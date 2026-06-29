@@ -246,6 +246,10 @@ bool load_opentyrian_config(void)
 
 		config_get_int_option(section, "fps", &fps_cap);
 		set_fps(fps_cap);
+
+		int vsync_enabled = output_vsync ? 1 : 0;
+		config_get_int_option(section, "vsync", &vsync_enabled);
+		set_vsync(vsync_enabled != 0);
 	}
 
 	section = config_find_section(config, "keyboard", NULL);
@@ -305,6 +309,8 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "scaling_mode", scaling_mode_names[scaling_mode]);
 
 	config_set_int_option(section, "fps", fps_cap);
+
+	config_set_int_option(section, "vsync", output_vsync ? 1 : 0);
 
 	section = config_find_or_add_section(config, "keyboard", NULL);
 	if (section == NULL)

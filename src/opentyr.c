@@ -127,6 +127,7 @@ void setupMenu(void)
 		MENU_ITEM_SCALER,
 		MENU_ITEM_SCALING_MODE,
 		MENU_ITEM_FPS,
+		MENU_ITEM_VSYNC,
 		MENU_ITEM_MUSIC_VOLUME,
 		MENU_ITEM_SOUND_VOLUME,
 	} MenuItemId;
@@ -151,7 +152,7 @@ void setupMenu(void)
 	typedef struct
 	{
 		const char *header;
-		const MenuItem items[6];
+		const MenuItem items[7];
 	} Menu;
 
 	static const Menu menus[] = {
@@ -172,7 +173,8 @@ void setupMenu(void)
 				{ MENU_ITEM_DISPLAY, "Display:", "Change the display mode.", getDisplayPickerItemsCount, getDisplayPickerItem },
 				{ MENU_ITEM_SCALER, "Scaler:", "Change the pixel art scaling algorithm.", getScalerPickerItemsCount, getScalerPickerItem },
 								{ MENU_ITEM_SCALING_MODE, "Scaling Mode:", "Change the scaling mode.", getScalingModePickerItemsCount, getScalingModePickerItem },
-								{ MENU_ITEM_FPS, "FPS:", "Limit FPS, default is 35 (AFFECTS GAMEPLAY SPEED!)", getFPSPickerItemsCount, getFPSPickerItem },
+								{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
+								{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames when VSync is off (0 = uncapped).", getFPSPickerItemsCount, getFPSPickerItem },
 								{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 								{ -1 }
 						},
@@ -286,6 +288,10 @@ void setupMenu(void)
 				else
 					snprintf(buffer, sizeof(buffer), "%d", fps_cap);
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, buffer, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_VSYNC:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, output_vsync ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_MUSIC_VOLUME:
@@ -404,6 +410,7 @@ void setupMenu(void)
 									case MENU_ITEM_SCALER:
 									case MENU_ITEM_SCALING_MODE:
 									case MENU_ITEM_FPS:
+									case MENU_ITEM_VSYNC:
 									{
 										action = true;
 										break;
@@ -499,6 +506,12 @@ void setupMenu(void)
 						JE_playSampleNum(S_CURSOR);
 						break;
 					}
+					case MENU_ITEM_VSYNC:
+					{
+						set_vsync(!output_vsync);
+						JE_playSampleNum(S_CURSOR);
+						break;
+					}
 					default:
 						break;
 					}
@@ -526,6 +539,12 @@ void setupMenu(void)
 					{
 						fps_cap += 5;
 						set_fps(fps_cap);
+						JE_playSampleNum(S_CURSOR);
+						break;
+					}
+					case MENU_ITEM_VSYNC:
+					{
+						set_vsync(!output_vsync);
 						JE_playSampleNum(S_CURSOR);
 						break;
 					}
@@ -645,6 +664,12 @@ void setupMenu(void)
 				{
 					samples_disabled = !samples_disabled;
 
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_VSYNC:
+				{
+					set_vsync(!output_vsync);
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

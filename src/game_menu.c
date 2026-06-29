@@ -35,6 +35,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
 #include "tyrian2.h"
@@ -235,6 +236,84 @@ JE_longint JE_cashLeft(void)
 	}
 
 	return tempL;
+}
+
+// Smoothly present the weapon-simulator preview. The surrounding menu draws at
+// ~23Hz (setDelay(3)), which makes the animated preview (starfield + shots) look
+// choppy next to the render-rate gameplay. The preview region (8..143 x 8..182)
+// is self-contained and fully redrawn each tick, so we record its draws and, for
+// the span of one logic tick, present interpolated copies of just that region at
+// the display rate while the static UI around it stays put. The preview's
+// non-blit overlay (power gauge, weapon-power segment bars, cost/cash text) is
+// captured as residual so the interpolated copy reproduces it rather than wiping
+// it (the render list records only blits).
+//
+// Caller must already have done, with VGAScreen == VGAScreenSeg:
+//   rl_begin_record(); <draw the weapon-sim frame>; rl_end_record();
+//   rl_finalize(); rl_capture_residual(VGAScreenSeg, game_screen);
+static void JE_weaponSimSmoothPresent(void)
+{
+	enum { RX0 = 8, RY0 = 8, RX1 = 143, RY1 = 182 };  // preview region (inclusive)
+
+	const float period = 3.0f * get_delay_period();  // setDelay(3) duration (ms)
+
+	// Present interpolated frames at the display rate for the WHOLE logic tick,
+	// paced by the same setDelay() timer the menu already uses (getDelayTicks),
+	// so we don't fight the wait_delay() that runs after this. alpha sweeps 0..1
+	// across the tick; when the tick's time is up, wait_delay() becomes a no-op.
+	for (;;)
+	{
+		const Uint32 remaining = getDelayTicks();  // ms until the setDelay(3) target
+		if (remaining == 0 || period <= 0.0f)
+			break;
+
+		float alpha = 1.0f - (float)remaining / period;
+		if (alpha < 0.0f)
+			alpha = 0.0f;
+		else if (alpha > 1.0f)
+			alpha = 1.0f;
+
+		// Reconstruct the recorded frame at interpolated positions into game_screen,
+		// then copy just the preview region over the live menu surface. (dt only
+		// matters for smoothie feedback, which the menu never has.)
+		rl_replay_interp(game_screen, alpha, false, 0.0f);
+
+		const Uint8 *src = (const Uint8 *)game_screen->pixels + RY0 * game_screen->pitch + RX0;
+		Uint8 *dst = (Uint8 *)VGAScreenSeg->pixels + RY0 * VGAScreenSeg->pitch + RX0;
+		for (int row = RY0; row <= RY1; ++row)
+		{
+			memcpy(dst, src, RX1 - RX0 + 1);
+			src += game_screen->pitch;
+			dst += VGAScreenSeg->pitch;
+		}
+
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		if (!output_vsync)
+			limit_render_fps();
+		service_SDL_events(false);
+	}
+}
+
+// While waiting out the rest of a menu logic tick, keep presenting at the display
+// rate with the mouse cursor redrawn at its live position, so the custom cursor
+// glides smoothly instead of updating only ~once per tick. The menu frame is
+// static during the wait, so only the cursor moves. (A no-op for the weapon sim,
+// whose own present loop already consumed the tick.)
+static void menuWaitWithSmoothCursor(void)
+{
+	for (;;)
+	{
+		if (getDelayTicks() == 0)
+			break;
+		JE_mouseStart();   // services SDL events + draws the cursor at its live pos
+		JE_showVGA();
+		JE_mouseReplace(); // restore the pixels under the cursor for the next pass
+		if (!output_vsync)
+			limit_render_fps();
+	}
 }
 
 void JE_itemScreen(void)
@@ -1015,8 +1094,22 @@ void JE_itemScreen(void)
 					      curSel[MENU_UPGRADES] <= 8)))
 					{
 						setDelay(3);
+
+						// Record the weapon-sim frame, then present it interpolated
+						// at the display rate (preview region only) so the animated
+						// ship/shots aren't stuck at ~23Hz. VGAScreen == VGAScreenSeg.
+						rl_begin_record();
 						JE_weaponSimUpdate();
 						JE_drawScore();
+						rl_end_record();
+						rl_finalize();
+						// Capture the non-blit overlay (power gauge, weapon-power
+						// segment bars, cost/cash text) as residual so the interpolated
+						// region copy doesn't wipe it. game_screen is a safe scratch:
+						// the present loop overwrites it anyway, so VGAScreen2 (the menu
+						// background snapshot) stays intact.
+						rl_capture_residual(VGAScreenSeg, game_screen);
+
 						service_SDL_events(false);
 
 						if (newPal > 0)
@@ -1026,15 +1119,11 @@ void JE_itemScreen(void)
 							newPal = 0;
 						}
 
-						JE_mouseStart();
-
 						if (paletteChanged)
 						{
 							set_palette(colors, 0, 255);
 							paletteChanged = false;
 						}
-
-						JE_showVGA(); /* SYN: This is where it updates the screen for the weapon sim */
 
 						if (backFromHelp)
 						{
@@ -1042,7 +1131,7 @@ void JE_itemScreen(void)
 							backFromHelp = false;
 						}
 
-						JE_mouseReplace();
+						JE_weaponSimSmoothPresent();  // cursor + showVGA happen inside
 
 					}
 					else  /* current menu is anything but weapon sim or datacube */
@@ -1079,7 +1168,7 @@ void JE_itemScreen(void)
 					}
 				}
 
-				wait_delay();
+				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
 				push_joysticks_as_keyboard();
 				service_SDL_events(false);

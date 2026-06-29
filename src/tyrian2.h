@@ -70,4 +70,11 @@ void JE_eventSystem(void);
 
 void draw_boss_bar(void);
 
+// Variable-timestep player ship (experimental; see render notes in tyrian2.c).
+extern bool vt_ship;       // runtime toggle for render-rate ship simulation
+bool vt_ship_owns(void);   // true when VT currently controls the player ship
+void vt_ship_step(float dt);  // advance the ship one displayed frame (dt in ticks)
+void vt_ship_tick(void);   // per-35Hz-tick reconcile (external forces / reposition)
+void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy);  // inter-tick ship move for tracking shots
+
 #endif /* TYRIAN2_H */

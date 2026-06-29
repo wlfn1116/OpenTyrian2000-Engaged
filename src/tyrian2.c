@@ -20,6 +20,7 @@
 
 #include "animlib.h"
 #include "backgrnd.h"
+#include "config.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -42,6 +43,7 @@
 #include "pcxload.h"
 #include "pcxmast.h"
 #include "picload.h"
+#include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
 #include "vga256d.h"
@@ -53,6 +55,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+
+// Stage 1 render-list verification: replay the captured list each clean frame
+// and report any pixels that differ from the real frame. Proven complete
+// (pixel-identical over hundreds of demo frames); left in, gated off, for
+// future debugging.
+#define RL_SELFTEST 0
 
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset);
 
@@ -72,82 +80,465 @@ char tempStr[31];
 JE_byte itemAvail[9][10]; /* [1..9, 1..10] */
 JE_byte itemAvailMax[9]; /* [1..9] */
 
-void JE_starShowVGA(void)
+// --- Phase 4: render-rate player-ship movement (display side) ---
+// The simulation keeps the ship's authoritative position at the 35Hz tick; here
+// we drive the *displayed* ship at the render rate so steering feels responsive,
+// not merely smooth. Live keyboard moves it every rendered frame (delta-time
+// scaled so it sums to the sim's per-tick step); mouse/joystick/demo fall back
+// to extrapolating the ship's last sim velocity. Reconciled to the sim each
+// tick so it can't drift. Applied via the render-list ship override, which also
+// carries the shadow, charge meter, and sidekicks (all id >= RL_ID_SHIP_BASE).
+static int ship_tick_x[2], ship_tick_y[2];   // ship position captured at the last tick
+static int ship_vel_x[2], ship_vel_y[2];       // per-tick movement (cur - prev tick)
+static bool ship_pred_have_tick = false;
+
+// Fixed-timestep accumulator for judder-free interpolation. Real elapsed time
+// is accumulated; we present every display frame at alpha = accumulator/period
+// and advance the simulation one tick whenever a full period has elapsed. This
+// keeps the displayed motion proportional to real time (even steps -> no
+// judder) and the average sim rate exact, regardless of the refresh rate.
+static float sim_accumulator = 0.0f;
+static Uint32 sim_last_ms = 0;
+static bool sim_timing_init = false;
+
+// Persistent interpolation buffer for smoothie levels: the ice/water/lava filters
+// are frame-feedback effects, so the displayed frame must carry over between
+// ticks. Seeded from the authoritative game_screen each tick, then evolved by the
+// replay (which re-applies the filters) every displayed frame.
+static SDL_Surface *render_gs = NULL;
+
+static SDL_Surface *get_render_gs(void)
+{
+	if (render_gs == NULL)
+		render_gs = SDL_CreateRGBSurface(0, vga_width, vga_height, 8, 0, 0, 0, 0);
+	return render_gs;
+}
+
+static void ship_pred_on_tick(void)
+{
+	const int players = twoPlayerMode ? 2 : 1;
+	for (int p = 0; p < players; ++p)
+	{
+		if (ship_pred_have_tick)
+		{
+			ship_vel_x[p] = player[p].x - ship_tick_x[p];
+			ship_vel_y[p] = player[p].y - ship_tick_y[p];
+		}
+		ship_tick_x[p] = player[p].x;
+		ship_tick_y[p] = player[p].y;
+	}
+	ship_pred_have_tick = true;
+}
+
+static int round_signed(float v)
+{
+	return (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
+}
+
+static void update_ship_override(float alpha)
+{
+	// The ship has momentum (acceleration + friction), so a fixed per-tick step
+	// would fight the sim and snap back every tick (jitter). Instead extrapolate
+	// each ship's *actual* per-tick velocity: this advances it continuously at the
+	// render rate, matches the sim (no jitter), and leads slightly (responsive).
+	// Per player, so two-player mode drives both ships independently. The offset
+	// also carries each ship's shadow and charge meter (same id); sidekicks are
+	// excluded and interpolate by their own motion.
+	const int players = twoPlayerMode ? 2 : 1;
+	for (int p = 0; p < players; ++p)
+	{
+		int vx = ship_vel_x[p], vy = ship_vel_y[p];
+		// A large jump (warp, dragonwing spawn, level start) isn't real velocity;
+		// snap rather than fling the ship along a bogus extrapolation.
+		if (vx > 40 || vx < -40 || vy > 40 || vy < -40)
+		{
+			vx = 0;
+			vy = 0;
+		}
+		rl_set_ship_override(p, round_signed(vx * alpha), round_signed(vy * alpha));
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Variable-timestep player ship (Option B, first slice).
+//
+// The world (enemies, shots, background, collisions) still advances at the
+// fixed 35Hz tick and is shown via render-list interpolation. The PLAYER SHIP,
+// however, is simulated here at the display/render rate with real dt: it
+// integrates its own momentum every presented frame, so it moves and responds
+// to input at full refresh instead of lagging or being extrapolated.
+//
+// While active this integrator OWNS the ship: JE_playerMovement's own keyboard/
+// joystick/mouse movement and velocity integration are skipped for that player
+// (guarded by `vt` there). We write player.x/y/x_velocity directly each frame
+// and drive the displayed sprite through the existing render-list ship-override
+// channel. The 35Hz sim still reads player.x/y for firing and collisions, so it
+// stays authoritative — only the ship's motion cadence changed. Because the
+// authoritative position now updates at render rate, the sprite and its hitbox
+// move together (no sprite-leads-hitbox), and input latency drops below a tick.
+//
+// First-slice limitations (intentional):
+//   * Single-player only, and reads KEYBOARD + digital-joystick directions.
+//     Mouse / analog-stick steering is bypassed while VT is on — toggle it off
+//     (vt_ship = false) to use the mouse.
+//   * Determinism is broken by design, so VT is force-disabled for demo
+//     playback, demo recording and network games.
+//   * The control feel is a fresh accel/friction model (the original coupled
+//     position-as-acceleration model can't be dt-scaled directly). The tunables
+//     below are deliberate starting points — adjust to taste.
+bool vt_ship = true;
+
+#define VT_ACCEL      1.5f  // velocity gained per tick while a direction is held
+#define VT_FRICTION_X 1.0f  // velocity bled per tick with no x input (orig ~1/tick)
+#define VT_FRICTION_Y 0.5f  // orig y friction fires every 2nd tick => half rate
+#define VT_VMAX       5.0f  // top speed/axis (orig: vel clamp 4 + 1 direct = ~5)
+#define VT_MOUSE_SENS 0.25f // screen-px ship motion per screen-px of mouse motion
+                            // (matches the original's ~1/4; raise for snappier)
+
+static float vt_x[2], vt_y[2], vt_vx[2], vt_vy[2];
+static int vt_wrote_vx[2], vt_wrote_vy[2];  // last velocity VT wrote to player[]
+static bool vt_seeded[2] = { false, false };
+
+bool vt_ship_owns(void)
+{
+	return vt_ship
+	    && smoothScroll != 0 && frameCountMax > 0  // the render-rate present loop must run
+	    && !play_demo && !record_demo && !isNetworkGame  // determinism-sensitive
+	    && !twoPlayerMode && !endLevel;
+}
+
+static void vt_seed_player(int p)
+{
+	vt_x[p] = (float)player[p].x;
+	vt_y[p] = (float)player[p].y;
+	vt_vx[p] = (float)player[p].x_velocity;
+	vt_vy[p] = (float)player[p].y_velocity;
+	vt_wrote_vx[p] = player[p].x_velocity;
+	vt_wrote_vy[p] = player[p].y_velocity;
+	vt_seeded[p] = true;
+}
+
+static float vt_friction(float v, float f)
+{
+	if (v > 0.0f) { v -= f; if (v < 0.0f) v = 0.0f; }
+	else if (v < 0.0f) { v += f; if (v > 0.0f) v = 0.0f; }
+	return v;
+}
+
+void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
+{
+	if (dt <= 0.0f)
+		return;
+
+	const int p = 0;  // single-player slice
+
+	if (!player[p].is_alive)
+	{
+		// Don't drive a dead/exploding ship; let it sit at the sim position.
+		vt_seeded[p] = false;
+		rl_clear_ship_override();
+		return;
+	}
+
+	// (Re)seed if uninitialised or the sim moved the ship out from under us
+	// (respawn, warp, link, or VT was just toggled on).
+	if (!vt_seeded[p]
+	    || abs(player[p].x - (int)lrintf(vt_x[p])) > 8
+	    || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)
+		vt_seed_player(p);
+
+	// --- Input ---
+	// Directional input (keyboard, d-pad, analog stick) feeds momentum; mouse
+	// relative motion is applied directly (pointer-style). "Inverted controls"
+	// levels (smoothies[8]) flip the Y axis.
+	const bool invert_y = smoothies[9 - 1];
+	float ix = 0.0f, iy = 0.0f;   // directional input -> momentum
+	float mdx = 0.0f, mdy = 0.0f; // mouse relative motion -> direct position
+
+	if (keysactive[keySettings[KEY_SETTING_UP]])    iy -= 1.0f;
+	if (keysactive[keySettings[KEY_SETTING_DOWN]])  iy += 1.0f;
+	if (keysactive[keySettings[KEY_SETTING_LEFT]])  ix -= 1.0f;
+	if (keysactive[keySettings[KEY_SETTING_RIGHT]]) ix += 1.0f;
+
+	if (joysticks > 0)
+	{
+		poll_joystick(0);
+		if (joystick[0].analog)
+		{
+			// Stick deflection -> proportional momentum input (clamped ~[-1,1]).
+			float ax = joystick_axis_reduce(0, joystick[0].x) / 32.0f;
+			float ay = joystick_axis_reduce(0, joystick[0].y) / 32.0f;
+			ix += (ax < -1.0f) ? -1.0f : (ax > 1.0f) ? 1.0f : ax;
+			iy += (ay < -1.0f) ? -1.0f : (ay > 1.0f) ? 1.0f : ay;
+		}
+		else
+		{
+			if (joystick[0].direction[0]) iy -= 1.0f;  // up
+			if (joystick[0].direction[2]) iy += 1.0f;  // down
+			if (joystick[0].direction[3]) ix -= 1.0f;  // left
+			if (joystick[0].direction[1]) ix += 1.0f;  // right
+		}
+	}
+
+	if (has_mouse)
+	{
+		// Relative motion since our last frame, float-scaled so sampling every
+		// render frame doesn't round small/diagonal motion away. Resets
+		// internally; returns 0 when relative mode is off (keyboard-only play).
+		float mxr = 0.0f, myr = 0.0f;
+		mouseGetRelativeMotionF(&mxr, &myr);
+		mdx = mxr * VT_MOUSE_SENS;
+		mdy = myr * VT_MOUSE_SENS;
+	}
+
+	if (invert_y) { iy = -iy; mdy = -mdy; }
+
+	// --- Integrate momentum (everything dt-scaled; dt==1 == one old tick) ---
+	if (ix != 0.0f)
+		vt_vx[p] += ix * VT_ACCEL * dt;
+	else
+		vt_vx[p] = vt_friction(vt_vx[p], VT_FRICTION_X * dt);
+
+	if (iy != 0.0f)
+		vt_vy[p] += iy * VT_ACCEL * dt;
+	else
+		vt_vy[p] = vt_friction(vt_vy[p], VT_FRICTION_Y * dt);
+
+	if (vt_vx[p] >  VT_VMAX) vt_vx[p] =  VT_VMAX;
+	if (vt_vx[p] < -VT_VMAX) vt_vx[p] = -VT_VMAX;
+	if (vt_vy[p] >  VT_VMAX) vt_vy[p] =  VT_VMAX;
+	if (vt_vy[p] < -VT_VMAX) vt_vy[p] = -VT_VMAX;
+
+	// Momentum step plus the direct mouse delta.
+	vt_x[p] += vt_vx[p] * dt + mdx;
+	vt_y[p] += vt_vy[p] * dt + mdy;
+
+	// Same playfield bounds the sim enforces (mainint.c). Stop velocity at walls
+	// so we don't accumulate phantom momentum while held against an edge.
+	if (vt_x[p] > PLAYFIELD_WIDTH - 8) { vt_x[p] = PLAYFIELD_WIDTH - 8; if (vt_vx[p] > 0) vt_vx[p] = 0; }
+	if (vt_x[p] < 40)                  { vt_x[p] = 40;                  if (vt_vx[p] < 0) vt_vx[p] = 0; }
+	if (vt_y[p] > 160)                 { vt_y[p] = 160;                 if (vt_vy[p] > 0) vt_vy[p] = 0; }
+	if (vt_y[p] < 10)                  { vt_y[p] = 10;                  if (vt_vy[p] < 0) vt_vy[p] = 0; }
+
+	// Write back so the next 35Hz tick (collisions, firing, homing) sees the
+	// current position/velocity.
+	player[p].x = (int)lrintf(vt_x[p]);
+	player[p].y = (int)lrintf(vt_y[p]);
+	player[p].x_velocity = (int)lrintf(vt_vx[p]);
+	player[p].y_velocity = (int)lrintf(vt_vy[p]);
+	vt_wrote_vx[p] = player[p].x_velocity;
+	vt_wrote_vy[p] = player[p].y_velocity;
+
+	// Display the recorded (tick-time) ship sprite at its new continuous position
+	// via the override channel the interpolator already understands.
+	rl_set_ship_override(p, player[p].x - ship_tick_x[p], player[p].y - ship_tick_y[p]);
+}
+
+void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
+{
+	if (!vt_ship_owns())
+		return;
+
+	const int p = 0;
+	if (!vt_seeded[p] || !player[p].is_alive)
+		return;
+
+	// Hard reposition (respawn/warp/link): re-seed instead of folding.
+	if (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
+	    || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)
+	{
+		vt_seed_player(p);
+		return;
+	}
+
+	// External velocity impulses (magnet fields, enemy-shot knockback) modify
+	// player.x_velocity during the tick; JE_playerMovement's integration is
+	// skipped for us, so fold whatever changed since our last write into VT.
+	vt_vx[p] += (float)(player[p].x_velocity - vt_wrote_vx[p]);
+	vt_vy[p] += (float)(player[p].y_velocity - vt_wrote_vy[p]);
+
+	// Refresh the ship position history (trailing sidekicks read old_x/old_y).
+	// Vanilla updates it from an intra-tick delta that VT leaves at zero, so do
+	// it here when the ship actually moved since the previous tick.
+	if (player[p].x != ship_tick_x[p] || player[p].y != ship_tick_y[p])
+	{
+		for (unsigned int i = 1; i < COUNTOF(player[p].old_x); ++i)
+		{
+			player[p].old_x[i - 1] = player[p].old_x[i];
+			player[p].old_y[i - 1] = player[p].old_y[i];
+		}
+		player[p].old_x[COUNTOF(player[p].old_x) - 1] = player[p].x;
+		player[p].old_y[COUNTOF(player[p].old_x) - 1] = player[p].y;
+	}
+}
+
+// Per-tick ship movement used by shots that track the ship (delta_x_shot_move,
+// e.g. the laser and main pulse). Vanilla derives it from (x - last_x_shot_move)
+// inside the tick, but VT moves the ship BETWEEN ticks, so that reads ~0; supply
+// the authoritative inter-tick delta (current pos vs the previous tick snapshot)
+// instead. ship_tick_x/y are updated by ship_pred_on_tick after JE_playerMovement
+// runs, so here they still hold the previous tick's position.
+void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
+{
+	const int p = (player_index <= 0) ? 0 : 1;
+	if (!ship_pred_have_tick)
+	{
+		*out_dx = 0;
+		*out_dy = 0;
+		return;
+	}
+	*out_dx = player[p].x - ship_tick_x[p];
+	*out_dy = player[p].y - ship_tick_y[p];
+}
+
+// Copy the freshly-drawn playfield from game_screen into VGAScreenSeg, applying
+// the special vertical-flip / lighting composites when active. Factored out so
+// interpolated in-between frames can re-composite after re-rendering.
+static void composite_playfield(SDL_Surface *playfield)
 {
 	JE_byte *src;
-	Uint8 *s = NULL; /* screen pointer, 8-bit specific */
+	Uint8 *s = VGAScreenSeg->pixels;
 
 	int x, y, lightx, lighty, lightdist;
 
+	src = playfield->pixels;
+	src += 24;
+
+	if (starShowVGASpecialCode == 1)
+	{
+		src += playfield->pitch * 183;
+		for (y = 0; y < 184; y++)
+		{
+			memmove(s, src, PLAYFIELD_WIDTH);
+			s += VGAScreenSeg->pitch;
+			src -= playfield->pitch;
+		}
+	}
+	else if (starShowVGASpecialCode == 2 && processorType >= 2)
+	{
+		lighty = 172 - player[0].y;
+		lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - player[0].x;
+
+		for (y = 184; y; y--)
+		{
+			if (lighty > y)
+			{
+				for (x = PLAYFIELD_WIDTH; x; x--)
+				{
+					*s = (*src & 0xf0) | ((*src >> 2) & 0x03);
+					s++;
+					src++;
+				}
+			}
+			else
+			{
+				for (x = PLAYFIELD_WIDTH; x; x--)
+				{
+					lightdist = abs(lightx - x) + lighty;
+					if (lightdist < y)
+						*s = *src;
+					else if (lightdist - y <= 5)
+						*s = (*src & 0xf0) | (((*src & 0x0f) + (3 * (5 - (lightdist - y)))) / 4);
+					else
+						*s = (*src & 0xf0) | ((*src & 0x0f) >> 2);
+					s++;
+					src++;
+				}
+			}
+			s += VGAScreenSeg->pitch - PLAYFIELD_WIDTH;
+			src += playfield->pitch - PLAYFIELD_WIDTH;
+		}
+	}
+	else
+	{
+		for (y = 0; y < 184; y++)
+		{
+			memmove(s, src, PLAYFIELD_WIDTH);
+			s += VGAScreenSeg->pitch;
+			src += playfield->pitch;
+		}
+	}
+}
+
+void JE_starShowVGA(void)
+{
 	if (!playerEndLevel && !skipStarShowVGA)
 	{
-
-		s = VGAScreenSeg->pixels;
-
-		src = game_screen->pixels;
-		src += 24;
+		composite_playfield(game_screen);
 
 		if (smoothScroll != 0 /*&& thisPlayerNum != 2*/)
 		{
-			wait_delay();
-			setDelay(frameCountMax);
-		}
+			// Needs a real tick period to scale interpolation against. Smoothie
+			// (ice/water/lava) levels interpolate too now, via a persistent
+			// feedback buffer (render_gs) that the replay re-filters each frame.
+			const bool can_interp = frameCountMax > 0;
 
-		if (starShowVGASpecialCode == 1)
-		{
-			src += game_screen->pitch * 183;
-			for (y = 0; y < 184; y++)
+			// On smoothie levels the replay evolves a persistent buffer; seed it
+			// from this tick's authoritative frame so its feedback starts correct.
+			SDL_Surface *const interp_buf = anySmoothies ? get_render_gs() : game_screen;
+			if (anySmoothies && interp_buf != NULL)
+				memcpy(interp_buf->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
+
+			if (can_interp && interp_buf != NULL)
 			{
-				memmove(s, src, PLAYFIELD_WIDTH);
-				s += VGAScreenSeg->pitch;
-				src -= game_screen->pitch;
+				// Fixed-timestep accumulator: present every display frame at
+				// alpha = accumulator/period (derived from REAL elapsed time, so
+				// motion is smooth and even at ANY refresh), and return to run the
+				// next sim tick once a full period has elapsed. The leftover time
+				// carries over, so the average sim rate stays exact (~35Hz).
+				const float period = (float)frameCountMax * get_delay_period();
+
+				if (!sim_timing_init)
+				{
+					sim_last_ms = SDL_GetTicks();
+					sim_accumulator = 0.0f;
+					sim_timing_init = true;
+				}
+
+				for (;;)
+				{
+					const Uint32 now = SDL_GetTicks();
+					float elapsed = (float)(now - sim_last_ms);
+					sim_last_ms = now;
+					if (elapsed > period * 4.0f)
+						elapsed = period;  // spiral guard (lag spike / resume from pause)
+					sim_accumulator += elapsed;
+
+					if (sim_accumulator >= period)
+					{
+						sim_accumulator -= period;
+						if (sim_accumulator > period)
+							sim_accumulator = period;  // clamp backlog: at most one tick behind
+						break;  // time for the next simulation tick
+					}
+
+					const float alpha = sim_accumulator / period;
+					const float frame_dt = elapsed / period;  // this frame's fraction of a tick
+					if (vt_ship_owns())
+						vt_ship_step(frame_dt);       // simulate the ship at the render rate (variable dt)
+					else
+						update_ship_override(alpha);  // otherwise extrapolate the ship for this frame
+					rl_replay_interp(interp_buf, alpha, anySmoothies, frame_dt);
+					composite_playfield(interp_buf);
+					JE_showVGA();
+
+					if (!output_vsync)
+						limit_render_fps();
+					service_SDL_events(false);
+				}
+				setDelay(frameCountMax);  // keep `target` current for other timing readers
 			}
-		}
-		else if (starShowVGASpecialCode == 2 && processorType >= 2)
-		{
-			lighty = 172 - player[0].y;
-			lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - player[0].x;
-
-			for (y = 184; y; y--)
+			else
 			{
-				if (lighty > y)
-				{
-					for (x = PLAYFIELD_WIDTH; x; x--)
-					{
-						*s = (*src & 0xf0) | ((*src >> 2) & 0x03);
-						s++;
-						src++;
-					}
-				}
-				else
-				{
-					for (x = PLAYFIELD_WIDTH; x; x--)
-					{
-						lightdist = abs(lightx - x) + lighty;
-						if (lightdist < y)
-							*s = *src;
-						else if (lightdist - y <= 5)
-							*s = (*src & 0xf0) | (((*src & 0x0f) + (3 * (5 - (lightdist - y)))) / 4);
-						else
-							*s = (*src & 0xf0) | ((*src & 0x0f) >> 2);
-						s++;
-						src++;
-					}
-				}
-				s += VGAScreenSeg->pitch - PLAYFIELD_WIDTH;
-				src += game_screen->pitch - PLAYFIELD_WIDTH;
+				JE_showVGA();
+				service_wait_delay();
+				setDelay(frameCountMax);
 			}
 		}
 		else
 		{
-			for (y = 0; y < 184; y++)
-			{
-				memmove(s, src, PLAYFIELD_WIDTH);
-				s += VGAScreenSeg->pitch;
-				src += game_screen->pitch;
-			}
+			JE_showVGA();
 		}
-		JE_showVGA();
 	}
 
 	quitRequested = false;
@@ -206,10 +597,12 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 	          y = enemy[i].ey + y_offset;
 	const unsigned int index = enemy[i].egr[enemy[i].enemycycle - 1] + sprite_offset;
 
+	rl_current_id = RL_ID_ENEMY_BASE + (int)i;  // tag for cross-frame interpolation
 	if (enemy[i].filter != 0)
 		blit_sprite2_filter(surface, x, y, *enemy[i].sprite2s, index, enemy[i].filter);
 	else
 		blit_sprite2(surface, x, y, *enemy[i].sprite2s, index);
+	rl_current_id = 0;
 }
 
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
@@ -1317,6 +1710,10 @@ level_loop:
 	/* use game_screen for all the generic drawing functions */
 	VGAScreen = game_screen;
 
+	// Begin capturing this tick's playfield draws into the render list so they
+	// can be replayed (interpolated) for in-between frames at the display rate.
+	rl_begin_record();
+
 	/*---------------------------EVENTS-------------------------*/
 	while (eventRec[eventLoc-1].eventtime <= curLoc && eventLoc <= maxEvent)
 		JE_eventSystem();
@@ -1366,6 +1763,8 @@ level_loop:
 
 	if (processorType > 1 && smoothies[5-1])
 	{
+		if (render_list_recording)
+			rl_rec_smoothie_filter(RC_ICED_BLUR);
 		iced_blur_filter(game_screen, VGAScreen);
 		VGAScreen = game_screen;
 	}
@@ -1391,11 +1790,15 @@ level_loop:
 
 	if (smoothies[0] && processorType > 2 && smoothie_data[0] == 0)
 	{
+		if (render_list_recording)
+			rl_rec_smoothie_filter(RC_LAVA_FILTER);
 		lava_filter(game_screen, VGAScreen);
 		VGAScreen = game_screen;
 	}
 	if (smoothies[2-1] && processorType > 2)
 	{
+		if (render_list_recording)
+			rl_rec_smoothie_filter(RC_WATER_FILTER);
 		water_filter(game_screen, VGAScreen);
 		VGAScreen = game_screen;
 	}
@@ -1416,6 +1819,8 @@ level_loop:
 
 	if (smoothies[0] && processorType > 2 && smoothie_data[0] > 0)
 	{
+		if (render_list_recording)
+			rl_rec_smoothie_filter(RC_LAVA_FILTER);
 		lava_filter(game_screen, VGAScreen);
 		VGAScreen = game_screen;
 	}
@@ -1924,10 +2329,12 @@ draw_player_shot_loop_end:
 								enemyShot[z].animate = 0;
 						}
 
+						rl_current_id = RL_ID_ESHOT_BASE + z;
 						if (enemyShot[z].sgr >= 500)
 							blit_sprite2(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, spriteSheet12, enemyShot[z].sgr + enemyShot[z].animate - 500);
 						else
 							blit_sprite2(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, spriteSheet8, enemyShot[z].sgr + enemyShot[z].animate);
+						rl_current_id = 0;
 					}
 				}
 
@@ -2027,10 +2434,12 @@ draw_player_shot_loop_end:
 			}
 			else
 			{
+				rl_current_id = 0;  // explosions snap: transient puffs reuse slots, so interp mis-pairs them into bogus "random direction" smoke
 				if (explosionTransparent)
 					blit_sprite2_blend(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
 				else
 					blit_sprite2(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
+				rl_current_id = 0;
 
 				explosions[j].ttl--;
 			}
@@ -2414,12 +2823,64 @@ draw_player_shot_loop_end:
 	/*Filtration*/
 	if (filterActive)
 	{
+		if (render_list_recording)
+			rl_rec_filter_screen(levelFilter, levelBrightness);
 		JE_filterScreen(levelFilter, levelBrightness);
 	}
+
+	// Snapshot the post-filter frame on feedback (smoothie) levels, before the
+	// boss bar / in-game displays are drawn, so we can diff it out below and
+	// capture just those overlays. They're drawn on top of the per-pixel filter,
+	// and the replayed filter would otherwise smear/recolor them every frame
+	// (e.g. water_filter turning the boss bar grey on DREAD-NOT).
+	if (anySmoothies)
+		memcpy(VGAScreen2->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
 
 	draw_boss_bar();
 
 	JE_inGameDisplays();
+
+	// Render-list capture for this tick ends here (everything below composites
+	// or presents; it does not draw into the playfield).
+	rl_end_record();
+	rl_finalize();  // match against previous frame -> per-command motion deltas
+	if (!anySmoothies)
+		rl_capture_residual(game_screen, VGAScreen2);  // non-blit pixels (superpixels, boss bar)
+	else
+		rl_capture_residual_delta(VGAScreen2, game_screen);  // overlay-only (boss bar, HUD) -> re-applied unfiltered
+	vt_ship_tick();       // fold external forces / repositions into the variable-dt ship
+	ship_pred_on_tick();  // snapshot authoritative ship pos for render-rate prediction
+#if RL_SELFTEST
+	{
+		static int seen = 0;
+		if (seen < 5)
+		{
+			++seen;
+			fprintf(stderr, "RL: in-game frame %d, anySmoothies=%d filterActive=%d cmds=%zu\n",
+			        seen, (int)anySmoothies, (int)filterActive, rl_count());
+		}
+	}
+	// On frames without smoothie per-pixel effects (lava/water/ice blur), the
+	// replayed list — including the full-screen colour filter, which we record
+	// explicitly — must reproduce game_screen exactly.
+	if (!anySmoothies)
+	{
+		const size_t mism = rl_replay_and_compare(VGAScreen2, game_screen);
+		static int clean_frames = 0, bad_frames = 0;
+		++clean_frames;
+		if (mism != 0)
+		{
+			++bad_frames;
+			if (bad_frames <= 20)
+				fprintf(stderr, "RL selftest: %zu mismatched bytes (clean frame %d, %zu cmds)\n",
+				        mism, clean_frames, rl_count());
+		}
+		else if (clean_frames % 120 == 1)
+		{
+			fprintf(stderr, "RL selftest: clean frame %d OK (%zu cmds)\n", clean_frames, rl_count());
+		}
+	}
+#endif
 
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 

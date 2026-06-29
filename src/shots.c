@@ -19,6 +19,7 @@
 #include "shots.h"
 
 #include "player.h"
+#include "render_list.h"
 #include "sprite.h"
 #include "video.h"
 #include "varz.h"
@@ -97,12 +98,14 @@ void simulate_player_shots(void)
 
 				if (anim_frame < 60000)
 				{
+					rl_current_id = RL_ID_PSHOT_BASE + z;
 					if (anim_frame > 1000)
 						anim_frame = anim_frame % 1000;
 					if (anim_frame > 500)
 						blit_sprite2(VGAScreen, tempShotX+1, tempShotY, spriteSheet12, anim_frame - 500);
 					else
 						blit_sprite2(VGAScreen, tempShotX+1, tempShotY, spriteSheet8, anim_frame);
+					rl_current_id = 0;
 				}
 			}
 
@@ -273,6 +276,14 @@ bool player_shot_move_and_draw(
 
 		*out_is_special = sprite_frame > 60000;
 
+		// Shots that track the ship (shotXM>100 / shotYM>100 sentinels) are drawn
+		// at the ship's render-rate position on the attached axis, so the laser /
+		// main-pulse base stays on the gun during strafes; the travelling axis
+		// interpolates. See ship_attach handling in render_list.c.
+		rl_current_id = RL_ID_PSHOT_BASE + shot_id;
+		rl_shot_attach = (shot->shotXM > 100 ? 1 : 0)
+		               | (shot->shotYM > 100 ? 2 : 0)
+		               | ((shot->playerNumber - 1) << 2);
 		if (*out_is_special)
 		{
 			blit_sprite_blend(VGAScreen, *out_shotx+1, *out_shoty, OPTION_SHAPES, sprite_frame - 60001);
@@ -300,6 +311,8 @@ bool player_shot_move_and_draw(
 				blit_sprite2(VGAScreen, *out_shotx+1, *out_shoty, spriteSheet8, sprite_frame);
 			}
 		}
+		rl_current_id = 0;
+		rl_shot_attach = 0;
 	}
 
 	return true;
