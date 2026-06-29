@@ -37,6 +37,12 @@ extern JE_byte smoothie_data[9];
 
 extern int starfield_speed;
 
+// When false, the draw_background_* functions render at the current scroll
+// position WITHOUT advancing it. The simulation tick leaves this true (normal
+// behavior); interpolated re-draws between ticks set it false so the same
+// frame can be re-rendered at sub-tick scroll offsets. (phase 2 groundwork)
+extern bool background_advance;
+
 void JE_darkenBackground(JE_word neat);
 
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map);
@@ -59,5 +65,6 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src);
 
 void initialize_starfield(void);
 void update_and_draw_starfield(SDL_Surface* surface, int move_speed);
+void draw_starfield_star(SDL_Surface* surface, int x, int y, Uint8 color);
 
 #endif /* BACKGRND_H */

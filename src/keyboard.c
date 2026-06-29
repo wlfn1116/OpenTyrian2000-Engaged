@@ -136,6 +136,23 @@ void mouseGetRelativePosition(Sint32 *const out_x, Sint32 *const out_y)
 	mouseWindowYRelative = 0;
 }
 
+// Like mouseGetRelativePosition but returns float screen-space motion with no
+// rounding, so it can be sampled every render frame (e.g. by the variable-
+// timestep ship) without losing sub-pixel / diagonal motion.
+void mouseGetRelativeMotionF(float *const out_x, float *const out_y)
+{
+	service_SDL_events(false);
+
+	float x = (float)mouseWindowXRelative;
+	float y = (float)mouseWindowYRelative;
+	scaleWindowDistanceToScreenF(&x, &y);
+	*out_x = x;
+	*out_y = y;
+
+	mouseWindowXRelative = 0;
+	mouseWindowYRelative = 0;
+}
+
 void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;

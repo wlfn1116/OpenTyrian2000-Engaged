@@ -39,8 +39,17 @@ JE_word tyrMusicVolume, fxVolume;
 const JE_word fxPlayVol = 4;
 JE_word tempVolume;
 
-int fps_cap = 35;
-static float delayPeriod = 1000.0f / (35 * 2);
+// Render-rate cap: maximum frames *presented* per second.
+//   0 = uncapped (or paced by vsync when that is enabled)
+// This no longer affects the simulation, which always advances at the fixed
+// canonical rate below regardless of how fast we present.
+int fps_cap = 0;
+
+// Canonical simulation rate. The original game timed everything against a
+// ~35Hz logic tick (further subdivided by frameCountMax); keeping this fixed
+// is what makes gameplay speed independent of the display/render rate.
+#define SIM_FPS 35
+static float delayPeriod = 1000.0f / (SIM_FPS * 2);
 
 // The period of the x86 programmable interval timer in milliseconds.
 static const float pitPeriod = (12.0f / 14318180.0f) * 1000.0f;
@@ -50,18 +59,19 @@ static Uint16 delaySpeed = 0x4300;
 static Uint32 target = 0;
 static Uint32 target2 = 0;
 
-void set_fps(int fps)
+void set_fps(int fps)  // sets the render-rate cap; does not affect sim speed
 {
 	fps_cap = fps;
-	if (fps_cap > 0)
-		delayPeriod = ((float)delaySpeed / 0x4300) * (1000.0f / (fps_cap * 2));
-	else
-		delayPeriod = 0;
 }
 
 void setDelay(int delay)  // FKA NortSong.frameCount
 {
 	target = SDL_GetTicks() + delay * delayPeriod;
+}
+
+float get_delay_period(void)  // ms per delay unit; tick period = frameCountMax * this
+{
+	return delayPeriod;
 }
 
 void setDelay2(int delay)  // FKA NortSong.frameCount2
@@ -86,6 +96,32 @@ void wait_delay(void)
 	Sint32 delay = target - SDL_GetTicks();
 	if (delay > 0)
 		SDL_Delay(delay);
+}
+
+// When vsync is disabled, space out presents so we don't exceed the configured
+// render cap (fps_cap). With vsync enabled this is unused — the display paces us.
+// A render cap of 0 means uncapped (present as fast as possible).
+void limit_render_fps(void)
+{
+	static Uint32 last_present = 0;
+
+	if (fps_cap <= 0)
+	{
+		last_present = SDL_GetTicks();
+		return;
+	}
+
+	const Uint32 frame_ms = 1000 / fps_cap;
+	Uint32 now = SDL_GetTicks();
+	Uint32 elapsed = now - last_present;
+
+	if (elapsed < frame_ms)
+	{
+		SDL_Delay(frame_ms - elapsed);
+		now = SDL_GetTicks();
+	}
+
+	last_present = now;
 }
 
 void service_wait_delay(void)
@@ -261,10 +297,7 @@ void JE_playSampleNum(JE_byte samplenum)
 void setDelaySpeed(Uint16 speed)  // FKA NortSong.speed and NortSong.setTimerInt
 {
 	delaySpeed = speed;
-	if (fps_cap > 0)
-		delayPeriod = ((float)speed / 0x4300) * (1000.0f / (fps_cap * 2));
-	else
-		delayPeriod = 0;
+	delayPeriod = ((float)speed / 0x4300) * (1000.0f / (SIM_FPS * 2));
 }
 
 void JE_changeVolume(JE_word *music, int music_delta, JE_word *sample, int sample_delta)

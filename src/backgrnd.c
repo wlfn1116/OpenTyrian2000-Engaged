@@ -21,6 +21,7 @@
 #include "config.h"
 #include "mtrand.h"
 #include "opentyr.h"
+#include "render_list.h"
 #include "varz.h"
 #include "video.h"
 
@@ -31,6 +32,10 @@
 /*Back Pos 3*/
 JE_word backPos, backPos2, backPos3;
 JE_word backMove, backMove2, backMove3;
+
+// See backgrnd.h: true during the sim tick (advance scroll as normal), false
+// during interpolated re-draws so the layer can be re-rendered without moving.
+bool background_advance = true;
 
 /*Main Maps*/
 JE_word mapX, mapY, mapX2, mapX3, mapY2, mapY3;
@@ -63,7 +68,10 @@ void JE_darkenBackground(JE_word neat)  /* wild detail level */
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map)
 {
 	assert(surface->format->BitsPerPixel == 8);
-	
+
+	if (render_list_recording)
+		rl_rec_bg_row(x, y, map, false);
+
 	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
 	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	      *pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
@@ -115,7 +123,10 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map)
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map)
 {
 	assert(surface->format->BitsPerPixel == 8);
-	
+
+	if (render_list_recording)
+		rl_rec_bg_row(x, y, map, true);
+
 	Uint8 *pixels = (Uint8 *)surface->pixels + (y * surface->pitch) + x,
 	      *pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	      *pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
@@ -170,18 +181,20 @@ void draw_background_1(SDL_Surface *surface)
 		// scroll offset.
 	const int tile_count = PLAYFIELD_WIDTH / 24 + 2;
 	Uint8** map = (Uint8**)mapYPos + mapXbpPos - tile_count;
-	
+
+	rl_current_id = RL_ID_BG_BASE + 1;  // tag rows for cross-frame interpolation
 	for (int i = -1; i < 7; i++)
 	{
 		blit_background_row(surface, mapXPos + PLAYFIELD_X_SHIFT, (i * 28) + backPos, map);
 
 		map += 14;
 	}
+	rl_current_id = 0;
 }
 
 void draw_background_2(SDL_Surface *surface)
 {
-	if (map2YDelayMax > 1 && backMove2 < 2)
+	if (background_advance && map2YDelayMax > 1 && backMove2 < 2)
 		backMove2 = (map2YDelay == 1) ? 1 : 0;
 	// Two extra tiles guarantee full coverage regardless of horizontal
 		// scroll offset.
@@ -192,17 +205,19 @@ void draw_background_2(SDL_Surface *surface)
 		int x = (smoothies[1] ? mapXPos : mapX2Pos) + PLAYFIELD_X_SHIFT;
 
 		Uint8** map = (Uint8**)mapY2Pos + (smoothies[1] ? mapXbpPos : mapX2bpPos) - tile_count;
-		
+
+		rl_current_id = RL_ID_BG_BASE + 2;
 		for (int i = -1; i < 7; i++)
 		{
 			blit_background_row(surface, x, (i * 28) + backPos2, map);
-			
+
 			map += 14;
 		}
+		rl_current_id = 0;
 	}
 	
 	/*Set Movement of background*/
-	if (--map2YDelay == 0)
+	if (background_advance && --map2YDelay == 0)
 	{
 		map2YDelay = map2YDelayMax;
 		
@@ -219,23 +234,25 @@ void draw_background_2(SDL_Surface *surface)
 
 void draw_background_2_blend(SDL_Surface *surface)
 {
-	if (map2YDelayMax > 1 && backMove2 < 2)
+	if (background_advance && map2YDelayMax > 1 && backMove2 < 2)
 		backMove2 = (map2YDelay == 1) ? 1 : 0;
 	
 	// Two extra tiles guarantee full coverage regardless of horizontal
 		// scroll offset.
 	const int tile_count = PLAYFIELD_WIDTH / 24 + 2;
 	Uint8** map = (Uint8**)mapY2Pos + mapX2bpPos - tile_count;
-	
+
+	rl_current_id = RL_ID_BG_BASE + 2;
 	for (int i = -1; i < 7; i++)
 	{
 		blit_background_row_blend(surface, mapX2Pos + PLAYFIELD_X_SHIFT, (i * 28) + backPos2, map);
 
 		map += 14;
 	}
+	rl_current_id = 0;
 	
 	/*Set Movement of background*/
-	if (--map2YDelay == 0)
+	if (background_advance && --map2YDelay == 0)
 	{
 		map2YDelay = map2YDelayMax;
 		
@@ -253,20 +270,24 @@ void draw_background_2_blend(SDL_Surface *surface)
 void draw_background_3(SDL_Surface *surface)
 {
 	/* Movement of background */
-	backPos3 += backMove3;
-	
-	if (backPos3 > 27)
+	if (background_advance)
 	{
-		backPos3 -= 28;
-		mapY3--;
-		mapY3Pos -= 15;   /*Map Width*/
+		backPos3 += backMove3;
+
+		if (backPos3 > 27)
+		{
+			backPos3 -= 28;
+			mapY3--;
+			mapY3Pos -= 15;   /*Map Width*/
+		}
 	}
-	
+
 	// Two extra tiles guarantee full coverage regardless of horizontal
 		// scroll offset.
 	const int tile_count = PLAYFIELD_WIDTH / 24 + 2;
 	Uint8** map = (Uint8**)mapY3Pos + mapX3bpPos - tile_count;
 
+	rl_current_id = RL_ID_BG_BASE + 3;
 	for (int i = -1; i < 7; i++)
 	{
 		// mapX3Pos already includes a 18-pixel left shift to correct the
@@ -275,6 +296,7 @@ void draw_background_3(SDL_Surface *surface)
 
 		map += 15;
 	}
+	rl_current_id = 0;
 }
 
 void JE_filterScreen(JE_shortint col, JE_shortint int_)
@@ -494,16 +516,30 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 	}
 }
 
-/* Background Starfield */
+/* Background Starfield.
+ *
+ * Each star is an independent (x column, y row) point. y is a float so the field
+ * can drift smoothly at any speed, and ONLY y is advanced/interpolated — x is
+ * fixed — so stars never bleed sideways. (The old model packed both into one
+ * linear byte offset and interpolated it, which dragged a fraction of a row into
+ * the column and made stars streak diagonally.) */
 typedef struct
 {
+	int x;        // column (constant for a star's lifetime)
+	float y;      // row (fractional, advances each tick, wraps at STARFIELD_WRAP)
+	int speed;    // base rows of drift (scaled by STARFIELD_SPEED_SCALE)
 	Uint8 color;
-	JE_word position; // relies on overflow wrap-around
-	int speed;
 } StarfieldStar;
 
 #define MAX_STARS 100
 #define STARFIELD_HUE 0x90
+#define STARFIELD_WRAP    184  // rows; star wraps back to the top past this
+#define STARFIELD_VISIBLE 177  // rows; star is only drawn above this (keeps it out of the HUD)
+
+// rows/tick per unit of (speed + move_speed). The speed knob: lower = slower.
+// 1.0 == the original game's speed (which the rewrite now renders smoothly,
+// without the old diagonal-streak bug that made it look far faster than it was).
+#define STARFIELD_SPEED_SCALE 1.0f
 static StarfieldStar starfield_stars[MAX_STARS];
 int starfield_speed;
 
@@ -511,44 +547,65 @@ void initialize_starfield(void)
 {
 	for (int i = MAX_STARS - 1; i >= 0; --i)
 	{
-		starfield_stars[i].position = mt_rand() % vga_width + mt_rand() % 200 * VGAScreen->pitch;
+		starfield_stars[i].x = mt_rand() % vga_width;
+		starfield_stars[i].y = (float)(mt_rand() % STARFIELD_WRAP);
 		starfield_stars[i].speed = mt_rand() % 3 + 2;
 		starfield_stars[i].color = mt_rand() % 16 + STARFIELD_HUE;
 	}
 }
 
+// Draw a single star (center pixel plus a dimmer halo) at column x, row y.
+// Factored out so the render list can re-draw stars during replay. Bounds are
+// checked per axis so a star can't wrap a pixel into the neighbouring row.
+void draw_starfield_star(SDL_Surface* surface, int x, int y, Uint8 color)
+{
+	if (x < 0 || x >= surface->w || y < 0 || y >= STARFIELD_VISIBLE)
+		return;
+
+	Uint8* p = (Uint8*)surface->pixels;
+	const int pitch = surface->pitch;
+	const int pos = y * pitch + x;
+
+	if (p[pos] == 0)
+		p[pos] = color;
+
+	// If star is bright enough, draw surrounding pixels
+	if (color - 4 >= STARFIELD_HUE)
+	{
+		if (x + 1 < surface->w && p[pos + 1] == 0)
+			p[pos + 1] = color - 4;
+		if (x - 1 >= 0 && p[pos - 1] == 0)
+			p[pos - 1] = color - 4;
+		if (y + 1 < surface->h && p[pos + pitch] == 0)
+			p[pos + pitch] = color - 4;
+		if (y - 1 >= 0 && p[pos - pitch] == 0)
+			p[pos - pitch] = color - 4;
+	}
+}
+
 void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 {
-	Uint8* p = (Uint8*)surface->pixels;
-
 	for (int i = MAX_STARS-1; i >= 0; --i)
 	{
 		StarfieldStar* star = &starfield_stars[i];
 
-		star->position += (star->speed + move_speed) * surface->pitch;
+		// Drift down by a (usually sub-pixel) amount; only y moves.
+		const float dy = (star->speed + move_speed) * STARFIELD_SPEED_SCALE;
+		star->y += dy;
 
-		if (star->position < 177 * surface->pitch)
+		// dy passed to the render list is this tick's row motion, for smooth
+		// interpolation. On a wrap, pass 0 so the replay snaps to the new
+		// position instead of streaking across the whole screen.
+		float rec_dy = dy;
+		if (star->y >= STARFIELD_WRAP)
 		{
-			if (p[star->position] == 0)
-			{
-				p[star->position] = star->color;
-			}
-
-			// If star is bright enough, draw surrounding pixels
-			if (star->color - 4 >= STARFIELD_HUE)
-			{
-				if (p[star->position + 1] == 0)
-					p[star->position + 1] = star->color - 4;
-
-				if (star->position > 0 && p[star->position - 1] == 0)
-					p[star->position - 1] = star->color - 4;
-
-				if (p[star->position + surface->pitch] == 0)
-					p[star->position + surface->pitch] = star->color - 4;
-
-				if (star->position >= surface->pitch && p[star->position - surface->pitch] == 0)
-					p[star->position - surface->pitch] = star->color - 4;
-			}
+			star->y -= STARFIELD_WRAP;
+			rec_dy = 0.0f;
 		}
+
+		draw_starfield_star(surface, star->x, (int)(star->y + 0.5f), star->color);
+
+		if (render_list_recording)
+			rl_rec_star(star->x, star->y, rec_dy, star->color);
 	}
 }

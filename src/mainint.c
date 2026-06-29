@@ -43,6 +43,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "render_list.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sprite.h"
@@ -3891,6 +3892,10 @@ redo:
 	accelXC = 0;
 	accelYC = 0;
 
+	// When the variable-timestep ship owns this player, skip the original
+	// position/velocity movement here — the render-rate integrator drives it.
+	const bool vt = vt_ship_owns() && playerNum_ == 1;
+
 	bool link_gun_analog = false;
 	float link_gun_angle = 0;
 
@@ -4051,7 +4056,7 @@ redo:
 
 							link_gun_analog = joystick_analog_angle(j, &link_gun_angle);
 						}
-						else
+						else if (!vt)
 						{
 							this_player->x += (joystick[j].direction[3] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[1] ? CURRENT_KEY_SPEED : 0);
 							this_player->y += (joystick[j].direction[0] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[2] ? CURRENT_KEY_SPEED : 0);
@@ -4077,25 +4082,31 @@ redo:
 					button[2] |= mouse_pressed[2];
 					button[3] |= mouse_pressed[3];
 
-					Sint32 mouseXR;
-					Sint32 mouseYR;
-					mouseGetRelativePosition(&mouseXR, &mouseYR);
-					mouseXC += mouseXR;
-					mouseYC += mouseYR;
+					if (!vt)
+					{
+						Sint32 mouseXR;
+						Sint32 mouseYR;
+						mouseGetRelativePosition(&mouseXR, &mouseYR);
+						mouseXC += mouseXR;
+						mouseYC += mouseYR;
+					}
 				}
 
 				/* keyboard input */
 				if ((inputDevice == 0 || inputDevice == 1) && !play_demo)
 				{
-					if (keysactive[keySettings[KEY_SETTING_UP]])
-						this_player->y -= CURRENT_KEY_SPEED;
-					if (keysactive[keySettings[KEY_SETTING_DOWN]])
-						this_player->y += CURRENT_KEY_SPEED;
+					if (!vt)
+					{
+						if (keysactive[keySettings[KEY_SETTING_UP]])
+							this_player->y -= CURRENT_KEY_SPEED;
+						if (keysactive[keySettings[KEY_SETTING_DOWN]])
+							this_player->y += CURRENT_KEY_SPEED;
 
-					if (keysactive[keySettings[KEY_SETTING_LEFT]])
-						this_player->x -= CURRENT_KEY_SPEED;
-					if (keysactive[keySettings[KEY_SETTING_RIGHT]])
-						this_player->x += CURRENT_KEY_SPEED;
+						if (keysactive[keySettings[KEY_SETTING_LEFT]])
+							this_player->x -= CURRENT_KEY_SPEED;
+						if (keysactive[keySettings[KEY_SETTING_RIGHT]])
+							this_player->x += CURRENT_KEY_SPEED;
+					}
 
 					button[0] = button[0] || keysactive[keySettings[KEY_SETTING_FIRE]];
 					button[3] = button[3] || keysactive[keySettings[KEY_SETTING_CHANGE_FIRE]];
@@ -4159,14 +4170,17 @@ redo:
 				else if (mouseYC < -30)
 					mouseYC = -30;
 
-				if (mouseXC > 0)
-					this_player->x += (mouseXC + 3) / 4;
-				else if (mouseXC < 0)
-					this_player->x += (mouseXC - 3) / 4;
-				if (mouseYC > 0)
-					this_player->y += (mouseYC + 3) / 4;
-				else if (mouseYC < 0)
-					this_player->y += (mouseYC - 3) / 4;
+				if (!vt)
+				{
+					if (mouseXC > 0)
+						this_player->x += (mouseXC + 3) / 4;
+					else if (mouseXC < 0)
+						this_player->x += (mouseXC - 3) / 4;
+					if (mouseYC > 0)
+						this_player->y += (mouseYC + 3) / 4;
+					else if (mouseYC < 0)
+						this_player->y += (mouseYC - 3) / 4;
+				}
 
 				if (mouseXC > 3)
 					accelXC++;
@@ -4391,6 +4405,8 @@ redo:
 				}
 			}
 
+			if (!vt)
+			{
 			if (this_player->x_friction_ticks > 0)
 			{
 				--this_player->x_friction_ticks;
@@ -4427,6 +4443,7 @@ redo:
 
 			this_player->x += this_player->x_velocity;
 			this_player->y += this_player->y_velocity;
+			}
 
 			// if player moved, add new ship x, y history entry
 			if (this_player->x - *mouseX_ != 0 || this_player->y - *mouseY_ != 0)
@@ -4500,7 +4517,21 @@ redo:
 			this_player->y = 10;
 
 		// Determines the ship banking sprite to display, depending on horizontal velocity and acceleration
-		int ship_banking = this_player->x_velocity / 2 + (this_player->x - *mouseX_) / 6;
+		int ship_banking;
+		if (vt)
+		{
+			// VT moves the ship between ticks (x is constant within a tick, and
+			// mouse steering never touches x_velocity), so the vanilla formula
+			// shows no tilt under the mouse. Use the authoritative inter-tick
+			// horizontal movement, which captures keyboard, joystick and mouse.
+			int dvx, dvy;
+			vt_ship_shot_delta(playerNum_ - 1, &dvx, &dvy);
+			ship_banking = dvx / 2;
+		}
+		else
+		{
+			ship_banking = this_player->x_velocity / 2 + (this_player->x - *mouseX_) / 6;
+		}
 		ship_banking = MAX(-2, MIN(ship_banking, 2));
 
 		int ship_sprite = ship_banking * 2 + shipGr_;
@@ -4513,6 +4544,9 @@ redo:
 
 		this_player->last_x_explosion_follow = this_player->x;
 		this_player->last_y_explosion_follow = this_player->y;
+
+		// Tag the ship (shadow + hull) for cross-frame interpolation.
+		rl_current_id = RL_ID_SHIP_BASE + playerNum_;
 
 		if (shipGr_ == 0)
 		{
@@ -4622,6 +4656,8 @@ redo:
 			}
 		}
 
+		rl_current_id = 0;  // end ship tag
+
 		/*Options Location*/
 		if (playerNum_ == 2 && shipGr_ == 0)  // if dragonwing
 		{
@@ -4645,8 +4681,20 @@ redo:
 		{
 			if (!endLevel)
 			{
-				this_player->delta_x_shot_move = this_player->x - this_player->last_x_shot_move;
-				this_player->delta_y_shot_move = this_player->y - this_player->last_y_shot_move;
+				if (vt)
+				{
+					// VT moves the ship between ticks, so (x - last_x_shot_move)
+					// reads ~0 here; use the authoritative inter-tick delta so
+					// tracking shots (laser, main pulse) follow the ship again.
+					vt_ship_shot_delta(playerNum_ - 1,
+					                   &this_player->delta_x_shot_move,
+					                   &this_player->delta_y_shot_move);
+				}
+				else
+				{
+					this_player->delta_x_shot_move = this_player->x - this_player->last_x_shot_move;
+					this_player->delta_y_shot_move = this_player->y - this_player->last_y_shot_move;
+				}
 
 				/* PLAYER SHOT Change */
 				if (button[4-1])
@@ -4721,7 +4769,11 @@ redo:
 				{
 
 					if (!twoPlayerLinked)
+					{
+						rl_current_id = RL_ID_SHIP_BASE + playerNum_;  // charge meter rides with the ship
 						blit_sprite2(VGAScreen, this_player->x + (shipGr_ == 0) + 1, this_player->y - 13, spriteSheet10, 77 + chargeLevel + chargeGr * 19);
+						rl_current_id = 0;
+					}
 
 					if (chargeGrWait > 0)
 					{
@@ -5017,10 +5069,20 @@ redo:
 				          y = this_player->sidekick[i].y;
 				const uint sprite = this_option->gr[this_player->sidekick[i].animation_frame] + this_player->sidekick[i].charge;
 
+				rl_current_id = RL_ID_SIDEKICK_BASE + playerNum_ * 2 + (int)i;
+				// Style-0 pods sit at a fixed offset from the ship (set to ship.x/y
+				// each tick), so attach them to the render-rate ship on both axes —
+				// otherwise they rubber-band a tick behind it. Other styles move on
+				// their own path and interpolate by their own motion.
+				rl_shot_attach = (this_player->sidekick[i].style == 0)
+				               ? (3 | ((playerNum_ - 1) << 2))
+				               : 0;
 				if (this_player->sidekick[i].style == 1 || this_player->sidekick[i].style == 2)
 					blit_sprite2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
 				else
 					blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
+				rl_current_id = 0;
+				rl_shot_attach = 0;
 			}
 
 			if (--this_player->sidekick[i].charge_ticks == 0)

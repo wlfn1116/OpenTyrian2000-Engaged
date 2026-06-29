@@ -49,6 +49,7 @@ void init_keyboard(void);
 void mouseSetRelative(bool enable);
 JE_word JE_mousePosition(JE_word *mouseX, JE_word *mouseY);
 void mouseGetRelativePosition(Sint32 *out_x, Sint32 *out_y);
+void mouseGetRelativeMotionF(float *out_x, float *out_y);  // float-scaled, no per-call rounding
 
 void service_SDL_events(JE_boolean clear_new);
 

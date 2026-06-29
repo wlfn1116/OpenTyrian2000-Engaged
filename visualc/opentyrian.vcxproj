@@ -28,7 +28,7 @@
     <IntDir>$(SolutionDir)..\obj\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>$(ProjectName)-$(Platform)-$(Configuration)</TargetName>
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
@@ -147,6 +147,7 @@
     <ClCompile Include="..\src\pcxmast.c" />
     <ClCompile Include="..\src\picload.c" />
     <ClCompile Include="..\src\player.c" />
+    <ClCompile Include="..\src\render_list.c" />
     <ClCompile Include="..\src\shots.c" />
     <ClCompile Include="..\src\sizebuf.c" />
     <ClCompile Include="..\src\sndmast.c" />
@@ -199,6 +200,7 @@
     <ClInclude Include="..\src\pcxmast.h" />
     <ClInclude Include="..\src\picload.h" />
     <ClInclude Include="..\src\player.h" />
+    <ClInclude Include="..\src\render_list.h" />
     <ClInclude Include="..\src\shots.h" />
     <ClInclude Include="..\src\sizebuf.h" />
     <ClInclude Include="..\src\sndmast.h" />

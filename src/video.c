@@ -33,12 +33,13 @@
 const char *const scaling_mode_names[ScalingMode_MAX] = {
 	"Center",
 	"Integer",
-	"Fit 8:5",
-	"Fit 4:3",
+	"Widescreen",
+	"Classic",
 };
 
 int fullscreen_display;
-ScalingMode scaling_mode = SCALE_INTEGER;
+bool output_vsync = true;  // present in sync with the display's refresh rate
+ScalingMode scaling_mode = SCALE_WIDESCREEN;  // fill the screen at true 16:9 by default
 static SDL_Rect last_output_rect = { 0, 0, vga_width, vga_height };
 
 SDL_Surface *VGAScreen, *VGAScreenSeg;
@@ -46,8 +47,7 @@ SDL_Surface *VGAScreen2;
 SDL_Surface *game_screen;
 static SDL_Surface* menu_screen;
 
-static const int menu_x_offset = (vga_width - 320) / 2;
-static int current_x_offset = (vga_width - 320) / 2;
+static int current_x_offset = MENU_X_OFFSET;
 
 SDL_Window *main_window = NULL;
 static SDL_Renderer *main_window_renderer = NULL;
@@ -56,7 +56,7 @@ static SDL_Texture *main_window_texture = NULL;
 
 static ScalerFunction scaler_function;
 
-static Uint8 gradient_cache[256][18];
+static Uint8 gradient_cache[256][MENU_X_OFFSET];
 static Uint32 last_gradient_palette[256];
 static bool gradient_cache_valid = false;
 
@@ -84,8 +84,8 @@ void init_video(void)
 		exit(1);
 	}
 
-	// Create the software surfaces that the game renders to. These are all 320x200x8 regardless
-	// of the window size or monitor resolution.
+	// Create the software surfaces that the game renders to. These are all 356x200x8 (16:9)
+	// regardless of the window size or monitor resolution.
 	VGAScreen = VGAScreenSeg = SDL_CreateRGBSurface(0, vga_width, vga_height, 8, 0, 0, 0, 0);
 	VGAScreen2 = SDL_CreateRGBSurface(0, vga_width, vga_height, 8, 0, 0, 0, 0);
 	game_screen = SDL_CreateRGBSurface(0, vga_width, vga_height, 8, 0, 0, 0, 0);
@@ -141,12 +141,38 @@ void deinit_video(void)
 
 static void init_renderer(void)
 {
-	main_window_renderer = SDL_CreateRenderer(main_window, -1, 0);
+	Uint32 flags = output_vsync ? SDL_RENDERER_PRESENTVSYNC : 0;
+	main_window_renderer = SDL_CreateRenderer(main_window, -1, flags);
+
+	if (main_window_renderer == NULL && flags != 0)
+	{
+		// The driver may be unable to provide a vsync'd renderer; fall back.
+		output_vsync = false;
+		main_window_renderer = SDL_CreateRenderer(main_window, -1, 0);
+	}
 
 	if (main_window_renderer == NULL)
 	{
 		fprintf(stderr, "error: failed to create renderer: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
+	}
+}
+
+// Toggle display-synced presentation. Recreates the renderer (and its texture)
+// so the new vsync setting takes effect immediately.
+void set_vsync(bool enabled)
+{
+	if (output_vsync == enabled && main_window_renderer != NULL)
+		return;
+
+	output_vsync = enabled;
+
+	if (main_window_renderer != NULL)
+	{
+		deinit_texture();
+		deinit_renderer();
+		init_renderer();
+		init_texture();
 	}
 }
 
@@ -339,6 +365,22 @@ void JE_showVGA(void)
 	}
 }
 
+// Fit a centred rectangle of the given display aspect ratio (width / height)
+// inside the window, preserving the ratio (letterbox or pillarbox as needed).
+static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float aspect)
+{
+	if ((float)win_h * aspect > (float)win_w)
+	{
+		r->w = win_w;
+		r->h = (int)((float)win_w / aspect);
+	}
+	else
+	{
+		r->w = (int)((float)win_h * aspect);
+		r->h = win_h;
+	}
+}
+
 static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const dst_rect)
 {
 	// Decides how the logical output texture (after software scaling applied) will fit
@@ -347,7 +389,8 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 	int win_w, win_h;
 	SDL_GetWindowSize(main_window, &win_w, &win_h);
 
-	int maxh_width, maxw_height;
+	// Square-pixel ratio of the framebuffer itself (356:200 = 16:9).
+	const float pixel_aspect = (float)src_surface->w / (float)src_surface->h;
 
 	switch (scaling_mode)
 	{
@@ -363,35 +406,13 @@ static void calc_dst_render_rect(SDL_Surface *const src_surface, SDL_Rect *const
 			dst_rect->h += src_surface->h;
 		}
 		break;
-	case SCALE_ASPECT_8_5:
-		maxh_width = win_h * (8.f / 5.f);
-		maxw_height = win_w * (5.f / 8.f);
-
-		if (maxh_width > win_w)
-		{
-			dst_rect->w = win_w;
-			dst_rect->h = maxw_height;
-		}
-		else
-		{
-			dst_rect->w = maxh_width;
-			dst_rect->h = win_h;
-		}
+	case SCALE_WIDESCREEN:
+		// True widescreen: square pixels, i.e. the buffer's own ratio (16:9).
+		fit_rect_to_aspect(dst_rect, win_w, win_h, pixel_aspect);
 		break;
-	case SCALE_ASPECT_4_3:
-		maxh_width = win_h * (4.f / 3.f);
-		maxw_height = win_w * (3.f / 4.f);
-
-		if (maxh_width > win_w)
-		{
-			dst_rect->w = win_w;
-			dst_rect->h = maxw_height;
-		}
-		else
-		{
-			dst_rect->w = maxh_width;
-			dst_rect->h = win_h;
-		}
+	case SCALE_CLASSIC_PAR:
+		// Original DOS pixel aspect (PAR 5/6): taller pixels, ~3:2 overall.
+		fit_rect_to_aspect(dst_rect, win_w, win_h, pixel_aspect * (5.f / 6.f));
 		break;
 	case ScalingMode_MAX:
 		assert(false);
@@ -457,9 +478,9 @@ static void update_gradient_cache(void)
 		{
 			SDL_Color col = colors[c];
 			gradient_cache[c][0] = 0;
-			for (int i = 1; i < menu_x_offset; ++i)
+			for (int i = 1; i < MENU_X_OFFSET; ++i)
 			{
-				float factor = (float)i / menu_x_offset;
+				float factor = (float)i / MENU_X_OFFSET;
 				Uint8 r = (Uint8)(col.r * factor);
 				Uint8 g = (Uint8)(col.g * factor);
 				Uint8 b = (Uint8)(col.b * factor);
@@ -480,7 +501,7 @@ static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset)
 		Uint8* src_row = (Uint8*)src->pixels + y * src->pitch;
 		Uint8* dst_row = (Uint8*)dst->pixels + y * dst->pitch;
 
-		memcpy(dst_row + x_offset, src_row, 320);
+		memcpy(dst_row + x_offset, src_row, LEGACY_WIDTH);
 
 		Uint8 left_color = src_row[0];
 		for (int i = 0; i < x_offset; ++i)
@@ -488,17 +509,17 @@ static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset)
 			dst_row[i] = gradient_cache[left_color][i];
 		}
 
-		Uint8 right_color = src_row[319];
+		Uint8 right_color = src_row[LEGACY_WIDTH - 1];
 		for (int i = 0; i < x_offset; ++i)
 		{
-			dst_row[x_offset + 320 + i] = gradient_cache[right_color][x_offset - 1 - i];
+			dst_row[x_offset + LEGACY_WIDTH + i] = gradient_cache[right_color][x_offset - 1 - i];
 		}
 	}
 }
 
 void set_menu_centered(bool centered)
 {
-	current_x_offset = centered ? menu_x_offset : 0;
+	current_x_offset = centered ? MENU_X_OFFSET : 0;
 }
 
 /** Maps a specified point in game screen coordinates to window coordinates. */
@@ -521,4 +542,16 @@ void scaleWindowDistanceToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 {
 	*inout_x = (2 * *inout_x + 1) * VGAScreen->w / (2 * last_output_rect.w);
 	*inout_y = (2 * *inout_y + 1) * VGAScreen->h / (2 * last_output_rect.h);
+}
+
+/** Float variant: scales a distance with no integer rounding. The integer
+ *  version above rounds each call toward zero, which is fine when called once
+ *  per tick with the whole accumulated motion, but loses fine/diagonal control
+ *  when a caller samples small deltas every render frame. */
+void scaleWindowDistanceToScreenF(float *const inout_x, float *const inout_y)
+{
+	if (last_output_rect.w > 0)
+		*inout_x = *inout_x * (float)VGAScreen->w / (float)last_output_rect.w;
+	if (last_output_rect.h > 0)
+		*inout_y = *inout_y * (float)VGAScreen->h / (float)last_output_rect.h;
 }
