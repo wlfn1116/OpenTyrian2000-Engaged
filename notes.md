@@ -311,12 +311,45 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Bars draw into `game_screen` (playfield space), not composited-buffer space —
   see §Widescreen. `BOSS_BAR_THICK`/`GAP` are shared between the layout code and
   the HUD-shift helper so they can't drift.
+- Enhanced boss-bar hit flash fades smoothly at render rate (like the shield/armor
+  gauge flash). The bars are captured in the playfield residual, so they'd otherwise
+  step at the 35 Hz tick; `draw_boss_bar_present` redraws them every displayed frame
+  in `JE_starShowVGA`'s present loop at an interpolated flash (`boss_flash_render`,
+  same `color + 1 - alpha` trick), overdrawing the residual bars. `draw_boss_bar_gauge`
+  and `draw_boss_bars_enhanced` gained a `(dst, scale)` so the per-frame redraw lands
+  on the residual's exact pixels: `bbfill` scales a 1x rect to a `scale`×`scale` block
+  identically to the residual re-apply (`x0*scale .. (x1+1)*scale-1`), and the frame
+  is now two filled rects instead of an outline+track (byte-identical at scale 1).
+  The once-per-tick call passes `decrement = true`; the per-frame call must not, or
+  the flash would race down at the display rate. Classic bars keep the per-tick flash.
 - Per-enemy bars: one bar per linknum group, spanning the group's on-screen
   bounding box and showing its most-damaged part; only live and damageable slots
   count (armorleft 1..254, `healthbar_seen` latched); boss-linked groups are
   skipped. Bars are recorded (`RC_HP_BAR`) so they interpolate with their enemy.
 - Endless reinforced hulls above the 28-unit armour bar draw as stacked rollover
   layers, each 28-unit chunk in its own palette-relative gradient (tuned by eye).
+- Shield/armor gauges flash white when depleted by damage (`Gauge Gradients` menu
+  toggles `gaugeFlashShield`/`gaugeFlashArmor`, on by default, each independent).
+  `JE_playerDamage` starts a per-player countdown (`shieldGaugeFlash`/
+  `armorGaugeFlash`) only when the value drops — never on shield regen or armour
+  pickups. `JE_updateGaugeFlash` (in `JE_main`) decays it one step per tick.
+- The fade is a white pop then a smooth in-family return: the `flash` arg to
+  `JE_dBar3` paints a flat white (index 15) at the peak, then for the lower steps
+  brightens the bar's own gradient toward its bank top (`flash * 3`, clamped) and
+  fades that to normal. This avoids a grey detour and a hue snap at the end — the
+  shield bank tops out light-blue and armour cream (not white, unlike the boss
+  bar's near-white bank 7), so the peak must reach into white but the tail should
+  stay in-family. `bright == 0` keeps the normal draw byte-exact.
+- Smoothness: the event-driven bars would otherwise step at the 35 Hz tick. Like
+  the power gauge, `gauge_flash_present(alpha)` repaints them every displayed frame
+  in `JE_starShowVGA`'s present loop at an interpolated intensity. Interp needs no
+  prev array — the counter decrements by exactly 1/tick, so `prev == cur + 1` and
+  intensity `= cur + 1 - alpha` (rounds to `cur` at `alpha == 1`, the non-interp /
+  per-tick path). `gaugeFlashAlpha` defaults to 1 so all other callers get `cur`.
+- Endless stacked armour flashes only the newest/active tier, not the whole column:
+  `endlessDrawArmorBar` passes the flash to the last-drawn rollover layer (`total-1`),
+  which sits at the bar's bottom (rollovers fill bottom-up) and is the chunk being
+  depleted; the fuller tiers below it in the stack keep their normal colour.
 
 ## Menus & shop — `game_menu.c`
 

@@ -339,6 +339,8 @@ typedef enum
 	MENU_ITEM_GAUGE_GRAD_GEN,
 	MENU_ITEM_GAUGE_GRAD_SHIELD,
 	MENU_ITEM_GAUGE_GRAD_ARMOR,
+	MENU_ITEM_GAUGE_FLASH_SHIELD,
+	MENU_ITEM_GAUGE_FLASH_ARMOR,
 	MENU_ITEM_DEBUG_MODE,
 	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_EXTRA_SPARKS,
@@ -468,6 +470,14 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		break;
 	case MENU_ITEM_GAUGE_GRAD_ARMOR:
 		gaugeGradArmor = (gaugeGradArmor + (int)COUNTOF(gaugeGradNames) + dir) % (int)COUNTOF(gaugeGradNames);
+		JE_playSampleNum(S_CURSOR);
+		break;
+	case MENU_ITEM_GAUGE_FLASH_SHIELD:
+		gaugeFlashShield = !gaugeFlashShield;
+		JE_playSampleNum(S_CURSOR);
+		break;
+	case MENU_ITEM_GAUGE_FLASH_ARMOR:
+		gaugeFlashArmor = !gaugeFlashArmor;
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_DEBUG_MODE:
@@ -780,6 +790,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_GAUGE_GRAD_GEN, "Generator:", "Generator gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
 				{ MENU_ITEM_GAUGE_GRAD_SHIELD, "Shield:", "Shield gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
 				{ MENU_ITEM_GAUGE_GRAD_ARMOR, "Armor:", "Armor gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
+				{ MENU_ITEM_GAUGE_FLASH_SHIELD, "Shield Flash:", "Flash the shield gauge white when it takes damage." },
+				{ MENU_ITEM_GAUGE_FLASH_ARMOR, "Armor Flash:", "Flash the armor gauge white when it takes damage." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -1024,6 +1036,14 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeGradNames[gaugeGradArmor], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_GAUGE_FLASH_SHIELD:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeFlashShield ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_GAUGE_FLASH_ARMOR:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeFlashArmor ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_DEBUG_MODE:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, debugMode ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -1237,6 +1257,8 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_GAUGE_GRAD_GEN:
 									case MENU_ITEM_GAUGE_GRAD_SHIELD:
 									case MENU_ITEM_GAUGE_GRAD_ARMOR:
+									case MENU_ITEM_GAUGE_FLASH_SHIELD:
+									case MENU_ITEM_GAUGE_FLASH_ARMOR:
 									case MENU_ITEM_DEBUG_MODE:
 									case MENU_ITEM_SMOOTH_MOTION:
 									case MENU_ITEM_EXTRA_SPARKS:
@@ -1696,6 +1718,18 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_ENEMY_BARS:
 				{
 					enemyBars = !enemyBars;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_GAUGE_FLASH_SHIELD:
+				{
+					gaugeFlashShield = !gaugeFlashShield;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_GAUGE_FLASH_ARMOR:
+				{
+					gaugeFlashArmor = !gaugeFlashArmor;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

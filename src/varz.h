@@ -454,6 +454,11 @@ void JE_setupExplosionLarge(JE_boolean enemyground, JE_byte explonum, JE_integer
 void JE_drawShield(void);
 void JE_drawArmor(void);
 
+extern int shieldGaugeFlash[2];
+extern int armorGaugeFlash[2];
+void JE_updateGaugeFlash(void);
+void gauge_flash_present(float alpha);
+
 JE_word JE_portConfigs(void);
 
 /*SuperPixels*/

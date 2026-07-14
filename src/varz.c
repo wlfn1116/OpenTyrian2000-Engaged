@@ -1200,6 +1200,66 @@ void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer
 	}
 }
 
+#define GAUGE_FLASH_START 6
+int shieldGaugeFlash[2] = { 0, 0 };
+int armorGaugeFlash[2]  = { 0, 0 };
+static float gaugeFlashAlpha = 1.0f;
+
+static int gauge_flash_render(int cur)
+{
+	if (cur <= 0)
+		return 0;
+	int i = (int)(cur + 1.0f - gaugeFlashAlpha + 0.5f);
+	if (i < 0)
+		i = 0;
+	return i;
+}
+
+static bool gauge_flash_any(void)
+{
+	for (int i = 0; i < 2; ++i)
+		if (shieldGaugeFlash[i] > 0 || armorGaugeFlash[i] > 0)
+			return true;
+	return false;
+}
+
+static void gauge_flash_redraw(void)
+{
+	JE_wipeShieldArmorBars();
+	SDL_Surface *saved = VGAScreen;
+	VGAScreen = VGAScreenSeg;
+	JE_drawShield();
+	JE_drawArmor();
+	VGAScreen = saved;
+}
+
+void JE_updateGaugeFlash(void)
+{
+	if (!gauge_flash_any())
+		return;
+
+	for (int i = 0; i < 2; ++i)
+	{
+		if (shieldGaugeFlash[i] > 0)
+			--shieldGaugeFlash[i];
+		if (armorGaugeFlash[i] > 0)
+			--armorGaugeFlash[i];
+	}
+
+	gaugeFlashAlpha = 1.0f;
+	gauge_flash_redraw();
+}
+
+void gauge_flash_present(float alpha)
+{
+	if (!gauge_flash_any())
+		return;
+
+	gaugeFlashAlpha = alpha;
+	gauge_flash_redraw();
+	gaugeFlashAlpha = 1.0f;
+}
+
 void JE_wipeShieldArmorBars(void)
 {
 	if (!twoPlayerMode || galagaMode)
@@ -1227,6 +1287,9 @@ JE_byte JE_playerDamage(JE_byte temp,
 {
 	int playerDamage = 0;
 	soundQueue[7] = S_SHIELD_HIT;
+
+	const int oldShield = this_player->shield;
+	const int oldArmor  = this_player->armor;
 
 	if (cheatInfiniteShields)
 		return 0;
@@ -1309,6 +1372,12 @@ JE_byte JE_playerDamage(JE_byte temp,
 		JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
 	}
 
+	const int gi = (this_player == &player[1]) ? 1 : 0;
+	if (gaugeFlashShield && this_player->shield < oldShield)
+		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
+	if (gaugeFlashArmor && this_player->armor < oldArmor)
+		armorGaugeFlash[gi] = GAUGE_FLASH_START;
+
 	JE_wipeShieldArmorBars();
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 	JE_drawShield();
@@ -1329,11 +1398,11 @@ void JE_drawShield(void)
 	if (twoPlayerMode && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
-			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, roundf(player[i].shield * 0.8f), 144, gaugeGradShield);
+			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, roundf(player[i].shield * 0.8f), 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]));
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield);
+		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]));
 		if (player[0].shield != player[0].shield_max)
 		{
 			const uint y = 193 - (player[0].shield_max * 2);
@@ -1349,11 +1418,19 @@ void JE_drawShield(void)
 static void endlessDrawArmorBar(int armor)
 {
 	static const int layerCol[] = { 224, 112, 80, 176, 16, 48, 96, 32 };
+	const int maxLayers = (int)COUNTOF(layerCol);
+
+	int total = 0;
+	for (int t = armor; t > 0 && total < maxLayers; t -= 28)
+		++total;
+	const int flashLayer = (total <= 1) ? 0 : total - 1;
+	const int flash = gauge_flash_render(armorGaugeFlash[0]);
+
 	int a = armor;
-	for (int layer = 0; a > 0 && layer < (int)COUNTOF(layerCol); ++layer)
+	for (int layer = 0; a > 0 && layer < maxLayers; ++layer)
 	{
 		const int seg = (a > 28) ? 28 : a;
-		JE_dBar3(VGAScreen, HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor);
+		JE_dBar3(VGAScreen, HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0);
 		a -= 28;
 	}
 }
@@ -1370,7 +1447,7 @@ void JE_drawArmor(void)
 	if (twoPlayerMode && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
-			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, roundf(player[i].armor * 0.8f), 224, gaugeGradArmor);
+			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, roundf(player[i].armor * 0.8f), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
 	}
 	else if (endlessMode)
 	{
@@ -1378,7 +1455,7 @@ void JE_drawArmor(void)
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor);
+		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[0]));
 	}
 }
 

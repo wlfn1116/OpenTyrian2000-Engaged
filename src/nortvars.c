@@ -46,6 +46,8 @@ static int dbar_voffset(int z)
 	return z < 1 ? 0 : (z - 1) / 2;
 }
 
+#define GAUGE_FLASH_WHITE 5
+
 // Draw one of the vertical HUD gauges: 9 pixels wide (x..x+8), num+1 stacked 2px bands rising
 // from y, shaded as a gradient. dir (GaugeGradientDir) picks the gradient axis/direction:
 //   Up    - classic, brightest at the top of the bar
@@ -54,12 +56,24 @@ static int dbar_voffset(int z)
 //   Right - horizontal, brightest at the right column
 // The Left/Right modes paint the same rows the vertical bars cover (bar top .. y), so the
 // empty area above is still cleared the usual way by JE_wipeShieldArmorBars.
-void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir)
+void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash)
 {
 	col += 2;
 
 	if (num < 0)
 		return;
+
+	int bright = 0;
+	if (flash > 0)
+	{
+		if (flash >= GAUGE_FLASH_WHITE)
+		{
+			fill_rectangle_xy(surface, x, y - (2 * num + 1), x + 8, y, 15);
+			return;
+		}
+		bright = flash * 3;
+	}
+	const int bankTop = (col & 0xF0) | 0x0F;
 
 	if (dir == GAUGE_GRAD_LEFT || dir == GAUGE_GRAD_RIGHT)
 	{
@@ -72,7 +86,14 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 		for (int j = 0; j <= 8; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (8 - j);
-			fill_rectangle_xy(surface, x + j, yTop, x + j, yBot, (Uint8)(col + 2 + off));
+			int shade = col + 2 + off;
+			if (bright)
+			{
+				shade += bright;
+				if (shade > bankTop)
+					shade = bankTop;
+			}
+			fill_rectangle_xy(surface, x + j, yTop, x + j, yBot, (Uint8)shade);
 		}
 		return;
 	}
@@ -81,7 +102,14 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 	for (JE_integer z = 0; z <= num; z++)
 	{
 		const int off = (dir == GAUGE_GRAD_DOWN) ? dbar_voffset(num - z) : dbar_voffset(z);
-		JE_rectangle(surface, x, y - 1, x + 8, y, (Uint8)(col + off)); /* <MXD> SEGa000 */
+		int shade = col + off;
+		if (bright)
+		{
+			shade += bright;
+			if (shade > bankTop)
+				shade = bankTop;
+		}
+		JE_rectangle(surface, x, y - 1, x + 8, y, (Uint8)shade); /* <MXD> SEGa000 */
 		y -= 2;
 	}
 }

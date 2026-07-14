@@ -305,6 +305,9 @@ extern int gaugeGradGenerator;  // GaugeGradientDir for the generator power gaug
 extern int gaugeGradShield;     // GaugeGradientDir for the shield gauge
 extern int gaugeGradArmor;      // GaugeGradientDir for the armor gauge
 
+extern bool gaugeFlashShield;
+extern bool gaugeFlashArmor;
+
 // Zica Laser Lv11 tweaks (menu: Enhancements -> Weapon Tweaks). Three independent axes:
 //   Base   : the Lv11 horizontal shot pattern, forced in every episode.
 //   Length : Lv11 shot length -- Short (vanilla) or Long (as long as the Lv10 beam).
