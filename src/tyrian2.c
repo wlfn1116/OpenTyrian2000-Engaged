@@ -6875,6 +6875,8 @@ static const int BOSS_BAR_GAP   = 4;
 
 static int boss_flash_render(int color, float alpha)
 {
+	if (color <= 0)
+		return 0;
 	int f = (int)(color + 1.0f - alpha + 0.5f);
 	if (f < 0)
 		f = 0;
