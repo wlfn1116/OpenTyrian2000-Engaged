@@ -146,7 +146,6 @@ devkitPro and VitaSDK; see the README in each folder.
 
 ## More detail
 
-- [RELEASE_NOTES.md](RELEASE_NOTES.md) -- the full list of changes in this release.
 - [notes.md](notes.md) -- design notes and known pitfalls for the systems above.
 
 ## License
