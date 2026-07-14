@@ -59,7 +59,7 @@ Basically a bunch of stuff that I thought would be cool and also wouldn't really
 ### Weapons
 
 - A creator for a fully custom weapon with 11 power levels, usable as a front
-  gun, rear gun, or sidekick, with a live firing preview.
+  gun, rear gun, or sidekick, with a live firing preview. (inspired by TYRHACK)
 - Menus to reproduce the per-episode weapon differences from the original games
   (Episodes 1-3 versus 4 and 5, including the spark-trail variants) instead of
   using a single set, plus submenus for tweaking specific weapons.
