@@ -697,6 +697,8 @@ static void draw_power_gauge(float power_value)
 	}
 }
 
+static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
+
 void JE_starShowVGA(void)
 {
 	if (!playerEndLevel && !skipStarShowVGA)
@@ -794,6 +796,8 @@ void JE_starShowVGA(void)
 						                    round_signed(((float)zinglonPillarCX + rl_get_ship_override_dx(0)) * rss),
 						                    zinglonPillarTemp, rss);
 
+					draw_boss_bar_present(interp_buf, rss, alpha);
+
 					if (use_hi)
 					{
 						// NxN composite + block-expanded 1x HUD, presented through the
@@ -801,6 +805,7 @@ void JE_starShowVGA(void)
 						composite_playfield_hi(interp_buf, vga_hi, rss);
 						if (power_gauge_active)
 							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha);
+						gauge_flash_present(alpha);
 						expand_hud_to_hi(VGAScreenSeg, vga_hi, rss);
 						present_hi(vga_hi);
 					}
@@ -811,6 +816,7 @@ void JE_starShowVGA(void)
 						// Power bar at the interpolated level: rises smoothly instead of per-tick steps.
 						if (power_gauge_active)
 							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha);
+						gauge_flash_present(alpha);
 
 						JE_showVGA();
 					}
@@ -1858,6 +1864,7 @@ start_level_first:
 	{
 		player[i].shield     = shields[player[i].items.shield].mpwr;
 		player[i].shield_max = player[i].shield * 2;
+		shieldGaugeFlash[i] = armorGaugeFlash[i] = 0;
 	}
 
 	JE_drawShield();
@@ -3529,6 +3536,7 @@ draw_player_shot_loop_end:
 	if (!anySmoothies)
 		draw_enemy_health_bars();
 	draw_boss_bar();
+	JE_updateGaugeFlash();
 
 	JE_inGameDisplays();
 
@@ -6803,10 +6811,15 @@ static int boss_bar_tint_base(JE_byte link_num)
 	return 112;  // palette bank 7 (default)
 }
 
+static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, Uint8 color)
+{
+	fill_rectangle_xy(dst, x0 * scale, y0 * scale, (x1 + 1) * scale - 1, (y1 + 1) * scale - 1, color);
+}
+
 // One enhanced boss bar: a framed, recessed track with a glossy gradient fill. (gx,gy)/gw/gh are
 // the outer frame; horizontal fills left->right, vertical bottom->up; fraction is 0..1; flash
-// 0..6 brightens on a hit. Colours stay within the one palette bank passed as base.
-static void draw_boss_bar_gauge(int gx, int gy, int gw, int gh,
+// brightens on a hit. Colours stay within the one palette bank passed as base. notes.md §Boss & enemy health bars.
+static void draw_boss_bar_gauge(SDL_Surface *dst, int scale, int gx, int gy, int gw, int gh,
                                 bool horizontal, float fraction, int flash, int base)
 {
 	if (gw < 4 || gh < 4)
@@ -6826,8 +6839,8 @@ static void draw_boss_bar_gauge(int gx, int gy, int gw, int gh,
 	const int along = horizontal ? iw : ih; // bar length (along the fill)
 
 	// Outline + recessed empty groove (always drawn, so a depleted bar still reads).
-	JE_rectangle(VGAScreen, gx, gy, gx + gw - 1, gy + gh - 1, FRAME);
-	fill_rectangle_xy(VGAScreen, ix, iy, ix + iw - 1, iy + ih - 1, TRACK);
+	bbfill(dst, gx, gy, gx + gw - 1, gy + gh - 1, scale, (Uint8)FRAME);
+	bbfill(dst, ix, iy, ix + iw - 1, iy + ih - 1, scale, (Uint8)TRACK);
 
 	const int fillLen = (int)(along * fraction + 0.5f);
 	if (fillLen <= 0)
@@ -6843,16 +6856,16 @@ static void draw_boss_bar_gauge(int gx, int gy, int gw, int gh,
 			col = BASE + 15;
 
 		if (horizontal)
-			fill_rectangle_xy(VGAScreen, ix, iy + c, ix + fillLen - 1, iy + c, (Uint8)col);
+			bbfill(dst, ix, iy + c, ix + fillLen - 1, iy + c, scale, (Uint8)col);
 		else
-			fill_rectangle_xy(VGAScreen, ix + c, iy + ih - fillLen, ix + c, iy + ih - 1, (Uint8)col);
+			bbfill(dst, ix + c, iy + ih - fillLen, ix + c, iy + ih - 1, scale, (Uint8)col);
 	}
 
 	// Bright leading-edge cap at the tip of the fill for a crisp, readable edge.
 	if (horizontal)
-		fill_rectangle_xy(VGAScreen, ix + fillLen - 1, iy, ix + fillLen - 1, iy + ih - 1, (Uint8)(BASE + 15));
+		bbfill(dst, ix + fillLen - 1, iy, ix + fillLen - 1, iy + ih - 1, scale, (Uint8)(BASE + 15));
 	else
-		fill_rectangle_xy(VGAScreen, ix, iy + ih - fillLen, ix + iw - 1, iy + ih - fillLen, (Uint8)(BASE + 15));
+		bbfill(dst, ix, iy + ih - fillLen, ix + iw - 1, iy + ih - fillLen, scale, (Uint8)(BASE + 15));
 }
 
 // Shared by draw_boss_bars_enhanced and boss_bar_right_edge_x (below), so the two can never
@@ -6860,9 +6873,17 @@ static void draw_boss_bar_gauge(int gx, int gy, int gw, int gh,
 static const int BOSS_BAR_THICK = 7;
 static const int BOSS_BAR_GAP   = 4;
 
+static int boss_flash_render(int color, float alpha)
+{
+	int f = (int)(color + 1.0f - alpha + 0.5f);
+	if (f < 0)
+		f = 0;
+	return f;
+}
+
 // Lay out and draw the enhanced boss bars per the player's Enhancements
-// settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2.
-static void draw_boss_bars_enhanced(unsigned int barCount)
+// settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2. notes.md §Boss & enemy health bars.
+static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlpha, bool decrement, unsigned int barCount)
 {
 	// Bars draw into game_screen (playfield space); JE_inGameDisplays draws the corner HUD
 	// indicators in the same space, so keep bars centred on the playfield and clear of them.
@@ -6918,11 +6939,11 @@ static void draw_boss_bars_enhanced(unsigned int barCount)
 				by = botAnchor - THICK + 1
 				   - ((two && !sideBySide) ? (int)(barCount - 1 - b) * (THICK + GAP) : 0);
 
-			draw_boss_bar_gauge(bx, by, bw, THICK, true,
-			                    boss_bar[b].armor / 254.0f, boss_bar[b].color,
+			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
+			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),
 			                    boss_bar_tint_base(boss_bar[b].link_num));
 
-			if (boss_bar[b].color > 0)
+			if (decrement && boss_bar[b].color > 0)
 				boss_bar[b].color--;
 		}
 	}
@@ -6967,11 +6988,11 @@ static void draw_boss_bars_enhanced(unsigned int barCount)
 					vTop = mid + GAP / 2 + 1;      // lower bar
 			}
 
-			draw_boss_bar_gauge(bx, vTop, THICK, vBot - vTop + 1, false,
-			                    boss_bar[b].armor / 254.0f, boss_bar[b].color,
+			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
+			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),
 			                    boss_bar_tint_base(boss_bar[b].link_num));
 
-			if (boss_bar[b].color > 0)
+			if (decrement && boss_bar[b].color > 0)
 				boss_bar[b].color--;
 		}
 	}
@@ -7233,9 +7254,30 @@ void draw_boss_bar(void)
 		return;
 
 	if (bossBarStyle == BOSS_BAR_ENHANCED)
-		draw_boss_bars_enhanced(bars);
+		draw_boss_bars_enhanced(VGAScreen, 1, 1.0f, true, bars);
 	else
 		draw_boss_bars_classic(bars);
+}
+
+// Per-frame redraw of the enhanced boss bars at an interpolated hit flash. notes.md §Boss & enemy health bars.
+static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
+{
+	if (bossBarStyle != BOSS_BAR_ENHANCED)
+		return;
+
+	bool flashing = false;
+	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
+		if (boss_bar[b].link_num != 0 && boss_bar[b].color > 0)
+			flashing = true;
+	if (!flashing)
+		return;
+
+	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
+	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
+	if (bars == 0)
+		return;
+
+	draw_boss_bars_enhanced(dst, scale, alpha, false, bars);
 }
 
 // How far LEFT the endless kill-fire HUD (bottom-right of the playfield, right-aligned to

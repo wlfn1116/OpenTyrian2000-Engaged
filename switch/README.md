@@ -1,11 +1,11 @@
-# OpenTyrian 2000 (widescreen fork) — Nintendo Switch homebrew
+# OpenTyrian 2000 (widescreen fork) - Nintendo Switch homebrew
 
 This builds `opentyrian2000.nro`, a Switch homebrew app that runs from the
 **Homebrew Launcher** on a CFW/Atmosphère console, or in a Switch emulator.
 
 > This is an unofficial homebrew build, **not** an eShop release. It requires a
 > console running custom firmware (which voids warranty and violates Nintendo's
-> ToS — do this at your own risk) or an emulator.
+> ToS - do this at your own risk) or an emulator.
 
 ---
 
@@ -26,7 +26,7 @@ You need **devkitPro** with the Switch toolchain and the SDL2 portlib.
    and its dependency chain and the `pkg-config` wrapper this Makefile uses.)
 
 3. Make sure `DEVKITPRO` is set in your environment (the installer normally does
-   this — typically `DEVKITPRO=/opt/devkitpro`, or `C:/devkitpro` on Windows).
+   this - typically `DEVKITPRO=/opt/devkitpro`, or `C:/devkitpro` on Windows).
    On Windows, build from the **“MSYS2 for devkitPro”** shell so the env vars and
    Unix tools are present.
 
@@ -35,7 +35,7 @@ You need **devkitPro** with the Switch toolchain and the SDL2 portlib.
 The engine needs the Tyrian 2000 data files. Either:
 
 - **Bundle them (self-contained .nro):** copy the data files into
-  [`switch/romfs/`](romfs/) before building — see the note in that folder. They
+  [`switch/romfs/`](romfs/) before building - see the note in that folder. They
   get packed into the `.nro` and mounted at `romfs:/`.
 - **…or ship them on the SD card:** copy them to `sdmc:/switch/opentyrian2000/`.
   The game checks that path first, then the bundled `romfs:/`.
@@ -49,7 +49,7 @@ make          # produces opentyrian2000.nro
 make clean    # remove build artifacts
 ```
 
-Or use the helper script (sets DEVKITPRO/PATH itself, logs to `build.log`) — this is
+Or use the helper script (sets DEVKITPRO/PATH itself, logs to `build.log`) - this is
 what works when driving the build from outside the devkitPro shell, e.g. Windows
 PowerShell:
 
@@ -57,7 +57,7 @@ PowerShell:
 & "D:\devkitPro\msys2\usr\bin\bash.exe" /d/Projects/OpenTyrian2000-widescreen/switch/build.sh
 ```
 
-> Do **not** run the build through a devkitPro MSYS2 *login* shell (`bash -lc ...`) — a
+> Do **not** run the build through a devkitPro MSYS2 *login* shell (`bash -lc ...`) - a
 > profile script there silently truncates multi-command runs. Invoke `build.sh` directly.
 
 ## 4. Install & run
@@ -79,7 +79,7 @@ To run in an emulator, load `opentyrian2000.nro` directly.
 ## Controls
 
 Joy-Con / Pro Controller are exposed through SDL's joystick API. The game has an
-in-game controller/joystick configuration menu — use it to bind buttons to taste.
+in-game controller/joystick configuration menu - use it to bind buttons to taste.
 The face buttons and D-pad work out of the box for menus and flying.
 
 ## Known limitations (v1)
@@ -107,4 +107,4 @@ The face buttons and D-pad work out of the box for menus and flying.
   use the devkitPro MSYS2 shell (Windows) or `source /etc/profile.d/devkit-env.sh`.
 - **Game exits immediately / can't find data**: the data files aren't in
   `switch/romfs/` (rebuild) or `sdmc:/switch/opentyrian2000/`. Filenames are
-  case-sensitive on romfs — keep them lowercase as the engine expects.
+  case-sensitive on romfs - keep them lowercase as the engine expects.

@@ -1,10 +1,10 @@
-# OpenTyrian 2000 — PS Vita port
+# OpenTyrian 2000 - PS Vita port
 
 A homebrew PlayStation Vita build of the OpenTyrian 2000 widescreen fork, producing a
 `.vpk` you install with VitaShell / a homebrew-enabled (HENkaku/Enso) Vita. It mirrors the
 Nintendo Switch port feature-for-feature: touch controls, on-screen keyboard for name entry,
 dual-analog ship control, the touch-sensitivity slider, and the same always-fullscreen
-display handling — just mapped to Vita hardware.
+display handling - just mapped to Vita hardware.
 
 This is **not** a signed retail title; it needs homebrew (HENkaku/Enso) to run.
 
@@ -12,7 +12,7 @@ This is **not** a signed retail title; it needs homebrew (HENkaku/Enso) to run.
 
 ## What you get
 
-`vita/build/OpenTyrian2000.vpk` (~6 MB) — a self-contained package: the game plus the
+`vita/build/OpenTyrian2000.vpk` (~6 MB) - a self-contained package: the game plus the
 freeware Tyrian 2000 data baked into `app0:data`. Writable config and saves go to
 `ux0:data/opentyrian2000` (created on first run). Title ID `OTYR20000`.
 
@@ -62,16 +62,16 @@ zipping the whole tree copies those names verbatim.
 ### Data bundling
 
 `build.ps1` copies `data/` into the VPK's `app0:data`, excluding the Windows/DOS distro cruft
-(`*.exe *.dll *.pif *.ico *.box *.ovl *.cfg *.sav *.txt` — same list as the Switch romfs) plus
+(`*.exe *.dll *.pif *.ico *.box *.ovl *.cfg *.sav *.txt` - same list as the Switch romfs) plus
 `WeedsGM3.sf2` (~55 MB): that soundfont only feeds the optional FluidSynth MIDI path, which is
 off here exactly as on Switch (`WITH_MIDI` is Windows-x64-only). To ship a user-updatable data
-copy instead, drop the files in `ux0:data/opentyrian2000` — `file.c` prefers it over `app0:`.
+copy instead, drop the files in `ux0:data/opentyrian2000` - `file.c` prefers it over `app0:`.
 
 ### LiveArea art
 
 `make_livearea.ps1` regenerates the LiveArea/VPK images (`icon0.png`, `pic0.png`, `bg0.png`,
 `startup.png`) from the shared box art (`switch/icon.jpg`). They must be **8-bit indexed**
-PNGs — the VPK promoter rejects 24-bit truecolor LiveArea images (install fails at ~98% with
+PNGs - the VPK promoter rejects 24-bit truecolor LiveArea images (install fails at ~98% with
 `0x8010113D`). The script produces indexed PNGs via a GIF round-trip through GDI+.
 
 ## Install
@@ -79,7 +79,7 @@ PNGs — the VPK promoter rejects 24-bit truecolor LiveArea images (install fail
 Copy `OpenTyrian2000.vpk` to the Vita (FTP / USB / SD2Vita) and install it with **VitaShell**
 (press `X` on the file → install). It appears on the LiveArea as *OpenTyrian 2000*.
 
-## Controls (defaults — rebindable in-game)
+## Controls (defaults - rebindable in-game)
 
 | Input | Action |
 |-------|--------|
@@ -100,7 +100,7 @@ scales the touch-drag ship control; its middle notch is the classic 1:1 feel.
 
 - **Button order is a best guess.** Vita SDL button indices (`0 △, 1 ○, 2 ✕, 3 □, 4 L, 5 R,
   6 down, 7 left, 8 up, 9 right, 10 select, 11 start`) come from the SDL Vita source; on first
-  run the game writes `ux0:data/opentyrian2000/joystick_info.txt` with the detected caps —
+  run the game writes `ux0:data/opentyrian2000/joystick_info.txt` with the detected caps -
   check it and re-bind in the Controls menu if anything is off.
 - **IME text entry** is wired through SDL's screen-keyboard support; the exact confirm/cancel
   behaviour may need tuning on real hardware (as the Switch software keyboard did).
