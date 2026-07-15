@@ -4441,6 +4441,32 @@ void endlessGenerateCourses(void)
 	}
 }
 
+// Resolve a saved/chosen (episode, section) back to a real endless-safe level file. Prefer the
+// exact persisted file when present; v7 and older saves only have the section, so use its first
+// safe match. Returning false means the script entry has no corresponding binary level data.
+static bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile)
+{
+	JE_byte secs[64], files[64];
+	const uint n = JE_getLevelSections(ep, secs, files, COUNTOF(secs));
+	JE_byte firstMatch = 0;
+	for (uint i = 0; i < n; ++i)
+	{
+		if (secs[i] != sec)
+			continue;
+		if (firstMatch == 0)
+			firstMatch = files[i];
+		if (requestedFile != 0 && files[i] == requestedFile)
+		{
+			*resolvedFile = files[i];
+			return true;
+		}
+	}
+	if (firstMatch == 0)
+		return false;
+	*resolvedFile = firstMatch;
+	return true;
+}
+
 int endlessCourseCount(void)
 {
 	return endlessCourseCnt;
@@ -4559,6 +4585,31 @@ JE_byte endlessSelectCourse(int i)
 	if (i < 0 || i >= endlessCourseCnt)
 		i = 0;
 
+	// Revalidate at the launch boundary too. This is the last line of defense for legacy saves or
+	// externally edited/corrupt sidecars: substitute a safe level instead of handing JE_loadMap an
+	// invalid section and terminating the game.
+	JE_byte resolvedFile;
+	if (endlessResolveCourseFile(endlessCourseEp[i], endlessCourseSec[i], endlessCourseFile[i], &resolvedFile))
+	{
+		endlessCourseFile[i] = resolvedFile;
+	}
+	else
+	{
+		int fallbackEp;
+		JE_byte fallbackSec, fallbackFile;
+		if (!endlessRandomSafeLevel(&fallbackEp, &fallbackSec, &fallbackFile))
+		{
+			fprintf(stderr, "error: no valid Endless level is available\n");
+			forcedLvlFileNum = 0;
+			return FIRST_LEVEL;
+		}
+		fprintf(stderr, "warning: replacing invalid saved course episode %d section %u\n",
+		        endlessCourseEp[i], (unsigned int)endlessCourseSec[i]);
+		endlessCourseEp[i] = fallbackEp;
+		endlessCourseSec[i] = fallbackSec;
+		endlessCourseFile[i] = fallbackFile;
+	}
+
 	// Stash the one-shots this pick is about to consume, so a non-hardcore mid-zone bail (which
 	// reopens the outpost unlocked and re-picks a course through here) can restore them first;
 	// otherwise a bought E-Shop buff would be silently forfeit. Hardcore relaunches the committed
@@ -4670,7 +4721,7 @@ void endlessEndRunToTitle(void)
 // by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 7      // v1 run-state only; v2 added the outpost snapshot; v3 adds the run seed; v4 adds the locked-sortie retry; v5 adds the kill-fire buff recharge; v6 adds the anti-repeat recent-level ring; v7 widens the mod bitsets (courseMod[]/sortieMods) 32->64-bit for TOPSY/SLUGGISH
+#define ENDLESS_SAVE_VERSION 8      // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files
 #define ENDLESS_SAVE_PERKS   16     // fixed perk-array width on disk (>= PERK_COUNT; headroom for new perks)
 
 typedef struct {
@@ -4698,6 +4749,7 @@ typedef struct {
 	Sint32 courseCnt;
 	Sint32 courseEp[ENDLESS_MAX_COURSES];
 	Uint8  courseSec[ENDLESS_MAX_COURSES];
+	Uint8  courseFile[ENDLESS_MAX_COURSES];  // v8: exact binary level file for each saved course
 	Uint64 courseMod[ENDLESS_MAX_COURSES];   // v7: was Uint32 (read narrow from v3-v6 files)
 	Sint32 lastEp;
 	Uint8  lastSec, forced;
@@ -4728,6 +4780,50 @@ typedef struct {
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
 // other slots' records intact.
 static EndlessSlotRec endlessSlotCache[SAVE_FILES_NUM];
+
+// Restore a chart from disk while migrating v7-and-older records that did not persist courseFile.
+// Invalid legacy entries (notably Episode 1 section 44 / nonexistent file 20) are dropped and the
+// remaining parallel arrays are compacted. If nothing usable remains, regenerate deterministically
+// for this depth so the outpost always has a launchable course.
+static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
+{
+	int savedCount = r->courseCnt;
+	if (savedCount < 0) savedCount = 0;
+	if (savedCount > ENDLESS_MAX_COURSES) savedCount = ENDLESS_MAX_COURSES;
+
+	memset(endlessCourseEp, 0, sizeof(endlessCourseEp));
+	memset(endlessCourseSec, 0, sizeof(endlessCourseSec));
+	memset(endlessCourseFile, 0, sizeof(endlessCourseFile));
+	memset(endlessCourseMod, 0, sizeof(endlessCourseMod));
+
+	int restoredCount = 0;
+	bool dropped = false;
+	for (int i = 0; i < savedCount; ++i)
+	{
+		JE_byte file;
+		if (!endlessResolveCourseFile(r->courseEp[i], r->courseSec[i], r->courseFile[i], &file))
+		{
+			fprintf(stderr, "warning: dropping invalid saved course episode %d section %u\n",
+			        r->courseEp[i], (unsigned int)r->courseSec[i]);
+			dropped = true;
+			continue;
+		}
+		endlessCourseEp[restoredCount] = r->courseEp[i];
+		endlessCourseSec[restoredCount] = r->courseSec[i];
+		endlessCourseFile[restoredCount] = file;
+		endlessCourseMod[restoredCount] = r->courseMod[i];
+		++restoredCount;
+	}
+	endlessCourseCnt = restoredCount;
+
+	// A forced visit represents one specific unavoidable course; if that entry was invalid, rebuild
+	// the whole visit rather than silently turning a different saved option into an Ambush.
+	if (endlessCourseCnt == 0 || (endlessForced && dropped))
+	{
+		endlessReseed((Uint64)endlessRunDepth * 2);
+		endlessGenerateCourses();
+	}
+}
 
 // Little-endian field I/O over a FILE*. The write side is fire-and-forget; the read side never
 // dies -- any short/failed read just aborts the load, so a missing or corrupt sidecar simply
@@ -4773,6 +4869,7 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
 		endlessPutU64(f, r->courseMod[i]);
 	endlessPutBytes(f, r->courseSec, ENDLESS_MAX_COURSES);
+	endlessPutBytes(f, r->courseFile, ENDLESS_MAX_COURSES);
 
 	endlessPutBytes(f, r->itemAvail, sizeof(r->itemAvail));
 	endlessPutBytes(f, r->itemAvailMax, sizeof(r->itemAvailMax));
@@ -4856,6 +4953,8 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		}
 	}
 	if (!endlessGetBytes(f, r->courseSec, ENDLESS_MAX_COURSES))
+		return false;
+	if (version >= 8 && !endlessGetBytes(f, r->courseFile, ENDLESS_MAX_COURSES))
 		return false;
 
 	if (!endlessGetBytes(f, r->itemAvail, sizeof(r->itemAvail))
@@ -5023,6 +5122,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	{
 		r->courseEp[i]  = endlessCourseEp[i];
 		r->courseSec[i] = endlessCourseSec[i];
+		r->courseFile[i] = endlessCourseFile[i];
 		r->courseMod[i] = endlessCourseMod[i];
 	}
 	r->lastEp  = endlessLastEp;
@@ -5100,19 +5200,6 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	for (int i = 0; i < 3; ++i)
 		endlessPerkChoice[i] = r->perkChoice[i];
 
-	endlessCourseCnt = r->courseCnt;
-	if (endlessCourseCnt < 0) endlessCourseCnt = 0;
-	if (endlessCourseCnt > ENDLESS_MAX_COURSES) endlessCourseCnt = ENDLESS_MAX_COURSES;
-	for (int i = 0; i < ENDLESS_MAX_COURSES; ++i)
-	{
-		endlessCourseEp[i]  = r->courseEp[i];
-		endlessCourseSec[i] = r->courseSec[i];
-		// Course file isn't persisted (the rec predates it): a resumed outpost rerolls its courses
-		// before any pick, and the locked Quit-Level relaunch carries its file via sortieFile. Default
-		// to 0 (the section's first ']L') so a stale file can never leak into a restored course.
-		endlessCourseFile[i] = 0;
-		endlessCourseMod[i] = r->courseMod[i];
-	}
 	endlessLastEp  = r->lastEp;
 	endlessLastSec = r->lastSec;
 	endlessForced  = r->forced != 0;
@@ -5125,6 +5212,8 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 		endlessRecentEp[i]  = r->recentEp[i];
 		endlessRecentSec[i] = r->recentSec[i];
 	}
+
+	endlessRestoreSavedCourses(r);
 
 	memcpy(itemAvail, r->itemAvail, sizeof(itemAvail));
 	memcpy(itemAvailMax, r->itemAvailMax, sizeof(itemAvailMax));

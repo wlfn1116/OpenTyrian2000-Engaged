@@ -28,5 +28,7 @@ extern char levelFile[13]; /* string [12] */
 extern JE_word lvlNum;
 
 void JE_analyzeLevel(void);
+unsigned int JE_levelFileCount(int episode);
+bool JE_levelFileNumValid(JE_word fileNum);
 
 #endif /* LVLLIB_H */
