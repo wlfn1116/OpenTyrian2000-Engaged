@@ -231,7 +231,7 @@ void JE_loadHelpText(void)
 		read_encrypted_pascal_string(menuText[i], sizeof(menuText[i]), f);
 	skip_pascal_string(f);
 
-	// OpenTyrian2000 Override
+	// OpenTyrian 2000 Engaged Override
 	strcpy(menuText[6], menuText[5]);
 	strcpy(menuText[5], menuText[4]);
 	strcpy(menuText[4], "Setup");

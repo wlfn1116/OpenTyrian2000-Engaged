@@ -1,4 +1,4 @@
-# OpenTyrian2000 Enhanced — developer notes
+# OpenTyrian 2000 Engaged — developer notes
 
 Design notes and known pitfalls for the systems this fork adds on top of upstream
 OpenTyrian2000. The source keeps short comments at the relevant sites; the full
@@ -6,15 +6,20 @@ reasoning lives here. Code comments reference these sections as `notes.md §Name
 
 ## Build & targets
 
-- `rebuild-all.bat` is the single entry point. It builds PC (MSVC x64 Release),
-  Switch (devkitA64 `.nro` via `switch/build.sh`) and Vita (VitaSDK `.vpk` via
-  `vita/build.ps1`), then collects the deliverables into `build\`. One target
-  failing does not stop the others, and a PASS/FAIL summary prints at the end.
+- `build-all.ps1` is the build entry point. It builds PC (MSVC), Switch
+  (devkitA64 `.nro` via `switch/build.sh`) and Vita (VitaSDK `.vpk` via
+  `vita/build.ps1`), then collects successful
+  deliverables into `build\`. Targets can be selected individually, `-Clean`
+  performs a clean rebuild, and one target failing does not stop the others
+  unless `-FailFast` is used.
+- Collected filenames use the semantic version from `src/opentyrian_version.h`
+  and a platform suffix (`Win64`, `Win32`, `Switch`, or `Vita`). The source
+  outputs retain the names expected by their toolchains.
 - The PC `.exe` must live next to `data\` to run. `build\` is a collection of
   deliverables, not a runtime layout.
-- Switch: `DEVKITPRO` must be in msys form (`/opt/devkitpro`); the bat neutralizes
-  an inherited Windows-style value before invoking devkitPro's bash. Batch files
-  need CRLF line endings.
+- Switch: `DEVKITPRO` must be in msys form (`/opt/devkitpro`); the build entry
+  point neutralizes an inherited Windows-style value before invoking devkitPro's
+  bash. Batch files need CRLF line endings.
 - The Vita build runs from PowerShell (native cmake + ninja) rather than MSYS
   bash. The native tools need native `D:\...` paths (MSYS mangles them into
   `/d/...`), and the shell-hostile data filenames (`shapes).dat`, `newsh%.shp`)

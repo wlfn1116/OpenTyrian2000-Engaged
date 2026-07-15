@@ -1,5 +1,5 @@
 /*
- * OpenTyrian2000: render-list capture & replay (see render_list.h).
+ * OpenTyrian 2000 Engaged: render-list capture & replay (see render_list.h).
  */
 #include "render_list.h"
 

@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------
-# OpenTyrian 2000 (widescreen fork) -- Nintendo Switch homebrew build
+# OpenTyrian 2000 Engaged -- Nintendo Switch homebrew build
 #
 # Produces opentyrian2000.nro for the Homebrew Launcher (Atmosphere/CFW) or an
 # emulator. Based on the standard devkitPro libnx application template.
@@ -20,7 +20,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 # Metadata baked into the .nro (shown in the Homebrew Launcher)
 #---------------------------------------------------------------------------------
-APP_TITLE   := OpenTyrian 2000
+APP_TITLE   := OpenTyrian 2000 Engaged
 APP_AUTHOR  := OpenTyrian Team (widescreen fork)
 APP_VERSION := 2.1
 

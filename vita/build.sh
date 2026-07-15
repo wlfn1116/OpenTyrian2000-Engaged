@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build OpenTyrian 2000 for the Sony PS Vita -> vita/build/OpenTyrian2000.vpk
+# Build OpenTyrian 2000 Engaged for the Sony PS Vita -> vita/build/OpenTyrian2000.vpk
 #
 #   bash vita/build.sh          # build
 #   bash vita/build.sh clean    # remove the build dir

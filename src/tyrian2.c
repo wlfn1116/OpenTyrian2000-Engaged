@@ -2559,8 +2559,13 @@ level_loop:
 		tempMapXOfs = ((background3x1 == 0) ? oldMapX3Ofs : mapXOfs) + PLAYFIELD_X_SHIFT;
 		tempMapXOfs_frac = (background3x1 == 0) ? (oldMapX3Ofs_f - oldMapX3Ofs) : (mapXOfs_f - mapXOfs);
 		tempBackMove = backMove3;
-		tempScrollYfrac    = bg_layer_yfrac[3];      // sprite (pre-advance): lagged frac, glued to layer 3
-		tempScrollYfracNow = bg_layer_yfrac_now[3];  // HP bar (post-advance): this-tick frac
+		// Layer-3 background records POST-advance (draw_background_3 advances before it draws), so a
+		// pre-advance enemy sprite sits one tick behind it -> 1-2px lag + scale-1 microjitter under a
+		// fast scroll modifier (sub-pixel hides it at scale>1). Fold THIS tick's integer scroll into
+		// the sprite's Y offset so the existing par_yfrac interp lands it at the SAME post-advance
+		// phase as the terrain -> glued at every scale. HP bar is already recorded post-advance.
+		tempScrollYfrac    = (float)(backMove3 + endlessScrollExtraPx3) + bg_layer_yfrac_now[3];
+		tempScrollYfracNow = bg_layer_yfrac_now[3];  // HP bar (already post-advance): this-tick frac
 		tempScrollExtraPx  = endlessScrollExtraPx3;  // this batch rides layer 3
 		JE_drawEnemy(75);
 	}
@@ -3062,8 +3067,13 @@ draw_player_shot_loop_end:
 		tempMapXOfs = ((background3x1 == 0) ? oldMapX3Ofs : oldMapXOfs) + PLAYFIELD_X_SHIFT;
 		tempMapXOfs_frac = (background3x1 == 0) ? (oldMapX3Ofs_f - oldMapX3Ofs) : (oldMapXOfs_f - oldMapXOfs);
 		tempBackMove = backMove3;
-		tempScrollYfrac    = bg_layer_yfrac[3];      // sprite (pre-advance): lagged frac, glued to layer 3
-		tempScrollYfracNow = bg_layer_yfrac_now[3];  // HP bar (post-advance): this-tick frac
+		// Layer-3 background records POST-advance (draw_background_3 advances before it draws), so a
+		// pre-advance enemy sprite sits one tick behind it -> 1-2px lag + scale-1 microjitter under a
+		// fast scroll modifier (sub-pixel hides it at scale>1). Fold THIS tick's integer scroll into
+		// the sprite's Y offset so the existing par_yfrac interp lands it at the SAME post-advance
+		// phase as the terrain -> glued at every scale. HP bar is already recorded post-advance.
+		tempScrollYfrac    = (float)(backMove3 + endlessScrollExtraPx3) + bg_layer_yfrac_now[3];
+		tempScrollYfracNow = bg_layer_yfrac_now[3];  // HP bar (already post-advance): this-tick frac
 		tempScrollExtraPx  = endlessScrollExtraPx3;  // this batch rides layer 3
 		JE_drawEnemy(75);
 	}
