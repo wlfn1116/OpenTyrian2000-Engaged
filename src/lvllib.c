@@ -20,6 +20,7 @@
 
 #include "file.h"
 #include "opentyr.h"
+#include "varz.h"
 
 JE_LvlPosType lvlPos;
 
@@ -31,10 +32,48 @@ void JE_analyzeLevel(void)
 	FILE *f = dir_fopen_die(data_dir(), levelFile, "rb");
 	
 	fread_u16_die(&lvlNum, 1, f);
+	if (lvlNum < 3 || lvlNum >= COUNTOF(lvlPos) || lvlNum % 2 == 0)
+	{
+		fprintf(stderr, "error: '%s' has an invalid level-offset count (%u)\n",
+		        levelFile, (unsigned int)lvlNum);
+		fclose(f);
+		JE_tyrianHalt(1);
+		return;
+	}
 
 	fread_s32_die(lvlPos, lvlNum, f);
 	
 	lvlPos[lvlNum] = ftell_eof(f);
-	
+
 	fclose(f);
+}
+
+unsigned int JE_levelFileCount(int episode)
+{
+	if (episode < 1 || episode > 9)
+		return 0;
+
+	char filename[13];
+	snprintf(filename, sizeof(filename), "tyrian%d.lvl", episode);
+	FILE *f = dir_fopen_warn(data_dir(), filename, "rb");
+	if (f == NULL)
+		return 0;
+
+	Uint16 offsetCount;
+	const bool readOk = fread(&offsetCount, sizeof(offsetCount), 1, f) == 1;
+	fclose(f);
+	if (!readOk)
+		return 0;
+
+	/* Each playable level owns two offsets (level data, then map data), and
+	 * the final offset is the end-of-file sentinel. */
+	offsetCount = SDL_SwapLE16(offsetCount);
+	if (offsetCount < 3 || offsetCount >= COUNTOF(lvlPos) || offsetCount % 2 == 0)
+		return 0;
+	return offsetCount / 2;
+}
+
+bool JE_levelFileNumValid(JE_word fileNum)
+{
+	return fileNum >= 1 && fileNum <= lvlNum / 2;
 }

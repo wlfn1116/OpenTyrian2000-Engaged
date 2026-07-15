@@ -30,6 +30,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
+#include "lvllib.h"
 #include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
@@ -225,6 +226,9 @@ static void ensure_equipped_items_visible(void)
 static void load_debug_levels(int episode)
 {
 	debugLevelCount = 0;
+	const unsigned int levelFileCount = JE_levelFileCount(episode);
+	if (levelFileCount == 0)
+		return;
 
 	char fname[16];
 	snprintf(fname, sizeof(fname), "levels%d.dat", episode);
@@ -245,6 +249,14 @@ static void load_debug_levels(int episode)
 		}
 		if (s[0] == ']' && s[1] == 'L')
 		{
+			const int fileNum = atoi(s + 25);
+			if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
+			{
+				fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
+				        episode, (unsigned int)section, fileNum);
+				continue;
+			}
+
 			debugMapSection[debugLevelCount] = section;
 
 			char name_buf[10];
@@ -255,7 +267,7 @@ static void load_debug_levels(int episode)
 			SDL_strlcpy(debugLevelName[debugLevelCount], name_buf,
 				sizeof(debugLevelName[0]));
 
-			debugLvlFileNum[debugLevelCount] = atoi(s + 25);
+			debugLvlFileNum[debugLevelCount] = (JE_byte)fileNum;
 			debugLevelCount++;
 		}
 	}
@@ -265,6 +277,10 @@ static void load_debug_levels(int episode)
 
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
 {
+	const unsigned int levelFileCount = JE_levelFileCount(episode);
+	if (levelFileCount == 0)
+		return 0;
+
 	char fname[16];
 	snprintf(fname, sizeof(fname), "levels%d.dat", episode);
 	FILE *f = dir_fopen_warn(data_dir(), fname, "rb");
@@ -295,6 +311,14 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 				sectionUnsafe = true;
 			else if (s[1] == 'L')
 			{
+				const int fileNum = atoi(s + 25);
+				if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
+				{
+					fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
+					        episode, (unsigned int)section, fileNum);
+					continue;
+				}
+
 				// Strip the level name (padded with spaces) for a name blocklist too.
 				char name[10];
 				SDL_strlcpy(name, s + 13, sizeof(name));
@@ -315,7 +339,7 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 					// Each ']L' is a distinct pool entry (section, lvlFileNum) -- a section can
 					// carry two level files; see JE_getLevelSections's doc in game_menu.h.
 					if (fileOut != NULL)
-						fileOut[n] = (JE_byte)atoi(s + 25);
+						fileOut[n] = (JE_byte)fileNum;
 					out[n++] = (JE_byte)section;
 				}
 			}
@@ -4369,6 +4393,9 @@ static void endlessLoadAllLevels(void)
 	{
 		if (!episodeAvail[ep - 1])
 			continue;
+		const unsigned int levelFileCount = JE_levelFileCount(ep);
+		if (levelFileCount == 0)
+			continue;
 
 		char fname[16];
 		snprintf(fname, sizeof(fname), "levels%d.dat", ep);
@@ -4386,6 +4413,10 @@ static void endlessLoadAllLevels(void)
 				section++;
 			if (s[0] == ']' && s[1] == 'L')
 			{
+				const int fileNum = atoi(s + 25);
+				if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
+					continue;
+
 				endlessBaseEp[endlessBaseCount] = ep;
 				endlessBaseSec[endlessBaseCount] = section;
 
@@ -4396,7 +4427,7 @@ static void endlessLoadAllLevels(void)
 					name_buf[--len] = '\0';
 				SDL_strlcpy(endlessBaseName[endlessBaseCount], name_buf, sizeof(endlessBaseName[0]));
 
-				endlessBaseFile[endlessBaseCount] = atoi(s + 25);
+				endlessBaseFile[endlessBaseCount] = (JE_byte)fileNum;
 				endlessBaseCount++;
 			}
 		}

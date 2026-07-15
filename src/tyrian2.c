@@ -4418,12 +4418,31 @@ new_game:
 	// forcedLvlFileNum; apply it here, then consume it so normal campaign progression is untouched.
 	if (forcedLvlFileNum != 0)
 	{
-		lvlFileNum = forcedLvlFileNum;
+		if (JE_levelFileNumValid(forcedLvlFileNum))
+			lvlFileNum = forcedLvlFileNum;
+		else
+			fprintf(stderr, "warning: ignoring missing level file %u in episode %u\n",
+			        (unsigned int)forcedLvlFileNum, (unsigned int)episodeNum);
 		forcedLvlFileNum = 0;
 	}
 
+	if (!JE_levelFileNumValid(lvlFileNum))
+	{
+		fprintf(stderr, "error: episode %u references missing level file %u (available: 1-%u)\n",
+		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)(lvlNum / 2));
+		JE_tyrianHalt(1);
+		return;
+	}
+
 	FILE* level_f = dir_fopen_die(data_dir(), levelFile, "rb");
-	fseek(level_f, lvlPos[(lvlFileNum-1) * 2], SEEK_SET);
+	if (fseek(level_f, lvlPos[(lvlFileNum - 1) * 2], SEEK_SET) != 0)
+	{
+		fprintf(stderr, "error: failed to seek to episode %u level file %u\n",
+		        (unsigned int)episodeNum, (unsigned int)lvlFileNum);
+		fclose(level_f);
+		JE_tyrianHalt(1);
+		return;
+	}
 
 	JE_char char_mapFile;
 	JE_char char_shapeFile;
@@ -4434,9 +4453,25 @@ new_game:
 	fread_u16_die(&mapX3, 1, level_f);
 
 	fread_u16_die(&levelEnemyMax, 1, level_f);
+	if (levelEnemyMax > COUNTOF(levelEnemy))
+	{
+		fprintf(stderr, "error: episode %u level file %u has too many random enemies (%u)\n",
+		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)levelEnemyMax);
+		fclose(level_f);
+		JE_tyrianHalt(1);
+		return;
+	}
 	fread_u16_die(levelEnemy, levelEnemyMax, level_f);
 
 	fread_u16_die(&maxEvent, 1, level_f);
+	if (maxEvent >= COUNTOF(eventRec))
+	{
+		fprintf(stderr, "error: episode %u level file %u has too many events (%u)\n",
+		        (unsigned int)episodeNum, (unsigned int)lvlFileNum, (unsigned int)maxEvent);
+		fclose(level_f);
+		JE_tyrianHalt(1);
+		return;
+	}
 	for (x = 0; x < maxEvent; x++)
 	{
 		fread_u16_die(&eventRec[x].eventtime, 1, level_f);
