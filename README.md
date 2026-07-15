@@ -1,6 +1,6 @@
-# OpenTyrian2000 Enhanced
+# OpenTyrian 2000 Engaged
 
-OpenTyrian2000 Enhanced is a fork of OpenTyrian2000, which is itself an
+OpenTyrian 2000 Engaged is a fork of OpenTyrian2000, which is itself an
 open-source port of the DOS game Tyrian. It leaves the original game in place
 and adds a widescreen playfield, display-rate motion, a new Endless mode,
 weapon-building tools, optional MIDI music, and Nintendo Switch and PlayStation
@@ -139,12 +139,26 @@ step.
 Both are unofficial homebrew builds and need a console that can run homebrew.
 MIDI music is Windows-64-bit only and is not built for the consoles.
 
-## Building (PC)
+## Building
 
 The Windows build uses Visual Studio; the project files are in `visualc`.
-`rebuild-all.bat` builds the PC, Switch, and Vita targets and collects the
-results in `build`. Building the Switch and Vita targets additionally needs
+`build-all.ps1` builds the PC, Switch, and Vita targets and collects successful
+outputs in `build`. Building the Switch and Vita targets additionally needs
 devkitPro and VitaSDK; see the README in each folder.
+
+```powershell
+.\build-all.ps1                         # all targets, incremental
+.\build-all.ps1 -Target PC -Clean       # clean PC x64 Release build
+.\build-all.ps1 -Target PC,Switch       # selected targets only
+.\build-all.ps1 -Target PC -Configuration Debug -NoCollect
+```
+
+Run `.\build-all.ps1 -Help` for every option.
+
+Collected artifacts use the version from `src/opentyrian_version.h` and include
+their platform in the filename, for example
+`OpenTyrian2000-Engaged-1.0.0-Win64.exe`. Switch and Vita builds use the
+corresponding `-Switch.nro` and `-Vita.vpk` suffixes.
 
 ## More detail
 

@@ -60,7 +60,7 @@
 #include <string.h>
 #include <time.h>
 
-const char *opentyrian_str = "OpenTyrian2000";
+const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 
 #if !defined(__SWITCH__) && !defined(__vita__)

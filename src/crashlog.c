@@ -29,6 +29,7 @@
 // How many previous crash logs to keep alongside the live one (opentyrian_log.1.log ... .N.log).
 #define LOG_ROTATE_KEEP 3
 
+extern const char *opentyrian_str;      // opentyr.c
 extern const char *opentyrian_version;  // opentyr.c
 
 // Guards the terminal fault paths (exception / abort / CRT fatal) so a fault raised mid-report
@@ -180,7 +181,7 @@ static void write_header(FILE *f, const char *event)
 		strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &lt);
 
 	fprintf(f, "================================================================\n");
-	fprintf(f, "OpenTyrian %s\n", event);
+	fprintf(f, "%s %s\n", opentyrian_str, event);
 	fprintf(f, "  Version:     %s\n", opentyrian_version ? opentyrian_version : "?");
 	fprintf(f, "  Time:        %s\n", when);
 	fprintf(f, "  Module base: %p\n", (void *)GetModuleHandleA(NULL));

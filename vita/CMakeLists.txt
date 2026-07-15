@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------
-# OpenTyrian 2000 (widescreen fork) -- Sony PlayStation Vita build
+# OpenTyrian 2000 Engaged -- Sony PlayStation Vita build
 #
 # Produces eboot.bin (a Sony SELF); vita/build.sh wraps this and assembles the final
 # OpenTyrian2000.vpk (param.sfo + LiveArea assets + the freeware Tyrian data). Build with:
@@ -25,7 +25,7 @@ project(OpenTyrian2000 C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
 ## VPK / LiveArea metadata (also used by build.sh) -----------------------------
-set(VITA_APP_NAME "OpenTyrian 2000")
+set(VITA_APP_NAME "OpenTyrian 2000 Engaged")
 set(VITA_TITLEID  "OTYR20000")
 set(VITA_VERSION  "01.00")
 

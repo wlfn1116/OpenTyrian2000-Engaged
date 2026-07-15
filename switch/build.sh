@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build OpenTyrian 2000 for Nintendo Switch (.nro).
+# Build OpenTyrian 2000 Engaged for Nintendo Switch (.nro).
 #
 # Invoke with the devkitPro MSYS2 bash, e.g. from PowerShell:
 #   & "D:\devkitPro\msys2\usr\bin\bash.exe" /d/Projects/OpenTyrian2000-widescreen/switch/build.sh

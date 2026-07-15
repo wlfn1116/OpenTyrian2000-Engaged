@@ -1,5 +1,5 @@
 <#
-  Build OpenTyrian 2000 for the Sony PS Vita  ->  vita\build\OpenTyrian2000.vpk
+  Build OpenTyrian 2000 Engaged for the Sony PS Vita  ->  vita\build\OpenTyrian2000.vpk
 
   Usage (from PowerShell, in the repo root or anywhere):
       powershell -ExecutionPolicy Bypass -File vita\build.ps1
@@ -10,9 +10,9 @@
       defaults to D:\vitasdk.
     * A NATIVE Windows CMake (>= 3.16) and Ninja. The MSYS/devkitPro cmake on PATH does
       NOT work here (it hands the native Ninja POSIX /d/... paths it can't resolve), so we
-      locate a native cmake explicitly. By default we use the CMake+Ninja that ship inside
-      Visual Studio (found via vswhere) -- guaranteed present since rebuild-all.bat's PC
-      target needs VS -- falling back to a standalone CMake or a `pip install cmake`, and to
+      locate a native cmake explicitly. By default we try the CMake+Ninja that ship inside
+      Visual Studio (found via vswhere), falling back to a standalone CMake or a
+      `pip install cmake`, and to
       $VITASDK\bin\ninja.exe for Ninja. Override either with $env:CMAKE_EXE / $env:NINJA_EXE.
 
   Why PowerShell and not the MSYS build.sh: the Windows-native cmake+ninja must be driven with
@@ -32,7 +32,7 @@ $Stage = Join-Path $Build 'vpk'
 $Data  = Join-Path $Repo  'data'
 $Vpk   = Join-Path $Build 'OpenTyrian2000.vpk'
 
-$AppName = 'OpenTyrian 2000'
+$AppName = 'OpenTyrian 2000 Engaged'
 $TitleId = 'OTYR20000'
 $AppVer  = '01.00'
 
@@ -61,7 +61,7 @@ if ($Clean) {
 # The native CMake+Ninja must NOT be the MSYS/devkitPro ones on PATH (they hand the native
 # Ninja POSIX /d/... paths it can't resolve). Search order: an explicit $env:CMAKE_EXE /
 # $env:NINJA_EXE override, a standalone CMake install, the CMake+Ninja that ship INSIDE
-# Visual Studio (guaranteed present -- rebuild-all.bat's PC target needs VS), then a
+# Visual Studio (normally present when build-all.ps1's PC target is used), then a
 # `pip install cmake` in the user's Python. For Ninja, VitaSDK's own copy stays preferred.
 function Find-Tool([string]$envVar, [string[]]$candidates, [string]$name) {
     if ((Test-Path Env:$envVar) -and (Test-Path (Get-Item Env:$envVar).Value)) {

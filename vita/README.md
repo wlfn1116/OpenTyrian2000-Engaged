@@ -1,6 +1,6 @@
-# OpenTyrian 2000 - PS Vita port
+# OpenTyrian 2000 Engaged - PS Vita port
 
-A homebrew PlayStation Vita build of the OpenTyrian 2000 widescreen fork, producing a
+A homebrew PlayStation Vita build of OpenTyrian 2000 Engaged, producing a
 `.vpk` you install with VitaShell / a homebrew-enabled (HENkaku/Enso) Vita. It mirrors the
 Nintendo Switch port feature-for-feature: touch controls, on-screen keyboard for name entry,
 dual-analog ship control, the touch-sensitivity slider, and the same always-fullscreen
@@ -77,7 +77,7 @@ PNGs - the VPK promoter rejects 24-bit truecolor LiveArea images (install fails 
 ## Install
 
 Copy `OpenTyrian2000.vpk` to the Vita (FTP / USB / SD2Vita) and install it with **VitaShell**
-(press `X` on the file → install). It appears on the LiveArea as *OpenTyrian 2000*.
+(press `X` on the file → install). It appears on the LiveArea as *OpenTyrian 2000 Engaged*.
 
 ## Controls (defaults - rebindable in-game)
 

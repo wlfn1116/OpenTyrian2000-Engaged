@@ -1,4 +1,4 @@
-# OpenTyrian 2000 (widescreen fork) - Nintendo Switch homebrew
+# OpenTyrian 2000 Engaged - Nintendo Switch homebrew
 
 This builds `opentyrian2000.nro`, a Switch homebrew app that runs from the
 **Homebrew Launcher** on a CFW/Atmosphère console, or in a Switch emulator.
