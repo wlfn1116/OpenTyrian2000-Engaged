@@ -7222,7 +7222,7 @@ redo:
 								// Lv11 shot for two LV10-length side beams; the "Buff" adds the Lv10
 								// centre beam. The primary shot pays the port's power cost; the extra
 								// beams fire drain-free so the combined weapon still costs one shot.
-								const bool zica_l11 = (item == 5 && temp == FRONT_WEAPON && item_power == 10);
+								const bool zica_l11 = (item == 5 && item_power == 10);
 								JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
 								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 									l11_primary = ZICA_LONG_WEAP_LEFT;
