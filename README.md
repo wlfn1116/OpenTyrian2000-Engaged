@@ -1,6 +1,6 @@
-# OpenTyrian 2000 Engaged
+# OpenTyrian2000 Engaged
 
-OpenTyrian 2000 Engaged is a fork of OpenTyrian2000, which is itself an
+OpenTyrian2000 Engaged is a fork of OpenTyrian2000, which is itself an
 open-source port of the DOS game Tyrian. It leaves the original game in place
 and adds a widescreen playfield, display-rate motion, a new Endless mode,
 weapon-building tools, optional MIDI music, and Nintendo Switch and PlayStation
