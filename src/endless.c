@@ -298,6 +298,7 @@ static int endlessComboKills = 0;
 #define ENDLESS_PERK_SHIELDRGN_MIN  3  // ...but never quicker than +1 shield per this many ticks (floor)
 #define ENDLESS_PERK_CHARGE_STEP    4  // ticks cut from the charge-sidekick charge interval per Rapid Charger stack (base 20)
 #define ENDLESS_PERK_CHARGE_MIN     4  // ...but a charge level never builds quicker than this many ticks (floor)
+#define ENDLESS_PERK_SHOTSPEED_PCT 25  // +% shot travel speed per High-Velocity Rounds stack
 
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
 // extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
@@ -313,7 +314,8 @@ enum {
 	PERK_AUTOSPECIAL,
 	PERK_POWERUSE,
 	PERK_SHIELDREGEN,
-	PERK_CHARGERATE,   // append new perks here; the index is the on-disk save slot, so don't renumber
+	PERK_CHARGERATE,
+	PERK_SHOTSPEED,    // append new perks here; the index is the on-disk save slot, so don't renumber
 	PERK_COUNT
 };
 
@@ -339,6 +341,7 @@ static const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Efficient Coils",  "Your weapons draw less generator power.", 5 },
 	{ "Shield Matrix",    "Your shield recharges faster.",        4 },
 	{ "Rapid Charger",    "Charge sidekicks power up faster.",    4 },
+	{ "High-Velocity Rounds", "Your shots travel faster.",        3 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -1658,6 +1661,15 @@ int endlessPerkChargeTicks(int base)
 		return base;
 	int t = base - endlessPerkOwned[PERK_CHARGERATE] * ENDLESS_PERK_CHARGE_STEP;
 	return t < ENDLESS_PERK_CHARGE_MIN ? ENDLESS_PERK_CHARGE_MIN : t;
+}
+
+// High-Velocity Rounds perk: shot travel-speed scale (100 = normal), applied in shots.c
+// player_shot_create to the genuine shot velocities. A no-op outside endless / with no stacks.
+int endlessPerkShotSpeedPercent(void)
+{
+	if (!endlessMode)
+		return 100;
+	return 100 + endlessPerkOwned[PERK_SHOTSPEED] * ENDLESS_PERK_SHOTSPEED_PCT;
 }
 
 // Roll this shop visit's perk offers: up to 3 distinct perks that aren't already maxed out.
@@ -4725,7 +4737,8 @@ void endlessEndRunToTitle(void)
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
 #define ENDLESS_SAVE_VERSION 8      // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files
-#define ENDLESS_SAVE_PERKS   16     // fixed perk-array width on disk (>= PERK_COUNT; headroom for new perks)
+#define ENDLESS_SAVE_PERKS   16     // fixed perk-array width on disk; now == PERK_COUNT (headroom used up).
+                                    // Adding a 17th perk means bumping this (and the save version) or it won't persist.
 
 typedef struct {
 	bool used;

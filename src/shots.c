@@ -577,6 +577,31 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 				shot->shotY -= player[shot->playerNumber-1].delta_y_shot_move;
 		}
 
+		// Endless "High-Velocity Rounds" perk: speed up genuine shot velocities. Only touch real
+		// speeds (|v| < 100, non-zero) so the >100 ship-track/attach sentinels and the static-0
+		// case are left alone; scaling X and Y together preserves the firing angle. The result is
+		// rounded, kept >= 1 so a moving shot never freezes, and clamped < 100 so a boosted shot
+		// can never read as a sentinel.
+		if (endlessMode)
+		{
+			int spd = endlessPerkShotSpeedPercent();
+			if (spd != 100)
+			{
+				if (shot->shotXM != 0 && abs(shot->shotXM) < 100)
+				{
+					int m = (abs(shot->shotXM) * spd + 50) / 100;
+					m = m < 1 ? 1 : (m > 99 ? 99 : m);
+					shot->shotXM = shot->shotXM < 0 ? -m : m;
+				}
+				if (shot->shotYM != 0 && abs(shot->shotYM) < 100)
+				{
+					int m = (abs(shot->shotYM) * spd + 50) / 100;
+					m = m < 1 ? 1 : (m > 99 ? 99 : m);
+					shot->shotYM = shot->shotYM < 0 ? -m : m;
+				}
+			}
+		}
+
 		if (weapon->aim > 5)  /*Guided Shot*/
 		{
 			uint best_dist = 65000;
