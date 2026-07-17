@@ -109,6 +109,21 @@ passes and two buffers:
   normalizes tagged enemy sprites and HP bars to the absolute anchor their layer
   actually recorded; simulation and exact/residual replay retain their original
   integer coordinates.
+- `background3x1` is not a parallax ratio — it welds layer 3 to layer 1
+  (`mainint.c` sets `mapX3Ofs = mapXOfs`), making it a co-scrolling foreground
+  overlay for pieces that belong to layer 1's plane but must draw over the ship.
+  The two therefore have to pan as one, but layer 1 always records before the
+  mid-tick parallax update while `background3over == 1` records layer 3 after it,
+  so the *shared* anchor was sampled a tick apart. The stock whole-pixel blit
+  truncated that sub-pixel difference away; the interpolated pan resolves it, and
+  a foreground welded to the terrain shows it as a horizontal seam whenever the
+  player strafes (EP4 SURFACE overhangs). `draw_background_3` now pans from the
+  anchor layer 1 recorded (`bg_layer_xofs[1]`) whenever `background3x1` is set,
+  keeping the integer at `mapX3Ofs` since that is what its rows blit at. Bound
+  Top Enemy sprites need no extra handling — the normalizer above already pulls
+  them onto their layer's recorded anchor. No-op unless `background3x1` is set,
+  and a no-op even then when layer 3 draws before the update (`background3over`
+  0/2 — BRAINIAC, DREAD-NOT), where both anchors are already the same value.
 - Vertical: the same idea via `bg_layer_dy`/`yfrac`. An integer per-tick scroll
   can't express a fractional rate (3.2 → 3,3,3,4 velocity pulse that looks like
   speeding up and slowing down); the float rate makes the displayed velocity

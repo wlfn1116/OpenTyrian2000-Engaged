@@ -488,7 +488,12 @@ void draw_background_3(SDL_Surface *surface)
 	bg_update_scroll_delta(3, (int)mapY3, (int)backPos3);
 
 	rl_current_id = RL_ID_BG_BASE + 3;
-	bg_set_layer_dx(3, mapX3Ofs_f, mapX3Ofs);  // background3x1 already folds this onto mapXOfs
+	// background3x1 welds this layer to layer 1 (mapX3Ofs = mapXOfs), but the two record on opposite
+	// sides of the mid-tick parallax update, sampling that shared anchor a tick apart. Pan from the
+	// one layer 1 recorded; the integer stays mapX3Ofs, which is what the rows below blit at.
+	// notes.md §Sub-pixel parallax.
+	const float x_anchor_f = (background3x1 && bg_layer_xofs_valid[1]) ? bg_layer_xofs[1] : mapX3Ofs_f;
+	bg_set_layer_dx(3, x_anchor_f, mapX3Ofs);
 	for (int i = -1; i < 7; i++)
 	{
 		// Layer 3 shares PLAYFIELD_X_SHIFT with layers 1/2; no per-layer correction.
