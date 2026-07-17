@@ -4688,6 +4688,26 @@ static bool endlessDebugScreen(void)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
+#if defined(__SWITCH__) || defined(__vita__)
+		// Y (Switch) / Square (Vita) pages this screen just like Tab. Menus only deliver
+		// confirm/cancel/directions from a controller (push_joysticks_as_keyboard), so this
+		// face button isn't bound to any action -- read it raw with local edge state and
+		// synthesize a Tab. Both ports report it as button 3 (Switch A/B/X/Y = 0/1/2/3;
+		// Vita triangle/circle/cross/square = 0/1/2/3). poll_joysticks (above) already ran
+		// SDL_JoystickUpdate this tick. Guard on !newkey so a real key still wins.
+		{
+			static bool page_btn_was;
+			const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+			                  SDL_JoystickGetButton(joystick[0].handle, 3) != 0;
+			if (down && !page_btn_was && !newkey)
+			{
+				newkey = true;
+				lastkey_scan = SDL_SCANCODE_TAB;
+			}
+			page_btn_was = down;
+		}
+#endif
+
 		/* wheel moves the selection; hover highlights; left-click acts on the row (toggle /
 		 * cycle / +zone / start); right-click cancels. */
 		if (mouse_scroll != 0)
