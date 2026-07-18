@@ -1000,7 +1000,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 				// pre-widescreen play width, so Minefield-style specials never reached the
 				// widened right edge; PLAYFIELD_LEFT + [0,PLAYFIELD_WIDTH) is the on-screen
 				// span in game_screen coords (see composite_playfield / video.h).
-				b = player_shot_create(0, SHOT_SPECIAL, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 180, mouseX, mouseY, specialWeaponWpn, playerNum);
+				// Y spans the full 184-row playfield (vanilla stopped at 180).
+				b = player_shot_create(0, SHOT_SPECIAL, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184, mouseX, mouseY, specialWeaponWpn, playerNum);
 			}
 
 			if (spraySpecial && b != MAX_PWEAPON)

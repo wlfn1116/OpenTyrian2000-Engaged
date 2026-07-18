@@ -5597,12 +5597,14 @@ void JE_inGameDisplays(void)
 			const uint extra_lives = *player[temp].lives - 1;
 
 			int y = (temp == 0 && player[0].items.special > 0) ? 35 : 15;
-			tempW = (temp == 0) ? 30: 270;
+			// P2 anchors ride the widened playfield edge (legacy 270/250 would float
+			// mid-field now), matching the name label's PLAYFIELD_WIDTH mapping below.
+			tempW = (temp == 0) ? 30 : PLAYFIELD_WIDTH + 7;
 
 			if (extra_lives >= 5)
 			{
 				blit_sprite2(VGAScreen, tempW, y, spriteSheet9, 285);
-				tempW = (temp == 0) ? 45 : 250;
+				tempW = (temp == 0) ? 45 : PLAYFIELD_WIDTH - 13;
 				sprintf(tempstr, "%d", extra_lives);
 				JE_textShade(VGAScreen, tempW, y + 3, tempstr, 15, 1, FULL_SHADE);
 			}
@@ -5630,7 +5632,7 @@ void JE_inGameDisplays(void)
 	/*Super Bombs!!*/
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		int x = (i == 0) ? 30 : 270;
+		int x = (i == 0) ? 30 : PLAYFIELD_WIDTH + 7;  // P2 anchor on the widened right edge (see lives above)
 
 		for (uint j = player[i].superbombs; j > 0; --j)
 		{
