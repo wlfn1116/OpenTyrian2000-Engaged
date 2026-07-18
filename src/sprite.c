@@ -645,9 +645,55 @@ void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprit
 					return;
 				if (pixels >= pixels_ll)
 					*pixels = (((*data & 0x0f) + (*pixels & 0x0f)) / 2) | (*data & 0xf0);
-				
+
 				++pixels;
 			}
+		}
+	}
+}
+
+// Clipping counterpart of blit_sprite2_blend (per-row X clip, mirrors
+// blit_sprite2_clip). Replay-only helper for rl_draw_cmd: an extrapolated shot
+// can be drawn a pixel or two past the surface edge, where the non-clipping
+// version wraps onto the adjacent row -- the brief left-exit-shows-on-the-right
+// flash. Not recorded (replays never record).
+void blit_sprite2_blend_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+{
+	assert(surface->format->BitsPerPixel == 8);
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= 0)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+					pixel_row[x] = (((*data & 0x0f) + (pixel_row[x] & 0x0f)) / 2) | (*data & 0xf0);
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
 		}
 	}
 }
@@ -683,9 +729,54 @@ void blit_sprite2_darken(SDL_Surface *surface, int x, int y, Sprite2_array sprit
 					return;
 				if (pixels >= pixels_ll)
 					*pixels = ((*pixels & 0x0f) / 2) + (*pixels & 0xf0);
-				
+
 				++pixels;
 			}
+		}
+	}
+}
+
+// Clipping counterpart of blit_sprite2_darken (per-row X clip, mirrors
+// blit_sprite2_clip). Replay-only helper for rl_draw_cmd; see
+// blit_sprite2_blend_clip. Darken ignores the sprite pixel value but still
+// consumes one data byte per opaque pixel.
+void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+{
+	assert(surface->format->BitsPerPixel == 8);
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= 0)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+					pixel_row[x] = ((pixel_row[x] & 0x0f) / 2) + (pixel_row[x] & 0xf0);
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
 		}
 	}
 }
