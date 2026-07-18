@@ -1172,7 +1172,13 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				}
 			}
 
-			if (enemy[i].ex + tempMapXOfs > -29 && enemy[i].ex + tempMapXOfs < PLAYFIELD_WIDTH + 29)
+			// Draw/animate gate vs the VISIBLE window [PLAYFIELD_LEFT, PLAYFIELD_RIGHT] (vanilla:
+			// 0..262, gate -29..300). Right: +38 so a 2x2 (spans ex-6..ex+17) is fully hidden
+			// before it stops drawing -- the old +29-off-PLAYFIELD_WIDTH bound cut it with pixels
+			// still visible at the right edge. Left: -28, not -29, because blit_sprite2 doesn't
+			// clip X and a left tile at blit x -34 row-wraps its first column onto the previous
+			// row's last VISIBLE column (322); one less keeps the wrap inside the cropped margin.
+			if (enemy[i].ex + tempMapXOfs > -28 && enemy[i].ex + tempMapXOfs < PLAYFIELD_RIGHT + 38)
 			{
 				if (enemy[i].aniactive == 1)
 				{
@@ -1294,11 +1300,14 @@ enemy_still_exists:
 				enemy[i].eyc = -enemy[i].eyc;
 
 			/* Evalue != 0 - score item at boundary */
+			// Keep pickups inside the VISIBLE window (vanilla: -5..245 vs window 0..262).
+			// The old -5/PLAYFIELD_WIDTH pair let items park fully hidden in the cropped
+			// left margin, and stopped them ~24px short of the widened right edge.
 			if (enemy[i].scoreitem)
 			{
-				if (enemy[i].ex < -5)
+				if (enemy[i].ex < PLAYFIELD_LEFT - 5)
 					enemy[i].ex++;
-				if (enemy[i].ex > PLAYFIELD_WIDTH)
+				if (enemy[i].ex > PLAYFIELD_RIGHT - 17)
 					enemy[i].ex--;
 			}
 
@@ -3185,7 +3194,11 @@ draw_player_shot_loop_end:
 					}
 				}
 
-				if (enemyShot[z].duration-- == 0 || enemyShot[z].sy > 190 || enemyShot[z].sy <= -14 || enemyShot[z].sx > PLAYFIELD_WIDTH || enemyShot[z].sx <= 0)
+				// X cull is against the VISIBLE window: [PLAYFIELD_LEFT, PLAYFIELD_RIGHT] after
+				// the composite crop (vanilla: 0..262, cull at >275/<=0). Right: 13 past the last
+				// visible column, fully hidden and row-wrap-safe (blit_sprite2 doesn't clip X).
+				// Left: <=0 is already 12+ px past hidden thanks to the crop margin.
+				if (enemyShot[z].duration-- == 0 || enemyShot[z].sy > 190 || enemyShot[z].sy <= -14 || enemyShot[z].sx > PLAYFIELD_RIGHT + 13 || enemyShot[z].sx <= 0)
 				{
 					enemyShotAvail[z] = true;
 				}
@@ -3367,16 +3380,24 @@ draw_player_shot_loop_end:
 			}
 			else
 			{
-				// Stable per-instance id: puff churn recycles slots, and a plain slot id
-				// would mis-pair a recycled slot with its previous occupant. Fold in the
-				// per-slot generation (4 values disambiguate consecutive reuses); j*4 + 3
-				// stays within the EXPL id range (MAX_EXPLOSIONS*4 < 1000).
-				rl_current_id = RL_ID_EXPL_BASE + j * 4 + (explosions[j].id_gen & 3);
-				if (explosionTransparent)
-					blit_sprite2_blend(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
-				else
-					blit_sprite2(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
-				rl_current_id = 0;
+				// X guard (display only; ttl still runs): the blitters don't clip X, so a
+				// far-offscreen explosion (e.g. a kill just past the left cull margin) would
+				// row-wrap its pixels onto the opposite edge -- which the widescreen crop
+				// makes VISIBLE (vanilla hid that region under the HUD). Both bounds are
+				// well past fully-hidden, so nothing on-screen is lost.
+				if (explosions[j].x > -12 && explosions[j].x < 344)
+				{
+					// Stable per-instance id: puff churn recycles slots, and a plain slot id
+					// would mis-pair a recycled slot with its previous occupant. Fold in the
+					// per-slot generation (4 values disambiguate consecutive reuses); j*4 + 3
+					// stays within the EXPL id range (MAX_EXPLOSIONS*4 < 1000).
+					rl_current_id = RL_ID_EXPL_BASE + j * 4 + (explosions[j].id_gen & 3);
+					if (explosionTransparent)
+						blit_sprite2_blend(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
+					else
+						blit_sprite2(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
+					rl_current_id = 0;
+				}
 
 				explosions[j].ttl--;
 			}
@@ -3486,9 +3507,10 @@ draw_player_shot_loop_end:
 
 	/*------- Random Explosions --------*/
 	// Full visible playfield: 280 was the pre-widescreen width, so explosions used to
-	// stop short of the widened right edge (see composite_playfield / video.h).
+	// stop short of the widened right edge (see composite_playfield / video.h);
+	// 184 = full playfield height (vanilla stopped at 180).
 	if (randomExplosions && mt_rand() % 10 == 1)
-		JE_setupExplosionLarge(false, 20, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 180);
+		JE_setupExplosionLarge(false, 20, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184);
 
 	/*=================================*/
 	/*=======The Sound Routine=========*/
