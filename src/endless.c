@@ -341,7 +341,7 @@ static const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Efficient Coils",  "Your weapons draw less generator power.", 5 },
 	{ "Shield Matrix",    "Your shield recharges faster.",        4 },
 	{ "Rapid Charger",    "Charge sidekicks power up faster.",    4 },
-	{ "High-Velocity Rounds", "Your shots travel faster.",        3 },
+	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
