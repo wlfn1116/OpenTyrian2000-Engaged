@@ -636,10 +636,16 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	switch (c->kind)
 	{
 	case RC_HP_BAR:              rl_draw_hp_bar(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity); break;
-	case RC_SPRITE2:             blit_sprite2(dst, x, y, c->sheet, c->index); break;
+	// Clip on X even for the nominally-unclipped kinds: an extrapolating id (player /
+	// enemy shot, rl_id_extrapolates) is drawn at cur + vel*alpha, which leads a fast
+	// edge-exiting shot a pixel or two past the surface bound. The non-clipping blits
+	// wrap that overshoot onto the adjacent row (a shot leaving the left flashing on the
+	// right). Clipping is a no-op for in-bounds sprites, so exact (alpha=0) replays stay
+	// byte-identical in the visible playfield. The scaled path already clips (blit2_block).
+	case RC_SPRITE2:             blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_CLIP:        blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
-	case RC_SPRITE2_BLEND:       blit_sprite2_blend(dst, x, y, c->sheet, c->index); break;
-	case RC_SPRITE2_DARKEN:      blit_sprite2_darken(dst, x, y, c->sheet, c->index); break;
+	case RC_SPRITE2_BLEND:       blit_sprite2_blend_clip(dst, x, y, c->sheet, c->index); break;
+	case RC_SPRITE2_DARKEN:      blit_sprite2_darken_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_filter(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE:              blit_sprite(dst, x, y, c->table, c->index); break;
