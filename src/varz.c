@@ -21,6 +21,7 @@
 #include <stdlib.h>  // _Exit (Switch clean-exit path in JE_tyrianHalt)
 
 #include "config.h"
+#include "crashlog.h"
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
@@ -520,6 +521,14 @@ void JE_drawOptionLevel(void)
 
 void JE_tyrianHalt(JE_byte code)
 {
+	// code 1 is the "hard error" convention (missing/short data file, bad level record). It reaches
+	// exit() below, which no crash handler sees -- so write a report first. Idempotent, so a path
+	// that already logged the specifics (dir_fopen_die/fread_die) won't be double-reported here.
+	// Normal quits (0), the network-missing notice (5) and the special code 9 are not failures.
+	if (code == 1)
+		crashlog_report_fatal("FATAL (JE_tyrianHalt error exit)",
+		                      "JE_tyrianHalt(1) -- unrecoverable data/level error; see phase + stack");
+
 	deinit_audio();
 	deinit_video();
 	deinit_joysticks();

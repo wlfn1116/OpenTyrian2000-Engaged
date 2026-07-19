@@ -18,6 +18,7 @@
  */
 #include "file.h"
 
+#include "crashlog.h"
 #include "opentyr.h"
 #include "varz.h"
 
@@ -110,9 +111,13 @@ FILE *dir_fopen_die(const char *dir, const char *file, const char *mode)
 
 	if (f == NULL)
 	{
+		char detail[400];
+		snprintf(detail, sizeof(detail), "failed to open required data file '%s': %s",
+		         file ? file : "(null)", strerror(errno));
 		fprintf(stderr, "error: failed to open '%s': %s\n", file, strerror(errno));
 		fprintf(stderr, "error: One or more of the required Tyrian " TYRIAN_VERSION " data files could not be found.\n"
 		                "       Please read the README file.\n");
+		crashlog_report_fatal("FATAL (missing data file -- dir_fopen_die)", detail);
 		JE_tyrianHalt(1);
 	}
 
@@ -146,7 +151,12 @@ void fread_die(void *buffer, size_t size, size_t count, FILE *stream)
 	size_t result = fread(buffer, size, count, stream);
 	if (result != count)
 	{
+		char detail[160];
+		snprintf(detail, sizeof(detail),
+		         "fread short read: wanted %zu x %zu = %zu bytes, got %zu (EOF/truncated file)",
+		         count, size, size * count, result);
 		fprintf(stderr, "error: An unexpected problem occurred while reading from a file.\n");
+		crashlog_report_fatal("FATAL (file read failed -- fread_die)", detail);
 		SDL_Quit();
 		exit(EXIT_FAILURE);
 	}
@@ -157,7 +167,12 @@ void fwrite_die(const void *buffer, size_t size, size_t count, FILE *stream)
 	size_t result = fwrite(buffer, size, count, stream);
 	if (result != count)
 	{
+		char detail[160];
+		snprintf(detail, sizeof(detail),
+		         "fwrite short write: wanted %zu x %zu = %zu bytes, wrote %zu (disk full?)",
+		         count, size, size * count, result);
 		fprintf(stderr, "error: An unexpected problem occurred while writing to a file.\n");
+		crashlog_report_fatal("FATAL (file write failed -- fwrite_die)", detail);
 		SDL_Quit();
 		exit(EXIT_FAILURE);
 	}

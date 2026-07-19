@@ -7605,27 +7605,48 @@ void JE_mainGamePlayerFunctions(void)
 	else
 		tempX = player[0].x;
 
-	const float left_bound = 40.0f;
-	const float right_bound = PLAYFIELD_WIDTH + 64;
-	float u = (tempX - left_bound) / (right_bound - left_bound);
-	if (u < 0.0f)
-		u = 0.0f;
-	else if (u > 1.0f)
-		u = 1.0f;
+	// w_f is the shared float driver for all three layers: mapX3Ofs = w_f, mapX2Ofs = (w_f-17)*2/3,
+	// mapXOfs = mapX2Ofs/2 (the original coupled 4:2:1 ratio); tempW is its floor. They move together.
+	float w_f;
+	bool bg2CrispLeft = false;  // Extra Parallax OFF only: render bg2 crisply at the far-left extreme (below)
+	if (extraParallax)
+	{
+		// Extra Parallax (Enhancements menu): pan the NEAR (terrain) layer across EXACTLY its 336px
+		// map so the ship's full travel runs it from left-edge-flush to right-edge-flush -- 0 px of
+		// the map spills off either side at the extremes. mapXOfs sweeps 36 (far-left: map plane-px 0
+		// sitting at the window's left edge = PLAYFIELD_LEFT - PLAYFIELD_X_SHIFT) down by the slack
+		// (near-map width 336 - window 299 = 37) to -1 (far-right: the map's last px at the window's
+		// right edge). Normalized over the ship's ACTUAL x-travel so BOTH walls are reached: the stock
+		// [40,363] normalization only hits u~0.81 at the right wall, leaving mapXOfs at ~2 (the ~4px of
+		// map that was still off the right edge). w_f is back-derived (3*near + 17) so the mid/deep
+		// layers keep the coupled ratio and still over-pan/uncover their edges at far-left (bg_clamp_map
+		// guards the resulting out-of-bounds tile read there). notes.md §Sub-pixel parallax.
+		const float travel = (float)((PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) - SHIP_LEFT_MARGIN);
+		float uu = (tempX - SHIP_LEFT_MARGIN) / travel;
+		if (uu < 0.0f)
+			uu = 0.0f;
+		else if (uu > 1.0f)
+			uu = 1.0f;
+		const float near_flush_left = (float)(PLAYFIELD_LEFT - PLAYFIELD_X_SHIFT);  // 36
+		const float near_slack      = (float)(14 * 24 - PLAYFIELD_WIDTH);           // 336 - 299 = 37
+		w_f = 3.0f * (near_flush_left - near_slack * uu) + 17.0f;                   // 125 (far-left) .. 14 (far-right)
+	}
+	else
+	{
+		// Stock amplitude and normalization -- the original parallax formula (the only OFF-mode
+		// deviation is the deliberate far-left bg2 sub-pixel snap applied at the very end).
+		const float left_bound = 40.0f;
+		const float right_bound = PLAYFIELD_WIDTH + 64;
+		float u = (tempX - left_bound) / (right_bound - left_bound);
+		if (u < 0.0f)
+			u = 0.0f;
+		else if (u > 1.0f)
+			u = 1.0f;
+		w_f = (1.0f - u) * (float)(24 * 3);
+		bg2CrispLeft = (u <= 0.0f);  // ship pushed fully to the left (parallax pinned at its leftmost)
+	}
 
-	// Extra Parallax (Enhancements menu): widen the parallax amplitude so a strafe sweeps ALL
-	// three layers across their full width, coupled in the original 4:2:1 ratio. The near layer
-	// then reaches ~36 at far-left (plane-px 0 flush to the window edge = the previously-hidden
-	// left tile fully in view); the mid/deep layers pan proportionally further -- far enough to run
-	// PAST their own map edges and uncover black / mismatched tiles at the extremes. That over-pan
-	// is intentional; draw_background_* clamps the tile pointer to the map base so it can never read
-	// out of bounds (edges repeat/blacken instead of crashing). 125 is the max that keeps the NEAR
-	// layer itself seam-free (its wrong-row tile stays inside the 24px crop margin); raise it for a
-	// terrain seam too. OFF selects the exact original span 24*3 = 72 (near capped at 18, left tile
-	// never came in) and disables the clamp, so the whole feature is byte-identical to stock.
-	// notes.md §Sub-pixel parallax.
-	const float parallax_span = extraParallax ? 125.0f : (float)(24 * 3);
-	tempW = floorf((1.0f - u) * parallax_span);
+	tempW = floorf(w_f);
 	mapX3Ofs = tempW;
 	mapX3Pos = mapX3Ofs % 24;
 	mapX3bpPos = 1 - (mapX3Ofs / 24);
@@ -7636,7 +7657,7 @@ void JE_mainGamePlayerFunctions(void)
 
 	oldMapXOfs = mapXOfs;
 	oldMapXOfs_f = mapXOfs_f;  // both still hold the PREVIOUS tick's value here (updated below)
-	mapXOfs    = mapX2Ofs / 2;  // near layer rides half the mid layer -- original coupled ratio, now at the wider span
+	mapXOfs    = mapX2Ofs / 2;  // near layer rides half the mid layer -- original coupled ratio
 	mapXPos    = mapXOfs % 24;
 	mapXbpPos  = 1 - (mapXOfs / 24);
 
@@ -7647,16 +7668,41 @@ void JE_mainGamePlayerFunctions(void)
 		mapX3bpPos = mapXbpPos - 1;
 	}
 
-	// Un-floored mirror of the same offsets. The render list interpolates each background
-	// layer's horizontal pan by the FLOAT per-tick delta of these (backgrnd.c), so a slow
-	// parallax glides sub-pixel-smooth instead of stepping a whole pixel every few ticks,
-	// while staying on the same interpolation timeline as the enemies anchored to it.
-	const float w_f = (1.0f - u) * parallax_span;
+	// Un-floored mirror of the same offsets (render-list sub-pixel interpolation of the pan),
+	// derived from the same w_f so the fraction matches the integer offsets above.
 	mapX3Ofs_f = w_f;
 	mapX2Ofs_f = ((w_f - 17.0f) * 2.0f) / 3.0f;
 	mapXOfs_f  = mapX2Ofs_f / 2.0f;
 	if (background3x1)
 		mapX3Ofs_f = mapXOfs_f;
+
+	// Stock-mode (Extra Parallax OFF) fine-tune for the bg2 overlay (EP1 TYRIAN clouds etc.). Layer 2
+	// is one strip at a single X offset, so it can only translate uniformly -- shifting it left just
+	// trades the left gap for a right one. The real artifact is sub-pixel: at the far-left extreme
+	// mapX2Ofs is 36 (int) but 36.667 (float), and the smoothed replay rounds that 0.667px fraction UP
+	// to a whole pixel, drawing the clouds 1px RIGHT of their true pixel. Snap the fraction to 0 so the
+	// smoothed render lands crisply on the integer pixel (1px left of the rounded-up position) with no
+	// fractional spill on EITHER edge. Integer mapX2Ofs (and glued layer-2 enemies) are untouched;
+	// affects only the render-list interpolation path (Smooth Motion on). notes.md §Sub-pixel parallax.
+	if (bg2CrispLeft)
+		mapX2Ofs_f = (float)mapX2Ofs;
+
+	// Layer 2 (bg2 overlay) right-edge coverage guard. Its 14-tile (336px) strip is 1px too narrow to
+	// reach the playfield's right edge (col PLAYFIELD_RIGHT = 322) once the parallax pushes mapX2Ofs to
+	// its far-right value of -2: the strip draws at screen x = mapX2Pos + PLAYFIELD_X_SHIFT = -14 and
+	// ends at col 321, leaving a 1px gap in the clouds (EP1 TYRIAN) at the far right. The near layer
+	// bottoms out at -1 (x=-13, which just covers 322), so clamp layer 2 to that same floor -- its
+	// strip then always reaches the right edge. Both the integer and float offsets are clamped so the
+	// smoothed replay agrees; costs a ~1px pan freeze over the last few px of ship travel. Not gated on
+	// the mode: the gap is present with Extra Parallax on or off. notes.md §Sub-pixel parallax.
+	if (mapX2Ofs < -1)
+	{
+		mapX2Ofs = -1;
+		mapX2Pos = mapX2Ofs % 24;
+		mapX2bpPos = 1 - (mapX2Ofs / 24);
+	}
+	if (mapX2Ofs_f < -1.0f)
+		mapX2Ofs_f = -1.0f;
 }
 
 const char *JE_getName(JE_byte pnum)
