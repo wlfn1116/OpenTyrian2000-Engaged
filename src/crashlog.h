@@ -24,6 +24,21 @@
 
 void install_crash_handler(void);
 
+// Write a full crash report for a "clean" fatal that raises no exception -- the paths that call
+// exit()/_Exit() directly (fread_die on a short read, a failed data-file open, a bad save
+// checksum, JE_tyrianHalt on an error code). Without this those deaths bypass every handler
+// installed by install_crash_handler() and leave NO opentyrian_log.log at all. Captures the
+// current thread's context + stack + game state, same as the exception paths. Does NOT terminate:
+// the caller keeps its own exit(). Re-entry-guarded and a no-op if a report was already written
+// for this fault. `detail` may be NULL. Windows only; a no-op elsewhere.
+void crashlog_report_fatal(const char *event, const char *detail);
+
+// Write a report for a RECOVERED problem -- something that would have crashed but was caught and
+// handled (e.g. an out-of-range level index in a desynced save, steered back to the title instead
+// of running off the end of the level file). Same rich context/stack as a crash, but does NOT
+// latch: the session continues, so a genuinely fatal crash later still logs. Windows only.
+void crashlog_note(const char *event, const char *detail);
+
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only
 // static globals and never faults on a corrupt process; safe to call from a fault handler.

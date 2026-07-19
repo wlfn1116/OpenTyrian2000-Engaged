@@ -4109,14 +4109,31 @@ new_game:
 		do
 		{
 			FILE *ep_f = dir_fopen_die(data_dir(), episode_file, "rb");
+			const long ep_end = ftell_eof(ep_f);  // guard the scans below against reading past EOF
 
 			jumpSection = false;
 			loadLevelOk = false;
 
-			/* Seek Section # Mainlevel */
+			/* Seek Section # Mainlevel. An out-of-range mainLevel -- a desynced save (episode
+			 * switched to a shorter episode while the level index stayed high) or a bad next-level
+			 * pointer -- used to run this scan off the end of the file, where read_encrypted_pascal_string
+			 * hits fread_die -> exit() and killed the game with NO crash log. Bound the scan by EOF and
+			 * recover to the title instead. See notes.md / crashlog. */
 			int x = 0;
 			while (x < mainLevel)
 			{
+				if (ftell(ep_f) >= ep_end)
+				{
+					char detail[192];
+					snprintf(detail, sizeof(detail),
+					         "episode %d has no section %d (file holds only %d); out-of-range save/level -- returning to title",
+					         (int)episodeNum, (int)mainLevel, x);
+					fprintf(stderr, "error: %s\n", detail);
+					crashlog_note("RECOVERED (JE_loadMap: level section out of range)", detail);
+					fclose(ep_f);
+					mainLevel = 0;   // caller (JE_main) sees mainLevel == 0 and returns to the title screen
+					return;
+				}
 				read_encrypted_pascal_string(s, sizeof(s), ep_f);
 				if (s[0] == '*')
 				{
@@ -4139,6 +4156,21 @@ new_game:
 						return;             // resumes at its outpost (endlessBetweenLevels), not a campaign reload
 					else
 						goto new_game;
+				}
+
+				// Same EOF guard as the section seek above: a section that ends without a ']L' or a
+				// jump (truncated/garbled data) would read past EOF into fread_die -> exit(). Recover.
+				if (ftell(ep_f) >= ep_end)
+				{
+					char detail[192];
+					snprintf(detail, sizeof(detail),
+					         "episode %d section %d ended with no level to load (truncated/garbled data) -- returning to title",
+					         (int)episodeNum, (int)mainLevel);
+					fprintf(stderr, "error: %s\n", detail);
+					crashlog_note("RECOVERED (JE_loadMap: section had no loadable level)", detail);
+					fclose(ep_f);
+					mainLevel = 0;
+					return;
 				}
 
 				strcpy(s, " ");

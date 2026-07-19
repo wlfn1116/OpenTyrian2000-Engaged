@@ -466,10 +466,13 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 // These terminate the process without raising an SEH exception, so crash_handler never sees
 // them. Each hook captures the current context and writes the same rich report, then exits.
 
-static void report_crt_fatal(const char *event, const char *detail)
+// Shared body: capture this thread's context and write a full report. Used by the CRT-fatal
+// hooks (which then _exit) and by crashlog_report_fatal (which returns to its caller's own exit).
+// Returns true if it wrote a report, false if another report is already in progress (re-entry).
+static bool write_captured_report(const char *event, const char *detail)
 {
 	if (InterlockedExchange(&s_reporting, 1) != 0)
-		_exit(3);
+		return false;
 
 	FILE *f = open_log();
 	if (f != NULL)
@@ -486,6 +489,32 @@ static void report_crt_fatal(const char *event, const char *detail)
 		fclose(f);
 	}
 
+	InterlockedExchange(&s_reporting, 0);
+	return true;
+}
+
+// Latches once a clean-exit fatal has been logged, so a cascade (fread_die -> its caller ->
+// JE_tyrianHalt, or dir_fopen_die -> JE_tyrianHalt) writes exactly one report for the one fault.
+static volatile LONG s_cleanFatalLogged = 0;
+
+// Public: log a "clean" fatal (exit()/_Exit paths that raise no exception) without terminating.
+void crashlog_report_fatal(const char *event, const char *detail)
+{
+	if (InterlockedExchange(&s_cleanFatalLogged, 1) != 0)
+		return;  // already reported this death; keep the first (most specific) report
+	write_captured_report(event ? event : "FATAL (clean exit path)", detail);
+}
+
+// Public: log a recovered (non-fatal) problem. Does NOT latch s_cleanFatalLogged, so the game
+// keeps running and any real crash later still writes its own report.
+void crashlog_note(const char *event, const char *detail)
+{
+	write_captured_report(event ? event : "RECOVERED", detail);
+}
+
+static void report_crt_fatal(const char *event, const char *detail)
+{
+	write_captured_report(event, detail);
 	_exit(3);
 }
 
@@ -637,5 +666,7 @@ void watchdog_init(void)
 void install_crash_handler(void) { }
 void watchdog_init(void) { }
 void watchdog_heartbeat(void) { }
+void crashlog_report_fatal(const char *event, const char *detail) { (void)event; (void)detail; }
+void crashlog_note(const char *event, const char *detail) { (void)event; (void)detail; }
 
 #endif

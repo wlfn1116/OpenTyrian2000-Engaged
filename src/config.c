@@ -1174,6 +1174,8 @@ void JE_decryptSaveTemp(void)
 	if (!correct)
 	{
 		fprintf(stderr, "Error reading save file!\n");
+		crashlog_report_fatal("FATAL (save file checksum mismatch)",
+		                      "tyrian.sav failed its checksum validation (corrupt or truncated save)");
 		exit(255);
 	}
 

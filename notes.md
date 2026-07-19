@@ -103,21 +103,46 @@ passes and two buffers:
   `(frac - dx*inv)`; float endpoints make the pan continuous across tick
   boundaries while still tracking the ticks enemies anchor to.
 - Parallax amplitude (all layers) — gated by the **Extra Parallax** toggle
-  (Enhancements menu, `extraParallax` in config, below Debug Mode). OFF selects
-  `parallax_span = 24*3 = 72` and makes `bg_clamp_map` a no-op, so the parallax +
-  draw path is byte-identical to stock. ON selects span `125` (below). The near map
-  is 14 tiles (336px) but the window is only 299px and the compositor crops the first
-  24px, so ~1 tile stayed permanently off the left. `mainint.c`'s parallax block keeps
-  the original coupled 4:2:1 ratio (`mapX3Ofs = tempW`, `mapX2Ofs = (tempW-17)*2/3`,
-  `mapXOfs = mapX2Ofs/2`) and, when ON, widens the shared span from 72 to 125, so a
-  strafe sweeps *every* layer across its full width. At far-left the near layer
-  reaches `mapXOfs == 36` (plane-px 0 flush to the window's left edge = the full left
-  tile); the mid/deep layers pan proportionally further (`mapX2Ofs → 72`, `mapX3Ofs
-  → 125`). Bound ground enemies ride `mapXOfs`/`mapX2Ofs`/`oldMapX3Ofs` via
-  `tempMapXOfs` and stay glued (they slide much further now — intentional).
-- 125 is the largest span that keeps the NEAR layer itself seam-free: at `mapXOfs ==
-  36`, `mapXPos == 12`, so its lone wrong-row boundary tile spans screen `[0,24)`,
-  entirely inside the crop margin. Raise the span past 125 for a terrain seam too.
+  (Enhancements menu, `extraParallax` in config, below Debug Mode). OFF computes the
+  stock `w_f = (1-u)*72` over the `[40,363]` normalization and makes `bg_clamp_map` a
+  no-op, so the parallax + draw path matches stock — with ONE deliberate exception:
+  when the ship is pinned fully left (`u<=0`), the bg2 overlay (EP1 TYRIAN clouds etc.)
+  has its sub-pixel scroll fraction snapped to 0 (`mapX2Ofs_f = (float)mapX2Ofs`).
+  Layer 2 is one strip at a single X offset, so it can only translate uniformly — a 1px
+  shift trades the left gap for a right one. The real artifact is that at the far-left
+  `mapX2Ofs` is 36 (int) / 36.667 (float), and the smoothed replay rounds that 0.667px
+  fraction UP to a whole pixel → clouds drawn 1px right. Snapping the fraction makes the
+  smoothed render land crisply on the integer pixel (1px left of the rounded-up spot),
+  no fractional spill on either edge. Only the render-list interpolation path (Smooth
+  Motion on) is affected; integer `mapX2Ofs` + glued layer-2 enemies untouched.
+  `bg2CrispLeft` flag in the parallax block.
+- Layer-2 right-edge coverage guard (both modes). The 14-tile (336px) bg2 strip is
+  1px too narrow to reach the playfield's right edge (col `PLAYFIELD_RIGHT` = 322)
+  once the parallax pushes `mapX2Ofs` to its far-right value `-2`: the strip draws at
+  screen `x = mapX2Pos + PLAYFIELD_X_SHIFT = -14` and ends at col 321 → 1px cloud gap
+  on the right. The near layer only reaches `-1` (`x=-13`, just covers 322), so clamp
+  `mapX2Ofs` (and `mapX2Ofs_f`) to a floor of `-1` so the strip always reaches the
+  right edge. ~1px pan freeze over the last few px of ship travel; both int and float
+  clamped so the smoothed replay agrees. Applied after `mapXOfs` is derived (near layer
+  keeps its own `-1` floor independently). The near map is 14
+  tiles (336px) but the window is only 299px and the compositor crops the first 24px,
+  so ~1 tile stayed permanently off the left. `mainint.c`'s parallax block keeps the
+  original coupled 4:2:1 ratio (`mapX3Ofs = tempW`, `mapX2Ofs = (tempW-17)*2/3`,
+  `mapXOfs = mapX2Ofs/2`) driven by a shared float `w_f`; ON reshapes `w_f` so a strafe
+  sweeps *every* layer across its full width. Bound ground enemies ride
+  `mapXOfs`/`mapX2Ofs`/`oldMapX3Ofs` via `tempMapXOfs` and stay glued (they slide much
+  further now — intentional).
+- ON pans the NEAR layer FLUSH at both extremes (0 px of map off either edge at the
+  walls). `mapXOfs` sweeps `36` (far-left: plane-px 0 at the window's left edge =
+  `PLAYFIELD_LEFT - PLAYFIELD_X_SHIFT`) down by the slack (`336 - 299 = 37`) to `-1`
+  (far-right: the map's last px at the window's right edge). Crucially it's normalized
+  over the ship's ACTUAL travel `[SHIP_LEFT_MARGIN, PLAYFIELD_WIDTH-SHIP_RIGHT_MARGIN]`
+  = `[29,303]`, not the stock `[40,363]` u (which only reaches ~0.81 at the right wall
+  → `mapXOfs` stuck at ~2, i.e. the ~4px of map left off the right edge). `w_f` is
+  back-derived as `3*near + 17` so the mid/deep layers keep the coupled ratio and still
+  over-pan (`mapX3Ofs → 125`, `mapX2Ofs → 72` at far-left). At `mapXOfs == 36`,
+  `mapXPos == 12`, so the near layer's lone wrong-row boundary tile spans screen
+  `[0,24)`, entirely inside the crop margin — no visible seam.
 - Over-pan out-of-bounds guard. The mid/deep layers now pan far enough that their
   14-tile read window runs *before* the start of their map array at the top-of-scroll
   edge (`mapXbpPos` goes to −2/−4). `mainmap` is the first struct member, so that read
