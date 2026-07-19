@@ -323,12 +323,26 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 	}
 }
 
+// Extra Parallax widens the horizontal pan (mainint.c parallax_span) enough that a layer's
+// 14-tile read window can run before the start of its map array at the top-of-scroll edge -- the
+// over-pan that intentionally uncovers the map's side edges. Clamp the read pointer to the map
+// base so that over-pan reads row 0 (repeat) instead of dereferencing tile pointers from out of
+// bounds. `base` is &megaDataN.mainmap[0][0]; the draw loops only advance the pointer downward
+// (higher rows), so clamping the initial (lowest) pointer covers every row drawn this call.
+// Gated on extraParallax: with the feature off the offsets stay in stock range and this is a
+// no-op, preserving the original (including its harmless 1-element edge read) byte-for-byte.
+static Uint8 **bg_clamp_map(Uint8 **map, Uint8 **base)
+{
+	return (extraParallax && map < base) ? base : map;
+}
+
 void draw_background_1(SDL_Surface *surface)
 {
 	SDL_FillRect(surface, NULL, 0);
 
 	const int tile_count = BG_TILE_COUNT;
 	Uint8** map = (Uint8**)mapYPos + mapXbpPos - tile_count;
+	map = bg_clamp_map(map, (Uint8**)&megaData1.mainmap[0][0]);
 
 	bg_update_scroll_delta(1, (int)mapY, (int)backPos);
 
@@ -359,6 +373,7 @@ void draw_background_2(SDL_Surface *surface)
 		int x = (smoothies[1] ? mapXPos : mapX2Pos) + PLAYFIELD_X_SHIFT;
 
 		Uint8** map = (Uint8**)mapY2Pos + (smoothies[1] ? mapXbpPos : mapX2bpPos) - tile_count;
+		map = bg_clamp_map(map, (Uint8**)&megaData2.mainmap[0][0]);
 
 		bg_update_scroll_delta(2, (int)mapY2, (int)backPos2);
 
@@ -414,6 +429,7 @@ void draw_background_2_blend(SDL_Surface *surface)
 	
 	const int tile_count = BG_TILE_COUNT;
 	Uint8** map = (Uint8**)mapY2Pos + mapX2bpPos - tile_count;
+	map = bg_clamp_map(map, (Uint8**)&megaData2.mainmap[0][0]);
 
 	bg_update_scroll_delta(2, (int)mapY2, (int)backPos2);
 
@@ -484,6 +500,7 @@ void draw_background_3(SDL_Surface *surface)
 
 	const int tile_count = BG_TILE_COUNT;
 	Uint8** map = (Uint8**)mapY3Pos + mapX3bpPos - tile_count;
+	map = bg_clamp_map(map, (Uint8**)&megaData3.mainmap[0][0]);
 
 	bg_update_scroll_delta(3, (int)mapY3, (int)backPos3);
 

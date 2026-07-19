@@ -7612,7 +7612,20 @@ void JE_mainGamePlayerFunctions(void)
 		u = 0.0f;
 	else if (u > 1.0f)
 		u = 1.0f;
-	tempW = floorf((1.0f - u) * (24 * 3));
+
+	// Extra Parallax (Enhancements menu): widen the parallax amplitude so a strafe sweeps ALL
+	// three layers across their full width, coupled in the original 4:2:1 ratio. The near layer
+	// then reaches ~36 at far-left (plane-px 0 flush to the window edge = the previously-hidden
+	// left tile fully in view); the mid/deep layers pan proportionally further -- far enough to run
+	// PAST their own map edges and uncover black / mismatched tiles at the extremes. That over-pan
+	// is intentional; draw_background_* clamps the tile pointer to the map base so it can never read
+	// out of bounds (edges repeat/blacken instead of crashing). 125 is the max that keeps the NEAR
+	// layer itself seam-free (its wrong-row tile stays inside the 24px crop margin); raise it for a
+	// terrain seam too. OFF selects the exact original span 24*3 = 72 (near capped at 18, left tile
+	// never came in) and disables the clamp, so the whole feature is byte-identical to stock.
+	// notes.md §Sub-pixel parallax.
+	const float parallax_span = extraParallax ? 125.0f : (float)(24 * 3);
+	tempW = floorf((1.0f - u) * parallax_span);
 	mapX3Ofs = tempW;
 	mapX3Pos = mapX3Ofs % 24;
 	mapX3bpPos = 1 - (mapX3Ofs / 24);
@@ -7623,7 +7636,7 @@ void JE_mainGamePlayerFunctions(void)
 
 	oldMapXOfs = mapXOfs;
 	oldMapXOfs_f = mapXOfs_f;  // both still hold the PREVIOUS tick's value here (updated below)
-	mapXOfs    = mapX2Ofs / 2;
+	mapXOfs    = mapX2Ofs / 2;  // near layer rides half the mid layer -- original coupled ratio, now at the wider span
 	mapXPos    = mapXOfs % 24;
 	mapXbpPos  = 1 - (mapXOfs / 24);
 
@@ -7638,7 +7651,7 @@ void JE_mainGamePlayerFunctions(void)
 	// layer's horizontal pan by the FLOAT per-tick delta of these (backgrnd.c), so a slow
 	// parallax glides sub-pixel-smooth instead of stepping a whole pixel every few ticks,
 	// while staying on the same interpolation timeline as the enemies anchored to it.
-	const float w_f = (1.0f - u) * (24.0f * 3.0f);
+	const float w_f = (1.0f - u) * parallax_span;
 	mapX3Ofs_f = w_f;
 	mapX2Ofs_f = ((w_f - 17.0f) * 2.0f) / 3.0f;
 	mapXOfs_f  = mapX2Ofs_f / 2.0f;
