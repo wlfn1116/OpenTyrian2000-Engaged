@@ -102,6 +102,31 @@ passes and two buffers:
   (`bg_layer_dx`/`bg_layer_frac`). Rows are replayed at recorded x plus
   `(frac - dx*inv)`; float endpoints make the pan continuous across tick
   boundaries while still tracking the ticks enemies anchor to.
+- Parallax amplitude (all layers) — gated by the **Extra Parallax** toggle
+  (Enhancements menu, `extraParallax` in config, below Debug Mode). OFF selects
+  `parallax_span = 24*3 = 72` and makes `bg_clamp_map` a no-op, so the parallax +
+  draw path is byte-identical to stock. ON selects span `125` (below). The near map
+  is 14 tiles (336px) but the window is only 299px and the compositor crops the first
+  24px, so ~1 tile stayed permanently off the left. `mainint.c`'s parallax block keeps
+  the original coupled 4:2:1 ratio (`mapX3Ofs = tempW`, `mapX2Ofs = (tempW-17)*2/3`,
+  `mapXOfs = mapX2Ofs/2`) and, when ON, widens the shared span from 72 to 125, so a
+  strafe sweeps *every* layer across its full width. At far-left the near layer
+  reaches `mapXOfs == 36` (plane-px 0 flush to the window's left edge = the full left
+  tile); the mid/deep layers pan proportionally further (`mapX2Ofs → 72`, `mapX3Ofs
+  → 125`). Bound ground enemies ride `mapXOfs`/`mapX2Ofs`/`oldMapX3Ofs` via
+  `tempMapXOfs` and stay glued (they slide much further now — intentional).
+- 125 is the largest span that keeps the NEAR layer itself seam-free: at `mapXOfs ==
+  36`, `mapXPos == 12`, so its lone wrong-row boundary tile spans screen `[0,24)`,
+  entirely inside the crop margin. Raise the span past 125 for a terrain seam too.
+- Over-pan out-of-bounds guard. The mid/deep layers now pan far enough that their
+  14-tile read window runs *before* the start of their map array at the top-of-scroll
+  edge (`mapXbpPos` goes to −2/−4). `mainmap` is the first struct member, so that read
+  would dereference tile pointers from adjacent globals — UB, and a crash risk on the
+  console ports. `draw_background_{1,2,3}` therefore clamp the initial (lowest) read
+  pointer to `&megaDataN.mainmap[0][0]` (`bg_clamp_map`); the draw loops only advance
+  downward, so one clamp covers every row. Result: the intended "uncovered edges" show
+  repeated row-0 / black tiles instead of crashing. Stock already sat at layer 3's
+  in-bounds limit (72 vs safe 71), which is why widening *requires* this clamp.
 - The legacy z-order can put a layer and its bound enemies on opposite sides of
   `JE_mainGamePlayerFunctions`, which also recalculates horizontal parallax. The
   entity may therefore carry the previous anchor while its layer carries the new

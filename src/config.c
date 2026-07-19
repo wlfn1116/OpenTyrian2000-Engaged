@@ -218,6 +218,11 @@ int bossBarTwoMode = BOSS_BAR_TWO_STACKED;
 /* When off: debug menu and debug level select hidden; buy/sell and pause menus
    keep their stock layout. */
 bool debugMode     = true;
+/* Wider horizontal background parallax: a strafe sweeps all three layers across their full map
+   width (revealing the ~1 tile normally hidden off the left) instead of the narrow stock sway.
+   Off restores the exact original amplitude. Read as the parallax_span selector in mainint.c and
+   the OOB clamp gate in backgrnd.c (bg_clamp_map). Off by default (stock behavior). */
+bool extraParallax = false;
 /* Thin health bar near an enemy once damaged (draw_enemy_health_bars in tyrian2.c). */
 bool enemyBars       = true;
 int enemyBarLayout   = ENEMY_BAR_HORIZONTAL;
@@ -452,6 +457,10 @@ bool load_opentyrian_config(void)
 		int extra_sparks_enabled = extraSparks ? 1 : 0;
 		config_get_int_option(section, "extra_sparks", &extra_sparks_enabled);
 		extraSparks = (extra_sparks_enabled != 0);
+
+		int extra_parallax_enabled = extraParallax ? 1 : 0;
+		config_get_int_option(section, "extra_parallax", &extra_parallax_enabled);
+		extraParallax = (extra_parallax_enabled != 0);
 
 		// Music device (OPL3 / FluidSynth / Native MIDI) + SoundFont path. The
 		// MIDI devices only take effect in a WITH_MIDI build; otherwise init_audio()
@@ -695,6 +704,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "enemy_bar_opacity", enemyBarOpacity);
 	config_set_int_option(section, "smooth_motion", smoothMotion ? 1 : 0);
 	config_set_int_option(section, "extra_sparks", extraSparks ? 1 : 0);
+	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)
