@@ -892,6 +892,16 @@ static int endlessEffectiveDepth(void)
 	return endlessRunDepth * endlessDifficultyRampPercent() * 5 / 400;
 }
 
+// The current zone as the difficulty ramp sees it: the real zone (endlessRunDepth + 1) on NORMAL,
+// advanced on harder difficulties and held back on easier ones (same rampPercent as every other
+// enemy lever). The player-facing "zone N" thresholds -- the extra-shot tide onset, the contact-
+// damage ramp, and the course-danger ramp -- are all expressed against THIS, so harder modes reach
+// each one sooner and easier modes later (notes.md §Difficulty ramp).
+static int endlessDifficultyZone(void)
+{
+	return 1 + endlessRunDepth * endlessDifficultyRampPercent() / 100;
+}
+
 // Ordinary-enemy HP multiplier (100 = normal): +4% per (effective) level; FORTIFIED +120%
 // (2.2x HP, clearly felt); FRAGILE -50%.
 int endlessArmorPercent(void)
@@ -998,14 +1008,17 @@ int endlessShotDamagePercent(void)
 // this single coefficient, staying 0 through the early hump (notes.md §Endless).
 
 #define ENDLESS_TIDE_START      35   // effective zone the tide begins (intensity is ~capped by here)
-// Enemy "rising tide" of EXTRA shots per volley (see endlessExtraEnemyShots). These define the
-// NORMAL-difficulty baseline: ENDLESS_TIDE_SHOT_ADD shots at zone ENDLESS_TIDE_SHOT_ANCHOR, plus
-// another ADD for every ENDLESS_TIDE_SHOT_STEP zones after. Harder/easier difficulties reach each
-// step sooner/later (scaled by the same rampPercent as the other enemy levers).
-#define ENDLESS_TIDE_SHOT_ANCHOR 100  // ZONE (on NORMAL) at which the tide adds ENDLESS_TIDE_SHOT_ADD shots
-#define ENDLESS_TIDE_SHOT_ADD    5    // shots added per step (and the count at the anchor zone on NORMAL)
-#define ENDLESS_TIDE_SHOT_STEP   33   // +ADD shots for every this-many zones past the anchor (on NORMAL)
-#define ENDLESS_TIDE_SHOT_MAX    50   // ceiling on added shots/volley (the enemy-shot pool caps total too)
+// Enemy "rising tide" of EXTRA shots per volley (see endlessExtraEnemyShots). NORMAL-difficulty
+// baseline: the FIRST extra shot at ENDLESS_TIDE_SHOT_ONSET (zone 25), rising evenly to
+// ENDLESS_TIDE_SHOT_ANCHOR_ADD (3) by the anchor zone (100), then +1 shot every ENDLESS_TIDE_SHOT_STEP
+// zones with NO hard cap -- so 5 by zone 150, then climbing indefinitely (only the MAX sanity backstop
+// and the enemy-shot pool bound it). Harder/easier difficulties travel this same curve sooner/later
+// (scaled by the same rampPercent as the other enemy levers).
+#define ENDLESS_TIDE_SHOT_ONSET      25   // ZONE (on NORMAL) the FIRST extra shot appears -- start of the early ramp
+#define ENDLESS_TIDE_SHOT_ANCHOR     100  // ZONE (on NORMAL) the early ramp reaches ENDLESS_TIDE_SHOT_ANCHOR_ADD
+#define ENDLESS_TIDE_SHOT_ANCHOR_ADD 3    // extra shots/volley at the anchor zone (on NORMAL)
+#define ENDLESS_TIDE_SHOT_STEP       25   // past the anchor: +1 extra shot every this-many zones (so 5 by zone 150, then more)
+#define ENDLESS_TIDE_SHOT_MAX        50   // sanity ceiling on added shots/volley (the enemy-shot pool caps total too)
 
 // The single tide coefficient (the "knob"): 0 through the early game, then +1 per effective zone,
 // uncapped. Everything the tide drives is derived from this.
@@ -1017,24 +1030,63 @@ int endlessTideLevel(void)
 	return (t > 0) ? t : 0;
 }
 
-// Extra enemy shots per firing volley: +ADD at the anchor zone, +ADD again every STEP zones,
-// capped at MAX, with the zone difficulty-scaled like every other lever. Uses endlessRunDepth
-// directly, not the shared endlessTideLevel(). tyrian2.c fans these out around the weapon's
-// own shots; the enemy-shot pool (ENEMY_SHOT_MAX) still hard-caps what reaches the screen.
+// Extra enemy shots per firing volley, difficulty-scaled like every other lever (endlessDifficultyZone).
+// Two segments meeting at the anchor (zone 100 on NORMAL): an EARLY ramp -- first extra shot at the
+// ONSET zone (25), rising evenly to ANCHOR_ADD (3) by the anchor -- then a steady +1 shot every STEP
+// zones with NO hard cap (5 by zone 150 on NORMAL, then climbing). tyrian2.c fans these out around the
+// weapon's own shots; the enemy-shot pool (ENEMY_SHOT_MAX) still hard-caps what reaches the screen
+// (notes.md §Difficulty ramp).
 int endlessExtraEnemyShots(void)
 {
 	if (!endlessMode)
 		return 0;
-	// Difficulty-scaled zone: == the real zone (endlessRunDepth+1) on NORMAL (ramp 100), advanced on
-	// harder difficulties and held back on easier ones -- same rampPercent as the other enemy levers.
-	const int zone     = 1 + endlessRunDepth * endlessDifficultyRampPercent() / 100;
-	const int zeroZone = ENDLESS_TIDE_SHOT_ANCHOR - ENDLESS_TIDE_SHOT_STEP;  // where the ramp crosses 0 (= 67)
-	if (zone <= zeroZone)
-		return 0;
-	int extra = ENDLESS_TIDE_SHOT_ADD * (zone - zeroZone) / ENDLESS_TIDE_SHOT_STEP;
+	const int zone = endlessDifficultyZone();
+
+	int extra;
+	if (zone >= ENDLESS_TIDE_SHOT_ANCHOR)
+	{
+		// Anchor onward: ANCHOR_ADD at the anchor, then +1 every STEP zones -- no hard cap beyond the
+		// MAX sanity backstop (3 by zone 100, 5 by zone 150 on NORMAL, then climbing without bound).
+		extra = ENDLESS_TIDE_SHOT_ANCHOR_ADD + (zone - ENDLESS_TIDE_SHOT_ANCHOR) / ENDLESS_TIDE_SHOT_STEP;
+	}
+	else if (zone >= ENDLESS_TIDE_SHOT_ONSET)
+	{
+		// Early ramp: 1 shot at the onset zone, rising evenly to ANCHOR_ADD by the anchor.
+		extra = 1 + (ENDLESS_TIDE_SHOT_ANCHOR_ADD - 1) * (zone - ENDLESS_TIDE_SHOT_ONSET)
+		              / (ENDLESS_TIDE_SHOT_ANCHOR - ENDLESS_TIDE_SHOT_ONSET);
+	}
+	else
+	{
+		extra = 0;
+	}
 	if (extra > ENDLESS_TIDE_SHOT_MAX)
 		extra = ENDLESS_TIDE_SHOT_MAX;
 	return extra;
+}
+
+// --- Contact (ramming) damage ramp -------------------------------------------------
+// The damage the PLAYER takes from colliding with an enemy climbs deep in a run, so trading hull for
+// a ram stops being cheap: no bonus until the START zone (35), then linear to +ANCHOR_PCT (150%) by
+// the anchor zone (100), the SAME slope onward, capped at +MAX_PCT (500%). Only the player's RECEIVED
+// contact damage scales -- the damage the collision deals to the enemy is left untouched (mainint.c).
+// Difficulty-scaled like every other lever (notes.md §Difficulty ramp).
+#define ENDLESS_CONTACT_START      35   // zone the contact-damage climb begins (no bonus at/below)
+#define ENDLESS_CONTACT_ANCHOR     100  // zone at which the bonus reaches ENDLESS_CONTACT_ANCHOR_PCT
+#define ENDLESS_CONTACT_ANCHOR_PCT 150  // +this% player contact damage at the anchor zone
+#define ENDLESS_CONTACT_MAX_PCT    500  // ceiling on the added player contact-damage percent
+
+int endlessContactDamagePercent(void)
+{
+	if (!endlessMode)
+		return 100;
+	const int zone = endlessDifficultyZone();
+	if (zone <= ENDLESS_CONTACT_START)
+		return 100;
+	int bonus = ENDLESS_CONTACT_ANCHOR_PCT * (zone - ENDLESS_CONTACT_START)
+	              / (ENDLESS_CONTACT_ANCHOR - ENDLESS_CONTACT_START);
+	if (bonus > ENDLESS_CONTACT_MAX_PCT)
+		bonus = ENDLESS_CONTACT_MAX_PCT;
+	return 100 + bonus;
 }
 
 // --- Elite enemies --------------------------------------------------------------
@@ -4094,6 +4146,58 @@ static Uint64 endlessMakeBoonCombo(void)
 	return combo;
 }
 
+// --- Deep-run course-danger escalation ---------------------------------------------
+// From ENDLESS_DANGER_RAMP_START (zone 40) the Chart-a-Course rolls tilt steadily against the player:
+// busier multi-danger combos, higher danger ratings, more frequent rare/super-rare dangerous sectors,
+// and more danger-only (Gauntlet/Ambush) visits with fewer calm/boon/jackpot ones. The tilt keeps
+// climbing the whole way from zone 40 to ENDLESS_DANGER_RAMP_FULL (zone 250) and CAPS there: about
+// TWICE as dangerous by the mid-point (zone 100), about SIX times by the cap. It's a TWO-STAGE ramp --
+// a gentle first stage to the mid-point, then a steeper second stage to the cap -- so the deep end can
+// reach ~6x by zone 250 while the zone<=100 range stays byte-for-byte the approved ~2x tuning. Even at
+// the cap the player never loses the last shot at a calm sector / boon / jackpot: course 0 stays clean
+// unless Gauntlet/Ambush fires, and BOTH of those are hard-capped WELL below certainty (the CAP_PCT
+// knobs -> a calm route survives ~46% of visits even at the deepest cap), while the boon/jackpot rolls
+// only thin, never vanish. So most of the deep-end escalation past the mid-point lands on the UNCAPPED
+// levers -- rarer boons/jackpots and more frequent rare/super-rare injections -- not on making danger a
+// sure thing. Difficulty-scaled like every other lever, so harder modes ramp sooner (notes.md §Course
+// generation & danger labels).
+#define ENDLESS_DANGER_RAMP_START 40   // zone the tilt begins (no escalation at/below)
+#define ENDLESS_DANGER_RAMP_MID   100  // zone the tilt reaches its "~2x" tuning (scale == ENDLESS_DANGER_RAMP_MID_SCALE)
+#define ENDLESS_DANGER_RAMP_FULL  250  // zone the tilt caps at its "~6x" tuning (scale == ENDLESS_DANGER_RAMP_FULL_SCALE)
+#define ENDLESS_DANGER_RAMP_MID_SCALE  100  // scale at the mid-point -- the approved ~2x point; keep at 100 so zone<=MID is unchanged
+#define ENDLESS_DANGER_RAMP_FULL_SCALE 500  // scale at the cap -- the deep-end "~6x" (only the uncapped levers read this far)
+#define ENDLESS_DANGER_GAUNTLET_CAP_PCT 45  // ceiling on the all-hostile Gauntlet chance -- keeps a calm route always possible
+#define ENDLESS_DANGER_AMBUSH_CAP_PCT   15  // ceiling on the one-forced-danger Ambush chance
+
+// The tilt SCALE (NOT a percentage): 0 at START, MID_SCALE (100) at MID, then a steeper stage up to
+// FULL_SCALE at FULL, capped. zone<=MID reproduces the earlier single-stage ramp exactly (MID_SCALE==100
+// over START..MID); only the second stage is new.
+static int endlessDangerRamp(void)
+{
+	if (!endlessMode)
+		return 0;
+	const int zone = endlessDifficultyZone();
+	if (zone <= ENDLESS_DANGER_RAMP_START)
+		return 0;
+	if (zone <= ENDLESS_DANGER_RAMP_MID)  // first stage: 0 -> MID_SCALE across START..MID (unchanged)
+		return ENDLESS_DANGER_RAMP_MID_SCALE * (zone - ENDLESS_DANGER_RAMP_START)
+		         / (ENDLESS_DANGER_RAMP_MID - ENDLESS_DANGER_RAMP_START);
+	// Second stage: MID_SCALE -> FULL_SCALE across MID..FULL, then held at the cap.
+	const int s = ENDLESS_DANGER_RAMP_MID_SCALE
+	                + (ENDLESS_DANGER_RAMP_FULL_SCALE - ENDLESS_DANGER_RAMP_MID_SCALE) * (zone - ENDLESS_DANGER_RAMP_MID)
+	                    / (ENDLESS_DANGER_RAMP_FULL - ENDLESS_DANGER_RAMP_MID);
+	return (s > ENDLESS_DANGER_RAMP_FULL_SCALE) ? ENDLESS_DANGER_RAMP_FULL_SCALE : s;
+}
+
+// Shrink a "1 in N" rare-danger divisor with the ramp (toward N/2 at the mid-point, ~N/6 at the cap),
+// so rare / super-rare dangerous sectors show up ~2x as often by zone 100 and ~6x by zone 250.
+// Floored at 1 (never a divide-by-zero).
+static int endlessDangerRareDiv(int base)
+{
+	const int d = base * 100 / (100 + endlessDangerRamp());
+	return (d < 1) ? 1 : d;
+}
+
 void endlessGenerateCourses(void)
 {
 	endlessCourseCnt = 0;
@@ -4167,13 +4271,24 @@ void endlessGenerateCourses(void)
 		// SLIPSTREAM stays out: Overclock (in the pool) already carries the same +70% scroll, so a
 		// random pairing would be a redundant bit. Slipstream sectors come from the named-theme shuffle.
 	};
+	const int dangerRamp = endlessDangerRamp();  // 0 (z40) -> 100 (z100) -> 350 (z250 cap) -- deep-run danger tilt
 	for (int c = 1; c < endlessCourseCnt; ++c)
 	{
-		if (endlessRand() % 2 != 0)   // ~half stay curated named themes
+		// Deep runs push more courses off the (often single-danger) curated themes onto busy random
+		// multi-danger combos: the ~50% base share climbs to ~75% by the mid-point, capped at 85% so a
+		// few legible curated themes always survive (the diverse-choice guarantee leans on them).
+		int comboShare = 50 + dangerRamp * 25 / 100;
+		if (comboShare > 85)
+			comboShare = 85;
+		if (endlessRand() % 100 >= comboShare)
 			continue;
 		// Bit-count weights leaning heavier on triples/quads than before, so busy multi-danger sectors
-		// show up as often as clean singles (avg ~2.8 bits, up from ~2.3).
-		int want = 1 + (endlessRand() % 100 < 80) + (endlessRand() % 100 < 55) + (endlessRand() % 100 < 30) + (endlessRand() % 100 < 12);
+		// show up as often as clean singles (avg ~2.8 bits, up from ~2.3); the danger ramp lifts every
+		// threshold, so deep sectors pile on more simultaneous dangers (avg ~4 bits at the cap).
+		int want = 1 + (endlessRand() % 100 < 80 + dangerRamp * 15 / 100)
+		             + (endlessRand() % 100 < 55 + dangerRamp * 35 / 100)
+		             + (endlessRand() % 100 < 30 + dangerRamp * 40 / 100)
+		             + (endlessRand() % 100 < 12 + dangerRamp * 38 / 100);
 		if (want > (int)COUNTOF(combinable))
 			want = (int)COUNTOF(combinable);
 		int ord[COUNTOF(combinable)];
@@ -4192,8 +4307,9 @@ void endlessGenerateCourses(void)
 
 	// A boon course is uncommon (~1 in 3 visits replaces a hostile one): most draw a named boon theme
 	// (single or curated combo), but ~40% instead roll a fresh emergent boon pair/triple, so
-	// pure-good sectors vary beyond the named set too.
-	if (endlessCourseCnt > 1 && (endlessRand() % 3) == 0)
+	// pure-good sectors vary beyond the named set too. The danger ramp thins boon courses deep (~1/3
+	// early down to ~1/6 at the cap), but they never vanish.
+	if (endlessCourseCnt > 1 && (endlessRand() % (3 + dangerRamp * 3 / 100)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		if (endlessRand() % 100 < 40)
@@ -4227,15 +4343,22 @@ void endlessGenerateCourses(void)
 				continue;
 			if (endlessCourseMod[c] & ENDLESS_BOON_MASK) // already a gambit / carries a boon
 				continue;
-			if (endlessRand() % 100 >= 35)             // ~35% of eligible courses gain a boon
+			int gambitPct = 35 - dangerRamp * 20 / 100;  // ~35% gain a boon early -> ~15% by the mid -> 5% floor deep
+			if (gambitPct < 5)
+				gambitPct = 5;
+			if (endlessRand() % 100 >= gambitPct)  // fewer mitigations grafted onto hostiles as the run deepens
 				continue;
 			endlessCourseMod[c] |= endlessPickMixBoon(h);
 		}
 	}
 
+	// Every rare/super-rare danger injection below routes its "1 in N" divisor through
+	// endlessDangerRareDiv, so from zone 40 they all grow steadily more frequent (about 2x by zone
+	// 100). The base rarities (the comments' "~1 in N") are the zone-<=40 values.
+	//
 	// Homing sectors are the GENTLEST homing tier (enemies barely lean toward you, no ram) -- rare,
 	// ~1 in 25 visits one hostile course becomes a random theme from the homing pool.
-	if (endlessCourseCnt > 1 && (endlessRand() % 25) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(25)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessHomingThemes[endlessRand() % COUNTOF(endlessHomingThemes)].mods;
@@ -4244,21 +4367,21 @@ void endlessGenerateCourses(void)
 	// Kamikaze sectors are now the MODERATE homing tier (strength 3, no ram -- the brutal rammer moved
 	// to the RAMPAGE gamble). Still rare -- ~1 in 50 visits one hostile course becomes a kamikaze theme.
 	// Rolled after homing so that, on a clash on one slot, the harder kamikaze wins it.
-	if (endlessCourseCnt > 1 && (endlessRand() % 50) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(50)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessKamikazeThemes[endlessRand() % COUNTOF(endlessKamikazeThemes)].mods;
 	}
 
 	// Warp Speed (much faster scroll -- a rare scroll THREAT: the level hurtles at you) -- ~1 in 12 visits.
-	if (endlessCourseCnt > 1 && (endlessRand() % 12) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(12)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = ENDLESS_MOD_WARP;
 	}
 
 	// Overload (Overclock cranked way up, a rare brutal sector) -- ~1 in 14 visits.
-	if (endlessCourseCnt > 1 && (endlessRand() % 14) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(14)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessOverloadThemes[endlessRand() % COUNTOF(endlessOverloadThemes)].mods;
@@ -4267,7 +4390,7 @@ void endlessGenerateCourses(void)
 	// Evil Turbodrive / Overdrive (a curse that turns your own kill streak against you: jammed
 	// guns, and for Evil Overdrive weaker shots too) -- rare, ~1 in 16 visits one hostile course
 	// becomes an evil-mirror sector drawn from its own pool.
-	if (endlessCourseCnt > 1 && (endlessRand() % 16) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(16)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessEvilThemes[endlessRand() % COUNTOF(endlessEvilThemes)].mods;
@@ -4275,7 +4398,7 @@ void endlessGenerateCourses(void)
 
 	// Reactor Redline (the gamble "Overheat" as a wild sector: kills quicken your guns, but the
 	// redlined core cooks your hull) -- super rare, ~1 in 60 visits one hostile course goes redline.
-	if (endlessCourseCnt > 1 && (endlessRand() % 60) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(60)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessRedlineThemes[endlessRand() % COUNTOF(endlessRedlineThemes)].mods;
@@ -4285,7 +4408,7 @@ void endlessGenerateCourses(void)
 	// hostile course becomes a heavy-and-slow nightmare from its own pool. Brutal, but always flyable
 	// (endlessGravityDrift slows the pull with the ship). SLUGGISH stays out of the combinable pool, so
 	// this injection is the ONLY place the sluggish+gravity pairing appears.
-	if (endlessCourseCnt > 1 && (endlessRand() % 30) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(30)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessSluggishThemes[endlessRand() % COUNTOF(endlessSluggishThemes)].mods;
@@ -4294,7 +4417,7 @@ void endlessGenerateCourses(void)
 	// Apex Swarm (every enemy elite) is a rare, nasty sector -- ~1 in 40 visits it takes over one
 	// hostile course, drawn from the Apex-tier rare themes (bare Apex, or Apex + an extra danger).
 	// Rolled late so it can override a boon slot.
-	if (endlessCourseCnt > 1 && (endlessRand() % 40) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(40)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessPickThemeMods(endlessRareThemes, COUNTOF(endlessRareThemes), ENDLESS_MOD_APEX, ENDLESS_MOD_LEGION);
@@ -4302,7 +4425,7 @@ void endlessGenerateCourses(void)
 
 	// Legion (every enemy a CHAMPION) is rarer still -- among the deadliest sectors; drawn from
 	// the Legion-tier rare themes.
-	if (endlessCourseCnt > 1 && (endlessRand() % 70) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(70)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessPickThemeMods(endlessRareThemes, COUNTOF(endlessRareThemes), ENDLESS_MOD_LEGION, 0);
@@ -4311,7 +4434,7 @@ void endlessGenerateCourses(void)
 	// Cataclysm: an extreme multi-danger nightmare (no elite tier -- just everything at once), a
 	// rare pure-hostile apex -- ~1 in 45 visits. Drawn from the rare themes carrying neither the
 	// Apex nor Legion bit (the 5+-danger pure combos).
-	if (endlessCourseCnt > 1 && (endlessRand() % 45) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(45)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessPickThemeMods(endlessRareThemes, COUNTOF(endlessRareThemes), 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION);
@@ -4321,7 +4444,7 @@ void endlessGenerateCourses(void)
 	// visits one hostile course becomes a sabotage sector from its own pool. The nastiest handicap in
 	// the game, so it's the rarest; rear guns / sidekicks / specials carry the fight. Rolled last of the
 	// danger injections so it claims the slot when it fires.
-	if (endlessCourseCnt > 1 && (endlessRand() % 55) == 0)
+	if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDiv(55)) == 0)
 	{
 		const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
 		endlessCourseMod[slot] = endlessDeadgenThemes[endlessRand() % COUNTOF(endlessDeadgenThemes)].mods;
@@ -4359,10 +4482,19 @@ void endlessGenerateCourses(void)
 	// --- Rare whole-visit flavors: Jackpot / Gauntlet / Ambush (mutually exclusive) ----------
 	// Jackpot (~1/25) all boons; Ambush (~1/20) one forced dangerous sector; Gauntlet (~1/7)
 	// all hostile. All three dice roll up front UNCONDITIONALLY so the seed stream stays
-	// aligned; precedence Jackpot > Ambush > Gauntlet; none fire at depth 0.
-	const bool jackpotRoll  = ((endlessRand() % 25) == 0);
-	const bool gauntletRoll = ((endlessRand() % 7)  == 0);
-	const bool ambushRoll   = ((endlessRand() % 20) == 0);
+	// aligned; precedence Jackpot > Ambush > Gauntlet; none fire at depth 0. The danger ramp tilts
+	// the odds deep: the danger-only Gauntlet/Ambush grow more common while the all-boon Jackpot thins.
+	// Gauntlet/Ambush use a percentage form HARD-CAPPED below certainty (the CAP_PCT knobs), so even at
+	// the ramp cap a large share of visits still offer a calm route -- danger is never a sure thing.
+	int gauntletPct = 14 + dangerRamp * 11 / 100;  // ~1/7 early -> 25% by the mid -> capped
+	if (gauntletPct > ENDLESS_DANGER_GAUNTLET_CAP_PCT)
+		gauntletPct = ENDLESS_DANGER_GAUNTLET_CAP_PCT;
+	int ambushPct = 5 + dangerRamp * 4 / 100;      // ~1/20 early -> ~9% by the mid -> capped
+	if (ambushPct > ENDLESS_DANGER_AMBUSH_CAP_PCT)
+		ambushPct = ENDLESS_DANGER_AMBUSH_CAP_PCT;
+	const bool jackpotRoll  = ((endlessRand() % (25 + dangerRamp * 25 / 100)) == 0);  // 1/25 -> 1/50 (mid) -> ~1/112 (cap)
+	const bool gauntletRoll = ((int)(endlessRand() % 100) < gauntletPct);
+	const bool ambushRoll   = ((int)(endlessRand() % 100) < ambushPct);
 	const bool doJackpot  = jackpotRoll && (endlessRunDepth > 0);
 	const bool doAmbush   = !doJackpot && ambushRoll && (endlessRunDepth > 0);
 	const bool doGauntlet = !doJackpot && !doAmbush && gauntletRoll && (endlessRunDepth > 0);

@@ -336,6 +336,7 @@ int endlessBossHpMult(void);        // boss HP divisor (1 = unchanged); N = N ti
 int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchanged; lower = fires faster)
 int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
 int endlessShotDamagePercent(void); // enemy shot-damage scale (100 = unchanged; higher = hits harder)
+int endlessContactDamagePercent(void); // PLAYER-side contact/ramming damage scale (100 = normal); ramps from zone 35 to +150% by zone 100, capped +500%; only the damage the player RECEIVES (mainint.c collision), never the enemy's
 
 // Rising-tide "quantity" scaling: past where the intensity levers above cap out (~zone 100), the
 // tide adds the one axis with no engine ceiling -- more enemy shots per volley and a rising share
