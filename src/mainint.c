@@ -8101,11 +8101,14 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 					int playerHit = armorleft;
 					if (endlessMode && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
-					{
-						playerHit = armorleft * 3 / 2;
-						if (playerHit > 255)
-							playerHit = 255;
-					}
+						playerHit = playerHit * 3 / 2;
+					// Endless depth ramp: the contact damage the PLAYER receives climbs past the mid-game
+					// (+150% by zone 100, up to +500%). Scales only playerHit -- damage_to_enemy above keeps
+					// the unscaled collision damage, so enemies aren't ground down any faster by ramming.
+					if (endlessMode)
+						playerHit = playerHit * endlessContactDamagePercent() / 100;
+					if (playerHit > 255)
+						playerHit = 255;
 					JE_playerDamage((JE_byte)playerHit, this_player);
 
 					// player ship gets push-back from collision

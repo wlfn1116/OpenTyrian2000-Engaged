@@ -452,8 +452,24 @@ mutable `last`, so a Quit-Level retry replays the same track.
   cap, fire pinned at one tick). The tide adds the one axis with no engine
   ceiling — extra enemy shots per volley and a rising elite/champion share — from
   a single coefficient, starting at zone 35 so it never piles onto the intensity
-  ramp. Extra volley shots use `endlessRunDepth` directly, not the shared tide
-  level.
+  ramp (drives the elite share + shot-damage climb).
+- Extra volley shots (`endlessExtraEnemyShots`) run off the difficulty-scaled zone
+  (`endlessDifficultyZone` = real zone on NORMAL), not the tide coefficient. Two
+  segments meeting at the anchor (zone 100): an early ramp that adds the FIRST
+  extra shot at zone 25 and rises evenly to `ANCHOR_ADD` (3) by zone 100, then a
+  steady +1 shot every `STEP` (25) zones with NO hard cap — so 5 by zone 150 and
+  climbing indefinitely (only the `MAX` 50 sanity backstop and the `ENEMY_SHOT_MAX`
+  pool bound it). NORMAL: 1@z25, 3@z100, 5@z150, 7@z200, 9@z250… Harder/easier
+  difficulties travel the same curve sooner/later.
+- Contact-damage ramp (`endlessContactDamagePercent`): the collision/ram damage
+  the PLAYER receives scales up with depth — no bonus until zone 35, linear to
+  +150% by zone 100, same slope onward, capped +500% (~zone 252). Applied in the
+  `mainint.c` ram-collision path to `playerHit` ONLY; `damage_to_enemy` keeps the
+  unscaled value, so enemies aren't ground down any faster. Composes after the
+  RAMPAGE ×1.5, then the final byte clamps to 255. Difficulty-scaled off the same
+  `endlessDifficultyZone`. Base ram damage is small (`damageRate`, usually 2/tick),
+  so the effective per-tick hit steps 2→3→4→5 as the multiplier crosses 150/200/
+  250%.
 - Gravity (Gravity Well course): base plus per-zone ramp, tilted by the same
   difficulty factor, with an absolute cap that stays clear of the ship's top
   speed (`VT_VMAX`) so full throttle can always climb. The VT integrator scales
@@ -495,6 +511,26 @@ mutable `last`, so a Quit-Level retry replays the same track.
   dangerous sector; Gauntlet ~1/7: all hostile). All three dice are rolled up
   front unconditionally so the seed stream stays aligned; precedence Jackpot >
   Ambush > Gauntlet; none fire at depth 0.
+- Deep-run danger escalation (`endlessDangerRamp`, a SCALE — not a percent). It's a
+  TWO-STAGE ramp off `endlessDifficultyZone`: a gentle first stage 0→100 across
+  zones 40→100 (`MID_SCALE`, byte-for-byte the old single-stage ramp — zone≤100
+  unchanged), then a STEEPER second stage 100→500 across zones 100→250
+  (`FULL_SCALE`), capped. So it tilts the Chart-a-Course rolls ~2× harder by zone
+  100 and ~6× by zone 250, then holds. Levers (baseline → zone 100 → zone 250 cap):
+  widen share 50→75→85% (capped, so a few legible curated themes survive); bits avg
+  ~2.8→~4.05→5; boon-course roll 1/3→1/6→1/18; gambit boon-graft 35→15→5% (floored);
+  every rare/super-rare injection routes its "1 in N" through `endlessDangerRareDiv`
+  (~N/2 at mid, ~N/6 at cap — e.g. Apex 1/40→1/20→1/6, Deadgen 1/55→1/27→1/9);
+  Jackpot 1/25→1/50→~1/150. The two danger-only whole-visit flavors use a percentage
+  form HARD-CAPPED below certainty (`ENDLESS_DANGER_GAUNTLET_CAP_PCT` 45,
+  `..._AMBUSH_CAP_PCT` 15), and they SATURATE at those caps by ~zone 160-190 — so the
+  jump from ~5× to ~6× lands entirely on the uncapped levers (rarer boons/jackpots,
+  more frequent rare injections), NOT on the "no safe route" odds. Gauntlet 14→25→45%,
+  Ambush 5→9→15%; a calm route still survives ~46% of visits even at the deepest cap —
+  danger is never a sure thing. None of these change the endlessRand DRAW COUNT (only
+  thresholds/moduli), so the seed stream stays aligned; course 0 stays clean unless
+  Gauntlet/Ambush fires. Past zone 250 the course tilt is frozen at ~6×; the always-on
+  enemy levers (stats, extra shots, contact damage) keep climbing.
 - Sector variety is all combinations of the existing `endlessModTable` bits, so
   it needs no new bits/save bump: the danger score, monitor rows, tier/rank and
   payout are all mod-agnostic. Sources, in generation order: distinct named
