@@ -77,6 +77,11 @@ enum {
 // cost you the elite/champion bounty income, a built-in drawback, so neither adds clear-cash.
 #define ENDLESS_MOD_NOCHAMP    ((Uint64)1 << 37)  // no champions: any enemy that would be a champion spawns as an elite instead (boon)
 #define ENDLESS_MOD_NOELITE    ((Uint64)1 << 38)  // no elites OR champions: every enemy stays normal-tier (boon, the stronger of the pair)
+// The 100th-zone finale MARKER. It carries no mechanic of its own: it labels the sector "The End",
+// forces the END rank and the FINALITY danger word, and pays the finale's enormous bounty. The
+// actual dangers ride alongside it and are re-rolled for every milestone (endlessMakeTheEndMods),
+// so no two run-100 finishers are the same sector.
+#define ENDLESS_MOD_THEEND     ((Uint64)1 << 39)
 
 // The six kill-fire mods -- boons Turbodrive/Overdrive/Overblast, evil mirrors Backfire/Burnout/
 // Misfire -- a sector carries at most one (notes.md §Course generation & danger labels).

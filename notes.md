@@ -538,6 +538,51 @@ mutable `last`, so a Quit-Level retry replays the same track.
   charted) / `endlessMilestoneClearedAt` (a depth that WAS one) live at the top of
   `endless.c` with the other run-progress state, since the outpost needs them long
   before the course generator does.
+- A GRAND milestone always deals **"The End"**, and it is NOT a fixed bitset — only
+  its CORE is constant, the rest is re-rolled per milestone off the seeded stream,
+  so a run's zone-100 finisher differs from its zone-200 one and from every other
+  run's (80 variants, all reachable). `ENDLESS_THEEND_CORE` is the enemy at its
+  worst and nothing else: Fortified, Frenzy, Swift, Devastating, Enrage. What
+  varies (`endlessMakeTheEndMods`): the special-enemy tier (always one — Apex, or
+  Legion at 1-in-3), the scroll pace (none / Slipstream / Overclock / Overload /
+  Warp), and a coin apiece for Gravity, Topsy and Sluggish. Gravity+Sluggish can
+  both land — that's the Tar Pit pairing, brutal but always flyable, since
+  `endlessGravityDrift` scales the pull down in lock-step with the ship.
+  Deliberately excluded: the homing tiers, which turn a gun fight into a chase, and
+  the two handicaps that simply take a system away (Shieldless, Deadgen). Elite
+  Pack is out too — deep runs retire it as redundant
+  (`endlessFixRedundantElitePack`), which would rewrite the finale's bitset from
+  under it.
+- Everything that makes The End *the* End hangs off one marker bit,
+  `ENDLESS_MOD_THEEND` (bit 39), not off matching an exact combination — which is
+  precisely what lets the dangers vary. The marker carries no mechanic; no gameplay
+  lever reads it. It supplies: the name ("The End", special-cased at the top of
+  `endlessComboNameSalted`), the **END** rank (`endlessDangerRankLevel` returns 10,
+  off the letter scale — `endlessRankName[]` and game_menu.c's `endlessRankHue[]`
+  are both indexed by that level and MUST stay the same length), the **FINALITY**
+  danger word (a rung above APOCALYPSE in `endlessDangerTier`), and the bounty: its
+  `endlessModTable` reward is 150, so the finale pays ~25-31x base (≈570-710k at
+  zone 100). Because the danger score sums that same table, the marker also puts
+  the sector at 238-301 — far above the 95 ceiling `endlessMakeRankCombo` tops
+  S+++ courses out at — so it is always strictly the worst course on the slate and
+  the sort always puts it last. It counts as one of the slate's high-rung courses,
+  so the 2-and-3 split still holds, and it is pinned into slot 0 so every later
+  draw sees it in `used`.
+- Moving The End onto the marker left the Cataclysm sub-pool (the `endlessRareThemes`
+  rows carrying neither Apex nor Legion, dealt by the ~1/45 injection) without that
+  bitset, so three rows were added at its top: **Ruination** (56, S++ — the same
+  six-danger enemy wall plus a well that the old fixed The End used, so the
+  combination stays in the game), **Death Knell** (68) and **Black Sun** (73).
+  Those last two are S+++, and the only S+++ sectors an ORDINARY zone can be dealt
+  without an Apex/Legion tier — a rare shot at a genuine nightmare outside the
+  milestones. The sub-pool now spans 46-73 across 20 rows.
+- The marker's `word` in `endlessModTable` is **NULL**, meaning "label, not
+  mechanic": `endlessCourseModRows` and `endlessAutoBody` both skip NULL-word bits,
+  so the monitor's threat column and the help line list only the sector's real
+  dangers — 6-10 rows (11 when Overload/Overclock adds its display-only scroll
+  row), against a 16-row monitor. That is the point of the design:
+  the finale is read as a long wall of threats plus an off-scale rank, not as a
+  curated one-liner. (Any future label-only bit gets this behaviour for free.)
 - Each milestone CLASS is PINNED to its own track, so the two set-pieces stay
   distinct: `ENDLESS_MILESTONE_SONG_GRAND` 35 = "One Mustn't Fall" on every 100th
   zone, `ENDLESS_MILESTONE_SONG_PLAIN` 37 = "A Field for Mag" on the other 50th
