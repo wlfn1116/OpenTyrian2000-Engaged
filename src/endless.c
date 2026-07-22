@@ -242,6 +242,13 @@ static bool endlessMilestoneClearedAt(int depth)
 #define ENDLESS_MILESTONE_SONG_GRAND 35  // "One Mustn't Fall" -- every 100th zone
 #define ENDLESS_MILESTONE_SONG_PLAIN 37  // "A Field for Mag"  -- the other 50th zones (50, 150, 250, ...)
 
+// The outpost BEFORE a milestone swaps its buy/sell music for this track, so the player is warned
+// that a set-piece is coming while they're still choosing a course. MIND THE TWO FORMS: songBuy is
+// played as-is (play_song(songBuy)), while levelSong is 1-based (play_song(levelSong - 1)), so the
+// same track carries two numbers -- keep the pair in step if it's ever retuned.
+#define ENDLESS_MILESTONE_SHOP_SONG     26  // "Parlance", songBuy form (0-based)
+#define ENDLESS_MILESTONE_SHOP_SONG_LVL 27  // "Parlance", levelSong form (1-based)
+
 // The pinned track for a milestone class, or 0 for an ordinary zone.
 static JE_byte endlessMilestoneSong(int kind)
 {
@@ -873,9 +880,13 @@ static void endlessPickLevelMusic(void)
 	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth - 1)
 		prev = endlessLastSong;
 	const JE_byte nextPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone + 1));
+	// When the NEXT zone is a milestone, the outpost between here and there plays the warning track
+	// (endlessBetweenLevels). Keep this zone off it too, or the level would run straight into its own
+	// music in the shop and the warning would read as "nothing changed".
+	const JE_byte nextShop = (nextPinned != 0) ? (JE_byte)ENDLESS_MILESTONE_SHOP_SONG_LVL : 0;
 
 	JE_byte s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
-	for (int guard = 0; guard < 4 && (s == prev || s == nextPinned); ++guard)
+	for (int guard = 0; guard < 6 && (s == prev || s == nextPinned || s == nextShop); ++guard)
 		s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
 
 	levelSong = (pinned != 0) ? pinned : s;  // the level-start play_song(levelSong - 1) uses this
@@ -3036,10 +3047,13 @@ void endlessBetweenLevels(void)
 		endlessSaveSlot(autoSlot);  // side-effect-free run capture into the sidecar (endlessMode is true here)
 	}
 
-	// Always play the standard buy/sell theme in the shop. A random level's ']i' command can
-	// leave songBuy on that level's own track; JE_itemScreen plays songBuy on entry, so pin it
-	// to the default here first.
-	songBuy = DEFAULT_SONG_BUY;
+	// Pin the shop's theme. A random level's ']i' command can leave songBuy on that level's own
+	// track, and JE_itemScreen plays songBuy on entry, so it's set here every visit -- which also
+	// makes it survive a save/load for free, since it's re-derived from the (saved) run depth rather
+	// than stored. The outpost that charts a MILESTONE zone swaps in the warning track instead of
+	// the usual buy/sell theme, so the player hears that something is coming while they still have
+	// the course list in front of them.
+	songBuy = endlessMilestoneKind() ? ENDLESS_MILESTONE_SHOP_SONG : DEFAULT_SONG_BUY;
 	JE_itemScreen();
 }
 

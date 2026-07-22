@@ -545,11 +545,27 @@ mutable `last`, so a Quit-Level retry replays the same track.
   level start plays as `levelSong - 1`. `endlessPickLevelMusic` still runs its
   normal rolls first and overrides the result, so the seeded song stream stays
   aligned with an ordinary zone.
-- NO track ever plays two zones running, exactly — not statistically. A zone
-  rejects both the song its predecessor really played and the one its successor is
-  PINNED to (so zones 49 and 51 both dodge "A Field for Mag", 99 and 101 both dodge
-  "One Mustn't Fall"). Rejection is a bounded 4-retry loop, so a pathological seed
-  can't spin. Two mechanisms make the two tests exact:
+- The OUTPOST that charts a milestone announces it: `endlessBetweenLevels` sets
+  `songBuy` to `ENDLESS_MILESTONE_SHOP_SONG` ("Parlance") instead of
+  `DEFAULT_SONG_BUY`, so the warning plays while the player still has the course
+  list in front of them. It needs no save field — `songBuy` is re-derived from the
+  (saved) run depth at every outpost entry, and every endless route into the shop
+  goes through `endlessBetweenLevels`, including the in-shop load that JE_main
+  detours via `endlessResumePending`. MIND THE INDEXING: `songBuy` is played as-is
+  (`play_song(songBuy)`, and the `]i` script command stores `temp - 1` into it),
+  while `levelSong` is 1-based — so the same track has two constants,
+  `ENDLESS_MILESTONE_SHOP_SONG` 26 and `..._LVL` 27. Keep them in step. The
+  levelSong form exists because the zone BEFORE a milestone must also avoid that
+  track (see below), or its level music would run straight into the shop playing
+  the same thing and the warning would read as "nothing changed". The ordinary
+  buy/sell theme never needed this: song 3 isn't in `endlessLevelSongs` at all.
+- NO track ever plays twice running anywhere in the shop → level → shop chain,
+  exactly — not statistically. A zone rejects the song its predecessor really
+  played, the one its successor is PINNED to, and the warning track its following
+  outpost will play if that outpost charts a milestone (so zones 49 and 51 both
+  dodge "A Field for Mag", 99 and 101 both dodge "One Mustn't Fall", and 49/99 also
+  dodge "Parlance"). Rejection is a bounded 6-retry loop, so a pathological seed
+  can't spin. Two mechanisms make the neighbour tests exact:
   - The SUCCESSOR test is RNG-free: `endlessMilestoneKindOfZone(zone)` takes the
     zone as a parameter, so a neighbouring milestone's pinned song is simply
     looked up.
@@ -567,8 +583,9 @@ mutable `last`, so a Quit-Level retry replays the same track.
   a locked relaunch, a reload) returns the stored song immediately, so the track
   can't reshuffle — even if the player re-charts to a different course, since the
   music belongs to the zone, not the level. Verified against the real SplitMix RNG
-  over 20k seeds × 210 zones (4.18M transitions): 0 wrong milestone tracks, 0
-  adjacent repeats of any kind, 0 retries or reloads that changed a track.
+  over 20k seeds × 210 zones (4.18M transitions): 0 wrong milestone tracks, 0 wrong
+  shop tracks, 0 adjacent repeats of any kind (level→level, level→shop, shop→level),
+  0 retries or reloads that changed a track.
 - The pin also has to survive the level's own script: `endlessMilestoneZone()`
   (the one public predicate, in `endless.h`) makes tyrian2.c ignore event 35 (play
   new song) AND event 34 (start music fade) on a milestone — suppressing only 35
