@@ -3221,10 +3221,11 @@ void JE_drawMenuChoices(void)
 #define ENDLESS_RANK_CX        MENU_MONITOR_CENTER_X
 #define ENDLESS_RANK_Y        173   // endlessModText draws the body AT this row (no +1 like DARKEN)
 
-// Rank-letter tint, 0 (F) .. 9 (S+++): a green-to-red ramp -- greens in palette-18 bank 8, the
+// Rank-letter tint, 0 (F) .. 10 (END): a green-to-red ramp -- greens in palette-18 bank 8, the
 // yellow/orange/red half in bank 15. {bank, brightness}, brightness kept in [-1,+5] so the glyph's
-// shades never leave the bank. notes.md §Menus & shop.
-static const struct { unsigned int bank; int bright; } endlessRankHue[10] = {
+// shades never leave the bank. Indexed by endlessCourseRankLevel, so this MUST stay as long as
+// endless.c's endlessRankName[]. notes.md §Menus & shop.
+static const struct { unsigned int bank; int bright; } endlessRankHue[11] = {
 	{  8,  3 },  // F     green
 	{  8,  4 },  // E     green
 	{  8,  5 },  // D     yellow-green
@@ -3235,6 +3236,7 @@ static const struct { unsigned int bank; int bright; } endlessRankHue[10] = {
 	{ 15,  1 },  // S+    orange-red
 	{ 15,  0 },  // S++   red-orange
 	{ 15, -1 },  // S+++  red
+	{ 15, -2 },  // END   darkest red -- off the letter scale, the 100th-zone finale alone
 };
 
 // Danger weight -> bank-15 brightness. Bands mirror the endlessModTable weights: nuisances

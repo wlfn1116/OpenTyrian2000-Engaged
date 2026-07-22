@@ -2109,6 +2109,11 @@ static const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_SLUGGISH,  15, "your ship slowed" },      // ship + mouse/touch crawl -- half the reach to dodge with
 	{ ENDLESS_MOD_SHIELDLESS, 12, "no shield regen" },      // shields never recharge -- once spent, you fly on armor
 	{ ENDLESS_MOD_DEADGEN,   30, "generator dead" },        // no shield regen AND the main gun is starved of power (super-rare)
+	// The 100th-zone finale marker. A NULL word means "no monitor row and no help-line phrase": it is
+	// a label, not a mechanic, so the threat list stays purely the sector's real dangers. The reward
+	// IS the finale bounty (roughly 15x the base clear on its own), and since the danger score sums
+	// the same table it also guarantees the sector outranks everything else on the slate.
+	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// -- boons: they HELP you, so little/no cash (a couple pay big instead) --
 	{ ENDLESS_MOD_FRAGILE,       -5, "less enemy HP" },
 	{ ENDLESS_MOD_TURBODRIVE,      0, "kills quicken guns" },
@@ -3421,8 +3426,58 @@ static const EndlessTheme endlessRareThemes[] = {
 	// -- more pure multi-danger nightmares (Cataclysm pool: no Apex/Legion bit) --
 	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_GRAVITY,   "Doomtide" },
 	{ ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_ELITEPACK,    "Deathstorm" },
-	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_GRAVITY, "The End" },
+	// -- the top of the Cataclysm pool: SIX and SEVEN simultaneous dangers, and the only S+++ sectors
+	//    an ordinary zone can be dealt without an Apex/Legion tier. Ruination is the full enemy-stat
+	//    wall plus a well (56, S++ -- it inherits the combination the old fixed "The End" used, which
+	//    now lives on the milestone marker instead); the other two push past 60 into S+++ by adding a
+	//    system loss or the disorienting pair. Rare by construction: only the ~1/45 Cataclysm
+	//    injection deals from this sub-pool (see endlessGenerateCourses).
+	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_GRAVITY, "Ruination" },
+	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_GRAVITY | ENDLESS_MOD_SHIELDLESS, "Death Knell" },
+	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH, "Black Sun" },
 };
+
+// "The End" -- the sector every GRAND (100th-zone) milestone deals. It is NOT a fixed bitset: only
+// its CORE is constant, and the rest is re-rolled per milestone off the seeded stream, so a run's
+// zone-100 finisher differs from its zone-200 one and from every other run's. Naming, the END rank,
+// the FINALITY danger word and the bounty all hang off the ENDLESS_MOD_THEEND marker rather than on
+// matching an exact combination, which is what lets the dangers vary freely.
+//
+// The CORE is the enemy at its worst -- every enemy-stat lever at once -- and nothing else. Kept out
+// on purpose: the homing tiers, which turn a gun fight into a chase, and the two handicaps that
+// simply take a system away from you (Shieldless, Deadgen). What varies is the special-enemy tier,
+// the scroll pace, and a coin each for the well, the flipped view and the slowed ship -- 80
+// combinations, each still recognisably The End.
+#define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
+                             | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
+
+static Uint64 endlessMakeTheEndMods(void)
+{
+	Uint64 m = ENDLESS_MOD_THEEND | ENDLESS_THEEND_CORE;
+
+	// One special-enemy tier, always: every enemy an elite, or -- less often -- every one a champion.
+	// Elite Pack is deliberately not offered: deep runs retire it as redundant (see
+	// endlessFixRedundantElitePack), which would rewrite the finale's bitset out from under it.
+	m |= (endlessRand() % 3 == 0) ? ENDLESS_MOD_LEGION : ENDLESS_MOD_APEX;
+
+	// One scroll pace, sometimes none -- the level can hold still or come at you at any speed.
+	static const Uint64 scroll[] = {
+		0, ENDLESS_MOD_SLIPSTREAM, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_OVERLOAD, ENDLESS_MOD_WARP,
+	};
+	m |= scroll[endlessRand() % COUNTOF(scroll)];
+
+	// A coin each for the hazards that act on the ship rather than the enemy. Gravity and Sluggish can
+	// both land -- that is the Tar Pit pairing, brutal but always flyable: endlessGravityDrift scales
+	// the pull down in lock-step with the ship, so full throttle still climbs.
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_GRAVITY;
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_TOPSY;
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_SLUGGISH;
+
+	return m;
+}
 
 // EVIL Turbodrive / Overdrive: hostile mirrors of the two boons -- they SLOW your fire (Evil
 // Overdrive also cuts damage) as your kill combo climbs. Injected as rare pickable course
@@ -3711,7 +3766,8 @@ static Uint64 endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint
 	ENDLESS_MOD_KAMIKAZE | ENDLESS_MOD_GRAVITY | ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_OVERLOAD | \
 	ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT | ENDLESS_MOD_MISFIRE | ENDLESS_MOD_OVERHEAT | \
 	ENDLESS_MOD_HOMING | ENDLESS_MOD_RAMPAGE | ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH | \
-	ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN | ENDLESS_MOD_SLIPSTREAM | ENDLESS_MOD_WARP )
+	ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN | ENDLESS_MOD_SLIPSTREAM | ENDLESS_MOD_WARP | \
+	ENDLESS_MOD_THEEND )
 
 // Bits that HELP you -- the boon side. A course carrying any of these plus a hostile bit is a "mixed"
 // gambit (risk + reward). Faster scrolling (SLIPSTREAM/WARP) counts HOSTILE -- the level rushing at
@@ -3785,6 +3841,8 @@ static const char *const endlessMixedGenericNames[] = {
 // tables hold no duplicate names, so distinct combos can't clash through them.
 static const char *endlessComboNameSalted(Uint64 mods, unsigned salt)
 {
+	if (mods & ENDLESS_MOD_THEEND)
+		return "The End";                  // the finale is named by its marker, whatever dangers it rolled
 	const EndlessTheme *t = endlessFindTheme(mods);
 	if (t)
 		return t->name;                    // curated combos keep their cool names
@@ -3866,6 +3924,7 @@ static int endlessDangerScore(Uint64 mods)
 // so the word and the letter grade never disagree.
 static const char *endlessDangerTier(Uint64 mods)
 {
+	if (mods & ENDLESS_MOD_THEEND)          return "FINALITY";  // the 100th-zone finale, a rung above APOCALYPSE
 	if (mods & ENDLESS_MOD_CURSED)          return "Trap";
 	if ((mods & ENDLESS_HOSTILE_MASK) == 0) return (mods == 0) ? "Calm" : "Boon";
 	const int s = endlessDangerScore(mods);
@@ -3887,6 +3946,7 @@ static const char *endlessDangerTier(Uint64 mods)
 // it in (game_menu.c endlessRankHue[]), so those two can never drift.
 static int endlessDangerRankLevel(Uint64 mods)
 {
+	if (mods & ENDLESS_MOD_THEEND) return 10;         // END -- the 100th-zone finale's own grade
 	if ((mods & ENDLESS_HOSTILE_MASK) == 0) return 0; // F
 	const int s = endlessDangerScore(mods);
 	if (s <=  9) return 1; // E
@@ -3899,7 +3959,9 @@ static int endlessDangerRankLevel(Uint64 mods)
 	if (s <= 59) return 8; // S++
 	return 9;              // S+++
 }
-static const char *const endlessRankName[10] = { "F", "E", "D", "C", "B", "A", "S", "S+", "S++", "S+++" };
+// Grade 10 ("END") is off the letter scale on purpose -- it belongs to the finale alone. game_menu.c's
+// endlessRankHue[] is indexed by the same level, so the two arrays must stay the same length.
+static const char *const endlessRankName[11] = { "F", "E", "D", "C", "B", "A", "S", "S+", "S++", "S+++", "END" };
 static const char *endlessDangerRank(Uint64 mods)
 {
 	return endlessRankName[endlessDangerRankLevel(mods)];
@@ -4148,6 +4210,11 @@ static const char *endlessCuratedDescFor(Uint64 mods)
 	for (unsigned i = 0; i < COUNTOF(endlessCuratedDesc); ++i)
 		if (endlessCuratedDesc[i].mods == mods)
 			return endlessCuratedDesc[i].desc;
+	// Same OMNI fallthrough endlessFindTheme does: an omnidirectional well is the same SECTOR as its
+	// plain-gravity twin, so it keeps the twin's curated line rather than dropping to the generated
+	// threat list. Strip the cosmetic bit and retry once (the retry can't recurse -- no OMNI left).
+	if (mods & ENDLESS_MOD_GRAVITY_OMNI)
+		return endlessCuratedDescFor(mods & ~ENDLESS_MOD_GRAVITY_OMNI);
 	return NULL;
 }
 
@@ -4184,8 +4251,8 @@ static void endlessAutoBody(Uint64 mods, char *out, size_t sz, unsigned font, in
 {
 	int idx[COUNTOF(endlessModTable)], n = 0;
 	for (unsigned i = 0; i < COUNTOF(endlessModTable); ++i)
-		if (mods & endlessModTable[i].bit)
-			idx[n++] = (int)i;
+		if ((mods & endlessModTable[i].bit) && endlessModTable[i].word != NULL)
+			idx[n++] = (int)i;  // a NULL word is a label-only bit (the finale marker), not a threat to list
 
 	if (n == 0) { snprintf(out, sz, "no threats"); return; }
 
@@ -4476,6 +4543,9 @@ static void endlessFixRedundantElitePack(int c)
 }
 
 // --- Milestone slates (see endlessMilestoneKind, up top) -------------------------------------
+// ENDLESS_THEME_THE_END -- the pinned 100th-zone sector -- is defined with its naming table, next to
+// endlessRareThemes, so the macro and the row that names it sit together and can't drift.
+//
 // Hostile bits a milestone slate is built from. `group` marks mutually redundant bits -- at most one
 // per nonzero group lands on a course: one scroll modifier (Overclock already carries Slipstream's
 // scroll), one homing tier, one elite tier, one shield handicap. The super-rare signatures (dead
@@ -5013,9 +5083,27 @@ void endlessGenerateCourses(void)
 			lowN = endlessCourseCnt - 1;               // short slate (too few distinct levels): keep both rungs present
 		if (lowN < 1)
 			lowN = 1;
-		for (int c = 0; c < endlessCourseCnt; ++c)
-			endlessCourseMod[c] = endlessMakeRankCombo((c < lowN) ? lowRank : lowRank + 1,
-			                                           endlessCourseMod, c);
+
+		// A GRAND milestone always deals "The End" -- a run far enough to roll the credits ought to be
+		// able to chart something by that name -- with its dangers rolled fresh for this milestone.
+		// Its marker carries a 150 reward, so its danger score clears the 95 ceiling the builder tops
+		// S+++ courses out at by a mile: it is always the worst course offered and the sort puts it
+		// last. It counts as one of the slate's high-rung courses, keeping the 2-and-3 split. Pinned
+		// into slot 0 so every later draw sees it in `used`; the slot index itself is invisible, since
+		// that same sort re-orders the whole slate afterwards.
+		int first = 0;
+		if (milestone == 2)
+		{
+			endlessCourseMod[0] = endlessMakeTheEndMods();
+			first = 1;
+		}
+		for (int c = first, lowLeft = lowN; c < endlessCourseCnt; ++c)
+		{
+			const int rank = (lowLeft > 0) ? lowRank : lowRank + 1;
+			if (lowLeft > 0)
+				--lowLeft;
+			endlessCourseMod[c] = endlessMakeRankCombo(rank, endlessCourseMod, c);
+		}
 	}
 
 	// GRAVITY WELL variant: whenever a course carries a gravity well (from any source above -- a named
@@ -5023,7 +5111,9 @@ void endlessGenerateCourses(void)
 	// OMNIDIRECTIONAL -- the pull runs along a fixed random heading for that sector (rolled per-sector
 	// in endlessRegenerateLevel) instead of straight down. Decided ONCE here, as the course is charted,
 	// so it's fixed for the seed and rides the save. Runs after every gravity-adding step, before the
-	// sort (OMNI is masked out of the danger score, so it doesn't disturb the ordering).
+	// sort (OMNI is masked out of the danger score, so it doesn't disturb the ordering). Curated
+	// sectors -- "The End" included -- keep their names through it: endlessFindTheme strips the
+	// cosmetic bit and retries when no exact row matches.
 	for (int c = 0; c < endlessCourseCnt; ++c)
 		if ((endlessCourseMod[c] & ENDLESS_MOD_GRAVITY) && (endlessRand() % 2))
 			endlessCourseMod[c] |= ENDLESS_MOD_GRAVITY_OMNI;
@@ -5203,6 +5293,8 @@ int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max)
 	{
 		if ((mods & endlessModTable[t].bit) == 0)
 			continue;
+		if (endlessModTable[t].word == NULL)
+			continue;  // label-only bit (the finale marker): it pays and ranks, but lists no threat
 		rows[n].word    = endlessModTable[t].word;
 		rows[n].weight  = endlessModTable[t].reward;
 		rows[n].hostile = (endlessModTable[t].bit & (ENDLESS_HOSTILE_MASK | ENDLESS_MOD_CURSED)) != 0;
