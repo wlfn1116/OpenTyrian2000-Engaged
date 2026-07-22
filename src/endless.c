@@ -1106,14 +1106,12 @@ void endlessResetElites(void)
 	endlessEliteRngState = endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x50000000);
 }
 
-// Chance (percent) that an eligible enemy becomes SPECIAL: a 2% trickle rising to an 80% cap;
-// Elite Pack forces half, Apex/Legion force all (notes.md §Difficulty ramp).
-static int endlessEliteChancePercent(void)
+// The depth-driven SPECIAL-enemy share BEFORE any mutator override: a 2% trickle rising to an 80%
+// cap. endlessEliteChancePercent applies the Elite Pack / Apex / Legion overrides on top; the course
+// generator also reads this directly, to retire a now-pointless "half enemies elite" once the natural
+// share has already passed 50% (see endlessFixRedundantElitePack).
+static int endlessNaturalEliteChancePercent(void)
 {
-	if (endlessActiveMods & (ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION))
-		return 100;
-	if (endlessActiveMods & ENDLESS_MOD_ELITEPACK)
-		return 50;
 	int pct = 2 + endlessEffectiveDepth() / 2;
 	if (pct > 25)
 		// Past the 25% shoulder (effective depth 46), climb the last 55 points to the cap at
@@ -1122,6 +1120,19 @@ static int endlessEliteChancePercent(void)
 	if (pct > 80)
 		pct = 80;                           // leave a true 100% to the Apex / Legion sectors
 	return pct;
+}
+
+// Chance (percent) that an eligible enemy becomes SPECIAL: the natural depth share above, except
+// Elite Pack forces half and Apex/Legion force all (notes.md §Difficulty ramp). Elite Pack is only
+// ever meant to RAISE the share, so the generator stops charting it once the natural share tops 50%
+// -- otherwise it would CAP elites BELOW the natural rate (a stealth boon on a danger course).
+static int endlessEliteChancePercent(void)
+{
+	if (endlessActiveMods & (ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION))
+		return 100;
+	if (endlessActiveMods & ENDLESS_MOD_ELITEPACK)
+		return 50;
+	return endlessNaturalEliteChancePercent();
 }
 
 // Roll one enemy's tier: 1 normal, 2 elite, 3 champion. Champions are ~half as common as
@@ -4198,6 +4209,56 @@ static int endlessDangerRareDiv(int base)
 	return (d < 1) ? 1 : d;
 }
 
+// Retire a now-pointless "half enemies elite" (ELITEPACK) on course c. ELITEPACK pins the special-
+// enemy share to 50%, which is a difficulty BUMP only while the natural depth share sits below it;
+// once the natural share tops 50% (deep runs -- see endlessNaturalEliteChancePercent), pinning it to
+// 50% would CAP elites below the natural rate, turning a "hostile" course into a stealth boon. Past
+// that crossover, swap ELITEPACK for a comparable hostile bit so the sector stays a real threat; the
+// name, danger tier and clear reward all re-derive from the new bitset. APEX/LEGION force a 100%
+// share (always a genuine increase over the 80% natural cap), so those are left untouched.
+//
+// Deterministic (no RNG) and driven by the same endlessRunDepth the launched level will see, so the
+// Chart-a-Course preview and the played sector always agree, and a reloaded outpost re-derives the
+// same swap. The replacement avoids any bitset another offered course already uses, so the visit
+// keeps distinct sectors.
+static void endlessFixRedundantElitePack(int c)
+{
+	const Uint64 mods = endlessCourseMod[c];
+	if (!(mods & ENDLESS_MOD_ELITEPACK))
+		return;
+	if (mods & (ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION))
+		return;                               // 100% share -- a real increase, keep it
+	if (endlessNaturalEliteChancePercent() <= 50)
+		return;                               // still raises the share -- ELITEPACK is genuine here
+
+	const Uint64 base = mods & ~(Uint64)ENDLESS_MOD_ELITEPACK;
+	// Ordered by rough danger so the stand-in is a fair replacement; the first bit not already on the
+	// course (and, where possible, not colliding with another offered course) wins.
+	static const Uint64 subs[] = {
+		ENDLESS_MOD_DEVASTATING, ENDLESS_MOD_FORTIFIED, ENDLESS_MOD_ENRAGE,
+		ENDLESS_MOD_FRENZY, ENDLESS_MOD_SWIFT, ENDLESS_MOD_GRAVITY, ENDLESS_MOD_OVERCLOCK,
+	};
+	Uint64 fallback = base;                   // if every candidate collides, at least drop ELITEPACK
+	bool haveFallback = false;
+	for (unsigned i = 0; i < COUNTOF(subs); ++i)
+	{
+		if (base & subs[i])
+			continue;                         // already present -- adding it would be a no-op
+		const Uint64 cand = base | subs[i];
+		if (!haveFallback) { fallback = cand; haveFallback = true; }
+		bool clash = false;
+		for (int k = 0; k < endlessCourseCnt && !clash; ++k)
+			if (k != c && endlessCourseMod[k] == cand)
+				clash = true;
+		if (!clash)
+		{
+			endlessCourseMod[c] = cand;
+			return;
+		}
+	}
+	endlessCourseMod[c] = fallback;           // every stand-in collided/was present -- best effort
+}
+
 void endlessGenerateCourses(void)
 {
 	endlessCourseCnt = 0;
@@ -4627,6 +4688,15 @@ void endlessGenerateCourses(void)
 	for (int c = 0; c < endlessCourseCnt; ++c)
 		if ((endlessCourseMod[c] & ENDLESS_MOD_GRAVITY) && (endlessRand() % 2))
 			endlessCourseMod[c] |= ENDLESS_MOD_GRAVITY_OMNI;
+
+	// Deep runs: the natural elite share can climb past the 50% that "half enemies elite" (ELITEPACK)
+	// pins it to, at which point ELITEPACK would CAP elites below the natural rate -- a stealth boon on
+	// a danger course. Swap any such redundant ELITEPACK for a comparable hostile now, after every
+	// mod-adding step (themes, widen, gambits, injections, gauntlet, ambush) and before the sort, so
+	// the danger ordering, tier word, name and reward all reflect the real sector. Course 0 is normally
+	// clean, but an Ambush collapses its combo onto slot 0, so scan from 0. (See endlessFixRedundantElitePack.)
+	for (int c = 0; c < endlessCourseCnt; ++c)
+		endlessFixRedundantElitePack(c);
 
 	// Present the courses from lowest danger to highest, so Chart-a-Course always reads as a left-
 	// to-right safety ramp (the clean/boon route first, the deadliest sector last). Sort the three
