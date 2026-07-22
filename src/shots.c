@@ -269,8 +269,15 @@ bool player_shot_move_and_draw(
 		// Ascending shots only: a decelerating shot (e.g. Vulcan Cannon) apexing between
 		// -15 and -40 would fall back on-screen, so past -15 cull once it stops ascending
 		// (shotYM >= 0).
+		// Bottom cull margin widened 190 -> 240 (40px below the 200px visible edge, mirroring
+		// the top -40). Some weapons launch shots downward that arc back up (negative sy ->
+		// downward shotYM, upward acceleration shotYC); the endless High-Velocity Shots perk
+		// scales the launch velocity but not the acceleration, so the dip deepens (roughly
+		// quadratically). Fired near the bottom, the boosted nadir cleared the old 190 cull
+		// and the shot despawned before returning. 240 leaves the boosted arc room to come
+		// back; blit_sprite2 clips at the surface edge, so drawing the off-screen dip is safe.
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
-			shot->shotY < -40 || shot->shotY > 190 ||
+			shot->shotY < -40 || shot->shotY > 240 ||
 			(shot->shotY < -15 && shot->shotYM >= 0))
 		{
 			shotAvail[shot_id] = 0;
