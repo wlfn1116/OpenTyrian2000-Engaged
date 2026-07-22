@@ -190,6 +190,13 @@ static bool endlessResumeVisit   = false;  // a save was just loaded: the next o
 static bool endlessCreditsShown  = false;  // the zone-100 credits roll has already played this run; rides the save so reloading the zone-101 outpost doesn't replay it
 #define ENDLESS_CREDITS_ZONE 100           // zones cleared before the run rolls the credits (once per run, at the outpost that follows)
 
+// The track the last-played zone actually used, and the run depth it was picked for. Remembering
+// the REAL song (rather than re-deriving an approximation of it from the previous zone's stream)
+// is what makes the never-two-in-a-row guarantee exact; both ride the save so a resumed run still
+// knows what it just heard. See endlessPickLevelMusic.
+static JE_byte endlessLastSong      = 0;   // 0 = nothing played yet this run
+static int     endlessLastSongDepth = -1;  // -1 = none
+
 // --- Milestone zones -------------------------------------------------------------------------
 // Every 50th zone is a set-piece: Chart-a-Course offers a full slate of five S-tier sectors and
 // nothing else (endlessGenerateCourses), and clearing one is worth a guaranteed perk pick
@@ -199,10 +206,13 @@ static bool endlessCreditsShown  = false;  // the zone-100 credits roll has alre
 #define ENDLESS_MILESTONE_EVERY 50
 #define ENDLESS_MILESTONE_GRAND 100
 
-// The zone ABOUT to be charted: 0 = an ordinary zone, 1 = the S+/S++ milestone, 2 = the S++/S+++ one.
-static int endlessMilestoneKind(void)
+// Milestone class of an arbitrary ZONE number: 0 = ordinary, 1 = the S+/S++ milestone, 2 = the
+// S++/S+++ one. Taking the zone as a parameter (rather than reading the run depth) is what lets the
+// music picker look at a zone's NEIGHBOURS without any RNG.
+static int endlessMilestoneKindOfZone(int zone)
 {
-	const int zone = endlessRunDepth + 1;
+	if (zone <= 0)
+		return 0;
 	if (zone % ENDLESS_MILESTONE_GRAND == 0)
 		return 2;
 	if (zone % ENDLESS_MILESTONE_EVERY == 0)
@@ -210,16 +220,35 @@ static int endlessMilestoneKind(void)
 	return 0;
 }
 
+// The zone about to be charted / played (the run depth counts zones CLEARED).
+static int endlessMilestoneKind(void)
+{
+	return endlessMilestoneKindOfZone(endlessRunDepth + 1);
+}
+
 // Was run depth `depth` a milestone zone? (A run depth IS the zone just cleared, so this is the
 // test for "the outpost I'm standing in follows a milestone".)
 static bool endlessMilestoneClearedAt(int depth)
 {
-	return depth > 0 && depth % ENDLESS_MILESTONE_EVERY == 0;
+	return endlessMilestoneKindOfZone(depth) != 0;
 }
 
 // Forced perk picks come on a fixed cadence: after the first cleared zone, then every 3rd zone
 // (depths 1, 4, 7, ...). Perks are strong, so they stay sparing.
 #define ENDLESS_PERK_EVERY 3
+
+// Each milestone class flies to its OWN pinned track, so the two set-pieces stay distinct. Both are
+// 1-based into musicTitle[] (musmast.c), matching levelSong -- the level start plays levelSong - 1.
+#define ENDLESS_MILESTONE_SONG_GRAND 35  // "One Mustn't Fall" -- every 100th zone
+#define ENDLESS_MILESTONE_SONG_PLAIN 37  // "A Field for Mag"  -- the other 50th zones (50, 150, 250, ...)
+
+// The pinned track for a milestone class, or 0 for an ordinary zone.
+static JE_byte endlessMilestoneSong(int kind)
+{
+	return (kind == 2) ? ENDLESS_MILESTONE_SONG_GRAND
+	     : (kind == 1) ? ENDLESS_MILESTONE_SONG_PLAIN
+	     : 0;
+}
 
 // Is a forced perk pick due at the outpost for run depth `depth` (the zone just cleared)? Three
 // reasons: the cadence above; a cleared MILESTONE zone (50, 100, 150, ...); or the zone right
@@ -639,6 +668,8 @@ void endlessResetRun(void)
 	endlessPerkDepthDone = -1;
 	endlessResumeVisit = false;
 	endlessCreditsShown = false;   // fresh run: the zone-100 credits are still ahead (a resume reloads this in endlessApplyCurrent)
+	endlessLastSong = 0;           // no zone has played yet, so nothing for the music anti-repeat to avoid
+	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;
 	endlessBuffCharge = 0;
 	endlessReviveHeld = false;
@@ -804,8 +835,21 @@ static const JE_byte endlessLevelSongs[] = {  // omits shop #3, level-end #10, g
 
 static void endlessPickLevelMusic(void)
 {
-	// Deterministic per (seed, zone), so a Quit Level relaunch reproduces the same track; the anti-
-	// repeat re-derives the PREVIOUS zone's song from its own stream (notes.md §Seeded structure RNG).
+	const int zone = endlessRunDepth + 1;
+
+	// Re-entering the SAME zone -- a Quit Level retry, a locked relaunch, or a reload that drops
+	// back into it -- keeps the track it already had, even if the player picked a different course.
+	// The music belongs to the zone, not to the level, and a retry must never reshuffle it.
+	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth)
+	{
+		levelSong = endlessLastSong;
+		return;
+	}
+
+	// Otherwise: deterministic per (seed, zone). Start from the previous zone's stream, taking its
+	// FIRST draw -- only an APPROXIMATION of what that zone actually played (it may have re-rolled),
+	// but it's the fallback for the cases where the exact value below isn't available: a pre-v10
+	// save, or a debug zone jump that skipped the intervening zones.
 	JE_byte prev = 0;
 	if (endlessRunDepth > 0)
 	{
@@ -813,10 +857,39 @@ static void endlessPickLevelMusic(void)
 		prev = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
 		endlessReseed((Uint64)endlessRunDepth * 2 + 1);  // re-prime this zone's stream
 	}
+
+	// A MILESTONE zone is pinned to its class's theme. The rolls below still run, so the seeded
+	// stream stays aligned with an ordinary zone.
+	const JE_byte pinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone));
+
+	// No track may play two zones running. Three sources for "what must this zone avoid", layered
+	// least- to most-authoritative: the approximation above; a milestone predecessor's pinned theme
+	// (RNG-free, so exact); and finally the song the previous zone REALLY played, remembered from
+	// when it started (exact whenever the run walked into this zone normally). The successor's
+	// pinned theme is likewise exact, so a milestone is never announced by its own track either.
+	const JE_byte prevPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone - 1));
+	if (prevPinned != 0)
+		prev = prevPinned;
+	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth - 1)
+		prev = endlessLastSong;
+	const JE_byte nextPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone + 1));
+
 	JE_byte s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
-	if (s == prev)  // one deterministic re-roll to dodge an immediate repeat between zones
+	for (int guard = 0; guard < 4 && (s == prev || s == nextPinned); ++guard)
 		s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
-	levelSong = s;  // the level-start play_song(levelSong - 1) uses this
+
+	levelSong = (pinned != 0) ? pinned : s;  // the level-start play_song(levelSong - 1) uses this
+
+	// Remember it for the next zone's anti-repeat (and for a retry of this one).
+	endlessLastSong      = levelSong;
+	endlessLastSongDepth = endlessRunDepth;
+}
+
+// True while the zone being played is a milestone (either class). The level script's own music
+// events are ignored there (tyrian2.c events 34/35), so nothing can unseat the pinned theme.
+bool endlessMilestoneZone(void)
+{
+	return endlessMode && endlessMilestoneKind() != 0;
 }
 
 // Whether this zone shows the "light cone" spotlight -- rolled in endlessRegenerateLevel.
@@ -5316,7 +5389,7 @@ void endlessEndRunToTitle(void)
 // by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 9      // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag
+#define ENDLESS_SAVE_VERSION 10     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song
 #define ENDLESS_SAVE_PERKS   16     // fixed perk-array width on disk; now == PERK_COUNT (headroom used up).
                                     // Adding a 17th perk means bumping this (and the save version) or it won't persist.
 
@@ -5374,6 +5447,10 @@ typedef struct {
 
 	// --- zone-100 credits (v9) ---
 	Uint8  creditsShown;  // 1 = this run has already rolled the credits, so resuming won't replay them
+
+	// --- per-zone music continuity (v10) ---
+	Uint8  lastSong;       // the track the last-played zone really used (0 = none yet)
+	Sint32 lastSongDepth;  // that zone's run depth (only meaningful when lastSong != 0)
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -5488,6 +5565,9 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutBytes(f, r->recentSec, ENDLESS_LEVEL_HISTORY);
 
 	endlessPutU8(f, r->creditsShown);                // v9 zone-100 credits
+
+	endlessPutU8(f, r->lastSong);                    // v10 per-zone music continuity
+	endlessPutU32(f, (Uint32)r->lastSongDepth);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -5634,6 +5714,16 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// pre-v9 run already past zone 100 gets one (harmless) showing at its next outpost.
 	if (version >= 9 && !endlessGetU8(f, &r->creditsShown))
 		return false;
+
+	// v10 per-zone music continuity. Older records lack it -- lastSong stays 0 ("nothing remembered"),
+	// and the picker falls back to deriving the previous zone's song approximately.
+	if (version >= 10)
+	{
+		Uint32 u32;
+		if (!endlessGetU8(f, &r->lastSong) || !endlessGetU32(f, &u32))
+			return false;
+		r->lastSongDepth = (Sint32)u32;
+	}
 	return true;
 }
 
@@ -5757,6 +5847,9 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	}
 
 	r->creditsShown = endlessCreditsShown ? 1 : 0;  // v9 zone-100 credits
+
+	r->lastSong      = endlessLastSong;             // v10 per-zone music continuity
+	r->lastSongDepth = endlessLastSongDepth;
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -5824,6 +5917,11 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// Zone-100 credits (v9): endlessResetRun above cleared the flag, so a pre-v9 record simply reads
 	// as "not shown yet".
 	endlessCreditsShown = r->creditsShown != 0;
+
+	// Per-zone music continuity (v10). A pre-v10 record has lastSong 0; force the depth back to "none"
+	// with it, since a zeroed record would otherwise read as a real entry for depth 0.
+	endlessLastSong      = r->lastSong;
+	endlessLastSongDepth = (r->lastSong != 0) ? r->lastSongDepth : -1;
 
 	endlessRestoreSavedCourses(r);
 
