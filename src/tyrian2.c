@@ -6771,7 +6771,10 @@ void JE_eventSystem(void)
 		break;
 
 	case 34: /* Start Music Fade */
-		if (firstGameOver)
+		// A milestone zone is pinned to its own theme (endlessPickLevelMusic), so the script's
+		// fade is ignored too -- a level that fades here and swaps tracks at event 35 would
+		// otherwise leave the pinned song stuck at the fade floor for the rest of the zone.
+		if (firstGameOver && !endlessMilestoneZone())
 		{
 			musicFade = true;
 			tempVolume = tyrMusicVolume;
@@ -6781,7 +6784,8 @@ void JE_eventSystem(void)
 	case 35: /* Play new song */
 		if (firstGameOver)
 		{
-			play_song(eventRec[eventLoc-1].eventdat - 1);
+			if (!endlessMilestoneZone())  // pinned theme: keep it playing, just restore the volume
+				play_song(eventRec[eventLoc-1].eventdat - 1);
 			set_volume(tyrMusicVolume, fxVolume);
 		}
 		musicFade = false;

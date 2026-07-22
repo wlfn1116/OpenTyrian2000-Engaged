@@ -538,6 +538,46 @@ mutable `last`, so a Quit-Level retry replays the same track.
   charted) / `endlessMilestoneClearedAt` (a depth that WAS one) live at the top of
   `endless.c` with the other run-progress state, since the outpost needs them long
   before the course generator does.
+- Each milestone CLASS is PINNED to its own track, so the two set-pieces stay
+  distinct: `ENDLESS_MILESTONE_SONG_GRAND` 35 = "One Mustn't Fall" on every 100th
+  zone, `ENDLESS_MILESTONE_SONG_PLAIN` 37 = "A Field for Mag" on the other 50th
+  zones. Both are 1-based into `musicTitle[]`, matching `levelSong`, which the
+  level start plays as `levelSong - 1`. `endlessPickLevelMusic` still runs its
+  normal rolls first and overrides the result, so the seeded song stream stays
+  aligned with an ordinary zone.
+- NO track ever plays two zones running, exactly — not statistically. A zone
+  rejects both the song its predecessor really played and the one its successor is
+  PINNED to (so zones 49 and 51 both dodge "A Field for Mag", 99 and 101 both dodge
+  "One Mustn't Fall"). Rejection is a bounded 4-retry loop, so a pathological seed
+  can't spin. Two mechanisms make the two tests exact:
+  - The SUCCESSOR test is RNG-free: `endlessMilestoneKindOfZone(zone)` takes the
+    zone as a parameter, so a neighbouring milestone's pinned song is simply
+    looked up.
+  - The PREDECESSOR test remembers rather than re-derives:
+    `endlessLastSong` / `endlessLastSongDepth` record what the last-played zone
+    actually used, and ride the save (v10). The old approach replayed the previous
+    zone's stream and took its FIRST draw, which is only an approximation — that
+    zone may itself have re-rolled — and left a real ~1-in-1150 chance of an
+    audible back-to-back repeat between two ordinary zones. Deriving it exactly
+    instead is impossible without recursing back through every prior zone, hence
+    the stored value. The first-draw derivation survives as the fallback for when
+    there's nothing remembered: a pre-v10 save, or a debug zone jump that skipped
+    the intervening zones.
+  `endlessLastSongDepth` also pins a RETRY: re-entering the same zone (Quit Level,
+  a locked relaunch, a reload) returns the stored song immediately, so the track
+  can't reshuffle — even if the player re-charts to a different course, since the
+  music belongs to the zone, not the level. Verified against the real SplitMix RNG
+  over 20k seeds × 210 zones (4.18M transitions): 0 wrong milestone tracks, 0
+  adjacent repeats of any kind, 0 retries or reloads that changed a track.
+- The pin also has to survive the level's own script: `endlessMilestoneZone()`
+  (the one public predicate, in `endless.h`) makes tyrian2.c ignore event 35 (play
+  new song) AND event 34 (start music fade) on a milestone — suppressing only 35
+  would strand the pinned track at the fade floor for the rest of the zone, since
+  34/35 are normally used as a pair. Event 35 still restores the volume. Songs 35
+  and 37 remain in the ordinary random pool (`endlessLevelSongs`), so they can
+  also come up on a normal zone (just never adjacent to the milestone that owns
+  them); pulling one from that array would make it milestone-exclusive, at the
+  cost of reshuffling every seed's song order.
 - Forced perk picks are decided by ONE predicate, `endlessPerkDueAtDepth(depth)`
   (depth = the zone just cleared), for three reasons: the every-3rd-zone cadence
   (`ENDLESS_PERK_EVERY`, depths 1, 4, 7, …); a cleared MILESTONE zone, the payoff
@@ -653,9 +693,11 @@ mutable `last`, so a Quit-Level retry replays the same track.
   quitting ends the run with no reload.
 - Sidecar version history: v3 seed, v4 locked sortie, v5 buff recharge, v6
   recent-level ring, v7 64-bit mods, v8 exact course files, v9 zone-100
-  credits-shown flag. Each new field is appended and read behind a
-  `version >= N` guard, so older sidecars still load (a missing field reads as
-  the memset-zero default).
+  credits-shown flag, v10 last zone's song + its depth. Each new field is appended
+  and read behind a `version >= N` guard, so older sidecars still load (a missing
+  field reads as the memset-zero default — note v10's apply step has to map a
+  zeroed `lastSong` back to depth −1, or a pre-v10 record would read as a real
+  entry for depth 0).
 - Quit Level in endless reverts the level to its launch state and reopens the
   outpost. Hardcore relocks it (retry same level or quit run; no farm-then-bail);
   non-hardcore unlocks it (re-outfit freely, still no mid-zone farming).

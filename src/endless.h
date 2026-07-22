@@ -301,6 +301,11 @@ unsigned endlessPendingMods(void);   // kill-fire buff bits bought this visit, n
 // level's actual content -- enemies, placement, terrain -- is left exactly as authored.
 void endlessRegenerateLevel(void);
 
+// True while the zone being played is a MILESTONE (every 50th): a forced all-S-tier course slate
+// and its own pinned theme. The level script's music events (34 fade / 35 change song) are ignored
+// on such a zone so nothing unseats that theme mid-level; see tyrian2.c.
+bool endlessMilestoneZone(void);
+
 // The "light cone" (spotlight) effect is decoupled from a level's own script in endless mode:
 // a level that ships with the spotlight has it stripped, and instead each zone gets an
 // independent, seeded 1-in-10 chance of it (decided in endlessRegenerateLevel). True when the
