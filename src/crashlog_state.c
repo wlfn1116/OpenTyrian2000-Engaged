@@ -275,8 +275,10 @@ void crashlog_write_game_state(FILE *f)
 
 	// --- Live enemies (diagnostic for map-stop softlocks: what is actually holding the scroll) ---
 	// Reads only the static enemy[] / enemyAvail[] arrays (always mapped); no pointer chase.
-	// "stuck?" flags an enemy above the reach line and vertically frozen (the map-stop watchdog's
-	// test): ey<=-58, eyc<=0, eycc<=0, fixedmovey<=0.
+	// "stuck-above" flags an enemy above the reach line and vertically frozen (the map-stop
+	// watchdog's test): ey<=-58, eyc<=0, eycc<=0, fixedmovey<=0. "orphaned" adds the watchdog's
+	// second gate -- no reachable member left in its linkgroup -- and is the state it actually
+	// culls; a stuck-above enemy WITHOUT it is a live boss fight's parked anchor, left alone.
 	{
 		int shown = 0;
 		fprintf(f, "\nLive enemies (idx: ex,ey exc,eyc excc,eycc link armor type edmg):\n");
@@ -287,11 +289,20 @@ void crashlog_write_game_state(FILE *f)
 			++shown;
 			bool stuck = enemy[i].ey <= -58 && enemy[i].eyc <= 0 &&
 			             enemy[i].eycc <= 0 && enemy[i].fixedmovey <= 0;
+			bool rescued = false;
+			if (stuck && enemy[i].linknum != 0)
+			{
+				for (int e = 0; e < 100 && !rescued; ++e)
+					rescued = enemyAvail[e] != 1 && enemy[e].linknum == enemy[i].linknum &&
+					          !(enemy[e].ey <= -58 && enemy[e].eyc <= 0 &&
+					            enemy[e].eycc <= 0 && enemy[e].fixedmovey <= 0);
+			}
 			fprintf(f, "  %2d: %4d,%-4d  %3d,%-3d  %3d,%-3d  L%-3d a%-3d t%-4d e%d%s\n",
 			        i, (int)enemy[i].ex, (int)enemy[i].ey, (int)enemy[i].exc, (int)enemy[i].eyc,
 			        (int)enemy[i].excc, (int)enemy[i].eycc, (int)enemy[i].linknum,
 			        (int)enemy[i].armorleft, (int)enemy[i].enemytype, (int)enemy[i].edamaged,
-			        stuck ? "  <-- stuck-above" : "");
+			        !stuck ? "" : rescued ? "  <-- stuck-above (group reachable)"
+			                              : "  <-- stuck-above (orphaned)");
 		}
 		if (shown == 0)
 			fprintf(f, "  (none)\n");
