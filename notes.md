@@ -274,7 +274,7 @@ passes and two buffers:
 - Enemies bound to the layers are sprites, not tiles: they slide over the mirrored
   region unreflected (same as before; intentional).
 
-### Slow-scroll smoothing — `endless.c`, `tyrian2.c`, `render_list.c`
+### Slow-scroll smoothing — `endless_combat.c`, `tyrian2.c`, `render_list.c`
 
 Levels slow the vertical scroll with the delay gate (`map*YDelayMax`, event 3:
 layer 1 = 1px every 3 ticks, layer 2 = 1px every 2 ticks). The average rate is
@@ -301,7 +301,7 @@ so the sim scroll (and demos, collision, events) stays byte-identical to stock.
 - Only layers 1/2 gate (layer 3 always scrolls `backMove3`/tick); enemies
   scroll-track layers 1/3 only, so they inherit the glue automatically.
 
-### Endless scroll boost — `endless.c` (`endlessScrollExtraPx`)
+### Endless scroll boost — `endless_combat.c` (`endlessScrollExtraPx`)
 
 Speeding the scroll by adding whole `baseMove` lumps pulses the velocity, and on
 delay-gated layers (`map*YDelayMax`, backMove forced 0 on off-ticks) the boost
@@ -422,7 +422,42 @@ Local motion beyond the ride is prorated like the other banks, and sky
   black out the widened middle; the readout boxes anchor 1px inside the same
   constants, so frame and box stay locked.
 
-## Endless mode — `endless.c`, `endless.h`
+## Endless mode — `endless*.c`, `endless.h`, `endless_internal.h`
+
+Endless mode is split across nine files. `endless.h` is the public interface the
+rest of the game calls; `endless_internal.h` is the private contract between the
+endless files (shared run state, shared helpers) and maps out which file owns what:
+
+| file | owns |
+| --- | --- |
+| `endless.c` | run state, lifecycle, zone milestones, the run-end screen |
+| `endless_rng.c` | the run seed and the structural RNG, the seed-select screen |
+| `endless_level.c` | which shipped level a zone plays, its music, its reroll |
+| `endless_combat.c` | enemy scaling, elites, specials, player-side modifiers |
+| `endless_perks.c` | perks |
+| `endless_shop.c` | the outpost: stock, prices, the E-Shop buys, the gamble |
+| `endless_mods.c` | the mutator table: sector names, danger tiers, help text |
+| `endless_course.c` | Chart-a-Course: generating and committing the next sector |
+| `endless_save.c` | the `endless.sav` sidecar and the Quit Level sortie snapshot |
+
+### Where the tuning knobs live
+
+Retuning endless mode means editing a named block, not hunting literals:
+
+| what | where |
+| --- | --- |
+| enemy intensity (HP, boss HP, fire rate, shot speed, shot damage) | "Enemy intensity tuning" block, `endless_combat.c` |
+| rising tide, contact damage, elite share | the `ENDLESS_TIDE_*` / `ENDLESS_CONTACT_*` blocks, `endless_combat.c` |
+| perk strengths | `ENDLESS_PERK_*`, `endless_internal.h` |
+| outpost prices and their per-visit escalation | "Outpost price tuning" block, `endless_shop.c` |
+| how rare each signature sector is | `endlessRareInjections[]`, `endless_course.c` |
+| what a danger score reads as (tier word + letter grade) | `endlessDangerBands[]`, `endless_mods.c` |
+| deep-run danger tilt | `ENDLESS_DANGER_RAMP_*`, `endless_course.c` |
+
+`endlessGenerateCourses` is a sequence of named phases (deal themes → widen → boon → gambits →
+rare injections → dedupe → visit flavor → milestone slate → sort → name). **Order is behaviour**:
+every phase that draws does so off the seeded structural stream, so moving one — or inserting a
+new one that draws — changes what every existing seed generates. Append rather than insert.
 
 ### Seeded structure RNG
 
@@ -538,7 +573,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
   gathered up top and re-deals only the mutator sets. Reward follows danger
   automatically (same `endlessModTable` the payout reads), so these pay big.
   The milestone constants and `endlessMilestoneKind` (the zone about to be
-  charted) / `endlessMilestoneClearedAt` (a depth that WAS one) live at the top of
+  charted) / `endlessMilestoneClearedAt` (a depth that WAS one) live in
   `endless.c` with the other run-progress state, since the outpost needs them long
   before the course generator does.
 - A GRAND milestone always deals **"The End"**, and it is NOT a fixed bitset — only
@@ -580,9 +615,9 @@ mutable `last`, so a Quit-Level retry replays the same track.
   without an Apex/Legion tier — a rare shot at a genuine nightmare outside the
   milestones. The sub-pool now spans 46-73 across 20 rows.
 - The marker's `word` in `endlessModTable` is **NULL**, meaning "label, not
-  mechanic": `endlessCourseModRows` and `endlessAutoBody` both skip NULL-word bits,
-  so the monitor's threat column and the help line list only the sector's real
-  dangers — 6-10 rows (11 when Overload/Overclock adds its display-only scroll
+  mechanic": `endlessCourseModRows` skips NULL-word bits, so the monitor's threat
+  column lists only the sector's real dangers — 6-10 rows (11 when
+  Overload/Overclock adds its display-only scroll
   row), against a 16-row monitor. That is the point of the design:
   the finale is read as a long wall of threats plus an off-scale rank, not as a
   curated one-liner. (Any future label-only bit gets this behaviour for free.)
@@ -708,7 +743,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
   Compatibility avoids same-lever cancels (no frail+fortified, no
   dilation+swift/overclock) and keeps the one-kill-fire rule (only one boon
   added). Un-named combos read with the right tone via three generic-name pools
-  (ominous / fortunate / gambit), chosen in `endlessComboName` off
+  (ominous / fortunate / gambit), chosen in `endlessComboNameSalted` off
   `ENDLESS_HOSTILE_MASK` vs `ENDLESS_BOON_MASK`.
 - Names are unique per chart: distinct bitsets can hash to the same generic
   word, so a final RNG-free pass in `endlessGenerateCourses` (after the danger
