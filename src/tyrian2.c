@@ -1080,13 +1080,39 @@ static bool enemy_stuck_above_screen(unsigned int i)
 	       enemy[i].fixedmovey <= 0;
 }
 
-// Count live enemies stuck above the screen: a dedicated full-pool scan, deliberately not the
+// True if this enemy's link group still has a member the player can reach. Killing ANY member of a
+// linkgroup cascades the whole group away, so one reachable partner means the group is a live,
+// winnable fight and nothing here is orphaned -- HARVEST's parked anchor shares linknum 10 with the
+// 12 shootable boss pieces resting at ey ~ +4/+32 for the entire fight. linknum 0 means "unlinked":
+// those never cascade (the death loop skips link 0), so each is its own group and is never rescued.
+static bool enemy_link_group_reachable(unsigned int i)
+{
+	const JE_byte link = enemy[i].linknum;
+	if (link == 0)
+		return false;
+
+	for (int e = 0; e < 100; e++)
+		if (enemyAvail[e] != 1 && enemy[e].linknum == link && !enemy_stuck_above_screen(e))
+			return true;
+
+	return false;
+}
+
+// The watchdog's real target: stuck above the reach line AND with no reachable link-group partner
+// left, i.e. an enemy no shot can ever touch again. This is the "boss died before its script staged
+// the fight" state and nothing else (notes.md §Map-stop softlock watchdog).
+static bool enemy_stuck_orphaned(unsigned int i)
+{
+	return enemy_stuck_above_screen(i) && !enemy_link_group_reachable(i);
+}
+
+// Count live enemies orphaned above the screen: a dedicated full-pool scan, deliberately not the
 // draw loop's on-screen census (notes.md §Map-stop softlock watchdog).
 static unsigned int count_stuck_above_screen(void)
 {
 	unsigned int n = 0;
 	for (int i = 0; i < 100; i++)
-		if (enemyAvail[i] != 1 && enemy_stuck_above_screen(i))
+		if (enemyAvail[i] != 1 && enemy_stuck_orphaned(i))
 			++n;
 	return n;
 }
@@ -3961,14 +3987,16 @@ draw_player_shot_loop_end:
 	// Map-stop softlock watchdog: a boss killed before its script finishes staging the fight can
 	// orphan a group member frozen above the screen -- unreachable, and with the event clock
 	// stopped unmovable -- so it holds enemyOnScreen != 0 forever. After a stop is held long enough
-	// with one present, cull it like an off-playfield enemy and the level resumes. notes.md §Level scripting.
+	// with one present, cull it like an off-playfield enemy and the level resumes. Only ORPHANED
+	// ones count: a parked anchor whose linkgroup still has shootable members is a boss fight in
+	// progress, and culling it there would release the stop mid-fight. notes.md §Level scripting.
 	enemyParkedAbove = count_stuck_above_screen();
 	if (!endLevel && stopBackgrounds && !forceEvents && enemyParkedAbove != 0)
 	{
 		if (++mapStopStallTicks >= MAP_STOP_STALL_LIMIT)
 		{
 			for (int i = 0; i < 100; i++)
-				if (enemyAvail[i] != 1 && enemy_stuck_above_screen(i))
+				if (enemyAvail[i] != 1 && enemy_stuck_orphaned(i))
 					enemyAvail[i] = 1;
 			mapStopStallTicks = 0;
 		}

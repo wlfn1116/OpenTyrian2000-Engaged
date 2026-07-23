@@ -1037,7 +1037,14 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
   `enemyOnScreen`, but shots can't reach it, the stopped scroll can't carry it in,
   and the frozen clock can't move it. The armed bar then shows a full-health
   "boss" that is already dead.
-- The watchdog (`enemy_stuck_above_screen` + `count_stuck_above_screen`): each
+- Why the anchor exists at all: the `stopBackgroundNum == 1` release census only
+  covers the two batches drawn with `tempBackMove = backMove` — `JE_drawEnemy(50)`
+  (slots 25–49) and `JE_drawEnemy(100)` (slots 75–99). HARVEST's 12 boss pieces are
+  event-7 "Top Enemy" spawns, i.e. slots 50–74, drawn by `JE_drawEnemy(75)` on
+  layer 3 — invisible to that census. The event-10 anchor lands in slots 75–99, so
+  it alone holds the stop, and the cascade that kills the pieces kills it too.
+- The watchdog (`enemy_stuck_orphaned` = `enemy_stuck_above_screen` +
+  `enemy_link_group_reachable`, counted by `count_stuck_above_screen`): each
   tick a dedicated full-pool scan sets `enemyParkedAbove` = live enemies that are
   `ey <= -58` and vertically frozen (`eyc<=0`, `eycc<=0`, `fixedmovey<=0`). -58 =
   ascending shots live to y=-40 and the widest hitbox reaches ~17px below `ey`, so
@@ -1065,14 +1072,28 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
   enemies are killable and are a normal clear-the-arena step; they must not gate
   recovery. The watchdog keys on `parkedAbove != 0` alone and culls only the
   stuck-above set (they sit at visible `ey > -58`, so the scan never touches them).
-- Why it can't false-fire on a live fight: a descending boss (`eyc>0`), a bouncer
+- **The geometry test alone false-fires on every live HARVEST fight.** The anchor
+  is spawned at `ey=-108` and frozen (event 19 `dat2=0`, event 20 `dat2=0`) whether
+  or not the boss is alive, so a normal fight trips the same predicate and the
+  watchdog culled the anchor ~6 s in. That released the stop mid-fight: the clock
+  resumed, `t=6332` restored `backMove3=2`, the still-alive boss scrolled off the
+  bottom, and the level ran on to its `t=7100` end event — the boss fight simply
+  evaporated. Hence the second gate, `enemy_link_group_reachable`: killing ANY
+  linkgroup member cascades the whole group, so a single live partner that is *not*
+  itself stuck-above means the fight is winnable and nothing is orphaned. The 12
+  boss pieces rest at `ey ≈ +4`/`+32` (they spawn at -56/-28, ride `backMove3=2`
+  for 30 ticks, then event 19 sets `eyc=-2` and exactly cancels the ride), so
+  during a real fight the anchor is always rescued. `linknum == 0` is "unlinked" —
+  those never cascade, so each is its own group and is never rescued.
+- Why it can't false-fire otherwise: a descending boss (`eyc>0`), a bouncer
   (`eyc` flips), or a homing chaser (drives `eyc>0` toward the player) all fail the
   vertical test and resolve on their own; a boss killed normally cascades the
   anchor away before the timer. In practice it fires only in the orphaned-anchor
   softlock. `forceEvents` levels self-drive the clock and are exempt.
 - The crash-log dumps `parkedAbove=` / `stallTicks=` and a per-enemy table
-  (`ex,ey exc,eyc excc,eycc link armor type`, with a `<-- stuck-above` marker) so
-  a stuck scroll shows exactly which enemies are holding it.
+  (`ex,ey exc,eyc excc,eycc link armor type`), marking each stuck-above enemy
+  `(orphaned)` — what the watchdog culls — or `(group reachable)` — a live fight's
+  parked anchor, left alone — so a stuck scroll shows exactly what is holding it.
 
 ## General pitfalls
 
