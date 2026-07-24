@@ -41,6 +41,12 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Rapid Charger",    "Charge sidekicks power up faster.",    4 },
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 	{ "Radar",            "Chart-a-Course shows each sector's level.", 1 },
+	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
+	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
+	{ "Opening Salvo",    "A long pause supercharges your next shot.", 1 },
+	{ "Kinetic Converter","Absorbed shield hits refuel the generator.",3 },
+	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
+	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -48,6 +54,8 @@ JE_byte endlessPerkOwned[PERK_COUNT]; // stack counts, reset each run
 int endlessPerkChoice[3];             // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..3)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
+int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
+int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
 // The run depth whose post-zone perk pick has already been resolved (taken or declined); -1 =
 // none yet. endlessBetweenLevels offers the forced pick only when this lags the current depth,
 // so re-entering the same outpost (e.g. after a save/reload) can't hand out a second perk.
@@ -177,6 +185,113 @@ int endlessPerkShotSpeedPercent(void)
 bool endlessPerkRadarActive(void)
 {
 	return endlessMode && endlessPerkOwned[PERK_RADAR] > 0;
+}
+
+// --- New perks: Surveyor / Executioner / Opening Salvo / Kinetic Converter / Countermeasures /
+//     Chain Reaction. Like the perks above, each folds into an existing player-side lever. ----------
+
+// Surveyor perk: extra Chart-a-Course routes this visit (one per stack). The caller adds these to the
+// rolled course count AFTER the RNG roll and clamps to ENDLESS_MAX_COURSES, so the seed stream is untouched.
+int endlessPerkSurveyorRoutes(void)
+{
+	return endlessMode ? endlessPerkOwned[PERK_SURVEYOR] * ENDLESS_PERK_SURVEYOR_ROUTES : 0;
+}
+
+// Executioner perk: bonus damage a player shot deals to a badly wounded target. `armorleft` is its
+// CURRENT armor, `fullHp` its latched full armor (enemy healthbar_max; 0 before the first hit, when it
+// is by definition at full HP so no bonus), `boss` selects the tighter boss threshold. Returns 0 for a
+// healthy / not-yet-hit / invulnerable target, else +ENDLESS_PERK_EXEC_DMG_PCT% of `damage` per stack.
+int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss)
+{
+	const int stacks = endlessMode ? endlessPerkOwned[PERK_EXECUTIONER] : 0;
+	if (stacks == 0 || damage <= 0 || fullHp <= 0 || armorleft <= 0 || armorleft >= 255)
+		return 0;
+	const int threshold = boss ? ENDLESS_PERK_EXEC_BOSS_PCT : ENDLESS_PERK_EXEC_HP_PCT;
+	if (armorleft * 100 >= fullHp * threshold)  // not wounded enough
+		return 0;
+	return damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT / 100;
+}
+
+// --- Opening Salvo perk ---------------------------------------------------------------------------
+// endlessSalvoIdle counts ticks since the main gun last fired (advanced by endlessGameplayTick).
+// endlessSalvoVolley is armed by the fire path when the main gun opens a charged volley, and stays
+// set for the REST of that tick so every gun firing alongside it -- rear weapon and both sidekicks
+// -- is boosted + power-free too. endlessOpeningSalvoTick clears it at the start of the next tick.
+static bool endlessSalvoVolley = false;
+
+// Start-of-tick housekeeping: drop last tick's volley flag (the fire path re-arms it if this tick's
+// main shot is charged), then advance the idle timer while the perk is owned (capped so a long idle
+// can't overflow). Called once per tick from endlessGameplayTick, before any weapon fires.
+void endlessOpeningSalvoTick(void)
+{
+	endlessSalvoVolley = false;
+	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle < 1000000)
+		++endlessSalvoIdle;
+}
+
+// The main gun just fired: reset the idle timer and, if the pause charged this volley, arm
+// endlessSalvoVolley so player_shot_create boosts every shot created for the rest of this tick.
+bool endlessOpeningSalvoConsume(void)
+{
+	const bool charged = endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
+	endlessSalvoIdle = 0;
+	if (charged)
+		endlessSalvoVolley = true;  // rides the rest of the tick (rear + sidekicks); cleared next endlessOpeningSalvoTick
+	return charged;
+}
+
+bool endlessOpeningSalvoVolleyActive(void) { return endlessMode && endlessSalvoVolley; }
+int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
+
+// --- Kinetic Converter perk -----------------------------------------------------------------------
+// Generator power refunded when the shield soaks a hit. `shieldAbsorbed` is the shield points lost,
+// `tpwr` the shield's per-point charge cost (shields[].tpwr); refunds ENDLESS_PERK_KINETIC_PCT% of that
+// per stack. The caller clamps the resulting power to the generator ceiling.
+int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
+{
+	const int stacks = endlessMode ? endlessPerkOwned[PERK_KINETIC] : 0;
+	if (stacks == 0 || shieldAbsorbed <= 0 || tpwr <= 0)
+		return 0;
+	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
+}
+
+// --- Countermeasure Suite perk --------------------------------------------------------------------
+// endlessCmCooldown counts down to the next ready burst (advanced by endlessGameplayTick).
+void endlessCountermeasureTick(void)
+{
+	if (endlessCmCooldown > 0)
+		--endlessCmCooldown;
+}
+
+// The projectile-clear radius to use RIGHT NOW: 0 if the perk isn't owned or a burst is still on
+// cooldown, else the 1- or 2-stack radius. When it returns nonzero the caller fires the burst and
+// must call endlessCountermeasureFired() to re-arm the cooldown.
+int endlessPerkCountermeasureRadius(void)
+{
+	if (!endlessMode || endlessPerkOwned[PERK_COUNTERMEASURE] == 0 || endlessCmCooldown > 0)
+		return 0;
+	return (endlessPerkOwned[PERK_COUNTERMEASURE] >= 2) ? ENDLESS_PERK_CM_RADIUS2 : ENDLESS_PERK_CM_RADIUS1;
+}
+
+void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
+
+// --- Chain Reaction perk --------------------------------------------------------------------------
+// The pulse itself (finding nearby enemies, dealing armor damage, vaporising fodder) lives at the
+// player-shot kill sites in tyrian2.c, where the enemy tables and explosions are; these just report
+// whether it is active and how far / hard it reaches.
+bool endlessPerkChainReactionActive(void) { return endlessMode && endlessPerkOwned[PERK_CHAINRXN] > 0; }
+int  endlessPerkChainRadius(void)         { return ENDLESS_PERK_CHAIN_RADIUS; }
+
+// Armor damage the pulse deals to nearby fodder. Ordinary enemy HP is scaled up with depth
+// (endlessArmorPercent, applied at spawn), so scale the pulse the same way -- otherwise a flat value
+// that clears fodder early would barely scratch it deep. Kept >= the base so it never rounds to nothing.
+int endlessPerkChainDamage(void)
+{
+	if (!endlessMode || endlessPerkOwned[PERK_CHAINRXN] == 0)
+		return 0;
+	const int base = endlessPerkOwned[PERK_CHAINRXN] * ENDLESS_PERK_CHAIN_DMG;
+	const int scaled = base * endlessArmorPercent() / 100;
+	return (scaled < base) ? base : scaled;
 }
 
 // Roll this shop visit's perk offers: up to 3 distinct perks that aren't already maxed out.

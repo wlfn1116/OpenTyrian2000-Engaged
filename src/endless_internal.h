@@ -48,8 +48,10 @@ Uint32 endlessEliteRand(void);             // the elite/champion tier random (it
 
 // --- endless.c: per-zone timers --------------------------------------------------
 #define ENDLESS_TURBODRIVE_TICKS 70   // ~2s of boosted fire per kill (TURBODRIVE)
+#define ENDLESS_RETALIATION_TICKS 35  // ~1s of quickened ENEMY fire per kill (RETALIATION); refreshes, doesn't stack
 extern int endlessZoneTicks;          // ticks elapsed this zone (drives ENRAGE)
 extern int endlessTurbodriveTimer;    // ticks left in the quickened-fire window after a kill
+extern int endlessRetaliationTimer;   // ticks left in the RETALIATION quickened-enemy-fire window (refreshed each kill)
 
 // --- endless.c: zone milestones --------------------------------------------------
 // The outpost BEFORE a milestone swaps its buy/sell music for this track, so the player is warned
@@ -90,6 +92,12 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out
 
+// STATIC DISCHARGE: a hit shorts the generator out briefly (no recharge), so the drained power
+// actually stays drained instead of being repaid by the next tick's regen.
+bool endlessStaticLockoutActive(void);         // is generator regen currently suppressed?
+void endlessStaticLockoutTick(void);           // drain the lockout (once per tick)
+void endlessStaticLockoutReset(void);          // clear it at level start
+
 int  endlessDifficultyZone(void);              // the current zone as the difficulty ramp sees it
 int  endlessNaturalEliteChancePercent(void);   // the depth-driven SPECIAL-enemy share, before mutators
 bool endlessEliteBoonsUnlocked(void);          // are NOCHAMP / NOELITE eligible to be charted yet?
@@ -117,6 +125,18 @@ void endlessRollGravityDir(void);              // pick this sector's gravity hea
 #define ENDLESS_PERK_CHARGE_STEP    4  // ticks cut from the charge-sidekick charge interval per Rapid Charger stack (base 20)
 #define ENDLESS_PERK_CHARGE_MIN     4  // ...but a charge level never builds quicker than this many ticks (floor)
 #define ENDLESS_PERK_SHOTSPEED_PCT 25  // +% shot travel speed per High-Velocity Rounds stack
+#define ENDLESS_PERK_SURVEYOR_ROUTES 1 // +Chart-a-Course routes per Surveyor stack (capped at ENDLESS_MAX_COURSES)
+#define ENDLESS_PERK_EXEC_DMG_PCT  15  // +% shot damage per Executioner stack, vs a wounded target
+#define ENDLESS_PERK_EXEC_HP_PCT   25  // Executioner "wounded" threshold: target below this % of full HP
+#define ENDLESS_PERK_EXEC_BOSS_PCT 15  // ...a tighter threshold for boss-bar enemies (harder to execute)
+#define ENDLESS_PERK_SALVO_IDLE    70  // ticks the main gun must sit idle to charge an Opening Salvo (~2s)
+#define ENDLESS_PERK_SALVO_DMG_PCT 80  // +% damage on the charged Opening Salvo volley (and it costs no power)
+#define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
+#define ENDLESS_PERK_CM_RADIUS1    26  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
+#define ENDLESS_PERK_CM_RADIUS2    40  // ...widened radius at 2 stacks
+#define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
+#define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy
+#define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
 
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
 // extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
@@ -134,7 +154,13 @@ enum {
 	PERK_SHIELDREGEN,
 	PERK_CHARGERATE,
 	PERK_SHOTSPEED,
-	PERK_RADAR,        // append new perks here; the index is the on-disk save slot, so don't renumber
+	PERK_RADAR,
+	PERK_SURVEYOR,        // append new perks here; the index is the on-disk save slot, so don't renumber
+	PERK_EXECUTIONER,
+	PERK_SALVO,
+	PERK_KINETIC,
+	PERK_COUNTERMEASURE,
+	PERK_CHAINRXN,
 	PERK_COUNT
 };
 
@@ -149,6 +175,8 @@ extern JE_byte endlessPerkOwned[PERK_COUNT];  // stack counts, reset each run
 extern int endlessPerkChoice[3];              // this visit's offered perk ids
 extern int endlessPerkChoiceN;                // how many are offered (0..3)
 extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
+extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run)
+extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run)
 extern int endlessPerkDepthDone;              // run depth whose perk pick is already resolved; -1 = none
 
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)
@@ -203,8 +231,8 @@ typedef struct { Uint64 mods; const char *name; } EndlessTheme;
 // The row counts below are part of the contract: COUNTOF() at the call sites in other endless_*.c
 // files reads them from here. Grow a table without bumping its number and endless_mods.c fails to
 // compile ("too many initializers"), so the pair cannot silently drift.
-extern const EndlessMod   endlessModTable[36];
-extern const EndlessTheme endlessHostileThemes[147];
+extern const EndlessMod   endlessModTable[40];
+extern const EndlessTheme endlessHostileThemes[159];
 extern const EndlessTheme endlessKamikazeThemes[12];
 extern const EndlessTheme endlessHomingThemes[8];
 extern const EndlessTheme endlessBoonThemes[43];
@@ -214,6 +242,8 @@ extern const EndlessTheme endlessEvilThemes[30];
 extern const EndlessTheme endlessRedlineThemes[2];
 extern const EndlessTheme endlessSluggishThemes[5];
 extern const EndlessTheme endlessDeadgenThemes[5];
+extern const EndlessTheme endlessMartyrdomThemes[5];  // MARTYRDOM: rare-injected death-burst sectors (its own pool)
+extern const EndlessTheme endlessSeekerThemes[5];     // SEEKER: rare-injected course-correcting-shot sectors (its own pool)
 
 // Bits that make a sector DANGEROUS. The danger score sums only these, so a pure-boon course -- e.g.
 // Bounty, which pays big but adds no danger -- never reads as a high tier. Cursed is handled apart
@@ -226,6 +256,7 @@ extern const EndlessTheme endlessDeadgenThemes[5];
 	ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT | ENDLESS_MOD_MISFIRE | ENDLESS_MOD_OVERHEAT | \
 	ENDLESS_MOD_HOMING | ENDLESS_MOD_RAMPAGE | ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH | \
 	ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN | ENDLESS_MOD_SLIPSTREAM | ENDLESS_MOD_WARP | \
+	ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_SEEKER | ENDLESS_MOD_STATIC | ENDLESS_MOD_RETALIATION | \
 	ENDLESS_MOD_THEEND )
 
 // Bits that HELP you -- the boon side. A course carrying any of these plus a hostile bit is a "mixed"

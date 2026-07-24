@@ -417,6 +417,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	if (endlessMode && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		power_use = 0;
 
+	// Endless Opening Salvo perk: a charged volley (the fire path arms it for the front gun only)
+	// costs no generator power. Its shots are also tagged below for the collision-time damage bonus.
+	if (endlessMode && endlessOpeningSalvoVolleyActive())
+		power_use = 0;
+
 	if (!cheatInfiniteGenerator)
 	{
 		if (power < power_use)
@@ -448,6 +453,9 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 		PlayerShotDataType* shot = &playerShotData[shot_id];
 		shot->chainReaction = 0;
+		// Endless Opening Salvo perk: tag this shot if it belongs to a charged volley, so the
+		// collision applies the damage bonus only to those shots (not every shot on screen).
+		shot->salvoBoost = (endlessMode && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
 
 		shot->playerNumber = playerNum;
 

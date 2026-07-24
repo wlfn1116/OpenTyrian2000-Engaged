@@ -28,6 +28,7 @@ typedef struct {
 	JE_word shotGr, shotAni, shotAniMax;
 	Uint8 shotDmg;
 	JE_byte shotBlastFilter, chainReaction, playerNumber, aimAtEnemy, aimDelay, aimDelayMax;
+	JE_byte salvoBoost;  // endless Opening Salvo perk: 1 = this shot is part of a charged volley (extra damage at collision)
 } PlayerShotDataType;
 
 // Player-shot pool size, bumped from the original 81 so a sustained special (e.g. an autofired

@@ -65,6 +65,208 @@
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset);
 static void draw_enemy_health_bars(void);
 
+// --- Endless sector dangers wired into the enemy-shot pool -------------------------------------
+// MARTYRDOM and SEEKER ROUNDS both act on enemyShot[] (spawned/moved here in tyrian2.c), so their
+// spawn/movement code lives with the pool while the per-modifier decisions live in endless_combat.c.
+
+#define ENDLESS_MARTYR_POOL_MARGIN   48    // suppress the whole burst unless at least (shots + this) enemy-shot slots are free -- the "pool nearly full" guard
+#define ENDLESS_MARTYR_SHOT_SPEED    3.0f  // slow bullets, as specified ("four slow cardinal shots")
+#define ENDLESS_MARTYR_SHOT_DMG      4     // base per-bullet damage, scaled by the sector's shot-damage ramp
+#define ENDLESS_MARTYR_SHOT_DURATION 120   // ticks before a burst bullet self-expires (also culled off-screen)
+#define ENDLESS_TWO_PI               6.28318531f
+
+// MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
+// pool -- 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
+// nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite matches the level's
+// own fire when one has been seen, else a guaranteed-valid fallback (endlessMartyrShotSprite is never 0).
+static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
+{
+	if (shots <= 0)
+		return;
+	const JE_word sgr = endlessMartyrShotSprite();
+
+	int freeSlots = 0;
+	for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
+		if (enemyShotAvail[b] == 1)
+			++freeSlots;
+	if (freeSlots < shots + ENDLESS_MARTYR_POOL_MARGIN)
+		return;                          // pool nearly full -- suppress the burst
+
+	int dmg = (ENDLESS_MARTYR_SHOT_DMG * endlessShotDamagePercent() + 50) / 100;
+	dmg = (dmg < 1) ? 1 : (dmg > 255) ? 255 : dmg;
+
+	for (int k = 0; k < shots; ++k)
+	{
+		int b;
+		for (b = 0; b < ENEMY_SHOT_MAX; ++b)
+			if (enemyShotAvail[b] == 1)
+				break;
+		if (b == ENEMY_SHOT_MAX)
+			return;                      // pool exhausted mid-burst (shouldn't happen past the guard)
+		enemyShotAvail[b] = 0;           // occupy the slot
+
+		const float ang = ENDLESS_TWO_PI * (float)k / (float)shots;
+		enemyShot[b].sx  = sx;
+		enemyShot[b].sy  = sy;
+		enemyShot[b].sxm = (JE_integer)roundf(cosf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
+		enemyShot[b].sym = (JE_integer)roundf(sinf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
+		enemyShot[b].sxc = 0;
+		enemyShot[b].syc = 0;
+		enemyShot[b].tx = 0;
+		enemyShot[b].ty = 0;
+		enemyShot[b].sgr = sgr;
+		enemyShot[b].sdmg = (JE_byte)dmg;
+		enemyShot[b].duration = ENDLESS_MARTYR_SHOT_DURATION;
+		enemyShot[b].animate = 0;
+		enemyShot[b].animax = 0;
+		enemyShot[b].seekerArm = 0;      // radial by design -- never a seeker
+	}
+}
+
+// --- Chain Reaction perk (endless) --------------------------------------------------------------
+// A destroyed enemy emits a pulse that damages nearby NORMAL-tier fodder. Kills only QUEUE a pulse
+// here (with the enemy's screen position); the queue is drained once the whole player-shot loop
+// finishes (chain_reaction_process). Deferring keeps the pulse OUT of the shot loop's own linkgroup
+// bookkeeping -- so it can't corrupt the kill tally mid-loop -- and makes it non-recursive by
+// construction (a chain kill enqueues nothing).
+#define CHAIN_QUEUE_MAX 64
+static struct { int x, y; } chainPulse[CHAIN_QUEUE_MAX];
+static int chainPulseN = 0;
+static int chainPulseLastLink = 0;   // dedup consecutive same-link kills -> one pulse per multi-tile enemy
+
+// Queue a pulse at a killed enemy's screen position. Deduped per linked enemy exactly like
+// endlessCountKill, so a multi-tile enemy pulses once, not once per tile.
+static void chain_queue_kill(int screenX, int y, int linknum)
+{
+	if (!endlessPerkChainReactionActive())
+		return;
+	if (linknum != 0 && linknum == chainPulseLastLink)
+		return;
+	chainPulseLastLink = linknum;
+	if (chainPulseN < CHAIN_QUEUE_MAX)
+	{
+		chainPulse[chainPulseN].x = screenX;
+		chainPulse[chainPulseN].y = y;
+		++chainPulseN;
+	}
+}
+
+// Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
+// depletes (a plain kill -- no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
+// Elites, champions, bosses, staged-death enemies and score pickups are left for real kills.
+static void chain_reaction_process(void)
+{
+	if (chainPulseN == 0)
+	{
+		chainPulseLastLink = 0;
+		return;
+	}
+	const int radius = endlessPerkChainRadius();
+	const int dmg    = endlessPerkChainDamage();
+	for (int p = 0; p < chainPulseN; ++p)
+	{
+		const int px = chainPulse[p].x, py = chainPulse[p].y;
+		for (int e = 0; e < 100; ++e)
+		{
+			if (enemyAvail[e] != 0)                            // live enemies only
+				continue;
+			if (enemy[e].scoreitem || enemy[e].special)        // pickups / flag-setters: never
+				continue;
+			if (enemy[e].eliteState >= 2)                      // elites/champions earn a real kill, not a chain pop
+				continue;
+			if (enemy[e].armorleft == 0 || enemy[e].armorleft >= 254)  // dead, or invulnerable/boss marker
+				continue;
+
+			bool isBoss = false;   // bosses spend HP through the damageAccum multiplier, so raw armor
+			for (unsigned int bi = 0; bi < COUNTOF(boss_bar); bi++)   // chipping would bypass their scaling entirely
+				if (enemy[e].linknum != 0 && enemy[e].linknum == boss_bar[bi].link_num)
+					isBoss = true;
+			if (isBoss)
+				continue;
+
+			const int ex = enemy[e].ex + enemy[e].mapoffset;
+			if (abs(ex - px) > radius || abs(enemy[e].ey - py) > radius)
+				continue;
+
+			// A LINKED enemy (multi-tile hull, formation) may be chipped but never destroyed here:
+			// removing one tile behind the shot loop's back would orphan the rest of its group. Lone
+			// fodder has no such tie, so the pulse can finish it outright.
+			const bool lone = (enemy[e].linknum == 0);
+
+			if (enemy[e].armorleft > dmg || !lone)
+			{
+				int chip = dmg;
+				if (!lone && chip >= enemy[e].armorleft)
+					chip = enemy[e].armorleft - 1;             // leave a linked tile alive on 1 armor
+				if (chip > 0)
+				{
+					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives -- spark so the arc is visible
+					JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
+				}
+			}
+			else
+			{
+				enemyAvail[e] = 1;                             // vaporised
+				enemyKilled++;
+				endlessCountKill(enemy[e].linknum);
+				if (enemyDat[enemy[e].enemytype].esize == 1)
+				{
+					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
+					soundQueue[6] = S_EXPLOSION_9;
+				}
+				else
+				{
+					JE_setupExplosion(ex, enemy[e].ey, 0, 1, false, false);
+					soundQueue[6] = S_EXPLOSION_8;
+				}
+			}
+		}
+	}
+	chainPulseN = 0;
+	chainPulseLastLink = 0;
+}
+
+// SEEKER ROUNDS: the single mid-flight course correction (a bounded ~23-degree turn toward the
+// player), applied once per shot at ~half a second (see the enemy-shot movement loop). Rotates the
+// velocity toward the player while preserving its speed; if the player already sits within the max
+// turn, it aims straight instead. NOT continuous homing -- the caller disarms the shot afterwards.
+#define ENDLESS_SEEKER_DELAY_TICKS 17     // ~0.5s at the 35Hz sim before the one correction fires
+#define ENDLESS_SEEKER_TURN_COS 0.9205f   // cos(~23 deg) -- the max single-shot turn
+#define ENDLESS_SEEKER_TURN_SIN 0.3907f   // sin(~23 deg)
+static void endlessSeekerCorrect(EnemyShotType *s)
+{
+	const float vx = (float)s->sxm, vy = (float)s->sym;
+	const float speed = sqrtf(vx * vx + vy * vy);
+	if (speed < 0.5f)
+		return;                          // a near-stationary shot has no heading to bend
+	const float dx = (float)((int)player[0].x - s->sx);
+	const float dy = (float)((int)player[0].y - s->sy);
+	const float dmag = sqrtf(dx * dx + dy * dy);
+	if (dmag < 0.5f)
+		return;
+	const float ux = dx / dmag, uy = dy / dmag;      // unit vector toward the player
+	const float cvx = vx / speed, cvy = vy / speed;  // current unit heading
+	const float dot = cvx * ux + cvy * uy;           // cos(angle between heading and target)
+	if (dot >= ENDLESS_SEEKER_TURN_COS)
+	{
+		s->sxm = (JE_integer)roundf(ux * speed);     // within one turn: snap straight at the player, keep the speed
+		s->sym = (JE_integer)roundf(uy * speed);
+	}
+	else
+	{
+		float sn = ENDLESS_SEEKER_TURN_SIN;          // rotate by exactly the max turn, toward the player's side
+		if (cvx * uy - cvy * ux < 0.0f)
+			sn = -sn;                                // sign from the cross product picks the shorter way round
+		s->sxm = (JE_integer)roundf(vx * ENDLESS_SEEKER_TURN_COS - vy * sn);
+		s->sym = (JE_integer)roundf(vx * sn + vy * ENDLESS_SEEKER_TURN_COS);
+	}
+	if (s->sxm == 0 && s->sym == 0)                  // rounding zeroed a tiny vector -- keep it moving
+	{
+		s->sxm = (JE_integer)roundf(vx);
+		s->sym = (JE_integer)roundf(vy);
+	}
+}
+
 boss_bar_t boss_bar[2];
 
 /* Level Event Data */
@@ -1560,6 +1762,9 @@ enemy_still_exists:
 								enemyShot[b].animax = weapons[temp3].weapani;
 
 								enemyShot[b].sgr = weapons[temp3].sg[tempPos];
+								enemyShot[b].seekerArm = 0;   // endless SEEKER arms this below; 0 for every non-seeker shot
+								if (endlessMode)
+									endlessNoteEnemyShotSprite(enemyShot[b].sgr);  // MARTYRDOM: remember a real bullet sprite this level
 								switch (j)
 								{
 								case 1:
@@ -1626,6 +1831,11 @@ enemy_still_exists:
 
 								if (endlessMode)
 								{
+									// SEEKER: arm this newly-fired shot for its single mid-flight course
+									// correction (counted + applied in the enemy-shot movement loop below).
+									if (endlessSeekerActive())
+										enemyShot[b].seekerArm = 1;
+
 									// Endless: enemy projectiles get faster with depth. Scale both
 									// velocity components (set above for fixed-direction and aimed
 									// shots alike); round away from zero so slow shots still speed up.
@@ -2910,8 +3120,15 @@ level_loop:
 
 			// OVERCHARGE / Overdrive / Heavy Rounds perk (endless): your weapons hit harder.
 			// Gate on the computed percent so any damage source (sector mod or run perk) applies.
-			if (endlessMode && endlessPlayerDamagePercent() != 100)
-				damage = damage * endlessPlayerDamagePercent() / 100;
+			if (endlessMode)
+			{
+				int dmgPct = endlessPlayerDamagePercent();
+				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
+				if (z != MAX_PWEAPON - 1 && playerShotData[z].salvoBoost)
+					dmgPct += endlessOpeningSalvoDamagePercent();
+				if (dmgPct != 100)
+					damage = damage * dmgPct / 100;
+			}
 
 			for (b = 0; b < 100; b++)
 			{
@@ -3005,6 +3222,16 @@ level_loop:
 							damage = enemy[b].damageAccum / hpMult;
 							enemy[b].damageAccum -= damage * hpMult;
 						}
+
+						// Executioner perk (endless): a badly wounded target takes extra damage. Computed
+						// from the enemy's latched full HP (post-accumulator, so a tough boss benefits
+						// proportionally) and undone in the shot-carry paths below, so a piercing / overkill
+						// shot does not hand this enemy's bonus to the next one it strikes this tick.
+						int execBonus = endlessMode
+							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
+							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
+							: 0;
+						damage += execBonus;
 
 						temp = enemy[b].linknum;
 						if (temp == 0)
@@ -3106,6 +3333,16 @@ level_loop:
 												endlessCountKill(enemy[temp3].linknum);
 												if (endlessMode && enemy[temp3].eliteState >= 2)
 													endlessAwardEliteKill(enemy[temp3].eliteState);
+												// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
+												// position (dedups to once per linked enemy; helper honours the pool guard).
+												if (endlessMode)
+												{
+													int mShots = endlessMartyrdomBurstShots(enemy[temp3].linknum, enemy[temp3].eliteState);
+													if (mShots > 0)
+														endlessSpawnMartyrBurst(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey, mShots);
+												}
+												// Chain Reaction perk: queue a death-pulse (deduped per linked enemy)
+												chain_queue_kill(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey, enemy[temp3].linknum);
 											}
 
 											enemy[temp3].aniwhenfire = 0;
@@ -3218,6 +3455,16 @@ level_loop:
 											endlessCountKill(enemy[temp2].linknum);
 											if (endlessMode && enemy[temp2].eliteState >= 2)
 												endlessAwardEliteKill(enemy[temp2].eliteState);
+											// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
+											// position (dedups to once per linked enemy; helper honours the pool guard).
+											if (endlessMode)
+											{
+												int mShots = endlessMartyrdomBurstShots(enemy[temp2].linknum, enemy[temp2].eliteState);
+												if (mShots > 0)
+													endlessSpawnMartyrBurst(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey, mShots);
+											}
+											// Chain Reaction perk: queue a death-pulse (deduped per linked enemy)
+											chain_queue_kill(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey, enemy[temp2].linknum);
 										}
 
 										if (enemyDat[enemy[temp2].enemytype].esize == 1)
@@ -3234,6 +3481,8 @@ level_loop:
 								}
 							}
 						}
+
+						damage -= execBonus;  // Executioner: undo the wounded-target bonus before a piercing / overkill shot carries `damage` to the next enemy
 
 						if (infiniteShot)
 						{
@@ -3259,6 +3508,10 @@ draw_player_shot_loop_end:
 			;
 		}
 	}
+
+	// Chain Reaction perk: drain the queued death-pulses now that the player-shot loop is done, so a
+	// chain kill can neither recurse nor disturb the loop's per-linkgroup kill bookkeeping.
+	chain_reaction_process();
 
 	/* Player movement indicators for shots that track your ship */
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -3286,6 +3539,15 @@ draw_player_shot_loop_end:
 		{
 			if (enemyShotAvail[z] == 0)
 			{
+				// SEEKER: a one-time bounded course correction toward the player, ~half a second after
+				// firing. seekerArm is nonzero only for shots armed at spawn under the mod; it counts
+				// sim ticks, fires the single turn at the delay, then disarms (0 = done / not a seeker).
+				if (enemyShot[z].seekerArm > 0 && ++enemyShot[z].seekerArm >= ENDLESS_SEEKER_DELAY_TICKS)
+				{
+					endlessSeekerCorrect(&enemyShot[z]);
+					enemyShot[z].seekerArm = 0;   // one correction only
+				}
+
 				enemyShot[z].sxm += enemyShot[z].sxc;
 				enemyShot[z].sx += enemyShot[z].sxm;
 

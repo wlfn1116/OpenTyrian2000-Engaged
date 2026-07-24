@@ -41,6 +41,10 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_SLUGGISH,  15, "your ship slowed" },      // ship + mouse/touch crawl -- half the reach to dodge with
 	{ ENDLESS_MOD_SHIELDLESS, 12, "no shield regen" },      // shields never recharge -- once spent, you fly on armor
 	{ ENDLESS_MOD_DEADGEN,   30, "generator dead" },        // no shield regen AND the main gun is starved of power (super-rare)
+	{ ENDLESS_MOD_MARTYRDOM, 18, "kills fire a burst" },    // a slain enemy's death throe: a radial burst (4/6/8 by tier)
+	{ ENDLESS_MOD_SEEKER,    14, "shots curve at you" },    // enemy projectiles bend once toward you mid-flight
+	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },      // taking damage bleeds the generator -- mistakes throttle your guns
+	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },  // a kill spree whips enemy fire faster (distinct from time-based Enrage)
 	// The 100th-zone finale marker. A NULL word means "no monitor row and no help-line phrase": it is
 	// a label, not a mechanic, so the threat list stays purely the sector's real dangers. The reward
 	// IS the finale bounty (roughly 15x the base clear on its own), and since the danger score sums
@@ -215,6 +219,22 @@ const EndlessTheme endlessHostileThemes[] = {
 	{ ENDLESS_MOD_ELITEPACK | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING,  "Elite Storm" },
 	{ ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING,  "Bullet Hell" },
 	{ ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING, "Overlord" },
+
+	// -- Static Discharge (COMMON: also in the combinable widen pool, so it mixes freely) --
+	{ ENDLESS_MOD_STATIC,                            "Static Discharge" },
+	{ ENDLESS_MOD_STATIC | ENDLESS_MOD_FRENZY,       "Power Leech" },
+	{ ENDLESS_MOD_STATIC | ENDLESS_MOD_DEVASTATING,  "Short Circuit" },
+	{ ENDLESS_MOD_STATIC | ENDLESS_MOD_SWIFT,        "Live Wire" },
+	{ ENDLESS_MOD_STATIC | ENDLESS_MOD_FORTIFIED,    "Grounded" },
+	{ ENDLESS_MOD_STATIC | ENDLESS_MOD_ELITEPACK,    "Feedback" },
+
+	// -- Retaliation (UNCOMMON: in the shuffle pool but NOT the combinable widen, like Molasses) --
+	{ ENDLESS_MOD_RETALIATION,                            "Retaliation" },
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_FRENZY,       "Backlash" },
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_SWIFT,        "Payback" },
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_DEVASTATING,  "Riposte" },
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,       "Bad Blood" },   // the +5 Retaliation+Enrage synergy sector
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_FORTIFIED,    "Grudge" },
 
 };
 
@@ -395,8 +415,9 @@ const EndlessTheme endlessRareThemes[] = {
 // The CORE is the enemy at its worst -- every enemy-stat lever at once -- and nothing else. Kept out
 // on purpose: the homing tiers, which turn a gun fight into a chase, and the two handicaps that
 // simply take a system away from you (Shieldless, Deadgen). What varies is the special-enemy tier,
-// the scroll pace, and a coin each for the well, the flipped view and the slowed ship -- 80
-// combinations, each still recognisably The End.
+// the scroll pace, a coin each for the well / flipped view / slowed ship, and a coin each for the
+// four reactive dangers (Martyrdom, Seeker, Static Discharge, Retaliation) -- 1280 combinations,
+// each still recognisably The End.
 #define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
                              | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
 
@@ -424,6 +445,18 @@ Uint64 endlessMakeTheEndMods(void)
 		m |= ENDLESS_MOD_TOPSY;
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_SLUGGISH;
+
+	// A coin each for the four reactive dangers, all independent -- The End can roll any mix of them
+	// (or none) on top of the core, so no two finishers punish the same way. Static is safe here: the
+	// core deliberately omits DEADGEN, so the Static/DEADGEN incompatibility never arises.
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_MARTYRDOM;
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_SEEKER;
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_STATIC;
+	if (endlessRand() % 2)
+		m |= ENDLESS_MOD_RETALIATION;
 
 	return m;
 }
@@ -495,6 +528,28 @@ const EndlessTheme endlessDeadgenThemes[] = {
 	{ ENDLESS_MOD_DEADGEN | ENDLESS_MOD_FRENZY,       "Powerless" },
 	{ ENDLESS_MOD_DEADGEN | ENDLESS_MOD_SWIFT,        "Brownout" },
 	{ ENDLESS_MOD_DEADGEN | ENDLESS_MOD_ELITEPACK,    "Cold Start" },
+};
+
+// MARTYRDOM: a destroyed enemy fires a final radial burst (4 normal / 6 elite / 8 champion), once per
+// linked enemy, suppressed when the shot pool is nearly full. A RARE signature sector with its own pool
+// (injected ~1/22 in endlessGenerateCourses, like Kamikaze / Overload), not part of the shuffle.
+const EndlessTheme endlessMartyrdomThemes[] = {
+	{ ENDLESS_MOD_MARTYRDOM,                            "Martyrdom" },
+	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_FORTIFIED,    "Last Rites" },
+	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_ELITEPACK,    "Dead Man's Volley" },
+	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_SWIFT,        "Parting Shot" },
+	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_DEVASTATING,  "Final Salvo" },
+};
+
+// SEEKER ROUNDS: each enemy projectile makes ONE limited course correction toward you ~0.5s after
+// firing (a single ~23-degree turn, not continuous homing). A RARE signature sector with its own pool
+// (injected ~1/24), not part of the shuffle. Its Swift pairing carries the +4 Seeker+Swift synergy.
+const EndlessTheme endlessSeekerThemes[] = {
+	{ ENDLESS_MOD_SEEKER,                            "Seeker Rounds" },
+	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_SWIFT,        "Guided Fire" },   // the +4 Seeker+Swift synergy sector
+	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_FRENZY,       "Smart Swarm" },
+	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_DEVASTATING,  "Lock On" },
+	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_FORTIFIED,    "Tracker Rounds" },
 };
 
 // NAMING ONLY: the bare omnidirectional gravity well gets its own headline so Chart-a-Course reads it
@@ -634,6 +689,8 @@ static const struct { const EndlessTheme *tbl; unsigned n; } endlessThemePools[]
 	THEME_POOL(endlessRedlineThemes),
 	THEME_POOL(endlessSluggishThemes),
 	THEME_POOL(endlessDeadgenThemes),
+	THEME_POOL(endlessMartyrdomThemes),
+	THEME_POOL(endlessSeekerThemes),
 	THEME_POOL(endlessWarpThemes),
 };
 #undef THEME_POOL
@@ -799,6 +856,8 @@ static const struct { Uint64 combo; int bonus; } endlessSynergies[] = {
 	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_FRENZY,      4 },  // half the reach to thread twice the bullets
 	{ ENDLESS_MOD_SWIFT      | ENDLESS_MOD_HOMING,      4 },  // homing shots that are ALSO fast -- hard to outrun and hard to sidestep
 	{ ENDLESS_MOD_TOPSY      | ENDLESS_MOD_GRAVITY,     4 },  // a flipped view AND a pull: which way is up, and away?
+	{ ENDLESS_MOD_SEEKER      | ENDLESS_MOD_SWIFT,     4 },  // guided shots that are ALSO fast -- barely any time to read the mid-flight turn
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,    5 },  // a kill-storm stacked on the time-based fire climb: it screams fastest exactly when you clear hardest
 };
 
 // Total synergy bonus for a modifier set: every combo whose bits are all present, summed (they stack).

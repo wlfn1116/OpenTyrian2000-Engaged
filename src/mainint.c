@@ -7305,6 +7305,14 @@ redo:
 								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 									l11_primary = ZICA_LONG_WEAP_LEFT;
 
+								// Opening Salvo perk (endless): the main (front) gun is firing. Reset its idle
+								// timer and, if the pause was long enough, arm the charged-volley flag that
+								// player_shot_create reads to boost + power-free the shots. The flag rides the
+								// rest of this tick, so the rear weapon and both sidekicks firing alongside are
+								// boosted too; endlessOpeningSalvoTick clears it at the start of the next tick.
+								if (endlessMode && temp == SHOT_FRONT && this_player == &player[0])
+									endlessOpeningSalvoConsume();
+
 								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);
 
 								if (zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))

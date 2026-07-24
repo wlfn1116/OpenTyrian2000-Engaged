@@ -1318,12 +1318,21 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (endlessMode && this_player == &player[0] && (endlessActiveMods & ENDLESS_MOD_NITRO))
 		temp = 255;
 
+	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on
+	// real hull damage. Taken here rather than by comparing armor before/after, because the armor
+	// deduction below is skipped entirely under cheatInfiniteArmor -- which would silently disarm
+	// the perk while testing with invincibility on.
+	bool cmHullHit = false;
+
 	/* Player Damage Routines */
 	if (this_player->shield < temp)
 	{
 		playerDamage = temp;
 		temp -= this_player->shield;
 		this_player->shield = 0;
+
+		if (temp > 0)
+			cmHullHit = true;
 
 		if (temp > 0 && !cheatInfiniteArmor)
 		{
@@ -1388,11 +1397,80 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (gaugeFlashArmor && this_player->armor < oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
 
+	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into
+	// the generator. Main player only; re-cap at the generator ceiling since the tick's own recharge/cap
+	// already ran. shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
+	if (endlessMode && this_player == &player[0] && this_player->shield < oldShield)
+	{
+		const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
+		                                           shields[this_player->items.shield].tpwr);
+		if (gained > 0)
+		{
+			power += gained;
+			if (power > 900)
+				power = 900;
+		}
+	}
+
+	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst
+	// that vaporises enemy projectiles around the ship (radius grows at 2 stacks), on a shared cooldown.
+	if (endlessMode && this_player == &player[0] && cmHullHit)
+	{
+		const int cmRadius = endlessPerkCountermeasureRadius();  // 0 unless owned AND off cooldown
+		if (cmRadius > 0)
+		{
+			// "Within N pixels" is measured from the SHIP, not from its centre reference point. The
+			// hull already spans +-shot_hit_area (12x10), and anything inside that has by definition
+			// just hit you -- the enemy-shot loop frees the offending bullet BEFORE calling us. So
+			// sweeping a bare N from the centre leaves only a ~14px halo, which in practice is empty
+			// and made the perk look dead. Reaching N PAST the hitbox is what actually clears the
+			// rest of the incoming volley.
+			const int reachX = (int)this_player->shot_hit_area_x + cmRadius;
+			const int reachY = (int)this_player->shot_hit_area_y + cmRadius;
+
+			for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
+			{
+				if (!enemyShotAvail[es]
+				    && abs(enemyShot[es].sx - this_player->x) <= reachX
+				    && abs(enemyShot[es].sy - this_player->y) <= reachY)
+				{
+					JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
+					enemyShotAvail[es] = true;
+				}
+			}
+
+			// A ring flare at the sweep's edge so the burst always reads, even when it caught nothing.
+			JE_setupExplosion(this_player->x - reachX, this_player->y, 0, 0, false, false);
+			JE_setupExplosion(this_player->x + reachX, this_player->y, 0, 0, false, false);
+			JE_setupExplosion(this_player->x, this_player->y - reachY, 0, 0, false, false);
+			JE_setupExplosion(this_player->x, this_player->y + reachY, 0, 0, false, false);
+			soundQueue[4] = S_WEAPON_7;    // point-defense "thunk"
+			endlessCountermeasureFired();  // re-arm the cooldown
+		}
+	}
+
 	JE_wipeShieldArmorBars();
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 	JE_drawShield();
 	JE_drawArmor();
 	VGAScreen = game_screen; /* side-effect of game_screen */
+
+	// STATIC DISCHARGE (endless): taking shield/hull damage also bleeds the generator -- power loss is
+	// the actual shield+armor LOST x5, never more than the current reserve. Uses the real drop (not the
+	// return value, which is 0 whenever the shield fully absorbs a hit -- the common early-game case, why
+	// this looked dead). Only losses count, so a revive restoring armor can't read as negative. Main
+	// player only (its generator is the global `power`); the helper is 0 when off / under a dead generator.
+	if (endlessMode && this_player == &player[0])
+	{
+		int lost = 0;
+		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
+		if (this_player->armor  < oldArmor)  lost += oldArmor  - this_player->armor;
+		if (lost > 0)
+		{
+			unsigned drain = endlessStaticDischargeDrain((unsigned)lost);
+			power = (power > drain) ? power - drain : 0;
+		}
+	}
 
 	return playerDamage;
 }
