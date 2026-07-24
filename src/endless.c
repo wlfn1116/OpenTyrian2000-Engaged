@@ -51,6 +51,7 @@ int      endlessRunBossKills = 0;// boss-tier enemies destroyed this run
 // down the quickened-fire window after each kill. Advanced by endlessGameplayTick.
 int endlessZoneTicks      = 0;
 int endlessTurbodriveTimer = 0;
+int endlessRetaliationTimer = 0;   // RETALIATION: ticks left in the quickened-enemy-fire window (refreshed each kill; read by endlessFireDelayPercent)
 static bool endlessArmorHudDirty = false;  // set when the Overheat DoT shaves hull; the game loop repaints the (event-driven) armor bar
 
 // --- Milestone zones -------------------------------------------------------------------------
@@ -158,6 +159,8 @@ void endlessResetRun(void)
 	endlessLastSong = 0;           // no zone has played yet, so nothing for the music anti-repeat to avoid
 	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;
+	endlessSalvoIdle = 0;   // Opening Salvo: fresh run, main gun starts "just fired"
+	endlessCmCooldown = 0;  // Countermeasure Suite: fresh run, first burst ready
 	endlessBuffCharge = 0;
 	endlessReviveHeld = false;
 	endlessRevivesUsed = 0;
@@ -211,6 +214,11 @@ void endlessCountKill(int linknum)
 	if ((endlessActiveMods & ENDLESS_MOD_STACKED) && endlessOverdriveStacks < ENDLESS_OVERDRIVE_MAX_STACKS)
 		++endlessOverdriveStacks;                        // per-kill damage stack (Overdrive/Overblast) or damage-cut stack (Burnout/Misfire)
 
+	// RETALIATION: every kill (re)opens the quickened-enemy-fire window -- refresh the timer, never
+	// stack its strength, so a fast kill tempo keeps the storm up for as long as you keep clearing.
+	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
+		endlessRetaliationTimer = ENDLESS_RETALIATION_TICKS;
+
 	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max).
 	if (endlessPerkOwned[PERK_SIPHON] > 0
 	    && (int)(mt_rand() % 100) < endlessPerkOwned[PERK_SIPHON] * ENDLESS_PERK_SIPHON_PCT  // per-kill: gameplay RNG, not the seed
@@ -247,6 +255,13 @@ void endlessGameplayTick(void)
 		}
 	}
 
+	// RETALIATION: drain the quickened-enemy-fire window opened by the last kill.
+	if (endlessRetaliationTimer > 0)
+		--endlessRetaliationTimer;
+
+	// STATIC DISCHARGE: drain the generator-regen lockout opened by the last hit taken.
+	endlessStaticLockoutTick();
+
 	// Nanorepair perk: regenerate 1 armor every so often (interval shortens with more stacks).
 	if (endlessPerkOwned[PERK_REGEN] > 0)
 	{
@@ -257,6 +272,9 @@ void endlessGameplayTick(void)
 				++player[0].armor;
 		}
 	}
+
+	endlessOpeningSalvoTick();    // Opening Salvo perk: advance the main-gun idle timer
+	endlessCountermeasureTick();  // Countermeasure Suite perk: advance the burst cooldown
 }
 
 // True (once) if the Overheat DoT just shaved a point of hull this tick; the game loop uses it to

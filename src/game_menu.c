@@ -4537,6 +4537,10 @@ static const struct { Uint64 bit; const char *name; } endlessDebugSectorMods[] =
 	{ ENDLESS_MOD_SLUGGISH,    "Sluggish Ship"  },  // fork: slowed movement (kbd/mouse/touch)
 	{ ENDLESS_MOD_SHIELDLESS,  "No Shield Regen" }, // fork: shields never recharge
 	{ ENDLESS_MOD_DEADGEN,     "Dead Generator" },  // fork: no shields + starved main gun (super-rare)
+	{ ENDLESS_MOD_MARTYRDOM,   "Martyrdom"      },  // dying enemies fire a final radial burst (4/6/8 by tier)
+	{ ENDLESS_MOD_SEEKER,      "Seeker Rounds"  },  // enemy shots make one mid-flight course correction
+	{ ENDLESS_MOD_STATIC,      "Static Discharge" },// taking damage bleeds generator power (x5, capped)
+	{ ENDLESS_MOD_RETALIATION, "Retaliation"    },  // each kill briefly quickens enemy fire (~25%)
 	// Gamble-only next-sector effects, also toggleable here for zone-jump testing. NITRO/OVERHEAT
 	// normally ride with OVERCHARGE / TURBODRIVE (toggle those too for the full "deal"); here each
 	// is isolable. All four are read straight from endlessActiveMods in-level, so the jump applies them.

@@ -113,6 +113,7 @@ int endlessDifficultyZone(void)
 #define ENDLESS_FIRE_OVERCLOCK    30    // OVERCLOCK: -% (everything runs hot)
 #define ENDLESS_FIRE_OVERLOAD     55    // OVERLOAD: -% (Overclock cranked way up)
 #define ENDLESS_FIRE_MAX_REDUCE   75    // floor of 25% cooldown, i.e. 4x fire rate
+#define ENDLESS_RETALIATION_FIRE_PCT 80 // RETALIATION: while the kill-storm window is up, enemy cooldown x this% (~25% quicker fire), applied MULTIPLICATIVELY after the reduce cap so it still bites deep in a run
 
 // Enemy projectile speed, percent of stock.
 #define ENDLESS_SPEED_PER_DEPTH_NUM 5   // +% per effective depth, as NUM/DEN (1.67%)
@@ -173,7 +174,14 @@ int endlessFireDelayPercent(void)
 		reduce += ENDLESS_FIRE_OVERLOAD;
 	if (reduce > ENDLESS_FIRE_MAX_REDUCE)
 		reduce = ENDLESS_FIRE_MAX_REDUCE;
-	return 100 - reduce;
+	int pct = 100 - reduce;
+	// RETALIATION: each enemy kill refreshes a short window (endlessRetaliationTimer, driven from
+	// endlessCountKill / endlessGameplayTick) during which ALL enemy fire is ~25% quicker. Applied as a
+	// final MULTIPLY, not another additive reduce, so it still speeds fire even once the depth/mod
+	// reduce has hit its floor -- and so a kill-tempo storm reads differently from the time-based Enrage.
+	if ((endlessActiveMods & ENDLESS_MOD_RETALIATION) && endlessRetaliationTimer > 0)
+		pct = pct * ENDLESS_RETALIATION_FIRE_PCT / 100;
+	return pct;
 }
 
 // Enemy projectile-speed multiplier (100 = normal): +1.67% per (effective) level, reaching the
@@ -309,10 +317,19 @@ int endlessContactDamagePercent(void)
 
 static signed char endlessEliteLink[256];  // per-linknum tier this level: -1 undecided, else 1/2/3
 
+// MARTYRDOM per-level state: the dedup link (so a multi-tile enemy bursts once, mirroring
+// endlessCountKill's "once per linked enemy") and the bullet sprite captured from the level's own
+// enemy fire (so the death burst matches what's shooting at you). Both reset at each level start.
+static int     endlessMartyrLastLink = 0;
+static JE_word endlessMartyrSgr = 0;   // 0 = no enemy shot seen yet this level -> the burst is suppressed
+
 void endlessResetElites(void)
 {
 	for (unsigned i = 0; i < COUNTOF(endlessEliteLink); ++i)
 		endlessEliteLink[i] = -1;
+
+	endlessMartyrLastLink = 0;   // fresh MARTYRDOM dedup + captured-sprite each level
+	endlessMartyrSgr = 0;
 
 	// Seed this zone's elite/champion tier stream from the run seed + depth, so the rolls are
 	// reproducible for a given seed. Own salt phase: a large offset that can't collide with the
@@ -765,7 +782,112 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 {
 	if (endlessMode && (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return ENDLESS_DEADGEN_POWER_ADD;
+	// STATIC DISCHARGE: a hit shorts the generator out for a moment -- no recharge at all while the
+	// lockout runs, which is what lets the drained power actually stay drained (see the block below).
+	if (endlessStaticLockoutActive())
+		return 0;
 	return normalAdd;
+}
+
+// --- MARTYRDOM / SEEKER / STATIC sector dangers ------------------------------------------------
+// These three reuse the existing enemy-death, enemy-projectile and player-damage systems, so the
+// bulk of each lives at its engine hook (tyrian2.c / varz.c). endless_combat.c owns the small
+// per-modifier decisions -- whether the danger is active, and the numbers it feeds those hooks.
+
+// MARTYRDOM: how many bullets a just-killed enemy's death burst fires -- 0 when the modifier is off,
+// else 4 (normal) / 6 (elite) / 8 (champion). Dedups per linked enemy exactly like endlessCountKill
+// (consecutive same-linknum removals are one enemy, so a multi-tile enemy bursts once, not per tile);
+// linknum 0 is a lone enemy and always fires. The caller (tyrian2.c death sites) does the spawning,
+// which is where the enemy-shot pool lives -- and it also honours the "suppress when the pool is
+// nearly full" rule, so this only decides the count.
+int endlessMartyrdomBurstShots(int linknum, int eliteState)
+{
+	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
+		return 0;
+	if (linknum != 0 && linknum == endlessMartyrLastLink)
+		return 0;                       // same multi-tile enemy as the last removed tile -- already burst
+	endlessMartyrLastLink = linknum;
+	return (eliteState == 3) ? 8 : (eliteState == 2) ? 6 : 4;
+}
+
+// Remember a real enemy-bullet sprite fired this level, so the martyr burst matches the level's own
+// fire on a guaranteed-valid sprite. ANY fired sprite counts (both sprite sheets -- the draw path
+// handles < 500 as spriteSheet8 and >= 500 as spriteSheet12), so even an ep4/5 level whose bullets are
+// all >= 500 spark graphics still arms the burst instead of leaving it silently spriteless.
+#define ENDLESS_MARTYR_DEFAULT_SGR 100  // fallback bolt (always-loaded spriteSheet8) for the moment before any enemy has fired this level
+void endlessNoteEnemyShotSprite(JE_word sgr)
+{
+	if (endlessMode && sgr > 0)
+		endlessMartyrSgr = sgr;
+}
+// Never 0: falls back to a known-valid bolt so the burst always has a sprite (the old 0 return made
+// endlessSpawnMartyrBurst skip entirely until an enemy happened to fire a capturable sprite).
+JE_word endlessMartyrShotSprite(void) { return endlessMartyrSgr ? endlessMartyrSgr : ENDLESS_MARTYR_DEFAULT_SGR; }
+
+// SEEKER ROUNDS: true while newly-fired enemy shots should arm for their single mid-flight course
+// correction (the arming + the one-time turn itself live at the enemy-shot sites in tyrian2.c).
+bool endlessSeekerActive(void)
+{
+	return endlessMode && (endlessActiveMods & ENDLESS_MOD_SEEKER);
+}
+
+// STATIC DISCHARGE: the generator power a hit of `actualDamage` (shield+armor lost) should bleed --
+// proportional to the damage, uncapped here (JE_playerDamage caps it at the current reserve). 0 when
+// the modifier is off, or under a dead generator: DEADGEN already starves the generator, so stacking
+// Static on it would add nothing (the spec's incompatibility), and generation never pairs the two.
+//
+// The per-damage multiplier is scaled for the RAW power pool (0..900, shown on the gauge as power/10):
+// the spec's "damage x5" is on that displayed 0..90 scale, so it's ~x50 on the raw pool. Kept a bit
+// below that (x30) so a common Static sector bites -- a small hit visibly dents the gauge, a heavier
+// one can drop power under a shot's cost and briefly stall the front gun -- without a single moderate
+// hit always emptying the reserve. Tune here if it wants to be nastier / gentler.
+//
+// THE DRAIN ALONE IS NOT ENOUGH, and this is the whole reason the first two attempts read as "doesn't
+// work": the generator refills the pool EVERY TICK (tyrian2.c power += powerAdd, ~5-23/tick), so even
+// draining all 900 to zero is repaid in about a second and the gauge just twitches. So a hit also
+// LOCKS OUT regen for a short, damage-scaled window -- that's what makes the loss persist long enough
+// to actually starve the guns (and shield regen, which spends power too). The lockout is applied at
+// the one existing regen seam, endlessGeneratorPowerAdd, the same hook DEADGEN uses.
+#define ENDLESS_STATIC_POWER_PER_DMG   30
+#define ENDLESS_STATIC_POWER_MIN      150   // ...but ANY hit costs at least this much (1/6 of the bar), so a 1-2 point graze still reads
+#define ENDLESS_STATIC_LOCKOUT_PER_DMG  6   // regen-lockout ticks per point of damage taken...
+#define ENDLESS_STATIC_LOCKOUT_MIN     25   // ...with a floor of ~0.7s, so even a graze visibly stalls the generator...
+#define ENDLESS_STATIC_LOCKOUT_MAX     70   // ...capped at ~2s, so even a huge hit can't strand you forever
+
+static int endlessStaticLockout = 0;  // ticks of suppressed generator regen left (per level; drained in endlessGameplayTick)
+
+// Is the generator currently locked out by a Static Discharge hit?
+bool endlessStaticLockoutActive(void) { return endlessMode && endlessStaticLockout > 0; }
+
+// Tick down the lockout; called once per tick from endlessGameplayTick.
+void endlessStaticLockoutTick(void)
+{
+	if (endlessStaticLockout > 0)
+		--endlessStaticLockout;
+}
+
+// Clear it at level start, so a sector's discharge can't bleed into the next zone.
+void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
+
+unsigned endlessStaticDischargeDrain(unsigned actualDamage)
+{
+	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
+		return 0;
+	// Arm the regen lockout alongside the drain (longest window wins, so a fresh hit never shortens
+	// one already running), then report the power to bleed. Both have a floor, so even a 1-point
+	// graze is felt rather than lost in the generator's normal churn.
+	int lock = (int)actualDamage * ENDLESS_STATIC_LOCKOUT_PER_DMG;
+	if (lock < ENDLESS_STATIC_LOCKOUT_MIN)
+		lock = ENDLESS_STATIC_LOCKOUT_MIN;
+	if (lock > ENDLESS_STATIC_LOCKOUT_MAX)
+		lock = ENDLESS_STATIC_LOCKOUT_MAX;
+	if (lock > endlessStaticLockout)
+		endlessStaticLockout = lock;
+
+	unsigned drain = actualDamage * ENDLESS_STATIC_POWER_PER_DMG;
+	if (drain < ENDLESS_STATIC_POWER_MIN)
+		drain = ENDLESS_STATIC_POWER_MIN;
+	return drain;
 }
 
 // Player shot-damage scale (100 = normal): OVERCHARGE is a flat +50%; Overdrive adds +2.5%

@@ -239,6 +239,16 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	// Kamikaze: the MODERATE homing tier (strength 3, no ram -- the brutal rammer moved to the
 	// RAMPAGE gamble). After homing, so the harder tier wins a clash.
 	RARE_FROM(50, endlessKamikazeThemes),
+	// Martyrdom: a destroyed enemy fires a final radial burst -- reshapes how you approach groups
+	// without touching the shipped layout. Rare, its own pool.
+	RARE_FROM(22, endlessMartyrdomThemes),
+	// Seeker Rounds: each enemy shot makes one mid-flight course correction toward you. Rare, its own
+	// pool. (Its Swift pairing carries the +4 Seeker+Swift synergy.)
+	RARE_FROM(24, endlessSeekerThemes),
+	// Retaliation: UNCOMMON, so on top of its shuffle-pool themes it gets a more frequent injection
+	// (~1/12 vs the rare pair's ~1/22), drawn from its own rows already in endlessHostileThemes. This
+	// lifts it clearly above the Rare tier without adding it to the common combinable widen pool.
+	RARE_PICK(12, endlessHostileThemes, ENDLESS_MOD_RETALIATION, 0),
 	// Warp Speed: a scroll THREAT -- the level hurtles at you.
 	RARE_FIXED(12, ENDLESS_MOD_WARP),
 	// Overload: Overclock cranked way up.
@@ -442,6 +452,7 @@ static const Uint64 endlessCombinableMods[] = {
 	ENDLESS_MOD_ENRAGE, ENDLESS_MOD_GRAVITY, ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_OVERCLOCK,
 	ENDLESS_MOD_TOPSY,  // the flipped-view mod mixes freely with everything (purely visual, no softlock)
 	ENDLESS_MOD_SHIELDLESS,  // a pure defense debuff -- safe to stack onto any combo (DEADGEN stays out: super-rare, injected only)
+	ENDLESS_MOD_STATIC,  // Static Discharge (COMMON): a generic damage-punish tax, safe to stack onto any combo; never pairs DEADGEN, which is injected-only and out of this pool
 	// SLIPSTREAM stays out: Overclock (in the pool) already carries the same +70% scroll, so a
 	// random pairing would be a redundant bit. Slipstream sectors come from the named-theme shuffle.
 };
@@ -962,6 +973,11 @@ void endlessGenerateCourses(void)
 	// distinct safe levels to fill them); a milestone always asks for the full slate.
 	int wantCourses = 2 + (int)(endlessRand() % (ENDLESS_MAX_COURSES - 1));  // 2..5
 	if (milestone)
+		wantCourses = ENDLESS_MAX_COURSES;
+	// Surveyor perk: chart extra routes. Added AFTER the RNG roll so the seed stream stays aligned;
+	// clamped to the slate maximum (a milestone already asks for the full slate, so this is a no-op there).
+	wantCourses += endlessPerkSurveyorRoutes();
+	if (wantCourses > ENDLESS_MAX_COURSES)
 		wantCourses = ENDLESS_MAX_COURSES;
 	endlessGatherCourseLevels(wantCourses);
 

@@ -316,9 +316,11 @@ void endlessRegenerateLevel(void)
 	// sure no stale resume flag can leak into a LATER outpost (e.g. an in-shop load).
 	endlessResumeVisit = false;
 
-	// Reset the per-zone timers (ENRAGE ramp, TURBODRIVE/Overdrive window).
+	// Reset the per-zone timers (ENRAGE ramp, TURBODRIVE/Overdrive window, RETALIATION window).
 	endlessZoneTicks = 0;
 	endlessTurbodriveTimer = 0;
+	endlessRetaliationTimer = 0;
+	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in from the last zone
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
 

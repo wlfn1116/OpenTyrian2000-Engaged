@@ -86,6 +86,13 @@ enum {
 // actual dangers ride alongside it and are re-rolled for every milestone (endlessMakeTheEndMods),
 // so no two run-100 finishers are the same sector.
 #define ENDLESS_MOD_THEEND     ((Uint64)1 << 39)
+// Four more sector dangers that reuse the existing enemy-death / enemy-projectile / player-damage
+// systems rather than altering the shipped enemy layout (see endless_combat.c + the engine hooks in
+// tyrian2.c / varz.c).
+#define ENDLESS_MOD_MARTYRDOM   ((Uint64)1 << 40)  // a destroyed enemy fires a final radial burst (4 normal / 6 elite / 8 champion), once per linked enemy, suppressed when the shot pool is nearly full (hostile, rare)
+#define ENDLESS_MOD_SEEKER      ((Uint64)1 << 41)  // each enemy projectile makes ONE limited course correction toward you ~0.5s after firing (hostile, rare)
+#define ENDLESS_MOD_STATIC      ((Uint64)1 << 42)  // taking shield/hull damage bleeds generator power (damage x30 of the raw 0..900 pool ~= the spec's x5 on the power/10 gauge, capped at the reserve) AND shorts the generator out briefly so the loss actually sticks -- without that regen lockout the next tick repays it; never rides a dead generator (hostile, common)
+#define ENDLESS_MOD_RETALIATION ((Uint64)1 << 43)  // every enemy kill briefly quickens enemy fire (~25%, refreshes but doesn't stack) -- a kill-tempo tax, distinct from the time-based Enrage (hostile, uncommon)
 
 // The six kill-fire mods -- boons Turbodrive/Overdrive/Overblast, evil mirrors Backfire/Burnout/
 // Misfire -- a sector carries at most one (notes.md §Course generation & danger labels).
@@ -398,6 +405,15 @@ bool endlessScrollBoostActive(void);    // true while any scroll-speed modifier 
 int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut); // SMOOTH boost: extra scroll px this tick for layer `channel` (0/1/2); call once/channel/tick (notes.md §Endless scroll boost)
 int  endlessShipTintFilter(void);       // player-ship blit filter: electric yellow while the TURBODRIVE buff is active (0 = none)
 
+// Martyrdom / Seeker Rounds / Static Discharge sector dangers -- read by the engine at the
+// enemy-death (tyrian2.c), enemy-shot (tyrian2.c) and player-damage (varz.c) sites. Retaliation
+// needs no accessor of its own: it folds straight into endlessFireDelayPercent.
+int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill -- 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
+void     endlessNoteEnemyShotSprite(JE_word sgr); // remember a real enemy-bullet sprite this level, so the martyr burst matches the level's own fire
+JE_word  endlessMartyrShotSprite(void);           // that captured bullet sprite (0 = none seen yet -> suppress the burst)
+bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
+unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve
+
 // Evil kill-fire curses (Evil Turbodrive / Evil Overdrive): the hostile mirrors of the boons.
 // They reuse the same combo/stack machinery but slow your fire (and, for Evil Overdrive, cut your
 // damage) instead of boosting it. See endless.c and the fire hooks in mainint.c / shots.c.
@@ -448,6 +464,19 @@ int endlessPerkShieldWait(int base);   // Shield Matrix perk: shield-regen inter
 int endlessPerkChargeTicks(int base);  // Rapid Charger perk: charge-base sidekick charge interval (ticks per +1 charge level) reduced from `base`, floored; applied at the sidekick charge loop in mainint.c
 int endlessPerkShotSpeedPercent(void); // High-Velocity Rounds perk: shot travel-speed scale (100 = normal); applied to genuine shot velocities in shots.c player_shot_create
 bool endlessPerkRadarActive(void);     // Radar perk: Chart-a-Course help line names each sector's base level (endless_course.c endlessCourseHelp)
+int  endlessPerkSurveyorRoutes(void);  // Surveyor perk: extra Chart-a-Course routes this visit (endless_course.c, added after the RNG roll)
+int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss); // Executioner: bonus damage vs a wounded enemy (tyrian2.c shot collision)
+void endlessOpeningSalvoTick(void);        // Opening Salvo: advance the main-gun idle timer one tick (endlessGameplayTick)
+bool endlessOpeningSalvoConsume(void);     // Opening Salvo: main gun fired -> reset idle, arm the charged-volley flag for the rest of this tick (mainint.c)
+bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is this tick a charged volley? (shots.c: power-free + tag front/rear/sidekick shots)
+int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
+int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
+void endlessCountermeasureTick(void);        // Countermeasure Suite: advance the burst cooldown one tick (endlessGameplayTick)
+int  endlessPerkCountermeasureRadius(void);  // Countermeasure Suite: projectile-clear radius if ready now (0 = not owned / on cooldown); varz.c JE_playerDamage
+void endlessCountermeasureFired(void);       // Countermeasure Suite: re-arm the cooldown after a burst (varz.c)
+bool endlessPerkChainReactionActive(void);   // Chain Reaction: perk owned (tyrian2.c kill-site pulse queue)
+int  endlessPerkChainRadius(void);           // Chain Reaction: pulse radius in px
+int  endlessPerkChainDamage(void);           // Chain Reaction: armor damage the pulse deals to nearby fodder
 
 // Perk registry accessors (for the endless debug screen: list / toggle / stack perks).
 int         endlessPerkCount(void);          // number of perks (PERK_COUNT)

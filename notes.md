@@ -783,6 +783,83 @@ mutable `last`, so a Quit-Level retry replays the same track.
   absent (it's the hostile table's "Glass Cannon"). The single-danger guarantee
   (≥4 courses) skips any course carrying a boon bit, so a gambit is never
   flattened into a plain single.
+- Four dangers reuse the enemy-death / enemy-projectile / player-damage systems
+  rather than the enemy layout, so each is a small engine hook plus an
+  `endless_combat.c` decision (bits 40-43, all in `ENDLESS_HOSTILE_MASK`):
+  - **Martyrdom** (bit 40, weight 18, RARE — own pool `endlessMartyrdomThemes`,
+    injected ~1/22): a destroyed enemy fires a radial burst — 4 cardinal
+    (normal) / 6 (elite) / 8 (champion), evenly spaced. Spawned at BOTH
+    enemy-death sites in tyrian2.c (`endlessSpawnMartyrBurst`, which owns the
+    `enemyShot[]` pool), gated by `endlessMartyrdomBurstShots(linknum,
+    eliteState)`. That gate DEDUPS per linked enemy exactly like
+    `endlessCountKill` (a file-static "last link", reset each level in
+    `endlessResetElites`), so a multi-tile enemy bursts once, not per tile;
+    linknum 0 (lone) always fires. Suppressed when fewer than `shots + 48` of
+    the 500 enemy-shot slots are free (the "pool nearly full" rule). The bullet
+    SPRITE matches the level's own enemy fire (`endlessNoteEnemyShotSprite`
+    captures ANY fired sprite — both sheets), but `endlessMartyrShotSprite`
+    ALWAYS returns non-zero, falling back to bolt 35 when nothing has fired yet.
+    GOTCHA (fixed): the first cut filtered captures to <500 and skipped the whole
+    burst on a 0 sprite, so Martyrdom was invisible on ep4/5 levels whose bullets
+    are all ≥500 spark sprites — hence the fallback + widened capture. Bullets are
+    slow (3 px/tick, fixed — the spec's "slow"), base damage 4 ×
+    `endlessShotDamagePercent`.
+  - **Seeker Rounds** (bit 41, weight 14, RARE — own pool `endlessSeekerThemes`,
+    injected ~1/24; +4 Seeker+Swift synergy): each enemy shot makes ONE bounded
+    course correction toward the player ~0.5s after firing, then never again —
+    distinct from Homing/Kamikaze (which bend enemy MOVEMENT). State rides on the
+    shot itself: a new `EnemyShotType.seekerArm` byte (carved out of `fill`), set
+    to 1 at the single spawn site only when `endlessSeekerActive()`, 0 for every
+    other shot. The shot-move loop counts it up and, at
+    `ENDLESS_SEEKER_DELAY_TICKS` (17 ≈ 0.5s at 35 Hz), calls
+    `endlessSeekerCorrect` then disarms it (0). The turn is capped at ~23°
+    (precomputed cos/sin, no `acos`): if the player is already within that cone
+    it snaps straight, else it rotates by exactly the cap toward the player's
+    side (sign from the 2-D cross). Speed is preserved; the render list records
+    the post-turn velocity that tick, so the smooth path just kinks once.
+  - **Static Discharge** (bit 42, weight 11, COMMON — in `endlessCombinableMods`
+    AND the shuffle themes): taking shield/hull damage bleeds generator power,
+    capped at the current reserve. Hook is in `JE_playerDamage` (main player only
+    — `power` is its generator). TWO gotchas, both hit in testing: (1) must use the
+    real shield+armor DROP (`oldShield - shield` + `oldArmor - armor`, losses only
+    so a revive's armor refill can't go negative) — NOT the function's return
+    `playerDamage`, which is 0 whenever the shield fully absorbs a hit (the common
+    early-game case). (2) THE DRAIN ALONE DOES NOTHING — the real reason this read
+    as broken through two attempts. The raw `power` pool is 0..900 (gauge shows
+    `power/10`) and the generator repays it EVERY TICK (`power += powerAdd`,
+    ~5–23/tick), so even draining the full 900 is refunded in about a second and no
+    magnitude is ever felt. So a hit ALSO locks generator regen out for a
+    damage-scaled window (`ENDLESS_STATIC_LOCKOUT_PER_DMG` 6 ticks/point, capped
+    `..._MAX` 70 ≈ 2s, longest window wins), applied at the one existing regen seam
+    `endlessGeneratorPowerAdd` — the same hook DEADGEN uses — ticked down in
+    `endlessGameplayTick` and cleared per level. THAT is what makes the loss stick
+    (confirmed in play-testing — the drain and the lockout together are what the
+    effect actually is; the drain on its own is unobservable at any magnitude):
+    the drain (`× ENDLESS_STATIC_POWER_PER_DMG` 30, floored at `..._POWER_MIN` 150
+    so a graze still reads, lockout floored at `..._LOCKOUT_MIN` 25) persists to
+    drop `power` under a shot's cost and stall the front gun (`if (power <
+    power_use) return` in shots.c) and to stall shield regen (which also spends
+    power). Rear guns / sidekicks / specials are power-free, so it's brutal, not
+    unwinnable — the same balance DEADGEN relies on. INCOMPATIBLE with Dead
+    Generator: `endlessStaticDischargeDrain` returns 0 when DEADGEN is also set
+    (belt-and-suspenders — DEADGEN is injected-only and overwrites the whole
+    course mod, so the two never co-occur via generation anyway).
+  - **Retaliation** (bit 43, weight 15, UNCOMMON; +5 Retaliation+Enrage synergy):
+    every kill (re)opens a ~1s window (`endlessRetaliationTimer`,
+    `ENDLESS_RETALIATION_TICKS` 35) during which ALL enemy fire is ~25% quicker.
+    Refreshed (not stacked) in `endlessCountKill`, drained in
+    `endlessGameplayTick`, reset per level. It folds into `endlessFireDelayPercent`
+    as a final MULTIPLY (×80%), not another additive reduce, so it still bites
+    once the depth/mod cooldown reduce has hit its floor — and reads as a
+    kill-TEMPO tax, unlike Enrage's TIME-based climb. RARITY: it's in the shuffle
+    themes (not the common combinable pool) PLUS a dedicated ~1/12 injection
+    (`RARE_PICK` on its own `endlessHostileThemes` rows) — the shuffle alone put
+    it at ~the Rare rate, so the injection lifts it to a genuine Uncommon,
+    between Static (common) and Martyrdom/Seeker (rare).
+- All four are also eligible in **The End**: `endlessMakeTheEndMods` rolls an
+  independent coin for each (1280 finale combinations now), so a zone-100+
+  finisher can carry any mix of them. Static is safe there because the core
+  omits DEADGEN.
 - Safe-special filter: a pickup special needs a non-empty name, a
   dispatcher-handled effect type (stype 1..18), and an in-range `itemgraphic`.
   The HUD redraws the equipped icon every frame, and an out-of-range icon reads
