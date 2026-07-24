@@ -120,6 +120,7 @@ void free_sprite2s(Sprite2_array *);
 
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
+bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array, unsigned int index, int wx0, int wx1, int wy0, int wy1);
 void blit_sprite2_blend(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_blend_clip(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);

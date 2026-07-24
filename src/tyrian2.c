@@ -1069,6 +1069,61 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 // the tick position by up to one tick of motion. Equals the interpolation snap threshold.
 enum { ENEMY_DRAW_MARGIN = 40 };
 
+// True if any opaque pixel of enemy i's CURRENT animation frame would land inside the visible
+// playfield, computed purely from the enemy's stored logic state -- the SAME fields the shot /
+// enemy collision reads (ex + mapoffset, ey, enemycycle, size). It never consults the draw, so
+// the kill-gate verdict cannot lag or desync the hit test the way a draw-time flag would on the
+// "over" layers (which blit AFTER the shot loop). It also tracks enemies that grow through their
+// animation: it walks the frame that is current this tick, not a fixed maximum box. Mirrors
+// blit_enemy's frame-index selection and the size==1 four-cell layout / vertical draw gates.
+static bool enemy_has_visible_pixel(unsigned int i)
+{
+	if (enemy[i].sprite2s == NULL)
+		return false;
+
+	const unsigned int cycle = enemy[i].enemycycle;
+	if (cycle < 1 || cycle > 20)  // no real frame selected (matches blit_enemy's guard)
+		return false;
+	const JE_word gr = enemy[i].egr[cycle - 1];
+	if (gr == 999)  // blank frame: JE_drawEnemy treats it as gone, nothing is drawn
+		return false;
+
+	const int baseX = enemy[i].ex + enemy[i].mapoffset;  // identical to the collision's X term
+	const int baseY = enemy[i].ey;
+	const int wx0 = PLAYFIELD_LEFT, wx1 = PLAYFIELD_RIGHT, wy0 = 0, wy1 = vga_height;
+
+	if (enemy[i].size == 1)  // 2x2 enemy: four cells, top/bottom rows gated on ey as in the draw
+	{
+		const bool topRow = enemy[i].ey > -13 - ENEMY_DRAW_MARGIN;
+		const bool botRow = enemy[i].ey > -26 - ENEMY_DRAW_MARGIN && enemy[i].ey < 182 + ENEMY_DRAW_MARGIN;
+		const struct { int dx, dy, off; bool on; } cell[4] = {
+			{ -6, -7,  0, topRow }, {  6, -7,  1, topRow },
+			{ -6,  7, 19, botRow }, {  6,  7, 20, botRow },
+		};
+		for (int c = 0; c < 4; c++)
+		{
+			if (!cell[c].on)
+				continue;
+			const unsigned int index = (unsigned int)gr + cell[c].off;
+			if (index == 0 || (size_t)index * sizeof(Uint16) > enemy[i].sprite2s->size)
+				continue;
+			if (sprite2_has_pixel_in_window(baseX + cell[c].dx, baseY + cell[c].dy,
+			                                *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1))
+				return true;
+		}
+		return false;
+	}
+	else  // normal enemy: a single cell, drawn only above the same lower ey bound
+	{
+		if (!(enemy[i].ey > -13 - ENEMY_DRAW_MARGIN))
+			return false;
+		const unsigned int index = gr;  // sprite_offset 0
+		if (index == 0 || (size_t)index * sizeof(Uint16) > enemy[i].sprite2s->size)
+			return false;
+		return sprite2_has_pixel_in_window(baseX, baseY, *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1);
+	}
+}
+
 // True if this live enemy is stuck above the top of the screen with no way to ever leave:
 // beyond shot reach (ey <= -58) and vertically frozen. HORIZONTAL state is deliberately
 // ignored (HARVEST's anchor carries a sideways sway). notes.md §Map-stop softlock watchdog.
@@ -2827,6 +2882,15 @@ level_loop:
 		JE_drawEnemy(75);
 	}
 
+	// Per-pixel on-screen kill gate: precompute, once per tick, whether each live enemy has at
+	// least one opaque pixel of its current frame inside the visible playfield. Derived from the
+	// same stored state the collision below reads, so the verdict is deterministic and stays in
+	// lock-step with the hit test -- no draw dependency, no lag on the "over" layers. The shot
+	// loop reads enemyVisible[b] instead of re-deriving a fixed bounding box per enemy.
+	bool enemyVisible[COUNTOF(enemy)];
+	for (unsigned int ev = 0; ev < COUNTOF(enemy); ev++)
+		enemyVisible[ev] = (enemyAvail[ev] == 0) && enemy_has_visible_pixel(ev);
+
 	/* Player Shot Images */
 	for (int z = 0; z < MAX_PWEAPON; z++)
 	{
@@ -2855,21 +2919,13 @@ level_loop:
 				{
 					bool collided;
 
-					// On-screen gate: a shot may only damage an enemy while part of its
-					// sprite is inside the visible playfield -- otherwise a shot that flies
-					// up past the top of the screen kills enemies that haven't scrolled into
-					// view yet. Footprint matches JE_drawEnemy / the enemy health bars: a 2x2
-					// (size==1) enemy is 24x28 at (ex+mapoffset-6, ey-7), a normal 1x1 enemy
-					// is 12x14 at (ex+mapoffset, ey). Its box must overlap the playfield rect
-					// [PLAYFIELD_LEFT..PLAYFIELD_RIGHT] x [0..vga_height).
-					const bool enemyBig  = (enemy[b].size == 1);
-					const int  enemyBoxX = enemy[b].ex + enemy[b].mapoffset + (enemyBig ? -6 : 0);
-					const int  enemyBoxY = enemy[b].ey + (enemyBig ? -7 : 0);
-					const int  enemyBoxW = enemyBig ? 24 : 12;
-					const int  enemyBoxH = enemyBig ? 28 : 14;
-					const bool enemyOnPlayfield =
-					    (enemyBoxX + enemyBoxW > PLAYFIELD_LEFT) && (enemyBoxX <= PLAYFIELD_RIGHT) &&
-					    (enemyBoxY + enemyBoxH > 0)              && (enemyBoxY <  vga_height);
+					// On-screen gate: a shot may only damage an enemy while at least one opaque
+					// pixel of its CURRENT sprite frame is inside the visible playfield -- else a
+					// shot flying up past the top of the screen kills enemies that haven't
+					// scrolled into view yet. Precomputed this tick in enemyVisible[] (above) from
+					// the same stored state read here, so it tracks enemies that grow through
+					// their animation and can never lag or desync the hit test.
+					const bool enemyOnPlayfield = enemyVisible[b];
 
 					if (z == MAX_PWEAPON - 1)
 					{

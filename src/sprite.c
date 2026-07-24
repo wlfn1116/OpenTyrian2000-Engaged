@@ -614,6 +614,50 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 	}
 }
 
+// Read-only, draw-free twin of blit_sprite2's logical walk (mirrors blit_sprite2_clip's
+// x/y bookkeeping, minus every surface write): returns true as soon as any OPAQUE pixel of
+// sprite `index` would land inside the window [wx0, wx1] x [wy0, wy1). The kill-gate uses it
+// to ask "is a pixel of this frame actually on screen?" purely from logic state, with no
+// dependency on whether or when the sprite was blitted -- so the answer is deterministic and
+// never lags the collision. wx1 is INCLUSIVE (a pixel column); wy1 is EXCLUSIVE (a row count).
+bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array sprite2s, unsigned int index,
+                                 int wx0, int wx1, int wy0, int wy1)
+{
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= wy1)  // rows only ever advance downward: nothing below can qualify
+			return false;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0)  // control byte with no run: advance to the next sprite row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= wy0)
+		{
+			for (Uint8 n = 0; n < fill_count; ++n, ++x)
+			{
+				++data;  // consume this opaque pixel's colour byte
+				if (x >= wx0 && x <= wx1)
+					return true;
+			}
+		}
+		else  // whole run sits above the window: skip its colour bytes
+		{
+			data += fill_count;
+			x += fill_count;
+		}
+	}
+	return false;
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
