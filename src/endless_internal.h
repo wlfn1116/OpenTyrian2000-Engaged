@@ -53,6 +53,12 @@ extern int endlessZoneTicks;          // ticks elapsed this zone (drives ENRAGE)
 extern int endlessTurbodriveTimer;    // ticks left in the quickened-fire window after a kill
 extern int endlessRetaliationTimer;   // ticks left in the RETALIATION quickened-enemy-fire window (refreshed each kill)
 
+// --- endless.c: boons banked ON CLEAR, spent at the NEXT outpost ------------------
+// Set by endlessOnSectorCleared, consumed by the outpost (endlessGenerateCourses / endlessBetweenLevels).
+// Both ride the save (v12), because the sector that earned them is over by the time they pay out.
+extern bool endlessStarChartsOwed;    // STAR CHARTS: the next ORDINARY chart deals its full route slate (held over a milestone/ambush visit rather than spent there)
+extern int  endlessBreakthroughOwed;  // BREAKTHROUGH: bonus perk picks owed; one per outpost that isn't already opening on a perk pick, so a collision defers rather than vanishes
+
 // --- endless.c: zone milestones --------------------------------------------------
 // The outpost BEFORE a milestone swaps its buy/sell music for this track, so the player is warned
 // that a set-piece is coming while they're still choosing a course. MIND THE TWO FORMS: songBuy is
@@ -100,7 +106,12 @@ void endlessStaticLockoutReset(void);          // clear it at level start
 
 int  endlessDifficultyZone(void);              // the current zone as the difficulty ramp sees it
 int  endlessNaturalEliteChancePercent(void);   // the depth-driven SPECIAL-enemy share, before mutators
-bool endlessEliteBoonsUnlocked(void);          // are NOCHAMP / NOELITE eligible to be charted yet?
+bool endlessEliteBoonsUnlocked(void);          // are NOCHAMP / NOELITE / GIANTKILLER / CLEANSIGNALS eligible to be charted yet?
+bool endlessTideBoonsUnlocked(void);           // is FLAKSCREEN worth charting yet (i.e. is the tide adding shots at all)?
+
+// AEGIS GATE: the one-per-cooldown shield block. Per level, like the Static lockout.
+void endlessAegisTick(void);                   // drain the gate cooldown (once per tick, endlessGameplayTick)
+void endlessAegisReset(void);                  // clear it at level start (endlessResetElites)
 void endlessRollGravityDir(void);              // pick this sector's gravity heading (called at zone start)
 
 // --- endless_perks.c: run-persistent, stacking upgrades --------------------------
@@ -231,11 +242,11 @@ typedef struct { Uint64 mods; const char *name; } EndlessTheme;
 // The row counts below are part of the contract: COUNTOF() at the call sites in other endless_*.c
 // files reads them from here. Grow a table without bumping its number and endless_mods.c fails to
 // compile ("too many initializers"), so the pair cannot silently drift.
-extern const EndlessMod   endlessModTable[40];
+extern const EndlessMod   endlessModTable[50];
 extern const EndlessTheme endlessHostileThemes[159];
 extern const EndlessTheme endlessKamikazeThemes[12];
 extern const EndlessTheme endlessHomingThemes[8];
-extern const EndlessTheme endlessBoonThemes[43];
+extern const EndlessTheme endlessBoonThemes[66];
 extern const EndlessTheme endlessOverloadThemes[20];
 extern const EndlessTheme endlessRareThemes[44];
 extern const EndlessTheme endlessEvilThemes[30];
@@ -244,6 +255,7 @@ extern const EndlessTheme endlessSluggishThemes[5];
 extern const EndlessTheme endlessDeadgenThemes[5];
 extern const EndlessTheme endlessMartyrdomThemes[5];  // MARTYRDOM: rare-injected death-burst sectors (its own pool)
 extern const EndlessTheme endlessSeekerThemes[5];     // SEEKER: rare-injected course-correcting-shot sectors (its own pool)
+extern const EndlessTheme endlessBreakthroughThemes[5]; // BREAKTHROUGH: the bonus-perk boon's own pool, drawn only by the rare roll in endlessDealBoonCourse
 
 // Bits that make a sector DANGEROUS. The danger score sums only these, so a pure-boon course -- e.g.
 // Bounty, which pays big but adds no danger -- never reads as a high tier. Cursed is handled apart
@@ -266,7 +278,10 @@ extern const EndlessTheme endlessSeekerThemes[5];     // SEEKER: rare-injected c
 #define ENDLESS_BOON_MASK ( \
 	ENDLESS_MOD_FRAGILE | ENDLESS_MOD_BOUNTY | ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCHARGE | \
 	ENDLESS_MOD_DILATION | ENDLESS_MOD_FAVOR | ENDLESS_MOD_OVERDRIVE | \
-	ENDLESS_MOD_OVERBLAST | ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_NOELITE )
+	ENDLESS_MOD_OVERBLAST | ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_NOELITE | \
+	ENDLESS_MOD_AEGIS | ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_LOWPROFILE | \
+	ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_STARCHARTS | \
+	ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_CLEANSIGNALS )
 
 Uint64      endlessMakeTheEndMods(void);   // "The End" -- the sector every GRAND milestone deals
 Uint64      endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint64 must, Uint64 forbid);

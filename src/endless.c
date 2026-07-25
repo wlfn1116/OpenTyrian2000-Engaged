@@ -52,6 +52,10 @@ int      endlessRunBossKills = 0;// boss-tier enemies destroyed this run
 int endlessZoneTicks      = 0;
 int endlessTurbodriveTimer = 0;
 int endlessRetaliationTimer = 0;   // RETALIATION: ticks left in the quickened-enemy-fire window (refreshed each kill; read by endlessFireDelayPercent)
+
+// Boons whose reward is banked on CLEAR and paid out at the NEXT outpost (see endlessOnSectorCleared).
+bool endlessStarChartsOwed  = false;  // STAR CHARTS: the next ordinary chart deals its full route slate
+int  endlessBreakthroughOwed = 0;     // BREAKTHROUGH: bonus perk picks owed (a counter, so two can queue up)
 static bool endlessArmorHudDirty = false;  // set when the Overheat DoT shaves hull; the game loop repaints the (event-driven) armor bar
 
 // --- Milestone zones -------------------------------------------------------------------------
@@ -152,6 +156,8 @@ void endlessResetRun(void)
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
 	endlessPerkPending = false;
+	endlessStarChartsOwed = false;   // fresh run: nothing owed from a cleared Star Charts / Breakthrough sector
+	endlessBreakthroughOwed = 0;
 	endlessPerkChoiceN = 0;
 	endlessPerkDepthDone = -1;
 	endlessResumeVisit = false;
@@ -226,6 +232,20 @@ void endlessCountKill(int linknum)
 		++player[0].armor;
 }
 
+// Two boons pay out AFTER the sector, so they can't be read off endlessActiveMods at the outpost --
+// by then the player is charting the next one. Bank them the moment the zone is cleared (tyrian2.c,
+// right where endlessRunDepth is bumped) into run state that rides the save.
+void endlessOnSectorCleared(void)
+{
+	if (!endlessMode)
+		return;
+	if (endlessActiveMods & ENDLESS_MOD_STARCHARTS)
+		endlessStarChartsOwed = true;   // a flag, not a count: two in a row still means "one full slate"
+	if (endlessActiveMods & ENDLESS_MOD_BREAKTHROUGH)
+		++endlessBreakthroughOwed;      // a COUNT: every Breakthrough cleared owes its own pick, even if
+		                                // an outpost can only hand out one at a time
+}
+
 // --- Time-based & player-side modifiers -----------------------------------------
 // endlessZoneTicks / endlessTurbodriveTimer live up top; advanced by endlessGameplayTick.
 
@@ -261,6 +281,9 @@ void endlessGameplayTick(void)
 
 	// STATIC DISCHARGE: drain the generator-regen lockout opened by the last hit taken.
 	endlessStaticLockoutTick();
+
+	// AEGIS GATE: recharge the shield gate after a block.
+	endlessAegisTick();
 
 	// Nanorepair perk: regenerate 1 armor every so often (interval shortens with more stacks).
 	if (endlessPerkOwned[PERK_REGEN] > 0)

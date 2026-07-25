@@ -685,7 +685,7 @@ static void configure_endless_shop_menu(void)
 		// neutral shop actions (Reroll, Sabotage), upgrades (Reinforce, Extra Perk), the weapon,
 		// the three kill-fire buffs, the consumables (Revive, Bomb), then Gamble last before Done.
 		SDL_strlcpy(e[1], "Buy Shop Reroll", sizeof(e[1]));
-		SDL_strlcpy(e[2], "Buy Sector Sabotage", sizeof(e[2]));
+		SDL_strlcpy(e[2], endlessCleanseMaxed() ? "Sabotage Maxed" : "Buy Sector Sabotage", sizeof(e[2]));
 		SDL_strlcpy(e[3], endlessHullMaxed() ? "Hull Maxed" : "Buy Reinforce", sizeof(e[3]));
 		SDL_strlcpy(e[4], "Buy Extra Perk", sizeof(e[4]));
 		SDL_strlcpy(e[5], "Buy Special Weapon", sizeof(e[5]));
@@ -3309,6 +3309,15 @@ static int endlessThreatShade(int weight)
 	return 1;
 }
 
+// A threat a queued Sabotage charge will strip is drawn WHITE instead of its danger red, so the card
+// shows what the charge bought. Palette 18 has no clean grey RAMP -- it's a luminance-sorted planet
+// palette, so most banks mix hues -- but bank 13 at +4 lands the three TINY_FONT shades on
+// 236,236,236 / 244,244,244 / 252,252,244: flat white, which is exactly the "struck out" read.
+// Keep the offset at +4: the shade-10 highlight would overflow bank 13 past +5 (blit_sprite_hv_unsafe
+// ORs the shade in, it does not clamp), and lower offsets pick up bank 13's yellow-green entries.
+#define ENDLESS_MOD_CLEANSED_BANK   13
+#define ENDLESS_MOD_CLEANSED_BRIGHT  4
+
 // One overlay row: a 1px black 8-direction outline, then the tinted fill via JE_outTextAndDarken.
 // FULL_SHADE can't be used -- its negative brightness is JE_outText's shadow sentinel, so deep-red
 // tiers would render black. notes.md §Menus & shop.
@@ -3356,18 +3365,24 @@ static void JE_drawEndlessCourseMods(void)
 	int boon_y   = ENDLESS_MODS_BOTTOM_Y - (boons - 1) * ENDLESS_MODS_ROW_H;
 	for (int i = 0; i < n; ++i)
 	{
+		// A Sabotage charge takes this one off before the sortie starts: draw it white rather than in
+		// its danger red. Only hostile bits are ever cleansed (the strip ladder is hostile-only), but
+		// the branch is written for either side so a future boon-stripper needs no change here.
+		const bool     cleansed = rows[i].cleansed;
+		const unsigned bank     = cleansed ? ENDLESS_MOD_CLEANSED_BANK : (rows[i].hostile ? 15u : 0u);
+
 		if (rows[i].hostile)
 		{
 			if (threat_y > ENDLESS_MODS_BOTTOM_Y)
 				break;  // no real course has this many rows; never spill off the monitor
-			endlessModText(ENDLESS_MODS_LEFT_X, threat_y, rows[i].word,
-			               15, endlessThreatShade(rows[i].weight));
+			endlessModText(ENDLESS_MODS_LEFT_X, threat_y, rows[i].word, bank,
+			               cleansed ? ENDLESS_MOD_CLEANSED_BRIGHT : endlessThreatShade(rows[i].weight));
 			threat_y += ENDLESS_MODS_ROW_H;
 		}
 		else
 		{
 			endlessModText(ENDLESS_MODS_RIGHT_X - JE_textWidth(rows[i].word, TINY_FONT),
-			               boon_y, rows[i].word, 0, 0);
+			               boon_y, rows[i].word, bank, cleansed ? ENDLESS_MOD_CLEANSED_BRIGHT : 0);
 			boon_y += ENDLESS_MODS_ROW_H;
 		}
 	}
@@ -3979,11 +3994,18 @@ void JE_drawMainMenuHelpText(void)
 				snprintf(costStr, sizeof(costStr), "$%ld", endlessExtraPerkPrice());
 				break;
 			case 3:  // Sabotage Sector
-				if (endlessCleanseCharges() > 0)
-					snprintf(tempStr, sizeof(tempStr), "%d strip(s) queued.  Buy more:", endlessCleanseCharges());
+				// Maxed prints no price, like Hull/Bombs: a cost next to an unbuyable row reads as a
+				// failed purchase rather than a full queue.
+				if (endlessCleanseMaxed())
+					snprintf(tempStr, sizeof(tempStr), "Sabotage queue is full (%d).", ENDLESS_CLEANSE_MAX_CHARGES);
 				else
-					SDL_strlcpy(tempStr, "Strip the next sector's worst danger.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessCleansePrice());
+				{
+					if (endlessCleanseCharges() > 0)
+						snprintf(tempStr, sizeof(tempStr), "%d strip(s) queued.  Buy more:", endlessCleanseCharges());
+					else
+						SDL_strlcpy(tempStr, "Strip the next sector's worst danger.", sizeof(tempStr));
+					snprintf(costStr, sizeof(costStr), "$%ld", endlessCleansePrice());
+				}
 				break;
 			case 12:  // Gamble
 				if (endlessGambleResult()[0] != '\0')
@@ -4541,6 +4563,18 @@ static const struct { Uint64 bit; const char *name; } endlessDebugSectorMods[] =
 	{ ENDLESS_MOD_SEEKER,      "Seeker Rounds"  },  // enemy shots make one mid-flight course correction
 	{ ENDLESS_MOD_STATIC,      "Static Discharge" },// taking damage bleeds generator power (x5, capped)
 	{ ENDLESS_MOD_RETALIATION, "Retaliation"    },  // each kill briefly quickens enemy fire (~25%)
+	// The later BOONS. Star Charts / Breakthrough pay out at the NEXT outpost, so toggling them here
+	// only shows up after the jumped-to zone is actually cleared.
+	{ ENDLESS_MOD_AEGIS,       "Aegis Gate"     },  // shields can't be punched through (70-tick cooldown per block)
+	{ ENDLESS_MOD_FLAKSCREEN,  "Flak Screen"    },  // halves the tide's ADDED shots (nothing to see before zone ~25)
+	{ ENDLESS_MOD_AUXREACTOR,  "Aux Reactor"    },  // shield regen costs no generator power
+	{ ENDLESS_MOD_LOWPROFILE,  "Low Profile"    },  // damage hitbox shrunk ~25% (pickup reach unchanged)
+	{ ENDLESS_MOD_GIANTKILLER, "Giant Killer"   },  // elites/champions lose their HP multiplier only
+	{ ENDLESS_MOD_CLEANSIGNALS,"Clean Signals"  },  // ...and this one takes their fire rate / shot damage instead
+	{ ENDLESS_MOD_SHOCKWAVE,   "Shockwave"      },  // elite/champion kills vaporise nearby enemy shots
+	{ ENDLESS_MOD_SOFTLANDING, "Soft Landing"   },  // contact damage the PLAYER takes cut to 30%
+	{ ENDLESS_MOD_STARCHARTS,  "Star Charts"    },  // clear -> the next ordinary chart deals a full slate
+	{ ENDLESS_MOD_BREAKTHROUGH,"Breakthrough"   },  // clear -> a bonus perk pick at the next outpost
 	// Gamble-only next-sector effects, also toggleable here for zone-jump testing. NITRO/OVERHEAT
 	// normally ride with OVERCHARGE / TURBODRIVE (toggle those too for the full "deal"); here each
 	// is isolable. All four are read straight from endlessActiveMods in-level, so the jump applies them.
@@ -4980,7 +5014,10 @@ static bool endlessDebugScreen(void)
 					break;
 				}
 				endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;  // jump to the typed zone
-				endlessActiveMods = dbgMods | endlessPendingMods();  // apply the chosen combo + personal buffs + any fired next-sector gamble mods
+				// Apply the chosen combo + personal buffs + any gamble outcome fired on page 2 after this
+				// screen opened. Same purchase-wins fold a real launch uses, so a debug jump can't produce
+				// a kill-fire state generation would never hand out.
+				endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
 				for (int p = 0; p < NPERKS; ++p)                     // apply the perk stacks
 					endlessPerkSetOwned(p, dbgPerks[p]);
 				if (dbgBase < 0)

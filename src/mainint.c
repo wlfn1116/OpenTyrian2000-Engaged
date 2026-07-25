@@ -8135,8 +8135,14 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
 				}
+				// endless LOW PROFILE boon: the DAMAGING half of this collision uses the shrunk box, while
+				// the outer test above (which also collects pickups and powerups) keeps its full reach --
+				// a boon must not make items harder to grab. endlessHitboxScale is the identity outside
+				// the boon, so every other game tests exactly the 12x14 the outer branch did.
 				else if (this_player->invulnerable_ticks == 0 && enemyAvail[z] == 0 && !noclipMode &&
-				         (enemyDat[enemy[z].enemytype].explosiontype & 1) == 0) // explosiontype & 1 == 0: not ground enemy
+				         (enemyDat[enemy[z].enemytype].explosiontype & 1) == 0 && // explosiontype & 1 == 0: not ground enemy
+				         abs(this_player->x - enemy_screen_x) < endlessHitboxScale(12) &&
+				         abs(this_player->y - enemy[z].ey) < endlessHitboxScale(14))
 				{
 					int armorleft = enemy[z].armorleft;
 					if (armorleft > damageRate)
@@ -8153,9 +8159,10 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					if (endlessMode)
 						playerHit = playerHit * endlessContactDamagePercent() / 100;
 					// Elite/champion tiers ram harder than a plain enemy: elites +25%, champions +50%.
-					// Stacks on top of the depth ramp, so a deep-run champion is a serious hull threat.
-					if (endlessMode && enemy[z].eliteState >= 2)
-						playerHit = playerHit * (enemy[z].eliteState == 3 ? 150 : 125) / 100;
+					// Stacks on top of the depth ramp, so a deep-run champion is a serious hull threat --
+					// unless CLEAN SIGNALS is up, which is what flattens this premium to 100%.
+					if (endlessMode)
+						playerHit = playerHit * endlessEliteContactPercent(enemy[z].eliteState) / 100;
 					if (playerHit > 255)
 						playerHit = 255;
 					JE_playerDamage((JE_byte)playerHit, this_player);

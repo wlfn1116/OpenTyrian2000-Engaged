@@ -154,8 +154,10 @@ long endlessClearBonusFor(Uint64 mods)
 
 // Cash paid on CLEARING a level -- the base plus whatever the active sector's mutators add (tenths),
 // plus the committed LEVEL's own fine payout term (thousandths). endlessSortiePayoutMille keys off the
-// same committed level the course card priced (endlessCoursePayout), so banked == shown.
-// Taking the harder route pays off.
+// same committed level the course card priced (endlessCoursePayout), and the card prices the exact
+// mod set launch commits -- purchases folded in, queued Sabotage charges spent (endlessCourseLaunchMods)
+// -- so banked == shown. Buying a cleanse visibly drops every card's payout: it buys an easier sector,
+// and easier pays less. Taking the harder route pays off.
 static long endlessClearBonus(void)
 {
 	return endlessClearBonusForEx(endlessActiveMods, endlessSortiePayoutMille());
@@ -426,6 +428,30 @@ bool endlessTryBuyOverblast(void)   // Overdrive's per-kill DAMAGE stacks only -
 // them into the next sector). Exposed so the debug level-select can fold them in too.
 unsigned endlessPendingMods(void) { return endlessPurchasedMods; }
 
+// Merge this visit's E-Shop / gamble mods into a charted sector's own mod set. THE PURCHASE WINS.
+//
+// A sector carries at most one kill-fire mod (endless.h) -- course generation and the shop both hold
+// that line internally, but a plain OR of the two broke it: a bought Turbodrive landing on a charted
+// Backfire left BOTH bits set, and nothing downstream is written for that. The boost and the jam then
+// applied to the same shot (endlessKillBuffFireDecrements + endlessKillFireJamTicks), the boon's
+// free-power break was silently withheld (shots.c reads endlessKillFireIsEvil, which the evil bit
+// makes true), and the HUD/ship tinted evil over a buff the player had paid 66-95% of their cash for.
+//
+// So whatever the player brought overrides the sector's kill-fire bit, in BOTH directions: a bought
+// boon clears a charted curse, a gambled curse clears a charted boon. The price is the balance --
+// a kill-fire buy costs most of the purse and locks all three behind the recharge for 2+ sectors.
+//
+// Also enforces NOELITE-supersedes-NOCHAMP, since the merge is another place that pair can meet.
+Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased)
+{
+	if (purchased & ENDLESS_MOD_KILLFIRE_ANY)
+		sectorMods &= ~(Uint64)ENDLESS_MOD_KILLFIRE_ANY;
+	Uint64 mods = sectorMods | purchased;
+	if ((mods & ENDLESS_MOD_NOELITE) && (mods & ENDLESS_MOD_NOCHAMP))
+		mods &= ~(Uint64)ENDLESS_MOD_NOCHAMP;
+	return mods;
+}
+
 bool endlessTryBuySpecial(void)
 {
 	long cost = endlessSpecialPrice();
@@ -512,9 +538,10 @@ bool endlessTryBuyExtraPerk(void)
 // course (applied in endlessSelectCourse). Handy against a forced Ambush you can't route around. --
 long endlessCleansePrice(void)   { return endlessCleanseCost; }
 int  endlessCleanseCharges(void) { return endlessCleanseChargeCount; }
+bool endlessCleanseMaxed(void)   { return endlessCleanseChargeCount >= ENDLESS_CLEANSE_MAX_CHARGES; }
 bool endlessTryBuyCleanse(void)
 {
-	if (endlessCleanseChargeCount >= 3 || player[0].cash < (ulong)endlessCleanseCost)
+	if (endlessCleanseMaxed() || player[0].cash < (ulong)endlessCleanseCost)
 		return false;
 	player[0].cash -= endlessCleanseCost;
 	++endlessCleanseChargeCount;
@@ -524,11 +551,20 @@ bool endlessTryBuyCleanse(void)
 // Strip the single most-dangerous hostile bit from a modifier set (one per cleanse charge).
 Uint64 endlessStripWorstMod(Uint64 mods)
 {
+	// Every hostile bit endlessModTable prices belongs here, or a charge spent on a sector carrying
+	// only that bit does nothing. The finale marker (THEEND) is deliberately absent -- it is a label
+	// that pays, not a danger -- and so are the gamble-only bits with no table row (Marked/Nitro/Dud).
+	// Ordering is curated by how much a bit hurts to fly with, not strictly by reward tenths.
 	static const Uint64 order[] = {  // nastiest first
 		ENDLESS_MOD_LEGION, ENDLESS_MOD_APEX, ENDLESS_MOD_DEADGEN, ENDLESS_MOD_RAMPAGE, ENDLESS_MOD_OVERLOAD,
 		ENDLESS_MOD_WARP,  // extreme scroll -- right below Overload on the danger ladder
-		ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_DEVASTATING, ENDLESS_MOD_SHIELDLESS, ENDLESS_MOD_FORTIFIED, ENDLESS_MOD_FRENZY,
-		ENDLESS_MOD_SLUGGISH, ENDLESS_MOD_SWIFT, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_ENRAGE, ENDLESS_MOD_SLIPSTREAM,
+		ENDLESS_MOD_ELITEPACK,
+		ENDLESS_MOD_BURNOUT, ENDLESS_MOD_MARTYRDOM,  // 18 each -- the heaviest of the kill-triggered dangers
+		ENDLESS_MOD_DEVASTATING, ENDLESS_MOD_SHIELDLESS, ENDLESS_MOD_FORTIFIED, ENDLESS_MOD_FRENZY,
+		ENDLESS_MOD_SLUGGISH, ENDLESS_MOD_RETALIATION,
+		ENDLESS_MOD_MISFIRE, ENDLESS_MOD_SEEKER, ENDLESS_MOD_OVERHEAT,
+		ENDLESS_MOD_BACKFIRE, ENDLESS_MOD_STATIC,
+		ENDLESS_MOD_SWIFT, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_ENRAGE, ENDLESS_MOD_SLIPSTREAM,
 		ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI, ENDLESS_MOD_TOPSY,  // gravity + its omni flag strip together, so a sabotaged well is fully cleared (not left as an orphaned omni pull)
 		ENDLESS_MOD_KAMIKAZE, ENDLESS_MOD_HOMING,  // the two mild homing tiers -- stripped last
 	};
@@ -1007,6 +1043,17 @@ void endlessBetweenLevels(void)
 		// save/reload doesn't hand out a second perk (endlessPerkDepthDone is part of the save).
 		if (endlessPerkDueAtDepth(endlessRunDepth) && endlessPerkDepthDone != endlessRunDepth)
 		{
+			endlessGeneratePerkChoices();
+			endlessPerkPending = true;
+		}
+		// BREAKTHROUGH boon: a cleared Breakthrough sector owes a BONUS pick. Only one perk screen opens
+		// per visit, so if the scheduled perk above already claimed this outpost the debt simply waits --
+		// the counter is decremented at the moment a pick is actually opened, never before, and it rides
+		// the save, so nothing is lost across a reload either. Gated on the pending FLAG rather than an
+		// `else`, so the scheduled perk always wins the visit however its own guard resolved.
+		if (!endlessPerkPending && endlessBreakthroughOwed > 0)
+		{
+			--endlessBreakthroughOwed;
 			endlessGeneratePerkChoices();
 			endlessPerkPending = true;
 		}

@@ -258,7 +258,12 @@ int endlessTideLevel(void)
 // zones with NO hard cap (5 by zone 150 on NORMAL, then climbing). tyrian2.c fans these out around the
 // weapon's own shots; the enemy-shot pool (ENEMY_SHOT_MAX) still hard-caps what reaches the screen
 // (notes.md §Difficulty ramp).
-int endlessExtraEnemyShots(void)
+// The tide's RAW extra-shot count, before any modifier touches it. Split out because
+// endlessTideBoonsUnlocked must ask "is the tide adding shots at all" -- and it is called during course
+// generation, when endlessActiveMods still holds the PREVIOUS sector's bits. Reading the public
+// (Flak-Screen-adjusted) figure there would let one Flak Screen sector's own effect decide whether the
+// next one may be charted.
+static int endlessTideExtraShotsRaw(void)
 {
 	if (!endlessMode)
 		return 0;
@@ -286,6 +291,27 @@ int endlessExtraEnemyShots(void)
 	return extra;
 }
 
+int endlessExtraEnemyShots(void)
+{
+	int extra = endlessTideExtraShotsRaw();
+	// FLAK SCREEN boon: half the tide's ADDED shots never leave the barrel. Only this endless-specific
+	// multiplication is thinned -- the level's authored volley is the `endlessBaseMulti` the caller adds
+	// this to (tyrian2.c), so every shipped firing pattern still plays exactly as designed. Rounds the
+	// kept half UP, so a lone extra shot stays one: the boon thins the tide, it never cancels it.
+	if (endlessActiveMods & ENDLESS_MOD_FLAKSCREEN)
+		extra = (extra + 1) / 2;
+	return extra;
+}
+
+// Is FLAK SCREEN worth charting yet? It only removes shots the TIDE added, so before the tide starts
+// (zone 25 on NORMAL) it would be an empty boon on the monitor. Gates every path that can emit the bit,
+// exactly like endlessEliteBoonsUnlocked does for the no-elite-tier boons. Reads the RAW tide, never
+// the Flak-Screen-adjusted figure -- see endlessTideExtraShotsRaw.
+bool endlessTideBoonsUnlocked(void)
+{
+	return endlessTideExtraShotsRaw() > 0;
+}
+
 // --- Contact (ramming) damage ramp -------------------------------------------------
 // The damage the PLAYER takes from colliding with an enemy climbs deep in a run, so trading hull for
 // a ram stops being cheap: no bonus until the START zone (35), then linear to +ANCHOR_PCT (150%) by
@@ -296,19 +322,32 @@ int endlessExtraEnemyShots(void)
 #define ENDLESS_CONTACT_ANCHOR     100  // zone at which the bonus reaches ENDLESS_CONTACT_ANCHOR_PCT
 #define ENDLESS_CONTACT_ANCHOR_PCT 150  // +this% player contact damage at the anchor zone
 #define ENDLESS_CONTACT_MAX_PCT    500  // ceiling on the added player contact-damage percent
+// SOFT LANDING boon: contact damage the player receives is cut to this % -- applied LAST, so it bites
+// into the depth ramp and the elite/champion ram bonuses alike (a deep champion ram is exactly what the
+// boon is for). Projectiles are untouched, which is what keeps it distinct from a general damage cut.
+#define ENDLESS_CONTACT_SOFTLANDING 30
 
 int endlessContactDamagePercent(void)
 {
 	if (!endlessMode)
 		return 100;
 	const int zone = endlessDifficultyZone();
-	if (zone <= ENDLESS_CONTACT_START)
-		return 100;
-	int bonus = ENDLESS_CONTACT_ANCHOR_PCT * (zone - ENDLESS_CONTACT_START)
-	              / (ENDLESS_CONTACT_ANCHOR - ENDLESS_CONTACT_START);
-	if (bonus > ENDLESS_CONTACT_MAX_PCT)
-		bonus = ENDLESS_CONTACT_MAX_PCT;
-	return 100 + bonus;
+	int pct = 100;
+	if (zone > ENDLESS_CONTACT_START)
+	{
+		int bonus = ENDLESS_CONTACT_ANCHOR_PCT * (zone - ENDLESS_CONTACT_START)
+		              / (ENDLESS_CONTACT_ANCHOR - ENDLESS_CONTACT_START);
+		if (bonus > ENDLESS_CONTACT_MAX_PCT)
+			bonus = ENDLESS_CONTACT_MAX_PCT;
+		pct = 100 + bonus;
+	}
+	if (endlessActiveMods & ENDLESS_MOD_SOFTLANDING)
+	{
+		pct = pct * ENDLESS_CONTACT_SOFTLANDING / 100;
+		if (pct < 1)
+			pct = 1;   // a scrape still costs something -- the boon softens ramming, it doesn't licence it
+	}
+	return pct;
 }
 
 // --- Elite enemies --------------------------------------------------------------
@@ -323,6 +362,10 @@ static signed char endlessEliteLink[256];  // per-linknum tier this level: -1 un
 static int     endlessMartyrLastLink = 0;
 static JE_word endlessMartyrSgr = 0;   // 0 = no enemy shot seen yet this level -> the burst is suppressed
 
+// SHOCKWAVE's dedup link, the same idea one boon over (see endlessShockwaveRadius, further down).
+// Declared here so endlessResetElites -- which runs before it -- can clear it with the martyr pair.
+static int endlessShockwaveLastLink = 0;
+
 void endlessResetElites(void)
 {
 	for (unsigned i = 0; i < COUNTOF(endlessEliteLink); ++i)
@@ -330,6 +373,8 @@ void endlessResetElites(void)
 
 	endlessMartyrLastLink = 0;   // fresh MARTYRDOM dedup + captured-sprite each level
 	endlessMartyrSgr = 0;
+	endlessShockwaveLastLink = 0;  // ...and a fresh SHOCKWAVE dedup
+	endlessAegisReset();           // ...and a ready AEGIS GATE: a block never carries into the next zone
 
 	// Seed this zone's elite/champion tier stream from the run seed + depth, so the rolls are
 	// reproducible for a given seed. Own salt phase: a large offset that can't collide with the
@@ -408,8 +453,15 @@ int endlessRollEliteTier(JE_byte linknum)
 
 // Elite/champion HP multiplier -- a damage divisor applied like the boss one: the enemy
 // spends N damage per 1 armor, so it effectively has N times its HP. ~2x, up with depth.
+//
+// GIANT KILLER boon flattens it to 1: elites and champions still spawn, still wear their tint, still
+// fire like elites and champions, and still pay their full bounty -- they just have ordinary hulls. That
+// is what separates it from NOELITE, which deletes the tier (and its income) outright: Giant Killer
+// leaves a sector full of profitable, killable specials rather than an empty one.
 int endlessEliteHpMult(void)
 {
+	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
+		return 1;
 	int mult = 2 + endlessEffectiveDepth() / 20;
 	if (mult > 5)
 		mult = 5;
@@ -423,8 +475,8 @@ int endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState)
 {
 	if (!hasBossBar)
 		return (eliteState >= 2) ? endlessEliteHpMult() : 1;
-	if (eliteState < 2)
-		return bossHpMult;                             // normal boss: unchanged
+	if (eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_GIANTKILLER))
+		return bossHpMult;                             // normal boss -- or GIANT KILLER, which drops the elite bump here too
 	int mult = bossHpMult * 2;                         // elite/champion boss: gentle bump
 	int cap  = (bossHpMult > ENDLESS_HP_MULT_MAX) ? bossHpMult : ENDLESS_HP_MULT_MAX;
 	return (mult > cap) ? cap : mult;                  // capped, but never below the base
@@ -454,8 +506,34 @@ long endlessChampionBounty(void)
 
 // Champion aggression, applied per-champion on top of the sector's global scaling: they
 // fire noticeably faster and their shots hit harder.
-int endlessChampionFireDelayPercent(void)  { return 60; }   // 0.6x cooldown (~1.7x fire rate)
-int endlessChampionShotDamagePercent(void) { return 150; }  // +50% shot damage
+//
+// CLEAN SIGNALS boon returns both to neutral: the special tier keeps its HP, its tint and its bounty --
+// so the sector still LOOKS and PAYS like an elite one -- but its guns behave like everyone else's. The
+// exact complement of Giant Killer, which takes the hulls and leaves the guns.
+int endlessChampionFireDelayPercent(void)
+{
+	if (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS)
+		return 100;
+	return 60;    // 0.6x cooldown (~1.7x fire rate)
+}
+int endlessChampionShotDamagePercent(void)
+{
+	if (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS)
+		return 100;
+	return 150;   // +50% shot damage
+}
+
+// The elite/champion RAM premium (elites +25%, champions +50%), on top of the depth contact ramp.
+// This is the ONLY offensive bonus a plain ELITE carries -- the fire-rate and shot-damage bonuses above
+// are champion-only -- so Clean Signals has to neutralise it too, or the boon would be champions-only
+// while its monitor row promises the whole special tier. Distinct from Soft Landing, which scales ALL
+// contact damage: this removes only the premium special enemies add, so the two stack without overlap.
+int endlessEliteContactPercent(int eliteState)
+{
+	if (!endlessMode || eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS))
+		return 100;
+	return (eliteState == 3) ? 150 : 125;
+}
 
 // Award an elite/champion kill: pay the bounty and post a kill message to the in-game text
 // bar. Called from both enemy-death sites (tyrian2.c) for every elite/champion tile -- a
@@ -787,6 +865,92 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 	if (endlessStaticLockoutActive())
 		return 0;
 	return normalAdd;
+}
+
+// --- AEGIS GATE / AUXILIARY REACTOR / LOW PROFILE / SHOCKWAVE boons ---------------------------
+// Like the reactive dangers above, these four ride existing engine systems (the shield/armor split in
+// JE_playerDamage, the shield-regen step, the two player hit-area tests, the enemy-death sites), so
+// endless_combat.c only owns the decision and the numbers -- the hooks live where those systems do.
+
+// AUXILIARY REACTOR: the shield still recharges on its normal interval, it just stops billing the
+// generator for it. Distinct from Shield Matrix (which shortens the interval) and Efficient Coils
+// (which discounts FIRING), so the three stack cleanly instead of overlapping.
+bool endlessShieldRegenFree(void)
+{
+	return endlessMode && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
+}
+
+// LOW PROFILE: scale a player hit-area half-extent. 75% of the stock box, applied at the collision
+// TESTS rather than to player[].shot_hit_area_x/y, so (a) the ship sprite and the pickup reach are
+// untouched -- shrinking the source fields would also shrink the item-collect box and the
+// Countermeasure sweep -- and (b) the boon can't leak into a non-endless game. Every damaging
+// collision test the player has (enemy projectiles in tyrian2.c, enemy contact in mainint.c) runs
+// through this one helper, which is what keeps the reduced box consistent between them.
+#define ENDLESS_LOWPROFILE_PCT 75
+int endlessHitboxScale(int area)
+{
+	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_LOWPROFILE))
+		return area;
+	int a = area * ENDLESS_LOWPROFILE_PCT / 100;
+	return (a < 1) ? 1 : a;   // never zero: a hitbox that can't be hit is a different (broken) boon
+}
+
+// AEGIS GATE: while the shield holds, a hit cannot spill through into armor -- the gate dumps whatever
+// shield is left and stops there. THE COOLDOWN IS THE WHOLE BALANCE: without it, one regenerated shield
+// point would block an entire champion volley forever, and Shield Matrix would make that trivial. So a
+// block costs the gate ~2s of recharge, during which hits punch through normally.
+//
+// ...and THE MINIMUM SPILL is what makes it felt. A shield only ever overflows on the hit that finishes
+// it, so the spill is whatever the shield couldn't cover -- frequently 1 point. Gating those spent the
+// whole 2s window to save a single hull point, and left the gate on cooldown for the champion railgun
+// that landed a moment later: the boon fired constantly and was worth almost nothing, which is exactly
+// how it read in play. Skipping the trivial spills keeps the gate LOADED for the hits that matter.
+#define ENDLESS_AEGIS_COOLDOWN  70  // ticks (~2s at the 35Hz sim) before the gate can block again
+#define ENDLESS_AEGIS_MIN_SPILL  2  // ...and a spill smaller than this isn't worth spending it on
+
+static int endlessAegisCooldown = 0;  // ticks until the gate is ready (per level; drained in endlessGameplayTick)
+
+void endlessAegisTick(void)
+{
+	if (endlessAegisCooldown > 0)
+		--endlessAegisCooldown;
+}
+
+void endlessAegisReset(void) { endlessAegisCooldown = 0; }
+
+// May THIS hit be stopped at the shield? Returns true at most once per cooldown, and ARMS the cooldown
+// when it does -- so the caller must act on a true (JE_playerDamage does, immediately). `shieldBefore`
+// is the shield the hit landed on (a gate with nothing to spend blocks nothing) and `spill` is the
+// damage that is about to reach armor -- i.e. what a block is actually worth.
+bool endlessAegisGateConsume(int shieldBefore, int spill)
+{
+	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
+		return false;
+	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
+		return false;
+	endlessAegisCooldown = ENDLESS_AEGIS_COOLDOWN;
+	return true;
+}
+
+// SHOCKWAVE: an elite/champion death vaporises enemy projectiles around it, turning the sector's
+// scariest targets into tactical objectives -- hold one alive through a bad patch, then pop it for room.
+// Ordinary fodder does nothing, so the boon rewards picking the right target rather than just shooting.
+#define ENDLESS_SHOCKWAVE_ELITE_RADIUS    40
+#define ENDLESS_SHOCKWAVE_CHAMPION_RADIUS 60
+
+bool endlessShockwaveActive(void)
+{
+	return endlessMode && (endlessActiveMods & ENDLESS_MOD_SHOCKWAVE);
+}
+
+int endlessShockwaveRadius(int linknum, int eliteState)
+{
+	if (!endlessShockwaveActive() || eliteState < 2)
+		return 0;
+	if (linknum != 0 && linknum == endlessShockwaveLastLink)
+		return 0;                       // same multi-tile enemy as the last removed tile -- already pulsed
+	endlessShockwaveLastLink = linknum;
+	return (eliteState == 3) ? ENDLESS_SHOCKWAVE_CHAMPION_RADIUS : ENDLESS_SHOCKWAVE_ELITE_RADIUS;
 }
 
 // --- MARTYRDOM / SEEKER / STATIC sector dangers ------------------------------------------------

@@ -62,6 +62,20 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_CURSED,        40, "cash now, empty shop" },
 	{ ENDLESS_MOD_NOCHAMP,        0, "no champion enemies" },     // no clear-cash: the boon already costs you the elite/champion bounties
 	{ ENDLESS_MOD_NOELITE,        0, "no elites or champions" },  // (same -- these thin the very enemies that pay the fat bounties)
+	// The ten later boons. Most carry a NEGATIVE reward: the sector is genuinely easier to fly, so it
+	// pays LESS than a clean one -- the mirror of a hostile bit's positive reward. The two that change
+	// nothing about the fight itself (Star Charts, Auxiliary Reactor) sit at 0, and Breakthrough is the
+	// deepest cut of all because a whole extra perk dwarfs one sector's cash.
+	{ ENDLESS_MOD_AEGIS,         -5, "shield blocks overflow" },
+	{ ENDLESS_MOD_FLAKSCREEN,    -5, "fewer added shots" },
+	{ ENDLESS_MOD_AUXREACTOR,     0, "free shield recharge" },
+	{ ENDLESS_MOD_LOWPROFILE,    -8, "smaller hitbox" },
+	{ ENDLESS_MOD_GIANTKILLER,   -6, "weaker elite armor" },
+	{ ENDLESS_MOD_SHOCKWAVE,     -4, "elite kills wipe shots" },
+	{ ENDLESS_MOD_STARCHARTS,     0, "more routes next" },
+	{ ENDLESS_MOD_BREAKTHROUGH, -10, "perk on clear" },
+	{ ENDLESS_MOD_SOFTLANDING,   -4, "safer collisions" },
+	{ ENDLESS_MOD_CLEANSIGNALS,  -5, "weaker elite attacks" },
 };
 
 const EndlessTheme endlessHostileThemes[] = {
@@ -318,6 +332,46 @@ const EndlessTheme endlessBoonThemes[] = {
 	{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_FAVOR,      "Clean Slate" },
 	// -- boon triples --
 	{ ENDLESS_MOD_DILATION | ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCHARGE, "Ascension" },
+	// -- the later boons: each on a system the rows above never touch (the shield/armor boundary, the
+	//    rising tide, the generator, the hitbox, elite STATS rather than the elite tier, enemy
+	//    projectiles, the chart itself). BREAKTHROUGH is deliberately absent -- it lives in its own
+	//    tiny pool below, so the ordinary boon deal and the Jackpot can never hand it out. --
+	{ ENDLESS_MOD_AEGIS,        "Aegis Gate" },
+	{ ENDLESS_MOD_FLAKSCREEN,   "Flak Screen" },
+	{ ENDLESS_MOD_AUXREACTOR,   "Auxiliary Reactor" },
+	{ ENDLESS_MOD_LOWPROFILE,   "Low Profile" },
+	{ ENDLESS_MOD_GIANTKILLER,  "Giant Killer" },
+	{ ENDLESS_MOD_SHOCKWAVE,    "Disruption Pulse" },   // not "Shockwave" -- that word is already a generated hostile name
+	{ ENDLESS_MOD_STARCHARTS,   "Star Charts" },
+	{ ENDLESS_MOD_SOFTLANDING,  "Soft Landing" },
+	{ ENDLESS_MOD_CLEANSIGNALS, "Clean Signals" },
+	// -- pairs with the older boons. Each pairs ACROSS systems (a shield boon beside a damage boon,
+	//    a hitbox boon beside a shot-speed boon), so nothing overlaps into a wasted half. --
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_AUXREACTOR,        "Full Deflector" },
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_LOWPROFILE,        "Untouchable" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_DILATION,     "Needle Threader" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_OVERCHARGE,   "Pinpoint" },
+	{ ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_OVERCHARGE,  "Titan Bane" },
+	{ ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_BOUNTY,      "Trophy Cull" },
+	{ ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_OVERCHARGE,    "Ion Burst" },
+	{ ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_DILATION,     "Open Air" },
+	{ ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_FRAGILE,      "Clear Corridor" },
+	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_FAVOR,        "Deep Survey" },
+	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_BOUNTY,       "Recon Data" },
+	{ ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_FRAGILE,     "Cushioned" },
+	{ ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_FRAGILE,    "Jamming Field" },
+	{ ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_OVERCHARGE,   "Full Power" },
+};
+
+// BREAKTHROUGH: clearing the sector owes a bonus perk pick -- by far the strongest thing a single
+// course can hand out, so it is the rarest boon in the game. Its own tiny pool, drawn ONLY by the
+// gated roll in endlessDealBoonCourse (never the ordinary boon deal, never a Jackpot, never a gambit).
+const EndlessTheme endlessBreakthroughThemes[] = {
+	{ ENDLESS_MOD_BREAKTHROUGH,                            "Breakthrough" },
+	{ ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_BOUNTY,       "Revelation" },
+	{ ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_FRAGILE,      "Discovery" },
+	{ ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_OVERCHARGE,   "Epiphany" },
+	{ ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_FAVOR,        "Eureka" },
 };
 
 // WARP (Slipstream cranked way up -- the level hurtles past) is a rare scroll THREAT with its own
@@ -629,6 +683,29 @@ static const EndlessTheme endlessMixedThemes[] = {
 	{ ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK,   "Demotion" },
 	{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_FORTIFIED,   "Grunt Work" },
 	{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_DEVASTATING, "Green Troops" },
+	// The later boons grafted onto danger. Same rule as every row above: the boon and the threat sit on
+	// DIFFERENT levers, so the red and green monitor columns never contradict each other.
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_DEVASTATING,       "Held Line" },
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_FRENZY,            "Storm Shelter" },
+	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_ELITEPACK,         "Shield Wall" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_FRENZY,       "Thread the Needle" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_SWIFT,        "Slip Through" },
+	{ ENDLESS_MOD_LOWPROFILE | ENDLESS_MOD_FORTIFIED,    "Small Target" },
+	{ ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_FRENZY,       "Flak Run" },
+	{ ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_FORTIFIED,    "Screened Advance" },
+	{ ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_ELITEPACK,   "Paper Giants" },
+	{ ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_APEX,        "Hollow Crown" },
+	{ ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_ELITEPACK,  "Silent Order" },
+	{ ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_LEGION,     "Broken Chain" },
+	{ ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_ELITEPACK,     "Chain Collapse" },
+	{ ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_FRENZY,        "Pressure Valve" },
+	{ ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_KAMIKAZE,    "Bounce Off" },
+	{ ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_HOMING,      "Glancing Blows" },
+	{ ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_ELITEPACK,   "Bumper Cars" },
+	{ ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_STATIC,       "Backup Cells" },
+	{ ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_DEVASTATING,  "Reserve Power" },
+	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_FORTIFIED,    "Survey Run" },
+	{ ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_ENRAGE,       "Scout's Toll" },
 
 	// -- triples --
 	{ ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_SWIFT,       "Armor Piercer" },
@@ -691,6 +768,7 @@ static const struct { const EndlessTheme *tbl; unsigned n; } endlessThemePools[]
 	THEME_POOL(endlessDeadgenThemes),
 	THEME_POOL(endlessMartyrdomThemes),
 	THEME_POOL(endlessSeekerThemes),
+	THEME_POOL(endlessBreakthroughThemes),
 	THEME_POOL(endlessWarpThemes),
 };
 #undef THEME_POOL
@@ -838,6 +916,16 @@ static const struct { Uint64 bit; int credit; } endlessBoonMitigation[] = {
 	{ ENDLESS_MOD_OVERDRIVE,   5 },  // each kill stacks fire and damage
 	{ ENDLESS_MOD_OVERBLAST,   4 },  // each kill stacks damage
 	{ ENDLESS_MOD_TURBODRIVE, 3 },  // each kill quickens the guns
+	// The later survival boons. Star Charts and Breakthrough are absent on purpose: their reward lands
+	// at the NEXT outpost, so they buy no safety inside the sector and must not soften its tier.
+	{ ENDLESS_MOD_LOWPROFILE,  7 },  // a quarter off the hitbox: the broadest dodge cushion of the set
+	{ ENDLESS_MOD_AEGIS,       5 },  // the shield can no longer be punched through in one hit
+	{ ENDLESS_MOD_FLAKSCREEN,  5 },  // half the tide's added bullets simply never fire
+	{ ENDLESS_MOD_GIANTKILLER, 5 },  // elites/champions die at ordinary speed, so their guns leave the fight sooner
+	{ ENDLESS_MOD_CLEANSIGNALS,4 },  // the special tier stops firing fast and hitting hard
+	{ ENDLESS_MOD_SOFTLANDING, 3 },  // ramming stops being a death sentence (projectiles still are)
+	{ ENDLESS_MOD_SHOCKWAVE,   3 },  // each special kill buys a moment of clear air
+	{ ENDLESS_MOD_AUXREACTOR,  3 },  // shields refill without starving the guns
 };
 
 // COMBO SYNERGIES: pairs whose danger is worse than the sum of their parts -- one bit makes the other

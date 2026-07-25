@@ -123,6 +123,29 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 	}
 }
 
+// SHOCKWAVE (endless boon): an elite/champion death vaporises every enemy bullet within `radius` of it
+// (a negative radius clears the whole field -- what a boss bar emptying does). Only touches the
+// enemy-shot pool, never enemy[], so unlike the Chain Reaction pulse below it is safe to fire straight
+// from a death site inside the player-shot loop: it cannot disturb that loop's linkgroup bookkeeping.
+static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
+{
+	if (radius == 0)
+		return;
+	bool caught = false;
+	for (int b = 0; b < ENEMY_SHOT_MAX; ++b)
+	{
+		if (enemyShotAvail[b])
+			continue;
+		if (radius > 0 && (abs(enemyShot[b].sx - sx) > radius || abs(enemyShot[b].sy - sy) > radius))
+			continue;
+		JE_setupExplosion(enemyShot[b].sx, enemyShot[b].sy, 0, 0, false, false);
+		enemyShotAvail[b] = true;
+		caught = true;
+	}
+	if (caught)
+		soundQueue[4] = S_WEAPON_7;   // the same point-defense "thunk" the Countermeasure burst uses
+}
+
 // --- Chain Reaction perk (endless) --------------------------------------------------------------
 // A destroyed enemy emits a pulse that damages nearby NORMAL-tier fodder. Kills only QUEUE a pulse
 // here (with the enemy's screen position); the queue is drained once the whole player-shot loop
@@ -2078,7 +2101,10 @@ start_level:
 		if ((!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel)
 		{
 			if (endlessMode)
+			{
 				endlessRunDepth++;
+				endlessOnSectorCleared();  // bank the boons that pay out at the NEXT outpost (Star Charts / Breakthrough)
+			}
 			else
 				mainLevel = nextLevel;
 
@@ -2700,14 +2726,18 @@ level_loop:
 					JE_drawShield();
 				}
 			}
-			else if (player[0].is_alive && player[0].shield < player[0].shield_max && power > shieldT
+			// endless AUXILIARY REACTOR: the recharge is free this sector, so the generator no longer
+			// gates it either -- an empty reserve must not stall a recharge that costs nothing.
+			else if (player[0].is_alive && player[0].shield < player[0].shield_max
+			         && (power > shieldT || endlessShieldRegenFree())
 			         && !endlessShieldRegenOff())  // endless SHIELDLESS / DEADGEN: shields never recharge
 			{
 				if (--shieldWait == 0)
 				{
 					shieldWait = endlessPerkShieldWait(15);  // Shield Matrix perk shortens this in endless (no-op otherwise)
 
-					power -= shieldT;
+					if (!endlessShieldRegenFree())
+						power -= shieldT;
 
 					++player[0].shield;
 					if (player[1].shield < player[0].shield_max)
@@ -3337,6 +3367,10 @@ level_loop:
 												// position (dedups to once per linked enemy; helper honours the pool guard).
 												if (endlessMode)
 												{
+													// SHOCKWAVE boon: see the twin death site below -- swept BEFORE the
+													// martyr burst so the two never cancel each other out.
+													endlessShockwaveClear(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey,
+													                      endlessShockwaveRadius(enemy[temp3].linknum, enemy[temp3].eliteState));
 													int mShots = endlessMartyrdomBurstShots(enemy[temp3].linknum, enemy[temp3].eliteState);
 													if (mShots > 0)
 														endlessSpawnMartyrBurst(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey, mShots);
@@ -3459,6 +3493,13 @@ level_loop:
 											// position (dedups to once per linked enemy; helper honours the pool guard).
 											if (endlessMode)
 											{
+												// SHOCKWAVE boon: the mirror image of Martyrdom -- an elite/champion death
+												// CLEARS bullets instead of adding them (also deduped per linked enemy).
+												// Runs FIRST so that on the rare sector carrying both, the sweep clears the
+												// fire already in the air and the death burst below still gets to spawn;
+												// the other order had the sweep silently eat the burst it just created.
+												endlessShockwaveClear(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey,
+												                      endlessShockwaveRadius(enemy[temp2].linknum, enemy[temp2].eliteState));
 												int mShots = endlessMartyrdomBurstShots(enemy[temp2].linknum, enemy[temp2].eliteState);
 												if (mShots > 0)
 													endlessSpawnMartyrBurst(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey, mShots);
@@ -3594,11 +3635,15 @@ draw_player_shot_loop_end:
 				{
 					for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
 					{
+						// endless LOW PROFILE boon shrinks the box ~25%; endlessHitboxScale returns the
+						// stock extent otherwise, so this reads as the vanilla test in every other game.
+						const int hitX = endlessHitboxScale((int)player[i].shot_hit_area_x);
+						const int hitY = endlessHitboxScale((int)player[i].shot_hit_area_y);
 						if (player[i].is_alive &&
-						    enemyShot[z].sx > player[i].x - (signed)player[i].shot_hit_area_x &&
-						    enemyShot[z].sx < player[i].x + (signed)player[i].shot_hit_area_x &&
-						    enemyShot[z].sy > player[i].y - (signed)player[i].shot_hit_area_y &&
-						    enemyShot[z].sy < player[i].y + (signed)player[i].shot_hit_area_y)
+						    enemyShot[z].sx > player[i].x - hitX &&
+						    enemyShot[z].sx < player[i].x + hitX &&
+						    enemyShot[z].sy > player[i].y - hitY &&
+						    enemyShot[z].sy < player[i].y + hitY)
 						{
 							JE_integer tempX = enemyShot[z].sx;
 							JE_integer tempY = enemyShot[z].sy;
@@ -8119,6 +8164,12 @@ void draw_boss_bar(void)
 			// are never counted.
 			if (endlessMode)
 				++endlessRunBossKills;
+			// SHOCKWAVE boon, top tier: a boss bar emptying wipes the WHOLE field of enemy fire, so the
+			// screenful of bullets a dying boss leaves behind can't kill you after the fact. Radius -1 is
+			// endlessShockwaveClear's "everything" form; the boss is off-box anyway, so a position would
+			// be meaningless here.
+			if (endlessShockwaveActive())
+				endlessShockwaveClear(0, 0, -1);
 		}
 		else
 			boss_bar[b].armor = (armor == 255) ? 254 : armor;  // 255 would make the bar too long
