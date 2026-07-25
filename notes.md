@@ -869,6 +869,22 @@ mutable `last`, so a Quit-Level retry replays the same track.
   absent (it's the hostile table's "Glass Cannon"). The single-danger guarantee
   (≥4 courses) skips any course carrying a boon bit, so a gambit is never
   flattened into a plain single.
+- Adding sector names — the four constraints, all verifiable before a build:
+  (1) **Unique across every table AND the three generic pools** (the salt pass
+  only ever steps a *generated* name, so two curated labels that read alike can
+  land on one chart). (2) **`font_ascii`-displayable only**: letters, space,
+  apostrophe, hyphen — every other punctuation mark maps to −1 and draws
+  nothing. (3) **Fits the course list**: `JE_dString` draws it in
+  `SMALL_FONT_SHAPES` at x=166 on a 356px screen, so the practical ceiling is
+  ~134px ("Thread the Needle", the widest label shipped); `menuInt` rows hold 23
+  chars + NUL on top of that. (4) **`endless_internal.h` declares the pools with
+  explicit bounds** (`endlessHostileThemes[256]`, `endlessBoonThemes[122]`, …)
+  because `endless_course.c` sizes stack arrays off their `COUNTOF` — growing a
+  table without updating its extern is a `C2078 too many initializers`.
+  Two deliberate holes in the hostile pairs: Overclock+Slipstream (Overclock
+  already carries the same scroll, so the row would be a redundant bit) and
+  Gravity+Sluggish (that pairing is Tar Pit and must stay rare-injected — a row
+  in `endlessHostileThemes` would let the ordinary signature draw deal it).
 - Four dangers reuse the enemy-death / enemy-projectile / player-damage systems
   rather than the enemy layout, so each is a small engine hook plus an
   `endless_combat.c` decision (bits 40-43, all in `ENDLESS_HOSTILE_MASK`):
