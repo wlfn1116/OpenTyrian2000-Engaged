@@ -148,6 +148,8 @@ void endlessRollGravityDir(void);              // pick this sector's gravity hea
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
 #define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy
 #define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
+#define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
+#define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Compound Interest stack (the cap scales with the rate)
 
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
 // extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
@@ -172,6 +174,7 @@ enum {
 	PERK_KINETIC,
 	PERK_COUNTERMEASURE,
 	PERK_CHAINRXN,
+	PERK_INTEREST,
 	PERK_COUNT
 };
 
@@ -191,6 +194,7 @@ extern int endlessCmCooldown;                 // Countermeasure Suite: ticks unt
 extern int endlessPerkDepthDone;              // run depth whose perk pick is already resolved; -1 = none
 
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)
+int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspent cash (10 = stock)
 
 // --- endless_shop.c: the outpost -------------------------------------------------
 extern long endlessRerollCost;        // escalating outpost prices, reset each visit

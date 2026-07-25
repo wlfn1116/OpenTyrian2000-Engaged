@@ -1071,6 +1071,11 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Rapid Recharge speeds the special-weapon cooldown and sidekick ammo-refill
   counters (not the main guns). Its decrement accumulator is stateful: sample it
   once per tick in the main-player block, then reuse the sampled value.
+- Level-clear bank interest is `ENDLESS_INTEREST_BASE_PCT` (10%) of unspent cash,
+  +5 points per **Compound Interest** stack (max 4 → 30%), capped at
+  `3000 + depth*80` scaled by the SAME rate factor — a rate rise with a fixed cap
+  would just hit the ceiling a level sooner and pay nothing extra. The multiply is
+  split into hundreds + remainder so a big bank can't overflow 32-bit `long`.
 
 ### Save / resume
 
