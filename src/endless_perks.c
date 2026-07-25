@@ -47,6 +47,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Kinetic Converter","Absorbed shield hits refuel the generator.",3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
+	{ "Compound Interest","More bank interest on unspent cash.",       4 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -66,6 +67,16 @@ int endlessPerkDepthDone = -1;
 int endlessPerkCashPercent(void)
 {
 	return 100 + endlessPerkOwned[PERK_CASH] * ENDLESS_PERK_CASH_PCT;
+}
+
+// Compound Interest perk: the level-clear bank-interest rate, as a % of unspent cash
+// (ENDLESS_INTEREST_BASE_PCT = stock). endlessApplyLevelPayout raises the interest CAP by the same
+// factor, so a bigger rate genuinely pays more instead of hitting the stock ceiling a level sooner.
+int endlessPerkInterestPercent(void)
+{
+	if (!endlessMode)
+		return ENDLESS_INTEREST_BASE_PCT;
+	return ENDLESS_INTEREST_BASE_PCT + endlessPerkOwned[PERK_INTEREST] * ENDLESS_PERK_INTEREST_PCT;
 }
 
 // +max armor from the Ablative Plating perk; added to the ship's armor each level start (varz.c),
