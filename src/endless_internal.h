@@ -247,10 +247,10 @@ typedef struct { Uint64 mods; const char *name; } EndlessTheme;
 // files reads them from here. Grow a table without bumping its number and endless_mods.c fails to
 // compile ("too many initializers"), so the pair cannot silently drift.
 extern const EndlessMod   endlessModTable[50];
-extern const EndlessTheme endlessHostileThemes[159];
+extern const EndlessTheme endlessHostileThemes[256];
 extern const EndlessTheme endlessKamikazeThemes[12];
 extern const EndlessTheme endlessHomingThemes[8];
-extern const EndlessTheme endlessBoonThemes[66];
+extern const EndlessTheme endlessBoonThemes[122];
 extern const EndlessTheme endlessOverloadThemes[20];
 extern const EndlessTheme endlessRareThemes[44];
 extern const EndlessTheme endlessEvilThemes[30];
