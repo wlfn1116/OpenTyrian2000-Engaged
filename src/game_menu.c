@@ -3249,6 +3249,33 @@ void JE_drawMenuChoices(void)
 		}
 		free(str);
 
+		// Endless perk PICK: draw each offer's owned/max stack count (e.g. "1/4") right-aligned on the
+		// row, so you can see at a glance which offers are stackable and how much room is left -- the
+		// same count the read-only perk list shows. The final "Take the Cash" row gets none. The rows
+		// here are the tall shape font, so nudge the tiny count down to sit on their centre line.
+		if (curMenu == MENU_PERKS && !endlessPerkListMode && x < menuChoices[curMenu])
+		{
+			const int id = endlessPerkChoiceId(x - 2);
+			if (id >= 0)
+			{
+				char cnt[16];
+				snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
+
+				char cline[18];
+				if (curSel[curMenu] == x)  // leading '~' toggles the highlight, as on the row itself
+				{
+					cline[0] = '~';
+					SDL_strlcpy(cline + 1, cnt, sizeof(cline) - 1);
+				}
+				else
+					SDL_strlcpy(cline, cnt, sizeof(cline));
+
+				const int count_right = 302;
+				JE_outTextAndDarken(VGAScreen, count_right - JE_textWidth(cnt, TINY_FONT), tempY + 3,
+				                    cline, 15, 2, TINY_FONT);
+			}
+		}
+
 		// Endless "gave up the level" outpost: grey out the rows locked to the launch-time choices
 		// (E-Shop = item 2, Upgrade Ship = item 4) so the disabled items read as disabled. Dims only
 		// the glyph pixels (no box over the background); item 6 (Start Level) relaunches, stays bright.
@@ -4030,7 +4057,8 @@ void JE_drawMainMenuHelpText(void)
 				{
 					const int id = perkListId[curSel[MENU_PERKS] - 2];
 					if (id >= 0)
-						snprintf(tempStr, sizeof(tempStr), "Owned %d.  %s", endlessPerkGetOwned(id), endlessPerkDesc(id));
+						snprintf(tempStr, sizeof(tempStr), "Owned %d/%d.  %s",
+						         endlessPerkGetOwned(id), endlessPerkMaxStack(id), endlessPerkDesc(id));
 					else
 						SDL_strlcpy(tempStr, "You haven't earned any perks yet.", sizeof(tempStr));
 				}
@@ -8067,12 +8095,13 @@ void JE_weaponViewFrame(void)
 	mouseX = player[0].x;
 	mouseY = player[0].y;
 
-	// Endless perks quicken the guns in the preview exactly as in play: apply the fire-rate perks'
-	// extra shotRepeat decrements once per tick, so the preview's fire cadence (and the generator
-	// drain on the power gauge) reflects the perks you own. Sampled once per tick.
+	// Endless perks quicken the guns in the preview as in play: apply the fire-rate perks' extra
+	// shotRepeat decrements once per tick, so the preview's fire cadence (and the generator drain on
+	// the power gauge) reflects the perks you own. Adrenaline is deliberately left OUT (see
+	// endlessPerkPreviewFireDecrements) -- it's a hurt-only burst, and you launch at full hull.
 	if (endlessMode)
 	{
-		const int dec = endlessPerkFireDecrements();
+		const int dec = endlessPerkPreviewFireDecrements();
 		for (unsigned i = 0; i < COUNTOF(shotRepeat); i++)
 			for (int k = 0; k < dec && shotRepeat[i] > 0; k++)
 				--shotRepeat[i];

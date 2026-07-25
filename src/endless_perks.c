@@ -105,8 +105,20 @@ static int endlessAccumSteps(int *accum, int rate)
 	return steps;
 }
 
-// Rapid Cyclers perk: extra shotRepeat decrements this tick, as a smooth fractional rate via an
-// accumulator (like the scroll-step boost). Applied every tick from the player fire block.
+// The fire-decrement rate (% per tick) the fire-rate perks are worth right now. `hurtBonus` folds in
+// the Adrenaline relic -- a big extra boost while armor is below 1/N of the ship's max.
+static int endlessPerkFireRate(bool hurtBonus)
+{
+	int rate = endlessPerkOwned[PERK_FIRERATE] * ENDLESS_PERK_FIRE_PCT;
+	if (hurtBonus && endlessPerkOwned[PERK_ADRENALINE] > 0 && player[0].initial_armor > 0
+	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor)
+		rate += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_PCT;
+	return rate;
+}
+
+// Rapid Cyclers perk (+ Adrenaline while hurt): extra shotRepeat decrements this tick, as a smooth
+// fractional rate via an accumulator (like the scroll-step boost). Applied every tick from the
+// player fire block.
 int endlessPerkFireDecrements(void)
 {
 	static int accum = 0;
@@ -115,12 +127,22 @@ int endlessPerkFireDecrements(void)
 		accum = 0;
 		return 0;
 	}
-	int rate = endlessPerkOwned[PERK_FIRERATE] * ENDLESS_PERK_FIRE_PCT;
-	// Adrenaline relic: a big extra boost while armor is below 1/N of the ship's max.
-	if (endlessPerkOwned[PERK_ADRENALINE] > 0 && player[0].initial_armor > 0
-	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor)
-		rate += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_PCT;
-	return endlessAccumSteps(&accum, rate);
+	return endlessAccumSteps(&accum, endlessPerkFireRate(true));
+}
+
+// Same, for the shop weapon preview: Rapid Cyclers only, never Adrenaline. The preview is meant to
+// show the cadence you'll fly with, and every zone starts you at full hull -- so a shop visit that
+// caught the ship badly hurt would otherwise advertise a burst speed the next zone won't have. Its
+// own accumulator, so the preview's carry can't bleed into the first gameplay tick or vice versa.
+int endlessPerkPreviewFireDecrements(void)
+{
+	static int accum = 0;
+	if (!endlessMode)
+	{
+		accum = 0;
+		return 0;
+	}
+	return endlessAccumSteps(&accum, endlessPerkFireRate(false));
 }
 
 // Rapid Recharge perk: extra cooldown decrements/tick (fractional accumulator). The caller
@@ -336,15 +358,23 @@ const char *endlessPerkChoiceName(int i)
 	return endlessPerkTable[endlessPerkChoice[i]].name;
 }
 
-// Help-line text for an offered perk: its description plus how many the player already owns.
+// Help-line text for an offered perk: its description plus owned/max stacks, so a stackable perk
+// shows how much room is left (e.g. "Owned 1/4") instead of a bare count.
 const char *endlessPerkChoiceDesc(int i)
 {
 	static char buf[80];
 	if (i < 0 || i >= endlessPerkChoiceN)
 		return "";
 	const int id = endlessPerkChoice[i];
-	snprintf(buf, sizeof(buf), "%s  (Owned: %d)", endlessPerkTable[id].desc, endlessPerkOwned[id]);
+	snprintf(buf, sizeof(buf), "%s  (Owned %d/%d)",
+	         endlessPerkTable[id].desc, endlessPerkOwned[id], endlessPerkTable[id].maxStack);
 	return buf;
+}
+
+// The perk id behind offer i (-1 if out of range), so the menu can draw its owned/max count on the row.
+int endlessPerkChoiceId(int i)
+{
+	return (i >= 0 && i < endlessPerkChoiceN) ? endlessPerkChoice[i] : -1;
 }
 
 // Acquire offered perk i. The forced post-zone pick is FREE (perks come sparingly -- see the cadence
