@@ -490,13 +490,15 @@ extern bool endlessPerkPending;      // a perk pick is queued for the next shop'
 void        endlessGeneratePerkChoices(void);  // roll this visit's offers (call before the shop)
 int         endlessPerkChoiceCount(void);      // how many perks are offered (usually 3)
 const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
-const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned count) for offer i
+const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned/max count) for offer i
+int         endlessPerkChoiceId(int i);        // perk id behind offer i (-1 if none); for the row's owned/max count
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
 long        endlessPerkDeclineBonus(void);     // cash paid for taking no perk (scales with depth)
 void        endlessDeclinePerk(void);          // take the cash instead of a perk
 
 int endlessPerkArmorBonus(void);     // +max armor from Ablative Plating (added at ship-info, varz.c); may be negative (Glass Cannon)
 int endlessPerkFireDecrements(void); // extra shotRepeat decrements/tick from Rapid Cyclers (+ Adrenaline when hurt)
+int endlessPerkPreviewFireDecrements(void); // ...the same for the shop weapon preview, minus Adrenaline (the preview shows the full-hull cadence)
 int endlessPlayerDamageReduce(void); // flat reduction on each hit taken (Bulwark relic); applied in JE_playerDamage
 bool endlessPerkAutoFireSpecial(void); // Autofire Special perk: auto-fire the equipped special while fire is held (varz.c)
 int endlessPerkPowerUsePercent(void);  // Efficient Coils perk: generator power-use scale per main-weapon shot (100 = normal, lower = cheaper); applied in shots.c
