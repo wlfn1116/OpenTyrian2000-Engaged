@@ -93,6 +93,21 @@ enum {
 #define ENDLESS_MOD_SEEKER      ((Uint64)1 << 41)  // each enemy projectile makes ONE limited course correction toward you ~0.5s after firing (hostile, rare)
 #define ENDLESS_MOD_STATIC      ((Uint64)1 << 42)  // taking shield/hull damage bleeds generator power (damage x30 of the raw 0..900 pool ~= the spec's x5 on the power/10 gauge, capped at the reserve) AND shorts the generator out briefly so the loss actually sticks -- without that regen lockout the next tick repays it; never rides a dead generator (hostile, common)
 #define ENDLESS_MOD_RETALIATION ((Uint64)1 << 43)  // every enemy kill briefly quickens enemy fire (~25%, refreshes but doesn't stack) -- a kill-tempo tax, distinct from the time-based Enrage (hostile, uncommon)
+// Ten BOONS on systems the earlier boons never touched. The existing roster already covers enemy HP,
+// cash, kill-fed guns, weapon damage, shot speed, shop prices and the elite tier; these instead act on
+// the shield/armor boundary, the rising tide, the generator, the hitbox, the elite STATS (rather than
+// the tier itself), enemy projectiles and the between-sector meta. Most carry a NEGATIVE clear-cash
+// reward: an easier sector should pay less (see endlessModTable).
+#define ENDLESS_MOD_AEGIS        ((Uint64)1 << 44)  // Aegis Gate: while the shield holds, a hit can't spill into armor -- the gate empties the shield instead, then recharges (boon)
+#define ENDLESS_MOD_FLAKSCREEN   ((Uint64)1 << 45)  // Flak Screen: halves the EXTRA shots the rising tide adds per volley; the level's authored fire is untouched (boon, only offered once the tide is running)
+#define ENDLESS_MOD_AUXREACTOR   ((Uint64)1 << 46)  // Auxiliary Reactor: shield regen costs no generator power this sector (same interval, just free) (boon)
+#define ENDLESS_MOD_LOWPROFILE   ((Uint64)1 << 47)  // Low Profile: the ship's DAMAGE hitbox shrinks ~25% (sprite and pickup reach unchanged) (boon)
+#define ENDLESS_MOD_GIANTKILLER  ((Uint64)1 << 48)  // Giant Killer: elites/champions keep their tint, aggression and bounty but lose their HP multiplier (boon)
+#define ENDLESS_MOD_SHOCKWAVE    ((Uint64)1 << 49)  // Shockwave: killing an elite/champion vaporises nearby enemy projectiles (a boss bar emptying clears the screen) (boon)
+#define ENDLESS_MOD_STARCHARTS   ((Uint64)1 << 50)  // Star Charts: clearing the sector guarantees a full route slate at the next ORDINARY outpost (boon, no combat effect)
+#define ENDLESS_MOD_BREAKTHROUGH ((Uint64)1 << 51)  // Breakthrough: clearing the sector owes you a bonus perk pick (boon, the rarest of the set)
+#define ENDLESS_MOD_SOFTLANDING  ((Uint64)1 << 52)  // Soft Landing: the contact damage the PLAYER takes from ramming is cut to 30% (projectiles untouched) (boon)
+#define ENDLESS_MOD_CLEANSIGNALS ((Uint64)1 << 53)  // Clean Signals: elites/champions lose their fire-rate and shot-damage bonuses, keeping HP, tint and bounty (boon)
 
 // The six kill-fire mods -- boons Turbodrive/Overdrive/Overblast, evil mirrors Backfire/Burnout/
 // Misfire -- a sector carries at most one (notes.md §Course generation & danger labels).
@@ -235,10 +250,13 @@ long        endlessCoursePayout(int i);    // truthful clear payout for course i
 // One row of the Chart-a-Course monitor overlay: an active modifier's short label, its danger
 // weight (the same reward-tenths endlessDangerScore sums, driving how dark its red tint draws),
 // and which side of the monitor it lists on (hostile/trap = left in red, boon = right in green).
+// `cleansed` marks a threat a queued Sabotage charge will strip before the sortie starts -- it is
+// still listed (so the player can see what the charge bought), but drawn WHITE instead of red.
 typedef struct {
 	const char *word;
 	int         weight;
 	bool        hostile;
+	bool        cleansed;
 } EndlessCourseModRow;
 
 // Fill rows[] with course i's individual modifiers, worst-first (highest weight leading), up to
@@ -299,8 +317,13 @@ bool endlessTryBuyRevive(void);
 bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears screen)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
+// Sabotage charges queue up per visit and are all spent on the course actually chosen, so the cap is
+// what stops a rich run from simply deleting every sector's danger. It is a hard limit the E-Shop
+// row and help line both read, so a maxed queue says so instead of failing a buy in silence.
+#define ENDLESS_CLEANSE_MAX_CHARGES 3
 long endlessCleansePrice(void);
 int  endlessCleanseCharges(void);    // sabotage strips queued for the next course select
+bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES -- no further buy will take
 bool endlessTryBuyCleanse(void);
 long endlessGamblePrice(void);
 bool endlessTryGamble(void);
@@ -313,6 +336,10 @@ const char *endlessGambleOutcomeName(int id);  // display name of gamble outcome
 void endlessForceGambleOutcome(int id); // debug: fire outcome `id`'s effect directly (no fee), for testing
 const char *endlessLastGrantedSpecial(void);  // name of the last special granted this shop visit ("" if none)
 unsigned endlessPendingMods(void);   // kill-fire buff bits bought this visit, not yet applied (for the debug jump)
+// Merge pending E-Shop/gamble mods into a sector's own mods. The PURCHASE wins any kill-fire
+// collision (see the definition), so the result always carries at most one kill-fire bit. Used by
+// the launch fold-in, the Chart-a-Course card, and the debug zone jump, so all three agree.
+Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased);
 
 // Called once per endless level, right after JE_loadMap loads the shipped level, to fix
 // up the per-level state a random level jump would otherwise leave in a crashing state
@@ -399,6 +426,7 @@ float endlessGravityDriftX(void);       // GRAVITY: horizontal drag component in
 float endlessGravityDriftY(void);       // GRAVITY: vertical drag component in px/tick (VT ship path)
 float endlessMoveScale(void);           // SLUGGISH: ship traverse-speed scale, 1.0 = normal; scales ALL input (keyboard/mouse/touch/stick) in both ship paths
 bool  endlessShieldRegenOff(void);      // SHIELDLESS or DEADGEN: true when the shield must not recharge (gate the shield-regen step in tyrian2.c)
+bool  endlessShieldRegenFree(void);     // AUXREACTOR: shield regen draws no generator power this sector (tyrian2.c: skip the `power -= shieldT` AND its power>shieldT gate)
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd); // DEADGEN: generator charge per tick, throttled to a trickle (else the passed-in normal rate)
 int  endlessScrollBoostPercent(void); // 0/70/220 for the active scroll modifier; single source for layers and bound scripted motion
 bool endlessScrollBoostActive(void);    // true while any scroll-speed modifier is active (stable across the tick, unlike the fractional step count)
@@ -413,6 +441,18 @@ void     endlessNoteEnemyShotSprite(JE_word sgr); // remember a real enemy-bulle
 JE_word  endlessMartyrShotSprite(void);           // that captured bullet sprite (0 = none seen yet -> suppress the burst)
 bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
 unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve
+
+// The four boons the engine has to ask about mid-frame (the rest fold into existing levers).
+int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
+bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
+int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
+int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 40 elite / 60 champion; dedups so a multi-tile enemy pulses once
+bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
+
+// Called the moment a sector is CLEARED (right after endlessRunDepth is bumped, tyrian2.c), to bank
+// the two boons whose reward lands at the NEXT outpost rather than in the level: Star Charts (a full
+// route slate) and Breakthrough (a bonus perk pick). Both ride the save.
+void endlessOnSectorCleared(void);
 
 // Evil kill-fire curses (Evil Turbodrive / Evil Overdrive): the hostile mirrors of the boons.
 // They reuse the same combo/stack machinery but slow your fire (and, for Evil Overdrive, cut your

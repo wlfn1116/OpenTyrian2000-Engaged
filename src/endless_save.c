@@ -46,7 +46,7 @@ int      endlessSortiePreLongCon   = 0;
 // by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 11     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk)
+#define ENDLESS_SAVE_VERSION 12     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts
 #define ENDLESS_SAVE_PERKS   32     // on-disk perk-array width from v11 (was 16, which had grown to == PERK_COUNT).
                                     // Comfortable headroom now; a future perk only needs a version bump once PERK_COUNT passes this.
 #define ENDLESS_SAVE_PERKS_V10 16   // v3..v10 wrote a fixed 16-wide perk block; the reader honours that for older files.
@@ -114,6 +114,10 @@ typedef struct {
 	// --- per-zone music continuity (v10) ---
 	Uint8  lastSong;       // the track the last-played zone really used (0 = none yet)
 	Sint32 lastSongDepth;  // that zone's run depth (only meaningful when lastSong != 0)
+
+	// --- boons banked on clear, owed to a LATER outpost (v12) ---
+	Uint8  starChartsOwed;    // STAR CHARTS: the next ordinary chart still owes its full route slate
+	Uint8  breakthroughOwed;  // BREAKTHROUGH: bonus perk picks still owed (a count -- two can queue)
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -233,6 +237,9 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 
 	endlessPutU8(f, r->lastSong);                    // v10 per-zone music continuity
 	endlessPutU32(f, (Uint32)r->lastSongDepth);
+
+	endlessPutU8(f, r->starChartsOwed);              // v12 boons owed to a later outpost
+	endlessPutU8(f, r->breakthroughOwed);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -392,6 +399,11 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			return false;
 		r->lastSongDepth = (Sint32)u32;
 	}
+
+	// v12 Star Charts / Breakthrough debts. Older records lack them -- the memset above left both at 0,
+	// so a resumed pre-v12 run simply owes nothing (it can only ever have been charted in a v12 build).
+	if (version >= 12 && (!endlessGetU8(f, &r->starChartsOwed) || !endlessGetU8(f, &r->breakthroughOwed)))
+		return false;
 	return true;
 }
 
@@ -518,6 +530,10 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 
 	r->lastSong      = endlessLastSong;             // v10 per-zone music continuity
 	r->lastSongDepth = endlessLastSongDepth;
+
+	r->starChartsOwed   = endlessStarChartsOwed ? 1 : 0;   // v12 boons owed to a later outpost
+	r->breakthroughOwed = (Uint8)((endlessBreakthroughOwed < 0) ? 0
+	                             : (endlessBreakthroughOwed > 255 ? 255 : endlessBreakthroughOwed));
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -590,6 +606,11 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// with it, since a zeroed record would otherwise read as a real entry for depth 0.
 	endlessLastSong      = r->lastSong;
 	endlessLastSongDepth = (r->lastSong != 0) ? r->lastSongDepth : -1;
+
+	// Boons owed to a later outpost (v12). endlessResetRun above cleared both, so a pre-v12 record just
+	// resumes owing nothing.
+	endlessStarChartsOwed   = r->starChartsOwed != 0;
+	endlessBreakthroughOwed = r->breakthroughOwed;
 
 	endlessRestoreSavedCourses(r);
 

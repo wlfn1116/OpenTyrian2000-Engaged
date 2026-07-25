@@ -512,11 +512,97 @@ mutable `last`, so a Quit-Level retry replays the same track.
 
 ### Course generation & danger labels
 
+- **Danger distribution (2026-07-25 rebalance).** Two things used to concentrate
+  almost every sector onto the same handful of bits, and both are fixed:
+  1. `endlessCombinableMods` was a FLAT 11-bit pool with 2.8-5 bits drawn per
+     course, so each of those bits sat on ~25-45% of courses while whole
+     mechanics were injection-only at ~3%. It is now a WEIGHTED table
+     (`EndlessModWeight`, drawn by `endlessWeightedModDraw`): core four
+     Fortified/Frenzy/Swift/Devastating at 3, mid tier at 4, under-seen
+     Topsy/Static at 6 and Shieldless/Retaliation at 5, and Martyrdom / Seeker /
+     Retaliation PROMOTED in (each acts on a system nothing else in the pool
+     touches, so they stack cleanly). A bit's share of a course ≈ bits-drawn ×
+     weight ÷ total weight — that is the "how often do I meet this" knob.
+  2. `endlessHostileThemes` is a NAME dictionary whose 159 rows were authored
+     mostly out of the same four bits (Swift in 50 rows, Slipstream in 4), so a
+     uniform row draw inherited that skew. `endlessPickSignatureTheme` now picks
+     WHICH danger the sector is about from `endlessThemeSignatures` (weighted),
+     then a random row carrying it. No table row changed; every name stays
+     reachable. Used by the initial deal, the duplicate re-roll AND the Gauntlet
+     fallback (`endlessUnusedHostileTheme`) — the Gauntlet matters, it is ~38% of
+     deep visits and was re-importing the skew on its own.
+- Bits with no curated row of their own (Martyrdom, Seeker) are absent from
+  `endlessThemeSignatures` on purpose: they reach the chart through the weighted
+  pool, and their name tables stay wired into `endlessFindTheme`.
+- Per-slate diversity: both weighted draws cut a bit already charted on another
+  route of the same slate to ⅓ weight (`endlessOtherCourseMods`), so one danger
+  rarely covers three of five offered routes.
+- Deep runs escalate by WHICH dangers, not HOW MANY: the widen tops out near 3.4
+  bits with a hard ceiling of 4 (it used to reach a guaranteed 5, which read as
+  "everything at once"), and the combo share caps at 80%.
+- `endlessRareInjections` rows carry a `brutal` flag; `endlessDangerRareDivEx`
+  CAPS the deep ramp at 2x for those instead of the full ~6x. Without it the
+  punishing signatures stopped being rare at depth (Apex ~12% of zone-250 slates,
+  dead generator ~9%, Overload ~23%). Tar Pit is the only flavour row left on the
+  full ramp. Martyrdom / Seeker / Retaliation injections were REMOVED (they are
+  in the weighted pool now).
+- Milestone slates take a SEPARATE path and are not affected by any of the above:
+  `endlessMakeRankComboForLevel` draws `endlessMilestonePool` (flat shuffle +
+  randomised greedy to a score band), and The End is fully self-contained in
+  `endlessMakeTheEndMods`. Neither reads the weighted pool, the signatures or the
+  injections, so the brutal-ramp cap does NOT apply — a milestone can still deal
+  Legion/Apex/Overload/Warp freely, which is the point of a set-piece. The four
+  reactive dangers were added to `endlessMilestonePool` (2026-07-25) so a slate
+  isn't the one place left that reads as a core-bit wall; the rank guarantee is
+  unaffected because the builder verifies against `endlessDangerRankLevelEx`.
+- The BOON economy is deliberately untouched by all of the above: boon courses
+  thin with depth (`3 + ramp*2/100`) and the gambit graft floors at 5%. Boons
+  slowly fading but never vanishing is the intended shape — do not "fix" it.
 - Kill-fire mods: three boons (Turbodrive/Overdrive/Overblast) and three evil
   mirrors (Backfire/Burnout/Misfire) share the combo/stack machinery, so a sector
   carries at most one; sub-masks (`FIREBOOST/FIREJAM/DMGUP/DMGDOWN/STACKED`) say
   which effect each grants. The evil three are also forced gamble outcomes
   (`EGO_CURSE_*`), independent of course injection.
+- **The purchase wins.** Generation and the shop each hold the one-kill-fire line
+  internally, but merging them at launch is where it used to break: a plain OR of
+  `endlessCourseMod[i] | endlessPurchasedMods` left a bought Turbodrive AND a
+  charted Backfire both set, so `endlessKillBuffFireDecrements` and
+  `endlessKillFireJamTicks` both hit the same shot, the boon's free-power break
+  was withheld (`shots.c` gates on `endlessKillFireIsEvil`, which the evil bit
+  makes true) and the HUD/ship tinted evil over a paid-for buff.
+  `endlessFoldPurchasedMods` is now the single merge point — whatever the player
+  brought clears the sector's kill-fire bit, in BOTH directions (a bought boon
+  clears a charted curse, a gambled curse clears a charted boon) — and it also
+  owns the NOELITE-supersedes-NOCHAMP rule. The price is the balance: a kill-fire
+  buy costs 66-95% of the purse and locks all three behind the recharge for 2+
+  sectors. The launch fold-in and the debug zone jump route through it directly;
+  the Chart-a-Course card reaches it via `endlessCourseLaunchMods`, which replays
+  BOTH launch passes (the fold, then the queued Sabotage strips) so the card
+  prices and lists exactly what the sortie commits. Course NAME and RANK stay as
+  charted (seed-determined; the slate is sorted by rank), so a "Backfire" card
+  can legitimately show no gun-jam row. The Long Con's deferred APEX is
+  deliberately NOT replayed — that one is paid for precisely so it arrives
+  unannounced.
+- Sabotage is shown, not hidden: a bit a queued charge will strip stays listed on
+  the monitor, flagged `EndlessCourseModRow.cleansed`, and draws WHITE (bank 13,
+  brightness +4) instead of its danger red — the card reads "this threat was here
+  and your charge takes it off" rather than quietly shrinking. Palette 18 has no
+  clean grey RAMP (it's a luminance-sorted planet palette, so most banks mix
+  hues), but bank 13 at +4 lands the three TINY_FONT shades on 236/244/252
+  neutral greys. Don't push the offset past +5: the shade-10 highlight would
+  overflow bank 13, and `blit_sprite_hv_unsafe` ORs the shade in rather than
+  clamping. Lower offsets pick up bank 13's yellow-green entries (shades 0/3/5).
+  The payout on the card drops with the strip, so buying a cleanse visibly costs
+  danger money.
+- `endlessStripWorstMod` (the Sabotage ladder) must list EVERY hostile bit
+  `endlessModTable` prices, or a charge spent on a sector carrying only that bit
+  silently does nothing — the evil kill-fire three, Overheat, and all four of the
+  reactive dangers (bits 40-43) were missing. Deliberately absent: THEEND (a
+  label that pays, not a danger) and the gamble-only bits with no table row
+  (Marked/Nitro/Dud). The pass runs on the MERGED set, so it can strip a gambled
+  curse as well as a charted one — that has always been true of gambled
+  Frenzy/Rampage. It runs AFTER the fold, so a charge is never wasted on a
+  kill-fire bit the purchase already overrode.
 - The generator gauge recolours while a kill-fire boon window is up (main-gun
   fire costs no power then). The value is a palette bank base; the whole 14-shade
   ramp must stay inside one bank (`draw_power_gauge` derives the AA dark end from
@@ -860,6 +946,111 @@ mutable `last`, so a Quit-Level retry replays the same track.
   independent coin for each (1280 finale combinations now), so a zone-100+
   finisher can carry any mix of them. Static is safe there because the core
   omits DEADGEN.
+- **Ten later BOONS** (bits 44–53, all in `ENDLESS_BOON_MASK`). The earlier boon
+  roster already covered enemy HP, cash, kill-fed guns, weapon damage, enemy shot
+  speed, shop prices and the elite TIER; these deliberately pick systems none of
+  those touch, so none is a reskin of an existing lever. Most carry a NEGATIVE
+  `endlessModTable` reward — an easier sector pays less, the mirror of a hostile
+  bit's positive reward — and the survival ones also grant an
+  `endlessBoonMitigation` credit so a gambit's tier reads its true net danger.
+  - **Aegis Gate** (bit 44, −5, credit 5): while the shield holds, a hit can't
+    spill into armor — the gate dumps the remaining shield and eats the rest.
+    Hooked in `JE_playerDamage` right after `shield = 0` and BEFORE `cmHullHit`,
+    so a blocked hit reaches neither the hull, the armor gauge, the Countermeasure
+    burst nor the death path. THE COOLDOWN IS THE BALANCE
+    (`ENDLESS_AEGIS_COOLDOWN` 70 ≈ 2s, per level, ticked in
+    `endlessGameplayTick`): without it a single regenerated shield point would
+    block forever, and Shield Matrix would make that trivial.
+    `endlessAegisGateConsume` ARMS the cooldown when it answers true, so exactly
+    one caller may ask per hit.
+    TWO things make it FELT, and the first cut had neither — it read as completely
+    inert in play even though the logic was right:
+    (1) `ENDLESS_AEGIS_MIN_SPILL` (2). A shield only ever overflows on the hit
+    that finishes it, so the spill is whatever the shield couldn't cover — often a
+    single point. Gating those spent the whole 2-second window to save 1 hull and
+    left the gate on cooldown for the champion railgun a moment later: it fired
+    constantly and was worth nothing. Skipping trivial spills keeps the gate
+    LOADED for the hits that matter.
+    (2) A distinct cue. It originally reused the shield's own flare and
+    `S_SHIELD_HIT` — what *every* ordinary hit already plays — so a block was
+    indistinguishable from being hit normally. It now draws the full nine-point
+    shield-absorb ring and plays `S_CLINK`, which nothing else in the damage path
+    uses.
+    KNOWN DESIGN PROPERTY (per spec, not a bug): the gate needs `shield > 0`, and
+    a block empties the shield, so under sustained fire — where the shield is
+    pinned at 0 — it does little. It is at its best beside Shield Matrix /
+    Auxiliary Reactor, which is the synergy the boon was specified for.
+  - **Flak Screen** (bit 45, −5, credit 5): halves what `endlessExtraEnemyShots`
+    adds, rounding the kept half UP — so only the Endless-specific projectile
+    multiplication thins and every authored firing pattern still plays as
+    designed. Gated on `endlessTideBoonsUnlocked` (the tide adding ≥1 shot at
+    all), else it would be an empty green row before zone ~25.
+  - **Auxiliary Reactor** (bit 46, 0, credit 3): shield regen costs no generator
+    power. Same interval, so it is mechanically distinct from Shield Matrix
+    (shorter interval) and Efficient Coils (cheaper FIRING). Note the regen gate
+    `power > shieldT` must be relaxed too, not just the `power -= shieldT` — an
+    empty reserve must not stall a recharge that costs nothing.
+  - **Low Profile** (bit 47, −8, credit 7 — the biggest cushion of the set): the
+    DAMAGE hitbox shrinks to 75%. Applied at the collision TESTS via
+    `endlessHitboxScale`, not to `player[].shot_hit_area_*`, for two reasons:
+    shrinking the source fields would also shrink the ITEM-collect reach and the
+    Countermeasure sweep, and the helper is the identity outside the boon so no
+    other game mode changes. Both damaging tests route through it — enemy
+    projectiles (tyrian2.c) and enemy contact (mainint.c). In `JE_playerCollide`
+    the shrunk box is added ONLY to the damage branch; the outer 12×14 test also
+    collects pickups and powerups, and a boon must never make items harder to grab.
+  - **Giant Killer** (bit 48, −6, credit 5): `endlessEliteHpMult` returns 1 and
+    `endlessEnemyHpMult` drops the elite-boss ×2 bump. Elites/champions still
+    spawn, keep their tint, their aggression and their FULL bounty — which is what
+    separates it from NOELITE, which deletes the tier and its income outright.
+    Gated on the same `endlessEliteBoonsUnlocked` 25%-share unlock.
+  - **Clean Signals** (bit 53, −5, credit 4): the exact complement — champion
+    `endlessChampionFireDelayPercent` / `...ShotDamagePercent` both return 100, so
+    the tier keeps HP, tint and bounty but loses its offensive bonuses. Same gate.
+    Those two are CHAMPION-only in the engine (`eliteState == 3`), so on its own
+    the boon did nothing to plain elites while its monitor row promised the whole
+    special tier. The one offensive bonus an elite does carry is the RAM premium
+    (elites +25% / champions +50%, mainint.c), so that moved behind
+    `endlessEliteContactPercent` and Clean Signals flattens it to 100 as well.
+    That keeps it distinct from Soft Landing, which scales ALL contact damage:
+    this removes only the premium special enemies add, so the two stack without
+    overlapping.
+  - **Shockwave** (bit 49, −4, credit 3): an elite/champion death vaporises enemy
+    bullets within 40px (elite) / 60px (champion); a boss bar emptying clears the
+    whole field (`endlessShockwaveClear` radius −1). Deduped per linknum exactly
+    like Martyrdom. Unlike the Chain Reaction perk it may fire STRAIGHT from the
+    death sites inside the player-shot loop, because it only touches
+    `enemyShot[]`/`enemyShotAvail[]` and never `enemy[]` — so it cannot disturb
+    that loop's per-linkgroup kill bookkeeping.
+  - **Soft Landing** (bit 52, −4, credit 3): folds into
+    `endlessContactDamagePercent` as a final ×30%, so it bites into the depth ramp
+    AND the elite/champion ram bonuses (a deep champion ram is the case it exists
+    for). Projectiles untouched, which keeps it distinct from a general damage cut.
+  - **Star Charts** (bit 50, 0, NO mitigation credit) and **Breakthrough**
+    (bit 51, −10, no credit): the two whose reward lands at the NEXT outpost, so
+    they buy no in-sector safety and must not soften a gambit's tier. Both are
+    banked by `endlessOnSectorCleared` (called from tyrian2.c right where
+    `endlessRunDepth` is bumped, since `endlessActiveMods` is overwritten by the
+    time the outpost charts again) into run state that rides the save (**v12**).
+    Star Charts sets `wantCourses = ENDLESS_MAX_COURSES`; it is HELD, not spent,
+    on a milestone visit (whose full slate is the point of the zone) and is handed
+    BACK if an Ambush later collapses the visit to one sector — the boon promises
+    a real choice, so a visit with none to give doesn't consume it.
+    `endlessBreakthroughOwed` is a COUNT, not a flag, so two can queue; the
+    outpost spends one only when no scheduled perk already claimed the visit
+    (gated on `!endlessPerkPending`, so the scheduled perk always wins), which is
+    the deferral the collision rule asks for.
+  - Breakthrough is the rarest boon in the game: `ENDLESS_BREAKTHROUGH_PCT` 7% of
+    the ~1-in-3 visits that deal a boon course ≈ 1 visit in 45, from its OWN pool
+    (`endlessBreakthroughThemes`). It has no `endlessBoonThemes` row at all —
+    that is precisely what keeps the ordinary boon deal, the emergent boon combo
+    and the Jackpot from ever handing out a free perk pick. It is also barred
+    below zone 5 and on any zone whose clear already owes a scheduled perk
+    (`endlessBreakthroughAllowed`); the roll is made unconditionally and the gate
+    applied after, so the seed stream stays aligned.
+  - `endlessLockedBoons()` is the single source of "which boons would be EMPTY at
+    this depth" — read by the boon deal, the Jackpot and the final scrub in
+    `endlessEnforceEliteRules`, so all three forbid exactly the same set.
 - Safe-special filter: a pickup special needs a non-empty name, a
   dispatcher-handled effect type (stype 1..18), and an in-range `itemgraphic`.
   The HUD redraws the equipped icon every frame, and an out-of-range icon reads
@@ -991,6 +1182,11 @@ mutable `last`, so a Quit-Level retry replays the same track.
   (`menuInt[MENU_ESHOP+1]`) are re-applied after every buy so prices stay live.
   The Perks entry reuses MENU_PERKS as a read-only scrolling list rendered from
   `perkListId[]`.
+- Any capped E-Shop buy must say so in BOTH the row label and the help line, and
+  print NO price once capped — "Hull Maxed", "Bombs Full", "Revive Ready",
+  "Sabotage Maxed" (`ENDLESS_CLEANSE_MAX_CHARGES`, 3 queued strips per visit). A
+  price beside a row that can't be bought reads as a failed purchase rather than
+  a full stock; the buy itself already answers with `S_SPRING`.
 - E-Shop rows are tinted by category so related buys share a hue
   (`endless_eshop_row_bank` in `JE_drawMenuChoices`, keyed by row x ==
   `curSel[MENU_ESHOP]`): buffs Turbodrive/Overblast/Overdrive = green (bank 12),

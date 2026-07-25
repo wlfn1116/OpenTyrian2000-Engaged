@@ -206,6 +206,13 @@ static void write_endless_mods(FILE *f, Uint64 mods)
 		{ ENDLESS_MOD_GRAVITY_OMNI,"GravityOmni" },
 		{ ENDLESS_MOD_NOCHAMP,     "NoChamp"     }, { ENDLESS_MOD_NOELITE,    "NoElite"    },
 		{ ENDLESS_MOD_THEEND,      "TheEnd"      },
+		{ ENDLESS_MOD_MARTYRDOM,   "Martyrdom"   }, { ENDLESS_MOD_SEEKER,     "Seeker"     },
+		{ ENDLESS_MOD_STATIC,      "Static"      }, { ENDLESS_MOD_RETALIATION,"Retaliation"},
+		{ ENDLESS_MOD_AEGIS,       "AegisGate"   }, { ENDLESS_MOD_FLAKSCREEN, "FlakScreen" },
+		{ ENDLESS_MOD_AUXREACTOR,  "AuxReactor"  }, { ENDLESS_MOD_LOWPROFILE, "LowProfile" },
+		{ ENDLESS_MOD_GIANTKILLER, "GiantKiller" }, { ENDLESS_MOD_SHOCKWAVE,  "Shockwave"  },
+		{ ENDLESS_MOD_STARCHARTS,  "StarCharts"  }, { ENDLESS_MOD_BREAKTHROUGH,"Breakthrough"},
+		{ ENDLESS_MOD_SOFTLANDING, "SoftLanding" }, { ENDLESS_MOD_CLEANSIGNALS,"CleanSignals"},
 	};
 
 	fprintf(f, "  Active mods:  0x%016llX", (unsigned long long)mods);

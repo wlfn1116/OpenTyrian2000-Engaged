@@ -1331,6 +1331,33 @@ JE_byte JE_playerDamage(JE_byte temp,
 		temp -= this_player->shield;
 		this_player->shield = 0;
 
+		// Endless AEGIS GATE boon: a hit big enough to punch through the shield is stopped AT the
+		// shield instead -- the gate spends whatever was left (already zeroed above) and eats the
+		// remainder, then goes on cooldown. Placed here, before cmHullHit, because a blocked hit did
+		// not reach the hull: it must not arm the Countermeasure burst, deal armor damage, flash the
+		// armor gauge or reach the death path. The helper arms the cooldown when it answers true, so
+		// this is the one place allowed to ask.
+		if (endlessMode && this_player == &player[0] && temp > 0
+		    && endlessAegisGateConsume(oldShield, temp))
+		{
+			temp = 0;
+			// Make the block READ. The first cut reused the shield's own flare and S_SHIELD_HIT -- which
+			// is what every ordinary hit already plays -- so a block was indistinguishable from being hit
+			// normally, and the boon looked inert even while it was working. Give it the full nine-point
+			// ring (the shield-absorb flare, so the hit visibly stops AT the shield) and S_CLINK, a sound
+			// nothing else in the damage path uses.
+			JE_setupExplosion(this_player->x - 17, this_player->y - 12, 0, 14, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x - 5 , this_player->y - 12, 0, 15, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x + 7 , this_player->y - 12, 0, 16, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x + 19, this_player->y - 12, 0, 17, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x - 17, this_player->y + 2 , 0, 18, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x + 19, this_player->y + 2 , 0, 19, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x - 17, this_player->y + 16, 0, 20, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x - 5 , this_player->y + 16, 0, 21, false, !twoPlayerMode);
+			JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
+			soundQueue[4] = S_CLINK;   // the "deflected" cue -- deliberately NOT S_SHIELD_HIT / S_HULL_HIT
+		}
+
 		if (temp > 0)
 			cmHullHit = true;
 
