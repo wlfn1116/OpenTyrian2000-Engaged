@@ -371,12 +371,6 @@ const char *endlessPerkChoiceDesc(int i)
 	return buf;
 }
 
-// The perk id behind offer i (-1 if out of range), so the menu can draw its owned/max count on the row.
-int endlessPerkChoiceId(int i)
-{
-	return (i >= 0 && i < endlessPerkChoiceN) ? endlessPerkChoice[i] : -1;
-}
-
 // Acquire offered perk i. The forced post-zone pick is FREE (perks come sparingly -- see the cadence
 // gate in endlessBetweenLevels); the paid path is the E-Shop "Buy Extra Perk", which charges up front
 // in endlessTryBuyExtraPerk before opening this menu.
