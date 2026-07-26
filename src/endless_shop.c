@@ -109,12 +109,44 @@ long endlessStartingCash(void)
 {
 	switch (difficultyLevel)
 	{
-	case DIFFICULTY_WIMP:       return 20000;
-	case DIFFICULTY_EASY:       return 15000;
-	case DIFFICULTY_NORMAL:     return 11000;
-	case DIFFICULTY_HARD:       return  8000;
-	case DIFFICULTY_IMPOSSIBLE: return  6000;
-	default:                    return  4000;  // Insanity and beyond
+	case DIFFICULTY_WIMP:       return 45000;
+	case DIFFICULTY_EASY:       return 34000;
+	case DIFFICULTY_NORMAL:     return 25000;
+	case DIFFICULTY_HARD:       return 18000;
+	case DIFFICULTY_IMPOSSIBLE: return 14000;
+	default:                    return  9000;  // Insanity and beyond
+	}
+}
+
+// The run's starting front gun: endless launches with the Atomic RailGun, not the campaign's Pulse
+// Cannon. Applied both when the run is created (newEndlessGame) and at the depth-0 outpost, so it
+// holds however the first shop was reached; both points run before the player can buy anything.
+#define ENDLESS_START_FRONT_WEAPON 39   // Atomic RailGun
+
+void endlessApplyStartingLoadout(void)
+{
+	player[0].items.weapon[FRONT_WEAPON].id = ENDLESS_START_FRONT_WEAPON;
+	player[0].items.weapon[FRONT_WEAPON].power = 1;
+	player[0].last_items = player[0].items;  // keep the shop's "already owned" list in sync
+}
+
+// The starting gun sits at the top of the front-weapon list for the whole first outpost, so it is the
+// row the menu opens on (JE_genItemMenu picks the equipped item's row, and an unmatched cursor falls
+// back to the top one). Must run AFTER sort_shop_inventory, which orders by id and would bury id 39
+// near the bottom. Depth 0 only -- from zone 2 on the list is plain id order again.
+void endlessHoistStartWeapon(void)
+{
+	if (!endlessMode || endlessRunDepth != 0)
+		return;
+
+	JE_byte *const row = itemAvail[1];  // front weapons (see itemAvailMap in game_menu.c)
+	for (int i = 1; i < itemAvailMax[1]; ++i)
+	{
+		if (row[i] != ENDLESS_START_FRONT_WEAPON)
+			continue;
+		memmove(&row[1], &row[0], (size_t)i * sizeof *row);  // shift the rows above it down one
+		row[0] = ENDLESS_START_FRONT_WEAPON;
+		return;
 	}
 }
 
@@ -1012,6 +1044,14 @@ void endlessBetweenLevels(void)
 	strcpy(lastLevelName, levelName);
 	if (saveLevel < 1)
 		saveLevel = FIRST_LEVEL;
+
+	// Zone 1's outpost is where the run's fixed starting gear lands. Re-applied here (as well as in
+	// newEndlessGame) so the starting gun holds whatever path reached this first shop -- nothing has
+	// been bought yet at depth 0, so it can't clobber a purchase. A resumed or locked visit keeps the
+	// loadout its snapshot restored instead, and endlessSortieValid() means a level has already
+	// launched this run (a Quit Level bail back to the depth-0 outpost), so the gun is the player's.
+	if (endlessRunDepth == 0 && !endlessResumeVisit && !endlessLockedSortie && !endlessSortieValid())
+		endlessApplyStartingLoadout();
 
 	// The level-clear payout (bank interest + clear bonus) is applied earlier, on the
 	// level-end screen (endlessApplyLevelPayout, called from JE_endLevelAni), so the shop

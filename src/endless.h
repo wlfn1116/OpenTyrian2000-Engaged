@@ -426,6 +426,14 @@ void endlessPreloadBanks(void);
 // Starting cash for a fresh run, by chosen difficulty (easier = more).
 long endlessStartingCash(void);
 
+// The run's fixed starting gear (currently just the front gun). Applied at run creation AND at the
+// depth-0 outpost before it opens -- both are ahead of any purchase, so it can't overwrite bought gear.
+void endlessApplyStartingLoadout(void);
+
+// Pull the starting gun to the TOP of the front-weapon merchant row, for the first outpost of a run
+// only. Call AFTER sort_shop_inventory (id order), which would otherwise bury it. No-op elsewhere.
+void endlessHoistStartWeapon(void);
+
 // Called when a run ends (the player died): shows the glowing Run Over summary, then the caller
 // returns to the title screen.
 void endlessOnRunEnd(void);
