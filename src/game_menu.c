@@ -4683,6 +4683,7 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	case ESO_EXTRASHOTS:  return sc->extraShots;
 	case ESO_ELITECHANCE: return sc->elitePct;
 	case ESO_ELITEHP:     return sc->eliteHpMult;
+	case ESO_PIERCELOCK:  return sc->pierceLock100;
 	default:              return sc->playerDmgPct;
 	}
 }
@@ -4842,6 +4843,7 @@ static bool endlessDebugScreen(bool jumpMode)
 			EDBG_ADD(EDR_HEADER, 0, "ENEMY INTENSITY");
 			EDBG_ADD(EDR_SCALE, ESO_ARMOR, "Enemy HP %");
 			EDBG_ADD(EDR_SCALE, ESO_BOSSHP, "Boss HP x");
+			EDBG_ADD(EDR_SCALE, ESO_PIERCELOCK, "Boss Pierce Lock");
 			EDBG_ADD(EDR_SCALE, ESO_FIREDELAY, "Fire Cooldown %");
 			EDBG_ADD(EDR_SCALE, ESO_SHOTSPEED, "Shot Speed %");
 			EDBG_ADD(EDR_SCALE, ESO_SHOTDMG, "Shot Damage %");
@@ -5064,7 +5066,12 @@ static bool endlessDebugScreen(bool jumpMode)
 				// confusion a debug override is otherwise prone to causing.
 				const bool pinned = endlessScalingOverride[rows[i].idx].active;
 				const long v = endlessScaleFieldOf(&sc, EDR_SCALE, rows[i].idx);
-				snprintf(val, sizeof(val), "%ld%s", v, pinned ? "  PIN" : "");
+				// The pierce lockout is carried as fixed-point hundredths of a sim tick so it can
+				// ramp smoothly; show the tick figure it means, not the raw fixed-point number.
+				if (rows[i].idx == ESO_PIERCELOCK)
+					snprintf(val, sizeof(val), "%ld.%02ld%s", v / 100, v % 100, pinned ? "  PIN" : "");
+				else
+					snprintf(val, sizeof(val), "%ld%s", v, pinned ? "  PIN" : "");
 				labBright = isSel ? 5 : (pinned ? 2 : -1);
 				valBright = pinned ? 6 : (isSel ? 5 : 1);
 				labX = px0 + 16;
@@ -5166,9 +5173,15 @@ static bool endlessDebugScreen(bool jumpMode)
 			{
 				EndlessScaling cs;
 				endlessScalingSnapshot(endlessCurveZones[c], dbgDiff, dbgMods, &cs);
-				n += snprintf(helpBuf + n, sizeof(helpBuf) - (size_t)n, "%sz%d:%ld",
-				              c ? " " : "", endlessCurveZones[c],
-				              endlessScaleFieldOf(&cs, rows[s].kind, rows[s].idx));
+				const long cv = endlessScaleFieldOf(&cs, rows[s].kind, rows[s].idx);
+				// One decimal for the fixed-point pierce lockout (see the row draw above) -- the help
+				// line is only 96 bytes wide, so it gets tenths where the row itself gets hundredths.
+				if (rows[s].kind == EDR_SCALE && rows[s].idx == ESO_PIERCELOCK)
+					n += snprintf(helpBuf + n, sizeof(helpBuf) - (size_t)n, "%sz%d:%ld.%ld",
+					              c ? " " : "", endlessCurveZones[c], cv / 100, (cv % 100) / 10);
+				else
+					n += snprintf(helpBuf + n, sizeof(helpBuf) - (size_t)n, "%sz%d:%ld",
+					              c ? " " : "", endlessCurveZones[c], cv);
 				if (n >= (int)sizeof(helpBuf))
 					break;
 			}

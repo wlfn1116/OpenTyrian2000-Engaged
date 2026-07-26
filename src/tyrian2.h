@@ -36,6 +36,13 @@ boss_bar_t;
 
 extern boss_bar_t boss_bar[2];
 
+// A BOSS is an enemy that explicitly has a boss health bar -- nothing else. An idle bar slot holds
+// link_num 0 (both start there, and draw_boss_bar zeroes a slot once its group is dead), and
+// linknum 0 means "unlinked" for an enemy, so a bare `enemy.linknum == boss_bar[i].link_num`
+// test calls EVERY ordinary unlinked enemy a boss for as long as either slot is idle -- which is
+// most of the time. Use this instead; never open-code the comparison.
+bool enemy_has_boss_bar(JE_byte linknum);
+
 extern float debug_interp_alpha;  // last presented interpolation fraction
 
 extern char tempStr[31];

@@ -67,9 +67,17 @@ static int endlessDifficultyRampPercent(void)
 // (endlessDifficultyRampPercent). Each lever below has its own slope so the caps mature one
 // at a time across the run instead of piling into a wall (notes.md §Endless / Difficulty
 // ramp); HUD, score, milestones and the economy still use the real endlessRunDepth.
+// The lever clock for an ARBITRARY (run depth, difficulty tilt) pair. Split out from the accessor
+// below so a calibration point can be evaluated off a fixed zone and difficulty without touching
+// the live globals -- see the pierce lockout's reference zone.
+static int endlessEffectiveDepthOf(int runDepth, int rampPercent)
+{
+	return runDepth * rampPercent * 5 / 400;
+}
+
 static int endlessEffectiveDepth(void)
 {
-	return endlessRunDepth * endlessDifficultyRampPercent() * 5 / 400;
+	return endlessEffectiveDepthOf(endlessRunDepth, endlessDifficultyRampPercent());
 }
 
 // The current zone as the difficulty ramp sees it: the real zone (endlessRunDepth + 1) on NORMAL,
@@ -102,6 +110,57 @@ int endlessDifficultyZone(void)
 #define ENDLESS_BOSS_FORTIFIED     3    // FORTIFIED: +this many x (a 4x boss at depth 0)
 #define ENDLESS_BOSS_MARKED        2    // gamble "Marked": the boss you paid to forget comes back bulked up
 #define ENDLESS_BOSS_MAX          16    // reached at run depth ~96 on Normal
+
+// Elite/champion HP, as a whole multiplier (1 = stock) -- a damage divisor like the boss one, and
+// it stacks on top of endlessArmorPercent, which has already scaled their raw armour. Retuned down
+// from 2 + depth/20 capped at 5: that was written while a `has_boss_bar` bug was quietly handing
+// ORDINARY enemies the boss multiplier too, so a 5x elite read as only ~2x tougher than the trash
+// beside it. With ordinary enemies correctly back at 1x, the same 5x reads as a wall -- especially
+// against the 1-damage piercing weapons, where a divisor of N means N hits per armour point.
+#define ENDLESS_ELITE_HP_BASE      2    // multiplier at depth 0
+#define ENDLESS_ELITE_HP_PER_X    40    // +1x per this many effective depths
+#define ENDLESS_ELITE_HP_MAX       4    // ceiling, reached at effective depth 80
+
+// Boss pierce lockout, in sim ticks. A piercing shot (weapon attack >= 250) is never consumed on
+// impact, so the SAME shot re-damages the SAME hull on every tick it overlaps -- five to ten free
+// hits per pass, multiplied again by every linked segment it happens to cover. Ordinary enemies
+// live with that fine; a BOSS does not, because the boss HP multiplier above buys hull that pierce
+// DPS simply ignores: pierce damage scales with overlap time, not with the armour it is pointed at,
+// so a 16x boss dies to a Mega Cannon in about the same time a 1x one does. The lockout therefore
+// rides the target's OWN multiplier -- zero ticks at stock HP (exactly the behaviour every
+// previous build had), a little more repeat-hit immunity for each further multiple. Reading it off
+// the multiplier is also what dilutes it for the special tiers for free: an elite or champion
+// carries 2..5x, not 1..16x, so it earns roughly a fifth of what a deep boss does. Ordinary
+// enemies carry 1x and are therefore never locked out at all.
+//
+// The figures are deliberately small. Pierce DPS is roughly proportional to 1/(lock+1) -- a bullet
+// re-hits the same hull once a tick otherwise -- so the 0.25 ticks a zone-50 boss earns is about a
+// 20% tax, and the 0.50 the ramp tops out at is about 33%. It is a safeguard, not a wall, and it can
+// never make a boss feel immune. Tuned by play-testing rather than by theory: the weapons this
+// touches (Mega Cannon, Sonic Impulse) deal 1 damage a hit, so anything heavier reads in play as
+// "my gun does nothing" -- which is exactly how the first few attempts at these numbers landed.
+//
+// Carried in HUNDREDTHS of a tick rather than whole ticks. The boss multiplier itself is an
+// integer -- the damage accumulator can only divide by one -- so keying the lockout off it made
+// the lockout jump a whole tick at a time, once every 16 effective depth. The lockout has no such
+// constraint, so it reads the UNROUNDED ramp and creeps every zone instead. The fraction is spent
+// at the hit site through a per-bullet carry (tyrian2.c).
+//
+// ---- THE TUNING KNOBS ----------------------------------------------------------------------
+// One number per tier, and each one IS the play-tested figure: what that tier's lockout reads, in
+// hundredths of a tick, at the reference zone. Everything else is derived, so changing a tier here
+// moves that tier and nothing else, and the shape (ride the target's own HP ramp) is preserved
+// automatically. Earlier revisions expressed this as a slope plus per-tier percentages that had to
+// be hand-fitted every time an HP ramp moved; these do not -- the reference span is recomputed
+// from the ramps themselves, so retuning elite HP can no longer silently drag the lockout with it.
+#define ENDLESS_PIERCE_LOCK_REF_ZONE     50   // the zone the three figures below were tuned at
+#define ENDLESS_PIERCE_LOCK_BOSS          20  // boss:     0.20 tick at the reference zone
+#define ENDLESS_PIERCE_LOCK_CHAMP         10  // champion: 0.10
+#define ENDLESS_PIERCE_LOCK_ELITE          5  // elite:    0.05
+#define ENDLESS_PIERCE_LOCK_MAX            1  // hard backstop in whole ticks; the ramps never reach it
+// --------------------------------------------------------------------------------------------
+// ENDLESS_PIERCE_LOCK_SCALE (the 1/100-tick fixed-point unit) lives in endless.h: it is the unit
+// of the value endlessPierceLock100 hands back, so the hit site has to agree on it.
 
 // Enemy shot cooldown, percent of stock. This one counts DOWN: the deltas are subtracted, so a
 // bigger number means faster enemy fire.
@@ -173,6 +232,33 @@ int endlessBossHpMult(void)
 	if (endlessActiveMods & ENDLESS_MOD_FRAGILE)
 		mult = (mult + 1) / 2;   // halve, rounding up: FRAGILE softens a boss, never erases it
 	return endlessClamp(mult, 1, ENDLESS_BOSS_MAX);
+}
+
+// The same boss multiplier WITHOUT the integer truncation, in hundredths. endlessBossHpMult has to
+// round down to a whole number because the damage accumulator divides by it; the pierce lockout has
+// no such constraint and wants the ramp itself, so it reads this. Identical slope, identical
+// mutator deltas, identical cap -- just continuous, so it passes exactly through the stepped
+// version at every point where that one steps. Keep the two bodies in step.
+// The BARE boss depth curve at an arbitrary effective depth, hundredths, no mutators -- what the
+// pierce lockout's reference point is measured against, so a calibration taken at a fixed zone
+// can never drift from the curve the run actually follows. Deliberately NOT folded into the live
+// accessor below: that one has to clamp LAST, after the mutator deltas, or FRAGILE would halve an
+// already-clamped figure instead of the true one.
+static int endlessBossRamp100(int effDepth)
+{
+	return endlessClamp(100 + effDepth * 100 / ENDLESS_BOSS_DEPTH_PER_X, 100, ENDLESS_BOSS_MAX * 100);
+}
+
+static int endlessBossHpMult100(void)
+{
+	int mult = 100 + endlessEffectiveDepth() * 100 / ENDLESS_BOSS_DEPTH_PER_X;
+	if (endlessActiveMods & ENDLESS_MOD_FORTIFIED)
+		mult += ENDLESS_BOSS_FORTIFIED * 100;
+	if (endlessActiveMods & ENDLESS_MOD_MARKED)
+		mult += ENDLESS_BOSS_MARKED * 100;
+	if (endlessActiveMods & ENDLESS_MOD_FRAGILE)
+		mult = (mult + 1) / 2;
+	return endlessClamp(mult, 100, ENDLESS_BOSS_MAX * 100);
 }
 
 // Enemy shot-cooldown multiplier (100 = normal; LOWER = fires faster): -0.75% per (effective)
@@ -484,10 +570,26 @@ int endlessEliteHpMult(void)
 	ENDLESS_OVERRIDE(ESO_ELITEHP);
 	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
 		return 1;
-	int mult = 2 + endlessEffectiveDepth() / 20;
-	if (mult > 5)
-		mult = 5;
-	return mult;
+	return endlessClamp(ENDLESS_ELITE_HP_BASE + endlessEffectiveDepth() / ENDLESS_ELITE_HP_PER_X,
+	                    ENDLESS_ELITE_HP_BASE, ENDLESS_ELITE_HP_MAX);
+}
+
+// The BARE elite depth curve at an arbitrary effective depth -- the elite counterpart of
+// endlessBossRamp100, same purpose. Keep in step with endlessEliteHpMult above.
+static int endlessEliteRamp100(int effDepth)
+{
+	return endlessClamp(ENDLESS_ELITE_HP_BASE * 100 + effDepth * 100 / ENDLESS_ELITE_HP_PER_X,
+	                    ENDLESS_ELITE_HP_BASE * 100, ENDLESS_ELITE_HP_MAX * 100);
+}
+
+// The elite/champion multiplier unrounded, in hundredths -- the counterpart of
+// endlessBossHpMult100 and for the same reason (the pierce lockout wants the ramp, not the
+// integer the damage accumulator has to divide by).
+static int endlessEliteHpMult100(void)
+{
+	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
+		return 100;
+	return endlessEliteRamp100(endlessEffectiveDepth());
 }
 
 // Combined per-hit HP divisor for an endless enemy. Non-boss elites/champions use the full
@@ -502,6 +604,61 @@ int endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState)
 	int mult = bossHpMult * 2;                         // elite/champion boss: gentle bump
 	int cap  = (bossHpMult > ENDLESS_HP_MULT_MAX) ? bossHpMult : ENDLESS_HP_MULT_MAX;
 	return (mult > cap) ? cap : mult;                  // capped, but never below the base
+}
+
+// How long a target ignores REPEAT piercing hits, in HUNDREDTHS of a sim tick. Deliberately
+// mirrors endlessEnemyHpMult's shape and takes the same three arguments: the lockout exists to
+// give back what an HP multiplier was supposed to buy, so it reads the SAME multiplier that
+// target is carrying, and the tiering falls out of that rather than being bolted on.
+//
+//   boss (an enemy that explicitly has a boss health bar)  full, off the boss ramp
+//   elite / champion                                       diluted -- their ramp is 2..5x
+//   everything else                                        none at all
+//
+// Both ramps are read UNROUNDED so the figure creeps every zone rather than jumping a whole tick.
+int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
+{
+	ENDLESS_OVERRIDE(ESO_PIERCELOCK);
+
+	// The reference zone in the levers' own clock, at NORMAL. Fixed on purpose: the calibration
+	// must not shift with the player's difficulty or with the sector's mutators, or the tuned
+	// figures would mean a different thing in every run.
+	const int refDepth = endlessEffectiveDepthOf(ENDLESS_PIERCE_LOCK_REF_ZONE - 1, 100);
+
+	int span;      // how far above stock THIS target's multiplier sits, in hundredths
+	int refSpan;   // the same span at the reference zone, for this tier
+	int atRef;     // the tuned figure this tier reads at the reference zone
+
+	if (hasBossBar)
+	{
+		int mult100 = endlessBossHpMult100();
+		// Whatever hpMult holds BEYOND the plain depth ramp -- the elite-boss bump, expert mode's
+		// own boss factor, endlessEnemyHpMult's cap -- is carried across as a ratio, so the lockout
+		// tracks the hull this boss actually got rather than the one depth alone implies.
+		const int stepped = endlessBossHpMult();
+		if (stepped > 0 && hpMult > 0 && hpMult != stepped)
+			mult100 = mult100 * hpMult / stepped;
+		span    = mult100 - 100;
+		refSpan = endlessBossRamp100(refDepth) - 100;
+		atRef   = ENDLESS_PIERCE_LOCK_BOSS;
+	}
+	else if (eliteState >= 2)
+	{
+		// Their 2..4x ramp is what dilutes the special tiers below the boss figure; the two tuned
+		// constants then separate a champion from a plain elite (eliteState 3 vs 2 -- see varz.h).
+		span    = endlessEliteHpMult100() - 100;
+		refSpan = endlessEliteRamp100(refDepth) - 100;
+		atRef   = (eliteState >= 3) ? ENDLESS_PIERCE_LOCK_CHAMP : ENDLESS_PIERCE_LOCK_ELITE;
+	}
+	else
+	{
+		return 0;   // ordinary enemies: no lockout, ever
+	}
+
+	if (span <= 0 || refSpan <= 0)
+		return 0;   // stock HP (or GIANT KILLER flattening the elite ramp): nothing to give back
+	return endlessClamp(span * atRef / refSpan,
+	                    0, ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE);
 }
 
 // Extra cash for destroying an elite / a champion (on top of the normal score value).
@@ -1262,6 +1419,7 @@ static const struct { const char *name; const char *key; int lo, hi; } endlessOv
 	[ESO_ELITECHANCE] = { "Elite Share %",   "elite_share",   0,                             100 },
 	[ESO_ELITEHP]     = { "Elite HP x",      "elite_hp",      1,                             ENDLESS_HP_MULT_MAX },
 	[ESO_PLAYERDMG]   = { "Your Damage %",   "your_damage",   10,                            1000 },
+	[ESO_PIERCELOCK]  = { "Boss Pierce Lock","boss_pierce",   0,                             ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE },
 };
 
 const char *endlessScalingOverrideName(int id)
@@ -1319,6 +1477,10 @@ int endlessScalingOverrideStock(int id)
 	case ESO_ELITECHANCE: v = endlessNaturalEliteChancePercent(); break;
 	case ESO_ELITEHP:     v = endlessEliteHpMult();               break;
 	case ESO_PLAYERDMG:   v = endlessPlayerDamagePercent();       break;
+	// The only lever that is a function of another one: read it at the boss multiplier this zone
+	// actually produces, which is what the run's bosses will be carrying.
+	// Reported at the BOSS tier -- the tier the lever is there to tune; the special tiers follow it down.
+	case ESO_PIERCELOCK:  v = endlessPierceLock100(true, endlessBossHpMult(), 1); break;
 	default: break;
 	}
 	endlessScalingOverride[id].active = was;
@@ -1368,6 +1530,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	out->elitePct     = endlessNaturalEliteChancePercent();
 	out->eliteHpMult  = endlessEliteHpMult();
 	out->playerDmgPct = endlessPlayerDamagePercent();
+	out->pierceLock100 = endlessPierceLock100(true, out->bossMult, 1);  // hundredths of a tick, at the boss tier
 	out->eliteBounty  = endlessEliteBounty();
 	out->champBounty  = endlessChampionBounty();
 

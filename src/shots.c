@@ -456,6 +456,9 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		// Endless Opening Salvo perk: tag this shot if it belongs to a charged volley, so the
 		// collision applies the damage bonus only to those shots (not every shot on screen).
 		shot->salvoBoost = (endlessFxActive() && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
+		// A recycled slot must not inherit the previous bullet's pierce lockout.
+		shot->pierceLock = 0;
+		shot->pierceLockCarry = 0;
 
 		shot->playerNumber = playerNum;
 
