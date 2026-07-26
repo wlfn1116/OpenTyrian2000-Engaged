@@ -3485,6 +3485,169 @@ static void debug_force_crash(void)
 	*debug_crash_ptr = 0xDEAD;
 }
 
+/* ---- The in-game debug menu: rows, help text, and the grouped display order ------------------
+ * The row IDENTITY (DBG_*) and the row ORDER (dbgRows) are deliberately separate tables. Every
+ * switch in JE_debugMenu keys off the id, never off a list position, so regrouping the menu or
+ * slipping a heading in shifts nothing -- and a new row only has to name itself in three places:
+ * the enum, dbgLabel, dbgHelp, then wherever it belongs in dbgRows.
+ */
+enum {
+	DBG_SHIP, DBG_FRONT_WEAPON, DBG_FRONT_POWER, DBG_REAR_WEAPON, DBG_REAR_POWER,
+	DBG_SHIELD, DBG_GENERATOR, DBG_SIDEKICK_L, DBG_SIDEKICK_R, DBG_SPECIAL,
+	DBG_TWIDDLE, DBG_AUTOFIRE_TWIDDLE, DBG_TOGGLE_FIRE,
+	DBG_AUTOFIRE_SPECIAL, DBG_AUTOFIRE_CHARGE, DBG_INSTANT_CHARGE, DBG_INF_SIDEKICK_AMMO, DBG_INF_GENERATOR,
+	DBG_GOD_MODE, DBG_NOCLIP, DBG_EXPERT_MODE, DBG_EXPERT_SETTINGS, DBG_AUTO_DIFFICULTY,
+	DBG_DIFFICULTY, DBG_ADD_CASH, DBG_NO_ENEMY_FIRE, DBG_SKIP_LEVEL,
+	DBG_PLAY_SOUND, DBG_PLAY_MUSIC, DBG_SPRITE_VIEWER, DBG_HITBOX, DBG_PERF,
+	DBG_HANG_TIMEOUT, DBG_FORCE_CRASH,
+	DBG_ROW_COUNT
+};
+
+static const char *const dbgLabel[DBG_ROW_COUNT] = {
+	[DBG_SHIP]                = "Ship",
+	[DBG_FRONT_WEAPON]        = "Front Weapon",
+	[DBG_FRONT_POWER]         = "Front Power",
+	[DBG_REAR_WEAPON]         = "Rear Weapon",
+	[DBG_REAR_POWER]          = "Rear Power",
+	[DBG_SHIELD]              = "Shield",
+	[DBG_GENERATOR]           = "Generator",
+	[DBG_SIDEKICK_L]          = "Sidekick L",
+	[DBG_SIDEKICK_R]          = "Sidekick R",
+	[DBG_SPECIAL]             = "Special",
+	[DBG_TWIDDLE]             = "Twiddle",
+	[DBG_AUTOFIRE_TWIDDLE]    = "Autofire Twiddle",
+	[DBG_TOGGLE_FIRE]         = "Toggle Fire",
+	[DBG_AUTOFIRE_SPECIAL]    = "Autofire Special",
+	[DBG_AUTOFIRE_CHARGE]     = "Autofire Charge Sidekicks",
+	[DBG_INSTANT_CHARGE]      = "Instant Charge Sidekicks",
+	[DBG_INF_SIDEKICK_AMMO]   = "Inf Sidekick Ammo",
+	[DBG_INF_GENERATOR]       = "Inf Generator",
+	[DBG_GOD_MODE]            = "God Mode",
+	[DBG_NOCLIP]              = "Noclip",
+	[DBG_EXPERT_MODE]         = "Expert Mode",
+	[DBG_EXPERT_SETTINGS]     = "Expert Settings",
+	[DBG_AUTO_DIFFICULTY]     = "Auto-Adjust Difficulty",
+	[DBG_DIFFICULTY]          = "Difficulty",
+	[DBG_ADD_CASH]            = "Add Cash",
+	[DBG_NO_ENEMY_FIRE]       = "No Enemy Fire",
+	[DBG_SKIP_LEVEL]          = "Skip to Next Level",
+	[DBG_PLAY_SOUND]          = "Play Sound",
+	[DBG_PLAY_MUSIC]          = "Play Music",
+	[DBG_SPRITE_VIEWER]       = "Sprite Viewer",
+	[DBG_HITBOX]              = "Hitbox Overlay",
+	[DBG_PERF]                = "Perf Overlay",
+	[DBG_HANG_TIMEOUT]        = "Hang Watchdog",
+	[DBG_FORCE_CRASH]         = "Force Crash (test)",
+};
+
+/* One line per row, shown under the list while that row is selected: what it DOES, not what it is
+ * called. Keep each under ~40 characters -- that is the panel's inner width in small_font. */
+static const char *const dbgHelp[DBG_ROW_COUNT] = {
+	[DBG_SHIP]                = "Swap the hull; red = no such ship",
+	[DBG_FRONT_WEAPON]        = "Front gun; red = no such weapon",
+	[DBG_FRONT_POWER]         = "Front gun power level, 1 to 11",
+	[DBG_REAR_WEAPON]         = "Rear gun; red = no such weapon",
+	[DBG_REAR_POWER]          = "Rear gun power level, 1 to 11",
+	[DBG_SHIELD]              = "Shield type, which sets max shield",
+	[DBG_GENERATOR]           = "Generator type, which sets power",
+	[DBG_SIDEKICK_L]          = "Left sidekick pod",
+	[DBG_SIDEKICK_R]          = "Right sidekick pod",
+	[DBG_SPECIAL]             = "Equipped special (safe ids only)",
+	[DBG_TWIDDLE]             = "Pick a twiddle special; Enter fires it",
+	[DBG_AUTOFIRE_TWIDDLE]    = "Refire that twiddle while fire is held",
+	[DBG_TOGGLE_FIRE]         = "Fire button toggles auto-fire",
+	[DBG_AUTOFIRE_SPECIAL]    = "Fire your special as you shoot",
+	[DBG_AUTOFIRE_CHARGE]     = "When charge pods release on their own",
+	[DBG_INSTANT_CHARGE]      = "Charge pods sit at full charge",
+	[DBG_INF_SIDEKICK_AMMO]   = "Sidekick ammo never runs out",
+	[DBG_INF_GENERATOR]       = "Generator power never drains",
+	[DBG_GOD_MODE]            = "Invulnerable: armor, shield, or both",
+	[DBG_NOCLIP]              = "Fly through everything (+ ghost look)",
+	[DBG_EXPERT_MODE]         = "Harder rules: tough enemies, dear shop",
+	[DBG_EXPERT_SETTINGS]     = "Opens the expert multipliers",
+	[DBG_AUTO_DIFFICULTY]     = "Score bumps difficulty between levels",
+	[DBG_DIFFICULTY]          = "The difficulty being played right now",
+	[DBG_ADD_CASH]            = "Type an amount; Enter sets your cash",
+	[DBG_NO_ENEMY_FIRE]       = "Enemies never shoot",
+	[DBG_SKIP_LEVEL]          = "Ends the level now and moves on",
+	[DBG_PLAY_SOUND]          = "L/R picks a sample; Enter plays it",
+	[DBG_PLAY_MUSIC]          = "L/R picks a track; Enter plays it",
+	[DBG_SPRITE_VIEWER]       = "Opens the sprite sheet browser",
+	[DBG_HITBOX]              = "Draw hit boxes on enemies and ship",
+	[DBG_PERF]                = "FPS, enemy and shot counts on screen",
+	[DBG_HANG_TIMEOUT]        = "Seconds of freeze before the log fires",
+	[DBG_FORCE_CRASH]         = "Faults on purpose to test the crash log",
+};
+
+/* The display order: the rows above under non-selectable headings (id < 0). Grouping is the whole
+ * point -- a flat 34-row list of hull ids, cheats and diagnostics reads as noise. */
+static const struct { int id; const char *heading; } dbgRows[] = {
+	{ -1, "SURVIVAL" },   // first: the rows most often reached for mid-level
+	{ DBG_GOD_MODE, NULL }, { DBG_NOCLIP, NULL }, { DBG_NO_ENEMY_FIRE, NULL },
+	{ DBG_ADD_CASH, NULL },
+	{ -1, "LOADOUT" },
+	{ DBG_SHIP, NULL }, { DBG_FRONT_WEAPON, NULL }, { DBG_FRONT_POWER, NULL },
+	{ DBG_REAR_WEAPON, NULL }, { DBG_REAR_POWER, NULL }, { DBG_SHIELD, NULL },
+	{ DBG_GENERATOR, NULL }, { DBG_SIDEKICK_L, NULL }, { DBG_SIDEKICK_R, NULL },
+	{ DBG_SPECIAL, NULL },
+	{ -1, "FIRING" },
+	{ DBG_TWIDDLE, NULL }, { DBG_AUTOFIRE_TWIDDLE, NULL }, { DBG_TOGGLE_FIRE, NULL },
+	{ DBG_AUTOFIRE_SPECIAL, NULL }, { DBG_AUTOFIRE_CHARGE, NULL }, { DBG_INSTANT_CHARGE, NULL },
+	{ DBG_INF_SIDEKICK_AMMO, NULL }, { DBG_INF_GENERATOR, NULL },
+	{ -1, "DIFFICULTY" },
+	{ DBG_EXPERT_MODE, NULL }, { DBG_EXPERT_SETTINGS, NULL }, { DBG_AUTO_DIFFICULTY, NULL },
+	{ DBG_DIFFICULTY, NULL },
+	{ -1, "LEVEL" },
+	{ DBG_SKIP_LEVEL, NULL },
+	{ -1, "DIAGNOSTICS" },
+	{ DBG_PLAY_SOUND, NULL }, { DBG_PLAY_MUSIC, NULL }, { DBG_SPRITE_VIEWER, NULL },
+	{ DBG_HITBOX, NULL }, { DBG_PERF, NULL }, { DBG_HANG_TIMEOUT, NULL },
+	{ DBG_FORCE_CRASH, NULL },
+};
+#define DBG_DISPLAY_ROWS  ((int)COUNTOF(dbgRows))
+#define DBG_HEADING_COUNT 6
+// Catches the slip that would otherwise go unnoticed: a row added to the enum but never placed in
+// dbgRows, leaving it unreachable in the menu. Bump DBG_HEADING_COUNT when adding a heading.
+COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, DBG_DISPLAY_ROWS == DBG_ROW_COUNT + DBG_HEADING_COUNT);
+
+static bool dbgRowIsHeading(int r)
+{
+	return r < 0 || r >= DBG_DISPLAY_ROWS || dbgRows[r].id < 0;
+}
+
+/* Step one selectable row in `dir`, wrapping past the headings. */
+static int dbgRowStep(int r, int dir)
+{
+	for (int n = 0; n < DBG_DISPLAY_ROWS; ++n)
+	{
+		r += dir;
+		if (r < 0)
+			r = DBG_DISPLAY_ROWS - 1;
+		else if (r >= DBG_DISPLAY_ROWS)
+			r = 0;
+		if (!dbgRowIsHeading(r))
+			return r;
+	}
+	return r;
+}
+
+/* The nearest selectable row at or after `r` (then searching back) -- for any jump that can land
+ * on a heading: clamping, paging, Home/End, a click. */
+static int dbgRowSnap(int r)
+{
+	if (r < 0)
+		r = 0;
+	if (r > DBG_DISPLAY_ROWS - 1)
+		r = DBG_DISPLAY_ROWS - 1;
+	for (int i = r; i < DBG_DISPLAY_ROWS; ++i)
+		if (!dbgRowIsHeading(i))
+			return i;
+	for (int i = r; i >= 0; --i)
+		if (!dbgRowIsHeading(i))
+			return i;
+	return r;
+}
+
 void JE_debugMenu(bool center)
 {
 	SDL_Surface* temp_surface = VGAScreen;
@@ -3506,59 +3669,8 @@ void JE_debugMenu(bool center)
 		off_y = (vga_height - DEBUG_MENU_HEIGHT) / 2 - DEBUG_MENU_Y + 1;
 	}
 
-	/* Row identifiers. Keep this enum and menuItems[] below in lockstep order;
-	 * everything else refers to rows by name. */
-	enum {
-		DBG_SHIP, DBG_FRONT_WEAPON, DBG_FRONT_POWER, DBG_REAR_WEAPON, DBG_REAR_POWER,
-		DBG_SHIELD, DBG_GENERATOR, DBG_SIDEKICK_L, DBG_SIDEKICK_R, DBG_SPECIAL,
-		DBG_TWIDDLE, DBG_AUTOFIRE_TWIDDLE, DBG_TOGGLE_FIRE,
-		DBG_AUTOFIRE_SPECIAL, DBG_AUTOFIRE_CHARGE, DBG_INSTANT_CHARGE, DBG_INF_SIDEKICK_AMMO, DBG_INF_GENERATOR,
-		DBG_GOD_MODE, DBG_NOCLIP, DBG_EXPERT_MODE, DBG_EXPERT_SETTINGS, DBG_AUTO_DIFFICULTY,
-		DBG_DIFFICULTY, DBG_ADD_CASH, DBG_NO_ENEMY_FIRE, DBG_SKIP_LEVEL,
-		DBG_PLAY_SOUND, DBG_PLAY_MUSIC, DBG_SPRITE_VIEWER, DBG_HITBOX, DBG_PERF,
-		DBG_HANG_TIMEOUT, DBG_FORCE_CRASH,
-		DBG_ROW_COUNT
-	};
-
-	const char* menuItems[] = {
-						[DBG_SHIP]                = "Ship",
-						[DBG_FRONT_WEAPON]        = "Front Weapon",
-						[DBG_FRONT_POWER]         = "Front Power",
-						[DBG_REAR_WEAPON]         = "Rear Weapon",
-						[DBG_REAR_POWER]          = "Rear Power",
-						[DBG_SHIELD]              = "Shield",
-						[DBG_GENERATOR]           = "Generator",
-						[DBG_SIDEKICK_L]          = "Sidekick L",
-						[DBG_SIDEKICK_R]          = "Sidekick R",
-						[DBG_SPECIAL]             = "Special",
-						[DBG_TWIDDLE]             = "Twiddle",
-						[DBG_AUTOFIRE_TWIDDLE]    = "Autofire Twiddle",
-						[DBG_TOGGLE_FIRE]         = "Toggle Fire",
-						[DBG_AUTOFIRE_SPECIAL]    = "Autofire Special",
-						[DBG_AUTOFIRE_CHARGE]     = "Autofire Charge Sidekicks",
-						[DBG_INSTANT_CHARGE]      = "Instant Charge Sidekicks",
-						[DBG_INF_SIDEKICK_AMMO]   = "Inf Sidekick Ammo",
-						[DBG_INF_GENERATOR]       = "Inf Generator",
-						[DBG_GOD_MODE]            = "God Mode",
-						[DBG_NOCLIP]              = "Noclip",
-						[DBG_EXPERT_MODE]         = "Expert Mode",
-						[DBG_EXPERT_SETTINGS]     = "Expert Settings",
-						[DBG_AUTO_DIFFICULTY]     = "Auto-Adjust Difficulty",
-						[DBG_DIFFICULTY]          = "Difficulty",
-						[DBG_ADD_CASH]            = "Add Cash",
-						[DBG_NO_ENEMY_FIRE]       = "No Enemy Fire",
-						[DBG_SKIP_LEVEL]          = "Skip to Next Level",
-						[DBG_PLAY_SOUND]          = "Play Sound",
-						[DBG_PLAY_MUSIC]          = "Play Music",
-						[DBG_SPRITE_VIEWER]       = "Sprite Viewer",
-						[DBG_HITBOX]              = "Hitbox Overlay",
-						[DBG_PERF]                = "Perf Overlay",
-						[DBG_HANG_TIMEOUT]        = "Hang Watchdog",
-						[DBG_FORCE_CRASH]         = "Force Crash (test)",
-	};
-
-	const size_t menuCount = DBG_ROW_COUNT;
-	size_t selected = 0;
+	const int menuCount = DBG_DISPLAY_ROWS;
+	int selected = dbgRowSnap(0);   // first real row, never the heading above it
 
 	/* transient debug-action values; persist across menu opens within a session */
 	static int dbgSoundId = 1, dbgMusicId = 0, dbgTwiddleId = 0;
@@ -3580,11 +3692,11 @@ void JE_debugMenu(bool center)
 	const int px1 = DEBUG_MENU_X + DEBUG_MENU_WIDTH - 1 + off_x, py1 = vga_height - 5 + off_y;
 	const int title_h = 15;                 /* height of the title strip      */
 	const int items_top = py0 + title_h + 3;
-	const int items_bottom = py1 - 9;       /* leave room for the footer hint */
+	const int items_bottom = py1 - 18;      /* two footer lines: the row's help, then the keys */
 	/* Fixed row density (matching the original ~19-row menu); the list scrolls
 	 * when there are more items than fit, so rows never get squashed. */
 	const int kVisibleTarget = 19;
-	const int visibleRows = ((int)menuCount < kVisibleTarget) ? (int)menuCount : kVisibleTarget;
+	const int visibleRows = (menuCount < kVisibleTarget) ? menuCount : kVisibleTarget;
 	const int row_h = (items_bottom - items_top) / visibleRows;
 	const int mid_x = (px0 + px1) / 2;
 	int scrollTop = 0;  /* index of the first visible row */
@@ -3620,24 +3732,38 @@ void JE_debugMenu(bool center)
 		draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, "DEBUG  MENU", normal_font, centered, 15, 4, true, 1);
 
 		/* keep the selection within the scrolled window */
-		if ((int)selected < scrollTop)
-			scrollTop = (int)selected;
-		else if ((int)selected >= scrollTop + visibleRows)
-			scrollTop = (int)selected - visibleRows + 1;
-		if (scrollTop > (int)menuCount - visibleRows)
-			scrollTop = (int)menuCount - visibleRows;
+		if (selected < scrollTop)
+			scrollTop = selected;
+		else if (selected >= scrollTop + visibleRows)
+			scrollTop = selected - visibleRows + 1;
+		/* keep a heading on screen with the first row under it, so a selection never floats
+		 * context-free at the top of the window */
+		if (scrollTop > 0 && scrollTop == selected && dbgRowIsHeading(selected - 1))
+			--scrollTop;
+		if (scrollTop > menuCount - visibleRows)
+			scrollTop = menuCount - visibleRows;
 		if (scrollTop < 0)
 			scrollTop = 0;
 
 		for (int vis = 0; vis < visibleRows; ++vis)
 		{
-			size_t i = (size_t)scrollTop + vis;
+			int i = scrollTop + vis;
 			int ry = items_top + vis * row_h;
 			bool sel = (i == selected);
 
+			if (dbgRowIsHeading(i))
+			{
+				draw_font_hv_shadow(VGAScreen, px0 + 6, ry, dbgRows[i].heading, small_font, left_aligned, 15, 3, true, 1);
+				const int rule_x = px0 + 10 + JE_textWidth(dbgRows[i].heading, small_font);
+				if (rule_x < px1 - 9)
+					fill_rectangle_xy(VGAScreen, rule_x, ry + 3, px1 - 9, ry + 3, C_DIVIDER);
+				continue;
+			}
+
+			const int id = dbgRows[i].id;
 			char buf[40];
 			bool invalid = false;
-			switch (i)
+			switch (id)
 			{
 			case DBG_SHIP:
 				if (player[0].items.ship <= SHIP_NUM)
@@ -3824,7 +3950,7 @@ void JE_debugMenu(bool center)
 				fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 2, C_SEL_BAR);
 
 			/* label (left) */
-			draw_font_hv_shadow(VGAScreen, px0 + 12, ry, menuItems[i], small_font, left_aligned,
+			draw_font_hv_shadow(VGAScreen, px0 + 14, ry, dbgLabel[id], small_font, left_aligned,
 			                    15, sel ? 5 : -1, true, 1);
 
 			/* value (right); dim plain "OFF", red for invalid entries */
@@ -3840,27 +3966,38 @@ void JE_debugMenu(bool center)
 		}
 
 		/* scrollbar track + thumb (only when the list overflows the window) */
-		if ((int)menuCount > visibleRows)
+		if (menuCount > visibleRows)
 		{
 			const int track_top = items_top - 1;
 			const int track_bot = items_top + visibleRows * row_h - 2;
 			const int track_h = track_bot - track_top;
 			fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, C_EDGE_LO);
 
-			int thumb_h = track_h * visibleRows / (int)menuCount;
+			int thumb_h = track_h * visibleRows / menuCount;
 			if (thumb_h < 4)
 				thumb_h = 4;
-			const int denom = (int)menuCount - visibleRows;
+			const int denom = menuCount - visibleRows;
 			const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
 			fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, C_EDGE_HI);
 		}
 
-		/* footer hint (the Add Cash row swaps in typing instructions) */
+		/* Footer line 1: what the selected row DOES -- 34 cheats and diagnostics is far too many
+		 * to carry their meaning in the label alone. Line 2: the keys, named for the platform. */
+		const int shownId = dbgRows[selected].id;
+		draw_font_hv(VGAScreen, mid_x, py1 - 17, dbgHelp[shownId], small_font, centered, 15, 1);
+#if defined(__SWITCH__) || defined(__vita__)
 		draw_font_hv(VGAScreen, mid_x, py1 - 8,
-		             (selected == DBG_ADD_CASH || selected == DBG_HANG_TIMEOUT)
+		             (shownId == DBG_ADD_CASH || shownId == DBG_HANG_TIMEOUT)
+		                 ? "A types a number   B close"
+		                 : "Left/Right change   A use   B close   L/R page",
+		             small_font, centered, 15, -3);
+#else
+		draw_font_hv(VGAScreen, mid_x, py1 - 8,
+		             (shownId == DBG_ADD_CASH || shownId == DBG_HANG_TIMEOUT)
 		                 ? "Type a number   Enter set   Esc close"
 		                 : "Left/Right change   Enter use   Esc close",
 		             small_font, centered, 15, -3);
+#endif
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
@@ -3870,24 +4007,48 @@ void JE_debugMenu(bool center)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
+#if defined(__SWITCH__) || defined(__vita__)
+		// The shoulder buttons page the list. Menus only deliver confirm/cancel/directions from a
+		// controller (push_joysticks_as_keyboard), so these aren't bound to any action -- read them
+		// raw with local edge state and synthesize the PageUp/PageDown the handler below already
+		// understands. poll_joysticks (above) already ran SDL_JoystickUpdate this tick. Guard on
+		// !newkey so a real key still wins. Same pattern as the endless debug jump screen.
+		{
+#if defined(__SWITCH__)
+			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
+#else
+			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
+#endif
+			static bool shoulder_was[2];
+			for (int b = 0; b < 2; ++b)
+			{
+				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
+				if (down && !shoulder_was[b] && !newkey)
+				{
+					newkey = true;
+					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
+				}
+				shoulder_was[b] = down;
+			}
+		}
+#endif
+
 		/* wheel scrolls the selection; hover highlights on pointer motion; a click
 		 * acts on the row (left = activate/advance, right = reverse, Enter rows drill in) */
 		{
 			if (mouse_scroll != 0)
 			{
-				int ns = (int)selected - mouse_scroll;
-				if (ns < 0)
-					ns = 0;
-				if (ns > (int)menuCount - 1)
-					ns = (int)menuCount - 1;
-				selected = (size_t)ns;
+				const int dir = (mouse_scroll > 0) ? -1 : 1;
+				for (int n = (mouse_scroll > 0) ? mouse_scroll : -mouse_scroll; n > 0; --n)
+					selected = dbgRowStep(selected, dir);
 				mouse_scroll = 0;
 			}
 			if (mouse_x != prev_mx || mouse_y != prev_my)
 			{
 				const int hov = panel_row_at(mouse_x, mouse_y, px0, px1, items_top,
-				                             row_h, visibleRows, scrollTop, (int)menuCount);
-				if (hov >= 0)
+				                             row_h, visibleRows, scrollTop, menuCount);
+				if (hov >= 0 && !dbgRowIsHeading(hov))
 					selected = hov;
 			}
 			prev_mx = mouse_x;
@@ -3895,15 +4056,16 @@ void JE_debugMenu(bool center)
 			if (newmouse)
 			{
 				const int r = panel_row_at(lastmouse_x, lastmouse_y, px0, px1, items_top,
-				                           row_h, visibleRows, scrollTop, (int)menuCount);
-				if (r >= 0)
+				                           row_h, visibleRows, scrollTop, menuCount);
+				if (r >= 0 && !dbgRowIsHeading(r))
 				{
+					const int rid = dbgRows[r].id;
 					selected = r;
-					const bool enterRow = (r == DBG_EXPERT_SETTINGS || r == DBG_ADD_CASH ||
-					                       r == DBG_SKIP_LEVEL || r == DBG_PLAY_SOUND ||
-					                       r == DBG_PLAY_MUSIC || r == DBG_SPRITE_VIEWER ||
-					                       r == DBG_TWIDDLE || r == DBG_FORCE_CRASH ||
-					                       r == DBG_HANG_TIMEOUT);
+					const bool enterRow = (rid == DBG_EXPERT_SETTINGS || rid == DBG_ADD_CASH ||
+					                       rid == DBG_SKIP_LEVEL || rid == DBG_PLAY_SOUND ||
+					                       rid == DBG_PLAY_MUSIC || rid == DBG_SPRITE_VIEWER ||
+					                       rid == DBG_TWIDDLE || rid == DBG_FORCE_CRASH ||
+					                       rid == DBG_HANG_TIMEOUT);
 					newkey = true;
 					lastkey_scan = (lastmouse_but == SDL_BUTTON_RIGHT) ? SDL_SCANCODE_LEFT
 					             : (enterRow ? SDL_SCANCODE_RETURN : SDL_SCANCODE_RIGHT);
@@ -3914,16 +4076,31 @@ void JE_debugMenu(bool center)
 
 		if (newkey)
 		{
+			// Read the row id HERE, not with the footer above: a click this same frame moves
+			// `selected` and then synthesizes the key, so the id must follow that move.
+			const int selId = dbgRows[selected].id;
 			switch (lastkey_scan)
 			{
 			case SDL_SCANCODE_UP:
-				selected = (selected == 0) ? menuCount - 1 : selected - 1;
+				selected = dbgRowStep(selected, -1);
 				break;
 			case SDL_SCANCODE_DOWN:
-				selected = (selected + 1) % menuCount;
+				selected = dbgRowStep(selected, 1);
+				break;
+			case SDL_SCANCODE_PAGEUP:
+				selected = dbgRowSnap(selected - visibleRows);
+				break;
+			case SDL_SCANCODE_PAGEDOWN:
+				selected = dbgRowSnap(selected + visibleRows);
+				break;
+			case SDL_SCANCODE_HOME:
+				selected = dbgRowSnap(0);
+				break;
+			case SDL_SCANCODE_END:
+				selected = dbgRowSnap(menuCount - 1);
 				break;
 			case SDL_SCANCODE_LEFT:
-				switch (selected)
+				switch (selId)
 				{
 				case DBG_SHIP: if (player[0].items.ship > 0) --player[0].items.ship; break;
 				case DBG_FRONT_WEAPON: if (player[0].items.weapon[FRONT_WEAPON].id > 0) --player[0].items.weapon[FRONT_WEAPON].id; break;
@@ -3965,7 +4142,7 @@ void JE_debugMenu(bool center)
 				}
 				break;
 			case SDL_SCANCODE_RIGHT:
-				switch (selected)
+				switch (selId)
 				{
 				case DBG_SHIP: ++player[0].items.ship; break;
 				case DBG_FRONT_WEAPON: ++player[0].items.weapon[FRONT_WEAPON].id; break;
@@ -4009,7 +4186,7 @@ void JE_debugMenu(bool center)
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_KP_ENTER:
 			case SDL_SCANCODE_SPACE:
-				switch (selected)
+				switch (selId)
 				{
 				case DBG_EXPERT_SETTINGS:  // drill-in
 					JE_expertSettingsMenu(off_x, off_y);
@@ -4078,10 +4255,10 @@ void JE_debugMenu(bool center)
 				/* Inline typed numeric fields (Add Cash, Hang Watchdog): digits append,
 				 * Backspace/Delete removes. Read scancodes directly -- this menu's event
 				 * pump can drop SDL_TEXTINPUT. */
-				char *editStr = (selected == DBG_ADD_CASH)    ? dbgCashStr
-				              : (selected == DBG_HANG_TIMEOUT) ? dbgHangStr
-				                                               : NULL;
-				const int editMax = (selected == DBG_ADD_CASH) ? cashMaxDigits : 4;
+				char *editStr = (selId == DBG_ADD_CASH)     ? dbgCashStr
+				              : (selId == DBG_HANG_TIMEOUT) ? dbgHangStr
+				                                            : NULL;
+				const int editMax = (selId == DBG_ADD_CASH) ? cashMaxDigits : 4;
 				if (editStr != NULL)
 				{
 					int digit = -1;

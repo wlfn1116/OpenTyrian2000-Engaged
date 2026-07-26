@@ -1286,6 +1286,90 @@ mutable `last`, so a Quit-Level retry replays the same track.
   unauthored icon now shows 167, not a blank; ships are exempt (they draw
   `shipgraphic`, never `itemgraphic`).
 
+### In-game debug menu — `JE_debugMenu` in `mainint.c`
+
+- Row IDENTITY and row ORDER are separate tables at file scope, just above the
+  function: `dbgLabel[]` / `dbgHelp[]` are indexed by the `DBG_*` id, `dbgRows[]`
+  is the display order and interleaves non-selectable group headings (`id < 0`)
+  between them. Every switch keys off `selId` — the row id — never off a list
+  position, so regrouping the menu or slipping a heading in shifts nothing.
+- `COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, …)` is the guard that matters: a
+  row added to the enum but forgotten in `dbgRows` would be silently unreachable.
+  Bump `DBG_HEADING_COUNT` when adding a heading.
+- 34 rows of hull ids, cheats and diagnostics in one flat list read as noise, so
+  they sit under SURVIVAL / LOADOUT / FIRING / DIFFICULTY / LEVEL / DIAGNOSTICS
+  (survival first — god mode and friends are what you open the menu for mid-run),
+  and the footer gained a second line: what the selected row DOES. `dbgRowStep`
+  skips headings when moving, `dbgRowSnap` pushes any jump (page, Home/End, a
+  click, a hover) off one; the scroll keeps a heading on screen with the first row
+  under it. Same row-kind vocabulary as the endless zone jump below — the two
+  screens are meant to read as one system.
+- Console: the shoulder buttons page the list via raw-button edge reads (menus
+  only receive confirm/cancel/directions from a pad), and the key legend names
+  A/B instead of Enter/Esc. The two typed fields (Add Cash, Hang Watchdog) already
+  pop `console_swkbd`.
+
+### Campaign debug level picker — `JE_debugLevelSelect` in `game_menu.c`
+
+- One list of EVERY level, grouped under `EPISODE n` headings, instead of the old
+  per-episode list you paged between with Left/Right. The browsed episode was a
+  mode you had to track, and it hid two thirds of the game behind it; Left/Right
+  now JUMPS an episode inside the one list, so the fast move survives without the
+  mode. Opens standing on the level being played, and that row stays tinted so a
+  jump can't land back where it started by accident.
+- Shares the endless jump screen's row model (`PickerRow` + `pickerRowStep` /
+  `pickerRowSnap`) and its level list. Those arrays are `allLevel*`, NOT
+  `endlessBase*` — `endlessBaseName` is also a global in endless_level.c (the
+  crash log's base-level history), and a file-static of the same name in
+  game_menu.c would silently shadow it.
+- Footer names the selected level's episode / section / file, which is what you
+  need the moment a jump misbehaves. Console: shoulders page, legend says A/B.
+- This picker used to be the only caller of `load_debug_levels`, so that parser
+  went with it. The `debugLevel*` arrays it filled belong to the OLD two-column
+  `MENU_DEBUG_PLAY_LEVEL` grid, which nothing sets `curMenu` to any more — its
+  draw and dispatch cases still compile but never run, and `debugLevelCount`
+  staying 0 is exactly what the dispatch guard tests.
+
+### Endless debug zone jump — `endlessDebugScreen` in `game_menu.c`
+
+- Reached from the debug level select (`JE_debugLevelSelect` forks to it whenever
+  `endlessMode` is on; the campaign browser below it is untouched). It sets up a
+  zone the way generation would have, then arms the same `select_level` jump.
+- Shape: a HUB that never scrolls — Zone, Base Level, one row per GROUP of
+  toggles (Sector Modifiers / Personal Buffs / Perks), Gamble Outcomes, two
+  reset actions, Start — with drill-in list screens behind the groups. It used to
+  be three Tab-paged lists totalling 120-odd rows, which meant scrolling past 48
+  modifiers to reach Start and cycling a 250-entry level list one press at a time.
+- Rows are rebuilt from row KINDS every frame, per screen, so adding a modifier or
+  a perk shifts nothing: there are no fixed `ROW_*` offsets anywhere. `EDR_HEADER`
+  rows are drawn but never selectable — `endlessDebugStep` skips them when moving
+  and `endlessDebugSnap` pushes any jump (page, Home/End, click, letter) off one.
+  Selection and scroll are per screen (`sel[]`/`top[]`), so backing out of a list
+  returns to the row it was opened from. `sel[]` is written back under the screen
+  the key was pressed on, NOT under `screen` — a drill-in changes `screen`
+  mid-handler, and filing the old row index under the new screen drags a bogus
+  selection in with it.
+- Console parity is the point of the redesign, not a retrofit: d-pad + confirm +
+  cancel reaches every row and every value. The old screen needed Tab (faked from
+  the Y/Square button) to page and a number row to type a zone. Now the shoulder
+  buttons page a list (raw-button edge reads synthesizing PageUp/PageDown, since
+  menus only get confirm/cancel/directions from a pad), Left/Right steps the zone
+  by 1 and PageUp/PageDown by 10, and Confirm on the Zone row opens
+  `console_swkbd` — the one place a number must be typed. Desktop keeps typed
+  digits, Backspace, the wheel, hover and click, plus a first-letter jump on the
+  list screens (the fast way through 250-odd level names).
+- Modifier rows carry a `grp` tag purely to file them under DANGERS / BOONS /
+  GAMBLE DEALS headings, and a `hint` that is normally NULL: the help line comes
+  from `endlessModWord(bit)`, which reads the real registry phrase out of
+  `endlessModTable`, so wording can't drift from the Chart-a-Course monitor. Only
+  bits with no registry row (Gravity-omni, Marked, Nitro, Dud) spell one out
+  locally. Perk rows get `endlessPerkDesc` for free.
+- The launch itself is unchanged: `endlessFoldPurchasedMods(dbgMods,
+  endlessPendingMods())` (so a debug jump can't produce a kill-fire state
+  generation would never hand out), perk stacks via `endlessPerkSetOwned`, then
+  `endlessPickNextLevel` or an explicit episode + section + file. A gamble outcome
+  fired without launching still routes the pending perk pick to `MENU_PERKS`.
+
 ## Weapons — `episodes.c`, `shots.c`, `custom_weapon.c`
 
 - Supersparks: only the ep4/5 item data tags certain projectiles with the ">1000"
@@ -1520,6 +1604,7 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
   strings.
 - The in-game debug menu (opened from the shop front menu, or the Esc-pause "Debug
   Menu" row while Debug Mode is on — there is no key shortcut) is the extension
-  point for cheat/diagnostic rows; new rows follow the existing table pattern.
+  point for cheat/diagnostic rows; new rows follow the table pattern described
+  under *In-game debug menu* above.
 - The Doxygen-style `/** */` documentation in upstream files (font.c,
   config_file.c, …) is upstream convention; leave it be.
