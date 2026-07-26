@@ -585,8 +585,8 @@ mutable `last`, so a Quit-Level retry replays the same track.
     each is merely stopped from re-hitting the *same* hull every tick.
   - **Charged once per TICK, at the toughest hull crossed — not once per hit.**
     Spent per hit, the cost scaled with how many hulls happened to line up, so the
-    tax was `1 − 1/(1 + H·L)`: a four-part boss paid 44% where a one-part boss paid
-    the tuned 17%, and the real figure depended on boss geometry. Taking the max
+    tax was `1 − 1/(1 + H·L)`: a four-part boss paid 29% where a one-part boss paid
+    the tuned 9%, and the real figure depended on boss geometry. Taking the max
     also stops a boss's tax being diluted by trash sharing its space.
   - **The charge is BANKED (`pierceLockPending`), converted at the top of the
     bullet's next pass.** Applying it inline would let the bullet lock itself
@@ -616,7 +616,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
     `endlessBossHpMult100()` / `endlessEliteHpMult100()` instead — same slopes,
     deltas and caps, unrounded. Keep each smooth body in step with its integer twin.
   - **One tuning knob per tier, and each IS the play-tested figure** at a fixed
-    reference zone (`_REF_ZONE` 50): `_BOSS` 20, `_CHAMP` 10, `_ELITE` 5 hundredths,
+    reference zone (`_REF_ZONE` 50): `_BOSS` 10, `_CHAMP` 5, `_ELITE` 2 hundredths,
     with `_MAX` (1 whole tick) as a backstop the ramps never reach. Everything else
     is derived — `span × atRef / refSpan`, where `refSpan` is recomputed from the
     ramps themselves — so changing a tier moves that tier and nothing else, and
@@ -626,9 +626,9 @@ mutable `last`, so a Quit-Level retry replays the same track.
     per-tier percentages (`_NUM`/`_DEN` 1/2 → 1/4 → 1/12 → 3/50 → 1/30, with
     `_ELITE_PCT` / `_CHAMP_PCT`) that had to be hand-fitted every time a ramp moved.
   - Figures are deliberately small: pierce DPS is ~`1/(lock+1)`, so a zone-50 boss
-    taxes ~17%, a plain boss at the 16× cap ~28% (≈0.39 tick), and the special tiers
-    barely register (≈0.05 elite / ≈0.11 champion even at their 4× cap). Only an
-    elite/champion boss riding the `ENDLESS_HP_MULT_MAX` 24× cap reaches ~0.60. It is
+    taxes ~9%, a plain boss at the 16× cap ~16% (≈0.19 tick), and the special tiers
+    barely register (≈0.02 elite / ≈0.05 champion even at their 4× cap). Only an
+    elite/champion boss riding the `ENDLESS_HP_MULT_MAX` 24× cap reaches ~0.30 (~23%). It is
     a safeguard, not a wall — after the marker fix above there is very little headroom
     to spend here, because the weapons it touches deal **1 damage a hit** and anything
     heavier reads in play as "my gun does nothing".
@@ -641,15 +641,15 @@ mutable `last`, so a Quit-Level retry replays the same track.
 
     | zone | boss | champ | elite | boss tax | champ tax | elite tax |
     |---|---|---|---|---|---|---|
-    | 1 | 0.00 | 0.03 | 0.01 | 0% | 3% | 1% |
-    | 20 | 0.07 | 0.06 | 0.03 | 7% | 6% | 3% |
-    | **50** | **0.20** | **0.10** | **0.05** | 17% | 9% | 5% |
-    | 100+ | 0.39 | 0.11 | 0.05 | 28% | 10% | 5% |
+    | 1 | 0.00 | 0.01 | 0.00 | 0% | 1% | 0% |
+    | 20 | 0.03 | 0.03 | 0.01 | 3% | 3% | 1% |
+    | **50** | **0.10** | **0.05** | **0.02** | 9% | 5% | 2% |
+    | 100+ | 0.19 | 0.05 | 0.02 | 16% | 5% | 2% |
 
-    The special figures are nonzero at zone 1 because their HP ramp *starts* at 2×,
-    and flatten from zone ~65 because it caps at 4× — so the tiers separate further
-    the deeper the run goes. `_MAX` (1 whole tick) is only a backstop; the boss ramp
-    tops out at 0.39 and never reaches it.
+    The champion figure is nonzero at zone 1 because its HP ramp *starts* at 2× (the
+    elite's rounds to zero there), and both flatten from zone ~65 because that ramp
+    caps at 4× — so the tiers separate further the deeper the run goes. `_MAX` (1
+    whole tick) is only a backstop; the boss ramp tops out at 0.19 and never reaches it.
   - **Tuning shape.** The knobs are `_REF_ZONE` plus one figure per tier
     (`_BOSS`/`_CHAMP`/`_ELITE`), and each figure *is* the play-tested value in
     hundredths of a tick at that zone — change one and only that tier moves. The
