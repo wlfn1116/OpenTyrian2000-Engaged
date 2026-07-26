@@ -482,6 +482,10 @@ static int endlessMartyrLastLink = 0;
 // Declared here so endlessResetElites -- which runs before it -- can clear it with the martyr pair.
 static int endlessShockwaveLastLink = 0;
 
+// ...and the elite/champion BOUNTY dedup link (see endlessAwardEliteKill), so a multi-tile elite
+// pays its bounty once instead of once per destroyed tile.
+static int endlessBountyLastLink = 0;
+
 void endlessResetElites(void)
 {
 	for (unsigned i = 0; i < COUNTOF(endlessEliteLink); ++i)
@@ -489,6 +493,7 @@ void endlessResetElites(void)
 
 	endlessMartyrLastLink = 0;     // fresh MARTYRDOM dedup each level
 	endlessShockwaveLastLink = 0;  // ...and a fresh SHOCKWAVE dedup
+	endlessBountyLastLink = 0;     // ...and a fresh bounty dedup, so the zone's first kill always pays
 	endlessAegisReset();           // ...and a ready AEGIS GATE: a block never carries into the next zone
 
 	// Seed this zone's elite/champion tier stream from the run seed + depth, so the rolls are
@@ -730,12 +735,22 @@ int endlessEliteContactPercent(int eliteState)
 	return (eliteState == 3) ? 150 : 125;
 }
 
-// Award an elite/champion kill: pay the bounty and post a kill message to the in-game text
-// bar. Called from both enemy-death sites (tyrian2.c) for every elite/champion tile -- a
-// lone enemy fires once; a multi-tile enemy re-posts the same line (which just redraws).
-void endlessAwardEliteKill(int eliteState)
+// Award an elite/champion kill: pay the bounty and post a kill message to the in-game text bar.
+//
+// Called from both enemy-death sites (tyrian2.c) for EVERY removed enemy, elite or not -- exactly
+// like endlessCountKill, and for the same reason. A multi-tile enemy is several enemy[] slots
+// sharing one nonzero linknum, all removed consecutively in a single kill loop, so the bounty is
+// deduped on that linknum: paying per tile handed a multipart elite two, three or more bounties for
+// one kill. Feeding the latch every kill (rather than only elite ones) is what makes it safe -- an
+// ordinary enemy dying in between breaks the run, so two same-linknum elites still both pay.
+void endlessAwardEliteKill(int linknum, int eliteState)
 {
-	if (!endlessFxActive() || eliteState < 2)
+	if (!endlessFxActive())
+		return;
+
+	const bool sameEnemy = (linknum != 0 && linknum == endlessBountyLastLink);
+	endlessBountyLastLink = linknum;
+	if (sameEnemy || eliteState < 2)
 		return;
 
 	const bool champion = (eliteState == 3);

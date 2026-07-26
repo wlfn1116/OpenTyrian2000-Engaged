@@ -3475,8 +3475,9 @@ level_loop:
 												enemyAvail[temp3] = 1;
 												enemyKilled++;
 												endlessCountKill(enemy[temp3].linknum);
-												if (endlessFxActive() && enemy[temp3].eliteState >= 2)
-													endlessAwardEliteKill(enemy[temp3].eliteState);
+												// Elite/champion bounty: unconditional, deduped per linked enemy inside
+												// (a multipart elite pays one bounty, not one per destroyed tile).
+												endlessAwardEliteKill(enemy[temp3].linknum, enemy[temp3].eliteState);
 												// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
 												// position (dedups to once per linked enemy; helper honours the pool guard).
 												if (endlessFxActive())
@@ -3601,8 +3602,9 @@ level_loop:
 											enemyAvail[temp2] = 1;
 											enemyKilled++;
 											endlessCountKill(enemy[temp2].linknum);
-											if (endlessFxActive() && enemy[temp2].eliteState >= 2)
-												endlessAwardEliteKill(enemy[temp2].eliteState);
+											// Elite/champion bounty: unconditional, deduped per linked enemy inside
+											// (a multipart elite pays one bounty, not one per destroyed tile).
+											endlessAwardEliteKill(enemy[temp2].linknum, enemy[temp2].eliteState);
 											// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
 											// position (dedups to once per linked enemy; helper honours the pool guard).
 											if (endlessFxActive())

@@ -673,6 +673,25 @@ mutable `last`, so a Quit-Level retry replays the same track.
   `ENDLESS_ELITE_HP_BASE/_PER_X/_MAX` = 2 / 40 / **4**: 3× at zone 50 (was 5×), 4×
   from zone ~65. Effective HP of a 20-armour elite at zone 50: 204, down from 340,
   against an ordinary neighbour's 68. `endlessEliteHpMult100()` must move with it.
+- **The elite/champion BOUNTY is a per-ENEMY payout, not a per-tile one.**
+  `endlessAwardEliteKill` used to take only `eliteState` and pay every time it was
+  called, while both tyrian2.c death sites call it inside the linkgroup cascade —
+  once per destroyed tile. A multi-tile elite hull therefore paid its bounty twice,
+  three times, once per tile, silently inflating run income (worst on the fattest
+  targets, which are exactly the ones already paying a champion rate). It now takes
+  `(linknum, eliteState)` and latches the linknum in `endlessBountyLastLink`, the
+  same "consecutive same-linknum removals are one enemy" rule `endlessCountKill`,
+  Martyrdom, Shockwave and the Chain Reaction perk all use; reset per level in
+  `endlessResetElites` so a zone's first kill always pays.
+  - The call sites are now UNCONDITIONAL — the `eliteState >= 2` test moved inside
+    the helper. That is the point, not tidying: the latch has to see ordinary kills
+    too, or two same-linknum elites separated only by fodder would read as one
+    enemy and the second would go unpaid. `endlessCountKill` is called for every
+    kill for exactly this reason; the shockwave/martyr latches, which only ever see
+    elite calls, carry that (much rarer, and merely cosmetic) edge case.
+  - The chain-reaction kill site deliberately does not call it: that pulse can only
+    destroy LONE, non-elite fodder, so it has no bounty to pay and no linkgroup to
+    break.
 - **Never repaint the HUD from the debug menu unless a HUD is on screen.**
   `debug_apply_loadout_change` repaints the shield/armour gauges and
   `JE_drawOptions` because both are event-driven and would otherwise keep showing
