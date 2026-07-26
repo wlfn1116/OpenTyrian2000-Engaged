@@ -3249,34 +3249,9 @@ void JE_drawMenuChoices(void)
 		}
 		free(str);
 
-		// Endless perk PICK: draw each offer's owned/max stack count (e.g. "1/4") right-aligned on the
-		// row, so you can see at a glance which offers are stackable and how much room is left -- the
-		// same count the read-only perk list shows. The final "Take the Cash" row gets none. The rows
-		// here are the tall shape font, so nudge the tiny count down to sit on their centre line.
-		if (curMenu == MENU_PERKS && !endlessPerkListMode && x < menuChoices[curMenu])
-		{
-			const int id = endlessPerkChoiceId(x - 2);
-			if (id >= 0)
-			{
-				char cnt[16];
-				snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
+		// (The perk PICK rows carry no owned/max count -- it lives in the help line only.)
 
-				char cline[18];
-				if (curSel[curMenu] == x)  // leading '~' toggles the highlight, as on the row itself
-				{
-					cline[0] = '~';
-					SDL_strlcpy(cline + 1, cnt, sizeof(cline) - 1);
-				}
-				else
-					SDL_strlcpy(cline, cnt, sizeof(cline));
-
-				const int count_right = 302;
-				JE_outTextAndDarken(VGAScreen, count_right - JE_textWidth(cnt, TINY_FONT), tempY + 3,
-				                    cline, 15, 2, TINY_FONT);
-			}
-		}
-
-		// Endless "gave up the level" outpost: grey out the rows locked to the launch-time choices
+// Endless "gave up the level" outpost: grey out the rows locked to the launch-time choices
 		// (E-Shop = item 2, Upgrade Ship = item 4) so the disabled items read as disabled. Dims only
 		// the glyph pixels (no box over the background); item 6 (Start Level) relaunches, stays bright.
 		if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && (x == 2 || x == 4))

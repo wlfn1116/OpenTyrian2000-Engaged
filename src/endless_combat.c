@@ -639,6 +639,57 @@ void endlessGrantSpecial(void)
 	JE_drawTextWindow(msg);
 }
 
+// --- Weapon-powerup drops -------------------------------------------------------------
+// Pickup enemy ids, verified against tyrian.hdt: 533 has value -1 (front powerup), 534 value -2
+// (rear powerup), 399 value 5000 (the top gem of the 390..399 ladder). All three sit in shapebank
+// 21, so swapping one for another keeps the same sprite sheet.
+#define ENEMY_FRONT_POWERUP 533
+#define ENEMY_REAR_POWERUP  534
+#define ENEMY_GEM_5000      399
+
+// Can this port still take a powerup? Same test power_up_weapon uses for can_power_up, so an
+// "open" port never means a pickup that silently converts to the +1000 cash consolation prize.
+static bool endlessPortCanPowerUp(uint port)
+{
+	return player[0].items.weapon[port].id != 0 && player[0].items.weapon[port].power < 11;
+}
+
+// What an endless enemy drops in place of the vanilla "random special weapon" pickup.
+//
+// Events 33/45 turn a front-powerup dropper (enemy 533) into one of the six special-weapon
+// droppers (829..834) on a roll weighted by front-gun power -- guaranteed at power 11, where a
+// front powerup would be wasted. Endless already hands out a guaranteed random special for every
+// datacube and secret orb it converts, so a third source only re-rolls what the player was just
+// given; the displaced powerup is handed back instead, front or rear at even odds. No port checks
+// here on purpose: the event fires long before the kill, so a full gun is caught at spawn time by
+// endlessResolvePowerupDrop instead.
+JE_word endlessPowerupDropEnemy(void)
+{
+	return (mt_rand() % 2) ? ENEMY_REAR_POWERUP : ENEMY_FRONT_POWERUP;  // drop: gameplay RNG, not the seed
+}
+
+// Spawn-time redirect for a powerup pickup whose gun is already full, hooked into JE_makeEnemy so
+// it covers EVERY way one reaches the playfield -- the event-33/45 droppers above, the rear-powerup
+// (534) drops a level scripts directly (which the 533-only substitution never touches), and pickups
+// a level places by hand. Doing it at spawn instead of at the event also kills the staleness window:
+// a gun that fills up between the event firing and the enemy dying would otherwise still drop the
+// pickup the event chose. A full port falls through to the other gun, and with both full the drop
+// pays out as the 5000-point gem rather than the cash consolation. Anything else passes through.
+JE_word endlessResolvePowerupDrop(JE_word eDatI)
+{
+	if (eDatI != ENEMY_FRONT_POWERUP && eDatI != ENEMY_REAR_POWERUP)
+		return eDatI;
+
+	const uint want  = (eDatI == ENEMY_REAR_POWERUP) ? REAR_WEAPON : FRONT_WEAPON;
+	const uint other = (want == REAR_WEAPON) ? FRONT_WEAPON : REAR_WEAPON;
+
+	if (endlessPortCanPowerUp(want))
+		return eDatI;
+	if (endlessPortCanPowerUp(other))
+		return (other == REAR_WEAPON) ? ENEMY_REAR_POWERUP : ENEMY_FRONT_POWERUP;
+	return ENEMY_GEM_5000;
+}
+
 // --- Kill-fire buff HUD readout -------------------------------------------------------
 // Live combo/timer/fire/damage numbers for JE_inGameDisplays -- the BUFF's own contribution
 // only, and no buff NAME (just the numbers) by design.

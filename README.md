@@ -49,8 +49,8 @@ Basically a bunch of stuff that I thought would be cool and also wouldn't really
 - Between levels you dock at an outpost with a shop, and chart a branching
   course whose sectors carry their own modifiers and a danger rank from F to
   S+++.
-- You choose a perk after the first cleared zone and every third zone after
-  that. Perks last for the whole run.
+- You choose a perk after the first cleared zone and every fourth zone after
+  that, plus one at every 50th zone. Perks last for the whole run.
 - Runs are seeded: the same seed and the same choices reproduce the same order
   of levels, courses, shops, and perks.
 - A Hardcore option disables saving, so dying or quitting ends the run for good.

@@ -790,17 +790,38 @@ mutable `last`, so a Quit-Level retry replays the same track.
   them); pulling one from that array would make it milestone-exclusive, at the
   cost of reshuffling every seed's song order.
 - Forced perk picks are decided by ONE predicate, `endlessPerkDueAtDepth(depth)`
-  (depth = the zone just cleared), for three reasons: the every-3rd-zone cadence
-  (`ENDLESS_PERK_EVERY`, depths 1, 4, 7, …); a cleared MILESTONE zone, the payoff
+  (depth = the zone just cleared), for three reasons: the every-4th-zone cadence
+  (`ENDLESS_PERK_EVERY`, depths 1, 5, 9, …); a cleared MILESTONE zone, the payoff
   for surviving the S-tier slate; or the zone right after a depth where those two
-  COLLIDED. A collision — depth 100, 250, 400, … i.e. every third milestone, the
-  ones where `depth % 50 == 0 && depth % 3 == 1` — would otherwise hand out one
-  perk where the player earned two, so the second is DEFERRED by a zone instead
-  of being swallowed (…97, 100, **101**, 103, 106…); the cadence is unaffected and
-  carries on from its own schedule. Derived purely from the depth, deliberately:
+  COLLIDED. A collision — a depth where `depth % 50 == 0 && depth % ENDLESS_PERK_EVERY
+  == 1` — would otherwise hand out one perk where the player earned two, so the
+  second is DEFERRED by a zone instead of being swallowed; the cadence is unaffected
+  and carries on from its own schedule. Derived purely from the depth, deliberately:
   no "owed perk" flag to persist, so it needs no save field and comes out the same
   across a save/reload or a mid-zone bail. `endlessPerkDepthDone` still caps it at
   one pick per depth, so re-entering the same outpost can't farm a second.
+- The cadence was 3 (depths 1, 4, 7, …) until 2026-07-25; it is now 4. Two knock-on
+  facts the change carries, both deliberate:
+  - **The deferral branch is currently unreachable.** Milestones are multiples of
+    50, and `50k % 4` only ever yields 2 or 0 — never 1 — so a milestone can no
+    longer land on a cadence depth. At the old 3 it fired at 100, 250, 400, …
+    (…97, 100, **101**, 103, 106…). The code stays: it is the general rule, and a
+    cadence of 3 or 5 revives it immediately. Don't "clean it up".
+  - **Breakthrough got slightly commoner.** `endlessBreakthroughAllowed`
+    (`endless_course.c`) bars the boon from any zone whose clear already owes a
+    scheduled perk, so it was blocked on ~1 zone in 3 and is now blocked on ~1 in
+    4. That partly offsets the slower cadence on its own, which is why no
+    Breakthrough constant was retuned alongside it.
+- Perk-completion pacing: 24 perks / **75 total stacks** (sum of `maxStack` in
+  `endlessPerkTable`). Every forced pick is worth exactly +1 stack regardless of
+  which row you take, because `endlessGeneratePerkChoices` only pools perks with
+  `owned < maxStack` — so an offer is never wasted and the completion depth is
+  order-independent. Picks banked by depth = `floor((d-1)/ENDLESS_PERK_EVERY) + 1
+  + floor(d/50)`. At a cadence of 4 the 75th pick lands at **depth 277** (it was
+  211 at a cadence of 3); waypoints: z50 = 14 picks, z100 = 27, z150 = 41, z200 =
+  54, z250 = 68. Past the last pick the scheduled gate still opens with an empty
+  pool — `configure_endless_perk_menu` then renders the "Take the Cash" row alone,
+  so it degrades into a small recurring cash bonus rather than breaking.
 - Zone-100 credits: clearing zone 100 rolls `JE_playCredits` once, at the outpost
   that follows (top of `endlessBetweenLevels`, before the course roll and the
   auto-save), then the run carries on into zone 101. `endlessCreditsShown` gates
@@ -1092,6 +1113,34 @@ mutable `last`, so a Quit-Level retry replays the same track.
   `3000 + depth*80` scaled by the SAME rate factor — a rate rise with a fixed cap
   would just hit the ceiling a level sooner and pay nothing extra. The multiply is
   split into hundreds + remainder so a big bank can't overflow 32-bit `long`.
+- **In-level special-weapon drops are converted to gun powerups.** Vanilla events
+  33/45 (`tyrian2.c`) rewrite the front-powerup dropper (enemy 533) into one of the
+  six special-weapon droppers (829..834, each `value = 32100 + specialId`) on the
+  roll `lives == 11 || (mt_rand() % 15) < lives` — and `player[0].lives` aliases
+  `items.weapon[FRONT_WEAPON].power` outside arcade, so the roll is really "chance
+  proportional to front-gun power, guaranteed once it's maxed at 11", i.e. it fires
+  exactly when a front powerup would be wasted. Endless already grants a guaranteed
+  random special for every datacube and secret orb it converts, so a third source
+  just re-rolls what the player was handed; `endlessPowerupDropEnemy`
+  (`endless_combat.c`) instead returns the front (533) or rear (534) powerup at even
+  odds. Enemy ids verified by parsing `tyrian.hdt` with the `JE_loadItemDat` record
+  layout: 533 `value=-1`, 534 `value=-2`, 399 `value=5000` (the top gem of the
+  390..399 ladder, same shapebank 21 as the powerups, so it reads as part of the same
+  pickup set). Note the event handlers *overwrite* `eventRec[].eventdat` in place —
+  that's vanilla's own behaviour, and harmless because every level load re-reads the
+  event table.
+- **The maxed-gun redirect lives in `JE_makeEnemy`, not at the drop site.** Deciding
+  it where the event fires is wrong twice over: the event runs long before the enemy
+  dies (a gun can fill in between), and it only ever inspects `eventdat == 533`, so
+  the rear-powerup drops (534) a level scripts directly sail past untouched — which is
+  why a maxed player still saw powerups. `endlessResolvePowerupDrop` instead hangs off
+  `JE_makeEnemy`, the single choke point every enemy spawn goes through (vanilla
+  already remaps 534 → 533 there for super-arcade): a 533/534 whose port is unmounted
+  or at power 11 falls through to the other gun, and with both full becomes enemy 399.
+  Same test as `power_up_weapon`'s `can_power_up`, so a pickup can never land as the
+  +1000 cash consolation. Everything else passes through by id, and because the swap
+  stays inside the `value < 30000` class it doesn't disturb the `enemy_offset` choice
+  the caller made from the pre-swap id.
 
 ### Save / resume
 

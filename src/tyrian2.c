@@ -6144,6 +6144,11 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	if (superArcadeMode != SA_NONE && eDatI == 534)
 		eDatI = 533;
 
+	// Endless: a weapon powerup whose gun is already maxed becomes the other gun's powerup, or the
+	// 5000 gem when both are full. Here rather than at the drop site so every spawn path is covered.
+	if (endlessMode)
+		eDatI = endlessResolvePowerupDrop(eDatI);
+
 	if (uniqueShapeTableI > 0)
 	{
 		shapeTableI = uniqueShapeTableI;
@@ -7146,8 +7151,10 @@ void JE_eventSystem(void)
 
 				if (eventRec[eventLoc-1].eventdat == 533 && (lives == 11 || (mt_rand() % 15) < lives))
 				{
-					// enemy will drop random special weapon
-					eventRec[eventLoc-1].eventdat = 829 + (mt_rand() % 6);
+					// enemy will drop random special weapon -- in endless, a front/rear powerup
+					// or the 5000 gem instead (specials already come from cubes and orbs there)
+					eventRec[eventLoc-1].eventdat = endlessMode ? endlessPowerupDropEnemy()
+					                                            : 829 + (mt_rand() % 6);
 				}
 			}
 			if (eventRec[eventLoc-1].eventdat == 534 && superTyrian)
@@ -7250,7 +7257,10 @@ void JE_eventSystem(void)
 
 			if (eventRec[eventLoc-1].eventdat == 533 && (lives == 11 || (mt_rand() % 15) < lives))
 			{
-				eventRec[eventLoc-1].eventdat = 829 + (mt_rand() % 6);
+				// same endless swap as event 33 (this arcade-only variant never fires in endless,
+				// but the two substitutions are otherwise identical -- keep them that way)
+				eventRec[eventLoc-1].eventdat = endlessMode ? endlessPowerupDropEnemy()
+				                                            : 829 + (mt_rand() % 6);
 			}
 			if (twoPlayerMode || onePlayerAction)
 			{

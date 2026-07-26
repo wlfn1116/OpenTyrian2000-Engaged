@@ -385,6 +385,16 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 // their normal (dead-in-endless) behaviour.
 void endlessGrantSpecial(void);
 
+// The endless replacement for the vanilla "random special weapon" enemy drop (829..834): the
+// front (533) or rear (534) weapon powerup the roll displaced, picked at even odds. Called by
+// the event-33/45 substitution in tyrian2.c.
+JE_word endlessPowerupDropEnemy(void);
+
+// Spawn-time redirect for a powerup pickup (533/534) whose gun is already at power 11 or unmounted:
+// the other gun's powerup, or the 5000-point gem (399) when neither can take one. Every other enemy
+// id passes through. Called from JE_makeEnemy, so it catches all drop paths at the moment of spawn.
+JE_word endlessResolvePowerupDrop(JE_word eDatI);
+
 // Depth- and mutator-scaled enemy difficulty levers, applied by the engine on top of
 // the base difficulty. HP is split like the expert-mode toggle: ordinary enemies scale
 // by an armor percent, bosses (at the 254 armor cap) scale by a damage divisor instead.
@@ -491,7 +501,6 @@ void        endlessGeneratePerkChoices(void);  // roll this visit's offers (call
 int         endlessPerkChoiceCount(void);      // how many perks are offered (usually 3)
 const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
 const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned/max count) for offer i
-int         endlessPerkChoiceId(int i);        // perk id behind offer i (-1 if none); for the row's owned/max count
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
 long        endlessPerkDeclineBonus(void);     // cash paid for taking no perk (scales with depth)
 void        endlessDeclinePerk(void);          // take the cash instead of a perk

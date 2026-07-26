@@ -1041,7 +1041,7 @@ void endlessBetweenLevels(void)
 		endlessFillShop();
 
 		// Queue the forced perk pick that opens the shop ahead of its normal front menu (see
-		// JE_itemScreen), then roll this visit's offers. endlessPerkDueAtDepth decides: the every-3rd-
+		// JE_itemScreen), then roll this visit's offers. endlessPerkDueAtDepth decides: the every-4th-
 		// zone cadence, a cleared milestone zone, or the deferred half of a collision between the two.
 		// Skip it if this depth's perk was already resolved, so re-opening the same outpost after a
 		// save/reload doesn't hand out a second perk (endlessPerkDepthDone is part of the save).
