@@ -1444,8 +1444,8 @@ mutable `last`, so a Quit-Level retry replays the same track.
   `items.weapon[FRONT_WEAPON].power` outside arcade, so the roll is really "chance
   proportional to front-gun power, guaranteed once it's maxed at 11", i.e. it fires
   exactly when a front powerup would be wasted. Endless already grants a guaranteed
-  random special for every datacube and secret orb it converts, so a third source
-  just re-rolls what the player was handed; `endlessPowerupDropEnemy`
+  random special for every *collectable* datacube and secret orb it converts, so a
+  third source just re-rolls what the player was handed; `endlessPowerupDropEnemy`
   (`endless_combat.c`) instead returns the front (533) or rear (534) powerup at even
   odds. Enemy ids verified by parsing `tyrian.hdt` with the `JE_loadItemDat` record
   layout: 533 `value=-1`, 534 `value=-2`, 399 `value=5000` (the top gem of the
@@ -1465,6 +1465,33 @@ mutable `last`, so a Quit-Level retry replays the same track.
   +1000 cash consolation. Everything else passes through by id, and because the swap
   stays inside the `value < 30000` class it doesn't disturb the `enemy_offset` choice
   the caller made from the pre-swap id.
+- **Datacubes come in two shapes, and only one of them still grants a special.**
+  `value == 1` is a sentinel in the enemy data meaning "data cube", not cash — the
+  difficulty scaler in `JE_makeEnemy` deliberately scales only `value > 1 && < 10000`,
+  so a cube can never be multiplied into a payout. Two delivery mechanisms use it:
+  - *Collectable* — an `armor == 0` pickup (enemy 513) a linkgroup drops on death.
+    You fly into it; `mainint.c`'s scoreitem branch handles it. Endless still calls
+    `endlessGrantSpecial()` here, and likewise for the secret-level orbs
+    (`value > 10000`, enemies 823/843), because both are things the player chose to
+    collect.
+  - *Carried by a shot enemy* — an armored piece whose own `value` is 1, resolved in
+    the linkgroup-death loop in `tyrian2.c`. Nothing appears on screen; vanilla just
+    does `cubeMax++`. Endless used to grant a special here too, which read as a whole
+    special weapon materialising out of nowhere at a boss kill. It now calls
+    `endlessDropCubeGem(slot)`, which spawns the 5000-point gem (enemy 399) at the
+    dead piece — visible, consistent with the powerup-drop fallback, and the cash
+    feeds the E-Shop where a special can be bought deliberately.
+  - Where this actually bites: **TYRIAN**, both cuts (`lvlFileNum` 9 and 15 of
+    `tyrian1.lvl` — `levels1.dat` lists two `]L` entries with the same name). Enemy
+    type 53 sits in the closing structure spawned at `t=5356` (linkgroup 142, driven
+    by the script until the level-end event at `t=8100`) and is the *only* piece of
+    the 46..65 block with `value == 1`. Verified by parsing `tyrian.hdt` /
+    `tyrian1.lvl` directly. Note the event records are **11 bytes**, not 12 — u16
+    time, u8 type, s16 dat, s16 dat2, s8 dat3, s8 dat5, s8 dat6, u8 dat4, exactly as
+    `JE_loadMap` reads them; assuming 12 desyncs the whole table.
+  - The `endlessMode` gate at the call site is intentional rather than
+    `endlessFxActive()`: a campaign run with the endless mods layered on still has a
+    working cube archive, so `cubeMax++` remains correct there.
 
 ### Save / resume
 
