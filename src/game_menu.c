@@ -20,6 +20,7 @@
 
 #include "backgrnd.h"
 #include "config.h"
+#include "console_platform.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
@@ -166,12 +167,14 @@ static PlayerItems old_items[2];  // TODO: should not be global if possible
 
 static struct cube_struct cube[4];
 
-/* Debug level menu data */
+/* Data for the OLD two-column MENU_DEBUG_PLAY_LEVEL grid, which nothing sets curMenu to any more --
+ * the standalone JE_debugLevelSelect browser replaced it, and that reads allLevel* instead. Kept
+ * because the grid's draw and dispatch cases still compile against these; they simply never run
+ * (debugLevelCount stays 0, which is exactly what the dispatch guard tests). */
 #define DEBUG_LEVEL_MAX 200
 static JE_word debugMapSection[DEBUG_LEVEL_MAX];
 static JE_byte debugLvlFileNum[DEBUG_LEVEL_MAX];
-static char debugLevelName[DEBUG_LEVEL_MAX][18];
-static uint debugLevelCount;
+static uint debugLevelCount;   // stays 0 now; the grid's dispatch guard reads it and bails
 static bool debugPlayMenu;
 
 #define DEBUG_MENU_MAX (50 + 2)
@@ -225,60 +228,6 @@ static void ensure_equipped_items_visible(void)
 			itemAvailMax[itemAvailMap[i] - 1]++;
 		}
 	}
-}
-
-/* Parse the ]L / * entries of an episode's level file into the debug-level arrays,
- * using JE_loadMap's offsets. Opens non-fatally: an absent episode yields an empty list. */
-static void load_debug_levels(int episode)
-{
-	debugLevelCount = 0;
-	const unsigned int levelFileCount = JE_levelFileCount(episode);
-	if (levelFileCount == 0)
-		return;
-
-	char fname[16];
-	snprintf(fname, sizeof(fname), "levels%d.dat", episode);
-	FILE* f = dir_fopen_warn(data_dir(), fname, "rb");
-	if (f == NULL)
-		return;
-
-	JE_word section = 0;
-	long end = ftell_eof(f);
-	char s[256];
-	while (ftell(f) < end && debugLevelCount < COUNTOF(debugMapSection))
-	{
-		read_encrypted_pascal_string(s, sizeof(s), f);
-
-		if (s[0] == '*')
-		{
-			section++;
-		}
-		if (s[0] == ']' && s[1] == 'L')
-		{
-			const int fileNum = atoi(s + 25);
-			if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
-			{
-				fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
-				        episode, (unsigned int)section, fileNum);
-				continue;
-			}
-
-			debugMapSection[debugLevelCount] = section;
-
-			char name_buf[10];
-			SDL_strlcpy(name_buf, s + 13, sizeof(name_buf));
-			size_t len = strlen(name_buf);
-			while (len > 0 && name_buf[len - 1] == ' ')
-				name_buf[--len] = '\0';
-			SDL_strlcpy(debugLevelName[debugLevelCount], name_buf,
-				sizeof(debugLevelName[0]));
-
-			debugLvlFileNum[debugLevelCount] = (JE_byte)fileNum;
-			debugLevelCount++;
-		}
-	}
-
-	fclose(f);
 }
 
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
@@ -4531,88 +4480,101 @@ static int scancode_digit(int sc)
 }
 
 /* Endless-only: the SECTOR modifiers (dangers / boons that define a zone) the debug screen can
- * toggle onto the jumped-to zone. The four PERSONAL kill-fire buffs (Turbodrive / Overdrive and
- * their evil mirrors) live in endlessDebugBuffMods below, on the "Perks & Buffs" page. */
-static const struct { Uint64 bit; const char *name; } endlessDebugSectorMods[] = {
-	{ ENDLESS_MOD_FORTIFIED,   "Fortified"      },
-	{ ENDLESS_MOD_FRENZY,      "Frenzy"         },
-	{ ENDLESS_MOD_SWIFT,       "Swift"          },
-	{ ENDLESS_MOD_DEVASTATING, "Devastating"    },
-	{ ENDLESS_MOD_FRAGILE,     "Fragile"        },
-	{ ENDLESS_MOD_BOUNTY,      "Bounty"         },
-	{ ENDLESS_MOD_ELITEPACK,   "Elite Pack"     },
-	{ ENDLESS_MOD_APEX,        "Apex Swarm"     },
-	{ ENDLESS_MOD_LEGION,      "Legion"         },
-	{ ENDLESS_MOD_ENRAGE,      "Enrage"         },
-	{ ENDLESS_MOD_KAMIKAZE,    "Kamikaze (mid)" },
-	{ ENDLESS_MOD_HOMING,      "Homing (light)" },
-	{ ENDLESS_MOD_GRAVITY,     "Gravity Well"   },
-	{ ENDLESS_MOD_GRAVITY_OMNI,"Gravity (omni)" },  // omni pulls along a random heading; toggle alone or with Gravity Well
-	{ ENDLESS_MOD_OVERCHARGE,  "Overcharged"    },
-	{ ENDLESS_MOD_DILATION,    "Time Dilation"  },
-	{ ENDLESS_MOD_FAVOR,       "Merchant Favor" },
-	{ ENDLESS_MOD_CURSED,      "Cursed Bounty"  },
-	{ ENDLESS_MOD_NOCHAMP,     "No Champions"   },  // boon: champions demoted to elites
-	{ ENDLESS_MOD_NOELITE,     "No Elites"      },  // boon: no elite/champion tier at all (supersedes No Champions)
-	{ ENDLESS_MOD_OVERCLOCK,   "Overclock"      },
-	{ ENDLESS_MOD_SLIPSTREAM,  "Slipstream"     },
-	{ ENDLESS_MOD_OVERLOAD,    "Overload"       },
-	{ ENDLESS_MOD_WARP,        "Warp Speed"     },
-	{ ENDLESS_MOD_TOPSY,       "Topsy-Turvy"    },  // fork: upside-down screen (boss-style controls)
-	{ ENDLESS_MOD_SLUGGISH,    "Sluggish Ship"  },  // fork: slowed movement (kbd/mouse/touch)
-	{ ENDLESS_MOD_SHIELDLESS,  "No Shield Regen" }, // fork: shields never recharge
-	{ ENDLESS_MOD_DEADGEN,     "Dead Generator" },  // fork: no shields + starved main gun (super-rare)
-	{ ENDLESS_MOD_MARTYRDOM,   "Martyrdom"      },  // dying enemies fire a final radial burst (4/6/8 by tier)
-	{ ENDLESS_MOD_SEEKER,      "Seeker Rounds"  },  // enemy shots make one mid-flight course correction
-	{ ENDLESS_MOD_STATIC,      "Static Discharge" },// taking damage bleeds generator power (x5, capped)
-	{ ENDLESS_MOD_RETALIATION, "Retaliation"    },  // each kill briefly quickens enemy fire (~25%)
+ * toggle onto the jumped-to zone. The six PERSONAL kill-fire buffs (Turbodrive / Overdrive and
+ * their evil mirrors) live in endlessDebugBuffMods below, on their own list.
+ *
+ * `grp` is only the heading a row files under on the modifier list -- it groups 48 toggles into
+ * three readable blocks and has no effect on what the bit does. `hint` is the help line; leave it
+ * NULL and the registry's own phrase is used (endlessModWord), so wording never drifts -- only the
+ * handful of bits with no registry row spell one out here. */
+enum { EMG_DANGER, EMG_BOON, EMG_DEAL, EMG_GROUPS };  // ...and the headings, in list order:
+static const char *const endlessDebugModGroupName[EMG_GROUPS] = { "DANGERS", "BOONS", "GAMBLE DEALS" };
+
+static const struct { Uint64 bit; Uint8 grp; const char *name; const char *hint; } endlessDebugSectorMods[] = {
+	{ ENDLESS_MOD_FORTIFIED,   EMG_DANGER, "Fortified",       NULL },
+	{ ENDLESS_MOD_FRENZY,      EMG_DANGER, "Frenzy",          NULL },
+	{ ENDLESS_MOD_SWIFT,       EMG_DANGER, "Swift",           NULL },
+	{ ENDLESS_MOD_DEVASTATING, EMG_DANGER, "Devastating",     NULL },
+	{ ENDLESS_MOD_ELITEPACK,   EMG_DANGER, "Elite Pack",      NULL },
+	{ ENDLESS_MOD_APEX,        EMG_DANGER, "Apex Swarm",      NULL },
+	{ ENDLESS_MOD_LEGION,      EMG_DANGER, "Legion",          NULL },
+	{ ENDLESS_MOD_ENRAGE,      EMG_DANGER, "Enrage",          NULL },
+	{ ENDLESS_MOD_KAMIKAZE,    EMG_DANGER, "Kamikaze (mid)",  NULL },
+	{ ENDLESS_MOD_HOMING,      EMG_DANGER, "Homing (light)",  NULL },
+	{ ENDLESS_MOD_GRAVITY,     EMG_DANGER, "Gravity Well",    NULL },
+	{ ENDLESS_MOD_GRAVITY_OMNI,EMG_DANGER, "Gravity (omni)",  "pull on a random heading" },  // no registry row: it rides GRAVITY
+	{ ENDLESS_MOD_OVERCLOCK,   EMG_DANGER, "Overclock",       NULL },
+	{ ENDLESS_MOD_SLIPSTREAM,  EMG_DANGER, "Slipstream",      NULL },
+	{ ENDLESS_MOD_OVERLOAD,    EMG_DANGER, "Overload",        NULL },
+	{ ENDLESS_MOD_WARP,        EMG_DANGER, "Warp Speed",      NULL },
+	{ ENDLESS_MOD_TOPSY,       EMG_DANGER, "Topsy-Turvy",     NULL },  // fork: upside-down screen (boss-style controls)
+	{ ENDLESS_MOD_SLUGGISH,    EMG_DANGER, "Sluggish Ship",   NULL },  // fork: slowed movement (kbd/mouse/touch)
+	{ ENDLESS_MOD_SHIELDLESS,  EMG_DANGER, "No Shield Regen", NULL },  // fork: shields never recharge
+	{ ENDLESS_MOD_DEADGEN,     EMG_DANGER, "Dead Generator",  NULL },  // fork: no shields + starved main gun (super-rare)
+	{ ENDLESS_MOD_MARTYRDOM,   EMG_DANGER, "Martyrdom",       NULL },  // dying enemies fire a final radial burst (4/6/8 by tier)
+	{ ENDLESS_MOD_SEEKER,      EMG_DANGER, "Seeker Rounds",   NULL },  // enemy shots make one mid-flight course correction
+	{ ENDLESS_MOD_STATIC,      EMG_DANGER, "Static Discharge",NULL },  // taking damage bleeds generator power (x5, capped)
+	{ ENDLESS_MOD_RETALIATION, EMG_DANGER, "Retaliation",     NULL },  // each kill briefly quickens enemy fire (~25%)
+	{ ENDLESS_MOD_FRAGILE,     EMG_BOON,   "Fragile",         NULL },
+	{ ENDLESS_MOD_BOUNTY,      EMG_BOON,   "Bounty",          NULL },
+	{ ENDLESS_MOD_OVERCHARGE,  EMG_BOON,   "Overcharged",     NULL },
+	{ ENDLESS_MOD_DILATION,    EMG_BOON,   "Time Dilation",   NULL },
+	{ ENDLESS_MOD_FAVOR,       EMG_BOON,   "Merchant Favor",  NULL },
+	{ ENDLESS_MOD_CURSED,      EMG_BOON,   "Cursed Bounty",   NULL },
+	{ ENDLESS_MOD_NOCHAMP,     EMG_BOON,   "No Champions",    NULL },  // champions demoted to elites
+	{ ENDLESS_MOD_NOELITE,     EMG_BOON,   "No Elites",       NULL },  // no elite/champion tier at all (supersedes No Champions)
 	// The later BOONS. Star Charts / Breakthrough pay out at the NEXT outpost, so toggling them here
 	// only shows up after the jumped-to zone is actually cleared.
-	{ ENDLESS_MOD_AEGIS,       "Aegis Gate"     },  // shields can't be punched through (70-tick cooldown per block)
-	{ ENDLESS_MOD_FLAKSCREEN,  "Flak Screen"    },  // halves the tide's ADDED shots (nothing to see before zone ~25)
-	{ ENDLESS_MOD_AUXREACTOR,  "Aux Reactor"    },  // shield regen costs no generator power
-	{ ENDLESS_MOD_LOWPROFILE,  "Low Profile"    },  // damage hitbox shrunk ~25% (pickup reach unchanged)
-	{ ENDLESS_MOD_GIANTKILLER, "Giant Killer"   },  // elites/champions lose their HP multiplier only
-	{ ENDLESS_MOD_CLEANSIGNALS,"Clean Signals"  },  // ...and this one takes their fire rate / shot damage instead
-	{ ENDLESS_MOD_SHOCKWAVE,   "Shockwave"      },  // elite/champion kills vaporise nearby enemy shots
-	{ ENDLESS_MOD_SOFTLANDING, "Soft Landing"   },  // contact damage the PLAYER takes cut to 30%
-	{ ENDLESS_MOD_STARCHARTS,  "Star Charts"    },  // clear -> the next ordinary chart deals a full slate
-	{ ENDLESS_MOD_BREAKTHROUGH,"Breakthrough"   },  // clear -> a bonus perk pick at the next outpost
+	{ ENDLESS_MOD_AEGIS,       EMG_BOON,   "Aegis Gate",      NULL },  // shields can't be punched through (70-tick cooldown per block)
+	{ ENDLESS_MOD_FLAKSCREEN,  EMG_BOON,   "Flak Screen",     NULL },  // halves the tide's ADDED shots (nothing to see before zone ~25)
+	{ ENDLESS_MOD_AUXREACTOR,  EMG_BOON,   "Aux Reactor",     NULL },  // shield regen costs no generator power
+	{ ENDLESS_MOD_LOWPROFILE,  EMG_BOON,   "Low Profile",     NULL },  // damage hitbox shrunk ~25% (pickup reach unchanged)
+	{ ENDLESS_MOD_GIANTKILLER, EMG_BOON,   "Giant Killer",    NULL },  // elites/champions lose their HP multiplier only
+	{ ENDLESS_MOD_CLEANSIGNALS,EMG_BOON,   "Clean Signals",   NULL },  // ...and this one takes their fire rate / shot damage instead
+	{ ENDLESS_MOD_SHOCKWAVE,   EMG_BOON,   "Shockwave",       NULL },  // elite/champion kills vaporise nearby enemy shots
+	{ ENDLESS_MOD_SOFTLANDING, EMG_BOON,   "Soft Landing",    NULL },  // contact damage the PLAYER takes cut to 30%
+	{ ENDLESS_MOD_STARCHARTS,  EMG_BOON,   "Star Charts",     NULL },  // clear -> the next ordinary chart deals a full slate
+	{ ENDLESS_MOD_BREAKTHROUGH,EMG_BOON,   "Breakthrough",    NULL },  // clear -> a bonus perk pick at the next outpost
 	// Gamble-only next-sector effects, also toggleable here for zone-jump testing. NITRO/OVERHEAT
 	// normally ride with OVERCHARGE / TURBODRIVE (toggle those too for the full "deal"); here each
-	// is isolable. All four are read straight from endlessActiveMods in-level, so the jump applies them.
-	{ ENDLESS_MOD_MARKED,      "Marked (boss+)" },
-	{ ENDLESS_MOD_NITRO,       "Nitro (1-hit)"  },
-	{ ENDLESS_MOD_OVERHEAT,    "Overheat DoT"   },
-	{ ENDLESS_MOD_DUD,         "Dud Bombs"      },
-	{ ENDLESS_MOD_RAMPAGE,     "Rampage (ram!)" },  // the original brutal Kamikaze; also the ~1/5000 gamble outcome
+	// is isolable. All are read straight from endlessActiveMods in-level, so the jump applies them.
+	{ ENDLESS_MOD_MARKED,      EMG_DEAL,   "Marked (boss+)",  "next boss beefed up" },
+	{ ENDLESS_MOD_NITRO,       EMG_DEAL,   "Nitro (1-hit)",   "you hit hard, any hit kills" },
+	{ ENDLESS_MOD_OVERHEAT,    EMG_DEAL,   "Overheat DoT",    NULL },
+	{ ENDLESS_MOD_DUD,         EMG_DEAL,   "Dud Bombs",       "superbombs will not fire" },
+	{ ENDLESS_MOD_RAMPAGE,     EMG_DEAL,   "Rampage (ram!)",  NULL },  // the original brutal Kamikaze; also the ~1/5000 gamble outcome
 };
 
-/* The four PERSONAL kill-fire mods -- the two boons and their two evil mirrors -- grouped on the
- * debug "Perks & Buffs" page (they buff/debuff YOU, not the sector). */
-static const struct { unsigned bit; const char *name; } endlessDebugBuffMods[] = {
-	{ ENDLESS_MOD_TURBODRIVE,  "Turbodrive"    },
-	{ ENDLESS_MOD_OVERBLAST,    "Overblast"      },
-	{ ENDLESS_MOD_OVERDRIVE,    "Overdrive"      },
-	{ ENDLESS_MOD_BACKFIRE,     "Backfire"       },
-	{ ENDLESS_MOD_BURNOUT,      "Burnout"        },
-	{ ENDLESS_MOD_MISFIRE,      "Misfire"        },
+/* The six PERSONAL kill-fire mods -- the three boons and their three evil mirrors -- on their own
+ * debug list (they buff/debuff YOU, not the sector). */
+static const struct { Uint64 bit; const char *name; const char *hint; } endlessDebugBuffMods[] = {
+	{ ENDLESS_MOD_TURBODRIVE,  "Turbodrive",  NULL },
+	{ ENDLESS_MOD_OVERBLAST,   "Overblast",   NULL },
+	{ ENDLESS_MOD_OVERDRIVE,   "Overdrive",   NULL },
+	{ ENDLESS_MOD_BACKFIRE,    "Backfire",    NULL },  // the evil mirrors, in the same order
+	{ ENDLESS_MOD_BURNOUT,     "Burnout",     NULL },
+	{ ENDLESS_MOD_MISFIRE,     "Misfire",     NULL },
 };
 
-/* All levels across every installed episode, for the endless base-level selector. */
-#define ENDLESS_BASE_MAX 256
-static int     endlessBaseEp[ENDLESS_BASE_MAX];
-static JE_word endlessBaseSec[ENDLESS_BASE_MAX];
-static JE_byte endlessBaseFile[ENDLESS_BASE_MAX];
-static char    endlessBaseName[ENDLESS_BASE_MAX][18];
-static int     endlessBaseCount;
+/* Every level in the game, across every installed episode -- the list BOTH debug pickers browse
+ * (the campaign one below, and the endless jump's base-level screen). Kept apart from the
+ * debugLevel* arrays up top, which hold one episode at a time and belong to the older
+ * MENU_DEBUG_PLAY_LEVEL grid. Names are deliberately not endless-flavoured: `endlessBaseName` is
+ * also a global in endless_level.c (the crash log's base-level history), and a file-static of the
+ * same name would quietly shadow it. */
+#define ALL_LEVEL_MAX 256
+static int     allLevelEp[ALL_LEVEL_MAX];
+static JE_word allLevelSec[ALL_LEVEL_MAX];
+static JE_byte allLevelFile[ALL_LEVEL_MAX];
+static char    allLevelName[ALL_LEVEL_MAX][18];
+static int     allLevelCount;
 
-// Gather every episode's ]L levels into one list (mirrors load_debug_levels, but across all
-// episodes and remembering each level's episode so the jump can switch to it).
-static void endlessLoadAllLevels(void)
+// Gather every episode's ]L levels into one list, remembering each level's episode so a jump can
+// switch to it. Same ']L' / '*' walk JE_loadMap uses; an absent episode is simply skipped.
+static void loadAllLevels(void)
 {
-	endlessBaseCount = 0;
-	for (int ep = 1; ep <= EPISODE_MAX && endlessBaseCount < ENDLESS_BASE_MAX; ep++)
+	allLevelCount = 0;
+	for (int ep = 1; ep <= EPISODE_MAX && allLevelCount < ALL_LEVEL_MAX; ep++)
 	{
 		if (!episodeAvail[ep - 1])
 			continue;
@@ -4629,7 +4591,7 @@ static void endlessLoadAllLevels(void)
 		JE_word section = 0;
 		long end = ftell_eof(f);
 		char s[256];
-		while (ftell(f) < end && endlessBaseCount < ENDLESS_BASE_MAX)
+		while (ftell(f) < end && allLevelCount < ALL_LEVEL_MAX)
 		{
 			read_encrypted_pascal_string(s, sizeof(s), f);
 			if (s[0] == '*')
@@ -4640,118 +4602,289 @@ static void endlessLoadAllLevels(void)
 				if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
 					continue;
 
-				endlessBaseEp[endlessBaseCount] = ep;
-				endlessBaseSec[endlessBaseCount] = section;
+				allLevelEp[allLevelCount] = ep;
+				allLevelSec[allLevelCount] = section;
 
 				char name_buf[10];
 				SDL_strlcpy(name_buf, s + 13, sizeof(name_buf));
 				size_t len = strlen(name_buf);
 				while (len > 0 && name_buf[len - 1] == ' ')
 					name_buf[--len] = '\0';
-				SDL_strlcpy(endlessBaseName[endlessBaseCount], name_buf, sizeof(endlessBaseName[0]));
+				SDL_strlcpy(allLevelName[allLevelCount], name_buf, sizeof(allLevelName[0]));
 
-				endlessBaseFile[endlessBaseCount] = (JE_byte)fileNum;
-				endlessBaseCount++;
+				allLevelFile[allLevelCount] = (JE_byte)fileNum;
+				allLevelCount++;
 			}
 		}
 		fclose(f);
 	}
 }
 
-/* The dedicated endless debug jump screen: a scrollable form of rows -- Zone (type a number),
- * Base Level (Random or any level, scroll with L/R), each modifier (toggle), then Start. Enter
- * launches; returns true if launched (select_level armed the jump) or false if cancelled. */
+/* ---- The endless debug jump screen ----------------------------------------------------------
+ * A small HUB -- zone, base level, one row per GROUP of toggles, then Start -- with drill-in lists
+ * behind the groups that hold dozens of entries (48 sector modifiers, the perks, every gamble
+ * outcome, every level in the game). The hub itself never scrolls, and each list is one flat
+ * subject with its own headings, so nothing is more than one screen away from what it belongs to.
+ *
+ * Console parity is the other half of the design: d-pad + confirm + cancel alone reaches every row
+ * and every value (no Tab paging, no typed digits, no mouse). The shoulder buttons page long lists
+ * -- read raw, because menus only ever receive confirm/cancel/directions from a pad -- and the Zone
+ * row opens the console software keypad, which is the only place a number has to be typed.
+ */
+/* The row model both debug pickers share: a list rebuilt every frame from row KINDS, with
+ * non-selectable headings mixed in. Nothing carries fixed row offsets, so adding a modifier, a
+ * perk or a level shifts nothing. */
+typedef struct { Uint8 kind; short idx; const char *label; } PickerRow;
+
+enum  // row kinds
+{
+	EDR_HEADER,   // group heading: drawn, never selectable
+	EDR_ZONE,     // the zone number
+	EDR_BASE,     // Random / the chosen base level (drills into EDS_BASE)
+	EDR_OPEN,     // drill into screen `idx`
+	EDR_ACTION,   // idx = EDA_*
+	EDR_LAUNCH,   // start the zone
+	EDR_SECMOD, EDR_BUFMOD, EDR_PERK, EDR_GAMBLE,
+	EDR_LEVEL     // a level from allLevel*: the endless base list AND the campaign picker
+};
+enum { EDS_HUB, EDS_SECMOD, EDS_BUFMOD, EDS_PERK, EDS_GAMBLE, EDS_BASE, EDS_SCREENS };
+enum { EDA_CLEAR, EDA_RESET };
+
+// The base-level list is the longest screen: every level, an episode heading each, plus Random.
+#define EDBG_MAX_ROWS (ALL_LEVEL_MAX + EPISODE_MAX + 8)
+
+static bool pickerRowSelectable(const PickerRow *r)
+{
+	return r->kind != EDR_HEADER;
+}
+
+/* Step one selectable row in `dir`, wrapping past the headings. */
+static int pickerRowStep(const PickerRow *rows, int rowCount, int sel, int dir)
+{
+	for (int n = 0; n < rowCount; ++n)
+	{
+		sel += dir;
+		if (sel < 0)
+			sel = rowCount - 1;
+		else if (sel >= rowCount)
+			sel = 0;
+		if (pickerRowSelectable(&rows[sel]))
+			return sel;
+	}
+	return sel;
+}
+
+/* The nearest selectable row at or after `sel` (then searching back) -- for any jump that can land
+ * on a heading: clamping, paging, Home/End, a letter jump, a click. */
+static int pickerRowSnap(const PickerRow *rows, int rowCount, int sel)
+{
+	if (sel < 0)
+		sel = 0;
+	if (sel > rowCount - 1)
+		sel = rowCount - 1;
+	for (int i = sel; i < rowCount; ++i)
+		if (pickerRowSelectable(&rows[i]))
+			return i;
+	for (int i = sel; i >= 0; --i)
+		if (pickerRowSelectable(&rows[i]))
+			return i;
+	return sel;
+}
+
+/* Returns true if a level was launched (select_level armed the jump), false if cancelled. */
 static bool endlessDebugScreen(void)
 {
 	const JE_byte startEp = episodeNum;
-	endlessLoadAllLevels();
+	loadAllLevels();
 
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
 
 	const int pw = 248;
+	// Centered within the legacy 320px content area (set_menu_centered(true) is active on this
+	// screen); using vga_width would double-offset it.
 	const int px0 = (LEGACY_WIDTH - pw) / 2;
 	const int px1 = px0 + pw - 1;
 	const int py0 = 12;
 	const int py1 = vga_height - 12;
 	const int title_h = 15;
 	const int items_top = py0 + title_h + 3;
-	const int items_bottom = py1 - 10;
+	const int items_bottom = py1 - 19;   // two footer lines: the selected row's help, then the keys
 	const int row_h = 10;
 	const int pageRows = (items_bottom - items_top) / row_h;
 	const int mid_x = (px0 + px1) / 2;
+	const int val_x = px1 - 10;          // right edge of the value column, clear of the scrollbar
 
 	enum {
 		C_PANEL_BG = 0xF1, C_TITLE_BG = 0xF3, C_DIVIDER = 0xF6,
 		C_EDGE_HI  = 0xFB, C_EDGE_LO  = 0xF4, C_SEL_BAR = 0xF5
 	};
 
+	static const char *const screenTitle[EDS_SCREENS] = {
+		"ENDLESS  -  ZONE JUMP", "SECTOR MODIFIERS", "PERSONAL BUFFS",
+		"PERKS", "GAMBLE OUTCOMES", "BASE LEVEL"
+	};
+#if defined(__SWITCH__) || defined(__vita__)
+	static const char *const screenKeys[EDS_SCREENS] = {
+		"A Open   B Close",
+		"A Toggle   B Back   L/R Page",
+		"A Toggle   B Back",
+		"A Stack   B Back   L/R Page",
+		"A Fire   B Back   L/R Page",
+		"A Pick   B Back   L/R Episode",
+	};
+#else
+	static const char *const screenKeys[EDS_SCREENS] = {
+		"Enter Open   Esc Close",
+		"Enter Toggle   Esc Back   PgUp/PgDn",
+		"Enter Toggle   Esc Back",
+		"Enter Stack   L/R Adjust   Esc Back",
+		"Enter Fire   Esc Back",
+		"Enter Pick   L/R Episode   Esc Back",
+	};
+#endif
+
 	const int NSEC   = (int)COUNTOF(endlessDebugSectorMods);
 	const int NBUF   = (int)COUNTOF(endlessDebugBuffMods);
-	const int NPERKS = endlessPerkCount();
 	const int NGAM   = endlessGambleOutcomeCount();
+	int       NPERKS = endlessPerkCount();
 
-	// Three pages, built each frame from row "kinds" so paging needs no fixed ROW_* offsets:
-	//   page 0 "Sectors":         Zone, Base, the sector danger/boon mods, Start.
-	//   page 1 "Perks & Buffs":   the four personal kill-fire buffs, the perks, Start.
-	//   page 2 "Gamble Outcomes": every gamble outcome (Space/L-R/click fires it), Start.
-	enum { RK_ZONE, RK_BASE, RK_SECMOD, RK_BUFMOD, RK_PERK, RK_GAMBLE, RK_LAUNCH };
-	char dbgGambleMsg[48];  // last gamble outcome fired on this screen (shown in the footer on page 2)
-	dbgGambleMsg[0] = '\0';
+	int    dbgPerks[32];               // owned stacks per perk, pre-loaded from the run (edit here)
+	if (NPERKS > (int)COUNTOF(dbgPerks))
+		NPERKS = (int)COUNTOF(dbgPerks);
 
-	int      dbgZone = endlessRunDepth + 1;
-	bool     dbgZoneTyped = false;
-	int      dbgBase = -1;             // -1 = Random, else index into endlessBase*
-	Uint64   dbgMods = endlessActiveMods | endlessPendingMods();  // sector + personal-buff bits (pre-toggled)
-	int      dbgPerks[32];             // owned stacks per perk, pre-loaded from the run (toggle/stack here)
-	for (int i = 0; i < NPERKS && i < 32; ++i)
+	const Uint64 runMods = endlessActiveMods | endlessPendingMods();
+
+	int    dbgZone = endlessRunDepth + 1;
+	bool   dbgZoneTyped = false;       // a number is being typed digit-by-digit (desktop keyboard)
+	int    dbgBase = -1;               // -1 = Random, else an index into endlessBase*
+	int    dbgBaseLast = 0;            // last real level picked, so the Base row can toggle back to it
+	Uint64 dbgMods = runMods;          // sector + personal-buff bits, pre-toggled from the run
+	for (int i = 0; i < NPERKS; ++i)
 		dbgPerks[i] = endlessPerkGetOwned(i);
 
-	int  page = 0;
-	int  selected = 0, scrollTop = 0;
+	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
+	dbgGambleMsg[0] = '\0';
+
+	int  screen = EDS_HUB;
+	int  sel[EDS_SCREENS] = { 0 }, top[EDS_SCREENS] = { 0 };
+	int  focusBase = -2;               // on opening the level list, land on the current pick (-2 = no request)
 	int  prev_mx = mouse_x, prev_my = mouse_y;
 	bool chosen = false, done = false;
 
 	wait_noinput(false, false, true);
-	newkey = newmouse = false;
+	newkey = newmouse = false;         // don't let the press that opened us leak in
 
 	while (!done)
 	{
-		// Build the current page's row list (kinds -> concrete rows), so paging needs no fixed offsets.
-		struct { int kind, idx; } rows[8 + 64];
-		int rowCount = 0;
-		if (page == 0)
-		{
-			rows[rowCount].kind = RK_ZONE; rows[rowCount].idx = 0; ++rowCount;
-			rows[rowCount].kind = RK_BASE; rows[rowCount].idx = 0; ++rowCount;
-			for (int i = 0; i < NSEC; ++i) { rows[rowCount].kind = RK_SECMOD; rows[rowCount].idx = i; ++rowCount; }
-		}
-		else if (page == 1)
-		{
-			for (int i = 0; i < NBUF; ++i)   { rows[rowCount].kind = RK_BUFMOD; rows[rowCount].idx = i; ++rowCount; }
-			for (int i = 0; i < NPERKS; ++i) { rows[rowCount].kind = RK_PERK;   rows[rowCount].idx = i; ++rowCount; }
-		}
-		else
-		{
-			for (int i = 0; i < NGAM; ++i)   { rows[rowCount].kind = RK_GAMBLE; rows[rowCount].idx = i; ++rowCount; }
-		}
-		rows[rowCount].kind = RK_LAUNCH; rows[rowCount].idx = 0; ++rowCount;
+		PickerRow rows[EDBG_MAX_ROWS];
+		char epHeads[EPISODE_MAX][12];     // "EPISODE n" headings, alive as long as the rows point at them
+		int  rowCount = 0;
 
-		if (selected > rowCount - 1)
-			selected = rowCount - 1;
-		if (selected < 0)
-			selected = 0;
+		#define EDBG_ADD(k, i, l) do { \
+			if (rowCount < (int)COUNTOF(rows)) { \
+				rows[rowCount].kind = (Uint8)(k); rows[rowCount].idx = (short)(i); \
+				rows[rowCount].label = (l); ++rowCount; \
+			} } while (0)
+
+		switch (screen)
+		{
+		case EDS_HUB:
+			EDBG_ADD(EDR_HEADER, 0, "ZONE");
+			EDBG_ADD(EDR_ZONE, 0, "Zone");
+			EDBG_ADD(EDR_BASE, 0, "Base Level");
+			EDBG_ADD(EDR_HEADER, 0, "SLATE");
+			EDBG_ADD(EDR_OPEN, EDS_SECMOD, "Sector Modifiers");
+			EDBG_ADD(EDR_OPEN, EDS_BUFMOD, "Personal Buffs");
+			EDBG_ADD(EDR_OPEN, EDS_PERK, "Perks");
+			EDBG_ADD(EDR_HEADER, 0, "TOOLS");
+			EDBG_ADD(EDR_OPEN, EDS_GAMBLE, "Gamble Outcomes");
+			EDBG_ADD(EDR_ACTION, EDA_CLEAR, "Clear Everything");
+			EDBG_ADD(EDR_ACTION, EDA_RESET, "Reset To Run State");
+			EDBG_ADD(EDR_LAUNCH, 0, "START ZONE");
+			break;
+
+		case EDS_SECMOD:
+			for (int g = 0; g < EMG_GROUPS; ++g)
+			{
+				EDBG_ADD(EDR_HEADER, 0, endlessDebugModGroupName[g]);
+				for (int i = 0; i < NSEC; ++i)
+					if (endlessDebugSectorMods[i].grp == g)
+						EDBG_ADD(EDR_SECMOD, i, endlessDebugSectorMods[i].name);
+			}
+			break;
+
+		case EDS_BUFMOD:
+			EDBG_ADD(EDR_HEADER, 0, "BUFFS AND THEIR EVIL MIRRORS");
+			for (int i = 0; i < NBUF; ++i)
+				EDBG_ADD(EDR_BUFMOD, i, endlessDebugBuffMods[i].name);
+			break;
+
+		case EDS_PERK:
+			EDBG_ADD(EDR_HEADER, 0, "OWNED STACKS");
+			for (int i = 0; i < NPERKS; ++i)
+				EDBG_ADD(EDR_PERK, i, endlessPerkName(i));
+			break;
+
+		case EDS_GAMBLE:
+			EDBG_ADD(EDR_HEADER, 0, "FIRES AT ONCE  -  NO FEE");
+			for (int i = 0; i < NGAM; ++i)
+				EDBG_ADD(EDR_GAMBLE, i, endlessGambleOutcomeName(i));
+			break;
+
+		default:  // EDS_BASE
+		{
+			EDBG_ADD(EDR_LEVEL, -1, "Random");
+			int lastEp = 0;
+			for (int i = 0; i < allLevelCount; ++i)
+			{
+				const int ep = allLevelEp[i];
+				if (ep != lastEp && ep >= 1 && ep <= EPISODE_MAX)
+				{
+					lastEp = ep;
+					snprintf(epHeads[ep - 1], sizeof(epHeads[0]), "EPISODE %d", ep);
+					EDBG_ADD(EDR_HEADER, ep, epHeads[ep - 1]);
+				}
+				EDBG_ADD(EDR_LEVEL, i, allLevelName[i]);
+			}
+			break;
+		}
+		}
+
+		#undef EDBG_ADD
+
+		// The list may have moved under the selection (a screen change, a shorter list than last
+		// visit): clamp it, and never leave it parked on a heading.
+		int s = pickerRowSnap(rows, rowCount, sel[screen]);
+		if (focusBase >= -1 && screen == EDS_BASE)
+		{
+			for (int r = 0; r < rowCount; ++r)
+				if (rows[r].kind == EDR_LEVEL && rows[r].idx == focusBase)
+				{
+					s = r;
+					break;
+				}
+			focusBase = -2;
+		}
 
 		const int visibleRows = (pageRows < rowCount) ? pageRows : rowCount;
 
-		if (selected < scrollTop)
-			scrollTop = selected;
-		else if (selected >= scrollTop + visibleRows)
-			scrollTop = selected - visibleRows + 1;
+		int scrollTop = top[screen];
+		if (s < scrollTop)
+			scrollTop = s;
+		else if (s >= scrollTop + visibleRows)
+			scrollTop = s - visibleRows + 1;
+		// keep a heading on screen with the first row under it, so a selection never floats
+		// context-free at the top of the window
+		if (scrollTop > 0 && scrollTop == s && !pickerRowSelectable(&rows[s - 1]))
+			--scrollTop;
 		if (scrollTop > rowCount - visibleRows)
 			scrollTop = rowCount - visibleRows;
 		if (scrollTop < 0)
 			scrollTop = 0;
+
+		sel[screen] = s;
+		top[screen] = scrollTop;
 
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py1, C_PANEL_BG);
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py0, C_EDGE_HI);
@@ -4760,66 +4893,136 @@ static bool endlessDebugScreen(void)
 		fill_rectangle_xy(VGAScreen, px1, py0, px1, py1, C_EDGE_LO);
 		fill_rectangle_xy(VGAScreen, px0 + 1, py0 + 1, px1 - 1, py0 + title_h - 1, C_TITLE_BG);
 		fill_rectangle_xy(VGAScreen, px0 + 1, py0 + title_h, px1 - 1, py0 + title_h, C_DIVIDER);
-		draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, page == 0 ? "ENDLESS  -  ZONE JUMP" : page == 1 ? "ENDLESS  -  PERKS AND BUFFS" : "ENDLESS  -  GAMBLE OUTCOMES", normal_font, centered, 15, 4, true, 1);
+		draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, screenTitle[screen], normal_font, centered, 15, 4, true, 1);
 
 		for (int vis = 0; vis < visibleRows; ++vis)
 		{
 			const int i = scrollTop + vis;
 			const int ry = items_top + vis * row_h;
-			const bool sel = (i == selected);
+			const bool isSel = (i == s);
 
-			if (sel)
+			if (rows[i].kind == EDR_HEADER)
+			{
+				draw_font_hv_shadow(VGAScreen, px0 + 6, ry, rows[i].label, small_font, left_aligned, 15, 3, true, 1);
+				const int rule_x = px0 + 10 + JE_textWidth(rows[i].label, small_font);
+				if (rule_x < val_x)
+					fill_rectangle_xy(VGAScreen, rule_x, ry + 3, val_x, ry + 3, C_DIVIDER);
+				continue;
+			}
+
+			if (isSel)
 				fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 2, C_SEL_BAR);
 
-			char buf[48];
+			char  val[40];
+			Sint8 labBright = isSel ? 5 : -1, valBright = isSel ? 5 : -1;
+			int   labX = px0 + 12;
+			val[0] = '\0';
+
 			switch (rows[i].kind)
 			{
-			case RK_ZONE:
-				snprintf(buf, sizeof(buf), "Zone:   %d", dbgZone);
-				draw_font_hv_shadow(VGAScreen, px0 + 8, ry, buf, small_font, left_aligned, 15, sel ? 5 : -1, true, 1);
+			case EDR_ZONE:
+			{
+				// tag the milestone classes, so a jump meant to test one can't miss by a zone
+				const int kind = endlessMilestoneKindOfZone(dbgZone);
+				snprintf(val, sizeof(val), "%d%s%s", dbgZone, dbgZoneTyped ? "_" : "",
+				         kind == 2 ? "   THE END" : kind == 1 ? "   MILESTONE" : kind == 3 ? "   minor" : "");
+				valBright = 6;
 				break;
-			case RK_BASE:
+			}
+			case EDR_BASE:
 				if (dbgBase < 0)
-					SDL_strlcpy(buf, "Base:   Random", sizeof(buf));
+					SDL_strlcpy(val, "Random", sizeof(val));
 				else
-					snprintf(buf, sizeof(buf), "Base:   %s  (Ep %d)", endlessBaseName[dbgBase], endlessBaseEp[dbgBase]);
-				draw_font_hv_shadow(VGAScreen, px0 + 8, ry, buf, small_font, left_aligned, 15, sel ? 5 : -1, true, 1);
+					snprintf(val, sizeof(val), "%s (Ep %d)", allLevelName[dbgBase], allLevelEp[dbgBase]);
+				valBright = 6;
 				break;
-			case RK_LAUNCH:
-				draw_font_hv_shadow(VGAScreen, px0 + 8, ry, "> Start Zone", small_font, left_aligned, 15, sel ? 6 : 2, true, 1);
-				break;
-			case RK_PERK:
+			case EDR_OPEN:
 			{
-				const int p = rows[i].idx;
-				const int n = dbgPerks[p], mx = endlessPerkMaxStack(p);
-				if (mx > 1)
-					snprintf(buf, sizeof(buf), "%s %s  %d/%d", n > 0 ? "ON" : "- ", endlessPerkName(p), n, mx);
+				int n = 0;
+				if (rows[i].idx == EDS_SECMOD)
+				{
+					for (int m = 0; m < NSEC; ++m)
+						if (dbgMods & endlessDebugSectorMods[m].bit)
+							++n;
+					if (n)
+						snprintf(val, sizeof(val), "%d on", n);
+				}
+				else if (rows[i].idx == EDS_BUFMOD)
+				{
+					for (int m = 0; m < NBUF; ++m)
+						if (dbgMods & endlessDebugBuffMods[m].bit)
+							++n;
+					if (n)
+						snprintf(val, sizeof(val), "%d on", n);
+				}
+				else if (rows[i].idx == EDS_PERK)
+				{
+					for (int p = 0; p < NPERKS; ++p)
+						n += dbgPerks[p];
+					if (n)
+						snprintf(val, sizeof(val), "%d owned", n);
+				}
+				if (val[0] == '\0')
+					SDL_strlcpy(val, rows[i].idx == EDS_GAMBLE ? "..." : "none", sizeof(val));
+				valBright = n ? 6 : (isSel ? 4 : -3);
+				break;
+			}
+			case EDR_ACTION:
+				labBright = isSel ? 6 : 1;
+				break;
+			case EDR_LAUNCH:
+				labBright = isSel ? 6 : 2;
+				break;
+			case EDR_SECMOD:
+			case EDR_BUFMOD:
+			{
+				const Uint64 bit = (rows[i].kind == EDR_SECMOD)
+				                 ? endlessDebugSectorMods[rows[i].idx].bit
+				                 : endlessDebugBuffMods[rows[i].idx].bit;
+				const bool on = (dbgMods & bit) != 0;
+				SDL_strlcpy(val, on ? "ON" : "-", sizeof(val));
+				labBright = isSel ? 5 : (on ? 2 : -1);
+				valBright = on ? 6 : (isSel ? 4 : -3);
+				labX = px0 + 16;
+				break;
+			}
+			case EDR_PERK:
+			{
+				const int p = rows[i].idx, n = dbgPerks[p];
+				if (n > 0)
+					snprintf(val, sizeof(val), "%d/%d", n, endlessPerkMaxStack(p));
 				else
-					snprintf(buf, sizeof(buf), "%s %s", n > 0 ? "ON" : "- ", endlessPerkName(p));
-				draw_font_hv_shadow(VGAScreen, px0 + 14, ry, buf, small_font, left_aligned, 15, n > 0 ? 6 : (sel ? 5 : -3), true, 1);
+					SDL_strlcpy(val, "-", sizeof(val));
+				labBright = isSel ? 5 : (n > 0 ? 2 : -1);
+				valBright = n > 0 ? 6 : (isSel ? 4 : -3);
+				labX = px0 + 16;
 				break;
 			}
-			case RK_BUFMOD:
+			case EDR_GAMBLE:
+				if (isSel)
+					SDL_strlcpy(val, "fire", sizeof(val));
+				valBright = 6;
+				labX = px0 + 16;
+				break;
+			default:  // EDR_LEVEL
 			{
-				const int m = rows[i].idx;
-				const bool on = (dbgMods & endlessDebugBuffMods[m].bit) != 0;
-				snprintf(buf, sizeof(buf), "%s %s", on ? "ON" : "- ", endlessDebugBuffMods[m].name);
-				draw_font_hv_shadow(VGAScreen, px0 + 14, ry, buf, small_font, left_aligned, 15, on ? 6 : (sel ? 5 : -3), true, 1);
-				break;
-			}
-			case RK_GAMBLE:
-				snprintf(buf, sizeof(buf), "%s", endlessGambleOutcomeName(rows[i].idx));
-				draw_font_hv_shadow(VGAScreen, px0 + 14, ry, buf, small_font, left_aligned, 15, sel ? 6 : -3, true, 1);
-				break;
-			default:  // RK_SECMOD
-			{
-				const int m = rows[i].idx;
-				const bool on = (dbgMods & endlessDebugSectorMods[m].bit) != 0;
-				snprintf(buf, sizeof(buf), "%s %s", on ? "ON" : "- ", endlessDebugSectorMods[m].name);
-				draw_font_hv_shadow(VGAScreen, px0 + 14, ry, buf, small_font, left_aligned, 15, on ? 6 : (sel ? 5 : -3), true, 1);
+				const bool picked = (rows[i].idx == dbgBase);
+				if (rows[i].idx >= 0)
+					snprintf(val, sizeof(val), "L%d", allLevelSec[rows[i].idx]);
+				else if (picked)
+					SDL_strlcpy(val, "picked", sizeof(val));
+				labBright = isSel ? 5 : (picked ? 6 : -1);
+				valBright = picked ? 6 : (isSel ? 4 : -3);
+				labX = px0 + 16;
 				break;
 			}
 			}
+
+			draw_font_hv_shadow(VGAScreen, labX, ry, rows[i].label, small_font, left_aligned, 15, labBright, true, 1);
+			if (val[0] != '\0')
+				draw_font_hv_shadow(VGAScreen, val_x, ry, val, small_font, right_aligned, 15, valBright, true, 1);
+			if (isSel)
+				draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 		}
 
 		if (rowCount > visibleRows)
@@ -4836,10 +5039,67 @@ static bool endlessDebugScreen(void)
 			fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, C_EDGE_HI);
 		}
 
-		if (page == 2 && dbgGambleMsg[0] != '\0')  // show the last fired outcome's result on the Gamble page
-			draw_font_hv(VGAScreen, mid_x, py1 - 9, dbgGambleMsg, small_font, centered, 15, 6);
-		else
-			draw_font_hv(VGAScreen, mid_x, py1 - 9, page == 2 ? "Space/Enter Fire   Tab Page   Esc Back" : "Tab Page   L/R Change   Enter Start   Esc Back", small_font, centered, 15, -3);
+		// Footer line 1: what the selected row IS. Every list row can explain itself, so none of
+		// the 48 modifier names has to carry its meaning in the name alone.
+		char helpBuf[64];
+		const char *help = "";
+		switch (rows[s].kind)
+		{
+		case EDR_ZONE:
+#if defined(__SWITCH__) || defined(__vita__)
+			help = "Confirm types a number;  L/R  +-10";
+#else
+			help = "Type a number;  L/R  +-1,  PgUp/PgDn  +-10";
+#endif
+			break;
+		case EDR_BASE:
+			help = "The shipped level under the zone";
+			break;
+		case EDR_OPEN:
+			help = rows[s].idx == EDS_SECMOD ? "Dangers and boons the zone flies with"
+			     : rows[s].idx == EDS_BUFMOD ? "Kill-fire buffs and their evil mirrors"
+			     : rows[s].idx == EDS_PERK   ? "Perk stacks you carry into the zone"
+			     :                             "Fire any outcome without paying the fee";
+			break;
+		case EDR_ACTION:
+			help = rows[s].idx == EDA_CLEAR ? "Turns every modifier and perk off"
+			                                : "Back to what the live run holds now";
+			break;
+		case EDR_LAUNCH:
+			help = "Jump straight into the zone as set up";
+			break;
+		case EDR_SECMOD:
+			help = endlessDebugSectorMods[rows[s].idx].hint
+			     ? endlessDebugSectorMods[rows[s].idx].hint
+			     : endlessModWord(endlessDebugSectorMods[rows[s].idx].bit);
+			break;
+		case EDR_BUFMOD:
+			help = endlessDebugBuffMods[rows[s].idx].hint
+			     ? endlessDebugBuffMods[rows[s].idx].hint
+			     : endlessModWord(endlessDebugBuffMods[rows[s].idx].bit);
+			break;
+		case EDR_PERK:
+			help = endlessPerkDesc(rows[s].idx);
+			break;
+		case EDR_GAMBLE:
+			help = (dbgGambleMsg[0] != '\0') ? dbgGambleMsg : "Confirm fires this outcome now";
+			break;
+		case EDR_LEVEL:
+			if (rows[s].idx < 0)
+				help = "Let the run's own picker choose a level";
+			else
+			{
+				snprintf(helpBuf, sizeof(helpBuf), "Episode %d   section %d   file %d",
+				         allLevelEp[rows[s].idx], allLevelSec[rows[s].idx], allLevelFile[rows[s].idx]);
+				help = helpBuf;
+			}
+			break;
+		default:
+			break;
+		}
+		if (help[0] != '\0')
+			draw_font_hv(VGAScreen, mid_x, py1 - 18, help, small_font, centered, 15, 1);
+		draw_font_hv(VGAScreen, mid_x, py1 - 9, screenKeys[screen], small_font, centered, 15, -3);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
@@ -4849,41 +5109,47 @@ static bool endlessDebugScreen(void)
 		service_SDL_events(true);
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// Y (Switch) / Square (Vita) pages this screen just like Tab. Menus only deliver
-		// confirm/cancel/directions from a controller (push_joysticks_as_keyboard), so this
-		// face button isn't bound to any action -- read it raw with local edge state and
-		// synthesize a Tab. Both ports report it as button 3 (Switch A/B/X/Y = 0/1/2/3;
-		// Vita triangle/circle/cross/square = 0/1/2/3). poll_joysticks (above) already ran
+		// The shoulder buttons page a long list (and step the Zone row by 10). Menus only deliver
+		// confirm/cancel/directions from a controller (push_joysticks_as_keyboard), so these aren't
+		// bound to any action -- read them raw with local edge state and synthesize the PageUp /
+		// PageDown the handler below already understands. poll_joysticks (above) already ran
 		// SDL_JoystickUpdate this tick. Guard on !newkey so a real key still wins.
 		{
-			static bool page_btn_was;
-			const bool down = joysticks > 0 && joystick[0].handle != NULL &&
-			                  SDL_JoystickGetButton(joystick[0].handle, 3) != 0;
-			if (down && !page_btn_was && !newkey)
+#if defined(__SWITCH__)
+			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
+#else
+			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
+#endif
+			static bool shoulder_was[2];
+			for (int b = 0; b < 2; ++b)
 			{
-				newkey = true;
-				lastkey_scan = SDL_SCANCODE_TAB;
+				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
+				if (down && !shoulder_was[b] && !newkey)
+				{
+					newkey = true;
+					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
+				}
+				shoulder_was[b] = down;
 			}
-			page_btn_was = down;
 		}
 #endif
 
-		/* wheel moves the selection; hover highlights; left-click acts on the row (toggle /
-		 * cycle / +zone / start); right-click cancels. */
+		/* wheel moves the selection; hover highlights; left-click acts on the row (the same thing
+		 * Confirm does there); right-click backs out. */
 		if (mouse_scroll != 0)
 		{
-			selected -= mouse_scroll;
-			if (selected < 0)
-				selected = 0;
-			if (selected > rowCount - 1)
-				selected = rowCount - 1;
+			const int dir = (mouse_scroll > 0) ? -1 : 1;
+			for (int n = (mouse_scroll > 0) ? mouse_scroll : -mouse_scroll; n > 0; --n)
+				s = pickerRowStep(rows, rowCount, s, dir);
+			sel[screen] = s;
 			mouse_scroll = 0;
 		}
 		if (mouse_x != prev_mx || mouse_y != prev_my)
 		{
 			const int hov = level_row_at(mouse_x, mouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, rowCount);
-			if (hov >= 0)
-				selected = hov;
+			if (hov >= 0 && pickerRowSelectable(&rows[hov]))
+				sel[screen] = s = hov;
 		}
 		prev_mx = mouse_x;
 		prev_my = mouse_y;
@@ -4897,11 +5163,11 @@ static bool endlessDebugScreen(void)
 			else
 			{
 				const int r = level_row_at(lastmouse_x, lastmouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, rowCount);
-				if (r >= 0)
+				if (r >= 0 && pickerRowSelectable(&rows[r]))
 				{
-					selected = r;
-					newkey = true;   // launch the Start row, otherwise "adjust" the row (=RIGHT)
-					lastkey_scan = (rows[r].kind == RK_LAUNCH) ? SDL_SCANCODE_RETURN : SDL_SCANCODE_RIGHT;
+					sel[screen] = s = r;
+					newkey = true;
+					lastkey_scan = SDL_SCANCODE_RETURN;
 				}
 			}
 			newmouse = false;
@@ -4909,9 +5175,12 @@ static bool endlessDebugScreen(void)
 
 		if (newkey)
 		{
-			const int selKind = rows[selected].kind;
-			const int digit = scancode_digit(lastkey_scan);
-			if (digit >= 0 && selKind == RK_ZONE)   // digits type a zone number (only on the Zone row)
+			const int selKind  = rows[s].kind;
+			const int selIdx   = rows[s].idx;
+			const int digit    = scancode_digit(lastkey_scan);
+			const int keyScreen = screen;   // remember it: a drill-in below may move `screen`
+
+			if (digit >= 0 && selKind == EDR_ZONE)   // digits type a zone number (desktop keyboard)
 			{
 				if (!dbgZoneTyped)
 				{
@@ -4920,24 +5189,67 @@ static bool endlessDebugScreen(void)
 				}
 				else if (dbgZone < 1000)
 					dbgZone = dbgZone * 10 + digit;
+				if (dbgZone < 1)
+					dbgZone = 1;
+			}
+			else if (screen != EDS_HUB && lastkey_scan >= SDL_SCANCODE_A && lastkey_scan <= SDL_SCANCODE_Z)
+			{
+				// letter jump: the fastest way through 250-odd level names on a keyboard
+				const char want = (char)('a' + (lastkey_scan - SDL_SCANCODE_A));
+				for (int n = 1; n <= rowCount; ++n)
+				{
+					const int c = (s + n) % rowCount;
+					if (!pickerRowSelectable(&rows[c]) || rows[c].label == NULL)
+						continue;
+					char first = rows[c].label[0];
+					if (first >= 'A' && first <= 'Z')
+						first = (char)(first - 'A' + 'a');
+					if (first == want)
+					{
+						s = c;
+						break;
+					}
+				}
 			}
 			else switch (lastkey_scan)
 			{
-			case SDL_SCANCODE_TAB:
-				page = (page + 1) % 3;   // cycle Sectors -> Perks & Buffs -> Gamble Outcomes
-				selected = 0;
-				scrollTop = 0;
-				break;
 			case SDL_SCANCODE_UP:
-				selected = (selected == 0) ? rowCount - 1 : selected - 1;
+				s = pickerRowStep(rows, rowCount, s, -1);
+				dbgZoneTyped = false;
 				break;
 			case SDL_SCANCODE_DOWN:
-				selected = (selected + 1) % rowCount;
+				s = pickerRowStep(rows, rowCount, s, 1);
+				dbgZoneTyped = false;
+				break;
+			case SDL_SCANCODE_PAGEUP:
+			case SDL_SCANCODE_PAGEDOWN:
+			{
+				const int dir = (lastkey_scan == SDL_SCANCODE_PAGEDOWN) ? 1 : -1;
+				if (selKind == EDR_ZONE)   // the Zone row pages by 10 -- the only fast way there on a pad
+				{
+					dbgZone += dir * 10;
+					if (dbgZone < 1)
+						dbgZone = 1;
+					if (dbgZone > 9999)
+						dbgZone = 9999;
+					dbgZoneTyped = false;
+				}
+				else
+					s = pickerRowSnap(rows, rowCount, s + dir * visibleRows);
+				break;
+			}
+			case SDL_SCANCODE_HOME:
+				s = pickerRowSnap(rows, rowCount, 0);
+				break;
+			case SDL_SCANCODE_END:
+				s = pickerRowSnap(rows, rowCount, rowCount - 1);
 				break;
 			case SDL_SCANCODE_BACKSPACE:
-				if (selKind == RK_ZONE)
+				if (selKind == EDR_ZONE)
 				{
 					dbgZone /= 10;
+					if (dbgZone < 1)
+						dbgZone = 1;
 					dbgZoneTyped = true;
 				}
 				break;
@@ -4945,111 +5257,200 @@ static bool endlessDebugScreen(void)
 			case SDL_SCANCODE_RIGHT:
 			{
 				const int dir = (lastkey_scan == SDL_SCANCODE_RIGHT) ? 1 : -1;
-				if (selKind == RK_ZONE)
+				switch (selKind)
 				{
+				case EDR_ZONE:
 					dbgZone += dir;
 					if (dbgZone < 1)
 						dbgZone = 1;
 					if (dbgZone > 9999)
 						dbgZone = 9999;
-					dbgZoneTyped = true;
-				}
-				else if (selKind == RK_BASE)
+					dbgZoneTyped = false;
+					break;
+				case EDR_BASE:   // flip between Random and the last level picked from the list
+					dbgBase = (dbgBase < 0 && allLevelCount > 0) ? dbgBaseLast : -1;
+					break;
+				case EDR_SECMOD:
+					dbgMods ^= endlessDebugSectorMods[selIdx].bit;
+					break;
+				case EDR_BUFMOD:
+					dbgMods ^= endlessDebugBuffMods[selIdx].bit;
+					break;
+				case EDR_PERK:
 				{
-					dbgBase += dir;                       // -1 (Random) .. count-1, wrapping
-					if (dbgBase < -1)
-						dbgBase = endlessBaseCount - 1;
-					else if (dbgBase > endlessBaseCount - 1)
-						dbgBase = -1;
+					const int mx = endlessPerkMaxStack(selIdx);
+					dbgPerks[selIdx] += dir;             // wrapping at both ends
+					if (dbgPerks[selIdx] < 0)
+						dbgPerks[selIdx] = mx;
+					else if (dbgPerks[selIdx] > mx)
+						dbgPerks[selIdx] = 0;
+					break;
 				}
-				else if (selKind == RK_SECMOD)
-					dbgMods ^= endlessDebugSectorMods[rows[selected].idx].bit;
-				else if (selKind == RK_BUFMOD)
-					dbgMods ^= endlessDebugBuffMods[rows[selected].idx].bit;
-				else if (selKind == RK_PERK)
+				case EDR_LEVEL:
 				{
-					const int p = rows[selected].idx, mx = endlessPerkMaxStack(p);
-					dbgPerks[p] += dir;                          // L/R adjust the stack, wrapping at the ends
-					if (dbgPerks[p] < 0)
-						dbgPerks[p] = mx;
-					else if (dbgPerks[p] > mx)
-						dbgPerks[p] = 0;
+					// jump a whole episode -- 250-odd levels is far too many to walk one by one
+					const int curEp = (selIdx >= 0) ? allLevelEp[selIdx] : 0;
+					int target = -1;
+					if (dir > 0)
+					{
+						for (int r = s + 1; r < rowCount && target < 0; ++r)
+							if (rows[r].kind == EDR_LEVEL && rows[r].idx >= 0 && allLevelEp[rows[r].idx] != curEp)
+								target = r;
+					}
+					else
+					{
+						int firstOfCur = s;   // the top of the block we're standing in
+						for (int r = s - 1; r >= 0; --r)
+						{
+							if (rows[r].kind != EDR_LEVEL)
+								continue;
+							if (rows[r].idx >= 0 && allLevelEp[rows[r].idx] == curEp)
+								firstOfCur = r;
+							else
+								break;
+						}
+						if (firstOfCur < s)
+							target = firstOfCur;   // not at the top yet: go there first
+						else
+						{
+							int prevEp = 0;
+							for (int r = firstOfCur - 1; r >= 0 && prevEp == 0; --r)
+								if (rows[r].kind == EDR_LEVEL && rows[r].idx >= 0)
+									prevEp = allLevelEp[rows[r].idx];
+							if (prevEp != 0)
+							{
+								for (int r = 0; r < rowCount && target < 0; ++r)
+									if (rows[r].kind == EDR_LEVEL && rows[r].idx >= 0 && allLevelEp[rows[r].idx] == prevEp)
+										target = r;
+							}
+							else
+								target = 0;        // above episode 1 sits Random
+						}
+					}
+					if (target >= 0)
+						s = target;
+					break;
 				}
-				else if (selKind == RK_GAMBLE)                   // L/R (or click) fires the selected outcome
-				{
-					endlessForceGambleOutcome(rows[selected].idx);
-					SDL_strlcpy(dbgGambleMsg, endlessGambleResult(), sizeof dbgGambleMsg);
+				default:
+					break;
 				}
 				break;
 			}
-			case SDL_SCANCODE_SPACE:
-				if (selKind == RK_SECMOD)
-				{
-					dbgMods ^= endlessDebugSectorMods[rows[selected].idx].bit;
-					break;
-				}
-				if (selKind == RK_BUFMOD)
-				{
-					dbgMods ^= endlessDebugBuffMods[rows[selected].idx].bit;
-					break;
-				}
-				if (selKind == RK_PERK)
-				{
-					const int p = rows[selected].idx;   // Space bumps the stack up, wrapping to 0 past max
-					if (++dbgPerks[p] > endlessPerkMaxStack(p))
-						dbgPerks[p] = 0;
-					break;
-				}
-				if (selKind == RK_GAMBLE)               // Space fires the selected gamble outcome
-				{
-					endlessForceGambleOutcome(rows[selected].idx);
-					SDL_strlcpy(dbgGambleMsg, endlessGambleResult(), sizeof dbgGambleMsg);
-					break;
-				}
-				if (selKind != RK_LAUNCH)
-					break;                       // Space on Zone / Base does nothing
-				/* fall through: Space on the Start row launches */
+			case SDL_SCANCODE_KP_ENTER:
 			case SDL_SCANCODE_RETURN:
-				if (selKind == RK_GAMBLE)  // Enter on a gamble row fires it; only the Start row launches
+			case SDL_SCANCODE_SPACE:
+				switch (selKind)
 				{
-					endlessForceGambleOutcome(rows[selected].idx);
-					SDL_strlcpy(dbgGambleMsg, endlessGambleResult(), sizeof dbgGambleMsg);
+				case EDR_ZONE:
+#if defined(__SWITCH__) || defined(__vita__)
+				{
+					// No physical keyboard on the consoles: the software keypad is how a far zone
+					// gets reached without thousands of button presses.
+					char kb[8];
+					snprintf(kb, sizeof(kb), "%d", dbgZone);
+					if (console_swkbd(kb, sizeof(kb), 4, kb, "Zone number", true))
+					{
+						int v = 0;
+						for (const char *c = kb; *c >= '0' && *c <= '9'; ++c)
+							v = v * 10 + (*c - '0');
+						dbgZone = (v < 1) ? 1 : (v > 9999) ? 9999 : v;
+					}
+					dbgZoneTyped = false;
+				}
+#else
+					dbgZoneTyped = false;   // the next digit starts a fresh number
+#endif
+					break;
+				case EDR_BASE:
+					focusBase = dbgBase;    // open the list standing on the current pick
+					screen = EDS_BASE;
+					break;
+				case EDR_OPEN:
+					screen = selIdx;
+					break;
+				case EDR_ACTION:
+					if (selIdx == EDA_CLEAR)
+					{
+						dbgMods = 0;
+						for (int p = 0; p < NPERKS; ++p)
+							dbgPerks[p] = 0;
+					}
+					else
+					{
+						dbgMods = runMods;
+						for (int p = 0; p < NPERKS; ++p)
+							dbgPerks[p] = endlessPerkGetOwned(p);
+					}
+					break;
+				case EDR_SECMOD:
+					dbgMods ^= endlessDebugSectorMods[selIdx].bit;
+					break;
+				case EDR_BUFMOD:
+					dbgMods ^= endlessDebugBuffMods[selIdx].bit;
+					break;
+				case EDR_PERK:
+					if (++dbgPerks[selIdx] > endlessPerkMaxStack(selIdx))
+						dbgPerks[selIdx] = 0;   // wraps back to off past the max
+					break;
+				case EDR_GAMBLE:
+					endlessForceGambleOutcome(selIdx);
+					SDL_strlcpy(dbgGambleMsg, endlessGambleResult(), sizeof(dbgGambleMsg));
+					break;
+				case EDR_LEVEL:
+					dbgBase = selIdx;
+					if (selIdx >= 0)
+						dbgBaseLast = selIdx;
+					screen = EDS_HUB;
+					break;
+				case EDR_LAUNCH:
+					endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;  // jump to the chosen zone
+					// Apply the chosen combo + personal buffs + any gamble outcome fired on the
+					// gamble list since this screen opened. Same purchase-wins fold a real launch
+					// uses, so a debug jump can't produce a kill-fire state generation would never
+					// hand out.
+					endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
+					for (int p = 0; p < NPERKS; ++p)                     // apply the perk stacks
+						endlessPerkSetOwned(p, dbgPerks[p]);
+					if (dbgBase < 0)
+					{
+						const JE_byte sec = endlessPickNextLevel();  // random endless-safe level (switches episode)
+						if (episodeNum != startEp)
+							initial_episode_num = episodeNum;
+						select_level(sec, 0);
+					}
+					else
+					{
+						if (allLevelEp[dbgBase] != episodeNum)
+							JE_initEpisode((JE_byte)allLevelEp[dbgBase]);
+						if (episodeNum != startEp)
+							initial_episode_num = episodeNum;
+						select_level(allLevelSec[dbgBase], allLevelFile[dbgBase]);  // sets forcedLvlFileNum
+					}
+					chosen = true;
+					done = true;
+					break;
+				default:
 					break;
 				}
-				endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;  // jump to the typed zone
-				// Apply the chosen combo + personal buffs + any gamble outcome fired on page 2 after this
-				// screen opened. Same purchase-wins fold a real launch uses, so a debug jump can't produce
-				// a kill-fire state generation would never hand out.
-				endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
-				for (int p = 0; p < NPERKS; ++p)                     // apply the perk stacks
-					endlessPerkSetOwned(p, dbgPerks[p]);
-				if (dbgBase < 0)
-				{
-					const JE_byte sec = endlessPickNextLevel();  // random endless-safe level (switches episode)
-					if (episodeNum != startEp)
-						initial_episode_num = episodeNum;
-					select_level(sec, 0);
-				}
-				else
-				{
-					if (endlessBaseEp[dbgBase] != episodeNum)
-						JE_initEpisode((JE_byte)endlessBaseEp[dbgBase]);
-					if (episodeNum != startEp)
-						initial_episode_num = episodeNum;
-					select_level(endlessBaseSec[dbgBase], endlessBaseFile[dbgBase]);  // sets forcedLvlFileNum
-				}
-				chosen = true;
-				done = true;
 				break;
 			case SDL_SCANCODE_ESCAPE:
-				done = true;
+				if (screen == EDS_HUB)
+					done = true;
+				else
+					screen = EDS_HUB;   // a list always backs out to the hub, never straight out
 				break;
 			default:
 				break;
 			}
+
+			// File the moved selection back under the screen it belongs to -- NOT under `screen`,
+			// which a drill-in may have just changed (that would drag the old row index with us).
+			sel[keyScreen] = s;
 			newkey = false;
 		}
 	}
+
+	wait_noinput(false, false, true);
 
 	VGAScreen = temp_surface;
 
@@ -5066,17 +5467,26 @@ static bool endlessDebugScreen(void)
 	return chosen;
 }
 
-/* Self-contained scrollable debug level picker (campaign/arcade). Returns true if a level was
- * chosen (select_level() has already armed the jump) or false if the user cancelled. Endless
- * mode has its own dedicated form -- see endlessDebugScreen(). */
+/* ---- The campaign / arcade debug level picker -----------------------------------------------
+ * One list of EVERY level in the game, grouped under episode headings, rather than a per-episode
+ * list you had to page between with Left/Right -- the browsed episode was a mode you had to track,
+ * and it hid two thirds of the game behind it. Left/Right now JUMPS an episode inside the one
+ * list, so the fast move is still one keypress, and the whole thing is reachable with d-pad +
+ * confirm + cancel on a pad (shoulders page, no mouse or keyboard needed anywhere).
+ *
+ * Endless mode has its own dedicated form -- see endlessDebugScreen() -- and this shares that
+ * screen's row model and level list.
+ *
+ * Returns true if a level was chosen (select_level() has already armed the jump), false if the
+ * user cancelled.
+ */
 bool JE_debugLevelSelect(void)
 {
 	if (endlessMode)
 		return endlessDebugScreen();  // endless gets its own Zone / Base Level / Modifiers form
 
 	const JE_byte startEp = episodeNum;
-	int dispEp = episodeNum;            // episode currently being browsed
-	load_debug_levels(dispEp);          // start on the player's current episode
+	loadAllLevels();
 
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
@@ -5090,18 +5500,54 @@ bool JE_debugLevelSelect(void)
 	const int py1 = vga_height - 12;
 	const int title_h = 15;
 	const int items_top = py0 + title_h + 3;
-	const int items_bottom = py1 - 10;
+	const int items_bottom = py1 - 19;   // two footer lines: the level's details, then the keys
 	const int row_h = 10;
 	const int pageRows = (items_bottom - items_top) / row_h;
 	const int mid_x = (px0 + px1) / 2;
+	const int val_x = px1 - 10;          // right edge of the value column, clear of the scrollbar
 
 	enum {
 		C_PANEL_BG = 0xF1, C_TITLE_BG = 0xF3, C_DIVIDER = 0xF6,
 		C_EDGE_HI  = 0xFB, C_EDGE_LO  = 0xF4, C_SEL_BAR = 0xF5
 	};
 
-	int selected = 0, scrollTop = 0;
-	int prev_mx = mouse_x, prev_my = mouse_y;  // for motion-based hover
+	// Build the rows once: the level list can't change while the screen is open.
+	PickerRow rows[ALL_LEVEL_MAX + EPISODE_MAX];
+	char      epHeads[EPISODE_MAX][12];
+	int       rowCount = 0;
+	int       lastEp = 0;
+	for (int i = 0; i < allLevelCount && rowCount < (int)COUNTOF(rows) - 1; ++i)
+	{
+		const int ep = allLevelEp[i];
+		if (ep != lastEp && ep >= 1 && ep <= EPISODE_MAX)
+		{
+			lastEp = ep;
+			snprintf(epHeads[ep - 1], sizeof(epHeads[0]), "EPISODE %d", ep);
+			rows[rowCount].kind = EDR_HEADER;
+			rows[rowCount].idx = (short)ep;
+			rows[rowCount].label = epHeads[ep - 1];
+			++rowCount;
+		}
+		rows[rowCount].kind = EDR_LEVEL;
+		rows[rowCount].idx = (short)i;
+		rows[rowCount].label = allLevelName[i];
+		++rowCount;
+	}
+
+	// Open standing on the level being played, so the common case -- "replay this one, or the one
+	// after it" -- needs no scrolling at all.
+	int selected = 0;
+	for (int r = 0; r < rowCount; ++r)
+		if (rows[r].kind == EDR_LEVEL && allLevelEp[rows[r].idx] == episodeNum &&
+		    allLevelSec[rows[r].idx] == mainLevel)
+		{
+			selected = r;
+			break;
+		}
+	selected = pickerRowSnap(rows, rowCount, selected);
+
+	int  scrollTop = 0;
+	int  prev_mx = mouse_x, prev_my = mouse_y;  // for motion-based hover
 	bool chosen = false, done = false;
 
 	wait_noinput(false, false, true);
@@ -5109,13 +5555,24 @@ bool JE_debugLevelSelect(void)
 
 	while (!done)
 	{
-		const int count = (int)debugLevelCount;
-		const int visibleRows = (pageRows < count) ? pageRows : count;  // 0 when empty
+		const int visibleRows = (pageRows < rowCount) ? pageRows : rowCount;
 
-		if (selected > count - 1)
-			selected = count - 1;
-		if (selected < 0)
-			selected = 0;
+		if (rowCount > 0)
+		{
+			selected = pickerRowSnap(rows, rowCount, selected);
+
+			if (selected < scrollTop)
+				scrollTop = selected;
+			else if (selected >= scrollTop + visibleRows)
+				scrollTop = selected - visibleRows + 1;
+			// keep the episode heading on screen with the first level under it
+			if (scrollTop > 0 && scrollTop == selected && !pickerRowSelectable(&rows[selected - 1]))
+				--scrollTop;
+			if (scrollTop > rowCount - visibleRows)
+				scrollTop = rowCount - visibleRows;
+			if (scrollTop < 0)
+				scrollTop = 0;
+		}
 
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py1, C_PANEL_BG);
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py0, C_EDGE_HI);
@@ -5124,71 +5581,83 @@ bool JE_debugLevelSelect(void)
 		fill_rectangle_xy(VGAScreen, px1, py0, px1, py1, C_EDGE_LO);
 		fill_rectangle_xy(VGAScreen, px0 + 1, py0 + 1, px1 - 1, py0 + title_h - 1, C_TITLE_BG);
 		fill_rectangle_xy(VGAScreen, px0 + 1, py0 + title_h, px1 - 1, py0 + title_h, C_DIVIDER);
+		draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, "DEBUG  LEVELS", normal_font, centered, 15, 4, true, 1);
 
-		char title[40];
-		snprintf(title, sizeof(title), "DEBUG LEVELS  < EP %d >", dispEp);
-		draw_font_hv_shadow(VGAScreen, mid_x, py0 + 3, title, normal_font, centered, 15, 4, true, 1);
-
-		if (count == 0)
+		if (rowCount == 0)
 		{
 			draw_font_hv(VGAScreen, mid_x, items_top + 8, "(no levels)", small_font, centered, 15, -2);
 		}
 		else
 		{
-			/* keep the selection within the scrolled window */
-			if (selected < scrollTop)
-				scrollTop = selected;
-			else if (selected >= scrollTop + visibleRows)
-				scrollTop = selected - visibleRows + 1;
-			if (scrollTop > count - visibleRows)
-				scrollTop = count - visibleRows;
-			if (scrollTop < 0)
-				scrollTop = 0;
-
 			for (int vis = 0; vis < visibleRows; ++vis)
 			{
 				const int i = scrollTop + vis;
 				const int ry = items_top + vis * row_h;
 				const bool sel = (i == selected);
 
+				if (rows[i].kind == EDR_HEADER)
+				{
+					draw_font_hv_shadow(VGAScreen, px0 + 6, ry, rows[i].label, small_font, left_aligned, 15, 3, true, 1);
+					const int rule_x = px0 + 10 + JE_textWidth(rows[i].label, small_font);
+					if (rule_x < val_x)
+						fill_rectangle_xy(VGAScreen, rule_x, ry + 3, val_x, ry + 3, C_DIVIDER);
+					continue;
+				}
+
 				if (sel)
 					fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 2, C_SEL_BAR);
 
-				char num[8], info[16];
-				snprintf(num, sizeof(num), "%d", i + 1);
-				snprintf(info, sizeof(info), "L%d", debugMapSection[i]);
+				const int lv = rows[i].idx;
+				// The level you are standing on right now, called out so a jump can't land back
+				// where it started by accident.
+				const bool here = (allLevelEp[lv] == episodeNum && allLevelSec[lv] == mainLevel);
 
-				// Number right-aligned to a fixed edge, name at a fixed x; a single
-				// left-aligned string would shift the name with the digit count.
-				const int numRight = px0 + 24;
-				const int nameLeft = px0 + 30;
-				draw_font_hv_shadow(VGAScreen, numRight, ry, num, small_font, right_aligned, 15, sel ? 5 : -1, true, 1);
-				draw_font_hv_shadow(VGAScreen, nameLeft, ry, debugLevelName[i], small_font, left_aligned, 15, sel ? 5 : -1, true, 1);
-				draw_font_hv_shadow(VGAScreen, px1 - 11, ry, info, small_font, right_aligned, 15, sel ? 5 : 0, true, 1);
+				char info[12];
+				snprintf(info, sizeof(info), "L%d", allLevelSec[lv]);
+
+				draw_font_hv_shadow(VGAScreen, px0 + 16, ry, rows[i].label, small_font, left_aligned,
+				                    15, sel ? 5 : (here ? 4 : -1), true, 1);
+				draw_font_hv_shadow(VGAScreen, val_x, ry, info, small_font, right_aligned,
+				                    15, sel ? 4 : (here ? 3 : -2), true, 1);
 
 				if (sel)
-					draw_font_hv(VGAScreen, px0 + 4, ry, ">", small_font, left_aligned, 15, 6);
+					draw_font_hv(VGAScreen, px0 + 5, ry, ">", small_font, left_aligned, 15, 6);
 			}
 
 			/* scrollbar (only when the list overflows the window) */
-			if (count > visibleRows)
+			if (rowCount > visibleRows)
 			{
 				const int track_top = items_top - 1;
 				const int track_bot = items_top + visibleRows * row_h - 2;
 				const int track_h = track_bot - track_top;
 				fill_rectangle_xy(VGAScreen, px1 - 4, track_top, px1 - 3, track_bot, C_EDGE_LO);
 
-				int thumb_h = track_h * visibleRows / count;
+				int thumb_h = track_h * visibleRows / rowCount;
 				if (thumb_h < 4)
 					thumb_h = 4;
-				const int denom = count - visibleRows;
+				const int denom = rowCount - visibleRows;
 				const int thumb_y = track_top + (denom > 0 ? (track_h - thumb_h) * scrollTop / denom : 0);
 				fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, C_EDGE_HI);
 			}
 		}
 
-		draw_font_hv(VGAScreen, mid_x, py1 - 9, "L/R Episode   Enter Play   Esc Back",
+		// Footer line 1: where the selected level actually lives, which is what you need when a
+		// jump misbehaves -- the episode it belongs to, its section, and its level file.
+		if (rowCount > 0 && rows[selected].kind == EDR_LEVEL)
+		{
+			const int lv = rows[selected].idx;
+			char detail[64];
+			snprintf(detail, sizeof(detail), "Episode %d   section %d   file %d",
+			         allLevelEp[lv], allLevelSec[lv], allLevelFile[lv]);
+			draw_font_hv(VGAScreen, mid_x, py1 - 18, detail, small_font, centered, 15, 1);
+		}
+#if defined(__SWITCH__) || defined(__vita__)
+		draw_font_hv(VGAScreen, mid_x, py1 - 9, "A Play   B Back   L/R Episode",
 		             small_font, centered, 15, -3);
+#else
+		draw_font_hv(VGAScreen, mid_x, py1 - 9, "Enter Play   L/R Episode   Esc Back",
+		             small_font, centered, 15, -3);
+#endif
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
@@ -5198,116 +5667,171 @@ bool JE_debugLevelSelect(void)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
-		/* wheel scrolls the selection; hover highlights on pointer motion; click
-		 * selects (title-strip halves change episode, right-click cancels) */
+#if defined(__SWITCH__) || defined(__vita__)
+		// The shoulder buttons page the list. Menus only deliver confirm/cancel/directions from a
+		// controller (push_joysticks_as_keyboard), so these aren't bound to any action -- read them
+		// raw with local edge state and synthesize the PageUp/PageDown the handler below already
+		// understands. poll_joysticks (above) already ran SDL_JoystickUpdate this tick.
 		{
-			if (mouse_scroll != 0)
+#if defined(__SWITCH__)
+			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
+#else
+			static const int shoulder_btn[2] = { 4, 5 };  // Vita: 4 = L, 5 = R
+#endif
+			static bool shoulder_was[2];
+			for (int b = 0; b < 2; ++b)
 			{
-				selected -= mouse_scroll;
-				if (selected < 0)
-					selected = 0;
-				if (count > 0 && selected > count - 1)
-					selected = count - 1;
-				mouse_scroll = 0;
-			}
-			if (count > 0 && (mouse_x != prev_mx || mouse_y != prev_my))
-			{
-				const int hov = level_row_at(mouse_x, mouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, count);
-				if (hov >= 0)
-					selected = hov;
-			}
-			prev_mx = mouse_x;
-			prev_my = mouse_y;
-			if (newmouse)
-			{
-				if (lastmouse_but == SDL_BUTTON_RIGHT)
+				const bool down = joysticks > 0 && joystick[0].handle != NULL &&
+				                  SDL_JoystickGetButton(joystick[0].handle, shoulder_btn[b]) != 0;
+				if (down && !shoulder_was[b] && !newkey)
 				{
 					newkey = true;
-					lastkey_scan = SDL_SCANCODE_ESCAPE;
+					lastkey_scan = (b == 0) ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
 				}
-				else if (lastmouse_y >= py0 && lastmouse_y <= py0 + title_h &&
-				         lastmouse_x >= px0 && lastmouse_x <= px1)
-				{
-					newkey = true;
-					lastkey_scan = (lastmouse_x < mid_x) ? SDL_SCANCODE_LEFT : SDL_SCANCODE_RIGHT;
-				}
-				else
-				{
-					const int r = level_row_at(lastmouse_x, lastmouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, count);
-					if (r >= 0)
-					{
-						selected = r;
-						newkey = true;
-						lastkey_scan = SDL_SCANCODE_RETURN;
-					}
-				}
-				newmouse = false;
+				shoulder_was[b] = down;
 			}
+		}
+#endif
+
+		/* wheel moves the selection; hover highlights on pointer motion; a click plays the row
+		 * under it; right-click backs out. */
+		if (mouse_scroll != 0)
+		{
+			const int dir = (mouse_scroll > 0) ? -1 : 1;
+			for (int n = (mouse_scroll > 0) ? mouse_scroll : -mouse_scroll; n > 0 && rowCount > 0; --n)
+				selected = pickerRowStep(rows, rowCount, selected, dir);
+			mouse_scroll = 0;
+		}
+		if (rowCount > 0 && (mouse_x != prev_mx || mouse_y != prev_my))
+		{
+			const int hov = level_row_at(mouse_x, mouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, rowCount);
+			if (hov >= 0 && pickerRowSelectable(&rows[hov]))
+				selected = hov;
+		}
+		prev_mx = mouse_x;
+		prev_my = mouse_y;
+		if (newmouse)
+		{
+			if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				newkey = true;
+				lastkey_scan = SDL_SCANCODE_ESCAPE;
+			}
+			else
+			{
+				const int r = level_row_at(lastmouse_x, lastmouse_y, px0, px1, items_top, row_h, visibleRows, scrollTop, rowCount);
+				if (r >= 0 && pickerRowSelectable(&rows[r]))
+				{
+					selected = r;
+					newkey = true;
+					lastkey_scan = SDL_SCANCODE_RETURN;
+				}
+			}
+			newmouse = false;
 		}
 
 		if (newkey)
 		{
-			switch (lastkey_scan)
+			if (rowCount > 0 && lastkey_scan >= SDL_SCANCODE_A && lastkey_scan <= SDL_SCANCODE_Z)
+			{
+				// letter jump: the fastest way through 250-odd level names on a keyboard
+				const char want = (char)('a' + (lastkey_scan - SDL_SCANCODE_A));
+				for (int n = 1; n <= rowCount; ++n)
+				{
+					const int c = (selected + n) % rowCount;
+					if (!pickerRowSelectable(&rows[c]) || rows[c].label == NULL)
+						continue;
+					char first = rows[c].label[0];
+					if (first >= 'A' && first <= 'Z')
+						first = (char)(first - 'A' + 'a');
+					if (first == want)
+					{
+						selected = c;
+						break;
+					}
+				}
+			}
+			else switch (lastkey_scan)
 			{
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
 			{
-				// step to the next available episode in that direction (wrapping)
+				// jump a whole episode -- what the old per-episode paging did, without the mode
 				const int dir = (lastkey_scan == SDL_SCANCODE_RIGHT) ? 1 : -1;
-				int e = dispEp;
-				for (int n = 0; n < EPISODE_MAX; ++n)
+				if (rowCount == 0)
+					break;
+				const int curEp = allLevelEp[rows[selected].idx];
+				int target = -1;
+				if (dir > 0)
 				{
-					e += dir;
-					if (e > EPISODE_MAX)
-						e = 1;
-					else if (e < 1)
-						e = EPISODE_MAX;
-					if (episodeAvail[e - 1])
-						break;
+					for (int r = selected + 1; r < rowCount && target < 0; ++r)
+						if (rows[r].kind == EDR_LEVEL && allLevelEp[rows[r].idx] != curEp)
+							target = r;
 				}
-				if (e != dispEp)
+				else
 				{
-					dispEp = e;
-					load_debug_levels(dispEp);
-					selected = 0;
-					scrollTop = 0;
+					int firstOfCur = selected;   // the top of the block we're standing in
+					for (int r = selected - 1; r >= 0; --r)
+					{
+						if (rows[r].kind != EDR_LEVEL)
+							continue;
+						if (allLevelEp[rows[r].idx] == curEp)
+							firstOfCur = r;
+						else
+							break;
+					}
+					if (firstOfCur < selected)
+						target = firstOfCur;   // not at the top of this episode yet: go there first
+					else
+					{
+						int prevEp = 0;
+						for (int r = firstOfCur - 1; r >= 0 && prevEp == 0; --r)
+							if (rows[r].kind == EDR_LEVEL)
+								prevEp = allLevelEp[rows[r].idx];
+						if (prevEp != 0)
+						{
+							for (int r = 0; r < rowCount && target < 0; ++r)
+								if (rows[r].kind == EDR_LEVEL && allLevelEp[rows[r].idx] == prevEp)
+									target = r;
+						}
+					}
 				}
+				if (target >= 0)
+					selected = target;
 				break;
 			}
 			case SDL_SCANCODE_UP:
-				if (count > 0)
-					selected = (selected == 0) ? count - 1 : selected - 1;
+				selected = pickerRowStep(rows, rowCount, selected, -1);
 				break;
 			case SDL_SCANCODE_DOWN:
-				if (count > 0)
-					selected = (selected + 1) % count;
+				selected = pickerRowStep(rows, rowCount, selected, 1);
 				break;
 			case SDL_SCANCODE_PAGEUP:
-				selected = (selected - visibleRows < 0) ? 0 : selected - visibleRows;
+				selected = pickerRowSnap(rows, rowCount, selected - visibleRows);
 				break;
 			case SDL_SCANCODE_PAGEDOWN:
-				if (count > 0)
-					selected = (selected + visibleRows > count - 1) ? count - 1 : selected + visibleRows;
+				selected = pickerRowSnap(rows, rowCount, selected + visibleRows);
 				break;
 			case SDL_SCANCODE_HOME:
-				selected = 0;
+				selected = pickerRowSnap(rows, rowCount, 0);
 				break;
 			case SDL_SCANCODE_END:
-				if (count > 0)
-					selected = count - 1;
+				selected = pickerRowSnap(rows, rowCount, rowCount - 1);
 				break;
+			case SDL_SCANCODE_KP_ENTER:
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_SPACE:
-				if (count > 0)
+				if (rowCount > 0 && rows[selected].kind == EDR_LEVEL)
 				{
-					// switch the game to the browsed episode if needed (reloads
-					// level + item data), then arm the jump to the chosen level.
-					// Snapshot first, while episodeNum is still where we came from.
+					// switch the game to the chosen level's episode if needed (reloads level +
+					// item data), then arm the jump. Snapshot first, while episodeNum is still
+					// where we came from.
+					const int lv = rows[selected].idx;
 					select_debug_level_capture();
-					JE_initEpisode((JE_byte)dispEp);  // no-op if already current
+					JE_initEpisode((JE_byte)allLevelEp[lv]);  // no-op if already current
 					if (episodeNum != startEp)
 						initial_episode_num = episodeNum;
-					select_level(debugMapSection[selected], debugLvlFileNum[selected]);
+					select_level(allLevelSec[lv], allLevelFile[lv]);
 					chosen = true;
 					done = true;
 				}

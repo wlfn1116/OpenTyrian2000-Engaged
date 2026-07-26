@@ -1436,6 +1436,17 @@ int endlessDangerScore(Uint64 mods)
 	return endlessDangerScoreEx(mods, 0);
 }
 
+// One bit's registry phrase, for screens outside the endless group (the debug zone jump labels its
+// modifier rows with it). "" for a bit with no row, or one whose word is deliberately NULL -- the
+// finale marker, which is a label rather than a mechanic.
+const char *endlessModWord(Uint64 bit)
+{
+	for (unsigned i = 0; i < COUNTOF(endlessModTable); ++i)
+		if (endlessModTable[i].bit == bit)
+			return endlessModTable[i].word ? endlessModTable[i].word : "";
+	return "";
+}
+
 // THE DANGER LADDER. One table drives both the tier WORD and the letter GRADE, so the pair can
 // never disagree -- they used to be two hand-maintained if-chains that had to be kept in step.
 // `maxScore` is the inclusive top of each band; the last row catches everything above it (its

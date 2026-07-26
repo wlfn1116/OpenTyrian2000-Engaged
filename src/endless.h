@@ -263,6 +263,11 @@ typedef struct {
 // max entries. Returns the count. game_menu.c draws these ON the planet monitor itself.
 int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max);
 
+// The registry's short WHAT-IT-DOES phrase for a single modifier bit ("" when the bit has no
+// registry row, or is a pure label like the 100th-zone finale marker). Lets a screen outside the
+// endless group -- the debug zone jump -- label a bit without duplicating the wording.
+const char *endlessModWord(Uint64 bit);
+
 // The between-level step: bank interest + clear reward on cash, then open the standard
 // item shop (JE_itemScreen). Also pins the planet-map hub so the shop's planet monitor
 // can't read out of bounds. Reroll/hull upgrades live inside the shop's own front menu.
@@ -351,6 +356,11 @@ void endlessRegenerateLevel(void);
 // and its own pinned theme. The level script's music events (34 fade / 35 change song) are ignored
 // on such a zone so nothing unseats that theme mid-level; see tyrian2.c.
 bool endlessMilestoneZone(void);
+
+// Milestone class of an ARBITRARY zone number: 0 ordinary, 1 the S+/S++ milestone (50, 150, ...),
+// 2 the S++/S+++ one (100, 200, ...), 3 the mildest "halfway" one (25, 75, ...). Kinds are tags,
+// not an ordinal. Used by the debug zone jump to tag the zone you are about to type.
+int endlessMilestoneKindOfZone(int zone);
 
 // The "light cone" (spotlight) effect is decoupled from a level's own script in endless mode:
 // a level that ships with the spotlight has it stripped, and instead each zone gets an
