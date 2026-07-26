@@ -132,11 +132,18 @@ int endlessDifficultyZone(void)
 // enemies carry 1x and are therefore never locked out at all.
 //
 // The figures are deliberately small. Pierce DPS is roughly proportional to 1/(lock+1) -- a bullet
-// re-hits the same hull once a tick otherwise -- so the 0.20 ticks a zone-50 boss earns is about a
-// 17% tax, and the ~0.40 a plain boss tops out at is about 28%. It is a safeguard, not a wall, and it
-// can never make a boss feel immune. Tuned by play-testing rather than by theory: the weapons this
-// touches (Mega Cannon, Sonic Impulse) deal 1 damage a hit, so anything heavier reads in play as
-// "my gun does nothing" -- which is exactly how the first few attempts at these numbers landed.
+// re-hits the same hull once a tick otherwise -- so at the reference zone:
+//
+//   boss      0.10 tick  (~9% tax)
+//   champion  0.05 tick  (~5%)
+//   elite     0.02 tick  (~2%)
+//
+// A plain boss only reaches 0.19 (~16%) at the very top of its HP ramp, the 16x cap at zone ~97;
+// an elite/champion boss riding the 24x cap tops out at 0.30 (~23%). It is a safeguard, not a wall,
+// and it can never make a boss feel immune. Tuned by play-testing rather than by theory: the
+// weapons this touches (Mega Cannon, Sonic Impulse) deal 1 damage a hit, so anything heavier reads
+// in play as "my gun does nothing" -- which is exactly how the first few attempts at these numbers
+// landed.
 //
 // Carried in HUNDREDTHS of a tick rather than whole ticks. The boss multiplier itself is an
 // integer -- the damage accumulator can only divide by one -- so keying the lockout off it made
@@ -153,7 +160,7 @@ int endlessDifficultyZone(void)
 // from the ramps themselves, so retuning elite HP can no longer silently drag the lockout with it.
 #define ENDLESS_PIERCE_LOCK_REF_ZONE      50  // the zone the three figures below were tuned at
 #define ENDLESS_PIERCE_LOCK_BOSS          10  // boss:     0.10 tick at the reference zone
-#define ENDLESS_PIERCE_LOCK_CHAMP		   5  // champion: 0.04
+#define ENDLESS_PIERCE_LOCK_CHAMP		   5  // champion: 0.05
 #define ENDLESS_PIERCE_LOCK_ELITE          2  // elite:    0.02
 #define ENDLESS_PIERCE_LOCK_MAX            1  // hard backstop in whole ticks; the ramps never reach it
 // --------------------------------------------------------------------------------------------
