@@ -71,7 +71,10 @@ enum
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
-	MENU_DEBUG_PLAY_LEVEL = 15,
+	// 15 is a RETIRED slot: the old two-column "debug play level" grid, replaced by the standalone
+	// JE_debugLevelSelect browser and removed in full (2026-07-26). The number is left as a hole
+	// rather than reused -- MENU_MAX, menuEsc[], menuChoicesDefault[] and the menuInt label file
+	// are all indexed by menu id, so renumbering 16/17 would silently shift every one of them.
 	MENU_ESHOP = 16,  // endless "E-Shop": reroll / reinforce / buy buff / buy special
 	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3 (+ decline) gate before the buy/sell front menu
 };
@@ -166,19 +169,6 @@ static void JE_navScreenSmoothPresent(void);
 static PlayerItems old_items[2];  // TODO: should not be global if possible
 
 static struct cube_struct cube[4];
-
-/* Data for the OLD two-column MENU_DEBUG_PLAY_LEVEL grid, which nothing sets curMenu to any more --
- * the standalone JE_debugLevelSelect browser replaced it, and that reads allLevel* instead. Kept
- * because the grid's draw and dispatch cases still compile against these; they simply never run
- * (debugLevelCount stays 0, which is exactly what the dispatch guard tests). */
-#define DEBUG_LEVEL_MAX 200
-static JE_word debugMapSection[DEBUG_LEVEL_MAX];
-static JE_byte debugLvlFileNum[DEBUG_LEVEL_MAX];
-static uint debugLevelCount;   // stays 0 now; the grid's dispatch guard reads it and bails
-static bool debugPlayMenu;
-
-#define DEBUG_MENU_MAX (50 + 2)
-static char debugMenuInt[DEBUG_MENU_MAX][18];
 
 static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };  // [16]=E-Shop: 5 buys + Done; [17]=Perks: 3 + decline (set at runtime)
 static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 2, 1, 1, 1 };  // [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
@@ -908,7 +898,7 @@ static void set_shop_phase(void)
 		"shop: joystick config",      // 12  MENU_JOYSTICK_CONFIG
 		"shop: SuperTyrian menu",     // 13  MENU_SUPER_TYRIAN
 		"shop: mouse config",         // 14  MENU_MOUSE_CONFIG
-		"shop: debug play level",     // 15  MENU_DEBUG_PLAY_LEVEL
+		"shop: (retired slot 15)",    // 15  the removed debug play-level grid; unreachable
 		"shop: endless E-Shop",       // 16  MENU_ESHOP
 		"shop: endless perks",        // 17  MENU_PERKS
 	};
@@ -2144,16 +2134,7 @@ void JE_itemScreen(void)
 			{
 				int selection = menuChoices[curMenu] + 1; /* invalid by default */
 
-				if (curMenu == MENU_DEBUG_PLAY_LEVEL)
-				{
-					if (mouseX > 165 && mouseX < 325 && mouseY >= 38)
-					{
-						int col = (mouseX - 165) / 80;
-						int row = (mouseY - 38) / 8;
-						selection = row * 2 + col + 2;
-					}
-				}
-				else if (mouseX > 170 && mouseX < 308)
+				if (mouseX > 170 && mouseX < 308)
 				{
 					const JE_byte mouseSelectionY[MENU_MAX] = { 16, 16, 16, 16, 26, 12, 11, 28, 0, 16, 16, 16, 8, 16, 24, 16, 16, 16 };  // [16]=E-Shop, [17]=Perks pick: 16px rows like the buy/sell menus
 
@@ -3074,10 +3055,7 @@ void JE_drawMenuHeader(void)
 			strcpy(tempStr, menuInt[3][performSave + 1]);
 			break;
 		default:
-			if (curMenu == MENU_DEBUG_PLAY_LEVEL)
-				strcpy(tempStr, debugMenuInt[0]);
-			else
-				strcpy(tempStr, menuInt[curMenu + 1][0]);
+			strcpy(tempStr, menuInt[curMenu + 1][0]);
 			break;
 	}
 	JE_dString(VGAScreen, 74 + JE_fontCenter(tempStr, FONT_SHAPES), 10, tempStr, FONT_SHAPES);
@@ -3111,18 +3089,8 @@ void JE_drawMenuChoices(void)
 
 	for (x = 2; x <= menuChoices[curMenu]; x++)
 	{
-		int line_height = (curMenu == MENU_DEBUG_PLAY_LEVEL) ? 8 : tightFont ? 10 : 16;
-		int tempY;
-		if (curMenu == MENU_DEBUG_PLAY_LEVEL)
-		{
-			int index = x - 2;
-			int row = index / 2;
-			tempY = 38 + (row + 1) * line_height;
-		}
-		else
-		{
-			tempY = 38 + (x - 1) * line_height;
-		}
+		int line_height = tightFont ? 10 : 16;
+		int tempY = 38 + (x - 1) * line_height;
 		/* Extra spacing after "Start Level": the original's blank gap above "Quit
 		 * Game"; with Debug Mode on it also offsets the debug block (items 7-9). */
 		if (curMenu == MENU_FULL_GAME && x >= 7)
@@ -3159,9 +3127,7 @@ void JE_drawMenuChoices(void)
 			tempY += (x-2) * 8;
 		}
 
-		const char* entry = (curMenu == MENU_DEBUG_PLAY_LEVEL)
-			? debugMenuInt[x - 1]
-			: menuInt[curMenu + 1][x - 1];
+		const char* entry = menuInt[curMenu + 1][x - 1];
 
 		str = malloc(strlen(entry) + 2);
 		if (curSel[curMenu] == x)
@@ -3174,17 +3140,9 @@ void JE_drawMenuChoices(void)
 			strcpy(str, entry);
 		}
 
-		unsigned int font = (curMenu == MENU_DEBUG_PLAY_LEVEL)
-			? TINY_FONT : SMALL_FONT_SHAPES;
-		int text_x = 166;
-		if (curMenu == MENU_DEBUG_PLAY_LEVEL)
-		{
-			int index = x - 2;
-			int col = index % 2;
-			text_x = 165 + col * 80;
-			JE_outTextAndDarken(VGAScreen, text_x, tempY, str, 15, 2, TINY_FONT);
-		}
-		else if (tightFont)
+		const unsigned int font = SMALL_FONT_SHAPES;
+		const int text_x = 166;
+		if (tightFont)
 		{
 			// Same buy/sell menu, small font: the shape font has no smaller size, so draw the rows
 			// in TINY_FONT (perk list + endless E-Shop). The leading '~' still toggles the highlight.
@@ -3795,19 +3753,7 @@ void JE_drawMainMenuHelpText(void)
 
 	temp = curSel[curMenu] - 2;
 
-	if (curMenu == MENU_DEBUG_PLAY_LEVEL)
-	{
-		if (curSel[curMenu] == menuChoices[MENU_DEBUG_PLAY_LEVEL])
-		{
-			memcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));
-		}
-		else
-		{
-			snprintf(tempStr, sizeof(tempStr), "Debug: Play the level %s.",
-				debugMenuInt[curSel[curMenu] - 1]);
-		}
-	}
-	else if (curMenu == MENU_JOYSTICK_CONFIG) // joystick settings menu help
+	if (curMenu == MENU_JOYSTICK_CONFIG) // joystick settings menu help
 	{
 		const int help[16] = { 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 24, 11 };
 		memcpy(tempStr, mainMenuHelp[help[curSel[curMenu] - 2]], sizeof(tempStr));
@@ -4557,11 +4503,9 @@ static const struct { Uint64 bit; const char *name; const char *hint; } endlessD
 };
 
 /* Every level in the game, across every installed episode -- the list BOTH debug pickers browse
- * (the campaign one below, and the endless jump's base-level screen). Kept apart from the
- * debugLevel* arrays up top, which hold one episode at a time and belong to the older
- * MENU_DEBUG_PLAY_LEVEL grid. Names are deliberately not endless-flavoured: `endlessBaseName` is
- * also a global in endless_level.c (the crash log's base-level history), and a file-static of the
- * same name would quietly shadow it. */
+ * (the campaign one below, and the endless jump's base-level screen). Names are deliberately not
+ * endless-flavoured: `endlessBaseName` is also a global in endless_level.c (the crash log's
+ * base-level history), and a file-static of the same name would quietly shadow it. */
 #define ALL_LEVEL_MAX 256
 static int     allLevelEp[ALL_LEVEL_MAX];
 static JE_word allLevelSec[ALL_LEVEL_MAX];
@@ -7913,7 +7857,6 @@ void JE_menuFunction(JE_byte select)
 		{
 			curMenu = MENU_FULL_GAME;
 			newPal = 1;
-			debugPlayMenu = false;
 		}
 		else if (endlessMode)
 		{
@@ -7922,36 +7865,7 @@ void JE_menuFunction(JE_byte select)
 		}
 		else
 		{
-			if (debugPlayMenu)
-			{
-				select_debug_level_capture();
-				select_level(debugMapSection[curSelect - 2],
-					debugLvlFileNum[curSelect - 2]);
-				debugPlayMenu = false;
-			}
-			else
-			{
-				select_level(mapSection[curSelect - 2], 0);
-			}
-		}
-		break;
-
-	case MENU_DEBUG_PLAY_LEVEL:
-		if (select == menuChoices[MENU_DEBUG_PLAY_LEVEL])
-		{
-			curMenu = MENU_FULL_GAME;
-			newPal = 1;
-			debugPlayMenu = false;
-		}
-		// Guard the index: the 2-column grid can put the cursor on an empty cell past the
-		// last level, and select_level() with a garbage section/file crashes. Out of range
-		// -> ignore (safe no-op) rather than load junk.
-		else if (curSelect >= 2 && (uint)(curSelect - 2) < debugLevelCount)
-		{
-			select_debug_level_capture();
-			select_level(debugMapSection[curSelect - 2],
-				debugLvlFileNum[curSelect - 2]);
-			debugPlayMenu = false;
+			select_level(mapSection[curSelect - 2], 0);
 		}
 		break;
 

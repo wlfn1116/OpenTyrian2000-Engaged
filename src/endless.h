@@ -457,8 +457,7 @@ int  endlessShipTintFilter(void);       // player-ship blit filter: electric yel
 // enemy-death (tyrian2.c), enemy-shot (tyrian2.c) and player-damage (varz.c) sites. Retaliation
 // needs no accessor of its own: it folds straight into endlessFireDelayPercent.
 int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill -- 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
-void     endlessNoteEnemyShotSprite(JE_word sgr); // remember a real enemy-bullet sprite this level, so the martyr burst matches the level's own fire
-JE_word  endlessMartyrShotSprite(void);           // that captured bullet sprite (0 = none seen yet -> suppress the burst)
+JE_word  endlessMartyrShotSprite(void);           // MARTYRDOM: the burst's own fixed bullet sprite (never the level's fire, so it always looks the same)
 bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
 unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve
 

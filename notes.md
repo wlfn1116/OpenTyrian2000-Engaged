@@ -919,14 +919,24 @@ mutable `last`, so a Quit-Level retry replays the same track.
     `endlessResetElites`), so a multi-tile enemy bursts once, not per tile;
     linknum 0 (lone) always fires. Suppressed when fewer than `shots + 48` of
     the 500 enemy-shot slots are free (the "pool nearly full" rule). The bullet
-    SPRITE matches the level's own enemy fire (`endlessNoteEnemyShotSprite`
-    captures ANY fired sprite — both sheets), but `endlessMartyrShotSprite`
-    ALWAYS returns non-zero, falling back to bolt 35 when nothing has fired yet.
-    GOTCHA (fixed): the first cut filtered captures to <500 and skipped the whole
-    burst on a 0 sprite, so Martyrdom was invisible on ep4/5 levels whose bullets
-    are all ≥500 spark sprites — hence the fallback + widened capture. Bullets are
-    slow (3 px/tick, fixed — the spec's "slow"), base damage 4 ×
-    `endlessShotDamagePercent`.
+    SPRITE is Martyrdom's OWN fixed graphic — `endlessMartyrShotSprite` returns
+    the constant `ENDLESS_MARTYR_SHOT_SGR` (100: a fat radially-symmetric orb in
+    `spriteSheet8`, which is loaded once from `tyrian.shp` and so is valid in
+    every level and episode). Symmetry is a requirement, not taste: the burst
+    fires 4/6/8 directions at once, so a directional bolt would look wrong on
+    most of them. Bullets are slow (3 px/tick, fixed — the spec's "slow"), base
+    damage 4 × `endlessShotDamagePercent`.
+    - HISTORY (two GOTCHAs, both now moot): the first cut derived the sprite from
+      the level's own fire — `endlessNoteEnemyShotSprite` captured the last enemy
+      bullet fired and the burst reused it. That capture originally filtered to
+      sgr <500 and skipped the burst on a 0 sprite, making Martyrdom INVISIBLE on
+      ep4/5 levels whose bullets are all ≥500 spark sprites (patched with a
+      fallback + widened capture). The design itself was the real bug: because the
+      capture was last-writer-wins across the whole level, the burst CHANGED
+      APPEARANCE mid-level as different shooters came on screen. A hazard the
+      player has to read on sight can't look like a different thing every minute,
+      so the capture was deleted outright (state, setter, `extern`, and the
+      tyrian2.c shot-spawn call) in favour of the fixed sprite above.
   - **Seeker Rounds** (bit 41, weight 14, RARE — own pool `endlessSeekerThemes`,
     injected ~1/24; +4 Seeker+Swift synergy): each enemy shot makes ONE bounded
     course correction toward the player ~0.5s after firing, then never again —
@@ -1324,11 +1334,19 @@ mutable `last`, so a Quit-Level retry replays the same track.
   game_menu.c would silently shadow it.
 - Footer names the selected level's episode / section / file, which is what you
   need the moment a jump misbehaves. Console: shoulders page, legend says A/B.
-- This picker used to be the only caller of `load_debug_levels`, so that parser
-  went with it. The `debugLevel*` arrays it filled belong to the OLD two-column
-  `MENU_DEBUG_PLAY_LEVEL` grid, which nothing sets `curMenu` to any more — its
-  draw and dispatch cases still compile but never run, and `debugLevelCount`
-  staying 0 is exactly what the dispatch guard tests.
+- This picker used to be the only caller of `load_debug_levels`, and that parser
+  fed the OLD two-column `MENU_DEBUG_PLAY_LEVEL` grid, which nothing could open
+  any more. Both were removed (2026-07-26), along with the grid's branches inside
+  the shared draw functions and its `debugPlayMenu` / `debugMenuInt` /
+  `debugLevel*` statics. **Menu id 15 is left as a hole, not reused**: `MENU_MAX`,
+  `menuEsc[]`, `menuChoicesDefault[]` and the `menuInt` label file are all indexed
+  by menu id, so renumbering 16/17 down would silently shift every one of them.
+- Proof the grid was dead, for the next time something looks removable here:
+  `curMenu` is a file-static starting at 0, and every assignment to it is either a
+  literal `MENU_*` (never 15), `menuEsc[curMenu] - 1` (that table maxes at 11), an
+  `isNetworkGame` ternary between the two Options menus, or `oldMenu` — which is
+  only ever a previous `curMenu`. `debugPlayMenu` was likewise only ever assigned
+  `false`, and `menuChoicesDefault[15]` was 0, so the grid had no rows either.
 
 ### Endless debug zone jump — `endlessDebugScreen` in `game_menu.c`
 
