@@ -542,7 +542,7 @@ int         endlessScalingOverrideCount(void);    // how many are currently pinn
 // tide adds the one axis with no engine ceiling -- more enemy shots per volley and a rising share
 // of elite/champion shooters. Both read the single tide coefficient, which is 0 through the early
 // game and then climbs without bound. Tune the onset/slope via ENDLESS_TIDE_* in endless.c.
-int endlessTideLevel(void);        // the single tide knob (0 early, then +1 per effective zone)
+int endlessTideLevel(void);        // the single tide knob (0 early, then +1 per effective depth)
 int endlessExtraEnemyShots(void);  // extra enemy shots to add to each firing volley at this tide
 
 // Player-side + time-based modifier hooks (see endless.c).
@@ -619,7 +619,7 @@ int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // co
 // of with the target's hull, which is why it ignores an HP multiplier completely. This returns how
 // long a target ignores REPEAT piercing hits for, read off the same multiplier endlessEnemyHpMult
 // gave it (hence the identical argument list): full for a boss, diluted for an elite or champion
-// because their ramp only reaches 5x, and ZERO for an ordinary enemy. 0 at stock HP too, so a run
+// because their ramp only reaches 4x, and ZERO for an ordinary enemy. 0 at stock HP too, so a run
 // that never multiplied anything plays out exactly as before.
 //
 // The figure is in HUNDREDTHS of a sim tick, because the ramps are read UNROUNDED so it creeps

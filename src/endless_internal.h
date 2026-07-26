@@ -198,8 +198,10 @@ extern JE_byte endlessPerkOwned[PERK_COUNT];  // stack counts, reset each run
 extern int endlessPerkChoice[3];              // this visit's offered perk ids
 extern int endlessPerkChoiceN;                // how many are offered (0..3)
 extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
-extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run)
-extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run)
+extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run AND each zone)
+extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run AND each zone)
+
+void endlessResetZonePerkTimers(void);        // clear the two gameplay-only perk timers at level start (endlessResetZoneEffects)
 extern int endlessPerkDepthDone;              // run depth whose perk pick is already resolved; -1 = none
 
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)

@@ -112,11 +112,9 @@ int endlessDifficultyZone(void)
 #define ENDLESS_BOSS_MAX          16    // reached at run depth ~96 on Normal
 
 // Elite/champion HP, as a whole multiplier (1 = stock) -- a damage divisor like the boss one, and
-// it stacks on top of endlessArmorPercent, which has already scaled their raw armour. Retuned down
-// from 2 + depth/20 capped at 5: that was written while a `has_boss_bar` bug was quietly handing
-// ORDINARY enemies the boss multiplier too, so a 5x elite read as only ~2x tougher than the trash
-// beside it. With ordinary enemies correctly back at 1x, the same 5x reads as a wall -- especially
-// against the 1-damage piercing weapons, where a divisor of N means N hits per armour point.
+// it stacks on top of endlessArmorPercent, which has already scaled their raw armour. A divisor of
+// N means N hits per armour point, which is why the ceiling is this low against the 1-damage
+// piercing weapons (notes.md §Difficulty ramp has the retune history).
 #define ENDLESS_ELITE_HP_BASE      2    // multiplier at depth 0
 #define ENDLESS_ELITE_HP_PER_X    40    // +1x per this many effective depths
 #define ENDLESS_ELITE_HP_MAX       4    // ceiling, reached at effective depth 80
@@ -130,13 +128,13 @@ int endlessDifficultyZone(void)
 // rides the target's OWN multiplier -- zero ticks at stock HP (exactly the behaviour every
 // previous build had), a little more repeat-hit immunity for each further multiple. Reading it off
 // the multiplier is also what dilutes it for the special tiers for free: an elite or champion
-// carries 2..5x, not 1..16x, so it earns roughly a fifth of what a deep boss does. Ordinary
+// carries 2..4x, not 1..16x, so it earns a small fraction of what a deep boss does. Ordinary
 // enemies carry 1x and are therefore never locked out at all.
 //
 // The figures are deliberately small. Pierce DPS is roughly proportional to 1/(lock+1) -- a bullet
-// re-hits the same hull once a tick otherwise -- so the 0.25 ticks a zone-50 boss earns is about a
-// 20% tax, and the 0.50 the ramp tops out at is about 33%. It is a safeguard, not a wall, and it can
-// never make a boss feel immune. Tuned by play-testing rather than by theory: the weapons this
+// re-hits the same hull once a tick otherwise -- so the 0.20 ticks a zone-50 boss earns is about a
+// 17% tax, and the ~0.40 a plain boss tops out at is about 28%. It is a safeguard, not a wall, and it
+// can never make a boss feel immune. Tuned by play-testing rather than by theory: the weapons this
 // touches (Mega Cannon, Sonic Impulse) deal 1 damage a hit, so anything heavier reads in play as
 // "my gun does nothing" -- which is exactly how the first few attempts at these numbers landed.
 //
@@ -153,10 +151,10 @@ int endlessDifficultyZone(void)
 // automatically. Earlier revisions expressed this as a slope plus per-tier percentages that had to
 // be hand-fitted every time an HP ramp moved; these do not -- the reference span is recomputed
 // from the ramps themselves, so retuning elite HP can no longer silently drag the lockout with it.
-#define ENDLESS_PIERCE_LOCK_REF_ZONE     50   // the zone the three figures below were tuned at
-#define ENDLESS_PIERCE_LOCK_BOSS          20  // boss:     0.20 tick at the reference zone
-#define ENDLESS_PIERCE_LOCK_CHAMP         10  // champion: 0.10
-#define ENDLESS_PIERCE_LOCK_ELITE          5  // elite:    0.05
+#define ENDLESS_PIERCE_LOCK_REF_ZONE      50  // the zone the three figures below were tuned at
+#define ENDLESS_PIERCE_LOCK_BOSS          10  // boss:     0.10 tick at the reference zone
+#define ENDLESS_PIERCE_LOCK_CHAMP		   5  // champion: 0.04
+#define ENDLESS_PIERCE_LOCK_ELITE          2  // elite:    0.02
 #define ENDLESS_PIERCE_LOCK_MAX            1  // hard backstop in whole ticks; the ramps never reach it
 // --------------------------------------------------------------------------------------------
 // ENDLESS_PIERCE_LOCK_SCALE (the 1/100-tick fixed-point unit) lives in endless.h: it is the unit
@@ -320,7 +318,7 @@ int endlessShotDamagePercent(void)
 		pct += ENDLESS_DMG_DEVASTATING;
 	if (pct > ENDLESS_DMG_MAX)
 		pct = ENDLESS_DMG_MAX;
-	// The tide (0 until effective zone 35, then +1 per effective zone, uncapped) adds a gentle
+	// The tide (0 until effective DEPTH 35, then +1 per effective depth, uncapped) adds a gentle
 	// +1% per ENDLESS_TIDE_DMG_STEP ON TOP of the intensity cap: ~+30% by zone 100, ~+70% by
 	// zone 200 on NORMAL. The high ENDLESS_TIDE_DMG_CAP is only a backstop; the consumer
 	// (tyrian2.c) also clamps the final per-shot byte to 255, so a big multiplier can't wrap.
@@ -331,11 +329,15 @@ int endlessShotDamagePercent(void)
 }
 
 // --- Rising tide: quantity scaling past the intensity caps ------------------------
-// The intensity levers above saturate by ~effective zone 100-125; the tide adds the one axis
+// The intensity levers above saturate by ~effective depth 100-125; the tide adds the one axis
 // with NO engine ceiling -- extra shots per volley and a rising elite/champion share -- off
 // this single coefficient, staying 0 through the early hump (notes.md §Endless).
-
-#define ENDLESS_TIDE_START      35   // effective zone the tide begins (intensity is ~capped by here)
+//
+// NOTE the clock: TIDE_START is on the EFFECTIVE-DEPTH clock (endlessTideLevel subtracts it from
+// endlessEffectiveDepth), while the TIDE_SHOT_* thresholds below are real ZONES on NORMAL
+// (endlessDifficultyZone). Effective depth is real depth x1.25 on NORMAL, so the two are not
+// interchangeable -- 35 effective depth is about real zone 28.
+#define ENDLESS_TIDE_START      35   // effective DEPTH the tide begins (intensity is ~capped by here)
 // Enemy "rising tide" of EXTRA shots per volley (see endlessExtraEnemyShots). NORMAL-difficulty
 // baseline: the FIRST extra shot at ENDLESS_TIDE_SHOT_ONSET (zone 25), rising evenly to
 // ENDLESS_TIDE_SHOT_ANCHOR_ADD (3) by the anchor zone (100), then +1 shot every ENDLESS_TIDE_SHOT_STEP
@@ -348,7 +350,7 @@ int endlessShotDamagePercent(void)
 #define ENDLESS_TIDE_SHOT_STEP       25   // past the anchor: +1 extra shot every this-many zones (so 5 by zone 150, then more)
 #define ENDLESS_TIDE_SHOT_MAX        50   // sanity ceiling on added shots/volley (the enemy-shot pool caps total too)
 
-// The single tide coefficient (the "knob"): 0 through the early game, then +1 per effective zone,
+// The single tide coefficient (the "knob"): 0 through the early game, then +1 per effective depth,
 // uncapped. Everything the tide drives is derived from this.
 int endlessTideLevel(void)
 {
@@ -484,7 +486,9 @@ void endlessResetElites(void)
 
 	// Seed this zone's elite/champion tier stream from the run seed + depth, so the rolls are
 	// reproducible for a given seed. Own salt phase: a large offset that can't collide with the
-	// outpost (depth*2), level/music (depth*2+1), or light-cone (depth*2+0x40000000) streams.
+	// outpost (depth*2), level/music (depth*2+1), light-cone (depth*2+0x40000000) or gravity-heading
+	// (depth*2+0x60000000) streams. Every phase must be UNIQUE even across separate state variables:
+	// the same salt derives the same SplitMix state, so a shared phase correlates the two sequences.
 	endlessEliteRngState = endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x50000000);
 }
 
@@ -508,7 +512,8 @@ int endlessNaturalEliteChancePercent(void)
 // Whether the no-elite-tier boons (NOCHAMP / NOELITE) are eligible to be charted yet. They only start
 // appearing once the natural special-enemy share climbs PAST 25% -- below that, elites/champions are a
 // rare trickle and "no champions / no elites" would be a near-empty boon. The 25% shoulder lands around
-// effective depth 47 (~zone 47 on Normal, sooner on harder modes). Gates every generation path that can
+// effective depth 47, i.e. ~zone 38 on Normal (effective depth is real depth x1.25 there, so the two
+// are NOT interchangeable), sooner on harder modes. Gates every generation path that can
 // emit either bit; a leaked bit below the threshold is also scrubbed in endlessGenerateCourses.
 bool endlessEliteBoonsUnlocked(void)
 {
@@ -612,12 +617,19 @@ int endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState)
 // target is carrying, and the tiering falls out of that rather than being bolted on.
 //
 //   boss (an enemy that explicitly has a boss health bar)  full, off the boss ramp
-//   elite / champion                                       diluted -- their ramp is 2..5x
+//   elite / champion                                       diluted -- their ramp is 2..4x
 //   everything else                                        none at all
 //
 // Both ramps are read UNROUNDED so the figure creeps every zone rather than jumping a whole tick.
 int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 {
+	// Ordinary enemies answer first, and answer before the debug pin: "no lockout on ordinary
+	// hulls" is structural, not a magnitude, so a pinned lever must not be able to introduce one.
+	// It is also the cheap path -- the hit site asks this question for every hull a piercing bullet
+	// touches, and most of them are ordinary.
+	if (!hasBossBar && eliteState < 2)
+		return 0;
+
 	ENDLESS_OVERRIDE(ESO_PIERCELOCK);
 
 	// The reference zone in the levers' own clock, at NORMAL. Fixed on purpose: the calibration
@@ -642,17 +654,14 @@ int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 		refSpan = endlessBossRamp100(refDepth) - 100;
 		atRef   = ENDLESS_PIERCE_LOCK_BOSS;
 	}
-	else if (eliteState >= 2)
+	else
 	{
-		// Their 2..4x ramp is what dilutes the special tiers below the boss figure; the two tuned
-		// constants then separate a champion from a plain elite (eliteState 3 vs 2 -- see varz.h).
+		// Elite or champion (the ordinary tier already returned above). Their 2..4x ramp is what
+		// dilutes the special tiers below the boss figure; the two tuned constants then separate a
+		// champion from a plain elite (eliteState 3 vs 2 -- see varz.h).
 		span    = endlessEliteHpMult100() - 100;
 		refSpan = endlessEliteRamp100(refDepth) - 100;
 		atRef   = (eliteState >= 3) ? ENDLESS_PIERCE_LOCK_CHAMP : ENDLESS_PIERCE_LOCK_ELITE;
-	}
-	else
-	{
-		return 0;   // ordinary enemies: no lockout, ever
 	}
 
 	if (span <= 0 || refSpan <= 0)

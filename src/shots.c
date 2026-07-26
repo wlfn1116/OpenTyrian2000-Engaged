@@ -459,6 +459,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		// A recycled slot must not inherit the previous bullet's pierce lockout.
 		shot->pierceLock = 0;
 		shot->pierceLockCarry = 0;
+		shot->pierceLockPending = 0;
 
 		shot->playerNumber = playerNum;
 

@@ -3153,8 +3153,31 @@ level_loop:
 		{
 			// The endless pierce lockout ages here -- once per bullet per sim tick, immediately
 			// before this bullet's own collision pass reads it.
-			if (playerShotData[z].pierceLock > 0)
-				--playerShotData[z].pierceLock;
+			{
+				PlayerShotDataType *ps = &playerShotData[z];
+				if (ps->pierceLock > 0)
+					--ps->pierceLock;
+
+				// Convert what LAST tick charged. Banking it rather than applying it at the hit
+				// site is what lets a bullet cross every hull it overlaps within one tick: a lock
+				// taken mid-pass would block the rest of that same pass, which is exactly the
+				// failure the per-enemy version had. The countdown above has already run for this
+				// tick, so a whole part of N here blocks the next N ticks with no off-by-one.
+				if (ps->pierceLockPending > 0)
+				{
+					int ticks = ps->pierceLockPending / ENDLESS_PIERCE_LOCK_SCALE;
+					int carry = ps->pierceLockCarry + ps->pierceLockPending % ENDLESS_PIERCE_LOCK_SCALE;
+					if (carry >= ENDLESS_PIERCE_LOCK_SCALE)
+					{
+						carry -= ENDLESS_PIERCE_LOCK_SCALE;
+						++ticks;
+					}
+					ps->pierceLockCarry = (JE_byte)carry;
+					ps->pierceLockPending = 0;
+					if (ticks > 0)
+						ps->pierceLock = (JE_byte)ticks;
+				}
+			}
 
 			bool is_special = false;
 			int tempShotX = 0, tempShotY = 0;
@@ -3308,33 +3331,32 @@ level_loop:
 						// See endless_combat.c for the tiering.
 						if (endlessFxActive() && infiniteShot)
 						{
-							PlayerShotDataType *pshot = &playerShotData[z];
-							if (pshot->pierceLock > 0)
-							{
-								damage += 250;   // re-encode: the bullet flies on, dealing nothing this tick
-								continue;
-							}
-							// The lockout ramps in hundredths of a tick so it can creep with every zone,
-							// but a tick is indivisible. Spend the whole part outright and accumulate the
-							// remainder in a per-bullet carry that buys one extra tick when it comes due --
-							// so the AVERAGE lockout lands exactly on the fractional figure, and the very
-							// early zones (well under one tick) still get their proportional share.
+							// Ask what THIS hull's tier is owed before consulting the lock, never the
+							// other way round. An ordinary enemy answers 0, so it is neither charged nor
+							// blocked -- including while the bullet is locked out of a boss it happens to
+							// be sharing space with. Testing the lock first made a boss's protection
+							// spill onto every scrap of trash overlapping it.
 							const int lock100 = endlessPierceLock100(has_boss_bar, hpMult, enemy[b].eliteState);
 							if (lock100 > 0)
 							{
-								int ticks = lock100 / ENDLESS_PIERCE_LOCK_SCALE;
-								int carry = pshot->pierceLockCarry + lock100 % ENDLESS_PIERCE_LOCK_SCALE;
-								if (carry >= ENDLESS_PIERCE_LOCK_SCALE)
+								PlayerShotDataType *pshot = &playerShotData[z];
+								if (pshot->pierceLock > 0)
 								{
-									carry -= ENDLESS_PIERCE_LOCK_SCALE;
-									++ticks;
+									damage += 250;   // re-encode: the bullet flies on, dealing nothing here
+									continue;
 								}
-								pshot->pierceLockCarry = (JE_byte)carry;
-								// Stored as ticks-left COUNTING THE ONE WE ARE ON: the countdown runs at the
-								// top of this bullet's own pass, so one extra is stored and a lock of N
-								// blocks the next N ticks exactly.
-								if (ticks > 0)
-									pshot->pierceLock = (JE_byte)(ticks + 1);
+								// Charge the lockout ONCE PER TICK, at the toughest hull this bullet crosses
+								// -- not once per hit. Spent per hit, the cost scaled with how many hulls
+								// happened to line up in front of the bullet, so a four-part boss taxed 44%
+								// where a one-part boss taxed the tuned 17%, and the figure quietly depended
+								// on boss geometry. Taking the max keeps a boss's tax from being diluted by
+								// the trash or elites sharing its space.
+								//
+								// Only BANKED here; the conversion into ticks happens at the top of this
+								// bullet's next pass. Applying it inline would let the bullet lock itself
+								// partway through its own sweep and drop the hulls behind the first one.
+								if (lock100 > pshot->pierceLockPending)
+									pshot->pierceLockPending = (JE_byte)lock100;
 							}
 						}
 
