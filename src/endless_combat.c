@@ -356,11 +356,9 @@ int endlessContactDamagePercent(void)
 
 static signed char endlessEliteLink[256];  // per-linknum tier this level: -1 undecided, else 1/2/3
 
-// MARTYRDOM per-level state: the dedup link (so a multi-tile enemy bursts once, mirroring
-// endlessCountKill's "once per linked enemy") and the bullet sprite captured from the level's own
-// enemy fire (so the death burst matches what's shooting at you). Both reset at each level start.
-static int     endlessMartyrLastLink = 0;
-static JE_word endlessMartyrSgr = 0;   // 0 = no enemy shot seen yet this level -> the burst is suppressed
+// MARTYRDOM per-level state: the dedup link, so a multi-tile enemy bursts once, mirroring
+// endlessCountKill's "once per linked enemy". Reset at each level start.
+static int endlessMartyrLastLink = 0;
 
 // SHOCKWAVE's dedup link, the same idea one boon over (see endlessShockwaveRadius, further down).
 // Declared here so endlessResetElites -- which runs before it -- can clear it with the martyr pair.
@@ -371,8 +369,7 @@ void endlessResetElites(void)
 	for (unsigned i = 0; i < COUNTOF(endlessEliteLink); ++i)
 		endlessEliteLink[i] = -1;
 
-	endlessMartyrLastLink = 0;   // fresh MARTYRDOM dedup + captured-sprite each level
-	endlessMartyrSgr = 0;
+	endlessMartyrLastLink = 0;     // fresh MARTYRDOM dedup each level
 	endlessShockwaveLastLink = 0;  // ...and a fresh SHOCKWAVE dedup
 	endlessAegisReset();           // ...and a ready AEGIS GATE: a block never carries into the next zone
 
@@ -1025,19 +1022,13 @@ int endlessMartyrdomBurstShots(int linknum, int eliteState)
 	return (eliteState == 3) ? 8 : (eliteState == 2) ? 6 : 4;
 }
 
-// Remember a real enemy-bullet sprite fired this level, so the martyr burst matches the level's own
-// fire on a guaranteed-valid sprite. ANY fired sprite counts (both sprite sheets -- the draw path
-// handles < 500 as spriteSheet8 and >= 500 as spriteSheet12), so even an ep4/5 level whose bullets are
-// all >= 500 spark graphics still arms the burst instead of leaving it silently spriteless.
-#define ENDLESS_MARTYR_DEFAULT_SGR 100  // fallback bolt (always-loaded spriteSheet8) for the moment before any enemy has fired this level
-void endlessNoteEnemyShotSprite(JE_word sgr)
-{
-	if (endlessMode && sgr > 0)
-		endlessMartyrSgr = sgr;
-}
-// Never 0: falls back to a known-valid bolt so the burst always has a sprite (the old 0 return made
-// endlessSpawnMartyrBurst skip entirely until an enemy happened to fire a capturable sprite).
-JE_word endlessMartyrShotSprite(void) { return endlessMartyrSgr ? endlessMartyrSgr : ENDLESS_MARTYR_DEFAULT_SGR; }
+// The martyr burst's own bullet sprite: ONE fixed graphic, never the level's. It used to mirror the
+// last enemy bullet fired this level, which made the burst change appearance mid-level as different
+// shooters came on screen -- the burst has to be recognisable on sight, so it gets its own sprite.
+// 100 is a fat radially-symmetric orb in spriteSheet8 (loaded once from tyrian.shp, so it is valid in
+// every level and episode); symmetry matters because the burst fires in 4/6/8 directions at once.
+#define ENDLESS_MARTYR_SHOT_SGR 100
+JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 
 // SEEKER ROUNDS: true while newly-fired enemy shots should arm for their single mid-flight course
 // correction (the arming + the one-time turn itself live at the enemy-shot sites in tyrian2.c).

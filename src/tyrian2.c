@@ -77,8 +77,8 @@ static void draw_enemy_health_bars(void);
 
 // MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
 // pool -- 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
-// nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite matches the level's
-// own fire when one has been seen, else a guaranteed-valid fallback (endlessMartyrShotSprite is never 0).
+// nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite is Martyrdom's own
+// fixed graphic (endlessMartyrShotSprite), so a death burst always looks the same wherever it happens.
 static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 {
 	if (shots <= 0)
@@ -1786,8 +1786,6 @@ enemy_still_exists:
 
 								enemyShot[b].sgr = weapons[temp3].sg[tempPos];
 								enemyShot[b].seekerArm = 0;   // endless SEEKER arms this below; 0 for every non-seeker shot
-								if (endlessMode)
-									endlessNoteEnemyShotSprite(enemyShot[b].sgr);  // MARTYRDOM: remember a real bullet sprite this level
 								switch (j)
 								{
 								case 1:
