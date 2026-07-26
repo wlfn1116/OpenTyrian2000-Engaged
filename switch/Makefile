@@ -60,7 +60,11 @@ PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 # (the code then returns/skips gracefully); on Switch a live assert -> abort() -> _exit()
 # closes the game with NO Atmosphere crash report (looks like a silent crash). Keep -g so
 # the ELF still symbolises real faults for crash-report decoding (see switch/README / memory).
-CFLAGS := -g -Wall -O2 -DNDEBUG -ffunction-sections -fsigned-char $(ARCH)
+#
+# -Wno-format-truncation: matches the root Makefile. The engine's snprintf calls build fixed-width
+# on-screen strings where a clamped tail is the intended behaviour, and gcc can't see the real
+# value ranges, so -Wall's version of this check only produces noise here.
+CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char $(ARCH)
 
 # TYRIAN_DIR is a compile-time fallback data path the engine expects to be defined
 # (desktop builds pass it too). On Switch the sdmc:/ and romfs: paths prepended in

@@ -61,6 +61,11 @@
       <AdditionalIncludeDirectories Condition="'$(WITH_NETWORK)'=='true'">D:\opentyrian2000\stuff\SDL2_net-2.2.0\include;D:\opentyrian2000\stuff\SDL2-2.26.2\include;$(SDL2netBaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">$(FluidSynthBaseDir)\include;$(SolutionDir)..\src\midiproc\src;$(SolutionDir)..\src\midiproc\compat;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>
+      <!-- Sources are UTF-8 without a BOM (see .editorconfig); say so, or cl assumes the
+           system code page and warns C4819 on every comment that uses a non-ASCII character.
+           Source charset only: no string literal here holds a non-ASCII character, so the
+           execution charset stays the system default and codegen is unchanged. -->
+      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>TARGET_WIN32;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(OPENTYRIAN_VERSION)'!=''">OPENTYRIAN_VERSION="$(OPENTYRIAN_VERSION)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -81,7 +86,9 @@
     <ClCompile>
       <TreatWarningAsError>false</TreatWarningAsError>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- No _DEBUG: this configuration links the release CRT (UseDebugLibraries=false), nothing
+           here reads _DEBUG, and defining it only forced a /U_DEBUG override (warning D9025) on the
+           vendored C++ TUs to keep the STL out of its debug-only code. -->
     </ClCompile>
     <Link>
     </Link>
@@ -191,10 +198,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -203,10 +206,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -215,10 +214,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -227,10 +222,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -239,10 +230,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -251,10 +238,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -263,10 +246,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -275,10 +254,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -287,10 +262,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -299,10 +270,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -311,10 +278,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -323,10 +286,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
@@ -335,10 +294,6 @@
       <CompileAs>CompileAsCpp</CompileAs>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PreprocessorDefinitions>NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <!-- The project links the release CRT (/MD) even in Debug (UseDebugLibraries=false),
-           so keep _DEBUG out of these C++ TUs; otherwise the STL enables debug iterators
-           and pulls the debug-only _CrtDbgReport, which the release CRT lacks. -->
-      <UndefinePreprocessorDefinitions>_DEBUG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>

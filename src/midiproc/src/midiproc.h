@@ -27,9 +27,20 @@ extern "C" {
 // we are only creating functions which implement the processor
 
 // HMidiProcessor, handle for MidiProcessor
+#ifdef __cplusplus
+// The pointed-to types are C++ classes, so declare them with a matching tag; using
+// `struct` here makes MSVC warn C4099 in every TU that also sees the definitions.
+class MIDIProcessor;
+class MIDIContainer;
+class MIDITrack;
+typedef MIDIProcessor * HMidiProcessor;
+typedef MIDIContainer * HMIDIContainer;
+typedef MIDITrack * HMIDITrack;
+#else
 typedef struct MIDIProcessor * HMidiProcessor;
 typedef struct MIDIContainer * HMIDIContainer;
 typedef struct MIDITrack * HMIDITrack;
+#endif
 
 
 /**

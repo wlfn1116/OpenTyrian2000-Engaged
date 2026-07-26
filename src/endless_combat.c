@@ -737,7 +737,7 @@ int endlessEliteContactPercent(int eliteState)
 
 // Award an elite/champion kill: pay the bounty and post a kill message to the in-game text bar.
 //
-// Called from both enemy-death sites (tyrian2.c) for EVERY removed enemy, elite or not -- exactly
+// Called from enemy_logical_death (tyrian2.c) for EVERY killed enemy, elite or not -- exactly
 // like endlessCountKill, and for the same reason. A multi-tile enemy is several enemy[] slots
 // sharing one nonzero linknum, all removed consecutively in a single kill loop, so the bounty is
 // deduped on that linknum: paying per tile handed a multipart elite two, three or more bounties for
@@ -802,7 +802,7 @@ void endlessGrantSpecial(void)
 	// deliberately kept OUT of the endless pool: a Buy Special that could roll full
 	// invulnerability would trivialize the run. Excluding by stype covers every
 	// invulnerability entry in the data ("Invulnerability" and "Invulnerability [easier]").
-	JE_byte pool[SPECIAL_NUM];
+	JE_byte pool[SPECIAL_NUM] = { 0 };
 	int n = 0;
 	for (int id = 1; id <= SPECIAL_NUM; ++id)
 		if (special[id].name[0] != '\0' &&
@@ -1206,11 +1206,19 @@ bool endlessShockwaveActive(void)
 
 int endlessShockwaveRadius(int linknum, int eliteState)
 {
-	if (!endlessShockwaveActive() || eliteState < 2)
+	if (!endlessShockwaveActive())
 		return 0;
-	if (linknum != 0 && linknum == endlessShockwaveLastLink)
-		return 0;                       // same multi-tile enemy as the last removed tile -- already pulsed
+
+	// Latch BEFORE the elite test, exactly like endlessAwardEliteKill: a dedup link only holds if
+	// EVERY kill feeds it, which is why enemy_logical_death calls this unconditionally. Testing
+	// eliteState first left the last elite's linknum latched indefinitely -- ordinary kills never
+	// cleared it -- so the next enemy to reuse that linknum read as another tile of it and its sweep
+	// was silently skipped.
+	const bool sameEnemy = (linknum != 0 && linknum == endlessShockwaveLastLink);
 	endlessShockwaveLastLink = linknum;
+	if (sameEnemy || eliteState < 2)
+		return 0;                       // same multi-tile enemy as the last removed tile, or not elite
+
 	return (eliteState == 3) ? ENDLESS_SHOCKWAVE_CHAMPION_RADIUS : ENDLESS_SHOCKWAVE_ELITE_RADIUS;
 }
 
@@ -1222,9 +1230,9 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 // MARTYRDOM: how many bullets a just-killed enemy's death burst fires -- 0 when the modifier is off,
 // else 4 (normal) / 6 (elite) / 8 (champion). Dedups per linked enemy exactly like endlessCountKill
 // (consecutive same-linknum removals are one enemy, so a multi-tile enemy bursts once, not per tile);
-// linknum 0 is a lone enemy and always fires. The caller (tyrian2.c death sites) does the spawning,
-// which is where the enemy-shot pool lives -- and it also honours the "suppress when the pool is
-// nearly full" rule, so this only decides the count.
+// linknum 0 is a lone enemy and always fires. Called unconditionally from enemy_logical_death
+// (tyrian2.c), which does the spawning -- that is where the enemy-shot pool lives, and it also
+// honours the "suppress when the pool is nearly full" rule, so this only decides the count.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
@@ -1492,8 +1500,11 @@ int endlessScalingOverrideStock(int id)
 {
 	if (id < 0 || id >= ESO_COUNT)
 		return 0;
-	const bool was = endlessScalingOverride[id].active;
-	endlessScalingOverride[id].active = false;
+	// Indexed once, right after the bounds check: the accessor calls below are opaque enough that
+	// static analysis loses `id`'s proven range and reports the restore as a buffer overrun (C6386).
+	EndlessScalingOverride *const ov = &endlessScalingOverride[id];
+	const bool was = ov->active;
+	ov->active = false;
 	int v = 0;
 	switch (id)
 	{
@@ -1514,7 +1525,7 @@ int endlessScalingOverrideStock(int id)
 	case ESO_PIERCELOCK:  v = endlessPierceLock100(true, endlessBossHpMult(), 1); break;
 	default: break;
 	}
-	endlessScalingOverride[id].active = was;
+	ov->active = was;
 	return v;
 }
 

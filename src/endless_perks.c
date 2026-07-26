@@ -399,7 +399,7 @@ int endlessPerkSpecialDuration(int base, int cap)
 // Called once per post-zone shop (endlessBetweenLevels), before the perk menu is shown.
 void endlessGeneratePerkChoices(void)
 {
-	int pool[PERK_COUNT], n = 0;
+	int pool[PERK_COUNT] = { 0 }, n = 0;
 	for (int i = 0; i < PERK_COUNT; ++i)
 		if (endlessPerkOwned[i] < endlessPerkTable[i].maxStack)
 			pool[n++] = i;

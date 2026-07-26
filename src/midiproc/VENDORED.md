@@ -29,6 +29,12 @@ project is built with `WITH_MIDI` (see `visualc/opentyrian.vcxproj`). Add
   backend can only restart a MIDI file from the beginning).
 - `src/MIDIContainer.h`: added the trivial `GetTimeDivision()` accessor needed
   by the above.
+- `src/midiproc.h`: the `HMidiProcessor`/`HMIDIContainer`/`HMIDITrack` typedefs
+  now forward-declare their targets as `class` when compiled as C++ (still
+  `struct` for the C API), silencing MSVC C4099 tag mismatches.
+- `src/MIDIProcessorRCP.cpp`: fixed the `"%2kd"` typo in the `OutputDebugStringW`
+  trace format ('k' is not a length modifier, so the specifier swallowed the `d`
+  and left the last argument unconsumed).
 
 The MSVC project compiles these files (see the dedicated ItemGroup in the
 `.vcxproj`) with:
@@ -38,8 +44,10 @@ The MSVC project compiles these files (see the dedicated ItemGroup in the
   macros would otherwise clash with the C++ `std::min`/`std::max` used here.
   Note: do NOT define `WIN32_LEAN_AND_MEAN` — the XMI/RCP processors need
   `FOURCC`/`mmioFOURCC` from `<mmsystem.h>`, which lean mode excludes.
-- `NDEBUG` + `/U_DEBUG` — the project links the release CRT (`/MD`) even in Debug
-  (`UseDebugLibraries=false`); keeping `_DEBUG` out of these C++ TUs avoids the
-  STL's debug iterators pulling the debug-only `_CrtDbgReport`.
+- `NDEBUG` — the project links the release CRT (`/MD`) even in Debug
+  (`UseDebugLibraries=false`), so these C++ TUs must not build in debug mode: the
+  STL's debug iterators pull the debug-only `_CrtDbgReport`. For the same reason
+  the Debug configuration defines no `_DEBUG` at all (it used to, and cancelled it
+  again here with `/U_DEBUG`, which cost a D9025 warning on every one of these files).
 
 These files are excluded from Win32 / non-`WITH_MIDI` configurations.
