@@ -67,13 +67,6 @@ static bool mouseRelativeEnabled;
 static Sint32 mouseWindowXRelative;
 static Sint32 mouseWindowYRelative;
 
-void flush_events_buffer(void)
-{
-	SDL_Event ev;
-
-	while (SDL_PollEvent(&ev));
-}
-
 void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 {
 	service_SDL_events(false);

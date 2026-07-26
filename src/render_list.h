@@ -245,10 +245,6 @@ void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
 // evolved plasma, so the full capture would wrongly flag the filtered playfield.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
 
-// Drop captured residual (so rl_replay_interp applies none). For callers whose
-// frame is fully reproduced by recorded blits.
-void rl_clear_residual(void);
-
 // Ship override: during interpolated replay, the hull/shadow/charge of player
 // `player` (0 or 1) draw at their recorded position PLUS (dx,dy) instead of being
 // time-interpolated, driving each ship at the render rate. Sidekicks are excluded

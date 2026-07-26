@@ -57,7 +57,6 @@ extern char last_text[SDL_TEXTINPUTEVENT_TEXT_SIZE];
 #define TOUCH_SENS_MARK_COL_DIM 136  // dark blue:   the fill is still below the middle slot
 extern int touch_sensitivity;
 
-void flush_events_buffer(void);
 void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
 void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
 void init_keyboard(void);
@@ -68,8 +67,6 @@ void mouseGetRelativePosition(Sint32 *out_x, Sint32 *out_y);
 void mouseGetRelativeMotionF(float *out_x, float *out_y);  // float-scaled, no per-call rounding
 
 void service_SDL_events(JE_boolean clear_new);
-
-void sleep_game(void);
 
 void JE_clearKeyboard(void);
 

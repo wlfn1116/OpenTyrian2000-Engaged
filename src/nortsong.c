@@ -48,9 +48,6 @@ int fps_cap = 0;
 #define SIM_FPS 35
 static float delayPeriod = 1000.0f / (SIM_FPS * 2);
 
-// The period of the x86 programmable interval timer in milliseconds.
-static const float pitPeriod = (12.0f / 14318180.0f) * 1000.0f;
-
 static Uint16 delaySpeed = 0x4300;
 
 static Uint32 target = 0;

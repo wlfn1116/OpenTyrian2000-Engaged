@@ -1687,6 +1687,11 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
 ## Console ports — `switch/`, `vita/`, `*_platform.c`
 
 - Both ports share `console_platform.h`; Vita mirrors the Switch port's seams.
+- The four console path literals live only in `switch_platform.h` / `vita_platform.h`
+  (`SWITCH_USER_DIR`, `SWITCH_ROMFS_DIR`, `VITA_USER_DIR`, `VITA_DATA_DIR`).
+  `file.c`'s `data_dir()` search list and `config.c`'s `get_user_directory()` pull
+  them in via `console_platform.h` instead of repeating the strings — they used to
+  be hardcoded in all three places, which left the header macros unreferenced.
 - Switch exit crash: libc `exit()` runs the romfs atexit teardown and then
   fcloses all stdio streams; closing a stream whose device is gone (or libnx's
   stdout/stderr) null-derefs in newlib's `_close_r`. Everything that must persist
@@ -1837,3 +1842,14 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
   under *In-game debug menu* above.
 - The Doxygen-style `/** */` documentation in upstream files (font.c,
   config_file.c, …) is upstream convention; leave it be.
+- Dead-code sweeps: a few symbols are unreferenced *by design* and should not be
+  pruned. `config_file.c` (Carl Reinke's upstream config parser) and `opl.c` (the
+  DOSBox OPL2/OPL3 emulator) are vendored libraries whose published API is kept
+  whole — `config_deinit`, `config_find_sections`,
+  `config_get_or_set_{string,uint}_option`, the `foreach_option_value` macro,
+  `adlib_reg_read` and `adlib_write_index` all have no in-tree caller. Likewise
+  `JE_readTextSync` (tyrian2.c) is an intentionally empty stub: its body is
+  `#if 0`'d out alongside the other `TODO: NETWORK` placeholders, and it is still
+  called from the level-script `'S'` opcode. Enum members that look unused
+  (`sndmast.h` sound ids, `destruct.c` mode/shot/team ids, …) are positional —
+  they index shipped data tables, so removing one shifts everything after it.

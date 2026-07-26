@@ -28,9 +28,7 @@
 #define WEAP_NUM    1818
 
 #define PORT_NUM    60
-#define ARMOR_NUM   4
 #define POWER_NUM   6
-#define ENGINE_NUM  6
 #define OPTION_NUM  37
 #define SHIP_NUM    18
 #define SHIELD_NUM  11

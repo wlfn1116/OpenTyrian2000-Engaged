@@ -1025,14 +1025,6 @@ int video_get_menu_x_offset(void)
 	return current_x_offset;
 }
 
-/** Maps a specified point in game screen coordinates to window coordinates. */
-void mapScreenPointToWindow(Sint32 *const inout_x, Sint32 *const inout_y)
-{
-	Sint32 x = *inout_x + current_x_offset;
-	*inout_x = (2 * x + 1) * last_output_rect.w / (2 * VGAScreen->w) + last_output_rect.x;
-	*inout_y = (2 * *inout_y + 1) * last_output_rect.h / (2 * VGAScreen->h) + last_output_rect.y;
-}
-
 /** Maps a specified point in window coordinates to game screen coordinates. */
 void mapWindowPointToScreen(Sint32 *const inout_x, Sint32 *const inout_y)
 {

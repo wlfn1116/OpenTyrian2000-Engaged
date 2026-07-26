@@ -22,11 +22,8 @@
 #include "opentyr.h"
 
 #define DEFAULT_SONG_BUY 2
-#define SONG_LEVELEND    9
 #define SONG_GAMEOVER    10
 #define SONG_MAPVIEW     19
-#define SONG_ENDGAME1    7
-#define SONG_ZANAC       31
 #define SONG_TITLE       29
 
 #define MUSIC_NUM 41

@@ -18,6 +18,7 @@
  */
 #include "file.h"
 
+#include "console_platform.h"  // SWITCH_/VITA_ data-directory names
 #include "crashlog.h"
 #include "opentyr.h"
 #include "varz.h"
@@ -39,14 +40,14 @@ const char *data_dir(void)
 #ifdef __SWITCH__
 		// Prefer an SD-card copy (user-updatable) then the read-only data bundled
 		// in the .nro. dir_fopen() joins with '/', so "romfs:" becomes "romfs:/file".
-		"sdmc:/switch/opentyrian2000",
-		"romfs:",
+		SWITCH_USER_DIR,
+		SWITCH_ROMFS_DIR,
 #endif
 #ifdef __vita__
 		// Prefer a memory-card copy (user-updatable) then the read-only data bundled
 		// in the VPK at app0:data. dir_fopen() joins with '/'.
-		"ux0:data/opentyrian2000",
-		"app0:data",
+		VITA_USER_DIR,
+		VITA_DATA_DIR,
 #endif
 		custom_data_dir,
 		TYRIAN_DIR,
