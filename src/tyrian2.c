@@ -6141,6 +6141,8 @@ bool newEndlessGame(void)
 
 	player[0].cash = endlessStartingCash();  // difficulty-based starting cash for the first shop
 
+	endlessApplyStartingLoadout();  // Atomic RailGun front gun (the depth-0 outpost re-applies it too)
+
 	fade_black(10);
 	return true;
 }

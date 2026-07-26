@@ -1019,6 +1019,7 @@ void JE_itemScreen(void)
 
 	/* JE: Sort items in merchant inventory (None sinks to the bottom of each list) */
 	sort_shop_inventory();
+	endlessHoistStartWeapon();  // endless zone 1: the run's starting gun leads the front-weapon list
 
 	do
 	{
@@ -8051,7 +8052,10 @@ void JE_menuFunction(JE_byte select)
 			}
 			JE_playSampleNum(bought ? S_SELECT : S_SPRING);
 			if (bought && select == 2)  // a reroll regenerated the stock: re-sort so None sinks to the bottom
+			{
 				sort_shop_inventory();
+				endlessHoistStartWeapon();  // ...and keep the starting gun leading the list at zone 1
+			}
 			configure_endless_shop_menu();  // refresh prices / bought-state labels
 			// A free perk pick can only come from the Gamble (select 12) -- no other buy grants one.
 			// Gate the perk-menu open on select==12 so a stale/leaked "won a perk" flag can never make
