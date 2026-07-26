@@ -68,7 +68,6 @@
 #include <assert.h>
 
 /*** Defines ***/
-#define UNIT_HEIGHT 12
 #define MAX_KEY_OPTIONS 4
 
 /* Widescreen Destruct HUD layout.  Each player's readout is a HUD_FRAME_W-wide

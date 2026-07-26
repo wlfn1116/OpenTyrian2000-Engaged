@@ -163,62 +163,6 @@ void draw_font_hv(SDL_Surface *surface, int x, int y, const char *text, Font fon
 }
 
 /**
- * \brief Draws blended text in a color specified by hue and value.
- * 
- * Corresponds to blit_sprite_hv_blend()
- * 
- * \li like JE_outTextModify()
- * 
- * @param surface destination surface
- * @param x initial x-position in pixels; which direction(s) the text is drawn
- *        from this position depends on the alignment
- * @param y initial upper y-position in pixels
- * @param text text to be drawn
- * @param font style/size of text
- * @param alignment left_aligned, centered, or right_aligned
- * @param hue hue component of text color
- * @param value value component of text color
- */
-void draw_font_hv_blend(SDL_Surface *surface, int x, int y, const char *text, Font font, FontAlignment alignment, Uint8 hue, Sint8 value)
-{
-	switch (alignment)
-	{
-	case left_aligned:
-		break;
-	case centered:
-		x -= JE_textWidth(text, font) / 2;
-		break;
-	case right_aligned:
-		x -= JE_textWidth(text, font);
-		break;
-	}
-	
-	for (; *text != '\0'; ++text)
-	{
-		int sprite_id = font_ascii[(unsigned char)*text];
-		
-		switch (*text)
-		{
-		case ' ':
-			x += 6;
-			break;
-			
-		case '~':
-			break;
-			
-		default:
-			if (sprite_id != -1 && sprite_exists(font, sprite_id))
-			{
-				blit_sprite_hv_blend(surface, x, y, font, sprite_id, hue, value);
-				
-				x += sprite(font, sprite_id)->width + 1;
-			}
-			break;
-		}
-	}
-}
-
-/**
  * \brief Draws darkened text.
  * 
  * Corresponds to blit_sprite_dark()

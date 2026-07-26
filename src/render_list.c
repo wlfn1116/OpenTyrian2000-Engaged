@@ -1096,13 +1096,6 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale)
 	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG, scale);
 }
 
-// See render_list.h: callers fully reproduced by recorded blits must not inherit
-// gameplay's residual pixels.
-void rl_clear_residual(void)
-{
-	res_count = 0;
-}
-
 // Append one residual pixel (offset + value). Returns false if growth failed
 // (out of memory) so the caller can stop; the residual captured so far is kept.
 static bool rl_res_push(int off, Uint8 val)

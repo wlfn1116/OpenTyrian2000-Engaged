@@ -18,6 +18,7 @@
  */
 #include "config.h"
 
+#include "console_platform.h"  // SWITCH_/VITA_USER_DIR
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
@@ -1221,10 +1222,10 @@ const char *get_user_directory(void)
 	{
 #if defined(__SWITCH__)
 		// Fixed writable location on the SD card; switch_platform_init() creates it.
-		strcpy(user_dir, "sdmc:/switch/opentyrian2000");
+		strcpy(user_dir, SWITCH_USER_DIR);
 #elif defined(__vita__)
 		// Fixed writable location on the memory card; vita_platform_init() creates it.
-		strcpy(user_dir, "ux0:data/opentyrian2000");
+		strcpy(user_dir, VITA_USER_DIR);
 #elif !defined(TARGET_WIN32)
 		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
 		if (xdg_config_home != NULL)

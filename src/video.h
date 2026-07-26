@@ -141,7 +141,6 @@ void video_repaint_if_stale(bool force);
 void set_menu_centered(bool centered);
 int video_get_menu_x_offset(void);
 
-void mapScreenPointToWindow(Sint32 *inout_x, Sint32 *inout_y);
 void mapWindowPointToScreen(Sint32 *inout_x, Sint32 *inout_y);
 void scaleWindowDistanceToScreen(Sint32 *inout_x, Sint32 *inout_y);
 void scaleWindowDistanceToScreenF(float *inout_x, float *inout_y);  // float, no rounding loss
