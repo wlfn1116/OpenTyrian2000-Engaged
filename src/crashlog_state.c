@@ -359,6 +359,37 @@ void crashlog_write_game_state(FILE *f)
 		}
 	}
 
+	// --- Endless EFFECTS inside a normal game (debug) ---
+	// Without this a crash under campaign mods reads as a plain campaign crash, and the mod bits,
+	// perk stacks and pinned levers that actually caused it are invisible.
+	if (!endlessMode && endlessCampaignMods)
+	{
+		fprintf(f, "\nEndless effects (debug, in a normal game):\n");
+		fprintf(f, "  Virtual zone: %d\n", endlessRunDepth + 1);
+		write_endless_mods(f, endlessActiveMods);
+		int perks = 0;
+		for (int p = 0; p < endlessPerkCount(); ++p)
+		{
+			const int n = endlessPerkGetOwned(p);
+			if (n > 0)
+			{
+				fprintf(f, "%s%s x%d", perks++ ? ", " : "  Perks:        ", endlessPerkName(p), n);
+			}
+		}
+		fprintf(f, "%s", perks ? "\n" : "  Perks:        none\n");
+	}
+
+	// Pinned scaling levers force a value past the ramp, so a "this difficulty is impossible"
+	// report is worth reading differently. Listed whenever any are set, endless or not.
+	if (endlessScalingOverrideCount() > 0)
+	{
+		fprintf(f, "\nScaling overrides:\n");
+		for (int i = 0; i < ESO_COUNT; ++i)
+			if (endlessScalingOverride[i].active)
+				fprintf(f, "  %-16s %d  (stock %d)\n", endlessScalingOverrideName(i),
+				        endlessScalingOverride[i].value, endlessScalingOverrideStock(i));
+	}
+
 	// --- Cheats / debug toggles (a crash that only reproduces with a cheat on is worth flagging) ---
 	fprintf(f, "\nCheats / debug:\n");
 	fprintf(f, "  debug=%d youAreCheating=%d noclip=%d hitboxOverlay=%d perfOverlay=%d\n",

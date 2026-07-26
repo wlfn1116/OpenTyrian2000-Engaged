@@ -398,7 +398,11 @@ void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
 
-	shipGrPtr = (ships[player[0].items.ship].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
+	// An "extra" ship (id > 90) is described by extraShips[], not ships[] -- and ships[] holds only
+	// SHIP_NUM+1 entries, so indexing it with such an id reads well past the end. Default those to
+	// the standard sheet here; JE_SGr picks the real one for them a few lines down.
+	shipGrPtr = (player[0].items.ship <= SHIP_NUM && ships[player[0].items.ship].shipgraphic > 500)
+	          ? &spriteSheetT2000 : &spriteSheet9;
 	shipGr2ptr = &spriteSheet9;
 
 	powerAdd  = powerSys[player[0].items.generator].power;
@@ -418,9 +422,13 @@ void JE_getShipInfo(void)
 
 	// Endless: apply the run-persistent hull upgrades (outpost Reinforce + Ablative Plating perk;
 	// the perk bonus can be NEGATIVE with Glass Cannon, so clamp the result to at least 1 armor).
-	if (endlessMode)
+	// The Reinforce half is endlessMode-only: it is bought at an outpost, and a campaign game
+	// running the effect layer under Debug Mode has no shop to have bought it at.
+	if (endlessFxActive())
 	{
-		int a = (int)player[0].armor + endlessArmorBonus + endlessPerkArmorBonus();
+		int a = (int)player[0].armor + endlessPerkArmorBonus();
+		if (endlessMode)
+			a += endlessArmorBonus;
 		player[0].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // clamp both ends: >=1, and byte-safe so no JE_byte armor path wraps
 	}
 
@@ -473,17 +481,26 @@ void JE_drawOptions(void)
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
 
+	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
+
+
+
 	Player *this_player = &player[twoPlayerMode ? 1 : 0];
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
 		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
+		// Ordnance Reserves perk grows the magazine; the refill cadence is scaled to match, so the
+		// deeper reserve still fills in the shipped time instead of trickling in proportionally
+		// slower. Both stay keyed to the SHIPPED size, which also keeps the stock `105 - ammo`
+		// formula from going negative once a boosted magazine passes 105 rounds.
 		this_player->sidekick[i].ammo =
-		this_player->sidekick[i].ammo_max = this_option->ammo;
+		this_player->sidekick[i].ammo_max = endlessPerkSidekickAmmo(this_option->ammo);
 
 		this_player->sidekick[i].ammo_refill_ticks =
-		this_player->sidekick[i].ammo_refill_ticks_max = (105 - this_player->sidekick[i].ammo) * 4;
+		this_player->sidekick[i].ammo_refill_ticks_max =
+			endlessPerkSidekickRefillTicks((105 - this_option->ammo) * 4, this_option->ammo);
 
 		this_player->sidekick[i].style = this_option->tr;
 
@@ -500,7 +517,7 @@ void JE_drawOptions(void)
 		fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 15, 0);
 		if (this_option->icongr > 0)
 			blit_sprite(VGAScreenSeg, hud_x, y, OPTION_SHAPES, this_option->icongr - 1);  // sidekick HUD icon
-		draw_segmented_gauge(VGAScreenSeg, hud_x, y + 13, 112, 2, 2, MAX(1, this_player->sidekick[i].ammo_max / 10), this_player->sidekick[i].ammo);
+		draw_segmented_gauge(VGAScreenSeg, hud_x, y + 13, 112, 2, 2, AMMO_GAUGE_STEP(this_player->sidekick[i].ammo_max), this_player->sidekick[i].ammo);
 	}
 
 	VGAScreen = temp_surface;
@@ -675,17 +692,19 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 5:
 					specialWeaponFilter = 7;
 					specialWeaponFreq = 2;
-					flareDuration = 50;
+					flareDuration = endlessPerkSpecialDuration(50, 0);
 					break;
 				case 6:
 					specialWeaponFilter = 1;
 					specialWeaponFreq = 7;
-					flareDuration = 200 + 25 * player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(200 + 25 * player[0].items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 7:
 					specialWeaponFilter = 3;
 					specialWeaponFreq = 3;
-					flareDuration = 50 + 10 * player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(50 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					// zinglonDuration is deliberately NOT stretched: its beam brightness is drawn as
+					// `25 - abs(zinglonDuration - 25)`, a ramp that only works on the stock 50 ticks.
 					zinglonDuration = 50;
 					shotRepeat[SHOT_SPECIAL] = 100;
 					soundQueue[7] = S_SOUL_OF_ZINGLON;
@@ -693,38 +712,38 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 8:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 7;
-					flareDuration = 10 + player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(10 + player[0].items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 9:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = 8 + 2 * player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(8 + 2 * player[0].items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					nextSpecialWait = special[specialType].pwr;
 					break;
 				case 10:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = 14 + 4 * player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(14 + 4 * player[0].items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					break;
 				case 11:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = special[specialType].pwr;
-					flareDuration = 10 + 10 * player[0].items.weapon[FRONT_WEAPON].power;
-					astralDuration = 20 + 10 * player[0].items.weapon[FRONT_WEAPON].power;
+					flareDuration = endlessPerkSpecialDuration(10 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					astralDuration = endlessPerkSpecialDuration(20 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 255);
 					break;
 				case 16:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = temp2 * 16 + 8;
+					flareDuration = endlessPerkSpecialDuration(temp2 * 16 + 8, 0);
 					linkToPlayer = true;
 					spraySpecial = true;
 					break;
 			}
 			break;
 		case 12:
-			player[playerNum-1].invulnerable_ticks = temp2 * 10;
+			player[playerNum-1].invulnerable_ticks = endlessPerkSpecialDuration(temp2 * 10, 0);
 
 			if (superArcadeMode > 0 && superArcadeMode <= SA)
 			{
@@ -1306,7 +1325,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Endless Bulwark relic: soften each incoming hit by a flat amount, but always leave at
 	// least 1 damage (only the main player carries perks; a lone hit of 0 is left untouched).
-	if (endlessMode && temp > 1 && this_player == &player[0])
+	if (endlessFxActive() && temp > 1 && this_player == &player[0])
 	{
 		int t = (int)temp - endlessPlayerDamageReduce();
 		temp = (t < 1) ? 1 : (JE_byte)t;
@@ -1315,7 +1334,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Nitro (gamble deal): the hull is stripped for raw firepower, so any hit that lands is fatal.
 	// Push the damage past every shield+armor total; a held revive can still catch the lethal blow
 	// on the death path below, which keeps the interaction honest rather than an unavoidable game-over.
-	if (endlessMode && this_player == &player[0] && (endlessActiveMods & ENDLESS_MOD_NITRO))
+	if (endlessFxActive() && this_player == &player[0] && (endlessActiveMods & ENDLESS_MOD_NITRO))
 		temp = 255;
 
 	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on
@@ -1337,7 +1356,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		// not reach the hull: it must not arm the Countermeasure burst, deal armor damage, flash the
 		// armor gauge or reach the death path. The helper arms the cooldown when it answers true, so
 		// this is the one place allowed to ask.
-		if (endlessMode && this_player == &player[0] && temp > 0
+		if (endlessFxActive() && this_player == &player[0] && temp > 0
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
 			temp = 0;
@@ -1427,7 +1446,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into
 	// the generator. Main player only; re-cap at the generator ceiling since the tick's own recharge/cap
 	// already ran. shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
-	if (endlessMode && this_player == &player[0] && this_player->shield < oldShield)
+	if (endlessFxActive() && this_player == &player[0] && this_player->shield < oldShield)
 	{
 		const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
 		                                           shields[this_player->items.shield].tpwr);
@@ -1441,7 +1460,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst
 	// that vaporises enemy projectiles around the ship (radius grows at 2 stacks), on a shared cooldown.
-	if (endlessMode && this_player == &player[0] && cmHullHit)
+	if (endlessFxActive() && this_player == &player[0] && cmHullHit)
 	{
 		const int cmRadius = endlessPerkCountermeasureRadius();  // 0 unless owned AND off cooldown
 		if (cmRadius > 0)
@@ -1487,7 +1506,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// return value, which is 0 whenever the shield fully absorbs a hit -- the common early-game case, why
 	// this looked dead). Only losses count, so a revive restoring armor can't read as negative. Main
 	// player only (its generator is the global `power`); the helper is 0 when off / under a dead generator.
-	if (endlessMode && this_player == &player[0])
+	if (endlessFxActive() && this_player == &player[0])
 	{
 		int lost = 0;
 		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
@@ -1554,7 +1573,7 @@ void JE_drawArmor(void)
 {
 	// The 28 cap is the classic bar maximum; the endless reinforced hull legitimately exceeds it
 	// (drawn as rollover layers below), so don't clobber the real value in endless mode.
-	if (!endlessMode)
+	if (!endlessFxActive())
 		for (uint i = 0; i < COUNTOF(player); ++i)
 			if (player[i].armor > 28)
 				player[i].armor = 28;
@@ -1564,7 +1583,7 @@ void JE_drawArmor(void)
 		for (uint i = 0; i < COUNTOF(player); ++i)
 			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, roundf(player[i].armor * 0.8f), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
 	}
-	else if (endlessMode)
+	else if (endlessFxActive())
 	{
 		endlessDrawArmorBar(player[0].armor);
 	}

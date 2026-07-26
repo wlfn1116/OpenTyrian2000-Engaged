@@ -20,6 +20,7 @@
 
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
 #include "episodes.h"
 #include "file.h"
 #include "joystick.h"
@@ -174,6 +175,7 @@ JE_boolean engageMode;
 
 JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian;
 JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
+JE_boolean endlessCampaignMods;  // debug: endless EFFECTS in a normal game (see endlessFxActive)
 JE_boolean trentWin = false;
 JE_byte    superArcadeMode;
 
@@ -637,6 +639,11 @@ bool load_opentyrian_config(void)
 		customWeaponEditMode = 0;
 	}
 
+	// The Debug Mode endless-effects layer: master toggle, virtual zone, mod mask, perk stacks and
+	// pinned scaling levers. Its own section because it is a whole setup rather than a setting, and
+	// endless_save.c owns the format -- config.c has no business knowing what a perk is.
+	endlessDebugConfigLoad(config_find_section(config, "endless_debug", NULL));
+
 	// Smooth Motion owns the sub-pixel render path. Keep it disabled when motion
 	// interpolation is off, then apply the scaler constraint to the final state.
 	set_smooth_motion(smoothMotion);
@@ -769,6 +776,13 @@ bool save_opentyrian_config(void)
 
 	for (int i = 0; i < expertSettingsCount; ++i)
 		config_set_int_option(section, expertSettings[i].cfgKey, *expertSettings[i].value);
+
+	// The Debug Mode endless-effects layer (see the matching load above). endlessDebugConfigSave
+	// declines to write during an endless run, so the section is only ever the CAMPAIGN setup.
+	section = config_find_or_add_section(config, "endless_debug", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	endlessDebugConfigSave(section);
 
 	FILE *file = dir_fopen(get_user_directory(), "opentyrian.cfg", "w");
 	if (file == NULL)

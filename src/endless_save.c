@@ -19,6 +19,7 @@
 #include "tyrian2.h"       // itemAvail, itemAvailMax
 #include "varz.h"          // eventRec, maxEvent, map* globals
 
+#include <inttypes.h>  // PRIX64 (the mod mask goes to the config as hex text)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -756,4 +757,103 @@ void endlessArmLockedRelaunch(void)
 	forcedLvlFileNum = endlessSortieFile;  // keep JE_loadMap's rescan from reverting to the section's first ']L'
 	nextLevel = mainLevel;
 	jumpSection = true;  // exits the shop loop; JE_loadMap then loads the committed level
+}
+
+// --- Debug campaign-mods state in opentyrian.cfg ----------------------------------------------
+// The Debug Mode effect layer (see endlessFxActive) is a setup you build once and then play with
+// for a while, so it outlives the process rather than the session. Kept here with the rest of the
+// endless persistence, and out of config.c, which has no business knowing what a perk is.
+//
+// Only written when NOT in an endless run: during a run these globals belong to the RUN (and ride
+// endless.sav), so writing them here would overwrite the campaign slate with a run's state. Leaving
+// the keys untouched instead means a quit from inside a run preserves whatever was last saved.
+
+#define ENDLESS_CFG_PIN_PREFIX "pin_"
+#define ENDLESS_CFG_PIN_OFF    (-1)   // no lever's valid range reaches below 0, so this can't collide
+
+void endlessDebugConfigSave(ConfigSection *section)
+{
+	if (section == NULL || endlessMode)
+		return;
+
+	config_set_int_option(section, "campaign_mods", endlessCampaignMods ? 1 : 0);
+	config_set_int_option(section, "virtual_zone", endlessRunDepth + 1);
+
+	// The mod mask is 64-bit and config options are int, so it goes as hex text rather than as a
+	// pair of halves that could be reassembled wrongly.
+	char buf[32];
+	snprintf(buf, sizeof(buf), "%016" PRIX64, (Uint64)endlessActiveMods);
+	config_set_string_option(section, "mods", buf);
+
+	// Two hex digits per perk, in perk-id order. That order is already contracted as stable (it is
+	// the endless.sav slot index -- see the PERK_* enum), so this needs no separate contract.
+	char perks[2 * PERK_COUNT + 1];
+	int n = 0;
+	for (int p = 0; p < PERK_COUNT && n + 2 < (int)sizeof(perks); ++p)
+		n += snprintf(perks + n, sizeof(perks) - (size_t)n, "%02X", endlessPerkOwned[p] & 0xFF);
+	perks[n] = '\0';
+	config_set_string_option(section, "perks", perks);
+
+	for (int i = 0; i < ESO_COUNT; ++i)
+	{
+		char key[48];
+		snprintf(key, sizeof(key), ENDLESS_CFG_PIN_PREFIX "%s", endlessScalingOverrideKey(i));
+		config_set_int_option(section, key, endlessScalingOverride[i].active
+		                                    ? endlessScalingOverride[i].value : ENDLESS_CFG_PIN_OFF);
+	}
+}
+
+void endlessDebugConfigLoad(const ConfigSection *section)
+{
+	if (section == NULL)
+		return;
+
+	int campaign_mods = 0;
+	config_get_int_option(section, "campaign_mods", &campaign_mods);
+	endlessCampaignMods = (campaign_mods != 0);
+
+	int zone = 1;
+	config_get_int_option(section, "virtual_zone", &zone);
+	if (zone < 1)
+		zone = 1;
+	if (zone > 9999)
+		zone = 9999;
+	endlessRunDepth = zone - 1;
+
+	const char *mods = NULL;
+	if (config_get_string_option(section, "mods", &mods) && mods != NULL)
+		endlessActiveMods = (Uint64)strtoull(mods, NULL, 16);
+
+	const char *perks = NULL;
+	if (config_get_string_option(section, "perks", &perks) && perks != NULL)
+	{
+		const size_t len = strlen(perks);
+		for (int p = 0; p < PERK_COUNT && (size_t)(p * 2 + 1) < len; ++p)
+		{
+			unsigned v = 0;
+			if (sscanf(perks + p * 2, "%2x", &v) == 1)
+				endlessPerkSetOwned(p, (int)v);   // clamps to the perk's own max
+		}
+	}
+
+	for (int i = 0; i < ESO_COUNT; ++i)
+	{
+		char key[48];
+		snprintf(key, sizeof(key), ENDLESS_CFG_PIN_PREFIX "%s", endlessScalingOverrideKey(i));
+		int v = ENDLESS_CFG_PIN_OFF;
+		config_get_int_option(section, key, &v);
+		// Clamp rather than trust: a hand-edited or older config must not be able to hand a lever a
+		// value outside the range the editor itself enforces.
+		if (v == ENDLESS_CFG_PIN_OFF)
+		{
+			endlessScalingOverride[i].active = false;
+			endlessScalingOverride[i].value = 0;
+		}
+		else
+		{
+			endlessScalingOverride[i].active = true;
+			endlessScalingOverride[i].value = endlessClamp(v, endlessScalingOverrideMin(i),
+			                                                  endlessScalingOverrideMax(i));
+		}
+	}
 }

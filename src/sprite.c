@@ -534,6 +534,28 @@ void free_sprite2s(Sprite2_array *sprite2s)
 	sprite2s->size = 0;
 }
 
+/* Is `index` a sprite this sheet actually contains?
+ *
+ * A Sprite2_array is one raw blob: a Uint16 offset table, then the packed sprites. Every blit below
+ * reads offsets[index - 1] and walks bytes from there until a 0x0f terminator -- with no bounds
+ * check at all, so an index the sheet doesn't have follows a junk offset into arbitrary memory and
+ * paints whatever it finds. That is precisely what a bad item id looks like on screen: "distorted
+ * graphics", not a missing sprite. Indices come from game data (ship/weapon/enemy ids, level
+ * scripts), so one bad id should cost a sprite, not the frame.
+ *
+ * Deliberately makes NO assumption about the sprite count -- it only requires that the table read
+ * and the offset it yields both land inside the blob. That is enough to contain a wild index, and
+ * it cannot wrongly reject a legitimate one.
+ */
+static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int index)
+{
+	if (sprite2s.data == NULL || index < 1)
+		return false;
+	if ((size_t)index * sizeof(Uint16) > sprite2s.size)   // the offset-table entry itself
+		return false;
+	return SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]) < sprite2s.size;  // ...and what it points at
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite2(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
@@ -544,6 +566,9 @@ void blit_sprite2(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, un
 	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
 	
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 	
 	for (; *data != 0x0f; ++data)
@@ -577,6 +602,9 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 	assert(surface->format->BitsPerPixel == 8);
 	if (render_list_recording)
 		rl_rec_sprite2(x, y, sprite2s, index, RC_SPRITE2_CLIP);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
@@ -624,6 +652,9 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array sprite2s, unsigned int index,
                                  int wx0, int wx1, int wy0, int wy1)
 {
+	if (!sprite2_index_valid(sprite2s, index))
+		return false;   // a sprite the sheet doesn't have covers nothing
+
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
 	for (; *data != 0x0f; ++data)
@@ -669,6 +700,9 @@ void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprit
 	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
 	
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 	
 	for (; *data != 0x0f; ++data)
@@ -705,6 +739,9 @@ void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprit
 void blit_sprite2_blend_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
 	assert(surface->format->BitsPerPixel == 8);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
@@ -753,6 +790,9 @@ void blit_sprite2_darken(SDL_Surface *surface, int x, int y, Sprite2_array sprit
 	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
 	
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 	
 	for (; *data != 0x0f; ++data)
@@ -788,6 +828,9 @@ void blit_sprite2_darken(SDL_Surface *surface, int x, int y, Sprite2_array sprit
 void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
 	assert(surface->format->BitsPerPixel == 8);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
@@ -836,6 +879,9 @@ void blit_sprite2_filter(SDL_Surface *surface, int x, int y, Sprite2_array sprit
 	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
 	
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 	
 	for (; *data != 0x0f; ++data)
@@ -869,6 +915,9 @@ void blit_sprite2_filter_clip(SDL_Surface *surface, int x, int y, Sprite2_array 
 	assert(surface->format->BitsPerPixel == 8);
 	if (render_list_recording)
 		rl_rec_sprite2_filter(x, y, sprite2s, index, filter, true);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 
@@ -991,6 +1040,9 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 void blit_sprite2_scaled(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int scale, Blit2Op op, Uint8 filter)
 {
 	assert(surface->format->BitsPerPixel == 8);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
 

@@ -890,8 +890,11 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			// Sidekicks are EXCLUDED — trailing companions (e.g. Gerund) follow the
 			// ship's past path, not its velocity; the ship offset would jitter them.
 			// They interpolate by their own motion instead (the branch below).
-			// id = RL_ID_SHIP_BASE + playerNum (1 or 2) => player index 0/1.
-			int p = c->id - RL_ID_SHIP_BASE - 1;
+			// id = RL_ID_SHIP_BASE + playerNum (1 or 2) => player index 0/1. The ship range also
+			// holds RL_ID_SHIP_TRIM_BASE + playerNum, which is two further along and belongs to the
+			// same player -- hence the wrap rather than a plain clamp, which would have handed
+			// player 1's trim to player 2.
+			int p = (c->id - RL_ID_SHIP_BASE - 1) % 2;
 			if (p < 0) p = 0; else if (p > 1) p = 1;
 			x += rl_iround(ship_override_dx[p] * scale);
 			y += rl_iround(ship_override_dy[p] * scale);

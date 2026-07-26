@@ -173,6 +173,10 @@ extern JE_boolean extraGame;
 extern JE_boolean engageMode;
 extern JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian, trentWin;
 extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
+// Debug Mode only: run endless mode's EFFECT layer (difficulty levers, sector mutators, perks,
+// elites) inside a normal campaign/arcade game, without any of its structure. Lives beside
+// endlessMode because the pair is what endlessFxActive() reads; session-only, never saved.
+extern JE_boolean endlessCampaignMods;
 extern JE_byte superArcadeMode;
 extern JE_byte superArcadePowerUp;
 extern JE_real linkGunDirec;

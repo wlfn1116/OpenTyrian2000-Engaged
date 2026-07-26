@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "custom_weapon.h"
+#include "endless.h"
 #include "file.h"
 #include "lvllib.h"
 #include "lvlmast.h"
@@ -392,30 +393,88 @@ static void JE_applyEpDiffs(void)
 // Bubble Gum-Gun (ammo 80) and the Flying Punch (ammo 20), carry a real magazine
 // (option.ammo > 0, so the in-game HUD gauge already works) but shipped without that
 // label, leaving them the only ammo sidekicks whose count never appeared in the shop.
-// Re-add the label in the original style for any ammo option that lacks it.
-static void JE_labelAmmoSidekicks(void)
+//
+// The label is rebuilt from scratch rather than only added where it was missing, because the
+// endless Ordnance Reserves perk grows every magazine mid-run: the shop has to advertise the
+// number you will actually fly with, and that number changes as the perk stacks.
+//
+// Bare name (label stripped) + shipped magazine size, captured once per item-data load; the
+// labels are then rendered from these, so relabelling is idempotent however often it runs.
+static char    ammoBaseName[OPTION_NUM + 1][31];
+static JE_byte ammoBaseAmmo[OPTION_NUM + 1];
+static int     ammoLabelPct = -1;  // magazine-bonus % the current labels were written for; -1 = not built yet
+
+// Copy `src` (space-padded to 30 in the data) into `dst` with the padding and any trailing
+// "Ammo <digits>" label removed, leaving just the weapon's own name.
+static void JE_stripAmmoLabel(const char *src, char *dst, size_t dstsz)
+{
+	size_t len = strlen(src);
+	while (len > 0 && src[len - 1] == ' ')
+		--len;
+
+	const char *p = strstr(src, "Ammo ");
+	if (p != NULL)
+	{
+		const char *q = p + 5;
+		while (*q >= '0' && *q <= '9')
+			++q;
+		if (q > p + 5 && (size_t)(q - src) >= len)  // the digits run to the end: it really is the label
+		{
+			len = (size_t)(p - src);
+			while (len > 0 && src[len - 1] == ' ')
+				--len;
+		}
+	}
+
+	if (len > dstsz - 1)
+		len = dstsz - 1;
+	memcpy(dst, src, len);
+	dst[len] = '\0';
+}
+
+// Snapshot the freshly-loaded sidekick names and magazine sizes, and force the next relabel to
+// run. Called from JE_loadItemDat, which is the only thing that rewrites options[] from disk.
+static void JE_captureAmmoSidekickBases(void)
 {
 	for (int i = 1; i <= OPTION_NUM; ++i)
 	{
-		if (options[i].ammo == 0                        // charge/infinite sidekick: no magazine
-		    || strncmp(options[i].name, "None", 4) == 0 // empty slot
-		    || strstr(options[i].name, "Ammo") != NULL) // already labelled (the classic weapons)
+		ammoBaseAmmo[i] = options[i].ammo;
+		JE_stripAmmoLabel(options[i].name, ammoBaseName[i], sizeof(ammoBaseName[i]));
+	}
+	ammoLabelPct = -1;
+}
+
+// Write "<name>   Ammo N" into every ammo sidekick's shop name, N being its magazine as the
+// player will actually fly it (shipped size + the Ordnance Reserves perk). Cheap to call often:
+// it does nothing until the perk bonus actually changes.
+void JE_labelAmmoSidekicks(void)
+{
+	const int pct = endlessPerkAmmoPercent();
+	if (pct == ammoLabelPct)
+		return;
+	ammoLabelPct = pct;
+
+	for (int i = 1; i <= OPTION_NUM; ++i)
+	{
+		if (ammoBaseAmmo[i] == 0                        // charge/infinite sidekick: no magazine
+		    || ammoBaseName[i][0] == '\0'               // empty slot
+		    || strncmp(ammoBaseName[i], "None", 4) == 0)
 			continue;
 
-		// Names are space-padded to 30 chars in the data; trim to find where the real name ends.
-		size_t len = strlen(options[i].name);
-		while (len > 0 && options[i].name[len - 1] == ' ')
-			--len;
-
 		char label[16];
-		int label_len = snprintf(label, sizeof(label), "Ammo %d", options[i].ammo);
+		int label_len = snprintf(label, sizeof(label), "Ammo %d",
+		                         endlessPerkSidekickAmmo(ammoBaseAmmo[i]));
 
 		// Align to column 15 like the originals (or one space past the name if it already
 		// reaches that far), clamped so the label never overruns the 30-char name field.
+		size_t len = strlen(ammoBaseName[i]);
 		size_t col = (len < 15) ? 15 : len + 1;
 		if (col + (size_t)label_len > 30)
 			col = (30 >= (size_t)label_len) ? 30 - (size_t)label_len : 0;
+		if (len > col)
+			len = col;
 
+		memcpy(options[i].name, ammoBaseName[i], len);
 		for (size_t k = len; k < col; ++k)
 			options[i].name[k] = ' ';
 		memcpy(options[i].name + col, label, label_len);
@@ -619,8 +678,6 @@ void JE_loadItemDat(void)
 
 	JE_applyEpDiffs();              // force the configured ep1-3/ep4-5 data on the other diff weapons
 
-	JE_labelAmmoSidekicks();        // show the magazine size in the shop name (Flying Punch, Bubble Gum-Gun)
-
 	// Wobbley's first animation frame ships as stray sprite 166 (a neighbouring small-pod
 	// graphic) while the rest of its loop is the 246/265/284/303 wobble; snap frame 0 to the
 	// base rest frame so it no longer flashes the wrong pod once per cycle.
@@ -644,6 +701,11 @@ void JE_loadItemDat(void)
 			shields[i].itemgraphic = 167;
 
 	customWeaponInit();             // claim a free port + compile the user's custom weapon
+
+	// Last, so the snapshot sees every slot as the shops will: after the Charge-Laser and the
+	// custom weapon have claimed theirs.
+	JE_captureAmmoSidekickBases();  // snapshot the shipped sidekick names + magazine sizes...
+	JE_labelAmmoSidekicks();        // ...and show the magazine size in the shop name (Flying Punch, Bubble Gum-Gun)
 }
 
 void JE_initEpisode(JE_byte newEpisode)
