@@ -64,6 +64,11 @@ void JE_drawScore(void);
 void JE_menuFunction(JE_byte select);
 bool JE_debugLevelSelect(void);
 
+// The endless effect layer's control panel, opened from the debug menu: sector modifiers, personal
+// buffs, perks and the zone-scaling readout, applied in place rather than launching a level. Outside
+// endless mode it also carries the master toggle that runs the whole layer in a normal campaign.
+void endlessDebugTuneScreen(void);
+
 // The debug level browser drops straight into a level, skipping the campaign route that
 // normally leads there. debugLevelJumpTake() reports (once, then disarms) that the level
 // which just finished was reached that way; debugLevelJumpReturn() puts the player back in

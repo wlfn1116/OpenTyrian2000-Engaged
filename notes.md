@@ -1128,6 +1128,35 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Rapid Recharge speeds the special-weapon cooldown and sidekick ammo-refill
   counters (not the main guns). Its decrement accumulator is stateful: sample it
   once per tick in the main-player block, then reuse the sampled value.
+- **Ordnance Reserves** (`PERK_ORDNANCE`, max 4) is one perk with two halves, both
+  hanging off levers that already existed:
+  - *Sidekick magazines.* `endlessPerkSidekickAmmo(base)` grows a shipped
+    `option.ammo` by `ENDLESS_PERK_AMMO_PCT` (30%) per stack — rounded UP to at
+    least +1, so a 5-round MegaMissile actually gains a shot — capped at
+    `ENDLESS_PERK_AMMO_CAP` (250). Applied where `JE_drawOptions` seeds
+    `sidekick[].ammo_max`. The refill cadence deliberately keeps using the
+    **shipped** size: vanilla computes it as `(105 - ammo) * 4` into a `uint`, so a
+    boosted magazine past 105 rounds would wrap it huge and stall the reload
+    forever — and a bigger magazine shouldn't come with slower reloads anyway.
+  - *Special duration.* `endlessPerkSpecialDuration(base, cap)` stretches the
+    timed specials by `ENDLESS_PERK_SPECDUR_PCT` (30%) per stack at every
+    `flareDuration` / `astralDuration` / `invulnerable_ticks` assignment in
+    `JE_specialComplete`. `cap` exists for the byte-wide fields (`astralDuration`).
+    `zinglonDuration` is the one duration deliberately left alone: its beam
+    brightness is drawn as `25 - abs(zinglonDuration - 25)`, a ramp that only
+    works on the stock 50 ticks.
+  - The shop name has to advertise the boosted number, so `JE_labelAmmoSidekicks`
+    (episodes.c) now REBUILDS every `"<name>   Ammo N"` label instead of only
+    adding the two that shipped without one. `JE_loadItemDat` snapshots the bare
+    names + shipped magazines once (after the Charge-Laser and custom weapon have
+    claimed their slots), and the relabel renders from that snapshot, so it is
+    idempotent however often it runs. It self-guards on the current bonus %, which
+    is why the shop frame loop and `JE_drawOptions` can just call it every time.
+  - `AMMO_GAUGE_STEP` (player.h) replaces the open-coded `MAX(1, ammo_max / 10)` at
+    the three HUD gauge draws. Ceiling division keeps a full magazine at ≤10
+    segments inside the 29px strip; the shipped sizes (5/10/20/80) are unchanged by
+    it, but a 26-round boosted magazine would otherwise have drawn 13 segments and
+    run off the end of the bar.
 - Level-clear bank interest is `ENDLESS_INTEREST_BASE_PCT` (10%) of unspent cash,
   +5 points per **Compound Interest** stack (max 4 → 30%), capped at
   `3000 + depth*80` scaled by the SAME rate factor — a rate rise with a fixed cap
@@ -1191,6 +1220,164 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Reroll runs neither the entry merchant-sort nor the equipped auto-adds, and a
   purchase doesn't sync `last_items`, so shop-stock code must seed from
   `player[0].items`, not stale caches.
+
+### The mode / effect split — `endlessFxActive()`
+
+`endlessMode` used to gate two unrelated things, so Debug Mode could not run the
+fun half of endless inside a normal game. They are now separate:
+
+- **`endlessMode`** — the run STRUCTURE: which level plays next, the outpost,
+  Chart-a-Course, the `endless.sav` sidecar, the Run Over screen, disabled
+  mid-level savepoints, the datacube/secret-orb rewrites, the powerup-drop
+  redirect, the depth-inflated shop prices, the boss-kill tally.
+- **`endlessFxActive()`** (`endless.h`, inline) — the EFFECTS: the depth-scaled
+  levers, every `ENDLESS_MOD_*` bit, perks, elites, the rising tide. Reads
+  `endlessMode || endlessCampaignMods`.
+
+**Which gate a new site wants is decided by what it DOES, not where it lives.**
+Reads a lever, a mod bit or a perk → `endlessFxActive()`. Touches run flow, the
+shop or the save → `endlessMode`. The effect layer is a no-op at depth 0 with no
+mods (every lever returns its identity value), so switching it on alone changes
+nothing — that property is the regression floor and is worth preserving.
+
+Three places needed care, and are the pattern for anything similar:
+
+- **Purchases must stay `endlessMode`.** The Reinforce-Hull bonus (`varz.c`
+  ship-info) and the revive token are bought at an outpost; a campaign has no
+  shop, so a finished run's purchases would otherwise follow the player into a
+  normal game. `endlessCampaignModsArm()` clears that state when the layer is
+  switched on; perks and mod bits are deliberately left alone, being what the
+  debug screen exists to set.
+- **The layer may only RAISE a cap, never lower one.** The armour-pickup cap
+  (`mainint.c`) is `initial_armor` in endless but keeps the classic 28 as a
+  FLOOR under campaign mods — otherwise merely enabling the layer would nerf
+  pickups for any ship with a hull under 28.
+- **Per-level effect state has to be reset.** `endlessResetZoneEffects()`
+  (`endless_level.c`) holds the elite tier decisions, the three zone timers and
+  the kill-fire combo; `endlessRegenerateLevel` and `endlessCampaignLevelStart`
+  both call it. It is deliberately RNG-free so `endlessRegenerateLevel` keeps
+  drawing its seeded rolls in their established phase order — moving a draw
+  changes every existing seed's run. The campaign path re-rolls the elite stream
+  and gravity heading from `mt_rand` instead, because it has no zone counter to
+  key a per-level phase off.
+
+`difficultyAdjust` is the one campaign behaviour the layer SUPPRESSES rather than
+adds to (`mainint.c` JE_endLevelAni): a score-driven difficulty bump between
+levels would move the whole ramp under the scaling readout.
+
+### Zone scaling: readout and per-lever overrides
+
+Every depth-driven lever is a pure function of (`endlessRunDepth`,
+`difficultyLevel`, `endlessActiveMods`). `endlessScalingSnapshot(zone,
+difficulty, mods, *out)` (`endless_combat.c`, at the file tail) exploits that: it
+saves those three globals, swaps in the requested triple, calls the REAL
+accessors and restores. So the readout can never drift from the formulas, and a
+snapshot taken mid-level leaves the run untouched. It also forces the effect
+layer on for its duration, so the page describes the RAMP rather than whether it
+currently applies — otherwise the `endlessFxActive()`-gated levers would read as
+flat zeroes exactly when someone is looking the curve up. The one figure it
+cannot predict is ENRAGE's and RETALIATION's contribution to `fireDelayPct`: both
+key off live per-level timers, so that reads as whatever it is right now.
+
+`endlessScalingOverride[ESO_*]` pins a lever: its accessor returns the pinned
+value outright via the one-line `ENDLESS_OVERRIDE(id)` macro at the top of the
+function, bypassing depth AND mutators. That total bypass is the point — it
+isolates which axis a difficulty wall came from. The macro and the array sit
+early in `endless_combat.c`; the name/bounds tables and the snapshot builder sit
+at the tail, because their editing bounds cite tunables declared further down
+beside the levers they belong to.
+
+### The debug screens — `game_menu.c` `endlessDebugScreen(bool jumpMode)`
+
+One screen, two shapes. `jumpMode` is the endless ZONE JUMP the debug level
+picker opens (Base Level + START ZONE, staged and committed only on launch, so
+Esc is a real cancel). `!jumpMode` is the TUNE form the debug menu opens
+(`endlessDebugTuneScreen`): same slate/perk/scaling editors, but it applies in
+place on the way out — Esc applies too, by design, because it is a live control
+panel rather than a dialog proposing a change. Outside endless it also carries
+the master `endlessCampaignMods` toggle.
+
+Both reach the `EDS_SCALING` page: one row per lever, value at the previewed
+zone, `PIN` marking an override, and the selected row's help line showing the
+CURVE across zones 1/25/50/100/200 — a lever's whole point is where it turns on
+and where it caps, which one figure at one zone shows neither of.
+
+Gotcha: this screen is now reachable from the IN-GAME debug menu, where there is
+no pillarbox, as well as from the shop, where there is. It centres on
+`video_get_menu_x_offset() != 0 ? LEGACY_WIDTH : vga_width` — assuming either one
+unconditionally strands or double-offsets the panel.
+
+The whole setup (toggle, virtual zone, mod mask, perk stacks, pinned levers) is
+persisted to `opentyrian.cfg` `[endless_debug]`. `endlessDebugConfigSave/Load`
+live in `endless_save.c`, not `config.c`, which has no business knowing what a
+perk is. **The save declines to write during an endless run** — those globals
+belong to the RUN then (and ride `endless.sav`), so writing would overwrite the
+campaign slate; leaving the keys untouched means quitting from inside a run
+preserves whatever was last saved. Written immediately on apply rather than at a
+clean exit, since a crash is a plausible way for a debug session to end.
+
+## Debug menu mid-level edits — `mainint.c` `JE_debugMenu`
+
+The loadout rows write straight into `player[0].items`, but the engine caches a
+great deal off those and recomputes it only at LEVEL START: `shipGr` **and which
+sheet it lives on** (`shipGrPtr`), the hull, `initial_armor`, the hit box,
+`powerAdd`, `shield_max`, the sidekick pods' ammo/style. Changing a ship mid-level
+moved none of it — a sprite index read against the wrong sheet is where the
+garbled hull came from.
+
+`debug_apply_loadout_change(shipChanged)` runs after any edit key on a loadout
+row. It is deliberately the same sequence as the engine's OWN in-level ship
+change (the Tab+digit extra-ship path in `JE_playerMovement`) so the two cannot
+drift: reset `shotMultiPos`, clamp `weapon_mode` to `JE_portConfigs()`,
+`JE_getShipInfo()`, then repaint — both gauges are **event-driven**, painted when
+they change rather than per frame, so they must be repainted explicitly.
+
+Two rules it encodes:
+- Only a real hull SWAP re-armors you (compare `items.ship` before/after — Left at
+  id 0 changes nothing). Nudging the rear weapon must not quietly heal you.
+- `JE_getShipInfo` rewrites BOTH players' armor, but only player 1's loadout is
+  editable here, so player 2 always keeps what it had.
+
+The **generator** row is covered by the same call: `powerAdd` (the per-tick
+recharge) is set *only* in `JE_getShipInfo`, so before this nothing about a
+generator swap took effect. Max power is a flat 900 regardless of generator, so
+`powerAdd` is the whole of it.
+
+Related: the cyclers now clamp at the top (`SHIP_NUM`, `PORT_NUM`, `SHIELD_NUM`,
+`POWER_NUM`, `OPTION_NUM`) the way Left already clamped at 0. Each indexes an
+array sized `[X_NUM + 1]`, so stepping past was an out-of-bounds read the moment
+anything looked the item up. `JE_getShipInfo` had the same latent bug for the
+"extra" ships (id > 90, described by `extraShips[]` not `ships[]`) — guarded now.
+
+### Sprite2 blits are now index-bounded — `sprite.c`
+
+A `Sprite2_array` is one raw blob: a `Uint16` offset table, then packed sprites.
+Every `blit_sprite2*` read `offsets[index - 1]` and walked bytes from there with
+**no bounds check at all**, so an index the sheet doesn't have followed a junk
+offset into arbitrary memory and painted whatever it found. That is what a bad
+item id looks like on screen — "distorted graphics", not a missing sprite.
+
+`sprite2_index_valid()` now gates all ten of them (and
+`sprite2_has_pixel_in_window`). It deliberately assumes **nothing** about the
+sprite count: it only requires that the offset-table read and the offset it
+yields both land inside the blob. That contains a wild index without any risk of
+wrongly rejecting a legitimate one.
+
+### The Nort ship's banking trim — `RL_ID_SHIP_TRIM_BASE`
+
+The Nort ship (id 12, the `shipgraphic == 1` sentinel — see the two-piece hull
+notes) is the only 1-player hull that draws a sprite **conditionally**: its
+banking trim (39/40/58/59) appears only while banked. It shared the hull's
+`RL_ID_SHIP_BASE + player` id, and `rl_finalize` snaps a whole id on any tick
+whose per-id blit count differs from the previous one — so the hull lost its
+interpolation every time banking started or stopped, i.e. continuously while
+moving. Normal ships draw a constant blit count and never hit this; the
+Dragonwing draws two constant halves, so it doesn't either.
+
+The trim now has its own id, kept inside the ship range so it still rides the
+ship's render-rate override and stays welded to the hull. That made the player
+index derivation in `rl_replay` a **wrap** rather than a clamp — a clamp would
+have handed player 1's trim to player 2.
 
 ## Boss & enemy health bars — `tyrian2.c`, `varz.c`
 

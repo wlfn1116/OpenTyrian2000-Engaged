@@ -402,7 +402,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 	// Endless "Efficient Coils" perk: trim the generator draw per main-weapon shot (100 = normal),
 	// so a given generator sustains heavier fire. Scales the base cost before the special/boost zeroing.
-	if (endlessMode)
+	if (endlessFxActive())
 		power_use = power_use * endlessPerkPowerUsePercent() / 100;
 
 	// Special-weapon shots are paid for upfront in shield/armor; they must not also
@@ -414,12 +414,12 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	// Endless kill-fire BOON (Turbodrive / Overdrive): the boosted fire rate must not drain the
 	// generator faster, so shots fired during the window are power-free. An evil curse fires SLOWER,
 	// so it gets no such break -- normal power cost applies.
-	if (endlessMode && endlessTurbodriveActive() && !endlessKillFireIsEvil())
+	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		power_use = 0;
 
 	// Endless Opening Salvo perk: a charged volley (the fire path arms it for the front gun only)
 	// costs no generator power. Its shots are also tagged below for the collision-time damage bonus.
-	if (endlessMode && endlessOpeningSalvoVolleyActive())
+	if (endlessFxActive() && endlessOpeningSalvoVolleyActive())
 		power_use = 0;
 
 	if (!cheatInfiniteGenerator)
@@ -455,7 +455,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		shot->chainReaction = 0;
 		// Endless Opening Salvo perk: tag this shot if it belongs to a charged volley, so the
 		// collision applies the damage bonus only to those shots (not every shot on screen).
-		shot->salvoBoost = (endlessMode && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
+		shot->salvoBoost = (endlessFxActive() && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
 
 		shot->playerNumber = playerNum;
 
@@ -597,7 +597,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		// case are left alone; scaling X and Y together preserves the firing angle. The result is
 		// rounded, kept >= 1 so a moving shot never freezes, and clamped < 100 so a boosted shot
 		// can never read as a sentinel.
-		if (endlessMode)
+		if (endlessFxActive())
 		{
 			int spd = endlessPerkShotSpeedPercent();
 			if (spd != 100)
@@ -647,7 +647,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		// Endless Evil Turbodrive/Overdrive curse: JAM the guns by lengthening the cooldown as the
 		// kill combo climbs (0 unless an evil kill-fire window is up). Main/sidekick guns only -- the
 		// special bays run their own cadence (see varz.c). shotRepeat is a byte, so clamp.
-		if (endlessMode && bay_i != SHOT_SPECIAL && bay_i != SHOT_SPECIAL2)
+		if (endlessFxActive() && bay_i != SHOT_SPECIAL && bay_i != SHOT_SPECIAL2)
 		{
 			const int jam = endlessKillFireJamTicks();
 			if (jam > 0)

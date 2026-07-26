@@ -132,10 +132,26 @@ int endlessDifficultyZone(void)
 #define ENDLESS_DMG_DEVASTATING   75    // DEVASTATING: +%
 #define ENDLESS_DMG_MAX          220    // intensity cap; the tide climbs on from here
 
+// --- Debug per-lever overrides ----------------------------------------------------
+// A pinned lever short-circuits its accessor entirely -- depth AND mutators are bypassed, which is
+// the whole point: it lets one lever be held still (or forced) while the rest ramp normally, so a
+// difficulty wall can be attributed to a single axis. All-zero by default, so an unpinned build
+// behaves exactly as before. See the ESO_* enum in endless.h.
+EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
+
+// Every override check is this one line at the top of an accessor. A macro rather than a helper
+// call so the early return reads at the call site -- an accessor that can be short-circuited should
+// say so on its first line. The lookup TABLES and the snapshot builder live at the END of this
+// file, because their editing bounds cite tunables declared further down with the levers they
+// belong to; only the array above and this macro have to precede the accessors.
+#define ENDLESS_OVERRIDE(id) \
+	do { if (endlessScalingOverride[id].active) return endlessScalingOverride[id].value; } while (0)
+
 // Ordinary-enemy HP multiplier (100 = normal): +4% per (effective) level; FORTIFIED +120%
 // (2.2x HP, clearly felt); FRAGILE -50%.
 int endlessArmorPercent(void)
 {
+	ENDLESS_OVERRIDE(ESO_ARMOR);
 	int pct = 100 + endlessEffectiveDepth() * ENDLESS_HP_PER_DEPTH;
 	if (endlessActiveMods & ENDLESS_MOD_FORTIFIED)
 		pct += ENDLESS_HP_FORTIFIED;
@@ -148,6 +164,7 @@ int endlessArmorPercent(void)
 // depth ~96 on Normal; FORTIFIED +3x (a 4x boss at depth 0); FRAGILE ~halves it.
 int endlessBossHpMult(void)
 {
+	ENDLESS_OVERRIDE(ESO_BOSSHP);
 	int mult = 1 + endlessEffectiveDepth() / ENDLESS_BOSS_DEPTH_PER_X;
 	if (endlessActiveMods & ENDLESS_MOD_FORTIFIED)
 		mult += ENDLESS_BOSS_FORTIFIED;
@@ -163,6 +180,7 @@ int endlessBossHpMult(void)
 // fire), floored at 25% so deep FRENZY runs reach ~4x.
 int endlessFireDelayPercent(void)
 {
+	ENDLESS_OVERRIDE(ESO_FIREDELAY);
 	int reduce = endlessEffectiveDepth() * ENDLESS_FIRE_PER_DEPTH_NUM / ENDLESS_FIRE_PER_DEPTH_DEN;
 	if (endlessActiveMods & ENDLESS_MOD_FRENZY)
 		reduce += ENDLESS_FIRE_FRENZY;
@@ -188,6 +206,7 @@ int endlessFireDelayPercent(void)
 // 2.4x cap at run depth ~67 on Normal; SWIFT +70% (1.7x shots).
 int endlessShotSpeedPercent(void)
 {
+	ENDLESS_OVERRIDE(ESO_SHOTSPEED);
 	int pct = 100 + endlessEffectiveDepth() * ENDLESS_SPEED_PER_DEPTH_NUM / ENDLESS_SPEED_PER_DEPTH_DEN;
 	if (endlessActiveMods & ENDLESS_MOD_SWIFT)
 		pct += ENDLESS_SPEED_SWIFT;
@@ -209,6 +228,7 @@ int endlessShotSpeedPercent(void)
 // Capped lower than the others, then the tide resumes a SLOW climb (notes.md §Difficulty ramp).
 int endlessShotDamagePercent(void)
 {
+	ENDLESS_OVERRIDE(ESO_SHOTDMG);
 	int pct = 100 + endlessEffectiveDepth() * ENDLESS_DMG_PER_DEPTH_NUM / ENDLESS_DMG_PER_DEPTH_DEN;
 	if (endlessActiveMods & ENDLESS_MOD_DEVASTATING)
 		pct += ENDLESS_DMG_DEVASTATING;
@@ -246,7 +266,8 @@ int endlessShotDamagePercent(void)
 // uncapped. Everything the tide drives is derived from this.
 int endlessTideLevel(void)
 {
-	if (!endlessMode)
+	ENDLESS_OVERRIDE(ESO_TIDE);
+	if (!endlessFxActive())
 		return 0;
 	const int t = endlessEffectiveDepth() - ENDLESS_TIDE_START;
 	return (t > 0) ? t : 0;
@@ -265,7 +286,7 @@ int endlessTideLevel(void)
 // next one may be charted.
 static int endlessTideExtraShotsRaw(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return 0;
 	const int zone = endlessDifficultyZone();
 
@@ -293,6 +314,7 @@ static int endlessTideExtraShotsRaw(void)
 
 int endlessExtraEnemyShots(void)
 {
+	ENDLESS_OVERRIDE(ESO_EXTRASHOTS);
 	int extra = endlessTideExtraShotsRaw();
 	// FLAK SCREEN boon: half the tide's ADDED shots never leave the barrel. Only this endless-specific
 	// multiplication is thinned -- the level's authored volley is the `endlessBaseMulti` the caller adds
@@ -329,7 +351,8 @@ bool endlessTideBoonsUnlocked(void)
 
 int endlessContactDamagePercent(void)
 {
-	if (!endlessMode)
+	ENDLESS_OVERRIDE(ESO_CONTACT);
+	if (!endlessFxActive())
 		return 100;
 	const int zone = endlessDifficultyZone();
 	int pct = 100;
@@ -385,6 +408,7 @@ void endlessResetElites(void)
 // share has already passed 50% (see endlessFixRedundantElitePack).
 int endlessNaturalEliteChancePercent(void)
 {
+	ENDLESS_OVERRIDE(ESO_ELITECHANCE);
 	int pct = 2 + endlessEffectiveDepth() / 2;
 	if (pct > 25)
 		// Past the 25% shoulder (effective depth 46), climb the last 55 points to the cap at
@@ -457,6 +481,7 @@ int endlessRollEliteTier(JE_byte linknum)
 // leaves a sector full of profitable, killable specials rather than an empty one.
 int endlessEliteHpMult(void)
 {
+	ENDLESS_OVERRIDE(ESO_ELITEHP);
 	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
 		return 1;
 	int mult = 2 + endlessEffectiveDepth() / 20;
@@ -527,7 +552,7 @@ int endlessChampionShotDamagePercent(void)
 // contact damage: this removes only the premium special enemies add, so the two stack without overlap.
 int endlessEliteContactPercent(int eliteState)
 {
-	if (!endlessMode || eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS))
+	if (!endlessFxActive() || eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS))
 		return 100;
 	return (eliteState == 3) ? 150 : 125;
 }
@@ -537,7 +562,7 @@ int endlessEliteContactPercent(int eliteState)
 // lone enemy fires once; a multi-tile enemy re-posts the same line (which just redraws).
 void endlessAwardEliteKill(int eliteState)
 {
-	if (!endlessMode || eliteState < 2)
+	if (!endlessFxActive() || eliteState < 2)
 		return;
 
 	const bool champion = (eliteState == 3);
@@ -577,7 +602,7 @@ const char *endlessLastGrantedSpecial(void) { return endlessLastSpecialName; }
 
 void endlessGrantSpecial(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return;
 
 	// Gather the real, SAFE specials: non-empty name, a dispatcher-handled effect type
@@ -698,7 +723,7 @@ int endlessKillBuffTicksMax(void)  { return endlessBuffWindowTicks(); }
 // endlessComboKills the same way in endlessCountKill).
 int endlessKillBuffComboCount(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return 0;
 	return endlessComboKills;
 }
@@ -750,7 +775,7 @@ int endlessKillBuffFireDecrements(void)
 // Is the currently-active kill-fire window an evil curse (slows fire / cuts damage) not a boon?
 bool endlessKillFireIsEvil(void)
 {
-	return endlessMode && endlessTurbodriveActive()
+	return endlessFxActive() && endlessTurbodriveActive()
 	    && (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL);
 }
 
@@ -820,7 +845,7 @@ static const float endlessGravityHeadings[16][2] = {
 // Called once per level from endlessRegenerateLevel (in its own seeded reseed phase).
 void endlessRollGravityDir(void)
 {
-	if (endlessMode && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
+	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
 	{
 		const unsigned h = endlessRand() % COUNTOF(endlessGravityHeadings);
 		endlessGravityDirX = endlessGravityHeadings[h][0];
@@ -836,7 +861,7 @@ void endlessRollGravityDir(void)
 float endlessGravityDrift(void)  // pull magnitude (px/tick), direction-agnostic
 {
 	// Responds to either bit so a debug-toggled bare OMNI (no GRAVITY) still pulls.
-	if (!endlessMode || !(endlessActiveMods & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
+	if (!endlessFxActive() || !(endlessActiveMods & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
 		return 0.0f;
 	float g = (ENDLESS_GRAVITY_BASE + ENDLESS_GRAVITY_PER_ZONE * (float)endlessRunDepth)
 	        * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -882,7 +907,7 @@ int endlessGravityPullY(void)
 #define ENDLESS_SLUGGISH_MAX      0.55f  // hardest slow (=> 0.45x): still clearly movable, never a standstill
 float endlessMoveScale(void)
 {
-	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
 		return 1.0f;
 	float slow = (ENDLESS_SLUGGISH_BASE + ENDLESS_SLUGGISH_PER_ZONE * (float)endlessRunDepth)
 	           * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -896,7 +921,7 @@ float endlessMoveScale(void)
 // no regen too. tyrian2.c gates the shield-regen step on this.
 bool endlessShieldRegenOff(void)
 {
-	return endlessMode && (endlessActiveMods & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
+	return endlessFxActive() && (endlessActiveMods & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
 }
 
 // DEADGEN: the generator is dead, so it barely trickles charge -- the main gun (which draws generator
@@ -906,7 +931,7 @@ bool endlessShieldRegenOff(void)
 #define ENDLESS_DEADGEN_POWER_ADD 2u   // generator charge per tick while dead (a normal generator adds ~5-23)
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 {
-	if (endlessMode && (endlessActiveMods & ENDLESS_MOD_DEADGEN))
+	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return ENDLESS_DEADGEN_POWER_ADD;
 	// STATIC DISCHARGE: a hit shorts the generator out for a moment -- no recharge at all while the
 	// lockout runs, which is what lets the drained power actually stay drained (see the block below).
@@ -925,7 +950,7 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 // (which discounts FIRING), so the three stack cleanly instead of overlapping.
 bool endlessShieldRegenFree(void)
 {
-	return endlessMode && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
 }
 
 // LOW PROFILE: scale a player hit-area half-extent. 75% of the stock box, applied at the collision
@@ -937,7 +962,7 @@ bool endlessShieldRegenFree(void)
 #define ENDLESS_LOWPROFILE_PCT 75
 int endlessHitboxScale(int area)
 {
-	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_LOWPROFILE))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_LOWPROFILE))
 		return area;
 	int a = area * ENDLESS_LOWPROFILE_PCT / 100;
 	return (a < 1) ? 1 : a;   // never zero: a hitbox that can't be hit is a different (broken) boon
@@ -972,7 +997,7 @@ void endlessAegisReset(void) { endlessAegisCooldown = 0; }
 // damage that is about to reach armor -- i.e. what a block is actually worth.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
-	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
 		return false;
 	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
 		return false;
@@ -988,7 +1013,7 @@ bool endlessAegisGateConsume(int shieldBefore, int spill)
 
 bool endlessShockwaveActive(void)
 {
-	return endlessMode && (endlessActiveMods & ENDLESS_MOD_SHOCKWAVE);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SHOCKWAVE);
 }
 
 int endlessShockwaveRadius(int linknum, int eliteState)
@@ -1014,7 +1039,7 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 // nearly full" rule, so this only decides the count.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
-	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
 		return 0;
 	if (linknum != 0 && linknum == endlessMartyrLastLink)
 		return 0;                       // same multi-tile enemy as the last removed tile -- already burst
@@ -1034,7 +1059,7 @@ JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 // correction (the arming + the one-time turn itself live at the enemy-shot sites in tyrian2.c).
 bool endlessSeekerActive(void)
 {
-	return endlessMode && (endlessActiveMods & ENDLESS_MOD_SEEKER);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SEEKER);
 }
 
 // STATIC DISCHARGE: the generator power a hit of `actualDamage` (shield+armor lost) should bleed --
@@ -1063,7 +1088,7 @@ bool endlessSeekerActive(void)
 static int endlessStaticLockout = 0;  // ticks of suppressed generator regen left (per level; drained in endlessGameplayTick)
 
 // Is the generator currently locked out by a Static Discharge hit?
-bool endlessStaticLockoutActive(void) { return endlessMode && endlessStaticLockout > 0; }
+bool endlessStaticLockoutActive(void) { return endlessFxActive() && endlessStaticLockout > 0; }
 
 // Tick down the lockout; called once per tick from endlessGameplayTick.
 void endlessStaticLockoutTick(void)
@@ -1077,7 +1102,7 @@ void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
 
 unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 {
-	if (!endlessMode || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return 0;
 	// Arm the regen lockout alongside the drain (longest window wins, so a fresh hit never shortens
 	// one already running), then report the power to bleed. Both have a floor, so even a 1-point
@@ -1100,7 +1125,8 @@ unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 // per active kill-stack on top. Applied to the player's shots (tyrian2.c).
 int endlessPlayerDamagePercent(void)
 {
-	if (!endlessMode)
+	ENDLESS_OVERRIDE(ESO_PLAYERDMG);
+	if (!endlessFxActive())
 		return 100;
 	int pct = (endlessActiveMods & ENDLESS_MOD_OVERCHARGE) ? 150 : 100;
 	if ((endlessActiveMods & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
@@ -1125,7 +1151,7 @@ int endlessPlayerDamagePercent(void)
 // Always leaves at least 1 damage so it can't make the player invulnerable.
 int endlessPlayerDamageReduce(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return 0;
 	return endlessPerkOwned[PERK_BULWARK] * ENDLESS_PERK_BULWARK;
 }
@@ -1134,7 +1160,7 @@ int endlessPlayerDamageReduce(void)
 // while sky/local scripts deliberately do not. notes.md §Endless scroll boost.
 int endlessScrollBoostPercent(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return 0;
 	if (endlessActiveMods & (ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP))
 		return 220;
@@ -1203,7 +1229,7 @@ int endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTi
 // Overclock/Overload change ENEMY behaviour, so they no longer tint the ship.)
 int endlessShipTintFilter(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return 0;
 	if (endlessTurbodriveActive())  // active kill-fire window (boost OR evil curse)
 	{
@@ -1216,4 +1242,137 @@ int endlessShipTintFilter(void)
 		       : ENDLESS_TURBODRIVE_SHIP_FILTER;   // red
 	}
 	return 0;
+}
+
+// --- Debug scaling readout & override tables --------------------------------------
+// Placed last so the editing bounds can cite every lever's own tunables (see the ENDLESS_OVERRIDE
+// macro up top, which is all the accessors themselves need).
+
+// `key` is the config-file name a pinned lever is stored under -- it is ON DISK, so rename a display
+// name freely but never one of these.
+static const struct { const char *name; const char *key; int lo, hi; } endlessOverrideInfo[ESO_COUNT] = {
+	[ESO_ARMOR]       = { "Enemy HP %",      "enemy_hp",      ENDLESS_HP_MIN,                ENDLESS_HP_MAX },
+	[ESO_BOSSHP]      = { "Boss HP x",       "boss_hp",       1,                             ENDLESS_BOSS_MAX },
+	[ESO_FIREDELAY]   = { "Fire Cooldown %", "fire_cooldown", 100 - ENDLESS_FIRE_MAX_REDUCE, 400 },
+	[ESO_SHOTSPEED]   = { "Shot Speed %",    "shot_speed",    ENDLESS_SPEED_MIN,             ENDLESS_SPEED_MAX },
+	[ESO_SHOTDMG]     = { "Shot Damage %",   "shot_damage",   10,                            ENDLESS_TIDE_DMG_CAP },
+	[ESO_CONTACT]     = { "Ram Damage %",    "ram_damage",    1,                             100 + ENDLESS_CONTACT_MAX_PCT },
+	[ESO_TIDE]        = { "Tide Level",      "tide",          0,                             400 },
+	[ESO_EXTRASHOTS]  = { "Extra Shots",     "extra_shots",   0,                             ENDLESS_TIDE_SHOT_MAX },
+	[ESO_ELITECHANCE] = { "Elite Share %",   "elite_share",   0,                             100 },
+	[ESO_ELITEHP]     = { "Elite HP x",      "elite_hp",      1,                             ENDLESS_HP_MULT_MAX },
+	[ESO_PLAYERDMG]   = { "Your Damage %",   "your_damage",   10,                            1000 },
+};
+
+const char *endlessScalingOverrideName(int id)
+{
+	return (id >= 0 && id < ESO_COUNT) ? endlessOverrideInfo[id].name : "";
+}
+const char *endlessScalingOverrideKey(int id)
+{
+	return (id >= 0 && id < ESO_COUNT) ? endlessOverrideInfo[id].key : "";
+}
+int endlessScalingOverrideMin(int id)
+{
+	return (id >= 0 && id < ESO_COUNT) ? endlessOverrideInfo[id].lo : 0;
+}
+int endlessScalingOverrideMax(int id)
+{
+	return (id >= 0 && id < ESO_COUNT) ? endlessOverrideInfo[id].hi : 0;
+}
+
+void endlessScalingOverridesClear(void)
+{
+	memset(endlessScalingOverride, 0, sizeof(endlessScalingOverride));
+}
+
+int endlessScalingOverrideCount(void)
+{
+	int n = 0;
+	for (int i = 0; i < ESO_COUNT; ++i)
+		if (endlessScalingOverride[i].active)
+			++n;
+	return n;
+}
+
+// What a lever would read RIGHT NOW if it weren't pinned -- for the debug page's "stock vs pinned"
+// column, and to seed a freshly-armed override with the live value so arming one never jumps the
+// difficulty by itself. Momentarily disarms that one override and calls the real accessor, so there
+// is no second copy of any formula to drift out of step.
+int endlessScalingOverrideStock(int id)
+{
+	if (id < 0 || id >= ESO_COUNT)
+		return 0;
+	const bool was = endlessScalingOverride[id].active;
+	endlessScalingOverride[id].active = false;
+	int v = 0;
+	switch (id)
+	{
+	case ESO_ARMOR:       v = endlessArmorPercent();              break;
+	case ESO_BOSSHP:      v = endlessBossHpMult();                break;
+	case ESO_FIREDELAY:   v = endlessFireDelayPercent();          break;
+	case ESO_SHOTSPEED:   v = endlessShotSpeedPercent();          break;
+	case ESO_SHOTDMG:     v = endlessShotDamagePercent();         break;
+	case ESO_CONTACT:     v = endlessContactDamagePercent();      break;
+	case ESO_TIDE:        v = endlessTideLevel();                 break;
+	case ESO_EXTRASHOTS:  v = endlessExtraEnemyShots();           break;
+	case ESO_ELITECHANCE: v = endlessNaturalEliteChancePercent(); break;
+	case ESO_ELITEHP:     v = endlessEliteHpMult();               break;
+	case ESO_PLAYERDMG:   v = endlessPlayerDamagePercent();       break;
+	default: break;
+	}
+	endlessScalingOverride[id].active = was;
+	return v;
+}
+
+// Compute the whole ramp for an arbitrary (zone, difficulty, mods) triple. Swaps the three globals
+// every lever reads, calls the REAL accessors, then puts them back -- so the readout can never
+// drift from the formulas, and a snapshot taken mid-level leaves the live run untouched.
+//
+// Three things the caller has to know. (1) The effect layer is FORCED ON for the duration, so the
+// page describes the ramp itself rather than whether it currently applies -- otherwise the handful
+// of endlessFxActive-gated levers would read as flat zeroes whenever the layer is switched off,
+// which is exactly when someone is most likely to be looking the curve up. Whether it applies is
+// the master toggle's job to state, and it does. (2) Overrides are deliberately left ARMED: a
+// pinned lever reads pinned rather than showing a stock curve the run is not following. (3)
+// fireDelayPct folds in whatever ENRAGE and RETALIATION contribute at this instant, since both key
+// off live per-level timers rather than depth -- outside a level both are idle and the figure is
+// the pure depth ramp.
+void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out)
+{
+	if (out == NULL)
+		return;
+
+	const int         saveDepth = endlessRunDepth;
+	const JE_shortint saveDiff  = difficultyLevel;
+	const Uint64      saveMods  = endlessActiveMods;
+	const JE_boolean  saveCamp  = endlessCampaignMods;
+
+	endlessRunDepth     = (zone > 0) ? zone - 1 : 0;
+	endlessActiveMods   = mods;
+	endlessCampaignMods = true;   // see (1) above
+	if (difficulty >= 0)
+		difficultyLevel = (JE_shortint)difficulty;
+
+	out->effDepth     = endlessEffectiveDepth();
+	out->diffZone     = endlessDifficultyZone();
+	out->rampPercent  = endlessDifficultyRampPercent();
+	out->armorPct     = endlessArmorPercent();
+	out->bossMult     = endlessBossHpMult();
+	out->fireDelayPct = endlessFireDelayPercent();
+	out->shotSpeedPct = endlessShotSpeedPercent();
+	out->shotDmgPct   = endlessShotDamagePercent();
+	out->tide         = endlessTideLevel();
+	out->extraShots   = endlessExtraEnemyShots();
+	out->contactPct   = endlessContactDamagePercent();
+	out->elitePct     = endlessNaturalEliteChancePercent();
+	out->eliteHpMult  = endlessEliteHpMult();
+	out->playerDmgPct = endlessPlayerDamagePercent();
+	out->eliteBounty  = endlessEliteBounty();
+	out->champBounty  = endlessChampionBounty();
+
+	endlessRunDepth     = saveDepth;
+	difficultyLevel     = saveDiff;
+	endlessActiveMods   = saveMods;
+	endlessCampaignMods = saveCamp;
 }

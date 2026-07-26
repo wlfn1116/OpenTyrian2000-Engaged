@@ -1042,6 +1042,10 @@ void JE_itemScreen(void)
 
 		set_shop_phase();  // crash-log breadcrumb: record which shop submenu is now open
 
+		// Keep the sidekick "Ammo N" labels current: an endless perk pick can grow every magazine
+		// without leaving this screen. A no-op unless the bonus actually moved.
+		JE_labelAmmoSidekicks();
+
 		paletteChanged = false;
 
 		leftPower = false;
@@ -1546,15 +1550,17 @@ void JE_itemScreen(void)
 		if (curMenu == MENU_OPTIONS ||
 		    curMenu == MENU_LIMITED_OPTIONS)
 		{
-			JE_barDrawShadow(VGAScreen, 225, 70, 1, music_disabled ? 12 : 16, tyrMusicVolume / 12, 3, 13);
-			JE_barDrawShadow(VGAScreen, 225, 86, 1, samples_disabled ? 12 : 16, fxVolume / 12, 3, 13);
+			// Round the bar count (+6) exactly like the in-game Esc menu, so the same
+			// volume never draws a different number of bars in the two menus.
+			JE_barDrawShadow(VGAScreen, 225, 70, 1, music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
+			JE_barDrawShadow(VGAScreen, 225, 86, 1, samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
 #if defined(__SWITCH__) || defined(__vita__)
 			// Touch Sensitivity (item 6, y=102): same bar style as the two volume rows above. The
 			// marker slot goes bright once the fill reaches it -- compare drawn bar counts (amt vs
 			// mark), not the raw value, so it flips exactly on the middle bar.
 			{
-				const int amt = touch_sensitivity / 12;
-				const int mark = TOUCH_SENS_DEFAULT / 12;
+				const int amt = (touch_sensitivity + 6) / 12;
+				const int mark = (TOUCH_SENS_DEFAULT + 6) / 12;
 				JE_barDrawShadow(VGAScreen, 225, 102, 1, 16, amt, 3, 13);
 				JE_barDrawMark(VGAScreen, 225, 102,
 				               amt >= mark ? TOUCH_SENS_MARK_COL : TOUCH_SENS_MARK_COL_DIM, mark, 3, 13);
@@ -2097,9 +2103,11 @@ void JE_itemScreen(void)
 
 					curSel[MENU_OPTIONS] = 4;
 
-					tyrMusicVolume = (mouseX - (225 - 4)) / 4 * 12;
-					if (tyrMusicVolume > 255)
-						tyrMusicVolume = 255;
+					// Same bar-width -> value mapping as the in-game Esc menu (continuous over
+					// the full bar), instead of the old quantize-to-12 step.
+					const int w = ((255 + 6) / 12) * (3 + 1) - 1;
+					const int value = (mouseX - 225) * 255 / (w - 1);
+					tyrMusicVolume = MIN(MAX(0, value), 255);
 				}
 
 				if ((mouseX >= (225 - 4)) && (mouseY >= 86) && (mouseY <= 98))
@@ -2108,9 +2116,9 @@ void JE_itemScreen(void)
 
 					curSel[MENU_OPTIONS] = 5;
 
-					fxVolume = (mouseX - (225 - 4)) / 4 * 12;
-					if (fxVolume > 255)
-						fxVolume = 255;
+					const int w = ((255 + 6) / 12) * (3 + 1) - 1;
+					const int value = (mouseX - 225) * 255 / (w - 1);
+					fxVolume = MIN(MAX(0, value), 255);
 				}
 
 #if defined(__SWITCH__) || defined(__vita__)
@@ -2119,9 +2127,9 @@ void JE_itemScreen(void)
 				{
 					curSel[curMenu] = 6;
 
-					touch_sensitivity = (mouseX - (225 - 4)) / 4 * 12;
-					if (touch_sensitivity > TOUCH_SENS_MAX)
-						touch_sensitivity = TOUCH_SENS_MAX;
+					const int w = ((TOUCH_SENS_MAX + 6) / 12) * (3 + 1) - 1;
+					const int value = (mouseX - 225) * TOUCH_SENS_MAX / (w - 1);
+					touch_sensitivity = MIN(MAX(0, value), TOUCH_SENS_MAX);
 				}
 #endif
 
@@ -4587,12 +4595,25 @@ enum  // row kinds
 	EDR_BASE,     // Random / the chosen base level (drills into EDS_BASE)
 	EDR_OPEN,     // drill into screen `idx`
 	EDR_ACTION,   // idx = EDA_*
-	EDR_LAUNCH,   // start the zone
+	EDR_LAUNCH,   // start the zone (jump form) / apply and close (tune form)
 	EDR_SECMOD, EDR_BUFMOD, EDR_PERK, EDR_GAMBLE,
+	EDR_CAMPFX,   // the master "run endless effects in a normal game" toggle (tune form, outside endless)
+	EDR_SCALE,    // one scaling lever: reads out at the previewed zone, Left/Right pins an override (idx = ESO_*)
+	EDR_SCALEINFO,// a scaling figure with no override of its own (idx = EDI_*)
+	EDR_SCALEDIFF,// the difficulty the preview is computed at
 	EDR_LEVEL     // a level from allLevel*: the endless base list AND the campaign picker
 };
-enum { EDS_HUB, EDS_SECMOD, EDS_BUFMOD, EDS_PERK, EDS_GAMBLE, EDS_BASE, EDS_SCREENS };
-enum { EDA_CLEAR, EDA_RESET };
+enum { EDS_HUB, EDS_SECMOD, EDS_BUFMOD, EDS_PERK, EDS_GAMBLE, EDS_SCALING, EDS_BASE, EDS_SCREENS };
+enum { EDA_CLEAR, EDA_RESET, EDA_UNPIN };
+
+// The read-only figures on the scaling page: derived from depth like the levers, but with no knob
+// of their own (the bounties are economy, and the three ramp figures are the levers' own clock).
+enum { EDI_ELITEBOUNTY, EDI_CHAMPBOUNTY, EDI_EFFDEPTH, EDI_RAMPZONE, EDI_RAMPPCT, EDI_COUNT };
+
+// Zones the curve shown on a selected lever's help line samples. Chosen to straddle every onset and
+// cap in the ramp: 1 (stock), 25 (the tide's first extra shot), 50, 100 (the tide anchor and the
+// contact-damage anchor), 200 (well past every intensity cap, where only the tide is still moving).
+static const int endlessCurveZones[] = { 1, 25, 50, 100, 200 };
 
 // The base-level list is the longest screen: every level, an episode heading each, plus Random.
 #define EDBG_MAX_ROWS (ALL_LEVEL_MAX + EPISODE_MAX + 8)
@@ -4635,19 +4656,68 @@ static int pickerRowSnap(const PickerRow *rows, int rowCount, int sel)
 	return sel;
 }
 
-/* Returns true if a level was launched (select_level armed the jump), false if cancelled. */
-static bool endlessDebugScreen(void)
+/* One scaling lever's value out of a snapshot, so the readout, the curve line and the override
+ * seeding all agree on which field a row means. `info` picks an EDI_* read-only figure instead. */
+static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 {
+	if (kind == EDR_SCALEINFO)
+	{
+		switch (idx)
+		{
+		case EDI_ELITEBOUNTY: return sc->eliteBounty;
+		case EDI_CHAMPBOUNTY: return sc->champBounty;
+		case EDI_EFFDEPTH:    return sc->effDepth;
+		case EDI_RAMPZONE:    return sc->diffZone;
+		default:              return sc->rampPercent;
+		}
+	}
+	switch (idx)
+	{
+	case ESO_ARMOR:       return sc->armorPct;
+	case ESO_BOSSHP:      return sc->bossMult;
+	case ESO_FIREDELAY:   return sc->fireDelayPct;
+	case ESO_SHOTSPEED:   return sc->shotSpeedPct;
+	case ESO_SHOTDMG:     return sc->shotDmgPct;
+	case ESO_CONTACT:     return sc->contactPct;
+	case ESO_TIDE:        return sc->tide;
+	case ESO_EXTRASHOTS:  return sc->extraShots;
+	case ESO_ELITECHANCE: return sc->elitePct;
+	case ESO_ELITEHP:     return sc->eliteHpMult;
+	default:              return sc->playerDmgPct;
+	}
+}
+
+/* The endless debug form. Two shapes off one screen:
+ *
+ *   jumpMode  the ZONE JUMP the endless debug level picker opens -- pick a base level and launch
+ *             straight into it at a chosen zone with a chosen slate.
+ *   !jumpMode the TUNE form the debug menu opens -- the same slate and perk editors, but it applies
+ *             in place and closes instead of launching, and outside endless it also carries the
+ *             master toggle that runs the effect layer inside a normal campaign game.
+ *
+ * Both reach the SCALING page, which is what the whole ramp actually looks like at a given zone.
+ *
+ * Returns true if a level was launched (select_level armed the jump); always false in tune mode.
+ */
+static bool endlessDebugScreen(bool jumpMode)
+{
+	// Outside endless the effect layer is opt-in, and the toggle for it lives on this screen.
+	const bool campaignForm = !jumpMode && !endlessMode;
 	const JE_byte startEp = episodeNum;
-	loadAllLevels();
+	if (jumpMode)
+		loadAllLevels();   // only the jump form has a Base Level row / list to fill
 
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
 
 	const int pw = 248;
-	// Centered within the legacy 320px content area (set_menu_centered(true) is active on this
-	// screen); using vga_width would double-offset it.
-	const int px0 = (LEGACY_WIDTH - pw) / 2;
+	// Centre in whatever content width is actually in force. Reached from the shop (and the endless
+	// zone jump) the legacy 320px area is pillarboxed and the composite adds the offset itself, so
+	// centring in LEGACY_WIDTH is right and vga_width would double-offset it -- the classic mistake
+	// here. Reached from the IN-GAME debug menu there is no pillarbox, and that same maths would
+	// strand the panel left of centre on a wide screen, so centre in the real width instead.
+	const int contentW = (video_get_menu_x_offset() != 0) ? LEGACY_WIDTH : vga_width;
+	const int px0 = (contentW - pw) / 2;
 	const int px1 = px0 + pw - 1;
 	const int py0 = 12;
 	const int py1 = vga_height - 12;
@@ -4664,26 +4734,29 @@ static bool endlessDebugScreen(void)
 		C_EDGE_HI  = 0xFB, C_EDGE_LO  = 0xF4, C_SEL_BAR = 0xF5
 	};
 
-	static const char *const screenTitle[EDS_SCREENS] = {
-		"ENDLESS  -  ZONE JUMP", "SECTOR MODIFIERS", "PERSONAL BUFFS",
-		"PERKS", "GAMBLE OUTCOMES", "BASE LEVEL"
+	const char *const screenTitle[EDS_SCREENS] = {
+		jumpMode ? "ENDLESS  -  ZONE JUMP" : "ENDLESS EFFECTS",
+		"SECTOR MODIFIERS", "PERSONAL BUFFS",
+		"PERKS", "GAMBLE OUTCOMES", "ZONE SCALING", "BASE LEVEL"
 	};
 #if defined(__SWITCH__) || defined(__vita__)
-	static const char *const screenKeys[EDS_SCREENS] = {
-		"A Open   B Close",
+	const char *const screenKeys[EDS_SCREENS] = {
+		jumpMode ? "A Open   B Close" : "A Open   B Apply and close",
 		"A Toggle   B Back   L/R Page",
 		"A Toggle   B Back",
 		"A Stack   B Back   L/R Page",
 		"A Fire   B Back   L/R Page",
+		"A Pin/unpin   L/R Adjust   B Back",
 		"A Pick   B Back   L/R Episode",
 	};
 #else
-	static const char *const screenKeys[EDS_SCREENS] = {
-		"Enter Open   Esc Close",
+	const char *const screenKeys[EDS_SCREENS] = {
+		jumpMode ? "Enter Open   Esc Close" : "Enter Open   Esc Apply and close",
 		"Enter Toggle   Esc Back   PgUp/PgDn",
 		"Enter Toggle   Esc Back",
 		"Enter Stack   L/R Adjust   Esc Back",
 		"Enter Fire   Esc Back",
+		"Enter Pin/unpin   L/R Adjust   Esc Back",
 		"Enter Pick   L/R Episode   Esc Back",
 	};
 #endif
@@ -4710,6 +4783,13 @@ static bool endlessDebugScreen(void)
 	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
 	dbgGambleMsg[0] = '\0';
 
+	// The difficulty the SCALING page computes at. -1 = "whatever the game is set to", which is what
+	// you want almost always; the explicit settings are there because the ramp is tilted 50%..160% by
+	// difficulty, so "zone 100" means quite different things across the modes and comparing them is
+	// half the point of the page.
+	int dbgDiff = -1;
+	bool dbgCampFx = endlessCampaignMods;
+
 	int  screen = EDS_HUB;
 	int  sel[EDS_SCREENS] = { 0 }, top[EDS_SCREENS] = { 0 };
 	int  focusBase = -2;               // on opening the level list, land on the current pick (-2 = no request)
@@ -4734,18 +4814,53 @@ static bool endlessDebugScreen(void)
 		switch (screen)
 		{
 		case EDS_HUB:
+			if (campaignForm)
+			{
+				EDBG_ADD(EDR_HEADER, 0, "IN A NORMAL GAME");
+				EDBG_ADD(EDR_CAMPFX, 0, "Endless Effects");
+			}
 			EDBG_ADD(EDR_HEADER, 0, "ZONE");
-			EDBG_ADD(EDR_ZONE, 0, "Zone");
-			EDBG_ADD(EDR_BASE, 0, "Base Level");
+			EDBG_ADD(EDR_ZONE, 0, jumpMode ? "Zone" : "Virtual Zone");
+			if (jumpMode)
+				EDBG_ADD(EDR_BASE, 0, "Base Level");
 			EDBG_ADD(EDR_HEADER, 0, "SLATE");
 			EDBG_ADD(EDR_OPEN, EDS_SECMOD, "Sector Modifiers");
 			EDBG_ADD(EDR_OPEN, EDS_BUFMOD, "Personal Buffs");
 			EDBG_ADD(EDR_OPEN, EDS_PERK, "Perks");
 			EDBG_ADD(EDR_HEADER, 0, "TOOLS");
+			EDBG_ADD(EDR_OPEN, EDS_SCALING, "Zone Scaling");
 			EDBG_ADD(EDR_OPEN, EDS_GAMBLE, "Gamble Outcomes");
 			EDBG_ADD(EDR_ACTION, EDA_CLEAR, "Clear Everything");
 			EDBG_ADD(EDR_ACTION, EDA_RESET, "Reset To Run State");
-			EDBG_ADD(EDR_LAUNCH, 0, "START ZONE");
+			EDBG_ADD(EDR_LAUNCH, 0, jumpMode ? "START ZONE" : "APPLY AND CLOSE");
+			break;
+
+		case EDS_SCALING:
+			EDBG_ADD(EDR_HEADER, 0, "PREVIEW AT");
+			EDBG_ADD(EDR_ZONE, 0, jumpMode ? "Zone" : "Virtual Zone");
+			EDBG_ADD(EDR_SCALEDIFF, 0, "Difficulty");
+			EDBG_ADD(EDR_HEADER, 0, "ENEMY INTENSITY");
+			EDBG_ADD(EDR_SCALE, ESO_ARMOR, "Enemy HP %");
+			EDBG_ADD(EDR_SCALE, ESO_BOSSHP, "Boss HP x");
+			EDBG_ADD(EDR_SCALE, ESO_FIREDELAY, "Fire Cooldown %");
+			EDBG_ADD(EDR_SCALE, ESO_SHOTSPEED, "Shot Speed %");
+			EDBG_ADD(EDR_SCALE, ESO_SHOTDMG, "Shot Damage %");
+			EDBG_ADD(EDR_SCALE, ESO_CONTACT, "Ram Damage %");
+			EDBG_ADD(EDR_HEADER, 0, "RISING TIDE");
+			EDBG_ADD(EDR_SCALE, ESO_TIDE, "Tide Level");
+			EDBG_ADD(EDR_SCALE, ESO_EXTRASHOTS, "Extra Shots");
+			EDBG_ADD(EDR_HEADER, 0, "ELITES");
+			EDBG_ADD(EDR_SCALE, ESO_ELITECHANCE, "Elite Share %");
+			EDBG_ADD(EDR_SCALE, ESO_ELITEHP, "Elite HP x");
+			EDBG_ADD(EDR_SCALEINFO, EDI_ELITEBOUNTY, "Elite Bounty");
+			EDBG_ADD(EDR_SCALEINFO, EDI_CHAMPBOUNTY, "Champion Bounty");
+			EDBG_ADD(EDR_HEADER, 0, "PLAYER");
+			EDBG_ADD(EDR_SCALE, ESO_PLAYERDMG, "Your Damage %");
+			EDBG_ADD(EDR_HEADER, 0, "THE RAMP ITSELF");
+			EDBG_ADD(EDR_SCALEINFO, EDI_EFFDEPTH, "Effective Depth");
+			EDBG_ADD(EDR_SCALEINFO, EDI_RAMPZONE, "Ramp Zone");
+			EDBG_ADD(EDR_SCALEINFO, EDI_RAMPPCT, "Difficulty Ramp %");
+			EDBG_ADD(EDR_ACTION, EDA_UNPIN, "Clear All Pins");
 			break;
 
 		case EDS_SECMOD:
@@ -4830,6 +4945,12 @@ static bool endlessDebugScreen(void)
 		sel[screen] = s;
 		top[screen] = scrollTop;
 
+		// The ramp as it stands for the zone/difficulty/slate currently set up. Recomputed every
+		// frame because every one of those three is editable from here; it is a couple of dozen
+		// integer accessors, and it guarantees the readout can never lag the thing it describes.
+		EndlessScaling sc;
+		endlessScalingSnapshot(dbgZone, dbgDiff, dbgMods, &sc);
+
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py1, C_PANEL_BG);
 		fill_rectangle_xy(VGAScreen, px0, py0, px1, py0, C_EDGE_HI);
 		fill_rectangle_xy(VGAScreen, px0, py0, px0, py1, C_EDGE_HI);
@@ -4913,9 +5034,47 @@ static bool endlessDebugScreen(void)
 			}
 			case EDR_ACTION:
 				labBright = isSel ? 6 : 1;
+				if (rows[i].idx == EDA_UNPIN)
+				{
+					const int np = endlessScalingOverrideCount();
+					if (np > 0)
+						snprintf(val, sizeof(val), "%d pinned", np);
+					valBright = np ? 6 : -3;
+				}
 				break;
 			case EDR_LAUNCH:
 				labBright = isSel ? 6 : 2;
+				break;
+			case EDR_CAMPFX:
+				SDL_strlcpy(val, dbgCampFx ? "ON" : "OFF", sizeof(val));
+				labBright = isSel ? 5 : (dbgCampFx ? 2 : -1);
+				valBright = dbgCampFx ? 6 : (isSel ? 4 : -3);
+				break;
+			case EDR_SCALEDIFF:
+				if (dbgDiff < 0)
+					snprintf(val, sizeof(val), "Current  (%s)", difficultyNameB[difficultyLevel % 11]);
+				else
+					SDL_strlcpy(val, difficultyNameB[dbgDiff % 11], sizeof(val));
+				valBright = 6;
+				break;
+			case EDR_SCALE:
+			{
+				// A pinned lever is flagged right in the value column: without the marker a forced
+				// figure is indistinguishable from one the ramp produced, which is exactly the
+				// confusion a debug override is otherwise prone to causing.
+				const bool pinned = endlessScalingOverride[rows[i].idx].active;
+				const long v = endlessScaleFieldOf(&sc, EDR_SCALE, rows[i].idx);
+				snprintf(val, sizeof(val), "%ld%s", v, pinned ? "  PIN" : "");
+				labBright = isSel ? 5 : (pinned ? 2 : -1);
+				valBright = pinned ? 6 : (isSel ? 5 : 1);
+				labX = px0 + 16;
+				break;
+			}
+			case EDR_SCALEINFO:
+				snprintf(val, sizeof(val), "%ld", endlessScaleFieldOf(&sc, EDR_SCALEINFO, rows[i].idx));
+				labBright = isSel ? 5 : -1;
+				valBright = isSel ? 5 : 1;
+				labX = px0 + 16;
 				break;
 			case EDR_SECMOD:
 			case EDR_BUFMOD:
@@ -4985,10 +5144,37 @@ static bool endlessDebugScreen(void)
 
 		// Footer line 1: what the selected row IS. Every list row can explain itself, so none of
 		// the 48 modifier names has to carry its meaning in the name alone.
-		char helpBuf[64];
+		char helpBuf[96];
 		const char *help = "";
 		switch (rows[s].kind)
 		{
+		case EDR_CAMPFX:
+			help = "Endless mods, perks and scaling in a normal game";
+			break;
+		case EDR_SCALEDIFF:
+			help = "The ramp is tilted 50%-160% by difficulty";
+			break;
+		case EDR_SCALE:
+		case EDR_SCALEINFO:
+		{
+			// The curve, not just the number: a lever's whole point is WHERE it turns on and where
+			// it stops, and one figure at one zone shows neither. Sampled through the same snapshot
+			// the rows use, at the chosen difficulty and slate.
+			int n = 0;
+			helpBuf[0] = '\0';
+			for (unsigned c = 0; c < COUNTOF(endlessCurveZones); ++c)
+			{
+				EndlessScaling cs;
+				endlessScalingSnapshot(endlessCurveZones[c], dbgDiff, dbgMods, &cs);
+				n += snprintf(helpBuf + n, sizeof(helpBuf) - (size_t)n, "%sz%d:%ld",
+				              c ? " " : "", endlessCurveZones[c],
+				              endlessScaleFieldOf(&cs, rows[s].kind, rows[s].idx));
+				if (n >= (int)sizeof(helpBuf))
+					break;
+			}
+			help = helpBuf;
+			break;
+		}
 		case EDR_ZONE:
 #if defined(__SWITCH__) || defined(__vita__)
 			help = "Confirm types a number;  L/R  +-10";
@@ -5000,17 +5186,20 @@ static bool endlessDebugScreen(void)
 			help = "The shipped level under the zone";
 			break;
 		case EDR_OPEN:
-			help = rows[s].idx == EDS_SECMOD ? "Dangers and boons the zone flies with"
-			     : rows[s].idx == EDS_BUFMOD ? "Kill-fire buffs and their evil mirrors"
-			     : rows[s].idx == EDS_PERK   ? "Perk stacks you carry into the zone"
-			     :                             "Fire any outcome without paying the fee";
+			help = rows[s].idx == EDS_SECMOD  ? "Dangers and boons the zone flies with"
+			     : rows[s].idx == EDS_BUFMOD  ? "Kill-fire buffs and their evil mirrors"
+			     : rows[s].idx == EDS_PERK    ? "Perk stacks you carry into the zone"
+			     : rows[s].idx == EDS_SCALING ? "Every depth-scaled lever, and how it ramps"
+			     :                              "Fire any outcome without paying the fee";
 			break;
 		case EDR_ACTION:
 			help = rows[s].idx == EDA_CLEAR ? "Turns every modifier and perk off"
-			                                : "Back to what the live run holds now";
+			     : rows[s].idx == EDA_UNPIN ? "Hand every lever back to the depth ramp"
+			     :                            "Back to what the live run holds now";
 			break;
 		case EDR_LAUNCH:
-			help = "Jump straight into the zone as set up";
+			help = jumpMode ? "Jump straight into the zone as set up"
+			                : "Apply this slate to play from here on";
 			break;
 		case EDR_SECMOD:
 			help = endlessDebugSectorMods[rows[s].idx].hint
@@ -5214,6 +5403,38 @@ static bool endlessDebugScreen(void)
 				case EDR_BASE:   // flip between Random and the last level picked from the list
 					dbgBase = (dbgBase < 0 && allLevelCount > 0) ? dbgBaseLast : -1;
 					break;
+				case EDR_CAMPFX:
+					dbgCampFx = !dbgCampFx;
+					break;
+				case EDR_SCALEDIFF:
+					// -1 ("current") sits below Wimp, so one step down from it wraps to the top.
+					dbgDiff += dir;
+					if (dbgDiff < -1)
+						dbgDiff = DIFFICULTY_10;
+					else if (dbgDiff > DIFFICULTY_10)
+						dbgDiff = -1;
+					break;
+				case EDR_SCALE:
+				{
+					// Adjusting a lever ARMS its pin, starting from whatever the ramp says right now
+					// -- so the first press never jumps the value, it just takes the wheel. Step size
+					// scales with the range so the wide percent levers aren't a hundred presses wide.
+					EndlessScalingOverride *ov = &endlessScalingOverride[selIdx];
+					const int lo = endlessScalingOverrideMin(selIdx);
+					const int hi = endlessScalingOverrideMax(selIdx);
+					if (!ov->active)
+					{
+						ov->value = (int)endlessScaleFieldOf(&sc, EDR_SCALE, selIdx);
+						ov->active = true;
+					}
+					const int step = ((hi - lo) >= 100) ? 5 : 1;
+					ov->value += dir * step;
+					if (ov->value < lo)
+						ov->value = lo;
+					if (ov->value > hi)
+						ov->value = hi;
+					break;
+				}
 				case EDR_SECMOD:
 					dbgMods ^= endlessDebugSectorMods[selIdx].bit;
 					break;
@@ -5313,17 +5534,38 @@ static bool endlessDebugScreen(void)
 					screen = selIdx;
 					break;
 				case EDR_ACTION:
-					if (selIdx == EDA_CLEAR)
+					if (selIdx == EDA_UNPIN)
+					{
+						endlessScalingOverridesClear();
+					}
+					else if (selIdx == EDA_CLEAR)
 					{
 						dbgMods = 0;
 						for (int p = 0; p < NPERKS; ++p)
 							dbgPerks[p] = 0;
+						endlessScalingOverridesClear();   // "everything" has to include the pinned levers
 					}
 					else
 					{
 						dbgMods = runMods;
 						for (int p = 0; p < NPERKS; ++p)
 							dbgPerks[p] = endlessPerkGetOwned(p);
+					}
+					break;
+				case EDR_CAMPFX:
+					dbgCampFx = !dbgCampFx;
+					break;
+				case EDR_SCALEDIFF:
+					dbgDiff = (dbgDiff < 0) ? DIFFICULTY_NORMAL : -1;
+					break;
+				case EDR_SCALE:
+					// Pin the lever at whatever the ramp currently says, or hand it back to the ramp.
+					if (endlessScalingOverride[selIdx].active)
+						endlessScalingOverride[selIdx].active = false;
+					else
+					{
+						endlessScalingOverride[selIdx].value = (int)endlessScaleFieldOf(&sc, EDR_SCALE, selIdx);
+						endlessScalingOverride[selIdx].active = true;
 					}
 					break;
 				case EDR_SECMOD:
@@ -5347,6 +5589,11 @@ static bool endlessDebugScreen(void)
 					screen = EDS_HUB;
 					break;
 				case EDR_LAUNCH:
+					if (!jumpMode)
+					{
+						done = true;   // the apply happens once, after the loop -- Esc takes the same path
+						break;
+					}
 					endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;  // jump to the chosen zone
 					// Apply the chosen combo + personal buffs + any gamble outcome fired on the
 					// gamble list since this screen opened. Same purchase-wins fold a real launch
@@ -5398,6 +5645,31 @@ static bool endlessDebugScreen(void)
 
 	VGAScreen = temp_surface;
 
+	// TUNE form: the edits land now, on the way out. Closing with Esc applies too -- there is no
+	// "cancel" here by design, because the screen is a live control panel for state you are about to
+	// go and play with, not a dialog that proposes a change. The jump form is the opposite: it stages
+	// everything and commits only on START ZONE, so Esc there really is a cancel.
+	if (!jumpMode)
+	{
+		// Arm FIRST: it clears the stale outpost purchases, including the pending kill-fire buy the
+		// fold below would otherwise read back out of a finished run.
+		if (campaignForm && dbgCampFx && !endlessCampaignMods)
+			endlessCampaignModsArm();
+		if (campaignForm)
+			endlessCampaignMods = dbgCampFx;
+
+		endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;
+		endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
+		for (int p = 0; p < NPERKS; ++p)
+			endlessPerkSetOwned(p, dbgPerks[p]);
+		endlessRefreshModDerivedState();   // the panel can change mods mid-level; re-roll what that decides
+
+		// Persist the setup now rather than at a clean exit. It is a thing you build once and then
+		// play with, and this is a debug feature -- a crash is a plausible way for the session to
+		// end. The save declines to write the slate during an endless run (endless_save.c).
+		save_opentyrian_config();
+	}
+
 	// A debug "Free perk pick" outcome was fired but we're not launching a level -> open the perk
 	// pick now, on return to the menu (the shop's front-gate perk gate already passed this visit).
 	// If a level WAS launched, the queued endlessPerkPending rides the normal next-shop gate instead.
@@ -5424,10 +5696,17 @@ static bool endlessDebugScreen(void)
  * Returns true if a level was chosen (select_level() has already armed the jump), false if the
  * user cancelled.
  */
+/* The debug menu's way in: the same screen with no level jump attached, so the effect layer can be
+ * retuned mid-game (and, outside endless, switched on for a normal campaign). */
+void endlessDebugTuneScreen(void)
+{
+	(void)endlessDebugScreen(false);
+}
+
 bool JE_debugLevelSelect(void)
 {
 	if (endlessMode)
-		return endlessDebugScreen();  // endless gets its own Zone / Base Level / Modifiers form
+		return endlessDebugScreen(true);  // endless gets its own Zone / Base Level / Modifiers form
 
 	const JE_byte startEp = episodeNum;
 	loadAllLevels();

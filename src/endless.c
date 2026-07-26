@@ -195,9 +195,34 @@ void endlessResetRun(void)
 	endlessSetSeed("");  // safe default; newEndlessGame / a resume load sets the real run seed next
 }
 
+// Arm the debug campaign-mods effect layer from a clean slate.
+//
+// Perks and mod bits are deliberately LEFT ALONE -- they are what the debug screen exists to set.
+// What gets cleared is the state that can only be BOUGHT at an outpost: a campaign game has no
+// shop, so a leftover hull upgrade, buff charge or revive token from a previous endless run would
+// otherwise silently follow the player into a normal game. No-op during a real run, whose state
+// belongs to that run.
+void endlessCampaignModsArm(void)
+{
+	if (endlessMode)
+		return;
+	endlessArmorBonus = 0;
+	endlessBuffCharge = 0;
+	endlessBuffKind = 0;
+	endlessPurchasedMods = 0;
+	endlessOverdriveStacks = 0;
+	endlessComboKills = 0;
+	endlessReviveHeld = false;
+	endlessCleanseChargeCount = 0;
+	endlessShopTax = 0;
+	endlessStarChartsOwed = false;
+	endlessBreakthroughOwed = 0;
+	endlessPerkPending = false;   // no outpost to spend a pick at
+}
+
 void endlessCountKill(int linknum)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return;
 
 	// A multi-part enemy is several enemy[] slots sharing one nonzero linknum, all removed
@@ -253,7 +278,7 @@ void endlessOnSectorCleared(void)
 
 void endlessGameplayTick(void)
 {
-	if (!endlessMode)
+	if (!endlessFxActive())
 		return;
 	++endlessZoneTicks;
 
@@ -313,7 +338,7 @@ bool endlessConsumeArmorHudDirty(void)
 
 bool endlessTurbodriveActive(void)
 {
-	return endlessMode && endlessTurbodriveTimer > 0;
+	return endlessFxActive() && endlessTurbodriveTimer > 0;
 }
 
 // --- Zone milestones ------------------------------------------------------------

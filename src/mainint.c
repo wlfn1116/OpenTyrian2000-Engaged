@@ -3499,6 +3499,7 @@ enum {
 	DBG_GOD_MODE, DBG_NOCLIP, DBG_EXPERT_MODE, DBG_EXPERT_SETTINGS, DBG_AUTO_DIFFICULTY,
 	DBG_DIFFICULTY, DBG_ADD_CASH, DBG_NO_ENEMY_FIRE, DBG_SKIP_LEVEL,
 	DBG_PLAY_SOUND, DBG_PLAY_MUSIC, DBG_SPRITE_VIEWER, DBG_HITBOX, DBG_PERF,
+	DBG_ENDLESS_FX, DBG_ENDLESS_TUNE,
 	DBG_HANG_TIMEOUT, DBG_FORCE_CRASH,
 	DBG_ROW_COUNT
 };
@@ -3537,6 +3538,8 @@ static const char *const dbgLabel[DBG_ROW_COUNT] = {
 	[DBG_HITBOX]              = "Hitbox Overlay",
 	[DBG_PERF]                = "Perf Overlay",
 	[DBG_HANG_TIMEOUT]        = "Hang Watchdog",
+	[DBG_ENDLESS_FX]          = "Endless Effects",
+	[DBG_ENDLESS_TUNE]        = "Endless Mods and Scaling",
 	[DBG_FORCE_CRASH]         = "Force Crash (test)",
 };
 
@@ -3576,6 +3579,8 @@ static const char *const dbgHelp[DBG_ROW_COUNT] = {
 	[DBG_HITBOX]              = "Draw hit boxes on enemies and ship",
 	[DBG_PERF]                = "FPS, enemy and shot counts on screen",
 	[DBG_HANG_TIMEOUT]        = "Seconds of freeze before the log fires",
+	[DBG_ENDLESS_FX]          = "Endless mods/perks in a normal game",
+	[DBG_ENDLESS_TUNE]        = "Opens the mod, perk and scaling panel",
 	[DBG_FORCE_CRASH]         = "Faults on purpose to test the crash log",
 };
 
@@ -3597,6 +3602,8 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 	{ -1, "DIFFICULTY" },
 	{ DBG_EXPERT_MODE, NULL }, { DBG_EXPERT_SETTINGS, NULL }, { DBG_AUTO_DIFFICULTY, NULL },
 	{ DBG_DIFFICULTY, NULL },
+	{ -1, "ENDLESS EFFECTS" },
+	{ DBG_ENDLESS_FX, NULL }, { DBG_ENDLESS_TUNE, NULL },
 	{ -1, "LEVEL" },
 	{ DBG_SKIP_LEVEL, NULL },
 	{ -1, "DIAGNOSTICS" },
@@ -3605,7 +3612,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 	{ DBG_FORCE_CRASH, NULL },
 };
 #define DBG_DISPLAY_ROWS  ((int)COUNTOF(dbgRows))
-#define DBG_HEADING_COUNT 6
+#define DBG_HEADING_COUNT 7
 // Catches the slip that would otherwise go unnoticed: a row added to the enum but never placed in
 // dbgRows, leaving it unreachable in the menu. Bump DBG_HEADING_COUNT when adding a heading.
 COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, DBG_DISPLAY_ROWS == DBG_ROW_COUNT + DBG_HEADING_COUNT);
@@ -3646,6 +3653,94 @@ static int dbgRowSnap(int r)
 		if (!dbgRowIsHeading(i))
 			return i;
 	return r;
+}
+
+/* Flip the endless effect layer on/off for a normal game.
+ *
+ * Inert during a real endless run: the layer is already on there, and flipping the flag would only
+ * desync the row's "ENDLESS" readout from it. Arming goes through endlessCampaignModsArm() -- the
+ * same path the tune panel uses -- so both entry points drop a previous run's outpost purchases
+ * rather than only one of them doing it. The config write makes the setup survive a restart
+ * immediately, rather than only if the game is exited cleanly; this is a debug feature, so a crash
+ * is a likely way for the session to end. */
+static void debug_toggle_campaign_mods(void)
+{
+	if (endlessMode)
+		return;
+	if (!endlessCampaignMods)
+		endlessCampaignModsArm();
+	endlessCampaignMods = !endlessCampaignMods;
+	save_opentyrian_config();
+}
+
+/* Does this row write into player[0].items? Those all need the refresh below; nothing else does. */
+static bool dbgRowIsLoadout(int id)
+{
+	switch (id)
+	{
+	case DBG_SHIP:   case DBG_FRONT_WEAPON: case DBG_FRONT_POWER:
+	case DBG_REAR_WEAPON: case DBG_REAR_POWER: case DBG_SHIELD:
+	case DBG_GENERATOR: case DBG_SIDEKICK_L: case DBG_SIDEKICK_R:
+	case DBG_SPECIAL:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/* Make a debug loadout edit actually take effect mid-level.
+ *
+ * The rows write straight into player[0].items, but the engine caches a great deal off those and
+ * recomputes it only at LEVEL START: the ship's sprite index and which sheet it lives on (shipGr /
+ * shipGrPtr), the hull, the hit box, the generator's output, the shield ceiling, the sidekick pods'
+ * ammo and style. Change a ship mid-level and none of that moves -- which is what produced a
+ * garbled hull (a sprite index read against the wrong sheet) and gauges still showing the old
+ * ship's numbers.
+ *
+ * This is deliberately the same sequence the engine's OWN in-level ship change runs (the Tab+digit
+ * extra-ship path in JE_playerMovement), so the two cannot drift apart.
+ *
+ * `shipChanged` decides what happens to the hull: swapping the SHIP legitimately re-armors you to
+ * the new one's maximum, but nudging the rear weapon must not quietly heal you.
+ */
+static void debug_apply_loadout_change(bool shipChanged)
+{
+	uint keptArmor[COUNTOF(player)];
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		keptArmor[i] = player[i].armor;
+
+	// A weapon that no longer exists can leave the multi-shot phase pointing at a pattern the new
+	// one doesn't have, and weapon_mode can outrun the new port's configuration count.
+	memset(shotMultiPos, 0, sizeof(shotMultiPos));
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		if (player[i].weapon_mode > JE_portConfigs())
+			player[i].weapon_mode = 1;
+
+	JE_getShipInfo();   // shipGr + shipGrPtr, hull, initial_armor, hit box, powerAdd
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		// JE_getShipInfo rewrites BOTH players' armor, but only player 1's loadout is editable
+		// here -- so player 2 always keeps what it had.
+		if (i != 0 || !shipChanged)
+			player[i].armor = keptArmor[i];
+		if (player[i].armor > player[i].initial_armor)
+			player[i].armor = player[i].initial_armor;
+
+		// The shield ceiling is set only at level start (tyrian2.c), so without this a shield swap
+		// keeps the old one's maximum and the gauge scale goes with it.
+		player[i].shield_max = shields[player[i].items.shield].mpwr * 2;
+		if (player[i].shield > player[i].shield_max)
+			player[i].shield = player[i].shield_max;
+	}
+
+	// Both gauges are event-driven -- painted when they change, not every frame -- so they have to
+	// be repainted explicitly or they keep reading the old ship's numbers. We are already on
+	// VGAScreenSeg here (JE_debugMenu switched to it), which is the surface the HUD lives on.
+	JE_wipeShieldArmorBars();
+	JE_drawArmor();
+	JE_drawShield();
+	JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
 }
 
 void JE_debugMenu(bool center)
@@ -3933,6 +4028,29 @@ void JE_debugMenu(bool center)
 				else
 					snprintf(buf, sizeof(buf), "%ds", crashlog_get_hang_timeout());  // live value
 				break;
+			case DBG_ENDLESS_FX:
+				// Inside a real endless run the layer is simply on, and this toggle has nothing to
+				// say -- report that rather than a switch that would appear to do nothing.
+				if (endlessMode)
+					sprintf(buf, "%s", "ENDLESS");
+				else
+					sprintf(buf, "%s", endlessCampaignMods ? "ON" : "OFF");
+				break;
+			case DBG_ENDLESS_TUNE:
+			{
+				// Summarise what the layer is actually carrying, so the panel's state is visible
+				// without opening it: mods, perk stacks and pinned levers.
+				int perks = 0;
+				for (int p = 0; p < endlessPerkCount(); ++p)
+					perks += endlessPerkGetOwned(p);
+				const int pins = endlessScalingOverrideCount();
+				const int mods = endlessPopCount64(endlessActiveMods);
+				if (mods || perks || pins)
+					snprintf(buf, sizeof(buf), "%dm %dp %dx", mods, perks, pins);
+				else
+					sprintf(buf, "%s", ">>");
+				break;
+			}
 			case DBG_FORCE_CRASH:  // action: deliberately crash to test the crash logger
 				sprintf(buf, "%s", "[Enter]");
 				break;
@@ -4065,7 +4183,7 @@ void JE_debugMenu(bool center)
 					                       rid == DBG_SKIP_LEVEL || rid == DBG_PLAY_SOUND ||
 					                       rid == DBG_PLAY_MUSIC || rid == DBG_SPRITE_VIEWER ||
 					                       rid == DBG_TWIDDLE || rid == DBG_FORCE_CRASH ||
-					                       rid == DBG_HANG_TIMEOUT);
+					                       rid == DBG_ENDLESS_TUNE || rid == DBG_HANG_TIMEOUT);
 					newkey = true;
 					lastkey_scan = (lastmouse_but == SDL_BUTTON_RIGHT) ? SDL_SCANCODE_LEFT
 					             : (enterRow ? SDL_SCANCODE_RETURN : SDL_SCANCODE_RIGHT);
@@ -4079,6 +4197,12 @@ void JE_debugMenu(bool center)
 			// Read the row id HERE, not with the footer above: a click this same frame moves
 			// `selected` and then synthesizes the key, so the id must follow that move.
 			const int selId = dbgRows[selected].id;
+			// For the loadout refresh below: only an actual hull SWAP may re-armor the player, so
+			// compare rather than assume the Ship row was touched (Left at id 0 changes nothing).
+			const JE_byte shipBefore = player[0].items.ship;
+			const bool editKey = (lastkey_scan == SDL_SCANCODE_LEFT || lastkey_scan == SDL_SCANCODE_RIGHT ||
+			                      lastkey_scan == SDL_SCANCODE_RETURN || lastkey_scan == SDL_SCANCODE_KP_ENTER ||
+			                      lastkey_scan == SDL_SCANCODE_SPACE);
 			switch (lastkey_scan)
 			{
 			case SDL_SCANCODE_UP:
@@ -4136,6 +4260,10 @@ void JE_debugMenu(bool center)
 				case DBG_PLAY_SOUND: if (dbgSoundId > 1) --dbgSoundId; break;
 				case DBG_PLAY_MUSIC: if (dbgMusicId > 0) --dbgMusicId; break;
 				case DBG_SPRITE_VIEWER: break;  // opens on Right/Enter
+				// Inside a real endless run the layer is already on and this toggle is inert --
+				// flipping it there would only desync the row's "ENDLESS" readout from the flag.
+				case DBG_ENDLESS_FX: debug_toggle_campaign_mods(); break;
+				case DBG_ENDLESS_TUNE: break;  // opens on Right/Enter
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
 				default: break;  // Add Cash / Hang Watchdog / Skip Level are Enter-only actions
@@ -4144,15 +4272,18 @@ void JE_debugMenu(bool center)
 			case SDL_SCANCODE_RIGHT:
 				switch (selId)
 				{
-				case DBG_SHIP: ++player[0].items.ship; break;
-				case DBG_FRONT_WEAPON: ++player[0].items.weapon[FRONT_WEAPON].id; break;
+				// Each of these indexes an array sized [X_NUM + 1], so stepping past X_NUM is an
+				// out-of-bounds read the moment anything looks the item up -- which is where the
+				// garbage ship graphics came from. Clamp at the top the way Left already does at 0.
+				case DBG_SHIP: if (player[0].items.ship < SHIP_NUM) ++player[0].items.ship; break;
+				case DBG_FRONT_WEAPON: if (player[0].items.weapon[FRONT_WEAPON].id < PORT_NUM) ++player[0].items.weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (player[0].items.weapon[FRONT_WEAPON].power < 11) ++player[0].items.weapon[FRONT_WEAPON].power; break;
-				case DBG_REAR_WEAPON: ++player[0].items.weapon[REAR_WEAPON].id; break;
+				case DBG_REAR_WEAPON: if (player[0].items.weapon[REAR_WEAPON].id < PORT_NUM) ++player[0].items.weapon[REAR_WEAPON].id; break;
 				case DBG_REAR_POWER: if (player[0].items.weapon[REAR_WEAPON].power < 11) ++player[0].items.weapon[REAR_WEAPON].power; break;
-				case DBG_SHIELD: ++player[0].items.shield; break;
-				case DBG_GENERATOR: ++player[0].items.generator; break;
-				case DBG_SIDEKICK_L: ++player[0].items.sidekick[LEFT_SIDEKICK]; break;
-				case DBG_SIDEKICK_R: ++player[0].items.sidekick[RIGHT_SIDEKICK]; break;
+				case DBG_SHIELD: if (player[0].items.shield < SHIELD_NUM) ++player[0].items.shield; break;
+				case DBG_GENERATOR: if (player[0].items.generator < POWER_NUM) ++player[0].items.generator; break;
+				case DBG_SIDEKICK_L: if (player[0].items.sidekick[LEFT_SIDEKICK] < OPTION_NUM) ++player[0].items.sidekick[LEFT_SIDEKICK]; break;
+				case DBG_SIDEKICK_R: if (player[0].items.sidekick[RIGHT_SIDEKICK] < OPTION_NUM) ++player[0].items.sidekick[RIGHT_SIDEKICK]; break;
 				case DBG_SPECIAL:  // step to the next crash-safe special (skip bad-icon slots)
 					for (int nid = (int)player[0].items.special + 1; nid <= SPECIAL_NUM; ++nid)
 						if (debug_special_is_safe(nid)) { player[0].items.special = (JE_byte)nid; break; }
@@ -4178,6 +4309,8 @@ void JE_debugMenu(bool center)
 				case DBG_PLAY_SOUND: if (dbgSoundId < SOUND_COUNT) ++dbgSoundId; break;
 				case DBG_PLAY_MUSIC: if (dbgMusicId < MUSIC_NUM - 1) ++dbgMusicId; break;
 				case DBG_SPRITE_VIEWER: JE_spriteViewer(off_x, off_y); break;
+				case DBG_ENDLESS_FX: debug_toggle_campaign_mods(); break;
+				case DBG_ENDLESS_TUNE: endlessDebugTuneScreen(); break;
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
 				default: break;  // Add Cash / Hang Watchdog / Skip Level are Enter-only actions
@@ -4193,6 +4326,9 @@ void JE_debugMenu(bool center)
 					break;
 				case DBG_SPRITE_VIEWER:  // drill-in
 					JE_spriteViewer(off_x, off_y);
+					break;
+				case DBG_ENDLESS_TUNE:  // drill-in: sector mods, personal buffs, perks, zone scaling
+					endlessDebugTuneScreen();
 					break;
 				case DBG_TWIDDLE:  // request a one-shot fire of the selected twiddle's special
 				{
@@ -4292,6 +4428,11 @@ void JE_debugMenu(bool center)
 				break;
 			}
 			}
+
+			// One place, after every handler: a loadout row may have just rewritten player[0].items,
+			// and the engine caches far too much off those to leave it until the next level start.
+			if (editKey && dbgRowIsLoadout(selId))
+				debug_apply_loadout_change(player[0].items.ship != shipBefore);
 
 			newkey = false;
 		}
@@ -5218,11 +5359,13 @@ void JE_endLevelAni(void)
 		}
 	}
 
-	// Endless mode drives its own ramp through depth- and mutator-scaled enemy stats,
-	// keeping the player's chosen base difficulty fixed (endless's own levers key off
-	// difficultyLevel too -- see endless.h). The vanilla score-based bump must not fire
-	// here, or e.g. Normal would silently climb to Hard/Impossible mid-run.
-	if (difficultyAdjust && !endlessMode)
+	// The endless effect layer drives its own ramp through depth- and mutator-scaled enemy stats,
+	// keeping the player's chosen base difficulty fixed (its levers key off difficultyLevel too --
+	// see endless.h). The vanilla score-based bump must not fire here, or e.g. Normal would silently
+	// climb to Hard/Impossible mid-run. This is the ONE campaign behaviour the debug layer suppresses
+	// rather than adds to, and deliberately: the scaling readout is only meaningful if the difficulty
+	// it is computed at holds still between levels.
+	if (difficultyAdjust && !endlessFxActive())
 		adjust_difficulty();
 
 	player[0].last_items = player[0].items;
@@ -5750,7 +5893,7 @@ void JE_inGameDisplays(void)
 	// playfield -- a combo kill counter ("xN"), the buff's fire/damage bonuses, and a draining
 	// timer bar. Shifts to clear whichever boss bar is shown: UP for a BOTTOM horizontal bar, LEFT
 	// for a RIGHT vertical bar; other layouts never reach the bottom-right corner.
-	if (endlessMode && endlessTurbodriveActive())
+	if (endlessFxActive() && endlessTurbodriveActive())
 	{
 		const int bank = endlessKillBuffColorBank();
 		const int baseRightX = PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 5 + 2;  // +2px right of the FPS counter's edge
@@ -6371,7 +6514,7 @@ void JE_playerMovement(Player *this_player,
 
 	// Endless per-tick hooks (main player only, once per tick): advance the zone timer +
 	// turbodrive decay, apply the GRAVITY pull, and quicken the guns during a TURBODRIVE streak.
-	if (endlessMode && this_player == &player[0])
+	if (endlessFxActive() && this_player == &player[0])
 	{
 		endlessGameplayTick();
 		if (endlessConsumeArmorHudDirty())  // the Overheat DoT just shaved hull -- repaint the event-driven armor bar
@@ -7318,6 +7461,12 @@ redo:
 				blit_ship2x2(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, 220);
 				blit_ship2x2(VGAScreen, this_player->x + 7, this_player->y - 7, *shipGrPtr_, 222);
 
+				// The banking trim gets its OWN render-list id. It is drawn only while banked, and
+				// rl_finalize snaps a whole id on any tick whose blit count differs from the last --
+				// so leaving it on the hull's id killed the hull's interpolation every time banking
+				// started or stopped, i.e. constantly while moving. On its own id only the trim
+				// snaps, which is a single sprite appearing anyway.
+				rl_current_id = RL_ID_SHIP_TRIM_BASE + playerNum_;
 				int ship_banking = 0;
 				switch (ship_sprite)
 				{
@@ -7345,6 +7494,7 @@ redo:
 					ship_banking = 2;
 					break;
 				}
+				rl_current_id = RL_ID_SHIP_BASE + playerNum_;  // back to the hull for anything after
 				if (ship_banking != 0)  // NortSparks
 				{
 					if (shotRepeat[SHOT_NORTSPARKS] > 0)
@@ -7487,7 +7637,7 @@ redo:
 								// player_shot_create reads to boost + power-free the shots. The flag rides the
 								// rest of this tick, so the rear weapon and both sidekicks firing alongside are
 								// boosted too; endlessOpeningSalvoTick clears it at the start of the next tick.
-								if (endlessMode && temp == SHOT_FRONT && this_player == &player[0])
+								if (endlessFxActive() && temp == SHOT_FRONT && this_player == &player[0])
 									endlessOpeningSalvoConsume();
 
 								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);
@@ -7580,7 +7730,7 @@ redo:
 					{
 						--shotRepeat[SHOT_P1_SUPERBOMB + temp-1];
 					}
-					else if ((button[3-1] || button[2-1]) && !(endlessMode && (endlessActiveMods & ENDLESS_MOD_DUD)))
+					else if ((button[3-1] || button[2-1]) && !(endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DUD)))
 					{  // Dud (gamble curse): the bombs are aboard but jammed -- the fire press does nothing this sector
 						--player[temp-1].superbombs;
 						shotMultiPos[SHOT_P1_SUPERBOMB + temp-1] = 0;
@@ -7662,7 +7812,7 @@ redo:
 										// draw sidekick refill ammo gauge
 										const int y = hud_sidekick_y[twoPlayerMode ? 1 : 0][i] + 13;
 										const int hud_x = HUD_X(284);
-										draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, MAX(1, ammo_max / 10), this_player->sidekick[i].ammo);
+										draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), this_player->sidekick[i].ammo);
 									}
 
 									if (button[1 + i] && (cheatInfiniteSidekickAmmo || this_player->sidekick[i].ammo > 0))
@@ -7685,7 +7835,7 @@ redo:
 										{
 											const int hud_x = HUD_X(284);
 											fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 2, 0);
-											draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, MAX(1, ammo_max / 10), this_player->sidekick[i].ammo);
+											draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), this_player->sidekick[i].ammo);
 										}
 									}
 								}
@@ -8207,7 +8357,12 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						this_player->armor += evalue - 20000;
 						// Endless: an armour pickup tops up to the reinforced hull max, not the classic 28.
-						const uint armorCap = endlessMode ? this_player->initial_armor : 28;
+						// Under debug campaign mods the classic 28 stays the FLOOR: the effect layer may
+					// only RAISE the cap (an Ablative Plating hull above 28), never lower it, so
+					// merely switching the layer on can't nerf pickups for a light-hulled ship.
+					const uint armorCap = endlessMode ? this_player->initial_armor
+					                    : (endlessCampaignMods && this_player->initial_armor > 28)
+					                      ? this_player->initial_armor : 28;
 						if (this_player->armor > armorCap)
 							this_player->armor = armorCap;
 					}
@@ -8328,17 +8483,17 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					int damage_to_enemy = armorleft;
 
 					int playerHit = armorleft;
-					if (endlessMode && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
+					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
 						playerHit = playerHit * 3 / 2;
 					// Endless depth ramp: the contact damage the PLAYER receives climbs past the mid-game
 					// (+150% by zone 100, up to +500%). Scales only playerHit -- damage_to_enemy above keeps
 					// the unscaled collision damage, so enemies aren't ground down any faster by ramming.
-					if (endlessMode)
+					if (endlessFxActive())
 						playerHit = playerHit * endlessContactDamagePercent() / 100;
 					// Elite/champion tiers ram harder than a plain enemy: elites +25%, champions +50%.
 					// Stacks on top of the depth ramp, so a deep-run champion is a serious hull threat --
 					// unless CLEAN SIGNALS is up, which is what flattens this premium to 100%.
-					if (endlessMode)
+					if (endlessFxActive())
 						playerHit = playerHit * endlessEliteContactPercent(enemy[z].eliteState) / 100;
 					if (playerHit > 255)
 						playerHit = 255;
@@ -8362,11 +8517,11 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					int bossHpMult = 1;
 					if (expertMode)
 						bossHpMult *= expertBossHpMult;
-					if (endlessMode)
+					if (endlessFxActive())
 						bossHpMult *= endlessBossHpMult();
 					// Combined divisor: boss depth-scaling and/or endless elite/champion
 					// tier (elites use the accumulator too; an elite boss gets a capped bump).
-					int hpMult = endlessMode ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[z].eliteState)
+					int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[z].eliteState)
 					                         : (has_boss_bar ? bossHpMult : 1);
 					if (hpMult > 1)
 					{

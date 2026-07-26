@@ -17,6 +17,7 @@
 #include "joystick.h"      // push_joysticks_as_keyboard
 #include "loudness.h"      // fade_song
 #include "lvlmast.h"       // shapeFile[]
+#include "mtrand.h"        // mt_rand (campaign-mods per-level re-roll)
 #include "player.h"        // player[]
 #include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
 #include "tyrian2.h"       // itemAvail, itemAvailMax
@@ -309,20 +310,12 @@ void endlessRegenerateLevel(void)
 	bonusLevelCurrent = false;
 	normalBonusLevelCurrent = false;
 
-	// Fresh elite decisions each level (linknums are reused per level).
-	endlessResetElites();
+	// Fresh elite decisions and per-zone timers (shared with the campaign-mods path below).
+	endlessResetZoneEffects();
 
 	// A resumed outpost snapshot is consumed by the shop; once a level actually starts, make
 	// sure no stale resume flag can leak into a LATER outpost (e.g. an in-shop load).
 	endlessResumeVisit = false;
-
-	// Reset the per-zone timers (ENRAGE ramp, TURBODRIVE/Overdrive window, RETALIATION window).
-	endlessZoneTicks = 0;
-	endlessTurbodriveTimer = 0;
-	endlessRetaliationTimer = 0;
-	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in from the last zone
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
 
 	// Re-derive the seeded stream for this zone's level-start draws (music), keyed by depth so it
 	// stays fixed for a seed regardless of what the player did at the outpost (gamble/reroll/buys).
@@ -340,5 +333,51 @@ void endlessRegenerateLevel(void)
 	// for the whole sector, a plain well points straight down. Own reseed phase (keyed by depth) so it
 	// stays fixed per (seed, zone) without shifting the music / course / light-cone draws above.
 	endlessReseed((Uint64)endlessRunDepth * 2 + 0x50000000);
+	endlessRollGravityDir();
+}
+
+// --- Per-level EFFECT reset (shared by endless and the debug campaign-mods path) ---------------
+// Everything the effect layer owns per level: the elite tier decisions (endlessEliteLink is keyed
+// by linknum, and linknums are reused from one level to the next), the three zone timers, and the
+// kill-fire combo. Deliberately RNG-free, so endlessRegenerateLevel can keep drawing its seeded
+// rolls in their established phase order -- moving a draw would change every existing seed's run.
+void endlessResetZoneEffects(void)
+{
+	endlessResetElites();
+	endlessZoneTicks = 0;          // ENRAGE ramp
+	endlessTurbodriveTimer = 0;    // TURBODRIVE / Overdrive window
+	endlessRetaliationTimer = 0;   // RETALIATION window
+	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
+	endlessOverdriveStacks = 0;
+	endlessComboKills = 0;
+}
+
+// Level start for a NORMAL campaign/arcade game running the effect layer under Debug Mode. The
+// effect half of endlessRegenerateLevel and nothing else: the structural fixups there (renaming the
+// level, pinning the planet hub, clearing the special-mode flags, overriding the music) exist to
+// make a RANDOM level jump safe, and a campaign level neither needs nor wants any of them.
+//
+// The two RNG draws are re-rolled from the gameplay stream rather than the seeded structural one,
+// because a campaign has no zone counter to key a per-level phase off: endlessRunDepth is pinned at
+// whatever virtual zone the debug screen set, so reusing the endless phases would hand every level
+// the identical elite pattern and gravity heading.
+void endlessCampaignLevelStart(void)
+{
+	if (!endlessCampaignMods || endlessMode)
+		return;
+
+	endlessResetZoneEffects();
+	endlessEliteRngState = endlessSplitMixSeed(((Uint64)mt_rand() << 32) ^ (Uint64)mt_rand());
+	endlessReseed(((Uint64)mt_rand() << 32) ^ (Uint64)mt_rand());
+	endlessRollGravityDir();
+}
+
+// The debug screen can change the mod set MID-LEVEL, but a little of what the mods imply is decided
+// once per sector rather than read per frame -- currently just the gravity well's heading, which an
+// omnidirectional well picks at level start. Without this, switching one on mid-level leaves it
+// pulling straight down until the next level. Enemies already on screen deliberately keep the elite
+// tier they spawned with; that is a property of the enemy, not of the sector.
+void endlessRefreshModDerivedState(void)
+{
 	endlessRollGravityDir();
 }

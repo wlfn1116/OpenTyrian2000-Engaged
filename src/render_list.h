@@ -193,6 +193,13 @@ enum
 	RL_ID_ESHOT_BASE = 12000, // + slot (0 .. ENEMY_SHOT_MAX-1)
 	RL_ID_EXPL_BASE = 13000, // + slot (0 .. MAX_EXPLOSIONS-1); also the upper bound of the "shot" id range
 	RL_ID_SHIP_BASE = 14000, // + player
+	// The Nort ship's banking trim sprite, which is drawn ONLY while the hull is banked. It must
+	// not share the hull's id: rl_finalize snaps a whole id for any tick whose per-id blit count
+	// differs from the last one (see the count check there), so a trim that appears and disappears
+	// would stop the hull interpolating every time the player starts or stops banking -- a
+	// continuous stutter, since banking tracks horizontal movement. Kept INSIDE the ship range so
+	// it still rides the ship's render-rate override and stays welded to the hull.
+	RL_ID_SHIP_TRIM_BASE = 14002, // + player
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
 	RL_ID_MAX = 16384,
 };

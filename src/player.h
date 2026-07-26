@@ -121,6 +121,12 @@ Player;
 
 extern Player player[2];
 
+// Rounds per segment on the sidekick ammo gauge, sized so a full magazine is at most ten
+// segments and stays inside the 29px HUD strip. Rounding UP matters now that the endless
+// Ordnance Reserves perk produces magazines that aren't round numbers (a 26-round magazine
+// at the old `ammo_max / 10` would have drawn 13 segments, running off the end of the bar).
+#define AMMO_GAUGE_STEP(ammo_max) ((uint)MAX(1, ((ammo_max) + 9) / 10))
+
 static inline bool all_players_dead(void)
 {
 	return (!player[0].is_alive && (!twoPlayerMode || !player[1].is_alive));

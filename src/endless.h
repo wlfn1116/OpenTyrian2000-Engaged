@@ -13,6 +13,7 @@
 #ifndef ENDLESS_H
 #define ENDLESS_H
 
+#include "config.h"   // endlessMode / endlessCampaignMods, read by endlessFxActive below
 #include "opentyr.h"
 
 #include <stdbool.h>
@@ -20,6 +21,30 @@
 // Master mode flag `endlessMode` lives in config.c/.h with the other game-mode
 // flags (twoPlayerMode, superTyrian, ...) so save/load and the rest of the engine
 // can reference it uniformly.
+
+// Is the endless EFFECT layer live?
+//
+// `endlessMode` gates the run STRUCTURE -- which level plays next, the outpost, Chart-a-Course,
+// the endless.sav sidecar, the Run Over screen, the disabled mid-level savepoints. THIS gates the
+// effects: the depth-scaled difficulty levers, the ENDLESS_MOD_* bits, perks, elites. The two are
+// the same thing during a real run; Debug Mode can turn the effect layer on inside a normal
+// campaign or arcade game (endlessCampaignMods), which is the only way they come apart.
+//
+// Which gate a site wants is decided by what it DOES, not where it lives: anything that reads a
+// lever, a mod bit or a perk takes this one; anything that touches run flow, the shop or the save
+// takes `endlessMode`. The effect layer is a no-op at depth 0 with no mods -- every lever returns
+// its identity value -- so turning it on alone changes nothing.
+static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
+
+// How many ENDLESS_MOD_* bits a mask carries. Small enough to inline, and it saves the debug
+// readouts that summarise a slate from each rolling their own loop.
+static inline int endlessPopCount64(Uint64 v)
+{
+	int n = 0;
+	for (; v != 0; v &= v - 1)
+		++n;
+	return n;
+}
 
 // Sector mutator EFFECT bits, folded into the difficulty levers, special-enemy spawns and
 // the clear-cash reward. Curated combos are the named themes in endless.c.
@@ -352,6 +377,30 @@ Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased);
 // level's actual content -- enemies, placement, terrain -- is left exactly as authored.
 void endlessRegenerateLevel(void);
 
+// The campaign-mods counterpart, called at every NON-endless level start: the effect half of the
+// above (elite decisions, zone timers, this level's gravity heading) and none of its structural
+// fixups. No-op unless endlessCampaignMods is on.
+void endlessCampaignLevelStart(void);
+
+// Re-derive the little that a mod set decides ONCE per sector rather than reading per frame (the
+// gravity well's heading). Call after changing endlessActiveMods mid-level; the two level-start
+// paths above already do it.
+void endlessRefreshModDerivedState(void);
+
+// --- Debug campaign-mods state in opentyrian.cfg --------------------------------------
+// The whole setup -- master toggle, virtual zone, mod mask, perk stacks, pinned levers -- survives
+// a restart, because it is something you build once and then play with for a while. Called from
+// config.c's [endless_debug] section; the save is a no-op during an endless run, whose state
+// belongs to the run and rides endless.sav instead.
+void endlessDebugConfigSave(ConfigSection *section);
+void endlessDebugConfigLoad(const ConfigSection *section);
+
+// Clear the outpost-bought state (hull upgrade, buff charge, revive token, ...) when the debug
+// campaign-mods layer is armed, so a previous endless run's purchases can't follow the player into
+// a normal game. Leaves perks and mod bits alone -- those are what the debug screen sets. No-op
+// during a real endless run.
+void endlessCampaignModsArm(void);
+
 // True while the zone being played is a MILESTONE (every 50th): a forced all-S-tier course slate
 // and its own pinned theme. The level script's music events (34 fade / 35 change song) are ignored
 // on such a zone so nothing unseats that theme mid-level; see tyrian2.c.
@@ -414,6 +463,78 @@ int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchange
 int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
 int endlessShotDamagePercent(void); // enemy shot-damage scale (100 = unchanged; higher = hits harder)
 int endlessContactDamagePercent(void); // PLAYER-side contact/ramming damage scale (100 = normal); ramps from zone 35 to +150% by zone 100, capped +500%; only the damage the player RECEIVES (mainint.c collision), never the enemy's
+
+// --- Zone scaling: readout + per-lever overrides (debug) ------------------------------
+// Every lever above is a PURE function of (endlessRunDepth, difficultyLevel, endlessActiveMods) --
+// no hidden per-level state except the two live timers noted below. That is what lets the debug
+// SCALING page compute the whole ramp for any zone without playing it.
+
+// The ramp as computed for one (zone, difficulty, mods) triple.
+typedef struct {
+	int  effDepth;      // endlessEffectiveDepth(): run depth x ramp% x 1.25, the levers' own clock
+	int  diffZone;      // endlessDifficultyZone(): the zone the player-facing thresholds see
+	int  rampPercent;   // the difficulty tilt itself: 50 (Wimp) .. 160 (Insanity and beyond)
+	int  armorPct;      // ordinary-enemy HP, % of stock
+	int  bossMult;      // boss HP multiplier
+	int  fireDelayPct;  // enemy shot cooldown, % of stock (LOWER = faster fire)
+	int  shotSpeedPct;  // enemy projectile speed, % of stock
+	int  shotDmgPct;    // enemy shot damage, % of stock
+	int  tide;          // the rising-tide coefficient
+	int  extraShots;    // extra enemy shots added per firing volley
+	int  contactPct;    // contact/ram damage the PLAYER receives, % of stock
+	int  elitePct;      // natural elite/champion share, % of eligible enemies
+	int  eliteHpMult;   // elite/champion HP multiplier
+	int  playerDmgPct;  // YOUR shot damage, % of stock (sector mods + perks)
+	long eliteBounty;   // cash per elite kill
+	long champBounty;   // cash per champion kill
+} EndlessScaling;
+
+// Compute the whole ramp for an ARBITRARY (zone, difficulty, mods) triple without disturbing the
+// live run: the three globals the levers read are saved, swapped, read back and restored. `zone`
+// is 1-based (zone 1 == run depth 0); pass difficulty -1 to keep the current difficultyLevel.
+//
+// The effect layer is forced on for the duration, so the result describes the RAMP rather than
+// whether it currently applies -- see the definition for why. ENRAGE's and RETALIATION's
+// contributions to fireDelayPct are the one thing that cannot be predicted from depth (both key off
+// live per-level timers); they read as whatever they are right now, and idle outside a level.
+//
+// Not reentrant -- it mutates globals for the duration -- so keep it on the menu thread.
+void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out);
+
+// Per-lever debug OVERRIDES. While a lever's override is active its accessor returns the pinned
+// value outright: depth, mutators and boons are ALL bypassed for that one lever, so ten can sit at
+// stock while the eleventh moves. That is the point -- it isolates which lever a difficulty wall
+// actually came from. Session-only, never saved, and independent of endlessMode: an override
+// applies wherever the effect layer is live.
+enum {
+	ESO_ARMOR,       // endlessArmorPercent
+	ESO_BOSSHP,      // endlessBossHpMult
+	ESO_FIREDELAY,   // endlessFireDelayPercent
+	ESO_SHOTSPEED,   // endlessShotSpeedPercent
+	ESO_SHOTDMG,     // endlessShotDamagePercent
+	ESO_CONTACT,     // endlessContactDamagePercent
+	ESO_TIDE,        // endlessTideLevel
+	ESO_EXTRASHOTS,  // endlessExtraEnemyShots (bypasses FLAK SCREEN too)
+	ESO_ELITECHANCE, // endlessNaturalEliteChancePercent (Elite Pack / Apex / NOELITE still win)
+	ESO_ELITEHP,     // endlessEliteHpMult
+	ESO_PLAYERDMG,   // endlessPlayerDamagePercent
+	ESO_COUNT
+};
+
+typedef struct {
+	int  value;
+	bool active;
+} EndlessScalingOverride;
+
+extern EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
+
+const char *endlessScalingOverrideName(int id);   // short row label
+const char *endlessScalingOverrideKey(int id);    // config-file key -- ON DISK, never rename one
+int         endlessScalingOverrideStock(int id);  // what the lever would read right now UNoverridden
+int         endlessScalingOverrideMin(int id);    // sane editing bounds for the debug row
+int         endlessScalingOverrideMax(int id);
+void        endlessScalingOverridesClear(void);   // drop every pin
+int         endlessScalingOverrideCount(void);    // how many are currently pinned (0 = all stock)
 
 // Rising-tide "quantity" scaling: past where the intensity levers above cap out (~zone 100), the
 // tide adds the one axis with no engine ceiling -- more enemy shots per volley and a rising share
@@ -537,6 +658,10 @@ void endlessCountermeasureFired(void);       // Countermeasure Suite: re-arm the
 bool endlessPerkChainReactionActive(void);   // Chain Reaction: perk owned (tyrian2.c kill-site pulse queue)
 int  endlessPerkChainRadius(void);           // Chain Reaction: pulse radius in px
 int  endlessPerkChainDamage(void);           // Chain Reaction: armor damage the pulse deals to nearby fodder
+int  endlessPerkAmmoPercent(void);           // Ordnance Reserves: sidekick-magazine bonus % (0 = not applying); the shop label and the flown magazine both derive from this
+int  endlessPerkSidekickAmmo(int base);      // Ordnance Reserves: a shipped option.ammo magazine, boosted + capped (0 stays 0: charge sidekicks have no magazine)
+int  endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo); // Ordnance Reserves: the per-round refill interval, scaled so a boosted magazine still fills in the shipped time
+int  endlessPerkSpecialDuration(int base, int cap); // Ordnance Reserves: a timed special's duration, stretched; `cap` clamps it for the byte-wide fields (0 = uncapped)
 
 // Perk registry accessors (for the endless debug screen: list / toggle / stack perks).
 int         endlessPerkCount(void);          // number of perks (PERK_COUNT)

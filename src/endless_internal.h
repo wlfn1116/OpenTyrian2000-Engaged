@@ -94,6 +94,11 @@ extern int     endlessRecentCount;                       // valid entries, 0..EN
 // levels; the file distinguishes the two Ep1-section-3 TYRIAN cuts. fileOut may be NULL.
 bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
+// The per-level reset the EFFECT layer owns (elite tier decisions + the zone timers + the kill-fire
+// combo), shared by endlessRegenerateLevel and the debug campaign-mods level start. RNG-free by
+// design -- see the definition.
+void endlessResetZoneEffects(void);
+
 // --- endless_combat.c: kill-fire combo, scaling, gravity -------------------------
 extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out
@@ -150,6 +155,9 @@ void endlessRollGravityDir(void);              // pick this sector's gravity hea
 #define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
 #define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
 #define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Compound Interest stack (the cap scales with the rate)
+#define ENDLESS_PERK_AMMO_PCT      30  // Ordnance Reserves: +% sidekick magazine per stack (always at least +1 round)
+#define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
+#define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
 // extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
@@ -175,6 +183,7 @@ enum {
 	PERK_COUNTERMEASURE,
 	PERK_CHAINRXN,
 	PERK_INTEREST,
+	PERK_ORDNANCE,
 	PERK_COUNT
 };
 

@@ -875,7 +875,7 @@ static void draw_power_gauge(float power_value)
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
 	// condition that gates the free power. notes.md §Course generation & danger labels.
 	int base = BASE;
-	if (endlessMode && endlessTurbodriveActive() && !endlessKillFireIsEvil())
+	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
 	const int darkEnd = base & ~0x0F;     // bank floor: the AA top edge blends up from here
 
@@ -1442,7 +1442,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 
 			// Endless: decide once (per linkgroup) this enemy's tier -- 0 undecided, 1 normal,
 			// 2 elite, 3 champion; score pickups and invincible (255-armor) enemies excluded.
-			if (endlessMode && enemy[i].eliteState == 0)
+			if (endlessFxActive() && enemy[i].eliteState == 0)
 			{
 				if (!enemy[i].scoreitem && enemy[i].armorleft > 0 && enemy[i].armorleft < 255)
 					enemy[i].eliteState = (JE_byte)endlessRollEliteTier(enemy[i].linknum);
@@ -1665,7 +1665,7 @@ enemy_still_exists:
 								enemy[i].eshotwait[j-1] = (enemy[i].eshotwait[j-1] / 2) + 1;
 						}
 
-						if (endlessMode)
+						if (endlessFxActive())
 						{
 							// Endless: enemies fire faster with depth (lower cooldown = faster);
 							// champions fire faster still.
@@ -1739,10 +1739,10 @@ enemy_still_exists:
 							// shots per volley (fanned out below) rather than firing quicker -- bullet
 							// count is the one difficulty axis with no engine ceiling. Zero early on.
 							int endlessBaseMulti = weapons[temp3].multi;
-							int endlessVolley = endlessBaseMulti + (endlessMode ? endlessExtraEnemyShots() : 0);
+							int endlessVolley = endlessBaseMulti + (endlessFxActive() ? endlessExtraEnemyShots() : 0);
 							// Only endless draws on the enlarged enemy-shot pool; normal levels keep the
 							// original 60-slot cap so they play exactly as before.
-							const int enemyShotCap = endlessMode ? ENEMY_SHOT_MAX : ENEMY_SHOT_NORMAL;
+							const int enemyShotCap = endlessFxActive() ? ENEMY_SHOT_MAX : ENEMY_SHOT_NORMAL;
 							for (int shotNum = 0; shotNum < endlessVolley; shotNum++)
 							{
 								for (b = 0; b < enemyShotCap; b++)
@@ -1850,7 +1850,7 @@ enemy_still_exists:
 									enemyShot[b].sym = roundf((float)aimY / maxMagAim * aim);
 								}
 
-								if (endlessMode)
+								if (endlessFxActive())
 								{
 									// SEEKER: arm this newly-fired shot for its single mid-flight course
 									// correction (counted + applied in the enemy-shot movement loop below).
@@ -2195,6 +2195,8 @@ start_level_first:
 		endlessRegenerateLevel();
 		endlessCaptureSortie();  // snapshot the launch-time loadout + committed level for a possible Quit Level retry
 	}
+	else
+		endlessCampaignLevelStart();  // debug campaign mods: the effect layer's per-level reset (no-op when off)
 
 	crashlog_set_phase("playing level");
 
@@ -2605,22 +2607,25 @@ level_loop:
 		// strip a spotlight any level would set by default, and show it only for the zones that
 		// rolled the seeded 1-in-10 chance (endlessRegenerateLevel). Inverted-control levels (code
 		// 1, or the rare code 3) are left alone so their flipped display and controls stay in sync.
+		// The spotlight rework is endless-only: it re-rolls a property of the SHIPPED level, which
+		// only makes sense when the level was picked at random. A campaign level keeps its own.
 		if (endlessMode)
 		{
 			if (starShowVGASpecialCode == 2)
 				starShowVGASpecialCode = 0;
 			if (starShowVGASpecialCode == 0 && endlessLightConeActive())
 				starShowVGASpecialCode = 2;
+		}
 
-			// TOPSY-TURVY modifier: flip the playfield like a screen-flip boss. Boss-STYLE means we
-			// set the same smoothies[9-1] the bosses use, so the vertical controls invert WITH the
-			// view (up on the stick still moves the ship up ON SCREEN) -- disorienting but fair. It
-			// overrides any spotlight above; the two never share a zone (TOPSY is a standalone theme).
-			if (endlessActiveMods & ENDLESS_MOD_TOPSY)
-			{
-				smoothies[9 - 1] = true;
-				starShowVGASpecialCode = 1;
-			}
+		// TOPSY-TURVY modifier: flip the playfield like a screen-flip boss. Boss-STYLE means we set
+		// the same smoothies[9-1] the bosses use, so the vertical controls invert WITH the view (up
+		// on the stick still moves the ship up ON SCREEN) -- disorienting but fair. It overrides any
+		// spotlight above; the two never share a zone (TOPSY is a standalone theme). A mod bit, so it
+		// rides the effect layer, not the mode.
+		if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_TOPSY))
+		{
+			smoothies[9 - 1] = true;
+			starShowVGASpecialCode = 1;
 		}
 	}
 
@@ -2824,7 +2829,7 @@ level_loop:
 	// A boosted scroll can advance more than one tile (28px) per tick, so widen the render
 	// list's bottom interpolation margin or its up-shift uncovers a strip below the playfield.
 	// Set once per tick (before any layer draws) so all three layers agree; 3 rows cover ~96px/tick.
-	bgMarginRows = (endlessMode && endlessScrollBoostActive()) ? 3 : 1;
+	bgMarginRows = (endlessFxActive() && endlessScrollBoostActive()) ? 3 : 1;
 
 	if (forceEvents && !backMove)
 		curLoc++;
@@ -3148,7 +3153,7 @@ level_loop:
 
 			// OVERCHARGE / Overdrive / Heavy Rounds perk (endless): your weapons hit harder.
 			// Gate on the computed percent so any damage source (sector mod or run perk) applies.
-			if (endlessMode)
+			if (endlessFxActive())
 			{
 				int dmgPct = endlessPlayerDamagePercent();
 				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
@@ -3238,11 +3243,11 @@ level_loop:
 						int bossHpMult = 1;
 						if (expertMode)
 							bossHpMult *= expertBossHpMult;
-						if (endlessMode)
+						if (endlessFxActive())
 							bossHpMult *= endlessBossHpMult();
 						// Combined divisor: boss depth-scaling and/or endless elite/champion
 						// tier (elites use the accumulator too; an elite boss gets a capped bump).
-						int hpMult = endlessMode ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
+						int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
 						                         : (has_boss_bar ? bossHpMult : 1);
 						if (hpMult > 1)
 						{
@@ -3255,7 +3260,7 @@ level_loop:
 						// from the enemy's latched full HP (post-accumulator, so a tough boss benefits
 						// proportionally) and undone in the shot-carry paths below, so a piercing / overkill
 						// shot does not hand this enemy's bonus to the next one it strikes this tick.
-						int execBonus = endlessMode
+						int execBonus = endlessFxActive()
 							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
 							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
 							: 0;
@@ -3359,11 +3364,11 @@ level_loop:
 												enemyAvail[temp3] = 1;
 												enemyKilled++;
 												endlessCountKill(enemy[temp3].linknum);
-												if (endlessMode && enemy[temp3].eliteState >= 2)
+												if (endlessFxActive() && enemy[temp3].eliteState >= 2)
 													endlessAwardEliteKill(enemy[temp3].eliteState);
 												// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
 												// position (dedups to once per linked enemy; helper honours the pool guard).
-												if (endlessMode)
+												if (endlessFxActive())
 												{
 													// SHOCKWAVE boon: see the twin death site below -- swept BEFORE the
 													// martyr burst so the two never cancel each other out.
@@ -3485,11 +3490,11 @@ level_loop:
 											enemyAvail[temp2] = 1;
 											enemyKilled++;
 											endlessCountKill(enemy[temp2].linknum);
-											if (endlessMode && enemy[temp2].eliteState >= 2)
+											if (endlessFxActive() && enemy[temp2].eliteState >= 2)
 												endlessAwardEliteKill(enemy[temp2].eliteState);
 											// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
 											// position (dedups to once per linked enemy; helper honours the pool guard).
-											if (endlessMode)
+											if (endlessFxActive())
 											{
 												// SHOCKWAVE boon: the mirror image of Martyrdom -- an elite/champion death
 												// CLEARS bullets instead of adding them (also deduped per linked enemy).
@@ -6219,7 +6224,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	//   KAMIKAZE 92 -> strength 3, no ram -- the moderate sector tier (what HOMING used to be).
 	//   HOMING   90 -> strength 1, no ram -- the gentlest sector tier (barely leans toward you).
 	// Only ever RAISE a weak enemy to the floor; an enemy that already tracks harder keeps its accel.
-	if (endlessMode)
+	if (endlessFxActive())
 	{
 		const int trackFloor = (endlessActiveMods & ENDLESS_MOD_RAMPAGE)  ? 96
 		                     : (endlessActiveMods & ENDLESS_MOD_KAMIKAZE) ? 92
@@ -6427,7 +6432,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 				break;
 			}
 
-			if (endlessMode)
+			if (endlessFxActive())
 				tempArmor = tempArmor * endlessArmorPercent() / 100;
 
 			// Expert mode toughens every enemy; bosses sit near the 254 cap already
@@ -7719,7 +7724,7 @@ static void JE_barX(JE_word x1, JE_word y1, JE_word x2, JE_word y2, JE_byte col)
 static int boss_bar_tint_base(JE_byte link_num)
 {
 	int tier = 0;  // highest tier among the boss's live parts
-	if (endlessMode && link_num != 0)
+	if (endlessFxActive() && link_num != 0)
 		for (unsigned int e = 0; e < COUNTOF(enemy); e++)
 			if (enemyAvail[e] != 1 && enemy[e].linknum == link_num && enemy[e].eliteState > tier)
 				tier = enemy[e].eliteState;
@@ -8130,9 +8135,9 @@ static void draw_enemy_health_bars(void)
 			// Endless special enemies get a bar in their tint bank (elite / champion) so the
 			// bar reads as part of the enemy; ordinary enemies keep the bank-7 yellow ramp.
 			int barBase = 112;  // palette bank 7
-			if (endlessMode && enemy[e].eliteState == 2)
+			if (endlessFxActive() && enemy[e].eliteState == 2)
 				barBase = ENDLESS_ELITE_FILTER;
-			else if (endlessMode && enemy[e].eliteState == 3)
+			else if (endlessFxActive() && enemy[e].eliteState == 3)
 				barBase = ENDLESS_CHAMPION_FILTER;
 			// Slot banks 0/25/50/75 use horizontal anchors 2/1/3/1 respectively (the same
 			// batches configured around JE_drawEnemy above). Preserve the representative enemy's

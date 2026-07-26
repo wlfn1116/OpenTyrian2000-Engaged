@@ -178,6 +178,12 @@ extern JE_byte chargeLaserSlot;  // option slot of the re-added Charge-Laser Can
 
 void JE_loadItemDat(void);
 void JE_initEpisode(JE_byte newEpisode);
+
+// Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
+// player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded
+// internally against no-op work, so the shop and JE_drawOptions can just call it.
+void JE_labelAmmoSidekicks(void);
+
 unsigned int JE_findNextEpisode(void);
 void JE_scanForEpisodes(void);
 
