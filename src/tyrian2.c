@@ -230,6 +230,11 @@ static void chain_reaction_process(void)
 				enemyAvail[e] = 1;                             // vaporised
 				enemyKilled++;
 				endlessCountKill(enemy[e].linknum);
+				// Pays nothing -- a chain pop only ever destroys LONE, non-elite fodder -- but
+				// the bounty latch has to see every removal, or a later elite reusing the
+				// last-paid linknum reads as another tile of it and goes unpaid. Resetting the
+				// latch to 0 IS the point of the call.
+				endlessAwardEliteKill(enemy[e].linknum, enemy[e].eliteState);
 				if (enemyDat[enemy[e].enemytype].esize == 1)
 				{
 					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
@@ -3347,10 +3352,10 @@ level_loop:
 								}
 								// Charge the lockout ONCE PER TICK, at the toughest hull this bullet crosses
 								// -- not once per hit. Spent per hit, the cost scaled with how many hulls
-								// happened to line up in front of the bullet, so a four-part boss taxed 44%
-								// where a one-part boss taxed the tuned 17%, and the figure quietly depended
-								// on boss geometry. Taking the max keeps a boss's tax from being diluted by
-								// the trash or elites sharing its space.
+								// happened to line up in front of the bullet (tax `1 - 1/(1 + H*L)`), so at
+								// zone 50 a four-part boss taxed 29% where a one-part boss taxed the tuned
+								// 9%, and the figure quietly depended on boss geometry. Taking the max keeps
+								// a boss's tax from being diluted by the trash or elites sharing its space.
 								//
 								// Only BANKED here; the conversion into ticks happens at the top of this
 								// bullet's next pass. Applying it inline would let the bullet lock itself

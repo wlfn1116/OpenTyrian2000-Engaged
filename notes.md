@@ -689,9 +689,13 @@ mutable `last`, so a Quit-Level retry replays the same track.
     enemy and the second would go unpaid. `endlessCountKill` is called for every
     kill for exactly this reason; the shockwave/martyr latches, which only ever see
     elite calls, carry that (much rarer, and merely cosmetic) edge case.
-  - The chain-reaction kill site deliberately does not call it: that pulse can only
-    destroy LONE, non-elite fodder, so it has no bounty to pay and no linkgroup to
-    break.
+  - The chain-reaction kill site calls it too, and that call is NOT redundant even
+    though a chain pop can only ever destroy lone, non-elite fodder and so can
+    never pay out. Its job is to reset the latch to 0. Skip it and a chain kill
+    between two same-linknum elites fails to break the run, so the second elite
+    reads as another tile of the first and goes unpaid — the exact failure the
+    "call it for every removed enemy" contract exists to prevent. Any future kill
+    path that removes an `enemy[]` slot has to call it for the same reason.
 - **Never repaint the HUD from the debug menu unless a HUD is on screen.**
   `debug_apply_loadout_change` repaints the shield/armour gauges and
   `JE_drawOptions` because both are event-driven and would otherwise keep showing
