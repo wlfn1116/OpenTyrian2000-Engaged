@@ -454,10 +454,14 @@ Retuning endless mode means editing a named block, not hunting literals:
 | what a danger score reads as (tier word + letter grade) | `endlessDangerBands[]`, `endless_mods.c` |
 | deep-run danger tilt | `ENDLESS_DANGER_RAMP_*`, `endless_course.c` |
 
-`endlessGenerateCourses` is a sequence of named phases (deal themes → widen → boon → gambits →
-rare injections → dedupe → visit flavor → milestone slate → sort → name). **Order is behaviour**:
-every phase that draws does so off the seeded structural stream, so moving one — or inserting a
-new one that draws — changes what every existing seed generates. Append rather than insert.
+`endlessGenerateCourses` is a sequence of named phases, in this order: gather levels → shuffle
+theme order → deal hostile themes → widen combos → boon course → gambit graft → rare injections →
+dedupe → visit flavor (Jackpot / Gauntlet / Ambush) → ensure a legible choice → milestone slate →
+gravity variants → enforce elite rules → sort by danger → unique names → cache base-level names
+(for Radar, deliberately after the sort). **Order is behaviour**: every phase that draws does so
+off the seeded structural stream, so moving one — or inserting a new one that draws — changes what
+every existing seed generates. Append rather than insert, and keep this list complete: a phase
+missing from it reads as a phase that is safe to reorder.
 
 ### Seeded structure RNG
 
@@ -471,6 +475,14 @@ a structural draw changes what a seed means. Moment-to-moment combat randomness 
 deliberately unseeded, so the elite roll sequence is seed-fixed but which enemy
 each roll lands on can shift.
 
+**Every phase salt must be unique, even across separate state variables.** The
+phases in use are `depth*2` (outpost stock), `depth*2+1` (level/music),
+`+0x40000000` (light cone), `+0x50000000` (elite/champion sub-stream, its own
+`endlessEliteRngState`) and `+0x60000000` (gravity heading). The same salt derives
+the same SplitMix state, so two streams sharing a phase start from identical
+sequences however separate their state variables are — gravity and the elite roll
+both sat on `0x50000000` for a while and were correlated because of it.
+
 Per-level music is deterministic per (seed, depth): the anti-repeat compares
 against the previous zone's song recomputed from that zone's own stream, not a
 mutable `last`, so a Quit-Level retry replays the same track.
@@ -480,14 +492,25 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Enemy levers are driven by an effective depth: real depth × 1.25, tilted by the
   50..160 difficulty factor (`endlessDifficultyRampPercent`). Real
   `endlessRunDepth` still drives HUD/score/milestones/economy.
-- Each lever has its own slope so caps mature one at a time (NORMAL: elite share
-  ~37, shot damage ~55, shot speed ~67, fire rate ~80, boss HP ~96, ordinary HP
-  ~100).
-- Rising tide: intensity levers saturate by effective zone ~100–125 (armor byte
+- Each lever has its own slope so caps mature one at a time (NORMAL real zones:
+  shot damage ~55, elite HP ~64, shot speed ~67, fire rate ~80, boss HP ~96,
+  ordinary HP ~100, elite share ~118).
+- The elite **share** is two-stage, so ~37 is its *shoulder*, not its cap:
+  `2 + effDepth/2` up to 25% (effective depth 46 ≈ real zone 37 on NORMAL), then a
+  shallower `+0.54`/level to the 80% cap at effective depth 148 ≈ real zone 118. A
+  true 100% is reserved for the Apex / Legion sectors. The 25% shoulder is also the
+  unlock gate for the no-elite-tier boons (`endlessEliteBoonsUnlocked`).
+- **Effective depth is not a zone number.** It is real depth × 1.25 on NORMAL, so a
+  figure quoted in effective depth reads ~20% lower as a zone. Several comments have
+  drifted by conflating the two — state which clock a number is on.
+- Rising tide: intensity levers saturate by effective depth ~100–125 (armor byte
   cap, fire pinned at one tick). The tide adds the one axis with no engine
   ceiling — extra enemy shots per volley and a rising elite/champion share — from
-  a single coefficient, starting at zone 35 so it never piles onto the intensity
-  ramp (drives the elite share + shot-damage climb).
+  a single coefficient, starting at **effective depth** 35 (≈ real zone 28) so it
+  never piles onto the intensity ramp (drives the elite share + shot-damage climb).
+  `ENDLESS_TIDE_START` is on the effective-depth clock; the `ENDLESS_TIDE_SHOT_*`
+  thresholds beside it are real zones. Shot damage resumes at +1% per 3 tide levels:
+  ~+30% by zone 100, ~+70% by zone 200 on NORMAL.
 - Extra volley shots (`endlessExtraEnemyShots`) run off the difficulty-scaled zone
   (`endlessDifficultyZone` = real zone on NORMAL), not the tide coefficient. Two
   segments meeting at the anchor (zone 100): an early ramp that adds the FIRST
@@ -543,6 +566,16 @@ mutable `last`, so a Quit-Level retry replays the same track.
     `endlessPierceLock100(hasBossBar, hpMult, eliteState)` grants immunity to
     *repeat* piercing hits, stored in **`playerShotData[].pierceLock`** and aged
     once per bullet per tick at the top of that bullet's own collision pass.
+  - **Ask the tier before consulting the lock, never the reverse.** The hit site
+    computes `lock100` for the hull it is standing on *first*, and only then tests
+    `pierceLock`. With the test first, a bullet locked out of a boss also passed
+    harmlessly through every ordinary enemy overlapping it — a boss's protection
+    spilling onto the trash beside it, contradicting "ordinary enemies, never".
+    Measured at ~44% of pierce damage denied to trash sharing a 4-part boss's space
+    at zone 50. `endlessPierceLock100` returns 0 for the ordinary tier *above* the
+    `ENDLESS_OVERRIDE` line too: "no lockout on ordinary hulls" is structural, not a
+    magnitude, so a pinned lever must not be able to introduce one. It is also the
+    cheap path — the hit site now asks per bullet × per overlapping hull.
   - **The lock must be PER BULLET, never per enemy.** Piercing weapons fire a
     spread — Mega Cannon and Sonic Impulse are both attack `251` (1 damage) × 8
     bullets, and *all* of their damage is "many bullets, every tick". A per-hull
@@ -550,13 +583,26 @@ mutable `last`, so a Quit-Level retry replays the same track.
     seven, collapsing a 16-bullet loadout to one hit per window: measured as
     "basically no damage to bosses" at zone 50. Per bullet, all eight still land;
     each is merely stopped from re-hitting the *same* hull every tick.
+  - **Charged once per TICK, at the toughest hull crossed — not once per hit.**
+    Spent per hit, the cost scaled with how many hulls happened to line up, so the
+    tax was `1 − 1/(1 + H·L)`: a four-part boss paid 44% where a one-part boss paid
+    the tuned 17%, and the real figure depended on boss geometry. Taking the max
+    also stops a boss's tax being diluted by trash sharing its space.
+  - **The charge is BANKED (`pierceLockPending`), converted at the top of the
+    bullet's next pass.** Applying it inline would let the bullet lock itself
+    partway through its own sweep and drop every hull behind the first — the same
+    failure as the per-enemy version, just smaller. Because the countdown for the
+    tick has already run by then, the whole part is stored as-is: no `+1` fudge.
+  - **Ask the tier before consulting the lock, never the reverse.** An ordinary
+    enemy returns 0 and so is neither charged nor blocked — including while the
+    bullet is locked out of a boss it is overlapping. Testing the lock first let a
+    boss's protection spill onto every scrap of trash sharing its space.
   - It takes `endlessEnemyHpMult`'s exact argument list on purpose: the lockout is
     read off **the same multiplier the target is carrying**, so the tiering falls
     out of that rather than being bolted on. Boss → full, off the boss ramp;
-    champion and elite → the 2..5× elite ramp, then their own `_CHAMP_PCT` /
-    `_ELITE_PCT` share of it; **ordinary enemy → zero**. 0 at stock HP too, so a run
-    that multiplied nothing is untouched. GIANT KILLER flattens the elite ramp to 1×
-    and so removes both special tiers' lockout with it.
+    champion and elite → the 2..4× elite ramp; **ordinary enemy → zero**. 0 at stock
+    HP too, so a run that multiplied nothing is untouched. GIANT KILLER flattens the
+    elite ramp to 1× and so removes both special tiers' lockout with it.
   - Measured attack bytes, straight out of `tyrian.hdt` (`doc/tools`-style dump):
     **Mega Cannon** (port 3) and **Sonic Impulse** (port 41) are `251` at *every*
     one of their 11 levels — 1 damage per hit, piercing, 8 bullets at max. Zica
@@ -568,16 +614,30 @@ mutable `last`, so a Quit-Level retry replays the same track.
     integers (the damage accumulator can only divide by one), so keying off them
     made the lockout jump a whole tick every 16 effective depth. It reads
     `endlessBossHpMult100()` / `endlessEliteHpMult100()` instead — same slopes,
-    deltas and caps, unrounded — giving `effDepth × 1.04` hundredths at the boss
-    tier, capped at 100 (1.00 tick, at effDepth 96). Keep each smooth body in step
-    with its integer twin.
+    deltas and caps, unrounded. Keep each smooth body in step with its integer twin.
+  - **One tuning knob per tier, and each IS the play-tested figure** at a fixed
+    reference zone (`_REF_ZONE` 50): `_BOSS` 20, `_CHAMP` 10, `_ELITE` 5 hundredths,
+    with `_MAX` (1 whole tick) as a backstop the ramps never reach. Everything else
+    is derived — `span × atRef / refSpan`, where `refSpan` is recomputed from the
+    ramps themselves — so changing a tier moves that tier and nothing else, and
+    retuning an HP ramp can no longer silently drag the lockout with it. The
+    reference point is evaluated at NORMAL on purpose, so the calibration doesn't
+    mean a different thing in every run. Earlier revisions were a shared slope plus
+    per-tier percentages (`_NUM`/`_DEN` 1/2 → 1/4 → 1/12 → 3/50 → 1/30, with
+    `_ELITE_PCT` / `_CHAMP_PCT`) that had to be hand-fitted every time a ramp moved.
   - Figures are deliberately small: pierce DPS is ~`1/(lock+1)`, so a zone-50 boss
-    taxes 20% and the deepest zones 33%. It is a safeguard, not a wall — after the
-    marker fix above there is very little headroom to spend here, because the weapons
-    it touches deal **1 damage a hit** and anything heavier reads in play as "my gun
-    does nothing". Tuned by play-testing, in this order: `_NUM`/`_DEN` 1/2 → 1/4 →
-    1/12 → 3/50 → **1/30**, with `_ELITE_PCT` (40) and `_CHAMP_PCT` (75) as the
-    independent dials for the two special tiers.
+    taxes ~17%, a plain boss at the 16× cap ~28% (≈0.39 tick), and the special tiers
+    barely register (≈0.05 elite / ≈0.11 champion even at their 4× cap). Only an
+    elite/champion boss riding the `ENDLESS_HP_MULT_MAX` 24× cap reaches ~0.60. It is
+    a safeguard, not a wall — after the marker fix above there is very little headroom
+    to spend here, because the weapons it touches deal **1 damage a hit** and anything
+    heavier reads in play as "my gun does nothing".
+  - **Elite/champion HP ramp history.** It was `2 + depth/20` capped at **5×**, written
+    while the `has_boss_bar` bug above was quietly handing ordinary enemies the boss
+    multiplier too — so a 5× elite read as only ~2× tougher than the trash beside it.
+    With ordinary enemies correctly back at 1×, the same 5× read as a wall, especially
+    against the 1-damage piercing weapons where a divisor of N means N hits per armour
+    point. Now `2 + effDepth/40` capped at **4×** (`ENDLESS_ELITE_HP_*`).
 
     | zone | boss | champ | elite | boss tax | champ tax | elite tax |
     |---|---|---|---|---|---|---|
@@ -650,17 +710,21 @@ mutable `last`, so a Quit-Level retry replays the same track.
      Retaliation PROMOTED in (each acts on a system nothing else in the pool
      touches, so they stack cleanly). A bit's share of a course ≈ bits-drawn ×
      weight ÷ total weight — that is the "how often do I meet this" knob.
-  2. `endlessHostileThemes` is a NAME dictionary whose 159 rows were authored
-     mostly out of the same four bits (Swift in 50 rows, Slipstream in 4), so a
+  2. `endlessHostileThemes` is a NAME dictionary whose rows were authored
+     mostly out of the same four bits (as of the 2026-07-25 name expansion: 256
+     rows, Swift in 75, Slipstream in 19 — the counts move with every extension,
+     so treat them as the symptom, not a knob), so a
      uniform row draw inherited that skew. `endlessPickSignatureTheme` now picks
      WHICH danger the sector is about from `endlessThemeSignatures` (weighted),
      then a random row carrying it. No table row changed; every name stays
      reachable. Used by the initial deal, the duplicate re-roll AND the Gauntlet
      fallback (`endlessUnusedHostileTheme`) — the Gauntlet matters, it is ~38% of
      deep visits and was re-importing the skew on its own.
-- Bits with no curated row of their own (Martyrdom, Seeker) are absent from
-  `endlessThemeSignatures` on purpose: they reach the chart through the weighted
-  pool, and their name tables stay wired into `endlessFindTheme`.
+- Martyrdom and Seeker are absent from `endlessThemeSignatures` on purpose: they
+  reach the chart through the weighted pool and are named from their curated rows
+  there (20 rows each since the name expansion — the original reason, "no curated
+  row of their own", no longer holds), so a signature would double-count them.
+  Their name tables stay wired into `endlessFindTheme`.
 - Per-slate diversity: both weighted draws cut a bit already charted on another
   route of the same slate to ⅓ weight (`endlessOtherCourseMods`), so one danger
   rarely covers three of five offered routes.
@@ -1333,7 +1397,9 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Sidecar version history: v3 seed, v4 locked sortie, v5 buff recharge, v6
   recent-level ring, v7 64-bit mods, v8 exact course files, v9 zone-100
   credits-shown flag, v10 last zone's song + its depth, v11 widened the fixed
-  perk block (16 → 32 slots) so the 17th perk (Radar) persists. Each new field is
+  perk block (16 → 32 slots) so the 17th perk (Radar) persists, v12 the Star Charts
+  / Breakthrough debts owed by a cleared sector. `ENDLESS_SAVE_VERSION` is the
+  authority — keep this list in step with it. Each new field is
   appended and read behind a `version >= N` guard, so older sidecars still load (a
   missing field reads as the memset-zero default — note v10's apply step has to map
   a zeroed `lastSong` back to depth −1, or a pre-v10 record would read as a real

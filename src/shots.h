@@ -37,6 +37,8 @@ typedef struct {
 	// which is the actual thing being taxed.
 	JE_byte pierceLock;       // sim ticks before this bullet may deal damage again
 	JE_byte pierceLockCarry;  // sub-tick remainder, so the lockout can ramp in fractions of a tick
+	JE_byte pierceLockPending;// largest lockout (1/100 tick) charged during the CURRENT tick, banked
+	                          // until the top of the next pass -- see the hit site for why
 } PlayerShotDataType;
 
 // Player-shot pool size, bumped from the original 81 so a sustained special (e.g. an autofired

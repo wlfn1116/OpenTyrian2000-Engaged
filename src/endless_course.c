@@ -637,14 +637,16 @@ static Uint64 endlessOtherCourseMods(int forCourse)
 // --- Curated-theme draw by SIGNATURE ------------------------------------------------------
 // endlessHostileThemes is a NAME dictionary first and a distribution second, and as a distribution
 // it is badly skewed: its doubles/triples/quads were authored mostly out of the same four core bits,
-// so Swift sits in 50 of the 159 rows and Slipstream in 4. Drawing a row uniformly inherits that
-// skew exactly, which is half of why a few dangers felt permanent.
+// so Swift sits in 75 of the 256 rows and Slipstream in 19. Drawing a row uniformly inherits that
+// skew exactly, which is half of why a few dangers felt permanent. (The row counts move whenever the
+// dictionary is extended -- they are the symptom, not a tunable; the weights below are the tunable.)
 //
 // So pick WHICH danger the sector is about first (weighted, below), then a random curated row
-// carrying it. Every one of the 159 names stays reachable and no table row had to change; only how
+// carrying it. Every curated name stays reachable and no table row had to change; only how
 // often each danger is the subject of a sector is now a tuning decision instead of a side effect of
-// how many combos someone happened to name. Bits with no row of their own (MARTYRDOM / SEEKER) are
-// absent here on purpose -- they reach the chart through the weighted pool above.
+// how many combos someone happened to name. MARTYRDOM / SEEKER are absent here on purpose: they
+// reach the chart through the weighted pool above and are NAMED from their curated rows there, so
+// giving them a signature too would double-count them.
 static const EndlessModWeight endlessThemeSignatures[] = {
 	{ ENDLESS_MOD_FORTIFIED,    3 },
 	{ ENDLESS_MOD_FRENZY,       3 },
@@ -1241,7 +1243,7 @@ void endlessGenerateCourses(void)
 	int idx[COUNTOF(endlessHostileThemes)];
 	endlessShuffleThemeOrder(idx);
 
-	const int dangerRamp = endlessDangerRamp();  // 0 (z40) -> 100 (z100) -> 350 (z250 cap) -- deep-run danger tilt
+	const int dangerRamp = endlessDangerRamp();  // 0 (z40) -> 100 (z100) -> 500 (z250 cap) -- deep-run danger tilt
 
 	endlessDealHostileThemes(idx);
 	endlessWidenHostileCombos(dangerRamp);

@@ -332,14 +332,19 @@ void endlessRegenerateLevel(void)
 	// Roll this sector's gravity-well heading: an omnidirectional well picks a fixed random heading
 	// for the whole sector, a plain well points straight down. Own reseed phase (keyed by depth) so it
 	// stays fixed per (seed, zone) without shifting the music / course / light-cone draws above.
-	endlessReseed((Uint64)endlessRunDepth * 2 + 0x50000000);
+	// 0x60000000, NOT 0x50000000: that phase belongs to the elite/champion stream (endlessResetElites),
+	// and sharing a salt would have both streams start from the identical SplitMix state -- separate
+	// state variables, but correlated first draws.
+	endlessReseed((Uint64)endlessRunDepth * 2 + 0x60000000);
 	endlessRollGravityDir();
 }
 
 // --- Per-level EFFECT reset (shared by endless and the debug campaign-mods path) ---------------
 // Everything the effect layer owns per level: the elite tier decisions (endlessEliteLink is keyed
-// by linknum, and linknums are reused from one level to the next), the three zone timers, and the
-// kill-fire combo. Deliberately RNG-free, so endlessRegenerateLevel can keep drawing its seeded
+// by linknum, and linknums are reused from one level to the next), the three zone timers, the two
+// gameplay-only perk timers, and the kill-fire combo. Anything that ticks only during gameplay has
+// to be listed here or it silently pauses across the outpost and resumes in the NEXT sector.
+// Deliberately RNG-free, so endlessRegenerateLevel can keep drawing its seeded
 // rolls in their established phase order -- moving a draw would change every existing seed's run.
 void endlessResetZoneEffects(void)
 {
@@ -348,6 +353,7 @@ void endlessResetZoneEffects(void)
 	endlessTurbodriveTimer = 0;    // TURBODRIVE / Overdrive window
 	endlessRetaliationTimer = 0;   // RETALIATION window
 	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
+	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
 }

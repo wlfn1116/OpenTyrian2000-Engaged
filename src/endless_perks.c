@@ -309,6 +309,19 @@ int endlessPerkCountermeasureRadius(void)
 
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
 
+// --- Per-zone perk timer reset --------------------------------------------------------------------
+// Both timers below tick only during gameplay, so without this they would PAUSE across the outpost
+// and resume mid-charge in the next sector -- a Countermeasure burst still on cooldown from a zone
+// the player already cleared, or an Opening Salvo volley pre-charged by however long the last zone's
+// final seconds happened to be quiet. Neither is a decision worth inheriting, so each sector starts
+// from the same state a fresh run does (endlessResetRun): countermeasures READY, salvo EMPTY.
+// Called from endlessResetZoneEffects, which also covers the campaign-mods path.
+void endlessResetZonePerkTimers(void)
+{
+	endlessSalvoIdle  = 0;  // Opening Salvo: the main gun reads as "just fired" at every zone start
+	endlessCmCooldown = 0;  // Countermeasure Suite: first burst of the sector is always ready
+}
+
 // --- Chain Reaction perk --------------------------------------------------------------------------
 // The pulse itself (finding nearby enemies, dealing armor damage, vaporising fodder) lives at the
 // player-shot kill sites in tyrian2.c, where the enemy tables and explosions are; these just report
