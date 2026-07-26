@@ -926,6 +926,16 @@ mutable `last`, so a Quit-Level retry replays the same track.
     fires 4/6/8 directions at once, so a directional bolt would look wrong on
     most of them. Bullets are slow (3 px/tick, fixed — the spec's "slow"), base
     damage 4 × `endlessShotDamagePercent`.
+    - PER-DIRECTION SPEED — tried and reverted: `sxm`/`sym` are WHOLE pixels per
+      tick (`JE_integer`) and the render list extrapolates the smooth path from
+      those same integers (`rl_current_vel_x` is an `int`), so a fractional carry
+      would desync it. A true 45° diagonal therefore has exactly TWO expressible
+      speeds — (2,2) = 2.83 px/tick and (3,3) = 4.24 — against the cardinals'
+      3.00, with nothing in between; the only way to land between them is to skew
+      the diagonals off 45° (e.g. (3,2) = 3.61, a pinwheel). Both were built and
+      both were rejected: the burst keeps the plain even ring at one speed for
+      every direction. Don't re-litigate this without new precision in the shot
+      struct AND the render list.
     - HISTORY (two GOTCHAs, both now moot): the first cut derived the sprite from
       the level's own fire — `endlessNoteEnemyShotSprite` captured the last enemy
       bullet fired and the burst reused it. That capture originally filtered to
@@ -1429,6 +1439,20 @@ mutable `last`, so a Quit-Level retry replays the same track.
   charge ramp. Sidekick mount style is the engine option `tr` (0 side / 1
   trailing-large / 2 front / 3 trailing / 4 orbit); styles 1–2 draw from 2x2
   `spriteSheet10`, the rest from `spriteSheet9`.
+- **Christmas shot sprites — shipped data bug in `tyrianc.shp`.** The shape file
+  holds 13 banks; bank 7 is `spriteSheet8` (player shots, `sg <= 500`) and bank 11
+  is `spriteSheet12` (player shots 2, `sg > 500`, used by `shots.c` and by enemy
+  shots in `tyrian2.c`). In `tyrianc.shp` bank 11 is a *byte-exact copy of bank 7*
+  (both 32404 bytes, md5 `ab95a26cfc0b…`) — the tool that built the festive file
+  wrote bank 7 twice and bank 11's real data was never emitted. Result: every
+  `sg > 500` projectile draws unrelated bank-7 art in Christmas mode.
+  No Christmas variant of bank 11 exists to substitute: in Tyrian 2.1 (12 banks,
+  same bank layout minus the T2000 ship sheet) bank 11 is byte-identical between
+  `tyrian.shp` and `tyrianc.shp` — that bank never had festive art. Only banks 7,
+  8, 9 legitimately differ between the two files, in both 2.1 and 2000.
+  `JE_loadMainShapeTables` therefore detects the duplication (bank 11 == bank 7,
+  only when loading a non-`tyrian.shp` file) and reloads bank 11 from
+  `tyrian.shp`. Both files index 304 sprites in that bank, so the swap is safe.
 
 ## Audio / MIDI — `loudness.c`, `fluid_music.c`, `win_native_midi.c`
 

@@ -26,6 +26,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 
 Sprite_array sprite_table[SPRITE_TABLES_MAX];
 
@@ -1152,10 +1153,44 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 	}
 }
 
+// tyrianc.shp is built wrong: bank 11 (the second player-shot sheet, spriteSheet12)
+// is a byte-exact copy of bank 7, so every shot with sg > 500 draws bank 7 art in
+// Christmas mode. No festive version of bank 11 exists anywhere -- in Tyrian 2.1 that
+// same bank is byte-identical in tyrian.shp and tyrianc.shp -- so take it from
+// tyrian.shp. Both files index 304 sprites in that bank, so the swap is safe.
+static void reload_shot_sprites_2_from_default(void)
+{
+	enum { SHP_NUM = 13, BANK = 11 };
+
+	FILE *f = dir_fopen_warn(data_dir(), "tyrian.shp", "rb");
+	if (f == NULL)
+		return;
+
+	JE_word shpNumb;
+	JE_longint shpPos[SHP_NUM + 1];  // +1 for storing file length
+
+	fread_u16_die(&shpNumb, 1, f);
+	if (shpNumb + 1u == COUNTOF(shpPos))
+	{
+		fread_s32_die(shpPos, shpNumb, f);
+
+		fseek(f, 0, SEEK_END);
+		for (unsigned int i = shpNumb; i < COUNTOF(shpPos); ++i)
+			shpPos[i] = ftell(f);
+
+		free_sprite2s(&spriteSheet12);
+		fseek(f, shpPos[BANK], SEEK_SET);
+		spriteSheet12.size = shpPos[BANK + 1] - shpPos[BANK];
+		JE_loadCompShapesB(&spriteSheet12, f);
+	}
+
+	fclose(f);
+}
+
 void JE_loadMainShapeTables(const char *shpfile)
 {
 	enum { SHP_NUM = 13 };
-	
+
 	FILE *f = dir_fopen_die(data_dir(), shpfile, "rb");
 	
 	JE_word shpNumb;
@@ -1206,8 +1241,16 @@ void JE_loadMainShapeTables(const char *shpfile)
 	// tyrian 2000 ship sprites
 	spriteSheetT2000.size = shpPos[i + 1] - shpPos[i];
 	JE_loadCompShapesB(&spriteSheetT2000, f);
-	
+
 	fclose(f);
+
+	// repair tyrianc.shp's duplicated bank 11; see reload_shot_sprites_2_from_default()
+	if (strcmp(shpfile, "tyrian.shp") != 0 &&
+	    spriteSheet12.size == spriteSheet8.size &&
+	    memcmp(spriteSheet12.data, spriteSheet8.data, spriteSheet12.size) == 0)
+	{
+		reload_shot_sprites_2_from_default();
+	}
 }
 
 void free_main_shape_tables(void)
