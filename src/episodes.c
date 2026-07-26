@@ -166,15 +166,17 @@ static void JE_applyZicaLaserConfig(void)
 	// (1) Shape the base Lv11 (short) weapon. Auto restores the captured native layout
 	// (byte-identical to vanilla); forced modes overwrite sx/bx (sy/by/sg keep the vanilla
 	// short bolts).
+	// Sized off the 8-slot sources, not the WEAPON_MULTI_MAX-wide destinations: this is an 8-bullet
+	// weapon, and copying the full destination width would read past these 8-byte arrays.
 	if (zicaLaserBase == ZICA_BASE_AUTO && zicaNativeCaptured)
 	{
-		memcpy(weapons[wn11].sx, zicaNativeSx, sizeof(weapons[wn11].sx));
-		memcpy(weapons[wn11].bx, zicaNativeBx, sizeof(weapons[wn11].bx));
+		memcpy(weapons[wn11].sx, zicaNativeSx, sizeof(zicaNativeSx));
+		memcpy(weapons[wn11].bx, zicaNativeBx, sizeof(zicaNativeBx));
 	}
 	else if (zicaLaserBase != ZICA_BASE_AUTO)
 	{
-		memcpy(weapons[wn11].sx, spread ? sx_spread : sx_straight, sizeof(weapons[wn11].sx));
-		memcpy(weapons[wn11].bx, spread ? bx_spread : bx_straight, sizeof(weapons[wn11].bx));
+		memcpy(weapons[wn11].sx, spread ? sx_spread : sx_straight, sizeof(sx_spread));
+		memcpy(weapons[wn11].bx, spread ? bx_spread : bx_straight, sizeof(bx_spread));
 	}
 
 	// (2) Build the two LONG side beams: full copies of the Lv10 beam (8 solid segments,
@@ -464,6 +466,14 @@ void JE_labelAmmoSidekicks(void)
 		char label[16];
 		int label_len = snprintf(label, sizeof(label), "Ammo %d",
 		                         endlessPerkSidekickAmmo(ammoBaseAmmo[i]));
+		// snprintf reports the length it WOULD have written (so a truncated label over-reports) and
+		// a negative on encoding failure. Clamp to what the buffer actually holds: the column
+		// arithmetic below is unsigned, so a negative length would turn into a huge count and the
+		// clamp meant to protect the 30-char name field would sail straight past it.
+		if (label_len < 0)
+			label_len = 0;
+		else if (label_len > (int)sizeof(label) - 1)
+			label_len = (int)sizeof(label) - 1;
 
 		// Align to column 15 like the originals (or one space past the name if it already
 		// reaches that far), clamped so the label never overruns the 30-char name field.

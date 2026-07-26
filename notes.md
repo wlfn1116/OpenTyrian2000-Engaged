@@ -28,6 +28,42 @@ reasoning lives here. Code comments reference these sections as `notes.md §Name
   are x64), so Win32 builds compile without it.
 - The crash logger (`crashlog.c`) is Windows-only; console ports get the stub paths.
 
+### Warning flags
+
+Every target builds warning-free (MSVC x64/Win32, Debug and Release, plus both
+console toolchains); keep it that way, and prefer fixing the code to widening
+these lists.
+
+- MSVC compiles the engine at `EnableAllWarnings` (`/Wall`) with a
+  `DisableSpecificWarnings` list in the `.vcxproj` for the checks that only fire
+  on the DOS-era idioms this engine is built from (implicit conversions, unused
+  padding, Spectre notes).
+- MSVC also needs `/source-charset:utf-8`: the sources are UTF-8 without a BOM
+  (`.editorconfig`), and without the switch `cl` assumes the system code page and
+  reports C4819 on every comment containing an em dash or `§`. Source charset
+  only -- no string literal holds a non-ASCII character, so the execution charset
+  stays the system default and codegen does not change.
+- Third-party headers are silenced at the include, not project-wide, so our own
+  code keeps the check: see the `#pragma warning(push/disable/pop)` pairs around
+  `<dbghelp.h>` in `crashlog.c` (C4255) and `<fluidsynth.h>` in `fluid_music.c`.
+- `main()` keeps an unreachable `return 0;` after `JE_tyrianHalt()` for compilers
+  that don't infer the exit. MSVC's C4702 is a code-generation warning, so the
+  `#pragma warning` pair has to sit *outside* the function -- the state that
+  counts is the one in effect at the closing brace.
+- MSVC's `/analyze` is NOT part of the build. Run it separately if you want it, and
+  expect noise: the two dominant categories are C6244/C6246 (a local shadowing one
+  of the engine's one-letter globals -- `b`, `temp`, `x`, `y`, whose compiler
+  equivalents 4456/4457/4459 are already suppressed on purpose) and C28301 (SAL
+  annotation mismatches inside the Windows SDK's own headers). Range findings on
+  indexed writes are usually the analyzer losing a bound across an opaque call, not
+  a defect -- take one indexed reference right after the bounds check and it goes
+  quiet (see `endlessScalingOverrideStock`).
+- All three gcc-based builds pass `-Wno-format-truncation`. The engine's
+  `snprintf` calls fill fixed-width on-screen fields where a clamped tail is the
+  intended result, and gcc cannot see the real value ranges (it assumes any `int`
+  can print 11 digits). `-Wstringop-truncation` is *not* disabled: use
+  `SDL_strlcpy` rather than `strncpy` + a manual terminator.
+
 ## Smooth motion (render list)
 
 The world simulates at the fixed 35Hz tick. Every draw is recorded into a render
@@ -683,19 +719,44 @@ mutable `last`, so a Quit-Level retry replays the same track.
   same "consecutive same-linknum removals are one enemy" rule `endlessCountKill`,
   Martyrdom, Shockwave and the Chain Reaction perk all use; reset per level in
   `endlessResetElites` so a zone's first kill always pays.
-  - The call sites are now UNCONDITIONAL — the `eliteState >= 2` test moved inside
-    the helper. That is the point, not tidying: the latch has to see ordinary kills
-    too, or two same-linknum elites separated only by fodder would read as one
-    enemy and the second would go unpaid. `endlessCountKill` is called for every
-    kill for exactly this reason; the shockwave/martyr latches, which only ever see
-    elite calls, carry that (much rarer, and merely cosmetic) edge case.
-  - The chain-reaction kill site calls it too, and that call is NOT redundant even
-    though a chain pop can only ever destroy lone, non-elite fodder and so can
-    never pay out. Its job is to reset the latch to 0. Skip it and a chain kill
-    between two same-linknum elites fails to break the run, so the second elite
-    reads as another tile of the first and goes unpaid — the exact failure the
-    "call it for every removed enemy" contract exists to prevent. Any future kill
-    path that removes an `enemy[]` slot has to call it for the same reason.
+  - The call is UNCONDITIONAL — the `eliteState >= 2` test lives inside the helper.
+    That is the point, not tidying: the latch has to see ordinary kills too, or two
+    same-linknum elites separated only by fodder would read as one enemy and the
+    second would go unpaid. `endlessCountKill` is called for every kill for exactly
+    this reason.
+- **Every kill goes through `enemy_logical_death` (tyrian2.c). There is one kill
+  path, and adding a second is a bug.** Retiring a killed `enemy[]` slot has six
+  required consequences — `enemyKilled`, `endlessCountKill`, `endlessAwardEliteKill`,
+  `endlessShockwaveRadius`+sweep, `endlessMartyrdomBurstShots`+burst, and
+  `chain_queue_kill` — and three of them carry the per-linkgroup dedup latch above.
+  A latch is only correct if it sees **every** kill, so a kill site that forgets one
+  entry fails silently and in both directions: pay a multipart elite once per tile,
+  or strand a linknum so the next enemy reusing it reads as another tile of the
+  previous one and gets nothing. That list used to be copy-pasted at each death site
+  and defended with comments; it is now written once, so a new kill path inherits
+  the whole contract by calling the helper.
+  - `ENEMY_DEATH_QUIET` (vs `ENEMY_DEATH_FULL`) is the only knob, and it suppresses
+    **effects only** — the latch-feeding calls run for every caller. The Chain
+    Reaction drain is its sole user: its pulse must not queue further pulses
+    (`chain_reaction_process` is non-recursive by construction) and a chain pop was
+    never meant to throw a death burst or sweep bullets. But it still has to feed the
+    latches, because a chain pop always removes lone (linknum 0) fodder and that zero
+    is exactly what breaks a stale run.
+  - Centralising this fixed `endlessShockwaveRadius`, which tested `eliteState < 2`
+    *before* updating `endlessShockwaveLastLink` and so only ever latched on elite
+    calls. The last elite's linknum stayed latched indefinitely — ordinary kills
+    never cleared it — so the next enemy to reuse that linknum had its sweep silently
+    skipped. It now latches first, exactly like `endlessAwardEliteKill`; the three
+    latches finally have identical semantics.
+  - **Despawns are not kills** and must keep assigning `enemyAvail[i] = 1` directly:
+    scrolling off the playfield, the map-stop watchdog cull, and the level-event
+    clear/replace paths (events 41, 59/68) feed no tally and no latch.
+  - The **ram kill** in `JE_playerCollide` (mainint.c) also stays off this path, and
+    that is a balance decision rather than an oversight — a ram has never fed
+    `enemyKilled`, and giving it the full contract would hand ramming the run tally,
+    the combo/Turbodrive window, Overdrive stacks, Siphon armour, elite bounties and
+    the death effects, i.e. make suiciding into elites a farming strategy. Swap its
+    two `enemyAvail` writes for `enemy_logical_death` calls to reverse it.
 - **Never repaint the HUD from the debug menu unless a HUD is on screen.**
   `debug_apply_loadout_change` repaints the shield/armour gauges and
   `JE_drawOptions` because both are event-driven and would otherwise keep showing

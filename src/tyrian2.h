@@ -43,6 +43,22 @@ extern boss_bar_t boss_bar[2];
 // most of the time. Use this instead; never open-code the comparison.
 bool enemy_has_boss_bar(JE_byte linknum);
 
+// --- Logical enemy death -------------------------------------------------------------------------
+// The ONE way an enemy[] slot may be retired as a KILL. A kill has a fixed list of required
+// consequences -- level tally, endless run tally, elite/champion bounty, SHOCKWAVE sweep, MARTYRDOM
+// burst, Chain Reaction pulse -- three of them latched per linkgroup, and a latch stays correct only
+// if EVERY kill feeds it. Never open-code `enemyAvail[i] = 1` for a kill; call this. The full
+// contract, and what is deliberately NOT routed through it, is documented at the definition
+// (tyrian2.c).
+typedef enum
+{
+	ENEMY_DEATH_FULL,   // an ordinary kill: the reactive boons / dangers / perks all get to fire
+	ENEMY_DEATH_QUIET,  // bookkeeping and latches only, no reactive effects (the Chain Reaction drain)
+}
+enemy_death_kind;
+
+void enemy_logical_death(unsigned int i, enemy_death_kind kind);
+
 extern float debug_interp_alpha;  // last presented interpolation fraction
 
 extern char tempStr[31];

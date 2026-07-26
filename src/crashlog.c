@@ -8,7 +8,14 @@
 #ifdef _WIN32
 
 #include <windows.h>
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4255)  // unprototyped callback typedefs inside the SDK's own dbghelp.h
+#endif
 #include <dbghelp.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <signal.h>

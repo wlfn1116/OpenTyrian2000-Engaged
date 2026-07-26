@@ -6710,7 +6710,9 @@ static void cwRowAdjust(int row, int dir)
 		return;  // editor-only selection
 
 	case CWROW_TWO_MODES:   customWeaponModes = cwClamp(customWeaponModes + (dir >= 0 ? 1 : -1), 1, CUSTOM_WEAPON_MODES);
-	                        if (customWeaponModes < 2) customWeaponEditMode = 0; break;
+	                        if (customWeaponModes < 2)
+	                            customWeaponEditMode = 0;
+	                        break;
 	case CWROW_EQUIP_SLOT:  customWeaponEquipSlot = (customWeaponEquipSlot + CUSTOM_EQUIP_COUNT + dir) % CUSTOM_EQUIP_COUNT; break;
 	case CWROW_COST:        customWeaponCost      = cwClamp(customWeaponCost + dir * 500, 0, 64000); break;
 	case CWROW_ICON:        customWeaponItemGraphic = cwClamp(customWeaponItemGraphic + dir, 1, 237); break;
@@ -6736,7 +6738,9 @@ static void cwRowAdjust(int row, int dir)
 	// Ranges span each field's full valid range so any imported value stays reachable.
 	case CWROW_FIRE_RATE:   w->shotrepeat = (JE_byte)cwClamp(w->shotrepeat + dir, 0, 255); break;
 	case CWROW_BULLETS:     w->multi = (JE_byte)cwClamp(w->multi + dir, 1, CUSTOM_BULLETS_MAX);
-	                        if (w->max < w->multi) w->max = w->multi; break;
+	                        if (w->max < w->multi)
+	                            w->max = w->multi;
+	                        break;
 	case CWROW_PATTERN:     w->max = (JE_byte)cwClamp(w->max + dir, 1, CUSTOM_BULLETS_MAX); break;
 	case CWROW_ANIM:        w->weapani = (JE_word)cwClamp((int)w->weapani + dir, 0, 255); break;
 	case CWROW_HOMING:      w->aim = (JE_byte)cwClamp(w->aim + dir, 0, 255); break;

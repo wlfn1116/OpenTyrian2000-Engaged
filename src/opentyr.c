@@ -2190,6 +2190,13 @@ static bool runOptionsMenu(MenuId startMenu)
 	}
 }
 
+#ifdef _MSC_VER
+// C4702 (unreachable code): JE_tyrianHalt() exits, so main()'s trailing return never runs. It is
+// kept for the compilers that don't infer that. Code-generation warnings use the state in effect at
+// the closing brace, so this has to sit outside the body to have any effect.
+#pragma warning(push)
+#pragma warning(disable: 4702)
+#endif
 int main(int argc, char *argv[])
 {
 #if defined(__SWITCH__) || defined(__vita__)
@@ -2372,3 +2379,6 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

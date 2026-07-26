@@ -174,6 +174,57 @@ static void chain_queue_kill(int screenX, int y, int linknum)
 	}
 }
 
+// --- Logical enemy death: the ONE place an enemy[] slot is retired as a kill --------------------
+// Killing an enemy has grown a fixed list of required consequences -- the level tally, the endless
+// run tally, the elite/champion bounty, the SHOCKWAVE sweep, the MARTYRDOM burst and the Chain
+// Reaction pulse. Three of those carry a "consecutive same-linknum removals are one enemy" latch
+// (see endlessCountKill), and a latch is correct only if it sees EVERY kill, so forgetting one from
+// a new kill path fails silently and in both directions: a multipart elite pays its bounty once per
+// destroyed tile, or the next enemy to reuse a latched linknum reads as another tile of the previous
+// one and pays nothing at all. Each kill site used to repeat the list and defend it with comments;
+// they all come through here now, so a new path inherits the whole contract by construction.
+//
+// NOT for despawns. An enemy that scrolls off the playfield, that the map-stop watchdog culls, or
+// that a level event clears or replaces was never killed: those sites still assign enemyAvail[i] = 1
+// directly and deliberately feed no tally and no latch. The ram kill in JE_playerCollide (mainint.c)
+// destroys an enemy without being a kill either -- see the note there.
+//
+// ENEMY_DEATH_QUIET exists for the Chain Reaction drain alone: its pulse must not queue further
+// pulses (chain_reaction_process is non-recursive by construction), and a chain pop was never meant
+// to throw a death burst or sweep bullets. It suppresses only the EFFECTS -- the latch-feeding calls
+// above the gate run for every caller, which is exactly what stops a chain pop from stranding a
+// latch on a linknum a later enemy will reuse.
+void enemy_logical_death(unsigned int i, enemy_death_kind kind)
+{
+	enemyAvail[i] = 1;
+	enemyKilled++;
+
+	const int linknum = enemy[i].linknum;
+	const int elite = enemy[i].eliteState;
+	const JE_integer sx = enemy[i].ex + enemy[i].mapoffset;
+	const JE_integer sy = enemy[i].ey;
+
+	// Latched bookkeeping: mandatory for every kill, elite or not, quiet or not. Each self-guards on
+	// endlessFxActive(), so outside an endless run these cost a call and nothing else. The two
+	// decide-functions are evaluated here rather than at the point of use so that a QUIET death still
+	// feeds their latches; neither touches the shot pool, so pulling them above the sweep is safe.
+	endlessCountKill(linknum);
+	endlessAwardEliteKill(linknum, elite);
+	const int shockRadius = endlessShockwaveRadius(linknum, elite);
+	const int martyrShots = endlessMartyrdomBurstShots(linknum, elite);
+
+	if (kind == ENEMY_DEATH_QUIET)
+		return;
+
+	// SHOCKWAVE runs BEFORE the martyr burst: on the rare sector carrying both, the sweep clears the
+	// fire already in the air and the burst below still gets to spawn. The other order had the sweep
+	// silently eat the burst it had just created.
+	endlessShockwaveClear(sx, sy, shockRadius);
+	if (martyrShots > 0)
+		endlessSpawnMartyrBurst(sx, sy, martyrShots);
+	chain_queue_kill(sx, sy, linknum);
+}
+
 // Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
 // depletes (a plain kill -- no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
 // Elites, champions, bosses, staged-death enemies and score pickups are left for real kills.
@@ -227,14 +278,11 @@ static void chain_reaction_process(void)
 			}
 			else
 			{
-				enemyAvail[e] = 1;                             // vaporised
-				enemyKilled++;
-				endlessCountKill(enemy[e].linknum);
-				// Pays nothing -- a chain pop only ever destroys LONE, non-elite fodder -- but
-				// the bounty latch has to see every removal, or a later elite reusing the
-				// last-paid linknum reads as another tile of it and goes unpaid. Resetting the
-				// latch to 0 IS the point of the call.
-				endlessAwardEliteKill(enemy[e].linknum, enemy[e].eliteState);
+				// Vaporised. QUIET: a chain pop pays nothing (it only ever destroys lone,
+				// non-elite fodder) and must not queue another pulse -- but it still has to feed
+				// the dedup latches, or a later elite reusing this linknum reads as another tile
+				// of the last one and goes unpaid / unswept.
+				enemy_logical_death(e, ENEMY_DEATH_QUIET);
 				if (enemyDat[enemy[e].enemytype].esize == 1)
 				{
 					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
@@ -3477,26 +3525,9 @@ level_loop:
 											}
 											else
 											{
-												enemyAvail[temp3] = 1;
-												enemyKilled++;
-												endlessCountKill(enemy[temp3].linknum);
-												// Elite/champion bounty: unconditional, deduped per linked enemy inside
-												// (a multipart elite pays one bounty, not one per destroyed tile).
-												endlessAwardEliteKill(enemy[temp3].linknum, enemy[temp3].eliteState);
-												// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
-												// position (dedups to once per linked enemy; helper honours the pool guard).
-												if (endlessFxActive())
-												{
-													// SHOCKWAVE boon: see the twin death site below -- swept BEFORE the
-													// martyr burst so the two never cancel each other out.
-													endlessShockwaveClear(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey,
-													                      endlessShockwaveRadius(enemy[temp3].linknum, enemy[temp3].eliteState));
-													int mShots = endlessMartyrdomBurstShots(enemy[temp3].linknum, enemy[temp3].eliteState);
-													if (mShots > 0)
-														endlessSpawnMartyrBurst(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey, mShots);
-												}
-												// Chain Reaction perk: queue a death-pulse (deduped per linked enemy)
-												chain_queue_kill(enemy[temp3].ex + enemy[temp3].mapoffset, enemy[temp3].ey, enemy[temp3].linknum);
+												// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
+												// the one helper -- never inline any of them here again (see tyrian2.h).
+												enemy_logical_death(temp3, ENEMY_DEATH_FULL);
 											}
 
 											enemy[temp3].aniwhenfire = 0;
@@ -3604,29 +3635,9 @@ level_loop:
 										}
 										else
 										{
-											enemyAvail[temp2] = 1;
-											enemyKilled++;
-											endlessCountKill(enemy[temp2].linknum);
-											// Elite/champion bounty: unconditional, deduped per linked enemy inside
-											// (a multipart elite pays one bounty, not one per destroyed tile).
-											endlessAwardEliteKill(enemy[temp2].linknum, enemy[temp2].eliteState);
-											// MARTYRDOM: the slain enemy's death throe -- a radial burst at its screen
-											// position (dedups to once per linked enemy; helper honours the pool guard).
-											if (endlessFxActive())
-											{
-												// SHOCKWAVE boon: the mirror image of Martyrdom -- an elite/champion death
-												// CLEARS bullets instead of adding them (also deduped per linked enemy).
-												// Runs FIRST so that on the rare sector carrying both, the sweep clears the
-												// fire already in the air and the death burst below still gets to spawn;
-												// the other order had the sweep silently eat the burst it just created.
-												endlessShockwaveClear(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey,
-												                      endlessShockwaveRadius(enemy[temp2].linknum, enemy[temp2].eliteState));
-												int mShots = endlessMartyrdomBurstShots(enemy[temp2].linknum, enemy[temp2].eliteState);
-												if (mShots > 0)
-													endlessSpawnMartyrBurst(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey, mShots);
-											}
-											// Chain Reaction perk: queue a death-pulse (deduped per linked enemy)
-											chain_queue_kill(enemy[temp2].ex + enemy[temp2].mapoffset, enemy[temp2].ey, enemy[temp2].linknum);
+											// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
+											// the one helper -- never inline any of them here again (see tyrian2.h).
+											enemy_logical_death(temp2, ENEMY_DEATH_FULL);
 										}
 
 										if (enemyDat[enemy[temp2].enemytype].esize == 1)

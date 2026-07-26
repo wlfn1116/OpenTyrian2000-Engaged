@@ -199,7 +199,8 @@ extern int endlessRunBossKills;
 
 // Count a destroyed enemy toward the total kill tally (no-op outside endless mode). Pass the
 // killed enemy's linknum. A multi-part enemy (shared nonzero linknum) is counted once, not per
-// tile, so the Overdrive stack and kill tally stay per-enemy.
+// tile, so the Overdrive stack and kill tally stay per-enemy. Called from enemy_logical_death
+// (tyrian2.c) -- the single kill path -- never inline at a new kill site.
 void endlessCountKill(int linknum);
 
 // Mutator bits (ENDLESS_MOD_*) active on the current level; set by endlessChooseNextLevel.
@@ -577,7 +578,8 @@ int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisT
 int  endlessShipTintFilter(void);       // player-ship blit filter: electric yellow while the TURBODRIVE buff is active (0 = none)
 
 // Martyrdom / Seeker Rounds / Static Discharge sector dangers -- read by the engine at the
-// enemy-death (tyrian2.c), enemy-shot (tyrian2.c) and player-damage (varz.c) sites. Retaliation
+// enemy-death (enemy_logical_death, tyrian2.c), enemy-shot (tyrian2.c) and player-damage (varz.c)
+// sites; the enemy-death ones are called for EVERY kill so their latches stay honest. Retaliation
 // needs no accessor of its own: it folds straight into endlessFireDelayPercent.
 int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill -- 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
 JE_word  endlessMartyrShotSprite(void);           // MARTYRDOM: the burst's own fixed bullet sprite (never the level's fire, so it always looks the same)
@@ -588,7 +590,7 @@ unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generato
 int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
 bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
 int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
-int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 40 elite / 60 champion; dedups so a multi-tile enemy pulses once
+int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 40 elite / 60 champion; dedups so a multi-tile enemy pulses once. Call for EVERY kill (enemy_logical_death does): it needs the ordinary ones to break its latch
 bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
 
 // Called the moment a sector is CLEARED (right after endlessRunDepth is bumped, tyrian2.c), to bank
@@ -635,8 +637,9 @@ int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale
 
 // Award an elite/champion kill: pay its bounty into the player's cash and post a message to
 // the in-game text bar ("Elite/Champion Enemy destroyed!  +cash"). No-op if eliteState < 2.
-// Call for EVERY removed enemy (like endlessCountKill), not just elite ones: it latches linknum
+// Call for EVERY killed enemy (like endlessCountKill), not just elite ones: it latches linknum
 // to pay a multi-tile enemy once, and needs the ordinary kills in between to break that latch.
+// enemy_logical_death (tyrian2.c) is that caller; nothing else should invoke this.
 void endlessAwardEliteKill(int linknum, int eliteState);
 
 // --- Perks: run-persistent, stacking upgrades chosen after each cleared zone -----------

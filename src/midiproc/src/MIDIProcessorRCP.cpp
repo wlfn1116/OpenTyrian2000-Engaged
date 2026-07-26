@@ -159,7 +159,9 @@ bool MIDIProcessor::ProcessRCP(std::vector<uint8_t> const & data, MIDIContainer 
             if (Size < HEADER_LENGTH || Offset + Size > data.size())
                 break; // Invalid track size;
 
-            ::swprintf_s(Text, _countof(Text), L"%08X: Track %2ld/%2kd, %5d bytes\n", ((long)Offset), ((long)i + 1), maxTracks, (int) Size);
+            // "%2kd" was a typo: 'k' is not a length modifier, so the specifier ate the 'd' and
+            // the trailing argument went unconsumed (MSVC C4476 + C4474).
+            ::swprintf_s(Text, _countof(Text), L"%08lX: Track %2ld/%2d, %5d bytes\n", ((unsigned long)Offset), ((long)i + 1), ((int)maxTracks), (int) Size);
             ::OutputDebugStringW(Text);
 
             uint8_t trackNo = Data[2]; // Track Number

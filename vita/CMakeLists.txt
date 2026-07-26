@@ -32,7 +32,10 @@ set(VITA_VERSION  "01.00")
 ## Compiler flags --------------------------------------------------------------
 # -fsigned-char        : ARM chars are unsigned by default; the DOS-era engine assumes signed x86.
 # -fno-strict-aliasing : the binary data-file loaders type-pun freely.
-add_compile_options(-Wall -O2 -fsigned-char -fno-strict-aliasing)
+# -Wno-format-truncation : matches the root Makefile -- the engine's snprintf calls build fixed-width
+#                          on-screen strings where a clamped tail is intended, and gcc can't see the
+#                          real value ranges.
+add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing)
 
 # Compile the whole engine. Every src/*.c is portable or self-guards on its platform macro
 # (win_native_midi.c/crashlog.c -> _WIN32, network.c -> WITH_NETWORK, switch_platform.c ->

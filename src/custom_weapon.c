@@ -648,8 +648,7 @@ static void customSidekickMaterialize(void)
 
 	JE_OptionType *o = &options[customSidekickSlot];
 	memset(o, 0, sizeof(*o));
-	strncpy(o->name, customWeaponName, 30);
-	o->name[30]    = '\0';
+	SDL_strlcpy(o->name, customWeaponName, sizeof(o->name));
 	o->pwr         = (JE_byte)pwr;                   // 0 = instant fire; N = N more charge shots
 	o->itemgraphic = 193;                            // valid shop icon
 	o->cost        = (JE_word)clampi(customWeaponCost, 0, 64000);
@@ -685,8 +684,7 @@ void customWeaponMaterialize(void)
 	// The reserved port: fire mode M, power level P (1..11) fires the matching slot.
 	// A single-mode weapon points op[1] at the mode-0 slots so a rear-gun toggle is a
 	// no-op instead of firing an undesigned bank.
-	strncpy(weaponPort[customWeaponPort].name, customWeaponName, 30);
-	weaponPort[customWeaponPort].name[30] = '\0';
+	SDL_strlcpy(weaponPort[customWeaponPort].name, customWeaponName, sizeof(weaponPort[customWeaponPort].name));
 	weaponPort[customWeaponPort].opnum = (JE_byte)customWeaponModes;
 	for (int p = 0; p < 11; ++p)
 	{
@@ -983,8 +981,7 @@ static void storeToSlot(int i)
 	if (i < 0 || i >= CUSTOM_WEAPON_LIB_MAX)
 		return;
 	CustomWeaponSlot *s = &customWeaponLib[i];
-	strncpy(s->name, customWeaponName, sizeof(s->name) - 1);
-	s->name[sizeof(s->name) - 1] = '\0';
+	SDL_strlcpy(s->name, customWeaponName, sizeof(s->name));
 	s->cost         = customWeaponCost;
 	s->powerUse     = customWeaponPowerUse;
 	s->equipSlot    = customWeaponEquipSlot;
@@ -1172,8 +1169,7 @@ void customWeaponLibraryLoad(void)
 			size_t len = strlen(nm);
 			while (len > 0 && (nm[len - 1] == '\n' || nm[len - 1] == '\r'))
 				nm[--len] = '\0';   // strip the newline
-			strncpy(customWeaponLib[cur].name, nm, sizeof(customWeaponLib[cur].name) - 1);
-			customWeaponLib[cur].name[sizeof(customWeaponLib[cur].name) - 1] = '\0';
+			SDL_strlcpy(customWeaponLib[cur].name, nm, sizeof(customWeaponLib[cur].name));
 		}
 		else if (cur >= 0 && strncmp(line, "props ", 6) == 0)
 		{

@@ -5659,7 +5659,7 @@ void JE_operation(JE_byte slot)
 		strcpy(stemp, "              ");
 		memcpy(stemp, saveFiles[slot-1].name, strlen(saveFiles[slot-1].name));
 		temp = strlen(stemp);
-		while (stemp[temp-1] == ' ' && --temp);
+		while (stemp[temp-1] == ' ' && --temp) { }  // trim the trailing pad spaces
 
 #if defined(__SWITCH__) || defined(__vita__)
 		// No physical keyboard on the consoles: get the name from the software keyboard and
@@ -8578,7 +8578,14 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else
 					{
-						// kill enemy
+						// Destroy the enemy the player just rammed. NOT a logical kill, and
+						// deliberately NOT routed through enemy_logical_death (tyrian2.c): a ram has
+						// never fed enemyKilled, and giving it the full kill contract would hand
+						// ramming the endless run tally, the combo/Turbodrive window, Overdrive
+						// stacks, Siphon armour, elite bounties and the Martyrdom/Shockwave/Chain
+						// death effects -- i.e. it would make suiciding into elites a farming
+						// strategy. This is a balance decision, not an oversight; flip it by
+						// swapping the two enemyAvail writes below for enemy_logical_death calls.
 						for (temp2 = 0; temp2 < 100; temp2++)
 						{
 							if (enemyAvail[temp2] != 1)
