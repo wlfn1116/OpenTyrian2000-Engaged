@@ -200,11 +200,9 @@ static void chain_reaction_process(void)
 			if (enemy[e].armorleft == 0 || enemy[e].armorleft >= 254)  // dead, or invulnerable/boss marker
 				continue;
 
-			bool isBoss = false;   // bosses spend HP through the damageAccum multiplier, so raw armor
-			for (unsigned int bi = 0; bi < COUNTOF(boss_bar); bi++)   // chipping would bypass their scaling entirely
-				if (enemy[e].linknum != 0 && enemy[e].linknum == boss_bar[bi].link_num)
-					isBoss = true;
-			if (isBoss)
+			// Bosses spend HP through the damageAccum multiplier, so raw armor chipping would
+			// bypass their scaling entirely.
+			if (enemy_has_boss_bar(enemy[e].linknum))
 				continue;
 
 			const int ex = enemy[e].ex + enemy[e].mapoffset;
@@ -291,6 +289,20 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 }
 
 boss_bar_t boss_bar[2];
+
+// Is this linkgroup one the level put a boss health bar on? The `linknum != 0` guard is the whole
+// point (see tyrian2.h): an idle bar slot and an unlinked enemy both read 0, so without it every
+// ordinary enemy on the level answers yes whenever a slot is free -- which handed them the boss HP
+// multiplier, the boss branch of the Executioner perk, and (in endless) the pierce lockout.
+bool enemy_has_boss_bar(JE_byte linknum)
+{
+	if (linknum == 0)
+		return false;
+	for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
+		if (linknum == boss_bar[i].link_num)
+			return true;
+	return false;
+}
 
 /* Level Event Data */
 JE_boolean quit, loadLevelOk;
@@ -3139,6 +3151,11 @@ level_loop:
 	{
 		if (shotAvail[z] != 0)
 		{
+			// The endless pierce lockout ages here -- once per bullet per sim tick, immediately
+			// before this bullet's own collision pass reads it.
+			if (playerShotData[z].pierceLock > 0)
+				--playerShotData[z].pierceLock;
+
 			bool is_special = false;
 			int tempShotX = 0, tempShotY = 0;
 			JE_byte chain;
@@ -3153,14 +3170,45 @@ level_loop:
 
 			// OVERCHARGE / Overdrive / Heavy Rounds perk (endless): your weapons hit harder.
 			// Gate on the computed percent so any damage source (sector mod or run perk) applies.
+			//
+			// shotDmg is an ENCODED byte, not a plain quantity: 99 means "ice, deals no damage" and
+			// 250..255 means "piercing, damage = value - 250" (see the decode below and shots.c).
+			// Scaling the raw byte therefore did three wrong things at once -- it multiplied the
+			// 250 marker along with the damage, so a 3-damage piercing round hit for 129 at +50%;
+			// a damage CUT could drag the byte back under 250 and silently strip the pierce flag;
+			// and an ordinary shot scaled onto either marker changed weapon behaviour outright.
+			// Decode first, scale only the real damage, then re-encode.
 			if (endlessFxActive())
 			{
 				int dmgPct = endlessPlayerDamagePercent();
 				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
 				if (z != MAX_PWEAPON - 1 && playerShotData[z].salvoBoost)
 					dmgPct += endlessOpeningSalvoDamagePercent();
-				if (dmgPct != 100)
-					damage = damage * dmgPct / 100;
+				if (dmgPct != 100 && damage != 99)   // 99 is the ice marker: no damage to scale
+				{
+					const int pierceMark = (damage >= 250) ? 250 : 0;
+					const int raw = damage - pierceMark;
+					int scaled = (raw * dmgPct + 50) / 100;   // round, don't truncate -- see below
+					if (raw > 0)
+					{
+						if (scaled < 1)
+							scaled = 1;              // a shot that deals damage never rounds away to none
+						// A piercing shot's raw damage is only 0..5, so plain integer scaling rounds
+						// most of the lever away: +50% on 3 damage bought exactly nothing, which made
+						// Overcharge/Overdrive/Glass Cannon feel dead on those weapons. Guarantee that
+						// an uplift moves the number by at least one.
+						if (dmgPct > 100 && scaled <= raw)
+							scaled = raw + 1;
+					}
+					if (pierceMark == 0)
+					{
+						if (scaled > 249)            // keep clear of the piercing marker...
+							scaled = 249;
+						else if (scaled == 99)       // ...and of the ice one
+							scaled = 100;
+					}
+					damage = pierceMark + scaled;
+				}
 			}
 
 			for (b = 0; b < 100; b++)
@@ -3232,10 +3280,7 @@ level_loop:
 
 						int armorleft = enemy[b].armorleft;
 
-						bool has_boss_bar = false;
-						for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
-							if (enemy[b].linknum == boss_bar[i].link_num)
-								has_boss_bar = true;
+						const bool has_boss_bar = enemy_has_boss_bar(enemy[b].linknum);
 
 						// Nx boss HP (expert-mode and/or endless-depth). Both use the same
 						// damage accumulator: spend 1 armor per N damage dealt, so the boss
@@ -3249,6 +3294,50 @@ level_loop:
 						// tier (elites use the accumulator too; an elite boss gets a capped bump).
 						int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
 						                         : (has_boss_bar ? bossHpMult : 1);
+
+						// ENDLESS pierce lockout. A piercing shot is never consumed, so without this the
+						// same bullet damages the same hull again on every tick it overlaps -- which is
+						// how a Mega Cannon eats a 16x boss in the time it takes to eat a 1x one. Scaled
+						// off the same multiplier the target is carrying, so a boss gets the full lockout,
+						// an elite or champion a much smaller one, and an ordinary enemy none whatsoever.
+						//
+						// The lock is PER BULLET (playerShotData), never per enemy. Weapons of this class
+						// fire a spread -- the Mega Cannon and Sonic Impulse both put 8 bullets in the air
+						// for 1 damage each -- so a per-hull lock let the first bullet of the tick claim it
+						// and silently discard the other seven, which is most of the weapon's damage.
+						// See endless_combat.c for the tiering.
+						if (endlessFxActive() && infiniteShot)
+						{
+							PlayerShotDataType *pshot = &playerShotData[z];
+							if (pshot->pierceLock > 0)
+							{
+								damage += 250;   // re-encode: the bullet flies on, dealing nothing this tick
+								continue;
+							}
+							// The lockout ramps in hundredths of a tick so it can creep with every zone,
+							// but a tick is indivisible. Spend the whole part outright and accumulate the
+							// remainder in a per-bullet carry that buys one extra tick when it comes due --
+							// so the AVERAGE lockout lands exactly on the fractional figure, and the very
+							// early zones (well under one tick) still get their proportional share.
+							const int lock100 = endlessPierceLock100(has_boss_bar, hpMult, enemy[b].eliteState);
+							if (lock100 > 0)
+							{
+								int ticks = lock100 / ENDLESS_PIERCE_LOCK_SCALE;
+								int carry = pshot->pierceLockCarry + lock100 % ENDLESS_PIERCE_LOCK_SCALE;
+								if (carry >= ENDLESS_PIERCE_LOCK_SCALE)
+								{
+									carry -= ENDLESS_PIERCE_LOCK_SCALE;
+									++ticks;
+								}
+								pshot->pierceLockCarry = (JE_byte)carry;
+								// Stored as ticks-left COUNTING THE ONE WE ARE ON: the countdown runs at the
+								// top of this bullet's own pass, so one extra is stored and a lock of N
+								// blocks the next N ticks exactly.
+								if (ticks > 0)
+									pshot->pierceLock = (JE_byte)(ticks + 1);
+							}
+						}
+
 						if (hpMult > 1)
 						{
 							enemy[b].damageAccum += damage;

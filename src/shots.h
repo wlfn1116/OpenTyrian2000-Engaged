@@ -29,6 +29,14 @@ typedef struct {
 	Uint8 shotDmg;
 	JE_byte shotBlastFilter, chainReaction, playerNumber, aimAtEnemy, aimDelay, aimDelayMax;
 	JE_byte salvoBoost;  // endless Opening Salvo perk: 1 = this shot is part of a charged volley (extra damage at collision)
+	// Endless pierce lockout, PER BULLET (endless_combat.c). It has to live here and not on the
+	// enemy: a per-enemy lock let the first bullet of a tick lock the hull and threw away every
+	// other bullet that tick, which for an 8-bullet piercing weapon like the Mega Cannon meant
+	// discarding 7 of 8 hits -- the weapon stopped doing damage at all. Per bullet, all eight still
+	// land; each is merely stopped from re-hitting the same hull on every single tick it overlaps,
+	// which is the actual thing being taxed.
+	JE_byte pierceLock;       // sim ticks before this bullet may deal damage again
+	JE_byte pierceLockCarry;  // sub-tick remainder, so the lockout can ramp in fractions of a tick
 } PlayerShotDataType;
 
 // Player-shot pool size, bumped from the original 81 so a sustained special (e.g. an autofired

@@ -3703,6 +3703,18 @@ static bool dbgRowIsLoadout(int id)
  * `shipChanged` decides what happens to the hull: swapping the SHIP legitimately re-armors you to
  * the new one's maximum, but nudging the rear weapon must not quietly heal you.
  */
+/* True only while the debug menu is open OVER THE IN-GAME HUD, as opposed to over a shop or title
+ * screen. The loadout-apply path below needs that question and not the layout one: the HUD gauges
+ * are event-driven, so it repaints them, and a repaint anywhere else stamps the gameplay
+ * shield/armour bars and sidekick icons into the bottom-right of whatever art is on screen -- where
+ * they stay, because the shop only redraws the regions it owns. Skipping the repaint off-HUD costs
+ * nothing: level start (JE_main) runs the very same three calls before the playfield fades in.
+ *
+ * It coincides exactly with JE_debugMenu's `center` today -- the level is the only uncentered
+ * caller -- but this is stored separately so a future centered in-level caller can't silently
+ * reintroduce the bug. */
+static bool debugMenuOverHud = false;
+
 static void debug_apply_loadout_change(bool shipChanged)
 {
 	uint keptArmor[COUNTOF(player)];
@@ -3737,16 +3749,28 @@ static void debug_apply_loadout_change(bool shipChanged)
 	// Both gauges are event-driven -- painted when they change, not every frame -- so they have to
 	// be repainted explicitly or they keep reading the old ship's numbers. We are already on
 	// VGAScreenSeg here (JE_debugMenu switched to it), which is the surface the HUD lives on.
-	JE_wipeShieldArmorBars();
-	JE_drawArmor();
-	JE_drawShield();
-	JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
+	//
+	// Only when there IS a HUD, though. JE_drawOptions paints the sidekick icons and ammo gauges as
+	// well as re-seeding their state, so off-HUD all four of these leave gameplay furniture stranded
+	// on the shop art. Level start repaints the lot anyway, so there is nothing to make up for.
+	if (debugMenuOverHud)
+	{
+		JE_wipeShieldArmorBars();
+		JE_drawArmor();
+		JE_drawShield();
+		JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
+	}
 }
 
 void JE_debugMenu(bool center)
 {
 	SDL_Surface* temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg;
+
+	// See debugMenuOverHud: uncentered == opened from inside a level, which is the only place the
+	// gameplay HUD exists to be repainted. Saved and restored so a nested open can't clear it.
+	const bool wasOverHud = debugMenuOverHud;
+	debugMenuOverHud = !center;
 
 	// gameplay runs the mouse in relative mode; switch to absolute so the menu
 	// can use the pointer, and restore on exit.
@@ -4439,6 +4463,7 @@ void JE_debugMenu(bool center)
 	}
 
 	mouseSetRelative(wasRelative);
+	debugMenuOverHud = wasOverHud;
 
 	VGAScreen = temp_surface;
 }
@@ -8506,10 +8531,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						this_player->y_velocity += (enemy[z].eyc * enemy[z].armorleft) / 2;
 					}
 
-					bool has_boss_bar = false;
-					for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
-						if (enemy[z].linknum == boss_bar[i].link_num)
-							has_boss_bar = true;
+					const bool has_boss_bar = enemy_has_boss_bar(enemy[z].linknum);
 
 					// Nx boss HP (expert-mode and/or endless-depth). Both use the same
 					// damage accumulator: spend 1 armor per N damage dealt, so the boss

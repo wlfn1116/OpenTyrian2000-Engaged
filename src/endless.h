@@ -485,6 +485,7 @@ typedef struct {
 	int  elitePct;      // natural elite/champion share, % of eligible enemies
 	int  eliteHpMult;   // elite/champion HP multiplier
 	int  playerDmgPct;  // YOUR shot damage, % of stock (sector mods + perks)
+	int  pierceLock100; // HUNDREDTHS of a sim tick a boss shrugs off repeat piercing hits for, at this zone's boss multiplier
 	long eliteBounty;   // cash per elite kill
 	long champBounty;   // cash per champion kill
 } EndlessScaling;
@@ -518,6 +519,7 @@ enum {
 	ESO_ELITECHANCE, // endlessNaturalEliteChancePercent (Elite Pack / Apex / NOELITE still win)
 	ESO_ELITEHP,     // endlessEliteHpMult
 	ESO_PLAYERDMG,   // endlessPlayerDamagePercent
+	ESO_PIERCELOCK,  // endlessPierceLock100 (pinned = a fixed figure at every tier and multiplier)
 	ESO_COUNT
 };
 
@@ -611,6 +613,21 @@ void endlessResetElites(void);               // clear per-level decisions (each 
 int  endlessRollEliteTier(JE_byte linknum);  // spawn tier: 1 normal, 2 elite, 3 champion (per linkgroup)
 int  endlessEliteHpMult(void);               // elite & champion HP multiplier (boss-style divisor)
 int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // combined per-hit HP divisor
+
+// Safeguard against piercing weapons. A piercing shot survives its own impact, so it re-damages
+// whatever it is sitting on every single tick -- DPS that scales with the shot's dwell time instead
+// of with the target's hull, which is why it ignores an HP multiplier completely. This returns how
+// long a target ignores REPEAT piercing hits for, read off the same multiplier endlessEnemyHpMult
+// gave it (hence the identical argument list): full for a boss, diluted for an elite or champion
+// because their ramp only reaches 5x, and ZERO for an ordinary enemy. 0 at stock HP too, so a run
+// that never multiplied anything plays out exactly as before.
+//
+// The figure is in HUNDREDTHS of a sim tick, because the ramps are read UNROUNDED so it creeps
+// every zone rather than jumping a whole tick at a time. The hit site (tyrian2.c) spends the whole
+// part outright and accumulates the fraction in a per-enemy carry, so the average lockout lands
+// exactly on the fractional figure.
+#define ENDLESS_PIERCE_LOCK_SCALE 100        // the fixed-point unit below: 1/100 of a sim tick
+int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);  // 1/100 sim ticks of repeat-pierce immunity (0 = none)
 long endlessEliteBounty(void);               // extra cash for destroying an elite
 long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)

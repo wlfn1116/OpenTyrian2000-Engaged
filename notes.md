@@ -505,6 +505,133 @@ mutable `last`, so a Quit-Level retry replays the same track.
   `endlessDifficultyZone`. Base ram damage is small (`damageRate`, usually 2/tick),
   so the effective per-tick hit steps 2→3→4→5 as the multiplier crosses 150/200/
   250%.
+- **"Is this a boss?" needs the `linknum != 0` guard — `enemy_has_boss_bar()`.**
+  A boss is an enemy that *explicitly has a boss health bar*. An idle bar slot
+  holds `link_num == 0` (both start there, and `draw_boss_bar` zeroes a slot once
+  its group is dead), and `linknum == 0` means "unlinked" for an enemy — so the
+  bare `enemy[b].linknum == boss_bar[i].link_num` test called **every ordinary
+  unlinked enemy a boss** for as long as either slot was idle, which is nearly
+  always. Consequences, all live before this was caught: ordinary enemies were
+  handed the full boss HP multiplier (8× at zone 50, or `expertBossHpMult` in a
+  campaign expert run), took the boss branch of the Executioner perk, and picked
+  up the endless pierce lockout. The chain-reaction site
+  ([tyrian2.c](src/tyrian2.c)) had the guard and was correct; the two damage sites
+  did not. All three now call the one helper — **never open-code the comparison.**
+- **Piercing weapons vs the boss HP multiplier.** `shotDmg` is an *encoded* byte:
+  99 = ice (no damage), 250..255 = piercing with `damage = value - 250`, and
+  100..249 is consumed earlier by `shots.c` (chain reaction, `shotDmg` forced to
+  1). Two consequences that both landed on bosses:
+  - The endless player-damage scale in `tyrian2.c` multiplied the *raw* byte, so
+    Overcharge/Overdrive/Heavy Rounds turned a 3-damage piercing round into a
+    ~129-damage one, a damage *cut* could drag the byte under 250 and strip the
+    pierce flag outright, and an ordinary shot could scale onto either marker.
+    It now decodes, scales only the real damage, and re-encodes (clamping a
+    non-piercing result to 249 and steering it off 99). **That bug was carrying
+    essentially all of pierce's endless damage output** — correcting it is a
+    ~26–43× cut at typical multipliers, so anything that felt tuned against the
+    old behaviour was tuned against a 40× buff.
+  - Because a piercing shot's raw damage is only 0..5, integer scaling rounds the
+    lever away entirely (+50% on 3 damage → 4, and on 1 damage → 1). The scale
+    therefore rounds rather than truncates and guarantees an uplift moves the
+    number by at least one, or Overcharge/Glass Cannon read as dead on exactly
+    the weapons whose damage is smallest.
+  - A piercing shot is never consumed on impact, so the *same* shot re-damages
+    the *same* hull on every tick it overlaps (~5–10 free hits per pass, ±25×±29
+    hitbox), times every linked segment it covers. That is DPS proportional to
+    dwell time rather than to armour, so it ignores `endlessBossHpMult` entirely
+    — a 16× boss died about as fast as a 1× one.
+    `endlessPierceLock100(hasBossBar, hpMult, eliteState)` grants immunity to
+    *repeat* piercing hits, stored in **`playerShotData[].pierceLock`** and aged
+    once per bullet per tick at the top of that bullet's own collision pass.
+  - **The lock must be PER BULLET, never per enemy.** Piercing weapons fire a
+    spread — Mega Cannon and Sonic Impulse are both attack `251` (1 damage) × 8
+    bullets, and *all* of their damage is "many bullets, every tick". A per-hull
+    lock let the first bullet of the tick claim it and silently discarded the other
+    seven, collapsing a 16-bullet loadout to one hit per window: measured as
+    "basically no damage to bosses" at zone 50. Per bullet, all eight still land;
+    each is merely stopped from re-hitting the *same* hull every tick.
+  - It takes `endlessEnemyHpMult`'s exact argument list on purpose: the lockout is
+    read off **the same multiplier the target is carrying**, so the tiering falls
+    out of that rather than being bolted on. Boss → full, off the boss ramp;
+    champion and elite → the 2..5× elite ramp, then their own `_CHAMP_PCT` /
+    `_ELITE_PCT` share of it; **ordinary enemy → zero**. 0 at stock HP too, so a run
+    that multiplied nothing is untouched. GIANT KILLER flattens the elite ramp to 1×
+    and so removes both special tiers' lockout with it.
+  - Measured attack bytes, straight out of `tyrian.hdt` (`doc/tools`-style dump):
+    **Mega Cannon** (port 3) and **Sonic Impulse** (port 41) are `251` at *every*
+    one of their 11 levels — 1 damage per hit, piercing, 8 bullets at max. Zica
+    Laser (port 5) is 1..12 and **not** piercing; Mega Pulse (port 19) is 149..154,
+    i.e. the *chain-reaction* range, so `shots.c` forces its `shotDmg` to 1. Any
+    reasoning about pierce balance has to start from "1 damage, 8 bullets, every
+    tick" — not from the encoded byte, which looks like 251 damage.
+  - Carried in **hundredths of a tick**, not whole ticks. Both multipliers are
+    integers (the damage accumulator can only divide by one), so keying off them
+    made the lockout jump a whole tick every 16 effective depth. It reads
+    `endlessBossHpMult100()` / `endlessEliteHpMult100()` instead — same slopes,
+    deltas and caps, unrounded — giving `effDepth × 1.04` hundredths at the boss
+    tier, capped at 100 (1.00 tick, at effDepth 96). Keep each smooth body in step
+    with its integer twin.
+  - Figures are deliberately small: pierce DPS is ~`1/(lock+1)`, so a zone-50 boss
+    taxes 20% and the deepest zones 33%. It is a safeguard, not a wall — after the
+    marker fix above there is very little headroom to spend here, because the weapons
+    it touches deal **1 damage a hit** and anything heavier reads in play as "my gun
+    does nothing". Tuned by play-testing, in this order: `_NUM`/`_DEN` 1/2 → 1/4 →
+    1/12 → 3/50 → **1/30**, with `_ELITE_PCT` (40) and `_CHAMP_PCT` (75) as the
+    independent dials for the two special tiers.
+
+    | zone | boss | champ | elite | boss tax | champ tax | elite tax |
+    |---|---|---|---|---|---|---|
+    | 1 | 0.00 | 0.03 | 0.01 | 0% | 3% | 1% |
+    | 20 | 0.07 | 0.06 | 0.03 | 7% | 6% | 3% |
+    | **50** | **0.20** | **0.10** | **0.05** | 17% | 9% | 5% |
+    | 100+ | 0.39 | 0.11 | 0.05 | 28% | 10% | 5% |
+
+    The special figures are nonzero at zone 1 because their HP ramp *starts* at 2×,
+    and flatten from zone ~65 because it caps at 4× — so the tiers separate further
+    the deeper the run goes. `_MAX` (1 whole tick) is only a backstop; the boss ramp
+    tops out at 0.39 and never reaches it.
+  - **Tuning shape.** The knobs are `_REF_ZONE` plus one figure per tier
+    (`_BOSS`/`_CHAMP`/`_ELITE`), and each figure *is* the play-tested value in
+    hundredths of a tick at that zone — change one and only that tier moves. The
+    ramp shape is derived: `lock = span × atRef / refSpan`, where `span` is how far
+    above stock the target's multiplier sits and `refSpan` is the same span at the
+    reference zone, recomputed from `endlessBossRamp100`/`endlessEliteRamp100`. That
+    is what makes it self-refitting — earlier revisions used a slope plus per-tier
+    percentages that had to be hand-fitted every time an HP ramp moved, and retuning
+    elite HP silently dragged the lockout with it. `endlessEffectiveDepthOf(zone-1,
+    100)` pins the reference to NORMAL so difficulty and mutators can't shift the
+    calibration. `endlessBossRamp100` is deliberately *not* folded into
+    `endlessBossHpMult100`: the live path must clamp **last**, after the mutator
+    deltas, or FRAGILE would halve an already-clamped figure.
+- **Elite/champion HP was over-tuned by a masked bug.** `endlessEliteHpMult` was
+  `2 + effDepth/20` capped at **5**, and it is a damage divisor stacking on top of
+  `endlessArmorPercent` (344% at zone 50). It was tuned while the `has_boss_bar` bug
+  above was handing *ordinary* enemies the boss multiplier as well, so a 5× elite
+  read as only ~2× tougher than the trash beside it. Fixing `has_boss_bar` put trash
+  back at 1× and the same 5× became a wall — worst against the 1-damage piercing
+  weapons, where a divisor of N literally means N hits per armour point. Now
+  `ENDLESS_ELITE_HP_BASE/_PER_X/_MAX` = 2 / 40 / **4**: 3× at zone 50 (was 5×), 4×
+  from zone ~65. Effective HP of a 20-armour elite at zone 50: 204, down from 340,
+  against an ordinary neighbour's 68. `endlessEliteHpMult100()` must move with it.
+- **Never repaint the HUD from the debug menu unless a HUD is on screen.**
+  `debug_apply_loadout_change` repaints the shield/armour gauges and
+  `JE_drawOptions` because both are event-driven and would otherwise keep showing
+  the old ship's numbers. But the debug menu opens from the shop and title screens
+  too, where that stamps gameplay gauges and sidekick icons into the bottom-right of
+  the shop art — and they *stay*, because the shop only redraws the regions it owns.
+  Gated on `debugMenuOverHud` (set from `JE_debugMenu`'s `!center`, saved/restored so
+  a nested open can't clear it). Skipping it off-HUD costs nothing: level start in
+  `JE_main` runs the same calls before the playfield fades in. Note `JE_drawOptions`
+  both re-seeds sidekick state *and* draws, so it has to be inside the gate.
+  - A tick is indivisible, so the fraction is spent through
+    `enemy[].pierceLockCarry`: whole part locks outright, remainder accumulates
+    and buys one extra tick when due, making the *average* lock the fractional
+    figure. `pierceLock` stores `ticks + 1` because the countdown pass runs at the
+    **top** of the tick — without the extra, a lock of N blocks only N−1 ticks.
+  - Pinnable as `ESO_PIERCELOCK` ("Boss Pierce Lock") on the SCALING page, which
+    formats it as `N.NN` (curve line gets tenths — `helpBuf` is only 96 bytes).
+    It is the one lever that is a function of another (it reads
+    `endlessBossHpMult()` to carry the elite-boss bump across as a ratio).
 - Gravity (Gravity Well course): base plus per-zone ramp, tilted by the same
   difficulty factor, with an absolute cap that stays clear of the ship's top
   speed (`VT_VMAX`) so full throttle can always climb. The VT integrator scales
