@@ -635,7 +635,9 @@ int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale
 
 // Award an elite/champion kill: pay its bounty into the player's cash and post a message to
 // the in-game text bar ("Elite/Champion Enemy destroyed!  +cash"). No-op if eliteState < 2.
-void endlessAwardEliteKill(int eliteState);
+// Call for EVERY removed enemy (like endlessCountKill), not just elite ones: it latches linknum
+// to pay a multi-tile enemy once, and needs the ordinary kills in between to break that latch.
+void endlessAwardEliteKill(int linknum, int eliteState);
 
 // --- Perks: run-persistent, stacking upgrades chosen after each cleared zone -----------
 // After finishing a zone the shop opens on a forced perk pick (before the normal buy/sell
