@@ -869,8 +869,8 @@ static bool endlessPortCanPowerUp(uint port)
 // Events 33/45 turn a front-powerup dropper (enemy 533) into one of the six special-weapon
 // droppers (829..834) on a roll weighted by front-gun power -- guaranteed at power 11, where a
 // front powerup would be wasted. Endless already hands out a guaranteed random special for every
-// datacube and secret orb it converts, so a third source only re-rolls what the player was just
-// given; the displaced powerup is handed back instead, front or rear at even odds. No port checks
+// collectable datacube and secret orb it converts, so a third source only re-rolls what the player
+// was just given; the displaced powerup is handed back instead, front or rear at even odds. No port checks
 // here on purpose: the event fires long before the kill, so a full gun is caught at spawn time by
 // endlessResolvePowerupDrop instead.
 JE_word endlessPowerupDropEnemy(void)
@@ -898,6 +898,25 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI)
 	if (endlessPortCanPowerUp(other))
 		return (other == REAR_WEAPON) ? ENEMY_REAR_POWERUP : ENEMY_FRONT_POWERUP;
 	return ENEMY_GEM_5000;
+}
+
+// A datacube carried by a REGULAR enemy (evalue 1 on an armored piece, e.g. the tile buried in
+// TYRIAN's end-of-level structure) has no pickup of its own: vanilla just does cubeMax++ the moment
+// the piece dies. Converting that to a random special the way the collectable cube and orb pickups
+// do meant a whole special weapon arriving out of nowhere, with nothing on screen to credit it to.
+// Drop the 5000-point gem at the dead piece instead -- a visible pickup, same substitution the
+// powerup drops already fall back to, and the cash feeds the E-Shop where a special can be bought
+// on purpose. The collectable cube (enemy 513) and the secret orbs still grant specials.
+// Gated by the caller on endlessMode alone, not endlessFxActive: a campaign run with the endless
+// mods layered on still has a working cube archive, so there cubeMax++ remains the right award.
+void endlessDropCubeGem(int slot)
+{
+	const Sint16 g = JE_newEnemy(slot - (slot % 25), ENEMY_GEM_5000, 0);
+	if (g == 0)
+		return;
+
+	enemy[g-1].ex = enemy[slot].ex;
+	enemy[g-1].ey = enemy[slot].ey;
 }
 
 // --- Kill-fire buff HUD readout -------------------------------------------------------

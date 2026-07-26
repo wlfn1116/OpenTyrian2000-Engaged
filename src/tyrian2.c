@@ -3609,8 +3609,8 @@ level_loop:
 										{
 											if (enemy[temp2].evalue == 1)
 											{
-												if (endlessMode)  // datacube -> random special weapon in endless (no cube archive)
-													endlessGrantSpecial();
+												if (endlessMode)  // datacube on a shot enemy -> 5000 gem in endless (no cube archive)
+													endlessDropCubeGem(temp2);
 												else
 													cubeMax++;
 											}

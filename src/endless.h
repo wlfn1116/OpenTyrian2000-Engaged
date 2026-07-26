@@ -441,9 +441,14 @@ void endlessEndRunToTitle(void);
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 
 // Grant a random special weapon (Repulsor, Flare, ...) and announce it in the in-game text
-// bar. In endless the datacube and secret-orb pickups a level drops call this instead of
-// their normal (dead-in-endless) behaviour.
+// bar. In endless the collectable datacube and secret-orb pickups a level drops call this
+// instead of their normal (dead-in-endless) behaviour.
 void endlessGrantSpecial(void);
+
+// The endless award for a datacube carried by an ordinary enemy rather than by a pickup (vanilla
+// scores those as cubeMax++ the instant the enemy dies): drop the 5000-point gem at that enemy's
+// slot position instead of conjuring a special out of nothing. Called from the enemy-death handler.
+void endlessDropCubeGem(int slot);
 
 // The endless replacement for the vanilla "random special weapon" enemy drop (829..834): the
 // front (533) or rear (534) weapon powerup the roll displaced, picked at even odds. Called by
