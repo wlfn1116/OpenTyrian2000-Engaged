@@ -1555,6 +1555,26 @@ the read/write pair in `endless_save.c` next to the `[endless_debug]` block, so
   record's gain therefore reads "up 4", in words. This is a property of that bank
   only: `TINY_FONT` draws them all fine, and `FONT_SHAPES` is worse still (no
   digits at all). See §Font glyph coverage.
+- The backdrop is `tshp2.pcx`, the painted ship from the campaign ending (the
+  "NOT ZINGLON!" screen), which the level scripts reach via `]P0`. Three things
+  make dropping it behind live text easy, and they are worth knowing before
+  reusing any picture this way:
+  - It is a **PCX with its own 8-bit palette** (`JE_loadPCX` copies the bytes
+    straight into `colors[]`, no 6-bit rescale — unlike `palette.dat`), and it
+    replaces `colors[]` wholesale. So the fade-in must come *after* the load.
+  - The picture only uses indices **0..223**. Banks 14–15 in the file are
+    placeholder green, which would render the glow text unreadable, so bank 15
+    is overwritten with `palettes[0]`'s dark→white ramp — the one every other
+    glow screen draws from. The outline pass (`hue 0, value −12`) wraps to
+    indices 0..3, which in this file are near-black browns, so the halo works
+    out on its own.
+  - **Dimming is a palette scale, not a pixel pass**: because those 224 entries
+    belong to nothing but the picture, scaling them to 32% darkens the backdrop
+    with no per-pixel work and no risk to the text.
+  `JE_loadPCX` writes 320 columns per row at x=0, so the picture is `memmove`d
+  into the middle of the 356px surface and its edge columns smeared into the two
+  18px side strips — its edges are soft haze, so the repeat reads as more sky
+  rather than as a seam.
 
 ### The mode / effect split — `endlessFxActive()`
 
