@@ -119,6 +119,11 @@ void endlessAegisTick(void);                   // drain the gate cooldown (once 
 void endlessAegisReset(void);                  // clear it at level start (endlessResetElites)
 void endlessRollGravityDir(void);              // pick this sector's gravity heading (called at zone start)
 
+// REVIVE GRACE: the ~3s enemy-fire stun a spent revive token buys. Per level, like the gate above.
+void endlessReviveGraceArm(void);              // a revive was just spent (endless_shop.c endlessConsumeRevive)
+void endlessReviveGraceTick(void);             // drain the window (once per tick, endlessGameplayTick)
+void endlessReviveGraceReset(void);            // clear it at level start (endlessResetZoneEffects)
+
 // --- endless_perks.c: run-persistent, stacking upgrades --------------------------
 // Free pick-1-of-3 after each cleared zone; each effect folds into an existing player-side
 // lever so there's no new subsystem. Reset each run. Tunables below are all by-eye.

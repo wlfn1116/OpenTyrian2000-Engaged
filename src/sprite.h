@@ -118,6 +118,8 @@ void JE_loadCompShapes(Sprite2_array *, char s);
 void JE_loadCompShapesB(Sprite2_array *, FILE *f);
 void free_sprite2s(Sprite2_array *);
 
+Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
+
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array, unsigned int index, int wx0, int wx1, int wy0, int wy1);

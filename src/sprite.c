@@ -556,6 +556,43 @@ static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int inde
 	return SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]) < sprite2s.size;  // ...and what it points at
 }
 
+/* The palette bank (0..15) this sprite is mostly drawn in -- its "colour", for effects that want to
+ * match a sprite they were spawned from (the endless Opening Salvo shot trail picks its superspark
+ * colour this way). Counts opaque pixels per bank and returns the winner, but only among the COLOUR
+ * banks: bank 0 is the palette's grey ramp, and a weapon sprite's white-hot core would otherwise
+ * outvote the hue that actually identifies it. Falls back to bank 0 only when there is no colour at
+ * all. Walks the packed sprite exactly like blit_sprite2 does, so an unpaintable index reads as 0.
+ */
+Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
+{
+	if (!sprite2_index_valid(sprite2s, index))
+		return 0;
+
+	unsigned int count[16] = { 0 };
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		unsigned int run = (*data & 0xf0) >> 4;  // first nibble: opaque pixel count (0 = next row)
+		while (run--)
+		{
+			++data;
+			++count[*data >> 4];
+		}
+	}
+
+	unsigned int best = 0, bestCount = 0;  // best stays 0 (grey) only if the sprite has no colour at all
+	for (unsigned int bank = 1; bank < 16; ++bank)
+	{
+		if (count[bank] > bestCount)
+		{
+			bestCount = count[bank];
+			best = bank;
+		}
+	}
+	return (Uint8)best;
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite2(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {

@@ -153,6 +153,22 @@ draw_player_shot_loop_end:
 	}
 }
 
+// Endless Opening Salvo: the superspark trail that marks a charged volley's shots. The colour is
+// taken from the SHOT'S OWN sprite (its dominant palette bank), so a green Protron bolt trails
+// green and a red Vulcan round trails red -- the volley reads as "your guns, supercharged" rather
+// than a bolted-on effect. `sprite_frame` is the plain sheet index (the >1000 trail tag already
+// stripped); `launch` asks for the fatter one-off burst the shot leaves on its first drawn tick.
+// The flight trail takes the classic 101-spark cap like every other weapon trail; the launch burst
+// behaves like an explosion instead, so a wide max-power volley doesn't flush the classic ring.
+static void salvo_shot_sparks(int x, int y, JE_word sprite_frame, bool launch)
+{
+	const Uint8 bank = (sprite_frame > 500)
+		? sprite2_dominant_bank(spriteSheet12, sprite_frame - 500)
+		: sprite2_dominant_bank(spriteSheet8, sprite_frame);
+
+	JE_doSP(x + 6, y + 6, launch ? 14 : 4, launch ? 6 : 4, bank << 4, !launch);
+}
+
 static const JE_word linkMultiGr[17] /* [0..16] */ =
 	{77,221,183,301,1,282,164,202,58,201,163,281,39,300,182,220,77};
 static const JE_word linkSonicGr[17] /* [0..16] */ =
@@ -357,10 +373,33 @@ bool player_shot_move_and_draw(
 		}
 		else
 		{
-			if (sprite_frame > 1000)
+			// Weapons whose ep4/5 item data already tags them with a superspark trail (Mega Pulse,
+			// Wallop Beam, Protron B, Ice). A charged Opening Salvo turns that NATIVE trail up
+			// instead of layering a second one on top -- against a trail this dense an added one
+			// just reads as noise, so the tell has to be the weapon's own plume getting bigger.
+			// The boosted plume drops the classic 101-spark cap (it would otherwise flush the ring
+			// in a tick and cut the tail short); with Extra Sparks off it stays capped regardless.
+			const bool ownTrail = sprite_frame > 1000;
+			if (ownTrail)
 			{
-				JE_doSP(*out_shotx+1 + 6, *out_shoty + 6, 5, 3, (sprite_frame / 1000) << 4, superSparkCapForSprite(sprite_frame % 1000));
+				const bool boost = shot->salvoBoost != 0;
+				JE_doSP(*out_shotx+1 + 6, *out_shoty + 6, boost ? 16 : 5, boost ? 7 : 3,
+				        (sprite_frame / 1000) << 4,
+				        boost ? false : superSparkCapForSprite(sprite_frame % 1000));
 				sprite_frame = sprite_frame % 1000;
+			}
+			// Opening Salvo: mark the boosted shots with sparks in their own colour. salvoBoost 1
+			// means this is the shot's first drawn tick, which always gets the fat launch flash; it
+			// steps to 2, and the rest of the flight gets the thin trail only if the weapon has no
+			// native trail of its own (boosted just above). Both values stay truthy, which is all
+			// the collision-time damage bonus tests.
+			if (shot->salvoBoost)
+			{
+				if (shot->salvoBoost == 1)
+					salvo_shot_sparks(*out_shotx + 1, *out_shoty, sprite_frame, true);
+				else if (!ownTrail)
+					salvo_shot_sparks(*out_shotx + 1, *out_shoty, sprite_frame, false);
+				shot->salvoBoost = 2;
 			}
 			if (sprite_frame > 500)
 			{

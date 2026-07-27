@@ -353,6 +353,7 @@ void endlessResetZoneEffects(void)
 	endlessTurbodriveTimer = 0;    // TURBODRIVE / Overdrive window
 	endlessRetaliationTimer = 0;   // RETALIATION window
 	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
+	endlessReviveGraceReset();     // ...and no leftover revive stun: the next zone opens shooting
 	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;

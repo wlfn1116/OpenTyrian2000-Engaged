@@ -882,6 +882,45 @@ mutable `last`, so a Quit-Level retry replays the same track.
   fire costs no power then). The value is a palette bank base; the whole 14-shade
   ramp must stay inside one bank (`draw_power_gauge` derives the AA dark end from
   the bank floor).
+- **Opening Salvo's readout.** The perk banks a charge silently, so it also owns
+  a gauge recolour: `ENDLESS_SALVO_GAUGE_BASE` (bank 12 + 1 = **193**) paints the
+  gauge GREEN whenever `endlessOpeningSalvoCharged()` — the side-effect-free twin
+  of `endlessOpeningSalvoConsume`'s test. It is applied AFTER the kill-fire tint
+  in `draw_power_gauge`, so the rarer player-timed state wins when both are up.
+  Bank 12 is the pure-green ramp (0,12,0 → 11,63,26) in the in-game palette —
+  which is **palette 5** (`pcxpal[3-1]`), structurally identical to palette 0, so
+  the classic bank map holds: 0 grey, 2 dark green, 7 red→yellow fire (the stock
+  gauge, base 113), 12 pure green. `base + 13` (the tallest vertical band) must
+  stay inside the bank, and 193+13 = 206 does.
+- The second Salvo tell is a superspark trail on the boosted shots
+  (`salvo_shot_sparks`, shots.c). Its colour is the shot sprite's own dominant
+  palette bank via `sprite2_dominant_bank` (sprite.c), which histograms the
+  packed sprite's opaque pixels and picks the winner among banks **1..15** —
+  bank 0 is the grey ramp and a weapon's white-hot core would otherwise outvote
+  the hue that identifies it; bank 0 is returned only when there is no colour at
+  all. `PlayerShotDataType.salvoBoost` doubles as the trail's phase: 1 = first
+  drawn tick (fat 14-spark launch burst), stepped to 2 for the 4-spark flight
+  trail. Both stay truthy, which is all the tyrian2.c collision bonus tests.
+  The flight trail passes `classic_cap = true` like every other weapon trail; the
+  launch burst passes false (explosion-like) so a wide max-power volley firing
+  5+ shots at once doesn't flush the whole classic 101-spark ring in one tick.
+  Blended "special" shots (sprite > 60000, e.g.
+  Plasma Storm) draw from a different sprite table and get no trail — they are
+  already unmistakable. Special WEAPONS are never boosted anyway:
+  `JE_doSpecialShot` (mainint.c) runs BEFORE the main-weapon loop arms the volley
+  flag, so it always misses the window. Front gun, rear gun and both sidekicks do
+  get it — the rear because the bay loop runs `SHOT_FRONT` then `SHOT_REAR` in
+  one tick, the sidekicks because their fire loop sits after it.
+- **Superspark weapons boost their OWN trail.** The four ep4/5 trail-tagged
+  weapons (sprite > 1000: Mega Pulse, Wallop Beam, Protron B, Ice) already emit
+  a dense plume, and a second added trail just reads as noise against it. So for
+  those the salvo turns the NATIVE `JE_doSP` up instead — 5→16 sparks, spread
+  3→7, same tagged colour bank — and the added flight trail is suppressed
+  (`ownTrail`); only the one-off launch flash still layers on. The boosted plume
+  passes `classic_cap = false`: at 16 sparks/tick/shot the classic 101-ring would
+  refill inside two ticks and visibly cut the tail short. With Extra Sparks OFF
+  it stays capped at 101 either way, so this only spends the big buffer when the
+  player has already opted into it.
 - `endlessDangerTier` (word) and `endlessDangerRank` (letter F..S+++) band the
   same net danger score; keep their thresholds in lockstep so the pair never
   disagree. Tier thresholds: ≤9 Low, ≤13 Moderate, ≤19 Tough, ≤26 High, ≤33
@@ -1497,6 +1536,25 @@ mutable `last`, so a Quit-Level retry replays the same track.
   - The `endlessMode` gate at the call site is intentional rather than
     `endlessFxActive()`: a campaign run with the endless mods layered on still has a
     working cube archive, so `cubeMax++` remains correct there.
+- **A spent Revive token buys a grace window, not just a hull.** Restoring armor
+  mid-fight hands the ship straight back into the volley that killed it, so
+  `endlessConsumeRevive` (`endless_shop.c`) also arms `endlessReviveGraceArm()` —
+  `ENDLESS_REVIVE_GRACE_TICKS` = 105, ~3s at the 35Hz sim, per level like the Aegis
+  cooldown, drained in `endlessGameplayTick`, cleared by `endlessResetZoneEffects`.
+  While it runs, `endlessReviveGraceActive()` suppresses enemy bullets at two
+  places in `tyrian2.c`: the `default:` turret case (**inside** the case, so the
+  reloaded `eshotwait` still counts down and the non-shooting turret behaviours —
+  the magnets, the Savara boss's launch puffs — carry on; only the bullets are
+  withheld) and `endlessSpawnMartyrBurst`, so a MARTYRDOM sector can't refill the
+  field with death bursts from the kills the player is making. Arming it inside
+  `endlessConsumeRevive` rather than at the varz.c call site keeps it attached to
+  the token itself. Launched *enemies* (`launchtype`) are deliberately untouched —
+  they're spawns, and stalling them for 3s would desync boss scripts.
+  The screen wipe itself stays in the `JE_playerDamage` revive branch, and now pops
+  a `JE_setupExplosion` per cleared bullet: without it the wipe was invisible,
+  indistinguishable from the shots simply having missed. Player shots are left
+  alone on purpose — clearing them would cancel a superbomb already in flight, a
+  bought consumable, for no defensive gain.
 
 ### Save / resume
 

@@ -162,6 +162,11 @@ enum {
 // BASE: the 14-shade ramp must stay in one bank (notes.md §Course generation & danger labels).
 #define ENDLESS_FREE_POWER_GAUGE_BASE 1 // bank 0 (gray)
 
+// Power-gauge recolour while an Opening Salvo volley is CHARGED (the next shot is free + boosted).
+// Same bank-BASE rule as above; bank 12 is the in-game palette's pure-green ramp, so a charged
+// gauge reads green at a glance against the stock bank-7 fire ramp.
+#define ENDLESS_SALVO_GAUGE_BASE  (12 * 16 + 1) // bank 12 (green)
+
 // Per-kill DAMAGE stack cap: the bonus scales so ENDLESS_OVERDRIVE_DMG_MAX lands exactly at the
 // cap, matching the fire ramp's combo-200 peak. Burnout/Misfire's damage CUT mirrors it.
 #define ENDLESS_OVERDRIVE_MAX_STACKS 200
@@ -358,7 +363,8 @@ bool endlessTryBuyBomb(void);
 long endlessRevivePrice(void);
 bool endlessReviveArmed(void);       // a revive token is currently held
 bool endlessTryBuyRevive(void);
-bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears screen)
+bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears the bullet field) -- also arms the grace window below
+bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
 // Sabotage charges queue up per visit and are all spent on the course actually chosen, so the cap is
@@ -698,6 +704,7 @@ int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool bos
 void endlessOpeningSalvoTick(void);        // Opening Salvo: advance the main-gun idle timer one tick (endlessGameplayTick)
 bool endlessOpeningSalvoConsume(void);     // Opening Salvo: main gun fired -> reset idle, arm the charged-volley flag for the rest of this tick (mainint.c)
 bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is this tick a charged volley? (shots.c: power-free + tag front/rear/sidekick shots)
+bool endlessOpeningSalvoCharged(void);     // Opening Salvo: is a volley charged RIGHT NOW? (tyrian2.c draw_power_gauge tint)
 int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
 int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
 void endlessCountermeasureTick(void);        // Countermeasure Suite: advance the burst cooldown one tick (endlessGameplayTick)

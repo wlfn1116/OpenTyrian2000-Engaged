@@ -275,6 +275,15 @@ bool endlessOpeningSalvoConsume(void)
 }
 
 bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoVolley; }
+
+// Is a volley charged right now -- i.e. would the main gun firing THIS instant be boosted? Same test
+// endlessOpeningSalvoConsume makes, minus the side effects; the generator gauge reads it to tint
+// itself green while the charge is banked, which is the perk's only readout before the shot lands.
+bool endlessOpeningSalvoCharged(void)
+{
+	return endlessFxActive() && endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
+}
+
 int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
 
 // --- Kinetic Converter perk -----------------------------------------------------------------------
