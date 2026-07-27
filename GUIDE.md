@@ -374,7 +374,7 @@ from the perks you haven't maxed out.
 **When you get one:**
 
 - after clearing zone 1, then **every 4th zone after that** (1, 5, 9, 13, …),
-- at every 50th zone (50, 100, 150, …),
+- at every **milestone zone** (25, 50, 75, 100, …),
 - from a cleared **Breakthrough** sector,
 - from the E-Shop's **Buy Extra Perk**, or a lucky gamble.
 
@@ -467,7 +467,7 @@ level event firing and the enemy actually dying still gives you something useful
 
 | Every… | What happens |
 | --- | --- |
-| **25th zone** (25, 75, 125…) | The route slate is pinned to S / S+ sectors, and the zone plays "Tunneling Trolls". No perk. |
+| **25th zone** (25, 75, 125…) | The route slate is pinned to S / S+ sectors, the zone plays "Tunneling Trolls", and clearing it grants a guaranteed perk. |
 | **50th zone** (50, 150, 250…) | S+ / S++ slate, plays "A Field for Mag", and grants a guaranteed perk. |
 | **100th zone** (100, 200…) | S++ / S+++ slate, plays "One Mustn't Fall", grants a perk, and the slate always includes **"The End"** — the finale sector, ranked FINALITY, paying roughly 15× a normal clear on its own. Reaching zone 100 the first time also rolls the credits, once per run. |
 

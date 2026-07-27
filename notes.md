@@ -929,8 +929,13 @@ mutable `last`, so a Quit-Level retry replays the same track.
   Ambush > Gauntlet; none fire at depth 0. All three are suppressed on a
   milestone zone (below) — the dice still roll, only the effect is gated.
 - MILESTONE ZONES (`endlessMilestoneKind`, keyed off the REAL zone
-  `endlessRunDepth + 1`, not the difficulty-scaled one): every 50th zone charts a
-  full FIVE-course slate of nothing but S-tier sectors. Zones 50/150/250/… run
+  `endlessRunDepth + 1`, not the difficulty-scaled one): every 25th zone charts a
+  full FIVE-course slate of nothing but S-tier sectors, in three classes. The MINOR
+  one (kind 3 — 25/75/125/…, the odd multiples of 25, sitting halfway between the
+  others) runs S/S+ on the same 2-and-3 split as the plain class, and pins its
+  music to "Tunneling Trolls"; it is the mildest
+  class despite carrying the highest kind number (the kinds are tags, not an
+  ordinal). Zones 50/150/250/… run
   S+/S++, split 2-of-one and 3-of-the-other with the seed deciding which rung gets
   the pair. Every 100th zone (100/200/300/…) has a FIXED shape instead: **1 END +
   2 S+++ + 2 S++** — the END course is "The End" (below), and the four generated
@@ -1066,35 +1071,35 @@ mutable `last`, so a Quit-Level retry replays the same track.
   cost of reshuffling every seed's song order.
 - Forced perk picks are decided by ONE predicate, `endlessPerkDueAtDepth(depth)`
   (depth = the zone just cleared), for three reasons: the every-4th-zone cadence
-  (`ENDLESS_PERK_EVERY`, depths 1, 5, 9, …); a cleared MILESTONE zone, the payoff
-  for surviving the S-tier slate; or the zone right after a depth where those two
-  COLLIDED. A collision — a depth where `depth % 50 == 0 && depth % ENDLESS_PERK_EVERY
-  == 1` — would otherwise hand out one perk where the player earned two, so the
+  (`ENDLESS_PERK_EVERY`, depths 1, 5, 9, …); a cleared MILESTONE zone of ANY class
+  (25, 50, 75, 100, …), the payoff for surviving the S-tier slate; or the zone right
+  after a depth where those two COLLIDED. A collision — a depth where `depth % 25 == 0
+  && depth % ENDLESS_PERK_EVERY == 1` — would otherwise hand out one perk where the player earned two, so the
   second is DEFERRED by a zone instead of being swallowed; the cadence is unaffected
   and carries on from its own schedule. Derived purely from the depth, deliberately:
   no "owed perk" flag to persist, so it needs no save field and comes out the same
   across a save/reload or a mid-zone bail. `endlessPerkDepthDone` still caps it at
   one pick per depth, so re-entering the same outpost can't farm a second.
-- The cadence was 3 (depths 1, 4, 7, …) until 2026-07-25; it is now 4. Two knock-on
-  facts the change carries, both deliberate:
-  - **The deferral branch is currently unreachable.** Milestones are multiples of
-    50, and `50k % 4` only ever yields 2 or 0 — never 1 — so a milestone can no
-    longer land on a cadence depth. At the old 3 it fired at 100, 250, 400, …
-    (…97, 100, **101**, 103, 106…). The code stays: it is the general rule, and a
-    cadence of 3 or 5 revives it immediately. Don't "clean it up".
-  - **Breakthrough got slightly commoner.** `endlessBreakthroughAllowed`
-    (`endless_course.c`) bars the boon from any zone whose clear already owes a
-    scheduled perk, so it was blocked on ~1 zone in 3 and is now blocked on ~1 in
-    4. That partly offsets the slower cadence on its own, which is why no
-    Breakthrough constant was retuned alongside it.
+- The cadence was 3 (depths 1, 4, 7, …) until 2026-07-25; it is now 4.
+  - **Breakthrough.** `endlessBreakthroughAllowed` (`endless_course.c`) bars the
+    boon from any zone whose clear already owes a scheduled perk, so it is blocked
+    on ~1 zone in 4 from the cadence (it was ~1 in 3 at a cadence of 3) plus the
+    milestone depths. That partly offsets the slower cadence on its own, which is
+    why no Breakthrough constant was retuned alongside it.
+- **The minor (25th) milestone pays a perk too**, as of 2026-07-27 — it was the one
+  forced slate with no payoff, which read as a pure tax. `endlessPerkMilestoneAt`
+  now accepts every milestone class rather than kinds 1 and 2, which also makes the
+  deferral branch REACHABLE again: collisions are depths 25, 125, 225, … (`25k % 4`
+  is 1 on every other minor milestone), so a run reads …21, 25, **26**, 29… . It
+  had been dead code at the 50-only schedule (`50k % 4` is only ever 2 or 0).
 - Perk-completion pacing: 24 perks / **75 total stacks** (sum of `maxStack` in
   `endlessPerkTable`). Every forced pick is worth exactly +1 stack regardless of
   which row you take, because `endlessGeneratePerkChoices` only pools perks with
   `owned < maxStack` — so an offer is never wasted and the completion depth is
   order-independent. Picks banked by depth = `floor((d-1)/ENDLESS_PERK_EVERY) + 1
-  + floor(d/50)`. At a cadence of 4 the 75th pick lands at **depth 277** (it was
-  211 at a cadence of 3); waypoints: z50 = 14 picks, z100 = 27, z150 = 41, z200 =
-  54, z250 = 68. Past the last pick the scheduled gate still opens with an empty
+  + floor(d/25)` (a collision depth banks one of its two that zone and the other
+  the next). At a cadence of 4 the 75th pick lands at **depth 257**; waypoints:
+  z50 = 15 picks, z100 = 29, z150 = 44, z200 = 58, z250 = 73. Past the last pick the scheduled gate still opens with an empty
   pool — `configure_endless_perk_menu` then renders the "Take the Cash" row alone,
   so it degrades into a small recurring cash bonus rather than breaking.
 - Zone-100 credits: clearing zone 100 rolls `JE_playCredits` once, at the outpost
