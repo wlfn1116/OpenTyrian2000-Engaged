@@ -418,7 +418,7 @@ static const char *endlessMilestoneLine(int d)
 		"Even the dark runs out of dark.",    // 235
 		"The final zones of creation.",       // 240
 		"One breath from the end of all.",    // 245
-		"The last dark. Press on.",		      // 250+ (final change)
+		"Thank you for playing.",		      // 250+ (final change)
 	};
 	int i = d / 5;
 	if (i < 0)
