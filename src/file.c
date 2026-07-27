@@ -84,7 +84,7 @@ const char *data_dir(void)
 // prepend directory and fopen
 FILE *dir_fopen(const char *dir, const char *file, const char *mode)
 {
-	char *path = malloc(strlen(dir) + 1 + strlen(file) + 1);
+	char *path = malloc_die(strlen(dir) + 1 + strlen(file) + 1);
 	sprintf(path, "%s/%s", dir, file);
 
 	FILE *f = fopen(path, mode);
@@ -145,6 +145,24 @@ long ftell_eof(FILE *f)
 	fseek(f, pos, SEEK_SET);
 
 	return size;
+}
+
+OT_RET_NOTNULL void *malloc_die(size_t size)
+{
+	// malloc(0) may return NULL without failing, so a zero-byte request can't be read as an error
+	// (a joystick with no buttons makes one). Round it to a byte the caller won't read, which keeps
+	// "NULL means out of memory" true here.
+	void *p = malloc(size ? size : 1);
+	if (p == NULL)
+	{
+		char detail[80];
+		snprintf(detail, sizeof(detail), "malloc failed: wanted %zu bytes", size);
+		fprintf(stderr, "error: Out of memory.\n");
+		crashlog_report_fatal("FATAL (allocation failed -- malloc_die)", detail);
+		SDL_Quit();
+		exit(EXIT_FAILURE);
+	}
+	return p;
 }
 
 void fread_die(void *buffer, size_t size, size_t count, FILE *stream)

@@ -31,6 +31,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*!
+ * \brief Marks a function that never returns (config_oom exits).  Annotation only -- it generates no
+ *        code, but without it a bail-out on a failed allocation reads as a null dereference on the
+ *        next line.  Kept local so this module stays free of project-wide headers.
+ */
+#if defined(_MSC_VER)
+#define CONFIG_NORETURN __declspec(noreturn)
+#elif defined(__GNUC__)
+#define CONFIG_NORETURN __attribute__((noreturn))
+#else
+#define CONFIG_NORETURN
+#endif
+
 #ifndef COMPILE_TIME_ASSERT
 /*!
  * \brief Cause compile error if compile-time computable condition fails.
@@ -584,7 +597,7 @@ static inline unsigned int config_get_value_count(const ConfigOption *option)
  */
 #define foreach_remove_option_value() \
 	{ \
-		extern void config_oom(void); \
+		CONFIG_NORETURN extern void config_oom(void); \
 		unsigned int _value_i = _value - _values_begin; \
 		if (config_remove_value(_option, _value_i) == NULL) \
 			config_oom(); \

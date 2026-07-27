@@ -264,12 +264,10 @@ static inline int rl_round_offset(double v)
 // genuinely need the current phase.
 //
 // own100 is the bound entity's own per-tick displacement (par_yown100; background rows pass 0),
-// folded into the SAME rounded value. Rounding the layer and own offsets separately makes their
-// staircases interleave whenever the entity moves against the scroll (own opposing the rate):
-// the sum then steps down-up-down inside one tick -- a 1px sawtooth at scale 1 (CORAL's upward-
-// swimming launched fish). One combined round keeps own100 == 0 bit-identical to the background
-// rows, holds a scroll-cancelling boss (rate + own == 0) perfectly still at every alpha, and
-// tracks a mover's true position within half a pixel, monotonically. notes.md §Sub-pixel parallax.
+// folded into the SAME rounded value. Rounding the layer and own offsets separately interleaves
+// their staircases whenever the entity moves against the scroll, giving a 1px sawtooth inside one
+// tick (CORAL's upward-swimming fish). One combined round keeps own100 == 0 bit-identical to the
+// background rows and holds a scroll-cancelling boss still. notes.md §Sub-pixel parallax.
 static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, int own100)
 {
 	const float rate = now ? bg_layer_dy_now[layer] : bg_layer_dy[layer];
@@ -886,14 +884,12 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		const bool is_ship_id = c->id >= RL_ID_SHIP_BASE && c->id < RL_ID_SIDEKICK_BASE;
 		if (use_override && ship_override_active && is_ship_id)
 		{
-			// Ship hull/shadow/charge: render-rate driven, not time-interpolated.
-			// Sidekicks are EXCLUDED — trailing companions (e.g. Gerund) follow the
-			// ship's past path, not its velocity; the ship offset would jitter them.
-			// They interpolate by their own motion instead (the branch below).
-			// id = RL_ID_SHIP_BASE + playerNum (1 or 2) => player index 0/1. The ship range also
-			// holds RL_ID_SHIP_TRIM_BASE + playerNum, which is two further along and belongs to the
-			// same player -- hence the wrap rather than a plain clamp, which would have handed
-			// player 1's trim to player 2.
+			// Ship hull/shadow/charge: render-rate driven, not time-interpolated. Sidekicks are
+			// EXCLUDED — trailing companions (e.g. Gerund) follow the ship's past path, not its
+			// velocity, so they interpolate by their own motion (the branch below).
+			// id = RL_ID_SHIP_BASE + playerNum (1 or 2) => player index 0/1. The range also holds
+			// RL_ID_SHIP_TRIM_BASE + playerNum, two further along and belonging to the same player
+			// -- hence the wrap; a plain clamp would hand player 1's trim to player 2.
 			int p = (c->id - RL_ID_SHIP_BASE - 1) % 2;
 			if (p < 0) p = 0; else if (p > 1) p = 1;
 			x += rl_iround(ship_override_dx[p] * scale);
@@ -975,21 +971,17 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (bg_row && bg_smooth_y_active && use_override)
 			{
-				// Vertical scroll at the true float rate (constant velocity) instead of the
-				// integer per-tick pulse of c->dy (bgScrollDeltaY), which freezes on delay-gated
-				// slow sections then jumps. Mirrors the horizontal parallax above; a byte-exact
-				// no-op (frac 0, integer rate) on full-speed layers. notes.md §Slow-scroll smoothing.
+				// Vertical scroll at the true float rate (constant velocity) instead of the integer
+				// per-tick pulse of c->dy (bgScrollDeltaY), which freezes on delay-gated slow
+				// sections then jumps. Mirrors the horizontal parallax above; a byte-exact no-op on
+				// full-speed layers. The integer row and fractional phase round separately through
+				// rl_round_offset, whose half-up rule is integer-translation-invariant.
 				//
-				// The integer row and fractional phase are rounded separately with rl_round_offset,
-				// whose half-up rule is integer-translation-invariant. Thus tile-wrap pulses remain
-				// continuous without making negative rows round differently from positive entities.
-				//
-				// Layer 3 is recorded AFTER its integer advance, unlike layers 1/2. The stock 1px
-				// base advance is part of the level's authored placement; only a scroll modifier's
-				// EXTRA pixels are unaccounted for. Remove those extras, then use the same lagged
-				// fractional clock as the bound enemy. Removing nothing leaves BRAINIAC's shootables
-				// behind; removing the complete step puts them 1px ahead. Removing exactly the extra
-				// preserves stock placement at every modifier speed.
+				// Layer 3 is recorded AFTER its integer advance, unlike layers 1/2. Its stock 1px
+				// base advance is part of the level's authored placement, so remove only a scroll
+				// modifier's EXTRA pixels, then use the same lagged fractional clock as the bound
+				// enemy. Removing nothing leaves BRAINIAC's shootables behind; removing the whole
+				// step puts them 1px ahead. notes.md §Slow-scroll smoothing.
 				const int L = c->id - RL_ID_BG_BASE;
 				const int phase_base = (L == 3) ? -endlessScrollExtraPx3 : 0;
 				y = (c->y + phase_base) * scale +

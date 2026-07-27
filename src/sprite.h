@@ -79,6 +79,8 @@ void load_sprites_file(unsigned int table, const char *filename);
 void load_sprites(unsigned int table, FILE *f);
 void free_sprites(unsigned int table);
 
+Uint8 sprite_dominant_bank(unsigned int table, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
+
 void blit_sprite(SDL_Surface *, int x, int y, unsigned int table, unsigned int index); // JE_newDrawCShapeNum
 void blit_sprite_blend(SDL_Surface *, int x, int y, unsigned int table, unsigned int index); // JE_newDrawCShapeTrick
 void blit_sprite_hv_unsafe(SDL_Surface *, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value); // JE_newDrawCShapeBright

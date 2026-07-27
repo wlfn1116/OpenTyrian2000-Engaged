@@ -50,6 +50,7 @@
 #include "config.h"
 #include "crashlog.h"
 #include "config_file.h"
+#include "file.h"
 #include "fonthand.h"
 #include "helptext.h"
 #include "joystick.h"
@@ -747,15 +748,15 @@ void JE_destructGame(void)
 	load_destruct_config(&opentyrian_config);
 
 	//malloc things that have customizable sizes
-	shotRec = malloc(sizeof(struct destruct_shot_s) * config.max_shots);
-	exploRec = malloc(sizeof(struct destruct_explo_s) * config.max_explosions);
-	world.mapWalls = malloc(sizeof(struct destruct_wall_s) * config.max_walls);
+	shotRec = malloc_die(sizeof(struct destruct_shot_s) * config.max_shots);
+	exploRec = malloc_die(sizeof(struct destruct_explo_s) * config.max_explosions);
+	world.mapWalls = malloc_die(sizeof(struct destruct_wall_s) * config.max_walls);
 
 	//Malloc enough structures to cover all of this session's possible needs.
 	for (i = 0; i < 10; i++)
 		config.max_installations = MAX(config.max_installations, basetypes[i][0]);
-	destruct_player[PLAYER_LEFT].unit = malloc(sizeof(struct destruct_unit_s) * config.max_installations);
-	destruct_player[PLAYER_RIGHT].unit = malloc(sizeof(struct destruct_unit_s) * config.max_installations);
+	destruct_player[PLAYER_LEFT].unit = malloc_die(sizeof(struct destruct_unit_s) * config.max_installations);
+	destruct_player[PLAYER_RIGHT].unit = malloc_die(sizeof(struct destruct_unit_s) * config.max_installations);
 
 	destructTempScreen = game_screen;
 	world.VGAScreen = VGAScreen;
@@ -1267,6 +1268,8 @@ static void DE_widenHUDBackdrop(SDL_Surface* surface)
 
 	if (surface->w < 2 * HUD_FRAME_W)
 		return;  /* too narrow to seat both frames without overlap */
+	if (vga_width > surface->pitch)
+		return;  /* a row is pitch bytes; everything below works in vga_width of them */
 
 	for (int y = 0; y < HUD_ROWS; ++y)
 	{
@@ -2930,24 +2933,30 @@ static void DE_ProcessInput(void)
 	}
 }
 
+// Both cyclers step an int and write the enum back once at the end -- nothing reads unit->shotType
+// inside the loop. Keeping the wrap on a local puts the bound on weaponSystems[][MAX_SHOT_TYPES]
+// at the subscript itself, rather than on the enum staying inside [SHOT_FIRST, SHOT_LAST], which
+// SHOT_INVALID = -1 can break.
 static void DE_CycleWeaponUp(struct destruct_unit_s* unit)
 {
+	int type = unit->shotType;
 	do
 	{
-		unit->shotType++;
-		if (unit->shotType > SHOT_LAST)
-			unit->shotType = SHOT_FIRST;
-	} while (weaponSystems[unit->unitType][unit->shotType] == 0);
+		if (++type > SHOT_LAST)
+			type = SHOT_FIRST;
+	} while (weaponSystems[unit->unitType][type] == 0);
+	unit->shotType = (enum de_shot_t)type;
 }
 
 static void DE_CycleWeaponDown(struct destruct_unit_s* unit)
 {
+	int type = unit->shotType;
 	do
 	{
-		unit->shotType--;
-		if (unit->shotType < SHOT_FIRST)
-			unit->shotType = SHOT_LAST;
-	} while (weaponSystems[unit->unitType][unit->shotType] == 0);
+		if (--type < SHOT_FIRST)
+			type = SHOT_LAST;
+	} while (weaponSystems[unit->unitType][type] == 0);
+	unit->shotType = (enum de_shot_t)type;
 }
 
 static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s* curUnit, int direction)

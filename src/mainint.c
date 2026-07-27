@@ -639,7 +639,9 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 	switch (itemType)
 	{
 	case 2:
-		cost = (itemNum > 90) ? 100 : ships[itemNum].cost;
+		// ships[] stops at SHIP_NUM, but only ids > 90 are "extra" ships -- so test the array's
+		// own bound, not the extra-ship one, or an id in between reads past the end.
+		cost = (itemNum > SHIP_NUM) ? 100 : ships[itemNum].cost;
 		break;
 	case 3:
 	case 4:
@@ -3655,14 +3657,11 @@ static int dbgRowSnap(int r)
 	return r;
 }
 
-/* Flip the endless effect layer on/off for a normal game.
- *
- * Inert during a real endless run: the layer is already on there, and flipping the flag would only
- * desync the row's "ENDLESS" readout from it. Arming goes through endlessCampaignModsArm() -- the
- * same path the tune panel uses -- so both entry points drop a previous run's outpost purchases
- * rather than only one of them doing it. The config write makes the setup survive a restart
- * immediately, rather than only if the game is exited cleanly; this is a debug feature, so a crash
- * is a likely way for the session to end. */
+/* Flip the endless effect layer on/off for a normal game. Inert during a real endless run, where
+ * the layer is already on and flipping the flag would only desync the row's readout. Arming goes
+ * through endlessCampaignModsArm(), the same path the tune panel uses, so both entry points drop a
+ * previous run's outpost purchases. The config write makes the setup survive a restart immediately
+ * -- this is a debug feature, so a crash is a likely way for the session to end. */
 static void debug_toggle_campaign_mods(void)
 {
 	if (endlessMode)
@@ -3691,28 +3690,20 @@ static bool dbgRowIsLoadout(int id)
 /* Make a debug loadout edit actually take effect mid-level.
  *
  * The rows write straight into player[0].items, but the engine caches a great deal off those and
- * recomputes it only at LEVEL START: the ship's sprite index and which sheet it lives on (shipGr /
- * shipGrPtr), the hull, the hit box, the generator's output, the shield ceiling, the sidekick pods'
- * ammo and style. Change a ship mid-level and none of that moves -- which is what produced a
- * garbled hull (a sprite index read against the wrong sheet) and gauges still showing the old
- * ship's numbers.
- *
- * This is deliberately the same sequence the engine's OWN in-level ship change runs (the Tab+digit
- * extra-ship path in JE_playerMovement), so the two cannot drift apart.
+ * recomputes it only at LEVEL START: the ship's sprite index and sheet (shipGr / shipGrPtr), the
+ * hull, the hit box, the generator output, the shield ceiling, the sidekick pods' ammo and style.
+ * This runs deliberately the same sequence the engine's OWN in-level ship change uses (the
+ * Tab+digit extra-ship path in JE_playerMovement), so the two can't drift apart.
  *
  * `shipChanged` decides what happens to the hull: swapping the SHIP legitimately re-armors you to
  * the new one's maximum, but nudging the rear weapon must not quietly heal you.
  */
 /* True only while the debug menu is open OVER THE IN-GAME HUD, as opposed to over a shop or title
- * screen. The loadout-apply path below needs that question and not the layout one: the HUD gauges
- * are event-driven, so it repaints them, and a repaint anywhere else stamps the gameplay
- * shield/armour bars and sidekick icons into the bottom-right of whatever art is on screen -- where
- * they stay, because the shop only redraws the regions it owns. Skipping the repaint off-HUD costs
- * nothing: level start (JE_main) runs the very same three calls before the playfield fades in.
- *
- * It coincides exactly with JE_debugMenu's `center` today -- the level is the only uncentered
- * caller -- but this is stored separately so a future centered in-level caller can't silently
- * reintroduce the bug. */
+ * screen -- the loadout-apply path below needs that question, not the layout one. The HUD gauges
+ * are event-driven so it repaints them, and a repaint anywhere else strands gameplay furniture in
+ * the corner of whatever art is on screen (the shop only redraws the regions it owns). Coincides
+ * with JE_debugMenu's `center` today, but stored separately so a future centered in-level caller
+ * can't silently reintroduce that. */
 static bool debugMenuOverHud = false;
 
 static void debug_apply_loadout_change(bool shipChanged)
@@ -3746,13 +3737,10 @@ static void debug_apply_loadout_change(bool shipChanged)
 			player[i].shield = player[i].shield_max;
 	}
 
-	// Both gauges are event-driven -- painted when they change, not every frame -- so they have to
-	// be repainted explicitly or they keep reading the old ship's numbers. We are already on
-	// VGAScreenSeg here (JE_debugMenu switched to it), which is the surface the HUD lives on.
-	//
-	// Only when there IS a HUD, though. JE_drawOptions paints the sidekick icons and ammo gauges as
-	// well as re-seeding their state, so off-HUD all four of these leave gameplay furniture stranded
-	// on the shop art. Level start repaints the lot anyway, so there is nothing to make up for.
+	// Both gauges are event-driven -- painted when they change, not every frame -- so they need an
+	// explicit repaint or they keep reading the old ship's numbers. Already on VGAScreenSeg here
+	// (JE_debugMenu switched to it), the surface the HUD lives on. Only when there IS a HUD, though:
+	// JE_drawOptions paints as well as re-seeds, so off-HUD these strand furniture on the shop art.
 	if (debugMenuOverHud)
 	{
 		JE_wipeShieldArmorBars();
@@ -4150,11 +4138,8 @@ void JE_debugMenu(bool center)
 		service_SDL_events(true);
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page the list. Menus only deliver confirm/cancel/directions from a
-		// controller (push_joysticks_as_keyboard), so these aren't bound to any action -- read them
-		// raw with local edge state and synthesize the PageUp/PageDown the handler below already
-		// understands. poll_joysticks (above) already ran SDL_JoystickUpdate this tick. Guard on
-		// !newkey so a real key still wins. Same pattern as the endless debug jump screen.
+		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown -- same
+		// pattern as the endless debug jump screen (game_menu.c); see the note there.
 		{
 #if defined(__SWITCH__)
 			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -5384,11 +5369,10 @@ void JE_endLevelAni(void)
 		}
 	}
 
-	// The endless effect layer drives its own ramp through depth- and mutator-scaled enemy stats,
-	// keeping the player's chosen base difficulty fixed (its levers key off difficultyLevel too --
-	// see endless.h). The vanilla score-based bump must not fire here, or e.g. Normal would silently
-	// climb to Hard/Impossible mid-run. This is the ONE campaign behaviour the debug layer suppresses
-	// rather than adds to, and deliberately: the scaling readout is only meaningful if the difficulty
+	// The endless effect layer drives its own ramp and keeps the player's chosen base difficulty
+	// fixed (its levers key off difficultyLevel too), so the vanilla score-based bump must not fire
+	// -- Normal would silently climb to Hard mid-run. The ONE campaign behaviour the debug layer
+	// suppresses rather than adds to: the scaling readout only means anything if the difficulty
 	// it is computed at holds still between levels.
 	if (difficultyAdjust && !endlessFxActive())
 		adjust_difficulty();
@@ -6440,8 +6424,7 @@ static int front_option_home_x(const Player *this_player, uint i)
 // Front-mounted (launchable) option physics for one sidekick slot. Each slot keeps its
 // own attachment state (optionAttachment*[i]), so a LEFT and a RIGHT front option can
 // both be launched at once: "Fire Both Sidekicks" sets button[1] and button[2], and each
-// pod launches on its own slot's trigger (button[1 + i]). This mirrors the behavior the
-// RIGHT slot always had -- the LEFT slot previously just stayed glued to the ship.
+// pod launches on its own slot's trigger (button[1 + i]). Mirrors the RIGHT slot's stock behavior.
 static void JE_frontOption(Player *this_player, uint i, int home_x, JE_boolean launch_pressed)
 {
 	int temp;
@@ -7637,6 +7620,9 @@ redo:
 
 					for (temp = min - 1; temp < max; temp++)
 					{
+						// min/max are 1 or 2, so temp is a bay index -- but it is the shared global
+						// scratch byte, so its range isn't visible at the subscripts below.
+						OT_ASSUME(temp < COUNTOF(this_player->items.weapon));
 						const uint item = this_player->items.weapon[temp].id;
 
 						if (item > 0)
@@ -7751,7 +7737,12 @@ redo:
 				if (temp == 0)
 					temp = 1;  /*Get whether player 1 or 2*/
 
-				if (player[temp-1].superbombs > 0)
+				// temp is the shared global scratch byte, so its 1-or-2 range isn't visible at the
+				// subscript. Index player[] through a local clamped to the array instead; still
+				// assigns temp above, which the shotRepeat/shotMultiPos slots below key off.
+				const uint bombPlayer = (temp >= 1 && temp <= COUNTOF(player)) ? temp - 1 : 0;
+
+				if (player[bombPlayer].superbombs > 0)
 				{
 					if (shotRepeat[SHOT_P1_SUPERBOMB + temp-1] > 0)
 					{
@@ -7759,7 +7750,7 @@ redo:
 					}
 					else if ((button[3-1] || button[2-1]) && !(endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DUD)))
 					{  // Dud (gamble curse): the bombs are aboard but jammed -- the fire press does nothing this sector
-						--player[temp-1].superbombs;
+						--player[bombPlayer].superbombs;
 						shotMultiPos[SHOT_P1_SUPERBOMB + temp-1] = 0;
 						b = player_shot_create(16, SHOT_P1_SUPERBOMB + temp-1, this_player->x, this_player->y, *mouseX_, *mouseY_, 535, playerNum_);
 					}
@@ -8013,16 +8004,12 @@ void JE_mainGamePlayerFunctions(void)
 	if (extraParallax)
 	{
 		// Extra Parallax (Enhancements menu): pan the NEAR (terrain) layer across EXACTLY its 336px
-		// map so the ship's full travel runs it from left-edge-flush to right-edge-flush -- 0 px of
-		// the map spills off either side at the extremes. mapXOfs sweeps 36 (far-left: map plane-px 0
-		// sitting at the window's left edge = PLAYFIELD_LEFT - PLAYFIELD_X_SHIFT) down by the slack
-		// (near-map width 336 - window 299 = 37) to -1 (far-right: the map's last px at the window's
-		// right edge). Normalized over the ship's ACTUAL x-travel so BOTH walls are reached: the stock
-		// [40,363] normalization only hits u~0.81 at the right wall, leaving mapXOfs at ~2 (the ~4px of
-		// map that was still off the right edge). w_f is back-derived (3*near + 17) so the mid/deep
-		// layers keep the coupled ratio and still over-pan past their edges at far-left; the uncovered
-		// span renders as the layer's own mirror image (backgrnd.c bg_mirror_tile), which also covers
-		// the out-of-bounds tile read the old clamp guarded. notes.md §Sub-pixel parallax.
+		// map, so the ship's full travel runs it left-edge-flush to right-edge-flush with 0 px
+		// spilling off either extreme. mapXOfs sweeps 36 down by the slack (336 - 299 = 37) to -1,
+		// normalized over the ship's ACTUAL x-travel so BOTH walls are reached (the stock [40,363]
+		// normalization only reaches u~0.81 at the right wall). w_f is back-derived (3*near + 17) so
+		// the mid/deep layers keep the coupled ratio; their over-pan renders as the layer's own
+		// mirror image (backgrnd.c bg_mirror_tile). notes.md §Sub-pixel parallax.
 		const float travel = (float)((PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) - SHIP_LEFT_MARGIN);
 		float uu = (tempX - SHIP_LEFT_MARGIN) / travel;
 		if (uu < 0.0f)
@@ -8078,25 +8065,21 @@ void JE_mainGamePlayerFunctions(void)
 	if (background3x1)
 		mapX3Ofs_f = mapXOfs_f;
 
-	// Stock-mode (Extra Parallax OFF) fine-tune for the bg2 overlay (EP1 TYRIAN clouds etc.). Layer 2
-	// is one strip at a single X offset, so it can only translate uniformly -- shifting it left just
-	// trades the left gap for a right one. The real artifact is sub-pixel: at the far-left extreme
-	// mapX2Ofs is 36 (int) but 36.667 (float), and the smoothed replay rounds that 0.667px fraction UP
-	// to a whole pixel, drawing the clouds 1px RIGHT of their true pixel. Snap the fraction to 0 so the
-	// smoothed render lands crisply on the integer pixel (1px left of the rounded-up position) with no
-	// fractional spill on EITHER edge. Integer mapX2Ofs (and glued layer-2 enemies) are untouched;
-	// affects only the render-list interpolation path (Smooth Motion on). notes.md §Sub-pixel parallax.
+	// Stock-mode (Extra Parallax OFF) fine-tune for the bg2 overlay (EP1 TYRIAN clouds etc.). The
+	// artifact is sub-pixel: at the far-left extreme mapX2Ofs is 36 (int) but 36.667 (float), and
+	// the smoothed replay rounds that fraction UP, drawing the clouds 1px right of their true pixel.
+	// Snap the fraction to 0 so the smoothed render lands on the integer pixel with no spill on
+	// either edge. Integer mapX2Ofs and glued layer-2 enemies are untouched; this affects only the
+	// render-list interpolation path. notes.md §Sub-pixel parallax.
 	if (bg2CrispLeft)
 		mapX2Ofs_f = (float)mapX2Ofs;
 
-	// Layer 2 (bg2 overlay) right-edge coverage guard. Its 14-tile (336px) strip is 1px too narrow to
-	// reach the playfield's right edge (col PLAYFIELD_RIGHT = 322) once the parallax pushes mapX2Ofs to
-	// its far-right value of -2: the strip draws at screen x = mapX2Pos + PLAYFIELD_X_SHIFT = -14 and
-	// ends at col 321, leaving a 1px gap in the clouds (EP1 TYRIAN) at the far right. The near layer
-	// bottoms out at -1 (x=-13, which just covers 322), so clamp layer 2 to that same floor -- its
-	// strip then always reaches the right edge. Both the integer and float offsets are clamped so the
-	// smoothed replay agrees; costs a ~1px pan freeze over the last few px of ship travel. Not gated on
-	// the mode: the gap is present with Extra Parallax on or off. notes.md §Sub-pixel parallax.
+	// Layer 2 (bg2 overlay) right-edge coverage guard. Its 336px strip is 1px too narrow to reach
+	// PLAYFIELD_RIGHT once the parallax pushes mapX2Ofs to -2, leaving a 1px cloud gap at the far
+	// right. The near layer bottoms out at -1, which just covers 322, so clamp layer 2 to that same
+	// floor. Both the integer and float offsets are clamped so the smoothed replay agrees; costs a
+	// ~1px pan freeze over the last few px of travel. Not gated on the mode -- the gap is present
+	// either way. notes.md §Sub-pixel parallax.
 	if (mapX2Ofs < -1)
 	{
 		mapX2Ofs = -1;
@@ -8117,13 +8100,11 @@ const char *JE_getName(JE_byte pnum)
 	return miscText[47 + pnum];
 }
 
-// Look up a level's display name by section number, for the secret-level pickup
-// message. Mirrors JE_loadMap: scan the episode script to section `levelNum`, then
-// read the next "]L" declaration, whose name is the 9 chars at offset 13 (as
-// JE_loadMap reads it: SDL_strlcpy(levelName, s + 13, 10)). A secret orb often
-// targets a *routing* section with no ]L of its own, so the scan crosses section
-// boundaries to the next named level. Writes "" if none found; the file-size bound
-// keeps a bad number from running the die-on-EOF reader past end of file.
+// Look up a level's display name by section number, for the secret-level pickup message. Mirrors
+// JE_loadMap: scan the episode script to section `levelNum`, then read the next "]L", whose name is
+// the 9 chars at offset 13. A secret orb often targets a *routing* section with no ]L of its own,
+// so the scan crosses section boundaries to the next named level. Writes "" if none found; the
+// file-size bound keeps a bad number from running the die-on-EOF reader past end of file.
 static void JE_getLevelName(int levelNum, char *out, size_t outSize)
 {
 	if (outSize == 0)
@@ -8582,12 +8563,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						// Destroy the enemy the player just rammed. NOT a logical kill, and
 						// deliberately NOT routed through enemy_logical_death (tyrian2.c): a ram has
-						// never fed enemyKilled, and giving it the full kill contract would hand
-						// ramming the endless run tally, the combo/Turbodrive window, Overdrive
-						// stacks, Siphon armour, elite bounties and the Martyrdom/Shockwave/Chain
-						// death effects -- i.e. it would make suiciding into elites a farming
-						// strategy. This is a balance decision, not an oversight; flip it by
-						// swapping the two enemyAvail writes below for enemy_logical_death calls.
+						// never fed enemyKilled, and the full kill contract would make suiciding into
+						// elites a farming strategy. A balance decision, not an oversight -- flip it
+						// by swapping the two enemyAvail writes below for enemy_logical_death calls.
 						for (temp2 = 0; temp2 < 100; temp2++)
 						{
 							if (enemyAvail[temp2] != 1)

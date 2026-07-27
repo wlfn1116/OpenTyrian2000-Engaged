@@ -153,20 +153,22 @@ draw_player_shot_loop_end:
 	}
 }
 
-// Endless Opening Salvo: the superspark trail that marks a charged volley's shots. The colour is
-// taken from the SHOT'S OWN sprite (its dominant palette bank), so a green Protron bolt trails
-// green and a red Vulcan round trails red -- the volley reads as "your guns, supercharged" rather
-// than a bolted-on effect. `sprite_frame` is the plain sheet index (the >1000 trail tag already
-// stripped); `launch` asks for the fatter one-off burst the shot leaves on its first drawn tick.
-// The flight trail takes the classic 101-spark cap like every other weapon trail; the launch burst
-// behaves like an explosion instead, so a wide max-power volley doesn't flush the classic ring.
+// Endless Opening Salvo: the superspark trail marking a boosted shot, coloured from the shot's own
+// sprite so each weapon trails its own hue. (cx,cy) is the shot centre; `launch` is the fatter
+// one-off burst on its first drawn tick, which skips the classic cap. notes.md §Opening Salvo.
+static void salvo_sparks_at(int cx, int cy, Uint8 bank, bool launch)
+{
+	JE_doSP(cx, cy, launch ? 14 : 4, launch ? 6 : 4, bank << 4, !launch);
+}
+
+// ...for a shot drawn from the packed sprite SHEETS (`sprite_frame` with the >1000 tag stripped).
 static void salvo_shot_sparks(int x, int y, JE_word sprite_frame, bool launch)
 {
 	const Uint8 bank = (sprite_frame > 500)
 		? sprite2_dominant_bank(spriteSheet12, sprite_frame - 500)
 		: sprite2_dominant_bank(spriteSheet8, sprite_frame);
 
-	JE_doSP(x + 6, y + 6, launch ? 14 : 4, launch ? 6 : 4, bank << 4, !launch);
+	salvo_sparks_at(x + 6, y + 6, bank, launch);
 }
 
 static const JE_word linkMultiGr[17] /* [0..16] */ =
@@ -280,18 +282,13 @@ bool player_shot_move_and_draw(
 		*out_shotx = shot->shotX;
 		*out_shoty = shot->shotY;
 
-		// Top cull margin widened -15 -> -40, so interpolation still gets recorded ticks
-		// past the edge and a fast shot's exit animates off-screen instead of popping.
-		// Ascending shots only: a decelerating shot (e.g. Vulcan Cannon) apexing between
-		// -15 and -40 would fall back on-screen, so past -15 cull once it stops ascending
-		// (shotYM >= 0).
-		// Bottom cull margin widened 190 -> 240 (40px below the 200px visible edge, mirroring
-		// the top -40). Some weapons launch shots downward that arc back up (negative sy ->
-		// downward shotYM, upward acceleration shotYC); the endless High-Velocity Shots perk
-		// scales the launch velocity but not the acceleration, so the dip deepens (roughly
-		// quadratically). Fired near the bottom, the boosted nadir cleared the old 190 cull
-		// and the shot despawned before returning. 240 leaves the boosted arc room to come
-		// back; blit_sprite2 clips at the surface edge, so drawing the off-screen dip is safe.
+		// Cull margins widened past the visible edges (top -40, bottom 240) so interpolation still
+		// gets recorded ticks and a fast shot's exit animates off-screen instead of popping.
+		// Top: ascending shots only -- a decelerating shot (e.g. Vulcan Cannon) apexing inside the
+		// margin would fall back on-screen, so past -15 cull once it stops ascending (shotYM >= 0).
+		// Bottom: some weapons launch downward and arc back up, and the endless High-Velocity Shots
+		// perk scales launch velocity but not acceleration, so the dip deepens quadratically -- 240
+		// leaves the boosted arc room to return. blit_sprite2 clips, so drawing the dip is safe.
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
 			shot->shotY < -40 || shot->shotY > 240 ||
 			(shot->shotY < -15 && shot->shotYM >= 0))
@@ -370,15 +367,22 @@ bool player_shot_move_and_draw(
 
 			*out_special_radiusw = sprite(OPTION_SHAPES, sprite_frame - 60001)->width / 2;
 			*out_special_radiush = sprite(OPTION_SHAPES, sprite_frame - 60001)->height / 2;
+
+			// Opening Salvo: blended shots come from the sprite TABLE, so they need the table
+			// colour walker, and centre on the real sprite rather than a bullet's +6/+6.
+			if (shot->salvoBoost)
+			{
+				salvo_sparks_at(*out_shotx + 1 + *out_special_radiusw, *out_shoty + *out_special_radiush,
+				                sprite_dominant_bank(OPTION_SHAPES, sprite_frame - 60001),
+				                shot->salvoBoost == 1);
+				shot->salvoBoost = 2;
+			}
 		}
 		else
 		{
-			// Weapons whose ep4/5 item data already tags them with a superspark trail (Mega Pulse,
-			// Wallop Beam, Protron B, Ice). A charged Opening Salvo turns that NATIVE trail up
-			// instead of layering a second one on top -- against a trail this dense an added one
-			// just reads as noise, so the tell has to be the weapon's own plume getting bigger.
-			// The boosted plume drops the classic 101-spark cap (it would otherwise flush the ring
-			// in a tick and cut the tail short); with Extra Sparks off it stays capped regardless.
+			// Weapons already tagged with a superspark trail: an Opening Salvo turns that NATIVE
+			// plume up rather than layering a second trail into it, and drops the classic cap so
+			// the denser shower doesn't flush the ring and cut its own tail short.
 			const bool ownTrail = sprite_frame > 1000;
 			if (ownTrail)
 			{
@@ -388,11 +392,9 @@ bool player_shot_move_and_draw(
 				        boost ? false : superSparkCapForSprite(sprite_frame % 1000));
 				sprite_frame = sprite_frame % 1000;
 			}
-			// Opening Salvo: mark the boosted shots with sparks in their own colour. salvoBoost 1
-			// means this is the shot's first drawn tick, which always gets the fat launch flash; it
-			// steps to 2, and the rest of the flight gets the thin trail only if the weapon has no
-			// native trail of its own (boosted just above). Both values stay truthy, which is all
-			// the collision-time damage bonus tests.
+			// salvoBoost 1 = first drawn tick (always the launch flash), stepping to 2 for the
+			// flight trail -- which a weapon with its own boosted plume doesn't need. Both stay
+			// truthy, which is all the collision-time damage bonus tests.
 			if (shot->salvoBoost)
 			{
 				if (shot->salvoBoost == 1)

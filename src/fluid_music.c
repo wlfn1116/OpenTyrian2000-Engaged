@@ -289,6 +289,31 @@ static void free_song(void)
 	g_loop_idx = 0;
 }
 
+// Double `cap` (from a 256 floor) until it covers `need` and grow the block to match, returning the
+// new block -- or NULL, leaving the ORIGINAL valid and still owned by the caller. Never assign
+// realloc's result straight back over the pointer: that leaks the block on failure, then writes
+// through NULL.
+static void *grow_buf(void *old, size_t *cap, size_t need, size_t elem)
+{
+	size_t ncap = *cap;
+	while (need > ncap)
+		ncap = ncap ? ncap * 2 : 256;
+	if (ncap == *cap)
+		return old;
+
+	void *grown = realloc(old, ncap * elem);
+	if (grown != NULL)
+		*cap = ncap;
+	return grown;
+}
+
+#define GROW_OR_FAIL(ptr, cap, need) \
+	do { \
+		void *grown_ = grow_buf((ptr), &(cap), (need), sizeof(*(ptr))); \
+		if (grown_ == NULL) goto oom; \
+		(ptr) = grown_; \
+	} while (0)
+
 // Parse `data` into g_events/g_sysex. Returns false (and leaves nothing allocated)
 // if the file isn't a usable SMF. Handles format 0/1 (tracks are merged by time).
 static bool parse_smf(const Uint8 *data, size_t size)
@@ -346,7 +371,7 @@ static bool parse_smf(const Uint8 *data, size_t size)
 					TmpEv e; memset(&e, 0, sizeof(e));
 					e.tick = tick; e.seq = seq++; e.type = 2;
 					e.tempo = ((Uint32)tp[0] << 16) | ((Uint32)tp[1] << 8) | tp[2];
-					if (ntmp == captmp) { captmp = captmp ? captmp * 2 : 256; tmp = realloc(tmp, captmp * sizeof(*tmp)); }
+					GROW_OR_FAIL(tmp, captmp, ntmp + 1);
 					tmp[ntmp++] = e;
 				}
 				else if (mtype == 0x06 && mlen == 9 && memcmp(tp, "loopStart", 9) == 0)
@@ -355,7 +380,7 @@ static bool parse_smf(const Uint8 *data, size_t size)
 					// jump-back position; the player loops here, not to time 0.
 					TmpEv e; memset(&e, 0, sizeof(e));
 					e.tick = tick; e.seq = seq++; e.type = 3;
-					if (ntmp == captmp) { captmp = captmp ? captmp * 2 : 256; tmp = realloc(tmp, captmp * sizeof(*tmp)); }
+					GROW_OR_FAIL(tmp, captmp, ntmp + 1);
 					tmp[ntmp++] = e;
 				}
 				tp += mlen;
@@ -369,13 +394,13 @@ static bool parse_smf(const Uint8 *data, size_t size)
 				if (slen > (Uint32)(tend - tp)) slen = (Uint32)(tend - tp);
 				Uint32 off = (Uint32)nsx;
 				Uint32 need = slen + (status == 0xF0 ? 1u : 0u);
-				if (nsx + need > capsx) { while (nsx + need > capsx) capsx = capsx ? capsx * 2 : 256; sx = realloc(sx, capsx); }
+				GROW_OR_FAIL(sx, capsx, nsx + need);
 				if (status == 0xF0) sx[nsx++] = 0xF0;
 				memcpy(sx + nsx, tp, slen); nsx += slen;
 				TmpEv e; memset(&e, 0, sizeof(e));
 				e.tick = tick; e.seq = seq++; e.type = 1;
 				e.sx_off = off; e.sx_len = (Uint32)nsx - off;
-				if (ntmp == captmp) { captmp = captmp ? captmp * 2 : 256; tmp = realloc(tmp, captmp * sizeof(*tmp)); }
+				GROW_OR_FAIL(tmp, captmp, ntmp + 1);
 				tmp[ntmp++] = e;
 				tp += slen;
 				running = 0;
@@ -393,17 +418,17 @@ static bool parse_smf(const Uint8 *data, size_t size)
 			TmpEv e; memset(&e, 0, sizeof(e));
 			e.tick = tick; e.seq = seq++; e.type = 0;
 			e.status = status; e.d1 = d1; e.d2 = d2;
-			if (ntmp == captmp) { captmp = captmp ? captmp * 2 : 256; tmp = realloc(tmp, captmp * sizeof(*tmp)); }
+			GROW_OR_FAIL(tmp, captmp, ntmp + 1);
 			tmp[ntmp++] = e;
 		}
 	}
 
-	if (ntmp == 0) { free(tmp); free(sx); return false; }
+	if (ntmp == 0) goto oom;  // nothing usable parsed -- same cleanup as a failed grow
 
 	qsort(tmp, ntmp, sizeof(*tmp), cmp_tmp);
 
 	g_events = malloc(ntmp * sizeof(*g_events));
-	if (g_events == NULL) { free(tmp); free(sx); return false; }
+	if (g_events == NULL) goto oom;
 	g_event_count = 0;
 	g_sysex = sx;  // ownership transferred (sx_off values index into it)
 
@@ -472,7 +497,14 @@ static bool parse_smf(const Uint8 *data, size_t size)
 	}
 
 	return true;
+
+oom:  // shared bail-out: sx is still owned here (ownership moves to g_sysex further down)
+	free(tmp);
+	free(sx);
+	return false;
 }
+
+#undef GROW_OR_FAIL
 
 // --- Public API ------------------------------------------------------------
 

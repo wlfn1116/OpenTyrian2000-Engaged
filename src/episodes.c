@@ -389,19 +389,14 @@ static void JE_applyEpDiffs(void)
 	}
 }
 
-// The classic ammo sidekicks advertise their magazine size right in the shop name --
-// "MegaMissile    Ammo 5", "Atom Bombs     Ammo 20", ... -- with every "Ammo N" aligned
-// at column 15 so they line up down the item list. The two Tyrian 2000 additions, the
-// Bubble Gum-Gun (ammo 80) and the Flying Punch (ammo 20), carry a real magazine
-// (option.ammo > 0, so the in-game HUD gauge already works) but shipped without that
-// label, leaving them the only ammo sidekicks whose count never appeared in the shop.
+// The classic ammo sidekicks advertise their magazine in the shop name -- "MegaMissile    Ammo 5"
+// -- with every "Ammo N" aligned at column 15. The two Tyrian 2000 additions (Bubble Gum-Gun,
+// Flying Punch) carry a real magazine but shipped without the label.
 //
-// The label is rebuilt from scratch rather than only added where it was missing, because the
-// endless Ordnance Reserves perk grows every magazine mid-run: the shop has to advertise the
-// number you will actually fly with, and that number changes as the perk stacks.
-//
-// Bare name (label stripped) + shipped magazine size, captured once per item-data load; the
-// labels are then rendered from these, so relabelling is idempotent however often it runs.
+// Rebuilt from scratch rather than only added where missing, because the endless Ordnance Reserves
+// perk grows every magazine mid-run and the shop has to advertise what you will actually fly with.
+// Bare name + shipped size are captured once per item-data load and the labels rendered from those,
+// so relabelling is idempotent however often it runs.
 static char    ammoBaseName[OPTION_NUM + 1][31];
 static JE_byte ammoBaseAmmo[OPTION_NUM + 1];
 static int     ammoLabelPct = -1;  // magazine-bonus % the current labels were written for; -1 = not built yet

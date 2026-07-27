@@ -313,8 +313,8 @@ void init_joysticks(void)
 		joysticks = 1;
 #endif
 
-	joystick = malloc(joysticks * sizeof(*joystick));
-	
+	joystick = malloc_die(joysticks * sizeof(*joystick));
+
 	for (int j = 0; j < joysticks; j++)
 	{
 		memset(&joystick[j], 0, sizeof(*joystick));
@@ -676,12 +676,12 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 		axis[i] = SDL_JoystickGetAxis(joystick[j].handle, i);
 	
 	const int buttons = SDL_JoystickNumButtons(joystick[j].handle);
-	Uint8 *button = malloc(buttons * sizeof(*button));
+	Uint8 *button = malloc_die(buttons * sizeof(*button));
 	for (int i = 0; i < buttons; i++)
 		button[i] = SDL_JoystickGetButton(joystick[j].handle, i);
 	
 	const int hats = SDL_JoystickNumHats(joystick[j].handle);
-	Uint8 *hat = malloc(hats * sizeof(*hat));
+	Uint8 *hat = malloc_die(hats * sizeof(*hat));
 	for (int i = 0; i < hats; i++)
 		hat[i] = SDL_JoystickGetHat(joystick[j].handle, i);
 	

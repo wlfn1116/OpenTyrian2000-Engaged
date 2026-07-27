@@ -151,7 +151,7 @@ bool lds_load(FILE *f, unsigned int music_offset, unsigned int music_size)
 	fread_u16_die(&numposi, 1, f);
 	
 	free(positions);
-	positions = malloc(sizeof(Position) * 9 * numposi);
+	positions = malloc_die(sizeof(Position) * 9 * numposi);
 	
 	for (unsigned int i = 0; i < numposi; i++)
 	{

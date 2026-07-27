@@ -30,10 +30,9 @@
 // the same thing during a real run; Debug Mode can turn the effect layer on inside a normal
 // campaign or arcade game (endlessCampaignMods), which is the only way they come apart.
 //
-// Which gate a site wants is decided by what it DOES, not where it lives: anything that reads a
-// lever, a mod bit or a perk takes this one; anything that touches run flow, the shop or the save
-// takes `endlessMode`. The effect layer is a no-op at depth 0 with no mods -- every lever returns
-// its identity value -- so turning it on alone changes nothing.
+// Which gate a site wants is decided by what it DOES, not where it lives: anything reading a lever,
+// a mod bit or a perk takes this one; anything touching run flow, the shop or the save takes
+// `endlessMode`. The layer is a no-op at depth 0 with no mods -- every lever returns identity.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
 
 // How many ENDLESS_MOD_* bits a mask carries. Small enough to inline, and it saves the debug
@@ -70,7 +69,7 @@ enum {
 	ENDLESS_MOD_SLIPSTREAM  = 1u << 18, // ONLY the scroll pace is sped up -- the level rushes at you (hostile)
 	ENDLESS_MOD_OVERLOAD    = 1u << 19, // Overclock cranked WAY up -- brutal fire/shots/scroll (rare)
 	ENDLESS_MOD_WARP        = 1u << 20, // Slipstream cranked WAY up -- the level BLURS past (rare threat)
-	ENDLESS_MOD_OVERDRIVE = 1u << 21,// E-Shop "Overdrive" buy: Turbodrive + each kill stacks fire/damage
+	ENDLESS_MOD_OVERDRIVE = 1u << 21,// E-Shop "Overdrive" buy: Turbodrive + Overblast together (the combo fire ramp AND the per-kill damage stacks)
 	ENDLESS_MOD_BACKFIRE  = 1u << 22, // Backfire (Evil Turbodrive): each kill briefly JAMS your guns (slower fire)
 	ENDLESS_MOD_BURNOUT   = 1u << 23, // Burnout (Evil Overdrive): the jam PLUS each kill stacks a fire+damage penalty
 	ENDLESS_MOD_OVERBLAST = 1u << 24, // E-Shop "Overblast" buy: Overdrive's DAMAGE half only -- each kill stacks shot damage, no fire boost (boon)
@@ -162,10 +161,11 @@ enum {
 // BASE: the 14-shade ramp must stay in one bank (notes.md §Course generation & danger labels).
 #define ENDLESS_FREE_POWER_GAUGE_BASE 1 // bank 0 (gray)
 
-// Power-gauge recolour while an Opening Salvo volley is CHARGED (the next shot is free + boosted).
-// Same bank-BASE rule as above; bank 12 is the in-game palette's pure-green ramp, so a charged
-// gauge reads green at a glance against the stock bank-7 fire ramp.
+// Power-gauge recolour while an Opening Salvo is banked or burning. Same bank-BASE rule as above.
+// The spark colour is the same bank, for the salvo effects with no sprite to take a colour FROM
+// (the Zinglon pillar, the specials that spawn no shot). notes.md §Opening Salvo.
 #define ENDLESS_SALVO_GAUGE_BASE  (12 * 16 + 1) // bank 12 (green)
+#define ENDLESS_SALVO_SPARK_COLOR (12 << 4)     // ...same bank, as JE_doSP wants it
 
 // Per-kill DAMAGE stack cap: the bonus scales so ENDLESS_OVERDRIVE_DMG_MAX lands exactly at the
 // cap, matching the fire ramp's combo-200 peak. Burnout/Misfire's damage CUT mirrors it.
@@ -255,7 +255,7 @@ const char *endlessSeedString(void);
 // --- Save / resume ------------------------------------------------------------------
 // Run-persistent endless state rides in a sidecar (endless.sav) keyed by the same save slot,
 // because the tyrian.sav layout is fixed and checksummed. Loading a slot with an endless
-// record re-enters endless mode at that zone's outpost. notes.md §Endless save / resume.
+// record re-enters endless mode at that zone's outpost. notes.md §Endless / Save / resume.
 void endlessSaveSlot(JE_byte slot);  // persist the current run to `slot` (or clear that slot's endless record when not in endless mode); call right after JE_saveGame
 bool endlessLoadSlot(JE_byte slot);  // if `slot` holds an endless run, enter endless mode + restore it (true); else leave the normal load untouched (false); call right after JE_loadGame
 bool endlessResumePending(void);     // true after an endless save was loaded but before its outpost has reopened; lets the main loop route an in-shop load back to the outpost instead of straight into the level
@@ -327,12 +327,10 @@ bool endlessHullMaxed(void);      // true once the run's armor bonus is capped
 bool endlessTryReroll(void);      // buy a shop reroll; false if unaffordable
 bool endlessTryReinforce(void);   // buy a +armor hull upgrade; false if unaffordable/maxed
 
-// E-Shop cash-fraction buys (the "E-Shop" submenu; see game_menu.c). Turbodrive (kill-fire
-// boost) costs 66% of cash; Overblast (Overdrive's DAMAGE half only, no fire boost) is 75%;
-// Overdrive is Turbodrive PLUS the escalating per-kill fire/damage stack for 95%. Only ONE of
-// the three kill-fire buffs is buyable per visit. Buy Special grants a random special for 80% --
-// pricey enough to be effectively one premium buy per visit. All price off the shop-entry cash;
-// all apply to the NEXT sector.
+// E-Shop cash-fraction buys (the "E-Shop" submenu; see game_menu.c). Turbodrive (kill-fire boost)
+// costs 66% of cash, Overblast (the DAMAGE half only) 75%, Overdrive (both) 95%; only ONE of the
+// three is buyable per visit. Buy Special grants a random special for 80%. All price off the
+// shop-entry cash and apply to the NEXT sector.
 long endlessTurbodrivePrice(void);         // Turbodrive cost (66% of entry cash), for the label
 long endlessOverblastPrice(void);    // Overblast cost (75% of entry cash), for the label
 long endlessOverdrivePrice(void);   // Overdrive cost (95% of entry cash), for the label
@@ -528,11 +526,9 @@ typedef struct {
 // is 1-based (zone 1 == run depth 0); pass difficulty -1 to keep the current difficultyLevel.
 //
 // The effect layer is forced on for the duration, so the result describes the RAMP rather than
-// whether it currently applies -- see the definition for why. ENRAGE's and RETALIATION's
-// contributions to fireDelayPct are the one thing that cannot be predicted from depth (both key off
-// live per-level timers); they read as whatever they are right now, and idle outside a level.
-//
-// Not reentrant -- it mutates globals for the duration -- so keep it on the menu thread.
+// whether it currently applies. ENRAGE's and RETALIATION's contributions to fireDelayPct are the
+// one thing depth can't predict (both key off live per-level timers), so they read as whatever they
+// are right now. Not reentrant -- it mutates globals for the duration -- so keep it on one thread.
 void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out);
 
 // Per-lever debug OVERRIDES. While a lever's override is active its accessor returns the pinned
@@ -584,16 +580,16 @@ void endlessGameplayTick(void);         // once per game tick (main player): zon
 bool endlessConsumeArmorHudDirty(void); // true once after the Overheat DoT shaves hull -> the game loop repaints the armor bar
 bool endlessTurbodriveActive(void);      // TURBODRIVE kill-streak fire boost currently active?
 
-// Live kill-fire buff readout for the in-game HUD (Turbodrive / Overdrive). All report the
+// Live kill-fire buff readout for the in-game HUD (Turbodrive / Overblast / Overdrive). All report the
 // BUFF's own contribution while its window is active; see JE_inGameDisplays. No name string is
 // exposed by design -- the HUD shows only numbers (combo count, fire/damage %, timer).
 int endlessKillBuffTicksLeft(void);    // window ticks remaining (drains ~2s after the last kill)
 int endlessKillBuffTicksMax(void);     // full window length, for the timer bar proportion
 int endlessKillBuffComboCount(void);   // combo kill count driving the escalation, shown as "xN"
-int endlessKillBuffColorBank(void);    // themed palette bank (red Overdrive / yellow Turbodrive)
-int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is granting (1 = none; 2x..7x, ~9x w/ Overdrive)
+int endlessKillBuffColorBank(void);    // themed palette bank (red Turbodrive / yellow Overdrive / blue Overblast)
+int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is granting (1 = none; 2x..10x on the combo ramp -- the same schedule for Turbodrive and Overdrive)
 int endlessKillBuffDamagePercent(void); // shot-damage bonus % the buff is granting (0 during Turbodrive)
-int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (Turbodrive base + Overdrive stacks)
+int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (the combo ramp; Turbodrive and Overdrive alike)
 int  endlessPerkSpecialCooldownDecrements(void); // Rapid Recharge perk: extra cooldown decrements/tick, applied by the caller to the special-weapon gate AND sidekick ammo refill
 int   endlessGravityPullX(void);        // GRAVITY: per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
 int   endlessGravityPullY(void);        // GRAVITY: per-tick vertical nudge (classic non-VT ship path)
@@ -648,18 +644,12 @@ int  endlessRollEliteTier(JE_byte linknum);  // spawn tier: 1 normal, 2 elite, 3
 int  endlessEliteHpMult(void);               // elite & champion HP multiplier (boss-style divisor)
 int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // combined per-hit HP divisor
 
-// Safeguard against piercing weapons. A piercing shot survives its own impact, so it re-damages
-// whatever it is sitting on every single tick -- DPS that scales with the shot's dwell time instead
-// of with the target's hull, which is why it ignores an HP multiplier completely. This returns how
-// long a target ignores REPEAT piercing hits for, read off the same multiplier endlessEnemyHpMult
-// gave it (hence the identical argument list): full for a boss, diluted for an elite or champion
-// because their ramp only reaches 4x, and ZERO for an ordinary enemy. 0 at stock HP too, so a run
-// that never multiplied anything plays out exactly as before.
-//
-// The figure is in HUNDREDTHS of a sim tick, because the ramps are read UNROUNDED so it creeps
-// every zone rather than jumping a whole tick at a time. The hit site (tyrian2.c) spends the whole
-// part outright and accumulates the fraction in a per-enemy carry, so the average lockout lands
-// exactly on the fractional figure.
+// Safeguard against piercing weapons, whose shots survive their own impact and so re-damage the
+// same hull every tick -- DPS that scales with dwell time rather than hull, ignoring any HP
+// multiplier. Returns how long a target ignores REPEAT piercing hits, read off the same multiplier
+// endlessEnemyHpMult gave it (hence the identical argument list): full for a boss, diluted for an
+// elite/champion, ZERO for an ordinary enemy or at stock HP. In HUNDREDTHS of a sim tick, so it
+// creeps every zone; the hit site (tyrian2.c) spends the whole part and carries the fraction.
 #define ENDLESS_PIERCE_LOCK_SCALE 100        // the fixed-point unit below: 1/100 of a sim tick
 int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);  // 1/100 sim ticks of repeat-pierce immunity (0 = none)
 long endlessEliteBounty(void);               // extra cash for destroying an elite
@@ -703,8 +693,9 @@ int  endlessPerkSurveyorRoutes(void);  // Surveyor perk: extra Chart-a-Course ro
 int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss); // Executioner: bonus damage vs a wounded enemy (tyrian2.c shot collision)
 void endlessOpeningSalvoTick(void);        // Opening Salvo: advance the main-gun idle timer one tick (endlessGameplayTick)
 bool endlessOpeningSalvoConsume(void);     // Opening Salvo: main gun fired -> reset idle, arm the charged-volley flag for the rest of this tick (mainint.c)
-bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is this tick a charged volley? (shots.c: power-free + tag front/rear/sidekick shots)
-bool endlessOpeningSalvoCharged(void);     // Opening Salvo: is a volley charged RIGHT NOW? (tyrian2.c draw_power_gauge tint)
+bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is a consumed salvo window running? (shots.c: power-free + tag every shot; varz.c specials)
+bool endlessOpeningSalvoCharged(void);     // Opening Salvo: banked OR burning -- what tints the gauge green (tyrian2.c draw_power_gauge)
+int  endlessOpeningSalvoScale(int value);  // Opening Salvo: scale a non-damage special magnitude x2.5 while the window runs (varz.c repulsor/heal/invuln)
 int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
 int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
 void endlessCountermeasureTick(void);        // Countermeasure Suite: advance the burst cooldown one tick (endlessGameplayTick)

@@ -43,7 +43,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Radar",            "Chart-a-Course shows each sector's level.", 1 },
 	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
 	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
-	{ "Opening Salvo",    "A long pause supercharges your next shot.", 1 },
+	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
 	{ "Kinetic Converter","Absorbed shield hits refuel the generator.",3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
@@ -57,6 +57,7 @@ int endlessPerkChoice[3];             // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..3)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
 int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
+int endlessSalvoWindow = 0;           // Opening Salvo: ticks of held fire left in a consumed salvo (reset each run)
 int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
 // The run depth whose post-zone perk pick has already been resolved (taken or declined); -1 =
 // none yet. endlessBetweenLevels offers the forced pick only when this lags the current depth,
@@ -231,10 +232,10 @@ int endlessPerkSurveyorRoutes(void)
 	return endlessFxActive() ? endlessPerkOwned[PERK_SURVEYOR] * ENDLESS_PERK_SURVEYOR_ROUTES : 0;
 }
 
-// Executioner perk: bonus damage a player shot deals to a badly wounded target. `armorleft` is its
-// CURRENT armor, `fullHp` its latched full armor (enemy healthbar_max; 0 before the first hit, when it
-// is by definition at full HP so no bonus), `boss` selects the tighter boss threshold. Returns 0 for a
-// healthy / not-yet-hit / invulnerable target, else +ENDLESS_PERK_EXEC_DMG_PCT% of `damage` per stack.
+// Executioner perk: bonus damage a player shot deals to a badly wounded target. `damage` must be
+// the shot's RAW damage, from BEFORE any boss/elite HP-multiplier divide, or the percentage has
+// nothing left to bite on. `armorleft` is current armor, `fullHp` the latched full armor
+// (healthbar_max; 0 before the first hit, i.e. at full HP), `boss` selects the tighter threshold.
 int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss)
 {
 	const int stacks = endlessFxActive() ? endlessPerkOwned[PERK_EXECUTIONER] : 0;
@@ -243,45 +244,62 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 	const int threshold = boss ? ENDLESS_PERK_EXEC_BOSS_PCT : ENDLESS_PERK_EXEC_HP_PCT;
 	if (armorleft * 100 >= fullHp * threshold)  // not wounded enough
 		return 0;
-	return damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT / 100;
+	// Round to NEAREST, not down. Truncating biases every payout down by up to a full armor point,
+	// which at one stack meant any shot under 7 damage bought exactly nothing -- and a piercing shot's
+	// raw damage is only 0..5, so those weapons never saw the perk at all.
+	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
 }
 
 // --- Opening Salvo perk ---------------------------------------------------------------------------
-// endlessSalvoIdle counts ticks since the main gun last fired (advanced by endlessGameplayTick).
-// endlessSalvoVolley is armed by the fire path when the main gun opens a charged volley, and stays
-// set for the REST of that tick so every gun firing alongside it -- rear weapon and both sidekicks
-// -- is boosted + power-free too. endlessOpeningSalvoTick clears it at the start of the next tick.
-static bool endlessSalvoVolley = false;
+// Two timers: endlessSalvoIdle charges the salvo, endlessSalvoWindow is the ~1s of held fire that
+// spending it buys, during which every gun AND every special is boosted. notes.md §Opening Salvo.
 
-// Start-of-tick housekeeping: drop last tick's volley flag (the fire path re-arms it if this tick's
-// main shot is charged), then advance the idle timer while the perk is owned (capped so a long idle
-// can't overflow). Called once per tick from endlessGameplayTick, before any weapon fires.
+// Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires.
 void endlessOpeningSalvoTick(void)
 {
-	endlessSalvoVolley = false;
+	if (endlessSalvoWindow > 0)
+	{
+		// button[0] is last tick's fire state -- this runs before JE_playerMovement re-reads the pad.
+		if (button[0])
+			--endlessSalvoWindow;       // released trigger pauses rather than drains
+		return;                        // and no second charge banks while one runs
+	}
 	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle < 1000000)
-		++endlessSalvoIdle;
+		++endlessSalvoIdle;            // capped so a very long idle can't overflow
 }
 
-// The main gun just fired: reset the idle timer and, if the pause charged this volley, arm
-// endlessSalvoVolley so player_shot_create boosts every shot created for the rest of this tick.
+// The main gun just fired: open a window if the pause charged one. A salvo already running is left
+// alone -- re-firing must not extend it.
 bool endlessOpeningSalvoConsume(void)
 {
+	if (endlessSalvoWindow > 0)
+		return true;
+
 	const bool charged = endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
 	endlessSalvoIdle = 0;
 	if (charged)
-		endlessSalvoVolley = true;  // rides the rest of the tick (rear + sidekicks); cleared next endlessOpeningSalvoTick
+		endlessSalvoWindow = ENDLESS_PERK_SALVO_WINDOW;
 	return charged;
 }
 
-bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoVolley; }
+bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoWindow > 0; }
 
-// Is a volley charged right now -- i.e. would the main gun firing THIS instant be boosted? Same test
-// endlessOpeningSalvoConsume makes, minus the side effects; the generator gauge reads it to tint
-// itself green while the charge is banked, which is the perk's only readout before the shot lands.
+// What tints the gauge green: a salvo you HAVE, banked or burning.
 bool endlessOpeningSalvoCharged(void)
 {
-	return endlessFxActive() && endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
+	if (!endlessFxActive() || endlessPerkOwned[PERK_SALVO] == 0)
+		return false;
+	return endlessSalvoWindow > 0 || endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
+}
+
+// x2.5 a non-damage special magnitude (repulsor push, heal, invuln duration) while a window is up.
+// The floor matters: the repulsor hands this a 1, which would otherwise scale back to itself.
+int endlessOpeningSalvoScale(int value)
+{
+	if (!endlessOpeningSalvoVolleyActive() || value <= 0)
+		return value;
+	const int scaled = (value * (100 + ENDLESS_PERK_SALVO_DMG_PCT) + 50) / 100;
+	return (scaled > value) ? scaled : value + 1;
 }
 
 int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
@@ -319,16 +337,15 @@ int endlessPerkCountermeasureRadius(void)
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
 
 // --- Per-zone perk timer reset --------------------------------------------------------------------
-// Both timers below tick only during gameplay, so without this they would PAUSE across the outpost
-// and resume mid-charge in the next sector -- a Countermeasure burst still on cooldown from a zone
-// the player already cleared, or an Opening Salvo volley pre-charged by however long the last zone's
-// final seconds happened to be quiet. Neither is a decision worth inheriting, so each sector starts
-// from the same state a fresh run does (endlessResetRun): countermeasures READY, salvo EMPTY.
-// Called from endlessResetZoneEffects, which also covers the campaign-mods path.
+// Both timers below tick only during gameplay, so without this they would pause across the outpost
+// and resume in whatever state the last zone's final seconds left them. Every sector instead opens
+// from the state a fresh run starts in: countermeasures READY, salvo CHARGED. Called from
+// endlessResetZoneEffects, which also covers the campaign-mods path.
 void endlessResetZonePerkTimers(void)
 {
-	endlessSalvoIdle  = 0;  // Opening Salvo: the main gun reads as "just fired" at every zone start
-	endlessCmCooldown = 0;  // Countermeasure Suite: first burst of the sector is always ready
+	endlessSalvoIdle   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 1.4s wait would be dead time here
+	endlessSalvoWindow = 0;                        // no half-spent salvo carries over
+	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
 }
 
 // --- Chain Reaction perk --------------------------------------------------------------------------
@@ -382,8 +399,8 @@ int endlessPerkSidekickAmmo(int base)
 // The per-round refill interval for a boosted magazine. `baseTicks` is the shipped
 // `(105 - ammo) * 4` cadence and `stockAmmo` the shipped magazine it was keyed to. Scaling by
 // stock/boosted holds the time to refill a WHOLE magazine constant, so a stack hands you a deeper
-// reserve rather than a longer wait -- keyed to the shipped cadence, every stack used to make
-// topping off slower in exact proportion to the rounds it had just granted.
+// reserve rather than a longer wait. Keyed to the SHIPPED cadence, not the boosted one, which would
+// make topping off slower in exact proportion to the rounds each stack had just granted.
 int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo)
 {
 	const int mag = endlessPerkSidekickAmmo(stockAmmo);

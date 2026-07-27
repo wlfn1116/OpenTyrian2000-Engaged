@@ -50,12 +50,11 @@ static int endlessCourseBaseDanger(int i)
 	return endlessLevelBaseDanger(endlessCourseEp[i], endlessCourseFile[i], difficultyLevel);
 }
 
-// What course i would ACTUALLY launch with, replaying endlessSelectCourse's two fold passes on the
-// charted mods: merge anything bought this visit (the purchase wins any kill-fire collision), then
-// spend the queued Sabotage charges. Returns the FOLDED set and reports through `cleansedOut` which
-// bits the charges take off it, so the card can still list a sabotaged threat -- struck through in
-// white -- rather than silently dropping it. The Long Con's deferred APEX is deliberately NOT
-// replayed: the player paid for that one to arrive unannounced.
+// What course i would ACTUALLY launch with, replaying endlessSelectCourse's two fold passes: merge
+// anything bought this visit (the purchase wins any kill-fire collision), then spend the queued
+// Sabotage charges. Returns the FOLDED set, reporting through `cleansedOut` which bits the charges
+// strip so the card can list them struck through. The Long Con's deferred APEX is NOT replayed --
+// the player paid for that one to arrive unannounced.
 static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 {
 	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i], endlessPurchasedMods);
@@ -67,13 +66,10 @@ static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 	return folded;
 }
 
-// The TRUTHFUL clear payout for course i at the current depth -- the modifier table plus the LEVEL's
-// fine payoutMille term (thousandths of base), exactly as endlessClearBonus banks it on clear (via
-// endlessSortiePayoutMille, keyed off the same committed level), so shown == banked. This is what
-// varies the cash between same-grade courses. Shown highlighted on the help line (game_menu.c).
-// Priced off what launch actually commits (endlessCourseLaunchMods), so neither a bought buff that
-// overrides a charted curse nor a queued Sabotage charge can leave the card quoting danger money the
-// sector will no longer be dangerous enough to pay.
+// The clear payout for course i at the current depth: the modifier table plus the LEVEL's fine
+// payoutMille term, exactly as endlessClearBonus banks it, so shown == banked. Priced off what
+// launch actually commits (endlessCourseLaunchMods), so a bought buff or a queued Sabotage charge
+// can't leave the card quoting danger money the sector will no longer be dangerous enough to pay.
 long endlessCoursePayout(int i)
 {
 	if (i < 0 || i >= endlessCourseCnt)
@@ -84,13 +80,10 @@ long endlessCoursePayout(int i)
 	                              endlessLevelPayoutMille(endlessCourseEp[i], endlessCourseFile[i], difficultyLevel));
 }
 
-// Pick a random BOON bit safe to weld onto a hostile course that already carries `hostiles`, turning it
-// into a MIXED "gambit" sector (real reward on real danger). Boons that would fight an existing threat on
-// the SAME lever are held back -- frail foes vs +HP (Fortified), crawling shots vs faster shots
-// (Swift/Overclock) -- so the sector's red/green monitor rows never contradict. The overpowered kill-fire
-// boons get a small roll of their own instead of two full shares in the ordinary candidate pool; this keeps
-// them uncommon in gambits while preserving the named pure-boon courses. Only one boon is added, so the
-// one-kill-fire-mod rule holds. The first three ordinary boons are always eligible, so this never returns 0.
+// Pick a random BOON bit safe to weld onto a hostile course carrying `hostiles`, making it a MIXED
+// "gambit" sector. Boons that would fight a threat on the SAME lever are held back, so the monitor's
+// red/green rows never contradict. The kill-fire boons get a small roll of their own rather than a
+// full share of the pool. The first three candidates are unconditional, so this never returns 0.
 static Uint64 endlessPickMixBoon(Uint64 hostiles)
 {
 	// Split evenly between the two kill-fire boons allowed on mixed courses. Overdrive remains a
@@ -98,12 +91,9 @@ static Uint64 endlessPickMixBoon(Uint64 hostiles)
 	if (endlessRand() % 100 < 4)
 		return (endlessRand() % 2) ? ENDLESS_MOD_TURBODRIVE : ENDLESS_MOD_OVERBLAST;
 
-	// The no-elite-tier boons get a small roll of their own too, so a gambit that thins the specials stays
-	// uncommon. NOELITE wipes the whole elite/champion tier, so it's held back when the course's danger IS
-	// that tier (it would cancel, not gamble); NOCHAMP only clips the champion spikes, so it may ride an
-	// Elite Pack (a real trade) but not an all-champion Legion. Weighted ~2:1 toward the milder NOCHAMP, so
-	// NOELITE gambits are the rarer sight; if an on-lever threat blocks the pick, fall through to the pool.
-	// Gated on the 25%-share unlock like every other no-elite-tier path (roll first so the stream is stable).
+	// The no-elite-tier boons get their own small roll. NOELITE is held back when the course's danger
+	// IS that tier (it would cancel, not gamble); NOCHAMP may ride an Elite Pack but not a Legion.
+	// Weighted ~2:1 toward NOCHAMP. Gated on the 25%-share unlock; roll first so the stream is stable.
 	if ((endlessRand() % 100 < 6) && endlessEliteBoonsUnlocked())
 	{
 		if ((endlessRand() % 3) == 0)  // ~1/3 of the roll aims for the stronger, rarer NOELITE
@@ -120,10 +110,8 @@ static Uint64 endlessPickMixBoon(Uint64 hostiles)
 	cand[n++] = ENDLESS_MOD_OVERCHARGE;   // more player damage -- always safe
 	cand[n++] = ENDLESS_MOD_BOUNTY;       // pure cash, no safety -- always safe
 	cand[n++] = ENDLESS_MOD_FAVOR;        // cheaper next shop -- always safe
-	// The later boons. Each acts on a system no ordinary hostile bit touches, so unlike the two
-	// conditional rows below none of them can cancel a threat -- they mitigate it, which is the point of
-	// a gambit. Two exceptions are gated: Flak Screen does nothing before the tide starts adding shots,
-	// and the two elite-stat boons do nothing worth showing while specials are still a trickle.
+	// The later boons: each acts on a system no ordinary hostile bit touches, so none can cancel a
+	// threat. Two are gated on the system being in play at all (see endlessBoonsLockedHere).
 	cand[n++] = ENDLESS_MOD_AEGIS;        // the shield can't be punched through
 	cand[n++] = ENDLESS_MOD_LOWPROFILE;   // a quarter off the hitbox
 	cand[n++] = ENDLESS_MOD_AUXREACTOR;   // free shield recharge
@@ -144,11 +132,9 @@ static Uint64 endlessPickMixBoon(Uint64 hostiles)
 	return cand[endlessRand() % n];
 }
 
-// The boon table doubles as the canonical name dictionary, so keep its semantic bitsets intact.
-// At generation time, swap the Turbodrive and Overblast rarity slots instead: Overblast inherits
-// Turbodrive's many common theme slots, while Turbodrive inherits Overblast's few rare ones. This is
-// an involution, so distinct Jackpot themes remain distinct after the mapping. Mixed gambits already
-// split the two evenly; Reactor Redline deliberately stays Turbodrive because it promises fast guns.
+// The boon table doubles as the canonical name dictionary, so its bitsets stay intact and the
+// Turbodrive/Overblast rarity slots are swapped at generation time instead. An involution, so
+// distinct Jackpot themes stay distinct. Reactor Redline keeps Turbodrive -- it promises fast guns.
 static Uint64 endlessSwapTurbodriveOverblast(Uint64 mods)
 {
 	const bool hadTurbodrive = (mods & ENDLESS_MOD_TURBODRIVE) != 0;
@@ -176,12 +162,10 @@ static Uint64 endlessLockedBoons(void)
 	return locked;
 }
 
-// Build a random emergent PURE-BOON combo (2, sometimes 3 bits) for a boon course -- more variety than
-// the named boon themes alone. The pool holds only ONE kill-fire boon (Overblast), so two can never
-// stack, and every pair is on an independent lever, so nothing cancels. Only NOCHAMP is in the pool of
-// the two no-elite-tier boons: they SHARE the elite lever (NOELITE supersedes NOCHAMP), so pooling both
-// could roll a self-cancelling pair -- keeping NOELITE out of the emergent pool sidesteps that and leaves
-// NOELITE to the named themes alone, one lever keeping the stronger boon the rarer one.
+// Build a random emergent PURE-BOON combo (2, sometimes 3 bits), for more variety than the named
+// boon themes alone. The pool holds only ONE kill-fire boon (Overblast) and every entry is on an
+// independent lever, so nothing cancels. NOELITE is out of the pool -- it shares the elite lever
+// with NOCHAMP, so pooling both could roll a self-cancelling pair.
 static Uint64 endlessMakeBoonCombo(void)
 {
 	Uint64 pool[16];
@@ -192,11 +176,9 @@ static Uint64 endlessMakeBoonCombo(void)
 	pool[poolN++] = ENDLESS_MOD_DILATION;
 	pool[poolN++] = ENDLESS_MOD_FAVOR;
 	pool[poolN++] = ENDLESS_MOD_OVERBLAST;
-	// The later boons, all on independent levers, so any pair the shuffle draws stacks cleanly. Only
-	// GIANTKILLER and CLEANSIGNALS share a subject (the special-enemy tier) and even those touch
-	// different halves of it -- hulls vs guns -- so the pair is a real "elites are just enemies now"
-	// combo rather than a self-cancelling one. BREAKTHROUGH is deliberately absent: it has its own
-	// heavily-gated roll, and an emergent combo would hand it out far too freely.
+	// The later boons, all on independent levers. GIANTKILLER and CLEANSIGNALS share the special
+	// tier but touch different halves of it (hulls vs guns), so that pair still stacks.
+	// BREAKTHROUGH is deliberately absent -- it has its own heavily-gated roll.
 	pool[poolN++] = ENDLESS_MOD_AEGIS;
 	pool[poolN++] = ENDLESS_MOD_LOWPROFILE;
 	pool[poolN++] = ENDLESS_MOD_AUXREACTOR;
@@ -227,20 +209,12 @@ static Uint64 endlessMakeBoonCombo(void)
 }
 
 // --- Deep-run course-danger escalation ---------------------------------------------
-// From ENDLESS_DANGER_RAMP_START (zone 40) the Chart-a-Course rolls tilt steadily against the player:
-// busier multi-danger combos, higher danger ratings, more frequent rare/super-rare dangerous sectors,
-// and more danger-only (Gauntlet/Ambush) visits with fewer calm/boon/jackpot ones. The tilt keeps
-// climbing the whole way from zone 40 to ENDLESS_DANGER_RAMP_FULL (zone 250) and CAPS there: about
-// TWICE as dangerous by the mid-point (zone 100), about SIX times by the cap. It's a TWO-STAGE ramp --
-// a gentle first stage to the mid-point, then a steeper second stage to the cap -- so the deep end can
-// reach ~6x by zone 250 while the zone<=100 range stays byte-for-byte the approved ~2x tuning. Even at
-// the cap the player never loses the last shot at a calm sector / boon / jackpot: course 0 stays clean
-// unless Gauntlet/Ambush fires, and BOTH of those are hard-capped WELL below certainty (the CAP_PCT
-// knobs -> a calm route survives ~46% of visits even at the deepest cap), while the boon/jackpot rolls
-// only thin, never vanish. So most of the deep-end escalation past the mid-point lands on the UNCAPPED
-// levers -- rarer boons/jackpots and more frequent rare/super-rare injections -- not on making danger a
-// sure thing. Difficulty-scaled like every other lever, so harder modes ramp sooner (notes.md §Course
-// generation & danger labels).
+// From RAMP_START the Chart-a-Course rolls tilt against the player: busier combos, higher danger
+// ratings, more rare/super-rare sectors, more Gauntlet/Ambush visits. TWO-STAGE -- ~2x by the
+// mid-point, ~6x at the cap -- so the zone<=MID range keeps its earlier single-stage tuning. The
+// Gauntlet/Ambush odds are hard-capped below certainty (the CAP_PCT knobs), so a calm route always
+// survives some share of visits and the deep escalation lands on the uncapped levers instead.
+// Difficulty-scaled like every other lever (notes.md §Course generation & danger labels).
 #define ENDLESS_DANGER_RAMP_START 40   // zone the tilt begins (no escalation at/below)
 #define ENDLESS_DANGER_RAMP_MID   100  // zone the tilt reaches its "~2x" tuning (scale == ENDLESS_DANGER_RAMP_MID_SCALE)
 #define ENDLESS_DANGER_RAMP_FULL  250  // zone the tilt caps at its "~6x" tuning (scale == ENDLESS_DANGER_RAMP_FULL_SCALE)
@@ -269,16 +243,10 @@ static int endlessDangerRamp(void)
 	return (s > ENDLESS_DANGER_RAMP_FULL_SCALE) ? ENDLESS_DANGER_RAMP_FULL_SCALE : s;
 }
 
-// Shrink a "1 in N" rare-danger divisor with the ramp (toward N/2 at the mid-point, ~N/6 at the cap),
-// so rare / super-rare dangerous sectors show up ~2x as often by zone 100 and ~6x by zone 250.
-// Floored at 1 (never a divide-by-zero).
-//
-// `brutal` rows CAP that ramp at the mid-point's 2x. The punishing signature sectors -- every enemy a
-// champion, a dead generator, homing rammers -- are meant to be a rare event you remember, and under
-// the full 6x ramp they stopped being rare at all (Apex reached ~12% of deep slates, dead generator
-// ~9%, i.e. several times their shallow rate). Capping them keeps a deep run's escalation in the
-// enemy stat ramp and in busier ordinary combos, where it belongs, instead of in a wall of
-// nightmare-tier sectors. Flavour rows keep the full ramp.
+// Shrink a "1 in N" rare-danger divisor with the ramp (toward N/2 at the mid-point, ~N/6 at the
+// cap). Floored at 1. `brutal` rows CAP that at the mid-point's 2x: the punishing signatures (Apex,
+// dead generator, homing rammers) must stay rare events, so a deep run's escalation lands on the
+// enemy stat ramp and busier ordinary combos instead. Flavour rows keep the full ramp.
 static int endlessDangerRareDivEx(int base, bool brutal)
 {
 	int ramp = endlessDangerRamp();
@@ -289,21 +257,16 @@ static int endlessDangerRareDivEx(int base, bool brutal)
 }
 
 // --- Rare sector injections ---------------------------------------------------------------
-// After the ordinary hostile/boon/gambit courses are dealt, each row below gets ONE "1 in N"
-// roll; if it fires, it takes over a random non-clean course slot. THE TUNING KNOBS ARE HERE:
-// `oneInN` is the base rarity at zone <= ENDLESS_DANGER_RAMP_START, routed through
-// endlessDangerRareDivEx so it grows more frequent with depth -- the full ~6x for a `flavour` row,
-// capped at ~2x for a `brutal` one (see that function for why).
+// After the ordinary hostile/boon/gambit courses are dealt, each row below gets ONE "1 in N" roll;
+// if it fires, it takes over a random non-clean course slot. The tuning knobs are here: `oneInN` is
+// the base rarity at zone <= RAMP_START, routed through endlessDangerRareDivEx.
 //
-// This table holds SIGNATURE sectors only. Martyrdom, Seeker Rounds and Retaliation used to be
-// injected here; they now live in the weighted endlessCombinableMods pool, which reaches the chart
-// far more often, so their injections are gone (their name tables are still wired into
-// endlessFindTheme, so every curated name survives).
+// SIGNATURE sectors only. Martyrdom / Seeker / Retaliation reach the chart through the weighted
+// endlessCombinableMods pool instead, so they have no injection row here.
 //
-// ORDER MATTERS. The rolls happen top to bottom and each overwrites the slot it lands on, so a
-// row placed later wins a contested slot -- kamikaze after homing (the harder tier wins the
-// clash), the elite-tier sectors late enough to override a boon slot, and dead generator last
-// of all because it is the nastiest handicap in the game.
+// ORDER MATTERS: rolls run top to bottom and each overwrites the slot it lands on, so a later row
+// wins a contested slot -- kamikaze after homing, the elite-tier sectors late enough to override a
+// boon slot, dead generator last of all.
 //
 // A row either draws from a named-theme `pool` (optionally narrowed to entries carrying all of
 // `must` and none of `forbid`) or, with no pool, deals the fixed `mods` bitset.
@@ -359,18 +322,13 @@ static const EndlessRareInjection endlessRareInjections[] = {
 #undef RARE_PICK
 #undef RARE_FIXED
 
-// Retire a now-pointless "half enemies elite" (ELITEPACK) on course c. ELITEPACK pins the special-
-// enemy share to 50%, which is a difficulty BUMP only while the natural depth share sits below it;
-// once the natural share tops 50% (deep runs -- see endlessNaturalEliteChancePercent), pinning it to
-// 50% would CAP elites below the natural rate, turning a "hostile" course into a stealth boon. Past
-// that crossover, swap ELITEPACK for a comparable hostile bit so the sector stays a real threat; the
-// name, danger tier and clear reward all re-derive from the new bitset. APEX/LEGION force a 100%
-// share (always a genuine increase over the 80% natural cap), so those are left untouched.
+// Retire a now-pointless "half enemies elite" (ELITEPACK) on course c. It pins the special share to
+// 50%, which is a bump only while the natural depth share sits below that; past the crossover it
+// would CAP elites and turn a hostile course into a stealth boon, so swap in a comparable hostile
+// bit (name, tier and reward all re-derive). APEX/LEGION force 100% and are left alone.
 //
-// Deterministic (no RNG) and driven by the same endlessRunDepth the launched level will see, so the
-// Chart-a-Course preview and the played sector always agree, and a reloaded outpost re-derives the
-// same swap. The replacement avoids any bitset another offered course already uses, so the visit
-// keeps distinct sectors.
+// Deterministic and driven by the same endlessRunDepth the launched level sees, so preview and
+// played sector agree and a reload re-derives the same swap. Avoids bitsets already on the chart.
 static void endlessFixRedundantElitePack(int c)
 {
 	const Uint64 mods = endlessCourseMod[c];
@@ -410,26 +368,16 @@ static void endlessFixRedundantElitePack(int c)
 }
 
 // --- Milestone slates (see endlessMilestoneKind, up top) -------------------------------------
-// ENDLESS_THEME_THE_END -- the pinned 100th-zone sector -- is defined with its naming table, next to
-// endlessRareThemes, so the macro and the row that names it sit together and can't drift.
+// ENDLESS_THEME_THE_END -- the pinned 100th-zone sector -- is defined with its naming table next to
+// endlessRareThemes, so the macro and the row that names it can't drift apart.
 //
-// Hostile bits a milestone slate is built from. `group` marks mutually redundant bits -- at most one
-// per nonzero group lands on a course: one scroll modifier (Overclock already carries Slipstream's
-// scroll), one homing tier, one elite tier, one shield handicap. Group 0 is "no group": those bits
-// are independent levers and any mix of them may land.
+// Hostile bits a milestone slate is built from. `group` marks mutually redundant bits: at most one
+// per nonzero group lands on a course (one scroll modifier, one homing tier, one elite tier, one
+// shield handicap). Group 0 is "no group" -- independent levers, any mix may land.
 //
-// The four reactive dangers are in the pool. They belong here for consistency: the ordinary chart
-// shows them often (they are weighted entries in endlessCombinableMods) and The End rolls each on a
-// coin, so without them a milestone slate was the one place left that read as a wall of core bits --
-// and on a GRAND milestone the finale would roll Martyrdom while the S++ courses beside it never
-// could. Their rewards (11-18) sit inside the band-builder's useful range, and the Seeker+Swift /
-// Retaliation+Enrage synergies are already accounted for: endlessMakeRankComboForLevel verifies the
-// finished combo against endlessDangerRankLevelEx, so the S/S+/S++/S+++ guarantees hold regardless.
-//
-// Still out, deliberately: Elite Pack (deep runs retire it as redundant -- see
-// endlessFixRedundantElitePack -- which would rewrite a slate's bitset out from under it) and the
-// super-rare signatures (dead generator, the evil kill-fire mirrors, reactor redline). A milestone
-// should be a wall of ordinary dangers, not a scheduled visit from the rarest sector in the game.
+// Deliberately OUT: Elite Pack (deep runs retire it as redundant, which would rewrite a slate's
+// bitset out from under it) and the super-rare signatures (dead generator, the evil kill-fire
+// mirrors, reactor redline). A milestone is a wall of ordinary dangers. notes.md §Endless.
 static const struct { Uint64 bit; int group; } endlessMilestonePool[] = {
 	{ ENDLESS_MOD_FORTIFIED,   0 },
 	{ ENDLESS_MOD_FRENZY,      0 },
@@ -464,16 +412,12 @@ static int endlessModReward(Uint64 bit)
 	return 0;
 }
 
-// Build a random pure-hostile combo whose letter grade -- AS DISPLAYED, with the target shipped
-// level's own baseDanger folded in -- is exactly `rank` (6 = S, 7 = S+, 8 = S++, 9 = S+++), distinct
-// from the `usedN` bitsets already dealt this visit. The score band mirrors endlessDangerRankLevel,
-// then is shifted DOWN by baseDanger: the level contributes that much to the final score at the
-// display/sort sites, so the modifier-only build must aim lower to hit `rank` there. Without this a
-// combo built to rank at baseDanger 0 drifts a grade once attached to a gentle (-2) or harsh (+5)
-// level. The built combo is verified against endlessDangerRankLevelEx (synergy AND baseDanger
-// included) before being handed back, so a retuned band / synergy / level profile can never silently
-// mislabel a milestone. S+++ is open-ended, but the build stops well short of piling on every bit in
-// the pool: brutal, still flyable.
+// Build a random pure-hostile combo whose letter grade AS DISPLAYED -- with the target level's own
+// baseDanger folded in -- is exactly `rank` (6 = S .. 9 = S+++), distinct from the `usedN` bitsets
+// already dealt. The band mirrors endlessDangerRankLevel shifted DOWN by baseDanger, since the
+// level contributes that much at the display/sort sites. The result is then verified against
+// endlessDangerRankLevelEx (synergy and baseDanger included), so a retuned band, synergy or level
+// profile can't silently mislabel a milestone.
 static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint64 *used, int usedN)
 {
 	int lo = (rank <= 6) ? 34 : (rank == 7) ? 40 : (rank == 8) ? 50 : 60;
@@ -543,18 +487,11 @@ static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint6
 // Kamikaze / overload / warp / sluggish stay out -- they are special or rare-injected (SLUGGISH's
 // only combinable pairing, gravity, is a rare injection, so it can't emerge randomly here).
 //
-// The pool is WEIGHTED, not flat. A flat pool handed all eleven bits the same ~25% share of every
-// course, which -- on top of the curated table's own bias toward the same few bits (see
-// endlessPickSignatureTheme) -- made "more HP / faster fire / faster shots / harder hits" read as
-// near-permanent fixtures while whole mechanics sat at 3%. The four core bits are therefore weighted
-// DOWN, the under-seen ones UP, and MARTYRDOM / SEEKER / RETALIATION are promoted in here: each acts
-// on a system nothing else in the pool touches, so they stack cleanly with any combo and no longer
-// need a rare injection of their own to be seen at all.
-//
-// A bit's share of a course is roughly (bits drawn) * weight / (total weight), so these are the
-// knobs for "how often do I meet this danger". Keep SLIPSTREAM out: Overclock (in the pool) already
-// carries the same +70% scroll, so a random pairing would be a redundant bit -- Slipstream sectors
-// come from the curated draw. DEADGEN stays out too: super-rare, injected only.
+// The pool is WEIGHTED, not flat: a flat one made the four core bits read as near-permanent
+// fixtures while whole mechanics sat at 3%. A bit's share of a course is roughly
+// (bits drawn) * weight / (total weight), so these are the "how often do I meet this danger" knobs.
+// SLIPSTREAM stays out (Overclock already carries the same +70% scroll -- it would be a redundant
+// bit); DEADGEN stays out too, super-rare and injected only. notes.md §Course generation.
 typedef struct {
 	Uint64 bit;
 	int    weight;
@@ -636,17 +573,11 @@ static Uint64 endlessOtherCourseMods(int forCourse)
 
 // --- Curated-theme draw by SIGNATURE ------------------------------------------------------
 // endlessHostileThemes is a NAME dictionary first and a distribution second, and as a distribution
-// it is badly skewed: its doubles/triples/quads were authored mostly out of the same four core bits,
-// so Swift sits in 75 of the 256 rows and Slipstream in 19. Drawing a row uniformly inherits that
-// skew exactly, which is half of why a few dangers felt permanent. (The row counts move whenever the
-// dictionary is extended -- they are the symptom, not a tunable; the weights below are the tunable.)
-//
-// So pick WHICH danger the sector is about first (weighted, below), then a random curated row
-// carrying it. Every curated name stays reachable and no table row had to change; only how
-// often each danger is the subject of a sector is now a tuning decision instead of a side effect of
-// how many combos someone happened to name. MARTYRDOM / SEEKER are absent here on purpose: they
-// reach the chart through the weighted pool above and are NAMED from their curated rows there, so
-// giving them a signature too would double-count them.
+// it is badly skewed toward the same few core bits. So pick WHICH danger the sector is about first
+// (weighted, below), then a random curated row carrying it -- every curated name stays reachable,
+// but how often each danger is a sector's subject becomes a tuning decision. MARTYRDOM / SEEKER are
+// absent on purpose: they reach the chart through the weighted pool above and are named from their
+// curated rows there, so a signature would double-count them.
 static const EndlessModWeight endlessThemeSignatures[] = {
 	{ ENDLESS_MOD_FORTIFIED,    3 },
 	{ ENDLESS_MOD_FRENZY,       3 },
@@ -789,10 +720,9 @@ static void endlessWidenHostileCombos(int dangerRamp)
 			comboShare = 80;
 		if (endlessRand() % 100 >= comboShare)
 			continue;
-		// Bit-count weights: ~2.2 bits typical, and the ramp lifts that to ~3.4 with a HARD CEILING of
-		// four simultaneous dangers. Deep sectors used to reach a guaranteed five, which read as "every
-		// danger at once" rather than as a distinct sector -- the deep-end escalation now lands on WHICH
-		// dangers (and on the enemy stat ramp, which is a separate system), not on how many.
+		// Bit-count weights: ~2.2 bits typical, lifted to ~3.4 by the ramp, with a HARD CEILING of
+		// four simultaneous dangers -- past that a sector reads as "every danger at once" rather
+		// than as itself. The deep-end escalation lands on WHICH dangers, not on how many.
 		int want = 1 + (endlessRand() % 100 < 70 + dangerRamp * 8 / 100)
 		             + (endlessRand() % 100 < 40 + dangerRamp * 10 / 100)
 		             + (endlessRand() % 100 < 12 + dangerRamp * 8 / 100);
@@ -804,15 +734,11 @@ static void endlessWidenHostileCombos(int dangerRamp)
 	}
 }
 
-// A boon course is uncommon (~1 in 3 visits replaces a hostile one): most draw a named boon theme
-// (single or curated combo), but ~40% instead roll a fresh emergent boon pair/triple, so
-// pure-good sectors vary beyond the named set too. The danger ramp thins boon courses deep (~1/3
-// early, ~1/5 by the mid, gently past that), but they never vanish. The deep-thinning coefficient is
-// kept a touch gentle (a small nudge, since the extra milestone zones force danger more often now).
-// BREAKTHROUGH: how rare is "extremely rare"? A boon course lands on roughly 1 visit in 3, and this is
-// the chance that a dealt boon course is a Breakthrough instead -- so about 1 visit in 45 offers one,
-// rarer than Bounty and rarer than any other boon in the game. An extra perk pick is worth far more
-// than a sector's cash, which is why it also carries the deepest payout cut in endlessModTable.
+// A boon course is uncommon (~1 in 3 visits replaces a hostile one): most draw a named boon theme,
+// ~40% roll a fresh emergent pair/triple instead. The danger ramp thins them deep (~1/3 early,
+// ~1/5 by the mid) but never to zero. BREAKTHROUGH is the chance a dealt boon course is one
+// instead -- ~1 visit in 45, the rarest boon in the game, since an extra perk pick outweighs any
+// sector's cash (hence its deep payout cut in endlessModTable).
 #define ENDLESS_BREAKTHROUGH_PCT   7
 #define ENDLESS_BREAKTHROUGH_DEPTH 5   // never in the opening zones: perks are still arriving on their own cadence there
 
@@ -850,15 +776,12 @@ static void endlessDealBoonCourse(int dangerRamp)
 	}
 }
 
-// MIXED "gambit" sectors: graft a compatible boon onto some ORDINARY hostile courses, welding a real
-// reward onto real danger. This is the main source of good-mixed-with-bad variety -- roughly a third of
-// the plain hostile courses become a risk/reward gambit each visit. Only "ordinary" courses (hostile
-// bits drawn from the combinable pool) are eligible, so rare signatures (Apex / Overload / Kamikaze /
-// Tar Pit / dead generator / evil-mirror / ...) and boon/clean routes keep their identity. The boon is
-// chosen to never fight the course's threats (endlessPickMixBoon), and only one is added, so the
-// one-kill-fire rule holds. Named pairs/triples/quads land their endlessMixedThemes label; the rest read
-// as a generated "gambit". Runs after the boon roll (won't override a boon course) and before the danger
-// sort, so the mitigation credit lands the gambit at the right rung.
+// MIXED "gambit" sectors: graft a compatible boon onto ~a third of the plain hostile courses, so
+// the chart carries real reward on real danger. Only ORDINARY courses (hostile bits from the
+// combinable pool) are eligible, so rare signatures and boon/clean routes keep their identity. The
+// boon never fights the course's threats (endlessPickMixBoon) and only one is added. Named
+// combinations land their endlessMixedThemes label; the rest read as a generated "gambit". Runs
+// after the boon roll and before the danger sort, so the mitigation credit lands at the right rung.
 static void endlessGraftGambits(int dangerRamp)
 {
 	// Slipstream isn't in the combinable pool (redundant beside Overclock's scroll), but its named
@@ -926,9 +849,9 @@ static void endlessDedupeCourseMods(const int *idx)
 // near-empty this shallow), so the jackpot deals only themes that actually help here.
 static void endlessDealJackpot(void)
 {
-	// Also skip whatever is still locked at this depth (endlessLockedBoons), so the jackpot deals only
-	// themes that actually help here. BREAKTHROUGH needs no entry: it has no row in endlessBoonThemes,
-	// which is exactly how a jackpot is kept from ever handing out a free perk pick.
+	// Also skip whatever is still locked at this depth (endlessLockedBoons), so the jackpot deals
+	// only themes that actually help here. BREAKTHROUGH needs no entry -- it has no row in
+	// endlessBoonThemes at all, which is what keeps a jackpot from handing out a free perk pick.
 	const Uint64 jackpotSkip = ENDLESS_MOD_CURSED | endlessLockedBoons();
 	int bidx[COUNTOF(endlessBoonThemes)];
 	int bn = 0;
@@ -984,12 +907,10 @@ static void endlessDealAmbush(void)
 	endlessCourseMod[0] = ambushCombos[endlessRand() % COUNTOF(ambushCombos)];
 }
 
-// DIVERSE CHOICE: with a full slate (4-5 courses), make sure at least one hostile course is a SINGLE
-// negative modifier -- a clean, legible "light" option beside the busy combos, so Chart-a-Course reads
-// as a real spread of risk rather than a wall of multi-danger sectors. If none ended up a lone hostile
-// bit, thin the mildest ORDINARY course (built only from the common combinable bits) down to just its
-// least-nasty bit -- never touching a rare signature (Tar Pit / Overload / Apex / dead generator / ...)
-// or a boon / clean route. Runs before the OMNI roll + sort, so the reduced course sorts to the easy end.
+// DIVERSE CHOICE: with a full slate, guarantee at least one hostile course is a SINGLE negative
+// modifier, so the chart reads as a spread of risk rather than a wall of multi-danger sectors. If
+// none is, thin the mildest ORDINARY course down to its least-nasty bit -- never a rare signature
+// or a boon/clean route. Runs before the OMNI roll and sort, so the thinned course sorts left.
 static void endlessEnsureLegibleChoice(void)
 {
 	if (endlessCourseCnt < 4)
@@ -1033,12 +954,11 @@ static void endlessEnsureLegibleChoice(void)
 		endlessCourseMod[best] = keep;
 }
 
-// MILESTONE SLATE: on a milestone zone the whole chart is replaced by five high-tier sectors. The
-// minor (kind 3) milestone deals S/S+ and the plain (kind 1) one S+/S++, each split 2-and-3 with the
-// seed deciding which rung gets the pair; a GRAND (kind 2) one has a FIXED shape -- one END course,
-// two S+++ and two S++. The LEVELS gathered above are kept; only the mutator sets are re-dealt, so the
-// slate is still five different sectors. Runs after every ordinary generation step (nothing above can
-// survive into it) and before the OMNI roll / sort / naming, which finish it off like any other chart.
+// MILESTONE SLATE: on a milestone zone the whole chart becomes five high-tier sectors -- kind 3
+// deals S/S+, kind 1 deals S+/S++ (each split 2-and-3, the seed choosing which rung gets the pair),
+// and a GRAND kind 2 has a fixed shape: one END, two S+++, two S++. The LEVELS gathered above are
+// kept, only the mutator sets are re-dealt. Runs after every ordinary step and before the OMNI roll
+// / sort / naming, which finish it off like any other chart.
 static void endlessDealMilestoneSlate(int milestone)
 {
 	const int lowRank = (milestone == 2) ? 8 : (milestone == 3) ? 6 : 7;  // S++ / S / S+  (see endlessDangerRankLevel)
@@ -1051,13 +971,11 @@ static void endlessDealMilestoneSlate(int milestone)
 	if (lowN < 1)
 		lowN = 1;
 
-	// A GRAND milestone always deals "The End" -- a run far enough to roll the credits ought to be
-	// able to chart something by that name -- with its dangers rolled fresh for this milestone. It
-	// is its OWN rank (END), not one of the two generated rungs, so the four remaining slots split
-	// 2 S++ / 2 S+++ evenly. Its marker carries a 150 reward, so its danger score clears the 95
-	// ceiling the builder tops S+++ courses out at by a mile: it is always the worst course offered
-	// and the sort puts it last. Pinned into slot 0 so every later draw sees it in `used`; the slot
-	// index itself is invisible, since that same sort re-orders the whole slate afterwards.
+	// A GRAND milestone always deals "The End", with its dangers rolled fresh. It carries its OWN
+	// rank (END), so the four remaining slots split 2 S++ / 2 S+++ evenly. Its marker's 150 reward
+	// clears the builder's 95 S+++ ceiling by a mile, so it is always the worst course offered and
+	// sorts last. Pinned into slot 0 so every later draw sees it in `used`; the index itself is
+	// invisible, since the sort re-orders the slate afterwards.
 	int first = 0;
 	if (milestone == 2)
 	{
@@ -1075,14 +993,12 @@ static void endlessDealMilestoneSlate(int milestone)
 	}
 }
 
-// GRAVITY WELL variant: whenever a course carries a gravity well (from any source above -- a named
-// theme, the random-combo widen, a rare injection, or the ambush), flip a coin to make it
-// OMNIDIRECTIONAL -- the pull runs along a fixed random heading for that sector (rolled per-sector
-// in endlessRegenerateLevel) instead of straight down. Decided ONCE here, as the course is charted,
-// so it's fixed for the seed and rides the save. Runs after every gravity-adding step, before the
-// sort (OMNI is masked out of the danger score, so it doesn't disturb the ordering). Curated
-// sectors -- "The End" included -- keep their names through it: endlessFindTheme strips the
-// cosmetic bit and retries when no exact row matches.
+// GRAVITY WELL variant: any course carrying a gravity well flips a coin to become OMNIDIRECTIONAL
+// -- the pull runs along a fixed random heading (rolled per sector in endlessRegenerateLevel)
+// instead of straight down. Decided ONCE here as the course is charted, so it is fixed for the seed
+// and rides the save. Runs after every gravity-adding step and before the sort (OMNI is masked out
+// of the danger score). Curated names survive it: endlessFindTheme strips the cosmetic bit and
+// retries when no exact row matches.
 static void endlessRollGravityVariants(void)
 {
 	for (int c = 0; c < endlessCourseCnt; ++c)
@@ -1118,33 +1034,40 @@ static void endlessEnforceEliteRules(void)
 		endlessFixRedundantElitePack(c);
 }
 
-// Present the courses from lowest danger to highest, so Chart-a-Course always reads as a left-
-// to-right safety ramp (the clean/boon route first, the deadliest sector last). Sort the four
-// parallel course arrays together by hostile danger score, the same metric that drives the
-// Low/Moderate/.../NIGHTMARE tier word. A stable insertion sort over this tiny list keeps equal-
-// danger courses in their generated order and consumes no RNG (it runs after every draw), so the
-// seed's structure is unchanged. Ambush already collapsed to one course above, so it's a no-op there.
-// The key the chart sorts on: a course's danger score WITH its level's intrinsic baseDanger folded in
-// (so a course backed by a harder level sorts rightward even when its modifier set is milder), with
-// one twist. A Cursed sector's COMBAT danger is zero -- its cost is economic (big cash now, empty shop
-// next), not a threat to survive -- so it reads as a Boon and by raw score would tie the calm/boon
-// routes at the far-left "safe" end. It isn't quite a pure win, though (its red "cash now, empty shop"
-// modifier row flags the catch), so give it a slot of its own just right of the safe routes and just
-// left of the mildest real combat danger. Combat scores floor at 1, so lifting every combat course by
-// one opens the score-1 slot without disturbing the combat order.
+// Present the courses lowest danger to highest, so Chart-a-Course reads as a left-to-right safety
+// ramp; same-rank routes then read cheapest-paying to richest. A stable insertion sort keeps fully
+// tied courses in generated order and consumes no RNG, so the seed's structure is unchanged; an
+// Ambush already collapsed to one course, so it's a no-op. notes.md §Course generation & danger labels.
+//
+// Primary key: the DISPLAYED rank (baseDanger folded in), so the order never contradicts the letter
+// grade on the card. Calm gets a rung of its own above the other boons (which may pay less than it),
+// and a Cursed sector one just below the combat routes -- its cost is economic, not a pure win.
 static int endlessDangerSortKey(Uint64 mods, int baseDanger)
 {
-	const int score = endlessDangerScoreEx(mods, baseDanger);
-	if (score > 0)
-		return score + 1;                    // real combat danger: sorts from 2 upward
+	const int rank = endlessDangerRankLevelEx(mods, baseDanger);
+	if (rank > 0)
+		return rank + 2;                     // real combat danger (E..END), sorts from 3 upward
 	if (mods & ENDLESS_MOD_CURSED)
-		return 1;                            // economic catch: between the safe routes and combat danger
-	return 0;                                // calm / pure boon: the safe left end
+		return 2;                            // economic catch: between the safe routes and combat danger
+	return (mods == 0) ? 0 : 1;              // pinned Calm, then the pure boons
 }
 
 static int endlessCourseSortKey(int i)
 {
 	return endlessDangerSortKey(endlessCourseMod[i], endlessCourseBaseDanger(i));
+}
+
+// The payout the sort ranks equal-rank courses by. Off the course's OWN bits, NOT endlessCoursePayout:
+// that one re-prices as the player buys buffs or queues Sabotage charges, and the slate's order is
+// fixed once, here at generation.
+static long endlessDangerSortPayout(Uint64 mods, int ep, int file)
+{
+	return endlessClearBonusForEx(mods, endlessLevelPayoutMille(ep, file, difficultyLevel));
+}
+
+static long endlessCourseSortPayout(int i)
+{
+	return endlessDangerSortPayout(endlessCourseMod[i], endlessCourseEp[i], endlessCourseFile[i]);
 }
 
 static void endlessSortCoursesByDanger(void)
@@ -1158,8 +1081,10 @@ static void endlessSortCoursesByDanger(void)
 		// The insertion element is out of the arrays during the shift below, so key it from the
 		// captured (mod, ep, file) rather than endlessCourseSortKey(i).
 		const int      key  = endlessDangerSortKey(mod, endlessLevelBaseDanger(ep, file, difficultyLevel));
+		const long     pay  = endlessDangerSortPayout(mod, ep, file);
 		int j = i - 1;
-		while (j >= 0 && endlessCourseSortKey(j) > key)
+		while (j >= 0 && (endlessCourseSortKey(j) > key
+		                  || (endlessCourseSortKey(j) == key && endlessCourseSortPayout(j) > pay)))
 		{
 			endlessCourseEp[j + 1]   = endlessCourseEp[j];
 			endlessCourseSec[j + 1]  = endlessCourseSec[j];
@@ -1253,12 +1178,10 @@ void endlessGenerateCourses(void)
 	endlessDedupeCourseMods(idx);
 
 	// --- Rare whole-visit flavors: Jackpot / Gauntlet / Ambush (mutually exclusive) ----------
-	// Jackpot (~1/22) all boons; Ambush (~1/20) one forced dangerous sector; Gauntlet (~1/7)
-	// all hostile. All three dice roll up front UNCONDITIONALLY so the seed stream stays
-	// aligned; precedence Jackpot > Ambush > Gauntlet; none fire at depth 0. The danger ramp tilts
-	// the odds deep: the danger-only Gauntlet/Ambush grow more common while the all-boon Jackpot thins.
-	// Gauntlet/Ambush use a percentage form HARD-CAPPED below certainty (the CAP_PCT knobs), so even at
-	// the ramp cap a large share of visits still offer a calm route -- danger is never a sure thing.
+	// Jackpot (~1/22) all boons; Ambush (~1/20) one forced dangerous sector; Gauntlet (~1/7) all
+	// hostile. All three dice roll up front UNCONDITIONALLY so the seed stream stays aligned;
+	// precedence Jackpot > Ambush > Gauntlet; none fire at depth 0. The danger ramp tilts the odds
+	// deep, but Gauntlet/Ambush are hard-capped below certainty (the CAP_PCT knobs).
 	int gauntletPct = 14 + dangerRamp * 11 / 100;  // ~1/7 early -> 25% by the mid -> capped
 	if (gauntletPct > ENDLESS_DANGER_GAUNTLET_CAP_PCT)
 		gauntletPct = ENDLESS_DANGER_GAUNTLET_CAP_PCT;
@@ -1359,13 +1282,11 @@ const char *endlessCourseHelp(int i)
 	{
 		const Uint64 mods = endlessCourseMod[i];
 		const int    bd   = endlessCourseBaseDanger(i);   // the shipped level's own danger (hostile courses only)
-		// The letter rank (F easiest .. S+++ hardest) is drawn separately, on the planet monitor's
-		// RANK field (endlessCourseRank + game_menu.c's overlay), so the help line is just the tier.
-		// A clean/boon course always reads Calm/Boon (its score ignores baseDanger, so the safe route
-		// is never demoted); the level's danger surfaces in its PAYOUT instead. A Cursed sector reads
-		// Boon too -- it has no COMBAT danger -- with its economic catch carried by its own red "cash
-		// now, empty shop" modifier row, not a separate help label. bd only bites on the hostile
-		// branch below, where it lifts the tier to match the shipped stage.
+		// The letter rank is drawn separately on the planet monitor's RANK field, so the help line
+		// is just the tier. A clean/boon course always reads Calm/Boon (its score ignores baseDanger,
+		// so the safe route is never demoted) and the level's danger surfaces in its PAYOUT instead.
+		// A Cursed sector reads Boon too, its catch carried by its own red modifier row. bd bites
+		// only on the hostile branch below, where it lifts the tier to match the shipped stage.
 		if (endlessDangerScoreEx(mods, bd) == 0)
 			snprintf(buf, sizeof buf, "%s", (mods == 0) ? "Calm: clear skies ahead" : "Boon: no danger here");
 		else
@@ -1407,12 +1328,10 @@ int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max)
 {
 	if (i < 0 || i >= endlessCourseCnt)
 		return 0;
-	// The purchase-folded set, so the monitor never lists a threat the player has already paid to
-	// override -- a pending Turbodrive drops the charted Backfire's "kills jam your guns" row here,
-	// the same way launch drops the bit. (The course NAME and its danger RANK stay charted: they are
-	// the sector's seed-determined grade, and the list is sorted by it.)
-	// A Sabotage charge is shown differently: its bits STAY listed and get flagged `cleansed`, so the
-	// card reads as "this threat was here and your charge takes it off" rather than quietly shrinking.
+	// The purchase-folded set, so the monitor never lists a threat already paid to override. (The
+	// course NAME and RANK stay charted -- that is the sector's seed-determined grade.) A Sabotage
+	// charge is shown differently: its bits STAY listed, flagged `cleansed`, so the card reads as
+	// "this threat was here and your charge takes it off" rather than quietly shrinking.
 	Uint64 cleansed = 0;
 	const Uint64 mods = endlessCourseLaunchMods(i, &cleansed);
 	int n = 0;

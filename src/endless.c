@@ -60,13 +60,11 @@ int  endlessBreakthroughOwed = 0;     // BREAKTHROUGH: bonus perk picks owed (a 
 static bool endlessArmorHudDirty = false;  // set when the Overheat DoT shaves hull; the game loop repaints the (event-driven) armor bar
 
 // --- Milestone zones -------------------------------------------------------------------------
-// Milestone zones are set-pieces: Chart-a-Course offers a full slate of five high-tier sectors and
-// nothing else (endlessGenerateCourses), and the outpost after plays the "Parlance" warning theme.
-// Three cadences: the minor milestone (25, 75, 125, ...) charts S/S+ and pins its level music to
-// "Tunneling Trolls"; the plain one (50, 150, 250, ...) charts S+/S++; the GRAND one -- every 100th
-// zone -- charts S++/S+++ and always includes "The End". EVERY milestone class grants a guaranteed perk
-// pick when it is cleared (endlessBetweenLevels) -- the slate is forced and unavoidable, so the payoff
-// is too. Keyed off the REAL zone the player sees, so the numbers match the HUD.
+// Set-pieces: Chart-a-Course offers a full slate of five high-tier sectors and nothing else, and
+// the outpost before it plays the "Parlance" warning theme. Three cadences -- minor (25, 75, ...)
+// charts S/S+ on a pinned track, plain (50, 150, ...) charts S+/S++, GRAND (every 100th) charts
+// S++/S+++ and always includes "The End". Every class grants a guaranteed perk pick on clear, since
+// the slate is unavoidable. Keyed off the REAL zone, so the numbers match the HUD.
 #define ENDLESS_MILESTONE_EVERY 50
 #define ENDLESS_MILESTONE_GRAND 100
 
@@ -122,14 +120,10 @@ JE_byte endlessMilestoneSong(int kind)
 }
 
 // Is a forced perk pick due at the outpost for run depth `depth` (the zone just cleared)? Three
-// reasons: the cadence above; a cleared MILESTONE zone (25, 50, 75, 100, ...); or the zone right
-// after a depth where those two COLLIDED. A collision would otherwise hand out one perk where the
-// player earned two, so the second is deferred by a zone instead of being swallowed; the cadence
-// itself is unaffected and carries on from its own schedule. (At ENDLESS_PERK_EVERY 4 the collisions
-// are depths 25, 125, 225, ... -- 25k mod 4 is 1 on every other minor milestone -- so a run reads
-// ..., 21, 25, 26, 29, ... . See notes.md.)
-// Derived purely from the depth, so it needs no persisted state and comes out the same across a
-// save/reload or a mid-zone bail.
+// reasons: the cadence above; a cleared MILESTONE zone; or the zone right after a depth where those
+// two COLLIDED -- the second perk is deferred by a zone rather than swallowed, and the cadence
+// carries on from its own schedule (notes.md §Economy & perk plumbing). Derived purely from the
+// depth, so it needs no persisted state and survives a save/reload or a mid-zone bail unchanged.
 bool endlessPerkDueAtDepth(int depth)
 {
 	if (depth <= 0)
@@ -191,7 +185,8 @@ void endlessResetRun(void)
 	endlessLastSong = 0;           // no zone has played yet, so nothing for the music anti-repeat to avoid
 	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;
-	endlessSalvoIdle = 0;   // Opening Salvo: fresh run, main gun starts "just fired"
+	endlessSalvoIdle = ENDLESS_PERK_SALVO_IDLE;  // Opening Salvo: fresh run opens with the volley charged (see endlessResetZonePerkTimers)
+	endlessSalvoWindow = 0;                      // ...and with no salvo already being spent
 	endlessCmCooldown = 0;  // Countermeasure Suite: fresh run, first burst ready
 	endlessBuffCharge = 0;
 	endlessReviveHeld = false;
@@ -219,13 +214,10 @@ void endlessResetRun(void)
 	endlessSetSeed("");  // safe default; newEndlessGame / a resume load sets the real run seed next
 }
 
-// Arm the debug campaign-mods effect layer from a clean slate.
-//
-// Perks and mod bits are deliberately LEFT ALONE -- they are what the debug screen exists to set.
-// What gets cleared is the state that can only be BOUGHT at an outpost: a campaign game has no
-// shop, so a leftover hull upgrade, buff charge or revive token from a previous endless run would
-// otherwise silently follow the player into a normal game. No-op during a real run, whose state
-// belongs to that run.
+// Arm the debug campaign-mods effect layer from a clean slate. Perks and mod bits are LEFT ALONE
+// -- they are what the debug screen exists to set. What gets cleared is state that can only be
+// BOUGHT at an outpost (hull upgrade, buff charge, revive token), which a campaign game has no shop
+// for and would otherwise inherit from a previous run. No-op during a real run.
 void endlessCampaignModsArm(void)
 {
 	if (endlessMode)
@@ -260,9 +252,9 @@ void endlessCountKill(int linknum)
 	lastCountedLink = linknum;
 
 	++endlessRunKills;
-	// Boss kills are tallied in draw_boss_bar (when a boss's health bar empties), so the
-	// "Bosses slain" stat counts only real bar-spawning bosses, not the high-armor regulars an
-	// armor-threshold test here used to wrongly sweep in.
+	// Boss kills are tallied in draw_boss_bar (when a boss's health bar empties), so the "Bosses
+	// slain" stat counts only real bar-spawning bosses. Do NOT count them here off an armor
+	// threshold -- that sweeps in the high-armor regulars too.
 	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_ANY)
 	{
 		endlessTurbodriveTimer = endlessBuffWindowTicks();  // refresh the window (boost OR evil jam; charge lengthens it)
@@ -444,13 +436,10 @@ static void endlessGlowCentered(int y, unsigned int font, const char *s)
 	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(s, font)) / 2, y, s);
 }
 
-// The Run Over backdrop: the painted ship illustration from the campaign ending (the "NOT
-// ZINGLON!" screen), dimmed to a moody underlay so the glowing tally still reads over it.
-//
-// Two things make this simple. The picture is a 320x200 PCX carrying its OWN 8-bit palette and it
-// uses only indices 0..223, so the whole top of the palette is ours: banks 14-15 in the file are
-// unused placeholder green, and dimming the picture is just a scale of its own entries -- no pixel
-// work, no palette-index shuffling, and the picture can't collide with the text.
+// The Run Over backdrop: the painted ship illustration from the campaign ending ("NOT ZINGLON!"),
+// dimmed to an underlay so the glowing tally still reads over it. Simple because the picture is a
+// 320x200 PCX carrying its OWN palette and using only indices 0..223 -- banks 14-15 are unused
+// placeholder green, so the text can't collide with it, and dimming is just a scale of its entries.
 #define ENDLESS_RUNEND_PIC   "tshp2.pcx"
 #define ENDLESS_RUNEND_DIM   32   // percent brightness kept: the ship still reads, the tally still wins
 
@@ -460,16 +449,20 @@ static void endlessDrawRunEndBackdrop(void)
 
 	// Centre the 320px picture on the widescreen surface and smear its edge columns into the two
 	// side strips. The picture's left and right edges are soft sky/haze gradients, so a repeated
-	// column reads as more of the same rather than as a seam.
-	const int pad = (vga_width - 320) / 2;
-	if (pad > 0)
+	// column reads as more of the same rather than as a seam. Sample the two edge columns BEFORE
+	// the move, from the picture where it still sits: reading them back out of the moved copy is
+	// the same byte but leaves the bounds resting on the memmove, which analysis can't follow.
+	const int pad = (vga_width - 320) / 2;   // left strip
+	const int tail = vga_width - pad - 320;  // right strip
+	if (pad > 0 && tail >= 0 && vga_width <= VGAScreen->pitch)
 	{
 		for (int row = 0; row < vga_height; ++row)
 		{
 			Uint8 *const p = (Uint8 *)VGAScreen->pixels + row * VGAScreen->pitch;
+			const Uint8 left = p[0], right = p[319];
 			memmove(p + pad, p, 320);
-			memset(p, p[pad], pad);
-			memset(p + pad + 320, p[pad + 319], vga_width - pad - 320);
+			memset(p, left, pad);
+			memset(p + pad + 320, right, tail);
 		}
 	}
 
@@ -508,27 +501,33 @@ void endlessOnRunEnd(void)
 	//
 	// SMALL_FONT_SHAPES has BLANK 2x2 stubs where '(', ')', '+', '*' and '=' should be (verified
 	// against data/tyrian.shp), so those characters silently draw nothing here. Words only.
-	char lines[8][64];
+	// Sized for every line that can be pushed below (5 fixed + hull + seed + record) with nothing to
+	// spare, so pushes go through RUNEND_LINE: adding a stat line without growing the array drops it
+	// rather than running off the end of the stack. Only slots [0, n) are ever read.
+	char lines[8][64] = { { 0 } };
 	int n = 0;
+	#define RUNEND_LINE(...) \
+		do { if (n < (int)COUNTOF(lines)) snprintf(lines[n++], sizeof(lines[0]), __VA_ARGS__); } while (0)
 
-	snprintf(lines[n++], sizeof(lines[0]), "You fell in Zone %d", endlessRunDepth + 1);
-	snprintf(lines[n++], sizeof(lines[0]), "Zones cleared:   %d", endlessRunDepth);
-	snprintf(lines[n++], sizeof(lines[0]), "Enemies destroyed:   %d", endlessRunKills);
-	snprintf(lines[n++], sizeof(lines[0]), "Bosses slain:   %d", endlessRunBossKills);
-	snprintf(lines[n++], sizeof(lines[0]), "Cash amassed:   $%lu", (unsigned long)player[0].cash);
+	RUNEND_LINE("You fell in Zone %d", endlessRunDepth + 1);
+	RUNEND_LINE("Zones cleared:   %d", endlessRunDepth);
+	RUNEND_LINE("Enemies destroyed:   %d", endlessRunKills);
+	RUNEND_LINE("Bosses slain:   %d", endlessRunBossKills);
+	RUNEND_LINE("Cash amassed:   $%lu", (unsigned long)player[0].cash);
 
 	if (endlessArmorBonus > 0)
-		snprintf(lines[n++], sizeof(lines[0]), "Hull reinforced:   %d", endlessArmorBonus);
+		RUNEND_LINE("Hull reinforced:   %d", endlessArmorBonus);
 
-	snprintf(lines[n++], sizeof(lines[0]), "Seed:   %s", endlessSeedString());
+	RUNEND_LINE("Seed:   %s", endlessSeedString());
 
 	// The all-time record. endlessNoteZoneReached has already folded this run into it, so a run that
 	// pushed the record says by how much -- the gap to where the record stood when the run began.
 	const int recordGain = endlessBestZone - endlessBestZoneAtStart();
 	if (recordGain > 0)
-		snprintf(lines[n++], sizeof(lines[0]), "New furthest zone:   %d   up %d", endlessBestZone, recordGain);
+		RUNEND_LINE("New furthest zone:   %d   up %d", endlessBestZone, recordGain);
 	else
-		snprintf(lines[n++], sizeof(lines[0]), "Furthest zone:   %d", endlessBestZone);
+		RUNEND_LINE("Furthest zone:   %d", endlessBestZone);
+	#undef RUNEND_LINE
 
 	// Vertical layout: title, stat block, then the milestone line held a little further off. Glyph
 	// heights are the tallest in each bank (tyrian.shp), so this measures the real drawn extent.

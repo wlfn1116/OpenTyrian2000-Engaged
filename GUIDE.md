@@ -233,7 +233,7 @@ the zone runs), **Retaliation is on your trigger** (it spikes when you kill).
 | Cursed | A fortune in cash now, but the next shop is barren | +4.0 |
 | Turbodrive | Each kill briefly quickens your guns | 0 |
 | Overcharge | Your weapons hit much harder | 0 |
-| Overdrive | Turbodrive plus a stacking fire/damage buff per kill | 0 |
+| Overdrive | Turbodrive + Overblast together — quickened guns *and* stacking shot damage | 0 |
 | Overblast | Overdrive's damage half only — kills stack shot damage | 0 |
 | Dilation | Enemy shots move much slower | 0 |
 | Merchant Favor | The next outpost slashes its prices | 0 |
@@ -280,7 +280,10 @@ than in the rank.
 ## Chart-a-Course
 
 The route screen offers **2 to 5 sectors**, sorted left-to-right from safest to
-most dangerous. Each card shows:
+most dangerous; sectors sharing a letter grade are then ordered by the cash they
+pay, cheapest first, so the richer of two equal-risk routes always sits further
+right. A Calm sector, when one is offered, is always the leftmost card. Each card
+shows:
 
 - the sector's generated name (a theme name drawn from the modifiers it carries),
 - its danger tier word and letter grade,
@@ -325,7 +328,7 @@ here applies to the **next sector**, or is a held item.
 | **Buy Special Weapon** | fraction of the cash you walked in with | Grants a random special weapon, equipped instantly. Never Invulnerability, and never the one you already have. |
 | **Buy Turbodrive** | fraction of walk-in cash | Next sector: kills briefly quicken your guns. |
 | **Buy Overblast** | fraction of walk-in cash | Next sector: kills stack shot damage (no fire boost). |
-| **Buy Overdrive** | fraction of walk-in cash | Next sector: Turbodrive *and* a stacking fire+damage buff per kill. |
+| **Buy Overdrive** | fraction of walk-in cash | Next sector: Turbodrive + Overblast together. |
 | **Buy Revive** | $150,000 + $10,000/zone, **doubling per revive already spent** | A held token. Survive one lethal hit with a full hull restore, a cleared bullet field and ~3s of stunned enemy guns. |
 | **Buy Bomb** | $2,500 + $400/zone, ×1.5 per restock | Superbombs. |
 | **Buy Gamble** | $25,000 + $2,000/zone | See below. |
@@ -399,32 +402,58 @@ from the perks you haven't maxed out.
 | Radar | Chart-a-Course shows each sector's real level | — | 1 |
 | Surveyor | Chart-a-Course offers an extra route | +1 | 2 |
 | Executioner | More damage to badly wounded enemies (below 25% HP; 15% for bosses) | +15% | 3 |
-| Opening Salvo | ~2s without firing supercharges your next volley | +80% damage, costs no power; **generator gauge turns green when charged** | 1 |
+| Opening Salvo | ~1.4s without firing supercharges the next **second** of fire | +150% damage on everything, costs no power; **generator gauge turns green when charged** | 1 |
 | Kinetic Converter | Absorbed shield hits refund generator power | 20% of the hit's cost | 3 |
 | Countermeasures | Taking hull damage clears nearby enemy shots | 26px radius, 40px at 2 stacks; ~2s cooldown | 2 |
 | Chain Reaction | Kills blast nearby enemies (44px) | +8 damage, scaled with depth | 3 |
 | Compound Interest | More bank interest on unspent cash | +5 points | 4 |
 | Ordnance Reserves | **More sidekick ammo; specials last longer** | +30% magazine (min +1), +30% special duration | 4 |
 
-### Reading Opening Salvo
+### Opening Salvo in detail
 
-The perk is worth nothing if you can't tell when it's ready, so it has two tells:
+**How it works.** Go ~1.4 seconds without firing your main gun and the salvo
+**charges** — the generator gauge turns green. Pull the trigger and you *spend*
+it: for the next **one second of held fire**, everything your ship puts out hits
+at ×2.5 and costs no generator power. Let go of the trigger and the window
+**pauses** rather than draining, so a dodge in the middle of a salvo doesn't
+waste it. When the second is used up the gauge drops back to its normal fire
+colour, and the ~1.4s charge starts over.
 
-- **The generator gauge turns green** the moment the charge banks (about two
-  seconds after your last main-gun shot) and goes back to its normal fire colour
-  as soon as you spend it. Green gauge = your next trigger pull is free and hits
-  for +80%.
-- **The charged shots trail sparks in their own colour**, taken from each
-  weapon's palette — a green Protron volley trails green, a red Vulcan burst
-  trails red — with a fatter flash at the muzzle.
+**Every sector opens charged.** You don't have to idle on the way in — the gauge
+is already green when the zone starts, so your first trigger pull of the level
+opens a salvo.
+
+**What the second of fire covers — everything:**
+
+| | While a salvo is burning |
+|---|---|
+| Front gun, rear gun, both sidekicks | ×2.5 damage, no generator drain |
+| Weapon specials (Pearl Wind, Banana Bomb, Atom Bomb, the Lightnings…) | every shot they spawn hits at ×2.5 |
+| Flare specials (Flare, SandStorm, MineField, Astral Zone, MegaLaser…) | likewise, for everything they keep spawning |
+| Soul of Zinglon | the pillar burns ×2.5 as hot |
+| Repulsor | shoves enemy fire away ×2.5 as hard |
+| Attractor | hauls in pickups ×2.5 as hard |
+| Invulnerability / Drone | ×2.5 the cover |
+| Repair Player 1 / 2 | ×2.5 the patch (still capped at your hull max) |
+
+That is genuinely every special in the game bar the six MicroSol Options, which
+only spawn a sidekick — and that sidekick then fires boosted shots anyway.
+
+**Reading it.** Two tells, so you always know which state you're in:
+
+- **The gauge is green** whenever you *have* a salvo — banked or actively
+  burning. It going back to fire-colour is the unambiguous "it's gone".
+- **The shots spark in their own colour**, taken from each weapon's palette — a
+  green Protron volley trails green, a red Vulcan burst trails red — with a
+  fatter flash at the muzzle. Sparks flying means the window is live right now.
+  Special-weapon and flare shots spark too, in their own colours.
 - **Weapons that already spark** (Mega Pulse, Wallop Beam, Protron B, Ice) don't
   get a second trail bolted on — their own plume swells instead, roughly three
-  times the sparks over twice the spread, so a charged shot is obvious even next
-  to an uncharged one.
-
-The whole volley is marked: front gun, rear gun and both sidekicks fire boosted
-and free. Special weapons are the exception — they fire too early in the frame to
-catch the charge, so a special never consumes or benefits from a salvo.
+  times the sparks over twice the spread.
+- **Specials that fire no shot** — Repulsor, Attractor, Invulnerability, Repair —
+  have no bullet to trail, so they flash a green burst off the ship instead, and
+  a boosted Soul of Zinglon showers green sparks up the beam. Green is the salvo's
+  colour throughout: same green as the gauge.
 
 ### On magazines and refill speed
 

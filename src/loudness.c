@@ -165,7 +165,7 @@ static void deinit_midi(void)
 // loop/duration metadata (loop_end == 0xFFFFFFFF marks a one-shot song).
 static void convert_midi_data(void)
 {
-	midi_data = malloc(song_count * sizeof(*midi_data));
+	midi_data = malloc_die(song_count * sizeof(*midi_data));
 
 	for (unsigned int i = 0; i < song_count; ++i)
 	{
@@ -175,7 +175,7 @@ static void convert_midi_data(void)
 		Uint32 start = song_offset[i];
 		Uint32 end = song_offset[i + 1];
 		Uint32 size = end - start;
-		Uint8 *buf = malloc(size);
+		Uint8 *buf = malloc_die(size);
 
 		fseek(music_file, start, SEEK_SET);
 		if (fread(buf, 1, size, music_file) != size)
@@ -553,7 +553,7 @@ void load_music(void)  // FKA NortSong.loadSong
 
 		fread_u16_die(&song_count, 1, music_file);
 
-		song_offset = malloc((song_count + 1) * sizeof(*song_offset));
+		song_offset = malloc_die((song_count + 1) * sizeof(*song_offset));
 
 		fread_u32_die(song_offset, song_count, music_file);
 
