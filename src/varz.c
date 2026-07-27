@@ -1394,11 +1394,17 @@ JE_byte JE_playerDamage(JE_byte temp,
 					if (endlessMode && this_player == &player[0] && endlessConsumeRevive())
 					{
 						// Held revive token: survive the lethal hit. endlessConsumeRevive already
-						// restored armor to full; clear the bullet field and grant brief i-frames so
-						// the revived ship isn't instantly re-killed by the same volley.
+						// restored armor to full and armed the ~3s enemy-fire stun; here we wipe the
+						// bullet field and grant brief i-frames so the revived ship isn't instantly
+						// re-killed by the same volley. Each cleared bullet pops -- without that the
+						// wipe was invisible, indistinguishable from the shots simply having missed.
 						this_player->invulnerable_ticks = 100;
 						for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
+						{
+							if (!enemyShotAvail[es])
+								JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
 							enemyShotAvail[es] = 1;
+						}
 						soundQueue[3] = S_POWERUP;
 					}
 					else

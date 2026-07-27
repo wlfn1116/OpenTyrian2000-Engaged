@@ -83,6 +83,8 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 {
 	if (shots <= 0)
 		return;
+	if (endlessReviveGraceActive())
+		return;                          // revive grace: no enemy bullets enter the field, death bursts included
 	const JE_word sgr = endlessMartyrShotSprite();
 
 	int freeSlots = 0;
@@ -942,6 +944,11 @@ static void draw_power_gauge(float power_value)
 	int base = BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
+	// Opening Salvo perk: while the charge is banked the next volley is free AND boosted, so the
+	// gauge goes green -- the tell that it is worth holding fire a beat longer. Tested after the
+	// kill-fire window so the rarer, player-timed state wins the gauge when both are up.
+	if (endlessOpeningSalvoCharged())
+		base = ENDLESS_SALVO_GAUGE_BASE;
 	const int darkEnd = base & ~0x0F;     // bank floor: the AA top edge blends up from here
 
 	// Clear the bar slot (its background is black, like the original shrink fill).
@@ -1799,6 +1806,13 @@ enemy_still_exists:
 						default:
 						/*Rot*/
 							if (cheatNoEnemyFire)  // debug: enemies behave but don't shoot
+								break;
+							// Endless revive grace: for ~3s after a revive token is spent, every gun on
+							// the field is stunned. Bailing HERE (not around the whole turret loop) means
+							// the cooldown that was just reloaded still runs down and the non-shooting
+							// turret behaviours -- the magnets, the Savara boss's launch puffs -- carry on
+							// as normal; only the bullets are withheld.
+							if (endlessReviveGraceActive())
 								break;
 							// Endless "rising tide": once faster-fire has saturated, enemies add EXTRA
 							// shots per volley (fanned out below) rather than firing quicker -- bullet

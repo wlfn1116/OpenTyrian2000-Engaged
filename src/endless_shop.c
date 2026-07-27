@@ -526,6 +526,8 @@ bool endlessTryBuyRevive(void)
 	return true;
 }
 // Consume a held revive at the moment of death: true = the player survives (caller clears the screen).
+// Arming the grace window HERE, not at the call site, keeps it attached to the token itself: every
+// path that spends a revive gets the same ~3s of stunned enemy guns.
 bool endlessConsumeRevive(void)
 {
 	if (!endlessMode || !endlessReviveHeld)
@@ -533,6 +535,7 @@ bool endlessConsumeRevive(void)
 	endlessReviveHeld = false;
 	++endlessRevivesUsed;
 	player[0].armor = player[0].initial_armor;  // full hull restore
+	endlessReviveGraceArm();
 	return true;
 }
 

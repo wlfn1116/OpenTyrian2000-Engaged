@@ -326,7 +326,7 @@ here applies to the **next sector**, or is a held item.
 | **Buy Turbodrive** | fraction of walk-in cash | Next sector: kills briefly quicken your guns. |
 | **Buy Overblast** | fraction of walk-in cash | Next sector: kills stack shot damage (no fire boost). |
 | **Buy Overdrive** | fraction of walk-in cash | Next sector: Turbodrive *and* a stacking fire+damage buff per kill. |
-| **Buy Revive** | $150,000 + $10,000/zone, **doubling per revive already spent** | A held token. Survive one lethal hit with a full hull restore. |
+| **Buy Revive** | $150,000 + $10,000/zone, **doubling per revive already spent** | A held token. Survive one lethal hit with a full hull restore, a cleared bullet field and ~3s of stunned enemy guns. |
 | **Buy Bomb** | $2,500 + $400/zone, ×1.5 per restock | Superbombs. |
 | **Buy Gamble** | $25,000 + $2,000/zone | See below. |
 
@@ -399,12 +399,32 @@ from the perks you haven't maxed out.
 | Radar | Chart-a-Course shows each sector's real level | — | 1 |
 | Surveyor | Chart-a-Course offers an extra route | +1 | 2 |
 | Executioner | More damage to badly wounded enemies (below 25% HP; 15% for bosses) | +15% | 3 |
-| Opening Salvo | ~2s without firing supercharges your next volley | +80% damage, costs no power | 1 |
+| Opening Salvo | ~2s without firing supercharges your next volley | +80% damage, costs no power; **generator gauge turns green when charged** | 1 |
 | Kinetic Converter | Absorbed shield hits refund generator power | 20% of the hit's cost | 3 |
 | Countermeasures | Taking hull damage clears nearby enemy shots | 26px radius, 40px at 2 stacks; ~2s cooldown | 2 |
 | Chain Reaction | Kills blast nearby enemies (44px) | +8 damage, scaled with depth | 3 |
 | Compound Interest | More bank interest on unspent cash | +5 points | 4 |
 | Ordnance Reserves | **More sidekick ammo; specials last longer** | +30% magazine (min +1), +30% special duration | 4 |
+
+### Reading Opening Salvo
+
+The perk is worth nothing if you can't tell when it's ready, so it has two tells:
+
+- **The generator gauge turns green** the moment the charge banks (about two
+  seconds after your last main-gun shot) and goes back to its normal fire colour
+  as soon as you spend it. Green gauge = your next trigger pull is free and hits
+  for +80%.
+- **The charged shots trail sparks in their own colour**, taken from each
+  weapon's palette — a green Protron volley trails green, a red Vulcan burst
+  trails red — with a fatter flash at the muzzle.
+- **Weapons that already spark** (Mega Pulse, Wallop Beam, Protron B, Ice) don't
+  get a second trail bolted on — their own plume swells instead, roughly three
+  times the sparks over twice the spread, so a charged shot is obvious even next
+  to an uncharged one.
+
+The whole volley is marked: front gun, rear gun and both sidekicks fire boosted
+and free. Special weapons are the exception — they fire too early in the frame to
+catch the charge, so a special never consumes or benefits from a salvo.
 
 ### On magazines and refill speed
 
@@ -477,7 +497,9 @@ seed — retrying a zone replays the same song.
 ## Dying, quitting, saving
 
 - **Death ends the run.** A held **Revive token** cheats that exactly once, with
-  a full hull restore.
+  a full hull restore. The lethal hit also wipes every enemy bullet off the
+  screen and stuns every enemy gun on the field for about **3 seconds**, so you
+  get a clean board and time to fly out before the shooting starts again.
 - **Outside Hardcore**, progress is saved at every outpost, into an `endless.sav`
   sidecar next to your normal save. You can quit to the title and resume.
 - **In Hardcore**, nothing is saved. Dying *or* voluntarily quitting to the title

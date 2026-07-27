@@ -1198,6 +1198,26 @@ void endlessAegisTick(void)
 
 void endlessAegisReset(void) { endlessAegisCooldown = 0; }
 
+// --- Revive grace window --------------------------------------------------------------------------
+// Spending a held revive token restores the hull mid-fight, which used to hand the ship straight back
+// into whatever volley had just killed it. So a revive also stuns every gun on the field for ~3s (the
+// bullet field itself is wiped where the token is spent, varz.c JE_playerDamage) -- enough to read the
+// screen and fly out. Per level, like the Aegis cooldown; nothing else arms it, so it stays 0 outside
+// endless and the enemy-fire test below is free in a normal game.
+#define ENDLESS_REVIVE_GRACE_TICKS 105  // ~3s at the 35Hz sim
+
+static int endlessReviveGrace = 0;
+
+void endlessReviveGraceArm(void)   { endlessReviveGrace = ENDLESS_REVIVE_GRACE_TICKS; }
+void endlessReviveGraceReset(void) { endlessReviveGrace = 0; }
+bool endlessReviveGraceActive(void) { return endlessReviveGrace > 0; }
+
+void endlessReviveGraceTick(void)
+{
+	if (endlessReviveGrace > 0)
+		--endlessReviveGrace;
+}
+
 // May THIS hit be stopped at the shield? Returns true at most once per cooldown, and ARMS the cooldown
 // when it does -- so the caller must act on a true (JE_playerDamage does, immediately). `shieldBefore`
 // is the shield the hit landed on (a gate with nothing to spend blocks nothing) and `spill` is the

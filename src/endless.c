@@ -336,6 +336,9 @@ void endlessGameplayTick(void)
 	// AEGIS GATE: recharge the shield gate after a block.
 	endlessAegisTick();
 
+	// REVIVE GRACE: drain the enemy-fire stun a spent revive token bought.
+	endlessReviveGraceTick();
+
 	// Nanorepair perk: regenerate 1 armor every so often (interval shortens with more stacks).
 	if (endlessPerkOwned[PERK_REGEN] > 0)
 	{
