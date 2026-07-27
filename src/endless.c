@@ -145,6 +145,31 @@ bool endlessPerkDueAtDepth(int depth)
 // mid-zone bail. Chosen on the seed screen, applied in newEndlessGame, cleared by endlessResetRun.
 bool endlessHardcore = false;
 
+// --- All-time record: the furthest zone ever reached -----------------------------------------
+// Deliberately NOT reset by endlessResetRun -- it is the one thing that survives a run. It lives
+// in opentyrian.cfg (see endlessRecordConfigSave): endless.sav is per-slot, and a hardcore run
+// never writes one, so the record would be lost exactly where it matters most.
+int endlessBestZone = 0;                   // furthest zone ever reached, over every run (0 = none yet)
+static int endlessBestZoneAtRunStart = 0;  // where the record stood when this run began
+
+#define ENDLESS_BEST_ZONE_MAX 99999  // a sanity ceiling on what a hand-edited config can claim
+
+// Called at every endless level start: the zone being launched is a zone REACHED. Written straight
+// through to the config, so quitting the process at zone 60 doesn't cost the record.
+void endlessNoteZoneReached(int zone)
+{
+	if (!endlessMode || zone <= endlessBestZone || zone > ENDLESS_BEST_ZONE_MAX)
+		return;
+	endlessBestZone = zone;
+	save_opentyrian_config();
+}
+
+// Snapshot the record for the run-over screen's "(+n)". Called when a run begins and when one is
+// resumed from a save -- NOT from endlessResetRun, so a Quit Level bail (which re-applies a run
+// snapshot) doesn't quietly zero out the gain the run has already earned.
+void endlessRecordRunStart(void) { endlessBestZoneAtRunStart = endlessBestZone; }
+int  endlessBestZoneAtStart(void) { return endlessBestZoneAtRunStart; }
+
 void endlessResetRun(void)
 {
 	endlessRunDepth   = 0;
@@ -433,33 +458,58 @@ void endlessOnRunEnd(void)
 	SDL_Color white = { 255, 255, 255 };
 	set_colors(white, 254, 254);
 
-	char buf[128];
-	endlessGlowCentered(22, FONT_SHAPES, "RUN OVER");
+	// Build the stat block first, then lay it out: only the run itself knows how tall it is (the
+	// hull line is conditional), and the whole screen is centred vertically around that height.
+	//
+	// SMALL_FONT_SHAPES has BLANK 2x2 stubs where '(', ')', '+', '*' and '=' should be (verified
+	// against data/tyrian.shp), so those characters silently draw nothing here. Words only.
+	char lines[8][64];
+	int n = 0;
 
-	int y = 54;
-
-	snprintf(buf, sizeof(buf), "You fell in Zone %d", endlessRunDepth + 1);
-	endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
-
-	snprintf(buf, sizeof(buf), "Zones cleared:   %d", endlessRunDepth);
-	endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
-
-	snprintf(buf, sizeof(buf), "Enemies destroyed:   %d", endlessRunKills);
-	endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
-
-	snprintf(buf, sizeof(buf), "Bosses slain:   %d", endlessRunBossKills);
-	endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
-
-	snprintf(buf, sizeof(buf), "Cash amassed:   $%lu", (unsigned long)player[0].cash);
-	endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
+	snprintf(lines[n++], sizeof(lines[0]), "You fell in Zone %d", endlessRunDepth + 1);
+	snprintf(lines[n++], sizeof(lines[0]), "Zones cleared:   %d", endlessRunDepth);
+	snprintf(lines[n++], sizeof(lines[0]), "Enemies destroyed:   %d", endlessRunKills);
+	snprintf(lines[n++], sizeof(lines[0]), "Bosses slain:   %d", endlessRunBossKills);
+	snprintf(lines[n++], sizeof(lines[0]), "Cash amassed:   $%lu", (unsigned long)player[0].cash);
 
 	if (endlessArmorBonus > 0)
-	{
-		snprintf(buf, sizeof(buf), "Hull reinforced:   +%d", endlessArmorBonus);
-		endlessGlowCentered(y, SMALL_FONT_SHAPES, buf);  y += 18;
-	}
+		snprintf(lines[n++], sizeof(lines[0]), "Hull reinforced:   %d", endlessArmorBonus);
 
-	endlessGlowCentered(y + 10, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
+	snprintf(lines[n++], sizeof(lines[0]), "Seed:   %s", endlessSeedString());
+
+	// The all-time record. endlessNoteZoneReached has already folded this run into it, so a run that
+	// pushed the record says by how much -- the gap to where the record stood when the run began.
+	const int recordGain = endlessBestZone - endlessBestZoneAtStart();
+	if (recordGain > 0)
+		snprintf(lines[n++], sizeof(lines[0]), "New furthest zone:   %d   up %d", endlessBestZone, recordGain);
+	else
+		snprintf(lines[n++], sizeof(lines[0]), "Furthest zone:   %d", endlessBestZone);
+
+	// Vertical layout: title, stat block, then the milestone line held a little further off. Glyph
+	// heights are the tallest in each bank (tyrian.shp), so this measures the real drawn extent.
+	const int titleH  = 20;   // FONT_SHAPES
+	const int lineH   = 13;   // SMALL_FONT_SHAPES
+	const int titleGap = 12;  // breathing room under the title
+	const int tailGap  = 10;  // ...and above the closing milestone line
+
+	// Tighten the stat pitch until the whole thing leaves a reasonable margin top and bottom. A run
+	// that bought hull has one extra line and lands a notch tighter; nothing else changes.
+	int step = 18;
+	int total;
+	while ((total = titleH + titleGap + (n - 1) * step + lineH + tailGap + lineH) > 176 && step > 14)
+		--step;
+
+	int y = (vga_height - total) / 2;
+
+	endlessGlowCentered(y, FONT_SHAPES, "RUN OVER");
+	y += titleH + titleGap;
+
+	for (int i = 0; i < n; ++i, y += step)
+		endlessGlowCentered(y, SMALL_FONT_SHAPES, lines[i]);
+
+	// y has advanced one full step past the last line; back that out so the tail gap is measured
+	// from the text itself.
+	endlessGlowCentered(y - step + lineH + tailGap, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
 
 	// Require inputs released first (the player may have died mid-fire), then wait for a
 	// fresh key/button so the summary can't flash past.

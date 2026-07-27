@@ -2259,6 +2259,7 @@ start_level_first:
 	{
 		endlessRegenerateLevel();
 		endlessCaptureSortie();  // snapshot the launch-time loadout + committed level for a possible Quit Level retry
+		endlessNoteZoneReached(endlessRunDepth + 1);  // launching a zone IS reaching it: advance the all-time record
 	}
 	else
 		endlessCampaignLevelStart();  // debug campaign mods: the effect layer's per-level reset (no-op when off)
@@ -6129,6 +6130,7 @@ bool newEndlessGame(void)
 	endlessResetRun();
 	endlessSetSeed(seedbuf);  // establish the run's seeded structural RNG (endlessResetRun blanked it)
 	endlessHardcore = hardcore;  // apply the seed screen's Hardcore choice (endlessResetRun cleared it)
+	endlessRecordRunStart();  // baseline the all-time record so this run's "(+n)" measures only what IT gained
 
 	endlessMode = true;
 	onePlayerAction = false;  // full game: cash economy + between-level shops, NOT arcade orb drops
