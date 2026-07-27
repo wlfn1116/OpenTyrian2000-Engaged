@@ -17,7 +17,7 @@ const EndlessMod endlessModTable[] = {
 	//                 not flavor -- "more enemy HP", not "tough hulls". Keep each under ~105px
 	//                 in TINY_FONT (roughly 20 chars) so it fits the monitor's 113px columns;
 	//                 game_menu.c anchors threats top-left and boons bottom-right)
-	{ ENDLESS_MOD_FORTIFIED,     10, "more enemy HP" },
+	{ ENDLESS_MOD_FORTIFIED,     10, "more enemy health" },
 	{ ENDLESS_MOD_FRENZY,        10, "faster enemy fire" },
 	{ ENDLESS_MOD_SWIFT,          8, "faster enemy shots" },
 	{ ENDLESS_MOD_DEVASTATING,   10, "harder enemy hits" },
@@ -50,7 +50,7 @@ const EndlessMod endlessModTable[] = {
 	// score sums the same table, that also makes the sector outrank everything else on the slate.
 	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// -- boons: they HELP you, so little/no cash (a couple pay big instead) --
-	{ ENDLESS_MOD_FRAGILE,       -5, "less enemy HP" },
+	{ ENDLESS_MOD_FRAGILE,       -5, "less enemy health" },
 	{ ENDLESS_MOD_TURBODRIVE,      0, "kills quicken guns" },
 	{ ENDLESS_MOD_OVERCHARGE,     0, "more weapon damage" },
 	{ ENDLESS_MOD_DILATION,       0, "slower enemy shots" },
@@ -136,7 +136,7 @@ const EndlessTheme endlessHostileThemes[] = {
 	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_FRENZY,		"Slog" },
 	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_SWIFT,			"Bogged Down" },
 	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_DEVASTATING,	"Lead Boots" },
-	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_ENRAGE,		"War of Attrition II" },
+	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_ENRAGE,		"Pressure Cooker" },
 	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_ELITEPACK,		"Ballast" },
 	{ ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_OVERCLOCK,		"Millstone" },
 	{ ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_FORTIFIED,   "Attrition" },

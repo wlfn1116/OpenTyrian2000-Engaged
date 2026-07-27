@@ -412,18 +412,18 @@ from the perks you haven't maxed out.
 ### Opening Salvo in detail
 
 **How it works.** Go ~1.4 seconds without firing your main gun and the salvo
-**charges** — the generator gauge turns green. Pull the trigger and you *spend*
-it: for the next **one second of held fire**, everything your ship puts out hits
-at ×2.5 and costs no generator power. Let go of the trigger and the window
-**pauses** rather than draining, so a dodge in the middle of a salvo doesn't
-waste it. When the second is used up the gauge drops back to its normal fire
-colour, and the ~1.4s charge starts over.
+**charges** — the generator gauge fills green. Pull the trigger and you *spend*
+it: for the next **one second**, everything your ship puts out hits at ×2.5 and
+costs no generator power. That second runs on the clock, so it is a burst to use,
+not a reserve to hold — the green drains down the gauge while it lasts, and the
+bar is back to its normal fire colour the moment the boost ends. Then the ~1.4s
+charge starts over.
 
 **Every sector opens charged.** You don't have to idle on the way in — the gauge
-is already green when the zone starts, so your first trigger pull of the level
-opens a salvo.
+is already full green when the zone starts, so your first trigger pull of the
+level opens a salvo.
 
-**What the second of fire covers — everything:**
+**What the salvo covers — everything:**
 
 | | While a salvo is burning |
 |---|---|
@@ -441,8 +441,10 @@ only spawn a sidekick — and that sidekick then fires boosted shots anyway.
 
 **Reading it.** Two tells, so you always know which state you're in:
 
-- **The gauge is green** whenever you *have* a salvo — banked or actively
-  burning. It going back to fire-colour is the unambiguous "it's gone".
+- **The green on the gauge is the salvo itself.** A full green bar means one is
+  banked and ready. Once you spend it the green sinks steadily down the gauge —
+  that is your second running out, so you can see exactly how much boost is left
+  and time the rest of the burst around it. No green means it's spent.
 - **The shots spark in their own colour**, taken from each weapon's palette — a
   green Protron volley trails green, a red Vulcan burst trails red — with a
   fatter flash at the muzzle. Sparks flying means the window is live right now.

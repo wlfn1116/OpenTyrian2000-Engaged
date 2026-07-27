@@ -912,8 +912,11 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 // frame at an interpolated level with a sub-pixel anti-aliased top edge.
 static bool power_gauge_active = false;
 static int power_render_prev = 0, power_render_cur = 0;  // `power` (0..900) at the prev/cur tick
+static int salvo_render_prev = 0, salvo_render_cur = 0;  // ...and the salvo green share (0..100)
 
-static void draw_power_gauge(float power_value)
+// salvo_frac (0..1) is the share of the bar the Opening Salvo paints green, measured against the
+// bar's OWN height so the drain stays visible on a part-full generator. notes.md §Opening Salvo.
+static void draw_power_gauge(float power_value, float salvo_frac)
 {
 	enum { Y_BOTTOM = 104, BAR_MAX = 93, BASE = 113, POWER_MAX = 900 };
 	// 9 pixels wide (x1..x2). The classic art drew this gauge 1px narrower than the
@@ -937,11 +940,17 @@ static void draw_power_gauge(float power_value)
 	int base = BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
-	// Opening Salvo: green while a salvo is banked or burning. After the kill-fire test, so the
-	// rarer player-timed state wins the gauge when both are up.
-	if (endlessOpeningSalvoCharged())
-		base = ENDLESS_SALVO_GAUGE_BASE;
-	const int darkEnd = base & ~0x0F;     // bank floor: the AA top edge blends up from here
+
+	// The bottom salvoRows of the bar take the salvo's green instead, so a banked salvo fills the
+	// gauge and a burning one drains it. Applied over the kill-fire tint: the rarer, player-timed
+	// state is the one worth reading.
+	int salvoRows = (salvo_frac > 0.0f) ? (int)(full * salvo_frac + 0.5f) : 0;
+	if (salvoRows > full)
+		salvoRows = full;
+	const int salvoBase = ENDLESS_SALVO_GAUGE_BASE;
+	// The AA row sits one above the solid bar, so it only reads green on a bar that is fully green.
+	const int edgeBase = (salvoRows > 0 && salvoRows >= full) ? salvoBase : base;
+	const int edgeDark = edgeBase & ~0x0F;  // bank floor: the AA top edge blends up from here
 
 	// Clear the bar slot (its background is black, like the original shrink fill).
 	fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - BAR_MAX, x2, Y_BOTTOM, 0);
@@ -954,12 +963,14 @@ static void draw_power_gauge(float power_value)
 		for (int j = 0; j <= x2 - x1; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (x2 - x1 - j);
-			const int shade = base + 2 + off;
-			if (full >= 1)
-				fill_rectangle_xy(VGAScreenSeg, x1 + j, Y_BOTTOM - full + 1, x1 + j, Y_BOTTOM, (Uint8)shade);
+			if (salvoRows >= 1)
+				fill_rectangle_xy(VGAScreenSeg, x1 + j, Y_BOTTOM - salvoRows + 1, x1 + j, Y_BOTTOM, (Uint8)(salvoBase + 2 + off));
+			if (full > salvoRows)
+				fill_rectangle_xy(VGAScreenSeg, x1 + j, Y_BOTTOM - full + 1, x1 + j, Y_BOTTOM - salvoRows, (Uint8)(base + 2 + off));
 			if (full < BAR_MAX && frac > 0.04f)
 			{
-				int edgeCol = darkEnd + (int)(frac * (shade - darkEnd) + 0.5f);
+				const int shade = edgeBase + 2 + off;
+				int edgeCol = edgeDark + (int)(frac * (shade - edgeDark) + 0.5f);
 				if (edgeCol > shade)
 					edgeCol = shade;
 				JE_pix(VGAScreenSeg, x1 + j, Y_BOTTOM - full, (Uint8)edgeCol);
@@ -970,14 +981,17 @@ static void draw_power_gauge(float power_value)
 
 	// Vertical gradient, drawn bottom-up in same-shade bands. Up = classic (shade
 	// BASE + h/7, darkest at the bottom); Down mirrors the gradient within the fill.
+	// A band also ends at the salvo boundary, since the two sides use different banks.
 	for (int h = 1; h <= full; )
 	{
 		const int shade = (dir == GAUGE_GRAD_DOWN) ? (full - h) / 7 : h / 7;
+		const int rowBase = (h <= salvoRows) ? salvoBase : base;
 		int h2 = h;
 		while (h2 + 1 <= full &&
-		       ((dir == GAUGE_GRAD_DOWN) ? (full - (h2 + 1)) / 7 : (h2 + 1) / 7) == shade)
+		       ((dir == GAUGE_GRAD_DOWN) ? (full - (h2 + 1)) / 7 : (h2 + 1) / 7) == shade &&
+		       (((h2 + 1) <= salvoRows) ? salvoBase : base) == rowBase)
 			++h2;
-		fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - h2 + 1, x2, Y_BOTTOM - h + 1, (Uint8)(base + shade));
+		fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - h2 + 1, x2, Y_BOTTOM - h + 1, (Uint8)(rowBase + shade));
 		h = h2 + 1;
 	}
 
@@ -986,8 +1000,8 @@ static void draw_power_gauge(float power_value)
 	// band is the darkest (BASE); in Up it is the current top shade.
 	if (full < BAR_MAX && frac > 0.04f)
 	{
-		const int barCol = (dir == GAUGE_GRAD_DOWN) ? base : (base + full / 7);
-		int edgeCol = darkEnd + (int)(frac * (barCol - darkEnd) + 0.5f);
+		const int barCol = (dir == GAUGE_GRAD_DOWN) ? edgeBase : (edgeBase + full / 7);
+		int edgeCol = edgeDark + (int)(frac * (barCol - edgeDark) + 0.5f);
 		if (edgeCol > barCol)
 			edgeCol = barCol;
 		fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - full, x2, Y_BOTTOM - full, (Uint8)edgeCol);
@@ -1101,7 +1115,8 @@ void JE_starShowVGA(void)
 						// dedicated hi path (same on-screen rect as the classic path).
 						composite_playfield_hi(interp_buf, vga_hi, rss);
 						if (power_gauge_active)
-							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha);
+							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
+							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
 						gauge_flash_present(alpha);
 						expand_hud_to_hi(VGAScreenSeg, vga_hi, rss);
 						present_hi(vga_hi);
@@ -1112,7 +1127,8 @@ void JE_starShowVGA(void)
 
 						// Power bar at the interpolated level: rises smoothly instead of per-tick steps.
 						if (power_gauge_active)
-							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha);
+							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
+							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
 						gauge_flash_present(alpha);
 
 						JE_showVGA();
@@ -2860,10 +2876,12 @@ level_loop:
 			// draw now so the non-interpolated path still updates each tick.
 			power_render_prev = power_render_cur;
 			power_render_cur = (int)power;
+			salvo_render_prev = salvo_render_cur;
+			salvo_render_cur = endlessOpeningSalvoGaugePercent();
 			power_gauge_active = true;
 			lastPower = power / 10;  // keep the legacy counter consistent
 
-			draw_power_gauge((float)power);
+			draw_power_gauge((float)power, salvo_render_cur / 100.0f);
 		}
 
 		oldMapX3Ofs = mapX3Ofs;
