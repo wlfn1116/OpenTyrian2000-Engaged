@@ -29,7 +29,8 @@
 #include "mtrand.h"        // mt_rand
 #include "nortsong.h"      // JE_playSampleNum, setDelay, wait_delayorinput, limit_render_fps
 #include "nortvars.h"      // JE_anyButton
-#include "palette.h"       // colors, fade_palette, fade_black
+#include "palette.h"       // colors, palettes, fade_palette, fade_black
+#include "pcxload.h"       // JE_loadPCX (the run-end ship illustration)
 #include "player.h"        // player[]
 #include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
 #include "tyrian2.h"       // itemAvail, itemAvailMax
@@ -442,14 +443,57 @@ static void endlessGlowCentered(int y, unsigned int font, const char *s)
 	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(s, font)) / 2, y, s);
 }
 
+// The Run Over backdrop: the painted ship illustration from the campaign ending (the "NOT
+// ZINGLON!" screen), dimmed to a moody underlay so the glowing tally still reads over it.
+//
+// Two things make this simple. The picture is a 320x200 PCX carrying its OWN 8-bit palette and it
+// uses only indices 0..223, so the whole top of the palette is ours: banks 14-15 in the file are
+// unused placeholder green, and dimming the picture is just a scale of its own entries -- no pixel
+// work, no palette-index shuffling, and the picture can't collide with the text.
+#define ENDLESS_RUNEND_PIC   "tshp2.pcx"
+#define ENDLESS_RUNEND_DIM   32   // percent brightness kept: the ship still reads, the tally still wins
+
+static void endlessDrawRunEndBackdrop(void)
+{
+	JE_loadPCX(ENDLESS_RUNEND_PIC);  // fills x 0..319 of each row; also replaces colors[] wholesale
+
+	// Centre the 320px picture on the widescreen surface and smear its edge columns into the two
+	// side strips. The picture's left and right edges are soft sky/haze gradients, so a repeated
+	// column reads as more of the same rather than as a seam.
+	const int pad = (vga_width - 320) / 2;
+	if (pad > 0)
+	{
+		for (int row = 0; row < vga_height; ++row)
+		{
+			Uint8 *const p = (Uint8 *)VGAScreen->pixels + row * VGAScreen->pitch;
+			memmove(p + pad, p, 320);
+			memset(p, p[pad], pad);
+			memset(p + pad + 320, p[pad + 319], vga_width - pad - 320);
+		}
+	}
+
+	// Dim the picture through its own palette entries...
+	for (int i = 0; i < 224; ++i)
+	{
+		colors[i].r = (Uint8)(colors[i].r * ENDLESS_RUNEND_DIM / 100);
+		colors[i].g = (Uint8)(colors[i].g * ENDLESS_RUNEND_DIM / 100);
+		colors[i].b = (Uint8)(colors[i].b * ENDLESS_RUNEND_DIM / 100);
+	}
+
+	// ...and give bank 15 the standard dark-to-white glow ramp the text is drawn from. The file's
+	// own bank 15 is placeholder green, which would render the whole tally unreadable.
+	memcpy(&colors[240], &palettes[0][240], 16 * sizeof(colors[0]));
+}
+
 void endlessOnRunEnd(void)
 {
 	// Run-over summary, styled like the level-end tally: glowing stat lines (the same
-	// JE_outTextGlow effect JE_endLevelAni uses), centred on the widescreen. The caller has
-	// already faded to black, so we clear to black, fade the (untouched) game palette back
-	// in, glow the lines in, wait for a key, then fade out. Returns to the title screen.
+	// JE_outTextGlow effect JE_endLevelAni uses), centred on the widescreen, over the ending's
+	// ship illustration. The caller has already faded to black, so we draw the backdrop, fade its
+	// palette in, glow the lines in, wait for a key, then fade out. Returns to the title screen.
 	VGAScreen = VGAScreenSeg;
 	JE_clr256(VGAScreen);
+	endlessDrawRunEndBackdrop();  // also swaps colors[] to the picture's palette
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
