@@ -34,9 +34,9 @@
 #define udecsizeof(t) ((CHAR_BIT * sizeof(t) / 3) + 1)
 #define sdecsizeof(t) (udecsizeof(t) + 1)
 
-extern void config_oom(void);
+CONFIG_NORETURN extern void config_oom(void);
 
-void config_oom(void)
+CONFIG_NORETURN void config_oom(void)
 {
 	fprintf(stderr, "out of memory\n");
 	exit(EXIT_FAILURE);

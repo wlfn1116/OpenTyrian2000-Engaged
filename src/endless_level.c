@@ -46,11 +46,9 @@ int  endlessPrevBaseEp       = 0;
 int  endlessPrevBaseLvl      = 0;
 
 // Recently-played base levels (anti-repeat): a small ring keyed by (episode, section), [0] = the
-// zone just played. The next zone's course/level picker avoids everything in this window, so the
-// same base level can't recur twice in a row and won't return until at least ENDLESS_LEVEL_HISTORY
-// other zones have been played (the window shrinks gracefully when too few safe levels exist to
-// fill it). Recorded in endlessRegenerateLevel (the one choke point every zone load passes through),
-// reset in endlessResetRun, persisted with the run (save v6), and surfaced in the crash log.
+// zone just played. The next zone's picker avoids the whole window, so a base level can't recur
+// until ENDLESS_LEVEL_HISTORY others have played (the window relaxes when too few safe levels
+// exist). Recorded in endlessRegenerateLevel, reset in endlessResetRun, saved (v6), crash-logged.
 int     endlessRecentEp[ENDLESS_LEVEL_HISTORY];
 JE_byte endlessRecentSec[ENDLESS_LEVEL_HISTORY];
 int     endlessRecentCount;  // valid entries, 0..ENDLESS_LEVEL_HISTORY
@@ -329,23 +327,19 @@ void endlessRegenerateLevel(void)
 	endlessReseed((Uint64)endlessRunDepth * 2 + 0x40000000);
 	endlessLightCone = (endlessRand() % 10 == 0);
 
-	// Roll this sector's gravity-well heading: an omnidirectional well picks a fixed random heading
-	// for the whole sector, a plain well points straight down. Own reseed phase (keyed by depth) so it
-	// stays fixed per (seed, zone) without shifting the music / course / light-cone draws above.
-	// 0x60000000, NOT 0x50000000: that phase belongs to the elite/champion stream (endlessResetElites),
-	// and sharing a salt would have both streams start from the identical SplitMix state -- separate
-	// state variables, but correlated first draws.
+	// Roll this sector's gravity-well heading: omnidirectional wells pick a fixed random heading for
+	// the whole sector, plain ones point down. Own reseed phase (keyed by depth) so it stays fixed
+	// per (seed, zone) without shifting the draws above. 0x60000000, NOT 0x50000000 -- that phase
+	// belongs to the elite stream, and a shared salt correlates two separate streams' first draws.
 	endlessReseed((Uint64)endlessRunDepth * 2 + 0x60000000);
 	endlessRollGravityDir();
 }
 
 // --- Per-level EFFECT reset (shared by endless and the debug campaign-mods path) ---------------
-// Everything the effect layer owns per level: the elite tier decisions (endlessEliteLink is keyed
-// by linknum, and linknums are reused from one level to the next), the three zone timers, the two
-// gameplay-only perk timers, and the kill-fire combo. Anything that ticks only during gameplay has
-// to be listed here or it silently pauses across the outpost and resumes in the NEXT sector.
-// Deliberately RNG-free, so endlessRegenerateLevel can keep drawing its seeded
-// rolls in their established phase order -- moving a draw would change every existing seed's run.
+// Everything the effect layer owns per level: the elite tier decisions (keyed by linknum, which is
+// reused across levels), the three zone timers, the two gameplay-only perk timers, and the kill-fire
+// combo. Anything that ticks only during gameplay must be listed here or it silently pauses across
+// the outpost. Deliberately RNG-free, so endlessRegenerateLevel keeps its seeded phase order.
 void endlessResetZoneEffects(void)
 {
 	endlessResetElites();
@@ -359,15 +353,11 @@ void endlessResetZoneEffects(void)
 	endlessComboKills = 0;
 }
 
-// Level start for a NORMAL campaign/arcade game running the effect layer under Debug Mode. The
-// effect half of endlessRegenerateLevel and nothing else: the structural fixups there (renaming the
-// level, pinning the planet hub, clearing the special-mode flags, overriding the music) exist to
-// make a RANDOM level jump safe, and a campaign level neither needs nor wants any of them.
-//
-// The two RNG draws are re-rolled from the gameplay stream rather than the seeded structural one,
-// because a campaign has no zone counter to key a per-level phase off: endlessRunDepth is pinned at
-// whatever virtual zone the debug screen set, so reusing the endless phases would hand every level
-// the identical elite pattern and gravity heading.
+// Level start for a NORMAL campaign/arcade game running the effect layer under Debug Mode: the
+// effect half of endlessRegenerateLevel and nothing else, since its structural fixups exist to make
+// a RANDOM level jump safe and a campaign level wants none of them. The two RNG draws come off the
+// gameplay stream, not the seeded structural one -- a campaign has no zone counter to key a phase
+// off, so reusing the endless phases would hand every level the same elite pattern and heading.
 void endlessCampaignLevelStart(void)
 {
 	if (!endlessCampaignMods || endlessMode)

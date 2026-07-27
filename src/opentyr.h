@@ -28,6 +28,35 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+// For the handful of functions that exit() rather than return. Purely an annotation -- it generates
+// no code -- but without it every caller reads as "might carry on", so a bail-out on a failed
+// allocation looks to analysis like a null dereference on the next line.
+#if defined(_MSC_VER)
+#define OT_NORETURN __declspec(noreturn)
+#elif defined(__GNUC__)
+#define OT_NORETURN __attribute__((noreturn))
+#else
+#define OT_NORETURN
+#endif
+
+// ...and for the allocators that die rather than return NULL, so callers aren't asked to check.
+#if defined(_MSC_VER)
+#include <sal.h>
+#define OT_RET_NOTNULL _Ret_notnull_
+#else
+#define OT_RET_NOTNULL
+#endif
+
+// States an invariant to static analysis. Generates no code, and is nothing at all off MSVC. Only
+// for bounds guaranteed by a helper the analyser can't see through (a clamp behind a call, a global
+// whose real range is set elsewhere) and that have been checked by hand -- an OT_ASSUME that isn't
+// true silences a real bug instead of a false one.
+#if defined(_MSC_VER)
+#define OT_ASSUME(e) __analysis_assume(e)
+#else
+#define OT_ASSUME(e) ((void)0)
+#endif
+
 #ifndef M_PI
 #define M_PI    3.14159265358979323846  // pi
 #endif

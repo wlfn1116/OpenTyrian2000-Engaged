@@ -133,7 +133,9 @@ void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, un
 // notes.md §Other render-rate presents.
 static void smooth_fade_to(const SDL_Color *target, int steps, unsigned int first_color, unsigned int last_color)
 {
-	SDL_Color start[256];
+	// Only [first_color, last_color] is filled and only that range is read back, but zeroing makes
+	// that pairing local rather than something a reader (or analysis) has to match up across loops.
+	SDL_Color start[256] = { { 0, 0, 0, 0 } };
 	for (unsigned int i = first_color; i <= last_color; i++)
 		start[i] = palette[i];
 

@@ -279,7 +279,7 @@ void loadSndFile(bool xmas)
 		}
 
 		free(soundSamples[i]);
-		soundSamples[i] = malloc(cvt.len_cvt);
+		soundSamples[i] = malloc_die(cvt.len_cvt);
 
 		memcpy(soundSamples[i], cvt.buf, cvt.len_cvt);
 		soundSampleCount[i] = cvt.len_cvt / sizeof (Sint16);

@@ -59,7 +59,10 @@ CustomWeaponSlot customWeaponLib[CUSTOM_WEAPON_LIB_MAX];
 int              customWeaponLibCount    = 0;
 int              customWeaponCurrentSlot = 0;
 
-static int clampi(int v, int lo, int hi)
+// inline so the [lo, hi] guarantee is visible at the call site: nearly every array index and loop
+// bound in this file comes from here, and callers rely on it (baseMulti >= 1 is what keeps the
+// `i % baseMulti` fan-out below from dividing by zero).
+static inline int clampi(int v, int lo, int hi)
 {
 	return (v < lo) ? lo : (v > hi) ? hi : v;
 }
@@ -314,9 +317,11 @@ void customWeaponAddAllLevels(int presetIdx)
 		for (int m = 0; m < modes; ++m)
 		{
 			const int sm = clampi(m, 0, smodes - 1);   // reuse the source's last mode if it has fewer
+			OT_ASSUME(sm >= 0);                        // sourcePortModes returns >= 1, so smodes-1 >= 0
 			for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
 			{
 				const int lvl = (p < maxp) ? p : maxp - 1;   // clamp beyond the source's top level
+				OT_ASSUME(lvl >= 0);                         // clampi bounds maxp to [1, LEVELS]
 				int wn = weaponPort[bp->sourcePort].op[sm][lvl];
 				for (int q = lvl; wn <= 0 && q >= 0; --q)     // fall back to a lower defined level
 					wn = weaponPort[bp->sourcePort].op[sm][q];
@@ -447,6 +452,7 @@ void customWeaponAutoScaleLevels(void)
 				const int s    = i % baseMulti;                     // reuse an original segment
 				const int rank = (i - baseMulti) / baseMulti + 1;   // 1,1,..,2,2,..
 				const int sign = ((i - baseMulti) & 1) ? 1 : -1;    // alternate sides
+				OT_ASSUME(s >= 0 && s < CUSTOM_BULLETS_MAX);        // clampi bounds baseMulti to [1, MAX]
 				w.sg[i] = anchor.sg[s];  w.attack[i] = w.attack[s];  w.del[i] = anchor.del[s];
 				w.sx[i] = anchor.sx[s];  w.sy[i]     = anchor.sy[s];
 				w.bx[i] = (JE_shortint)clampi(anchor.bx[s] + sign * rank * 8, -128, 127);
@@ -1174,14 +1180,18 @@ void customWeaponLibraryLoad(void)
 		else if (cur >= 0 && strncmp(line, "props ", 6) == 0)
 		{
 			CustomWeaponSlot *s = &customWeaponLib[cur];
-			sscanf(line + 6, "%d %d %d %d %d %d",
+			// Trailing fields are absent in older files; whatever doesn't parse keeps its
+			// slotSetDefault value, so a partial match is the expected case, not an error.
+			const int parsed = sscanf(line + 6, "%d %d %d %d %d %d",
 			       &s->cost, &s->powerUse, &s->equipSlot, &s->itemGraphic, &s->chargeStages, &s->modes);
+			(void)parsed;
 		}
 		else if (cur >= 0 && strncmp(line, "sidekick ", 9) == 0)
 		{
 			CustomWeaponSlot *s = &customWeaponLib[cur];  // absent in old files -> keeps slotSetDefault values
-			sscanf(line + 9, "%d %d %d %d %d",
+			const int parsed = sscanf(line + 9, "%d %d %d %d %d",
 			       &s->sidekickMount, &s->sidekickSprite, &s->sidekickFrames, &s->sidekickFrameStep, &s->sidekickAnimate);
+			(void)parsed;
 		}
 		else if (cur >= 0 && strncmp(line, "raw ", 4) == 0)
 		{

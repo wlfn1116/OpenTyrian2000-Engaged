@@ -45,8 +45,11 @@ unsigned endlessPurchasedMods = 0;
 // Which kill-fire buff was bought this visit (mutually exclusive): 0 none, 1 Turbodrive,
 // 2 Overdrive.
 int endlessBuffKind = 0;
-// Overdrive stacks: +1 per kill while the buff window is up (capped), each worth +5% fire
-// and +2.5% damage. Reset to 0 the moment the kill-fire window lapses (see endlessGameplayTick).
+// Per-kill DAMAGE stacks (the Overblast half, so they count for Overblast AND Overdrive): +1 per
+// kill while the buff window is up, capped at ENDLESS_OVERDRIVE_MAX_STACKS and worth
+// ENDLESS_OVERDRIVE_DMG_MAX% shot damage at the cap. The fire half is NOT stack-driven -- it rides
+// the combo ramp in endlessKillBuffFireDecrements. Reset to 0 the moment the kill-fire window
+// lapses (see endlessGameplayTick).
 int endlessOverdriveStacks = 0;
 
 // Kill-fire buff recharge: the run depth at which the three E-Shop kill-fire buys unlock again
@@ -184,12 +187,10 @@ long endlessClearBonusFor(Uint64 mods)
 	return endlessClearBonusForEx(mods, 0);
 }
 
-// Cash paid on CLEARING a level -- the base plus whatever the active sector's mutators add (tenths),
-// plus the committed LEVEL's own fine payout term (thousandths). endlessSortiePayoutMille keys off the
-// same committed level the course card priced (endlessCoursePayout), and the card prices the exact
-// mod set launch commits -- purchases folded in, queued Sabotage charges spent (endlessCourseLaunchMods)
-// -- so banked == shown. Buying a cleanse visibly drops every card's payout: it buys an easier sector,
-// and easier pays less. Taking the harder route pays off.
+// Cash paid on CLEARING a level: the base, plus the sector's mutators (tenths), plus the committed
+// LEVEL's own fine payout term (thousandths). Keyed off the same committed level the course card
+// priced, and the card prices the exact mod set launch commits, so banked == shown. Buying a
+// cleanse visibly drops every card's payout -- it buys an easier sector, and easier pays less.
 static long endlessClearBonus(void)
 {
 	return endlessClearBonusForEx(endlessActiveMods, endlessSortiePayoutMille());
@@ -421,12 +422,10 @@ static void endlessArmBuffCooldown(void) { endlessBuffCooldownUntil = endlessRun
 bool endlessBuffOnCooldown(void)   { return endlessRunDepth < endlessBuffCooldownUntil; }
 int  endlessBuffCooldownLeft(void) { int d = endlessBuffCooldownUntil - endlessRunDepth; return (d > 0) ? d : 0; }
 
-// The three kill-fire buys differ only in what they cost, which mod bit they arm and the kind id
-// that rides the save. Everything else is shared: the "one buff per visit, not while recharging,
-// must be affordable" gate, the charge tier scaled off the cash actually paid, the one-kill-fire-
-// effect-at-a-time rule, and the recharge lock that closes all three.
-//
-// The ENDLESS_BUFF_KIND_* ids live in endless.h -- the shop menu reads them too.
+// The three kill-fire buys differ only in cost, which mod bit they arm and the kind id that rides
+// the save. Everything else is shared: the "one buff per visit, not while recharging, must be
+// affordable" gate, the charge tier scaled off cash paid, the one-kill-fire-effect rule, and the
+// recharge lock that closes all three. The ENDLESS_BUFF_KIND_* ids live in endless.h.
 static bool endlessTryBuyKillFire(long cost, unsigned bit, int kind)
 {
 	if (endlessBuffKind != 0 || endlessBuffOnCooldown() || cost < 1 || player[0].cash < (ulong)cost)
@@ -446,7 +445,7 @@ bool endlessTryBuyTurbodrive(void)  // quickened fire for a window after each ki
 	return endlessTryBuyKillFire(endlessTurbodrivePrice(), ENDLESS_MOD_TURBODRIVE, ENDLESS_BUFF_KIND_TURBODRIVE);
 }
 
-bool endlessTryBuyOverdrive(void)   // Turbodrive + per-kill fire/damage stacks (implies the base window)
+bool endlessTryBuyOverdrive(void)   // Turbodrive + Overblast together (one bit granting both halves)
 {
 	return endlessTryBuyKillFire(endlessOverdrivePrice(), ENDLESS_MOD_OVERDRIVE, ENDLESS_BUFF_KIND_OVERDRIVE);
 }
@@ -460,20 +459,14 @@ bool endlessTryBuyOverblast(void)   // Overdrive's per-kill DAMAGE stacks only -
 // them into the next sector). Exposed so the debug level-select can fold them in too.
 unsigned endlessPendingMods(void) { return endlessPurchasedMods; }
 
-// Merge this visit's E-Shop / gamble mods into a charted sector's own mod set. THE PURCHASE WINS.
+// Merge this visit's E-Shop / gamble mods into a charted sector's mod set. THE PURCHASE WINS.
 //
-// A sector carries at most one kill-fire mod (endless.h) -- course generation and the shop both hold
-// that line internally, but a plain OR of the two broke it: a bought Turbodrive landing on a charted
-// Backfire left BOTH bits set, and nothing downstream is written for that. The boost and the jam then
-// applied to the same shot (endlessKillBuffFireDecrements + endlessKillFireJamTicks), the boon's
-// free-power break was silently withheld (shots.c reads endlessKillFireIsEvil, which the evil bit
-// makes true), and the HUD/ship tinted evil over a buff the player had paid 66-95% of their cash for.
-//
-// So whatever the player brought overrides the sector's kill-fire bit, in BOTH directions: a bought
-// boon clears a charted curse, a gambled curse clears a charted boon. The price is the balance --
-// a kill-fire buy costs most of the purse and locks all three behind the recharge for 2+ sectors.
-//
-// Also enforces NOELITE-supersedes-NOCHAMP, since the merge is another place that pair can meet.
+// A sector carries at most one kill-fire mod (endless.h), and a plain OR would break that: nothing
+// downstream is written for a boost and a jam both set, so the two would apply to the same shot,
+// the boon's free-power break would be withheld, and the HUD would tint evil over a paid-for buff.
+// So whatever the player brought overrides the sector's kill-fire bit in BOTH directions -- a
+// bought boon clears a charted curse, a gambled curse clears a charted boon. The price is the
+// balance. Also enforces NOELITE-supersedes-NOCHAMP, another place that pair can meet.
 Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased)
 {
 	if (purchased & ENDLESS_MOD_KILLFIRE_ANY)
@@ -610,17 +603,16 @@ Uint64 endlessStripWorstMod(Uint64 mods)
 }
 
 // --- Gamble (F6): a flat depth-scaled fee for a random outcome. Wins span 0..51, pushes 52..61,
-// and a long tail 62..99. Roughly neutral EV at high variance, but the tail is harsh: it can strip
-// gun power, erase a perk, steal the special, halve cash, or mark the player for a deferred ambush.
-// The wins stay worthwhile (a revive, a free perk, a hull tier, +gun power, a fat next-clear).
-// Every branch reuses an existing lever: player items/perks, endlessArmorBonus, endlessReviveHeld,
-// the shop-tax/rigged/long-con state above, and next-sector mod bits.
+// a long tail 62..99. Roughly neutral EV at high variance, with a harsh tail (stripped gun power,
+// an erased perk, a stolen special, halved cash, a deferred ambush). Every branch reuses an
+// existing lever: player items/perks, endlessArmorBonus, endlessReviveHeld, the shop-tax/rigged/
+// long-con state above, and next-sector mod bits.
 long endlessGamblePrice(void) { return 25000 + (long)endlessRunDepth * 2000; }  // steep: the gamble is a slot machine (some outcomes scale off this cost), priced so it can't be spam-pulled to fish for jackpots/free perks
 const char *endlessGambleResult(void) { return endlessGambleMsg; }
 bool endlessGambleWonPerk(void) { return endlessGamblePerkWon; }
-// Clear the gamble-won-perk flag once its perk menu has been opened. Without this the flag stayed set
-// after the pick, so every LATER successful E-Shop buy (Turbodrive/Overblast/Overdrive/...) saw it
-// still true and wrongly re-opened the perk menu -- showing the stale, previously-offered choices.
+// Clear the gamble-won-perk flag once its perk menu has been opened. A one-dispatch signal: left
+// set, every LATER successful E-Shop buy would see it still true and re-open the perk menu on the
+// stale choices.
 void endlessClearGamblePerk(void) { endlessGamblePerkWon = false; }
 int  endlessShopTaxPercent(void) { return endlessShopTax; }
 // Every DISTINCT gamble outcome, as a stable ID. endlessTryGamble maps a random roll to one of these
@@ -1060,13 +1052,9 @@ void endlessBetweenLevels(void)
 	// level-end screen (endlessApplyLevelPayout, called from JE_endLevelAni), so the shop
 	// opens with the reward already banked.
 
-	// Generate the next-level courses (offered in the shop's Start Level submenu), reset the
-	// reroll/hull prices, stock the shop, then open it. The player picks a course in Start Level,
-	// which sets mainLevel + the mutators and launches (see game_menu.c).
-	// On a normal visit, roll everything fresh. On a resumed visit (a save was just loaded) or a
-	// locked "gave up the level" reopen, the courses, prices, shop stock, perk offer and pending
-	// buys were all restored from the snapshot; regenerating any of them would be a free reroll
-	// (and, when locked, would break the lock), so skip the whole step.
+	// Generate the next-level courses (the shop's Start Level submenu), reset the reroll/hull
+	// prices, stock the shop, then open it. On a RESUMED or locked visit all of that was restored
+	// from the snapshot instead -- regenerating would be a free reroll (and would break the lock).
 	if (endlessResumeVisit || endlessLockedSortie)
 	{
 		endlessResumeVisit = false;
@@ -1108,7 +1096,7 @@ void endlessBetweenLevels(void)
 
 	// Auto-checkpoint into the bottom "LAST LEVEL" continue slot -- outpost entry is the one
 	// coherent resume point (courses/shop/perks set up; lastLevelName is "ZONE N" already).
-	// HARDCORE allows no saving of any kind, so it is suppressed (notes.md §Endless save).
+	// HARDCORE allows no saving of any kind, so it is suppressed (notes.md §Endless / Save / resume).
 	if (!endlessHardcore)
 	{
 		const JE_byte autoSlot = twoPlayerMode ? 22 : 11;
@@ -1116,12 +1104,10 @@ void endlessBetweenLevels(void)
 		endlessSaveSlot(autoSlot);  // side-effect-free run capture into the sidecar (endlessMode is true here)
 	}
 
-	// Pin the shop's theme. A random level's ']i' command can leave songBuy on that level's own
-	// track, and JE_itemScreen plays songBuy on entry, so it's set here every visit -- which also
-	// makes it survive a save/load for free, since it's re-derived from the (saved) run depth rather
-	// than stored. The outpost that charts a MILESTONE zone swaps in the warning track instead of
-	// the usual buy/sell theme, so the player hears that something is coming while they still have
-	// the course list in front of them.
+	// Pin the shop's theme. A random level's ']i' can leave songBuy on that level's own track, so
+	// it is set here every visit -- which also makes it survive a save/load for free, being
+	// re-derived from the saved run depth. An outpost charting a MILESTONE swaps in the warning
+	// track, so the player hears it coming with the course list still in front of them.
 	songBuy = endlessMilestoneKind() ? ENDLESS_MILESTONE_SHOP_SONG : DEFAULT_SONG_BUY;
 	JE_itemScreen();
 }

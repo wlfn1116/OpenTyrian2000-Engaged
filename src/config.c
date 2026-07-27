@@ -702,11 +702,14 @@ bool save_opentyrian_config(void)
 		config_set_string_option(section, keySettingNames[i], keyName);
 	}
 
+	// Best-effort: the directory almost always exists already, and a genuine failure surfaces at the
+	// fopen below rather than here. Consumed so it doesn't read as an overlooked return.
 #ifndef TARGET_WIN32
-	mkdir(get_user_directory(), 0700);
+	const int mkdir_result = mkdir(get_user_directory(), 0700);
 #else
-	mkdir(get_user_directory());
+	const int mkdir_result = mkdir(get_user_directory());
 #endif
+	(void)mkdir_result;
 
 	// Tyrian 2000 doesn't save mouse settings, so we do it ourselves
 	section = config_find_or_add_section(config, "mouse", NULL);
@@ -789,8 +792,8 @@ bool save_opentyrian_config(void)
 		exit(EXIT_FAILURE);  // out of memory
 	endlessDebugConfigSave(section);
 
-	// The endless all-time record (furthest zone ever reached) -- unlike the debug layer this one is
-	// written during a run too, which is the whole point of it.
+	// The endless all-time record (furthest zone ever reached). Unlike the debug layer, this one is
+	// written during a run too.
 	section = config_find_or_add_section(config, "endless", NULL);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
@@ -1157,7 +1160,10 @@ void JE_decryptSaveTemp(void)
 	/* Decrypt save game file */
 	for (x = (SAVE_FILE_SIZE - 1); x >= 0; x--)
 	{
-		s2[x] = (JE_byte)saveTemp[x] ^ (JE_byte)(cryptKey[(x+1) % 10]);
+		// (unsigned) only to make the index's non-negativity local -- x is >= 0 by the loop condition.
+		const unsigned int k = (unsigned)(x + 1) % 10;
+		OT_ASSUME(k < 10);
+		s2[x] = (JE_byte)saveTemp[x] ^ (JE_byte)(cryptKey[k]);
 		if (x > 0)
 		{
 			s2[x] ^= (JE_byte)saveTemp[x - 1];
@@ -1621,12 +1627,14 @@ void JE_saveConfiguration(void)
 	
 	JE_encryptSaveTemp();
 	
+	// Best-effort, as above: dir_fopen_warn is what actually reports a broken save directory.
 #ifndef TARGET_WIN32
-	mkdir(get_user_directory(), 0700);
+	const int mkdir_result = mkdir(get_user_directory(), 0700);
 #else
-	mkdir(get_user_directory());
+	const int mkdir_result = mkdir(get_user_directory());
 #endif
-	
+	(void)mkdir_result;
+
 	f = dir_fopen_warn(get_user_directory(), "tyrian.sav", "wb");
 	if (f != NULL)
 	{

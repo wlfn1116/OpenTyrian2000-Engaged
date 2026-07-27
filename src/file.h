@@ -20,6 +20,7 @@
 #define FILE_H
 
 #include "SDL_endian.h"
+#include "opentyr.h"  // OT_RET_NOTNULL
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -35,6 +36,11 @@ FILE *dir_fopen_die(const char *dir, const char *file, const char *mode);
 bool dir_file_exists(const char *dir, const char *file);
 
 long ftell_eof(FILE *f);
+
+// malloc that reports and exits rather than returning NULL, for the one-shot allocations whose
+// failure would otherwise surface as a null dereference further down. Never returns NULL, and a
+// zero-byte request still yields a real pointer (see the definition).
+OT_RET_NOTNULL void *malloc_die(size_t size);
 
 void fread_die(void *buffer, size_t size, size_t count, FILE *stream);
 

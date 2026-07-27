@@ -159,10 +159,10 @@ void JE_darkenBackground(JE_word neat)  /* wild detail level */
 }
 
 // Extra Parallax widens the horizontal pan (mainint.c parallax_span) enough that the mid/deep
-// layers' read window slides past the side edge of their map rows. Out-of-row columns used to
-// wrap into the adjacent map row (a visible content seam where the layer "ends"); now they
-// re-read the row's edge columns in reflected order and render horizontally FLIPPED, so the
-// layer continues past its edge as a pixel-exact mirror image. Activated per row batch by
+// layers' read window slides past the side edge of their map rows. Rather than wrapping into the
+// adjacent map row (a visible content seam where the layer "ends"), out-of-row columns re-read the
+// row's edge columns in reflected order and render horizontally FLIPPED, so the layer continues
+// past its edge as a pixel-exact mirror image. Activated per row batch by
 // bg_mirror_setup (mirror_w = row width in tiles, 0 = off; col0 = map-column index of map[0]).
 // notes.md §Extra Parallax edge mirror.
 static Uint8 *bg_mirror_tile(Uint8 **map, int tile, int mirror_w, int col0, bool *flip)
@@ -179,18 +179,14 @@ static Uint8 *bg_mirror_tile(Uint8 **map, int tile, int mirror_w, int col0, bool
 
 // Mirrored Layers only: how much extra row to append past the right end of the nominal
 // BG_TILE_COUNT tiles, in 1x px (0 = none; up to BG_EDGE_TILES tiles, clipped to the surface).
-// A row is exactly BG_TILE_COUNT*24 = 336px -- the width of the near map -- so at the far-right
-// pan extreme it ends flush with PLAYFIELD_RIGHT and nothing covers the columns beyond it. The
-// lava and water smoothie filters SAMPLE up to 7px to the right of the pixel they write, so at
-// the screen's right edge they read that black fill; their per-scanline waver is a triangle wave,
-// which turns the miss into the sawtooth "black triangles" seen on EP1 ASSASSIN / EP4 LAVA RUN.
-// The filters also feed back through the row above/below, so black beyond the read range still
-// bleeds in over frames -- hence run the fill all the way to the surface edge rather than just
-// past +7. (The smooth-motion replay independently shifts a row up to a tick's pan further left,
-// which uncovers columns that ARE displayed.) bg_mirror_tile already resolves an out-of-row column
-// as a flipped edge column, so the appended strip is just more of the layer. Clipped so the row can
-// never run past surface->w and wrap onto the next scanline. Inert with Mirrored Layers off, where
-// out-of-row columns have no defined content (they wrap into the next map row).
+// A row is exactly 336px, so at the far-right pan extreme it ends flush with PLAYFIELD_RIGHT and
+// nothing covers the columns beyond. The lava/water smoothie filters SAMPLE up to 7px right of the
+// pixel they write and would read that black fill, and their triangle-wave waver turns the miss
+// into the sawtooth "black triangles" on EP1 ASSASSIN / EP4 LAVA RUN. They also feed back through
+// the rows above/below, so the fill runs to the surface edge rather than just past +7.
+// bg_mirror_tile already resolves an out-of-row column as a flipped edge column, so the appended
+// strip is just more of the layer; clipped so it can't wrap onto the next scanline. Inert with
+// Mirrored Layers off, where out-of-row columns have no defined content.
 // notes.md §Extra Parallax edge mirror.
 static int bg_edge_px(int mirror_w, int x, int surface_w, int scale)
 {
@@ -388,17 +384,16 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 	}
 }
 
-// Prepare a layer's row walk. Mirrored Layers off: stock pointers -- with Extra Parallax on,
-// clamp the read pointer to the map base (the old bg_clamp_map out-of-bounds guard: uncovered
-// edges show the adjacent-row wrap / repeated row 0); with it off this is the original draw
-// byte-for-byte (including its harmless 1-element edge read). Mirrored Layers on works in
-// EITHER parallax mode -- even the stock span uncovers ~12px of layer 3's left edge at
-// far-left: enable edge mirroring for the batch; the walk keeps its column phase even when
-// `map` starts before `base`, because bg_mirror_tile resolves out-of-row columns from inside
-// the row -- which is the OOB dereference the clamp guarded against. If the first ROW itself
-// starts before the map (level-end re-points mapYPos at row 0), fall back to that clamp: draw
-// from row 0, mirroring inert. The draw loops only advance the pointer downward, so checking
-// the initial (lowest) row covers every row drawn this call.
+// Prepare a layer's row walk.
+//   Mirrored Layers OFF: stock pointers. With Extra Parallax on, clamp the read pointer to the map
+//     base (the old bg_clamp_map OOB guard -- uncovered edges then show the adjacent-row wrap);
+//     with it off this is the original draw byte-for-byte.
+//   Mirrored Layers ON: works in EITHER parallax mode, since even the stock span uncovers ~12px of
+//     layer 3's left edge at far-left. The walk keeps its column phase even when `map` starts
+//     before `base`, because bg_mirror_tile resolves out-of-row columns from inside the row --
+//     which is exactly the OOB dereference the clamp guarded against.
+// If the first ROW itself starts before the map (level-end re-points mapYPos at row 0), fall back
+// to the clamp. The draw loops only advance downward, so checking the lowest row covers them all.
 static Uint8 **bg_mirror_setup(Uint8 **map, Uint8 **base, int width, int col0, int *out_w, int *out_c0)
 {
 	if (!mirroredLayers)
@@ -1129,8 +1124,8 @@ static void star_block(SDL_Surface *surface, int x, int y, Uint8 color, int scal
 
 void draw_starfield_star_scaled(SDL_Surface* surface, int x, int y, Uint8 color, int scale)
 {
-	// Same visibility rule as the 1x draw, in HI coordinates. The interpolated row
-	// lands on the 1/scale-pixel grid, which is the whole point: slow stars glide.
+	// Same visibility rule as the 1x draw, in HI coordinates. The interpolated row lands on the
+	// 1/scale-pixel grid, so slow stars glide.
 	if (x < 0 || x >= surface->w || y < 0 || y >= STARFIELD_VISIBLE * scale)
 		return;
 

@@ -416,8 +416,12 @@ void JE_getShipInfo(void)
 	}
 	else
 	{
-		shipGr = ships[player[0].items.ship].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
-		player[0].armor = ships[player[0].items.ship].dmg;
+		// Only ids > 90 are "extra" ships, so 19..90 land here while ships[] stops at SHIP_NUM --
+		// the same overrun the shipGrPtr guard above already avoids. Fall back to entry 0 rather
+		// than reading off the end if an edited ship or an older save carries a stray id.
+		const uint shipIdx = (player[0].items.ship <= SHIP_NUM) ? player[0].items.ship : 0;
+		shipGr = ships[shipIdx].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
+		player[0].armor = ships[shipIdx].dmg;
 	}
 
 	// Endless: apply the run-persistent hull upgrades (outpost Reinforce + Ablative Plating perk;
@@ -449,8 +453,11 @@ void JE_getShipInfo(void)
 	{
 		player[i].initial_armor = player[i].armor;
 
+		// ships[] stops at SHIP_NUM while an "extra" ship is only id > 90, so an id in between
+		// would read past the end here too (see the shipGr fallback above).
+		const uint shipIdx = (player[i].items.ship <= SHIP_NUM) ? player[i].items.ship : 0;
 		uint temp = ((i == 0 && extraShip) ||
-		             (i == 1 && extraShip2)) ? 2 : ships[player[i].items.ship].ani;
+		             (i == 1 && extraShip2)) ? 2 : ships[shipIdx].ani;
 
 		if (temp == 0)
 		{
@@ -612,6 +619,18 @@ void JE_tyrianHalt(JE_byte code)
 #endif
 }
 
+// Opening Salvo: the specials that spawn no shot (repulsor, attractor, invuln, repair) have no
+// bullet to trail sparks off, so a boosted one would look identical to a plain one. Burst off the
+// ship instead, in the gauge's green. No-op outside a window. notes.md §Opening Salvo.
+static void salvo_special_burst(JE_byte playerNum)
+{
+	if (!endlessOpeningSalvoVolleyActive())
+		return;
+
+	const Player *const p = &player[playerNum - 1];
+	JE_doSP(p->x + 7, p->y + 10, 24, 11, ENDLESS_SALVO_SPARK_COLOR, false);
+}
+
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
 	nextSpecialWait = 0;
@@ -628,6 +647,10 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			break;
 		/*Repulsor*/
 		case 2:
+		{
+			const int push = endlessOpeningSalvoScale(1);  // Opening Salvo: shoves that much harder
+			salvo_special_burst(playerNum);
+
 			// Local int counter, not the global JE_byte `temp`: ENEMY_SHOT_MAX is 500, which a byte
 			// counter can never reach (it wraps at 255), so `temp` here would loop forever and hang
 			// the moment the Repulsor fires. (The pool grew past 255 for endless; see ENEMY_SHOT_MAX.)
@@ -636,17 +659,18 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				if (!enemyShotAvail[es])
 				{
 					if (player[0].x > enemyShot[es].sx)
-						enemyShot[es].sxm--;
+						enemyShot[es].sxm -= push;
 					else if (player[0].x < enemyShot[es].sx)
-						enemyShot[es].sxm++;
+						enemyShot[es].sxm += push;
 
 					if (player[0].y > enemyShot[es].sy)
-						enemyShot[es].sym--;
+						enemyShot[es].sym -= push;
 					else if (player[0].y < enemyShot[es].sy)
-						enemyShot[es].sym++;
+						enemyShot[es].sym += push;
 				}
 			}
 			break;
+		}
 		/*Zinglon Blast*/
 		case 3:
 			zinglonDuration = 50;
@@ -655,23 +679,34 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			break;
 		/*Attractor*/
 		case 4:
+		{
+			// Opening Salvo: hauls that much harder. exc/eyc are Sint8 and accumulate per firing,
+			// so clamp below -- a wrapped speed would fling the pickup the wrong way.
+			const int pull = endlessOpeningSalvoScale(1);
+			salvo_special_burst(playerNum);
 			for (temp = 0; temp < 100; temp++)
 			{
 				if (enemyAvail[temp] != 1 && enemy[temp].scoreitem &&
 				    enemy[temp].evalue != 0)
 				{
+					int exc = enemy[temp].exc, eyc = enemy[temp].eyc;
+
 					if (player[0].x > enemy[temp].ex)
-						enemy[temp].exc++;
+						exc += pull;
 					else if (player[0].x < enemy[temp].ex)
-						enemy[temp].exc--;
+						exc -= pull;
 
 					if (player[0].y > enemy[temp].ey)
-						enemy[temp].eyc++;
+						eyc += pull;
 					else if (player[0].y < enemy[temp].ey)
-						enemy[temp].eyc--;
+						eyc -= pull;
+
+					enemy[temp].exc = (JE_shortint)(exc > 120 ? 120 : (exc < -120 ? -120 : exc));
+					enemy[temp].eyc = (JE_shortint)(eyc > 120 ? 120 : (eyc < -120 ? -120 : eyc));
 				}
 			}
 			break;
+		}
 		/*Flare*/
 		case 5:
 		case 6:
@@ -743,7 +778,9 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			}
 			break;
 		case 12:
-			player[playerNum-1].invulnerable_ticks = endlessPerkSpecialDuration(temp2 * 10, 0);
+			// Opening Salvo x2.5, on top of Ordnance Reserves' stretch. invulnerable_ticks is a uint.
+			player[playerNum-1].invulnerable_ticks = endlessOpeningSalvoScale(endlessPerkSpecialDuration(temp2 * 10, 0));
+			salvo_special_burst(playerNum);
 
 			if (superArcadeMode > 0 && superArcadeMode <= SA)
 			{
@@ -752,13 +789,22 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				player[0].invulnerable_ticks = 100;
 			}
 			break;
+		// Repair specials, Opening Salvo x2.5. Vanilla leans on JE_drawArmor's blanket 28 clamp to
+		// bound these, but endless deliberately SKIPS it (reinforced hulls exceed 28), so cap on the
+		// hull's own max -- the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
 		case 13:
-			player[0].armor += temp2 / 4 + 1;
+			player[0].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && player[0].initial_armor > 0 && player[0].armor > player[0].initial_armor)
+				player[0].armor = player[0].initial_armor;
+			salvo_special_burst(1);   // repairs are hardwired to a player, not to playerNum
 
 			soundQueue[3] = S_POWERUP;
 			break;
 		case 14:
-			player[1].armor += temp2 / 4 + 1;
+			player[1].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && player[1].initial_armor > 0 && player[1].armor > player[1].initial_armor)
+				player[1].armor = player[1].initial_armor;
+			salvo_special_burst(2);
 
 			soundQueue[3] = S_POWERUP;
 			break;
@@ -1075,6 +1121,11 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		zinglonPillarCX = player[0].x + 7;
 		zinglonPillarTemp = temp;
 
+		// Opening Salvo: the pillar is a brightness effect, not a sprite, so it has no colour to
+		// trail. Scatter sparks up the beam in the salvo's green, width following its own ramp.
+		if (endlessOpeningSalvoVolleyActive() && temp > 0)
+			JE_doSP(player[0].x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
+
 		zinglonDuration--;
 		if (zinglonDuration % 5 == 0)
 		{
@@ -1351,20 +1402,18 @@ JE_byte JE_playerDamage(JE_byte temp,
 		this_player->shield = 0;
 
 		// Endless AEGIS GATE boon: a hit big enough to punch through the shield is stopped AT the
-		// shield instead -- the gate spends whatever was left (already zeroed above) and eats the
-		// remainder, then goes on cooldown. Placed here, before cmHullHit, because a blocked hit did
-		// not reach the hull: it must not arm the Countermeasure burst, deal armor damage, flash the
-		// armor gauge or reach the death path. The helper arms the cooldown when it answers true, so
-		// this is the one place allowed to ask.
+		// shield -- the gate spends whatever was left (already zeroed above), eats the remainder and
+		// goes on cooldown. Placed BEFORE cmHullHit because a blocked hit never reached the hull, so
+		// it must not arm the Countermeasure burst, deal armor damage, flash the gauge or reach the
+		// death path. The helper arms the cooldown when it answers true, so this is the one asker.
 		if (endlessFxActive() && this_player == &player[0] && temp > 0
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
 			temp = 0;
-			// Make the block READ. The first cut reused the shield's own flare and S_SHIELD_HIT -- which
-			// is what every ordinary hit already plays -- so a block was indistinguishable from being hit
-			// normally, and the boon looked inert even while it was working. Give it the full nine-point
-			// ring (the shield-absorb flare, so the hit visibly stops AT the shield) and S_CLINK, a sound
-			// nothing else in the damage path uses.
+			// Make the block READ as its own event: the full nine-point ring (the shield-absorb
+			// flare, so the hit visibly stops AT the shield) plus S_CLINK, a sound nothing else in
+			// the damage path uses. Reusing the shield's ordinary flare and S_SHIELD_HIT makes a
+			// block indistinguishable from being hit normally, i.e. the boon reads as inert.
 			JE_setupExplosion(this_player->x - 17, this_player->y - 12, 0, 14, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x - 5 , this_player->y - 12, 0, 15, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x + 7 , this_player->y - 12, 0, 16, false, !twoPlayerMode);
@@ -1473,10 +1522,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 		{
 			// "Within N pixels" is measured from the SHIP, not from its centre reference point. The
 			// hull already spans +-shot_hit_area (12x10), and anything inside that has by definition
-			// just hit you -- the enemy-shot loop frees the offending bullet BEFORE calling us. So
-			// sweeping a bare N from the centre leaves only a ~14px halo, which in practice is empty
-			// and made the perk look dead. Reaching N PAST the hitbox is what actually clears the
-			// rest of the incoming volley.
+			// just hit you (the enemy-shot loop frees that bullet BEFORE calling us), so a bare N
+			// from the centre leaves only an empty ~14px halo. Reach N PAST the hitbox instead.
 			const int reachX = (int)this_player->shot_hit_area_x + cmRadius;
 			const int reachY = (int)this_player->shot_hit_area_y + cmRadius;
 
@@ -1507,11 +1554,11 @@ JE_byte JE_playerDamage(JE_byte temp,
 	JE_drawArmor();
 	VGAScreen = game_screen; /* side-effect of game_screen */
 
-	// STATIC DISCHARGE (endless): taking shield/hull damage also bleeds the generator -- power loss is
-	// the actual shield+armor LOST x5, never more than the current reserve. Uses the real drop (not the
-	// return value, which is 0 whenever the shield fully absorbs a hit -- the common early-game case, why
-	// this looked dead). Only losses count, so a revive restoring armor can't read as negative. Main
-	// player only (its generator is the global `power`); the helper is 0 when off / under a dead generator.
+	// STATIC DISCHARGE (endless): taking shield/hull damage also bleeds the generator, never more
+	// than the current reserve. Must use the REAL shield+armor drop, not the return value -- that is
+	// 0 whenever the shield fully absorbs a hit, the common early-game case. Only losses count, so a
+	// revive restoring armor can't read as negative. Main player only (its generator is the global
+	// `power`); the helper is 0 when off or under a dead generator.
 	if (endlessFxActive() && this_player == &player[0])
 	{
 		int lost = 0;

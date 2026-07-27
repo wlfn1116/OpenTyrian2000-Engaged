@@ -34,10 +34,8 @@ int endlessComboKills = 0;
 // Turbodrive, Overdrive and the evil jams share the schedule; only Overblast skips the fire boost.
 #define ENDLESS_COMBO_MAX_STEPS       8
 
-// The evil kill-fire mirrors. Fire-jam curses (Backfire, Burnout): while the window is up they add
-// cooldown to every shot (slower fire) instead of removing it, ramping with the same combo steps;
-// Burnout stacks even more jam. Damage-cut curses (Burnout, Misfire): each kill stacks a shot-damage
-// reduction, peaking at the stack cap and floored so you can still fight.
+// The evil kill-fire mirrors: fire-jam curses (Backfire, Burnout) ADD shot cooldown on the same
+// combo schedule; damage-cut curses (Burnout, Misfire) stack a floored shot-damage reduction.
 #define ENDLESS_EVIL_JAM_BASE        3   // base extra shotRepeat ticks per shot while a fire-jam curse is up
 #define ENDLESS_EVIL_JAM_PER_STEP    3   // + this many more per combo step (up to ENDLESS_COMBO_MAX_STEPS)
 #define ENDLESS_EVIL_JAM_STACK_MAX   10  // Burnout: up to this many MORE jam ticks at full stacks
@@ -63,13 +61,9 @@ static int endlessDifficultyRampPercent(void)
 	}
 }
 
-// Depth driving the enemy-difficulty levers: real run depth x1.25, tilted by base difficulty
-// (endlessDifficultyRampPercent). Each lever below has its own slope so the caps mature one
-// at a time across the run instead of piling into a wall (notes.md §Endless / Difficulty
-// ramp); HUD, score, milestones and the economy still use the real endlessRunDepth.
-// The lever clock for an ARBITRARY (run depth, difficulty tilt) pair. Split out from the accessor
-// below so a calibration point can be evaluated off a fixed zone and difficulty without touching
-// the live globals -- see the pierce lockout's reference zone.
+// Depth driving the enemy-difficulty levers: real run depth x1.25, tilted by base difficulty.
+// HUD, score, milestones and the economy still use the real endlessRunDepth (notes.md §Difficulty
+// ramp). Takes (depth, tilt) so a calibration point can be evaluated without touching the globals.
 static int endlessEffectiveDepthOf(int runDepth, int rampPercent)
 {
 	return runDepth * rampPercent * 5 / 400;
@@ -80,23 +74,18 @@ static int endlessEffectiveDepth(void)
 	return endlessEffectiveDepthOf(endlessRunDepth, endlessDifficultyRampPercent());
 }
 
-// The current zone as the difficulty ramp sees it: the real zone (endlessRunDepth + 1) on NORMAL,
-// advanced on harder difficulties and held back on easier ones (same rampPercent as every other
-// enemy lever). The player-facing "zone N" thresholds -- the extra-shot tide onset, the contact-
-// damage ramp, and the course-danger ramp -- are all expressed against THIS, so harder modes reach
-// each one sooner and easier modes later (notes.md §Difficulty ramp).
+// The current zone as the ramp sees it: the real zone on NORMAL, advanced/held back elsewhere.
+// Every player-facing "zone N" threshold (tide onset, contact ramp, course-danger ramp) is
+// expressed against THIS, not the real zone (notes.md §Difficulty ramp).
 int endlessDifficultyZone(void)
 {
 	return 1 + endlessRunDepth * endlessDifficultyRampPercent() / 100;
 }
 
 // --- Enemy intensity tuning ------------------------------------------------------
-// The four intensity levers all have the same shape: a stock value of 100 (or 1x), a slope per
-// EFFECTIVE depth, a set of per-mutator deltas, and a clamp. Every number one of them uses is
-// named here, so retuning the ramp means editing this block rather than hunting literals in the
-// bodies below. The clamps matter as much as the slopes: each lever tops out at a different
-// zone, which is what makes the run's difficulty arrive in waves rather than as one wall
-// (notes.md §Difficulty ramp).
+// Each lever has the same shape: a stock value (100 or 1x), a slope per EFFECTIVE depth,
+// per-mutator deltas, and a clamp. Every number lives here, and the clamps differ per lever
+// so they top out at different zones (notes.md §Difficulty ramp).
 
 // Ordinary-enemy HP, percent of stock.
 #define ENDLESS_HP_PER_DEPTH       4    // +% per effective depth
@@ -111,53 +100,21 @@ int endlessDifficultyZone(void)
 #define ENDLESS_BOSS_MARKED        2    // gamble "Marked": the boss you paid to forget comes back bulked up
 #define ENDLESS_BOSS_MAX          16    // reached at run depth ~96 on Normal
 
-// Elite/champion HP, as a whole multiplier (1 = stock) -- a damage divisor like the boss one, and
-// it stacks on top of endlessArmorPercent, which has already scaled their raw armour. A divisor of
-// N means N hits per armour point, which is why the ceiling is this low against the 1-damage
-// piercing weapons (notes.md §Difficulty ramp has the retune history).
+// Elite/champion HP, as a whole multiplier (1 = stock) -- a damage divisor like the boss one,
+// stacking on top of the already-scaled endlessArmorPercent (notes.md §Difficulty ramp).
 #define ENDLESS_ELITE_HP_BASE      2    // multiplier at depth 0
 #define ENDLESS_ELITE_HP_PER_X    40    // +1x per this many effective depths
 #define ENDLESS_ELITE_HP_MAX       4    // ceiling, reached at effective depth 80
 
-// Boss pierce lockout, in sim ticks. A piercing shot (weapon attack >= 250) is never consumed on
-// impact, so the SAME shot re-damages the SAME hull on every tick it overlaps -- five to ten free
-// hits per pass, multiplied again by every linked segment it happens to cover. Ordinary enemies
-// live with that fine; a BOSS does not, because the boss HP multiplier above buys hull that pierce
-// DPS simply ignores: pierce damage scales with overlap time, not with the armour it is pointed at,
-// so a 16x boss dies to a Mega Cannon in about the same time a 1x one does. The lockout therefore
-// rides the target's OWN multiplier -- zero ticks at stock HP (exactly the behaviour every
-// previous build had), a little more repeat-hit immunity for each further multiple. Reading it off
-// the multiplier is also what dilutes it for the special tiers for free: an elite or champion
-// carries 2..4x, not 1..16x, so it earns a small fraction of what a deep boss does. Ordinary
-// enemies carry 1x and are therefore never locked out at all.
+// Boss pierce lockout: how long a target ignores REPEAT hits from one piercing shot, which is
+// never consumed on impact and so re-damages the same hull every tick it overlaps. Rides the
+// target's own HP multiplier, so a boss gets the full lockout, an elite/champion a diluted one
+// and an ordinary enemy none. Carried in HUNDREDTHS of a tick (the multiplier is an integer, the
+// lockout is not), spent at the hit site via a per-bullet carry in tyrian2.c.
 //
-// The figures are deliberately small. Pierce DPS is roughly proportional to 1/(lock+1) -- a bullet
-// re-hits the same hull once a tick otherwise -- so at the reference zone:
-//
-//   boss      0.10 tick  (~9% tax)
-//   champion  0.05 tick  (~5%)
-//   elite     0.02 tick  (~2%)
-//
-// A plain boss only reaches 0.19 (~16%) at the very top of its HP ramp, the 16x cap at zone ~97;
-// an elite/champion boss riding the 24x cap tops out at 0.30 (~23%). It is a safeguard, not a wall,
-// and it can never make a boss feel immune. Tuned by play-testing rather than by theory: the
-// weapons this touches (Mega Cannon, Sonic Impulse) deal 1 damage a hit, so anything heavier reads
-// in play as "my gun does nothing" -- which is exactly how the first few attempts at these numbers
-// landed.
-//
-// Carried in HUNDREDTHS of a tick rather than whole ticks. The boss multiplier itself is an
-// integer -- the damage accumulator can only divide by one -- so keying the lockout off it made
-// the lockout jump a whole tick at a time, once every 16 effective depth. The lockout has no such
-// constraint, so it reads the UNROUNDED ramp and creeps every zone instead. The fraction is spent
-// at the hit site through a per-bullet carry (tyrian2.c).
-//
-// ---- THE TUNING KNOBS ----------------------------------------------------------------------
-// One number per tier, and each one IS the play-tested figure: what that tier's lockout reads, in
-// hundredths of a tick, at the reference zone. Everything else is derived, so changing a tier here
-// moves that tier and nothing else, and the shape (ride the target's own HP ramp) is preserved
-// automatically. Earlier revisions expressed this as a slope plus per-tier percentages that had to
-// be hand-fitted every time an HP ramp moved; these do not -- the reference span is recomputed
-// from the ramps themselves, so retuning elite HP can no longer silently drag the lockout with it.
+// The tuning knobs: one number per tier -- what that tier reads, in hundredths of a tick, at the
+// reference zone. Everything else is derived from the HP ramps themselves, so retuning elite HP
+// can't drag the lockout with it. Full derivation and the measured tax figures: notes.md §Endless.
 #define ENDLESS_PIERCE_LOCK_REF_ZONE      50  // the zone the three figures below were tuned at
 #define ENDLESS_PIERCE_LOCK_BOSS          10  // boss:     0.10 tick at the reference zone
 #define ENDLESS_PIERCE_LOCK_CHAMP		   5  // champion: 0.05
@@ -197,17 +154,13 @@ int endlessDifficultyZone(void)
 #define ENDLESS_DMG_MAX          220    // intensity cap; the tide climbs on from here
 
 // --- Debug per-lever overrides ----------------------------------------------------
-// A pinned lever short-circuits its accessor entirely -- depth AND mutators are bypassed, which is
-// the whole point: it lets one lever be held still (or forced) while the rest ramp normally, so a
-// difficulty wall can be attributed to a single axis. All-zero by default, so an unpinned build
-// behaves exactly as before. See the ESO_* enum in endless.h.
+// A pinned lever short-circuits its accessor entirely -- depth AND mutators bypassed -- so one
+// axis can be held still while the rest ramp. All-zero by default. See the ESO_* enum in endless.h.
 EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
 
-// Every override check is this one line at the top of an accessor. A macro rather than a helper
-// call so the early return reads at the call site -- an accessor that can be short-circuited should
-// say so on its first line. The lookup TABLES and the snapshot builder live at the END of this
-// file, because their editing bounds cite tunables declared further down with the levers they
-// belong to; only the array above and this macro have to precede the accessors.
+// Every override check is this one line at the top of an accessor. The lookup TABLES and the
+// snapshot builder live at the END of this file (their editing bounds cite tunables declared
+// further down); only the array above and this macro have to precede the accessors.
 #define ENDLESS_OVERRIDE(id) \
 	do { if (endlessScalingOverride[id].active) return endlessScalingOverride[id].value; } while (0)
 
@@ -239,21 +192,16 @@ int endlessBossHpMult(void)
 	return endlessClamp(mult, 1, ENDLESS_BOSS_MAX);
 }
 
-// The same boss multiplier WITHOUT the integer truncation, in hundredths. endlessBossHpMult has to
-// round down to a whole number because the damage accumulator divides by it; the pierce lockout has
-// no such constraint and wants the ramp itself, so it reads this. Identical slope, identical
-// mutator deltas, identical cap -- just continuous, so it passes exactly through the stepped
-// version at every point where that one steps. Keep the two bodies in step.
-// The BARE boss depth curve at an arbitrary effective depth, hundredths, no mutators -- what the
-// pierce lockout's reference point is measured against, so a calibration taken at a fixed zone
-// can never drift from the curve the run actually follows. Deliberately NOT folded into the live
-// accessor below: that one has to clamp LAST, after the mutator deltas, or FRAGILE would halve an
-// already-clamped figure instead of the true one.
+// The BARE boss depth curve, hundredths, no mutators -- the pierce lockout's reference point.
+// NOT folded into the untruncated accessor below: that one must clamp LAST, after the mutator
+// deltas, or FRAGILE would halve an already-clamped figure.
 static int endlessBossRamp100(int effDepth)
 {
 	return endlessClamp(100 + effDepth * 100 / ENDLESS_BOSS_DEPTH_PER_X, 100, ENDLESS_BOSS_MAX * 100);
 }
 
+// endlessBossHpMult without the integer truncation, in hundredths: same slope, deltas and cap,
+// just continuous. The pierce lockout reads this; keep the two bodies in step.
 static int endlessBossHpMult100(void)
 {
 	int mult = 100 + endlessEffectiveDepth() * 100 / ENDLESS_BOSS_DEPTH_PER_X;
@@ -284,10 +232,8 @@ int endlessFireDelayPercent(void)
 	if (reduce > ENDLESS_FIRE_MAX_REDUCE)
 		reduce = ENDLESS_FIRE_MAX_REDUCE;
 	int pct = 100 - reduce;
-	// RETALIATION: each enemy kill refreshes a short window (endlessRetaliationTimer, driven from
-	// endlessCountKill / endlessGameplayTick) during which ALL enemy fire is ~25% quicker. Applied as a
-	// final MULTIPLY, not another additive reduce, so it still speeds fire even once the depth/mod
-	// reduce has hit its floor -- and so a kill-tempo storm reads differently from the time-based Enrage.
+	// RETALIATION: each kill refreshes a short window during which all enemy fire is ~25% quicker.
+	// A final MULTIPLY, not another additive reduce, so it still bites once the reduce hits its floor.
 	if ((endlessActiveMods & ENDLESS_MOD_RETALIATION) && endlessRetaliationTimer > 0)
 		pct = pct * ENDLESS_RETALIATION_FIRE_PCT / 100;
 	return pct;
@@ -325,10 +271,8 @@ int endlessShotDamagePercent(void)
 		pct += ENDLESS_DMG_DEVASTATING;
 	if (pct > ENDLESS_DMG_MAX)
 		pct = ENDLESS_DMG_MAX;
-	// The tide (0 until effective DEPTH 35, then +1 per effective depth, uncapped) adds a gentle
-	// +1% per ENDLESS_TIDE_DMG_STEP ON TOP of the intensity cap: ~+30% by zone 100, ~+70% by
-	// zone 200 on NORMAL. The high ENDLESS_TIDE_DMG_CAP is only a backstop; the consumer
-	// (tyrian2.c) also clamps the final per-shot byte to 255, so a big multiplier can't wrap.
+	// The tide adds +1% per STEP on top of the intensity cap: ~+30% by zone 100, ~+70% by zone 200
+	// on NORMAL. TIDE_DMG_CAP is only a backstop -- tyrian2.c also clamps the final byte to 255.
 	pct += endlessTideLevel() / ENDLESS_TIDE_DMG_STEP;
 	if (pct > ENDLESS_TIDE_DMG_CAP)
 		pct = ENDLESS_TIDE_DMG_CAP;
@@ -336,21 +280,12 @@ int endlessShotDamagePercent(void)
 }
 
 // --- Rising tide: quantity scaling past the intensity caps ------------------------
-// The intensity levers above saturate by ~effective depth 100-125; the tide adds the one axis
-// with NO engine ceiling -- extra shots per volley and a rising elite/champion share -- off
-// this single coefficient, staying 0 through the early hump (notes.md §Endless).
+// The intensity levers above saturate by ~effective depth 100-125; the tide adds the one axis with
+// NO engine ceiling -- extra shots per volley and a rising elite share (notes.md §Endless).
 //
-// NOTE the clock: TIDE_START is on the EFFECTIVE-DEPTH clock (endlessTideLevel subtracts it from
-// endlessEffectiveDepth), while the TIDE_SHOT_* thresholds below are real ZONES on NORMAL
-// (endlessDifficultyZone). Effective depth is real depth x1.25 on NORMAL, so the two are not
-// interchangeable -- 35 effective depth is about real zone 28.
+// MIND THE CLOCK: TIDE_START is on the EFFECTIVE-DEPTH clock, while the TIDE_SHOT_* thresholds
+// below are real ZONES on NORMAL. The two are not interchangeable (35 effective ~ real zone 28).
 #define ENDLESS_TIDE_START      35   // effective DEPTH the tide begins (intensity is ~capped by here)
-// Enemy "rising tide" of EXTRA shots per volley (see endlessExtraEnemyShots). NORMAL-difficulty
-// baseline: the FIRST extra shot at ENDLESS_TIDE_SHOT_ONSET (zone 25), rising evenly to
-// ENDLESS_TIDE_SHOT_ANCHOR_ADD (3) by the anchor zone (100), then +1 shot every ENDLESS_TIDE_SHOT_STEP
-// zones with NO hard cap -- so 5 by zone 150, then climbing indefinitely (only the MAX sanity backstop
-// and the enemy-shot pool bound it). Harder/easier difficulties travel this same curve sooner/later
-// (scaled by the same rampPercent as the other enemy levers).
 #define ENDLESS_TIDE_SHOT_ONSET      25   // ZONE (on NORMAL) the FIRST extra shot appears -- start of the early ramp
 #define ENDLESS_TIDE_SHOT_ANCHOR     100  // ZONE (on NORMAL) the early ramp reaches ENDLESS_TIDE_SHOT_ANCHOR_ADD
 #define ENDLESS_TIDE_SHOT_ANCHOR_ADD 3    // extra shots/volley at the anchor zone (on NORMAL)
@@ -368,17 +303,12 @@ int endlessTideLevel(void)
 	return (t > 0) ? t : 0;
 }
 
-// Extra enemy shots per firing volley, difficulty-scaled like every other lever (endlessDifficultyZone).
-// Two segments meeting at the anchor (zone 100 on NORMAL): an EARLY ramp -- first extra shot at the
-// ONSET zone (25), rising evenly to ANCHOR_ADD (3) by the anchor -- then a steady +1 shot every STEP
-// zones with NO hard cap (5 by zone 150 on NORMAL, then climbing). tyrian2.c fans these out around the
-// weapon's own shots; the enemy-shot pool (ENEMY_SHOT_MAX) still hard-caps what reaches the screen
-// (notes.md §Difficulty ramp).
-// The tide's RAW extra-shot count, before any modifier touches it. Split out because
-// endlessTideBoonsUnlocked must ask "is the tide adding shots at all" -- and it is called during course
-// generation, when endlessActiveMods still holds the PREVIOUS sector's bits. Reading the public
-// (Flak-Screen-adjusted) figure there would let one Flak Screen sector's own effect decide whether the
-// next one may be charted.
+// The tide's RAW extra shots per volley, before any modifier touches it. Two segments meeting at
+// the anchor: an early ramp from the ONSET zone up to ANCHOR_ADD, then +1 every STEP zones with no
+// hard cap (notes.md §Difficulty ramp). Split out from the public accessor because
+// endlessTideBoonsUnlocked runs during course generation, when endlessActiveMods still holds the
+// PREVIOUS sector's bits -- reading the Flak-Screen-adjusted figure there would let one Flak Screen
+// sector decide whether the next one may be charted.
 static int endlessTideExtraShotsRaw(void)
 {
 	if (!endlessFxActive())
@@ -407,41 +337,37 @@ static int endlessTideExtraShotsRaw(void)
 	return extra;
 }
 
+// Extra shots per firing volley as the sim sees them. tyrian2.c fans these out around the weapon's
+// own shots; the enemy-shot pool (ENEMY_SHOT_MAX) still hard-caps what reaches the screen.
 int endlessExtraEnemyShots(void)
 {
 	ENDLESS_OVERRIDE(ESO_EXTRASHOTS);
 	int extra = endlessTideExtraShotsRaw();
-	// FLAK SCREEN boon: half the tide's ADDED shots never leave the barrel. Only this endless-specific
-	// multiplication is thinned -- the level's authored volley is the `endlessBaseMulti` the caller adds
-	// this to (tyrian2.c), so every shipped firing pattern still plays exactly as designed. Rounds the
-	// kept half UP, so a lone extra shot stays one: the boon thins the tide, it never cancels it.
+	// FLAK SCREEN boon: half the tide's ADDED shots never leave the barrel. Only the endless-added
+	// shots are thinned; the level's authored volley (endlessBaseMulti, tyrian2.c) is untouched.
+	// Rounds the kept half UP, so a lone extra shot stays one -- it thins the tide, never cancels it.
 	if (endlessActiveMods & ENDLESS_MOD_FLAKSCREEN)
 		extra = (extra + 1) / 2;
 	return extra;
 }
 
-// Is FLAK SCREEN worth charting yet? It only removes shots the TIDE added, so before the tide starts
-// (zone 25 on NORMAL) it would be an empty boon on the monitor. Gates every path that can emit the bit,
-// exactly like endlessEliteBoonsUnlocked does for the no-elite-tier boons. Reads the RAW tide, never
-// the Flak-Screen-adjusted figure -- see endlessTideExtraShotsRaw.
+// Is FLAK SCREEN worth charting yet? It only removes shots the TIDE added, so before the tide
+// starts it is an empty boon. Gates every path that can emit the bit, like endlessEliteBoonsUnlocked.
 bool endlessTideBoonsUnlocked(void)
 {
 	return endlessTideExtraShotsRaw() > 0;
 }
 
 // --- Contact (ramming) damage ramp -------------------------------------------------
-// The damage the PLAYER takes from colliding with an enemy climbs deep in a run, so trading hull for
-// a ram stops being cheap: no bonus until the START zone (35), then linear to +ANCHOR_PCT (150%) by
-// the anchor zone (100), the SAME slope onward, capped at +MAX_PCT (500%). Only the player's RECEIVED
-// contact damage scales -- the damage the collision deals to the enemy is left untouched (mainint.c).
-// Difficulty-scaled like every other lever (notes.md §Difficulty ramp).
+// Damage the PLAYER takes from an enemy collision climbs deep in a run: nothing until START, then
+// linear to +ANCHOR_PCT by the anchor zone, same slope onward, capped at +MAX_PCT. Only the
+// RECEIVED half scales; what the collision deals the enemy is untouched (notes.md §Difficulty ramp).
 #define ENDLESS_CONTACT_START      35   // zone the contact-damage climb begins (no bonus at/below)
 #define ENDLESS_CONTACT_ANCHOR     100  // zone at which the bonus reaches ENDLESS_CONTACT_ANCHOR_PCT
 #define ENDLESS_CONTACT_ANCHOR_PCT 150  // +this% player contact damage at the anchor zone
 #define ENDLESS_CONTACT_MAX_PCT    500  // ceiling on the added player contact-damage percent
-// SOFT LANDING boon: contact damage the player receives is cut to this % -- applied LAST, so it bites
-// into the depth ramp and the elite/champion ram bonuses alike (a deep champion ram is exactly what the
-// boon is for). Projectiles are untouched, which is what keeps it distinct from a general damage cut.
+// SOFT LANDING boon: received contact damage cut to this % -- applied LAST, so it bites into the
+// depth ramp and the elite ram bonuses alike. Projectiles untouched (not a general damage cut).
 #define ENDLESS_CONTACT_SOFTLANDING 30
 
 int endlessContactDamagePercent(void)
@@ -496,18 +422,15 @@ void endlessResetElites(void)
 	endlessBountyLastLink = 0;     // ...and a fresh bounty dedup, so the zone's first kill always pays
 	endlessAegisReset();           // ...and a ready AEGIS GATE: a block never carries into the next zone
 
-	// Seed this zone's elite/champion tier stream from the run seed + depth, so the rolls are
-	// reproducible for a given seed. Own salt phase: a large offset that can't collide with the
-	// outpost (depth*2), level/music (depth*2+1), light-cone (depth*2+0x40000000) or gravity-heading
-	// (depth*2+0x60000000) streams. Every phase must be UNIQUE even across separate state variables:
-	// the same salt derives the same SplitMix state, so a shared phase correlates the two sequences.
+	// Seed this zone's elite tier stream from run seed + depth, so the rolls are reproducible.
+	// Own salt phase (0x50000000), which must be UNIQUE even across separate state variables:
+	// the same salt derives the same SplitMix state, so a shared phase correlates the streams.
 	endlessEliteRngState = endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x50000000);
 }
 
 // The depth-driven SPECIAL-enemy share BEFORE any mutator override: a 2% trickle rising to an 80%
-// cap. endlessEliteChancePercent applies the Elite Pack / Apex / Legion overrides on top; the course
-// generator also reads this directly, to retire a now-pointless "half enemies elite" once the natural
-// share has already passed 50% (see endlessFixRedundantElitePack).
+// cap. The course generator reads this directly too, to retire a now-pointless "half enemies
+// elite" once the natural share has passed 50% (see endlessFixRedundantElitePack).
 int endlessNaturalEliteChancePercent(void)
 {
 	ENDLESS_OVERRIDE(ESO_ELITECHANCE);
@@ -521,21 +444,16 @@ int endlessNaturalEliteChancePercent(void)
 	return pct;
 }
 
-// Whether the no-elite-tier boons (NOCHAMP / NOELITE) are eligible to be charted yet. They only start
-// appearing once the natural special-enemy share climbs PAST 25% -- below that, elites/champions are a
-// rare trickle and "no champions / no elites" would be a near-empty boon. The 25% shoulder lands around
-// effective depth 47, i.e. ~zone 38 on Normal (effective depth is real depth x1.25 there, so the two
-// are NOT interchangeable), sooner on harder modes. Gates every generation path that can
-// emit either bit; a leaked bit below the threshold is also scrubbed in endlessGenerateCourses.
+// May the no-elite-tier boons (NOCHAMP / NOELITE) be charted yet? Only once the natural special
+// share passes 25% (~zone 38 on Normal); below that they would be near-empty boons. Gates every
+// path that can emit either bit; a leaked bit is also scrubbed in endlessGenerateCourses.
 bool endlessEliteBoonsUnlocked(void)
 {
 	return endlessNaturalEliteChancePercent() > 25;
 }
 
 // Chance (percent) that an eligible enemy becomes SPECIAL: the natural depth share above, except
-// Elite Pack forces half and Apex/Legion force all (notes.md §Difficulty ramp). Elite Pack is only
-// ever meant to RAISE the share, so the generator stops charting it once the natural share tops 50%
-// -- otherwise it would CAP elites BELOW the natural rate (a stealth boon on a danger course).
+// Elite Pack forces half and Apex/Legion force all (notes.md §Difficulty ramp).
 static int endlessEliteChancePercent(void)
 {
 	if (endlessActiveMods & ENDLESS_MOD_NOELITE)
@@ -575,13 +493,10 @@ int endlessRollEliteTier(JE_byte linknum)
 	return endlessEliteLink[linknum];
 }
 
-// Elite/champion HP multiplier -- a damage divisor applied like the boss one: the enemy
-// spends N damage per 1 armor, so it effectively has N times its HP. ~2x, up with depth.
-//
-// GIANT KILLER boon flattens it to 1: elites and champions still spawn, still wear their tint, still
-// fire like elites and champions, and still pay their full bounty -- they just have ordinary hulls. That
-// is what separates it from NOELITE, which deletes the tier (and its income) outright: Giant Killer
-// leaves a sector full of profitable, killable specials rather than an empty one.
+// Elite/champion HP multiplier -- a damage divisor applied like the boss one: the enemy spends N
+// damage per 1 armor, so it effectively has N times its HP. ~2x, up with depth. GIANT KILLER
+// flattens it to 1 -- the tier keeps its tint, guns and bounty, just not its hull (unlike NOELITE,
+// which deletes the tier and its income outright).
 int endlessEliteHpMult(void)
 {
 	ENDLESS_OVERRIDE(ESO_ELITEHP);
@@ -623,22 +538,15 @@ int endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState)
 	return (mult > cap) ? cap : mult;                  // capped, but never below the base
 }
 
-// How long a target ignores REPEAT piercing hits, in HUNDREDTHS of a sim tick. Deliberately
-// mirrors endlessEnemyHpMult's shape and takes the same three arguments: the lockout exists to
-// give back what an HP multiplier was supposed to buy, so it reads the SAME multiplier that
-// target is carrying, and the tiering falls out of that rather than being bolted on.
-//
-//   boss (an enemy that explicitly has a boss health bar)  full, off the boss ramp
-//   elite / champion                                       diluted -- their ramp is 2..4x
-//   everything else                                        none at all
-//
-// Both ramps are read UNROUNDED so the figure creeps every zone rather than jumping a whole tick.
+// How long a target ignores REPEAT piercing hits, in HUNDREDTHS of a sim tick. Mirrors
+// endlessEnemyHpMult's shape and argument list: a boss gets the full lockout off the boss ramp,
+// an elite/champion a diluted one off theirs (2..4x), everything else none. Both ramps are read
+// UNROUNDED so the figure creeps every zone rather than jumping a whole tick.
 int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 {
-	// Ordinary enemies answer first, and answer before the debug pin: "no lockout on ordinary
-	// hulls" is structural, not a magnitude, so a pinned lever must not be able to introduce one.
-	// It is also the cheap path -- the hit site asks this question for every hull a piercing bullet
-	// touches, and most of them are ordinary.
+	// Ordinary enemies answer first, and before the debug pin: "no lockout on ordinary hulls" is
+	// structural, not a magnitude, so a pinned lever must not be able to introduce one. It is also
+	// the cheap path -- most hulls a piercing bullet touches are ordinary.
 	if (!hasBossBar && eliteState < 2)
 		return 0;
 
@@ -704,12 +612,9 @@ long endlessChampionBounty(void)
 	return b * endlessPerkCashPercent() / 100;
 }
 
-// Champion aggression, applied per-champion on top of the sector's global scaling: they
-// fire noticeably faster and their shots hit harder.
-//
-// CLEAN SIGNALS boon returns both to neutral: the special tier keeps its HP, its tint and its bounty --
-// so the sector still LOOKS and PAYS like an elite one -- but its guns behave like everyone else's. The
-// exact complement of Giant Killer, which takes the hulls and leaves the guns.
+// Champion aggression, per-champion on top of the sector's global scaling: faster fire, harder
+// shots. CLEAN SIGNALS returns both to neutral -- the tier keeps its HP, tint and bounty but not
+// its guns. The complement of Giant Killer, which takes the hulls and leaves the guns.
 int endlessChampionFireDelayPercent(void)
 {
 	if (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS)
@@ -724,10 +629,9 @@ int endlessChampionShotDamagePercent(void)
 }
 
 // The elite/champion RAM premium (elites +25%, champions +50%), on top of the depth contact ramp.
-// This is the ONLY offensive bonus a plain ELITE carries -- the fire-rate and shot-damage bonuses above
-// are champion-only -- so Clean Signals has to neutralise it too, or the boon would be champions-only
-// while its monitor row promises the whole special tier. Distinct from Soft Landing, which scales ALL
-// contact damage: this removes only the premium special enemies add, so the two stack without overlap.
+// The ONLY offensive bonus a plain ELITE carries -- the two above are champion-only -- so Clean
+// Signals neutralises it too. Removes only the special-enemy premium, so it stacks with Soft
+// Landing (which scales ALL contact damage) without overlap.
 int endlessEliteContactPercent(int eliteState)
 {
 	if (!endlessFxActive() || eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_CLEANSIGNALS))
@@ -736,13 +640,8 @@ int endlessEliteContactPercent(int eliteState)
 }
 
 // Award an elite/champion kill: pay the bounty and post a kill message to the in-game text bar.
-//
-// Called from enemy_logical_death (tyrian2.c) for EVERY killed enemy, elite or not -- exactly
-// like endlessCountKill, and for the same reason. A multi-tile enemy is several enemy[] slots
-// sharing one nonzero linknum, all removed consecutively in a single kill loop, so the bounty is
-// deduped on that linknum: paying per tile handed a multipart elite two, three or more bounties for
-// one kill. Feeding the latch every kill (rather than only elite ones) is what makes it safe -- an
-// ordinary enemy dying in between breaks the run, so two same-linknum elites still both pay.
+// Called from enemy_logical_death for EVERY killed enemy, elite or not -- the bounty is deduped on
+// linknum so a multi-tile elite pays once, and that latch is only correct if every kill feeds it.
 void endlessAwardEliteKill(int linknum, int eliteState)
 {
 	if (!endlessFxActive())
@@ -771,10 +670,9 @@ void endlessAwardEliteKill(int linknum, int eliteState)
 // orbs a shipped level drops would otherwise be dead pickups. Instead each grants a random
 // SPECIAL weapon (Repulsor, Flare, ...), equipped instantly with a text-bar announcement.
 
-// Number of sprites in the HUD "power-up" sheet (spriteSheet10). A Sprite2_array begins with
-// a Uint16 offset table, one entry per sprite; entry[0] is the byte offset to sprite 1's
-// pixels -- i.e. the table's own size -- so entry[0] / 2 is the sprite count. Used to reject
-// specials whose icon index would blit past the table (see endlessGrantSpecial).
+// Number of sprites in the HUD "power-up" sheet (spriteSheet10): a Sprite2_array starts with a
+// Uint16 offset table, so entry[0] (the offset to sprite 1) divided by 2 is the sprite count.
+// Rejects specials whose icon index would blit past the table (see endlessGrantSpecial).
 static unsigned endlessHudIconCount(void)
 {
 	if (spriteSheet10.data == NULL || spriteSheet10.size < sizeof(Uint16))
@@ -798,10 +696,8 @@ void endlessGrantSpecial(void)
 	// frame, so the bad icon several unfinished specials carry crashes instantly.
 	const unsigned iconMax = endlessHudIconCount();
 
-	// Invulnerability (stype 12 in JE_specialComplete -- the invulnerable_ticks effect) is
-	// deliberately kept OUT of the endless pool: a Buy Special that could roll full
-	// invulnerability would trivialize the run. Excluding by stype covers every
-	// invulnerability entry in the data ("Invulnerability" and "Invulnerability [easier]").
+	// Invulnerability (stype 12) is kept OUT of the pool -- a Buy Special that could roll it would
+	// trivialize the run. Excluding by stype covers both invulnerability entries in the data.
 	JE_byte pool[SPECIAL_NUM] = { 0 };
 	int n = 0;
 	for (int id = 1; id <= SPECIAL_NUM; ++id)
@@ -864,27 +760,20 @@ static bool endlessPortCanPowerUp(uint port)
 	return player[0].items.weapon[port].id != 0 && player[0].items.weapon[port].power < 11;
 }
 
-// What an endless enemy drops in place of the vanilla "random special weapon" pickup.
-//
-// Events 33/45 turn a front-powerup dropper (enemy 533) into one of the six special-weapon
-// droppers (829..834) on a roll weighted by front-gun power -- guaranteed at power 11, where a
-// front powerup would be wasted. Endless already hands out a guaranteed random special for every
-// collectable datacube and secret orb it converts, so a third source only re-rolls what the player
-// was just given; the displaced powerup is handed back instead, front or rear at even odds. No port checks
-// here on purpose: the event fires long before the kill, so a full gun is caught at spawn time by
-// endlessResolvePowerupDrop instead.
+// What an endless enemy drops in place of the vanilla "random special weapon" pickup (events
+// 33/45). Endless already grants a special for every converted datacube and orb, so a third source
+// would only re-roll what was just given -- hand back a powerup instead, front or rear at even
+// odds. No port checks here on purpose: the event fires long before the kill, so a full gun is
+// caught at spawn time by endlessResolvePowerupDrop.
 JE_word endlessPowerupDropEnemy(void)
 {
 	return (mt_rand() % 2) ? ENEMY_REAR_POWERUP : ENEMY_FRONT_POWERUP;  // drop: gameplay RNG, not the seed
 }
 
-// Spawn-time redirect for a powerup pickup whose gun is already full, hooked into JE_makeEnemy so
-// it covers EVERY way one reaches the playfield -- the event-33/45 droppers above, the rear-powerup
-// (534) drops a level scripts directly (which the 533-only substitution never touches), and pickups
-// a level places by hand. Doing it at spawn instead of at the event also kills the staleness window:
-// a gun that fills up between the event firing and the enemy dying would otherwise still drop the
-// pickup the event chose. A full port falls through to the other gun, and with both full the drop
-// pays out as the 5000-point gem rather than the cash consolation. Anything else passes through.
+// Spawn-time redirect for a powerup pickup whose gun is already full. Hooked into JE_makeEnemy so
+// it covers EVERY route onto the playfield (the event droppers, rear powerups a level script drops
+// directly, hand-placed pickups) and so a gun that fills between the event and the kill is still
+// caught. A full port falls through to the other gun; with both full it pays the 5000-point gem.
 JE_word endlessResolvePowerupDrop(JE_word eDatI)
 {
 	if (eDatI != ENEMY_FRONT_POWERUP && eDatI != ENEMY_REAR_POWERUP)
@@ -900,15 +789,11 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI)
 	return ENEMY_GEM_5000;
 }
 
-// A datacube carried by a REGULAR enemy (evalue 1 on an armored piece, e.g. the tile buried in
-// TYRIAN's end-of-level structure) has no pickup of its own: vanilla just does cubeMax++ the moment
-// the piece dies. Converting that to a random special the way the collectable cube and orb pickups
-// do meant a whole special weapon arriving out of nowhere, with nothing on screen to credit it to.
-// Drop the 5000-point gem at the dead piece instead -- a visible pickup, same substitution the
-// powerup drops already fall back to, and the cash feeds the E-Shop where a special can be bought
-// on purpose. The collectable cube (enemy 513) and the secret orbs still grant specials.
-// Gated by the caller on endlessMode alone, not endlessFxActive: a campaign run with the endless
-// mods layered on still has a working cube archive, so there cubeMax++ remains the right award.
+// A datacube carried by a REGULAR enemy (evalue 1 on an armored piece) has no pickup of its own --
+// vanilla just does cubeMax++. Granting a special there would arrive from nowhere with nothing on
+// screen to credit it to, so drop the 5000-point gem at the dead piece instead. The collectable
+// cube (513) and the secret orbs still grant specials. Gated by the caller on endlessMode alone,
+// not endlessFxActive: a campaign run with the mods layered on still has a working cube archive.
 void endlessDropCubeGem(int slot)
 {
 	const Sint16 g = JE_newEnemy(slot - (slot % 25), ENEMY_GEM_5000, 0);
@@ -946,10 +831,9 @@ int endlessKillBuffColorBank(void)
 	return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
 }
 
-// The buff's current fire-rate MULTIPLIER (1 = none; 2x..10x from the combo ramp -- same for
-// Turbodrive and Overdrive). Derived from the same decrement count the fire block actually applies
-// (endlessKillBuffFireDecrements) plus 1 for the weapon's own per-tick decrement, so the HUD
-// multiplier can never drift from the real, combo-scaled rate.
+// The buff's current fire-rate MULTIPLIER (1 = none; 2x..10x from the combo ramp). Derived from
+// the decrement count the fire block actually applies, plus 1 for the weapon's own per-tick
+// decrement, so the HUD figure can't drift from the real rate.
 int endlessKillBuffFireMultiplier(void)
 {
 	if (!endlessTurbodriveActive())
@@ -1104,11 +988,10 @@ int endlessGravityPullY(void)
 	return step;
 }
 
-// SLUGGISH: the ship crawls. Like GRAVITY, the bite RAMPS with depth and difficulty -- barely slowed
-// early, heavy deep in a run -- but floored so you can ALWAYS move. Returns the traverse-speed scale
-// (1.0 = normal) applied to the committed per-tick displacement in BOTH ship paths (VT tyrian2.c +
-// classic mainint.c), so keyboard, stick, mouse AND touch slow together. endlessGravityDrift multiplies
-// gravity by this same factor, so a sluggish+gravity sector stays climbable (the pull slows to match).
+// SLUGGISH: the ship crawls. Ramps with depth and difficulty, floored so you can ALWAYS move.
+// Returns the traverse-speed scale (1.0 = normal) applied to the committed per-tick displacement in
+// BOTH ship paths (VT tyrian2.c + classic mainint.c), so every input slows together.
+// endlessGravityDrift multiplies gravity by the same factor, so sluggish+gravity stays climbable.
 #define ENDLESS_SLUGGISH_BASE     0.18f  // fraction slowed at zone 0 on NORMAL (=> 0.82x), before the difficulty tilt
 #define ENDLESS_SLUGGISH_PER_ZONE 0.010f // +slowed per zone cleared
 #define ENDLESS_SLUGGISH_MAX      0.55f  // hardest slow (=> 0.45x): still clearly movable, never a standstill
@@ -1131,10 +1014,9 @@ bool endlessShieldRegenOff(void)
 	return endlessFxActive() && (endlessActiveMods & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
 }
 
-// DEADGEN: the generator is dead, so it barely trickles charge -- the main gun (which draws generator
-// power per shot, shots.c) sputters and shields never refill, while rear guns / sidekicks / specials
-// (power-free) keep you in the fight. Never zero, so every weapon still EVENTUALLY fires -- brutal, not
-// unwinnable. Returns the normal rate untouched when the modifier is off (byte-identical normal play).
+// DEADGEN: the generator barely trickles charge, so the main gun (which draws power per shot,
+// shots.c) sputters and shields never refill; power-free rear guns/sidekicks/specials keep you in
+// the fight. Never zero, so every weapon still eventually fires. Passes through when off.
 #define ENDLESS_DEADGEN_POWER_ADD 2u   // generator charge per tick while dead (a normal generator adds ~5-23)
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 {
@@ -1148,9 +1030,8 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 }
 
 // --- AEGIS GATE / AUXILIARY REACTOR / LOW PROFILE / SHOCKWAVE boons ---------------------------
-// Like the reactive dangers above, these four ride existing engine systems (the shield/armor split in
-// JE_playerDamage, the shield-regen step, the two player hit-area tests, the enemy-death sites), so
-// endless_combat.c only owns the decision and the numbers -- the hooks live where those systems do.
+// Like the reactive dangers above, these four ride existing engine systems, so endless_combat.c
+// owns only the decision and the numbers -- the hooks live where those systems do.
 
 // AUXILIARY REACTOR: the shield still recharges on its normal interval, it just stops billing the
 // generator for it. Distinct from Shield Matrix (which shortens the interval) and Efficient Coils
@@ -1160,12 +1041,10 @@ bool endlessShieldRegenFree(void)
 	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
 }
 
-// LOW PROFILE: scale a player hit-area half-extent. 75% of the stock box, applied at the collision
-// TESTS rather than to player[].shot_hit_area_x/y, so (a) the ship sprite and the pickup reach are
-// untouched -- shrinking the source fields would also shrink the item-collect box and the
-// Countermeasure sweep -- and (b) the boon can't leak into a non-endless game. Every damaging
-// collision test the player has (enemy projectiles in tyrian2.c, enemy contact in mainint.c) runs
-// through this one helper, which is what keeps the reduced box consistent between them.
+// LOW PROFILE: scale a player hit-area half-extent to 75% of the stock box. Applied at the
+// collision TESTS, not to player[].shot_hit_area_x/y -- shrinking the source fields would also
+// shrink the item-collect box and the Countermeasure sweep, and would leak into a non-endless game.
+// Every damaging test (tyrian2.c projectiles, mainint.c contact) goes through this one helper.
 #define ENDLESS_LOWPROFILE_PCT 75
 int endlessHitboxScale(int area)
 {
@@ -1175,16 +1054,11 @@ int endlessHitboxScale(int area)
 	return (a < 1) ? 1 : a;   // never zero: a hitbox that can't be hit is a different (broken) boon
 }
 
-// AEGIS GATE: while the shield holds, a hit cannot spill through into armor -- the gate dumps whatever
-// shield is left and stops there. THE COOLDOWN IS THE WHOLE BALANCE: without it, one regenerated shield
-// point would block an entire champion volley forever, and Shield Matrix would make that trivial. So a
-// block costs the gate ~2s of recharge, during which hits punch through normally.
-//
-// ...and THE MINIMUM SPILL is what makes it felt. A shield only ever overflows on the hit that finishes
-// it, so the spill is whatever the shield couldn't cover -- frequently 1 point. Gating those spent the
-// whole 2s window to save a single hull point, and left the gate on cooldown for the champion railgun
-// that landed a moment later: the boon fired constantly and was worth almost nothing, which is exactly
-// how it read in play. Skipping the trivial spills keeps the gate LOADED for the hits that matter.
+// AEGIS GATE: while the shield holds, a hit cannot spill through into armor -- the gate dumps the
+// remaining shield and stops there. The cooldown is the balance: without it one regenerated shield
+// point would block forever. The minimum spill matters as much -- a shield only overflows on the
+// hit that finishes it, so most spills are 1 point, and gating those keeps the gate on cooldown
+// for the hit that mattered. notes.md §Endless.
 #define ENDLESS_AEGIS_COOLDOWN  70  // ticks (~2s at the 35Hz sim) before the gate can block again
 #define ENDLESS_AEGIS_MIN_SPILL  2  // ...and a spill smaller than this isn't worth spending it on
 
@@ -1199,11 +1073,9 @@ void endlessAegisTick(void)
 void endlessAegisReset(void) { endlessAegisCooldown = 0; }
 
 // --- Revive grace window --------------------------------------------------------------------------
-// Spending a held revive token restores the hull mid-fight, which used to hand the ship straight back
-// into whatever volley had just killed it. So a revive also stuns every gun on the field for ~3s (the
-// bullet field itself is wiped where the token is spent, varz.c JE_playerDamage) -- enough to read the
-// screen and fly out. Per level, like the Aegis cooldown; nothing else arms it, so it stays 0 outside
-// endless and the enemy-fire test below is free in a normal game.
+// Spending a revive token restores the hull mid-fight, so it also stuns every gun on the field for
+// ~3s (the bullet field is wiped where the token is spent, varz.c JE_playerDamage) -- enough to
+// read the screen and fly out. Per level, like the Aegis cooldown; nothing else arms it.
 #define ENDLESS_REVIVE_GRACE_TICKS 105  // ~3s at the 35Hz sim
 
 static int endlessReviveGrace = 0;
@@ -1218,10 +1090,9 @@ void endlessReviveGraceTick(void)
 		--endlessReviveGrace;
 }
 
-// May THIS hit be stopped at the shield? Returns true at most once per cooldown, and ARMS the cooldown
-// when it does -- so the caller must act on a true (JE_playerDamage does, immediately). `shieldBefore`
-// is the shield the hit landed on (a gate with nothing to spend blocks nothing) and `spill` is the
-// damage that is about to reach armor -- i.e. what a block is actually worth.
+// May THIS hit be stopped at the shield? Returns true at most once per cooldown and ARMS the
+// cooldown when it does, so the caller must act on a true (JE_playerDamage does, immediately).
+// `shieldBefore` is the shield the hit landed on; `spill` is the damage about to reach armor.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
@@ -1232,9 +1103,8 @@ bool endlessAegisGateConsume(int shieldBefore, int spill)
 	return true;
 }
 
-// SHOCKWAVE: an elite/champion death vaporises enemy projectiles around it, turning the sector's
-// scariest targets into tactical objectives -- hold one alive through a bad patch, then pop it for room.
-// Ordinary fodder does nothing, so the boon rewards picking the right target rather than just shooting.
+// SHOCKWAVE: an elite/champion death vaporises enemy projectiles around it, so the sector's
+// scariest targets double as tactical objectives. Ordinary fodder does nothing.
 #define ENDLESS_SHOCKWAVE_ELITE_RADIUS    40
 #define ENDLESS_SHOCKWAVE_CHAMPION_RADIUS 60
 
@@ -1250,9 +1120,8 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 
 	// Latch BEFORE the elite test, exactly like endlessAwardEliteKill: a dedup link only holds if
 	// EVERY kill feeds it, which is why enemy_logical_death calls this unconditionally. Testing
-	// eliteState first left the last elite's linknum latched indefinitely -- ordinary kills never
-	// cleared it -- so the next enemy to reuse that linknum read as another tile of it and its sweep
-	// was silently skipped.
+	// eliteState first would strand the last elite's linknum latched, and the next enemy to reuse
+	// it would read as another tile of it.
 	const bool sameEnemy = (linknum != 0 && linknum == endlessShockwaveLastLink);
 	endlessShockwaveLastLink = linknum;
 	if (sameEnemy || eliteState < 2)
@@ -1266,12 +1135,9 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 // bulk of each lives at its engine hook (tyrian2.c / varz.c). endless_combat.c owns the small
 // per-modifier decisions -- whether the danger is active, and the numbers it feeds those hooks.
 
-// MARTYRDOM: how many bullets a just-killed enemy's death burst fires -- 0 when the modifier is off,
-// else 4 (normal) / 6 (elite) / 8 (champion). Dedups per linked enemy exactly like endlessCountKill
-// (consecutive same-linknum removals are one enemy, so a multi-tile enemy bursts once, not per tile);
-// linknum 0 is a lone enemy and always fires. Called unconditionally from enemy_logical_death
-// (tyrian2.c), which does the spawning -- that is where the enemy-shot pool lives, and it also
-// honours the "suppress when the pool is nearly full" rule, so this only decides the count.
+// MARTYRDOM: how many bullets a just-killed enemy's death burst fires -- 4/6/8 by tier, 0 when off.
+// Dedups per linked enemy like endlessCountKill, so a multi-tile enemy bursts once. Called
+// unconditionally from enemy_logical_death, which owns the spawning and the pool-full suppression.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
@@ -1282,11 +1148,9 @@ int endlessMartyrdomBurstShots(int linknum, int eliteState)
 	return (eliteState == 3) ? 8 : (eliteState == 2) ? 6 : 4;
 }
 
-// The martyr burst's own bullet sprite: ONE fixed graphic, never the level's. It used to mirror the
-// last enemy bullet fired this level, which made the burst change appearance mid-level as different
-// shooters came on screen -- the burst has to be recognisable on sight, so it gets its own sprite.
-// 100 is a fat radially-symmetric orb in spriteSheet8 (loaded once from tyrian.shp, so it is valid in
-// every level and episode); symmetry matters because the burst fires in 4/6/8 directions at once.
+// The martyr burst's own bullet sprite: ONE fixed graphic, never the level's, so the burst stays
+// recognisable on sight. 100 is a fat radially-symmetric orb in spriteSheet8 (loaded once from
+// tyrian.shp, so valid in every level); symmetry matters -- the burst fires 4/6/8 ways at once.
 #define ENDLESS_MARTYR_SHOT_SGR 100
 JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 
@@ -1297,23 +1161,14 @@ bool endlessSeekerActive(void)
 	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SEEKER);
 }
 
-// STATIC DISCHARGE: the generator power a hit of `actualDamage` (shield+armor lost) should bleed --
-// proportional to the damage, uncapped here (JE_playerDamage caps it at the current reserve). 0 when
-// the modifier is off, or under a dead generator: DEADGEN already starves the generator, so stacking
-// Static on it would add nothing (the spec's incompatibility), and generation never pairs the two.
+// STATIC DISCHARGE: the generator power a hit of `actualDamage` (shield+armor lost) bleeds --
+// proportional to the damage, uncapped here (JE_playerDamage caps it at the reserve). 0 when off or
+// under a dead generator, which already starves the generator.
 //
-// The per-damage multiplier is scaled for the RAW power pool (0..900, shown on the gauge as power/10):
-// the spec's "damage x5" is on that displayed 0..90 scale, so it's ~x50 on the raw pool. Kept a bit
-// below that (x30) so a common Static sector bites -- a small hit visibly dents the gauge, a heavier
-// one can drop power under a shot's cost and briefly stall the front gun -- without a single moderate
-// hit always emptying the reserve. Tune here if it wants to be nastier / gentler.
-//
-// THE DRAIN ALONE IS NOT ENOUGH, and this is the whole reason the first two attempts read as "doesn't
-// work": the generator refills the pool EVERY TICK (tyrian2.c power += powerAdd, ~5-23/tick), so even
-// draining all 900 to zero is repaid in about a second and the gauge just twitches. So a hit also
-// LOCKS OUT regen for a short, damage-scaled window -- that's what makes the loss persist long enough
-// to actually starve the guns (and shield regen, which spends power too). The lockout is applied at
-// the one existing regen seam, endlessGeneratorPowerAdd, the same hook DEADGEN uses.
+// The multiplier is on the RAW power pool (0..900, shown on the gauge as power/10), so the spec's
+// "damage x5" is ~x50 raw; kept below that at x30. The drain ALONE does nothing -- the generator
+// repays ~5-23/tick, so even a full drain is back in a second -- so a hit also locks out regen for
+// a short damage-scaled window, applied at the same endlessGeneratorPowerAdd seam DEADGEN uses.
 #define ENDLESS_STATIC_POWER_PER_DMG   30
 #define ENDLESS_STATIC_POWER_MIN      150   // ...but ANY hit costs at least this much (1/6 of the bar), so a 1-2 point graze still reads
 #define ENDLESS_STATIC_LOCKOUT_PER_DMG  6   // regen-lockout ticks per point of damage taken...
@@ -1558,9 +1413,8 @@ int endlessScalingOverrideStock(int id)
 	case ESO_ELITECHANCE: v = endlessNaturalEliteChancePercent(); break;
 	case ESO_ELITEHP:     v = endlessEliteHpMult();               break;
 	case ESO_PLAYERDMG:   v = endlessPlayerDamagePercent();       break;
-	// The only lever that is a function of another one: read it at the boss multiplier this zone
-	// actually produces, which is what the run's bosses will be carrying.
-	// Reported at the BOSS tier -- the tier the lever is there to tune; the special tiers follow it down.
+	// The only lever that is a function of another one. Read at the boss multiplier this zone
+	// actually produces, and at the BOSS tier -- the special tiers follow it down.
 	case ESO_PIERCELOCK:  v = endlessPierceLock100(true, endlessBossHpMult(), 1); break;
 	default: break;
 	}
@@ -1573,14 +1427,10 @@ int endlessScalingOverrideStock(int id)
 // drift from the formulas, and a snapshot taken mid-level leaves the live run untouched.
 //
 // Three things the caller has to know. (1) The effect layer is FORCED ON for the duration, so the
-// page describes the ramp itself rather than whether it currently applies -- otherwise the handful
-// of endlessFxActive-gated levers would read as flat zeroes whenever the layer is switched off,
-// which is exactly when someone is most likely to be looking the curve up. Whether it applies is
-// the master toggle's job to state, and it does. (2) Overrides are deliberately left ARMED: a
-// pinned lever reads pinned rather than showing a stock curve the run is not following. (3)
-// fireDelayPct folds in whatever ENRAGE and RETALIATION contribute at this instant, since both key
-// off live per-level timers rather than depth -- outside a level both are idle and the figure is
-// the pure depth ramp.
+// page describes the ramp itself rather than whether it currently applies. (2) Overrides are left
+// ARMED, so a pinned lever reads pinned. (3) fireDelayPct folds in whatever ENRAGE and RETALIATION
+// contribute at this instant -- both key off live per-level timers, so outside a level it is the
+// pure depth ramp.
 void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out)
 {
 	if (out == NULL)

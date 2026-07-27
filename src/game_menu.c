@@ -1914,13 +1914,11 @@ void JE_itemScreen(void)
 				inputDetected = newkey || mouseButton > 0;
 
 #if defined(__SWITCH__) || defined(__vita__)
-				// The shoulder buttons cycle the rear gun's fire mode in the weapon
-				// preview, mirroring the [/] key (SDL_SCANCODE_SLASH below): L = previous
-				// mode, R = next. Raw button reads with local edge state, because the
-				// menus only receive confirm/cancel/directions from a controller
-				// (push_joysticks_as_keyboard) and the shoulders aren't bound to any of
-				// those. poll_joysticks (inside push_joysticks_as_keyboard, just above)
-				// already ran SDL_JoystickUpdate this tick.
+				// The shoulder buttons cycle the rear gun's fire mode in the weapon preview,
+				// mirroring the [/] key below: L = previous mode, R = next. Raw reads with
+				// local edge state -- menus only receive confirm/cancel/directions from a
+				// controller, so the shoulders aren't bound to any action. poll_joysticks
+				// (just above) already ran SDL_JoystickUpdate this tick.
 				{
 #if defined(__SWITCH__)
 					static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -3138,7 +3136,7 @@ void JE_drawMenuChoices(void)
 
 		const char* entry = menuInt[curMenu + 1][x - 1];
 
-		str = malloc(strlen(entry) + 2);
+		str = malloc_die(strlen(entry) + 2);
 		if (curSel[curMenu] == x)
 		{
 			str[0] = '~';
@@ -3196,12 +3194,11 @@ void JE_drawMenuChoices(void)
 #define ENDLESS_RANK_CX        MENU_MONITOR_CENTER_X
 #define ENDLESS_RANK_Y        173   // endlessModText draws the body AT this row (no +1 like DARKEN)
 
-// Rank-letter tint, 0 (F) .. 10 (END): a green-to-red ramp. The easy grades are GREEN from bank 0 --
-// the nav palette's clean green ramp (shades 3-7), the same green the boon mod rows use -- and C..END
-// ride bank 15, the pale-yellow -> orange -> deep-red fire ramp. {bank, brightness}; brightness kept
-// in [-2,+5] so the glyph's shades never leave the bank. (bank 8 was used for the greens before, but
-// its shades 10-12 render brown/gray in this palette, not green.) Indexed by endlessCourseRankLevel,
-// so this MUST stay as long as endless_mods.c's endlessRankName[]. notes.md §Menus & shop.
+// Rank-letter tint, 0 (F) .. 10 (END): a green-to-red ramp. Easy grades take bank 0's clean green
+// (shades 3-7, the same green the boon mod rows use); C..END ride bank 15's pale-yellow -> orange
+// -> deep-red fire ramp. {bank, brightness}, brightness kept in [-2,+5] so the glyph's shades never
+// leave the bank. NOT bank 8 for the greens -- its shades 10-12 render brown/gray here. Indexed by
+// endlessCourseRankLevel, so keep it as long as endless_mods.c's endlessRankName[].
 static const struct { unsigned int bank; int bright; } endlessRankHue[11] = {
 	{  0,  0 },  // F     green        (bank 0 shade 7)
 	{  0, -1 },  // E     green
@@ -3227,12 +3224,11 @@ static int endlessThreatShade(int weight)
 	return 1;
 }
 
-// A threat a queued Sabotage charge will strip is drawn WHITE instead of its danger red, so the card
-// shows what the charge bought. Palette 18 has no clean grey RAMP -- it's a luminance-sorted planet
-// palette, so most banks mix hues -- but bank 13 at +4 lands the three TINY_FONT shades on
-// 236,236,236 / 244,244,244 / 252,252,244: flat white, which is exactly the "struck out" read.
-// Keep the offset at +4: the shade-10 highlight would overflow bank 13 past +5 (blit_sprite_hv_unsafe
-// ORs the shade in, it does not clamp), and lower offsets pick up bank 13's yellow-green entries.
+// A threat a queued Sabotage charge will strip is drawn WHITE instead of its danger red. Palette 18
+// has no clean grey RAMP (it's a luminance-sorted planet palette), but bank 13 at +4 lands the
+// three TINY_FONT shades on flat white. Keep the offset at +4: past +5 the shade-10 highlight
+// overflows the bank (blit_sprite_hv_unsafe ORs the shade in, it does not clamp), and lower offsets
+// pick up bank 13's yellow-green entries.
 #define ENDLESS_MOD_CLEANSED_BANK   13
 #define ENDLESS_MOD_CLEANSED_BRIGHT  4
 
@@ -3756,6 +3752,9 @@ void JE_doShipSpecs(void)
 
 void JE_drawMainMenuHelpText(void)
 {
+	// One byte wider than a mainMenuHelp row (66), so it must be filled with SDL_strlcpy and never
+	// a memcpy of sizeof(tempStr) -- that reads a byte past every source row, and past the end of
+	// the array on the last one.
 	char tempStr[67];
 	char costStr[24] = "";  // endless: an amount drawn highlighted after tempStr (E-Shop cost / perk decline)
 	JE_byte temp;
@@ -3765,7 +3764,7 @@ void JE_drawMainMenuHelpText(void)
 	if (curMenu == MENU_JOYSTICK_CONFIG) // joystick settings menu help
 	{
 		const int help[16] = { 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 24, 11 };
-		memcpy(tempStr, mainMenuHelp[help[curSel[curMenu] - 2]], sizeof(tempStr));
+		SDL_strlcpy(tempStr, mainMenuHelp[help[curSel[curMenu] - 2]], sizeof(tempStr));
 	}
 	else if (curMenu < MENU_PLAY_NEXT_LEVEL || curMenu >= MENU_2_PLAYER_ARCADE)
 	{
@@ -3779,7 +3778,7 @@ void JE_drawMainMenuHelpText(void)
 		}
 		else if (debugMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 9)
 		{
-			memcpy(tempStr, mainMenuHelp[5 - 1], sizeof(tempStr));
+			SDL_strlcpy(tempStr, mainMenuHelp[5 - 1], sizeof(tempStr));
 		}
 		else if (debugMode &&
 		         (curMenu == MENU_1_PLAYER_ARCADE || curMenu == MENU_2_PLAYER_ARCADE || curMenu == MENU_SUPER_TYRIAN) &&
@@ -3792,7 +3791,7 @@ void JE_drawMainMenuHelpText(void)
 			else if (curSel[curMenu] == menuChoices[curMenu] - 1)
 				snprintf(tempStr, sizeof(tempStr), "Debug: select a level.");
 			else
-				memcpy(tempStr, mainMenuHelp[menuHelp[curMenu][menuChoices[curMenu] - 4] - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[menuHelp[curMenu][menuChoices[curMenu] - 4] - 1], sizeof(tempStr));
 		}
 		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && curSel[curMenu] == 6)
 		{
@@ -3959,7 +3958,7 @@ void JE_drawMainMenuHelpText(void)
 			if (curSel[curMenu] == 9)
 				SDL_strlcpy(tempStr, "Create and equip a custom weapon.", sizeof(tempStr));
 			else
-				memcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
+				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
 		}
 #if defined(__SWITCH__) || defined(__vita__)
 		else if ((curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS) && curSel[curMenu] >= 6)
@@ -3969,22 +3968,22 @@ void JE_drawMainMenuHelpText(void)
 			if (curSel[curMenu] == 6)
 				SDL_strlcpy(tempStr, "Touchscreen ship control sensitivity.", sizeof(tempStr));
 			else
-				memcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
 		}
 #endif
 		else
 		{
-			memcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp]) - 1], sizeof(tempStr));
+			SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp]) - 1], sizeof(tempStr));
 		}
 	}
 	else if (curMenu == MENU_KEYBOARD_CONFIG &&
 	         curSel[MENU_KEYBOARD_CONFIG] == 10)
 	{
-		memcpy(tempStr, mainMenuHelp[25-1], sizeof(tempStr));
+		SDL_strlcpy(tempStr, mainMenuHelp[25-1], sizeof(tempStr));
 	}
 	else if (leftPower || rightPower)
 	{
-		memcpy(tempStr, mainMenuHelp[24-1], sizeof(tempStr));
+		SDL_strlcpy(tempStr, mainMenuHelp[24-1], sizeof(tempStr));
 	}
 	else if (endlessMode && curMenu == MENU_PLAY_NEXT_LEVEL && temp < endlessCourseCount())
 	{
@@ -3997,11 +3996,11 @@ void JE_drawMainMenuHelpText(void)
 	else if (temp == menuChoices[curMenu] - 2 ||
 	         (curMenu == MENU_DATA_CUBES && cubeMax == 0))
 	{
-		memcpy(tempStr, mainMenuHelp[12-1], sizeof(tempStr));
+		SDL_strlcpy(tempStr, mainMenuHelp[12-1], sizeof(tempStr));
 	}
 	else
 	{
-		memcpy(tempStr, mainMenuHelp[17 + curMenu - 3], sizeof(tempStr));
+		SDL_strlcpy(tempStr, mainMenuHelp[17 + curMenu - 3], sizeof(tempStr));
 	}
 	
 	JE_textShade(VGAScreen, 10, 187, tempStr, 14, 1, DARKEN);
@@ -4356,13 +4355,11 @@ static void select_level(JE_word section, JE_byte file_num)
 }
 
 /* ---- Debug level browser: return-to-outpost snapshot -----------------------------------
- * The three ENGAGE mini-games (** ALE **, TIME WAR, SQUADRON) are dead ends in the campaign
- * script: their ']L' next-level pointer is the episode's END GAME section, and their failure
- * path reloads the "LAST LEVEL" backup save. Both are right when you fly there off the nav
- * map at the end of an episode -- but a level picked out of the debug browser has neither a
- * finished episode nor a matching backup save behind it, so either way the player is dumped
- * at level 1 of the next episode. Snapshot where the jump came from (and the loadout ']e'
- * is about to overwrite with the ENGAGE Stalker) so JE_main can hand the outpost back. */
+ * The three ENGAGE mini-games (** ALE **, TIME WAR, SQUADRON) are campaign dead ends -- their
+ * ']L' points at the episode's END GAME section and their failure path reloads the "LAST LEVEL"
+ * backup save. A level picked from the debug browser has neither behind it, so the player would
+ * be dumped at level 1 of the next episode. Snapshot where the jump came from (and the loadout
+ * ']e' is about to overwrite with the ENGAGE Stalker) so JE_main can hand the outpost back. */
 static struct
 {
 	bool armed;                        // a browser pick is in flight -- good for one level only
@@ -4434,14 +4431,12 @@ static int scancode_digit(int sc)
 	return -1;
 }
 
-/* Endless-only: the SECTOR modifiers (dangers / boons that define a zone) the debug screen can
- * toggle onto the jumped-to zone. The six PERSONAL kill-fire buffs (Turbodrive / Overdrive and
- * their evil mirrors) live in endlessDebugBuffMods below, on their own list.
+/* Endless-only: the SECTOR modifiers the debug screen can toggle onto the jumped-to zone. The six
+ * PERSONAL kill-fire buffs live in endlessDebugBuffMods below, on their own list.
  *
- * `grp` is only the heading a row files under on the modifier list -- it groups 48 toggles into
- * three readable blocks and has no effect on what the bit does. `hint` is the help line; leave it
- * NULL and the registry's own phrase is used (endlessModWord), so wording never drifts -- only the
- * handful of bits with no registry row spell one out here. */
+ * `grp` is only the heading a row files under -- it has no effect on what the bit does. `hint` is
+ * the help line; leave it NULL and the registry's own phrase (endlessModWord) is used, so wording
+ * never drifts. Only the handful of bits with no registry row spell one out here. */
 enum { EMG_DANGER, EMG_BOON, EMG_DEAL, EMG_GROUPS };  // ...and the headings, in list order:
 static const char *const endlessDebugModGroupName[EMG_GROUPS] = { "DANGERS", "BOONS", "GAMBLE DEALS" };
 
@@ -4575,14 +4570,12 @@ static void loadAllLevels(void)
 
 /* ---- The endless debug jump screen ----------------------------------------------------------
  * A small HUB -- zone, base level, one row per GROUP of toggles, then Start -- with drill-in lists
- * behind the groups that hold dozens of entries (48 sector modifiers, the perks, every gamble
- * outcome, every level in the game). The hub itself never scrolls, and each list is one flat
- * subject with its own headings, so nothing is more than one screen away from what it belongs to.
+ * behind the groups that hold dozens of entries. The hub never scrolls and each list is one flat
+ * subject with its own headings.
  *
  * Console parity is the other half of the design: d-pad + confirm + cancel alone reaches every row
- * and every value (no Tab paging, no typed digits, no mouse). The shoulder buttons page long lists
- * -- read raw, because menus only ever receive confirm/cancel/directions from a pad -- and the Zone
- * row opens the console software keypad, which is the only place a number has to be typed.
+ * and value. The shoulder buttons page long lists (read raw -- menus only receive
+ * confirm/cancel/directions from a pad), and the Zone row opens the console software keypad.
  */
 /* The row model both debug pickers share: a list rebuilt every frame from row KINDS, with
  * non-selectable headings mixed in. Nothing carries fixed row offsets, so adding a modifier, a
@@ -4691,15 +4684,13 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 
 /* The endless debug form. Two shapes off one screen:
  *
- *   jumpMode  the ZONE JUMP the endless debug level picker opens -- pick a base level and launch
- *             straight into it at a chosen zone with a chosen slate.
- *   !jumpMode the TUNE form the debug menu opens -- the same slate and perk editors, but it applies
- *             in place and closes instead of launching, and outside endless it also carries the
- *             master toggle that runs the effect layer inside a normal campaign game.
+ *   jumpMode  the ZONE JUMP -- pick a base level and launch into it at a chosen zone and slate.
+ *   !jumpMode the TUNE form -- the same slate and perk editors, but it applies in place and closes
+ *             instead of launching, and outside endless it also carries the master toggle that
+ *             runs the effect layer inside a normal campaign game.
  *
- * Both reach the SCALING page, which is what the whole ramp actually looks like at a given zone.
- *
- * Returns true if a level was launched (select_level armed the jump); always false in tune mode.
+ * Both reach the SCALING page. Returns true if a level was launched (select_level armed the jump);
+ * always false in tune mode.
  */
 static bool endlessDebugScreen(bool jumpMode)
 {
@@ -4713,11 +4704,10 @@ static bool endlessDebugScreen(bool jumpMode)
 	VGAScreen = VGAScreenSeg;
 
 	const int pw = 248;
-	// Centre in whatever content width is actually in force. Reached from the shop (and the endless
-	// zone jump) the legacy 320px area is pillarboxed and the composite adds the offset itself, so
-	// centring in LEGACY_WIDTH is right and vga_width would double-offset it -- the classic mistake
-	// here. Reached from the IN-GAME debug menu there is no pillarbox, and that same maths would
-	// strand the panel left of centre on a wide screen, so centre in the real width instead.
+	// Centre in whatever content width is actually in force. From the shop (and the endless zone
+	// jump) the legacy 320px area is pillarboxed and the composite adds the offset itself, so
+	// LEGACY_WIDTH is right and vga_width would double-offset. From the IN-GAME debug menu there is
+	// no pillarbox, and that same maths would strand the panel left of centre on a wide screen.
 	const int contentW = (video_get_menu_x_offset() != 0) ? LEGACY_WIDTH : vga_width;
 	const int px0 = (contentW - pw) / 2;
 	const int px1 = px0 + pw - 1;
@@ -5062,9 +5052,8 @@ static bool endlessDebugScreen(bool jumpMode)
 				break;
 			case EDR_SCALE:
 			{
-				// A pinned lever is flagged right in the value column: without the marker a forced
-				// figure is indistinguishable from one the ramp produced, which is exactly the
-				// confusion a debug override is otherwise prone to causing.
+				// A pinned lever is flagged right in the value column -- without the marker a forced
+				// figure is indistinguishable from one the ramp produced.
 				const bool pinned = endlessScalingOverride[rows[i].idx].active;
 				const long v = endlessScaleFieldOf(&sc, EDR_SCALE, rows[i].idx);
 				// The pierce lockout is carried as fixed-point hundredths of a sim tick so it can
@@ -5256,11 +5245,10 @@ static bool endlessDebugScreen(bool jumpMode)
 		service_SDL_events(true);
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page a long list (and step the Zone row by 10). Menus only deliver
-		// confirm/cancel/directions from a controller (push_joysticks_as_keyboard), so these aren't
-		// bound to any action -- read them raw with local edge state and synthesize the PageUp /
-		// PageDown the handler below already understands. poll_joysticks (above) already ran
-		// SDL_JoystickUpdate this tick. Guard on !newkey so a real key still wins.
+		// The shoulder buttons page a long list (and step the Zone row by 10). Read raw with local
+		// edge state and synthesized into PageUp/PageDown -- menus only deliver
+		// confirm/cancel/directions from a pad, so these aren't bound to any action. poll_joysticks
+		// (above) already ran SDL_JoystickUpdate. Guard on !newkey so a real key still wins.
 		{
 #if defined(__SWITCH__)
 			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -5698,17 +5686,12 @@ static bool endlessDebugScreen(bool jumpMode)
 }
 
 /* ---- The campaign / arcade debug level picker -----------------------------------------------
- * One list of EVERY level in the game, grouped under episode headings, rather than a per-episode
- * list you had to page between with Left/Right -- the browsed episode was a mode you had to track,
- * and it hid two thirds of the game behind it. Left/Right now JUMPS an episode inside the one
- * list, so the fast move is still one keypress, and the whole thing is reachable with d-pad +
- * confirm + cancel on a pad (shoulders page, no mouse or keyboard needed anywhere).
+ * One list of EVERY level in the game, grouped under episode headings; Left/Right JUMPS an episode
+ * inside that one list rather than switching which episode is browsed. Reachable with d-pad +
+ * confirm + cancel on a pad (shoulders page). Shares its row model and level list with
+ * endlessDebugScreen(), which is endless mode's own form.
  *
- * Endless mode has its own dedicated form -- see endlessDebugScreen() -- and this shares that
- * screen's row model and level list.
- *
- * Returns true if a level was chosen (select_level() has already armed the jump), false if the
- * user cancelled.
+ * Returns true if a level was chosen (select_level() has already armed the jump).
  */
 /* The debug menu's way in: the same screen with no level jump attached, so the effect layer can be
  * retuned mid-game (and, outside endless, switched on for a normal campaign). */
@@ -5905,10 +5888,8 @@ bool JE_debugLevelSelect(void)
 		service_SDL_events(true);
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page the list. Menus only deliver confirm/cancel/directions from a
-		// controller (push_joysticks_as_keyboard), so these aren't bound to any action -- read them
-		// raw with local edge state and synthesize the PageUp/PageDown the handler below already
-		// understands. poll_joysticks (above) already ran SDL_JoystickUpdate this tick.
+		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown -- same
+		// pattern as endlessDebugScreen; see the note there.
 		{
 #if defined(__SWITCH__)
 			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -8045,7 +8026,7 @@ void JE_menuFunction(JE_byte select)
 			case 6: bought = endlessTryBuySpecial();      break;  // random special weapon
 			case 7: bought = endlessTryBuyTurbodrive();  break;  // Turbodrive (kill-fire boost)
 			case 8: bought = endlessTryBuyOverblast();    break;  // Overblast (damage-only stacks)
-			case 9: bought = endlessTryBuyOverdrive();   break;  // Overdrive (+ escalating fire+damage stacks)
+			case 9: bought = endlessTryBuyOverdrive();   break;  // Overdrive (Turbodrive + Overblast together)
 			case 10: bought = endlessTryBuyRevive();      break;  // one-shot revive token
 			case 11: bought = endlessTryBuyBomb();         break;  // +1 superbomb (cap 10)
 			case 12: bought = endlessTryGamble();         break;  // random good/bad outcome (pinned last)

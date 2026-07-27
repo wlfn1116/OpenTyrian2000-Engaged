@@ -576,6 +576,21 @@ mutable `last`, so a Quit-Level retry replays the same track.
   up the endless pierce lockout. The chain-reaction site
   ([tyrian2.c](src/tyrian2.c)) had the guard and was correct; the two damage sites
   did not. All three now call the one helper — **never open-code the comparison.**
+- **Percentage levers must bite on RAW damage, never on the post-`hpMult` figure.**
+  The hit site divides `damage` through `enemy[].damageAccum` (spend 1 armour per
+  `hpMult` damage), so past the first few zones the surviving number is 1 or 2
+  armour points, whatever the weapon actually deals. The **Executioner** perk was
+  computed *after* that divide: `damage * stacks * 15 / 100` on a value of 1 is 0,
+  so the one perk sold as "finish off wounded bosses" paid out **exactly zero on
+  every boss hit** — 4× at zone 24, 16× at the cap, 24× on an elite boss. It now
+  takes its cut off the raw damage and rides the accumulator, and the site measures
+  the bonus in post-divide armour points (`damage - plain`, where `plain` re-divides
+  the same pre-hit accumulator state without the perk) because the shot-carry paths
+  at the bottom of the collision block undo `execBonus` in *that* space. Same trap
+  as the pierce-marker scaling below: **truncation is not a rounding detail when the
+  quantity being scaled is 1.** `endlessPerkExecutionerBonus` rounds to nearest for
+  the same reason — at one stack, truncation meant no payout at all under 7 damage,
+  and a piercing shot's raw damage is only 0..5.
 - **Piercing weapons vs the boss HP multiplier.** `shotDmg` is an *encoded* byte:
   99 = ice (no damage), 250..255 = piercing with `damage = value - 250`, and
   100..249 is consumed earlier by `shots.c` (chain reaction, `shotDmg` forced to
@@ -882,45 +897,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
   fire costs no power then). The value is a palette bank base; the whole 14-shade
   ramp must stay inside one bank (`draw_power_gauge` derives the AA dark end from
   the bank floor).
-- **Opening Salvo's readout.** The perk banks a charge silently, so it also owns
-  a gauge recolour: `ENDLESS_SALVO_GAUGE_BASE` (bank 12 + 1 = **193**) paints the
-  gauge GREEN whenever `endlessOpeningSalvoCharged()` — the side-effect-free twin
-  of `endlessOpeningSalvoConsume`'s test. It is applied AFTER the kill-fire tint
-  in `draw_power_gauge`, so the rarer player-timed state wins when both are up.
-  Bank 12 is the pure-green ramp (0,12,0 → 11,63,26) in the in-game palette —
-  which is **palette 5** (`pcxpal[3-1]`), structurally identical to palette 0, so
-  the classic bank map holds: 0 grey, 2 dark green, 7 red→yellow fire (the stock
-  gauge, base 113), 12 pure green. `base + 13` (the tallest vertical band) must
-  stay inside the bank, and 193+13 = 206 does.
-- The second Salvo tell is a superspark trail on the boosted shots
-  (`salvo_shot_sparks`, shots.c). Its colour is the shot sprite's own dominant
-  palette bank via `sprite2_dominant_bank` (sprite.c), which histograms the
-  packed sprite's opaque pixels and picks the winner among banks **1..15** —
-  bank 0 is the grey ramp and a weapon's white-hot core would otherwise outvote
-  the hue that identifies it; bank 0 is returned only when there is no colour at
-  all. `PlayerShotDataType.salvoBoost` doubles as the trail's phase: 1 = first
-  drawn tick (fat 14-spark launch burst), stepped to 2 for the 4-spark flight
-  trail. Both stay truthy, which is all the tyrian2.c collision bonus tests.
-  The flight trail passes `classic_cap = true` like every other weapon trail; the
-  launch burst passes false (explosion-like) so a wide max-power volley firing
-  5+ shots at once doesn't flush the whole classic 101-spark ring in one tick.
-  Blended "special" shots (sprite > 60000, e.g.
-  Plasma Storm) draw from a different sprite table and get no trail — they are
-  already unmistakable. Special WEAPONS are never boosted anyway:
-  `JE_doSpecialShot` (mainint.c) runs BEFORE the main-weapon loop arms the volley
-  flag, so it always misses the window. Front gun, rear gun and both sidekicks do
-  get it — the rear because the bay loop runs `SHOT_FRONT` then `SHOT_REAR` in
-  one tick, the sidekicks because their fire loop sits after it.
-- **Superspark weapons boost their OWN trail.** The four ep4/5 trail-tagged
-  weapons (sprite > 1000: Mega Pulse, Wallop Beam, Protron B, Ice) already emit
-  a dense plume, and a second added trail just reads as noise against it. So for
-  those the salvo turns the NATIVE `JE_doSP` up instead — 5→16 sparks, spread
-  3→7, same tagged colour bank — and the added flight trail is suppressed
-  (`ownTrail`); only the one-off launch flash still layers on. The boosted plume
-  passes `classic_cap = false`: at 16 sparks/tick/shot the classic 101-ring would
-  refill inside two ticks and visibly cut the tail short. With Extra Sparks OFF
-  it stays capped at 101 either way, so this only spends the big buffer when the
-  player has already opted into it.
+  Opening Salvo owns a second recolour on the same gauge; see §Opening Salvo.
 - `endlessDangerTier` (word) and `endlessDangerRank` (letter F..S+++) band the
   same net danger score; keep their thresholds in lockstep so the pair never
   disagree. Tier thresholds: ≤9 Low, ≤13 Moderate, ≤19 Tough, ≤26 High, ≤33
@@ -942,9 +919,19 @@ mutable `last`, so a Quit-Level retry replays the same track.
   red "cash now, empty shop" modifier row; an earlier "!" rank + "Trap" help line
   were removed as redundant with that row. It still isn't a pure win, so the chart
   sort key (`endlessDangerSortKey`) gives it a slot of its own — just right of the
-  calm/boon routes (key 0), just left of the mildest combat danger (every combat
-  score lifted +1 to open the key-1 slot) — so it never sits at the far-left
-  "safest pick" end.
+  calm/boon routes, just left of the mildest combat danger — so it never sits at
+  the far-left "safest pick" end.
+- **Slate order** (`endlessSortCoursesByDanger`, a stable RNG-free insertion sort
+  run once at generation): primary key is the DISPLAYED rank, not the raw score,
+  so the left-to-right ramp can never contradict the letter grade on the cards.
+  Key rungs: 0 = Calm (`mods == 0`, pinned top — boons may pay LESS than it, since
+  survival boons carry negative rewards), 1 = the other pure boons, 2 = Cursed,
+  3.. = rank + 2 for every combat route (E..END). Ties on the key break on the
+  clear PAYOUT, cheapest first, so a slate of same-grade sectors also reads as a
+  rising price. The payout used is `endlessDangerSortPayout` — the course's own
+  bits plus the level's `payoutMille` — deliberately NOT `endlessCoursePayout`,
+  which re-prices as the player buys buffs or queues Sabotage charges mid-visit
+  and would leave the fixed order disagreeing with the numbers on screen.
 - Faster scroll always reads hostile (2026-07). Mechanics unchanged: Overclock
   (+70%) / Overload (+220%) still speed fire + shots + scroll together, and
   Slipstream / Warp are the scroll-only versions at the same strengths — but
@@ -1555,6 +1542,80 @@ mutable `last`, so a Quit-Level retry replays the same track.
   indistinguishable from the shots simply having missed. Player shots are left
   alone on purpose — clearing them would cancel a superbomb already in flight, a
   bought consumable, for no defensive gain.
+
+### Opening Salvo — `endless_perks.c`, `shots.c`, `varz.c`, `tyrian2.c`
+
+Two timers, and the perk is the handoff between them. `endlessSalvoIdle` counts
+ticks since the main gun fired; at `ENDLESS_PERK_SALVO_IDLE` the salvo is
+CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
+(35 ticks ≈ 1s), during which everything the ship emits is x2.5 and power-free.
+
+- The window drains only on ticks where `button[0]` is held, so releasing the
+  trigger pauses rather than wastes it; no new charge banks while one runs, so at
+  most one salvo is live. `endlessOpeningSalvoTick` reads `button[0]` *before*
+  `JE_playerMovement` clears and re-reads the pad, i.e. the previous tick's state
+  — a one-tick skew across 35, not worth plumbing a parameter through.
+- **The window is what let specials in.** `JE_doSpecialShot` runs BEFORE the
+  main-weapon loop that arms the salvo, so the older same-tick flag could never
+  reach a special. Anything spawning shots (stype 1, flares 5-11/16) now gets the
+  tag free via `player_shot_create`; the rest are scaled by hand with
+  `endlessOpeningSalvoScale` — repulsor push, attractor pull, invuln duration,
+  repair amount. It carries a "must actually move" floor because the repulsor
+  hands it a literal 1. The Zinglon pillar is a pseudo-shot at `MAX_PWEAPON-1`
+  with no `playerShotData` entry, so it is scaled at its `damage = 10` site in
+  tyrian2.c instead.
+- Two clamps came with that, both endless-only so vanilla is untouched. The
+  attractor's `exc/eyc` are **Sint8** and accumulate per activation (a x2.5 step
+  reaches the wrap sooner, and a wrapped speed flings the pickup away). The repair
+  specials leaned on `JE_drawArmor`'s blanket 28 clamp — which endless
+  deliberately SKIPS for the reinforced hull — so they cap at `initial_armor`,
+  the rule an armour pickup already follows.
+- **The `stype` set is closed.** Dumped from `tyrian.hdt` (ep1-3) and
+  `tyrian5.lvl` (ep4/5) by replaying `JE_loadItemDat`'s read order: both use
+  exactly `{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,17,18}`. **stype 15 is in no
+  shipped data and has no `case` in `JE_specialComplete`** — were it ever to
+  appear the special would silently do nothing. 17/18 (spawn sidekick) are the
+  only live types with no magnitude to scale.
+- Every sector opens CHARGED: `endlessResetZonePerkTimers` parks
+  `endlessSalvoIdle` at the threshold (not 0) and `endlessResetRun` matches. The
+  reset still exists so neither perk timer inherits the previous sector's tail;
+  it just resolves to "charged" now. Parking *at* the threshold is fine — the
+  tick keeps incrementing and caps at 1000000.
+
+**Readouts.** Both tells are deliberate: the perk is worthless if you can't see it.
+
+- Gauge: `ENDLESS_SALVO_GAUGE_BASE` (bank 12 + 1 = **193**) paints it green while
+  `endlessOpeningSalvoCharged()` — banked *or* burning, so dropping back to fire
+  colour is the one unambiguous "it's gone". Applied after the kill-fire tint, so
+  the rarer player-timed state wins when both are up. The in-game palette is
+  **palette 5** (`pcxpal[3-1]`), structurally identical to palette 0: bank 0 grey,
+  2 dark green, 7 red→yellow fire (the stock gauge, base 113), 12 pure green
+  (0,12,0 → 11,63,26). `base + 13` (the tallest band) must stay in the bank; 206 does.
+- Sparks: `salvo_shot_sparks` colours the trail from the shot's own dominant
+  palette bank. `sprite2_dominant_bank` (sheets) and `sprite_dominant_bank`
+  (tables, for the blended sprite > 60000 shots — Astral Zone, Protron Field,
+  Plasma Storm) share `dominant_bank_of`, which picks among banks **1..15** only:
+  bank 0 is the grey ramp and a weapon's white-hot core would outvote the hue that
+  identifies it. Blended shots centre on `out_special_radiusw/h`, not a bullet's +6/+6.
+- `salvoBoost` doubles as the trail's phase: 1 = first drawn tick (fat 14-spark
+  launch burst), stepped to 2 for the 4-spark flight trail. Both stay truthy,
+  which is all the tyrian2.c collision bonus tests. Flight trail passes
+  `classic_cap = true` like every weapon trail; the launch burst passes false, so
+  a wide volley can't flush the classic 101-spark ring in one tick.
+- The four ep4/5 trail-tagged weapons (sprite > 1000: Mega Pulse, Wallop Beam,
+  Protron B, Ice) already emit a dense plume that a second trail just muddies, so
+  the salvo turns the NATIVE `JE_doSP` up instead — 5→16 sparks, spread 3→7 — and
+  suppresses the added flight trail (`ownTrail`); only the launch flash layers on.
+  That plume passes `classic_cap = false`: at 16 sparks/tick/shot the 101-ring
+  refills inside two ticks and visibly cuts the tail short. Extra Sparks OFF caps
+  it at 101 regardless, so the big buffer is only spent when opted into.
+- Specials with no bullet to trail (repulsor/attractor/invuln/repair) fire
+  `salvo_special_burst` off the ship; the Zinglon pillar scatters sparks up the
+  beam, width following its own `temp` ramp. Both use `ENDLESS_SALVO_SPARK_COLOR`
+  (bank 12) — the same green as the gauge, so green reads as "salvo" throughout.
+- Front gun, rear gun and both sidekicks all get the boost: the rear because the
+  bay loop runs `SHOT_FRONT` then `SHOT_REAR` in one tick, the sidekicks because
+  their fire loop sits after it.
 
 ### Save / resume
 
@@ -2259,6 +2320,58 @@ the OPL player. SDL Mixer X could only repeat whole files and was removed.
   (`ex,ey exc,eyc excc,eycc link armor type`), marking each stuck-above enemy
   `(orphaned)` — what the watchdog culls — or `(group reachable)` — a live fight's
   parked anchor, left alone — so a stuck scroll shows exactly what is holding it.
+
+## Static analysis (MSVC `/analyze`)
+
+Run it with:
+
+```
+MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:RunCodeAnalysis=true /p:EnableMicrosoftCodeAnalysis=true
+```
+
+A 2026-07-27 sweep took it from **66 warnings to 17**. Four real defects came out of it:
+
+- `game_menu.c` filled `char tempStr[67]` with `memcpy(..., sizeof(tempStr))` from
+  `mainMenuHelp[][66]` — a one-byte over-read on all ten sites, past the end of
+  the array on the last row. Now `SDL_strlcpy`.
+- `ships[]` holds `SHIP_NUM + 1` entries but only ids **> 90** are "extra" ships,
+  so 19..90 read past the end in `JE_getCost` (mainint.c) and twice in
+  `JE_getShipInfo` (varz.c). Bound against the array, not the extra-ship id.
+- The MIDI SMF parsers (`fluid_music.c`, `win_native_midi.c`) grew their event
+  buffers with `p = realloc(p, ...)`, which leaks the block and then writes
+  through NULL if it fails. Both now use a local `grow_buf` + `goto oom`; growth
+  (doubling from 256) is unchanged.
+- ~12 allocations were used unchecked. New `malloc_die` (file.c) joins the
+  existing `*_die` family — reports through crashlog and exits. It rounds a
+  zero-byte request up to one byte, so "NULL means out of memory" stays true for
+  every caller (`malloc(0)` may legitimately return NULL, and joysticks with zero
+  buttons hit exactly that).
+
+Three annotation macros in `opentyr.h` do the rest, all no-ops in codegen:
+`OT_NORETURN` (config_file has its own `CONFIG_NORETURN` to stay standalone),
+`OT_RET_NOTNULL`, and `OT_ASSUME` — the last states an invariant a helper
+guarantees but the analyser can't see through (`clampi` in custom_weapon.c, the
+global scratch `temp` in mainint.c). **Only use OT_ASSUME on a bound checked by
+hand**: an untrue one silences a real bug instead of a false one.
+
+**`__analysis_assume` can crash CL.** Adding `temp < COUNTOF(...)` as a second
+condition on the weapon-bay loop in `JE_playerMovement` made `cl.exe` die with
+0xC0000005 during analysis (the ordinary build was fine). `OT_ASSUME` on the line
+inside the loop clears the same warning without crashing. If the analysis run
+fails with MSB6006, suspect the most recent bound you added, not the code.
+
+The **17 that remain are deliberate**:
+
+- *Upstream / vendored (8)* — `opl.c` ×4, `MIDIContainer.h` ×2, `animlib.c`,
+  `mtrand.c`. Left alone on the same rule as the comment sweep.
+- *C6262 large stack frames (5)* — `config.c`, `custom_weapon.c` ×2, `mainint.c`,
+  `tyrian2.c` (86 KB). Moving them to the heap is a real behaviour change for no
+  benefit; they have always worked.
+- *Network (2)* — `network.c`, `tyrian2.c` packet derefs. Guarding them means
+  touching two-player sync, which can't be tested here.
+- *`destruct.c` ×2* — a C6001 on `destruct_player.unit` (static storage, so it is
+  NULL before the `malloc_die`, and `free(NULL)` is fine either way) and a C6385
+  on the HUD row copy that survives both an entry guard and an `OT_ASSUME`.
 
 ## General pitfalls
 

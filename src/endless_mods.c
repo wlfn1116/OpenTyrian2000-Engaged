@@ -45,10 +45,9 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_SEEKER,    14, "shots curve at you" },    // enemy projectiles bend once toward you mid-flight
 	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },      // taking damage bleeds the generator -- mistakes throttle your guns
 	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },  // a kill spree whips enemy fire faster (distinct from time-based Enrage)
-	// The 100th-zone finale marker. A NULL word means "no monitor row and no help-line phrase": it is
-	// a label, not a mechanic, so the threat list stays purely the sector's real dangers. The reward
-	// IS the finale bounty (roughly 15x the base clear on its own), and since the danger score sums
-	// the same table it also guarantees the sector outranks everything else on the slate.
+	// The 100th-zone finale marker. NULL word = no monitor row and no help phrase -- it is a label,
+	// not a mechanic. Its reward IS the finale bounty (~15x a base clear), and since the danger
+	// score sums the same table, that also makes the sector outrank everything else on the slate.
 	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// -- boons: they HELP you, so little/no cash (a couple pay big instead) --
 	{ ENDLESS_MOD_FRAGILE,       -5, "less enemy HP" },
@@ -56,16 +55,15 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_OVERCHARGE,     0, "more weapon damage" },
 	{ ENDLESS_MOD_DILATION,       0, "slower enemy shots" },
 	{ ENDLESS_MOD_FAVOR,          0, "cheaper next shop" },
-	{ ENDLESS_MOD_OVERDRIVE,   0, "kills stack firepower" },
+	{ ENDLESS_MOD_OVERDRIVE,   0, "Turbodrive + Overblast" },
 	{ ENDLESS_MOD_OVERBLAST,   0, "kills stack damage" },
 	{ ENDLESS_MOD_BOUNTY,        30, "big cash payout" },
 	{ ENDLESS_MOD_CURSED,        40, "cash now, empty shop" },
 	{ ENDLESS_MOD_NOCHAMP,        0, "no champion enemies" },     // no clear-cash: the boon already costs you the elite/champion bounties
 	{ ENDLESS_MOD_NOELITE,        0, "no elites or champions" },  // (same -- these thin the very enemies that pay the fat bounties)
-	// The ten later boons. Most carry a NEGATIVE reward: the sector is genuinely easier to fly, so it
-	// pays LESS than a clean one -- the mirror of a hostile bit's positive reward. The two that change
-	// nothing about the fight itself (Star Charts, Auxiliary Reactor) sit at 0, and Breakthrough is the
-	// deepest cut of all because a whole extra perk dwarfs one sector's cash.
+	// The ten later boons. Most carry a NEGATIVE reward -- an easier sector pays less than a clean
+	// one, the mirror of a hostile bit. The two that don't change the fight (Star Charts, Auxiliary
+	// Reactor) sit at 0; Breakthrough is the deepest cut, since a whole extra perk dwarfs the cash.
 	{ ENDLESS_MOD_AEGIS,         -5, "shield blocks overflow" },
 	{ ENDLESS_MOD_FLAKSCREEN,    -5, "fewer added shots" },
 	{ ENDLESS_MOD_AUXREACTOR,     0, "free shield recharge" },
@@ -250,12 +248,9 @@ const EndlessTheme endlessHostileThemes[] = {
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,       "Bad Blood" },   // the +5 Retaliation+Enrage synergy sector
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_FORTIFIED,    "Grudge" },
 
-	// -- the under-named pairings. The four reactive dangers (Martyrdom / Seeker / Static /
-	//    Retaliation), Slipstream and the two ship handicaps only ever had a handful of rows each, so
-	//    most of their pairings fell through to a generic word. Every remaining pair among the
-	//    signature-drawable bits is named here, EXCEPT two deliberate holes: Overclock+Slipstream
-	//    (Overclock already carries the same scroll -- a redundant bit) and Gravity+Sluggish (that is
-	//    Tar Pit, and it must stay in the rare-injection pool rather than become an ordinary theme). --
+	// -- the under-named pairings: every remaining pair among the signature-drawable bits, EXCEPT
+	//    two deliberate holes -- Overclock+Slipstream (redundant, same scroll) and Gravity+Sluggish
+	//    (that is Tar Pit, which must stay a rare injection rather than an ordinary theme). --
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_FRENZY,         "Dying Breath" },
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_ENRAGE,         "Death Throes" },
 	{ ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_GRAVITY,        "Deadfall" },
@@ -440,10 +435,8 @@ const EndlessTheme endlessBoonThemes[] = {
 	{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_FAVOR,      "Clean Slate" },
 	// -- boon triples --
 	{ ENDLESS_MOD_DILATION | ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCHARGE, "Ascension" },
-	// -- the later boons: each on a system the rows above never touch (the shield/armor boundary, the
-	//    rising tide, the generator, the hitbox, elite STATS rather than the elite tier, enemy
-	//    projectiles, the chart itself). BREAKTHROUGH is deliberately absent -- it lives in its own
-	//    tiny pool below, so the ordinary boon deal and the Jackpot can never hand it out. --
+	// -- the later boons, each on a system the rows above never touch. BREAKTHROUGH is deliberately
+	//    absent: it lives in its own tiny pool below, out of the boon deal and the Jackpot. --
 	{ ENDLESS_MOD_AEGIS,        "Aegis Gate" },
 	{ ENDLESS_MOD_FLAKSCREEN,   "Flak Screen" },
 	{ ENDLESS_MOD_AUXREACTOR,   "Auxiliary Reactor" },
@@ -470,9 +463,8 @@ const EndlessTheme endlessBoonThemes[] = {
 	{ ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_FRAGILE,    "Jamming Field" },
 	{ ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_OVERCHARGE,   "Full Power" },
 	// -- the remaining cross-system pairs among the boons endlessMakeBoonCombo can actually draw
-	//    (Turbodrive and Overdrive are NOT in that pool, so their pairings stay as authored above).
-	//    NOELITE deliberately gains nothing here: its short row count is one of the levers keeping the
-	//    stronger no-elite-tier boon the rarer sight, while NOCHAMP may spread out. --
+	//    (Turbodrive/Overdrive are not in that pool, so their pairings stay as authored above).
+	//    NOELITE gains nothing here on purpose -- its short row count keeps it the rarer label. --
 	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_BOUNTY,            "Safe Haul" },
 	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_FAVOR,             "Insurance" },
 	{ ENDLESS_MOD_AEGIS | ENDLESS_MOD_SHOCKWAVE,         "Bulwark" },
@@ -630,18 +622,13 @@ const EndlessTheme endlessRareThemes[] = {
 	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH, "Black Sun" },
 };
 
-// "The End" -- the sector every GRAND (100th-zone) milestone deals. It is NOT a fixed bitset: only
-// its CORE is constant, and the rest is re-rolled per milestone off the seeded stream, so a run's
-// zone-100 finisher differs from its zone-200 one and from every other run's. Naming, the END rank,
-// the FINALITY danger word and the bounty all hang off the ENDLESS_MOD_THEEND marker rather than on
-// matching an exact combination, which is what lets the dangers vary freely.
+// "The End" -- the sector every GRAND (100th-zone) milestone deals. NOT a fixed bitset: only its
+// CORE is constant, the rest re-rolled per milestone off the seeded stream (1280 combinations).
+// Naming, the END rank, the FINALITY danger word and the bounty all hang off the ENDLESS_MOD_THEEND
+// marker rather than an exact combination, which is what lets the dangers vary.
 //
-// The CORE is the enemy at its worst -- every enemy-stat lever at once -- and nothing else. Kept out
-// on purpose: the homing tiers, which turn a gun fight into a chase, and the two handicaps that
-// simply take a system away from you (Shieldless, Deadgen). What varies is the special-enemy tier,
-// the scroll pace, a coin each for the well / flipped view / slowed ship, and a coin each for the
-// four reactive dangers (Martyrdom, Seeker, Static Discharge, Retaliation) -- 1280 combinations,
-// each still recognisably The End.
+// The CORE is every enemy-stat lever at once and nothing else. Kept out on purpose: the homing
+// tiers, and the two handicaps that take a system away outright (Shieldless, Deadgen).
 #define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
                              | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
 
@@ -784,14 +771,11 @@ static const EndlessTheme endlessGravityOmniThemes[] = {
 	{ ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI, "Rogue Well" },
 };
 
-// MIXED "gambit" sectors: a real BOON welded to real DANGER, so the sector reads as risk AND reward
-// (threats on the monitor's red column, boons on the green). Every entry pairs a boon with hostiles
-// on DIFFERENT levers, so nothing cancels: FRAGILE never rides FORTIFIED (opposite HP), DILATION never
-// rides SWIFT/OVERCLOCK (opposite shot speed), and at most one kill-fire boon appears (they share one
-// stack). Naming/monitor/payout are all driven by endlessModTable, so these rows are purely cosmetic
-// labels -- generation grafts boons onto hostile courses (endlessPickMixBoon) and the matches land here;
-// anything unlisted falls through to the "gambit" generic names. FRAGILE|DEVASTATING is intentionally
-// absent -- it's the hostile table's "Glass Cannon".
+// MIXED "gambit" sectors: a real BOON welded to real DANGER. Every entry pairs a boon with hostiles
+// on DIFFERENT levers so nothing cancels -- no FRAGILE on FORTIFIED, no DILATION on SWIFT/OVERCLOCK,
+// at most one kill-fire boon. Purely cosmetic labels: generation does the grafting
+// (endlessPickMixBoon) and unlisted combinations fall through to the "gambit" generic names.
+// FRAGILE|DEVASTATING is intentionally absent -- it's the hostile table's "Glass Cannon".
 static const EndlessTheme endlessMixedThemes[] = {
 	// -- doubles --
 	{ ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_FORTIFIED,   "Can Opener" },
@@ -1210,12 +1194,11 @@ Uint64 endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint64 must
 	return must;  // unreachable
 }
 
-// Evocative names for un-curated (randomly generated) combos, picked deterministically per bitset so a
-// given combo always reads the same. Three flavors so an un-named combo still reads the RIGHT tone: an
-// ominous word for pure danger, a fortunate word for a pure boon combo, a "gambit" word for a mixed one.
-// Big pools keep same-chart hash collisions rare (the unique-name pass in endlessGenerateCourses catches
-// the rest). Every word must be unique across ALL name tables (curated included -- see the dup scan in
-// notes.md) and stick to font_ascii-displayable characters: letters, space, apostrophe, hyphen.
+// Names for un-curated (randomly generated) combos, picked deterministically per bitset so a given
+// combo always reads the same. Three flavors by tone: ominous for pure danger, fortunate for a pure
+// boon, "gambit" for mixed. Big pools keep same-chart hash collisions rare (the unique-name pass in
+// endlessGenerateCourses catches the rest). Every word must be unique across ALL name tables and
+// stick to font_ascii-displayable characters -- see the constraints in notes.md §Endless.
 static const char *const endlessGenericNames[] = {
 	"Havoc", "Chaos", "Carnage", "Ruin", "Fury", "Terror", "Doom", "Peril",
 	"Menace", "Scourge", "Bedlam", "Mayhem", "Torment", "Dread", "Malice",
@@ -1339,13 +1322,10 @@ const char *endlessComboNameSalted(Uint64 mods, unsigned salt)
 }
 
 // --- Course danger tier ---------------------------------------------------------------------
-// A sector's net danger, and the two ways it is shown: the tier WORD on the Chart-a-Course help
-// line ("Danger: Severe") and the letter GRADE on the planet monitor. Both come off one score, so
-// they can never disagree, and the score shares its reward table with the payout -- so a course
-// that reads more dangerous always pays more.
-//
-// ENDLESS_HOSTILE_MASK / ENDLESS_BOON_MASK are defined earlier (with the generic name pools, which
-// classify combos by tone from them); the danger score / tier / rank below reuse the same masks.
+// A sector's net danger and the two ways it is shown: the tier WORD on the help line and the letter
+// GRADE on the planet monitor. Both come off one score, so they can't disagree, and that score
+// shares its reward table with the payout -- so a course that reads more dangerous always pays more.
+// ENDLESS_HOSTILE_MASK / ENDLESS_BOON_MASK are defined earlier, with the generic name pools.
 
 // A survival boon riding a hostile sector makes it play less deadly than its raw threat list:
 // frail or crawling-shot foes, harder-hitting or kill-fed guns, or a blitz-past pass all buy time.
@@ -1358,7 +1338,7 @@ static const struct { Uint64 bit; int credit; } endlessBoonMitigation[] = {
 	{ ENDLESS_MOD_NOELITE,     8 },  // no elite/champion tier at all: the tanky, hard-hitting shooters simply never appear
 	{ ENDLESS_MOD_NOCHAMP,     5 },  // no champions: drops the nastiest tier (1.7x fire, +50% shot dmg, fat HP)
 	{ ENDLESS_MOD_OVERCHARGE,  5 },  // shots hit harder: quicker kills
-	{ ENDLESS_MOD_OVERDRIVE,   5 },  // each kill stacks fire and damage
+	{ ENDLESS_MOD_OVERDRIVE,   5 },  // Turbodrive + Overblast together: quickened guns and stacking damage
 	{ ENDLESS_MOD_OVERBLAST,   4 },  // each kill stacks damage
 	{ ENDLESS_MOD_TURBODRIVE, 3 },  // each kill quickens the guns
 	// The later survival boons. Star Charts and Breakthrough are absent on purpose: their reward lands
@@ -1373,12 +1353,10 @@ static const struct { Uint64 bit; int credit; } endlessBoonMitigation[] = {
 	{ ENDLESS_MOD_AUXREACTOR,  3 },  // shields refill without starving the guns
 };
 
-// COMBO SYNERGIES: pairs whose danger is worse than the sum of their parts -- one bit makes the other
-// harder to survive, so the pairing earns a bonus on top of the two rewards. Folded into BOTH the
-// danger score (endlessDangerScoreEx) and the clear payout (endlessClearBonusForEx), so a synergy
-// course both READS and PAYS like the nastier sector it is. Every entry whose bits are ALL present
-// fires, and entries stack. Bits are all hostile, so a pure-boon course never triggers one; bonus is
-// in the same reward-tenths as endlessModTable.
+// COMBO SYNERGIES: pairs whose danger is worse than the sum of their parts, earning a bonus on top
+// of the two rewards. Folded into BOTH the danger score and the clear payout, so a synergy course
+// reads and pays like the nastier sector it is. Every entry whose bits are ALL present fires, and
+// entries stack; bonus is in the same reward-tenths as endlessModTable.
 static const struct { Uint64 combo; int bonus; } endlessSynergies[] = {
 	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_GRAVITY,     8 },  // Tar Pit: a crawling ship dragged down -- the classic inescapable pairing
 	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_KAMIKAZE,    7 },  // slowed WHILE the rammers home in: you can't outrun them
@@ -1403,17 +1381,14 @@ int endlessSynergyBonus(Uint64 mods)
 	return b;
 }
 
-// The sector's net danger: its hostile modifiers' summed reward (endlessModTable, in tenths of the
-// base) minus any survival-boon credit above. A course with no hostile bits scores 0, so the tier
-// words it as Boon/Calm and never needs a number. A hostile course floors at 1, so even a heavily
-// mitigated danger still reads at least "Low" rather than collapsing to a boon.
-// `baseDanger` is the shipped level's intrinsic danger nudge (endless_levelprofile.h), folded into a
-// HOSTILE course's score by the DISPLAY/SORT sites so its rank reflects the level too. A calm/boon
-// course (no hostile bits) deliberately IGNORES baseDanger and stays at 0 -- so calm sectors always
-// read Calm and always sort FIRST, whatever their level; that level's danger surfaces only in the
-// PAYOUT (payoutMille, endless_shop.c), never by demoting the safe route below a hostile one. The
-// plain endlessDangerScore is this with baseDanger 0 -- kept pure for the milestone generator, which
-// scores bare hypothetical bitsets that have no level behind them.
+// The sector's net danger: its hostile modifiers' summed reward (endlessModTable, tenths of base)
+// minus any survival-boon credit above. No hostile bits scores 0 (the tier words it Boon/Calm); a
+// hostile course floors at 1, so a heavily mitigated danger still reads "Low" rather than a boon.
+//
+// `baseDanger` is the level's intrinsic nudge (endless_levelprofile.h), folded in by the DISPLAY /
+// SORT sites. A calm/boon course deliberately IGNORES it and stays at 0, so calm sectors always
+// read Calm and sort FIRST whatever their level -- that level's danger surfaces in the PAYOUT
+// instead. Plain endlessDangerScore is this at baseDanger 0, kept pure for the milestone generator.
 int endlessDangerScoreEx(Uint64 mods, int baseDanger)
 {
 	const Uint64 h = mods & ENDLESS_HOSTILE_MASK;
@@ -1447,12 +1422,10 @@ const char *endlessModWord(Uint64 bit)
 	return "";
 }
 
-// THE DANGER LADDER. One table drives both the tier WORD and the letter GRADE, so the pair can
-// never disagree -- they used to be two hand-maintained if-chains that had to be kept in step.
-// `maxScore` is the inclusive top of each band; the last row catches everything above it (its
-// score is never read). These thresholds are the tuning knobs for how a net danger score reads
-// on the Chart-a-Course monitor: they are spread so single-danger sectors fan out into distinct
-// rungs rather than all landing on "Low".
+// The danger ladder: one table drives both the tier WORD and the letter GRADE, so the pair can't
+// disagree. `maxScore` is the inclusive top of each band; the last row catches everything above it
+// (its score is never read). These thresholds are the tuning knobs, spread so single-danger sectors
+// fan out into distinct rungs rather than all landing on "Low".
 static const struct { int maxScore; const char *tier; } endlessDangerBands[] = {
 	{  9, "Low"        },  // grade E -- every hostile course floors at score 1, so nothing hostile reads F
 	{ 13, "Moderate"   },  // grade D
@@ -1521,11 +1494,9 @@ const char *endlessDangerRank(Uint64 mods)
 }
 
 // --- Per-level intrinsic danger (endless_levelprofile.h) -------------------------------------
-// The generated table is keyed by (episode, lvlFileNum). Endless folds baseDanger into a course's
-// danger score at the DISPLAY / SORT / PAYOUT sites (endless_course.c) so the shown rank reflects
-// the level too; endlessDangerScore itself stays pure (it also scores bare hypothetical bitsets
-// that have no level). A level missing from the table -- which shouldn't happen for shipped data
-// -- reads neutral so an unknown level never mislabels or misprices a course.
+// The generated table is keyed by (episode, lvlFileNum). baseDanger is folded into a course's score
+// at the DISPLAY / SORT / PAYOUT sites (endless_course.c); endlessDangerScore itself stays pure. A
+// level missing from the table reads neutral, so an unknown level never mislabels or misprices.
 int endlessLevelBaseDanger(int ep, int file, int difficulty)
 {
 	if (difficulty < 0)

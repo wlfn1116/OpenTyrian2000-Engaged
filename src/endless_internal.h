@@ -150,8 +150,12 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_EXEC_DMG_PCT  15  // +% shot damage per Executioner stack, vs a wounded target
 #define ENDLESS_PERK_EXEC_HP_PCT   25  // Executioner "wounded" threshold: target below this % of full HP
 #define ENDLESS_PERK_EXEC_BOSS_PCT 15  // ...a tighter threshold for boss-bar enemies (harder to execute)
-#define ENDLESS_PERK_SALVO_IDLE    70  // ticks the main gun must sit idle to charge an Opening Salvo (~2s)
-#define ENDLESS_PERK_SALVO_DMG_PCT 80  // +% damage on the charged Opening Salvo volley (and it costs no power)
+#define ENDLESS_PERK_SALVO_IDLE    50  // ticks the main gun must sit idle to charge an Opening Salvo (~1.4s at the 35Hz sim tick)
+#define ENDLESS_PERK_SALVO_DMG_PCT 150 // +% damage in an Opening Salvo window (which also costs no power).
+                                       // Percentage POINTS added to endlessPlayerDamagePercent, so a bare
+                                       // salvo is x2.5; endlessOpeningSalvoScale reuses it for the
+                                       // non-damage special effects. notes.md §Opening Salvo.
+#define ENDLESS_PERK_SALVO_WINDOW  35  // ticks of HELD FIRE a consumed salvo lasts (~1s at the 35Hz sim tick)
 #define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
 #define ENDLESS_PERK_CM_RADIUS1    26  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2    40  // ...widened radius at 2 stacks
@@ -204,6 +208,7 @@ extern int endlessPerkChoice[3];              // this visit's offered perk ids
 extern int endlessPerkChoiceN;                // how many are offered (0..3)
 extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
 extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run AND each zone)
+extern int endlessSalvoWindow;                // Opening Salvo: ticks of held fire left in a CONSUMED salvo (0 = none running)
 extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run AND each zone)
 
 void endlessResetZonePerkTimers(void);        // clear the two gameplay-only perk timers at level start (endlessResetZoneEffects)
@@ -319,11 +324,10 @@ int         endlessDangerRankLevelEx(Uint64 mods, int baseDanger);
 const char *endlessDangerRankEx(Uint64 mods, int baseDanger);
 
 // --- endless_levelprofile.h: GENERATED per-level intrinsic danger ------------------
-// Each shipped level, run through the Tyrian2000Atlas GameSim at every difficulty, yields a
-// small baseDanger nudge (roughly -2..+5) that endless folds into a course's danger score so
-// the displayed rank/payout reflects the intrinsic LEVEL, not just its modifiers. Keyed by
-// (episode, lvlFileNum) == (endlessCourseEp[i], endlessCourseFile[i]). The generated table and
-// the mapping that built it live in endless_levelprofile.h (included by endless_mods.c).
+// Each shipped level, run through the Tyrian2000Atlas GameSim at every difficulty, yields a small
+// baseDanger nudge (~-2..+5) folded into a course's danger score so the displayed rank/payout
+// reflects the LEVEL too. Keyed by (episode, lvlFileNum). The generated table and the mapping that
+// built it live in endless_levelprofile.h (included by endless_mods.c).
 typedef struct {
 	JE_byte     ep;               // episode number 1..5
 	JE_byte     file;             // lvlFileNum (endlessCourseFile / forcedLvlFileNum)

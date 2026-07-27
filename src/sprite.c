@@ -167,6 +167,57 @@ void blit_sprite(SDL_Surface *surface, int x, int y, unsigned int table, unsigne
 	}
 }
 
+/* Shared tail of the two dominant-bank walkers. Picks the most-used COLOUR bank, 1..15: bank 0 is
+ * the palette's grey ramp, and a weapon sprite's white-hot core would outvote the hue that
+ * identifies it. Returns 0 only for a sprite with no colour at all.
+ */
+static Uint8 dominant_bank_of(const unsigned int count[16])
+{
+	unsigned int best = 0, bestCount = 0;
+	for (unsigned int bank = 1; bank < 16; ++bank)
+	{
+		if (count[bank] > bestCount)
+		{
+			bestCount = count[bank];
+			best = bank;
+		}
+	}
+	return (Uint8)best;
+}
+
+/* The palette bank a sprite-TABLE sprite is mostly drawn in -- the blit_sprite side of
+ * sprite2_dominant_bank. Walks the run-length stream exactly like the blitters above: 255 = a
+ * transparent run whose length is the next byte, 254 = next row, 253 = one transparent pixel.
+ */
+Uint8 sprite_dominant_bank(unsigned int table, unsigned int index)
+{
+	if (table >= COUNTOF(sprite_table) || index >= sprite_table[table].count || !sprite_exists(table, index))
+		return 0;
+
+	const Sprite *const cur_sprite = sprite(table, index);
+	const Uint8 *data = cur_sprite->data;
+	const Uint8 *const data_ul = data + cur_sprite->size;
+
+	unsigned int count[16] = { 0 };
+	for (; data < data_ul; ++data)
+	{
+		switch (*data)
+		{
+		case 255:  // transparent run: the length byte follows, and is not a pixel
+			++data;
+			break;
+		case 254:  // next pixel row
+		case 253:  // one transparent pixel
+			break;
+		default:
+			++count[*data >> 4];
+			break;
+		}
+	}
+
+	return dominant_bank_of(count);
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite_blend(SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index)
 {
@@ -537,15 +588,13 @@ void free_sprite2s(Sprite2_array *sprite2s)
 /* Is `index` a sprite this sheet actually contains?
  *
  * A Sprite2_array is one raw blob: a Uint16 offset table, then the packed sprites. Every blit below
- * reads offsets[index - 1] and walks bytes from there until a 0x0f terminator -- with no bounds
- * check at all, so an index the sheet doesn't have follows a junk offset into arbitrary memory and
- * paints whatever it finds. That is precisely what a bad item id looks like on screen: "distorted
- * graphics", not a missing sprite. Indices come from game data (ship/weapon/enemy ids, level
- * scripts), so one bad id should cost a sprite, not the frame.
+ * reads offsets[index - 1] and walks from there to a 0x0f terminator with no bounds check, so an
+ * index the sheet doesn't have follows a junk offset into arbitrary memory and paints whatever it
+ * finds -- which is what a bad item id looks like on screen ("distorted graphics", not a missing
+ * sprite). Indices come from game data, so one bad id should cost a sprite, not the frame.
  *
- * Deliberately makes NO assumption about the sprite count -- it only requires that the table read
- * and the offset it yields both land inside the blob. That is enough to contain a wild index, and
- * it cannot wrongly reject a legitimate one.
+ * Makes NO assumption about the sprite count: it only requires that the table read and the offset
+ * it yields both land inside the blob, which contains a wild index without rejecting a valid one.
  */
 static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int index)
 {
@@ -556,12 +605,9 @@ static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int inde
 	return SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]) < sprite2s.size;  // ...and what it points at
 }
 
-/* The palette bank (0..15) this sprite is mostly drawn in -- its "colour", for effects that want to
- * match a sprite they were spawned from (the endless Opening Salvo shot trail picks its superspark
- * colour this way). Counts opaque pixels per bank and returns the winner, but only among the COLOUR
- * banks: bank 0 is the palette's grey ramp, and a weapon sprite's white-hot core would otherwise
- * outvote the hue that actually identifies it. Falls back to bank 0 only when there is no colour at
- * all. Walks the packed sprite exactly like blit_sprite2 does, so an unpaintable index reads as 0.
+/* The palette bank this sprite is mostly drawn in -- its "colour", for effects that want to match
+ * the sprite they spawned from (the endless Opening Salvo trail picks its spark colour this way).
+ * Walks the packed sprite exactly like blit_sprite2, so an unpaintable index reads as 0.
  */
 Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 {
@@ -581,16 +627,7 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 		}
 	}
 
-	unsigned int best = 0, bestCount = 0;  // best stays 0 (grey) only if the sprite has no colour at all
-	for (unsigned int bank = 1; bank < 16; ++bank)
-	{
-		if (count[bank] > bestCount)
-		{
-			bestCount = count[bank];
-			best = bank;
-		}
-	}
-	return (Uint8)best;
+	return dominant_bank_of(count);
 }
 
 // does not clip on left or right edges of surface

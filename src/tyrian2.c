@@ -177,25 +177,18 @@ static void chain_queue_kill(int screenX, int y, int linknum)
 }
 
 // --- Logical enemy death: the ONE place an enemy[] slot is retired as a kill --------------------
-// Killing an enemy has grown a fixed list of required consequences -- the level tally, the endless
-// run tally, the elite/champion bounty, the SHOCKWAVE sweep, the MARTYRDOM burst and the Chain
-// Reaction pulse. Three of those carry a "consecutive same-linknum removals are one enemy" latch
-// (see endlessCountKill), and a latch is correct only if it sees EVERY kill, so forgetting one from
-// a new kill path fails silently and in both directions: a multipart elite pays its bounty once per
-// destroyed tile, or the next enemy to reuse a latched linknum reads as another tile of the previous
-// one and pays nothing at all. Each kill site used to repeat the list and defend it with comments;
-// they all come through here now, so a new path inherits the whole contract by construction.
+// A kill carries a fixed list of consequences: the level tally, the endless run tally, the
+// elite/champion bounty, the SHOCKWAVE sweep, the MARTYRDOM burst and the Chain Reaction pulse.
+// Three of those carry a "consecutive same-linknum removals are one enemy" latch, and a latch is
+// only correct if it sees EVERY kill -- so routing every path through here is what stops a new one
+// from silently double-paying a multipart elite or stranding a latch on a reused linknum.
 //
-// NOT for despawns. An enemy that scrolls off the playfield, that the map-stop watchdog culls, or
-// that a level event clears or replaces was never killed: those sites still assign enemyAvail[i] = 1
-// directly and deliberately feed no tally and no latch. The ram kill in JE_playerCollide (mainint.c)
-// destroys an enemy without being a kill either -- see the note there.
+// NOT for despawns: an enemy that scrolls off, that the map-stop watchdog culls, or that a level
+// event clears was never killed, and those sites still assign enemyAvail[i] = 1 directly. The ram
+// kill in JE_playerCollide (mainint.c) is deliberately not a kill either -- see the note there.
 //
-// ENEMY_DEATH_QUIET exists for the Chain Reaction drain alone: its pulse must not queue further
-// pulses (chain_reaction_process is non-recursive by construction), and a chain pop was never meant
-// to throw a death burst or sweep bullets. It suppresses only the EFFECTS -- the latch-feeding calls
-// above the gate run for every caller, which is exactly what stops a chain pop from stranding a
-// latch on a linknum a later enemy will reuse.
+// ENEMY_DEATH_QUIET exists for the Chain Reaction drain alone: it suppresses only the EFFECTS, so
+// a chain pop still feeds the latches (and so can't strand one) without queueing further pulses.
 void enemy_logical_death(unsigned int i, enemy_death_kind kind)
 {
 	enemyAvail[i] = 1;
@@ -473,7 +466,7 @@ static void update_ship_override(float alpha)
 }
 
 // Variable-timestep (VT) player ship: the ship alone is simulated at the render rate with
-// real dt while the world stays on the fixed 35Hz tick; the integrator owns it. notes.md §VT ship.
+// real dt while the world stays on the fixed 35Hz tick; the integrator owns it. notes.md §Variable-timestep (VT) player ship.
 bool vt_ship = true;
 
 #define VT_ACCEL      1.0f  // velocity gained per tick while a direction is held (orig accelXC: +1/tick)
@@ -944,9 +937,8 @@ static void draw_power_gauge(float power_value)
 	int base = BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
-	// Opening Salvo perk: while the charge is banked the next volley is free AND boosted, so the
-	// gauge goes green -- the tell that it is worth holding fire a beat longer. Tested after the
-	// kill-fire window so the rarer, player-timed state wins the gauge when both are up.
+	// Opening Salvo: green while a salvo is banked or burning. After the kill-fire test, so the
+	// rarer player-timed state wins the gauge when both are up.
 	if (endlessOpeningSalvoCharged())
 		base = ENDLESS_SALVO_GAUGE_BASE;
 	const int darkEnd = base & ~0x0F;     // bank floor: the AA top edge blends up from here
@@ -1062,7 +1054,7 @@ void JE_starShowVGA(void)
 					// Advance the VT ship by the REAL elapsed time before the break check:
 					// stepping only on rendered frames discards the elapsed time of the
 					// iteration that triggers a sim tick, which reads as visible stutter
-					// even at a solid 60 fps (notes.md §VT ship).
+					// even at a solid 60 fps (notes.md §Variable-timestep (VT) player ship).
 					const bool vt_owns = vt_ship_owns();
 					if (vt_owns)
 						vt_ship_step(elapsed / period);
@@ -1367,11 +1359,10 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 enum { ENEMY_DRAW_MARGIN = 40 };
 
 // True if any opaque pixel of enemy i's CURRENT animation frame would land inside the visible
-// playfield, computed purely from the enemy's stored logic state -- the SAME fields the shot /
-// enemy collision reads (ex + mapoffset, ey, enemycycle, size). It never consults the draw, so
-// the kill-gate verdict cannot lag or desync the hit test the way a draw-time flag would on the
-// "over" layers (which blit AFTER the shot loop). It also tracks enemies that grow through their
-// animation: it walks the frame that is current this tick, not a fixed maximum box. Mirrors
+// playfield, computed purely from stored logic state -- the SAME fields the collision reads
+// (ex + mapoffset, ey, enemycycle, size). It never consults the draw, so the kill-gate verdict
+// can't lag or desync the hit test the way a draw-time flag would on the "over" layers (which blit
+// AFTER the shot loop), and it tracks enemies that grow through their animation. Mirrors
 // blit_enemy's frame-index selection and the size==1 four-cell layout / vertical draw gates.
 static bool enemy_has_visible_pixel(unsigned int i)
 {
@@ -3262,13 +3253,10 @@ level_loop:
 			// OVERCHARGE / Overdrive / Heavy Rounds perk (endless): your weapons hit harder.
 			// Gate on the computed percent so any damage source (sector mod or run perk) applies.
 			//
-			// shotDmg is an ENCODED byte, not a plain quantity: 99 means "ice, deals no damage" and
+			// shotDmg is an ENCODED byte, not a plain quantity: 99 means "ice, no damage" and
 			// 250..255 means "piercing, damage = value - 250" (see the decode below and shots.c).
-			// Scaling the raw byte therefore did three wrong things at once -- it multiplied the
-			// 250 marker along with the damage, so a 3-damage piercing round hit for 129 at +50%;
-			// a damage CUT could drag the byte back under 250 and silently strip the pierce flag;
-			// and an ordinary shot scaled onto either marker changed weapon behaviour outright.
-			// Decode first, scale only the real damage, then re-encode.
+			// Never scale the raw byte -- decode first, scale only the real damage, re-encode.
+			// notes.md §Weapons.
 			if (endlessFxActive())
 			{
 				int dmgPct = endlessPlayerDamagePercent();
@@ -3285,9 +3273,8 @@ level_loop:
 						if (scaled < 1)
 							scaled = 1;              // a shot that deals damage never rounds away to none
 						// A piercing shot's raw damage is only 0..5, so plain integer scaling rounds
-						// most of the lever away: +50% on 3 damage bought exactly nothing, which made
-						// Overcharge/Overdrive/Glass Cannon feel dead on those weapons. Guarantee that
-						// an uplift moves the number by at least one.
+						// most of the lever away (+50% on 3 damage buys nothing). Guarantee that an
+						// uplift moves the number by at least one.
 						if (dmgPct > 100 && scaled <= raw)
 							scaled = raw + 1;
 					}
@@ -3322,7 +3309,9 @@ level_loop:
 						collided = abs(enemy[b].ex + enemy[b].mapoffset - (player[0].x + 7)) < temp;
 						temp2 = 9;
 						chain = 0;
-						damage = 10;
+						// The Zinglon pillar is a pseudo-shot with no playerShotData entry, so it
+						// misses the salvoBoost tag and the scaling block above; scale it here.
+						damage = endlessOpeningSalvoScale(10);
 					}
 					else if (is_special)
 					{
@@ -3386,24 +3375,19 @@ level_loop:
 						int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
 						                         : (has_boss_bar ? bossHpMult : 1);
 
-						// ENDLESS pierce lockout. A piercing shot is never consumed, so without this the
-						// same bullet damages the same hull again on every tick it overlaps -- which is
-						// how a Mega Cannon eats a 16x boss in the time it takes to eat a 1x one. Scaled
-						// off the same multiplier the target is carrying, so a boss gets the full lockout,
-						// an elite or champion a much smaller one, and an ordinary enemy none whatsoever.
+						// ENDLESS pierce lockout: a piercing shot is never consumed, so without this the
+						// same bullet re-damages the same hull every tick it overlaps. Scaled off the
+						// multiplier the target carries (see endless_combat.c for the tiering).
 						//
-						// The lock is PER BULLET (playerShotData), never per enemy. Weapons of this class
-						// fire a spread -- the Mega Cannon and Sonic Impulse both put 8 bullets in the air
-						// for 1 damage each -- so a per-hull lock let the first bullet of the tick claim it
-						// and silently discard the other seven, which is most of the weapon's damage.
-						// See endless_combat.c for the tiering.
+						// The lock is PER BULLET (playerShotData), never per enemy: these weapons fire
+						// spreads of 8 one-damage bullets, so a per-hull lock would let the first bullet
+						// of the tick claim it and discard most of the weapon's damage.
 						if (endlessFxActive() && infiniteShot)
 						{
-							// Ask what THIS hull's tier is owed before consulting the lock, never the
-							// other way round. An ordinary enemy answers 0, so it is neither charged nor
-							// blocked -- including while the bullet is locked out of a boss it happens to
-							// be sharing space with. Testing the lock first made a boss's protection
-							// spill onto every scrap of trash overlapping it.
+							// Ask what THIS hull's tier is owed BEFORE consulting the lock, never the
+							// other way round: an ordinary enemy answers 0 and so is neither charged
+							// nor blocked, even while the bullet is locked out of a boss it overlaps.
+							// Testing the lock first spills a boss's protection onto the trash beside it.
 							const int lock100 = endlessPierceLock100(has_boss_bar, hpMult, enemy[b].eliteState);
 							if (lock100 > 0)
 							{
@@ -3413,12 +3397,9 @@ level_loop:
 									damage += 250;   // re-encode: the bullet flies on, dealing nothing here
 									continue;
 								}
-								// Charge the lockout ONCE PER TICK, at the toughest hull this bullet crosses
-								// -- not once per hit. Spent per hit, the cost scaled with how many hulls
-								// happened to line up in front of the bullet (tax `1 - 1/(1 + H*L)`), so at
-								// zone 50 a four-part boss taxed 29% where a one-part boss taxed the tuned
-								// 9%, and the figure quietly depended on boss geometry. Taking the max keeps
-								// a boss's tax from being diluted by the trash or elites sharing its space.
+								// Charge the lockout ONCE PER TICK, at the toughest hull this bullet
+								// crosses -- not once per hit, which would make the tax depend on how many
+								// hulls happened to line up in front of the bullet.
 								//
 								// Only BANKED here; the conversion into ticks happens at the top of this
 								// bullet's next pass. Applying it inline would let the bullet lock itself
@@ -3428,22 +3409,37 @@ level_loop:
 							}
 						}
 
-						if (hpMult > 1)
-						{
-							enemy[b].damageAccum += damage;
-							damage = enemy[b].damageAccum / hpMult;
-							enemy[b].damageAccum -= damage * hpMult;
-						}
-
-						// Executioner perk (endless): a badly wounded target takes extra damage. Computed
-						// from the enemy's latched full HP (post-accumulator, so a tough boss benefits
-						// proportionally) and undone in the shot-carry paths below, so a piercing / overkill
-						// shot does not hand this enemy's bonus to the next one it strikes this tick.
-						int execBonus = endlessFxActive()
+						// Executioner perk (endless): a badly wounded target takes extra damage. Taken
+						// off the RAW shot damage, BEFORE the accumulator below divides it -- a
+						// percentage of a post-divide 1 or 2 armor points truncates to nothing, i.e.
+						// to zero against exactly the depth-scaled bosses the perk exists for. The
+						// wounded TEST still reads armor, which the multiplier never touches.
+						const int execRaw = endlessFxActive()
 							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
 							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
 							: 0;
-						damage += execBonus;
+
+						// Armor points the bonus actually bought, which is what the shot-carry paths at the
+						// bottom have to undo -- they work in post-divide space, so the raw bonus is the
+						// wrong quantity to subtract there.
+						int execBonus;
+
+						if (hpMult > 1)
+						{
+							// Run the accumulator once, then measure the perk by re-dividing the same
+							// starting state without it. `plain` only reads the pre-hit accumulator; the
+							// bonused pass is the one that commits.
+							const int plain = (enemy[b].damageAccum + damage) / hpMult;
+							enemy[b].damageAccum += damage + execRaw;
+							damage = enemy[b].damageAccum / hpMult;
+							enemy[b].damageAccum -= damage * hpMult;
+							execBonus = damage - plain;
+						}
+						else
+						{
+							damage += execRaw;
+							execBonus = execRaw;
+						}
 
 						temp = enemy[b].linknum;
 						if (temp == 0)
@@ -4086,9 +4082,8 @@ draw_player_shot_loop_end:
 	}
 
 	/*------- Random Explosions --------*/
-	// Full visible playfield: 280 was the pre-widescreen width, so explosions used to
-	// stop short of the widened right edge (see composite_playfield / video.h);
-	// 184 = full playfield height (vanilla stopped at 180).
+	// Full visible playfield: 280 is the pre-widescreen width and stops short of the widened right
+	// edge (see composite_playfield / video.h); 184 = full playfield height (vanilla stopped at 180).
 	if (randomExplosions && mt_rand() % 10 == 1)
 		JE_setupExplosionLarge(false, 20, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184);
 
@@ -6019,7 +6014,7 @@ bool newSuperArcadeGame(unsigned int i)
 		else if (tempW == 1)
 		{
 			// Nort Ship: shipgraphic 1 is a sentinel (see JE_playerMovement / JE_drawItem), so draw
-			// its two-piece hull here instead of skipping it (previously left blank).
+			// its two-piece hull here rather than treating 1 as a sprite index.
 			blit_sprite2x2(VGAScreen, 148, 70, spriteSheet9, 220);
 			blit_sprite2x2(VGAScreen, 172, 70, spriteSheet9, 222);
 		}
@@ -6664,14 +6659,12 @@ static int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_Singl
 	if (layer == 2)
 	{
 		// The glass and the event clock quantize their boosted fractional rates through
-		// independent carries, so the integer identity "glass == ratio x curLoc" that stock
-		// keeps exact wanders +/-1px with the relative carry phase. Pieces of one structure
-		// spawn on different ticks and would inherit different phases -- a permanent 1px seam
-		// inside the structure (GYGES's chain machine). Anchor every spawn to the same ideal
-		// line instead: late whole event-px at the stock layer ratio plus the current
-		// cross-layer phase. Applies even at late == 0 (the phase can be nonzero on an
-		// on-time tick). Local motion beyond the ride is prorated like the other banks;
-		// sky fixedmovey itself never scales (local-motion semantics).
+		// independent carries, so stock's exact "glass == ratio x curLoc" wanders +/-1px with
+		// the relative carry phase -- and pieces of one structure spawning on different ticks
+		// inherit different phases, i.e. a permanent 1px seam (GYGES's chain machine). Anchor
+		// every spawn to the same ideal line instead: late whole event-px at the stock layer
+		// ratio plus the current cross-layer phase. Applies even at late == 0. Local motion
+		// beyond the ride is prorated; sky fixedmovey itself never scales.
 		if (!eventScrollSkyValid || late < 0)
 			return 0;
 		int catchup = event_scroll_round_div(eventScrollSkyRatio100 * late +

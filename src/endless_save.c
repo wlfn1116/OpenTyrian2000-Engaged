@@ -761,13 +761,10 @@ void endlessArmLockedRelaunch(void)
 }
 
 // --- Debug campaign-mods state in opentyrian.cfg ----------------------------------------------
-// The Debug Mode effect layer (see endlessFxActive) is a setup you build once and then play with
-// for a while, so it outlives the process rather than the session. Kept here with the rest of the
-// endless persistence, and out of config.c, which has no business knowing what a perk is.
-//
-// Only written when NOT in an endless run: during a run these globals belong to the RUN (and ride
-// endless.sav), so writing them here would overwrite the campaign slate with a run's state. Leaving
-// the keys untouched instead means a quit from inside a run preserves whatever was last saved.
+// The Debug Mode effect layer (endlessFxActive) is a setup built once and played with for a while,
+// so it outlives the process. Kept here with the rest of the endless persistence, out of config.c.
+// Only written when NOT in an endless run: during a run these globals belong to the RUN and ride
+// endless.sav, so writing them here would overwrite the campaign slate with a run's state.
 
 #define ENDLESS_CFG_PIN_PREFIX "pin_"
 #define ENDLESS_CFG_PIN_OFF    (-1)   // no lever's valid range reaches below 0, so this can't collide

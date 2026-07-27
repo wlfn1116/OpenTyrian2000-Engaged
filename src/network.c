@@ -19,6 +19,7 @@
 #include "network.h"
 
 #include "episodes.h"
+#include "file.h"
 #include "fonthand.h"
 #include "helptext.h"
 #include "joystick.h"
@@ -661,7 +662,7 @@ connect_again:
 		episodes >>= 1;
 	}
 
-	network_opponent_name = malloc(packet_in[0]->len - 12 + 1);
+	network_opponent_name = malloc_die(packet_in[0]->len - 12 + 1);
 	strcpy(network_opponent_name, (char *)&packet_in[0]->data[12]);
 
 	network_update();

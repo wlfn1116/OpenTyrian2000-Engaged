@@ -39,7 +39,10 @@ void JE_decryptShips(void)
 	
 	for (int x = SAS - 1; x >= 0; x--)
 	{
-		s2[x] = extraShips[x] ^ extraCryptKey[(x + 1) % 10];
+		// (unsigned) only to make the index's non-negativity local -- x is >= 0 by the loop condition.
+		const unsigned int k = (unsigned)(x + 1) % 10;
+		OT_ASSUME(k < 10);
+		s2[x] = extraShips[x] ^ extraCryptKey[k];
 		if (x > 0)
 			s2[x] ^= extraShips[x - 1];
 	}  /*  <= Key Decryption Test (Reversed key) */
