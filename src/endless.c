@@ -64,9 +64,9 @@ static bool endlessArmorHudDirty = false;  // set when the Overheat DoT shaves h
 // nothing else (endlessGenerateCourses), and the outpost after plays the "Parlance" warning theme.
 // Three cadences: the minor milestone (25, 75, 125, ...) charts S/S+ and pins its level music to
 // "Tunneling Trolls"; the plain one (50, 150, 250, ...) charts S+/S++; the GRAND one -- every 100th
-// zone -- charts S++/S+++ and always includes "The End". The 50- and 100-based milestones each grant a
-// guaranteed perk pick (endlessBetweenLevels); the minor one does NOT -- its zones get a perk only if
-// the ENDLESS_PERK_EVERY cadence lands there. Keyed off the REAL zone the player sees, so the numbers match the HUD.
+// zone -- charts S++/S+++ and always includes "The End". EVERY milestone class grants a guaranteed perk
+// pick when it is cleared (endlessBetweenLevels) -- the slate is forced and unavoidable, so the payoff
+// is too. Keyed off the REAL zone the player sees, so the numbers match the HUD.
 #define ENDLESS_MILESTONE_EVERY 50
 #define ENDLESS_MILESTONE_GRAND 100
 
@@ -94,14 +94,12 @@ int endlessMilestoneKind(void)
 	return endlessMilestoneKindOfZone(endlessRunDepth + 1);
 }
 
-// Was run depth `depth` a PERK-GRANTING milestone? Only the 50-based (kind 1) and 100-based (kind 2)
-// milestones hand out a guaranteed perk; the minor kind-3 "Tunneling Trolls" milestone does NOT -- its
-// zones get a perk only if the cadence happens to land on one. (A run depth IS the zone just
-// cleared, so this tests "the outpost I'm standing in follows a perk milestone".)
+// Was run depth `depth` a PERK-GRANTING milestone? Every class is (25, 50, 75, 100, ...): each one
+// forces its slate on the player, so each one pays. (A run depth IS the zone just cleared, so this
+// tests "the outpost I'm standing in follows a milestone".)
 static bool endlessPerkMilestoneAt(int depth)
 {
-	const int kind = endlessMilestoneKindOfZone(depth);
-	return kind == 1 || kind == 2;
+	return endlessMilestoneKindOfZone(depth) != 0;
 }
 
 // Forced perk picks come on a fixed cadence: after the first cleared zone, then every 4th zone
@@ -124,12 +122,12 @@ JE_byte endlessMilestoneSong(int kind)
 }
 
 // Is a forced perk pick due at the outpost for run depth `depth` (the zone just cleared)? Three
-// reasons: the cadence above; a cleared MILESTONE zone (50, 100, 150, ...); or the zone right
+// reasons: the cadence above; a cleared MILESTONE zone (25, 50, 75, 100, ...); or the zone right
 // after a depth where those two COLLIDED. A collision would otherwise hand out one perk where the
 // player earned two, so the second is deferred by a zone instead of being swallowed; the cadence
-// itself is unaffected and carries on from its own schedule. (At ENDLESS_PERK_EVERY 4 no collision
-// can occur -- 50k mod 4 is only ever 2 or 0, never 1 -- so the deferral is currently unreachable;
-// it stays because it is the general rule, and a cadence of 3 or 5 revives it. See notes.md.)
+// itself is unaffected and carries on from its own schedule. (At ENDLESS_PERK_EVERY 4 the collisions
+// are depths 25, 125, 225, ... -- 25k mod 4 is 1 on every other minor milestone -- so a run reads
+// ..., 21, 25, 26, 29, ... . See notes.md.)
 // Derived purely from the depth, so it needs no persisted state and comes out the same across a
 // save/reload or a mid-zone bail.
 bool endlessPerkDueAtDepth(int depth)
