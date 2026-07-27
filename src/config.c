@@ -645,6 +645,10 @@ bool load_opentyrian_config(void)
 	// endless_save.c owns the format -- config.c has no business knowing what a perk is.
 	endlessDebugConfigLoad(config_find_section(config, "endless_debug", NULL));
 
+	// The endless all-time record (furthest zone ever reached), its own section because it is a
+	// player RECORD rather than a setting -- and because it is the one endless value written mid-run.
+	endlessRecordConfigLoad(config_find_section(config, "endless", NULL));
+
 	// Smooth Motion owns the sub-pixel render path. Keep it disabled when motion
 	// interpolation is off, then apply the scaler constraint to the final state.
 	set_smooth_motion(smoothMotion);
@@ -784,6 +788,13 @@ bool save_opentyrian_config(void)
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	endlessDebugConfigSave(section);
+
+	// The endless all-time record (furthest zone ever reached) -- unlike the debug layer this one is
+	// written during a run too, which is the whole point of it.
+	section = config_find_or_add_section(config, "endless", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	endlessRecordConfigSave(section);
 
 	FILE *file = dir_fopen(get_user_directory(), "opentyrian.cfg", "w");
 	if (file == NULL)

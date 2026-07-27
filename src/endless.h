@@ -213,6 +213,19 @@ extern int endlessArmorBonus;
 // Reset all per-run state at the start of a new Endless run.
 void endlessResetRun(void);
 
+// --- All-time record: the furthest zone ever reached -----------------------------------
+// The one number that outlives a run. It rides opentyrian.cfg rather than endless.sav,
+// because that sidecar is per-slot and hardcore runs never write one at all.
+extern int endlessBestZone;             // furthest zone ever reached, over every run (0 = none yet)
+void endlessNoteZoneReached(int zone);  // called at each endless level start; advances + persists the record
+void endlessRecordRunStart(void);       // snapshot the record as this run finds it (new run / resumed run)
+int  endlessBestZoneAtStart(void);      // that snapshot -- the run-over screen's "(+n)" is the gap to it
+
+// The record in opentyrian.cfg's [endless] section (endless_save.c owns the format, as with
+// the [endless_debug] block).
+void endlessRecordConfigSave(ConfigSection *section);
+void endlessRecordConfigLoad(const ConfigSection *section);
+
 // --- Run seed ------------------------------------------------------------------------
 // A run's STRUCTURE (level order, mutators, perks, shop stock) is reproducible from a seed;
 // combat randomness stays unseeded by design (notes.md §Seeded structure RNG).

@@ -5499,13 +5499,15 @@ void JE_endLevelAni(void)
 	}
 	else if (endlessMode)
 	{
-		// Endless earns cash, not data cubes -- show the clear payout just banked above.
+		// Endless earns cash, not data cubes -- show the clear payout just banked above. No '+' or
+		// parentheses: SMALL_FONT_SHAPES has blank stubs there and would silently drop them (notes.md
+		// §Font glyph coverage).
 		char payStr[64];
-		snprintf(payStr, sizeof(payStr), "Zone Bonus:  +%ld", endlessBonus);
+		snprintf(payStr, sizeof(payStr), "Zone Bonus:  %ld", endlessBonus);
 		JE_outTextGlow(VGAScreenSeg, 30, 120, payStr);
 		if (endlessInterest > 0)
 		{
-			snprintf(payStr, sizeof(payStr), "Bank Interest:  +%ld", endlessInterest);
+			snprintf(payStr, sizeof(payStr), "Bank Interest:  %ld", endlessInterest);
 			JE_outTextGlow(VGAScreenSeg, 30, 138, payStr);
 		}
 	}

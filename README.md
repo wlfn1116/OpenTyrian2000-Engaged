@@ -161,6 +161,8 @@ Collected artifacts include their platform in the filename, for example
 
 ## More detail
 
+- [GUIDE.md](GUIDE.md) -- the player's guide: every setting explained, and a full
+  reference for Endless mode (modifiers, elites, perks, the outpost, the economy).
 - [notes.md](notes.md) -- design notes and known pitfalls for the systems above.
 
 ## License

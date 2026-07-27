@@ -1525,6 +1525,37 @@ mutable `last`, so a Quit-Level retry replays the same track.
   purchase doesn't sync `last_items`, so shop-stock code must seed from
   `player[0].items`, not stale caches.
 
+### All-time record — furthest zone reached
+
+The furthest zone ever reached is the only endless state that outlives a run, so
+it deliberately does NOT ride `endless.sav`: that sidecar is keyed by save slot,
+and a hardcore run — the one most likely to set a record — never writes one at
+all. It lives in `opentyrian.cfg`'s own `[endless]` section (`best_zone`), with
+the read/write pair in `endless_save.c` next to the `[endless_debug]` block, so
+`config.c` still knows nothing about endless internals.
+
+- `endlessNoteZoneReached(zone)` is called from the endless level-start path in
+  `tyrian2.c`, right after `endlessCaptureSortie`. **Launching a zone is
+  reaching it** — the same reading the Run Over screen uses ("You fell in Zone
+  `runDepth + 1`"), so the record and that line always agree. It writes the
+  config through immediately rather than at exit: a record set at zone 60 must
+  survive an alt-F4.
+- `endlessRecordRunStart()` snapshots the record as a run finds it, and the Run
+  Over screen shows the gap as `(+n)`. It is called from `newEndlessGame` and
+  `endlessLoadSlot` — deliberately NOT from `endlessResetRun`, which a Quit
+  Level bail re-runs via `endlessApplyCurrent`; baselining there would silently
+  zero out a gain the run had already earned.
+- The Run Over screen also shows the run's seed, so a good run can be replayed.
+  It now builds its lines into an array first, because only the run knows its own
+  height (the hull line is conditional): the pitch tightens until the block fits,
+  and the whole screen — title, stats, milestone line — is then centred
+  vertically on that measured height instead of starting at a fixed y.
+- **`SMALL_FONT_SHAPES` has blank glyphs for `( ) + * =`.** They are 1x2/2x2 stubs
+  in `data/tyrian.shp`, so they draw *nothing* — a `(+4)` renders as `4`. The
+  record's gain therefore reads "up 4", in words. This is a property of that bank
+  only: `TINY_FONT` draws them all fine, and `FONT_SHAPES` is worse still (no
+  digits at all). See §Font glyph coverage.
+
 ### The mode / effect split — `endlessFxActive()`
 
 `endlessMode` used to gate two unrelated things, so Debug Mode could not run the
@@ -1944,6 +1975,28 @@ have handed player 1's trim to player 2.
   `JE_loadMainShapeTables` therefore detects the duplication (bank 11 == bank 7,
   only when loading a non-`tyrian.shp` file) and reloads bank 11 from
   `tyrian.shp`. Both files index 304 sprites in that bank, so the swap is safe.
+
+## Font glyph coverage — `fonthand.c`, `data/tyrian.shp`
+
+`font_ascii[]` maps a character to a sprite id, and −1 means "draws nothing".
+That table is NOT the whole story: a mapped id can still resolve to a **blank
+1x2 / 2x2 stub** in the shape bank, which also draws nothing — silently, and with
+no gap, so `(+4)` comes out as `4`. The three banks differ, and a string is only
+safe in the bank it is actually drawn with:
+
+- **`TINY_FONT`** (table 2, 127 sprites, ≤8px tall) — everything printable except
+  `& < > @ ^ _ ` ~` and a stubbed `'`. The most permissive bank.
+- **`SMALL_FONT_SHAPES`** (table 1, 85 sprites, ≤13px tall) — letters, digits and
+  most punctuation, but `( ) + * = ] { }` are blank stubs and `& < > @ ^ _ ` ~`
+  are unmapped. `$ : , . / ! ? - '` are all fine.
+- **`FONT_SHAPES`** (table 0, 60 sprites, ≤20px tall) — **uppercase letters and
+  little else**: no digits at all, no `+ - / ( )`. Headings only.
+
+Verify by parsing `data/tyrian.shp` rather than by eye: u16 table count, then u32
+offsets; each table is a u16 sprite count followed by, per sprite, a bool
+"populated" plus u16 width/height/size and the data. Width ≤ 2 *and* height ≤ 2
+is the blank-stub signature. Advance is `width + 1` per glyph, 6 for a space, 0
+for the `~` highlight toggle.
 
 ## Audio / MIDI — `loudness.c`, `fluid_music.c`, `win_native_midi.c`
 

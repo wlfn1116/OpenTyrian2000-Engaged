@@ -659,6 +659,7 @@ bool endlessLoadSlot(JE_byte slot)
 
 	endlessApplyCurrent(&endlessSlotCache[slot - 1]);
 	endlessMode = true;  // JE_loadGame cleared it for a normal load; this slot is an endless run
+	endlessRecordRunStart();  // a resumed run measures its "(+n)" from here -- the zones it already flew are banked
 	return true;
 }
 
@@ -856,4 +857,29 @@ void endlessDebugConfigLoad(const ConfigSection *section)
 			                                                  endlessScalingOverrideMax(i));
 		}
 	}
+}
+
+// --- The all-time record in opentyrian.cfg ----------------------------------------------------
+// The furthest zone ever reached is the only endless state that outlives a run, so it can't ride
+// endless.sav: that sidecar is keyed by save slot and a hardcore run never writes one. It goes to
+// the config's own [endless] section instead, written the moment the record advances
+// (endlessNoteZoneReached) as well as on the normal config save.
+
+void endlessRecordConfigSave(ConfigSection *section)
+{
+	if (section == NULL)
+		return;
+
+	config_set_int_option(section, "best_zone", endlessBestZone);
+}
+
+void endlessRecordConfigLoad(const ConfigSection *section)
+{
+	if (section == NULL)
+		return;
+
+	int best = 0;
+	config_get_int_option(section, "best_zone", &best);
+	endlessBestZone = (best > 0) ? best : 0;   // a hand-edited negative reads as "no record yet"
+	endlessRecordRunStart();                   // nothing is running yet, so the baseline is the record
 }
