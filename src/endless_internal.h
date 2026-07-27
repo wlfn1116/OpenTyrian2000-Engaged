@@ -155,7 +155,7 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
                                        // Percentage POINTS added to endlessPlayerDamagePercent, so a bare
                                        // salvo is x2.5; endlessOpeningSalvoScale reuses it for the
                                        // non-damage special effects. notes.md §Opening Salvo.
-#define ENDLESS_PERK_SALVO_WINDOW  35  // ticks of HELD FIRE a consumed salvo lasts (~1s at the 35Hz sim tick)
+#define ENDLESS_PERK_SALVO_WINDOW  35  // ticks a consumed salvo lasts (~1s at the 35Hz sim tick), trigger held or not
 #define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
 #define ENDLESS_PERK_CM_RADIUS1    26  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2    40  // ...widened radius at 2 stacks
@@ -208,7 +208,7 @@ extern int endlessPerkChoice[3];              // this visit's offered perk ids
 extern int endlessPerkChoiceN;                // how many are offered (0..3)
 extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
 extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run AND each zone)
-extern int endlessSalvoWindow;                // Opening Salvo: ticks of held fire left in a CONSUMED salvo (0 = none running)
+extern int endlessSalvoWindow;                // Opening Salvo: ticks left in a CONSUMED salvo (0 = none running)
 extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run AND each zone)
 
 void endlessResetZonePerkTimers(void);        // clear the two gameplay-only perk timers at level start (endlessResetZoneEffects)

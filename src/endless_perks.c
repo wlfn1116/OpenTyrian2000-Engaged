@@ -57,7 +57,7 @@ int endlessPerkChoice[3];             // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..3)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
 int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
-int endlessSalvoWindow = 0;           // Opening Salvo: ticks of held fire left in a consumed salvo (reset each run)
+int endlessSalvoWindow = 0;           // Opening Salvo: ticks left in a consumed salvo (reset each run)
 int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
 // The run depth whose post-zone perk pick has already been resolved (taken or declined); -1 =
 // none yet. endlessBetweenLevels offers the forced pick only when this lags the current depth,
@@ -251,17 +251,15 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 }
 
 // --- Opening Salvo perk ---------------------------------------------------------------------------
-// Two timers: endlessSalvoIdle charges the salvo, endlessSalvoWindow is the ~1s of held fire that
-// spending it buys, during which every gun AND every special is boosted. notes.md §Opening Salvo.
+// Two timers: endlessSalvoIdle charges the salvo, endlessSalvoWindow is the ~1s that spending it
+// buys, during which every gun AND every special is boosted. notes.md §Opening Salvo.
 
 // Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires.
 void endlessOpeningSalvoTick(void)
 {
 	if (endlessSalvoWindow > 0)
 	{
-		// button[0] is last tick's fire state -- this runs before JE_playerMovement re-reads the pad.
-		if (button[0])
-			--endlessSalvoWindow;       // released trigger pauses rather than drains
+		--endlessSalvoWindow;          // real time, not held-fire time: the gauge counts it down
 		return;                        // and no second charge banks while one runs
 	}
 	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle < 1000000)
@@ -284,12 +282,15 @@ bool endlessOpeningSalvoConsume(void)
 
 bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoWindow > 0; }
 
-// What tints the gauge green: a salvo you HAVE, banked or burning.
-bool endlessOpeningSalvoCharged(void)
+// How much of the generator gauge reads green, 0..100: a full bar while a charge is banked, then
+// the share of the spent window still to run, so the green recedes as the salvo burns down.
+int endlessOpeningSalvoGaugePercent(void)
 {
 	if (!endlessFxActive() || endlessPerkOwned[PERK_SALVO] == 0)
-		return false;
-	return endlessSalvoWindow > 0 || endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
+		return 0;
+	if (endlessSalvoWindow > 0)
+		return endlessSalvoWindow * 100 / ENDLESS_PERK_SALVO_WINDOW;
+	return (endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE) ? 100 : 0;
 }
 
 // x2.5 a non-damage special magnitude (repulsor push, heal, invuln duration) while a window is up.

@@ -1550,11 +1550,10 @@ ticks since the main gun fired; at `ENDLESS_PERK_SALVO_IDLE` the salvo is
 CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
 (35 ticks ≈ 1s), during which everything the ship emits is x2.5 and power-free.
 
-- The window drains only on ticks where `button[0]` is held, so releasing the
-  trigger pauses rather than wastes it; no new charge banks while one runs, so at
-  most one salvo is live. `endlessOpeningSalvoTick` reads `button[0]` *before*
-  `JE_playerMovement` clears and re-reads the pad, i.e. the previous tick's state
-  — a one-tick skew across 35, not worth plumbing a parameter through.
+- The window drains on **real time**, one tick per tick, whether or not the
+  trigger is held — the gauge counts it down in front of the player, so it has to
+  be the clock they can see. No new charge banks while one runs, so at most one
+  salvo is ever live.
 - **The window is what let specials in.** `JE_doSpecialShot` runs BEFORE the
   main-weapon loop that arms the salvo, so the older same-tick flag could never
   reach a special. Anything spawning shots (stype 1, flares 5-11/16) now gets the
@@ -1584,13 +1583,23 @@ CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
 
 **Readouts.** Both tells are deliberate: the perk is worthless if you can't see it.
 
-- Gauge: `ENDLESS_SALVO_GAUGE_BASE` (bank 12 + 1 = **193**) paints it green while
-  `endlessOpeningSalvoCharged()` — banked *or* burning, so dropping back to fire
-  colour is the one unambiguous "it's gone". Applied after the kill-fire tint, so
-  the rarer player-timed state wins when both are up. The in-game palette is
-  **palette 5** (`pcxpal[3-1]`), structurally identical to palette 0: bank 0 grey,
-  2 dark green, 7 red→yellow fire (the stock gauge, base 113), 12 pure green
-  (0,12,0 → 11,63,26). `base + 13` (the tallest band) must stay in the bank; 206 does.
+- Gauge: `endlessOpeningSalvoGaugePercent()` (0..100) is the share of the bar that
+  takes `ENDLESS_SALVO_GAUGE_BASE` (bank 12 + 1 = **193**) instead of the normal
+  base — 100 while a charge is banked, then the window's remaining fraction, so
+  the green recedes as the salvo burns and the bar is back to fire colour exactly
+  when the boost ends. The split is measured against the bar's own height, not
+  `BAR_MAX`, or the drain would be invisible on a part-full generator. It sits
+  over the kill-fire tint: the rarer, player-timed state is the one worth reading.
+- `draw_power_gauge` therefore mixes two banks in one bar. Both draw paths break a
+  span at the salvo boundary (the vertical one adds it to the same-shade band
+  test), and the sub-pixel AA row above the fill only reads green when the bar is
+  *fully* green — it sits one row above `salvoRows`, so a draining bar caps in the
+  normal colour. `salvo_render_prev/cur` interpolate the fraction at present rate,
+  exactly like `power_render_prev/cur`, so the edge slides instead of stepping at 35Hz.
+- The in-game palette is **palette 5** (`pcxpal[3-1]`), structurally identical to
+  palette 0: bank 0 grey, 2 dark green, 7 red→yellow fire (the stock gauge, base
+  113), 12 pure green (0,12,0 → 11,63,26). `base + 13` (the tallest band) must stay
+  inside the bank; 206 does.
 - Sparks: `salvo_shot_sparks` colours the trail from the shot's own dominant
   palette bank. `sprite2_dominant_bank` (sheets) and `sprite_dominant_bank`
   (tables, for the blended sprite > 60000 shots — Astral Zone, Protron Field,
