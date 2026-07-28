@@ -52,12 +52,12 @@ static int endlessDifficultyRampPercent(void)
 {
 	switch (difficultyLevel)
 	{
-	case DIFFICULTY_WIMP:       return 50;
+	case DIFFICULTY_WIMP:       return 50;    // debug-only: not on the Difficulty Level select screen
 	case DIFFICULTY_EASY:       return 75;
 	case DIFFICULTY_NORMAL:     return 100;
 	case DIFFICULTY_HARD:       return 120;   // 80% elite cap at ~zone 100
 	case DIFFICULTY_IMPOSSIBLE: return 134;   // 80% elite cap at ~zone 90
-	default:                    return 160;   // Insanity and beyond: 80% elite cap at ~zone 75
+	default:                    return 160;   // Suicide, Lord of Game and above: 80% elite cap at ~zone 75
 	}
 }
 

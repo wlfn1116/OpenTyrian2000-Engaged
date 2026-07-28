@@ -92,12 +92,16 @@ entire depth ramp. On Hard, zone 60 fights like zone 72 does on Normal.
 
 | Difficulty | Starting cash | Ramp |
 | --- | --- | --- |
-| Wimp | $45,000 | 50% |
 | Easy | $34,000 | 75% |
 | Normal | $25,000 | 100% |
 | Hard | $18,000 | 120% |
 | Impossible | $14,000 | 134% |
-| Insanity+ | $9,000 | 160% |
+| Suicide | $9,000 | 160% |
+| Lord of Game | $9,000 | 160% |
+
+Suicide and Lord of Game share the cash and the ramp; Lord of Game is still the
+harder of the two, because the base game already gives its enemies twice the hull
+before Endless scales anything.
 
 You launch with the **Atomic RailGun** at power 1, not the campaign's Pulse Cannon.
 
