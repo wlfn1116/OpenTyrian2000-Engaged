@@ -379,6 +379,7 @@ const char *endlessGambleResult(void);  // last gamble outcome text (for the E-S
 bool endlessGambleWonPerk(void);        // last gamble handed out a free perk pick (dispatch opens MENU_PERKS)
 void endlessClearGamblePerk(void);      // consume that flag once the perk menu has opened, so later E-Shop buys don't re-open it
 int  endlessShopTaxPercent(void);       // Loan Shark: permanent +% added to every shop price this run (0 = none)
+int  endlessPerkShopCostBp(void);       // Financier perk: what the outpost charges, in basis points (10000 = unchanged); multiplies the depth-scaled percent in JE_getCost
 int  endlessGambleOutcomeCount(void);   // number of distinct gamble outcomes (for the debug "Gamble Outcomes" page)
 const char *endlessGambleOutcomeName(int id);  // display name of gamble outcome `id`
 void endlessForceGambleOutcome(int id); // debug: fire outcome `id`'s effect directly (no fee), for testing

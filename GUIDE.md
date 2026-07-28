@@ -405,7 +405,7 @@ from the perks you haven't maxed out — **up to 5 after a milestone zone**.
 | Kinetic Converter | Absorbed shield hits refund generator power | 20% of the hit's cost | 3 |
 | Countermeasures | Taking hull damage clears nearby enemy shots | 26px radius, 40px at 2 stacks; ~2s cooldown | 2 |
 | Chain Reaction | Kills blast nearby enemies (44px) | +8 damage, scaled with depth | 3 |
-| Compound Interest | More bank interest on unspent cash | +5 points | 4 |
+| Financier | **More bank interest, and the outpost charges you less** | +5 points of interest; −8.25% on buy/sell prices (−33% at 4 stacks) | 4 |
 | Ordnance Reserves | **More sidekick ammo; specials last longer** | +30% magazine (min +1), +30% special duration | 4 |
 | Failsafe | A hit that reaches the **hull** leaves you briefly untouchable | ~0.25s of invulnerability per stack, so ~0.5s at 2 (the ship flashes transparent, as after a respawn) | 2 |
 
@@ -496,8 +496,15 @@ The Chart-a-Course card shows this exact number before you commit, including
 purchases and queued Sabotage charges. What's shown is what's banked.
 
 **Interest** is paid on clear: 10% of unspent cash, capped at $3,000 + $80/zone.
-Compound Interest raises both the rate and the cap, so a higher rate genuinely
-pays more rather than hitting the old ceiling a level sooner.
+Financier raises both the rate and the cap, so a higher rate genuinely pays more
+rather than hitting the old ceiling a level sooner.
+
+Financier's other half cuts what the outpost charges — 8.25% per stack, so 33%
+off at 4 stacks. It applies to the **buy/sell shop** (ships, weapons, gun power,
+shields, generators, sidekicks), which is the same set of prices the Loan Shark
+tax and Merchant's Favor touch; the E-Shop's own buys keep their listed prices.
+All three stack multiplicatively, so a Favor sector with a full Financier is the
+cheapest the shop ever gets.
 
 **Bounties** for elites and champions are paid immediately on the kill, with a
 message in the text bar. They're capped per kill ($2,500 / $6,000) because the

@@ -1497,11 +1497,25 @@ mutable `last`, so a Quit-Level retry replays the same track.
   The readout is free — the post-hit transparency flash in `JE_playerMovement`
   already draws exactly while `invulnerable_ticks > 0`, so the perk is visible
   without a tell of its own.
-- Level-clear bank interest is `ENDLESS_INTEREST_BASE_PCT` (10%) of unspent cash,
-  +5 points per **Compound Interest** stack (max 4 → 30%), capped at
-  `3000 + depth*80` scaled by the SAME rate factor — a rate rise with a fixed cap
-  would just hit the ceiling a level sooner and pay nothing extra. The multiply is
-  split into hundreds + remainder so a big bank can't overflow 32-bit `long`.
+- **Financier** (`PERK_FINANCIER`, max 4) is the economy perk, and it works both
+  ends of the ledger. It was "Compound Interest" (the interest half alone) until
+  2026-07-28; the ENUM ENTRY was renamed, not moved, so its on-disk slot and every
+  slot after it are untouched and no save bump was needed.
+  - *Interest.* Level-clear bank interest is `ENDLESS_INTEREST_BASE_PCT` (10%) of
+    unspent cash, +5 points per stack (max 4 → 30%), capped at `3000 + depth*80`
+    scaled by the SAME rate factor — a rate rise with a fixed cap would just hit
+    the ceiling a level sooner and pay nothing extra. The multiply is split into
+    hundreds + remainder so a big bank can't overflow 32-bit `long`.
+  - *Discount.* `endlessPerkShopCostBp` returns what the outpost charges in BASIS
+    POINTS (10000 = unchanged, 6700 at 4 stacks). Basis points because
+    `ENDLESS_PERK_DISCOUNT_BP` is 825 = 8.25%/stack, which has no whole-percent
+    form and would lose a third of its value to truncation as an integer percent.
+    Applied in `JE_getCost` as a multiplier on the depth-scaled `pct`, right after
+    Merchant's Favor's `* 65 / 100`, so the depth ramp, the Loan Shark tax and both
+    discounts COMPOUND rather than overriding one another. Floor needs no guard: the
+    worst case (depth 0, Favor, 4 stacks) still lands at `pct` 43, not 0.
+    It rides the same lever as the tax, so its coverage is exactly the tax's — the
+    buy/sell shop, not the E-Shop buys, which price themselves via `endlessRebuy`.
 - **In-level special-weapon drops are converted to gun powerups.** Vanilla events
   33/45 (`tyrian2.c`) rewrite the front-powerup dropper (enemy 533) into one of the
   six special-weapon droppers (829..834, each `value = 32100 + specialId`) on the
