@@ -164,7 +164,9 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy
 #define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
 #define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
-#define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Compound Interest stack (the cap scales with the rate)
+#define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Financier stack (the cap scales with the rate)
+#define ENDLESS_PERK_DISCOUNT_BP  825  // ...and this much off buy/sell prices per stack, in BASIS POINTS (1/100 of a
+                                       // percent) because 8.25% has no whole-percent form: 4 stacks = 3300 = 33% off
 #define ENDLESS_PERK_AMMO_PCT      30  // Ordnance Reserves: +% sidekick magazine per stack (always at least +1 round)
 #define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
@@ -201,7 +203,7 @@ enum {
 	PERK_KINETIC,
 	PERK_COUNTERMEASURE,
 	PERK_CHAINRXN,
-	PERK_INTEREST,
+	PERK_FINANCIER,       // was PERK_INTEREST; renamed when it gained the shop discount, same slot
 	PERK_ORDNANCE,
 	PERK_FAILSAFE,
 	PERK_COUNT

@@ -46,7 +46,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Kinetic Converter","Absorbed shield hits refuel the generator.",3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
-	{ "Compound Interest","More bank interest on unspent cash.",       4 },
+	{ "Financier",        "Better interest and cheaper shop prices.",  4 },
 	{ "Ordnance Reserves","More sidekick ammo; specials last longer.", 4 },
 	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
 };
@@ -71,14 +71,26 @@ int endlessPerkCashPercent(void)
 	return 100 + endlessPerkOwned[PERK_CASH] * ENDLESS_PERK_CASH_PCT;
 }
 
-// Compound Interest perk: the level-clear bank-interest rate, as a % of unspent cash
+// Financier perk, first half: the level-clear bank-interest rate, as a % of unspent cash
 // (ENDLESS_INTEREST_BASE_PCT = stock). endlessApplyLevelPayout raises the interest CAP by the same
 // factor, so a bigger rate genuinely pays more instead of hitting the stock ceiling a level sooner.
 int endlessPerkInterestPercent(void)
 {
 	if (!endlessFxActive())
 		return ENDLESS_INTEREST_BASE_PCT;
-	return ENDLESS_INTEREST_BASE_PCT + endlessPerkOwned[PERK_INTEREST] * ENDLESS_PERK_INTEREST_PCT;
+	return ENDLESS_INTEREST_BASE_PCT + endlessPerkOwned[PERK_FINANCIER] * ENDLESS_PERK_INTEREST_PCT;
+}
+
+// Financier perk, second half: what the outpost charges, in basis points (10000 = unchanged, 6700 at
+// the 4-stack cap). Applied in JE_getCost as a multiplier on the depth-scaled percent, so it composes
+// with the depth ramp, the Loan Shark tax and Merchant's Favor rather than replacing any of them --
+// the same lever the tax rides, so the perk covers exactly what the tax does: the buy/sell shop, not
+// the E-Shop's own prices.
+int endlessPerkShopCostBp(void)
+{
+	if (!endlessFxActive())
+		return 10000;
+	return 10000 - endlessPerkOwned[PERK_FINANCIER] * ENDLESS_PERK_DISCOUNT_BP;
 }
 
 // +max armor from the Ablative Plating perk; added to the ship's armor each level start (varz.c),

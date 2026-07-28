@@ -694,6 +694,9 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 		pct += endlessShopTaxPercent();             // Loan Shark: a permanent debt tax on top of the depth cap
 		if (endlessActiveMods & ENDLESS_MOD_FAVOR)  // Merchant's Favor: the outpost slashes prices
 			pct = pct * 65 / 100;
+		// Financier perk: better terms, in basis points because the per-stack cut isn't a whole
+		// percent. Multiplies like Favor does, so the two compound instead of one overriding the other.
+		pct = pct * endlessPerkShopCostBp() / 10000;
 
 		cost = (cost > LONG_MAX / pct) ? LONG_MAX : cost * pct / 100;
 

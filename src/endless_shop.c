@@ -980,14 +980,14 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 	long interest = 0, bonus = 0;
 	if (endlessMode && endlessRunDepth > 0)
 	{
-		// Bank interest on unspent cash: 10% base, raised by the Compound Interest perk. Split into
+		// Bank interest on unspent cash: 10% base, raised by the Financier perk. Split into
 		// whole hundreds plus the remainder so a big bank can't overflow the rate multiply.
 		const int rate = endlessPerkInterestPercent();
 		interest = (long)(player[0].cash / 100 * rate + player[0].cash % 100 * rate / 100);
 		// The interest cap RISES with depth, so banking toward a big buy (a deep hull tier, or a
 		// saved-up Overdrive) is a real strategy on a long run -- cash becomes a reserve you manage,
 		// not just per-zone Overdrive throughput. The depth-scaled ceiling still stops it snowballing.
-		// It scales with the rate too, so Compound Interest lifts the ceiling as well as the rate.
+		// It scales with the rate too, so Financier lifts the ceiling as well as the rate.
 		long icap = (3000 + (long)endlessRunDepth * 80) * rate / ENDLESS_INTEREST_BASE_PCT;
 		if (interest > icap)
 			interest = icap;
