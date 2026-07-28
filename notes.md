@@ -1129,13 +1129,13 @@ mutable `last`, so a Quit-Level retry replays the same track.
   deferral branch REACHABLE again: collisions are depths 25, 125, 225, … (`25k % 4`
   is 1 on every other minor milestone), so a run reads …21, 25, **26**, 29… . It
   had been dead code at the 50-only schedule (`50k % 4` is only ever 2 or 0).
-- Perk-completion pacing: 24 perks / **75 total stacks** (sum of `maxStack` in
+- Perk-completion pacing: 25 perks / **77 total stacks** (sum of `maxStack` in
   `endlessPerkTable`). Every forced pick is worth exactly +1 stack regardless of
   which row you take, because `endlessGeneratePerkChoices` only pools perks with
   `owned < maxStack` — so an offer is never wasted and the completion depth is
   order-independent. Picks banked by depth = `floor((d-1)/ENDLESS_PERK_EVERY) + 1
   + floor(d/25)` (a collision depth banks one of its two that zone and the other
-  the next). At a cadence of 4 the 75th pick lands at **depth 257**; waypoints:
+  the next). At a cadence of 4 the 77th pick lands at **depth 265**; waypoints:
   z50 = 15 picks, z100 = 29, z150 = 44, z200 = 58, z250 = 73. Past the last pick the scheduled gate still opens with an empty
   pool — `configure_endless_perk_menu` then renders the "Take the Cash" row alone,
   so it degrades into a small recurring cash bonus rather than breaking.
@@ -1445,6 +1445,13 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Rapid Recharge speeds the special-weapon cooldown and sidekick ammo-refill
   counters (not the main guns). Its decrement accumulator is stateful: sample it
   once per tick in the main-player block, then reuse the sampled value.
+  It has a THIRD effect on a different lever: `endlessPerkChargeTicks` shortens
+  the charge-sidekick charge interval (20 ticks, −`ENDLESS_PERK_CHARGE_STEP` per
+  stack, floor `ENDLESS_PERK_CHARGE_MIN`). That was its own perk, "Rapid Charger",
+  until 2026-07-28 — a perk that did nothing at all unless you happened to fly a
+  charge sidekick, which made it a dead offer most of the time. Folding it in
+  makes one perk cover every sidekick: magazines refill quicker, charges build
+  quicker. Both halves cap at 4 stacks, so the merge is 1:1 for the charge half.
 - **Ordnance Reserves** (`PERK_ORDNANCE`, max 4) is one perk with two halves, both
   hanging off levers that already existed:
   - *Sidekick magazines.* `endlessPerkSidekickAmmo(base)` grows a shipped
@@ -1474,6 +1481,22 @@ mutable `last`, so a Quit-Level retry replays the same track.
     segments inside the 29px strip; the shipped sizes (5/10/20/80) are unchanged by
     it, but a 26-round boosted magazine would otherwise have drawn 13 segments and
     run off the end of the bar.
+- **Failsafe** (`PERK_FAILSAFE`, max 2) grants `ENDLESS_PERK_FAILSAFE_TICKS` (9 ≈
+  0.25s) of invulnerability per stack when a hit reaches the HULL, hung off
+  `cmHullHit` in `JE_playerDamage` — the same flag the Countermeasure burst uses,
+  which is deliberately set before the armor deduction so `cheatInfiniteArmor`
+  can't silently disarm it. Three things make it need no cooldown of its own:
+  - It EXTENDS `invulnerable_ticks` instead of assigning, so it can never cut short
+    a longer window already running — notably the 100 ticks a spent revive grants a
+    few lines above, which would otherwise be truncated to 18.
+  - It cannot chain. Arming it requires hull damage, and `invulnerable_ticks` gates
+    both damaging tests (enemy shots in tyrian2.c, contact in mainint.c), so no hit
+    lands while it runs.
+  - Dead ships are skipped (`is_alive`): a respawn sets its own 100 ticks, and
+    arming a corpse would be meaningless anyway.
+  The readout is free — the post-hit transparency flash in `JE_playerMovement`
+  already draws exactly while `invulnerable_ticks > 0`, so the perk is visible
+  without a tell of its own.
 - Level-clear bank interest is `ENDLESS_INTEREST_BASE_PCT` (10%) of unspent cash,
   +5 points per **Compound Interest** stack (max 4 → 30%), capped at
   `3000 + depth*80` scaled by the SAME rate factor — a rate rise with a fixed cap
@@ -1557,9 +1580,11 @@ mutable `last`, so a Quit-Level retry replays the same track.
 ### Opening Salvo — `endless_perks.c`, `shots.c`, `varz.c`, `tyrian2.c`
 
 Two timers, and the perk is the handoff between them. `endlessSalvoIdle` counts
-ticks since the main gun fired; at `ENDLESS_PERK_SALVO_IDLE` the salvo is
-CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
+ticks since the main gun fired; at `ENDLESS_PERK_SALVO_IDLE` (70 ticks = 2s) the
+salvo is CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
 (35 ticks ≈ 1s), during which everything the ship emits is x2.5 and power-free.
+The charge was 50 ticks (~1.4s) until 2026-07-28; a 2:1 wait-to-burst ratio makes
+holding fire a real cost rather than a rhythm you can sit in.
 
 - The window drains on **real time**, one tick per tick, whether or not the
   trigger is held — the gauge counts it down in front of the player, so it has to
@@ -1654,7 +1679,8 @@ CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
   credits-shown flag, v10 last zone's song + its depth, v11 widened the fixed
   perk block (16 → 32 slots) so the 17th perk (Radar) persists, v12 the Star Charts
   / Breakthrough debts owed by a cleared sector, v13 widened the stored perk OFFER
-  list (3 → 5) for the milestone pick. `ENDLESS_SAVE_VERSION` is the
+  list (3 → 5) for the milestone pick, v14 dropped the Rapid Charger perk and so
+  RENUMBERED the perk slots. `ENDLESS_SAVE_VERSION` is the
   authority — keep this list in step with it. Each new field is
   appended and read behind a `version >= N` guard, so older sidecars still load (a
   missing field reads as the memset-zero default — note v10's apply step has to map
@@ -1666,6 +1692,20 @@ CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
   it). A `COMPILE_TIME_ASSERT` keeps
   `PERK_COUNT <= ENDLESS_SAVE_PERKS`, so the next overflow fails the build instead
   of silently dropping a perk.
+- v14 is the odd one out: the record LAYOUT is unchanged (the perk block is a fixed
+  32 bytes either way) but the MEANING of its slots moved, because deleting a perk
+  from the middle of the enum renumbered every id below it. TWO stored arrays are
+  keyed by those ids and both need migrating in `endlessReadRec`:
+  - `perkOwned` — a perk's on-disk slot IS its `PERK_*` id. The dropped Rapid
+    Charger stacks are added to Rapid Recharge (which inherited the effect; the
+    apply step clamps to `maxStack`), then the tail memmoves down one. Without it a
+    resumed run reads every perk below slot 14 as its neighbour.
+  - `perkChoice` — this visit's pending OFFERS are `PERK_*` values too. Ids above
+    the hole shift down, the offer that WAS Rapid Charger is dropped and the list
+    compacted. Skipping this is worse than cosmetic: a stored id of 24 (the old
+    last perk) would index one past the shortened `endlessPerkTable`.
+  This is the only sanctioned way to renumber, and the cost of it is exactly this
+  paragraph — appending stays the rule.
 - Quit Level in endless reverts the level to its launch state and reopens the
   outpost. Hardcore relocks it (retry same level or quit run; no farm-then-bail);
   non-hardcore unlocks it (re-outfit freely, still no mid-zone farming).

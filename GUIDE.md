@@ -393,30 +393,36 @@ from the perks you haven't maxed out — **up to 5 after a milestone zone**.
 | Bulwark | Take less damage from every hit | −1 (never below 1 damage) | 5 |
 | Adrenaline | Fire much faster when badly hurt (below ⅓ armour) | +45% | 3 |
 | Glass Cannon | Big damage, weaker hull | +40% damage, −8 max armour | 1 |
-| Rapid Recharge | **Specials and sidekick ammo** recharge faster | +25% | 4 |
+| Rapid Recharge | **Specials, sidekick ammo and sidekick charge** all recharge faster | +25% refill; charge-type sidekicks −4 ticks off the 20-tick interval (floor 4) | 4 |
 | Autofire Special | Your special fires on its own while you hold fire | — | 1 |
 | Efficient Coils | Weapons draw less generator power | −15% (floor 20% of stock cost) | 5 |
 | Shield Matrix | Shield recharges faster | −3 ticks off the 15-tick interval (floor 3) | 4 |
-| Rapid Charger | Charge sidekicks power up faster | −4 ticks off the 20-tick interval (floor 4) | 4 |
 | High-Velocity Shots | Your shots travel faster | +25% | 3 |
 | Radar | Chart-a-Course shows each sector's real level | — | 1 |
 | Surveyor | Chart-a-Course offers an extra route | +1 | 2 |
 | Executioner | More damage to badly wounded enemies (below 25% HP; 15% for bosses) | +15% | 3 |
-| Opening Salvo | ~1.4s without firing supercharges the next **second** of fire | +150% damage on everything, costs no power; **generator gauge turns green when charged** | 1 |
+| Opening Salvo | 2s without firing supercharges the next **second** of fire | +150% damage on everything, costs no power; **generator gauge turns green when charged** | 1 |
 | Kinetic Converter | Absorbed shield hits refund generator power | 20% of the hit's cost | 3 |
 | Countermeasures | Taking hull damage clears nearby enemy shots | 26px radius, 40px at 2 stacks; ~2s cooldown | 2 |
 | Chain Reaction | Kills blast nearby enemies (44px) | +8 damage, scaled with depth | 3 |
 | Compound Interest | More bank interest on unspent cash | +5 points | 4 |
 | Ordnance Reserves | **More sidekick ammo; specials last longer** | +30% magazine (min +1), +30% special duration | 4 |
+| Failsafe | A hit that reaches the **hull** leaves you briefly untouchable | ~0.25s of invulnerability per stack, so ~0.5s at 2 (the ship flashes transparent, as after a respawn) | 2 |
+
+**Failsafe fires on hull hits only.** A shot your shield soaks does nothing — the
+window opens when damage punches through to armour, the same trigger
+**Countermeasures** uses, so the two fire together: the burst clears the shots
+around you and the i-frames cover you while you leave. It can't chain, because you
+can't take hull damage while it's running.
 
 ### Opening Salvo in detail
 
-**How it works.** Go ~1.4 seconds without firing your main gun and the salvo
+**How it works.** Go **2 seconds** without firing your main gun and the salvo
 **charges** — the generator gauge fills green. Pull the trigger and you *spend*
 it: for the next **one second**, everything your ship puts out hits at ×2.5 and
 costs no generator power. That second runs on the clock, so it is a burst to use,
 not a reserve to hold — the green drains down the gauge while it lasts, and the
-bar is back to its normal fire colour the moment the boost ends. Then the ~1.4s
+bar is back to its normal fire colour the moment the boost ends. Then the 2s
 charge starts over.
 
 **Every sector opens charged.** You don't have to idle on the way in — the gauge
@@ -471,7 +477,9 @@ Two perks touch sidekick ammunition, and they do different things:
   It does not touch your main guns.
 
 Charge-type sidekicks have no magazine, so Ordnance Reserves does nothing for
-them — that's what **Rapid Charger** is for.
+them — Rapid Recharge covers those instead, shortening the charge interval by 4
+ticks per stack (20 down to a floor of 4). So it is the one perk that speeds up
+every sidekick, whichever kind you fly.
 
 ## Money
 

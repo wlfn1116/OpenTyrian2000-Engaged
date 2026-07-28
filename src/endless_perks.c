@@ -34,11 +34,10 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Bulwark",          "Take less damage from every hit.",     5 },
 	{ "Adrenaline",       "Fire much faster when badly hurt.",    3 },
 	{ "Glass Cannon",     "Big damage, but a weaker hull.",       1 },
-	{ "Rapid Recharge",   "Specials and ammo recharge faster.",   4 },
+	{ "Rapid Recharge",   "Specials, ammo and charges refill faster.", 4 },
 	{ "Autofire Special", "Auto-fires your special as you shoot.", 1 },
 	{ "Efficient Coils",  "Your weapons draw less generator power.", 5 },
 	{ "Shield Matrix",    "Your shield recharges faster.",        4 },
-	{ "Rapid Charger",    "Charge sidekicks power up faster.",    4 },
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
 	{ "Radar",            "Chart-a-Course shows each sector's level.", 1 },
 	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
@@ -49,6 +48,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
 	{ "Compound Interest","More bank interest on unspent cash.",       4 },
 	{ "Ordnance Reserves","More sidekick ammo; specials last longer.", 4 },
+	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -149,6 +149,7 @@ int endlessPerkPreviewFireDecrements(void)
 
 // Rapid Recharge perk: extra cooldown decrements/tick (fractional accumulator). The caller
 // applies them to the special-fire gate AND the sidekick ammo refill -- not the main guns.
+// Charge sidekicks have no magazine to refill; endlessPerkChargeTicks covers them instead.
 int endlessPerkSpecialCooldownDecrements(void)
 {
 	static int accum = 0;
@@ -197,11 +198,12 @@ int endlessPerkShieldWait(int base)
 	                          ENDLESS_PERK_SHIELDRGN_STEP, ENDLESS_PERK_SHIELDRGN_MIN);
 }
 
-// Rapid Charger perk: shortens the charge-sidekick charge interval from `base` (mainint.c),
-// floored; a no-op outside endless / with no stacks.
+// Rapid Recharge perk, third effect: shortens the charge-sidekick charge interval from `base`
+// (mainint.c), floored; a no-op outside endless / with no stacks. Magazine sidekicks refill quicker
+// via the decrements above, so this is what the perk does for the charge-type ones instead.
 int endlessPerkChargeTicks(int base)
 {
-	return endlessPerkShorten(base, PERK_CHARGERATE,
+	return endlessPerkShorten(base, PERK_SPECIALCD,
 	                          ENDLESS_PERK_CHARGE_STEP, ENDLESS_PERK_CHARGE_MIN);
 }
 
@@ -337,6 +339,17 @@ int endlessPerkCountermeasureRadius(void)
 
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
 
+// --- Failsafe perk ---------------------------------------------------------------------------------
+// I-frames a hit that reaches the HULL buys you, or 0 if the perk isn't owned. Needs no cooldown of
+// its own: the window can only be re-armed by hull damage, and you cannot take hull damage while it
+// runs, so it never chains. The caller extends the ship's existing invulnerability (varz.c).
+int endlessPerkFailsafeTicks(void)
+{
+	if (!endlessFxActive())
+		return 0;
+	return endlessPerkOwned[PERK_FAILSAFE] * ENDLESS_PERK_FAILSAFE_TICKS;
+}
+
 // --- Per-zone perk timer reset --------------------------------------------------------------------
 // Both timers below tick only during gameplay, so without this they would pause across the outpost
 // and resume in whatever state the last zone's final seconds left them. Every sector instead opens
@@ -344,7 +357,7 @@ void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOL
 // endlessResetZoneEffects, which also covers the campaign-mods path.
 void endlessResetZonePerkTimers(void)
 {
-	endlessSalvoIdle   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 1.4s wait would be dead time here
+	endlessSalvoIdle   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait would be dead time here
 	endlessSalvoWindow = 0;                        // no half-spent salvo carries over
 	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
 }

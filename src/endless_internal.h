@@ -144,14 +144,14 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_POWERUSE_MIN  20  // ...but firing never costs less than this % of stock power
 #define ENDLESS_PERK_SHIELDRGN_STEP 3  // shield-regen interval cut by this many ticks per Shield Matrix stack (base 15)
 #define ENDLESS_PERK_SHIELDRGN_MIN  3  // ...but never quicker than +1 shield per this many ticks (floor)
-#define ENDLESS_PERK_CHARGE_STEP    4  // ticks cut from the charge-sidekick charge interval per Rapid Charger stack (base 20)
+#define ENDLESS_PERK_CHARGE_STEP    4  // ticks cut from the charge-sidekick charge interval per Rapid Recharge stack (base 20)
 #define ENDLESS_PERK_CHARGE_MIN     4  // ...but a charge level never builds quicker than this many ticks (floor)
 #define ENDLESS_PERK_SHOTSPEED_PCT 25  // +% shot travel speed per High-Velocity Rounds stack
 #define ENDLESS_PERK_SURVEYOR_ROUTES 1 // +Chart-a-Course routes per Surveyor stack (capped at ENDLESS_MAX_COURSES)
 #define ENDLESS_PERK_EXEC_DMG_PCT  15  // +% shot damage per Executioner stack, vs a wounded target
 #define ENDLESS_PERK_EXEC_HP_PCT   25  // Executioner "wounded" threshold: target below this % of full HP
 #define ENDLESS_PERK_EXEC_BOSS_PCT 15  // ...a tighter threshold for boss-bar enemies (harder to execute)
-#define ENDLESS_PERK_SALVO_IDLE    50  // ticks the main gun must sit idle to charge an Opening Salvo (~1.4s at the 35Hz sim tick)
+#define ENDLESS_PERK_SALVO_IDLE    70  // ticks the main gun must sit idle to charge an Opening Salvo (2s at the 35Hz sim tick)
 #define ENDLESS_PERK_SALVO_DMG_PCT 150 // +% damage in an Opening Salvo window (which also costs no power).
                                        // Percentage POINTS added to endlessPlayerDamagePercent, so a bare
                                        // salvo is x2.5; endlessOpeningSalvoScale reuses it for the
@@ -168,6 +168,7 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_AMMO_PCT      30  // Ordnance Reserves: +% sidekick magazine per stack (always at least +1 round)
 #define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
+#define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
 
 // How many perks a pick puts on the table. A milestone outpost deals the wider slate, so surviving
 // a forced S-tier zone pays in CHOICE as well as cash. The wider number is also the offer-array
@@ -181,6 +182,9 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_EXTRA_PERK_OWNED_PCT  40   // +% per owned perk stack
 #define ENDLESS_EXTRA_PERK_OWNED_CAP 1000  // ...but the owned-count surcharge tops out here (+1000% = x11)
 
+// PERK_CHARGERATE ("Rapid Charger") used to sit between PERK_SHIELDREGEN and PERK_SHOTSPEED; it was
+// folded into Rapid Recharge and dropped in save v14, which renumbers everything below it. That is
+// the ONE time an index may move, and only because endlessReadRec migrates older perk blocks.
 enum {
 	PERK_DAMAGE, PERK_FIRERATE, PERK_ARMOR, PERK_CASH,
 	PERK_REGEN, PERK_SIPHON, PERK_BOUNTY,
@@ -189,7 +193,6 @@ enum {
 	PERK_AUTOSPECIAL,
 	PERK_POWERUSE,
 	PERK_SHIELDREGEN,
-	PERK_CHARGERATE,
 	PERK_SHOTSPEED,
 	PERK_RADAR,
 	PERK_SURVEYOR,        // append new perks here; the index is the on-disk save slot, so don't renumber
@@ -200,6 +203,7 @@ enum {
 	PERK_CHAINRXN,
 	PERK_INTEREST,
 	PERK_ORDNANCE,
+	PERK_FAILSAFE,
 	PERK_COUNT
 };
 
