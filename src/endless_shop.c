@@ -550,7 +550,7 @@ bool endlessTryBuyExtraPerk(void)
 		return false;
 	player[0].cash -= price;
 	endlessExtraPerkCost = endlessRebuy(endlessExtraPerkCost, ENDLESS_REBUY_EXTRAPERK_NUM, ENDLESS_REBUY_EXTRAPERK_DEN, 0);
-	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // dispatch opens MENU_PERKS to pick one (a BOUGHT pick stays three wide)
+	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS_BOUGHT);  // dispatch opens MENU_PERKS to pick one of four
 	return true;
 }
 

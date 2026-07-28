@@ -324,7 +324,7 @@ here applies to the **next sector**, or is a held item.
 | **Buy Shop Reroll** | $6,000 + $1,000/zone, then ×1.6 + $3,000 per further reroll this visit | Reshuffles the entire shop inventory. Keeps whatever you have equipped, and sinks "None" to the bottom of each list. |
 | **Buy Sector Sabotage** | $25,000 + $2,500/zone, doubling per buy | Strips the worst threat off the sector you chart next. Up to 3 charges can be queued; the threats they'll remove are drawn white on the course cards. |
 | **Buy Reinforce** | $15,000 + $2,000/zone, then ×1.5 + $5,000 per further tier this visit | +6 permanent max armour. The cap on total hull bonus starts at 60 and unlocks another +6 step every 6 zones, up to 150. |
-| **Buy Extra Perk** | $70,000 + $2,500/zone, doubling per buy, **plus +40% for every perk stack you already own** (capped at ×11) | An extra perk pick on top of the free ones. Deliberately brutal. |
+| **Buy Extra Perk** | $70,000 + $2,500/zone, doubling per buy, **plus +40% for every perk stack you already own** (capped at ×11) | An extra perk pick on top of the free ones, **4 wide** rather than the usual 3. Deliberately brutal. |
 | **Buy Special Weapon** | fraction of the cash you walked in with | Grants a random special weapon, equipped instantly. Never Invulnerability, and never the one you already have. |
 | **Buy Turbodrive** | fraction of walk-in cash | Next sector: kills briefly quicken your guns. |
 | **Buy Overblast** | fraction of walk-in cash | Next sector: kills stack shot damage (no fire boost). |
@@ -372,14 +372,16 @@ It's a slot machine. It is not a strategy.
 ## Perks
 
 Perks are permanent for the run and stack. You're offered up to 3 at a time, drawn
-from the perks you haven't maxed out — **up to 5 after a milestone zone**.
+from the perks you haven't maxed out. The two picks that cost you something deal
+wider slates — **4 if you bought it, 5 after a milestone zone** — so what they buy
+is choice as well as the perk.
 
 **When you get one:**
 
 - after clearing zone 1, then **every 4th zone after that** (1, 5, 9, 13, …),
 - at every **milestone zone** (25, 50, 75, 100, …), where the pick is 5 wide,
-- from a cleared **Breakthrough** sector,
-- from the E-Shop's **Buy Extra Perk**, or a lucky gamble.
+- from the E-Shop's **Buy Extra Perk**, where it's 4 wide,
+- from a cleared **Breakthrough** sector, or a lucky gamble.
 
 | Perk | Effect | Per stack | Max |
 | --- | --- | --- | --- |
@@ -424,9 +426,9 @@ things push it up:
 - **Depth.** The buyout is priced off the same clear-payout base every other
   endless reward is built from, so it keeps pace with the shop instead of falling
   behind it.
-- **How wide the slate is.** A **milestone** pick deals five perks instead of
-  three, and passing on five pays about **⅔ more** than passing on three. A pool
-  thinned out by a long run never pays *less* than a standard slate.
+- **How wide the slate is.** Passing on a **milestone**'s five perks pays about
+  **⅔ more** than passing on three, and a bought four-wide pick a third more. A
+  pool thinned out by a long run never pays *less* than a standard slate.
 - **How many perks you're already carrying.** Every stack you own adds **6%**, up
   to **+150%** at 25 stacks — the mirror image of what Buy Extra Perk charges you
   for the same collection.

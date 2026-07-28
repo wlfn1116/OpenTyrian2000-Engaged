@@ -458,8 +458,9 @@ int endlessPerkSpecialDuration(int base, int cap)
 }
 
 // Roll this shop visit's perk offers: up to `offers` distinct perks that aren't already maxed out.
-// Called before the perk menu is shown -- ENDLESS_PERK_OFFERS for an ordinary pick, the wider
-// milestone count via endlessPerkOffersAtDepth. Fewer come out only when the pool is nearly maxed.
+// Called before the perk menu is shown -- ENDLESS_PERK_OFFERS for an ordinary pick, _BOUGHT for the
+// E-Shop's, the milestone count via endlessPerkOffersAtDepth. Fewer come out only when the pool is
+// nearly maxed.
 void endlessGeneratePerkChoices(int offers)
 {
 	offers = endlessClamp(offers, 0, ENDLESS_PERK_OFFERS_MILESTONE);  // never past the array width
@@ -491,16 +492,22 @@ const char *endlessPerkChoiceName(int i)
 	return endlessPerkTable[endlessPerkChoice[i]].name;
 }
 
-// Help-line text for an offered perk: its description plus owned/max stacks, so a stackable perk
-// shows how much room is left (e.g. "Owned 1/4") instead of a bare count.
+// Help-line text for an offered perk: what it does, and how much room is left in it. Two strings
+// rather than one, because the menu draws the count flush right of the description, not after it.
 const char *endlessPerkChoiceDesc(int i)
 {
-	static char buf[80];
+	if (i < 0 || i >= endlessPerkChoiceN)
+		return "";
+	return endlessPerkTable[endlessPerkChoice[i]].desc;
+}
+
+const char *endlessPerkChoiceOwnedText(int i)
+{
+	static char buf[24];
 	if (i < 0 || i >= endlessPerkChoiceN)
 		return "";
 	const int id = endlessPerkChoice[i];
-	snprintf(buf, sizeof(buf), "%s  (Owned %d/%d)",
-	         endlessPerkTable[id].desc, endlessPerkOwned[id], endlessPerkTable[id].maxStack);
+	snprintf(buf, sizeof(buf), "Owned %d/%d", endlessPerkOwned[id], endlessPerkTable[id].maxStack);
 	return buf;
 }
 
