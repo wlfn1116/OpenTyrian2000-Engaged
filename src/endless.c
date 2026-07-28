@@ -134,6 +134,14 @@ bool endlessPerkDueAtDepth(int depth)
 	return endlessPerkMilestoneAt(prev) && prev % ENDLESS_PERK_EVERY == 1;
 }
 
+// How wide the scheduled pick at run depth `depth` is: a cleared milestone deals the bigger slate.
+// Off the depth like the predicate above, so it survives a save/reload. A collision's deferred half
+// lands on the zone AFTER the milestone -- an ordinary depth -- so it deals the ordinary three.
+int endlessPerkOffersAtDepth(int depth)
+{
+	return endlessMilestoneKindOfZone(depth) ? ENDLESS_PERK_OFFERS_MILESTONE : ENDLESS_PERK_OFFERS;
+}
+
 // Hardcore mode for the current run (see endless.h): no saving at all + a locked outpost on a
 // mid-zone bail. Chosen on the seed screen, applied in newEndlessGame, cleared by endlessResetRun.
 bool endlessHardcore = false;

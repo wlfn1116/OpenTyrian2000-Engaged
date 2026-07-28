@@ -558,7 +558,7 @@ bool endlessTryBuyExtraPerk(void)
 		return false;
 	player[0].cash -= price;
 	endlessExtraPerkCost = endlessRebuy(endlessExtraPerkCost, ENDLESS_REBUY_EXTRAPERK_NUM, ENDLESS_REBUY_EXTRAPERK_DEN, 0);
-	endlessGeneratePerkChoices();                     // dispatch opens MENU_PERKS to pick one
+	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // dispatch opens MENU_PERKS to pick one (a BOUGHT pick stays three wide)
 	return true;
 }
 
@@ -659,7 +659,7 @@ static void endlessApplyGambleOutcome(int id, long cost)
 		{ const long win = cost * 4; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Revive held --  +$%ld", win); }
 		break;
 	case EGO_PERK:
-		endlessGeneratePerkChoices();  // the E-Shop dispatch opens MENU_PERKS when endlessGambleWonPerk() is set
+		endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // the E-Shop dispatch opens MENU_PERKS when endlessGambleWonPerk() is set
 		if (endlessPerkChoiceCount() > 0)
 		{ endlessGamblePerkWon = true; SDL_strlcpy(endlessGambleMsg, "Won a free perk pick!", sizeof endlessGambleMsg); }
 		else
@@ -1076,9 +1076,10 @@ void endlessBetweenLevels(void)
 		// zone cadence, a cleared milestone zone (every 25th), or the deferred half of a collision between the two.
 		// Skip it if this depth's perk was already resolved, so re-opening the same outpost after a
 		// save/reload doesn't hand out a second perk (endlessPerkDepthDone is part of the save).
+		// The same depth decides how WIDE the pick is: a milestone outpost deals five, not three.
 		if (endlessPerkDueAtDepth(endlessRunDepth) && endlessPerkDepthDone != endlessRunDepth)
 		{
-			endlessGeneratePerkChoices();
+			endlessGeneratePerkChoices(endlessPerkOffersAtDepth(endlessRunDepth));
 			endlessPerkPending = true;
 		}
 		// BREAKTHROUGH boon: a cleared Breakthrough sector owes a BONUS pick. Only one perk screen opens
@@ -1089,7 +1090,7 @@ void endlessBetweenLevels(void)
 		if (!endlessPerkPending && endlessBreakthroughOwed > 0)
 		{
 			--endlessBreakthroughOwed;
-			endlessGeneratePerkChoices();
+			endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // the boon's own pick, not the milestone's, so it stays three wide
 			endlessPerkPending = true;
 		}
 	}

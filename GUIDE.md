@@ -372,12 +372,12 @@ It's a slot machine. It is not a strategy.
 ## Perks
 
 Perks are permanent for the run and stack. You're offered up to 3 at a time, drawn
-from the perks you haven't maxed out.
+from the perks you haven't maxed out — **up to 5 after a milestone zone**.
 
 **When you get one:**
 
 - after clearing zone 1, then **every 4th zone after that** (1, 5, 9, 13, …),
-- at every **milestone zone** (25, 50, 75, 100, …),
+- at every **milestone zone** (25, 50, 75, 100, …), where the pick is 5 wide,
 - from a cleared **Breakthrough** sector,
 - from the E-Shop's **Buy Extra Perk**, or a lucky gamble.
 
@@ -521,6 +521,9 @@ level event firing and the enemy actually dying still gives you something useful
 | **25th zone** (25, 75, 125…) | The route slate is pinned to S / S+ sectors, the zone plays "Tunneling Trolls", and clearing it grants a guaranteed perk. |
 | **50th zone** (50, 150, 250…) | S+ / S++ slate, plays "A Field for Mag", and grants a guaranteed perk. |
 | **100th zone** (100, 200…) | S++ / S+++ slate, plays "One Mustn't Fall", grants a perk, and the slate always includes **"The End"** — the finale sector, ranked FINALITY, paying roughly 15× a normal clear on its own. Reaching zone 100 the first time also rolls the credits, once per run. |
+
+Every milestone perk is picked from **5** offers instead of the usual 3 — the
+forced slate pays out in choice as well as cash.
 
 Music never repeats back-to-back, and each zone's track is deterministic for the
 seed — retrying a zone replays the same song.

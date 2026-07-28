@@ -666,13 +666,13 @@ void endlessAwardEliteKill(int linknum, int eliteState);
 
 // --- Perks: run-persistent, stacking upgrades chosen after each cleared zone -----------
 // After finishing a zone the shop opens on a forced perk pick (before the normal buy/sell
-// front menu): three random perks plus a "take the cash" decline. Once you leave it you can't
-// return this visit. Perks stack and last the whole run; their effects fold into the same
-// player-side levers the sector mods / E-Shop buffs use.
+// front menu): three random perks -- five after a milestone zone -- plus a "take the cash"
+// decline. Once you leave it you can't return this visit. Perks stack and last the whole run;
+// their effects fold into the same player-side levers the sector mods / E-Shop buffs use.
 extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate
 
-void        endlessGeneratePerkChoices(void);  // roll this visit's offers (call before the shop)
-int         endlessPerkChoiceCount(void);      // how many perks are offered (usually 3)
+void        endlessGeneratePerkChoices(int offers);  // roll this visit's offers (call before the shop)
+int         endlessPerkChoiceCount(void);      // how many perks are offered (3, or 5 after a milestone)
 const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
 const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned/max count) for offer i
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
