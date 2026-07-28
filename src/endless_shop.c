@@ -156,8 +156,9 @@ void endlessHoistStartWeapon(void)
 // The base level-clear reward, before per-modifier bonuses. It scales up with the run so the
 // payout stays a meaningful supplement against the depth-inflated shop prices (weapons run
 // ~5k-30k, upgrades far more); every modifier reward is a multiple of this. Capped so a very
-// deep run can't mint an absurd single payout.
-static long endlessClearBase(void)
+// deep run can't mint an absurd single payout. Shared: the perk buyout ("Take the Cash") prices
+// itself off this too, so it can never fall behind the economy it is competing with.
+long endlessClearBase(void)
 {
 	long base = 900 + (long)endlessRunDepth * 220;
 	return (base > 60000) ? 60000 : base;
@@ -533,15 +534,6 @@ bool endlessConsumeRevive(void)
 }
 
 // --- Extra Perk (F4): pay for a bonus perk pick; the E-Shop dispatch opens the perk menu after. -
-// Total perk stacks the player currently holds (summed across every perk); drives the owned-count
-// surcharge below so a bigger collection costs more to grow.
-static int endlessPerkTotalOwned(void)
-{
-	int total = 0;
-	for (int i = 0; i < PERK_COUNT; ++i)
-		total += endlessPerkOwned[i];
-	return total;
-}
 long endlessExtraPerkPrice(void)
 {
 	// Base = depth price, doubled per buy this visit (endlessExtraPerkCost). Surcharge = a capped

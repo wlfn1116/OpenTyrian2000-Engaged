@@ -27,7 +27,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Heavy Rounds",     "Your shots deal more damage.",         5 },
 	{ "Rapid Cyclers",    "Your guns fire noticeably faster.",    4 },
 	{ "Ablative Plating", "Raises your maximum armor.",           6 },
-	{ "Scavenger",        "More cash from clears and bounties.",  4 },
+	{ "Scavenger",        "More cash from clears, bounties, buyouts.", 4 },
 	{ "Nanorepair",       "Slowly regenerate armor in flight.",   3 },
 	{ "Siphon",           "Chance to restore armor on a kill.",   3 },
 	{ "Bounty Hunter",    "Elite and champion bounties doubled.", 1 },
@@ -64,11 +64,21 @@ int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the n
 // so re-entering the same outpost (e.g. after a save/reload) can't hand out a second perk.
 int endlessPerkDepthDone = -1;
 
-// Cash multiplier (100 = unchanged) from the Scavenger perk, applied to the clear bonus and
-// elite/champion bounties.
+// Cash multiplier (100 = unchanged) from the Scavenger perk, applied to the clear bonus, the
+// elite/champion bounties and the "Take the Cash" perk buyout.
 int endlessPerkCashPercent(void)
 {
 	return 100 + endlessPerkOwned[PERK_CASH] * ENDLESS_PERK_CASH_PCT;
+}
+
+// Perk stacks the player currently holds, summed across every perk. Both sides of the perk market
+// price off it: the extra-perk surcharge (endlessExtraPerkPrice) and the buyout below.
+int endlessPerkTotalOwned(void)
+{
+	int total = 0;
+	for (int i = 0; i < PERK_COUNT; ++i)
+		total += endlessPerkOwned[i];
+	return total;
 }
 
 // Financier perk, first half: the level-clear bank-interest rate, as a % of unspent cash
@@ -507,10 +517,23 @@ void endlessTakePerk(int i)
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
 
-// Cash paid for declining the perk ("take the cash"), scaling with depth so it stays tempting.
+// Cash paid for declining the pick ("Take the Cash"). The constants, and the reasoning behind each
+// term, are in endless_internal.h.
 long endlessPerkDeclineBonus(void)
 {
-	return 1000 + (long)endlessRunDepth * 200;
+	// A thinned pool (a deep run with most perks maxed, down to one offer or none) never pays LESS
+	// than a standard slate; a wider milestone deal pays proportionally more.
+	const int offers = endlessClamp(endlessPerkChoiceN, ENDLESS_PERK_OFFERS, ENDLESS_PERK_OFFERS_MILESTONE);
+	int surcharge = endlessPerkTotalOwned() * ENDLESS_PERK_DECLINE_OWNED_PCT;
+	if (surcharge > ENDLESS_PERK_DECLINE_OWNED_CAP)
+		surcharge = ENDLESS_PERK_DECLINE_OWNED_CAP;
+
+	// Stepwise, dividing as it goes: the deepest runs cap the base at 60000, and folding four
+	// multipliers together before any divide would push the intermediate past a 32-bit long.
+	long cash = endlessClearBase() * ENDLESS_PERK_DECLINE_MULT / 10;
+	cash = cash * offers / ENDLESS_PERK_OFFERS;
+	cash = cash * (100 + surcharge) / 100;
+	return cash * endlessPerkCashPercent() / 100;  // Scavenger, as on every other endless cash source
 }
 
 void endlessDeclinePerk(void)

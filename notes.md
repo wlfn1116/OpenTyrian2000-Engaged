@@ -1138,7 +1138,9 @@ mutable `last`, so a Quit-Level retry replays the same track.
   the next). At a cadence of 4 the 77th pick lands at **depth 265**; waypoints:
   z50 = 15 picks, z100 = 29, z150 = 44, z200 = 58, z250 = 73. Past the last pick the scheduled gate still opens with an empty
   pool — `configure_endless_perk_menu` then renders the "Take the Cash" row alone,
-  so it degrades into a small recurring cash bonus rather than breaking.
+  so it degrades into a recurring cash payout rather than breaking. A zero-wide
+  slate is clamped back up to a standard three in `endlessPerkDeclineBonus`, and by
+  then every stack is owned, so that tail pays at the capped rate.
 - Zone-100 credits: clearing zone 100 rolls `JE_playCredits` once, at the outpost
   that follows (top of `endlessBetweenLevels`, before the course roll and the
   auto-save), then the run carries on into zone 101. `endlessCreditsShown` gates
@@ -1516,6 +1518,35 @@ mutable `last`, so a Quit-Level retry replays the same track.
     worst case (depth 0, Favor, 4 stacks) still lands at `pct` 43, not 0.
     It rides the same lever as the tax, so its coverage is exactly the tax's — the
     buy/sell shop, not the E-Shop buys, which price themselves via `endlessRebuy`.
+- **"Take the Cash"** — the decline row every perk pick carries — is a buyout, not a
+  consolation prize, as of 2026-07-28. It was a flat `1000 + depth*200`: roughly a
+  fifth of a zone's income at *every* depth, which is to say never once the better
+  play. `endlessPerkDeclineBonus` now prices off `endlessClearBase()` (which is why
+  the shop file's base function is no longer static, and why the buyout can't drift
+  behind a retuned economy) at `ENDLESS_PERK_DECLINE_MULT` — 25 tenths, ×2.5 — and
+  then by the two things the flat line ignored:
+  - *The slate on the table.* `offers / ENDLESS_PERK_OFFERS`, clamped UP to a
+    standard three, so a milestone's five-perk deal costs ×1.67 to walk away from
+    while a pool thinned to one offer — or to none, past the 77th pick — never pays
+    less than an ordinary one.
+  - *The collection already flown.* `ENDLESS_PERK_DECLINE_OWNED_PCT` (6%) per owned
+    stack, capped at +150% (reached at 25 stacks). Deliberately the extra-perk
+    surcharge read backwards: a perk is dearer the more you hold, on both sides of
+    the counter. It cannot feed itself, because declining is the one move that never
+    raises your own stack count — so a serial decliner's buyout stays flat, while a
+    player who banked perks first cashes out at the higher rate.
+  Scavenger applies last, as to every other endless cash source, and its description
+  now says "buyouts" alongside clears and bounties. Measured against a zone's income
+  (clear ≈ 2.5× base, plus capped interest) that lands at ~0.5 zones at depth 1
+  — early perks *should* win — ~1.5 by zone 50, and ~3.5 at a deep milestone. The
+  multiplies are stepped with a divide between each: the depth-capped base (60000)
+  against all four factors combined would overflow a 32-bit `long`.
+  `endlessPerkTotalOwned` moved from `endless_shop.c` to `endless_perks.c` for this
+  (both prices need it) and is declared in `endless_internal.h`.
+  One ordering consequence, left as-is because it's a fair reward rather than a
+  leak: `endlessShopEntryCash` is frozen in `endlessBetweenLevels`, and the perk
+  screen opens *after* that (the front gate in `JE_itemScreen`), so buyout cash
+  doesn't inflate the E-Shop's cash-fraction prices until the next visit.
 - **In-level special-weapon drops are converted to gun powerups.** Vanilla events
   33/45 (`tyrian2.c`) rewrite the front-powerup dropper (enemy 533) into one of the
   six special-weapon droppers (829..834, each `value = 32100 + specialId`) on the

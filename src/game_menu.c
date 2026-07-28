@@ -3942,10 +3942,13 @@ void JE_drawMainMenuHelpText(void)
 						SDL_strlcpy(tempStr, "You haven't earned any perks yet.", sizeof(tempStr));
 				}
 			}
-			// Perk pick: show the hovered perk's effect (+ owned count), or the decline's cash.
+			// Perk pick: show the hovered perk's effect (+ owned count), or the decline's buyout. The
+			// two levers that move that number are named -- neither is otherwise visible here. Kept to
+			// the length of the line it replaced, so the cost that follows it still clears the margin
+			// the rest of the endless shop UI right-aligns to.
 			else if (curSel[MENU_PERKS] == menuChoices[MENU_PERKS])
 			{
-				SDL_strlcpy(tempStr, "Take no perk this zone for a cash bonus.", sizeof(tempStr));
+				SDL_strlcpy(tempStr, "Take no perk: depth and perks pay more.", sizeof(tempStr));
 				snprintf(costStr, sizeof(costStr), "+$%ld", endlessPerkDeclineBonus());
 			}
 			else
