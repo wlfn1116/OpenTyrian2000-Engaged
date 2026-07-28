@@ -673,9 +673,10 @@ void endlessAwardEliteKill(int linknum, int eliteState);
 extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate
 
 void        endlessGeneratePerkChoices(int offers);  // roll this visit's offers (call before the shop)
-int         endlessPerkChoiceCount(void);      // how many perks are offered (3, or 5 after a milestone)
+int         endlessPerkChoiceCount(void);      // how many perks are offered (3; 4 if bought, 5 after a milestone)
 const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
-const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned/max count) for offer i
+const char *endlessPerkChoiceDesc(int i);      // help-line description for offer i
+const char *endlessPerkChoiceOwnedText(int i); // ...and its "Owned n/max", drawn flush right of that
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
 long        endlessPerkDeclineBonus(void);     // "Take the Cash" buyout: scales with depth, slate width and perks owned
 void        endlessDeclinePerk(void);          // take the cash instead of a perk

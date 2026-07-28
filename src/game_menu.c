@@ -76,7 +76,7 @@ enum
 	// rather than reused -- MENU_MAX, menuEsc[], menuChoicesDefault[] and the menuInt label file
 	// are all indexed by menu id, so renumbering 16/17 would silently shift every one of them.
 	MENU_ESHOP = 16,  // endless "E-Shop": reroll / reinforce / buy buff / buy special
-	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3, 1-of-5 after a milestone (+ decline) gate before the buy/sell front menu
+	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3 (1-of-4 bought, 1-of-5 after a milestone) + decline, gating the buy/sell front menu
 };
 
 // Horizontal centre of the monitor window's readout slot (the panel under the map, y173). Both the
@@ -645,7 +645,7 @@ static void configure_endless_shop_menu(void)
 }
 
 /* Populate the endless perk-pick menu (MENU_PERKS) from the offers rolled this visit
- * (endlessGeneratePerkChoices). Rows: title, the offered perk names (3, or 5 after a milestone),
+ * (endlessGeneratePerkChoices). Rows: title, the offered perk names (3; 4 bought, 5 at a milestone),
  * then "Take the Cash" -- driven by the offer count, so a wider pick needs no layout work.
  * The exact perk effect + owned count shows in the help line; the decline cash is there too. */
 static void configure_endless_perk_menu(void)
@@ -3747,9 +3747,21 @@ void JE_doShipSpecs(void)
 #define ENDLESS_COURSE_HL_BANK   14
 #define ENDLESS_COURSE_HL_BRIGHT 6
 
-// Right edge both the Chart-a-Course payout and the E-Shop cost right-align to, flush against the
-// help bar's right end (description left, price right). notes.md §Menus & shop.
+// Right edge every endless help-bar figure right-aligns to -- Chart-a-Course payout, E-Shop price,
+// perk buyout, offered perk's stack count -- flush against the bar's right end (description left,
+// figure right). notes.md §Menus & shop.
 #define ENDLESS_COURSE_PAYOUT_RIGHT 305
+
+/* Draw `right` flush against that edge on the help bar, backing off to just after `text` when an
+ * unusually long description would otherwise reach it. */
+static void draw_help_bar_right(const char *text, const char *right, unsigned int bank, int brightness)
+{
+	const int afterText = 10 + JE_textWidth(text, TINY_FONT) + 5;
+	int x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(right, TINY_FONT);
+	if (x < afterText)
+		x = afterText;
+	JE_textShade(VGAScreen, x, 187, right, bank, brightness, DARKEN);
+}
 
 void JE_drawMainMenuHelpText(void)
 {
@@ -3757,7 +3769,10 @@ void JE_drawMainMenuHelpText(void)
 	// a memcpy of sizeof(tempStr) -- that reads a byte past every source row, and past the end of
 	// the array on the last one.
 	char tempStr[67];
-	char costStr[24] = "";  // endless: an amount drawn highlighted after tempStr (E-Shop cost / perk decline)
+	// Endless: the two kinds of flush-right figure. Money is highlighted; a stack count isn't money,
+	// so it keeps the description's own colour. Never both at once -- see the draw below.
+	char costStr[24] = "";   // price / payout / buyout
+	char ownedStr[24] = "";  // an offered perk's "Owned n/max"
 	JE_byte temp;
 
 	temp = curSel[curMenu] - 2;
@@ -3896,7 +3911,7 @@ void JE_drawMainMenuHelpText(void)
 				}
 				break;
 			case 5:  // Extra Perk
-				SDL_strlcpy(tempStr, "Pick a bonus perk now.", sizeof(tempStr));
+				SDL_strlcpy(tempStr, "Pick a bonus perk now, from four.", sizeof(tempStr));
 				snprintf(costStr, sizeof(costStr), "$%ld", endlessExtraPerkPrice());
 				break;
 			case 3:  // Sabotage Sector
@@ -3929,30 +3944,32 @@ void JE_drawMainMenuHelpText(void)
 		{
 			if (endlessPerkListMode)
 			{
-				// Read-only perk list: "Done" returns; each perk row shows its stack count + effect.
+				// Read-only perk list: "Done" returns; each perk row shows its effect. The stack count
+				// belongs to the row itself here (draw_endless_perk_list draws it), so repeating it on
+				// the help line said the same thing twice.
 				if (curSel[MENU_PERKS] == menuChoices[MENU_PERKS])
 					SDL_strlcpy(tempStr, "Return to the buy/sell menu.", sizeof(tempStr));
 				else
 				{
 					const int id = perkListId[curSel[MENU_PERKS] - 2];
-					if (id >= 0)
-						snprintf(tempStr, sizeof(tempStr), "Owned %d/%d.  %s",
-						         endlessPerkGetOwned(id), endlessPerkMaxStack(id), endlessPerkDesc(id));
-					else
-						SDL_strlcpy(tempStr, "You haven't earned any perks yet.", sizeof(tempStr));
+					SDL_strlcpy(tempStr, id >= 0 ? endlessPerkDesc(id) : "You haven't earned any perks yet.",
+					            sizeof(tempStr));
 				}
 			}
-			// Perk pick: show the hovered perk's effect (+ owned count), or the decline's buyout. The
-			// two levers that move that number are named -- neither is otherwise visible here. Kept to
-			// the length of the line it replaced, so the cost that follows it still clears the margin
-			// the rest of the endless shop UI right-aligns to.
+			// Perk pick: the hovered perk's effect, with the stack count flush right -- the pick rows
+			// are bare names, so the help line is the only place it shows. The decline instead quotes
+			// its buyout, and its line is kept short so that stays flush right rather than tripping the
+			// anti-overlap fallback, even at the seven figures a capped deep run can reach.
 			else if (curSel[MENU_PERKS] == menuChoices[MENU_PERKS])
 			{
 				SDL_strlcpy(tempStr, "Take no perk: depth and perks pay more.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "+$%ld", endlessPerkDeclineBonus());
+				snprintf(costStr, sizeof(costStr), "$%ld", endlessPerkDeclineBonus());
 			}
 			else
+			{
 				SDL_strlcpy(tempStr, endlessPerkChoiceDesc(curSel[MENU_PERKS] - 2), sizeof(tempStr));
+				SDL_strlcpy(ownedStr, endlessPerkChoiceOwnedText(curSel[MENU_PERKS] - 2), sizeof(ownedStr));
+			}
 		}
 		else if (customWeaponEnabled && curMenu == MENU_UPGRADES && curSel[curMenu] >= 9)
 		{
@@ -4008,24 +4025,20 @@ void JE_drawMainMenuHelpText(void)
 	}
 	
 	JE_textShade(VGAScreen, 10, 187, tempStr, 14, 1, DARKEN);
-	// Endless: draw the price/payout in a highlight colour so it stands out. The Chart a Course
-	// screen runs under a different palette (see the defines above), so it gets its own palette-safe
-	// pair instead of the E-Shop's -- and the payout is RIGHT-ALIGNED to the bar there (reward flush
-	// right, opposite the left-aligned tier/description). Other cost lines sit just after their text.
+	// Endless: money goes flush right in a highlight colour so it stands out -- Chart a Course runs
+	// under a different palette (see the defines above), so its payout gets a palette-safe pair
+	// instead of the E-Shop's. An offered perk's stack count is not money and keeps the description's
+	// own colour. An `else if`, because the two never coexist: only the perk pick sets ownedStr, and
+	// only on the rows where the decline's buyout doesn't apply.
 	if (costStr[0] != '\0')
 	{
-		const int hlBank   = (curMenu == MENU_PLAY_NEXT_LEVEL) ? ENDLESS_COURSE_HL_BANK   : ENDLESS_COST_HL_BANK;
-		const int hlBright = (curMenu == MENU_PLAY_NEXT_LEVEL) ? ENDLESS_COURSE_HL_BRIGHT : ENDLESS_COST_HL_BRIGHT;
-		const int afterText = 10 + JE_textWidth(tempStr, TINY_FONT) + 5;
-		int cost_x = afterText;
-		if (curMenu == MENU_PLAY_NEXT_LEVEL || curMenu == MENU_ESHOP)
-		{
-			cost_x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(costStr, TINY_FONT);
-			if (cost_x < afterText)  // description unusually long -- keep a gap, never overlap
-				cost_x = afterText;
-		}
-		JE_textShade(VGAScreen, cost_x, 187, costStr, hlBank, hlBright, DARKEN);
+		const bool course = (curMenu == MENU_PLAY_NEXT_LEVEL);
+		draw_help_bar_right(tempStr, costStr,
+		                    course ? ENDLESS_COURSE_HL_BANK : ENDLESS_COST_HL_BANK,
+		                    course ? ENDLESS_COURSE_HL_BRIGHT : ENDLESS_COST_HL_BRIGHT);
 	}
+	else if (ownedStr[0] != '\0')
+		draw_help_bar_right(tempStr, ownedStr, 14, 1);  // same bank/brightness as the help text itself
 
 	// Endless: show the run's seed on the E-Shop help line, right-aligned opposite "Open the
 	// E-Shop." so it's always visible from the outpost. Bank/brightness tuned by eye to read as
@@ -7984,7 +7997,7 @@ void JE_menuFunction(JE_byte select)
 		}
 		break;
 
-	case MENU_PERKS:  // endless perk pick (forced 1-of-3 or 1-of-5, + decline); one-shot gate before the shop
+	case MENU_PERKS:  // endless perk pick (forced 1-of-3, wider bought / at a milestone, + decline); one-shot gate before the shop
 		if (endlessPerkListMode)  // read-only perk list reached from the buy/sell menu -- any pick just returns
 		{
 			endlessPerkListMode = false;

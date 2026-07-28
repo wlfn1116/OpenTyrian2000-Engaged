@@ -1130,12 +1130,18 @@ mutable `last`, so a Quit-Level retry replays the same track.
   cleared milestone of any class — the forced slate pays in CHOICE as well as cash.
   A collision's deferred half lands on the zone AFTER the milestone, an ordinary
   depth, so it deals three. The other three callers of
-  `endlessGeneratePerkChoices` (Buy Extra Perk, the gamble win, Breakthrough) pass
-  3 explicitly: those picks are bought or earned elsewhere, and reading the depth
-  inside the generator would have quietly upgraded every one of them at a
-  milestone outpost. The offer count also drives the menu's row count
-  (`configure_endless_perk_menu`), so the wider pick needed no layout work: 16px
-  rows from y=38 put "Take the Cash" at y=134, clear of the help line.
+  `endlessGeneratePerkChoices` pass their width explicitly rather than letting the
+  generator read the depth, which would have quietly upgraded every one of them at
+  a milestone outpost: the gamble win and Breakthrough deal 3, and **Buy Extra Perk
+  deals `ENDLESS_PERK_OFFERS_BOUGHT` (4)** as of 2026-07-28. The E-Shop pick is the
+  most expensive thing in the mode ($70,000 + $2,500/zone, doubling per buy, ×11 at
+  the surcharge cap) and was landing the same 3-wide slate the free cadence hands
+  out, so the money bought a perk but no say in which — the same complaint the
+  milestone slate was widened to answer. Four rather than five keeps the milestone
+  the widest deal in the game. The offer count also drives the menu's row count
+  (`configure_endless_perk_menu`), so a wider pick needs no layout work: 16px rows
+  from y=38 put "Take the Cash" at y=134 even at five, clear of the help line. No
+  save bump either — the on-disk offer list has held five slots since v13.
 - The cadence was 3 (depths 1, 4, 7, …) until 2026-07-25; it is now 4.
   - **Breakthrough.** `endlessBreakthroughAllowed` (`endless_course.c`) bars the
     boon from any zone whose clear already owes a scheduled perk, so it is blocked
@@ -2089,7 +2095,28 @@ have handed player 1's trim to player 2.
   brightness is `JE_outText`'s shadow sentinel (deep-red tiers would render
   black). Help-line amounts: E-Shop cost = bank 1/brightness 6 (palette-1 cash
   colour); Chart-a-Course runs under palette 18, so its payout = bank
-  14/brightness 6, right-aligned to x=305.
+  14/brightness 6.
+- **Every help-bar figure right-aligns to `ENDLESS_COURSE_PAYOUT_RIGHT` (305)** —
+  description left, figure right — via `draw_help_bar_right`, which falls back to
+  just-after-the-text when a long description would otherwise reach it. Both the
+  perk pick's "Take the Cash" buyout and the offered perk's `Owned n/max` joined
+  the Chart-a-Course payout and the E-Shop price there on 2026-07-28; that retired
+  the last caller of the after-the-text path, so the per-menu test went with it and
+  only the overlap guard remains. Two strings feed it, and the split is by MEANING,
+  not by menu: `costStr` is money and takes a highlight bank, `ownedStr` is a stack
+  count and keeps the help text's own 14/1. They can never coexist (only the perk
+  pick sets `ownedStr`, and only on rows where the decline's buyout doesn't apply),
+  which is why the draw is an `else if` rather than two independent blocks.
+  The overlap guard is also why the decline's help line is kept short: the buyout
+  reaches seven figures on a deep capped run. On the perk rows the margin is
+  thinner still — the longest description in `endlessPerkTable` (41 chars) leaves
+  about 12px before `Owned n/max` would be bumped out of alignment, so a longer one
+  needs the count checked, not just the row width.
+- The read-only Perks list (`endlessPerkListMode`) draws each perk's stack count on
+  the ROW, right-aligned at x=302 just clear of the scroll-bar track — so its help
+  line carries the description only. It used to prefix `Owned n/max.` there as well,
+  which said the same thing twice on one screen. The perk PICK is the opposite case:
+  its rows are bare names, so the help line is the only place the count appears.
 - Nav-map planet draws must loop `mapPNum`, not `menuChoices - 1`: in endless
   `menuChoices = courseCount + 2`, which reads past `mapPlanet[5]` and feeds
   garbage to `JE_drawPlanet` (crash).

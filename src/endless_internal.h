@@ -126,8 +126,9 @@ void endlessReviveGraceTick(void);             // drain the window (once per tic
 void endlessReviveGraceReset(void);            // clear it at level start (endlessResetZoneEffects)
 
 // --- endless_perks.c: run-persistent, stacking upgrades --------------------------
-// Free pick-1-of-3 after each cleared zone (1-of-5 after a milestone); each effect folds into an
-// existing player-side lever so there's no new subsystem. Reset each run. Tunables below are all by-eye.
+// Free pick-1-of-3 on the post-zone cadence (wider when bought or earned at a milestone -- see the
+// ENDLESS_PERK_OFFERS* block); each effect folds into an existing player-side lever so there's no
+// new subsystem. Reset each run. Tunables below are all by-eye.
 #define ENDLESS_PERK_DAMAGE_PCT    12  // +% shot damage per Heavy Rounds stack
 #define ENDLESS_PERK_FIRE_PCT      20  // fire-decrement accumulator % per Rapid Cyclers stack
 #define ENDLESS_PERK_ARMOR_STEP     8  // +max armor per Ablative Plating stack
@@ -172,10 +173,12 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 #define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
 
-// How many perks a pick puts on the table. A milestone outpost deals the wider slate, so surviving
-// a forced S-tier zone pays in CHOICE as well as cash. The wider number is also the offer-array
-// width, so no caller can ask for more than endlessPerkChoice[] holds.
-#define ENDLESS_PERK_OFFERS           3  // ordinary pick: cadence, E-Shop buy, gamble win, Breakthrough
+// How many perks a pick puts on the table. The two picks that COST something -- surviving a forced
+// S-tier milestone, or paying the outpost's steepest price -- deal wider slates, so what they buy is
+// choice as well as the perk itself. The milestone number is also the offer-array width, so no
+// caller can ask for more than endlessPerkChoice[] holds; the save has carried five slots since v13.
+#define ENDLESS_PERK_OFFERS           3  // ordinary pick: the cadence, a gamble win, Breakthrough
+#define ENDLESS_PERK_OFFERS_BOUGHT    4  // ...E-Shop "Buy Extra Perk", which you paid for
 #define ENDLESS_PERK_OFFERS_MILESTONE 5  // ...after a cleared milestone zone (25, 50, 75, 100, ...)
 
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
