@@ -47,10 +47,11 @@ int      endlessSortiePreLongCon   = 0;
 // by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 13     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts; v13 wider perk OFFER list (milestone 1-of-5)
+#define ENDLESS_SAVE_VERSION 14     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts; v13 wider perk OFFER list (milestone 1-of-5); v14 Rapid Charger folded into Rapid Recharge (perk slots renumbered)
 #define ENDLESS_SAVE_PERKS   32     // on-disk perk-array width from v11 (was 16, which had grown to == PERK_COUNT).
                                     // Comfortable headroom now; a future perk only needs a version bump once PERK_COUNT passes this.
 #define ENDLESS_SAVE_PERKS_V10 16   // v3..v10 wrote a fixed 16-wide perk block; the reader honours that for older files.
+#define ENDLESS_SAVE_PERK_CHARGER_V13 14  // slot the deleted "Rapid Charger" held in v3..v13 (see the v14 migration below)
 #define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE  // on-disk offer slots from v13: a milestone pick's full slate.
 #define ENDLESS_SAVE_OFFERS_V12 3   // v3..v12 wrote a fixed 3-wide offer list; the reader honours that for older files.
 
@@ -294,6 +295,32 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	}
 	if (r->perkChoiceN > (Sint32)offerSlots)
 		r->perkChoiceN = (Sint32)offerSlots;
+
+	// v14 deleted "Rapid Charger" (old slot 14) and folded its effect into Rapid Recharge, which
+	// renumbered every perk id below it. BOTH stored arrays are keyed by those ids, so migrate a
+	// pre-v14 record: the dropped stacks go to Rapid Recharge (endlessApplyCurrent clamps them to its
+	// maxStack) so an in-flight run keeps the charge speed it paid for, the owned block closes the
+	// gap, and this visit's saved offers are renumbered -- dropping the one that WAS Rapid Charger,
+	// which would otherwise resume as a different perk (or index off the end of the table).
+	if (version < 14)
+	{
+		const int merged = r->perkOwned[PERK_SPECIALCD] + r->perkOwned[ENDLESS_SAVE_PERK_CHARGER_V13];
+		r->perkOwned[PERK_SPECIALCD] = (Uint8)(merged > 255 ? 255 : merged);
+		memmove(&r->perkOwned[ENDLESS_SAVE_PERK_CHARGER_V13],
+		        &r->perkOwned[ENDLESS_SAVE_PERK_CHARGER_V13 + 1],
+		        ENDLESS_SAVE_PERKS - ENDLESS_SAVE_PERK_CHARGER_V13 - 1);
+		r->perkOwned[ENDLESS_SAVE_PERKS - 1] = 0;
+
+		Sint32 kept = 0;
+		for (Sint32 i = 0; i < r->perkChoiceN; ++i)
+		{
+			const Sint32 id = r->perkChoice[i];
+			if (id == ENDLESS_SAVE_PERK_CHARGER_V13)
+				continue;
+			r->perkChoice[kept++] = (id > ENDLESS_SAVE_PERK_CHARGER_V13) ? id - 1 : id;
+		}
+		r->perkChoiceN = kept;   // 0 is fine: the pick menu then opens on "Take the Cash" alone
+	}
 
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
 	{

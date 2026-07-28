@@ -1548,6 +1548,18 @@ JE_byte JE_playerDamage(JE_byte temp,
 		}
 	}
 
+	// Failsafe perk (endless): the same hull hit leaves the ship briefly untouchable, which is what
+	// breaks up the volley that would otherwise finish a nearly-dead run. EXTENDS rather than assigns,
+	// so it can't cut short a longer window already running -- notably the 100 ticks a spent revive
+	// just granted above. Dead ships are skipped; their respawn sets its own invulnerability. The
+	// existing post-hit transparency flash (mainint.c) is the readout, so this needs no tell of its own.
+	if (endlessFxActive() && this_player == &player[0] && cmHullHit && this_player->is_alive)
+	{
+		const uint failsafe = (uint)endlessPerkFailsafeTicks();
+		if (this_player->invulnerable_ticks < failsafe)
+			this_player->invulnerable_ticks = failsafe;
+	}
+
 	JE_wipeShieldArmorBars();
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 	JE_drawShield();
