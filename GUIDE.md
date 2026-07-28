@@ -386,7 +386,7 @@ from the perks you haven't maxed out — **up to 5 after a milestone zone**.
 | Heavy Rounds | Your shots deal more damage | +12% | 5 |
 | Rapid Cyclers | Your guns fire faster | +20% cycle | 4 |
 | Ablative Plating | Raises maximum armour | +8 | 6 |
-| Scavenger | More cash from clears and bounties | +15% | 4 |
+| Scavenger | More cash from clears, bounties and perk buyouts | +15% | 4 |
 | Nanorepair | Regenerate armour in flight | +1 armour / 4s (faster with more stacks) | 3 |
 | Siphon | Chance to restore armour on a kill | +12% chance | 3 |
 | Bounty Hunter | Elite and champion bounties doubled | ×2 | 1 |
@@ -414,6 +414,42 @@ window opens when damage punches through to armour, the same trigger
 **Countermeasures** uses, so the two fire together: the burst clears the shots
 around you and the i-frames cover you while you leave. It can't chain, because you
 can't take hull damage while it's running.
+
+### Take the Cash
+
+Every perk screen ends with a **Take the Cash** row. It isn't a consolation prize
+— it's the outpost offering to buy the pick back, and the price on it moves. Three
+things push it up:
+
+- **Depth.** The buyout is priced off the same clear-payout base every other
+  endless reward is built from, so it keeps pace with the shop instead of falling
+  behind it.
+- **How wide the slate is.** A **milestone** pick deals five perks instead of
+  three, and passing on five pays about **⅔ more** than passing on three. A pool
+  thinned out by a long run never pays *less* than a standard slate.
+- **How many perks you're already carrying.** Every stack you own adds **6%**, up
+  to **+150%** at 25 stacks — the mirror image of what Buy Extra Perk charges you
+  for the same collection.
+
+**Scavenger applies to it**, so a cash build gets up to 60% more again.
+
+The upshot is that the answer changes over a run. Early on the perk is almost
+always right — the buyout is worth about **half a zone's income** at depth 1, and
+the perks you take then compound for the rest of the run. Deep in, with a broad
+collection and a slate full of things you've deliberately skipped, a milestone
+buyout runs to **three zones' income or more** — enough to take a hull tier off
+the E-Shop on the spot. That's a real fork, not a default.
+
+Two things worth knowing before you lean on it:
+
+- **Declining never raises your own stack count**, so the rate doesn't climb just
+  because you keep refusing. Building perks first and cashing out later pays;
+  refusing every pick from zone 1 does not.
+- **The perk screen opens before the shop, and the E-Shop's cash-fraction buys
+  price off the cash you walked in with** — which was counted before the buyout
+  landed. So Turbodrive, Overblast, Overdrive and Buy Special all keep the price
+  they'd have had if you'd taken the perk, and the buyout is pure profit against
+  them that visit.
 
 ### Opening Salvo in detail
 
@@ -509,6 +545,10 @@ cheapest the shop ever gets.
 **Bounties** for elites and champions are paid immediately on the kill, with a
 message in the text bar. They're capped per kill ($2,500 / $6,000) because the
 rising tide multiplies how *many* of them there are.
+
+**Perk buyouts** are the fourth source, and the only one you choose: see
+[Take the Cash](#take-the-cash). They're built off the same clear base, so they
+scale with everything else on this page.
 
 Shop prices inflate with depth on the same curve, so a deep run is not a rich run
 — it's a run with bigger numbers on both sides.

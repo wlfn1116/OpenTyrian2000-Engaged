@@ -184,6 +184,15 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_EXTRA_PERK_OWNED_PCT  40   // +% per owned perk stack
 #define ENDLESS_EXTRA_PERK_OWNED_CAP 1000  // ...but the owned-count surcharge tops out here (+1000% = x11)
 
+// "Take the Cash": the buyout the outpost pays for a pick you walk away from. Built on the zone's
+// CLEAR BASE, so it tracks the economy instead of drifting behind it, then scaled by how wide the
+// slate is and how many stacks the player already holds. That second term is the extra-perk
+// surcharge above read the other way round -- a perk is dearer the more you own, on both sides of
+// the counter -- and can't be farmed: declining is the one move that never raises your own count.
+#define ENDLESS_PERK_DECLINE_MULT      25  // buyout, in TENTHS of the level-clear base (25 = 2.5x)
+#define ENDLESS_PERK_DECLINE_OWNED_PCT  6  // +% per perk stack already owned
+#define ENDLESS_PERK_DECLINE_OWNED_CAP 150 // ...topping out here (+150% = x2.5, reached at 25 stacks)
+
 // PERK_CHARGERATE ("Rapid Charger") used to sit between PERK_SHIELDREGEN and PERK_SHOTSPEED; it was
 // folded into Rapid Recharge and dropped in save v14, which renumbers everything below it. That is
 // the ONE time an index may move, and only because endlessReadRec migrates older perk blocks.
@@ -229,6 +238,7 @@ extern int endlessPerkDepthDone;              // run depth whose perk pick is al
 
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)
 int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspent cash (10 = stock)
+int endlessPerkTotalOwned(void);              // perk stacks held, summed across every perk
 
 // --- endless_shop.c: the outpost -------------------------------------------------
 extern long endlessRerollCost;        // escalating outpost prices, reset each visit
@@ -257,6 +267,7 @@ extern int  endlessLongCon;             // The Long Con: sectors until a paid-an
 extern bool endlessResumeVisit;         // a save was just loaded: the next outpost restores its snapshot
 extern bool endlessCreditsShown;        // the zone-100 credits roll already played this run (rides the save)
 
+long   endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
 long   endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
 long   endlessClearBonusForEx(Uint64 mods, int payoutMille);  // ...plus the shipped level's payoutMille (thousandths of base: harder level pays more, finely)
 int    endlessSortiePayoutMille(void);      // payoutMille of the COMMITTED level at the run difficulty (0 if no sortie); keeps banked payout == the shown course payout

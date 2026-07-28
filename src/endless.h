@@ -677,7 +677,7 @@ int         endlessPerkChoiceCount(void);      // how many perks are offered (3,
 const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
 const char *endlessPerkChoiceDesc(int i);      // help-line description (+ owned/max count) for offer i
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
-long        endlessPerkDeclineBonus(void);     // cash paid for taking no perk (scales with depth)
+long        endlessPerkDeclineBonus(void);     // "Take the Cash" buyout: scales with depth, slate width and perks owned
 void        endlessDeclinePerk(void);          // take the cash instead of a perk
 
 int endlessPerkArmorBonus(void);     // +max armor from Ablative Plating (added at ship-info, varz.c); may be negative (Glass Cannon)
