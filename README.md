@@ -50,7 +50,8 @@ Basically a bunch of stuff that I thought would be cool and also wouldn't really
   course whose sectors carry their own modifiers and a danger rank from F to
   S+++.
 - You choose a perk after the first cleared zone and every fourth zone after
-  that, plus one at every 50th zone. Perks last for the whole run.
+  that, plus one for clearing each milestone zone (25, 50, 75, 100, ...), where
+  the pick is five wide instead of three. Perks last for the whole run.
 - Runs are seeded: the same seed and the same choices reproduce the same order
   of levels, courses, shops, and perks.
 - A Hardcore option disables saving, so dying or quitting ends the run for good.
