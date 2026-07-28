@@ -526,7 +526,8 @@ mutable `last`, so a Quit-Level retry replays the same track.
 ### Difficulty ramp
 
 - Enemy levers are driven by an effective depth: real depth × 1.25, tilted by the
-  50..160 difficulty factor (`endlessDifficultyRampPercent`). Real
+  difficulty factor (`endlessDifficultyRampPercent`): 75..160 across the six
+  selectable difficulties (Easy..Lord of Game), plus a debug-only WIMP 50. Real
   `endlessRunDepth` still drives HUD/score/milestones/economy.
 - Each lever has its own slope so caps mature one at a time (NORMAL real zones:
   shot damage ~55, elite HP ~64, shot speed ~67, fire rate ~80, boss HP ~96,

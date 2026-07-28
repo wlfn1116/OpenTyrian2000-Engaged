@@ -112,12 +112,12 @@ long endlessStartingCash(void)
 {
 	switch (difficultyLevel)
 	{
-	case DIFFICULTY_WIMP:       return 45000;
+	case DIFFICULTY_WIMP:       return 45000;  // debug-only: not on the Difficulty Level select screen
 	case DIFFICULTY_EASY:       return 34000;
 	case DIFFICULTY_NORMAL:     return 25000;
 	case DIFFICULTY_HARD:       return 18000;
 	case DIFFICULTY_IMPOSSIBLE: return 14000;
-	default:                    return  9000;  // Insanity and beyond
+	default:                    return  9000;  // Suicide, Lord of Game and above
 	}
 }
 
