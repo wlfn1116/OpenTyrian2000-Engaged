@@ -402,6 +402,15 @@ static const struct { Uint64 bit; int group; } endlessMilestonePool[] = {
 	{ ENDLESS_MOD_SHIELDLESS,  4 },  // shield handicap
 };
 
+// Bits held scarcer than their danger warrants: they tax how a sector must be FLOWN for its whole
+// length, so they wear thin faster than a stat bump does. The weighted pools further down do this
+// with a low weight; the milestone pool above is flat, so each bit sits out 1 in `oneInN` of the
+// builder's attempts instead. Add a bit here AND to its pool weight -- the two work together.
+static const struct { Uint64 bit; int oneInN; } endlessScarceMods[] = {
+	{ ENDLESS_MOD_TOPSY,   3 },
+	{ ENDLESS_MOD_GRAVITY, 3 },
+};
+
 // The danger weight one modifier bit contributes, read straight off endlessModTable so a milestone's
 // target rank can never drift from the table the rank bands are computed from.
 static int endlessModReward(Uint64 bit)
@@ -441,6 +450,12 @@ static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint6
 			const int t = ord[k]; ord[k] = ord[j]; ord[j] = t;
 		}
 
+		// Which scarce bits sit this attempt out. Rolled unconditionally, so the stream stays aligned.
+		Uint64 sitOut = 0;
+		for (unsigned s = 0; s < COUNTOF(endlessScarceMods); ++s)
+			if ((endlessRand() % endlessScarceMods[s].oneInN) == 0)
+				sitOut |= endlessScarceMods[s].bit;
+
 		// Randomised greedy: walk the shuffled pool taking every bit that doesn't overshoot the band,
 		// and stop the moment the running (modifier-only) score is inside it.
 		Uint64 combo = 0;
@@ -448,6 +463,8 @@ static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint6
 		unsigned groups = 0;
 		for (unsigned k = 0; k < COUNTOF(endlessMilestonePool) && score < lo; ++k)
 		{
+			if (sitOut & endlessMilestonePool[ord[k]].bit)
+				continue;
 			const int g = endlessMilestonePool[ord[k]].group;
 			if (g != 0 && (groups & (1u << g)))
 				continue;
@@ -504,17 +521,18 @@ static const EndlessModWeight endlessCombinableMods[] = {
 	{ ENDLESS_MOD_DEVASTATING, 3 },
 	// -- mid tier --
 	{ ENDLESS_MOD_ENRAGE,      4 },
-	{ ENDLESS_MOD_GRAVITY,     4 },
 	{ ENDLESS_MOD_OVERCLOCK,   4 },
 	{ ENDLESS_MOD_ELITEPACK,   4 },
 	// -- under-seen flavour, weighted up --
-	{ ENDLESS_MOD_TOPSY,       6 },  // purely visual, no softlock -- mixes with everything
 	{ ENDLESS_MOD_STATIC,      6 },  // a generic damage-punish tax; never pairs the injected-only DEADGEN
 	{ ENDLESS_MOD_SHIELDLESS,  5 },  // a pure defense debuff -- safe to stack onto any combo
 	{ ENDLESS_MOD_RETALIATION, 5 },  // kill-tempo tax, promoted out of injection-only
 	// -- promoted, deliberately kept the modest end of the pool --
 	{ ENDLESS_MOD_MARTYRDOM,   4 },
 	{ ENDLESS_MOD_SEEKER,      4 },
+	// -- the scarce bits (endlessScarceMods): a whole sector flown crooked, or flown against a pull --
+	{ ENDLESS_MOD_TOPSY,       3 },
+	{ ENDLESS_MOD_GRAVITY,     3 },
 };
 
 // Every combinable bit OR'd together -- "is this course built only from ordinary dangers?".
@@ -584,10 +602,12 @@ static const EndlessModWeight endlessThemeSignatures[] = {
 	{ ENDLESS_MOD_SWIFT,        3 },
 	{ ENDLESS_MOD_DEVASTATING,  3 },
 	{ ENDLESS_MOD_ENRAGE,       4 },
-	{ ENDLESS_MOD_GRAVITY,      4 },
 	{ ENDLESS_MOD_ELITEPACK,    4 },
 	{ ENDLESS_MOD_OVERCLOCK,    4 },
-	{ ENDLESS_MOD_TOPSY,        8 },
+	// the scarce bits, held down here too -- though the dictionary carries them into other
+	// signatures' rows, so this side moves far less than the widen pool
+	{ ENDLESS_MOD_TOPSY,        5 },
+	{ ENDLESS_MOD_GRAVITY,      3 },
 	{ ENDLESS_MOD_STATIC,       9 },
 	{ ENDLESS_MOD_RETALIATION,  9 },
 	{ ENDLESS_MOD_SLIPSTREAM,   8 },  // its only route onto the chart: out of the widen pool by design

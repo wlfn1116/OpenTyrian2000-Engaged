@@ -805,7 +805,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
      mechanics were injection-only at ~3%. It is now a WEIGHTED table
      (`EndlessModWeight`, drawn by `endlessWeightedModDraw`): core four
      Fortified/Frenzy/Swift/Devastating at 3, mid tier at 4, under-seen
-     Topsy/Static at 6 and Shieldless/Retaliation at 5, and Martyrdom / Seeker /
+     Static at 6 and Shieldless/Retaliation at 5, the scarce bits at 3, and Martyrdom / Seeker /
      Retaliation PROMOTED in (each acts on a system nothing else in the pool
      touches, so they stack cleanly). A bit's share of a course ≈ bits-drawn ×
      weight ÷ total weight — that is the "how often do I meet this" knob.
@@ -827,6 +827,20 @@ mutable `last`, so a Quit-Level retry replays the same track.
 - Per-slate diversity: both weighted draws cut a bit already charted on another
   route of the same slate to ⅓ weight (`endlessOtherCourseMods`), so one danger
   rarely covers three of five offered routes.
+- **SCARCE BITS (`endlessScarceMods`, 2026-07-28).** Topsy and Gravity are held
+  below the weight their danger earns: both tax how the whole sector must be
+  FLOWN — crooked, or against a pull — rather than how hard it hits, so they tire
+  a run faster than a stat bump does. Both are 3 in the widen pool (Topsy was 6,
+  Gravity 4) and low in the signatures (Topsy 8 → 5, Gravity 4 → 3); per hostile
+  route, Topsy went ~20% → ~13% and Gravity ~16% → ~13%. Nothing about how either
+  bit MIXES changed — neither can softlock a sector.
+  - The signature side moves far less (Topsy 17.5% → 14.2%) because 31 of the 256
+    `endlessHostileThemes` rows carry Topsy and 47 carry Gravity, so both ride in
+    under OTHER signatures. There the dictionary, not the weight, is the floor:
+    thinning those rows is the only way further down, and it costs names.
+  - The omni share is untouched — still the ½ coin in
+    `endlessRollGravityVariants`, so a Rogue Well follows Gravity down to ~7% of
+    hostile routes.
 - Deep runs escalate by WHICH dangers, not HOW MANY: the widen tops out near 3.4
   bits with a hard ceiling of 4 (it used to reach a guaranteed 5, which read as
   "everything at once"), and the combo share caps at 80%.
@@ -845,6 +859,11 @@ mutable `last`, so a Quit-Level retry replays the same track.
   reactive dangers were added to `endlessMilestonePool` (2026-07-25) so a slate
   isn't the one place left that reads as a core-bit wall; the rank guarantee is
   unaffected because the builder verifies against `endlessDangerRankLevelEx`.
+  The flat pool is why the scarcity above needed its own handling here: every
+  `endlessScarceMods` bit sits out 1 attempt in 3 (one roll per bit per attempt, so
+  the stream stays predictable), leaving each on roughly two thirds as many
+  milestone routes as before. `endlessMakeTheEndMods` keeps its own coins — the
+  finale is allowed to be flipped and dragged.
 - The BOON economy is deliberately untouched by all of the above: boon courses
   thin with depth (`3 + ramp*2/100`) and the gambit graft floors at 5%. Boons
   slowly fading but never vanishing is the intended shape — do not "fix" it.
