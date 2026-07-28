@@ -76,7 +76,7 @@ enum
 	// rather than reused -- MENU_MAX, menuEsc[], menuChoicesDefault[] and the menuInt label file
 	// are all indexed by menu id, so renumbering 16/17 would silently shift every one of them.
 	MENU_ESHOP = 16,  // endless "E-Shop": reroll / reinforce / buy buff / buy special
-	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3 (+ decline) gate before the buy/sell front menu
+	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3, 1-of-5 after a milestone (+ decline) gate before the buy/sell front menu
 };
 
 // Horizontal centre of the monitor window's readout slot (the panel under the map, y173). Both the
@@ -645,7 +645,8 @@ static void configure_endless_shop_menu(void)
 }
 
 /* Populate the endless perk-pick menu (MENU_PERKS) from the offers rolled this visit
- * (endlessGeneratePerkChoices). Rows: title, up to 3 perk names, then "Take the Cash".
+ * (endlessGeneratePerkChoices). Rows: title, the offered perk names (3, or 5 after a milestone),
+ * then "Take the Cash" -- driven by the offer count, so a wider pick needs no layout work.
  * The exact perk effect + owned count shows in the help line; the decline cash is there too. */
 static void configure_endless_perk_menu(void)
 {
@@ -7980,7 +7981,7 @@ void JE_menuFunction(JE_byte select)
 		}
 		break;
 
-	case MENU_PERKS:  // endless perk pick (forced 1-of-3 + decline); one-shot gate before the shop
+	case MENU_PERKS:  // endless perk pick (forced 1-of-3 or 1-of-5, + decline); one-shot gate before the shop
 		if (endlessPerkListMode)  // read-only perk list reached from the buy/sell menu -- any pick just returns
 		{
 			endlessPerkListMode = false;

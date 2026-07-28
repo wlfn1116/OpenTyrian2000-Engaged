@@ -1106,6 +1106,17 @@ mutable `last`, so a Quit-Level retry replays the same track.
   no "owed perk" flag to persist, so it needs no save field and comes out the same
   across a save/reload or a mid-zone bail. `endlessPerkDepthDone` still caps it at
   one pick per depth, so re-entering the same outpost can't farm a second.
+- How WIDE that pick is comes off the same depth, via `endlessPerkOffersAtDepth`:
+  `ENDLESS_PERK_OFFERS` (3) normally, `ENDLESS_PERK_OFFERS_MILESTONE` (5) after a
+  cleared milestone of any class — the forced slate pays in CHOICE as well as cash.
+  A collision's deferred half lands on the zone AFTER the milestone, an ordinary
+  depth, so it deals three. The other three callers of
+  `endlessGeneratePerkChoices` (Buy Extra Perk, the gamble win, Breakthrough) pass
+  3 explicitly: those picks are bought or earned elsewhere, and reading the depth
+  inside the generator would have quietly upgraded every one of them at a
+  milestone outpost. The offer count also drives the menu's row count
+  (`configure_endless_perk_menu`), so the wider pick needed no layout work: 16px
+  rows from y=38 put "Take the Cash" at y=134, clear of the help line.
 - The cadence was 3 (depths 1, 4, 7, …) until 2026-07-25; it is now 4.
   - **Breakthrough.** `endlessBreakthroughAllowed` (`endless_course.c`) bars the
     boon from any zone whose clear already owes a scheduled perk, so it is blocked
@@ -1642,13 +1653,17 @@ CHARGED. Firing then opens `endlessSalvoWindow` = `ENDLESS_PERK_SALVO_WINDOW`
   recent-level ring, v7 64-bit mods, v8 exact course files, v9 zone-100
   credits-shown flag, v10 last zone's song + its depth, v11 widened the fixed
   perk block (16 → 32 slots) so the 17th perk (Radar) persists, v12 the Star Charts
-  / Breakthrough debts owed by a cleared sector. `ENDLESS_SAVE_VERSION` is the
+  / Breakthrough debts owed by a cleared sector, v13 widened the stored perk OFFER
+  list (3 → 5) for the milestone pick. `ENDLESS_SAVE_VERSION` is the
   authority — keep this list in step with it. Each new field is
   appended and read behind a `version >= N` guard, so older sidecars still load (a
   missing field reads as the memset-zero default — note v10's apply step has to map
   a zeroed `lastSong` back to depth −1, or a pre-v10 record would read as a real
   entry for depth 0; v11 reads the legacy 16-slot perk width for pre-v11 files, the
-  zeroed extra slots reading as newer perks unowned). A `COMPILE_TIME_ASSERT` keeps
+  zeroed extra slots reading as newer perks unowned; v13 likewise reads 3 offer
+  slots from an older file and clamps that record's offer COUNT to 3, since a
+  widened field in the MIDDLE of the record would otherwise desync everything after
+  it). A `COMPILE_TIME_ASSERT` keeps
   `PERK_COUNT <= ENDLESS_SAVE_PERKS`, so the next overflow fails the build instead
   of silently dropping a perk.
 - Quit Level in endless reverts the level to its launch state and reopens the

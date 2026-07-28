@@ -53,8 +53,8 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
 JE_byte endlessPerkOwned[PERK_COUNT]; // stack counts, reset each run
-int endlessPerkChoice[3];             // this visit's offered perk ids
-int endlessPerkChoiceN = 0;           // how many are offered (0..3)
+int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
+int endlessPerkChoiceN = 0;           // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
 int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
 int endlessSalvoWindow = 0;           // Opening Salvo: ticks left in a consumed salvo (reset each run)
@@ -422,17 +422,20 @@ int endlessPerkSpecialDuration(int base, int cap)
 	return (cap > 0 && v > cap) ? cap : v;
 }
 
-// Roll this shop visit's perk offers: up to 3 distinct perks that aren't already maxed out.
-// Called once per post-zone shop (endlessBetweenLevels), before the perk menu is shown.
-void endlessGeneratePerkChoices(void)
+// Roll this shop visit's perk offers: up to `offers` distinct perks that aren't already maxed out.
+// Called before the perk menu is shown -- ENDLESS_PERK_OFFERS for an ordinary pick, the wider
+// milestone count via endlessPerkOffersAtDepth. Fewer come out only when the pool is nearly maxed.
+void endlessGeneratePerkChoices(int offers)
 {
+	offers = endlessClamp(offers, 0, ENDLESS_PERK_OFFERS_MILESTONE);  // never past the array width
+
 	int pool[PERK_COUNT] = { 0 }, n = 0;
 	for (int i = 0; i < PERK_COUNT; ++i)
 		if (endlessPerkOwned[i] < endlessPerkTable[i].maxStack)
 			pool[n++] = i;
 
-	// Partial Fisher-Yates: shuffle the first min(3, n) slots and take them.
-	endlessPerkChoiceN = n < 3 ? n : 3;
+	// Partial Fisher-Yates: shuffle the first min(offers, n) slots and take them.
+	endlessPerkChoiceN = n < offers ? n : offers;
 	for (int i = 0; i < endlessPerkChoiceN; ++i)
 	{
 		int j = i + (int)(endlessRand() % (unsigned)(n - i));

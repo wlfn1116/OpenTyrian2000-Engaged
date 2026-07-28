@@ -47,10 +47,12 @@ int      endlessSortiePreLongCon   = 0;
 // by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 12     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts
+#define ENDLESS_SAVE_VERSION 13     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts; v13 wider perk OFFER list (milestone 1-of-5)
 #define ENDLESS_SAVE_PERKS   32     // on-disk perk-array width from v11 (was 16, which had grown to == PERK_COUNT).
                                     // Comfortable headroom now; a future perk only needs a version bump once PERK_COUNT passes this.
 #define ENDLESS_SAVE_PERKS_V10 16   // v3..v10 wrote a fixed 16-wide perk block; the reader honours that for older files.
+#define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE  // on-disk offer slots from v13: a milestone pick's full slate.
+#define ENDLESS_SAVE_OFFERS_V12 3   // v3..v12 wrote a fixed 3-wide offer list; the reader honours that for older files.
 
 // A perk's on-disk slot IS its PERK_* index, so the fixed-width block must cover every perk or
 // endlessCaptureCurrent would silently drop the highest ones. This stops compiling the moment
@@ -76,7 +78,7 @@ typedef struct {
 
 	// --- outpost snapshot: this visit's perk offer ---
 	Sint32 perkChoiceN;
-	Sint32 perkChoice[3];
+	Sint32 perkChoice[ENDLESS_SAVE_OFFERS];  // v13: was 3 (read narrow from v3-v12 files)
 
 	// --- outpost snapshot: this visit's courses ---
 	Sint32 courseCnt;
@@ -280,13 +282,19 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	    || !endlessGetBytes(f, r->lastSpecialName, sizeof(r->lastSpecialName)))
 		return false;
 
-	for (unsigned i = 0; i < COUNTOF(r->perkChoice); ++i)
+	// v13 widened the offer list for the milestone 1-of-5 pick; v3..v12 wrote 3 entries. Clamping the
+	// COUNT to what the file stored keeps the memset-zeroed tail slots from reading as real offers.
+	const unsigned offerSlots = (version >= 13) ? ENDLESS_SAVE_OFFERS : ENDLESS_SAVE_OFFERS_V12;
+	for (unsigned i = 0; i < offerSlots; ++i)
 	{
 		Uint32 t;
 		if (!endlessGetU32(f, &t))
 			return false;
 		r->perkChoice[i] = (Sint32)t;
 	}
+	if (r->perkChoiceN > (Sint32)offerSlots)
+		r->perkChoiceN = (Sint32)offerSlots;
+
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
 	{
 		Uint32 t;
@@ -491,7 +499,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	SDL_strlcpy(r->lastSpecialName, endlessLastSpecialName, sizeof(r->lastSpecialName));
 
 	r->perkChoiceN = endlessPerkChoiceN;
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
 		r->perkChoice[i] = endlessPerkChoice[i];
 
 	r->courseCnt = endlessCourseCnt;
@@ -580,10 +588,8 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	SDL_strlcpy(endlessLastSpecialName, r->lastSpecialName, sizeof(endlessLastSpecialName));
 	endlessSetSeed(r->seed);  // restore the run seed (endlessResetRun blanked it); rehashes + primes the stream
 
-	endlessPerkChoiceN = r->perkChoiceN;
-	if (endlessPerkChoiceN < 0) endlessPerkChoiceN = 0;
-	if (endlessPerkChoiceN > 3) endlessPerkChoiceN = 3;
-	for (int i = 0; i < 3; ++i)
+	endlessPerkChoiceN = endlessClamp(r->perkChoiceN, 0, ENDLESS_SAVE_OFFERS);
+	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
 		endlessPerkChoice[i] = r->perkChoice[i];
 
 	endlessLastEp  = r->lastEp;

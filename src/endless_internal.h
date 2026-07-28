@@ -71,6 +71,7 @@ int     endlessMilestoneKindOfZone(int zone);  // 0 ordinary, 1 the S+/S++ miles
 int     endlessMilestoneKind(void);            // ...for the zone about to be charted / played
 JE_byte endlessMilestoneSong(int kind);        // the pinned track for a milestone class, 0 otherwise
 bool    endlessPerkDueAtDepth(int depth);      // is a forced perk pick due at the outpost for this depth?
+int     endlessPerkOffersAtDepth(int depth);   // how many perks that outpost's scheduled pick offers
 
 // --- endless_level.c: the shipped level behind each zone -------------------------
 #define ENDLESS_LEVEL_HISTORY 5    // how many recently-played levels the anti-repeat ring tracks
@@ -125,8 +126,8 @@ void endlessReviveGraceTick(void);             // drain the window (once per tic
 void endlessReviveGraceReset(void);            // clear it at level start (endlessResetZoneEffects)
 
 // --- endless_perks.c: run-persistent, stacking upgrades --------------------------
-// Free pick-1-of-3 after each cleared zone; each effect folds into an existing player-side
-// lever so there's no new subsystem. Reset each run. Tunables below are all by-eye.
+// Free pick-1-of-3 after each cleared zone (1-of-5 after a milestone); each effect folds into an
+// existing player-side lever so there's no new subsystem. Reset each run. Tunables below are all by-eye.
 #define ENDLESS_PERK_DAMAGE_PCT    12  // +% shot damage per Heavy Rounds stack
 #define ENDLESS_PERK_FIRE_PCT      20  // fire-decrement accumulator % per Rapid Cyclers stack
 #define ENDLESS_PERK_ARMOR_STEP     8  // +max armor per Ablative Plating stack
@@ -168,6 +169,12 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 
+// How many perks a pick puts on the table. A milestone outpost deals the wider slate, so surviving
+// a forced S-tier zone pays in CHOICE as well as cash. The wider number is also the offer-array
+// width, so no caller can ask for more than endlessPerkChoice[] holds.
+#define ENDLESS_PERK_OFFERS           3  // ordinary pick: cadence, E-Shop buy, gamble win, Breakthrough
+#define ENDLESS_PERK_OFFERS_MILESTONE 5  // ...after a cleared milestone zone (25, 50, 75, 100, ...)
+
 // "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
 // extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
 // perk collection, the pricier it gets to grow it further (perks are strong and bounded).
@@ -204,8 +211,8 @@ typedef struct {
 
 extern const EndlessPerk endlessPerkTable[PERK_COUNT];
 extern JE_byte endlessPerkOwned[PERK_COUNT];  // stack counts, reset each run
-extern int endlessPerkChoice[3];              // this visit's offered perk ids
-extern int endlessPerkChoiceN;                // how many are offered (0..3)
+extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
+extern int endlessPerkChoiceN;                // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
 extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
 extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run AND each zone)
 extern int endlessSalvoWindow;                // Opening Salvo: ticks left in a CONSUMED salvo (0 = none running)
