@@ -2,7 +2,7 @@
 
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian. The original campaigns and arcade modes remain available.
+the DOS game Tyrian.
 
 This fork adds:
 
@@ -14,8 +14,7 @@ This fork adds:
 - expanded health bars, menus, and debug tools;
 - Nintendo Switch and PlayStation Vita homebrew builds.
 
-See [GUIDE.md](GUIDE.md) for controls, settings, and Endless mode mechanics.
-Maintainer notes are in [notes.md](notes.md).
+See [GUIDE.md](GUIDE.md) for more information about the additions to this fork.
 
 ## Game data
 
@@ -37,7 +36,7 @@ at the display rate. In single-player games, the ship also uses display-rate
 movement to reduce input latency. This movement is disabled for demos and
 network games.
 
-Sub-pixel rendering draws the playfield internally at up to 8x scale. This makes
+Sub-pixel rendering draws the playfield internally at up to 5x scale. This makes
 slow scrolling smoother without changing the simulation.
 
 ### Endless mode
@@ -46,7 +45,7 @@ Endless mode selects from the original levels, adds depth-based enemy scaling,
 and places an outpost between zones. At each outpost you can:
 
 - buy and upgrade equipment;
-- use the Endless E-Shop;
+- use the Endless Shop;
 - choose from several routes with visible risks and rewards;
 - take a perk when one is due.
 
