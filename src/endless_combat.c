@@ -1105,8 +1105,8 @@ bool endlessAegisGateConsume(int shieldBefore, int spill)
 
 // SHOCKWAVE: an elite/champion death vaporises enemy projectiles around it, so the sector's
 // scariest targets double as tactical objectives. Ordinary fodder does nothing.
-#define ENDLESS_SHOCKWAVE_ELITE_RADIUS    40
-#define ENDLESS_SHOCKWAVE_CHAMPION_RADIUS 60
+#define ENDLESS_SHOCKWAVE_ELITE_RADIUS     80
+#define ENDLESS_SHOCKWAVE_CHAMPION_RADIUS 120
 
 bool endlessShockwaveActive(void)
 {

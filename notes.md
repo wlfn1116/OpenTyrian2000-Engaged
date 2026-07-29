@@ -1418,7 +1418,7 @@ mutable `last`, so a Quit-Level retry replays the same track.
     this removes only the premium special enemies add, so the two stack without
     overlapping.
   - **Shockwave** (bit 49, −4, credit 3): an elite/champion death vaporises enemy
-    bullets within 40px (elite) / 60px (champion); a boss bar emptying clears the
+    bullets within 80px (elite) / 120px (champion); a boss bar emptying clears the
     whole field (`endlessShockwaveClear` radius −1). Deduped per linknum exactly
     like Martyrdom. Unlike the Chain Reaction perk it may fire STRAIGHT from the
     death sites inside the player-shot loop, because it only touches

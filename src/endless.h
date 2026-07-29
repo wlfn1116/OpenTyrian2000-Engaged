@@ -619,7 +619,7 @@ unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generato
 int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
 bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
 int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
-int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 40 elite / 60 champion; dedups so a multi-tile enemy pulses once. Call for EVERY kill (enemy_logical_death does): it needs the ordinary ones to break its latch
+int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 80 elite / 120 champion; dedups so a multi-tile enemy pulses once. Call for EVERY kill (enemy_logical_death does): it needs the ordinary ones to break its latch
 bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
 
 // Called the moment a sector is CLEARED (right after endlessRunDepth is bumped, tyrian2.c), to bank
