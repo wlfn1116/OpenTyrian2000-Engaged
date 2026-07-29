@@ -2,7 +2,7 @@
 
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian. The original campaigns and arcade modes remain available.
+the DOS game Tyrian.
 
 This fork adds:
 
