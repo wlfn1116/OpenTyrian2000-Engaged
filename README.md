@@ -29,7 +29,7 @@ For a PC build, place the executable beside the `data` directory.
 ### Widescreen and motion
 
 The playfield is 356x200 instead of 320x200. The HUD remains at the right edge,
-while menus keep their original 320-pixel layout and are centred.
+while menus keep their original 320-pixel layout and are centred. 
 
 The simulation still runs at 35 Hz. Smooth Motion interpolates world rendering
 at the display rate. In single-player games, the ship also uses display-rate
