@@ -252,6 +252,9 @@ void endlessRegenerateLevel(void)
 	bonusLevelCurrent = false;
 	normalBonusLevelCurrent = false;
 
+	flareDuration = 0;
+	flareStart = false;
+
 	// Reset per-zone effects.
 	endlessResetZoneEffects();
 
