@@ -2038,7 +2038,7 @@ JE_boolean JE_inGameSetup(void)
 	{
 		MENU_ITEM_MUSIC_VOLUME = 0,
 		MENU_ITEM_EFFECTS_VOLUME,
-		MENU_ITEM_TOUCH_SENS,        // Switch only; skipped on other platforms (see below)
+		MENU_ITEM_SHIP_SENS,         // "Sensitivity" slider: touch on consoles, mouse on desktop
 		MENU_ITEM_DETAIL_LEVEL,
 		MENU_ITEM_GAME_SPEED,
 		MENU_ITEM_EXTRA,
@@ -2047,7 +2047,7 @@ JE_boolean JE_inGameSetup(void)
 		MENU_ITEM_QUIT,
 	};
 
-	// Indexed by id (help for Touch/Extra/Debug/Return/Quit is overridden below).
+	// Indexed by id (help for the sensitivity/Extra/Debug/Return/Quit rows is overridden below).
 	const size_t helpIndexes[] = { 14, 14, 14, 27, 28, 26, 26, 26, 26 };
 
 	if (shopSpriteSheet.data == NULL)
@@ -2060,7 +2060,7 @@ JE_boolean JE_inGameSetup(void)
 	{
 			inGameText[0],
 			inGameText[1],
-			"Touch",
+			SHIP_SENS_NAME,
 			inGameText[2],
 			inGameText[3],
 			"Extra",
@@ -2077,25 +2077,15 @@ JE_boolean JE_inGameSetup(void)
 	{
 		if (i == MENU_ITEM_DEBUG && !debugMode)
 			continue;
-#if !defined(__SWITCH__) && !defined(__vita__)
-		// Touch sensitivity is only meaningful on the consoles' touchscreen.
-		if (i == MENU_ITEM_TOUCH_SENS)
-			continue;
-#endif
 		items[menuItemsCount++] = (enum MenuItemIndex)i;
 	}
 
 	size_t selectedIndex = 0;
 
 	const int yMenuItems = 18;
-	/* Extra always adds a row (7 rows, or 8 with the Debug row). Tighten the
-	 * pitch when the Debug row is present so the last row clears the help box.
-	 * On the consoles the Touch Sensitivity row adds one more, so squish further. */
-#if defined(__SWITCH__) || defined(__vita__)
+	/* The Extra and sensitivity rows always add two (8 rows, or 9 with the Debug
+	 * row). Tighten the pitch so the last row clears the help box. */
 	const int dyMenuItems = debugMode ? 14 : 16;
-#else
-	const int dyMenuItems = debugMode ? 16 : 18;
-#endif
 	const int xMenuItem = 10;
 	const int xMenuItemName = xMenuItem;
 	const int wMenuItemName = 110;
@@ -2151,16 +2141,16 @@ JE_boolean JE_inGameSetup(void)
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
 				break;
 			}
-			case MENU_ITEM_TOUCH_SENS:
+			case MENU_ITEM_SHIP_SENS:
 			{
-				// Same bar style as the volume sliders; middle == the classic touch feel. The marker
+				// Same bar style as the volume sliders; middle == the classic 1:1 feel. The marker
 				// slot goes bright once the fill reaches it -- compare drawn bar counts (amt vs mark),
 				// not the raw value, so it flips exactly on the middle bar.
-				const int amt = (touch_sensitivity + 6) / 12;
-				const int mark = (TOUCH_SENS_DEFAULT + 6) / 12;
+				const int amt = (ship_sensitivity + 6) / 12;
+				const int mark = (SHIP_SENS_DEFAULT + 6) / 12;
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 16, amt, 3, 13);
 				JE_barDrawMark(VGAScreen, xMenuItemValue, y,
-				               amt >= mark ? TOUCH_SENS_MARK_COL : TOUCH_SENS_MARK_COL_DIM, mark, 3, 13);
+				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 3, 13);
 				break;
 			}
 			case MENU_ITEM_DETAIL_LEVEL:
@@ -2193,8 +2183,8 @@ JE_boolean JE_inGameSetup(void)
 			pause_help = "Return to game.";
 		else if (selectedId == MENU_ITEM_QUIT)
 			pause_help = endlessMode ? "Give up the level; return to the outpost." : "Quit playing the level.";
-		else if (selectedId == MENU_ITEM_TOUCH_SENS)
-			pause_help = "Touchscreen ship control sensitivity.";
+		else if (selectedId == MENU_ITEM_SHIP_SENS)
+			pause_help = SHIP_SENS_HELP;
 		JE_outTextAdjust(VGAScreen, 10, 156, pause_help, 14, 6, TINY_FONT, true);
 
 		service_SDL_events(true);
@@ -2281,12 +2271,12 @@ JE_boolean JE_inGameSetup(void)
 									JE_playSampleNum(S_CURSOR);
 									break;
 								}
-								case MENU_ITEM_TOUCH_SENS:
+								case MENU_ITEM_SHIP_SENS:
 								{
-									const int w = ((TOUCH_SENS_MAX + 6) / 12) * (3 + 1) - 1;
+									const int w = ((SHIP_SENS_MAX + 6) / 12) * (3 + 1) - 1;
 
-									int value = (lastmouse_x - xMenuItemValue) * TOUCH_SENS_MAX / (w - 1);
-									touch_sensitivity = MIN(MAX(0, value), TOUCH_SENS_MAX);
+									int value = (lastmouse_x - xMenuItemValue) * SHIP_SENS_MAX / (w - 1);
+									ship_sensitivity = MIN(MAX(0, value), SHIP_SENS_MAX);
 
 									JE_playSampleNum(S_CURSOR);
 									break;
@@ -2487,9 +2477,9 @@ JE_boolean JE_inGameSetup(void)
 				JE_playSampleNum(S_CURSOR);
 				break;
 			}
-			case MENU_ITEM_TOUCH_SENS:
+			case MENU_ITEM_SHIP_SENS:
 			{
-				touch_sensitivity = MIN(MAX(0, touch_sensitivity + dir * 12), TOUCH_SENS_MAX);
+				ship_sensitivity = MIN(MAX(0, ship_sensitivity + dir * 12), SHIP_SENS_MAX);
 
 				JE_playSampleNum(S_CURSOR);
 				break;

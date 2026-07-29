@@ -4156,7 +4156,8 @@ draw_player_shot_loop_end:
 			}
 			else
 			{
-				soundQueue[7] = S_WARNING;
+				if (armorAlarm)
+					soundQueue[7] = S_WARNING;
 				warningSoundDelay = tempW;
 			}
 
