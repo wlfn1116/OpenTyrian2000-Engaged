@@ -14,8 +14,7 @@ This fork adds:
 - expanded health bars, menus, and debug tools;
 - Nintendo Switch and PlayStation Vita homebrew builds.
 
-See [GUIDE.md](GUIDE.md) for controls, settings, and Endless mode mechanics.
-Maintainer notes are in [notes.md](notes.md).
+See [GUIDE.md](GUIDE.md) for more information about the additions to this fork.
 
 ## Game data
 
