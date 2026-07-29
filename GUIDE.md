@@ -244,7 +244,7 @@ choices, bought picks show four, and milestone picks show five.
 | Siphon | +12% chance to restore armour on a kill | 3 |
 | Bounty Hunter | Doubles elite and champion bounties | 1 |
 | Bulwark | -1 damage per hit, minimum 1 | 5 |
-| Adrenaline | +45% firing speed below one-third armour | 3 |
+| Adrenaline | +45% firing speed and +25% damage below one-third armour | 3 |
 | Glass Cannon | +40% damage, -8 maximum armour | 1 |
 | Rapid Recharge | +25% sidekick refill and special recharge | 4 |
 | Autofire Special | Fires the special while the fire button is held | 1 |

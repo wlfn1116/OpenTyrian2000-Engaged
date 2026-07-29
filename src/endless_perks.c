@@ -25,7 +25,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Siphon",           "Chance to restore armor on a kill.",   3 },
 	{ "Bounty Hunter",    "Elite and champion bounties doubled.", 1 },
 	{ "Bulwark",          "Take less damage from every hit.",     5 },
-	{ "Adrenaline",       "Fire much faster when badly hurt.",    3 },
+	{ "Adrenaline",       "Fire faster and hit harder when badly hurt.", 3 },
 	{ "Glass Cannon",     "Big damage, but a weaker hull.",       1 },
 	{ "Rapid Recharge",   "Specials, ammo and charges refill faster.", 4 },
 	{ "Autofire Special", "Auto-fires your special as you shoot.", 1 },
@@ -118,13 +118,18 @@ static int endlessAccumSteps(int *accum, int rate)
 	return steps;
 }
 
+bool endlessAdrenalineActive(void)
+{
+	return endlessPerkOwned[PERK_ADRENALINE] > 0 && player[0].initial_armor > 0
+	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor;
+}
+
 // The fire-decrement rate (% per tick) the fire-rate perks are worth right now. `hurtBonus` folds in
 // the Adrenaline relic -- a big extra boost while armor is below 1/N of the ship's max.
 static int endlessPerkFireRate(bool hurtBonus)
 {
 	int rate = endlessPerkOwned[PERK_FIRERATE] * ENDLESS_PERK_FIRE_PCT;
-	if (hurtBonus && endlessPerkOwned[PERK_ADRENALINE] > 0 && player[0].initial_armor > 0
-	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor)
+	if (hurtBonus && endlessAdrenalineActive())
 		rate += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_PCT;
 	return rate;
 }

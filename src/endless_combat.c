@@ -987,6 +987,8 @@ int endlessPlayerDamagePercent(void)
 	pct += endlessPerkOwned[PERK_DAMAGE] * ENDLESS_PERK_DAMAGE_PCT;
 	if (endlessPerkOwned[PERK_GLASSCANNON])
 		pct += ENDLESS_PERK_GLASS_DMG;
+	if (endlessAdrenalineActive())
+		pct += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_DMG;
 	// Apply hostile damage cuts after every bonus.
 	if ((endlessActiveMods & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
 	{
