@@ -340,7 +340,8 @@ typedef enum
 	MENU_ITEM_MUSIC_VOLUME,
 	MENU_ITEM_SOUND_VOLUME,
 	MENU_ITEM_MUSIC_DEVICE,         // music synthesizer: OPL3 / FluidSynth / Native MIDI
-	MENU_ITEM_TOUCH_SENS,           // Switch only: touchscreen ship sensitivity slider
+	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
+	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
 	MENU_ITEM_BOSS_BARS,
 	MENU_ITEM_BOSS_BAR_STYLE,
 	MENU_ITEM_BOSS_BAR_LAYOUT,
@@ -413,8 +414,8 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, dir * 8);
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_TOUCH_SENS:
-		touch_sensitivity = MIN(MAX(0, touch_sensitivity + dir * 8), TOUCH_SENS_MAX);
+	case MENU_ITEM_SHIP_SENS:
+		ship_sensitivity = MIN(MAX(0, ship_sensitivity + dir * 8), SHIP_SENS_MAX);
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_FPS:
@@ -453,6 +454,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		JE_playSampleNum(S_CURSOR);
 		break;
 	}
+	case MENU_ITEM_ARMOR_ALARM:
+		armorAlarm = !armorAlarm;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_BOSS_BAR_STYLE:
 		bossBarStyle = (bossBarStyle + (int)COUNTOF(bossBarStyleNames) + dir) % (int)COUNTOF(bossBarStyleNames);
 		JE_playSampleNum(S_CURSOR);
@@ -656,9 +661,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_GRAPHICS, "Graphics...", "Change the graphics settings." },
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
-#if defined(__SWITCH__) || defined(__vita__)
-				{ MENU_ITEM_TOUCH_SENS, "Touch", "Touchscreen ship control sensitivity." },
-#endif
+				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
 				{ MENU_ITEM_ENHANCEMENTS, "Enhancements...", "Change the gameplay enhancement settings." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
@@ -688,6 +691,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_MUSIC_VOLUME, "Music Volume", "Change volume with the left/right arrow keys." },
 				{ MENU_ITEM_SOUND_VOLUME, "Sound Volume", "Change volume with the left/right arrow keys." },
 				{ MENU_ITEM_MUSIC_DEVICE, "Music Synth:", "Synthesizer for music (FluidSynth needs a .sf2).", getMusicDeviceItemsCount, getMusicDeviceItem },
+				{ MENU_ITEM_ARMOR_ALARM, "Armor Alarm:", "Siren while your armor is critically low." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -1015,22 +1019,26 @@ static bool runOptionsMenu(MenuId startMenu)
 				JE_rectangle(VGAScreen, xMenuItemValue - 2, y - 2, xMenuItemValue + 96, y + 11, 242);
 				break;
 
-			case MENU_ITEM_TOUCH_SENS:
+			case MENU_ITEM_SHIP_SENS:
 			{
-				// Same bar as the volume sliders; middle == the classic touch feel. The marker slot
+				// Same bar as the volume sliders; middle == the classic 1:1 feel. The marker slot
 				// goes bright once the fill actually reaches it -- compare the drawn bar counts
 				// (amt vs mark), not the raw value, so it flips exactly on the middle bar.
-				const int amt = (touch_sensitivity + 4) / 8;
-				const int mark = (TOUCH_SENS_DEFAULT + 4) / 8;
+				const int amt = (ship_sensitivity + 4) / 8;
+				const int mark = (SHIP_SENS_DEFAULT + 4) / 8;
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, 174, amt, 2, 10);
 				JE_barDrawMark(VGAScreen, xMenuItemValue, y,
-				               amt >= mark ? TOUCH_SENS_MARK_COL : TOUCH_SENS_MARK_COL_DIM, mark, 2, 10);
+				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 2, 10);
 				JE_rectangle(VGAScreen, xMenuItemValue - 2, y - 2, xMenuItemValue + 96, y + 11, 242);
 				break;
 			}
 
 			case MENU_ITEM_MUSIC_DEVICE:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, music_device_names[music_device], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_ARMOR_ALARM:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, armorAlarm ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_BOSS_BAR_STYLE:
@@ -1303,6 +1311,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_VSYNC:
 									case MENU_ITEM_SHOW_FPS:
 									case MENU_ITEM_MUSIC_DEVICE:
+									case MENU_ITEM_ARMOR_ALARM:
 									case MENU_ITEM_BOSS_BAR_STYLE:
 									case MENU_ITEM_BOSS_BAR_LAYOUT:
 									case MENU_ITEM_BOSS_BAR_TWO:
@@ -1360,10 +1369,10 @@ static bool runOptionsMenu(MenuId startMenu)
 										JE_playSampleNum(S_CURSOR);
 										break;
 									}
-									case MENU_ITEM_TOUCH_SENS:
+									case MENU_ITEM_SHIP_SENS:
 									{
-										int value = (lastmouse_x - xMenuItemValue) * TOUCH_SENS_MAX / (wMenuItemValue - 1);
-										touch_sensitivity = MIN(MAX(0, value), TOUCH_SENS_MAX);
+										int value = (lastmouse_x - xMenuItemValue) * SHIP_SENS_MAX / (wMenuItemValue - 1);
+										ship_sensitivity = MIN(MAX(0, value), SHIP_SENS_MAX);
 
 										JE_playSampleNum(S_CURSOR);
 										break;
@@ -1764,6 +1773,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					samples_disabled = !samples_disabled;
 
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_ARMOR_ALARM:
+				{
+					armorAlarm = !armorAlarm;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

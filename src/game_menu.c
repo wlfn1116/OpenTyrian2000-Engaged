@@ -843,13 +843,13 @@ static void configure_custom_weapon_menu(void)
 	}
 }
 
-#if defined(__SWITCH__) || defined(__vita__)
-/* Switch/Vita: insert a "Touch" volume row into the shop Options / Limited Options submenus
- * after Sound Volume (item 6 in both). Labels come from data (menuInt), so shift them down
- * once (captured on first call) and re-apply the bumped menuChoices on every entry (they
- * reset from menuChoicesDefault at the top of JE_itemScreen). Value bar, input handling and
- * help text key off item 6 elsewhere (all #if defined(__SWITCH__) || defined(__vita__)). */
-static void configure_options_touch_menu(void)
+/* Insert the ship-sensitivity row (touch on the consoles, mouse on desktop) into the shop
+ * Options / Limited Options submenus after Sound Volume (item 6 in both) -- labelled "Sens"
+ * here, the full "Sensitivity" is too wide beside the value bar. Labels come from data
+ * (menuInt), so shift them down once (captured on first call) and re-apply the bumped
+ * menuChoices on every entry (they reset from menuChoicesDefault at the top of JE_itemScreen).
+ * Value bar, input handling and help text key off item 6 elsewhere. */
+static void configure_options_sens_menu(void)
 {
 	const size_t entrySize = sizeof(menuInt[0][0]);
 	static bool shifted = false;
@@ -861,11 +861,11 @@ static void configure_options_touch_menu(void)
 		SDL_strlcpy(menuInt[3][8], menuInt[3][7], entrySize);  // Mouse Setup
 		SDL_strlcpy(menuInt[3][7], menuInt[3][6], entrySize);  // Keyboard Setup
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
-		SDL_strlcpy(menuInt[3][5], "Touch", entrySize);  // new item 6
+		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
 		// MENU_LIMITED_OPTIONS (menuInt[12]): item 6 (Exit, label [5]) moves down to item 7 ([6]).
 		SDL_strlcpy(menuInt[12][6], menuInt[12][5], entrySize);  // Exit
-		SDL_strlcpy(menuInt[12][5], "Touch", entrySize);   // new item 6
+		SDL_strlcpy(menuInt[12][5], "Sens", entrySize);  // new item 6
 
 		shifted = true;
 	}
@@ -873,7 +873,6 @@ static void configure_options_touch_menu(void)
 	menuChoices[MENU_OPTIONS] = menuChoicesDefault[MENU_OPTIONS] + 1;                  // 9 -> 10
 	menuChoices[MENU_LIMITED_OPTIONS] = menuChoicesDefault[MENU_LIMITED_OPTIONS] + 1;  // 6 -> 7
 }
-#endif
 
 /* Crash-log breadcrumb: map the live shop submenu (curMenu) to a readable name so a crash inside
  * the buy/sell screens records exactly which one was open (upgrade ship, a config screen, the
@@ -952,9 +951,7 @@ void JE_itemScreen(void)
 	configure_buysell_debug_menu();
 	configure_arcade_debug_menus();
 	configure_custom_weapon_menu();
-#if defined(__SWITCH__) || defined(__vita__)
-	configure_options_touch_menu();
-#endif
+	configure_options_sens_menu();
 	configure_endless_shop_menu();
 
 	play_song(songBuy);
@@ -1556,18 +1553,16 @@ void JE_itemScreen(void)
 			// volume never draws a different number of bars in the two menus.
 			JE_barDrawShadow(VGAScreen, 225, 70, 1, music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
 			JE_barDrawShadow(VGAScreen, 225, 86, 1, samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
-#if defined(__SWITCH__) || defined(__vita__)
-			// Touch Sensitivity (item 6, y=102): same bar style as the two volume rows above. The
+			// Ship sensitivity (item 6, y=102): same bar style as the two volume rows above. The
 			// marker slot goes bright once the fill reaches it -- compare drawn bar counts (amt vs
 			// mark), not the raw value, so it flips exactly on the middle bar.
 			{
-				const int amt = (touch_sensitivity + 6) / 12;
-				const int mark = (TOUCH_SENS_DEFAULT + 6) / 12;
+				const int amt = (ship_sensitivity + 6) / 12;
+				const int mark = (SHIP_SENS_DEFAULT + 6) / 12;
 				JE_barDrawShadow(VGAScreen, 225, 102, 1, 16, amt, 3, 13);
 				JE_barDrawMark(VGAScreen, 225, 102,
-				               amt >= mark ? TOUCH_SENS_MARK_COL : TOUCH_SENS_MARK_COL_DIM, mark, 3, 13);
+				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 3, 13);
 			}
-#endif
 		}
 
 		/* "firstmenu9" refers to menu 8 because of reindexing */
@@ -2121,17 +2116,15 @@ void JE_itemScreen(void)
 					fxVolume = MIN(MAX(0, value), 255);
 				}
 
-#if defined(__SWITCH__) || defined(__vita__)
-				// Touch Sensitivity bar (item 6, y=102): drag to set, same feel as the volume bars.
+				// Ship sensitivity bar (item 6, y=102): drag to set, same feel as the volume bars.
 				if ((mouseX >= (225 - 4)) && (mouseY >= 102) && (mouseY <= 114))
 				{
 					curSel[curMenu] = 6;
 
-					const int w = ((TOUCH_SENS_MAX + 6) / 12) * (3 + 1) - 1;
-					const int value = (mouseX - 225) * TOUCH_SENS_MAX / (w - 1);
-					touch_sensitivity = MIN(MAX(0, value), TOUCH_SENS_MAX);
+					const int w = ((SHIP_SENS_MAX + 6) / 12) * (3 + 1) - 1;
+					const int value = (mouseX - 225) * SHIP_SENS_MAX / (w - 1);
+					ship_sensitivity = MIN(MAX(0, value), SHIP_SENS_MAX);
 				}
-#endif
 
 				set_volume(tyrMusicVolume, fxVolume);
 
@@ -2549,13 +2542,11 @@ void JE_itemScreen(void)
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, -12);
 						samples_disabled = false;
 						break;
-#if defined(__SWITCH__) || defined(__vita__)
 					case 6:
-						touch_sensitivity -= 12;
-						if (touch_sensitivity < 0)
-							touch_sensitivity = 0;
+						ship_sensitivity -= 12;
+						if (ship_sensitivity < 0)
+							ship_sensitivity = 0;
 						break;
-#endif
 					}
 					break;
 				case 4:
@@ -2649,13 +2640,11 @@ void JE_itemScreen(void)
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, 12);
 						samples_disabled = false;
 						break;
-#if defined(__SWITCH__) || defined(__vita__)
 					case 6:
-						touch_sensitivity += 12;
-						if (touch_sensitivity > TOUCH_SENS_MAX)
-							touch_sensitivity = TOUCH_SENS_MAX;
+						ship_sensitivity += 12;
+						if (ship_sensitivity > SHIP_SENS_MAX)
+							ship_sensitivity = SHIP_SENS_MAX;
 						break;
-#endif
 					}
 					break;
 				case 4:
@@ -3980,17 +3969,15 @@ void JE_drawMainMenuHelpText(void)
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
 		}
-#if defined(__SWITCH__) || defined(__vita__)
 		else if ((curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS) && curSel[curMenu] >= 6)
 		{
-			// Switch inserts a Touch Sensitivity row at item 6; items below it shift down one, so
-			// read each shifted item's ORIGINAL help slot (temp-1) and supply touch's own text.
+			// The ship-sensitivity row sits at item 6; items below it shift down one, so
+			// read each shifted item's ORIGINAL help slot (temp-1) and supply the row's own text.
 			if (curSel[curMenu] == 6)
-				SDL_strlcpy(tempStr, "Touchscreen ship control sensitivity.", sizeof(tempStr));
+				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
 		}
-#endif
 		else
 		{
 			SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp]) - 1], sizeof(tempStr));
@@ -8489,9 +8476,8 @@ void JE_menuFunction(JE_byte select)
 			performSave = (select == 3);  // item 2 = Load, item 3 = Save
 			quikSave = false;
 			break;
-#if defined(__SWITCH__) || defined(__vita__)
-		// Item 6 is Touch Sensitivity (a bar, adjusted via left/right); the config rows below
-		// it and Exit each shift down by one.
+		// Item 6 is the ship-sensitivity bar (adjusted via left/right); the config rows
+		// below it and Exit each shift down by one.
 		case 7:
 			curMenu = MENU_JOYSTICK_CONFIG;
 			break;
@@ -8504,20 +8490,6 @@ void JE_menuFunction(JE_byte select)
 		case 10:
 			curMenu = MENU_FULL_GAME;
 			break;
-#else
-		case 6:
-			curMenu = MENU_JOYSTICK_CONFIG;
-			break;
-		case 7:
-			curMenu = MENU_KEYBOARD_CONFIG;
-			break;
-		case 8:
-			curMenu = MENU_MOUSE_CONFIG;
-			break;
-		case 9:
-			curMenu = MENU_FULL_GAME;
-			break;
-#endif
 		}
 		break;
 
@@ -8781,16 +8753,10 @@ void JE_menuFunction(JE_byte select)
 		case 3:
 			curMenu = MENU_KEYBOARD_CONFIG;
 			break;
-#if defined(__SWITCH__) || defined(__vita__)
-		// Item 6 is Touch Sensitivity (a bar); Exit shifts down from item 6 to item 7.
+		// Item 6 is the ship-sensitivity bar; Exit shifts down from item 6 to item 7.
 		case 7:
 			curMenu = MENU_1_PLAYER_ARCADE;
 			break;
-#else
-		case 6:
-			curMenu = MENU_1_PLAYER_ARCADE;
-			break;
-#endif
 		}
 		break;
 
