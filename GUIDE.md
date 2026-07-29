@@ -26,7 +26,7 @@ The loop is:
 outpost -> choose a course -> clear the zone -> outpost
 ```
 
-A run has no last zone. Death ends it unless you own a revive.
+A run has no last zone, however there is a credits roll after clearing Zone 100. Death ends it unless you own a revive.
 
 ### Starting a run
 
