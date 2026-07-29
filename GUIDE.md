@@ -301,7 +301,7 @@ Elite and champion bounties are paid on kill. Shop prices rise with depth.
 ### Milestones
 
 | Zone | Course list | Reward |
-| --- | --- | --- | --- |
+| --- | --- | --- |
 | 25, 75, 125, ... | S / S+ | Five-choice perk |
 | 50, 150, 250, ... | S+ / S++ | Five-choice perk |
 | 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
