@@ -36,7 +36,7 @@ at the display rate. In single-player games, the ship also uses display-rate
 movement to reduce input latency. This movement is disabled for demos and
 network games.
 
-Sub-pixel rendering draws the playfield internally at up to 8x scale. This makes
+Sub-pixel rendering draws the playfield internally at up to 5x scale. This makes
 slow scrolling smoother without changing the simulation.
 
 ### Endless mode
@@ -45,7 +45,7 @@ Endless mode selects from the original levels, adds depth-based enemy scaling,
 and places an outpost between zones. At each outpost you can:
 
 - buy and upgrade equipment;
-- use the Endless E-Shop;
+- use the Endless Shop;
 - choose from several routes with visible risks and rewards;
 - take a perk when one is due.
 
