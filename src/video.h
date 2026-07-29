@@ -77,9 +77,9 @@ extern ScalingMode scaling_mode;
 
 /*
  * Sub-pixel supersampling into an NxN buffer so motion lands on 1/N-pixel
- * positions.  0 = Auto (match the scaler), 1 = off, 2..8 = fixed factor.
+ * positions.  0 = Auto (match the scaler), 1 = off, 2..5 = fixed factor.
  */
-#define RENDER_SUPERSAMPLE_MAX 8
+#define RENDER_SUPERSAMPLE_MAX 5
 extern int render_supersample;
 int effective_supersample(void);
 

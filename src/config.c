@@ -393,10 +393,12 @@ bool load_opentyrian_config(void)
 			touch_sensitivity = TOUCH_SENS_DEFAULT;
 #endif
 
-		// Sub-pixel supersampling: 0 = Auto (follow the scaler), 1 = off, 2..8 fixed.
+		// Sub-pixel supersampling: 0 = Auto, 1 = off, 2..5 fixed.
 		config_get_int_option(section, "render_supersample", &render_supersample);
-		if (render_supersample < 0 || render_supersample > RENDER_SUPERSAMPLE_MAX)
+		if (render_supersample < 0)
 			render_supersample = 0;
+		else if (render_supersample > RENDER_SUPERSAMPLE_MAX)
+			render_supersample = RENDER_SUPERSAMPLE_MAX;
 
 		// Sub-pixel filter: 0 = Sharp (crisp pixels), 1 = Smooth (antialiased edges),
 		// 2 = None (raw, unfiltered nearest at every ratio).

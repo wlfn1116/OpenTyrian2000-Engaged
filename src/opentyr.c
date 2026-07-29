@@ -125,8 +125,8 @@ static const char* getFPSPickerItem(size_t i, char* buffer, size_t bufferSize)
 /* ---- Graphics: sub-pixel supersampling picker ---- */
 
 // Index maps directly onto render_supersample: 0 = Auto (follow the scaler),
-// 1 = Off, 2..8 = fixed NxN. Keep the last entry == RENDER_SUPERSAMPLE_MAX.
-static const char *const supersampleNames[] = { "Auto", "Off", "2x", "3x", "4x", "5x", "6x", "7x", "8x" };
+// 1 = Off, 2..5 = fixed NxN. Keep the last entry == RENDER_SUPERSAMPLE_MAX.
+static const char *const supersampleNames[] = { "Auto", "Off", "2x", "3x", "4x", "5x" };
 
 static size_t getSupersamplePickerItemsCount(void) { return COUNTOF(supersampleNames); }
 static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t bufferSize)
