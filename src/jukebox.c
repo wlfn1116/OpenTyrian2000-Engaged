@@ -150,13 +150,7 @@ void jukebox(void)  // FKA Setup.jukeboxGo
 		service_SDL_events(true);
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// Y (Switch) / Square (Vita) toggles the text overlay, mirroring F/SPACE.
-		// Raw button read with local edge state, because a controller only feeds
-		// confirm/cancel/directions into the jukebox (push_joysticks_as_keyboard)
-		// and this button is bound to none of those. poll_joysticks (inside
-		// push_joysticks_as_keyboard, just above) already ran SDL_JoystickUpdate
-		// this tick. Both consoles happen to use raw id 3 (switch-sdl2: 3 = Y;
-		// Vita: 3 = Square).
+		// Raw button 3 toggles text: Y on Switch, Square on Vita.
 		{
 			static bool hide_btn_was;
 			const bool down = joysticks > 0 && joystick[0].handle != NULL &&

@@ -1,42 +1,19 @@
 /*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode — see endless.c.
- *
- * A run of real, UNMODIFIED shipped levels: outpost + Chart-a-Course between zones,
- * difficulty via depth- and mutator-scaled enemy STATS (notes.md §Endless mode).
- *
- * This is the interface the rest of the game calls. The implementation is split
- * across endless.c and its endless_*.c siblings; endless_internal.h is private to
- * that group and lists which file owns what.
+ * Public Endless mode interface.
+ * Implementation details are private to endless.c and endless_*.c.
  */
 #ifndef ENDLESS_H
 #define ENDLESS_H
 
-#include "config.h"   // endlessMode / endlessCampaignMods, read by endlessFxActive below
+#include "config.h"
 #include "opentyr.h"
 
 #include <stdbool.h>
 
-// Master mode flag `endlessMode` lives in config.c/.h with the other game-mode
-// flags (twoPlayerMode, superTyrian, ...) so save/load and the rest of the engine
-// can reference it uniformly.
-
-// Is the endless EFFECT layer live?
-//
-// `endlessMode` gates the run STRUCTURE -- which level plays next, the outpost, Chart-a-Course,
-// the endless.sav sidecar, the Run Over screen, the disabled mid-level savepoints. THIS gates the
-// effects: the depth-scaled difficulty levers, the ENDLESS_MOD_* bits, perks, elites. The two are
-// the same thing during a real run; Debug Mode can turn the effect layer on inside a normal
-// campaign or arcade game (endlessCampaignMods), which is the only way they come apart.
-//
-// Which gate a site wants is decided by what it DOES, not where it lives: anything reading a lever,
-// a mod bit or a perk takes this one; anything touching run flow, the shop or the save takes
-// `endlessMode`. The layer is a no-op at depth 0 with no mods -- every lever returns identity.
+// Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
 
-// How many ENDLESS_MOD_* bits a mask carries. Small enough to inline, and it saves the debug
-// readouts that summarise a slate from each rolling their own loop.
+// Number of active modifier bits.
 static inline int endlessPopCount64(Uint64 v)
 {
 	int n = 0;
@@ -45,96 +22,74 @@ static inline int endlessPopCount64(Uint64 v)
 	return n;
 }
 
-// Sector mutator EFFECT bits, folded into the difficulty levers, special-enemy spawns and
-// the clear-cash reward. Curated combos are the named themes in endless.c.
+// Sector modifiers. Bits 0-30 fit in the enum; later bits use Uint64 defines.
 enum {
-	ENDLESS_MOD_FORTIFIED   = 1u << 0,  // +enemy & boss HP (hostile)
-	ENDLESS_MOD_FRENZY      = 1u << 1,  // enemies fire much faster (hostile)
-	ENDLESS_MOD_SWIFT       = 1u << 2,  // much faster enemy projectiles (hostile)
-	ENDLESS_MOD_FRAGILE     = 1u << 3,  // enemies have much less HP (boon)
-	ENDLESS_MOD_BOUNTY      = 1u << 4,  // big clear payout, no added danger (boon)
-	ENDLESS_MOD_DEVASTATING = 1u << 5,  // enemy shots deal much more damage (hostile)
-	ENDLESS_MOD_ELITEPACK   = 1u << 6,  // half of all enemies are elite/champion (hostile)
-	ENDLESS_MOD_APEX        = 1u << 7,  // every enemy is elite/champion (hostile, super rare)
-	ENDLESS_MOD_LEGION      = 1u << 8,  // every enemy is a CHAMPION (hostile, ultra rare)
-	ENDLESS_MOD_ENRAGE      = 1u << 9,  // enemies fire faster the longer the zone runs (hostile)
-	ENDLESS_MOD_KAMIKAZE    = 1u << 10, // enemies home in on you at a moderate pace, NO ram bonus (hostile; the mid homing tier -- the brutal rammer is RAMPAGE below)
-	ENDLESS_MOD_GRAVITY     = 1u << 11, // a constant pull drags your ship down (hostile)
-	ENDLESS_MOD_TURBODRIVE   = 1u << 12, // each kill briefly quickens your guns (boon)
-	ENDLESS_MOD_OVERCHARGE  = 1u << 13, // your weapons hit much harder (boon)
-	ENDLESS_MOD_DILATION    = 1u << 14, // enemy shots move much slower (boon)
-	ENDLESS_MOD_FAVOR       = 1u << 15, // the next outpost slashes its prices (boon)
-	ENDLESS_MOD_CURSED      = 1u << 16, // a fortune in cash, but the next shop is barren (mixed)
-	ENDLESS_MOD_OVERCLOCK   = 1u << 17, // faster enemy fire, projectiles AND scroll pace (hostile; monitor lists fire and scroll as separate rows)
-	ENDLESS_MOD_SLIPSTREAM  = 1u << 18, // ONLY the scroll pace is sped up -- the level rushes at you (hostile)
-	ENDLESS_MOD_OVERLOAD    = 1u << 19, // Overclock cranked WAY up -- brutal fire/shots/scroll (rare)
-	ENDLESS_MOD_WARP        = 1u << 20, // Slipstream cranked WAY up -- the level BLURS past (rare threat)
-	ENDLESS_MOD_OVERDRIVE = 1u << 21,// E-Shop "Overdrive" buy: Turbodrive + Overblast together (the combo fire ramp AND the per-kill damage stacks)
-	ENDLESS_MOD_BACKFIRE  = 1u << 22, // Backfire (Evil Turbodrive): each kill briefly JAMS your guns (slower fire)
-	ENDLESS_MOD_BURNOUT   = 1u << 23, // Burnout (Evil Overdrive): the jam PLUS each kill stacks a fire+damage penalty
-	ENDLESS_MOD_OVERBLAST = 1u << 24, // E-Shop "Overblast" buy: Overdrive's DAMAGE half only -- each kill stacks shot damage, no fire boost (boon)
-	ENDLESS_MOD_MISFIRE   = 1u << 25, // Misfire (Evil Overblast): each kill stacks a shot-damage CUT, no jam (hostile)
-	// --- gamble-only next-sector effects (never rolled as a course theme; set via the E-Shop gamble) ---
-	ENDLESS_MOD_MARKED    = 1u << 26, // Marked: the next sector's boss is beefed up (+2 boss HP mult)
-	ENDLESS_MOD_NITRO     = 1u << 27, // Nitro: your shots hit harder (paired OVERCHARGE), but ANY hit is fatal
-	ENDLESS_MOD_OVERHEAT  = 1u << 28, // Overheat: kills quicken your guns (paired TURBODRIVE), but the hull cooks (chip DoT)
-	ENDLESS_MOD_DUD       = 1u << 29, // Dud: your superbombs refuse to fire this sector
-	// --- hostile sector theme: the gentlest homing tier ---
-	ENDLESS_MOD_HOMING    = 1u << 30, // enemies barely lean toward you -- the EASIEST homing tier, no ram (hostile)
+	ENDLESS_MOD_FORTIFIED   = 1u << 0,  // enemy and boss HP
+	ENDLESS_MOD_FRENZY      = 1u << 1,  // enemy fire rate
+	ENDLESS_MOD_SWIFT       = 1u << 2,  // enemy shot speed
+	ENDLESS_MOD_FRAGILE     = 1u << 3,  // lower enemy HP
+	ENDLESS_MOD_BOUNTY      = 1u << 4,  // larger clear reward
+	ENDLESS_MOD_DEVASTATING = 1u << 5,  // enemy shot damage
+	ENDLESS_MOD_ELITEPACK   = 1u << 6,  // 50% special enemies
+	ENDLESS_MOD_APEX        = 1u << 7,  // 100% special enemies
+	ENDLESS_MOD_LEGION      = 1u << 8,  // 100% champions
+	ENDLESS_MOD_ENRAGE      = 1u << 9,  // time-based enemy fire ramp
+	ENDLESS_MOD_KAMIKAZE    = 1u << 10, // moderate homing
+	ENDLESS_MOD_GRAVITY     = 1u << 11, // downward pull
+	ENDLESS_MOD_TURBODRIVE  = 1u << 12, // kill-fed fire boost
+	ENDLESS_MOD_OVERCHARGE  = 1u << 13, // player damage boost
+	ENDLESS_MOD_DILATION    = 1u << 14, // slower enemy shots
+	ENDLESS_MOD_FAVOR       = 1u << 15, // next-shop discount
+	ENDLESS_MOD_CURSED      = 1u << 16, // cash now, empty next shop
+	ENDLESS_MOD_OVERCLOCK   = 1u << 17, // enemy fire, shots, and scroll
+	ENDLESS_MOD_SLIPSTREAM  = 1u << 18, // faster scroll
+	ENDLESS_MOD_OVERLOAD    = 1u << 19, // stronger Overclock
+	ENDLESS_MOD_WARP        = 1u << 20, // stronger Slipstream
+	ENDLESS_MOD_OVERDRIVE   = 1u << 21, // Turbodrive and Overblast
+	ENDLESS_MOD_BACKFIRE    = 1u << 22, // kill-fed gun jam
+	ENDLESS_MOD_BURNOUT     = 1u << 23, // jam and damage penalty
+	ENDLESS_MOD_OVERBLAST   = 1u << 24, // kill-fed damage boost
+	ENDLESS_MOD_MISFIRE     = 1u << 25, // kill-fed damage penalty
+
+	// Gamble-only next-sector effects.
+	ENDLESS_MOD_MARKED    = 1u << 26,
+	ENDLESS_MOD_NITRO     = 1u << 27,
+	ENDLESS_MOD_OVERHEAT  = 1u << 28,
+	ENDLESS_MOD_DUD       = 1u << 29,
+
+	ENDLESS_MOD_HOMING    = 1u << 30, // weak homing
 };
 
-// Bit 31 as a #define, not an enum constant: (1u << 31) overflows `int`, which a C enum constant
-// must fit in. RAMPAGE: aggressive homing rammers with extra ram damage (gamble-only, ~1/5000).
+// Bit 31 cannot be a C enum constant because it may not fit in int.
 #define ENDLESS_MOD_RAMPAGE (1u << 31)
 
-// Bits 32+ live above the 32-bit line, so they're Uint64 and endlessActiveMods (and every mod-set
-// that can carry them: endlessCourseMod[], sortieMods, the save fields) is Uint64 too. Fork
-// "challenge" sector mutators: a flipped screen and a slowed ship, in the spirit of the boss gimmicks.
-#define ENDLESS_MOD_TOPSY    ((Uint64)1 << 32)  // playfield flips upside-down, boss-style: controls invert WITH the view (hostile)
-#define ENDLESS_MOD_SLUGGISH ((Uint64)1 << 33)  // your ship crawls -- keyboard, mouse AND touch all slowed (hostile)
-// Gravity Well variant, decided (50/50) whenever a gravity course is charted: the pull runs along a
-// FIXED RANDOM heading for the whole sector instead of straight down. Rides alongside GRAVITY (never
-// alone in a course) and is cosmetically masked out of theme-name lookup, so gravity combos keep
-// their names; the per-sector heading is rolled in endlessRegenerateLevel.
-#define ENDLESS_MOD_GRAVITY_OMNI ((Uint64)1 << 34)  // omnidirectional gravity well: pull along a random heading, not just down (hostile)
-#define ENDLESS_MOD_SHIELDLESS ((Uint64)1 << 35)  // shields do NOT recharge -- you keep what you have, then run on armor (hostile)
-#define ENDLESS_MOD_DEADGEN    ((Uint64)1 << 36)  // the generator is dead: no shield regen AND the main gun is starved of power (hostile, super-rare nightmare)
-// Two boons that thin the special-enemy tier. NOELITE is strictly better than NOCHAMP (it removes the
-// elites too), so it's charted slightly rarer, and the two NEVER co-occur on one sector -- NOELITE
-// supersedes NOCHAMP wherever both would land (endlessGenerateCourses + the per-level fold-in). Both
-// cost you the elite/champion bounty income, a built-in drawback, so neither adds clear-cash.
-#define ENDLESS_MOD_NOCHAMP    ((Uint64)1 << 37)  // no champions: any enemy that would be a champion spawns as an elite instead (boon)
-#define ENDLESS_MOD_NOELITE    ((Uint64)1 << 38)  // no elites OR champions: every enemy stays normal-tier (boon, the stronger of the pair)
-// The 100th-zone finale MARKER. It carries no mechanic of its own: it labels the sector "The End",
-// forces the END rank and the FINALITY danger word, and pays the finale's enormous bounty. The
-// actual dangers ride alongside it and are re-rolled for every milestone (endlessMakeTheEndMods),
-// so no two run-100 finishers are the same sector.
-#define ENDLESS_MOD_THEEND     ((Uint64)1 << 39)
-// Four more sector dangers that reuse the existing enemy-death / enemy-projectile / player-damage
-// systems rather than altering the shipped enemy layout (see endless_combat.c + the engine hooks in
-// tyrian2.c / varz.c).
-#define ENDLESS_MOD_MARTYRDOM   ((Uint64)1 << 40)  // a destroyed enemy fires a final radial burst (4 normal / 6 elite / 8 champion), once per linked enemy, suppressed when the shot pool is nearly full (hostile, rare)
-#define ENDLESS_MOD_SEEKER      ((Uint64)1 << 41)  // each enemy projectile makes ONE limited course correction toward you ~0.5s after firing (hostile, rare)
-#define ENDLESS_MOD_STATIC      ((Uint64)1 << 42)  // taking shield/hull damage bleeds generator power (damage x30 of the raw 0..900 pool ~= the spec's x5 on the power/10 gauge, capped at the reserve) AND shorts the generator out briefly so the loss actually sticks -- without that regen lockout the next tick repays it; never rides a dead generator (hostile, common)
-#define ENDLESS_MOD_RETALIATION ((Uint64)1 << 43)  // every enemy kill briefly quickens enemy fire (~25%, refreshes but doesn't stack) -- a kill-tempo tax, distinct from the time-based Enrage (hostile, uncommon)
-// Ten BOONS on systems the earlier boons never touched. The existing roster already covers enemy HP,
-// cash, kill-fed guns, weapon damage, shot speed, shop prices and the elite tier; these instead act on
-// the shield/armor boundary, the rising tide, the generator, the hitbox, the elite STATS (rather than
-// the tier itself), enemy projectiles and the between-sector meta. Most carry a NEGATIVE clear-cash
-// reward: an easier sector should pay less (see endlessModTable).
-#define ENDLESS_MOD_AEGIS        ((Uint64)1 << 44)  // Aegis Gate: while the shield holds, a hit can't spill into armor -- the gate empties the shield instead, then recharges (boon)
-#define ENDLESS_MOD_FLAKSCREEN   ((Uint64)1 << 45)  // Flak Screen: halves the EXTRA shots the rising tide adds per volley; the level's authored fire is untouched (boon, only offered once the tide is running)
-#define ENDLESS_MOD_AUXREACTOR   ((Uint64)1 << 46)  // Auxiliary Reactor: shield regen costs no generator power this sector (same interval, just free) (boon)
-#define ENDLESS_MOD_LOWPROFILE   ((Uint64)1 << 47)  // Low Profile: the ship's DAMAGE hitbox shrinks ~25% (sprite and pickup reach unchanged) (boon)
-#define ENDLESS_MOD_GIANTKILLER  ((Uint64)1 << 48)  // Giant Killer: elites/champions keep their tint, aggression and bounty but lose their HP multiplier (boon)
-#define ENDLESS_MOD_SHOCKWAVE    ((Uint64)1 << 49)  // Shockwave: killing an elite/champion vaporises nearby enemy projectiles (a boss bar emptying clears the screen) (boon)
-#define ENDLESS_MOD_STARCHARTS   ((Uint64)1 << 50)  // Star Charts: clearing the sector guarantees a full route slate at the next ORDINARY outpost (boon, no combat effect)
-#define ENDLESS_MOD_BREAKTHROUGH ((Uint64)1 << 51)  // Breakthrough: clearing the sector owes you a bonus perk pick (boon, the rarest of the set)
-#define ENDLESS_MOD_SOFTLANDING  ((Uint64)1 << 52)  // Soft Landing: the contact damage the PLAYER takes from ramming is cut to 30% (projectiles untouched) (boon)
-#define ENDLESS_MOD_CLEANSIGNALS ((Uint64)1 << 53)  // Clean Signals: elites/champions lose their fire-rate and shot-damage bonuses, keeping HP, tint and bounty (boon)
+// Bits 32 and above require Uint64 storage throughout courses and saves.
+#define ENDLESS_MOD_TOPSY    ((Uint64)1 << 32)  // flipped playfield and controls
+#define ENDLESS_MOD_SLUGGISH ((Uint64)1 << 33)  // slower ship movement
+#define ENDLESS_MOD_GRAVITY_OMNI ((Uint64)1 << 34) // random fixed gravity heading
+#define ENDLESS_MOD_SHIELDLESS ((Uint64)1 << 35)
+#define ENDLESS_MOD_DEADGEN    ((Uint64)1 << 36)
+#define ENDLESS_MOD_NOCHAMP    ((Uint64)1 << 37)
+#define ENDLESS_MOD_NOELITE    ((Uint64)1 << 38)
 
-// The six kill-fire mods -- boons Turbodrive/Overdrive/Overblast, evil mirrors Backfire/Burnout/
-// Misfire -- a sector carries at most one (notes.md §Course generation & danger labels).
+// Finale marker; mechanics remain in the other modifier bits.
+#define ENDLESS_MOD_THEEND     ((Uint64)1 << 39)
+#define ENDLESS_MOD_MARTYRDOM   ((Uint64)1 << 40)
+#define ENDLESS_MOD_SEEKER      ((Uint64)1 << 41)
+#define ENDLESS_MOD_STATIC      ((Uint64)1 << 42)
+#define ENDLESS_MOD_RETALIATION ((Uint64)1 << 43)
+#define ENDLESS_MOD_AEGIS        ((Uint64)1 << 44)
+#define ENDLESS_MOD_FLAKSCREEN   ((Uint64)1 << 45)
+#define ENDLESS_MOD_AUXREACTOR   ((Uint64)1 << 46)
+#define ENDLESS_MOD_LOWPROFILE   ((Uint64)1 << 47)
+#define ENDLESS_MOD_GIANTKILLER  ((Uint64)1 << 48)
+#define ENDLESS_MOD_SHOCKWAVE    ((Uint64)1 << 49)
+#define ENDLESS_MOD_STARCHARTS   ((Uint64)1 << 50)
+#define ENDLESS_MOD_BREAKTHROUGH ((Uint64)1 << 51)
+#define ENDLESS_MOD_SOFTLANDING  ((Uint64)1 << 52)
+#define ENDLESS_MOD_CLEANSIGNALS ((Uint64)1 << 53)
+
+// A course carries at most one kill-fire modifier.
 #define ENDLESS_MOD_FIREBOOST      (ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERDRIVE)
 #define ENDLESS_MOD_FIREJAM        (ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT)
 #define ENDLESS_MOD_DMGUP          (ENDLESS_MOD_OVERDRIVE | ENDLESS_MOD_OVERBLAST)
@@ -144,40 +99,29 @@ enum {
 #define ENDLESS_MOD_KILLFIRE_EVIL  (ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_BURNOUT | ENDLESS_MOD_MISFIRE)
 #define ENDLESS_MOD_KILLFIRE_ANY   (ENDLESS_MOD_KILLFIRE_GOOD | ENDLESS_MOD_KILLFIRE_EVIL)
 
-// Palette bank (high nibble) the elite/champion tints remap enemy sprites into via the blit
-// filter (see blit_sprite2_filter). The exact hue depends on the level's palette; tuned by
-// eye. The tiny enemy HP bars reuse these banks so a bar matches its enemy's tint.
+// Sprite-filter banks shared by special enemies and their health bars.
 #define ENDLESS_ELITE_FILTER    0xD0
 #define ENDLESS_CHAMPION_FILTER 0x50  // bank 5 = purple (an "epic" aura; 0xB0 read as brown)
 
-// Hull tints flash only for PLAYER-side kill-fire buffs (Overclock/Overload change enemy
-// behaviour, so they do not tint the ship). Palette-relative; tuned by eye.
-#define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0  // bank 12 = red (Turbodrive)
-#define ENDLESS_OVERDRIVE_SHIP_FILTER 0x70 // bank 7 = electric yellow -- the escalating Overdrive buff (tunable)
-#define ENDLESS_OVERBLAST_SHIP_FILTER 0x90 // bank 9 = blue -- the damage-only Overblast buff (tunable)
-#define ENDLESS_EVIL_SHIP_FILTER      0x40 // bank 4 -- the Backfire/Burnout/Misfire curse tint (tuned by eye)
+// Player-side kill-fire tint banks.
+#define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0
+#define ENDLESS_OVERDRIVE_SHIP_FILTER  0x70
+#define ENDLESS_OVERBLAST_SHIP_FILTER  0x90
+#define ENDLESS_EVIL_SHIP_FILTER       0x40
 
-// Power-gauge recolour while a kill-fire BOON window is up (fire costs no power then). A bank
-// BASE: the 14-shade ramp must stay in one bank (notes.md §Course generation & danger labels).
-#define ENDLESS_FREE_POWER_GAUGE_BASE 1 // bank 0 (gray)
+// Gauge bases must leave room for all 14 shades inside one palette bank.
+#define ENDLESS_FREE_POWER_GAUGE_BASE 1
+#define ENDLESS_SALVO_GAUGE_BASE  (12 * 16 + 1)
+#define ENDLESS_SALVO_SPARK_COLOR (12 << 4)
 
-// Power-gauge recolour while an Opening Salvo is banked or burning. Same bank-BASE rule as above.
-// The spark colour is the same bank, for the salvo effects with no sprite to take a colour FROM
-// (the Zinglon pillar, the specials that spawn no shot). notes.md §Opening Salvo.
-#define ENDLESS_SALVO_GAUGE_BASE  (12 * 16 + 1) // bank 12 (green)
-#define ENDLESS_SALVO_SPARK_COLOR (12 << 4)     // ...same bank, as JE_doSP wants it
-
-// Per-kill DAMAGE stack cap: the bonus scales so ENDLESS_OVERDRIVE_DMG_MAX lands exactly at the
-// cap, matching the fire ramp's combo-200 peak. Burnout/Misfire's damage CUT mirrors it.
+// Kill-fire damage reaches this bonus at the stack cap.
 #define ENDLESS_OVERDRIVE_MAX_STACKS 200
-#define ENDLESS_OVERDRIVE_DMG_MAX    150  // Overdrive/Overblast: +this% shot damage at the stack cap (i.e. at ~200 combo)
+#define ENDLESS_OVERDRIVE_DMG_MAX    150
 
-// Ceiling on any endless enemy's effective HP multiplier, so even an elite/champion boss
-// deep in a run can't become an unkillable sponge.
+// Global effective-HP multiplier ceiling.
 #define ENDLESS_HP_MULT_MAX 24
 
-// Base (shipped) level the current / previous ZONE is built on, for the crash logger. The name
-// is the level's authored name (endless renames the live levelName to "ZONE n"); "" until set.
+// Authored level identity retained after levelName becomes "ZONE n".
 const char *endlessBaseLevelName(void);
 int         endlessBaseLevelEpisode(void);
 int         endlessBaseLevelSection(void);
@@ -185,117 +129,79 @@ const char *endlessPrevLevelName(void);
 int         endlessPrevLevelEpisode(void);
 int         endlessPrevLevelSection(void);
 
-// Anti-repeat recent-level ring (newest first, i = 0): the base levels the next zone's picker keeps
-// away from, so no level recurs twice in a row or within a few zones. For the crash logger; indices
-// out of range read as 0.
+// Recent authored levels, newest first. Out-of-range accessors return 0.
 int endlessRecentLevelCount(void);
 int endlessRecentLevelEpisode(int i);
 int endlessRecentLevelSection(int i);
 
-// How many levels have been cleared this run (0 on a fresh run). Drives the difficulty
-// ramp and is the depth/score of the run.
+// Cleared zones; drives progression and score.
 extern int endlessRunDepth;
 
-// Run kill tallies, shown on the run-end screen. Both reset each run. endlessRunBossKills is
-// bumped in draw_boss_bar (tyrian2.c) the moment a boss health bar empties, so it counts only
-// enemies that actually spawned a boss bar -- not high-armor mini-bosses or tough regulars.
+// Per-run kill totals. Boss kills count only enemies with a boss bar.
 extern int endlessRunKills;
 extern int endlessRunBossKills;
 
-// Count a destroyed enemy toward the total kill tally (no-op outside endless mode). Pass the
-// killed enemy's linknum. A multi-part enemy (shared nonzero linknum) is counted once, not per
-// tile, so the Overdrive stack and kill tally stay per-enemy. Called from enemy_logical_death
-// (tyrian2.c) -- the single kill path -- never inline at a new kill site.
+// Count one logical enemy. All kill paths go through enemy_logical_death.
 void endlessCountKill(int linknum);
 
-// Mutator bits (ENDLESS_MOD_*) active on the current level; set by endlessChooseNextLevel.
-extern Uint64 endlessActiveMods;   // ENDLESS_MOD_* bits for the current level (64-bit: TOPSY/SLUGGISH are bits 32-33)
+extern Uint64 endlessActiveMods;
 
-// Run-persistent bonus to max armor, bought at the outpost ("Reinforce Hull"). Added to
-// the ship's armor each level start (varz.c ship-info). Reset each run.
+// Run-persistent Reinforce bonus.
 extern int endlessArmorBonus;
 
-// Reset all per-run state at the start of a new Endless run.
 void endlessResetRun(void);
 
-// --- All-time record: the furthest zone ever reached -----------------------------------
-// The one number that outlives a run. It rides opentyrian.cfg rather than endless.sav,
-// because that sidecar is per-slot and hardcore runs never write one at all.
-extern int endlessBestZone;             // furthest zone ever reached, over every run (0 = none yet)
-void endlessNoteZoneReached(int zone);  // called at each endless level start; advances + persists the record
-void endlessRecordRunStart(void);       // snapshot the record as this run finds it (new run / resumed run)
-int  endlessBestZoneAtStart(void);      // that snapshot -- the run-over screen's "(+n)" is the gap to it
+// All-time record. Stored in opentyrian.cfg so Hardcore runs can update it.
+extern int endlessBestZone;
+void endlessNoteZoneReached(int zone);
+void endlessRecordRunStart(void);
+int  endlessBestZoneAtStart(void);
 
-// The record in opentyrian.cfg's [endless] section (endless_save.c owns the format, as with
-// the [endless_debug] block).
 void endlessRecordConfigSave(ConfigSection *section);
 void endlessRecordConfigLoad(const ConfigSection *section);
 
-// --- Run seed ------------------------------------------------------------------------
-// A run's STRUCTURE (level order, mutators, perks, shop stock) is reproducible from a seed;
-// combat randomness stays unseeded by design (notes.md §Seeded structure RNG).
-#define ENDLESS_SEED_MAXLEN 24  // seed string buffer (incl. NUL); also the on-disk save width
+// Run seed. Structural randomness is deterministic; combat randomness is not.
+#define ENDLESS_SEED_MAXLEN 24
 
-// HARDCORE mode: a per-run toggle chosen on the seed screen -- NO saving at all, and a mid-zone
-// bail re-locks the outpost to the launch-time choices (notes.md §Save / resume).
+// Hardcore disables all run saves.
 extern bool endlessHardcore;
 
-// The pre-difficulty "choose your seed" screen: type any text for a seeded run, or take a random
-// one. Also toggles HARDCORE for the run. Writes the chosen seed (always non-empty) into outSeed and
-// the hardcore choice into *outHardcore (may be NULL); returns false if cancelled (Esc).
+// Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore);
 
-// Establish the run's seed (copy the string + hash it + prime the stream). Call once when a run
-// begins, right after endlessResetRun. Any string is valid; "" hashes to a fixed default.
 void endlessSetSeed(const char *s);
-
-// The current run's seed string, for the in-game display (shown on the E-Shop help line).
 const char *endlessSeedString(void);
 
-// --- Save / resume ------------------------------------------------------------------
-// Run-persistent endless state rides in a sidecar (endless.sav) keyed by the same save slot,
-// because the tyrian.sav layout is fixed and checksummed. Loading a slot with an endless
-// record re-enters endless mode at that zone's outpost. notes.md §Endless / Save / resume.
-void endlessSaveSlot(JE_byte slot);  // persist the current run to `slot` (or clear that slot's endless record when not in endless mode); call right after JE_saveGame
-bool endlessLoadSlot(JE_byte slot);  // if `slot` holds an endless run, enter endless mode + restore it (true); else leave the normal load untouched (false); call right after JE_loadGame
-bool endlessResumePending(void);     // true after an endless save was loaded but before its outpost has reopened; lets the main loop route an in-shop load back to the outpost instead of straight into the level
+// Sidecar save keyed by the normal save slot.
+void endlessSaveSlot(JE_byte slot);
+bool endlessLoadSlot(JE_byte slot);
+bool endlessResumePending(void);
 
-// --- "Quit Level" -> outpost retry ----------------------------------------------------------
-// In endless the ESC menu's Quit Level reverts the level to its launch state and reopens the
-// outpost: HARDCORE relocked (retry the same level or quit the run -- no farm-then-bail),
-// non-hardcore unlocked (re-outfit freely; launch state still reverted). Session state only.
-extern bool endlessQuitToOutpost;  // set by the ESC-menu Quit in endless; consumed by the game loop
-extern bool endlessLockedSortie;   // the reopened outpost is locked to the launch-time choices (hardcore only)
+// Quit Level restores the launch snapshot. Hardcore keeps the sortie locked.
+extern bool endlessQuitToOutpost;
+extern bool endlessLockedSortie;
 
-void endlessCaptureSortie(void);   // snapshot the launch-time state; called at every endless level start
-void endlessRestoreSortie(void);   // revert to that snapshot; in hardcore arm the locked outpost (sets endlessLockedSortie)
-bool endlessSortieValid(void);     // a sortie snapshot is available to restore / relaunch
-void endlessArmLockedRelaunch(void); // re-arm the committed level (episode + mods + level) WITHOUT re-running course selection
+void endlessCaptureSortie(void);
+void endlessRestoreSortie(void);
+bool endlessSortieValid(void);
+void endlessArmLockedRelaunch(void);
 
-// Fallback single-level picker: a random endless-safe level from any installed episode
-// (switching episode data as needed). endlessChooseNextLevel is the normal path.
+// Fallback picker; normal runs use the course path.
 JE_byte endlessPickNextLevel(void);
 
-// Next-level "courses": the choice presented in the shop's Start Level submenu (see
-// game_menu.c, which drives its planet monitor from these). Each course is a shipped level
-// plus its own risk/reward mutators; course 0 is always clean (no modifiers) and a
-// pure-upside BOUNTY course is rare. Generated once per shop visit by endlessBetweenLevels.
-void        endlessGenerateCourses(void);  // build this visit's courses
-int         endlessCourseCount(void);      // how many courses (up to 3)
-const char *endlessCourseName(int i);      // short label for the menu list
-const char *endlessCourseHelp(int i);      // one-line risk summary (tier) for the help line
-const char *endlessCourseRank(int i);      // letter danger grade (F..S+++, END) for the monitor RANK field
-int         endlessCourseRankLevel(int i); // danger level 0(F)..9(S+++), 10(END), or -1; drives the tint
-JE_byte     endlessCoursePlanet(int i);    // star-map planet index for the monitor (cosmetic)
-JE_byte     endlessCourseSection(int i);   // the course's level section (for mapSection[])
-JE_byte     endlessSelectCourse(int i);    // apply course i (mutators + episode); returns its section
-long        endlessCoursePayout(int i);    // truthful clear payout for course i (shown highlighted in help)
+// Course list for the current outpost.
+void        endlessGenerateCourses(void);
+int         endlessCourseCount(void);
+const char *endlessCourseName(int i);
+const char *endlessCourseHelp(int i);
+const char *endlessCourseRank(int i);
+int         endlessCourseRankLevel(int i);
+JE_byte     endlessCoursePlanet(int i);
+JE_byte     endlessCourseSection(int i);
+JE_byte     endlessSelectCourse(int i);
+long        endlessCoursePayout(int i);
 
-// One row of the Chart-a-Course monitor overlay: an active modifier's short label, its danger
-// weight (the same reward-tenths endlessDangerScore sums, driving how dark its red tint draws),
-// and which side of the monitor it lists on (hostile/trap = left in red, boon = right in green).
-// `cleansed` marks a threat a queued Sabotage charge will strip before the sortie starts -- it is
-// still listed (so the player can see what the charge bought), but drawn WHITE instead of red.
+// One modifier row on a course card.
 typedef struct {
 	const char *word;
 	int         weight;
@@ -303,23 +209,16 @@ typedef struct {
 	bool        cleansed;
 } EndlessCourseModRow;
 
-// Fill rows[] with course i's individual modifiers, worst-first (highest weight leading), up to
-// max entries. Returns the count. game_menu.c draws these ON the planet monitor itself.
+// Returns rows in descending danger order.
 int endlessCourseModRows(int i, EndlessCourseModRow *rows, int max);
 
-// The registry's short WHAT-IT-DOES phrase for a single modifier bit ("" when the bit has no
-// registry row, or is a pure label like the 100th-zone finale marker). Lets a screen outside the
-// endless group -- the debug zone jump -- label a bit without duplicating the wording.
+// Registry description for one modifier bit.
 const char *endlessModWord(Uint64 bit);
 
-// The between-level step: bank interest + clear reward on cash, then open the standard
-// item shop (JE_itemScreen). Also pins the planet-map hub so the shop's planet monitor
-// can't read out of bounds. Reroll/hull upgrades live inside the shop's own front menu.
+// Pay the clear reward and open the outpost.
 void endlessBetweenLevels(void);
 
-// Outpost economy actions, wired into JE_itemScreen's front menu in endless mode (the
-// Reroll and Reinforce entries replace Data Cubes and Ship Specs; see game_menu.c).
-// Prices escalate per use and reset each shop visit.
+// Outpost actions; prices escalate within one visit.
 void endlessResetShopPrices(void);
 long endlessRerollPrice(void);    // current reroll cost (for the menu label)
 int  endlessHullPrice(void);      // current hull-upgrade cost (for the menu label)
@@ -327,16 +226,12 @@ bool endlessHullMaxed(void);      // true once the run's armor bonus is capped
 bool endlessTryReroll(void);      // buy a shop reroll; false if unaffordable
 bool endlessTryReinforce(void);   // buy a +armor hull upgrade; false if unaffordable/maxed
 
-// E-Shop cash-fraction buys (the "E-Shop" submenu; see game_menu.c). Turbodrive (kill-fire boost)
-// costs 66% of cash, Overblast (the DAMAGE half only) 75%, Overdrive (both) 95%; only ONE of the
-// three is buyable per visit. Buy Special grants a random special for 80%. All price off the
-// shop-entry cash and apply to the NEXT sector.
+// Cash-fraction purchases use the balance recorded on shop entry.
 long endlessTurbodrivePrice(void);         // Turbodrive cost (66% of entry cash), for the label
 long endlessOverblastPrice(void);    // Overblast cost (75% of entry cash), for the label
 long endlessOverdrivePrice(void);   // Overdrive cost (95% of entry cash), for the label
 long endlessSpecialPrice(void);      // Buy-Special cost (80% of entry cash), for the label
-// Which kill-fire buff was bought this shop visit. THESE IDS ARE PERSISTED in endless.sav --
-// never renumber them, only append.
+// Persisted IDs: append only.
 enum {
 	ENDLESS_BUFF_KIND_NONE = 0,
 	ENDLESS_BUFF_KIND_TURBODRIVE,
@@ -351,10 +246,7 @@ bool endlessTryBuyOverblast(void);   // buy Overblast; false if unaffordable / a
 bool endlessTryBuyOverdrive(void);// buy Overdrive; false if unaffordable / a buff already owned / on recharge
 bool endlessTryBuySpecial(void);     // buy a random special weapon; false if unaffordable
 
-// Expanded E-Shop buys. Bomb: +1 superbomb (cap 10). Revive: a held one-shot that survives a lethal
-// hit (endlessConsumeRevive, called from the death path). Extra Perk: opens a bonus perk pick.
-// Sabotage: cleanse charges that strip the worst mutator off the NEXT chosen course. Gamble: a
-// random good/bad outcome (result text via endlessGambleResult, shown on the E-Shop help line).
+// Remaining E-Shop purchases.
 long endlessBombPrice(void);
 bool endlessBombFull(void);
 bool endlessTryBuyBomb(void);
@@ -365,9 +257,7 @@ bool endlessConsumeRevive(void);     // spend a held revive on death; true = sur
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
-// Sabotage charges queue up per visit and are all spent on the course actually chosen, so the cap is
-// what stops a rich run from simply deleting every sector's danger. It is a hard limit the E-Shop
-// row and help line both read, so a maxed queue says so instead of failing a buy in silence.
+// Maximum queued Sabotage charges per visit.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3
 long endlessCleansePrice(void);
 int  endlessCleanseCharges(void);    // sabotage strips queued for the next course select
@@ -385,121 +275,74 @@ const char *endlessGambleOutcomeName(int id);  // display name of gamble outcome
 void endlessForceGambleOutcome(int id); // debug: fire outcome `id`'s effect directly (no fee), for testing
 const char *endlessLastGrantedSpecial(void);  // name of the last special granted this shop visit ("" if none)
 unsigned endlessPendingMods(void);   // kill-fire buff bits bought this visit, not yet applied (for the debug jump)
-// Merge pending E-Shop/gamble mods into a sector's own mods. The PURCHASE wins any kill-fire
-// collision (see the definition), so the result always carries at most one kill-fire bit. Used by
-// the launch fold-in, the Chart-a-Course card, and the debug zone jump, so all three agree.
+// Purchased kill-fire modifiers win conflicts.
 Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased);
 
-// Called once per endless level, right after JE_loadMap loads the shipped level, to fix
-// up the per-level state a random level jump would otherwise leave in a crashing state
-// (level name -> "ZONE n", datacube count, planet-map hub, special-mode flags). The
-// level's actual content -- enemies, placement, terrain -- is left exactly as authored.
+// Initialize fork state after an Endless level is loaded.
 void endlessRegenerateLevel(void);
 
-// The campaign-mods counterpart, called at every NON-endless level start: the effect half of the
-// above (elite decisions, zone timers, this level's gravity heading) and none of its structural
-// fixups. No-op unless endlessCampaignMods is on.
+// Reset only effect state for campaign debug mode.
 void endlessCampaignLevelStart(void);
 
-// Re-derive the little that a mod set decides ONCE per sector rather than reading per frame (the
-// gravity well's heading). Call after changing endlessActiveMods mid-level; the two level-start
-// paths above already do it.
+// Recompute state chosen once per sector, such as gravity heading.
 void endlessRefreshModDerivedState(void);
 
-// --- Debug campaign-mods state in opentyrian.cfg --------------------------------------
-// The whole setup -- master toggle, virtual zone, mod mask, perk stacks, pinned levers -- survives
-// a restart, because it is something you build once and then play with for a while. Called from
-// config.c's [endless_debug] section; the save is a no-op during an endless run, whose state
-// belongs to the run and rides endless.sav instead.
+// Campaign-effect debug state in opentyrian.cfg.
 void endlessDebugConfigSave(ConfigSection *section);
 void endlessDebugConfigLoad(const ConfigSection *section);
 
-// Clear the outpost-bought state (hull upgrade, buff charge, revive token, ...) when the debug
-// campaign-mods layer is armed, so a previous endless run's purchases can't follow the player into
-// a normal game. Leaves perks and mod bits alone -- those are what the debug screen sets. No-op
-// during a real endless run.
+// Prevent run purchases from leaking into campaign debug mode.
 void endlessCampaignModsArm(void);
 
-// True while the zone being played is a MILESTONE (every 50th): a forced all-S-tier course slate
-// and its own pinned theme. The level script's music events (34 fade / 35 change song) are ignored
-// on such a zone so nothing unseats that theme mid-level; see tyrian2.c.
+// Milestone zones ignore script music changes.
 bool endlessMilestoneZone(void);
 
-// Milestone class of an ARBITRARY zone number: 0 ordinary, 1 the S+/S++ milestone (50, 150, ...),
-// 2 the S++/S+++ one (100, 200, ...), 3 the mildest "halfway" one (25, 75, ...). Kinds are tags,
-// not an ordinal. Used by the debug zone jump to tag the zone you are about to type.
+// 0 ordinary, 1 half-century, 2 century, 3 odd multiple of 25.
 int endlessMilestoneKindOfZone(int zone);
 
-// The "light cone" (spotlight) effect is decoupled from a level's own script in endless mode:
-// a level that ships with the spotlight has it stripped, and instead each zone gets an
-// independent, seeded 1-in-10 chance of it (decided in endlessRegenerateLevel). True when the
-// current zone rolled the cone; read by the starShowVGASpecialCode override in tyrian2.c.
+// Seeded replacement for level-script spotlight state.
 bool endlessLightConeActive(void);
 
-// Load the level's initial enemy sprite banks up front (right after the engine resets
-// the bank table at level start), so ambient/early enemies aren't invisible when they
-// spawn before the level's scheduled bank-load event fires.
+// Preload sprite banks needed before their script event.
 void endlessPreloadBanks(void);
 
-// Starting cash for a fresh run, by chosen difficulty (easier = more).
 long endlessStartingCash(void);
 
-// The run's fixed starting gear (currently just the front gun). Applied at run creation AND at the
-// depth-0 outpost before it opens -- both are ahead of any purchase, so it can't overwrite bought gear.
+// Apply fixed starting gear before any purchase can occur.
 void endlessApplyStartingLoadout(void);
 
-// Pull the starting gun to the TOP of the front-weapon merchant row, for the first outpost of a run
-// only. Call AFTER sort_shop_inventory (id order), which would otherwise bury it. No-op elsewhere.
+// Move the starting gun to the first row of the opening shop.
 void endlessHoistStartWeapon(void);
 
-// Called when a run ends (the player died): shows the glowing Run Over summary, then the caller
-// returns to the title screen.
 void endlessOnRunEnd(void);
 
-// Called when the player VOLUNTARILY quits an in-progress run to the title (from any outpost's Quit
-// Game). Clears endlessMode; in hardcore it first shows the Run Over summary (quitting is final --
-// no save to resume), matching the death path. The caller then returns to the title.
+// Hardcore quits show the same final summary as death.
 void endlessEndRunToTitle(void);
 
-// Apply the level-clear payout (bank interest on unspent cash + the depth/mutator-scaled
-// clear bonus) to the player's cash, reporting the two amounts so the level-end screen can
-// show them. Both zero before the first level is cleared. Applied by JE_endLevelAni.
+// Apply the level-clear payout and return its components.
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 
-// Grant a random special weapon (Repulsor, Flare, ...) and announce it in the in-game text
-// bar. In endless the collectable datacube and secret-orb pickups a level drops call this
-// instead of their normal (dead-in-endless) behaviour.
+// Replace Endless data cubes and secret orbs with a safe special.
 void endlessGrantSpecial(void);
 
-// The endless award for a datacube carried by an ordinary enemy rather than by a pickup (vanilla
-// scores those as cubeMax++ the instant the enemy dies): drop the 5000-point gem at that enemy's
-// slot position instead of conjuring a special out of nothing. Called from the enemy-death handler.
+// Replace an embedded data cube with a gem at the enemy slot.
 void endlessDropCubeGem(int slot);
 
-// The endless replacement for the vanilla "random special weapon" enemy drop (829..834): the
-// front (533) or rear (534) weapon powerup the roll displaced, picked at even odds. Called by
-// the event-33/45 substitution in tyrian2.c.
+// Replace the random-special event drop with a weapon power-up.
 JE_word endlessPowerupDropEnemy(void);
 
-// Spawn-time redirect for a powerup pickup (533/534) whose gun is already at power 11 or unmounted:
-// the other gun's powerup, or the 5000-point gem (399) when neither can take one. Every other enemy
-// id passes through. Called from JE_makeEnemy, so it catches all drop paths at the moment of spawn.
+// Redirect a maxed-port power-up to the other port, then to a gem.
 JE_word endlessResolvePowerupDrop(JE_word eDatI);
 
-// Depth- and mutator-scaled enemy difficulty levers, applied by the engine on top of
-// the base difficulty. HP is split like the expert-mode toggle: ordinary enemies scale
-// by an armor percent, bosses (at the 254 armor cap) scale by a damage divisor instead.
+// Depth and modifier scaling. Boss HP uses a divisor because armor is byte-sized.
 int endlessArmorPercent(void);      // ordinary-enemy HP scale (100 = unchanged); 254 cap applies
 int endlessBossHpMult(void);        // boss HP divisor (1 = unchanged); N = N times boss HP
 int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchanged; lower = fires faster)
 int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
 int endlessShotDamagePercent(void); // enemy shot-damage scale (100 = unchanged; higher = hits harder)
-int endlessContactDamagePercent(void); // PLAYER-side contact/ramming damage scale (100 = normal); ramps from zone 35 to +150% by zone 100, capped +500%; only the damage the player RECEIVES (mainint.c collision), never the enemy's
+int endlessContactDamagePercent(void); // scales player damage only
 
-// --- Zone scaling: readout + per-lever overrides (debug) ------------------------------
-// Every lever above is a PURE function of (endlessRunDepth, difficultyLevel, endlessActiveMods) --
-// no hidden per-level state except the two live timers noted below. That is what lets the debug
-// SCALING page compute the whole ramp for any zone without playing it.
+// Debug snapshot of the pure depth/modifier levers.
 
 // The ramp as computed for one (zone, difficulty, mods) triple.
 typedef struct {
@@ -522,21 +365,10 @@ typedef struct {
 	long champBounty;   // cash per champion kill
 } EndlessScaling;
 
-// Compute the whole ramp for an ARBITRARY (zone, difficulty, mods) triple without disturbing the
-// live run: the three globals the levers read are saved, swapped, read back and restored. `zone`
-// is 1-based (zone 1 == run depth 0); pass difficulty -1 to keep the current difficultyLevel.
-//
-// The effect layer is forced on for the duration, so the result describes the RAMP rather than
-// whether it currently applies. ENRAGE's and RETALIATION's contributions to fireDelayPct are the
-// one thing depth can't predict (both key off live per-level timers), so they read as whatever they
-// are right now. Not reentrant -- it mutates globals for the duration -- so keep it on one thread.
+// Temporarily swaps the three input globals; not reentrant.
 void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out);
 
-// Per-lever debug OVERRIDES. While a lever's override is active its accessor returns the pinned
-// value outright: depth, mutators and boons are ALL bypassed for that one lever, so ten can sit at
-// stock while the eleventh moves. That is the point -- it isolates which lever a difficulty wall
-// actually came from. Session-only, never saved, and independent of endlessMode: an override
-// applies wherever the effect layer is live.
+// An active override bypasses both depth and modifiers for one lever.
 enum {
 	ESO_ARMOR,       // endlessArmorPercent
 	ESO_BOSSHP,      // endlessBossHpMult
@@ -568,10 +400,7 @@ int         endlessScalingOverrideMax(int id);
 void        endlessScalingOverridesClear(void);   // drop every pin
 int         endlessScalingOverrideCount(void);    // how many are currently pinned (0 = all stock)
 
-// Rising-tide "quantity" scaling: past where the intensity levers above cap out (~zone 100), the
-// tide adds the one axis with no engine ceiling -- more enemy shots per volley and a rising share
-// of elite/champion shooters. Both read the single tide coefficient, which is 0 through the early
-// game and then climbs without bound. Tune the onset/slope via ENDLESS_TIDE_* in endless.c.
+// Rising tide adds projectile count after the ordinary intensity ramps flatten.
 int endlessTideLevel(void);        // the single tide knob (0 early, then +1 per effective depth)
 int endlessExtraEnemyShots(void);  // extra enemy shots to add to each firing volley at this tide
 
@@ -581,9 +410,7 @@ void endlessGameplayTick(void);         // once per game tick (main player): zon
 bool endlessConsumeArmorHudDirty(void); // true once after the Overheat DoT shaves hull -> the game loop repaints the armor bar
 bool endlessTurbodriveActive(void);      // TURBODRIVE kill-streak fire boost currently active?
 
-// Live kill-fire buff readout for the in-game HUD (Turbodrive / Overblast / Overdrive). All report the
-// BUFF's own contribution while its window is active; see JE_inGameDisplays. No name string is
-// exposed by design -- the HUD shows only numbers (combo count, fire/damage %, timer).
+// Live kill-fire values for the HUD.
 int endlessKillBuffTicksLeft(void);    // window ticks remaining (drains ~2s after the last kill)
 int endlessKillBuffTicksMax(void);     // full window length, for the timer bar proportion
 int endlessKillBuffComboCount(void);   // combo kill count driving the escalation, shown as "xN"
@@ -597,79 +424,56 @@ int   endlessGravityPullY(void);        // GRAVITY: per-tick vertical nudge (cla
 float endlessGravityDrift(void);        // GRAVITY: pull magnitude in px per 35Hz tick (direction-agnostic)
 float endlessGravityDriftX(void);       // GRAVITY: horizontal drag component in px/tick (VT ship path; nonzero only for an omni well)
 float endlessGravityDriftY(void);       // GRAVITY: vertical drag component in px/tick (VT ship path)
-float endlessMoveScale(void);           // SLUGGISH: ship traverse-speed scale, 1.0 = normal; scales ALL input (keyboard/mouse/touch/stick) in both ship paths
+float endlessMoveScale(void);           // Sluggish input scale; 1.0 is normal
 bool  endlessShieldRegenOff(void);      // SHIELDLESS or DEADGEN: true when the shield must not recharge (gate the shield-regen step in tyrian2.c)
 bool  endlessShieldRegenFree(void);     // AUXREACTOR: shield regen draws no generator power this sector (tyrian2.c: skip the `power -= shieldT` AND its power>shieldT gate)
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd); // DEADGEN: generator charge per tick, throttled to a trickle (else the passed-in normal rate)
 int  endlessScrollBoostPercent(void); // 0/70/220 for the active scroll modifier; single source for layers and bound scripted motion
 bool endlessScrollBoostActive(void);    // true while any scroll-speed modifier is active (stable across the tick, unlike the fractional step count)
-int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut); // SMOOTH boost: extra scroll px this tick for layer `channel` (0/1/2); call once/channel/tick (notes.md §Endless scroll boost)
+// Call once per layer (channels 0-2) per tick.
+int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut);
 int  endlessShipTintFilter(void);       // player-ship blit filter: electric yellow while the TURBODRIVE buff is active (0 = none)
 
-// Martyrdom / Seeker Rounds / Static Discharge sector dangers -- read by the engine at the
-// enemy-death (enemy_logical_death, tyrian2.c), enemy-shot (tyrian2.c) and player-damage (varz.c)
-// sites; the enemy-death ones are called for EVERY kill so their latches stay honest. Retaliation
-// needs no accessor of its own: it folds straight into endlessFireDelayPercent.
+// Combat hooks for modifiers that need engine-owned object pools.
 int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill -- 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
 JE_word  endlessMartyrShotSprite(void);           // MARTYRDOM: the burst's own fixed bullet sprite (never the level's fire, so it always looks the same)
 bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
 unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve
 
-// The four boons the engine has to ask about mid-frame (the rest fold into existing levers).
+// Boons queried at collision or death sites.
 int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
 bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
 int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
-int  endlessShockwaveRadius(int linknum, int eliteState); // SHOCKWAVE: projectile-clear radius for this kill -- 0 (off / not an elite), else 80 elite / 120 champion; dedups so a multi-tile enemy pulses once. Call for EVERY kill (enemy_logical_death does): it needs the ordinary ones to break its latch
+int  endlessShockwaveRadius(int linknum, int eliteState); // 0, 80 (elite), or 120 (champion)
 bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
 
-// Called the moment a sector is CLEARED (right after endlessRunDepth is bumped, tyrian2.c), to bank
-// the two boons whose reward lands at the NEXT outpost rather than in the level: Star Charts (a full
-// route slate) and Breakthrough (a bonus perk pick). Both ride the save.
+// Bank Star Charts and Breakthrough after a clear.
 void endlessOnSectorCleared(void);
 
-// Evil kill-fire curses (Evil Turbodrive / Evil Overdrive): the hostile mirrors of the boons.
-// They reuse the same combo/stack machinery but slow your fire (and, for Evil Overdrive, cut your
-// damage) instead of boosting it. See endless.c and the fire hooks in mainint.c / shots.c.
+// Hostile kill-fire effects share the normal combo machinery.
 bool endlessKillFireIsEvil(void);            // is the active kill-fire window an evil curse (not a boon)?
 int  endlessKillFireJamTicks(void);          // extra shotRepeat cooldown per shot while an evil curse is up (0 otherwise)
 int  endlessKillBuffEvilDamagePenalty(void); // Evil Overdrive: shot-damage REDUCTION % currently applied (0 otherwise), for the HUD
 const char *endlessKillFireEvilName(void);   // one-word HUD label for the active curse: JAMMED (Backfire) / BURNOUT / MISFIRE ("" if none)
 
-// Special enemies come in two tiers: ELITE (tougher, tinted, pays a bounty) and CHAMPION
-// (an elite that also fires faster and hits harder, a distinct tint, ~half as common). A
-// depth-scaled trickle spawns them; the Elite Pack / Apex mutators force many/all. Toughness
-// rides the boss-style damage accumulator; the roll is cached per linkgroup so a multi-tile
-// enemy is one tier as a whole (see the JE_drawEnemy hook + endless.c).
+// Tier rolls are cached by link group.
 void endlessResetElites(void);               // clear per-level decisions (each level start)
 int  endlessRollEliteTier(JE_byte linknum);  // spawn tier: 1 normal, 2 elite, 3 champion (per linkgroup)
 int  endlessEliteHpMult(void);               // elite & champion HP multiplier (boss-style divisor)
 int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // combined per-hit HP divisor
 
-// Safeguard against piercing weapons, whose shots survive their own impact and so re-damage the
-// same hull every tick -- DPS that scales with dwell time rather than hull, ignoring any HP
-// multiplier. Returns how long a target ignores REPEAT piercing hits, read off the same multiplier
-// endlessEnemyHpMult gave it (hence the identical argument list): full for a boss, diluted for an
-// elite/champion, ZERO for an ordinary enemy or at stock HP. In HUNDREDTHS of a sim tick, so it
-// creeps every zone; the hit site (tyrian2.c) spends the whole part and carries the fraction.
-#define ENDLESS_PIERCE_LOCK_SCALE 100        // the fixed-point unit below: 1/100 of a sim tick
-int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);  // 1/100 sim ticks of repeat-pierce immunity (0 = none)
+// Repeat-hit delay for piercing bullets, in hundredths of a tick.
+#define ENDLESS_PIERCE_LOCK_SCALE 100
+int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);
 long endlessEliteBounty(void);               // extra cash for destroying an elite
 long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
 
-// Award an elite/champion kill: pay its bounty into the player's cash and post a message to
-// the in-game text bar ("Elite/Champion Enemy destroyed!  +cash"). No-op if eliteState < 2.
-// Call for EVERY killed enemy (like endlessCountKill), not just elite ones: it latches linknum
-// to pay a multi-tile enemy once, and needs the ordinary kills in between to break that latch.
-// enemy_logical_death (tyrian2.c) is that caller; nothing else should invoke this.
+// Call for every logical death so ordinary enemies break the link-group latch.
 void endlessAwardEliteKill(int linknum, int eliteState);
 
-// --- Perks: run-persistent, stacking upgrades chosen after each cleared zone -----------
-// After finishing a zone the shop opens on a forced perk pick (before the normal buy/sell
-// front menu): three random perks -- five after a milestone zone -- plus a "take the cash"
-// decline. Once you leave it you can't return this visit. Perks stack and last the whole run;
-// their effects fold into the same player-side levers the sector mods / E-Shop buffs use.
+// Run-persistent perks.
 extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate
 
 void        endlessGeneratePerkChoices(int offers);  // roll this visit's offers (call before the shop)

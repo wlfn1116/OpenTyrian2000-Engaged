@@ -1,18 +1,6 @@
 /*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: GENERATED per-level danger profiles. DO NOT EDIT BY HAND.
- *
- * Produced by tools/endless_levelprofile (Tyrian2000Atlas "--exportthreat" + gen_profile.py):
- * every shipped level run through the atlas's GameSim at every difficulty (0..10), its
- * LevelThreat.Difficulty01 (~1.0 = an ordinary campaign level) mapped to two per-difficulty terms:
- *   baseDanger  = clamp(round((Difficulty01 - 1.0) * 4.0), -2, 5)   -- coarse GRADE/tier/sort nudge
- *   payoutMille = clamp(round((Difficulty01 - 1.0) * 1000), -400, 1500)  -- fine PAYOUT term, thousandths of base
- * Keyed by (episode, lvlFileNum) -- lvlFileNum is endlessCourseFile / forcedLvlFileNum.
- * lengthClass: 0 short, 1 normal, 2 long (measured play length at Normal; boss-loops = long).
- *
- * Requires EndlessLevelProfile (endless_internal.h); include only from endless_mods.c.
- * Regenerate:  Tyrian2000Atlas.exe --exportthreat threat.csv <dataDir> && python gen_profile.py
+ * Generated level-danger profiles. Do not edit.
+ * Regenerate with tools/endless_levelprofile.
  */
 #pragma once
 

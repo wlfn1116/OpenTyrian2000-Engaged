@@ -539,7 +539,7 @@ static struct destruct_shot_s* shotRec;
 static struct destruct_explo_s* exploRec;
 
 /* Smooth (interpolated + supersampled) present: when Smooth Motion + supersampling are on,
- * present several interpolated NxN frames per tick instead of one. notes.md §Smooth motion. */
+ * present several interpolated NxN frames per tick instead of one. */
 static SDL_Surface* destruct_hi = NULL;     /* NxN compose + present buffer */
 static SDL_Surface* destruct_bg_hi = NULL;  /* NxN static terrain, rebuilt once per tick */
 
@@ -1259,7 +1259,7 @@ static void DE_widenHUDBackdrop(SDL_Surface* surface)
 {
 	/* HUD backdrop = top 12 rows of pic #11: two 320px box frames pinned flush to each screen
 	 * edge with the widened middle blacked out. Finished strip stashed in hudBackdrop for per-tick
-	 * repaints. notes.md §Widescreen. */
+	 * repaints. */
 	enum
 	{
 		LEFT_SRC_X  = 2,    /* left frame's authored x in pic #11 */

@@ -35,7 +35,7 @@
 #if defined(__SWITCH__) || defined(__vita__)
 // Touch-drag -> ship travel multiplier. The base 4.0 cancels VT_MOUSE_SENS (0.25) so at the
 // slider's middle the ship tracks the finger 1:1; the Touch Sensitivity slider scales it
-// linearly around TOUCH_SENS_DEFAULT. notes.md §Console ports.
+// linearly around TOUCH_SENS_DEFAULT.
 #define SWITCH_TOUCH_SHIP_SENS_BASE 4.0f
 #endif
 

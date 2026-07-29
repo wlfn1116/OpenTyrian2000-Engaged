@@ -308,7 +308,7 @@ void init_joysticks(void)
 
 #ifdef __SWITCH__
 	// switch-sdl2 always reports 8 slots but only slot 0 is real; saving the idle
-	// placeholders clobbers slot 0's shared bindings, so use only slot 0. notes.md §Console ports.
+	// placeholders clobbers slot 0's shared bindings, so use only slot 0.
 	if (joysticks > 1)
 		joysticks = 1;
 #endif

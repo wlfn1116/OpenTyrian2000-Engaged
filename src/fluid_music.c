@@ -1,12 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * fluid_music -- see fluid_music.h. A self-contained SoundFont MIDI player built on
- * libfluidsynth: it owns a fluid_synth plus fluid's own audio driver, parses a Standard
- * MIDI File into a time-ordered event list, and plays it from its own sequencer thread.
- * A looping song jumps back to its "loopStart" marker with channel state carried over the
- * seam, exactly like win_native_midi does for the OS synth.
- */
+/* FluidSynth player implementation. See fluid_music.h. */
 #include "fluid_music.h"
 
 #ifdef WITH_MIDI
@@ -68,8 +60,7 @@ static float  g_last_gain = -1.0f;       // last gain pushed to the synth (avoid
 // set this from its finished hook; we set it when the sequencer wraps.
 extern bool songlooped;
 
-// --- FluidSynth output helpers (called from the sequencer thread, or from the main
-//     thread while the sequencer thread is stopped/joined) ---------------------
+// Called from the sequencer thread, or while that thread is stopped.
 
 // Push the current master volume (scaled by any active fade) to the synth's gain.
 static void fm_apply_gain(void)
@@ -133,7 +124,7 @@ static void fm_send_event(const FmEvent *e)
 // Restart at the loop target (the loopStart marker, or the top if none): reset to a clean synth
 // and re-establish the exact channel state the song had there. Replaying every state event before
 // the target (in order, notes skipped) makes each loop begin identically, like OPL's register
-// state. notes.md §Audio / MIDI.
+// state.
 static void fm_restore_loop_state(void)
 {
 	fm_all_notes_off();
@@ -148,7 +139,7 @@ static void fm_restore_loop_state(void)
 	}
 }
 
-// --- Sequencer thread ------------------------------------------------------
+// Sequencer thread.
 
 static int SDLCALL fm_thread(void *userdata)
 {
@@ -243,7 +234,7 @@ static int SDLCALL fm_thread(void *userdata)
 	return 0;
 }
 
-// --- Standard MIDI File parsing (mirrors win_native_midi.c's parser) --------
+// Standard MIDI File parser, mirrored in win_native_midi.c.
 
 // Growable scratch event list (absolute ticks) before the tempo map is applied.
 typedef struct
@@ -506,7 +497,7 @@ oom:  // shared bail-out: sx is still owned here (ownership moves to g_sysex fur
 
 #undef GROW_OR_FAIL
 
-// --- Public API ------------------------------------------------------------
+// Public API.
 
 bool fm_init(const char *soundfont, int sample_rate)
 {

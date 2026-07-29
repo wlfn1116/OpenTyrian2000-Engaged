@@ -1,22 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Crash / diagnostic logger. Writes a rich, (symbolised, if the .pdb is present)
- * report to opentyrian_log.log next to the executable whenever the game dies hard,
- * so hard-to-reproduce failures can be pinned to an exact function / file:line.
- * The report carries a timestamp, build version, the decoded fault (exception name,
- * read/write address), a register dump, the call stack, and the loaded-module map.
- *
- * install_crash_handler() covers unhandled structured exceptions (access violation,
- * divide-by-zero, ...) plus CRT-level fatals that raise no exception: abort()/failed
- * asserts, invalid-parameter, and pure-call. Call it once, early in startup.
- * Windows only; a no-op elsewhere.
- *
- * Every report also carries a game-state snapshot (mode, difficulty, both players'
- * loadout, custom-weapon / endless-run state, active cheats, and how full each on-screen
- * object pool is) so a bare stack trace becomes a reproducible scenario -- see
- * crashlog_write_game_state() in crashlog_state.c.
- */
+/* Windows crash, fatal-error, and hang reporting. Other platforms use no-op stubs. */
 #ifndef CRASHLOG_H
 #define CRASHLOG_H
 
@@ -24,13 +6,8 @@
 
 void install_crash_handler(void);
 
-// Write a full crash report for a "clean" fatal that raises no exception -- the paths that call
-// exit()/_Exit() directly (fread_die on a short read, a failed data-file open, a bad save
-// checksum, JE_tyrianHalt on an error code). Without this those deaths bypass every handler
-// installed by install_crash_handler() and leave NO opentyrian_log.log at all. Captures the
-// current thread's context + stack + game state, same as the exception paths. Does NOT terminate:
-// the caller keeps its own exit(). Re-entry-guarded and a no-op if a report was already written
-// for this fault. `detail` may be NULL. Windows only; a no-op elsewhere.
+// Report a fatal path that exits without raising an exception.
+// Does not terminate; `detail` may be NULL. No-op outside Windows.
 void crashlog_report_fatal(const char *event, const char *detail);
 
 // Write a report for a RECOVERED problem -- something that would have crashed but was caught and
@@ -60,13 +37,7 @@ const char *crashlog_get_phase(void);
 void watchdog_init(void);
 void watchdog_heartbeat(void);
 
-// The watchdog's stall threshold in seconds: how long the main thread must make NO progress
-// before a HANG report is written. Adjustable at runtime (debug menu) and persisted in config, so
-// you can lower it toward the minimum to catch a brief freeze -- but note that while it's low, a
-// legitimate multi-second main-thread block (level load on a slow disk, dragging/resizing the
-// window) can log a false hang, overwriting whatever was in opentyrian_log.log. Default 5s. The
-// value lives in crashlog_state.c so it exists on every platform, even though only the Windows
-// watchdog reads it.
+// Main-thread stall threshold in seconds. Low values can report slow loads as hangs.
 #define CRASHLOG_HANG_TIMEOUT_MIN     1     // 1s granularity floor (the watchdog polls every ~1s)
 #define CRASHLOG_HANG_TIMEOUT_MAX     9999  // matches the 4-digit debug-menu input field; ~2.7h = "off"
 #define CRASHLOG_HANG_TIMEOUT_DEFAULT 5

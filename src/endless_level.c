@@ -1,43 +1,30 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: picking the shipped level behind each zone, its music and its reroll.
- *
- * One of the endless_*.c files that make up endless mode: endless.h is the public
- * interface, endless_internal.h the state and helpers the group shares.
- */
+/* Endless base-level selection, music, and per-zone setup. */
 
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"        // difficultyLevel, DIFFICULTY_*, player-independent globals
-#include "custom_weapon.h" // customWeaponPort / customSidekickSlot (reserved shop slots)
-#include "episodes.h"      // item arrays + SHIP_NUM/PORT_NUM/... counts, episodeAvail, JE_initEpisode
-#include "game_menu.h"     // JE_itemScreen, JE_getLevelSections
-#include "joystick.h"      // push_joysticks_as_keyboard
-#include "loudness.h"      // fade_song
-#include "lvlmast.h"       // shapeFile[]
-#include "mtrand.h"        // mt_rand (campaign-mods per-level re-roll)
-#include "player.h"        // player[]
-#include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
-#include "tyrian2.h"       // itemAvail, itemAvailMax
-#include "varz.h"          // eventRec, maxEvent, map* globals
+#include "config.h"
+#include "custom_weapon.h"
+#include "episodes.h"
+#include "game_menu.h"
+#include "joystick.h"
+#include "loudness.h"
+#include "lvlmast.h"
+#include "mtrand.h"
+#include "player.h"
+#include "sprite.h"
+#include "tyrian2.h"
+#include "varz.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// The track the last-played zone actually used, and the run depth it was picked for. Remembering
-// the REAL song (rather than re-deriving an approximation of it from the previous zone's stream)
-// is what makes the never-two-in-a-row guarantee exact; both ride the save so a resumed run still
-// knows what it just heard. See endlessPickLevelMusic.
-JE_byte endlessLastSong      = 0;   // 0 = nothing played yet this run
-int     endlessLastSongDepth = -1;  // -1 = none
+// Saved for exact music anti-repeat behavior after a resume.
+JE_byte endlessLastSong      = 0;
+int     endlessLastSongDepth = -1;
 
-// Base (shipped) level each zone is built on, captured in endlessRegenerateLevel just before it
-// renames levelName to "ZONE n" (levelName still holds the level's authored name there). When a
-// new zone starts, the current base rolls down into "previous". Read only by the crash logger
-// (endless base-level accessors below); both are reset per run in endlessResetRun.
+// Current and previous shipped levels, exposed to the crash log.
 char endlessBaseName[11]     = "";
 int  endlessBaseEp           = 0;
 int  endlessBaseLvl          = 0;
@@ -45,16 +32,12 @@ char endlessPrevBaseName[11] = "";
 int  endlessPrevBaseEp       = 0;
 int  endlessPrevBaseLvl      = 0;
 
-// Recently-played base levels (anti-repeat): a small ring keyed by (episode, section), [0] = the
-// zone just played. The next zone's picker avoids the whole window, so a base level can't recur
-// until ENDLESS_LEVEL_HISTORY others have played (the window relaxes when too few safe levels
-// exist). Recorded in endlessRegenerateLevel, reset in endlessResetRun, saved (v6), crash-logged.
+// Recent base levels, newest first, used to avoid repeats.
 int     endlessRecentEp[ENDLESS_LEVEL_HISTORY];
 JE_byte endlessRecentSec[ENDLESS_LEVEL_HISTORY];
-int     endlessRecentCount;  // valid entries, 0..ENDLESS_LEVEL_HISTORY
+int     endlessRecentCount;
 
-// Push (ep, sec) as the newest recently-played level. A repeat of the current newest (e.g. a locked-
-// sortie relaunch reloading the same committed level) is ignored so it can't crowd the window.
+// Do not add the same level twice during a locked-sortie relaunch.
 static void endlessRecordRecentLevel(int ep, int sec)
 {
 	if (endlessRecentCount > 0 && endlessRecentEp[0] == ep && endlessRecentSec[0] == (JE_byte)sec)
@@ -70,7 +53,7 @@ static void endlessRecordRecentLevel(int ep, int sec)
 		++endlessRecentCount;
 }
 
-// Is (ep, sec) among the newest `window` recently-played levels? window is clamped to what's tracked.
+// Search the newest `window` entries.
 static bool endlessLevelInRecent(int ep, JE_byte sec, int window)
 {
 	if (window > endlessRecentCount)
@@ -83,11 +66,7 @@ static bool endlessLevelInRecent(int ep, JE_byte sec, int window)
 
 void endlessPreloadBanks(void)
 {
-	// Apply the level's first enemy-sprite-bank load (event type 5) immediately, so the starting
-	// banks are resident before anything spawns. The engine zeroes the bank slots at level start
-	// and schedules this load on the event timeline; applying it up front is a harmless safety net
-	// (it loads exactly the level's own first banks) so the earliest enemies render. Later event-5s
-	// still fire as normal.
+	// Load the initial enemy sprite banks before the first spawn.
 	for (int i = 0; i < maxEvent; ++i)
 	{
 		if (eventRec[i].eventtype != 5)
@@ -106,18 +85,14 @@ void endlessPreloadBanks(void)
 				enemySpriteSheetIds[s] = (Uint8)b;
 			}
 		}
-		break;  // only the initial bank set
+		break;
 	}
 }
 
-// Random endless-safe (ep, section, file) from any installed episode, avoiding the recently-played
-// levels; the file distinguishes the two Ep1-section-3 TYRIAN cuts. fileOut may be NULL.
+// Pick an Endless-safe level from any installed episode.
 bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
 {
-	// Build the full cross-episode pool once (each JE_getLevelSections parses a levels%d.dat off
-	// disk), then sample it in memory -- so the recent-play rejection below can retry for free
-	// instead of re-reading files. Sampling is uniform per LEVEL (not per episode as the old two-
-	// step pick was), which spreads variety more evenly across the differently-sized episodes.
+	// Build the cross-episode pool once, then sample uniformly by level.
 	struct { int ep; JE_byte sec, file; } pool[EPISODE_MAX * 64];
 	int npool = 0;
 	for (int e = 1; e <= EPISODE_MAX && npool < (int)COUNTOF(pool); ++e)
@@ -137,9 +112,7 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
 	if (npool == 0)
 		return false;
 
-	// Prefer a level outside the whole recent-play window; if too few levels exist to honour it,
-	// relax the window one step at a time (window 0 excludes nothing, so this always terminates
-	// with a pick -- a repeat a few zones early beats failing to choose a level at all).
+	// Relax the recent-history window when the safe pool is too small.
 	for (int window = endlessRecentCount; window >= 0; --window)
 	{
 		for (int attempt = 0; attempt < npool * 4 + 8; ++attempt)
@@ -159,9 +132,7 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
 
 JE_byte endlessPickNextLevel(void)
 {
-	// Fallback single-level picker (used if the branching choice can't build candidates).
-	// Picks a random endless-safe level from any installed episode, switching episode data
-	// if needed (the weapon arsenal is shared, so the loadout is unaffected).
+	// Fallback when course generation cannot build candidates.
 	int ep;
 	JE_byte sec, file;
 	if (!endlessRandomSafeLevel(&ep, &sec, &file))
@@ -172,13 +143,11 @@ JE_byte endlessPickNextLevel(void)
 
 	if (ep != episodeNum)
 		JE_initEpisode(ep);
-	forcedLvlFileNum = file;  // load this ']L''s file, not just the section's first (see JE_loadMap)
+	forcedLvlFileNum = file;
 	return sec;
 }
 
-// --- Per-level random music ------------------------------------------------------
-// Endless plays a random track each level (1-based song numbers into musicTitle[]), avoiding
-// an immediate repeat between zones. The non-level jingles and a few misfits are left out:
+// Level music excludes jingles and avoids immediate repeats.
 static const JE_byte endlessLevelSongs[] = {  // omits shop #3, level-end #10, game-over #11, high-score #34, MusicMan #19, ZANAC3 #31, BEER #41
 	1, 2, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 35, 36, 37, 38, 39, 40,
 };
@@ -187,60 +156,47 @@ static void endlessPickLevelMusic(void)
 {
 	const int zone = endlessRunDepth + 1;
 
-	// Re-entering the SAME zone -- a Quit Level retry, a locked relaunch, or a reload that drops
-	// back into it -- keeps the track it already had, even if the player picked a different course.
-	// The music belongs to the zone, not to the level, and a retry must never reshuffle it.
+	// Retrying a zone keeps its existing track.
 	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth)
 	{
 		levelSong = endlessLastSong;
 		return;
 	}
 
-	// Otherwise: deterministic per (seed, zone). Start from the previous zone's stream, taking its
-	// FIRST draw -- only an APPROXIMATION of what that zone actually played (it may have re-rolled),
-	// but it's the fallback for the cases where the exact value below isn't available: a pre-v10
-	// save, or a debug zone jump that skipped the intervening zones.
+	// Reconstruct a fallback previous track for old saves and debug jumps.
 	JE_byte prev = 0;
 	if (endlessRunDepth > 0)
 	{
 		endlessReseed((Uint64)(endlessRunDepth - 1) * 2 + 1);
 		prev = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
-		endlessReseed((Uint64)endlessRunDepth * 2 + 1);  // re-prime this zone's stream
+		endlessReseed((Uint64)endlessRunDepth * 2 + 1);
 	}
 
-	// A MILESTONE zone is pinned to its class's theme. The rolls below still run, so the seeded
-	// stream stays aligned with an ordinary zone.
+	// Milestones use pinned tracks without changing RNG draw order.
 	const JE_byte pinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone));
 
-	// No track may play two zones running. Three sources for "what must this zone avoid", layered
-	// least- to most-authoritative: the approximation above; a milestone predecessor's pinned theme
-	// (RNG-free, so exact); and finally the song the previous zone REALLY played, remembered from
-	// when it started (exact whenever the run walked into this zone normally). The successor's
-	// pinned theme is likewise exact, so a milestone is never announced by its own track either.
+	// Prefer exact saved or pinned tracks over the reconstructed fallback.
 	const JE_byte prevPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone - 1));
 	if (prevPinned != 0)
 		prev = prevPinned;
 	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth - 1)
 		prev = endlessLastSong;
 	const JE_byte nextPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone + 1));
-	// When the NEXT zone is a milestone, the outpost between here and there plays the warning track
-	// (endlessBetweenLevels). Keep this zone off it too, or the level would run straight into its own
-	// music in the shop and the warning would read as "nothing changed".
+	// Avoid the next milestone's outpost warning track.
 	const JE_byte nextShop = (nextPinned != 0) ? (JE_byte)ENDLESS_MILESTONE_SHOP_SONG_LVL : 0;
 
 	JE_byte s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
 	for (int guard = 0; guard < 6 && (s == prev || s == nextPinned || s == nextShop); ++guard)
 		s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
 
-	levelSong = (pinned != 0) ? pinned : s;  // the level-start play_song(levelSong - 1) uses this
+	levelSong = (pinned != 0) ? pinned : s;
 
-	// Remember it for the next zone's anti-repeat (and for a retry of this one).
+	// Save it for retries and the next zone.
 	endlessLastSong      = levelSong;
 	endlessLastSongDepth = endlessRunDepth;
 }
 
-// True while the zone being played is a milestone (either class). The level script's own music
-// events are ignored there (tyrian2.c events 34/35), so nothing can unseat the pinned theme.
+// Level-script music events are ignored during milestones.
 bool endlessMilestoneZone(void)
 {
 	return endlessMode && endlessMilestoneKind() != 0;
@@ -251,8 +207,7 @@ static bool endlessLightCone = false;
 
 bool endlessLightConeActive(void) { return endlessLightCone; }
 
-// Base (shipped) level accessors for the crash logger. "Base" = the current ZONE's underlying
-// authored level; "Prev" = the one the previous zone was built on ("" name until the 2nd zone).
+// Bounds-safe base-level accessors for crash reporting.
 const char *endlessBaseLevelName(void)     { return endlessBaseName; }
 int         endlessBaseLevelEpisode(void)  { return endlessBaseEp; }
 int         endlessBaseLevelSection(void)  { return endlessBaseLvl; }
@@ -260,22 +215,16 @@ const char *endlessPrevLevelName(void)     { return endlessPrevBaseName; }
 int         endlessPrevLevelEpisode(void)  { return endlessPrevBaseEp; }
 int         endlessPrevLevelSection(void)  { return endlessPrevBaseLvl; }
 
-// Anti-repeat recent-level ring, newest first (i = 0). Bounds-checked so the crash logger can walk
-// it without trusting the count. Out-of-range indices read as 0.
+// Bounds-safe recent-level accessors for crash reporting.
 int endlessRecentLevelCount(void)          { return endlessRecentCount; }
 int endlessRecentLevelEpisode(int i)       { return (i >= 0 && i < endlessRecentCount) ? endlessRecentEp[i]  : 0; }
 int endlessRecentLevelSection(int i)       { return (i >= 0 && i < endlessRecentCount) ? endlessRecentSec[i] : 0; }
 
 void endlessRegenerateLevel(void)
 {
-	// Endless plays the shipped level exactly as authored -- its enemies, their
-	// placement, spawn timing, and terrain are all left untouched. This hook only fixes
-	// up the bits of per-level state that a random level jump would otherwise leave in a
-	// state that crashes (or misbehaves in) a plain single-player run.
+	// Keep authored level content intact; only repair state required by random jumps.
 
-	// Remember the shipped level this zone is built on before we overwrite levelName below --
-	// JE_loadMap (which ran just before this) left the level's authored name in levelName. Roll
-	// the current base down to "previous" first. Surfaced only in the crash log.
+	// Capture the authored level name before replacing it with the zone label.
 	memcpy(endlessPrevBaseName, endlessBaseName, sizeof(endlessPrevBaseName));
 	endlessPrevBaseEp  = endlessBaseEp;
 	endlessPrevBaseLvl = endlessBaseLvl;
@@ -283,63 +232,47 @@ void endlessRegenerateLevel(void)
 	endlessBaseEp  = episodeNum;
 	endlessBaseLvl = mainLevel;
 
-	// Log this zone's base level into the anti-repeat ring so the next course/level pick avoids it
-	// (and the few before it). This is the single point every zone load passes through, so it also
-	// covers the first zone, the debug jump, and the locked-sortie relaunch (a same-level reload is
-	// ignored by endlessRecordRecentLevel).
+	// Add the base level to the anti-repeat history.
 	endlessRecordRecentLevel(episodeNum, mainLevel);
 
-	// Show the run zone on the HUD instead of the underlying level's name. And endless
-	// has no datacubes -- a randomly-picked level's cube data can crash on collect.
+	// Endless has no datacubes; random level cube data is unsafe.
 	snprintf(levelName, sizeof(levelName), "ZONE %d", endlessRunDepth + 1);
 	cubeMax = 0;
 	lastCubeMax = 0;
 
-	// Pin the planet-map hub to one safe planet (see endlessBetweenLevels for why).
+	// Pin the planet-map hub to one safe planet.
 	mapOrigin = 1;
 	mapPNum = 1;
 	mapPlanet[0] = 1;
 	mapSection[0] = mainLevel;
 
-	// A randomly-jumped level may carry special-mode flags (Galaga 2-player, bonus,
-	// extra-game) whose machinery doesn't fit a 1-player endless run and can crash.
+	// Clear special-mode flags that are unsafe after a random jump.
 	galagaMode = false;
 	extraGame = false;
 	bonusLevelCurrent = false;
 	normalBonusLevelCurrent = false;
 
-	// Fresh elite decisions and per-zone timers (shared with the campaign-mods path below).
+	// Reset per-zone effects.
 	endlessResetZoneEffects();
 
-	// A resumed outpost snapshot is consumed by the shop; once a level actually starts, make
-	// sure no stale resume flag can leak into a LATER outpost (e.g. an in-shop load).
+	// The shop consumes resume snapshots before a level starts.
 	endlessResumeVisit = false;
 
-	// Re-derive the seeded stream for this zone's level-start draws (music), keyed by depth so it
-	// stays fixed for a seed regardless of what the player did at the outpost (gamble/reroll/buys).
+	// Reseed the level-start phase by depth.
 	endlessReseed((Uint64)endlessRunDepth * 2 + 1);
 
-	// Random level-appropriate music each level (overrides the shipped level's own track).
 	endlessPickLevelMusic();
 
-	// Roll this zone's light cone (spotlight): a seeded 1-in-10 chance in its own reseed phase,
-	// fixed per (seed, depth) without shifting the existing music/course/shop draws.
+	// The light cone has its own per-zone phase.
 	endlessReseed((Uint64)endlessRunDepth * 2 + 0x40000000);
 	endlessLightCone = (endlessRand() % 10 == 0);
 
-	// Roll this sector's gravity-well heading: omnidirectional wells pick a fixed random heading for
-	// the whole sector, plain ones point down. Own reseed phase (keyed by depth) so it stays fixed
-	// per (seed, zone) without shifting the draws above. 0x60000000, NOT 0x50000000 -- that phase
-	// belongs to the elite stream, and a shared salt correlates two separate streams' first draws.
+	// Gravity has a separate phase; 0x50000000 belongs to elite rolls.
 	endlessReseed((Uint64)endlessRunDepth * 2 + 0x60000000);
 	endlessRollGravityDir();
 }
 
-// --- Per-level EFFECT reset (shared by endless and the debug campaign-mods path) ---------------
-// Everything the effect layer owns per level: the elite tier decisions (keyed by linknum, which is
-// reused across levels), the three zone timers, the two gameplay-only perk timers, and the kill-fire
-// combo. Anything that ticks only during gameplay must be listed here or it silently pauses across
-// the outpost. Deliberately RNG-free, so endlessRegenerateLevel keeps its seeded phase order.
+// Reset all per-level effect state without consuming RNG.
 void endlessResetZoneEffects(void)
 {
 	endlessResetElites();
@@ -353,11 +286,7 @@ void endlessResetZoneEffects(void)
 	endlessComboKills = 0;
 }
 
-// Level start for a NORMAL campaign/arcade game running the effect layer under Debug Mode: the
-// effect half of endlessRegenerateLevel and nothing else, since its structural fixups exist to make
-// a RANDOM level jump safe and a campaign level wants none of them. The two RNG draws come off the
-// gameplay stream, not the seeded structural one -- a campaign has no zone counter to key a phase
-// off, so reusing the endless phases would hand every level the same elite pattern and heading.
+// Campaign debug effects use gameplay RNG because campaigns have no zone phase.
 void endlessCampaignLevelStart(void)
 {
 	if (!endlessCampaignMods || endlessMode)
@@ -369,11 +298,7 @@ void endlessCampaignLevelStart(void)
 	endlessRollGravityDir();
 }
 
-// The debug screen can change the mod set MID-LEVEL, but a little of what the mods imply is decided
-// once per sector rather than read per frame -- currently just the gravity well's heading, which an
-// omnidirectional well picks at level start. Without this, switching one on mid-level leaves it
-// pulling straight down until the next level. Enemies already on screen deliberately keep the elite
-// tier they spawned with; that is a property of the enemy, not of the sector.
+// Refresh derived sector state after debug modifiers change mid-level.
 void endlessRefreshModDerivedState(void)
 {
 	endlessRollGravityDir();

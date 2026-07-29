@@ -1,11 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * win_native_midi -- see win_native_midi.h. A deadlock-free replacement for SDL
- * Mixer X's Win32 native-MIDI backend: parses a Standard MIDI File into a single
- * time-ordered event list and plays it from our own thread with midiOutShortMsg,
- * using CALLBACK_NULL (no winmm callback thread, so a stop never waits on one).
- */
+/* Win32 native MIDI player implementation. See win_native_midi.h. */
 #include "win_native_midi.h"
 
 #ifdef _WIN32
@@ -53,8 +46,7 @@ static Uint8  g_chan_vol[16];   // last song-set channel volume (CC7), pre-scali
 static double g_fade_scale = 1.0;  // thread-only: 1.0 normally, ramps to 0 on fade
 static bool   g_period_set = false;
 
-// --- MIDI output helpers (all called only from the player thread, or from the
-//     main thread while the player thread is stopped/joined) ----------------
+// Called from the player thread, or while that thread is stopped.
 
 static void send_short(Uint8 status, Uint8 d1, Uint8 d2)
 {
@@ -137,7 +129,7 @@ static void send_event(const WnmEvent *e)
 
 // Restart at the loop target with the exact channel state the song had there. Reset every channel,
 // then replay each state event before the target (in order, notes skipped) so every loop begins
-// identically, like OPL. notes.md §Audio / MIDI.
+// identically, like OPL.
 static void restore_loop_state(void)
 {
 	all_notes_off();
@@ -154,7 +146,7 @@ static void restore_loop_state(void)
 	}
 }
 
-// --- Player thread ---------------------------------------------------------
+// Player thread.
 
 static int SDLCALL wnm_thread(void *userdata)
 {
@@ -254,7 +246,7 @@ static int SDLCALL wnm_thread(void *userdata)
 	return 0;
 }
 
-// --- Standard MIDI File parsing -------------------------------------------
+// Standard MIDI File parser.
 
 // Growable scratch event list (absolute ticks) before the tempo map is applied.
 typedef struct
@@ -519,7 +511,7 @@ oom:  // shared bail-out: sx is still owned here (ownership moves to g_sysex fur
 
 #undef GROW_OR_FAIL
 
-// --- Public API ------------------------------------------------------------
+// Public API.
 
 bool wnm_init(void)
 {

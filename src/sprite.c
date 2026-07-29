@@ -585,17 +585,7 @@ void free_sprite2s(Sprite2_array *sprite2s)
 	sprite2s->size = 0;
 }
 
-/* Is `index` a sprite this sheet actually contains?
- *
- * A Sprite2_array is one raw blob: a Uint16 offset table, then the packed sprites. Every blit below
- * reads offsets[index - 1] and walks from there to a 0x0f terminator with no bounds check, so an
- * index the sheet doesn't have follows a junk offset into arbitrary memory and paints whatever it
- * finds -- which is what a bad item id looks like on screen ("distorted graphics", not a missing
- * sprite). Indices come from game data, so one bad id should cost a sprite, not the frame.
- *
- * Makes NO assumption about the sprite count: it only requires that the table read and the offset
- * it yields both land inside the blob, which contains a wild index without rejecting a valid one.
- */
+/* Validate both the 1-based offset-table read and the resulting blob offset. */
 static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int index)
 {
 	if (sprite2s.data == NULL || index < 1)
@@ -1082,7 +1072,7 @@ void blit_sprite2x2_filter_clip(SDL_Surface *surface, int x, int y, Sprite2_arra
 	blit_sprite2_filter_clip(surface, x + 12, y + 14, sprite2s, index + 20, filter);
 }
 
-// --- Supersampled blit variants (render-list replay only; see sprite.h) ---
+// Supersampled blits used by render-list replay.
 
 // Draw one source pixel as a scale x scale block, clipped on all edges.
 static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Uint8 d, Blit2Op op, Uint8 filter)

@@ -1,24 +1,6 @@
 /*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Crash-log game-state dump (declared in crashlog.h; called from crashlog.c).
- *
- * Appends a human-readable snapshot of the live game state to an already-open crash
- * report: the mode/difficulty/episode being played, both players' full loadout (ship,
- * generator, shield, weapons, sidekicks, special, cash, armor, ...), the custom-weapon
- * and endless-run state, active cheats/debug toggles, and how full every on-screen
- * object pool is (enemies, player shots, enemy shots, explosions, sparks). That context
- * turns an otherwise anonymous stack trace into a reproducible scenario.
- *
- * Kept in its own translation unit, free of <windows.h>, so it can pull in the game headers
- * without a macro clash with the Win32 API that crashlog.c needs (windows.h's
- * PlaySound/DrawText/min/max). Portable C; only ever called from the Windows fault paths.
- *
- * Fault-tolerance: this runs inside a crash handler, on a process that may already be corrupt,
- * so it only reads fixed statically-allocated globals (always mapped, so scanning them can't
- * fault), bounds-checks every item-table lookup, and follows no untrusted pointer (in
- * particular never Player::lives). Add nothing here that allocates, locks, or chases a pointer
- * of unknown validity.
+ * Crash-handler state snapshot. Keep this file free of windows.h and avoid
+ * allocation, locks, and untrusted pointers.
  */
 #include "config.h"
 #include "crashlog.h"
@@ -41,14 +23,14 @@
 // Declared locally (matches network.h) to avoid pulling SDL_net into this TU for one flag.
 extern bool isNetworkGame;
 
-// --- "Current phase" breadcrumb (see crashlog.h) ---------------------------------------------
+// Current-phase breadcrumb.
 // Game code sets this at coarse phase boundaries; the crash report prints it. Plain pointer
 // store/read, `volatile` so a fault handler on another thread observes the latest value.
 static const char *volatile g_phase = "startup";
 void crashlog_set_phase(const char *phase) { if (phase != NULL) g_phase = phase; }
 const char *crashlog_get_phase(void) { return g_phase; }
 
-// --- Hang-watchdog stall threshold (see crashlog.h) ------------------------------------------
+// Hang-watchdog threshold.
 // Lives here (portable TU) so the debug menu and config can read/write it on any platform; only
 // the Windows watchdog thread (crashlog.c) actually consumes it, re-reading it every second.
 static int g_hangTimeout = CRASHLOG_HANG_TIMEOUT_DEFAULT;
@@ -60,9 +42,9 @@ void crashlog_set_hang_timeout(int seconds)
 }
 int crashlog_get_hang_timeout(void) { return g_hangTimeout; }
 
-// --- Safe item-name lookups ------------------------------------------------------------------
+// Safe item-name lookups.
 // Item tables are empty until JE_loadItemDat() and ids can be garbage, so each helper name-checks
-// range + slot, else "?". trim_name() uses a rotating static buffer so one fprintf can hold several. notes.md §Crash logging.
+// range + slot, else "?". trim_name() uses a rotating buffer for multi-name fprintf calls.
 static const char *trim_name(const char *s)
 {
 	static char buf[4][32];
@@ -86,7 +68,7 @@ static const char *shield_name (int id) { return trim_name((id >= 0 && id <= SHI
 static const char *option_name (int id) { return trim_name((id >= 0 && id <= OPTION_NUM  && options[id].name[0])    ? options[id].name    : "?"); }
 static const char *special_name(int id) { return trim_name((id >= 0 && id <= SPECIAL_NUM && special[id].name[0])    ? special[id].name    : "?"); }
 
-// --- On-screen object-pool census ------------------------------------------------------------
+// On-screen object-pool census.
 // "In use" tests mirror JE_drawDebugOverlays (mainint.c): an enemy slot is active when
 // enemyAvail != 1 (== 0 is a shootable enemy; == 2 a non-shootable one), a player shot when
 // shotAvail != 0, an enemy shot when enemyShotAvail == 0, and an explosion/spark by its ttl/z.
@@ -245,7 +227,7 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "Game state\n");
 	fprintf(f, "================================================================\n");
 
-	// --- Mode / difficulty / where we are ---
+	// Mode and difficulty.
 	fprintf(f, "Mode:          %s%s   (loaded=%s)\n",
 	        mode_label(), extraGame ? " +extra" : "", gameLoaded ? "yes" : "no");
 	fprintf(f, "Mode flags:    2P=%d linked=%d 1PAction=%d galaga=%d timedBattle=%d superTyrian=%d endless=%d superArcade=%d\n",
@@ -255,7 +237,7 @@ void crashlog_write_game_state(FILE *f)
 	        (int)difficultyLevel, (int)initialDifficulty, expertMode ? "   EXPERT MODE" : "");
 	fprintf(f, "Episode:       %d (initial %d)\n", (int)episodeNum, (int)initial_episode_num);
 
-	// --- Level ---
+	// Level.
 	fprintf(f, "\nLevel:\n");
 	fprintf(f, "  Name:         '%.10s'\n", trim_name(levelName));
 	fprintf(f, "  mainLevel=%d nextLevel=%d saveLevel=%d  lvlFileNum=%d  song=%d\n",
@@ -269,7 +251,7 @@ void crashlog_write_game_state(FILE *f)
 	if (levelTimer)
 		fprintf(f, "  levelTimer countdown=%u\n", (unsigned)levelTimerCountdown);
 
-	// --- On-screen object pools (the "how many X were on screen" the report is really for) ---
+	// On-screen object pools.
 	PoolCensus c;
 	take_pool_census(&c);
 	fprintf(f, "\nOn-screen pools:\n");
@@ -280,12 +262,9 @@ void crashlog_write_game_state(FILE *f)
 	        c.explosions, MAX_EXPLOSIONS, c.repExplosions, MAX_REPEATING_EXPLOSIONS);
 	fprintf(f, "  Sparks:       %d live (cap %d)\n", c.sparks, MAX_SUPERPIXELS);
 
-	// --- Live enemies (diagnostic for map-stop softlocks: what is actually holding the scroll) ---
-	// Reads only the static enemy[] / enemyAvail[] arrays (always mapped); no pointer chase.
-	// "stuck-above" flags an enemy above the reach line and vertically frozen (the map-stop
-	// watchdog's test): ey<=-58, eyc<=0, eycc<=0, fixedmovey<=0. "orphaned" adds the watchdog's
-	// second gate -- no reachable member left in its linkgroup -- and is the state it actually
-	// culls; a stuck-above enemy WITHOUT it is a live boss fight's parked anchor, left alone.
+	// Live enemies, including map-stop blockers.
+	// Read only static enemy arrays. "stuck-above" matches the watchdog's position
+	// test; "orphaned" also lacks a reachable member and is safe to cull.
 	{
 		int shown = 0;
 		fprintf(f, "\nLive enemies (idx: ex,ey exc,eyc excc,eycc link armor type edmg):\n");
@@ -315,11 +294,11 @@ void crashlog_write_game_state(FILE *f)
 			fprintf(f, "  (none)\n");
 	}
 
-	// --- Players / loadout ---
+	// Players and loadout.
 	for (int p = 0; p < (twoPlayerMode ? 2 : 1); ++p)
 		write_player(f, p);
 
-	// --- Custom weapons ---
+	// Custom weapons.
 	fprintf(f, "\nCustom weapons: %s\n", customWeaponEnabled ? "ENABLED" : "disabled");
 	if (customWeaponEnabled)
 	{
@@ -330,7 +309,7 @@ void crashlog_write_game_state(FILE *f)
 		        customWeaponLibCount, customWeaponCurrentSlot);
 	}
 
-	// --- Endless run ---
+	// Endless run.
 	if (endlessMode)
 	{
 		fprintf(f, "\nEndless run:\n");
@@ -359,7 +338,7 @@ void crashlog_write_game_state(FILE *f)
 		}
 	}
 
-	// --- Endless EFFECTS inside a normal game (debug) ---
+	// Endless effects in campaign debug mode.
 	// Without this a crash under campaign mods reads as a plain campaign crash, and the mod bits,
 	// perk stacks and pinned levers that actually caused it are invisible.
 	if (!endlessMode && endlessCampaignMods)
@@ -390,7 +369,7 @@ void crashlog_write_game_state(FILE *f)
 				        endlessScalingOverride[i].value, endlessScalingOverrideStock(i));
 	}
 
-	// --- Cheats / debug toggles (a crash that only reproduces with a cheat on is worth flagging) ---
+	// Cheats and debug toggles.
 	fprintf(f, "\nCheats / debug:\n");
 	fprintf(f, "  debug=%d youAreCheating=%d noclip=%d hitboxOverlay=%d perfOverlay=%d\n",
 	        debug, youAreCheating, (int)noclipMode, debugHitboxOverlay, debugPerfOverlay);
@@ -398,7 +377,7 @@ void crashlog_write_game_state(FILE *f)
 	        infiniteShot, cheatInfiniteArmor, cheatInfiniteShields, cheatInfiniteGenerator,
 	        cheatNoEnemyFire, cheatInstantCharge, cheatInfiniteSidekickAmmo);
 
-	// --- Video / render (this fork's interpolated + supersampled present path) ---
+	// Video and rendering.
 	fprintf(f, "\nVideo / render:\n");
 	fprintf(f, "  Logical size: %dx%d   %s   vsync=%d\n", vga_width, vga_height,
 	        fullscreen_display < 0 ? "windowed" : "fullscreen", output_vsync);
@@ -412,7 +391,7 @@ void crashlog_write_game_state(FILE *f)
 	        render_list_recording, rl_count(), (double)debug_interp_alpha);
 	fprintf(f, "  FPS:          %d (cap %d, show=%d)\n", current_fps, fps_cap, show_fps);
 
-	// --- Audio (SDL mixes on its OWN thread -- a fault there reads as unrelated to gameplay) ---
+	// Audio.
 	fprintf(f, "\nAudio:\n");
 	fprintf(f, "  Song:         %u %s\n", song_playing,
 	        (song_playing < MUSIC_NUM) ? musicTitle[song_playing] : "?");
@@ -431,13 +410,13 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, " %d", soundQueue[i]);
 	fprintf(f, "\n");
 
-	// --- Loaded enemy sprite banks (a missing/mismatched bank => bad blit / crash) ---
+	// Loaded enemy sprite banks.
 	fprintf(f, "\nEnemy sprite banks:\n");
 	for (int i = 0; i < 4; ++i)
 		fprintf(f, "  bank %d: id=%-3d %s\n", i, (int)enemySpriteSheetIds[i],
 		        enemySpriteSheets[i].data != NULL ? "loaded" : "EMPTY");
 
-	// --- Misc engine state ---
+	// Miscellaneous engine state.
 	fprintf(f, "\nMisc:\n");
 	fprintf(f, "  Generator power: %u (last %u, add %u)\n", power, lastPower, powerAdd);
 	fprintf(f, "  gameSpeed=%d fps_cap=%d netGame=%d\n", (int)gameSpeed, fps_cap, isNetworkGame);

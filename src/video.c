@@ -351,7 +351,6 @@ void reinit_fullscreen(int new_display)
 #if defined(__SWITCH__) || defined(__vita__)
 	// Consoles have one always-fullscreen display and the SDL driver owns the window size.
 	// Forcing FULLSCREEN_DESKTOP here pinned the Switch buffer to 1080p -- leave it untouched.
-	// notes.md §Console ports.
 	return;
 #endif
 
@@ -899,7 +898,7 @@ void present_hi(SDL_Surface *hi)
 // expose). The backbuffer goes stale on such a change, but the game may be parked in an
 // input-wait loop that won't redraw on its own, so it would "sit on the frame" until the next
 // keypress. Presents one 1x frame from the live VGAScreen; any in-game smooth/hi present loop
-// resumes on the next iteration. notes.md §Console ports.
+// resumes on the next iteration.
 void video_repaint(void)
 {
 	if (main_window_renderer == NULL)
@@ -982,7 +981,6 @@ static void blit_with_offset(SDL_Surface* src, SDL_Surface* dst, int x_offset)
 #ifndef __vita__
 	// The side gradient's nearest-palette-index rebuild (256-colour search per cell) reruns
 	// every menu-fade frame and dominates the Vita's slow CPU, so Vita draws plain black bars.
-	// notes.md §Console ports.
 	update_gradient_cache();
 #endif
 

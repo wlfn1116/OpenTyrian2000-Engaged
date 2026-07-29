@@ -42,7 +42,6 @@
 /*
  * PLAYFIELD_LEFT must equal composite_playfield()'s crop offset, and is
  * deliberately NOT derived from PLAYFIELD_X_SHIFT (an unrelated tile phase).
- * notes.md §Widescreen.
  */
 #define PLAYFIELD_LEFT   24
 #define PLAYFIELD_RIGHT  (PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 1)
@@ -79,7 +78,6 @@ extern ScalingMode scaling_mode;
 /*
  * Sub-pixel supersampling into an NxN buffer so motion lands on 1/N-pixel
  * positions.  0 = Auto (match the scaler), 1 = off, 2..8 = fixed factor.
- * notes.md §Supersampling & video.
  */
 #define RENDER_SUPERSAMPLE_MAX 8
 extern int render_supersample;
@@ -88,7 +86,6 @@ int effective_supersample(void);
 /*
  * How the supersampled frame fits a larger output: Sharp / Smooth / None.
  * Values persist in the config: keep Sharp=0/Smooth=1 and append.
- * notes.md §Supersampling & video.
  */
 enum
 {

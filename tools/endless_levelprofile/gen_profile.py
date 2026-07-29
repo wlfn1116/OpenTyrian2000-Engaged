@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-"""Generate src/endless_levelprofile.h from a Tyrian2000Atlas threat export.
+"""Generate src/endless_levelprofile.h from threat.csv.
 
-Pipeline (see README.md):
-  1. Tyrian2000Atlas.exe --exportthreat threat.csv <tyrian-data-dir>
-  2. python gen_profile.py            # reads threat.csv here, writes ../../src/endless_levelprofile.h
-
-Every shipped level is run through the atlas's GameSim at every difficulty (0..10); its
-LevelThreat.Difficulty01 (~1.0 = an ordinary campaign level) becomes TWO per-difficulty values,
-keyed by (episode, lvlFileNum):
-
-  baseDanger  : a small -2..+5 nudge folded into the course's danger GRADE/tier/sort. Coarse on
-                purpose -- it rides the letter-grade ladder (F..S+++), which only has ~10 rungs.
-  payoutMille : a fine-grained thousandths-of-base cash term folded into the course PAYOUT, so two
-                same-grade levels pay different amounts (the grade clumps; the cash should not).
-                Decoupled from baseDanger precisely so the payout can vary continuously.
+See README.md for the export command. Each level and difficulty produces a
+coarse danger-grade adjustment and a finer payout adjustment.
 """
 import csv, os, math
 
@@ -69,26 +58,14 @@ def crow(k):
             f"  // {L['name'][:10]:<10} d01 N={L['d01'][2]:.2f} I={L['d01'][4]:.2f}")
 
 hdr = '''/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: GENERATED per-level danger profiles. DO NOT EDIT BY HAND.
- *
- * Produced by tools/endless_levelprofile (Tyrian2000Atlas "--exportthreat" + gen_profile.py):
- * every shipped level run through the atlas's GameSim at every difficulty (0..10), its
- * LevelThreat.Difficulty01 (~1.0 = an ordinary campaign level) mapped to two per-difficulty terms:
- *   baseDanger  = clamp(round((Difficulty01 - %.1f) * %.1f), %d, %d)   -- coarse GRADE/tier/sort nudge
- *   payoutMille = clamp(round((Difficulty01 - %.1f) * %.0f), %d, %d)  -- fine PAYOUT term, thousandths of base
- * Keyed by (episode, lvlFileNum) -- lvlFileNum is endlessCourseFile / forcedLvlFileNum.
- * lengthClass: 0 short, 1 normal, 2 long (measured play length at Normal; boss-loops = long).
- *
- * Requires EndlessLevelProfile (endless_internal.h); include only from endless_mods.c.
- * Regenerate:  Tyrian2000Atlas.exe --exportthreat threat.csv <dataDir> && python gen_profile.py
+ * Generated level-danger profiles. Do not edit.
+ * Regenerate with tools/endless_levelprofile.
  */
 #pragma once
 
 // { ep, file, lengthClass, baseDanger[difficulty 0..10], payoutMille[difficulty 0..10] }
 static const EndlessLevelProfile endlessLevelProfiles[] = {
-''' % (ANCHOR, G_SCALE, G_LO, G_HI, ANCHOR, P_SCALE, P_LO, P_HI)
+'''
 
 text = hdr + "\n".join(crow(k) for k in sorted(levels)) + "\n};\n"
 open(OUT, "w", newline='\n').write(text)

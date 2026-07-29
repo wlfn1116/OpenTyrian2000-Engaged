@@ -1,14 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Sony PlayStation Vita (VitaSDK / arm-vita-eabi) platform glue.
- *
- * The whole implementation is compiled out unless __vita__ is defined (which the
- * VitaSDK gcc sets automatically), so this header and its translation unit are
- * inert on every other target and safe to leave in the shared source tree. This
- * mirrors switch_platform.h -- see console_platform.h for the neutral names the
- * shared game code actually calls.
- */
+/* Vita platform services. Inert unless __vita__ is defined. */
 #ifndef VITA_PLATFORM_H
 #define VITA_PLATFORM_H
 

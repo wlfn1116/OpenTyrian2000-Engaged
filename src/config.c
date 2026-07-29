@@ -333,7 +333,7 @@ bool load_opentyrian_config(void)
 	fullscreen_display = -1;
 #ifdef __vita__
 	// Vita's SGX GPU + A9 CPU can't afford a software-upscaled present every frame; present at
-	// native size and let the GPU scale to the 960x544 panel. notes.md §Console ports.
+	// native size and let the GPU scale to the 960x544 panel.
 	set_scaler_by_name("None");
 #else
 	set_scaler_by_name("4x");  // first-boot default: plain nearest-neighbour 4x (crisp pixels)

@@ -30,7 +30,7 @@
 #pragma comment(lib, "psapi.lib")
 
 // One log for every kind of hard failure (exception, hang, abort, CRT fatal), written next to
-// the executable; the previous session's log is rotated aside at startup. notes.md §Crash logging
+// the executable; the previous session's log is rotated aside at startup.
 #define LOG_FILENAME "opentyrian_log.log"
 
 // How many previous crash logs to keep alongside the live one (opentyrian_log.1.log ... .N.log).
@@ -48,7 +48,7 @@ static volatile LONG s_reporting = 0;
 static volatile LONG s_logOpened = 0;
 
 // Last fault the vectored handler reported; the backup filter skips exactly this (code, addr)
-// pair. Not a latch, only the most recent fault is held. notes.md §Crash logging
+// pair. Not a latch, only the most recent fault is held.
 static volatile DWORD s_reportedCode = 0;
 static volatile PVOID s_reportedAddr = NULL;
 
@@ -121,11 +121,8 @@ static void rotated_log_path(char *out, size_t outSize, int n)
 	log_path(out, outSize, name);
 }
 
-// Rotate the crash-log generations up one and discard the oldest (opentyrian_log.log -> .1.log,
-// .1 -> .2, ... up to LOG_ROTATE_KEEP), preserving the previous session's log. Called once at
-// startup before any handler is armed, so it never runs on a fault path. No-op when there is no
-// live log, so crash-free restarts don't shift an older real report off the end. Only the exe-dir
-// log is rotated (a read-only exe dir couldn't have been rotated anyway).
+// Rotate executable-directory logs at startup, before fault handlers are armed.
+// Missing live logs do not shift older reports.
 static void rotate_logs(void)
 {
 	char live[MAX_PATH + 32];
@@ -393,7 +390,7 @@ static void write_context_report(FILE *f, HANDLE thr, CONTEXT *ctx)
 	write_modules(f);
 }
 
-// --- Unhandled structured exception (access violation, div-by-zero, ...) ---------------------
+// Unhandled structured exceptions.
 
 // Codes that mean a genuine crash. The vectored handler reports on these; the game and SDL never
 // handle them first-chance, so it doesn't fire spuriously, and the writer doesn't latch, so a rare
@@ -460,7 +457,7 @@ static LONG WINAPI crash_veh(EXCEPTION_POINTERS *ep)
 // Top-level filter: backup for anything the vectored handler didn't report. On the same exception
 // its second-chance context often points at thread start, so re-writing would replace the good
 // trace with a useless 1-frame one; skip that exact (code, addr) pair, but still log a genuinely
-// different fault the vectored handler missed. notes.md §Crash logging
+// different fault the vectored handler missed.
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 {
 	const EXCEPTION_RECORD *er = ep->ExceptionRecord;
@@ -469,7 +466,7 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 	return EXCEPTION_EXECUTE_HANDLER;  // let the process terminate normally
 }
 
-// --- CRT-level fatal errors (abort()/assert, invalid parameter, pure call) -------------------
+// CRT-level fatal errors.
 // These terminate the process without raising an SEH exception, so crash_handler never sees
 // them. Each hook captures the current context and writes the same rich report, then exits.
 
@@ -574,11 +571,9 @@ void install_crash_handler(void)
 	_set_purecall_handler(on_purecall);
 }
 
-// --- Hang watchdog --------------------------------------------------------------------------
-// A hard hang raises no exception, so a background thread watches a heartbeat pumped from
-// service_SDL_events. If it stalls past crashlog_get_hang_timeout() (default 5s) the main
-// thread's stack is walked into the log and the thread resumed; a legitimate long pause costs
-// only a spurious log, never a kill. Re-arms on progress. notes.md §Crash logging
+// Hang watchdog.
+// A background thread logs the main thread's stack when the event heartbeat stalls.
+// It resumes the thread and rearms after progress; it never terminates the process.
 
 static volatile LONG s_heartbeat = 0;   // bumped by the main loop; frozen while it's stuck
 static HANDLE        s_mainThread = NULL;

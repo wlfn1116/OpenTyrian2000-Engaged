@@ -1,29 +1,22 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: the outpost -- shop stock, prices, the E-Shop buys and the gamble.
- *
- * One of the endless_*.c files that make up endless mode: endless.h is the public
- * interface, endless_internal.h the state and helpers the group shares.
- */
+/* Endless outpost stock, pricing, E-Shop purchases, and gambles. */
 
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"        // difficultyLevel, DIFFICULTY_*, player-independent globals
-#include "custom_weapon.h" // customWeaponPort / customSidekickSlot (reserved shop slots)
-#include "episodes.h"      // item arrays + SHIP_NUM/PORT_NUM/... counts, episodeAvail, JE_initEpisode
-#include "game_menu.h"     // JE_itemScreen, JE_getLevelSections
-#include "keyboard.h"      // newkey/lastkey_scan/keysactive, service_SDL_events
-#include "lvlmast.h"       // shapeFile[]
-#include "mainint.h"       // JE_getCost
-#include "musmast.h"       // songBuy, DEFAULT_SONG_BUY (shop / buy-sell music)
-#include "palette.h"       // colors, fade_palette, fade_black
-#include "player.h"        // player[]
-#include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
-#include "tyrian2.h"       // itemAvail, itemAvailMax
-#include "varz.h"          // eventRec, maxEvent, map* globals
-#include "video.h"         // VGAScreen/VGAScreen2, JE_showVGA, output_vsync
+#include "config.h"
+#include "custom_weapon.h"
+#include "episodes.h"
+#include "game_menu.h"
+#include "keyboard.h"
+#include "lvlmast.h"
+#include "mainint.h"
+#include "musmast.h"
+#include "palette.h"
+#include "player.h"
+#include "sprite.h"
+#include "tyrian2.h"
+#include "varz.h"
+#include "video.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,11 +38,7 @@ unsigned endlessPurchasedMods = 0;
 // Which kill-fire buff was bought this visit (mutually exclusive): 0 none, 1 Turbodrive,
 // 2 Overdrive.
 int endlessBuffKind = 0;
-// Per-kill DAMAGE stacks (the Overblast half, so they count for Overblast AND Overdrive): +1 per
-// kill while the buff window is up, capped at ENDLESS_OVERDRIVE_MAX_STACKS and worth
-// ENDLESS_OVERDRIVE_DMG_MAX% shot damage at the cap. The fire half is NOT stack-driven -- it rides
-// the combo ramp in endlessKillBuffFireDecrements. Reset to 0 the moment the kill-fire window
-// lapses (see endlessGameplayTick).
+// Overblast damage stacks rise per kill and reset when the kill-fire window closes.
 int endlessOverdriveStacks = 0;
 
 // Kill-fire buff recharge: the run depth at which the three E-Shop kill-fire buys unlock again
@@ -57,7 +46,7 @@ int endlessOverdriveStacks = 0;
 // can't wipe it. The lock length scales with depth; see endlessBuffCooldownLength.
 int endlessBuffCooldownUntil = 0;
 
-// --- Expanded E-Shop state -----------------------------------------------------------------------
+// E-Shop state.
 // Buff "charge" scales the kill-fire window/damage with the cash paid (normalized by depth,
 // cap 20). Reset each run.
 int endlessBuffCharge = 0;
@@ -153,11 +142,8 @@ void endlessHoistStartWeapon(void)
 	}
 }
 
-// The base level-clear reward, before per-modifier bonuses. It scales up with the run so the
-// payout stays a meaningful supplement against the depth-inflated shop prices (weapons run
-// ~5k-30k, upgrades far more); every modifier reward is a multiple of this. Capped so a very
-// deep run can't mint an absurd single payout. Shared: the perk buyout ("Take the Cash") prices
-// itself off this too, so it can never fall behind the economy it is competing with.
+// Base clear reward before modifier bonuses, shared with the perk buyout.
+// It scales with depth but is capped.
 long endlessClearBase(void)
 {
 	long base = 900 + (long)endlessRunDepth * 220;
@@ -197,7 +183,7 @@ static long endlessClearBonus(void)
 	return endlessClearBonusForEx(endlessActiveMods, endlessSortiePayoutMille());
 }
 
-// --- Shop stock -----------------------------------------------------------------
+// Shop stock.
 
 // Whether an item id is a real, buyable item in its category — filters out the
 // blank/placeholder slots and the reserved custom-weapon ("Test") ports.
@@ -311,7 +297,7 @@ static void endlessFillShop(void)
 		return;
 
 	// Seed each category with the player's LIVE equipped item (player[0].items), never the stale
-	// last_items, so a reroll keeps whatever is on the ship (notes.md §Save / resume).
+	// last_items, so a reroll keeps whatever is on the ship.
 	const PlayerItems *it = &player[0].items;
 
 	// Front and rear share one id pool: fill front first (holding back the equipped rear), then
@@ -329,12 +315,12 @@ static void endlessFillShop(void)
 	endlessFillCategory(8, 5, SHIELD_NUM, false, it->shield,                      NULL, 0);  // shields
 }
 
-// --- Outpost economy: reroll / hull upgrade -------------------------------------
+// Outpost economy.
 // These two actions REPLACE the Data Cubes and Ship Specs entries in JE_itemScreen's
 // own front menu when endlessMode is on (see game_menu.c), so the economy reuses the
 // in-game shop rather than a bespoke screen. Prices escalate per use, reset each visit.
 
-// --- Outpost price tuning ----------------------------------------------------------------
+// Price tuning.
 // Every per-visit price is `BASE + zone * PER_ZONE`, so the whole outpost inflates as the run
 // deepens; buying the same thing twice in one visit then escalates it again by the REBUY rule
 // next to each buy. Retune the outpost here.
@@ -403,11 +389,7 @@ long endlessOverdrivePrice(void)  { return endlessCashFraction(19, 20); }  // 95
 long endlessSpecialPrice(void)    { return endlessCashFraction(4, 5); }    // 80% -- a random special weapon
 int  endlessBuffKindBought(void)  { return endlessBuffKind; }
 
-// Kill-fire buff recharge. After any Turbodrive/Overblast/Overdrive buy, all three lock until the
-// run reaches endlessBuffCooldownUntil, so a cash-rich late run can't buy one every sector. The
-// lock length (in sectors) scales with depth: base 2, +1 for every full 20 zones past depth 50
-// (2 early, 3 by zone 70, 4 by zone 90, ...). Stored at purchase time as an absolute unlock depth,
-// so it can't drift as the run deepens.
+// Kill-fire purchases share a depth-scaled cooldown stored as an absolute unlock depth.
 #define ENDLESS_BUFF_COOLDOWN_BASE        2
 #define ENDLESS_BUFF_COOLDOWN_RAMP_START 50
 #define ENDLESS_BUFF_COOLDOWN_RAMP_STEP  20
@@ -460,14 +442,8 @@ bool endlessTryBuyOverblast(void)   // Overdrive's per-kill DAMAGE stacks only -
 // them into the next sector). Exposed so the debug level-select can fold them in too.
 unsigned endlessPendingMods(void) { return endlessPurchasedMods; }
 
-// Merge this visit's E-Shop / gamble mods into a charted sector's mod set. THE PURCHASE WINS.
-//
-// A sector carries at most one kill-fire mod (endless.h), and a plain OR would break that: nothing
-// downstream is written for a boost and a jam both set, so the two would apply to the same shot,
-// the boon's free-power break would be withheld, and the HUD would tint evil over a paid-for buff.
-// So whatever the player brought overrides the sector's kill-fire bit in BOTH directions -- a
-// bought boon clears a charted curse, a gambled curse clears a charted boon. The price is the
-// balance. Also enforces NOELITE-supersedes-NOCHAMP, another place that pair can meet.
+// Purchased kill-fire effects replace charted effects rather than combining with them.
+// No-Elites also supersedes No-Champions.
 Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased)
 {
 	if (purchased & ENDLESS_MOD_KILLFIRE_ANY)
@@ -488,7 +464,7 @@ bool endlessTryBuySpecial(void)
 	return true;
 }
 
-// --- Buy Bomb (F2): +1 to the superbomb stockpile (the AST. CITY collectable bomb). -------------
+// Buy one superbomb.
 long endlessBombPrice(void) { return endlessBombCost; }
 bool endlessBombFull(void)  { return player[0].superbombs >= 10; }
 bool endlessTryBuyBomb(void)
@@ -501,7 +477,7 @@ bool endlessTryBuyBomb(void)
 	return true;
 }
 
-// --- Revive token (F3): survive one lethal hit, full-restore (die = run over otherwise). In a
+// Revive token: survive one lethal hit and restore fully. In a
 // permadeath run this cheats death outright, so it's priced STUPIDLY high -- a rare, run-defining
 // splurge -- and still doubles per revive already spent this run so it never becomes immortality. ---
 long endlessRevivePrice(void)
@@ -533,7 +509,7 @@ bool endlessConsumeRevive(void)
 	return true;
 }
 
-// --- Extra Perk (F4): pay for a bonus perk pick; the E-Shop dispatch opens the perk menu after. -
+// Extra perk: the E-Shop opens the perk menu after purchase.
 long endlessExtraPerkPrice(void)
 {
 	// Base = depth price, doubled per buy this visit (endlessExtraPerkCost). Surcharge = a capped
@@ -554,7 +530,7 @@ bool endlessTryBuyExtraPerk(void)
 	return true;
 }
 
-// --- Sabotage Sector (F5): buy "cleanse charges" that strip the worst mutator off the next chosen
+// Sabotage Sector buys charges that strip the worst modifier from the next chosen
 // course (applied in endlessSelectCourse). Handy against a forced Ambush you can't route around. --
 long endlessCleansePrice(void)   { return endlessCleanseCost; }
 int  endlessCleanseCharges(void) { return endlessCleanseChargeCount; }
@@ -594,11 +570,7 @@ Uint64 endlessStripWorstMod(Uint64 mods)
 	return mods;
 }
 
-// --- Gamble (F6): a flat depth-scaled fee for a random outcome. Wins span 0..51, pushes 52..61,
-// a long tail 62..99. Roughly neutral EV at high variance, with a harsh tail (stripped gun power,
-// an erased perk, a stolen special, halved cash, a deferred ambush). Every branch reuses an
-// existing lever: player items/perks, endlessArmorBonus, endlessReviveHeld, the shop-tax/rigged/
-// long-con state above, and next-sector mod bits.
+// Gamble outcomes use a depth-scaled fee and existing run-state levers.
 long endlessGamblePrice(void) { return 25000 + (long)endlessRunDepth * 2000; }  // steep: the gamble is a slot machine (some outcomes scale off this cost), priced so it can't be spam-pulled to fish for jackpots/free perks
 const char *endlessGambleResult(void) { return endlessGambleMsg; }
 bool endlessGambleWonPerk(void) { return endlessGamblePerkWon; }
@@ -927,7 +899,7 @@ bool endlessTryGamble(void)
 	return true;
 }
 
-// --- Debug hooks: enumerate and fire gamble outcomes by ID (the E-Shop debug "Gamble Outcomes" page).
+// Debug hooks for the E-Shop's Gamble Outcomes page.
 int endlessGambleOutcomeCount(void) { return EGO_COUNT; }
 const char *endlessGambleOutcomeName(int id) { return (id >= 0 && id < EGO_COUNT) ? endlessGambleOutcomeNames[id] : ""; }
 void endlessForceGambleOutcome(int id)
@@ -995,11 +967,7 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 
 void endlessBetweenLevels(void)
 {
-	// Pin the planet-map hub to one safe planet before the shop opens. Endless jumps to random
-	// levels, so a level's ]G planet data can leave mapPNum/mapPlanet out of range, and
-	// JE_itemScreen's planet monitor would then read mapPlanet[]/mapSection[] (size 5) out of
-	// bounds and crash. (endlessRegenerateLevel re-pins these per level too, but the very first
-	// shop runs before any level has loaded.)
+	// Pin the planet map before the first shop and after random level jumps.
 	mapOrigin = 1;
 	mapPNum = 1;
 	mapPlanet[0] = 1;
@@ -1032,11 +1000,7 @@ void endlessBetweenLevels(void)
 	if (saveLevel < 1)
 		saveLevel = FIRST_LEVEL;
 
-	// Zone 1's outpost is where the run's fixed starting gear lands. Re-applied here (as well as in
-	// newEndlessGame) so the starting gun holds whatever path reached this first shop -- nothing has
-	// been bought yet at depth 0, so it can't clobber a purchase. A resumed or locked visit keeps the
-	// loadout its snapshot restored instead, and endlessSortieValid() means a level has already
-	// launched this run (a Quit Level bail back to the depth-0 outpost), so the gun is the player's.
+	// Reapply starting gear only at a fresh depth-0 outpost.
 	if (endlessRunDepth == 0 && !endlessResumeVisit && !endlessLockedSortie && !endlessSortieValid())
 		endlessApplyStartingLoadout();
 
@@ -1063,22 +1027,13 @@ void endlessBetweenLevels(void)
 		endlessResetShopPrices();
 		endlessFillShop();
 
-		// Queue the forced perk pick that opens the shop ahead of its normal front menu (see
-		// JE_itemScreen), then roll this visit's offers. endlessPerkDueAtDepth decides: the every-4th-
-		// zone cadence, a cleared milestone zone (every 25th), or the deferred half of a collision between the two.
-		// Skip it if this depth's perk was already resolved, so re-opening the same outpost after a
-		// save/reload doesn't hand out a second perk (endlessPerkDepthDone is part of the save).
-		// The same depth decides how WIDE the pick is: a milestone outpost deals five, not three.
+		// Queue one unresolved scheduled or milestone perk pick for this depth.
 		if (endlessPerkDueAtDepth(endlessRunDepth) && endlessPerkDepthDone != endlessRunDepth)
 		{
 			endlessGeneratePerkChoices(endlessPerkOffersAtDepth(endlessRunDepth));
 			endlessPerkPending = true;
 		}
-		// BREAKTHROUGH boon: a cleared Breakthrough sector owes a BONUS pick. Only one perk screen opens
-		// per visit, so if the scheduled perk above already claimed this outpost the debt simply waits --
-		// the counter is decremented at the moment a pick is actually opened, never before, and it rides
-		// the save, so nothing is lost across a reload either. Gated on the pending FLAG rather than an
-		// `else`, so the scheduled perk always wins the visit however its own guard resolved.
+		// Breakthrough debt waits when this visit already has a scheduled pick.
 		if (!endlessPerkPending && endlessBreakthroughOwed > 0)
 		{
 			--endlessBreakthroughOwed;
@@ -1089,7 +1044,7 @@ void endlessBetweenLevels(void)
 
 	// Auto-checkpoint into the bottom "LAST LEVEL" continue slot -- outpost entry is the one
 	// coherent resume point (courses/shop/perks set up; lastLevelName is "ZONE N" already).
-	// HARDCORE allows no saving of any kind, so it is suppressed (notes.md §Endless / Save / resume).
+	// Hardcore allows no saving.
 	if (!endlessHardcore)
 	{
 		const JE_byte autoSlot = twoPlayerMode ? 22 : 11;

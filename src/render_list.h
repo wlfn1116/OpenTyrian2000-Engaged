@@ -1,7 +1,7 @@
 /*
  * High-refresh render interpolation: every playfield draw of a 35Hz tick is recorded
  * and re-drawn at interpolated positions once per displayed frame (re-running the
- * game's draw code isn't safe). notes.md §Smooth motion (render list).
+ * game's draw code is not safe).
  */
 #ifndef RENDER_LIST_H
 #define RENDER_LIST_H
@@ -113,24 +113,15 @@ typedef struct
 	// interpolated, so the laser/main-pulse base stays on the gun. 0 = not attached.
 	Uint8 ship_attach;
 
-	// Horizontal parallax correction for entities anchored to a background layer (enemies:
-	// drawn at ex + tempMapXOfs, a whole-pixel offset). par_anchor is the entity batch's
-	// un-floored anchor; par_layer names the background it must follow. Finalize adjusts
-	// par_frac to the anchor that layer actually recorded this tick, then fills par_frac_dx.
-	// Replay adds (par_frac - par_frac_dx*inv), keeping the entity glued even when its draw
-	// and its layer straddle the mid-frame parallax update. par_layer 0 = not anchored.
+	// Horizontal correction for an entity anchored to a background layer.
+	// Finalize normalizes par_frac to the layer's recorded anchor. Layer 0 is unbound.
 	float par_frac, par_frac_dx;
 	float par_anchor;
 	Uint8 par_layer;
 
-	// VERTICAL background binding. par_ybase is the whole-pixel correction from the
-	// entity's draw phase to its layer's draw phase; par_yfrac is the layer's fractional
-	// phase. Keeping these separate lets replay round only the shared fractional offset,
-	// so rows at negative Y and enemies at positive Y cannot round opposite ways at .5.
-	// par_yown100 is the finalized enemy-local displacement only, in exact hundredths.
-	// Replay always applies the layer's canonical transform independently, even when this
-	// command has no previous match.
-	// par_ylayer 0 means the command is not vertically bound.
+	// Vertical layer binding. par_ybase is the whole-pixel phase correction;
+	// par_yfrac is the layer phase and par_yown100 the entity motion in hundredths.
+	// Layer 0 is unbound.
 	int par_ybase;
 	float par_yfrac;
 	int par_yown100;
@@ -179,10 +170,7 @@ extern int rl_current_vel_x, rl_current_vel_y;
 // back (see acc_x/acc_y in RenderCmd).
 extern int rl_current_acc_x, rl_current_acc_y;
 
-// Identity ranges for rl_current_id (kept < RL_ID_MAX). The ranges must not overlap: each base
-// plus its largest "+ slot" has to stay below the next base. RL_ID_PSHOT_BASE + slot spans the
-// whole player-shot pool (MAX_PWEAPON, shots.h), so the ranges after it were pushed up to give
-// the enlarged pool room (player shots now occupy 3000..3000+MAX_PWEAPON-1 = ..10999).
+// Identity ranges must not overlap and must stay below RL_ID_MAX.
 enum
 {
 	RL_ID_FILTER = 8,        // full-screen colour filter (one per tick; brightness interpolates)
@@ -193,11 +181,7 @@ enum
 	RL_ID_ESHOT_BASE = 12000, // + slot (0 .. ENEMY_SHOT_MAX-1)
 	RL_ID_EXPL_BASE = 13000, // + slot (0 .. MAX_EXPLOSIONS-1); also the upper bound of the "shot" id range
 	RL_ID_SHIP_BASE = 14000, // + player
-	// The Nort ship's banking trim sprite, drawn ONLY while the hull is banked. It must not share
-	// the hull's id: rl_finalize snaps a whole id on any tick whose per-id blit count differs from
-	// the last, so a trim that appears and disappears would stop the hull interpolating every time
-	// banking starts or stops -- i.e. constantly, since banking tracks horizontal movement. Kept
-	// INSIDE the ship range so it still rides the render-rate override and stays welded to the hull.
+	// Banking trim needs a separate ID, but stays in the ship override range.
 	RL_ID_SHIP_TRIM_BASE = 14002, // + player
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
 	RL_ID_MAX = 16384,
@@ -217,20 +201,13 @@ void rl_finalize(void);
 // Re-draw every captured command into dst at its recorded position (alpha=1).
 void rl_replay(SDL_Surface *dst);
 
-// Smoothie levels present in two passes (full rationale at the definitions):
-//   rl_replay_bg: backgrounds interpolated + the smoothie filter, once, full strength
-//     (per displayed frame on a COPY of the plasma base; per tick advancing the base).
-//   rl_replay_fg: entities interpolated + full-screen grade + residual, onto pass 1.
-// `scale` >= 2 replays into an NxN supersampled dst (vga_width*scale wide) with all
-// positions on the 1/scale-pixel grid; 1 reproduces the classic path byte-for-byte.
+// Smoothie levels replay backgrounds and foregrounds separately.
+// scale=1 is the classic path; larger values use the supersampled grid.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale);
 void rl_replay_fg(SDL_Surface *dst, float alpha, int scale);
 
-// Re-draw every captured command into dst at an interpolated position
-// (x,y) - (dx,dy)*(1-alpha); alpha in [0,1], 1 reproduces the exact frame. Also
-// re-applies the captured residual. feedback=false clears dst first (normal levels);
-// feedback=true does not, so smoothie trails persist — caller seeds dst from the tick
-// frame. `scale` as in rl_replay_bg (dst must be scale x the logical size).
+// Replay at (x,y) - (dx,dy)*(1-alpha), then apply the residual.
+// Feedback mode preserves the destination for smoothie trails.
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
 
 // Capture the residual: pixels in `reference` (the authoritative frame) that a
@@ -244,12 +221,8 @@ void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
 // evolved plasma, so the full capture would wrongly flag the filtered playfield.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
 
-// Ship override: during interpolated replay, the hull/shadow/charge of player
-// `player` (0 or 1) draw at their recorded position PLUS (dx,dy) instead of being
-// time-interpolated, driving each ship at the render rate. Sidekicks are excluded
-// by id range and interpolate by their own motion. dx/dy are FLOAT: the replay
-// rounds them at the render scale, so a supersampled ship moves on the sub-pixel
-// grid instead of snapping whole pixels.
+// Draw a ship at its render-rate offset instead of its interpolated tick position.
+// Sidekicks retain their own interpolation.
 void rl_set_ship_override(int player, float dx, float dy);
 void rl_clear_ship_override(void);
 float rl_get_ship_override_dx(int player);

@@ -256,18 +256,8 @@ static inline int rl_round_offset(double v)
 	return (int)floor(v + 0.5);
 }
 
-// The one canonical vertical presentation transform for a background layer. Background rows
-// and every bound entity call this same helper, so their shared component cannot diverge through
-// stale command state, different rounding, or an unmatched interpolation id. Layer 3 is RECORDED
-// after its integer advance; replay preserves its authored base step but removes any modifier-added
-// part, then uses the shared lagged fractional clock. `now` remains available for callers that
-// genuinely need the current phase.
-//
-// own100 is the bound entity's own per-tick displacement (par_yown100; background rows pass 0),
-// folded into the SAME rounded value. Rounding the layer and own offsets separately interleaves
-// their staircases whenever the entity moves against the scroll, giving a 1px sawtooth inside one
-// tick (CORAL's upward-swimming fish). One combined round keeps own100 == 0 bit-identical to the
-// background rows and holds a scroll-cancelling boss still. notes.md §Sub-pixel parallax.
+// Canonical vertical transform shared by background rows and bound entities.
+// Layer and entity motion are rounded together to avoid one-pixel phase splits.
 static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, int own100)
 {
 	const float rate = now ? bg_layer_dy_now[layer] : bg_layer_dy[layer];
@@ -357,11 +347,7 @@ void rl_finalize(void)
 	for (size_t i = 0; i < ncur; ++i)
 	{
 		RenderCmd *const c = &cur[i];
-		// The player/parallax update occurs halfway through the legacy draw order. Depending on
-		// the z-order flags, a bound enemy can therefore be recorded with the previous anchor
-		// while its background uses the new one (or vice versa). Normalize the display-only
-		// fraction to the anchor the layer actually recorded; x and simulation coordinates stay
-		// untouched, and exact/residual replay ignores this correction.
+		// Normalize bound entities to the anchor their layer recorded.
 		if (c->par_layer >= 1 && c->par_layer <= 3 && bg_layer_xofs_valid[c->par_layer])
 			c->par_frac += bg_layer_xofs[c->par_layer] - c->par_anchor;
 
@@ -379,11 +365,7 @@ void rl_finalize(void)
 		if (id <= 0 || id >= RL_ID_MAX)
 			continue;  // static / untagged: never interpolate
 
-		// A changed per-id blit count means the sub-blit SET changed this tick (multi-
-		// sprite enemy crossing a screen edge, shadow toggling, recycled slot). The
-		// pairing below is positional (k-th cur <-> k-th prev), so survivors would
-		// mis-pair and wobble; snap the whole id (dx/dy already 0) — invisible, and
-		// self-limited to the one tick the count differs.
+		// A changed blit count makes positional pairing unsafe; snap for one tick.
 		if (prevN[id] != curN[id])
 			continue;
 
@@ -422,12 +404,7 @@ void rl_finalize(void)
 		if (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND)
 		{
 			dx = wrap_delta(dx, 24);       // horizontal scroll: either direction
-			// Vertical scroll is always downward and, under an endless speed modifier, can
-			// exceed the 28px tile height. A screen-position diff only recovers the sub-tile
-			// remainder (mod 28), so the whole-tile part would snap at every tick boundary
-			// -> vertical jitter. Use the layer's TRUE per-tick scroll (whole tiles included),
-			// tracked in backgrnd.c. In the normal (<28px/tick) case this equals the old
-			// wrap_delta_down result exactly, so slow levels are unchanged.
+			// Use the full layer delta; screen coordinates lose whole-tile motion.
 			const int layer = id - RL_ID_BG_BASE;
 			dy = (layer >= 1 && layer <= 3) ? bgScrollDeltaY[layer] : wrap_delta_down(dy, 28);
 		}
@@ -884,12 +861,8 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		const bool is_ship_id = c->id >= RL_ID_SHIP_BASE && c->id < RL_ID_SIDEKICK_BASE;
 		if (use_override && ship_override_active && is_ship_id)
 		{
-			// Ship hull/shadow/charge: render-rate driven, not time-interpolated. Sidekicks are
-			// EXCLUDED — trailing companions (e.g. Gerund) follow the ship's past path, not its
-			// velocity, so they interpolate by their own motion (the branch below).
-			// id = RL_ID_SHIP_BASE + playerNum (1 or 2) => player index 0/1. The range also holds
-			// RL_ID_SHIP_TRIM_BASE + playerNum, two further along and belonging to the same player
-			// -- hence the wrap; a plain clamp would hand player 1's trim to player 2.
+			// Hull, shadow, charge, and trim use the render-rate ship offset.
+			// Sidekicks interpolate independently.
 			int p = (c->id - RL_ID_SHIP_BASE - 1) % 2;
 			if (p < 0) p = 0; else if (p > 1) p = 1;
 			x += rl_iround(ship_override_dx[p] * scale);
@@ -908,7 +881,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			// Background rows: on a display replay (use_override) pan the horizontal parallax
 			// sub-pixel-smooth as recorded x plus (frac - dx*inv), from the un-floored float
 			// offsets (backgrnd.c). The exact/residual replay keeps the whole-pixel c->dx so
-			// recorded frames reproduce byte-exact. notes.md §Sub-pixel parallax.
+			// recorded frames reproduce byte-exact.
 			const bool bg_row = (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND)
 			    && c->id >= RL_ID_BG_BASE + 1 && c->id <= RL_ID_BG_BASE + 3;
 
@@ -923,11 +896,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			else if ((c->ship_attach & 1) && ovr)
 			{
 				x += rl_iround(ship_override_dx[sp] * scale);  // X tracks the render-rate ship
-				// An attached shot can also move relative to the ship (orbiting asteroid
-				// killer, weapon 104). c->dx is the total delta (ship move + own motion);
-				// subtracting the ship's velocity leaves the own motion to interpolate
-				// (smooth orbit). A pure tracker (laser, main pulse) has own == 0 and stays
-				// glued. The >40 guard snaps on a warp tick (the ship override snaps too).
+				// Remove ship velocity so an attached shot can interpolate its own motion.
 				const int own = c->dx - ship_tick_vel_x[sp];
 				if (inv != 0.0f && own && own <= 40 && own >= -40)
 					x -= rl_iround(own * inv * scale);
@@ -944,11 +913,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (use_override && (c->par_frac != 0.0f || c->par_frac_dx != 0.0f))
 			{
-				// Parallax-anchored entity (enemy / HP bar): fold the integer parallax + own X
-				// (c->dx) and the sub-pixel fraction into one rounded displacement, so the <1px
-				// fraction survives at scale 1 instead of rounding to 0 (mirrors the vertical
-				// par_yfrac path below). c->dx also carries any own horizontal motion, so a moving
-				// enemy still interpolates right. notes.md §Sub-pixel parallax.
+				// Round parallax and local motion together.
 				x = c->x * scale + rl_iround((c->par_frac - (c->dx + c->par_frac_dx) * inv) * scale);
 			}
 			else if (c->dx && inv != 0.0f)
@@ -971,17 +936,8 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (bg_row && bg_smooth_y_active && use_override)
 			{
-				// Vertical scroll at the true float rate (constant velocity) instead of the integer
-				// per-tick pulse of c->dy (bgScrollDeltaY), which freezes on delay-gated slow
-				// sections then jumps. Mirrors the horizontal parallax above; a byte-exact no-op on
-				// full-speed layers. The integer row and fractional phase round separately through
-				// rl_round_offset, whose half-up rule is integer-translation-invariant.
-				//
-				// Layer 3 is recorded AFTER its integer advance, unlike layers 1/2. Its stock 1px
-				// base advance is part of the level's authored placement, so remove only a scroll
-				// modifier's EXTRA pixels, then use the same lagged fractional clock as the bound
-				// enemy. Removing nothing leaves BRAINIAC's shootables behind; removing the whole
-				// step puts them 1px ahead. notes.md §Slow-scroll smoothing.
+				// Smooth vertical scroll at its fractional rate.
+				// Layer 3 is recorded after its base step, so remove only modifier motion.
 				const int L = c->id - RL_ID_BG_BASE;
 				const int phase_base = (L == 3) ? -endlessScrollExtraPx3 : 0;
 				y = (c->y + phase_base) * scale +
@@ -989,12 +945,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (use_override && c->par_ylayer != 0)
 			{
-				// Scroll-tracked entity (enemy / HP bar): the canonical layer transform with
-				// the entity-local displacement folded into the same single round (see
-				// rl_layer_y_offset). A resting entity (own100 == 0) stays bit-identical to
-				// the background's offset even for a new command, a changed multi-blit count,
-				// or a snapped slot; an entity opposing the scroll no longer saws 1px inside
-				// the tick from two interleaved rounding staircases.
+				// Apply the canonical layer transform and local motion in one round.
 				const int L = c->par_ylayer;
 				y = (c->y + c->par_ybase) * scale +
 				    rl_layer_y_offset(L, false, inv, scale, c->par_yown100);
@@ -1062,11 +1013,7 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL, scale);
 }
 
-// Smoothie pass 1 (background): apply the filter once, FULL strength, feedback on, entities
-// skipped (RL_PHASE_BG). Two call sites: per frame (dst = fresh copy of render_gs, frame
-// alpha) and per tick (dst = render_gs, alpha 1, advancing the base one step). use_override
-// on so bg rows get the same sub-pixel parallax as pass 2; both call sites share identical
-// float positions, so base and copies agree at the tick boundary (no seam). notes.md §Smoothie levels.
+// Smoothie pass 1 updates the feedback background without entities.
 void rl_replay_bg(SDL_Surface *dst, float alpha, int scale)
 {
 	if (alpha < 0.0f)

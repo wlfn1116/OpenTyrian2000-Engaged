@@ -65,7 +65,7 @@
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset);
 static void draw_enemy_health_bars(void);
 
-// --- Endless sector dangers wired into the enemy-shot pool -------------------------------------
+// Endless effects on the enemy-shot pool.
 // MARTYRDOM and SEEKER ROUNDS both act on enemyShot[] (spawned/moved here in tyrian2.c), so their
 // spawn/movement code lives with the pool while the per-modifier decisions live in endless_combat.c.
 
@@ -148,7 +148,7 @@ static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
 		soundQueue[4] = S_WEAPON_7;   // the same point-defense "thunk" the Countermeasure burst uses
 }
 
-// --- Chain Reaction perk (endless) --------------------------------------------------------------
+// Chain Reaction.
 // A destroyed enemy emits a pulse that damages nearby NORMAL-tier fodder. Kills only QUEUE a pulse
 // here (with the enemy's screen position); the queue is drained once the whole player-shot loop
 // finishes (chain_reaction_process). Deferring keeps the pulse OUT of the shot loop's own linkgroup
@@ -176,19 +176,9 @@ static void chain_queue_kill(int screenX, int y, int linknum)
 	}
 }
 
-// --- Logical enemy death: the ONE place an enemy[] slot is retired as a kill --------------------
-// A kill carries a fixed list of consequences: the level tally, the endless run tally, the
-// elite/champion bounty, the SHOCKWAVE sweep, the MARTYRDOM burst and the Chain Reaction pulse.
-// Three of those carry a "consecutive same-linknum removals are one enemy" latch, and a latch is
-// only correct if it sees EVERY kill -- so routing every path through here is what stops a new one
-// from silently double-paying a multipart elite or stranding a latch on a reused linknum.
-//
-// NOT for despawns: an enemy that scrolls off, that the map-stop watchdog culls, or that a level
-// event clears was never killed, and those sites still assign enemyAvail[i] = 1 directly. The ram
-// kill in JE_playerCollide (mainint.c) is deliberately not a kill either -- see the note there.
-//
-// ENEMY_DEATH_QUIET exists for the Chain Reaction drain alone: it suppresses only the EFFECTS, so
-// a chain pop still feeds the latches (and so can't strand one) without queueing further pulses.
+// Central kill path for tallies, link-group latches, bounties, and reactive effects.
+// Despawns and collision removals are not kills. Quiet deaths update bookkeeping
+// without chaining more effects.
 void enemy_logical_death(unsigned int i, enemy_death_kind kind)
 {
 	enemyAvail[i] = 1;
@@ -367,13 +357,13 @@ JE_byte itemAvail[9][10]; /* [1..9, 1..10] */
 JE_byte itemAvailMax[9]; /* [1..9] */
 
 // Render-rate ship movement: the displayed ship extrapolates its last per-tick velocity each
-// frame and is reconciled to the 35Hz sim via the ship override. notes.md §Smooth motion.
+// frame and is reconciled to the 35Hz simulation through the ship override.
 static int ship_tick_x[2], ship_tick_y[2];   // ship position captured at the last tick
 static int ship_vel_x[2], ship_vel_y[2];       // per-tick movement (cur - prev tick)
 static bool ship_pred_have_tick = false;
 
 // Fixed-timestep accumulator: each display frame presents at alpha = accumulator/period, the
-// sim ticks once per full period. Perf-counter timing, not SDL_GetTicks — notes.md §Smooth motion.
+// simulation ticks once per full period. Uses the performance counter, not SDL_GetTicks.
 static float sim_accumulator = 0.0f;
 static Uint64 sim_last_counter = 0;
 static Uint64 sim_perf_freq = 0;
@@ -382,7 +372,7 @@ static bool sim_timing_init = false;
 float debug_interp_alpha = 0.0f;  // last presented interpolation fraction (perf overlay)
 
 // Smoothie levels present in two passes: render_gs = persistent background plasma (per tick),
-// smoothie_frame = per-frame display buffer composited on top. notes.md §Smoothie levels.
+// smoothie_frame = per-frame display buffer composited on top.
 static SDL_Surface *render_gs = NULL;
 static SDL_Surface *smoothie_frame = NULL;
 
@@ -413,7 +403,7 @@ static SDL_Surface *get_smoothie_frame(int scale)
 }
 
 // Supersampled present path: the interpolated playfield renders NxN into pf_hi, composites into
-// vga_hi with the 1x HUD block-expanded on top, presents via present_hi(). notes.md §Supersampling & video.
+// vga_hi with the 1x HUD block-expanded on top, then presents via present_hi().
 static SDL_Surface *pf_hi = NULL;   // NxN playfield replay target (normal levels)
 static SDL_Surface *vga_hi = NULL;  // NxN final frame (playfield composite + HUD)
 
@@ -466,7 +456,7 @@ static void update_ship_override(float alpha)
 }
 
 // Variable-timestep (VT) player ship: the ship alone is simulated at the render rate with
-// real dt while the world stays on the fixed 35Hz tick; the integrator owns it. notes.md §Variable-timestep (VT) player ship.
+// real dt while the world stays on the fixed 35Hz tick.
 bool vt_ship = true;
 
 #define VT_ACCEL      1.0f  // velocity gained per tick while a direction is held (orig accelXC: +1/tick)
@@ -533,7 +523,7 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 	    || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)
 		vt_seed_player(p);
 
-	// --- Input ---
+	// Input.
 	// Directional input (keyboard/d-pad/stick) feeds momentum; mouse relative motion
 	// applies directly. "Inverted controls" levels (smoothies[8]) flip the Y axis.
 	const bool invert_y = smoothies[9 - 1];
@@ -595,7 +585,7 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 	if (ix < -1.0f) ix = -1.0f; else if (ix > 1.0f) ix = 1.0f;
 	if (iy < -1.0f) iy = -1.0f; else if (iy > 1.0f) iy = 1.0f;
 
-	// --- Integrate momentum (everything dt-scaled; dt==1 == one old tick) ---
+	// Integrate momentum; dt=1 is one classic tick.
 	if (ix != 0.0f)
 		vt_vx[p] += ix * VT_ACCEL * dt;
 	else
@@ -894,7 +884,7 @@ static void expand_hud_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 }
 
 // Soul of Zinglon light pillar, drawn at display rate from the per-tick request (zinglonPillar*).
-// cx is in HI units (already scaled); temp is 1x half-width. notes.md §Other render-rate presents.
+// cx is in HI units; temp is the 1x half-width.
 static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scale)
 {
 	const int bottom = 184 * scale;
@@ -915,7 +905,7 @@ static int power_render_prev = 0, power_render_cur = 0;  // `power` (0..900) at 
 static int salvo_render_prev = 0, salvo_render_cur = 0;  // ...and the salvo green share (0..100)
 
 // salvo_frac (0..1) is the share of the bar the Opening Salvo paints green, measured against the
-// bar's OWN height so the drain stays visible on a part-full generator. notes.md §Opening Salvo.
+// bar's own height so the drain stays visible on a partly full generator.
 static void draw_power_gauge(float power_value, float salvo_frac)
 {
 	enum { Y_BOTTOM = 104, BAR_MAX = 93, BASE = 113, POWER_MAX = 900 };
@@ -936,7 +926,7 @@ static void draw_power_gauge(float power_value, float salvo_frac)
 	const int dir = gaugeGradGenerator;   // GaugeGradientDir
 
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
-	// condition that gates the free power. notes.md §Course generation & danger labels.
+	// condition that gates the free power.
 	int base = BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
@@ -1023,8 +1013,7 @@ void JE_starShowVGA(void)
 
 		if (smoothScroll != 0)
 		{
-			// Interpolation needs a real tick period. Smoothie levels present in two passes
-			// (notes.md §Smoothie levels); normal levels interpolate straight into game_screen.
+			// Smoothie levels present in two passes; normal levels use game_screen.
 			const bool can_interp = frameCountMax > 0 && smoothMotion;
 
 			// Supersample factor for this present pass (Auto follows the scaler; see
@@ -1068,7 +1057,7 @@ void JE_starShowVGA(void)
 					// Advance the VT ship by the REAL elapsed time before the break check:
 					// stepping only on rendered frames discards the elapsed time of the
 					// iteration that triggers a sim tick, which reads as visible stutter
-					// even at a solid 60 fps (notes.md §Variable-timestep (VT) player ship).
+					// even at a solid 60 fps.
 					const bool vt_owns = vt_ship_owns();
 					if (vt_owns)
 						vt_ship_step(elapsed / period);
@@ -1204,7 +1193,7 @@ static void copy_buffer_to_screen(const Uint8* buffer)
 }
 
 // Sub-pixel fraction of tempMapXOfs, set beside every tempMapXOfs assignment so enemies float
-// their parallax onto the background layer's sub-pixel offset. notes.md §Sub-pixel parallax.
+// their parallax onto the background layer's sub-pixel offset.
 static float tempMapXOfs_frac = 0.0f;
 // Background layer whose horizontal anchor tempMapXOfs represents (1..3). The render list uses
 // this to resolve legacy draw-order cases where the entity and layer straddle the parallax update.
@@ -1226,7 +1215,7 @@ static int   tempScrollBaseStep = 0, tempScrollDelayMax = 1;
 // channel is tagged EXPLICITLY here rather than matched by value (tempBackMove == backMove?) --
 // value-matching mis-picks when two layers momentarily share a backMove (e.g. EP1 TYRIAN's slowdown
 // makes backMove == backMove3, which sent layer-3 enemies onto layer 1's much smaller delay-gated
-// extra px, so they drifted off the terrain). notes.md §Endless scroll boost / §Slow-scroll smoothing.
+// extra pixel, so they drifted off the terrain).
 static int tempScrollExtraPx = 0;
 
 // Sky-bank (slots 0..24) enemies carry tempBackMove == 0: any scroll ride is authored in the
@@ -1332,7 +1321,7 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 	          y = enemy[i].ey + y_offset;
 
 	// enemycycle indexes egr[] 1-based; skip anything that doesn't name a real in-sheet sprite
-	// instead of underflowing into a wild read in blit_sprite2 (notes.md §General pitfalls).
+	// instead of underflowing into a wild read in blit_sprite2.
 	const unsigned int cycle = enemy[i].enemycycle;
 	if (cycle < 1 || cycle > 20)
 		return;
@@ -1430,7 +1419,7 @@ static bool enemy_has_visible_pixel(unsigned int i)
 
 // True if this live enemy is stuck above the top of the screen with no way to ever leave:
 // beyond shot reach (ey <= -58) and vertically frozen. HORIZONTAL state is deliberately
-// ignored (HARVEST's anchor carries a sideways sway). notes.md §Map-stop softlock watchdog.
+// ignored because HARVEST's anchor carries a sideways sway.
 static bool enemy_stuck_above_screen(unsigned int i)
 {
 	return enemy[i].ey   <= -58 &&
@@ -1459,14 +1448,14 @@ static bool enemy_link_group_reachable(unsigned int i)
 
 // The watchdog's real target: stuck above the reach line AND with no reachable link-group partner
 // left, i.e. an enemy no shot can ever touch again. This is the "boss died before its script staged
-// the fight" state and nothing else (notes.md §Map-stop softlock watchdog).
+// the fight" state and nothing else.
 static bool enemy_stuck_orphaned(unsigned int i)
 {
 	return enemy_stuck_above_screen(i) && !enemy_link_group_reachable(i);
 }
 
 // Count live enemies orphaned above the screen: a dedicated full-pool scan, deliberately not the
-// draw loop's on-screen census (notes.md §Map-stop softlock watchdog).
+// draw loop's on-screen census.
 static unsigned int count_stuck_above_screen(void)
 {
 	unsigned int n = 0;
@@ -1476,7 +1465,7 @@ static unsigned int count_stuck_above_screen(void)
 	return n;
 }
 
-// Sim ticks (~6s) a stuck-above stall is left alone before the watchdog culls it (notes.md §Map-stop softlock watchdog).
+// Wait about six seconds before culling a stuck-above enemy.
 enum { MAP_STOP_STALL_LIMIT = 210 };
 
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
@@ -1700,7 +1689,6 @@ enemy_still_exists:
 			// enemy rides (tagged per batch beside tempBackMove), so ground enemies glide with the
 			// terrain instead of drifting when two layers share a backMove. Attached sky scenery
 			// rides layer 2 through its own eyc, so it takes that layer's extra pixels here.
-			// notes.md §Endless scroll boost.
 			enemy[i].ey += tempBackMove + tempScrollExtraPx +
 			               (skyGlueThisEnemy ? endlessScrollExtraPx2 : 0);
 
@@ -2514,7 +2502,7 @@ start_level_first:
 
 	/*Save backup game*/
 	// Skip this mid-level autosave point for endless: its continue-slot autosave lives at the
-	// OUTPOST instead (endlessBetweenLevels), the one coherent resume point. notes.md §Save / resume.
+	// outpost instead, the one coherent resume point.
 	if (!play_demo && !doNotSaveBackup && !timedBattleMode && !endlessMode)
 	{
 		temp = twoPlayerMode ? 22 : 11;
@@ -2959,7 +2947,7 @@ level_loop:
 
 	// Publish the PREVIOUS tick's smooth vertical scroll rate + sub-pixel fraction for the render
 	// list (the present loop shows this tick's list at its pre-advance position, so the data lags
-	// one tick, matching bgScrollDeltaY). notes.md §Slow-scroll smoothing.
+	// one tick, matching bgScrollDeltaY).
 	static float bgSmoothRatePend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	static float bgSmoothFracPend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	static bool  bgSmoothActivePend  = false;
@@ -2972,7 +2960,7 @@ level_loop:
 
 	// Smooth every layer to its true average scroll rate so a delay-gated slow section (event 3:
 	// layer 1 1px/3 ticks, layer 2 1px/2 ticks) slides sub-pixel instead of freezing then jumping.
-	// Runs on EVERY level; a scroll modifier additionally emits extra px. fireN = per-fire step (1
+	// Runs on every level; a scroll modifier additionally emits extra px. fireN = per-fire step (1
 	// while delay-gated, else backMoveN); baseN = px that actually moved this tick.
 	{
 		int fire1 = (map1YDelayMax > 1 && backMove < 2) ? 1 : (int)backMove;
@@ -3008,7 +2996,6 @@ level_loop:
 	// Publish this tick's (non-lagged) rate + fraction for background layer 3, which advances before
 	// it records its rows (unlike layers 1/2). Enemy banks preserve their common pre-advance phase
 	// and use the lagged bg_layer_dy/bg_layer_yfrac values even when bound to layer 3.
-	// notes.md §Sub-pixel parallax / §Slow-scroll smoothing.
 	for (int L = 1; L <= 3; ++L)
 	{
 		bg_layer_yfrac_now[L] = bgSmoothFracPend[L];
@@ -3274,7 +3261,6 @@ level_loop:
 			// shotDmg is an ENCODED byte, not a plain quantity: 99 means "ice, no damage" and
 			// 250..255 means "piercing, damage = value - 250" (see the decode below and shots.c).
 			// Never scale the raw byte -- decode first, scale only the real damage, re-encode.
-			// notes.md §Weapons.
 			if (endlessFxActive())
 			{
 				int dmgPct = endlessPlayerDamagePercent();
@@ -3393,13 +3379,8 @@ level_loop:
 						int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
 						                         : (has_boss_bar ? bossHpMult : 1);
 
-						// ENDLESS pierce lockout: a piercing shot is never consumed, so without this the
-						// same bullet re-damages the same hull every tick it overlaps. Scaled off the
-						// multiplier the target carries (see endless_combat.c for the tiering).
-						//
-						// The lock is PER BULLET (playerShotData), never per enemy: these weapons fire
-						// spreads of 8 one-damage bullets, so a per-hull lock would let the first bullet
-						// of the tick claim it and discard most of the weapon's damage.
+						// Per-bullet lockout prevents a piercing shot from damaging the same
+						// scaled hull on every overlapping tick.
 						if (endlessFxActive() && infiniteShot)
 						{
 							// Ask what THIS hull's tier is owed BEFORE consulting the lock, never the
@@ -3415,13 +3396,8 @@ level_loop:
 									damage += 250;   // re-encode: the bullet flies on, dealing nothing here
 									continue;
 								}
-								// Charge the lockout ONCE PER TICK, at the toughest hull this bullet
-								// crosses -- not once per hit, which would make the tax depend on how many
-								// hulls happened to line up in front of the bullet.
-								//
-								// Only BANKED here; the conversion into ticks happens at the top of this
-								// bullet's next pass. Applying it inline would let the bullet lock itself
-								// partway through its own sweep and drop the hulls behind the first one.
+							// Bank the toughest lockout crossed this tick; apply it next pass
+							// so the current sweep can hit every aligned hull.
 								if (lock100 > pshot->pierceLockPending)
 									pshot->pierceLockPending = (JE_byte)lock100;
 							}
@@ -4029,7 +4005,7 @@ draw_player_shot_loop_end:
 
 	// Smoothie levels: snapshot the frame here -- after the last recorded blit (sparks/bars above
 	// diff out), before the non-blit overlays (WARNING bars, fades, boss bar, HUD) so those are
-	// captured as the per-frame residual and don't freeze at 35fps. notes.md §Smoothie levels.
+	// captured as the per-frame residual and do not freeze at 35 fps.
 	if (anySmoothies)
 		memcpy(VGAScreen2->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
 
@@ -4395,7 +4371,7 @@ draw_player_shot_loop_end:
 
 		// Smoothie residual: any full-screen grade -- colour flare (levelFilter != -99) or
 		// brightness-only flash (levelBrightness != -99) -- must hit the pre-overlay snapshot too,
-		// or it bakes into the residual and freezes the playfield. notes.md §Smoothie levels.
+		// or it bakes into the residual and freezes the playfield.
 		if (anySmoothies)
 			JE_filterScreenApply(VGAScreen2, levelFilter, levelBrightness);
 
@@ -4512,7 +4488,7 @@ draw_player_shot_loop_end:
 	// stopped unmovable -- so it holds enemyOnScreen != 0 forever. After a stop is held long enough
 	// with one present, cull it like an off-playfield enemy and the level resumes. Only ORPHANED
 	// ones count: a parked anchor whose linkgroup still has shootable members is a boss fight in
-	// progress, and culling it there would release the stop mid-fight. notes.md §Level scripting.
+	// progress; culling it there would release the stop mid-fight.
 	enemyParkedAbove = count_stuck_above_screen();
 	if (!endLevel && stopBackgrounds && !forceEvents && enemyParkedAbove != 0)
 	{
@@ -4714,7 +4690,7 @@ new_game:
 			 * switched to a shorter episode while the level index stayed high) or a bad next-level
 			 * pointer -- used to run this scan off the end of the file, where read_encrypted_pascal_string
 			 * hits fread_die -> exit() and killed the game with NO crash log. Bound the scan by EOF and
-			 * recover to the title instead. See notes.md / crashlog. */
+			 * recover to the title instead. */
 			int x = 0;
 			while (x < mainLevel)
 			{
@@ -6377,13 +6353,8 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	enemy->xaccel = enemyDat[eDatI].xaccel;
 	enemy->yaccel = enemyDat[eDatI].yaccel;
 
-	// RAMPAGE / KAMIKAZE / HOMING (endless): force a minimum tracking accel so enemies home in on you.
-	// The accel maps to tracking strength as (accel - 89). Three tiers, hardest first:
-	//   RAMPAGE  96 -> strength 7, and ALSO rams for extra collision damage (see mainint.c) -- the
-	//            original brutal Kamikaze, now a super-rare gamble-only mod.
-	//   KAMIKAZE 92 -> strength 3, no ram -- the moderate sector tier (what HOMING used to be).
-	//   HOMING   90 -> strength 1, no ram -- the gentlest sector tier (barely leans toward you).
-	// Only ever RAISE a weak enemy to the floor; an enemy that already tracks harder keeps its accel.
+	// Endless homing tiers raise weak tracking to minimum accelerations 90, 92, or 96.
+	// Existing stronger tracking is preserved; Rampage also adds collision damage.
 	if (endlessFxActive())
 	{
 		const int trackFloor = (endlessActiveMods & ENDLESS_MOD_RAMPAGE)  ? 96
@@ -6676,13 +6647,7 @@ static int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_Singl
 
 	if (layer == 2)
 	{
-		// The glass and the event clock quantize their boosted fractional rates through
-		// independent carries, so stock's exact "glass == ratio x curLoc" wanders +/-1px with
-		// the relative carry phase -- and pieces of one structure spawning on different ticks
-		// inherit different phases, i.e. a permanent 1px seam (GYGES's chain machine). Anchor
-		// every spawn to the same ideal line instead: late whole event-px at the stock layer
-		// ratio plus the current cross-layer phase. Applies even at late == 0. Local motion
-		// beyond the ride is prorated; sky fixedmovey itself never scales.
+		// Anchor sky spawns to one ideal layer/event phase to avoid one-pixel seams.
 		if (!eventScrollSkyValid || late < 0)
 			return 0;
 		int catchup = event_scroll_round_div(eventScrollSkyRatio100 * late +
@@ -6710,9 +6675,7 @@ static int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_Singl
 	}
 	const int fixedMove = (fixedMoveRaw - scalable) + fixedMoveScaled;
 
-	// An existing enemy would have received these three terms during the full previous tick.
-	// Apply only the fraction after this event's coordinate; for ordinary fixed-0 scenery on
-	// layer 1 this reduces exactly to `late`, with no rounding at all.
+	// Apply the fraction of the previous tick after this event coordinate.
 	const int fullMove = eventScrollLayerDelta[layer] + fixedMove + e->eyc;
 	return event_scroll_round_div(fullMove * late, span);
 }
@@ -6804,13 +6767,7 @@ void JE_eventJump(JE_word jump)
 	else
 	{
 		returnLoc = curLoc + 1;
-		// Endless scroll boost: the tick that reached this jump advanced the clock and every
-		// scrolling layer in lockstep by base + extra px, overrunning the jump record by up to
-		// endlessScrollExtraPx1 more than the stock stride level authors laid their maps out
-		// around. That overrun terrain is already consumed and cannot be rewound, so re-base
-		// the clock the same distance PAST the target to keep post-jump event times matched to
-		// the map (ICESECRET's ramp-in jump otherwise lands every clock-timed building ~a tile
-		// off its foundation under Warp Speed). Zero extra px -> stock byte-identical.
+		// Preserve the boosted tick's consumed terrain when rebasing a level-script jump.
 		int excess = (int)curLoc - (int)eventRec[eventLoc - 1].eventtime;
 		if (excess > endlessScrollExtraPx1)
 			excess = endlessScrollExtraPx1;
@@ -7898,7 +7855,7 @@ static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, 
 
 // One enhanced boss bar: a framed, recessed track with a glossy gradient fill. (gx,gy)/gw/gh are
 // the outer frame; horizontal fills left->right, vertical bottom->up; fraction is 0..1; flash
-// brightens on a hit. Colours stay within the one palette bank passed as base. notes.md §Boss & enemy health bars.
+// brightens on a hit. Colors stay within the supplied palette bank.
 static void draw_boss_bar_gauge(SDL_Surface *dst, int scale, int gx, int gy, int gw, int gh,
                                 bool horizontal, float fraction, int flash, int base)
 {
@@ -7964,12 +7921,11 @@ static int boss_flash_render(int color, float alpha)
 }
 
 // Lay out and draw the enhanced boss bars per the player's Enhancements
-// settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2. notes.md §Boss & enemy health bars.
+// settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2.
 static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlpha, bool decrement, unsigned int barCount)
 {
 	// Bars draw into game_screen (playfield space); JE_inGameDisplays draws the corner HUD
 	// indicators in the same space, so keep bars centred on the playfield and clear of them.
-	// notes.md §Widescreen, §Boss & enemy health bars.
 	const int PF_L  = PLAYFIELD_LEFT;        // 24: left visible edge
 	const int PF_R  = PLAYFIELD_RIGHT;       // 322: right visible edge, just before the HUD
 	const int PF_CX = PF_L + PLAYFIELD_WIDTH / 2;    // 173: playfield centre
@@ -7984,7 +7940,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 
 	if (!vertical)
 	{
-		// ----- Horizontal bars (Top / Bottom) -----
+		// Horizontal bars.
 		const bool top = (bossBarLayout == BOSS_BAR_TOP);
 		const bool sideBySide = two && splitMode;  // halves on one row; else stacked rows
 
@@ -8031,7 +7987,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 	}
 	else
 	{
-		// ----- Vertical bars (Left / Right) -----
+		// Vertical bars.
 		// Bars hug the side edges: the left edge carries player-1 corner indicators
 		// (use the clear middle band); the right is full-height in 1-player but
 		// banded in 2-player. Two-bar modes: Split = one per side, Together =
@@ -8222,7 +8178,7 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 
 // Tiny per-enemy health bars: one bar per linknum group, spanning the group and showing its
 // most-damaged part. Shown once an enemy has taken damage (healthbar_seen latch); boss-linked
-// groups are skipped; only active, damageable slots qualify. notes.md §Boss & enemy health bars.
+// groups are skipped; only active, damageable slots qualify.
 static void draw_enemy_health_bars(void)
 {
 	if (!enemyBars)
@@ -8365,7 +8321,7 @@ void draw_boss_bar(void)
 		draw_boss_bars_classic(bars);
 }
 
-// Per-frame redraw of the enhanced boss bars at an interpolated hit flash. notes.md §Boss & enemy health bars.
+// Redraw enhanced boss bars with an interpolated hit flash.
 static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 {
 	if (bossBarStyle != BOSS_BAR_ENHANCED)

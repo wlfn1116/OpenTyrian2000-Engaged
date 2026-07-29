@@ -82,7 +82,7 @@ enum
 // Horizontal centre of the monitor window's readout slot (the panel under the map, y173). Both the
 // shop cash total and the endless course RANK are centred on this x (value 77). The slot is
 // asymmetric -- the corner bulb eats its right end -- so this is the window centre, not the slot
-// midpoint. See JE_drawEndlessCourseMods (ENDLESS_RANK_CX) and notes.md §Menus & shop.
+// midpoint. See JE_drawEndlessCourseMods and ENDLESS_RANK_CX.
 #define MENU_MONITOR_CENTER_X 77
 
 /*** Structs ***/
@@ -135,7 +135,7 @@ static int upgradeSubScrollTop = 1;
 static int upgradeSubPrevSel = 0;    // curSel last frame; the view follows only when it changes
 
 // Flush the current joystick's bindings to opentyrian.cfg right away: the Switch HOME-menu
-// exit never runs JE_tyrianHalt's config write (notes.md §Console ports).
+// exit never runs JE_tyrianHalt's config write.
 static void save_joystick_config_now(void)
 {
 	if (joystick_config >= 0 && joystick_config < joysticks)
@@ -394,7 +394,7 @@ JE_longint JE_cashLeft(void)
 	return tempL;
 }
 
-// ---- Generator power gauge (upgrade screen) ---------------------------------
+// Generator power gauge.
 // Raw pixels (not a blit), updated once per logic tick. Each tick the clean interface
 // background under the bar is snapshotted, so JE_weaponSimSmoothPresent can redraw
 // it at an interpolated level every presented frame.
@@ -474,7 +474,7 @@ static void draw_menu_power_bar(SDL_Surface *s, int power_value)
 
 // Smooth weapon-sim preview: replay the recorded frame at interpolated positions, copying only
 // the preview box. weaponSimOverlayFn (NULL except in the custom weapon creator) draws over the
-// finished box each present, receiving the interpolation alpha so overlays glide. notes.md §Menus & shop.
+// finished box each present, receiving the interpolation alpha so overlays glide.
 static void (*weaponSimOverlayFn)(float alpha) = NULL;
 
 // The non-blit overlay (power gauge, segment bars, cost/cash text) comes from the
@@ -595,7 +595,7 @@ static void configure_buysell_debug_menu(void)
 
 /* Endless swaps the shop's front-menu items 2/3 (Data Cubes -> E-Shop, Ship Specs -> Perks) and
  * captures the stock labels so a campaign shop restores them. The E-Shop labels carry live prices,
- * so this is re-called after each buy. notes.md §Menus & shop. */
+ * so this is called again after each buy. */
 static void configure_endless_shop_menu(void)
 {
 	static char stockCubes[sizeof(menuInt[1][1])];
@@ -663,7 +663,7 @@ static void configure_endless_perk_menu(void)
 
 /* Populate MENU_PERKS as a read-only list of the perks owned this run (the "Perks" front-menu entry
  * that replaces Ship Specs in endless). Rows render from perkListId[], not menuInt, so the list can
- * hold every owned perk and scroll. notes.md §Menus & shop. */
+ * hold every owned perk and scroll. */
 static void configure_endless_perk_list_menu(void)
 {
 	SDL_strlcpy(menuInt[MENU_PERKS + 1][0], "Perks", sizeof(menuInt[MENU_PERKS + 1][0]));  // title, drawn by JE_drawMenuHeader
@@ -2804,7 +2804,7 @@ void draw_ship_illustration(void)
 
 	// Each weapon id has a mount point in exactly one of these tables (the other holds -1); prefer
 	// the slot's table but fall back to the weapon's real mount table so an endless cross-slot
-	// weapon never indexes at [-1]. NortShip specials pin to the front. notes.md §Menus & shop.
+	// weapon never indexes at [-1]. NortShip specials pin to the front.
 	const int front_weapon_xy_list[60] =
 	{
 		 -1,  4,  9,  3,  8,  2,  5, 10,  1, -1,
@@ -3070,8 +3070,8 @@ void JE_drawMenuHeader(void)
 }
 
 // Endless E-Shop: tint each buy row by WHAT IT IS, so related purchases share a colour and the
-// player can read the menu at a glance. Banks are palette-1 (the shop palette; see notes.md
-// "Menus & shop"): 12=green, 8=cyan, 4=red, 5=purple, 7=fiery red->yellow, 15=default gold. Keyed
+// player can read the menu at a glance. Palette-1 banks are 12=green, 8=cyan, 4=red,
+// 5=purple, 7=red-to-yellow, and 15=default gold. Keyed
 // by menu row x (== curSel[MENU_ESHOP]); the row order is fixed in configure_endless_shop_menu().
 static unsigned int endless_eshop_row_bank(JE_byte x)
 {
@@ -3182,7 +3182,7 @@ void JE_drawMenuChoices(void)
 
 // Chart-a-Course monitor overlay: the course's modifiers on the planet monitor -- threats from the
 // top-left in red, boons from the bottom-right in green, opposite corners so long lines never
-// collide. Palette/shade facts in notes.md §Menus & shop.
+// collide.
 #define ENDLESS_MODS_LEFT_X    22
 #define ENDLESS_MODS_RIGHT_X  132
 #define ENDLESS_MODS_TOP_Y     20
@@ -3191,7 +3191,7 @@ void JE_drawMenuChoices(void)
 
 // Danger-grade slot under the map. The slot is asymmetric (the corner bulb eats its right end), so
 // centre on the monitor window's centre (MENU_MONITOR_CENTER_X), not the slot midpoint, and every
-// rank lines up -- the same slot/centre the shop cash total uses. notes.md §Menus & shop.
+// rank lines up in the same slot used by the shop cash total.
 #define ENDLESS_RANK_CX        MENU_MONITOR_CENTER_X
 #define ENDLESS_RANK_Y        173   // endlessModText draws the body AT this row (no +1 like DARKEN)
 
@@ -3235,7 +3235,7 @@ static int endlessThreatShade(int weight)
 
 // One overlay row: a 1px black 8-direction outline, then the tinted fill via JE_outTextAndDarken.
 // FULL_SHADE can't be used -- its negative brightness is JE_outText's shadow sentinel, so deep-red
-// tiers would render black. notes.md §Menus & shop.
+// tiers would render black.
 static void endlessModText(int x, int y, const char *s, unsigned int bank, int brightness)
 {
 	for (int dy = -1; dy <= 1; ++dy)
@@ -3255,7 +3255,7 @@ static void JE_drawEndlessCourseMods(void)
 
 	// The course's danger grade, centred in the slot under the map: "RANK " in the help-line beige,
 	// then the letter tinted by danger (green F -> red S+++, endlessRankHue). Both go through
-	// endlessModText so they share ONE uniform black outline -- that keeps the red end from blending
+	// endlessModText so they share a uniform black outline, keeping the red end from blending
 	// into the red slot, and the shadow stays a single colour across the whole line. Shown for every
 	// valid course, including Calm ones that have no mod rows below.
 	const char *rank  = endlessCourseRank(course);
@@ -3319,7 +3319,7 @@ static void JE_drawNavMonitor(void)
 
 	// Loop mapPNum (entries actually written), not menuChoices-1: in endless menuChoices is
 	// (course count + 2), so menuChoices-1 reads past mapPlanet[] and feeds JE_drawPlanet a garbage
-	// planet number (crash). notes.md §Menus & shop.
+	// planet number.
 	for (x = 0; x < mapPNum; x++)
 	{
 		if (mapPlanet[x] > 11)
@@ -3737,19 +3737,18 @@ void JE_doShipSpecs(void)
 	wait_input(true, true, true);
 }
 
-// E-Shop cost highlight: the game's cash colour (bank 1) reads cleanly under the shop's palette 1.
-// notes.md §Menus & shop.
+// E-Shop cost highlight under shop palette 1.
 #define ENDLESS_COST_HL_BANK   1
 #define ENDLESS_COST_HL_BRIGHT 6
 
 // Chart-a-Course runs under palette 18, where bank 1 clashes; bank 14 (the course text's own
-// colour) reads correctly there. notes.md §Menus & shop.
+// colour) reads correctly there.
 #define ENDLESS_COURSE_HL_BANK   14
 #define ENDLESS_COURSE_HL_BRIGHT 6
 
 // Right edge every endless help-bar figure right-aligns to -- Chart-a-Course payout, E-Shop price,
 // perk buyout, offered perk's stack count -- flush against the bar's right end (description left,
-// figure right). notes.md §Menus & shop.
+// figure right).
 #define ENDLESS_COURSE_PAYOUT_RIGHT 305
 
 /* Draw `right` flush against that edge on the help bar, backing off to just after `text` when an
@@ -4011,7 +4010,7 @@ void JE_drawMainMenuHelpText(void)
 		SDL_strlcpy(tempStr, endlessCourseHelp(temp), sizeof(tempStr));
 		// '~' is a brightness toggle in this font renderer, never drawn (see fonthand.c), so keep
 		// it out of format strings -- an earlier "~$%ld" here shifted the palette bank and corrupted
-		// the digits rather than printing a tilde. notes.md §General pitfalls.
+		// the digits rather than printing a tilde.
 		snprintf(costStr, sizeof(costStr), "$%ld", endlessCoursePayout(temp));
 	}
 	else if (temp == menuChoices[curMenu] - 2 ||
@@ -4585,18 +4584,8 @@ static void loadAllLevels(void)
 	}
 }
 
-/* ---- The endless debug jump screen ----------------------------------------------------------
- * A small HUB -- zone, base level, one row per GROUP of toggles, then Start -- with drill-in lists
- * behind the groups that hold dozens of entries. The hub never scrolls and each list is one flat
- * subject with its own headings.
- *
- * Console parity is the other half of the design: d-pad + confirm + cancel alone reaches every row
- * and value. The shoulder buttons page long lists (read raw -- menus only receive
- * confirm/cancel/directions from a pad), and the Zone row opens the console software keypad.
- */
-/* The row model both debug pickers share: a list rebuilt every frame from row KINDS, with
- * non-selectable headings mixed in. Nothing carries fixed row offsets, so adding a modifier, a
- * perk or a level shifts nothing. */
+/* Endless debug jump and tuning screens. */
+/* Shared row model with non-selectable headings and no fixed offsets. */
 typedef struct { Uint8 kind; short idx; const char *label; } PickerRow;
 
 enum  // row kinds
@@ -4699,16 +4688,7 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	}
 }
 
-/* The endless debug form. Two shapes off one screen:
- *
- *   jumpMode  the ZONE JUMP -- pick a base level and launch into it at a chosen zone and slate.
- *   !jumpMode the TUNE form -- the same slate and perk editors, but it applies in place and closes
- *             instead of launching, and outside endless it also carries the master toggle that
- *             runs the effect layer inside a normal campaign game.
- *
- * Both reach the SCALING page. Returns true if a level was launched (select_level armed the jump);
- * always false in tune mode.
- */
+/* Jump mode launches a chosen zone; tune mode applies effects in place. */
 static bool endlessDebugScreen(bool jumpMode)
 {
 	// Outside endless the effect layer is opt-in, and the toggle for it lives on this screen.
@@ -5702,14 +5682,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	return chosen;
 }
 
-/* ---- The campaign / arcade debug level picker -----------------------------------------------
- * One list of EVERY level in the game, grouped under episode headings; Left/Right JUMPS an episode
- * inside that one list rather than switching which episode is browsed. Reachable with d-pad +
- * confirm + cancel on a pad (shoulders page). Shares its row model and level list with
- * endlessDebugScreen(), which is endless mode's own form.
- *
- * Returns true if a level was chosen (select_level() has already armed the jump).
- */
+/* Campaign debug picker, grouped by episode in one list. */
 /* The debug menu's way in: the same screen with no level jump attached, so the effect layer can be
  * retuned mid-game (and, outside endless, switched on for a normal campaign). */
 void endlessDebugTuneScreen(void)
@@ -6381,7 +6354,7 @@ static int cwBulletIndex(void)
 	return cwClamp(cwBulletSel, 0, mx - 1);
 }
 
-// ---- combat-preview target dummies (data + layout) -----------------------------
+// Combat-preview target dummies.
 // The dummies give the shots something to hit so on-hit behaviour (Damage, Ice,
 // Explode-To chaining, Homing) is visible. Their count/spacing/height/armour are set
 // from the editor rows via cwLayoutDummies(); the collision + draw code lives further
@@ -6406,7 +6379,7 @@ static void cwLayoutDummies(void)
 	}
 }
 
-// --- readable decoders for the sentinel-encoded raw fields -------------------
+// Decoders for sentinel-encoded fields.
 static void cwFmtDamage(int a, char *b, size_t n)
 {
 	// 101-249 (explode-into-weapon) is shown by the separate -Explode To row, not here.
@@ -6774,7 +6747,7 @@ static void cwRowAdjust(int row, int dir)
 	customWeaponMaterialize();
 }
 
-// ---- direct numeric entry ------------------------------------------------------
+// Direct numeric entry.
 // Many value rows have wide ranges or coarse Left/Right steps (cost jumps by 500, a
 // bullet sprite runs 0..65535), so the editor also lets you type an exact number for
 // them. cwNumericRange says which rows accept typing and their valid range; cwSetNumeric
@@ -6956,7 +6929,7 @@ static void cwRestoreRect(int x0, int y0, int x1, int y1)
 	}
 }
 
-// ---- sprite preview + segment hitbox overlay ------------------------------------
+// Sprite preview and segment hitbox overlay.
 // The number of sprites in a compiled Sprite2 sheet: the offset table (one JE_word per
 // sprite) precedes the sprite data, so the first offset is the table's byte length.
 static int cwSprite2Count(Sprite2_array s)
@@ -7142,13 +7115,7 @@ static void cwDrawPreviewOverlay(float alpha)
 	}
 }
 
-// ---- combat preview: collision + effects ---------------------------------------
-// The preview box has no enemies, so a weapon's on-hit behaviour (Damage, Ice,
-// Explode-To chaining, Homing) is normally invisible — every weapon just fires straight
-// bullets. A lightweight collision pass against the dummies (laid out above) mirrors the
-// game (tyrian2.c ~2263): throw real impact explosions, cascade the chained weapon, freeze
-// on Ice, and drain a regenerating armour bar so damage magnitude reads at a glance. Homing
-// is nudged here too, since the shop shot simulator (simulate_player_shots) ignores aim.
+// Target dummies expose damage, ice, chaining, explosions, and homing in the preview.
 
 // Position the dummies from the current settings and clear any leftover explosions so the
 // preview starts clean. Called when the creator opens.
@@ -7498,7 +7465,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		}
 		fieldScrollTop = cwClamp(fieldScrollTop, 0, (fieldCount > fieldVis) ? fieldCount - fieldVis : 0);
 
-		// --- record the box: dark bg, starfield, the custom weapon firing, the ship ---
+		// Draw the preview box.
 		power = lastPower = 900;  // never let the preview starve for power
 		rl_begin_record();
 		fill_rectangle_xy(VGAScreen, BOX_X0, BOX_Y0, BOX_X1, BOX_Y1, 0);
@@ -7529,15 +7496,14 @@ bool JE_customWeaponCreator(bool canEquip)
 			cwDrawStats();      // live DPS / damage / fire-rate HUD (independent of targets)
 		rl_end_record();
 
-		// --- clip the box: restore the backdrop everywhere outside it, wiping the
-		//     full-screen starfield and any shots that flew past the edges ---
+		// Restore the backdrop outside the preview box.
 		cwRestoreRect(0, 0, LEGACY_WIDTH - 1, BOX_Y0 - 1);                   // above
 		cwRestoreRect(0, BOX_Y1 + 1, LEGACY_WIDTH - 1, vga_height - 1);      // below
 		cwRestoreRect(0, BOX_Y0, BOX_X0 - 1, BOX_Y1);                        // left
 		cwRestoreRect(BOX_X1 + 1, BOX_Y0, LEGACY_WIDTH - 1, BOX_Y1);         // right
 		JE_rectangle(VGAScreen, BOX_X0 - 1, BOX_Y0 - 1, BOX_X1 + 1, BOX_Y1 + 1, C_HI);  // box frame
 
-		// --- editor panel (over the backdrop, right of the box) ---
+		// Draw the editor panel.
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
 		draw_font_hv_shadow(VGAScreen, (panX0 + panX1) / 2, panY0 + 2, "CUSTOM WEAPON CREATOR",
@@ -7664,7 +7630,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		JE_weaponSimSmoothPresent();  // smooth box interpolation + cursor + present (Smooth Motion on)
 		menuWaitWithSmoothCursor();   // waits out the tick if Smooth Motion is off
 
-		// --- input gathered over the tick: wheel scrolls, motion hovers, click acts ---
+		// Process input gathered during the tick.
 		if (mouse_scroll != 0)
 		{
 			selected = cwClamp(selected - mouse_scroll, 0, navCount - 1);
@@ -8856,7 +8822,7 @@ void JE_weaponViewFrame(void)
 
 	// Position + fire both sidekicks, mirroring the gameplay mounts so the preview is faithful:
 	// side pods (tr 0), front pods (tr 2), and orbiting satellites (tr 4) use their gameplay
-	// offsets; trailing companions (tr 1/3) keep a side-by-side layout. notes.md §Menus & shop.
+	// offsets; trailing companions (tr 1/3) keep a side-by-side layout.
 	const bool bothFront = options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 2
 	                    && options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 2;
 

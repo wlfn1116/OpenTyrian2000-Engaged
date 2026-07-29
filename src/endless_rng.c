@@ -1,53 +1,43 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: the run seed, the structural RNG, and the seed-select screen.
- *
- * One of the endless_*.c files that make up endless mode: endless.h is the public
- * interface, endless_internal.h the state and helpers the group shares.
- */
+/* Endless run seeds, structural RNG, and seed selection. */
 
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"        // difficultyLevel, DIFFICULTY_*, player-independent globals
-#include "font.h"          // draw_font_hv_shadow, JE_textWidth, fonts, alignment
-#include "fonthand.h"      // JE_outText
-#include "joystick.h"      // push_joysticks_as_keyboard
-#include "keyboard.h"      // newkey/lastkey_scan/keysactive, service_SDL_events
-#include "mouse.h"         // mouse_x/y, JE_mouseStart/Replace, mouseCursor
-#include "mtrand.h"        // mt_rand
-#include "nortsong.h"      // JE_playSampleNum, setDelay, wait_delayorinput, limit_render_fps
-#include "palette.h"       // colors, fade_palette, fade_black
-#include "picload.h"       // JE_loadPic
-#include "player.h"        // player[]
-#include "sndmast.h"       // S_SELECT, S_CURSOR, S_SPRING
-#include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
-#include "varz.h"          // eventRec, maxEvent, map* globals
-#include "video.h"         // VGAScreen/VGAScreen2, JE_showVGA, output_vsync
+#include "config.h"
+#include "font.h"
+#include "fonthand.h"
+#include "joystick.h"
+#include "keyboard.h"
+#include "mouse.h"
+#include "mtrand.h"
+#include "nortsong.h"
+#include "palette.h"
+#include "picload.h"
+#include "player.h"
+#include "sndmast.h"
+#include "sprite.h"
+#include "varz.h"
+#include "video.h"
 
 #include <stdio.h>
 #include <string.h>
 
-// --- Run seed & structural RNG --------------------------------------------------
-// Structure (level order, mutators, perks, shop stock) draws from a dedicated SplitMix64
-// stream, isolated from the shared gameplay mt_rand (notes.md §Seeded structure RNG).
-char   endlessRunSeed[ENDLESS_SEED_MAXLEN] = "";  // the run's seed string (also shown in-game)
-static Uint64 endlessSeedHash = 0;   // FNV-1a hash of endlessRunSeed; the base for every per-zone reseed
-static Uint64 endlessRngState = 0;   // live SplitMix64 state (structural stream)
-Uint64 endlessEliteRngState = 0;  // live SplitMix64 state for the seeded elite/champion tier rolls
+// Structural choices use SplitMix64, isolated from gameplay's mt_rand stream.
+char   endlessRunSeed[ENDLESS_SEED_MAXLEN] = "";
+static Uint64 endlessSeedHash = 0;
+static Uint64 endlessRngState = 0;
+Uint64 endlessEliteRngState = 0;
 
-// FNV-1a over the string's bytes: maps any typed text to a 64-bit seed, so every seed is valid.
+// FNV-1a maps any seed string to 64 bits.
 static Uint64 endlessHashString(const char *s)
 {
-	Uint64 h = 14695981039346656037ULL;  // FNV offset basis
+	Uint64 h = 14695981039346656037ULL;
 	for (; *s != '\0'; ++s)
-		h = (h ^ (Uint8)*s) * 1099511628211ULL;  // FNV prime
+		h = (h ^ (Uint8)*s) * 1099511628211ULL;
 	return h;
 }
 
-// One SplitMix64 step on `state`: the endless RNG core, shared by the structural stream and the
-// separate elite-tier stream below. Every use is `...Rand() % n`.
+// One SplitMix64 step, shared by the structural and elite streams.
 static Uint32 endlessSplitMixNext(Uint64 *state)
 {
 	Uint64 z = (*state += 0x9E3779B97F4A7C15ULL);
@@ -57,8 +47,7 @@ static Uint32 endlessSplitMixNext(Uint64 *state)
 	return (Uint32)(z >> 32);
 }
 
-// Derive a fresh stream state for a (zone, phase): mix the run's seed hash with a salt so each
-// (seed, salt) is an independent, reproducible sequence.
+// Derive an independent, repeatable stream for a salted phase.
 Uint64 endlessSplitMixSeed(Uint64 salt)
 {
 	Uint64 z = endlessSeedHash + (salt + 1) * 0x9E3779B97F4A7C15ULL;
@@ -68,23 +57,19 @@ Uint64 endlessSplitMixSeed(Uint64 salt)
 	return z;
 }
 
-// The structural random: a drop-in for mt_rand() at the structural call sites (level order,
-// course mutators, perk offers, shop stock). Re-derived per (zone, phase) by endlessReseed.
+// Structural random for levels, courses, perks, and shop stock.
 Uint32 endlessRand(void)
 {
 	return endlessSplitMixNext(&endlessRngState);
 }
 
-// Re-derive the structural stream for a fresh (zone, phase): each zone's generation is independent
-// of what the player did in earlier zones. Called at each outpost and each level start (see
-// endlessBetweenLevels / endlessRegenerateLevel).
+// Restart a structural phase without depending on earlier player choices.
 void endlessReseed(Uint64 salt)
 {
 	endlessRngState = endlessSplitMixSeed(salt);
 }
 
-// The elite/champion tier random: its own seeded stream, per (seed, zone) in endlessResetElites;
-// only the roll sequence is seed-fixed (notes.md §Seeded structure RNG).
+// Elite tiers use a separate per-zone stream.
 Uint32 endlessEliteRand(void)
 {
 	return endlessSplitMixNext(&endlessEliteRngState);
@@ -102,26 +87,25 @@ const char *endlessSeedString(void)
 	return endlessRunSeed;
 }
 
-// The pre-difficulty "choose your seed" screen (see endless.h), shown for a new Endless run.
-// Styled after difficultySelect (the adjacent screen): pic-2 background, centered rows.
+// Seed and Hardcore selection before the difficulty screen.
 bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 {
 	if (shopSpriteSheet.data == NULL)
-		JE_loadCompShapes(&shopSpriteSheet, '1');  // mouse-pointer sprites (as difficultySelect does)
+		JE_loadCompShapes(&shopSpriteSheet, '1');
 
-	char seed[ENDLESS_SEED_MAXLEN] = "";  // the seed being typed ("" => a random seed is rolled on Start)
+	char seed[ENDLESS_SEED_MAXLEN] = "";
 	size_t len = 0;
-	bool hardcore = false;  // the Hardcore toggle (default off); written to *outHardcore on Start
+	bool hardcore = false;
 
 	enum { ROW_SEED, ROW_RANDOM, ROW_HARDCORE, ROW_START, ROW_COUNT };
 	int selected = ROW_SEED;
 
-	const int xCenter = 320 / 2;  // fixed 320 center (see difficultySelect / gameplaySelect rationale)
+	const int xCenter = 320 / 2;
 	const int yRows   = 82;
 	const int dyRows  = 20;
 	const int hRow    = 15;
 
-	// Background + static titles: drawn once into VGAScreen2, copied to VGAScreen each frame.
+	// Cache the static background in VGAScreen2.
 	JE_loadPic(VGAScreen2, 2, false);
 	draw_font_hv_shadow(VGAScreen2, xCenter, 20, "ENDLESS", large_font, centered, 15, -3, false, 2);
 	draw_font_hv_shadow(VGAScreen2, xCenter, 54, "Type a seed for a repeatable run,",  small_font, centered, 15, 2, false, 1);
@@ -131,7 +115,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 
 	bool first = true, done = false, commit = false;
 	int prev_mx = mouse_x, prev_my = mouse_y;
-	newkey = newmouse = new_text = false;  // input flags are consumed + cleared at the END of each pass
+	newkey = newmouse = new_text = false;
 	while (!done)
 	{
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
@@ -151,7 +135,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 			                    normal_font, centered, 15, -4 + (i == selected ? 2 : 0), false, 2);
 		}
 
-		// A line under the rows spells out what the current Hardcore choice means, then the controls.
+		// Explain the selected save policy.
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 4,
 		                    hardcore ? "Hardcore: no saving, and no second chances."
 		                             : "Standard: save anytime; bail a level to re-outfit.",
@@ -165,16 +149,13 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 			first = false;
 		}
 
-		// Present at the render rate, smooth like every other menu: pump SDL events every frame and
-		// end the pass the moment input arrives. JE_mouseStart calls service_SDL_events, so input
-		// accumulates onto the edge flags (cleared only at the end of the pass, never mid-pass), so
-		// no keystroke is dropped. setDelay bounds an idle pass; input ends it early.
+		// Present until input arrives or the menu tick ends.
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		push_joysticks_as_keyboard();
 		setDelay(1);
 		for (;;)
 		{
-			JE_mouseStart();   // service_SDL_events(false): pump + accumulate, then prep the cursor
+			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
 			if (newkey || newmouse || new_text || getDelayTicks() == 0)
@@ -183,9 +164,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 				limit_render_fps();
 		}
 
-		// Row hit-testing (centered rows): which row, if any, is the cursor over. Only a mouse
-		// MOVE re-selects (so arrow-key navigation isn't yanked back to a resting cursor); a click
-		// still acts on whatever row it lands on.
+		// Mouse movement changes selection; a resting pointer does not.
 		int hover = -1;
 		for (int i = 0; i < ROW_COUNT; ++i)
 		{
@@ -209,7 +188,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 			if (lastmouse_but == SDL_BUTTON_RIGHT)
 			{
 				JE_playSampleNum(S_SPRING);
-				done = true;  // cancel
+				done = true;
 			}
 			else if (hover >= 0)
 			{
@@ -236,7 +215,6 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 				break;
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				// A natural left/right on the on/off Hardcore row flips it.
 				if (selected == ROW_HARDCORE)
 				{
 					hardcore = !hardcore;
@@ -249,14 +227,14 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 				break;
 			case SDL_SCANCODE_ESCAPE:
 				JE_playSampleNum(S_SPRING);
-				done = true;  // cancel
+				done = true;
 				break;
 			default:
 				break;
 			}
 		}
 
-		// Typed characters always edit the seed field -- any printable ASCII is a valid seed byte.
+		// Printable ASCII is valid in a seed.
 		if (new_text)
 		{
 			for (size_t ti = 0; last_text[ti] != '\0'; ++ti)
@@ -273,18 +251,18 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 		{
 			if (selected == ROW_RANDOM)
 			{
-				snprintf(seed, sizeof(seed), "%lu", (unsigned long)(1u + mt_rand() % 999999999u));  // a fresh random seed to preview / share
+				snprintf(seed, sizeof(seed), "%lu", (unsigned long)(1u + mt_rand() % 999999999u));
 				len = strlen(seed);
 				JE_playSampleNum(S_SELECT);
 			}
 			else if (selected == ROW_HARDCORE)
 			{
-				hardcore = !hardcore;  // Enter / click on the toggle flips it, doesn't start the run
+				hardcore = !hardcore;
 				JE_playSampleNum(S_CLICK);
 			}
-			else  // ROW_SEED or ROW_START: begin the run
+			else
 			{
-				if (len == 0)  // blank field => roll a random seed so a run always has one
+				if (len == 0)
 					snprintf(seed, sizeof(seed), "%lu", (unsigned long)(1u + mt_rand() % 999999999u));
 				SDL_strlcpy(outSeed, seed, outN);
 				if (outHardcore)
@@ -295,9 +273,9 @@ bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore)
 			}
 		}
 
-		newkey = newmouse = new_text = false;  // consume this pass's input so nothing repeats next pass
+		newkey = newmouse = new_text = false;
 	}
 
-	fade_black(commit ? 10 : 15);  // fade out like difficultySelect, so the next screen fades in cleanly
+	fade_black(commit ? 10 : 15);
 	return commit;
 }

@@ -52,7 +52,7 @@ bool vita_swkbd(char *out, size_t out_size, size_t max_len,
 	SDL_SetTextInputRect(&rect);
 
 	// The IME is a Vita system common dialog; it holds the control pad until terminated, so drive
-	// the loop off its native status and force it down afterwards. notes.md §Console ports / pitfalls.
+	// the loop off its native status and force it down afterwards.
 	SDL_StartTextInput();
 
 	bool everRunning = false;

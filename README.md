@@ -1,176 +1,118 @@
 # OpenTyrian2000 Engaged
 
-OpenTyrian2000 Engaged is a fork of OpenTyrian2000, which is itself an
-open-source port of the DOS game Tyrian. It leaves the original game in place
-and adds a widescreen playfield, display-rate motion, a new Endless mode,
-weapon-building tools, optional MIDI music, and Nintendo Switch and PlayStation
-Vita ports.
+OpenTyrian2000 Engaged is a fork of
+[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
+the DOS game Tyrian. The original campaigns and arcade modes remain available.
 
-Tyrian is a vertical scrolling shooter. Its story mode is set in 20,031, where
-you play Trent Hawkins, a fighter pilot hired to fight MicroSol. The game also
-has one- and two-player arcade modes and networked multiplayer.
+This fork adds:
 
-The story mode, arcade modes, and the original levels are unchanged. The
-additions below are optional; where noted, they can be turned off.
+- a 356x200 widescreen playfield;
+- smooth, display-rate rendering with optional sub-pixel supersampling;
+- an Endless mode built from the original levels;
+- a custom weapon editor and per-episode weapon options;
+- optional FluidSynth and system MIDI playback;
+- expanded health bars, menus, and debug tools;
+- Nintendo Switch and PlayStation Vita homebrew builds.
 
-## What this fork adds
+See [GUIDE.md](GUIDE.md) for controls, settings, and Endless mode mechanics.
+Maintainer notes are in [notes.md](notes.md).
 
-Basically a bunch of stuff that I thought would be cool and also wouldn't really take that much away from the actual game.
+## Game data
 
-### Widescreen
+The engine needs the freeware Tyrian 2000 data files:
 
-- The playfield renders at 356x200 (16:9 with square pixels) instead of the
-  original 320x200. The HUD keeps its size and stays pinned to the right edge.
-- Menus, the shop, and the HUD are still drawn against the original 320-pixel
-  layout, centered in the wider image.
+<https://www.camanis.net/tyrian/tyrian2000.zip>
 
-### Motion and framerate
+For a PC build, place the executable beside the `data` directory.
 
-- The game simulates at a fixed 35 Hz, as it always has. Drawing is separated
-  from the simulation: frames are interpolated between ticks and shown at the
-  display's refresh rate.
-- The player ship is integrated at the display rate with its own movement
-  model, which puts control latency below one simulation tick. This is
-  single-player only and is turned off automatically for demo recording, demo
-  playback, and network games.
-- The playfield can optionally be rendered internally at up to 8x its normal
-  resolution, so slow scrolling moves in fractions of a pixel instead of whole
-  steps.
-- The frame-feedback filter levels (ice, water, lava) and the Destruct minigame
-  have their own display-rate smoothing.
+## Main additions
+
+### Widescreen and motion
+
+The playfield is 356x200 instead of 320x200. The HUD remains at the right edge,
+while menus keep their original 320-pixel layout and are centred.
+
+The simulation still runs at 35 Hz. Smooth Motion interpolates world rendering
+at the display rate. In single-player games, the ship also uses display-rate
+movement to reduce input latency. This movement is disabled for demos and
+network games.
+
+Sub-pixel rendering draws the playfield internally at up to 8x scale. This makes
+slow scrolling smoother without changing the simulation.
 
 ### Endless mode
 
-- Plays the game's real, unmodified levels in a random order across episodes,
-  and gets harder the deeper you go.
-- The added difficulty comes from scaling enemy statistics -- health, fire
-  rate, projectile speed, and shot damage -- and from tinted elite and champion
-  enemies, not from changing the levels themselves.
-- Between levels you dock at an outpost with a shop, and chart a branching
-  course whose sectors carry their own modifiers and a danger rank from F to
-  S+++.
-- You choose a perk after the first cleared zone and every fourth zone after
-  that, plus one for clearing each milestone zone (25, 50, 75, 100, ...), where
-  the pick is five wide instead of three. Perks last for the whole run.
-- Runs are seeded: the same seed and the same choices reproduce the same order
-  of levels, courses, shops, and perks.
-- A Hardcore option disables saving, so dying or quitting ends the run for good.
-  Without it, progress is saved at outpost checkpoints.
+Endless mode selects from the original levels, adds depth-based enemy scaling,
+and places an outpost between zones. At each outpost you can:
 
-### Weapons
+- buy and upgrade equipment;
+- use the Endless E-Shop;
+- choose from several routes with visible risks and rewards;
+- take a perk when one is due.
 
-- A creator for a fully custom weapon with 11 power levels, usable as a front
-  gun, rear gun, or sidekick, with a live firing preview. (inspired by TYRHACK)
-- Menus to reproduce the per-episode weapon differences from the original games
-  (Episodes 1-3 versus 4 and 5, including the spark-trail variants) instead of
-  using a single set, plus submenus for tweaking specific weapons.
+Runs are seeded. The same seed and choices reproduce the same level, shop,
+course, and perk sequence. Hardcore runs disable checkpoints.
 
-### Music
+### Weapons and music
 
-- Optional MIDI playback of the original songs through FluidSynth or the
-  operating system's synthesizer. FluidSynth needs a SoundFont (`.sf2`) file to
-  produce sound; without one it stays silent. The operating system's
-  synthesizer needs no extra file. OPL emulation remains the default, so none of
-  this is required.
-- Songs loop at their internal loop point rather than restarting the file, and
-  the end-of-level jingle no longer repeats.
+The Custom Weapon Creator makes one weapon with 11 editable power levels. It can
+be used as a front gun, rear gun, or sidekick.
 
-### Interface
+Weapon Tweaks restores selected differences between the Episode 1-3 and Episode
+4-5 data.
 
-- Reworked boss health bars with configurable style and layout (Setup ->
-  Enhancements).
-- Optional small health bars on damaged enemies.
-- Extra menus for the jukebox, the Destruct minigame, SuperTyrian, and the
-  secret Super Arcade ships.
-- An optional Debug Mode (Setup -> Enhancements) that adds level select and
-  diagnostic entries to the menus.
+OPL remains the default music backend. FluidSynth requires a SoundFont (`.sf2`,
+`.sf3`, or `.sf`) file. The Windows x64 build can also use the system MIDI
+synthesizer.
 
-### Stability
+## Controls
 
-- On Windows, a crash handler writes a stack trace and a dump of the game state
-  to `opentyrian_log.log`, with a watchdog that captures the same information if
-  the game stops responding.
-- A fix for a soft-lock that could happen when a boss was destroyed faster than
-  the level script expected.
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move |
+| Space | Fire |
+| Enter | Change rear-weapon mode |
+| Ctrl / Alt | Fire left / right sidekick |
+| Alt+Enter | Toggle fullscreen |
 
-## Additional necessary files
-
-Like OpenTyrian2000, this requires the Tyrian 2000 data files, which have been
-released as freeware:
-
-  https://www.camanis.net/tyrian/tyrian2000.zip
-
-On the PC build, keep the game executable next to the `data` folder.
-
-## Keyboard controls
-
-```
-alt-enter      -- toggle full-screen
-arrow keys     -- ship movement
-space          -- fire weapons
-enter          -- toggle rear weapon mode
-ctrl/alt       -- fire left/right sidekick
-```
-
-Keys are rebindable in the setup menu. Controllers are supported and have their
-own configuration menu.
+Controls are rebindable. Controllers are supported.
 
 ## Network multiplayer
 
-Networked games are started manually from the command line by both players at
-the same time:
+Both players must start the game from the command line:
 
-```
+```text
 opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
 ```
 
-HOSTNAME is your opponent's IP address, NUM is either 1 or 2 depending on which
-ship you pilot, and NAME is your alias. The game uses UDP port 1333 and UDP hole
-punching, so opening ports is usually unnecessary.
+`HOSTNAME` is the other player's address. `NUM` is `1` or `2`. The game uses UDP
+port 1333.
 
-Network play is inherited from OpenTyrian2000 and has not been tested. The
-display-rate ship control is disabled in network games so both sides stay in
-step.
-
-## Consoles
-
-- Nintendo Switch, as a homebrew `.nro` -- see [switch/README.md](switch/README.md).
-- PlayStation Vita, as a `.vpk` -- see [vita/README.md](vita/README.md).
-
-Both are unofficial homebrew builds and need a console that can run homebrew.
-MIDI music is Windows-64-bit only and is not built for the consoles.
+Network play is inherited from OpenTyrian2000 and is not regularly tested.
 
 ## Building
 
-The Windows build uses Visual Studio; the project files are in `visualc`.
-`build-all.ps1` builds the PC, Switch, and Vita targets and collects successful
-outputs in `build`. Building the Switch and Vita targets additionally needs
-devkitPro and VitaSDK; see the README in each folder.
+The Windows project is in `visualc`. The root build script can build and collect
+the PC, Switch, and Vita targets:
 
 ```powershell
-.\build-all.ps1                         # all targets, incremental
-.\build-all.ps1 -Target PC -Clean       # clean PC x64 Release build
-.\build-all.ps1 -Target PC,Switch       # selected targets only
+.\build-all.ps1
+.\build-all.ps1 -Target PC -Clean
+.\build-all.ps1 -Target PC,Switch
 .\build-all.ps1 -Target PC -Configuration Debug -NoCollect
 ```
 
-Run `.\build-all.ps1 -Help` for every option.
+Run `.\build-all.ps1 -Help` for all options. Console builds also require their
+platform toolchains:
 
-Collected artifacts include their platform in the filename, for example
-`OpenTyrian2000-Engaged-Win64.exe`. Switch and Vita builds use the corresponding
-`-Switch.nro` and `-Vita.vpk` suffixes.
-
-## More detail
-
-- [GUIDE.md](GUIDE.md) -- the player's guide: every setting explained, and a full
-  reference for Endless mode (modifiers, elites, perks, the outpost, the economy).
-- [notes.md](notes.md) -- design notes and known pitfalls for the systems above.
+- [Nintendo Switch build](switch/README.md)
+- [PlayStation Vita build](vita/README.md)
 
 ## License
 
-GNU General Public License, version 2 or later, the same as OpenTyrian.
+GNU General Public License, version 2 or later.
 
-## Links
+## Related projects
 
-- OpenTyrian2000 (upstream): https://github.com/KScl/opentyrian2000
-- OpenTyrian: https://github.com/opentyrian/opentyrian
+- [OpenTyrian2000](https://github.com/KScl/opentyrian2000)
+- [OpenTyrian](https://github.com/opentyrian/opentyrian)

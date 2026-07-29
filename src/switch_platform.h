@@ -1,12 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Nintendo Switch (libnx / devkitA64) platform glue.
- *
- * The whole implementation is compiled out unless __SWITCH__ is defined (which
- * devkitA64 sets automatically), so this header and its translation unit are
- * inert on every other target and safe to leave in the shared source tree.
- */
+/* Nintendo Switch platform services. Inert unless __SWITCH__ is defined. */
 #ifndef SWITCH_PLATFORM_H
 #define SWITCH_PLATFORM_H
 

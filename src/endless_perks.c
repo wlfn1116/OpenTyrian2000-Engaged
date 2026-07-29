@@ -1,22 +1,15 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: perks -- the run-persistent, stacking upgrades.
- *
- * One of the endless_*.c files that make up endless mode: endless.h is the public
- * interface, endless_internal.h the state and helpers the group shares.
- */
+/* Endless run-persistent perks. */
 
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"        // difficultyLevel, DIFFICULTY_*, player-independent globals
-#include "custom_weapon.h" // customWeaponPort / customSidekickSlot (reserved shop slots)
-#include "episodes.h"      // item arrays + SHIP_NUM/PORT_NUM/... counts, episodeAvail, JE_initEpisode
-#include "mainint.h"       // JE_getCost
-#include "player.h"        // player[]
-#include "tyrian2.h"       // itemAvail, itemAvailMax
-#include "varz.h"          // eventRec, maxEvent, map* globals
+#include "config.h"
+#include "custom_weapon.h"
+#include "episodes.h"
+#include "mainint.h"
+#include "player.h"
+#include "tyrian2.h"
+#include "varz.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,11 +84,7 @@ int endlessPerkInterestPercent(void)
 	return ENDLESS_INTEREST_BASE_PCT + endlessPerkOwned[PERK_FINANCIER] * ENDLESS_PERK_INTEREST_PCT;
 }
 
-// Financier perk, second half: what the outpost charges, in basis points (10000 = unchanged, 6700 at
-// the 4-stack cap). Applied in JE_getCost as a multiplier on the depth-scaled percent, so it composes
-// with the depth ramp, the Loan Shark tax and Merchant's Favor rather than replacing any of them --
-// the same lever the tax rides, so the perk covers exactly what the tax does: the buy/sell shop, not
-// the E-Shop's own prices.
+// Financier's shop-price multiplier in basis points; it composes with other modifiers.
 int endlessPerkShopCostBp(void)
 {
 	if (!endlessFxActive())
@@ -246,7 +235,7 @@ bool endlessPerkRadarActive(void)
 	return endlessFxActive() && endlessPerkOwned[PERK_RADAR] > 0;
 }
 
-// --- New perks: Surveyor / Executioner / Opening Salvo / Kinetic Converter / Countermeasures /
+// Surveyor, Executioner, Opening Salvo, Kinetic Converter, Countermeasures,
 //     Chain Reaction. Like the perks above, each folds into an existing player-side lever. ----------
 
 // Surveyor perk: extra Chart-a-Course routes this visit (one per stack). The caller adds these to the
@@ -274,9 +263,9 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
 }
 
-// --- Opening Salvo perk ---------------------------------------------------------------------------
+// Opening Salvo.
 // Two timers: endlessSalvoIdle charges the salvo, endlessSalvoWindow is the ~1s that spending it
-// buys, during which every gun AND every special is boosted. notes.md §Opening Salvo.
+// buys, during which guns and specials are boosted.
 
 // Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires.
 void endlessOpeningSalvoTick(void)
@@ -329,7 +318,7 @@ int endlessOpeningSalvoScale(int value)
 
 int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
 
-// --- Kinetic Converter perk -----------------------------------------------------------------------
+// Kinetic Converter.
 // Generator power refunded when the shield soaks a hit. `shieldAbsorbed` is the shield points lost,
 // `tpwr` the shield's per-point charge cost (shields[].tpwr); refunds ENDLESS_PERK_KINETIC_PCT% of that
 // per stack. The caller clamps the resulting power to the generator ceiling.
@@ -341,7 +330,7 @@ int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
 }
 
-// --- Countermeasure Suite perk --------------------------------------------------------------------
+// Countermeasure Suite.
 // endlessCmCooldown counts down to the next ready burst (advanced by endlessGameplayTick).
 void endlessCountermeasureTick(void)
 {
@@ -361,7 +350,7 @@ int endlessPerkCountermeasureRadius(void)
 
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
 
-// --- Failsafe perk ---------------------------------------------------------------------------------
+// Failsafe.
 // I-frames a hit that reaches the HULL buys you, or 0 if the perk isn't owned. Needs no cooldown of
 // its own: the window can only be re-armed by hull damage, and you cannot take hull damage while it
 // runs, so it never chains. The caller extends the ship's existing invulnerability (varz.c).
@@ -372,11 +361,7 @@ int endlessPerkFailsafeTicks(void)
 	return endlessPerkOwned[PERK_FAILSAFE] * ENDLESS_PERK_FAILSAFE_TICKS;
 }
 
-// --- Per-zone perk timer reset --------------------------------------------------------------------
-// Both timers below tick only during gameplay, so without this they would pause across the outpost
-// and resume in whatever state the last zone's final seconds left them. Every sector instead opens
-// from the state a fresh run starts in: countermeasures READY, salvo CHARGED. Called from
-// endlessResetZoneEffects, which also covers the campaign-mods path.
+// Start each zone with countermeasures ready and Opening Salvo charged.
 void endlessResetZonePerkTimers(void)
 {
 	endlessSalvoIdle   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait would be dead time here
@@ -384,7 +369,7 @@ void endlessResetZonePerkTimers(void)
 	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
 }
 
-// --- Chain Reaction perk --------------------------------------------------------------------------
+// Chain Reaction.
 // The pulse itself (finding nearby enemies, dealing armor damage, vaporising fodder) lives at the
 // player-shot kill sites in tyrian2.c, where the enemy tables and explosions are; these just report
 // whether it is active and how far / hard it reaches.
@@ -403,7 +388,7 @@ int endlessPerkChainDamage(void)
 	return (scaled < base) ? base : scaled;
 }
 
-// --- Ordnance Reserves perk -----------------------------------------------------------------------
+// Ordnance Reserves.
 // Two halves of one idea -- you carry more ordnance, and what you set off stays up longer:
 // sidekicks that fire from a magazine get a bigger one, and the specials that run on a timer
 // (flares, the Astral Zone, the invulnerability field) tick for longer.
@@ -432,11 +417,7 @@ int endlessPerkSidekickAmmo(int base)
 	return total > ENDLESS_PERK_AMMO_CAP ? ENDLESS_PERK_AMMO_CAP : total;
 }
 
-// The per-round refill interval for a boosted magazine. `baseTicks` is the shipped
-// `(105 - ammo) * 4` cadence and `stockAmmo` the shipped magazine it was keyed to. Scaling by
-// stock/boosted holds the time to refill a WHOLE magazine constant, so a stack hands you a deeper
-// reserve rather than a longer wait. Keyed to the SHIPPED cadence, not the boosted one, which would
-// make topping off slower in exact proportion to the rounds each stack had just granted.
+// Scale round refill time so a larger magazine keeps the stock full-refill duration.
 int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo)
 {
 	const int mag = endlessPerkSidekickAmmo(stockAmmo);
