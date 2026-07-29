@@ -1,85 +1,55 @@
 /*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode, PRIVATE interface.
- *
- * endless.h is what the rest of the game calls. This header is the contract
- * between the endless_*.c files themselves: the run state each of them owns and
- * the helpers they lend one another. Nothing outside endless_*.c includes it.
- *
- * Who owns what:
- *   endless.c         run state, lifecycle, zone milestones, the run-end screen
- *   endless_rng.c     the run seed and the structural RNG
- *   endless_level.c   which shipped level a zone plays, its music, its reroll
- *   endless_combat.c  enemy scaling, elites, specials, player-side modifiers
- *   endless_perks.c   perks: the run-persistent stacking upgrades
- *   endless_shop.c    the outpost: stock, prices, the E-Shop buys, the gamble
- *   endless_mods.c    the mutator table: sector names, danger tiers, help text
- *   endless_course.c  Chart-a-Course: generating and committing the next sector
- *   endless_save.c    the endless.sav sidecar and the Quit Level sortie snapshot
- *
- * Adding state? Define it in the .c that owns it and declare it here only if
- * another one of these files genuinely needs it -- endless_save.c usually does,
- * since it serializes the run.
+ * Private interface shared by the endless_*.c files.
+ * Define state in its owning source file and expose it here only when necessary.
  */
 #ifndef ENDLESS_INTERNAL_H
 #define ENDLESS_INTERNAL_H
 
 #include "endless.h"
 
-// Clamp v into [lo, hi]. Every scaled lever in endless mode ends in one of these, so it is worth
-// a name: the clamp is the tuning knob that decides WHEN a lever stops growing (opentyr.h's
-// MIN/MAX are macros and would evaluate their arguments twice).
+// Clamp without evaluating the value twice.
 static inline int endlessClamp(int v, int lo, int hi)
 {
 	return (v < lo) ? lo : (v > hi) ? hi : v;
 }
 
-// --- endless_rng.c: run seed & structural RNG -----------------------------------
-// Structure (level order, mutators, perks, shop stock) draws from a dedicated
-// SplitMix64 stream, isolated from the shared gameplay mt_rand.
-extern char   endlessRunSeed[ENDLESS_SEED_MAXLEN];  // the run's seed string (also shown in-game)
-extern Uint64 endlessEliteRngState;                 // live state of the seeded elite/champion tier stream
+// Structural RNG.
+extern char   endlessRunSeed[ENDLESS_SEED_MAXLEN];
+extern Uint64 endlessEliteRngState;
 
-Uint32 endlessRand(void);                  // the structural random -- a drop-in for mt_rand() at structural sites
-void   endlessReseed(Uint64 salt);         // re-derive the structural stream for a fresh (zone, phase)
-Uint64 endlessSplitMixSeed(Uint64 salt);   // derive a stream state for a (zone, phase) without installing it
-Uint32 endlessEliteRand(void);             // the elite/champion tier random (its own stream)
+Uint32 endlessRand(void);
+void   endlessReseed(Uint64 salt);
+Uint64 endlessSplitMixSeed(Uint64 salt);
+Uint32 endlessEliteRand(void);
 
-// --- endless.c: per-zone timers --------------------------------------------------
-#define ENDLESS_TURBODRIVE_TICKS 70   // ~2s of boosted fire per kill (TURBODRIVE)
-#define ENDLESS_RETALIATION_TICKS 35  // ~1s of quickened ENEMY fire per kill (RETALIATION); refreshes, doesn't stack
-extern int endlessZoneTicks;          // ticks elapsed this zone (drives ENRAGE)
-extern int endlessTurbodriveTimer;    // ticks left in the quickened-fire window after a kill
-extern int endlessRetaliationTimer;   // ticks left in the RETALIATION quickened-enemy-fire window (refreshed each kill)
+// Per-zone timers.
+#define ENDLESS_TURBODRIVE_TICKS 70
+#define ENDLESS_RETALIATION_TICKS 35
+extern int endlessZoneTicks;
+extern int endlessTurbodriveTimer;
+extern int endlessRetaliationTimer;
 
-// --- endless.c: boons banked ON CLEAR, spent at the NEXT outpost ------------------
-// Set by endlessOnSectorCleared, consumed by the outpost (endlessGenerateCourses / endlessBetweenLevels).
-// Both ride the save (v12), because the sector that earned them is over by the time they pay out.
-extern bool endlessStarChartsOwed;    // STAR CHARTS: the next ORDINARY chart deals its full route slate (held over a milestone/ambush visit rather than spent there)
-extern int  endlessBreakthroughOwed;  // BREAKTHROUGH: bonus perk picks owed; one per outpost that isn't already opening on a perk pick, so a collision defers rather than vanishes
+// Rewards banked on clear and spent at a later outpost.
+extern bool endlessStarChartsOwed;
+extern int  endlessBreakthroughOwed;
 
-// --- endless.c: zone milestones --------------------------------------------------
-// The outpost BEFORE a milestone swaps its buy/sell music for this track, so the player is warned
-// that a set-piece is coming while they're still choosing a course. MIND THE TWO FORMS: songBuy is
-// played as-is (play_song(songBuy)), while levelSong is 1-based (play_song(levelSong - 1)), so the
-// same track carries two numbers -- keep the pair in step if it's ever retuned.
-#define ENDLESS_MILESTONE_SHOP_SONG     26  // "Parlance", songBuy form (0-based)
-#define ENDLESS_MILESTONE_SHOP_SONG_LVL 27  // "Parlance", levelSong form (1-based)
+// Shop playback is zero-based; levelSong is one-based. Keep these paired.
+#define ENDLESS_MILESTONE_SHOP_SONG     26
+#define ENDLESS_MILESTONE_SHOP_SONG_LVL 27
 
-int     endlessMilestoneKindOfZone(int zone);  // 0 ordinary, 1 the S+/S++ milestone, 2 the GRAND one
-int     endlessMilestoneKind(void);            // ...for the zone about to be charted / played
-JE_byte endlessMilestoneSong(int kind);        // the pinned track for a milestone class, 0 otherwise
-bool    endlessPerkDueAtDepth(int depth);      // is a forced perk pick due at the outpost for this depth?
-int     endlessPerkOffersAtDepth(int depth);   // how many perks that outpost's scheduled pick offers
+int     endlessMilestoneKindOfZone(int zone);
+int     endlessMilestoneKind(void);
+JE_byte endlessMilestoneSong(int kind);
+bool    endlessPerkDueAtDepth(int depth);
+int     endlessPerkOffersAtDepth(int depth);
 
-// --- endless_level.c: the shipped level behind each zone -------------------------
-#define ENDLESS_LEVEL_HISTORY 5    // how many recently-played levels the anti-repeat ring tracks
+// Authored level behind each zone.
+#define ENDLESS_LEVEL_HISTORY 5
 
 extern JE_byte endlessLastSong;       // track the last-played zone used; 0 = nothing played yet this run
 extern int     endlessLastSongDepth;  // the run depth it was picked for; -1 = none
 
-// Base (shipped) level each zone is built on, and the one before it (crash-log history).
+// Current and previous authored level, retained for diagnostics.
 extern char endlessBaseName[11];
 extern int  endlessBaseEp;
 extern int  endlessBaseLvl;
@@ -87,48 +57,38 @@ extern char endlessPrevBaseName[11];
 extern int  endlessPrevBaseEp;
 extern int  endlessPrevBaseLvl;
 
-extern int     endlessRecentEp[ENDLESS_LEVEL_HISTORY];   // anti-repeat ring, newest first
+extern int     endlessRecentEp[ENDLESS_LEVEL_HISTORY];
 extern JE_byte endlessRecentSec[ENDLESS_LEVEL_HISTORY];
-extern int     endlessRecentCount;                       // valid entries, 0..ENDLESS_LEVEL_HISTORY
+extern int     endlessRecentCount;
 
-// Random endless-safe (ep, section, file) from any installed episode, avoiding the recently-played
-// levels; the file distinguishes the two Ep1-section-3 TYRIAN cuts. fileOut may be NULL.
+// Random safe level not present in the recent-level ring.
 bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
-// The per-level reset the EFFECT layer owns (elite tier decisions + the zone timers + the kill-fire
-// combo), shared by endlessRegenerateLevel and the debug campaign-mods level start. RNG-free by
-// design -- see the definition.
+// Shared effect reset. It must not consume structural RNG.
 void endlessResetZoneEffects(void);
 
-// --- endless_combat.c: kill-fire combo, scaling, gravity -------------------------
+// Combat state.
 extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out
 
-// STATIC DISCHARGE: a hit shorts the generator out briefly (no recharge), so the drained power
-// actually stays drained instead of being repaid by the next tick's regen.
-bool endlessStaticLockoutActive(void);         // is generator regen currently suppressed?
-void endlessStaticLockoutTick(void);           // drain the lockout (once per tick)
-void endlessStaticLockoutReset(void);          // clear it at level start
+bool endlessStaticLockoutActive(void);
+void endlessStaticLockoutTick(void);
+void endlessStaticLockoutReset(void);
 
 int  endlessDifficultyZone(void);              // the current zone as the difficulty ramp sees it
 int  endlessNaturalEliteChancePercent(void);   // the depth-driven SPECIAL-enemy share, before mutators
 bool endlessEliteBoonsUnlocked(void);          // are NOCHAMP / NOELITE / GIANTKILLER / CLEANSIGNALS eligible to be charted yet?
 bool endlessTideBoonsUnlocked(void);           // is FLAKSCREEN worth charting yet (i.e. is the tide adding shots at all)?
 
-// AEGIS GATE: the one-per-cooldown shield block. Per level, like the Static lockout.
-void endlessAegisTick(void);                   // drain the gate cooldown (once per tick, endlessGameplayTick)
-void endlessAegisReset(void);                  // clear it at level start (endlessResetElites)
-void endlessRollGravityDir(void);              // pick this sector's gravity heading (called at zone start)
+void endlessAegisTick(void);
+void endlessAegisReset(void);
+void endlessRollGravityDir(void);
 
-// REVIVE GRACE: the ~3s enemy-fire stun a spent revive token buys. Per level, like the gate above.
-void endlessReviveGraceArm(void);              // a revive was just spent (endless_shop.c endlessConsumeRevive)
-void endlessReviveGraceTick(void);             // drain the window (once per tick, endlessGameplayTick)
-void endlessReviveGraceReset(void);            // clear it at level start (endlessResetZoneEffects)
+void endlessReviveGraceArm(void);
+void endlessReviveGraceTick(void);
+void endlessReviveGraceReset(void);
 
-// --- endless_perks.c: run-persistent, stacking upgrades --------------------------
-// Free pick-1-of-3 on the post-zone cadence (wider when bought or earned at a milestone -- see the
-// ENDLESS_PERK_OFFERS* block); each effect folds into an existing player-side lever so there's no
-// new subsystem. Reset each run. Tunables below are all by-eye.
+// Perk tuning.
 #define ENDLESS_PERK_DAMAGE_PCT    12  // +% shot damage per Heavy Rounds stack
 #define ENDLESS_PERK_FIRE_PCT      20  // fire-decrement accumulator % per Rapid Cyclers stack
 #define ENDLESS_PERK_ARMOR_STEP     8  // +max armor per Ablative Plating stack
@@ -153,52 +113,37 @@ void endlessReviveGraceReset(void);            // clear it at level start (endle
 #define ENDLESS_PERK_EXEC_HP_PCT   25  // Executioner "wounded" threshold: target below this % of full HP
 #define ENDLESS_PERK_EXEC_BOSS_PCT 15  // ...a tighter threshold for boss-bar enemies (harder to execute)
 #define ENDLESS_PERK_SALVO_IDLE    70  // ticks the main gun must sit idle to charge an Opening Salvo (2s at the 35Hz sim tick)
-#define ENDLESS_PERK_SALVO_DMG_PCT 150 // +% damage in an Opening Salvo window (which also costs no power).
-                                       // Percentage POINTS added to endlessPlayerDamagePercent, so a bare
-                                       // salvo is x2.5; endlessOpeningSalvoScale reuses it for the
-                                       // non-damage special effects. notes.md §Opening Salvo.
+#define ENDLESS_PERK_SALVO_DMG_PCT 150 // percentage points; also scales special effects
 #define ENDLESS_PERK_SALVO_WINDOW  35  // ticks a consumed salvo lasts (~1s at the 35Hz sim tick), trigger held or not
 #define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
-#define ENDLESS_PERK_CM_RADIUS1    26  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
-#define ENDLESS_PERK_CM_RADIUS2    40  // ...widened radius at 2 stacks
+#define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
+#define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
 #define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy
 #define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
 #define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
 #define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Financier stack (the cap scales with the rate)
-#define ENDLESS_PERK_DISCOUNT_BP  825  // ...and this much off buy/sell prices per stack, in BASIS POINTS (1/100 of a
-                                       // percent) because 8.25% has no whole-percent form: 4 stacks = 3300 = 33% off
+#define ENDLESS_PERK_DISCOUNT_BP  825  // basis points; 4 stacks = 33% off
 #define ENDLESS_PERK_AMMO_PCT      30  // Ordnance Reserves: +% sidekick magazine per stack (always at least +1 round)
 #define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 #define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
 
-// How many perks a pick puts on the table. The two picks that COST something -- surviving a forced
-// S-tier milestone, or paying the outpost's steepest price -- deal wider slates, so what they buy is
-// choice as well as the perk itself. The milestone number is also the offer-array width, so no
-// caller can ask for more than endlessPerkChoice[] holds; the save has carried five slots since v13.
-#define ENDLESS_PERK_OFFERS           3  // ordinary pick: the cadence, a gamble win, Breakthrough
-#define ENDLESS_PERK_OFFERS_BOUGHT    4  // ...E-Shop "Buy Extra Perk", which you paid for
-#define ENDLESS_PERK_OFFERS_MILESTONE 5  // ...after a cleared milestone zone (25, 50, 75, 100, ...)
+// Offer-array width is fixed by the widest persisted slate.
+#define ENDLESS_PERK_OFFERS           3
+#define ENDLESS_PERK_OFFERS_BOUGHT    4
+#define ENDLESS_PERK_OFFERS_MILESTONE 5
 
-// "Buy Extra Perk" (E-Shop) surcharge: every perk stack the player already holds adds this % to the
-// extra-perk price, capped, on top of the base depth price + per-visit doubling. So the deeper the
-// perk collection, the pricier it gets to grow it further (perks are strong and bounded).
-#define ENDLESS_EXTRA_PERK_OWNED_PCT  40   // +% per owned perk stack
-#define ENDLESS_EXTRA_PERK_OWNED_CAP 1000  // ...but the owned-count surcharge tops out here (+1000% = x11)
+// Extra-perk surcharge by total owned stacks.
+#define ENDLESS_EXTRA_PERK_OWNED_PCT  40
+#define ENDLESS_EXTRA_PERK_OWNED_CAP 1000
 
-// "Take the Cash": the buyout the outpost pays for a pick you walk away from. Built on the zone's
-// CLEAR BASE, so it tracks the economy instead of drifting behind it, then scaled by how wide the
-// slate is and how many stacks the player already holds. That second term is the extra-perk
-// surcharge above read the other way round -- a perk is dearer the more you own, on both sides of
-// the counter -- and can't be farmed: declining is the one move that never raises your own count.
-#define ENDLESS_PERK_DECLINE_MULT      25  // buyout, in TENTHS of the level-clear base (25 = 2.5x)
-#define ENDLESS_PERK_DECLINE_OWNED_PCT  6  // +% per perk stack already owned
-#define ENDLESS_PERK_DECLINE_OWNED_CAP 150 // ...topping out here (+150% = x2.5, reached at 25 stacks)
+// Perk decline payout.
+#define ENDLESS_PERK_DECLINE_MULT      25
+#define ENDLESS_PERK_DECLINE_OWNED_PCT  6
+#define ENDLESS_PERK_DECLINE_OWNED_CAP 150
 
-// PERK_CHARGERATE ("Rapid Charger") used to sit between PERK_SHIELDREGEN and PERK_SHOTSPEED; it was
-// folded into Rapid Recharge and dropped in save v14, which renumbers everything below it. That is
-// the ONE time an index may move, and only because endlessReadRec migrates older perk blocks.
+// Save v14 removed Rapid Charger and migrates every persisted ID after it.
 enum {
 	PERK_DAMAGE, PERK_FIRERATE, PERK_ARMOR, PERK_CASH,
 	PERK_REGEN, PERK_SIPHON, PERK_BOUNTY,
@@ -209,13 +154,13 @@ enum {
 	PERK_SHIELDREGEN,
 	PERK_SHOTSPEED,
 	PERK_RADAR,
-	PERK_SURVEYOR,        // append new perks here; the index is the on-disk save slot, so don't renumber
+	PERK_SURVEYOR,        // persisted IDs: append only
 	PERK_EXECUTIONER,
 	PERK_SALVO,
 	PERK_KINETIC,
 	PERK_COUNTERMEASURE,
 	PERK_CHAINRXN,
-	PERK_FINANCIER,       // was PERK_INTEREST; renamed when it gained the shop discount, same slot
+	PERK_FINANCIER,
 	PERK_ORDNANCE,
 	PERK_FAILSAFE,
 	PERK_COUNT
@@ -228,28 +173,27 @@ typedef struct {
 } EndlessPerk;
 
 extern const EndlessPerk endlessPerkTable[PERK_COUNT];
-extern JE_byte endlessPerkOwned[PERK_COUNT];  // stack counts, reset each run
-extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
-extern int endlessPerkChoiceN;                // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
-extern int endlessRegenTick;                  // Nanorepair countdown (reset each run)
-extern int endlessSalvoIdle;                  // Opening Salvo: ticks the main gun has sat idle (reset each run AND each zone)
-extern int endlessSalvoWindow;                // Opening Salvo: ticks left in a CONSUMED salvo (0 = none running)
-extern int endlessCmCooldown;                 // Countermeasure Suite: ticks until the next burst is ready (reset each run AND each zone)
+extern JE_byte endlessPerkOwned[PERK_COUNT];
+extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];
+extern int endlessPerkChoiceN;
+extern int endlessRegenTick;
+extern int endlessSalvoIdle;
+extern int endlessSalvoWindow;
+extern int endlessCmCooldown;
 
-void endlessResetZonePerkTimers(void);        // clear the two gameplay-only perk timers at level start (endlessResetZoneEffects)
-extern int endlessPerkDepthDone;              // run depth whose perk pick is already resolved; -1 = none
+void endlessResetZonePerkTimers(void);
+extern int endlessPerkDepthDone;
 
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)
 int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspent cash (10 = stock)
 int endlessPerkTotalOwned(void);              // perk stacks held, summed across every perk
 
-// --- endless_shop.c: the outpost -------------------------------------------------
+// Outpost state.
 extern long endlessRerollCost;        // escalating outpost prices, reset each visit
 extern int  endlessHullCost;
 extern long endlessShopEntryCash;     // cash on entering the shop -- the E-Shop cash-fraction buys price off this
 
-// E-Shop kill-fire buff: bought once per shop visit, its modifier bits stashed here and OR'd into
-// the next sector's mods at course selection, so they survive the choice that overwrites the mods.
+// A purchased kill-fire modifier is folded in after course selection.
 extern unsigned endlessPurchasedMods;
 extern int endlessBuffKind;           // which buff was bought: 0 none, 1 Turbodrive, 2 Overdrive
 extern int endlessOverdriveStacks;    // +1 per kill while the window is up (capped), reset when it lapses
@@ -272,28 +216,21 @@ extern bool endlessCreditsShown;        // the zone-100 credits roll already pla
 
 long   endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
 long   endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
-long   endlessClearBonusForEx(Uint64 mods, int payoutMille);  // ...plus the shipped level's payoutMille (thousandths of base: harder level pays more, finely)
-int    endlessSortiePayoutMille(void);      // payoutMille of the COMMITTED level at the run difficulty (0 if no sortie); keeps banked payout == the shown course payout
+long   endlessClearBonusForEx(Uint64 mods, int payoutMille);
+int    endlessSortiePayoutMille(void);
 Uint64 endlessStripWorstMod(Uint64 mods);   // strip the single most-dangerous hostile bit (one per cleanse charge)
 
-// --- endless_mods.c: the mutator registry ----------------------------------------
-// Payout/help registry: per-bit clear-cash `reward` (tenths of the base) + monitor `word`.
-// Generation lives in endlessGenerateCourses; every bit a course can carry is listed here.
+// Modifier registry.
 typedef struct {
 	Uint64      bit;
 	short       reward;    // clear-cash reward in TENTHS of the base (10 = 1.0x base; may be < 0)
 	const char *word;      // short phrase for the generated help line
 } EndlessMod;
 
-// Named course themes: a NAME dictionary of evocative labels for combos worth naming
-// (endlessComboNameSalted looks up an exact bit-set here; anything unlisted gets a generated name).
-// Generation and payout are driven by endlessModTable, not these rows -- so this is purely
-// cosmetic naming, free to extend or trim without touching behaviour.
+// Theme rows supply names only; modifier tables drive behaviour and payout.
 typedef struct { Uint64 mods; const char *name; } EndlessTheme;
 
-// The row counts below are part of the contract: COUNTOF() at the call sites in other endless_*.c
-// files reads them from here. Grow a table without bumping its number and endless_mods.c fails to
-// compile ("too many initializers"), so the pair cannot silently drift.
+// Counts are part of the cross-file array type and must match each definition.
 extern const EndlessMod   endlessModTable[50];
 extern const EndlessTheme endlessHostileThemes[256];
 extern const EndlessTheme endlessKamikazeThemes[12];
@@ -307,12 +244,9 @@ extern const EndlessTheme endlessSluggishThemes[5];
 extern const EndlessTheme endlessDeadgenThemes[5];
 extern const EndlessTheme endlessMartyrdomThemes[5];  // MARTYRDOM: rare-injected death-burst sectors (its own pool)
 extern const EndlessTheme endlessSeekerThemes[5];     // SEEKER: rare-injected course-correcting-shot sectors (its own pool)
-extern const EndlessTheme endlessBreakthroughThemes[5]; // BREAKTHROUGH: the bonus-perk boon's own pool, drawn only by the rare roll in endlessDealBoonCourse
+extern const EndlessTheme endlessBreakthroughThemes[5];
 
-// Bits that make a sector DANGEROUS. The danger score sums only these, so a pure-boon course -- e.g.
-// Bounty, which pays big but adds no danger -- never reads as a high tier. Cursed is handled apart
-// (it's a trap, not a danger). The type-aware naming classifies a combo as hostile / boon / mixed
-// off these masks.
+// Bits included in combat danger and hostile naming.
 #define ENDLESS_HOSTILE_MASK ( \
 	ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | \
 	ENDLESS_MOD_ELITEPACK | ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION | ENDLESS_MOD_ENRAGE | \
@@ -323,10 +257,7 @@ extern const EndlessTheme endlessBreakthroughThemes[5]; // BREAKTHROUGH: the bon
 	ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_SEEKER | ENDLESS_MOD_STATIC | ENDLESS_MOD_RETALIATION | \
 	ENDLESS_MOD_THEEND )
 
-// Bits that HELP you -- the boon side. A course carrying any of these plus a hostile bit is a "mixed"
-// gambit (risk + reward). Faster scrolling (SLIPSTREAM/WARP) counts HOSTILE -- the level rushing at
-// you cuts reaction time; the evil kill-fire mirrors are hostile (above), and CURSED is a trap
-// counted on the hostile side, so none of those belong here.
+// Boon bits; a course with both masks is a gambit.
 #define ENDLESS_BOON_MASK ( \
 	ENDLESS_MOD_FRAGILE | ENDLESS_MOD_BOUNTY | ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCHARGE | \
 	ENDLESS_MOD_DILATION | ENDLESS_MOD_FAVOR | ENDLESS_MOD_OVERDRIVE | \
@@ -338,7 +269,7 @@ extern const EndlessTheme endlessBreakthroughThemes[5]; // BREAKTHROUGH: the bon
 Uint64      endlessMakeTheEndMods(void);   // "The End" -- the sector every GRAND milestone deals
 Uint64      endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint64 must, Uint64 forbid);
 const char *endlessComboNameSalted(Uint64 mods, unsigned salt);  // salt steps a GENERATED pick to the next word
-int         endlessSynergyBonus(Uint64 mods);     // extra danger for combos worse than the sum of their parts (into score AND payout)
+int         endlessSynergyBonus(Uint64 mods);
 int         endlessDangerScore(Uint64 mods);      // net danger: summed hostile reward, minus boon credits, plus synergy
 const char *endlessDangerTier(Uint64 mods);       // tier word shown before a course's description
 int         endlessDangerRankLevel(Uint64 mods);  // 0 (F) .. 10 (END)
@@ -350,11 +281,7 @@ const char *endlessDangerTierEx(Uint64 mods, int baseDanger);
 int         endlessDangerRankLevelEx(Uint64 mods, int baseDanger);
 const char *endlessDangerRankEx(Uint64 mods, int baseDanger);
 
-// --- endless_levelprofile.h: GENERATED per-level intrinsic danger ------------------
-// Each shipped level, run through the Tyrian2000Atlas GameSim at every difficulty, yields a small
-// baseDanger nudge (~-2..+5) folded into a course's danger score so the displayed rank/payout
-// reflects the LEVEL too. Keyed by (episode, lvlFileNum). The generated table and the mapping that
-// built it live in endless_levelprofile.h (included by endless_mods.c).
+// Generated level-specific danger and payout adjustments.
 typedef struct {
 	JE_byte     ep;               // episode number 1..5
 	JE_byte     file;             // lvlFileNum (endlessCourseFile / forcedLvlFileNum)
@@ -367,7 +294,7 @@ int endlessLevelBaseDanger(int ep, int file, int difficulty);   // coarse grade 
 int endlessLevelPayoutMille(int ep, int file, int difficulty);  // fine payout term (thousandths of base); 0 if unknown
 int endlessLevelLengthClass(int ep, int file);                  // 0/1/2; 1 (normal) if level unknown
 
-// --- endless_course.c: Chart-a-Course --------------------------------------------
+// Current course slate.
 #define ENDLESS_MAX_COURSES 5
 
 extern int      endlessCourseCnt;
@@ -382,12 +309,10 @@ extern bool     endlessForced;   // this visit is a forced "Ambush" (single dang
 // Resolve a saved/chosen (episode, section) back to a real endless-safe level file.
 bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile);
 
-// Cache each current course's authored base-level name (for the Radar perk's Chart-a-Course
-// readout) so the per-frame help text never re-reads levels*.dat. Run whenever the course set
-// is finalized: the tail of endlessGenerateCourses, and after endlessRestoreSavedCourses.
+// Cache authored names after generation or restore.
 void endlessNameCourseBaseLevels(void);
 
-// --- endless_save.c: the Quit Level sortie snapshot ------------------------------
+// Quit Level launch snapshot.
 extern bool     endlessSortieHave;         // a launch-time snapshot exists
 extern unsigned endlessSortiePrePurchased; // one-shots snapshotted pre-consumption at the course pick,
 extern int      endlessSortiePreCleanse;   // so a non-hardcore bail can restore them

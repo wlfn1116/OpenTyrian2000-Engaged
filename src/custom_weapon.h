@@ -1,19 +1,9 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Custom Weapon Creator: the player edits a RAW engine weapon (JE_WeaponType)
- * directly — one independent design per power level — which is copied into a
- * reserved weapons[]/weaponPort[] slot and fired through the normal engine path,
- * so it behaves and previews exactly like a stock weapon.
- *
- * Every stock weapon can be imported byte-for-byte and then edited, so the
- * built-in arsenal serves as a starting point for the player's own designs.
- */
+/* Custom weapons use editable JE_WeaponType designs in reserved engine slots. */
 #ifndef CUSTOM_WEAPON_H
 #define CUSTOM_WEAPON_H
 
 #include "opentyr.h"
-#include "episodes.h"   // JE_WeaponType, weaponPort, PORT_NUM, ...
+#include "episodes.h"
 
 // The custom weapon carries an independent raw design for each of the 11 power
 // levels, so buying weapon-power upgrades in the shop steps through them exactly
@@ -65,13 +55,8 @@ extern int  customWeaponPowerUse;   // generator drain (port poweruse)
 extern int  customWeaponEquipSlot;  // CUSTOM_EQUIP_*
 extern int  customWeaponItemGraphic; // shop/HUD icon (weaponPort itemgraphic), 1 .. 237
 
-// Number of charge shots when equipped as a sidekick (maps to option pwr + 1):
-// 1 = no charging (fires instantly like a normal sidekick); N = the sidekick steps through N
-// escalating shots as it holds to charge, then releases. Charge shot S (1..N) fires the
-// mode-0 power level S design (customWeaponRaw[0][S-1]) — the per-level designs ARE the
-// charge stages, each independently editable. Only the sidekick equip slots use it.
-// (Engine: charge counts 0..pwr, firing wpnum + charge; e.g. the 6-shot Charge-Laser
-// is pwr 5. So the stage count the player edits is pwr + 1.)
+// Sidekick charge stages map to option pwr+1 and use consecutive mode-0 power levels.
+// A value of 1 fires immediately; larger values charge through independently editable shots.
 extern int  customWeaponChargeStages;
 
 // Which power level / fire mode the editor is currently editing.
@@ -87,11 +72,8 @@ extern int customWeaponPort;
 // Option (sidekick) slot claimed for the custom weapon's sidekick (0 = none free).
 extern int customSidekickSlot;
 
-// Sidekick body appearance (used when equipped as a sidekick). Mount style is the engine's
-// option "tr": it selects both the position (0 side pod, 1 trailing large, 2 front-mounted,
-// 3 trailing, 4 orbiting) AND the sprite sheet (styles 1-2 use the 2x2 spriteSheet10, the
-// rest spriteSheet9 -- see mainint.c). gr[f] = Sprite + f*FrameStep; the engine draws frame
-// + charge, so a charge sidekick steps through consecutive body sprites.
+// Sidekick body appearance. Mount style selects position and sprite sheet;
+// animation and charge stages advance from Sprite by FrameStep.
 #define CUSTOM_SIDEKICK_MOUNTS 5   // tr values 0..4 are all valid mount styles
 extern int customSidekickMount;     // option tr (0..4)
 extern int customSidekickSprite;    // base body sprite (gr[0]); sheet depends on the mount
@@ -150,11 +132,8 @@ void customWeaponSelectMode(int mode);
 void customWeaponImportLevel(int presetIdx, int basePower);
 void customWeaponImportAllLevels(int presetIdx);
 
-// ADD (combine) a stock weapon on top of the current design instead of replacing it: the source's
-// bullets are appended to what is already there, up to CUSTOM_BULLETS_MAX, so two or more weapons
-// can be layered into one. Level adds the source's chosen base power level onto the level being
-// edited; All adds each of the source's levels onto the matching custom level across all 11. Only
-// bullet segments are added -- the design keeps its own name, cost and whole-volley fields.
+// Append a stock weapon's bullet segments without replacing design metadata.
+// Level affects the current power level; All maps all source levels onto the custom levels.
 void customWeaponAddLevel(int presetIdx, int basePower);
 void customWeaponAddAllLevels(int presetIdx);
 
@@ -163,22 +142,13 @@ void customWeaponAddAllLevels(int presetIdx);
 void customWeaponReset(void);
 void customWeaponRandomize(void);
 
-// Add / remove a bullet segment (one of the design's simultaneous bullets) in the
-// design currently being edited. Add duplicates the segment at afterIndex, inserts
-// the copy just after it (nudged sideways so it is visibly distinct), and returns the
-// new segment's index — or -1 if the design is already at CUSTOM_BULLETS_MAX. Remove
-// deletes the segment at index, shifting the rest down, and returns the index that
-// should be selected next — or -1 if only one segment remains (a design must keep at
-// least one bullet).
+// Add duplicates and nudges a bullet segment; remove compacts the array.
+// Both return the next selected index, or -1 at their size limit.
 int customWeaponAddBullet(int afterIndex);
 int customWeaponRemoveBullet(int index);
 
-// Add / remove a sidekick charge state (bump customWeaponChargeStages, the shot count).
-// Add jumps the edit level to the new top stage so its shot can be tuned immediately, and
-// returns that level index — or -1 if already at CUSTOM_POWER_LEVELS states. Remove drops
-// the top state (clamping the edit level) and returns the new top level index — or -1 if
-// only one state remains (1 = no charging). Each charge state is the power level design at
-// its index, so its sprite/damage/etc. are edited via the normal per-level fields.
+// Add or remove the highest sidekick charge stage.
+// Returns the selected top level, or -1 at the stage limit.
 int customWeaponAddChargeState(void);
 int customWeaponRemoveChargeState(void);
 
@@ -198,11 +168,9 @@ void customWeaponAutoScaleLevels(void);
 void customWeaponSerializeLevel(int mode, int level, char *buf, size_t bufSize);
 void customWeaponDeserializeLevel(int mode, int level, const char *str);
 
-// ---- weapon library (save many designs) -------------------------------------
-// The editable globals above are the *working copy* of one library slot; the library
-// keeps a collection of complete weapons, persisted to its own file (custom_weapons.cfg
-// in the user directory). Only one weapon is equipped/materialized at a time (the engine
-// reserves a single custom port + sidekick slot).
+// Weapon library.
+// The globals above are one working copy from custom_weapons.cfg.
+// Only one library weapon can be materialized in the reserved engine slots.
 #define CUSTOM_WEAPON_LIB_MAX 32
 
 typedef struct

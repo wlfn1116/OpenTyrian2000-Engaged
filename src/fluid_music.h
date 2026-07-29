@@ -1,19 +1,4 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * fluid_music -- a small, self-contained SoundFont MIDI player built directly on
- * libfluidsynth. It owns a fluid_synth plus fluid's own audio driver, and runs a
- * sequencer thread that parses an in-memory Standard MIDI File and plays it,
- * looping mid-song at the "loopStart" marker (meta 0x06) exactly like
- * win_native_midi does for the OS synth.
- *
- * Owning playback (rather than SDL Mixer X's whole-file repeat) is what lets a looping
- * song jump straight back to its loop point with channel state intact. notes.md §Audio / MIDI.
- *
- * Input is the same in-memory SMF loudness.c already produces from music.mus via
- * midiproc. The real implementation is built only WITH_MIDI; other builds (and any
- * without FluidSynth) get no-op stubs so the file always compiles.
- */
+/* FluidSynth SMF playback with loop-marker support. */
 #ifndef FLUID_MUSIC_H
 #define FLUID_MUSIC_H
 

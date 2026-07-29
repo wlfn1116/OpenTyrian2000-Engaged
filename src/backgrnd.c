@@ -101,13 +101,8 @@ static void bg_set_layer_dx(int layer, float cur_f, int cur_int)
 	bg_layer_ofs_prev[layer] = cur_f;
 }
 
-// Previous draw-time (mapY, backPos) per layer, used to derive bgScrollDeltaY. The
-// absolute downward scroll between two consecutive draws is
-//   (mapY_prev - mapY_now) * 28 + (backPos_now - backPos_prev)
-// which recovers the whole-tile motion (mapY steps) that a bare screen-position diff
-// loses. Works regardless of whether a layer advances before or after it draws, because
-// it always compares the state at successive record points. mapY/backPos are unsigned
-// (JE_word); snapshot them as int. A level load / BKwrap makes the diff wild -> snapped.
+// Track full vertical layer deltas, including whole-tile mapY steps.
+// Level loads and wraps produce wild deltas and are snapped.
 static int  bgPrevMapY[4]    = { 0, 0, 0, 0 };
 static int  bgPrevBackPos[4] = { 0, 0, 0, 0 };
 static bool bgPrevValid[4]   = { false, false, false, false };
@@ -158,13 +153,7 @@ void JE_darkenBackground(JE_word neat)  /* wild detail level */
 	}
 }
 
-// Extra Parallax widens the horizontal pan (mainint.c parallax_span) enough that the mid/deep
-// layers' read window slides past the side edge of their map rows. Rather than wrapping into the
-// adjacent map row (a visible content seam where the layer "ends"), out-of-row columns re-read the
-// row's edge columns in reflected order and render horizontally FLIPPED, so the layer continues
-// past its edge as a pixel-exact mirror image. Activated per row batch by
-// bg_mirror_setup (mirror_w = row width in tiles, 0 = off; col0 = map-column index of map[0]).
-// notes.md §Extra Parallax edge mirror.
+// Mirror out-of-row columns so wider parallax never reads the adjacent map row.
 static Uint8 *bg_mirror_tile(Uint8 **map, int tile, int mirror_w, int col0, bool *flip)
 {
 	*flip = false;
@@ -177,17 +166,7 @@ static Uint8 *bg_mirror_tile(Uint8 **map, int tile, int mirror_w, int col0, bool
 	return (map - col0)[c < 0 ? -1 - c : 2 * mirror_w - 1 - c];
 }
 
-// Mirrored Layers only: how much extra row to append past the right end of the nominal
-// BG_TILE_COUNT tiles, in 1x px (0 = none; up to BG_EDGE_TILES tiles, clipped to the surface).
-// A row is exactly 336px, so at the far-right pan extreme it ends flush with PLAYFIELD_RIGHT and
-// nothing covers the columns beyond. The lava/water smoothie filters SAMPLE up to 7px right of the
-// pixel they write and would read that black fill, and their triangle-wave waver turns the miss
-// into the sawtooth "black triangles" on EP1 ASSASSIN / EP4 LAVA RUN. They also feed back through
-// the rows above/below, so the fill runs to the surface edge rather than just past +7.
-// bg_mirror_tile already resolves an out-of-row column as a flipped edge column, so the appended
-// strip is just more of the layer; clipped so it can't wrap onto the next scanline. Inert with
-// Mirrored Layers off, where out-of-row columns have no defined content.
-// notes.md §Extra Parallax edge mirror.
+// Extend mirrored rows to the surface edge so smoothie filters never sample black.
 static int bg_edge_px(int mirror_w, int x, int surface_w, int scale)
 {
 	if (mirror_w == 0)
@@ -384,16 +363,7 @@ void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map,
 	}
 }
 
-// Prepare a layer's row walk.
-//   Mirrored Layers OFF: stock pointers. With Extra Parallax on, clamp the read pointer to the map
-//     base (the old bg_clamp_map OOB guard -- uncovered edges then show the adjacent-row wrap);
-//     with it off this is the original draw byte-for-byte.
-//   Mirrored Layers ON: works in EITHER parallax mode, since even the stock span uncovers ~12px of
-//     layer 3's left edge at far-left. The walk keeps its column phase even when `map` starts
-//     before `base`, because bg_mirror_tile resolves out-of-row columns from inside the row --
-//     which is exactly the OOB dereference the clamp guarded against.
-// If the first ROW itself starts before the map (level-end re-points mapYPos at row 0), fall back
-// to the clamp. The draw loops only advance downward, so checking the lowest row covers them all.
+// Prepare a row walk, preserving mirror phase while guarding the map base.
 static Uint8 **bg_mirror_setup(Uint8 **map, Uint8 **base, int width, int col0, int *out_w, int *out_c0)
 {
 	if (!mirroredLayers)
@@ -587,7 +557,6 @@ void draw_background_3(SDL_Surface *surface)
 	// background3x1 welds this layer to layer 1 (mapX3Ofs = mapXOfs), but the two record on opposite
 	// sides of the mid-tick parallax update, sampling that shared anchor a tick apart. Pan from the
 	// one layer 1 recorded; the integer stays mapX3Ofs, which is what the rows below blit at.
-	// notes.md §Sub-pixel parallax.
 	const float x_anchor_f = (background3x1 && bg_layer_xofs_valid[1]) ? bg_layer_xofs[1] : mapX3Ofs_f;
 	bg_set_layer_dx(3, x_anchor_f, mapX3Ofs);
 	for (int i = -1; i < 7; i++)

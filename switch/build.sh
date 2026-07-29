@@ -1,14 +1,6 @@
 #!/bin/bash
-# Build OpenTyrian 2000 Engaged for Nintendo Switch (.nro).
-#
-# Invoke with the devkitPro MSYS2 bash, e.g. from PowerShell:
-#   & "D:\devkitPro\msys2\usr\bin\bash.exe" /d/Projects/OpenTyrian2000-widescreen/switch/build.sh
-# or from the devkitPro shell:
-#   bash switch/build.sh          # build   (default target)
-#   bash switch/build.sh clean    # clean
-#
-# A directly-invoked (non-login) shell starts with an almost-empty PATH, so we set
-# it explicitly before touching any coreutil. Output is teed to switch/build.log.
+# Build the Switch NRO with devkitPro bash. Pass `clean` to clean.
+# Set PATH explicitly because non-login MSYS2 shells start nearly empty.
 
 export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
 export DEVKITA64=$DEVKITPRO/devkitA64

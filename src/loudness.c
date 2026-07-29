@@ -25,7 +25,7 @@
 #include "params.h"
 
 // Optional MIDI music backends -- FluidSynth or the OS synth (see loudness.h and
-// notes.md §Audio / MIDI). OPL stays the default.
+// OPL stays the default.
 #ifdef WITH_MIDI
 #include <midiproc.h>
 #include "win_native_midi.h"  // NATIVE_MIDI plays through our own deadlock-free Win32 player
@@ -81,7 +81,7 @@ const char *soundfont_basename(void)
 static const uint8_t IS_MIDI_DEVICE = FLUIDSYNTH | NATIVE_MIDI;
 
 // Per-song converted SMF plus loop/duration metadata; the active MIDI backend
-// (fluid_music or win_native_midi) owns playback (notes.md §Audio / MIDI).
+// (fluid_music or win_native_midi) owns playback.
 typedef struct MidiData {
 	Uint8 *data;
 	Uint32 size;
@@ -255,7 +255,7 @@ static bool is_soundfont_ext(const char *name)
 }
 
 // If no SoundFont is configured, adopt the newest .sf/.sf2/.sf3 in the data dir
-// so a dropped-in bank just works (notes.md §Audio / MIDI).
+// so a dropped-in bank just works.
 static void autodetect_soundfont(void)
 {
 	if (soundfont[0] != '\0')
@@ -291,7 +291,7 @@ static void autodetect_soundfont(void)
 }
 
 // Re-anchor a stale configured SoundFont path to data_dir() (survives moved installs
-// and CWD changes); clear it if unresolvable so autodetect runs (notes.md §Audio / MIDI).
+// and CWD changes); clear it if unresolvable so autodetect runs.
 static void resolve_soundfont(void)
 {
 	if (soundfont[0] == '\0')

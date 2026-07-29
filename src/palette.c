@@ -130,7 +130,6 @@ void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, un
 
 // Present a palette fade at display refresh rate: the framebuffer is static during a fade, so
 // 35 steps/sec stutters. The classic step is linear -> a per-frame lerp reproduces it exactly.
-// notes.md §Other render-rate presents.
 static void smooth_fade_to(const SDL_Color *target, int steps, unsigned int first_color, unsigned int last_color)
 {
 	// Only [first_color, last_color] is filled and only that range is read back, but zeroing makes

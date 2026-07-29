@@ -276,7 +276,7 @@ JE_EnemyAvailType enemyAvail;  /* values: 0: used, 1: free, 2: secret pick-up */
 JE_word enemyOffset;
 JE_word enemyOnScreen;
 JE_word enemyParkedAbove;   // of enemyOnScreen: parked above the screen with no way to ever enter it (map-stop watchdog, tyrian2.c)
-JE_word mapStopStallTicks;  // consecutive ticks a scripted map stop has been held ONLY by parked-above enemies
+JE_word mapStopStallTicks;  // ticks a scripted map stop has been held only by parked-above enemies
 JE_word superEnemy254Jump;
 
 /*EnemyShotData*/
@@ -612,7 +612,7 @@ void JE_tyrianHalt(JE_byte code)
 
 #ifdef __SWITCH__
 	// Switch: libc exit()'s atexit/stdio teardown NULL-derefs in newlib once romfs is
-	// gone; everything is already flushed, so _Exit and skip it. notes.md §Console ports.
+	// gone; everything is already flushed, so _Exit and skip it.
 	_Exit(code);
 #else
 	exit(code);
@@ -621,7 +621,7 @@ void JE_tyrianHalt(JE_byte code)
 
 // Opening Salvo: the specials that spawn no shot (repulsor, attractor, invuln, repair) have no
 // bullet to trail sparks off, so a boosted one would look identical to a plain one. Burst off the
-// ship instead, in the gauge's green. No-op outside a window. notes.md §Opening Salvo.
+// ship instead, in the gauge's green. No-op outside a window.
 static void salvo_special_burst(JE_byte playerNum)
 {
 	if (!endlessOpeningSalvoVolleyActive())

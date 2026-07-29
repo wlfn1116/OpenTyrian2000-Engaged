@@ -56,7 +56,7 @@ JE_boolean bonusLevel;
 JE_boolean jumpBackToEpisode1;
 
 // Re-adds the cut-from-Tyrian-2000 "Charge-Laser Cannon", a 5-stage DOS charge sidekick
-// (sprites survive in spriteSheet9); values below are verbatim from the DOS LVLs. notes.md §Weapons.
+// (sprites survive in spriteSheet9); values below are verbatim from the DOS LVLs.
 #define CHARGELASER_WEAP_BASE 900  // 6 scratch weapon slots in the unused WEAP_END1(818)..WEAP_START2(1000) gap
 
 // Option slot claimed for the current episode (differs per episode), or 0 if none
@@ -133,7 +133,7 @@ static void JE_addChargeLaserCannon(void)
 }
 
 // The Zica Laser (port 5) Lv11 native horizontal layout, captured before we reshape it so
-// ZICA_BASE_AUTO can restore the episode's vanilla pattern. notes.md §Weapons.
+// ZICA_BASE_AUTO can restore the episode's vanilla pattern.
 static JE_shortint zicaNativeSx[8], zicaNativeBx[8];
 static bool zicaNativeCaptured = false;
 
@@ -213,7 +213,7 @@ static void JE_applyZicaLaserConfig(void)
 }
 
 // Superspark trails: retags the ep4/5 ">1000" spark-shower shot graphics per superSparkMode
-// (Auto = per-episode shipped, On/Off = force). Idempotent. notes.md §Weapons.
+// Auto uses the shipped episode setting; On and Off force it. Idempotent.
 
 // Retag one weapon's fire pattern between plain[i] and tagged[i] per the SUPER_SPARKS_* mode.
 static void JE_retagWeaponSparks(int wn, int mode, const JE_word *plain, const JE_word *tagged, int nsprites)
@@ -251,13 +251,7 @@ static void JE_applySuperSparks(void)
 		JE_retagWeaponSparks(weaponPort[19].op[0][lvl], superSparkMode[SSW_MEGA_PULSE],
 		                     pulsePlain, pulseTagged, COUNTOF(pulsePlain));
 
-	// Beno Wallop Beam sidekick (option wpnum 736). The ep4/5 record also fires a second
-	// bolt each volley (multi/max 2; sprite 29 launched 2px ahead of the sprite-30 bolt,
-	// same damage/speed) that the ep1-3 record lacks. wallopSecondBolt forces that pattern
-	// in/out of every episode; slot 1 is rebuilt from the shipped ep4/5 values (identical
-	// in tyrian4.lvl and tyrian5.lvl -- ep1-3 only carries garbage padding there), so this
-	// stays idempotent. Runs before the spark retag below so the rebuilt bolt's trail also
-	// follows the Sparks mode.
+	// Optionally rebuild Beno Wallop Beam's second bolt from the shipped Ep4/5 data.
 	{
 		JE_WeaponType *w = &weapons[736];
 		bool second;
@@ -389,14 +383,8 @@ static void JE_applyEpDiffs(void)
 	}
 }
 
-// The classic ammo sidekicks advertise their magazine in the shop name -- "MegaMissile    Ammo 5"
-// -- with every "Ammo N" aligned at column 15. The two Tyrian 2000 additions (Bubble Gum-Gun,
-// Flying Punch) carry a real magazine but shipped without the label.
-//
-// Rebuilt from scratch rather than only added where missing, because the endless Ordnance Reserves
-// perk grows every magazine mid-run and the shop has to advertise what you will actually fly with.
-// Bare name + shipped size are captured once per item-data load and the labels rendered from those,
-// so relabelling is idempotent however often it runs.
+// Rebuild aligned "Ammo N" shop labels from captured base names and magazine sizes.
+// This also reflects Endless magazine bonuses and remains idempotent.
 static char    ammoBaseName[OPTION_NUM + 1][31];
 static JE_byte ammoBaseAmmo[OPTION_NUM + 1];
 static int     ammoLabelPct = -1;  // magazine-bonus % the current labels were written for; -1 = not built yet

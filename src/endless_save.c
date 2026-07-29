@@ -1,75 +1,59 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Endless mode: the endless.sav sidecar and the Quit Level sortie snapshot.
- *
- * One of the endless_*.c files that make up endless mode: endless.h is the public
- * interface, endless_internal.h the state and helpers the group shares.
- */
+/* Endless saves and Quit Level sortie snapshots. */
 
 #include "endless.h"
 #include "endless_internal.h"
 
-#include "config.h"        // difficultyLevel, DIFFICULTY_*, player-independent globals
-#include "episodes.h"      // item arrays + SHIP_NUM/PORT_NUM/... counts, episodeAvail, JE_initEpisode
-#include "file.h"          // dir_fopen / dir_fopen_warn (endless.sav sidecar I/O)
-#include "mainint.h"       // JE_getCost
-#include "player.h"        // player[]
-#include "sprite.h"        // JE_loadCompShapes, enemySpriteSheets, shopSpriteSheet
-#include "tyrian2.h"       // itemAvail, itemAvailMax
-#include "varz.h"          // eventRec, maxEvent, map* globals
+#include "config.h"
+#include "episodes.h"
+#include "file.h"
+#include "mainint.h"
+#include "player.h"
+#include "sprite.h"
+#include "tyrian2.h"
+#include "varz.h"
 
-#include <inttypes.h>  // PRIX64 (the mod mask goes to the config as hex text)
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// --- "Quit Level" -> outpost retry (see endless.h) -------------------------------------------
-bool endlessQuitToOutpost = false;  // ESC-menu Quit (endless): return to the outpost instead of ending the run
-bool endlessLockedSortie  = false;  // the reopened outpost is locked to the launch-time loadout/course (hardcore only)
-// The launch-time snapshot Quit Level reverts to. The endless run/outpost half lives in an
-// EndlessSlotRec (declared near the save code); these primitives hold the loadout + committed level
-// and are declared up here (and in endless_internal.h) so endlessResetRun can clear them.
-bool     endlessSortieHave  = false; // a launch-time snapshot exists
-static Player   endlessSortiePlayer[2];     // player[] loadout at launch (cash / items / superbombs)
-static Uint64 endlessSortieModsV = 0;       // endlessActiveMods at launch (the committed level's mutators)
-static JE_byte  endlessSortieSec   = 0;     // committed level section
-static int      endlessSortieEp    = 0;     // committed episode
-static JE_byte  endlessSortieFile  = 0;     // committed lvl file number
-// One-shots consumed at the course pick (E-Shop buff / sabotage charges / Long Con), snapshotted
-// pre-consumption so a non-hardcore bail can restore them (see endlessRestoreSortie).
+// Launch-time state used by Quit Level.
+bool endlessQuitToOutpost = false;
+bool endlessLockedSortie  = false;
+bool     endlessSortieHave  = false;
+static Player   endlessSortiePlayer[2];
+static Uint64 endlessSortieModsV = 0;
+static JE_byte  endlessSortieSec   = 0;
+static int      endlessSortieEp    = 0;
+static JE_byte  endlessSortieFile  = 0;
+// One-shot purchases are captured before course selection consumes them.
 unsigned endlessSortiePrePurchased = 0;
 int      endlessSortiePreCleanse   = 0;
 int      endlessSortiePreLongCon   = 0;
 
-// --- Save / resume (endless.sav sidecar) ---------------------------------------------------
-// tyrian.sav can't be extended (fixed checksummed layout), so the run lives in an endless.sav sidecar keyed
-// by the same slot; restoring the snapshot rather than regenerating stops reload rerolling the shop. notes.md §Save / resume.
+// tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 14     // v1 run-state only; v2 outpost snapshot; v3 seed; v4 locked sortie; v5 buff recharge; v6 recent-level ring; v7 64-bit mods; v8 exact course files; v9 credits-shown flag; v10 last zone's song; v11 wider perk array (17th perk); v12 Star Charts / Breakthrough debts; v13 wider perk OFFER list (milestone 1-of-5); v14 Rapid Charger folded into Rapid Recharge (perk slots renumbered)
-#define ENDLESS_SAVE_PERKS   32     // on-disk perk-array width from v11 (was 16, which had grown to == PERK_COUNT).
-                                    // Comfortable headroom now; a future perk only needs a version bump once PERK_COUNT passes this.
-#define ENDLESS_SAVE_PERKS_V10 16   // v3..v10 wrote a fixed 16-wide perk block; the reader honours that for older files.
-#define ENDLESS_SAVE_PERK_CHARGER_V13 14  // slot the deleted "Rapid Charger" held in v3..v13 (see the v14 migration below)
-#define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE  // on-disk offer slots from v13: a milestone pick's full slate.
-#define ENDLESS_SAVE_OFFERS_V12 3   // v3..v12 wrote a fixed 3-wide offer list; the reader honours that for older files.
+#define ENDLESS_SAVE_VERSION 14
+#define ENDLESS_SAVE_PERKS   32
+#define ENDLESS_SAVE_PERKS_V10 16
+#define ENDLESS_SAVE_PERK_CHARGER_V13 14
+#define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE
+#define ENDLESS_SAVE_OFFERS_V12 3
 
-// A perk's on-disk slot IS its PERK_* index, so the fixed-width block must cover every perk or
-// endlessCaptureCurrent would silently drop the highest ones. This stops compiling the moment
-// PERK_COUNT outgrows the block -- the cue to widen ENDLESS_SAVE_PERKS and bump the save version.
+// Perk IDs are on-disk slots; widen the block and bump the version together.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
 
 typedef struct {
 	bool used;
 
-	// --- run-persistent ---
+	// Run state.
 	Sint32 runDepth, armorBonus, runKills, runBossKills;
 	Sint32 buffCharge, revivesUsed, shopTax, longCon, perkDepthDone, superbombs;
 	Uint8  reviveHeld, gambleRigged;
 	Uint8  perkOwned[ENDLESS_SAVE_PERKS];
 
-	// --- outpost snapshot: prices + pending buys ---
+	// Outpost prices and pending buys.
 	Sint32 rerollCost, hullCost, bombCost, extraPerkCost, cleanseCost, shopEntryCash;
 	Uint32 purchasedMods;
 	Sint32 buffKind, cleanseCharges;
@@ -77,11 +61,11 @@ typedef struct {
 	char   gambleMsg[48];
 	char   lastSpecialName[31];
 
-	// --- outpost snapshot: this visit's perk offer ---
+	// Perk offer.
 	Sint32 perkChoiceN;
 	Sint32 perkChoice[ENDLESS_SAVE_OFFERS];  // v13: was 3 (read narrow from v3-v12 files)
 
-	// --- outpost snapshot: this visit's courses ---
+	// Course offer.
 	Sint32 courseCnt;
 	Sint32 courseEp[ENDLESS_MAX_COURSES];
 	Uint8  courseSec[ENDLESS_MAX_COURSES];
@@ -90,36 +74,36 @@ typedef struct {
 	Sint32 lastEp;
 	Uint8  lastSec, forced;
 
-	// --- outpost snapshot: this visit's shop stock ---
+	// Shop stock.
 	Uint8  itemAvail[9][10];
 	Uint8  itemAvailMax[9];
 
-	// --- run seed (v3) ---
+	// Added in v3.
 	char   seed[ENDLESS_SEED_MAXLEN];
 
-	// --- locked sortie (v4): a "gave up the level" outpost, locked to the launch-time choices ---
+	// Locked sortie, added in v4.
 	Uint8  lockedSortie;  // 1 = this save reopens the locked retry outpost (else a normal outpost)
 	Uint64 sortieMods;    // endlessActiveMods of the committed level (v7: was Uint32)
 	Uint8  sortieSec;     // committed level section
 	Sint32 sortieEp;      // committed episode
 	Uint8  sortieFile;    // committed lvl file number
 
-	// --- kill-fire buff recharge (v5) ---
+	// Added in v5.
 	Sint32 buffCooldownUntil;  // run depth at which the E-Shop kill-fire buys unlock again (0 = no lock)
 
-	// --- anti-repeat recent-level ring (v6): the last few played (ep, sec), [0] = newest ---
+	// Recent levels, added in v6.
 	Uint8  recentCount;
 	Sint32 recentEp[ENDLESS_LEVEL_HISTORY];
 	Uint8  recentSec[ENDLESS_LEVEL_HISTORY];
 
-	// --- zone-100 credits (v9) ---
+	// Added in v9.
 	Uint8  creditsShown;  // 1 = this run has already rolled the credits, so resuming won't replay them
 
-	// --- per-zone music continuity (v10) ---
+	// Music continuity, added in v10.
 	Uint8  lastSong;       // the track the last-played zone really used (0 = none yet)
 	Sint32 lastSongDepth;  // that zone's run depth (only meaningful when lastSong != 0)
 
-	// --- boons banked on clear, owed to a LATER outpost (v12) ---
+	// Deferred boons, added in v12.
 	Uint8  starChartsOwed;    // STAR CHARTS: the next ordinary chart still owes its full route slate
 	Uint8  breakthroughOwed;  // BREAKTHROUGH: bonus perk picks still owed (a count -- two can queue)
 } EndlessSlotRec;
@@ -296,12 +280,8 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	if (r->perkChoiceN > (Sint32)offerSlots)
 		r->perkChoiceN = (Sint32)offerSlots;
 
-	// v14 deleted "Rapid Charger" (old slot 14) and folded its effect into Rapid Recharge, which
-	// renumbered every perk id below it. BOTH stored arrays are keyed by those ids, so migrate a
-	// pre-v14 record: the dropped stacks go to Rapid Recharge (endlessApplyCurrent clamps them to its
-	// maxStack) so an in-flight run keeps the charge speed it paid for, the owned block closes the
-	// gap, and this visit's saved offers are renumbered -- dropping the one that WAS Rapid Charger,
-	// which would otherwise resume as a different perk (or index off the end of the table).
+	// v14 removed Rapid Charger. Merge its stacks into Rapid Recharge and close
+	// the resulting ID gap in owned perks and saved offers.
 	if (version < 14)
 	{
 		const int merged = r->perkOwned[PERK_SPECIALCD] + r->perkOwned[ENDLESS_SAVE_PERK_CHARGER_V13];
@@ -702,7 +682,7 @@ bool endlessLoadSlot(JE_byte slot)
 // the outpost when it's still set (see tyrian2.c). Mirrors the endlessBetweenLevels gate.
 bool endlessResumePending(void) { return endlessResumeVisit; }
 
-// --- "Quit Level" -> locked-outpost retry ----------------------------------------------------
+// Quit Level and locked-outpost retry.
 // The endless run/outpost half of the launch-time snapshot (the loadout + committed-level half are
 // the endlessSortie* primitives up top). Reusing the save record means depth, perks, prices,
 // purchased mods, courses, shop stock and seed are all reverted by the tested capture/apply code.
@@ -793,11 +773,8 @@ void endlessArmLockedRelaunch(void)
 	jumpSection = true;  // exits the shop loop; JE_loadMap then loads the committed level
 }
 
-// --- Debug campaign-mods state in opentyrian.cfg ----------------------------------------------
-// The Debug Mode effect layer (endlessFxActive) is a setup built once and played with for a while,
-// so it outlives the process. Kept here with the rest of the endless persistence, out of config.c.
-// Only written when NOT in an endless run: during a run these globals belong to the RUN and ride
-// endless.sav, so writing them here would overwrite the campaign slate with a run's state.
+// Campaign debug modifiers persist in opentyrian.cfg.
+// Do not overwrite them with live Endless run state.
 
 #define ENDLESS_CFG_PIN_PREFIX "pin_"
 #define ENDLESS_CFG_PIN_OFF    (-1)   // no lever's valid range reaches below 0, so this can't collide
@@ -889,11 +866,7 @@ void endlessDebugConfigLoad(const ConfigSection *section)
 	}
 }
 
-// --- The all-time record in opentyrian.cfg ----------------------------------------------------
-// The furthest zone ever reached is the only endless state that outlives a run, so it can't ride
-// endless.sav: that sidecar is keyed by save slot and a hardcore run never writes one. It goes to
-// the config's own [endless] section instead, written the moment the record advances
-// (endlessNoteZoneReached) as well as on the normal config save.
+// The all-time record lives in opentyrian.cfg so Hardcore runs can update it.
 
 void endlessRecordConfigSave(ConfigSection *section)
 {

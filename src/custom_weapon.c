@@ -1,27 +1,12 @@
-/*
- * OpenTyrian: A modern cross-platform port of Tyrian
- *
- * Custom Weapon Creator — see custom_weapon.h.
- *
- * The player edits the engine's raw weapon struct (JE_WeaponType) directly, one
- * independent design per (fire mode, power level). materialize() copies each into
- * a reserved scratch weapon slot and wires up a reserved weaponPort, so the weapon
- * fires (and previews) through the exact same code path as every stock weapon. It
- * can also be equipped as a sidekick (a synthesized options[] sidekick that fires the
- * mode-0 level-1 compiled weapon).
- *
- * Because the design IS a JE_WeaponType, importing a stock weapon is a plain
- * struct copy — byte-for-byte identical firing behaviour, then fully editable.
- * A rear gun with two fire modes (opnum 2) imports and edits both banks.
- */
+/* Custom Weapon Creator implementation. See custom_weapon.h. */
 
 #include "custom_weapon.h"
 
-#include "config.h"     // get_user_directory
-#include "episodes.h"   // weapons[], weaponPort, options[], OPTION_NUM, chargeLaserSlot, WEAP_NUM, PORT_NUM
-#include "file.h"       // dir_fopen, dir_fopen_warn
-#include "player.h"     // player[], FRONT_WEAPON, REAR_WEAPON, LEFT_SIDEKICK, RIGHT_SIDEKICK
-#include "sprite.h"     // spriteSheet9 / spriteSheet10 (sidekick body sheets)
+#include "config.h"
+#include "episodes.h"
+#include "file.h"
+#include "player.h"
+#include "sprite.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,7 +66,7 @@ int customBulletMaxPower(int presetIdx)
 }
 
 // Keep a raw design within the engine's hard limits (bullet count, sound index).
-// Deliberately light: an imported stock weapon is already valid; this mainly
+// Imported stock weapons are already valid; this mainly
 // guards hand-edited, randomized, or config-loaded designs.
 static void sanitizeRawWeapon(JE_WeaponType *w)
 {
@@ -210,11 +195,8 @@ void customWeaponImportAllLevels(int presetIdx)
 	}
 	else
 	{
-		// Sidekick source (one mode). A charge sidekick lays its escalating shots out at
-		// consecutive weapon numbers wpnum + 0..pwr; maxPower carries that count (pwr + 1).
-		// Copy each stage into the matching power level so the whole charge ramp comes
-		// across (e.g. the Charge-Laser's 6 shots -> power levels 1..6), then adopt the
-		// real shot count. Levels past the last valid stage repeat the top stage.
+		// Copy consecutive sidekick charge shots into matching power levels.
+		// Levels beyond the source's last stage repeat its top stage.
 		const int wn     = bp->sourceWeapon;                              // stage-0 weapon
 		const int stages = clampi(bp->maxPower, 1, CUSTOM_POWER_LEVELS);  // charge-shot count
 		customWeaponModes    = 1;
@@ -642,11 +624,7 @@ static void customSidekickMaterialize(void)
 	const int step    = clampi(customSidekickFrameStep, 0, 40);
 	const int animate = clampi(customSidekickAnimate,   1, 2);
 
-	// Clamp every body sprite the engine can read into the sheet's valid range. The blit is
-	// 1-BASED (blit_sprite2 reads offsetTable[index-1], so index 0 underflows and crashes); a
-	// 2x2 mount also reads index+1/+19/+20; and the engine adds `charge` (0..pwr) at draw time.
-	// So a body index must stay in 1 .. count - pwr - (20 for a 2x2 mount). Clamp the base and
-	// every animation frame to that window (the blit is not otherwise bounds-checked).
+	// Clamp 1-based body sprite reads, including charge frames and 2x2 mount offsets.
 	const int count = customSidekickSpriteCount(mount);
 	const int extra = (mount == 1 || mount == 2) ? 20 : 0;          // blit_sprite2x2 index+1/+19/+20
 	const int hiIdx = (count > 0 && count - pwr - extra >= 1) ? count - pwr - extra : 1;
@@ -703,11 +681,7 @@ void customWeaponMaterialize(void)
 
 	customSidekickMaterialize();  // keep the sidekick in sync with the weapon
 
-	// The compiled weapon just changed under the live fire state. Restart every bay's fire cursor
-	// so none is left pointing past the new design's pattern length (`max`) — those slots hold
-	// sg 0, which player_shot_create discards (an invisible gun) — and drop any cooldown inherited
-	// from the previous design so the new one fires on the next tick. Materialize only runs from
-	// menus / item-data load, so this matches the reset the game does on every in-game weapon switch.
+	// Reset live fire cursors and cooldowns after replacing the compiled weapon.
 	memset(shotMultiPos, 0, sizeof(shotMultiPos));
 	memset(shotRepeat, 1, sizeof(shotRepeat));
 }
@@ -759,7 +733,7 @@ bool customWeaponEquip(void)
 	return true;
 }
 
-// ---- import-source list -----------------------------------------------------
+// Import sources.
 
 // Copy a weapon/sidekick name for the picker, stripping the data's cosmetic
 // shop formatting (leading/trailing padding and the " Ammo <count>" suffix that
@@ -869,13 +843,10 @@ static void buildBulletPresets(void)
 		addOptionPreset(i);
 }
 
-// ---- persistence ------------------------------------------------------------
+// Persistence.
 
-// How many bullet slots actually carry data, so the serializer only writes those. The per-bullet
-// arrays are now WEAPON_MULTI_MAX (255) wide, but a typical weapon uses only a handful of bullets;
-// writing the full width would bloat every saved design to ~12 KB. At least the fired range
-// (multi/max), extended upward to include any higher slot that still holds data (so a design is
-// never silently truncated). deserializeRaw recovers this width from the blob's integer count.
+// Serialize the fired bullet range plus any higher non-empty slots.
+// This avoids writing every 255-wide per-bullet array for small designs.
 static int usedBulletCount(const JE_WeaponType *w)
 {
 	int n = (w->multi > w->max) ? w->multi : w->max;
@@ -979,7 +950,7 @@ void customWeaponDeserializeLevel(int mode, int level, const char *str)
 	deserializeRaw(&customWeaponRaw[mode][level], str);
 }
 
-// ---- weapon library ---------------------------------------------------------
+// Weapon library.
 
 // Copy the editable globals into / out of a library slot.
 static void storeToSlot(int i)

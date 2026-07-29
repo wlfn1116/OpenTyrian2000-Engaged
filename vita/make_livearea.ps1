@@ -1,17 +1,6 @@
-# Generate the PS Vita LiveArea / VPK image assets as 8-bit INDEXED (palette) PNGs.
-#
-# WHY INDEXED: the Vita VPK promoter rejects 24-bit truecolor LiveArea PNGs (install fails
-# at ~98% with 0x8010113D); it requires 8-bit palette PNGs. GDI+ cannot Clone() straight to
-# an indexed format reliably, so we round-trip through the GIF encoder (which quantizes to a
-# 256-colour adaptive palette) and re-save the palettized bitmap as PNG -- the PNG encoder
-# then writes color-type 3 (indexed), which is exactly what the promoter wants.
-#
-# Source art is the Tyrian 2000 box art shared with the Switch build (switch/icon.jpg); if it
-# is missing, a solid dark background is used. Run from anywhere:
-#   powershell -ExecutionPolicy Bypass -File vita/make_livearea.ps1
-#
-# Outputs (under vita/sce_sys): icon0.png 128x128, pic0.png 960x544,
-#   livearea/contents/{bg0.png 840x500, startup.png 280x158}
+# Generate Vita LiveArea assets as indexed PNGs, required by the VPK promoter.
+# GDI+ reaches indexed PNG reliably by quantizing through GIF first.
+# Source art: switch/icon.jpg; output: vita/sce_sys.
 Add-Type -AssemblyName System.Drawing
 
 $root   = $PSScriptRoot

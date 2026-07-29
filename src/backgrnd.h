@@ -47,7 +47,7 @@ extern int bgMarginRows;
 
 // Un-floored parallax offsets (mainint.c) and, per layer, bg_layer_dx (FLOAT scroll delta) +
 // bg_layer_frac (floored-away fraction). Interpolated sub-pixel-smooth, tick-locked to the
-// layer's anchored enemies. notes.md §Sub-pixel parallax.
+// layer's anchored enemies.
 extern float mapXOfs_f, mapX2Ofs_f, mapX3Ofs_f;
 extern float oldMapXOfs_f, oldMapX3Ofs_f;  // un-floored mirrors of oldMapXOfs / oldMapX3Ofs
 extern float bg_layer_dx[4], bg_layer_frac[4];
@@ -59,7 +59,7 @@ extern float bg_layer_xofs[4];
 extern bool bg_layer_xofs_valid[4];
 
 // Vertical scroll smoothing: bg_layer_dy (FLOAT average scroll rate) + bg_layer_yfrac (sub-pixel
-// remainder) per layer, gated by bg_smooth_y_active. notes.md §Slow-scroll smoothing.
+// remainder) per layer, gated by bg_smooth_y_active.
 extern float bg_layer_dy[4], bg_layer_yfrac[4];
 extern bool bg_smooth_y_active;
 // this-tick (non-lagged) scroll rate + sub-pixel fraction. Layer 3 alone uses these because it

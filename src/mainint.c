@@ -683,7 +683,7 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 	if (endlessMode)
 	{
 		// Endless: shop prices inflate with depth (+19%/level, capped 100x) since income also
-		// scales; first 5 zones ramp at half-slope to keep early game gentle. notes.md §Economy & perk plumbing.
+		// scales; the first five zones ramp at half slope.
 		int pct;
 		if (endlessRunDepth < 5)
 			pct = 100 + endlessRunDepth * 19 / 2;                 // first 5 zones: gentle half-slope
@@ -3463,7 +3463,7 @@ static int twiddle_special_id(int row)
 
 // Is this special safe to equip? The HUD blits special[id].itemgraphic every frame, so an
 // out-of-range icon crashes instantly; guard on a real HUD icon, name, and effect type. Unlike
-// endless we KEEP Invulnerability -- it doesn't crash, and debug wants it. notes.md §Endless mode.
+// Endless keeps Invulnerability because it is safe and useful for debugging.
 static bool debug_special_is_safe(int id)
 {
 	if (id == 0)
@@ -3483,7 +3483,7 @@ static bool debug_special_is_safe(int id)
 }
 
 // Debug-only: fault on purpose so the crash logger runs end-to-end (Force Crash row). Pointer must
-// be a volatile file-scope global or /O2 folds the null store away and never faults. notes.md §Crash logging.
+// be a volatile file-scope global or /O2 folds the null store away.
 static int *volatile debug_crash_ptr;  // NULL; never assigned -> the dereference faults
 static void debug_force_crash(void)
 {
@@ -3690,23 +3690,8 @@ static bool dbgRowIsLoadout(int id)
 	}
 }
 
-/* Make a debug loadout edit actually take effect mid-level.
- *
- * The rows write straight into player[0].items, but the engine caches a great deal off those and
- * recomputes it only at LEVEL START: the ship's sprite index and sheet (shipGr / shipGrPtr), the
- * hull, the hit box, the generator output, the shield ceiling, the sidekick pods' ammo and style.
- * This runs deliberately the same sequence the engine's OWN in-level ship change uses (the
- * Tab+digit extra-ship path in JE_playerMovement), so the two can't drift apart.
- *
- * `shipChanged` decides what happens to the hull: swapping the SHIP legitimately re-armors you to
- * the new one's maximum, but nudging the rear weapon must not quietly heal you.
- */
-/* True only while the debug menu is open OVER THE IN-GAME HUD, as opposed to over a shop or title
- * screen -- the loadout-apply path below needs that question, not the layout one. The HUD gauges
- * are event-driven so it repaints them, and a repaint anywhere else strands gameplay furniture in
- * the corner of whatever art is on screen (the shop only redraws the regions it owns). Coincides
- * with JE_debugMenu's `center` today, but stored separately so a future centered in-level caller
- * can't silently reintroduce that. */
+/* Rebuild cached player state after a mid-level debug loadout edit. */
+/* True only when the debug menu overlays the gameplay HUD. */
 static bool debugMenuOverHud = false;
 
 static void debug_apply_loadout_change(bool shipChanged)
@@ -5374,7 +5359,7 @@ void JE_endLevelAni(void)
 
 	// The endless effect layer drives its own ramp and keeps the player's chosen base difficulty
 	// fixed (its levers key off difficultyLevel too), so the vanilla score-based bump must not fire
-	// -- Normal would silently climb to Hard mid-run. The ONE campaign behaviour the debug layer
+	// -- Normal would silently climb to Hard mid-run. The campaign behavior the debug layer
 	// suppresses rather than adds to: the scaling readout only means anything if the difficulty
 	// it is computed at holds still between levels.
 	if (difficultyAdjust && !endlessFxActive())
@@ -5487,8 +5472,7 @@ void JE_endLevelAni(void)
 	else if (endlessMode)
 	{
 		// Endless earns cash, not data cubes -- show the clear payout just banked above. No '+' or
-		// parentheses: SMALL_FONT_SHAPES has blank stubs there and would silently drop them (notes.md
-		// §Font glyph coverage).
+		// parentheses: SMALL_FONT_SHAPES silently drops those glyphs.
 		char payStr[64];
 		snprintf(payStr, sizeof(payStr), "Zone Bonus:  %ld", endlessBonus);
 		JE_outTextGlow(VGAScreenSeg, 30, 120, payStr);
@@ -6560,7 +6544,7 @@ void JE_playerMovement(Player *this_player,
 
 		// Rapid Recharge perk: extra decrements to the special cooldown gate + each sidekick's
 		// ammo-refill counter (skips main guns). Sampled once per tick -- the decrement accumulator
-		// is stateful and must be read exactly once. notes.md §Economy & perk plumbing.
+		// is stateful and must be read exactly once.
 		{
 			const int specDec = endlessPerkSpecialCooldownDecrements();
 			for (int k = 0; k < specDec && shotRepeat[SHOT_SPECIAL] > 0; k++)
@@ -7891,7 +7875,7 @@ redo:
 										// we fired (the top charge stage when Instant Charge holds it maxed,
 										// whose shotrepeat is the SLOWEST). Override it with the quickest
 										// charge stage's shotrepeat so full-power blasts come out at stage-0
-										// speed. notes.md §Weapons.
+										// speed.
 										if (chargeSidekickAutofire == CHARGE_AUTOFIRE_FAST && this_option->pwr > 0)
 										{
 											JE_byte fastest = weapons[this_option->wpnum].shotrepeat;
@@ -8006,13 +7990,8 @@ void JE_mainGamePlayerFunctions(void)
 	bool bg2CrispLeft = false;  // Extra Parallax OFF only: render bg2 crisply at the far-left extreme (below)
 	if (extraParallax)
 	{
-		// Extra Parallax (Enhancements menu): pan the NEAR (terrain) layer across EXACTLY its 336px
-		// map, so the ship's full travel runs it left-edge-flush to right-edge-flush with 0 px
-		// spilling off either extreme. mapXOfs sweeps 36 down by the slack (336 - 299 = 37) to -1,
-		// normalized over the ship's ACTUAL x-travel so BOTH walls are reached (the stock [40,363]
-		// normalization only reaches u~0.81 at the right wall). w_f is back-derived (3*near + 17) so
-		// the mid/deep layers keep the coupled ratio; their over-pan renders as the layer's own
-		// mirror image (backgrnd.c bg_mirror_tile). notes.md §Sub-pixel parallax.
+		// Pan the near layer edge-to-edge across the ship's actual travel.
+		// Derive w_f so deeper layers keep the stock coupled ratio.
 		const float travel = (float)((PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) - SHIP_LEFT_MARGIN);
 		float uu = (tempX - SHIP_LEFT_MARGIN) / travel;
 		if (uu < 0.0f)
@@ -8073,7 +8052,7 @@ void JE_mainGamePlayerFunctions(void)
 	// the smoothed replay rounds that fraction UP, drawing the clouds 1px right of their true pixel.
 	// Snap the fraction to 0 so the smoothed render lands on the integer pixel with no spill on
 	// either edge. Integer mapX2Ofs and glued layer-2 enemies are untouched; this affects only the
-	// render-list interpolation path. notes.md §Sub-pixel parallax.
+	// render-list interpolation path.
 	if (bg2CrispLeft)
 		mapX2Ofs_f = (float)mapX2Ofs;
 
@@ -8082,7 +8061,7 @@ void JE_mainGamePlayerFunctions(void)
 	// right. The near layer bottoms out at -1, which just covers 322, so clamp layer 2 to that same
 	// floor. Both the integer and float offsets are clamped so the smoothed replay agrees; costs a
 	// ~1px pan freeze over the last few px of travel. Not gated on the mode -- the gap is present
-	// either way. notes.md §Sub-pixel parallax.
+	// either way.
 	if (mapX2Ofs < -1)
 	{
 		mapX2Ofs = -1;

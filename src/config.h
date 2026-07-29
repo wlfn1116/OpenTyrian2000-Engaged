@@ -248,7 +248,7 @@ extern bool smoothMotion;   // interpolate motion between logic ticks for smooth
 void set_smooth_motion(bool enabled);  // off: disables supersampling; off->on: Sub-pixel back to Auto
 extern bool extraSparks;    // raise the explosion superspark limit far above the classic 101 cap
 // Superspark projectile trails (menu: Enhancements -> Weapon Tweaks -> Superspark Weapons). Only
-// ep4/5 item data tags these projectiles; retagged per-episode by JE_applySuperSparks. notes.md §Weapons.
+// Ep4/5 item data tags these projectiles; JE_applySuperSparks retags them per episode.
 enum
 {
 	SUPER_SPARKS_AUTO = 0,  // no trail in ep1-3, trail in ep4/5 (vanilla per-episode)
@@ -277,7 +277,7 @@ extern int wallopSecondBolt;
 
 // Weapons whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the superspark
 // trail above (full diff of the two data sets): gameplay reworks, a blast sprite, retuned sounds.
-// epDiffMode[] forces one episode's data; JE_applyEpDiffs rewrites from shipped constants. notes.md §Weapons.
+// epDiffMode[] forces one episode's data; JE_applyEpDiffs rewrites from shipped constants.
 enum
 {
 	EPDIFF_AUTO = 0,     // per-episode default: ep1-3 data in ep1-3, ep4/5 data in ep4/5

@@ -155,7 +155,7 @@ draw_player_shot_loop_end:
 
 // Endless Opening Salvo: the superspark trail marking a boosted shot, coloured from the shot's own
 // sprite so each weapon trails its own hue. (cx,cy) is the shot centre; `launch` is the fatter
-// one-off burst on its first drawn tick, which skips the classic cap. notes.md §Opening Salvo.
+// one-off burst on its first drawn tick, which skips the classic cap.
 static void salvo_sparks_at(int cx, int cy, Uint8 bank, bool launch)
 {
 	JE_doSP(cx, cy, launch ? 14 : 4, launch ? 6 : 4, bank << 4, !launch);
@@ -282,13 +282,8 @@ bool player_shot_move_and_draw(
 		*out_shotx = shot->shotX;
 		*out_shoty = shot->shotY;
 
-		// Cull margins widened past the visible edges (top -40, bottom 240) so interpolation still
-		// gets recorded ticks and a fast shot's exit animates off-screen instead of popping.
-		// Top: ascending shots only -- a decelerating shot (e.g. Vulcan Cannon) apexing inside the
-		// margin would fall back on-screen, so past -15 cull once it stops ascending (shotYM >= 0).
-		// Bottom: some weapons launch downward and arc back up, and the endless High-Velocity Shots
-		// perk scales launch velocity but not acceleration, so the dip deepens quadratically -- 240
-		// leaves the boosted arc room to return. blit_sprite2 clips, so drawing the dip is safe.
+		// Wide cull margins keep interpolated exits and returning projectile arcs visible.
+		// Decelerating shots are culled above -15 once they stop ascending.
 		if (shot->shotX < -34 || shot->shotX > PLAYFIELD_WIDTH + 34 ||
 			shot->shotY < -40 || shot->shotY > 240 ||
 			(shot->shotY < -15 && shot->shotYM >= 0))
@@ -484,7 +479,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 			return MAX_PWEAPON;
 
 		// Fire-cursor wrap must test >=, not ==: the cursor is a persistent per-bay global, so a
-		// weapon swap mid-cycle can leave it above the new max, silently killing the gun. notes.md §Weapons.
+		// weapon swap mid-cycle can leave it above the new max, silently killing the gun.
 		if ((weapon->max != 0 && shotMultiPos[bay_i] >= weapon->max) ||
 		    shotMultiPos[bay_i] >= WEAPON_MULTI_MAX ||
 		    (weapon->max == 0 && shotMultiPos[bay_i] > 8))

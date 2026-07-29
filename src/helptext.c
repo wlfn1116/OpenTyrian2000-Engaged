@@ -338,14 +338,8 @@ void JE_loadHelpText(void)
 		read_encrypted_pascal_string(difficultyNameB[i], sizeof(difficultyNameB[i]), f);
 	skip_pascal_string(f);
 
-	// The high-score table and the debug menu label a difficulty using difficultyNameB[]
-	// (indexed by difficultyLevel), loaded from the "HighScore Difficulty Names" section.
-	// That section titles the hardest selectable difficulty "Terror", but the Difficulty
-	// Level select screen (difficulty_name[]) calls it "Lord of Game".  Copy the six names
-	// that actually appear on the select screen over their difficultyNameB[] slots so every
-	// place that shows a difficulty agrees with the select screen.  difficulty_name[] is
-	// laid out header-first ([0] = "Difficulty Level", [1..6] = the six choices); the hidden
-	// ranks (Unranked/Insanity/Maniacal/Master/Zinglon) are left untouched.
+	// Use the difficulty-select names in score and debug screens.
+	// Hidden ranks retain their separate names.
 	SDL_strlcpy(difficultyNameB[DIFFICULTY_EASY],         difficulty_name[1], sizeof(difficultyNameB[0]));
 	SDL_strlcpy(difficultyNameB[DIFFICULTY_NORMAL],       difficulty_name[2], sizeof(difficultyNameB[0]));
 	SDL_strlcpy(difficultyNameB[DIFFICULTY_HARD],         difficulty_name[3], sizeof(difficultyNameB[0]));

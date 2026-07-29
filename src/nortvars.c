@@ -48,14 +48,7 @@ static int dbar_voffset(int z)
 
 #define GAUGE_FLASH_WHITE 5
 
-// Draw one of the vertical HUD gauges: 9 pixels wide (x..x+8), num+1 stacked 2px bands rising
-// from y, shaded as a gradient. dir (GaugeGradientDir) picks the gradient axis/direction:
-//   Up    - classic, brightest at the top of the bar
-//   Down  - vertical, brightest at the bottom (Up mirrored within the current fill)
-//   Left  - horizontal, brightest at the left column
-//   Right - horizontal, brightest at the right column
-// The Left/Right modes paint the same rows the vertical bars cover (bar top .. y), so the
-// empty area above is still cleared the usual way by JE_wipeShieldArmorBars.
+// Draw a 9px gauge with an up, down, left, or right brightness gradient.
 void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash)
 {
 	col += 2;
@@ -137,13 +130,7 @@ void JE_barDrawShadow(SDL_Surface *surface, JE_word x, JE_word y, JE_word res, J
 	}
 }
 
-// Recolour a single bar of a JE_barDrawShadow slider, at 1-based slot `mark`, using colour
-// bank `col`. Mirrors JE_barDrawShadow's per-bar geometry (same xsize/ysize) and step, so it
-// lands exactly on the mark-th bar. Used to flag a fixed reference value -- the middle/default
-// of the touch-sensitivity sliders -- in a contrasting colour, drawn whether or not that slot
-// currently holds a filled bar. No JE_barShade here: when the slot is filled the underlying
-// JE_barDrawShadow bar already cast its drop-shadow (re-shading would darken the next bar); when
-// it's empty a flat marker still reads clearly.
+// Recolor one 1-based slider slot without redrawing its shadow.
 void JE_barDrawMark(SDL_Surface *surface, JE_word x, JE_word y, JE_word col, JE_word mark, JE_word xsize, JE_word ysize)
 {
 	if (mark == 0)
