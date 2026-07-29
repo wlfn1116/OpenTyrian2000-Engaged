@@ -37,7 +37,7 @@ movement to reduce input latency. This movement is disabled for demos and
 network games.
 
 Sub-pixel rendering draws the playfield internally at up to 5x scale. This makes
-slow scrolling smoother without changing the simulation. 
+slow scrolling smoother without changing the simulation.
 
 ### Endless mode
 
