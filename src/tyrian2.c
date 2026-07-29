@@ -1809,14 +1809,40 @@ enemy_still_exists:
 							// as normal; only the bullets are withheld.
 							if (endlessReviveGraceActive())
 								break;
-							// Endless "rising tide": once faster-fire has saturated, enemies add EXTRA
-							// shots per volley (fanned out below) rather than firing quicker -- bullet
-							// count is the one difficulty axis with no engine ceiling. Zero early on.
-							int endlessBaseMulti = weapons[temp3].multi;
-							int endlessVolley = endlessBaseMulti + (endlessFxActive() ? endlessExtraEnemyShots() : 0);
+							// `multi` may describe one tiled projectile or beam. Carry tide
+							// credit between shots and emit only complete authored volleys.
+							const int endlessBaseMulti = weapons[temp3].multi;
+							int endlessExtraVolleys = 0;
+							if (endlessFxActive() && endlessBaseMulti > 0)
+							{
+								const int credit = enemy[i].eshotextracredit[j-1] + endlessExtraEnemyShots();
+								endlessExtraVolleys = credit / endlessBaseMulti;
+								enemy[i].eshotextracredit[j-1] = (JE_byte)(credit % endlessBaseMulti);
+							}
+
 							// Only endless draws on the enlarged enemy-shot pool; normal levels keep the
 							// original 60-slot cap so they play exactly as before.
 							const int enemyShotCap = endlessFxActive() ? ENEMY_SHOT_MAX : ENEMY_SHOT_NORMAL;
+							if (endlessFxActive() && endlessBaseMulti > 0)
+							{
+								// Do not truncate a composite volley when the pool is nearly full.
+								int freeShots = 0;
+								for (int slot = 0; slot < enemyShotCap; ++slot)
+									if (enemyShotAvail[slot] == 1)
+										++freeShots;
+
+								const int completeVolleys = freeShots / endlessBaseMulti;
+								if (completeVolleys == 0)
+									goto draw_enemy_end;
+								if (endlessExtraVolleys > completeVolleys - 1)
+									endlessExtraVolleys = completeVolleys - 1;
+							}
+
+							const int endlessFanPhase = enemy[i].eshotfanphase[j-1] & 1;
+							enemy[i].eshotfanphase[j-1] ^= endlessExtraVolleys & 1;
+
+							const int endlessVolley = endlessBaseMulti * (1 + endlessExtraVolleys);
+							int baseShotSlots[WEAPON_MULTI_MAX];
 							for (int shotNum = 0; shotNum < endlessVolley; shotNum++)
 							{
 								for (b = 0; b < enemyShotCap; b++)
@@ -1829,7 +1855,31 @@ enemy_still_exists:
 
 								enemyShotAvail[b] = !enemyShotAvail[b];
 
-								if (weapons[temp3].sound > 0 && shotNum < endlessBaseMulti)
+								if (shotNum >= endlessBaseMulti)
+								{
+									// Clone the current volley without advancing its weapon pattern.
+									// One fan angle keeps all of a composite shot's parts together.
+									const int component = shotNum % endlessBaseMulti;
+									enemyShot[b] = enemyShot[baseShotSlots[component]];
+
+									const int fanK = shotNum / endlessBaseMulti - 1;
+									const int fanOrder = endlessFanPhase + fanK;
+									const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (fanK / 2 + 1) * 0.20f;
+									const float fc = cosf(fanAng), fs = sinf(fanAng);
+									const int ox = enemyShot[b].sxm, oy = enemyShot[b].sym;
+									enemyShot[b].sxm = roundf(ox * fc - oy * fs);
+									enemyShot[b].sym = roundf(ox * fs + oy * fc);
+									if (enemyShot[b].sxm == 0 && enemyShot[b].sym == 0)
+									{
+										enemyShot[b].sxm = ox;
+										enemyShot[b].sym = oy;
+									}
+									continue;
+								}
+
+								baseShotSlots[shotNum] = b;
+
+								if (weapons[temp3].sound > 0)
 								{
 									do
 									{
@@ -1947,24 +1997,6 @@ enemy_still_exists:
 									int dmg = (enemyShot[b].sdmg * dpct + 50) / 100;
 									enemyShot[b].sdmg = (JE_byte)(dmg > 255 ? 255 : dmg);
 
-									// Tide fan: the EXTRA shots (beyond the weapon's own volley) get a small
-									// alternating angular offset, so they spread into a readable fan instead
-									// of stacking on the base trajectory. Done after the speed scale, so the
-									// larger velocity rotates with some resolution.
-									if (shotNum >= endlessBaseMulti)
-									{
-										int fanK = shotNum - endlessBaseMulti;   // 0, 1, 2, ... per extra shot
-										float fanAng = ((fanK & 1) ? -1.0f : 1.0f) * (fanK / 2 + 1) * 0.20f;
-										float fc = cosf(fanAng), fs = sinf(fanAng);
-										int ox = enemyShot[b].sxm, oy = enemyShot[b].sym;
-										enemyShot[b].sxm = roundf(ox * fc - oy * fs);
-										enemyShot[b].sym = roundf(ox * fs + oy * fc);
-										if (enemyShot[b].sxm == 0 && enemyShot[b].sym == 0)  // rounding zeroed a tiny vector
-										{
-											enemyShot[b].sxm = ox;
-											enemyShot[b].sym = oy;
-										}
-									}
 								}
 							}
 							break;
@@ -6330,6 +6362,8 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	for (uint i = 0; i < 3; ++i)
 	{
 		enemy->eshotmultipos[i] = 0;
+		enemy->eshotextracredit[i] = 0;
+		enemy->eshotfanphase[i] = 0;
 	}
 
 	enemy->enemyground = (enemyDat[eDatI].explosiontype & 1) == 0;

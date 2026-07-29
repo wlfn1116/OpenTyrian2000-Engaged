@@ -72,6 +72,8 @@ struct JE_SingleEnemyType
 	JE_byte     healthbar_max;  /* armor at the moment of the first hit = denominator for the enemy HP bar */
 	JE_boolean  healthbar_seen; /* set once this enemy has taken player damage (gates the enemy HP bar) */
 	JE_byte     eshotwait[3], eshotmultipos[3]; /* [1..3] */
+	JE_byte     eshotextracredit[3]; /* endless carry for whole-volley tide scaling */
+	JE_byte     eshotfanphase[3]; /* endless starting side for the next tide fan */
 	JE_byte     enemycycle;
 	JE_byte     ani;
 	JE_word     egr[20]; /* [1..20] */
