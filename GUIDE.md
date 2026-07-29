@@ -248,7 +248,7 @@ the zone runs), **Retaliation is on your trigger** (it spikes when you kill).
 | Auxiliary Reactor | Shield recharge costs no generator power this sector | 0 |
 | Low Profile | Your damage hitbox shrinks about 25% (sprite and pickup reach unchanged) | −0.8 |
 | Giant Killer | Elites/champions lose their HP multiplier | −0.6 |
-| Shockwave | Killing an elite/champion vaporises nearby enemy shots | −0.4 |
+| Shockwave | Elite kills clear enemy shots within 80px; champion kills within 120px | −0.4 |
 | Star Charts | Clearing this sector guarantees a full route slate at the next ordinary outpost | 0 |
 | Breakthrough | Clearing this sector owes you a **bonus perk pick** | −1.0 |
 | Soft Landing | Ram damage you take is cut to 30% | −0.4 |
