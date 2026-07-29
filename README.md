@@ -86,7 +86,7 @@ opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
 ```
 
 `HOSTNAME` is the other player's address. `NUM` is `1` or `2`. The game uses UDP
-port 1333.
+port 1333. 
 
 Network play is inherited from OpenTyrian2000 and is not regularly tested.
 
