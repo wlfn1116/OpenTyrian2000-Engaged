@@ -1468,6 +1468,82 @@ static unsigned int count_stuck_above_screen(void)
 // Wait about six seconds before culling a stuck-above enemy.
 enum { MAP_STOP_STALL_LIMIT = 210 };
 
+static void endlessGroupHoming(void)
+{
+	if (!endlessFxActive())
+		return;
+
+	for (int i = 0; i < 100; i++)
+		enemy[i].groupHomed = false;
+
+	for (int i = 0; i < 100; i++)
+	{
+		if (enemyAvail[i] == 1 || enemy[i].groupHomed || enemy[i].linknum == 0 ||
+		    enemy[i].scoreitem || (enemy[i].xaccel == 0 && enemy[i].yaccel == 0))
+			continue;
+
+		int members[100];
+		int count = 0;
+		int sumX = 0;
+		int sumY = 0;
+
+		for (int j = i; j < 100; j++)
+		{
+			if (enemyAvail[j] == 1 || enemy[j].scoreitem ||
+			    enemy[j].linknum != enemy[i].linknum ||
+			    enemy[j].exc    != enemy[i].exc    || enemy[j].eyc    != enemy[i].eyc ||
+			    enemy[j].excc   != enemy[i].excc   || enemy[j].eycc   != enemy[i].eycc ||
+			    enemy[j].exccw  != enemy[i].exccw  || enemy[j].eyccw  != enemy[i].eyccw ||
+			    enemy[j].xaccel != enemy[i].xaccel || enemy[j].yaccel != enemy[i].yaccel)
+				continue;
+			members[count++] = j;
+			sumX += enemy[j].ex;
+			sumY += enemy[j].ey;
+		}
+
+		if (count < 2)
+			continue;
+
+		const int cx = sumX / count;
+		const int cy = sumY / count;
+
+		if (enemy[i].xaccel && enemy[i].xaccel - 89u > mt_rand() % 11)
+		{
+			if (player[0].x - 25 > cx)
+			{
+				if (enemy[i].exc < enemy[i].xaccel - 89)
+					for (int m = 0; m < count; m++)
+						enemy[members[m]].exc++;
+			}
+			else
+			{
+				if (enemy[i].exc >= 0 || -enemy[i].exc < enemy[i].xaccel - 89)
+					for (int m = 0; m < count; m++)
+						enemy[members[m]].exc--;
+			}
+		}
+
+		if (enemy[i].yaccel && enemy[i].yaccel - 89u > mt_rand() % 11)
+		{
+			if (player[0].y > cy)
+			{
+				if (enemy[i].eyc < enemy[i].yaccel - 89)
+					for (int m = 0; m < count; m++)
+						enemy[members[m]].eyc++;
+			}
+			else
+			{
+				if (enemy[i].eyc >= 0 || -enemy[i].eyc < enemy[i].yaccel - 89)
+					for (int m = 0; m < count; m++)
+						enemy[members[m]].eyc--;
+			}
+		}
+
+		for (int m = 0; m < count; m++)
+			enemy[members[m]].groupHomed = true;
+	}
+}
+
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
 {
 	// JE_drawEnemy(25) is only ever the sky bank (slots 0..24), the one batch whose layer-2
@@ -1518,7 +1594,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 					enemy[i].eliteState = 1;
 			}
 
-			if (enemy[i].xaccel && enemy[i].xaccel - 89u > mt_rand() % 11)
+			if (!enemy[i].groupHomed && enemy[i].xaccel && enemy[i].xaccel - 89u > mt_rand() % 11)
 			{
 				if (player[0].x > enemy[i].ex)
 				{
@@ -1532,7 +1608,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				}
 			}
 
-			if (enemy[i].yaccel && enemy[i].yaccel - 89u > mt_rand() % 11)
+			if (!enemy[i].groupHomed && enemy[i].yaccel && enemy[i].yaccel - 89u > mt_rand() % 11)
 			{
 				if (player[0].y > enemy[i].ey)
 				{
@@ -3095,6 +3171,8 @@ level_loop:
 		water_filter(game_screen, VGAScreen);
 		VGAScreen = game_screen;
 	}
+
+	endlessGroupHoming();
 
 	/*-----------------------Ground Enemy------------------------*/
 	lastEnemyOnScreen = enemyOnScreen;
@@ -6632,6 +6710,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	enemy->healthbar_seen = false;  // no enemy HP bar until this slot takes damage
 	enemy->healthbar_max = 0;
 	enemy->eliteState = 0;  // endless: elite undecided until first processed (see JE_drawEnemy)
+	enemy->groupHomed = false;
 
 	if (!enemy->scoreitem)
 	{
