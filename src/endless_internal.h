@@ -97,6 +97,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SIPHON_PCT    12  // heal-on-kill chance % per Siphon stack
 #define ENDLESS_PERK_BULWARK        1  // incoming damage reduced by this per Bulwark stack (min 1 dmg kept)
 #define ENDLESS_PERK_ADRENALINE_PCT 45 // extra fire-accumulator % per Adrenaline stack while badly hurt
+#define ENDLESS_PERK_ADRENALINE_DMG 25 // +% shot damage per Adrenaline stack while badly hurt
 #define ENDLESS_PERK_ADRENALINE_HP  3  // Adrenaline triggers when armor < 1/this of max
 #define ENDLESS_PERK_GLASS_DMG     40  // Glass Cannon: +% shot damage
 #define ENDLESS_PERK_GLASS_ARMOR    8  // Glass Cannon: -max armor (the drawback)
@@ -187,6 +188,7 @@ extern int endlessPerkDepthDone;
 int endlessPerkCashPercent(void);             // Scavenger cash multiplier (100 = unchanged)
 int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspent cash (10 = stock)
 int endlessPerkTotalOwned(void);              // perk stacks held, summed across every perk
+bool endlessAdrenalineActive(void);           // Adrenaline owned and armor below its hurt threshold
 
 // Outpost state.
 extern long endlessRerollCost;        // escalating outpost prices, reset each visit
