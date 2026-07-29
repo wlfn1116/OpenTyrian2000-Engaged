@@ -16,11 +16,38 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+#include <assert.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#if defined(_MSC_VER)
+#include <malloc.h>
+#endif
+
+#include <SDL_stdinc.h>
+#include <SDL_scancode.h>
+#include <SDL_keycode.h>
+#include <SDL_keyboard.h>
+#include <SDL_surface.h>
+#include <SDL_mouse.h>
+#include <SDL_endian.h>
+#include <SDL_timer.h>
+
+#ifdef WITH_NETWORK
+#include <SDL_net.h>
+#endif
+
 #include "game_menu.h"
 
 #include "backgrnd.h"
 #include "config.h"
+#if defined(__SWITCH__) || defined(__vita__)
 #include "console_platform.h"
+#endif
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
@@ -28,31 +55,32 @@
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
 #include "lvllib.h"
+#include "lvlmast.h"
 #include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
+#include "opentyr.h"
+#include "palette.h"
 #include "params.h"
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
 #include "render_list.h"
 #include "shots.h"
+#include "sndmast.h"
 #include "sprite.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
-
-#include <assert.h>
-#include <limits.h>
-#include <math.h>
 
 enum
 {
@@ -727,7 +755,7 @@ static void draw_endless_perk_list(void)
 
 		const bool selected = (tempW == sel_row);
 
-		char line[34];
+		char line[34] = { 0 };
 		if (selected)  // leading '~' toggles the highlight, as in JE_drawMenuChoices
 		{
 			line[0] = '~';
@@ -744,7 +772,7 @@ static void draw_endless_perk_list(void)
 			char cnt[16];
 			snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
 
-			char cline[18];
+			char cline[18] = { 0 };
 			if (selected)  // match the row's highlight so the count brightens with its name
 			{
 				cline[0] = '~';
@@ -990,7 +1018,7 @@ void JE_itemScreen(void)
 		curMenu = MENU_PERKS;
 	}
 
-	int temp_weapon_power[7]; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
+	int temp_weapon_power[7] = { 0 }; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	for (int i = 0; i < 7; i++)
@@ -1012,7 +1040,7 @@ void JE_itemScreen(void)
 		}
 	}
 
-	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
+	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
 
 	keyboardUsed = false;
 	firstMenu9 = false;
@@ -1056,7 +1084,7 @@ void JE_itemScreen(void)
 		/* SYN: note reindexing... "firstMenu9" refers to Menu 8 here :( */
 		if (curMenu != MENU_DATA_CUBE_SUB || firstMenu9)
 		{
-			memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
+			memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 		}
 
 		if (curMenu == MENU_UPGRADES &&
@@ -2387,7 +2415,7 @@ void JE_itemScreen(void)
 						break;
 					}
 
-					memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
+					memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
 
 					curPal = newPal;
 					memcpy(colors, palettes[newPal-1], sizeof(colors));
@@ -4755,7 +4783,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	const int NGAM   = endlessGambleOutcomeCount();
 	int       NPERKS = endlessPerkCount();
 
-	int    dbgPerks[32];               // owned stacks per perk, pre-loaded from the run (edit here)
+	int    dbgPerks[32] = { 0 };       // owned stacks per perk, pre-loaded from the run (edit here)
 	if (NPERKS > (int)COUNTOF(dbgPerks))
 		NPERKS = (int)COUNTOF(dbgPerks);
 
@@ -4769,8 +4797,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	for (int i = 0; i < NPERKS; ++i)
 		dbgPerks[i] = endlessPerkGetOwned(i);
 
-	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
-	dbgGambleMsg[0] = '\0';
+	char dbgGambleMsg[48] = { 0 };     // last outcome fired here, shown as the gamble list's help
 
 	// The difficulty the SCALING page computes at. -1 = "whatever the game is set to", which is what
 	// you want almost always; the explicit settings are there because the ramp is tilted 50%..160% by
@@ -4790,8 +4817,8 @@ static bool endlessDebugScreen(bool jumpMode)
 
 	while (!done)
 	{
-		PickerRow rows[EDBG_MAX_ROWS];
-		char epHeads[EPISODE_MAX][12];     // "EPISODE n" headings, alive as long as the rows point at them
+		PickerRow rows[EDBG_MAX_ROWS] = { 0 };
+		char epHeads[EPISODE_MAX][12] = { { 0 } }; // headings stay alive while rows point at them
 		int  rowCount = 0;
 
 		#define EDBG_ADD(k, i, l) do { \
@@ -4968,10 +4995,9 @@ static bool endlessDebugScreen(bool jumpMode)
 			if (isSel)
 				fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 2, C_SEL_BAR);
 
-			char  val[40];
+			char  val[40] = { 0 };
 			Sint8 labBright = isSel ? 5 : -1, valBright = isSel ? 5 : -1;
 			int   labX = px0 + 12;
-			val[0] = '\0';
 
 			switch (rows[i].kind)
 			{
@@ -5138,7 +5164,7 @@ static bool endlessDebugScreen(bool jumpMode)
 
 		// Footer line 1: what the selected row IS. Every list row can explain itself, so none of
 		// the 48 modifier names has to carry its meaning in the name alone.
-		char helpBuf[96];
+		char helpBuf[96] = { 0 };
 		const char *help = "";
 		switch (rows[s].kind)
 		{
@@ -5722,8 +5748,8 @@ bool JE_debugLevelSelect(void)
 	};
 
 	// Build the rows once: the level list can't change while the screen is open.
-	PickerRow rows[ALL_LEVEL_MAX + EPISODE_MAX];
-	char      epHeads[EPISODE_MAX][12];
+	PickerRow rows[ALL_LEVEL_MAX + EPISODE_MAX] = { 0 };
+	char      epHeads[EPISODE_MAX][12] = { { 0 } };
 	int       rowCount = 0;
 	int       lastEp = 0;
 	for (int i = 0; i < allLevelCount && rowCount < (int)COUNTOF(rows) - 1; ++i)
@@ -6099,6 +6125,8 @@ enum  // rows of the editor list (weapon-wide, per-bullet, import, then actions)
 	CWROW_REMOVE_CHARGE, // inline action: remove a charge state
 	CWROW_AUTOSCALE,   // inline action: build all levels from this one, scaled up + down
 	CWROW_COPY_ALL,    // inline action: copy this level to every level (flatten)
+	CWROW_COPY_LEVEL,  // inline action: copy this level for a later paste
+	CWROW_PASTE_LEVEL, // inline action: replace this level from the editor clipboard
 	// "Firing": this mode + power level's whole-volley raw fields
 	CWROW_FIRE_RATE,   // shotrepeat
 	CWROW_BULLETS,     // multi
@@ -6142,9 +6170,61 @@ enum  // rows of the editor list (weapon-wide, per-bullet, import, then actions)
 	CWROW_FIELD_COUNT
 };
 
-// Action ids (shared by the inline action rows above and the bottom action list).
-enum { CWACT_ADD_BULLET, CWACT_REMOVE_BULLET, CWACT_ADD_CHARGE, CWACT_REMOVE_CHARGE, CWACT_IMPORT_LEVEL, CWACT_IMPORT_ALL, CWACT_COPY_ALL, CWACT_RANDOMIZE, CWACT_RESET, CWACT_RESET_ALL, CWACT_EQUIP, CWACT_DONE, CWACT_LIB_NEW, CWACT_LIB_DUPLICATE, CWACT_LIB_DELETE, CWACT_AUTOSCALE, CWACT_SAVE, CWACT_ADD_LEVEL, CWACT_ADD_ALL_LEVELS };
-static const char *const cwActLabel[] = { "ADD SEGMENT", "REMOVE SEGMENT", "ADD CHARGE STATE", "REMOVE CHARGE STATE", "IMPORT THIS LEVEL", "IMPORT ALL LEVELS", "COPY TO ALL", "RANDOMIZE", "RESET", "RESET ALL", "EQUIP", "DONE", "NEW WEAPON", "DUPLICATE", "DELETE WEAPON", "AUTO-SCALE LEVELS", "SAVE", "ADD THIS LEVEL", "ADD ALL LEVELS" };
+// Shared by inline actions and the buttons at the bottom.
+enum
+{
+	CWACT_ADD_BULLET,
+	CWACT_REMOVE_BULLET,
+	CWACT_ADD_CHARGE,
+	CWACT_REMOVE_CHARGE,
+	CWACT_IMPORT_LEVEL,
+	CWACT_IMPORT_ALL,
+	CWACT_COPY_ALL,
+	CWACT_RANDOMIZE,
+	CWACT_RESET,
+	CWACT_RESET_ALL,
+	CWACT_EQUIP,
+	CWACT_DONE,
+	CWACT_LIB_NEW,
+	CWACT_LIB_DUPLICATE,
+	CWACT_LIB_DELETE,
+	CWACT_AUTOSCALE,
+	CWACT_SAVE,
+	CWACT_ADD_LEVEL,
+	CWACT_ADD_ALL_LEVELS,
+	CWACT_COPY_LEVEL,
+	CWACT_PASTE_LEVEL,
+	CWACT_UNDO,
+	CWACT_REDO,
+	CWACT_COUNT
+};
+
+static const char *const cwActLabel[CWACT_COUNT] =
+{
+	"ADD SEGMENT",
+	"REMOVE SEGMENT",
+	"ADD CHARGE STATE",
+	"REMOVE CHARGE STATE",
+	"IMPORT THIS LEVEL",
+	"IMPORT ALL LEVELS",
+	"COPY TO ALL",
+	"RANDOMIZE",
+	"RESET",
+	"RESET ALL",
+	"EQUIP",
+	"DONE",
+	"NEW WEAPON",
+	"DUPLICATE",
+	"DELETE WEAPON",
+	"AUTO-SCALE LEVELS",
+	"SAVE",
+	"ADD THIS LEVEL",
+	"ADD ALL LEVELS",
+	"COPY LEVEL",
+	"PASTE LEVEL",
+	"UNDO",
+	"REDO"
+};
 
 // Map an inline action row to its action id; returns -1 for a normal (adjustable) field row.
 static int cwInlineActionId(int row)
@@ -6157,6 +6237,8 @@ static int cwInlineActionId(int row)
 	case CWROW_REMOVE_CHARGE:  return CWACT_REMOVE_CHARGE;
 	case CWROW_AUTOSCALE:      return CWACT_AUTOSCALE;
 	case CWROW_COPY_ALL:       return CWACT_COPY_ALL;
+	case CWROW_COPY_LEVEL:     return CWACT_COPY_LEVEL;
+	case CWROW_PASTE_LEVEL:    return CWACT_PASTE_LEVEL;
 	case CWROW_IMPORT_THIS:    return CWACT_IMPORT_LEVEL;
 	case CWROW_IMPORT_ALL:     return CWACT_IMPORT_ALL;
 	case CWROW_ADD_THIS:       return CWACT_ADD_LEVEL;
@@ -6197,7 +6279,7 @@ static int cwRowCategory(int row)
 		return CWCAT_LIBRARY;
 	case CWROW_POWER_LEVEL: case CWROW_TWO_MODES: case CWROW_FIRE_MODE:
 	case CWROW_CHARGE: case CWROW_ADD_CHARGE: case CWROW_REMOVE_CHARGE:
-	case CWROW_AUTOSCALE: case CWROW_COPY_ALL:
+	case CWROW_AUTOSCALE: case CWROW_COPY_ALL: case CWROW_COPY_LEVEL: case CWROW_PASTE_LEVEL:
 		return CWCAT_LEVELS;
 	case CWROW_SHOW_TARGETS: case CWROW_SHOW_STATS:
 	case CWROW_TARGET_COUNT: case CWROW_TARGET_SPREAD: case CWROW_TARGET_HEIGHT:
@@ -6322,6 +6404,9 @@ static int  cwShipX = 70;            // preview ship position = shot origin (dri
 static int  cwShipY = 110;
 static int  cwCategory = CWCAT_ALL;  // which row category the top selector is showing
 
+static JE_WeaponType cwLevelClipboard;
+static bool cwLevelClipboardSet = false;
+
 // Direct numeric entry: on a numeric value row, typing digits builds an exact value
 // (so a shop price of 900, or sprite 214, doesn't need scrolling in coarse steps).
 // cwNumRow is the row currently being typed into (-1 = not typing); cwNumText holds
@@ -6329,12 +6414,124 @@ static int  cwCategory = CWCAT_ALL;  // which row category the top selector is s
 static int  cwNumRow = -1;
 static char cwNumText[12];
 
-// Frames remaining to show the "saved" confirmation on the hint line (0 = not showing).
-static int  cwSavedFlash = 0;
+static char cwNotice[64];
+static int  cwNoticeTicks = 0;
+static int  cwDeleteConfirmTicks = 0;
 
 static int cwClamp(int v, int lo, int hi)
 {
 	return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
+static void cwSetNotice(const char *text)
+{
+	SDL_strlcpy(cwNotice, text, sizeof(cwNotice));
+	cwNoticeTicks = 40;
+}
+
+static void cwClearPreviewShots(void)
+{
+	memset(shotAvail, 0, sizeof(shotAvail));
+	memset(shotRepeat, 1, sizeof(shotRepeat));
+	memset(shotMultiPos, 0, sizeof(shotMultiPos));
+	for (int i = 0; i < MAX_EXPLOSIONS; ++i)
+		explosions[i].ttl = 0;
+}
+
+// Undo tracks the working weapon only. Switching library slots starts a fresh history.
+typedef struct
+{
+	CustomWeaponSlot weapon;
+} CwHistoryState;
+
+enum { CW_HISTORY_MAX = 16 };
+static CwHistoryState cwHistory[CW_HISTORY_MAX];
+static int cwHistoryCount = 0;
+static int cwHistoryPos = 0;
+
+static void cwCaptureWorking(CwHistoryState *state)
+{
+	memset(state, 0, sizeof(*state));
+	CustomWeaponSlot *s = &state->weapon;
+	SDL_strlcpy(s->name, customWeaponName, sizeof(s->name));
+	s->cost         = customWeaponCost;
+	s->powerUse     = customWeaponPowerUse;
+	s->equipSlot    = customWeaponEquipSlot;
+	s->itemGraphic  = customWeaponItemGraphic;
+	s->chargeStages = customWeaponChargeStages;
+	s->modes        = customWeaponModes;
+	s->sidekickMount     = customSidekickMount;
+	s->sidekickSprite    = customSidekickSprite;
+	s->sidekickFrames    = customSidekickFrames;
+	s->sidekickFrameStep = customSidekickFrameStep;
+	s->sidekickAnimate   = customSidekickAnimate;
+	memcpy(s->raw, customWeaponRaw, sizeof(customWeaponRaw));
+}
+
+static void cwRestoreWorking(const CwHistoryState *state)
+{
+	const CustomWeaponSlot *s = &state->weapon;
+	SDL_strlcpy(customWeaponName, s->name, sizeof(customWeaponName));
+	customWeaponCost         = s->cost;
+	customWeaponPowerUse     = s->powerUse;
+	customWeaponEquipSlot    = s->equipSlot;
+	customWeaponItemGraphic  = s->itemGraphic;
+	customWeaponChargeStages = s->chargeStages;
+	customWeaponModes        = s->modes;
+	customSidekickMount      = s->sidekickMount;
+	customSidekickSprite     = s->sidekickSprite;
+	customSidekickFrames     = s->sidekickFrames;
+	customSidekickFrameStep  = s->sidekickFrameStep;
+	customSidekickAnimate    = s->sidekickAnimate;
+	memcpy(customWeaponRaw, s->raw, sizeof(customWeaponRaw));
+
+	customWeaponEditMode = cwClamp(customWeaponEditMode, 0, customWeaponModes - 1);
+	customWeaponMaterialize();
+	cwClearPreviewShots();
+}
+
+static void cwHistoryReset(void)
+{
+	cwHistoryCount = 1;
+	cwHistoryPos = 0;
+	cwCaptureWorking(&cwHistory[0]);
+}
+
+static bool cwHistoryRecord(void)
+{
+	static CwHistoryState next;
+	cwCaptureWorking(&next);
+	if (cwHistoryCount > 0 && memcmp(&next, &cwHistory[cwHistoryPos], sizeof(next)) == 0)
+		return false;
+
+	cwHistoryCount = cwHistoryPos + 1;  // discard redo states after a new edit
+	if (cwHistoryCount == CW_HISTORY_MAX)
+	{
+		memmove(&cwHistory[0], &cwHistory[1], sizeof(cwHistory[0]) * (CW_HISTORY_MAX - 1));
+		--cwHistoryCount;
+		--cwHistoryPos;
+	}
+	cwHistory[++cwHistoryPos] = next;
+	cwHistoryCount = cwHistoryPos + 1;
+	return true;
+}
+
+static bool cwHistoryUndo(void)
+{
+	if (cwHistoryPos <= 0)
+		return false;
+	cwRestoreWorking(&cwHistory[--cwHistoryPos]);
+	cwSetNotice("Undo");
+	return true;
+}
+
+static bool cwHistoryRedo(void)
+{
+	if (cwHistoryPos + 1 >= cwHistoryCount)
+		return false;
+	cwRestoreWorking(&cwHistory[++cwHistoryPos]);
+	cwSetNotice("Redo");
+	return true;
 }
 
 // Current mode + level's raw weapon (edits happen in place).
@@ -6352,6 +6549,47 @@ static int cwBulletIndex(void)
 	if (mx < 1) mx = 1;
 	if (mx > CUSTOM_BULLETS_MAX) mx = CUSTOM_BULLETS_MAX;
 	return cwClamp(cwBulletSel, 0, mx - 1);
+}
+
+static bool cwActionAvailable(int act)
+{
+	switch (act)
+	{
+	case CWACT_ADD_BULLET:    return cwCur()->multi < CUSTOM_BULLETS_MAX;
+	case CWACT_REMOVE_BULLET: return cwCur()->multi > 1;
+	case CWACT_ADD_CHARGE:    return customWeaponChargeStages < CUSTOM_POWER_LEVELS;
+	case CWACT_REMOVE_CHARGE: return customWeaponChargeStages > 1;
+	case CWACT_LIB_NEW:
+	case CWACT_LIB_DUPLICATE:  return customWeaponLibCount < CUSTOM_WEAPON_LIB_MAX;
+	case CWACT_LIB_DELETE:     return customWeaponLibCount > 1;
+	case CWACT_PASTE_LEVEL:    return cwLevelClipboardSet;
+	case CWACT_UNDO:           return cwHistoryPos > 0;
+	case CWACT_REDO:           return cwHistoryPos + 1 < cwHistoryCount;
+	default:                   return true;
+	}
+}
+
+static const char *cwActionText(int act)
+{
+	if (act == CWACT_LIB_DELETE && cwDeleteConfirmTicks > 0)
+		return "CONFIRM DELETE";
+	return cwActLabel[act];
+}
+
+static const char *cwActionHelp(int act)
+{
+	switch (act)
+	{
+	case CWACT_UNDO:       return "Undo the last edit (Ctrl+Z)";
+	case CWACT_REDO:       return "Redo the last undone edit (Ctrl+Y)";
+	case CWACT_RANDOMIZE:  return "Randomize this level and name; Undo restores them";
+	case CWACT_SAVE:       return "Save now (Ctrl+S); leaving also saves";
+	case CWACT_RESET:      return "Reset this level; Undo restores it";
+	case CWACT_RESET_ALL:  return "Reset the entire weapon; Undo restores it";
+	case CWACT_EQUIP:      return "Equip this weapon and return";
+	case CWACT_DONE:       return "Save and return";
+	default:               return "Enter: use";
+	}
 }
 
 // Combat-preview target dummies.
@@ -6482,12 +6720,14 @@ static const char *cwRowHelp(int row)
 	case CWROW_LIB_SELECT:  return "Pick a saved weapon (Left/Right)";
 	case CWROW_LIB_NEW:       return "Enter: add a new blank weapon to the library";
 	case CWROW_LIB_DUPLICATE: return "Enter: copy the current weapon to a new slot";
-	case CWROW_LIB_DELETE:    return "Enter: delete the current weapon";
+	case CWROW_LIB_DELETE:    return "Enter twice: delete the current weapon";
 	case CWROW_POWER_LEVEL: return "Level being edited (= charge stage when charging)";
 	case CWROW_TWO_MODES:   return "2nd design for the rear-gun fire toggle";
 	case CWROW_FIRE_MODE:   return "Which fire mode you're editing";
 	case CWROW_AUTOSCALE:   return "Enter: build all levels from this one (scale up + down)";
 	case CWROW_COPY_ALL:    return "Enter: copy this level to every level (all identical)";
+	case CWROW_COPY_LEVEL:  return "Enter: copy this level for pasting elsewhere";
+	case CWROW_PASTE_LEVEL: return "Enter: replace this level with the copied level";
 	case CWROW_SHOW_TARGETS:return "Practice targets: see hits, freeze, chains, homing";
 	case CWROW_SHOW_STATS:  return "Live DPS / damage / fire-rate readout in the box";
 	case CWROW_TARGET_COUNT: return "How many practice targets (0 = none)";
@@ -6513,8 +6753,8 @@ static const char *cwRowHelp(int row)
 	case CWROW_IMPORT_SRC:  return "Stock weapon to copy from";
 	case CWROW_IMPORT_PWR:  return "Source level for Import This Level";
 	case CWROW_FIRE_RATE:   return "Ticks between shots (0 = every tick; needed for solid lasers)";
-	case CWROW_BULLETS:     return "Bullets per shot (max 8)";
-	case CWROW_PATTERN:     return "Cycle len; above Bullets = variation";
+	case CWROW_BULLETS:     return "Projectiles emitted each time the weapon fires";
+	case CWROW_PATTERN:     return "Pattern length; above Bullets adds shot variation";
 	case CWROW_ANIM:        return "Sprite frames cycled (1 = static, no animation)";
 	case CWROW_HOMING:      return "Guides shots at enemies when above 5";
 	case CWROW_ACCEL_Y:     return "Vertical acceleration";
@@ -6747,6 +6987,29 @@ static void cwRowAdjust(int row, int dir)
 	customWeaponMaterialize();
 }
 
+static void cwAdjustRow(int row, int dir)
+{
+	const int oldSlot = customWeaponCurrentSlot;
+	cwRowAdjust(row, dir);
+	if (row == CWROW_LIB_SELECT)
+	{
+		cwDeleteConfirmTicks = 0;
+		if (customWeaponCurrentSlot != oldSlot)
+		{
+			cwHistoryReset();
+			cwClearPreviewShots();
+		}
+	}
+	else if (row == CWROW_POWER_LEVEL || row == CWROW_FIRE_MODE)
+	{
+		cwClearPreviewShots();
+	}
+	else if (cwHistoryRecord())
+	{
+		cwClearPreviewShots();
+	}
+}
+
 // Direct numeric entry.
 // Many value rows have wide ranges or coarse Left/Right steps (cost jumps by 500, a
 // bullet sprite runs 0..65535), so the editor also lets you type an exact number for
@@ -6766,7 +7029,11 @@ static bool cwNumericRange(int row, int *lo, int *hi)
 	                            *lo = 1; *hi = (cnt > 0) ? cnt : 65535; return true; }  // 1-based body sprite
 	case CWROW_SK_FRAMES:     *lo = 1;    *hi = 20;               return true;
 	case CWROW_SK_STEP:       *lo = 0;    *hi = 40;               return true;
+	case CWROW_CHARGE:        *lo = 1;    *hi = CUSTOM_POWER_LEVELS; return true;
 	case CWROW_FIRE_RATE:     *lo = 0;    *hi = 255;              return true;
+	case CWROW_BULLETS:       *lo = 1;    *hi = CUSTOM_BULLETS_MAX; return true;
+	case CWROW_PATTERN:       *lo = 1;    *hi = CUSTOM_BULLETS_MAX; return true;
+	case CWROW_ANIM:          *lo = 1;    *hi = 256;              return true;
 	case CWROW_HOMING:        *lo = 0;    *hi = 255;              return true;
 	case CWROW_ACCEL_Y:       *lo = -128; *hi = 127;              return true;
 	case CWROW_ACCEL_X:       *lo = -128; *hi = 127;              return true;
@@ -6776,6 +7043,7 @@ static bool cwNumericRange(int row, int *lo, int *hi)
 	case CWROW_BLAST:         *lo = 0;    *hi = 255;              return true;
 	case CWROW_B_SPRITE:      *lo = 0;    *hi = 65535;            return true;
 	case CWROW_B_DAMAGE:      *lo = 0;    *hi = 99;               return true;
+	case CWROW_B_CHAIN:       *lo = 0;    *hi = 149;              return true;
 	case CWROW_B_LIFE:        *lo = 0;    *hi = 255;              return true;
 	case CWROW_B_VELX:        *lo = -128; *hi = 127;              return true;
 	case CWROW_B_VELY:        *lo = -128; *hi = 127;              return true;
@@ -6812,7 +7080,13 @@ static void cwSetNumeric(int row, int v)
 	case CWROW_SK_SPRITE:     customSidekickSprite    = v; break;
 	case CWROW_SK_FRAMES:     customSidekickFrames    = v; break;
 	case CWROW_SK_STEP:       customSidekickFrameStep = v; break;
+	case CWROW_CHARGE:        customWeaponChargeStages = v; break;
 	case CWROW_FIRE_RATE:     w->shotrepeat      = (JE_byte)v;     break;
+	case CWROW_BULLETS:       w->multi = (JE_byte)v;
+	                          if (w->max < w->multi) w->max = w->multi;
+	                          break;
+	case CWROW_PATTERN:       w->max = (JE_byte)v; break;
+	case CWROW_ANIM:          w->weapani = (JE_word)(v - 1); break;
 	case CWROW_HOMING:        w->aim             = (JE_byte)v;     break;
 	case CWROW_ACCEL_Y:       w->acceleration    = (JE_shortint)v; break;
 	case CWROW_ACCEL_X:       w->accelerationx   = (JE_shortint)v; break;
@@ -6822,6 +7096,7 @@ static void cwSetNumeric(int row, int v)
 	case CWROW_BLAST:         w->shipblastfilter = (JE_byte)v;     break;
 	case CWROW_B_SPRITE:      w->sg[b]     = (JE_word)v;     break;
 	case CWROW_B_DAMAGE:      w->attack[b] = (JE_byte)v;     break;  // 0 none / 1-98 dmg / 99 Ice
+	case CWROW_B_CHAIN:       w->attack[b] = (JE_byte)(v == 0 ? 10 : 100 + v); break;
 	case CWROW_B_LIFE:        w->del[b]    = (JE_byte)v;     break;
 	case CWROW_B_VELX:        w->sx[b]     = (JE_shortint)v; break;
 	case CWROW_B_VELY:        w->sy[b]     = (JE_shortint)v; break;
@@ -6846,7 +7121,11 @@ static void cwCommitNumeric(void)
 	if (cwNumRow < 0)
 		return;
 	if (cwNumText[0] != '\0' && !(cwNumText[0] == '-' && cwNumText[1] == '\0'))
+	{
 		cwSetNumeric(cwNumRow, SDL_atoi(cwNumText));
+		if (cwHistoryRecord())
+			cwClearPreviewShots();
+	}
 	cwNumRow = -1;
 	cwNumText[0] = '\0';
 }
@@ -6855,39 +7134,73 @@ static void cwCommitNumeric(void)
 // done/equipped are set by EQUIP and DONE (harmless for the other actions).
 static void cwPerformAction(int act, bool *done, bool *equipped)
 {
+	bool changed = false;
+	bool resetHistory = false;
+	if (act != CWACT_LIB_DELETE)
+		cwDeleteConfirmTicks = 0;
+
 	switch (act)
 	{
 	case CWACT_ADD_BULLET:
 	{
 		const int ni = customWeaponAddBullet(cwBulletIndex());
-		if (ni >= 0) { cwBulletSel = ni; customWeaponMaterialize(); JE_playSampleNum(S_SELECT); }
-		else         JE_playSampleNum(S_SPRING);  // already at 8 bullets
+		if (ni >= 0) { cwBulletSel = ni; customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; }
+		else         JE_playSampleNum(S_SPRING);  // already at the segment limit
 		break;
 	}
 	case CWACT_REMOVE_BULLET:
 	{
 		const int ni = customWeaponRemoveBullet(cwBulletIndex());
-		if (ni >= 0) { cwBulletSel = ni; customWeaponMaterialize(); JE_playSampleNum(S_SELECT); }
+		if (ni >= 0) { cwBulletSel = ni; customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; }
 		else         JE_playSampleNum(S_SPRING);  // can't remove the last segment
 		break;
 	}
 	case CWACT_ADD_CHARGE:
-		if (customWeaponAddChargeState() >= 0) { customWeaponMaterialize(); JE_playSampleNum(S_SELECT); }
+		if (customWeaponAddChargeState() >= 0) { customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; }
 		else                                   JE_playSampleNum(S_SPRING);  // already 11 states
 		break;
 	case CWACT_REMOVE_CHARGE:
-		if (customWeaponRemoveChargeState() >= 0) { customWeaponMaterialize(); JE_playSampleNum(S_SELECT); }
+		if (customWeaponRemoveChargeState() >= 0) { customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; }
 		else                                      JE_playSampleNum(S_SPRING);  // only 1 shot left
 		break;
-	case CWACT_IMPORT_LEVEL: customWeaponImportLevel(cwImportSrc, cwImportPwr); customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_IMPORT_ALL:   customWeaponImportAllLevels(cwImportSrc);          customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_ADD_LEVEL:      customWeaponAddLevel(cwImportSrc, cwImportPwr);  customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_ADD_ALL_LEVELS: customWeaponAddAllLevels(cwImportSrc);          customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_COPY_ALL:     customWeaponCopyToAllLevels();                     customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_AUTOSCALE:    customWeaponAutoScaleLevels();                     customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_RANDOMIZE:    customWeaponRandomize();                           customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_RESET:        customWeaponReset();                               customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
-	case CWACT_RESET_ALL:    customWeaponResetAllLevels();                      customWeaponMaterialize(); JE_playSampleNum(S_SELECT); break;
+	case CWACT_IMPORT_LEVEL:   customWeaponImportLevel(cwImportSrc, cwImportPwr); customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_IMPORT_ALL:     customWeaponImportAllLevels(cwImportSrc);          customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_ADD_LEVEL:      customWeaponAddLevel(cwImportSrc, cwImportPwr);    customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_ADD_ALL_LEVELS: customWeaponAddAllLevels(cwImportSrc);             customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_COPY_ALL:       customWeaponCopyToAllLevels();                     customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_AUTOSCALE:      customWeaponAutoScaleLevels();                     customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_RANDOMIZE:      customWeaponRandomize();                           customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_RESET:          customWeaponReset();                               customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_RESET_ALL:      customWeaponResetAllLevels();                      customWeaponMaterialize(); JE_playSampleNum(S_SELECT); changed = true; break;
+	case CWACT_COPY_LEVEL:
+		cwLevelClipboard = *cwCur();
+		cwLevelClipboardSet = true;
+		cwSetNotice("Level copied");
+		JE_playSampleNum(S_SELECT);
+		break;
+	case CWACT_PASTE_LEVEL:
+		if (cwLevelClipboardSet)
+		{
+			*cwCur() = cwLevelClipboard;
+			customWeaponMaterialize();
+			cwSetNotice("Level pasted");
+			JE_playSampleNum(S_SELECT);
+			changed = true;
+		}
+		else
+		{
+			cwSetNotice("Copy a level first");
+			JE_playSampleNum(S_SPRING);
+		}
+		break;
+	case CWACT_UNDO:
+		if (cwHistoryUndo()) JE_playSampleNum(S_SELECT);
+		else                 { cwSetNotice("Nothing to undo"); JE_playSampleNum(S_SPRING); }
+		break;
+	case CWACT_REDO:
+		if (cwHistoryRedo()) JE_playSampleNum(S_SELECT);
+		else                 { cwSetNotice("Nothing to redo"); JE_playSampleNum(S_SPRING); }
+		break;
 	case CWACT_EQUIP:
 		if (customWeaponEquip()) { *equipped = true; JE_playSampleNum(S_SELECT); *done = true; }
 		else                     JE_playSampleNum(S_SPRING);  // e.g. no free sidekick slot
@@ -6896,21 +7209,47 @@ static void cwPerformAction(int act, bool *done, bool *equipped)
 		customWeaponLibrarySave();   // flush the weapon library to disk now, without leaving
 		save_opentyrian_config();    // ... and the active design in the main config
 		JE_playSampleNum(S_SELECT);
-		cwSavedFlash = 40;           // show "Weapon saved!" on the hint line briefly
+		cwSetNotice("Weapon saved");
 		break;
 	case CWACT_DONE:         *done = true; break;
 	case CWACT_LIB_NEW:
-		if (customWeaponLibraryNew() >= 0) JE_playSampleNum(S_SELECT);
+		if (customWeaponLibraryNew() >= 0) { JE_playSampleNum(S_SELECT); resetHistory = true; }
 		else                               JE_playSampleNum(S_SPRING);  // library full
 		break;
 	case CWACT_LIB_DUPLICATE:
-		if (customWeaponLibraryDuplicate() >= 0) JE_playSampleNum(S_SELECT);
+		if (customWeaponLibraryDuplicate() >= 0) { JE_playSampleNum(S_SELECT); resetHistory = true; }
 		else                                     JE_playSampleNum(S_SPRING);  // library full
 		break;
 	case CWACT_LIB_DELETE:
-		if (customWeaponLibraryDelete() >= 0) JE_playSampleNum(S_SELECT);
-		else                                  JE_playSampleNum(S_SPRING);  // can't delete the last one
+		if (customWeaponLibCount <= 1)
+		{
+			JE_playSampleNum(S_SPRING);
+		}
+		else if (cwDeleteConfirmTicks <= 0)
+		{
+			cwDeleteConfirmTicks = 70;
+			cwSetNotice("Press Delete Weapon again to confirm");
+			cwNoticeTicks = cwDeleteConfirmTicks;
+			JE_playSampleNum(S_CLICK);
+		}
+		else if (customWeaponLibraryDelete() >= 0)
+		{
+			cwDeleteConfirmTicks = 0;
+			cwSetNotice("Weapon deleted");
+			JE_playSampleNum(S_SELECT);
+			resetHistory = true;
+		}
 		break;
+	}
+
+	if (resetHistory)
+	{
+		cwHistoryReset();
+		cwClearPreviewShots();
+	}
+	else if (changed && cwHistoryRecord())
+	{
+		cwClearPreviewShots();
 	}
 }
 
@@ -7297,7 +7636,7 @@ static void cwDrawStats(void)
 
 	char l1[24], l2[24], l3[24];
 	snprintf(l1, sizeof(l1), "DPS ~%d%s", dps, chain ? " +ch" : (ice && dmg == 0) ? " ice" : "");
-	snprintf(l2, sizeof(l2), "%d dmg x%d", dmg, multi);
+	snprintf(l2, sizeof(l2), "Volley %d dmg", dmg);
 	snprintf(l3, sizeof(l3), "%d.%d/sec", rate10 / 10, rate10 % 10);
 
 	enum { SX = 11, SY = 10 };
@@ -7368,12 +7707,10 @@ bool JE_customWeaponCreator(bool canEquip)
 	cwImportPwr = customBulletMaxPower(cwImportSrc);
 	cwBulletSel = 0;
 
-	// Action buttons (context-dependent: no "Equip" without an active ship). They stay pinned
-	// at the bottom of the panel, always visible whatever category is showing. The segment,
-	// import, and fill-all-levels (auto-scale / copy) actions live inline next to what they act on.
-	// Laid out two per line (each half clickable), in this order — so the pairs come out
-	// Randomize|Save, Reset|Reset All, Equip|Done (or Done alone when there's no Equip).
-	int actIds[8], actCount = 0;
+	// These stay visible while the field list changes category.
+	int actIds[8] = { 0 }, actCount = 0;
+	actIds[actCount++] = CWACT_UNDO;
+	actIds[actCount++] = CWACT_REDO;
 	actIds[actCount++] = CWACT_RANDOMIZE;
 	actIds[actCount++] = CWACT_SAVE;
 	actIds[actCount++] = CWACT_RESET;
@@ -7396,7 +7733,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	// shows black margins. Snapshot it to VGAScreen2 so cwRestoreRect() can wipe the
 	// area around the preview box each tick.
 	JE_loadPic(VGAScreen, 1, true);
-	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
+	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
 
 	// The preview box is fixed at 8,8..143,182 so JE_weaponSimSmoothPresent() — the
 	// buy/sell screen's own interpolated presenter — can be reused verbatim, giving
@@ -7433,18 +7770,22 @@ bool JE_customWeaponCreator(bool canEquip)
 	cwTrackedSeg = -1;
 	cwNumRow = -1;         // not typing a number yet
 	cwNumText[0] = '\0';
-	cwSavedFlash = 0;
+	cwNoticeTicks = 0;
+	cwDeleteConfirmTicks = 0;
+	cwHistoryReset();
 	weaponSimOverlayFn = cwDrawPreviewOverlay;  // enable the sprite/hitbox overlay while open
 
 	while (!done)
 	{
 		setDelay(3);
 
-		if (cwSavedFlash > 0)
-			--cwSavedFlash;
+		if (cwNoticeTicks > 0)
+			--cwNoticeTicks;
+		if (cwDeleteConfirmTicks > 0)
+			--cwDeleteConfirmTicks;
 
 		// Build the visible field list for the current category (All = every field row).
-		int fieldRows[CWROW_FIELD_COUNT], fieldCount = 0;
+		int fieldRows[CWROW_FIELD_COUNT] = { 0 }, fieldCount = 0;
 		for (int r = 0; r < CWROW_FIELD_COUNT; ++r)
 			if (cwCategory == CWCAT_ALL || cwRowCategory(r) == cwCategory)
 				fieldRows[fieldCount++] = r;
@@ -7489,7 +7830,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		if (cwShowTargets)
 			cwCollideShots(); // impacts, chain cascade, freeze, armour depletion
 		JE_drawItem(1, previewShip, player[0].x - 5, player[0].y - 7);
-			cwDrawSidekickPreview();  // show the sidekick body sprite when equipped as one
+		cwDrawSidekickPreview();  // show the sidekick body sprite when equipped as one
 		if (cwShowTargets)
 			cwPumpExplosions(); // draw the impact explosions on top
 		if (cwShowStats)
@@ -7506,8 +7847,15 @@ bool JE_customWeaponCreator(bool canEquip)
 		// Draw the editor panel.
 		fill_rectangle_xy(VGAScreen, panX0, panY0, panX1, panY1, C_PANEL);
 		JE_rectangle(VGAScreen, panX0, panY0, panX1, panY1, C_HI);
-		draw_font_hv_shadow(VGAScreen, (panX0 + panX1) / 2, panY0 + 2, "CUSTOM WEAPON CREATOR",
-		                    small_font, centered, 15, 3, false, 1);
+		char editorContext[24];
+		if (customWeaponModes > 1)
+			snprintf(editorContext, sizeof(editorContext), "LV %d  M%d", customWeaponEditLevel + 1, customWeaponEditMode + 1);
+		else
+			snprintf(editorContext, sizeof(editorContext), "LV %d", customWeaponEditLevel + 1);
+		draw_font_hv_shadow(VGAScreen, panX0 + 5, panY0 + 2, "CUSTOM WEAPON",
+		                    small_font, left_aligned, 15, 3, false, 1);
+		draw_font_hv_shadow(VGAScreen, panX1 - 5, panY0 + 2, editorContext,
+		                    small_font, right_aligned, 15, 3, false, 1);
 		fill_rectangle_xy(VGAScreen, panX0 + 2, panY0 + 11, panX1 - 2, panY0 + 11, C_DIV);
 
 		// Category selector (pinned at top): Left/Right cycles which group of rows shows.
@@ -7544,21 +7892,30 @@ bool JE_customWeaponCreator(bool canEquip)
 			const Uint8 txtHue = sel ? 15 : (Uint8)(cwGroupColor(row) >> 4);
 			// A row that doesn't apply to the current Equip slot is drawn dim (unless it's the
 			// one under the cursor, which stays bright so its value + hint are still readable).
-			const bool dim = !sel && !cwRowActive(row);
+			const int inlineAct = cwInlineActionId(row);
+			const bool dim = !sel && (!cwRowActive(row) ||
+			                         (inlineAct >= 0 && !cwActionAvailable(inlineAct)));
 
-			if (cwInlineActionId(row) >= 0)  // an inline action row (drawn as a centered button)
+			if (inlineAct >= 0)
 			{
-				draw_font_hv_shadow(VGAScreen, (panX0 + panX1) / 2, ry, cwActLabel[cwInlineActionId(row)],
+				draw_font_hv_shadow(VGAScreen, (panX0 + panX1) / 2, ry, cwActionText(inlineAct),
 				                    small_font, centered, txtHue, dim ? 2 : 4, false, 1);
 			}
 			else
 			{
-				char val[40];
+				char val[48];
 				const bool typing = (cwNumRow == row);
 				if (typing)
 					snprintf(val, sizeof(val), "%s_", cwNumText);  // show the digits typed so far + caret
 				else
-					cwRowValue(row, val, sizeof(val));
+				{
+					char raw[40];
+					cwRowValue(row, raw, sizeof(raw));
+					if (sel && row != CWROW_NAME)
+						snprintf(val, sizeof(val), "< %s >", raw);
+					else
+						SDL_strlcpy(val, raw, sizeof(val));
+				}
 				const bool editing = typing || (row == CWROW_NAME && sel);
 				// Long values (bullet/custom names) may need the whole row; only draw the label
 				// when it won't collide with the right-aligned value.
@@ -7586,6 +7943,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		fill_rectangle_xy(VGAScreen, panX0 + 2, actionsTop - 2, panX1 - 2, actionsTop - 2, C_DIV);
 		for (int a = 0; a < actCount; ++a)
 		{
+			const int act = actIds[a];
 			const int col = a % 2;
 			const bool alone = (col == 0 && a + 1 >= actCount);   // even action with no right partner
 			const int bx0 = alone ? panX0 + 2 : (col == 0 ? panX0 + 2 : panMidX + 1);
@@ -7593,8 +7951,9 @@ bool JE_customWeaponCreator(bool canEquip)
 			const int ry = actionsTop + (a / 2) * row_h;
 			const bool sel = (selected == fieldCount + 1 + a);
 			fill_rectangle_xy(VGAScreen, bx0, ry - 1, bx1, ry + row_h - 2, sel ? C_SEL : CW_BG_ACTION);
-			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, ry, cwActLabel[actIds[a]],
-			                    small_font, centered, sel ? 15 : (Uint8)(CW_BG_ACTION >> 4), 4, false, 1);
+			draw_font_hv_shadow(VGAScreen, (bx0 + bx1) / 2, ry, cwActionText(act),
+			                    small_font, centered, sel ? 15 : (Uint8)(CW_BG_ACTION >> 4),
+			                    (!sel && !cwActionAvailable(act)) ? 2 : 4, false, 1);
 		}
 
 		{
@@ -7602,9 +7961,9 @@ bool JE_customWeaponCreator(bool canEquip)
 			static char hintBuf[96];
 			const char *hint;
 			int lo, hi;
-			if (cwSavedFlash > 0)            hint = "Weapon saved!";
+			if (cwNoticeTicks > 0)           hint = cwNotice;
 			else if (cwNumRow >= 0)          hint = "Type a value   -   Enter: set   -   Esc: cancel";
-			else if (selected == 0)          hint = "Left/Right: pick category   -   Esc: back";
+			else if (selected == 0)          hint = "Click left/right: -/+   Tab: view   PgUp/Dn: level";
 			else if (selField == CWROW_NAME) hint = "Type to rename   -   Esc: back";
 			else if (selField >= 0 && !cwRowActive(selField)) hint = cwRowInactiveReason(selField);
 			else if (selField >= 0 && cwNumericRange(selField, &lo, &hi))
@@ -7614,7 +7973,7 @@ bool JE_customWeaponCreator(bool canEquip)
 				hint = (JE_textWidth(hintBuf, small_font) <= LEGACY_WIDTH - 16) ? hintBuf : cwRowHelp(selField);
 			}
 			else if (selField >= 0)          hint = cwRowHelp(selField);
-			else                             hint = "Enter: use   -   Esc: back";
+			else                             hint = cwActionHelp(actIds[selected - fieldCount - 1]);
 			draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, vga_height - 12, hint, small_font, centered, 15, 2, false, 1);
 		}
 
@@ -7674,9 +8033,10 @@ bool JE_customWeaponCreator(bool canEquip)
 			else if (hoverNav >= 0)
 			{
 				selected = hoverNav;
-				if (hoverNav == 0)  // category selector: cycle forward
+				if (hoverNav == 0)
 				{
-					cwCategory = (cwCategory + 1) % CWCAT_COUNT;
+					const int dir = (mouse_x < panMidX) ? -1 : 1;
+					cwCategory = (cwCategory + CWCAT_COUNT + dir) % CWCAT_COUNT;
 					fieldScrollTop = 0;
 					JE_playSampleNum(S_CURSOR);
 				}
@@ -7688,7 +8048,10 @@ bool JE_customWeaponCreator(bool canEquip)
 					else if (cwInlineActionId(f) >= 0)
 						cwPerformAction(cwInlineActionId(f), &done, &equipped);
 					else
-						{ cwRowAdjust(f, +1); JE_playSampleNum(S_CURSOR); }
+					{
+						cwAdjustRow(f, (mouse_x < panMidX) ? -1 : 1);
+						JE_playSampleNum(S_CURSOR);
+					}
 				}
 				else  // an action button
 				{
@@ -7698,7 +8061,8 @@ bool JE_customWeaponCreator(bool canEquip)
 			newmouse = false;
 		}
 
-		if (selField == CWROW_NAME && new_text)  // inline name editing
+		if (selField == CWROW_NAME && new_text &&
+		    (lastkey_mod & (KMOD_CTRL | KMOD_GUI)) == 0)
 		{
 			size_t len = strlen(customWeaponName);
 			for (size_t ti = 0; last_text[ti] != '\0'; ++ti)
@@ -7709,6 +8073,7 @@ bool JE_customWeaponCreator(bool canEquip)
 			}
 			customWeaponName[len] = '\0';
 			customWeaponMaterialize();
+			cwHistoryRecord();
 		}
 		else if (new_text && selField >= 0 && cwRowActive(selField))  // direct numeric entry into a value field
 		{
@@ -7740,24 +8105,89 @@ bool JE_customWeaponCreator(bool canEquip)
 
 		if (newkey)
 		{
-			switch (lastkey_scan)
+			const bool commandKey = (lastkey_mod & (KMOD_CTRL | KMOD_GUI)) != 0;
+			if (commandKey && lastkey_scan == SDL_SCANCODE_Z)
+			{
+				if (cwNumRow >= 0)
+					cwCommitNumeric();
+				cwPerformAction((lastkey_mod & KMOD_SHIFT) ? CWACT_REDO : CWACT_UNDO, &done, &equipped);
+			}
+			else if (commandKey && lastkey_scan == SDL_SCANCODE_Y)
+			{
+				if (cwNumRow >= 0)
+					cwCommitNumeric();
+				cwPerformAction(CWACT_REDO, &done, &equipped);
+			}
+			else if (commandKey && lastkey_scan == SDL_SCANCODE_S)
+			{
+				if (cwNumRow >= 0)
+					cwCommitNumeric();
+				cwPerformAction(CWACT_SAVE, &done, &equipped);
+			}
+			else switch (lastkey_scan)
 			{
 			case SDL_SCANCODE_UP:    if (cwNumRow >= 0) cwCommitNumeric(); selected = (selected == 0) ? navCount - 1 : selected - 1; break;
 			case SDL_SCANCODE_DOWN:  if (cwNumRow >= 0) cwCommitNumeric(); selected = (selected + 1) % navCount; break;
+			case SDL_SCANCODE_TAB:
+			{
+				if (cwNumRow >= 0)
+					cwCommitNumeric();
+				const int dir = (lastkey_mod & KMOD_SHIFT) ? -1 : 1;
+				cwCategory = (cwCategory + CWCAT_COUNT + dir) % CWCAT_COUNT;
+				fieldScrollTop = 0;
+				selected = 1;
+				JE_playSampleNum(S_CURSOR);
+				break;
+			}
+			case SDL_SCANCODE_PAGEUP:
+			case SDL_SCANCODE_PAGEDOWN:
+				if (cwNumRow >= 0)
+					cwCommitNumeric();
+				cwAdjustRow(CWROW_POWER_LEVEL, lastkey_scan == SDL_SCANCODE_PAGEUP ? -1 : 1);
+				JE_playSampleNum(S_CURSOR);
+				break;
+			case SDL_SCANCODE_LEFTBRACKET:
+			case SDL_SCANCODE_RIGHTBRACKET:
+				if (selField != CWROW_NAME)
+				{
+					if (cwNumRow >= 0)
+						cwCommitNumeric();
+					const int count = cwClamp(cwCur()->multi, 1, CUSTOM_BULLETS_MAX);
+					const int dir = (lastkey_scan == SDL_SCANCODE_RIGHTBRACKET) ? 1 : -1;
+					cwBulletSel = (cwBulletIndex() + count + dir) % count;
+					JE_playSampleNum(S_CURSOR);
+				}
+				break;
 			case SDL_SCANCODE_LEFT:
+			{
 				if (cwNumRow >= 0)             { cwCommitNumeric(); JE_playSampleNum(S_SELECT); break; }  // arrows finish typing
 				if (selected == 0)             { cwCategory = (cwCategory + CWCAT_COUNT - 1) % CWCAT_COUNT; fieldScrollTop = 0; JE_playSampleNum(S_CURSOR); }
 				else if (selField < 0)         break;
 				else if (!cwRowActive(selField)) JE_playSampleNum(S_SPRING);  // greyed: doesn't apply here
-				else                           { cwRowAdjust(selField, -1); JE_playSampleNum(S_CURSOR); }
+				else
+				{
+					int lo, hi;
+					const int step = ((lastkey_mod & KMOD_SHIFT) && cwNumericRange(selField, &lo, &hi)) ? 10 : 1;
+					cwAdjustRow(selField, -step);
+					JE_playSampleNum(S_CURSOR);
+				}
 				break;
+			}
 			case SDL_SCANCODE_RIGHT:
+			{
 				if (cwNumRow >= 0)             { cwCommitNumeric(); JE_playSampleNum(S_SELECT); break; }  // arrows finish typing
 				if (selected == 0)             { cwCategory = (cwCategory + 1) % CWCAT_COUNT; fieldScrollTop = 0; JE_playSampleNum(S_CURSOR); }
 				else if (selField < 0)         break;
 				else if (!cwRowActive(selField)) JE_playSampleNum(S_SPRING);  // greyed: doesn't apply here
-				else                           { cwRowAdjust(selField, +1); JE_playSampleNum(S_CURSOR); }
+				else
+				{
+					int lo, hi;
+					const int step = ((lastkey_mod & KMOD_SHIFT) && cwNumericRange(selField, &lo, &hi)) ? 10 : 1;
+					cwAdjustRow(selField, step);
+					JE_playSampleNum(S_CURSOR);
+				}
 				break;
+			}
 			case SDL_SCANCODE_BACKSPACE:
 				if (cwNumRow >= 0)  // editing a number: erase the last typed digit
 				{
@@ -7773,6 +8203,7 @@ bool JE_customWeaponCreator(bool canEquip)
 					if (len > 0)
 						customWeaponName[len - 1] = '\0';
 					customWeaponMaterialize();
+					cwHistoryRecord();
 				}
 				break;
 			case SDL_SCANCODE_RETURN:
@@ -7795,7 +8226,7 @@ bool JE_customWeaponCreator(bool canEquip)
 				         selField == CWROW_BULLET_SEL ||
 				         selField == CWROW_SK_MOUNT || selField == CWROW_SK_ANIMATE)
 				{
-					cwRowAdjust(selField, +1);  // Enter cycles the enum-style / selector fields
+					cwAdjustRow(selField, +1);  // Enter cycles the enum-style / selector fields
 					JE_playSampleNum(S_CURSOR);
 				}
 				break;

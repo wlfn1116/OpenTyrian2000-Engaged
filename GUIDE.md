@@ -356,8 +356,28 @@ Settings are under Setup > Enhancements.
 
 ## Weapons
 
-The Custom Weapon Creator edits one weapon across 11 power levels and previews
-it while firing. The finished design can occupy a front, rear, or sidekick slot.
+The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power
+levels, an optional rear-gun firing mode, and a live test range. Designs can be
+equipped as a front gun, rear gun, or sidekick.
+
+The Levels section can copy and paste one level, copy it to every level, or
+build a full level curve automatically. Undo and Redo stay available at the
+bottom of every section.
+
+| Creator control | Action |
+| --- | --- |
+| Up / Down | Move through fields and actions |
+| Left / Right | Change a value |
+| Shift + Left / Right | Change numeric values in larger steps |
+| Click left / right half | Decrease / increase a value |
+| Tab / Shift + Tab | Next / previous section |
+| Page Up / Page Down | Previous / next power level |
+| `[` / `]` | Previous / next bullet segment |
+| Type digits | Enter an exact value |
+| Ctrl+Z / Ctrl+Y | Undo / redo |
+| Ctrl+S | Save now |
+| Esc | Cancel a number being entered; otherwise save and return |
+| Right-click | Save and return |
 
 Weapon Tweaks covers:
 

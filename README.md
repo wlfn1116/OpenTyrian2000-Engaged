@@ -54,8 +54,9 @@ course, and perk sequence. Hardcore runs disable checkpoints.
 
 ### Weapons and music
 
-The Custom Weapon Creator makes one weapon with 11 editable power levels. It can
-be used as a front gun, rear gun, or sidekick.
+The Custom Weapon Creator stores up to 32 weapons with 11 editable power levels,
+an optional rear-gun firing mode, and a live test range. A design can be used as
+a front gun, rear gun, or sidekick.
 
 Weapon Tweaks restores selected differences between the Episode 1-3 and Episode
 4-5 data.
