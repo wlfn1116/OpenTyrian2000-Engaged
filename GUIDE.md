@@ -295,17 +295,16 @@ Elite and champion bounties are paid on kill. Shop prices rise with depth.
 | Original pickup | Endless result |
 | --- | --- |
 | Data cube or secret-level orb | Random safe special weapon |
-| Data cube embedded in an enemy | 5,000-point gem |
 | Random-special event drop | Front or rear weapon power-up |
 | Power-up for a maxed port | Other port, then a 5,000-point gem if both are full |
 
 ### Milestones
 
-| Zone | Course list | Music | Reward |
+| Zone | Course list | Reward |
 | --- | --- | --- | --- |
-| 25, 75, 125, ... | S / S+ | Tunneling Trolls | Five-choice perk |
-| 50, 150, 250, ... | S+ / S++ | A Field for Mag | Five-choice perk |
-| 100, 200, 300, ... | S++ / S+++, plus The End | One Mustn't Fall | Five-choice perk |
+| 25, 75, 125, ... | S / S+ | Five-choice perk |
+| 50, 150, 250, ... | S+ / S++ | Five-choice perk |
+| 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
 
 The first clear of zone 100 also plays the credits. The run continues.
 
