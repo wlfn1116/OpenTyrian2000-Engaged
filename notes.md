@@ -262,6 +262,8 @@ Useful modifier-specific constraints:
 
 - Martyrdom uses a fixed, symmetric sprite and fires once per logical enemy.
 - Seeker state belongs to the projectile and permits one delayed correction.
+- Rising-tide shots clone whole enemy volleys because `multi` entries may be
+  tiles of one projectile or beam. Single extra volleys alternate fan sides.
 - Static must combine a power drain with a recharge lockout; generator recovery
   otherwise hides the drain.
 - Retaliation refreshes one timer. It does not stack.

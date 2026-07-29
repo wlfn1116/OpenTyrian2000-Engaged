@@ -3575,7 +3575,7 @@ static const char *const dbgHelp[DBG_ROW_COUNT] = {
 	[DBG_EXPERT_SETTINGS]     = "Opens the expert multipliers",
 	[DBG_AUTO_DIFFICULTY]     = "Score bumps difficulty between levels",
 	[DBG_DIFFICULTY]          = "The difficulty being played right now",
-	[DBG_ADD_CASH]            = "Type an amount; Enter sets your cash",
+	[DBG_ADD_CASH]            = "Type an amount, or L/R for max cash",
 	[DBG_NO_ENEMY_FIRE]       = "Enemies never shoot",
 	[DBG_SKIP_LEVEL]          = "Ends the level now and moves on",
 	[DBG_PLAY_SOUND]          = "L/R picks a sample; Enter plays it",
@@ -3601,7 +3601,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 	{ DBG_GENERATOR, NULL }, { DBG_SIDEKICK_L, NULL }, { DBG_SIDEKICK_R, NULL },
 	{ DBG_SPECIAL, NULL },
 	{ -1, "FIRING" },
-	{ DBG_TWIDDLE, NULL }, { DBG_AUTOFIRE_TWIDDLE, NULL }, { DBG_TOGGLE_FIRE, NULL },
+	{ DBG_TOGGLE_FIRE, NULL }, { DBG_TWIDDLE, NULL }, { DBG_AUTOFIRE_TWIDDLE, NULL },
 	{ DBG_AUTOFIRE_SPECIAL, NULL }, { DBG_AUTOFIRE_CHARGE, NULL }, { DBG_INSTANT_CHARGE, NULL },
 	{ DBG_INF_SIDEKICK_AMMO, NULL }, { DBG_INF_GENERATOR, NULL },
 	{ -1, "DIFFICULTY" },
@@ -3775,6 +3775,7 @@ void JE_debugMenu(bool center)
 	 * append, Backspace deletes) and Enter sets cash to it. Starts empty each open; the row shows
 	 * the live cash when you're not on it. See the value display and input switch below. */
 	const int cashMaxDigits = 9;               // 999,999,999 cap: ample, and safely within ulong
+	const ulong cashMax = 999999999UL;
 	char dbgCashStr[16] = "";
 	char dbgHangStr[8] = "";                   // inline typed field for the Hang Watchdog row (seconds)
 
@@ -4253,6 +4254,10 @@ void JE_debugMenu(bool center)
 				case DBG_EXPERT_SETTINGS: break;  // opens on Right/Enter
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel > DIFFICULTY_WIMP) --difficultyLevel; break;
+				case DBG_ADD_CASH:
+					player[0].cash = cashMax;
+					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
+					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
 				case DBG_PLAY_SOUND: if (dbgSoundId > 1) --dbgSoundId; break;
 				case DBG_PLAY_MUSIC: if (dbgMusicId > 0) --dbgMusicId; break;
@@ -4263,7 +4268,7 @@ void JE_debugMenu(bool center)
 				case DBG_ENDLESS_TUNE: break;  // opens on Right/Enter
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
-				default: break;  // Add Cash / Hang Watchdog / Skip Level are Enter-only actions
+				default: break;  // Hang Watchdog / Skip Level are Enter-only actions
 				}
 				break;
 			case SDL_SCANCODE_RIGHT:
@@ -4302,6 +4307,10 @@ void JE_debugMenu(bool center)
 				case DBG_EXPERT_SETTINGS: JE_expertSettingsMenu(off_x, off_y); break;
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel < DIFFICULTY_10) ++difficultyLevel; break;
+				case DBG_ADD_CASH:
+					player[0].cash = cashMax;
+					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
+					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
 				case DBG_PLAY_SOUND: if (dbgSoundId < SOUND_COUNT) ++dbgSoundId; break;
 				case DBG_PLAY_MUSIC: if (dbgMusicId < MUSIC_NUM - 1) ++dbgMusicId; break;
@@ -4310,7 +4319,7 @@ void JE_debugMenu(bool center)
 				case DBG_ENDLESS_TUNE: endlessDebugTuneScreen(); break;
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
-				default: break;  // Add Cash / Hang Watchdog / Skip Level are Enter-only actions
+				default: break;  // Hang Watchdog / Skip Level are Enter-only actions
 				}
 				break;
 			case SDL_SCANCODE_RETURN:
