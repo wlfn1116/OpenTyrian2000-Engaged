@@ -331,7 +331,7 @@ Settings are under Setup > Graphics.
 | Scaler | Pixel-art scaling algorithm |
 | Scaling Mode | Fit inside the window |
 | Smooth Motion | Interpolates the 35 Hz simulation at the display rate |
-| Sub-pixel | Renders the playfield internally at Auto or 1x-8x |
+| Sub-pixel | Renders the playfield internally at Auto or 1x-5x |
 | Filter | Sharp, Smooth, or unfiltered sub-pixel output |
 | VSync / FPS Cap / Show FPS | Presentation controls |
 

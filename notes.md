@@ -124,7 +124,7 @@ catch-up to the layer's current phase.
 
 ### Supersampling
 
-The playfield can render at 1x-8x. `0` means Auto. Auto follows the selected
+The playfield can render at 1x-5x. `0` means Auto. Auto follows the selected
 scaler and never resolves below 2x when sub-pixel rendering is requested.
 
 Filter enum values are persisted. Keep existing numeric values and append new
