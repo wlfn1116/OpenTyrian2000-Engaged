@@ -16,38 +16,11 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-#include <assert.h>
-#include <limits.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#if defined(_MSC_VER)
-#include <malloc.h>
-#endif
-
-#include <SDL_stdinc.h>
-#include <SDL_scancode.h>
-#include <SDL_keycode.h>
-#include <SDL_keyboard.h>
-#include <SDL_surface.h>
-#include <SDL_mouse.h>
-#include <SDL_endian.h>
-#include <SDL_timer.h>
-
-#ifdef WITH_NETWORK
-#include <SDL_net.h>
-#endif
-
 #include "game_menu.h"
 
 #include "backgrnd.h"
 #include "config.h"
-#if defined(__SWITCH__) || defined(__vita__)
 #include "console_platform.h"
-#endif
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
@@ -55,32 +28,31 @@
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
-#include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
 #include "lvllib.h"
-#include "lvlmast.h"
 #include "mainint.h"
 #include "mouse.h"
 #include "musmast.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
-#include "opentyr.h"
-#include "palette.h"
 #include "params.h"
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
 #include "render_list.h"
 #include "shots.h"
-#include "sndmast.h"
 #include "sprite.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
+
+#include <assert.h>
+#include <limits.h>
+#include <math.h>
 
 enum
 {
@@ -755,7 +727,7 @@ static void draw_endless_perk_list(void)
 
 		const bool selected = (tempW == sel_row);
 
-		char line[34] = { 0 };
+		char line[34];
 		if (selected)  // leading '~' toggles the highlight, as in JE_drawMenuChoices
 		{
 			line[0] = '~';
@@ -772,7 +744,7 @@ static void draw_endless_perk_list(void)
 			char cnt[16];
 			snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
 
-			char cline[18] = { 0 };
+			char cline[18];
 			if (selected)  // match the row's highlight so the count brightens with its name
 			{
 				cline[0] = '~';
@@ -1018,7 +990,7 @@ void JE_itemScreen(void)
 		curMenu = MENU_PERKS;
 	}
 
-	int temp_weapon_power[7] = { 0 }; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
+	int temp_weapon_power[7]; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	for (int i = 0; i < 7; i++)
@@ -1040,7 +1012,7 @@ void JE_itemScreen(void)
 		}
 	}
 
-	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
+	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 	keyboardUsed = false;
 	firstMenu9 = false;
@@ -1084,7 +1056,7 @@ void JE_itemScreen(void)
 		/* SYN: note reindexing... "firstMenu9" refers to Menu 8 here :( */
 		if (curMenu != MENU_DATA_CUBE_SUB || firstMenu9)
 		{
-			memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+			memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
 		}
 
 		if (curMenu == MENU_UPGRADES &&
@@ -2415,7 +2387,7 @@ void JE_itemScreen(void)
 						break;
 					}
 
-					memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
+					memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 					curPal = newPal;
 					memcpy(colors, palettes[newPal-1], sizeof(colors));
@@ -4783,7 +4755,7 @@ static bool endlessDebugScreen(bool jumpMode)
 	const int NGAM   = endlessGambleOutcomeCount();
 	int       NPERKS = endlessPerkCount();
 
-	int    dbgPerks[32] = { 0 };       // owned stacks per perk, pre-loaded from the run (edit here)
+	int    dbgPerks[32];               // owned stacks per perk, pre-loaded from the run (edit here)
 	if (NPERKS > (int)COUNTOF(dbgPerks))
 		NPERKS = (int)COUNTOF(dbgPerks);
 
@@ -4797,7 +4769,8 @@ static bool endlessDebugScreen(bool jumpMode)
 	for (int i = 0; i < NPERKS; ++i)
 		dbgPerks[i] = endlessPerkGetOwned(i);
 
-	char dbgGambleMsg[48] = { 0 };     // last outcome fired here, shown as the gamble list's help
+	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
+	dbgGambleMsg[0] = '\0';
 
 	// The difficulty the SCALING page computes at. -1 = "whatever the game is set to", which is what
 	// you want almost always; the explicit settings are there because the ramp is tilted 50%..160% by
@@ -4817,8 +4790,8 @@ static bool endlessDebugScreen(bool jumpMode)
 
 	while (!done)
 	{
-		PickerRow rows[EDBG_MAX_ROWS] = { 0 };
-		char epHeads[EPISODE_MAX][12] = { { 0 } }; // headings stay alive while rows point at them
+		PickerRow rows[EDBG_MAX_ROWS];
+		char epHeads[EPISODE_MAX][12];     // "EPISODE n" headings, alive as long as the rows point at them
 		int  rowCount = 0;
 
 		#define EDBG_ADD(k, i, l) do { \
@@ -4995,9 +4968,10 @@ static bool endlessDebugScreen(bool jumpMode)
 			if (isSel)
 				fill_rectangle_xy(VGAScreen, px0 + 3, ry - 1, px1 - 3, ry + row_h - 2, C_SEL_BAR);
 
-			char  val[40] = { 0 };
+			char  val[40];
 			Sint8 labBright = isSel ? 5 : -1, valBright = isSel ? 5 : -1;
 			int   labX = px0 + 12;
+			val[0] = '\0';
 
 			switch (rows[i].kind)
 			{
@@ -5164,7 +5138,7 @@ static bool endlessDebugScreen(bool jumpMode)
 
 		// Footer line 1: what the selected row IS. Every list row can explain itself, so none of
 		// the 48 modifier names has to carry its meaning in the name alone.
-		char helpBuf[96] = { 0 };
+		char helpBuf[96];
 		const char *help = "";
 		switch (rows[s].kind)
 		{
@@ -5748,8 +5722,8 @@ bool JE_debugLevelSelect(void)
 	};
 
 	// Build the rows once: the level list can't change while the screen is open.
-	PickerRow rows[ALL_LEVEL_MAX + EPISODE_MAX] = { 0 };
-	char      epHeads[EPISODE_MAX][12] = { { 0 } };
+	PickerRow rows[ALL_LEVEL_MAX + EPISODE_MAX];
+	char      epHeads[EPISODE_MAX][12];
 	int       rowCount = 0;
 	int       lastEp = 0;
 	for (int i = 0; i < allLevelCount && rowCount < (int)COUNTOF(rows) - 1; ++i)
@@ -7708,7 +7682,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	cwBulletSel = 0;
 
 	// These stay visible while the field list changes category.
-	int actIds[8] = { 0 }, actCount = 0;
+	int actIds[8], actCount = 0;
 	actIds[actCount++] = CWACT_UNDO;
 	actIds[actCount++] = CWACT_REDO;
 	actIds[actCount++] = CWACT_RANDOMIZE;
@@ -7733,7 +7707,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	// shows black margins. Snapshot it to VGAScreen2 so cwRestoreRect() can wipe the
 	// area around the preview box each tick.
 	JE_loadPic(VGAScreen, 1, true);
-	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
+	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 	// The preview box is fixed at 8,8..143,182 so JE_weaponSimSmoothPresent() — the
 	// buy/sell screen's own interpolated presenter — can be reused verbatim, giving
@@ -7785,7 +7759,7 @@ bool JE_customWeaponCreator(bool canEquip)
 			--cwDeleteConfirmTicks;
 
 		// Build the visible field list for the current category (All = every field row).
-		int fieldRows[CWROW_FIELD_COUNT] = { 0 }, fieldCount = 0;
+		int fieldRows[CWROW_FIELD_COUNT], fieldCount = 0;
 		for (int r = 0; r < CWROW_FIELD_COUNT; ++r)
 			if (cwCategory == CWCAT_ALL || cwRowCategory(r) == cwCategory)
 				fieldRows[fieldCount++] = r;
