@@ -125,6 +125,7 @@ Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank 
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array, unsigned int index, int wx0, int wx1, int wy0, int wy1);
+bool sprite2_is_blank(Sprite2_array, unsigned int index);  // frame draws nothing (map-drawn / invisible pieces)
 void blit_sprite2_blend(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_blend_clip(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);

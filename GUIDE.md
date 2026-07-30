@@ -333,12 +333,17 @@ Settings are under Setup > Graphics.
 | Scaler | Pixel-art scaling algorithm |
 | Scaling Mode | Fit inside the window |
 | Smooth Motion | Interpolates the 35 Hz simulation at the display rate |
-| Sub-pixel | Renders the playfield internally at Auto or 1x-5x |
+| Sub-pixel | Renders the playfield internally at Auto, 1x-5x, or Native |
 | Filter | Sharp, Smooth, or unfiltered sub-pixel output |
 | VSync / FPS Cap / Show FPS | Presentation controls |
 
 Smooth Motion also enables display-rate ship movement in supported single-player
 games. Sub-pixel rendering has the largest effect when Smooth Motion is enabled.
+
+Sub-pixel **Native** renders one internal sample per screen pixel, so it follows your
+monitor instead of stopping at 5x (11x on a 4K display, shown beside the setting). It
+pairs with the **Native** scaler, which already outputs at the exact window size. The
+cost scales with your resolution, which is why Auto still stops at 5x.
 
 ## Enhancements
 

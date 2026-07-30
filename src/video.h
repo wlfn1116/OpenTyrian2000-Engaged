@@ -77,9 +77,15 @@ extern ScalingMode scaling_mode;
 
 /*
  * Sub-pixel supersampling into an NxN buffer so motion lands on 1/N-pixel
- * positions.  0 = Auto (match the scaler), 1 = off, 2..5 = fixed factor.
+ * positions.  0 = Auto (match the scaler), 1 = off, 2..5 = fixed factor,
+ * 6 = Native: match the DISPLAY, i.e. one sub-pixel sample per screen pixel of
+ * the presented image, with no 5x ceiling.  Native is the sub-pixel twin of the
+ * Native scaler; on a 4K screen it resolves to 11x, so the cost scales with the
+ * monitor -- which is why it is opt-in and Auto keeps the fixed-factor ceiling.
  */
-#define RENDER_SUPERSAMPLE_MAX 5
+#define RENDER_SUPERSAMPLE_MAX 5      // highest FIXED factor offered (and Auto's ceiling)
+#define RENDER_SUPERSAMPLE_NATIVE 6   // follow the output resolution instead
+#define RENDER_SUPERSAMPLE_LIMIT 24   // hard ceiling on a resolved Native factor (covers 8K)
 extern int render_supersample;
 int effective_supersample(void);
 
