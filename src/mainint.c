@@ -7625,7 +7625,8 @@ redo:
 								// Zica Laser (port 5) Lv11 tweaks. Length "Long" swaps the vanilla
 								// Lv11 shot for two LV10-length side beams; the "Buff" adds the Lv10
 								// centre beam. The primary shot pays the port's power cost; the extra
-								// beams fire drain-free so the combined weapon still costs one shot.
+								// beams fire drain-free so the combined weapon still costs one shot,
+								// but only when the primary actually went out (see below).
 								const bool zica_l11 = (item == 5 && item_power == 10);
 								JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
 								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
@@ -7641,7 +7642,11 @@ redo:
 
 								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);
 
-								if (zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
+								// Free does not mean unconditional: zeroing poweruse also makes the
+								// extras' own power check pass, which would let them keep firing on an
+								// empty generator after the primary was refused. Gate them on the
+								// primary having fired, so the whole weapon starves together.
+								if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
 								{
 									JE_word saved_poweruse = weaponPort[item].poweruse;
 									weaponPort[item].poweruse = 0;

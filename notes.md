@@ -451,6 +451,13 @@ The custom weapon occupies spare runtime slots. Imported designs are clamped but
 otherwise copied exactly. A design must always keep at least one segment and one
 power state.
 
+A shot fired with `poweruse` temporarily zeroed is not just free, it is also
+exempt from the generator check inside `player_shot_create` - so it keeps firing
+on an empty generator. Any such extra beam must additionally be gated on its
+primary shot having succeeded (`b < MAX_PWEAPON`), or the weapon half-fires when
+starved. The Zica Lv11 Long/Buff beams do this at both fire sites: gameplay in
+`JE_mainGamePlayerFunctions` and the Creator's test range in `game_menu.c`.
+
 Custom weapon persistence and its library have fixed field widths. Validate
 counts and indices before applying a record.
 
