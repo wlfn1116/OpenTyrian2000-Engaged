@@ -38,6 +38,7 @@
 
 extern const char *opentyrian_str;      // opentyr.c
 extern const char *opentyrian_version;  // opentyr.c
+extern const char *opentyrian_commit;   // opentyr.c
 
 // Guards the terminal fault paths (exception / abort / CRT fatal) so a fault raised mid-report
 // can't re-enter the logger and clobber it. The hang watchdog is non-terminal and stays
@@ -187,6 +188,7 @@ static void write_header(FILE *f, const char *event)
 	fprintf(f, "================================================================\n");
 	fprintf(f, "%s %s\n", opentyrian_str, event);
 	fprintf(f, "  Version:     %s\n", opentyrian_version ? opentyrian_version : "?");
+	fprintf(f, "  Commit:      %s\n", (opentyrian_commit && *opentyrian_commit) ? opentyrian_commit : "?");
 	fprintf(f, "  Time:        %s\n", when);
 	fprintf(f, "  Module base: %p\n", (void *)GetModuleHandleA(NULL));
 	fprintf(f, "================================================================\n\n");
