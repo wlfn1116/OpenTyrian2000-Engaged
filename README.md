@@ -10,6 +10,7 @@ This fork adds:
 
 - a 356x200 widescreen playfield;
 - smooth, display-rate rendering with optional sub-pixel supersampling;
+- unused/removed content restoration;
 - an Endless mode built from the original levels;
 - a custom weapon editor;
 - expanded health bars, menus, and debug tools;
