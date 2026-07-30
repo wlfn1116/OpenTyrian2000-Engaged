@@ -1,6 +1,9 @@
-# Builds the three release targets on every push/PR and, when a tag is pushed,
-# attaches them to that tag's GitHub release under the same asset names the
-# hand-made releases used:
+# Builds the three release targets on every push/PR and publishes them twice over:
+#
+#   - every push to master force-updates the rolling `latest` tag and its
+#     pre-release, so the newest build is always downloadable without logging in;
+#   - pushing a version tag attaches the artifacts to that tag's release under
+#     the same asset names the hand-made releases used.
 #
 #   OpenTyrian2000-Engaged-Win64.7z    exe + SDL2/SDL2_net/FluidSynth DLLs + data/
 #   OpenTyrian2000-Engaged-Switch.nro  freeware data baked into romfs
@@ -37,7 +40,7 @@ jobs:
     steps:
       - name: Restore cached tyrian2000.zip
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: tyrian2000.zip
           key: tyrian2000-zip-v1
@@ -57,7 +60,7 @@ jobs:
             test -f "data/$f" || { echo "missing $f in data zip"; exit 1; }
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: tyrian2000-data
           path: data
@@ -70,9 +73,9 @@ jobs:
     # project files use. (VS 2026 no longer ships v143, so do not pin older.)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: microsoft/setup-msbuild@v2
+      - uses: microsoft/setup-msbuild@v3
 
       - name: Build (Release x64)
         run: >-
@@ -81,7 +84,7 @@ jobs:
           "/p:SDL2BaseDir=${{ github.workspace }}\stuff\SDL2-2.26.2"
           "/p:SDL2netBaseDir=${{ github.workspace }}\stuff\SDL2_net-2.2.0"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: tyrian2000-data
           path: pkg/data
@@ -92,13 +95,13 @@ jobs:
           Copy-Item SDL2.dll, SDL2_net.dll, libfluidsynth-3.dll pkg\
           7z a -mx=9 OpenTyrian2000-Engaged-Win64.7z .\pkg\*
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Win64
           path: OpenTyrian2000-Engaged-Win64.7z
 
       # Not part of the release archive, but kept for decoding crash logs.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Win64-pdb
           path: opentyrian-x64-Release.pdb
@@ -109,10 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Bake game data into romfs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tyrian2000-data
           path: switch/romfs
@@ -123,7 +126,7 @@ jobs:
           make -C switch -j"$(nproc)"
           cp switch/opentyrian2000.nro OpenTyrian2000-Engaged-Switch.nro
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Switch
           path: OpenTyrian2000-Engaged-Switch.nro
@@ -134,9 +137,9 @@ jobs:
     runs-on: ubuntu-latest
     container: vitasdk/vitasdk:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: tyrian2000-data
           path: data
@@ -162,10 +165,47 @@ jobs:
           cp data/* "$stage/data/"
           cd "$stage" && cmake -E tar cf "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Vita.vpk" --format=zip .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Vita
           path: OpenTyrian2000-Engaged-Vita.vpk
+
+  # Rolling pre-release: every master build force-moves the `latest` tag to the
+  # built commit and refreshes the pre-release's assets in place. Tag pushes made
+  # with the workflow token do not re-trigger this workflow, so no loop.
+  prerelease:
+    name: Update latest pre-release
+    if: github.ref == 'refs/heads/master'
+    needs: [windows, switch, vita]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: OpenTyrian2000-Engaged-*
+          merge-multiple: true
+
+      - name: Create or update the `latest` pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(OpenTyrian2000-Engaged-Win64.7z
+                  OpenTyrian2000-Engaged-Switch.nro
+                  OpenTyrian2000-Engaged-Vita.vpk)
+          subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" \
+                    --jq '.commit.message' | head -n 1)
+          notes="Automatic build of ${GITHUB_SHA:0:9} (${subject}), $(date -u +'%Y-%m-%d %H:%M UTC')."
+          if gh release view latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
+              -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            gh release edit latest --repo "$GITHUB_REPOSITORY" --prerelease \
+              --title "Latest build" --notes "$notes"
+            gh release upload latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --prerelease --target "$GITHUB_SHA" --title "Latest build" --notes "$notes"
+          fi
 
   release:
     name: Attach to release
@@ -175,7 +215,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: OpenTyrian2000-Engaged-*
           merge-multiple: true
