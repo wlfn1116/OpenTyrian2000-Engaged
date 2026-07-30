@@ -278,20 +278,9 @@ jobs:
           subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" \
                     --jq '.commit.message' | head -n 1)
           notes="Automatic build of ${GITHUB_SHA:0:9} (${subject}), $(date -u +'%Y-%m-%d %H:%M UTC')."
-          if gh release view latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
-              -f sha="$GITHUB_SHA" -F force=true > /dev/null
-            gh release edit latest --repo "$GITHUB_REPOSITORY" --prerelease \
-              --title "Latest build" --notes "$notes"
-            gh release upload latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-            # --clobber only replaces same-named assets; drop ones from before
-            # the Windows package was renamed so they don't linger on `latest`.
-            gh release delete-asset latest OpenTyrian2000-Engaged-Win64.7z \
-              --repo "$GITHUB_REPOSITORY" --yes 2> /dev/null || true
-          else
-            gh release create latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
-              --prerelease --target "$GITHUB_SHA" --title "Latest build" --notes "$notes"
-          fi
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2> /dev/null || true
+          gh release create latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+            --prerelease --target "$GITHUB_SHA" --title "Latest build" --notes "$notes"
 
   release:
     name: Attach to release
