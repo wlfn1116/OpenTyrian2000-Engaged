@@ -12,7 +12,7 @@ to `build`. A target failure does not stop the others unless `-FailFast` is used
 Keep these target differences in mind:
 
 - The PC executable must run beside `data`; `build` is only an output folder.
-- MIDI is enabled only for Windows x64.
+- MIDI is enabled only for Windows x86-64.
 - The Windows crash logger is stubbed on other platforms.
 - Switch builds run through devkitPro bash with an MSYS-style `DEVKITPRO` path.
 - Vita builds use native CMake and Ninja from PowerShell. MSYS paths break the

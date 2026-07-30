@@ -5,7 +5,7 @@ This directory contains
 `67213aafc05657a778000d85f1cbaac03eba5649`.
 
 It converts Tyrian LDS music to Standard MIDI Files. The code is compiled into
-Windows x64 builds when `WITH_MIDI` is enabled. See `LICENSE` for its license.
+Windows x86-64 builds when `WITH_MIDI` is enabled. See `LICENSE` for its license.
 
 ## Local changes
 

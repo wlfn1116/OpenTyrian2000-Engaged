@@ -397,7 +397,7 @@ Weapon Tweaks covers:
 | --- | --- |
 | OPL | None; default |
 | FluidSynth | SoundFont file |
-| System synth | Windows x64 |
+| System synth | Windows x86-64 |
 
 MIDI songs loop at their internal loop point. The title-screen Extra menu also
 contains a jukebox.
