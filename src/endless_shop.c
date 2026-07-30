@@ -982,9 +982,9 @@ void endlessBetweenLevels(void)
 
 	// Clearing ZONE 100 rolls the credits once, then the run carries straight on into zone 101. The
 	// flag is set BEFORE the roll and the outpost auto-saves right below it, so watching them through
-	// or skipping them both leave a zone-101 save that won't play them again on reload. (`>=` rather
-	// than `==` so a debug zone jump over the mark still gets its one showing.)
-	if (endlessRunDepth >= ENDLESS_CREDITS_ZONE && !endlessCreditsShown)
+	// or skipping them both leave a zone-101 save that won't play them again on reload. (`==` on
+	// purpose: a debug jump over the mark skips the roll rather than interrupting a deep test visit.)
+	if (endlessRunDepth == ENDLESS_CREDITS_ZONE && !endlessCreditsShown)
 	{
 		endlessCreditsShown = true;
 		VGAScreen = VGAScreenSeg;  // the level loop may have left it on VGAScreen2 (as JE_itemScreen does)
