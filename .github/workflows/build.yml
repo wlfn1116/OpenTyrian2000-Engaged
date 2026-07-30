@@ -5,7 +5,7 @@
 #   - pushing a version tag attaches the artifacts to that tag's release under
 #     the same asset names the hand-made releases used.
 #
-#   OpenTyrian2000-Engaged-Win64.7z             exe + SDL2/SDL2_net/FluidSynth DLLs + data/
+#   OpenTyrian2000-Engaged-Windows-x86_64.7z    exe + SDL2/SDL2_net/FluidSynth DLLs + data/
 #   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz  binary + data/ (root Makefile, distro SDL2)
 #   OpenTyrian2000-Engaged-Switch.nro           freeware data baked into romfs
 #   OpenTyrian2000-Engaged-Vita.vpk             freeware data staged into app0:data
@@ -94,9 +94,9 @@ jobs:
 
       - name: Package 7z
         run: |
-          Copy-Item opentyrian-x64-Release.exe pkg\OpenTyrian2000-Engaged-Win64.exe
+          Copy-Item opentyrian-x64-Release.exe pkg\OpenTyrian2000-Engaged-Windows-x86_64.exe
           Copy-Item SDL2.dll, SDL2_net.dll, libfluidsynth-3.dll pkg\
-          7z a -mx=9 OpenTyrian2000-Engaged-Win64.7z .\pkg\*
+          7z a -mx=9 OpenTyrian2000-Engaged-Windows-x86_64.7z .\pkg\*
 
       # Boot the packaged game headless: SDL's dummy video/audio drivers let it
       # load the data and run the attract demo with no display. Surviving the
@@ -106,7 +106,7 @@ jobs:
         run: |
           $env:SDL_VIDEODRIVER = 'dummy'
           $env:SDL_AUDIODRIVER = 'dummy'
-          $p = Start-Process -FilePath .\pkg\OpenTyrian2000-Engaged-Win64.exe -WorkingDirectory .\pkg -PassThru
+          $p = Start-Process -FilePath .\pkg\OpenTyrian2000-Engaged-Windows-x86_64.exe -WorkingDirectory .\pkg -PassThru
           if ($p.WaitForExit(15000)) { throw "game exited early (code $($p.ExitCode))" }
           Stop-Process -Id $p.Id -Force
           Write-Host 'survived 15s headless'
@@ -116,14 +116,14 @@ jobs:
       # compressed archive inside is not compressed a second time.
       - uses: actions/upload-artifact@v6
         with:
-          name: OpenTyrian2000-Engaged-Win64
-          path: OpenTyrian2000-Engaged-Win64.7z
+          name: OpenTyrian2000-Engaged-Windows-x86_64
+          path: OpenTyrian2000-Engaged-Windows-x86_64.7z
           compression-level: 0
 
       # Not part of the release archive, but kept for decoding crash logs.
       - uses: actions/upload-artifact@v6
         with:
-          name: OpenTyrian2000-Engaged-Win64-pdb
+          name: OpenTyrian2000-Engaged-Windows-x86_64-pdb
           path: opentyrian-x64-Release.pdb
 
   linux:
@@ -271,7 +271,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          assets=(OpenTyrian2000-Engaged-Win64.7z
+          assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
@@ -284,6 +284,10 @@ jobs:
             gh release edit latest --repo "$GITHUB_REPOSITORY" --prerelease \
               --title "Latest build" --notes "$notes"
             gh release upload latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            # --clobber only replaces same-named assets; drop ones from before
+            # the Windows package was renamed so they don't linger on `latest`.
+            gh release delete-asset latest OpenTyrian2000-Engaged-Win64.7z \
+              --repo "$GITHUB_REPOSITORY" --yes 2> /dev/null || true
           else
             gh release create latest "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
               --prerelease --target "$GITHUB_SHA" --title "Latest build" --notes "$notes"
@@ -309,7 +313,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          assets=(OpenTyrian2000-Engaged-Win64.7z
+          assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
