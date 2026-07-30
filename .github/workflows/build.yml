@@ -1,0 +1,198 @@
+# Builds the three release targets on every push/PR and, when a tag is pushed,
+# attaches them to that tag's GitHub release under the same asset names the
+# hand-made releases used:
+#
+#   OpenTyrian2000-Engaged-Win64.7z    exe + SDL2/SDL2_net/FluidSynth DLLs + data/
+#   OpenTyrian2000-Engaged-Switch.nro  freeware data baked into romfs
+#   OpenTyrian2000-Engaged-Vita.vpk    freeware data staged into app0:data
+#
+# Windows links against the SDKs vendored in stuff/ (the sdl_paths.props defaults
+# point elsewhere, so the paths are passed as global MSBuild properties). The
+# console jobs run in the official toolchain images: devkitpro/devkita64 already
+# includes switch-portlibs (SDL2 + the pkg-config wrapper switch/Makefile needs),
+# and vitasdk/vitasdk includes SDL2 via vdpm plus cmake/make. vita/build.ps1 is
+# Windows-only, so the Vita job restates its staging/packing steps in shell.
+#
+# The freeware Tyrian 2000 data (same URL README.md points players at) is fetched
+# once by the `data` job and shared with all three builds; desktop-only files are
+# stripped with the same exclusion list vita/build.ps1 uses.
+
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  data:
+    name: Game data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore cached tyrian2000.zip
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: tyrian2000.zip
+          key: tyrian2000-zip-v1
+
+      - name: Download freeware Tyrian 2000 data
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: curl -fL --retry 3 -o tyrian2000.zip https://www.camanis.net/tyrian/tyrian2000.zip
+
+      - name: Extract and strip desktop-only files
+        run: |
+          unzip -q -j tyrian2000.zip 'tyrian2000/*' -d data
+          rm -f data/*.exe data/*.dll data/*.pif data/*.ico data/*.box \
+                data/*.ovl data/*.cfg data/*.sav data/*.txt data/*.sf2
+          # A few files the engine cannot start without; fail here rather than
+          # shipping artifacts that boot to a missing-data error.
+          for f in tyrian1.lvl tyrian.hdt music.mus palette.dat; do
+            test -f "data/$f" || { echo "missing $f in data zip"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tyrian2000-data
+          path: data
+          retention-days: 1
+
+  windows:
+    name: Windows x64
+    needs: data
+    # windows-latest is the VS 2026 image, which provides the v145 toolset the
+    # project files use. (VS 2026 no longer ships v143, so do not pin older.)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release x64)
+        run: >-
+          msbuild visualc\opentyrian.sln /m /v:minimal /t:Build
+          /p:Configuration=Release /p:Platform=x64
+          "/p:SDL2BaseDir=${{ github.workspace }}\stuff\SDL2-2.26.2"
+          "/p:SDL2netBaseDir=${{ github.workspace }}\stuff\SDL2_net-2.2.0"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tyrian2000-data
+          path: pkg/data
+
+      - name: Package 7z
+        run: |
+          Copy-Item opentyrian-x64-Release.exe pkg\OpenTyrian2000-Engaged-Win64.exe
+          Copy-Item SDL2.dll, SDL2_net.dll, libfluidsynth-3.dll pkg\
+          7z a -mx=9 OpenTyrian2000-Engaged-Win64.7z .\pkg\*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTyrian2000-Engaged-Win64
+          path: OpenTyrian2000-Engaged-Win64.7z
+
+      # Not part of the release archive, but kept for decoding crash logs.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTyrian2000-Engaged-Win64-pdb
+          path: opentyrian-x64-Release.pdb
+
+  switch:
+    name: Nintendo Switch
+    needs: data
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bake game data into romfs
+        uses: actions/download-artifact@v4
+        with:
+          name: tyrian2000-data
+          path: switch/romfs
+
+      - name: Build .nro
+        run: |
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          make -C switch -j"$(nproc)"
+          cp switch/opentyrian2000.nro OpenTyrian2000-Engaged-Switch.nro
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTyrian2000-Engaged-Switch
+          path: OpenTyrian2000-Engaged-Switch.nro
+
+  vita:
+    name: PlayStation Vita
+    needs: data
+    runs-on: ubuntu-latest
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tyrian2000-data
+          path: data
+
+      - name: Build eboot.bin
+        run: |
+          cmake -S vita -B vita/build
+          cmake --build vita/build -j"$(nproc)"
+
+      # Same staging vita/build.ps1 performs: param.sfo + LiveArea assets +
+      # data, zipped from inside the stage directory so paths are VPK-relative.
+      - name: Assemble VPK
+        run: |
+          "$VITASDK/bin/vita-mksfoex" -s APP_VER=01.00 -s TITLE_ID=OTYR20000 -s CATEGORY=gd \
+            "OpenTyrian 2000 Engaged" vita/build/param.sfo
+          stage=vita/build/vpk
+          rm -rf "$stage"
+          mkdir -p "$stage/sce_sys/livearea/contents" "$stage/data"
+          cp vita/build/eboot.bin "$stage/"
+          cp vita/build/param.sfo "$stage/sce_sys/"
+          cp vita/sce_sys/icon0.png vita/sce_sys/pic0.png "$stage/sce_sys/"
+          cp vita/sce_sys/livearea/contents/* "$stage/sce_sys/livearea/contents/"
+          cp data/* "$stage/data/"
+          cd "$stage" && cmake -E tar cf "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Vita.vpk" --format=zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTyrian2000-Engaged-Vita
+          path: OpenTyrian2000-Engaged-Vita.vpk
+
+  release:
+    name: Attach to release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, switch, vita]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: OpenTyrian2000-Engaged-*
+          merge-multiple: true
+
+      # If the release was already created from the GitHub UI, just attach the
+      # assets; otherwise create it as a draft so notes can be written by hand
+      # before publishing.
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(OpenTyrian2000-Engaged-Win64.7z
+                  OpenTyrian2000-Engaged-Switch.nro
+                  OpenTyrian2000-Engaged-Vita.vpk)
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --generate-notes
+          fi
