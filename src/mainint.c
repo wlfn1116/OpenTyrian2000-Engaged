@@ -5125,9 +5125,9 @@ void JE_playCredits(void)
 	// keeps its position relative to the end of the roll, so the song fade and the final held frame
 	// land exactly where they always did.
 	static const char *const credits_extra[lines_extra] = {
+		"Mwlfn",
 		"LOpenTyrian 2000",
 		"LEngaged",
-		"Mwlfn",
 	};
 	int endLine = lines_file - 1;
 	while (endLine > 0 && credits_line_blank(credstr[endLine]))
