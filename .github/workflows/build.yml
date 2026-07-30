@@ -1,13 +1,14 @@
-# Builds the three release targets on every push/PR and publishes them twice over:
+# Builds the release targets on every push/PR and publishes them twice over:
 #
 #   - every push to master force-updates the rolling `latest` tag and its
 #     pre-release, so the newest build is always downloadable without logging in;
 #   - pushing a version tag attaches the artifacts to that tag's release under
 #     the same asset names the hand-made releases used.
 #
-#   OpenTyrian2000-Engaged-Win64.7z    exe + SDL2/SDL2_net/FluidSynth DLLs + data/
-#   OpenTyrian2000-Engaged-Switch.nro  freeware data baked into romfs
-#   OpenTyrian2000-Engaged-Vita.vpk    freeware data staged into app0:data
+#   OpenTyrian2000-Engaged-Win64.7z             exe + SDL2/SDL2_net/FluidSynth DLLs + data/
+#   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz  binary + data/ (root Makefile, distro SDL2)
+#   OpenTyrian2000-Engaged-Switch.nro           freeware data baked into romfs
+#   OpenTyrian2000-Engaged-Vita.vpk             freeware data staged into app0:data
 #
 # Windows links against the SDKs vendored in stuff/ (the sdl_paths.props defaults
 # point elsewhere, so the paths are passed as global MSBuild properties). The
@@ -106,6 +107,38 @@ jobs:
           name: OpenTyrian2000-Engaged-Win64-pdb
           path: opentyrian-x64-Release.pdb
 
+  linux:
+    name: Linux x86-64
+    needs: data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-net-dev
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      # Tarball unpacks to opentyrian2000/ with the data beside the binary, so
+      # it runs in place (data_dir() checks ./data before the system path).
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: stage/opentyrian2000/data
+
+      - name: Package tar.gz
+        run: |
+          cp opentyrian2000 stage/opentyrian2000/
+          tar -C stage -czf OpenTyrian2000-Engaged-Linux-x86_64.tar.gz opentyrian2000
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Linux
+          path: OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+
   switch:
     name: Nintendo Switch
     needs: data
@@ -176,7 +209,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, switch, vita]
+    needs: [windows, linux, switch, vita]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -191,6 +224,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Win64.7z
+                  OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" \
@@ -210,7 +244,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, switch, vita]
+    needs: [windows, linux, switch, vita]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -228,6 +262,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(OpenTyrian2000-Engaged-Win64.7z
+                  OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then

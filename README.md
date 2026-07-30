@@ -1,6 +1,6 @@
 # OpenTyrian2000 Engaged
 
-[![build](https://github.com/wlfn1116/opentyrian2000-widescreen/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/opentyrian2000-widescreen/actions/workflows/build.yml)
+[![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
@@ -110,13 +110,19 @@ platform toolchains:
 - [Nintendo Switch build](switch/README.md)
 - [PlayStation Vita build](vita/README.md)
 
-GitHub Actions builds all three targets on every push. The newest master build
-is always available from the
-[latest pre-release](https://github.com/wlfn1116/opentyrian2000-widescreen/releases/tag/latest);
+On Linux, install the SDL2 development packages and use the root Makefile:
+
+```sh
+sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
+make
+```
+
+GitHub Actions builds the Windows, Linux, Switch, and Vita targets on every
+push. The newest master build is always available from the
+[latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest);
 per-commit artifacts are on the
-[Actions](https://github.com/wlfn1116/opentyrian2000-widescreen/actions) tab.
-Pushing a tag attaches the Windows, Switch, and Vita packages to that tag's
-release automatically.
+[Actions](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions) tab.
+Pushing a tag attaches all four packages to that tag's release automatically.
 
 ## License
 
