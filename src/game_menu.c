@@ -9170,7 +9170,8 @@ void JE_weaponViewFrame(void)
 
 			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions)
 			// so the preview matches. Long swaps in the two LV10-length side beams; Buff
-			// adds the Lv10 centre beam. Extra beams are drain-free.
+			// adds the Lv10 centre beam. Extra beams are drain-free, but still only fire
+			// when the primary did -- see the note at the gameplay site.
 			const bool zica_l11 = (item == 5 && item_power == 10);
 			JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
 			if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
@@ -9178,7 +9179,7 @@ void JE_weaponViewFrame(void)
 
 			b = player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, l11_primary, 1);
 
-			if (zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
+			if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
 			{
 				JE_word saved_poweruse = weaponPort[item].poweruse;
 				weaponPort[item].poweruse = 0;
