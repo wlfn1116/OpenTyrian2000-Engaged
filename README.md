@@ -11,10 +11,10 @@ This fork adds:
 - a 356x200 widescreen playfield;
 - smooth, display-rate rendering with optional sub-pixel supersampling;
 - an Endless mode built from the original levels;
-- a custom weapon editor and per-episode weapon options;
-- optional FluidSynth and system MIDI playback;
+- a custom weapon editor;
 - expanded health bars, menus, and debug tools;
 - Nintendo Switch and PlayStation Vita homebrew builds.
+- optional FluidSynth and system MIDI playback (Windows only);
 
 See [GUIDE.md](GUIDE.md) for more information about the additions to this fork.
 
