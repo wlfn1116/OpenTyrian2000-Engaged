@@ -20,7 +20,7 @@ CC ?= gcc
 INSTALL ?= install
 PKG_CONFIG ?= pkg-config
 
-VCS_IDREV ?= (git describe --tags || git rev-parse --short HEAD)
+VCS_IDREV ?= git rev-parse --short HEAD
 
 INSTALL_PROGRAM ?= $(INSTALL)
 INSTALL_DATA ?= $(INSTALL) -m 644
@@ -56,10 +56,13 @@ ifeq ($(WITH_NETWORK), true)
     EXTRA_CPPFLAGS += -DWITH_NETWORK
 endif
 
-OPENTYRIAN_VERSION := $(shell $(VCS_IDREV) 2>/dev/null && \
-                              touch src/opentyrian_version.h)
-ifneq ($(OPENTYRIAN_VERSION), )
-    EXTRA_CPPFLAGS += -DOPENTYRIAN_VERSION='"$(OPENTYRIAN_VERSION)"'
+# The version string itself comes from src/opentyrian_version.h; the short
+# commit id is baked in separately for the title screen's commit line. The
+# touch forces opentyr.o to rebuild so a new commit always lands in the binary.
+OPENTYRIAN_COMMIT := $(shell $(VCS_IDREV) 2>/dev/null && \
+                             touch src/opentyrian_version.h)
+ifneq ($(OPENTYRIAN_COMMIT), )
+    EXTRA_CPPFLAGS += -DOPENTYRIAN_COMMIT='"$(OPENTYRIAN_COMMIT)"'
 endif
 
 CPPFLAGS ?= -MMD

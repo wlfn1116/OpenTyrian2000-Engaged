@@ -189,7 +189,7 @@ function Build-PC {
     $msbuild = Find-MSBuild
     $buildTarget = if ($Clean) { 'Rebuild' } else { 'Build' }
     Write-Host "  MSBuild: $msbuild"
-    Invoke-NativeCommand $msbuild @(
+    $msbuildArgs = @(
         $Project,
         "/target:$buildTarget",
         "/property:Configuration=$Configuration",
@@ -198,6 +198,12 @@ function Build-PC {
         '/nologo',
         '/verbosity:minimal'
     )
+    # Bake the short commit id into the title screen when git is available.
+    $commit = & git -C $RepoRoot rev-parse --short HEAD 2>$null
+    if ($commit) {
+        $msbuildArgs += "/property:OPENTYRIAN_COMMIT=$commit"
+    }
+    Invoke-NativeCommand $msbuild $msbuildArgs
 }
 
 function Build-Switch {

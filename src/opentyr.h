@@ -84,6 +84,7 @@ typedef float  JE_real;
 
 extern const char *opentyrian_str;
 extern const char *opentyrian_version;
+extern const char *opentyrian_commit;
 
 void setupMenu(void);
 bool extraMenu(void);  // title-screen Extra menu; returns true if a game was launched

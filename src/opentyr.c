@@ -62,6 +62,7 @@
 
 const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
+const char *opentyrian_commit = OPENTYRIAN_COMMIT;
 
 #if !defined(__SWITCH__) && !defined(__vita__)
 // The consoles (Switch / Vita) have a single, always-fullscreen display managed by the
@@ -2226,7 +2227,8 @@ int main(int argc, char *argv[])
 	printf("\nWelcome to... >> %s %s <<\n\n", opentyrian_str, opentyrian_version);
 
 	printf("Copyright (C) 2022 The OpenTyrian Development Team\n");
-	printf("Copyright (C) 2022 Kaito Sinclaire\n\n");
+	printf("Copyright (C) 2022 Kaito Sinclaire\n");
+	printf("Copyright (C) 2026 wlfn\n\n");
 
 	printf("This program comes with ABSOLUTELY NO WARRANTY.\n");
 	printf("This is free software, and you are welcome to redistribute it\n");

@@ -79,11 +79,13 @@ jobs:
       - uses: microsoft/setup-msbuild@v3
 
       - name: Build (Release x64)
-        run: >-
-          msbuild visualc\opentyrian.sln /m /v:minimal /t:Build
-          /p:Configuration=Release /p:Platform=x64
-          "/p:SDL2BaseDir=${{ github.workspace }}\stuff\SDL2-2.26.2"
-          "/p:SDL2netBaseDir=${{ github.workspace }}\stuff\SDL2_net-2.2.0"
+        run: |
+          $commit = $env:GITHUB_SHA.Substring(0, 7)
+          msbuild visualc\opentyrian.sln /m /v:minimal /t:Build `
+            /p:Configuration=Release /p:Platform=x64 `
+            "/p:SDL2BaseDir=${{ github.workspace }}\stuff\SDL2-2.26.2" `
+            "/p:SDL2netBaseDir=${{ github.workspace }}\stuff\SDL2_net-2.2.0" `
+            "/p:OPENTYRIAN_COMMIT=$commit"
 
       - uses: actions/download-artifact@v7
         with:
@@ -188,6 +190,9 @@ jobs:
       - name: Build .nro
         run: |
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          # printf, not ${VAR:0:7}: container job scripts run under sh, and
+          # Debian's dash has no bash substring expansion (exits 2).
+          export OPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
           make -C switch -j"$(nproc)"
           cp switch/opentyrian2000.nro OpenTyrian2000-Engaged-Switch.nro
 
@@ -211,14 +216,23 @@ jobs:
 
       - name: Build eboot.bin
         run: |
-          cmake -S vita -B vita/build
+          cmake -S vita -B vita/build -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
           cmake --build vita/build -j"$(nproc)"
 
       # Same staging vita/build.ps1 performs: param.sfo + LiveArea assets +
       # data, zipped from inside the stage directory so paths are VPK-relative.
+      #
+      # APP_VER is derived from src/opentyrian_version.h ("Engaged v1.1.0" ->
+      # major.minor -> "01.01"). The SFO expects strictly "XX.YY"; anything that
+      # fails that shape falls back to 01.00 rather than risk an unloadable VPK.
       - name: Assemble VPK
         run: |
-          "$VITASDK/bin/vita-mksfoex" -s APP_VER=01.00 -s TITLE_ID=OTYR20000 -s CATEGORY=gd \
+          ver=$(sed -n 's/.*OPENTYRIAN_VERSION *"\([^"]*\)".*/\1/p' src/opentyrian_version.h | sed 's/.*[vV]//')
+          major=${ver%%.*}; rest=${ver#*.}; minor=${rest%%.*}
+          appver=$(printf '%02d.%02d' "$major" "$minor" 2>/dev/null) || appver=01.00
+          case "$appver" in [0-9][0-9].[0-9][0-9]) ;; *) appver=01.00 ;; esac
+          echo "APP_VER: $appver (from version '$ver')"
+          "$VITASDK/bin/vita-mksfoex" -s APP_VER="$appver" -s TITLE_ID=OTYR20000 -s CATEGORY=gd \
             "OpenTyrian 2000 Engaged" vita/build/param.sfo
           stage=vita/build/vpk
           rm -rf "$stage"

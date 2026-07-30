@@ -62,6 +62,19 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   TYRIAN_DIR="app0:data"
 )
 
+# Short commit id for the title screen. The workflow and build.ps1 pass
+# -DOPENTYRIAN_COMMIT=...; otherwise ask git. Empty -> define omitted and the
+# game hides the commit line. (Compile-time define only -- no VPK metadata.)
+if(NOT DEFINED OPENTYRIAN_COMMIT)
+  execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}/.." rev-parse --short HEAD
+                  OUTPUT_VARIABLE OPENTYRIAN_COMMIT
+                  OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET)
+endif()
+if(OPENTYRIAN_COMMIT)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE OPENTYRIAN_COMMIT="${OPENTYRIAN_COMMIT}")
+endif()
+
 # SDL2 + its Vita stub dependency chain (mirrors sdl2.pc's Libs), plus the threading stub SDL
 # uses and libm. Order matters for the static GNU linker: SDL2 before its Sce* stubs.
 target_link_libraries(${PROJECT_NAME}

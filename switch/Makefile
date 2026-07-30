@@ -21,8 +21,16 @@ include $(DEVKITPRO)/libnx/switch_rules
 # Metadata baked into the .nro (shown in the Homebrew Launcher)
 #---------------------------------------------------------------------------------
 APP_TITLE   := OpenTyrian 2000 Engaged
-APP_AUTHOR  := OpenTyrian Team (widescreen fork)
-APP_VERSION := 2.1
+APP_AUTHOR  := wlfn / OpenTyrian Team
+
+# The version shown in the Homebrew Launcher comes from src/opentyrian_version.h
+# ("Engaged v1.1.0" -> "1.1.0"), so bumping the header bumps this too. Numeric
+# part only: the NACP display_version field holds at most 15 chars + NUL.
+# $(TOPDIR) resolves to this directory in both phases of the recursive build.
+APP_VERSION := $(shell sed -n 's/.*OPENTYRIAN_VERSION *"\([^"]*\)".*/\1/p' $(TOPDIR)/../src/opentyrian_version.h | sed 's/.*[vV]//')
+ifeq ($(strip $(APP_VERSION)),)
+    APP_VERSION := 0.0.0
+endif
 
 #---------------------------------------------------------------------------------
 # TARGET   is the output filename (opentyrian2000.nro / .elf)
@@ -70,6 +78,14 @@ CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsig
 # (desktop builds pass it too). On Switch the sdmc:/ and romfs: paths prepended in
 # file.c take priority, so this is only a last-resort placeholder.
 CFLAGS += $(INCLUDE) -D__SWITCH__ -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 --cflags)
+
+# Short commit id for the title screen. CI passes OPENTYRIAN_COMMIT in the
+# environment (git can be absent inside the container); local builds ask git.
+# Empty -> the define is omitted and the game hides the commit line.
+OPENTYRIAN_COMMIT ?= $(shell git -C $(TOPDIR)/.. rev-parse --short HEAD 2>/dev/null)
+ifneq ($(strip $(OPENTYRIAN_COMMIT)),)
+    CFLAGS += -DOPENTYRIAN_COMMIT='"$(OPENTYRIAN_COMMIT)"'
+endif
 
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
