@@ -237,6 +237,7 @@ typedef enum
 extern int bossBarStyle;    // BossBarStyle
 extern int bossBarLayout;   // BossBarLayout
 extern int bossBarTwoMode;  // BossBarTwoMode
+extern bool armorAlarm;     // low-armor WARNING siren (Setup > Sound)
 extern bool debugMode;      // gates the debug menu and debug level select
 extern bool extraParallax;  // wider all-layer horizontal parallax (strafe sweeps the full map width); off = original amplitude
 extern bool mirroredLayers; // over-panned layer edges continue as a flipped mirror image (both parallax modes)

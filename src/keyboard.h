@@ -43,19 +43,27 @@ extern bool windowHasFocus;
 extern bool new_text;
 extern char last_text[SDL_TEXTINPUTEVENT_TEXT_SIZE];
 
-// Touchscreen ship-control sensitivity (Nintendo Switch). Slider range [0, TOUCH_SENS_MAX];
-// the bar's middle (TOUCH_SENS_DEFAULT) reproduces the classic 1:1 finger-to-ship feel, more
-// bars = higher sensitivity, fewer = lower. Exposed on every platform so the shared setup and
-// pause-menu code links; only the Switch touch handler actually reads it. Persisted in config.
-#define TOUCH_SENS_MAX 255
-#define TOUCH_SENS_DEFAULT 128
+// Ship-control sensitivity: scales the consoles' touch-drag or the desktop relative mouse
+// motion. Slider range [0, SHIP_SENS_MAX]; the bar's middle (SHIP_SENS_DEFAULT) reproduces
+// the classic 1:1 feel, more bars = higher sensitivity, fewer = lower. One "Sensitivity"
+// row per build; only the help text and config key are per-platform. Persisted in config.
+#define SHIP_SENS_MAX 255
+#define SHIP_SENS_DEFAULT 128
 // Colour banks for the slider's middle-value marker bar: bank 9 is a dark->light blue ramp
 // identical across the setup/shop palettes. The marker draws dark blue while the fill is
 // below the neutral middle slot and bright blue at/above it, keyed to the drawn bar counts
 // so it flips exactly on the middle bar. Tunable.
-#define TOUCH_SENS_MARK_COL     144  // bright blue: the fill has reached the middle slot
-#define TOUCH_SENS_MARK_COL_DIM 136  // dark blue:   the fill is still below the middle slot
-extern int touch_sensitivity;
+#define SHIP_SENS_MARK_COL     144  // bright blue: the fill has reached the middle slot
+#define SHIP_SENS_MARK_COL_DIM 136  // dark blue:   the fill is still below the middle slot
+#define SHIP_SENS_NAME "Sensitivity"
+#if defined(__SWITCH__) || defined(__vita__)
+#define SHIP_SENS_HELP "Touchscreen ship control sensitivity."
+#define SHIP_SENS_CFG  "touch_sensitivity"
+#else
+#define SHIP_SENS_HELP "Mouse ship control sensitivity."
+#define SHIP_SENS_CFG  "mouse_sensitivity"
+#endif
+extern int ship_sensitivity;
 
 void wait_input(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);
 void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick);

@@ -39,7 +39,7 @@ movement to reduce input latency. This movement is disabled for demos and
 network games.
 
 Sub-pixel rendering draws the playfield internally at up to 5x scale. This makes
-slow scrolling smoother without changing the simulation. 
+slow scrolling smoother without changing the simulation.
 
 ### Endless mode
 
@@ -88,7 +88,7 @@ opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
 ```
 
 `HOSTNAME` is the other player's address. `NUM` is `1` or `2`. The game uses UDP
-port 1333.
+port 1333. 
 
 Network play is inherited from OpenTyrian2000 and is not regularly tested.
 

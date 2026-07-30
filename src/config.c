@@ -218,8 +218,9 @@ JE_word editorLevel;   /*Initial value 800*/
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
 int bossBarStyle   = BOSS_BAR_ENHANCED;
-int bossBarLayout  = BOSS_BAR_RIGHT;
-int bossBarTwoMode = BOSS_BAR_TWO_STACKED;
+int bossBarLayout  = BOSS_BAR_TOP;
+int bossBarTwoMode = BOSS_BAR_TWO_SPLIT;
+bool armorAlarm    = true;  // low-armor WARNING siren (Setup > Sound)
 /* When off: debug menu and debug level select hidden; buy/sell and pause menus
    keep their stock layout. */
 bool debugMode     = true;
@@ -386,12 +387,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "show_fps", &show_fps_enabled);
 		show_fps = (show_fps_enabled != 0);
 
-#if defined(__SWITCH__) || defined(__vita__)
-		// Touchscreen ship-control sensitivity slider (Setup > Sound and the pause menu).
-		config_get_int_option(section, "touch_sensitivity", &touch_sensitivity);
-		if (touch_sensitivity < 0 || touch_sensitivity > TOUCH_SENS_MAX)
-			touch_sensitivity = TOUCH_SENS_DEFAULT;
-#endif
+		// Ship-control sensitivity slider: touch on the consoles, mouse on desktop.
+		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
+		if (ship_sensitivity < 0 || ship_sensitivity > SHIP_SENS_MAX)
+			ship_sensitivity = SHIP_SENS_DEFAULT;
 
 		// Sub-pixel supersampling: 0 = Auto, 1 = off, 2..5 fixed.
 		config_get_int_option(section, "render_supersample", &render_supersample);
@@ -449,6 +448,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "boss_bar_style", &bossBarStyle);
 		config_get_int_option(section, "boss_bar_layout", &bossBarLayout);
 		config_get_int_option(section, "boss_bar_two_mode", &bossBarTwoMode);
+
+		int armor_alarm_enabled = armorAlarm ? 1 : 0;
+		config_get_int_option(section, "armor_alarm", &armor_alarm_enabled);
+		armorAlarm = (armor_alarm_enabled != 0);
 
 		int debug_mode_enabled = debugMode ? 1 : 0;
 		config_get_int_option(section, "debug_mode", &debug_mode_enabled);
@@ -572,9 +575,9 @@ bool load_opentyrian_config(void)
 		if (bossBarStyle < BOSS_BAR_CLASSIC || bossBarStyle > BOSS_BAR_ENHANCED)
 			bossBarStyle = BOSS_BAR_ENHANCED;
 		if (bossBarLayout < BOSS_BAR_TOP || bossBarLayout > BOSS_BAR_RIGHT)
-			bossBarLayout = BOSS_BAR_RIGHT;
+			bossBarLayout = BOSS_BAR_TOP;
 		if (bossBarTwoMode < BOSS_BAR_TWO_TOGETHER || bossBarTwoMode > BOSS_BAR_TWO_STACKED)
-			bossBarTwoMode = BOSS_BAR_TWO_STACKED;
+			bossBarTwoMode = BOSS_BAR_TWO_SPLIT;
 		if (enemyBarLayout < ENEMY_BAR_HORIZONTAL || enemyBarLayout > ENEMY_BAR_VERTICAL)
 			enemyBarLayout = ENEMY_BAR_HORIZONTAL;
 		if (enemyBarPosition < ENEMY_BAR_POS_BOTTOM || enemyBarPosition > ENEMY_BAR_POS_CENTER)
@@ -684,9 +687,7 @@ bool save_opentyrian_config(void)
 
 	config_set_int_option(section, "show_fps", show_fps ? 1 : 0);
 
-#if defined(__SWITCH__) || defined(__vita__)
-	config_set_int_option(section, "touch_sensitivity", touch_sensitivity);
-#endif
+	config_set_int_option(section, SHIP_SENS_CFG, ship_sensitivity);
 
 	config_set_int_option(section, "render_supersample", render_supersample);
 
@@ -728,6 +729,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "boss_bar_style", bossBarStyle);
 	config_set_int_option(section, "boss_bar_layout", bossBarLayout);
 	config_set_int_option(section, "boss_bar_two_mode", bossBarTwoMode);
+	config_set_int_option(section, "armor_alarm", armorAlarm ? 1 : 0);
 	config_set_int_option(section, "debug_mode", debugMode ? 1 : 0);
 	config_set_int_option(section, "hang_timeout", crashlog_get_hang_timeout());
 	config_set_int_option(section, "enemy_bars", enemyBars ? 1 : 0);
