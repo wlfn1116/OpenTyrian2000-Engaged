@@ -117,6 +117,13 @@ sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
 make
 ```
 
+Running a Linux build (including the release tarball) only needs the SDL2
+runtime libraries; package names vary by distro:
+
+```sh
+sudo apt install libsdl2-2.0-0 libsdl2-net-2.0-0
+```
+
 GitHub Actions builds the Windows, Linux, Switch, and Vita targets on every
 push. The newest master build is always available from the
 [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest);
