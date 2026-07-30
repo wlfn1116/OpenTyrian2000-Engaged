@@ -96,10 +96,27 @@ jobs:
           Copy-Item SDL2.dll, SDL2_net.dll, libfluidsynth-3.dll pkg\
           7z a -mx=9 OpenTyrian2000-Engaged-Win64.7z .\pkg\*
 
+      # Boot the packaged game headless: SDL's dummy video/audio drivers let it
+      # load the data and run the attract demo with no display. Surviving the
+      # timeout proves init + main loop; a crash exits earlier and fails here,
+      # blocking the uploads below.
+      - name: Smoke test (headless)
+        run: |
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $p = Start-Process -FilePath .\pkg\OpenTyrian2000-Engaged-Win64.exe -WorkingDirectory .\pkg -PassThru
+          if ($p.WaitForExit(15000)) { throw "game exited early (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host 'survived 15s headless'
+
+      # Artifacts are always stored zip-wrapped (GitHub's format, not optional);
+      # compression-level 0 keeps the wrapper a plain container so the already-
+      # compressed archive inside is not compressed a second time.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Win64
           path: OpenTyrian2000-Engaged-Win64.7z
+          compression-level: 0
 
       # Not part of the release archive, but kept for decoding crash logs.
       - uses: actions/upload-artifact@v6
@@ -134,10 +151,25 @@ jobs:
           cp opentyrian2000 stage/opentyrian2000/
           tar -C stage -czf OpenTyrian2000-Engaged-Linux-x86_64.tar.gz opentyrian2000
 
+      # Same headless boot as the Windows job: timeout kills the still-running
+      # game after 15s (exit 124 = pass); any crash exits earlier and fails.
+      - name: Smoke test (headless)
+        working-directory: stage/opentyrian2000
+        run: |
+          status=0
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 15s ./opentyrian2000 || status=$?
+          test "$status" -eq 124 || { echo "game exited early (status $status)"; exit 1; }
+          echo 'survived 15s headless'
+
+      # The tar.gz layer is load-bearing: a bare directory in the artifact zip
+      # would lose the binary's exec bit (zip has no POSIX permissions), and the
+      # release jobs attach this exact file. The Actions-tab download is zip-
+      # wrapped either way (GitHub's format); level 0 avoids double compression.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Linux
           path: OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+          compression-level: 0
 
   switch:
     name: Nintendo Switch
@@ -198,10 +230,12 @@ jobs:
           cp data/* "$stage/data/"
           cd "$stage" && cmake -E tar cf "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Vita.vpk" --format=zip .
 
+      # The VPK is itself a zip; level 0 avoids compressing it a second time.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Vita
           path: OpenTyrian2000-Engaged-Vita.vpk
+          compression-level: 0
 
   # Rolling pre-release: every master build force-moves the `latest` tag to the
   # built commit and refreshes the pre-release's assets in place. Tag pushes made
