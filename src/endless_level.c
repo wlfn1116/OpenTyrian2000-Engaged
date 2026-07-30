@@ -182,8 +182,10 @@ static void endlessPickLevelMusic(void)
 	if (endlessLastSong != 0 && endlessLastSongDepth == endlessRunDepth - 1)
 		prev = endlessLastSong;
 	const JE_byte nextPinned = endlessMilestoneSong(endlessMilestoneKindOfZone(zone + 1));
-	// Avoid the next milestone's outpost warning track.
-	const JE_byte nextShop = (nextPinned != 0) ? (JE_byte)ENDLESS_MILESTONE_SHOP_SONG_LVL : 0;
+	// Avoid the next milestone's outpost track (the credits-zone outpost plays the finale send-off).
+	const JE_byte nextShop = (nextPinned == 0) ? 0
+	                       : (zone + 1 == ENDLESS_CREDITS_ZONE) ? (JE_byte)ENDLESS_FINALE_SHOP_SONG_LVL
+	                       : (JE_byte)ENDLESS_MILESTONE_SHOP_SONG_LVL;
 
 	JE_byte s = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
 	for (int guard = 0; guard < 6 && (s == prev || s == nextPinned || s == nextShop); ++guard)
