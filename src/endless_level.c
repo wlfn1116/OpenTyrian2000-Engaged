@@ -291,6 +291,13 @@ void endlessResetZoneEffects(void)
 	endlessComboKills = 0;
 }
 
+// Dormant dispenser bases: an independent, seed-repeatable coin per zone (own
+// salt, so it consumes nothing from the other level-start phases).
+bool endlessDispenserBaseRoll(void)
+{
+	return (endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x70000000) & 1) != 0;
+}
+
 // Campaign debug effects use gameplay RNG because campaigns have no zone phase.
 void endlessCampaignLevelStart(void)
 {

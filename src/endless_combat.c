@@ -280,6 +280,14 @@ int endlessExtraEnemyShots(void)
 	return extra;
 }
 
+// Which side the tide fan leans toward right now: held for one second of game
+// time (35 sim ticks), then flipped, so every volley in that second sweeps the
+// same way.
+int endlessFanPhaseNow(void)
+{
+	return (endlessZoneTicks / 35) & 1;
+}
+
 bool endlessTideBoonsUnlocked(void)
 {
 	return endlessTideExtraShotsRaw() > 0;

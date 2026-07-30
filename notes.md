@@ -263,7 +263,8 @@ Useful modifier-specific constraints:
 - Martyrdom uses a fixed, symmetric sprite and fires once per logical enemy.
 - Seeker state belongs to the projectile and permits one delayed correction.
 - Rising-tide shots clone whole enemy volleys because `multi` entries may be
-  tiles of one projectile or beam. Single extra volleys alternate fan sides.
+  tiles of one projectile or beam. The fan lean (`endlessFanPhaseNow`) holds one
+  side for a second of zone time, then flips, so a burst reads as one sweep.
 - Static must combine a power drain with a recharge lockout; generator recovery
   otherwise hides the drain.
 - Retaliation refreshes one timer. It does not stack.
@@ -543,6 +544,78 @@ reachable and prevents culling. Detection uses a full enemy-pool scan rather tha
 the draw-loop visibility count.
 
 Crash logs include parked-enemy and stall information for this path.
+
+## Dormant dispenser bases
+
+Enemy data 80-83 form the 2x2 "orb" base (event type 12, all four quadrants
+share one linknum). Each piece carries a 17-frame palindromic `egraphic` cycle
+with `animate=2` (play once per fire/launch), but ships with no turrets, no
+launcher, and no arming or animate event in any level - the cycle is unreachable
+in unmodified data. The base appears only in CAMANIS (episode 3, twice) and
+ICESECRET (episode 4 file 20, "Secret Camanis research base", sixteen times);
+the records are identical in all five episodes' item data. The single-tile
+cousin, enemy 86, is the working model: same `animate=2` hatch with
+`elaunchfreq=40 / elaunchtype=463` (the heavy orb, art bank 8).
+
+The restore (`dispenserBasesActive`, set per level in `JE_main`) gives all
+four pieces `launchfreq=40` in `JE_makeEnemy` so their launch countdowns stay
+in sync (created the same tick) and the whole hatch opens as one; `launchtype`
+stays 0 (an engine-supported animation-only path - the launch routine flips
+`aniactive` before the `launchtype` check), so the launch trigger only starts
+the animation.
+
+The volley itself comes from `dispenser_fire`, called from the animation
+advance when piece 80 reaches **frame 9** - the one frame where the top hatch
+stands open on its lit eye and the orb below flares white. Firing on the art's
+own glow frame, not on the launch tick, is what puts muzzle and animation in
+step; the launch tick draws a closed hatch. The call sits inside the animation
+advance so it lands exactly once per cycle even if the enemy leaves the draw
+window, and it skips iced or dying bases.
+
+- Eye: one weapon-59 shot (the same player-aimed round enemy 84's turret
+  fires). Difficulty aim bonus, two-player targeting, and the endless
+  seeker/speed/damage/champion scaling all mirror the turret path, and in
+  endless the rising-tide extra shots fan from it like any other volley.
+- Orb: a 1x4 lightning column - four stacked 12x14 enemy shots, 14px apart,
+  straight down at speed 10, damage = weapon 59's, with `S_WEAPON_15` as its
+  own firing sound. The segments are `spriteSheet8` (player shots) rows
+  210/229/248/267 top-to-bottom, each with four consecutive frames, so the
+  stock `sgr + animate` draw path with `animax=4` animates the bolt with no
+  renderer change - and because that sheet is always resident, the bolt works
+  in any level regardless of which enemy banks the level loaded. Same-tick
+  spawns keep all four segments on the same frame, so the column always
+  composes a whole authored bolt. Sprites and sound both come from weapons
+  238-242, which fire this exact tile set as a `multi=4` composite; grepping
+  the weapon table for a sprite id is the way to find its authentic sound.
+
+Both emitters take the rising tide, but the bolt takes it as a composite: its
+extra shots accumulate in turret slot 0's `eshotextracredit` and only cash out
+as WHOLE extra bolts, exactly as the turret path treats a `multi` weapon -
+a partial bolt is a broken sprite, not a weaker one. The base has no authored
+turrets, so that credit slot is otherwise dead. Each tide bolt leans off the
+vertical by the shared `endlessFanPhaseNow` fan; unlike the turret path, which
+can only rotate a clone's velocity, this rotates the segment offsets too, so a
+leaning bolt stays a straight line along its own travel instead of shearing.
+A pool-space cap ahead of the loop keeps a bolt from ever spawning partially.
+
+Assembly geometry (piece 80's `ex/ey` frame): art spans `ex-6..ex+42` by
+`ey-35..ey+21`. Both emitters sit on the art's own centre line, assembly x 22
+= `ex+16` (2px left of the geometric centre): eye at `ey-27`, and the orb's
+white flare across `ey+4..ey+8` (the idle blue orb sits lower, `ey+8..ey+13`).
+The bolt's top edge starts at `ey+4`, level with the top of the flare.
+Sprites blit from their top-left, so a 12x14 shot centres on an emitter at
+`(emitter - 6, emitter - 7)`; vanilla turret shots follow the same rule, which
+is why enemy 84 spawns its shot at the enemy's raw `ex/ey`.
+
+Campaign reads the Game Tweaks toggle (`restoreBaseDispensers`); Endless
+ignores it and derives a 50/50 per zone from `endlessSplitMixSeed` salt
+`depth*2 + 0x70000000` (salts `0x40/0x50/0x60000000` are taken by light cone,
+elites, and gravity).
+
+Other authored-but-idle hatch animations exist (GYGES sky hatches 158/159/161,
+DELIANI base 239, and id 529 which is spawned nowhere); several lookalikes
+(BUBBLES 465/467, FLEET/STATION 732/733, EYESPY 339/340) are armed at runtime
+by event 31 and do animate. Only 80-83 are restored.
 
 ## General constraints
 

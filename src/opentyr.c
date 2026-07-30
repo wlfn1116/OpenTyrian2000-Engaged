@@ -364,7 +364,7 @@ typedef enum
 	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_EXTRA_SPARKS,
 	MENU_ITEM_XMAS,
-	MENU_ITEM_WEAPON_TWEAKS,
+	MENU_ITEM_GAME_TWEAKS,
 	MENU_ITEM_ZICA_LASER,
 	MENU_ITEM_ZICA_BASE,
 	MENU_ITEM_ZICA_LENGTH,
@@ -389,6 +389,7 @@ typedef enum
 	MENU_ITEM_EPDIFF_DRAGON,
 	MENU_ITEM_EPDIFF_MODE,          // shared "Version:" row inside those submenus (see currentDiffWeapon)
 	MENU_ITEM_CHARGE_LASER,
+	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
 	MENU_ITEM_CUSTOM_WEAPONS,
 	MENU_ITEM_CUSTOM_CREATOR,
@@ -567,6 +568,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		chargeLaserCannon = !chargeLaserCannon;
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_BASE_DISPENSERS:
+		restoreBaseDispensers = !restoreBaseDispensers;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_SIDEKICK_AUTOFIRE:
 		cycleSidekickAutofire(dir);
 		JE_playSampleNum(S_CURSOR);
@@ -602,7 +607,7 @@ typedef enum
 	MENU_BOSS_BARS,
 	MENU_ENEMY_BARS,
 	MENU_GAUGE_GRADIENTS,
-	MENU_WEAPON_TWEAKS,
+	MENU_GAME_TWEAKS,
 	MENU_ZICA_LASER,
 	MENU_SUPERSPARKS,
 	MENU_SPARKS_MEGA_PULSE,
@@ -707,19 +712,20 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_ENEMY_BARS_MENU, "Enemy Bars...", "Health bars on enemies you've damaged." },
 				{ MENU_ITEM_BOSS_BARS, "Boss Health Bars...", "Style and layout of the boss health bars." },
 				{ MENU_ITEM_GAUGE_GRADS_MENU, "Gauge Gradients...", "Gradient direction of each HUD gauge." },
-				{ MENU_ITEM_WEAPON_TWEAKS, "Weapon Tweaks...", "Zica Laser buff and the Charge-Laser Cannon." },
+				{ MENU_ITEM_GAME_TWEAKS, "Game Tweaks...", "Weapon tweaks and restored cut behaviors." },
 				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
 				{ MENU_ITEM_CUSTOM_CREATOR, "Custom Weapon Creator...", "Design your own weapon with a live preview." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
 		},
-		[MENU_WEAPON_TWEAKS] = {
-			.header = "Weapon Tweaks",
+		[MENU_GAME_TWEAKS] = {
+			.header = "Game Tweaks",
 			.items = {
 				{ MENU_ITEM_SUPERSPARKS, "Superspark Weapons...", "Weapons whose spark trails differ per episode." },
 				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other weapons that differ between Ep 1-3 and Ep 4-5." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
+				{ MENU_ITEM_BASE_DISPENSERS, "Base Dispensers:", "Wake dormant dispenser bases; Endless rolls 50/50." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
@@ -1151,6 +1157,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, chargeLaserCannon ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_BASE_DISPENSERS:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, restoreBaseDispensers ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_SIDEKICK_AUTOFIRE:
 			{
 				// Off/On/Charged are the reachable modes; "Fast" only shows if the
@@ -1516,12 +1526,12 @@ static bool runOptionsMenu(MenuId startMenu)
 					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}
-				case MENU_ITEM_WEAPON_TWEAKS:
+				case MENU_ITEM_GAME_TWEAKS:
 				{
 					JE_playSampleNum(S_SELECT);
 
-					menuParents[MENU_WEAPON_TWEAKS] = currentMenu;
-					currentMenu = MENU_WEAPON_TWEAKS;
+					menuParents[MENU_GAME_TWEAKS] = currentMenu;
+					currentMenu = MENU_GAME_TWEAKS;
 					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}
@@ -1910,6 +1920,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_CHARGE_LASER:
 				{
 					chargeLaserCannon = !chargeLaserCannon;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_BASE_DISPENSERS:
+				{
+					restoreBaseDispensers = !restoreBaseDispensers;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

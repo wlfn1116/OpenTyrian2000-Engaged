@@ -343,6 +343,7 @@ extern int  zicaLaserLength;    // ZICA_LEN_*  : Lv11 shot length
 extern bool zicaLaserLock;      // Length=Long: lock the side beams to the ship (like the Lv10 beam)
 extern bool zicaLaserBuff;      // also fire the Lv10 beam alongside the Lv11 shots
 extern bool chargeLaserCannon;  // re-add the cut DOS "Charge-Laser Cannon" sidekick to shops
+extern bool restoreBaseDispensers;  // wake the dormant dispenser bases (enemy 80-83); Endless ignores it and rolls 50/50 per zone
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 extern Config opentyrian_config;
