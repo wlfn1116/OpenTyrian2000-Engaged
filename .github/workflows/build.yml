@@ -68,7 +68,7 @@ jobs:
           retention-days: 1
 
   windows:
-    name: Windows x64
+    name: Windows x86-64
     needs: data
     # windows-latest is the VS 2026 image, which provides the v145 toolset the
     # project files use. (VS 2026 no longer ships v143, so do not pin older.)
