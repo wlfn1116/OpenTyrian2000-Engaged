@@ -1708,13 +1708,12 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 		int dmg = (boltDmg * dpct + 50) / 100;
 		boltDmg = dmg > 255 ? 255 : dmg;
 
-		// Rising tide: the bolt is a four-tile composite, so extra shots accumulate into
-		// WHOLE extra bolts the way the turret path treats a multi weapon -- half a bolt
-		// would just be a broken sprite. Turret slot 0's shot credit carries the
-		// remainder; this base has no authored turrets, so nothing else touches it.
-		const int credit = enemy[i].eshotextracredit[0] + endlessExtraEnemyShots();
-		bolts += credit / 4;
-		enemy[i].eshotextracredit[0] = (JE_byte)(credit % 4);
+		// Rising tide: one whole extra bolt per extra shot, so the column thickens at the
+		// same rate the aimed shot above it multiplies. Counting the four segments against
+		// that budget instead would starve the bolt -- a base rarely lives long enough to
+		// bank four extra shots, which is why this must not divide the tide by the tile
+		// count the way the turret path does.
+		bolts += endlessExtraEnemyShots();
 	}
 
 	// Never emit a partial bolt: cap on the whole bolts the pool can still hold.
@@ -2970,7 +2969,7 @@ start_level_first:
 		endlessPreloadBanks();  // load starting sprite banks now so early spawns aren't invisible
 
 	// Dormant dispenser bases: the campaign obeys the Game Tweaks toggle; Endless
-	// ignores it and flips a seed-stable coin every zone.
+	// ignores it and asks the zone instead.
 	dispenserBasesActive = endlessMode ? endlessDispenserBaseRoll() : restoreBaseDispensers;
 
 	memset(SFCurrentCode,    0, sizeof(SFCurrentCode));
