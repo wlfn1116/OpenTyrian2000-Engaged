@@ -1363,12 +1363,26 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 // the tick position by up to one tick of motion. Equals the interpolation snap threshold.
 enum { ENEMY_DRAW_MARGIN = 40 };
 
+// Does a fully opaque 12x14 sprite cell drawn at (x, y) reach into the window? Same inclusive-wx1 /
+// exclusive-wy1 convention as sprite2_has_pixel_in_window, so the blank-frame fallback below lands
+// on exactly the cells that function would have tested.
+static bool sprite_cell_in_window(int x, int y, int wx0, int wx1, int wy0, int wy1)
+{
+	return x + 11 >= wx0 && x <= wx1 && y + 13 >= wy0 && y < wy1;
+}
+
 // True if any opaque pixel of enemy i's CURRENT animation frame would land inside the visible
 // playfield, computed purely from stored logic state -- the SAME fields the collision reads
 // (ex + mapoffset, ey, enemycycle, size). It never consults the draw, so the kill-gate verdict
 // can't lag or desync the hit test the way a draw-time flag would on the "over" layers (which blit
 // AFTER the shot loop), and it tracks enemies that grow through their animation. Mirrors
 // blit_enemy's frame-index selection and the size==1 four-cell layout / vertical draw gates.
+//
+// A frame with NO art at all is the one case the pixel test cannot answer: levels place blank-sprite
+// enemies over structures the MAP draws (BRAINIAC's walls are enemy 519, an empty 2x2), and a pure
+// pixel test would leave those permanently unhittable while they still ram the player. When every
+// gated cell is blank, fall back to the frame's nominal footprint -- restoring the pre-gate hit
+// behaviour while keeping the on-playfield requirement the gate exists for.
 static bool enemy_has_visible_pixel(unsigned int i)
 {
 	if (enemy[i].sprite2s == NULL)
@@ -1393,18 +1407,23 @@ static bool enemy_has_visible_pixel(unsigned int i)
 			{ -6, -7,  0, topRow }, {  6, -7,  1, topRow },
 			{ -6,  7, 19, botRow }, {  6,  7, 20, botRow },
 		};
+		bool anyArt = false, blankCellOnScreen = false;
 		for (int c = 0; c < 4; c++)
 		{
 			if (!cell[c].on)
 				continue;
+			const int cx = baseX + cell[c].dx, cy = baseY + cell[c].dy;
 			const unsigned int index = (unsigned int)gr + cell[c].off;
 			if (index == 0 || (size_t)index * sizeof(Uint16) > enemy[i].sprite2s->size)
 				continue;
-			if (sprite2_has_pixel_in_window(baseX + cell[c].dx, baseY + cell[c].dy,
-			                                *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1))
+			if (sprite2_has_pixel_in_window(cx, cy, *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1))
 				return true;
+			if (sprite2_is_blank(*enemy[i].sprite2s, index))
+				blankCellOnScreen |= sprite_cell_in_window(cx, cy, wx0, wx1, wy0, wy1);
+			else
+				anyArt = true;  // a drawn cell exists: its pixels alone decide
 		}
-		return false;
+		return !anyArt && blankCellOnScreen;
 	}
 	else  // normal enemy: a single cell, drawn only above the same lower ey bound
 	{
@@ -1413,7 +1432,10 @@ static bool enemy_has_visible_pixel(unsigned int i)
 		const unsigned int index = gr;  // sprite_offset 0
 		if (index == 0 || (size_t)index * sizeof(Uint16) > enemy[i].sprite2s->size)
 			return false;
-		return sprite2_has_pixel_in_window(baseX, baseY, *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1);
+		if (sprite2_has_pixel_in_window(baseX, baseY, *enemy[i].sprite2s, index, wx0, wx1, wy0, wy1))
+			return true;
+		return sprite2_is_blank(*enemy[i].sprite2s, index) &&
+		       sprite_cell_in_window(baseX, baseY, wx0, wx1, wy0, wy1);
 	}
 }
 

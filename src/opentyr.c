@@ -126,8 +126,9 @@ static const char* getFPSPickerItem(size_t i, char* buffer, size_t bufferSize)
 /* ---- Graphics: sub-pixel supersampling picker ---- */
 
 // Index maps directly onto render_supersample: 0 = Auto (follow the scaler),
-// 1 = Off, 2..5 = fixed NxN. Keep the last entry == RENDER_SUPERSAMPLE_MAX.
-static const char *const supersampleNames[] = { "Auto", "Off", "2x", "3x", "4x", "5x" };
+// 1 = Off, 2..5 = fixed NxN, 6 = Native (follow the display; see video.h). Keep
+// "5x" at RENDER_SUPERSAMPLE_MAX and "Native" at RENDER_SUPERSAMPLE_NATIVE.
+static const char *const supersampleNames[] = { "Auto", "Off", "2x", "3x", "4x", "5x", "Native" };
 
 static size_t getSupersamplePickerItemsCount(void) { return COUNTOF(supersampleNames); }
 static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t bufferSize)
@@ -682,7 +683,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SCALER, "Scaler:", "Change the pixel art scaling algorithm.", getScalerPickerItemsCount, getScalerPickerItem },
 								{ MENU_ITEM_SCALING_MODE, "Scaling Mode:", "Change the scaling mode.", getScalingModePickerItemsCount, getScalingModePickerItem },
 								{ MENU_ITEM_SMOOTH_MOTION, "Smooth Motion:", "Interpolate motion for smooth high-refresh play." },
-								{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Auto matches the scaler.", getSupersamplePickerItemsCount, getSupersamplePickerItem },
+								{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.", getSupersamplePickerItemsCount, getSupersamplePickerItem },
 								{ MENU_ITEM_SS_FILTER, "Filter:", "Sub-pixel filter: Sharp, Smooth, or None (raw).", getSSFilterPickerItemsCount, getSSFilterPickerItem },
 								{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
 								{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames when VSync is off (0 = uncapped).", getFPSPickerItemsCount, getFPSPickerItem },
@@ -989,8 +990,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 
 			case MENU_ITEM_SUPERSAMPLE:
-				if (render_supersample == 0)
-					snprintf(buffer, sizeof(buffer), "Auto (%dx)", effective_supersample());
+				// Auto and Native both resolve at present time; show what they land on.
+				if (render_supersample == 0 || render_supersample == RENDER_SUPERSAMPLE_NATIVE)
+					snprintf(buffer, sizeof(buffer), "%s (%dx)",
+					         supersampleNames[render_supersample], effective_supersample());
 				else
 					snprintf(buffer, sizeof(buffer), "%s", supersampleNames[render_supersample]);
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, buffer, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);

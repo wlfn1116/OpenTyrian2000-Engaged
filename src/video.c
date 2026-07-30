@@ -54,12 +54,36 @@ int render_supersample = 0;
 int render_supersample_filter = SS_FILTER_NONE;
 
 static void update_native_scaler_dims(void);
+static void native_output_size(int *out_w, int *out_h);
+
+// Supersample factor that lands one sub-pixel sample on every screen pixel of the
+// presented image. The output/logical ratio is fractional, so round it UP: the buffer
+// covers every screen pixel and the present pass averages the slight overshoot back
+// down to the exact size. Shared by the Native sub-pixel setting (uncapped, up to
+// RENDER_SUPERSAMPLE_LIMIT) and by Auto under the Native scaler (which then takes the
+// ordinary RENDER_SUPERSAMPLE_MAX ceiling with every other Auto case).
+#ifndef __vita__  // unused there: the Vita forces 1x below
+static int display_supersample_factor(void)
+{
+	int w = vga_width, h = vga_height;
+	native_output_size(&w, &h);
+
+	const int fw = (w + vga_width - 1) / vga_width;
+	const int fh = (h + vga_height - 1) / vga_height;
+	int factor = fw > fh ? fw : fh;
+
+	if (factor < 1)
+		factor = 1;
+	else if (factor > RENDER_SUPERSAMPLE_LIMIT)
+		factor = RENDER_SUPERSAMPLE_LIMIT;
+	return factor;
+}
+#endif
 
 // Resolve the configured supersample factor: Auto follows the scaler's integer
 // factor (2x/Scale2x/hq2x -> 2, ...), so the sub-pixel buffer is exactly the
-// resolution the user already chose to run the game at. The Native scaler's output
-// ratio is fractional; round it UP so the sub-pixel buffer covers every screen
-// pixel — the present pass averages the slight overshoot back down to exact size.
+// resolution the user already chose to run the game at. Native follows the display
+// instead, and is the one setting the RENDER_SUPERSAMPLE_MAX ceiling doesn't bind.
 int effective_supersample(void)
 {
 	if (!smoothMotion)
@@ -73,15 +97,13 @@ int effective_supersample(void)
 	return 1;
 #else
 	int factor = render_supersample;
+	if (factor == RENDER_SUPERSAMPLE_NATIVE)
+		return display_supersample_factor();
+
 	if (factor == 0)
 	{
 		if (scaler_is_native(scaler))
-		{
-			update_native_scaler_dims();
-			const int fw = (scalers[scaler].width + vga_width - 1) / vga_width;
-			const int fh = (scalers[scaler].height + vga_height - 1) / vga_height;
-			factor = fw > fh ? fw : fh;
-		}
+			factor = display_supersample_factor();
 		else
 			factor = scalers[scaler].width / vga_width;
 
@@ -538,47 +560,56 @@ static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float as
 	}
 }
 
-// The Native scaler's output size is not fixed: it tracks the window so the software
-// scaler emits exactly one texel per screen pixel (in fullscreen, the exact size of
-// the screen) and the final present never rescales. Refresh the table entry from the
-// live window size and scaling mode; cheap, so callers run it before any use of the
-// entry's dimensions.
+// Size the presented image actually occupies on screen: the logical screen fitted into
+// the live window under the current scaling mode. This is what the Native scaler renders
+// at (one texel per screen pixel, so the final present never rescales) and what the Native
+// sub-pixel factor is measured against. Falls back to the logical size before the window
+// exists.
+static void native_output_size(int *out_w, int *out_h)
+{
+	SDL_Rect r = { 0, 0, vga_width, vga_height };
+
+	if (main_window != NULL)
+	{
+		int win_w, win_h;
+		SDL_GetWindowSize(main_window, &win_w, &win_h);
+
+		const float pixel_aspect = (float)vga_width / (float)vga_height;
+
+		switch (scaling_mode)
+		{
+		case SCALE_INTEGER:
+			while (r.w + vga_width <= win_w && r.h + vga_height <= win_h)
+			{
+				r.w += vga_width;
+				r.h += vga_height;
+			}
+			break;
+		case SCALE_CLASSIC_PAR:
+			fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect * (5.f / 6.f));
+			break;
+		case SCALE_CENTER:  // no fixed size to center on; fill like Widescreen
+		case SCALE_WIDESCREEN:
+		default:
+			fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect);
+			break;
+		}
+	}
+
+	*out_w = r.w < vga_width ? vga_width : r.w;
+	*out_h = r.h < vga_height ? vga_height : r.h;
+}
+
+// Refresh the Native scaler's table entry from the live output size; cheap, so callers
+// run it before any use of the entry's dimensions.
 static void update_native_scaler_dims(void)
 {
 	if (main_window == NULL)
 		return;
 
-	int win_w, win_h;
-	SDL_GetWindowSize(main_window, &win_w, &win_h);
-
-	SDL_Rect r = { 0, 0, vga_width, vga_height };
-	const float pixel_aspect = (float)vga_width / (float)vga_height;
-
-	switch (scaling_mode)
-	{
-	case SCALE_INTEGER:
-		while (r.w + vga_width <= win_w && r.h + vga_height <= win_h)
-		{
-			r.w += vga_width;
-			r.h += vga_height;
-		}
-		break;
-	case SCALE_CLASSIC_PAR:
-		fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect * (5.f / 6.f));
-		break;
-	case SCALE_CENTER:  // no fixed size to center on; fill like Widescreen
-	case SCALE_WIDESCREEN:
-	default:
-		fit_rect_to_aspect(&r, win_w, win_h, pixel_aspect);
-		break;
-	}
-
-	if (r.w < vga_width)
-		r.w = vga_width;
-	if (r.h < vga_height)
-		r.h = vga_height;
-
-	scaler_set_native_size(r.w, r.h);
+	int w, h;
+	native_output_size(&w, &h);
+	scaler_set_native_size(w, h);
 }
 
 // Windowed size for the Native scaler (which has no fixed output size to restore):

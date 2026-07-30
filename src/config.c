@@ -395,12 +395,12 @@ bool load_opentyrian_config(void)
 		if (ship_sensitivity < 0 || ship_sensitivity > SHIP_SENS_MAX)
 			ship_sensitivity = SHIP_SENS_DEFAULT;
 
-		// Sub-pixel supersampling: 0 = Auto, 1 = off, 2..5 fixed.
+		// Sub-pixel supersampling: 0 = Auto, 1 = off, 2..5 fixed, 6 = Native (match the display).
 		config_get_int_option(section, "render_supersample", &render_supersample);
 		if (render_supersample < 0)
 			render_supersample = 0;
-		else if (render_supersample > RENDER_SUPERSAMPLE_MAX)
-			render_supersample = RENDER_SUPERSAMPLE_MAX;
+		else if (render_supersample > RENDER_SUPERSAMPLE_NATIVE)
+			render_supersample = RENDER_SUPERSAMPLE_NATIVE;
 
 		// Sub-pixel filter: 0 = Sharp (crisp pixels), 1 = Smooth (antialiased edges),
 		// 2 = None (raw, unfiltered nearest at every ratio).

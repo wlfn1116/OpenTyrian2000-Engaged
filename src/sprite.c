@@ -707,6 +707,22 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 	}
 }
 
+// True if sprite `index` draws nothing at all -- every control byte is a row advance, so the
+// frame has no opaque pixel anywhere. Levels use blank frames for pieces the MAP draws (see the
+// kill gate in tyrian2.c), which the pixel test below can never find on screen.
+bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
+{
+	if (!sprite2_index_valid(sprite2s, index))
+		return true;   // a sprite the sheet doesn't have covers nothing
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+		if (((*data >> 4) & 0x0f) != 0)  // first nibble: opaque run length (0 = next row)
+			return false;
+	return true;
+}
+
 // Read-only, draw-free twin of blit_sprite2's logical walk (mirrors blit_sprite2_clip's
 // x/y bookkeeping, minus every surface write): returns true as soon as any OPAQUE pixel of
 // sprite `index` would land inside the window [wx0, wx1] x [wy0, wy1). The kill-gate uses it

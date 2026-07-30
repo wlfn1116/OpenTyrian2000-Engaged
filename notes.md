@@ -127,6 +127,13 @@ catch-up to the layer's current phase.
 The playfield can render at 1x-5x. `0` means Auto. Auto follows the selected
 scaler and never resolves below 2x when sub-pixel rendering is requested.
 
+`RENDER_SUPERSAMPLE_NATIVE` (6) instead follows the presented output rectangle -
+one internal sample per screen pixel, `RENDER_SUPERSAMPLE_MAX` does not bind it,
+and `RENDER_SUPERSAMPLE_LIMIT` is the only ceiling. `display_supersample_factor`
+measures against `native_output_size`, the same fitted rect the Native scaler
+renders at, so scaler and sub-pixel Native agree. It resolves to 11x on a 4K
+screen, so it stays opt-in: Auto must not become a resolution-dependent cost.
+
 Filter enum values are persisted. Keep existing numeric values and append new
 ones.
 
@@ -529,6 +536,26 @@ Vita:
 Both ports treat menu touch as absolute tap input and gameplay touch as relative
 drag. The right stick is folded into ship movement. Networking and MIDI are
 disabled.
+
+## Invisible level structures
+
+Player shots may only damage an enemy that `enemy_has_visible_pixel` places inside
+the playfield, so a shot leaving the top of the screen cannot kill enemies that
+have not scrolled in yet.
+
+Levels also place enemies whose current frame has no art at all, standing in for a
+structure the MAP draws: BRAINIAC's walls (enemy 519), FLEET's hulls (698/699),
+IXMUCANE's linked boss pieces (107), NOSE DRIP (794), DELIANI (144). A pure pixel
+test can never find those on screen, which left them unhittable while they still
+rammed the player.
+
+When every gated cell of a frame is blank, the gate falls back to the frame's
+nominal 12x14 cell footprint. A frame with any drawn cell is still decided by its
+pixels alone. Armour 255 then does the rest: `JE_doSP` sparks, the shot stops,
+piercing shots carry on - all stock code, reached again.
+
+Verify blankness against the sheet, not the enemy record: `sprite2_is_blank`
+answers for a resolved bank plus index, and a level's banks come from event 5.
 
 ## Level-script map stops
 
