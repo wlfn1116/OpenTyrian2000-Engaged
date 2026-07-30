@@ -77,7 +77,6 @@ bool endlessGambleRigged = false;   // Rigged: the NEXT gamble secretly rolls tw
 int  endlessLongCon = 0;            // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due (0 = none)
 bool endlessResumeVisit   = false;  // a save was just loaded: the next outpost restores its snapshot instead of rerolling (consumed by endlessBetweenLevels)
 bool endlessCreditsShown  = false;  // the zone-100 credits roll has already played this run; rides the save so reloading the zone-101 outpost doesn't replay it
-#define ENDLESS_CREDITS_ZONE 100           // zones cleared before the run rolls the credits (once per run, at the outpost that follows)
 
 // Cash the player had on entering the shop this visit. The E-Shop cash-fraction buys (buff /
 // Buy Special) price off this snapshot, not live cash, so their cost stays fixed for the whole
@@ -1057,5 +1056,9 @@ void endlessBetweenLevels(void)
 	// re-derived from the saved run depth. An outpost charting a MILESTONE swaps in the warning
 	// track, so the player hears it coming with the course list still in front of them.
 	songBuy = endlessMilestoneKind() ? ENDLESS_MILESTONE_SHOP_SONG : DEFAULT_SONG_BUY;
+	// The run's first approach to the credits zone trades the warning track for a send-off; once
+	// the credits have rolled, later century outposts (200, 300, ...) warn like any milestone.
+	if (endlessRunDepth + 1 == ENDLESS_CREDITS_ZONE && !endlessCreditsShown)
+		songBuy = ENDLESS_FINALE_SHOP_SONG;
 	JE_itemScreen();
 }

@@ -36,6 +36,10 @@ extern int  endlessBreakthroughOwed;
 // Shop playback is zero-based; levelSong is one-based. Keep these paired.
 #define ENDLESS_MILESTONE_SHOP_SONG     26
 #define ENDLESS_MILESTONE_SHOP_SONG_LVL 27
+#define ENDLESS_FINALE_SHOP_SONG        24  // "The final edge" -- only the outpost charting the credits zone, pre-credits
+#define ENDLESS_FINALE_SHOP_SONG_LVL    25
+
+#define ENDLESS_CREDITS_ZONE 100  // zones cleared before the run rolls the credits (once per run, at the outpost that follows)
 
 int     endlessMilestoneKindOfZone(int zone);
 int     endlessMilestoneKind(void);
