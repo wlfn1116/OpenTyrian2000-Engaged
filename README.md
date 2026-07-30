@@ -64,7 +64,7 @@ Weapon Tweaks restores selected differences between the Episode 1-3 and Episode
 4-5 data.
 
 OPL remains the default music backend. FluidSynth requires a SoundFont (`.sf2`,
-`.sf3`, or `.sf`) file. The Windows x86-64 build can also use the system MIDI
+`.sf3`, or `.sf`) file. You can also use the system MIDI
 synthesizer.
 
 ## Controls
