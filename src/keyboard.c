@@ -35,13 +35,12 @@
 #if defined(__SWITCH__) || defined(__vita__)
 // Touch-drag -> ship travel multiplier. The base 4.0 cancels VT_MOUSE_SENS (0.25) so at the
 // slider's middle the ship tracks the finger 1:1; the Touch Sensitivity slider scales it
-// linearly around TOUCH_SENS_DEFAULT.
+// linearly around SHIP_SENS_DEFAULT.
 #define SWITCH_TOUCH_SHIP_SENS_BASE 4.0f
 #endif
 
-// Defined on every platform so the shared menu code (opentyr.c setup, mainint.c pause) links;
-// only the Switch touch handler below reads it. See keyboard.h.
-int touch_sensitivity = TOUCH_SENS_DEFAULT;
+// Touch (consoles) / Mouse (desktop) ship-control sensitivity. See keyboard.h.
+int ship_sensitivity = SHIP_SENS_DEFAULT;
 
 JE_boolean ESCPressed;
 
@@ -142,11 +141,30 @@ JE_word JE_mousePosition(JE_word *mouseX, JE_word *mouseY)
 	return mousedown ? lastmouse_but : 0;
 }
 
+#if !defined(__SWITCH__) && !defined(__vita__)
+// Mouse Sensitivity slider factor; the consoles instead scale at the touch source
+// (see SDL_FINGERMOTION below), so their reads stay 1:1.
+static float shipSensScale(void)
+{
+	return (float)ship_sensitivity / (float)SHIP_SENS_DEFAULT;
+}
+#endif
+
 void mouseGetRelativePosition(Sint32 *const out_x, Sint32 *const out_y)
 {
 	service_SDL_events(false);
 
 	scaleWindowDistanceToScreen(&mouseWindowXRelative, &mouseWindowYRelative);
+#if !defined(__SWITCH__) && !defined(__vita__)
+	// Sensitivity-scale with a fractional carry so slow motion is never rounded away.
+	static float fracX, fracY;
+	fracX += (float)mouseWindowXRelative * shipSensScale();
+	fracY += (float)mouseWindowYRelative * shipSensScale();
+	mouseWindowXRelative = (Sint32)fracX;
+	mouseWindowYRelative = (Sint32)fracY;
+	fracX -= (float)mouseWindowXRelative;
+	fracY -= (float)mouseWindowYRelative;
+#endif
 	*out_x = mouseWindowXRelative;
 	*out_y = mouseWindowYRelative;
 
@@ -163,6 +181,10 @@ void mouseGetRelativeMotionF(float *const out_x, float *const out_y)
 	float x = (float)mouseWindowXRelative;
 	float y = (float)mouseWindowYRelative;
 	scaleWindowDistanceToScreenF(&x, &y);
+#if !defined(__SWITCH__) && !defined(__vita__)
+	x *= shipSensScale();
+	y *= shipSensScale();
+#endif
 	*out_x = x;
 	*out_y = y;
 
@@ -356,8 +378,8 @@ void service_SDL_events(JE_boolean clear_new)
 					// touch (down) or lift (up) must not jump the ship.
 					if (ev.type == SDL_FINGERMOTION && windowHasFocus)
 					{
-						// Scale the 1:1 base by the slider; TOUCH_SENS_DEFAULT reproduces 1:1.
-						const float sens = SWITCH_TOUCH_SHIP_SENS_BASE * (float)touch_sensitivity / (float)TOUCH_SENS_DEFAULT;
+						// Scale the 1:1 base by the slider; SHIP_SENS_DEFAULT reproduces 1:1.
+						const float sens = SWITCH_TOUCH_SHIP_SENS_BASE * (float)ship_sensitivity / (float)SHIP_SENS_DEFAULT;
 						mouseWindowXRelative += (Sint32)(ev.tfinger.dx * (float)ww * sens);
 						mouseWindowYRelative += (Sint32)(ev.tfinger.dy * (float)wh * sens);
 					}

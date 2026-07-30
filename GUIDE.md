@@ -13,6 +13,8 @@ and arcade modes work as before.
 | Edit boss or enemy bars | Setup > Enhancements |
 | Create a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Select MIDI playback | Setup > Sound > Music Synth |
+| Toggle the low-armor siren | Setup > Sound > Armor Alarm |
+| Change mouse or touch sensitivity | Setup > Sensitivity |
 | Restore episode-specific weapons | Setup > Enhancements > Weapon Tweaks |
 
 ## Endless mode
