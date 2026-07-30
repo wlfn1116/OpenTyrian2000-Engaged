@@ -87,7 +87,7 @@ $CollectionDirectory = Join-Path $RepoRoot 'build'
 $Project = Join-Path $RepoRoot 'visualc\opentyrian.vcxproj'
 $PcBaseName = "opentyrian-$Platform-$Configuration"
 $PackageBaseName = 'OpenTyrian2000-Engaged'
-$PcPackagePlatform = if ($Platform -eq 'x64') { 'Win64' } else { 'Win32' }
+$PcPackagePlatform = if ($Platform -eq 'x64') { 'Windows-x86_64' } else { 'Windows-x86' }
 
 function Get-EnvironmentOverride {
     param(
