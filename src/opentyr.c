@@ -2224,7 +2224,10 @@ int main(int argc, char *argv[])
 
 	mt_srand(time(NULL));
 
-	printf("\nWelcome to... >> %s %s <<\n\n", opentyrian_str, opentyrian_version);
+	// opentyrian_version already leads with the fork name ("Engaged vX.Y.Z"),
+	// so pair it with the base game name here -- using opentyrian_str would
+	// print ">> OpenTyrian 2000 Engaged Engaged vX.Y.Z <<".
+	printf("\nWelcome to... >> OpenTyrian 2000 %s <<\n\n", opentyrian_version);
 
 	printf("Copyright (C) 2022 The OpenTyrian Development Team\n");
 	printf("Copyright (C) 2022 Kaito Sinclaire\n");
