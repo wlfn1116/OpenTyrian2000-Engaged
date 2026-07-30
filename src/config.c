@@ -319,8 +319,8 @@ bool zicaLaserBuff = true;              /* also fire the Lv10 beam alongside the
    menu (JE_addChargeLaserCannon in episodes.c). */
 bool chargeLaserCannon = true;
 /* Wake the dormant dispenser bases (enemy 80-83; JE_makeEnemy in tyrian2.c). Campaign
-   only -- Endless ignores the toggle and rolls 50/50 per zone. */
-bool restoreBaseDispensers = false;
+   only -- Endless ignores the toggle and asks the zone instead. */
+bool restoreBaseDispensers = true;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
