@@ -284,6 +284,9 @@ void endlessRegenerateLevel(void);
 // Reset only effect state for campaign debug mode.
 void endlessCampaignLevelStart(void);
 
+// Seed-repeatable per-zone coin: does this zone wake the dormant dispenser bases?
+bool endlessDispenserBaseRoll(void);
+
 // Recompute state chosen once per sector, such as gravity heading.
 void endlessRefreshModDerivedState(void);
 
@@ -403,6 +406,7 @@ int         endlessScalingOverrideCount(void);    // how many are currently pinn
 // Rising tide adds projectile count after the ordinary intensity ramps flatten.
 int endlessTideLevel(void);        // the single tide knob (0 early, then +1 per effective depth)
 int endlessExtraEnemyShots(void);  // extra enemy shots to add to each firing volley at this tide
+int endlessFanPhaseNow(void);      // tide fan lean; flips every second of zone time
 
 // Player-side + time-based modifier hooks (see endless.c).
 int  endlessPlayerDamagePercent(void);  // OVERCHARGE / Overdrive stacks + Heavy Rounds perk: your shot-damage scale (100 = normal)

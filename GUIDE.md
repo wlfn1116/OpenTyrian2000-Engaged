@@ -15,7 +15,8 @@ and arcade modes work as before.
 | Select MIDI playback | Setup > Sound > Music Synth |
 | Toggle the low-armor siren | Setup > Sound > Armor Alarm |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
-| Restore episode-specific weapons | Setup > Enhancements > Weapon Tweaks |
+| Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
+| Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
 
 ## Endless mode
 
@@ -352,7 +353,7 @@ Settings are under Setup > Enhancements.
 | Enemy Bars | Shows health for damaged enemies |
 | Boss Health Bars | Selects boss-bar style and placement |
 | Gauge Gradients | Selects gauge direction and damage flashes |
-| Weapon Tweaks | Opens episode-specific weapon settings |
+| Game Tweaks | Opens weapon tweaks and restored cut behaviors |
 | Custom Weapons | Enables the custom weapon in shops |
 | Custom Weapon Creator | Opens the weapon editor |
 
@@ -381,7 +382,7 @@ bottom of every section.
 | Esc | Cancel a number being entered; otherwise save and return |
 | Right-click | Save and return |
 
-Weapon Tweaks covers:
+Game Tweaks covers:
 
 - superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice;
 - Zica Laser level-11 patterns and beam behaviour;
@@ -389,7 +390,17 @@ Weapon Tweaks covers:
 - Flare and Super Bomb sprites;
 - Needle Laser and Bubble Gum-Gun sounds;
 - the removed Charge-Laser sidekick;
+- Base Dispensers;
 - sidekick autofire.
+
+Base Dispensers wakes the dormant dispenser bases of Camanis (Episode 3) and
+the secret Camanis research base (Episode 4). The game data gives these bases a
+full hatch open/close animation, but ships them with no way to ever trigger it.
+When enabled, the bases open on the same cadence as the small hatches beside
+them. At the moment the hatch stands open, the eye fires a player-aimed shot
+and the orb below it discharges a fast four-segment lightning bolt straight
+down. Endless mode ignores the toggle: every zone has a 50/50 chance of waking
+them, fixed by the run seed.
 
 ## Music
 

@@ -73,7 +73,6 @@ struct JE_SingleEnemyType
 	JE_boolean  healthbar_seen; /* set once this enemy has taken player damage (gates the enemy HP bar) */
 	JE_byte     eshotwait[3], eshotmultipos[3]; /* [1..3] */
 	JE_byte     eshotextracredit[3]; /* endless carry for whole-volley tide scaling */
-	JE_byte     eshotfanphase[3]; /* endless starting side for the next tide fan */
 	JE_byte     enemycycle;
 	JE_byte     ani;
 	JE_word     egr[20]; /* [1..20] */
@@ -373,6 +372,7 @@ enum
 	CHARGE_AUTOFIRE_NUM  = 4,  // (append new modes; the value is saved per slot -- don't renumber)
 };
 extern JE_byte    chargeSidekickAutofire;
+extern JE_boolean dispenserBasesActive;
 extern JE_boolean difficultyAdjust;
 extern JE_boolean expertMode;
 

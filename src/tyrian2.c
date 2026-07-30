@@ -1544,6 +1544,235 @@ static void endlessGroupHoming(void)
 	}
 }
 
+// Restored dispenser volley (Game Tweaks "Base Dispensers"), fired from piece 80's
+// launch trigger so it stays in step with the hatch cycle: one enemy-84-style aimed
+// shot (weapon 59) from the turret nub on the top rim, plus a 1x4 lightning column
+// from the bottom hatch (bank-3 sprite columns 210/229/248/267, 4 frames, drawn via
+// the sgr>=2000 enemy-bank path in the shot renderer).
+static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
+{
+	if (cheatNoEnemyFire || endlessReviveGraceActive())
+		return;
+
+	const int shotCap = endlessFxActive() ? ENEMY_SHOT_MAX : ENEMY_SHOT_NORMAL;
+	const Uint16 w = 59;  // enemy 84's aimed turret weapon
+
+	int spct = 100, dpct = 100;
+	if (endlessFxActive())
+	{
+		spct = endlessShotSpeedPercent();
+		dpct = endlessShotDamagePercent();
+		if (enemy[i].eliteState == 3)
+			dpct = dpct * endlessChampionShotDamagePercent() / 100;
+	}
+
+	// Assembly art spans baseX-6..baseX+42 by baseY-35..baseY+21. Both emitters sit on
+	// the art's own centre line (assembly x 22, i.e. baseX+16, 2px left of the geometric
+	// centre). The eye that opens at the glow frame is at baseY-27; sprites blit from
+	// their top-left, so back off 6,7 to centre the 12x14 shot on it. The orb flares
+	// white across baseY+4..baseY+8 on that same frame, and the bolt's top edge starts
+	// level with the top of that flare so the column reads as leaving the orb.
+	const JE_integer eyeX = baseX + 10, eyeY = baseY - 34;
+	const JE_integer orbX = baseX + 10, orbY = baseY + 4;
+
+	int b = -1;
+	for (int slot = 0; slot < shotCap; ++slot)
+		if (enemyShotAvail[slot] == 1)
+		{
+			b = slot;
+			break;
+		}
+	if (b < 0)
+		return;
+	enemyShotAvail[b] = 0;
+
+	{
+		int sq;
+		do
+			sq = mt_rand() % 8;
+		while (sq == 3);
+		soundQueue[sq] = weapons[w].sound;
+	}
+
+	enemyShot[b].sx = eyeX + tempMapXOfs;
+	enemyShot[b].sy = eyeY;
+	enemyShot[b].sdmg = weapons[w].attack[0];
+	enemyShot[b].tx = weapons[w].tx;
+	enemyShot[b].ty = weapons[w].ty;
+	enemyShot[b].duration = weapons[w].del[0];
+	enemyShot[b].animate = 0;
+	enemyShot[b].animax = weapons[w].weapani;
+	enemyShot[b].sgr = weapons[w].sg[0];
+	enemyShot[b].seekerArm = 0;
+	enemyShot[b].syc = weapons[w].acceleration;
+	enemyShot[b].sxc = weapons[w].accelerationx;
+	enemyShot[b].sxm = weapons[w].sx[0];
+	enemyShot[b].sym = weapons[w].sy[0];
+
+	{
+		JE_byte aim = weapons[w].aim;
+		if (difficultyLevel > DIFFICULTY_NORMAL)
+			aim += difficultyLevel - 2;
+
+		JE_word targetX = player[0].x;
+		JE_word targetY = player[0].y;
+		if (twoPlayerMode)
+		{
+			int t;
+			if (player[0].is_alive && !player[1].is_alive)
+				t = 0;
+			else if (player[1].is_alive && !player[0].is_alive)
+				t = 1;
+			else
+				t = mt_rand() % 2;
+			if (t == 1)
+			{
+				targetX = player[1].x - 25;
+				targetY = player[1].y;
+			}
+		}
+
+		JE_integer aimX = (targetX + 25) - eyeX - tempMapXOfs - 4;
+		if (aimX == 0)
+			aimX = 1;
+		JE_integer aimY = targetY - eyeY;
+		if (aimY == 0)
+			aimY = 1;
+		const JE_integer maxMagAim = MAX(abs(aimX), abs(aimY));
+		enemyShot[b].sxm = roundf((float)aimX / maxMagAim * aim);
+		enemyShot[b].sym = roundf((float)aimY / maxMagAim * aim);
+	}
+
+	if (endlessFxActive())
+	{
+		if (endlessSeekerActive())
+			enemyShot[b].seekerArm = 1;
+		enemyShot[b].sxm = (enemyShot[b].sxm * spct + (enemyShot[b].sxm >= 0 ? 50 : -50)) / 100;
+		enemyShot[b].sym = (enemyShot[b].sym * spct + (enemyShot[b].sym >= 0 ? 50 : -50)) / 100;
+		int dmg = (enemyShot[b].sdmg * dpct + 50) / 100;
+		enemyShot[b].sdmg = (JE_byte)(dmg > 255 ? 255 : dmg);
+
+		// Tide extra shots fan out from the aimed shot like any other turret volley.
+		const int extra = endlessExtraEnemyShots();
+		const int fanPhase = endlessFanPhaseNow();
+		for (int k = 0; k < extra; ++k)
+		{
+			int c = -1;
+			for (int slot = 0; slot < shotCap; ++slot)
+				if (enemyShotAvail[slot] == 1)
+				{
+					c = slot;
+					break;
+				}
+			if (c < 0)
+				break;
+			enemyShotAvail[c] = 0;
+			enemyShot[c] = enemyShot[b];
+			const int fanOrder = fanPhase + k;
+			const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (k / 2 + 1) * 0.20f;
+			const float fc = cosf(fanAng), fs = sinf(fanAng);
+			const int ox = enemyShot[c].sxm, oy = enemyShot[c].sym;
+			enemyShot[c].sxm = roundf(ox * fc - oy * fs);
+			enemyShot[c].sym = roundf(ox * fs + oy * fc);
+			if (enemyShot[c].sxm == 0 && enemyShot[c].sym == 0)
+			{
+				enemyShot[c].sxm = ox;
+				enemyShot[c].sym = oy;
+			}
+		}
+	}
+
+	// Orb below: the 1x4 lightning column. Its four segments live in the always-loaded
+	// player-shot sheet (rows 210/229/248/267, four consecutive frames each), so the
+	// stock sgr+animate draw path animates the whole bolt in any level. Spawning them
+	// on one tick keeps every segment on the same frame, so the column always composes
+	// a whole authored bolt.
+	static const JE_word boltSegment[4] = { 210, 229, 248, 267 };
+	int boltSpeed = 10;
+
+	{
+		// The bolt's own voice: weapons 238-242 fire this exact 4-tile sprite set and all
+		// of them use S_WEAPON_15.
+		int sq;
+		do
+			sq = mt_rand() % 8;
+		while (sq == 3);
+		soundQueue[sq] = S_WEAPON_15;
+	}
+
+	int boltDmg = weapons[w].attack[0];
+	int bolts = 1;
+	if (endlessFxActive())
+	{
+		boltSpeed = (boltSpeed * spct + 50) / 100;
+		int dmg = (boltDmg * dpct + 50) / 100;
+		boltDmg = dmg > 255 ? 255 : dmg;
+
+		// Rising tide: the bolt is a four-tile composite, so extra shots accumulate into
+		// WHOLE extra bolts the way the turret path treats a multi weapon -- half a bolt
+		// would just be a broken sprite. Turret slot 0's shot credit carries the
+		// remainder; this base has no authored turrets, so nothing else touches it.
+		const int credit = enemy[i].eshotextracredit[0] + endlessExtraEnemyShots();
+		bolts += credit / 4;
+		enemy[i].eshotextracredit[0] = (JE_byte)(credit % 4);
+	}
+
+	// Never emit a partial bolt: cap on the whole bolts the pool can still hold.
+	{
+		int freeShots = 0;
+		for (int slot = 0; slot < shotCap; ++slot)
+			if (enemyShotAvail[slot] == 1)
+				++freeShots;
+		if (bolts > freeShots / 4)
+			bolts = freeShots / 4;
+	}
+
+	const int boltFanPhase = endlessFanPhaseNow();
+	for (int volley = 0; volley < bolts; ++volley)
+	{
+		// The authored bolt drops straight down; each tide bolt leans off it by the same
+		// fan the turret volleys use. Rotating the segment offsets as well as the
+		// velocity keeps a leaning bolt a straight line along its own travel.
+		float dx = 0.0f, dy = 1.0f;
+		if (volley > 0)
+		{
+			const int fanK = volley - 1;
+			const int fanOrder = boltFanPhase + fanK;
+			const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (fanK / 2 + 1) * 0.20f;
+			dx = -sinf(fanAng);
+			dy = cosf(fanAng);
+		}
+
+		for (int s = 0; s < 4; ++s)
+		{
+			int c = -1;
+			for (int slot = 0; slot < shotCap; ++slot)
+				if (enemyShotAvail[slot] == 1)
+				{
+					c = slot;
+					break;
+				}
+			if (c < 0)
+				break;
+			enemyShotAvail[c] = 0;
+			enemyShot[c].sx = orbX + tempMapXOfs + (int)roundf(dx * 14.0f * s);
+			enemyShot[c].sy = orbY + (int)roundf(dy * 14.0f * s);
+			enemyShot[c].sxm = (int)roundf(dx * boltSpeed);
+			enemyShot[c].sym = (int)roundf(dy * boltSpeed);
+			enemyShot[c].sxc = 0;
+			enemyShot[c].syc = 0;
+			enemyShot[c].sdmg = (JE_byte)boltDmg;
+			enemyShot[c].tx = 0;
+			enemyShot[c].ty = 0;
+			enemyShot[c].duration = 255;
+			enemyShot[c].animate = 0;
+			enemyShot[c].animax = 4;
+			enemyShot[c].sgr = boltSegment[s];
+			enemyShot[c].seekerArm = 0;
+		}
+	}
+}
+
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
 {
 	// JE_drawEnemy(25) is only ever the sky bank (slots 0..24), the one batch whose layer-2
@@ -1638,6 +1867,13 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 						enemy[i].aniactive = enemy[i].aniwhenfire;
 					else if (enemy[i].enemycycle > enemy[i].ani)
 						enemy[i].enemycycle = enemy[i].animin;
+
+					// Restored dispenser: the base fires on frame 9, the one frame where the
+					// top hatch stands open on the lit eye and the orb below it flares white.
+					// Placed inside the advance so it lands exactly once per hatch cycle.
+					if (dispenserBasesActive && enemy[i].enemytype == 80 &&
+					    enemy[i].enemycycle == 9 && !enemy[i].iced && !enemy[i].edamaged)
+						dispenser_fire(i, enemy[i].ex, enemy[i].ey);
 				}
 
 				if (enemy[i].enemycycle >= 1 && enemy[i].enemycycle <= 20 &&
@@ -1914,8 +2150,9 @@ enemy_still_exists:
 									endlessExtraVolleys = completeVolleys - 1;
 							}
 
-							const int endlessFanPhase = enemy[i].eshotfanphase[j-1] & 1;
-							enemy[i].eshotfanphase[j-1] ^= endlessExtraVolleys & 1;
+							// Tide fan lean: held for a full second of game time instead of
+							// alternating per volley, so a burst reads as one sweep.
+							const int endlessFanPhase = endlessFanPhaseNow();
 
 							const int endlessVolley = endlessBaseMulti * (1 + endlessExtraVolleys);
 							int baseShotSlots[WEAPON_MULTI_MAX];
@@ -2731,6 +2968,10 @@ start_level_first:
 
 	if (endlessMode)
 		endlessPreloadBanks();  // load starting sprite banks now so early spawns aren't invisible
+
+	// Dormant dispenser bases: the campaign obeys the Game Tweaks toggle; Endless
+	// ignores it and flips a seed-stable coin every zone.
+	dispenserBasesActive = endlessMode ? endlessDispenserBaseRoll() : restoreBaseDispensers;
 
 	memset(SFCurrentCode,    0, sizeof(SFCurrentCode));
 	memset(SFExecuted,       0, sizeof(SFExecuted));
@@ -6444,7 +6685,6 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	{
 		enemy->eshotmultipos[i] = 0;
 		enemy->eshotextracredit[i] = 0;
-		enemy->eshotfanphase[i] = 0;
 	}
 
 	enemy->enemyground = (enemyDat[eDatI].explosiontype & 1) == 0;
@@ -6463,6 +6703,17 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	{
 		enemy->launchtype = enemyDat[eDatI].elaunchtype % 1000;
 		enemy->launchspecial = enemyDat[eDatI].elaunchtype / 1000;
+	}
+
+	// Dispenser restore: the dormant 2x2 base (pieces 80-83) gets its cousin hatch's
+	// cadence so the shipped 17-frame open/close cycle finally plays; same-tick creation
+	// keeps all four quadrants in sync. Piece 80's trigger fires the actual volley
+	// (aimed top shot + lightning column) -- see dispenser_fire.
+	if (dispenserBasesActive && eDatI >= 80 && eDatI <= 83)
+	{
+		enemy->launchfreq = 40;
+		enemy->launchwait = 40;
+		enemy->launchspecial = 0;
 	}
 
 	enemy->xaccel = enemyDat[eDatI].xaccel;
