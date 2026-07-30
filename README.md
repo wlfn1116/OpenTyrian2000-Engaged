@@ -110,7 +110,10 @@ platform toolchains:
 - [Nintendo Switch build](switch/README.md)
 - [PlayStation Vita build](vita/README.md)
 
-GitHub Actions builds all three targets on every push; download them from the
+GitHub Actions builds all three targets on every push. The newest master build
+is always available from the
+[latest pre-release](https://github.com/wlfn1116/opentyrian2000-widescreen/releases/tag/latest);
+per-commit artifacts are on the
 [Actions](https://github.com/wlfn1116/opentyrian2000-widescreen/actions) tab.
 Pushing a tag attaches the Windows, Switch, and Vita packages to that tag's
 release automatically.
