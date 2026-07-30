@@ -588,15 +588,17 @@ window, and it skips iced or dying bases.
   238-242, which fire this exact tile set as a `multi=4` composite; grepping
   the weapon table for a sprite id is the way to find its authentic sound.
 
-Both emitters take the rising tide, but the bolt takes it as a composite: its
-extra shots accumulate in turret slot 0's `eshotextracredit` and only cash out
-as WHOLE extra bolts, exactly as the turret path treats a `multi` weapon -
-a partial bolt is a broken sprite, not a weaker one. The base has no authored
-turrets, so that credit slot is otherwise dead. Each tide bolt leans off the
-vertical by the shared `endlessFanPhaseNow` fan; unlike the turret path, which
-can only rotate a clone's velocity, this rotates the segment offsets too, so a
-leaning bolt stays a straight line along its own travel instead of shearing.
-A pool-space cap ahead of the loop keeps a bolt from ever spawning partially.
+Both emitters take the rising tide at the same rate: one extra shot buys one
+whole extra bolt. Do NOT divide the tide by the four tiles the way the turret
+path does for a `multi` weapon - a base rarely lives long enough to bank four
+extra shots, so the accounting that is correct for an authored composite
+starves this one and the column never thickens. Bolts are still all-or-nothing
+(a partial bolt is a broken sprite, not a weaker one), so a pool-space cap
+ahead of the loop drops whole bolts rather than truncating one. Each tide bolt
+leans off the vertical by the shared `endlessFanPhaseNow` fan; unlike the
+turret path, which can only rotate a clone's velocity, this rotates the segment
+offsets too, so a leaning bolt stays a straight line along its own travel
+instead of shearing.
 
 Assembly geometry (piece 80's `ex/ey` frame): art spans `ex-6..ex+42` by
 `ey-35..ey+21`. Both emitters sit on the art's own centre line, assembly x 22
@@ -608,9 +610,15 @@ Sprites blit from their top-left, so a 12x14 shot centres on an emitter at
 is why enemy 84 spawns its shot at the enemy's raw `ex/ey`.
 
 Campaign reads the Game Tweaks toggle (`restoreBaseDispensers`); Endless
-ignores it and derives a 50/50 per zone from `endlessSplitMixSeed` salt
-`depth*2 + 0x70000000` (salts `0x40/0x50/0x60000000` are taken by light cone,
-elites, and gravity).
+ignores it and asks `endlessDispenserBaseRoll`: a coin per zone below
+`ENDLESS_DISPENSER_ALWAYS_ZONE` (50), always on from that zone up, where they
+stop being a surprise and become furniture. The coin is `endlessSplitMixSeed`
+salt `depth*2 + 0x70000000` (salts `0x40/0x50/0x60000000` are taken by light
+cone, elites, and gravity). It was checked over 800k seed/zone samples: 0.5005
+on, per-seed mean 0.5002, all four consecutive-pair combinations at 0.25, and
+run lengths matching the geometric distribution - so zones are independent,
+with no alternation or stickiness despite consecutive depths differing by a
+fixed step into the mixer.
 
 Other authored-but-idle hatch animations exist (GYGES sky hatches 158/159/161,
 DELIANI base 239, and id 529 which is spawned nowhere); several lookalikes

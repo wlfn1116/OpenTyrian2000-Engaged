@@ -291,10 +291,15 @@ void endlessResetZoneEffects(void)
 	endlessComboKills = 0;
 }
 
-// Dormant dispenser bases: an independent, seed-repeatable coin per zone (own
-// salt, so it consumes nothing from the other level-start phases).
+// Dormant dispenser bases: a coin per zone up to ENDLESS_DISPENSER_ALWAYS_ZONE,
+// where they stop being a surprise and become part of the furniture. The coin has
+// its own salt, so it consumes nothing from the other level-start phases.
+#define ENDLESS_DISPENSER_ALWAYS_ZONE 50
+
 bool endlessDispenserBaseRoll(void)
 {
+	if (endlessRunDepth + 1 >= ENDLESS_DISPENSER_ALWAYS_ZONE)
+		return true;
 	return (endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x70000000) & 1) != 0;
 }
 

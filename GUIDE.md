@@ -399,8 +399,9 @@ full hatch open/close animation, but ships them with no way to ever trigger it.
 When enabled, the bases open on the same cadence as the small hatches beside
 them. At the moment the hatch stands open, the eye fires a player-aimed shot
 and the orb below it discharges a fast four-segment lightning bolt straight
-down. Endless mode ignores the toggle: every zone has a 50/50 chance of waking
-them, fixed by the run seed.
+down. Endless mode ignores the toggle: up to Zone 50 each zone has a 50/50
+chance of waking them, fixed by the run seed, and from Zone 50 onward they are
+always awake.
 
 ## Music
 
