@@ -17,7 +17,15 @@ $Vpk   = Join-Path $Build 'OpenTyrian2000.vpk'
 
 $AppName = 'OpenTyrian 2000 Engaged'
 $TitleId = 'OTYR20000'
-$AppVer  = '01.00'
+
+# APP_VER derives from src/opentyrian_version.h ("Engaged v1.1.0" -> "01.01").
+# The SFO expects strictly "XX.YY"; on any parse failure keep the safe default
+# rather than risk an unloadable VPK.
+$AppVer = '01.00'
+$VersionHeader = Get-Content (Join-Path $Repo 'src\opentyrian_version.h') -Raw
+if ($VersionHeader -match 'OPENTYRIAN_VERSION\s+"[^"]*?v?(\d+)\.(\d+)') {
+    $AppVer = '{0:00}.{1:00}' -f [int]$Matches[1], [int]$Matches[2]
+}
 
 # Delete a file/dir, tolerating a transient Windows lock (AV scan, a just-closed build handle).
 function Remove-Robust([string]$path) {
@@ -101,9 +109,13 @@ if (-not (Test-Path (Join-Path $Root 'sce_sys\icon0.png'))) {
 
 # Configure and compile.
 Write-Host '== cmake configure =='
-& $Cmake -S $Root -B $Build -G Ninja `
-    -DCMAKE_MAKE_PROGRAM="$Ninja" `
-    -DCMAKE_TOOLCHAIN_FILE="$Vitasdk/share/vita.toolchain.cmake"
+$CmakeArgs = @('-S', $Root, '-B', $Build, '-G', 'Ninja',
+    "-DCMAKE_MAKE_PROGRAM=$Ninja",
+    "-DCMAKE_TOOLCHAIN_FILE=$Vitasdk/share/vita.toolchain.cmake")
+# Bake the short commit id into the title screen when git is available.
+$Commit = & git -C $Repo rev-parse --short HEAD 2>$null
+if ($Commit) { $CmakeArgs += "-DOPENTYRIAN_COMMIT=$Commit" }
+& $Cmake @CmakeArgs
 if ($LASTEXITCODE) { throw "cmake configure failed ($LASTEXITCODE)" }
 
 Write-Host '== cmake build =='

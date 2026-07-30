@@ -5,4 +5,8 @@
 #define OPENTYRIAN_VERSION "Engaged v1.1.0"
 #endif
 
+#ifndef OPENTYRIAN_COMMIT
+#define OPENTYRIAN_COMMIT ""
+#endif
+
 #endif // OPENTYRIAN_VERSION_H
