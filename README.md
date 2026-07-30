@@ -1,5 +1,7 @@
 # OpenTyrian2000 Engaged
 
+[![build](https://github.com/wlfn1116/opentyrian2000-widescreen/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/opentyrian2000-widescreen/actions/workflows/build.yml)
+
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
 the DOS game Tyrian.
@@ -107,6 +109,11 @@ platform toolchains:
 
 - [Nintendo Switch build](switch/README.md)
 - [PlayStation Vita build](vita/README.md)
+
+GitHub Actions builds all three targets on every push; download them from the
+[Actions](https://github.com/wlfn1116/opentyrian2000-widescreen/actions) tab.
+Pushing a tag attaches the Windows, Switch, and Vita packages to that tag's
+release automatically.
 
 ## License
 
