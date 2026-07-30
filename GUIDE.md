@@ -390,18 +390,18 @@ Game Tweaks covers:
 - Flare and Super Bomb sprites;
 - Needle Laser and Bubble Gum-Gun sounds;
 - the removed Charge-Laser sidekick;
-- Base Dispensers;
+- Ice Base Shots;
 - sidekick autofire.
 
-Base Dispensers wakes the dormant dispenser bases of Camanis (Episode 3) and
-the secret Camanis research base (Episode 4). The game data gives these bases a
-full hatch open/close animation, but ships them with no way to ever trigger it.
-When enabled, the bases open on the same cadence as the small hatches beside
-them. At the moment the hatch stands open, the eye fires a player-aimed shot
-and the orb below it discharges a fast four-segment lightning bolt straight
-down. Endless mode ignores the toggle: up to Zone 50 each zone has a 50/50
-chance of waking them, fixed by the run seed, and from Zone 50 onward they are
-always awake.
+Ice Base Shots, on by default, wakes the dormant dispenser bases of Camanis
+(Episode 3) and the secret Camanis research base (Episode 4). The game data
+gives these bases a full hatch open/close animation, but ships them with no way
+to ever trigger it. When enabled, the bases open on the same cadence as the
+small hatches beside them. At the moment the hatch stands open, the eye fires a
+player-aimed shot and the orb below it discharges a fast four-segment lightning
+bolt straight down. Endless mode ignores the toggle: up to Zone 50 each zone has
+a 50/50 chance of waking them, fixed by the run seed, and from Zone 50 onward
+they are always awake.
 
 ## Music
 
