@@ -91,11 +91,14 @@ bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = fal
 
 static Uint8 debug_menu_backup[DEBUG_MENU_WIDTH * DEBUG_MENU_HEIGHT];
 
-/* Draws a message at the bottom text window on the playing screen */
+/* Draws a message at the bottom text window on the playing screen.
+ * The erase is unconditional: textErase == 0 no longer proves the bar is
+ * clean, because the countdown's own erase can be swallowed when the 1->0
+ * crossing lands in a silent rollback re-simulation pass (sprite blits are
+ * no-ops there).  Redrawing the bar background is cheap and self-heals. */
 void JE_drawTextWindow(const char *text)
 {
-	if (textErase > 0) // erase current text
-		blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
+	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
 
 	textErase = 100;
 	JE_outText(VGAScreenSeg, 20, vga_height - 10, text, 0, 4);
@@ -108,8 +111,7 @@ void JE_drawTextWindow(const char *text)
 // clears both. Endless uses this for the elite/champion kill line (label left, bounty right).
 void JE_drawTextWindowSplit(const char *left, const char *right, int right_x)
 {
-	if (textErase > 0) // erase current text
-		blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
+	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area (unconditional -- see JE_drawTextWindow)
 
 	textErase = 100;
 	JE_outText(VGAScreenSeg, 20, vga_height - 10, left, 0, 4);
@@ -6936,6 +6938,17 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 	}
 	in->buttons = buttons;
 
+	// Movement intent for the docked-link tests: this tick's real input
+	// displacement, captured before the dock pin rewrites x/y (RB_MOVE_* in
+	// rollback.h).  Dominant axis only, so the turret-rotate target can be
+	// rebuilt from the bits exactly as the classic |dx|>|dy| test chose it.
+	const int dx = (int)in->x - (int)in->mouseX;
+	const int dy = (int)in->y - (int)in->mouseY;
+	if (abs(dx) > abs(dy))
+		in->buttons |= (dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
+	else if (dy != 0)
+		in->buttons |= (dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
+
 	if (link_analog)
 	{
 		in->buttons |= RB_LINK_ANALOG;
@@ -6944,7 +6957,9 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 			a += (float)(2.0 * M_PI);
 		while (a >= (float)(2.0 * M_PI))
 			a -= (float)(2.0 * M_PI);
-		in->linkAngle = (Uint16)(a * (float)(65536.0 / (2.0 * M_PI)));
+		// Quantized to 256 steps (~1.4 degrees): raw stick jitter in the low
+		// bits read as a fresh aim every tick and bought a rollback each time.
+		in->linkAngle = (Uint16)(a * (float)(65536.0 / (2.0 * M_PI))) & 0xFF00;
 	}
 }
 
@@ -7202,6 +7217,12 @@ redo:
 		button[2-1] = false;
 		button[3-1] = false;
 		button[4-1] = false;
+
+		// Movement intent consumed by the linking routines below: taken from this
+		// player's rollback tuple when one exists (wire-carried, so both machines
+		// agree), else derived classically from the tick's position delta.
+		Uint16 linkIntent = 0;
+		bool   haveLinkIntent = false;
 
 		/* --- Movement Routine Beginning --- */
 
@@ -7493,6 +7514,8 @@ redo:
 				if (thisPlayerNum == networkHostPlayerNum)
 					in.difficulty = (Uint8)difficultyLevel;  // host dictates
 				nrb_record_local(&in);
+				linkIntent = in.buttons;
+				haveLinkIntent = true;
 
 				// Adopt the wire-quantized analog gun angle locally too: the peer
 				// can only ever apply the quantized value, and both simulations
@@ -7591,6 +7614,8 @@ redo:
 				}
 				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
 				               &link_gun_analog, &link_gun_angle);
+				linkIntent = in.buttons;
+				haveLinkIntent = true;
 			}
 			else if (rollback_resim)
 			{
@@ -7599,6 +7624,8 @@ redo:
 				nrb_get_local(nrb_frame(), &in);
 				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
 				               &link_gun_analog, &link_gun_angle);
+				linkIntent = in.buttons;
+				haveLinkIntent = true;
 			}
 			// else: normal pass, local player -- the live values stand as-is.
 		}
@@ -7723,7 +7750,16 @@ redo:
 
 			/*Linking Routines*/
 
-			if (twoPlayerMode && !twoPlayerLinked && this_player->x == *mouseX_ && this_player->y == *mouseY_ &&
+			// "Did this player press a direction this tick."  In rollback netplay
+			// this must come from the tuple's intent bits: the position compare
+			// reads the sender's dock pin against the local one, and those differ
+			// whenever the carrier moves (the pin embeds the sender's predicted
+			// copy of player 1) -- a phantom move that flapped the link.
+			const bool linkMoved = haveLinkIntent
+				? (linkIntent & RB_MOVE_MASK) != 0
+				: (this_player->x != *mouseX_ || this_player->y != *mouseY_);
+
+			if (twoPlayerMode && !twoPlayerLinked && !linkMoved &&
 			    abs(player[0].x - player[1].x) < 8 && abs(player[0].y - player[1].y) < 8 &&
 			    player[0].is_alive && player[1].is_alive && !galagaMode)
 			{
@@ -7733,8 +7769,7 @@ redo:
 			if (playerNum_ == 1 && (button[3-1] || button[2-1]) && !galagaMode)
 				twoPlayerLinked = false;
 
-			if (twoPlayerMode && twoPlayerLinked && playerNum_ == 2 &&
-			    (this_player->x != *mouseX_ || this_player->y != *mouseY_))
+			if (twoPlayerMode && twoPlayerLinked && playerNum_ == 2 && linkMoved)
 			{
 				if (button[0])
 				{
@@ -7746,7 +7781,14 @@ redo:
 					{
 						JE_real tempR;
 
-						if (abs(this_player->x - *mouseX_) > abs(this_player->y - *mouseY_))
+						if (haveLinkIntent)
+						{
+							if (linkIntent & (RB_MOVE_LEFT | RB_MOVE_RIGHT))
+								tempR = (linkIntent & RB_MOVE_RIGHT) ? M_PI_2 : (M_PI + M_PI_2);
+							else
+								tempR = (linkIntent & RB_MOVE_DOWN) ? 0 : M_PI;
+						}
+						else if (abs(this_player->x - *mouseX_) > abs(this_player->y - *mouseY_))
 							tempR = (this_player->x - *mouseX_ > 0) ? M_PI_2 : (M_PI + M_PI_2);
 						else
 							tempR = (this_player->y - *mouseY_ > 0) ? 0 : M_PI;

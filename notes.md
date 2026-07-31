@@ -597,7 +597,48 @@ What the design rests on:
   rest of the level is garbage" into a hitch, and must not also convert them into
   silence. A host `PACKET_WAITING`/`PACKET_DETAILS` at the queue head during a
   stream means the joiner already left the level — the packet belongs to the
-  level-end machinery and aborts the attempt unconsumed.
+  level-end machinery and aborts the attempt unconsumed. The receive side follows
+  the same rule: a rendezvous release consumed by a dying stream would strand the
+  peer at that rendezvous forever.
+
+`PACKET_WAITING` is a strictly paired rendezvous: every use (in-game-menu
+release, pause release, shop exit, level start) is passed by both machines in
+the same order, one send and one consume each, so the ordered deduplicated
+queue can never cross the pairings. Any loop that drains `packet_in` while one
+of these rendezvous could be pending must either be between the same pair on
+both machines or leave `PACKET_WAITING` unconsumed.
+
+The level-start rendezvous (tyrian2.c, just before `rollback_level_start`)
+exists because everything after the shop-exit barrier — map scan, sprite
+loads, the HUD-picture fade — is unsynchronized wall-clock work, while the
+level fade-in (`levelBrightness`, one step per tick) is sim state. Without it
+the faster loader ticked to frame 3, froze nearly black at the driver's
+`remote_newest == 0` barrier for the whole load-time difference, and looked
+like a stretched fade-in; the frame-3 barrier now only ever holds for about a
+round trip and stays as the safety net.
+
+The docked Dragonwing's "did player 2 press a direction" test must come from
+the tuple's `RB_MOVE_*` intent bits in rollback netplay, never from comparing
+tuple x/y against the local tick-start snapshot. The tuple is recorded before
+the dock pin rewrites x/y, and the pin embeds the sender's own — possibly
+predicted — copy of player 1, so the position compare reads phantom movement
+whenever the carrier moves: with fire held it merely mis-aimed the turret,
+without it the link unlinked/relinked every tick (the "stuttery fused pair"
+and the "Dragonwing refuses to fuse" reports). The bits carry the dominant
+axis only, matching the classic `|dx|>|dy|` turret-target choice, and are
+predicted flat like the held buttons. Offline and lockstep keep the classic
+position test (their pins agree by construction). `linkAngle` is quantized to
+256 steps at capture and only compared by `nrb_wire_differs` when fire is
+involved: the sim consumes it solely in the fire-held rotate branch, so an
+aim-only stick wiggle must not buy a rollback.
+
+The message bar (`textErase`) is presentation state deliberately outside the
+rollback registry, and its per-tick countdown must only run on live passes:
+sprite blits are no-ops in silent re-simulation passes, so a 1→0 crossing
+landing there swallowed the erase and left stale glyphs that the next
+`JE_drawTextWindow` — whose pre-erase used to trust `textErase > 0` — drew
+straight over (the garbled-helptext screenshots). The pre-erase is now
+unconditional as well, so a poisoned bar self-heals on the next message.
 
 ## UI and sprite safety
 

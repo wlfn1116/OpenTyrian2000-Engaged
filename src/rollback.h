@@ -125,6 +125,19 @@ typedef struct
 #define RB_EV_DEMO_END     (1u << 9)   /* self-test only: demo ran out this tick    */
 #define RB_EV_DISMISS      (1u << 10)  /* self-test only: game-over/demo dismissed  */
 
+/* Docked-link movement intent: did this player really press a direction this
+ * tick, and along which dominant axis (ties go vertical, matching the classic
+ * |dx|>|dy| turret test).  The linking routines must read these instead of
+ * comparing tuple x/y against the local tick-start snapshot: a docked player's
+ * tuple position embeds the sender's OWN dock pin -- computed from its
+ * possibly-predicted copy of the carrier -- so the position compare reads as
+ * phantom movement whenever the carrier moves, flapping the link every tick. */
+#define RB_MOVE_LEFT       (1u << 11)
+#define RB_MOVE_RIGHT      (1u << 12)
+#define RB_MOVE_UP         (1u << 13)
+#define RB_MOVE_DOWN       (1u << 14)
+#define RB_MOVE_MASK       (RB_MOVE_LEFT | RB_MOVE_RIGHT | RB_MOVE_UP | RB_MOVE_DOWN)
+
 /* --- Single-player self-test ---------------------------------------------------
  *
  * When enabled (config key rollback_selftest), every in-level tick runs twice:

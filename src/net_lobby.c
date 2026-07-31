@@ -219,6 +219,33 @@ static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, siz
 					buf[--len] = '\0';
 				break;
 
+			// Paste replaces the field rather than appending: it is pre-filled with the
+			// last-used value, and a copied address wants to take its place whole.
+			case SDL_SCANCODE_V:
+				if ((lastkey_mod & (KMOD_CTRL | KMOD_GUI)) != 0)
+				{
+					char *clip = SDL_GetClipboardText();
+					if (clip != NULL)
+					{
+						char pasted[64];
+						size_t out = 0;
+						for (const char *c = clip; *c != '\0' && out + 1 < sizeof(pasted) && out + 1 < buf_size; ++c)
+						{
+							if (filter(*c))
+								pasted[out++] = *c;
+						}
+						pasted[out] = '\0';
+						SDL_free(clip);
+
+						if (out > 0)
+						{
+							memcpy(buf, pasted, out + 1);
+							len = out;
+						}
+					}
+				}
+				break;
+
 			default:
 				break;
 			}
@@ -893,7 +920,7 @@ bool networkLobby(void)
 		{
 			JE_playSampleNum(S_SELECT);
 
-			if (!lobbyTextEntry("Join by Address", "Host address (or address:port):", addr_buf,
+			if (!lobbyTextEntry("Join by IP Address", "Host address (or address:port):", addr_buf,
 			                    sizeof(addr_buf), filterAddress, false))
 				break;
 

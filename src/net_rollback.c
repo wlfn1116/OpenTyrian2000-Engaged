@@ -112,17 +112,18 @@ bool nrb_active(void)
 #define NRB_HDR_BYTES   48            /* wire size of the packet header       */
 
 /* Wire-relevant tuple bits: the four buttons, the four requests, the analog
- * link flag.  The RB_EV_* bits are self-test-local and never leave a machine. */
-#define NRB_WIRE_BUTTONS 0x01FFu
+ * link flag, and the four RB_MOVE_* docked-link intent bits.  The RB_EV_*
+ * bits (9-10) are self-test-local and never leave a machine. */
+#define NRB_WIRE_BUTTONS (0x01FFu | RB_MOVE_MASK)
 /* Of those, the bits the SIMULATION reads.  Pause and in-game-menu requests are
  * processed outside the sim, from remote_hist rather than from what the frame
  * consumed, so an unpredicted pulse changes no simulated byte -- comparing them
  * only bought a rollback that re-derived the identical state. */
 #define NRB_SIM_BUTTONS (NRB_WIRE_BUTTONS & ~(RB_REQ_PAUSE | RB_REQ_MENU))
-/* Bits a PREDICTED tuple may carry: held buttons + analog flag; one-shot
- * request pulses must never be predicted into existence. */
+/* Bits a PREDICTED tuple may carry: held buttons + analog flag + held movement
+ * intent; one-shot request pulses must never be predicted into existence. */
 #define NRB_PREDICT_BUTTONS (RB_BTN_FIRE | RB_BTN_LSIDEKICK | RB_BTN_RSIDEKICK | \
-                             RB_BTN_CHANGEFIRE | RB_LINK_ANALOG)
+                             RB_BTN_CHANGEFIRE | RB_LINK_ANALOG | RB_MOVE_MASK)
 
 /* How much of a remote frame's tuple the simulation consumed.  The level-end
  * fade and a dead ship skip the movement/apply path entirely, but the frame's
@@ -464,14 +465,17 @@ void nrb_get_remote(Uint32 frame, RbInput *out)
 	remote_used[frame % NRB_HIST].kind = NRB_USED_FULL;
 }
 
-/* Compare only wire-carried fields; local-only tuple extras don't matter. */
+/* Compare only wire-carried fields; local-only tuple extras don't matter.
+ * linkAngle reaches the sim only through the docked turret-rotate branch,
+ * which requires fire held -- an aim-only stick wiggle must not buy a
+ * rollback that re-derives identical state. */
 static bool nrb_wire_differs(const RbInput *a, const RbInput *b)
 {
 	return a->x != b->x || a->y != b->y ||
 	       a->velX != b->velX || a->velY != b->velY ||
 	       a->accelX != b->accelX || a->accelY != b->accelY ||
 	       ((a->buttons ^ b->buttons) & NRB_SIM_BUTTONS) != 0 ||
-	       a->linkAngle != b->linkAngle ||
+	       (((a->buttons | b->buttons) & RB_BTN_FIRE) && a->linkAngle != b->linkAngle) ||
 	       a->difficulty != b->difficulty;
 }
 
@@ -1378,6 +1382,14 @@ static bool nrb_resync_receive(void)
 				playerEndLevel = true;
 				end_agreed = true;
 				level_over = true;
+				break;
+			}
+			if (type == PACKET_WAITING || type == PACKET_DETAILS)
+			{
+				/* The peer is already in a between-levels handshake: the stream
+				 * is dead, and this packet is a rendezvous release the level
+				 * machinery is (or will be) blocked on.  Same rule as the send
+				 * side: abort and leave it at the queue head, never consume. */
 				break;
 			}
 			network_update();

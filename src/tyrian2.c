@@ -3394,6 +3394,59 @@ start_level_first:
 	BKwrap2 = BKwrap2to = &megaData2.mainmap[1][0];
 	BKwrap3 = BKwrap3to = &megaData3.mainmap[1][0];
 
+#ifdef WITH_NETWORK
+	// Level-ready rendezvous.  Everything since the shop-exit barrier -- the map
+	// scan, sprite loads, the HUD-picture fade -- is unsynchronized wall-clock
+	// work, and the level fade-in is sim state (levelBrightness advances once
+	// per tick).  Without this the faster-loading machine entered the sim, ran
+	// 3 ticks, and froze nearly black at the driver's start-of-level barrier
+	// until the slower machine caught up: a "fade-in" as long as the two load
+	// times differed.  Rendezvous after the slow work so both machines enter
+	// the level loop within one round trip.
+	if (isNetworkGame)
+	{
+		network_prepare(PACKET_WAITING);
+		network_send(4);  // PACKET_WAITING
+
+		SDL_Surface *const save_surface = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+		const Uint32 wait_start = SDL_GetTicks();
+		bool overlay_drawn = false;
+		while (true)
+		{
+			service_SDL_events(false);
+
+			// A debug-menu edit can ride in ahead of the WAITING packet (reliable
+			// and ordered); adopt it rather than letting the drain discard it.
+			if (network_debug_sync_pump(false))
+				continue;
+
+			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+			{
+				network_update();
+				break;
+			}
+
+			network_update();
+			network_check();
+
+			// The common case is a sub-RTT wait; only a genuinely slow peer
+			// earns the overlay (same style as the in-level stall pump).
+			if (!overlay_drawn && SDL_GetTicks() - wait_start > 700)
+			{
+				overlay_drawn = true;
+				JE_barShade(VGAScreen, 3, 60, 257, 80);
+				JE_barShade(VGAScreen, 5, 62, 255, 78);
+				JE_dString(VGAScreen, 10, 65, "Waiting for other player.", SMALL_FONT_SHAPES);
+				JE_showVGA();
+			}
+
+			SDL_Delay(16);
+		}
+		VGAScreen = save_surface;
+	}
+#endif
+
 	// Rollback machinery for this level: registers/allocates on first use, arms
 	// the self-test in single player, resets the netplay input history.  Ship
 	// spawn positions are final here, which the prediction seed relies on.
@@ -3507,7 +3560,11 @@ level_loop:
 		extend_playfield_right_column(VGAScreenSeg);
 
 		/*-----------------------Message Bar------------------------*/
-		if (textErase > 0 && --textErase == 0)
+		// Live passes only: a re-simulated tick already counted down on its first
+		// pass, and blit_sprite is a no-op in silent passes -- a 1->0 crossing
+		// landing there would swallow the erase and leave the bar poisoned with
+		// stale glyphs the next message then draws over.
+		if (!rollback_resim && textErase > 0 && --textErase == 0)
 			blit_sprite(VGAScreenSeg, 16, 189, OPTION_SHAPES, 36);  // in-game message area
 
 		/*------------------------Shield Gen-------------------------*/

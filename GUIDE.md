@@ -401,6 +401,14 @@ seconds and reads `--` until the first reply arrives. Under roughly 85ms the gam
 runs at full speed on the default network delay of 3; above that it starts to slow
 down, and raising the delay trades input lag for smoothness.
 
+Join by IP Address takes a host address alone or with a port, like
+`12.345.67.89:1337`. Ctrl+V pastes a copied address into the field, replacing
+whatever was already typed there.
+
+At the start of each level the two machines wait for each other before play
+begins, so if one side loads levels slower the other briefly shows "Waiting for
+other player." and then both fade in together.
+
 ## Weapons
 
 The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power
