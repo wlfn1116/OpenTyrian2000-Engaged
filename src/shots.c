@@ -20,6 +20,7 @@
 
 #include "config.h"
 #include "endless.h"
+#include "mainint.h"
 #include "player.h"
 #include "render_list.h"
 #include "sprite.h"
@@ -346,6 +347,17 @@ bool player_shot_move_and_draw(
 		// the exact motion extrapolates — fast shots exit the top cleanly, recycled slots
 		// never streak.
 		rl_current_id = RL_ID_PSHOT_BASE + shot_id;
+		// The linked-Dragonwing aim markers are recreated every tick, so their
+		// pool slot can drift; a stable id keeps them paired across frames and
+		// the aim swing interpolates instead of stepping at the tick rate.
+		for (int k = 0; k < 3; ++k)
+		{
+			if (link_marker_slot[k] == (int)shot_id)
+			{
+				rl_current_id = RL_ID_LINKGUN_BASE + k;
+				break;
+			}
+		}
 		rl_current_vel_x = shot->shotX - rl_shot_old_x;
 		rl_current_vel_y = shot->shotY - rl_shot_old_y;
 		// Acceleration lets the travelling axis extrapolate a decelerating shot

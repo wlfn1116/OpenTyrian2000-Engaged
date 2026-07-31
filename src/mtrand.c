@@ -42,6 +42,8 @@
 
 #include "mtrand.h"
 
+#include <string.h>
+
 /* Period parameters */
 #define N 624
 #define M 397
@@ -52,10 +54,13 @@
 static unsigned long x[N];      /* the array for the state vector  */
 static unsigned long *p0, *p1, *pm;
 
+unsigned long mt_rand_count = 0;  /* draws since the last seed; see mtrand.h */
+
 void mt_srand(unsigned long s)
 {
 	int i;
-	
+
+	mt_rand_count = 0;
 	x[0] = s & 0xffffffffUL;
 	for (i = 1; i < N; ++i) {
 		x[i] = (1812433253UL * (x[i - 1] ^ (x[i - 1] >> 30)) + i)
@@ -75,6 +80,7 @@ unsigned long mt_rand(void)
 		/* Default seed */
 		mt_srand(5489UL);
 	}
+	++mt_rand_count;
 	/* Twisted feedback */
 	y = *p0 = *pm++ ^ (((*p0 & UPPER_MASK) | (*p1 & LOWER_MASK)) >> 1) ^ ((~(*p1 & 1)+1) & MATRIX_A);
 	p0 = p1++;
@@ -90,6 +96,55 @@ unsigned long mt_rand(void)
 	y ^= y << 15 & 0xefc60000UL;
 	y ^= y >> 18;
 	return y;
+}
+
+/* --- Rollback snapshot support ---------------------------------------------
+ *
+ * The generator's whole state is x[], three cursor POINTERS into x[], and the
+ * draw counter.  A raw memcpy of this file's statics would capture pointer
+ * values, which restore fine within one process but are fragile on principle;
+ * store the cursors as offsets instead.  Layout (same-process only, never
+ * serialized): x[N], then three int offsets, then mt_rand_count.
+ */
+size_t mt_state_size(void)
+{
+	return sizeof(x) + 3 * sizeof(int) + sizeof(mt_rand_count);
+}
+
+void mt_state_save(void *dst)
+{
+	unsigned char *p = dst;
+	int ofs[3];
+
+	memcpy(p, x, sizeof(x));
+	p += sizeof(x);
+
+	/* p0 NULL means "never seeded"; keep that representable. */
+	ofs[0] = p0 ? (int)(p0 - x) : -1;
+	ofs[1] = p1 ? (int)(p1 - x) : -1;
+	ofs[2] = pm ? (int)(pm - x) : -1;
+	memcpy(p, ofs, sizeof(ofs));
+	p += sizeof(ofs);
+
+	memcpy(p, &mt_rand_count, sizeof(mt_rand_count));
+}
+
+void mt_state_restore(const void *src)
+{
+	const unsigned char *p = src;
+	int ofs[3];
+
+	memcpy(x, p, sizeof(x));
+	p += sizeof(x);
+
+	memcpy(ofs, p, sizeof(ofs));
+	p += sizeof(ofs);
+
+	p0 = (ofs[0] >= 0) ? x + ofs[0] : NULL;
+	p1 = (ofs[1] >= 0) ? x + ofs[1] : NULL;
+	pm = (ofs[2] >= 0) ? x + ofs[2] : NULL;
+
+	memcpy(&mt_rand_count, p, sizeof(mt_rand_count));
 }
 
 /* generates a random number on the interval [0,1]. */

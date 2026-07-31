@@ -24,6 +24,7 @@
 #include "mouse.h"
 #include "network.h"
 #include "opentyr.h"
+#include "rollback.h"
 #include "console_platform.h"
 #include "video.h"
 #include "video_scale.h"
@@ -195,6 +196,12 @@ void mouseGetRelativeMotionF(float *const out_x, float *const out_y)
 void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;
+
+	// A rollback re-simulation replays a past tick: pumping the OS queue here
+	// would feed it fresh input and make the replay diverge from the original
+	// run.  Every input the replayed tick needs comes from the recorded tuples.
+	if (rollback_resim)
+		return;
 
 	watchdog_heartbeat();  // main-loop progress marker; a stall here trips the hang watchdog
 

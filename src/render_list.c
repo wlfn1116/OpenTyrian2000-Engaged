@@ -98,6 +98,19 @@ void rl_end_record(void)
 	render_list_recording = false;
 }
 
+// Abandon a recording mid-tick (rollback re-simulation, self-test replay).
+// Discards the partial list AND flips back so the last COMPLETE frame is
+// "current" again -- the next rl_begin_record then promotes that complete
+// frame, not the aborted partial, to the interpolation baseline.
+void rl_abort_record(void)
+{
+	if (!render_list_recording)
+		return;
+	render_list_recording = false;
+	counts[cur_buf] = 0;
+	cur_buf ^= 1;
+}
+
 size_t rl_count(void)
 {
 	return counts[cur_buf];
@@ -710,6 +723,15 @@ float rl_get_ship_override_dx(int player)
 	if (player < 0 || player > 1 || !ship_override_active)
 		return 0.0f;
 	return ship_override_dx[player];
+}
+
+// Y counterpart. Needed by the docked Dragonwing, which rides player 1 rigidly and so has to
+// be drawn with player 1's sub-tick offset on both axes rather than its own.
+float rl_get_ship_override_dy(int player)
+{
+	if (player < 0 || player > 1 || !ship_override_active)
+		return 0.0f;
+	return ship_override_dy[player];
 }
 
 void rl_set_ship_vel(int player, int vx, int vy)
