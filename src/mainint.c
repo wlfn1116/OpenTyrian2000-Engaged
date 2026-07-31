@@ -7581,7 +7581,14 @@ redo:
 				RbInput in;
 				nrb_get_remote(nrb_frame(), &in);
 				if (thisPlayerNum == 2)
-					difficultyLevel = (JE_shortint)in.difficulty;  // host-authoritative
+				{
+					// Host-authoritative, but clamped like every other value adopted from
+					// the wire: difficultyLevel indexes difficultyNameB[], so a corrupt
+					// byte here is an out-of-bounds read rather than a wrong difficulty.
+					const JE_shortint d = (JE_shortint)in.difficulty;
+					difficultyLevel = (d >= DIFFICULTY_WIMP && d <= DIFFICULTY_10)
+					                ? d : DIFFICULTY_NORMAL;
+				}
 				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
 				               &link_gun_analog, &link_gun_angle);
 			}

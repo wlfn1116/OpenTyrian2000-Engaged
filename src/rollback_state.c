@@ -19,6 +19,9 @@
  *     read by logic).  JE_doSP still RUNS during re-simulation so its mt_rand
  *     draws keep the RNG stream aligned; a rollback can at worst double a few
  *     sparks for a moment.
+ *   - the endless effect layer (zone timer, turbodrive decay, gravity carries,
+ *     damage over time): endless is not a replayed mode.  Nothing that re-runs
+ *     a tick may be armed while it is active -- see rollback_selftest_active().
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -83,6 +86,13 @@ void rollback_state_register_globals(void)
 	REG(mouseX);  REG(mouseY);  REG(mouseXB);  REG(mouseYB);
 	REG(twoPlayerLinked);
 	REG(linkGunDirec);
+	/* Ship-graphic cache.  Not render state that a replay redraws from the sim:
+	 * it is a derivation of player[].items.ship refreshed only by an explicit
+	 * JE_getShipInfo (which also re-armors, so it cannot serve as a fixup), and
+	 * the Nort Ship request rewrites shipGr from inside the tick.  Pointers are
+	 * into fixed sprite-sheet globals, like the mapY*Pos entries below. */
+	REG(shipGr);   REG(shipGrPtr);
+	REG(shipGr2);  REG(shipGr2ptr);
 	REG(twoPlayerMode);        /* galaga mode clears this mid-level         */
 	REG(galagaMode);
 	REG(galagaShotFreq);

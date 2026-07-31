@@ -43,6 +43,7 @@
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
+#include "rollback.h"
 #include "sprite.h"
 #include "console_platform.h"
 #include "tyrian2.h"
@@ -2375,6 +2376,11 @@ int main(int argc, char *argv[])
 		// any finished game.
 		setjmp(network_bailout_env);
 		network_bailout_armed = true;
+
+		// The teardown skips the level loop's own exit, so clear the rollback
+		// mode flags here: a re-simulation pass left silent would suppress every
+		// sprite draw from the title screen on.
+		rollback_level_end();
 #endif
 
 		crashlog_set_phase("title / main menu");

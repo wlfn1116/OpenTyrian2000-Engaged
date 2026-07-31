@@ -45,9 +45,21 @@ bool net_rollback = true;
 static bool session_mode = false;
 static bool session_vt = true;
 
+#ifdef WITH_NETWORK
+/* Levels started in this session, stamped on every input packet.  A peer stalled
+ * at the end of the previous level keeps re-sending its records for as long as
+ * the stall timeout allows, and those frame numbers can fall inside the new
+ * level's acceptance window; the epoch is what tells them apart. */
+static Uint16 nrb_epoch;
+#endif
+
 void nrb_set_session_mode(bool enabled)
 {
 	session_mode = enabled;
+#ifdef WITH_NETWORK
+	/* Both machines run this at connect time, so both start the count from zero. */
+	nrb_epoch = 0;
+#endif
 }
 
 bool nrb_session_mode(void)
@@ -84,10 +96,16 @@ bool nrb_active(void)
                                       /* something is wedged beyond waiting   */
 #define NRB_REC_BYTES   14            /* wire size of one input record        */
 #define NRB_HDR_BYTES   48            /* wire size of the packet header       */
+#define NRB_DRAIN_MAX   32            /* datagrams read per frame at most     */
 
 /* Wire-relevant tuple bits: the four buttons, the four requests, the analog
  * link flag.  The RB_EV_* bits are self-test-local and never leave a machine. */
 #define NRB_WIRE_BUTTONS 0x01FFu
+/* Of those, the bits the SIMULATION reads.  Pause and in-game-menu requests are
+ * processed outside the sim, from remote_hist rather than from what the frame
+ * consumed, so an unpredicted pulse changes no simulated byte -- comparing them
+ * only bought a rollback that re-derived the identical state. */
+#define NRB_SIM_BUTTONS (NRB_WIRE_BUTTONS & ~(RB_REQ_PAUSE | RB_REQ_MENU))
 /* Bits a PREDICTED tuple may carry: held buttons + analog flag; one-shot
  * request pulses must never be predicted into existence. */
 #define NRB_PREDICT_BUTTONS (RB_BTN_FIRE | RB_BTN_LSIDEKICK | RB_BTN_RSIDEKICK | \
@@ -123,6 +141,8 @@ static NrbSlot remote_used[NRB_HIST];   /* what the sim actually consumed     */
 static Uint32 nrb_cur;                  /* frame being simulated              */
 static Uint32 verified_upto;            /* sim used truth through this frame  */
 static Uint32 req_done;                 /* pause/menu processed through this  */
+static Uint32 req_at;                   /* frame the menu opens after; 0=none */
+static bool   req_local_menu;           /* our own press, not the peer's      */
 static Uint32 peer_acked;               /* peer holds all our frames <= this  */
 static Uint32 remote_contig;            /* we hold all peer frames <= this    */
 static Uint32 remote_newest;            /* newest peer frame seen (timesync)  */
@@ -145,8 +165,14 @@ typedef struct
 }
 NrbCanary;
 static NrbCanary canary[NRB_HIST];
-static NrbCanary peer_canary;           /* newest received, compared once     */
-static bool peer_canary_pending;
+/* Received canaries waiting for OUR copy of their frame to become final.  A
+ * single slot starved the check: at any steady prediction depth the arriving
+ * canary was always ahead of verified_upto, and the next packet overwrote it
+ * before it could ever be compared. */
+#define NRB_CANARY_PEND 8
+static NrbCanary peer_pend[NRB_CANARY_PEND];
+static int       peer_pend_n;
+static Uint32    canary_checked_upto;   /* newest peer frame already compared */
 static bool   canary_reported;          /* one full report per level          */
 static Uint32 canary_mismatches;        /* further ones only counted          */
 
@@ -186,9 +212,12 @@ void nrb_level_reset(void)
 	memset(remote_hist, 0, sizeof(remote_hist));
 	memset(remote_used, 0, sizeof(remote_used));
 	memset(canary, 0, sizeof(canary));
-	peer_canary_pending = false;
+	peer_pend_n = 0;
+	canary_checked_upto = 0;
 	canary_reported = false;
 	canary_mismatches = 0;
+
+	++nrb_epoch;
 
 	nrb_cur = 1;
 	verified_upto = 0;
@@ -209,6 +238,8 @@ void nrb_level_reset(void)
 	resim_last_K = resim_repeat = 0;
 	resim_livelock_reported = false;
 	end_agreed = false;
+	req_at = 0;
+	req_local_menu = false;
 
 	/* Until the peer's first packet, predict "parked at spawn, no buttons".
 	 * Ship spawn positions are part of deterministic level init, so both
@@ -382,7 +413,7 @@ static bool nrb_wire_differs(const RbInput *a, const RbInput *b)
 	return a->x != b->x || a->y != b->y ||
 	       a->velX != b->velX || a->velY != b->velY ||
 	       a->accelX != b->accelX || a->accelY != b->accelY ||
-	       ((a->buttons ^ b->buttons) & NRB_WIRE_BUTTONS) != 0 ||
+	       ((a->buttons ^ b->buttons) & NRB_SIM_BUTTONS) != 0 ||
 	       a->linkAngle != b->linkAngle ||
 	       a->difficulty != b->difficulty;
 }
@@ -477,7 +508,7 @@ static void nrb_send_input(void)
 	SDLNet_Write32(F,              &data[4]);
 	SDLNet_Write32(remote_contig,  &data[8]);
 	SDLNet_Write16((Uint16)(Sint16)(adv_ema * 8.0f), &data[12]);
-	SDLNet_Write16(0,              &data[14]);
+	SDLNet_Write16(nrb_epoch,      &data[14]);
 
 	/* Canary for the newest frame we know is final on our side: the three
 	 * hashes plus raw context so a mismatch report can name the divergence. */
@@ -540,6 +571,12 @@ void nrb_handle_packet(const Uint8 *data, int len)
 	 * the timesync estimate.  A real peer can only be MAX_PREDICT ahead. */
 	if (F > nrb_cur + NRB_HIST)
 		return;
+	/* ...and a SHORT previous level leaves frame numbers small enough to pass that
+	 * test, which the epoch catches instead.  Only strictly older is refused: a
+	 * peer that is a level ahead of us is the pre-existing behaviour, and refusing
+	 * it would turn a one-sided level-start skew into a mutual stall. */
+	if ((Sint16)(SDLNet_Read16(&data[14]) - nrb_epoch) < 0)
+		return;
 
 	their_adv_x8 = (Sint16)SDLNet_Read16(&data[12]);
 
@@ -554,20 +591,34 @@ void nrb_handle_packet(const Uint8 *data, int len)
 	}
 
 	{
+		/* The peer repeats one frame's canary until its own side moves on, so take
+		 * each frame exactly once: already queued, or already checked. */
 		const Uint32 cf = SDLNet_Read32(&data[16]);
-		if (cf != 0)
+		bool have = cf == 0 || cf <= canary_checked_upto;
+		for (int i = 0; !have && i < peer_pend_n; ++i)
+			have = peer_pend[i].tag == cf;
+
+		if (!have)
 		{
-			peer_canary.tag  = cf;
-			peer_canary.rand = SDLNet_Read32(&data[20]);
-			peer_canary.ph   = SDLNet_Read32(&data[24]);
-			peer_canary.eh   = SDLNet_Read32(&data[28]);
-			peer_canary.curLoc = SDLNet_Read16(&data[32]);
-			peer_canary.linked = data[34];
-			peer_canary.px[0] = (Sint16)SDLNet_Read16(&data[36]);
-			peer_canary.py[0] = (Sint16)SDLNet_Read16(&data[38]);
-			peer_canary.px[1] = (Sint16)SDLNet_Read16(&data[40]);
-			peer_canary.py[1] = (Sint16)SDLNet_Read16(&data[42]);
-			peer_canary_pending = true;
+			if (peer_pend_n == NRB_CANARY_PEND)
+			{
+				/* Full: drop the oldest.  It is the one whose frame our own side is
+				 * least likely to still hold a canary for anyway. */
+				memmove(&peer_pend[0], &peer_pend[1], sizeof(peer_pend[0]) * (NRB_CANARY_PEND - 1));
+				--peer_pend_n;
+			}
+
+			NrbCanary *const c = &peer_pend[peer_pend_n++];
+			c->tag  = cf;
+			c->rand = SDLNet_Read32(&data[20]);
+			c->ph   = SDLNet_Read32(&data[24]);
+			c->eh   = SDLNet_Read32(&data[28]);
+			c->curLoc = SDLNet_Read16(&data[32]);
+			c->linked = data[34];
+			c->px[0] = (Sint16)SDLNet_Read16(&data[36]);
+			c->py[0] = (Sint16)SDLNet_Read16(&data[38]);
+			c->px[1] = (Sint16)SDLNet_Read16(&data[40]);
+			c->py[1] = (Sint16)SDLNet_Read16(&data[42]);
 		}
 	}
 
@@ -614,22 +665,17 @@ static void nrb_stamp_canary(Uint32 frame)
 	c->py[1] = (Sint16)player[1].y;
 }
 
-static void nrb_compare_canary(void)
+/* One received canary against our own copy of its frame.  The caller has already
+ * established that our side considers that frame final. */
+static void nrb_check_canary(const NrbCanary *const peer)
 {
-	if (!peer_canary_pending)
-		return;
-	/* Compare only once OUR copy of that frame is final too. */
-	if (peer_canary.tag > verified_upto)
-		return;
-	peer_canary_pending = false;
-
-	const NrbCanary *ours = &canary[peer_canary.tag % NRB_HIST];
-	if (ours->tag != peer_canary.tag)
+	const NrbCanary *ours = &canary[peer->tag % NRB_HIST];
+	if (ours->tag != peer->tag)
 		return;  /* out of window; too old to compare */
 
-	if (ours->rand != peer_canary.rand || ours->ph != peer_canary.ph ||
-	    ours->eh != peer_canary.eh ||
-	    ours->curLoc != peer_canary.curLoc || ours->linked != peer_canary.linked)
+	if (ours->rand != peer->rand || ours->ph != peer->ph ||
+	    ours->eh != peer->eh ||
+	    ours->curLoc != peer->curLoc || ours->linked != peer->linked)
 	{
 		++canary_mismatches;
 
@@ -645,16 +691,18 @@ static void nrb_compare_canary(void)
 			 * equal OUR state for N-1 or N+1?  That distinguishes "the sims
 			 * diverged" from "the frame counters slipped by one" -- completely
 			 * different bugs that look identical in a plain hash mismatch. */
-			const NrbCanary *m1 = &canary[(peer_canary.tag - 1) % NRB_HIST];
-			const NrbCanary *p1 = &canary[(peer_canary.tag + 1) % NRB_HIST];
+			/* Frame 1 has no N-1 to compare against, and an empty canary slot reads
+			 * as tag 0 -- which would match and report a skew that never happened. */
+			const NrbCanary *m1 = &canary[(peer->tag - 1) % NRB_HIST];
+			const NrbCanary *p1 = &canary[(peer->tag + 1) % NRB_HIST];
 			const char *skew = "";
-			if (m1->tag == peer_canary.tag - 1 &&
-			    m1->rand == peer_canary.rand && m1->ph == peer_canary.ph &&
-			    m1->eh == peer_canary.eh && m1->curLoc == peer_canary.curLoc)
+			if (peer->tag >= 2 && m1->tag == peer->tag - 1 &&
+			    m1->rand == peer->rand && m1->ph == peer->ph &&
+			    m1->eh == peer->eh && m1->curLoc == peer->curLoc)
 				skew = "\n  NOTE: remote frame N equals our frame N-1 -- FRAME COUNTERS SKEWED (we run one ahead)";
-			else if (p1->tag == peer_canary.tag + 1 &&
-			         p1->rand == peer_canary.rand && p1->ph == peer_canary.ph &&
-			         p1->eh == peer_canary.eh && p1->curLoc == peer_canary.curLoc)
+			else if (p1->tag == peer->tag + 1 &&
+			         p1->rand == peer->rand && p1->ph == peer->ph &&
+			         p1->eh == peer->eh && p1->curLoc == peer->curLoc)
 				skew = "\n  NOTE: remote frame N equals our frame N+1 -- FRAME COUNTERS SKEWED (we run one behind)";
 
 			char detail[1024];
@@ -668,19 +716,19 @@ static void nrb_compare_canary(void)
 			         "  P1 pos     : local %d,%d  remote %d,%d\n"
 			         "  P2 pos     : local %d,%d  remote %d,%d\n"
 			         "  rollbacks so far: %lu (deepest %lu, resim frames %lu)%s",
-			         (unsigned long)peer_canary.tag, thisPlayerNum, (unsigned long)nrb_cur,
-			         (unsigned long)ours->rand, (unsigned long)peer_canary.rand,
-			         ours->rand == peer_canary.rand ? "ok" : "DIFFERS",
-			         (unsigned)ours->ph, (unsigned)peer_canary.ph,
-			         ours->ph == peer_canary.ph ? "ok" : "DIFFERS",
-			         (unsigned)ours->eh, (unsigned)peer_canary.eh,
-			         ours->eh == peer_canary.eh ? "ok" : "DIFFERS",
-			         (unsigned)ours->curLoc, (unsigned)peer_canary.curLoc,
-			         ours->curLoc == peer_canary.curLoc ? "ok" : "DIFFERS",
-			         (unsigned)ours->linked, (unsigned)peer_canary.linked,
-			         ours->linked == peer_canary.linked ? "ok" : "DIFFERS",
-			         ours->px[0], ours->py[0], peer_canary.px[0], peer_canary.py[0],
-			         ours->px[1], ours->py[1], peer_canary.px[1], peer_canary.py[1],
+			         (unsigned long)peer->tag, thisPlayerNum, (unsigned long)nrb_cur,
+			         (unsigned long)ours->rand, (unsigned long)peer->rand,
+			         ours->rand == peer->rand ? "ok" : "DIFFERS",
+			         (unsigned)ours->ph, (unsigned)peer->ph,
+			         ours->ph == peer->ph ? "ok" : "DIFFERS",
+			         (unsigned)ours->eh, (unsigned)peer->eh,
+			         ours->eh == peer->eh ? "ok" : "DIFFERS",
+			         (unsigned)ours->curLoc, (unsigned)peer->curLoc,
+			         ours->curLoc == peer->curLoc ? "ok" : "DIFFERS",
+			         (unsigned)ours->linked, (unsigned)peer->linked,
+			         ours->linked == peer->linked ? "ok" : "DIFFERS",
+			         ours->px[0], ours->py[0], peer->px[0], peer->py[0],
+			         ours->px[1], ours->py[1], peer->px[1], peer->py[1],
 			         (unsigned long)stat_rollbacks, (unsigned long)stat_deepest,
 			         (unsigned long)stat_resim_frames, skew);
 			crashlog_note("NETWORK DESYNC (rollback)", detail);
@@ -691,7 +739,51 @@ static void nrb_compare_canary(void)
 	}
 }
 
-/* --- Confirmed-frame request processing (pause / in-game menu) ----------------- */
+/* Compare every pending canary whose frame our side has finalised, and keep the
+ * rest for a later frame. */
+static void nrb_compare_canary(void)
+{
+	int keep = 0;
+
+	for (int i = 0; i < peer_pend_n; ++i)
+	{
+		if (peer_pend[i].tag > verified_upto)
+		{
+			peer_pend[keep++] = peer_pend[i];   /* our copy is not final yet */
+			continue;
+		}
+
+		nrb_check_canary(&peer_pend[i]);
+		if (peer_pend[i].tag > canary_checked_upto)
+			canary_checked_upto = peer_pend[i].tag;
+	}
+
+	peer_pend_n = keep;
+}
+
+/* --- Confirmed-frame request processing (pause / in-game menu) -----------------
+ *
+ * The in-game menu writes SIMULATION state from outside the tuple stream (a debug
+ * loadout edit, a difficulty change), so the two machines have to run it having
+ * simulated the same frames.  Opening it the moment its frame is confirmed does
+ * not achieve that: each machine is then at its own prediction depth past that
+ * frame, so the frames in between get the change on one machine and not the
+ * other -- and with the inputs still matching, no rollback ever corrects it.
+ *
+ * A request seen on frame f therefore SCHEDULES the menu for f + NRB_REQ_LEAD,
+ * and both machines stall on that frame until it is final.  The lead has to
+ * exceed the deepest a machine can be past f when it first notices the request.
+ * remote_contig sits below f until f's truth lands, and the prediction gate holds
+ * nrb_cur to remote_contig + ROLLBACK_MAX_PREDICT, so nrb_cur <= f - 1 + PREDICT
+ * at that point; the notice can slip by one further frame when verified_upto
+ * advances inside a stall AFTER this ran, which puts the worst case at
+ * f + ROLLBACK_MAX_PREDICT.  A frame of slack on top keeps it off the boundary.
+ *
+ * Pause is deliberately NOT scheduled: JE_pauseGame is presentation and a network
+ * rendezvous only, it writes nothing the sim reads, and scheduling it would put a
+ * third of a second between the keypress and the game stopping.
+ */
+#define NRB_REQ_LEAD (ROLLBACK_MAX_PREDICT + 2)
 
 static void nrb_process_requests(void)
 {
@@ -707,21 +799,13 @@ static void nrb_process_requests(void)
 
 		if (bits & RB_REQ_MENU)
 		{
-			yourInGameMenuRequest = (lbits & RB_REQ_MENU) != 0;
-			JE_doInGameSetup();
-			yourInGameMenuRequest = false;
-			if (haltGame)
-				reallyEndLevel = true;
-
-			/* "Quit to outpost" from the in-game menu is not a predicted event:
-			 * the menu is itself a rendezvous (both machines enter it on the same
-			 * confirmed frame and agree on the quit through PACKET_GAME_QUIT), and
-			 * it lands at a frame the rollback can no longer reach.  Making the
-			 * exit wait for one more frame of peer input therefore deadlocks the
-			 * machine that happens to be a frame ahead: the peer has already torn
-			 * the level down and will never send it. */
-			if (reallyEndLevel)
-				end_agreed = true;
+			/* Two presses a few frames apart fold into one opening: the earlier
+			 * schedule stands, and a later one joins it rather than queueing a
+			 * second menu behind the first. */
+			const Uint32 at = f + NRB_REQ_LEAD;
+			if (req_at == 0 || at < req_at)
+				req_at = at;
+			req_local_menu |= (lbits & RB_REQ_MENU) != 0;
 		}
 	}
 }
@@ -836,9 +920,9 @@ static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		char detail[256];
 		snprintf(detail, sizeof(detail),
 		         "%s\n"
-		         "  player   : %u\n"
+		         "  player   : %u   level epoch: %u\n"
 		         "  frame    : %lu   verified: %lu   peer ack: %lu   remote newest: %lu",
-		         why, thisPlayerNum,
+		         why, thisPlayerNum, (unsigned)nrb_epoch,
 		         (unsigned long)nrb_cur, (unsigned long)verified_upto,
 		         (unsigned long)peer_acked, (unsigned long)remote_newest);
 		crashlog_note("ROLLBACK STALL", detail);
@@ -853,6 +937,44 @@ static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		        (unsigned)waited);
 		network_tyrian_halt(2, false);
 	}
+}
+
+/* True once the scheduled menu frame has been reached and confirmed, at which
+ * point both machines hold identical state and the menu may open.  Returns false
+ * if a rollback is needed first -- the caller re-enters here after re-simulating. */
+static bool nrb_menu_frame_ready(Uint32 *resim_from)
+{
+	const Uint32 wait_start = SDL_GetTicks();
+	const Uint32 newest_at_start = remote_newest;
+	bool stall_reported = false;
+
+	while (verified_upto < nrb_cur)
+	{
+		nrb_stall_pump(wait_start, &stall_reported, "waiting to open the in-game menu");
+
+		const Uint32 K = nrb_scan_mispredict();
+		if (K != 0)
+		{
+			*resim_from = K;
+			return false;
+		}
+
+		/* Same escape as the level-end gate: a peer that has simulated nothing for
+		 * this long has left the level by a route we did not model, and freezing
+		 * here would take the menu -- and with it the only way to quit -- away. */
+		if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
+		{
+			char detail[192];
+			snprintf(detail, sizeof(detail),
+			         "peer stopped simulating at frame %lu while we waited to open the menu "
+			         "at frame %lu (player %u)\n  opening it unsynchronised",
+			         (unsigned long)remote_newest, (unsigned long)nrb_cur, thisPlayerNum);
+			crashlog_note("ROLLBACK MENU TIMEOUT", detail);
+			break;
+		}
+	}
+
+	return true;
 }
 
 /* Give back time when we are consistently ahead of the peer, GGPO-style: each
@@ -932,8 +1054,16 @@ NrbStep nrb_driver(void)
 
 	JE_clearSpecialRequests();
 
-	/* Ingest whatever has arrived and correct the timeline if needed. */
-	network_check();
+	/* Ingest whatever has arrived and correct the timeline if needed.
+	 *
+	 * DRAIN, don't take one: network_check() handles a single datagram per call
+	 * and the peer sends one every frame, so at one call per frame the socket
+	 * runs at exactly break-even -- any burst (a retransmit, a keep-alive, a
+	 * stray discovery probe) parks a backlog that never clears again and reads
+	 * as permanently added latency and deeper prediction.  Bounded so a flood
+	 * cannot hold the frame open indefinitely. */
+	for (int i = 0; i < NRB_DRAIN_MAX && network_check() > 0; ++i)
+		;
 	{
 		const Uint32 K = nrb_scan_mispredict();
 		if (K != 0)
@@ -942,6 +1072,36 @@ NrbStep nrb_driver(void)
 
 	nrb_compare_canary();
 	nrb_process_requests();
+
+	/* Scheduled menu rendezvous.  req_at is always strictly ahead of nrb_cur when
+	 * it is set (see NRB_REQ_LEAD), so this fires on exactly that frame, on both
+	 * machines, with the same simulation behind it. */
+	if (req_at != 0 && nrb_cur >= req_at)
+	{
+		Uint32 K = 0;
+		if (!nrb_menu_frame_ready(&K))
+			return nrb_begin_resim(K);
+
+		const bool local_menu = req_local_menu;
+		req_at = 0;
+		req_local_menu = false;
+
+		yourInGameMenuRequest = local_menu;
+		JE_doInGameSetup();
+		yourInGameMenuRequest = false;
+		if (haltGame)
+			reallyEndLevel = true;
+
+		/* "Quit to outpost" from the in-game menu is not a predicted event: the
+		 * menu is itself a rendezvous (both machines enter it on the same
+		 * confirmed frame and agree on the quit through PACKET_GAME_QUIT), and it
+		 * lands at a frame the rollback can no longer reach.  Making the exit wait
+		 * for one more frame of peer input therefore deadlocks the machine that
+		 * happens to be a frame ahead: the peer has already torn the level down
+		 * and will never send it. */
+		if (reallyEndLevel)
+			end_agreed = true;
+	}
 
 	/* Irreversible transition gate: the level may only actually end once the
 	 * frame that ended it is confirmed -- a predicted "end" can be rolled back

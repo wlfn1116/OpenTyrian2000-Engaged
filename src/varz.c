@@ -342,6 +342,11 @@ ExpertSetting expertSettings[] =
 };
 const int expertSettingsCount = (int)(sizeof(expertSettings) / sizeof(expertSettings[0]));
 
+// The debug-sync block carries these across the wire in a fixed number of slots, and its loops
+// simply stop when they run out -- a setting added past the end would go unsynced in silence.
+COMPILE_TIME_ASSERT(expert_settings_fit_debug_sync,
+                    COUNTOF(expertSettings) <= NETWORK_DEBUG_EXPERT_SLOTS);
+
 void clamp_expert_settings(void)
 {
 	for (int i = 0; i < expertSettingsCount; ++i)

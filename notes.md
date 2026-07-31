@@ -462,6 +462,45 @@ bit both sims consume on the same frame, not through `reallyEndLevel`.
 
 Adding a field to the block moves the wire offsets; bump `NET_VERSION`.
 
+### Rollback input stream
+
+`PACKET_INPUT` is a 48-byte header plus up to 16 redundant 14-byte input records,
+unacknowledged and idempotent. Four invariants hold it together:
+
+- **Drain the socket, don't sample it.** `network_check()` takes one datagram per
+  call and the peer sends one per frame, so a single call per frame runs at exactly
+  break-even: any burst leaves a backlog that never clears and reads as permanent
+  latency.
+- **The header carries a level epoch.** Frame numbers alone cannot separate a
+  stalled peer's leftovers from the previous level, because a short level leaves
+  numbers small enough to land inside the new level's acceptance window. Only a
+  strictly older epoch is refused — refusing a newer one would turn a one-sided
+  level-start skew into a mutual stall.
+- **Pause and menu request bits are outside the misprediction test.** They are
+  processed from the received truth rather than from what a frame consumed, so an
+  unpredicted pulse changes no simulated byte and must not cost a rollback.
+- **Received canaries queue.** A canary arrives for a frame our own side has not
+  finalised yet; a single slot is overwritten by the next packet before it can ever
+  be compared, and the desync check silently never runs.
+
+The in-game menu is a **frame** rendezvous, not just a wall-clock one. It writes
+simulation state from outside the tuple stream, so opening it as soon as its frame
+is confirmed is not enough: each machine is then at its own prediction depth past
+that frame, the frames in between get the change on one machine only, and the
+inputs still match so no rollback corrects it. A request on frame f schedules the
+menu for `f + NRB_REQ_LEAD` — past the deepest either machine can be when it
+notices — and both stall there until the frame is final. Pause is exempt: it writes
+nothing the sim reads, and scheduling it would delay the keypress by a third of a
+second.
+
+`shipGr`/`shipGrPtr` are in the registry despite looking like render state. They
+cache a derivation of `player[].items.ship` that only an explicit `JE_getShipInfo`
+refreshes — and that call re-armors, so it cannot serve as a restore fixup.
+
+The Endless effect layer (zone timer, turbodrive decay, gravity carries, damage over
+time) is outside the rollback registry by design, so nothing that re-runs a tick may
+be armed while it is active — `rollback_selftest_active()` is the gate.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. A bad index otherwise

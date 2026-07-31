@@ -49,7 +49,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       6            // increment whenever networking changes might create incompatibility
+#define NET_VERSION       7            // increment whenever networking changes might create incompatibility
 #define NET_PORT          1333         // UDP
 
 // 320 (was 256): the rollback input packet carries a 48-byte header plus up to
@@ -61,6 +61,10 @@
 // then the host's simulation settings, then the null-terminated player name.
 #define NET_CONNECT_SETTINGS  12
 #define NET_CONNECT_NAME      (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+
+// Longest player name that goes on the wire.  Every send path clamps to it; the
+// stored name is never truncated, so a long one survives a network game intact.
+#define NET_NAME_MAX      20
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -322,12 +326,18 @@ int network_check(void)
 			{
 				if (host_awaiting_peer)
 				{
-					const size_t name_len = strlen(network_player_name);
+					// Bounded by the wire limit rather than by whatever the config holds:
+					// the name arrives straight out of opentyrian.cfg, which nothing
+					// validates, and the packet buffer is a fixed NET_PACKET_SIZE.
+					size_t name_len = strlen(network_player_name);
+					if (name_len > NET_NAME_MAX)
+						name_len = NET_NAME_MAX;
 
 					SDLNet_Write16(PACKET_DISCOVER_REPLY, &packet_out_temp->data[0]);
 					SDLNet_Write16(NET_VERSION,           &packet_out_temp->data[2]);
 					SDLNet_Write16(network_player_port,   &packet_out_temp->data[4]);
-					memcpy(&packet_out_temp->data[6], network_player_name, name_len + 1);
+					memcpy(&packet_out_temp->data[6], network_player_name, name_len);
+					packet_out_temp->data[6 + name_len] = '\0';
 
 					packet_out_temp->len = (int)(6 + name_len + 1);
 					packet_out_temp->address = packet_temp->address;
@@ -754,14 +764,19 @@ void network_state_reset(void)
 // after sync), so it lives here rather than being spelled out at each site.
 static void send_connect_packet(Uint16 episodes_local)
 {
+	size_t name_len = strlen(network_player_name);
+	if (name_len > NET_NAME_MAX)
+		name_len = NET_NAME_MAX;
+
 	network_prepare(PACKET_CONNECT);
 	SDLNet_Write16(NET_VERSION,    &packet_out_temp->data[4]);
 	SDLNet_Write16(network_delay,  &packet_out_temp->data[6]);
 	SDLNet_Write16(episodes_local, &packet_out_temp->data[8]);
 	SDLNet_Write16(thisPlayerNum,  &packet_out_temp->data[10]);
 	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
-	strcpy((char *)&packet_out_temp->data[NET_CONNECT_NAME], network_player_name);
-	network_send(NET_CONNECT_NAME + strlen(network_player_name) + 1);
+	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
+	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
+	network_send(NET_CONNECT_NAME + name_len + 1);
 }
 
 // attempt to punch through firewall by firing off UDP packets at the opponent
@@ -801,9 +816,7 @@ int network_connect(void)
 	}
 	episodes_local = episodes;
 
-	assert(NET_PACKET_SIZE - NET_CONNECT_NAME >= 20 + 1);
-	if (strlen(network_player_name) > 20)
-		network_player_name[20] = '\0';
+	assert(NET_PACKET_SIZE - NET_CONNECT_NAME >= NET_NAME_MAX + 1);
 
 	// The lobby decides the roles, so derive the player number from them; a command-line
 	// game keeps whatever --net-player-number set and is checked for conflicts below.
@@ -913,9 +926,17 @@ connect_again:
 	}
 
 	// The name is whatever trails the settings block.  Take the length from the packet rather
-	// than trusting it to be terminated, and tolerate a packet too short to hold one at all.
+	// than trusting it to be terminated, tolerate a packet too short to hold one at all, and
+	// hold the sender to the same limit we send under -- the retry path below re-enters here,
+	// so anything already allocated is ours to release first.
 	{
-		const int name_len = packet_in[0]->len - NET_CONNECT_NAME;
+		int name_len = packet_in[0]->len - NET_CONNECT_NAME;
+		if (name_len > NET_NAME_MAX)
+			name_len = NET_NAME_MAX;
+
+		if (network_opponent_name != empty_string)
+			free(network_opponent_name);
+
 		if (name_len > 0)
 		{
 			network_opponent_name = malloc_die(name_len + 1);
@@ -1220,7 +1241,7 @@ void network_settings_restore(void)
 #define NDS_CASH      42    /* 2 x Uint32                                 */
 #define NDS_ARMOR     50    /* Uint16 armor, shield, per player           */
 #define NDS_EXPERT    58    /* NDS_EXPERT_SLOTS x Uint16                  */
-#define NDS_EXPERT_SLOTS 8
+#define NDS_EXPERT_SLOTS NETWORK_DEBUG_EXPERT_SLOTS
 #define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
 
 // PlayerItems is all Uint8, so it goes on the wire as-is -- but only for as long as that

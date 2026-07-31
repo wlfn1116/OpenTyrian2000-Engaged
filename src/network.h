@@ -172,6 +172,9 @@ void network_debug_sync_mark(void);
 bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
 bool network_debug_sync_pump(bool in_level);
+// Expert tunables the block has room for.  Exposed so varz.c, which owns the table, can assert
+// it still fits -- the send/adopt loops stop at this many and would drop a later one in silence.
+#define NETWORK_DEBUG_EXPERT_SLOTS 8
 
 // Summary of the parts of the simulation that must match between the two machines, split into
 // three independent pieces so a mismatch says WHICH part diverged.  That distinction matters:

@@ -20,6 +20,7 @@
 #include "rollback.h"
 
 #include "crashlog.h"
+#include "endless.h"
 #include "net_rollback.h"
 #include "network.h"
 #include "opentyr.h"
@@ -311,7 +312,7 @@ static bool   st_level_active = false;
 
 bool rollback_selftest_active(void)
 {
-	return rollback_selftest && st_level_active && !isNetworkGame;
+	return rollback_selftest && st_level_active && !isNetworkGame && !endlessFxActive();
 }
 
 /* Temporary diagnostic probe for self-test divergence hunting: logs which pass
@@ -347,14 +348,18 @@ void rollback_level_start(void)
 
 	/* Registration + the multi-megabyte ring exist only when something will
 	 * actually use them; pure single-player play without the self-test costs
-	 * nothing. */
-	if (rollback_selftest || (isNetworkGame && nrb_session_mode()))
+	 * nothing.  The endless effect layer (zone timers, gravity carries, damage
+	 * over time) sits outside the registry by design, so a replayed tick would
+	 * advance it a second time -- the self-test does not arm there. */
+	const bool selftest_will_arm = rollback_selftest && !isNetworkGame && !endlessFxActive();
+
+	if (selftest_will_arm || (isNetworkGame && nrb_session_mode()))
 	{
 		rollback_register_all();
 		rollback_ring_reset();
 	}
 
-	if (rollback_selftest && !isNetworkGame)
+	if (selftest_will_arm)
 		rb_log("level start: selftest armed (state %zu bytes, demo=%s)",
 		       rollback_state_size(), play_demo ? "yes" : "no");
 
