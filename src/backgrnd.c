@@ -22,6 +22,7 @@
 #include "mtrand.h"
 #include "opentyr.h"
 #include "render_list.h"
+#include "rollback.h"
 #include "varz.h"
 #include "video.h"
 
@@ -181,6 +182,10 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 {
 	assert(surface->format->BitsPerPixel == 8);
 
+	// Silent rollback re-simulation: state only, no pixels (see sprite.c).
+	if (rollback_resim_silent)
+		return;
+
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, false, mirror_w, col0);
 
@@ -237,6 +242,10 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
 {
 	assert(surface->format->BitsPerPixel == 8);
+
+	// Silent rollback re-simulation: state only, no pixels (see sprite.c).
+	if (rollback_resim_silent)
+		return;
 
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, true, mirror_w, col0);

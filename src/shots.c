@@ -350,11 +350,13 @@ bool player_shot_move_and_draw(
 		// The linked-Dragonwing aim markers are recreated every tick, so their
 		// pool slot can drift; a stable id keeps them paired across frames and
 		// the aim swing interpolates instead of stepping at the tick rate.
+		bool link_marker = false;
 		for (int k = 0; k < 3; ++k)
 		{
 			if (link_marker_slot[k] == (int)shot_id)
 			{
 				rl_current_id = RL_ID_LINKGUN_BASE + k;
+				link_marker = true;
 				break;
 			}
 		}
@@ -368,6 +370,12 @@ bool player_shot_move_and_draw(
 		rl_shot_attach = (shot->shotXM > 100 ? 1 : 0)
 		               | (shot->shotYM > 100 ? 2 : 0)
 		               | ((shot->playerNumber - 1) << 2);
+		// The aim markers orbit the fused ship: attach BOTH axes to the carrier
+		// (player 1 = index 0), so they ride the render-rate ship instead of
+		// interpolating a tick behind it; their own angular motion still
+		// interpolates from the cross-frame pairing.
+		if (link_marker)
+			rl_shot_attach = 3;
 		if (*out_is_special)
 		{
 			blit_sprite_blend(VGAScreen, *out_shotx+1, *out_shoty, OPTION_SHAPES, sprite_frame - 60001);

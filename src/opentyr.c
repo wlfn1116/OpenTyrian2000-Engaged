@@ -2368,6 +2368,15 @@ int main(int argc, char *argv[])
 
 	for (; ; )
 	{
+#ifdef WITH_NETWORK
+		// Landing pad for a network teardown mid-game (peer quit, connection
+		// lost, desync halt): network_tyrian_halt longjmps here after cleaning
+		// the session up, and this iteration proceeds to the title screen like
+		// any finished game.
+		setjmp(network_bailout_env);
+		network_bailout_armed = true;
+#endif
+
 		crashlog_set_phase("title / main menu");
 
 #ifdef WITH_NETWORK

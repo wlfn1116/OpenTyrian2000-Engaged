@@ -1566,7 +1566,11 @@ void JE_doInGameSetup(void)
 			while (true)
 			{
 				service_SDL_events(false);
+				// Keep the mouse cursor alive while we wait on the other player.
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
 				JE_showVGA();
+				JE_mouseReplace();
 
 				if (packet_in[0])
 				{
@@ -1605,6 +1609,10 @@ void JE_doInGameSetup(void)
 		while (!network_is_sync())
 		{
 			service_SDL_events(false);
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);
@@ -6603,6 +6611,10 @@ void JE_pauseGame(void)
 		while (!network_is_sync())
 		{
 			service_SDL_events(false);
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);
@@ -6751,6 +6763,10 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 	memset(in, 0, sizeof(*in));
 	in->x = (Sint16)this_player->x;
 	in->y = (Sint16)this_player->y;
+	in->velX = (Sint16)(this_player->x_velocity > 127 ? 127 :
+	                    (this_player->x_velocity < -127 ? -127 : this_player->x_velocity));
+	in->velY = (Sint16)(this_player->y_velocity > 127 ? 127 :
+	                    (this_player->y_velocity < -127 ? -127 : this_player->y_velocity));
 	in->mouseX = (Sint16)mx;
 	in->mouseY = (Sint16)my;
 	/* The wire carries one signed byte per axis; the sim never produces more. */
@@ -6789,6 +6805,8 @@ static void rb_apply_tuple(const RbInput *in, Player *this_player,
 	}
 	this_player->x = in->x;
 	this_player->y = in->y;
+	this_player->x_velocity = (int)in->velX;
+	this_player->y_velocity = (int)in->velY;
 	*accelXC_ = (JE_integer)in->accelX;
 	*accelYC_ = (JE_integer)in->accelY;
 	*link_analog = (in->buttons & RB_LINK_ANALOG) != 0;
@@ -6890,7 +6908,19 @@ redo:
 	// position/velocity movement here — the render-rate integrator drives it.
 	// Player 2 docked as the Dragonwing is the exception: the sim places it from player 1's
 	// position every tick, so VT leaves it alone and the original path below must still run.
-	const bool vt = vt_ship_owns() && !(playerNum_ == 2 && twoPlayerLinked);
+	// Which physics tail the SIMULATION runs.  In rollback netplay this must be
+	// identical on both machines no matter what each machine's own presentation
+	// settings say -- the friction/velocity tail, the ship-tracking shot deltas
+	// and the banking pick (it spawns NortSparks: shots + RNG draws) all key off
+	// it -- so the session adopts the HOST's choice via the settings handshake.
+	const bool vt_sim_owns = (isNetworkGame && nrb_active())
+	                       ? (nrb_session_vt() && frameCountMax > 0 && !endLevel)
+	                       : vt_ship_owns();
+	const bool vt = vt_sim_owns && !(playerNum_ == 2 && twoPlayerLinked);
+	// Which paths this machine's LIVE INPUT flows through -- always the local
+	// setup: these only shape the tuple this machine records, so they are free
+	// to differ per machine.
+	const bool vt_input = vt_ship_owns() && !(playerNum_ == 2 && twoPlayerLinked);
 
 	bool link_gun_analog = false;
 	float link_gun_angle = 0;
@@ -7070,7 +7100,7 @@ redo:
 
 							link_gun_analog = joystick_analog_angle(j, &link_gun_angle);
 						}
-						else if (!vt)
+						else if (!vt_input)
 						{
 							this_player->x += (joystick[j].direction[3] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[1] ? CURRENT_KEY_SPEED : 0);
 							this_player->y += (joystick[j].direction[0] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[2] ? CURRENT_KEY_SPEED : 0);
@@ -7116,7 +7146,7 @@ redo:
 					button[2] |= mouse_pressed[2];
 					button[3] |= mouse_pressed[3];
 
-					if (!vt)
+					if (!vt_input)
 					{
 						if (!isNetworkGame)
 						{
@@ -7155,7 +7185,7 @@ redo:
 				/* keyboard input */
 				if ((inputDevice == 0 || inputDevice == 1) && !play_demo)
 				{
-					if (!vt)
+					if (!vt_input)
 					{
 						if (keysactive[keySettings[KEY_SETTING_UP]])
 							this_player->y -= CURRENT_KEY_SPEED;
@@ -7244,7 +7274,7 @@ redo:
 				else if (mouseYC < -30)
 					mouseYC = -30;
 
-				if (!vt)
+				if (!vt_input)
 				{
 					if (mouseXC > 0)
 						this_player->x += (mouseXC + 3) / 4;
@@ -7308,6 +7338,12 @@ redo:
 				if (thisPlayerNum == 1)
 					in.difficulty = (Uint8)difficultyLevel;  // host dictates
 				nrb_record_local(&in);
+
+				// Adopt the wire-quantized analog gun angle locally too: the peer
+				// can only ever apply the quantized value, and both simulations
+				// must feed linkGunDirec the bit-identical float.
+				if (in.buttons & RB_LINK_ANALOG)
+					link_gun_angle = (float)in.linkAngle * (float)(2.0 * M_PI / 65536.0);
 			}
 			else if (isNetworkGame && playerNum_ == thisPlayerNum)
 			{

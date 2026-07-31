@@ -85,6 +85,10 @@ bool rollback_restore(Uint32 frame);
 typedef struct
 {
 	Sint16 x, y;            /* ship position after the movement routine        */
+	Sint16 velX, velY;      /* ship velocity after the movement routine: the   */
+	                        /* classic physics tail and banking read it, so it */
+	                        /* must cross the wire or machines with different  */
+	                        /* Smooth Motion settings drift                    */
 	Sint16 mouseX, mouseY;  /* tick aim/anchor pair (self-test replay only)    */
 	Sint16 sfTx, sfTy;      /* Street-Fighter-code target (self-test only)     */
 	Sint16 accelX, accelY;  /* banking/aim acceleration the tick derived       */

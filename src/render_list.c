@@ -371,6 +371,14 @@ void rl_finalize(void)
 		if (rl_id_extrapolates(id))
 			continue;
 
+		// Velocity hint the recorder seeded (blit_enemy stamps per-tick enemy
+		// motion; zero for everything that never sets one).  When positional
+		// pairing fails -- a BLINKING sprite like the arcade pickup balls is
+		// hidden every other tick, so its blit count flips 0/1 forever -- fall
+		// back to this hint instead of snapping, and the blinker glides like
+		// every other entity.
+		const int hint_dx = c->dx, hint_dy = c->dy;
+
 		c->dx = 0;
 		c->dy = 0;
 		c->par_yown100 = 0;
@@ -378,13 +386,22 @@ void rl_finalize(void)
 		if (id <= 0 || id >= RL_ID_MAX)
 			continue;  // static / untagged: never interpolate
 
-		// A changed blit count makes positional pairing unsafe; snap for one tick.
+		// A changed blit count makes positional pairing unsafe; snap for one tick
+		// (or glide on the recorded velocity when the recorder supplied one).
 		if (prevN[id] != curN[id])
+		{
+			c->dx = hint_dx;
+			c->dy = hint_dy;
 			continue;
+		}
 
 		const int pi = head[id];
 		if (pi < 0)
-			continue;  // no match (newly spawned): snap
+		{
+			c->dx = hint_dx;  // newly (re)appeared mid-motion: glide, don't snap
+			c->dy = hint_dy;
+			continue;
+		}
 		head[id] = link[pi];
 
 		int dx = c->x - prev[pi].x;

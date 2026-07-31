@@ -2683,7 +2683,11 @@ void JE_itemScreen(void)
 		while (true)
 		{
 			service_SDL_events(false);
+			// Keep the mouse cursor alive while we wait on the other player.
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
 			JE_showVGA();
+			JE_mouseReplace();
 
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 			{
@@ -2705,7 +2709,10 @@ void JE_itemScreen(void)
 		while (!network_is_sync())
 		{
 			service_SDL_events(false);
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
 			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);

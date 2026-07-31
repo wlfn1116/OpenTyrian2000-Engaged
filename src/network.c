@@ -27,6 +27,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mainint.h"
+#include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
 #include "nortvars.h"
@@ -34,6 +35,7 @@
 #include "picload.h"
 #include "player.h"
 #include "sprite.h"
+#include "tyrian2.h"
 #include "varz.h"
 #include "video.h"
 
@@ -47,10 +49,12 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       4            // increment whenever networking changes might create incompatibility
+#define NET_VERSION       5            // increment whenever networking changes might create incompatibility
 #define NET_PORT          1333         // UDP
 
-#define NET_PACKET_SIZE   256
+// 320 (was 256): the rollback input packet carries a 48-byte header plus up to
+// 16 x 14-byte redundant input records = 272 bytes.
+#define NET_PACKET_SIZE   320
 #define NET_PACKET_QUEUE  16
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -135,6 +139,11 @@ static bool connected = false, quit = false;
 // the way the original command-line netplay did (both sides were given each other's address).
 // While this is set, the first inbound connect packet binds the channel to its sender.
 static bool host_awaiting_peer = false;
+#endif
+
+#ifdef WITH_NETWORK
+jmp_buf network_bailout_env;
+bool network_bailout_armed = false;
 #endif
 
 uint thisPlayerNum = 0;  /* Player number on this PC (1 or 2) */
@@ -248,6 +257,13 @@ static int network_acknowledge(Uint16 sync)
 static bool network_is_alive(void)
 {
 	return (SDL_GetTicks() - last_in_tick < NET_TIME_OUT || SDL_GetTicks() - last_state_in_tick < NET_TIME_OUT);
+}
+
+// Exported liveness for the rollback stall logic: a peer sitting in menus for
+// minutes keeps sending keep-alives, and that must read as "slow, not dead".
+bool network_peer_alive(void)
+{
+	return network_is_alive();
 }
 
 // poll for new packets received, check that connection is alive, resend queued packets if necessary
@@ -797,6 +813,7 @@ int network_connect(void)
 	// when it adopts the host's settings block; command-line games have no host,
 	// so both sides must simply be configured alike (as with network_delay).
 	nrb_set_session_mode(net_rollback);
+	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
 
 connect_reset:
 	// A listening host has no address to send to yet, so it stays quiet until the joiner
@@ -809,6 +826,14 @@ connect_reset:
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
+
+		// The lobby's "Connecting..." / "Waiting for a player" frame is still on
+		// screen; re-present it with the cursor composited so the pointer stays
+		// alive (and visibly responsive) through the whole wait.
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
 
 		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
@@ -909,6 +934,11 @@ connect_again:
 	{
 		service_SDL_events(false);
 
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
 		// got a duplicate packet; process it again (but why?)
 		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
 			goto connect_again;
@@ -984,6 +1014,25 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 	fade_black(10);
 
+	// A dead session should put the player back on the title screen, not on the
+	// desktop.  Tear the whole session down (socket, queues, adopted settings,
+	// rollback mode) and unwind to the main loop's landing pad; the next JE_main
+	// entry reloads sprite banks and state like any fresh game.
+	if (network_bailout_armed)
+	{
+		network_shutdown();
+
+		isNetworkGame = false;
+		network_from_lobby = false;
+		network_is_host = false;
+		twoPlayerMode = false;
+		haltGame = false;
+		JE_clearSpecialRequests();
+
+		longjmp(network_bailout_env, 1);
+	}
+
+	// Not armed (very early startup failure): the original hard exit.
 	SDLNet_Quit();
 
 	JE_tyrianHalt(5);
@@ -1040,6 +1089,9 @@ int network_settings_pack(Uint8 *buf)
 	flags |= chargeLaserCannon     ? 1 << 2 : 0;
 	flags |= restoreBaseDispensers ? 1 << 3 : 0;
 	flags |= net_rollback          ? 1 << 4 : 0;  // rollback vs lockstep -- host decides
+	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
+	// so the host's smooth-motion choice binds the session.
+	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1096,6 +1148,7 @@ int network_settings_adopt(const Uint8 *buf)
 	// Netcode mode is a session property, not a config setting: the joiner's own
 	// net_rollback preference is left untouched and restored semantics don't apply.
 	nrb_set_session_mode((flags & (1 << 4)) != 0);
+	nrb_set_session_vt((flags & (1 << 5)) != 0);
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
