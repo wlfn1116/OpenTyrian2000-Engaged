@@ -22,6 +22,7 @@
 #include "mtrand.h"
 #include "opentyr.h"
 #include "render_list.h"
+#include "rollback.h"
 #include "varz.h"
 #include "video.h"
 
@@ -181,6 +182,10 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 {
 	assert(surface->format->BitsPerPixel == 8);
 
+	// Silent rollback re-simulation: state only, no pixels (see sprite.c).
+	if (rollback_resim_silent)
+		return;
+
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, false, mirror_w, col0);
 
@@ -237,6 +242,10 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mi
 void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0)
 {
 	assert(surface->format->BitsPerPixel == 8);
+
+	// Silent rollback re-simulation: state only, no pixels (see sprite.c).
+	if (rollback_resim_silent)
+		return;
 
 	if (render_list_recording)
 		rl_rec_bg_row(x, y, map, true, mirror_w, col0);
@@ -1140,4 +1149,24 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 		if (render_list_recording)
 			rl_rec_star(star->x, star->y, rec_dy, star->color);
 	}
+}
+
+/* --- Rollback state registration ---------------------------------------------
+ *
+ * The in-level starfield statics are sim state (deterministic, RNG-free, but
+ * carried across ticks).  The extern-visible scroll state is registered
+ * centrally in rollback_state.c.
+ */
+#include "rollback.h"
+
+void backgrnd_register_rollback(void)
+{
+	rollback_register("bg.starfieldStars", starfield_stars, sizeof(starfield_stars));
+	rollback_register("bg.starfieldPhase", &starfield_spawn_phase, sizeof(starfield_spawn_phase));
+	/* Cross-tick scroll-delta trackers: they feed bg_layer_dy and, through the
+	 * draw pass, the per-enemy scroll stamps -- a replayed tick must see them. */
+	rollback_register("bg.layerOfsPrev",   bg_layer_ofs_prev, sizeof(bg_layer_ofs_prev));
+	rollback_register("bg.prevMapY",       bgPrevMapY, sizeof(bgPrevMapY));
+	rollback_register("bg.prevBackPos",    bgPrevBackPos, sizeof(bgPrevBackPos));
+	rollback_register("bg.prevValid",      bgPrevValid, sizeof(bgPrevValid));
 }

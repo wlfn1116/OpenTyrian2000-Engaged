@@ -47,6 +47,8 @@
 #include "picload.h"
 #include "player.h"
 #include "render_list.h"
+#include "rollback.h"
+#include "net_rollback.h"
 #include "shots.h"
 #include "sndmast.h"
 #include "sprite.h"
@@ -1481,6 +1483,10 @@ JE_boolean JE_gammaCheck(void)
 
 void JE_doInGameSetup(void)
 {
+	// A modal UI mid-tick (which may even change sim-affecting settings) makes
+	// the tick non-replayable; skip self-test verification of this tick.
+	rollback_taint("ingame-setup");
+
 	// These menus present their own frames inside the gameplay tick's recording
 	// window (rl_begin_record..rl_end_record in JE_main). Left on, their per-frame
 	// draws flood the command buffer (runaway memory, multi-second replay), so
@@ -1560,7 +1566,11 @@ void JE_doInGameSetup(void)
 			while (true)
 			{
 				service_SDL_events(false);
+				// Keep the mouse cursor alive while we wait on the other player.
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
 				JE_showVGA();
+				JE_mouseReplace();
 
 				if (packet_in[0])
 				{
@@ -1599,6 +1609,10 @@ void JE_doInGameSetup(void)
 		while (!network_is_sync())
 		{
 			service_SDL_events(false);
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);
@@ -5866,8 +5880,200 @@ static void JE_drawDebugOverlays(void)
 		snprintf(buf, sizeof(buf), "SHOTS P%d E%d", pShots, eShots);
 		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
 		snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE);
+		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+
+		// Netplay health.  PRED is the one that explains a jumpy peer ship: it is how
+		// many frames of pure guesswork the peer's position is extrapolated over
+		// before real input lands, so it bounds how far the ship can be flung before
+		// a correction yanks it back.  RB is rollbacks per 100 frames / deepest.
+		// DESYNC counts canary mismatches -- non-zero means the simulations actually
+		// diverged and nothing will repair them; that is a different bug from jitter.
+		if (nrb_active())
+		{
+			Uint32 predict, depth, rate, desyncs;
+			nrb_stats(&predict, &depth, &rate, &desyncs);
+
+			snprintf(buf, sizeof(buf), "PRED %u", (unsigned)predict);
+			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+			snprintf(buf, sizeof(buf), "RB %u%%/%u", (unsigned)rate, (unsigned)depth);
+			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+			if (desyncs != 0)
+			{
+				snprintf(buf, sizeof(buf), "DESYNC %u", (unsigned)desyncs);
+				JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE);
+			}
+		}
 	}
+}
+
+#ifdef WITH_NETWORK
+/* --- Own-ship replay history ------------------------------------------------------------
+ *
+ * Lockstep replays BOTH players at the same logical tick. The remote player's state comes
+ * from the packet that just arrived; ours has to come from network_delay ticks ago.
+ *
+ * That used to be read out of packet_state_out[network_delay] -- i.e. by counting backwards
+ * through the outbound queue -- which only lines up if the outbound and inbound queues shift
+ * in perfect lockstep forever. They don't: a resend, a duplicate or a queue hiccup slides one
+ * of them by a tick, and from then on the two machines are replaying our ship at different
+ * ticks. One tick of movement is one pixel, which is exactly the drift the desync detector
+ * kept reporting.
+ *
+ * Keying on the sync number removes the assumption. Every state packet carries the tick it
+ * belongs to; we record our own state under that number and, when a remote packet for tick s
+ * arrives, replay our own tick s. Both machines then reconstruct the identical pair for the
+ * identical tick no matter what the queues did.
+ */
+#define NET_OWN_RING 16  // >= NET_PACKET_QUEUE, so an entry outlives the queue that names it
+
+static Sint16 net_own_x[NET_OWN_RING], net_own_y[NET_OWN_RING];
+static Uint16 net_own_buttons[NET_OWN_RING];
+
+static void net_own_state_store(Uint16 sync, int x, int y, Uint16 buttons)
+{
+	const unsigned slot = (unsigned)sync % NET_OWN_RING;
+	net_own_x[slot] = (Sint16)x;
+	net_own_y[slot] = (Sint16)y;
+	net_own_buttons[slot] = buttons;
+}
+
+static void net_own_state_load(Uint16 sync, int *x, int *y, Uint16 *buttons)
+{
+	const unsigned slot = (unsigned)sync % NET_OWN_RING;
+	*x = net_own_x[slot];
+	*y = net_own_y[slot];
+	*buttons = net_own_buttons[slot];
+}
+#endif
+
+/* --- Bottom-band HUD layout (see mainint.h for the precedence order) --------------------- */
+
+// The score row's text baseline. FULL_SHADE outlines the glyphs, so the rows actually touched
+// are HUD_SCORE_Y-1 .. HUD_SCORE_Y+8.
+#define HUD_SCORE_Y      (vga_height - 25)
+#define HUD_ROW_H        10   // row pitch that keeps two shadowed TINY_FONT lines clear of each other
+#define HUD_SUPERBOMB_Y  160  // row the superbomb icons blit at, in both bottom corners
+
+// Rightmost column player 1's superbomb row reaches (icons march right from x30).
+static int hud_superbomb_p1_right(void)
+{
+	return 30 + 12 * (int)player[0].superbombs;
+}
+
+int hud_fps_row(void)
+{
+	// The bottom-right corner stacks upward: player 2's score on the bottom row, its
+	// superbomb icons above that, then this counter. One-player leaves the corner free --
+	// player 1's score and superbombs are both on the opposite side -- so it stays put.
+	if (!twoPlayerMode || galagaMode)
+		return HUD_SCORE_Y + 1;
+
+	if (player[1].superbombs > 0)
+		return HUD_SUPERBOMB_Y - HUD_ROW_H + 1;
+
+	return HUD_SCORE_Y - HUD_ROW_H + 1;
+}
+
+int hud_bottom_band_top(void)
+{
+	int top = HUD_SCORE_Y - 1;  // both scores share this row; the shadow starts one above
+
+	// Superbomb icons form their own row above the scores at both playfield edges, so a
+	// centred full-width bar has to clear them as well.
+	if (player[0].superbombs > 0 || player[1].superbombs > 0)
+		top = HUD_SUPERBOMB_Y;
+
+	if (show_fps)
+	{
+		const int fps_top = hud_fps_row() - 1;
+		if (fps_top < top)
+			top = fps_top;
+	}
+
+	return top;
+}
+
+/* The top corners carry each player's name label, lives row and (player 1) the special-weapon
+ * icon. A centred TOP boss bar shares those rows, so it needs their horizontal extent.
+ *
+ * These mirror the layout arithmetic in JE_inGameDisplays below rather than sharing it, the
+ * same way boss_bar_hud_left_shift mirrors draw_boss_bars_enhanced -- keep the two in step.
+ */
+static int hud_player_name_width(int index)
+{
+	char name[21];
+	SDL_strlcpy(name, isNetworkGame ? JE_getName(index + 1)
+	                                : miscText[(index == 0 ? 49 : 50) - 1], sizeof(name));
+	return JE_textWidth(name, TINY_FONT);
+}
+
+static bool hud_lives_shown(void)
+{
+	return onePlayerAction || twoPlayerMode;
+}
+
+int hud_top_left_right_edge(void)
+{
+	int right = 0;
+
+	if (player[0].items.special > 0)
+		right = 49;  // the 2x2 special-weapon icon blitted at x25
+
+	if (hud_lives_shown())
+	{
+		const uint extra = *player[0].lives - 1;
+
+		// The label sits at x28; the lives row starts at x30 and steps right, or collapses to
+		// a single icon plus a count at x45 once there are five or more.
+		const int name_right = 28 + hud_player_name_width(0);
+		const int lives_right = (extra >= 5) ? 45 + JE_textWidth("99", TINY_FONT)
+		                      : (extra >= 1) ? 30 + (int)extra * 12
+		                                     : 30;
+
+		if (name_right > right)  right = name_right;
+		if (lives_right > right) right = lives_right;
+	}
+
+	return right;
+}
+
+int hud_top_right_left_edge(void)
+{
+	if (!twoPlayerMode || galagaMode || !hud_lives_shown())
+		return PLAYFIELD_RIGHT + 1;  // nothing claimed over there
+
+	const uint extra = *player[1].lives - 1;
+
+	// Mirror of the above: the label is right-aligned to PLAYFIELD_WIDTH + 22 and the lives
+	// row starts at PLAYFIELD_WIDTH + 7 stepping left.
+	const int name_left = PLAYFIELD_WIDTH + 22 - hud_player_name_width(1);
+	const int lives_left = (extra >= 5) ? PLAYFIELD_WIDTH - 13
+	                     : (extra >= 1) ? PLAYFIELD_WIDTH + 7 - ((int)extra - 1) * 12
+	                                    : PLAYFIELD_WIDTH + 7;
+
+	return (name_left < lives_left) ? name_left : lives_left;
+}
+
+int hud_bottom_right_top(void)
+{
+	// Nothing claimed: report a row below the playfield so callers clamp to their own limit.
+	int top = vga_height;
+
+	if (twoPlayerMode && !galagaMode)
+	{
+		top = HUD_SCORE_Y - 1;  // player 2's score lives in this corner
+		if (player[1].superbombs > 0)
+			top = HUD_SUPERBOMB_Y;  // ...with its superbomb row just above
+	}
+
+	if (show_fps)
+	{
+		const int fps_top = hud_fps_row() - 1;
+		if (fps_top < top)
+			top = fps_top;
+	}
+
+	return top;
 }
 
 void JE_inGameDisplays(void)
@@ -5875,15 +6081,35 @@ void JE_inGameDisplays(void)
 	char stemp[21];
 	char tempstr[256];
 
+	// Scores sit in the bottom corners of the playfield: player 1 left-aligned, player 2
+	// right-aligned as its exact mirror. This is playfield (game_screen) space, so the visible
+	// edges are PLAYFIELD_LEFT..PLAYFIELD_RIGHT and both corners follow the widescreen width.
+	// (The old code left-aligned player 2 at a fixed +200, which was tied to the original 320px
+	// layout and drifted away from the right edge as the playfield widened.)
+	//
+	// Mirroring the inset exactly needs the two quirks of this text: JE_textWidth counts a
+	// trailing inter-character pixel after the last glyph, and FULL_SHADE outlines the string
+	// one pixel each way. Player 1's ink starts at PLAYFIELD_LEFT + SCORE_INSET, so its shadow
+	// starts one pixel earlier; putting player 2's shadow the same distance inside the right
+	// edge gives x = PLAYFIELD_RIGHT - width - 1, which lands the ink at the mirrored inset too.
+	const int SCORE_INSET = 3;
+
 	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
 	{
 		snprintf(tempstr, sizeof(tempstr), "%lu", player[i].cash);
 
-		// x base 27 (nudged 3px left from the original 30); player 1 mirrors at +200.
+		// Ink spans [x, x + width - 2] (width carries that trailing pixel); the shadow widens
+		// it to [x - 1, x + width - 1]. Setting the right shadow edge to PLAYFIELD_RIGHT -
+		// (SCORE_INSET - 1) -- the mirror of player 1's left shadow edge -- rearranges to:
+		const int width = JE_textWidth(tempstr, TINY_FONT);
+		const int x = (i == 0)
+		            ? PLAYFIELD_LEFT + SCORE_INSET
+		            : PLAYFIELD_RIGHT - width - SCORE_INSET + 2;
+
 		if (smoothies[6 - 1])
-			JE_textShade(VGAScreen, 27 + 200 * i, vga_height - 25, tempstr, 8, 8, FULL_SHADE);
+			JE_textShade(VGAScreen, x, vga_height - 25, tempstr, 8, 8, FULL_SHADE);
 		else
-			JE_textShade(VGAScreen, 27 + 200 * i, vga_height - 25, tempstr, 2, 4, FULL_SHADE);
+			JE_textShade(VGAScreen, x, vga_height - 25, tempstr, 2, 4, FULL_SHADE);
 	}
 
 	// Endless: compact live kill-fire buff readout (Turbodrive / Overdrive), bottom-right of the
@@ -5895,8 +6121,38 @@ void JE_inGameDisplays(void)
 		const int bank = endlessKillBuffColorBank();
 		const int baseRightX = PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 5 + 2;  // +2px right of the FPS counter's edge
 		const int rightX = baseRightX - boss_bar_hud_left_shift(baseRightX);
-		const int yShift = boss_bar_hud_needs_up_shift() ? 14 : 0;
 		const int yBase = 7;  // +7px down from the original placement
+
+		// This readout is last in the bottom-band precedence, so it lifts clear of everything
+		// else rather than the other way round: the FPS counter below it, and a BOTTOM boss
+		// bar that may have grown upward into this space. Derived from where those actually
+		// are, so a stacked pair of bars pushes it exactly as far as it needs to go.
+		int floorRow = vga_height;  // nothing below to avoid
+		if (show_fps)
+		{
+			const int fps_top = hud_fps_row() - 1;
+			if (fps_top < floorRow)
+				floorRow = fps_top;
+		}
+		{
+			const int bar_top = boss_bar_bottom_band_top();
+			if (bar_top < floorRow)
+				floorRow = bar_top;
+		}
+		// Endless is one-player, so the superbomb icons march rightward from the far side --
+		// only a long enough row actually reaches under this readout.
+		if (player[0].superbombs > 0
+		    && hud_superbomb_p1_right() >= rightX - 60
+		    && HUD_SUPERBOMB_Y < floorRow)
+		{
+			floorRow = HUD_SUPERBOMB_Y;
+		}
+
+		const int naturalBottom = vga_height - 26 + yBase;  // the timer bar's bottom row
+		int yShift = naturalBottom - (floorRow - 2);
+		if (yShift < 0)
+			yShift = 0;
+
 		char buf[48];
 
 		snprintf(buf, sizeof(buf), "x%d", endlessKillBuffComboCount());
@@ -6007,9 +6263,15 @@ void JE_inGameDisplays(void)
 		char fps_str[16];
 		snprintf(fps_str, sizeof(fps_str), "%d FPS", current_fps);
 
-		const int fps_right = PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 5;  // ~x318
+		// A right-side vertical boss bar owns the last few columns; slide left to clear it,
+		// exactly as the endless readout does.
+		const int fps_right_base = PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 5;  // ~x318
+		const int fps_right = fps_right_base - boss_bar_hud_left_shift(fps_right_base);
 		const int fps_x = fps_right - JE_textWidth(fps_str, TINY_FONT);
-		JE_textShade(VGAScreen, fps_x, 176, fps_str, 15, 2, FULL_SHADE);
+
+		// Player 2's score is right-aligned into this same corner, so the counter stacks
+		// above it when both are on screen (hud_fps_row).
+		JE_textShade(VGAScreen, fps_x, hud_fps_row(), fps_str, 15, 2, FULL_SHADE);
 	}
 
 	JE_drawDebugOverlays();
@@ -6030,6 +6292,7 @@ void JE_mainKeyboardInput(void)
 			{
 				if (keysactive[x])
 				{
+					rollback_taint("edit-ship-1");
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[0].items.ship = 90 + z;                     /*Ships*/
 					z = (z - 1) * 15;
@@ -6073,6 +6336,7 @@ void JE_mainKeyboardInput(void)
 			{
 				if (keysactive[x])
 				{
+					rollback_taint("edit-ship-2");
 					int z = x - SDL_SCANCODE_1 + 1;
 					player[1].items.ship = 90 + z;
 					z = (z - 1) * 15;
@@ -6134,6 +6398,7 @@ void JE_mainKeyboardInput(void)
 		}
 		else
 		{
+			rollback_taint("nort-ship");
 			player[0].items.ship = 12;                     // Nort Ship
 			player[0].items.special = 13;                  // Astral Zone
 			player[0].items.weapon[FRONT_WEAPON].id = 36;  // NortShip Super Pulse
@@ -6147,12 +6412,14 @@ void JE_mainKeyboardInput(void)
 	{
 		if (keysactive[SDL_SCANCODE_F2] && keysactive[SDL_SCANCODE_F3] && keysactive[SDL_SCANCODE_F6])
 		{
+			rollback_taint("cheat-toggle");
 			youAreCheating = !youAreCheating;
 			keysactive[SDL_SCANCODE_F2] = false;
 		}
 
 		if (keysactive[SDL_SCANCODE_F2] && keysactive[SDL_SCANCODE_F3] && (keysactive[SDL_SCANCODE_F4] || keysactive[SDL_SCANCODE_F5]))
 		{
+			rollback_taint("cheat-armor");
 			for (uint i = 0; i < COUNTOF(player); ++i)
 				player[i].armor = 0;
 
@@ -6162,6 +6429,7 @@ void JE_mainKeyboardInput(void)
 
 		if (constantPlay && keysactive[SDL_SCANCODE_C])
 		{
+			rollback_taint("cheat-constant");
 			youAreCheating = !youAreCheating;
 			keysactive[SDL_SCANCODE_C] = false;
 		}
@@ -6197,6 +6465,7 @@ void JE_mainKeyboardInput(void)
 		}
 		else
 		{
+			rollback_taint("skip-level");
 			levelTimer = true;
 			levelTimerCountdown = 0;
 			endLevel = true;
@@ -6219,6 +6488,7 @@ void JE_mainKeyboardInput(void)
 		/* {SMOOTHIES} */
 		if (keysactive[SDL_SCANCODE_F12] && keysactive[SDL_SCANCODE_SCROLLLOCK])
 		{
+			rollback_taint("smoothies-key");
 			for (temp = SDL_SCANCODE_2; temp <= SDL_SCANCODE_9; temp++)
 				if (keysactive[temp])
 					smoothies[temp-SDL_SCANCODE_2] = !smoothies[temp-SDL_SCANCODE_2];
@@ -6230,6 +6500,7 @@ void JE_mainKeyboardInput(void)
 		/* {CYCLE THROUGH FILTER COLORS} */
 		if (keysactive[SDL_SCANCODE_MINUS])
 		{
+			rollback_taint("filter-key");
 			if (levelFilter == -99)
 			{
 				levelFilter = 0;
@@ -6246,6 +6517,7 @@ void JE_mainKeyboardInput(void)
 		/* {HYPER-SPEED} */
 		if (keysactive[SDL_SCANCODE_1])
 		{
+			rollback_taint("hyper-speed");
 			fastPlay++;
 			if (fastPlay > 2)
 				fastPlay = 0;
@@ -6255,12 +6527,19 @@ void JE_mainKeyboardInput(void)
 
 		/* {IN-GAME RANDOM MUSIC SELECTION} */
 		if (keysactive[SDL_SCANCODE_SCROLLLOCK])
+		{
+			// Draws mt_rand outside the recorded input path -- taints the tick.
+			rollback_taint("random-music");
 			play_song(mt_rand() % MUSIC_NUM);
+		}
 	}
 }
 
 void JE_pauseGame(void)
 {
+	// A modal UI mid-tick makes the tick non-replayable; skip self-test verify.
+	rollback_taint("pause");
+
 	// The pause overlay presents frames while the tick's render-list recording is
 	// active; suspend it (see JE_doInGameSetup).
 	const bool rl_was_recording = render_list_recording;
@@ -6354,6 +6633,10 @@ void JE_pauseGame(void)
 		while (!network_is_sync())
 		{
 			service_SDL_events(false);
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);
@@ -6490,6 +6773,68 @@ static void JE_frontOption(Player *this_player, uint i, int home_x, JE_boolean l
 		this_player->sidekick[i].y = 10;
 }
 
+/* Capture the effective per-tick input tuple for a player after the movement
+ * routine ran: absolute post-movement position, aim anchors, banking accel,
+ * buttons and link-gun state.  This tuple is the simulation's only input door
+ * in rollback netplay and in the self-test replay. */
+static void rb_fill_tuple(RbInput *in, const Player *this_player,
+                          JE_word mx, JE_word my,
+                          JE_integer accelXC, JE_integer accelYC,
+                          bool link_analog, float link_angle)
+{
+	memset(in, 0, sizeof(*in));
+	in->x = (Sint16)this_player->x;
+	in->y = (Sint16)this_player->y;
+	in->velX = (Sint16)(this_player->x_velocity > 127 ? 127 :
+	                    (this_player->x_velocity < -127 ? -127 : this_player->x_velocity));
+	in->velY = (Sint16)(this_player->y_velocity > 127 ? 127 :
+	                    (this_player->y_velocity < -127 ? -127 : this_player->y_velocity));
+	in->mouseX = (Sint16)mx;
+	in->mouseY = (Sint16)my;
+	/* The wire carries one signed byte per axis; the sim never produces more. */
+	in->accelX = (Sint16)(accelXC > 127 ? 127 : (accelXC < -127 ? -127 : accelXC));
+	in->accelY = (Sint16)(accelYC > 127 ? 127 : (accelYC < -127 ? -127 : accelYC));
+
+	Uint16 buttons = 0;
+	for (int i = 4 - 1; i >= 0; i--)
+	{
+		buttons <<= 1;
+		buttons |= button[i] ? 1 : 0;
+	}
+	in->buttons = buttons;
+
+	if (link_analog)
+	{
+		in->buttons |= RB_LINK_ANALOG;
+		float a = link_angle;
+		while (a < 0.0f)
+			a += (float)(2.0 * M_PI);
+		while (a >= (float)(2.0 * M_PI))
+			a -= (float)(2.0 * M_PI);
+		in->linkAngle = (Uint16)(a * (float)(65536.0 / (2.0 * M_PI)));
+	}
+}
+
+static void rb_apply_tuple(const RbInput *in, Player *this_player,
+                           JE_integer *accelXC_, JE_integer *accelYC_,
+                           bool *link_analog, float *link_angle)
+{
+	Uint16 buttons = in->buttons;
+	for (int i = 0; i < 4; i++)
+	{
+		button[i] = buttons & 1;
+		buttons >>= 1;
+	}
+	this_player->x = in->x;
+	this_player->y = in->y;
+	this_player->x_velocity = (int)in->velX;
+	this_player->y_velocity = (int)in->velY;
+	*accelXC_ = (JE_integer)in->accelX;
+	*accelYC_ = (JE_integer)in->accelY;
+	*link_analog = (in->buttons & RB_LINK_ANALOG) != 0;
+	*link_angle = (float)in->linkAngle * (float)(2.0 * M_PI / 65536.0);
+}
+
 void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
@@ -6561,7 +6906,8 @@ void JE_playerMovement(Player *this_player,
 	}
 
 #ifdef WITH_NETWORK
-	if (isNetworkGame && thisPlayerNum == playerNum_)
+	// Lockstep state packets; rollback mode replaces them with the input stream.
+	if (isNetworkGame && thisPlayerNum == playerNum_ && !nrb_active())
 	{
 		network_state_prepare();
 		memset(&packet_state_out[0]->data[4], 0, 10);
@@ -6582,7 +6928,21 @@ redo:
 
 	// When the variable-timestep ship owns this player, skip the original
 	// position/velocity movement here — the render-rate integrator drives it.
-	const bool vt = vt_ship_owns() && playerNum_ == 1;
+	// Player 2 docked as the Dragonwing is the exception: the sim places it from player 1's
+	// position every tick, so VT leaves it alone and the original path below must still run.
+	// Which physics tail the SIMULATION runs.  In rollback netplay this must be
+	// identical on both machines no matter what each machine's own presentation
+	// settings say -- the friction/velocity tail, the ship-tracking shot deltas
+	// and the banking pick (it spawns NortSparks: shots + RNG draws) all key off
+	// it -- so the session adopts the HOST's choice via the settings handshake.
+	const bool vt_sim_owns = (isNetworkGame && nrb_active())
+	                       ? (nrb_session_vt() && frameCountMax > 0 && !endLevel)
+	                       : vt_ship_owns();
+	const bool vt = vt_sim_owns && !(playerNum_ == 2 && twoPlayerLinked);
+	// Which paths this machine's LIVE INPUT flows through -- always the local
+	// setup: these only shape the tuple this machine records, so they are free
+	// to differ per machine.
+	const bool vt_input = vt_ship_owns() && !(playerNum_ == 2 && twoPlayerLinked);
 
 	bool link_gun_analog = false;
 	float link_gun_angle = 0;
@@ -6712,7 +7072,16 @@ redo:
 
 		/* --- Movement Routine Beginning --- */
 
-		if (!isNetworkGame || playerNum_ == thisPlayerNum)
+		// Netplay with the variable-timestep ship: fold the motion VT accumulated since the
+		// last tick into the ship now, between the snapshot above and the netcode below that
+		// reads (and reverts) the difference. Only our own ship -- the other player's motion
+		// arrives over the wire. No-op unless VT owns a network game.
+		if (isNetworkGame && playerNum_ == thisPlayerNum && !rollback_resim)
+			vt_ship_commit_net(playerNum_ - 1);
+
+		// The live-sampling block never runs on a rollback/self-test replay pass:
+		// a replayed tick takes its input from the recorded tuples instead.
+		if ((!isNetworkGame || playerNum_ == thisPlayerNum) && !rollback_resim)
 		{
 			if (endLevel)
 			{
@@ -6730,6 +7099,10 @@ redo:
 					{
 						endLevel = true;
 						levelEnd = 40;
+						// One-shot input event outside the movement tuple; recorded
+						// so a self-test replay reproduces it.
+						if (rollback_selftest_active())
+							rollback_st_event(RB_EV_DEMO_END);
 					}
 				}
 
@@ -6749,7 +7122,7 @@ redo:
 
 							link_gun_analog = joystick_analog_angle(j, &link_gun_angle);
 						}
-						else if (!vt)
+						else if (!vt_input)
 						{
 							this_player->x += (joystick[j].direction[3] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[1] ? CURRENT_KEY_SPEED : 0);
 							this_player->y += (joystick[j].direction[0] ? -CURRENT_KEY_SPEED : 0) + (joystick[j].direction[2] ? CURRENT_KEY_SPEED : 0);
@@ -6795,7 +7168,7 @@ redo:
 					button[2] |= mouse_pressed[2];
 					button[3] |= mouse_pressed[3];
 
-					if (!vt)
+					if (!vt_input)
 					{
 						if (!isNetworkGame)
 						{
@@ -6834,7 +7207,7 @@ redo:
 				/* keyboard input */
 				if ((inputDevice == 0 || inputDevice == 1) && !play_demo)
 				{
-					if (!vt)
+					if (!vt_input)
 					{
 						if (keysactive[keySettings[KEY_SETTING_UP]])
 							this_player->y -= CURRENT_KEY_SPEED;
@@ -6923,7 +7296,7 @@ redo:
 				else if (mouseYC < -30)
 					mouseYC = -30;
 
-				if (!vt)
+				if (!vt_input)
 				{
 					if (mouseXC > 0)
 						this_player->x += (mouseXC + 3) / 4;
@@ -6975,7 +7348,26 @@ redo:
 			}   /*endLevel*/
 
 #ifdef WITH_NETWORK
-			if (isNetworkGame && playerNum_ == thisPlayerNum)
+			if (isNetworkGame && playerNum_ == thisPlayerNum && nrb_active())
+			{
+				// Rollback: the live values just computed ARE this frame's input
+				// tuple, and the simulation consumes them immediately -- zero
+				// local input delay, single-player feel.  The tuple goes on the
+				// wire (redundantly) for the peer to apply or roll back onto.
+				RbInput in;
+				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
+				              accelXC, accelYC, link_gun_analog, link_gun_angle);
+				if (thisPlayerNum == 1)
+					in.difficulty = (Uint8)difficultyLevel;  // host dictates
+				nrb_record_local(&in);
+
+				// Adopt the wire-quantized analog gun angle locally too: the peer
+				// can only ever apply the quantized value, and both simulations
+				// must feed linkGunDirec the bit-identical float.
+				if (in.buttons & RB_LINK_ANALOG)
+					link_gun_angle = (float)in.linkAngle * (float)(2.0 * M_PI / 65536.0);
+			}
+			else if (isNetworkGame && playerNum_ == thisPlayerNum)
 			{
 				Uint16 buttons = 0;
 				for (int i = 4 - 1; i >= 0; i--)
@@ -6984,11 +7376,23 @@ redo:
 					buttons |= button[i];
 				}
 
-				SDLNet_Write16(this_player->x - *mouseX_, &packet_state_out[0]->data[4]);
-				SDLNet_Write16(this_player->y - *mouseY_, &packet_state_out[0]->data[6]);
-				SDLNet_Write16(accelXC,                   &packet_state_out[0]->data[8]);
-				SDLNet_Write16(accelYC,                   &packet_state_out[0]->data[10]);
-				SDLNet_Write16(buttons,                   &packet_state_out[0]->data[12]);
+				// ABSOLUTE position, not the delta this used to send. A delta is only
+				// meaningful once, so a single packet that is lost and rebuilt imperfectly
+				// from the XOR parity leaves the two machines permanently offset -- exactly
+				// the 1px drifts the desync detector was reporting. An absolute position is
+				// idempotent: whatever happened to earlier packets, both machines land on the
+				// same number and any divergence heals on the next tick instead of compounding.
+				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
+				SDLNet_Write16(this_player->y, &packet_state_out[0]->data[6]);
+				SDLNet_Write16(accelXC,        &packet_state_out[0]->data[8]);
+				SDLNet_Write16(accelYC,        &packet_state_out[0]->data[10]);
+				SDLNet_Write16(buttons,        &packet_state_out[0]->data[12]);
+
+				// Also keep it keyed by THIS tick's sync number, so the replay below can pick
+				// the entry that matches the tick the remote packet names rather than trusting
+				// two independently-shifted queues to stay in step.
+				net_own_state_store(SDLNet_Read16(&packet_state_out[0]->data[2]),
+				                    this_player->x, this_player->y, buttons);
 
 				this_player->x = *mouseX_;
 				this_player->y = *mouseY_;
@@ -7002,14 +7406,63 @@ redo:
 				accelYC = 0;
 			}
 #endif
+
+			// Self-test: capture the effective tuple for BOTH players so a replay
+			// of this tick can reproduce the live-sampled movement exactly.
+			if (rollback_selftest_active())
+			{
+				RbInput in;
+				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
+				              accelXC, accelYC, link_gun_analog, link_gun_angle);
+				rollback_st_record(playerNum_ - 1, &in);
+			}
 		}  /*isNetworkGame*/
 
 		/* --- Movement Routine Ending --- */
 
 		moveOk = true;
 
+		// Self-test replay: both players' movement comes from the recorded tuples.
+		if (rollback_selftest_active() && rollback_resim)
+		{
+			const RbInput *st = rollback_st_get(playerNum_ - 1);
+			rb_apply_tuple(st, this_player, &accelXC, &accelYC,
+			               &link_gun_analog, &link_gun_angle);
+			*mouseX_ = (JE_word)st->mouseX;
+			*mouseY_ = (JE_word)st->mouseY;
+			if (playerNum_ == 1 && (rollback_st_events() & RB_EV_DEMO_END))
+			{
+				endLevel = true;
+				levelEnd = 40;
+			}
+		}
+
 #ifdef WITH_NETWORK
-		if (isNetworkGame && !network_state_is_reset())
+		if (isNetworkGame && nrb_active())
+		{
+			if (playerNum_ != thisPlayerNum)
+			{
+				// Peer's ship: the arrived truth for this frame, or a prediction
+				// that a later rollback corrects.  Identical apply shape to the
+				// local tuple, so both machines' sims see the same kind of input.
+				RbInput in;
+				nrb_get_remote(nrb_frame(), &in);
+				if (thisPlayerNum == 2)
+					difficultyLevel = (JE_shortint)in.difficulty;  // host-authoritative
+				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
+				               &link_gun_analog, &link_gun_angle);
+			}
+			else if (rollback_resim)
+			{
+				// Replaying our own past frame: consume the recorded tuple.
+				RbInput in;
+				nrb_get_local(nrb_frame(), &in);
+				rb_apply_tuple(&in, this_player, &accelXC, &accelYC,
+				               &link_gun_analog, &link_gun_angle);
+			}
+			// else: normal pass, local player -- the live values stand as-is.
+		}
+		else if (isNetworkGame && !network_state_is_reset())
 		{
 			if (playerNum_ != thisPlayerNum)
 			{
@@ -7023,22 +7476,32 @@ redo:
 					buttons >>= 1;
 				}
 
-				this_player->x += (Sint16)SDLNet_Read16(&packet_state_in[0]->data[4]);
-				this_player->y += (Sint16)SDLNet_Read16(&packet_state_in[0]->data[6]);
+				// Absolute, so assign rather than accumulate (see the send side above).
+				this_player->x = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[4]);
+				this_player->y = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[6]);
 				accelXC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[8]);
 				accelYC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[10]);
 			}
 			else
 			{
-				Uint16 buttons = SDLNet_Read16(&packet_state_out[network_delay]->data[12]);
+				// Replay OUR ship at the same logical tick the remote packet names, taken from
+				// the sync-keyed history rather than by counting back through the outbound
+				// queue -- see net_own_state_store. This is what guarantees both machines
+				// reconstruct the identical pair of positions for the identical tick.
+				const Uint16 tick = SDLNet_Read16(&packet_state_in[0]->data[2]);
+
+				int own_x, own_y;
+				Uint16 buttons;
+				net_own_state_load(tick, &own_x, &own_y, &buttons);
+
 				for (int i = 0; i < 4; i++)
 				{
 					button[i] = buttons & 1;
 					buttons >>= 1;
 				}
 
-				this_player->x += (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[4]);
-				this_player->y += (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[6]);
+				this_player->x = own_x;
+				this_player->y = own_y;
 				accelXC = (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[8]);
 				accelYC = (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[10]);
 			}
@@ -7046,7 +7509,20 @@ redo:
 #endif
 
 		/*Street-Fighter codes*/
-		if (vt)
+		// NEVER take this branch in a network game. It rebuilds the direction from THIS
+		// machine's live controls, but JE_playerMovement runs for both players on both
+		// machines -- so the remote player's twiddle detection would be fed the local
+		// player's input, the two SFCurrentCode streams would diverge, and with them
+		// anything a twiddle triggers (the Dragonwing link, for one). The synced path below
+		// derives the direction from the position delta both machines agreed on instead.
+		// A self-test replay likewise never reads live controls: it feeds the detector
+		// the recorded target from the live pass.
+		if (rollback_selftest_active() && rollback_resim)
+		{
+			const RbInput *st = rollback_st_get(playerNum_ - 1);
+			JE_SFCodes(playerNum_, this_player->x, this_player->y, st->sfTx, st->sfTy);
+		}
+		else if (vt && !isNetworkGame)
 		{
 			// Movement is skipped above, so *mouseX_/*mouseY_ stay at the ship position:
 			// JE_SFCodes sees no direction and twiddles never fire. Rebuild the direction
@@ -7090,10 +7566,16 @@ redo:
 			// original "ship leads toward the target" sign the detector expects.
 			int tx = (int)this_player->x - (dirx > 0 ? 1 : dirx < 0 ? -1 : 0);
 			int ty = (int)this_player->y - (diry > 0 ? 1 : diry < 0 ? -1 : 0);
+			if (rollback_selftest_active())
+				rollback_st_record_sf(playerNum_ - 1, (Sint16)tx, (Sint16)ty);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);
 		}
 		else
+		{
+			if (rollback_selftest_active() && !rollback_resim)
+				rollback_st_record_sf(playerNum_ - 1, (Sint16)*mouseX_, (Sint16)*mouseY_);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, *mouseX_, *mouseY_);
+		}
 
 		if (moveOk)
 		{
@@ -7303,13 +7785,39 @@ redo:
 			this_player->x_velocity = player[0].x_velocity;
 			this_player->y_velocity = 4;
 
+			// Keep the ship x/y history running while docked.  Trailing sidekicks
+			// (Companion Ship Gerund and the rest of style 1/3) are anchored to
+			// old_x/old_y, and only the unfused branch above ever shifted it -- so
+			// the moment the pair fused the trail froze in place and the sidekicks
+			// stopped following, even though the fused ship is still moving.  The
+			// carrier drags this ship around, so the history has to track that.
+			//
+			// Movement is measured against the newest stored entry rather than the
+			// tick-start mouseX_/mouseY_ the unfused branch uses: the pin above
+			// rewrites x/y outright, so a tick-delta reads as movement even when
+			// the fused pair is parked.
+			if (this_player->x != this_player->old_x[COUNTOF(player->old_x) - 1] ||
+			    this_player->y != this_player->old_y[COUNTOF(player->old_x) - 1])
+			{
+				for (uint i = 1; i < COUNTOF(player->old_x); ++i)
+				{
+					this_player->old_x[i - 1] = this_player->old_x[i];
+					this_player->old_y[i - 1] = this_player->old_y[i];
+				}
+				this_player->old_x[COUNTOF(player->old_x) - 1] = this_player->x;
+				this_player->old_y[COUNTOF(player->old_x) - 1] = this_player->y;
+			}
+
 			// turret direction marker/shield
 			shotMultiPos[SHOT_MISC] = 0;
 			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec + 0.2f) * 26), this_player->y + roundf(cosf(linkGunDirec + 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
+			link_marker_slot[0] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 			shotMultiPos[SHOT_MISC] = 0;
 			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec - 0.2f) * 26), this_player->y + roundf(cosf(linkGunDirec - 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
+			link_marker_slot[1] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 			shotMultiPos[SHOT_MISC] = 0;
 			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec) * 26), this_player->y + roundf(cosf(linkGunDirec) * 26), *mouseX_, *mouseY_, 147, playerNum_);
+			link_marker_slot[2] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 
 			if (shotRepeat[SHOT_REAR] > 0)
 			{
@@ -7950,9 +8458,19 @@ redo:
 	}
 }
 
+/* Pool slots of the three linked-Dragonwing turret aim markers created this
+ * tick (-1 = none).  Presentation-only: the shot draw maps these slots to the
+ * stable RL_ID_LINKGUN ids so the aim indicator interpolates at render rate. */
+int link_marker_slot[3] = { -1, -1, -1 };
+
 void JE_mainGamePlayerFunctions(void)
 {
 	/*PLAYER MOVEMENT/MOUSE ROUTINES*/
+
+	// Last tick's aim markers were drawn (and their slots freed) by the shot
+	// pass that just ran; forget them before this tick's movement re-creates
+	// them, so a recycled slot can never mis-tag an unrelated shot.
+	link_marker_slot[0] = link_marker_slot[1] = link_marker_slot[2] = -1;
 
 	if (endLevel && levelEnd > 0)
 	{

@@ -1033,12 +1033,19 @@ bool endlessScrollBoostActive(void)
 	return endlessScrollBoostPercent() != 0;
 }
 
+// Sub-pixel carries for the smooth-scroll distributor below.  File scope (not
+// function-local) so the rollback snapshot registry can reach them: they run on
+// EVERY level (not just endless), and their published fractions anchor sky-glue
+// enemy spawns -- a replayed tick must resume them from the same point.
+static int scrollExtraCarry[3] = { 0, 0, 0 };
+static int scrollExtraTrem[3]  = { 0, 0, 0 };
+
 // Publish the smooth rate and distribute extra whole pixels for one layer.
 int endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick,
                          float *rateOut, float *fracOut)
 {
-	static int carry[3] = { 0, 0, 0 };
-	static int trem[3]  = { 0, 0, 0 };
+	int *const carry = scrollExtraCarry;
+	int *const trem  = scrollExtraTrem;
 	if (rateOut != NULL)
 		*rateOut = 0.0f;
 	if (fracOut != NULL)
@@ -1211,4 +1218,18 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	difficultyLevel     = saveDiff;
 	endlessActiveMods   = saveMods;
 	endlessCampaignMods = saveCamp;
+}
+
+/* --- Rollback state registration ---------------------------------------------
+ *
+ * Only the pieces that mutate on EVERY level belong here (the smooth-scroll
+ * carries).  Endless-mode-only state is out of scope: netplay cannot enter
+ * endless, and the single-player self-test focuses on the campaign path.
+ */
+#include "rollback.h"
+
+void endless_combat_register_rollback(void)
+{
+	rollback_register("ec.scrollCarry", scrollExtraCarry, sizeof(scrollExtraCarry));
+	rollback_register("ec.scrollTrem",  scrollExtraTrem, sizeof(scrollExtraTrem));
 }

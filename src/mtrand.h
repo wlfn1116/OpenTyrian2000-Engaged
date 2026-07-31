@@ -26,4 +26,17 @@ unsigned long mt_rand(void);
 float mt_rand_1(void);
 float mt_rand_lt1(void);
 
+/* Draws taken since the last mt_srand(). Netplay's desync detector hashes this: any
+ * divergence in how much randomness the two sims consumed shows up here immediately,
+ * usually a tick or two before it becomes visible in positions or armor. Network levels
+ * reseed to a fixed constant (tyrian2.c), so the count is directly comparable. */
+extern unsigned long mt_rand_count;
+
+/* Rollback snapshot support: the generator's full state (vector, cursors as
+ * offsets, draw count) as an opaque same-process blob.  See mtrand.c. */
+#include <stddef.h>
+size_t mt_state_size(void);
+void mt_state_save(void *dst);
+void mt_state_restore(const void *src);
+
 #endif /* MTRAND_H */

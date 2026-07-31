@@ -98,6 +98,19 @@ void rl_end_record(void)
 	render_list_recording = false;
 }
 
+// Abandon a recording mid-tick (rollback re-simulation, self-test replay).
+// Discards the partial list AND flips back so the last COMPLETE frame is
+// "current" again -- the next rl_begin_record then promotes that complete
+// frame, not the aborted partial, to the interpolation baseline.
+void rl_abort_record(void)
+{
+	if (!render_list_recording)
+		return;
+	render_list_recording = false;
+	counts[cur_buf] = 0;
+	cur_buf ^= 1;
+}
+
 size_t rl_count(void)
 {
 	return counts[cur_buf];
@@ -358,6 +371,14 @@ void rl_finalize(void)
 		if (rl_id_extrapolates(id))
 			continue;
 
+		// Velocity hint the recorder seeded (blit_enemy stamps per-tick enemy
+		// motion; zero for everything that never sets one).  When positional
+		// pairing fails -- a BLINKING sprite like the arcade pickup balls is
+		// hidden every other tick, so its blit count flips 0/1 forever -- fall
+		// back to this hint instead of snapping, and the blinker glides like
+		// every other entity.
+		const int hint_dx = c->dx, hint_dy = c->dy;
+
 		c->dx = 0;
 		c->dy = 0;
 		c->par_yown100 = 0;
@@ -365,13 +386,22 @@ void rl_finalize(void)
 		if (id <= 0 || id >= RL_ID_MAX)
 			continue;  // static / untagged: never interpolate
 
-		// A changed blit count makes positional pairing unsafe; snap for one tick.
+		// A changed blit count makes positional pairing unsafe; snap for one tick
+		// (or glide on the recorded velocity when the recorder supplied one).
 		if (prevN[id] != curN[id])
+		{
+			c->dx = hint_dx;
+			c->dy = hint_dy;
 			continue;
+		}
 
 		const int pi = head[id];
 		if (pi < 0)
-			continue;  // no match (newly spawned): snap
+		{
+			c->dx = hint_dx;  // newly (re)appeared mid-motion: glide, don't snap
+			c->dy = hint_dy;
+			continue;
+		}
 		head[id] = link[pi];
 
 		int dx = c->x - prev[pi].x;
@@ -710,6 +740,15 @@ float rl_get_ship_override_dx(int player)
 	if (player < 0 || player > 1 || !ship_override_active)
 		return 0.0f;
 	return ship_override_dx[player];
+}
+
+// Y counterpart. Needed by the docked Dragonwing, which rides player 1 rigidly and so has to
+// be drawn with player 1's sub-tick offset on both axes rather than its own.
+float rl_get_ship_override_dy(int player)
+{
+	if (player < 0 || player > 1 || !ship_override_active)
+		return 0.0f;
+	return ship_override_dy[player];
 }
 
 void rl_set_ship_vel(int player, int vx, int vy)

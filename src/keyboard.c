@@ -24,6 +24,7 @@
 #include "mouse.h"
 #include "network.h"
 #include "opentyr.h"
+#include "rollback.h"
 #include "console_platform.h"
 #include "video.h"
 #include "video_scale.h"
@@ -196,7 +197,16 @@ void service_SDL_events(JE_boolean clear_new)
 {
 	SDL_Event ev;
 
-	watchdog_heartbeat();  // main-loop progress marker; a stall here trips the hang watchdog
+	// Beat the watchdog BEFORE the re-simulation gate below: a burst of rollback
+	// re-simulation is real forward progress, and skipping the heartbeat during
+	// one once let the watchdog "rescue" a perfectly healthy client mid-burst.
+	watchdog_heartbeat();
+
+	// A rollback re-simulation replays a past tick: pumping the OS queue here
+	// would feed it fresh input and make the replay diverge from the original
+	// run.  Every input the replayed tick needs comes from the recorded tuples.
+	if (rollback_resim)
+		return;
 
 	// Recover from a resolution change (fullscreen toggle, scaler resize, Switch
 	// dock/undock) that the current game state won't redraw for on its own: every

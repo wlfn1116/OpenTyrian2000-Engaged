@@ -81,16 +81,30 @@ Controls are rebindable. Controllers are supported.
 
 ## Network multiplayer
 
-Both players must start the game from the command line:
+Host or join from the in-game menu (Host Game / Join Game), or start both
+players from the command line:
 
 ```text
 opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
 ```
 
 `HOSTNAME` is the other player's address. `NUM` is `1` or `2`. The game uses UDP
-port 1333. 
+port 1333.
 
-Network play is inherited from OpenTyrian2000 and is not regularly tested.
+Netplay uses **rollback netcode** by default: your ship answers to input on the
+same tick it happens — the same feel as single player — while the other ship is
+predicted and silently corrected when its real input arrives. The host decides
+the mode for both machines; set `net_rollback` to `off` in the `enhancements`
+section of `opentyrian.cfg` to fall back to the original delay-based lockstep
+(whose input delay is tuned with `net_delay`).
+
+Related config keys (`enhancements` section):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `net_rollback` | `on` | Rollback netcode (host-authoritative for the session) |
+| `net_delay` | `3` | Lockstep-only: ticks of input delay / tick-rate cap |
+| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player (runs each tick twice; results in `rollback_selftest.log`) |
 
 ## Building
 

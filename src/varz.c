@@ -36,6 +36,7 @@
 #include "nortvars.h"
 #include "opentyr.h"
 #include "render_list.h"
+#include "rollback.h"
 #include "shots.h"
 #include "sprite.h"
 #include "vga256d.h"
@@ -847,13 +848,16 @@ static bool special_is_flare(JE_byte sidx)
 	return (st >= 5 && st <= 11) || st == 16;
 }
 
+// Debug twiddle autofire runs its own pipeline: flareFromTwiddle marks the flare
+// as the twiddle's (the equipped special keeps firing) and twiddleFlareShotWait
+// paces its shots independently of shotRepeat[SHOT_SPECIAL].  File scope (not
+// function-local) so the rollback snapshot registry can reach them.
+static JE_boolean flareFromTwiddle = false;
+static JE_word twiddleFlareShotWait = 0;
+static JE_word twiddleWait = 0;
+
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
-	// Debug twiddle autofire runs its own pipeline: flareFromTwiddle marks the flare
-	// as the twiddle's (the equipped special keeps firing) and twiddleFlareShotWait
-	// paces its shots independently of shotRepeat[SHOT_SPECIAL].
-	static JE_boolean flareFromTwiddle = false;
-	static JE_word twiddleFlareShotWait = 0;
 
 	if (player[0].items.special > 0)
 	{
@@ -958,7 +962,6 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	// special (which keeps priority) on its own cooldown (twiddleWait), ignores the
 	// shield/armor cost, and won't stack onto an active flare.
 	{
-		static JE_word twiddleWait = 0;
 		if (playerNum == 1)
 		{
 			if (twiddleWait > 0)
@@ -1743,4 +1746,18 @@ void JE_drawSP(void)
 			superpixels[i].z--;
 		}
 	}
+}
+
+/* --- Rollback state registration ---------------------------------------------
+ *
+ * This file's sim-relevant statics; the extern-visible globals defined here are
+ * registered centrally in rollback_state.c.
+ */
+#include "rollback.h"
+
+void varz_register_rollback(void)
+{
+	rollback_register("vz.flareFromTwiddle",    &flareFromTwiddle, sizeof(flareFromTwiddle));
+	rollback_register("vz.twiddleFlareWait",    &twiddleFlareShotWait, sizeof(twiddleFlareShotWait));
+	rollback_register("vz.twiddleWait",         &twiddleWait, sizeof(twiddleWait));
 }
