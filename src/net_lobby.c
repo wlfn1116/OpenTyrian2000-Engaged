@@ -25,6 +25,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "net_rollback.h"
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -425,6 +426,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	enum
 	{
 		ITEM_PORT = 0,
+		ITEM_RECOVERY,
 		ITEM_PLAYER,
 		ITEM_START,
 		ITEM_BACK,
@@ -449,6 +451,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		const char *items[ITEM_COUNT];
 		items[ITEM_PORT] = portItem;
+		items[ITEM_RECOVERY] = net_desync_recovery
+		                     ? "Desync Recovery: On"
+		                     : "Desync Recovery: Off";
 		items[ITEM_PLAYER] = network_host_player == 2
 		                   ? "Host Flies: Dragonwing"
 		                   : "Host Flies: Silver Ship";
@@ -535,11 +540,11 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				action = true;
 				break;
 
-			// The one value row answers to left/right as well, the way every other
+			// The value rows answer to left/right as well, the way every other
 			// setting in the game does.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_PLAYER)
+				if (selectedIndex == ITEM_PLAYER || selectedIndex == ITEM_RECOVERY)
 					action = true;
 				break;
 
@@ -574,6 +579,15 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				SDL_strlcpy(status, "Port must be 1 to 49151.", sizeof(status));
 			break;
 		}
+
+		case ITEM_RECOVERY:
+			// On a detected desync the host streams its state and the joiner adopts
+			// it -- one hitch instead of a divergent rest-of-level.  The host's
+			// value binds the session (settings block bit 6), like every other
+			// sim-affecting setting; rollback sessions only.
+			JE_playSampleNum(S_CLICK);
+			net_desync_recovery = !net_desync_recovery;
+			break;
 
 		case ITEM_PLAYER:
 			// Player 2 is the Dragonwing, so this is the row that lets a host fly it; the

@@ -549,6 +549,56 @@ The Endless effect layer (zone timer, turbodrive decay, gravity carries, damage 
 time) is outside the rollback registry by design, so nothing that re-runs a tick may
 be armed while it is active — `rollback_selftest_active()` is the gate.
 
+### Desync recovery
+
+On a canary mismatch the host streams its whole registered state (`PACKET_RESYNC`)
+and the joiner adopts it; both then run `nrb_reset_core` — the level-start reset —
+so the repair is a fresh epoch at frame 1, and the guards that already police level
+boundaries discard every in-flight datagram of the abandoned timeline. Rollback
+sessions only; the host's toggle binds the session through settings-flag bit 6.
+
+What the design rests on:
+
+- **A snapshot is not wire-safe.** The registry holds raw pointers, each with a
+  known set of homes: `enemy[].sprite2s` (six sheet globals), `enemy[].enemydatofs`
+  (`&enemyDat[i]`), `shipGrPtr`/`shipGr2ptr`, and the `mapY*Pos`/`BKwrap*` family
+  (offsets into `megaData*.mainmap`, where `mapYPos` legally sits one element
+  *before* the array — the level-init `- 1`). `rollback_wire_export` rewrites them
+  as tags or offsets and then **decodes its own output back and compares against
+  live state**; a pointer with an unknown home refuses the whole resync rather than
+  ship garbage. A new registered pointer therefore fails loudly, not silently —
+  extend `rb_relocs` when adding one.
+- **Same-build peers only.** The payload is the registry's native layout, so the
+  preamble carries `rollback_state_size()` and the joiner refuses a mismatch. This
+  is the honest cross-platform answer: PC–Vita pairs differ in pointer width and
+  fall back to today's behaviour.
+- **Dead pool slots are canonicalized, on the host, in live state.** A spawn may
+  read what a recycled slot left behind, so after adoption both machines must hold
+  identical *dead* bytes too, or the first reuse diverges again.
+  `rollback_wire_canonicalize` zeroes dead `playerShotData`/`enemyShot`/
+  `explosions`/`rep_explosions` slots — which also makes the 400KB-plus snapshot
+  collapse to a few tens of KB under the zero-run RLE. `enemy[]` is exempt: a new
+  enemy whose sheet is not loaded deliberately inherits its slot's `sprite2s`
+  (APPROACH), so dead enemy slots ship as data.
+- **The acknowledged channel acks on receipt, not on consumption.** A full window
+  against a peer that is not consuming gets acknowledged into a full inbound queue
+  and dropped — the one loss the reliability layer cannot see. The sender therefore
+  keeps at most half of `NET_PACKET_QUEUE` in flight, the joiner treats a skipped
+  chunk index as unrecoverable (ordered channel: the hole can never fill), and a NAK
+  answers with a fresh stream. Every wait loop the driver owns dispatches inbound
+  chunks (`nrb_stall_pump`), because a desync at the level end arrives while the
+  peer sits in exactly such a loop.
+- **A NAK after a fully-acked stream means the host already reset.** Its acks came
+  home before the joiner's validation failed, so on the final failed attempt no
+  shared frame exists any more and the joiner halts the session cleanly instead of
+  wedging both machines into the long stall timeout.
+- **Recovery is capped (3 per level) and every use is a crashlog entry.** The
+  canary exists to surface determinism bugs; recovery converts their cost from "the
+  rest of the level is garbage" into a hitch, and must not also convert them into
+  silence. A host `PACKET_WAITING`/`PACKET_DETAILS` at the queue head during a
+  stream means the joiner already left the level — the packet belongs to the
+  level-end machinery and aborts the attempt unconsumed.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. A bad index otherwise

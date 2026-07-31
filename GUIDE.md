@@ -379,11 +379,21 @@ Effects are not available online.
 
 ## Online play
 
-Host Game opens a screen with the listen port, **Host Flies**, and Start Hosting.
-Host Flies picks which ship you take when hosting: player one, or player two, which
-is the Dragonwing. Whoever joins gets the other one. Left and right change it, and
-it is remembered between sessions. The host chooses the episode and difficulty
-either way.
+Host Game opens a screen with the listen port, **Desync Recovery**, **Host Flies**,
+and Start Hosting. Host Flies picks which ship you take when hosting: player one,
+or player two, which is the Dragonwing. Whoever joins gets the other one. Left and
+right change it, and it is remembered between sessions. The host chooses the
+episode and difficulty either way.
+
+Desync Recovery, on by default, repairs a game whose two machines have drifted
+apart instead of letting the rest of the level play out differently on each.
+When a desync is detected, the game pauses for a moment ("Resyncing players."),
+the host sends its complete game state to the other player, and both continue
+from the host's version of events. The host's setting decides for the session,
+like every other rule that affects the simulation. It works in rollback netplay
+between two copies of the same build on the same platform, and gives up after
+three repairs in one level; every repair is still recorded in the crash log, so
+a recurring desync stays visible to bug reports.
 
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half

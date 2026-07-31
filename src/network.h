@@ -32,6 +32,12 @@
 #endif
 #endif
 
+// 320 (was 256): the rollback input packet carries a 48-byte header plus up to
+// 16 x 14-byte redundant input records = 272 bytes.  In the header rather than
+// network.c so bulk senders (the resync stream) can size and throttle to it.
+#define NET_PACKET_SIZE   320
+#define NET_PACKET_QUEUE  16
+
 #define PACKET_ACKNOWLEDGE   0x00    //
 #define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
 #define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
@@ -56,6 +62,7 @@
 #define PACKET_DISCOVER_REPLY 0x51   // version, port, name
 
 #define PACKET_INPUT         0x60    // rollback input stream (never acknowledged; see net_rollback.c)
+#define PACKET_RESYNC        0x61    // gen, chunk idx/count, len, <state chunk>  (acknowledged; see nrb_resync_*)
 
 extern bool isNetworkGame;
 extern int network_delay;
@@ -158,6 +165,11 @@ int network_check(void);
 bool network_update(void);
 
 bool network_is_sync(void);
+
+// Outbound acknowledged packets still awaiting their ACK.  The resync stream
+// throttles on this: network_send halts the game on a full queue, so a bulk
+// sender has to know how much room is left before each send.
+int network_ack_backlog(void);
 
 void network_state_prepare(void);
 int network_state_send(void);

@@ -38,12 +38,15 @@
 #include "video.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 bool net_rollback = true;
+bool net_desync_recovery = true;
 
 static bool session_mode = false;
 static bool session_vt = true;
+static bool session_recovery = false;
 
 #ifdef WITH_NETWORK
 /* Levels started in this session, stamped on every input packet.  A peer stalled
@@ -78,6 +81,16 @@ void nrb_set_session_vt(bool enabled)
 bool nrb_session_vt(void)
 {
 	return session_vt;
+}
+
+void nrb_set_session_recovery(bool enabled)
+{
+	session_recovery = enabled;
+}
+
+bool nrb_session_recovery(void)
+{
+	return session_recovery;
 }
 
 bool nrb_active(void)
@@ -185,6 +198,39 @@ static Uint32 last_resend_tick;
 /* Diagnostics. */
 static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 
+/* --- Desync recovery ------------------------------------------------------------
+ *
+ * On a canary mismatch the HOST streams its whole registered sim state over the
+ * acknowledged channel (PACKET_RESYNC) and the joiner adopts it; both then reset
+ * the frame machinery exactly as at level start (new input epoch, frame 1), so
+ * every in-flight datagram of the abandoned timeline is refused by the guards
+ * that already police level boundaries.
+ *
+ * Chunk layout after the 4-byte reliable header:
+ *   [4]  Uint16 gen          attempt id within the level; NAK carries the gen refused
+ *   [6]  Uint16 chunk index  0xFFFF = NAK (joiner could not assemble/adopt)
+ *   [8]  Uint16 chunk count
+ *   [10] Uint16 payload bytes
+ * Chunk 0's payload begins with a 12-byte preamble: registry size (layout
+ * guard -- same-build peers only), compressed total, FNV-1a of the compressed
+ * stream.  Payload is a zero-run RLE of the wire-safe snapshot: the dead pool
+ * slots are canonicalized to zero first, so the dominant arrays compress to
+ * nearly nothing.
+ */
+#define NRB_RS_HDR       12
+#define NRB_RS_PRE       12
+#define NRB_RS_PAYLOAD   (NET_PACKET_SIZE - NRB_RS_HDR)
+#define NRB_RS_NAK       0xFFFFu
+#define NRB_RS_MAX       3                /* recovery attempts per level          */
+#define NRB_RS_PROGRESS_TIME_OUT 8000     /* ms without a new chunk -> NAK        */
+#define NRB_RS_ABS_TIME_OUT      60000    /* ms for the whole attempt             */
+
+static Uint32 resync_used;   /* attempts consumed this level (either role)        */
+static Uint16 resync_gen;    /* newest attempt id sent (host) / adopted (joiner)  */
+static bool   resync_wanted; /* canary mismatch seen; the host acts on it         */
+
+static bool nrb_resync_dispatch(void);
+
 /* Livelock guard: consecutive rollbacks that landed on the same frame. */
 static Uint32 resim_last_K, resim_repeat;
 static bool   resim_livelock_reported;
@@ -206,7 +252,10 @@ void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs)
 	*desyncs = canary_mismatches;
 }
 
-void nrb_level_reset(void)
+/* Everything a fresh timeline needs: shared by the level start and a completed
+ * desync recovery (which IS a level start as far as frames, histories and the
+ * epoch are concerned -- only the per-level recovery budget survives it). */
+static void nrb_reset_core(void)
 {
 	memset(local_hist, 0, sizeof(local_hist));
 	memset(remote_hist, 0, sizeof(remote_hist));
@@ -216,6 +265,7 @@ void nrb_level_reset(void)
 	canary_checked_upto = 0;
 	canary_reported = false;
 	canary_mismatches = 0;
+	resync_wanted = false;
 
 	++nrb_epoch;
 
@@ -252,6 +302,13 @@ void nrb_level_reset(void)
 	}
 
 	rollback_ring_reset();
+}
+
+void nrb_level_reset(void)
+{
+	nrb_reset_core();
+	resync_used = 0;
+	resync_gen = 0;
 }
 
 /* --- Frame begin: snapshot, then apply the previous frame's sim requests ------ */
@@ -736,6 +793,11 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			if (networkDesyncHalt)
 				network_tyrian_halt(7, false);
 		}
+
+		/* Repairable: arm a recovery.  The host acts on the flag at its driver
+		 * site; the joiner's own copy is cleared when the stream arrives. */
+		if (nrb_session_recovery() && resync_used < NRB_RS_MAX)
+			resync_wanted = true;
 	}
 }
 
@@ -875,8 +937,10 @@ static NrbStep nrb_begin_resim(Uint32 K)
 }
 
 /* Pump the world while stalled: OS events, inbound packets, periodic input
- * resend (the peer may be waiting on a lost packet), bounded by timeout. */
-static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *why)
+ * resend (the peer may be waiting on a lost packet), bounded by timeout.
+ * Returns true when an inbound desync recovery reset the timeline underneath
+ * the wait -- the caller must abandon it and fall through to present. */
+static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *why)
 {
 	service_SDL_events(false);
 
@@ -887,6 +951,12 @@ static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 	// spin this pump on a core for the whole stall.
 	if (network_check() <= 0)
 		SDL_Delay(1);
+
+	// The peer can start a recovery while we sit in a wait loop (a desync right
+	// at the level end is the classic case).  Handle it here, or its chunks
+	// would rot at the head of the reliable queue until the wait timed out.
+	if (nrb_resync_dispatch())
+		return true;
 
 	const Uint32 waited = SDL_GetTicks() - wait_start;
 
@@ -939,12 +1009,552 @@ static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		        (unsigned)waited);
 		network_tyrian_halt(2, false);
 	}
+
+	return false;
 }
 
-/* True once the scheduled menu frame has been reached and confirmed, at which
- * point both machines hold identical state and the menu may open.  Returns false
- * if a rollback is needed first -- the caller re-enters here after re-simulating. */
-static bool nrb_menu_frame_ready(Uint32 *resim_from)
+/* --- Desync recovery engine ------------------------------------------------------ */
+
+/* FNV-1a over the compressed stream: guards the assembly logic, not the link
+ * (UDP already checksums each datagram). */
+static Uint32 nrb_rs_hash(const Uint8 *p, size_t n)
+{
+	Uint32 h = 2166136261u;
+	for (size_t i = 0; i < n; ++i)
+	{
+		h ^= p[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+/* Zero-run RLE.  Token 0x00 is followed by a two-byte run length of zeroes;
+ * tokens 0x01..0xFF are followed by that many literal bytes.  Zero runs
+ * shorter than four bytes ride inside literals (a zero token costs three).
+ * Returns bytes written, or 0 on dst overflow (the caller's cap absorbs the
+ * worst case; checked anyway). */
+static size_t nrb_rs_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
+{
+	size_t in = 0, out = 0;
+	while (in < n)
+	{
+		size_t zrun = 0;
+		while (in + zrun < n && src[in + zrun] == 0 && zrun < 65535)
+			++zrun;
+		if (zrun >= 4)
+		{
+			if (out + 3 > cap)
+				return 0;
+			dst[out++] = 0x00;
+			dst[out++] = (Uint8)(zrun >> 8);
+			dst[out++] = (Uint8)zrun;
+			in += zrun;
+			continue;
+		}
+
+		size_t lit = 0;
+		while (in + lit < n && lit < 255)
+		{
+			if (src[in + lit] == 0)
+			{
+				size_t z = 1;
+				while (in + lit + z < n && src[in + lit + z] == 0 && z < 4)
+					++z;
+				if (z >= 4)
+					break;
+			}
+			++lit;
+		}
+		if (out + 1 + lit > cap)
+			return 0;
+		dst[out++] = (Uint8)lit;
+		memcpy(dst + out, src + in, lit);
+		out += lit;
+		in += lit;
+	}
+	return out;
+}
+
+static size_t nrb_rs_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
+{
+	size_t in = 0, out = 0;
+	while (in < n)
+	{
+		const Uint8 tok = src[in++];
+		if (tok == 0x00)
+		{
+			if (in + 2 > n)
+				return 0;
+			const size_t zrun = ((size_t)src[in] << 8) | src[in + 1];
+			in += 2;
+			if (zrun == 0 || out + zrun > cap)
+				return 0;
+			memset(dst + out, 0, zrun);
+			out += zrun;
+		}
+		else
+		{
+			if (in + tok > n || out + tok > cap)
+				return 0;
+			memcpy(dst + out, src + in, tok);
+			in += tok;
+			out += tok;
+		}
+	}
+	return out;
+}
+
+/* Pump for the transfer loops: OS events, inbound datagrams, the overlay, the
+ * link timeouts.  False = this attempt ran out of time.  Not nrb_stall_pump:
+ * that one resends input records (noise while a transfer owns the channel),
+ * dispatches inbound recoveries (this IS one), and names the wrong wait. */
+static bool nrb_resync_pump(Uint32 wait_start, bool *reported, const char *why)
+{
+	service_SDL_events(false);
+
+	if (network_check() <= 0)
+		SDL_Delay(1);
+
+	const Uint32 waited = SDL_GetTicks() - wait_start;
+
+	if (waited > 300)
+	{
+		static Uint32 overlay_for = 0;
+		static Uint32 last_present = 0;
+
+		SDL_Surface *const save = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+		if (overlay_for != wait_start)
+		{
+			overlay_for = wait_start;
+			JE_barShade(VGAScreen, 3, 60, 257, 80);
+			JE_barShade(VGAScreen, 5, 62, 255, 78);
+			JE_dString(VGAScreen, 10, 65, "Resyncing players.", SMALL_FONT_SHAPES);
+			last_present = 0;
+		}
+		if (SDL_GetTicks() - last_present > 100)
+		{
+			last_present = SDL_GetTicks();
+			JE_showVGA();
+		}
+		VGAScreen = save;
+	}
+
+	if (!*reported && waited > 3000)
+	{
+		*reported = true;
+		char detail[224];
+		snprintf(detail, sizeof(detail),
+		         "%s\n  player %u, attempt %lu, gen %u, %lu ms in",
+		         why, thisPlayerNum, (unsigned long)resync_used,
+		         (unsigned)resync_gen, (unsigned long)waited);
+		crashlog_note("RESYNC STALL", detail);
+	}
+
+	if (waited > NRB_TIME_OUT && !network_peer_alive())
+		network_tyrian_halt(2, false);
+
+	return waited <= NRB_RS_ABS_TIME_OUT;
+}
+
+/* One chunk onto the acknowledged channel.  `stream` = preamble + compressed. */
+static void nrb_resync_send_chunk(const Uint8 *stream, size_t total, Uint32 chunks, Uint32 idx)
+{
+	Uint8 *data = packet_out_temp->data;
+	const size_t from = (size_t)idx * NRB_RS_PAYLOAD;
+	size_t len = total - from;
+	if (len > NRB_RS_PAYLOAD)
+		len = NRB_RS_PAYLOAD;
+
+	network_prepare(PACKET_RESYNC);
+	SDLNet_Write16(resync_gen,     &data[4]);
+	SDLNet_Write16((Uint16)idx,    &data[6]);
+	SDLNet_Write16((Uint16)chunks, &data[8]);
+	SDLNet_Write16((Uint16)len,    &data[10]);
+	memcpy(&data[NRB_RS_HDR], stream + from, len);
+	network_send(NRB_RS_HDR + (int)len);
+}
+
+static void nrb_resync_send_nak(Uint16 gen)
+{
+	Uint8 *data = packet_out_temp->data;
+	network_prepare(PACKET_RESYNC);
+	SDLNet_Write16(gen,                &data[4]);
+	SDLNet_Write16((Uint16)NRB_RS_NAK, &data[6]);
+	SDLNet_Write16(0,                  &data[8]);
+	SDLNet_Write16(0,                  &data[10]);
+	network_send(NRB_RS_HDR);
+}
+
+/* One host streaming attempt.  1 = streamed, acknowledged, timeline reset;
+ * 0 = failed but worth retrying (joiner NAK, stall); -1 = stop trying. */
+static int nrb_resync_send_once(void)
+{
+	++resync_used;
+	++resync_gen;
+
+	const size_t state_sz = rollback_state_size();
+	const size_t cap = state_sz + state_sz / 255 + 64;
+
+	Uint8 *raw = malloc(state_sz);
+	Uint8 *stream = malloc(NRB_RS_PRE + cap);
+	if (raw == NULL || stream == NULL)
+	{
+		free(raw);
+		free(stream);
+		return -1;
+	}
+
+	/* Canonicalize LIVE state first: the joiner adopts these bytes, so this is
+	 * the step that makes the two machines byte-identical afterwards. */
+	rollback_wire_canonicalize();
+
+	if (!rollback_wire_export(raw))
+	{
+		/* A pointer with no relocation, or the export failed its own decode
+		 * check.  Not a link problem: retrying cannot help this level. */
+		crashlog_note("NETWORK RESYNC REFUSED",
+		              "wire export failed (unrelocatable pointer or self-check); keeping the divergent game");
+		free(raw);
+		free(stream);
+		return -1;
+	}
+
+	const size_t comp_sz = nrb_rs_compress(raw, state_sz, stream + NRB_RS_PRE, cap);
+	free(raw);
+	if (comp_sz == 0)
+	{
+		free(stream);
+		return -1;
+	}
+
+	SDLNet_Write32((Uint32)state_sz, &stream[0]);
+	SDLNet_Write32((Uint32)comp_sz,  &stream[4]);
+	SDLNet_Write32(nrb_rs_hash(stream + NRB_RS_PRE, comp_sz), &stream[8]);
+
+	const size_t total  = NRB_RS_PRE + comp_sz;
+	const Uint32 chunks = (Uint32)((total + NRB_RS_PAYLOAD - 1) / NRB_RS_PAYLOAD);
+
+	const Uint32 wait_start = SDL_GetTicks();
+	bool reported = false;
+	Uint32 sent = 0;
+	int outcome = 0;  /* 1 done, 2 NAK: retry, 3 give up this level */
+
+	while (outcome == 0)
+	{
+		if (!nrb_resync_pump(wait_start, &reported, "streaming the resync state"))
+		{
+			/* Timed out with a live link: the peer is not consuming.  A retry
+			 * would just spend another minute on the same silence. */
+			outcome = 3;
+			break;
+		}
+
+		if (packet_in[0])
+		{
+			const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+			if (type == PACKET_RESYNC)
+			{
+				const Uint16 g  = SDLNet_Read16(&packet_in[0]->data[4]);
+				const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
+				network_update();
+				if (ix == NRB_RS_NAK && g == resync_gen)
+					outcome = 2;
+				/* other gens: stale echoes of an abandoned attempt */
+			}
+			else if (type == PACKET_GAME_QUIT)
+			{
+				/* The peer left the level under us (the in-game menu's quit
+				 * path).  The level is over; recovery is moot. */
+				network_update();
+				reallyEndLevel = true;
+				playerEndLevel = true;
+				end_agreed = true;
+				outcome = 3;
+			}
+			else if (type == PACKET_WAITING || type == PACKET_DETAILS)
+			{
+				/* The peer is already in a between-levels handshake: it left
+				 * the level and nothing over there is listening for chunks.
+				 * The packet belongs to the level-end machinery -- leave it. */
+				outcome = 3;
+			}
+			else
+			{
+				network_update();  /* pause/menu presses are lost in the hitch */
+			}
+			continue;
+		}
+
+		/* Keep at most half the reliable queue in flight: the peer acknowledges
+		 * on RECEIPT, before consumption, so a full window could overflow its
+		 * inbound queue -- and acknowledged-but-dropped is the one loss this
+		 * channel cannot see.  The joiner's index check catches it anyway; the
+		 * half window keeps it from happening. */
+		while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+		{
+			nrb_resync_send_chunk(stream, total, chunks, sent);
+			++sent;
+		}
+
+		if (sent == chunks && network_ack_backlog() == 0)
+			outcome = 1;
+	}
+
+	free(stream);
+
+	if (outcome == 1)
+	{
+		char detail[224];
+		snprintf(detail, sizeof(detail),
+		         "host streamed frame %lu state: %lu bytes (%lu compressed, %lu chunks) "
+		         "in %lu ms, attempt %lu of %d",
+		         (unsigned long)nrb_cur, (unsigned long)state_sz, (unsigned long)comp_sz,
+		         (unsigned long)chunks, (unsigned long)(SDL_GetTicks() - wait_start),
+		         (unsigned long)resync_used, NRB_RS_MAX);
+		crashlog_note("NETWORK RESYNC", detail);
+
+		nrb_reset_core();
+		JE_clearSpecialRequests();
+		return 1;
+	}
+	return outcome == 2 ? 0 : -1;
+}
+
+/* Host: run attempts until one lands or the level's budget is spent.
+ * True = the timeline was reset; the caller presents and starts frame 1. */
+static bool nrb_resync_host_run(void)
+{
+	resync_wanted = false;
+	while (resync_used < NRB_RS_MAX)
+	{
+		const int r = nrb_resync_send_once();
+		if (r == 1)
+			return true;
+		if (r < 0)
+			break;
+	}
+	return false;
+}
+
+/* Joiner: packet_in[0] holds a resync chunk; assemble, validate, adopt.
+ * True = adopted and timeline reset. */
+static bool nrb_resync_receive(void)
+{
+	const size_t state_sz = rollback_state_size();
+
+	Uint8 *comp = NULL, *raw = NULL;
+	Uint32 comp_total = 0, want_crc = 0;
+	Uint32 chunks = 0, next = 0;
+	size_t got = 0;
+	Uint16 gen = 0, seen_gen = 0;
+	bool have_hdr = false;
+	bool assembled = false, adopted = false, level_over = false;
+
+	const Uint32 wait_start = SDL_GetTicks();
+	Uint32 last_progress = wait_start;
+	bool reported = false;
+
+	++resync_used;
+
+	for (;;)
+	{
+		if (packet_in[0] == NULL)
+		{
+			if (!nrb_resync_pump(wait_start, &reported, "receiving the resync state"))
+				break;
+			if (SDL_GetTicks() - last_progress > NRB_RS_PROGRESS_TIME_OUT)
+				break;
+			continue;
+		}
+
+		const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+		if (type != PACKET_RESYNC)
+		{
+			if (type == PACKET_GAME_QUIT)
+			{
+				network_update();
+				reallyEndLevel = true;
+				playerEndLevel = true;
+				end_agreed = true;
+				level_over = true;
+				break;
+			}
+			network_update();
+			continue;
+		}
+
+		const int    len = packet_in[0]->len;
+		const Uint16 g   = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 ix  = SDLNet_Read16(&packet_in[0]->data[6]);
+		const Uint16 cn  = SDLNet_Read16(&packet_in[0]->data[8]);
+		const Uint16 pl  = SDLNet_Read16(&packet_in[0]->data[10]);
+		seen_gen = g;
+
+		if (ix == NRB_RS_NAK || len < NRB_RS_HDR + pl || pl > NRB_RS_PAYLOAD)
+		{
+			network_update();  /* an echo, or malformed: drop */
+			continue;
+		}
+
+		if (ix == 0)
+		{
+			/* First chunk of a (possibly restarted) stream: the preamble. */
+			const Uint8 *p = &packet_in[0]->data[NRB_RS_HDR];
+			if (pl < NRB_RS_PRE)
+			{
+				network_update();
+				break;
+			}
+			const Uint32 their_state = SDLNet_Read32(&p[0]);
+			comp_total = SDLNet_Read32(&p[4]);
+			want_crc   = SDLNet_Read32(&p[8]);
+
+			/* Layout guard: a different build (or platform) has a different
+			 * registry, and its bytes must never be restored here. */
+			if (their_state != (Uint32)state_sz ||
+			    comp_total == 0 || comp_total > (Uint32)(state_sz + state_sz / 255 + 64))
+			{
+				network_update();
+				break;
+			}
+
+			free(comp);
+			comp = malloc(comp_total);
+			if (comp == NULL)
+			{
+				network_update();
+				break;
+			}
+			gen = g;
+			chunks = cn;
+			have_hdr = true;
+			next = 0;
+
+			const size_t body = (size_t)pl - NRB_RS_PRE;
+			if (body > comp_total)
+			{
+				network_update();
+				break;
+			}
+			memcpy(comp, p + NRB_RS_PRE, body);
+			got = body;
+		}
+		else
+		{
+			if (!have_hdr || g != gen || cn != chunks)
+			{
+				network_update();  /* tail of an abandoned attempt */
+				continue;
+			}
+			if (ix != next)
+			{
+				/* The reliable channel delivers in order, so a skipped index
+				 * means a chunk was acknowledged into a full inbound queue and
+				 * dropped before we started consuming.  Unrecoverable. */
+				network_update();
+				break;
+			}
+			if (got + pl > comp_total)
+			{
+				network_update();
+				break;
+			}
+			memcpy(comp + got, &packet_in[0]->data[NRB_RS_HDR], pl);
+			got += pl;
+		}
+
+		network_update();
+		last_progress = SDL_GetTicks();
+		++next;
+
+		if (next == chunks)
+		{
+			assembled = true;
+			if (got == comp_total && nrb_rs_hash(comp, comp_total) == want_crc)
+			{
+				raw = malloc(state_sz);
+				adopted = raw != NULL &&
+				          nrb_rs_expand(comp, comp_total, raw, state_sz) == state_sz &&
+				          rollback_wire_adopt(raw);
+			}
+			break;
+		}
+	}
+
+	free(comp);
+	free(raw);
+
+	if (adopted)
+	{
+		resync_gen = gen;
+
+		char detail[192];
+		snprintf(detail, sizeof(detail),
+		         "joiner adopted the host state: gen %u, %lu bytes, %lu ms, attempt %lu of %d",
+		         (unsigned)gen, (unsigned long)state_sz,
+		         (unsigned long)(SDL_GetTicks() - wait_start),
+		         (unsigned long)resync_used, NRB_RS_MAX);
+		crashlog_note("NETWORK RESYNC", detail);
+
+		nrb_reset_core();
+		JE_clearSpecialRequests();
+		return true;
+	}
+
+	if (!level_over)
+	{
+		nrb_resync_send_nak(have_hdr ? gen : seen_gen);
+
+		/* A fully assembled stream means every chunk was acknowledged, so the
+		 * host has already reset onto the fresh timeline.  If adoption failed
+		 * for good on top of that, no shared frame exists any more and playing
+		 * on only wedges both machines into the long stall timeout. */
+		if (assembled && resync_used >= NRB_RS_MAX)
+			network_tyrian_halt(7, false);
+	}
+	return false;
+}
+
+/* An inbound PACKET_RESYNC sits at the head of the reliable queue.  Host: only
+ * a NAK matters (the joiner failed after our acks came home) -- answer it with
+ * a fresh stream.  Joiner: assemble and adopt.  True = the timeline was reset;
+ * the caller abandons whatever it was doing and presents. */
+static bool nrb_resync_dispatch(void)
+{
+	if (packet_in[0] == NULL || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_RESYNC)
+		return false;
+
+	if (!nrb_session_recovery())
+	{
+		network_update();  /* stray: keep the reliable queue's head moving */
+		return false;
+	}
+
+	if (network_is_host)
+	{
+		const Uint16 g  = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
+		network_update();
+		if (ix == NRB_RS_NAK && g == resync_gen && resync_used < NRB_RS_MAX)
+			return nrb_resync_host_run();
+		return false;
+	}
+
+	return nrb_resync_receive();
+}
+
+/* Verdicts for the scheduled-menu wait below. */
+enum
+{
+	NRB_MENU_OPEN,     /* frame confirmed on both machines: open the menu      */
+	NRB_MENU_RESIM,    /* rollback first; the caller re-enters after it        */
+	NRB_MENU_ABANDON,  /* a desync recovery reset the timeline: no menu frame  */
+};
+
+/* The scheduled menu frame has been reached; wait until it is confirmed, at
+ * which point both machines hold identical state and the menu may open. */
+static int nrb_menu_frame_ready(Uint32 *resim_from)
 {
 	const Uint32 wait_start = SDL_GetTicks();
 	const Uint32 newest_at_start = remote_newest;
@@ -952,13 +1562,14 @@ static bool nrb_menu_frame_ready(Uint32 *resim_from)
 
 	while (verified_upto < nrb_cur)
 	{
-		nrb_stall_pump(wait_start, &stall_reported, "waiting to open the in-game menu");
+		if (nrb_stall_pump(wait_start, &stall_reported, "waiting to open the in-game menu"))
+			return NRB_MENU_ABANDON;
 
 		const Uint32 K = nrb_scan_mispredict();
 		if (K != 0)
 		{
 			*resim_from = K;
-			return false;
+			return NRB_MENU_RESIM;
 		}
 
 		/* Same escape as the level-end gate: a peer that has simulated nothing for
@@ -976,7 +1587,7 @@ static bool nrb_menu_frame_ready(Uint32 *resim_from)
 		}
 	}
 
-	return true;
+	return NRB_MENU_OPEN;
 }
 
 /* Give back time when we are consistently ahead of the peer, GGPO-style: each
@@ -1068,14 +1679,34 @@ NrbStep nrb_driver(void)
 	nrb_compare_canary();
 	nrb_process_requests();
 
+	/* Desync recovery rendezvous.  Either path that fires here leaves the frame
+	 * machinery reset -- this pass presents, the next tick simulates the fresh
+	 * timeline's frame 1 -- so nothing below (menus, gates, prediction bounds)
+	 * may run after one. */
+	if (nrb_resync_dispatch())
+		return NRB_STEP_PRESENT;
+	if (resync_wanted)
+	{
+		resync_wanted = false;
+		if (network_is_host && nrb_resync_host_run())
+			return NRB_STEP_PRESENT;
+	}
+
 	/* Scheduled menu rendezvous.  req_at is always strictly ahead of nrb_cur when
 	 * it is set (see NRB_REQ_LEAD), so this fires on exactly that frame, on both
 	 * machines, with the same simulation behind it. */
 	if (req_at != 0 && nrb_cur >= req_at)
 	{
 		Uint32 K = 0;
-		if (!nrb_menu_frame_ready(&K))
+		switch (nrb_menu_frame_ready(&K))
+		{
+		case NRB_MENU_RESIM:
 			return nrb_begin_resim(K);
+		case NRB_MENU_ABANDON:
+			return NRB_STEP_PRESENT;
+		default:
+			break;
+		}
 
 		const bool local_menu = req_local_menu;
 		req_at = 0;
@@ -1110,7 +1741,9 @@ NrbStep nrb_driver(void)
 
 		while (verified_upto < nrb_cur && reallyEndLevel)
 		{
-			nrb_stall_pump(wait_start, &stall_reported, "waiting to confirm level end");
+			if (nrb_stall_pump(wait_start, &stall_reported, "waiting to confirm level end"))
+				return NRB_STEP_PRESENT;  /* recovery reset the timeline; the end it
+				                             was confirming no longer exists */
 			const Uint32 K = nrb_scan_mispredict();
 			if (K != 0)
 				return nrb_begin_resim(K);
@@ -1156,7 +1789,8 @@ NrbStep nrb_driver(void)
 		        * guaranteed an opening rollback burst. */
 		       (remote_newest == 0 && nrb_cur >= 3))
 		{
-			nrb_stall_pump(wait_start, &stall_reported, "peer too far behind");
+			if (nrb_stall_pump(wait_start, &stall_reported, "peer too far behind"))
+				return NRB_STEP_PRESENT;
 			const Uint32 K = nrb_scan_mispredict();
 			if (K != 0)
 				return nrb_begin_resim(K);

@@ -49,6 +49,16 @@ bool nrb_session_mode(void);
 void nrb_set_session_vt(bool enabled);
 bool nrb_session_vt(void);
 
+/* Desync recovery (config default; the host's value binds the session).  When
+ * on, a canary mismatch is repaired in place: the host streams its whole
+ * registered sim state (PACKET_RESYNC) and the joiner adopts it, then both
+ * restart the input timeline at a fresh epoch -- one visible hitch instead of
+ * a divergent rest-of-level.  Rollback sessions between same-build peers only;
+ * anything else refuses the stream and falls back to today's behaviour. */
+extern bool net_desync_recovery;
+void nrb_set_session_recovery(bool enabled);
+bool nrb_session_recovery(void);
+
 /* Sim frame currently being simulated (1-based; 0 = before the first tick). */
 Uint32 nrb_frame(void);
 

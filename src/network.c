@@ -63,11 +63,6 @@
 #define NET_VERSION       8            // increment whenever networking changes might create incompatibility
 #define NET_PORT          1333         // UDP
 
-// 320 (was 256): the rollback input packet carries a 48-byte header plus up to
-// 16 x 14-byte redundant input records = 272 bytes.
-#define NET_PACKET_SIZE   320
-#define NET_PACKET_QUEUE  16
-
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
 // then the host's simulation settings, then the null-terminated player name.
 #define NET_CONNECT_SETTINGS  12
@@ -433,6 +428,7 @@ static int network_recv_one(void)
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
 					case PACKET_DEBUG_SYNC:
+					case PACKET_RESYNC:
 						{
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
 							if (i < NET_PACKET_QUEUE)
@@ -650,6 +646,11 @@ bool network_update(void)
 bool network_is_sync(void)
 {
 	return (queue_out_sync - last_ack_sync == 1);
+}
+
+int network_ack_backlog(void)
+{
+	return (Uint16)(last_out_sync - queue_out_sync);
 }
 
 // prepare new state for sending
@@ -936,6 +937,7 @@ int network_connect(void)
 	// so both sides must simply be configured alike (as with network_delay).
 	nrb_set_session_mode(net_rollback);
 	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
+	nrb_set_session_recovery(net_desync_recovery);
 
 connect_reset:
 	// A listening host has no address to send to yet, so it stays quiet until the joiner
@@ -1246,6 +1248,7 @@ int network_settings_pack(Uint8 *buf)
 	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
 	// so the host's smooth-motion choice binds the session.
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
+	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery -- host decides
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1303,6 +1306,7 @@ int network_settings_adopt(const Uint8 *buf)
 	// net_rollback preference is left untouched and restored semantics don't apply.
 	nrb_set_session_mode((flags & (1 << 4)) != 0);
 	nrb_set_session_vt((flags & (1 << 5)) != 0);
+	nrb_set_session_recovery((flags & (1 << 6)) != 0);
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -1628,6 +1632,7 @@ void network_shutdown(void)
 	host_awaiting_peer = false;
 
 	nrb_set_session_mode(false);
+	nrb_set_session_recovery(false);
 
 	network_settings_restore();
 }

@@ -75,6 +75,22 @@ void rollback_snapshot(Uint32 frame);
 bool rollback_have_frame(Uint32 frame);
 bool rollback_restore(Uint32 frame);
 
+/* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
+ *
+ * A snapshot buffer holds a handful of raw pointers, valid only in the process
+ * that took it.  Export rewrites each one as a tag or array offset (every
+ * target is a fixed global, so the encoding is exact) and proves it by decoding
+ * its own output back and comparing; adopt rewrites them into THIS process's
+ * pointers and restores.  Same-build peers only -- the layout is the registry's.
+ */
+bool rollback_wire_export(Uint8 *dst);   /* dst: rollback_state_size() bytes    */
+bool rollback_wire_adopt(Uint8 *buf);    /* decodes in place, then restores     */
+/* Zero every DEAD slot of the big object pools in LIVE state, so that after an
+ * adopt both machines are byte-identical (a spawn may read a recycled slot).
+ * enemy[] is exempt: a new enemy deliberately inherits its slot's sprite bank
+ * when its own isn't loaded (APPROACH), so dead enemy slots ship as data. */
+void rollback_wire_canonicalize(void);
+
 /* --- Per-frame input tuples ----------------------------------------------------
  *
  * The simulation's only doors for player input.  In netplay the wire carries

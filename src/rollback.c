@@ -21,9 +21,12 @@
 
 #include "crashlog.h"
 #include "endless.h"
+#include "episodes.h"
 #include "net_rollback.h"
 #include "network.h"
 #include "opentyr.h"
+#include "shots.h"
+#include "sprite.h"
 #include "varz.h"
 
 #include <stdarg.h>
@@ -200,6 +203,284 @@ bool rollback_restore(Uint32 frame)
 		return false;
 	rb_restore_from(rb_ring[slot]);
 	return true;
+}
+
+static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz);
+
+/* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
+ *
+ * See rollback.h.  Every registered pointer field and where it can point:
+ *   enemy[].sprite2s     one of six fixed sprite-sheet globals, or NULL
+ *   enemy[].enemydatofs  &enemyDat[i] (tyrian2.c JE_makeEnemy), or NULL
+ *   shipGrPtr/shipGr2ptr &spriteSheet9 or &spriteSheetT2000 (varz.c), or NULL
+ *   mapY*Pos, BKwrap*    into megaData{1,2,3}.mainmap -- fixed globals, so an
+ *                        element offset relocates exactly (mapYPos can sit one
+ *                        element BEFORE the array: the level-init -1)
+ *   player[].lives       re-derived by the restore fixup; never encoded
+ */
+
+enum
+{
+	RB_RELOC_SHEET,   /* Sprite2_array*: rb_sheet_tab index                     */
+	RB_RELOC_SHIP,    /* Sprite2_array*: rb_ship_tab index                      */
+	RB_RELOC_EDAT,    /* void*: element index into enemyDat                     */
+	RB_RELOC_MAP1,    /* JE_byte**: element offset into megaData1.mainmap       */
+	RB_RELOC_MAP2,
+	RB_RELOC_MAP3,
+};
+
+#define RB_CODE_NULL 0xFFFFFFFFu   /* NULL for the EDAT and MAP kinds */
+
+/* Index 0 is NULL so a zero code is never a valid live pointer by accident. */
+static Sprite2_array *const rb_sheet_tab[] = {
+	NULL, &spriteSheet10, &spriteSheet11,
+	&enemySpriteSheets[0], &enemySpriteSheets[1],
+	&enemySpriteSheets[2], &enemySpriteSheets[3],
+};
+static Sprite2_array *const rb_ship_tab[] = { NULL, &spriteSheet9, &spriteSheetT2000 };
+
+typedef struct
+{
+	const char *item;      /* registry name                            */
+	size_t      field_ofs; /* field offset within one element          */
+	size_t      stride;    /* element stride (0: single field, count 1) */
+	int         count;
+	int         kind;
+}
+RbReloc;
+
+static const RbReloc rb_relocs[] = {
+	{ "enemy",      offsetof(struct JE_SingleEnemyType, sprite2s),    sizeof(struct JE_SingleEnemyType), 100, RB_RELOC_SHEET },
+	{ "enemy",      offsetof(struct JE_SingleEnemyType, enemydatofs), sizeof(struct JE_SingleEnemyType), 100, RB_RELOC_EDAT  },
+	{ "shipGrPtr",  0, 0, 1, RB_RELOC_SHIP },
+	{ "shipGr2ptr", 0, 0, 1, RB_RELOC_SHIP },
+	{ "mapYPos",    0, 0, 1, RB_RELOC_MAP1 },
+	{ "mapY2Pos",   0, 0, 1, RB_RELOC_MAP2 },
+	{ "mapY3Pos",   0, 0, 1, RB_RELOC_MAP3 },
+	{ "BKwrap1",    0, 0, 1, RB_RELOC_MAP1 },
+	{ "BKwrap1to",  0, 0, 1, RB_RELOC_MAP1 },
+	{ "BKwrap2",    0, 0, 1, RB_RELOC_MAP2 },
+	{ "BKwrap2to",  0, 0, 1, RB_RELOC_MAP2 },
+	{ "BKwrap3",    0, 0, 1, RB_RELOC_MAP3 },
+	{ "BKwrap3to",  0, 0, 1, RB_RELOC_MAP3 },
+};
+
+static void rb_map_base(int kind, JE_byte ***base, ptrdiff_t *count)
+{
+	switch (kind)
+	{
+	case RB_RELOC_MAP1: *base = &megaData1.mainmap[0][0]; *count = 300 * 14; break;
+	case RB_RELOC_MAP2: *base = &megaData2.mainmap[0][0]; *count = 600 * 14; break;
+	default:            *base = &megaData3.mainmap[0][0]; *count = 600 * 15; break;
+	}
+}
+
+/* The pointer field is sizeof(void*) bytes; the code always occupies the first
+ * four with the rest zeroed, so encode/decode is layout-symmetric per build. */
+static Uint32 rb_field_read_code(const Uint8 *field)
+{
+	Uint32 code;
+	memcpy(&code, field, sizeof(code));
+	return code;
+}
+
+static void rb_field_write_code(Uint8 *field, Uint32 code)
+{
+	memset(field, 0, sizeof(void *));
+	memcpy(field, &code, sizeof(code));
+}
+
+/* Encode one pointer field in the buffer; false = a pointer with no known home. */
+static bool rb_reloc_encode_field(Uint8 *field, int kind)
+{
+	void *v;
+	memcpy(&v, field, sizeof(v));
+
+	switch (kind)
+	{
+	case RB_RELOC_SHEET:
+	case RB_RELOC_SHIP:
+	{
+		Sprite2_array *const *tab = (kind == RB_RELOC_SHEET) ? rb_sheet_tab : rb_ship_tab;
+		const int n = (kind == RB_RELOC_SHEET) ? (int)COUNTOF(rb_sheet_tab) : (int)COUNTOF(rb_ship_tab);
+		for (int i = 0; i < n; ++i)
+		{
+			if (v == tab[i])
+			{
+				rb_field_write_code(field, (Uint32)i);
+				return true;
+			}
+		}
+		return false;
+	}
+	case RB_RELOC_EDAT:
+	{
+		if (v == NULL)
+		{
+			rb_field_write_code(field, RB_CODE_NULL);
+			return true;
+		}
+		const ptrdiff_t byte_d = (char *)v - (char *)&enemyDat[0];
+		if (byte_d < 0 || byte_d % (ptrdiff_t)sizeof(enemyDat[0]) != 0)
+			return false;
+		const ptrdiff_t idx = byte_d / (ptrdiff_t)sizeof(enemyDat[0]);
+		if (idx > ENEMY_NUM)
+			return false;
+		rb_field_write_code(field, (Uint32)idx);
+		return true;
+	}
+	default:
+	{
+		if (v == NULL)
+		{
+			rb_field_write_code(field, RB_CODE_NULL);
+			return true;
+		}
+		JE_byte **base;
+		ptrdiff_t count;
+		rb_map_base(kind, &base, &count);
+		const ptrdiff_t d = (JE_byte **)v - base;
+		if (d < -1 || d > count)  /* -1: the level-init bias; count: one-past */
+			return false;
+		rb_field_write_code(field, (Uint32)(Sint32)d);
+		return true;
+	}
+	}
+}
+
+static bool rb_reloc_decode_field(Uint8 *field, int kind)
+{
+	const Uint32 code = rb_field_read_code(field);
+	void *v;
+
+	switch (kind)
+	{
+	case RB_RELOC_SHEET:
+	case RB_RELOC_SHIP:
+	{
+		Sprite2_array *const *tab = (kind == RB_RELOC_SHEET) ? rb_sheet_tab : rb_ship_tab;
+		const Uint32 n = (kind == RB_RELOC_SHEET) ? (Uint32)COUNTOF(rb_sheet_tab) : (Uint32)COUNTOF(rb_ship_tab);
+		if (code >= n)
+			return false;
+		v = tab[code];
+		break;
+	}
+	case RB_RELOC_EDAT:
+		if (code == RB_CODE_NULL)
+			v = NULL;
+		else if (code > ENEMY_NUM)
+			return false;
+		else
+			v = &enemyDat[code];
+		break;
+	default:
+	{
+		if (code == RB_CODE_NULL)
+		{
+			v = NULL;
+			break;
+		}
+		JE_byte **base;
+		ptrdiff_t count;
+		rb_map_base(kind, &base, &count);
+		const Sint32 d = (Sint32)code;
+		if (d < -1 || (ptrdiff_t)d > count)
+			return false;
+		v = base + d;
+		break;
+	}
+	}
+
+	memset(field, 0, sizeof(void *));
+	memcpy(field, &v, sizeof(v));
+	return true;
+}
+
+/* Run every relocation over a snapshot buffer, one direction. */
+static bool rb_reloc_walk(Uint8 *buf, bool encode)
+{
+	for (size_t r = 0; r < COUNTOF(rb_relocs); ++r)
+	{
+		const RbReloc *rel = &rb_relocs[r];
+
+		const RbItem *it = NULL;
+		for (int i = 0; i < rb_item_count; ++i)
+		{
+			if (strcmp(rb_items[i].name, rel->item) == 0)
+			{
+				it = &rb_items[i];
+				break;
+			}
+		}
+		if (it == NULL)
+			return false;  /* registry and reloc table out of step */
+
+		for (int e = 0; e < rel->count; ++e)
+		{
+			const size_t ofs = it->offset + rel->field_ofs + rel->stride * (size_t)e;
+			if (ofs + sizeof(void *) > it->offset + it->size)
+				return false;
+
+			if (encode ? !rb_reloc_encode_field(buf + ofs, rel->kind)
+			           : !rb_reloc_decode_field(buf + ofs, rel->kind))
+				return false;
+		}
+	}
+	return true;
+}
+
+bool rollback_wire_export(Uint8 *dst)
+{
+	if (!rb_registered)
+		return false;
+
+	rb_save_to(dst);
+	if (!rb_reloc_walk(dst, true))
+		return false;
+
+	/* Prove the payload: decode a copy and compare it against live state (which
+	 * rb_save_to just captured and nothing has touched since).  A mismatch means
+	 * an encode/decode bug or an unregistered relocation -- refuse to ship it. */
+	Uint8 *chk = malloc(rb_total_size);
+	if (!chk)
+		return false;
+	memcpy(chk, dst, rb_total_size);
+
+	bool ok = rb_reloc_walk(chk, false);
+	if (ok)
+		ok = rb_verify_against(chk, NULL, 0) == 0;
+
+	free(chk);
+	return ok;
+}
+
+bool rollback_wire_adopt(Uint8 *buf)
+{
+	if (!rb_registered)
+		return false;
+	if (!rb_reloc_walk(buf, false))
+		return false;
+	rb_restore_from(buf);
+	return true;
+}
+
+void rollback_wire_canonicalize(void)
+{
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+		if (shotAvail[i] == 0)
+			memset(&playerShotData[i], 0, sizeof(playerShotData[i]));
+
+	for (int i = 0; i < ENEMY_SHOT_MAX; ++i)
+		if (enemyShotAvail[i])  /* true = free slot */
+			memset(&enemyShot[i], 0, sizeof(enemyShot[i]));
+
+	for (int i = 0; i < MAX_EXPLOSIONS; ++i)
+		if (explosions[i].ttl == 0)
+			memset(&explosions[i], 0, sizeof(explosions[i]));
+
+	for (int i = 0; i < MAX_REPEATING_EXPLOSIONS; ++i)
+		if (rep_explosions[i].ttl == 0)
+			memset(&rep_explosions[i], 0, sizeof(rep_explosions[i]));
 }
 
 /* Compare live state to a reference buffer item by item.  Returns the number of

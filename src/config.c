@@ -550,6 +550,10 @@ bool load_opentyrian_config(void)
 			// Host-authoritative like the rest of the sim settings.
 			config_get_bool_option(section, "net_rollback", &net_rollback);
 
+			// Repair a detected desync by streaming the host's state to the
+			// joiner (net_rollback.h).  Host-authoritative; rollback sessions only.
+			config_get_bool_option(section, "net_desync_recovery", &net_desync_recovery);
+
 			// Single-player determinism harness: verify the rollback snapshot
 			// every tick (see rollback.h).  Costs a second sim pass per tick.
 			config_get_bool_option(section, "rollback_selftest", &rollback_selftest);
@@ -802,6 +806,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "net_host_player", network_host_player);
 	config_set_int_option(section, "net_delay", network_delay);
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
+	config_set_bool_option(section, "net_desync_recovery", net_desync_recovery, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)
