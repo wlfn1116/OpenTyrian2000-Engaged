@@ -46,6 +46,8 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "render_list.h"
+#include "rollback.h"
+#include "net_rollback.h"
 #include "shots.h"
 #include "sprite.h"
 #include "vga256d.h"
@@ -53,6 +55,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -441,6 +444,12 @@ static void update_ship_override(float alpha)
 	const int players = twoPlayerMode ? 2 : 1;
 	for (int p = 0; p < players; ++p)
 	{
+		// Rollback netplay: the LOCAL ship's override is driven per render frame
+		// by the VT integrator (single-player feel); don't overwrite it with the
+		// per-tick extrapolation meant for sim-positioned ships.
+		if (nrb_active() && vt_ship_owns() && (uint)(p + 1) == thisPlayerNum)
+			continue;
+
 		int vx = ship_vel_x[p], vy = ship_vel_y[p];
 		// A large jump (warp, dragonwing spawn, level start) isn't real velocity;
 		// snap rather than fling the ship along a bogus extrapolation.
@@ -470,6 +479,17 @@ static float vt_x[2], vt_y[2], vt_vx[2], vt_vy[2];
 static int vt_wrote_vx[2], vt_wrote_vy[2];  // last velocity VT wrote to player[]
 static bool vt_seeded[2] = { false, false };
 
+
+/* Local prediction was tried here and removed deliberately.
+ *
+ * Drawing our own ship ahead of the simulation did hide the lockstep delay, but only the ship
+ * sprite moved: its shots still spawned at the simulation position, so they came out of empty
+ * space beside it, and anything else keyed to the real position disagreed with what was on
+ * screen. In an engine where the ship is the origin for shots, sidekicks and the hitbox, a
+ * prediction that only the sprite honours is worse than the delay it hides. The delay is
+ * addressed by lowering network_delay instead.
+ */
+
 // Raw (un-inverted) mouse motion accumulated by vt_ship_step since the last twiddle
 // read; consumed by vt_ship_twiddle_dir (rationale there).
 static float vt_twiddle_mx[2], vt_twiddle_my[2];
@@ -479,8 +499,13 @@ bool vt_ship_owns(void)
 	return vt_ship
 	    && smoothMotion                            // user's Graphics-menu toggle
 	    && smoothScroll != 0 && frameCountMax > 0  // the render-rate present loop must run
-	    && !play_demo && !record_demo && !isNetworkGame  // determinism-sensitive
-	    && !twoPlayerMode && !endLevel;
+	    // Demos are the only genuinely determinism-bound case left: they replay a recorded
+	    // input stream against the fixed 35Hz tick, so a render-rate ship would desync them.
+	    // Two-player shares one machine and needs no agreement with anyone; netplay is safe
+	    // because VT never moves the ship there -- it only produces the integer per-tick
+	    // delta the wire already carried, which both machines then apply identically.
+	    && !play_demo && !record_demo
+	    && !endLevel;
 }
 
 static void vt_seed_player(int p)
@@ -501,27 +526,30 @@ static float vt_friction(float v, float f)
 	return v;
 }
 
-void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
+static void vt_ship_step_player(int p, float dt)
 {
-	if (dt <= 0.0f)
-		return;
-
-	const int p = 0;  // single-player slice
-
 	if (!player[p].is_alive)
 	{
-		// Don't drive a dead/exploding ship; let it sit at the sim position.
+		// Don't drive a dead/exploding ship; let it sit at the sim position.  Zero this
+		// player's offset rather than clearing the whole override: in two-player the other
+		// ship may still be VT-driven and needs its offset kept.
 		vt_seeded[p] = false;
-		rl_clear_ship_override();
+		rl_set_ship_override(p, 0.0f, 0.0f);
 		return;
 	}
 
 	// (Re)seed if uninitialised or the sim moved the ship out from under us
-	// (respawn, warp, link, or VT was just toggled on).
+	// (respawn, warp, link, or VT was just toggled on).  In netplay vt_x/vt_y are not the
+	// ship's position -- the netcode owns that -- so the position comparison would be true
+	// every frame and would reset the velocity, destroying all momentum.  Seed once there
+	// and let the integrator keep its own state.
 	if (!vt_seeded[p]
-	    || abs(player[p].x - (int)lrintf(vt_x[p])) > 8
-	    || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)
+	    || (!isNetworkGame
+	        && (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
+	         || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)))
+	{
 		vt_seed_player(p);
+	}
 
 	// Input.
 	// Directional input (keyboard/d-pad/stick) feeds momentum; mouse relative motion
@@ -530,40 +558,64 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 	float ix = 0.0f, iy = 0.0f;   // directional input -> momentum
 	float mdx = 0.0f, mdy = 0.0f; // mouse relative motion -> direct position
 
-	if (keysactive[keySettings[KEY_SETTING_UP]])    iy -= 1.0f;
-	if (keysactive[keySettings[KEY_SETTING_DOWN]])  iy += 1.0f;
-	if (keysactive[keySettings[KEY_SETTING_LEFT]])  ix -= 1.0f;
-	if (keysactive[keySettings[KEY_SETTING_RIGHT]]) ix += 1.0f;
+	// Which devices this player may read (0 = any, 1 = keyboard, 2 = mouse, 3+ = a specific
+	// joystick). Per-player devices only apply to real two-player, where the two ships share
+	// one machine and must not both answer to everything; Tyrian has a single keyboard
+	// binding set, so that split relies on the players being on different devices (the
+	// default is player 1 keyboard, player 2 mouse).
+	//
+	// Everything else reads ANY device, and must: JE_playerMovement is handed a literal 0 for
+	// one-player (mainint.c) and forces 0 for a network game, so restricting VT to
+	// inputDevice[0] -- which defaults to keyboard -- silently killed mouse control.
+	const JE_byte device = (twoPlayerMode && !galagaMode && !isNetworkGame)
+	                     ? inputDevice[p]
+	                     : 0;
+	const bool use_keyboard = (device == 0 || device == 1);
+	const bool use_mouse    = (device == 0 || device == 2);
+	const bool use_joystick = (device == 0 || device >= 3);
+	const int  joy_first    = (device >= 3) ? device - 3 : 0;
+	const int  joy_last     = (device >= 3) ? device - 3 : joysticks - 1;
 
-	if (joysticks > 0)
+	if (use_keyboard)
 	{
-		poll_joystick(0);
-
-		// Menu/pause/change-fire are edge-triggered (action_pressed) and this render-rate
-		// poll consumes the edge before tick-rate JE_playerMovement can read it, so catch
-		// (latch) them here. Without this the discrete "change fire" is eaten most presses.
-		if (joystick[0].action_pressed[4]) ingamemenu_pressed = true;  // "menu"
-		if (joystick[0].action_pressed[5]) pause_pressed = true;        // "pause"
-		if (joystick[0].action_pressed[1]) changefire_pressed = true;   // "change fire"
-
-		if (joystick[0].analog)
-		{
-			// Stick deflection -> proportional momentum input (clamped ~[-1,1]).
-			float ax = joystick_axis_reduce(0, joystick[0].x) / 32.0f;
-			float ay = joystick_axis_reduce(0, joystick[0].y) / 32.0f;
-			ix += (ax < -1.0f) ? -1.0f : (ax > 1.0f) ? 1.0f : ax;
-			iy += (ay < -1.0f) ? -1.0f : (ay > 1.0f) ? 1.0f : ay;
-		}
-
-		// D-pad / digital directions, read in both modes so the d-pad works even when
-		// the stick is configured analog. (The combined input is clamped below.)
-		if (joystick[0].direction[0]) iy -= 1.0f;  // up
-		if (joystick[0].direction[2]) iy += 1.0f;  // down
-		if (joystick[0].direction[3]) ix -= 1.0f;  // left
-		if (joystick[0].direction[1]) ix += 1.0f;  // right
+		if (keysactive[keySettings[KEY_SETTING_UP]])    iy -= 1.0f;
+		if (keysactive[keySettings[KEY_SETTING_DOWN]])  iy += 1.0f;
+		if (keysactive[keySettings[KEY_SETTING_LEFT]])  ix -= 1.0f;
+		if (keysactive[keySettings[KEY_SETTING_RIGHT]]) ix += 1.0f;
 	}
 
-	if (has_mouse)
+	if (use_joystick)
+	{
+		for (int j = joy_first; j <= joy_last && j < joysticks; ++j)
+		{
+			poll_joystick(j);
+
+			// Menu/pause/change-fire are edge-triggered (action_pressed) and this render-rate
+			// poll consumes the edge before tick-rate JE_playerMovement can read it, so catch
+			// (latch) them here. Without this the discrete "change fire" is eaten most presses.
+			if (joystick[j].action_pressed[4]) ingamemenu_pressed = true;  // "menu"
+			if (joystick[j].action_pressed[5]) pause_pressed = true;        // "pause"
+			if (joystick[j].action_pressed[1]) changefire_pressed = true;   // "change fire"
+
+			if (joystick[j].analog)
+			{
+				// Stick deflection -> proportional momentum input (clamped ~[-1,1]).
+				float ax = joystick_axis_reduce(j, joystick[j].x) / 32.0f;
+				float ay = joystick_axis_reduce(j, joystick[j].y) / 32.0f;
+				ix += (ax < -1.0f) ? -1.0f : (ax > 1.0f) ? 1.0f : ax;
+				iy += (ay < -1.0f) ? -1.0f : (ay > 1.0f) ? 1.0f : ay;
+			}
+
+			// D-pad / digital directions, read in both modes so the d-pad works even when
+			// the stick is configured analog. (The combined input is clamped below.)
+			if (joystick[j].direction[0]) iy -= 1.0f;  // up
+			if (joystick[j].direction[2]) iy += 1.0f;  // down
+			if (joystick[j].direction[3]) ix -= 1.0f;  // left
+			if (joystick[j].direction[1]) ix += 1.0f;  // right
+		}
+	}
+
+	if (has_mouse && use_mouse)
 	{
 		// Float relative motion since our last frame (per-frame sampling would round
 		// small/diagonal motion away); returns 0 when relative mode is off.
@@ -607,8 +659,52 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 	// term, AND the mouse/touch delta (touch rides mdx/mdy) all slow together. Exactly 1.0 (a no-op,
 	// bit-for-bit) whenever the modifier is off, so normal play is unchanged.
 	const float mscale = endlessMoveScale();
-	vt_x[p] += ((vt_vx[p] + ix * VT_DIRECT) * dt + mdx) * mscale;
-	vt_y[p] += ((vt_vy[p] + iy * VT_DIRECT) * dt + mdy) * mscale;
+	const float step_x = ((vt_vx[p] + ix * VT_DIRECT) * dt + mdx) * mscale;
+	const float step_y = ((vt_vy[p] + iy * VT_DIRECT) * dt + mdy) * mscale;
+
+	if (isNetworkGame)
+	{
+		// Netplay: vt_x/vt_y hold this ship's TRUE, unlagged position, and the wire carries it
+		// as an absolute (see the send block in mainint.c).
+		//
+		// It deliberately does NOT integrate from player[p].x. That is the position the
+		// simulation has agreed on, which trails by network_delay ticks; feeding it back in
+		// would make each tick's absolute "lagged position + this tick's motion", so the ship
+		// would advance once every delay+1 ticks instead of every tick, and crawl.
+		vt_x[p] += step_x;
+		vt_y[p] += step_y;
+
+		// The same bounds the simulation enforces for THIS player. Netplay gives player 1 a
+		// 6px tighter bottom edge to leave room for the other ship (mainint.c); disagreeing
+		// with that here would leave VT pushing into a wall the simulation keeps clamping,
+		// generating motion that goes nowhere.
+		const float botMargin = (float)((p == 0) ? SHIP_BOTTOM_MARGIN - 6 : SHIP_BOTTOM_MARGIN);
+
+		if (vt_x[p] > PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) { vt_x[p] = PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN; if (vt_vx[p] > 0) vt_vx[p] = 0; }
+		if (vt_x[p] < SHIP_LEFT_MARGIN)                    { vt_x[p] = SHIP_LEFT_MARGIN;                    if (vt_vx[p] < 0) vt_vx[p] = 0; }
+		if (vt_y[p] > botMargin)                           { vt_y[p] = botMargin;                           if (vt_vy[p] > 0) vt_vy[p] = 0; }
+		if (vt_y[p] < SHIP_TOP_MARGIN)                     { vt_y[p] = SHIP_TOP_MARGIN;                     if (vt_vy[p] < 0) vt_vy[p] = 0; }
+
+		// Rollback netplay, our own ship: zero input delay means the simulation
+		// adopts exactly this integrator position at the next tick, so drawing
+		// the ship AT the live position is the same sprite/shots/hitbox
+		// relationship single player has -- true render-rate response.
+		// (update_ship_override skips the local ship in this mode.)
+		if (nrb_active() && (uint)(p + 1) == thisPlayerNum)
+		{
+			rl_set_ship_override(p, vt_x[p] - (float)ship_tick_x[p], vt_y[p] - (float)ship_tick_y[p]);
+			return;
+		}
+
+		// Lockstep: no render override -- the ship is drawn where the simulation
+		// has it, which is the only place its shots and hitbox actually are.
+		// update_ship_override interpolates it between ticks like every other
+		// networked ship.
+		return;
+	}
+
+	vt_x[p] += step_x;
+	vt_y[p] += step_y;
 
 	// Endless GRAVITY WELL: a steady drag (dt-scaled, so render-rate independent). A plain well pulls
 	// straight down; an omnidirectional well pulls along a fixed random heading, so it has an X
@@ -640,18 +736,111 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 	rl_set_ship_override(p, vt_x[p] - (float)ship_tick_x[p], vt_y[p] - (float)ship_tick_y[p]);
 }
 
-void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
+// Netplay: publish VT's current (unlagged) position into the ship, so the netcode picks it up
+// as this tick's absolute. Called from JE_playerMovement after the tick-start snapshot and
+// before the netcode reads and restores the ship, so what goes on the wire is exactly where
+// VT has steered to -- and both machines then place the ship on the same absolute number.
+void vt_ship_commit_net(int player_index)
 {
-	if (!vt_ship_owns())
+	if (!vt_ship_owns() || !isNetworkGame)
 		return;
 
-	const int p = 0;
+	const int p = (player_index <= 0) ? 0 : 1;
+	if (!player[p].is_alive || !vt_seeded[p])
+		return;  // nothing meaningful to hand over; the simulation keeps the ship where it is
+
+	// Hand the simulation VT's current position. The netcode reads it straight back out as
+	// this tick's absolute, sends it, restores the ship, and both machines apply it together
+	// network_delay ticks later.
+	player[p].x = (int)lrintf(vt_x[p]);
+	player[p].y = (int)lrintf(vt_y[p]);
+
+	// The wire carries position, not velocity, but the tilt/banking code still reads these.
+	player[p].x_velocity = (int)lrintf(vt_vx[p]);
+	player[p].y_velocity = (int)lrintf(vt_vy[p]);
+	vt_wrote_vx[p] = player[p].x_velocity;
+	vt_wrote_vy[p] = player[p].y_velocity;
+}
+
+// The other player in a network game: its ship is placed from the deltas arriving on the wire,
+// so VT must not integrate input for it -- that input belongs to the machine it is sitting at.
+static bool vt_player_is_net_remote(int p)
+{
+	return isNetworkGame && (uint)(p + 1) != thisPlayerNum;
+}
+
+// True while the sim, not VT, owns this ship's position.  Player 2 docked to player 1 as the
+// Dragonwing is placed from player 1's position every tick (mainint.c), so VT must keep its
+// hands off until it undocks -- at which point the seed-on-large-jump check picks it back up.
+static bool vt_player_is_sim_driven(int p)
+{
+	return vt_player_is_net_remote(p) || (p == 1 && twoPlayerLinked);
+}
+
+void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
+{
+	if (dt <= 0.0f)
+		return;
+
+	const int players = twoPlayerMode ? 2 : 1;
+	for (int p = 0; p < players; ++p)
+	{
+		if (vt_player_is_sim_driven(p))
+		{
+			vt_seeded[p] = false;
+
+			// In netplay VT owns no ship's rendering at all -- update_ship_override() runs
+			// immediately after this and drives both ships -- so leave the channel alone.
+			if (!isNetworkGame)
+			{
+				if (p == 1 && twoPlayerLinked)
+				{
+					// Docked Dragonwing: the sim pins it to player 1 every tick, so between
+					// ticks it has to be drawn with player 1's sub-tick offset. Left at zero,
+					// player 1 glides while the Dragonwing snaps from tick to tick and the
+					// fused pair visibly comes apart, even though the sim keeps them locked.
+					// Player 0 is stepped first in this loop, so its offset is already current.
+					rl_set_ship_override(p, rl_get_ship_override_dx(0), rl_get_ship_override_dy(0));
+				}
+				else
+				{
+					rl_set_ship_override(p, 0.0f, 0.0f);
+				}
+			}
+			continue;
+		}
+
+		vt_ship_step_player(p, dt);
+	}
+}
+
+// Refresh the ship position history (trailing sidekicks read old_x/old_y): vanilla derives it
+// from an intra-tick delta, which is zero whenever VT is the one moving the ship.
+static void vt_refresh_position_history(int p)
+{
+	if (player[p].x == ship_tick_x[p] && player[p].y == ship_tick_y[p])
+		return;
+
+	for (unsigned int i = 1; i < COUNTOF(player[p].old_x); ++i)
+	{
+		player[p].old_x[i - 1] = player[p].old_x[i];
+		player[p].old_y[i - 1] = player[p].old_y[i];
+	}
+	player[p].old_x[COUNTOF(player[p].old_x) - 1] = player[p].x;
+	player[p].old_y[COUNTOF(player[p].old_x) - 1] = player[p].y;
+}
+
+static void vt_ship_tick_player(int p)
+{
 	if (!vt_seeded[p] || !player[p].is_alive)
 		return;
 
-	// Hard reposition (respawn/warp/link): re-seed instead of folding.
-	if (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
-	    || abs(player[p].y - (int)lrintf(vt_y[p])) > 8)
+	// Hard reposition (respawn/warp/link): re-seed instead of folding.  Skipped in netplay
+	// for the same reason as the seed check in vt_ship_step_player: vt_x is not the ship's
+	// position there, so this would fire constantly.
+	if (!isNetworkGame
+	    && (abs(player[p].x - (int)lrintf(vt_x[p])) > 8
+	     || abs(player[p].y - (int)lrintf(vt_y[p])) > 8))
 	{
 		vt_seed_player(p);
 		return;
@@ -662,17 +851,30 @@ void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
 	vt_vx[p] += (float)(player[p].x_velocity - vt_wrote_vx[p]);
 	vt_vy[p] += (float)(player[p].y_velocity - vt_wrote_vy[p]);
 
-	// Refresh the ship position history (trailing sidekicks read old_x/old_y):
-	// vanilla derives it from an intra-tick delta that VT leaves at zero.
-	if (player[p].x != ship_tick_x[p] || player[p].y != ship_tick_y[p])
+	vt_refresh_position_history(p);
+}
+
+void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
+{
+	if (!vt_ship_owns())
+		return;
+
+	const int players = twoPlayerMode ? 2 : 1;
+	for (int p = 0; p < players; ++p)
 	{
-		for (unsigned int i = 1; i < COUNTOF(player[p].old_x); ++i)
+		if (vt_player_is_net_remote(p))
 		{
-			player[p].old_x[i - 1] = player[p].old_x[i];
-			player[p].old_y[i - 1] = player[p].old_y[i];
+			// Its position arrives over the wire, but the trailing-sidekick history still has
+			// to follow it: the classic path that maintains that is skipped while VT owns the
+			// level, so nothing else would update it.
+			vt_refresh_position_history(p);
+			continue;
 		}
-		player[p].old_x[COUNTOF(player[p].old_x) - 1] = player[p].x;
-		player[p].old_y[COUNTOF(player[p].old_x) - 1] = player[p].y;
+
+		if (vt_player_is_sim_driven(p))
+			continue;
+
+		vt_ship_tick_player(p);
 	}
 }
 
@@ -1072,8 +1274,12 @@ void JE_starShowVGA(void)
 
 					const float alpha = sim_accumulator / period;
 					debug_interp_alpha = alpha;  // expose for the perf overlay
-					if (!vt_owns)
-						update_ship_override(alpha);  // extrapolate the ship for this frame (non-VT path)
+					// Extrapolate the ship for this frame whenever VT is not the thing moving
+					// it. In netplay VT owns the *input* but never the position -- the wire
+					// does -- so both ships still need the interpolator here, or they would
+					// step a whole tick at a time.
+					if (!vt_owns || isNetworkGame)
+						update_ship_override(alpha);
 
 					if (anySmoothies)
 					{
@@ -1244,6 +1450,13 @@ static int eventScrollBoost = 0;
 static bool eventScrollSkyValid = false;
 static int eventScrollSkyRatio100 = 0;
 static int eventScrollSkyPhase100 = 0;
+
+// One-tick-lagged smooth-scroll publication buffers (see the scroll block in the
+// level loop).  File scope so the rollback registry can snapshot them --
+// bgSmoothFracPend feeds eventScrollSkyPhase100, which anchors sky-glue spawns.
+static float bgSmoothRatePend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static float bgSmoothFracPend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+static bool  bgSmoothActivePend  = false;
 
 // Only the part of fixedmovey left after it cancels an opposing eyc is scroll-relative. BRAINIAC,
 // for example, pairs fixed=-1 with eyc=+1 to make a zero local velocity; scaling fixed alone would
@@ -2454,6 +2667,9 @@ void JE_main(void)
 
 start_level:
 
+	// Leaving the level loop: whatever rollback machinery was live is done.
+	rollback_level_end();
+
 	mouseSetRelative(false);
 
 	if (galagaMode)
@@ -3035,7 +3251,24 @@ start_level_first:
 	BKwrap2 = BKwrap2to = &megaData2.mainmap[1][0];
 	BKwrap3 = BKwrap3to = &megaData3.mainmap[1][0];
 
+	// Rollback machinery for this level: registers/allocates on first use, arms
+	// the self-test in single player, resets the netplay input history.  Ship
+	// spawn positions are final here, which the prediction seed relies on.
+	rollback_level_start();
+#ifdef WITH_NETWORK
+	if (isNetworkGame && nrb_active())
+		nrb_level_reset();
+#endif
+
 level_loop:
+
+	// Frame boundary: snapshot this frame's pre-tick state (netplay rollback and
+	// self-test), then apply the previous frame's sim-affecting request bits.
+	// Runs on re-simulation passes too -- that application is part of the frame.
+#ifdef WITH_NETWORK
+	nrb_frame_begin();
+#endif
+	rollback_selftest_frame_begin();
 
 	//tempScreenSeg = game_screen; /* side-effect of game_screen */
 
@@ -3253,7 +3486,10 @@ level_loop:
 
 	// Begin capturing this tick's playfield draws into the render list so they
 	// can be replayed (interpolated) for in-between frames at the display rate.
-	rl_begin_record();
+	// Silent rollback re-simulation passes are never presented, so they record
+	// nothing; the pass that IS presented records normally.
+	if (!rollback_resim_silent)
+		rl_begin_record();
 
 	// Cleared each tick; JE_doSpecialShot re-sets it while the Zinglon blast is live.
 	zinglonPillarActive = false;
@@ -3262,7 +3498,10 @@ level_loop:
 	while (eventRec[eventLoc-1].eventtime <= curLoc && eventLoc <= maxEvent)
 		JE_eventSystem();
 
-	if (isNetworkGame && reallyEndLevel)
+	// Lockstep's early exit.  Rollback mode must NOT take it: a predicted (not
+	// yet confirmed) level end can still be rolled back, so the driver at the
+	// end of the tick decides when the exit is real.
+	if (isNetworkGame && reallyEndLevel && !nrb_active())
 		goto start_level;
 
 	/* SMOOTHIES! */
@@ -3317,10 +3556,8 @@ level_loop:
 
 	// Publish the PREVIOUS tick's smooth vertical scroll rate + sub-pixel fraction for the render
 	// list (the present loop shows this tick's list at its pre-advance position, so the data lags
-	// one tick, matching bgScrollDeltaY).
-	static float bgSmoothRatePend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	static float bgSmoothFracPend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	static bool  bgSmoothActivePend  = false;
+	// one tick, matching bgScrollDeltaY).  (File-scope statics, declared above level_loop, so the
+	// rollback registry can reach them: bgSmoothFracPend feeds eventScrollSkyPhase100, which is sim.)
 	for (int L = 1; L <= 3; ++L)
 	{
 		bg_layer_dy[L]    = bgSmoothRatePend[L];
@@ -4378,7 +4615,7 @@ draw_player_shot_loop_end:
 	// Smoothie levels: snapshot the frame here -- after the last recorded blit (sparks/bars above
 	// diff out), before the non-blit overlays (WARNING bars, fades, boss bar, HUD) so those are
 	// captured as the per-frame residual and do not freeze at 35 fps.
-	if (anySmoothies)
+	if (anySmoothies && !rollback_resim_silent)
 		memcpy(VGAScreen2->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
 
 	/*-------------------------Warning---------------------------*/
@@ -4472,7 +4709,12 @@ draw_player_shot_loop_end:
 				else   /*Lightning*/
 					temp3 = fxPlayVol / 2;
 
-				multiSamplePlay(soundSamples[temp-1], soundSampleCount[temp-1], temp2, temp3);
+				// A rollback re-simulation drains the queue silently: these ticks'
+				// sounds already played when the tick first ran.  The temp/temp3
+				// writes above still happen -- they are registered scratch state
+				// and a replayed tick must mutate them identically.
+				if (!rollback_resim)
+					multiSamplePlay(soundSamples[temp-1], soundSampleCount[temp-1], temp2, temp3);
 
 				soundQueue[temp2] = S_NONE;
 			}
@@ -4594,7 +4836,7 @@ draw_player_shot_loop_end:
 					firstGameOver = false;
 				}
 
-				if (!play_demo)
+				if (!play_demo && !rollback_resim)
 				{
 					push_joysticks_as_keyboard();
 					// Poll without clearing: the smooth-present loop in JE_starShowVGA
@@ -4604,6 +4846,10 @@ draw_player_shot_loop_end:
 					if ((newkey || button[0] || button[1] || button[2]) || newmouse)
 					{
 						reallyEndLevel = true;
+						// A live-input one-shot outside the movement tuples; record it
+						// so a self-test replay of this tick lands on the same state.
+						if (rollback_selftest_active())
+							rollback_st_event(RB_EV_DISMISS);
 					}
 				}
 
@@ -4613,7 +4859,16 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	if (play_demo) // input kills demo
+	if (rollback_resim)
+	{
+		// Replay pass: live input is never sampled.  The only sim effects the
+		// blocks below can have came from one-shot input events, re-applied
+		// here from the recorded bits (self-test; netplay resim derives its
+		// pause/menu/cheat handling from the input tuples instead).
+		if (rollback_st_events() & RB_EV_DISMISS)
+			reallyEndLevel = true;
+	}
+	else if (play_demo) // input kills demo
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
@@ -4621,6 +4876,8 @@ draw_player_shot_loop_end:
 		if (newkey || newmouse)
 		{
 			reallyEndLevel = true;
+			if (rollback_selftest_active())
+				rollback_st_event(RB_EV_DISMISS);
 
 			stopped_demo = true;
 		}
@@ -4635,7 +4892,12 @@ draw_player_shot_loop_end:
 			JE_mainKeyboardInput();
 			newkey = false;
 			if (skipStarShowVGA)
+			{
+				// Mid-tick restart (in-game help / cheat overlays): the tick is
+				// not cleanly replayable, so the self-test skips verifying it.
+				rollback_taint("skipStarShowVGA");
 				goto level_loop;
+			}
 		}
 
 		if (pause_pressed || !windowHasFocus)
@@ -4665,9 +4927,89 @@ draw_player_shot_loop_end:
 		}
 	}
 
+	/*Start backgrounds if no enemies on screen
+	  End level if number of enemies left to kill equals 0.
+	  (Historically this block sat AFTER the present call; it draws nothing and
+	  only mutates next-tick sim state, but living outside the tick body meant a
+	  rollback re-simulation would skip it and diverge.  It now runs inside the
+	  tick, before the netcode driver, so replayed ticks execute it too.)*/
+	if (stopBackgroundNum == 9 && backMove == 0 && !enemyStillExploding)
+	{
+		backMove = 1;
+		backMove2 = 2;
+		backMove3 = 3;
+		explodeMove = 2;
+		stopBackgroundNum = 0;
+		stopBackgrounds = false;
+		if (waitToEndLevel)
+		{
+			endLevel = true;
+			levelEnd = 40;
+		}
+		if (allPlayersGone)
+		{
+			reallyEndLevel = true;
+		}
+	}
+
+	if (!endLevel && enemyOnScreen == 0)
+	{
+		if (readyToEndLevel && !enemyStillExploding)
+		{
+			if (levelTimerCountdown > 0)
+			{
+				levelTimer = false;
+			}
+			readyToEndLevel = false;
+			endLevel = true;
+			levelEnd = 40;
+			if (allPlayersGone)
+			{
+				reallyEndLevel = true;
+			}
+		}
+		if (stopBackgrounds)
+		{
+			stopBackgrounds = false;
+			backMove = 1;
+			backMove2 = 2;
+			backMove3 = 3;
+			explodeMove = 2;
+		}
+	}
+
+	// Map-stop softlock watchdog: a boss killed before its script finishes staging the fight can
+	// orphan a group member frozen above the screen -- unreachable, and with the event clock
+	// stopped unmovable -- so it holds enemyOnScreen != 0 forever. After a stop is held long enough
+	// with one present, cull it like an off-playfield enemy and the level resumes. Only ORPHANED
+	// ones count: a parked anchor whose linkgroup still has shootable members is a boss fight in
+	// progress; culling it there would release the stop mid-fight.
+	enemyParkedAbove = count_stuck_above_screen();
+	if (!endLevel && stopBackgrounds && !forceEvents && enemyParkedAbove != 0)
+	{
+		if (++mapStopStallTicks >= MAP_STOP_STALL_LIMIT)
+		{
+			for (int i = 0; i < 100; i++)
+				if (enemyAvail[i] != 1 && enemy_stuck_orphaned(i))
+					enemyAvail[i] = 1;
+			mapStopStallTicks = 0;
+		}
+	}
+	else
+		mapStopStallTicks = 0;
+
 	/*Network Update*/
 #ifdef WITH_NETWORK
-	if (isNetworkGame)
+	if (isNetworkGame && nrb_active())
+	{
+		// Rollback driver: publish this frame's input, ingest the peer's, and
+		// either fall through to present or restore-and-re-simulate.  The
+		// re-simulation passes re-enter the loop with rollback_resim set; the
+		// last one records rendering and falls through here to be presented.
+		if (nrb_driver() == NRB_STEP_RESIM)
+			goto level_loop;
+	}
+	else if (isNetworkGame)
 	{
 		if (!reallyEndLevel)
 		{
@@ -4684,11 +5026,63 @@ draw_player_shot_loop_end:
 			SDLNet_Write16(player[1].y,     &packet_state_out[0]->data[24]);
 			SDLNet_Write16(curLoc,          &packet_state_out[0]->data[26]);
 
+			// Desync canary: a summary of the simulation as it stands at this point in the
+			// tick, which both machines reach with identical state when all is well.
+			{
+				Uint32 rand_draws, player_hash, enemy_hash;
+				network_sim_state(&rand_draws, &player_hash, &enemy_hash);
+				SDLNet_Write32(rand_draws,  &packet_state_out[0]->data[NET_STATE_RAND]);
+				SDLNet_Write32(player_hash, &packet_state_out[0]->data[NET_STATE_PHASH]);
+				SDLNet_Write32(enemy_hash,  &packet_state_out[0]->data[NET_STATE_EHASH]);
+			}
+
 			network_state_send();
 
 			if (network_state_update())
 			{
 				assert(SDLNet_Read16(&packet_state_in[0]->data[26]) == SDLNet_Read16(&packet_state_out[network_delay]->data[26]));
+
+				// Compare against our own packet from the same logical tick -- the pair
+				// (packet_state_in[0], packet_state_out[network_delay]) that JE_playerMovement
+				// reads for input next tick, so the alignment is the one the game already
+				// relies on.  Reported once per level: a desync repeats every tick afterwards
+				// and a per-tick log would bury the first, most useful line.
+				{
+					static int reported_for_level = -1;
+
+					const Uint32 their_rand = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_RAND]);
+					const Uint32 our_rand   = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_RAND]);
+					const Uint32 their_ph   = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_PHASH]);
+					const Uint32 our_ph     = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_PHASH]);
+					const Uint32 their_eh   = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_EHASH]);
+					const Uint32 our_eh     = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_EHASH]);
+
+					if ((their_rand != our_rand || their_ph != our_ph || their_eh != our_eh) &&
+					    reported_for_level != curLoc)
+					{
+						reported_for_level = curLoc;
+
+						// Goes through crashlog_note, not stderr: this is a Windows-subsystem
+						// build with no console, so a printf would be thrown away.
+						char detail[512];
+						snprintf(detail, sizeof(detail),
+						         "level %d, player %u, delay %d\n"
+						         "  rand draws : local %lu  remote %lu  %s\n"
+						         "  players    : local %08x  remote %08x  %s\n"
+						         "  enemies    : local %08x  remote %08x  %s",
+						         (int)curLoc, thisPlayerNum, network_delay,
+						         (unsigned long)our_rand, (unsigned long)their_rand,
+						         our_rand == their_rand ? "ok" : "DIFFERS",
+						         (unsigned)our_ph, (unsigned)their_ph,
+						         our_ph == their_ph ? "ok" : "DIFFERS",
+						         (unsigned)our_eh, (unsigned)their_eh,
+						         our_eh == their_eh ? "ok" : "DIFFERS");
+						crashlog_note("NETWORK DESYNC", detail);
+
+						if (networkDesyncHalt)
+							network_tyrian_halt(7, false);
+					}
+				}
 
 				requests = SDLNet_Read16(&packet_state_in[0]->data[14]) ^ SDLNet_Read16(&packet_state_out[network_delay]->data[14]);
 				if (requests & 1)
@@ -4735,6 +5129,17 @@ draw_player_shot_loop_end:
 		JE_clearSpecialRequests();
 	}
 #endif
+
+	// Single-player determinism harness: restore the pre-tick snapshot and
+	// re-run this tick from the recorded input tuples, then compare every
+	// registered byte against the live pass (rollback.h).  The replay pass
+	// re-records rendering, so the presented frame comes from the replay --
+	// if the two runs differ, the log names the diverging item.
+	if (rollback_selftest_tick())
+	{
+		rl_abort_record();
+		goto level_loop;
+	}
 
 	/*Filtration*/
 	if (filterActive)
@@ -4808,76 +5213,6 @@ draw_player_shot_loop_end:
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 
 	JE_starShowVGA();
-
-	/*Start backgrounds if no enemies on screen
-	  End level if number of enemies left to kill equals 0.*/
-	if (stopBackgroundNum == 9 && backMove == 0 && !enemyStillExploding)
-	{
-		backMove = 1;
-		backMove2 = 2;
-		backMove3 = 3;
-		explodeMove = 2;
-		stopBackgroundNum = 0;
-		stopBackgrounds = false;
-		if (waitToEndLevel)
-		{
-			endLevel = true;
-			levelEnd = 40;
-		}
-		if (allPlayersGone)
-		{
-			reallyEndLevel = true;
-		}
-	}
-
-	if (!endLevel && enemyOnScreen == 0)
-	{
-		if (readyToEndLevel && !enemyStillExploding)
-		{
-			if (levelTimerCountdown > 0)
-			{
-				levelTimer = false;
-			}
-			readyToEndLevel = false;
-			endLevel = true;
-			levelEnd = 40;
-			if (allPlayersGone)
-			{
-				reallyEndLevel = true;
-			}
-		}
-		if (stopBackgrounds)
-		{
-			stopBackgrounds = false;
-			backMove = 1;
-			backMove2 = 2;
-			backMove3 = 3;
-			explodeMove = 2;
-		}
-	}
-
-	// Map-stop softlock watchdog: a boss killed before its script finishes staging the fight can
-	// orphan a group member frozen above the screen -- unreachable, and with the event clock
-	// stopped unmovable -- so it holds enemyOnScreen != 0 forever. After a stop is held long enough
-	// with one present, cull it like an off-playfield enemy and the level resumes. Only ORPHANED
-	// ones count: a parked anchor whose linkgroup still has shootable members is a boss fight in
-	// progress; culling it there would release the stop mid-fight.
-	enemyParkedAbove = count_stuck_above_screen();
-	if (!endLevel && stopBackgrounds && !forceEvents && enemyParkedAbove != 0)
-	{
-		if (++mapStopStallTicks >= MAP_STOP_STALL_LIMIT)
-		{
-			for (int i = 0; i < 100; i++)
-				if (enemyAvail[i] != 1 && enemy_stuck_orphaned(i))
-					enemyAvail[i] = 1;
-			mapStopStallTicks = 0;
-		}
-	}
-	else
-		mapStopStallTicks = 0;
-
-	/*Other Network Functions*/
-	JE_handleChat();
 
 	if (reallyEndLevel)
 	{
@@ -5826,13 +6161,26 @@ new_game:
 #ifdef WITH_NETWORK
 void networkStartScreen(void)
 {
-	JE_loadPic(VGAScreen, 2, false);
-	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
-	JE_dString(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
-	JE_showVGA();
-	fade_palette(colors, 10, 0, 255);
+	// A lobby game is already connected by the time we get here -- the lobby had to do it
+	// itself so that a failed or cancelled attempt could return to the menu.  Command-line
+	// netplay has no lobby, so it still connects here.
+	if (!network_from_lobby)
+	{
+		JE_loadPic(VGAScreen, 2, false);
+		memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
+		JE_dString(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
+		JE_showVGA();
+		fade_palette(colors, 10, 0, 255);
 
-	network_connect();
+		network_connect();
+	}
+	else
+	{
+		// Already connected, but the joiner's wait screen below composes itself by copying
+		// VGAScreen2, so it still needs the backdrop staged there -- otherwise it draws over
+		// whatever the lobby happened to leave behind.
+		JE_loadPic(VGAScreen2, 2, false);
+	}
 
 	twoPlayerMode = true;
 	if (thisPlayerNum == 1)
@@ -6318,6 +6666,20 @@ bool newGame(void)
 		// and full setup (episode 1, starting cash, flags) and resets endlessMode on cancel.
 		if (endlessMode)
 			return newEndlessGame();
+
+#ifdef WITH_NETWORK
+		// The multiplayer lobby connected us from inside the mode menu.  networkStartScreen()
+		// runs the episode/difficulty handshake -- the host picks and sends, the joiner waits
+		// and receives -- and sets both ships and purses up, so none of the single-player
+		// setup below applies.
+		if (isNetworkGame)
+		{
+			networkStartScreen();
+
+			gameLoaded = true;
+			return true;
+		}
+#endif
 
 		if (timedBattleMode)
 		{
@@ -8332,11 +8694,18 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 		const bool top = (bossBarLayout == BOSS_BAR_TOP);
 		const bool sideBySide = two && splitMode;  // halves on one row; else stacked rows
 
-		// Longest centred span that clears the corner indicators: at the TOP the
-		// special-weapon icon ends ~x49 (and player 2's indicators start ~x208 in
-		// 2-player); near the BOTTOM the playfield edge is the limit.
-		const int leftClear  = top ? 64 : PF_L + 2;
-		const int rightClear = (top && twoPlayerMode) ? 208 : PF_R;
+		// Longest centred span that clears the corner indicators. At the TOP those are the
+		// name/lives/special-weapon clusters, measured live -- a long network player name or
+		// a full lives row pushes the bar in, and on a widescreen playfield player 2's
+		// cluster sits near the right edge rather than at the legacy x208.
+		// Near the BOTTOM the playfield edge is the only horizontal limit.
+		int leftClear  = top ? (hud_top_left_right_edge() + 2) : (PF_L + 2);
+		int rightClear = top ? (hud_top_right_left_edge() - 2) : PF_R;
+
+		// With no corner cluster on that side the measured edge falls outside the playfield,
+		// so pin both limits to the visible area.
+		if (leftClear < PF_L + 2)   leftClear = PF_L + 2;
+		if (rightClear > PF_R)      rightClear = PF_R;
 		const int leftHalf   = PF_CX - leftClear;
 		const int rightHalf  = rightClear - PF_CX;
 		const int half       = (leftHalf < rightHalf) ? leftHalf : rightHalf;
@@ -8344,10 +8713,11 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 		const int fullR      = PF_CX + half;
 		const int fullW      = fullR - fullL + 1;
 
-		// Top drops below the level timer when it shows; bottom sits above the score
-		// row (y175+) and the low-armor WARNING (y178+).
+		// Top drops below the level timer when it shows. The bottom sits clear of whatever
+		// the bottom band currently claims -- both scores always, plus the FPS counter when
+		// it is on, which in two-player pushes the whole band up a row.
 		const int topAnchor = levelTimer ? 18 : 6;
-		const int botAnchor = 174;
+		const int botAnchor = hud_bottom_band_top() - 2;
 
 		for (unsigned int b = 0; b < barCount; b++)
 		{
@@ -8383,7 +8753,11 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 		const int edgeL    = PF_L + 2;            // left bar's left edge
 		const int edgeR    = PF_R - 1;            // right bar's right edge
 		const int clearTop = 48, clearBot = 158;  // between the top & bottom corner HUD
-		const int fullTop  = 8,  fullBot  = 176;  // clear of the top/bottom WARNING strips
+		const int fullTop  = 8;                   // clear of the top WARNING strip
+		// A full-height column only happens on the HUD-free right side in one-player, where
+		// the FPS counter may still be sitting in the corner -- stop above it if so.
+		const int fullBotLimit = hud_bottom_right_top() - 2;
+		const int fullBot  = (fullBotLimit < 176) ? fullBotLimit : 176;
 
 		for (unsigned int b = 0; b < barCount; b++)
 		{
@@ -8764,4 +9138,66 @@ bool boss_bar_hud_needs_up_shift(void)
 	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
 	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
 	return bars > 0 && bossBarStyle == BOSS_BAR_ENHANCED && bossBarLayout == BOSS_BAR_BOTTOM;
+}
+
+// Topmost playfield row a BOTTOM horizontal Enhanced bar occupies right now, or INT_MAX when
+// no such bar is on screen. Derived from the same anchor/stacking arithmetic as
+// draw_boss_bars_enhanced so the endless readout above cannot drift out of step with it.
+int boss_bar_bottom_band_top(void)
+{
+	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
+	                        + (boss_bar[1].link_num != 0 ? 1 : 0);
+	if (!boss_bar_hud_needs_up_shift())
+		return INT_MAX;
+
+	// Two bars stack into rows unless Split puts them side by side on one row.
+	const bool stackedRows = (bars == 2 && bossBarTwoMode != BOSS_BAR_TWO_SPLIT);
+	const int rows = stackedRows ? 2 : 1;
+
+	const int botAnchor = hud_bottom_band_top() - 2;
+	return botAnchor - (rows * BOSS_BAR_THICK + (rows - 1) * BOSS_BAR_GAP) + 1;
+}
+
+/* --- Rollback state registration ---------------------------------------------
+ *
+ * Registers this file's sim-relevant STATICS (extern-visible globals are
+ * registered centrally in rollback_state.c).  Excluded deliberately: the
+ * variable-timestep ship (vt_*) and twiddle accumulators, which are live-input
+ * integrator state outside the sim boundary; the present-loop pacing statics;
+ * and the render-side scroll publication mirrors.
+ */
+#include "rollback.h"
+
+void tyrian2_register_rollback(void)
+{
+	rollback_register("t2.eventRec",         eventRec, sizeof(eventRec));
+	rollback_register("t2.chainPulse",       chainPulse, sizeof(chainPulse));
+	rollback_register("t2.chainPulseN",      &chainPulseN, sizeof(chainPulseN));
+	rollback_register("t2.chainPulseLast",   &chainPulseLastLink, sizeof(chainPulseLastLink));
+	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
+	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
+	rollback_register("t2.tempMapXOfsFrac",  &tempMapXOfs_frac, sizeof(tempMapXOfs_frac));
+	rollback_register("t2.tempMapXOfsLayer", &tempMapXOfs_layer, sizeof(tempMapXOfs_layer));
+	rollback_register("t2.tempScrollYBase",  &tempScrollYBase, sizeof(tempScrollYBase));
+	rollback_register("t2.tempScrollYBaseB", &tempScrollYBaseBar, sizeof(tempScrollYBaseBar));
+	rollback_register("t2.tempScrollYfrac",  &tempScrollYfrac, sizeof(tempScrollYfrac));
+	rollback_register("t2.tempScrollYfracB", &tempScrollYfracBar, sizeof(tempScrollYfracBar));
+	rollback_register("t2.tempScrollYLayer", &tempScrollYLayer, sizeof(tempScrollYLayer));
+	rollback_register("t2.tempScrollBase",   &tempScrollBaseStep, sizeof(tempScrollBaseStep));
+	rollback_register("t2.tempScrollDelay",  &tempScrollDelayMax, sizeof(tempScrollDelayMax));
+	rollback_register("t2.tempScrollExtra",  &tempScrollExtraPx, sizeof(tempScrollExtraPx));
+	rollback_register("t2.skyGlue",          &skyGlueThisEnemy, sizeof(skyGlueThisEnemy));
+	rollback_register("t2.evScrollValid",    &eventScrollCatchupValid, sizeof(eventScrollCatchupValid));
+	rollback_register("t2.evScrollFrom",     &eventScrollFrom, sizeof(eventScrollFrom));
+	rollback_register("t2.evScrollTo",       &eventScrollTo, sizeof(eventScrollTo));
+	rollback_register("t2.evScrollDelta",    eventScrollLayerDelta, sizeof(eventScrollLayerDelta));
+	rollback_register("t2.evScrollBase",     eventScrollBaseStep, sizeof(eventScrollBaseStep));
+	rollback_register("t2.evScrollDelayMax", eventScrollDelayMax, sizeof(eventScrollDelayMax));
+	rollback_register("t2.evScrollBoost",    &eventScrollBoost, sizeof(eventScrollBoost));
+	rollback_register("t2.evSkyValid",       &eventScrollSkyValid, sizeof(eventScrollSkyValid));
+	rollback_register("t2.evSkyRatio",       &eventScrollSkyRatio100, sizeof(eventScrollSkyRatio100));
+	rollback_register("t2.evSkyPhase",       &eventScrollSkyPhase100, sizeof(eventScrollSkyPhase100));
+	rollback_register("t2.bgSmoothRate",     bgSmoothRatePend, sizeof(bgSmoothRatePend));
+	rollback_register("t2.bgSmoothFrac",     bgSmoothFracPend, sizeof(bgSmoothFracPend));
+	rollback_register("t2.bgSmoothActive",   &bgSmoothActivePend, sizeof(bgSmoothActivePend));
 }

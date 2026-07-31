@@ -79,11 +79,33 @@ bool str_pop_int(char *str, int *val);
 bool JE_loadScreen(void);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
+
+/* Bottom-band HUD layout, in playfield (game_screen) space.
+ *
+ * Several readouts want the bottom corners, so they claim space in a fixed precedence and
+ * everything below yields to everything above it -- which keeps the resolution acyclic:
+ *   1. the scores          fixed anchors, never move
+ *   2. the FPS counter     stacks above player 2's score
+ *   3. the boss bars       clear 1 and 2 (these helpers)
+ *   4. the endless readout clears 1, 2 and 3
+ */
+int hud_fps_row(void);            // text row the FPS counter occupies
+int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere across the width
+int hud_bottom_right_top(void);   // ...and in the bottom-right corner alone
+
+// Horizontal extent of the top corner clusters (name label, lives row, special-weapon icon),
+// so a centred TOP boss bar stops short of them instead of being clipped to a legacy constant.
+int hud_top_left_right_edge(void);
+int hud_top_right_left_edge(void);
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 
 void JE_playerMovement(Player *this_player, JE_byte inputDevice, JE_byte playerNum, JE_word shipGr, Sprite2_array *shipGrPtr_, JE_word *mouseX, JE_word *mouseY);
 void JE_mainGamePlayerFunctions(void);
+
+// Pool slots of this tick's linked-Dragonwing aim markers (-1 = none); the
+// shot draw maps them to stable render-list ids so the indicator interpolates.
+extern int link_marker_slot[3];
 const char *JE_getName(JE_byte pnum);
 
 void JE_playerCollide(Player *this_player, JE_byte playerNum);

@@ -25,6 +25,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "net_lobby.h"
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -111,7 +112,10 @@ bool gameplaySelect(void)
 			// "Endless" is inserted after the full-game entry; every other label still comes
 			// from gameplay_name[] (full game = [1], the rest map straight across after the
 			// insert: Arcade = [2], Timed = [3], 2P = [4], Network = [5]).
+			// The network entry's shipped label is "Modem/Network Game", which describes an
+			// era rather than the mode; it is plain two-player arcade over a network now.
 			const char *const text = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
+			                       : (i == MENU_ITEM_NETWORK)             ? "2 Player Online Arcade"
 			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
 			                       :                                        gameplay_name[i];
 
@@ -120,7 +124,13 @@ bool gameplaySelect(void)
 			const int y = yMenuItems + dyMenuItems * i;
 
 			const bool selected = i == selectedIndex;
+			// Network play used to be a dead, permanently dimmed entry (setup was command-line
+			// only); it is live now unless the build has no networking at all.
+#ifdef WITH_NETWORK
+			const bool disabled = false;
+#else
 			const bool disabled = i == MENU_ITEM_NETWORK;
+#endif
 
 			draw_font_hv_shadow(VGAScreen, x, y, text, normal_font, left_aligned, 15, -4 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 		}
@@ -262,8 +272,27 @@ bool gameplaySelect(void)
 			}
 			case MENU_ITEM_NETWORK:
 			{
+#ifdef WITH_NETWORK
+				JE_playSampleNum(S_SELECT);
+
+				// The lobby handles hosting/joining and only returns true once a peer is
+				// connected; anything else (backed out, failed) leaves nothing initialised
+				// and drops us back onto this menu.
+				if (!networkLobby())
+				{
+					restart = true;
+					break;
+				}
+
+				onePlayerAction = false;
+				timedBattleMode = false;
+				endlessMode = false;
+				twoPlayerMode = true;  // networkStartScreen() sets the rest up
+				return true;
+#else
 				JE_playSampleNum(S_SPRING);
 				break;
+#endif
 			}
 			default:
 				break;

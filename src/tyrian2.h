@@ -90,6 +90,7 @@ void draw_boss_bar(void);
 // bottom-right HUD element must shift to clear the currently-shown boss bar, if any.
 int  boss_bar_hud_left_shift(int hudRightX);  // px to shift LEFT for a right-side vertical bar
 bool boss_bar_hud_needs_up_shift(void);       // true while a BOTTOM horizontal bar is shown
+int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or INT_MAX if none
 
 // Variable-timestep player ship (experimental; see render notes in tyrian2.c).
 // Mouse sensitivity (ship px per px of pointer motion, orig ~1/4) is shared with
@@ -99,6 +100,9 @@ extern bool vt_ship;       // runtime toggle for render-rate ship simulation
 bool vt_ship_owns(void);   // true when VT currently controls the player ship
 void vt_ship_step(float dt);  // advance the ship one displayed frame (dt in ticks)
 void vt_ship_tick(void);   // per-35Hz-tick reconcile (external forces / reposition)
+// Netplay only: commit this tick's accumulated VT motion to the ship as whole pixels, so the
+// netcode transmits it as its per-tick delta. No-op outside a network game.
+void vt_ship_commit_net(int player_index);
 void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy);  // inter-tick ship move for tracking shots
 void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy);  // mouse steering dir for twiddle codes
 

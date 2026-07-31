@@ -184,12 +184,19 @@ enum
 	// Banking trim needs a separate ID, but stays in the ship override range.
 	RL_ID_SHIP_TRIM_BASE = 14002, // + player
 	RL_ID_SIDEKICK_BASE = 15000, // + player*2 + slot
+	RL_ID_LINKGUN_BASE = 15010,  // + 0..2: linked-Dragonwing turret aim markers.  The three
+	                             // marker shots are recreated every tick, so their pool slots
+	                             // (and with them RL_ID_PSHOT_BASE ids) can drift and break
+	                             // cross-frame pairing; stable ids let the aim swing interpolate.
 	RL_ID_MAX = 16384,
 };
 
 // Begin/finish recording the current tick's playfield draws.
 void rl_begin_record(void);
 void rl_end_record(void);
+// Abandon a recording mid-tick (rollback re-simulation): discard the partial
+// list and keep the last complete frame as the interpolation baseline.
+void rl_abort_record(void);
 
 // Number of commands captured for the current frame.
 size_t rl_count(void);
@@ -226,6 +233,7 @@ void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
 void rl_set_ship_override(int player, float dx, float dy);
 void rl_clear_ship_override(void);
 float rl_get_ship_override_dx(int player);
+float rl_get_ship_override_dy(int player);
 
 // The ship's authoritative per-tick velocity (player 0/1), set once per tick. A
 // ship-attached shot that also moves relative to the ship (orbiting asteroid killer)

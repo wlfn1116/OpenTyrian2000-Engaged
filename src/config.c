@@ -28,9 +28,12 @@
 #include "keyboard.h"
 #include "loudness.h"
 #include "mtrand.h"
+#include "net_rollback.h"
+#include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
 #include "player.h"
+#include "rollback.h"
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
@@ -508,6 +511,44 @@ bool load_opentyrian_config(void)
 		if (config_get_string_option(section, "soundfont", &soundfont_name))
 			SDL_strlcpy(soundfont, soundfont_name, sizeof(soundfont));
 
+		// Multiplayer lobby: remembered so hosting or rejoining is Enter-Enter next time.
+		// Only the joiner's target port is stored with the address (as "host:port"); the
+		// listen port is separate because a machine can be host one session and joiner the next.
+		{
+			const char *name;
+			if (config_get_string_option(section, "net_player_name", &name))
+				network_set_player_name(name);
+
+			const char *host;
+			if (config_get_string_option(section, "net_last_host", &host) && host[0] != '\0')
+			{
+				free(network_opponent_host);
+				network_opponent_host = malloc_die(strlen(host) + 1);
+				strcpy(network_opponent_host, host);
+			}
+
+			int net_port = network_listen_port;
+			config_get_int_option(section, "net_listen_port", &net_port);
+			if (net_port > 0 && net_port < 49152)
+				network_listen_port = (Uint16)net_port;
+
+			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
+			// link can be tuned without a rebuild -- the host's value is what both sides use.
+			int net_delay = network_delay;
+			config_get_int_option(section, "net_delay", &net_delay);
+			if (net_delay >= 1 && net_delay <= 6)
+				network_delay = net_delay;
+
+			// Rollback netcode (local input applies instantly, peer predicted and
+			// corrected by re-simulation) vs the original delay-based lockstep.
+			// Host-authoritative like the rest of the sim settings.
+			config_get_bool_option(section, "net_rollback", &net_rollback);
+
+			// Single-player determinism harness: verify the rollback snapshot
+			// every tick (see rollback.h).  Costs a second sim pass per tick.
+			config_get_bool_option(section, "rollback_selftest", &rollback_selftest);
+		}
+
 		// Legacy keys from when only the Mega Pulse had these settings; the new per-weapon
 		// keys below override them when present.
 		config_get_int_option(section, "mega_pulse_sparks", &superSparkMode[SSW_MEGA_PULSE]);
@@ -748,6 +789,13 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "extra_parallax", extraParallax ? 1 : 0);
 	config_set_int_option(section, "mirrored_layers", mirroredLayers ? 1 : 0);
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
+
+	config_set_string_option(section, "net_player_name", network_player_name);
+	config_set_string_option(section, "net_last_host", network_opponent_host ? network_opponent_host : "");
+	config_set_int_option(section, "net_listen_port", network_listen_port);
+	config_set_int_option(section, "net_delay", network_delay);
+	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
+	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)
 	{

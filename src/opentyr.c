@@ -2370,6 +2370,21 @@ int main(int argc, char *argv[])
 	{
 		crashlog_set_phase("title / main menu");
 
+#ifdef WITH_NETWORK
+		// A lobby session that has run its course: close the socket and hand the joiner its
+		// own settings back, so the title screen behaves like a normal single-player one and
+		// a second session can be started cleanly.  (Command-line netplay reconnects instead.)
+		if (isNetworkGame && network_from_lobby)
+		{
+			network_shutdown();
+
+			isNetworkGame = false;
+			network_from_lobby = false;
+			network_is_host = false;
+			twoPlayerMode = false;
+		}
+#endif
+
 		JE_initPlayerData();
 		JE_sortHighScores();
 
@@ -2380,7 +2395,9 @@ int main(int argc, char *argv[])
 		jumpSection = false;
 
 #ifdef WITH_NETWORK
-		if (isNetworkGame)
+		// A command-line network game has no title screen: it connects straight away, every
+		// time round the loop.  A lobby game reaches the same handshake from the menu below.
+		if (isNetworkGame && !network_from_lobby)
 		{
 			networkStartScreen();
 		}
