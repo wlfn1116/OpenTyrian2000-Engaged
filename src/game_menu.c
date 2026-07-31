@@ -937,6 +937,9 @@ void JE_itemScreen(void)
 
 	crashlog_set_phase("shop / buy-sell menu");
 
+	// A staged debug-browser pick is good for the launch it was made for and nothing else.
+	debugLevelPickReset();
+
 	/* Center the buy/sell screen independently from the gameplay HUD */
 	set_menu_centered(true);
 
@@ -2677,8 +2680,18 @@ void JE_itemScreen(void)
 		JE_barShade(VGAScreen, 1, 1, 318, 198);
 		JE_dString(VGAScreen, 10, 160, "Waiting for other player.", SMALL_FONT_SHAPES);
 
+		// This rendezvous is the last point where both machines are still in menu code, so it
+		// is where the level they are about to load has to be agreed on.  A debug-browser pick
+		// rides along in the WAITING packet; whichever player made one drags the other into it.
+		JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
+		const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
+
 		network_prepare(PACKET_WAITING);
-		network_send(4);  // PACKET_WAITING
+		packet_out_temp->data[4] = myPick ? 1 : 0;
+		packet_out_temp->data[5] = myPickEp;
+		packet_out_temp->data[6] = myPickSec;
+		packet_out_temp->data[7] = myPickFile;
+		network_send(8);  // PACKET_WAITING + debug level pick
 
 		while (true)
 		{
@@ -2691,6 +2704,16 @@ void JE_itemScreen(void)
 
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 			{
+				// Adopt the other player's browser pick.  If we made one too the host's wins,
+				// so the two machines can never resolve the tie in opposite directions.
+				if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
+				    (!myPick || !network_is_host))
+				{
+					debugLevelPickApply(packet_in[0]->data[5],
+					                    packet_in[0]->data[6],
+					                    packet_in[0]->data[7]);
+				}
+
 				network_update();
 				break;
 			}
@@ -4401,6 +4424,61 @@ bool debugLevelJumpTake(void)
 	return armed;
 }
 
+/* ---- Debug level browser: the network hand-off ------------------------------------------
+ * The browser is a local screen, but the level it picks is simulation state: both machines
+ * have to load the same map or nothing after that agrees. This staging area carries the pick
+ * from the browser to the shop's start-of-level rendezvous, which puts it on the wire; the
+ * player who did not pick adopts it there and enters the same level.
+ * Cleared whenever the shop opens, so a pick can only ever apply to the launch it was made for. */
+static struct
+{
+	bool    armed;
+	JE_byte episode, section, fileNum;
+}
+debugPick;
+
+static void debug_level_pick_stage(JE_byte episode, JE_byte section, JE_byte fileNum)
+{
+	debugPick.armed = true;
+	debugPick.episode = episode;
+	debugPick.section = section;
+	debugPick.fileNum = fileNum;
+}
+
+void debugLevelPickReset(void)
+{
+	debugPick.armed = false;
+}
+
+bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum)
+{
+	if (!debugPick.armed)
+		return false;
+
+	*episode = debugPick.episode;
+	*section = debugPick.section;
+	*fileNum = debugPick.fileNum;
+	return true;
+}
+
+void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum)
+{
+	const JE_byte startEp = (JE_byte)episodeNum;
+
+	// Same sequence the browser itself runs: snapshot the outpost we are leaving (while
+	// episodeNum still points at it), switch episode if the pick lives in another one, then
+	// arm the jump.  Doing it here means the adopting player also gets handed back to their
+	// own outpost when the level is over.
+	select_debug_level_capture();
+	if (episode != 0 && episode != (JE_byte)episodeNum)
+		JE_initEpisode(episode);
+	if ((JE_byte)episodeNum != startEp)
+		initial_episode_num = episodeNum;
+	select_level(section, fileNum);
+
+	debug_level_pick_stage(episode, section, fileNum);
+}
+
 void debugLevelJumpReturn(void)
 {
 	if (debugJump.episode != episodeNum)
@@ -6034,6 +6112,8 @@ bool JE_debugLevelSelect(void)
 					if (episodeNum != startEp)
 						initial_episode_num = episodeNum;
 					select_level(allLevelSec[lv], allLevelFile[lv]);
+					// Network game: hand the pick to the other player at the shop rendezvous.
+					debug_level_pick_stage((JE_byte)allLevelEp[lv], allLevelSec[lv], allLevelFile[lv]);
 					chosen = true;
 					done = true;
 				}

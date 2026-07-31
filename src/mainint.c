@@ -5880,7 +5880,29 @@ static void JE_drawDebugOverlays(void)
 		snprintf(buf, sizeof(buf), "SHOTS P%d E%d", pShots, eShots);
 		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
 		snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE);
+		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+
+		// Netplay health.  PRED is the one that explains a jumpy peer ship: it is how
+		// many frames of pure guesswork the peer's position is extrapolated over
+		// before real input lands, so it bounds how far the ship can be flung before
+		// a correction yanks it back.  RB is rollbacks per 100 frames / deepest.
+		// DESYNC counts canary mismatches -- non-zero means the simulations actually
+		// diverged and nothing will repair them; that is a different bug from jitter.
+		if (nrb_active())
+		{
+			Uint32 predict, depth, rate, desyncs;
+			nrb_stats(&predict, &depth, &rate, &desyncs);
+
+			snprintf(buf, sizeof(buf), "PRED %u", (unsigned)predict);
+			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+			snprintf(buf, sizeof(buf), "RB %u%%/%u", (unsigned)rate, (unsigned)depth);
+			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
+			if (desyncs != 0)
+			{
+				snprintf(buf, sizeof(buf), "DESYNC %u", (unsigned)desyncs);
+				JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE);
+			}
+		}
 	}
 }
 
@@ -7762,6 +7784,29 @@ redo:
 
 			this_player->x_velocity = player[0].x_velocity;
 			this_player->y_velocity = 4;
+
+			// Keep the ship x/y history running while docked.  Trailing sidekicks
+			// (Companion Ship Gerund and the rest of style 1/3) are anchored to
+			// old_x/old_y, and only the unfused branch above ever shifted it -- so
+			// the moment the pair fused the trail froze in place and the sidekicks
+			// stopped following, even though the fused ship is still moving.  The
+			// carrier drags this ship around, so the history has to track that.
+			//
+			// Movement is measured against the newest stored entry rather than the
+			// tick-start mouseX_/mouseY_ the unfused branch uses: the pin above
+			// rewrites x/y outright, so a tick-delta reads as movement even when
+			// the fused pair is parked.
+			if (this_player->x != this_player->old_x[COUNTOF(player->old_x) - 1] ||
+			    this_player->y != this_player->old_y[COUNTOF(player->old_x) - 1])
+			{
+				for (uint i = 1; i < COUNTOF(player->old_x); ++i)
+				{
+					this_player->old_x[i - 1] = this_player->old_x[i];
+					this_player->old_y[i - 1] = this_player->old_y[i];
+				}
+				this_player->old_x[COUNTOF(player->old_x) - 1] = this_player->x;
+				this_player->old_y[COUNTOF(player->old_x) - 1] = this_player->y;
+			}
 
 			// turret direction marker/shield
 			shotMultiPos[SHOT_MISC] = 0;

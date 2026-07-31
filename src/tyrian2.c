@@ -458,7 +458,13 @@ static void update_ship_override(float alpha)
 		{
 			const float dt_ms = (float)(now - rsm_last_counter) * 1000.0f
 			                  / (float)SDL_GetPerformanceFrequency();
-			rsm_ease = dt_ms / 90.0f;
+			// Exponential, not linear: `dt/90` clamps to 1.0 the moment a frame takes
+			// 90ms, which turns the smoothing completely OFF on exactly the machine
+			// that needs it most -- a box struggling to present sees every correction
+			// raw while its fast peer sees a perfectly eased ship.  1-exp(-dt/tau) is
+			// the frame-rate-independent form: it still eases hard at low frame rates,
+			// but it eases.
+			rsm_ease = 1.0f - expf(-dt_ms / 60.0f);
 			if (rsm_ease > 1.0f) rsm_ease = 1.0f;
 			if (rsm_ease < 0.0f) rsm_ease = 0.0f;
 		}
@@ -499,14 +505,29 @@ static void update_ship_override(float alpha)
 
 		if (nrb_active() && !local)
 		{
-			// Remote ship: ease the absolute drawn position toward this frame's
-			// extrapolation target; snap across warps/respawns.
+			// A ship cannot exceed ~5px/tick (VT_VMAX + VT_DIRECT), so anything past
+			// that in a REMOTE ship's per-tick delta is a rollback correction, not
+			// motion -- and extrapolating along it flings the ship up to 40px further
+			// in the direction it was already wrongly sent.  Clamp to plausible ship
+			// speed: the correction still lands, it just stops being amplified.
+			const int RVMAX = 6;
+			if (vx >  RVMAX) vx =  RVMAX; else if (vx < -RVMAX) vx = -RVMAX;
+			if (vy >  RVMAX) vy =  RVMAX; else if (vy < -RVMAX) vy = -RVMAX;
+
 			const float tgt_x = (float)ship_tick_x[p] + vx * alpha;
 			const float tgt_y = (float)ship_tick_y[p] + vy * alpha;
 
+			// Remote ship: ease the absolute drawn position toward this frame's
+			// extrapolation target; snap across warps/respawns.
+			//
+			// The threshold is deliberately far above the worst ordinary
+			// misprediction (prediction runs up to 5 steps at up to 6px, so a peer
+			// reversing direction is good for ~50px): a snap that fires on a
+			// misprediction IS the teleport, while a warp that eases instead of
+			// snapping merely glides for a few frames.  Err toward gliding.
 			if (!rsm_valid[p] ||
-			    tgt_x - rsm_x[p] > 40.0f || tgt_x - rsm_x[p] < -40.0f ||
-			    tgt_y - rsm_y[p] > 40.0f || tgt_y - rsm_y[p] < -40.0f)
+			    tgt_x - rsm_x[p] > 100.0f || tgt_x - rsm_x[p] < -100.0f ||
+			    tgt_y - rsm_y[p] > 100.0f || tgt_y - rsm_y[p] < -100.0f)
 			{
 				rsm_x[p] = tgt_x;
 				rsm_y[p] = tgt_y;
@@ -945,8 +966,10 @@ void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
 			// to follow it: the classic path that maintains that is skipped while VT owns the
 			// level, so nothing else would update it.  Rollback mode is the exception: there
 			// the wire position applies mid-tick and the classic in-sim block fires normally
-			// (see vt_ship_tick_player).
-			if (!nrb_active())
+			// (see vt_ship_tick_player).  A DOCKED Dragonwing is the other exception -- the
+			// sim's own docked branch maintains its history (mainint.c), so refreshing it
+			// here as well would shift the trail twice per tick on this machine only.
+			if (!nrb_active() && !(p == 1 && twoPlayerLinked))
 				vt_refresh_position_history(p);
 			continue;
 		}
