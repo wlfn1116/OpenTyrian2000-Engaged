@@ -8,12 +8,13 @@
 #ifdef __vita__
 
 #include "SDL.h"
+#include "keyboard.h"          // keydown/mousedown, see the end of vita_swkbd
 #include "video.h"             // main_window, video_repeat_last_present()
 
 #include <psp2/io/stat.h>      // sceIoMkdir
 #include <psp2/sysmodule.h>    // sceSysmoduleLoadModule, SCE_SYSMODULE_IME
 #include <psp2/common_dialog.h>// SceCommonDialogStatus
-#include <psp2/ime_dialog.h>   // sceImeDialogGetStatus / sceImeDialogAbort / sceImeDialogTerm
+#include <psp2/ime_dialog.h>   // sceImeDialog*
 
 void vita_platform_init(void)
 {
@@ -22,78 +23,187 @@ void vita_platform_init(void)
 	// sceIoMkdir no-ops (EEXIST) if it is already there.
 	sceIoMkdir(VITA_USER_DIR, 0777);
 
-	// SDL's Vita text-input support drives the system IME dialog; make sure its sysmodule
-	// is resident before the first SDL_StartTextInput(). Harmless if SDL also loads it.
+	// Make sure the IME sysmodule behind the text-entry dialog is resident before
+	// the first sceImeDialogInit in vita_swkbd.
 	sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
+}
+
+// The dialog speaks UTF-16; the game speaks UTF-8 (ASCII in practice -- the fields
+// filter, and the font has no glyphs beyond it). BMP-only converters cover that;
+// anything wider (surrogate pairs) is dropped rather than mis-encoded.
+
+static void swkbd_utf8_to_utf16(const char *src, SceWChar16 *dst, size_t dst_cap)
+{
+	size_t n = 0;
+	if (src != NULL)
+	{
+		for (const Uint8 *s = (const Uint8 *)src; *s != '\0' && n + 1 < dst_cap; )
+		{
+			Uint32 cp;
+			if (s[0] < 0x80)
+			{
+				cp = s[0];
+				s += 1;
+			}
+			else if ((s[0] & 0xe0) == 0xc0 && (s[1] & 0xc0) == 0x80)
+			{
+				cp = ((Uint32)(s[0] & 0x1f) << 6) | (s[1] & 0x3f);
+				s += 2;
+			}
+			else if ((s[0] & 0xf0) == 0xe0 && (s[1] & 0xc0) == 0x80 && (s[2] & 0xc0) == 0x80)
+			{
+				cp = ((Uint32)(s[0] & 0x0f) << 12) | ((Uint32)(s[1] & 0x3f) << 6) | (s[2] & 0x3f);
+				s += 3;
+			}
+			else  // 4-byte sequence or malformed byte: skip it
+			{
+				s += 1;
+				continue;
+			}
+			dst[n++] = (SceWChar16)cp;
+		}
+	}
+	dst[n] = 0;
+}
+
+// dst_cap counts bytes including the NUL; output is cut at whole characters only.
+static void swkbd_utf16_to_utf8(const SceWChar16 *src, char *dst, size_t dst_cap)
+{
+	size_t n = 0;
+	for (size_t i = 0; src[i] != 0; ++i)
+	{
+		const Uint16 cp = src[i];
+		if (cp >= 0xd800 && cp <= 0xdfff)
+			continue;  // surrogate half; the game can't render these anyway
+		if (cp < 0x80)
+		{
+			if (n + 1 >= dst_cap)
+				break;
+			dst[n++] = (char)cp;
+		}
+		else if (cp < 0x800)
+		{
+			if (n + 2 >= dst_cap)
+				break;
+			dst[n++] = (char)(0xc0 | (cp >> 6));
+			dst[n++] = (char)(0x80 | (cp & 0x3f));
+		}
+		else
+		{
+			if (n + 3 >= dst_cap)
+				break;
+			dst[n++] = (char)(0xe0 | (cp >> 12));
+			dst[n++] = (char)(0x80 | ((cp >> 6) & 0x3f));
+			dst[n++] = (char)(0x80 | (cp & 0x3f));
+		}
+	}
+	dst[n] = '\0';
 }
 
 bool vita_swkbd(char *out, size_t out_size, size_t max_len,
                 const char *initial, const char *guide, bool numeric)
 {
-	(void)guide;
-	(void)numeric;   // SDL's Vita IME exposes no type/guide option; it is a plain keyboard.
-
 	if (out == NULL || out_size == 0)
 		return false;
 
-	// Start from the initial text so a cancel leaves the value unchanged, matching the
-	// Switch keyboard's pre-fill behaviour. Names here are short; 256 is ample.
-	char text[256];
-	text[0] = '\0';
-	if (initial != NULL)
-		SDL_strlcpy(text, initial, sizeof(text));
+	size_t cap = out_size - 1;
+	if (max_len > 0 && max_len < cap)
+		cap = max_len;
+	if (cap == 0)
+		return false;
+	if (cap > SCE_IME_DIALOG_MAX_TEXT_LENGTH)
+		cap = SCE_IME_DIALOG_MAX_TEXT_LENGTH;
 
-	// Drain stale events so a queued keypress isn't mistaken for the IME's result.
+	// The dialog reads these for its whole lifetime, so they cannot be stack locals
+	// of a frame that might unwind on an error path; static is safe here because the
+	// dialog is modal and the game is single-threaded.
+	static SceWChar16 kbTitle[SCE_IME_DIALOG_MAX_TITLE_LENGTH];
+	static SceWChar16 kbInitial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
+	static SceWChar16 kbInput[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
+
+	swkbd_utf8_to_utf16(guide, kbTitle, SCE_IME_DIALOG_MAX_TITLE_LENGTH);
+	swkbd_utf8_to_utf16(initial, kbInitial, cap + 1);
+	SDL_memset(kbInput, 0, sizeof(kbInput));
+
+	// Own the dialog natively instead of going through SDL_StartTextInput: SDL's Vita
+	// backend also tracks the dialog and terminates it from inside SDL_PollEvent the
+	// moment it finishes, which raced everything the old loop here did afterwards
+	// (status polls and a second sceImeDialogTerm on the already-torn-down dialog) and
+	// froze the game whenever a field closed.  This way SDL never knows the dialog is
+	// up; its only involvement is SDL_RenderPresent, whose sceCommonDialogUpdate call
+	// composites the dialog each frame.
+	SceImeDialogParam param;
+	sceImeDialogParamInit(&param);
+	param.supportedLanguages = 0;
+	param.languagesForced = SCE_FALSE;
+	param.type = numeric ? SCE_IME_TYPE_NUMBER : SCE_IME_TYPE_DEFAULT;
+	param.option = 0;
+	param.dialogMode = SCE_IME_DIALOG_DIALOG_MODE_WITH_CANCEL;
+	param.textBoxMode = SCE_IME_DIALOG_TEXTBOX_MODE_WITH_CLEAR;
+	param.title = kbTitle;
+	param.maxTextLength = (SceUInt32)cap;
+	param.initialText = kbInitial;
+	param.inputTextBuffer = kbInput;
+
+	SceInt32 res = sceImeDialogInit(&param);
+	if (res < 0 && numeric)
+	{
+		// If the number pad is refused, retry as a plain keyboard; every numeric call
+		// site re-filters the result anyway.
+		param.type = SCE_IME_TYPE_DEFAULT;
+		res = sceImeDialogInit(&param);
+	}
+	if (res < 0)
+		return false;
+
+	// Drain stale events so a queued press isn't mistaken for dialog input later.
 	SDL_Event ev;
 	while (SDL_PollEvent(&ev)) { }
 
-	// The Vita IME is full-screen; still set a rect (some SDL paths gate showing on it).
-	SDL_Rect rect = { 0, 0, 960, 544 };
-	SDL_SetTextInputRect(&rect);
-
-	// The IME is a Vita system common dialog; it holds the control pad until terminated, so drive
-	// the loop off its native status and force it down afterwards.
-	SDL_StartTextInput();
-
-	bool everRunning = false;
 	bool confirmed = false;
-	const int maxFrames = 60 * 60;   // ~60s absolute safety cap, so we can never hard-hang
 
-	for (int frame = 0; frame < maxFrames; ++frame)
+	for (int frame = 0; ; ++frame)
 	{
+		// Presenting is what draws the dialog and services its input; the pump is only
+		// to keep SDL's queue from pooling up (the dialog owns the controls, and with
+		// text input never started SDL's event path leaves the dialog alone).
 		video_repeat_last_present();
-
-		while (SDL_PollEvent(&ev))
-		{
-			if (ev.type == SDL_TEXTINPUT)
-				SDL_strlcpy(text, ev.text.text, sizeof(text));
-			else if (ev.type == SDL_KEYDOWN &&
-			         (ev.key.keysym.scancode == SDL_SCANCODE_RETURN ||
-			          ev.key.keysym.scancode == SDL_SCANCODE_KP_ENTER))
-				confirmed = true;   // Enter only; a cancel/close sends no RETURN
-		}
+		while (SDL_PollEvent(&ev)) { }
 
 		const SceCommonDialogStatus st = sceImeDialogGetStatus();
-		if (st == SCE_COMMON_DIALOG_STATUS_RUNNING)
-			everRunning = true;
-		else if (everRunning || frame > 90)  // closed (confirm/cancel), or never opened
+		if (st == SCE_COMMON_DIALOG_STATUS_FINISHED)
+		{
+			SceImeDialogResult result;
+			SDL_memset(&result, 0, sizeof(result));
+			if (sceImeDialogGetResult(&result) >= 0 && result.button == SCE_IME_DIALOG_BUTTON_ENTER)
+				confirmed = true;
 			break;
+		}
+		if (st != SCE_COMMON_DIALOG_STATUS_RUNNING &&
+		    (st != SCE_COMMON_DIALOG_STATUS_NONE || frame > 120))
+			break;  // error status, or it never came up within ~2s: treat as a cancel
 
 		SDL_Delay(16);
 	}
 
-	SDL_StopTextInput();
+	sceImeDialogTerm();
 
-	if (sceImeDialogGetStatus() == SCE_COMMON_DIALOG_STATUS_RUNNING)
-		sceImeDialogAbort();
-	if (sceImeDialogGetStatus() != SCE_COMMON_DIALOG_STATUS_NONE)
-		sceImeDialogTerm();
+	while (SDL_PollEvent(&ev)) { }   // drop anything the dialog session left queued
 
-	while (SDL_PollEvent(&ev)) { }   // drop the dialog's synthetic keys so they don't leak into the game
+	// The raw drains above also swallow release edges -- above all the FINGERUP of the tap
+	// that opened this field, which lands ~100ms in.  Its FINGERDOWN already latched
+	// mousedown through the normal event path, so with the release eaten the flag stays
+	// true with no release ever coming, and the lobby's wait_noinput() wind-down spins on
+	// it forever (the freeze reported on every touch-opened field).  Nothing is really
+	// held once the dialog is gone, so force the level flags down; newkey/newmouse are
+	// edge flags the call sites already clear themselves.
+	keydown = false;
+	mousedown = false;
 
-	if (max_len > 0 && SDL_strlen(text) > max_len)
-		text[max_len] = '\0';
-	SDL_strlcpy(out, text, out_size);
+	if (confirmed)
+		swkbd_utf16_to_utf8(kbInput, out, cap + 1);
+	else if (out != initial)  // a cancel leaves the caller's value unchanged
+		SDL_strlcpy(out, initial != NULL ? initial : "", out_size);
 
 	return confirmed;
 }

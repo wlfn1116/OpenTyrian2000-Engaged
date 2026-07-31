@@ -744,10 +744,19 @@ Switch:
 Vita:
 
 - present at native size and force supersampling to 1x;
-- keep presenting while the IME dialog is open;
-- drive IME lifetime from `sceImeDialogGetStatus`, not
-  `SDL_IsTextInputActive`;
-- abort and terminate the dialog on every exit path so it releases the controls.
+- keep presenting while the IME dialog is open (SDL_RenderPresent's
+  `sceCommonDialogUpdate` is what composites it);
+- own the IME dialog natively and never call `SDL_StartTextInput`: SDL's Vita
+  backend also tracks the dialog and terminates it from inside `SDL_PollEvent`
+  the moment it finishes, so any caller-side status poll or second
+  `sceImeDialogTerm` races that teardown -- shared ownership froze the game on
+  every lobby-field close;
+- terminate the dialog exactly once, on every exit path, so it releases the
+  controls;
+- a modal that raw-drains SDL events must force the `keydown`/`mousedown` level
+  flags back down before returning: the drain eats release edges (above all the
+  FINGERUP of the tap that opened it), and `wait_noinput` then spins forever on
+  the latched level.
 
 Both ports treat menu touch as absolute tap input and gameplay touch as relative
 drag. The right stick is folded into ship movement. MIDI is disabled on both.
@@ -774,7 +783,8 @@ helpers. What the platforms did need:
 - **Text entry.** Nothing on either console produces `SDL_TEXTINPUT`, so the lobby's
   port/address/name fields would never see a character. They route to
   `console_swkbd` instead, and still run the result through the field's filter --
-  the Vita IME has no numeric mode, so a port field can come back with letters.
+  the Vita number pad is asked for but can fall back to the full keyboard, and
+  neither console restricts the character set.
 
 ## Invisible level structures
 

@@ -21,10 +21,11 @@
 void vita_platform_init(void);
 
 // Show the on-screen keyboard (there is no physical keyboard). Writes the entered text
-// into out (NUL-terminated). `initial` pre-fills it; `guide`/`numeric` are accepted for
-// call-site parity with switch_swkbd but the SDL Vita IME has no matching option, so
-// they are currently ignored. `max_len` caps the entry length (0 = out_size-1). Returns
-// true if the user confirmed, false if they cancelled. Blocks (modal) while up.
+// into out (NUL-terminated). `initial` pre-fills it, `guide` becomes the dialog title,
+// and `numeric` asks for the system number pad. `max_len` caps the entry length
+// (0 = out_size-1). Returns true if the user confirmed, false if they cancelled (out is
+// then left at `initial`). Blocks (modal) while up. Drives sceImeDialog natively -- see
+// vita_swkbd for why SDL_StartTextInput must never be used for this.
 bool vita_swkbd(char *out, size_t out_size, size_t max_len,
                 const char *initial, const char *guide, bool numeric);
 
