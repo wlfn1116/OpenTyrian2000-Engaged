@@ -931,6 +931,58 @@ static void sort_shop_inventory(void)
 	}
 }
 
+/* ---- Two-player shop readout ----------------------------------------------------------
+ * The left panel lists both players' scores and the gear each one flies. Bounds are the
+ * backdrop's inner viewport (logical x 21..134, y 18..145): item names run up to 133px in
+ * TINY_FONT, wider than that panel, so a value that does not fit wraps onto an indented
+ * continuation row instead of running under the menu column at x=166.
+ */
+#define SHOP_2P_TOP     26   // first row
+#define SHOP_2P_X       25   // player rows
+#define SHOP_2P_SUB_X   31   // indented detail rows
+#define SHOP_2P_RIGHT  138   // right edge -- text stops here, well clear of the menu column (x=166)
+#define SHOP_2P_ROW_H    8
+
+// Draw "<label> <value>", wrapping the value word by word. Returns the row after the last drawn.
+static int draw_2p_info_row(int x, int y, int bright, const char *label, const char *value)
+{
+	char line[96], probe[96];
+	SDL_strlcpy(line, label, sizeof(line));
+	int row_x = x;
+
+	for (const char *w = value; *w != '\0'; )
+	{
+		if (*w == ' ')
+		{
+			++w;
+			continue;
+		}
+
+		const char *end = w;
+		while (*end != '\0' && *end != ' ')
+			++end;
+
+		snprintf(probe, sizeof(probe), "%s%s%.*s", line, line[0] == '\0' ? "" : " ", (int)(end - w), w);
+
+		// Break only when the row already holds something, so a word too wide even on a row
+		// of its own is still drawn (clipped by the panel) rather than looping forever.
+		if (line[0] != '\0' && row_x + JE_textWidth(probe, TINY_FONT) > SHOP_2P_RIGHT)
+		{
+			JE_textShade(VGAScreen, row_x, y, line, 15, bright, FULL_SHADE);
+			y += SHOP_2P_ROW_H;
+			row_x = x + 6;
+			line[0] = '\0';
+			continue;
+		}
+
+		SDL_strlcpy(line, probe, sizeof(line));
+		w = end;
+	}
+
+	JE_textShade(VGAScreen, row_x, y, line, 15, bright, FULL_SHADE);
+	return y + SHOP_2P_ROW_H;
+}
+
 void JE_itemScreen(void)
 {
 	bool quit = false;
@@ -1519,12 +1571,47 @@ void JE_itemScreen(void)
 		{
 			if (twoPlayerMode)
 			{
-				char buf[50];
+				char buf[80];
+				int y = SHOP_2P_TOP;
 
 				for (uint i = 0; i < 2; ++i)
 				{
-					snprintf(buf, sizeof(buf), "%s %lu", miscText[40 + i], player[i].cash);
-					JE_textShade(VGAScreen, 25, 50 + 10 * i, buf, 15, 0, FULL_SHADE);
+					// A network game labels the two totals with the players' own names: the
+					// "Player N" prefix of "Player N Score:" is swapped for the name, keeping
+					// the label's tail (and so its punctuation) intact.
+					const char *label = miscText[40 + i];   // "Player 1 Score:"
+					const char *who = miscText[48 + i];     // "Player 1"
+					const size_t who_len = strlen(who);
+
+					if (isNetworkGame && strncmp(label, who, who_len) == 0)
+						snprintf(buf, sizeof(buf), "%s%s %lu", JE_getName(i + 1), label + who_len, player[i].cash);
+					else
+						snprintf(buf, sizeof(buf), "%s %lu", label, player[i].cash);
+
+					y = draw_2p_info_row(SHOP_2P_X, y, 4, "", buf);
+
+					snprintf(buf, sizeof(buf), "%d", *player[i].lives);
+					y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Lives:", buf);
+
+					// Player 1 flies the front gun and the special, player 2 the rear gun and
+					// both sidekicks -- the same split the powerup pickups use (JE_eventSystem).
+					if (i == 0)
+					{
+						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Front gun:",
+							weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name);
+						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Special:",
+							special[player[0].items.special].name);
+						y += 4;  // gap between the two blocks
+					}
+					else
+					{
+						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Rear gun:",
+							weaponPort[player[1].items.weapon[REAR_WEAPON].id].name);
+						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Sidekick L:",
+							options[player[1].items.sidekick[LEFT_SIDEKICK]].name);
+						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Sidekick R:",
+							options[player[1].items.sidekick[RIGHT_SIDEKICK]].name);
+					}
 				}
 			}
 			else if (superArcadeMode != SA_NONE || superTyrian)
