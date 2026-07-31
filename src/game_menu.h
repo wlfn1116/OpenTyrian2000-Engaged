@@ -75,6 +75,16 @@ void endlessDebugTuneScreen(void);
 // the outpost the jump started from, with the loadout they had before it.
 bool debugLevelJumpTake(void);
 void debugLevelJumpReturn(void);
+
+// Network games: a level picked from the debug browser has to drag the other player along,
+// or the two machines load different maps and every frame after that is a desync. The picker
+// stages its choice here; the shop's start-of-level rendezvous puts it on the wire, and the
+// player who did NOT pick adopts it before the level loads.
+// debugLevelPickGet() reports whether this machine has a browser pick staged (and what it is);
+// debugLevelPickApply() adopts the peer's, exactly as if this machine had made it.
+bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum);
+void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum);
+void debugLevelPickReset(void);
 bool JE_customWeaponCreator(bool canEquip);
 void JE_drawShipSpecs(SDL_Surface *, SDL_Surface *);
 void JE_weaponSimUpdate(void);

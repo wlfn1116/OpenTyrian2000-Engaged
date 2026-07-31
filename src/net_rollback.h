@@ -52,6 +52,14 @@ bool nrb_session_vt(void);
 /* Sim frame currently being simulated (1-based; 0 = before the first tick). */
 Uint32 nrb_frame(void);
 
+/* Live netplay health, for the perf overlay.  `predict` is how many frames ahead
+ * of the peer's newest arrived input we are running (the depth every remote-ship
+ * prediction is extrapolated over -- the number that decides how far the peer's
+ * ship can be flung before a correction lands).  `depth` is the deepest rollback
+ * so far this level, `rate` rollbacks per 100 frames, `desyncs` the canary's
+ * mismatch count. */
+void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs);
+
 void nrb_level_reset(void);
 
 /* Loop-top hook: snapshot this frame, then apply the previous frame's

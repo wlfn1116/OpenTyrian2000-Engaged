@@ -159,9 +159,25 @@ static Uint32 last_resend_tick;
 /* Diagnostics. */
 static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 
+/* Livelock guard: consecutive rollbacks that landed on the same frame. */
+static Uint32 resim_last_K, resim_repeat;
+static bool   resim_livelock_reported;
+
+/* The level end was settled out of band (in-game menu quit), not predicted, so
+ * it needs no further confirmation from the peer.  See nrb_process_requests. */
+static bool end_agreed;
+
 Uint32 nrb_frame(void)
 {
 	return nrb_cur;
+}
+
+void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs)
+{
+	*predict = (nrb_cur > remote_newest) ? nrb_cur - remote_newest : 0;
+	*depth   = stat_deepest;
+	*rate    = (nrb_cur > 1) ? stat_rollbacks * 100 / (nrb_cur - 1) : 0;
+	*desyncs = canary_mismatches;
 }
 
 void nrb_level_reset(void)
@@ -190,6 +206,9 @@ void nrb_level_reset(void)
 	last_resend_tick = 0;
 
 	stat_rollbacks = stat_resim_frames = stat_deepest = 0;
+	resim_last_K = resim_repeat = 0;
+	resim_livelock_reported = false;
+	end_agreed = false;
 
 	/* Until the peer's first packet, predict "parked at spawn, no buttons".
 	 * Ship spawn positions are part of deterministic level init, so both
@@ -368,6 +387,11 @@ static bool nrb_wire_differs(const RbInput *a, const RbInput *b)
 	       a->difficulty != b->difficulty;
 }
 
+/* How many rollbacks onto one frame are allowed before we stop trying to
+ * correct it.  A correction that does not converge would otherwise spin the
+ * restore/re-simulate cycle forever without completing a single frame. */
+#define NRB_RESIM_GIVE_UP 16
+
 /* Advance verified_upto over frames whose used inputs match the arrived truth;
  * return the first frame where they differ (0 = none). */
 static Uint32 nrb_scan_mispredict(void)
@@ -375,6 +399,8 @@ static Uint32 nrb_scan_mispredict(void)
 	while (verified_upto < nrb_cur)
 	{
 		const Uint32 f = verified_upto + 1;
+		bool differs = false;
+
 		if (remote_hist[f % NRB_HIST].tag != f)
 			break;  /* truth not here yet */
 		if (remote_used[f % NRB_HIST].tag != f ||
@@ -388,13 +414,39 @@ static Uint32 nrb_scan_mispredict(void)
 		if (remote_used[f % NRB_HIST].kind == NRB_USED_REQS)
 		{
 			/* Only the frame-locked request bits were consumed. */
-			if (((remote_used[f % NRB_HIST].in.buttons ^
-			      remote_hist[f % NRB_HIST].in.buttons) & NRB_SIM_REQS) != 0)
-				return f;
+			differs = ((remote_used[f % NRB_HIST].in.buttons ^
+			            remote_hist[f % NRB_HIST].in.buttons) & NRB_SIM_REQS) != 0;
 		}
-		else if (nrb_wire_differs(&remote_used[f % NRB_HIST].in, &remote_hist[f % NRB_HIST].in))
+		else
 		{
-			return f;
+			differs = nrb_wire_differs(&remote_used[f % NRB_HIST].in,
+			                           &remote_hist[f % NRB_HIST].in);
+		}
+
+		if (differs)
+		{
+			/* Not converging: rolling back to f keeps landing on the same
+			 * mismatch.  Accept the truth as consumed and move on -- a state
+			 * divergence the canary will report beats an unrecoverable freeze,
+			 * and the machine stays responsive enough to quit. */
+			if (f != resim_last_K || resim_repeat <= NRB_RESIM_GIVE_UP)
+				return f;
+
+			remote_used[f % NRB_HIST].in = remote_hist[f % NRB_HIST].in;
+			resim_repeat = 0;
+
+			if (!resim_livelock_reported)
+			{
+				resim_livelock_reported = true;
+				char detail[224];
+				snprintf(detail, sizeof(detail),
+				         "frame %lu rolled back %d times without verifying "
+				         "(current %lu, player %u)\n"
+				         "  accepting the peer's input as consumed to keep the simulation moving",
+				         (unsigned long)f, NRB_RESIM_GIVE_UP,
+				         (unsigned long)nrb_cur, thisPlayerNum);
+				crashlog_note("ROLLBACK LIVELOCK", detail);
+			}
 		}
 		++verified_upto;
 	}
@@ -660,6 +712,16 @@ static void nrb_process_requests(void)
 			yourInGameMenuRequest = false;
 			if (haltGame)
 				reallyEndLevel = true;
+
+			/* "Quit to outpost" from the in-game menu is not a predicted event:
+			 * the menu is itself a rendezvous (both machines enter it on the same
+			 * confirmed frame and agree on the quit through PACKET_GAME_QUIT), and
+			 * it lands at a frame the rollback can no longer reach.  Making the
+			 * exit wait for one more frame of peer input therefore deadlocks the
+			 * machine that happens to be a frame ahead: the peer has already torn
+			 * the level down and will never send it. */
+			if (reallyEndLevel)
+				end_agreed = true;
 		}
 	}
 }
@@ -669,6 +731,33 @@ static void nrb_process_requests(void)
 /* Restore to frame K and arrange for the level loop to re-simulate K..target. */
 static NrbStep nrb_begin_resim(Uint32 K)
 {
+	/* Highest frame the timeline we are about to discard ever simulated. */
+	const Uint32 high = (resim_active && resim_target > nrb_cur) ? resim_target : nrb_cur;
+
+	/* Forget what that timeline CONSUMED for K..high -- it consumed nothing yet.
+	 *
+	 * This matters for frames the re-simulation takes no input from at all: a
+	 * dead ship and the level-end fade both return out of JE_playerMovement
+	 * before nrb_get_remote(), so the re-simulated frame never re-stamps its
+	 * slot.  The stale entry then mismatched the same arrived truth again, and
+	 * the driver rolled back to the same frame forever -- a silent infinite
+	 * loop (no frame ever completed, so nothing beat the hang watchdog and the
+	 * peer stalled out on "peer too far behind").  Both players dying within a
+	 * few frames of each other was the reliable way to reach it. */
+	for (Uint32 f = K; f <= high; ++f)
+		if (remote_used[f % NRB_HIST].tag == f)
+			memset(&remote_used[f % NRB_HIST], 0, sizeof(remote_used[0]));
+
+	/* Count consecutive rollbacks onto the same frame; the scan uses this to
+	 * break out of a correction that is not converging (see NRB_RESIM_GIVE_UP). */
+	if (K == resim_last_K)
+		++resim_repeat;
+	else
+	{
+		resim_last_K = K;
+		resim_repeat = 1;
+	}
+
 	if (!rollback_restore(K))
 	{
 		/* The snapshot for a frame inside the prediction window is missing --
@@ -684,12 +773,17 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	rl_abort_record();  /* drop the aborted pass's partial render recording */
 
 	++stat_rollbacks;
-	stat_resim_frames += nrb_cur - K + 1;
-	if (nrb_cur - K + 1 > stat_deepest)
-		stat_deepest = nrb_cur - K + 1;
+	stat_resim_frames += high - K + 1;
+	if (high - K + 1 > stat_deepest)
+		stat_deepest = high - K + 1;
 
 	resim_active = true;
-	resim_target = nrb_cur;
+	/* `high`, not nrb_cur: a second correction arriving mid-re-simulation must
+	 * not shorten the pass to the frame we happen to be replaying.  Dropping the
+	 * tail turned those frames back into normal passes, and a normal pass
+	 * re-samples live input over local_hist entries the peer was already sent --
+	 * a guaranteed desync. */
+	resim_target = high;
 	nrb_cur = K;
 	rollback_resim = true;
 	rollback_resim_silent = (K < resim_target);
@@ -851,10 +945,12 @@ NrbStep nrb_driver(void)
 
 	/* Irreversible transition gate: the level may only actually end once the
 	 * frame that ended it is confirmed -- a predicted "end" can be rolled back
-	 * (the restore rewinds reallyEndLevel itself). */
-	if (reallyEndLevel)
+	 * (the restore rewinds reallyEndLevel itself).  An end the two machines
+	 * already agreed on out of band needs no such confirmation. */
+	if (reallyEndLevel && !end_agreed)
 	{
 		const Uint32 wait_start = SDL_GetTicks();
+		const Uint32 newest_at_start = remote_newest;
 		bool stall_reported = false;
 
 		while (verified_upto < nrb_cur && reallyEndLevel)
@@ -863,9 +959,29 @@ NrbStep nrb_driver(void)
 			const Uint32 K = nrb_scan_mispredict();
 			if (K != 0)
 				return nrb_begin_resim(K);
+
+			/* Safety valve: a peer that is still playing sends a frame every
+			 * tick, and every modal that stops it (pause, in-game menu) is
+			 * entered on the same confirmed frame by both machines -- so a peer
+			 * that has simulated NOTHING for this long while we are trying to
+			 * end the level has left it by some route we did not model.  Exit
+			 * anyway rather than sit here until the wedge timeout: the shop's
+			 * start-of-level handshake is the next rendezvous either way. */
+			if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
+			{
+				char detail[192];
+				snprintf(detail, sizeof(detail),
+				         "peer stopped simulating at frame %lu while we waited to confirm "
+				         "frame %lu (player %u)\n  ending the level unconfirmed",
+				         (unsigned long)remote_newest, (unsigned long)nrb_cur, thisPlayerNum);
+				crashlog_note("ROLLBACK LEVEL-END TIMEOUT", detail);
+				break;
+			}
 		}
 		return NRB_STEP_PRESENT;  /* confirmed: let the exit happen */
 	}
+	if (reallyEndLevel)
+		return NRB_STEP_PRESENT;
 
 	/* Bound prediction depth and outstanding unacked history before advancing.
 	 * SIGNED differences: after a long modal (options menu) the peer may
@@ -908,6 +1024,10 @@ NrbStep nrb_driver(void)
 #else /* !WITH_NETWORK */
 
 Uint32 nrb_frame(void) { return 0; }
+void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs)
+{
+	*predict = *depth = *rate = *desyncs = 0;
+}
 void nrb_level_reset(void) {}
 void nrb_frame_begin(void) {}
 void nrb_record_local(const RbInput *in) { (void)in; }
