@@ -39,8 +39,8 @@ add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-a
 
 # Compile the whole engine. Every src/*.c is portable or self-guards on its platform macro
 # (win_native_midi.c/crashlog.c -> _WIN32, network.c -> WITH_NETWORK, switch_platform.c ->
-# __SWITCH__, vita_platform.c -> __vita__), so the flat glob is safe. midiproc/ is NOT globbed
-# (MIDI is a Windows-only extra, off here, exactly like the Switch build).
+# __SWITCH__, vita_platform.c/vita_net.c -> __vita__), so the flat glob is safe. midiproc/ is
+# NOT globbed (MIDI is a Windows-only extra, off here, exactly like the Switch build).
 file(GLOB OT_SOURCES "${CMAKE_SOURCE_DIR}/../src/*.c")
 
 add_executable(${PROJECT_NAME} ${OT_SOURCES})
@@ -56,9 +56,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # them live, a Vita build would abort where desktop Release silently returns. __vita__ is
 # predefined by the VitaSDK gcc, so it needs no -D. TYRIAN_DIR is a compile-time fallback
 # data path; file.c prepends ux0:/app0: at runtime and takes priority.
+#
+# WITH_NETWORK turns on the netplay lobby and the rollback netcode. VitaSDK ships no
+# SDL2_net (and no BSD socket wrappers in libc), so src/vita_net.c stands in for it on
+# top of SceNet -- see that file's header.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
   NDEBUG
   TARGET_UNIX
+  WITH_NETWORK
   TYRIAN_DIR="app0:data"
 )
 
@@ -77,12 +82,14 @@ endif()
 
 # SDL2 + its Vita stub dependency chain (mirrors sdl2.pc's Libs), plus the threading stub SDL
 # uses and libm. Order matters for the static GNU linker: SDL2 before its Sce* stubs.
+# SceNet/SceNetCtl are for vita_net.c, not SDL.
 target_link_libraries(${PROJECT_NAME}
   SDL2
   SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub SceMotion_stub SceHid_stub
   SceAudio_stub SceAudioIn_stub SceCommonDialog_stub SceSysmodule_stub
   SceAppMgr_stub SceAppUtil_stub ScePower_stub SceProcessmgr_stub SceIofilemgr_stub
   SceKernelThreadMgr_stub
+  SceNet_stub SceNetCtl_stub
   m
 )
 

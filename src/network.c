@@ -19,6 +19,7 @@
 #include "network.h"
 
 #include "config.h"
+#include "console_platform.h"
 #include "crashlog.h"
 #include "episodes.h"
 #include "file.h"
@@ -49,7 +50,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       7            // increment whenever networking changes might create incompatibility
+#define NET_VERSION       8            // increment whenever networking changes might create incompatibility
 #define NET_PORT          1333         // UDP
 
 // 320 (was 256): the rollback input packet carries a 48-byte header plus up to
@@ -70,6 +71,7 @@
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
 #define NET_KEEP_ALIVE    1600         // ticks to wait between keep-alive packets
 #define NET_TIME_OUT      16000        // ticks to wait before considering connection dead
+#define NET_PING_MAX      5000         // round trips longer than this are treated as garbage, not latency
 
 bool isNetworkGame = false;
 
@@ -143,6 +145,13 @@ static bool connected = false, quit = false;
 // the way the original command-line netplay did (both sides were given each other's address).
 // While this is set, the first inbound connect packet binds the channel to its sender.
 static bool host_awaiting_peer = false;
+
+// Round trip to the peer.  Every keep-alive carries the sender's own tick count and the peer
+// echoes it straight back, so the sample never leaves the machine that started it and the two
+// clocks never have to agree.  Smoothed: a single UDP round trip is noisy enough that a raw
+// figure jitters by tens of ticks between readings.
+static float ping_ema = 0.0f;
+static bool ping_valid = false;
 #endif
 
 #ifdef WITH_NETWORK
@@ -270,6 +279,17 @@ bool network_peer_alive(void)
 	return network_is_alive();
 }
 
+// -1 rather than 0 while unknown: no reply has come back yet, or the peer is old enough not to
+// echo the stamp at all.  Callers show that as "--", which is honest; a zero would read as a
+// perfect link.
+int network_ping_ms(void)
+{
+	if (!connected || !ping_valid)
+		return -1;
+
+	return (int)(ping_ema + 0.5f);
+}
+
 // poll for new packets received, check that connection is alive, resend queued packets if necessary
 int network_check(void)
 {
@@ -285,12 +305,16 @@ int network_check(void)
 				network_tyrian_halt(2, false);
 		}
 
-		// keep-alive
+		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while
+		// a player sits in the outpost, so the round trip stays measurable off the menus.  The
+		// four extra bytes cost an old peer nothing -- it reads the header and ignores the rest,
+		// and simply never sends the reply that would produce a reading.
 		static Uint32 keep_alive_tick = 0;
 		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
 		{
 			network_prepare(PACKET_KEEP_ALIVE);
-			network_send_no_ack(4);
+			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
+			network_send_no_ack(8);
 
 			keep_alive_tick = SDL_GetTicks();
 		}
@@ -438,6 +462,37 @@ int network_check(void)
 						// fall through
 
 					case PACKET_KEEP_ALIVE:
+						// Bounce the ping probe back the moment it lands, so what the sender
+						// measures is the link and not our keep-alive timer's phase.  The type
+						// has to be re-checked because the acknowledged packets above fall
+						// through to here, and their data[4] is payload rather than a stamp.
+						if (SDLNet_Read16(&packet_temp->data[0]) == PACKET_KEEP_ALIVE &&
+						    packet_temp->len >= 8)
+						{
+							SDLNet_Write16(PACKET_PING_REPLY, &packet_out_temp->data[0]);
+							SDLNet_Write16(last_out_sync,     &packet_out_temp->data[2]);
+							memcpy(&packet_out_temp->data[4], &packet_temp->data[4], 4);
+							network_send_no_ack(8);
+						}
+
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_PING_REPLY:
+						if (packet_temp->len >= 8)
+						{
+							// Our own stamp coming home.  An absurd figure means a corrupt or
+							// stale packet rather than a slow link, and averaging it in would
+							// leave the readout wrong for many seconds afterwards.
+							const Uint32 rtt = SDL_GetTicks() - SDLNet_Read32(&packet_temp->data[4]);
+							if (rtt <= NET_PING_MAX)
+							{
+								ping_ema = ping_valid ? ping_ema * 0.7f + rtt * 0.3f
+								                      : (float)rtt;
+								ping_valid = true;
+							}
+						}
+
 						last_in_tick = SDL_GetTicks();
 						break;
 
@@ -1487,6 +1542,9 @@ void network_shutdown(void)
 	last_state_in_sync = last_state_out_sync = 0;
 	last_state_in_tick = 0;
 
+	ping_ema = 0.0f;
+	ping_valid = false;
+
 	net_initialized = false;
 	connected = false;
 	quit = false;
@@ -1504,6 +1562,30 @@ void network_shutdown(void)
  * subnet broadcast address as well as the global one: some stacks and firewalls permit one
  * and not the other, and a duplicate probe costs nothing.
  */
+int network_local_addresses(IPaddress *out, int max)
+{
+	if (out == NULL || max < 1)
+		return 0;
+
+	const int count = SDLNet_GetLocalAddresses(out, max);
+	if (count > 0)
+		return count;
+
+#if defined(__SWITCH__) || defined(__vita__)
+	// SDL_net enumerates interfaces with a SIOCGIFCONF ioctl that libnx does not service, so
+	// on the consoles it finds nothing and the platform has to be asked for its own address.
+	uint32_t host = 0;
+	if (console_get_local_ip(&host))
+	{
+		out[0].host = host;
+		out[0].port = 0;
+		return 1;
+	}
+#endif
+
+	return 0;
+}
+
 static void discover_send_probe(UDPsocket sock, UDPpacket *probe, Uint32 host_be, Uint16 port)
 {
 	// IPaddress keeps both fields in network byte order.
@@ -1552,7 +1634,7 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms)
 	const int port_count = (ports[1] == ports[0]) ? 1 : 2;
 
 	IPaddress local[8];
-	const int local_count = SDLNet_GetLocalAddresses(local, (int)COUNTOF(local));
+	const int local_count = network_local_addresses(local, (int)COUNTOF(local));
 
 	for (int p = 0; p < port_count; ++p)
 	{

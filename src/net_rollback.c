@@ -87,7 +87,8 @@ bool nrb_active(void)
 
 #ifdef WITH_NETWORK
 
-#include "SDL_net.h"
+/* The UDP types come in via network.h above, which picks the real SDL_net or the Vita's
+ * stand-in for it. */
 
 #define NRB_HIST        64            /* input/canary history depth           */
 #define NRB_REDUNDANCY  16            /* newest frames repeated per packet    */

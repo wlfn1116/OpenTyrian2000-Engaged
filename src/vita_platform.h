@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __vita__
 
@@ -26,6 +27,12 @@ void vita_platform_init(void);
 // true if the user confirmed, false if they cancelled. Blocks (modal) while up.
 bool vita_swkbd(char *out, size_t out_size, size_t max_len,
                 const char *initial, const char *guide, bool numeric);
+
+// This console's own IPv4 address, in network byte order (the layout SDL_net's IPaddress.host
+// uses). SceNet exposes no interface enumeration, so the netplay lobby has no other way to
+// show a host their address. Returns false if the network is down or the address is unknown.
+// vita_net.c must have brought the net stack up first (SDLNet_Init).
+bool vita_get_local_ip(uint32_t *out);
 
 // Native output resolution of the Vita LCD: a fixed 960x544. Either pointer may be NULL.
 // (Mirrors switch_get_output_size, which varies with the dock state; the Vita panel is

@@ -18,6 +18,7 @@
 #include "net_lobby.h"
 
 #include "config.h"
+#include "console_platform.h"
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
@@ -86,11 +87,53 @@ static bool lobbyWaitForInput(void)
 	}
 }
 
-// Blocking single-line prompt.  `filter` returns true for characters the field accepts.
-// Returns false if the player cancelled with Escape.
+// Blocking single-line prompt.  `filter` returns true for characters the field accepts, and
+// `numeric` asks for a keypad rather than a full keyboard where the platform has one.
+// Returns false if the player cancelled.
 static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, size_t buf_size,
-                           bool (*filter)(char))
+                           bool (*filter)(char), bool numeric)
 {
+#if defined(__SWITCH__) || defined(__vita__)
+	// No physical keyboard on the consoles, and nothing there produces SDL_TEXTINPUT, so the
+	// field below would never see a character.  The system keyboard replaces it wholesale.
+	(void)title;
+
+	char kb[64];
+	SDL_strlcpy(kb, buf, sizeof(kb));
+
+	const bool confirmed = console_swkbd(kb, sizeof(kb), buf_size - 1, kb, prompt, numeric);
+
+	// Drop the button that opened this field along with anything the keyboard left behind,
+	// so the menu we return to does not act on it a second time.  Same wind-down the desktop
+	// field does on its way in.
+	wait_noinput(true, true, true);
+	service_SDL_events(true);
+	newkey = newmouse = false;
+
+	if (!confirmed)
+	{
+		JE_playSampleNum(S_SPRING);
+		return false;
+	}
+
+	// Still filter: the Vita's IME has no numeric mode, and neither keyboard restricts the
+	// character set, so a port field can come back with letters in it.
+	size_t out = 0;
+	for (const char *c = kb; *c != '\0' && out + 1 < buf_size; ++c)
+	{
+		if (filter(*c))
+			buf[out++] = *c;
+	}
+	buf[out] = '\0';
+
+	if (out == 0)
+		return false;  // an empty address or port is never useful
+
+	JE_playSampleNum(S_SELECT);
+	return true;
+#else
+	(void)numeric;  // no separate keypad to ask for; the field just filters what is typed
+
 	size_t len = strlen(buf);
 	int flash = 0;
 
@@ -181,6 +224,7 @@ static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, siz
 			newkey = false;
 		}
 	}
+#endif
 }
 
 static bool filterDigits(char c)
@@ -200,11 +244,11 @@ static bool filterName(char c)
 }
 
 // List the machine's own addresses so a LAN host can read one out to the other player.
-// Drawn under the "waiting" message; silently skipped if SDL_net cannot enumerate them.
+// Drawn under the "waiting" message; silently skipped if none can be determined.
 static void lobbyDrawLocalAddresses(int y)
 {
 	IPaddress addr[8];
-	const int count = SDLNet_GetLocalAddresses(addr, (int)COUNTOF(addr));
+	const int count = network_local_addresses(addr, (int)COUNTOF(addr));
 
 	if (count <= 0)
 		return;
@@ -591,7 +635,7 @@ bool networkLobby(void)
 		{
 			JE_playSampleNum(S_SELECT);
 
-			if (!lobbyTextEntry("Host Game", "Listen on port:", port_buf, sizeof(port_buf), filterDigits))
+			if (!lobbyTextEntry("Host Game", "Listen on port:", port_buf, sizeof(port_buf), filterDigits, true))
 				break;
 
 			const int port = atoi(port_buf);
@@ -643,7 +687,7 @@ bool networkLobby(void)
 			JE_playSampleNum(S_SELECT);
 
 			if (!lobbyTextEntry("Join by Address", "Host address (or address:port):", addr_buf,
-			                    sizeof(addr_buf), filterAddress))
+			                    sizeof(addr_buf), filterAddress, false))
 				break;
 
 			// Split an optional ":port" suffix; without one, the default port is assumed.
@@ -685,7 +729,7 @@ bool networkLobby(void)
 
 		case ITEM_NAME:
 			JE_playSampleNum(S_SELECT);
-			if (lobbyTextEntry("Multiplayer", "Your name:", name_buf, sizeof(name_buf), filterName))
+			if (lobbyTextEntry("Multiplayer", "Your name:", name_buf, sizeof(name_buf), filterName, false))
 				network_set_player_name(name_buf);
 			break;
 

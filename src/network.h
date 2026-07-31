@@ -23,11 +23,18 @@
 
 #include "SDL.h"
 #ifdef WITH_NETWORK
+// VitaSDK has no SDL2_net package, so that build substitutes its own SceNet-backed
+// implementation of the subset used here. Every other platform links the real library.
+#ifdef __vita__
+#include "vita_net.h"
+#else
 #include "SDL_net.h"
 #endif
+#endif
 
-#define PACKET_ACKNOWLEDGE   0x00    // 
-#define PACKET_KEEP_ALIVE    0x01    // 
+#define PACKET_ACKNOWLEDGE   0x00    //
+#define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
+#define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
 
 #define PACKET_CONNECT       0x10    // version, delay, episodes, player_number, name
 #define PACKET_DETAILS       0x11    // episode, difficulty
@@ -85,6 +92,12 @@ typedef struct
 NetworkHostInfo;
 
 #ifdef WITH_NETWORK
+// This machine's own addresses, network byte order, for showing a host what to read out and
+// for aiming directed broadcasts. Wraps SDLNet_GetLocalAddresses and falls back to the
+// console's own "what is my IP" service where SDL_net cannot enumerate interfaces. Zero is a
+// normal answer (network down, or an interface list nobody can produce).
+int network_local_addresses(IPaddress *out, int max);
+
 // Broadcast a probe on every local interface and collect replies for `timeout_ms`.  Uses its
 // own short-lived socket, so it must NOT be called while a game socket is open.  Returns how
 // many distinct hosts were found (at most `max`).  Zero is a normal answer: broadcast may be
@@ -124,6 +137,10 @@ bool network_send_unacked(int len);
 // Any packet (including keep-alives) received recently?  Distinguishes a slow
 // peer (in menus, loading) from a dead connection.
 bool network_peer_alive(void);
+
+// Smoothed round-trip time to the peer in ticks, or -1 while unknown.  Sampled off the
+// keep-alive, so it keeps updating on menu screens where no gameplay traffic flows.
+int network_ping_ms(void);
 
 int network_check(void);
 bool network_update(void);
@@ -206,6 +223,7 @@ extern bool rollback_resim;
 			network_check();
 #else
 #define NETWORK_KEEP_ALIVE()
+#define network_ping_ms() (-1)
 #endif
 
 #endif /* NETWORK_H */

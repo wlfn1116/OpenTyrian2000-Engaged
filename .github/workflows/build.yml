@@ -13,9 +13,10 @@
 # Windows links against the SDKs vendored in stuff/ (the sdl_paths.props defaults
 # point elsewhere, so the paths are passed as global MSBuild properties). The
 # console jobs run in the official toolchain images: devkitpro/devkita64 already
-# includes switch-portlibs (SDL2 + the pkg-config wrapper switch/Makefile needs),
-# and vitasdk/vitasdk includes SDL2 via vdpm plus cmake/make. vita/build.ps1 is
-# Windows-only, so the Vita job restates its staging/packing steps in shell.
+# includes switch-portlibs (SDL2, SDL2_net, and the pkg-config wrapper
+# switch/Makefile needs), and vitasdk/vitasdk includes SDL2 via vdpm plus
+# cmake/make -- the Vita needs no SDL2_net, since src/vita_net.c stands in for it.
+# vita/build.ps1 is Windows-only, so the Vita job restates its staging steps in shell.
 #
 # The freeware Tyrian 2000 data (same URL README.md points players at) is fetched
 # once by the `data` job and shared with all three builds; desktop-only files are

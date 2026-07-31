@@ -77,7 +77,10 @@ CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsig
 # TYRIAN_DIR is a compile-time fallback data path the engine expects to be defined
 # (desktop builds pass it too). On Switch the sdmc:/ and romfs: paths prepended in
 # file.c take priority, so this is only a last-resort placeholder.
-CFLAGS += $(INCLUDE) -D__SWITCH__ -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 --cflags)
+# WITH_NETWORK turns on the netplay lobby and the rollback netcode. It needs SDL2_net
+# (dkp-pacman -S switch-sdl2_net) and socketInitializeDefault(), which switch_platform.c
+# calls -- libnx leaves the BSD socket layer unmounted until then.
+CFLAGS += $(INCLUDE) -D__SWITCH__ -DWITH_NETWORK -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 SDL2_net --cflags)
 
 # Short commit id for the title screen. CI passes OPENTYRIAN_COMMIT in the
 # environment (git can be absent inside the container); local builds ask git.
@@ -93,7 +96,8 @@ ASFLAGS := -g $(ARCH)
 LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # SDL2 and its full (static) dependency chain, then libnx/libm as a safe backstop.
-LIBS := $(shell $(PKGCONF) sdl2 --libs --static) -lnx -lm
+# SDL2_net comes first so the static linker resolves its SDL2 references.
+LIBS := $(shell $(PKGCONF) sdl2 SDL2_net --libs --static) -lnx -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level

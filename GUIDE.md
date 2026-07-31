@@ -377,6 +377,14 @@ Online, the game stays connected while the menu is open, and every change you ma
 is sent to the other player, so both machines keep playing the same game. Endless
 Effects are not available online.
 
+## Online play
+
+The outpost help bar carries a **Ping** figure at its right end, showing the round
+trip to the other player in milliseconds. It updates about every one and a half
+seconds and reads `--` until the first reply arrives. Under roughly 85ms the game
+runs at full speed on the default network delay of 3; above that it starts to slow
+down, and raising the delay trades input lag for smoothness.
+
 ## Weapons
 
 The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power
@@ -437,6 +445,9 @@ contains a jukebox.
 ## Console builds
 
 The Switch and Vita builds are unofficial homebrew ports. MIDI is not included.
+
+Netplay works on both. Use Find LAN Games rather than typing an address; where a
+field does need typing, the console's own keyboard opens.
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)

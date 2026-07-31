@@ -166,6 +166,7 @@ static void JE_drawNavMonitor(void);
 static void JE_navScreenAdvance(void);
 static void JE_navDrawFrame(JE_real dispNavX, JE_real dispNavY);
 static void JE_navScreenSmoothPresent(void);
+static void refresh_help_bar_ping(void);
 static PlayerItems old_items[2];  // TODO: should not be global if possible
 
 static struct cube_struct cube[4];
@@ -1963,6 +1964,10 @@ void JE_itemScreen(void)
 						setDelay(2);
 
 						JE_drawScore();
+
+						// The help bar is only composed when the selection changes, so the
+						// online round-trip figure on it gets repainted here instead.
+						refresh_help_bar_ping();
 
 						if (newPal > 0)
 						{
@@ -3862,15 +3867,95 @@ void JE_doShipSpecs(void)
 // figure right).
 #define ENDLESS_COURSE_PAYOUT_RIGHT 305
 
-/* Draw `right` flush against that edge on the help bar, backing off to just after `text` when an
- * unusually long description would otherwise reach it. */
-static void draw_help_bar_right(const char *text, const char *right, unsigned int bank, int brightness)
+/* Leftmost x at which `right` can sit flush against that edge, backing off to just after `text`
+ * when an unusually long description would otherwise reach it. */
+static int help_bar_right_x(const char *text, const char *right)
 {
 	const int afterText = 10 + JE_textWidth(text, TINY_FONT) + 5;
-	int x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(right, TINY_FONT);
-	if (x < afterText)
-		x = afterText;
-	JE_textShade(VGAScreen, x, 187, right, bank, brightness, DARKEN);
+	const int x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(right, TINY_FONT);
+	return (x < afterText) ? afterText : x;
+}
+
+/* Draw `right` flush against that edge on the help bar. */
+static void draw_help_bar_right(const char *text, const char *right, unsigned int bank, int brightness)
+{
+	JE_textShade(VGAScreen, help_bar_right_x(text, right), 187, right, bank, brightness, DARKEN);
+}
+
+/* Online play: the peer's round trip, flush right on the help bar opposite the description.
+ *
+ * The bar is composed once per pass of the shop's outer loop -- that is, only when the player
+ * moves the cursor -- so the figure needs its own per-frame repaint or it would sit frozen at
+ * whatever it read when the selection last changed. The pixels underneath are kept from the
+ * moment the bar is composed, because DARKEN's drop shadow is not idempotent and redrawing over
+ * the previous frame would blacken it a step at a time.
+ *
+ * The saved band is sized for the widest figure rather than the current one, so a number that
+ * shrinks ("Ping: 120 ms" -> "Ping: 98 ms") leaves no tail behind.
+ */
+#define PING_BAND_Y      186
+#define PING_BAND_H       12
+#define PING_BAND_RIGHT  (ENDLESS_COURSE_PAYOUT_RIGHT + 2)  // DARKEN's shadow sits a pixel right
+#define PING_BAND_MAX_W   96
+#define PING_WIDEST      "Ping: 9999 ms"
+#define PING_BANK         14  // secondary chrome, matching the endless seed readout -- not a price
+#define PING_BRIGHT        3
+
+static char ping_str[16];
+static int ping_band_x = 0, ping_band_w = 0;
+static bool ping_shown = false;
+static Uint8 ping_band_bak[PING_BAND_H * PING_BAND_MAX_W];
+
+static void draw_help_bar_ping(void)
+{
+	const int ms = network_ping_ms();
+	if (ms < 0)
+		SDL_strlcpy(ping_str, "Ping: --", sizeof(ping_str));
+	else
+		snprintf(ping_str, sizeof(ping_str), "Ping: %d ms", ms);
+
+	int x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(ping_str, TINY_FONT);
+	if (x < ping_band_x)
+		x = ping_band_x;
+	JE_textShade(VGAScreen, x, 187, ping_str, PING_BANK, PING_BRIGHT, DARKEN);
+}
+
+/* Call with the help bar already composed and the ping not yet drawn over it. */
+static void save_help_bar_ping_band(const char *text)
+{
+	ping_shown = false;
+
+	ping_band_x = help_bar_right_x(text, PING_WIDEST);
+	ping_band_w = PING_BAND_RIGHT - ping_band_x;
+	if (ping_band_w > PING_BAND_MAX_W)
+		ping_band_w = PING_BAND_MAX_W;
+	if (ping_band_w <= 0)
+		return;
+
+	for (int i = 0; i < PING_BAND_H; i++)
+	{
+		memcpy(&ping_band_bak[i * PING_BAND_MAX_W],
+		       (Uint8 *)VGAScreen->pixels + (size_t)(PING_BAND_Y + i) * VGAScreen->pitch + ping_band_x,
+		       ping_band_w);
+	}
+
+	ping_shown = true;
+}
+
+/* Put the saved pixels back and redraw with a fresh reading. No-op off the network. */
+static void refresh_help_bar_ping(void)
+{
+	if (!ping_shown)
+		return;
+
+	for (int i = 0; i < PING_BAND_H; i++)
+	{
+		memcpy((Uint8 *)VGAScreen->pixels + (size_t)(PING_BAND_Y + i) * VGAScreen->pitch + ping_band_x,
+		       &ping_band_bak[i * PING_BAND_MAX_W],
+		       ping_band_w);
+	}
+
+	draw_help_bar_ping();
 }
 
 void JE_drawMainMenuHelpText(void)
@@ -4160,6 +4245,19 @@ void JE_drawMainMenuHelpText(void)
 		if (seed_x < afterText)  // never overlap the help text on the left
 			seed_x = afterText;
 		JE_textShade(VGAScreen, seed_x, 187, seedStr, 14, 3, DARKEN);
+	}
+
+	// Online play's round trip takes the same right edge. It never competes with the figures
+	// above for it: those are all endless, which is single-player.
+	ping_shown = false;
+	if (isNetworkGame)
+	{
+		// No band means a description long enough to reach the right edge on its own, which
+		// leaves nowhere to put the figure -- and nothing to restore it from, so it must not
+		// be drawn at all rather than drawn somewhere it can never be repainted.
+		save_help_bar_ping_band(tempStr);
+		if (ping_shown)
+			draw_help_bar_ping();
 	}
 }
 

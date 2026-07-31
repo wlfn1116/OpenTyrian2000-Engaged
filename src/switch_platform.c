@@ -15,8 +15,19 @@
 // romfsInit() mounts the read-only asset bundle baked into the .nro at romfs:/.
 // The SD card (sdmc:/) is mounted automatically by libnx before main() runs.
 
+// Set once socketInitializeDefault() has succeeded, so the exit path only tears down what
+// was actually brought up. Stays false in a build without WITH_NETWORK.
+static bool net_up = false;
+
 static void switch_platform_exit(void)
 {
+	if (net_up)
+	{
+		nifmExit();
+		socketExit();
+		net_up = false;
+	}
+
 	romfsExit();
 }
 
@@ -32,7 +43,32 @@ void switch_platform_init(void)
 	mkdir("sdmc:/switch", 0777);
 	mkdir(SWITCH_USER_DIR, 0777);
 
+#ifdef WITH_NETWORK
+	// libnx leaves the BSD socket layer unmounted until this call, so without it every
+	// socket() in SDL_net fails and netplay is dead. Failure is not fatal: the rest of the
+	// game runs fine, and the lobby reports the socket error when the player tries to host
+	// or join. nifm is only for reading our own address (see switch_get_local_ip).
+	if (R_SUCCEEDED(socketInitializeDefault()))
+	{
+		net_up = true;
+		nifmInitialize(NifmServiceType_User);
+	}
+#endif
+
 	atexit(switch_platform_exit);
+}
+
+bool switch_get_local_ip(uint32_t *out)
+{
+	if (out == NULL || !net_up)
+		return false;
+
+	u32 addr = 0;
+	if (R_FAILED(nifmGetCurrentIpAddress(&addr)) || addr == 0)
+		return false;
+
+	*out = addr;  // struct in_addr layout: already network byte order
+	return true;
 }
 
 bool switch_swkbd(char *out, size_t out_size, size_t max_len,

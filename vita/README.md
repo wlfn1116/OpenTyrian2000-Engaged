@@ -64,5 +64,17 @@ Copy `OpenTyrian2000.vpk` to the Vita and install it with VitaShell.
 
 Bindings and touch sensitivity are configurable. Text fields use the system IME.
 
-Networking and MIDI are disabled. If performance is poor, reduce Sub-pixel in
-the Graphics menu; the port normally forces the inexpensive presentation path.
+MIDI is disabled. If performance is poor, reduce Sub-pixel in the Graphics menu;
+the port normally forces the inexpensive presentation path.
+
+## Networking
+
+Two-player netplay is available from the Network entry on the main menu. Both
+machines must be on the same network; the port is UDP 1333 by default.
+
+Find LAN Games discovers a host on the same subnet, so neither player normally
+has to type an address. The host screen shows this console's IP for the cases
+where broadcast is blocked and the other player has to join by address.
+
+VitaSDK ships no SDL2_net, so `src/vita_net.c` implements the UDP subset the
+netcode uses directly on SceNet. It needs no extra `vdpm` package.

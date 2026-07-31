@@ -9,6 +9,7 @@
   #define console_platform_init    switch_platform_init
   #define console_swkbd            switch_swkbd
   #define console_get_output_size  switch_get_output_size
+  #define console_get_local_ip     switch_get_local_ip
 
 #elif defined(__vita__)
 
@@ -17,6 +18,7 @@
   #define console_platform_init    vita_platform_init
   #define console_swkbd            vita_swkbd
   #define console_get_output_size  vita_get_output_size
+  #define console_get_local_ip     vita_get_local_ip
 
 #endif
 

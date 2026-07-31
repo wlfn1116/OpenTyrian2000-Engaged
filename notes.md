@@ -611,8 +611,31 @@ Vita:
 - abort and terminate the dialog on every exit path so it releases the controls.
 
 Both ports treat menu touch as absolute tap input and gameplay touch as relative
-drag. The right stick is folded into ship movement. Networking and MIDI are
-disabled.
+drag. The right stick is folded into ship movement. MIDI is disabled on both.
+
+### Console netplay
+
+`WITH_NETWORK` is on for both ports. The engine needed no changes for it: every
+call site was already guarded, and the SDL_net surface is UDP plus the byte-order
+helpers. What the platforms did need:
+
+- **Switch.** `switch-sdl2_net` supplies the library, but libnx leaves the BSD
+  socket layer unmounted until `socketInitializeDefault()`, which
+  `switch_platform_init` now calls. Without it every `socket()` fails and nothing
+  says why.
+- **Vita.** VitaSDK has no SDL2_net package *and* no BSD socket wrappers in libc,
+  so `vita_net.c` reimplements the subset over SceNet and `network.h` includes it
+  instead of `<SDL_net.h>`. SceNet wants a memory pool that outlives the sockets,
+  so the stack comes up once and stays up; `SDLNet_Quit` only drops a refcount.
+- **Local address.** `SDLNet_GetLocalAddresses` needs a `SIOCGIFCONF` ioctl neither
+  console services, so it returns nothing and the lobby had no address to show a
+  host. `network_local_addresses()` wraps it and falls back to `console_get_local_ip`
+  (nifm on Switch, SceNetCtl on Vita). Discovery degrades on its own: the global
+  broadcast still goes out with an empty interface list.
+- **Text entry.** Nothing on either console produces `SDL_TEXTINPUT`, so the lobby's
+  port/address/name fields would never see a character. They route to
+  `console_swkbd` instead, and still run the result through the field's filter --
+  the Vita IME has no numeric mode, so a port field can come back with letters.
 
 ## Invisible level structures
 
