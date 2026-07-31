@@ -49,7 +49,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       5            // increment whenever networking changes might create incompatibility
+#define NET_VERSION       6            // increment whenever networking changes might create incompatibility
 #define NET_PORT          1333         // UDP
 
 // 320 (was 256): the rollback input packet carries a 48-byte header plus up to
@@ -408,6 +408,7 @@ int network_check(void)
 					case PACKET_GAME_QUIT:
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
+					case PACKET_DEBUG_SYNC:
 						{
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
 							if (i < NET_PACKET_QUEUE)
@@ -1191,6 +1192,189 @@ void network_settings_restore(void)
 	settings_stashed = false;
 }
 
+/* --- Debug Mode across the wire ----------------------------------------------------------
+ *
+ * The debug menu writes simulation state straight into the globals, so an edit made on one
+ * machine (a loadout swap, a cheat, a difficulty change) would leave the two sims playing
+ * different games from the next tick on.  The editing machine publishes the whole block and
+ * the peer adopts it verbatim -- no field-by-field diffing, so a block can never be applied
+ * half-way.
+ *
+ * Where it is safe to apply is a property of where the debug menu can be OPENED from: the
+ * in-game options menu (a rendezvous -- the peer is parked in JE_doInGameSetup's wait loop)
+ * and the shop (nobody is simulating).  The packet is reliable and ordered, so it always
+ * lands before the PACKET_WAITING that releases the peer.
+ *
+ * Armor and shield ride along rather than being re-derived: the sender already ran the hull
+ * swap's re-armor, and reproducing "was this a hull swap?" on the far side is guesswork the
+ * two machines have no reason to agree on.
+ */
+#define NDS_GEN        4    /* Uint32: generation of the block            */
+#define NDS_SENDER     8    /* Uint8:  publishing player number, 1 or 2   */
+#define NDS_DIFFICULTY 9    /* Uint8                                      */
+#define NDS_FLAGS     10    /* Uint16: the boolean cheats                 */
+#define NDS_NOCLIP    12    /* Uint8                                      */
+#define NDS_CHARGEAF  13    /* Uint8:  chargeSidekickAutofire             */
+#define NDS_TWIDDLE   14    /* Uint8:  debugTwiddleSpecial                */
+#define NDS_ITEMS     16    /* 2 x PlayerItems                            */
+#define NDS_CASH      42    /* 2 x Uint32                                 */
+#define NDS_ARMOR     50    /* Uint16 armor, shield, per player           */
+#define NDS_EXPERT    58    /* NDS_EXPERT_SLOTS x Uint16                  */
+#define NDS_EXPERT_SLOTS 8
+#define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
+
+// PlayerItems is all Uint8, so it goes on the wire as-is -- but only for as long as that
+// stays true, hence the check.  Growing it is fine; it just has to move NDS_CASH and the
+// offsets below it, and bump NET_VERSION.
+COMPILE_TIME_ASSERT(nds_items_are_flat_bytes, sizeof(PlayerItems) == 13);
+COMPILE_TIME_ASSERT(nds_items_fit_the_slot, 2 * sizeof(PlayerItems) <= NDS_CASH - NDS_ITEMS);
+COMPILE_TIME_ASSERT(nds_block_fits_a_packet, NDS_SIZE <= NET_PACKET_SIZE);
+
+// Generation of the block this machine currently holds, whether it published it or adopted
+// it.  Both players editing during the same rendezvous is the only case that needs a rule:
+// equal generations are broken in the host's favour, so the two can never end up having
+// swapped each other's edits.
+static Uint32 debug_sync_gen = 0;
+static Uint8 debug_sync_last[NDS_SIZE];   // what we last published or adopted, for the change test
+
+/* Everything from NDS_DIFFICULTY on; the packet header, generation and sender are stamped by
+ * the send path, and left zero here so two packings of the same state compare equal. */
+static void network_debug_state_pack(Uint8 *buf)
+{
+	memset(buf, 0, NDS_SIZE);
+
+	Uint16 flags = 0;
+	flags |= cheatInfiniteShields     ? 1 << 0 : 0;
+	flags |= cheatInfiniteArmor       ? 1 << 1 : 0;
+	flags |= cheatInfiniteGenerator   ? 1 << 2 : 0;
+	flags |= cheatNoEnemyFire         ? 1 << 3 : 0;
+	flags |= cheatInstantCharge       ? 1 << 4 : 0;
+	flags |= cheatInfiniteSidekickAmmo? 1 << 5 : 0;
+	flags |= autoFireSpecial          ? 1 << 6 : 0;
+	flags |= debugAutofireTwiddle     ? 1 << 7 : 0;
+	flags |= debugToggleFire          ? 1 << 8 : 0;
+	flags |= expertMode               ? 1 << 9 : 0;
+	flags |= difficultyAdjust         ? 1 << 10 : 0;
+	flags |= debugTwiddleTrigger      ? 1 << 11 : 0;
+
+	buf[NDS_DIFFICULTY] = (Uint8)difficultyLevel;
+	SDLNet_Write16(flags, &buf[NDS_FLAGS]);
+	buf[NDS_NOCLIP]   = noclipMode;
+	buf[NDS_CHARGEAF] = chargeSidekickAutofire;
+	buf[NDS_TWIDDLE]  = debugTwiddleSpecial;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		memcpy(&buf[NDS_ITEMS + i * sizeof(PlayerItems)], &player[i].items, sizeof(PlayerItems));
+		SDLNet_Write32((Uint32)player[i].cash, &buf[NDS_CASH + i * 4]);
+		SDLNet_Write16((Uint16)player[i].armor,  &buf[NDS_ARMOR + i * 4]);
+		SDLNet_Write16((Uint16)player[i].shield, &buf[NDS_ARMOR + i * 4 + 2]);
+	}
+
+	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
+		SDLNet_Write16((Uint16)*expertSettings[i].value, &buf[NDS_EXPERT + i * 2]);
+}
+
+static void network_debug_state_adopt(const Uint8 *buf, bool in_level)
+{
+	const Uint16 flags = SDLNet_Read16(&buf[NDS_FLAGS]);
+
+	cheatInfiniteShields      = (flags & (1 << 0)) != 0;
+	cheatInfiniteArmor        = (flags & (1 << 1)) != 0;
+	cheatInfiniteGenerator    = (flags & (1 << 2)) != 0;
+	cheatNoEnemyFire          = (flags & (1 << 3)) != 0;
+	cheatInstantCharge        = (flags & (1 << 4)) != 0;
+	cheatInfiniteSidekickAmmo = (flags & (1 << 5)) != 0;
+	autoFireSpecial           = (flags & (1 << 6)) != 0;
+	debugAutofireTwiddle      = (flags & (1 << 7)) != 0;
+	debugToggleFire           = (flags & (1 << 8)) != 0;
+	expertMode                = (flags & (1 << 9)) != 0;
+	difficultyAdjust          = (flags & (1 << 10)) != 0;
+	// One-shot: both machines resume from the same confirmed frame, so both fire it on the
+	// same tick.  Never cleared here -- a trigger already pending locally must still happen.
+	if (flags & (1 << 11))
+		debugTwiddleTrigger = true;
+
+	difficultyLevel = (JE_shortint)buf[NDS_DIFFICULTY];
+	if (difficultyLevel < DIFFICULTY_WIMP || difficultyLevel > DIFFICULTY_10)
+		difficultyLevel = DIFFICULTY_NORMAL;
+
+	noclipMode             = buf[NDS_NOCLIP] % NOCLIP_NUM;
+	chargeSidekickAutofire = buf[NDS_CHARGEAF] % CHARGE_AUTOFIRE_NUM;
+	debugTwiddleSpecial    = (buf[NDS_TWIDDLE] <= SPECIAL_NUM) ? buf[NDS_TWIDDLE] : 0;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		memcpy(&player[i].items, &buf[NDS_ITEMS + i * sizeof(PlayerItems)], sizeof(PlayerItems));
+		player[i].cash   = SDLNet_Read32(&buf[NDS_CASH + i * 4]);
+		player[i].armor  = SDLNet_Read16(&buf[NDS_ARMOR + i * 4]);
+		player[i].shield = SDLNet_Read16(&buf[NDS_ARMOR + i * 4 + 2]);
+	}
+
+	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NDS_EXPERT + i * 2]);
+	clamp_expert_settings();
+
+	// Ships, hit boxes, shield ceilings and the sidekick pods are all cached off items[];
+	// the same rebuild the editing machine ran, minus the hull re-armor it already applied.
+	debugLoadoutRefresh(in_level);
+
+	// Re-pack rather than keeping the received bytes: the clamps above may have landed
+	// somewhere else, and the baseline has to be the state we actually hold.
+	network_debug_state_pack(debug_sync_last);
+}
+
+void network_debug_sync_mark(void)
+{
+	network_debug_state_pack(debug_sync_last);
+}
+
+bool network_debug_sync_changed(void)
+{
+	Uint8 now[NDS_SIZE];
+	network_debug_state_pack(now);
+	return memcmp(now, debug_sync_last, NDS_SIZE) != 0;
+}
+
+void network_debug_sync_send(void)
+{
+	if (!isNetworkGame || !network_debug_sync_changed())
+		return;
+
+	network_debug_state_pack(debug_sync_last);
+	++debug_sync_gen;
+
+	network_prepare(PACKET_DEBUG_SYNC);
+	memcpy(&packet_out_temp->data[NDS_GEN], &debug_sync_last[NDS_GEN], NDS_SIZE - NDS_GEN);
+	SDLNet_Write32(debug_sync_gen, &packet_out_temp->data[NDS_GEN]);
+	packet_out_temp->data[NDS_SENDER] = (Uint8)thisPlayerNum;
+
+	network_send(NDS_SIZE);
+}
+
+bool network_debug_sync_pump(bool in_level)
+{
+	if (!packet_in[0] || packet_in[0]->len < NDS_SIZE ||
+	    SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_DEBUG_SYNC)
+	{
+		return false;
+	}
+
+	const Uint32 gen = SDLNet_Read32(&packet_in[0]->data[NDS_GEN]);
+	const bool from_host = packet_in[0]->data[NDS_SENDER] == 1;
+
+	// Older than what we hold means our own edit superseded it; a tie means both players
+	// edited during the same rendezvous, and the host's block is the one both sides take.
+	if (gen > debug_sync_gen || (gen == debug_sync_gen && from_host && thisPlayerNum != 1))
+	{
+		network_debug_state_adopt(packet_in[0]->data, in_level);
+		debug_sync_gen = gen;
+	}
+
+	network_update();
+	return true;
+}
+
 /* --- Desync detection -------------------------------------------------------------------
  *
  * Nothing in the original netcode ever checked that the two simulations still agreed: a
@@ -1275,6 +1459,8 @@ void network_shutdown(void)
 	SDLNet_Quit();
 
 	// Reset every sync counter, or a second session would start mid-sequence.
+	debug_sync_gen = 0;
+	memset(debug_sync_last, 0, sizeof(debug_sync_last));
 	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;
 	last_in_tick = last_out_tick = 0;
 	last_state_in_sync = last_state_out_sync = 0;

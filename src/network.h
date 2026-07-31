@@ -36,9 +36,10 @@
 #define PACKET_WAITING       0x21    // 
 #define PACKET_BUSY          0x22    // 
 
-#define PACKET_GAME_QUIT     0x30    // 
-#define PACKET_GAME_PAUSE    0x31    // 
-#define PACKET_GAME_MENU     0x32    // 
+#define PACKET_GAME_QUIT     0x30    //
+#define PACKET_GAME_PAUSE    0x31    //
+#define PACKET_GAME_MENU     0x32    //
+#define PACKET_DEBUG_SYNC    0x33    // generation, sender, <debug state block>  (see network_debug_sync_send)
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -157,6 +158,20 @@ int  network_settings_pack(Uint8 *buf);
 int  network_settings_adopt(const Uint8 *buf);
 void network_settings_restore(void);
 #define NETWORK_SETTINGS_SIZE 16
+
+// Debug Mode across the wire.  The debug menu rewrites simulation state directly -- either
+// player's loadout, cash, armor and shield, the cheat flags, difficulty, the expert tunables --
+// so an edit made on one machine would leave the two sims playing different games.  The machine
+// that edited publishes the whole block; the peer adopts it verbatim.
+//   ..._mark     take the live state as the baseline (call when the debug menu opens)
+//   ..._changed  true if the live state differs from the last published/adopted block
+//   ..._send     publish the live state (bumps the generation; no-op if nothing changed)
+//   ..._pump     adopt a block waiting at the head of the inbound queue, if any
+// `in_level` tells the adopt path whether a gameplay HUD is on screen to repaint.
+void network_debug_sync_mark(void);
+bool network_debug_sync_changed(void);
+void network_debug_sync_send(void);
+bool network_debug_sync_pump(bool in_level);
 
 // Summary of the parts of the simulation that must match between the two machines, split into
 // three independent pieces so a mismatch says WHICH part diverged.  That distinction matters:

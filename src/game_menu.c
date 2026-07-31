@@ -2789,6 +2789,11 @@ void JE_itemScreen(void)
 			JE_showVGA();
 			JE_mouseReplace();
 
+			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
+			// and ordered), so both machines load the level with the same loadouts.
+			if (network_debug_sync_pump(false))
+				continue;
+
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 			{
 				// Adopt the other player's browser pick.  If we made one too the host's wins,
@@ -5400,6 +5405,8 @@ static bool endlessDebugScreen(bool jumpMode)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
+		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
+
 #if defined(__SWITCH__) || defined(__vita__)
 		// The shoulder buttons page a long list (and step the Zone row by 10). Read raw with local
 		// edge state and synthesized into PageUp/PageDown -- menus only deliver
@@ -6035,6 +6042,8 @@ bool JE_debugLevelSelect(void)
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
+
+		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
 #if defined(__SWITCH__) || defined(__vita__)
 		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown -- same

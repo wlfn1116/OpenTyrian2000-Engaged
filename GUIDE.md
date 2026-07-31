@@ -362,6 +362,21 @@ Settings are under Setup > Enhancements.
 | Custom Weapons | Enables the custom weapon in shops |
 | Custom Weapon Creator | Opens the weapon editor |
 
+### Debug Mode
+
+Debug Mode adds a Debug Menu row to the shop and to the Esc pause menu, plus a
+level browser. The menu changes the game as you use it: loadout, cash, cheats,
+difficulty, and the expert multipliers.
+
+In a two-player game, local or online, an **Edit Player** row at the top of the
+LOADOUT group chooses whose gear the rows below it change. It opens on your own
+ship. Player two flies the Dragonwing, so swapping that player's hull changes the
+hit box but not the sprite or armour.
+
+Online, the game stays connected while the menu is open, and every change you make
+is sent to the other player, so both machines keep playing the same game. Endless
+Effects are not available online.
+
 ## Weapons
 
 The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power

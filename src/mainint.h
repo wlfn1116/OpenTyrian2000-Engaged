@@ -52,6 +52,10 @@ void JE_helpSystem(JE_byte startTopic);
 void JE_doInGameSetup(void);
 JE_boolean JE_inGameSetup(void);
 void JE_debugMenu(bool center);
+// Rebuild what a loadout write invalidates (ship graphics, hit boxes, shield ceiling, sidekick
+// pods), keeping every player's live armor and shield. For the network peer-apply path; the
+// menu's own edits go through a private variant that also re-armors a swapped hull.
+void debugLoadoutRefresh(bool overHud);
 bool JE_extraMenu(void);
 void JE_inGameHelp(void);
 void JE_sortHighScores(void);

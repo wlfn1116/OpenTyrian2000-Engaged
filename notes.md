@@ -412,6 +412,15 @@ Mid-level loadout edits must refresh cached ship data through the same path used
 by the normal in-level ship change. Only a ship change restores armour; changing
 another item must not heal the player.
 
+The debug menu's loadout rows act on the player chosen by its Edit Player row,
+which appears only in two-player games and opens on your own ship. Rows the
+current mode cannot honour are dropped from the list rather than shown inert, so
+selection, scrolling, and hit-testing index the filtered view, never the row table.
+
+Player two flies the Dragonwing in two-player games: its hull id still drives the
+hit box, but the sprite and armour come from that fixed role, so a hull swap there
+looks like it did nothing.
+
 The campaign level picker and Endless zone editor share row-navigation helpers.
 Menu ID 15 is an intentional hole left by the removed level grid; do not reuse or
 renumber it.
@@ -423,6 +432,35 @@ The Endless editor has two behaviours:
 
 The editor is reachable from both centred shop UI and full-width in-game UI.
 Choose its coordinate width from the active menu offset.
+
+## Networking
+
+Both machines simulate both ships, so anything a menu writes into simulation state
+has to reach the other machine or the two sims diverge from the next tick.
+
+A modal panel stops the packet pump the peer's liveness test reads. Any panel that
+can stay open during a session needs `NETWORK_KEEP_ALIVE()` in its loop, or the
+peer declares the connection dead after `NET_TIME_OUT`.
+
+Debug Mode edits travel as one block, `PACKET_DEBUG_SYNC`: both loadouts, cash,
+armour, shield, the cheat flags, difficulty, and the expert tunables. What makes
+applying it safe:
+
+- it is sent when the debug menu closes, from inside the rendezvous the menu was
+  opened from (the in-game options menu, or the shop), so the peer is never
+  simulating when it arrives;
+- it is reliable and ordered, so it lands ahead of the `PACKET_WAITING` that
+  releases the peer;
+- armour and shield ride along instead of being re-derived, because only the
+  editing machine knows whether a hull actually swapped;
+- a generation counter orders two blocks, and equal generations resolve in the
+  host's favour, so simultaneous edits cannot end up swapped.
+
+Rows whose state is not on the wire are dropped from the debug menu in a network
+game (currently the Endless effect layer). Skip Level has to go through the request
+bit both sims consume on the same frame, not through `reallyEndLevel`.
+
+Adding a field to the block moves the wire offsets; bump `NET_VERSION`.
 
 ## UI and sprite safety
 

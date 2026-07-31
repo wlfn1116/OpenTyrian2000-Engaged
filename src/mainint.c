@@ -1572,6 +1572,11 @@ void JE_doInGameSetup(void)
 				JE_showVGA();
 				JE_mouseReplace();
 
+				// The other player may be in the debug menu: adopt whatever it rewrote before the
+				// WAITING that releases us.  Reliable and ordered, so it always arrives first.
+				if (network_debug_sync_pump(true))
+					continue;
+
 				if (packet_in[0])
 				{
 					if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
@@ -1613,6 +1618,11 @@ void JE_doInGameSetup(void)
 			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
+
+			// Both players can reach the menu on the same frame, in which case neither ran the
+			// wait loop above and this is where a debug block from the other one turns up.
+			if (network_debug_sync_pump(true))
+				continue;
 
 			network_check();
 			SDL_Delay(16);
@@ -1812,6 +1822,8 @@ bool JE_extraMenu(void)
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
+
+		NETWORK_KEEP_ALIVE();  // nothing else pumps packets while this panel is up
 
 		// Mouse: hover to select, wheel to move, left-click to activate, right-click back.
 		bool activate = false, goBack = false;
@@ -2631,6 +2643,8 @@ static void JE_expertSettingsMenu(int off_x, int off_y)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
+		NETWORK_KEEP_ALIVE();  // nothing else pumps packets while this panel is up
+
 		/* wheel moves the selection; hover highlights on pointer motion; left-click
 		 * advances a value (Enter on the Reset row), right-click decreases it */
 		{
@@ -3372,6 +3386,8 @@ static void JE_spriteViewer(int off_x, int off_y)
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
 
+		NETWORK_KEEP_ALIVE();  // nothing else pumps packets while this panel is up
+
 		/* wheel walks sprites; left-click = next, right-click = exit */
 		if (mouse_scroll != 0)
 		{
@@ -3501,6 +3517,7 @@ static void debug_force_crash(void)
  * the enum, dbgLabel, dbgHelp, then wherever it belongs in dbgRows.
  */
 enum {
+	DBG_PLAYER,
 	DBG_SHIP, DBG_FRONT_WEAPON, DBG_FRONT_POWER, DBG_REAR_WEAPON, DBG_REAR_POWER,
 	DBG_SHIELD, DBG_GENERATOR, DBG_SIDEKICK_L, DBG_SIDEKICK_R, DBG_SPECIAL,
 	DBG_TWIDDLE, DBG_AUTOFIRE_TWIDDLE, DBG_TOGGLE_FIRE,
@@ -3514,6 +3531,7 @@ enum {
 };
 
 static const char *const dbgLabel[DBG_ROW_COUNT] = {
+	[DBG_PLAYER]              = "Edit Player",
 	[DBG_SHIP]                = "Ship",
 	[DBG_FRONT_WEAPON]        = "Front Weapon",
 	[DBG_FRONT_POWER]         = "Front Power",
@@ -3555,6 +3573,7 @@ static const char *const dbgLabel[DBG_ROW_COUNT] = {
 /* One line per row, shown under the list while that row is selected: what it DOES, not what it is
  * called. Keep each under ~40 characters -- that is the panel's inner width in small_font. */
 static const char *const dbgHelp[DBG_ROW_COUNT] = {
+	[DBG_PLAYER]              = "Whose gear the rows below edit",
 	[DBG_SHIP]                = "Swap the hull; red = no such ship",
 	[DBG_FRONT_WEAPON]        = "Front gun; red = no such weapon",
 	[DBG_FRONT_POWER]         = "Front gun power level, 1 to 11",
@@ -3600,6 +3619,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 	{ DBG_GOD_MODE, NULL }, { DBG_NOCLIP, NULL }, { DBG_NO_ENEMY_FIRE, NULL },
 	{ DBG_ADD_CASH, NULL },
 	{ -1, "LOADOUT" },
+	{ DBG_PLAYER, NULL },
 	{ DBG_SHIP, NULL }, { DBG_FRONT_WEAPON, NULL }, { DBG_FRONT_POWER, NULL },
 	{ DBG_REAR_WEAPON, NULL }, { DBG_REAR_POWER, NULL }, { DBG_SHIELD, NULL },
 	{ DBG_GENERATOR, NULL }, { DBG_SIDEKICK_L, NULL }, { DBG_SIDEKICK_R, NULL },
@@ -3626,20 +3646,66 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 // dbgRows, leaving it unreachable in the menu. Bump DBG_HEADING_COUNT when adding a heading.
 COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, DBG_DISPLAY_ROWS == DBG_ROW_COUNT + DBG_HEADING_COUNT);
 
+/* Rows the current mode has nothing to say about are dropped rather than shown inert: the player
+ * selector outside a two-player game, and the endless effect layer in a network game (a second
+ * body of simulation state, none of which is on the wire). dbgVis[] is that filtered view --
+ * indices into dbgRows -- and every index the menu carries around (selection, scroll, hit test)
+ * indexes IT, never dbgRows directly. Rebuilt at every open. */
+static int dbgVis[DBG_DISPLAY_ROWS];
+static int dbgVisCount;
+
+static bool dbgRowApplies(int id)
+{
+	switch (id)
+	{
+	case DBG_PLAYER:
+		return twoPlayerMode;
+	case DBG_ENDLESS_FX:
+	case DBG_ENDLESS_TUNE:
+		return !isNetworkGame;
+	default:
+		return true;
+	}
+}
+
+static void dbgBuildVisibleRows(void)
+{
+	dbgVisCount = 0;
+	for (int i = 0; i < DBG_DISPLAY_ROWS; ++i)
+		if (dbgRows[i].id < 0 || dbgRowApplies(dbgRows[i].id))
+			dbgVis[dbgVisCount++] = i;
+
+	// Drop a heading whose whole group went with it, or it would sit over the next group's rows.
+	int keep = 0;
+	for (int i = 0; i < dbgVisCount; ++i)
+	{
+		const bool heading = dbgRows[dbgVis[i]].id < 0;
+		if (heading && (i + 1 == dbgVisCount || dbgRows[dbgVis[i + 1]].id < 0))
+			continue;
+		dbgVis[keep++] = dbgVis[i];
+	}
+	dbgVisCount = keep;
+}
+
 static bool dbgRowIsHeading(int r)
 {
-	return r < 0 || r >= DBG_DISPLAY_ROWS || dbgRows[r].id < 0;
+	return r < 0 || r >= dbgVisCount || dbgRows[dbgVis[r]].id < 0;
+}
+
+static int dbgRowId(int r)
+{
+	return dbgRows[dbgVis[r]].id;
 }
 
 /* Step one selectable row in `dir`, wrapping past the headings. */
 static int dbgRowStep(int r, int dir)
 {
-	for (int n = 0; n < DBG_DISPLAY_ROWS; ++n)
+	for (int n = 0; n < dbgVisCount; ++n)
 	{
 		r += dir;
 		if (r < 0)
-			r = DBG_DISPLAY_ROWS - 1;
-		else if (r >= DBG_DISPLAY_ROWS)
+			r = dbgVisCount - 1;
+		else if (r >= dbgVisCount)
 			r = 0;
 		if (!dbgRowIsHeading(r))
 			return r;
@@ -3653,9 +3719,9 @@ static int dbgRowSnap(int r)
 {
 	if (r < 0)
 		r = 0;
-	if (r > DBG_DISPLAY_ROWS - 1)
-		r = DBG_DISPLAY_ROWS - 1;
-	for (int i = r; i < DBG_DISPLAY_ROWS; ++i)
+	if (r > dbgVisCount - 1)
+		r = dbgVisCount - 1;
+	for (int i = r; i < dbgVisCount; ++i)
 		if (!dbgRowIsHeading(i))
 			return i;
 	for (int i = r; i >= 0; --i)
@@ -3679,7 +3745,8 @@ static void debug_toggle_campaign_mods(void)
 	save_opentyrian_config();
 }
 
-/* Does this row write into player[0].items? Those all need the refresh below; nothing else does. */
+/* Does this row write into the edited player's items? Those all need the refresh below; nothing
+ * else does. (The Edit Player row itself changes no items, only which player they belong to.) */
 static bool dbgRowIsLoadout(int id)
 {
 	switch (id)
@@ -3698,7 +3765,9 @@ static bool dbgRowIsLoadout(int id)
 /* True only when the debug menu overlays the gameplay HUD. */
 static bool debugMenuOverHud = false;
 
-static void debug_apply_loadout_change(bool shipChanged)
+/* `pnum` is the player whose loadout was just edited; `shipChanged` says their hull actually
+ * swapped, which is the one case where the re-derived armor is kept instead of the live value. */
+static void debug_apply_loadout_change(int pnum, bool shipChanged)
 {
 	uint keptArmor[COUNTOF(player)];
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -3715,9 +3784,9 @@ static void debug_apply_loadout_change(bool shipChanged)
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		// JE_getShipInfo rewrites BOTH players' armor, but only player 1's loadout is editable
-		// here -- so player 2 always keeps what it had.
-		if (i != 0 || !shipChanged)
+		// JE_getShipInfo rewrites BOTH players' armor from their hulls; only the player whose
+		// hull actually changed should take that, so everyone else keeps what they had.
+		if ((int)i != pnum || !shipChanged)
 			player[i].armor = keptArmor[i];
 		if (player[i].armor > player[i].initial_armor)
 			player[i].armor = player[i].initial_armor;
@@ -3740,6 +3809,18 @@ static void debug_apply_loadout_change(bool shipChanged)
 		JE_drawShield();
 		JE_drawOptions();   // re-seeds the sidekick pods' ammo, refill cadence and style from options[]
 	}
+}
+
+/* Peer side of a networked debug edit (network.c): the wire block already carried the armor and
+ * shield the editing machine ended up with, so nothing is re-derived here -- this only rebuilds
+ * the caches that hang off items[]. `overHud` says a gameplay HUD is on screen to repaint, which
+ * the caller knows and this side of the wire does not. */
+void debugLoadoutRefresh(bool overHud)
+{
+	const bool wasOverHud = debugMenuOverHud;
+	debugMenuOverHud = overHud;
+	debug_apply_loadout_change(-1, false);
+	debugMenuOverHud = wasOverHud;
 }
 
 void JE_debugMenu(bool center)
@@ -3768,12 +3849,29 @@ void JE_debugMenu(bool center)
 		off_y = (vga_height - DEBUG_MENU_HEIGHT) / 2 - DEBUG_MENU_Y + 1;
 	}
 
-	const int menuCount = DBG_DISPLAY_ROWS;
+	dbgBuildVisibleRows();
+	const int menuCount = dbgVisCount;
 	int selected = dbgRowSnap(0);   // first real row, never the heading above it
+
+#ifdef WITH_NETWORK
+	// Baseline for the change test at close: only a real edit is worth putting on the wire.
+	// Taken before the twiddle re-arm below, so that counts as an edit too -- otherwise it
+	// would quietly overwrite a twiddle the peer had published and never republish it.
+	if (isNetworkGame)
+		network_debug_sync_mark();
+#endif
 
 	/* transient debug-action values; persist across menu opens within a session */
 	static int dbgSoundId = 1, dbgMusicId = 0, dbgTwiddleId = 0;
 	debugTwiddleSpecial = (JE_byte)twiddle_special_id(dbgTwiddleId);  // keep the armed twiddle in sync
+
+	/* Which player the LOADOUT rows (and Add Cash) act on, 0-based. Two-player games open on your
+	 * own ship -- across the network that is the one you flew in with; locally, player 1. Not
+	 * remembered between opens: the whole menu reads wrong if you don't notice it is set to the
+	 * other ship. */
+	int dbgPlayer = 0;
+	if (twoPlayerMode && isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= COUNTOF(player))
+		dbgPlayer = (int)thisPlayerNum - 1;
 
 	/* Add Cash is an inline numeric field: while the row is selected you type a value (digits
 	 * append, Backspace deletes) and Enter sets cash to it. Starts empty each open; the row shows
@@ -3853,93 +3951,103 @@ void JE_debugMenu(bool center)
 
 			if (dbgRowIsHeading(i))
 			{
-				draw_font_hv_shadow(VGAScreen, px0 + 6, ry, dbgRows[i].heading, small_font, left_aligned, 15, 3, true, 1);
-				const int rule_x = px0 + 10 + JE_textWidth(dbgRows[i].heading, small_font);
+				const char *const heading = dbgRows[dbgVis[i]].heading;
+				draw_font_hv_shadow(VGAScreen, px0 + 6, ry, heading, small_font, left_aligned, 15, 3, true, 1);
+				const int rule_x = px0 + 10 + JE_textWidth(heading, small_font);
 				if (rule_x < px1 - 9)
 					fill_rectangle_xy(VGAScreen, rule_x, ry + 3, px1 - 9, ry + 3, C_DIVIDER);
 				continue;
 			}
 
-			const int id = dbgRows[i].id;
+			const int id = dbgRowId(i);
+			const PlayerItems *const it = &player[dbgPlayer].items;
 			char buf[40];
 			bool invalid = false;
 			switch (id)
 			{
+			case DBG_PLAYER:
+				// Across the network, name which ship is yours -- the two machines number the
+				// players the same way, so "2" alone doesn't say whose gear you're about to rewrite.
+				if (isNetworkGame && (int)thisPlayerNum == dbgPlayer + 1)
+					snprintf(buf, sizeof(buf), "%d (you)", dbgPlayer + 1);
+				else
+					snprintf(buf, sizeof(buf), "%d", dbgPlayer + 1);
+				break;
 			case DBG_SHIP:
-				if (player[0].items.ship <= SHIP_NUM)
-					snprintf(buf, sizeof(buf), "%s", ships[player[0].items.ship].name);
+				if (it->ship <= SHIP_NUM)
+					snprintf(buf, sizeof(buf), "%s", ships[it->ship].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.ship);
+					snprintf(buf, sizeof(buf), "%d", it->ship);
 					invalid = true;
 				}
 				break;
 			case DBG_FRONT_WEAPON:
-				if (player[0].items.weapon[FRONT_WEAPON].id <= PORT_NUM)
-					snprintf(buf, sizeof(buf), "%s", weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name);
+				if (it->weapon[FRONT_WEAPON].id <= PORT_NUM)
+					snprintf(buf, sizeof(buf), "%s", weaponPort[it->weapon[FRONT_WEAPON].id].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.weapon[FRONT_WEAPON].id);
+					snprintf(buf, sizeof(buf), "%d", it->weapon[FRONT_WEAPON].id);
 					invalid = true;
 				}
 				break;
 			case DBG_FRONT_POWER:
-				snprintf(buf, sizeof(buf), "%d", player[0].items.weapon[FRONT_WEAPON].power);
+				snprintf(buf, sizeof(buf), "%d", it->weapon[FRONT_WEAPON].power);
 				break;
 			case DBG_REAR_WEAPON:
-				if (player[0].items.weapon[REAR_WEAPON].id <= PORT_NUM)
-					snprintf(buf, sizeof(buf), "%s", weaponPort[player[0].items.weapon[REAR_WEAPON].id].name);
+				if (it->weapon[REAR_WEAPON].id <= PORT_NUM)
+					snprintf(buf, sizeof(buf), "%s", weaponPort[it->weapon[REAR_WEAPON].id].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.weapon[REAR_WEAPON].id);
+					snprintf(buf, sizeof(buf), "%d", it->weapon[REAR_WEAPON].id);
 					invalid = true;
 				}
 				break;
 			case DBG_REAR_POWER:
-				snprintf(buf, sizeof(buf), "%d", player[0].items.weapon[REAR_WEAPON].power);
+				snprintf(buf, sizeof(buf), "%d", it->weapon[REAR_WEAPON].power);
 				break;
 			case DBG_SHIELD:
-				if (player[0].items.shield <= SHIELD_NUM)
-					snprintf(buf, sizeof(buf), "%s", shields[player[0].items.shield].name);
+				if (it->shield <= SHIELD_NUM)
+					snprintf(buf, sizeof(buf), "%s", shields[it->shield].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.shield);
+					snprintf(buf, sizeof(buf), "%d", it->shield);
 					invalid = true;
 				}
 				break;
 			case DBG_GENERATOR:
-				if (player[0].items.generator <= POWER_NUM)
-					snprintf(buf, sizeof(buf), "%s", powerSys[player[0].items.generator].name);
+				if (it->generator <= POWER_NUM)
+					snprintf(buf, sizeof(buf), "%s", powerSys[it->generator].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.generator);
+					snprintf(buf, sizeof(buf), "%d", it->generator);
 					invalid = true;
 				}
 				break;
 			case DBG_SIDEKICK_L:
-				if (player[0].items.sidekick[LEFT_SIDEKICK] <= OPTION_NUM)
-					snprintf(buf, sizeof(buf), "%s", options[player[0].items.sidekick[LEFT_SIDEKICK]].name);
+				if (it->sidekick[LEFT_SIDEKICK] <= OPTION_NUM)
+					snprintf(buf, sizeof(buf), "%s", options[it->sidekick[LEFT_SIDEKICK]].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.sidekick[LEFT_SIDEKICK]);
+					snprintf(buf, sizeof(buf), "%d", it->sidekick[LEFT_SIDEKICK]);
 					invalid = true;
 				}
 				break;
 			case DBG_SIDEKICK_R:
-				if (player[0].items.sidekick[RIGHT_SIDEKICK] <= OPTION_NUM)
-					snprintf(buf, sizeof(buf), "%s", options[player[0].items.sidekick[RIGHT_SIDEKICK]].name);
+				if (it->sidekick[RIGHT_SIDEKICK] <= OPTION_NUM)
+					snprintf(buf, sizeof(buf), "%s", options[it->sidekick[RIGHT_SIDEKICK]].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.sidekick[RIGHT_SIDEKICK]);
+					snprintf(buf, sizeof(buf), "%d", it->sidekick[RIGHT_SIDEKICK]);
 					invalid = true;
 				}
 				break;
 			case DBG_SPECIAL:
-				if (player[0].items.special <= SPECIAL_NUM)
-					snprintf(buf, sizeof(buf), "%s", special[player[0].items.special].name);
+				if (it->special <= SPECIAL_NUM)
+					snprintf(buf, sizeof(buf), "%s", special[it->special].name);
 				else
 				{
-					snprintf(buf, sizeof(buf), "%d", player[0].items.special);
+					snprintf(buf, sizeof(buf), "%d", it->special);
 					invalid = true;
 				}
 				break;
@@ -4004,7 +4112,7 @@ void JE_debugMenu(bool center)
 				if (sel)
 					snprintf(buf, sizeof(buf), "%s|", dbgCashStr);  // your input + '|' caret (empty => just the caret)
 				else
-					snprintf(buf, sizeof(buf), "%lu", (unsigned long)player[0].cash);  // live cash when not editing
+					snprintf(buf, sizeof(buf), "%lu", (unsigned long)player[dbgPlayer].cash);  // live cash when not editing
 				break;
 			case DBG_NO_ENEMY_FIRE:
 				sprintf(buf, "%s", cheatNoEnemyFire ? "ON" : "OFF");
@@ -4106,7 +4214,7 @@ void JE_debugMenu(bool center)
 
 		/* Footer line 1: what the selected row DOES -- 34 cheats and diagnostics is far too many
 		 * to carry their meaning in the label alone. Line 2: the keys, named for the platform. */
-		const int shownId = dbgRows[selected].id;
+		const int shownId = dbgRowId(selected);
 		draw_font_hv(VGAScreen, mid_x, py1 - 17, dbgHelp[shownId], small_font, centered, 15, 1);
 #if defined(__SWITCH__) || defined(__vita__)
 		draw_font_hv(VGAScreen, mid_x, py1 - 8,
@@ -4129,6 +4237,11 @@ void JE_debugMenu(bool center)
 
 		push_joysticks_as_keyboard();
 		service_SDL_events(true);
+
+		// The whole game stops while this panel is open, including the packet pump the peer's
+		// liveness test reads -- so without this the other machine declares us disconnected
+		// after NET_TIME_OUT and halts the game.
+		NETWORK_KEEP_ALIVE();
 
 #if defined(__SWITCH__) || defined(__vita__)
 		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown -- same
@@ -4179,7 +4292,7 @@ void JE_debugMenu(bool center)
 				                           row_h, visibleRows, scrollTop, menuCount);
 				if (r >= 0 && !dbgRowIsHeading(r))
 				{
-					const int rid = dbgRows[r].id;
+					const int rid = dbgRowId(r);
 					selected = r;
 					const bool enterRow = (rid == DBG_EXPERT_SETTINGS || rid == DBG_ADD_CASH ||
 					                       rid == DBG_SKIP_LEVEL || rid == DBG_PLAY_SOUND ||
@@ -4198,10 +4311,12 @@ void JE_debugMenu(bool center)
 		{
 			// Read the row id HERE, not with the footer above: a click this same frame moves
 			// `selected` and then synthesizes the key, so the id must follow that move.
-			const int selId = dbgRows[selected].id;
+			const int selId = dbgRowId(selected);
 			// For the loadout refresh below: only an actual hull SWAP may re-armor the player, so
 			// compare rather than assume the Ship row was touched (Left at id 0 changes nothing).
-			const JE_byte shipBefore = player[0].items.ship;
+			const int editPlayer = dbgPlayer;   // the Edit Player row may move the selector below
+			PlayerItems *const edit = &player[editPlayer].items;
+			const JE_byte shipBefore = edit->ship;
 			const bool editKey = (lastkey_scan == SDL_SCANCODE_LEFT || lastkey_scan == SDL_SCANCODE_RIGHT ||
 			                      lastkey_scan == SDL_SCANCODE_RETURN || lastkey_scan == SDL_SCANCODE_KP_ENTER ||
 			                      lastkey_scan == SDL_SCANCODE_SPACE);
@@ -4228,18 +4343,19 @@ void JE_debugMenu(bool center)
 			case SDL_SCANCODE_LEFT:
 				switch (selId)
 				{
-				case DBG_SHIP: if (player[0].items.ship > 0) --player[0].items.ship; break;
-				case DBG_FRONT_WEAPON: if (player[0].items.weapon[FRONT_WEAPON].id > 0) --player[0].items.weapon[FRONT_WEAPON].id; break;
-				case DBG_FRONT_POWER: if (player[0].items.weapon[FRONT_WEAPON].power > 1) --player[0].items.weapon[FRONT_WEAPON].power; break;
-				case DBG_REAR_WEAPON: if (player[0].items.weapon[REAR_WEAPON].id > 0) --player[0].items.weapon[REAR_WEAPON].id; break;
-				case DBG_REAR_POWER: if (player[0].items.weapon[REAR_WEAPON].power > 1) --player[0].items.weapon[REAR_WEAPON].power; break;
-				case DBG_SHIELD: if (player[0].items.shield > 0) --player[0].items.shield; break;
-				case DBG_GENERATOR: if (player[0].items.generator > 0) --player[0].items.generator; break;
-				case DBG_SIDEKICK_L: if (player[0].items.sidekick[LEFT_SIDEKICK] > 0) --player[0].items.sidekick[LEFT_SIDEKICK]; break;
-				case DBG_SIDEKICK_R: if (player[0].items.sidekick[RIGHT_SIDEKICK] > 0) --player[0].items.sidekick[RIGHT_SIDEKICK]; break;
+				case DBG_PLAYER: dbgPlayer = (dbgPlayer + (int)COUNTOF(player) - 1) % (int)COUNTOF(player); break;
+				case DBG_SHIP: if (edit->ship > 0) --edit->ship; break;
+				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id > 0) --edit->weapon[FRONT_WEAPON].id; break;
+				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power > 1) --edit->weapon[FRONT_WEAPON].power; break;
+				case DBG_REAR_WEAPON: if (edit->weapon[REAR_WEAPON].id > 0) --edit->weapon[REAR_WEAPON].id; break;
+				case DBG_REAR_POWER: if (edit->weapon[REAR_WEAPON].power > 1) --edit->weapon[REAR_WEAPON].power; break;
+				case DBG_SHIELD: if (edit->shield > 0) --edit->shield; break;
+				case DBG_GENERATOR: if (edit->generator > 0) --edit->generator; break;
+				case DBG_SIDEKICK_L: if (edit->sidekick[LEFT_SIDEKICK] > 0) --edit->sidekick[LEFT_SIDEKICK]; break;
+				case DBG_SIDEKICK_R: if (edit->sidekick[RIGHT_SIDEKICK] > 0) --edit->sidekick[RIGHT_SIDEKICK]; break;
 				case DBG_SPECIAL:  // step to the previous crash-safe special (skip bad-icon slots)
-					for (int nid = (int)player[0].items.special - 1; nid >= 0; --nid)
-						if (debug_special_is_safe(nid)) { player[0].items.special = (JE_byte)nid; break; }
+					for (int nid = (int)edit->special - 1; nid >= 0; --nid)
+						if (debug_special_is_safe(nid)) { edit->special = (JE_byte)nid; break; }
 					break;
 				case DBG_TWIDDLE:
 					dbgTwiddleId = (dbgTwiddleId + (int)COUNTOF(keyboardCombos) - 1) % (int)COUNTOF(keyboardCombos);
@@ -4259,7 +4375,7 @@ void JE_debugMenu(bool center)
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel > DIFFICULTY_WIMP) --difficultyLevel; break;
 				case DBG_ADD_CASH:
-					player[0].cash = cashMax;
+					player[editPlayer].cash = cashMax;
 					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
@@ -4281,18 +4397,19 @@ void JE_debugMenu(bool center)
 				// Each of these indexes an array sized [X_NUM + 1], so stepping past X_NUM is an
 				// out-of-bounds read the moment anything looks the item up -- which is where the
 				// garbage ship graphics came from. Clamp at the top the way Left already does at 0.
-				case DBG_SHIP: if (player[0].items.ship < SHIP_NUM) ++player[0].items.ship; break;
-				case DBG_FRONT_WEAPON: if (player[0].items.weapon[FRONT_WEAPON].id < PORT_NUM) ++player[0].items.weapon[FRONT_WEAPON].id; break;
-				case DBG_FRONT_POWER: if (player[0].items.weapon[FRONT_WEAPON].power < 11) ++player[0].items.weapon[FRONT_WEAPON].power; break;
-				case DBG_REAR_WEAPON: if (player[0].items.weapon[REAR_WEAPON].id < PORT_NUM) ++player[0].items.weapon[REAR_WEAPON].id; break;
-				case DBG_REAR_POWER: if (player[0].items.weapon[REAR_WEAPON].power < 11) ++player[0].items.weapon[REAR_WEAPON].power; break;
-				case DBG_SHIELD: if (player[0].items.shield < SHIELD_NUM) ++player[0].items.shield; break;
-				case DBG_GENERATOR: if (player[0].items.generator < POWER_NUM) ++player[0].items.generator; break;
-				case DBG_SIDEKICK_L: if (player[0].items.sidekick[LEFT_SIDEKICK] < OPTION_NUM) ++player[0].items.sidekick[LEFT_SIDEKICK]; break;
-				case DBG_SIDEKICK_R: if (player[0].items.sidekick[RIGHT_SIDEKICK] < OPTION_NUM) ++player[0].items.sidekick[RIGHT_SIDEKICK]; break;
+				case DBG_PLAYER: dbgPlayer = (dbgPlayer + 1) % (int)COUNTOF(player); break;
+				case DBG_SHIP: if (edit->ship < SHIP_NUM) ++edit->ship; break;
+				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id < PORT_NUM) ++edit->weapon[FRONT_WEAPON].id; break;
+				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power < 11) ++edit->weapon[FRONT_WEAPON].power; break;
+				case DBG_REAR_WEAPON: if (edit->weapon[REAR_WEAPON].id < PORT_NUM) ++edit->weapon[REAR_WEAPON].id; break;
+				case DBG_REAR_POWER: if (edit->weapon[REAR_WEAPON].power < 11) ++edit->weapon[REAR_WEAPON].power; break;
+				case DBG_SHIELD: if (edit->shield < SHIELD_NUM) ++edit->shield; break;
+				case DBG_GENERATOR: if (edit->generator < POWER_NUM) ++edit->generator; break;
+				case DBG_SIDEKICK_L: if (edit->sidekick[LEFT_SIDEKICK] < OPTION_NUM) ++edit->sidekick[LEFT_SIDEKICK]; break;
+				case DBG_SIDEKICK_R: if (edit->sidekick[RIGHT_SIDEKICK] < OPTION_NUM) ++edit->sidekick[RIGHT_SIDEKICK]; break;
 				case DBG_SPECIAL:  // step to the next crash-safe special (skip bad-icon slots)
-					for (int nid = (int)player[0].items.special + 1; nid <= SPECIAL_NUM; ++nid)
-						if (debug_special_is_safe(nid)) { player[0].items.special = (JE_byte)nid; break; }
+					for (int nid = (int)edit->special + 1; nid <= SPECIAL_NUM; ++nid)
+						if (debug_special_is_safe(nid)) { edit->special = (JE_byte)nid; break; }
 					break;
 				case DBG_TWIDDLE:
 					dbgTwiddleId = (dbgTwiddleId + 1) % (int)COUNTOF(keyboardCombos);
@@ -4312,7 +4429,7 @@ void JE_debugMenu(bool center)
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel < DIFFICULTY_10) ++difficultyLevel; break;
 				case DBG_ADD_CASH:
-					player[0].cash = cashMax;
+					player[editPlayer].cash = cashMax;
 					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
@@ -4360,7 +4477,7 @@ void JE_debugMenu(bool center)
 						ulong v = 0;
 						for (const char *c = dbgCashStr; *c >= '0' && *c <= '9'; ++c)
 							v = v * 10u + (ulong)(*c - '0');
-						player[0].cash = v;
+						player[editPlayer].cash = v;
 					}
 					break;
 				case DBG_HANG_TIMEOUT:  // apply the typed watchdog timeout in seconds (clamps to range)
@@ -4377,7 +4494,13 @@ void JE_debugMenu(bool center)
 					}
 					break;
 				case DBG_SKIP_LEVEL:  // flag it and close so the game processes it
-					reallyEndLevel = true;
+					// In a network game the level may only end on both machines at once, so ask
+					// through the request bit both sims consume on the same frame (RB_REQ_SKIPLEVEL)
+					// rather than tearing this machine's level down on its own.
+					if (isNetworkGame && !center)
+						skipLevelRequest = true;
+					else
+						reallyEndLevel = true;
 					done = true;
 					break;
 				case DBG_FORCE_CRASH:  // deliberately fault to exercise the crash logger
@@ -4439,14 +4562,24 @@ void JE_debugMenu(bool center)
 			}
 			}
 
-			// One place, after every handler: a loadout row may have just rewritten player[0].items,
-			// and the engine caches far too much off those to leave it until the next level start.
+			// One place, after every handler: a loadout row may have just rewritten the edited
+			// player's items, and the engine caches far too much off those to leave it until the
+			// next level start.
 			if (editKey && dbgRowIsLoadout(selId))
-				debug_apply_loadout_change(player[0].items.ship != shipBefore);
+				debug_apply_loadout_change(editPlayer, edit->ship != shipBefore);
 
 			newkey = false;
 		}
 	}
+
+#ifdef WITH_NETWORK
+	// Publish whatever was changed: every loadout row, cheat and difficulty here is simulation
+	// state, so an edit the peer never hears about leaves the two machines playing different
+	// games. No-op when nothing moved. Sent from inside the rendezvous the menu was opened from
+	// (the in-game options menu or the shop), which is what makes applying it on the far side safe.
+	if (isNetworkGame)
+		network_debug_sync_send();
+#endif
 
 	mouseSetRelative(wasRelative);
 	debugMenuOverHud = wasOverHud;
