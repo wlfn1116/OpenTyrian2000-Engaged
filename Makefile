@@ -80,6 +80,10 @@ ifeq ($(WITH_NETWORK), true)
     SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --cflags)
     SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-L --libs-only-other)
     SDL_LDLIBS := $(shell $(PKG_CONFIG) sdl2 SDL2_net --libs-only-l)
+    # network.c calls getsockopt/getsockname/WSAIoctl directly to turn off SIO_UDP_CONNRESET.
+    ifeq ($(PLATFORM), WIN32)
+        SDL_LDLIBS += -lws2_32
+    endif
 else
     SDL_CPPFLAGS := $(shell $(PKG_CONFIG) sdl2 --cflags)
     SDL_LDFLAGS := $(shell $(PKG_CONFIG) sdl2 --libs-only-L --libs-only-other)

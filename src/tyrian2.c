@@ -6377,7 +6377,12 @@ void networkStartScreen(void)
 			service_SDL_events(false);
 			JE_showVGA();
 
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_DETAILS)
+			// The length matters: packet_copy fills only the first `len` bytes of a reused
+			// buffer, so a short packet would set the episode and difficulty from whatever the
+			// previous one left behind -- a desync before the first tick.  Discard it and keep
+			// waiting; a peer that never sends a whole one times out as a lost connection.
+			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_DETAILS &&
+			    packet_in[0]->len >= 8)
 				break;
 
 			network_update();
@@ -6386,8 +6391,22 @@ void networkStartScreen(void)
 			SDL_Delay(16);
 		}
 
-		JE_initEpisode(SDLNet_Read16(&packet_in[0]->data[4]));
-		difficultyLevel = SDLNet_Read16(&packet_in[0]->data[6]);
+		const int their_episode    = SDLNet_Read16(&packet_in[0]->data[4]);
+		const int their_difficulty = SDLNet_Read16(&packet_in[0]->data[6]);
+
+		// The host picked both from its own menus, so out of range means a corrupt packet, not a
+		// disagreement.  Worth catching here: JE_initEpisode builds level filenames from the
+		// number, and a bad one takes the game down inside the loader instead.
+		if (their_episode < 1 || their_episode > EPISODE_MAX ||
+		    their_difficulty < 1 || their_difficulty > DIFFICULTY_10)
+		{
+			fprintf(stderr, "error: opponent sent an unusable episode/difficulty (%d/%d)\n",
+			        their_episode, their_difficulty);
+			network_tyrian_halt(3, false);
+		}
+
+		JE_initEpisode(their_episode);
+		difficultyLevel = their_difficulty;
 		initialDifficulty = difficultyLevel - 1;
 		fade_black(10);
 

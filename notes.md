@@ -462,15 +462,40 @@ bit both sims consume on the same frame, not through `reallyEndLevel`.
 
 Adding a field to the block moves the wire offsets; bump `NET_VERSION`.
 
+### Reliability layer
+
+Three rules the UDP plumbing rests on, each of which was once broken:
+
+- **A receive error is not a dead link.** Windows fails the next `recv` on a UDP
+  socket with `WSAECONNRESET` once an ICMP port-unreachable comes back — routine
+  throughout the connect handshake, and immediate when the peer's process dies. It
+  is one-shot per ICMP and leaves the datagram queue alone, so `network_check()`
+  reports it as a plain "nothing this time" and every wait loop must sleep on `<= 0`
+  rather than `== 0`, or it spins a core for the whole stall. `network_init` also
+  turns the behaviour off at the socket, which means reading the handle out of
+  SDL_net's opaque `UDPsocket`; it is proved to be ours (a datagram socket, on the
+  port SDL_net reports binding) before anything is set on it, and skipped otherwise.
+- **Queue room is checked before the send, not after.** The other order put the
+  datagram on the wire and only then returned without advancing `last_out_sync`, so
+  every later packet reused that sequence number and the peer discarded one of each
+  pair as a duplicate. A full outbound queue means `NET_PACKET_QUEUE` rendezvous
+  packets outstanding with no acknowledgement at all — a dead link, reported as one.
+- **Read no field the packet's length does not cover.** `packet_copy` fills only the
+  first `len` bytes of a reused `NET_PACKET_SIZE` buffer, so anything past the length
+  is the *previous* packet's payload. A short `PACKET_DETAILS` set the episode and
+  difficulty from those stale bytes and desynced before the first tick; a short
+  `PACKET_CONNECT` took the version, delay and whole settings block the same way.
+
 ### Rollback input stream
 
 `PACKET_INPUT` is a 48-byte header plus up to 16 redundant 14-byte input records,
 unacknowledged and idempotent. Four invariants hold it together:
 
-- **Drain the socket, don't sample it.** `network_check()` takes one datagram per
-  call and the peer sends one per frame, so a single call per frame runs at exactly
+- **Drain the socket, don't sample it.** The peer sends one datagram per frame and
+  every caller polls at most once per frame, so one datagram per poll runs at exactly
   break-even: any burst leaves a backlog that never clears and reads as permanent
-  latency.
+  latency. `network_check()` therefore drains up to `NET_DRAIN_MAX` itself, and
+  callers must not wrap it in a loop of their own.
 - **The header carries a level epoch.** Frame numbers alone cannot separate a
   stalled peer's leftovers from the previous level, because a short level leaves
   numbers small enough to land inside the new level's acceptance window. Only a

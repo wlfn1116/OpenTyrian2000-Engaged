@@ -77,7 +77,9 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalDependencies Condition="'$(WITH_NETWORK)'=='true'">SDL2_net.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- ws2_32: network.c calls getsockopt/getsockname/WSAIoctl directly to turn off
+           SIO_UDP_CONNRESET on the UDP socket SDL_net opened. -->
+      <AdditionalDependencies Condition="'$(WITH_NETWORK)'=='true'">SDL2_net.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">libfluidsynth-3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>

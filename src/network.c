@@ -16,6 +16,16 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+
+// Ahead of network.h, which pulls in SDL_net.h: SDL_net only defines INADDR_* when the platform
+// headers have not, so winsock2.h has to win the race or every one of them warns C4005.
+#if defined(WITH_NETWORK) && defined(_WIN32)
+#include <winsock2.h>
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+#endif
+
 #include "network.h"
 
 #include "config.h"
@@ -72,6 +82,7 @@
 #define NET_KEEP_ALIVE    1600         // ticks to wait between keep-alive packets
 #define NET_TIME_OUT      16000        // ticks to wait before considering connection dead
 #define NET_PING_MAX      5000         // round trips longer than this are treated as garbage, not latency
+#define NET_DRAIN_MAX     32           // datagrams network_check() reads per call at most
 
 bool isNetworkGame = false;
 
@@ -119,7 +130,9 @@ void network_set_player_name(const char *name)
 }
 
 #ifdef WITH_NETWORK
-static UDPsocket socket;
+// Not `socket`: <winsock2.h> (included below for the WSAECONNRESET fix) declares a function of
+// that name, and a file-scope object would collide with it.
+static UDPsocket net_socket;
 static IPaddress ip;
 
 UDPpacket *packet_out_temp;
@@ -216,7 +229,7 @@ static bool network_send_no_ack(int len)
 {
 	packet_out_temp->len = len;
 
-	if (!SDLNet_UDP_Send(socket, 0, packet_out_temp))
+	if (!SDLNet_UDP_Send(net_socket, 0, packet_out_temp))
 	{
 		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
 		return false;
@@ -233,20 +246,30 @@ bool network_send_unacked(int len)
 // send packet and place it in queue to be acknowledged
 bool network_send(int len)
 {
-	bool temp = network_send_no_ack(len);
-
+	// Queue room is checked BEFORE the send.  The other order put the datagram on the wire and
+	// only then discovered there was nowhere to file it, returning without advancing
+	// last_out_sync -- so every later packet went out reusing that sequence number, and the peer
+	// dropped one of each pair as a duplicate.  A full queue means NET_PACKET_QUEUE rendezvous
+	// packets outstanding with no acknowledgement at all, which is a dead link, not congestion:
+	// report it as one rather than play on with a corrupt sequence.
 	Uint16 i = last_out_sync - queue_out_sync;
-	if (i < NET_PACKET_QUEUE)
+	if (i >= NET_PACKET_QUEUE)
 	{
-		packet_out[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-		packet_copy(packet_out[i], packet_out_temp);
-	}
-	else
-	{
-		// connection is probably bad now
-		fprintf(stderr, "warning: outbound packet queue overflow\n");
+		fprintf(stderr, "error: outbound packet queue overflow\n");
+
+		crashlog_note("NETWORK QUEUE OVERFLOW",
+		              "no acknowledgement for a full outbound queue; treating the link as lost");
+
+		if (!quit)
+			network_tyrian_halt(2, false);
+
 		return false;
 	}
+
+	bool temp = network_send_no_ack(len);
+
+	packet_out[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	packet_copy(packet_out[i], packet_out_temp);
 
 	last_out_sync++;
 
@@ -290,56 +313,20 @@ int network_ping_ms(void)
 	return (int)(ping_ema + 0.5f);
 }
 
-// poll for new packets received, check that connection is alive, resend queued packets if necessary
-int network_check(void)
+// Consume at most one inbound datagram: 1 = one handled, 0 = none waiting, -1 = receive error.
+//
+// A receive error is neither fatal nor logged.  On Windows an ICMP port-unreachable -- which the
+// connect handshake produces routinely, and which also lands the moment the peer's process dies --
+// fails the NEXT recv on this socket with WSAECONNRESET, once per ICMP and without disturbing the
+// datagram queue.  Callers must read -1 as "nothing this time" rather than as a dead link.
+static int network_recv_one(void)
 {
-	if (!net_initialized)
-		return -1;
-
-	if (connected)
-	{
-		// timeout
-		if (!network_is_alive())
-		{
-			if (!quit)
-				network_tyrian_halt(2, false);
-		}
-
-		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while
-		// a player sits in the outpost, so the round trip stays measurable off the menus.  The
-		// four extra bytes cost an old peer nothing -- it reads the header and ignores the rest,
-		// and simply never sends the reply that would produce a reading.
-		static Uint32 keep_alive_tick = 0;
-		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
-		{
-			network_prepare(PACKET_KEEP_ALIVE);
-			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
-			network_send_no_ack(8);
-
-			keep_alive_tick = SDL_GetTicks();
-		}
-	}
-
-	// retry
-	if (packet_out[0] && SDL_GetTicks() - last_out_tick > NET_RETRY)
-	{
-		if (!SDLNet_UDP_Send(socket, 0, packet_out[0]))
-		{
-			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
-			return -1;
-		}
-
-		last_out_tick = SDL_GetTicks();
-	}
-
-	switch (SDLNet_UDP_Recv(socket, packet_temp))
+	switch (SDLNet_UDP_Recv(net_socket, packet_temp))
 	{
 		case -1:
-			printf("SDLNet_UDP_Recv: %s\n", SDL_GetError());
 			return -1;
-			break;
 		case 0:
-			break;
+			return 0;
 		default:
 			// LAN discovery probes come from machines we have never spoken to, so they arrive
 			// on no channel (-1) and have to be answered before the channel check below.  They
@@ -368,7 +355,7 @@ int network_check(void)
 
 					// Channel -1 sends to the packet's own address, which is what we want:
 					// replying must not disturb the channel binding the game protocol uses.
-					SDLNet_UDP_Send(socket, -1, packet_out_temp);
+					SDLNet_UDP_Send(net_socket, -1, packet_out_temp);
 				}
 
 				return 1;
@@ -380,7 +367,7 @@ int network_check(void)
 			if (host_awaiting_peer && packet_temp->len >= 4 &&
 			    SDLNet_Read16(&packet_temp->data[0]) == PACKET_CONNECT)
 			{
-				if (SDLNet_UDP_Bind(socket, 0, &packet_temp->address) == -1)
+				if (SDLNet_UDP_Bind(net_socket, 0, &packet_temp->address) == -1)
 				{
 					fprintf(stderr, "error: SDLNet_UDP_Bind: %s\n", SDLNet_GetError());
 					return -1;
@@ -558,11 +545,10 @@ int network_check(void)
 							{
 								if (packet_state_out[i])
 								{
-									if (!SDLNet_UDP_Send(socket, 0, packet_state_out[i]))
-									{
+									// A failed resend is not a receive error: log it and carry on, or
+									// the drain would stop on a datagram it had already consumed.
+									if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[i]))
 										printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
-										return -1;
-									}
 								}
 							}
 						}
@@ -570,7 +556,6 @@ int network_check(void)
 
 					default:
 						fprintf(stderr, "warning: bad packet %d received\n", SDLNet_Read16(&packet_temp->data[0]));
-						return 0;
 						break;
 				}
 
@@ -579,7 +564,68 @@ int network_check(void)
 			break;
 	}
 
-	return 0;
+	// A datagram we had no use for is still a datagram consumed, so the drain below keeps going.
+	return 1;
+}
+
+// poll for new packets received, check that connection is alive, resend queued packets if necessary
+int network_check(void)
+{
+	if (!net_initialized)
+		return -1;
+
+	if (connected)
+	{
+		// timeout
+		if (!network_is_alive())
+		{
+			if (!quit)
+				network_tyrian_halt(2, false);
+		}
+
+		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while
+		// a player sits in the outpost, so the round trip stays measurable off the menus.  The
+		// four extra bytes cost an old peer nothing -- it reads the header and ignores the rest,
+		// and simply never sends the reply that would produce a reading.
+		static Uint32 keep_alive_tick = 0;
+		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
+		{
+			network_prepare(PACKET_KEEP_ALIVE);
+			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
+			network_send_no_ack(8);
+
+			keep_alive_tick = SDL_GetTicks();
+		}
+	}
+
+	// retry
+	if (packet_out[0] && SDL_GetTicks() - last_out_tick > NET_RETRY)
+	{
+		if (!SDLNet_UDP_Send(net_socket, 0, packet_out[0]))
+		{
+			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+			return -1;
+		}
+
+		last_out_tick = SDL_GetTicks();
+	}
+
+	// DRAIN, don't take one.  Every caller polls this at most once per frame while the peer
+	// sends one datagram per frame, so one-per-call sits exactly at break-even: any burst (a
+	// retransmit, a keep-alive, a stray discovery probe) parks a backlog that never clears
+	// again and reads as permanently added latency.  Bounded so a flood cannot hold the frame
+	// open indefinitely.
+	int handled = 0;
+	for (int i = 0; i < NET_DRAIN_MAX; ++i)
+	{
+		const int got = network_recv_one();
+		if (got <= 0)
+			return handled > 0 ? handled : got;
+
+		++handled;
+	}
+
+	return handled;
 }
 
 // discard working packet, now processing next packet in queue
@@ -625,7 +671,7 @@ void network_state_prepare(void)
 // send state packet, xor packet if applicable
 int network_state_send(void)
 {
-	if (!SDLNet_UDP_Send(socket, 0, packet_state_out[0]))
+	if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[0]))
 	{
 		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
 		return -1;
@@ -640,7 +686,7 @@ int network_state_send(void)
 			for (int j = 4; j < packet_temp->len; j++)
 				packet_temp->data[j] ^= packet_state_out[i]->data[j];
 
-		if (!SDLNet_UDP_Send(socket, 0, packet_temp))
+		if (!SDLNet_UDP_Send(net_socket, 0, packet_temp))
 		{
 			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
 			return -1;
@@ -750,7 +796,9 @@ bool network_state_update(void)
 				network_tyrian_halt(2, false);
 			}
 
-			if (network_check() == 0)
+			// <= 0, not == 0: a receive error reads nothing, so skipping the sleep on it
+			// would spin this loop on a core for as long as the peer takes.
+			if (network_check() <= 0)
 				SDL_Delay(1);
 		}
 
@@ -855,7 +903,7 @@ int network_connect(void)
 			return -2;
 		}
 
-		if (SDLNet_UDP_Bind(socket, 0, &ip) == -1)
+		if (SDLNet_UDP_Bind(net_socket, 0, &ip) == -1)
 		{
 			fprintf(stderr, "error: SDLNet_UDP_Bind: %s\n", SDLNet_GetError());
 			return -2;
@@ -931,6 +979,15 @@ connect_reset:
 		send_connect_packet(episodes_local);
 
 connect_again:
+	// packet_copy only fills the first `len` bytes of a reused NET_PACKET_SIZE buffer, so reading
+	// past the length gets whatever the PREVIOUS packet left there -- a short connect packet would
+	// take the version, delay and whole settings block from stale bytes.  Nothing that speaks this
+	// protocol version sends fewer, so treat it as the version mismatch it is.
+	if (packet_in[0]->len < NET_CONNECT_NAME)
+	{
+		fprintf(stderr, "error: malformed connect packet from opponent (%d bytes)\n", packet_in[0]->len);
+		network_tyrian_halt(4, true);
+	}
 	if (SDLNet_Read16(&packet_in[0]->data[4]) != NET_VERSION)
 	{
 		fprintf(stderr, "error: network version did not match opponent's\n");
@@ -1530,7 +1587,7 @@ void network_shutdown(void)
 	if (packet_temp)     { SDLNet_FreePacket(packet_temp);     packet_temp = NULL; }
 	if (packet_out_temp) { SDLNet_FreePacket(packet_out_temp); packet_out_temp = NULL; }
 
-	if (socket) { SDLNet_UDP_Close(socket); socket = NULL; }
+	if (net_socket) { SDLNet_UDP_Close(net_socket); net_socket = NULL; }
 
 	SDLNet_Quit();
 
@@ -1720,6 +1777,53 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms)
 	return found;
 }
 
+// Stop Windows failing the next recv with WSAECONNRESET after an ICMP port-unreachable (see
+// network_recv_one).  SDL_net keeps the raw handle private, so it is read out of the opaque
+// struct and then proved to be ours -- a datagram socket, on the port SDL_net says it bound --
+// before anything is set on it.  A layout that stops matching simply skips the ioctl.
+#ifdef _WIN32
+static void network_allow_conn_reset(void)
+{
+	// SDL2_net's struct _UDPsocket opens with these two members.
+	struct sdlnet_udpsocket_head
+	{
+		int    ready;
+		SOCKET channel;
+	};
+
+	const SOCKET fd = ((const struct sdlnet_udpsocket_head *)net_socket)->channel;
+
+	int type = 0, type_len = (int)sizeof(type);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, (char *)&type, &type_len) != 0 || type != SOCK_DGRAM)
+	{
+		fprintf(stderr, "warning: could not reach the UDP socket; leaving WSAECONNRESET on\n");
+		return;
+	}
+
+	// A joiner deliberately opens port 0, which SDL_net leaves unbound and reports as 0; there is
+	// nothing to compare against then, and the socket type check above already stands alone.
+	const IPaddress *const bound = SDLNet_UDP_GetPeerAddress(net_socket, -1);
+	if (bound != NULL && bound->port != 0)
+	{
+		struct sockaddr_in addr;
+		int addr_len = (int)sizeof(addr);
+
+		if (getsockname(fd, (struct sockaddr *)&addr, &addr_len) != 0 ||
+		    addr.sin_family != AF_INET || addr.sin_port != bound->port)
+		{
+			fprintf(stderr, "warning: UDP socket did not check out; leaving WSAECONNRESET on\n");
+			return;
+		}
+	}
+
+	DWORD off = 0, returned = 0;
+	if (WSAIoctl(fd, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &returned, NULL, NULL) != 0)
+		fprintf(stderr, "warning: WSAIoctl(SIO_UDP_CONNRESET): %d\n", WSAGetLastError());
+}
+#else
+static void network_allow_conn_reset(void) { }
+#endif
+
 int network_init(void)
 {
 	printf("Initializing network...\n");
@@ -1736,12 +1840,14 @@ int network_init(void)
 		return -1;
 	}
 
-	socket = SDLNet_UDP_Open(network_player_port);
-	if (!socket)
+	net_socket = SDLNet_UDP_Open(network_player_port);
+	if (!net_socket)
 	{
 		fprintf(stderr, "error: SDLNet_UDP_Open: %s\n", SDLNet_GetError());
 		return -2;
 	}
+
+	network_allow_conn_reset();
 
 	packet_temp = SDLNet_AllocPacket(NET_PACKET_SIZE);
 	packet_out_temp = SDLNet_AllocPacket(NET_PACKET_SIZE);

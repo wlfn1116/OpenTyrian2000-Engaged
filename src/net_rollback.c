@@ -97,7 +97,6 @@ bool nrb_active(void)
                                       /* something is wedged beyond waiting   */
 #define NRB_REC_BYTES   14            /* wire size of one input record        */
 #define NRB_HDR_BYTES   48            /* wire size of the packet header       */
-#define NRB_DRAIN_MAX   32            /* datagrams read per frame at most     */
 
 /* Wire-relevant tuple bits: the four buttons, the four requests, the analog
  * link flag.  The RB_EV_* bits are self-test-local and never leave a machine. */
@@ -884,7 +883,9 @@ static void nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 	if (SDL_GetTicks() - last_resend_tick > 100)
 		nrb_send_input();
 
-	if (network_check() == 0)
+	// <= 0, not == 0: a receive error reads nothing, so skipping the sleep on it would
+	// spin this pump on a core for the whole stall.
+	if (network_check() <= 0)
 		SDL_Delay(1);
 
 	const Uint32 waited = SDL_GetTicks() - wait_start;
@@ -1056,15 +1057,8 @@ NrbStep nrb_driver(void)
 	JE_clearSpecialRequests();
 
 	/* Ingest whatever has arrived and correct the timeline if needed.
-	 *
-	 * DRAIN, don't take one: network_check() handles a single datagram per call
-	 * and the peer sends one every frame, so at one call per frame the socket
-	 * runs at exactly break-even -- any burst (a retransmit, a keep-alive, a
-	 * stray discovery probe) parks a backlog that never clears again and reads
-	 * as permanently added latency and deeper prediction.  Bounded so a flood
-	 * cannot hold the frame open indefinitely. */
-	for (int i = 0; i < NRB_DRAIN_MAX && network_check() > 0; ++i)
-		;
+	 * network_check() drains the socket itself (see NET_DRAIN_MAX). */
+	network_check();
 	{
 		const Uint32 K = nrb_scan_mispredict();
 		if (K != 0)

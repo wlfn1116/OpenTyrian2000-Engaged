@@ -501,7 +501,7 @@ bool networkLobby(void)
 		const char *items[ITEM_COUNT];
 		items[ITEM_HOST] = "Host Game";
 		items[ITEM_FIND] = "Find LAN Games";
-		items[ITEM_JOIN] = "Join by Address";
+		items[ITEM_JOIN] = "Join by IP Address";
 		items[ITEM_NAME] = nameItem;
 		items[ITEM_BACK] = "Back";
 
