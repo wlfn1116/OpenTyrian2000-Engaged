@@ -111,6 +111,11 @@ void rollback_state_register_globals(void)
 	REG(enemyStillExploding);
 	/* Level events 49-52 rewrite enemy template slot 0 mid-level. */
 	rollback_register("enemyDat[0]", &enemyDat[0], sizeof(enemyDat[0]));
+	/* Secret-orb warp latch (episodes.c).  The pickup is guarded by !bonusLevel;
+	 * left out of the registry, a re-simulated pickup found the flag already set
+	 * from the first pass and silently skipped the nextLevel warp assignment --
+	 * the "orb collected but sent to the normal next level" bug. */
+	REG(bonusLevel);
 
 	/* --- Enemy shots ------------------------------------------------------ */
 	REG_ARR(enemyShot);

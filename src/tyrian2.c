@@ -441,14 +441,52 @@ static void update_ship_override(float alpha)
 {
 	// Extrapolate each ship's actual per-tick velocity (a fixed step would fight the sim). The
 	// offset also carries the shadow and charge meter; sidekicks interpolate on their own.
+	// Rollback netplay: remote-ship error smoothing.  A rollback correction
+	// rewrites the peer ship's tick positions in one step; drawing straight from
+	// them makes every correction a visible snap.  Ease the DRAWN position
+	// toward the target instead -- wall-clock based and presentation-only, so it
+	// can never touch simulation state.  ~90ms time constant: corrections glide
+	// but aimed dodges still read as immediate.
+	static float  rsm_x[2], rsm_y[2];
+	static bool   rsm_valid[2];
+	static Uint64 rsm_last_counter;
+	float rsm_ease = 1.0f;
+	if (nrb_active())
+	{
+		const Uint64 now = SDL_GetPerformanceCounter();
+		if (rsm_last_counter != 0)
+		{
+			const float dt_ms = (float)(now - rsm_last_counter) * 1000.0f
+			                  / (float)SDL_GetPerformanceFrequency();
+			rsm_ease = dt_ms / 90.0f;
+			if (rsm_ease > 1.0f) rsm_ease = 1.0f;
+			if (rsm_ease < 0.0f) rsm_ease = 0.0f;
+		}
+		rsm_last_counter = now;
+	}
+
 	const int players = twoPlayerMode ? 2 : 1;
 	for (int p = 0; p < players; ++p)
 	{
+		const bool local  = (uint)(p + 1) == thisPlayerNum;
+		const bool docked = (p == 1 && twoPlayerLinked);
+
 		// Rollback netplay: the LOCAL ship's override is driven per render frame
 		// by the VT integrator (single-player feel); don't overwrite it with the
-		// per-tick extrapolation meant for sim-positioned ships.
-		if (nrb_active() && vt_ship_owns() && (uint)(p + 1) == thisPlayerNum)
+		// per-tick extrapolation meant for sim-positioned ships.  A docked local
+		// Dragonwing is sim-pinned to the carrier, so it falls through to the
+		// dock case below instead.
+		if (nrb_active() && vt_ship_owns() && local && !docked)
 			continue;
+
+		// Fused pair in rollback netplay: the sim pins player 2 to player 1
+		// every tick, so between ticks it must ride the carrier's own offset
+		// (player 0 was handled first in this loop) or the pair visibly splits.
+		if (nrb_active() && docked)
+		{
+			rl_set_ship_override(p, rl_get_ship_override_dx(0), rl_get_ship_override_dy(0));
+			continue;
+		}
 
 		int vx = ship_vel_x[p], vy = ship_vel_y[p];
 		// A large jump (warp, dragonwing spawn, level start) isn't real velocity;
@@ -457,6 +495,32 @@ static void update_ship_override(float alpha)
 		{
 			vx = 0;
 			vy = 0;
+		}
+
+		if (nrb_active() && !local)
+		{
+			// Remote ship: ease the absolute drawn position toward this frame's
+			// extrapolation target; snap across warps/respawns.
+			const float tgt_x = (float)ship_tick_x[p] + vx * alpha;
+			const float tgt_y = (float)ship_tick_y[p] + vy * alpha;
+
+			if (!rsm_valid[p] ||
+			    tgt_x - rsm_x[p] > 40.0f || tgt_x - rsm_x[p] < -40.0f ||
+			    tgt_y - rsm_y[p] > 40.0f || tgt_y - rsm_y[p] < -40.0f)
+			{
+				rsm_x[p] = tgt_x;
+				rsm_y[p] = tgt_y;
+				rsm_valid[p] = true;
+			}
+			else
+			{
+				rsm_x[p] += (tgt_x - rsm_x[p]) * rsm_ease;
+				rsm_y[p] += (tgt_y - rsm_y[p]) * rsm_ease;
+			}
+
+			rl_set_ship_override(p, rsm_x[p] - (float)ship_tick_x[p],
+			                        rsm_y[p] - (float)ship_tick_y[p]);
+			continue;
 		}
 		// Float offset: the replay rounds it at the render scale, so a supersampled
 		// ship glides on the sub-pixel grid instead of stepping whole pixels.
@@ -816,10 +880,17 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 
 // Refresh the ship position history (trailing sidekicks read old_x/old_y): vanilla derives it
 // from an intra-tick delta, which is zero whenever VT is the one moving the ship.
+// Movement is tracked against this function's OWN last-seen position, not ship_tick_x/y:
+// ship_pred_on_tick now captures those inside the sim frame (rollback determinism), which
+// would read as "not moved" by the time this runs after the present.
+static int hist_prev_x[2] = { -32768, -32768 }, hist_prev_y[2] = { -32768, -32768 };
+
 static void vt_refresh_position_history(int p)
 {
-	if (player[p].x == ship_tick_x[p] && player[p].y == ship_tick_y[p])
+	if (player[p].x == hist_prev_x[p] && player[p].y == hist_prev_y[p])
 		return;
+	hist_prev_x[p] = player[p].x;
+	hist_prev_y[p] = player[p].y;
 
 	for (unsigned int i = 1; i < COUNTOF(player[p].old_x); ++i)
 	{
@@ -851,7 +922,13 @@ static void vt_ship_tick_player(int p)
 	vt_vx[p] += (float)(player[p].x_velocity - vt_wrote_vx[p]);
 	vt_vy[p] += (float)(player[p].y_velocity - vt_wrote_vy[p]);
 
-	vt_refresh_position_history(p);
+	// Rollback netplay: positions apply MID-tick there (live commit / tuple), so
+	// the classic in-sim history block already shifted old_x/old_y for every
+	// moved ship.  Shifting again here made the history advance twice on
+	// presented ticks but once on re-simulated ones -- a cross-machine desync in
+	// the trailing-sidekick anchor (and visible pod jitter).
+	if (!nrb_active())
+		vt_refresh_position_history(p);
 }
 
 void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
@@ -866,8 +943,11 @@ void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
 		{
 			// Its position arrives over the wire, but the trailing-sidekick history still has
 			// to follow it: the classic path that maintains that is skipped while VT owns the
-			// level, so nothing else would update it.
-			vt_refresh_position_history(p);
+			// level, so nothing else would update it.  Rollback mode is the exception: there
+			// the wire position applies mid-tick and the classic in-sim block fires normally
+			// (see vt_ship_tick_player).
+			if (!nrb_active())
+				vt_refresh_position_history(p);
 			continue;
 		}
 
@@ -1522,6 +1602,17 @@ static int enemy_fixed_move_y(unsigned int i)
 	return (move - scalable) + scaled;
 }
 
+// Per-slot last-drawn anchor for the enemy velocity HINT the render list falls
+// back on when cross-frame pairing fails (blinking sprites: the arcade pickup
+// balls hide every other tick).  Presentation-only: feeds rl interpolation, never
+// the sim.  The gap tolerance (3 ticks) is what lets a blinker keep its velocity
+// across its hidden frames; a type change (recycled slot) discards the anchor.
+static int    rl_enemy_hint_px[100], rl_enemy_hint_py[100];
+static int    rl_enemy_hint_vx[100], rl_enemy_hint_vy[100];
+static Uint32 rl_enemy_hint_gen[100];
+static JE_word rl_enemy_hint_type[100];
+static Uint32 rl_enemy_gen;   // bumped once per sim pass at the loop top
+
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset)
 {
 	if (enemy[i].sprite2s == NULL)
@@ -1529,9 +1620,34 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		fprintf(stderr, "warning: enemy %d sprite missing\n", i);
 		return;
 	}
-	
+
 	const int x = enemy[i].ex + x_offset + tempMapXOfs,
 	          y = enemy[i].ey + y_offset;
+
+	// First draw of this slot this tick: derive the per-tick velocity from the
+	// last drawn anchor (averaged across a short hidden gap), then re-anchor.
+	// Later parts of a multi-cell enemy reuse the cached hint.
+	if (rl_enemy_hint_gen[i] != rl_enemy_gen)
+	{
+		const Uint32 gap = rl_enemy_gen - rl_enemy_hint_gen[i];
+		int hvx = 0, hvy = 0;
+		if (gap >= 1 && gap <= 3 && rl_enemy_hint_type[i] == enemy[i].enemytype)
+		{
+			hvx = (x - rl_enemy_hint_px[i]) / (int)gap;
+			hvy = (y - rl_enemy_hint_py[i]) / (int)gap;
+			if (hvx > 40 || hvx < -40 || hvy > 40 || hvy < -40)
+			{
+				hvx = 0;
+				hvy = 0;
+			}
+		}
+		rl_enemy_hint_vx[i] = hvx;
+		rl_enemy_hint_vy[i] = hvy;
+		rl_enemy_hint_px[i] = x;
+		rl_enemy_hint_py[i] = y;
+		rl_enemy_hint_gen[i] = rl_enemy_gen;
+		rl_enemy_hint_type[i] = enemy[i].enemytype;
+	}
 
 	// enemycycle indexes egr[] 1-based; skip anything that doesn't name a real in-sheet sprite
 	// instead of underflowing into a wild read in blit_sprite2.
@@ -1543,6 +1659,8 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		return;
 
 	rl_current_id = RL_ID_ENEMY_BASE + (int)i;  // tag for cross-frame interpolation
+	rl_current_vel_x = rl_enemy_hint_vx[i];     // fallback velocity when pairing fails (blinkers)
+	rl_current_vel_y = rl_enemy_hint_vy[i];
 	rl_current_par_frac = tempMapXOfs_frac;     // float the parallax to match the background
 	rl_current_par_layer = tempMapXOfs_layer;
 	rl_current_par_anchor = (float)(tempMapXOfs - PLAYFIELD_X_SHIFT) + tempMapXOfs_frac;
@@ -1564,6 +1682,8 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 	else
 		blit_sprite2(surface, x, y, *enemy[i].sprite2s, index);
 	rl_current_id = 0;
+	rl_current_vel_x = 0;
+	rl_current_vel_y = 0;
 	rl_current_par_frac = 0.0f;
 	rl_current_par_layer = 0;
 	rl_current_par_anchor = 0.0f;
@@ -3270,6 +3390,9 @@ level_loop:
 #endif
 	rollback_selftest_frame_begin();
 
+	// New sim pass: advance the enemy velocity-hint generation (blit_enemy).
+	++rl_enemy_gen;
+
 	//tempScreenSeg = game_screen; /* side-effect of game_screen */
 
 	if (isNetworkGame)
@@ -4602,8 +4725,11 @@ draw_player_shot_loop_end:
 
 	// Explosion sparks (superpixels): drawn AND recorded here, before the residual
 	// snapshot below, so they're part of its baseline and interpolate via the replay
-	// instead of snapping through the residual.
-	JE_drawSP();
+	// instead of snapping through the residual.  Sparks are pure presentation
+	// (never collided, unregistered), so silent re-simulation passes skip the
+	// whole pass -- they advance once per PRESENTED frame, the correct cadence.
+	if (!rollback_resim_silent)
+		JE_drawSP();
 
 	// Smoothie levels: draw+record the enemy health bars before the residual snapshot
 	// (like the sparks above) so they interpolate with their enemy and diff out of
@@ -4927,6 +5053,14 @@ draw_player_shot_loop_end:
 		}
 	}
 
+	// Per-tick ship snapshot (ship_tick_x/y + ship_vel): moved INSIDE the sim
+	// frame from the old post-present site.  vt_ship_shot_delta derives the
+	// velocity that ship-tracking and inheritance shots (Vulcan!) spawn with
+	// from ship_tick_x/y, so a rollback re-simulation must advance it per
+	// simulated frame -- left outside, a resimmed fire tick computed a stale
+	// delta and the machines' copies of the same shot flew differently.
+	ship_pred_on_tick();
+
 	/*Start backgrounds if no enemies on screen
 	  End level if number of enemies left to kill equals 0.
 	  (Historically this block sat AFTER the present call; it draws nothing and
@@ -5174,7 +5308,9 @@ draw_player_shot_loop_end:
 	else
 		rl_capture_residual_delta(VGAScreen2, game_screen);  // overlay-only (WARNING bars, boss bar, HUD) -> re-applied unfiltered on the display frame
 	vt_ship_tick();       // fold external forces / repositions into the variable-dt ship
-	ship_pred_on_tick();  // snapshot authoritative ship pos for render-rate prediction
+	// (ship_pred_on_tick moved INTO the sim frame, before the netcode driver:
+	// ship_tick_x/y feed vt_ship_shot_delta -> shot-inherited velocities, so a
+	// rollback re-simulation must see per-frame values, not presented-frame ones.)
 	// This tick's ship velocity lets the render list interpolate ship-attached shots
 	// (the orbiting killer's circle); matches the c->dx just computed by rl_finalize.
 	for (int p = 0; p < (twoPlayerMode ? 2 : 1); ++p)

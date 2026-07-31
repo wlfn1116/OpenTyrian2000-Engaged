@@ -235,11 +235,16 @@ static void lobbyDrawLocalAddresses(int y)
 static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_count)
 {
 	// Draw the "searching" frame first: the probe blocks for its whole timeout.
+	// Composite the cursor into it -- it holds still for the 1.5s probe, but a
+	// frozen pointer beats a vanished one.
 	lobbyPrepareBackdrop("Find LAN Games");
 	lobbyRestoreBackdrop();
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Searching the local network...",
 	                    normal_font, centered, 15, -2, false, 2);
+	mouseCursor = MOUSE_POINTER_NORMAL;
+	JE_mouseStart();
 	JE_showVGA();
+	JE_mouseReplace();
 	fade_palette(colors, 10, 0, 255);
 
 	const int count = network_discover(hosts, LOBBY_MAX_FOUND, 1500);

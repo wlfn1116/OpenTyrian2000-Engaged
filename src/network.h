@@ -104,6 +104,14 @@ extern JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
 extern JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 
 #ifdef WITH_NETWORK
+#include <setjmp.h>
+
+// Landing pad for a mid-game network teardown: once armed (opentyr.c's main
+// loop, just before the title screen), network_tyrian_halt cleans the session
+// up and longjmps back there instead of exiting the process.
+extern jmp_buf network_bailout_env;
+extern bool network_bailout_armed;
+
 void network_prepare(Uint16 type);
 bool network_send(int len);
 
@@ -111,6 +119,10 @@ bool network_send(int len);
 // input packets are redundant by construction and must never be retransmitted
 // by the reliability layer.
 bool network_send_unacked(int len);
+
+// Any packet (including keep-alives) received recently?  Distinguishes a slow
+// peer (in menus, loading) from a dead connection.
+bool network_peer_alive(void);
 
 int network_check(void);
 bool network_update(void);

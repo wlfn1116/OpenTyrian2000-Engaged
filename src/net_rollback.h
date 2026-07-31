@@ -43,6 +43,12 @@ bool nrb_active(void);
 void nrb_set_session_mode(bool enabled);
 bool nrb_session_mode(void);
 
+/* The host's smooth-motion (VT) choice, adopted for the session: it selects
+ * which ship-physics tail the SIMULATION runs, so it must match on both
+ * machines (JE_playerMovement's vt_sim gate). */
+void nrb_set_session_vt(bool enabled);
+bool nrb_session_vt(void);
+
 /* Sim frame currently being simulated (1-based; 0 = before the first tick). */
 Uint32 nrb_frame(void);
 
