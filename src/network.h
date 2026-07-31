@@ -69,9 +69,14 @@ extern char *network_player_name, *network_opponent_name;
 // that would wipe out the host port the player chose.
 extern Uint16 network_listen_port;
 
-// Set by the in-game lobby before network_connect(). The host listens, is always player 1,
-// and dictates every simulation-affecting setting for the session (see network_settings_*).
-// The joiner is player 2. Command-line netplay (params.c) still sets these directly.
+// The player slot the lobby claims when hosting: 1, or 2 to fly the Dragonwing.  A preference,
+// unlike networkHostPlayerNum, which is what the live session settled on.
+extern int network_host_player;
+
+// Set by the in-game lobby before network_connect(). The host listens, picks which player it
+// flies, and dictates every simulation-affecting setting for the session (see
+// network_settings_*). The joiner takes the other slot. Command-line netplay (params.c) still
+// sets these directly.
 extern bool network_is_host;
 
 // True once the lobby has taken over setup, so the startup path in opentyr.c knows not to
@@ -112,6 +117,13 @@ extern UDPpacket *packet_in[], *packet_out[],
 #endif
 
 extern uint thisPlayerNum;
+
+// The slot the host is flying (1 or 2).  Everything the host decides for both machines --
+// episode, difficulty, a debug-menu edit made by both at once -- keys off this rather than
+// spelling the host as "player 1", which it no longer has to be.  Command-line netplay has no
+// host and leaves it at 1, so whoever is player 1 decides there, exactly as before.
+extern uint networkHostPlayerNum;
+
 extern JE_boolean haltGame;
 extern JE_boolean moveOk;
 extern JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;

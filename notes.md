@@ -462,6 +462,29 @@ bit both sims consume on the same frame, not through `reallyEndLevel`.
 
 Adding a field to the block moves the wire offsets; bump `NET_VERSION`.
 
+### Host and player slot
+
+Two separate things, since a host can choose to fly player two (the Dragonwing):
+
+- `network_is_host` — who listens and decides for both machines;
+- `networkHostPlayerNum` — which slot that machine flies, so "the host decides"
+  never means "player 1 decides". Command-line netplay has no host and leaves it 1,
+  which is what it always did.
+
+The joiner has to send its connect packet before the host's arrives, so the slot it
+declares there is provisional; the host's own declared number settles it, and the
+joiner takes the other. That is also why only command-line games still treat two
+equal numbers as a conflict — in a lobby game the two are *expected* to collide, and
+the check would reject exactly the case the assignment resolves.
+
+Slot-based rules stay slot-based, and must not be converted: player two is the
+Dragonwing (`is_dragonwing`, the docking rules), player one gets the Silver Ship and
+the 6px tighter bottom bound.
+
+The wire format does not change, so no `NET_VERSION` bump: an old peer reads the
+host's slot from the same field it always did. Only an old *joiner* against a host
+that picked player two is broken, and it fails loudly on its own conflict check.
+
 ### Reliability layer
 
 Three rules the UDP plumbing rests on, each of which was once broken:

@@ -7490,7 +7490,7 @@ redo:
 				RbInput in;
 				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
 				              accelXC, accelYC, link_gun_analog, link_gun_angle);
-				if (thisPlayerNum == 1)
+				if (thisPlayerNum == networkHostPlayerNum)
 					in.difficulty = (Uint8)difficultyLevel;  // host dictates
 				nrb_record_local(&in);
 
@@ -7580,7 +7580,7 @@ redo:
 				// local tuple, so both machines' sims see the same kind of input.
 				RbInput in;
 				nrb_get_remote(nrb_frame(), &in);
-				if (thisPlayerNum == 2)
+				if (thisPlayerNum != networkHostPlayerNum)
 				{
 					// Host-authoritative, but clamped like every other value adopted from
 					// the wire: difficultyLevel indexes difficultyNameB[], so a corrupt
@@ -7606,7 +7606,7 @@ redo:
 		{
 			if (playerNum_ != thisPlayerNum)
 			{
-				if (thisPlayerNum == 2)
+				if (thisPlayerNum != networkHostPlayerNum)
 					difficultyLevel = SDLNet_Read16(&packet_state_in[0]->data[16]);
 
 				Uint16 buttons = SDLNet_Read16(&packet_state_in[0]->data[12]);

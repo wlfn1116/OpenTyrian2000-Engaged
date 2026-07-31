@@ -1042,7 +1042,7 @@ NrbStep nrb_driver(void)
 				s->in.velX = (Sint16)(vx > 127 ? 127 : (vx < -127 ? -127 : vx));
 				s->in.velY = (Sint16)(vy > 127 ? 127 : (vy < -127 ? -127 : vy));
 			}
-			if (thisPlayerNum == 1)
+			if (thisPlayerNum == networkHostPlayerNum)
 				s->in.difficulty = (Uint8)difficultyLevel;
 			s->tag = nrb_cur;
 		}

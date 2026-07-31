@@ -379,6 +379,12 @@ Effects are not available online.
 
 ## Online play
 
+Host Game opens a screen with the listen port, **Host Flies**, and Start Hosting.
+Host Flies picks which ship you take when hosting: player one, or player two, which
+is the Dragonwing. Whoever joins gets the other one. Left and right change it, and
+it is remembered between sessions. The host chooses the episode and difficulty
+either way.
+
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half
 seconds and reads `--` until the first reply arrives. Under roughly 85ms the game

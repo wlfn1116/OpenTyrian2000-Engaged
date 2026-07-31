@@ -6342,7 +6342,7 @@ void networkStartScreen(void)
 	}
 
 	twoPlayerMode = true;
-	if (thisPlayerNum == 1)
+	if (thisPlayerNum == networkHostPlayerNum)
 	{
 		fade_black(10);
 

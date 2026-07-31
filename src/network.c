@@ -105,6 +105,8 @@ Uint16 network_player_port = NET_PORT,
 
 Uint16 network_listen_port = NET_PORT;
 
+int network_host_player = 1;
+
 static char empty_string[] = "";
 char *network_player_name = empty_string,
      *network_opponent_name = empty_string;
@@ -173,6 +175,7 @@ bool network_bailout_armed = false;
 #endif
 
 uint thisPlayerNum = 0;  /* Player number on this PC (1 or 2) */
+uint networkHostPlayerNum = 1;  /* Player number the host is flying */
 
 JE_boolean haltGame = false;
 
@@ -923,8 +926,10 @@ int network_connect(void)
 
 	// The lobby decides the roles, so derive the player number from them; a command-line
 	// game keeps whatever --net-player-number set and is checked for conflicts below.
+	// The joiner's slot is provisional until the host's connect packet names the host's
+	// own -- it has to send before it can know which one that leaves it.
 	if (network_from_lobby)
-		thisPlayerNum = network_is_host ? 1 : 2;
+		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
 	// Netcode mode: start from our own config.  A lobby joiner overwrites this
 	// when it adopts the host's settings block; command-line games have no host,
@@ -1013,6 +1018,17 @@ connect_again:
 			network_delay = host_delay;
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+
+			// The host names its own slot too, and the joiner takes the other one: a host
+			// that picked player 2 to fly the Dragonwing leaves player 1 here.
+			const int host_slot = SDLNet_Read16(&packet_in[0]->data[10]);
+			if (host_slot != 1 && host_slot != 2)
+			{
+				fprintf(stderr, "error: host asked for an unusable player number (%d)\n", host_slot);
+				network_tyrian_halt(6, true);
+			}
+			networkHostPlayerNum = (uint)host_slot;
+			thisPlayerNum = 3 - networkHostPlayerNum;
 		}
 	}
 	else
@@ -1025,7 +1041,11 @@ connect_again:
 			network_tyrian_halt(5, true);
 		}
 	}
-	if (SDLNet_Read16(&packet_in[0]->data[10]) == thisPlayerNum)
+	// Only command-line netplay can conflict: both sides were numbered by hand, and nothing
+	// else stops them flying the same ship.  A lobby game is settled above instead -- the
+	// joiner's declared number is stale by construction (sent before the host's arrived), so
+	// comparing the two would reject the very case that assignment resolves.
+	if (!network_from_lobby && SDLNet_Read16(&packet_in[0]->data[10]) == thisPlayerNum)
 	{
 		fprintf(stderr, "error: player number conflicts with opponent's\n");
 		network_tyrian_halt(6, true);
@@ -1494,11 +1514,11 @@ bool network_debug_sync_pump(bool in_level)
 	}
 
 	const Uint32 gen = SDLNet_Read32(&packet_in[0]->data[NDS_GEN]);
-	const bool from_host = packet_in[0]->data[NDS_SENDER] == 1;
+	const bool from_host = packet_in[0]->data[NDS_SENDER] == networkHostPlayerNum;
 
 	// Older than what we hold means our own edit superseded it; a tie means both players
 	// edited during the same rendezvous, and the host's block is the one both sides take.
-	if (gen > debug_sync_gen || (gen == debug_sync_gen && from_host && thisPlayerNum != 1))
+	if (gen > debug_sync_gen || (gen == debug_sync_gen && from_host && thisPlayerNum != networkHostPlayerNum))
 	{
 		network_debug_state_adopt(packet_in[0]->data, in_level);
 		debug_sync_gen = gen;

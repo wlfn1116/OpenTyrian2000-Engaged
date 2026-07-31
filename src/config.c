@@ -532,6 +532,12 @@ bool load_opentyrian_config(void)
 			if (net_port > 0 && net_port < 49152)
 				network_listen_port = (Uint16)net_port;
 
+			// Which player the host flies (2 is the Dragonwing); the joiner takes the other.
+			int net_host_player = network_host_player;
+			config_get_int_option(section, "net_host_player", &net_host_player);
+			if (net_host_player == 1 || net_host_player == 2)
+				network_host_player = net_host_player;
+
 			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
 			// link can be tuned without a rebuild -- the host's value is what both sides use.
 			int net_delay = network_delay;
@@ -793,6 +799,7 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "net_player_name", network_player_name);
 	config_set_string_option(section, "net_last_host", network_opponent_host ? network_opponent_host : "");
 	config_set_int_option(section, "net_listen_port", network_listen_port);
+	config_set_int_option(section, "net_host_player", network_host_player);
 	config_set_int_option(section, "net_delay", network_delay);
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);

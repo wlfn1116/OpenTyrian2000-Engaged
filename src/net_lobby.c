@@ -232,6 +232,18 @@ static bool filterDigits(char c)
 	return c >= '0' && c <= '9';
 }
 
+// Ports we can actually bind and dial: 49152 up is the ephemeral range the joiner's own socket
+// is drawn from.  Used for the listen port and for a typed ":port" suffix alike.
+static bool lobbyValidPort(const char *text, Uint16 *out)
+{
+	const int port = atoi(text);
+	if (port <= 0 || port >= 49152)
+		return false;
+
+	*out = (Uint16)port;
+	return true;
+}
+
 static bool filterAddress(char c)
 {
 	// IPv4, a hostname, or either with a ":port" suffix.
@@ -406,6 +418,196 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 	}
 }
 
+// Everything that has to be settled before the machine starts listening.  Returns true to go
+// ahead and host, with the port applied and the slot choice made; false to go back.
+static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
+{
+	enum
+	{
+		ITEM_PORT = 0,
+		ITEM_PLAYER,
+		ITEM_START,
+		ITEM_BACK,
+		ITEM_COUNT,
+	};
+
+	char status[64] = "";
+
+	size_t selectedIndex = ITEM_START;
+	int wItem[ITEM_COUNT] = { 0 };
+
+	const int yItems = 70;
+	const int dyItems = 22;
+	const int hItem = 13;
+
+	lobbyPrepareBackdrop("Host Game");
+
+	for (;;)
+	{
+		char portItem[32];
+		snprintf(portItem, sizeof(portItem), "Listen Port: %s", port_buf[0] ? port_buf : "(none)");
+
+		const char *items[ITEM_COUNT];
+		items[ITEM_PORT] = portItem;
+		items[ITEM_PLAYER] = network_host_player == 2
+		                   ? "Host Flies: Dragonwing"
+		                   : "Host Flies: Silver Ship";
+		items[ITEM_START] = "Start Hosting";
+		items[ITEM_BACK] = "Back";
+
+		lobbyRestoreBackdrop();
+
+		for (size_t i = 0; i < ITEM_COUNT; ++i)
+		{
+			wItem[i] = JE_textWidth(items[i], normal_font);
+			const int x = LOBBY_XCENTER - wItem[i] / 2;
+			const int y = yItems + dyItems * (int)i;
+
+			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
+			                    -4 + (i == selectedIndex ? 2 : 0), false, 2);
+		}
+
+		if (status[0])
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 175, status, normal_font, centered, 15, -3, false, 2);
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+
+		// Drop whatever opened this screen (or closed the port field) before waiting for a
+		// fresh press; otherwise the first frame reads it again and acts on the selected row.
+		service_SDL_events(true);
+
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		const bool mouseMoved = lobbyWaitForInput();
+
+		bool action = false;
+
+		if (mouseMoved || newmouse)
+		{
+			for (size_t i = 0; i < ITEM_COUNT; ++i)
+			{
+				const int x = LOBBY_XCENTER - wItem[i] / 2;
+				const int y = yItems + dyItems * (int)i;
+
+				if (mouse_x >= x && mouse_x < x + wItem[i] && mouse_y >= y && mouse_y < y + hItem)
+				{
+					if (selectedIndex != i)
+					{
+						JE_playSampleNum(S_CURSOR);
+						selectedIndex = i;
+					}
+					if (newmouse && lastmouse_but == SDL_BUTTON_LEFT)
+						action = true;
+					break;
+				}
+			}
+		}
+
+		if (newmouse)
+		{
+			if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				JE_playSampleNum(S_SPRING);
+				return false;
+			}
+		}
+		else if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
+				break;
+
+			case SDL_SCANCODE_DOWN:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
+				break;
+
+			case SDL_SCANCODE_RETURN:
+			case SDL_SCANCODE_KP_ENTER:
+			case SDL_SCANCODE_SPACE:
+				action = true;
+				break;
+
+			// The one value row answers to left/right as well, the way every other
+			// setting in the game does.
+			case SDL_SCANCODE_LEFT:
+			case SDL_SCANCODE_RIGHT:
+				if (selectedIndex == ITEM_PLAYER)
+					action = true;
+				break;
+
+			case SDL_SCANCODE_ESCAPE:
+				JE_playSampleNum(S_SPRING);
+				return false;
+
+			default:
+				break;
+			}
+		}
+
+		if (!action)
+			continue;
+
+		status[0] = '\0';
+
+		switch (selectedIndex)
+		{
+		case ITEM_PORT:
+		{
+			JE_playSampleNum(S_SELECT);
+
+			const bool entered = lobbyTextEntry("Host Game", "Listen on port:", port_buf,
+			                                    port_buf_size, filterDigits, true);
+
+			// The field drew its own screen over the backdrop, whatever the answer was.
+			lobbyPrepareBackdrop("Host Game");
+
+			Uint16 port;
+			if (entered && !lobbyValidPort(port_buf, &port))
+				SDL_strlcpy(status, "Port must be 1 to 49151.", sizeof(status));
+			break;
+		}
+
+		case ITEM_PLAYER:
+			// Player 2 is the Dragonwing, so this is the row that lets a host fly it; the
+			// joiner is told which slot is left during the handshake.
+			JE_playSampleNum(S_CLICK);
+			network_host_player = (network_host_player == 2) ? 1 : 2;
+			break;
+
+		case ITEM_START:
+		{
+			Uint16 port;
+			if (!lobbyValidPort(port_buf, &port))
+			{
+				SDL_strlcpy(status, "Port must be 1 to 49151.", sizeof(status));
+				break;
+			}
+
+			JE_playSampleNum(S_SELECT);
+			network_listen_port = port;
+			network_player_port = port;
+			newkey = newmouse = false;
+			return true;
+		}
+
+		case ITEM_BACK:
+			JE_playSampleNum(S_SPRING);
+			return false;
+
+		default:
+			break;
+		}
+	}
+}
+
 // Tear the session down after a failed or cancelled attempt so the title screen is reachable
 // again and a second try starts from a clean slate.
 static void lobbyAbort(const char *status)
@@ -425,7 +627,12 @@ static bool lobbyStartSession(bool as_host)
 	isNetworkGame = true;
 	network_from_lobby = true;
 	network_is_host = as_host;
-	thisPlayerNum = as_host ? 1 : 2;
+
+	// The host takes the slot it asked for; the joiner assumes it is hosted by a player 1 and
+	// corrects itself from the host's connect packet, which is the first word it gets on the
+	// subject (see network_connect).
+	networkHostPlayerNum = (as_host && network_host_player == 2) ? 2 : 1;
+	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
 	if (network_init() != 0)
 	{
@@ -496,7 +703,7 @@ bool networkLobby(void)
 	for (;;)
 	{
 		char nameItem[48];
-		snprintf(nameItem, sizeof(nameItem), "Player Name: %s", name_buf[0] ? name_buf : "(none)");
+		snprintf(nameItem, sizeof(nameItem), "Your Nickname: %s", name_buf[0] ? name_buf : "(none)");
 
 		const char *items[ITEM_COUNT];
 		items[ITEM_HOST] = "Host Game";
@@ -632,25 +839,11 @@ bool networkLobby(void)
 		switch (selectedIndex)
 		{
 		case ITEM_HOST:
-		{
 			JE_playSampleNum(S_SELECT);
 
-			if (!lobbyTextEntry("Host Game", "Listen on port:", port_buf, sizeof(port_buf), filterDigits, true))
-				break;
-
-			const int port = atoi(port_buf);
-			if (port <= 0 || port >= 49152)
-			{
-				SDL_strlcpy(lobby_status, "Port must be 1 to 49151.", sizeof(lobby_status));
-				break;
-			}
-			network_listen_port = (Uint16)port;
-			network_player_port = (Uint16)port;
-
-			if (lobbyStartSession(true))
+			if (lobbyHostMenu(port_buf, sizeof(port_buf)) && lobbyStartSession(true))
 				return true;
 			break;
-		}
 
 		case ITEM_FIND:
 		{
@@ -698,13 +891,11 @@ bool networkLobby(void)
 			char *const colon = strrchr(host_only, ':');
 			if (colon)
 			{
-				const int port = atoi(colon + 1);
-				if (port <= 0 || port >= 49152)
+				if (!lobbyValidPort(colon + 1, &network_opponent_port))
 				{
 					SDL_strlcpy(lobby_status, "Port must be 1 to 49151.", sizeof(lobby_status));
 					break;
 				}
-				network_opponent_port = (Uint16)port;
 				*colon = '\0';
 			}
 
