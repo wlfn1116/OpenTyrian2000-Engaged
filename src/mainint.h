@@ -80,7 +80,9 @@ void JE_endLevelAni(void);
 void JE_drawCube(SDL_Surface * screen, JE_word x, JE_word y, JE_byte filter, JE_byte brightness);
 void JE_handleChat(void);
 bool str_pop_int(char *str, int *val);
-bool JE_loadScreen(void);
+// net2p pins it to the 2-player page for the online host and returns the loaded slot;
+// saving turns it into a save menu (returns 0 -- the saving happens inside).
+int JE_loadScreen(bool net2p, bool saving);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
 

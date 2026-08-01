@@ -245,8 +245,9 @@ void rollback_state_register_globals(void)
 	REG(power);
 	REG(lastPower);
 	REG(shieldWait);
-	REG_ARR(shieldGaugeFlash);
-	REG_ARR(armorGaugeFlash);
+	/* shieldGaugeFlash/armorGaugeFlash are deliberately NOT registered: they are presentation
+	 * state (armed on the live pass only, decremented only on presenting ticks), and restoring
+	 * them rewound the damage flash on every shallow rollback -- a visible gauge flicker. */
 	REG(armorShipDelay);
 	REG(warningSoundDelay);
 	REG(warningCol);

@@ -3237,6 +3237,12 @@ start_level_first:
 		temp = twoPlayerMode ? 22 : 11;
 		JE_saveGame(temp, "LAST LEVEL    ");
 		endlessSaveSlot(temp);  // not in endless mode: drops any stale endless sidecar record for this slot
+
+#ifdef WITH_NETWORK
+		// The backup just written is what the disconnect dialog offers to keep (network.c).
+		if (isNetworkGame)
+			network_session_saveable = true;
+#endif
 	}
 
 	if (!play_demo && record_demo)
@@ -6441,14 +6447,12 @@ void networkStartScreen(void)
 	{
 		fade_black(10);
 
-		// Resume an online save?  The host picks; the record rides in the details packet so the
-		// joiner adopts the exact same state (difficulty already carries the 2-player +1 bump).
-		const int resumeSlot = networkOnlineSaveSelect();
+		// New Game or Load Game.  A load applies the save right in the load menu; its record
+		// rides in the details packet so the joiner adopts the exact same state (difficulty
+		// already carries the 2-player +1 bump).
+		const int resumeSlot = networkHostStartSelect();
 		if (resumeSlot > 0)
 		{
-			gameJustLoaded = true;
-			JE_loadGame(resumeSlot);
-
 			network_prepare(PACKET_DETAILS);
 			SDLNet_Write16(episodeNum, &packet_out_temp->data[4]);
 			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[6]);
@@ -6457,7 +6461,7 @@ void networkStartScreen(void)
 
 			resumed = true;
 		}
-		else if (episodeSelect() && difficultySelect())
+		else if (resumeSlot == 0 && episodeSelect() && difficultySelect())
 		{
 			initialDifficulty = difficultyLevel;
 
@@ -6906,7 +6910,7 @@ bool titleScreen(void)
 			{
 				fade_black(15);
 
-				if (JE_loadScreen())
+				if (JE_loadScreen(false, false) > 0)
 					return true;
 
 				restart = true;

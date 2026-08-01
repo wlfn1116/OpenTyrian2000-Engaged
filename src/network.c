@@ -38,6 +38,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mainint.h"
+#include "menus.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
@@ -45,6 +46,7 @@
 #include "opentyr.h"
 #include "picload.h"
 #include "player.h"
+#include "rollback.h"
 #include "sprite.h"
 #include "tyrian2.h"
 #include "varz.h"
@@ -107,6 +109,8 @@ char *network_player_name = empty_string,
      *network_opponent_name = empty_string;
 
 bool network_is_host = false;
+
+bool network_session_saveable = false;
 bool network_from_lobby = false;
 
 // network_player_name starts out pointing at a static empty string and is otherwise owned
@@ -1208,6 +1212,11 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 	quit = true;
 
+	// The desync halt can arrive from inside a re-simulation pass, whose silent flag
+	// suppresses every sprite draw -- including this screen's text and menus.
+	rollback_resim = false;
+	rollback_resim_silent = false;
+
 	if (err >= COUNTOF(err_msg))
 		err = 0;
 
@@ -1220,44 +1229,63 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	// like every other menu screen.
 	set_menu_centered(true);
 
-	JE_loadPic(VGAScreen, 2, false);
-	JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
-
-	JE_showVGA();
-	fade_palette(colors, 10, 0, 255);
-
 	// Reached mid-game the mouse is still captured for ship control; release it,
 	// or the cursor below can never move off wherever the ship left it.
 	mouseSetRelative(false);
 
-	if (attempt_sync)
+	// A session that died under this player mid-game (peer quit, link lost, desync) leaves
+	// the run hanging: offer to keep it before unwinding.  Voluntary quits (err 0) had the
+	// shop's Save Game; pre-game failures have nothing to save (the flag is only ever set
+	// once gameplay wrote a LAST LEVEL backup).  Keep-alives inside the menus deliver the
+	// remaining acks the attempt_sync wait below otherwise handles.
+	if (err != 0 && network_session_saveable && network_bailout_armed)
 	{
-		while (!network_is_sync() && network_is_alive())
+		if (networkDisconnectSavePrompt(err_msg[err]))
 		{
-			service_SDL_events(false);
-
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			network_check();
-			SDL_Delay(16);
+			// Restore the pre-level outpost state (the LAST LEVEL backup) and run the standard
+			// save menu on it: what gets written is the same state a game-over reload or a
+			// later host resume uses, not this level's half-flown progress.
+			JE_loadGameRecord(&saveFiles[22 - 1], true);
+			JE_loadScreen(true, true);
 		}
 	}
-
-	if (err)
+	else
 	{
-		// Re-present each frame so the cursor stays alive on the "press any
-		// button" screen, like every other menu wait.
-		while (!JE_anyButton())
-		{
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
+		JE_loadPic(VGAScreen, 2, false);
+		JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
 
-			SDL_Delay(16);
+		JE_showVGA();
+		fade_palette(colors, 10, 0, 255);
+
+		if (attempt_sync)
+		{
+			while (!network_is_sync() && network_is_alive())
+			{
+				service_SDL_events(false);
+
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
+				JE_showVGA();
+				JE_mouseReplace();
+
+				network_check();
+				SDL_Delay(16);
+			}
+		}
+
+		if (err)
+		{
+			// Re-present each frame so the cursor stays alive on the "press any
+			// button" screen, like every other menu wait.
+			while (!JE_anyButton())
+			{
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
+				JE_showVGA();
+				JE_mouseReplace();
+
+				SDL_Delay(16);
+			}
 		}
 	}
 
@@ -1848,6 +1876,7 @@ void network_shutdown(void)
 	connected = false;
 	quit = false;
 	host_awaiting_peer = false;
+	network_session_saveable = false;
 
 	nrb_set_session_mode(false);
 	nrb_set_session_recovery(false);

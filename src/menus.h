@@ -32,8 +32,12 @@ bool episodeSelect(void);
 bool difficultySelect(void);
 bool timedBattleSelect(void);
 
-// Online-resume picker shown to the host after the peers connect: an online-page save slot
-// (1-based), or 0 to start a new game.
-int networkOnlineSaveSelect(void);
+// Host-side New Game / Load Game choice after the peers connect: the loaded 2-player-page
+// slot (1-based, save already applied), 0 for a new game, or -1 to abandon hosting.
+int networkHostStartSelect(void);
+
+// Session-died dialog: true = the player wants to keep the pre-level backup (caller opens
+// the save menu), false = let it go.  `message` names what ended the session.
+bool networkDisconnectSavePrompt(const char *message);
 
 #endif /* MENUS_H */

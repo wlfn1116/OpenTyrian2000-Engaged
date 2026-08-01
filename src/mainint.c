@@ -715,7 +715,26 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 }
 
 
-bool JE_loadScreen(void)
+// The episode a save will really initialize: a "Completed" save rolls over to the next one.
+static int save_effective_episode(const JE_SaveFileType *rec)
+{
+	int episode = rec->episode;
+	if (strcmp(rec->levelName, "Completed") == 0)
+	{
+		if (episode == EPISODE_AVAILABLE)
+			episode = 1;
+		else if (episode < EPISODE_AVAILABLE)
+			episode++;
+	}
+	return episode;
+}
+
+// net2p pins the menu to the 2-player page for the online host: paging is hidden, saves whose
+// episode the session lacks (episodeAvail was intersected at connect) are unselectable, and the
+// chosen slot is returned so the caller can send its record to the joiner.
+// saving turns it into a save menu (the disconnect dialog uses it): every regular slot becomes
+// a target for the standard JE_operation name-entry flow, and Exit leaves when done.
+int JE_loadScreen(bool net2p, bool saving)
 {
 	set_menu_centered(true);
 
@@ -724,7 +743,7 @@ bool JE_loadScreen(void)
 
 	bool restart = true;
 
-	size_t playersIndex = 0;
+	size_t playersIndex = net2p ? 1 : 0;
 	const size_t menuItemsCount = 12;
 	size_t selectedIndex = 0;
 
@@ -774,6 +793,11 @@ bool JE_loadScreen(void)
 			const JE_SaveFileType *const saveFile = &saveFiles[playersIndex * 11 + i];
 
 			const bool disabled = saveFile->level == 0;
+			// Online loads: a save whose episode this session lacks is shown but dimmed and
+			// unselectable.  Saving overwrites the slot, so the lock doesn't apply there.
+			const int saveEpisode = save_effective_episode(saveFile);
+			const bool epLocked = net2p && !saving && !disabled &&
+			                      (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1]);
 
 			char buffer[22];
 
@@ -786,20 +810,22 @@ bool JE_loadScreen(void)
 			}
 			else
 			{
-				JE_textShade(VGAScreen, xMenuItemName, y, saveFile->name, 13, selected ? 6 : 2, FULL_SHADE);
+				const int bright = selected ? 6 : (epLocked ? 0 : 2);
+
+				JE_textShade(VGAScreen, xMenuItemName, y, saveFile->name, 13, bright, FULL_SHADE);
 
 				snprintf(buffer, sizeof buffer, "%s %s", miscTextB[2], saveFile->levelName);
-				JE_textShade(VGAScreen, xMenuItemLastLevel, y, buffer, 5, selected ? 6 : 2, FULL_SHADE);
+				JE_textShade(VGAScreen, xMenuItemLastLevel, y, buffer, 5, bright, FULL_SHADE);
 
 				snprintf(buffer, sizeof buffer, "%s %u", miscTextB[1], saveFile->episode);
-				JE_textShade(VGAScreen, xMenuItemEpisode, y, buffer, 5, selected ? 6 : 2, FULL_SHADE);
+				JE_textShade(VGAScreen, xMenuItemEpisode, y, buffer, 5, bright, FULL_SHADE);
 			}
 		}
 
-		// Draw paging controls.
+		// Draw paging controls (fixed to the 2-player page for the online host).
 
-		const bool leftControlVisible = playersIndex > 0;
-		const bool rightControlVisible = playersIndex < 1;
+		const bool leftControlVisible = !net2p && playersIndex > 0;
+		const bool rightControlVisible = !net2p && playersIndex < 1;
 
 		if (leftControlVisible)
 			blit_sprite2x2(VGAScreen, xLeftControl, yControls, shopSpriteSheet, 279);
@@ -808,7 +834,7 @@ bool JE_loadScreen(void)
 			blit_sprite2x2(VGAScreen, xRightControl, yControls, shopSpriteSheet, 281);
 
 		helpBoxColor = 15;
-		JE_helpBox(VGAScreen, 103, vga_height - 18, miscText[55], 25);
+		JE_helpBox(VGAScreen, 103, vga_height - 18, saving ? "Choose a slot to save your game into." : miscText[55], 25);
 
 		if (restart)
 		{
@@ -829,6 +855,8 @@ bool JE_loadScreen(void)
 		do
 		{
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+
+			NETWORK_KEEP_ALIVE();  // the joiner is connected and waiting while the host browses
 
 			Uint16 oldMouseX = mouse_x;
 			Uint16 oldMouseY = mouse_y;
@@ -966,11 +994,12 @@ bool JE_loadScreen(void)
 			}
 		}
 
-		if (leftAction)
+		// Arrow keys raise these too, so the online pin has to gate here, not just the mouse arrows.
+		if (leftAction && !net2p)
 		{
 			playersIndex = playersIndex == 0 ? 1 : 0;
 		}
-		else if (rightAction)
+		else if (rightAction && !net2p)
 		{
 			playersIndex = playersIndex == 1 ? 0 : 1;
 		}
@@ -982,11 +1011,34 @@ bool JE_loadScreen(void)
 
 				done = true;
 			}
-			else
+			else if (saving)
 			{
 				const size_t saveFileIndex = playersIndex * 11 + selectedIndex;
 
-				if (saveFiles[saveFileIndex].level == 0)  // "EMPTY SLOT"
+				// The LAST LEVEL row is the auto slot (JE_operation refuses slot % 11 == 0);
+				// empty slots are fine -- they are what saving is for.
+				if ((saveFileIndex + 1) % 11 == 0)
+				{
+					JE_playSampleNum(S_CLINK);
+				}
+				else
+				{
+					JE_playSampleNum(S_SELECT);
+
+					performSave = true;
+					JE_operation(saveFileIndex + 1);
+					// Stay on the list (its per-frame backdrop restore erases the dialog), so a
+					// mistyped name can be redone; Exit leaves when the player is satisfied.
+				}
+			}
+			else
+			{
+				const size_t saveFileIndex = playersIndex * 11 + selectedIndex;
+				const JE_SaveFileType *const saveFile = &saveFiles[saveFileIndex];
+				const int saveEpisode = save_effective_episode(saveFile);
+
+				if (saveFile->level == 0 ||  // "EMPTY SLOT"
+				    (net2p && (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1])))
 				{
 					JE_playSampleNum(S_CLINK);
 				}
@@ -999,7 +1051,7 @@ bool JE_loadScreen(void)
 
 					fade_black(15);
 
-					return gameLoaded;
+					return gameLoaded ? (int)saveFileIndex + 1 : 0;
 				}
 			}
 		}
@@ -1008,7 +1060,7 @@ bool JE_loadScreen(void)
 		{
 			fade_black(15);
 
-			return false;
+			return 0;
 		}
 	}
 }

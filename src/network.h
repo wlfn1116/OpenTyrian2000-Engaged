@@ -93,6 +93,11 @@ extern int network_host_game_speed;
 // sets these directly.
 extern bool network_is_host;
 
+// True once this session has written its LAST LEVEL backup (slot 22), i.e. gameplay was
+// reached and there is a coherent pre-level state worth offering to save when the session
+// dies.  Cleared by network_shutdown.
+extern bool network_session_saveable;
+
 // True once the lobby has taken over setup, so the startup path in opentyr.c knows not to
 // treat isNetworkGame as "connect immediately from argv".
 extern bool network_from_lobby;

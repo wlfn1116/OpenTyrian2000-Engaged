@@ -1534,10 +1534,14 @@ JE_byte JE_playerDamage(JE_byte temp,
 		JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
 	}
 
+	// Presentation only, and armed only on the LIVE pass: a rollback replay re-crossing this
+	// damage would restart the flash, and the counters deliberately sit outside the snapshot
+	// registry -- registered, every shallow netplay rollback rewound them to an older, higher
+	// value, so the white flash kept replaying as a visible gauge flicker.
 	const int gi = (this_player == &player[1]) ? 1 : 0;
-	if (gaugeFlashShield && this_player->shield < oldShield)
+	if (!rollback_resim && gaugeFlashShield && this_player->shield < oldShield)
 		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
-	if (gaugeFlashArmor && this_player->armor < oldArmor)
+	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
 
 	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into

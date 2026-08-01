@@ -453,15 +453,26 @@ writes its own copy of every save, and both copies hold the same session —
 both ships' gear, both scores, the level, episode and difficulty — so either
 player can host the resume later.
 
-To resume, host a game as usual. Once the other player connects, a **Continue
-Game** screen lists the 2-player page's saves next to NEW GAME; picking one
-sends the whole saved state to the joiner and the session continues at that
-save's next level, with the episode and difficulty the save was made at. NEW
-GAME (or Esc) falls through to the familiar episode and difficulty selects.
-Saves whose episode the other player's data files lack are not offered.
-Loading is host-side only and only at session start — there is no Load Game
-or Alt+L during online play, since a mid-session load on one machine would
-fork the two copies of the game.
+If the session ends under you — the other player quits, the connection drops,
+or an unrecoverable desync stops the game — you are offered **Save Game** or
+**Don't Save** before returning to the title screen. Save Game opens the save
+menu on the 2-player page with the run restored to the outpost before the
+current level (the same point a game over rolls back to), so pick a slot,
+name it, and resume it together later. Both players get the offer when both
+machines lose the session; a player who quits on purpose is expected to have
+saved from the shop.
+
+To resume, host a game as usual. Once the other player connects, the host
+chooses between **New Game** and **Load Game**. New Game runs the familiar
+episode and difficulty selects; Load Game opens the regular load menu, fixed
+to the 2-player page, and picking a save there sends the whole saved state to
+the joiner — the session continues at that save's next level, with the
+episode and difficulty the save was made at. Backing out of the load menu
+returns to the choice; Esc on the choice itself abandons hosting. Saves whose
+episode the other player's data files lack are shown dimmed and cannot be
+picked. Loading is host-side only and only at session start — there is no
+Load Game or Alt+L during online play, since a mid-session load on one
+machine would fork the two copies of the game.
 
 ## Weapons
 

@@ -665,6 +665,18 @@ timeline that had already painted (e.g. a mispredicted hit) is also settled.
 `JE_drawArmor`'s 28-point clamp mutates sim state and therefore still runs on
 silent passes, before the gate.
 
+That fix left one more gauge flicker: the depletion-flash counters
+(`shieldGaugeFlash`/`armorGaugeFlash`) were registered rollback state, but
+their decrement (`JE_updateGaugeFlash`) runs after the resim `goto`, on
+presenting ticks only. Every shallow rollback therefore restored the counters
+to an older, HIGHER value, rewinding the flash — the white/bright phase
+replayed over and over as a visible pulse. They are presentation state and
+now sit outside the registry entirely, and `JE_playerDamage` arms them only
+on the live pass (`!rollback_resim`), so a replayed damage cannot restart
+them either. Consequences accepted: a hit discovered only by a correction
+doesn't flash (the bar value still updates), and a mispredicted hit's flash
+runs its course despite the rollback.
+
 The fuse/unfuse sound cue has the equivalent problem in audio form, plus one of
 its own: `soundQueue` slot 4 doubles as the sidekick-fire slot (`soundChannel`
 in shots.c), so queueing the cue in the sim lost it whenever a sidekick fired
@@ -756,18 +768,38 @@ slot-indexed wrapper over `JE_loadGameRecord(rec, twoP)`, which is what the
 joiner feeds a received record through.
 
 Resume flow: after the peers connect, `networkStartScreen` shows the host
-`networkOnlineSaveSelect()` (menus.c, episodeSelect pattern; small_font at
-12px spacing because 12 rows must fit) before the episode select. Picking a
-save loads it host-side and sends the record appended to PACKET_DETAILS
-(len 8 = fresh game, len 8+77 = resume; NET_VERSION bumped to 9). The joiner
-adopts the record wholesale except `input1`/`input2`, which it overwrites
-with its own live `inputDevice` values first — those name hardware on the
-host's desk, not simulation state. On resume both sides skip the fresh-game
-cash zero and Silver Ship override. Esc on the picker falls through to NEW
-GAME rather than quitting; abandoning the session stays on the episode
-select, which follows. Saves are filtered by `episodeAvail`, already
-intersected across both machines during the connect handshake, so the joiner
-can never be handed an episode it cannot load.
+`networkHostStartSelect()` (menus.c): a bare New Game / Load Game choice in
+the standard menu style. Load Game reuses the title screen's `JE_loadScreen`
+with its `net2p` flag — pinned to the 2-player page, paging hidden, rows
+whose episode fails the (connect-handshake-intersected) `episodeAvail` mask
+drawn dim and unselectable, and `NETWORK_KEEP_ALIVE()` in its poll loop so
+the waiting joiner isn't dropped. The load menu applies the save on the spot
+(`JE_operation`) and returns the slot; the host then sends that record
+appended to PACKET_DETAILS (len 8 = fresh game, len 8+77 = resume;
+NET_VERSION 9). The joiner adopts the record wholesale except
+`input1`/`input2`, which it overwrites with its own live `inputDevice`
+values first — those name hardware on the host's desk, not simulation state.
+On resume both sides skip the fresh-game cash zero and Silver Ship override.
+Backing out of the load menu returns to the New/Load choice; Esc there
+abandons hosting (PACKET_QUIT), same as cancelling the episode select
+always has.
+
+Disconnect save offer: every session death funnels through
+`network_tyrian_halt` (network.c), which now runs
+`networkDisconnectSavePrompt` (menus.c) instead of the press-any-button wait
+when the end was involuntary (`err != 0`), gameplay was reached
+(`network_session_saveable`, set at the online LAST LEVEL backup write in
+tyrian2.c, cleared in `network_shutdown`), and the bailout pad is armed.
+Choosing Save runs `JE_loadGameRecord(&saveFiles[21], true)` — the pre-level
+backup, NOT the live mid-level globals, so the banked save matches what a
+game-over reload or host resume would use — then `JE_loadScreen(true, true)`,
+the same slot list in save mode: every regular slot opens the standard
+JE_operation name-entry/overwrite flow, the LAST LEVEL row clinks, and Exit
+leaves.  Two traps: the halt can arrive from inside a re-simulation pass, so
+it clears `rollback_resim`/`rollback_resim_silent` up front (silent mode
+would suppress every sprite the dialog draws); and the attempt_sync ack wait
+is skipped on the dialog path — the menus' `NETWORK_KEEP_ALIVE` pumps
+`network_check`, which delivers those acks instead.
 
 Menu wiring traps: the shop's limited (network) options menu gets its Save
 Game row by the same runtime label-shift as the Sens row
