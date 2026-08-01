@@ -750,8 +750,8 @@ bool networkLobby(void)
 	enum
 	{
 		ITEM_HOST = 0,
-		ITEM_FIND,
 		ITEM_JOIN,
+		ITEM_FIND,
 		ITEM_NAME,
 		ITEM_BACK,
 		ITEM_COUNT,
@@ -776,6 +776,7 @@ bool networkLobby(void)
 	const int yMenuItems = 60;
 	const int dyMenuItems = 24;
 	const int hMenuItem = 13;
+	const int yGapAfterJoin = 12;  // visually separates the connect actions from the settings below
 
 	fade_black(10);
 
@@ -803,7 +804,7 @@ bool networkLobby(void)
 		{
 			wMenuItem[i] = JE_textWidth(items[i], normal_font);
 			const int x = LOBBY_XCENTER - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * (int)i;
+			const int y = yMenuItems + dyMenuItems * (int)i + (i >= ITEM_NAME ? yGapAfterJoin : 0);
 			const bool selected = i == selectedIndex;
 
 			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
@@ -811,7 +812,7 @@ bool networkLobby(void)
 		}
 
 		if (lobby_status[0])
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 175, lobby_status, normal_font, centered, 15, -3, false, 2);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 183, lobby_status, normal_font, centered, 15, -3, false, 2);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
@@ -841,7 +842,7 @@ bool networkLobby(void)
 			for (size_t i = 0; i < ITEM_COUNT; ++i)
 			{
 				const int xItem = LOBBY_XCENTER - wMenuItem[i] / 2;
-				const int yItem = yMenuItems + dyMenuItems * (int)i;
+				const int yItem = yMenuItems + dyMenuItems * (int)i + (i >= ITEM_NAME ? yGapAfterJoin : 0);
 
 				if (mouse_x >= xItem && mouse_x < xItem + wMenuItem[i] &&
 				    mouse_y >= yItem && mouse_y < yItem + hMenuItem)
