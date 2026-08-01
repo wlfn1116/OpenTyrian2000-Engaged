@@ -2110,12 +2110,15 @@ JE_boolean JE_inGameSetup(void)
 	};
 
 	/* Visible rows: the Debug Menu row only appears when Debug Mode is enabled
-	 * in the Enhancements menu. */
+	 * in the Enhancements menu, and Game Speed is hidden in netplay (both sides
+	 * must tick in lockstep, so changing it would desync). */
 	enum MenuItemIndex items[COUNTOF(menuNames)];
 	size_t menuItemsCount = 0;
 	for (size_t i = 0; i < COUNTOF(menuNames); ++i)
 	{
 		if (i == MENU_ITEM_DEBUG && !debugMode)
+			continue;
+		if (i == MENU_ITEM_GAME_SPEED && isNetworkGame)
 			continue;
 		items[menuItemsCount++] = (enum MenuItemIndex)i;
 	}
@@ -2123,9 +2126,9 @@ JE_boolean JE_inGameSetup(void)
 	size_t selectedIndex = 0;
 
 	const int yMenuItems = 18;
-	/* The Extra and sensitivity rows always add two (8 rows, or 9 with the Debug
-	 * row). Tighten the pitch so the last row clears the help box. */
-	const int dyMenuItems = debugMode ? 14 : 16;
+	/* 8 rows fit at the classic pitch; a 9th (Debug row) needs it tightened so
+	 * the last row clears the help box. */
+	const int dyMenuItems = menuItemsCount > 8 ? 14 : 16;
 	const int xMenuItem = 10;
 	const int xMenuItemName = xMenuItem;
 	const int wMenuItemName = 110;
