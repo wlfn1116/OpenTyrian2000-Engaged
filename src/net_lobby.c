@@ -453,6 +453,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	enum
 	{
 		ITEM_PORT = 0,
+		ITEM_NETCODE,
 		ITEM_RECOVERY,
 		ITEM_PLAYER,
 		ITEM_START,
@@ -465,8 +466,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	size_t selectedIndex = ITEM_START;
 	int wItem[ITEM_COUNT] = { 0 };
 
-	const int yItems = 70;
-	const int dyItems = 22;
+	// Six rows now; tighter spacing keeps the last one clear of the status line at y=175.
+	const int yItems = 60;
+	const int dyItems = 20;
 	const int hItem = 13;
 
 	lobbyPrepareBackdrop("Host Game");
@@ -478,6 +480,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		const char *items[ITEM_COUNT];
 		items[ITEM_PORT] = portItem;
+		items[ITEM_NETCODE] = net_rollback
+		                    ? "Netcode: Rollback"
+		                    : "Netcode: Delay-Based";
 		items[ITEM_RECOVERY] = net_desync_recovery
 		                     ? "Desync Recovery: On"
 		                     : "Desync Recovery: Off";
@@ -571,7 +576,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// setting in the game does.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_PLAYER || selectedIndex == ITEM_RECOVERY)
+				if (selectedIndex == ITEM_PLAYER || selectedIndex == ITEM_RECOVERY ||
+				    selectedIndex == ITEM_NETCODE)
 					action = true;
 				break;
 
@@ -606,6 +612,15 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				SDL_strlcpy(status, "Port must be 1 to 49151.", sizeof(status));
 			break;
 		}
+
+		case ITEM_NETCODE:
+			// Rollback (local input lands the same tick, the peer is predicted and
+			// corrected) vs the original delay-based lockstep.  Host-authoritative:
+			// the joiner adopts it from the settings block (bit 4) like every other
+			// sim-binding choice.
+			JE_playSampleNum(S_CLICK);
+			net_rollback = !net_rollback;
+			break;
 
 		case ITEM_RECOVERY:
 			// On a detected desync the host streams its state and the joiner adopts

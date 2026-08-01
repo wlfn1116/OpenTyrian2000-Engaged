@@ -379,11 +379,18 @@ Effects are not available online.
 
 ## Online play
 
-Host Game opens a screen with the listen port, **Desync Recovery**, **Host Flies**,
-and Start Hosting. Host Flies picks which ship you take when hosting: player one,
-or player two, which is the Dragonwing. Whoever joins gets the other one. Left and
-right change it, and it is remembered between sessions. The host chooses the
-episode and difficulty either way.
+Host Game opens a screen with the listen port, **Netcode**, **Desync Recovery**,
+**Host Flies**, and Start Hosting. Host Flies picks which ship you take when
+hosting: player one, or player two, which is the Dragonwing. Whoever joins gets
+the other one. Left and right change it, and it is remembered between sessions.
+The host chooses the episode and difficulty either way.
+
+Netcode picks how the two machines stay in step. **Rollback**, the default,
+applies your input the moment you press it and quietly corrects the other ship
+when its inputs arrive, so the game feels the same as playing offline.
+**Delay-Based** is the original lockstep: both ships wait for each other's
+inputs, which adds input lag that grows with the connection's ping. The host's
+choice binds the session, and it is remembered between sessions.
 
 Desync Recovery, on by default, repairs a game whose two machines have drifted
 apart instead of letting the rest of the level play out differently on each.
