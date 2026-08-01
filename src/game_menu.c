@@ -4303,7 +4303,10 @@ JE_boolean JE_saveRequest(JE_byte slot, const char *savename)
 			NETWORK_KEEP_ALIVE();  // online saves confirm from inside the shop; don't drop the peer
 
 			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
-			JE_textShade(VGAScreen, 70, 66, miscText[68], 0, 5, FULL_SHADE); // Are you sure you want to save?
+			// Bank 12 (the body text's own bank) rather than bank 0: bank 0 is a near-black red
+			// ramp under the saved-games palette, where this dialog is now also opened.  Keeps
+			// the brighter shade so the question still outranks the two detail rows.
+			JE_textShade(VGAScreen, 70, 66, miscText[68], 12, 5, FULL_SHADE); // Are you sure you want to save?
 			JE_textShade(VGAScreen, 74, 90, miscText[1], 12, 1, FULL_SHADE); // Save name:
 			JE_textShade(VGAScreen, 135, 90, savename, 12, 1, FULL_SHADE);
 			JE_textShade(VGAScreen, 74, 100, miscText[69], 12, 1, FULL_SHADE); // Original save:

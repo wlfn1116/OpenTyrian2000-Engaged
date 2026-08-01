@@ -183,6 +183,7 @@ static struct
 	Uint32 recv_errors, send_errors;            // socket-level failures (ICMP resets etc.)
 	Uint32 bad_packets;                         // unknown type on the game channel
 	Uint32 retries;                             // reliable-channel retransmits
+	Uint32 acked_dropped;                       // reliable packets acked into a full queue, then lost
 	Uint32 state_in, state_out, state_late;     // state stream; late = outside the queue window
 	Uint32 xor_rebuilds;                        // lost state packets reconstructed from parity
 	Uint32 resend_req_sent, resend_req_served;  // state resend requests
@@ -473,6 +474,15 @@ static int network_recv_one(void)
 							{
 								// inbound packet queue overflow/underflow
 								// under normal circumstances, this is okay
+								//
+								// ...except for one case worth counting: `i` just past the window
+								// is a NEW packet arriving with all 16 slots still unconsumed (a
+								// stalled receiver mid-resync).  It is acknowledged below and then
+								// lost -- the one loss an acknowledged channel cannot see, and what
+								// a resync abort's "chunk index skip" means.  A huge `i` is only a
+								// stale duplicate of an already-consumed packet.
+								if ((Uint16)(i - NET_PACKET_QUEUE) < NET_PACKET_QUEUE)
+									++net_diag.acked_dropped;
 							}
 						}
 
@@ -1734,6 +1744,37 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 	#undef HASH_WORD
 }
 
+// Must sample exactly what network_sim_state() hashes, at the same call site, or the
+// dumped rows and the mismatching hash could disagree about what diverged.
+void network_sim_detail(NetSimDetail *out)
+{
+	SDL_COMPILE_TIME_ASSERT(sim_detail_enemies, NET_SIM_DETAIL_ENEMIES == COUNTOF(enemy));
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		out->p[i].x      = (Sint32)player[i].x;
+		out->p[i].y      = (Sint32)player[i].y;
+		out->p[i].armor  = (Sint32)player[i].armor;
+		out->p[i].shield = (Sint32)player[i].shield;
+		out->p[i].alive  = player[i].is_alive ? 1 : 0;
+		out->p[i].cash   = (Sint32)player[i].cash;
+	}
+
+	out->enemy_count = 0;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		if (enemyAvail[i] == 1)
+			continue;
+		NetSimEnemyRow *r = &out->e[out->enemy_count++];
+		r->idx       = (Uint8)i;
+		r->avail     = enemyAvail[i];
+		r->type      = (Uint16)enemy[i].enemytype;
+		r->ex        = (Sint32)enemy[i].ex;
+		r->ey        = (Sint32)enemy[i].ey;
+		r->armorleft = (Sint32)enemy[i].armorleft;
+	}
+}
+
 // Session-long desync memo for the crash log.  Both detection modes call this once per
 // desynced level, so a crash or hang long after the fact still names when trouble started.
 void network_diag_note_desync(int level)
@@ -1798,9 +1839,10 @@ void network_write_diagnostics(FILE *f)
 			if (packet_in[i] != NULL)  ++in_held;
 			if (packet_out[i] != NULL) ++out_held;
 		}
-		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu\n",
+		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu   acked-dropped=%lu\n",
 		        last_out_sync, last_ack_sync, network_ack_backlog(), out_held,
-		        queue_in_sync, in_held, (unsigned long)net_diag.retries);
+		        queue_in_sync, in_held, (unsigned long)net_diag.retries,
+		        (unsigned long)net_diag.acked_dropped);
 	}
 
 	fprintf(f, "  State ch:     in_sync=%u out_sync=%u   sent=%lu recv=%lu late-dropped=%lu\n",

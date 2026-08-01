@@ -2,6 +2,7 @@
 #ifndef CRASHLOG_H
 #define CRASHLOG_H
 
+#include <stdbool.h>
 #include <stdio.h>
 
 void install_crash_handler(void);
@@ -27,6 +28,12 @@ void crashlog_note_net(const char *event, const char *detail);
 // start/end banners around an online session), so the log always shows logging is alive and an
 // entry-free session reads as "no trouble detected", not "never ran". All platforms.
 void crashlog_netlog_line(const char *event, const char *detail);
+
+// Net-log master switch (menu: Setup -> Network Log, persisted in the config). Off means nothing
+// touches opentyrian_net.log at all: no entries, and no rotation of an existing log. On by
+// default; config.c applies the saved value at load, after the handlers are already installed.
+void crashlog_set_netlog_enabled(bool enabled);
+bool crashlog_get_netlog_enabled(void);
 
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only

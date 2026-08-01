@@ -16,6 +16,7 @@ and arcade modes work as before.
 | Toggle the low-armor siren | Setup > Sound > Armor Alarm |
 | Toggle the two-player fuse/unfuse sounds | Setup > Sound > Link Sounds |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
+| Turn the network log off | Setup > Network Log |
 | Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
 | Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
 
@@ -423,11 +424,19 @@ so a recurring desync stays visible to bug reports.
 The network log (`opentyrian_net.log`, next to `opentyrian_log.log` beside the
 game on PC, or in the game's data folder on Switch and Vita) records every
 online session: a session-start line naming the netcode and settings, any
-desyncs, stalls and resyncs, and a session-end line with totals. A log whose
+desyncs, stalls and resyncs — including a one-line reason for every repair
+attempt that fails — and a session-end line with totals. A desync entry also
+carries a snapshot of the disputed frame as that machine computed it, so when
+reporting a desync, include the log from **both** machines: comparing the two
+snapshots points straight at what diverged. A log whose
 session has no entries between start and end means the session was healthy. On
 PC the previous three logs are kept as `opentyrian_net.1.log` through `.3.log`
-— each launch of the game rotates them, so a report from an earlier session is
-in one of the numbered files, not the live one.
+— they rotate when a session first writes to the log, so a report from an
+earlier session is in one of the numbered files, not the live one.
+
+**Network Log**, in the Setup menu and on by default, is what writes that file.
+Switched off, the game keeps no network log at all: no new entries, and an
+existing log is left exactly as it is rather than rotated away.
 
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half
@@ -440,7 +449,9 @@ are dimmed, so a glance tells your bars from the other player's.
 
 Join by IP Address takes a host address alone or with a port, like
 `12.345.67.89:1337`. Ctrl+V pastes a copied address into the field, replacing
-whatever was already typed there.
+whatever was already typed there. The field comes back pre-filled with the last
+address and port you used, including after a restart, so rejoining the same host
+is Join then Enter.
 
 At the start of each level the two machines wait for each other before play
 begins, so if one side loads levels slower the other briefly shows "Waiting for

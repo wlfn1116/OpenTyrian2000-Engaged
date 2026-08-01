@@ -37,6 +37,7 @@
 #include "vga256d.h"
 #include "video.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -190,6 +191,10 @@ typedef struct
 }
 NrbCanary;
 static NrbCanary canary[NRB_HIST];
+/* Raw fields behind each canary's two hashes, kept so the one-per-level desync
+ * report can print the disputed frame itself.  Valid only where canary[].tag
+ * matches, so it needs no clearing of its own. */
+static NetSimDetail canary_detail[NRB_HIST];
 /* Received canaries waiting for OUR copy of their frame to become final.  A
  * single slot starved the check: at any steady prediction depth the arriving
  * canary was always ahead of verified_upto, and the next packet overwrote it
@@ -746,12 +751,27 @@ static void nrb_stamp_canary(Uint32 frame)
 	NrbCanary *c = &canary[frame % NRB_HIST];
 	c->tag = frame;
 	network_sim_state(&c->rand, &c->ph, &c->eh);
+	network_sim_detail(&canary_detail[frame % NRB_HIST]);
 	c->curLoc = (Uint16)curLoc;
 	c->linked = twoPlayerLinked ? 1 : 0;
 	c->px[0] = (Sint16)player[0].x;
 	c->py[0] = (Sint16)player[0].y;
 	c->px[1] = (Sint16)player[1].x;
 	c->py[1] = (Sint16)player[1].y;
+}
+
+/* Bounded append for the desync report below; off saturates at cap - 1. */
+static int nrb_apf(char *buf, int cap, int off, const char *fmt, ...)
+{
+	if (off < 0 || off >= cap - 1)
+		return cap - 1;
+	va_list ap;
+	va_start(ap, fmt);
+	const int n = vsnprintf(buf + off, (size_t)(cap - off), fmt, ap);
+	va_end(ap);
+	if (n < 0 || off + n > cap - 1)
+		return cap - 1;
+	return off + n;
 }
 
 /* One received canary against our own copy of its frame.  The caller has already
@@ -794,8 +814,10 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         p1->eh == peer->eh && p1->curLoc == peer->curLoc)
 				skew = "\n  NOTE: remote frame N equals our frame N+1 -- FRAME COUNTERS SKEWED (we run one behind)";
 
-			char detail[1024];
-			snprintf(detail, sizeof(detail),
+			/* Static: the enemy table can outgrow a comfortable stack frame, and
+			 * this writes at most once per level from the main thread. */
+			static char detail[8192];
+			int off = nrb_apf(detail, sizeof(detail), 0,
 			         "rollback frame %lu (player %u, current frame %lu)\n"
 			         "  rand draws : local %lu  remote %lu  %s\n"
 			         "  players    : local %08x  remote %08x  %s\n"
@@ -804,7 +826,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         "  linked     : local %u  remote %u  %s\n"
 			         "  P1 pos     : local %d,%d  remote %d,%d\n"
 			         "  P2 pos     : local %d,%d  remote %d,%d\n"
-			         "  rollbacks so far: %lu (deepest %lu, resim frames %lu)%s",
+			         "  rollbacks so far: %lu (deepest %lu, resim frames %lu)%s\n",
 			         (unsigned long)peer->tag, thisPlayerNum, (unsigned long)nrb_cur,
 			         (unsigned long)ours->rand, (unsigned long)peer->rand,
 			         ours->rand == peer->rand ? "ok" : "DIFFERS",
@@ -820,6 +842,85 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         ours->px[1], ours->py[1], peer->px[1], peer->py[1],
 			         (unsigned long)stat_rollbacks, (unsigned long)stat_deepest,
 			         (unsigned long)stat_resim_frames, skew);
+
+			/* Every field the mismatching hashes cover, as this machine computed
+			 * them for the disputed frame.  The peer's log carries the same block
+			 * for its own detection frame; diffing the two names the culprit slot
+			 * and field directly. */
+			{
+				const NetSimDetail *d = &canary_detail[peer->tag % NRB_HIST];
+
+				off = nrb_apf(detail, sizeof(detail), off,
+				              "  --- local frame %lu, hashed fields (diff against the peer's log) ---\n",
+				              (unsigned long)peer->tag);
+				for (int i = 0; i < 2; ++i)
+					off = nrb_apf(detail, sizeof(detail), off,
+					              "  P%d: x=%ld y=%ld armor=%ld shield=%ld alive=%ld cash=%ld\n",
+					              i + 1, (long)d->p[i].x, (long)d->p[i].y, (long)d->p[i].armor,
+					              (long)d->p[i].shield, (long)d->p[i].alive, (long)d->p[i].cash);
+				off = nrb_apf(detail, sizeof(detail), off,
+				              "  enemies: %u live (idx: ex,ey armor avail type)\n",
+				              (unsigned)d->enemy_count);
+				for (Uint16 i = 0; i < d->enemy_count && i < NET_SIM_DETAIL_ENEMIES; ++i)
+					off = nrb_apf(detail, sizeof(detail), off,
+					              "  %3u: %5ld,%-5ld a%-5ld v%u t%u\n",
+					              (unsigned)d->e[i].idx, (long)d->e[i].ex, (long)d->e[i].ey,
+					              (long)d->e[i].armorleft, (unsigned)d->e[i].avail,
+					              (unsigned)d->e[i].type);
+			}
+
+			/* Input window up to the disputed frame: what we sent, the peer's
+			 * truth, and what the sim consumed.  "CONSUMED != TRUTH" on a verified
+			 * frame means the rollback verifier itself missed a mispredict --
+			 * a different culprit than the sim reading state outside the tuples. */
+			{
+				const Uint32 lo = peer->tag > 7 ? peer->tag - 7 : 1;
+
+				off = nrb_apf(detail, sizeof(detail), off,
+				              "  inputs %lu..%lu (frame: local x,y btn | remote truth x,y btn | consumed kind):\n",
+				              (unsigned long)lo, (unsigned long)peer->tag);
+				for (Uint32 f = lo; f <= peer->tag; ++f)
+				{
+					const NrbSlot *L = &local_hist[f % NRB_HIST];
+					const NrbSlot *R = &remote_hist[f % NRB_HIST];
+					const NrbSlot *U = &remote_used[f % NRB_HIST];
+
+					off = nrb_apf(detail, sizeof(detail), off, "  %6lu:", (unsigned long)f);
+					if (L->tag == f)
+						off = nrb_apf(detail, sizeof(detail), off, " %4d,%-4d %04x |",
+						              L->in.x, L->in.y, (unsigned)L->in.buttons);
+					else
+						off = nrb_apf(detail, sizeof(detail), off, " (gone) |");
+					if (R->tag == f)
+						off = nrb_apf(detail, sizeof(detail), off, " %4d,%-4d %04x |",
+						              R->in.x, R->in.y, (unsigned)R->in.buttons);
+					else
+						off = nrb_apf(detail, sizeof(detail), off, " (gone) |");
+
+					if (U->tag != f)
+						off = nrb_apf(detail, sizeof(detail), off, " (gone)\n");
+					else
+					{
+						bool bad = false;
+						if (R->tag == f)
+						{
+							if (U->kind == NRB_USED_FULL)
+								bad = U->in.x != R->in.x || U->in.y != R->in.y ||
+								      U->in.velX != R->in.velX || U->in.velY != R->in.velY ||
+								      U->in.accelX != R->in.accelX || U->in.accelY != R->in.accelY ||
+								      U->in.linkAngle != R->in.linkAngle ||
+								      U->in.difficulty != R->in.difficulty ||
+								      ((U->in.buttons ^ R->in.buttons) & NRB_SIM_BUTTONS) != 0;
+							else if (U->kind == NRB_USED_REQS)
+								bad = ((U->in.buttons ^ R->in.buttons) & NRB_SIM_REQS) != 0;
+						}
+						off = nrb_apf(detail, sizeof(detail), off, " k%u%s\n",
+						              (unsigned)U->kind,
+						              bad ? "  !! CONSUMED != TRUTH on a verified frame" : "");
+					}
+				}
+			}
+
 			network_diag_note_desync((int)mainLevel);
 			crashlog_note_net("NETWORK DESYNC (rollback)", detail);
 
@@ -1274,13 +1375,18 @@ static int nrb_resync_send_once(void)
 	bool reported = false;
 	Uint32 sent = 0;
 	int outcome = 0;  /* 1 done, 2 NAK: retry, 3 give up this level */
+	const char *fail = NULL;  /* set where a failure is OURS to report */
 
 	while (outcome == 0)
 	{
-		if (!nrb_resync_pump(wait_start, &reported, "streaming the resync state"))
+		char why[112];
+		snprintf(why, sizeof(why), "streaming the resync state: %lu/%lu chunks handed over, backlog %d",
+		         (unsigned long)sent, (unsigned long)chunks, network_ack_backlog());
+		if (!nrb_resync_pump(wait_start, &reported, why))
 		{
 			/* Timed out with a live link: the peer is not consuming.  A retry
 			 * would just spend another minute on the same silence. */
+			fail = "timed out: the joiner stopped acknowledging";
 			outcome = 3;
 			break;
 		}
@@ -1294,7 +1400,10 @@ static int nrb_resync_send_once(void)
 				const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
 				network_update();
 				if (ix == NRB_RS_NAK && g == resync_gen)
+				{
+					fail = "the joiner NAKed the stream (its abort entry names why)";
 					outcome = 2;
+				}
 				/* other gens: stale echoes of an abandoned attempt */
 			}
 			else if (type == PACKET_GAME_QUIT)
@@ -1338,6 +1447,19 @@ static int nrb_resync_send_once(void)
 
 	free(stream);
 
+	if (outcome != 1 && fail != NULL)
+	{
+		/* Peer-departure exits (quit, between-levels handshake) are not logged
+		 * here: the level is over and the recovery simply became moot. */
+		char line[224];
+		snprintf(line, sizeof(line),
+		         "host attempt %lu of %d gen %u failed: %s  (%lu/%lu chunks sent, %lu ms)",
+		         (unsigned long)resync_used, NRB_RS_MAX, (unsigned)resync_gen, fail,
+		         (unsigned long)sent, (unsigned long)chunks,
+		         (unsigned long)(SDL_GetTicks() - wait_start));
+		crashlog_netlog_line("NETWORK RESYNC ABORT", line);
+	}
+
 	if (outcome == 1)
 	{
 		char detail[224];
@@ -1367,8 +1489,10 @@ static bool nrb_resync_host_run(void)
 		if (r == 1)
 			return true;
 		if (r < 0)
-			break;
+			return false;  /* hard stop; its own entry named the reason */
 	}
+	crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
+	                     "host: attempt budget spent; playing on with divergent state");
 	return false;
 }
 
@@ -1386,6 +1510,10 @@ static bool nrb_resync_receive(void)
 	bool have_hdr = false;
 	bool assembled = false, adopted = false, level_over = false;
 
+	/* Failure cause for the one-line abort entry; every break below names one. */
+	const char *abort = "unknown";
+	char abort_ctx[160];
+
 	const Uint32 wait_start = SDL_GetTicks();
 	Uint32 last_progress = wait_start;
 	bool reported = false;
@@ -1396,10 +1524,23 @@ static bool nrb_resync_receive(void)
 	{
 		if (packet_in[0] == NULL)
 		{
-			if (!nrb_resync_pump(wait_start, &reported, "receiving the resync state"))
+			char why[112];
+			if (have_hdr)
+				snprintf(why, sizeof(why), "receiving the resync state: %lu/%lu chunks (gen %u)",
+				         (unsigned long)next, (unsigned long)chunks, (unsigned)gen);
+			else
+				snprintf(why, sizeof(why), "receiving the resync state: no preamble yet (last gen seen %u)",
+				         (unsigned)seen_gen);
+			if (!nrb_resync_pump(wait_start, &reported, why))
+			{
+				abort = "whole-attempt timeout";
 				break;
+			}
 			if (SDL_GetTicks() - last_progress > NRB_RS_PROGRESS_TIME_OUT)
+			{
+				abort = "no chunk for 8 s (host stream dead, or its attempt budget spent)";
 				break;
+			}
 			continue;
 		}
 
@@ -1421,6 +1562,7 @@ static bool nrb_resync_receive(void)
 				 * is dead, and this packet is a rendezvous release the level
 				 * machinery is (or will be) blocked on.  Same rule as the send
 				 * side: abort and leave it at the queue head, never consume. */
+				abort = "peer already in the between-levels handshake";
 				break;
 			}
 			network_update();
@@ -1446,6 +1588,7 @@ static bool nrb_resync_receive(void)
 			const Uint8 *p = &packet_in[0]->data[NRB_RS_HDR];
 			if (pl < NRB_RS_PRE)
 			{
+				abort = "malformed preamble chunk";
 				network_update();
 				break;
 			}
@@ -1458,6 +1601,10 @@ static bool nrb_resync_receive(void)
 			if (their_state != (Uint32)state_sz ||
 			    comp_total == 0 || comp_total > (Uint32)(state_sz + state_sz / 255 + 64))
 			{
+				snprintf(abort_ctx, sizeof(abort_ctx),
+				         "preamble refused: peer state %lu bytes vs ours %lu, compressed %lu (mismatched builds?)",
+				         (unsigned long)their_state, (unsigned long)state_sz, (unsigned long)comp_total);
+				abort = abort_ctx;
 				network_update();
 				break;
 			}
@@ -1466,6 +1613,7 @@ static bool nrb_resync_receive(void)
 			comp = malloc(comp_total);
 			if (comp == NULL)
 			{
+				abort = "out of memory for the compressed stream";
 				network_update();
 				break;
 			}
@@ -1477,6 +1625,7 @@ static bool nrb_resync_receive(void)
 			const size_t body = (size_t)pl - NRB_RS_PRE;
 			if (body > comp_total)
 			{
+				abort = "preamble body overflows the announced compressed size";
 				network_update();
 				break;
 			}
@@ -1495,11 +1644,17 @@ static bool nrb_resync_receive(void)
 				/* The reliable channel delivers in order, so a skipped index
 				 * means a chunk was acknowledged into a full inbound queue and
 				 * dropped before we started consuming.  Unrecoverable. */
+				snprintf(abort_ctx, sizeof(abort_ctx),
+				         "chunk index skip: got %u, expected %lu -- a chunk was acked into our full "
+				         "inbound queue and dropped (see acked-dropped)",
+				         (unsigned)ix, (unsigned long)next);
+				abort = abort_ctx;
 				network_update();
 				break;
 			}
 			if (got + pl > comp_total)
 			{
+				abort = "chunk data overflows the announced compressed size";
 				network_update();
 				break;
 			}
@@ -1514,12 +1669,24 @@ static bool nrb_resync_receive(void)
 		if (next == chunks)
 		{
 			assembled = true;
-			if (got == comp_total && nrb_rs_hash(comp, comp_total) == want_crc)
+			if (got != comp_total)
+			{
+				snprintf(abort_ctx, sizeof(abort_ctx), "assembled short: %lu of %lu compressed bytes",
+				         (unsigned long)got, (unsigned long)comp_total);
+				abort = abort_ctx;
+			}
+			else if (nrb_rs_hash(comp, comp_total) != want_crc)
+			{
+				abort = "checksum mismatch on the assembled stream";
+			}
+			else
 			{
 				raw = malloc(state_sz);
 				adopted = raw != NULL &&
 				          nrb_rs_expand(comp, comp_total, raw, state_sz) == state_sz &&
 				          rollback_wire_adopt(raw);
+				if (!adopted)
+					abort = "state adopt failed (expand, relocation, or memory)";
 			}
 			break;
 		}
@@ -1547,6 +1714,18 @@ static bool nrb_resync_receive(void)
 
 	if (!level_over)
 	{
+		/* One line per failed attempt, so the log names the culprit even when the
+		 * level plays on: which attempt, why it died, and how far it got. */
+		char line[288];
+		snprintf(line, sizeof(line),
+		         "joiner attempt %lu of %d failed: %s  (gen %u, %lu/%lu chunks, %lu ms)%s",
+		         (unsigned long)resync_used, NRB_RS_MAX, abort,
+		         (unsigned)(have_hdr ? gen : seen_gen),
+		         (unsigned long)next, (unsigned long)chunks,
+		         (unsigned long)(SDL_GetTicks() - wait_start),
+		         resync_used > NRB_RS_MAX ? "   [over budget: started by stray chunks]" : "");
+		crashlog_netlog_line("NETWORK RESYNC ABORT", line);
+
 		nrb_resync_send_nak(have_hdr ? gen : seen_gen);
 
 		/* A fully assembled stream means every chunk was acknowledged, so the
@@ -1579,8 +1758,15 @@ static bool nrb_resync_dispatch(void)
 		const Uint16 g  = SDLNet_Read16(&packet_in[0]->data[4]);
 		const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
 		network_update();
-		if (ix == NRB_RS_NAK && g == resync_gen && resync_used < NRB_RS_MAX)
-			return nrb_resync_host_run();
+		if (ix == NRB_RS_NAK && g == resync_gen)
+		{
+			if (resync_used < NRB_RS_MAX)
+				return nrb_resync_host_run();
+			/* Without this line, the joiner's next attempt stalls against total
+			 * silence and its log never says the host had already given up. */
+			crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
+			                     "host: joiner NAK ignored, attempt budget already spent this level");
+		}
 		return false;
 	}
 

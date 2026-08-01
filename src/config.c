@@ -473,6 +473,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "hang_timeout", &hang_timeout);
 		crashlog_set_hang_timeout(hang_timeout);  // clamps into range
 
+		int net_log_enabled = crashlog_get_netlog_enabled() ? 1 : 0;
+		config_get_int_option(section, "net_log", &net_log_enabled);
+		crashlog_set_netlog_enabled(net_log_enabled != 0);
+
 		int enemy_bars_enabled = enemyBars ? 1 : 0;
 		config_get_int_option(section, "enemy_bars", &enemy_bars_enabled);
 		enemyBars = (enemy_bars_enabled != 0);
@@ -531,6 +535,17 @@ bool load_opentyrian_config(void)
 				free(network_opponent_host);
 				network_opponent_host = malloc_die(strlen(host) + 1);
 				strcpy(network_opponent_host, host);
+
+				// Split the stored "host:port" back apart; a bad or missing port keeps the
+				// default, but the suffix is always cut off so the host still resolves.
+				char *const colon = strrchr(network_opponent_host, ':');
+				if (colon != NULL && colon != network_opponent_host)
+				{
+					const int port = SDL_atoi(colon + 1);
+					if (port > 0 && port < 49152)
+						network_opponent_port = (Uint16)port;
+					*colon = '\0';
+				}
 			}
 
 			int net_port = network_listen_port;
@@ -803,6 +818,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "link_sounds", linkSounds ? 1 : 0);
 	config_set_int_option(section, "debug_mode", debugMode ? 1 : 0);
 	config_set_int_option(section, "hang_timeout", crashlog_get_hang_timeout());
+	config_set_int_option(section, "net_log", crashlog_get_netlog_enabled() ? 1 : 0);
 	config_set_int_option(section, "enemy_bars", enemyBars ? 1 : 0);
 	config_set_int_option(section, "enemy_bar_layout", enemyBarLayout);
 	config_set_int_option(section, "enemy_bar_position", enemyBarPosition);
@@ -814,7 +830,13 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "music_device", music_device_names[music_device]);
 
 	config_set_string_option(section, "net_player_name", network_player_name);
-	config_set_string_option(section, "net_last_host", network_opponent_host ? network_opponent_host : "");
+	// Written as "host:port" so the joiner's target port is remembered with the address.
+	char net_last_host[80];
+	if (network_opponent_host != NULL && network_opponent_host[0] != '\0')
+		snprintf(net_last_host, sizeof(net_last_host), "%s:%u", network_opponent_host, (unsigned)network_opponent_port);
+	else
+		net_last_host[0] = '\0';
+	config_set_string_option(section, "net_last_host", net_last_host);
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);

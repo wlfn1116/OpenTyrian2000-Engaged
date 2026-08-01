@@ -29,9 +29,10 @@
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "psapi.lib")
 
-// Two logs, written next to the executable, both rotated at startup.  The crash log holds
-// every kind of hard process failure (exception, hang, abort, CRT fatal); the net log holds
-// netplay health events (desyncs, stalls, resyncs) so they can't bury a real crash report.
+// Two logs, written next to the executable.  The crash log holds every kind of hard process
+// failure (exception, hang, abort, CRT fatal) and rotates at startup; the net log holds netplay
+// health events (desyncs, stalls, resyncs) so they can't bury a real crash report, and rotates
+// on its first entry of the session.
 #define LOG_STEM        "opentyrian_log"
 #define NETLOG_STEM     "opentyrian_net"
 #define LOG_FILENAME    LOG_STEM ".log"
@@ -53,6 +54,9 @@ static volatile LONG s_reporting = 0;
 // file).  Each log tracks its own flag.
 static volatile LONG s_logOpened = 0;
 static volatile LONG s_netLogOpened = 0;
+
+// Net-log master switch (Setup -> Network Log); see crashlog.h.
+static volatile LONG s_netLogEnabled = 1;
 
 // Last fault the vectored handler reported; the backup filter skips exactly this (code, addr)
 // pair. Not a latch, only the most recent fault is held.
@@ -120,11 +124,6 @@ static FILE *open_log(void)
 	return open_log_file(LOG_FILENAME, &s_logOpened);
 }
 
-static FILE *open_net_log(void)
-{
-	return open_log_file(NETLOG_FILENAME, &s_netLogOpened);
-}
-
 // Build "<exe dir>\<stem>.<n>.log" for n >= 1, or "<exe dir>\<stem>.log" for n == 0.
 static void rotated_log_path(char *out, size_t outSize, const char *stem, int n)
 {
@@ -136,8 +135,8 @@ static void rotated_log_path(char *out, size_t outSize, const char *stem, int n)
 	log_path(out, outSize, name);
 }
 
-// Rotate one executable-directory log chain at startup, before fault handlers are armed.
-// A missing live log does not shift older reports.
+// Rotate one executable-directory log chain: the crash log at startup, before fault handlers are
+// armed; the net log on its first entry. A missing live log does not shift older reports.
 static void rotate_log_chain(const char *stem)
 {
 	char live[MAX_PATH + 32];
@@ -158,10 +157,23 @@ static void rotate_log_chain(const char *stem)
 	}
 }
 
-static void rotate_logs(void)
+// Rotated on the session's first entry rather than at startup, so a session that logs nothing --
+// including one with Network Log switched off -- leaves the previous log live to be read.
+static FILE *open_net_log(void)
 {
-	rotate_log_chain(LOG_STEM);
-	rotate_log_chain(NETLOG_STEM);
+	if (s_netLogOpened == 0)
+		rotate_log_chain(NETLOG_STEM);
+	return open_log_file(NETLOG_FILENAME, &s_netLogOpened);
+}
+
+void crashlog_set_netlog_enabled(bool enabled)
+{
+	InterlockedExchange(&s_netLogEnabled, enabled ? 1 : 0);
+}
+
+bool crashlog_get_netlog_enabled(void)
+{
+	return s_netLogEnabled != 0;
 }
 
 // Human-readable name for a Windows structured-exception code.
@@ -548,12 +560,17 @@ void crashlog_note(const char *event, const char *detail)
 // resyncs) can't bury a real crash report in the crash log.
 void crashlog_note_net(const char *event, const char *detail)
 {
+	if (!crashlog_get_netlog_enabled())
+		return;
 	write_captured_report_ex(true, event ? event : "NETWORK", detail);
 }
 
 // Public: one short entry, no context/stack body -- the session start/end banners.
 void crashlog_netlog_line(const char *event, const char *detail)
 {
+	if (!crashlog_get_netlog_enabled())
+		return;
+
 	if (InterlockedExchange(&s_reporting, 1) != 0)
 		return;
 
@@ -617,7 +634,7 @@ void install_crash_handler(void)
 
 	// Preserve the previous session's crash log before we arm the handlers that could overwrite it.
 	// Still single-threaded here with no handler installed, so this can't race a live report.
-	rotate_logs();
+	rotate_log_chain(LOG_STEM);
 
 	// Two catches so a real fault is hard to miss: the vectored handler (crash_veh) is primary, the
 	// top-level filter a backup for whatever it doesn't take. SetUnhandledExceptionFilter alone can
@@ -737,8 +754,14 @@ void watchdog_init(void)
 
 #include <time.h>
 
+// Net-log master switch (Setup -> Network Log); see crashlog.h.
+static bool s_netLogEnabled = true;
+
 static void netlog_write(const char *event, const char *detail)
 {
+	if (!s_netLogEnabled)
+		return;
+
 	FILE *f = dir_fopen(get_user_directory(), "opentyrian_net.log", "a");
 	if (f == NULL)
 		return;
@@ -772,5 +795,8 @@ void crashlog_netlog_line(const char *event, const char *detail)
 {
 	netlog_write(event, detail);
 }
+
+void crashlog_set_netlog_enabled(bool enabled) { s_netLogEnabled = enabled; }
+bool crashlog_get_netlog_enabled(void) { return s_netLogEnabled; }
 
 #endif

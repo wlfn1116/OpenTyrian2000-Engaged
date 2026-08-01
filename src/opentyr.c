@@ -330,6 +330,7 @@ typedef enum
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
+	MENU_ITEM_NET_LOG,              // write opentyrian_net.log during online play
 	MENU_ITEM_BOSS_BARS,
 	MENU_ITEM_BOSS_BAR_STYLE,
 	MENU_ITEM_BOSS_BAR_LAYOUT,
@@ -449,6 +450,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		break;
 	case MENU_ITEM_LINK_SOUNDS:
 		linkSounds = !linkSounds;
+		JE_playSampleNum(S_CURSOR);
+		break;
+	case MENU_ITEM_NET_LOG:
+		crashlog_set_netlog_enabled(!crashlog_get_netlog_enabled());
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_BOSS_BAR_STYLE:
@@ -658,8 +663,9 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_GRAPHICS, "Graphics...", "Change the graphics settings." },
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
-				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
 				{ MENU_ITEM_ENHANCEMENTS, "Enhancements...", "Change the gameplay enhancement settings." },
+				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
+				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to opentyrian_net.log." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -1052,6 +1058,10 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_LINK_SOUNDS:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, linkSounds ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_NET_LOG:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, crashlog_get_netlog_enabled() ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_BOSS_BAR_STYLE:
@@ -1857,6 +1867,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_LINK_SOUNDS:
 				{
 					linkSounds = !linkSounds;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_NET_LOG:
+				{
+					crashlog_set_netlog_enabled(!crashlog_get_netlog_enabled());
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

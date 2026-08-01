@@ -601,6 +601,31 @@ What the design rests on:
   the same rule: a rendezvous release consumed by a dying stream would strand the
   peer at that rendezvous forever.
 
+What the log names when things fail (added after a session where recovery died
+in silence — 4 joiner attempts in 3 s, no reason recorded for any of them):
+
+- **The desync report prints the disputed frame, not just its hashes.**
+  `nrb_stamp_canary` captures the raw fields behind both hashes
+  (`network_sim_detail`, kept beside `network_sim_state` so they cannot drift)
+  into `canary_detail[NRB_HIST]`, and the one-per-level report dumps that
+  frame's player rows and enemy table plus the last 8 input tuples (local,
+  remote truth, consumed — with a `CONSUMED != TRUTH` flag that would indict
+  the verifier itself). The two machines' reports diff to the culprit slot and
+  field; one report alone still names the input-side suspects.
+- **Every failed resync attempt writes a one-line `NETWORK RESYNC ABORT`**
+  naming the attempt, gen, chunk progress, elapsed time, and cause (index
+  skip, checksum, preamble refused, timeouts, NAK). `NETWORK RESYNC GIVE-UP`
+  lines mark the host spending its budget and — crucially — the host ignoring
+  a NAK *after* the budget is spent, which is otherwise indistinguishable from
+  a dead link on the joiner's side.
+- **`acked-dropped` on the Reliable ch line** counts inbound packets that were
+  acknowledged into a full 16-slot queue and then discarded (`network.c`,
+  the overflow arm distinguishes a new-but-out-of-window sequence from a stale
+  duplicate). Nonzero = the receiver stalled while the sender streamed; it is
+  the direct cause of "chunk index skip" aborts.
+- The resync stall notes now carry live progress ("3/40 chunks, gen 2" /
+  "no preamble yet"), so a stall against a host that gave up reads as such.
+
 `PACKET_WAITING` is a strictly paired rendezvous: every use (in-game-menu
 release, pause release, shop exit, level start) is passed by both machines in
 the same order, one send and one consume each, so the ordered deduplicated
@@ -694,9 +719,22 @@ so neither can be borrowed without cutting a game sound.
 
 Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the
 offline rollback selftest — are written by `crashlog_note_net` to their own
-`opentyrian_net.log` (same report format and rotation as the crash log), so
-they cannot bury a real crash report; the crash log keeps only process
+`opentyrian_net.log` (same report format and rotation chain as the crash log),
+so they cannot bury a real crash report; the crash log keeps only process
 failures and recovered would-be-crashes.
+
+`Setup > Network Log` (`crashlog_set_netlog_enabled`, persisted as
+`[enhancements] net_log`, on by default) is the master switch, checked inside
+`crashlog_note_net`/`crashlog_netlog_line` rather than at each of their ~20 call
+sites. Off has to mean the file is untouched, which is why the net log rotates
+lazily — `open_net_log` runs `rotate_log_chain` on the session's first entry,
+not `install_crash_handler` at startup. Startup rotation could not honour the
+setting anyway (the handler is installed long before the config is read), and
+it also meant every launch shifted the chain, so three launches without netplay
+buried a report in `.3.log` and a fourth discarded it. The crash log keeps its
+startup rotation: it must be rotated before the handlers that write it are
+armed, and its writers can be fault handlers, where MoveFileEx calls do not
+belong.
 
 Every online session is bracketed in the net log: `network_connect` writes a
 `NETWORK SESSION START` line (role, netcode, recovery, delay) the moment the
@@ -894,9 +932,10 @@ changes.
 
 The Windows logger writes a stack trace and guarded game-state dump to
 `opentyrian_log.log`. Netplay health events (`crashlog_note_net`) go to a
-separate `opentyrian_net.log` in the same format, rotated the same way, so a
-lossy session cannot bury a real crash report; only genuine process failures
-and recovered would-be-crashes use the crash log.
+separate `opentyrian_net.log` in the same format, so a lossy session cannot
+bury a real crash report; only genuine process failures and recovered
+would-be-crashes use the crash log. That log has its own on/off setting and
+rotates on first write — see Netplay > Crash-log diagnostics.
 
 The watchdog suspends the main thread only long enough to capture its context,
 then resumes it before symbol loading and stack walking. Those operations may

@@ -241,6 +241,35 @@ bool network_debug_sync_pump(bool in_level);
 // matching draws with differing state points at the check itself being wrong.
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash);
 
+// Raw copy of every field network_sim_state() hashes, captured at the same moment, so the
+// desync report can print the disputed frame itself; the two machines' logs then diff
+// line-by-line to the culprit slot and field.  `type` rides along unhashed for readability.
+typedef struct
+{
+	Sint32 x, y, armor, shield, alive, cash;
+}
+NetSimPlayerRow;
+
+typedef struct
+{
+	Uint8  idx, avail;
+	Uint16 type;
+	Sint32 ex, ey, armorleft;
+}
+NetSimEnemyRow;
+
+#define NET_SIM_DETAIL_ENEMIES 100  // == COUNTOF(enemy); asserted at the capture site
+
+typedef struct
+{
+	NetSimPlayerRow p[2];
+	Uint16          enemy_count;
+	NetSimEnemyRow  e[NET_SIM_DETAIL_ENEMIES];
+}
+NetSimDetail;
+
+void network_sim_detail(NetSimDetail *out);
+
 // Session-long desync memo for the crash log: call once per desynced level (the lockstep
 // once-per-level report and the rollback canary's first report both do).
 void network_diag_note_desync(int level);

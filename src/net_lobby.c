@@ -789,7 +789,10 @@ bool networkLobby(void)
 	char name_buf[NET_NAME_MAX + 1];
 
 	snprintf(port_buf, sizeof(port_buf), "%u", (unsigned)network_listen_port);
-	SDL_strlcpy(addr_buf, network_opponent_host ? network_opponent_host : "", sizeof(addr_buf));
+	if (network_opponent_host != NULL && network_opponent_host[0] != '\0')
+		snprintf(addr_buf, sizeof(addr_buf), "%s:%u", network_opponent_host, (unsigned)network_opponent_port);
+	else
+		addr_buf[0] = '\0';
 	SDL_strlcpy(name_buf, network_player_name, sizeof(name_buf));
 
 	lobby_status[0] = '\0';
