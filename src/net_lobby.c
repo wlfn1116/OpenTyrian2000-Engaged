@@ -22,6 +22,7 @@
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
+#include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
@@ -467,6 +468,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_NETCODE,
 		ITEM_RECOVERY,
 		ITEM_PLAYER,
+		ITEM_SPEED,
 		ITEM_START,
 		ITEM_BACK,
 		ITEM_COUNT,
@@ -477,10 +479,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	size_t selectedIndex = ITEM_START;
 	int wItem[ITEM_COUNT] = { 0 };
 
-	// Six rows now; tighter spacing keeps the last one clear of the status line at y=175.
-	const int yItems = 60;
-	const int dyItems = 20;
+	// Seven rows plus a gap separating the settings from Start Hosting/Back; the block
+	// starts high enough that the last row stays clear of the status line at y=175.
+	const int yItems = 52;
+	const int dyItems = 17;
 	const int hItem = 13;
+	const int yGroupGap = 8;  // extra space above ITEM_START
 
 	lobbyPrepareBackdrop("Host Game");
 
@@ -495,6 +499,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		char portItem[32];
 		snprintf(portItem, sizeof(portItem), "Listen Port: %s", port_buf[0] ? port_buf : "(none)");
 
+		char speedItem[32];
+		snprintf(speedItem, sizeof(speedItem), "Game Speed: %s", gameSpeedText[network_host_game_speed - 1]);
+
 		const char *items[ITEM_COUNT];
 		items[ITEM_PORT] = portItem;
 		items[ITEM_NETCODE] = net_rollback
@@ -506,6 +513,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		items[ITEM_PLAYER] = network_host_player == 2
 		                   ? "Host Flies: Dragonwing"
 		                   : "Host Flies: Silver Ship";
+		items[ITEM_SPEED] = speedItem;
 		items[ITEM_START] = "Start Hosting";
 		items[ITEM_BACK] = "Back";
 
@@ -515,7 +523,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			wItem[i] = JE_textWidth(items[i], normal_font);
 			const int x = LOBBY_XCENTER - wItem[i] / 2;
-			const int y = yItems + dyItems * (int)i;
+			const int y = yItems + dyItems * (int)i + (i >= ITEM_START ? yGroupGap : 0);
 
 			const bool disabled = i == ITEM_RECOVERY && recoveryLocked;
 			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
@@ -540,6 +548,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		const bool mouseMoved = lobbyWaitForInput();
 
 		bool action = false;
+		int cycleDir = 1;  // left arrow cycles multi-value rows backward
 
 		if (mouseMoved || newmouse)
 		{
@@ -549,7 +558,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 					continue;
 
 				const int x = LOBBY_XCENTER - wItem[i] / 2;
-				const int y = yItems + dyItems * (int)i;
+				const int y = yItems + dyItems * (int)i + (i >= ITEM_START ? yGroupGap : 0);
 
 				if (mouse_x >= x && mouse_x < x + wItem[i] && mouse_y >= y && mouse_y < y + hItem)
 				{
@@ -602,8 +611,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
 				if (selectedIndex == ITEM_PLAYER || selectedIndex == ITEM_RECOVERY ||
-				    selectedIndex == ITEM_NETCODE)
+				    selectedIndex == ITEM_NETCODE || selectedIndex == ITEM_SPEED)
+				{
 					action = true;
+					if (lastkey_scan == SDL_SCANCODE_LEFT)
+						cycleDir = -1;
+				}
 				break;
 
 			case SDL_SCANCODE_ESCAPE:
@@ -663,6 +676,17 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// joiner is told which slot is left during the handshake.
 			JE_playSampleNum(S_CLICK);
 			network_host_player = (network_host_player == 2) ? 1 : 2;
+			break;
+
+		case ITEM_SPEED:
+			// Forced on both players for the session: the host applies it at connect and
+			// the joiner adopts it from the settings block (see network_connect).
+			JE_playSampleNum(S_CLICK);
+			network_host_game_speed += cycleDir;
+			if (network_host_game_speed > 5)
+				network_host_game_speed = 1;
+			else if (network_host_game_speed < 1)
+				network_host_game_speed = 5;
 			break;
 
 		case ITEM_START:

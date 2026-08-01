@@ -388,10 +388,14 @@ for both players. Set the cap to 35 or higher — or Uncapped — and the menu
 returns.
 
 Host Game opens a screen with the listen port, **Netcode**, **Desync Recovery**,
-**Host Flies**, and Start Hosting. Host Flies picks which ship you take when
-hosting: player one, or player two, which is the Dragonwing. Whoever joins gets
-the other one. Left and right change it, and it is remembered between sessions.
-The host chooses the episode and difficulty either way.
+**Host Flies**, **Game Speed**, and Start Hosting. Host Flies picks which ship
+you take when hosting: player one, or player two, which is the Dragonwing.
+Whoever joins gets the other one. Left and right change it, and it is remembered
+between sessions. Game Speed sets the speed the whole session runs at, for both
+players — the joiner's own setting is ignored and restored when the session
+ends. It does not appear in the in-game Esc menu during online play, so the
+lobby choice is final for the session. The host chooses the episode and
+difficulty either way.
 
 Netcode picks how the two machines stay in step. **Rollback**, the default,
 applies your input the moment you press it and quietly corrects the other ship

@@ -85,6 +85,7 @@ extern Uint16 network_listen_port;
 // The player slot the lobby claims when hosting: 1, or 2 to fly the Dragonwing.  A preference,
 // unlike networkHostPlayerNum, which is what the live session settled on.
 extern int network_host_player;
+extern int network_host_game_speed;
 
 // Set by the in-game lobby before network_connect(). The host listens, picks which player it
 // flies, and dictates every simulation-affecting setting for the session (see
@@ -208,6 +209,7 @@ void network_shutdown(void);
 // Returns the number of bytes written/read so the caller can place the player name after it.
 int  network_settings_pack(Uint8 *buf);
 int  network_settings_adopt(const Uint8 *buf);
+void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
 #define NETWORK_SETTINGS_SIZE 16
 

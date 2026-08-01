@@ -98,6 +98,10 @@ Uint16 network_listen_port = NET_PORT;
 
 int network_host_player = 1;
 
+// Session game speed, a host option (1..5, 4 = Normal); the joiner adopts it from the
+// settings block like every other sim-binding choice.
+int network_host_game_speed = 4;
+
 static char empty_string[] = "";
 char *network_player_name = empty_string,
      *network_opponent_name = empty_string;
@@ -940,6 +944,8 @@ static void send_connect_packet(Uint16 episodes_local)
 // exchange game information
 int network_connect(void)
 {
+	network_settings_apply_session_speed();
+
 	const bool listening = network_from_lobby && network_is_host;
 
 	if (listening)
@@ -1070,6 +1076,11 @@ connect_again:
 			network_delay = host_delay;
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+
+			// The adopted gameSpeed only sets the global; push it through to the
+			// tick-rate machinery so the joiner runs at the host's chosen speed.
+			JE_initProcessorType();
+			JE_setNewGameSpeed();
 
 			// The host names its own slot too, and the joiner takes the other one: a host
 			// that picked player 2 to fly the Dragonwing leaves player 1 here.
@@ -1270,7 +1281,9 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		longjmp(network_bailout_env, 1);
 	}
 
-	// Not armed (very early startup failure): the original hard exit.
+	// Not armed (very early startup failure): the original hard exit.  JE_tyrianHalt saves
+	// the config, so put the stashed local settings (forced-Normal gameSpeed) back first.
+	network_settings_restore();
 	SDLNet_Quit();
 
 	JE_tyrianHalt(5);
@@ -1292,7 +1305,8 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
  *   chargeLaserCannon changes what the shared shop stocks.
  *   restoreBaseDispensers wakes enemies 80-83.
  *   xmasMode          selects a different shape/data set.
- *   gameSpeed         scales the tick rate the whole sim runs at.
+ *   gameSpeed         scales the tick rate the whole sim runs at.  A host option in the
+ *                     lobby (network_host_game_speed), applied at connect and synced here.
  *
  * Purely presentational settings (gauge gradients, boss/enemy bars, parallax, smooth motion,
  * fps cap, gamma, input device) are deliberately absent: they should stay per-player.
@@ -1344,23 +1358,39 @@ int network_settings_pack(Uint8 *buf)
 	return NETWORK_SETTINGS_SIZE;
 }
 
+static void network_settings_stash(void)
+{
+	if (settings_stashed)
+		return;
+
+	memcpy(settings_local.superSparkMode, superSparkMode, sizeof(superSparkMode));
+	memcpy(settings_local.epDiffMode, epDiffMode, sizeof(epDiffMode));
+	settings_local.zicaLaserBase        = zicaLaserBase;
+	settings_local.zicaLaserLength      = zicaLaserLength;
+	settings_local.zicaLaserLock        = zicaLaserLock;
+	settings_local.zicaLaserBuff        = zicaLaserBuff;
+	settings_local.wallopSecondBolt     = wallopSecondBolt;
+	settings_local.chargeLaserCannon    = chargeLaserCannon;
+	settings_local.restoreBaseDispensers = restoreBaseDispensers;
+	settings_local.xmasMode             = xmasMode;
+	settings_local.gameSpeed            = gameSpeed;
+	settings_stashed = true;
+}
+
+// Session game speed: the host applies its lobby choice here and the joiner adopts it from
+// the settings block in the connect packet.  Command-line netplay has no host, so both sides
+// pin Normal.  network_settings_restore puts the player's own speed back afterward.
+void network_settings_apply_session_speed(void)
+{
+	network_settings_stash();
+	gameSpeed = (network_from_lobby && network_is_host) ? (JE_byte)network_host_game_speed : 4;
+	JE_initProcessorType();
+	JE_setNewGameSpeed();
+}
+
 int network_settings_adopt(const Uint8 *buf)
 {
-	if (!settings_stashed)
-	{
-		memcpy(settings_local.superSparkMode, superSparkMode, sizeof(superSparkMode));
-		memcpy(settings_local.epDiffMode, epDiffMode, sizeof(epDiffMode));
-		settings_local.zicaLaserBase        = zicaLaserBase;
-		settings_local.zicaLaserLength      = zicaLaserLength;
-		settings_local.zicaLaserLock        = zicaLaserLock;
-		settings_local.zicaLaserBuff        = zicaLaserBuff;
-		settings_local.wallopSecondBolt     = wallopSecondBolt;
-		settings_local.chargeLaserCannon    = chargeLaserCannon;
-		settings_local.restoreBaseDispensers = restoreBaseDispensers;
-		settings_local.xmasMode             = xmasMode;
-		settings_local.gameSpeed            = gameSpeed;
-		settings_stashed = true;
-	}
+	network_settings_stash();
 
 	Uint16 spark  = SDLNet_Read16(&buf[0]);
 	Uint16 epdiff = SDLNet_Read16(&buf[2]);

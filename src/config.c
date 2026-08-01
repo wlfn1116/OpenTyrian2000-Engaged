@@ -543,6 +543,12 @@ bool load_opentyrian_config(void)
 			if (net_host_player == 1 || net_host_player == 2)
 				network_host_player = net_host_player;
 
+			// Session game speed forced on both players when hosting (1..5, 4 = Normal).
+			int net_game_speed = network_host_game_speed;
+			config_get_int_option(section, "net_host_game_speed", &net_game_speed);
+			if (net_game_speed >= 1 && net_game_speed <= 5)
+				network_host_game_speed = net_game_speed;
+
 			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
 			// link can be tuned without a rebuild -- the host's value is what both sides use.
 			int net_delay = network_delay;
@@ -810,6 +816,7 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "net_last_host", network_opponent_host ? network_opponent_host : "");
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
+	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
 	config_set_int_option(section, "net_delay", network_delay);
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
 	config_set_bool_option(section, "net_desync_recovery", net_desync_recovery, OFF_ON);
