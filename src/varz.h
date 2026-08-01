@@ -452,6 +452,8 @@ void JE_getShipInfo(void);
 JE_word JE_SGr(JE_word ship, Sprite2_array **ptr);
 
 void JE_drawOptions(void);
+void JE_drawOptionsHUD(void);
+extern bool hud_sidekicks_dirty;
 
 void JE_tyrianHalt(JE_byte code); /* This ends the game */
 void JE_specialComplete(JE_byte playernum, JE_byte specialType);

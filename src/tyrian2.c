@@ -4897,6 +4897,14 @@ draw_player_shot_loop_end:
 	if (randomExplosions && mt_rand() % 10 == 1)
 		JE_setupExplosionLarge(false, 20, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184);
 
+	// Repaint the sidekick HUD boxes if a silent re-simulation pass wiped them (its box
+	// fill runs but its icon blit is suppressed).  This pass's draws reach the screen.
+	if (hud_sidekicks_dirty && !rollback_resim_silent)
+	{
+		hud_sidekicks_dirty = false;
+		JE_drawOptionsHUD();
+	}
+
 	/*=================================*/
 	/*=======The Sound Routine=========*/
 	/*=================================*/

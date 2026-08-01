@@ -7776,10 +7776,15 @@ redo:
 			    player[0].is_alive && player[1].is_alive && !galagaMode)
 			{
 				twoPlayerLinked = true;
+				soundQueue[4] = S_CLINK;
 			}
 
 			if (playerNum_ == 1 && (button[3-1] || button[2-1]) && !galagaMode)
+			{
+				if (twoPlayerLinked)
+					soundQueue[4] = S_SPRING;
 				twoPlayerLinked = false;
+			}
 
 			if (twoPlayerMode && twoPlayerLinked && playerNum_ == 2 && linkMoved)
 			{
@@ -7823,6 +7828,7 @@ redo:
 				else if (!galagaMode)
 				{
 					twoPlayerLinked = false;
+					soundQueue[4] = S_SPRING;
 				}
 			}
 		}

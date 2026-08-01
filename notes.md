@@ -640,6 +640,18 @@ landing there swallowed the erase and left stale glyphs that the next
 straight over (the garbled-helptext screenshots). The pre-erase is now
 unconditional as well, so a poisoned bar self-heals on the next message.
 
+The same silent-pass asymmetry — sprite blits are skipped, plain fills
+(`fill_rectangle_xy`, `draw_segmented_gauge`) are not — wipes any HUD element
+drawn once at an event rather than per tick. The sidekick HUD boxes were the
+case in point: a rollback re-crossing the pickup tick re-ran `JE_drawOptions`,
+whose box fill executed while the icon blit was swallowed, leaving black boxes
+with live ammo dots on both machines. The painting now lives in
+`JE_drawOptionsHUD` (varz.c); `JE_drawOptions` sets `hud_sidekicks_dirty` when
+it runs under `rollback_resim_silent`, and the level loop repaints on the first
+non-silent pass, before anything is presented. The flag is presentation-only
+and stays out of the rollback registry. Any future event-drawn HUD blit needs
+the same dirty-flag repaint.
+
 ### Crash-log diagnostics
 
 Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the

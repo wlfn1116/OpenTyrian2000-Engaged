@@ -523,8 +523,32 @@ void JE_drawOptions(void)
 
 		this_player->sidekick[i].charge = 0;
 		this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
+	}
 
-		// draw initial sidekick HUD
+	JE_drawOptionsHUD();
+
+	// A silent rollback re-simulation swallows blit_sprite but not the box fill, so a
+	// resim pass that re-crosses a sidekick pickup wipes the HUD icon.  Flag it for a
+	// repaint once a non-silent pass comes around.
+	if (rollback_resim_silent)
+		hud_sidekicks_dirty = true;
+
+	VGAScreen = temp_surface;
+
+	JE_drawOptionLevel();
+}
+
+bool hud_sidekicks_dirty = false;
+
+// Draw-only companion to JE_drawOptions: repaints the sidekick HUD boxes from current state.
+void JE_drawOptionsHUD(void)
+{
+	Player *this_player = &player[twoPlayerMode ? 1 : 0];
+
+	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
+	{
+		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
+
 		const int y = hud_sidekick_y[twoPlayerMode ? 1 : 0][i];
 
 		const int hud_x = HUD_X(284);
@@ -533,10 +557,6 @@ void JE_drawOptions(void)
 			blit_sprite(VGAScreenSeg, hud_x, y, OPTION_SHAPES, this_option->icongr - 1);  // sidekick HUD icon
 		draw_segmented_gauge(VGAScreenSeg, hud_x, y + 13, 112, 2, 2, AMMO_GAUGE_STEP(this_player->sidekick[i].ammo_max), this_player->sidekick[i].ammo);
 	}
-
-	VGAScreen = temp_surface;
-
-	JE_drawOptionLevel();
 }
 
 void JE_drawOptionLevel(void)
