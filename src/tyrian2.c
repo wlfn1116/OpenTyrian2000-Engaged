@@ -5833,14 +5833,12 @@ new_game:
 						break; /*store savepoint*/
 
 					case 'b':
-						if (twoPlayerMode)
-							temp = 22;
-						else
-							temp = 11;
+						// Online rides the 2-player LAST LEVEL slot; solo keeps the original slot 11.
+						temp = isNetworkGame ? 22 : 11;
 						if (!endlessMode)  // mid-level savepoint: unstable for endless; it autosaves at the outpost instead (endlessBetweenLevels)
 						{
-							JE_saveGame(11, "LAST LEVEL    ");
-							endlessSaveSlot(11);  // keep the endless sidecar in sync: drop any stale record so this campaign save isn't read back as endless
+							JE_saveGame(temp, "LAST LEVEL    ");
+							endlessSaveSlot(temp);  // keep the endless sidecar in sync: drop any stale record so this campaign save isn't read back as endless
 						}
 						break;
 
@@ -6438,11 +6436,28 @@ void networkStartScreen(void)
 	}
 
 	twoPlayerMode = true;
+	bool resumed = false;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
 		fade_black(10);
 
-		if (episodeSelect() && difficultySelect())
+		// Resume an online save?  The host picks; the record rides in the details packet so the
+		// joiner adopts the exact same state (difficulty already carries the 2-player +1 bump).
+		const int resumeSlot = networkOnlineSaveSelect();
+		if (resumeSlot > 0)
+		{
+			gameJustLoaded = true;
+			JE_loadGame(resumeSlot);
+
+			network_prepare(PACKET_DETAILS);
+			SDLNet_Write16(episodeNum, &packet_out_temp->data[4]);
+			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[6]);
+			save_record_pack(&packet_out_temp->data[8], &saveFiles[resumeSlot - 1]);
+			network_send(8 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
+
+			resumed = true;
+		}
+		else if (episodeSelect() && difficultySelect())
 		{
 			initialDifficulty = difficultyLevel;
 
@@ -6506,18 +6521,38 @@ void networkStartScreen(void)
 			network_tyrian_halt(3, false);
 		}
 
-		JE_initEpisode(their_episode);
-		difficultyLevel = their_difficulty;
-		initialDifficulty = difficultyLevel - 1;
+		if (packet_in[0]->len >= 8 + SAVE_RECORD_PACKED_SIZE)
+		{
+			// Resume form: adopt the host's save record wholesale.  Input devices stay ours --
+			// they name hardware on the host's desk, not simulation state.
+			JE_SaveFileType rec;
+			save_record_unpack(&rec, &packet_in[0]->data[8]);
+			rec.input1 = inputDevice[0];
+			rec.input2 = inputDevice[1];
+
+			gameJustLoaded = true;
+			JE_loadGameRecord(&rec, true);
+
+			resumed = true;
+		}
+		else
+		{
+			JE_initEpisode(their_episode);
+			difficultyLevel = their_difficulty;
+			initialDifficulty = difficultyLevel - 1;
+		}
 		fade_black(10);
 
 		network_update();
 	}
 
-	for (uint i = 0; i < COUNTOF(player); ++i)
-		player[i].cash = 0;
+	if (!resumed)
+	{
+		for (uint i = 0; i < COUNTOF(player); ++i)
+			player[i].cash = 0;
 
-	player[0].items.ship = 11;  // Silver Ship
+		player[0].items.ship = 11;  // Silver Ship
+	}
 
 	while (!network_is_sync())
 	{

@@ -35,6 +35,9 @@
 #include "vga256d.h"
 #include "video.h"
 
+#include <stdio.h>
+#include <string.h>
+
 char episode_name[6][31];
 char difficulty_name[7][21];
 char gameplay_name[GAMEPLAY_NAME_COUNT][26];
@@ -673,6 +676,221 @@ bool difficultySelect(void)
 			fade_black(15);
 
 			return false;
+		}
+	}
+}
+
+// The episode a record will really initialize: a "Completed" save rolls over to the next one.
+static int save_record_effective_episode(const JE_SaveFileType *rec)
+{
+	int episode = rec->episode;
+	if (strcmp(rec->levelName, "Completed") == 0)
+	{
+		if (episode == EPISODE_AVAILABLE)
+			episode = 1;
+		else if (episode < EPISODE_AVAILABLE)
+			episode++;
+	}
+	return episode;
+}
+
+// Host-side, after the peers connect: pick which 2-player-page save to resume (online sessions
+// share that page -- a couch save resumes online and vice versa), or start fresh.  Returns the
+// chosen slot (1-based, 12..22), or 0 for a new game -- also the immediate answer when there is
+// nothing to resume.  Esc falls through to a new game too; abandoning the session stays where
+// it always was, on the episode select that follows.
+int networkOnlineSaveSelect(void)
+{
+	enum { PAGE_SLOTS = SAVE_FILES_NUM / 2 };  // the 2-player page: slots 12..22
+
+	int slots[PAGE_SLOTS + 1] = { 0 };  // menu row -> save slot (row 0 = NEW GAME)
+	char labels[PAGE_SLOTS + 1][40];
+	size_t menuItemsCount = 1;
+
+	strcpy(labels[0], "NEW GAME");
+
+	for (int s = 0; s < PAGE_SLOTS; ++s)
+	{
+		const JE_SaveFileType *rec = &saveFiles[PAGE_SLOTS + s];
+		if (rec->level == 0)
+			continue;
+
+		const int episode = save_record_effective_episode(rec);
+		if (episode < 1 || episode > EPISODE_MAX || !episodeAvail[episode - 1])
+			continue;  // the joiner's data files already intersected episodeAvail
+
+		char name[15];
+		SDL_strlcpy(name, rec->name, sizeof(name));
+		for (int i = (int)strlen(name); i > 0 && name[i - 1] == ' '; --i)
+			name[i - 1] = '\0';
+
+		slots[menuItemsCount] = PAGE_SLOTS + s + 1;
+		snprintf(labels[menuItemsCount], sizeof(labels[0]), "%s - %s EP%d",
+		         name[0] != '\0' ? name : "SAVE", rec->levelName, episode);
+		++menuItemsCount;
+	}
+
+	if (menuItemsCount == 1)
+		return 0;  // nothing to offer; straight to the normal new-game flow
+
+	if (shopSpriteSheet.data == NULL)
+		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
+
+	bool restart = true;
+	size_t selectedIndex = 0;
+
+	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
+	const int xCenter = 320 / 2;
+	const int yMenuHeader = 20;
+	const int yMenuItems = 46;
+	const int dyMenuItems = 12;  // 12 rows at most; the roomy 24px spacing would run off screen
+	const int hMenuItem = 11;
+	int wMenuItem[PAGE_SLOTS + 1] = { 0 };
+
+	for (; ; )
+	{
+		if (restart)
+		{
+			JE_loadPic(VGAScreen2, 2, false);
+
+			draw_font_hv_shadow(VGAScreen2, xCenter, yMenuHeader, "Continue Game", large_font, centered, 15, -3, false, 2);
+		}
+
+		// Restore background and header.
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Draw menu items.
+		for (size_t i = 0; i < menuItemsCount; ++i)
+		{
+			const char *const text = labels[i];
+
+			wMenuItem[i] = JE_textWidth(text, small_font);
+			const int x = xCenter - wMenuItem[i] / 2;
+			const int y = yMenuItems + dyMenuItems * (int)i;
+
+			const bool selected = i == selectedIndex;
+
+			draw_font_hv_shadow(VGAScreen, x, y, text, small_font, left_aligned, 15, -4 + (selected ? 2 : 0), false, 2);
+		}
+
+		if (restart)
+		{
+			mouseCursor = MOUSE_POINTER_NORMAL;
+
+			fade_palette(colors, 10, 0, 255);
+
+			restart = false;
+		}
+
+		service_SDL_events(true);
+
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();  // pace the cursor redraw to the render-fps cap
+
+		const bool mouseMoved = menuWaitForInput();
+
+		// Handle interaction.
+
+		bool action = false;
+		bool cancel = false;
+
+		if (mouseMoved || newmouse)
+		{
+			// Find menu item that was hovered or clicked.
+			for (size_t i = 0; i < menuItemsCount; ++i)
+			{
+				const int xMenuItem = xCenter - wMenuItem[i] / 2;
+				if (mouse_x >= xMenuItem && mouse_x < xMenuItem + wMenuItem[i])
+				{
+					const int yMenuItem = yMenuItems + dyMenuItems * (int)i;
+					if (mouse_y >= yMenuItem && mouse_y < yMenuItem + hMenuItem)
+					{
+						if (selectedIndex != i)
+						{
+							JE_playSampleNum(S_CURSOR);
+
+							selectedIndex = i;
+						}
+
+						if (newmouse && lastmouse_but == SDL_BUTTON_LEFT &&
+							lastmouse_x >= xMenuItem && lastmouse_x < xMenuItem + wMenuItem[i] &&
+							lastmouse_y >= yMenuItem && lastmouse_y < yMenuItem + hMenuItem)
+						{
+							action = true;
+						}
+
+						break;
+					}
+				}
+			}
+		}
+
+		if (newmouse)
+		{
+			if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				JE_playSampleNum(S_SPRING);
+
+				cancel = true;
+			}
+		}
+		else if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+			{
+				JE_playSampleNum(S_CURSOR);
+
+				selectedIndex = selectedIndex == 0
+					? menuItemsCount - 1
+					: selectedIndex - 1;
+				break;
+			}
+			case SDL_SCANCODE_DOWN:
+			{
+				JE_playSampleNum(S_CURSOR);
+
+				selectedIndex = selectedIndex == menuItemsCount - 1
+					? 0
+					: selectedIndex + 1;
+				break;
+			}
+			case SDL_SCANCODE_SPACE:
+			case SDL_SCANCODE_RETURN:
+			{
+				action = true;
+				break;
+			}
+			case SDL_SCANCODE_ESCAPE:
+			{
+				JE_playSampleNum(S_SPRING);
+
+				cancel = true;
+				break;
+			}
+			default:
+				break;
+			}
+		}
+
+		if (action)
+		{
+			JE_playSampleNum(S_SELECT);
+
+			fade_black(10);
+
+			return slots[selectedIndex];
+		}
+
+		if (cancel)
+		{
+			fade_black(15);
+
+			return 0;
 		}
 	}
 }

@@ -60,7 +60,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       8            // increment whenever networking changes might create incompatibility
+#define NET_VERSION       9            // increment whenever networking changes might create incompatibility (9: resume form of PACKET_DETAILS)
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,

@@ -731,6 +731,57 @@ fact still names when trouble started. Everything the writers touch is a
 static in their own TU read without locks — no SDL_net calls — so they are
 safe from the fault handler and the watchdog thread.
 
+### Online saves and session resume
+
+Online sessions save like any 2-player game — the sim is lockstep-identical,
+so both machines hold the full session state and a save is a purely local act.
+What was missing was a way into the save menu online and a way to start a
+session from a save.
+
+Storage is the existing 2-player page (slots 12–22) in TYRIAN.SAV, shared
+with couch play deliberately: online sets `twoPlayerMode`, so the save menu's
+page select and slot arithmetic need no network case at all, and a couch save
+resumes online (and vice versa) for free. The trade-off is the LAST LEVEL
+slot: an online session's level-start backup overwrites slot 22, the same
+slot local 2-player play backs up to (GUIDE.md warns about it). The mid-level
+`'b'` savepoint redirects from its historical slot 11 to 22 when
+`isNetworkGame`; the game-over reload path (`twoPlayerMode ? 22 : 11`)
+already lands on 22 online unchanged.
+
+The wire format: `save_record_pack`/`unpack` (config.c,
+`SAVE_RECORD_PACKED_SIZE` 77) fix a little-endian record of everything
+`JE_loadGameRecord` applies (loadout, cash, level, episode, difficulty, the
+sim-affecting toggles; high scores stay out). `JE_loadGame` is now a
+slot-indexed wrapper over `JE_loadGameRecord(rec, twoP)`, which is what the
+joiner feeds a received record through.
+
+Resume flow: after the peers connect, `networkStartScreen` shows the host
+`networkOnlineSaveSelect()` (menus.c, episodeSelect pattern; small_font at
+12px spacing because 12 rows must fit) before the episode select. Picking a
+save loads it host-side and sends the record appended to PACKET_DETAILS
+(len 8 = fresh game, len 8+77 = resume; NET_VERSION bumped to 9). The joiner
+adopts the record wholesale except `input1`/`input2`, which it overwrites
+with its own live `inputDevice` values first — those name hardware on the
+host's desk, not simulation state. On resume both sides skip the fresh-game
+cash zero and Silver Ship override. Esc on the picker falls through to NEW
+GAME rather than quitting; abandoning the session stays on the episode
+select, which follows. Saves are filtered by `episodeAvail`, already
+intersected across both machines during the connect handshake, so the joiner
+can never be handed an episode it cannot load.
+
+Menu wiring traps: the shop's limited (network) options menu gets its Save
+Game row by the same runtime label-shift as the Sens row
+(`configure_options_sens_menu`) — the tail of the help-text mapping for that
+menu is now shifted by *two*, not one. `MENU_LOAD_SAVE` needed two
+network-aware exits (the done row and the Esc handler): its static `menuEsc`
+target is the full options menu, which a network session must never enter.
+Alt+L is gated off online; Alt+S works and lands on the 2-player page via
+`twoPlayerMode`. The save-name dialogs (`JE_operation`, `JE_saveRequest`)
+sit in their own wait loops, so both got `NETWORK_KEEP_ALIVE()` — without it
+a player lingering in the name entry reads as a dead connection to the peer.
+`JE_operation`'s `slot % 11 != 0` rule keeps slot 22 read-only in the menu,
+so the autosave can't be overwritten by hand, online or off.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. A bad index otherwise

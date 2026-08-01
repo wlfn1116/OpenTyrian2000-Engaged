@@ -32,4 +32,8 @@ bool episodeSelect(void);
 bool difficultySelect(void);
 bool timedBattleSelect(void);
 
+// Online-resume picker shown to the host after the peers connect: an online-page save slot
+// (1-based), or 0 to start a new game.
+int networkOnlineSaveSelect(void);
+
 #endif /* MENUS_H */

@@ -5860,6 +5860,8 @@ void JE_operation(JE_byte slot)
 				{
 					setDelay(1);
 
+					NETWORK_KEEP_ALIVE();  // name entry for an online save; hold the link meanwhile
+
 					push_joysticks_as_keyboard();
 					service_wait_delay();
 

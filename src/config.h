@@ -359,6 +359,16 @@ bool save_opentyrian_config(void);  // write opentyrian.cfg now (settings + cust
 void JE_saveGame(JE_byte slot, const char *name);
 void JE_loadGame(JE_byte slot);
 
+// Apply a save record without going through a slot; the network resume path feeds the joiner a
+// record received from the host.  twoP tells it which loadout layout the record uses.
+void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
+
+// Fixed little-endian packed form of a save record, used by the network resume handshake
+// (everything JE_loadGameRecord applies; high scores stay out).
+#define SAVE_RECORD_PACKED_SIZE 77
+void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
+void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
+
 void JE_encryptSaveTemp(void);
 void JE_decryptSaveTemp(void);
 

@@ -439,6 +439,30 @@ At the start of each level the two machines wait for each other before play
 begins, so if one side loads levels slower the other briefly shows "Waiting for
 other player." and then both fade in together.
 
+### Saving and resuming online games
+
+Online sessions can be saved from the shop: Options → **Save Game** (or Alt+S
+anywhere in the shop). Online games share the regular 2-player save page —
+the same eleven slots a couch co-op game uses — so a save made online can be
+continued locally and a couch save can be taken online. The page's last slot
+is written automatically at the start of every level as `LAST LEVEL`, so a
+session that ends mid-episode can be picked up even if nobody saved by hand
+(an online session therefore overwrites that slot's local 2-player backup —
+save by hand into a numbered slot if you want to keep a run). Each machine
+writes its own copy of every save, and both copies hold the same session —
+both ships' gear, both scores, the level, episode and difficulty — so either
+player can host the resume later.
+
+To resume, host a game as usual. Once the other player connects, a **Continue
+Game** screen lists the 2-player page's saves next to NEW GAME; picking one
+sends the whole saved state to the joiner and the session continues at that
+save's next level, with the episode and difficulty the save was made at. NEW
+GAME (or Esc) falls through to the familiar episode and difficulty selects.
+Saves whose episode the other player's data files lack are not offered.
+Loading is host-side only and only at session start — there is no Load Game
+or Alt+L during online play, since a mid-session load on one machine would
+fork the two copies of the game.
+
 ## Weapons
 
 The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power

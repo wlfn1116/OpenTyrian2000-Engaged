@@ -864,15 +864,18 @@ static void configure_options_sens_menu(void)
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
 		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
-		// MENU_LIMITED_OPTIONS (menuInt[12]): item 6 (Exit, label [5]) moves down to item 7 ([6]).
-		SDL_strlcpy(menuInt[12][6], menuInt[12][5], entrySize);  // Exit
+		// MENU_LIMITED_OPTIONS (menuInt[12]): item 6 (Exit, label [5]) moves down to item 8 ([7]),
+		// making room for Sens at 6 and Save Game at 7 (online sessions can save; loading stays
+		// host-side, at session start).
+		SDL_strlcpy(menuInt[12][7], menuInt[12][5], entrySize);  // Exit
+		SDL_strlcpy(menuInt[12][6], menuInt[3][2], entrySize);   // new item 7: Save Game (label from the full menu)
 		SDL_strlcpy(menuInt[12][5], "Sens", entrySize);  // new item 6
 
 		shifted = true;
 	}
 
 	menuChoices[MENU_OPTIONS] = menuChoicesDefault[MENU_OPTIONS] + 1;                  // 9 -> 10
-	menuChoices[MENU_LIMITED_OPTIONS] = menuChoicesDefault[MENU_LIMITED_OPTIONS] + 1;  // 6 -> 7
+	menuChoices[MENU_LIMITED_OPTIONS] = menuChoicesDefault[MENU_LIMITED_OPTIONS] + 2;  // 6 -> 8
 }
 
 /* Crash-log breadcrumb: map the live shop submenu (curMenu) to a readable name so a crash inside
@@ -1187,6 +1190,7 @@ void JE_itemScreen(void)
 		{
 			int min, max;
 
+			// Online sessions run as two-player, so they share the 2-player page (slots 12-22).
 			if (twoPlayerMode)
 			{
 				min = 13;
@@ -2083,7 +2087,10 @@ void JE_itemScreen(void)
 						newPal = 1;
 						oldPal = curPal;
 					}
-					if (keysactive[SDL_SCANCODE_L] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]))
+					// No quick-load online: loading is a host-side act at session start, and a
+					// mid-session local load would fork the two sims on the spot.
+					if (keysactive[SDL_SCANCODE_L] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]) &&
+					    !isNetworkGame)
 					{
 						if (curMenu == MENU_DATA_CUBE_SUB ||
 						    curMenu == MENU_DATA_CUBES)
@@ -2429,6 +2436,13 @@ void JE_itemScreen(void)
 				{
 					curMenu = oldMenu;
 					newPal = oldPal;
+				}
+				else if (curMenu == MENU_LOAD_SAVE && isNetworkGame)
+				{
+					// Online reached this menu from Limited Options; menuEsc's target is the
+					// full options menu, which a network session must never enter.
+					newPal = 1;
+					curMenu = MENU_LIMITED_OPTIONS;
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
@@ -4180,8 +4194,13 @@ void JE_drawMainMenuHelpText(void)
 		{
 			// The ship-sensitivity row sits at item 6; items below it shift down one, so
 			// read each shifted item's ORIGINAL help slot (temp-1) and supply the row's own text.
+			// The limited (online) menu also inserts Save Game at 7, so its tail shifts by two.
 			if (curSel[curMenu] == 6)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
+			else if (curMenu == MENU_LIMITED_OPTIONS && curSel[curMenu] == 7)
+				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[MENU_OPTIONS][3 - 2]) - 1], sizeof(tempStr));  // the full menu's Save Game help
+			else if (curMenu == MENU_LIMITED_OPTIONS)
+				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 2]) - 1], sizeof(tempStr));
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
 		}
@@ -4280,6 +4299,8 @@ JE_boolean JE_saveRequest(JE_byte slot, const char *savename)
 		{
 			service_SDL_events(true);
 			setDelay(4);
+
+			NETWORK_KEEP_ALIVE();  // online saves confirm from inside the shop; don't drop the peer
 
 			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
 			JE_textShade(VGAScreen, 70, 66, miscText[68], 0, 5, FULL_SHADE); // Are you sure you want to save?
@@ -8884,7 +8905,7 @@ void JE_menuFunction(JE_byte select)
 			}
 			else
 			{
-				curMenu = MENU_OPTIONS;
+				curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			}
 		}
 		else
@@ -9034,8 +9055,13 @@ void JE_menuFunction(JE_byte select)
 		case 3:
 			curMenu = MENU_KEYBOARD_CONFIG;
 			break;
-		// Item 6 is the ship-sensitivity bar; Exit shifts down from item 6 to item 7.
+		// Item 6 is the ship-sensitivity bar; 7 = Save Game (2-player page), Exit sits at 8.
 		case 7:
+			curMenu = MENU_LOAD_SAVE;
+			performSave = true;
+			quikSave = false;
+			break;
+		case 8:
 			curMenu = MENU_1_PLAYER_ARCADE;
 			break;
 		}

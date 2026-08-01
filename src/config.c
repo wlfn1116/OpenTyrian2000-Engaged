@@ -39,6 +39,7 @@
 #include "video.h"
 #include "video_scale.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -914,7 +915,7 @@ static void playeritems_to_pitems(JE_PItemsType pItems, PlayerItems *items, JE_b
 	pItems[11] = items->ship;
 }
 
-static void pitems_to_playeritems(PlayerItems *items, JE_PItemsType pItems, JE_byte *initial_episode_num)
+static void pitems_to_playeritems(PlayerItems *items, const JE_PItemsType pItems, JE_byte *initial_episode_num)
 {
 	items->weapon[FRONT_WEAPON].id  = pItems[0];
 	items->weapon[REAR_WEAPON].id   = pItems[1];
@@ -985,17 +986,22 @@ void JE_saveGame(JE_byte slot, const char *name)
 	saveFiles[slot - 1].expertMode = expertMode;
 
 	strcpy(saveFiles[slot-1].name, name);
-	
+
 	for (uint port = 0; port < 2; ++port)
 	{
 		// if two-player, use first player's front and second player's rear weapon
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
-	
+
 	JE_saveConfiguration();
 }
 
 void JE_loadGame(JE_byte slot)
+{
+	JE_loadGameRecord(&saveFiles[slot-1], (slot-1) > 10);
+}
+
+void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 {
 	superTyrian = false;
 	onePlayerAction = false;
@@ -1005,31 +1011,31 @@ void JE_loadGame(JE_byte slot)
 	timedBattleMode = false;
 	endlessMode = false;  // saves are never endless (high-scores-only mode); always load as a normal game
 
-	initialDifficulty = saveFiles[slot-1].initialDifficulty;
-	gameHasRepeated   = saveFiles[slot-1].gameHasRepeated;
-	twoPlayerMode     = (slot-1) > 10;
-	difficultyLevel   = saveFiles[slot-1].difficulty;
-	
-	pitems_to_playeritems(&player[0].items, saveFiles[slot-1].items, &initial_episode_num);
-	
+	initialDifficulty = rec->initialDifficulty;
+	gameHasRepeated   = rec->gameHasRepeated;
+	twoPlayerMode     = twoP;
+	difficultyLevel   = rec->difficulty;
+
+	pitems_to_playeritems(&player[0].items, rec->items, &initial_episode_num);
+
 	superArcadeMode = player[0].items.super_arcade_mode;
-	
+
 	if (superArcadeMode == SA_SUPERTYRIAN)
 		superTyrian = true;
 	if (superArcadeMode != SA_NONE)
 		onePlayerAction = true;
 	if (superArcadeMode > SA_LASTSHIP)
 		superArcadeMode = SA_NONE;
-	
+
 	if (twoPlayerMode)
 	{
 		onePlayerAction = false;
-		
-		pitems_to_playeritems(&player[1].items, saveFiles[slot-1].lastItems, NULL);
+
+		pitems_to_playeritems(&player[1].items, rec->lastItems, NULL);
 	}
 	else
 	{
-		pitems_to_playeritems(&player[0].last_items, saveFiles[slot-1].lastItems, NULL);
+		pitems_to_playeritems(&player[0].last_items, rec->lastItems, NULL);
 	}
 
 	/* Compatibility with old version */
@@ -1038,35 +1044,35 @@ void JE_loadGame(JE_byte slot)
 		player[1].items.sidekick_level = 101;
 		player[1].items.sidekick_series = player[1].items.sidekick[LEFT_SIDEKICK];
 	}
-	
-	player[0].cash = saveFiles[slot-1].score;
-	player[1].cash = saveFiles[slot-1].score2;
-	
-	mainLevel   = saveFiles[slot-1].level;
-	cubeMax     = saveFiles[slot-1].cubes;
+
+	player[0].cash = rec->score;
+	player[1].cash = rec->score2;
+
+	mainLevel   = rec->level;
+	cubeMax     = rec->cubes;
 	lastCubeMax = cubeMax;
 
-	secretHint = saveFiles[slot - 1].secretHint;
-	inputDevice[0] = saveFiles[slot - 1].input1;
-	inputDevice[1] = saveFiles[slot - 1].input2;
+	secretHint = rec->secretHint;
+	inputDevice[0] = rec->input1;
+	inputDevice[1] = rec->input2;
 
-	autoFireSpecial = saveFiles[slot - 1].autoFireSpecial;
-	chargeSidekickAutofire = saveFiles[slot - 1].chargeSidekickAutofire;
-	difficultyAdjust = saveFiles[slot - 1].difficultyAdjust;
-	cheatInfiniteSidekickAmmo = saveFiles[slot - 1].cheatInfiniteSidekickAmmo;
-	cheatInfiniteShields = saveFiles[slot - 1].cheatInfiniteShields;
-	cheatInfiniteArmor = saveFiles[slot - 1].cheatInfiniteArmor;
-	expertMode = saveFiles[slot - 1].expertMode;
+	autoFireSpecial = rec->autoFireSpecial;
+	chargeSidekickAutofire = rec->chargeSidekickAutofire;
+	difficultyAdjust = rec->difficultyAdjust;
+	cheatInfiniteSidekickAmmo = rec->cheatInfiniteSidekickAmmo;
+	cheatInfiniteShields = rec->cheatInfiniteShields;
+	cheatInfiniteArmor = rec->cheatInfiniteArmor;
+	expertMode = rec->expertMode;
 
 	for (uint port = 0; port < 2; ++port)
 	{
 		// if two-player, use first player's front and second player's rear weapon
-		player[twoPlayerMode ? port : 0].items.weapon[port].power = saveFiles[slot-1].power[port];
+		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
 	}
-	
-	int episode = saveFiles[slot-1].episode;
 
-	memcpy(&levelName, &saveFiles[slot-1].levelName, sizeof(levelName));
+	int episode = rec->episode;
+
+	memcpy(&levelName, &rec->levelName, sizeof(levelName));
 
 	if (strcmp(levelName, "Completed") == 0)
 	{
@@ -1799,6 +1805,94 @@ void JE_saveConfiguration(void)
 #endif
 		fclose(f);
 	}
-	
+
 	save_opentyrian_config();
+}
+
+/* Packed save record for the network resume handshake: the host serializes the chosen 2-player
+ * save with this and the joiner applies it through JE_loadGameRecord, so both machines start the
+ * resumed session from byte-identical state. */
+
+void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
+{
+	Uint8 *p = buf;
+
+	Uint16 u16 = SDL_SwapLE16(rec->level);
+	memcpy(p, &u16, 2); p += 2;
+
+	memcpy(p, rec->items, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+	memcpy(p, rec->lastItems, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+
+	Uint32 u32 = SDL_SwapLE32((Uint32)rec->score);
+	memcpy(p, &u32, 4); p += 4;
+	u32 = SDL_SwapLE32((Uint32)rec->score2);
+	memcpy(p, &u32, 4); p += 4;
+
+	memcpy(p, rec->levelName, sizeof(rec->levelName)); p += sizeof(rec->levelName);
+	memcpy(p, rec->name, sizeof(rec->name)); p += sizeof(rec->name);
+
+	*p++ = rec->cubes;
+	*p++ = rec->power[0];
+	*p++ = rec->power[1];
+	*p++ = rec->episode;
+	*p++ = rec->difficulty;
+	*p++ = rec->secretHint;
+	*p++ = rec->input1;
+	*p++ = rec->input2;
+	*p++ = rec->gameHasRepeated != false;
+	*p++ = rec->initialDifficulty;
+	*p++ = rec->autoFireSpecial != false;
+	*p++ = rec->chargeSidekickAutofire;
+	*p++ = rec->difficultyAdjust != false;
+	*p++ = rec->cheatInfiniteSidekickAmmo != false;
+	*p++ = rec->cheatInfiniteShields != false;
+	*p++ = rec->cheatInfiniteArmor != false;
+	*p++ = rec->expertMode != false;
+
+	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
+}
+
+void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
+{
+	const Uint8 *p = buf;
+
+	memset(rec, 0, sizeof(*rec));
+
+	Uint16 u16;
+	memcpy(&u16, p, 2); p += 2;
+	rec->level = SDL_SwapLE16(u16);
+
+	memcpy(rec->items, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+	memcpy(rec->lastItems, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+
+	Uint32 u32;
+	memcpy(&u32, p, 4); p += 4;
+	rec->score = (JE_longint)SDL_SwapLE32(u32);
+	memcpy(&u32, p, 4); p += 4;
+	rec->score2 = (JE_longint)SDL_SwapLE32(u32);
+
+	memcpy(rec->levelName, p, sizeof(rec->levelName)); p += sizeof(rec->levelName);
+	rec->levelName[sizeof(rec->levelName) - 1] = '\0';
+	memcpy(rec->name, p, sizeof(rec->name)); p += sizeof(rec->name);
+	rec->name[sizeof(rec->name) - 1] = '\0';
+
+	rec->cubes = *p++;
+	rec->power[0] = *p++;
+	rec->power[1] = *p++;
+	rec->episode = *p++;
+	rec->difficulty = *p++;
+	rec->secretHint = *p++;
+	rec->input1 = *p++;
+	rec->input2 = *p++;
+	rec->gameHasRepeated = *p++ != 0;
+	rec->initialDifficulty = *p++;
+	rec->autoFireSpecial = *p++ != 0;
+	rec->chargeSidekickAutofire = *p++;
+	rec->difficultyAdjust = *p++ != 0;
+	rec->cheatInfiniteSidekickAmmo = *p++ != 0;
+	rec->cheatInfiniteShields = *p++ != 0;
+	rec->cheatInfiniteArmor = *p++ != 0;
+	rec->expertMode = *p++ != 0;
+
+	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
