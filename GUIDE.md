@@ -444,8 +444,10 @@ seconds and reads `--` until the first reply arrives. Under roughly 85ms the gam
 runs at full speed on the default network delay of 3; above that it starts to slow
 down, and raising the delay trades input lag for smoothness.
 
-In the sidebar, the shield and armor gauges of the ship you are *not* flying
-are dimmed, so a glance tells your bars from the other player's.
+In any two-player game, local or online, the sidebar tags each gauge block with
+**P1** or **P2** just below its bars. Online, the shield and armor gauges
+of the ship you are *not* flying are dimmed as well, so a glance tells your bars
+from the other player's.
 
 Join by IP Address takes a host address alone or with a port, like
 `12.345.67.89:1337`. Ctrl+V pastes a copied address into the field, replacing

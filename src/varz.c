@@ -25,6 +25,7 @@
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
+#include "fonthand.h"
 #include "joystick.h"
 #include "lds_play.h"
 #include "loudness.h"
@@ -1651,6 +1652,20 @@ static void gauge_dim_rect(int x1, int y1, int x2, int y2)
 	// Two shade passes (each halves the in-bank shade): a single one read too close to live.
 	JE_barShade(VGAScreen, x1, y1, x2, y2);
 	JE_barShade(VGAScreen, x1, y1, x2, y2);
+}
+
+// Two-player HUD (local and online): "P1"/"P2" under each player's gauge block, so which block
+// belongs to whom reads at a glance.  Painted into the HUD alongside the level name at level
+// start, so it is already there under the fade-in; nothing drawn during play covers those rows.
+// Bank 9 is the shield gauge's own blue, so the tag tracks the HUD under any level palette, and
+// the cardinal black outline separates it from the panel art it sits on.
+void JE_drawPlayerTags(void)
+{
+	if (!twoPlayerMode || galagaMode)
+		return;
+
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		JE_textShade(VGAScreen, HUD_X(289), 59 + 134 * i, (i == 0) ? "P1" : "P2", 0, 5, FULL_SHADE);
 }
 
 void JE_drawShield(void)

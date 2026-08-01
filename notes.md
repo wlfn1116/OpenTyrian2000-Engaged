@@ -868,6 +868,12 @@ Enemy bars group by non-zero link number, ignore boss groups, and use the most
 damaged visible part. Their render command must carry the same layer binding as
 the enemy.
 
+The two-player gauge blocks repeat at a 134px stride, so any per-player HUD mark
+shares that offset. `JE_drawPlayerTags` paints the `P1`/`P2` marks onto the arch
+below each block at level start, next to the level-name draw and before the fade,
+so they are part of the panel. That works only because nothing during play covers
+those rows: the bar wipe is confined to the gauge columns.
+
 Help-bar values right-align to `ENDLESS_COURSE_PAYOUT_RIGHT`. Keep descriptions
 short enough to leave room for prices or owned-stack counts.
 

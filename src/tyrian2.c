@@ -3055,6 +3055,7 @@ start_level_first:
 	JE_drawOptions();
 
 	JE_outText(VGAScreen, HUD_X(268), twoPlayerMode ? 76 : 118, levelName, 12, 4);
+	JE_drawPlayerTags();
 
 	// Ensure the widened playfield blends into the HUD before the fade-in
 	// so no remnants of the old HUD position appear during level start.
