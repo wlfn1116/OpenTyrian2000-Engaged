@@ -338,6 +338,10 @@ Settings are under Setup > Graphics.
 | Filter | Sharp, Smooth, or unfiltered sub-pixel output |
 | VSync / FPS Cap / Show FPS | Presentation controls |
 
+On the FPS Cap row, Left/Right steps the cap by 5, or type a number directly
+(minimum 5; 0 or Backspace down to nothing = Uncapped). On Switch and Vita,
+pressing Select on the row opens the system keypad instead.
+
 Smooth Motion also enables display-rate ship movement in supported single-player
 games. Sub-pixel rendering has the largest effect when Smooth Motion is enabled.
 
@@ -430,6 +434,9 @@ trip to the other player in milliseconds. It updates about every one and a half
 seconds and reads `--` until the first reply arrives. Under roughly 85ms the game
 runs at full speed on the default network delay of 3; above that it starts to slow
 down, and raising the delay trades input lag for smoothness.
+
+In the sidebar, the shield and armor gauges of the ship you are *not* flying
+are dimmed, so a glance tells your bars from the other player's.
 
 Join by IP Address takes a host address alone or with a port, like
 `12.345.67.89:1337`. Ctrl+V pastes a copied address into the field, replacing

@@ -78,4 +78,6 @@ void service_SDL_events(JE_boolean clear_new);
 
 void JE_clearKeyboard(void);
 
+int scancode_digit(int sc);  // typed digit (0-9) from a scancode, or -1
+
 #endif /* KEYBOARD_H */

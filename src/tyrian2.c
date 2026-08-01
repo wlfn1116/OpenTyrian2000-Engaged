@@ -6426,6 +6426,7 @@ void networkStartScreen(void)
 	if (!network_from_lobby)
 	{
 		JE_loadPic(VGAScreen, 2, false);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
 		memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 		JE_dString(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
 		JE_showVGA();
@@ -6439,6 +6440,7 @@ void networkStartScreen(void)
 		// VGAScreen2, so it still needs the backdrop staged there -- otherwise it draws over
 		// whatever the lobby happened to leave behind.
 		JE_loadPic(VGAScreen2, 2, false);
+		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
 	}
 
 	twoPlayerMode = true;

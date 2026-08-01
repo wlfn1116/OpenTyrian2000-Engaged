@@ -33,6 +33,7 @@
 #include "crashlog.h"
 #include "episodes.h"
 #include "file.h"
+#include "font.h"
 #include "fonthand.h"
 #include "helptext.h"
 #include "joystick.h"
@@ -1252,6 +1253,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	else
 	{
 		JE_loadPic(VGAScreen, 2, false);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
 		JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
 
 		JE_showVGA();

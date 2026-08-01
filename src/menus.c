@@ -707,7 +707,12 @@ int networkHostStartSelect(void)
 	for (; ; )
 	{
 		if (restart)
+		{
 			JE_loadPic(VGAScreen2, 2, false);
+
+			// Same header the lobby screens carry.
+			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+		}
 
 		// Restore background.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
@@ -882,6 +887,8 @@ bool networkDisconnectSavePrompt(const char *message)
 		if (restart)
 		{
 			JE_loadPic(VGAScreen2, 2, false);
+
+			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
 
 			// The message is part of the backdrop; only the two options redraw per frame.
 			JE_dString(VGAScreen2, JE_fontCenter(message, SMALL_FONT_SHAPES), yMessage, message, SMALL_FONT_SHAPES);

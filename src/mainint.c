@@ -767,6 +767,11 @@ int JE_loadScreen(bool net2p, bool saving)
 		if (restart)
 		{
 			JE_loadPic(VGAScreen2, 2, false);
+			// The save-name/overwrite dialogs (JE_operation) blit the OPTION_SHAPES message
+			// box, whose 224..239 ramp is fire-red under this pic's palette 7 but brown under
+			// the menu palette it was drawn for. Pic 2 never touches that ramp, so graft the
+			// menu values in.
+			memcpy(&colors[224], &palettes[0][224], 16 * sizeof(colors[0]));
 			fill_rectangle_wh(VGAScreen2, 0, vga_height - 8, vga_width, 8, 0);
 		}
 

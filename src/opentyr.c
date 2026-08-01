@@ -108,22 +108,6 @@ static const char* getScalingModePickerItem(size_t i, char* buffer, size_t buffe
 	return scaling_mode_names[i];
 }
 
-static const int fps_options[] = { 0, 35, 60, 120 };
-
-static size_t getFPSPickerItemsCount(void)
-{
-	return COUNTOF(fps_options);
-}
-
-static const char* getFPSPickerItem(size_t i, char* buffer, size_t bufferSize)
-{
-	if (fps_options[i] == 0)
-		return "Uncapped";
-
-	snprintf(buffer, bufferSize, "%d", fps_options[i]);
-	return buffer;
-}
-
 /* ---- Graphics: sub-pixel supersampling picker ---- */
 
 // Index maps directly onto render_supersample: 0 = Auto (follow the scaler),
@@ -692,7 +676,7 @@ static bool runOptionsMenu(MenuId startMenu)
 								{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.", getSupersamplePickerItemsCount, getSupersamplePickerItem },
 								{ MENU_ITEM_SS_FILTER, "Filter:", "Sub-pixel filter: Sharp, Smooth, or None (raw).", getSSFilterPickerItemsCount, getSSFilterPickerItem },
 								{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
-								{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames when VSync is off (0 = uncapped).", getFPSPickerItemsCount, getFPSPickerItem },
+								{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
 								{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },
 								{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 								{ -1 }
@@ -907,6 +891,7 @@ static bool runOptionsMenu(MenuId startMenu)
 	MenuId currentMenu = startMenu;
 	MenuItemId currentPicker = MENU_ITEM_NONE;
 	size_t pickerSelectedIndex = 0;
+	bool fpsTyped = false;  // an FPS cap is being typed digit-by-digit (desktop keyboard)
 
 	/* See comment in JE_helpSystem regarding the virtual screen width. */
 	const int xCenter = 320 / 2;
@@ -931,6 +916,11 @@ static bool runOptionsMenu(MenuId startMenu)
 
 		// Restore background.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Committed typed caps snap to the arrows' 5fps floor: below that the paced
+		// menus themselves become nearly unusable.
+		if (!fpsTyped && fps_cap > 0 && fps_cap < 5)
+			set_fps(5);
 
 		const Menu *menu = &menus[currentMenu];
 
@@ -1011,7 +1001,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 
 			case MENU_ITEM_FPS:
-				if (fps_cap == 0)
+				if (fpsTyped)
+					snprintf(buffer, sizeof(buffer), "%d_", fps_cap);
+				else if (fps_cap == 0)
 					snprintf(buffer, sizeof(buffer), "Uncapped");
 				else
 					snprintf(buffer, sizeof(buffer), "%d", fps_cap);
@@ -1309,6 +1301,7 @@ static bool runOptionsMenu(MenuId startMenu)
 							if (*selectedMenuItemIndex != i)
 							{
 								JE_playSampleNum(S_CURSOR);
+								fpsTyped = false;
 
 								*selectedMenuItemIndex = i;
 							}
@@ -1426,11 +1419,32 @@ static bool runOptionsMenu(MenuId startMenu)
 			}
 			else if (newkey)
 			{
-				switch (lastkey_scan)
+				const bool fpsRow = menuItems[*selectedMenuItemIndex].id == MENU_ITEM_FPS;
+				const int digit = scancode_digit(lastkey_scan);
+
+				// Digits type an FPS cap directly (desktop keyboard); arrows still step by 5.
+				if (fpsRow && digit >= 0)
+				{
+					fps_cap = fpsTyped && fps_cap < 100 ? fps_cap * 10 + digit
+					        : fpsTyped                  ? fps_cap
+					                                    : digit;
+					fpsTyped = true;
+					set_fps(fps_cap);
+					JE_playSampleNum(S_CURSOR);
+				}
+				else if (fpsRow && lastkey_scan == SDL_SCANCODE_BACKSPACE)
+				{
+					fps_cap /= 10;
+					fpsTyped = true;
+					set_fps(fps_cap);
+					JE_playSampleNum(S_CURSOR);
+				}
+				else switch (lastkey_scan)
 				{
 				case SDL_SCANCODE_UP:
 				{
 					JE_playSampleNum(S_CURSOR);
+					fpsTyped = false;
 
 					*selectedMenuItemIndex = *selectedMenuItemIndex == 0
 						? menuItemsCount - 1
@@ -1440,6 +1454,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				case SDL_SCANCODE_DOWN:
 				{
 					JE_playSampleNum(S_CURSOR);
+					fpsTyped = false;
 
 					*selectedMenuItemIndex = *selectedMenuItemIndex == menuItemsCount - 1
 						? 0
@@ -1448,11 +1463,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				case SDL_SCANCODE_LEFT:
 				{
+					fpsTyped = false;
 					adjustMenuItemValue(menuItems[*selectedMenuItemIndex].id, -1);
 					break;
 				}
 				case SDL_SCANCODE_RIGHT:
 				{
+					fpsTyped = false;
 					adjustMenuItemValue(menuItems[*selectedMenuItemIndex].id, +1);
 					break;
 				}
@@ -1465,6 +1482,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				case SDL_SCANCODE_ESCAPE:
 				{
 					JE_playSampleNum(S_SPRING);
+					fpsTyped = false;
 
 					currentMenu = menuParents[currentMenu];
 					break;
@@ -1712,6 +1730,34 @@ static bool runOptionsMenu(MenuId startMenu)
 
 					currentPicker = selectedMenuItemId;
 					pickerSelectedIndex = (size_t)render_supersample_filter;
+					break;
+				}
+				case MENU_ITEM_FPS:
+				{
+#if defined(__SWITCH__) || defined(__vita__)
+					// No physical keyboard on the consoles; the system keypad stands in
+					// for the desktop's typed digits.
+					char kb[8];
+					snprintf(kb, sizeof(kb), "%d", fps_cap);
+					if (console_swkbd(kb, sizeof(kb), 3, kb, "FPS cap (0 = uncapped)", true))
+					{
+						// Filter, not trust: the Vita IME has no numeric mode.
+						int v = 0;
+						for (const char *c = kb; *c != '\0'; ++c)
+							if (*c >= '0' && *c <= '9' && v < 100)
+								v = v * 10 + (*c - '0');
+						fps_cap = v;
+						set_fps(fps_cap);
+					}
+					// Drop the press that opened the keypad and anything it left behind,
+					// so this menu does not act on it a second time.
+					wait_noinput(true, true, true);
+					service_SDL_events(true);
+					newkey = newmouse = false;
+#else
+					fpsTyped = false;  // commit; the next digit starts a fresh number
+#endif
+					JE_playSampleNum(S_CLICK);
 					break;
 				}
 				case MENU_ITEM_MUSIC_DEVICE:
@@ -2154,12 +2200,6 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_SS_FILTER:
 				{
 					render_supersample_filter = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_FPS:
-				{
-					fps_cap = fps_options[pickerSelectedIndex];
-					set_fps(fps_cap);
 					break;
 				}
 				case MENU_ITEM_MUSIC_DEVICE:

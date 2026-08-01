@@ -4720,16 +4720,6 @@ static int level_row_at(int mx, int my, int px0, int px1, int items_top,
 	return (idx >= 0 && idx < count) ? idx : -1;
 }
 
-/* A typed digit (0-9) from a scancode, or -1. Both the number row and the keypad. */
-static int scancode_digit(int sc)
-{
-	if (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9)     return sc - SDL_SCANCODE_1 + 1;
-	if (sc == SDL_SCANCODE_0)                             return 0;
-	if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_9) return sc - SDL_SCANCODE_KP_1 + 1;
-	if (sc == SDL_SCANCODE_KP_0)                          return 0;
-	return -1;
-}
-
 /* Endless-only: the SECTOR modifiers the debug screen can toggle onto the jumped-to zone. The six
  * PERSONAL kill-fire buffs live in endlessDebugBuffMods below, on their own list.
  *

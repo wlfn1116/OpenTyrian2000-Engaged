@@ -456,3 +456,13 @@ void JE_clearKeyboard(void)
 {
 	// /!\ Doesn't seems important. I think. D:
 }
+
+/* A typed digit (0-9) from a scancode, or -1. Both the number row and the keypad. */
+int scancode_digit(int sc)
+{
+	if (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9)       return sc - SDL_SCANCODE_1 + 1;
+	if (sc == SDL_SCANCODE_0)                               return 0;
+	if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_9) return sc - SDL_SCANCODE_KP_1 + 1;
+	if (sc == SDL_SCANCODE_KP_0)                            return 0;
+	return -1;
+}

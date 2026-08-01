@@ -1638,6 +1638,21 @@ JE_word JE_portConfigs(void)
 	return tempW = weaponPort[player[player_index].items.weapon[REAR_WEAPON].id].opnum;
 }
 
+// Online, the ship this machine is NOT flying gets its gauges dimmed (same hue, quarter
+// shade), so whose bars are whose reads at a glance.  Every repaint rewrites the bar pixels
+// before the shade runs, so the dim never compounds.
+static bool gauge_is_remote(uint i)
+{
+	return isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2 && i != thisPlayerNum - 1;
+}
+
+static void gauge_dim_rect(int x1, int y1, int x2, int y2)
+{
+	// Two shade passes (each halves the in-bank shade): a single one read too close to live.
+	JE_barShade(VGAScreen, x1, y1, x2, y2);
+	JE_barShade(VGAScreen, x1, y1, x2, y2);
+}
+
 void JE_drawShield(void)
 {
 	if (rollback_resim_silent)
@@ -1649,7 +1664,11 @@ void JE_drawShield(void)
 	if (twoPlayerMode && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
+		{
 			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, roundf(player[i].shield * 0.8f), 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]));
+			if (gauge_is_remote(i))
+				gauge_dim_rect(HUD_X(270), 60 + 134 * i - 44, HUD_X(278), 60 + 134 * i);
+		}
 	}
 	else
 	{
@@ -1705,7 +1724,11 @@ void JE_drawArmor(void)
 	if (twoPlayerMode && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
+		{
 			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, roundf(player[i].armor * 0.8f), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
+			if (gauge_is_remote(i))
+				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
+		}
 	}
 	else if (endlessFxActive())
 	{
