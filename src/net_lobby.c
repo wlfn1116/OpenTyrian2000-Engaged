@@ -314,13 +314,24 @@ static void lobbyDrawLocalAddresses(int y)
 
 #define LOBBY_MAX_FOUND 8
 
+// Discovery-wait poll: re-present the static "searching" frame with the cursor composited at
+// its live position, so the pointer keeps moving through network_discover's blocking window.
+static void lobbyDiscoverPoll(void)
+{
+	mouseCursor = MOUSE_POINTER_NORMAL;
+	JE_mouseStart();
+	JE_showVGA();
+	JE_mouseReplace();
+	if (!output_vsync)
+		limit_render_fps();
+}
+
 // Probe the LAN and let the player pick from what answered.  Returns the chosen host, or NULL
 // if nothing was found or the player backed out.  The returned pointer is into `hosts`.
 static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_count)
 {
-	// Draw the "searching" frame first: the probe blocks for its whole timeout.
-	// Composite the cursor into it -- it holds still for the 1.5s probe, but a
-	// frozen pointer beats a vanished one.
+	// Draw the "searching" frame first: the probe blocks for its whole timeout,
+	// re-presented with a live cursor from lobbyDiscoverPoll.
 	lobbyPrepareBackdrop("Find LAN Games");
 	lobbyRestoreBackdrop();
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Searching the local network...",
@@ -331,7 +342,7 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 	JE_mouseReplace();
 	fade_palette(colors, 10, 0, 255);
 
-	const int count = network_discover(hosts, LOBBY_MAX_FOUND, 1500);
+	const int count = network_discover(hosts, LOBBY_MAX_FOUND, 1500, lobbyDiscoverPoll);
 	*out_count = count;
 
 	if (count == 0)
@@ -475,6 +486,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 	for (;;)
 	{
+		// Desync recovery is a rollback-only repair: the lockstep path never runs the
+		// canary compare that arms it, so delay-based forces the row off and dead.
+		const bool recoveryLocked = !net_rollback;
+		if (recoveryLocked)
+			net_desync_recovery = false;
+
 		char portItem[32];
 		snprintf(portItem, sizeof(portItem), "Listen Port: %s", port_buf[0] ? port_buf : "(none)");
 
@@ -500,8 +517,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			const int x = LOBBY_XCENTER - wItem[i] / 2;
 			const int y = yItems + dyItems * (int)i;
 
+			const bool disabled = i == ITEM_RECOVERY && recoveryLocked;
 			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
-			                    -4 + (i == selectedIndex ? 2 : 0), false, 2);
+			                    -4 + (i == selectedIndex ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 		}
 
 		if (status[0])
@@ -527,6 +545,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			for (size_t i = 0; i < ITEM_COUNT; ++i)
 			{
+				if (i == ITEM_RECOVERY && recoveryLocked)
+					continue;
+
 				const int x = LOBBY_XCENTER - wItem[i] / 2;
 				const int y = yItems + dyItems * (int)i;
 
@@ -558,12 +579,16 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			{
 			case SDL_SCANCODE_UP:
 				JE_playSampleNum(S_CURSOR);
-				selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
+				do
+					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
+				while (selectedIndex == ITEM_RECOVERY && recoveryLocked);
 				break;
 
 			case SDL_SCANCODE_DOWN:
 				JE_playSampleNum(S_CURSOR);
-				selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
+				do
+					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
+				while (selectedIndex == ITEM_RECOVERY && recoveryLocked);
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -627,6 +652,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// it -- one hitch instead of a divergent rest-of-level.  The host's
 			// value binds the session (settings block bit 6), like every other
 			// sim-affecting setting; rollback sessions only.
+			if (recoveryLocked)
+				break;
 			JE_playSampleNum(S_CLICK);
 			net_desync_recovery = !net_desync_recovery;
 			break;
@@ -735,7 +762,7 @@ bool networkLobby(void)
 	// Pre-filled from the config so the common case is Host/Join then Enter.
 	char port_buf[8];
 	char addr_buf[64];
-	char name_buf[24];
+	char name_buf[NET_NAME_MAX + 1];
 
 	snprintf(port_buf, sizeof(port_buf), "%u", (unsigned)network_listen_port);
 	SDL_strlcpy(addr_buf, network_opponent_host ? network_opponent_host : "", sizeof(addr_buf));

@@ -150,8 +150,7 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 			
 		case 256: // --net-player-name
-			network_player_name = malloc(strlen(option.arg) + 1);
-			strcpy(network_player_name, option.arg);
+			network_set_player_name(option.arg);
 			break;
 			
 		case 257: // --net-player-number

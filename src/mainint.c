@@ -1506,9 +1506,19 @@ void JE_doInGameSetup(void)
 		network_prepare(PACKET_GAME_MENU);
 		network_send(4);  // PACKET_GAME_MENU
 
+		// Present the frozen frame with the cursor composited while we wait for
+		// the peer's menu packet, like the rendezvous loops below.
+		SDL_Surface *const save_surface = VGAScreen;
+		VGAScreen = VGAScreenSeg;
+
 		while (true)
 		{
 			service_SDL_events(false);
+
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_GAME_MENU)
 			{
@@ -1521,6 +1531,8 @@ void JE_doInGameSetup(void)
 
 			SDL_Delay(16);
 		}
+
+		VGAScreen = save_surface;
 	}
 #endif
 

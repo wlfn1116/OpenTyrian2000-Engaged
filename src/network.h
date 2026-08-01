@@ -39,6 +39,11 @@
 #define NET_PACKET_SIZE   320
 #define NET_PACKET_QUEUE  16
 
+// Longest player name, enforced at network_set_player_name (so every entry path -- lobby,
+// config file, command line -- gets the same clamp) and on receive.  10 keeps the in-game
+// "<name> got <item>" line inside the text bar even against the longest item names.
+#define NET_NAME_MAX      10
+
 #define PACKET_ACKNOWLEDGE   0x00    //
 #define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
 #define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
@@ -114,8 +119,9 @@ int network_local_addresses(IPaddress *out, int max);
 // Broadcast a probe on every local interface and collect replies for `timeout_ms`.  Uses its
 // own short-lived socket, so it must NOT be called while a game socket is open.  Returns how
 // many distinct hosts were found (at most `max`).  Zero is a normal answer: broadcast may be
-// blocked by a firewall, or nobody is hosting.
-int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms);
+// blocked by a firewall, or nobody is hosting.  `poll` (may be NULL) is called every few
+// milliseconds so the caller's screen and cursor stay alive through the blocking wait.
+int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void));
 #endif
 
 #ifdef WITH_NETWORK

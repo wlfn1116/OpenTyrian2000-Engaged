@@ -398,7 +398,9 @@ When a desync is detected, the game pauses for a moment ("Resyncing players."),
 the host sends its complete game state to the other player, and both continue
 from the host's version of events. The host's setting decides for the session,
 like every other rule that affects the simulation. It works in rollback netplay
-between two copies of the same build on the same platform, and gives up after
+between two copies of the same build on the same platform — Delay-Based netcode
+has no way to detect a desync, so choosing it switches the row off and grays it
+out — and gives up after
 three repairs in one level; every repair is still recorded in the network log
 (`opentyrian_net.log`, next to `opentyrian_log.log` beside the game), so a
 recurring desync stays visible to bug reports.

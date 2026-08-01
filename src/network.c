@@ -68,10 +68,6 @@
 #define NET_CONNECT_SETTINGS  12
 #define NET_CONNECT_NAME      (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
 
-// Longest player name that goes on the wire.  Every send path clamps to it; the
-// stored name is never truncated, so a long one survives a network game intact.
-#define NET_NAME_MAX      20
-
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
 #define NET_KEEP_ALIVE    1600         // ticks to wait between keep-alive packets
@@ -110,7 +106,9 @@ bool network_is_host = false;
 bool network_from_lobby = false;
 
 // network_player_name starts out pointing at a static empty string and is otherwise owned
-// heap memory, so changing it has to know which it currently is.
+// heap memory, so changing it has to know which it currently is.  Clamps to NET_NAME_MAX:
+// the stored name feeds fixed-size HUD buffers directly, so an over-long name from a
+// hand-edited config file must never get past this point.
 void network_set_player_name(const char *name)
 {
 	if (network_player_name != empty_string)
@@ -122,8 +120,13 @@ void network_set_player_name(const char *name)
 		return;
 	}
 
-	network_player_name = malloc_die(strlen(name) + 1);
-	strcpy(network_player_name, name);
+	size_t len = strlen(name);
+	if (len > NET_NAME_MAX)
+		len = NET_NAME_MAX;
+
+	network_player_name = malloc_die(len + 1);
+	memcpy(network_player_name, name, len);
+	network_player_name[len] = '\0';
 }
 
 #ifdef WITH_NETWORK
@@ -356,9 +359,8 @@ static int network_recv_one(void)
 			{
 				if (host_awaiting_peer)
 				{
-					// Bounded by the wire limit rather than by whatever the config holds:
-					// the name arrives straight out of opentyrian.cfg, which nothing
-					// validates, and the packet buffer is a fixed NET_PACKET_SIZE.
+					// network_set_player_name already clamps the stored name; the re-clamp
+					// keeps the fixed-size packet fill safe on its own terms.
 					size_t name_len = strlen(network_player_name);
 					if (name_len > NET_NAME_MAX)
 						name_len = NET_NAME_MAX;
@@ -1200,11 +1202,20 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	JE_showVGA();
 	fade_palette(colors, 10, 0, 255);
 
+	// Reached mid-game the mouse is still captured for ship control; release it,
+	// or the cursor below can never move off wherever the ship left it.
+	mouseSetRelative(false);
+
 	if (attempt_sync)
 	{
 		while (!network_is_sync() && network_is_alive())
 		{
 			service_SDL_events(false);
+
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
 
 			network_check();
 			SDL_Delay(16);
@@ -1213,8 +1224,17 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 	if (err)
 	{
+		// Re-present each frame so the cursor stays alive on the "press any
+		// button" screen, like every other menu wait.
 		while (!JE_anyButton())
+		{
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
+
 			SDL_Delay(16);
+		}
 	}
 
 	fade_black(10);
@@ -1822,7 +1842,7 @@ static void discover_send_probe(UDPsocket sock, UDPpacket *probe, Uint32 host_be
 	SDLNet_UDP_Send(sock, -1, probe);
 }
 
-int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms)
+int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void))
 {
 	if (max <= 0)
 		return 0;
@@ -1933,6 +1953,11 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms)
 			}
 			continue;  // drain anything else already queued before sleeping again
 		}
+
+		// Let the caller keep its screen alive (the lobby re-presents the
+		// "searching" frame with the mouse cursor) while we sit on the socket.
+		if (poll)
+			poll();
 
 		SDL_Delay(5);
 	}
