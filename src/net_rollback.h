@@ -33,6 +33,8 @@
 #include "opentyr.h"
 #include "rollback.h"
 
+#include <stdio.h>
+
 /* Config default; the host's value decides for the session (settings block). */
 extern bool net_rollback;
 
@@ -98,6 +100,10 @@ NrbStep nrb_driver(void);
 #ifdef WITH_NETWORK
 /* Called from network_check() for inbound PACKET_INPUT datagrams. */
 void nrb_handle_packet(const Uint8 *data, int len);
+
+/* Append the rollback module's live state to the crash log's Network section
+ * (network_write_diagnostics calls this when the session runs rollback). */
+void nrb_write_diagnostics(FILE *f);
 #endif
 
 #endif /* NET_ROLLBACK_H */

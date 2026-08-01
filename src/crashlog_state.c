@@ -20,8 +20,9 @@
 
 #include <stdio.h>
 
-// Declared locally (matches network.h) to avoid pulling SDL_net into this TU for one flag.
+// Declared locally (matches network.h) to avoid pulling SDL_net into this TU.
 extern bool isNetworkGame;
+void network_write_diagnostics(FILE *f);
 
 // Current-phase breadcrumb.
 // Game code sets this at coarse phase boundaries; the crash report prints it. Plain pointer
@@ -376,6 +377,10 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "  infShot=%d infArmor=%d infShield=%d infGen=%d noEnemyFire=%d instCharge=%d infSideAmmo=%d\n",
 	        infiniteShot, cheatInfiniteArmor, cheatInfiniteShields, cheatInfiniteGenerator,
 	        cheatNoEnemyFire, cheatInstantCharge, cheatInfiniteSidekickAmmo);
+
+	// Netcode: connection health, sync counters, desync/rollback state.
+	if (isNetworkGame)
+		network_write_diagnostics(f);
 
 	// Video and rendering.
 	fprintf(f, "\nVideo / render:\n");

@@ -5276,7 +5276,7 @@ draw_player_shot_loop_end:
 					{
 						reported_for_level = curLoc;
 
-						// Goes through crashlog_note, not stderr: this is a Windows-subsystem
+						// Goes through the net log, not stderr: this is a Windows-subsystem
 						// build with no console, so a printf would be thrown away.
 						char detail[512];
 						snprintf(detail, sizeof(detail),
@@ -5291,7 +5291,8 @@ draw_player_shot_loop_end:
 						         our_ph == their_ph ? "ok" : "DIFFERS",
 						         (unsigned)our_eh, (unsigned)their_eh,
 						         our_eh == their_eh ? "ok" : "DIFFERS");
-						crashlog_note("NETWORK DESYNC", detail);
+						network_diag_note_desync((int)mainLevel);
+						crashlog_note_net("NETWORK DESYNC", detail);
 
 						if (networkDesyncHalt)
 							network_tyrian_halt(7, false);

@@ -54,6 +54,16 @@ static bool session_recovery = false;
  * the stall timeout allows, and those frame numbers can fall inside the new
  * level's acceptance window; the epoch is what tells them apart. */
 static Uint16 nrb_epoch;
+
+/* Session-long wire/stall counters for the crash log (nrb_write_diagnostics).
+ * Unlike the per-level stats below these survive nrb_reset_core; they reset
+ * when a session starts. */
+static struct
+{
+	Uint32 pkt_in;                    /* input packets accepted                */
+	Uint32 refused_malformed, refused_window, refused_epoch;
+	Uint32 stalls;                    /* waits that earned a >3 s crashlog note */
+} nrb_diag;
 #endif
 
 void nrb_set_session_mode(bool enabled)
@@ -62,6 +72,7 @@ void nrb_set_session_mode(bool enabled)
 #ifdef WITH_NETWORK
 	/* Both machines run this at connect time, so both start the count from zero. */
 	nrb_epoch = 0;
+	memset(&nrb_diag, 0, sizeof(nrb_diag));
 #endif
 }
 
@@ -537,7 +548,7 @@ static Uint32 nrb_scan_mispredict(void)
 				         "  accepting the peer's input as consumed to keep the simulation moving",
 				         (unsigned long)f, NRB_RESIM_GIVE_UP,
 				         (unsigned long)nrb_cur, thisPlayerNum);
-				crashlog_note("ROLLBACK LIVELOCK", detail);
+				crashlog_note_net("ROLLBACK LIVELOCK", detail);
 			}
 		}
 		++verified_upto;
@@ -617,27 +628,44 @@ static void nrb_send_input(void)
 void nrb_handle_packet(const Uint8 *data, int len)
 {
 	if (len < NRB_HDR_BYTES)
+	{
+		++nrb_diag.refused_malformed;
 		return;
+	}
 
 	const int    count = SDLNet_Read16(&data[2]);
 	const Uint32 F     = SDLNet_Read32(&data[4]);
 	const Uint32 ack   = SDLNet_Read32(&data[8]);
 
 	if (count < 0 || count > NRB_REDUNDANCY || len < NRB_HDR_BYTES + count * NRB_REC_BYTES)
+	{
+		++nrb_diag.refused_malformed;
 		return;
+	}
 	if (F < (Uint32)count)
+	{
+		++nrb_diag.refused_malformed;
 		return;
+	}
 	/* In-flight datagrams from the previous level carry frame numbers far past
 	 * this level's counter; letting them in would poison the ack frontier and
 	 * the timesync estimate.  A real peer can only be MAX_PREDICT ahead. */
 	if (F > nrb_cur + NRB_HIST)
+	{
+		++nrb_diag.refused_window;
 		return;
+	}
 	/* ...and a SHORT previous level leaves frame numbers small enough to pass that
 	 * test, which the epoch catches instead.  Only strictly older is refused: a
 	 * peer that is a level ahead of us is the pre-existing behaviour, and refusing
 	 * it would turn a one-sided level-start skew into a mutual stall. */
 	if ((Sint16)(SDLNet_Read16(&data[14]) - nrb_epoch) < 0)
+	{
+		++nrb_diag.refused_epoch;
 		return;
+	}
+
+	++nrb_diag.pkt_in;
 
 	their_adv_x8 = (Sint16)SDLNet_Read16(&data[12]);
 
@@ -792,7 +820,8 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         ours->px[1], ours->py[1], peer->px[1], peer->py[1],
 			         (unsigned long)stat_rollbacks, (unsigned long)stat_deepest,
 			         (unsigned long)stat_resim_frames, skew);
-			crashlog_note("NETWORK DESYNC (rollback)", detail);
+			network_diag_note_desync((int)mainLevel);
+			crashlog_note_net("NETWORK DESYNC (rollback)", detail);
 
 			if (networkDesyncHalt)
 				network_tyrian_halt(7, false);
@@ -916,7 +945,7 @@ static NrbStep nrb_begin_resim(Uint32 K)
 		snprintf(detail, sizeof(detail),
 		         "no snapshot for frame %lu (current %lu, verified %lu)",
 		         (unsigned long)K, (unsigned long)nrb_cur, (unsigned long)verified_upto);
-		crashlog_note("ROLLBACK SNAPSHOT MISSING", detail);
+		crashlog_note_net("ROLLBACK SNAPSHOT MISSING", detail);
 		network_tyrian_halt(7, false);
 	}
 
@@ -993,6 +1022,7 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 	if (!*stall_reported && waited > 3000)
 	{
 		*stall_reported = true;
+		++nrb_diag.stalls;
 		char detail[256];
 		snprintf(detail, sizeof(detail),
 		         "%s\n"
@@ -1001,7 +1031,7 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		         why, thisPlayerNum, (unsigned)nrb_epoch,
 		         (unsigned long)nrb_cur, (unsigned long)verified_upto,
 		         (unsigned long)peer_acked, (unsigned long)remote_newest);
-		crashlog_note("ROLLBACK STALL", detail);
+		crashlog_note_net("ROLLBACK STALL", detail);
 	}
 
 	// A LIVE peer that is merely slow (menus, loading, level tally) must never
@@ -1147,12 +1177,13 @@ static bool nrb_resync_pump(Uint32 wait_start, bool *reported, const char *why)
 	if (!*reported && waited > 3000)
 	{
 		*reported = true;
+		++nrb_diag.stalls;
 		char detail[224];
 		snprintf(detail, sizeof(detail),
 		         "%s\n  player %u, attempt %lu, gen %u, %lu ms in",
 		         why, thisPlayerNum, (unsigned long)resync_used,
 		         (unsigned)resync_gen, (unsigned long)waited);
-		crashlog_note("RESYNC STALL", detail);
+		crashlog_note_net("RESYNC STALL", detail);
 	}
 
 	if (waited > NRB_TIME_OUT && !network_peer_alive())
@@ -1217,7 +1248,7 @@ static int nrb_resync_send_once(void)
 	{
 		/* A pointer with no relocation, or the export failed its own decode
 		 * check.  Not a link problem: retrying cannot help this level. */
-		crashlog_note("NETWORK RESYNC REFUSED",
+		crashlog_note_net("NETWORK RESYNC REFUSED",
 		              "wire export failed (unrelocatable pointer or self-check); keeping the divergent game");
 		free(raw);
 		free(stream);
@@ -1316,7 +1347,7 @@ static int nrb_resync_send_once(void)
 		         (unsigned long)nrb_cur, (unsigned long)state_sz, (unsigned long)comp_sz,
 		         (unsigned long)chunks, (unsigned long)(SDL_GetTicks() - wait_start),
 		         (unsigned long)resync_used, NRB_RS_MAX);
-		crashlog_note("NETWORK RESYNC", detail);
+		crashlog_note_net("NETWORK RESYNC", detail);
 
 		nrb_reset_core();
 		JE_clearSpecialRequests();
@@ -1507,7 +1538,7 @@ static bool nrb_resync_receive(void)
 		         (unsigned)gen, (unsigned long)state_sz,
 		         (unsigned long)(SDL_GetTicks() - wait_start),
 		         (unsigned long)resync_used, NRB_RS_MAX);
-		crashlog_note("NETWORK RESYNC", detail);
+		crashlog_note_net("NETWORK RESYNC", detail);
 
 		nrb_reset_core();
 		JE_clearSpecialRequests();
@@ -1594,7 +1625,7 @@ static int nrb_menu_frame_ready(Uint32 *resim_from)
 			         "peer stopped simulating at frame %lu while we waited to open the menu "
 			         "at frame %lu (player %u)\n  opening it unsynchronised",
 			         (unsigned long)remote_newest, (unsigned long)nrb_cur, thisPlayerNum);
-			crashlog_note("ROLLBACK MENU TIMEOUT", detail);
+			crashlog_note_net("ROLLBACK MENU TIMEOUT", detail);
 			break;
 		}
 	}
@@ -1774,7 +1805,7 @@ NrbStep nrb_driver(void)
 				         "peer stopped simulating at frame %lu while we waited to confirm "
 				         "frame %lu (player %u)\n  ending the level unconfirmed",
 				         (unsigned long)remote_newest, (unsigned long)nrb_cur, thisPlayerNum);
-				crashlog_note("ROLLBACK LEVEL-END TIMEOUT", detail);
+				crashlog_note_net("ROLLBACK LEVEL-END TIMEOUT", detail);
 				break;
 			}
 		}
@@ -1820,6 +1851,45 @@ NrbStep nrb_driver(void)
 
 	++nrb_cur;
 	return NRB_STEP_PRESENT;
+}
+
+/* --- Crash-log rollback section ------------------------------------------------
+ *
+ * Appended under the crash log's Network section.  Reads only statics -- safe
+ * from a fault handler or the watchdog thread.
+ */
+void nrb_write_diagnostics(FILE *f)
+{
+	if (f == NULL)
+		return;
+
+	fprintf(f, "  Rollback:\n");
+	fprintf(f, "    frames:     current=%lu verified=%lu remote_contig=%lu remote_newest=%lu peer_acked=%lu\n",
+	        (unsigned long)nrb_cur, (unsigned long)verified_upto, (unsigned long)remote_contig,
+	        (unsigned long)remote_newest, (unsigned long)peer_acked);
+	fprintf(f, "    predict:    depth=%lu (cap %d)   adv_ema=%.2f their_adv=%.2f   epoch=%u\n",
+	        (unsigned long)((nrb_cur > remote_newest) ? nrb_cur - remote_newest : 0),
+	        ROLLBACK_MAX_PREDICT, (double)adv_ema, (double)their_adv_x8 / 8.0, (unsigned)nrb_epoch);
+	fprintf(f, "    rollbacks:  %lu this level (deepest %lu, resim frames %lu)%s%s\n",
+	        (unsigned long)stat_rollbacks, (unsigned long)stat_deepest,
+	        (unsigned long)stat_resim_frames,
+	        resim_active ? "   RESIM ACTIVE" : "",
+	        resim_livelock_reported ? "   LIVELOCK reported" : "");
+	fprintf(f, "    canary:     mismatches=%lu checked_upto=%lu pending=%d%s\n",
+	        (unsigned long)canary_mismatches, (unsigned long)canary_checked_upto, peer_pend_n,
+	        canary_reported ? "   (desync reported this level)" : "");
+	fprintf(f, "    recovery:   attempts=%lu/%d gen=%u%s\n",
+	        (unsigned long)resync_used, NRB_RS_MAX, (unsigned)resync_gen,
+	        resync_wanted ? "   RESYNC PENDING" : "");
+	fprintf(f, "    input pkts: ok=%lu   refused: malformed=%lu window=%lu epoch=%lu   stalls=%lu\n",
+	        (unsigned long)nrb_diag.pkt_in, (unsigned long)nrb_diag.refused_malformed,
+	        (unsigned long)nrb_diag.refused_window, (unsigned long)nrb_diag.refused_epoch,
+	        (unsigned long)nrb_diag.stalls);
+	if (req_at != 0)
+		fprintf(f, "    menu:       scheduled for frame %lu%s\n",
+		        (unsigned long)req_at, req_local_menu ? " (our press)" : "");
+	if (end_agreed)
+		fprintf(f, "    level end agreed out of band\n");
 }
 
 #else /* !WITH_NETWORK */

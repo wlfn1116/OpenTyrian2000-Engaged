@@ -162,6 +162,23 @@ static bool host_awaiting_peer = false;
 // figure jitters by tens of ticks between readings.
 static float ping_ema = 0.0f;
 static bool ping_valid = false;
+
+// Session traffic/health counters for the crash log's Network section (network_write_diagnostics).
+// Cheap enough to maintain on every packet; reset when the session tears down.
+static struct
+{
+	Uint32 dg_in, dg_out;                       // datagrams consumed / put on the wire
+	Uint32 recv_errors, send_errors;            // socket-level failures (ICMP resets etc.)
+	Uint32 bad_packets;                         // unknown type on the game channel
+	Uint32 retries;                             // reliable-channel retransmits
+	Uint32 state_in, state_out, state_late;     // state stream; late = outside the queue window
+	Uint32 xor_rebuilds;                        // lost state packets reconstructed from parity
+	Uint32 resend_req_sent, resend_req_served;  // state resend requests
+	Uint32 stalls;                              // state waits that earned a >3 s crashlog note
+	Uint32 desync_levels;                       // levels that reported a desync (either mode)
+	Uint32 connect_tick, first_desync_tick;
+	int    first_desync_level;
+} net_diag;
 #endif
 
 #ifdef WITH_NETWORK
@@ -230,9 +247,11 @@ static bool network_send_no_ack(int len)
 	if (!SDLNet_UDP_Send(net_socket, 0, packet_out_temp))
 	{
 		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+		++net_diag.send_errors;
 		return false;
 	}
 
+	++net_diag.dg_out;
 	return true;
 }
 
@@ -255,7 +274,7 @@ bool network_send(int len)
 	{
 		fprintf(stderr, "error: outbound packet queue overflow\n");
 
-		crashlog_note("NETWORK QUEUE OVERFLOW",
+		crashlog_note_net("NETWORK QUEUE OVERFLOW",
 		              "no acknowledgement for a full outbound queue; treating the link as lost");
 
 		if (!quit)
@@ -322,10 +341,12 @@ static int network_recv_one(void)
 	switch (SDLNet_UDP_Recv(net_socket, packet_temp))
 	{
 		case -1:
+			++net_diag.recv_errors;
 			return -1;
 		case 0:
 			return 0;
 		default:
+			++net_diag.dg_in;
 			// LAN discovery probes come from machines we have never spoken to, so they arrive
 			// on no channel (-1) and have to be answered before the channel check below.  They
 			// are never queued and never bind anything; a host that already has a player stays
@@ -501,9 +522,14 @@ static int network_recv_one(void)
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - last_state_in_sync + 1;
 							if (i < NET_PACKET_QUEUE)
 							{
+								++net_diag.state_in;
 								if (packet_state_in[i] == NULL)
 									packet_state_in[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
 								packet_copy(packet_state_in[i], packet_temp);
+							}
+							else
+							{
+								++net_diag.state_late;
 							}
 						}
 						break;
@@ -547,13 +573,22 @@ static int network_recv_one(void)
 									// A failed resend is not a receive error: log it and carry on, or
 									// the drain would stop on a datagram it had already consumed.
 									if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[i]))
+									{
 										printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+										++net_diag.send_errors;
+									}
+									else
+									{
+										++net_diag.dg_out;
+										++net_diag.resend_req_served;
+									}
 								}
 							}
 						}
 						break;
 
 					default:
+						++net_diag.bad_packets;
 						fprintf(stderr, "warning: bad packet %d received\n", SDLNet_Read16(&packet_temp->data[0]));
 						break;
 				}
@@ -603,9 +638,12 @@ int network_check(void)
 		if (!SDLNet_UDP_Send(net_socket, 0, packet_out[0]))
 		{
 			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+			++net_diag.send_errors;
 			return -1;
 		}
 
+		++net_diag.dg_out;
+		++net_diag.retries;
 		last_out_tick = SDL_GetTicks();
 	}
 
@@ -678,8 +716,12 @@ int network_state_send(void)
 	if (!SDLNet_UDP_Send(net_socket, 0, packet_state_out[0]))
 	{
 		printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+		++net_diag.send_errors;
 		return -1;
 	}
+
+	++net_diag.dg_out;
+	++net_diag.state_out;
 
 	// send xor of last network_delay packets
 	if (network_delay > 1 && (last_state_out_sync + 1) % network_delay == 0 && packet_state_out[network_delay - 1] != NULL)
@@ -693,8 +735,11 @@ int network_state_send(void)
 		if (!SDLNet_UDP_Send(net_socket, 0, packet_temp))
 		{
 			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+			++net_diag.send_errors;
 			return -1;
 		}
+
+		++net_diag.dg_out;
 	}
 
 	packets_shift_down(packet_state_out, NET_PACKET_QUEUE);
@@ -743,6 +788,7 @@ bool network_state_update(void)
 				}
 				if (okay)
 				{
+					++net_diag.xor_rebuilds;
 					packet_state_in[0] = SDLNet_AllocPacket(NET_PACKET_SIZE);
 					packet_copy(packet_state_in[0], packet_state_in_xor[x]);
 					for (int i = 1; i <= x; i++)
@@ -758,6 +804,7 @@ bool network_state_update(void)
 				SDLNet_Write16(PACKET_STATE_RESEND,    &packet_out_temp->data[0]);
 				SDLNet_Write16(last_state_in_sync - 1, &packet_out_temp->data[2]);
 				network_send_no_ack(4);  // PACKET_RESEND
+				++net_diag.resend_req_sent;
 
 				resend_tick = SDL_GetTicks();
 			}
@@ -776,6 +823,7 @@ bool network_state_update(void)
 			if (!stall_reported && waited > 3000)
 			{
 				stall_reported = true;
+				++net_diag.stalls;
 
 				char detail[256];
 				snprintf(detail, sizeof(detail),
@@ -787,7 +835,7 @@ bool network_state_update(void)
 				         (unsigned)last_state_in_sync, (unsigned)last_state_out_sync, network_delay,
 				         (unsigned)(SDL_GetTicks() - last_state_in_tick),
 				         (unsigned)(SDL_GetTicks() - last_in_tick));
-				crashlog_note("NETWORK STALL", detail);
+				crashlog_note_net("NETWORK STALL", detail);
 			}
 
 			// Bound it.  network_is_alive() only asks whether ANY packet arrived recently, and
@@ -1113,6 +1161,7 @@ connect_again:
 	send_connect_packet(episodes_local);
 
 	connected = true;
+	net_diag.connect_tick = SDL_GetTicks();
 
 	return 0;
 }
@@ -1592,6 +1641,98 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 	#undef HASH_WORD
 }
 
+// Session-long desync memo for the crash log.  Both detection modes call this once per
+// desynced level, so a crash or hang long after the fact still names when trouble started.
+void network_diag_note_desync(int level)
+{
+	if (net_diag.desync_levels++ == 0)
+	{
+		net_diag.first_desync_tick = SDL_GetTicks();
+		net_diag.first_desync_level = level;
+	}
+}
+
+/* --- Crash-log network section ------------------------------------------------------------
+ *
+ * Appended to every crash/hang/note report via crashlog_write_game_state, so each NETWORK
+ * DESYNC / STALL / RESYNC entry carries the session's whole health picture.  Reads only
+ * statics in this TU (plus the rollback module's own writer) -- no SDL_net calls, safe from
+ * a fault handler or the watchdog thread.
+ */
+void network_write_diagnostics(FILE *f)
+{
+	if (f == NULL)
+		return;
+
+	fprintf(f, "\nNetwork:\n");
+
+	if (!net_initialized)
+	{
+		fprintf(f, "  (not initialized)\n");
+		return;
+	}
+
+	const Uint32 now = SDL_GetTicks();
+
+	fprintf(f, "  Role:         %s, we fly P%u (host flies P%u)%s%s\n",
+	        network_is_host ? "host" : network_from_lobby ? "joiner" : "command-line peer",
+	        thisPlayerNum, networkHostPlayerNum,
+	        connected ? "" : "  NOT CONNECTED",
+	        quit ? "  [halting]" : "");
+	fprintf(f, "  Names:        '%.20s' vs '%.20s'\n", network_player_name, network_opponent_name);
+	fprintf(f, "  Session:      %s  vt=%s  recovery=%s  delay=%d  wire v%d",
+	        nrb_session_mode() ? "rollback" : "lockstep",
+	        nrb_session_vt() ? "on" : "off",
+	        nrb_session_recovery() ? "on" : "off",
+	        network_delay, NET_VERSION);
+	if (net_diag.connect_tick != 0)
+		fprintf(f, "   connected %lu s ago", (unsigned long)((now - net_diag.connect_tick) / 1000));
+	fprintf(f, "\n");
+
+	if (ping_valid)
+		fprintf(f, "  Ping:         %d ms (smoothed)\n", (int)(ping_ema + 0.5f));
+	else
+		fprintf(f, "  Ping:         --\n");
+
+	fprintf(f, "  Last traffic: any in %lu ms ago   state in %lu ms ago   reliable out %lu ms ago\n",
+	        (unsigned long)(now - last_in_tick), (unsigned long)(now - last_state_in_tick),
+	        (unsigned long)(now - last_out_tick));
+
+	{
+		int in_held = 0, out_held = 0;
+		for (int i = 0; i < NET_PACKET_QUEUE; i++)
+		{
+			if (packet_in[i] != NULL)  ++in_held;
+			if (packet_out[i] != NULL) ++out_held;
+		}
+		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu\n",
+		        last_out_sync, last_ack_sync, network_ack_backlog(), out_held,
+		        queue_in_sync, in_held, (unsigned long)net_diag.retries);
+	}
+
+	fprintf(f, "  State ch:     in_sync=%u out_sync=%u   sent=%lu recv=%lu late-dropped=%lu\n",
+	        last_state_in_sync, last_state_out_sync,
+	        (unsigned long)net_diag.state_out, (unsigned long)net_diag.state_in,
+	        (unsigned long)net_diag.state_late);
+	fprintf(f, "  Loss repair:  xor rebuilds=%lu   resends asked=%lu answered=%lu\n",
+	        (unsigned long)net_diag.xor_rebuilds,
+	        (unsigned long)net_diag.resend_req_sent, (unsigned long)net_diag.resend_req_served);
+	fprintf(f, "  Datagrams:    in=%lu out=%lu   recv errors=%lu send errors=%lu bad type=%lu   state stalls=%lu\n",
+	        (unsigned long)net_diag.dg_in, (unsigned long)net_diag.dg_out,
+	        (unsigned long)net_diag.recv_errors, (unsigned long)net_diag.send_errors,
+	        (unsigned long)net_diag.bad_packets, (unsigned long)net_diag.stalls);
+
+	if (net_diag.desync_levels != 0)
+		fprintf(f, "  Desyncs:      %lu level(s); first on level %d, %lu s after connect\n",
+		        (unsigned long)net_diag.desync_levels, net_diag.first_desync_level,
+		        (unsigned long)((net_diag.first_desync_tick - net_diag.connect_tick) / 1000));
+	else
+		fprintf(f, "  Desyncs:      none detected\n");
+
+	if (nrb_session_mode())
+		nrb_write_diagnostics(f);
+}
+
 // Tear down far enough that another network_init() can succeed.  Called when the lobby
 // backs out, when a connection attempt fails, and when a network game ends.
 void network_shutdown(void)
@@ -1625,6 +1766,8 @@ void network_shutdown(void)
 
 	ping_ema = 0.0f;
 	ping_valid = false;
+
+	memset(&net_diag, 0, sizeof(net_diag));
 
 	net_initialized = false;
 	connected = false;
@@ -1886,6 +2029,15 @@ int network_init(void)
 	net_initialized = true;
 
 	return 0;
+}
+
+#else
+
+// The crash log calls this whenever a network game is flagged; without networking
+// compiled in there is nothing to report.
+void network_write_diagnostics(FILE *f)
+{
+	(void)f;
 }
 
 #endif

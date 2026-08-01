@@ -22,6 +22,7 @@
 #include "opentyr.h"
 
 #include "SDL.h"
+#include <stdio.h>
 #ifdef WITH_NETWORK
 // VitaSDK has no SDL2_net package, so that build substitutes its own SceNet-backed
 // implementation of the subset used here. Every other platform links the real library.
@@ -131,6 +132,10 @@ extern uint thisPlayerNum;
 // host and leaves it at 1, so whoever is player 1 decides there, exactly as before.
 extern uint networkHostPlayerNum;
 
+// Append the live netcode diagnostics to a crash report; crashlog_state.c calls this for
+// the game-state dump.  Safe from a fault handler: reads only statics, no SDL_net calls.
+void network_write_diagnostics(FILE *f);
+
 extern JE_boolean haltGame;
 extern JE_boolean moveOk;
 extern JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
@@ -222,6 +227,10 @@ bool network_debug_sync_pump(bool in_level);
 // a differing RNG draw count means the two sims really are running different games, whereas
 // matching draws with differing state points at the check itself being wrong.
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash);
+
+// Session-long desync memo for the crash log: call once per desynced level (the lockstep
+// once-per-level report and the rollback canary's first report both do).
+void network_diag_note_desync(int level);
 
 // While false, a mismatch is reported once per level and play continues.  The check is new and
 // unproven; halting a working game on a false positive would be worse than the divergence it is

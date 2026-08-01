@@ -16,6 +16,12 @@ void crashlog_report_fatal(const char *event, const char *detail);
 // latch: the session continues, so a genuinely fatal crash later still logs. Windows only.
 void crashlog_note(const char *event, const char *detail);
 
+// Same report format, but written to the NETWORK log (opentyrian_net.log, rotated alongside the
+// crash log) instead of the crash log. For netplay health events -- desyncs, stalls, resyncs --
+// which are link/session trouble rather than process failures, so a lossy session can't bury a
+// real crash report. Windows only.
+void crashlog_note_net(const char *event, const char *detail);
+
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only
 // static globals and never faults on a corrupt process; safe to call from a fault handler.

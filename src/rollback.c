@@ -700,7 +700,7 @@ bool rollback_selftest_tick(void)
 			snprintf(msg, sizeof(msg),
 			         "tick %lu: %d registered item(s) diverged on replay\n%s",
 			         (unsigned long)st_frame, bad, detail);
-			crashlog_note("ROLLBACK SELFTEST", msg);
+			crashlog_note_net("ROLLBACK SELFTEST", msg);
 			rb_log("FAIL %s"
 			       "  ctx: curLoc=%u endLevel=%d levelEnd=%d reallyEnd=%d demo=%d "
 			       "p0(alive=%d expl=%u invuln=%u) events=%04x",

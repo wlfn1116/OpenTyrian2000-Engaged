@@ -640,6 +640,34 @@ landing there swallowed the erase and left stale glyphs that the next
 straight over (the garbled-helptext screenshots). The pre-erase is now
 unconditional as well, so a poisoned bar self-heals on the next message.
 
+### Crash-log diagnostics
+
+Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the
+offline rollback selftest — are written by `crashlog_note_net` to their own
+`opentyrian_net.log` (same report format and rotation as the crash log), so
+they cannot bury a real crash report; the crash log keeps only process
+failures and recovered would-be-crashes.
+
+Every report's game-state dump — in either log — ends with a Network section
+when `isNetworkGame` is set (`network_write_diagnostics`, called from
+`crashlog_state.c`; `nrb_write_diagnostics` appends the rollback block when the
+session runs rollback). Each desync/stall/resync entry therefore automatically
+carries the session's whole health picture: role and negotiated session
+settings, ping, per-channel sync counters and queue occupancy, and the
+`net_diag`/`nrb_diag` counters (datagram totals, socket errors, retries, xor
+rebuilds, state resends, refused input packets by reason, stall reports,
+desynced-level memo).
+
+Counter lifetime is deliberate: `net_diag` resets in `network_shutdown` and
+`nrb_diag` in `nrb_set_session_mode`, so both span the *session*, unlike the
+per-level `stat_*`/canary counters that `nrb_reset_core` clears — the writer
+labels which is which. The desync memo (`network_diag_note_desync`) is fed
+once per desynced level by both detection modes (the lockstep once-per-level
+report and the rollback canary's first report), so a crash long after the
+fact still names when trouble started. Everything the writers touch is a
+static in their own TU read without locks — no SDL_net calls — so they are
+safe from the fault handler and the watchdog thread.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. A bad index otherwise
@@ -719,7 +747,10 @@ changes.
 ## Crash logging
 
 The Windows logger writes a stack trace and guarded game-state dump to
-`opentyrian_log.log`.
+`opentyrian_log.log`. Netplay health events (`crashlog_note_net`) go to a
+separate `opentyrian_net.log` in the same format, rotated the same way, so a
+lossy session cannot bury a real crash report; only genuine process failures
+and recovered would-be-crashes use the crash log.
 
 The watchdog suspends the main thread only long enough to capture its context,
 then resumes it before symbol loading and stack walking. Those operations may
@@ -728,6 +759,9 @@ need locks held by the suspended thread.
 Item-name lookups in a crash path must tolerate unloaded tables and invalid IDs.
 The Force Crash target is a volatile file-scope pointer so optimized builds still
 perform the faulting write.
+
+During a network game the dump also includes the netcode section — see
+"Crash-log diagnostics" under Networking.
 
 ## Console ports
 

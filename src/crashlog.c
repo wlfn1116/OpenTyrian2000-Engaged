@@ -29,11 +29,15 @@
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "psapi.lib")
 
-// One log for every kind of hard failure (exception, hang, abort, CRT fatal), written next to
-// the executable; the previous session's log is rotated aside at startup.
-#define LOG_FILENAME "opentyrian_log.log"
+// Two logs, written next to the executable, both rotated at startup.  The crash log holds
+// every kind of hard process failure (exception, hang, abort, CRT fatal); the net log holds
+// netplay health events (desyncs, stalls, resyncs) so they can't bury a real crash report.
+#define LOG_STEM        "opentyrian_log"
+#define NETLOG_STEM     "opentyrian_net"
+#define LOG_FILENAME    LOG_STEM ".log"
+#define NETLOG_FILENAME NETLOG_STEM ".log"
 
-// How many previous crash logs to keep alongside the live one (opentyrian_log.1.log ... .N.log).
+// How many previous logs to keep alongside each live one (opentyrian_log.1.log ... .N.log).
 #define LOG_ROTATE_KEEP 3
 
 extern const char *opentyrian_str;      // opentyr.c
@@ -45,8 +49,10 @@ extern const char *opentyrian_commit;   // opentyr.c
 // re-armable, so it doesn't use this.
 static volatile LONG s_reporting = 0;
 
-// First report of the session truncates; later ones append (keeps a HANG + later crash in one file).
+// First report of the session truncates; later ones append (keeps a HANG + later crash in one
+// file).  Each log tracks its own flag.
 static volatile LONG s_logOpened = 0;
+static volatile LONG s_netLogOpened = 0;
 
 // Last fault the vectored handler reported; the backup filter skips exactly this (code, addr)
 // pair. Not a latch, only the most recent fault is held.
@@ -78,22 +84,22 @@ static void log_path(char *out, size_t outSize, const char *filename)
 	snprintf(out, outSize, "%s%s", exePath, filename);
 }
 
-// Open the crash log, falling back through writable locations if the exe dir is read-only: next
-// to the exe, then the working directory, then %TEMP%. NULL only if all fail. The first report of
-// a session truncates, later ones append, so a non-fatal hang followed by a crash is kept as two
-// stacked reports.
-static FILE *open_log(void)
+// Open a log, falling back through writable locations if the exe dir is read-only: next to
+// the exe, then the working directory, then %TEMP%. NULL only if all fail. The first report of
+// a session truncates, later ones append, so a non-fatal hang followed by a crash is kept as
+// two stacked reports.
+static FILE *open_log_file(const char *filename, volatile LONG *openedFlag)
 {
-	const char *mode = (InterlockedExchange(&s_logOpened, 1) == 0) ? "w" : "a";
+	const char *mode = (InterlockedExchange(openedFlag, 1) == 0) ? "w" : "a";
 
 	char path[MAX_PATH + 32];
 
-	log_path(path, sizeof(path), LOG_FILENAME);
+	log_path(path, sizeof(path), filename);
 	FILE *f = fopen(path, mode);
 	if (f != NULL)
 		return f;
 
-	f = fopen(LOG_FILENAME, mode);  // current working directory
+	f = fopen(filename, mode);  // current working directory
 	if (f != NULL)
 		return f;
 
@@ -101,7 +107,7 @@ static FILE *open_log(void)
 	DWORD n = GetTempPathA(sizeof(tmp), tmp);
 	if (n > 0 && n < sizeof(tmp))
 	{
-		snprintf(path, sizeof(path), "%s%s", tmp, LOG_FILENAME);
+		snprintf(path, sizeof(path), "%s%s", tmp, filename);
 		f = fopen(path, mode);
 		if (f != NULL)
 			return f;
@@ -109,25 +115,33 @@ static FILE *open_log(void)
 	return NULL;
 }
 
-// Build "<exe dir>\opentyrian_log.<n>.log" for n >= 1, or the base log path for n == 0.
-static void rotated_log_path(char *out, size_t outSize, int n)
+static FILE *open_log(void)
 {
+	return open_log_file(LOG_FILENAME, &s_logOpened);
+}
+
+static FILE *open_net_log(void)
+{
+	return open_log_file(NETLOG_FILENAME, &s_netLogOpened);
+}
+
+// Build "<exe dir>\<stem>.<n>.log" for n >= 1, or "<exe dir>\<stem>.log" for n == 0.
+static void rotated_log_path(char *out, size_t outSize, const char *stem, int n)
+{
+	char name[80];
 	if (n <= 0)
-	{
-		log_path(out, outSize, LOG_FILENAME);
-		return;
-	}
-	char name[64];
-	snprintf(name, sizeof(name), "opentyrian_log.%d.log", n);
+		snprintf(name, sizeof(name), "%s.log", stem);
+	else
+		snprintf(name, sizeof(name), "%s.%d.log", stem, n);
 	log_path(out, outSize, name);
 }
 
-// Rotate executable-directory logs at startup, before fault handlers are armed.
-// Missing live logs do not shift older reports.
-static void rotate_logs(void)
+// Rotate one executable-directory log chain at startup, before fault handlers are armed.
+// A missing live log does not shift older reports.
+static void rotate_log_chain(const char *stem)
 {
 	char live[MAX_PATH + 32];
-	rotated_log_path(live, sizeof(live), 0);
+	rotated_log_path(live, sizeof(live), stem, 0);
 	if (GetFileAttributesA(live) == INVALID_FILE_ATTRIBUTES)
 		return;  // nothing new to preserve
 
@@ -138,10 +152,16 @@ static void rotate_logs(void)
 	// one MoveFileEx fail harmlessly.
 	for (int n = LOG_ROTATE_KEEP - 1; n >= 0; --n)
 	{
-		rotated_log_path(src, sizeof(src), n);
-		rotated_log_path(dst, sizeof(dst), n + 1);
+		rotated_log_path(src, sizeof(src), stem, n);
+		rotated_log_path(dst, sizeof(dst), stem, n + 1);
 		MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING);
 	}
+}
+
+static void rotate_logs(void)
+{
+	rotate_log_chain(LOG_STEM);
+	rotate_log_chain(NETLOG_STEM);
 }
 
 // Human-readable name for a Windows structured-exception code.
@@ -474,13 +494,14 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 
 // Shared body: capture this thread's context and write a full report. Used by the CRT-fatal
 // hooks (which then _exit) and by crashlog_report_fatal (which returns to its caller's own exit).
+// `net` selects the net log over the crash log (crashlog_note_net).
 // Returns true if it wrote a report, false if another report is already in progress (re-entry).
-static bool write_captured_report(const char *event, const char *detail)
+static bool write_captured_report_ex(bool net, const char *event, const char *detail)
 {
 	if (InterlockedExchange(&s_reporting, 1) != 0)
 		return false;
 
-	FILE *f = open_log();
+	FILE *f = net ? open_net_log() : open_log();
 	if (f != NULL)
 	{
 		CONTEXT ctx;
@@ -497,6 +518,11 @@ static bool write_captured_report(const char *event, const char *detail)
 
 	InterlockedExchange(&s_reporting, 0);
 	return true;
+}
+
+static bool write_captured_report(const char *event, const char *detail)
+{
+	return write_captured_report_ex(false, event, detail);
 }
 
 // Latches once a clean-exit fatal has been logged, so a cascade (fread_die -> its caller ->
@@ -516,6 +542,13 @@ void crashlog_report_fatal(const char *event, const char *detail)
 void crashlog_note(const char *event, const char *detail)
 {
 	write_captured_report(event ? event : "RECOVERED", detail);
+}
+
+// Public: same report, but into the net log, so netplay health events (desyncs, stalls,
+// resyncs) can't bury a real crash report in the crash log.
+void crashlog_note_net(const char *event, const char *detail)
+{
+	write_captured_report_ex(true, event ? event : "NETWORK", detail);
 }
 
 static void report_crt_fatal(const char *event, const char *detail)
@@ -672,5 +705,6 @@ void watchdog_init(void) { }
 void watchdog_heartbeat(void) { }
 void crashlog_report_fatal(const char *event, const char *detail) { (void)event; (void)detail; }
 void crashlog_note(const char *event, const char *detail) { (void)event; (void)detail; }
+void crashlog_note_net(const char *event, const char *detail) { (void)event; (void)detail; }
 
 #endif

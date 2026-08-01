@@ -399,8 +399,9 @@ the host sends its complete game state to the other player, and both continue
 from the host's version of events. The host's setting decides for the session,
 like every other rule that affects the simulation. It works in rollback netplay
 between two copies of the same build on the same platform, and gives up after
-three repairs in one level; every repair is still recorded in the crash log, so
-a recurring desync stays visible to bug reports.
+three repairs in one level; every repair is still recorded in the network log
+(`opentyrian_net.log`, next to `opentyrian_log.log` beside the game), so a
+recurring desync stays visible to bug reports.
 
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half
