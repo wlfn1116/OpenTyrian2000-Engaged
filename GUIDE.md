@@ -380,7 +380,8 @@ Self-Test** is the heaviest: it replays every tick and compares the result, whic
 checks that the snapshot online play rides on covers everything the game changes.
 The tick runs twice while it is on, so the game may run slower; the row shows the
 count of verified ticks and any failures, and the detail goes to
-`rollback_selftest.log`. It stays on until you turn it off, restarts included.
+`rollback_selftest.log`. It starts off, and stays however you leave it — restarts
+included.
 
 In a two-player game, local or online, an **Edit Player** row at the top of the
 LOADOUT group chooses whose gear the rows below it change. It opens on your own

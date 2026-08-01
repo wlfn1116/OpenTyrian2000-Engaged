@@ -700,7 +700,7 @@ int networkHostStartSelect(void)
 	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
 	const int xCenter = 320 / 2;
 	const int yMenuItems = 70;
-	const int dyMenuItems = 24 * 2;  // one blank row between the two options
+	const int dyMenuItems = 24;  // half a row of breathing space between the two options
 	const int hMenuItem = 13;
 	int wMenuItem[COUNTOF(menu_item)] = { 0 };
 
