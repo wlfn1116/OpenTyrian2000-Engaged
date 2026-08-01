@@ -344,6 +344,7 @@ typedef enum
 	MENU_ITEM_SOUND_VOLUME,
 	MENU_ITEM_MUSIC_DEVICE,         // music synthesizer: OPL3 / FluidSynth / Native MIDI
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
+	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
 	MENU_ITEM_BOSS_BARS,
 	MENU_ITEM_BOSS_BAR_STYLE,
@@ -460,6 +461,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 	}
 	case MENU_ITEM_ARMOR_ALARM:
 		armorAlarm = !armorAlarm;
+		JE_playSampleNum(S_CURSOR);
+		break;
+	case MENU_ITEM_LINK_SOUNDS:
+		linkSounds = !linkSounds;
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_BOSS_BAR_STYLE:
@@ -700,6 +705,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SOUND_VOLUME, "Sound Volume", "Change volume with the left/right arrow keys." },
 				{ MENU_ITEM_MUSIC_DEVICE, "Music Synth:", "Synthesizer for music (FluidSynth needs a .sf2).", getMusicDeviceItemsCount, getMusicDeviceItem },
 				{ MENU_ITEM_ARMOR_ALARM, "Armor Alarm:", "Siren while your armor is critically low." },
+				{ MENU_ITEM_LINK_SOUNDS, "Link Sounds:", "Sound cue when two ships fuse or unfuse." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -1052,6 +1058,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, armorAlarm ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_LINK_SOUNDS:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, linkSounds ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_BOSS_BAR_STYLE:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, bossBarStyleNames[bossBarStyle], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -1327,6 +1337,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_SHOW_FPS:
 									case MENU_ITEM_MUSIC_DEVICE:
 									case MENU_ITEM_ARMOR_ALARM:
+									case MENU_ITEM_LINK_SOUNDS:
 									case MENU_ITEM_BOSS_BAR_STYLE:
 									case MENU_ITEM_BOSS_BAR_LAYOUT:
 									case MENU_ITEM_BOSS_BAR_TWO:
@@ -1794,6 +1805,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_ARMOR_ALARM:
 				{
 					armorAlarm = !armorAlarm;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_LINK_SOUNDS:
+				{
+					linkSounds = !linkSounds;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

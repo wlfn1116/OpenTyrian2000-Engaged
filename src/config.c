@@ -224,6 +224,7 @@ int bossBarStyle   = BOSS_BAR_ENHANCED;
 int bossBarLayout  = BOSS_BAR_TOP;
 int bossBarTwoMode = BOSS_BAR_TWO_SPLIT;
 bool armorAlarm    = true;  // low-armor WARNING siren (Setup > Sound)
+bool linkSounds    = true;  // 2P fuse/unfuse clink+spring (Setup > Sound)
 /* When off: debug menu and debug level select hidden; buy/sell and pause menus
    keep their stock layout. */
 bool debugMode     = true;
@@ -458,6 +459,10 @@ bool load_opentyrian_config(void)
 		int armor_alarm_enabled = armorAlarm ? 1 : 0;
 		config_get_int_option(section, "armor_alarm", &armor_alarm_enabled);
 		armorAlarm = (armor_alarm_enabled != 0);
+
+		int link_sounds_enabled = linkSounds ? 1 : 0;
+		config_get_int_option(section, "link_sounds", &link_sounds_enabled);
+		linkSounds = (link_sounds_enabled != 0);
 
 		int debug_mode_enabled = debugMode ? 1 : 0;
 		config_get_int_option(section, "debug_mode", &debug_mode_enabled);
@@ -788,6 +793,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "boss_bar_layout", bossBarLayout);
 	config_set_int_option(section, "boss_bar_two_mode", bossBarTwoMode);
 	config_set_int_option(section, "armor_alarm", armorAlarm ? 1 : 0);
+	config_set_int_option(section, "link_sounds", linkSounds ? 1 : 0);
 	config_set_int_option(section, "debug_mode", debugMode ? 1 : 0);
 	config_set_int_option(section, "hang_timeout", crashlog_get_hang_timeout());
 	config_set_int_option(section, "enemy_bars", enemyBars ? 1 : 0);

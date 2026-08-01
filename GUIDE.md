@@ -14,6 +14,7 @@ and arcade modes work as before.
 | Create a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Select MIDI playback | Setup > Sound > Music Synth |
 | Toggle the low-armor siren | Setup > Sound > Armor Alarm |
+| Toggle the two-player fuse/unfuse sounds | Setup > Sound > Link Sounds |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
 | Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
 | Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
