@@ -551,6 +551,32 @@ void crashlog_note_net(const char *event, const char *detail)
 	write_captured_report_ex(true, event ? event : "NETWORK", detail);
 }
 
+// Public: one short entry, no context/stack body -- the session start/end banners.
+void crashlog_netlog_line(const char *event, const char *detail)
+{
+	if (InterlockedExchange(&s_reporting, 1) != 0)
+		return;
+
+	FILE *f = open_net_log();
+	if (f != NULL)
+	{
+		time_t now = time(NULL);
+		struct tm lt;
+		char when[64] = "unknown";
+		if (localtime_s(&lt, &now) == 0)
+			strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &lt);
+
+		fprintf(f, "--- %s --- %s (%s)\n", event, when,
+		        (opentyrian_commit && *opentyrian_commit) ? opentyrian_commit : "?");
+		if (detail != NULL)
+			fprintf(f, "%s\n", detail);
+		fputc('\n', f);
+		fclose(f);
+	}
+
+	InterlockedExchange(&s_reporting, 0);
+}
+
 static void report_crt_fatal(const char *event, const char *detail)
 {
 	write_captured_report(event, detail);
@@ -700,11 +726,51 @@ void watchdog_init(void)
 
 #else  // !_WIN32
 
+// No crash handler or stack walker here, but netplay still needs its health log -- a desync
+// against a console peer otherwise leaves no trace on that side. Reduced entries (header +
+// detail only) append to opentyrian_net.log in the user directory; append-only because there
+// is no startup rotation, so earlier sessions survive a relaunch.
+
+#include "config.h"
+#include "file.h"
+#include "opentyr.h"
+
+#include <time.h>
+
+static void netlog_write(const char *event, const char *detail)
+{
+	FILE *f = dir_fopen(get_user_directory(), "opentyrian_net.log", "a");
+	if (f == NULL)
+		return;
+
+	time_t now = time(NULL);
+	const struct tm *lt = localtime(&now);
+	char when[64] = "unknown";
+	if (lt != NULL)
+		strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", lt);
+
+	fprintf(f, "--- %s --- %s (%s)\n", event, when,
+	        (opentyrian_commit && *opentyrian_commit) ? opentyrian_commit : "?");
+	if (detail != NULL)
+		fprintf(f, "%s\n", detail);
+	fputc('\n', f);
+	fclose(f);
+}
+
 void install_crash_handler(void) { }
 void watchdog_init(void) { }
 void watchdog_heartbeat(void) { }
 void crashlog_report_fatal(const char *event, const char *detail) { (void)event; (void)detail; }
 void crashlog_note(const char *event, const char *detail) { (void)event; (void)detail; }
-void crashlog_note_net(const char *event, const char *detail) { (void)event; (void)detail; }
+
+void crashlog_note_net(const char *event, const char *detail)
+{
+	netlog_write(event ? event : "NETWORK", detail);
+}
+
+void crashlog_netlog_line(const char *event, const char *detail)
+{
+	netlog_write(event, detail);
+}
 
 #endif

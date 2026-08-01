@@ -786,6 +786,11 @@ bool networkLobby(void)
 
 	for (;;)
 	{
+		// A render cap below the 35Hz sim rate throttles the lockstep session to this
+		// machine's render rate for BOTH players (the present sits inside the tick loop),
+		// so the lobby refuses to start a netgame under one.  Uncapped (0) is fine.
+		const bool fpsLocked = fps_cap > 0 && fps_cap < 35;
+
 		char nameItem[48];
 		snprintf(nameItem, sizeof(nameItem), "Your Nickname: %s", name_buf[0] ? name_buf : "(none)");
 
@@ -800,15 +805,28 @@ bool networkLobby(void)
 			lobbyPrepareBackdrop("Multiplayer");
 		lobbyRestoreBackdrop();
 
-		for (size_t i = 0; i < ITEM_COUNT; ++i)
+		if (fpsLocked)
 		{
-			wMenuItem[i] = JE_textWidth(items[i], normal_font);
-			const int x = LOBBY_XCENTER - wMenuItem[i] / 2;
-			const int y = yMenuItems + dyMenuItems * (int)i + (i >= ITEM_NAME ? yGapAfterJoin : 0);
-			const bool selected = i == selectedIndex;
+			// The lock replaces the menu wholesale: no rows at all, just the notice.
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Multiplayer cannot be played below 35 fps",
+			                    normal_font, centered, 15, -1, false, 2);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 102, "due to stability concerns.",
+			                    normal_font, centered, 15, -1, false, 2);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to go back",
+			                    normal_font, centered, 15, -5, false, 2);
+		}
+		else
+		{
+			for (size_t i = 0; i < ITEM_COUNT; ++i)
+			{
+				wMenuItem[i] = JE_textWidth(items[i], normal_font);
+				const int x = LOBBY_XCENTER - wMenuItem[i] / 2;
+				const int y = yMenuItems + dyMenuItems * (int)i + (i >= ITEM_NAME ? yGapAfterJoin : 0);
+				const bool selected = i == selectedIndex;
 
-			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
-			                    -4 + (selected ? 2 : 0), false, 2);
+				draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
+				                    -4 + (selected ? 2 : 0), false, 2);
+			}
 		}
 
 		if (lobby_status[0])
@@ -836,7 +854,7 @@ bool networkLobby(void)
 
 		const bool mouseMoved = lobbyWaitForInput();
 
-		if (mouseMoved || newmouse)
+		if (!fpsLocked && (mouseMoved || newmouse))
 		{
 			// Hover highlights, and a click inside the hovered item activates it.
 			for (size_t i = 0; i < ITEM_COUNT; ++i)
@@ -879,12 +897,18 @@ bool networkLobby(void)
 		{
 			switch (lastkey_scan)
 			{
+			// The rows are hidden while the fps lock is up; only Esc (and right-click
+			// above) still answers, so the arrows and Enter fall through dead.
 			case SDL_SCANCODE_UP:
+				if (fpsLocked)
+					break;
 				JE_playSampleNum(S_CURSOR);
 				selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
 				break;
 
 			case SDL_SCANCODE_DOWN:
+				if (fpsLocked)
+					break;
 				JE_playSampleNum(S_CURSOR);
 				selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
 				break;
@@ -892,7 +916,8 @@ bool networkLobby(void)
 			case SDL_SCANCODE_RETURN:
 			case SDL_SCANCODE_KP_ENTER:
 			case SDL_SCANCODE_SPACE:
-				action = true;
+				if (!fpsLocked)
+					action = true;
 				break;
 
 			case SDL_SCANCODE_ESCAPE:

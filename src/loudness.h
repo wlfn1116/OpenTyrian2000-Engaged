@@ -64,6 +64,10 @@ void fade_song(void);
 void set_volume(Uint8 musicVolume, Uint8 sampleVolume);
 void set_music_disabled(bool disabled);  // toggle music on/off (pauses/resumes MIDI too)
 
+// Channels 0-7 belong to the sim's soundQueue slots; this one is reserved for
+// presentation-side cues so playing them can never cut a queued game sound.
+#define SFX_CUE_CHANNEL 8
+
 void multiSamplePlay(const Sint16 *samples, size_t sampleCount, Uint8 chan, Uint8 vol);
 void stop_sample_channels(void);
 

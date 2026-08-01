@@ -123,7 +123,7 @@ static Uint16 song_count = 0;
 
 #define NO_SONG_PLAYING 0xFFFFFFFF
 
-#define CHANNEL_COUNT 8
+#define CHANNEL_COUNT 9  // 8 soundQueue slots + SFX_CUE_CHANNEL (loudness.h)
 static const Sint16 *channelSamples[CHANNEL_COUNT];
 static size_t channelSampleCount[CHANNEL_COUNT] = { 0 };
 static Uint8 channelVolume[CHANNEL_COUNT];

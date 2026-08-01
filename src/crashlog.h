@@ -19,8 +19,14 @@ void crashlog_note(const char *event, const char *detail);
 // Same report format, but written to the NETWORK log (opentyrian_net.log, rotated alongside the
 // crash log) instead of the crash log. For netplay health events -- desyncs, stalls, resyncs --
 // which are link/session trouble rather than process failures, so a lossy session can't bury a
-// real crash report. Windows only.
+// real crash report. All platforms: consoles write a reduced entry (header + detail, no stack)
+// appended to opentyrian_net.log in the user directory.
 void crashlog_note_net(const char *event, const char *detail);
+
+// Short timestamped net-log entry with no context/stack body. For session bookkeeping (the
+// start/end banners around an online session), so the log always shows logging is alive and an
+// entry-free session reads as "no trouble detected", not "never ran". All platforms.
+void crashlog_netlog_line(const char *event, const char *detail);
 
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only

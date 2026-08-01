@@ -380,6 +380,13 @@ Effects are not available online.
 
 ## Online play
 
+The Multiplayer menu refuses to start a netgame while the FPS Cap is set below
+35: its options disappear, replaced by a notice that multiplayer cannot be
+played below 35 fps. The game simulates at 35 frames per second, and a render
+cap under that would slow the whole session to the capped machine's framerate
+for both players. Set the cap to 35 or higher — or Uncapped — and the menu
+returns.
+
 Host Game opens a screen with the listen port, **Netcode**, **Desync Recovery**,
 **Host Flies**, and Start Hosting. Host Flies picks which ship you take when
 hosting: player one, or player two, which is the Dragonwing. Whoever joins gets
@@ -400,11 +407,19 @@ the host sends its complete game state to the other player, and both continue
 from the host's version of events. The host's setting decides for the session,
 like every other rule that affects the simulation. It works in rollback netplay
 between two copies of the same build on the same platform — Delay-Based netcode
-has no way to detect a desync, so choosing it switches the row off and grays it
-out — and gives up after
-three repairs in one level; every repair is still recorded in the network log
-(`opentyrian_net.log`, next to `opentyrian_log.log` beside the game), so a
-recurring desync stays visible to bug reports.
+detects and logs a desync but has no way to repair one, so choosing it switches
+the row off and grays it out — and gives up after
+three repairs in one level; every repair is still recorded in the network log,
+so a recurring desync stays visible to bug reports.
+
+The network log (`opentyrian_net.log`, next to `opentyrian_log.log` beside the
+game on PC, or in the game's data folder on Switch and Vita) records every
+online session: a session-start line naming the netcode and settings, any
+desyncs, stalls and resyncs, and a session-end line with totals. A log whose
+session has no entries between start and end means the session was healthy. On
+PC the previous three logs are kept as `opentyrian_net.1.log` through `.3.log`
+— each launch of the game rotates them, so a report from an earlier session is
+in one of the numbered files, not the live one.
 
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half

@@ -1203,6 +1203,10 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 	JE_barBright(surface, x0, 0, x1, bottom);
 }
 
+// Last PRESENTED twoPlayerLinked value, for the fuse/unfuse sound cue edge detector
+// in the level loop.  Presentation state: unregistered, reset at level start.
+static bool link_cue_state = false;
+
 // Generator power bar render state: a HUD overlay on VGAScreenSeg, redrawn every presented
 // frame at an interpolated level with a sub-pixel anti-aliased top edge.
 static bool power_gauge_active = false;
@@ -3287,6 +3291,7 @@ start_level_first:
 	}
 
 	twoPlayerLinked = false;
+	link_cue_state = false;
 	linkGunDirec = M_PI;
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -4905,6 +4910,22 @@ draw_player_shot_loop_end:
 		JE_drawOptionsHUD();
 	}
 
+	// Fuse/unfuse cue, edge-detected on the PRESENTED link state rather than queued by
+	// the sim: soundQueue slot 4 doubles as the sidekick-fire slot (shots.c soundChannel),
+	// and a link discovered only by a rollback correction drains silently -- either way
+	// the cue was swallowed.  Comparing against the last presented value also stops a
+	// correction that merely replays the same transition from double-playing it.
+	// link_cue_state is presentation state: unregistered, reset at level start.
+	if (!rollback_resim_silent && twoPlayerLinked != link_cue_state)
+	{
+		link_cue_state = twoPlayerLinked;
+		if (linkSounds && !galagaMode)
+		{
+			const JE_byte cue = twoPlayerLinked ? S_CLINK : S_SPRING;
+			multiSamplePlay(soundSamples[cue-1], soundSampleCount[cue-1], SFX_CUE_CHANNEL, fxPlayVol / 2);
+		}
+	}
+
 	/*=================================*/
 	/*=======The Sound Routine=========*/
 	/*=================================*/
@@ -5280,19 +5301,19 @@ draw_player_shot_loop_end:
 					const Uint32 our_eh     = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_EHASH]);
 
 					if ((their_rand != our_rand || their_ph != our_ph || their_eh != our_eh) &&
-					    reported_for_level != curLoc)
+					    reported_for_level != (int)mainLevel)
 					{
-						reported_for_level = curLoc;
+						reported_for_level = (int)mainLevel;
 
 						// Goes through the net log, not stderr: this is a Windows-subsystem
 						// build with no console, so a printf would be thrown away.
 						char detail[512];
 						snprintf(detail, sizeof(detail),
-						         "level %d, player %u, delay %d\n"
+						         "level %d (scroll clock %u), player %u, delay %d\n"
 						         "  rand draws : local %lu  remote %lu  %s\n"
 						         "  players    : local %08x  remote %08x  %s\n"
 						         "  enemies    : local %08x  remote %08x  %s",
-						         (int)curLoc, thisPlayerNum, network_delay,
+						         (int)mainLevel, (unsigned)curLoc, thisPlayerNum, network_delay,
 						         (unsigned long)our_rand, (unsigned long)their_rand,
 						         our_rand == their_rand ? "ok" : "DIFFERS",
 						         (unsigned)our_ph, (unsigned)their_ph,

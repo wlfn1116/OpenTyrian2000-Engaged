@@ -1165,6 +1165,19 @@ connect_again:
 	connected = true;
 	net_diag.connect_tick = SDL_GetTicks();
 
+	// Session banner: every online session leaves a mark in the net log, so an entry-free
+	// log means "no trouble detected" instead of "logging never ran".
+	{
+		char detail[128];
+		snprintf(detail, sizeof(detail),
+		         "player %u (%s), netcode %s, desync recovery %s, delay %d",
+		         (unsigned)thisPlayerNum, network_is_host ? "host" : "joiner",
+		         nrb_session_mode() ? "rollback" : "delay-based",
+		         nrb_session_recovery() ? "on" : "off",
+		         network_delay);
+		crashlog_netlog_line("NETWORK SESSION START", detail);
+	}
+
 	return 0;
 }
 
@@ -1786,6 +1799,18 @@ void network_shutdown(void)
 
 	ping_ema = 0.0f;
 	ping_valid = false;
+
+	// Close the session's net-log bracket while the counters still exist.
+	if (net_diag.connect_tick != 0)
+	{
+		char detail[128];
+		snprintf(detail, sizeof(detail),
+		         "connected %lu s, desynced levels %lu, stalls %lu",
+		         (unsigned long)((SDL_GetTicks() - net_diag.connect_tick) / 1000),
+		         (unsigned long)net_diag.desync_levels,
+		         (unsigned long)net_diag.stalls);
+		crashlog_netlog_line("NETWORK SESSION END", detail);
+	}
 
 	memset(&net_diag, 0, sizeof(net_diag));
 

@@ -7776,16 +7776,13 @@ redo:
 			    player[0].is_alive && player[1].is_alive && !galagaMode)
 			{
 				twoPlayerLinked = true;
-				if (linkSounds)
-					soundQueue[4] = S_CLINK;
 			}
 
+			// Fuse/unfuse cues are played presentation-side in tyrian2.c (link_cue_state):
+			// queueing them here loses them to the sidekick-fire slot and to rollback.
+
 			if (playerNum_ == 1 && (button[3-1] || button[2-1]) && !galagaMode)
-			{
-				if (twoPlayerLinked && linkSounds)
-					soundQueue[4] = S_SPRING;
 				twoPlayerLinked = false;
-			}
 
 			if (twoPlayerMode && twoPlayerLinked && playerNum_ == 2 && linkMoved)
 			{
@@ -7829,8 +7826,6 @@ redo:
 				else if (!galagaMode)
 				{
 					twoPlayerLinked = false;
-					if (linkSounds)
-						soundQueue[4] = S_SPRING;
 				}
 			}
 		}
@@ -8796,12 +8791,19 @@ void JE_mainGamePlayerFunctions(void)
 		mapX2Ofs_f = -1.0f;
 }
 
+// Per-slot lookup: an unset nickname must fall back to "Player N" for that slot, never to the
+// other side's nickname, or the named player's nick shows on both slots for the unnamed player.
 const char *JE_getName(JE_byte pnum)
 {
-	if (pnum == thisPlayerNum && network_player_name[0] != '\0')
-		return network_player_name;
+	if (pnum == thisPlayerNum)
+	{
+		if (network_player_name[0] != '\0')
+			return network_player_name;
+	}
 	else if (network_opponent_name[0] != '\0')
+	{
 		return network_opponent_name;
+	}
 
 	return miscText[47 + pnum];
 }

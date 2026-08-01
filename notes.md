@@ -652,6 +652,19 @@ non-silent pass, before anything is presented. The flag is presentation-only
 and stays out of the rollback registry. Any future event-drawn HUD blit needs
 the same dirty-flag repaint.
 
+The fuse/unfuse sound cue has the equivalent problem in audio form, plus one of
+its own: `soundQueue` slot 4 doubles as the sidekick-fire slot (`soundChannel`
+in shots.c), so queueing the cue in the sim lost it whenever a sidekick fired
+that tick, and a link discovered only by a rollback correction drained silently.
+The cue is therefore played presentation-side: `link_cue_state` (tyrian2.c,
+unregistered, reset at level start) tracks the last PRESENTED `twoPlayerLinked`
+value, and the level loop plays S_CLINK/S_SPRING on `SFX_CUE_CHANNEL` when it
+flips on a non-silent pass. Comparing presented state also prevents double-plays
+when a correction replays the same transition. `SFX_CUE_CHANNEL` (loudness.h) is
+a ninth mixer channel reserved for presentation cues — channels 0-7 belong to
+the queue slots, and `JE_playSampleNum` hardcodes channel 0 (the front gun's),
+so neither can be borrowed without cutting a game sound.
+
 ### Crash-log diagnostics
 
 Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the
@@ -659,6 +672,31 @@ offline rollback selftest — are written by `crashlog_note_net` to their own
 `opentyrian_net.log` (same report format and rotation as the crash log), so
 they cannot bury a real crash report; the crash log keeps only process
 failures and recovered would-be-crashes.
+
+Every online session is bracketed in the net log: `network_connect` writes a
+`NETWORK SESSION START` line (role, netcode, recovery, delay) the moment the
+sync handshake completes, and `network_shutdown` a `SESSION END` line with the
+session's desync/stall totals before it wipes `net_diag`. These go through
+`crashlog_netlog_line` — header line plus detail only, no context/stack body —
+so the brackets stay cheap. The point is falsifiability: a session with no
+entries between its brackets was healthy, a missing file means logging never
+ran, and neither state is confusable with the other. (Prompted by a real
+desync that left an empty-looking log; between startup rotation and a build
+predating the net-log split there was no way to tell which had happened.)
+
+On non-Windows (Switch/Vita), `crashlog_note_net` and `crashlog_netlog_line`
+are real now, not stubs: reduced entries (timestamped header + detail, no
+stack — there is no walker there) appended to `opentyrian_net.log` in
+`get_user_directory()`. Append-only deliberately: consoles have no startup
+rotation, and truncate-on-first-write would destroy the previous session's
+reports on relaunch, exactly when someone finally pulls the SD card to look.
+The other crashlog entry points stay no-ops on consoles.
+
+The lockstep detector's once-per-level latch (`tyrian2.c`) compares
+`mainLevel`, not `curLoc` — it originally latched on `curLoc`, which advances
+with the scroll, so a desynced level re-reported every few ticks (the same
+multi-KB-per-tick ballooning the rollback canary's `canary_reported` flag
+exists to prevent).
 
 Every report's game-state dump — in either log — ends with a Network section
 when `isNetworkGame` is set (`network_write_diagnostics`, called from
