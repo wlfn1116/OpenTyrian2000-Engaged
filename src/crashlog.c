@@ -176,6 +176,36 @@ bool crashlog_get_netlog_enabled(void)
 	return s_netLogEnabled != 0;
 }
 
+// Truncate the live net log wherever open_log_file would have found it, first hit wins. Only an
+// existing log is opened, so a clear never leaves an empty file behind where there was none.
+bool crashlog_clear_netlog(void)
+{
+	char paths[3][MAX_PATH + 32];
+	int count = 0;
+
+	log_path(paths[count++], sizeof(paths[0]), NETLOG_FILENAME);
+	snprintf(paths[count++], sizeof(paths[0]), "%s", NETLOG_FILENAME);  // current working directory
+
+	char tmp[MAX_PATH];
+	DWORD n = GetTempPathA(sizeof(tmp), tmp);
+	if (n > 0 && n < sizeof(tmp))
+		snprintf(paths[count++], sizeof(paths[0]), "%s%s", tmp, NETLOG_FILENAME);
+
+	for (int i = 0; i < count; ++i)
+	{
+		if (GetFileAttributesA(paths[i]) == INVALID_FILE_ATTRIBUTES)
+			continue;
+
+		FILE *f = fopen(paths[i], "w");
+		if (f == NULL)
+			continue;
+
+		fclose(f);
+		return true;
+	}
+	return false;
+}
+
 // Human-readable name for a Windows structured-exception code.
 static const char *exception_name(DWORD code)
 {
@@ -757,12 +787,17 @@ void watchdog_init(void)
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static bool s_netLogEnabled = true;
 
+static FILE *netlog_open(const char *mode)
+{
+	return dir_fopen(get_user_directory(), "opentyrian_net.log", mode);
+}
+
 static void netlog_write(const char *event, const char *detail)
 {
 	if (!s_netLogEnabled)
 		return;
 
-	FILE *f = dir_fopen(get_user_directory(), "opentyrian_net.log", "a");
+	FILE *f = netlog_open("a");
 	if (f == NULL)
 		return;
 
@@ -798,5 +833,22 @@ void crashlog_netlog_line(const char *event, const char *detail)
 
 void crashlog_set_netlog_enabled(bool enabled) { s_netLogEnabled = enabled; }
 bool crashlog_get_netlog_enabled(void) { return s_netLogEnabled; }
+
+// Probe for the log before truncating it, so clearing when there is nothing to clear does not
+// create an empty one -- and so the menu can report which of the two happened.
+bool crashlog_clear_netlog(void)
+{
+	FILE *f = netlog_open("r");
+	if (f == NULL)
+		return false;
+	fclose(f);
+
+	f = netlog_open("w");
+	if (f == NULL)
+		return false;
+
+	fclose(f);
+	return true;
+}
 
 #endif

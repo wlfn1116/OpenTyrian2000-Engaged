@@ -600,6 +600,29 @@ bool rollback_selftest_active(void)
 	return rollback_selftest && st_level_active && !isNetworkGame && !endlessFxActive();
 }
 
+/* The registry and the snapshot ring are allocated at level start, and only for a
+ * self-test that was already on.  Two debug-menu rows can turn one on mid-level --
+ * the self-test's own, and the endless effect layer whose presence suppresses it --
+ * and without the buffers the driver would verify an EMPTY registry: every tick
+ * trivially matches, and the replay pass re-runs it with nothing restored, running
+ * the level at double speed.  Allocate on the spot instead. */
+static void rb_selftest_arm(void)
+{
+	if (rb_registered)
+		return;
+	rollback_register_all();
+	rollback_ring_reset();
+	rb_log("selftest armed mid-level (state %zu bytes)", rollback_state_size());
+}
+
+/* Toggled mid-session from the debug menu. */
+void rollback_selftest_set(bool on)
+{
+	rollback_selftest = on;
+	if (rollback_selftest_active())
+		rb_selftest_arm();
+}
+
 /* Temporary diagnostic probe for self-test divergence hunting: logs which pass
  * executed a tagged site.  Cheap no-op unless the self-test is armed. */
 void rollback_dbg(const char *tag, int a, int b)
@@ -658,6 +681,8 @@ void rollback_selftest_frame_begin(void)
 	if (st_verifying)
 		return;  /* replay pass re-entering the loop: keep the same frame */
 
+	rb_selftest_arm();  /* no-op unless it was armed after the level started */
+
 	++st_frame;
 	memset(st_input, 0, sizeof(st_input));
 	st_event_bits = 0;
@@ -672,6 +697,23 @@ bool rollback_selftest_tick(void)
 	if (!st_verifying)
 	{
 		/* Live pass just finished. */
+
+		/* Cross-machine trace.  The self-test proves a machine replays ITSELF; it
+		 * says nothing about two platforms computing the same game.  A demo is the
+		 * one input stream both machines share, so stamp the three summaries the
+		 * netplay canary compares and let two logs diff to the first diverging
+		 * tick.  demo_num rides along: a machine that started on a different demo
+		 * would otherwise diff as a divergence on tick 1. */
+		if (play_demo)
+		{
+			Uint32 rand_draws, ph, eh;
+			network_sim_state(&rand_draws, &ph, &eh);
+			rb_log("demo%u t %lu r %lu p %08x e %08x loc %u",
+			       (unsigned)demo_num, (unsigned long)st_frame,
+			       (unsigned long)rand_draws, (unsigned)ph, (unsigned)eh,
+			       (unsigned)curLoc);
+		}
+
 		if (st_tainted)
 		{
 			/* A modal UI or live cheat mutated state outside the tuples this

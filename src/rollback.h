@@ -147,6 +147,9 @@ typedef struct
  */
 extern bool rollback_selftest;                 /* config toggle                  */
 bool rollback_selftest_active(void);           /* on && in-level && !netplay     */
+/* Flip the toggle (debug menu).  Arms the registry + ring when switched on
+ * mid-level, which the level-start path only does for an already-on self-test. */
+void rollback_selftest_set(bool on);
 
 void rollback_level_start(void);               /* reset ring + self-test state   */
 void rollback_level_end(void);                 /* leaving the level loop         */

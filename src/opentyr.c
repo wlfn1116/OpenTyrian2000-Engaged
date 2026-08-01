@@ -331,6 +331,7 @@ typedef enum
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
 	MENU_ITEM_NET_LOG,              // write opentyrian_net.log during online play
+	MENU_ITEM_CLEAR_NET_LOG,        // truncate that log (console-only row; see isMenuItemVisible)
 	MENU_ITEM_BOSS_BARS,
 	MENU_ITEM_BOSS_BAR_STYLE,
 	MENU_ITEM_BOSS_BAR_LAYOUT,
@@ -389,6 +390,20 @@ typedef enum
 	MENU_ITEM_CONSTANT_DIE,
 	MENU_ITEM_ARCADE_SHIP_BASE,  // keep LAST: ids BASE+0..BASE+8 are the 9 arcade ships
 } MenuItemId;
+
+/* Rows that only exist under some condition; everything else is always shown.
+ * A row hidden here costs no slot at all -- the menu loop builds its item list
+ * through this, so drawing, cursor movement and mouse hits all skip it. */
+static bool isMenuItemVisible(MenuItemId id)
+{
+	switch (id)
+	{
+	case MENU_ITEM_CLEAR_NET_LOG:
+		return crashlog_get_netlog_enabled();  // nothing to clear while nothing is written
+	default:
+		return true;
+	}
+}
 
 /* Adjust a setup-menu item's value in response to left/right input (dir is -1
  * or +1). Items without a cyclable value are ignored. */
@@ -665,7 +680,11 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
 				{ MENU_ITEM_ENHANCEMENTS, "Enhancements...", "Change the gameplay enhancement settings." },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
-				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to opentyrian_net.log." },
+				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
+#if defined(__SWITCH__) || defined(__vita__)
+				// Consoles have no file manager to prune the log with, so the game has to offer it.
+				{ MENU_ITEM_CLEAR_NET_LOG, "Clear Net Log", "Erase the net log file and start it over empty." },
+#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -899,6 +918,10 @@ static bool runOptionsMenu(MenuId startMenu)
 	size_t pickerSelectedIndex = 0;
 	bool fpsTyped = false;  // an FPS cap is being typed digit-by-digit (desktop keyboard)
 
+	// What the last "Clear Net Log" press did, reported in that row's value column until
+	// the menu is left: nothing yet, a log erased, or no log to erase.
+	enum { NETLOG_CLEAR_UNTOUCHED, NETLOG_CLEAR_DONE, NETLOG_CLEAR_ABSENT } netLogCleared = NETLOG_CLEAR_UNTOUCHED;
+
 	/* See comment in JE_helpSystem regarding the virtual screen width. */
 	const int xCenter = 320 / 2;
 	const int yMenuHeader = 4;
@@ -939,15 +962,33 @@ static bool runOptionsMenu(MenuId startMenu)
 		const int hPickerItem = dyPickerItem - dyPickerItemPadding;
 
 		size_t *const selectedMenuItemIndex = &selectedMenuItemIndexes[currentMenu];
-		const MenuItem *menuItems = menu->items;
 
-		// Count the rows up front and tighten the pitch when the classic 21px
-		// spacing would run off the bottom (the Graphics menu outgrew it): fit the
-		// last row's baseline within y<=172 so its 13px height clears the bottom
-		// text strip at y=192.
+		// Drop this frame's conditional rows (isMenuItemVisible) up front, so everything
+		// below indexes one contiguous list of rows that are actually on screen.
+		// The scan stops one short of the array so the terminator below always has a slot,
+		// which is also the most rows a menu can declare and still be terminated.
+		MenuItem visibleItems[COUNTOF(menu->items)];
 		size_t menuItemsCount = 0;
-		while (menuItems[menuItemsCount].id != (MenuItemId)-1)
-			++menuItemsCount;
+		for (size_t i = 0; i + 1 < COUNTOF(visibleItems) && menu->items[i].id != (MenuItemId)-1; ++i)
+			if (isMenuItemVisible(menu->items[i].id))
+				visibleItems[menuItemsCount++] = menu->items[i];
+		visibleItems[menuItemsCount].id = (MenuItemId)-1;
+
+		const MenuItem *menuItems = visibleItems;
+
+		// The clear row's readout goes with the row: dropping it as Network Log is
+		// switched off keeps a stale "Cleared" from returning with the row.
+		if (!isMenuItemVisible(MENU_ITEM_CLEAR_NET_LOG))
+			netLogCleared = NETLOG_CLEAR_UNTOUCHED;
+
+		// A row can vanish under the cursor (switching Network Log off takes the clear
+		// row with it), so keep the selection inside the list.
+		if (*selectedMenuItemIndex >= menuItemsCount)
+			*selectedMenuItemIndex = menuItemsCount - 1;
+
+		// Tighten the row pitch when the classic 21px spacing would run off the bottom
+		// (the Graphics menu outgrew it): fit the last row's baseline within y<=172 so
+		// its 13px height clears the bottom text strip at y=192.
 		dyMenuItems = 21;
 		if (menuItemsCount > 1 && yMenuItems + dyMenuItems * (int)(menuItemsCount - 1) > 172)
 			dyMenuItems = (172 - yMenuItems) / (int)(menuItemsCount - 1);
@@ -1062,6 +1103,13 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_NET_LOG:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, crashlog_get_netlog_enabled() ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_CLEAR_NET_LOG:
+				// An action row, so it has no value of its own -- the column carries the
+				// outcome of the press instead, and stays blank until there is one.
+				if (netLogCleared != NETLOG_CLEAR_UNTOUCHED)
+					draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, netLogCleared == NETLOG_CLEAR_DONE ? "Cleared" : "No Log", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_BOSS_BAR_STYLE:
@@ -1874,6 +1922,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					crashlog_set_netlog_enabled(!crashlog_get_netlog_enabled());
 					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_CLEAR_NET_LOG:
+				{
+					netLogCleared = crashlog_clear_netlog() ? NETLOG_CLEAR_DONE : NETLOG_CLEAR_ABSENT;
+					JE_playSampleNum(netLogCleared == NETLOG_CLEAR_DONE ? S_SELECT : S_CLICK);
 					break;
 				}
 				case MENU_ITEM_VSYNC:

@@ -549,6 +549,12 @@ The Endless effect layer (zone timer, turbodrive decay, gravity carries, damage 
 time) is outside the rollback registry by design, so nothing that re-runs a tick may
 be armed while it is active — `rollback_selftest_active()` is the gate.
 
+The debug menu's **Rollback Self-Test** row goes through `rollback_selftest_set()`, not
+the flag: the registry and the snapshot ring are allocated at level start and only for a
+self-test that was already on, so setting the flag alone would leave the driver verifying
+an *empty* registry — every tick trivially matches, and the replay pass re-runs it with
+nothing restored, simulating the level at double speed.
+
 ### Desync recovery
 
 On a canary mismatch the host streams its whole registered state (`PACKET_RESYNC`)
@@ -592,6 +598,14 @@ What the design rests on:
   home before the joiner's validation failed, so on the final failed attempt no
   shared frame exists any more and the joiner halts the session cleanly instead of
   wedging both machines into the long stall timeout.
+- **Both machines call the hitch the same thing.** The transfer stops the sim on
+  one side while the other sits in an ordinary input stall — most visibly after the
+  host's stream is fully acked, when it resets and waits several frames for a joiner
+  still draining chunks. The two overlays said "Resyncing players." and "Waiting for
+  other player.", which read as two separate faults. `resync_notice` (armed by the
+  mismatch and by either side of a transfer) makes the stall overlay say "Resyncing
+  players." too, and is held past the local reset until the peer's first frame on
+  the fresh timeline lands — the epoch it was armed in is what dates it.
 - **Recovery is capped (3 per level) and every use is a crashlog entry.** The
   canary exists to surface determinism bugs; recovery converts their cost from "the
   rest of the level is garbage" into a hitch, and must not also convert them into
@@ -754,6 +768,17 @@ stack — there is no walker there) appended to `opentyrian_net.log` in
 rotation, and truncate-on-first-write would destroy the previous session's
 reports on relaunch, exactly when someone finally pulls the SD card to look.
 The other crashlog entry points stay no-ops on consoles.
+
+Append-only with no rotation means the console log only ever grows, so
+`Setup > Clear Net Log` (`crashlog_clear_netlog`) truncates it on demand — a
+console-only row, since on PC the file sits next to the executable and rotates
+itself. It probes for the log before opening it `"w"`, so clearing when there is
+none creates no empty file, and the menu reports which of the two happened. The
+row is compiled in only for Switch/Vita and is further hidden while Network Log
+is off, through the new `isMenuItemVisible` filter in `runOptionsMenu`: the menu
+loop now builds a per-frame list of visible rows, so a hidden row occupies no
+slot in drawing, cursor movement or mouse hit-testing (all of which index that
+one list), and the selection is clamped in case a row vanishes under it.
 
 The lockstep detector's once-per-level latch (`tyrian2.c`) compares
 `mainLevel`, not `curLoc` — it originally latched on `curLoc`, which advances

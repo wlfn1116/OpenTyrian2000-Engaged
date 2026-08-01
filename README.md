@@ -104,7 +104,7 @@ Related config keys (`enhancements` section):
 | --- | --- | --- |
 | `net_rollback` | `on` | Rollback netcode (host-authoritative for the session) |
 | `net_delay` | `3` | Lockstep-only: ticks of input delay / tick-rate cap |
-| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player (runs each tick twice; results in `rollback_selftest.log`) |
+| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player (runs each tick twice; results in `rollback_selftest.log`). Also a **Rollback Self-Test** row in the debug menu, which can arm it mid-level |
 
 ## Building
 

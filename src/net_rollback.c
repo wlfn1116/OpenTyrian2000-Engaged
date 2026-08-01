@@ -246,7 +246,22 @@ static Uint32 resync_used;   /* attempts consumed this level (either role)      
 static Uint16 resync_gen;    /* newest attempt id sent (host) / adopted (joiner)  */
 static bool   resync_wanted; /* canary mismatch seen; the host acts on it         */
 
+/* Presentation: a recovery is in play, so the stall overlay names that instead of
+ * the wait.  Held from the mismatch until the peer is heard on the fresh timeline
+ * -- the host finishes streaming while the joiner is still adopting, and one
+ * hitch showing two different messages read like two different faults. */
+static bool   resync_notice;
+static Uint16 resync_notice_epoch;  /* epoch the notice was armed in */
+
 static bool nrb_resync_dispatch(void);
+
+/* Both roles arm this, at the mismatch and at the transfer, so neither machine
+ * calls the recovery something the other does not. */
+static void nrb_notice_resync(void)
+{
+	resync_notice = true;
+	resync_notice_epoch = nrb_epoch;
+}
 
 /* Livelock guard: consecutive rollbacks that landed on the same frame. */
 static Uint32 resim_last_K, resim_repeat;
@@ -326,6 +341,7 @@ void nrb_level_reset(void)
 	nrb_reset_core();
 	resync_used = 0;
 	resync_gen = 0;
+	resync_notice = false;
 }
 
 /* --- Frame begin: snapshot, then apply the previous frame's sim requests ------ */
@@ -774,6 +790,19 @@ static int nrb_apf(char *buf, int cap, int off, const char *fmt, ...)
 	return off + n;
 }
 
+/* One input column of the window below, carrying every field nrb_wire_differs()
+ * compares.  Printing x,y alone showed two identical columns beside frames that
+ * had legitimately rolled back on a velocity the report never named. */
+static int nrb_apf_tuple(char *buf, int cap, int off, const NrbSlot *s, Uint32 f)
+{
+	if (s->tag != f)
+		return nrb_apf(buf, cap, off, " (gone) |");
+	return nrb_apf(buf, cap, off, " %4d,%-4d %04x v%d,%d a%d,%d L%u d%u |",
+	               s->in.x, s->in.y, (unsigned)s->in.buttons,
+	               s->in.velX, s->in.velY, s->in.accelX, s->in.accelY,
+	               (unsigned)s->in.linkAngle, (unsigned)s->in.difficulty);
+}
+
 /* One received canary against our own copy of its frame.  The caller has already
  * established that our side considers that frame final. */
 static void nrb_check_canary(const NrbCanary *const peer)
@@ -877,7 +906,8 @@ static void nrb_check_canary(const NrbCanary *const peer)
 				const Uint32 lo = peer->tag > 7 ? peer->tag - 7 : 1;
 
 				off = nrb_apf(detail, sizeof(detail), off,
-				              "  inputs %lu..%lu (frame: local x,y btn | remote truth x,y btn | consumed kind):\n",
+				              "  inputs %lu..%lu (x,y btn v<vel> a<accel> L<linkAngle> d<difficulty>)\n"
+				              "  (frame: local | remote truth | consumed kind):\n",
 				              (unsigned long)lo, (unsigned long)peer->tag);
 				for (Uint32 f = lo; f <= peer->tag; ++f)
 				{
@@ -886,16 +916,8 @@ static void nrb_check_canary(const NrbCanary *const peer)
 					const NrbSlot *U = &remote_used[f % NRB_HIST];
 
 					off = nrb_apf(detail, sizeof(detail), off, "  %6lu:", (unsigned long)f);
-					if (L->tag == f)
-						off = nrb_apf(detail, sizeof(detail), off, " %4d,%-4d %04x |",
-						              L->in.x, L->in.y, (unsigned)L->in.buttons);
-					else
-						off = nrb_apf(detail, sizeof(detail), off, " (gone) |");
-					if (R->tag == f)
-						off = nrb_apf(detail, sizeof(detail), off, " %4d,%-4d %04x |",
-						              R->in.x, R->in.y, (unsigned)R->in.buttons);
-					else
-						off = nrb_apf(detail, sizeof(detail), off, " (gone) |");
+					off = nrb_apf_tuple(detail, sizeof(detail), off, L, f);
+					off = nrb_apf_tuple(detail, sizeof(detail), off, R, f);
 
 					if (U->tag != f)
 						off = nrb_apf(detail, sizeof(detail), off, " (gone)\n");
@@ -931,7 +953,10 @@ static void nrb_check_canary(const NrbCanary *const peer)
 		/* Repairable: arm a recovery.  The host acts on the flag at its driver
 		 * site; the joiner's own copy is cleared when the stream arrives. */
 		if (nrb_session_recovery() && resync_used < NRB_RS_MAX)
+		{
 			resync_wanted = true;
+			nrb_notice_resync();
+		}
 	}
 }
 
@@ -1109,7 +1134,11 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 			overlay_for = wait_start;
 			JE_barShade(VGAScreen, 3, 60, 257, 80);
 			JE_barShade(VGAScreen, 5, 62, 255, 78);
-			JE_dString(VGAScreen, 10, 65, "Waiting for other player.", SMALL_FONT_SHAPES);
+			// This wait IS the recovery when one is in play -- the machine on the
+			// other side of it stops simulating to stream or adopt state.
+			JE_dString(VGAScreen, 10, 65,
+			           resync_notice ? "Resyncing players." : "Waiting for other player.",
+			           SMALL_FONT_SHAPES);
 			last_present = 0;
 		}
 		if (SDL_GetTicks() - last_present > 100)
@@ -1328,6 +1357,7 @@ static int nrb_resync_send_once(void)
 {
 	++resync_used;
 	++resync_gen;
+	nrb_notice_resync();
 
 	const size_t state_sz = rollback_state_size();
 	const size_t cap = state_sz + state_sz / 255 + 64;
@@ -1489,10 +1519,12 @@ static bool nrb_resync_host_run(void)
 		if (r == 1)
 			return true;
 		if (r < 0)
-			return false;  /* hard stop; its own entry named the reason */
+			break;  /* hard stop; its own entry named the reason */
 	}
-	crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
-	                     "host: attempt budget spent; playing on with divergent state");
+	if (resync_used >= NRB_RS_MAX)
+		crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
+		                     "host: attempt budget spent; playing on with divergent state");
+	resync_notice = false;  /* no recovery is coming; stop announcing one */
 	return false;
 }
 
@@ -1519,6 +1551,7 @@ static bool nrb_resync_receive(void)
 	bool reported = false;
 
 	++resync_used;
+	nrb_notice_resync();
 
 	for (;;)
 	{
@@ -1728,6 +1761,10 @@ static bool nrb_resync_receive(void)
 
 		nrb_resync_send_nak(have_hdr ? gen : seen_gen);
 
+		/* Spent: the host has no attempt left to answer that NAK with. */
+		if (resync_used >= NRB_RS_MAX)
+			resync_notice = false;
+
 		/* A fully assembled stream means every chunk was acknowledged, so the
 		 * host has already reset onto the fresh timeline.  If adoption failed
 		 * for good on top of that, no shared frame exists any more and playing
@@ -1899,6 +1936,12 @@ NrbStep nrb_driver(void)
 	/* Ingest whatever has arrived and correct the timeline if needed.
 	 * network_check() drains the socket itself (see NET_DRAIN_MAX). */
 	network_check();
+
+	/* The recovery is over once the peer turns up on the timeline it handed us:
+	 * our epoch has moved on and the peer's first frame there has landed. */
+	if (resync_notice && nrb_epoch != resync_notice_epoch && remote_newest > 0)
+		resync_notice = false;
+
 	{
 		const Uint32 K = nrb_scan_mispredict();
 		if (K != 0)

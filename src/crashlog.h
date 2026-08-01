@@ -35,6 +35,11 @@ void crashlog_netlog_line(const char *event, const char *detail);
 void crashlog_set_netlog_enabled(bool enabled);
 bool crashlog_get_netlog_enabled(void);
 
+// Zero the network log: an existing opentyrian_net.log is truncated to nothing, and none is
+// created if there isn't one. Behind the consoles' "Clear Net Log" row, where there is no file
+// manager to prune a log that has grown across sessions. Returns true if there was one to clear.
+bool crashlog_clear_netlog(void);
+
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only
 // static globals and never faults on a corrupt process; safe to call from a fault handler.

@@ -3600,7 +3600,7 @@ enum {
 	DBG_DIFFICULTY, DBG_ADD_CASH, DBG_NO_ENEMY_FIRE, DBG_SKIP_LEVEL,
 	DBG_PLAY_SOUND, DBG_PLAY_MUSIC, DBG_SPRITE_VIEWER, DBG_HITBOX, DBG_PERF,
 	DBG_ENDLESS_FX, DBG_ENDLESS_TUNE,
-	DBG_HANG_TIMEOUT, DBG_FORCE_CRASH,
+	DBG_HANG_TIMEOUT, DBG_ROLLBACK_SELFTEST, DBG_FORCE_CRASH,
 	DBG_ROW_COUNT
 };
 
@@ -3639,6 +3639,7 @@ static const char *const dbgLabel[DBG_ROW_COUNT] = {
 	[DBG_HITBOX]              = "Hitbox Overlay",
 	[DBG_PERF]                = "Perf Overlay",
 	[DBG_HANG_TIMEOUT]        = "Hang Watchdog",
+	[DBG_ROLLBACK_SELFTEST]   = "Rollback Self-Test",
 	[DBG_ENDLESS_FX]          = "Endless Effects",
 	[DBG_ENDLESS_TUNE]        = "Endless Mods and Scaling",
 	[DBG_FORCE_CRASH]         = "Force Crash (test)",
@@ -3681,6 +3682,7 @@ static const char *const dbgHelp[DBG_ROW_COUNT] = {
 	[DBG_HITBOX]              = "Draw hit boxes on enemies and ship",
 	[DBG_PERF]                = "FPS, enemy and shot counts on screen",
 	[DBG_HANG_TIMEOUT]        = "Seconds of freeze before the log fires",
+	[DBG_ROLLBACK_SELFTEST]   = "Replay every tick to verify rollback",
 	[DBG_ENDLESS_FX]          = "Endless mods/perks in a normal game",
 	[DBG_ENDLESS_TUNE]        = "Opens the mod, perk and scaling panel",
 	[DBG_FORCE_CRASH]         = "Faults on purpose to test the crash log",
@@ -3712,7 +3714,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 	{ -1, "DIAGNOSTICS" },
 	{ DBG_PLAY_SOUND, NULL }, { DBG_PLAY_MUSIC, NULL }, { DBG_SPRITE_VIEWER, NULL },
 	{ DBG_HITBOX, NULL }, { DBG_PERF, NULL }, { DBG_HANG_TIMEOUT, NULL },
-	{ DBG_FORCE_CRASH, NULL },
+	{ DBG_ROLLBACK_SELFTEST, NULL }, { DBG_FORCE_CRASH, NULL },
 };
 #define DBG_DISPLAY_ROWS  ((int)COUNTOF(dbgRows))
 #define DBG_HEADING_COUNT 7
@@ -3721,7 +3723,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, DBG_DISPLAY_ROWS == DBG_ROW_COUNT + DBG_HEADING_COUNT);
 
 /* Rows the current mode has nothing to say about are dropped rather than shown inert: the player
- * selector outside a two-player game, and the endless effect layer in a network game (a second
+ * selector outside a two-player game, and in a network game the endless effect layer (a second
  * body of simulation state, none of which is on the wire). dbgVis[] is that filtered view --
  * indices into dbgRows -- and every index the menu carries around (selection, scroll, hit test)
  * indexes IT, never dbgRows directly. Rebuilt at every open. */
@@ -3736,6 +3738,7 @@ static bool dbgRowApplies(int id)
 		return twoPlayerMode;
 	case DBG_ENDLESS_FX:
 	case DBG_ENDLESS_TUNE:
+	case DBG_ROLLBACK_SELFTEST:  // netplay drives the rollback engine for real; the self-test never arms there
 		return !isNetworkGame;
 	default:
 		return true;
@@ -3816,6 +3819,16 @@ static void debug_toggle_campaign_mods(void)
 	if (!endlessCampaignMods)
 		endlessCampaignModsArm();
 	endlessCampaignMods = !endlessCampaignMods;
+	save_opentyrian_config();
+}
+
+/* Flip the rollback self-test. Goes through rollback_selftest_set() rather than the flag, so
+ * switching it on mid-level also arms the registry and snapshot ring. The config write persists
+ * it the way the `rollback_selftest` key already did: a divergence hunt usually spans restarts,
+ * and the session it is diagnosing may well end in a crash. */
+static void debug_toggle_rollback_selftest(void)
+{
+	rollback_selftest_set(!rollback_selftest);
 	save_opentyrian_config();
 }
 
@@ -4238,6 +4251,20 @@ void JE_debugMenu(bool center)
 					sprintf(buf, "%s", ">>");
 				break;
 			}
+			case DBG_ROLLBACK_SELFTEST:
+				// Carry the running tally, not just the switch: it is the only sign from inside the
+				// game that the verification is actually armed and what it has found so far.
+				if (!rollback_selftest)
+					sprintf(buf, "%s", "OFF");
+				else if (endlessFxActive())
+					sprintf(buf, "%s", "ON (idle: endless)");  // the effect layer is outside the registry
+				else if (rollback_selftest_failures > 0)
+					snprintf(buf, sizeof(buf), "ON  %lu FAIL", rollback_selftest_failures);
+				else if (rollback_selftest_ticks > 0)
+					snprintf(buf, sizeof(buf), "ON  %lu ok", rollback_selftest_ticks);
+				else
+					sprintf(buf, "%s", "ON");
+				break;
 			case DBG_FORCE_CRASH:  // action: deliberately crash to test the crash logger
 				sprintf(buf, "%s", "[Enter]");
 				break;
@@ -4462,6 +4489,7 @@ void JE_debugMenu(bool center)
 				case DBG_ENDLESS_TUNE: break;  // opens on Right/Enter
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
+				case DBG_ROLLBACK_SELFTEST: debug_toggle_rollback_selftest(); break;
 				default: break;  // Hang Watchdog / Skip Level are Enter-only actions
 				}
 				break;
@@ -4514,6 +4542,7 @@ void JE_debugMenu(bool center)
 				case DBG_ENDLESS_TUNE: endlessDebugTuneScreen(); break;
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
 				case DBG_PERF: debugPerfOverlay = !debugPerfOverlay; break;
+				case DBG_ROLLBACK_SELFTEST: debug_toggle_rollback_selftest(); break;
 				default: break;  // Hang Watchdog / Skip Level are Enter-only actions
 				}
 				break;

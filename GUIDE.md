@@ -17,6 +17,7 @@ and arcade modes work as before.
 | Toggle the two-player fuse/unfuse sounds | Setup > Sound > Link Sounds |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
 | Turn the network log off | Setup > Network Log |
+| Erase the network log (Switch/Vita) | Setup > Clear Net Log |
 | Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
 | Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
 
@@ -374,6 +375,13 @@ Debug Mode adds a Debug Menu row to the shop and to the Esc pause menu, plus a
 level browser. The menu changes the game as you use it: loadout, cash, cheats,
 difficulty, and the expert multipliers.
 
+The DIAGNOSTICS group at the bottom holds the inspection tools. **Rollback
+Self-Test** is the heaviest: it replays every tick and compares the result, which
+checks that the snapshot online play rides on covers everything the game changes.
+The tick runs twice while it is on, so the game may run slower; the row shows the
+count of verified ticks and any failures, and the detail goes to
+`rollback_selftest.log`. It stays on until you turn it off, restarts included.
+
 In a two-player game, local or online, an **Edit Player** row at the top of the
 LOADOUT group chooses whose gear the rows below it change. It opens on your own
 ship. Player two flies the Dragonwing, so swapping that player's hull changes the
@@ -381,7 +389,8 @@ hit box but not the sprite or armour.
 
 Online, the game stays connected while the menu is open, and every change you make
 is sent to the other player, so both machines keep playing the same game. Endless
-Effects are not available online.
+Effects are not available online, and neither is the Rollback Self-Test — online
+play exercises the same machinery for real.
 
 ## Online play
 
@@ -437,6 +446,12 @@ earlier session is in one of the numbered files, not the live one.
 **Network Log**, in the Setup menu and on by default, is what writes that file.
 Switched off, the game keeps no network log at all: no new entries, and an
 existing log is left exactly as it is rather than rotated away.
+
+**Clear Net Log**, directly below it, erases that log and starts it over empty.
+It is a Switch and Vita row — those builds have no file manager to prune a log
+that has grown across sessions with, while on PC you can delete the file beside
+the game yourself — and it only appears while Network Log is on. The row reports
+what the press did: *Cleared*, or *No Log* when there was nothing to erase.
 
 The outpost help bar carries a **Ping** figure at its right end, showing the round
 trip to the other player in milliseconds. It updates about every one and a half
