@@ -3054,7 +3054,18 @@ start_level_first:
 
 	JE_drawOptions();
 
-	JE_outText(VGAScreen, HUD_X(268), twoPlayerMode ? 76 : 118, levelName, 12, 4);
+	// Two-player HUD: centre the name in its black readout rather than parking it at the classic
+	// left-aligned x268/y76, which sat low in the box with all the slack on the right.  "** ALE **"
+	// is a pixel wider than the box, so an overlong name stays flush left instead of starting outside.
+	int nameX = HUD_X(268), nameY = 118;
+	if (twoPlayerMode)
+	{
+		enum { BOX_X = 267, BOX_W = 49, BOX_Y = 71, BOX_H = 12, TEXT_H = 6 };
+		const int textW = JE_textWidth(levelName, TINY_FONT) - 1;  // less the trailing advance
+		nameX = HUD_X(BOX_X + (textW < BOX_W ? (BOX_W - textW) / 2 : 0));
+		nameY = BOX_Y + (BOX_H - TEXT_H) / 2;
+	}
+	JE_outText(VGAScreen, nameX, nameY, levelName, 12, 4);
 	JE_drawPlayerTags();
 
 	// Ensure the widened playfield blends into the HUD before the fade-in
