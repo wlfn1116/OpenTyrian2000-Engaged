@@ -270,6 +270,23 @@ NetSimDetail;
 
 void network_sim_detail(NetSimDetail *out);
 
+// The object pools the two hashes above never reach: explosions, repeating explosions,
+// enemy shots, player shots, the sound queue.  A divergence that lands here first --
+// a shot spawned on one machine only, a sound slot drawn from a shifted RNG stream --
+// changes no position and no armor, so it stayed invisible until it eventually moved
+// one, thousands of frames later and far from its cause.  Returns the combined hash
+// that rides the wire; fills `detail` (may be NULL) with the per-pool breakdown, which
+// only the desync report reads: there is one spare word in the input header, so the
+// wire says THAT the pools diverged and the two logs say WHICH one.
+typedef struct
+{
+	Uint32 explosions, rep_explosions, enemy_shots, player_shots, sound;
+	Uint16 n_expl, n_rep, n_eshot, n_pshot;
+}
+NetSimPools;
+
+Uint32 network_sim_pools(NetSimPools *detail);
+
 // Session-long desync memo for the crash log: call once per desynced level (the lockstep
 // once-per-level report and the rollback canary's first report both do).
 void network_diag_note_desync(int level);

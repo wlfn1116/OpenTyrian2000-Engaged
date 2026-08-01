@@ -48,6 +48,7 @@
 #include "picload.h"
 #include "player.h"
 #include "rollback.h"
+#include "shots.h"
 #include "sprite.h"
 #include "tyrian2.h"
 #include "varz.h"
@@ -63,7 +64,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       9            // increment whenever networking changes might create incompatibility (9: resume form of PACKET_DETAILS)
+#define NET_VERSION       10           // increment whenever networking changes might create incompatibility (10: pool hash in the input header's last spare word)
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1742,6 +1743,110 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 	*enemy_hash = h;
 
 	#undef HASH_WORD
+}
+
+Uint32 network_sim_pools(NetSimPools *detail)
+{
+	Uint32 h = 2166136261u;
+	#define HASH_WORD(v) do { \
+		Uint32 w_ = (Uint32)(v); \
+		for (int b_ = 0; b_ < 4; ++b_) { \
+			h ^= (w_ >> (b_ * 8)) & 0xffu; \
+			h *= 16777619u; \
+		} \
+	} while (0)
+	#define POOL_DONE(field, count) do { \
+		if (detail) { detail->field = h; detail->count = (Uint16)live; } \
+		combined ^= h; combined *= 16777619u; \
+		h = 2166136261u; live = 0; \
+	} while (0)
+
+	Uint32 combined = 2166136261u;
+	Uint16 live = 0;
+
+	// Slot index goes in with every row: two pools holding the same rows in different
+	// slots are NOT the same state -- the next spawn picks a different slot and the
+	// timelines part for good.
+	for (uint i = 0; i < COUNTOF(explosions); ++i)
+	{
+		if (explosions[i].ttl == 0)
+			continue;
+		++live;
+		HASH_WORD(i);
+		HASH_WORD(explosions[i].ttl);
+		HASH_WORD(explosions[i].x);
+		HASH_WORD(explosions[i].y);
+		HASH_WORD(explosions[i].sprite);
+		HASH_WORD(explosions[i].deltaY);
+		HASH_WORD((explosions[i].followPlayer ? 1u : 0u) | (explosions[i].fixedPosition ? 2u : 0u));
+	}
+	POOL_DONE(explosions, n_expl);
+
+	for (uint i = 0; i < COUNTOF(rep_explosions); ++i)
+	{
+		if (rep_explosions[i].ttl == 0)
+			continue;
+		++live;
+		HASH_WORD(i);
+		HASH_WORD(rep_explosions[i].delay);
+		HASH_WORD(rep_explosions[i].ttl);
+		HASH_WORD(rep_explosions[i].x);
+		HASH_WORD(rep_explosions[i].y);
+		HASH_WORD(rep_explosions[i].big ? 1u : 0u);
+	}
+	POOL_DONE(rep_explosions, n_rep);
+
+	// enemyShotAvail is 1 for a FREE slot, like enemyAvail.
+	for (uint i = 0; i < COUNTOF(enemyShot); ++i)
+	{
+		if (enemyShotAvail[i] == 1)
+			continue;
+		++live;
+		HASH_WORD(i);
+		HASH_WORD(enemyShot[i].sx);
+		HASH_WORD(enemyShot[i].sy);
+		HASH_WORD(enemyShot[i].sxm);
+		HASH_WORD(enemyShot[i].sym);
+		HASH_WORD(enemyShot[i].sxc);
+		HASH_WORD(enemyShot[i].syc);
+		HASH_WORD(enemyShot[i].sdmg);
+		HASH_WORD(enemyShot[i].duration);
+		HASH_WORD(enemyShot[i].animate);
+	}
+	POOL_DONE(enemy_shots, n_eshot);
+
+	// shotAvail is a countdown, not a flag: nonzero means the slot is LIVE.
+	for (uint i = 0; i < COUNTOF(shotAvail); ++i)
+	{
+		if (shotAvail[i] == 0)
+			continue;
+		++live;
+		HASH_WORD(i);
+		HASH_WORD(shotAvail[i]);
+		HASH_WORD(playerShotData[i].shotX);
+		HASH_WORD(playerShotData[i].shotY);
+		HASH_WORD(playerShotData[i].shotXM);
+		HASH_WORD(playerShotData[i].shotYM);
+		HASH_WORD(playerShotData[i].shotXC);
+		HASH_WORD(playerShotData[i].shotYC);
+		HASH_WORD(playerShotData[i].shotDmg);
+		HASH_WORD(playerShotData[i].playerNumber);
+		HASH_WORD(playerShotData[i].pierceLock);
+	}
+	POOL_DONE(player_shots, n_pshot);
+
+	// The sound queue is simulation state, not presentation: its slot is drawn from the
+	// shared RNG, so a divergence here is an early tell that the streams have parted.
+	for (uint i = 0; i < COUNTOF(soundQueue); ++i)
+		HASH_WORD(soundQueue[i]);
+	if (detail)
+		detail->sound = h;
+	combined ^= h;
+	combined *= 16777619u;
+
+	#undef POOL_DONE
+	#undef HASH_WORD
+	return combined;
 }
 
 // Must sample exactly what network_sim_state() hashes, at the same call site, or the

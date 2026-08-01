@@ -65,6 +65,12 @@ static struct
 	Uint32 refused_malformed, refused_window, refused_epoch;
 	Uint32 stalls;                    /* waits that earned a >3 s crashlog note */
 } nrb_diag;
+
+/* The peer's registry has a different layout (mismatched builds, or PC<->console),
+ * so its bytes can never be adopted here.  Session-scoped like the counters above,
+ * not per level: the peer's build does not change mid-session, and each retry costs
+ * the host a full state export to be refused on chunk 0 again. */
+static bool resync_layout_bad;
 #endif
 
 void nrb_set_session_mode(bool enabled)
@@ -74,6 +80,7 @@ void nrb_set_session_mode(bool enabled)
 	/* Both machines run this at connect time, so both start the count from zero. */
 	nrb_epoch = 0;
 	memset(&nrb_diag, 0, sizeof(nrb_diag));
+	resync_layout_bad = false;
 #endif
 }
 
@@ -184,7 +191,7 @@ static RbInput remote_seed;             /* prediction anchor before any data  */
  * instead of two opaque words. */
 typedef struct
 {
-	Uint32 tag, rand, ph, eh;
+	Uint32 tag, rand, ph, eh, xh;
 	Uint16 curLoc;
 	Uint8  linked;
 	Sint16 px[2], py[2];
@@ -195,6 +202,10 @@ static NrbCanary canary[NRB_HIST];
  * report can print the disputed frame itself.  Valid only where canary[].tag
  * matches, so it needs no clearing of its own. */
 static NetSimDetail canary_detail[NRB_HIST];
+/* Per-pool breakdown behind the combined `xh`.  Only four bytes of the input header
+ * were spare, so the wire carries one hash for all five pools; this says which of
+ * them moved, and is captured at the same moment for the same reason. */
+static NetSimPools  canary_pools[NRB_HIST];
 /* Received canaries waiting for OUR copy of their frame to become final.  A
  * single slot starved the check: at any steady prediction depth the arriving
  * canary was always ahead of verified_upto, and the next packet overwrote it
@@ -619,7 +630,7 @@ static void nrb_send_input(void)
 		SDLNet_Write16((Uint16)c->py[0], &data[38]);
 		SDLNet_Write16((Uint16)c->px[1], &data[40]);
 		SDLNet_Write16((Uint16)c->py[1], &data[42]);
-		memset(&data[44], 0, 4);
+		SDLNet_Write32(c->xh,   &data[44]);   /* the header's last spare word */
 	}
 	else
 	{
@@ -729,6 +740,7 @@ void nrb_handle_packet(const Uint8 *data, int len)
 			c->py[0] = (Sint16)SDLNet_Read16(&data[38]);
 			c->px[1] = (Sint16)SDLNet_Read16(&data[40]);
 			c->py[1] = (Sint16)SDLNet_Read16(&data[42]);
+			c->xh    = SDLNet_Read32(&data[44]);
 		}
 	}
 
@@ -767,6 +779,7 @@ static void nrb_stamp_canary(Uint32 frame)
 	NrbCanary *c = &canary[frame % NRB_HIST];
 	c->tag = frame;
 	network_sim_state(&c->rand, &c->ph, &c->eh);
+	c->xh = network_sim_pools(&canary_pools[frame % NRB_HIST]);
 	network_sim_detail(&canary_detail[frame % NRB_HIST]);
 	c->curLoc = (Uint16)curLoc;
 	c->linked = twoPlayerLinked ? 1 : 0;
@@ -812,7 +825,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 		return;  /* out of window; too old to compare */
 
 	if (ours->rand != peer->rand || ours->ph != peer->ph ||
-	    ours->eh != peer->eh ||
+	    ours->eh != peer->eh || ours->xh != peer->xh ||
 	    ours->curLoc != peer->curLoc || ours->linked != peer->linked)
 	{
 		++canary_mismatches;
@@ -851,6 +864,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         "  rand draws : local %lu  remote %lu  %s\n"
 			         "  players    : local %08x  remote %08x  %s\n"
 			         "  enemies    : local %08x  remote %08x  %s\n"
+			         "  pools      : local %08x  remote %08x  %s\n"
 			         "  curLoc     : local %u  remote %u  %s\n"
 			         "  linked     : local %u  remote %u  %s\n"
 			         "  P1 pos     : local %d,%d  remote %d,%d\n"
@@ -863,6 +877,8 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         ours->ph == peer->ph ? "ok" : "DIFFERS",
 			         (unsigned)ours->eh, (unsigned)peer->eh,
 			         ours->eh == peer->eh ? "ok" : "DIFFERS",
+			         (unsigned)ours->xh, (unsigned)peer->xh,
+			         ours->xh == peer->xh ? "ok" : "DIFFERS",
 			         (unsigned)ours->curLoc, (unsigned)peer->curLoc,
 			         ours->curLoc == peer->curLoc ? "ok" : "DIFFERS",
 			         (unsigned)ours->linked, (unsigned)peer->linked,
@@ -896,6 +912,18 @@ static void nrb_check_canary(const NrbCanary *const peer)
 					              (unsigned)d->e[i].idx, (long)d->e[i].ex, (long)d->e[i].ey,
 					              (long)d->e[i].armorleft, (unsigned)d->e[i].avail,
 					              (unsigned)d->e[i].type);
+
+				/* Which pool moved.  The wire carries only the combined hash, so
+				 * these five lines are what turns "pools DIFFER" into a subsystem. */
+				const NetSimPools *x = &canary_pools[peer->tag % NRB_HIST];
+				off = nrb_apf(detail, sizeof(detail), off,
+				              "  pools: explosions %08x (%u live)  repeating %08x (%u)\n"
+				              "         enemy shots %08x (%u)  player shots %08x (%u)  sound %08x\n",
+				              (unsigned)x->explosions, (unsigned)x->n_expl,
+				              (unsigned)x->rep_explosions, (unsigned)x->n_rep,
+				              (unsigned)x->enemy_shots, (unsigned)x->n_eshot,
+				              (unsigned)x->player_shots, (unsigned)x->n_pshot,
+				              (unsigned)x->sound);
 			}
 
 			/* Input window up to the disputed frame: what we sent, the peer's
@@ -952,7 +980,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 
 		/* Repairable: arm a recovery.  The host acts on the flag at its driver
 		 * site; the joiner's own copy is cleared when the stream arrives. */
-		if (nrb_session_recovery() && resync_used < NRB_RS_MAX)
+		if (nrb_session_recovery() && resync_used < NRB_RS_MAX && !resync_layout_bad)
 		{
 			resync_wanted = true;
 			nrb_notice_resync();
@@ -1634,8 +1662,13 @@ static bool nrb_resync_receive(void)
 			if (their_state != (Uint32)state_sz ||
 			    comp_total == 0 || comp_total > (Uint32)(state_sz + state_sz / 255 + 64))
 			{
+				/* Not a link failure: no retry against this peer can ever pass
+				 * this test, so retire recovery for the session rather than
+				 * spend the budget re-streaming the same refused bytes. */
+				resync_layout_bad = true;
 				snprintf(abort_ctx, sizeof(abort_ctx),
-				         "preamble refused: peer state %lu bytes vs ours %lu, compressed %lu (mismatched builds?)",
+				         "preamble refused: peer state %lu bytes vs ours %lu, compressed %lu "
+				         "(mismatched builds, or PC<->console); recovery disabled for this session",
 				         (unsigned long)their_state, (unsigned long)state_sz, (unsigned long)comp_total);
 				abort = abort_ctx;
 				network_update();
@@ -1759,10 +1792,15 @@ static bool nrb_resync_receive(void)
 		         resync_used > NRB_RS_MAX ? "   [over budget: started by stray chunks]" : "");
 		crashlog_netlog_line("NETWORK RESYNC ABORT", line);
 
+		/* The NAK goes out even for a layout refusal, which no retry can pass.
+		 * It is not a request to retry so much as the only "I did not adopt" the
+		 * host ever hears: it declares success from transport acks alone and then
+		 * resets onto the fresh timeline, so a silent refusal would leave the two
+		 * machines on different timelines with no recovery left. */
 		nrb_resync_send_nak(have_hdr ? gen : seen_gen);
 
 		/* Spent: the host has no attempt left to answer that NAK with. */
-		if (resync_used >= NRB_RS_MAX)
+		if (resync_used >= NRB_RS_MAX || resync_layout_bad)
 			resync_notice = false;
 
 		/* A fully assembled stream means every chunk was acknowledged, so the
@@ -1787,6 +1825,18 @@ static bool nrb_resync_dispatch(void)
 	if (!nrb_session_recovery())
 	{
 		network_update();  /* stray: keep the reliable queue's head moving */
+		return false;
+	}
+
+	/* A finished attempt leaves the rest of its stream in flight, and the joiner
+	 * had no budget test of its own -- so the first leftover chunk opened attempt
+	 * 4 of 3, which then blocked the whole game for the 8 s progress timeout
+	 * waiting for a preamble the host had already given up on sending.  The
+	 * counter is per level and the layout latch per session; both mean "no
+	 * receive can succeed", so drop the chunk and keep the queue moving. */
+	if (!network_is_host && (resync_used >= NRB_RS_MAX || resync_layout_bad))
+	{
+		network_update();
 		return false;
 	}
 

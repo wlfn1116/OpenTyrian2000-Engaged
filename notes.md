@@ -530,6 +530,14 @@ unacknowledged and idempotent. Four invariants hold it together:
 - **Received canaries queue.** A canary arrives for a frame our own side has not
   finalised yet; a single slot is overwritten by the next packet before it can ever
   be compared, and the desync check silently never runs.
+- **The canary covers the object pools, not just positions.** Player and enemy hashes
+  reach only x/y/armor/shield/cash and ex/ey/armorleft, so a divergence that lands
+  first in explosions, repeating explosions, enemy shots, player shots or the sound
+  queue changes nothing they can see — and stays invisible for thousands of frames,
+  until it finally moves a position and gets reported far from its cause. A fourth
+  hash (`network_sim_pools`) rides the input header's last spare word. Only four
+  bytes were free, so the wire says *that* the pools diverged; `canary_pools[]`
+  keeps the per-pool breakdown for the report, and the two logs say *which*.
 
 The in-game menu is a **frame** rendezvous, not just a wall-clock one. It writes
 simulation state from outside the tuple stream, so opening it as soon as its frame
@@ -554,6 +562,46 @@ the flag: the registry and the snapshot ring are allocated at level start and on
 self-test that was already on, so setting the flag alone would leave the driver verifying
 an *empty* registry — every tick trivially matches, and the replay pass re-runs it with
 nothing restored, simulating the level at double speed.
+
+### Determinism harness
+
+**A demo is a fixed input stream, so it must be a fixed replay.** It was not: the RNG
+is seeded from `time(NULL)` at startup (`opentyr.c`) and only a *network* level reseeded
+to the constant 32402394, so every launch played the same demo differently. `JE_game`
+now reseeds on `play_demo` at the same site. Beyond making title demos stop drifting,
+this turns a demo into the cheapest determinism test available — one machine, no
+netcode, no timing, a fixed input stream — and the self-test writes a per-tick trace
+(`demo<N> t <tick> r <draws> p <hash> e <hash> loc <curLoc>`, the same three summaries
+the netplay canary compares) that two logs diff to the first diverging tick.
+
+Diffing two of those traces proved **x86_64 and aarch64 simulate identically**: over a
+full demo, RNG draw count, the whole enemy table and `curLoc` matched on every tick. The
+platform is not a desync suspect; the self-test also passes on both, so the resim path
+is not one either.
+
+Three ways such a comparison lies, all of which cost real time before being spotted:
+
+- **A clock-seeded run compares nothing.** Draw *counts* stay in lockstep for hundreds
+  of ticks after the values have diverged, because the count only moves when a random
+  value crosses a branch. A trace that agrees early is not evidence of determinism.
+- **Raw state bytes are not comparable between processes.** Every registered pointer
+  holds a different address per launch, so hashing live bytes reports `enemy[]`,
+  `player[]`, `shipGr*ptr`, `mapY*Pos` and `BKwrap*` as diverging in *every* pair of
+  runs. The per-item dump therefore hashes a snapshot put through the resync wire
+  format's `rb_reloc_walk`. `player[]` still differs: its interior `lives` pointer is
+  re-derived by a restore fixup rather than encoded, so relocation cannot reach it —
+  expected residue, and the reason the `p` summary (which hashes fields, not bytes) is
+  the trustworthy signal.
+- **Both machines must enter the demo from the same place.** Playing a level first
+  carries `player[]`, `nextLevel`, `cubeList` and the previous screen's scroll
+  interpolation into the demo. Boot cold, touch nothing, let the title demo run.
+
+The per-item dump is **off by default** (`RB_TRACE_ITEMS_TO 0`, an empty window): a full
+window is ~260 lines per tick, megabytes of SD-card traffic on a console. Narrow the
+divergence with the per-tick summary first, then open a window of a few ticks around it.
+For the same reason the log is fully buffered and flushed only on a failure, the
+every-350-tick progress line, and level end — an unbuffered line per tick is enough I/O
+to disturb the frame timing a determinism run is measuring.
 
 ### Desync recovery
 
@@ -614,6 +662,23 @@ What the design rests on:
   level-end machinery and aborts the attempt unconsumed. The receive side follows
   the same rule: a rendezvous release consumed by a dying stream would strand the
   peer at that rendezvous forever.
+- **The cap binds the joiner's receive side too, not just the trigger.** A finished
+  attempt leaves the rest of its stream in flight; with the budget test only on the
+  arming site and the host's NAK branch, the first leftover chunk opened "attempt 4
+  of 3" on the joiner, which then blocked the whole game for the 8 s progress timeout
+  waiting for a preamble the host had already given up on sending — and the host,
+  watching a peer that had stopped advancing, logged its own stall. Both roles must
+  refuse to *start* work once the budget is spent, and drop the stray chunk to keep
+  the reliable queue's head moving.
+- **A layout refusal is permanent, so it retires recovery for the session.** The
+  chunk-0 registry-size guard fails identically on every retry, and a mismatched peer
+  is a mismatched build for as long as it is connected — retrying only spends the
+  budget on full state exports that are refused on the first chunk. `resync_layout_bad`
+  is session-scoped (reset in `nrb_set_session_mode`, not per level) and gates both
+  arming and receiving. It does **not** suppress the NAK: the host declares success
+  from transport acks alone and then resets onto the fresh timeline, so a silent
+  refusal would leave the two machines on different timelines with nothing left to
+  repair them.
 
 What the log names when things fail (added after a session where recovery died
 in silence — 4 joiner attempts in 3 s, no reason recorded for any of them):

@@ -3235,6 +3235,14 @@ start_level_first:
 	}
 #endif
 
+	// A demo is a recorded input stream, so it should be a fixed replay -- but it rode the
+	// clock-seeded RNG (opentyr.c mt_srand(time(NULL))) and never reseeded, so every launch
+	// drew different numbers and the same demo ended somewhere else each time. Reseed to the
+	// constant the network path already uses. This also makes a demo a determinism harness:
+	// two runs, or two platforms, become directly comparable under the self-test.
+	if (play_demo)
+		mt_srand(32402394);
+
 	initialize_starfield();
 
 	JE_setNewGameSpeed();

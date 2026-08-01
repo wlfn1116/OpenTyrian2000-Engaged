@@ -42,22 +42,43 @@ unsigned long rollback_selftest_ticks = 0, rollback_selftest_failures = 0;
 
 /* Self-test results go to their own file next to the executable: this build is
  * a Windows-subsystem app, so stderr is a black hole. */
+static FILE *rb_log_file;
+
+static void rb_log_open(void)
+{
+	if (rb_log_file)
+		return;
+	rb_log_file = fopen("rollback_selftest.log", "a");
+	if (rb_log_file)
+	{
+		/* Fully buffered, with a big buffer: the trace writes a line per tick for
+		 * a whole demo, and on a console every unbuffered line is its own SD-card
+		 * write -- enough I/O to disturb the frame timing being measured. */
+		static char buf[64 * 1024];
+		setvbuf(rb_log_file, buf, _IOFBF, sizeof(buf));
+	}
+}
+
+/* Flush points are deliberate and rare: the periodic progress line, a failure,
+ * and leaving the level.  That bounds what a hard kill can lose to a few seconds
+ * of trace without paying a write per line. */
+static void rb_log_flush(void)
+{
+	if (rb_log_file)
+		fflush(rb_log_file);
+}
+
 static void rb_log(const char *fmt, ...)
 {
-	static FILE *f;
-	if (!f)
-	{
-		f = fopen("rollback_selftest.log", "a");
-		if (!f)
-			return;
-	}
+	rb_log_open();
+	if (!rb_log_file)
+		return;
 
 	va_list ap;
 	va_start(ap, fmt);
-	vfprintf(f, fmt, ap);
+	vfprintf(rb_log_file, fmt, ap);
 	va_end(ap);
-	fputc('\n', f);
-	fflush(f);
+	fputc('\n', rb_log_file);
 }
 
 /* --- Registry ----------------------------------------------------------------- */
@@ -131,6 +152,9 @@ static bool   rb_ring_valid[ROLLBACK_RING];
 /* Extra buffer for the self-test's "state after the live pass" reference. */
 static Uint8 *rb_verify_buf;
 
+/* Scratch for the demo trace's pointer-relocated snapshot (see rb_item_hash). */
+static Uint8 *rb_trace_buf;
+
 static void rb_alloc_buffers(void)
 {
 	for (int i = 0; i < ROLLBACK_RING; ++i)
@@ -146,6 +170,12 @@ static void rb_alloc_buffers(void)
 	if (!rb_verify_buf)
 	{
 		fprintf(stderr, "rollback: out of memory (verify buffer)\n");
+		exit(1);
+	}
+	rb_trace_buf = malloc(rb_total_size);
+	if (!rb_trace_buf)
+	{
+		fprintf(stderr, "rollback: out of memory (trace buffer)\n");
 		exit(1);
 	}
 }
@@ -210,6 +240,55 @@ bool rollback_restore(Uint32 frame)
 }
 
 static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz);
+static bool rb_reloc_walk(Uint8 *buf, bool encode);
+
+/* --- Demo trace: per-item state hashes ----------------------------------------
+ *
+ * The trace's player/enemy summaries come from the netplay canary, which covers
+ * only positions and armor -- a divergence in shots, explosions or the sound
+ * queue hides from them for thousands of ticks.  Over this window every registry
+ * entry is hashed by name, so two runs' logs diff straight to the entry that
+ * moved first.
+ *
+ * Hashed from a POINTER-RELOCATED snapshot, not from live bytes: every registered
+ * pointer holds a different address in each process, so raw hashing reported
+ * enemy[], player[], shipGr*ptr, mapY*Pos and BKwrap* as diverging in every pair
+ * of runs -- pure ASLR noise that buried the real signal.  The relocation is the
+ * one the resync wire format already uses.  (player[] still differs between
+ * processes: its interior `lives` pointer is re-derived by a restore fixup rather
+ * than encoded, so the relocation cannot reach it.  Expected residue, not a bug.)
+ *
+ * OFF by default (_TO == 0 is an empty window) -- a full window costs ~260 lines
+ * per tick, which is megabytes of SD-card traffic on a console.  Set a window only
+ * when a per-tick summary has already narrowed the divergence to a few ticks, and
+ * keep it narrow.
+ */
+#define RB_TRACE_ITEMS_FROM 1
+#define RB_TRACE_ITEMS_TO   0
+
+/* Refresh rb_trace_buf with an address-independent copy of live state.  False if
+ * the relocation failed, in which case the caller must not hash it. */
+static bool rb_trace_snapshot(void)
+{
+	if (rb_trace_buf == NULL)
+		return false;
+	rb_save_to(rb_trace_buf);
+	return rb_reloc_walk(rb_trace_buf, true);
+}
+
+/* FNV-1a over one entry's relocated bytes.  Raw entries only -- the single
+ * callback entry is the RNG, whose draw count the trace carries verbatim. */
+static Uint32 rb_item_hash(const RbItem *it)
+{
+	Uint32 h = 2166136261u;
+	const Uint8 *p = rb_trace_buf + it->offset;
+	for (size_t i = 0; i < it->size; ++i)
+	{
+		h ^= p[i];
+		h *= 16777619u;
+	}
+	return h;
+}
 
 /* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
  *
@@ -712,6 +791,17 @@ bool rollback_selftest_tick(void)
 			       (unsigned)demo_num, (unsigned long)st_frame,
 			       (unsigned long)rand_draws, (unsigned)ph, (unsigned)eh,
 			       (unsigned)curLoc);
+
+			if (RB_TRACE_ITEMS_TO > 0
+			    && st_frame >= RB_TRACE_ITEMS_FROM && st_frame <= RB_TRACE_ITEMS_TO
+			    && rb_trace_snapshot())
+			{
+				for (int i = 0; i < rb_item_count; ++i)
+					if (rb_items[i].ptr != NULL)
+						rb_log("  item t %lu %-24s %08x",
+						       (unsigned long)st_frame, rb_items[i].name,
+						       (unsigned)rb_item_hash(&rb_items[i]));
+			}
 		}
 
 		if (st_tainted)
@@ -755,12 +845,14 @@ bool rollback_selftest_tick(void)
 			       (int)play_demo,
 			       (int)player[0].is_alive, player[0].exploding_ticks,
 			       player[0].invulnerable_ticks, (unsigned)st_event_bits);
+			rb_log_flush();
 		}
 		else if (rollback_selftest_ticks % 350 == 0)
 		{
 			rb_log("ok: %lu ticks verified, %lu failures (state %zu bytes)",
 			       rollback_selftest_ticks, rollback_selftest_failures,
 			       rollback_state_size());
+			rb_log_flush();
 		}
 	}
 	return false;
@@ -774,6 +866,7 @@ void rollback_level_end(void)
 	st_verifying = false;
 	rollback_resim = false;
 	rollback_resim_silent = false;
+	rb_log_flush();  /* the level's trace is complete; get it on disk */
 }
 
 /* --- Registration root --------------------------------------------------------
