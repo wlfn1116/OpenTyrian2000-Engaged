@@ -4910,6 +4910,15 @@ draw_player_shot_loop_end:
 		JE_drawOptionsHUD();
 	}
 
+	// Same for the shield/armor gauges: their painters go quiet during silent passes
+	// (varz.c) and every snapshot restore raises the flag, so one repaint here settles
+	// the HUD on the corrected state instead of whatever a resim pass painted last.
+	if (hud_bars_dirty && !rollback_resim_silent)
+	{
+		hud_bars_dirty = false;
+		JE_repaintShieldArmorBars();
+	}
+
 	// Fuse/unfuse cue, edge-detected on the PRESENTED link state rather than queued by
 	// the sim: soundQueue slot 4 doubles as the sidekick-fire slot (shots.c soundChannel),
 	// and a link discovered only by a rollback correction drains silently -- either way

@@ -174,6 +174,10 @@ static void rb_restore_from(const Uint8 *buf)
 	}
 	for (int i = 0; i < rb_fixup_count; ++i)
 		rb_fixups[i]();
+
+	// The discarded timeline may have painted the shield/armor gauges (e.g. a
+	// mispredicted hit); repaint them from the restored state on the next live pass.
+	hud_bars_dirty = true;
 }
 
 void rollback_ring_reset(void)

@@ -472,6 +472,8 @@ extern int shieldGaugeFlash[2];
 extern int armorGaugeFlash[2];
 void JE_updateGaugeFlash(void);
 void gauge_flash_present(float alpha);
+extern bool hud_bars_dirty;
+void JE_repaintShieldArmorBars(void);
 
 JE_word JE_portConfigs(void);
 

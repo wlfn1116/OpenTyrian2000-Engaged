@@ -652,6 +652,19 @@ non-silent pass, before anything is presented. The flag is presentation-only
 and stays out of the rollback registry. Any future event-drawn HUD blit needs
 the same dirty-flag repaint.
 
+The shield/armor gauges are the fill-side mirror of that bug: they are painted
+entirely with fills (`JE_dBar3`), which silent passes do NOT suppress, so every
+re-simulation pass that crossed a damage, regen or gauge-flash tick repainted
+the persistent HUD surface with rolled-back values — under netplay's frequent
+shallow rollbacks the bars (and the white depletion-flash rect) visibly
+flickered. `JE_wipeShieldArmorBars` / `JE_drawShield` / `JE_drawArmor` now go
+quiet under `rollback_resim_silent` and raise `hud_bars_dirty`; the level loop
+repaints via `JE_repaintShieldArmorBars` on the first non-silent pass, and
+`rb_restore_from` raises the flag on every snapshot restore so a discarded
+timeline that had already painted (e.g. a mispredicted hit) is also settled.
+`JE_drawArmor`'s 28-point clamp mutates sim state and therefore still runs on
+silent passes, before the gate.
+
 The fuse/unfuse sound cue has the equivalent problem in audio form, plus one of
 its own: `soundQueue` slot 4 doubles as the sidekick-fire slot (`soundChannel`
 in shots.c), so queueing the cue in the sim lost it whenever a sidekick fired

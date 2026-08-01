@@ -1332,7 +1332,14 @@ static bool gauge_flash_any(void)
 	return false;
 }
 
-static void gauge_flash_redraw(void)
+// The gauges are event-painted with raw fills, which a silent rollback pass does NOT
+// suppress (only blits are) -- so mid-re-simulation paints put rolled-back values on the
+// HUD, a visible flicker under netplay's frequent shallow rollbacks.  The painters below
+// go quiet during silent passes and raise this flag; a non-silent tick repaints once.
+bool hud_bars_dirty = false;
+
+// Draw-only repaint of both gauges from current state onto the HUD surface.
+void JE_repaintShieldArmorBars(void)
 {
 	JE_wipeShieldArmorBars();
 	SDL_Surface *saved = VGAScreen;
@@ -1356,7 +1363,7 @@ void JE_updateGaugeFlash(void)
 	}
 
 	gaugeFlashAlpha = 1.0f;
-	gauge_flash_redraw();
+	JE_repaintShieldArmorBars();
 }
 
 void gauge_flash_present(float alpha)
@@ -1365,12 +1372,18 @@ void gauge_flash_present(float alpha)
 		return;
 
 	gaugeFlashAlpha = alpha;
-	gauge_flash_redraw();
+	JE_repaintShieldArmorBars();
 	gaugeFlashAlpha = 1.0f;
 }
 
 void JE_wipeShieldArmorBars(void)
 {
+	if (rollback_resim_silent)
+	{
+		hud_bars_dirty = true;
+		return;
+	}
+
 	if (!twoPlayerMode || galagaMode)
 	{
 		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[0].shield * 2, 0);
@@ -1623,6 +1636,12 @@ JE_word JE_portConfigs(void)
 
 void JE_drawShield(void)
 {
+	if (rollback_resim_silent)
+	{
+		hud_bars_dirty = true;
+		return;
+	}
+
 	if (twoPlayerMode && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
@@ -1667,10 +1686,17 @@ void JE_drawArmor(void)
 {
 	// The 28 cap is the classic bar maximum; the endless reinforced hull legitimately exceeds it
 	// (drawn as rollover layers below), so don't clobber the real value in endless mode.
+	// This clamp mutates sim state, so it must run on silent passes too, BEFORE the gate.
 	if (!endlessFxActive())
 		for (uint i = 0; i < COUNTOF(player); ++i)
 			if (player[i].armor > 28)
 				player[i].armor = 28;
+
+	if (rollback_resim_silent)
+	{
+		hud_bars_dirty = true;
+		return;
+	}
 
 	if (twoPlayerMode && !galagaMode)
 	{
