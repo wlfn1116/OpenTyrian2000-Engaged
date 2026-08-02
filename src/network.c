@@ -169,6 +169,10 @@ static bool connected = false, quit = false;
 // While this is set, the first inbound connect packet binds the channel to its sender.
 static bool host_awaiting_peer = false;
 
+// Whether `ip` names a peer yet.  It is only assigned, never cleared, so a session that never
+// reached a peer would otherwise still be comparing against the one before it.
+static bool peer_addr_known = false;
+
 // Round trip to the peer.  Every keep-alive carries the sender's own tick count and the peer
 // echoes it straight back, so the sample never leaves the machine that started it and the two
 // clocks never have to agree.  Smoothed: a single UDP round trip is noisy enough that a raw
@@ -405,11 +409,21 @@ static int network_recv_one(void)
 					return -1;
 				}
 				ip = packet_temp->address;
+				peer_addr_known = true;
 				host_awaiting_peer = false;
 				packet_temp->channel = 0;
 			}
 
-			if (packet_temp->channel == 0 && packet_temp->len >= 4)
+			// SDL_net reports a channel only when the source host AND port both match a binding.
+			// A NAT that does not reuse the forwarded port for the peer's outbound traffic makes
+			// every reply arrive unmatched, so the handshake never completes and the joiner waits
+			// on "Connecting..." forever with nothing logged on either side.  The peer's address
+			// is its identity; the source port is its NAT's business.  Sends are unaffected --
+			// they still go to channel 0, the address that was dialled and is actually forwarded.
+			const bool from_peer = packet_temp->channel == 0 ||
+			                       (peer_addr_known && packet_temp->address.host == ip.host);
+
+			if (from_peer && packet_temp->len >= 4)
 			{
 				switch (SDLNet_Read16(&packet_temp->data[0]))
 				{
@@ -969,6 +983,7 @@ int network_connect(void)
 		// Nothing to resolve: whoever sends the first connect packet becomes the peer, and
 		// network_check() binds channel 0 to them at that point.
 		host_awaiting_peer = true;
+		peer_addr_known = false;
 	}
 	else
 	{
@@ -984,6 +999,8 @@ int network_connect(void)
 			fprintf(stderr, "error: SDLNet_UDP_Bind: %s\n", SDLNet_GetError());
 			return -2;
 		}
+
+		peer_addr_known = true;
 	}
 
 	Uint16 episodes = 0, episodes_local = 0;
@@ -2091,6 +2108,7 @@ void network_shutdown(void)
 	connected = false;
 	quit = false;
 	host_awaiting_peer = false;
+	peer_addr_known = false;
 	network_session_saveable = false;
 
 	nrb_set_session_mode(false);
