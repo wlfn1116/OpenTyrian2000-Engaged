@@ -11,7 +11,8 @@ The original campaigns play as they always did. What the fork adds:
 - smooth display-rate rendering, with optional sub-pixel supersampling;
 - **Endless mode**, a roguelite run built from the shipped levels;
 - a custom weapon editor;
-- rollback netcode for online play, with save and resume;
+- **cross-platform online play** with rollback netcode — PC, Switch and Vita
+  players share the same game;
 - content the original game shipped but never used, each behind its own toggle;
 - expanded health bars, menus, and debug tools;
 - optional FluidSynth and system MIDI playback (Windows);
@@ -62,24 +63,19 @@ data, and wakes content the original left dormant.
 OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
 `.sf3`, or `.sf`); the Windows system MIDI synthesizer also works.
 
-## Controls
-
-| Key | Action |
-| --- | --- |
-| Arrow keys | Move |
-| Space | Fire |
-| Enter | Change rear-weapon mode |
-| Ctrl / Alt | Fire left / right sidekick |
-| Alt+Enter | Toggle fullscreen |
-
-Controls are rebindable, and controllers are supported.
-
 ## Online play
 
 Two-player arcade over the network, set up entirely in-game: **2 Player Online
 Arcade** on the main menu opens a lobby with Host Game, Find LAN Games, and Join
 by IP Address. On a shared network, LAN discovery finds the host without anyone
 typing an address. The game uses UDP port 1333 by default.
+
+Cross-platform play works, and not just on paper: a Windows player, a Linux
+player, someone on a Switch and someone on a Vita can all play each other, as
+long as everyone is on the same version. Every build runs the same simulation
+tick for tick. Saves cross over too — both machines keep their own copy of a
+session, so a game you started against a handheld can be resumed later with the
+desktop player hosting.
 
 - **Rollback netcode** by default. Your ship answers input on the tick it
   happens, the same feel as single player, while the other ship is predicted and
@@ -91,14 +87,24 @@ typing an address. The game uses UDP port 1333 by default.
 - **Save and resume.** Save from the shop mid-session, or when a session drops
   under you. Online games share the regular 2-player save page, so a run can move
   between couch co-op and online.
-- **Cross-platform.** Windows, Linux, Switch and Vita builds of the same version
-  play together; the protocol version is checked at connect.
 - A ping readout in the outpost, per-player gauge tagging in the HUD, and a
   session log for diagnosing desyncs.
 
 The host's lobby choices bind the session; joiners keep their own settings, which
 are restored afterwards. [GUIDE.md](GUIDE.md#online-play) covers each lobby row,
 the saving and resuming flow, and what to attach to a desync report.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move |
+| Space | Fire |
+| Enter | Change rear-weapon mode |
+| Ctrl / Alt | Fire left / right sidekick |
+| Alt+Enter | Toggle fullscreen |
+
+Controls are rebindable, and controllers are supported.
 
 ## Building
 
