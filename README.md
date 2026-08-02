@@ -11,8 +11,7 @@ The original campaigns play as they always did. What the fork adds:
 - smooth display-rate rendering, with optional sub-pixel supersampling;
 - **Endless mode**, a roguelite run built from the shipped levels;
 - a custom weapon editor;
-- **cross-platform online play** with rollback netcode — PC, Switch and Vita
-  players share the same game;
+- **cross-platform online play** with rollback netcode
 - content the original game shipped but never used, each behind its own toggle;
 - expanded health bars, menus, and debug tools;
 - optional FluidSynth and system MIDI playback (Windows);
