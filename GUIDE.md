@@ -16,8 +16,8 @@ and arcade modes work as before.
 | Toggle the low-armor siren | Setup > Sound > Armor Alarm |
 | Toggle the two-player fuse/unfuse sounds | Setup > Sound > Link Sounds |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
-| Turn the network log off | Setup > Network Log |
-| Erase the network log (Switch/Vita) | Setup > Clear Net Log |
+| Turn the network log off | Setup > Enhancements > Game Tweaks > Network |
+| Erase the network log (Switch/Vita) | Setup > Enhancements > Game Tweaks > Network |
 | Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
 | Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
 
@@ -362,12 +362,12 @@ Settings are under Setup > Enhancements.
 | Extra Parallax | Uses the full horizontal range of background layers |
 | Mirrored Layers | Reflects background content beyond a layer edge |
 | Extra Sparks | Raises the spark-particle limit |
+| Custom Weapons | Enables the custom weapon in shops |
+| Custom Weapon Creator | Opens the weapon editor |
 | Enemy Bars | Shows health for damaged enemies |
 | Boss Health Bars | Selects boss-bar style and placement |
 | Gauge Gradients | Selects gauge direction and damage flashes |
-| Game Tweaks | Opens weapon tweaks and restored cut behaviors |
-| Custom Weapons | Enables the custom weapon in shops |
-| Custom Weapon Creator | Opens the weapon editor |
+| Game Tweaks | Opens weapon tweaks, restored cut behaviors, and the network log |
 
 ### Debug Mode
 
@@ -449,9 +449,10 @@ PC the previous three logs are kept as `opentyrian_net.1.log` through `.3.log`
 — they rotate when a session first writes to the log, so a report from an
 earlier session is in one of the numbered files, not the live one.
 
-**Network Log**, in the Setup menu and on by default, is what writes that file.
-Switched off, the game keeps no network log at all: no new entries, and an
-existing log is left exactly as it is rather than rotated away.
+**Network Log**, under Setup > Enhancements > Game Tweaks > Network and on by
+default, is what writes that file. Switched off, the game keeps no network log at
+all: no new entries, and an existing log is left exactly as it is rather than
+rotated away.
 
 **Clear Net Log**, directly below it, erases that log and starts it over empty.
 It is a Switch and Vita row — those builds have no file manager to prune a log

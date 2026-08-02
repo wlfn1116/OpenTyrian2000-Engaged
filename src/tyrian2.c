@@ -2155,6 +2155,20 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 	}
 }
 
+// Attached sky scenery rides at exactly the layer-2 step. The ride can be authored in eyc
+// (GYGES's later glass structures) OR in fixedmovey with the eycc oscillator swinging eyc
+// symmetrically around 0 on top (GYGES's first chain structure: fixed=2, eyc 0 +/- eyrev),
+// so sum the ride components and skip the oscillator's transient eyc. Homing (yaccel) marks
+// a free flyer, and so does a score pickup: every dropped orb falls at a flat eyc 1, which
+// only COINCIDES with a backMove2 of 1. A delay-gated layer 2 forces backMove2 between 1 and
+// 0 on alternating ticks, so without that exclusion an orb binds and unbinds at tick rate.
+// One predicate for the draw batch and the event spawner: the two must never disagree.
+static bool enemy_rides_layer2(const struct JE_SingleEnemyType *e)
+{
+	return backMove2 > 0 && !e->scoreitem && e->yaccel == 0 &&
+	       (int)e->fixedmovey + (e->eycc != 0 ? 0 : (int)e->eyc) == (int)backMove2;
+}
+
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
 {
 	// JE_drawEnemy(25) is only ever the sky bank (slots 0..24), the one batch whose layer-2
@@ -2168,15 +2182,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 	{
 		if (enemyAvail[i] != 1)
 		{
-			// Attached sky scenery rides at exactly the layer-2 step. The ride can be
-			// authored in eyc (GYGES's later glass structures) OR in fixedmovey with the
-			// eycc oscillator swinging eyc symmetrically around 0 on top (GYGES's first
-			// chain structure: fixed=2, eyc 0 +/- eyrev), so sum the ride components and
-			// skip the oscillator's transient eyc. Homing (yaccel) marks a free flyer.
-			const int skyRide = (int)enemy[i].fixedmovey +
-			                    (enemy[i].eycc != 0 ? 0 : (int)enemy[i].eyc);
-			skyGlueThisEnemy = skyBank && backMove2 > 0 &&
-			                   skyRide == (int)backMove2 && enemy[i].yaccel == 0;
+			skyGlueThisEnemy = skyBank && enemy_rides_layer2(&enemy[i]);
 
 			enemy[i].mapoffset = tempMapXOfs;
 			enemy[i].mapoffset_frac = tempMapXOfs_frac;  // for the health bar's smooth-H match
@@ -3239,9 +3245,10 @@ start_level_first:
 	// A demo is a recorded input stream, so it should be a fixed replay -- but it rode the
 	// clock-seeded RNG (opentyr.c mt_srand(time(NULL))) and never reseeded, so every launch
 	// drew different numbers and the same demo ended somewhere else each time. Reseed to the
-	// constant the network path already uses. This also makes a demo a determinism harness:
-	// two runs, or two platforms, become directly comparable under the self-test.
-	if (play_demo)
+	// constant the network path already uses, on recording as well as playback: a demo taped
+	// against the live stream could never replay against a fresh one. This also makes a demo a
+	// determinism harness: two runs, or two platforms, become directly comparable.
+	if (play_demo || record_demo)
 		mt_srand(32402394);
 
 	initialize_starfield();
@@ -7743,8 +7750,7 @@ static int event_enemy_scroll_catchup(JE_word enemyOffset, const struct JE_Singl
 		layer = 1;
 	else if (enemyOffset == 50)
 		layer = 3;
-	else if (enemyOffset == 0 && backMove2 > 0 && e->yaccel == 0 &&
-	         (int)e->fixedmovey + (e->eycc != 0 ? 0 : (int)e->eyc) == (int)backMove2)
+	else if (enemyOffset == 0 && enemy_rides_layer2(e))
 		layer = 2;  // attached sky scenery rides layer 2 through eyc and/or fixedmovey (see JE_drawEnemy)
 	else
 		return 0;  // free-flying sky enemies are not vertically layer-bound

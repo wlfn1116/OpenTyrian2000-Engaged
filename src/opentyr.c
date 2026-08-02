@@ -330,6 +330,7 @@ typedef enum
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
+	MENU_ITEM_NETWORK_MENU,         // opens the Network submenu
 	MENU_ITEM_NET_LOG,              // write opentyrian_net.log during online play
 	MENU_ITEM_CLEAR_NET_LOG,        // truncate that log (console-only row; see isMenuItemVisible)
 	MENU_ITEM_BOSS_BARS,
@@ -619,6 +620,7 @@ typedef enum
 	MENU_ENEMY_BARS,
 	MENU_GAUGE_GRADIENTS,
 	MENU_GAME_TWEAKS,
+	MENU_NETWORK,
 	MENU_ZICA_LASER,
 	MENU_SUPERSPARKS,
 	MENU_SPARKS_MEGA_PULSE,
@@ -680,11 +682,6 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
 				{ MENU_ITEM_ENHANCEMENTS, "Enhancements...", "Change the gameplay enhancement settings." },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
-				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
-#if defined(__SWITCH__) || defined(__vita__)
-				// Consoles have no file manager to prune the log with, so the game has to offer it.
-				{ MENU_ITEM_CLEAR_NET_LOG, "Clear Net Log", "Erase the net log file and start it over empty." },
-#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
 			},
@@ -726,12 +723,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_EXTRA_PARALLAX, "Extra Parallax:", "Wider parallax: strafing sweeps the whole map." },
 				{ MENU_ITEM_MIRRORED_LAYERS, "Mirrored Layers:", "Over-panned layer edges continue as a mirror." },
 				{ MENU_ITEM_EXTRA_SPARKS, "Extra Sparks:", "Denser, longer-lasting explosion spark showers." },
+				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
+				{ MENU_ITEM_CUSTOM_CREATOR, "Custom Weapon Creator...", "Design your own weapon with a live preview." },
 				{ MENU_ITEM_ENEMY_BARS_MENU, "Enemy Bars...", "Health bars on enemies you've damaged." },
 				{ MENU_ITEM_BOSS_BARS, "Boss Health Bars...", "Style and layout of the boss health bars." },
 				{ MENU_ITEM_GAUGE_GRADS_MENU, "Gauge Gradients...", "Gradient direction of each HUD gauge." },
 				{ MENU_ITEM_GAME_TWEAKS, "Game Tweaks...", "Weapon tweaks and restored cut behaviors." },
-				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
-				{ MENU_ITEM_CUSTOM_CREATOR, "Custom Weapon Creator...", "Design your own weapon with a live preview." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -741,9 +738,22 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_SUPERSPARKS, "Superspark Weapons...", "Weapons whose spark trails differ per episode." },
 				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other weapons that differ between Ep 1-3 and Ep 4-5." },
+				{ MENU_ITEM_NETWORK_MENU, "Network...", "Diagnostics for online play." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
+				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
+				{ -1 }
+			},
+		},
+		[MENU_NETWORK] = {
+			.header = "Network",
+			.items = {
+				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
+#if defined(__SWITCH__) || defined(__vita__)
+				// Consoles have no file manager to prune the log with, so the game has to offer it.
+				{ MENU_ITEM_CLEAR_NET_LOG, "Clear Net Log", "Erase the net log file and start it over empty." },
+#endif
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -1389,6 +1399,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_MUSIC_DEVICE:
 									case MENU_ITEM_ARMOR_ALARM:
 									case MENU_ITEM_LINK_SOUNDS:
+									case MENU_ITEM_NET_LOG:
 									case MENU_ITEM_BOSS_BAR_STYLE:
 									case MENU_ITEM_BOSS_BAR_LAYOUT:
 									case MENU_ITEM_BOSS_BAR_TWO:
@@ -1623,6 +1634,15 @@ static bool runOptionsMenu(MenuId startMenu)
 
 					menuParents[MENU_GAME_TWEAKS] = currentMenu;
 					currentMenu = MENU_GAME_TWEAKS;
+					selectedMenuItemIndexes[currentMenu] = 0;
+					break;
+				}
+				case MENU_ITEM_NETWORK_MENU:
+				{
+					JE_playSampleNum(S_SELECT);
+
+					menuParents[MENU_NETWORK] = currentMenu;
+					currentMenu = MENU_NETWORK;
 					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}

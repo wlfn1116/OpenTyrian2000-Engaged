@@ -64,7 +64,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       11           // increment whenever networking changes might create incompatibility (11: layout fingerprint in the settings block, resync ACK/NAK reasons)
+#define NET_VERSION       13           // increment whenever networking changes might create incompatibility (13: settings block back to 24 bytes, RNG seed removed)
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,

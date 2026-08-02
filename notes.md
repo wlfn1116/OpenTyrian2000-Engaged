@@ -99,6 +99,11 @@ Important details:
   one-pixel sawtooth when an enemy moves against the scroll.
 - Layer 3 can be recorded after its advance; preserve its authored base step.
 - Horizontal normalization uses the ship's actual travel range.
+- Only map structure binds to a layer, and `enemy_rides_layer2` is the single test
+  for it. A sky-bank enemy is bound by moving at exactly the layer step, which every
+  score pickup meets by accident: orbs fall at a flat 1px/tick, and a delay-gated
+  layer 2 alternates `backMove2` between 1 and 0, so an orb would bind and unbind on
+  every tick. Pickups are excluded there.
 
 Mirrored Layers reflects out-of-range map columns within the same row. Reflection
 parameters are stored in each render command so 1x and supersampled replay match.
@@ -433,6 +438,40 @@ The Endless editor has two behaviours:
 The editor is reachable from both centred shop UI and full-width in-game UI.
 Choose its coordinate width from the active menu offset.
 
+## Levels are scripts, not seeded content
+
+There is deliberately no RNG-seed setting. One was built and removed once already,
+so the measurement that killed it is recorded here rather than learned again: a
+Tyrian level is an authored script and almost nothing in it is random. Counted
+across all five `tyrian?.lvl` files:
+
+| | count |
+| --- | --- |
+| events placing a powerup outright (`eventdat` 512/513) | 827 |
+| events that pick a weapon randomly (`eventdat` 533 → `829 + mt_rand() % 6`) | **2** |
+
+Two, in the whole game: episode 1 section 2 and episode 5 section 4. Episode 1
+section 1 — where a new campaign or 2P online game starts — has none, so no seed
+can alter a single drop there. In the arcade modes it is emptier still: event 33
+skips `eventdat` 512/513 outright when `twoPlayerMode || onePlayerAction ||
+superTyrian`, so those 827 do not even fire.
+
+What a reseed *does* move is the random background enemy (`levelEnemy[mt_rand() %
+levelEnemyMax]`, gated by `levelEnemyFrequency`, default 96 → about 3% of ticks),
+enemy spawn jitter, explosion placement, and which of several sounds plays. Real,
+but easy to watch straight past — a player looking at drops sees an identical run
+and reports the seed as broken.
+
+Anything that has to genuinely vary must randomise the SCRIPT at event time, not
+the seed. That is what Endless does, from its own SplitMix64 run seed in
+`endless_rng.c`, which is independent of `mt_rand` and unaffected by any of this.
+
+To count for yourself, parse the level files the way `JE_loadMap` does: u16 section
+count, then that many s32 offsets; at `lvlPos[(n-1)*2]` read 2 chars, 3 × u16
+(mapX/X2/X3), u16 `levelEnemyMax` and that many u16, u16 `maxEvent`, then
+`maxEvent` × 10-byte records (u16 time, u8 type, s16 dat, s16 dat2, s8 dat3, s8
+dat5, s8 dat6, u8 dat4), little-endian throughout.
+
 ## Networking
 
 Both machines simulate both ships, so anything a menu writes into simulation state
@@ -582,7 +621,9 @@ latch.
 **A demo is a fixed input stream, so it must be a fixed replay.** It was not: the RNG
 is seeded from `time(NULL)` at startup (`opentyr.c`) and only a *network* level reseeded
 to the constant 32402394, so every launch played the same demo differently. `JE_game`
-now reseeds on `play_demo` at the same site. Beyond making title demos stop drifting,
+now reseeds on `play_demo` at the same site — and on `record_demo` too, since a demo
+taped against the live stream could never replay against a fresh one. Beyond making
+title demos stop drifting,
 this turns a demo into the cheapest determinism test available — one machine, no
 netcode, no timing, a fixed input stream — and the self-test writes a per-tick trace
 (`demo<N> t <tick> r <draws> p <hash> e <hash> loc <curLoc>`, the same three summaries
@@ -905,7 +946,8 @@ offline rollback selftest — are written by `crashlog_note_net` to their own
 so they cannot bury a real crash report; the crash log keeps only process
 failures and recovered would-be-crashes.
 
-`Setup > Network Log` (`crashlog_set_netlog_enabled`, persisted as
+`Setup > Enhancements > Game Tweaks > Network > Network Log`
+(`crashlog_set_netlog_enabled`, persisted as
 `[enhancements] net_log`, on by default) is the master switch, checked inside
 `crashlog_note_net`/`crashlog_netlog_line` rather than at each of their ~20 call
 sites. Off has to mean the file is untouched, which is why the net log rotates
@@ -938,7 +980,7 @@ reports on relaunch, exactly when someone finally pulls the SD card to look.
 The other crashlog entry points stay no-ops on consoles.
 
 Append-only with no rotation means the console log only ever grows, so
-`Setup > Clear Net Log` (`crashlog_clear_netlog`) truncates it on demand — a
+`Clear Net Log`, alongside it (`crashlog_clear_netlog`), truncates it on demand — a
 console-only row, since on PC the file sits next to the executable and rotates
 itself. It probes for the log before opening it `"w"`, so clearing when there is
 none creates no empty file, and the menu reports which of the two happened. The
