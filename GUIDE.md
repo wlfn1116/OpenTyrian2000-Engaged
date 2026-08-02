@@ -396,7 +396,7 @@ own settings are left alone and restored afterwards.
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 
 **Join by IP Address** takes an address on its own or with a port, like
-`12.345.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
+`123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
 pre-filled with the last address you used, restarts included, so rejoining the
 same host is Join then Enter.
 
