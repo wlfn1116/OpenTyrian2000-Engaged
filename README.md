@@ -74,31 +74,31 @@ OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
 
 Controls are rebindable, and controllers are supported.
 
-## Network multiplayer
+## Online play
 
-Host or join from the Multiplayer menu, or start both players from the command
-line:
+Two-player arcade over the network, set up entirely in-game: **2 Player Online
+Arcade** on the main menu opens a lobby with Host Game, Find LAN Games, and Join
+by IP Address. On a shared network, LAN discovery finds the host without anyone
+typing an address. The game uses UDP port 1333.
 
-```text
-opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
-```
+- **Rollback netcode** by default. Your ship answers input on the tick it
+  happens, the same feel as single player, while the other ship is predicted and
+  silently corrected when its real input arrives. The original delay-based
+  lockstep is still selectable in the host's lobby.
+- **Desync recovery.** If the two machines drift apart, the host ships its whole
+  game state across and both resume from it, instead of playing out two different
+  levels.
+- **Save and resume.** Save from the shop mid-session, or when a session drops
+  under you. Online games share the regular 2-player save page, so a run can move
+  between couch co-op and online.
+- **Cross-platform.** Windows, Linux, Switch and Vita builds of the same version
+  play together; the protocol version is checked at connect.
+- A ping readout in the outpost, per-player gauge tagging in the HUD, and a
+  session log for diagnosing desyncs.
 
-`HOSTNAME` is the other player's address and `NUM` is `1` or `2`. The game uses
-UDP port 1333.
-
-Netplay uses rollback netcode by default: your ship answers input on the tick it
-happens, the same as single player, while the other ship is predicted and
-corrected when its real input arrives. The host's choice applies to both
-machines. Everything else — the lobby rows, desync recovery, ping, saving and
-resuming — is in [GUIDE.md](GUIDE.md#online-play).
-
-Config keys, `enhancements` section:
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `net_rollback` | `on` | Rollback netcode; host-authoritative for the session |
-| `net_delay` | `3` | Lockstep only: ticks of input delay |
-| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player. Runs each tick twice; results in `rollback_selftest.log`. Also a debug-menu row that can arm it mid-level |
+The host's lobby choices bind the session; joiners keep their own settings, which
+are restored afterwards. [GUIDE.md](GUIDE.md#online-play) covers each lobby row,
+the saving and resuming flow, and what to attach to a desync report.
 
 ## Building
 

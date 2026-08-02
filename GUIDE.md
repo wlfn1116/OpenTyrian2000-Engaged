@@ -11,7 +11,7 @@ play, the weapon editor, and the cut content that has been switched back on.
 | Start an Endless run | Main menu > 1 Player Endless |
 | Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
 | Smooth out scrolling | Setup > Graphics > Sub-pixel |
-| Play with a friend | Main menu > Multiplayer |
+| Play with a friend | Main menu > 2 Player Online Arcade |
 | Design a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Change boss and enemy health bars | Setup > Enhancements |
 | Turn restored content on or off | Setup > Enhancements > Game Tweaks |
@@ -374,9 +374,10 @@ quick way to see the shield is topped up.
 
 ## Online play
 
-**Multiplayer** on the main menu offers Host Game, Find LAN Games, and Join by IP
-Address. The game uses UDP port 1333. On the same network, Find LAN Games saves
-anyone typing an address.
+**2 Player Online Arcade** on the main menu opens the Multiplayer screen: Host
+Game, Find LAN Games, Join by IP Address, and Your Nickname, which is the name
+the other player sees. The game uses UDP port 1333. On the same network, Find LAN
+Games saves anyone typing an address.
 
 The menu refuses to start a netgame while the FPS Cap is below 35, and says so
 instead of showing its options. The simulation runs at 35 Hz, so a lower render
