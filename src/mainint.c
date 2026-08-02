@@ -6251,6 +6251,15 @@ static bool hud_lives_shown(void)
 	return onePlayerAction || twoPlayerMode;
 }
 
+/* Left edge of player 2's collapsed lives count, right-aligned so its last painted pixel lands 3px
+ * left of the icon at PLAYFIELD_WIDTH + 7 -- the mirror of player 1's count starting 3px right of
+ * its icon. The icon paints columns 0..10 of its 12px cell, and FULL_SHADE adds a 1px outline.
+ */
+static int hud_lives_count_left(const char *count)
+{
+	return PLAYFIELD_WIDTH + 4 - JE_textWidth(count, TINY_FONT);
+}
+
 int hud_top_left_right_edge(void)
 {
 	int right = 0;
@@ -6284,9 +6293,9 @@ int hud_top_right_left_edge(void)
 	const uint extra = *player[1].lives - 1;
 
 	// Mirror of the above: the label is right-aligned to PLAYFIELD_WIDTH + 22 and the lives
-	// row starts at PLAYFIELD_WIDTH + 7 stepping left.
+	// row starts at PLAYFIELD_WIDTH + 7 stepping left. "99" stands in for the widest count.
 	const int name_left = PLAYFIELD_WIDTH + 22 - hud_player_name_width(1);
-	const int lives_left = (extra >= 5) ? PLAYFIELD_WIDTH - 13
+	const int lives_left = (extra >= 5) ? hud_lives_count_left("99")
 	                     : (extra >= 1) ? PLAYFIELD_WIDTH + 7 - ((int)extra - 1) * 12
 	                                    : PLAYFIELD_WIDTH + 7;
 
@@ -6453,8 +6462,10 @@ void JE_inGameDisplays(void)
 			if (extra_lives >= 5)
 			{
 				blit_sprite2(VGAScreen, tempW, y, spriteSheet9, 285);
-				tempW = (temp == 0) ? 45 : PLAYFIELD_WIDTH - 13;
 				sprintf(tempstr, "%d", extra_lives);
+				// Both counts sit 3px from the icon: P1's runs right from x45, P2's is right-aligned
+				// so its last pixel lands 3px left of the icon, whatever the digit count.
+				tempW = (temp == 0) ? 45 : hud_lives_count_left(tempstr);
 				JE_textShade(VGAScreen, tempW, y + 3, tempstr, 15, 1, FULL_SHADE);
 			}
 			else if (extra_lives >= 1)

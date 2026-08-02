@@ -30,9 +30,10 @@
 #pragma comment(lib, "psapi.lib")
 
 // Two logs, written next to the executable.  The crash log holds every kind of hard process
-// failure (exception, hang, abort, CRT fatal) and rotates at startup; the net log holds netplay
-// health events (desyncs, stalls, resyncs) so they can't bury a real crash report, and rotates
-// on its first entry of the session.
+// failure (exception, hang, abort, CRT fatal); the net log holds netplay health events (desyncs,
+// stalls, resyncs) so they can't bury a real crash report.  Both rotate once per session, so the
+// live file always belongs to the running process: the crash log at startup, the net log as soon
+// as the config has been read (crashlog_netlog_begin_session).
 #define LOG_STEM        "opentyrian_log"
 #define NETLOG_STEM     "opentyrian_net"
 #define LOG_FILENAME    LOG_STEM ".log"
@@ -54,6 +55,10 @@ static volatile LONG s_reporting = 0;
 // file).  Each log tracks its own flag.
 static volatile LONG s_logOpened = 0;
 static volatile LONG s_netLogOpened = 0;
+
+// Set once the previous session's net log has been moved aside this run, so it happens exactly
+// once whether it was the startup call or a first entry that got there first.
+static volatile LONG s_netLogRetired = 0;
 
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static volatile LONG s_netLogEnabled = 1;
@@ -157,12 +162,22 @@ static void rotate_log_chain(const char *stem)
 	}
 }
 
-// Rotated on the session's first entry rather than at startup, so a session that logs nothing --
-// including one with Network Log switched off -- leaves the previous log live to be read.
+// Move the previous session's log into the .1..N chain, once per run. Launches that never log
+// don't thin the chain: rotate_log_chain leaves the older generations alone when there is no
+// live log to preserve.
+static void retire_previous_net_log(void)
+{
+	if (InterlockedExchange(&s_netLogRetired, 1) == 0)
+		rotate_log_chain(NETLOG_STEM);
+}
+
+// The chain is normally rotated at startup, so the live log this opens is always the running
+// session's; retiring here as well covers a Network Log switched on after that point. The
+// truncate-on-first-write in open_log_file covers the fallback locations (working directory,
+// %TEMP%), which the exe-directory rotation cannot reach.
 static FILE *open_net_log(void)
 {
-	if (s_netLogOpened == 0)
-		rotate_log_chain(NETLOG_STEM);
+	retire_previous_net_log();
 	return open_log_file(NETLOG_FILENAME, &s_netLogOpened);
 }
 
@@ -174,6 +189,17 @@ void crashlog_set_netlog_enabled(bool enabled)
 bool crashlog_get_netlog_enabled(void)
 {
 	return s_netLogEnabled != 0;
+}
+
+// Retire the previous session's net log into the .1..N chain, so opentyrian_net.log only ever
+// holds the run that is going now (and is absent when this run logged nothing). Called after the
+// config load, late enough for the master switch to be the saved one: off still means untouched.
+void crashlog_netlog_begin_session(void)
+{
+	if (!crashlog_get_netlog_enabled())
+		return;
+
+	retire_previous_net_log();
 }
 
 // Truncate the live net log wherever open_log_file would have found it, first hit wins. Only an
@@ -775,8 +801,8 @@ void watchdog_init(void)
 
 // No crash handler or stack walker here, but netplay still needs its health log -- a desync
 // against a console peer otherwise leaves no trace on that side. Reduced entries (header +
-// detail only) append to opentyrian_net.log in the user directory; append-only because there
-// is no startup rotation, so earlier sessions survive a relaunch.
+// detail only) go to opentyrian_net.log in the user directory, appended within a session but
+// never across one: crashlog_netlog_begin_session retires the previous log first.
 
 #include "config.h"
 #include "file.h"
@@ -784,12 +810,48 @@ void watchdog_init(void)
 
 #include <time.h>
 
+#define NETLOG_FILENAME "opentyrian_net.log"
+#define NETLOG_SPARE    "opentyrian_net.1.log"  // the one previous session kept, in place of PC's chain
+
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static bool s_netLogEnabled = true;
 
+// Backstop for a failed retire (read-only card, rename unsupported): the session's first entry
+// truncates whatever is there, later ones append.
+static bool s_netLogOpened = false;
+
+// Set once the previous session's log has been moved aside this run.
+static bool s_netLogRetired = false;
+
 static FILE *netlog_open(const char *mode)
 {
-	return dir_fopen(get_user_directory(), "opentyrian_net.log", mode);
+	return dir_fopen(get_user_directory(), NETLOG_FILENAME, mode);
+}
+
+// Move the previous session's log aside and leave none behind, so opentyrian_net.log is always
+// the running session's -- and absent when this one logged nothing.
+static void retire_previous_net_log(void)
+{
+	if (s_netLogRetired)
+		return;
+	s_netLogRetired = true;
+
+	const char *dir = get_user_directory();
+	char live[600], spare[600];
+	snprintf(live, sizeof(live), "%s/%s", dir, NETLOG_FILENAME);
+	snprintf(spare, sizeof(spare), "%s/%s", dir, NETLOG_SPARE);
+
+	remove(spare);        // rename() does not replace an existing destination here
+	rename(live, spare);  // nothing to keep -> fails harmlessly
+}
+
+// Off means untouched, so a log switched on later retires at its first entry instead.
+void crashlog_netlog_begin_session(void)
+{
+	if (!s_netLogEnabled)
+		return;
+
+	retire_previous_net_log();
 }
 
 static void netlog_write(const char *event, const char *detail)
@@ -797,9 +859,12 @@ static void netlog_write(const char *event, const char *detail)
 	if (!s_netLogEnabled)
 		return;
 
-	FILE *f = netlog_open("a");
+	retire_previous_net_log();
+
+	FILE *f = netlog_open(s_netLogOpened ? "a" : "w");
 	if (f == NULL)
 		return;
+	s_netLogOpened = true;
 
 	time_t now = time(NULL);
 	const struct tm *lt = localtime(&now);

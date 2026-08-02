@@ -699,7 +699,9 @@ int networkHostStartSelect(void)
 
 	/* See gameplaySelect() for rationale behind using a fixed 320px center. */
 	const int xCenter = 320 / 2;
-	const int yMenuItems = 70;
+	// Only two options, so center the pair on the screen rather than stacking them under
+	// the header: the block spans dyMenuItems + hMenuItem, so 81 puts its center on y=99.5.
+	const int yMenuItems = 81;
 	const int dyMenuItems = 24;  // half a row of breathing space between the two options
 	const int hMenuItem = 13;
 	int wMenuItem[COUNTOF(menu_item)] = { 0 };

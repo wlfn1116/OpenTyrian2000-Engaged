@@ -21,7 +21,7 @@ void crashlog_note(const char *event, const char *detail);
 // crash log) instead of the crash log. For netplay health events -- desyncs, stalls, resyncs --
 // which are link/session trouble rather than process failures, so a lossy session can't bury a
 // real crash report. All platforms: consoles write a reduced entry (header + detail, no stack)
-// appended to opentyrian_net.log in the user directory.
+// to opentyrian_net.log in the user directory.
 void crashlog_note_net(const char *event, const char *detail);
 
 // Short timestamped net-log entry with no context/stack body. For session bookkeeping (the
@@ -35,9 +35,15 @@ void crashlog_netlog_line(const char *event, const char *detail);
 void crashlog_set_netlog_enabled(bool enabled);
 bool crashlog_get_netlog_enabled(void);
 
+// Start this process's net log: the previous session's opentyrian_net.log is retired (into the
+// .1..3 chain on PC, to .1.log on consoles) so the live file only ever holds the running session,
+// and is absent when this one logs nothing. Call once from main() AFTER the config is read, so
+// the switch above is the saved one, and before any netplay. No-op while the switch is off.
+void crashlog_netlog_begin_session(void);
+
 // Zero the network log: an existing opentyrian_net.log is truncated to nothing, and none is
 // created if there isn't one. Behind the consoles' "Clear Net Log" row, where there is no file
-// manager to prune a log that has grown across sessions. Returns true if there was one to clear.
+// manager to drop this session's log and start it over. Returns true if there was one to clear.
 bool crashlog_clear_netlog(void);
 
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c

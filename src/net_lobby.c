@@ -1056,7 +1056,7 @@ bool networkLobby(void)
 
 		case ITEM_NAME:
 			JE_playSampleNum(S_SELECT);
-			if (lobbyTextEntry("Multiplayer", "Your name:", name_buf, sizeof(name_buf), filterName, false))
+			if (lobbyTextEntry("Multiplayer", "Your Nickname:", name_buf, sizeof(name_buf), filterName, false))
 				network_set_player_name(name_buf);
 			break;
 

@@ -495,10 +495,15 @@ attempt that fails — and a session-end line with totals. A desync entry also
 carries a snapshot of the disputed frame as that machine computed it, so when
 reporting a desync, include the log from **both** machines: comparing the two
 snapshots points straight at what diverged. A log whose
-session has no entries between start and end means the session was healthy. On
-PC the previous three logs are kept as `opentyrian_net.1.log` through `.3.log`
-— they rotate when a session first writes to the log, so a report from an
-earlier session is in one of the numbered files, not the live one.
+session has no entries between start and end means the session was healthy.
+
+The log covers the run that wrote it and nothing else: each launch sets the
+previous one aside, so `opentyrian_net.log` is always the copy belonging to the
+game you have open now — and there is no file at all until that run logs
+something. Earlier runs are kept beside it, three deep on PC as
+`opentyrian_net.1.log` through `.3.log` and one deep on Switch and Vita as
+`opentyrian_net.1.log`, so last night's report is in a numbered file rather
+than the live one. Launches that never go online leave all of them alone.
 
 **Network Log**, under Setup > Enhancements > Game Tweaks > Network and on by
 default, is what writes that file. Switched off, the game keeps no network log at
@@ -506,8 +511,8 @@ all: no new entries, and an existing log is left exactly as it is rather than
 rotated away.
 
 **Clear Net Log**, directly below it, erases that log and starts it over empty.
-It is a Switch and Vita row — those builds have no file manager to prune a log
-that has grown across sessions with, while on PC you can delete the file beside
+It is a Switch and Vita row — those builds have no file manager to drop what
+this session has logged so far with, while on PC you can delete the file beside
 the game yourself — and it only appears while Network Log is on. The row reports
 what the press did: *Cleared*, or *No Log* when there was nothing to erase.
 

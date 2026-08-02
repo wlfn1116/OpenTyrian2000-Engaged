@@ -1034,15 +1034,21 @@ failures and recovered would-be-crashes.
 (`crashlog_set_netlog_enabled`, persisted as
 `[enhancements] net_log`, on by default) is the master switch, checked inside
 `crashlog_note_net`/`crashlog_netlog_line` rather than at each of their ~20 call
-sites. Off has to mean the file is untouched, which is why the net log rotates
-lazily — `open_net_log` runs `rotate_log_chain` on the session's first entry,
-not `install_crash_handler` at startup. Startup rotation could not honour the
-setting anyway (the handler is installed long before the config is read), and
-it also meant every launch shifted the chain, so three launches without netplay
-buried a report in `.3.log` and a fourth discarded it. The crash log keeps its
-startup rotation: it must be rotated before the handlers that write it are
-armed, and its writers can be fault handlers, where MoveFileEx calls do not
-belong.
+sites.
+
+The live `opentyrian_net.log` holds the running session and nothing else, so
+"the log" and "this run" are the same object when someone is asked for one.
+`crashlog_netlog_begin_session` (`retire_previous_net_log`, once-only latch)
+rotates the chain, and `main()` calls it right after `JE_loadConfiguration` —
+not from `install_crash_handler`, which runs long before the config is read and
+so could not honour the switch (off must leave the file untouched). `open_net_log`
+retires too, through the same latch, which covers a Network Log switched on
+mid-session: its first entry rotates rather than truncating the older log away.
+Rotating every launch does not thin the chain, because `rotate_log_chain`
+returns early when there is no live log to preserve — a launch that never goes
+online leaves `.1..3` where they are. The crash log keeps its startup rotation:
+it must be rotated before the handlers that write it are armed, and its writers
+can be fault handlers, where MoveFileEx calls do not belong.
 
 Every online session is bracketed in the net log: `network_connect` writes a
 `NETWORK SESSION START` line (role, netcode, recovery, delay) the moment the
@@ -1057,17 +1063,20 @@ predating the net-log split there was no way to tell which had happened.)
 
 On non-Windows (Switch/Vita), `crashlog_note_net` and `crashlog_netlog_line`
 are real now, not stubs: reduced entries (timestamped header + detail, no
-stack — there is no walker there) appended to `opentyrian_net.log` in
-`get_user_directory()`. Append-only deliberately: consoles have no startup
-rotation, and truncate-on-first-write would destroy the previous session's
-reports on relaunch, exactly when someone finally pulls the SD card to look.
-The other crashlog entry points stay no-ops on consoles.
+stack — there is no walker there) written to `opentyrian_net.log` in
+`get_user_directory()`, appended within a session and never across one. There is
+no MoveFileEx chain there, so `retire_previous_net_log` keeps a single spare
+generation by hand: `remove` the stale `opentyrian_net.1.log` (rename will not
+replace a destination on these libcs), then `rename` the live log onto it — a
+failure at either step is harmless, because the session's first entry opens `"w"`
+and later ones `"a"`, which makes the log session-only even where the rename
+could not run. The other crashlog entry points stay no-ops on consoles.
 
-Append-only with no rotation means the console log only ever grows, so
-`Clear Net Log`, alongside it (`crashlog_clear_netlog`), truncates it on demand — a
-console-only row, since on PC the file sits next to the executable and rotates
-itself. It probes for the log before opening it `"w"`, so clearing when there is
-none creates no empty file, and the menu reports which of the two happened. The
+`Clear Net Log`, alongside the switch (`crashlog_clear_netlog`), truncates the
+live log on demand — a console-only row, since on PC the file sits next to the
+executable and can be deleted there. It probes for the log before opening it
+`"w"`, so clearing when there is none creates no empty file, and the menu reports
+which of the two happened. The
 row is compiled in only for Switch/Vita and is further hidden while Network Log
 is off, through the new `isMenuItemVisible` filter in `runOptionsMenu`: the menu
 loop now builds a per-frame list of visible rows, so a hidden row occupies no
