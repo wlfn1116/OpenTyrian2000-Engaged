@@ -1,88 +1,54 @@
-# OpenTyrian2000 Engaged player guide
+# OpenTyrian2000 Engaged — player guide
 
-This guide covers the features added by this fork. The original Tyrian campaigns
-work as before; the arcade modes gain one rule, described below.
+The original Tyrian campaigns play exactly as they always did. This guide is
+about what the fork adds on top: Endless mode, the new graphics settings, online
+play, the weapon editor, and the cut content that has been switched back on.
 
-## Quick start
+## Where to find things
 
-| Task | Menu |
+| I want to | Menu |
 | --- | --- |
 | Start an Endless run | Main menu > 1 Player Endless |
-| Enable high-refresh rendering | Setup > Graphics > Smooth Motion |
-| Smooth slow scrolling | Setup > Graphics > Sub-pixel |
-| Edit boss or enemy bars | Setup > Enhancements |
-| Create a weapon | Setup > Enhancements > Custom Weapon Creator |
-| Select MIDI playback | Setup > Sound > Music Synth |
-| Toggle the low-armor siren | Setup > Sound > Armor Alarm |
-| Toggle the two-player fuse/unfuse sounds | Setup > Sound > Link Sounds |
+| Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
+| Smooth out scrolling | Setup > Graphics > Sub-pixel |
+| Play with a friend | Main menu > Multiplayer |
+| Design a weapon | Setup > Enhancements > Custom Weapon Creator |
+| Change boss and enemy health bars | Setup > Enhancements |
+| Turn restored content on or off | Setup > Enhancements > Game Tweaks |
+| Use a SoundFont instead of OPL | Setup > Sound > Music Synth |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
-| Turn the network log off | Setup > Enhancements > Game Tweaks > Network |
-| Erase the network log (Switch/Vita) | Setup > Enhancements > Game Tweaks > Network |
-| Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
-| Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
-| Scale arcade shield/armor with lives | Setup > Enhancements > Game Tweaks > Arcade Life Boost |
+| Reach the jukebox, Destruct, and SuperTyrian | Title screen > Extra |
+| Turn on invincibility or a cheat without the key combo | Esc > Extra |
 
-## Arcade modes
+## Graphics settings
 
-### Life counter
+Three rows under **Setup > Graphics** are worth setting once, before anything
+else.
 
-The row of ship icons beside your name counts the lives you have, not the spare
-ones: one icon on your last life, two on your second-to-last, and so on. It is
-the same number the outpost's **Lives:** row shows. Past four the row collapses
-to a single icon and a figure, so eleven lives reads as one ship and "11".
+**Smooth Motion** interpolates the game between simulation ticks so it presents
+at your display's refresh rate instead of 35 Hz. In single-player it also moves
+your ship at the display rate, which cuts input latency. Leave it on.
 
-### Shield ceiling mark
+**Sub-pixel** renders the playfield internally at Auto, 1x–5x, or Native.
+Background scrolling is where it shows the most: without it, distant layers creep in
+whole pixels and visibly step. It only pays off with Smooth Motion on. **Native**
+renders one internal sample per screen pixel, so it follows your monitor rather
+than stopping at 5x (11x on a 4K display, shown beside the setting) — pair it
+with the **Native** scaler, which outputs at the exact window size. Auto stops at
+5x because the cost scales with your resolution.
 
-The shield gauge carries a thin line marking where a full charge would reach. It
-was already there in the one-player HUD; it is now on both gauges of the
-two-player HUD as well, and it is always drawn — there is nothing to switch on.
-It disappears while the gauge is at its ceiling, which is how you can tell the
-shield is topped up at a glance.
+**Filter** picks how sub-pixel output is resolved: Sharp, Smooth, or none.
 
-### Arcade Life Boost
-
-**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, on by default.
-
-With it on, in 1 Player Arcade, 2 Player Arcade, Timed Battle and 2 Player Online
-Arcade, lives buy durability as well as retries. Each ship's shield and armor
-ceilings scale with its own life count: at 1 life they are exactly the vanilla
-numbers, and at the 11-life maximum both gauges reach a full bar. Switched off,
-every arcade ship keeps the vanilla hull and shield it always had.
-
-| Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
-| --- | --- | --- | --- | --- |
-| 1 Player Arcade | Stalker | 15 | 10 | 28 |
-| 2 Player (and Online) | Silver Ship | 10 | 10 | 28 |
-| 2 Player (and Online) | Dragonwing | 10 | 10 | 28 |
-
-The two ships in a two-player game scale independently, each off its own life
-count. Growth is even across the range — a mid-run six lives puts the Stalker at
-22 armor and 19 shield.
-
-The ceilings move the moment the life count does, and both gauges repaint on the
-spot rather than waiting for the next hit:
-
-- **Gaining a life mid-level** raises both ceilings at once. Damage already taken
-  carries across proportionally, so a ship at half armor stays at half armor —
-  the extra hull is a larger bar, not a free repair.
-- **Losing a life** drops both ceilings, then the usual respawn refill fills the
-  smaller gauges.
-- **The outpost between levels** restores armor to the current ceiling, and the
-  next level starts you on half a shield charge off the current ceiling, as ever.
-
-Armor pickups now top up to the current ceiling rather than to a flat 28, so at
-low life counts a light hull holds less than it used to.
-
-Online games need no extra traffic for this: both machines derive the ceilings
-from the life counts they already agree on. The row decides how much damage each
-ship survives, so like every other setting that reaches the simulation it is
-**host-authoritative** — the host's choice binds the session, and the joiner's own
-setting is left untouched and restored when the session ends.
+On the **FPS Cap** row, Left/Right steps by 5, or type a number directly.
+Minimum 5; 0 or Backspace clears it to Uncapped. Don't set it below 35 if you
+plan to play online — see [Online play](#online-play). On Switch and Vita,
+pressing Select on the row opens the system keypad.
 
 ## Endless mode
 
-Endless mode builds a run from the shipped Tyrian levels. Levels are not edited;
-enemy scaling and sector modifiers supply the extra difficulty.
+Endless mode builds a run out of the shipped Tyrian levels. The levels
+themselves are unedited; the difficulty comes from depth scaling and sector
+modifiers.
 
 The loop is:
 
@@ -90,18 +56,19 @@ The loop is:
 outpost -> choose a course -> clear the zone -> outpost
 ```
 
-A run has no last zone, however there is a credits roll after clearing Zone 100. Death ends it unless you own a revive.
+There is no last zone. Death ends the run unless you own a revive. Clearing
+Zone 100 rolls the credits, then the run carries on.
 
 ### Starting a run
 
-The start screen accepts a seed and a Hardcore setting.
+The start screen takes a seed and a Hardcore setting.
 
 - A blank seed generates a random one.
 - The same seed and choices reproduce levels, music, courses, shops, and perks.
-- Combat randomness is not fixed by the seed.
+- Combat randomness is not seeded.
 - Hardcore disables saving. Quitting or dying ends the run.
 
-Difficulty changes starting cash and the rate of depth scaling:
+Difficulty sets your starting cash and how fast depth scaling ramps:
 
 | Difficulty | Starting cash | Ramp |
 | --- | ---: | ---: |
@@ -117,8 +84,7 @@ an Atomic RailGun at power 1.
 
 ### Depth scaling
 
-Different enemy stats reach their caps at different times. On Normal, the rough
-schedule is:
+Enemy stats reach their caps at different depths. On Normal, roughly:
 
 | Stat | Near its cap |
 | --- | ---: |
@@ -130,11 +96,10 @@ schedule is:
 | Ordinary enemy health | Zone 100 |
 | Elite and champion share | Zone 118 |
 
-The rising tide starts near zone 28. It keeps adding shots per volley and raises
-shot damage and the special-enemy share after the ordinary ramps flatten.
-
-Player contact damage starts rising near zone 35 and eventually caps at +500%.
-Course generation also becomes less generous in deep runs.
+A rising tide starts near zone 28 and keeps adding shots per volley, shot damage
+and special-enemy share after the ordinary ramps flatten. Contact damage starts
+climbing near zone 35 and caps at +500%. Course generation also turns stingier
+in deep runs.
 
 ### Elites and champions
 
@@ -144,27 +109,21 @@ Course generation also becomes less generous in deep runs.
 | Elite | 2x to 4x | Normal | +25% | $150 + $40/zone, capped at $2,500 |
 | Champion | 2x to 4x | ~1.7x fire rate, +50% damage | +50% | $350 + $90/zone, capped at $6,000 |
 
-Elites and champions are palette-shifted. Linked enemy parts share one tier and
-pay one bounty. Bosses can also receive a special tier.
+Both tiers are palette-shifted, so you can spot them. Linked enemy parts share
+one tier and pay one bounty. Bosses can be promoted too.
 
-The natural special-enemy share starts at 2%, reaches about 25% near zone 37,
-and caps at 80%. Sector modifiers can override it:
-
-- Elite Pack sets the share to 50%.
-- Apex makes every enemy elite or champion.
-- Legion makes every enemy a champion.
-- No Champions downgrades champions to elites.
-- No Elites removes both tiers.
-- Giant Killer removes their health multiplier.
-- Clean Signals removes their offensive bonuses.
+The natural share starts at 2%, reaches about 25% near zone 37, and caps at 80%.
+Sector modifiers override it: Elite Pack forces 50%, Apex makes everything elite
+or champion, Legion makes everything a champion, No Champions demotes champions
+to elites, No Elites removes both, Giant Killer strips their health multiplier,
+and Clean Signals strips their weapon bonuses.
 
 ### Sector modifiers
 
-Course cards list threats in red and boons in green. Hostile modifiers increase
-both danger and payout. Most boons reduce one or both.
+Course cards list threats in red and boons in green. Hostile modifiers raise
+danger and payout together; most boons lower one or both.
 
-`Pays` is a multiple of the base clear reward. For example, `+1.0` adds one base
-reward.
+`Pays` is a multiple of the base clear reward, so `+1.0` adds one base reward.
 
 #### Threats
 
@@ -175,7 +134,7 @@ reward.
 | Swift | Faster enemy shots | +0.8 |
 | Devastating | More enemy shot damage | +1.0 |
 | Enrage | Enemy fire accelerates over time | +1.0 |
-| Gravity Well | Pulls the ship down or along a fixed random heading | +0.8 |
+| Gravity Well | Pulls the ship down, or along a fixed random heading | +0.8 |
 | Elite Pack | 50% special enemies | +2.0 |
 | Apex | 100% special enemies | +4.0 |
 | Legion | 100% champions | +5.0 |
@@ -194,15 +153,15 @@ reward.
 | Seeker | Enemy shots make one delayed correction | +1.4 |
 | Static | Damage drains and briefly disables generator recharge | +1.1 |
 | Retaliation | Kills briefly speed up enemy fire | +1.5 |
-| Backfire | Kills briefly jam the player's guns | +1.2 |
+| Backfire | Kills briefly jam your guns | +1.2 |
 | Burnout | Backfire plus stacking fire and damage penalties | +1.8 |
 | Misfire | Kills stack a player damage penalty | +1.4 |
-| Overheat | Kills speed up the guns but damage the hull over time | +1.4 |
+| Overheat | Kills speed up your guns but damage the hull over time | +1.4 |
 | Marked | Strengthens the next boss | - |
-| Nitro | Increases player damage, but any hit is fatal | - |
+| Nitro | More player damage, but any hit is fatal | - |
 | Dud | Disables superbombs | - |
 
-Enrage is time-based. Retaliation is refreshed by kills.
+Enrage is on a timer. Retaliation is refreshed by kills.
 
 #### Boons
 
@@ -211,7 +170,7 @@ Enrage is time-based. Retaliation is refreshed by kills.
 | Fragile | Less enemy health | -0.5 |
 | Bounty | Larger clear reward | +3.0 |
 | Cursed | Large reward; next shop is empty | +4.0 |
-| Turbodrive | Kills briefly speed up the player's guns | 0 |
+| Turbodrive | Kills briefly speed up your guns | 0 |
 | Overcharge | More player damage | 0 |
 | Overdrive | Turbodrive and Overblast | 0 |
 | Overblast | Kills stack player damage | 0 |
@@ -232,7 +191,7 @@ Enrage is time-based. Retaliation is refreshed by kills.
 
 #### Danger ranks
 
-The score includes sector modifiers and a small level-specific adjustment.
+The score covers the sector's modifiers plus a small level-specific adjustment.
 
 | Grade | Label | Score |
 | --- | --- | ---: |
@@ -250,24 +209,20 @@ The score includes sector modifiers and a small level-specific adjustment.
 
 ### Chart-a-Course
 
-The course screen offers two to five routes, ordered from safest to most
-dangerous. Equal grades are ordered by payout. Each card shows:
+The course screen offers two to five routes, safest first, with equal grades
+ordered by payout. Each card shows a generated sector name, the danger label and
+grade, the active threats and boons, and the exact clear payout.
 
-- a generated sector name;
-- danger label and grade;
-- active threats and boons;
-- the exact clear payout.
+Radar reveals which level is underneath. Surveyor adds routes. Recently played
+levels are avoided.
 
-Radar reveals the underlying level. Surveyor adds routes. Recently played levels
-are avoided.
-
-Queued Sabotage charges remove threats from the chosen route. The card updates
-before launch, including the lower payout.
+Queued Sabotage charges strip threats from the route you pick, and the card
+updates before launch — including the lower payout.
 
 ### Outpost and E-Shop
 
-The normal shop receives random stock on each visit. Data Cubes becomes the
-E-Shop entry; Ship Specs becomes the perk list.
+The normal shop restocks randomly on every visit. Data Cubes becomes the E-Shop
+entry, and Ship Specs becomes the perk list.
 
 | E-Shop item | Base cost | Result |
 | --- | ---: | --- |
@@ -283,20 +238,20 @@ E-Shop entry; Ship Specs becomes the perk list.
 | Bomb | $2,500 + $400/zone | Adds one superbomb; restocks cost more |
 | Gamble | $25,000 + $2,000/zone | Applies a random good or bad outcome |
 
-Only one kill-fire buff can be bought per recharge period. Its price and strength
-use the cash held when the outpost opened, not the balance after shopping.
+You can buy only one kill-fire buff per recharge period, and its price and
+strength use the cash you walked in with, not what is left after shopping.
 
-The gamble has about 40 outcomes. These range from cash, equipment, perks, and
-revives to lost cash, stolen equipment, shop tax, or a next-sector curse. It is
-high variance and is not required for progression.
+The gamble has about 40 outcomes, from cash, equipment, perks and revives down to
+lost cash, stolen equipment, a shop tax, or a curse on the next sector. It is
+high variance and no run needs it.
 
 ### Perks
 
-Perks last for the run and stack up to their listed limit.
+Perks last the whole run and stack up to their listed limit.
 
-Free picks occur after zone 1 and every fourth zone after it. Milestones,
-Breakthrough, the E-Shop, and the gamble can add more. Normal picks show three
-choices, bought picks show four, and milestone picks show five.
+Free picks come after zone 1 and every fourth zone after that. Milestones,
+Breakthrough, the E-Shop and the gamble can add more. Normal picks offer three
+choices, bought picks four, milestone picks five.
 
 | Perk | Per stack | Max |
 | --- | --- | ---: |
@@ -326,16 +281,19 @@ choices, bought picks show four, and milestone picks show five.
 | Ordnance Reserves | +30% sidekick ammo and special duration | 4 |
 | Failsafe | About 0.25 seconds of invulnerability after hull damage | 2 |
 
-Opening Salvo charges after two seconds without main-gun fire. The generator
-gauge turns green when ready. Firing starts a one-second window with 2.5x damage
-and no generator cost. The window also scales specials. Every zone starts
-charged.
+A few that need more than one line:
 
-Ordnance Reserves increases magazine size without increasing total refill time.
-Rapid Recharge shortens the refill itself and also handles charge-type sidekicks.
+- **Opening Salvo** charges after two seconds without main-gun fire, and the
+  generator gauge turns green when it is ready. Firing opens a one-second window
+  with 2.5x damage, no generator cost, and scaled specials. Every zone starts
+  charged.
+- **Ordnance Reserves** grows the magazine without lengthening the total refill.
+  **Rapid Recharge** shortens the refill itself and also covers charge-type
+  sidekicks.
 
-Every perk screen includes Take the Cash. The buyout grows with depth, offer
-count, and total owned perk stacks. Scavenger increases it.
+Every perk screen also offers **Take the Cash**. The buyout grows with depth,
+with the number of offers, and with how many perk stacks you already own.
+Scavenger raises it.
 
 ### Economy
 
@@ -345,16 +303,14 @@ modifier reward   = base multiplied by the sum of modifier rewards
 minimum payout    = one quarter of base
 ```
 
-A small level-specific term separates otherwise equal routes. The course card
-shows the final payout.
+A small level-specific term breaks ties between otherwise equal routes. The
+course card always shows the final figure.
 
-Interest starts at 10% of unspent cash, capped at `$3,000 + $80/zone`.
-Financier raises the rate and cap and discounts the normal equipment shop. It
-does not discount the E-Shop.
+Interest pays 10% of unspent cash, capped at `$3,000 + $80/zone`. Financier
+raises both the rate and the cap and discounts the normal shop, but not the
+E-Shop. Elite and champion bounties pay on the kill. Shop prices rise with depth.
 
-Elite and champion bounties are paid on kill. Shop prices rise with depth.
-
-### Pickups
+### Pickups and milestones
 
 | Original pickup | Endless result |
 | --- | --- |
@@ -362,286 +318,260 @@ Elite and champion bounties are paid on kill. Shop prices rise with depth.
 | Random-special event drop | Front or rear weapon power-up |
 | Power-up for a maxed port | Other port, then a 5,000-point gem if both are full |
 
-### Milestones
-
 | Zone | Course list | Reward |
 | --- | --- | --- |
 | 25, 75, 125, ... | S / S+ | Five-choice perk |
 | 50, 150, 250, ... | S+ / S++ | Five-choice perk |
 | 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
 
-The first clear of zone 100 also plays the credits. The run continues.
+### Saving
 
-### Saving and quitting
+Non-Hardcore runs checkpoint at the outpost, in `endless.sav`. Hardcore runs
+never save. Quit Level restores the launch snapshot and drops you back into the
+same committed sortie. A revive refills the hull, clears enemy shots, and briefly
+stops enemy fire. Your furthest zone is kept in `opentyrian.cfg`.
 
-- Non-Hardcore runs checkpoint at the outpost in `endless.sav`.
-- Hardcore runs never save.
-- Quit Level restores the launch snapshot and returns to the same committed
-  sortie.
-- A revive restores full hull, clears enemy shots, and briefly stops enemy fire.
-- The furthest reached zone is stored in `opentyrian.cfg`.
+With Debug Mode on, **Endless Effects** applies the scaling, modifiers, elites
+and perks to a normal campaign without the Endless run structure around it.
 
-With Debug Mode enabled, Endless Effects can apply scaling, modifiers, elites,
-and perks to a normal campaign without enabling the Endless run structure.
+## Arcade modes
 
-## Graphics
+The row of ship icons beside your name counts the lives you have, not the spare
+ones: one icon on your last life, two on your second-to-last. It matches the
+outpost's **Lives:** row. Past four it collapses to one icon and a number, so
+eleven lives reads as a ship and "11".
 
-Settings are under Setup > Graphics.
+### Arcade Life Boost
 
-| Setting | Effect |
-| --- | --- |
-| Display | Windowed or fullscreen output |
-| Scaler | Pixel-art scaling algorithm |
-| Scaling Mode | Fit inside the window |
-| Smooth Motion | Interpolates the 35 Hz simulation at the display rate |
-| Sub-pixel | Renders the playfield internally at Auto, 1x-5x, or Native |
-| Filter | Sharp, Smooth, or unfiltered sub-pixel output |
-| VSync / FPS Cap / Show FPS | Presentation controls |
+**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, on by default.
 
-On the FPS Cap row, Left/Right steps the cap by 5, or type a number directly
-(minimum 5; 0 or Backspace down to nothing = Uncapped). On Switch and Vita,
-pressing Select on the row opens the system keypad instead.
+Lives buy durability as well as retries, in 1 Player Arcade, 2 Player Arcade,
+Timed Battle and 2 Player Online Arcade. Each ship's shield and armor ceilings
+scale off its own life count: at 1 life they are the vanilla numbers, and at the
+11-life maximum both gauges reach a full bar. Growth in between is even, so six
+lives puts the Stalker at 22 armor and 19 shield.
 
-Smooth Motion also enables display-rate ship movement in supported single-player
-games. Sub-pixel rendering has the largest effect when Smooth Motion is enabled.
+| Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
+| --- | --- | --- | --- | --- |
+| 1 Player Arcade | Stalker | 15 | 10 | 28 |
+| 2 Player (and Online) | Silver Ship | 10 | 10 | 28 |
+| 2 Player (and Online) | Dragonwing | 10 | 10 | 28 |
 
-Sub-pixel **Native** renders one internal sample per screen pixel, so it follows your
-monitor instead of stopping at 5x (11x on a 4K display, shown beside the setting). It
-pairs with the **Native** scaler, which already outputs at the exact window size. The
-cost scales with your resolution, which is why Auto still stops at 5x.
+Gaining a life mid-level raises both ceilings immediately, and damage already
+taken carries across proportionally — a ship at half armor stays at half armor,
+so the extra hull is a bigger bar, not a free repair. Losing a life shrinks the
+ceilings before the respawn refill. Armor pickups top up to the current ceiling
+rather than a flat 28, so a light hull holds less at low life counts than it used
+to.
 
-## Enhancements
+Switch it off and every arcade ship keeps the hull and shield it always had.
+Online, the host's setting binds the session, like every other rule that reaches
+the simulation.
 
-Settings are under Setup > Enhancements.
-
-| Setting | Effect |
-| --- | --- |
-| Debug Mode | Adds debug menus and level selection |
-| Extra Parallax | Uses the full horizontal range of background layers |
-| Mirrored Layers | Reflects background content beyond a layer edge |
-| Extra Sparks | Raises the spark-particle limit |
-| Custom Weapons | Enables the custom weapon in shops |
-| Custom Weapon Creator | Opens the weapon editor |
-| Enemy Bars | Shows health for damaged enemies |
-| Boss Health Bars | Selects boss-bar style and placement |
-| Gauge Gradients | Selects gauge direction and damage flashes |
-| Game Tweaks | Opens weapon tweaks, restored cut behaviors, and the network log |
-
-### Debug Mode
-
-Debug Mode adds a Debug Menu row to the shop and to the Esc pause menu, plus a
-level browser. The menu changes the game as you use it: loadout, cash, cheats,
-difficulty, and the expert multipliers.
-
-The DIAGNOSTICS group at the bottom holds the inspection tools. **Rollback
-Self-Test** is the heaviest: it replays every tick and compares the result, which
-checks that the snapshot online play rides on covers everything the game changes.
-The tick runs twice while it is on, so the game may run slower; the row shows the
-count of verified ticks and any failures, and the detail goes to
-`rollback_selftest.log`. It starts off, and stays however you leave it — restarts
-included.
-
-In a two-player game, local or online, an **Edit Player** row at the top of the
-LOADOUT group chooses whose gear the rows below it change. It opens on your own
-ship. Player two flies the Dragonwing, so swapping that player's hull changes the
-hit box but not the sprite or armour.
-
-Online, the game stays connected while the menu is open, and every change you make
-is sent to the other player, so both machines keep playing the same game. Endless
-Effects are not available online, and neither is the Rollback Self-Test — online
-play exercises the same machinery for real.
+The shield gauge carries a thin line marking a full charge. It is on both gauges
+of the two-player HUD now, and it vanishes while the gauge is at its ceiling — a
+quick way to see the shield is topped up.
 
 ## Online play
 
-The Multiplayer menu refuses to start a netgame while the FPS Cap is set below
-35: its options disappear, replaced by a notice that multiplayer cannot be
-played below 35 fps. The game simulates at 35 frames per second, and a render
-cap under that would slow the whole session to the capped machine's framerate
-for both players. Set the cap to 35 or higher — or Uncapped — and the menu
-returns.
+**Multiplayer** on the main menu offers Host Game, Find LAN Games, and Join by IP
+Address. The game uses UDP port 1333. On the same network, Find LAN Games saves
+anyone typing an address.
 
-Host Game opens a screen with the listen port, **Netcode**, **Desync Recovery**,
-**Host Flies**, **Game Speed**, and Start Hosting. Host Flies picks which ship
-you take when hosting: player one, or player two, which is the Dragonwing.
-Whoever joins gets the other one. Left and right change it, and it is remembered
-between sessions. Game Speed sets the speed the whole session runs at, for both
-players — the joiner's own setting is ignored and restored when the session
-ends. It does not appear in the in-game Esc menu during online play, so the
-lobby choice is final for the session. The host chooses the episode and
-difficulty either way.
+The menu refuses to start a netgame while the FPS Cap is below 35, and says so
+instead of showing its options. The simulation runs at 35 Hz, so a lower render
+cap would drag both players down to the capped machine's rate. Set the cap to 35
+or higher, or Uncapped.
 
-Netcode picks how the two machines stay in step. **Rollback**, the default,
-applies your input the moment you press it and quietly corrects the other ship
-when its inputs arrive, so the game feels the same as playing offline.
-**Delay-Based** is the original lockstep: both ships wait for each other's
-inputs, which adds input lag that grows with the connection's ping. The host's
-choice binds the session, and it is remembered between sessions.
+**Host Game** covers the listen port, Netcode, Desync Recovery, Host Flies, and
+Game Speed. The host's choices bind the session for both machines; the joiner's
+own settings are left alone and restored afterwards.
 
-Desync Recovery, on by default, repairs a game whose two machines have drifted
-apart instead of letting the rest of the level play out differently on each.
-When a desync is detected, the game pauses for a moment ("Resyncing players."),
-the host sends its complete game state to the other player, and both continue
-from the host's version of events. The host's setting decides for the session,
-like every other rule that affects the simulation. It needs rollback netplay —
-Delay-Based netcode detects and logs a desync but has no way to repair one, so
-choosing it switches the row off and grays it out — and it needs two builds that
-lay their game state out the same way, which the two machines check when they
-connect. PC, Switch and Vita builds of the same version qualify; mixing versions
-generally does not, and when that happens the network log says so at connect and
-the session simply plays on through any desync instead of repairing it. Recovery
-also gives up after three repairs in one level; every repair is still recorded in
-the network log, so a recurring desync stays visible to bug reports.
+| Lobby row | What it does |
+| --- | --- |
+| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. |
+| Host Flies | Which ship you take: player one, or player two (the Dragonwing). Remembered between sessions. |
+| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 
-The network log (`opentyrian_net.log`, next to `opentyrian_log.log` beside the
-game on PC, or in the game's data folder on Switch and Vita) records every
-online session: a session-start line naming the netcode, settings and the size
-and fingerprint of that machine's game-state layout (identical on both machines
-means recovery is available), any
-desyncs, stalls and resyncs — including a one-line reason for every repair
-attempt that fails — and a session-end line with totals. A desync entry also
-carries a snapshot of the disputed frame as that machine computed it, so when
-reporting a desync, include the log from **both** machines: comparing the two
-snapshots points straight at what diverged. A log whose
-session has no entries between start and end means the session was healthy.
+**Join by IP Address** takes an address on its own or with a port, like
+`12.345.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
+pre-filled with the last address you used, restarts included, so rejoining the
+same host is Join then Enter.
 
-The log covers the run that wrote it and nothing else: each launch sets the
-previous one aside, so `opentyrian_net.log` is always the copy belonging to the
-game you have open now — and there is no file at all until that run logs
-something. Earlier runs are kept beside it, three deep on PC as
-`opentyrian_net.1.log` through `.3.log` and one deep on Switch and Vita as
-`opentyrian_net.1.log`, so last night's report is in a numbered file rather
-than the live one. Launches that never go online leave all of them alone.
+The outpost help bar shows a **Ping** figure at its right end, updated about
+every one and a half seconds and reading `--` until the first reply. Under
+roughly 85ms the game runs at full speed on the default network delay of 3; above
+that it starts to slow, and raising the delay trades input lag for smoothness.
 
-**Network Log**, under Setup > Enhancements > Game Tweaks > Network and on by
-default, is what writes that file. Switched off, the game keeps no network log at
-all: no new entries, and an existing log is left exactly as it is rather than
-rotated away.
+In any two-player game the sidebar tags each gauge block **P1** or **P2**.
+Online, the other player's gauges are dimmed as well.
 
-**Clear Net Log**, directly below it, erases that log and starts it over empty.
-It is a Switch and Vita row — those builds have no file manager to drop what
-this session has logged so far with, while on PC you can delete the file beside
-the game yourself — and it only appears while Network Log is on. The row reports
-what the press did: *Cleared*, or *No Log* when there was nothing to erase.
+At the start of each level both machines wait for each other, so a slower loader
+briefly shows "Waiting for other player." before the two fade in together.
 
-The outpost help bar carries a **Ping** figure at its right end, showing the round
-trip to the other player in milliseconds. It updates about every one and a half
-seconds and reads `--` until the first reply arrives. Under roughly 85ms the game
-runs at full speed on the default network delay of 3; above that it starts to slow
-down, and raising the delay trades input lag for smoothness.
+### Saving and resuming an online game
 
-In any two-player game, local or online, the sidebar tags each gauge block with
-**P1** or **P2** just below its bars. Online, the shield and armor gauges
-of the ship you are *not* flying are dimmed as well, so a glance tells your bars
-from the other player's.
+Save from the shop with Options > **Save Game**, or Alt+S anywhere in the shop.
+Online games share the regular 2-player save page, so a session saved online can
+be continued on the couch and vice versa. The page's last slot is written
+automatically at the start of every level as `LAST LEVEL` — handy if nobody saved
+by hand, but it means an online session overwrites that slot's local 2-player
+backup. Save into a numbered slot to keep a run. Both machines write their own
+copy of the same session, so either player can host the resume.
 
-Join by IP Address takes a host address alone or with a port, like
-`12.345.67.89:1337`. Ctrl+V pastes a copied address into the field, replacing
-whatever was already typed there. The field comes back pre-filled with the last
-address and port you used, including after a restart, so rejoining the same host
-is Join then Enter.
+If the session ends under you — the other player quits, the connection drops, or
+an unrecoverable desync stops the game — you are offered **Save Game** or
+**Don't Save** before the title screen. Save Game opens the 2-player save page
+with the run rolled back to the outpost before the current level, the same point
+a game over returns to.
 
-At the start of each level the two machines wait for each other before play
-begins, so if one side loads levels slower the other briefly shows "Waiting for
-other player." and then both fade in together.
+To resume, host as usual. Once the other player connects, the host picks between
+**New Game** and **Load Game**. Load Game opens the load menu fixed to the
+2-player page, and the save you pick is sent to the joiner whole, resuming at
+that save's next level with its own episode and difficulty. Saves whose episode
+the other player's data files lack are dimmed. Loading is host-side and only at
+session start; there is no Alt+L during play, because a mid-session load on one
+machine would fork the game.
 
-### Saving and resuming online games
+## Custom Weapon Creator
 
-Online sessions can be saved from the shop: Options → **Save Game** (or Alt+S
-anywhere in the shop). Online games share the regular 2-player save page —
-the same eleven slots a couch co-op game uses — so a save made online can be
-continued locally and a couch save can be taken online. The page's last slot
-is written automatically at the start of every level as `LAST LEVEL`, so a
-session that ends mid-episode can be picked up even if nobody saved by hand
-(an online session therefore overwrites that slot's local 2-player backup —
-save by hand into a numbered slot if you want to keep a run). Each machine
-writes its own copy of every save, and both copies hold the same session —
-both ships' gear, both scores, the level, episode and difficulty — so either
-player can host the resume later.
+**Setup > Enhancements > Custom Weapon Creator.** Stores up to 32 weapons, each
+with 11 power levels, an optional rear-gun firing mode, and a live test range. A
+finished design can be equipped as a front gun, rear gun, or sidekick — the
+**Custom Weapons** row puts it in the shops.
 
-If the session ends under you — the other player quits, the connection drops,
-or an unrecoverable desync stops the game — you are offered **Save Game** or
-**Don't Save** before returning to the title screen. Save Game opens the save
-menu on the 2-player page with the run restored to the outpost before the
-current level (the same point a game over rolls back to), so pick a slot,
-name it, and resume it together later. Both players get the offer when both
-machines lose the session; a player who quits on purpose is expected to have
-saved from the shop.
+The Levels section can copy and paste a single level, copy one level to all of
+them, or generate a full level curve. Undo and Redo sit at the bottom of every
+section.
 
-To resume, host a game as usual. Once the other player connects, the host
-chooses between **New Game** and **Load Game**. New Game runs the familiar
-episode and difficulty selects; Load Game opens the regular load menu, fixed
-to the 2-player page, and picking a save there sends the whole saved state to
-the joiner — the session continues at that save's next level, with the
-episode and difficulty the save was made at. Backing out of the load menu
-returns to the choice; Esc on the choice itself abandons hosting. Saves whose
-episode the other player's data files lack are shown dimmed and cannot be
-picked. Loading is host-side only and only at session start — there is no
-Load Game or Alt+L during online play, since a mid-session load on one
-machine would fork the two copies of the game.
-
-## Weapons
-
-The Custom Weapon Creator stores up to 32 weapons. Each weapon has 11 power
-levels, an optional rear-gun firing mode, and a live test range. Designs can be
-equipped as a front gun, rear gun, or sidekick.
-
-The Levels section can copy and paste one level, copy it to every level, or
-build a full level curve automatically. Undo and Redo stay available at the
-bottom of every section.
-
-| Creator control | Action |
+| Control | Action |
 | --- | --- |
 | Up / Down | Move through fields and actions |
 | Left / Right | Change a value |
-| Shift + Left / Right | Change numeric values in larger steps |
-| Click left / right half | Decrease / increase a value |
+| Shift + Left / Right | Larger steps |
+| Click left / right half | Decrease / increase |
 | Tab / Shift + Tab | Next / previous section |
 | Page Up / Page Down | Previous / next power level |
 | `[` / `]` | Previous / next bullet segment |
 | Type digits | Enter an exact value |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Ctrl+S | Save now |
-| Esc | Cancel a number being entered; otherwise save and return |
+| Esc | Cancel a number being entered, otherwise save and return |
 | Right-click | Save and return |
 
-Game Tweaks covers:
+## Restored and tweakable content
+
+**Setup > Enhancements > Game Tweaks** holds the differences between the Episode
+1-3 and Episode 4-5 weapon data, plus the content the original game shipped but
+never used:
 
 - superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice;
 - Zica Laser level-11 patterns and beam behaviour;
 - Xega Ball and MicroSol Option 5 episode variants;
 - Flare and Super Bomb sprites;
 - Needle Laser and Bubble Gum-Gun sounds;
-- the removed Charge-Laser sidekick;
+- the cut Charge-Laser sidekick;
 - Ice Base Shots;
 - sidekick autofire.
 
-Ice Base Shots, on by default, wakes the dormant dispenser bases of Camanis
-(Episode 3) and the secret Camanis research base (Episode 4). The game data
-gives these bases a full hatch open/close animation, but ships them with no way
-to ever trigger it. When enabled, the bases open on the same cadence as the
-small hatches beside them. At the moment the hatch stands open, the eye fires a
-player-aimed shot and the orb below it discharges a fast four-segment lightning
-bolt straight down. Endless mode ignores the toggle: up to Zone 50 each zone has
-a 50/50 chance of waking them, fixed by the run seed, and from Zone 50 onward
-they are always awake.
+**Ice Base Shots**, on by default, wakes the dormant dispenser bases on Camanis
+(Episode 3) and the secret Camanis research base (Episode 4). The game data gives
+these bases a full hatch open/close animation but never triggers it. Switched on,
+they open on the same cadence as the small hatches beside them; at the moment the
+hatch stands open, the eye fires a player-aimed shot and the orb below discharges
+a fast four-segment bolt straight down. Endless ignores the toggle: up to Zone 50
+each zone has a 50/50 chance of waking them, fixed by the run seed, and from Zone
+50 they are always awake.
+
+## Other enhancements
+
+| Setting | Effect |
+| --- | --- |
+| Debug Mode | Adds the debug menu and level selection |
+| Extra Parallax | Uses the full horizontal range of the background layers |
+| Mirrored Layers | Continues background content past a layer's edge as a mirror |
+| Extra Sparks | Raises the spark-particle limit |
+| Enemy Bars | Health bars on enemies you have damaged |
+| Boss Health Bars | Boss-bar style and placement |
+| Gauge Gradients | Gauge direction and damage flashes |
+
+Under **Setup > Sound**, *Armor Alarm* is the low-armor siren and *Link Sounds*
+is the cue for two ships fusing or unfusing. **Setup > Sensitivity** covers the
+mouse on desktop and touch on consoles.
+
+### Debug Mode
+
+Debug Mode adds a Debug Menu row to the shop and the Esc pause menu, plus a level
+browser. The menu changes the game live: loadout, cash, cheats, difficulty, and
+the expert multipliers.
+
+In a two-player game an **Edit Player** row at the top of the LOADOUT group picks
+whose gear the rows below it change. Player two flies the Dragonwing, so swapping
+that player's hull changes the hit box but not the sprite or armour. Online, the
+game stays connected while the menu is open and every change is sent to the other
+player. Endless Effects and the Rollback Self-Test are unavailable online.
+
+The DIAGNOSTICS group holds the inspection tools. **Rollback Self-Test** replays
+every tick and compares the result, checking that the snapshot online play rides
+on covers everything the game changes. It runs the tick twice, so expect it to be
+slower; the row counts verified ticks and failures, details go to
+`rollback_selftest.log`, and the setting survives restarts.
+
+## The Extra menus
+
+Two menus named Extra, in two places.
+
+**Title screen > Extra** collects the things that used to need a code typed at
+the title: the jukebox, the Destruct mini-game, SuperTyrian, the secret Super
+Arcade ships, the command-line cheat options, and Christmas Mode.
+
+**Esc > Extra**, during a game, is the DOS cheat combos made clickable. It has an
+Invincibility toggle, a Cheat Codes page (Nort Ship, Self-Destruct, Skip Level)
+and a Debug Codes page (debug overlay, hyper-speed, level filter, random music,
+screenshot pause). Each row shows its original key combo in the footer, so you
+can still press them by hand. The cheat rows only work in a normal solo game.
 
 ## Music
 
 | Backend | Requirement |
 | --- | --- |
 | OPL | None; default |
-| FluidSynth | SoundFont file |
+| FluidSynth | A SoundFont file (`.sf2`, `.sf3`, `.sf`) |
 | System synth | Windows x86-64 |
 
-MIDI songs loop at their internal loop point. The title-screen Extra menu also
-contains a jukebox.
+Pick one on **Setup > Sound > Music Synth**. MIDI songs loop at their internal
+loop point.
 
 ## Console builds
 
 The Switch and Vita builds are unofficial homebrew ports. MIDI is not included.
-
-Netplay works on both. Use Find LAN Games rather than typing an address; where a
-field does need typing, the console's own keyboard opens.
+Netplay works on both; prefer Find LAN Games, and where a field does need typing,
+the console's own keyboard opens.
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)
+
+## Files
+
+On Windows these sit next to the executable, on Linux in
+`~/.config/opentyrian2000`, and on Switch and Vita in the game's data folder.
+
+| File | Contents |
+| --- | --- |
+| `opentyrian.cfg` | Settings, high scores, furthest Endless zone |
+| `tyrian.sav` | Campaign and 2-player saves |
+| `endless.sav` | The current non-Hardcore Endless run |
+| `opentyrian_log.log` | Crash report, Windows only, written only if the game falls over |
+| `opentyrian_net.log` | Online session log |
+
+Both logs rotate per launch, so the live file always belongs to the run you have
+open now; earlier ones are numbered `.1.log` upwards beside it.
+
+If you hit a desync, attach `opentyrian_net.log` from **both** machines to the
+report. Each side logs the disputed frame as it computed it, and comparing the
+two points straight at what diverged. A session with nothing between its start
+and end lines was healthy.
+
+The net log can be turned off, and cleared on consoles, under **Setup >
+Enhancements > Game Tweaks > Network**.

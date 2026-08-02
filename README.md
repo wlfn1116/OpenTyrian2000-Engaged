@@ -2,22 +2,22 @@
 
 [![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
-OpenTyrian2000 Engaged is a fork of
-[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian.
+A fork of [OpenTyrian2000](https://github.com/KScl/opentyrian2000), which is an
+open-source port of the DOS game Tyrian.
 
-This fork adds:
+The original campaigns play as they always did. What the fork adds:
 
 - a 356x200 widescreen playfield;
-- smooth, display-rate rendering with optional sub-pixel supersampling;
-- unused/removed content restoration;
-- an Endless mode built from the original levels;
+- smooth display-rate rendering, with optional sub-pixel supersampling;
+- **Endless mode**, a roguelite run built from the shipped levels;
 - a custom weapon editor;
+- rollback netcode for online play, with save and resume;
+- content the original game shipped but never used, each behind its own toggle;
 - expanded health bars, menus, and debug tools;
+- optional FluidSynth and system MIDI playback (Windows);
 - Nintendo Switch and PlayStation Vita homebrew builds.
-- optional FluidSynth and system MIDI playback (Windows only);
 
-See [GUIDE.md](GUIDE.md) for more information about the additions to this fork.
+[GUIDE.md](GUIDE.md) is the player guide for all of it.
 
 ## Game data
 
@@ -25,47 +25,42 @@ The engine needs the freeware Tyrian 2000 data files:
 
 <https://www.camanis.net/tyrian/tyrian2000.zip>
 
-For a PC build, place the executable beside the `data` directory.
+On PC, put the executable beside the `data` directory.
 
-## Main additions
+## Highlights
 
 ### Widescreen and motion
 
-The playfield is 356x200 instead of 320x200. The HUD remains at the right edge,
-while menus keep their original 320-pixel layout and are centred.
+The playfield is 356x200 instead of 320x200, with the HUD still at the right
+edge. Menus keep their original 320-pixel layout, centred.
 
-The simulation still runs at 35 Hz. Smooth Motion interpolates world rendering
-at the display rate. In single-player games, the ship also uses display-rate
-movement to reduce input latency. This movement is disabled for demos and
-network games.
-
-Sub-pixel rendering draws the playfield internally at up to 5x scale. This makes
-slow scrolling smoother without changing the simulation.
+The simulation still runs at 35 Hz. Smooth Motion interpolates the world at the
+display rate, and in single-player the ship moves at the display rate too, which
+cuts input latency. Demos and network games keep the fixed-step movement.
+Sub-pixel rendering draws the playfield internally at up to 5x — or one sample
+per screen pixel on Native — which is what makes slow scrolling stop stepping.
 
 ### Endless mode
 
-Endless mode selects from the original levels, adds depth-based enemy scaling,
-and places an outpost between zones. At each outpost you can:
+Endless picks from the original levels, scales enemies with depth, and puts an
+outpost between zones where you shop, take perks, and choose your next route
+from several with visible risks and rewards. Sector modifiers supply the rest of
+the difficulty and most of the payout.
 
-- buy and upgrade equipment;
-- use the Endless Shop;
-- choose from several routes with visible risks and rewards;
-- take a perk when one is due.
-
-Runs are seeded. The same seed and choices reproduce the same level, shop,
-course, and perk sequence. Hardcore runs disable checkpoints.
+Runs are seeded: the same seed and choices reproduce the same levels, shops,
+courses and perks. Hardcore runs disable checkpoints.
 
 ### Weapons and music
 
-The Custom Weapon Creator stores up to 32 weapons with 11 editable power levels,
-an optional rear-gun firing mode, and a live test range. A design can be used as
-a front gun, rear gun, or sidekick.
+The Custom Weapon Creator stores up to 32 weapons, each with 11 editable power
+levels, an optional rear-gun firing mode, and a live test range. A design can be
+equipped as a front gun, rear gun, or sidekick.
 
-Weapon Tweaks restores selected differences between the Episode 1-3 and Episode
-4-5 data.
+Game Tweaks restores differences between the Episode 1-3 and Episode 4-5 weapon
+data, and wakes content the original left dormant.
 
-OPL remains the default music backend. FluidSynth requires a SoundFont (`.sf2`,
-`.sf3`, or `.sf`) file. You can also use the system MIDI synthesizer.
+OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
+`.sf3`, or `.sf`); the Windows system MIDI synthesizer also works.
 
 ## Controls
 
@@ -77,39 +72,38 @@ OPL remains the default music backend. FluidSynth requires a SoundFont (`.sf2`,
 | Ctrl / Alt | Fire left / right sidekick |
 | Alt+Enter | Toggle fullscreen |
 
-Controls are rebindable. Controllers are supported.
+Controls are rebindable, and controllers are supported.
 
 ## Network multiplayer
 
-Host or join from the in-game menu (Host Game / Join Game), or start both
-players from the command line:
+Host or join from the Multiplayer menu, or start both players from the command
+line:
 
 ```text
 opentyrian2000 --net HOSTNAME --net-player-name NAME --net-player-number NUM
 ```
 
-`HOSTNAME` is the other player's address. `NUM` is `1` or `2`. The game uses UDP
-port 1333.
+`HOSTNAME` is the other player's address and `NUM` is `1` or `2`. The game uses
+UDP port 1333.
 
-Netplay uses **rollback netcode** by default: your ship answers to input on the
-same tick it happens — the same feel as single player — while the other ship is
-predicted and silently corrected when its real input arrives. The host decides
-the mode for both machines; set `net_rollback` to `off` in the `enhancements`
-section of `opentyrian.cfg` to fall back to the original delay-based lockstep
-(whose input delay is tuned with `net_delay`).
+Netplay uses rollback netcode by default: your ship answers input on the tick it
+happens, the same as single player, while the other ship is predicted and
+corrected when its real input arrives. The host's choice applies to both
+machines. Everything else — the lobby rows, desync recovery, ping, saving and
+resuming — is in [GUIDE.md](GUIDE.md#online-play).
 
-Related config keys (`enhancements` section):
+Config keys, `enhancements` section:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `net_rollback` | `on` | Rollback netcode (host-authoritative for the session) |
-| `net_delay` | `3` | Lockstep-only: ticks of input delay / tick-rate cap |
-| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player (runs each tick twice; results in `rollback_selftest.log`). Also a **Rollback Self-Test** row in the debug menu, which can arm it mid-level |
+| `net_rollback` | `on` | Rollback netcode; host-authoritative for the session |
+| `net_delay` | `3` | Lockstep only: ticks of input delay |
+| `rollback_selftest` | `off` | Debug: verify the rollback snapshot every tick in single player. Runs each tick twice; results in `rollback_selftest.log`. Also a debug-menu row that can arm it mid-level |
 
 ## Building
 
-The Windows project is in `visualc`. The root build script can build and collect
-the PC, Switch, and Vita targets:
+The Windows project is in `visualc`. The root script builds and collects the PC,
+Switch, and Vita targets:
 
 ```powershell
 .\build-all.ps1
@@ -118,8 +112,8 @@ the PC, Switch, and Vita targets:
 .\build-all.ps1 -Target PC -Configuration Debug -NoCollect
 ```
 
-Run `.\build-all.ps1 -Help` for all options. Console builds also require their
-platform toolchains:
+`.\build-all.ps1 -Help` lists every option. The console targets need their own
+toolchains:
 
 - [Nintendo Switch build](switch/README.md)
 - [PlayStation Vita build](vita/README.md)
@@ -131,19 +125,19 @@ sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
 make
 ```
 
-Running a Linux build (including the release tarball) only needs the SDL2
-runtime libraries; package names vary by distro:
+Running a Linux build, including the release tarball, only needs the SDL2
+runtime libraries. Package names vary by distro:
 
 ```sh
 sudo apt install libsdl2-2.0-0 libsdl2-net-2.0-0
 ```
 
-GitHub Actions builds the Windows, Linux, Switch, and Vita targets on every
-push. The newest master build is always available from the
-[latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest);
-per-commit artifacts are on the
+GitHub Actions builds Windows, Linux, Switch, and Vita on every push. The newest
+master build is always at the
+[latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest),
+and per-commit artifacts are on the
 [Actions](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions) tab.
-Pushing a tag attaches all four packages to that tag's release automatically.
+Pushing a tag attaches all four packages to that tag's release.
 
 ## License
 
