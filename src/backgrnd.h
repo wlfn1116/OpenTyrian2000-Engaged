@@ -97,7 +97,8 @@ void draw_background_2(SDL_Surface *surface);
 void draw_background_2_blend(SDL_Surface *surface);
 void draw_background_3(SDL_Surface *surface);
 
-void JE_filterScreen(JE_shortint col, JE_shortint generic_int);
+// Advances the fade/flash ramp by one tick: sim state, call from the tick body only.
+void JE_advanceLevelFade(void);
 void JE_filterScreenApply(SDL_Surface *surface, JE_shortint col, JE_shortint generic_int);
 // JE_filterScreenApply on an NxN supersampled surface (playfield region x scale).
 void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shortint generic_int, int scale);

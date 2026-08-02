@@ -855,7 +855,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			// Full-screen flash/fade: interpolate the brightness across the tick so
 			// the ramp is smooth at any refresh (filt_dbright = 0 => snap). Applied
 			// side-effect-free onto the composited playfield (A), matching the tick's
-			// own JE_filterScreen which runs after all entities.
+			// own filter pass which runs after all entities.
 			int bright = c->filt_bright;
 			if (inv != 0.0f && c->filt_dbright != 0)
 				bright -= rl_iround(c->filt_dbright * inv);

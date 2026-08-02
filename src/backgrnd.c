@@ -672,27 +672,30 @@ void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shorti
 	}
 }
 
-void JE_filterScreen(JE_shortint col, JE_shortint int_)
+// One tick of the level fade-in / flash ramp.  This is simulation state, so it belongs
+// in the tick body and NOT in the draw path it used to live in (inside JE_filterScreen):
+// a rollback re-simulation restores levelBrightness and then jumps back to the top of the
+// loop from the netcode driver, so only the presented pass ever advanced it.  A peer whose
+// input kept mispredicting -- the guest flying around from the first frame of the level --
+// rewound the fade every tick and pushed it forward once, holding the other machine at its
+// starting darkness for as long as the rollbacks lasted.
+void JE_advanceLevelFade(void)
 {
-	// Advance the fade animation exactly once per sim tick; must not run on the
-	// render list's replay path (see JE_filterScreenApply).
-	if (filterFade)
-	{
-		levelBrightness += levelBrightnessChg;
-		if ((filterFadeStart && levelBrightness < -14) || levelBrightness > 14)
-		{
-			levelBrightnessChg = -levelBrightnessChg;
-			filterFadeStart = false;
-			levelFilter = levelFilterNew;
-		}
-		if (!filterFadeStart && levelBrightness == 0)
-		{
-			filterFade = false;
-			levelBrightness = -99;
-		}
-	}
+	if (!filterActive || !filterFade)
+		return;
 
-	JE_filterScreenApply(VGAScreen, col, int_);
+	levelBrightness += levelBrightnessChg;
+	if ((filterFadeStart && levelBrightness < -14) || levelBrightness > 14)
+	{
+		levelBrightnessChg = -levelBrightnessChg;
+		filterFadeStart = false;
+		levelFilter = levelFilterNew;
+	}
+	if (!filterFadeStart && levelBrightness == 0)
+	{
+		filterFade = false;
+		levelBrightness = -99;
+	}
 }
 
 void JE_checkSmoothies(void)

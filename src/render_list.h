@@ -30,7 +30,7 @@ typedef enum
 	RC_BG_ROW,
 	RC_BG_ROW_BLEND,
 	RC_STAR,
-	RC_FILTER_SCREEN,   // full-screen colour filter (JE_filterScreen)
+	RC_FILTER_SCREEN,   // full-screen colour filter (JE_filterScreenApply)
 	RC_ICED_BLUR,       // smoothie feedback filters: dst = filter(dst, src), src = the
 	RC_LAVA_FILTER,     // buffer named by `surface`. These read the previous frame's
 	RC_WATER_FILTER,    // main buffer (trails/plasma), so it persists across frames.

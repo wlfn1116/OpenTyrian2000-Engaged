@@ -933,6 +933,22 @@ the faster loader ticked to frame 3, froze nearly black at the driver's
 like a stretched fade-in; the frame-3 barrier now only ever holds for about a
 round trip and stays as the safety net.
 
+That same fade had a second, unrelated way to stall, and it needed a peer who
+flew off the moment the level started: the ramp itself lived in the *draw*
+path (inside the old `JE_filterScreen`), below the netcode driver. A
+re-simulated frame never reaches that far — the driver sends it back to
+`level_loop` — so a rollback restored `levelBrightness` to the snapshot and
+then only the one presented pass pushed it forward again. At a prediction
+depth of D that is D-1 steps lost per correction, and a peer mispredicting
+every tick pinned the fade at its opening darkness for as long as it kept
+moving: the level simply never lit up on the *other* machine. The ramp is
+sim state and now advances in the tick body (`JE_advanceLevelFade`, called
+just before the network update, alongside the other blocks that were moved
+inside the tick for this exact reason); `JE_filterScreenApply` is left as the
+pure pixel pass. The presented frame now shows the post-advance value rather
+than the pre-advance one — one step of sixteen, identical on both machines
+and offline.
+
 The docked Dragonwing's "did player 2 press a direction" test must come from
 the tuple's `RB_MOVE_*` intent bits in rollback netplay, never from comparing
 tuple x/y against the local tick-start snapshot. The tuple is recorded before

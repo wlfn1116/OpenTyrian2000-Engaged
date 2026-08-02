@@ -5304,6 +5304,11 @@ draw_player_shot_loop_end:
 	else
 		mapStopStallTicks = 0;
 
+	// Level fade-in / flash ramp.  Sim state, so it advances here with the rest of the
+	// tick rather than down in the filtration draw below: everything past the netcode
+	// driver is skipped by re-simulated frames (JE_advanceLevelFade).
+	JE_advanceLevelFade();
+
 	/*Network Update*/
 #ifdef WITH_NETWORK
 	if (isNetworkGame && nrb_active())
@@ -5460,7 +5465,7 @@ draw_player_shot_loop_end:
 		if (anySmoothies)
 			JE_filterScreenApply(VGAScreen2, levelFilter, levelBrightness);
 
-		JE_filterScreen(levelFilter, levelBrightness);
+		JE_filterScreenApply(VGAScreen, levelFilter, levelBrightness);
 	}
 
 	// Smoothie levels already drew+recorded the enemy bars before the residual
