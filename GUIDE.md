@@ -10,7 +10,7 @@ play, the weapon editor, and the cut content that has been switched back on.
 | --- | --- |
 | Start an Endless run | Main menu > 1 Player Endless |
 | Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
-| Smooth out scrolling | Setup > Graphics > Sub-pixel |
+| Smooth out scrolling and movement | Setup > Graphics > Sub-pixel |
 | Play with a friend | Main menu > 2 Player Online Arcade |
 | Design a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Change boss and enemy health bars | Setup > Enhancements |
@@ -30,7 +30,7 @@ at your display's refresh rate instead of 35 Hz. In single-player it also moves
 your ship at the display rate, which cuts input latency. Leave it on.
 
 **Sub-pixel** renders the playfield internally at Auto, 1x–5x, or Native.
-Background scrolling is where it shows the most: without it, distant layers creep in
+Background scrolling and sprite movement is where it shows the most: without it, distant layers creep in
 whole pixels and visibly step. It only pays off with Smooth Motion on. **Native**
 renders one internal sample per screen pixel, so it follows your monitor rather
 than stopping at 5x (11x on a 4K display, shown beside the setting) — pair it
