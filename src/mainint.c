@@ -51,6 +51,7 @@
 #include "net_rollback.h"
 #include "shots.h"
 #include "sndmast.h"
+#include "sim_math.h"
 #include "sprite.h"
 #include "console_platform.h"
 #include "tyrian2.h"
@@ -8098,13 +8099,13 @@ redo:
 
 			// turret direction marker/shield
 			shotMultiPos[SHOT_MISC] = 0;
-			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec + 0.2f) * 26), this_player->y + roundf(cosf(linkGunDirec + 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
+			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sim_sinf(linkGunDirec + 0.2f) * 26), this_player->y + roundf(sim_cosf(linkGunDirec + 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
 			link_marker_slot[0] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 			shotMultiPos[SHOT_MISC] = 0;
-			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec - 0.2f) * 26), this_player->y + roundf(cosf(linkGunDirec - 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
+			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sim_sinf(linkGunDirec - 0.2f) * 26), this_player->y + roundf(sim_cosf(linkGunDirec - 0.2f) * 26), *mouseX_, *mouseY_, 148, playerNum_);
 			link_marker_slot[1] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 			shotMultiPos[SHOT_MISC] = 0;
-			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sinf(linkGunDirec) * 26), this_player->y + roundf(cosf(linkGunDirec) * 26), *mouseX_, *mouseY_, 147, playerNum_);
+			b = player_shot_create(0, SHOT_MISC, this_player->x + 1 + roundf(sim_sinf(linkGunDirec) * 26), this_player->y + roundf(sim_cosf(linkGunDirec) * 26), *mouseX_, *mouseY_, 147, playerNum_);
 			link_marker_slot[2] = (b >= 0 && b < MAX_PWEAPON) ? b : -1;
 
 			if (shotRepeat[SHOT_REAR] > 0)
@@ -8114,7 +8115,7 @@ redo:
 			else if (button[1-1])
 			{
 				shotMultiPos[SHOT_REAR] = 0;
-				b = player_shot_create(0, SHOT_REAR, this_player->x + 1 + roundf(sinf(linkGunDirec) * 20), this_player->y + roundf(cosf(linkGunDirec) * 20), *mouseX_, *mouseY_, linkGunWeapons[this_player->items.weapon[REAR_WEAPON].id-1], playerNum_);
+				b = player_shot_create(0, SHOT_REAR, this_player->x + 1 + roundf(sim_sinf(linkGunDirec) * 20), this_player->y + roundf(sim_cosf(linkGunDirec) * 20), *mouseX_, *mouseY_, linkGunWeapons[this_player->items.weapon[REAR_WEAPON].id-1], playerNum_);
 				player_shot_set_direction(b, this_player->items.weapon[REAR_WEAPON].id, linkGunDirec);
 			}
 		}
@@ -8565,16 +8566,16 @@ redo:
 					JE_frontOption(this_player, LEFT_SIDEKICK, front_option_home_x(this_player, LEFT_SIDEKICK), button[1 + LEFT_SIDEKICK]);
 					break;
 				case 4:  // orbiting
-					this_player->sidekick[LEFT_SIDEKICK].x = this_player->x + roundf(sinf(optionSatelliteRotate) * 20);
-					this_player->sidekick[LEFT_SIDEKICK].y = this_player->y + roundf(cosf(optionSatelliteRotate) * 20);
+					this_player->sidekick[LEFT_SIDEKICK].x = this_player->x + roundf(sim_sinf(optionSatelliteRotate) * 20);
+					this_player->sidekick[LEFT_SIDEKICK].y = this_player->y + roundf(sim_cosf(optionSatelliteRotate) * 20);
 					break;
 				}
 
 				switch (this_player->sidekick[RIGHT_SIDEKICK].style)
 				{
 				case 4:  // orbiting
-					this_player->sidekick[RIGHT_SIDEKICK].x = this_player->x - roundf(sinf(optionSatelliteRotate) * 20);
-					this_player->sidekick[RIGHT_SIDEKICK].y = this_player->y - roundf(cosf(optionSatelliteRotate) * 20);
+					this_player->sidekick[RIGHT_SIDEKICK].x = this_player->x - roundf(sim_sinf(optionSatelliteRotate) * 20);
+					this_player->sidekick[RIGHT_SIDEKICK].y = this_player->y - roundf(sim_cosf(optionSatelliteRotate) * 20);
 					break;
 				case 1:  // trailing
 				case 3:

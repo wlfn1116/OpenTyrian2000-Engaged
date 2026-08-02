@@ -23,6 +23,7 @@
 #include "mainint.h"
 #include "player.h"
 #include "render_list.h"
+#include "sim_math.h"
 #include "sprite.h"
 #include "video.h"
 #include "varz.h"
@@ -183,8 +184,8 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
 {
 	PlayerShotDataType* shot = &playerShotData[shot_id];
 
-	shot->shotXM = -roundf(sinf(direction) * shot->shotYM);
-	shot->shotYM = -roundf(cosf(direction) * shot->shotYM);
+	shot->shotXM = -roundf(sim_sinf(direction) * shot->shotYM);
+	shot->shotYM = -roundf(sim_cosf(direction) * shot->shotYM);
 
 	// Some weapons have sprites for each direction, use those.
 	int rounded_dir;

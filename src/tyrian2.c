@@ -49,6 +49,7 @@
 #include "rollback.h"
 #include "net_rollback.h"
 #include "shots.h"
+#include "sim_math.h"
 #include "sprite.h"
 #include "vga256d.h"
 #include "video.h"
@@ -113,8 +114,8 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 		const float ang = ENDLESS_TWO_PI * (float)k / (float)shots;
 		enemyShot[b].sx  = sx;
 		enemyShot[b].sy  = sy;
-		enemyShot[b].sxm = (JE_integer)roundf(cosf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
-		enemyShot[b].sym = (JE_integer)roundf(sinf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
+		enemyShot[b].sxm = (JE_integer)roundf(sim_cosf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
+		enemyShot[b].sym = (JE_integer)roundf(sim_sinf(ang) * ENDLESS_MARTYR_SHOT_SPEED);
 		enemyShot[b].sxc = 0;
 		enemyShot[b].syc = 0;
 		enemyShot[b].tx = 0;
@@ -2052,7 +2053,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 			enemyShot[c] = enemyShot[b];
 			const int fanOrder = fanPhase + k;
 			const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (k / 2 + 1) * 0.20f;
-			const float fc = cosf(fanAng), fs = sinf(fanAng);
+			const float fc = sim_cosf(fanAng), fs = sim_sinf(fanAng);
 			const int ox = enemyShot[c].sxm, oy = enemyShot[c].sym;
 			enemyShot[c].sxm = roundf(ox * fc - oy * fs);
 			enemyShot[c].sym = roundf(ox * fs + oy * fc);
@@ -2120,8 +2121,8 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 			const int fanK = volley - 1;
 			const int fanOrder = boltFanPhase + fanK;
 			const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (fanK / 2 + 1) * 0.20f;
-			dx = -sinf(fanAng);
-			dy = cosf(fanAng);
+			dx = -sim_sinf(fanAng);
+			dy = sim_cosf(fanAng);
 		}
 
 		for (int s = 0; s < 4; ++s)
@@ -2559,7 +2560,7 @@ enemy_still_exists:
 									const int fanK = shotNum / endlessBaseMulti - 1;
 									const int fanOrder = endlessFanPhase + fanK;
 									const float fanAng = ((fanOrder & 1) ? -1.0f : 1.0f) * (fanK / 2 + 1) * 0.20f;
-									const float fc = cosf(fanAng), fs = sinf(fanAng);
+									const float fc = sim_cosf(fanAng), fs = sim_sinf(fanAng);
 									const int ox = enemyShot[b].sxm, oy = enemyShot[b].sym;
 									enemyShot[b].sxm = roundf(ox * fc - oy * fs);
 									enemyShot[b].sym = roundf(ox * fs + oy * fc);

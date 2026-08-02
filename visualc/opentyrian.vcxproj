@@ -56,6 +56,10 @@
     <ClCompile>
       <CompileAs>CompileAsC</CompileAs>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <!-- Stated, not left to the default: netplay requires this build's float results to
+           match the console builds bit for bit, and Precise is the model that forbids the
+           reassociation and multiply-add contraction they also have turned off. -->
+      <FloatingPointModel>Precise</FloatingPointModel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>$(SDL2BaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(WITH_NETWORK)'=='true'">D:\opentyrian2000\stuff\SDL2_net-2.2.0\include;D:\opentyrian2000\stuff\SDL2-2.26.2\include;$(SDL2netBaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -180,6 +184,7 @@
     <ClCompile Include="..\src\rollback.c" />
     <ClCompile Include="..\src\rollback_state.c" />
     <ClCompile Include="..\src\shots.c" />
+    <ClCompile Include="..\src\sim_math.c" />
     <ClCompile Include="..\src\sizebuf.c" />
     <ClCompile Include="..\src\sndmast.c" />
     <ClCompile Include="..\src\sprite.c" />
@@ -352,6 +357,7 @@
     <ClInclude Include="..\src\render_list.h" />
     <ClInclude Include="..\src\rollback.h" />
     <ClInclude Include="..\src\shots.h" />
+    <ClInclude Include="..\src\sim_math.h" />
     <ClInclude Include="..\src\sizebuf.h" />
     <ClInclude Include="..\src\sndmast.h" />
     <ClInclude Include="..\src\sprite.h" />

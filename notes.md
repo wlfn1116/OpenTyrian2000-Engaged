@@ -629,6 +629,35 @@ Four ways such a comparison lies, all of which cost real time before being spott
   cross-platform trace** — statement boundaries are sequence points, so `if (mt_rand()
   ...) { x = mt_rand(); }` is fine; a single argument list or `^` is not.
 
+#### Float determinism
+
+Two builds only agree on a float expression if every step of it is specified. Three things
+are, and one is not:
+
+- **`+ - * /`, comparisons and `sqrtf` are exact.** IEEE 754 pins them to a single
+  correctly-rounded answer, so they are safe to use anywhere. `roundf`/`floor` likewise.
+- **…unless the compiler fuses them.** GCC defaults to `-ffp-contract=fast` and turns
+  `a*b + c` into a single FMADD — one rounding where MSVC's `/fp:precise` does two.
+  Measured, not assumed: `ax*bx + ay*by` compiles to `fmul`+`fmadd` on devkitA64 and
+  `fmul`+`fmul`+`fadd` with `-ffp-contract=off`. The Switch, Vita and Linux builds now
+  pass that flag and the vcxproj states `Precise` rather than relying on the default, so
+  no build can drift into a different answer for the same expression. This mattered:
+  the enemy-shot fan rotates by `ox*fc - oy*fs`, exactly the shape that fuses.
+- **`sinf`/`cosf` are NOT specified.** They are library code, and MSVC's CRT and the
+  consoles' newlib may legitimately return different values. `sim_sinf`/`sim_cosf`
+  (sim_math.c) replace them wherever the result reaches registered state or a netplay
+  hash — Cody-Waite reduction plus the fdlibm kernel polynomials, built only from the
+  exact operations, so every platform gets the same bits. Verified against MSVC's libm
+  over 4M angles spanning ±2000 rad: 10496 results differ by exactly one float ULP, and
+  **zero of 392M rounded results differ** across every multiplier the call sites use, so
+  the trajectories players see did not move. Presentation code (shop preview, render
+  interpolation, the spark shower — superpixels are outside the registry by design) keeps
+  the libm calls.
+
+`-fsigned-char` belongs to the same family and the consoles always had it; the Linux
+Makefile now sets it too, since ARM Linux would otherwise silently flip every `char`
+comparison the DOS-era engine assumes is signed.
+
 The per-item dump is **off by default** (`RB_TRACE_ITEMS_TO 0`, an empty window): a full
 window is ~260 lines per tick, megabytes of SD-card traffic on a console. Narrow the
 divergence with the per-tick summary first, then open a window of a few ticks around it.

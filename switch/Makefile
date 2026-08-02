@@ -59,6 +59,11 @@ PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 # __SWITCH__ is defined automatically by devkitA64; -fsigned-char keeps the
 # behaviour the game assumes on x86 (ARM chars are unsigned by default).
 #
+# -ffp-contract=off: gcc otherwise fuses `a*b + c` into a single FMADD (one rounding
+# instead of two), which MSVC's /fp:precise never does -- so the same float expression
+# gave the PC and this build different answers. Netplay is cross-platform, so the
+# simulation's float results have to match bit for bit.
+#
 # -DNDEBUG: this is a RELEASE build (it's what players run), so compile out assert()
 # exactly like the desktop MSVC Release config does. Without it, asserts are LIVE, and
 # several are latent tripwires the engine relies on NDEBUG to elide -- e.g. blit_sprite()
@@ -72,7 +77,8 @@ PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 # -Wno-format-truncation: matches the root Makefile. The engine's snprintf calls build fixed-width
 # on-screen strings where a clamped tail is the intended behaviour, and gcc can't see the real
 # value ranges, so -Wall's version of this check only produces noise here.
-CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char $(ARCH)
+CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char \
+          -ffp-contract=off $(ARCH)
 
 # TYRIAN_DIR is a compile-time fallback data path the engine expects to be defined
 # (desktop builds pass it too). On Switch the sdmc:/ and romfs: paths prepended in

@@ -95,7 +95,17 @@ ALL_CPPFLAGS = -DTARGET_$(PLATFORM) \
                $(EXTRA_CPPFLAGS) \
                $(SDL_CPPFLAGS) \
                $(CPPFLAGS)
+# Not in CFLAGS, because CFLAGS is the user's to override and these two are correctness,
+# not taste:
+#   -fsigned-char     the DOS-era engine assumes signed char; it is signed by default on x86
+#                     but UNSIGNED on ARM, so an ARM Linux build silently misbehaves without it
+#                     (the console builds have always set it).
+#   -ffp-contract=off gcc fuses `a*b + c` into one FMADD (a single rounding); MSVC's
+#                     /fp:precise never does, so the same float expression gives two builds
+#                     different answers -- and netplay is cross-platform.
 ALL_CFLAGS = -std=iso9899:1999 \
+             -fsigned-char \
+             -ffp-contract=off \
              $(CFLAGS)
 ALL_LDFLAGS = $(SDL_LDFLAGS) \
               $(LDFLAGS)

@@ -32,10 +32,15 @@ set(VITA_VERSION  "01.00")
 ## Compiler flags --------------------------------------------------------------
 # -fsigned-char        : ARM chars are unsigned by default; the DOS-era engine assumes signed x86.
 # -fno-strict-aliasing : the binary data-file loaders type-pun freely.
+# -ffp-contract=off    : gcc otherwise fuses `a*b + c` into a single FMADD (one rounding instead
+#                        of two), which MSVC's /fp:precise never does -- the same float expression
+#                        then gives the PC and this build different answers, and netplay is
+#                        cross-platform, so the simulation's floats must match bit for bit.
 # -Wno-format-truncation : matches the root Makefile -- the engine's snprintf calls build fixed-width
 #                          on-screen strings where a clamped tail is intended, and gcc can't see the
 #                          real value ranges.
-add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing)
+add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing
+                    -ffp-contract=off)
 
 # Compile the whole engine. Every src/*.c is portable or self-guards on its platform macro
 # (win_native_midi.c/crashlog.c -> _WIN32, network.c -> WITH_NETWORK, switch_platform.c ->
