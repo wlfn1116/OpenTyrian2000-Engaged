@@ -79,7 +79,7 @@ Controls are rebindable, and controllers are supported.
 Two-player arcade over the network, set up entirely in-game: **2 Player Online
 Arcade** on the main menu opens a lobby with Host Game, Find LAN Games, and Join
 by IP Address. On a shared network, LAN discovery finds the host without anyone
-typing an address. The game uses UDP port 1333.
+typing an address. The game uses UDP port 1333 by default.
 
 - **Rollback netcode** by default. Your ship answers input on the tick it
   happens, the same feel as single player, while the other ship is predicted and
