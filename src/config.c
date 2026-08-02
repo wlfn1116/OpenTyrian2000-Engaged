@@ -326,6 +326,9 @@ bool chargeLaserCannon = true;
 /* Wake the dormant dispenser bases (enemy 80-83; JE_makeEnemy in tyrian2.c). Campaign
    only -- Endless ignores the toggle and asks the zone instead. */
 bool restoreBaseDispensers = true;
+/* Arcade modes only: a ship's shield and armour ceilings scale with its life count
+   (arcade_life_scaling_active in player.c). Off leaves the vanilla hull numbers. */
+bool arcadeLifeBoost = true;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
@@ -652,6 +655,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "restore_base_dispensers", &restore_base_dispensers);
 		restoreBaseDispensers = (restore_base_dispensers != 0);
 
+		int arcade_life_boost = arcadeLifeBoost ? 1 : 0;
+		config_get_int_option(section, "arcade_life_boost", &arcade_life_boost);
+		arcadeLifeBoost = (arcade_life_boost != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -864,6 +871,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "zica_laser_buff", zicaLaserBuff ? 1 : 0);
 	config_set_int_option(section, "charge_laser_cannon", chargeLaserCannon ? 1 : 0);
 	config_set_int_option(section, "restore_base_dispensers", restoreBaseDispensers ? 1 : 0);
+	config_set_int_option(section, "arcade_life_boost", arcadeLifeBoost ? 1 : 0);
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);

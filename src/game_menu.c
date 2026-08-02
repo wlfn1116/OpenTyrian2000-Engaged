@@ -1554,12 +1554,12 @@ void JE_itemScreen(void)
 			}
 			else
 				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, player[0].armor, 2, 13);
-			// Shield strength (item mpwr) rescaled so the strongest shield (HXS Class C, mpwr 14)
-			// fills exactly 10 bars and every weaker shield proportionally fewer -- matching the
-			// in-game shield gauge, whose full height scales the same way (shield_max = mpwr*2).
+			// Shield ceiling rescaled so a full 28-unit gauge fills exactly 10 bars and every weaker
+			// shield proportionally fewer -- matching the in-game gauge. Reading the ceiling rather
+			// than the item's mpwr also shows the arcade lives scaling growing it between levels.
 			// Rounded to the nearest bar; None (mpwr 0) draws nothing; clamped so it can't overrun.
 			{
-				int shieldBars = (shields[player[0].items.shield].mpwr * 10 + 7) / 14;
+				int shieldBars = (int)((arcade_shield_max(&player[0]) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
 				if (shieldBars > 10)
 					shieldBars = 10;
 				JE_barDrawShadow(VGAScreen, 104, 152, 1, 14, shieldBars, 2, 13);

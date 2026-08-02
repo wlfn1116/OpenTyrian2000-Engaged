@@ -140,7 +140,7 @@ static void write_player(FILE *f, int p)
 	fprintf(f, "  Ship:         %-3d %s\n", (int)it->ship, ship_name(it->ship));
 	fprintf(f, "  Generator:    %-3d %s\n", (int)it->generator, power_name(it->generator));
 	fprintf(f, "  Shield:       %-3d %s  (%u/%u)\n", (int)it->shield, shield_name(it->shield), pl->shield, pl->shield_max);
-	fprintf(f, "  Armor:        %u  (initial %u)\n", pl->armor, pl->initial_armor);
+	fprintf(f, "  Armor:        %u/%u  (hull %u)\n", pl->armor, pl->initial_armor, pl->hull_armor);
 	fprintf(f, "  Front weapon: %-3d %s\n", (int)it->weapon[FRONT_WEAPON].id, port_name(it->weapon[FRONT_WEAPON].id));
 	fprintf(f, "  Front weapon power: %d\n", (int)it->weapon[FRONT_WEAPON].power);
 	fprintf(f, "  Rear weapon:  %-3d %s\n", (int)it->weapon[REAR_WEAPON].id, port_name(it->weapon[REAR_WEAPON].id));

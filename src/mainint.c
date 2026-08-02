@@ -1227,7 +1227,7 @@ void JE_initPlayerData(void)
 		}
 
 		player[p].weapon_mode = 1;
-		player[p].armor = ships[player[p].items.ship].dmg;
+		player[p].armor = player[p].hull_armor = ships[player[p].items.ship].dmg;
 
 		player[p].is_dragonwing = (p == 1);
 		player[p].lives = &player[p].items.weapon[p].power;
@@ -3881,7 +3881,7 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 
 		// The shield ceiling is set only at level start (tyrian2.c), so without this a shield swap
 		// keeps the old one's maximum and the gauge scale goes with it.
-		player[i].shield_max = shields[player[i].items.shield].mpwr * 2;
+		player[i].shield_max = arcade_shield_max(&player[i]);
 		if (player[i].shield > player[i].shield_max)
 			player[i].shield = player[i].shield_max;
 	}
@@ -7234,6 +7234,9 @@ redo:
 				if (*this_player->lives > 1)  // respawn if any extra lives
 				{
 					--(*this_player->lives);
+					// One life poorer, so both ceilings come back down before the refill below
+					// re-derives the respawn armour and shield from them.
+					arcade_rescale_to_lives(this_player);
 
 					reallyEndLevel = false;
 					shotMultiPos[playerNum_-1] = 0;
@@ -7297,8 +7300,11 @@ redo:
 			VGAScreen = game_screen; /* side-effect of game_screen */
 
 			// as if instant death weren't enough, player also gets infinite lives in order to enjoy an infinite number of deaths -_-
-			if (*player[0].lives < 11)
+			if (*player[0].lives < ARCADE_LIVES_MAX)
+			{
 				++(*player[0].lives);
+				arcade_rescale_to_lives(&player[0]);
+			}
 		}
 	}
 
@@ -8986,6 +8992,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							twoPlayerMode = true;
 							twoPlayerLinked = true;
 							player[1].items.weapon[REAR_WEAPON].power = 1;
+							arcade_rescale_to_lives(&player[1]);  // that power IS the spawned wing's life count
 							player[1].armor = 10;
 							player[1].is_alive = true;
 						}
@@ -9161,8 +9168,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						for (uint i = 0; i < COUNTOF(player); ++i)
 						{
 							player[i].armor += (evalue - 20000) / COUNTOF(player);
-							if (player[i].armor > 28)
-								player[i].armor = 28;
+							const uint armorCap = arcade_life_scaling_active() ? player[i].initial_armor : 28;
+							if (player[i].armor > armorCap)
+								player[i].armor = armorCap;
 						}
 					}
 					else
@@ -9172,7 +9180,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						// Under debug campaign mods the classic 28 stays the FLOOR: the effect layer may
 					// only RAISE the cap (an Ablative Plating hull above 28), never lower it, so
 					// merely switching the layer on can't nerf pickups for a light-hulled ship.
-					const uint armorCap = endlessMode ? this_player->initial_armor
+					// Arcade tops up to the lives-scaled ceiling, which is what "max armour" means there.
+					const uint armorCap = (endlessMode || arcade_life_scaling_active())
+					                    ? this_player->initial_armor
 					                    : (endlessCampaignMods && this_player->initial_armor > 28)
 					                      ? this_player->initial_armor : 28;
 						if (this_player->armor > armorCap)

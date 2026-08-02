@@ -459,7 +459,12 @@ void JE_getShipInfo(void)
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		player[i].initial_armor = player[i].armor;
+		// Arcade lives scaling: the hull is only the 1-life figure, so keep it and raise the real
+		// ceiling on top of it. Every caller of this treats the result as a full hull restore --
+		// the between-level outpost is one of them -- so the armour follows the new ceiling up.
+		player[i].hull_armor = player[i].armor;
+		player[i].initial_armor = arcade_armor_max(&player[i]);
+		player[i].armor = player[i].initial_armor;
 
 		// ships[] stops at SHIP_NUM while an "extra" ship is only id > 90, so an id in between
 		// would read past the end here too (see the shipGr fallback above).
@@ -1674,6 +1679,29 @@ void JE_drawPlayerTags(void)
 		JE_textShade(VGAScreen, HUD_X(289), 59 + 134 * i, (i == 0) ? "P1" : "P2", 0, 5, FULL_SHADE);
 }
 
+// Two-player gauge units. The 0.8 squeeze fits the one-player scale into the shorter 2P strip,
+// but JE_dBar3 paints 2*units+1 rows and JE_wipeShieldArmorBars only clears 45 -- so 22 units
+// (what 27 and 28 round to) puts the bar's top row outside what the wipe reaches, where it
+// sticks. Cap at the tallest bar the strip actually holds. Only those two values are affected,
+// and armour could already reach them without any of the lives scaling.
+#define HUD_2P_GAUGE_UNITS_MAX 21
+static int hud_2p_gauge_units(uint value)
+{
+	const int units = (int)roundf(value * 0.8f);
+	return (units > HUD_2P_GAUGE_UNITS_MAX) ? HUD_2P_GAUGE_UNITS_MAX : units;
+}
+
+// The tick mark showing where a full shield would reach, drawn on the row JE_dBar3 would use as
+// the bar's top at `units_max`. Only worth drawing while the bar is short of it.
+static void draw_shield_ceiling_mark(int x, int bottom_y, int units_now, int units_max)
+{
+	if (units_now >= units_max)
+		return;
+
+	const int y = bottom_y - (2 * units_max + 1);
+	JE_rectangle(VGAScreen, x, y, x + 8, y, 68); /* <MXD> SEGa000 */
+}
+
 void JE_drawShield(void)
 {
 	if (rollback_resim_silent)
@@ -1686,7 +1714,10 @@ void JE_drawShield(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, roundf(player[i].shield * 0.8f), 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]));
+			const int units = hud_2p_gauge_units(player[i].shield);
+			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]));
+			// Before the dim, so a remote player's mark fades with the rest of their gauge.
+			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units(player[i].shield_max));
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(270), 60 + 134 * i - 44, HUD_X(278), 60 + 134 * i);
 		}
@@ -1694,11 +1725,7 @@ void JE_drawShield(void)
 	else
 	{
 		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]));
-		if (player[0].shield != player[0].shield_max)
-		{
-			const uint y = 193 - (player[0].shield_max * 2);
-			JE_rectangle(VGAScreen, HUD_X(270), y, HUD_X(278), y, 68); /* <MXD> SEGa000 */
-		}
+		draw_shield_ceiling_mark(HUD_X(270), 194, player[0].shield, player[0].shield_max);
 	}
 }
 
@@ -1746,7 +1773,7 @@ void JE_drawArmor(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, roundf(player[i].armor * 0.8f), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
+			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(player[i].armor), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
 		}

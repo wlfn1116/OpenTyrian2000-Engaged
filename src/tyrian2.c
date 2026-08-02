@@ -3203,10 +3203,10 @@ start_level_first:
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		player[i].shield     = shields[player[i].items.shield].mpwr;
-		player[i].shield_max = player[i].shield * 2;
-		if (startShieldFull)
-			player[i].shield = player[i].shield_max;
+		// Half a charge to start, as ever -- but off the arcade lives-scaled ceiling, which is
+		// just the shield item's own mpwr*2 outside the arcade modes.
+		player[i].shield_max = arcade_shield_max(&player[i]);
+		player[i].shield     = startShieldFull ? player[i].shield_max : player[i].shield_max / 2;
 		shieldGaugeFlash[i] = armorGaugeFlash[i] = 0;
 	}
 
@@ -3632,8 +3632,11 @@ level_loop:
 				soundQueue[6] = S_EXPLOSION_11;
 				soundQueue[7] = S_SOUL_OF_ZINGLON;
 
-				if (*player[0].lives < 11)
+				if (*player[0].lives < ARCADE_LIVES_MAX)
+				{
 					++(*player[0].lives);
+					arcade_rescale_to_lives(&player[0]);
+				}
 				else
 					player[0].cash += 1000;
 

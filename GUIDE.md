@@ -1,7 +1,7 @@
 # OpenTyrian2000 Engaged player guide
 
 This guide covers the features added by this fork. The original Tyrian campaigns
-and arcade modes work as before.
+work as before; the arcade modes gain one rule, described below.
 
 ## Quick start
 
@@ -20,6 +20,57 @@ and arcade modes work as before.
 | Erase the network log (Switch/Vita) | Setup > Enhancements > Game Tweaks > Network |
 | Restore episode-specific weapons | Setup > Enhancements > Game Tweaks |
 | Wake the dormant dispenser bases | Setup > Enhancements > Game Tweaks |
+| Scale arcade shield/armor with lives | Setup > Enhancements > Game Tweaks > Arcade Life Boost |
+
+## Arcade modes
+
+### Shield ceiling mark
+
+The shield gauge carries a thin line marking where a full charge would reach. It
+was already there in the one-player HUD; it is now on both gauges of the
+two-player HUD as well, and it is always drawn — there is nothing to switch on.
+It disappears while the gauge is at its ceiling, which is how you can tell the
+shield is topped up at a glance.
+
+### Arcade Life Boost
+
+**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, on by default.
+
+With it on, in 1 Player Arcade, 2 Player Arcade, Timed Battle and 2 Player Online
+Arcade, lives buy durability as well as retries. Each ship's shield and armor
+ceilings scale with its own life count: at 1 life they are exactly the vanilla
+numbers, and at the 11-life maximum both gauges reach a full bar. Switched off,
+every arcade ship keeps the vanilla hull and shield it always had.
+
+| Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
+| --- | --- | --- | --- | --- |
+| 1 Player Arcade | Stalker | 15 | 10 | 28 |
+| 2 Player (and Online) | Silver Ship | 10 | 10 | 28 |
+| 2 Player (and Online) | Dragonwing | 10 | 10 | 28 |
+
+The two ships in a two-player game scale independently, each off its own life
+count. Growth is even across the range — a mid-run six lives puts the Stalker at
+22 armor and 19 shield.
+
+The ceilings move the moment the life count does, and both gauges repaint on the
+spot rather than waiting for the next hit:
+
+- **Gaining a life mid-level** raises both ceilings at once. Damage already taken
+  carries across proportionally, so a ship at half armor stays at half armor —
+  the extra hull is a larger bar, not a free repair.
+- **Losing a life** drops both ceilings, then the usual respawn refill fills the
+  smaller gauges.
+- **The outpost between levels** restores armor to the current ceiling, and the
+  next level starts you on half a shield charge off the current ceiling, as ever.
+
+Armor pickups now top up to the current ceiling rather than to a flat 28, so at
+low life counts a light hull holds less than it used to.
+
+Online games need no extra traffic for this: both machines derive the ceilings
+from the life counts they already agree on. The row decides how much damage each
+ship survives, so like every other setting that reaches the simulation it is
+**host-authoritative** — the host's choice binds the session, and the joiner's own
+setting is left untouched and restored when the session ends.
 
 ## Endless mode
 

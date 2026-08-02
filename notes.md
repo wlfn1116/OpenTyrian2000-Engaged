@@ -472,6 +472,74 @@ count, then that many s32 offsets; at `lvlPos[(n-1)*2]` read 2 chars, 3 × u16
 `maxEvent` × 10-byte records (u16 time, u8 type, s16 dat, s16 dat2, s8 dat3, s8
 dat5, s8 dat6, u8 dat4), little-endian throughout.
 
+## Arcade lives scaling
+
+In the arcade modes a ship's shield and armour ceilings scale with its life count:
+the hull's own numbers at 1 life, a full 28-unit bar at 11. `player.c` owns it —
+`arcade_armor_max`, `arcade_shield_max`, `arcade_rescale_to_lives`. The Game Tweaks
+row is `arcadeLifeBoost`, host-authoritative online (flags bit 7 of the connect
+settings block). It can only be reached from the title-screen Setup menu — the
+in-game Esc menu has its own short item list and `JE_extraMenu` is a separate
+screen — so it cannot change mid-level and nothing has to react to it changing.
+
+The trap to know first: **`player[].lives` is not a counter of its own.** It is a
+pointer into `items`, `&player[p].items.weapon[p].power` (`JE_initPlayerData`), so
+in arcade a life IS a weapon power level. That is why `power_up_weapon` is the one
+place a life is gained by pickup — front port for player one, rear for the
+Dragonwing — and why the cap is 11 rather than something chosen for lives. It also
+means `lives` rides the wire for free: `PlayerItems` is already in the debug-sync
+block and in every rollback snapshot.
+
+Both ceilings are therefore pure integer functions of `items` + lives, which is the
+whole netplay story — nothing new is sent, and the two machines cannot disagree as
+long as the arithmetic stays integer. `arcade_scaled_max` is written that way on
+purpose; a float lerp here would be exactly the kind of cross-machine drift
+`sim_sinf`/`-ffp-contract=off` exist to prevent.
+
+Two fields carry it in `Player`:
+
+| field | meaning |
+| --- | --- |
+| `hull_armor` | the ship's own armour, straight from `ships[].dmg` / `extraShips[]` |
+| `initial_armor` | the **scaled ceiling** — respawn refill, pickup cap, endless clamps |
+
+`initial_armor` used to be a copy of the hull, which is why `hull_armor` had to be
+added rather than re-derived: `JE_getShipInfo` is the only code that knows how to
+read a hull (extra ships live in `extraShips[]`, the Dragonwing is a hardcoded 10),
+and it overwrites `initial_armor` with the ceiling.
+
+Where it hooks in, and why each one is needed:
+
+| site | why |
+| --- | --- |
+| `JE_getShipInfo` (varz.c) | derives both `hull_armor` and the ceiling; every caller treats it as a full hull restore, which is what makes the between-level outpost refill to the new maximum |
+| level start (tyrian2.c) | `shield_max` is only ever set here; shield still starts at half of it |
+| `power_up_weapon` (player.c) | the single funnel for a life gained from a pickup |
+| respawn (mainint.c) | drops the ceilings *before* the refill re-derives armour and shield from them |
+| galaga 1UP and Dragonwing spawn | the two places a life is written without going through `power_up_weapon` |
+| `debug_apply_loadout_change` | also the peer side of a networked debug edit (`debugLoadoutRefresh`) |
+
+`arcade_rescale_to_lives` carries the live gauges across proportionally rather than
+topping them up, so a life gained is a bigger bar and not a free repair. It has no
+arcade guard of its own, deliberately: outside arcade (or with the row off)
+`arcade_armor_max` is `hull_armor` and `arcade_shield_max` is `shields[].mpwr * 2`,
+exactly the expressions they replaced, so it is a no-op on the campaign and Endless
+paths — and an early return would have stranded an inflated ceiling when the row
+goes off. It also raises `hud_bars_dirty`: both gauges are event-painted and a life
+picked up mid-level paints neither, so without that the new ceilings sat unshown
+until the next hit. Flagging rather than drawing is what makes it rollback-safe —
+the tick's repaint poll is the one place a silent re-simulation pass cannot paint
+a value that is about to be rolled back.
+
+SuperTyrian and the Super Arcade secret ships run on lives too but are excluded —
+they were balanced around their own hulls, and the Stalker 21.126 is already past
+28 armour anyway. `arcade_scaled_max` also returns `base` unchanged for a 0 base,
+so "None" in the shield slot stays no shield.
+
+The armour pickup cap in `JE_eventSystem` moved from a flat 28 to the ceiling. That
+is a deliberate nerf at low life counts — vanilla let any arcade hull reach 28 off
+a pickup, which would have made the ceiling meaningless for armour.
+
 ## Networking
 
 Both machines simulate both ships, so anything a menu writes into simulation state
@@ -1108,6 +1176,16 @@ shares that offset. `JE_drawPlayerTags` paints the `P1`/`P2` marks onto the arch
 below each block at level start, next to the level-name draw and before the fade,
 so they are part of the panel. That works only because nothing during play covers
 those rows: the bar wipe is confined to the gauge columns.
+
+`JE_dBar3` paints `2*units+1` rows upward from its bottom `y`, and the two-player
+wipe clears 45 — so a gauge must stay at or under 21 units there or its top row
+lands outside the wipe and sticks. The `0.8` squeeze that fits the one-player
+scale into the shorter strip turns a full 28-unit gauge into 22, which is why
+`hud_2p_gauge_units` clamps. This was already reachable in vanilla: two-player
+armour caps at 28. The shield ceiling mark (`draw_shield_ceiling_mark`) is drawn
+on the row `JE_dBar3` would use as the bar top at the maximum, which is what keeps
+it inside the wiped region — so it is derived from the same clamped units, not
+from `shield_max` directly.
 
 Help-bar values right-align to `ENDLESS_COURSE_PAYOUT_RIGHT`. Keep descriptions
 short enough to leave room for prices or owned-stack counts.
