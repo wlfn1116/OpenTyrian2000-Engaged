@@ -1533,7 +1533,7 @@ void JE_itemScreen(void)
 			{
 				char buf[20];
 
-				snprintf(buf, sizeof buf, "%lu", player[0].cash);
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)player[0].cash);
 				// Centre the cash total in the monitor slot, matching the endless course RANK readout
 				// (same slot, same row) instead of growing rightward from a fixed left edge.
 				// y172: DARKEN draws the body at y+1, so this lands on row 173 -- level with the RANK.
@@ -1589,9 +1589,9 @@ void JE_itemScreen(void)
 					const size_t who_len = strlen(who);
 
 					if (isNetworkGame && strncmp(label, who, who_len) == 0)
-						snprintf(buf, sizeof(buf), "%s%s %lu", JE_getName(i + 1), label + who_len, player[i].cash);
+						snprintf(buf, sizeof(buf), "%s%s %lu", JE_getName(i + 1), label + who_len, (unsigned long)player[i].cash);
 					else
-						snprintf(buf, sizeof(buf), "%s %lu", label, player[i].cash);
+						snprintf(buf, sizeof(buf), "%s %lu", label, (unsigned long)player[i].cash);
 
 					y = draw_2p_info_row(SHOP_2P_X, y, 4, "", buf);
 

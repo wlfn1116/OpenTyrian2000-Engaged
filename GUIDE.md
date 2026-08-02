@@ -424,16 +424,21 @@ apart instead of letting the rest of the level play out differently on each.
 When a desync is detected, the game pauses for a moment ("Resyncing players."),
 the host sends its complete game state to the other player, and both continue
 from the host's version of events. The host's setting decides for the session,
-like every other rule that affects the simulation. It works in rollback netplay
-between two copies of the same build on the same platform — Delay-Based netcode
-detects and logs a desync but has no way to repair one, so choosing it switches
-the row off and grays it out — and gives up after
-three repairs in one level; every repair is still recorded in the network log,
-so a recurring desync stays visible to bug reports.
+like every other rule that affects the simulation. It needs rollback netplay —
+Delay-Based netcode detects and logs a desync but has no way to repair one, so
+choosing it switches the row off and grays it out — and it needs two builds that
+lay their game state out the same way, which the two machines check when they
+connect. PC, Switch and Vita builds of the same version qualify; mixing versions
+generally does not, and when that happens the network log says so at connect and
+the session simply plays on through any desync instead of repairing it. Recovery
+also gives up after three repairs in one level; every repair is still recorded in
+the network log, so a recurring desync stays visible to bug reports.
 
 The network log (`opentyrian_net.log`, next to `opentyrian_log.log` beside the
 game on PC, or in the game's data folder on Switch and Vita) records every
-online session: a session-start line naming the netcode and settings, any
+online session: a session-start line naming the netcode, settings and the size
+and fingerprint of that machine's game-state layout (identical on both machines
+means recovery is available), any
 desyncs, stalls and resyncs — including a one-line reason for every repair
 attempt that fails — and a session-end line with totals. A desync entry also
 carries a snapshot of the disputed frame as that machine computed it, so when

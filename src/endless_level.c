@@ -310,8 +310,12 @@ void endlessCampaignLevelStart(void)
 		return;
 
 	endlessResetZoneEffects();
-	endlessEliteRngState = endlessSplitMixSeed(((Uint64)mt_rand() << 32) ^ (Uint64)mt_rand());
-	endlessReseed(((Uint64)mt_rand() << 32) ^ (Uint64)mt_rand());
+	// `^` sequences nothing, so the high and low halves swapped between compilers and the
+	// two platforms seeded differently from the same stream. Draw them in named order.
+	const Uint64 elite_hi = (Uint64)mt_rand(), elite_lo = (Uint64)mt_rand();
+	endlessEliteRngState = endlessSplitMixSeed((elite_hi << 32) ^ elite_lo);
+	const Uint64 zone_hi = (Uint64)mt_rand(), zone_lo = (Uint64)mt_rand();
+	endlessReseed((zone_hi << 32) ^ zone_lo);
 	endlessRollGravityDir();
 }
 

@@ -157,6 +157,9 @@ static Uint8 *rb_trace_buf;
 
 static void rb_alloc_buffers(void)
 {
+	if (rb_ring[0] != NULL)
+		return;  /* the fingerprint path can register long before anything rolls back */
+
 	for (int i = 0; i < ROLLBACK_RING; ++i)
 	{
 		rb_ring[i] = malloc(rb_total_size);
@@ -687,7 +690,10 @@ bool rollback_selftest_active(void)
  * the level at double speed.  Allocate on the spot instead. */
 static void rb_selftest_arm(void)
 {
-	if (rb_registered)
+	/* Keyed on the RING, not on rb_registered: the connect handshake registers the
+	 * registry (to fingerprint it) without allocating anything, so "registered" no
+	 * longer implies "has buffers" -- and this used to return early on it. */
+	if (rb_ring[0] != NULL)
 		return;
 	rollback_register_all();
 	rollback_ring_reset();
@@ -877,7 +883,7 @@ void rollback_level_end(void)
 void rollback_state_register_globals(void);   /* rollback_state.c  */
 void tyrian2_register_rollback(void);         /* tyrian2.c statics */
 
-void rollback_register_all(void)
+void rollback_ensure_registered(void)
 {
 	if (rb_registered)
 		return;
@@ -885,9 +891,48 @@ void rollback_register_all(void)
 
 	rollback_state_register_globals();
 	tyrian2_register_rollback();
+}
 
+void rollback_register_all(void)
+{
+	const bool first = !rb_registered;
+
+	rollback_ensure_registered();
 	rb_alloc_buffers();
 
-	fprintf(stderr, "rollback: %d items, %zu bytes per snapshot, %d-deep ring\n",
-	        rb_item_count, rb_total_size, ROLLBACK_RING);
+	if (first)
+		fprintf(stderr, "rollback: %d items, %zu bytes per snapshot, %d-deep ring\n",
+		        rb_item_count, rb_total_size, ROLLBACK_RING);
+}
+
+/* Registry shape, not registry contents.  Names go in because two builds can
+ * reach the same total by different routes, and offsets go in because the wire
+ * snapshot is positional -- an item that merely MOVED would corrupt the peer
+ * just as thoroughly as one that changed size. */
+Uint32 rollback_layout_fingerprint(void)
+{
+	rollback_ensure_registered();
+
+	Uint32 h = 2166136261u;
+	#define FP_BYTE(v) do { h ^= (Uint8)(v); h *= 16777619u; } while (0)
+	#define FP_WORD(v) do { \
+		const Uint32 w_ = (Uint32)(v); \
+		for (int b_ = 0; b_ < 4; ++b_) \
+			FP_BYTE(w_ >> (b_ * 8)); \
+	} while (0)
+
+	FP_WORD(rb_item_count);
+	FP_WORD(rb_total_size);
+	for (int i = 0; i < rb_item_count; ++i)
+	{
+		for (const char *n = rb_items[i].name; *n != '\0'; ++n)
+			FP_BYTE(*n);
+		FP_BYTE(0);
+		FP_WORD(rb_items[i].size);
+		FP_WORD(rb_items[i].offset);
+	}
+
+	#undef FP_WORD
+	#undef FP_BYTE
+	return h;
 }

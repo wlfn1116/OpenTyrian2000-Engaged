@@ -3482,6 +3482,17 @@ start_level_first:
 	// the self-test in single player, resets the netplay input history.  Ship
 	// spawn positions are final here, which the prediction seed relies on.
 	rollback_level_start();
+	// The per-tick ship snapshot is per LEVEL: left standing, the first tick of level 2
+	// measured its delta against level 1's final ship position and handed every
+	// ship-tracking shot fired that tick a bogus inherited velocity.
+	ship_pred_have_tick = false;
+	memset(ship_vel_x, 0, sizeof(ship_vel_x));
+	memset(ship_vel_y, 0, sizeof(ship_vel_y));
+	for (int p = 0; p < 2; ++p)
+	{
+		ship_tick_x[p] = player[p].x;
+		ship_tick_y[p] = player[p].y;
+	}
 #ifdef WITH_NETWORK
 	if (isNetworkGame && nrb_active())
 		nrb_level_reset();
@@ -4926,7 +4937,13 @@ draw_player_shot_loop_end:
 	// Full visible playfield: 280 is the pre-widescreen width and stops short of the widened right
 	// edge (see composite_playfield / video.h); 184 = full playfield height (vanilla stopped at 180).
 	if (randomExplosions && mt_rand() % 10 == 1)
-		JE_setupExplosionLarge(false, 20, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184);
+	{
+		// Sequenced: as arguments the two draws were unordered, and the compilers disagree
+		// about which coordinate gets which (see varz.c's special scatter).
+		const int boom_x = PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH;
+		const int boom_y = mt_rand() % 184;
+		JE_setupExplosionLarge(false, 20, boom_x, boom_y);
+	}
 
 	// Repaint the sidekick HUD boxes if a silent re-simulation pass wiped them (its box
 	// fill runs but its icon blit is suppressed).  This pass's draws reach the screen.
@@ -5931,7 +5948,7 @@ new_game:
 						if (twoPlayerMode)
 						{
 							for (uint i = 0; i < 2; ++i)
-								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lu", miscText[40 + i], player[i].cash);
+								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lu", miscText[40 + i], (unsigned long)player[i].cash);
 							strcpy(levelWarningText[2], "");
 							levelWarningLines = 3;
 						}
@@ -9520,6 +9537,11 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.chainPulseLast",   &chainPulseLastLink, sizeof(chainPulseLastLink));
 	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
+	/* The latch that arms them.  It flips false->true inside the tick, so a replay of
+	 * the level's FIRST tick found it already set and took vt_ship_shot_delta's other
+	 * branch -- the shot-move deltas and the aim anchors came out swapped, which is
+	 * what the self-test reported as three items diverging on tick 1. */
+	rollback_register("t2.shipPredHave",     &ship_pred_have_tick, sizeof(ship_pred_have_tick));
 	rollback_register("t2.tempMapXOfsFrac",  &tempMapXOfs_frac, sizeof(tempMapXOfs_frac));
 	rollback_register("t2.tempMapXOfsLayer", &tempMapXOfs_layer, sizeof(tempMapXOfs_layer));
 	rollback_register("t2.tempScrollYBase",  &tempScrollYBase, sizeof(tempScrollYBase));

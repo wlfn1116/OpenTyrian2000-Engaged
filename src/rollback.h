@@ -68,6 +68,17 @@ void rollback_register_fixup(void (*fn)(void));
 void rollback_register_all(void);
 size_t rollback_state_size(void);
 
+/* Registers without allocating the snapshot ring.  For callers that need the
+ * registry described (the layout fingerprint) but are not about to roll back. */
+void rollback_ensure_registered(void);
+
+/* A hash of the registry's SHAPE: item count, and every item's name, size and
+ * offset.  Two machines can only adopt each other's wire snapshots if this and
+ * rollback_state_size() both agree, so the connect handshake trades it and a
+ * session that cannot ever recover says so up front instead of discovering it
+ * at the first desync -- when the failed attempt costs both machines the level. */
+Uint32 rollback_layout_fingerprint(void);
+
 /* --- Snapshot ring, keyed by sim frame ---------------------------------------- */
 
 void rollback_ring_reset(void);

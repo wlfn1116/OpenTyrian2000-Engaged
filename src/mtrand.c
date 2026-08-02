@@ -51,10 +51,10 @@
 #define UPPER_MASK 0x80000000UL /* most significant w-r bits */
 #define LOWER_MASK 0x7fffffffUL /* least significant r bits */
 
-static unsigned long x[N];      /* the array for the state vector  */
-static unsigned long *p0, *p1, *pm;
+static uint32_t x[N];           /* the array for the state vector  */
+static uint32_t *p0, *p1, *pm;
 
-unsigned long mt_rand_count = 0;  /* draws since the last seed; see mtrand.h */
+uint32_t mt_rand_count = 0;  /* draws since the last seed; see mtrand.h */
 
 void mt_srand(unsigned long s)
 {
@@ -74,7 +74,7 @@ void mt_srand(unsigned long s)
 /* generates a random number on the interval [0,0xffffffff] */
 unsigned long mt_rand(void)
 {
-	unsigned long y;
+	uint32_t y;
 
 	if (!p0) {
 		/* Default seed */
@@ -103,26 +103,28 @@ unsigned long mt_rand(void)
  * The generator's whole state is x[], three cursor POINTERS into x[], and the
  * draw counter.  A raw memcpy of this file's statics would capture pointer
  * values, which restore fine within one process but are fragile on principle;
- * store the cursors as offsets instead.  Layout (same-process only, never
- * serialized): x[N], then three int offsets, then mt_rand_count.
+ * store the cursors as offsets instead.  Layout: x[N], three int32 offsets, then
+ * mt_rand_count -- every field fixed-width, because netplay desync recovery ships
+ * this blob to the peer and a Windows/console width difference here made the two
+ * machines' snapshots 2500 bytes apart (see mtrand.h).
  */
 size_t mt_state_size(void)
 {
-	return sizeof(x) + 3 * sizeof(int) + sizeof(mt_rand_count);
+	return sizeof(x) + 3 * sizeof(int32_t) + sizeof(mt_rand_count);
 }
 
 void mt_state_save(void *dst)
 {
 	unsigned char *p = dst;
-	int ofs[3];
+	int32_t ofs[3];
 
 	memcpy(p, x, sizeof(x));
 	p += sizeof(x);
 
 	/* p0 NULL means "never seeded"; keep that representable. */
-	ofs[0] = p0 ? (int)(p0 - x) : -1;
-	ofs[1] = p1 ? (int)(p1 - x) : -1;
-	ofs[2] = pm ? (int)(pm - x) : -1;
+	ofs[0] = p0 ? (int32_t)(p0 - x) : -1;
+	ofs[1] = p1 ? (int32_t)(p1 - x) : -1;
+	ofs[2] = pm ? (int32_t)(pm - x) : -1;
 	memcpy(p, ofs, sizeof(ofs));
 	p += sizeof(ofs);
 
@@ -132,7 +134,7 @@ void mt_state_save(void *dst)
 void mt_state_restore(const void *src)
 {
 	const unsigned char *p = src;
-	int ofs[3];
+	int32_t ofs[3];
 
 	memcpy(x, p, sizeof(x));
 	p += sizeof(x);

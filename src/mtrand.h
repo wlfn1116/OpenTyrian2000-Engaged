@@ -19,8 +19,13 @@
 #ifndef MTRAND_H
 #define MTRAND_H
 
+#include <stdint.h>
+
 #define MT_RAND_MAX 0xffffffffUL
 
+/* The generator is 32-bit throughout; the `unsigned long` in these two signatures is
+ * historical and harmless (every value fits, and every caller takes a modulus).  The
+ * STATE is what has to be fixed-width -- see the snapshot note below. */
 void mt_srand(unsigned long s);
 unsigned long mt_rand(void);
 float mt_rand_1(void);
@@ -30,10 +35,15 @@ float mt_rand_lt1(void);
  * divergence in how much randomness the two sims consumed shows up here immediately,
  * usually a tick or two before it becomes visible in positions or armor. Network levels
  * reseed to a fixed constant (tyrian2.c), so the count is directly comparable. */
-extern unsigned long mt_rand_count;
+extern uint32_t mt_rand_count;
 
 /* Rollback snapshot support: the generator's full state (vector, cursors as
- * offsets, draw count) as an opaque same-process blob.  See mtrand.c. */
+ * offsets, draw count) as an opaque same-process blob.  See mtrand.c.
+ *
+ * Fixed-width, not `unsigned long`: netplay desync recovery ships this blob to the
+ * peer, and `unsigned long` made the state vector 2496 bytes on Windows and 4992 on
+ * the consoles.  That alone put a PC<->Switch session 2500 bytes apart, so the
+ * receiving side refused every recovery stream it was ever offered. */
 #include <stddef.h>
 size_t mt_state_size(void);
 void mt_state_save(void *dst);

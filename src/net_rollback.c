@@ -248,10 +248,19 @@ static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 #define NRB_RS_HDR       12
 #define NRB_RS_PRE       12
 #define NRB_RS_PAYLOAD   (NET_PACKET_SIZE - NRB_RS_HDR)
-#define NRB_RS_NAK       0xFFFFu
+#define NRB_RS_NAK       0xFFFFu          /* joiner -> host: did NOT adopt        */
+#define NRB_RS_ACK       0xFFFEu          /* joiner -> host: adopted, gen G       */
 #define NRB_RS_MAX       3                /* recovery attempts per level          */
 #define NRB_RS_PROGRESS_TIME_OUT 8000     /* ms without a new chunk -> NAK        */
 #define NRB_RS_ABS_TIME_OUT      60000    /* ms for the whole attempt             */
+#define NRB_RS_ADOPT_TIME_OUT    6000     /* ms to answer a fully delivered stream */
+
+/* Why the joiner refused, in the NAK's spare word.  Without it the host cannot tell
+ * "try again" from "no stream will ever pass", and a permanent refusal burned the
+ * whole budget re-sending identical bytes at a peer that had already stopped
+ * listening -- see nrb_resync_recv's layout branch. */
+#define NRB_NAK_RETRY    0u               /* transient: stall, checksum, short assembly */
+#define NRB_NAK_FATAL    1u               /* permanent: layout/build mismatch           */
 
 static Uint32 resync_used;   /* attempts consumed this level (either role)        */
 static Uint16 resync_gen;    /* newest attempt id sent (host) / adopted (joiner)  */
@@ -858,7 +867,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 
 			/* Static: the enemy table can outgrow a comfortable stack frame, and
 			 * this writes at most once per level from the main thread. */
-			static char detail[8192];
+			static char detail[12288];
 			int off = nrb_apf(detail, sizeof(detail), 0,
 			         "rollback frame %lu (player %u, current frame %lu)\n"
 			         "  rand draws : local %lu  remote %lu  %s\n"
@@ -903,18 +912,12 @@ static void nrb_check_canary(const NrbCanary *const peer)
 					              "  P%d: x=%ld y=%ld armor=%ld shield=%ld alive=%ld cash=%ld\n",
 					              i + 1, (long)d->p[i].x, (long)d->p[i].y, (long)d->p[i].armor,
 					              (long)d->p[i].shield, (long)d->p[i].alive, (long)d->p[i].cash);
-				off = nrb_apf(detail, sizeof(detail), off,
-				              "  enemies: %u live (idx: ex,ey armor avail type)\n",
-				              (unsigned)d->enemy_count);
-				for (Uint16 i = 0; i < d->enemy_count && i < NET_SIM_DETAIL_ENEMIES; ++i)
-					off = nrb_apf(detail, sizeof(detail), off,
-					              "  %3u: %5ld,%-5ld a%-5ld v%u t%u\n",
-					              (unsigned)d->e[i].idx, (long)d->e[i].ex, (long)d->e[i].ey,
-					              (long)d->e[i].armorleft, (unsigned)d->e[i].avail,
-					              (unsigned)d->e[i].type);
-
 				/* Which pool moved.  The wire carries only the combined hash, so
-				 * these five lines are what turns "pools DIFFER" into a subsystem. */
+				 * these five lines are what turns "pools DIFFER" into a subsystem.
+				 * Printed BEFORE the enemy table: this block and the shot rows are
+				 * bounded and are what a pool divergence needs, while the enemy
+				 * table can run to 100 rows and is the right thing to lose if the
+				 * entry runs out of room. */
 				const NetSimPools *x = &canary_pools[peer->tag % NRB_HIST];
 				off = nrb_apf(detail, sizeof(detail), off,
 				              "  pools: explosions %08x (%u live)  repeating %08x (%u)\n"
@@ -924,6 +927,38 @@ static void nrb_check_canary(const NrbCanary *const peer)
 				              (unsigned)x->enemy_shots, (unsigned)x->n_eshot,
 				              (unsigned)x->player_shots, (unsigned)x->n_pshot,
 				              (unsigned)x->sound);
+
+				/* The player-shot pool is the only hashed pool whose rows a
+				 * position/armor dump cannot reconstruct, and a desync that moves
+				 * only this hash is otherwise a dead end.  Capped, so say so when
+				 * the cap bites rather than letting the list read as complete. */
+				if (x->n_pshot > 0)
+				{
+					const Uint16 shown = x->n_pshot < NET_SIM_DETAIL_SHOTS
+					                   ? x->n_pshot : NET_SIM_DETAIL_SHOTS;
+					off = nrb_apf(detail, sizeof(detail), off,
+					              "  player shots: %u live, showing %u (idx: x,y xm,ym xc,yc dmg avail pl pierce)\n",
+					              (unsigned)x->n_pshot, (unsigned)shown);
+					for (Uint16 i = 0; i < shown; ++i)
+						off = nrb_apf(detail, sizeof(detail), off,
+						              "  %4u: %5ld,%-5ld m%ld,%-4ld c%ld,%-4ld d%-4u v%-4u p%u k%u\n",
+						              (unsigned)x->pshot[i].idx,
+						              (long)x->pshot[i].x, (long)x->pshot[i].y,
+						              (long)x->pshot[i].xm, (long)x->pshot[i].ym,
+						              (long)x->pshot[i].xc, (long)x->pshot[i].yc,
+						              (unsigned)x->pshot[i].dmg, (unsigned)x->pshot[i].avail,
+						              (unsigned)x->pshot[i].playernum, (unsigned)x->pshot[i].pierce);
+				}
+
+				off = nrb_apf(detail, sizeof(detail), off,
+				              "  enemies: %u live (idx: ex,ey armor avail type)\n",
+				              (unsigned)d->enemy_count);
+				for (Uint16 i = 0; i < d->enemy_count && i < NET_SIM_DETAIL_ENEMIES; ++i)
+					off = nrb_apf(detail, sizeof(detail), off,
+					              "  %3u: %5ld,%-5ld a%-5ld v%u t%u\n",
+					              (unsigned)d->e[i].idx, (long)d->e[i].ex, (long)d->e[i].ey,
+					              (long)d->e[i].armorleft, (unsigned)d->e[i].avail,
+					              (unsigned)d->e[i].type);
 			}
 
 			/* Input window up to the disputed frame: what we sent, the peer's
@@ -1368,12 +1403,26 @@ static void nrb_resync_send_chunk(const Uint8 *stream, size_t total, Uint32 chun
 	network_send(NRB_RS_HDR + (int)len);
 }
 
-static void nrb_resync_send_nak(Uint16 gen)
+static void nrb_resync_send_nak(Uint16 gen, Uint16 reason)
 {
 	Uint8 *data = packet_out_temp->data;
 	network_prepare(PACKET_RESYNC);
 	SDLNet_Write16(gen,                &data[4]);
 	SDLNet_Write16((Uint16)NRB_RS_NAK, &data[6]);
+	SDLNet_Write16(reason,             &data[8]);
+	SDLNet_Write16(0,                  &data[10]);
+	network_send(NRB_RS_HDR);
+}
+
+/* The joiner's "I am on the new timeline".  The host resets onto it only when this
+ * arrives: transport acks say the bytes were RECEIVED, and the joiner acknowledges
+ * on receipt, before it has parsed a single one of them. */
+static void nrb_resync_send_ack(Uint16 gen)
+{
+	Uint8 *data = packet_out_temp->data;
+	network_prepare(PACKET_RESYNC);
+	SDLNet_Write16(gen,                &data[4]);
+	SDLNet_Write16((Uint16)NRB_RS_ACK, &data[6]);
 	SDLNet_Write16(0,                  &data[8]);
 	SDLNet_Write16(0,                  &data[10]);
 	network_send(NRB_RS_HDR);
@@ -1432,13 +1481,17 @@ static int nrb_resync_send_once(void)
 	const Uint32 wait_start = SDL_GetTicks();
 	bool reported = false;
 	Uint32 sent = 0;
+	Uint32 delivered_at = 0;  /* when the last chunk was acknowledged; 0 = not yet */
 	int outcome = 0;  /* 1 done, 2 NAK: retry, 3 give up this level */
 	const char *fail = NULL;  /* set where a failure is OURS to report */
+	char fail_ctx[160];
 
 	while (outcome == 0)
 	{
 		char why[112];
-		snprintf(why, sizeof(why), "streaming the resync state: %lu/%lu chunks handed over, backlog %d",
+		snprintf(why, sizeof(why), "%s: %lu/%lu chunks handed over, backlog %d",
+		         delivered_at ? "waiting for the joiner to adopt the resync state"
+		                      : "streaming the resync state",
 		         (unsigned long)sent, (unsigned long)chunks, network_ack_backlog());
 		if (!nrb_resync_pump(wait_start, &reported, why))
 		{
@@ -1454,13 +1507,33 @@ static int nrb_resync_send_once(void)
 			const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
 			if (type == PACKET_RESYNC)
 			{
-				const Uint16 g  = SDLNet_Read16(&packet_in[0]->data[4]);
-				const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
+				const Uint16 g      = SDLNet_Read16(&packet_in[0]->data[4]);
+				const Uint16 ix     = SDLNet_Read16(&packet_in[0]->data[6]);
+				const Uint16 reason = SDLNet_Read16(&packet_in[0]->data[8]);
 				network_update();
-				if (ix == NRB_RS_NAK && g == resync_gen)
+				if (ix == NRB_RS_ACK && g == resync_gen)
 				{
-					fail = "the joiner NAKed the stream (its abort entry names why)";
-					outcome = 2;
+					/* The joiner is on the new timeline.  Only now may we be. */
+					outcome = 1;
+				}
+				else if (ix == NRB_RS_NAK && g == resync_gen)
+				{
+					if (reason == NRB_NAK_FATAL)
+					{
+						/* No stream we can build will ever pass its check.  Retire
+						 * recovery for the session on THIS side too, so the remaining
+						 * attempts are not spent re-sending the same refused bytes at
+						 * a peer that has already stopped listening for them. */
+						resync_layout_bad = true;
+						fail = "the joiner refused permanently (its abort entry names why); "
+						       "recovery disabled for this session";
+						outcome = 3;
+					}
+					else
+					{
+						fail = "the joiner NAKed the stream (its abort entry names why)";
+						outcome = 2;
+					}
 				}
 				/* other gens: stale echoes of an abandoned attempt */
 			}
@@ -1499,8 +1572,29 @@ static int nrb_resync_send_once(void)
 			++sent;
 		}
 
+		/* Delivered is not adopted.  This used to be the success test outright, and
+		 * the comment above already says why it cannot be: the joiner acknowledges on
+		 * receipt.  A joiner that refused the stream and stopped listening still acked
+		 * every chunk of it, so the host declared victory, advanced the epoch, and left
+		 * the two machines on timelines neither could reach -- both then sat in the
+		 * peer-too-far-behind stall until the session died.  Wait for the joiner to say
+		 * it adopted; the loop above turns that ACK into outcome 1. */
 		if (sent == chunks && network_ack_backlog() == 0)
-			outcome = 1;
+		{
+			if (delivered_at == 0)
+				delivered_at = SDL_GetTicks();
+			else if (SDL_GetTicks() - delivered_at > NRB_RS_ADOPT_TIME_OUT)
+			{
+				/* Every byte landed and the joiner said nothing either way.  Worth one
+				 * more attempt, but never worth resetting our own timeline over. */
+				snprintf(fail_ctx, sizeof(fail_ctx),
+				         "the joiner took the whole stream (%lu chunks) but never answered "
+				         "within %d ms -- not adopted, so our timeline stands",
+				         (unsigned long)chunks, NRB_RS_ADOPT_TIME_OUT);
+				fail = fail_ctx;
+				outcome = 2;
+			}
+		}
 	}
 
 	free(stream);
@@ -1637,9 +1731,9 @@ static bool nrb_resync_receive(void)
 		const Uint16 pl  = SDLNet_Read16(&packet_in[0]->data[10]);
 		seen_gen = g;
 
-		if (ix == NRB_RS_NAK || len < NRB_RS_HDR + pl || pl > NRB_RS_PAYLOAD)
+		if (ix == NRB_RS_NAK || ix == NRB_RS_ACK || len < NRB_RS_HDR + pl || pl > NRB_RS_PAYLOAD)
 		{
-			network_update();  /* an echo, or malformed: drop */
+			network_update();  /* our own NAK/ACK echoed back, or malformed: drop */
 			continue;
 		}
 
@@ -1765,6 +1859,11 @@ static bool nrb_resync_receive(void)
 	{
 		resync_gen = gen;
 
+		/* Before the reset, and before we present: the host is blocked waiting for
+		 * exactly this, and it is the only evidence it will ever get that the bytes
+		 * were not merely delivered but taken. */
+		nrb_resync_send_ack(gen);
+
 		char detail[192];
 		snprintf(detail, sizeof(detail),
 		         "joiner adopted the host state: gen %u, %lu bytes, %lu ms, attempt %lu of %d",
@@ -1792,21 +1891,22 @@ static bool nrb_resync_receive(void)
 		         resync_used > NRB_RS_MAX ? "   [over budget: started by stray chunks]" : "");
 		crashlog_netlog_line("NETWORK RESYNC ABORT", line);
 
-		/* The NAK goes out even for a layout refusal, which no retry can pass.
-		 * It is not a request to retry so much as the only "I did not adopt" the
-		 * host ever hears: it declares success from transport acks alone and then
-		 * resets onto the fresh timeline, so a silent refusal would leave the two
-		 * machines on different timelines with no recovery left. */
-		nrb_resync_send_nak(have_hdr ? gen : seen_gen);
+		/* The NAK is the only "I did not adopt" the host ever hears -- transport
+		 * acks say the bytes arrived, not that they were taken.  The reason is what
+		 * separates "try again" from "no stream you can build will ever pass", so a
+		 * layout refusal retires recovery on the host too instead of burning the
+		 * remaining attempts on identical bytes we have already stopped listening for. */
+		nrb_resync_send_nak(have_hdr ? gen : seen_gen,
+		                    resync_layout_bad ? NRB_NAK_FATAL : NRB_NAK_RETRY);
 
 		/* Spent: the host has no attempt left to answer that NAK with. */
 		if (resync_used >= NRB_RS_MAX || resync_layout_bad)
 			resync_notice = false;
 
-		/* A fully assembled stream means every chunk was acknowledged, so the
-		 * host has already reset onto the fresh timeline.  If adoption failed
-		 * for good on top of that, no shared frame exists any more and playing
-		 * on only wedges both machines into the long stall timeout. */
+		/* The host no longer resets its timeline on delivery alone, so a refused
+		 * stream leaves both machines where they were -- desynced, but on the same
+		 * timeline and still playable.  Only a peer that has genuinely run out of
+		 * ways to agree is worth halting for. */
 		if (assembled && resync_used >= NRB_RS_MAX)
 			network_tyrian_halt(7, false);
 	}
@@ -1836,17 +1936,37 @@ static bool nrb_resync_dispatch(void)
 	 * receive can succeed", so drop the chunk and keep the queue moving. */
 	if (!network_is_host && (resync_used >= NRB_RS_MAX || resync_layout_bad))
 	{
+		/* Answer a stream RESTART rather than swallowing it: silence is what let a
+		 * host keep streaming to a peer that had permanently stopped listening, and
+		 * then reset its timeline on the transport acks alone.  Bounded to chunk 0 so
+		 * an in-flight stream's remaining chunks stay silent. */
+		if (resync_layout_bad && SDLNet_Read16(&packet_in[0]->data[6]) == 0)
+			nrb_resync_send_nak(SDLNet_Read16(&packet_in[0]->data[4]), NRB_NAK_FATAL);
 		network_update();
 		return false;
 	}
 
 	if (network_is_host)
 	{
-		const Uint16 g  = SDLNet_Read16(&packet_in[0]->data[4]);
-		const Uint16 ix = SDLNet_Read16(&packet_in[0]->data[6]);
+		const Uint16 g      = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 ix     = SDLNet_Read16(&packet_in[0]->data[6]);
+		const Uint16 reason = SDLNet_Read16(&packet_in[0]->data[8]);
 		network_update();
 		if (ix == NRB_RS_NAK && g == resync_gen)
 		{
+			if (reason == NRB_NAK_FATAL)
+			{
+				/* Arrived outside the streaming loop -- a late refusal, or the
+				 * joiner answering a stream restart it had already given up on. */
+				if (!resync_layout_bad)
+				{
+					resync_layout_bad = true;
+					crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
+					                     "host: joiner refused permanently (layout/build mismatch); "
+					                     "recovery disabled for this session");
+				}
+				return false;
+			}
 			if (resync_used < NRB_RS_MAX)
 				return nrb_resync_host_run();
 			/* Without this line, the joiner's next attempt stalls against total

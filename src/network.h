@@ -214,9 +214,13 @@ void network_shutdown(void);
 // Returns the number of bytes written/read so the caller can place the player name after it.
 int  network_settings_pack(Uint8 *buf);
 int  network_settings_adopt(const Uint8 *buf);
+void network_settings_check_layout(const Uint8 *buf);
 void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
-#define NETWORK_SETTINGS_SIZE 16
+// 0..15 simulation settings; 16..19 the sender's rollback layout fingerprint;
+// 20..23 its snapshot size.  The last two are not adopted -- they are compared,
+// so a session that can never hand over state knows it at connect.
+#define NETWORK_SETTINGS_SIZE 24
 
 // Debug Mode across the wire.  The debug menu rewrites simulation state directly -- either
 // player's loadout, cash, armor and shield, the cheat flags, difficulty, the expert tunables --
@@ -278,10 +282,26 @@ void network_sim_detail(NetSimDetail *out);
 // that rides the wire; fills `detail` (may be NULL) with the per-pool breakdown, which
 // only the desync report reads: there is one spare word in the input header, so the
 // wire says THAT the pools diverged and the two logs say WHICH one.
+// Rows behind the player-shot hash.  Every other pool that can diverge is either tiny or
+// already visible through positions and armor; the shot pool is neither, and a PC<->console
+// desync that moved ONLY this hash could not be localized any further from the logs.  Bounded
+// because the pool holds 8000 slots and the report is a fixed-size crashlog entry -- a
+// divergence shows up in the first handful of live slots or not at all.
+#define NET_SIM_DETAIL_SHOTS 24
+
+typedef struct
+{
+	Uint16 idx;
+	Uint8  avail, dmg, playernum, pierce;
+	Sint32 x, y, xm, ym, xc, yc;
+}
+NetSimShotRow;
+
 typedef struct
 {
 	Uint32 explosions, rep_explosions, enemy_shots, player_shots, sound;
 	Uint16 n_expl, n_rep, n_eshot, n_pshot;
+	NetSimShotRow pshot[NET_SIM_DETAIL_SHOTS];  // first n_pshot (capped) live slots
 }
 NetSimPools;
 

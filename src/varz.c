@@ -1105,7 +1105,13 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 				// widened right edge; PLAYFIELD_LEFT + [0,PLAYFIELD_WIDTH) is the on-screen
 				// span in game_screen coords (see composite_playfield / video.h).
 				// Y spans the full 184-row playfield (vanilla stopped at 180).
-				b = player_shot_create(0, SHOT_SPECIAL, PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH, mt_rand() % 184, mouseX, mouseY, specialWeaponWpn, playerNum);
+				// The two draws MUST be sequenced: as arguments they were unordered, and MSVC
+				// evaluates right-to-left where GCC goes left-to-right, so PC and console put
+				// the same pair of numbers in opposite coordinates -- identical draw counts,
+				// different shot positions, i.e. a desync no RNG check could see (notes.md).
+				const int scatter_x = PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH;
+				const int scatter_y = mt_rand() % 184;
+				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, mouseX, mouseY, specialWeaponWpn, playerNum);
 			}
 
 			if (spraySpecial && b != MAX_PWEAPON)

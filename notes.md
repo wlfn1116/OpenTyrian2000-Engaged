@@ -563,6 +563,20 @@ self-test that was already on, so setting the flag alone would leave the driver 
 an *empty* registry — every tick trivially matches, and the replay pass re-runs it with
 nothing restored, simulating the level at double speed.
 
+**A one-shot latch is registry state, however trivial it looks.** `ship_pred_have_tick`
+guards `vt_ship_shot_delta`: false means "no previous tick to measure against, delta 0",
+and `ship_pred_on_tick` flips it true *inside* the tick. `ship_tick_x`/`ship_tick_y` were
+registered but the latch was not, so a replay of a level's **first** tick found it already
+set and took the other branch — the shot-move deltas came out as (spawn position − 0)
+instead of 0, and because the VT branch derives the aim anchors as `x − delta`, the anchors
+came out 0. The self-test reported it as three items diverging on tick 1 (`player` at the
+`delta_*_shot_move` offset, `mouseX`, `mouseY`) on *both* platforms — the offsets differed
+only by the 8-byte `Player.cash` width, which is how that bug got found. The latch was also
+never reset per level, so tick 1 of level 2 measured its delta against level 1's *final*
+ship position and handed every ship-tracking shot fired that tick a bogus inherited
+velocity; `rollback_level_start` now reseeds the pair to the spawn position and clears the
+latch.
+
 ### Determinism harness
 
 **A demo is a fixed input stream, so it must be a fixed replay.** It was not: the RNG
@@ -574,12 +588,15 @@ netcode, no timing, a fixed input stream — and the self-test writes a per-tick
 (`demo<N> t <tick> r <draws> p <hash> e <hash> loc <curLoc>`, the same three summaries
 the netplay canary compares) that two logs diff to the first diverging tick.
 
-Diffing two of those traces proved **x86_64 and aarch64 simulate identically**: over a
-full demo, RNG draw count, the whole enemy table and `curLoc` matched on every tick. The
-platform is not a desync suspect; the self-test also passes on both, so the resim path
-is not one either.
+Diffing two of those traces showed x86_64 and aarch64 agreeing over a full demo: RNG draw
+count, the whole enemy table and `curLoc` matched on every tick, and the self-test passes
+on both. That cleared the arithmetic and the resim path — but **it did not clear the
+platforms**, and reading it as "the platform is not a suspect" cost a later session real
+time. A demo exercises the code the demo happens to run; the divergence that was actually
+there (unsequenced `mt_rand()` pairs, below) lives on the special-weapon, random-explosion
+and Nort-spark paths, none of which a title demo touches.
 
-Three ways such a comparison lies, all of which cost real time before being spotted:
+Four ways such a comparison lies, all of which cost real time before being spotted:
 
 - **A clock-seeded run compares nothing.** Draw *counts* stay in lockstep for hundreds
   of ticks after the values have diverged, because the count only moves when a random
@@ -595,6 +612,22 @@ Three ways such a comparison lies, all of which cost real time before being spot
 - **Both machines must enter the demo from the same place.** Playing a level first
   carries `player[]`, `nextLevel`, `cubeList` and the previous screen's scroll
   interpolation into the demo. Boot cold, touch nothing, let the title demo run.
+- **A matching draw COUNT can hide a value swap.** Two `mt_rand()` calls in one
+  expression are unsequenced, and the compilers disagree: MSVC evaluates function
+  arguments right-to-left, devkitA64 GCC left-to-right (measured, not assumed — a
+  two-draw probe returns `#2,#1` on one and `#1,#2` on the other). Both machines then
+  draw the *same* numbers in the *same* quantity and assign them to *opposite*
+  parameters. Every RNG check passes; the objects land somewhere else. This was the
+  real PC↔Switch desync: `player_shot_create(..., PLAYFIELD_LEFT + mt_rand() %
+  PLAYFIELD_WIDTH, mt_rand() % 184, ...)` in varz.c scattered the same special-weapon
+  shot at (x,y) on one machine and (y,x) on the other — the desync report showed the
+  same slot, same velocity, same damage, same age, different position, with
+  `rand draws` reading `1347 vs 1347 ok`. Four other sites had the same shape
+  (`JE_setupExplosionLarge`'s random explosions, the Nort-spark jitter, and the two
+  endless campaign seeds, where `^` sequences nothing either). All five now draw into
+  named locals first. **Grep for two `mt_rand()` in one expression before trusting any
+  cross-platform trace** — statement boundaries are sequence points, so `if (mt_rand()
+  ...) { x = mt_rand(); }` is fine; a single argument list or `^` is not.
 
 The per-item dump is **off by default** (`RB_TRACE_ITEMS_TO 0`, an empty window): a full
 window is ~260 lines per tick, megabytes of SD-card traffic on a console. Narrow the
@@ -622,10 +655,24 @@ What the design rests on:
   live state**; a pointer with an unknown home refuses the whole resync rather than
   ship garbage. A new registered pointer therefore fails loudly, not silently —
   extend `rb_relocs` when adding one.
-- **Same-build peers only.** The payload is the registry's native layout, so the
-  preamble carries `rollback_state_size()` and the joiner refuses a mismatch. This
-  is the honest cross-platform answer: PC–Vita pairs differ in pointer width and
-  fall back to today's behaviour.
+- **Same-LAYOUT peers, agreed at connect.** The payload is the registry's native
+  layout, so both machines put `rollback_layout_fingerprint()` (item count, and every
+  item's name, size and offset) plus `rollback_state_size()` in the connect settings
+  block and compare. A mismatch turns recovery off for the session there and then,
+  with one `NETWORK LAYOUT MISMATCH` entry naming both numbers — instead of the old
+  behaviour, where the first desync spent an attempt discovering it. Both sides check,
+  host included: the settings block is host-dictated, but the host is the side that
+  streams, so a one-sided check left it spending the budget on bytes the joiner could
+  never take. The numbers also ride the session-start banner, so two logs from a
+  healthy session prove the snapshots are interchangeable.
+
+  Cross-platform is no longer excluded. Registered state must simply be fixed-width:
+  `unsigned long` is 4 bytes on Windows and 8 on the consoles, and the two sites that
+  had it — the Mersenne Twister's state vector plus draw count, and `Player.cash` —
+  put a PC↔Switch pair exactly 2516 bytes apart (2500 + 8 per player), which is why
+  every stream that pair ever exchanged was refused on the preamble. Both are `Uint32`
+  now. A new `long`/`ulong`/`size_t` anywhere in registered state re-breaks this, and
+  the fingerprint is what catches it.
 - **Dead pool slots are canonicalized, on the host, in live state.** A spawn may
   read what a recycled slot left behind, so after adoption both machines must hold
   identical *dead* bytes too, or the first reuse diverges again.
@@ -642,10 +689,18 @@ What the design rests on:
   answers with a fresh stream. Every wait loop the driver owns dispatches inbound
   chunks (`nrb_stall_pump`), because a desync at the level end arrives while the
   peer sits in exactly such a loop.
-- **A NAK after a fully-acked stream means the host already reset.** Its acks came
-  home before the joiner's validation failed, so on the final failed attempt no
-  shared frame exists any more and the joiner halts the session cleanly instead of
-  wedging both machines into the long stall timeout.
+- **Delivered is not adopted: the host resets on the joiner's ACK, never on acks.**
+  This was the single worst bug the system had. Success was `sent == chunks &&
+  network_ack_backlog() == 0` — but the channel acknowledges on *receipt*, before the
+  joiner has parsed a byte, so a joiner that refused the stream and stopped listening
+  still acked every chunk of it. The host declared victory, ran `nrb_reset_core`, and
+  advanced `nrb_epoch`; the joiner stayed on the old epoch; each then discarded the
+  other's packets as stale and both sat in `peer too far behind` until the session
+  died. `NRB_RS_ACK` is now the joiner's explicit "I adopted gen G", sent before its
+  own reset, and the host waits `NRB_RS_ADOPT_TIME_OUT` (6 s) for it after the last
+  chunk lands. Silence there is a failed attempt worth retrying — never a reason to
+  move our own timeline. The joiner's halt on a final failed attempt survives, but it
+  is now a genuine last resort rather than the routine consequence of a refusal.
 - **Both machines call the hitch the same thing.** The transfer stops the sim on
   one side while the other sits in an ordinary input stall — most visibly after the
   host's stream is fully acked, when it resets and waits several frames for a joiner
@@ -675,10 +730,18 @@ What the design rests on:
   is a mismatched build for as long as it is connected — retrying only spends the
   budget on full state exports that are refused on the first chunk. `resync_layout_bad`
   is session-scoped (reset in `nrb_set_session_mode`, not per level) and gates both
-  arming and receiving. It does **not** suppress the NAK: the host declares success
-  from transport acks alone and then resets onto the fresh timeline, so a silent
-  refusal would leave the two machines on different timelines with nothing left to
-  repair them.
+  arming and receiving. With the fingerprint check above it should now be unreachable
+  at connect-time-known layouts, and it stays as the backstop for anything the
+  fingerprint cannot predict.
+
+  It does **not** suppress the NAK, and the NAK carries a **reason**. Without one the
+  host could not tell "try again" from "no stream you can build will ever pass": a
+  layout refusal NAKed like a transient one, the host answered with attempt 2 of the
+  identical bytes, and the joiner — already latched — acked and dropped all 84 chunks
+  in silence. `NRB_NAK_FATAL` retires recovery on the host too. A stream *restart*
+  arriving after the latch is answered with one more fatal NAK rather than swallowed
+  (bounded to chunk 0, so an in-flight stream's tail stays quiet), because silence is
+  exactly what let the host keep streaming at a peer that had stopped listening.
 
 What the log names when things fail (added after a session where recovery died
 in silence — 4 joiner attempts in 3 s, no reason recorded for any of them):
@@ -691,6 +754,17 @@ in silence — 4 joiner attempts in 3 s, no reason recorded for any of them):
   remote truth, consumed — with a `CONSUMED != TRUTH` flag that would indict
   the verifier itself). The two machines' reports diff to the culprit slot and
   field; one report alone still names the input-side suspects.
+
+  The **player-shot rows** were the gap. A PC↔Switch desync landed with rand draws,
+  player hash, enemy hash, curLoc, explosions, enemy shots and the sound queue all
+  matching and *only* the player-shot pool hash differing — and the report printed
+  every enemy row but a single hash for that pool, so the one thing that diverged was
+  the one thing the log could not describe. `NetSimPools` now carries the first
+  `NET_SIM_DETAIL_SHOTS` (24) live slots with exactly the fields the hash covers,
+  sampled at the same site so rows and hash cannot disagree, and says "showing N of M"
+  when the cap bites. The pool block and the shot rows print *before* the enemy table:
+  both are bounded, the enemy table runs to 100 rows, and truncation should cost the
+  unbounded part.
 - **Every failed resync attempt writes a one-line `NETWORK RESYNC ABORT`**
   naming the attempt, gen, chunk progress, elapsed time, and cause (index
   skip, checksum, preamble refused, timeouts, NAK). `NETWORK RESYNC GIVE-UP`

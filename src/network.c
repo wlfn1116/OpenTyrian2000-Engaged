@@ -64,7 +64,7 @@
  * Hopefully it'll be rewritten some day.
  */
 
-#define NET_VERSION       10           // increment whenever networking changes might create incompatibility (10: pool hash in the input header's last spare word)
+#define NET_VERSION       11           // increment whenever networking changes might create incompatibility (11: layout fingerprint in the settings block, resync ACK/NAK reasons)
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1120,6 +1120,12 @@ connect_again:
 			network_tyrian_halt(5, true);
 		}
 	}
+	// Layout compatibility is mutual and is checked by BOTH sides, host included: the
+	// settings block above is host-dictated, but whether the peer could ever adopt our
+	// snapshot bytes is a property of the pair.  Runs after the adopt, so it has the last
+	// word over the recovery flag the host asked for.
+	network_settings_check_layout(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+
 	// Only command-line netplay can conflict: both sides were numbered by hand, and nothing
 	// else stops them flying the same ship.  A lobby game is settled above instead -- the
 	// joiner's declared number is stale by construction (sent before the host's arrived), so
@@ -1195,13 +1201,19 @@ connect_again:
 	// Session banner: every online session leaves a mark in the net log, so an entry-free
 	// log means "no trouble detected" instead of "logging never ran".
 	{
-		char detail[128];
+		// The state layout goes in the banner rather than only in the mismatch entry:
+		// two logs from a working session then PROVE the snapshots are interchangeable,
+		// which is the whole precondition for recovery and is otherwise invisible.
+		char detail[192];
 		snprintf(detail, sizeof(detail),
-		         "player %u (%s), netcode %s, desync recovery %s, delay %d",
+		         "player %u (%s), netcode %s, desync recovery %s, delay %d\n"
+		         "state layout: %lu bytes, fingerprint %08x",
 		         (unsigned)thisPlayerNum, network_is_host ? "host" : "joiner",
 		         nrb_session_mode() ? "rollback" : "delay-based",
 		         nrb_session_recovery() ? "on" : "off",
-		         network_delay);
+		         network_delay,
+		         (unsigned long)rollback_state_size(),
+		         (unsigned)rollback_layout_fingerprint());
 		crashlog_netlog_line("NETWORK SESSION START", detail);
 	}
 
@@ -1396,7 +1408,38 @@ int network_settings_pack(Uint8 *buf)
 	SDLNet_Write16((Uint16)(xmasMode + 1),   &buf[12]);  // xmasMode is -1..1; bias to 0..2
 	SDLNet_Write16(gameSpeed,                &buf[14]);
 
+	// Not a setting: our snapshot layout, for the peer to compare against its own.
+	SDLNet_Write32(rollback_layout_fingerprint(),   &buf[16]);
+	SDLNet_Write32((Uint32)rollback_state_size(),   &buf[20]);
+
 	return NETWORK_SETTINGS_SIZE;
+}
+
+/* Both machines run this against the peer's settings block -- the joiner adopts the
+ * host's simulation settings, but the layout is a mutual property and the HOST is the
+ * side that streams, so a one-sided check would leave it spending the level's recovery
+ * budget on bytes the joiner can never take.  Recovery is retired for the session on a
+ * mismatch; the desync canary is untouched, so a divergence is still reported. */
+void network_settings_check_layout(const Uint8 *buf)
+{
+	const Uint32 their_fp   = SDLNet_Read32(&buf[16]);
+	const Uint32 their_size = SDLNet_Read32(&buf[20]);
+	const Uint32 our_fp     = rollback_layout_fingerprint();
+	const Uint32 our_size   = (Uint32)rollback_state_size();
+
+	if (their_fp == our_fp && their_size == our_size)
+		return;
+
+	nrb_set_session_recovery(false);
+
+	char line[256];
+	snprintf(line, sizeof(line),
+	         "desync recovery unavailable this session: peer state %lu bytes / layout %08x, "
+	         "ours %lu / %08x (different build, or PC<->console).  A desync will be reported "
+	         "and played through rather than repaired.",
+	         (unsigned long)their_size, (unsigned)their_fp,
+	         (unsigned long)our_size, (unsigned)our_fp);
+	crashlog_netlog_line("NETWORK LAYOUT MISMATCH", line);
 }
 
 static void network_settings_stash(void)
@@ -1821,6 +1864,23 @@ Uint32 network_sim_pools(NetSimPools *detail)
 		if (shotAvail[i] == 0)
 			continue;
 		++live;
+		// Same fields, same order, same moment as the hash below: the rows must name
+		// exactly what the mismatching hash covered or a log diff would mislead.
+		if (detail && live <= NET_SIM_DETAIL_SHOTS)
+		{
+			NetSimShotRow *r = &detail->pshot[live - 1];
+			r->idx       = (Uint16)i;
+			r->avail     = shotAvail[i];
+			r->dmg       = playerShotData[i].shotDmg;
+			r->playernum = playerShotData[i].playerNumber;
+			r->pierce    = playerShotData[i].pierceLock;
+			r->x         = (Sint32)playerShotData[i].shotX;
+			r->y         = (Sint32)playerShotData[i].shotY;
+			r->xm        = (Sint32)playerShotData[i].shotXM;
+			r->ym        = (Sint32)playerShotData[i].shotYM;
+			r->xc        = (Sint32)playerShotData[i].shotXC;
+			r->yc        = (Sint32)playerShotData[i].shotYC;
+		}
 		HASH_WORD(i);
 		HASH_WORD(shotAvail[i]);
 		HASH_WORD(playerShotData[i].shotX);

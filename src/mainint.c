@@ -5653,13 +5653,13 @@ void JE_endLevelAni(void)
 	{
 		for (uint i = 0; i < 2; ++i)
 		{
-			snprintf(tempStr, sizeof(tempStr), "%s %lu", miscText[40 + i], player[i].cash);
+			snprintf(tempStr, sizeof(tempStr), "%s %lu", miscText[40 + i], (unsigned long)player[i].cash);
 			JE_outTextGlow(VGAScreenSeg, 30, 50 + 20 * i, tempStr);
 		}
 	}
 	else
 	{
-		sprintf(tempStr, "%s %lu", miscText[28-1], player[0].cash);
+		sprintf(tempStr, "%s %lu", miscText[28-1], (unsigned long)player[0].cash);
 		JE_outTextGlow(VGAScreenSeg, 30, 50, tempStr);
 	}
 
@@ -6334,7 +6334,7 @@ void JE_inGameDisplays(void)
 
 	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
 	{
-		snprintf(tempstr, sizeof(tempstr), "%lu", player[i].cash);
+		snprintf(tempstr, sizeof(tempstr), "%lu", (unsigned long)player[i].cash);
 
 		// Ink spans [x, x + width - 2] (width carries that trailing pixel); the shadow widens
 		// it to [x - 1, x + width - 1]. Setting the right shadow edge to PLAYFIELD_RIGHT -
@@ -8295,7 +8295,11 @@ redo:
 					}
 					else
 					{
-						b = player_shot_create(0, SHOT_NORTSPARKS, tempW + (mt_rand() % 8) - 4, this_player->y + (mt_rand() % 8) - 4, *mouseX_, *mouseY_, 671, 1);
+						// Sequenced: as arguments the two draws were unordered, and MSVC and GCC
+						// pick opposite orders, so the jitter landed on opposite axes per platform.
+						const int spark_x = tempW + (mt_rand() % 8) - 4;
+						const int spark_y = this_player->y + (mt_rand() % 8) - 4;
+						b = player_shot_create(0, SHOT_NORTSPARKS, spark_x, spark_y, *mouseX_, *mouseY_, 671, 1);
 						shotRepeat[SHOT_NORTSPARKS] = abs(ship_banking) - 1;
 					}
 				}

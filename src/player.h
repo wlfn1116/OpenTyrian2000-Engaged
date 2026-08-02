@@ -64,7 +64,10 @@ PlayerItems;
 
 typedef struct
 {
-	ulong cash;
+	// Fixed-width, not `ulong`: player[] is registered rollback state and netplay desync
+	// recovery ships the snapshot to the peer, so an `unsigned long` here made the struct
+	// 8 bytes wider per player on the consoles than on Windows.
+	Uint32 cash;
 	
 	PlayerItems items, last_items;
 	
