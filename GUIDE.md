@@ -24,6 +24,13 @@ work as before; the arcade modes gain one rule, described below.
 
 ## Arcade modes
 
+### Life counter
+
+The row of ship icons beside your name counts the lives you have, not the spare
+ones: one icon on your last life, two on your second-to-last, and so on. It is
+the same number the outpost's **Lives:** row shows. Past four the row collapses
+to a single icon and a figure, so eleven lives reads as one ship and "11".
+
 ### Shield ceiling mark
 
 The shield gauge carries a thin line marking where a full charge would reach. It

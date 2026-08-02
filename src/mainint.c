@@ -6251,6 +6251,12 @@ static bool hud_lives_shown(void)
 	return onePlayerAction || twoPlayerMode;
 }
 
+/* One icon per life the player still has, so the row reads the same number the outpost's
+ * "Lives:" row does. Past this many the row collapses to a single icon plus a count, which
+ * caps its width where the old extra-lives row (icons for lives - 1) already capped.
+ */
+#define HUD_LIVES_ICONS_MAX 4
+
 /* Left edge of player 2's collapsed lives count, right-aligned so its last painted pixel lands 3px
  * left of the icon at PLAYFIELD_WIDTH + 7 -- the mirror of player 1's count starting 3px right of
  * its icon. The icon paints columns 0..10 of its 12px cell, and FULL_SHADE adds a 1px outline.
@@ -6269,13 +6275,13 @@ int hud_top_left_right_edge(void)
 
 	if (hud_lives_shown())
 	{
-		const uint extra = *player[0].lives - 1;
+		const uint lives = *player[0].lives;
 
 		// The label sits at x28; the lives row starts at x30 and steps right, or collapses to
-		// a single icon plus a count at x45 once there are five or more.
+		// a single icon plus a count at x45 once past HUD_LIVES_ICONS_MAX.
 		const int name_right = 28 + hud_player_name_width(0);
-		const int lives_right = (extra >= 5) ? 45 + JE_textWidth("99", TINY_FONT)
-		                      : (extra >= 1) ? 30 + (int)extra * 12
+		const int lives_right = (lives > HUD_LIVES_ICONS_MAX) ? 45 + JE_textWidth("99", TINY_FONT)
+		                      : (lives >= 1) ? 30 + (int)lives * 12
 		                                     : 30;
 
 		if (name_right > right)  right = name_right;
@@ -6290,13 +6296,13 @@ int hud_top_right_left_edge(void)
 	if (!twoPlayerMode || galagaMode || !hud_lives_shown())
 		return PLAYFIELD_RIGHT + 1;  // nothing claimed over there
 
-	const uint extra = *player[1].lives - 1;
+	const uint lives = *player[1].lives;
 
 	// Mirror of the above: the label is right-aligned to PLAYFIELD_WIDTH + 22 and the lives
 	// row starts at PLAYFIELD_WIDTH + 7 stepping left. "99" stands in for the widest count.
 	const int name_left = PLAYFIELD_WIDTH + 22 - hud_player_name_width(1);
-	const int lives_left = (extra >= 5) ? hud_lives_count_left("99")
-	                     : (extra >= 1) ? PLAYFIELD_WIDTH + 7 - ((int)extra - 1) * 12
+	const int lives_left = (lives > HUD_LIVES_ICONS_MAX) ? hud_lives_count_left("99")
+	                     : (lives >= 1) ? PLAYFIELD_WIDTH + 7 - ((int)lives - 1) * 12
 	                                    : PLAYFIELD_WIDTH + 7;
 
 	return (name_left < lives_left) ? name_left : lives_left;
@@ -6452,25 +6458,25 @@ void JE_inGameDisplays(void)
 	{
 		for (int temp = 0; temp < (onePlayerAction ? 1 : 2); temp++)
 		{
-			const uint extra_lives = *player[temp].lives - 1;
+			const uint lives = *player[temp].lives;
 
 			int y = (temp == 0 && player[0].items.special > 0) ? 35 : 15;
 			// P2 anchors ride the widened playfield edge (legacy 270/250 would float
 			// mid-field now), matching the name label's PLAYFIELD_WIDTH mapping below.
 			tempW = (temp == 0) ? 30 : PLAYFIELD_WIDTH + 7;
 
-			if (extra_lives >= 5)
+			if (lives > HUD_LIVES_ICONS_MAX)
 			{
 				blit_sprite2(VGAScreen, tempW, y, spriteSheet9, 285);
-				sprintf(tempstr, "%d", extra_lives);
+				sprintf(tempstr, "%u", lives);
 				// Both counts sit 3px from the icon: P1's runs right from x45, P2's is right-aligned
 				// so its last pixel lands 3px left of the icon, whatever the digit count.
 				tempW = (temp == 0) ? 45 : hud_lives_count_left(tempstr);
 				JE_textShade(VGAScreen, tempW, y + 3, tempstr, 15, 1, FULL_SHADE);
 			}
-			else if (extra_lives >= 1)
+			else
 			{
-				for (uint i = 0; i < extra_lives; ++i)
+				for (uint i = 0; i < lives; ++i)
 				{
 					blit_sprite2(VGAScreen, tempW, y, spriteSheet9, 285);
 
