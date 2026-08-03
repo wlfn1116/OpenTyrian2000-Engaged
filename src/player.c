@@ -19,16 +19,19 @@
 #include "player.h"
 
 #include "episodes.h"
-#include "varz.h"  // SA_NONE
+#include "varz.h"  // hud_bars_dirty
 
 Player player[2];
 
-/* Arcade only: SuperTyrian and the Super Arcade secret ships run with lives too, but they were
- * balanced around their own hulls and are left on the vanilla numbers.  `arcadeLifeBoost` is the
- * Game Tweaks row; in a network game the host's copy of it binds the session (network.c). */
+/* Arcade only, Super Arcade secret ships included.  Nothing here is per-ship: both ceilings are
+ * derived from whatever hull and shield the ship itself was shipped with, so the secret ships need
+ * no table of their own -- the U-Ship climbs from its 8 hull and the Nort Ship is already past a
+ * full bar at 30 and simply stays there.  SuperTyrian stays out: it is a single fixed loadout
+ * balanced around the Stalker 21.126, not a ship you pick.  `arcadeLifeBoost` is the Game Tweaks
+ * row; in a network game the host's copy of it binds the session (network.c). */
 bool arcade_life_scaling_active(void)
 {
-	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian && superArcadeMode == SA_NONE;
+	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian;
 }
 
 /* Linear from `base` at 1 life to a full bar at ARCADE_LIVES_MAX.  Integer throughout: this runs

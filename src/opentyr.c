@@ -2460,8 +2460,8 @@ int main(int argc, char *argv[])
 
 	JE_loadConfiguration();
 
-	// Retire the previous session's opentyrian_net.log now that the saved Network Log setting is
-	// in effect, so the live one only ever holds this run. Nothing has written to it yet.
+	// Drop the previous session's opentyrian_net.log now that the saved Network Log setting is
+	// in effect, so the one net log there is only ever holds this run. Nothing has written to it yet.
 	crashlog_netlog_begin_session();
 
 	// A saved Christmas choice (Extra menu, xmasMode 0/1) overrides the date

@@ -343,13 +343,13 @@ eleven lives reads as a ship and "11".
 
 ### Arcade Life Boost
 
-**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, on by default.
+**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, off by default.
 
 Lives buy durability as well as retries, in 1 Player Arcade, 2 Player Arcade,
-Timed Battle and 2 Player Online Arcade. Each ship's shield and armor ceilings
-scale off its own life count: at 1 life they are the vanilla numbers, and at the
-11-life maximum both gauges reach a full bar. Growth in between is even, so six
-lives puts the Stalker at 22 armor and 19 shield.
+2 Player Online Arcade and on the Super Arcade secret ships. Each ship's shield
+and armor ceilings scale off its own life count: at 1 life they are the vanilla
+numbers, and at the 11-life maximum both gauges reach a full bar. Growth in
+between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 
 | Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
 | --- | --- | --- | --- | --- |
@@ -360,9 +360,19 @@ lives puts the Stalker at 22 armor and 19 shield.
 Gaining a life mid-level raises both ceilings immediately, and damage already
 taken carries across proportionally — a ship at half armor stays at half armor,
 so the extra hull is a bigger bar, not a free repair. Losing a life shrinks the
-ceilings before the respawn refill. Armor pickups top up to the current ceiling
-rather than a flat 28, so a light hull holds less at low life counts than it used
-to.
+ceilings first, and the respawn then puts both gauges back on them full: the life
+you just spent is the cost of dying, and in arcade that life is a weapon level
+too, so the ceilings are not taxed on top of it. Switched off, you get the
+vanilla half refill instead. Armor pickups top up to the current ceiling rather
+than a flat 28, so a light hull holds less at low life counts than it used to.
+
+The Super Arcade secret ships are covered too, and nothing about them is levelled
+to a shared number: each one scales off the hull it actually flies, and those run
+from 8 to 30 across the nine ships. At 11 lives every one of them reaches the
+full 28-point bar on both gauges. The heaviest starts at 30, already past the
+bar, so it simply flies full the whole way. All nine carry the standard Gencore
+High Energy Shield, so their shield ceilings climb from 10 to 28 alike.
+SuperTyrian stays out — it is one fixed loadout rather than a ship you pick.
 
 Switch it off and every arcade ship keeps the hull and shield it always had.
 Online, the host's setting binds the session, like every other rule that reaches
@@ -371,6 +381,45 @@ the simulation.
 The shield gauge carries a thin line marking a full charge. It is on both gauges
 of the two-player HUD now, and it vanishes while the gauge is at its ceiling — a
 quick way to see the shield is topped up.
+
+### Random Pickups
+
+**Setup > Enhancements > Game Tweaks > Random Pickups**, off by default.
+
+Every weapon ball in Tyrian is hand-placed: the level script names the exact
+pickup an enemy drops, so a level always hands out the same guns in the same
+order, run after run. Switch this on and each ball is re-rolled the moment it
+spawns, in 1 Player Arcade, 2 Player Arcade, 2 Player Online Arcade and on the
+Super Arcade secret ships.
+
+A ball only ever becomes another ball of its own kind, so a level that meant to
+hand you a rear gun or a sidekick still does — only which one changes. Each
+episode draws from its own arsenal, which is why Episodes 4 and 5 have two more
+specials to roll than the first three.
+
+| Ball | Rolls into | Ep 1-3 | Ep 4-5 |
+| --- | --- | --- | --- |
+| Front weapon | another front weapon | 12 | 12 |
+| Rear weapon | another rear weapon | 8 | 8 |
+| Sidekick | another sidekick | 9 | 9 |
+| Special weapon | another special weapon | 6 | 8 |
+
+Purple balls are left exactly as they are, and so are the front and rear power-up
+balls — those hand you a power level, not a weapon, and randomizing them would
+just be a coin toss over which gun grows. Nothing changes in the main game, in
+Endless, or in SuperTyrian, which flies a fixed loadout.
+
+The secret ships work differently and are handled to match. A Super Arcade ball
+does not carry a weapon at all: it carries one of five colors, and the color is
+a slot in the arsenal of whichever ship you are flying. Normally those colors
+come out in a fixed 1-2-3-4-5 cycle, so a level walks you through that ship's
+guns in the same order every time. Switched on, the color is rolled instead —
+still one of that ship's own five, never a gun it cannot fly, so the Stealth Ship
+keeps drawing from its list and the StormWind from its own. You can draw the same
+color twice in a row now, which the cycle never let happen.
+
+Online, the host's setting binds the session and both machines roll the same
+pickup from the same shot, like every other rule that reaches the simulation.
 
 ## Online play
 
@@ -566,8 +615,10 @@ On Windows these sit next to the executable, on Linux in
 | `opentyrian_log.log` | Crash report, Windows only, written only if the game falls over |
 | `opentyrian_net.log` | Online session log |
 
-Both logs rotate per launch, so the live file always belongs to the run you have
-open now; earlier ones are numbered `.1.log` upwards beside it.
+Both start fresh each launch, so they always belong to the run you have open now.
+Older crash logs are kept beside the live one, numbered `.1.log` upwards; the net
+log keeps no history at all — there is only ever the current session's
+`opentyrian_net.log`, and none if this session had nothing to report.
 
 If you hit a desync, attach `opentyrian_net.log` from **both** machines to the
 report. Each side logs the disputed frame as it computed it, and comparing the

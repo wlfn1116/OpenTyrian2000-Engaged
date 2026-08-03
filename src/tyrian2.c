@@ -68,6 +68,9 @@
 
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset);
 static void draw_enemy_health_bars(void);
+// Defined with the rest of the Random Pickups code (next to JE_makeEnemy), used up in JE_main's
+// enemy loop where Super Arcade repaints a dropped ball into its ship's own weapon set.
+static bool arcadeSuperPickupRandomActive(void);
 
 // Endless effects on the enemy-shot pool.
 // MARTYRDOM and SEEKER ROUNDS both act on enemyShot[] (spawned/moved here in tyrian2.c), so their
@@ -4544,9 +4547,17 @@ level_loop:
 											{
 												if ((superArcadeMode != SA_NONE) && (enemy[b-1].evalue > 30000))
 												{
-													superArcadePowerUp++;
-													if (superArcadePowerUp > 5)
-														superArcadePowerUp = 1;
+													// Random Pickups: roll the colour instead of walking 1-2-3-4-5.
+													// The index is a slot in THIS ship's SAWeapon row, so a roll can
+													// only ever hand out one of the five guns it is allowed to fly.
+													if (arcadeSuperPickupRandomActive())
+														superArcadePowerUp = (mt_rand() % 5) + 1;
+													else
+													{
+														superArcadePowerUp++;
+														if (superArcadePowerUp > 5)
+															superArcadePowerUp = 1;
+													}
 													enemy[b-1].egr[1-1] = 5 + superArcadePowerUp * 2;
 													enemy[b-1].evalue = 30000 + superArcadePowerUp;
 												}
@@ -7209,9 +7220,11 @@ bool newSuperArcadeGame(unsigned int i)
 		else if (tempW == 1)
 		{
 			// Nort Ship: shipgraphic 1 is a sentinel (see JE_playerMovement / JE_drawItem), so draw
-			// its two-piece hull here rather than treating 1 as a sprite index.
-			blit_sprite2x2(VGAScreen, 148, 70, spriteSheet9, 220);
-			blit_sprite2x2(VGAScreen, 172, 70, spriteSheet9, 222);
+			// its two-piece hull here rather than treating 1 as a sprite index. The halves straddle
+			// the 148 anchor every other ship blits at (the -12/+12 spacing JE_drawItem uses), so
+			// the wider hull ends up centred on the same point instead of hanging 12px to its right.
+			blit_sprite2x2(VGAScreen, 148 - 12, 70, spriteSheet9, 220);
+			blit_sprite2x2(VGAScreen, 148 + 12, 70, spriteSheet9, 222);
 		}
 		else
 			blit_sprite2x2(VGAScreen, 148, 70, spriteSheet9, tempW);
@@ -7536,19 +7549,33 @@ void JE_buildArcadeBallPools(void)
 	}
 }
 
-// 1-player arcade, 2-player arcade and 2-player online arcade only.  The secret-ship modes are
-// deliberately out: Super Arcade recolours every ball into its own five-weapon set right after
-// it spawns (see the enemydie handler in JE_main's enemy loop), so a re-roll there would just be
-// overwritten, and SuperTyrian / ENGAGE / Galaga each run a scripted loadout of their own.
-static bool arcadeBallRandomActive(void)
+// Which modes the Random Pickups row covers: 1-player arcade, 2-player arcade, 2-player online
+// arcade and the Super Arcade secret ships.  SuperTyrian / ENGAGE / Galaga each fly a scripted
+// loadout, so a re-roll there would only fight the script.
+static bool arcadeRandomPickupsOn(void)
 {
 	return arcadeRandomBalls
 	    && (onePlayerAction || twoPlayerMode)
-	    && superArcadeMode == SA_NONE
 	    && !superTyrian
 	    && !galagaMode
 	    && !timedBattleMode
 	    && !endlessMode;
+}
+
+// Ball-id re-roll, for every covered mode EXCEPT Super Arcade -- that one paints its own
+// five-weapon set over the ball right after it spawns (the enemydie handler in JE_main's enemy
+// loop), which would overwrite anything decided here.  It is re-rolled there instead.
+static bool arcadeBallRandomActive(void)
+{
+	return arcadeRandomPickupsOn() && superArcadeMode == SA_NONE;
+}
+
+// Super Arcade colour re-roll.  A Super Arcade ball carries a colour index of 1-5 rather than a
+// weapon, and the pickup turns that index into SAWeapon[ship][index-1] -- so rolling the index is
+// exactly "a random weapon from THIS ship's own five", with no per-ship table needed here.
+static bool arcadeSuperPickupRandomActive(void)
+{
+	return arcadeRandomPickupsOn() && superArcadeMode != SA_NONE;
 }
 
 // Draws exactly one mt_rand per ball spawned.  mt_rand is the lockstep sim RNG (re-anchored per

@@ -9032,7 +9032,18 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						shotMultiPos[SHOT_FRONT] = 0;
 						shotRepeat[SHOT_FRONT] = 10;
 
-						tempW = SAWeapon[superArcadeMode-1][evalue - 30000-1];
+						// A Super Arcade ball carries a colour, 1-5, rather than a weapon, and the
+						// enemydie handler repaints every ball it drops into that range (JE_main,
+						// tyrian2.c). A ball a level script spawns DIRECTLY never passes through
+						// that repaint, and this branch claims every evalue above 30000 -- so a
+						// rear/sidekick/special ball arriving here would index far past the end of
+						// the ship's five-weapon row. Clamp to the last slot: colours 1-5 are
+						// untouched, so nothing the game actually drops behaves differently.
+						uint saSlot = (uint)(evalue - 30000 - 1);
+						if (saSlot >= COUNTOF(SAWeapon[0]))
+							saSlot = COUNTOF(SAWeapon[0]) - 1;
+
+						tempW = SAWeapon[superArcadeMode-1][saSlot];
 
 						// if picked up already-owned weapon, power weapon up
 						if (tempW == player[0].items.weapon[FRONT_WEAPON].id)

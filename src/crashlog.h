@@ -17,11 +17,11 @@ void crashlog_report_fatal(const char *event, const char *detail);
 // latch: the session continues, so a genuinely fatal crash later still logs. Windows only.
 void crashlog_note(const char *event, const char *detail);
 
-// Same report format, but written to the NETWORK log (opentyrian_net.log, rotated alongside the
-// crash log) instead of the crash log. For netplay health events -- desyncs, stalls, resyncs --
-// which are link/session trouble rather than process failures, so a lossy session can't bury a
-// real crash report. All platforms: consoles write a reduced entry (header + detail, no stack)
-// to opentyrian_net.log in the user directory.
+// Same report format, but written to the NETWORK log (opentyrian_net.log, the single per-session
+// log started alongside the crash log) instead of the crash log. For netplay health events --
+// desyncs, stalls, resyncs -- which are link/session trouble rather than process failures, so a
+// lossy session can't bury a real crash report. All platforms: consoles write a reduced entry
+// (header + detail, no stack) to opentyrian_net.log in the user directory.
 void crashlog_note_net(const char *event, const char *detail);
 
 // Short timestamped net-log entry with no context/stack body. For session bookkeeping (the
@@ -30,15 +30,16 @@ void crashlog_note_net(const char *event, const char *detail);
 void crashlog_netlog_line(const char *event, const char *detail);
 
 // Net-log master switch (menu: Setup -> Network Log, persisted in the config). Off means nothing
-// touches opentyrian_net.log at all: no entries, and no rotation of an existing log. On by
+// touches opentyrian_net.log at all: no entries, and an existing log is left where it is. On by
 // default; config.c applies the saved value at load, after the handlers are already installed.
 void crashlog_set_netlog_enabled(bool enabled);
 bool crashlog_get_netlog_enabled(void);
 
-// Start this process's net log: the previous session's opentyrian_net.log is retired (into the
-// .1..3 chain on PC, to .1.log on consoles) so the live file only ever holds the running session,
-// and is absent when this one logs nothing. Call once from main() AFTER the config is read, so
-// the switch above is the saved one, and before any netplay. No-op while the switch is off.
+// Start this process's net log: the previous session's opentyrian_net.log is DELETED (along with
+// any numbered opentyrian_net.N.log an older build left behind) so there is exactly one net log,
+// it only ever holds the running session, and it is absent when this one logs nothing. Call once
+// from main() AFTER the config is read, so the switch above is the saved one, and before any
+// netplay. No-op while the switch is off.
 void crashlog_netlog_begin_session(void);
 
 // Zero the network log: an existing opentyrian_net.log is truncated to nothing, and none is
