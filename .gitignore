@@ -62,3 +62,4 @@ tyrian.sav
 # Collected deliverables (build-all.ps1 copies the .exe/.pdb/.nro/.vpk here)
 /build/
 /test
+/testing
