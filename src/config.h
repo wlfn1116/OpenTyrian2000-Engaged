@@ -346,6 +346,7 @@ extern bool zicaLaserBuff;      // also fire the Lv10 beam alongside the Lv11 sh
 extern bool chargeLaserCannon;  // re-add the cut DOS "Charge-Laser Cannon" sidekick to shops
 extern bool restoreBaseDispensers;  // wake the dormant dispenser bases (enemy 80-83); Endless ignores it and rolls 50/50 per zone
 extern bool arcadeLifeBoost;    // arcade modes: lives scale the shield and armour ceilings (player.c)
+extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, tyrian2.c)
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 extern Config opentyrian_config;

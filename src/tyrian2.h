@@ -84,6 +84,10 @@ void JE_displayText(void);
 bool JE_searchFor(JE_byte PLType, JE_byte* out_index);
 void JE_eventSystem(void);
 
+// Arcade weapon-ball randomizer: re-scan enemyDat for the front/rear/sidekick/special ball
+// pools. Must run after any load that rewrites enemyDat (JE_loadItemDat).
+void JE_buildArcadeBallPools(void);
+
 void draw_boss_bar(void);
 
 // Endless kill-fire HUD collision avoidance (see JE_inGameDisplays, mainint.c): how far a

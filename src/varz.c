@@ -1685,6 +1685,11 @@ void JE_drawPlayerTags(void)
 // sticks. Cap at the tallest bar the strip actually holds. Only those two values are affected,
 // and armour could already reach them without any of the lives scaling.
 #define HUD_2P_GAUGE_UNITS_MAX 21
+
+// Extra rows the 2P gauges take at the top (see JE_dBar3). The band pitch left the 2P bars one
+// row short of the 45 the wipe clears, unlike the 1P bars which fill their slot exactly; this
+// hands that row back, so at 21 units the bar tops out at y-44 -- still inside the wipe.
+#define HUD_2P_GAUGE_TOP_PAD 1
 static int hud_2p_gauge_units(uint value)
 {
 	const int units = (int)roundf(value * 0.8f);
@@ -1693,12 +1698,12 @@ static int hud_2p_gauge_units(uint value)
 
 // The tick mark showing where a full shield would reach, drawn on the row JE_dBar3 would use as
 // the bar's top at `units_max`. Only worth drawing while the bar is short of it.
-static void draw_shield_ceiling_mark(int x, int bottom_y, int units_now, int units_max)
+static void draw_shield_ceiling_mark(int x, int bottom_y, int units_now, int units_max, int top_pad)
 {
 	if (units_now >= units_max)
 		return;
 
-	const int y = bottom_y - (2 * units_max + 1);
+	const int y = bottom_y - (2 * units_max + 1) - top_pad;
 	JE_rectangle(VGAScreen, x, y, x + 8, y, 68); /* <MXD> SEGa000 */
 }
 
@@ -1715,17 +1720,17 @@ void JE_drawShield(void)
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
 			const int units = hud_2p_gauge_units(player[i].shield);
-			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]));
+			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD);
 			// Before the dim, so a remote player's mark fades with the rest of their gauge.
-			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units(player[i].shield_max));
+			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units(player[i].shield_max), HUD_2P_GAUGE_TOP_PAD);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(270), 60 + 134 * i - 44, HUD_X(278), 60 + 134 * i);
 		}
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]));
-		draw_shield_ceiling_mark(HUD_X(270), 194, player[0].shield, player[0].shield_max);
+		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]), 0);
+		draw_shield_ceiling_mark(HUD_X(270), 194, player[0].shield, player[0].shield_max, 0);
 	}
 }
 
@@ -1748,7 +1753,7 @@ static void endlessDrawArmorBar(int armor)
 	for (int layer = 0; a > 0 && layer < maxLayers; ++layer)
 	{
 		const int seg = (a > 28) ? 28 : a;
-		JE_dBar3(VGAScreen, HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0);
+		JE_dBar3(VGAScreen, HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0, 0);
 		a -= 28;
 	}
 }
@@ -1773,7 +1778,7 @@ void JE_drawArmor(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(player[i].armor), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]));
+			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(player[i].armor), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
 		}
@@ -1784,7 +1789,7 @@ void JE_drawArmor(void)
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[0]));
+		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[0]), 0);
 	}
 }
 

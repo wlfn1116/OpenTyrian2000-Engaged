@@ -1214,22 +1214,28 @@ static bool power_gauge_active = false;
 static int power_render_prev = 0, power_render_cur = 0;  // `power` (0..900) at the prev/cur tick
 static int salvo_render_prev = 0, salvo_render_cur = 0;  // ...and the salvo green share (0..100)
 
-// salvo_frac (0..1) is the share of the bar the Opening Salvo paints green, measured against the
-// bar's own height so the drain stays visible on a partly full generator.
-static void draw_power_gauge(float power_value, float salvo_frac)
+// Gauge geometry, shared by the generator power bar and the arcade lives bar that reuses
+// its slot. BAR_MAX drives the full height, so the bar rescales with it (classic was
+// power/10 with a 90px BAR_MAX). SEG_SHADE_MAX is the top of the segmented ramp, matching
+// where the smooth vertical ramp tops out (BAR_MAX / 7).
+enum { PG_Y_BOTTOM = 104, PG_BAR_MAX = 93, PG_BASE = 113, PG_POWER_MAX = 900, PG_SEG_SHADE_MAX = 13 };
+
+// `level` is the filled height in pixels (0..PG_BAR_MAX); its fractional part becomes the
+// sub-pixel anti-aliased top edge. salvo_frac (0..1) is the share of the bar the Opening
+// Salvo paints green, measured against the bar's own height so the drain stays visible on a
+// partly full generator. segments > 1 divides the bar into that many blocks, so a counted
+// resource (lives) stays countable: Up/Down give each block its own flat shade, Left/Right
+// keep the per-column ramp and just blank a row at each boundary.
+static void draw_gauge_bar(float level, float salvo_frac, int segments)
 {
-	enum { Y_BOTTOM = 104, BAR_MAX = 93, BASE = 113, POWER_MAX = 900 };
 	// 9 pixels wide (x1..x2). The classic art drew this gauge 1px narrower than the
 	// shield/armor bars; extend it right by one so all three gauges match at 9px.
 	const int x1 = HUD_X(269), x2 = HUD_X(277);
 
-	// power (0..POWER_MAX) -> bar height in pixels (0..BAR_MAX). BAR_MAX drives the full
-	// height, so the bar rescales with it (classic was power/10 with a 90px BAR_MAX).
-	float level = power_value * BAR_MAX / (float)POWER_MAX;
 	if (level < 0.0f)
 		level = 0.0f;
-	else if (level > BAR_MAX)
-		level = BAR_MAX;
+	else if (level > PG_BAR_MAX)
+		level = PG_BAR_MAX;
 
 	const int full = (int)level;          // solid pixel rows
 	const float frac = level - full;      // sub-pixel remainder for the top edge
@@ -1237,7 +1243,7 @@ static void draw_power_gauge(float power_value, float salvo_frac)
 
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
 	// condition that gates the free power.
-	int base = BASE;
+	int base = PG_BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
 
@@ -1253,7 +1259,7 @@ static void draw_power_gauge(float power_value, float salvo_frac)
 	const int edgeDark = edgeBase & ~0x0F;  // bank floor: the AA top edge blends up from here
 
 	// Clear the bar slot (its background is black, like the original shrink fill).
-	fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - BAR_MAX, x2, Y_BOTTOM, 0);
+	fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - PG_BAR_MAX, x2, PG_Y_BOTTOM, 0);
 
 	if (dir == GAUGE_GRAD_LEFT || dir == GAUGE_GRAD_RIGHT)
 	{
@@ -1264,48 +1270,106 @@ static void draw_power_gauge(float power_value, float salvo_frac)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (x2 - x1 - j);
 			if (salvoRows >= 1)
-				fill_rectangle_xy(VGAScreenSeg, x1 + j, Y_BOTTOM - salvoRows + 1, x1 + j, Y_BOTTOM, (Uint8)(salvoBase + 2 + off));
+				fill_rectangle_xy(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - salvoRows + 1, x1 + j, PG_Y_BOTTOM, (Uint8)(salvoBase + 2 + off));
 			if (full > salvoRows)
-				fill_rectangle_xy(VGAScreenSeg, x1 + j, Y_BOTTOM - full + 1, x1 + j, Y_BOTTOM - salvoRows, (Uint8)(base + 2 + off));
-			if (full < BAR_MAX && frac > 0.04f)
+				fill_rectangle_xy(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - full + 1, x1 + j, PG_Y_BOTTOM - salvoRows, (Uint8)(base + 2 + off));
+			if (full < PG_BAR_MAX && frac > 0.04f)
 			{
 				const int shade = edgeBase + 2 + off;
 				int edgeCol = edgeDark + (int)(frac * (shade - edgeDark) + 0.5f);
 				if (edgeCol > shade)
 					edgeCol = shade;
-				JE_pix(VGAScreenSeg, x1 + j, Y_BOTTOM - full, (Uint8)edgeCol);
+				JE_pix(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - full, (Uint8)edgeCol);
 			}
 		}
-		return;
-	}
 
-	// Vertical gradient, drawn bottom-up in same-shade bands. Up = classic (shade
-	// BASE + h/7, darkest at the bottom); Down mirrors the gradient within the fill.
-	// A band also ends at the salvo boundary, since the two sides use different banks.
-	for (int h = 1; h <= full; )
-	{
-		const int shade = (dir == GAUGE_GRAD_DOWN) ? (full - h) / 7 : h / 7;
-		const int rowBase = (h <= salvoRows) ? salvoBase : base;
-		int h2 = h;
-		while (h2 + 1 <= full &&
-		       ((dir == GAUGE_GRAD_DOWN) ? (full - (h2 + 1)) / 7 : (h2 + 1) / 7) == shade &&
-		       (((h2 + 1) <= salvoRows) ? salvoBase : base) == rowBase)
-			++h2;
-		fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - h2 + 1, x2, Y_BOTTOM - h + 1, (Uint8)(rowBase + shade));
-		h = h2 + 1;
+		// Segment separators: one blank row at each internal boundary, so a counted resource
+		// reads as N blocks rather than one smooth column. The column ramp runs across the
+		// width here, so the blocks all share it and only need cutting apart. Boundaries at
+		// or above the fill are left alone -- the top of the bar keeps its own edge.
+		for (int i = 1; i < segments; ++i)
+		{
+			const int h = PG_BAR_MAX * i / segments;
+			if (h >= 1 && h < full)
+				fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - h + 1, x2, PG_Y_BOTTOM - h + 1, 0);
+		}
 	}
+	else if (segments > 1)
+	{
+		// Segmented vertical: every block is one flat shade, stepping through the bank across
+		// the whole bar. The step is absolute, not relative to the fill, so a block keeps its
+		// own colour as the count moves up and down. Up = brightest block on top (classic
+		// direction), Down mirrors it. Each block gives up its top row to the gap below the
+		// next one, which is what separates the rectangles. The salvo tint has no segmented
+		// user (endless never runs a counted gauge), so it is not applied here.
+		for (int i = 1; i <= segments; ++i)
+		{
+			const int lo = PG_BAR_MAX * (i - 1) / segments;  // boundary under this block
+			const int hi = PG_BAR_MAX * i / segments;        // boundary at its top
+			if (lo + 1 > full)
+				break;
 
-	// Anti-aliased leading row: dimmed toward the darkest shade by frac so the top
-	// edge appears to move at sub-pixel resolution as the bar fills. In Down the top
-	// band is the darkest (BASE); in Up it is the current top shade.
-	if (full < BAR_MAX && frac > 0.04f)
-	{
-		const int barCol = (dir == GAUGE_GRAD_DOWN) ? edgeBase : (edgeBase + full / 7);
-		int edgeCol = edgeDark + (int)(frac * (barCol - edgeDark) + 0.5f);
-		if (edgeCol > barCol)
-			edgeCol = barCol;
-		fill_rectangle_xy(VGAScreenSeg, x1, Y_BOTTOM - full, x2, Y_BOTTOM - full, (Uint8)edgeCol);
+			int top = (i < segments) ? hi - 1 : hi;  // topmost block has no gap above it
+			if (top > full)
+				top = full;
+			if (top < lo + 1)
+				continue;
+
+			const int step = (dir == GAUGE_GRAD_DOWN) ? (segments - i) : (i - 1);
+			const int shade = step * PG_SEG_SHADE_MAX / (segments - 1);
+			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - top + 1, x2, PG_Y_BOTTOM - lo, (Uint8)(base + shade));
+		}
 	}
+	else
+	{
+		// Vertical gradient, drawn bottom-up in same-shade bands. Up = classic (shade
+		// PG_BASE + h/7, darkest at the bottom); Down mirrors the gradient within the fill.
+		// A band also ends at the salvo boundary, since the two sides use different banks.
+		for (int h = 1; h <= full; )
+		{
+			const int shade = (dir == GAUGE_GRAD_DOWN) ? (full - h) / 7 : h / 7;
+			const int rowBase = (h <= salvoRows) ? salvoBase : base;
+			int h2 = h;
+			while (h2 + 1 <= full &&
+			       ((dir == GAUGE_GRAD_DOWN) ? (full - (h2 + 1)) / 7 : (h2 + 1) / 7) == shade &&
+			       (((h2 + 1) <= salvoRows) ? salvoBase : base) == rowBase)
+				++h2;
+			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - h2 + 1, x2, PG_Y_BOTTOM - h + 1, (Uint8)(rowBase + shade));
+			h = h2 + 1;
+		}
+
+		// Anti-aliased leading row: dimmed toward the darkest shade by frac so the top
+		// edge appears to move at sub-pixel resolution as the bar fills. In Down the top
+		// band is the darkest (PG_BASE); in Up it is the current top shade.
+		if (full < PG_BAR_MAX && frac > 0.04f)
+		{
+			const int barCol = (dir == GAUGE_GRAD_DOWN) ? edgeBase : (edgeBase + full / 7);
+			int edgeCol = edgeDark + (int)(frac * (barCol - edgeDark) + 0.5f);
+			if (edgeCol > barCol)
+				edgeCol = barCol;
+			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - full, x2, PG_Y_BOTTOM - full, (Uint8)edgeCol);
+		}
+	}
+}
+
+// Generator power (0..PG_POWER_MAX) -> a smooth, un-segmented bar.
+static void draw_power_gauge(float power_value, float salvo_frac)
+{
+	draw_gauge_bar(power_value * PG_BAR_MAX / (float)PG_POWER_MAX, salvo_frac, 0);
+}
+
+// The arcade modes have no generator, so its gauge slot sits empty -- hand it to the life
+// counter instead: one segment per life, full bar at ARCADE_LIVES_MAX. The fill height is
+// integer-divided so it lands exactly on a segment boundary (no anti-aliased top edge on a
+// value that only ever moves in whole steps).
+static void draw_lives_gauge(int lives)
+{
+	if (lives < 0)
+		lives = 0;
+	else if (lives > ARCADE_LIVES_MAX)
+		lives = ARCADE_LIVES_MAX;
+
+	draw_gauge_bar((float)(PG_BAR_MAX * lives / ARCADE_LIVES_MAX), 0.0f, ARCADE_LIVES_MAX);
 }
 
 static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
@@ -3358,6 +3422,9 @@ start_level_first:
 		JE_loadItemDat();
 	}
 
+	// After the last thing that can rewrite enemyDat, so the ball pools match this episode.
+	JE_buildArcadeBallPools();
+
 	memset(enemyAvail,       1, sizeof(enemyAvail));
 	for (uint i = 0; i < COUNTOF(enemyShotAvail); i++)
 		enemyShotAvail[i] = 1;
@@ -3683,6 +3750,11 @@ level_loop:
 		}
 
 		/*---------------------Weapon Display-------------------------*/
+		// One slot per power level, each a shade further up the ramp -- and in the arcade modes
+		// the front port's "power" IS the life counter, so a slot is a life. The two-player pair
+		// sits 2px left of the classic anchor, one row taller and 6px wider; the extra width is
+		// spread across the SAME 11 slots (some land 3px wide, some 2px) so one gradient shade
+		// still means exactly one level. One-player keeps the classic 11x2px strip.
 		for (uint i = 0; i < 2; ++i)
 		{
 			uint item_power = player[twoPlayerMode ? i : 0].items.weapon[i].power;
@@ -3691,15 +3763,25 @@ level_loop:
 			{
 				old_weapon_bar[i] = item_power;
 
-				int x = HUD_X(twoPlayerMode ? 286 : 289),
-					y = (i == 0) ? (twoPlayerMode ? 6 : 17) : (twoPlayerMode ? 100 : 38);
+				enum { WEAPON_BAR_SLOTS = 11 };
+				const int width  = twoPlayerMode ? 28 : WEAPON_BAR_SLOTS * 2,
+				          height = twoPlayerMode ? 3 : 2;  // rows y .. y + height
 
-				fill_rectangle_xy(VGAScreenSeg, x, y, x + 1 + 10 * 2, y + 2, 0);
+				const int x = HUD_X(twoPlayerMode ? 284 : 289),
+				          y = (i == 0) ? (twoPlayerMode ? 5 : 17) : (twoPlayerMode ? 99 : 38);
 
+				fill_rectangle_xy(VGAScreenSeg, x, y, x + width - 1, y + height, 0);
+
+				if (item_power > WEAPON_BAR_SLOTS)
+					item_power = WEAPON_BAR_SLOTS;
+
+				// Filled, not JE_rectangle: the classic slot was 2px wide by 3 rows, so an
+				// outline covered every pixel it had. A 3px-wide slot has an interior, and
+				// an outline would leave it black.
 				for (uint j = 1; j <= item_power; ++j)
 				{
-					JE_rectangle(VGAScreen, x, y, x + 1, y + 2, 115 + j); /* SEGa000 */
-					x += 2;
+					fill_rectangle_xy(VGAScreen, x + (int)(width * (j - 1)) / WEAPON_BAR_SLOTS, y,
+					                             x + (int)(width * j) / WEAPON_BAR_SLOTS - 1, y + height, 115 + j); /* SEGa000 */
 				}
 			}
 		}
@@ -3709,6 +3791,14 @@ level_loop:
 		{
 			power = 900;
 			power_gauge_active = false;
+
+			// No generator to read out in the arcade modes, so the gauge slot shows lives
+			// instead -- 1P Arcade, the Super Arcade secret ships and SuperTyrian, all of
+			// which run onePlayerAction. Two-player has no single life count to show, and
+			// its own lives rows already sit in both top corners. Lives only ever move in
+			// whole steps, so the per-tick redraw is enough; no interpolated present pass.
+			if (onePlayerAction)
+				draw_lives_gauge(*player[0].lives);
 		}
 		else
 		{
@@ -7385,6 +7475,94 @@ Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI)
 	return 0;
 }
 
+/* --- Arcade weapon-ball randomizer -------------------------------------------------------
+ *
+ * Every weapon pickup in Tyrian is hand-placed: a level script names the exact ball enemy to
+ * drop, so a level always hands out the same guns in the same order.  With the toggle on each
+ * ball is re-rolled as it spawns, staying inside its own class -- a front-weapon ball becomes
+ * some other front weapon, a rear ball another rear, and so on -- so a level that meant to
+ * hand you a rear gun or a sidekick still does.
+ *
+ * Left alone: the purple ball (value 30000) and the +1 power-up balls (enemies 533/534, shape
+ * bank 21).  Those grant power, not a weapon.
+ *
+ * The pools are read out of enemyDat instead of being hardcoded, so each episode contributes
+ * its own ball set and nothing has to be kept in step with the data files by hand.
+ */
+enum
+{
+	BALL_CLASS_FRONT,     // value 30001..30999 -> front weapon
+	BALL_CLASS_REAR,      // value 31000..31999 -> rear weapon
+	BALL_CLASS_SIDEKICK,  // value 32000..32099 -> sidekick
+	BALL_CLASS_SPECIAL,   // value 32100+       -> special weapon
+	BALL_CLASS_COUNT
+};
+
+#define BALL_POOL_MAX 32
+
+static Uint16 ballPool[BALL_CLASS_COUNT][BALL_POOL_MAX];
+static int ballPoolLen[BALL_CLASS_COUNT];
+
+// Ball enemies sit on the Power-ups sprite sheet (shape bank 26) and encode what they grant
+// in `value`; JE_playerCollide (mainint.c) decodes the very same ranges on pickup.
+static int arcadeBallClass(Uint16 eDatI)
+{
+	if (eDatI > ENEMY_NUM || enemyDat[eDatI].shapebank != 26)
+		return -1;
+
+	const Sint16 value = enemyDat[eDatI].value;
+	if (value <= 30000)  // 30000 is the purple ball; nothing below it on this sheet grants a weapon
+		return -1;
+	if (value < 31000)
+		return BALL_CLASS_FRONT;
+	if (value < 32000)
+		return BALL_CLASS_REAR;
+	if (value < 32100)
+		return BALL_CLASS_SIDEKICK;
+	return BALL_CLASS_SPECIAL;
+}
+
+// Rebuilt per level, after the episode's item data is in place (see the level init below).
+void JE_buildArcadeBallPools(void)
+{
+	memset(ballPoolLen, 0, sizeof(ballPoolLen));
+
+	for (Uint16 i = 0; i <= ENEMY_NUM; ++i)
+	{
+		const int cls = arcadeBallClass(i);
+		if (cls < 0 || ballPoolLen[cls] >= BALL_POOL_MAX)
+			continue;
+		ballPool[cls][ballPoolLen[cls]++] = i;
+	}
+}
+
+// 1-player arcade, 2-player arcade and 2-player online arcade only.  The secret-ship modes are
+// deliberately out: Super Arcade recolours every ball into its own five-weapon set right after
+// it spawns (see the enemydie handler in JE_main's enemy loop), so a re-roll there would just be
+// overwritten, and SuperTyrian / ENGAGE / Galaga each run a scripted loadout of their own.
+static bool arcadeBallRandomActive(void)
+{
+	return arcadeRandomBalls
+	    && (onePlayerAction || twoPlayerMode)
+	    && superArcadeMode == SA_NONE
+	    && !superTyrian
+	    && !galagaMode
+	    && !timedBattleMode
+	    && !endlessMode;
+}
+
+// Draws exactly one mt_rand per ball spawned.  mt_rand is the lockstep sim RNG (re-anchored per
+// network level) and its state rides along in the rollback snapshot, so both peers roll the same
+// ball -- the toggle itself is host-authoritative, see network_settings_pack in network.c.
+static Uint16 arcadeRandomizeBall(Uint16 eDatI)
+{
+	const int cls = arcadeBallClass(eDatI);
+	if (cls < 0 || ballPoolLen[cls] == 0)
+		return eDatI;
+
+	return ballPool[cls][mt_rand() % ballPoolLen[cls]];
+}
+
 uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueShapeTableI)
 {
 	uint avail;
@@ -7393,6 +7571,12 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 
 	if (superArcadeMode != SA_NONE && eDatI == 534)
 		eDatI = 533;
+
+	// Arcade: re-roll the weapon ball here rather than at the drop sites, so enemydie drops,
+	// direct script spawns and everything else funnelling through here are all covered. The
+	// sprite follows the new enemy id on its own (egraphic is read from enemyDat below).
+	if (arcadeBallRandomActive())
+		eDatI = arcadeRandomizeBall(eDatI);
 
 	// Endless: a weapon powerup whose gun is already maxed becomes the other gun's powerup, or the
 	// 5000 gem when both are full. Here rather than at the drop site so every spawn path is covered.

@@ -327,8 +327,12 @@ bool chargeLaserCannon = true;
    only -- Endless ignores the toggle and asks the zone instead. */
 bool restoreBaseDispensers = true;
 /* Arcade modes only: a ship's shield and armour ceilings scale with its life count
-   (arcade_life_scaling_active in player.c). Off leaves the vanilla hull numbers. */
-bool arcadeLifeBoost = true;
+   (arcade_life_scaling_active in player.c). Off (the default) leaves the vanilla hull
+   numbers, so arcade plays as shipped until the toggle is turned on. */
+bool arcadeLifeBoost = false;
+/* Arcade modes only: every weapon ball a level drops is re-rolled inside its own class
+   (JE_makeEnemy in tyrian2.c). Off = the hand-placed pickups the level scripts specify. */
+bool arcadeRandomBalls = false;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
@@ -659,6 +663,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "arcade_life_boost", &arcade_life_boost);
 		arcadeLifeBoost = (arcade_life_boost != 0);
 
+		int arcade_random_balls = arcadeRandomBalls ? 1 : 0;
+		config_get_int_option(section, "arcade_random_balls", &arcade_random_balls);
+		arcadeRandomBalls = (arcade_random_balls != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -872,6 +880,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "charge_laser_cannon", chargeLaserCannon ? 1 : 0);
 	config_set_int_option(section, "restore_base_dispensers", restoreBaseDispensers ? 1 : 0);
 	config_set_int_option(section, "arcade_life_boost", arcadeLifeBoost ? 1 : 0);
+	config_set_int_option(section, "arcade_random_balls", arcadeRandomBalls ? 1 : 0);
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);

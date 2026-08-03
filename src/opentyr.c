@@ -381,6 +381,7 @@ typedef enum
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
+	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
 	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
 	MENU_ITEM_CUSTOM_WEAPONS,
 	MENU_ITEM_CUSTOM_CREATOR,
@@ -589,6 +590,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		arcadeLifeBoost = !arcadeLifeBoost;
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_ARCADE_RANDOM_BALLS:
+		arcadeRandomBalls = !arcadeRandomBalls;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_SIDEKICK_AUTOFIRE:
 		cycleSidekickAutofire(dir);
 		JE_playSampleNum(S_CURSOR);
@@ -747,6 +752,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
 				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Arcade Life Boost:", "Arcade lives raise your shield and armor caps." },
+				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Arcade modes: randomize the weapon each ball gives." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
@@ -1243,6 +1249,10 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			case MENU_ITEM_ARCADE_LIFE_BOOST:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeLifeBoost ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
+			case MENU_ITEM_ARCADE_RANDOM_BALLS:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeRandomBalls ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_SIDEKICK_AUTOFIRE:
@@ -2099,6 +2109,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_ARCADE_LIFE_BOOST:
 				{
 					arcadeLifeBoost = !arcadeLifeBoost;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_ARCADE_RANDOM_BALLS:
+				{
+					arcadeRandomBalls = !arcadeRandomBalls;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

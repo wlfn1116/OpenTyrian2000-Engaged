@@ -7266,13 +7266,24 @@ redo:
 					this_player->is_alive = true;
 					endLevel = false;
 
-					if (galagaMode || episodeNum == 4)
+					// Arcade life boost: the scaled ceilings ARE what a high life count buys, so a
+					// respawn puts both gauges back ON them. Halving them -- the vanilla refill,
+					// still used below when the boost is off -- cancels the boost out exactly
+					// where it should matter most: you come back at 50% either way, and on a
+					// light hull half the ceiling lands so near the ship's own armour that the
+					// boost looks like it did nothing. Losing the life (and the weapon level
+					// that life IS in arcade) is the cost of dying; the ceilings are not.
+					const bool boostedRefill = arcade_life_scaling_active();
+
+					if (galagaMode || episodeNum == 4 || boostedRefill)
 						this_player->armor = this_player->initial_armor;
 					else
 						this_player->armor = this_player->initial_armor / 2;
 
 					if (galagaMode)
-						this_player->shield = 0;
+						this_player->shield = 0;  // galaga starts you shieldless, boost or not
+					else if (boostedRefill)
+						this_player->shield = this_player->shield_max;
 					else
 						this_player->shield = this_player->shield_max / 2;
 

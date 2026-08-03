@@ -49,7 +49,10 @@ static int dbar_voffset(int z)
 #define GAUGE_FLASH_WHITE 5
 
 // Draw a 9px gauge with an up, down, left, or right brightness gradient.
-void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash)
+// topPad grows the bar by that many rows at the top without touching the bottom row or the
+// 2px band pitch -- the two-player strip uses 1 so its four gauges reach the full height the
+// wipe already clears (the one-player bars fill their slot exactly and pass 0).
+void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad)
 {
 	col += 2;
 
@@ -61,7 +64,7 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 	{
 		if (flash >= GAUGE_FLASH_WHITE)
 		{
-			fill_rectangle_xy(surface, x, y - (2 * num + 1), x + 8, y, 15);
+			fill_rectangle_xy(surface, x, y - (2 * num + 1) - topPad, x + 8, y, 15);
 			return;
 		}
 		bright = flash * 3;
@@ -75,7 +78,7 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 		// Lifted +2 shades so the horizontal ramp reads a touch brighter (still in-family; the
 		// vertical bar's upper bands reach higher still).
 		const int yBot = y;
-		const int yTop = y - (2 * num + 1);
+		const int yTop = y - (2 * num + 1) - topPad;
 		for (int j = 0; j <= 8; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (8 - j);
@@ -102,7 +105,9 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 			if (shade > bankTop)
 				shade = bankTop;
 		}
-		JE_rectangle(surface, x, y - 1, x + 8, y, (Uint8)shade); /* <MXD> SEGa000 */
+		// The topmost band absorbs topPad, so the extra height carries the shade the bar
+		// already ends on rather than introducing a band of its own.
+		JE_rectangle(surface, x, y - 1 - ((z == num) ? topPad : 0), x + 8, y, (Uint8)shade); /* <MXD> SEGa000 */
 		y -= 2;
 	}
 }

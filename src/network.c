@@ -1376,6 +1376,9 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
  *   restoreBaseDispensers wakes enemies 80-83.
  *   arcadeLifeBoost   scales both ships' shield and armour ceilings with their life counts
  *                     (player.c), which decides how much damage each of them survives.
+ *   arcadeRandomBalls re-rolls each arcade weapon ball as it spawns, costing one mt_rand draw
+ *                     per ball (JE_makeEnemy, tyrian2.c) -- and both ships pick the balls up
+ *                     out of a shared world, so this has to be one shared choice.
  *   xmasMode          selects a different shape/data set.
  *   gameSpeed         scales the tick rate the whole sim runs at.  A host option in the
  *                     lobby (network_host_game_speed), applied at connect and synced here.
@@ -1391,7 +1394,7 @@ static struct
 	int  zicaLaserBase, zicaLaserLength;
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
-	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost;
+	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
 	int  xmasMode;
 	JE_byte gameSpeed;
 }
@@ -1418,6 +1421,7 @@ int network_settings_pack(Uint8 *buf)
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
 	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery -- host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
+	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1477,6 +1481,7 @@ static void network_settings_stash(void)
 	settings_local.chargeLaserCannon    = chargeLaserCannon;
 	settings_local.restoreBaseDispensers = restoreBaseDispensers;
 	settings_local.arcadeLifeBoost      = arcadeLifeBoost;
+	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
 	settings_local.xmasMode             = xmasMode;
 	settings_local.gameSpeed            = gameSpeed;
 	settings_stashed = true;
@@ -1519,6 +1524,7 @@ int network_settings_adopt(const Uint8 *buf)
 	chargeLaserCannon     = (flags & (1 << 2)) != 0;
 	restoreBaseDispensers = (flags & (1 << 3)) != 0;
 	arcadeLifeBoost       = (flags & (1 << 7)) != 0;
+	arcadeRandomBalls     = (flags & (1 << 8)) != 0;
 
 	// Netcode mode is a session property, not a config setting: the joiner's own
 	// net_rollback preference is left untouched and restored semantics don't apply.
@@ -1562,6 +1568,7 @@ void network_settings_restore(void)
 	chargeLaserCannon     = settings_local.chargeLaserCannon;
 	restoreBaseDispensers = settings_local.restoreBaseDispensers;
 	arcadeLifeBoost       = settings_local.arcadeLifeBoost;
+	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
 
