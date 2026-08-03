@@ -29,13 +29,13 @@ else.
 at your display's refresh rate instead of 35 Hz. In single-player it also moves
 your ship at the display rate, which cuts input latency. Leave it on.
 
-**Sub-pixel** renders the playfield internally at Auto, 1x–5x, or Native.
-Background scrolling and sprite movement is where it shows the most: without it, distant layers creep in
-whole pixels and visibly step. It only pays off with Smooth Motion on. **Native**
-renders one internal sample per screen pixel, so it follows your monitor rather
-than stopping at 5x (11x on a 4K display, shown beside the setting) — pair it
-with the **Native** scaler, which outputs at the exact window size. Auto stops at
-5x because the cost scales with your resolution.
+**Sub-pixel** renders the playfield internally at Auto, 1x–5x, or Native. It
+shows most in background scrolling: without it, distant layers creep in whole
+pixels and visibly step. It only pays off with Smooth Motion on. **Native**
+renders one internal sample per screen pixel, following your monitor rather than
+stopping at 5x (11x on a 4K display, shown beside the setting); pair it with the
+**Native** scaler, which outputs at the exact window size. Auto stops at 5x
+because the cost scales with your resolution.
 
 **Filter** picks how sub-pixel output is resolved: Sharp, Smooth, or none.
 
@@ -109,8 +109,8 @@ in deep runs.
 | Elite | 2x to 4x | Normal | +25% | $150 + $40/zone, capped at $2,500 |
 | Champion | 2x to 4x | ~1.7x fire rate, +50% damage | +50% | $350 + $90/zone, capped at $6,000 |
 
-Both tiers are palette-shifted, so you can spot them. Linked enemy parts share
-one tier and pay one bounty. Bosses can be promoted too.
+Both tiers are palette-shifted. Linked enemy parts share one tier and pay one
+bounty. Bosses can be promoted too.
 
 The natural share starts at 2%, reaches about 25% near zone 37, and caps at 80%.
 Sector modifiers override it: Elite Pack forces 50%, Apex makes everything elite
@@ -242,8 +242,8 @@ You can buy only one kill-fire buff per recharge period, and its price and
 strength use the cash you walked in with, not what is left after shopping.
 
 The gamble has about 40 outcomes, from cash, equipment, perks and revives down to
-lost cash, stolen equipment, a shop tax, or a curse on the next sector. It is
-high variance and no run needs it.
+lost cash, stolen equipment, a shop tax, or a curse on the next sector. High
+variance; no run needs it.
 
 ### Perks
 
@@ -357,45 +357,32 @@ between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 | 2 Player (and Online) | Silver Ship | 10 | 10 | 28 |
 | 2 Player (and Online) | Dragonwing | 10 | 10 | 28 |
 
-Gaining a life mid-level raises both ceilings immediately, and damage already
-taken carries across proportionally — a ship at half armor stays at half armor,
-so the extra hull is a bigger bar, not a free repair. Losing a life shrinks the
-ceilings first, and the respawn then puts both gauges back on them full: the life
-you just spent is the cost of dying, and in arcade that life is a weapon level
-too, so the ceilings are not taxed on top of it. Switched off, you get the
-vanilla half refill instead. Armor pickups top up to the current ceiling rather
-than a flat 28, so a light hull holds less at low life counts than it used to.
+Gaining a life raises both ceilings at once and carries damage across
+proportionally, so a ship at half armor stays at half armor. Losing one shrinks
+them, and the respawn refills both to the new ceiling instead of the vanilla
+half. Armor pickups top up to the current ceiling rather than a flat 28, so a
+light hull holds less at low life counts.
 
-The Super Arcade secret ships are covered too, and nothing about them is levelled
-to a shared number: each one scales off the hull it actually flies, and those run
-from 8 to 30 across the nine ships. At 11 lives every one of them reaches the
-full 28-point bar on both gauges. The heaviest starts at 30, already past the
-bar, so it simply flies full the whole way. All nine carry the standard Gencore
-High Energy Shield, so their shield ceilings climb from 10 to 28 alike.
-SuperTyrian stays out — it is one fixed loadout rather than a ship you pick.
+The Super Arcade ships each scale off their own hull, which runs from 8 to 30
+across the nine. All nine carry the stock Gencore High Energy Shield, so their
+shields climb 10 to 28 alike. The Nort-Ship Z's 30 hull is already past the bar
+and stays there. SuperTyrian is excluded.
 
-Switch it off and every arcade ship keeps the hull and shield it always had.
-Online, the host's setting binds the session, like every other rule that reaches
-the simulation.
+Off, every ship keeps its stock hull and shield. Online, the host's setting binds
+the session.
 
-The shield gauge carries a thin line marking a full charge. It is on both gauges
-of the two-player HUD now, and it vanishes while the gauge is at its ceiling — a
-quick way to see the shield is topped up.
+The shield gauge's full-charge line is on both gauges of the two-player HUD now.
 
 ### Random Pickups
 
 **Setup > Enhancements > Game Tweaks > Random Pickups**, off by default.
 
-Every weapon ball in Tyrian is hand-placed: the level script names the exact
-pickup an enemy drops, so a level always hands out the same guns in the same
-order, run after run. Switch this on and each ball is re-rolled the moment it
-spawns, in 1 Player Arcade, 2 Player Arcade, 2 Player Online Arcade and on the
-Super Arcade secret ships.
+Weapon balls are hand-placed in the level scripts, so a level always drops the
+same guns in the same order. On, each ball is re-rolled as it spawns, in 1 Player
+Arcade, 2 Player Arcade, 2 Player Online Arcade and on the Super Arcade ships.
 
-A ball only ever becomes another ball of its own kind, so a level that meant to
-hand you a rear gun or a sidekick still does — only which one changes. Each
-episode draws from its own arsenal, which is why Episodes 4 and 5 have two more
-specials to roll than the first three.
+A ball only becomes another of its own kind, so a rear-gun drop is still a rear
+gun. Each episode rolls from its own arsenal.
 
 | Ball | Rolls into | Ep 1-3 | Ep 4-5 |
 | --- | --- | --- | --- |
@@ -404,34 +391,24 @@ specials to roll than the first three.
 | Sidekick | another sidekick | 9 | 9 |
 | Special weapon | another special weapon | 6 | 8 |
 
-Purple balls are left exactly as they are, and so are the front and rear power-up
-balls — those hand you a power level, not a weapon, and randomizing them would
-just be a coin toss over which gun grows. Nothing changes in the main game, in
-Endless, or in SuperTyrian, which flies a fixed loadout.
+Purple balls and the front and rear power-up balls are untouched: they grant a
+power level, not a weapon. The main game, Endless and SuperTyrian are unaffected.
 
-The secret ships work differently and are handled to match. A Super Arcade ball
-does not carry a weapon at all: it carries one of five colors, and the color is
-a slot in the arsenal of whichever ship you are flying. Normally those colors
-come out in a fixed 1-2-3-4-5 cycle, so a level walks you through that ship's
-guns in the same order every time. Switched on, the color is rolled instead —
-still one of that ship's own five, never a gun it cannot fly, so the Stealth Ship
-keeps drawing from its list and the StormWind from its own. You can draw the same
-color twice in a row now, which the cycle never let happen.
+Super Arcade balls carry a color rather than a weapon, and the color picks a slot
+in the current ship's five-gun arsenal. Normally they cycle 1-2-3-4-5; rolled
+instead, a ship can draw the same gun twice running, but never one it cannot fly.
 
-Online, the host's setting binds the session and both machines roll the same
-pickup from the same shot, like every other rule that reaches the simulation.
+Online, the host's setting binds the session.
 
 ## Online play
 
 **2 Player Online Arcade** on the main menu opens the Multiplayer screen: Host
-Game, Find LAN Games, Join by IP Address, and Your Nickname, which is the name
-the other player sees. The game uses UDP port 1333. On the same network, Find LAN
-Games saves anyone typing an address.
+Game, Find LAN Games, Join by IP Address, and Your Nickname, the name the other
+player sees. The game uses UDP port 1333.
 
-The menu refuses to start a netgame while the FPS Cap is below 35, and says so
-instead of showing its options. The simulation runs at 35 Hz, so a lower render
-cap would drag both players down to the capped machine's rate. Set the cap to 35
-or higher, or Uncapped.
+The menu refuses to start a netgame while the FPS Cap is below 35: the simulation
+runs at 35 Hz, and a lower render cap drags both players down to the capped
+machine's rate. Set the cap to 35 or higher, or Uncapped.
 
 **Host Game** covers the listen port, Netcode, Desync Recovery, Host Flies, and
 Game Speed. The host's choices bind the session for both machines; the joiner's
@@ -457,18 +434,17 @@ that it starts to slow, and raising the delay trades input lag for smoothness.
 In any two-player game the sidebar tags each gauge block **P1** or **P2**.
 Online, the other player's gauges are dimmed as well.
 
-At the start of each level both machines wait for each other, so a slower loader
-briefly shows "Waiting for other player." before the two fade in together.
+At the start of each level both machines wait for each other; a slower loader
+shows "Waiting for other player." before the two fade in together.
 
 ### Saving and resuming an online game
 
 Save from the shop with Options > **Save Game**, or Alt+S anywhere in the shop.
 Online games share the regular 2-player save page, so a session saved online can
 be continued on the couch and vice versa. The page's last slot is written
-automatically at the start of every level as `LAST LEVEL` — handy if nobody saved
-by hand, but it means an online session overwrites that slot's local 2-player
-backup. Save into a numbered slot to keep a run. Both machines write their own
-copy of the same session, so either player can host the resume.
+automatically at the start of every level as `LAST LEVEL`, so an online session
+overwrites that slot's local 2-player backup. Save into a numbered slot to keep a
+run. Both machines write their own copy, so either player can host the resume.
 
 If the session ends under you — the other player quits, the connection drops, or
 an unrecoverable desync stops the game — you are offered **Save Game** or
@@ -481,8 +457,7 @@ To resume, host as usual. Once the other player connects, the host picks between
 2-player page, and the save you pick is sent to the joiner whole, resuming at
 that save's next level with its own episode and difficulty. Saves whose episode
 the other player's data files lack are dimmed. Loading is host-side and only at
-session start; there is no Alt+L during play, because a mid-session load on one
-machine would fork the game.
+session start; there is no Alt+L during play.
 
 ## Custom Weapon Creator
 
@@ -615,15 +590,14 @@ On Windows these sit next to the executable, on Linux in
 | `opentyrian_log.log` | Crash report, Windows only, written only if the game falls over |
 | `opentyrian_net.log` | Online session log |
 
-Both start fresh each launch, so they always belong to the run you have open now.
-Older crash logs are kept beside the live one, numbered `.1.log` upwards; the net
-log keeps no history at all — there is only ever the current session's
-`opentyrian_net.log`, and none if this session had nothing to report.
+Both logs start fresh each launch. Older crash logs are kept beside the live one,
+numbered `.1.log` upwards; the net log keeps no history, and none is written if
+the session had nothing to report.
 
 If you hit a desync, attach `opentyrian_net.log` from **both** machines to the
-report. Each side logs the disputed frame as it computed it, and comparing the
-two points straight at what diverged. A session with nothing between its start
-and end lines was healthy.
+report — each side logs the disputed frame as it computed it, and comparing the
+two points at what diverged. A session with nothing between its start and end
+lines was healthy.
 
 The net log can be turned off, and cleared on consoles, under **Setup >
 Enhancements > Game Tweaks > Network**.
