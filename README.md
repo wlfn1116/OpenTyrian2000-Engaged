@@ -21,7 +21,12 @@ The original campaigns play as they always did. What the fork adds:
 
 ## Game data
 
-The engine needs the freeware Tyrian 2000 data files:
+The release downloads already contain the freeware Tyrian 2000 data, so there is
+nothing separate to fetch. The Windows and Linux packages ship a `data` folder
+beside the binary, and the Switch and Vita builds carry it inside the `.nro` and
+`.vpk`.
+
+Building from source is the exception. Get the data from:
 
 <https://www.camanis.net/tyrian/tyrian2000.zip>
 
