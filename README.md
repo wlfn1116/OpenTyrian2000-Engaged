@@ -111,7 +111,7 @@ Controls are rebindable, and controllers are supported.
 ## Building
 
 The Windows project is in `visualc`. The root script builds and collects the PC,
-Switch, and Vita targets:
+Switch, and Vita targets: 
 
 ```powershell
 .\build-all.ps1
