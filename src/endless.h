@@ -186,6 +186,9 @@ void endlessRestoreSortie(void);
 bool endlessSortieValid(void);
 void endlessArmLockedRelaunch(void);
 
+// Death menu "Restart Zone": restore + re-arm the same level, skipping the outpost.
+void endlessRestartSortie(void);
+
 // Fallback picker; normal runs use the course path.
 JE_byte endlessPickNextLevel(void);
 
@@ -316,6 +319,9 @@ void endlessApplyStartingLoadout(void);
 
 // Move the starting gun to the first row of the opening shop.
 void endlessHoistStartWeapon(void);
+
+// A destroyed ship gets the death menu instead of GAME OVER and the run summary.
+bool endlessDeathMenuDue(void);
 
 void endlessOnRunEnd(void);
 

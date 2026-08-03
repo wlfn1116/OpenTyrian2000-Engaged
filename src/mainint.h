@@ -51,6 +51,18 @@ void JE_nextEpisode(void);
 void JE_helpSystem(JE_byte startTopic);
 void JE_doInGameSetup(void);
 JE_boolean JE_inGameSetup(void);
+
+// Endless death prompt (Hardcore off only), shown over the frozen death frame before the run
+// summary. Values double as the row order.
+typedef enum
+{
+	ENDLESS_DEATH_RESTART = 0,  // fly the same zone again from the launch-time snapshot
+	ENDLESS_DEATH_OUTPOST,      // back to the outpost, exactly like the pause menu's Quit Level
+	ENDLESS_DEATH_END_RUN,      // on to the Run Over summary
+}
+EndlessDeathChoice;
+
+EndlessDeathChoice JE_endlessDeathMenu(void);
 void JE_debugMenu(bool center);
 // Rebuild what a loadout write invalidates (ship graphics, hit boxes, shield ceiling, sidekick
 // pods), keeping every player's live armor and shield. For the network peer-apply path; the

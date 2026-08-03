@@ -747,6 +747,27 @@ void endlessRestoreSortie(void)
 
 bool endlessSortieValid(void) { return endlessSortieHave; }
 
+// Death menu "Restart Zone": revert to the launch-time snapshot and re-arm the same level with no
+// outpost visit in between. The one-shots the course pick consumed stay consumed -- the relaunch
+// replays that very pick, so refunding them (what the unlocked Quit Level path does, since there
+// the player re-picks a course) would spend them twice.
+void endlessRestartSortie(void)
+{
+	if (!endlessSortieHave)
+		return;
+
+	const bool wasHardcore = endlessHardcore;  // survives endlessApplyCurrent -> endlessResetRun
+
+	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state; also arms endlessResumeVisit
+	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
+	endlessSortieHave   = true;                                       // the committed-level statics are still valid
+	endlessHardcore     = wasHardcore;
+	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
+
+	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here
+	endlessArmLockedRelaunch();    // re-arm the committed level: episode, section, level file, mutators
+}
+
 // The committed level's fine PAYOUT term at the run difficulty, from the sortie snapshot (the
 // authoritative "level being played" record, valid through the clear + outpost and across a reload).
 // The clear payout reads this so the banked cash matches the course card the player picked; 0 when no

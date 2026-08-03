@@ -1211,6 +1211,11 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 // in the level loop.  Presentation state: unregistered, reset at level start.
 static bool link_cue_state = false;
 
+// Set once everything is released after a fatal hit, arming the endless death menu's "any input
+// but Esc cuts the wreck animation short" test so it can't fire on input that was already held.
+// Input state, not sim state: unregistered, reset at level start (as link_cue_state above).
+static bool deathSkipArmed = false;
+
 // Generator power bar render state: a HUD overlay on VGAScreenSeg, redrawn every presented
 // frame at an interpolated level with a sub-pixel anti-aliased top edge.
 static bool power_gauge_active = false;
@@ -2891,6 +2896,13 @@ start_level:
 	// Leaving the level loop: whatever rollback machinery was live is done.
 	rollback_level_end();
 
+	// A script's music fade (event 34) drops the MASTER volume and is normally undone by the
+	// event 35 that follows it. Every exit from a level -- clear, death, Quit Level -- can strand
+	// that ramp part-way, and only the next level start put the volume back, so the level-end
+	// jingle and the shop/outpost after it played at the fade floor.
+	musicFade = false;
+	set_volume(tyrMusicVolume, fxVolume);
+
 	mouseSetRelative(false);
 
 	if (galagaMode)
@@ -3002,11 +3014,46 @@ start_level:
 		}
 		else
 		{
+			// Endless death with Hardcore off: the frozen death frame gets a choice before the run
+			// summary. Hardcore skips it -- and its pause menu is locked out from the moment the ship
+			// dies (see the ingamemenu_pressed gate in the level loop), so Quit Level is no way out
+			// of a fatal hit either.
+			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
+			if (endlessDeathMenuDue() && all_players_dead())
+				deathPick = JE_endlessDeathMenu();
+
 			fade_song();
 			fade_black(10);
 
+			if (endlessMode && deathPick == ENDLESS_DEATH_RESTART)
+			{
+				endlessRestartSortie();  // revert to the launch snapshot and re-arm the same zone
+
+				// start_level_first fades the song on the way in and then calls play_song, which
+				// only reloads when the song NUMBER changes. Every other entry comes from a screen
+				// playing something else, so the reload undoes that fade; a zone retry names the
+				// same track, early-outs, and the level plays under the tail of the fade in silence.
+				// Dropping the selection makes the retry reload like any other level entry.
+				clear_song_selection();
+				goto start_level_first;
+			}
+
 			if (endlessMode)
 			{
+				// Return to Outpost reverts to the same launch-time snapshot, then reopens the shop
+				// the way Quit Level does.
+				if (deathPick == ENDLESS_DEATH_OUTPOST)
+				{
+					endlessRestoreSortie();
+					endlessBetweenLevels();
+					if (mainLevel == 0)  // player chose Quit Game in the reopened outpost
+					{
+						endlessEndRunToTitle();
+						return;
+					}
+					goto start_level_first;
+				}
+
 				endlessOnRunEnd();
 				endlessMode = false;
 				mainLevel = 0;
@@ -3390,6 +3437,7 @@ start_level_first:
 
 	twoPlayerLinked = false;
 	link_cue_state = false;
+	deathSkipArmed = false;
 	linkGunDirec = M_PI;
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -3657,7 +3705,11 @@ level_loop:
 	if (!allPlayersGone && levelEnd > 0 && endLevel)
 	{
 		play_song(9);
-		musicFade = false;
+		if (musicFade)  // cancelling the ramp isn't enough: the jingle needs the volume back too
+		{
+			musicFade = false;
+			set_volume(tyrMusicVolume, fxVolume);
+		}
 	}
 	else if (!playing && firstGameOver)
 	{
@@ -5206,10 +5258,41 @@ draw_player_shot_loop_end:
 					player[1].exploding_ticks = 0;
 
 				musicFade = true;
+
+				// Endless death menu: fire, Enter, a click -- anything but Esc -- cuts the wreck
+				// animation short and brings the menu up. Esc is left alone so it still opens the
+				// pause menu (which is exactly what Hardcore locks out at this point).
+				//
+				// Only a press made after LETTING GO of whatever was held when the hit landed
+				// counts. `newkey` is raised by keyboard auto-repeat as well as by the synthetic
+				// key events push_joysticks_as_keyboard emits for a held stick direction, so
+				// steering through the fatal hit -- which a movement modifier has you doing
+				// constantly -- otherwise skipped the explosion on its very first tick.
+				if (endlessDeathMenuDue() && !play_demo && !rollback_resim)
+				{
+					push_joysticks_as_keyboard();
+					service_SDL_events(false);
+
+					if (!keydown && !mousedown && !joydown)
+					{
+						deathSkipArmed = true;
+					}
+					else if (deathSkipArmed && ((newkey && lastkey_scan != SDL_SCANCODE_ESCAPE) || newmouse))
+					{
+						reallyEndLevel = true;
+						// A live-input one-shot outside the movement tuples; record it so a
+						// self-test replay of this tick lands on the same state.
+						if (rollback_selftest_active())
+							rollback_st_event(RB_EV_DISMISS);
+					}
+				}
 			}
 			else
 			{
-				if (play_demo || normalBonusLevelCurrent || bonusLevelCurrent)
+				// The endless death menu replaces GAME OVER outright: it offers the same "press
+				// something to move on" beat and two ways to keep the run, so leaving GAME OVER in
+				// front of it would only cost the player an extra keypress.
+				if (play_demo || normalBonusLevelCurrent || bonusLevelCurrent || endlessDeathMenuDue())
 					reallyEndLevel = true;
 				else
 				{
@@ -5305,6 +5388,13 @@ draw_player_shot_loop_end:
 			else
 				JE_pauseGame();
 		}
+
+		// Endless Hardcore: the pause menu is off-limits from the moment the ship dies. Its Quit
+		// Level row returns to the outpost, which during the death explosion would turn a fatal hit
+		// into a free retry -- the one thing Hardcore does not allow. (With Hardcore off the death
+		// menu offers that retry openly; see JE_main.)
+		if (ingamemenu_pressed && endlessMode && endlessHardcore && all_players_dead())
+			ingamemenu_pressed = false;
 
 		if (ingamemenu_pressed)
 		{

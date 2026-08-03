@@ -377,6 +377,81 @@ members is safe; deleting or reordering one requires migration of both arrays.
 The all-time best zone is stored in `opentyrian.cfg`, not the sidecar, so Hardcore
 runs can update it. Record a zone when it starts and write the config immediately.
 
+### Death and retries
+
+A destroyed ship in a non-Hardcore run gets `JE_endlessDeathMenu` (mainint.c) over
+the frozen death frame before `endlessOnRunEnd`: Restart Zone, Return to Outpost,
+End Run. It is built on `JE_inGameSetup`'s arrangement so the cursor, hover and
+joystick behave identically, and Esc/right-click are inert so nothing discards a
+run by accident.
+
+`endlessDeathMenuDue()` gates both halves. The level loop's GAME OVER branch reads
+it and sets `reallyEndLevel` instead of drawing GAME OVER and waiting on a press —
+the menu offers the same beat plus two ways to keep the run, so leaving GAME OVER
+in front of it only cost a keypress. The frame frozen under the panel is therefore
+the clean playfield.
+
+Three drawing constraints, all easy to get wrong:
+
+- **Bank 15 is the text ramp in the menu palette only.** Of the 24 palettes in
+  `palette.dat`, entries 240-255 are a usable ramp in about a third (0, 5, 7, 8, 10,
+  17, 18, 19, 21, 23); half are a flat block of white, 3 and 22 are flat green, 20
+  and 23 are unordered noise, and **palette 5 has a black hole at index 254**, which
+  turns the brightest pixel of every glyph black -- the "corrupted letters" look.
+  Any panel drawn over a live level must borrow the ramp (`memcpy(&colors[240],
+  &palettes[0][240], ...)` + `set_palette(colors, 240, 255)`);
+  `endlessDrawRunEndBackdrop` does the same after loading its PCX. On exit put the
+  level's entries back in `colors` for whoever sets the palette next, but do **not**
+  re-apply them -- the panel is still on screen while the caller fades to black, and
+  pushing the level ramp back under it wrecks the letters again for the whole fade.
+- **The `value` sign follows the font, not taste.** It slides a glyph's shades along
+  the bank, and each font's body sits somewhere different: `normal_font` at shade 13
+  (so it wants negatives -- a positive clamps its bright half into a slab) and
+  `small_font`/`TINY_FONT` at shade 7 (so a negative buries it in the near-black end;
+  the pause menu's help line is +6 for this reason). Measured off `tyrian.shp`.
+- `composite_playfield` lays the playfield down at screen x 0, 184 rows tall. The HUD
+  owns everything from `PLAYFIELD_WIDTH` (299) right and the message bar everything
+  below row 183, so an overlay centred on `vga_width`/`vga_height` sits low and to the
+  right. Centre on `PLAYFIELD_WIDTH` and 184 instead.
+
+Any input except Esc during the wreck animation cuts it short and brings the menu
+up (`exploding_ticks > 0` branch of the GAME OVER block, recording `RB_EV_DISMISS`
+like the GAME OVER dismiss it replaces). Esc is excluded so it still reaches the
+pause menu -- the one Hardcore locks out at exactly this moment.
+
+That test waits on `deathSkipArmed`, set once nothing is held. **`newkey` does not
+mean "a new key was pressed"**: `service_SDL_events` raises it for SDL keyboard
+auto-repeat, and `push_joysticks_as_keyboard` pushes a synthetic KEYDOWN for every
+held stick direction each call (`direction_pressed` is edge *or* repeat-after-delay).
+Steering through the fatal hit -- constant under a movement modifier -- therefore
+skipped the explosion on its first tick. Any "did the player just press something"
+test in the level loop needs the same guard.
+
+**Restart Zone has to drop the song selection.** `start_level_first` fades the song on
+the way in and later calls `play_song(levelSong - 1)`, which reloads only when the song
+NUMBER changes -- and `fade_song` leaves a track *selected at volume 1* rather than
+stopped (`lds_fade` ramps `allvolume` down to 1 and returns with `playing` still
+**true**; only a `hardfade` clears it). Every other level entry arrives from a screen
+playing something else, so that reload undoes the fade for it. A zone retry names the
+same track, early-outs, and the level plays under the tail of the fade in silence. The
+branch calls `clear_song_selection()` (loudness.c) so the retry reloads like any other
+entry.
+
+Both retries revert the launch snapshot. Return to Outpost is literally the Quit
+Level path (`endlessRestoreSortie` then `endlessBetweenLevels`). Restart Zone uses
+`endlessRestartSortie`, which differs from the unlocked restore in two ways that
+matter:
+
+- it keeps the post-pick one-shots (purchased buff, sabotage charge, Long Con) as
+  the snapshot restored them, because the relaunch replays that same course pick;
+  refunding them the way the unlocked path does would spend them twice;
+- it clears `endlessResumeVisit` and calls `endlessArmLockedRelaunch` itself,
+  because no outpost visit will run to consume the flag and arm the level.
+
+Hardcore never reaches the menu, and `ingamemenu_pressed` is dropped in the level
+loop from the moment `all_players_dead()` goes true, so the pause menu's Quit Level
+row cannot turn a fatal hit into a free trip to the outpost during the explosion.
+
 ### Mode and effects
 
 Use `endlessMode` for run structure:
@@ -408,6 +483,14 @@ modifiers.
 
 Menu labels, choice counts, and help indices are parallel data. Update all three
 when adding a row.
+
+Panels drawn over a live level -- the pause menu, the debug menu, the Endless death
+menu -- centre on the **playfield**, not the frame: `PLAYFIELD_WIDTH` (299) wide from
+screen x 0, with the HUD owning everything to its right. The pause menu's two boxes
+are authored flush left (both at x=3) and are shifted by a computed offset each, so
+their internal layout is untouched; its help line centres on the same axis, with a
+floor at the box's inner edge so an over-wide string runs off to the right rather
+than starting at a negative x (where `blit_sprite_hv` wraps rows instead of clipping).
 
 Debug menus separate row identity from display order. Switch logic uses a row ID,
 never the current list position. Headings are non-selectable and navigation must

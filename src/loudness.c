@@ -631,6 +631,15 @@ void play_song(unsigned int song_num)  // FKA NortSong.playSong
 	SDL_UnlockAudioDevice(audioDevice);
 }
 
+// Forget which song is selected, so the next play_song() reloads the track even when it names the
+// one already up. That same-song early-out is normally right -- it stops a re-issued jingle
+// restarting every tick -- but fade_song leaves a song SELECTED at volume 1 rather than stopped,
+// so a screen that fades out and then returns to the same track has no other way to be heard.
+void clear_song_selection(void)
+{
+	song_playing = NO_SONG_PLAYING;
+}
+
 void restart_song(void)  // FKA Player.selectSong(1)
 {
 	if (audio_disabled)

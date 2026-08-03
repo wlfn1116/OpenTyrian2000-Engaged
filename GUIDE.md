@@ -55,8 +55,9 @@ The loop is:
 outpost -> choose a course -> clear the zone -> outpost
 ```
 
-There is no last zone. Death ends the run unless you own a revive. Clearing
-Zone 100 rolls the credits, then the run carries on.
+There is no last zone. Death ends the run unless you own a revive, though a
+non-Hardcore run gets one more choice first. Clearing Zone 100 rolls the credits,
+then the run carries on.
 
 ### Starting a run
 
@@ -323,12 +324,33 @@ E-Shop. Elite and champion bounties pay on the kill. Shop prices rise with depth
 | 50, 150, 250, ... | S+ / S++ | Five-choice perk |
 | 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
 
+### Dying
+
+A revive spends itself first: it refills the hull, clears enemy shots, briefly
+stops enemy fire, and the zone carries on.
+
+Without one, a non-Hardcore run puts a choice over the wreck. It stands in for
+GAME OVER, so no extra keypress is needed to reach it, and fire, Enter or a click
+during the explosion brings it up early. Esc still opens the pause menu instead:
+
+| Choice | Result |
+| --- | --- |
+| Restart Zone | Fly the same zone again |
+| Return to Outpost | Reopen the outpost and pick a new course |
+| End Run | On to the summary |
+
+Either retry rolls the run back to the launch snapshot, the way Quit Level does:
+the loadout, cash, perks and shop stock you had when the zone started. Nothing
+picked up in the failed attempt is kept.
+
+Hardcore gets no such choice, and its pause menu closes off the moment the ship
+dies, so its Quit Level row is no escape from a fatal hit either.
+
 ### Saving
 
 Non-Hardcore runs checkpoint at the outpost, in `endless.sav`. Hardcore runs
 never save. Quit Level restores the launch snapshot and drops you back into the
-same committed sortie. A revive refills the hull, clears enemy shots, and briefly
-stops enemy fire. Your furthest zone is kept in `opentyrian.cfg`.
+same committed sortie. Your furthest zone is kept in `opentyrian.cfg`.
 
 With Debug Mode on, **Endless Effects** applies the scaling, modifiers, elites
 and perks to a normal campaign without the Endless run structure around it.

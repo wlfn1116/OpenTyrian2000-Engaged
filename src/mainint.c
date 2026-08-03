@@ -2187,7 +2187,16 @@ JE_boolean JE_inGameSetup(void)
 	/* 8 rows fit at the classic pitch; a 9th (Debug row) needs it tightened so
 	 * the last row clears the help box. */
 	const int dyMenuItems = menuItemsCount > 8 ? 14 : 16;
-	const int xMenuItem = 10;
+
+	/* Both boxes are authored flush against the left edge (x=3); centre each of them in the
+	 * PLAYFIELD, which composite_playfield lays down at screen x 0, PLAYFIELD_WIDTH (299) wide,
+	 * with the HUD owning everything to its right. Everything below is expressed as the original
+	 * coordinate plus one of these offsets, so the layout inside each box is untouched. */
+	const int xOfs = (PLAYFIELD_WIDTH - 215) / 2 - 3;      /* main box: x 3..217 */
+	const int xHelpOfs = (PLAYFIELD_WIDTH - 255) / 2 - 3;  /* help box: x 3..257 */
+	const int xHelpMid = 3 + xHelpOfs + 255 / 2;
+
+	const int xMenuItem = 10 + xOfs;
 	const int xMenuItemName = xMenuItem;
 	const int wMenuItemName = 110;
 	const int xMenuItemValue = xMenuItemName + wMenuItemName;
@@ -2200,12 +2209,12 @@ JE_boolean JE_inGameSetup(void)
 		if (restart)
 		{
 			// Main box (extended down a little to fit the extra Extra row)
-			JE_barShade(VGAScreen, 3, 13, 217, 148);
-			JE_barShade(VGAScreen, 5, 15, 215, 146);
+			JE_barShade(VGAScreen, 3 + xOfs, 13, 217 + xOfs, 148);
+			JE_barShade(VGAScreen, 5 + xOfs, 15, 215 + xOfs, 146);
 
 			// Help box
-			JE_barShade(VGAScreen, 3, 152, 257, 168);
-			JE_barShade(VGAScreen, 5, 154, 255, 166);
+			JE_barShade(VGAScreen, 3 + xHelpOfs, 152, 257 + xHelpOfs, 168);
+			JE_barShade(VGAScreen, 5 + xHelpOfs, 154, 255 + xHelpOfs, 166);
 
 			memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
@@ -2286,7 +2295,13 @@ JE_boolean JE_inGameSetup(void)
 			pause_help = endlessMode ? "Give up the level; return to the outpost." : "Quit playing the level.";
 		else if (selectedId == MENU_ITEM_SHIP_SENS)
 			pause_help = SHIP_SENS_HELP;
-		JE_outTextAdjust(VGAScreen, 10, 156, pause_help, 14, 6, TINY_FONT, true);
+		/* Centred in the help box. The floor is the box's inner edge, so a string too wide to
+		 * centre degrades the way the old left-aligned draw did -- running off to the right --
+		 * instead of starting at a negative x, where blit_sprite_hv wraps rows instead of clipping. */
+		int xHelpText = xHelpMid - JE_textWidth(pause_help, TINY_FONT) / 2;
+		if (xHelpText < 5 + xHelpOfs)
+			xHelpText = 5 + xHelpOfs;
+		JE_outTextAdjust(VGAScreen, xHelpText, 156, pause_help, 14, 6, TINY_FONT, true);
 
 		service_SDL_events(true);
 
@@ -2618,6 +2633,199 @@ JE_boolean JE_inGameSetup(void)
 	VGAScreen = temp_surface; /* side-effect of game_screen */
 
 	return result;
+}
+
+/* Endless death prompt, put up over the frozen death frame while the level music still plays.
+ * Built on JE_inGameSetup's arrangement -- shaded panel, VGAScreen2 as the redraw background,
+ * hover/click alongside keyboard and joystick -- so the cursor behaves as it does in the pause
+ * menu. Esc and right-click are deliberately inert: the run's fate is one of the three rows,
+ * so a stray press can't discard it. Hardcore never gets here (see tyrian2.c JE_main). */
+EndlessDeathChoice JE_endlessDeathMenu(void)
+{
+	SDL_Surface *const temp_surface = VGAScreen;
+	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
+
+	if (shopSpriteSheet.data == NULL)
+		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
+
+	static const char *const rowName[] = { "Restart Zone", "Return to Outpost", "End Run" };
+	static const char *const rowHelp[] =
+	{
+		"Fly this zone again as you launched it.",
+		"Back to the outpost for a new course.",
+		"End the run and see the summary.",
+	};
+
+	static const char title[] = "SHIP DESTROYED";
+
+	// Bank 15 is the text ramp and `value` slides a glyph's shades along it, so the sign that reads
+	// right depends on where the font's glyph body sits: normal_font's is shade 13 (near the top,
+	// wants negatives, and a positive would clamp the bright half into a slab), small_font's is only
+	// shade 7 and needs a positive or it lands in the near-black end of the ramp.
+	const int titleValue = -1, rowValueOn = -2, rowValueOff = -4, helpValue = 4;
+
+	// Size the panel to its widest line: the help strings are long enough that guessing at the
+	// small_font metrics would sooner or later run text off the panel.
+	int contentW = JE_textWidth(title, normal_font);
+	for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+	{
+		contentW = MAX(contentW, JE_textWidth(rowName[i], normal_font));
+		contentW = MAX(contentW, JE_textWidth(rowHelp[i], small_font));
+	}
+
+	// Centred on the PLAYFIELD, not the frame: composite_playfield lays the playfield down at
+	// screen x 0 and the HUD owns everything from PLAYFIELD_WIDTH (299) right, so a frame-centred
+	// panel slides under the HUD. The cap keeps a strip of playfield showing either side.
+	const int panelW = MIN(contentW + 24, PLAYFIELD_WIDTH - 32);
+	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
+
+	// Same for the vertical: composite_playfield copies 184 rows to screen y 0..183 and the bottom
+	// HUD message bar owns everything under that, so centring on vga_height sits the panel low.
+	const int playfieldRows = 184, panelH = 104;
+	const int py0 = (playfieldRows - panelH) / 2, py1 = py0 + panelH;
+
+	const int midX = (px0 + px1) / 2;
+	const int rowY0 = py0 + 34, rowPitch = 18, rowH = 14;
+	const int rowX0 = px0 + 6, rowX1 = px1 - 6;
+
+	// Only the MENU palette actually holds a ramp at bank 15 (entries 240-255). Level palettes put
+	// flat white there, or noise, or (palette 5) a black hole at 254 that eats the brightest pixel
+	// of every letter. Borrow the menu ramp for the panel, hand the level's back on exit.
+	SDL_Color savedRamp[16];
+	memcpy(savedRamp, &colors[240], sizeof(savedRamp));
+	memcpy(&colors[240], &palettes[0][240], sizeof(savedRamp));
+	set_palette(colors, 240, 255);
+
+	JE_barShade(VGAScreen, px0, py0, px1, py1);
+	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py1 - 2);
+
+	memcpy(VGAScreen2->pixels, VGAScreen->pixels, (size_t)VGAScreen2->pitch * VGAScreen2->h);
+
+	int selected = 0;
+	bool firstFrame = true;
+
+	for (bool done = false; !done; )
+	{
+		// Restore background.
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		draw_font_hv_shadow(VGAScreen, midX, py0 + 10, title, normal_font, centered, 15, titleValue, false, 2);
+
+		for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+		{
+			draw_font_hv_shadow(VGAScreen, midX, rowY0 + rowPitch * i, rowName[i], normal_font, centered,
+			                    15, i == selected ? rowValueOn : rowValueOff, false, 2);
+		}
+
+		draw_font_hv_shadow(VGAScreen, midX, py1 - 16, rowHelp[selected], small_font, centered, 15, helpValue, true, 1);
+
+		service_SDL_events(true);
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		if (firstFrame)
+		{
+			// Only now that the panel is up: a fire button still held from the fatal hit would
+			// otherwise pick a row instantly, and waiting before the present would just freeze
+			// the death frame for as long as it stays down.
+			firstFrame = false;
+			wait_noinput(true, true, true);
+			newkey = newmouse = false;
+		}
+
+		bool mouseMoved = false;
+		do
+		{
+			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
+
+			const Uint16 oldMouseX = mouse_x;
+			const Uint16 oldMouseY = mouse_y;
+
+			push_joysticks_as_keyboard();
+			service_SDL_events(false);
+
+			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
+		} while (!(newkey || newmouse || mouseMoved));
+
+		bool action = false;
+
+		if ((mouseMoved || newmouse) && mouse_x >= rowX0 && mouse_x < rowX1)
+		{
+			for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+			{
+				const int y = rowY0 + rowPitch * i;
+				if (mouse_y < y - 2 || mouse_y >= y - 2 + rowH)
+					continue;
+
+				if (selected != i)
+				{
+					JE_playSampleNum(S_CURSOR);
+
+					selected = i;
+				}
+
+				if (newmouse && lastmouse_but == SDL_BUTTON_LEFT &&
+				    lastmouse_x >= rowX0 && lastmouse_x < rowX1 &&
+				    lastmouse_y >= y - 2 && lastmouse_y < y - 2 + rowH)
+				{
+					action = true;
+				}
+
+				break;
+			}
+		}
+
+		if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+			{
+				JE_playSampleNum(S_CURSOR);
+
+				selected = selected == 0 ? (int)COUNTOF(rowName) - 1 : selected - 1;
+				break;
+			}
+			case SDL_SCANCODE_DOWN:
+			{
+				JE_playSampleNum(S_CURSOR);
+
+				selected = selected == (int)COUNTOF(rowName) - 1 ? 0 : selected + 1;
+				break;
+			}
+			case SDL_SCANCODE_SPACE:
+			case SDL_SCANCODE_RETURN:
+			{
+				action = true;
+				break;
+			}
+			default:
+				break;
+			}
+		}
+
+		if (action)
+		{
+			JE_playSampleNum(S_SELECT);
+
+			done = true;
+		}
+	}
+
+	wait_noinput(true, true, true);  // don't let the confirming press carry into the next screen
+
+	// Put the level's ramp back in `colors` for whoever sets the palette next, but do NOT push it
+	// to the screen: the panel is still up while the caller fades to black, and re-applying the
+	// level ramp under it wrecks the letters again for the length of that fade. Every exit from
+	// here (level reload, outpost, run summary) installs a palette of its own.
+	memcpy(&colors[240], savedRamp, sizeof(savedRamp));
+
+	VGAScreen = temp_surface; /* side-effect of game_screen */
+
+	return (EndlessDeathChoice)selected;
 }
 
 /* Map a screen point to the absolute row index of a scrolled panel list, or -1

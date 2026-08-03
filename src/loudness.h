@@ -60,6 +60,8 @@ void play_song(unsigned int song_num);
 void restart_song(void);
 void stop_song(void);
 void fade_song(void);
+// Drop the "already selected" state so the next play_song() reloads even for the same song.
+void clear_song_selection(void);
 
 void set_volume(Uint8 musicVolume, Uint8 sampleVolume);
 void set_music_disabled(bool disabled);  // toggle music on/off (pauses/resumes MIDI too)
