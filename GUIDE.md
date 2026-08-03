@@ -1,4 +1,4 @@
-# OpenTyrian2000 Engaged — player guide
+# OpenTyrian2000 Engaged player guide
 
 The original Tyrian campaigns play exactly as they always did. This guide is
 about what the fork adds on top: Endless mode, the new graphics settings, online
@@ -22,32 +22,31 @@ play, the weapon editor, and the cut content that has been switched back on.
 
 ## Graphics settings
 
-Three rows under **Setup > Graphics** are worth setting once, before anything
-else.
+Three rows under **Setup > Graphics** are worth setting once.
 
 **Smooth Motion** interpolates the game between simulation ticks so it presents
 at your display's refresh rate instead of 35 Hz. In single-player it also moves
 your ship at the display rate, which cuts input latency. Leave it on.
 
-**Sub-pixel** renders the playfield internally at Auto, 1x–5x, or Native. It
-shows most in background scrolling: without it, distant layers creep in whole
+**Sub-pixel** renders the playfield internally at Auto, 1x-5x, or Native. It
+shows most in background scrolling. Without it, distant layers creep in whole
 pixels and visibly step. It only pays off with Smooth Motion on. **Native**
 renders one internal sample per screen pixel, following your monitor rather than
-stopping at 5x (11x on a 4K display, shown beside the setting); pair it with the
+stopping at 5x (11x on a 4K display, shown beside the setting). Pair it with the
 **Native** scaler, which outputs at the exact window size. Auto stops at 5x
 because the cost scales with your resolution.
 
 **Filter** picks how sub-pixel output is resolved: Sharp, Smooth, or none.
 
 On the **FPS Cap** row, Left/Right steps by 5, or type a number directly.
-Minimum 5; 0 or Backspace clears it to Uncapped. Don't set it below 35 if you
-plan to play online — see [Online play](#online-play). On Switch and Vita,
+Minimum 5, and 0 or Backspace clears it to Uncapped. Don't set it below 35 if you
+plan to play online (see [Online play](#online-play)). On Switch and Vita,
 pressing Select on the row opens the system keypad.
 
 ## Endless mode
 
 Endless mode builds a run out of the shipped Tyrian levels. The levels
-themselves are unedited; the difficulty comes from depth scaling and sector
+themselves are unedited. The difficulty comes from depth scaling and sector
 modifiers.
 
 The loop is:
@@ -121,7 +120,7 @@ and Clean Signals strips their weapon bonuses.
 ### Sector modifiers
 
 Course cards list threats in red and boons in green. Hostile modifiers raise
-danger and payout together; most boons lower one or both.
+danger and payout together. Most boons lower one or both.
 
 `Pays` is a multiple of the base clear reward, so `+1.0` adds one base reward.
 
@@ -217,7 +216,7 @@ Radar reveals which level is underneath. Surveyor adds routes. Recently played
 levels are avoided.
 
 Queued Sabotage charges strip threats from the route you pick, and the card
-updates before launch — including the lower payout.
+updates before launch, including the lower payout.
 
 ### Outpost and E-Shop
 
@@ -243,7 +242,7 @@ strength use the cash you walked in with, not what is left after shopping.
 
 The gamble has about 40 outcomes, from cash, equipment, perks and revives down to
 lost cash, stolen equipment, a shop tax, or a curse on the next sector. High
-variance; no run needs it.
+variance, and no run needs it.
 
 ### Perks
 
@@ -347,7 +346,7 @@ eleven lives reads as a ship and "11".
 
 Lives buy durability as well as retries, in 1 Player Arcade, 2 Player Arcade,
 2 Player Online Arcade and on the Super Arcade secret ships. Each ship's shield
-and armor ceilings scale off its own life count: at 1 life they are the vanilla
+and armor ceilings scale off its own life count. At 1 life they are the vanilla
 numbers, and at the 11-life maximum both gauges reach a full bar. Growth in
 between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 
@@ -391,11 +390,11 @@ gun. Each episode rolls from its own arsenal.
 | Sidekick | another sidekick | 9 | 9 |
 | Special weapon | another special weapon | 6 | 8 |
 
-Purple balls and the front and rear power-up balls are untouched: they grant a
+Purple balls and the front and rear power-up balls are untouched. They grant a
 power level, not a weapon. The main game, Endless and SuperTyrian are unaffected.
 
 Super Arcade balls carry a color rather than a weapon, and the color picks a slot
-in the current ship's five-gun arsenal. Normally they cycle 1-2-3-4-5; rolled
+in the current ship's five-gun arsenal. Normally they cycle 1-2-3-4-5. Rolled
 instead, a ship can draw the same gun twice running, but never one it cannot fly.
 
 Online, the host's setting binds the session.
@@ -411,7 +410,7 @@ runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
 **Host Game** covers the listen port, Netcode, Desync Recovery, Host Flies, and
-Game Speed. The host's choices bind the session for both machines; the joiner's
+Game Speed. The host's choices bind the session for both machines. The joiner's
 own settings are left alone and restored afterwards.
 
 | Lobby row | What it does |
@@ -428,13 +427,13 @@ same host is Join then Enter.
 
 The outpost help bar shows a **Ping** figure at its right end, updated about
 every one and a half seconds and reading `--` until the first reply. Under
-roughly 85ms the game runs at full speed on the default network delay of 3; above
+roughly 85ms the game runs at full speed on the default network delay of 3. Above
 that it starts to slow, and raising the delay trades input lag for smoothness.
 
 In any two-player game the sidebar tags each gauge block **P1** or **P2**.
 Online, the other player's gauges are dimmed as well.
 
-At the start of each level both machines wait for each other; a slower loader
+At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
 
 ### Saving and resuming an online game
@@ -446,8 +445,8 @@ automatically at the start of every level as `LAST LEVEL`, so an online session
 overwrites that slot's local 2-player backup. Save into a numbered slot to keep a
 run. Both machines write their own copy, so either player can host the resume.
 
-If the session ends under you — the other player quits, the connection drops, or
-an unrecoverable desync stops the game — you are offered **Save Game** or
+If the session ends under you, because the other player quit, the connection
+dropped, or an unrecoverable desync stopped the game, you get **Save Game** or
 **Don't Save** before the title screen. Save Game opens the 2-player save page
 with the run rolled back to the outpost before the current level, the same point
 a game over returns to.
@@ -457,13 +456,13 @@ To resume, host as usual. Once the other player connects, the host picks between
 2-player page, and the save you pick is sent to the joiner whole, resuming at
 that save's next level with its own episode and difficulty. Saves whose episode
 the other player's data files lack are dimmed. Loading is host-side and only at
-session start; there is no Alt+L during play.
+session start. There is no Alt+L during play.
 
 ## Custom Weapon Creator
 
 **Setup > Enhancements > Custom Weapon Creator.** Stores up to 32 weapons, each
 with 11 power levels, an optional rear-gun firing mode, and a live test range. A
-finished design can be equipped as a front gun, rear gun, or sidekick — the
+finished design can be equipped as a front gun, rear gun, or sidekick. The
 **Custom Weapons** row puts it in the shops.
 
 The Levels section can copy and paste a single level, copy one level to all of
@@ -491,21 +490,21 @@ section.
 1-3 and Episode 4-5 weapon data, plus the content the original game shipped but
 never used:
 
-- superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice;
-- Zica Laser level-11 patterns and beam behaviour;
-- Xega Ball and MicroSol Option 5 episode variants;
-- Flare and Super Bomb sprites;
-- Needle Laser and Bubble Gum-Gun sounds;
-- the cut Charge-Laser sidekick;
-- Ice Base Shots;
-- sidekick autofire.
+- superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice
+- Zica Laser level-11 patterns and beam behaviour
+- Xega Ball and MicroSol Option 5 episode variants
+- Flare and Super Bomb sprites
+- Needle Laser and Bubble Gum-Gun sounds
+- the cut Charge-Laser sidekick
+- Ice Base Shots
+- sidekick autofire
 
 **Ice Base Shots**, on by default, wakes the dormant dispenser bases on Camanis
 (Episode 3) and the secret Camanis research base (Episode 4). The game data gives
 these bases a full hatch open/close animation but never triggers it. Switched on,
-they open on the same cadence as the small hatches beside them; at the moment the
+they open on the same cadence as the small hatches beside them. At the moment the
 hatch stands open, the eye fires a player-aimed shot and the orb below discharges
-a fast four-segment bolt straight down. Endless ignores the toggle: up to Zone 50
+a fast four-segment bolt straight down. Endless ignores the toggle. Up to Zone 50
 each zone has a 50/50 chance of waking them, fixed by the run seed, and from Zone
 50 they are always awake.
 
@@ -540,7 +539,7 @@ player. Endless Effects and the Rollback Self-Test are unavailable online.
 The DIAGNOSTICS group holds the inspection tools. **Rollback Self-Test** replays
 every tick and compares the result, checking that the snapshot online play rides
 on covers everything the game changes. It runs the tick twice, so expect it to be
-slower; the row counts verified ticks and failures, details go to
+slower. The row counts verified ticks and failures, details go to
 `rollback_selftest.log`, and the setting survives restarts.
 
 ## The Extra menus
@@ -571,7 +570,7 @@ loop point.
 ## Console builds
 
 The Switch and Vita builds are unofficial homebrew ports. MIDI is not included.
-Netplay works on both; prefer Find LAN Games, and where a field does need typing,
+Netplay works on both. Prefer Find LAN Games, and where a field does need typing,
 the console's own keyboard opens.
 
 - [Nintendo Switch](switch/README.md)
@@ -591,11 +590,11 @@ On Windows these sit next to the executable, on Linux in
 | `opentyrian_net.log` | Online session log |
 
 Both logs start fresh each launch. Older crash logs are kept beside the live one,
-numbered `.1.log` upwards; the net log keeps no history, and none is written if
+numbered `.1.log` upwards. The net log keeps no history, and none is written if
 the session had nothing to report.
 
 If you hit a desync, attach `opentyrian_net.log` from **both** machines to the
-report — each side logs the disputed frame as it computed it, and comparing the
+report. Each side logs the disputed frame as it computed it, and comparing the
 two points at what diverged. A session with nothing between its start and end
 lines was healthy.
 
