@@ -63,7 +63,7 @@ JE_boolean jumpBackToEpisode1;
 // was free; the shop loader (tyrian2.c) reads this.
 JE_byte chargeLaserSlot = 0;
 
-// ---- Unused shop sprites -------------------------------------------------------------
+// Unused shop sprites.
 // Assign newsh1.shp's eleven unreferenced icons to weapons that lack distinct shop art. Endless
 // exposes these otherwise campaign-only ports together, making duplicate placeholders visible.
 static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
@@ -187,7 +187,7 @@ static void JE_addChargeLaserCannon(void)
 	JE_OptionType *o = &options[slot];
 	memset(o, 0, sizeof(*o));
 	strcpy(o->name, "Charge-Laser Cannon");
-	o->pwr         = 5;      // five charge stages -- its defining trait
+	o->pwr         = 5;      // five charge stages; its defining trait
 	o->itemgraphic = 193;    // shop icon (matches the original record)
 	o->cost        = 30000;
 	o->tr          = 0;      // side-mounted (style 0 -> drawn from spriteSheet9)
@@ -197,7 +197,7 @@ static void JE_addChargeLaserCannon(void)
 	memcpy(o->gr, grFrames, sizeof(o->gr));
 	o->wport       = 4;      // power-drain port (as original; also the Zica Flamethrower's)
 	o->wpnum       = CHARGELASER_WEAP_BASE;
-	o->ammo        = 0;      // infinite -- a charge weapon, not an ammo weapon
+	o->ammo        = 0;      // infinite; a charge weapon, not an ammo weapon
 	o->stop        = true;
 	o->icongr      = 6;
 }
@@ -212,7 +212,7 @@ static bool zicaNativeCaptured = false;
 static void JE_applyZicaLaserConfig(void)
 {
 	const int wn11 = weaponPort[5].op[0][10];  // Zica Laser (port 5), Lv11 weapon (209)
-	const int wn10 = weaponPort[5].op[0][9];   // Lv10 weapon (208) -- the long-beam template
+	const int wn10 = weaponPort[5].op[0][9];   // Lv10 weapon (208); the long-beam template
 	if (wn11 <= 0 || wn11 > WEAP_NUM || wn10 <= 0 || wn10 > WEAP_NUM)
 		return;
 
@@ -767,7 +767,7 @@ void JE_initEpisode(JE_byte newEpisode)
 	if (newEpisode == episodeNum)
 	{
 		// Same episode: item data isn't reloaded, but the Zica Lv11 config may have changed
-		// in the menu since -- reapply so it takes effect next game (restores/reshapes wpn 209
+		// in the menu since; reapply so it takes effect next game (restores/reshapes wpn 209
 		// from the captured native, so it is idempotent).
 		JE_applyZicaLaserConfig();
 		JE_applySuperSparks();      // likewise reapply the superspark trail modes (self-correcting)

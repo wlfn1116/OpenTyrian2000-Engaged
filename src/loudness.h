@@ -48,7 +48,7 @@ const char *soundfont_basename(void);  // basename of `soundfont` for display, "
 bool soundfont_available(void);
 
 typedef enum {
-	OPL,          // built-in OPL3 (AdLib) FM emulation -- the classic Tyrian sound
+	OPL,          // built-in OPL3 (AdLib) FM emulation; the classic Tyrian sound
 	FLUIDSYNTH,   // SoundFont MIDI via FluidSynth
 	NATIVE_MIDI,  // OS MIDI synth (e.g. the Windows MIDI mapper)
 	MUSIC_DEVICE_MAX

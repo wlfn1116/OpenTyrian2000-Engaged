@@ -1,15 +1,8 @@
-#---------------------------------------------------------------------------------
-# OpenTyrian 2000 Engaged -- Sony PlayStation Vita build
-#
-# Produces eboot.bin (a Sony SELF); vita/build.sh wraps this and assembles the final
-# OpenTyrian2000.vpk (param.sfo + LiveArea assets + the freeware Tyrian data). Build with:
-#   ./vita/build.sh          (from Git Bash / MSYS with VITASDK set)
-#
-# Requires VitaSDK with the sdl2 package installed (vdpm sdl2).
-#---------------------------------------------------------------------------------
+# PlayStation Vita build. Requires VitaSDK with the SDL2 package. The build
+# wrapper assembles eboot.bin, LiveArea assets, and data into the final VPK.
 cmake_minimum_required(VERSION 3.10)
 
-## VitaSDK toolchain -----------------------------------------------------------
+# VitaSDK toolchain
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   if(DEFINED ENV{VITASDK})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "toolchain file")
@@ -20,32 +13,21 @@ endif()
 
 project(OpenTyrian2000 C)
 
-# vita.toolchain.cmake (above) sets up the arm-vita-eabi compiler/sysroot; vita.cmake adds the
-# vita_create_self / vita_create_vpk helper macros.
+# vita.cmake provides the Vita packaging helpers.
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-## VPK / LiveArea metadata (also used by build.sh) -----------------------------
+# VPK and LiveArea metadata
 set(VITA_APP_NAME "OpenTyrian 2000 Engaged")
 set(VITA_TITLEID  "OTYR20000")
 set(VITA_VERSION  "01.00")
 
-## Compiler flags --------------------------------------------------------------
-# -fsigned-char        : ARM chars are unsigned by default; the DOS-era engine assumes signed x86.
-# -fno-strict-aliasing : the binary data-file loaders type-pun freely.
-# -ffp-contract=off    : gcc otherwise fuses `a*b + c` into a single FMADD (one rounding instead
-#                        of two), which MSVC's /fp:precise never does -- the same float expression
-#                        then gives the PC and this build different answers, and netplay is
-#                        cross-platform, so the simulation's floats must match bit for bit.
-# -Wno-format-truncation : matches the root Makefile -- the engine's snprintf calls build fixed-width
-#                          on-screen strings where a clamped tail is intended, and gcc can't see the
-#                          real value ranges.
+# Compiler flags: signed char matches the engine's x86 assumptions; relaxed
+# aliasing supports the data loaders; unfused floats preserve netplay parity.
+# The format warning is disabled for intentionally fixed-width display strings.
 add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing
                     -ffp-contract=off)
 
-# Compile the whole engine. Every src/*.c is portable or self-guards on its platform macro
-# (win_native_midi.c/crashlog.c -> _WIN32, network.c -> WITH_NETWORK, switch_platform.c ->
-# __SWITCH__, vita_platform.c/vita_net.c -> __vita__), so the flat glob is safe. midiproc/ is
-# NOT globbed (MIDI is a Windows-only extra, off here, exactly like the Switch build).
+# Platform-specific sources self-guard; the flat glob excludes the midiproc directory.
 file(GLOB OT_SOURCES "${CMAKE_SOURCE_DIR}/../src/*.c")
 
 add_executable(${PROJECT_NAME} ${OT_SOURCES})
@@ -55,16 +37,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "$ENV{VITASDK}/arm-vita-eabi/include/SDL2"   # the engine includes "SDL.h" unqualified
 )
 
-# -DNDEBUG: this is a RELEASE build (what players run) -- compile out assert() exactly like
-# the desktop MSVC Release config and the Switch build. Several asserts are latent tripwires
-# the engine relies on NDEBUG to elide (blit_sprite bounds, JE_loadCompShapesB, ...); with
-# them live, a Vita build would abort where desktop Release silently returns. __vita__ is
-# predefined by the VitaSDK gcc, so it needs no -D. TYRIAN_DIR is a compile-time fallback
-# data path; file.c prepends ux0:/app0: at runtime and takes priority.
-#
-# WITH_NETWORK turns on the netplay lobby and the rollback netcode. VitaSDK ships no
-# SDL2_net (and no BSD socket wrappers in libc), so src/vita_net.c stands in for it on
-# top of SceNet -- see that file's header.
+# Match desktop Release assertions. TYRIAN_DIR is a fallback behind Vita runtime
+# paths. vita_net.c supplies the SceNet-backed SDL2_net compatibility layer.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
   NDEBUG
   TARGET_UNIX
@@ -72,9 +46,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   TYRIAN_DIR="app0:data"
 )
 
-# Short commit id for the title screen. The workflow and build.ps1 pass
-# -DOPENTYRIAN_COMMIT=...; otherwise ask git. Empty -> define omitted and the
-# game hides the commit line. (Compile-time define only -- no VPK metadata.)
+# Use an explicit commit id or derive one from Git; omit the title-screen line if empty.
 if(NOT DEFINED OPENTYRIAN_COMMIT)
   execute_process(COMMAND git -C "${CMAKE_SOURCE_DIR}/.." rev-parse --short HEAD
                   OUTPUT_VARIABLE OPENTYRIAN_COMMIT
@@ -85,9 +57,7 @@ if(OPENTYRIAN_COMMIT)
   target_compile_definitions(${PROJECT_NAME} PRIVATE OPENTYRIAN_COMMIT="${OPENTYRIAN_COMMIT}")
 endif()
 
-# SDL2 + its Vita stub dependency chain (mirrors sdl2.pc's Libs), plus the threading stub SDL
-# uses and libm. Order matters for the static GNU linker: SDL2 before its Sce* stubs.
-# SceNet/SceNetCtl are for vita_net.c, not SDL.
+# Static-link order follows sdl2.pc; SceNet and SceNetCtl serve vita_net.c.
 target_link_libraries(${PROJECT_NAME}
   SDL2
   SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub SceMotion_stub SceHid_stub
@@ -98,6 +68,5 @@ target_link_libraries(${PROJECT_NAME}
   m
 )
 
-## eboot.bin (SELF). UNSAFE: the game reads/writes ux0: outside its own app0: sandbox.
-## The VPK itself is assembled by build.sh (see the header comment).
+# UNSAFE permits the game's ux0: reads and writes outside app0:.
 vita_create_self(eboot.bin ${PROJECT_NAME} UNSAFE)

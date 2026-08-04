@@ -50,11 +50,8 @@ void JE_loadPals(void)
 	{
 		for (int i = 0; i < 256; ++i)
 		{
-			// The VGA hardware palette used only 6 bits per component, so the values need to be rescaled to
-			// 8 bits. The naive way to do this is to simply do (c << 2), padding it with 0's, however this
-			// makes the maximum value 252 instead of the proper 255. A trick to fix this is to use the upper 2
-			// bits of the original value instead. This ensures that the value goes to 255 as the original goes
-			// to 63.
+			// Replicate the high two bits while expanding VGA 6-bit components to 8 bits,
+			// preserving both endpoints 0 and 255.
 
 			Uint8 rgb[3];
 			fread_u8_die(rgb, 3, f);

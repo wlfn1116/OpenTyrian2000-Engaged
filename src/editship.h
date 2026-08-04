@@ -21,7 +21,7 @@
 
 #include "opentyr.h"
 
-// TODO: replace with less opaque type
+/* Serialized table width; preserve the byte layout. */
 typedef JE_byte JE_ShipsType[154]; /* [1..154] */
 
 extern JE_boolean extraAvail;

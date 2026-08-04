@@ -292,10 +292,7 @@ static void free_song(void)
 	g_loop_idx = 0;
 }
 
-// Double `cap` (from a 256 floor) until it covers `need` and grow the block to match, returning the
-// new block -- or NULL, leaving the ORIGINAL valid and still owned by the caller. Never assign
-// realloc's result straight back over the pointer: that leaks the block on failure, then writes
-// through NULL.
+// Grow from a 256-entry floor until `need` fits. Failure returns NULL and preserves the original block.
 static void *grow_buf(void *old, size_t *cap, size_t need, size_t elem)
 {
 	size_t ncap = *cap;
@@ -427,7 +424,7 @@ static bool parse_smf(const Uint8 *data, size_t size)
 		}
 	}
 
-	if (ntmp == 0) goto oom;  // nothing usable parsed -- same cleanup as a failed grow
+	if (ntmp == 0) goto oom;  // use the allocation-failure cleanup path
 
 	qsort(tmp, ntmp, sizeof(*tmp), cmp_tmp);
 
@@ -536,7 +533,7 @@ void wnm_stop(void)
 	if (g_thread != NULL)
 	{
 		SDL_AtomicSet(&g_stop, 1);
-		SDL_WaitThread(g_thread, NULL);  // returns promptly -- the thread polls g_stop
+		SDL_WaitThread(g_thread, NULL);  // returns promptly; the thread polls g_stop
 		g_thread = NULL;
 	}
 	SDL_AtomicSet(&g_active, 0);
@@ -607,7 +604,7 @@ void wnm_set_volume(uint8_t vol255)
 	SDL_AtomicSet(&g_vol_dirty, 1);
 }
 
-#else  /* !_WIN32 -- no native MIDI; loudness.c only calls these on Windows */
+#else  /* !_WIN32; no native MIDI; loudness.c only calls these on Windows */
 
 bool wnm_init(void) { return false; }
 void wnm_quit(void) {}

@@ -39,11 +39,11 @@ extern struct Scalers scalers[];
 extern const uint scalers_count;
 
 void set_scaler_by_name(const char *name);
-// Nearest-neighbour ("plain") scaler queries — the only scalers allowed while
+// Nearest-neighbour ("plain") scaler queries; the only scalers allowed while
 // supersampling is enabled (the hi path bypasses scaler algorithms in-game).
 bool scaler_is_plain(uint index);
 uint scaler_plain_equivalent(uint index);
-// "Native" fit-to-output scaler: no fixed factor — it renders at the exact
+// "Native" fit-to-output scaler: no fixed factor; it renders at the exact
 // output size (any ratio), one texel per screen pixel.
 bool scaler_is_native(uint index);
 void scaler_set_native_size(int w, int h);

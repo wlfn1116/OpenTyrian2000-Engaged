@@ -108,7 +108,7 @@ static const char* getScalingModePickerItem(size_t i, char* buffer, size_t buffe
 	return scaling_mode_names[i];
 }
 
-/* ---- Graphics: sub-pixel supersampling picker ---- */
+/* Graphics: sub-pixel supersampling picker. */
 
 // Index maps directly onto render_supersample: 0 = Auto (follow the scaler),
 // 1 = Off, 2..5 = fixed NxN, 6 = Native (follow the display; see video.h). Keep
@@ -123,7 +123,7 @@ static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t buffe
 }
 
 // Index maps onto render_supersample_filter (SS_FILTER_SHARP / SS_FILTER_SMOOTH /
-// SS_FILTER_NONE). Keep this order in sync with the enum — persisted as the index.
+// SS_FILTER_NONE). Keep this order in sync with the enum; persisted as the index.
 static const char *const ssFilterNames[] = { "Sharp", "Smooth", "None" };
 
 static size_t getSSFilterPickerItemsCount(void) { return COUNTOF(ssFilterNames); }
@@ -133,7 +133,7 @@ static const char* getSSFilterPickerItem(size_t i, char* buffer, size_t bufferSi
 	return ssFilterNames[i];
 }
 
-/* ---- Enhancements: boss health bar pickers ---- */
+/* Enhancements: boss health bar pickers. */
 
 static const char *const bossBarStyleNames[]  = { "Classic", "Enhanced" };
 static const char *const bossBarLayoutNames[] = { "Top", "Bottom", "Left", "Right" };
@@ -160,7 +160,7 @@ static const char* getBossBarTwoItem(size_t i, char* buffer, size_t bufferSize)
 	return bossBarTwoNames[i];
 }
 
-/* ---- Enhancements: enemy health bar pickers ---- */
+/* Enhancements: enemy health bar pickers. */
 
 static const char *const enemyBarLayoutNames[]   = { "Horizontal", "Vertical" };
 static const char *const enemyBarPositionNames[] = { "Bottom", "Top", "Left", "Right", "Center" };
@@ -179,7 +179,7 @@ static const char* getEnemyBarPositionItem(size_t i, char* buffer, size_t buffer
 	return enemyBarPositionNames[i];
 }
 
-/* ---- Enhancements: HUD gauge gradient pickers ---- */
+/* Enhancements: HUD gauge gradient pickers. */
 
 // Indexed by GaugeGradientDir (config.h). "Up" is the classic vertical gauge look; Left/Right
 // run the gradient across the bar's 9-pixel width instead. The label names the bar's bright end.
@@ -192,7 +192,7 @@ static const char* getGaugeGradItem(size_t i, char* buffer, size_t bufferSize)
 	return gaugeGradNames[i];
 }
 
-/* ---- Sound: music synthesizer picker ---- */
+/* Sound: music synthesizer picker. */
 
 // music_device_names[] / MUSIC_DEVICE_MAX come from loudness.h. The MIDI devices
 // (FluidSynth / Native MIDI) only produce sound in a WITH_MIDI build; otherwise
@@ -211,7 +211,7 @@ static const char* getMusicDeviceItem(size_t i, char* buffer, size_t bufferSize)
 	return music_device_names[i];
 }
 
-/* ---- Weapon Tweaks: Zica Laser pickers ---- */
+/* Weapon Tweaks: Zica Laser pickers. */
 
 // Indexed by the ZICA_BASE_* / ZICA_LEN_* enums (config.h).
 static const char *const zicaBaseNames[]   = { "Auto", "Ep 1-3", "Ep 4+" };
@@ -279,7 +279,7 @@ static bool toggle_xmas_mode(void)
 }
 
 // While supersampling is enabled, algorithm scalers (Scale2x/hqNx) are bypassed by
-// the in-game hi path, which would make gameplay and pause/menus look different —
+// the in-game hi path, which would make gameplay and pause/menus look different;
 // so switch to the same-size plain scaler. Called after the Sub-pixel setting changes;
 // the scaler picker enforces the same rule (algorithm entries grayed and unselectable).
 static void enforcePlainScalerForSupersample(void)
@@ -295,7 +295,7 @@ static void enforcePlainScalerForSupersample(void)
 // Advance the Weapon Tweaks "Sidekick Autofire" row through its three
 // player-visible modes (Off / On / Charged), skipping the debug-only "Fast"
 // mode (CHARGE_AUTOFIRE_FAST). This edits the very same chargeSidekickAutofire
-// the debug menu's own autofire row uses, so the two stay in sync -- and a value
+// the debug menu's autofire row uses, keeping the two in sync. A value
 // the debug menu set to Fast collapses into the visible cycle on the first press
 // here and can never be selected back to.
 static void cycleSidekickAutofire(int dir)
@@ -453,7 +453,7 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 	case MENU_ITEM_MUSIC_DEVICE:
 	{
 		const int n = (int)getMusicDeviceItemsCount();
-		// Step past FluidSynth when there is no SoundFont for it to load -- the picker
+		// Step past FluidSynth when there is no SoundFont for it to load; the picker
 		// grays it out for the same reason. At most n steps, so this always lands.
 		int next = music_device;
 		for (int i = 0; i < n; ++i)
@@ -1122,7 +1122,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			case MENU_ITEM_SHIP_SENS:
 			{
 				// Same bar as the volume sliders; middle == the classic 1:1 feel. The marker slot
-				// goes bright once the fill actually reaches it -- compare the drawn bar counts
+				// goes bright once the fill actually reaches it; compare the drawn bar counts
 				// (amt vs mark), not the raw value, so it flips exactly on the middle bar.
 				const int amt = (ship_sensitivity + 4) / 8;
 				const int mark = (SHIP_SENS_DEFAULT + 4) / 8;
@@ -1150,7 +1150,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 
 			case MENU_ITEM_CLEAR_LOGS:
-				// An action row, so it has no value of its own -- the column carries the
+				// An action row, so it has no value of its own; the column carries the
 				// outcome of the press instead, and stays blank until there is one.
 				if (logsCleared != LOGS_CLEAR_UNTOUCHED)
 					draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, logsCleared == LOGS_CLEAR_DONE ? "Cleared" : "No Logs", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
@@ -1288,7 +1288,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			case MENU_ITEM_SIDEKICK_AUTOFIRE:
 			{
 				// Off/On/Charged are the reachable modes; "Fast" only shows if the
-				// debug menu set CHARGE_AUTOFIRE_FAST -- it can't be selected here.
+				// debug menu set CHARGE_AUTOFIRE_FAST; it can't be selected here.
 				static const char *const names[CHARGE_AUTOFIRE_NUM] = { "Off", "On", "Charged", "Fast" };
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, names[chargeSidekickAutofire % CHARGE_AUTOFIRE_NUM], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -2502,7 +2502,7 @@ int main(int argc, char *argv[])
 	mt_srand(time(NULL));
 
 	// opentyrian_version already leads with the fork name ("Engaged vX.Y.Z"),
-	// so pair it with the base game name here -- using opentyrian_str would
+	// so pair it with the base game name here; using opentyrian_str would
 	// print ">> OpenTyrian 2000 Engaged Engaged vX.Y.Z <<".
 	printf("\nWelcome to... >> OpenTyrian 2000 %s <<\n\n", opentyrian_version);
 
@@ -2533,8 +2533,6 @@ int main(int argc, char *argv[])
 
 	/* The debug entries in the buy/sell menu are inserted at runtime by
 	 * JE_itemScreen, only when Debug Mode is enabled; off keeps the stock layout. */
-
-	/*debuginfo("Help text complete");*/
 
 	JE_loadConfiguration();
 

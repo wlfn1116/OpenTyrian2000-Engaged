@@ -14,8 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// The perk registry, indexed by the PERK_* ids. The order is the on-disk save slot order,
-// so append new perks at the end of the enum (endless_internal.h) and here -- never renumber.
+// PERK_* order is serialized. Append entries here and in endless_internal.h; never renumber them.
 const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Heavy Rounds",     "Your shots deal more damage.",         5 },
 	{ "Rapid Cyclers",    "Your guns fire noticeably faster.",    4 },
@@ -52,9 +51,7 @@ int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
 int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
 int endlessSalvoWindow = 0;           // Opening Salvo: ticks left in a consumed salvo (reset each run)
 int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
-// The run depth whose post-zone perk pick has already been resolved (taken or declined); -1 =
-// none yet. endlessBetweenLevels offers the forced pick only when this lags the current depth,
-// so re-entering the same outpost (e.g. after a save/reload) can't hand out a second perk.
+// Last depth whose post-zone perk was resolved, or -1. This prevents duplicate picks on reload.
 int endlessPerkDepthDone = -1;
 
 // Cash multiplier (100 = unchanged) from the Scavenger perk, applied to the clear bonus, the
@@ -124,8 +121,7 @@ bool endlessAdrenalineActive(void)
 	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor;
 }
 
-// The fire-decrement rate (% per tick) the fire-rate perks are worth right now. `hurtBonus` folds in
-// the Adrenaline relic -- a big extra boost while armor is below 1/N of the ship's max.
+// Fire-rate decrement percentage, including Adrenaline when `hurtBonus` is true.
 static int endlessPerkFireRate(bool hurtBonus)
 {
 	int rate = endlessPerkOwned[PERK_FIRERATE] * ENDLESS_PERK_FIRE_PCT;
@@ -134,9 +130,7 @@ static int endlessPerkFireRate(bool hurtBonus)
 	return rate;
 }
 
-// Rapid Cyclers perk (+ Adrenaline while hurt): extra shotRepeat decrements this tick, as a smooth
-// fractional rate via an accumulator (like the scroll-step boost). Applied every tick from the
-// player fire block.
+// Apply Rapid Cyclers and, while hurt, Adrenaline through a fractional accumulator.
 int endlessPerkFireDecrements(void)
 {
 	static int accum = 0;
@@ -148,10 +142,8 @@ int endlessPerkFireDecrements(void)
 	return endlessAccumSteps(&accum, endlessPerkFireRate(true));
 }
 
-// Same, for the shop weapon preview: Rapid Cyclers only, never Adrenaline. The preview is meant to
-// show the cadence you'll fly with, and every zone starts you at full hull -- so a shop visit that
-// caught the ship badly hurt would otherwise advertise a burst speed the next zone won't have. Its
-// own accumulator, so the preview's carry can't bleed into the first gameplay tick or vice versa.
+// The preview includes Rapid Cyclers but not Adrenaline because zones start at full hull.
+// Its accumulator is isolated from gameplay.
 int endlessPerkPreviewFireDecrements(void)
 {
 	static int accum = 0;
@@ -163,8 +155,7 @@ int endlessPerkPreviewFireDecrements(void)
 	return endlessAccumSteps(&accum, endlessPerkFireRate(false));
 }
 
-// Rapid Recharge perk: extra cooldown decrements/tick (fractional accumulator). The caller
-// applies them to the special-fire gate AND the sidekick ammo refill -- not the main guns.
+// Rapid Recharge applies to the special-fire gate and sidekick refill, not the main guns.
 // Charge sidekicks have no magazine to refill; endlessPerkChargeTicks covers them instead.
 int endlessPerkSpecialCooldownDecrements(void)
 {
@@ -177,9 +168,7 @@ int endlessPerkSpecialCooldownDecrements(void)
 	return endlessAccumSteps(&accum, endlessPerkOwned[PERK_SPECIALCD] * ENDLESS_PERK_SPECIALCD_PCT);
 }
 
-// Autofire Special perk: while owned, the equipped special weapon fires on its own as long as the
-// main fire button is held -- the run-persistent equivalent of the debug "Autofire Special" toggle.
-// Read in varz.c's special-fire path, OR'd with the debug autoFireSpecial global.
+// The special-fire path combines this run perk with the debug autoFireSpecial flag.
 bool endlessPerkAutoFireSpecial(void)
 {
 	return endlessFxActive() && endlessPerkOwned[PERK_AUTOSPECIAL] > 0;
@@ -195,9 +184,7 @@ int endlessPerkPowerUsePercent(void)
 	return pct < ENDLESS_PERK_POWERUSE_MIN ? ENDLESS_PERK_POWERUSE_MIN : pct;
 }
 
-// Shorten an interval by `step` ticks per stack of `perk`, never below `minimum`. Outside
-// endless, or with no stacks, `base` comes back untouched -- so callers can hand their stock
-// interval straight through with no endless-specific branch of their own.
+// Shorten an interval per perk stack, without dropping below `minimum`.
 static int endlessPerkShorten(int base, int perk, int step, int minimum)
 {
 	if (!endlessFxActive() || endlessPerkOwned[perk] == 0)
@@ -232,28 +219,20 @@ int endlessPerkShotSpeedPercent(void)
 	return 100 + endlessPerkOwned[PERK_SHOTSPEED] * ENDLESS_PERK_SHOTSPEED_PCT;
 }
 
-// Radar perk: while owned, Chart-a-Course's help line names the shipped level behind each offered
-// sector (endlessCourseHelp appends it after the danger tier). A pure information reveal -- no
-// combat effect -- so it hangs off the perk-owned flag alone.
+// Radar adds the shipped level name to each Chart-a-Course help line.
 bool endlessPerkRadarActive(void)
 {
 	return endlessFxActive() && endlessPerkOwned[PERK_RADAR] > 0;
 }
 
-// Surveyor, Executioner, Opening Salvo, Kinetic Converter, Countermeasures,
-//     Chain Reaction. Like the perks above, each folds into an existing player-side lever. ----------
-
-// Surveyor perk: extra Chart-a-Course routes this visit (one per stack). The caller adds these to the
-// rolled course count AFTER the RNG roll and clamps to ENDLESS_MAX_COURSES, so the seed stream is untouched.
+// Add Surveyor routes after the RNG roll so the seed stream remains unchanged.
 int endlessPerkSurveyorRoutes(void)
 {
 	return endlessFxActive() ? endlessPerkOwned[PERK_SURVEYOR] * ENDLESS_PERK_SURVEYOR_ROUTES : 0;
 }
 
-// Executioner perk: bonus damage a player shot deals to a badly wounded target. `damage` must be
-// the shot's RAW damage, from BEFORE any boss/elite HP-multiplier divide, or the percentage has
-// nothing left to bite on. `armorleft` is current armor, `fullHp` the latched full armor
-// (healthbar_max; 0 before the first hit, i.e. at full HP), `boss` selects the tighter threshold.
+// Calculate Executioner from raw shot damage before boss or elite scaling.
+// `fullHp` is the latched healthbar maximum; zero means the target has not been hit.
 int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss)
 {
 	const int stacks = endlessFxActive() ? endlessPerkOwned[PERK_EXECUTIONER] : 0;
@@ -262,15 +241,11 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 	const int threshold = boss ? ENDLESS_PERK_EXEC_BOSS_PCT : ENDLESS_PERK_EXEC_HP_PCT;
 	if (armorleft * 100 >= fullHp * threshold)  // not wounded enough
 		return 0;
-	// Round to NEAREST, not down. Truncating biases every payout down by up to a full armor point,
-	// which at one stack meant any shot under 7 damage bought exactly nothing -- and a piercing shot's
-	// raw damage is only 0..5, so those weapons never saw the perk at all.
+	// Round to nearest so low-damage and piercing shots can receive the bonus.
 	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
 }
 
-// Opening Salvo.
-// Two timers: endlessSalvoIdle charges the salvo, endlessSalvoWindow is the ~1s that spending it
-// buys, during which guns and specials are boosted.
+// endlessSalvoIdle charges the salvo; endlessSalvoWindow tracks its active period.
 
 // Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires.
 void endlessOpeningSalvoTick(void)
@@ -284,8 +259,7 @@ void endlessOpeningSalvoTick(void)
 		++endlessSalvoIdle;            // capped so a very long idle can't overflow
 }
 
-// The main gun just fired: open a window if the pause charged one. A salvo already running is left
-// alone -- re-firing must not extend it.
+// Consume a charged salvo without extending an active window.
 bool endlessOpeningSalvoConsume(void)
 {
 	if (endlessSalvoWindow > 0)
@@ -324,9 +298,7 @@ int endlessOpeningSalvoScale(int value)
 int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
 
 // Kinetic Converter.
-// Generator power refunded when the shield soaks a hit. `shieldAbsorbed` is the shield points lost,
-// `tpwr` the shield's per-point charge cost (shields[].tpwr); refunds ENDLESS_PERK_KINETIC_PCT% of that
-// per stack. The caller clamps the resulting power to the generator ceiling.
+// Refund a percentage of absorbed shield cost per stack. The caller clamps generator power.
 int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 {
 	const int stacks = endlessFxActive() ? endlessPerkOwned[PERK_KINETIC] : 0;
@@ -335,17 +307,14 @@ int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
 }
 
-// Countermeasure Suite.
-// endlessCmCooldown counts down to the next ready burst (advanced by endlessGameplayTick).
+// endlessGameplayTick advances the countermeasure cooldown.
 void endlessCountermeasureTick(void)
 {
 	if (endlessCmCooldown > 0)
 		--endlessCmCooldown;
 }
 
-// The projectile-clear radius to use RIGHT NOW: 0 if the perk isn't owned or a burst is still on
-// cooldown, else the 1- or 2-stack radius. When it returns nonzero the caller fires the burst and
-// must call endlessCountermeasureFired() to re-arm the cooldown.
+// Return the ready projectile-clear radius. The caller must re-arm the cooldown after firing.
 int endlessPerkCountermeasureRadius(void)
 {
 	if (!endlessFxActive() || endlessPerkOwned[PERK_COUNTERMEASURE] == 0 || endlessCmCooldown > 0)
@@ -355,10 +324,7 @@ int endlessPerkCountermeasureRadius(void)
 
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
 
-// Failsafe.
-// I-frames a hit that reaches the HULL buys you, or 0 if the perk isn't owned. Needs no cooldown of
-// its own: the window can only be re-armed by hull damage, and you cannot take hull damage while it
-// runs, so it never chains. The caller extends the ship's existing invulnerability (varz.c).
+// A hull hit grants invulnerability. The active window prevents it from chaining.
 int endlessPerkFailsafeTicks(void)
 {
 	if (!endlessFxActive())
@@ -374,16 +340,11 @@ void endlessResetZonePerkTimers(void)
 	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
 }
 
-// Chain Reaction.
-// The pulse itself (finding nearby enemies, dealing armor damage, vaporising fodder) lives at the
-// player-shot kill sites in tyrian2.c, where the enemy tables and explosions are; these just report
-// whether it is active and how far / hard it reaches.
+// Pulse application lives at the player-shot kill sites in tyrian2.c.
 bool endlessPerkChainReactionActive(void) { return endlessFxActive() && endlessPerkOwned[PERK_CHAINRXN] > 0; }
 int  endlessPerkChainRadius(void)         { return ENDLESS_PERK_CHAIN_RADIUS; }
 
-// Armor damage the pulse deals to nearby fodder. Ordinary enemy HP is scaled up with depth
-// (endlessArmorPercent, applied at spawn), so scale the pulse the same way -- otherwise a flat value
-// that clears fodder early would barely scratch it deep. Kept >= the base so it never rounds to nothing.
+// Scale pulse damage with ordinary enemy health, without dropping below its base value.
 int endlessPerkChainDamage(void)
 {
 	if (!endlessFxActive() || endlessPerkOwned[PERK_CHAINRXN] == 0)
@@ -393,10 +354,7 @@ int endlessPerkChainDamage(void)
 	return (scaled < base) ? base : scaled;
 }
 
-// Ordnance Reserves.
-// Two halves of one idea -- you carry more ordnance, and what you set off stays up longer:
-// sidekicks that fire from a magazine get a bigger one, and the specials that run on a timer
-// (flares, the Astral Zone, the invulnerability field) tick for longer.
+// Ordnance Reserves expands sidekick magazines and timed special effects.
 
 // The magazine bonus as a percentage, 0 when it isn't applying. The shop name label (episodes.c)
 // and the in-flight magazine (varz.c) both come off this, so the number you buy is the number you fly.
@@ -407,9 +365,7 @@ int endlessPerkAmmoPercent(void)
 	return endlessPerkOwned[PERK_ORDNANCE] * ENDLESS_PERK_AMMO_PCT;
 }
 
-// A sidekick magazine, boosted. `base` is the item's shipped option.ammo; 0 (a charge/infinite
-// sidekick) stays 0 -- there is no magazine to grow. The bonus is rounded up to at least +1 so even
-// a 5-round launcher gains a shot per stack, and capped so the label and the HUD gauge stay in range.
+// Leave charge and infinite sidekicks at zero. Round a magazine bonus up and cap it for the HUD.
 int endlessPerkSidekickAmmo(int base)
 {
 	const int pct = endlessPerkAmmoPercent();
@@ -432,9 +388,7 @@ int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo)
 	return ticks < 1 ? 1 : ticks;  // never a round per tick, however deep the reserve gets
 }
 
-// A special weapon's duration, stretched. Callers hand in the stock tick count they were about to
-// assign and get it back untouched outside endless / with no stacks; `cap` clamps the result for the
-// byte-wide duration fields (0 = no clamp).
+// Extend a special duration; `cap` protects byte-wide fields, and zero disables the cap.
 int endlessPerkSpecialDuration(int base, int cap)
 {
 	if (!endlessFxActive() || endlessPerkOwned[PERK_ORDNANCE] == 0 || base <= 0)
@@ -444,9 +398,7 @@ int endlessPerkSpecialDuration(int base, int cap)
 }
 
 // Roll this shop visit's perk offers: up to `offers` distinct perks that aren't already maxed out.
-// Called before the perk menu is shown -- ENDLESS_PERK_OFFERS for an ordinary pick, _BOUGHT for the
-// E-Shop's, the milestone count via endlessPerkOffersAtDepth. Fewer come out only when the pool is
-// nearly maxed.
+// Generate distinct, non-maxed perk offers for the requested menu size.
 void endlessGeneratePerkChoices(int offers)
 {
 	offers = endlessClamp(offers, 0, ENDLESS_PERK_OFFERS_MILESTONE);  // never past the array width
@@ -497,9 +449,7 @@ const char *endlessPerkChoiceOwnedText(int i)
 	return buf;
 }
 
-// Acquire offered perk i. The forced post-zone pick is FREE (perks come sparingly -- see the cadence
-// gate in endlessBetweenLevels); the paid path is the E-Shop "Buy Extra Perk", which charges up front
-// in endlessTryBuyExtraPerk before opening this menu.
+// The paid path charges before this function; post-zone picks are free.
 void endlessTakePerk(int i)
 {
 	if (i < 0 || i >= endlessPerkChoiceN)
@@ -514,8 +464,7 @@ void endlessTakePerk(int i)
 // term, are in endless_internal.h.
 long endlessPerkDeclineBonus(void)
 {
-	// A thinned pool (a deep run with most perks maxed, down to one offer or none) never pays LESS
-	// than a standard slate; a wider milestone deal pays proportionally more.
+	// A thinned pool never pays less than a standard slate; milestone slates pay proportionally more.
 	const int offers = endlessClamp(endlessPerkChoiceN, ENDLESS_PERK_OFFERS, ENDLESS_PERK_OFFERS_MILESTONE);
 	int surcharge = endlessPerkTotalOwned() * ENDLESS_PERK_DECLINE_OWNED_PCT;
 	if (surcharge > ENDLESS_PERK_DECLINE_OWNED_CAP)

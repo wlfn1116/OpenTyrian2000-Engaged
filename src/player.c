@@ -147,7 +147,7 @@ bool power_up_weapon(Player *this_player, uint port)
 	if (can_power_up)
 	{
 		++this_player->items.weapon[port].power;
-		shotMultiPos[port] = 0; // TODO: should be part of Player structure
+		shotMultiPos[port] = 0; // shared per-port firing cursor
 
 		calc_purple_balls_needed(this_player);
 		arcade_rescale_to_lives(this_player);  // this port IS the life counter in arcade modes

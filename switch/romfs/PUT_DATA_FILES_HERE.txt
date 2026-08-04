@@ -1,7 +1,7 @@
 Drop the Tyrian 2000 data files into this folder before building.
 
-Everything placed in switch/romfs/ is packed read-only into the .nro and mounted
-at romfs:/ at runtime, so the game can find it with no SD-card setup.
+Everything in switch/romfs/ is packed read-only into the .nro and mounted at
+romfs:/, so the game can find it without SD-card setup.
 
 Copy the *contents* of your existing data directory here (the same files the
 desktop build loads), e.g.:
@@ -13,4 +13,4 @@ Alternatively, leave this folder empty and instead copy the data files onto the
 SD card at:  sdmc:/switch/opentyrian2000/
 The game checks that SD-card path first, then falls back to this bundled romfs.
 
-This placeholder file is harmless -- it just keeps the folder in version control.
+This placeholder keeps the folder in version control.

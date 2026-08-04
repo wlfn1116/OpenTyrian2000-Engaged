@@ -100,7 +100,7 @@ void rl_end_record(void)
 
 // Abandon a recording mid-tick (rollback re-simulation, self-test replay).
 // Discards the partial list AND flips back so the last COMPLETE frame is
-// "current" again -- the next rl_begin_record then promotes that complete
+// "current" again; the next rl_begin_record then promotes that complete
 // frame, not the aborted partial, to the interpolation baseline.
 void rl_abort_record(void)
 {
@@ -236,7 +236,7 @@ void rl_rec_smoothie_filter(RenderCmdKind kind)
 
 // Lazily-allocated background scratch (the "VGAScreen2" role) for replaying the
 // smoothie two-buffer ping-pong without disturbing the live surfaces. Sized to the
-// replay scale; reallocated only when the supersample factor changes (rare — the
+// replay scale; reallocated only when the supersample factor changes (rare; the
 // scale is constant within a present loop).
 static SDL_Surface *rl_scratch_b = NULL;
 
@@ -316,7 +316,7 @@ void rl_finalize(void)
 	const size_t nprev = counts[cur_buf ^ 1];
 
 	// Per-id forward-linked lists over the previous frame, plus per-id blit counts
-	// for both frames (to detect a changed sub-blit set — see the snap below).
+	// for both frames (to detect a changed sub-blit set; see the snap below).
 	static int head[RL_ID_MAX];
 	static int prevN[RL_ID_MAX], curN[RL_ID_MAX];
 	static int *link = NULL;
@@ -367,7 +367,7 @@ void rl_finalize(void)
 		const int id = c->id;
 
 		// Extrapolating ids already carry their own velocity in dx/dy; keep it (see
-		// rl_id_extrapolates) — no large-jump snap, no recycled-slot streak.
+		// rl_id_extrapolates); no large-jump snap, no recycled-slot streak.
 		if (rl_id_extrapolates(id))
 			continue;
 
@@ -437,7 +437,7 @@ void rl_finalize(void)
 		{
 			// The flash/fade ramps brightness by ±levelBrightnessChg per tick; smooth it
 			// across displayed frames. Snap across the -99 "no filter" sentinel and
-			// colour-bank swaps — discontinuities, not ramps (a bank swap happens at
+			// colour-bank swaps; discontinuities, not ramps (a bank swap happens at
 			// peak wash-out, so the snap is invisible).
 			int db = c->filt_bright - prev[pi].filt_bright;
 			if (c->filt_bright == -99 || prev[pi].filt_bright == -99 ||
@@ -515,7 +515,7 @@ static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, U
 // Plot one bar pixel, clipped. opacity < 255 alpha-blends like the engine's
 // translucent sprites (blit_sprite_blend): the bar's colour bank is kept, only the
 // brightness nibble mixes with the background's. Reading the destination makes the
-// draw background-dependent — safe, because the residual capture replays the bar
+// draw background-dependent; safe, because the residual capture replays the bar
 // over the reconstructed background (see rl_capture_residual).
 static inline void rl_hp_plot(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 opacity)
 {
@@ -866,7 +866,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			// Interpolate only the row (x is fixed): the star slides from its
 			// previous row to the recorded one across the tick. star_dy is 0 on a
 			// wrap tick, so a wrapped star simply snaps to the top. At scale > 1 the
-			// float row lands on the 1/scale-pixel grid — slow drifts glide.
+			// float row lands on the 1/scale-pixel grid; slow drifts glide.
 			const float sy = c->star_y - c->star_dy * inv;
 			if (scale == 1)
 				draw_starfield_star(src, c->star_x, (int)(sy + 0.5f), c->star_color);
@@ -878,7 +878,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		if (c->kind == RC_SUPERPIXEL)
 		{
 			// Explosion spark at its interpolated position (constant velocity, so the
-			// recorded per-tick delta is self-contained — no cross-frame matching).
+			// recorded per-tick delta is self-contained; no cross-frame matching).
 			const int sx = c->x * scale - rl_iround(c->sp_dx * inv * scale);
 			const int sy = c->y * scale - rl_iround(c->sp_dy * inv * scale);
 			if (scale == 1)
@@ -1010,7 +1010,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		{
 			// Residual pixels were captured against the 1x reference; re-apply each
 			// as a scale x scale block (overlays like the boss bar simply appear at
-			// classic resolution — correct, just not supersampled).
+			// classic resolution; correct, just not supersampled).
 			for (size_t i = 0; i < res_count; ++i)
 			{
 				const int rx = res_off[i] % res_ref_pitch;

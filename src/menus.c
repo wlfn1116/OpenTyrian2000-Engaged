@@ -45,7 +45,7 @@ char gameplay_name[GAMEPLAY_NAME_COUNT][26];
 char timed_battle_name[4][23];
 
 // Wait for menu input (key, mouse button, or motion); returns true if the mouse moved.
-// Polls at 1 ms so the caller's redraw loop — and thus the cursor — can run at the
+// Poll at 1 ms so the caller's redraw loop and cursor can run at the
 // display refresh rate.
 static bool menuWaitForInput(void)
 {
@@ -1186,8 +1186,7 @@ bool timedBattleSelect(void)
 
 			fade_black(10);
 
-			// I don't know how T2K determines episode from this,
-			// I'm assuming it's hardcoded
+			// Time Battle selections map directly to episodes 1 and 5.
 			JE_initEpisode(selectedIndex == 0 ? 1 : 5);
 			timeBattleSelection = selectedIndex + 1;
 			return true;

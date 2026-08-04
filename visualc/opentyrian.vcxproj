@@ -56,19 +56,14 @@
     <ClCompile>
       <CompileAs>CompileAsC</CompileAs>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <!-- Stated, not left to the default: netplay requires this build's float results to
-           match the console builds bit for bit, and Precise is the model that forbids the
-           reassociation and multiply-add contraction they also have turned off. -->
+      <!-- Precise disables reassociation and contraction to match console netplay builds. -->
       <FloatingPointModel>Precise</FloatingPointModel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>$(SDL2BaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(WITH_NETWORK)'=='true'">D:\opentyrian2000\stuff\SDL2_net-2.2.0\include;D:\opentyrian2000\stuff\SDL2-2.26.2\include;$(SDL2netBaseDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">$(FluidSynthBaseDir)\include;$(SolutionDir)..\src\midiproc\src;$(SolutionDir)..\src\midiproc\compat;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>EnableAllWarnings</WarningLevel>
-      <!-- Sources are UTF-8 without a BOM (see .editorconfig); say so, or cl assumes the
-           system code page and warns C4819 on every comment that uses a non-ASCII character.
-           Source charset only: no string literal here holds a non-ASCII character, so the
-           execution charset stays the system default and codegen is unchanged. -->
+      <!-- Read BOM-less sources as UTF-8 while leaving the execution charset unchanged. -->
       <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>TARGET_WIN32;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -81,8 +76,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <!-- ws2_32: network.c calls getsockopt/getsockname/WSAIoctl directly to turn off
-           SIO_UDP_CONNRESET on the UDP socket SDL_net opened. -->
+      <!-- network.c uses ws2_32 directly to disable SIO_UDP_CONNRESET. -->
       <AdditionalDependencies Condition="'$(WITH_NETWORK)'=='true'">SDL2_net.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(WITH_MIDI)'=='true' AND '$(Platform)'=='x64'">libfluidsynth-3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -93,9 +87,7 @@
     <ClCompile>
       <TreatWarningAsError>false</TreatWarningAsError>
       <Optimization>Disabled</Optimization>
-      <!-- No _DEBUG: this configuration links the release CRT (UseDebugLibraries=false), nothing
-           here reads _DEBUG, and defining it only forced a /U_DEBUG override (warning D9025) on the
-           vendored C++ TUs to keep the STL out of its debug-only code. -->
+      <!-- Keep _DEBUG undefined because this configuration uses the release CRT. -->
     </ClCompile>
     <Link>
     </Link>
@@ -200,10 +192,7 @@
     <ClCompile Include="..\src\win_native_midi.c" />
     <ClCompile Include="..\src\xmas.c" />
   </ItemGroup>
-  <!-- Vendored midiproc (C++11): LDS->MIDI conversion, used only by WITH_MIDI (x64)
-       builds. Compiled as C++ (overriding the project-wide CompileAsC) and excluded
-       from Win32 / non-MIDI configs. NOMINMAX/WIN32_LEAN_AND_MEAN are needed because
-       compat\os_compat.h pulls in <windows.h>. See src\midiproc\VENDORED.md. -->
+  <!-- Vendored LDS-to-MIDI C++ code for WITH_MIDI x64 builds. See src\midiproc\VENDORED.md. -->
   <ItemGroup>
     <ClCompile Include="..\src\midiproc\src\MIDIContainer.cpp">
       <ExcludedFromBuild Condition="'$(WITH_MIDI)'!='true' OR '$(Platform)'!='x64'">true</ExcludedFromBuild>
@@ -382,8 +371,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(Platform)'=='x64'">
     <Dependency Condition="'$(WITH_MIDI)'!='true'" Include="$(SDL2BaseDir)\lib\x64\*.dll" />
-    <!-- WITH_MIDI ships the DLLs staged in FluidSynthBaseDir: a newer SDL2.dll (2.32, ABI-
-         compatible with the 2.26.2 import lib the game links) plus libfluidsynth-3.dll. -->
+    <!-- WITH_MIDI stages its ABI-compatible SDL2 and FluidSynth DLLs together. -->
     <Dependency Condition="'$(WITH_MIDI)'=='true'" Include="$(FluidSynthBaseDir)\lib\x64\*.dll" />
     <Dependency Condition="$(WITH_NETWORK)=='true'" Include="$(SDL2netBaseDir)\lib\x64\*.dll" />
   </ItemGroup>

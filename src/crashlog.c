@@ -1,7 +1,7 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Crash / diagnostic logger — see crashlog.h.
+ * Crash / diagnostic logger; see crashlog.h.
  */
 #include "crashlog.h"
 
@@ -97,7 +97,7 @@ static void build_session_stamp(void)
 		snprintf(s_sessionStamp, sizeof(s_sessionStamp), "unknown");
 }
 
-// "<stem>_<session stamp>.log" -- the same name for every report of this launch.
+// "<stem>_<session stamp>.log"; the same name for every report of this launch.
 static void log_filename(char *out, size_t outSize, const char *stem)
 {
 	if (s_sessionStamp[0] == '\0')
@@ -634,7 +634,7 @@ void crashlog_note_net(const char *event, const char *detail)
 	write_captured_report_ex(true, event ? event : "NETWORK", detail);
 }
 
-// Public: one short entry, no context/stack body -- the session start/end banners.
+// Public: one short entry, no context/stack body; the session start/end banners.
 void crashlog_netlog_line(const char *event, const char *detail)
 {
 	if (!crashlog_get_netlog_enabled())
@@ -753,7 +753,7 @@ static void watchdog_dump_hang(int seconds)
 	}
 
 	BOOL gotContext = GetThreadContext(s_mainThread, &ctx);
-	ResumeThread(s_mainThread);  // resume immediately -- all remaining work runs unsuspended
+	ResumeThread(s_mainThread);  // resume immediately; all remaining work runs unsuspended
 
 	if (gotContext)
 		write_context_report(f, s_mainThread, &ctx);
@@ -848,7 +848,7 @@ static const char *netlog_filename(void)
 	return s_netLogName;
 }
 
-// "<user dir>/log", without creating it -- the delete/scan paths must not conjure an empty folder.
+// "<user dir>/log", without creating it; the delete/scan paths must not conjure an empty folder.
 static const char *log_dir(void)
 {
 	static char dir[560];

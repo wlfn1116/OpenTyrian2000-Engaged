@@ -444,7 +444,7 @@ void JE_newStar(void)
 	}
 	else
 	{
-		nsp = nsp + nspVarInc; /* YKS: < lol */
+		nsp = nsp + nspVarInc;
 		switch (setup)
 		{
 			case 1:

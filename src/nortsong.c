@@ -93,7 +93,7 @@ void wait_delay(void)
 }
 
 // With vsync off, space out presents to the fps_cap render cap (0 = uncapped);
-// with vsync on this is unused — the display paces us.
+// with vsync on this is unused; the display paces us.
 void limit_render_fps(void)
 {
 	// Use the high-res performance counter, not ms: integer `1000 / fps_cap` truncates

@@ -1,0 +1,4 @@
+# Preserve third-party formatting and make local patches easy to compare upstream.
+src/midiproc/**
+stuff/**
+

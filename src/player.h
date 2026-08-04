@@ -58,7 +58,7 @@ typedef struct
 	Uint8 sidekick_level;
 	
 	// Single-player only
-	Uint8 super_arcade_mode;  // stored as an item for compatibility :(
+	Uint8 super_arcade_mode;  // stored with items for save compatibility
 }
 PlayerItems;
 

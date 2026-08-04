@@ -43,11 +43,11 @@
 #ifdef WITH_NETWORK
 
 /* Menus render on a 320px virtual screen centred in the wider VGA buffer (same convention as
- * menus.c) -- centring on vga_width instead would drift when the menu is blitted over. */
+ * menus.c); centring on vga_width instead would drift when the menu is blitted over. */
 #define LOBBY_XCENTER  (320 / 2)
 
 // The font has no glyph for '&', '<', '>', '@', '^', '_' or '`' (they silently vanish) and
-// treats '~' as a brightness toggle, so every string here avoids them -- hence "and", and
+// treats '~' as a brightness toggle, so every string here avoids them; hence "and", and
 // "Address" rather than an '@'-style label.
 
 static char lobby_status[64];  // transient one-line feedback under the menu
@@ -196,7 +196,7 @@ static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, siz
 			switch (lastkey_scan)
 			{
 			// service_wait_delay() pumps events without clearing the "new input" flags, so
-			// both exits have to consume the keypress themselves -- otherwise the menu we
+			// both exits have to consume the keypress themselves; otherwise the menu we
 			// return to sees it still pending and acts on it a second time.
 			case SDL_SCANCODE_ESCAPE:
 				JE_playSampleNum(S_SPRING);
@@ -658,7 +658,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		case ITEM_RECOVERY:
 			// On a detected desync the host streams its state and the joiner adopts
-			// it -- one hitch instead of a divergent rest-of-level.  The host's
+			// it; one hitch instead of a divergent rest-of-level.  The host's
 			// value binds the session (settings block bit 6), like every other
 			// sim-affecting setting; rollback sessions only.
 			if (recoveryLocked)

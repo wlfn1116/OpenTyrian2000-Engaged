@@ -31,12 +31,6 @@ void lds_free(void);
 void lds_rewind(void);
 void lds_fade(Uint8 speed);
 
-/*unsigned int getorders() { return numposi; }
-unsigned int getorder() { return posplay; }
-unsigned int getrow() { return pattplay; }
-unsigned int getspeed() { return speed; }
-unsigned int getinstruments() { return numpatch; }*/
-
 typedef struct {
 	unsigned char mod_misc, mod_vol, mod_ad, mod_sr, mod_wave,
 		car_misc, car_vol, car_ad, car_sr, car_wave, feedback, keyoff,

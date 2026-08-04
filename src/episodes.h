@@ -29,7 +29,7 @@
 #define EPISODE_MAX 5
 #define EPISODE_AVAILABLE 5
 
-// Width of a weapon's per-bullet arrays -- raised from the original 8 so the Custom Weapon
+// Width of a weapon's per-bullet arrays; raised from the original 8 so the Custom Weapon
 // Creator can build wider weapons (stock data still loads exactly 8 per array; only custom
 // weapons touch the extra slots; the shots.c wrap guard and editor clamps key off this).
 // MUST stay in 8..255: multi/max and the fire cursor shotMultiPos are all bytes.

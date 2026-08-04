@@ -1,7 +1,7 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Nintendo Switch (libnx / devkitA64) platform glue -- see switch_platform.h.
+ * Nintendo Switch (libnx / devkitA64) platform glue; see switch_platform.h.
  */
 #include "switch_platform.h"
 
@@ -34,7 +34,7 @@ static void switch_platform_exit(void)
 void switch_platform_init(void)
 {
 	// Mount bundled read-only data. If the .nro carries no romfs this simply
-	// fails and we fall back to the SD card copy -- not fatal, so ignore the result.
+	// fails and we fall back to the SD card copy; not fatal, so ignore the result.
 	romfsInit();
 
 	// Make sure the writable config/save directory exists. mkdir() does not create

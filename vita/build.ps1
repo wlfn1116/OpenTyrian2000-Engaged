@@ -19,8 +19,7 @@ $AppName = 'OpenTyrian 2000 Engaged'
 $TitleId = 'OTYR20000'
 
 # APP_VER derives from src/opentyrian_version.h ("Engaged v1.1.0" -> "01.01").
-# The SFO expects strictly "XX.YY"; on any parse failure keep the safe default
-# rather than risk an unloadable VPK.
+# The SFO requires "XX.YY"; invalid input keeps the safe default.
 $AppVer = '01.00'
 $VersionHeader = Get-Content (Join-Path $Repo 'src\opentyrian_version.h') -Raw
 if ($VersionHeader -match 'OPENTYRIAN_VERSION\s+"[^"]*?v?(\d+)\.(\d+)') {
@@ -37,7 +36,7 @@ function Remove-Robust([string]$path) {
     Remove-Item -LiteralPath $path -Recurse -Force   # final attempt; let it throw if truly stuck
 }
 
-# VitaSDK (forward-slash form -- cmake and its toolchain like that).
+# CMake and its toolchain use the forward-slash VitaSDK path.
 $Vitasdk = if ($env:VITASDK) { $env:VITASDK } else { 'D:/vitasdk' }
 $Vitasdk = $Vitasdk -replace '\\', '/'
 $env:VITASDK = $Vitasdk

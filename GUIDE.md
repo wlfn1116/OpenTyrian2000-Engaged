@@ -1,8 +1,8 @@
 # OpenTyrian2000 Engaged player guide
 
-The original Tyrian campaigns play exactly as they always did. This guide is
-about what the fork adds on top: Endless mode, the new graphics settings, online
-play, the weapon editor, and the cut content that has been switched back on.
+The original Tyrian campaigns remain available alongside Endless mode, new
+graphics settings, online play, the weapon editor, and optional restored
+content. This guide explains those additions.
 
 ## Where to find things
 
@@ -37,6 +37,7 @@ stopping at 5x (11x on a 4K display, shown beside the setting). Pair it with the
 because the cost scales with your resolution.
 
 **Filter** picks how sub-pixel output is resolved: Sharp, Smooth, or none.
+The Vita build always resolves Sub-pixel to 1x while keeping Smooth Motion.
 
 On the **FPS Cap** row, Left/Right steps by 5, or type a number directly.
 Minimum 5, and 0 or Backspace clears it to Uncapped. Don't set it below 35 if you
@@ -49,9 +50,9 @@ Endless mode builds a run out of the shipped Tyrian levels. The levels
 themselves are unedited. The difficulty comes from depth scaling and sector
 modifiers.
 
-How much a fatal hit costs you is your call: every run picks a mode on the start
-screen -- **Relaxed**, **Standard** or **Hardcore** -- ranging from a free retry of
-the zone to no saving at all. See [Starting a run](#starting-a-run).
+Every run picks a mode on the start screen: **Relaxed**, **Standard** or
+**Hardcore**. The modes range from a free retry of the zone to no saving at all.
+See [Starting a run](#starting-a-run).
 
 The loop is:
 
@@ -78,9 +79,9 @@ The start screen takes a seed and a run mode.
 | Hardcore | Never | Ends the run, and the pause menu is locked from the fatal hit |
 
 The mode is fixed for the whole run and travels with its save. A fatal hit is
-final in both Standard and Hardcore -- neither lets you slip out through the pause
-menu while the wreck is still exploding. What separates them is everything before
-that: Standard saves the last level and you can still choose a different course.
+final in both Standard and Hardcore. Neither mode lets you use the pause menu
+while the wreck is still exploding. Standard still saves the last level and lets
+you choose a different course before launch.
 
 Difficulty sets your starting cash and how fast depth scaling ramps:
 
@@ -256,8 +257,8 @@ You can buy only one kill-fire buff per recharge period, and its price and
 strength use the cash you walked in with, not what is left after shopping.
 
 The gamble has about 40 outcomes, from cash, equipment, perks and revives down to
-lost cash, stolen equipment, a shop tax, or a curse on the next sector. High
-variance, and no run needs it.
+lost cash, stolen equipment, a shop tax, or a curse on the next sector. It is
+optional and has high variance.
 
 ### Perks
 
@@ -295,12 +296,14 @@ choices, bought picks four, milestone picks five.
 | Ordnance Reserves | +30% sidekick ammo and special duration | 4 |
 | Failsafe | About 0.25 seconds of invulnerability after hull damage | 2 |
 
-A few that need more than one line:
+Additional details:
 
 - **Opening Salvo** charges after two seconds without main-gun fire, and the
   generator gauge turns green when it is ready. Firing opens a one-second window
-  with 2.5x damage, no generator cost, and scaled specials. Every zone starts
-  charged.
+  with 2.5x damage, no generator cost, and scaled specials. Weapons that burst
+  into a second wave on impact, such as Mega Pulse and the bomb sidekicks, carry
+  the boost into that wave even when it lands after the window closes. Every zone
+  starts charged.
 - **Ordnance Reserves** grows the magazine without lengthening the total refill.
   **Rapid Recharge** shortens the refill itself and also covers charge-type
   sidekicks.
@@ -469,7 +472,7 @@ same host is Join then Enter.
 
 The outpost help bar shows a **Ping** figure at its right end, updated about
 every one and a half seconds and reading `--` until the first reply. Under
-roughly 85ms the game runs at full speed on the default network delay of 3. Above
+roughly 85 ms the game runs at full speed on the default network delay of 3. Above
 that it starts to slow, and raising the delay trades input lag for smoothness.
 
 In any two-player game the sidebar tags each gauge block **P1** or **P2**.
@@ -586,7 +589,7 @@ slower. The row counts verified ticks and failures, details go to
 
 ## The Extra menus
 
-Two menus named Extra, in two places.
+The title screen and in-game pause menu each have an Extra menu.
 
 **Title screen > Extra** collects the things that used to need a code typed at
 the title: the jukebox, the Destruct mini-game, SuperTyrian, the secret Super

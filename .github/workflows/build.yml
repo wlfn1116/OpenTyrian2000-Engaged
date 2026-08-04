@@ -1,26 +1,7 @@
-# Builds the release targets on every push/PR and publishes them twice over:
-#
-#   - every push to master force-updates the rolling `latest` tag and its
-#     pre-release, so the newest build is always downloadable without logging in;
-#   - pushing a version tag attaches the artifacts to that tag's release under
-#     the same asset names the hand-made releases used.
-#
-#   OpenTyrian2000-Engaged-Windows-x86_64.7z    exe + SDL2/SDL2_net/FluidSynth DLLs + data/
-#   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz  binary + data/ (root Makefile, distro SDL2)
-#   OpenTyrian2000-Engaged-Switch.nro           freeware data baked into romfs
-#   OpenTyrian2000-Engaged-Vita.vpk             freeware data staged into app0:data
-#
-# Windows links against the SDKs vendored in stuff/ (the sdl_paths.props defaults
-# point elsewhere, so the paths are passed as global MSBuild properties). The
-# console jobs run in the official toolchain images: devkitpro/devkita64 already
-# includes switch-portlibs (SDL2, SDL2_net, and the pkg-config wrapper
-# switch/Makefile needs), and vitasdk/vitasdk includes SDL2 via vdpm plus
-# cmake/make -- the Vita needs no SDL2_net, since src/vita_net.c stands in for it.
-# vita/build.ps1 is Windows-only, so the Vita job restates its staging steps in shell.
-#
-# The freeware Tyrian 2000 data (same URL README.md points players at) is fetched
-# once by the `data` job and shared with all three builds; desktop-only files are
-# stripped with the same exclusion list vita/build.ps1 uses.
+# Builds all release targets on pushes, pull requests, and manual runs. Master
+# refreshes the `latest` pre-release; version tags attach the same four artifacts
+# to a tagged release. The data job supplies one stripped freeware-data artifact
+# to every platform job.
 
 name: build
 
@@ -56,8 +37,7 @@ jobs:
           unzip -q -j tyrian2000.zip 'tyrian2000/*' -d data
           rm -f data/*.exe data/*.dll data/*.pif data/*.ico data/*.box \
                 data/*.ovl data/*.cfg data/*.sav data/*.txt data/*.sf2
-          # A few files the engine cannot start without; fail here rather than
-          # shipping artifacts that boot to a missing-data error.
+          # Validate the files required at startup.
           for f in tyrian1.lvl tyrian.hdt music.mus palette.dat; do
             test -f "data/$f" || { echo "missing $f in data zip"; exit 1; }
           done
@@ -71,8 +51,7 @@ jobs:
   windows:
     name: Windows x86-64
     needs: data
-    # windows-latest is the VS 2026 image, which provides the v145 toolset the
-    # project files use. (VS 2026 no longer ships v143, so do not pin older.)
+    # windows-latest provides the v145 toolset used by the project files.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -99,10 +78,7 @@ jobs:
           Copy-Item SDL2.dll, SDL2_net.dll, libfluidsynth-3.dll pkg\
           7z a -mx=9 OpenTyrian2000-Engaged-Windows-x86_64.7z .\pkg\*
 
-      # Boot the packaged game headless: SDL's dummy video/audio drivers let it
-      # load the data and run the attract demo with no display. Surviving the
-      # timeout proves init + main loop; a crash exits earlier and fails here,
-      # blocking the uploads below.
+      # Run the packaged game headless for 15 seconds; an early exit fails the job.
       - name: Smoke test (headless)
         run: |
           $env:SDL_VIDEODRIVER = 'dummy'
@@ -112,16 +88,14 @@ jobs:
           Stop-Process -Id $p.Id -Force
           Write-Host 'survived 15s headless'
 
-      # Artifacts are always stored zip-wrapped (GitHub's format, not optional);
-      # compression-level 0 keeps the wrapper a plain container so the already-
-      # compressed archive inside is not compressed a second time.
+      # Avoid recompressing the 7z inside GitHub's artifact wrapper.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Windows-x86_64
           path: OpenTyrian2000-Engaged-Windows-x86_64.7z
           compression-level: 0
 
-      # Not part of the release archive, but kept for decoding crash logs.
+      # Keep symbols separately for crash-log decoding.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Windows-x86_64-pdb
@@ -142,8 +116,7 @@ jobs:
       - name: Build
         run: make -j"$(nproc)"
 
-      # Tarball unpacks to opentyrian2000/ with the data beside the binary, so
-      # it runs in place (data_dir() checks ./data before the system path).
+      # Package the binary beside data/ for in-place use.
       - uses: actions/download-artifact@v7
         with:
           name: tyrian2000-data
@@ -154,8 +127,7 @@ jobs:
           cp opentyrian2000 stage/opentyrian2000/
           tar -C stage -czf OpenTyrian2000-Engaged-Linux-x86_64.tar.gz opentyrian2000
 
-      # Same headless boot as the Windows job: timeout kills the still-running
-      # game after 15s (exit 124 = pass); any crash exits earlier and fails.
+      # Exit 124 means the headless game survived the 15-second timeout.
       - name: Smoke test (headless)
         working-directory: stage/opentyrian2000
         run: |
@@ -164,10 +136,7 @@ jobs:
           test "$status" -eq 124 || { echo "game exited early (status $status)"; exit 1; }
           echo 'survived 15s headless'
 
-      # The tar.gz layer is load-bearing: a bare directory in the artifact zip
-      # would lose the binary's exec bit (zip has no POSIX permissions), and the
-      # release jobs attach this exact file. The Actions-tab download is zip-
-      # wrapped either way (GitHub's format); level 0 avoids double compression.
+      # The tar layer preserves the executable bit; avoid recompressing it.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Linux
@@ -191,8 +160,7 @@ jobs:
       - name: Build .nro
         run: |
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
-          # printf, not ${VAR:0:7}: container job scripts run under sh, and
-          # Debian's dash has no bash substring expansion (exits 2).
+          # The container uses sh, so avoid Bash substring expansion.
           export OPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
           make -C switch -j"$(nproc)"
           cp switch/opentyrian2000.nro OpenTyrian2000-Engaged-Switch.nro
@@ -220,12 +188,8 @@ jobs:
           cmake -S vita -B vita/build -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
           cmake --build vita/build -j"$(nproc)"
 
-      # Same staging vita/build.ps1 performs: param.sfo + LiveArea assets +
-      # data, zipped from inside the stage directory so paths are VPK-relative.
-      #
-      # APP_VER is derived from src/opentyrian_version.h ("Engaged v1.1.0" ->
-      # major.minor -> "01.01"). The SFO expects strictly "XX.YY"; anything that
-      # fails that shape falls back to 01.00 rather than risk an unloadable VPK.
+      # Mirror vita/build.ps1 staging. APP_VER is the zero-padded major.minor
+      # from src/opentyrian_version.h, with 01.00 as the invalid-input fallback.
       - name: Assemble VPK
         run: |
           ver=$(sed -n 's/.*OPENTYRIAN_VERSION *"\([^"]*\)".*/\1/p' src/opentyrian_version.h | sed 's/.*[vV]//')
@@ -245,16 +209,14 @@ jobs:
           cp data/* "$stage/data/"
           cd "$stage" && cmake -E tar cf "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Vita.vpk" --format=zip .
 
-      # The VPK is itself a zip; level 0 avoids compressing it a second time.
+      # Avoid recompressing the VPK inside GitHub's artifact wrapper.
       - uses: actions/upload-artifact@v6
         with:
           name: OpenTyrian2000-Engaged-Vita
           path: OpenTyrian2000-Engaged-Vita.vpk
           compression-level: 0
 
-  # Rolling pre-release: every master build force-moves the `latest` tag to the
-  # built commit and refreshes the pre-release's assets in place. Tag pushes made
-  # with the workflow token do not re-trigger this workflow, so no loop.
+  # Refresh the rolling `latest` pre-release after every master build.
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
@@ -296,9 +258,7 @@ jobs:
           pattern: OpenTyrian2000-Engaged-*
           merge-multiple: true
 
-      # If the release was already created from the GitHub UI, just attach the
-      # assets; otherwise create it as a draft so notes can be written by hand
-      # before publishing.
+      # Attach to an existing release, or create a draft for release notes.
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}

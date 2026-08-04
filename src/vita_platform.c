@@ -1,7 +1,7 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Sony PlayStation Vita (VitaSDK) platform glue -- see vita_platform.h.
+ * Sony PlayStation Vita (VitaSDK) platform glue; see vita_platform.h.
  */
 #include "vita_platform.h"
 

@@ -1,4 +1,4 @@
-# BUILD SETTINGS ###############################################################
+# Build settings
 
 ifneq ($(filter Msys Cygwin, $(shell uname -o)), )
     PLATFORM := WIN32
@@ -10,9 +10,7 @@ endif
 
 WITH_NETWORK := true
 
-################################################################################
-
-# see https://www.gnu.org/prep/standards/html_node/Makefile-Conventions.html
+# GNU Make conventions: https://www.gnu.org/prep/standards/html_node/Makefile-Conventions.html
 
 SHELL = /bin/sh
 
@@ -38,19 +36,15 @@ man6ext ?= .6
 desktopdir ?= $(datarootdir)/applications
 icondir ?= $(datarootdir)/icons
 
-# see https://www.pathname.com/fhs/pub/fhs-2.3.html
+# Filesystem hierarchy: https://www.pathname.com/fhs/pub/fhs-2.3.html
 
 gamesdir ?= $(datadir)/games
-
-###
 
 TARGET := opentyrian2000
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:src/%.c=obj/%.o)
 DEPS := $(SRCS:src/%.c=obj/%.d)
-
-###
 
 ifeq ($(WITH_NETWORK), true)
     EXTRA_CPPFLAGS += -DWITH_NETWORK
@@ -95,14 +89,9 @@ ALL_CPPFLAGS = -DTARGET_$(PLATFORM) \
                $(EXTRA_CPPFLAGS) \
                $(SDL_CPPFLAGS) \
                $(CPPFLAGS)
-# Not in CFLAGS, because CFLAGS is the user's to override and these two are correctness,
-# not taste:
-#   -fsigned-char     the DOS-era engine assumes signed char; it is signed by default on x86
-#                     but UNSIGNED on ARM, so an ARM Linux build silently misbehaves without it
-#                     (the console builds have always set it).
-#   -ffp-contract=off gcc fuses `a*b + c` into one FMADD (a single rounding); MSVC's
-#                     /fp:precise never does, so the same float expression gives two builds
-#                     different answers -- and netplay is cross-platform.
+# These correctness flags remain outside user-overridable CFLAGS. The engine
+# assumes signed char, and disabling fused operations keeps netplay float results
+# consistent with MSVC /fp:precise.
 ALL_CFLAGS = -std=iso9899:1999 \
              -fsigned-char \
              -ffp-contract=off \
@@ -112,8 +101,6 @@ ALL_LDFLAGS = $(SDL_LDFLAGS) \
 ALL_LDLIBS = -lm \
              $(SDL_LDLIBS) \
              $(LDLIBS)
-
-###
 
 .PHONY : all
 all : $(TARGET)

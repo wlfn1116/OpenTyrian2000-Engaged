@@ -30,10 +30,7 @@ static JE_byte  endlessSortieFile  = 0;
 unsigned endlessSortiePrePurchased = 0;
 int      endlessSortiePreCleanse   = 0;
 int      endlessSortiePreLongCon   = 0;
-// The mutators in force at the outpost the sortie launched FROM (captured on opening it), which is
-// the previous sector's set -- not the committed level's. An unlocked bail reopens that same outpost,
-// so it must price and stock itself off these, or the level's own Merchant's Favor / Cursed Bounty
-// would leak backwards into a shop the player already visited.
+// Mutators captured when the outpost opens. An unlocked bail must restore this previous-sector set.
 Uint64   endlessSortieOutpostMods = 0;
 
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
@@ -117,14 +114,14 @@ typedef struct {
 
 	// Deferred boons, added in v12.
 	Uint8  starChartsOwed;    // STAR CHARTS: the next ordinary chart still owes its full route slate
-	Uint8  breakthroughOwed;  // BREAKTHROUGH: bonus perk picks still owed (a count -- two can queue)
+	Uint8  breakthroughOwed;  // bonus perk picks still owed; two can queue
 
 	// Added in v15.
 	Uint8  runMode;  // EndlessRunMode: the run's Relaxed/Standard/Hardcore choice (never Hardcore on disk)
 
 	// Added in v16 (which stored this one field alone), widened in v17.
 	Uint64 cashEarned;  // running total of cash taken in, for the run-over tally
-	Uint64 cashSpent;   // ...and of everything that left the wallet
+	Uint64 cashSpent;   // running total spent
 	Uint64 cashBySource[ENDLESS_SAVE_CASH_SOURCES];  // the earnings breakdown, indexed by EndlessCashSource
 
 	// Added in v19 (v18 briefly stored only the gear sink as a single field).
@@ -135,10 +132,8 @@ typedef struct {
 // other slots' records intact.
 static EndlessSlotRec endlessSlotCache[SAVE_FILES_NUM];
 
-// Restore a chart from disk while migrating v7-and-older records that did not persist courseFile.
-// Invalid legacy entries (notably Episode 1 section 44 / nonexistent file 20) are dropped and the
-// remaining parallel arrays are compacted. If nothing usable remains, regenerate deterministically
-// for this depth so the outpost always has a launchable course.
+// Restore a chart and migrate records that predate persisted courseFile values.
+// Drop invalid entries; regenerate deterministically if none remain.
 static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 {
 	int savedCount = r->courseCnt;
@@ -170,8 +165,7 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	}
 	endlessCourseCnt = restoredCount;
 
-	// A forced visit represents one specific unavoidable course; if that entry was invalid, rebuild
-	// the whole visit rather than silently turning a different saved option into an Ambush.
+	// Rebuild an invalid forced visit rather than turning another saved option into an Ambush.
 	if (endlessCourseCnt == 0 || (endlessForced && dropped))
 	{
 		endlessReseed((Uint64)endlessRunDepth * 2);
@@ -181,9 +175,7 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	endlessNameCourseBaseLevels();  // populate the Radar perk's base-level cache for the restored chart
 }
 
-// Little-endian field I/O over a FILE*. The write side is fire-and-forget; the read side never
-// dies -- any short/failed read just aborts the load, so a missing or corrupt sidecar simply
-// means "no endless save".
+// Little-endian field I/O. A short read invalidates the optional Endless sidecar.
 static void endlessPutU8(FILE *f, unsigned v)                 { Uint8 b = (Uint8)v; fwrite(&b, 1, 1, f); }
 static void endlessPutU32(FILE *f, Uint32 v)                  { v = SDL_SwapLE32(v); fwrite(&v, 4, 1, f); }
 static void endlessPutU64(FILE *f, Uint64 v)                  { v = SDL_SwapLE64(v); fwrite(&v, 8, 1, f); }
@@ -254,8 +246,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 
 	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Standard / Hardcore
 
-	endlessPutU64(f, r->cashEarned);                 // v16 cash ledger (earned alone)...
-	endlessPutU64(f, r->cashSpent);                  // ...widened in v17: spent, then the breakdown
+	endlessPutU64(f, r->cashEarned);                 // v16 stored earnings only
+	endlessPutU64(f, r->cashSpent);                  // v17 added spending and source detail
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
 		endlessPutU64(f, r->cashBySource[i]);
 
@@ -292,16 +284,14 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	    || !endlessGetU8(f, &r->lastSec) || !endlessGetU8(f, &r->forced))
 		return false;
 
-	// v11 widened the perk block; v3..v10 wrote 16 bytes. memset(r,0) above zeroed the extra
-	// slots, so reading the narrow legacy width just leaves the newer perks unowned.
+	// v11 widened the perk block. Zero-filled newer slots remain unowned in older records.
 	const size_t perkBytes = (version >= 11) ? ENDLESS_SAVE_PERKS : ENDLESS_SAVE_PERKS_V10;
 	if (!endlessGetBytes(f, r->perkOwned, perkBytes)
 	    || !endlessGetBytes(f, r->gambleMsg, sizeof(r->gambleMsg))
 	    || !endlessGetBytes(f, r->lastSpecialName, sizeof(r->lastSpecialName)))
 		return false;
 
-	// v13 widened the offer list for the milestone 1-of-5 pick; v3..v12 wrote 3 entries. Clamping the
-	// COUNT to what the file stored keeps the memset-zeroed tail slots from reading as real offers.
+	// v13 widened perk offers from three to five. Clamp counts to the version's stored width.
 	const unsigned offerSlots = (version >= 13) ? ENDLESS_SAVE_OFFERS : ENDLESS_SAVE_OFFERS_V12;
 	for (unsigned i = 0; i < offerSlots; ++i)
 	{
@@ -372,8 +362,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	r->lastSpecialName[sizeof(r->lastSpecialName) - 1] = '\0';
 	r->seed[sizeof(r->seed) - 1] = '\0';
 
-	// v4 locked-sortie block. Older (v3) records don't carry it -- the memset above already left
-	// lockedSortie = 0, so they simply read as "not a locked outpost".
+	// v3 records have no locked-sortie block and remain unlocked after zero-initialization.
 	if (version >= 4)
 	{
 		Uint8  u8;
@@ -405,8 +394,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		r->sortieFile = u8;
 	}
 
-	// v5 kill-fire buff recharge. Older (v3/v4) records lack it -- the memset above left
-	// buffCooldownUntil = 0 ("no lock"), so a resumed pre-v5 run can buy immediately.
+	// Pre-v5 records leave the kill-fire purchase cooldown unlocked.
 	if (version >= 5)
 	{
 		Uint32 u32;
@@ -415,8 +403,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		r->buffCooldownUntil = (Sint32)u32;
 	}
 
-	// v6 anti-repeat recent-level ring. Older records lack it -- the memset above left recentCount = 0,
-	// so a resumed pre-v6 run just starts with an empty window (it refills as zones are played).
+	// Pre-v6 records resume with an empty recent-level window.
 	if (version >= 6)
 	{
 		if (!endlessGetU8(f, &r->recentCount))
@@ -434,13 +421,11 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			r->recentCount = ENDLESS_LEVEL_HISTORY;
 	}
 
-	// v9 zone-100 credits. Older records lack it -- the memset above left creditsShown = 0, so a
-	// pre-v9 run already past zone 100 gets one (harmless) showing at its next outpost.
+	// Pre-v9 records may show the zone-100 credits once after resuming.
 	if (version >= 9 && !endlessGetU8(f, &r->creditsShown))
 		return false;
 
-	// v10 per-zone music continuity. Older records lack it -- lastSong stays 0 ("nothing remembered"),
-	// and the picker falls back to deriving the previous zone's song approximately.
+	// Pre-v10 records derive the previous song when lastSong remains zero.
 	if (version >= 10)
 	{
 		Uint32 u32;
@@ -449,13 +434,11 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		r->lastSongDepth = (Sint32)u32;
 	}
 
-	// v12 Star Charts / Breakthrough debts. Older records lack them -- the memset above left both at 0,
-	// so a resumed pre-v12 run simply owes nothing (it can only ever have been charted in a v12 build).
+	// Pre-v12 records resume without deferred Star Charts or Breakthrough rewards.
 	if (version >= 12 && (!endlessGetU8(f, &r->starChartsOwed) || !endlessGetU8(f, &r->breakthroughOwed)))
 		return false;
 
-	// v15 run mode. Older records predate Standard and were all written by a build whose only
-	// saveable run behaved like Relaxed, so the memset above (runMode 0) already resumes them right.
+	// Pre-v15 records resume in Relaxed mode, matching their original behavior.
 	if (version >= 15)
 	{
 		if (!endlessGetU8(f, &r->runMode))
@@ -479,16 +462,12 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		}
 		else
 		{
-			// A v16 run knew what it had earned but not how, nor what it had spent. Book the lot as
-			// untagged rather than leaving a breakdown that doesn't sum to the total.
+			// v16 stored total earnings only, so assign them to the untagged source.
 			r->cashBySource[ENDLESS_CASH_OTHER] = r->cashEarned;
 		}
 	}
 
-	// Spending breakdown. v18 briefly stored only the gear sink (the slice trade-in refunds cancel
-	// against); v19 keeps the full per-sink array. Pre-v18 resumes all-zero (the memset), so gear
-	// bought before the save sells as "gear sold" income instead of cancelling -- older behaviour,
-	// and still consistent with earned - spent == wallet.
+	// v18 stored only the gear sink; v19 stores every sink. Earlier versions remain zero-filled.
 	if (version == 18)
 	{
 		if (!endlessGetU64(f, &r->cashBySink[ENDLESS_SINK_GEAR]))
@@ -503,8 +482,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	return true;
 }
 
-// Load every slot's record into the cache (all-unused on a missing / short / corrupt / wrong-
-// version file -- this is optional data, so any problem just means "no endless save").
+// Load all slot records. Any sidecar-level error marks the optional cache unused.
 static void endlessReadAllSlots(void)
 {
 	memset(endlessSlotCache, 0, sizeof(endlessSlotCache));
@@ -534,7 +512,7 @@ static void endlessReadAllSlots(void)
 	fclose(f);
 }
 
-// Write the whole cache back to disk (fixed record layout, so a slot is simply overwritten).
+// Write the fixed-layout slot cache.
 static void endlessWriteAllSlots(void)
 {
 	FILE *f = dir_fopen_warn(get_user_directory(), ENDLESS_SAVE_FILE, "wb");
@@ -552,10 +530,8 @@ static void endlessWriteAllSlots(void)
 // Snapshot the live run AND the current outpost into a record.
 static void endlessCaptureCurrent(EndlessSlotRec *r)
 {
-	// Audit before copying: the ledger must agree with the wallet this record is snapshotted
-	// ALONGSIDE (in tyrian.sav for a save, in endlessSortiePlayer for a sortie), and the restore
-	// re-anchors the mark, so any drift not booked now would be dropped for good. Safe here:
-	// neither caller runs while the upgrade sub-menu is showing its fake trade-in balance.
+	// Reconcile the ledger with the wallet before snapshotting; restore re-anchors this value.
+	// Callers do not run while the upgrade menu displays its temporary trade-in balance.
 	endlessCashAudit();
 
 	memset(r, 0, sizeof(*r));
@@ -612,8 +588,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 
 	SDL_strlcpy(r->seed, endlessRunSeed, sizeof(r->seed));
 
-	// Locked "gave up the level" outpost (v4): only meaningful when saving FROM the locked shop
-	// (endlessLockedSortie). memset(r,0) at the top leaves these cleared for a normal save.
+	// The v4 locked-sortie fields are populated only when saving from the locked outpost.
 	r->lockedSortie = endlessLockedSortie ? 1 : 0;
 	r->sortieMods   = endlessSortieModsV;
 	r->sortieSec    = endlessSortieSec;
@@ -637,8 +612,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->breakthroughOwed = (Uint8)((endlessBreakthroughOwed < 0) ? 0
 	                             : (endlessBreakthroughOwed > 255 ? 255 : endlessBreakthroughOwed));
 
-	// Run mode (v15). On disk this is only ever Relaxed or Standard (Hardcore never saves), but the
-	// sortie snapshot shares this record, and there it carries a Hardcore run's mode across a bail.
+	// Disk saves use Relaxed or Standard; in-memory sortie snapshots can carry Hardcore.
 	r->runMode = (Uint8)endlessRunMode;
 
 	// v16 cash ledger + v19 sink breakdown. The spare on-disk slots past ENDLESS_CASH_SOURCES /
@@ -651,10 +625,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 		r->cashBySink[i] = endlessCashBySink[i];
 }
 
-// Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
-// transients we DON'T persist (combat timers, elite rolls, ...) start clean; then restore both
-// the run and the outpost snapshot, and arm endlessResumeVisit so the next outpost is the
-// SAVED one rather than a fresh (free) reroll.
+// Reset transient state, restore the saved run and outpost, then reopen the saved visit without a reroll.
 static void endlessApplyCurrent(const EndlessSlotRec *r)
 {
 	endlessResetRun();
@@ -702,8 +673,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessLastSec = r->lastSec;
 	endlessForced  = r->forced != 0;
 
-	// Anti-repeat recent-level ring (v6). endlessResetRun (above) already cleared it, so a pre-v6
-	// record (recentCount 0) simply resumes with an empty window.
+	// Pre-v6 records retain the reset empty recent-level window.
 	endlessRecentCount = (r->recentCount > ENDLESS_LEVEL_HISTORY) ? ENDLESS_LEVEL_HISTORY : r->recentCount;
 	for (int i = 0; i < ENDLESS_LEVEL_HISTORY; ++i)
 	{
@@ -711,23 +681,18 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 		endlessRecentSec[i] = r->recentSec[i];
 	}
 
-	// Zone-100 credits (v9): endlessResetRun above cleared the flag, so a pre-v9 record simply reads
-	// as "not shown yet".
+	// Pre-v9 records resume with zone-100 credits marked unshown.
 	endlessCreditsShown = r->creditsShown != 0;
 
-	// Per-zone music continuity (v10). A pre-v10 record has lastSong 0; force the depth back to "none"
-	// with it, since a zeroed record would otherwise read as a real entry for depth 0.
+	// A zero lastSong means no remembered depth for pre-v10 records.
 	endlessLastSong      = r->lastSong;
 	endlessLastSongDepth = (r->lastSong != 0) ? r->lastSongDepth : -1;
 
-	// Boons owed to a later outpost (v12). endlessResetRun above cleared both, so a pre-v12 record just
-	// resumes owing nothing.
+	// Pre-v12 records owe no deferred boons.
 	endlessStarChartsOwed   = r->starChartsOwed != 0;
 	endlessBreakthroughOwed = r->breakthroughOwed;
 
-	// Run mode (v15). endlessResetRun above reset it to Relaxed, which is also what a pre-v15 record
-	// (runMode 0) resumes as. A bail/retry goes through here too, so this is what keeps a Hardcore
-	// run Hardcore across the reset the sortie restore performs.
+	// Restore the saved run mode; pre-v15 records use Relaxed.
 	endlessRunMode = (r->runMode < ENDLESS_RUNMODE_COUNT) ? (EndlessRunMode)r->runMode
 	                                                      : ENDLESS_RUNMODE_RELAXED;
 
@@ -736,8 +701,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	memcpy(itemAvail, r->itemAvail, sizeof(itemAvail));
 	memcpy(itemAvailMax, r->itemAvailMax, sizeof(itemAvailMax));
 
-	// Locked-sortie retry (v4): a save made from the "gave up the level" outpost reopens locked and
-	// relaunches the same committed level. endlessResetRun (above) already cleared these to unlocked.
+	// A v4 locked-sortie save reopens the locked outpost and committed level.
 	endlessLockedSortie = r->lockedSortie != 0;
 	if (endlessLockedSortie)
 	{
@@ -748,9 +712,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 		endlessSortieHave  = true;
 	}
 
-	// Cash ledger (v16). endlessResetRun above zeroed it all, which is also what a pre-v16 record
-	// restores as. The mark is re-anchored to whatever wallet this record is being laid over -- the
-	// two sortie paths below re-anchor again after they memcpy the snapshotted loadout back.
+	// Restore the v16 ledger and anchor it to the current wallet. Sortie restores re-anchor after loadout copy.
 	endlessRunCashEarned = r->cashEarned;
 	endlessRunCashSpent  = r->cashSpent;
 	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
@@ -788,20 +750,14 @@ bool endlessLoadSlot(JE_byte slot)
 
 	endlessApplyCurrent(&endlessSlotCache[slot - 1]);
 	endlessMode = true;  // JE_loadGame cleared it for a normal load; this slot is an endless run
-	endlessRecordRunStart();  // a resumed run measures its "(+n)" from here -- the zones it already flew are banked
+	endlessRecordRunStart();  // resumed record gains count from this point
 	return true;
 }
 
-// True from the moment a run is restored until its outpost reopens and consumes the snapshot.
-// The title-load path runs the outpost at JE_main's entry (flag already cleared by the time a
-// level starts); an in-shop load can't, so JE_main checks this after JE_loadMap and detours to
-// the outpost when it's still set (see tyrian2.c). Mirrors the endlessBetweenLevels gate.
+// Remains true until the restored outpost consumes its snapshot. JE_main handles in-shop loads.
 bool endlessResumePending(void) { return endlessResumeVisit; }
 
-// Quit Level and locked-outpost retry.
-// The endless run/outpost half of the launch-time snapshot (the loadout + committed-level half are
-// the endlessSortie* primitives up top). Reusing the save record means depth, perks, prices,
-// purchased mods, courses, shop stock and seed are all reverted by the tested capture/apply code.
+// Quit Level snapshots reuse the save record for run and outpost state.
 static EndlessSlotRec endlessSortieRec;
 
 void endlessCaptureSortie(void)
@@ -809,16 +765,15 @@ void endlessCaptureSortie(void)
 	if (!endlessMode)
 		return;
 
-	// We're about to run a level, so by definition we're no longer sitting in a locked "gave up"
-	// outpost. Clear it before the capture so the snapshot itself reads as unlocked.
+	// A new launch clears the locked-outpost flag before capture.
 	endlessLockedSortie = false;
 
 	endlessCaptureCurrent(&endlessSortieRec);                          // endless run + outpost state
 	memcpy(endlessSortiePlayer, player, sizeof(endlessSortiePlayer));  // full loadout (cash / items / superbombs)
-	endlessSortieModsV = endlessActiveMods;   // the committed level's mutators...
-	endlessSortieSec   = mainLevel;           // ...its section (== the level being loaded)...
-	endlessSortieEp    = episodeNum;          // ...its episode...
-	endlessSortieFile  = lvlFileNum;          // ...and its level file
+	endlessSortieModsV = endlessActiveMods;   // committed level modifiers
+	endlessSortieSec   = mainLevel;           // committed section
+	endlessSortieEp    = episodeNum;          // committed episode
+	endlessSortieFile  = lvlFileNum;          // committed level file
 	endlessSortieHave  = true;
 }
 
@@ -827,9 +782,7 @@ void endlessRestoreSortie(void)
 	if (!endlessSortieHave)
 		return;
 
-	// Grab the one-shots before endlessApplyCurrent -> endlessResetRun clobbers them. (The run mode
-	// needs no such rescue: it rides in the snapshot record itself, so the reset the apply performs
-	// is undone by the apply -- a bail can never silently un-lock the outpost or re-enable saving.)
+	// Preserve one-shot state across endlessApplyCurrent's reset. Run mode is stored in the record.
 	const unsigned preBuff     = endlessSortiePrePurchased;
 	const int      preCleanse  = endlessSortiePreCleanse;
 	const int      preLongCon  = endlessSortiePreLongCon;
@@ -838,8 +791,8 @@ void endlessRestoreSortie(void)
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); arms endlessResumeVisit (also cleared endlessSortieHave via endlessResetRun)
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout (wins over the superbombs field applyCurrent touched)
 	endlessActiveMods   = endlessSortieModsV;                         // the committed level's mutators (for the relaunch)
-	endlessSortieHave   = true;                                       // the committed-level statics are still valid -- keep the invariant
-	endlessSortieOutpostMods = outpostMods;                           // still the same outpost -- keep its mutators across the reset
+	endlessSortieHave   = true;                                       // committed-level state remains valid
+	endlessSortieOutpostMods = outpostMods;                           // preserve the same outpost modifiers
 
 	if (endlessHardcore())
 	{
@@ -862,10 +815,8 @@ void endlessRestoreSortie(void)
 
 bool endlessSortieValid(void) { return endlessSortieHave; }
 
-// Death menu "Restart Zone": revert to the launch-time snapshot and re-arm the same level with no
-// outpost visit in between. The one-shots the course pick consumed stay consumed -- the relaunch
-// replays that very pick, so refunding them (what the unlocked Quit Level path does, since there
-// the player re-picks a course) would spend them twice.
+// Restart Zone restores the launch snapshot and re-arms the same level without an outpost visit.
+// Consumed one-shot purchases remain consumed.
 void endlessRestartSortie(void)
 {
 	if (!endlessSortieHave)
@@ -877,8 +828,7 @@ void endlessRestartSortie(void)
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid
 	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
-	// The outpost this zone launched from is unchanged, and a later bail out of the retry reopens it
-	// -- so its mutators have to survive the restart, or that bail would reopen the shop with none.
+	// Preserve outpost modifiers for a later bail from the restarted zone.
 	endlessSortieOutpostMods = outpostMods;
 
 	endlessCashResync();           // the reverted wallet is the new baseline (the tally rode in on the record)
@@ -886,10 +836,7 @@ void endlessRestartSortie(void)
 	endlessArmLockedRelaunch();    // re-arm the committed level: episode, section, level file, mutators
 }
 
-// The committed level's fine PAYOUT term at the run difficulty, from the sortie snapshot (the
-// authoritative "level being played" record, valid through the clear + outpost and across a reload).
-// The clear payout reads this so the banked cash matches the course card the player picked; 0 when no
-// sortie is live (e.g. a debug launch that set endlessActiveMods without committing a level).
+// Return the committed level's payout adjustment, or zero when no sortie is active.
 int endlessSortiePayoutMille(void)
 {
 	if (!endlessSortieHave)
@@ -899,10 +846,9 @@ int endlessSortiePayoutMille(void)
 
 void endlessArmLockedRelaunch(void)
 {
-	// Re-arm the same level directly -- not via endlessSelectCourse, whose one-shot consumption
-	// (Long Con decrement, Sabotage/cleanse charges, purchased-mod fold-in) must not fire twice.
+	// Re-arm directly so course-selection one-shots do not run twice.
 	if (endlessSortieEp != episodeNum)
-		JE_initEpisode((JE_byte)endlessSortieEp);  // may reset mainLevel/lvlFileNum -- so set them after
+		JE_initEpisode((JE_byte)endlessSortieEp);  // set level fields after this reset
 	endlessActiveMods = endlessSortieModsV;
 	mainLevel = endlessSortieSec;
 	if (endlessSortieFile != 0)
@@ -926,14 +872,12 @@ void endlessDebugConfigSave(ConfigSection *section)
 	config_set_int_option(section, "campaign_mods", endlessCampaignMods ? 1 : 0);
 	config_set_int_option(section, "virtual_zone", endlessRunDepth + 1);
 
-	// The mod mask is 64-bit and config options are int, so it goes as hex text rather than as a
-	// pair of halves that could be reassembled wrongly.
+	// Store the 64-bit modifier mask as hex text because config integers are narrower.
 	char buf[32];
 	snprintf(buf, sizeof(buf), "%016" PRIX64, (Uint64)endlessActiveMods);
 	config_set_string_option(section, "mods", buf);
 
-	// Two hex digits per perk, in perk-id order. That order is already contracted as stable (it is
-	// the endless.sav slot index -- see the PERK_* enum), so this needs no separate contract.
+	// Store two hex digits per perk in the serialized PERK_* order.
 	char perks[2 * PERK_COUNT + 1];
 	int n = 0;
 	for (int p = 0; p < PERK_COUNT && n + 2 < (int)sizeof(perks); ++p)

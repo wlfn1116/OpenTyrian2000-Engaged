@@ -82,7 +82,7 @@ extern int customSidekickFrameStep; // sprite step between animation frames (0/1
 extern int customSidekickAnimate;   // option: 1 = animate while firing, 2 = always animate
 
 // Largest body sprite a mount's sheet can address (so the editor + materialize can clamp
-// the sprite index — the sidekick blit is not bounds-checked). 0 if the sheet isn't loaded.
+// the sprite index; the sidekick blit is not bounds-checked). 0 if the sheet isn't loaded.
 int customSidekickSpriteCount(int mount);
 
 // Import sources: one named entry per real weapon port (sampleable across its
@@ -109,7 +109,7 @@ int customBulletMaxPower(int presetIdx);
 
 // One-time setup: gather the import-source list, claim a free port + sidekick slot,
 // fill in a default design if none is loaded, and materialize. Call once after
-// JE_loadItemDat() (also safe to call again — it never clobbers a loaded design).
+// JE_loadItemDat() (also safe to call again; it never clobbers a loaded design).
 void customWeaponInit(void);
 
 // Copy every power level's raw design into weapons[CUSTOM_WEAP_BASE + level] and
@@ -122,7 +122,7 @@ void customWeaponMaterialize(void);
 bool customWeaponEquip(void);
 
 // Switch which power level / fire mode the editor is editing (edits happen in
-// place, so these are just clamped assignments — no save/load dance).
+// place, so these are just clamped assignments; no save/load dance).
 void customWeaponSelectLevel(int level);
 void customWeaponSelectMode(int mode);
 
@@ -152,13 +152,12 @@ int customWeaponRemoveBullet(int index);
 int customWeaponAddChargeState(void);
 int customWeaponRemoveChargeState(void);
 
-// Copy the level currently being edited into all 11 levels (flatten), or restore
-// the built-in default — including the weapon-wide identity — to all 11 levels.
+// Copy the edited level into all 11 levels, or restore the complete built-in default.
 void customWeaponCopyToAllLevels(void);
 void customWeaponResetAllLevels(void);
 
 // Auto-scale: treat the level currently being edited as the "anchor" and generate a power curve
-// for the other ten levels of the current fire mode -- scaling damage, fire rate and bullet count
+// for the other ten levels of the current fire mode; scaling damage, fire rate and bullet count
 // down for levels below the anchor and up for levels above it. The anchor level is left exactly as
 // designed, as is every field that defines the weapon's look and feel (sprite, motion, sound, ...).
 void customWeaponAutoScaleLevels(void);

@@ -1,15 +1,11 @@
 #!/bin/bash
-# Build OpenTyrian 2000 Engaged for the Sony PS Vita -> vita/build/OpenTyrian2000.vpk
+# Build the Vita VPK at vita/build/OpenTyrian2000.vpk.
 #
 #   bash vita/build.sh          # build
 #   bash vita/build.sh clean    # remove the build dir
 #
-# On this Windows machine the VitaSDK build is driven by a NATIVE Windows cmake + ninja, which
-# must be handed native (D:\...) paths. MSYS bash mangles those paths (and splits the colon in
-# the VITASDK env var), so the real build logic lives in the companion PowerShell script,
-# vita/build.ps1. This wrapper just forwards to it so the familiar `bash vita/build.sh` works
-# too -- matching the Switch build.sh convention. See vita/README.md for details and for the
-# native cmake/ninja requirements.
+# The native Windows toolchain requires Windows paths, so this MSYS wrapper
+# delegates to build.ps1. See vita/README.md for prerequisites.
 set -e
 cd "$(dirname "$0")"
 

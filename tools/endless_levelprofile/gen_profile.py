@@ -10,13 +10,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(HERE, "threat.csv")
 OUT = os.path.normpath(os.path.join(HERE, "..", "..", "src", "endless_levelprofile.h"))
 
-ANCHOR = 1.0     # difficulty01 of an "ordinary" campaign level -> 0 on both scales
+ANCHOR = 1.0     # difficulty01 of an ordinary campaign level maps to zero
 
-# GRADE nudge (coarse): rides the danger-score ladder, bands ~9..59, so a few points is plenty.
+# Coarse adjustment to the danger-score grade.
 G_SCALE, G_LO, G_HI = 4.0, -2, 5
 
-# PAYOUT term (fine): thousandths of the base clear reward. An ordinary level adds nothing; the
-# easiest pays ~0.4x base less, the hardest ~1.5x base more, in ~continuous steps -> real variety.
+# Fine payout adjustment in thousandths of the base clear reward.
 P_SCALE, P_LO, P_HI = 1000.0, -400, 1500
 
 def rnd(x): return int(math.floor(x + 0.5))
@@ -25,7 +24,7 @@ def base_danger(d01):  return clamp(rnd((d01 - ANCHOR) * G_SCALE), G_LO, G_HI)
 def payout_mille(d01): return clamp(rnd((d01 - ANCHOR) * P_SCALE), P_LO, P_HI)
 
 rows = list(csv.DictReader(open(CSV, newline='')))
-levels = {}   # (ep,file) -> dict
+levels = {}   # (episode, file) to profile data
 for r in rows:
     ep, f, d = int(r['episode']), int(r['fileNum']), int(r['difficulty'])
     L = levels.setdefault((ep, f), {
@@ -39,8 +38,7 @@ def q(xs, p):
     xs = sorted(xs); i = (len(xs) - 1) * p; lo = int(i); hi = min(lo + 1, len(xs) - 1)
     return xs[lo] + (xs[hi] - xs[lo]) * (i - lo)
 
-# lengthClass thresholds from measured play-length (ticks at Normal) among naturally-ending levels;
-# a level that never ends on its own (a boss gate that loops) counts as long.
+# Tertiles use Normal-duration ticks from naturally ending levels; looping levels are long.
 ended_ticks = [L['ticks'][2] for L in levels.values() if L['ended'].get(2)]
 t33, t66 = q(ended_ticks, 1/3), q(ended_ticks, 2/3)
 def length_class(L):
@@ -72,7 +70,7 @@ open(OUT, "w", newline='\n').write(text)
 print(f"wrote {OUT}  ({len(levels)} levels)")
 print(f"  grade  clamp[{G_LO},{G_HI}] scale {G_SCALE}")
 print(f"  payout clamp[{P_LO},{P_HI}] scale {P_SCALE} (thousandths of base)")
-# quick spread check at Normal / Impossible
+# Report the payout spread at representative difficulties.
 for d in (2, 4, 10):
     pm = sorted(payout_mille(L['d01'][d]) for L in levels.values())
     print(f"  payoutMille @diff{d:>2}: min={pm[0]} p25={q(pm,.25):.0f} med={q(pm,.5):.0f} p75={q(pm,.75):.0f} max={pm[-1]}  distinct={len(set(pm))}")

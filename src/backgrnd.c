@@ -285,7 +285,7 @@ void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, 
 }
 
 // Supersampled tile row (render-list replay only; see backgrnd.h). One loop serves
-// both the copy and blend ops — the pixel math matches the 1x blitters above.
+// both the copy and blend ops; the pixel math matches the 1x blitters above.
 void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0)
 {
 	assert(surface->format->BitsPerPixel == 8);
@@ -685,8 +685,7 @@ void lava_filter(SDL_Surface *dst, SDL_Surface *src)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 	
-	/* we don't need to check for over-reading the pixel surfaces since we only
-		 * read from the top 185+1 scanlines, and the playfield width is vga_width */
+	/* Reads stay within the top 186 scanlines and the playfield width. */
 	
 	const int dst_pitch = dst->pitch;
 	Uint8 *dst_pixel = (Uint8 *)dst->pixels + (185 * dst_pitch);
@@ -738,8 +737,7 @@ void water_filter(SDL_Surface *dst, SDL_Surface *src)
 	
 	Uint8 hue = smoothie_data[1] << 4;
 	
-	/* we don't need to check for over-reading the pixel surfaces since we only
-		 * read from the top 185+1 scanlines, and the playfield width is vga_width */
+	/* Reads stay within the top 186 scanlines and the playfield width. */
 	
 	const int dst_pitch = dst->pitch;
 	Uint8 *dst_pixel = (Uint8 *)dst->pixels + (185 * dst_pitch);
@@ -836,10 +834,10 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 }
 
 /*
- * Supersampled smoothie filters — same pixel math as the 1x filters on an NxN
+ * Supersampled smoothie filters; same pixel math as the 1x filters on an NxN
  * buffer; see backgrnd.h for the spatial-scale and stability notes. The 1x lava
  * and water filters scan bottom-up, so the "row below" read sees this frame's
- * value while the "row above" read sees the previous frame's — the scaled
+ * value while the "row above" read sees the previous frame's; the scaled
  * versions keep that scan order (and therefore those dynamics) exactly.
  */
 void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
@@ -987,7 +985,7 @@ void blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 }
 
 /* Background Starfield. Each star is an (x column, float y row) point; only y is
- * advanced/interpolated — x stays fixed — so stars can never smear sideways. */
+ * advanced and interpolated. Fixed x coordinates prevent horizontal smearing. */
 typedef struct
 {
 	int x;        // column (constant for a star's lifetime)
@@ -1013,7 +1011,7 @@ typedef struct
 static StarfieldStar starfield_stars[MAX_STARS];
 int starfield_speed;
 // Rotates the above-screen respawn height so consecutive recycles stagger across the
-// spawn band instead of clustering at one height. Deterministic / RNG-free -- the
+// spawn band instead of clustering at one height. Deterministic / RNG-free; the
 // per-tick starfield must never touch mt_rand (that would perturb the gameplay RNG
 // stream the demos depend on).
 static int starfield_spawn_phase;
@@ -1119,7 +1117,7 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 			// row 0, so the star drifts smoothly into view instead of popping in and
 			// holding there for the wrap tick. It stays invisible (y < 0) through the
 			// snap and only crosses the top edge on a normal moving tick, so the
-			// interpolator slides it in mid-motion -- no "frozen at the top" blip.
+			// interpolator slides it in mid-motion; no "frozen at the top" blip.
 			star->y = -(float)(STARFIELD_SPAWN_MIN + (starfield_spawn_phase % STARFIELD_SPAWN_SPREAD));
 			starfield_spawn_phase += 13;  // step coprime with SPREAD -> even coverage of the band
 			rec_dy = 0.0f;                // snap on the wrap; the star is off-screen so nothing streaks
@@ -1132,7 +1130,7 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 	}
 }
 
-/* --- Rollback state registration ---------------------------------------------
+/* Rollback state registration.
  *
  * The in-level starfield statics are sim state (deterministic, RNG-free, but
  * carried across ticks).  The extern-visible scroll state is registered
@@ -1145,7 +1143,7 @@ void backgrnd_register_rollback(void)
 	rollback_register("bg.starfieldStars", starfield_stars, sizeof(starfield_stars));
 	rollback_register("bg.starfieldPhase", &starfield_spawn_phase, sizeof(starfield_spawn_phase));
 	/* Cross-tick scroll-delta trackers: they feed bg_layer_dy and, through the
-	 * draw pass, the per-enemy scroll stamps -- a replayed tick must see them. */
+	 * draw pass, the per-enemy scroll stamps; a replayed tick must see them. */
 	rollback_register("bg.layerOfsPrev",   bg_layer_ofs_prev, sizeof(bg_layer_ofs_prev));
 	rollback_register("bg.prevMapY",       bgPrevMapY, sizeof(bgPrevMapY));
 	rollback_register("bg.prevBackPos",    bgPrevBackPos, sizeof(bgPrevBackPos));

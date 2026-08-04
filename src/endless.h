@@ -320,7 +320,7 @@ bool endlessTryBuyBomb(void);
 long endlessRevivePrice(void);
 bool endlessReviveArmed(void);       // a revive token is currently held
 bool endlessTryBuyRevive(void);
-bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears the bullet field) -- also arms the grace window below
+bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
@@ -328,7 +328,7 @@ bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch
 #define ENDLESS_CLEANSE_MAX_CHARGES 3
 long endlessCleansePrice(void);
 int  endlessCleanseCharges(void);    // sabotage strips queued for the next course select
-bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES -- no further buy will take
+bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES; no further buy will take
 bool endlessTryBuyCleanse(void);
 long endlessGamblePrice(void);
 bool endlessTryGamble(void);
@@ -469,7 +469,7 @@ typedef struct {
 extern EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
 
 const char *endlessScalingOverrideName(int id);   // short row label
-const char *endlessScalingOverrideKey(int id);    // config-file key -- ON DISK, never rename one
+const char *endlessScalingOverrideKey(int id);    // config-file key; ON DISK, never rename one
 int         endlessScalingOverrideStock(int id);  // what the lever would read right now UNoverridden
 int         endlessScalingOverrideMin(int id);    // sane editing bounds for the debug row
 int         endlessScalingOverrideMax(int id);
@@ -492,7 +492,7 @@ int endlessKillBuffTicksLeft(void);    // window ticks remaining (drains ~2s aft
 int endlessKillBuffTicksMax(void);     // full window length, for the timer bar proportion
 int endlessKillBuffComboCount(void);   // combo kill count driving the escalation, shown as "xN"
 int endlessKillBuffColorBank(void);    // themed palette bank (red Turbodrive / yellow Overdrive / blue Overblast)
-int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is granting (1 = none; 2x..10x on the combo ramp -- the same schedule for Turbodrive and Overdrive)
+int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is granting (1 = none; 2x..10x on the combo ramp; the same schedule for Turbodrive and Overdrive)
 int endlessKillBuffDamagePercent(void); // shot-damage bonus % the buff is granting (0 during Turbodrive)
 int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (the combo ramp; Turbodrive and Overdrive alike)
 int  endlessPerkSpecialCooldownDecrements(void); // Rapid Recharge perk: extra cooldown decrements/tick, applied by the caller to the special-weapon gate AND sidekick ammo refill
@@ -512,7 +512,7 @@ int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisT
 int  endlessShipTintFilter(void);       // player-ship blit filter: electric yellow while the TURBODRIVE buff is active (0 = none)
 
 // Combat hooks for modifiers that need engine-owned object pools.
-int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill -- 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
+int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill; 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
 JE_word  endlessMartyrShotSprite(void);           // MARTYRDOM: the burst's own fixed bullet sprite (never the level's fire, so it always looks the same)
 bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
 unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve

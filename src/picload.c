@@ -80,7 +80,7 @@ void JE_loadPic(SDL_Surface *screen, JE_byte PCXnumber, JE_boolean storepal)
 	free(buffer);
 
 	// Pic 1 (the shop/menu backdrop) ships with a lone highlight dot (palette 227) marooned in
-	// the flat bronze wall tone (palette 226) at (30,60) -- isolated in a uniform field it reads
+	// the flat bronze wall tone (palette 226) at (30,60); isolated in a uniform field it reads
 	// like a stuck pixel, so blend it into the wall. Guarded on the value so only that known dot
 	// is touched. (Lands at window x~48 once the 320px menu is pillarboxed: 30 + MENU_X_OFFSET.)
 	if (PCXnumber == 0)

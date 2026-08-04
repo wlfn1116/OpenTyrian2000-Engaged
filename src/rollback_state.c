@@ -57,10 +57,10 @@ static void rb_fixup_player_lives(void)
 
 void rollback_state_register_globals(void)
 {
-	/* --- RNG: the determinism anchor ------------------------------------ */
+	/* RNG determinism anchor. */
 	rollback_register_callback("mtrand", mt_state_size(), mt_state_save, mt_state_restore);
 
-	/* --- Players --------------------------------------------------------- */
+	/* Players. */
 	REG_ARR(player);
 	rollback_register_fixup(rb_fixup_player_lives);
 	REG_ARR(button);
@@ -81,7 +81,7 @@ void rollback_state_register_globals(void)
 	REG(galagaLife);
 	REG(superArcadePowerUp);
 
-	/* --- Player shots ----------------------------------------------------- */
+	/* Player shots. */
 	REG_ARR(playerShotData);
 	REG_ARR(shotAvail);
 	REG_ARR(shotRepeat);
@@ -89,7 +89,7 @@ void rollback_state_register_globals(void)
 	REG(portConfigChange);
 	REG(portConfigDone);
 
-	/* --- Enemies ---------------------------------------------------------- */
+	/* Enemies. */
 	REG_ARR(enemy);
 	REG_ARR(enemyAvail);
 	REG_ARR(enemySpriteSheetIds);
@@ -105,25 +105,24 @@ void rollback_state_register_globals(void)
 	rollback_register("enemyDat[0]", &enemyDat[0], sizeof(enemyDat[0]));
 	/* Secret-orb warp latch (episodes.c).  The pickup is guarded by !bonusLevel;
 	 * left out of the registry, a re-simulated pickup found the flag already set
-	 * from the first pass and silently skipped the nextLevel warp assignment --
-	 * the "orb collected but sent to the normal next level" bug. */
+	 * from the first pass and skipped the nextLevel warp assignment. */
 	REG(bonusLevel);
 
-	/* --- Enemy shots ------------------------------------------------------ */
+	/* Enemy shots. */
 	REG_ARR(enemyShot);
 	REG_ARR(enemyShotAvail);
 
-	/* --- Explosions (visual, but they consume slots deterministically) ---- */
+	/* Explosions consume slots deterministically. */
 	REG_ARR(explosions);
 	REG_ARR(rep_explosions);
 	REG(explosionFollowAmountX);
 	REG(explosionFollowAmountY);
 
-	/* --- Street-Fighter twiddle detector ----------------------------------- */
+	/* Street Fighter twiddle detector. */
 	REG_ARR(SFCurrentCode);
 	REG_ARR(SFExecuted);
 
-	/* --- Specials / charge / sidekicks ------------------------------------ */
+	/* Specials, charge weapons, and sidekicks. */
 	REG(zinglonDuration);
 	REG(zinglonPillarActive);
 	REG(zinglonPillarCX);
@@ -152,7 +151,7 @@ void rollback_state_register_globals(void)
 	REG_ARR(optionAttachmentLinked);
 	REG_ARR(optionAttachmentReturn);
 
-	/* --- Level flow / event system ---------------------------------------- */
+	/* Level flow and events. */
 	REG(curLoc);
 	REG(eventLoc);
 	REG(maxEvent);
@@ -207,7 +206,7 @@ void rollback_state_register_globals(void)
 	REG_ARR(cubeList);
 	REG(timedBattleMode);
 
-	/* --- Filters / draw-order flags set by level events -------------------- */
+	/* Filters and draw-order flags set by level events. */
 	REG(levelFilter);
 	REG(levelFilterNew);
 	REG(levelBrightness);
@@ -223,13 +222,13 @@ void rollback_state_register_globals(void)
 	REG(skyEnemyOverAll);
 	REG(background2notTransparent);
 
-	/* --- HUD-adjacent counters the sim reads back -------------------------- */
+	/* HUD-adjacent counters read by simulation. */
 	REG(power);
 	REG(lastPower);
 	REG(shieldWait);
 	/* shieldGaugeFlash/armorGaugeFlash are deliberately NOT registered: they are presentation
 	 * state (armed on the live pass only, decremented only on presenting ticks), and restoring
-	 * them rewound the damage flash on every shallow rollback -- a visible gauge flicker. */
+	 * them rewound the damage flash on every shallow rollback; a visible gauge flicker. */
 	REG(armorShipDelay);
 	REG(warningSoundDelay);
 	REG(warningCol);
@@ -238,7 +237,7 @@ void rollback_state_register_globals(void)
 	REG(tempVolume);
 	REG(frameCountMax);   /* pentiumMode toggles it 2<->3 inside the tick */
 
-	/* --- Background scroll state ------------------------------------------- */
+	/* Background scroll state. */
 	REG(backPos);   REG(backPos2);   REG(backPos3);
 	REG(backMove);  REG(backMove2);  REG(backMove3);
 	REG(mapX);  REG(mapY);  REG(mapX2);  REG(mapY2);  REG(mapX3);  REG(mapY3);
@@ -258,7 +257,7 @@ void rollback_state_register_globals(void)
 	REG(endlessScrollExtraPx3);
 	/* The smooth-scroll float mirrors are presentation-facing, but their values
 	 * are stamped into enemy[] (mapoffset_frac / scroll_yfrac) during the draw
-	 * pass -- so a replayed tick must start them from the same point or the
+	 * pass. A replayed tick must start them from the same point or the
 	 * stamped bytes differ (the self-test caught exactly this). */
 	REG(mapXOfs_f);  REG(mapX2Ofs_f);  REG(mapX3Ofs_f);
 	REG(oldMapXOfs_f);  REG(oldMapX3Ofs_f);
@@ -274,14 +273,13 @@ void rollback_state_register_globals(void)
 	REG(BKwrap1);  REG(BKwrap2);  REG(BKwrap3);
 	REG(BKwrap1to);  REG(BKwrap2to);  REG(BKwrap3to);
 
-	/* --- Pascal-heritage shared scratch (written before read, but cheap
-	 *     certainty beats an argument about liveness) ----------------------- */
+	/* Shared scratch retained for deterministic snapshots. */
 	REG(temp);  REG(temp2);  REG(temp3);
 	REG(tempW);
 	REG(tempDat);  REG(tempDat2);  REG(tempDat3);
 	REG(x);  REG(y);  REG(b);
 
-	/* --- File-local statics, registered by their owning files -------------- */
+	/* File-local statics registered by their owners. */
 	varz_register_rollback();
 	backgrnd_register_rollback();
 	endless_combat_register_rollback();

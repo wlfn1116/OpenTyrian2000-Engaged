@@ -342,7 +342,7 @@ void crashlog_write_game_state(FILE *f)
 		const int recentN = endlessRecentLevelCount();
 		if (recentN > 0)
 		{
-			fprintf(f, "  Recent zones: ");  // newest first -- the anti-repeat window the next pick avoids
+			fprintf(f, "  Recent zones: ");  // newest first; the anti-repeat window the next pick avoids
 			for (int i = 0; i < recentN; ++i)
 				fprintf(f, "%s%d:%d", i ? ", " : "",
 				        endlessRecentLevelEpisode(i), endlessRecentLevelSection(i));

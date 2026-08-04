@@ -26,13 +26,8 @@
 #define vga_width 356
 #define vga_height 200
 
- /*
-  * Original Tyrian rendered 320x200 with the rightmost columns as HUD.  Widened
-  * to 356x200 -- exactly 16:9 at square pixels -- for true-widescreen gameplay,
-  * HUD width intact and pinned to the right.  356 is the practical ceiling: the
-  * background tile maps are only 14 columns (336px) wide.  LEGACY_WIDTH is the
-  * original 320px the menu/shop/HUD art is still authored against.
-  */
+/* The 356x200 frame is 16:9 at square pixels. Legacy UI remains authored at 320 pixels;
+ * the HUD stays right-aligned, and 14-column background maps limit further widening. */
 #define LEGACY_WIDTH 320
 #define HUD_WIDTH 57
 #define PLAYFIELD_WIDTH (vga_width - HUD_WIDTH)
@@ -53,7 +48,7 @@
 
 // Clamp on the ship's reference position (this_player->x/y or vt_x/vt_y, not the
 // sprite edge): how close it may get to the playfield edges. Enforced by both
-// JE_playerMovement (mainint.c) and the VT ship integrator (tyrian2.c) -- re-tune here.
+// JE_playerMovement (mainint.c) and the VT ship integrator (tyrian2.c); re-tune here.
 // blit_sprite2/2x2 draw ~17-31px past this position without clipping at the surface
 // edge, so the margins can't shrink to 0. Originals: 40/8 (x), 10/160 (y).
 #define SHIP_LEFT_MARGIN   29
