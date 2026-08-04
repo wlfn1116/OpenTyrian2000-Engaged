@@ -88,7 +88,8 @@ whole tree.
 - Do not narrate the next line or restate a clear name.
 - Do not write long comment walls. Keep comments to one to three direct
   sentences. If an explanation needs more space, put it in the relevant section
-  of `notes.md` and leave only a short summary or section pointer beside the code.
+  of `doc/notes.md` and leave only a short summary or section pointer beside the
+  code.
 - Wire layouts, persistent formats, and public API contracts may use longer
   comments when every detail is necessary at the call site.
 - Use sentence case and neutral wording. Avoid bug-story prose, decorative
@@ -125,14 +126,14 @@ whole tree.
 - `README.md` is the concise project overview and build entry point.
 - `GUIDE.md` explains how players use features and covers relevant player-visible
   behavior.
-- `notes.md` records maintainer invariants, compatibility constraints, and
+- `doc/notes.md` records maintainer invariants, compatibility constraints, and
   non-obvious implementation decisions.
 - Platform build and packaging details belong in the corresponding platform
   README.
 - Keep `README.md` and `GUIDE.md` readable for a general audience. Omit private
   function names, internal data flow, bug history, debugging internals, and
   exhaustive edge cases unless a player needs that information to use or
-  troubleshoot the feature. Put necessary maintainer detail in `notes.md`.
+  troubleshoot the feature. Put necessary maintainer detail in `doc/notes.md`.
 - Concision must preserve user-visible limitations, compatibility requirements,
   destructive effects, and instructions required to use a feature correctly.
 - Describe current behavior in present tense. Keep implementation history only

@@ -116,8 +116,9 @@ Controls are rebindable, and controllers are supported.
 ## Building
 
 Code, comment, and documentation conventions are defined in
-[STYLE.md](STYLE.md). Formatting tools apply to changed lines only; vendored code
-keeps its upstream style.
+[doc/STYLE.md](doc/STYLE.md). Formatting tools apply to changed lines only;
+vendored code keeps its upstream style. Maintainer invariants and implementation
+decisions are recorded in [doc/notes.md](doc/notes.md).
 
 The Windows project is in `visualc`. The root script builds and collects the PC,
 Switch, and Vita targets:
