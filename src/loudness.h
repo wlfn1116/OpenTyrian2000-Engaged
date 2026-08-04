@@ -41,6 +41,12 @@ extern char soundfont[4096];  // path to a General-MIDI SoundFont (.sf2), used b
 extern bool midi_soundfont_loaded;
 const char *soundfont_basename(void);  // basename of `soundfont` for display, "" if unset
 
+// True when FLUIDSYNTH has something to load: either the configured `soundfont` is
+// readable, or a .sf/.sf2/.sf3 sits next to the .exe or in the data folder. False
+// grays the option out in the Sound menu (and keeps init_audio() on OPL). The scan
+// result is cached until the next init_audio().
+bool soundfont_available(void);
+
 typedef enum {
 	OPL,          // built-in OPL3 (AdLib) FM emulation -- the classic Tyrian sound
 	FLUIDSYNTH,   // SoundFont MIDI via FluidSynth

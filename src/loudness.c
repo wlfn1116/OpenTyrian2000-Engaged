@@ -254,44 +254,93 @@ static bool is_soundfont_ext(const char *name)
 	    || SDL_strcasecmp(dot, ".sf") == 0;
 }
 
-// If no SoundFont is configured, adopt the newest .sf/.sf2/.sf3 in the data dir
-// so a dropped-in bank just works.
-static void autodetect_soundfont(void)
-{
-	if (soundfont[0] != '\0')
-		return;  // an explicit config/CLI soundfont already chosen -- respect it
 #ifdef _WIN32
+// Directory holding the executable, no trailing slash; "" when it can't be determined.
+// A SoundFont dropped next to the .exe counts even when the data files live elsewhere
+// (an installed data dir, a -t override, a shortcut with a different working dir).
+static const char *exe_dir(void)
+{
+	static char dir[MAX_PATH];
+	static bool resolved = false;
+
+	if (!resolved)
+	{
+		resolved = true;
+		DWORD len = GetModuleFileNameA(NULL, dir, MAX_PATH);
+		char *slash = (len > 0 && len < MAX_PATH) ? strrchr(dir, '\\') : NULL;
+		if (slash != NULL)
+			*slash = '\0';
+		else
+			dir[0] = '\0';
+	}
+	return dir;
+}
+
+// Scan one directory for loadable SoundFonts, keeping the newest seen so far in
+// best/bestTime -- which may already hold a match from an earlier directory, so the
+// newest across every scanned directory wins. best[] is a full path, left untouched
+// when this directory holds nothing newer.
+static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize, FILETIME *bestTime)
+{
+	if (dir == NULL || dir[0] == '\0')
+		return;
+
 	char pattern[4096];
-	snprintf(pattern, sizeof(pattern), "%s/*.sf*", data_dir());
+	snprintf(pattern, sizeof(pattern), "%s/*.sf*", dir);
 
 	WIN32_FIND_DATAA fd;
 	HANDLE h = FindFirstFileA(pattern, &fd);
 	if (h == INVALID_HANDLE_VALUE)
 		return;
 
-	char best[256] = { 0 };
-	FILETIME bestTime = { 0, 0 };
 	do
 	{
 		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 			continue;
 		if (!is_soundfont_ext(fd.cFileName))
 			continue;  // *.sf* also matches .sfz/.sfark etc.
-		if (best[0] == '\0' || CompareFileTime(&fd.ftLastWriteTime, &bestTime) > 0)
+		if (best[0] == '\0' || CompareFileTime(&fd.ftLastWriteTime, bestTime) > 0)
 		{
-			SDL_strlcpy(best, fd.cFileName, sizeof(best));
-			bestTime = fd.ftLastWriteTime;
+			snprintf(best, bestSize, "%s/%s", dir, fd.cFileName);
+			*bestTime = fd.ftLastWriteTime;
 		}
 	} while (FindNextFileA(h, &fd));
 	FindClose(h);
-
-	if (best[0] != '\0')
-		snprintf(soundfont, sizeof(soundfont), "%s/%s", data_dir(), best);
+}
 #endif
+
+// Find the newest loadable SoundFont sitting next to the .exe or in the data folder.
+// Returns false with `out` empty when there is none -- the condition that grays
+// FluidSynth out in the Sound menu (see soundfont_available()).
+static bool find_soundfont(char *out, size_t outSize)
+{
+	out[0] = '\0';
+#ifdef _WIN32
+	FILETIME bestTime = { 0, 0 };
+	scan_dir_for_soundfont(exe_dir(), out, outSize, &bestTime);
+	scan_dir_for_soundfont(data_dir(), out, outSize, &bestTime);
+#else
+	(void)outSize;  // no autodetect off Windows; those ports need an explicit config path
+#endif
+	return out[0] != '\0';
 }
 
-// Re-anchor a stale configured SoundFont path to data_dir() (survives moved installs
-// and CWD changes); clear it if unresolvable so autodetect runs.
+// Cached "is there a SoundFont FluidSynth could load?": -1 unscanned, 0 none, 1 found.
+// The Sound menu asks on every redraw, so the directory scan runs once per audio
+// (re)start -- init_audio() clears it, and any music-device change restarts audio.
+static int soundfont_scan = -1;
+
+// If no SoundFont is configured, adopt the newest one found next to the .exe or in
+// the data dir so a dropped-in bank just works.
+static void autodetect_soundfont(void)
+{
+	if (soundfont[0] != '\0')
+		return;  // an explicit config/CLI soundfont already chosen -- respect it
+	find_soundfont(soundfont, sizeof(soundfont));
+}
+
+// Re-anchor a stale configured SoundFont path (survives moved installs and CWD
+// changes); clear it if unresolvable so autodetect runs.
 static void resolve_soundfont(void)
 {
 	if (soundfont[0] == '\0')
@@ -299,19 +348,45 @@ static void resolve_soundfont(void)
 	if (file_readable(soundfont))
 		return;  // resolves already (absolute path, or relative with a matching CWD)
 
+	// Same filename, re-anchored: the data folder first, then next to the .exe.
+	const char *const dirs[] = {
+		data_dir(),
+#ifdef _WIN32
+		exe_dir(),
+#endif
+	};
 	char candidate[4096];
-	snprintf(candidate, sizeof(candidate), "%s/%s", data_dir(), soundfont_basename());
-	if (file_readable(candidate))
+	for (uint i = 0; i < COUNTOF(dirs); ++i)
 	{
-		fprintf(stderr, "midi: soundfont '%s' re-anchored to '%s'\n", soundfont, candidate);
-		SDL_strlcpy(soundfont, candidate, sizeof(soundfont));
+		if (dirs[i] == NULL || dirs[i][0] == '\0')
+			continue;
+		snprintf(candidate, sizeof(candidate), "%s/%s", dirs[i], soundfont_basename());
+		if (file_readable(candidate))
+		{
+			fprintf(stderr, "midi: soundfont '%s' re-anchored to '%s'\n", soundfont, candidate);
+			SDL_strlcpy(soundfont, candidate, sizeof(soundfont));
+			return;
+		}
 	}
-	else
-	{
-		fprintf(stderr, "midi: configured soundfont '%s' not found; will autodetect\n", soundfont);
-		soundfont[0] = '\0';
-	}
+
+	fprintf(stderr, "midi: configured soundfont '%s' not found; will autodetect\n", soundfont);
+	soundfont[0] = '\0';
 }
+
+bool soundfont_available(void)
+{
+	if (soundfont_scan < 0)
+	{
+		char found[sizeof(soundfont)];
+		soundfont_scan = ((soundfont[0] != '\0' && file_readable(soundfont))
+		                  || find_soundfont(found, sizeof(found))) ? 1 : 0;
+	}
+	return soundfont_scan != 0;
+}
+
+#else  /* !WITH_MIDI -- FluidSynth isn't compiled in, so no SoundFont can be used */
+
+bool soundfont_available(void) { return false; }
 
 #endif /* WITH_MIDI */
 
@@ -320,6 +395,8 @@ bool init_audio(void)
 #ifndef WITH_MIDI
 	music_device = OPL;  // no MIDI support compiled in
 #else
+	soundfont_scan = -1;  // rescan: a .sf2 may have been dropped in since the last start
+
 	#ifdef NO_NATIVE_MIDI
 	if (music_device == NATIVE_MIDI)
 		music_device = FLUIDSYNTH;
@@ -371,9 +448,16 @@ bool init_audio(void)
 #ifdef WITH_MIDI
 	if (music_device == FLUIDSYNTH)
 	{
-		resolve_soundfont();     // re-anchor a configured path to data_dir() (survives moves/CWD)
-		autodetect_soundfont();  // if none is configured, adopt one from data_dir()
-		if (!fm_init(soundfont, audioSampleRate))
+		resolve_soundfont();     // re-anchor a configured path (survives moves/CWD)
+		autodetect_soundfont();  // if none is configured, adopt one from the exe/data dirs
+		if (soundfont[0] == '\0')
+		{
+			// Nothing to load: FluidSynth would render silence. The Sound menu grays the
+			// option out for the same reason, so don't leave it selected either.
+			fprintf(stderr, "error: no SoundFont found for FluidSynth, falling back to OPL...\n");
+			music_device = OPL;
+		}
+		else if (!fm_init(soundfont, audioSampleRate))
 		{
 			fprintf(stderr, "error: failed to initialize FluidSynth, falling back to OPL...\n");
 			music_device = OPL;

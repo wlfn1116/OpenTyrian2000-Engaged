@@ -609,6 +609,10 @@ can still press them by hand. The cheat rows only work in a normal solo game.
 Pick one on **Setup > Sound > Music Synth**. MIDI songs loop at their internal
 loop point.
 
+Drop a SoundFont next to the game executable or in the `data` folder and
+FluidSynth picks up the newest one automatically. Without one, FluidSynth is
+grayed out in the picker and cannot be selected.
+
 ## Console builds
 
 The Switch and Vita builds are unofficial homebrew ports. MIDI is not included.

@@ -459,8 +459,17 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		break;
 	case MENU_ITEM_MUSIC_DEVICE:
 	{
-		int n = (int)getMusicDeviceItemsCount();
-		music_device = (MusicDevice)((music_device + n + dir) % n);
+		const int n = (int)getMusicDeviceItemsCount();
+		// Step past FluidSynth when there is no SoundFont for it to load -- the picker
+		// grays it out for the same reason. At most n steps, so this always lands.
+		int next = music_device;
+		for (int i = 0; i < n; ++i)
+		{
+			next = (next + n + dir) % n;
+			if (next != FLUIDSYNTH || soundfont_available())
+				break;
+		}
+		music_device = (MusicDevice)next;
 		restart_audio();  // apply live (tears down + re-inits the synth; see loudness.c)
 		JE_playSampleNum(S_CURSOR);
 		break;
@@ -1314,13 +1323,19 @@ static bool runOptionsMenu(MenuId startMenu)
 		char musicSynthStatus[128];
 		if (menuItems[*selectedMenuItemIndex].id == MENU_ITEM_MUSIC_DEVICE)
 		{
-			if (music_device == FLUIDSYNTH)
+			const bool noSoundFont = !soundfont_available();
+			if (noSoundFont && (music_device == FLUIDSYNTH || currentPicker == MENU_ITEM_MUSIC_DEVICE))
+			{
+				// Says what would un-gray the FluidSynth entry the picker is showing.
+				statusText = "FluidSynth needs a .sf2 next to the game or in data.";
+			}
+			else if (music_device == FLUIDSYNTH)
 			{
 				if (midi_soundfont_loaded)
 					// %.34s caps a long filename so the one-line status stays on-screen (~54 chars).
 					snprintf(musicSynthStatus, sizeof(musicSynthStatus), "SoundFont loaded: %.34s", soundfont_basename());
 				else
-					snprintf(musicSynthStatus, sizeof(musicSynthStatus), "No SoundFont found -- put a .sf2 in the data folder.");
+					snprintf(musicSynthStatus, sizeof(musicSynthStatus), "SoundFont failed to load -- try a different .sf2.");
 				statusText = musicSynthStatus;
 			}
 			else if (music_device == NATIVE_MIDI)
@@ -1352,9 +1367,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				const bool selected = i == pickerSelectedIndex;
 
 				// Algorithm scalers are unavailable while Sub-pixel is on (the hi
-				// path bypasses them in-game); gray them out.
-				const bool grayed = currentPicker == MENU_ITEM_SCALER
-				                 && render_supersample != 1 && !scaler_is_plain((uint)i);
+				// path bypasses them in-game); gray them out. FluidSynth is likewise
+				// unusable with no SoundFont to load (see loudness.c).
+				const bool grayed = (currentPicker == MENU_ITEM_SCALER
+				                     && render_supersample != 1 && !scaler_is_plain((uint)i))
+				                 || (currentPicker == MENU_ITEM_MUSIC_DEVICE
+				                     && (MusicDevice)i == FLUIDSYNTH && !soundfont_available());
 
 				const char *value = selectedMenuItem->getPickerItem(i, buffer, sizeof buffer);
 
@@ -2366,6 +2384,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				case MENU_ITEM_MUSIC_DEVICE:
 				{
+					// FluidSynth is grayed out with no SoundFont to load; refuse.
+					if ((MusicDevice)pickerSelectedIndex == FLUIDSYNTH && !soundfont_available())
+					{
+						JE_playSampleNum(S_SPRING);
+						break;
+					}
 					music_device = (MusicDevice)pickerSelectedIndex;
 					restart_audio();
 					break;

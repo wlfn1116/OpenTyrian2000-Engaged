@@ -67,7 +67,9 @@ Game Tweaks restores differences between the Episode 1-3 and Episode 4-5 weapon
 data, and wakes content the original left dormant.
 
 OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
-`.sf3`, or `.sf`). The Windows system MIDI synthesizer also works.
+`.sf3`, or `.sf`) next to the executable or in the `data` folder, and is grayed
+out in the menu when there is none. The Windows system MIDI synthesizer also
+works.
 
 ## Online play
 
