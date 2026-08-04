@@ -246,26 +246,9 @@ static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz);
 static bool rb_reloc_walk(Uint8 *buf, bool encode);
 
 /* --- Demo trace: per-item state hashes ----------------------------------------
- *
- * The trace's player/enemy summaries come from the netplay canary, which covers
- * only positions and armor -- a divergence in shots, explosions or the sound
- * queue hides from them for thousands of ticks.  Over this window every registry
- * entry is hashed by name, so two runs' logs diff straight to the entry that
- * moved first.
- *
- * Hashed from a POINTER-RELOCATED snapshot, not from live bytes: every registered
- * pointer holds a different address in each process, so raw hashing reported
- * enemy[], player[], shipGr*ptr, mapY*Pos and BKwrap* as diverging in every pair
- * of runs -- pure ASLR noise that buried the real signal.  The relocation is the
- * one the resync wire format already uses.  (player[] still differs between
- * processes: its interior `lives` pointer is re-derived by a restore fixup rather
- * than encoded, so the relocation cannot reach it.  Expected residue, not a bug.)
- *
- * OFF by default (_TO == 0 is an empty window) -- a full window costs ~260 lines
- * per tick, which is megabytes of SD-card traffic on a console.  Set a window only
- * when a per-tick summary has already narrowed the divergence to a few ticks, and
- * keep it narrow.
- */
+ * Hash relocated snapshots so process-specific pointer addresses do not create false differences.
+ * player[].lives remains process-specific because restore fixups derive it. Disabled by default;
+ * enable only a narrow frame window because each tick emits hundreds of lines. */
 #define RB_TRACE_ITEMS_FROM 1
 #define RB_TRACE_ITEMS_TO   0
 
@@ -294,8 +277,7 @@ static Uint32 rb_item_hash(const RbItem *it)
 }
 
 /* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
- *
- * See rollback.h.  Every registered pointer field and where it can point:
+ * Registered pointer fields and their targets:
  *   enemy[].sprite2s     one of six fixed sprite-sheet globals, or NULL
  *   enemy[].enemydatofs  &enemyDat[i] (tyrian2.c JE_makeEnemy), or NULL
  *   shipGrPtr/shipGr2ptr &spriteSheet9 or &spriteSheetT2000 (varz.c), or NULL
@@ -682,17 +664,11 @@ bool rollback_selftest_active(void)
 	return rollback_selftest && st_level_active && !isNetworkGame && !endlessFxActive();
 }
 
-/* The registry and the snapshot ring are allocated at level start, and only for a
- * self-test that was already on.  Two debug-menu rows can turn one on mid-level --
- * the self-test's own, and the endless effect layer whose presence suppresses it --
- * and without the buffers the driver would verify an EMPTY registry: every tick
- * trivially matches, and the replay pass re-runs it with nothing restored, running
- * the level at double speed.  Allocate on the spot instead. */
+/* Allocate buffers when the self-test becomes active mid-level; an empty registry would replay
+ * without restoring state. */
 static void rb_selftest_arm(void)
 {
-	/* Keyed on the RING, not on rb_registered: the connect handshake registers the
-	 * registry (to fingerprint it) without allocating anything, so "registered" no
-	 * longer implies "has buffers" -- and this used to return early on it. */
+	/* The connect handshake registers metadata without allocating the ring. */
 	if (rb_ring[0] != NULL)
 		return;
 	rollback_register_all();
@@ -739,11 +715,8 @@ void rollback_level_start(void)
 	memset(st_input, 0, sizeof(st_input));
 	st_event_bits = 0;
 
-	/* Registration + the multi-megabyte ring exist only when something will
-	 * actually use them; pure single-player play without the self-test costs
-	 * nothing.  The endless effect layer (zone timers, gravity carries, damage
-	 * over time) sits outside the registry by design, so a replayed tick would
-	 * advance it a second time -- the self-test does not arm there. */
+	/* Allocate the ring only for rollback or the self-test. Endless effects are not registered, so
+	 * the self-test remains disabled there. */
 	const bool selftest_will_arm = rollback_selftest && !isNetworkGame && !endlessFxActive();
 
 	if (selftest_will_arm || (isNetworkGame && nrb_session_mode()))
@@ -783,12 +756,7 @@ bool rollback_selftest_tick(void)
 	{
 		/* Live pass just finished. */
 
-		/* Cross-machine trace.  The self-test proves a machine replays ITSELF; it
-		 * says nothing about two platforms computing the same game.  A demo is the
-		 * one input stream both machines share, so stamp the three summaries the
-		 * netplay canary compares and let two logs diff to the first diverging
-		 * tick.  demo_num rides along: a machine that started on a different demo
-		 * would otherwise diff as a divergence on tick 1. */
+		/* Demo traces compare deterministic state across platforms; demo_num identifies the input stream. */
 		if (play_demo)
 		{
 			Uint32 rand_draws, ph, eh;

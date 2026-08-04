@@ -152,11 +152,7 @@ static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, siz
 
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 70, prompt, normal_font, centered, 15, -3, false, 2);
 
-		// Field: the typed text, centred on its own width only -- appending a
-		// caret CHARACTER changed the width and made the whole line shuffle
-		// left and right as it blinked (and '_' has no glyph in this font
-		// anyway).  The caret is a drawn bar just past the text instead, so
-		// the text never moves and the caret is actually visible.
+		// Draw the caret separately so centred text does not shift as it blinks.
 		{
 			const int w = JE_textWidth(buf, normal_font);
 			const int x = LOBBY_XCENTER - w / 2;

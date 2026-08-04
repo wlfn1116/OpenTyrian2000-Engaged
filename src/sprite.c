@@ -24,11 +24,7 @@
 #include "rollback.h"
 #include "video.h"
 
-/* Silent rollback re-simulation passes exist only to advance simulation state;
- * their pixels are never presented.  Skipping the blit work at the primitive
- * level cuts a re-simulated tick to a fraction of a drawn one, which is what
- * keeps a rollback-heavy stretch (fused Dragonwing under acceleration) from
- * spiraling below real-time. */
+// Silent rollback passes advance simulation without drawing.
 #define SKIP_IF_SILENT_RESIM()  do { if (rollback_resim_silent) return; } while (0)
 
 #include <assert.h>

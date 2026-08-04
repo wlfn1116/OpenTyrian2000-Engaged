@@ -141,8 +141,7 @@ extern int endlessRunDepth;
 extern int endlessRunKills;
 extern int endlessRunBossKills;
 
-// Where a run's cash came from. Append new sources at the TAIL: the save block carries spare slots
-// (ENDLESS_SAVE_CASH_SOURCES), so growing this list needs no save-version bump.
+// Run income sources. Append only; the save block reserves ENDLESS_SAVE_CASH_SOURCES slots.
 typedef enum {
 	ENDLESS_CASH_KILL = 0,   // enemy value, paid the instant a ship is destroyed
 	ENDLESS_CASH_PICKUP,     // cash and gems collected off the playfield
@@ -157,8 +156,7 @@ typedef enum {
 	ENDLESS_CASH_SOURCES
 } EndlessCashSource;
 
-// Where a run's cash went. Same append-only rule as the sources: the save block carries spare
-// slots (ENDLESS_SAVE_CASH_SINKS), so growing this list needs no save-version bump.
+// Run spending sinks. Append only; the save block reserves ENDLESS_SAVE_CASH_SINKS slots.
 typedef enum {
 	ENDLESS_SINK_GEAR = 0,   // upgrade-shop trades: guns, power steps, shields, generators, sidekicks
 	ENDLESS_SINK_SUPPLIES,   // E-Shop kit: specials, superbombs, sabotage charges
@@ -171,21 +169,14 @@ typedef enum {
 	ENDLESS_CASH_SINKS
 } EndlessCashSink;
 
-// THE endless economy interface: every wallet movement in a run goes through one of these, so the
-// run-over tally is exact by construction, with no reconciliation in the normal path.
-//   Credit pays income in. Safe with endless off (campaign mods award bounties too) -- it credits
-//   and skips the tally. Debit takes a purchase or penalty out, clamped to the wallet.
-//   The upgrade shop's full-refund trades are bracketed instead: Begin snapshots the real wallet
-//   before the sub-menu fakes it, Commit books the committed delta -- a fall as ENDLESS_SINK_GEAR
-//   spending, a rise cancelling booked gear spending first (churn moves neither total) with only
-//   the excess (selling GRANTED gear, e.g. the starting gun) credited as ENDLESS_CASH_TRADEIN.
+// Route every Endless wallet change through this interface. Credit and Debit book ordinary
+// movement; Begin/Commit brackets the upgrade menu's temporary balance and full-refund trades.
 void endlessCashCredit(long amount, EndlessCashSource src);
 void endlessCashDebit(Sint64 amount, EndlessCashSink sink);
 void endlessShopTradeBegin(void);
 void endlessShopTradeCommit(void);
 
-// Run totals for the run-over tally. Earned is the sum of endlessCashBySource, spent of
-// endlessCashBySink plus anything the audit had to book. All saturating, so no run can wrap them.
+// Saturating run totals and their source/sink breakdowns.
 extern Uint64 endlessRunCashEarned;
 extern Uint64 endlessRunCashSpent;
 extern Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES];
@@ -193,9 +184,7 @@ extern Uint64 endlessCashBySink[ENDLESS_CASH_SINKS];
 const char *endlessCashSourceName(EndlessCashSource src);
 const char *endlessCashSinkName(EndlessCashSink sink);
 
-// The old reconciler, demoted to a debugging assertion: if the wallet drifted from the ledger's
-// mark, some path bypassed the interface above -- it warns on stderr and books the drift (a rise
-// as "untagged", a fall as plain spending) so the totals stay wallet-true. Expected to no-op.
+// Report and book wallet drift caused by bypassing the economy interface. Expected to no-op.
 void endlessCashAudit(void);
 void endlessCashResync(void);          // re-anchor without booking either way (run start, load, sortie revert)
 void endlessCashDebugOverwrite(void);  // the debug screen overwrote the wallet: book the delta, no warning
@@ -398,8 +387,7 @@ void endlessHoistStartWeapon(void);
 // A destroyed ship gets the death menu instead of GAME OVER and the run summary.
 bool endlessDeathMenuDue(void);
 
-// True once the ship is dead in a mode that does not hand out retries: the pause menu is closed off
-// from that moment, so its Quit Level row cannot become one.
+// True after a fatal Standard or Hardcore death; closes the Quit Level escape.
 bool endlessDeathLocksMenu(void);
 
 void endlessOnRunEnd(void);

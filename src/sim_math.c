@@ -1,13 +1,8 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Deterministic trigonometry for simulation code.  See sim_math.h for why.
- *
- * Cody-Waite reduction to [-pi/4, pi/4] against a two-part pi/2, then the classic fdlibm
- * kernel polynomials, all in double.  Double is not a portability risk here: its basic
- * operations are IEEE-exact too, and it buys ~29 bits over float, so the final cast lands
- * on the correctly-rounded float result.  No libm call is made -- not even floor, whose
- * job the long long cast does within the range any game value can reach.
+ * Deterministic trigonometry for simulation code. Cody-Waite reduction and fdlibm kernels use
+ * only IEEE 754 operations; see sim_math.h.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,10 +20,7 @@
  */
 #include "sim_math.h"
 
-/* pi/2 split so that n * PIO2_HI is exact for every n the reduction can produce, leaving
- * the correction in PIO2_LO.  Subtracting a single rounded pi/2 instead would lose most of
- * the answer's low bits once the argument grows -- and one of the callers, the sidekick
- * satellite angle, grows without bound at 0.2 rad per tick. */
+/* Split pi/2 to preserve low bits for unbounded sidekick angles. */
 #define PIO2_HI  1.57079632673412561417e+00
 #define PIO2_LO  6.07710050650619224932e-11
 #define TWO_OVER_PI 6.36619772367581382433e-01

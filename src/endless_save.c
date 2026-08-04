@@ -464,13 +464,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			r->runMode = ENDLESS_RUNMODE_RELAXED;
 	}
 
-	// Cash ledger. Pre-v16 records lack it entirely -- the memset above left every field 0, so such a
-	// run resumes counting only what it takes in and spends from here on.
-	//
-	// v16 stored cashEarned ALONE; v17 added cashSpent and the per-source breakdown. The two layouts
-	// have to stay distinguishable: reading a v16 file with the v17 layout short-reads, and a short
-	// read aborts the whole sidecar -- which would silently discard every slot's run, not just this
-	// field. Hence the separate version rather than a wider v16.
+	// v16 stores total earnings. v17 adds spending and per-source totals.
 	if (version >= 16)
 	{
 		if (!endlessGetU64(f, &r->cashEarned))
@@ -849,25 +843,17 @@ void endlessRestoreSortie(void)
 
 	if (endlessHardcore())
 	{
-		// Hardcore: the reopened outpost is LOCKED to the launch-time choices. The relaunch re-arms
-		// the committed level directly (endlessArmLockedRelaunch), so the post-pick snapshot's zeroed
-		// one-shots are correct -- leave them as endlessApplyCurrent restored them (no double-spend).
+		// Hardcore reuses the committed course and its post-pick one-shot state.
 		endlessLockedSortie = true;
 	}
 	else
 	{
-		// Relaxed / Standard: the outpost reopens UNLOCKED and the player re-picks a course through
-		// endlessSelectCourse, which re-consumes these one-shots. Restore their PRE-pick values so a
-		// bought buff / queued sabotage / Long Con carry to the next course instead of being lost.
+		// Relaxed and Standard reopen before course selection, so restore pre-pick one-shots.
 		endlessLockedSortie       = false;
 		endlessPurchasedMods      = preBuff;
 		endlessCleanseChargeCount = preCleanse;
 		endlessLongCon            = preLongCon;
-		// ...and put the OUTPOST's own mutators back, undoing the committed-level set applied above.
-		// That set is a promise about the sector AHEAD, so letting it stand would apply the abandoned
-		// level's shop-facing effects (Merchant's Favor's discount, Cursed Bounty's barren reroll) to
-		// the shop the player is bailing back into -- a discount farmable by launching and quitting.
-		// The relaunch doesn't need it: the re-pick sets the mods for whatever course is chosen next.
+		// Restore the outpost's modifiers; the next course selection replaces them.
 		endlessActiveMods         = endlessSortieOutpostMods;
 	}
 
@@ -1019,11 +1005,7 @@ void endlessDebugConfigLoad(const ConfigSection *section)
 	}
 }
 
-// The all-time records live in opentyrian.cfg so Hardcore runs can update theirs. One key per run
-// mode. "best_zone" is the original single-record key and stays the Relaxed slot, so an existing
-// record carries over -- and lands in the mode that claims the least, since the build that wrote it
-// had no Standard and never saved a Hardcore run's progress anywhere else either. Standard likewise
-// keeps its original "best_zone_normal" key from before the mode was renamed, so its record survives.
+// Preserve the original Relaxed and pre-rename Standard config keys.
 static const char *const endlessBestZoneKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone", "best_zone_normal", "best_zone_hardcore",
 };

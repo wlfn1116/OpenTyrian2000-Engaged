@@ -681,11 +681,7 @@ bool difficultySelect(void)
 	}
 }
 
-// Host-side, after the peers connect: New Game runs the classic episode/difficulty flow,
-// Load Game opens the load menu pinned to the 2-player page (online sessions share it -- a
-// couch save resumes online and vice versa).  Returns the loaded slot (1-based; the save is
-// already applied by the load menu), 0 for a new game, or -1 if the host backed out of
-// hosting entirely.
+// Host start choice. Returns a loaded slot (1-based), 0 for new game, or -1 to cancel.
 int networkHostStartSelect(void)
 {
 	static const char *const menu_item[] = { "New Game", "Load Game" };

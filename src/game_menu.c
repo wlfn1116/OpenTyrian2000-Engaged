@@ -71,18 +71,12 @@ enum
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
-	// 15 is a RETIRED slot: the old two-column "debug play level" grid, replaced by the standalone
-	// JE_debugLevelSelect browser and removed in full (2026-07-26). The number is left as a hole
-	// rather than reused -- MENU_MAX, menuEsc[], menuChoicesDefault[] and the menuInt label file
-	// are all indexed by menu id, so renumbering 16/17 would silently shift every one of them.
+	// Retired debug-level grid. Keep the hole because menu tables are indexed by these IDs.
 	MENU_ESHOP = 16,  // endless "E-Shop": reroll / reinforce / buy buff / buy special
 	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3 (1-of-4 bought, 1-of-5 after a milestone) + decline, gating the buy/sell front menu
 };
 
-// Horizontal centre of the monitor window's readout slot (the panel under the map, y173). Both the
-// shop cash total and the endless course RANK are centred on this x (value 77). The slot is
-// asymmetric -- the corner bulb eats its right end -- so this is the window centre, not the slot
-// midpoint. See JE_drawEndlessCourseMods and ENDLESS_RANK_CX.
+// Center of the asymmetric monitor readout used by shop cash and Endless rank.
 #define MENU_MONITOR_CENTER_X 77
 
 /*** Structs ***/
@@ -296,12 +290,8 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 	return n;
 }
 
-// Look up the authored name of the level at (episode, section, fileNum) -- the same 9-char name
-// (offset 13, space-padded) JE_getLevelSections reads for its blocklist -- without loading the
-// level. fileNum 0 matches the section's first ']L'; a non-zero fileNum picks a specific cut
-// (Episode 1 section 3's two TYRIAN files). `out` is set to "" if no matching entry is found.
-// Used by the endless Radar perk to name each charted course's base level. (Distinct from
-// mainint.c's static JE_getLevelName, which resolves routing sections in the current episode.)
+// Read a section's nine-character authored level name without loading it. fileNum 0 selects the
+// first ]L entry; no match returns an empty string.
 void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char *out, size_t outSize)
 {
 	if (out == NULL || outSize == 0)
@@ -645,10 +635,7 @@ static void configure_endless_shop_menu(void)
 	}
 }
 
-/* Populate the endless perk-pick menu (MENU_PERKS) from the offers rolled this visit
- * (endlessGeneratePerkChoices). Rows: title, the offered perk names (3; 4 bought, 5 at a milestone),
- * then "Take the Cash" -- driven by the offer count, so a wider pick needs no layout work.
- * The exact perk effect + owned count shows in the help line; the decline cash is there too. */
+/* Populate MENU_PERKS from the current offers, followed by Take the Cash. */
 static void configure_endless_perk_menu(void)
 {
 	char (*p)[24] = menuInt[MENU_PERKS + 1];
@@ -844,12 +831,8 @@ static void configure_custom_weapon_menu(void)
 	}
 }
 
-/* Insert the ship-sensitivity row (touch on the consoles, mouse on desktop) into the shop
- * Options / Limited Options submenus after Sound Volume (item 6 in both) -- labelled "Sens"
- * here, the full "Sensitivity" is too wide beside the value bar. Labels come from data
- * (menuInt), so shift them down once (captured on first call) and re-apply the bumped
- * menuChoices on every entry (they reset from menuChoicesDefault at the top of JE_itemScreen).
- * Value bar, input handling and help text key off item 6 elsewhere. */
+/* Insert Sensitivity after Sound Volume in both options menus. Shift labels once; menuChoices
+ * resets on each JE_itemScreen entry. */
 static void configure_options_sens_menu(void)
 {
 	const size_t entrySize = sizeof(menuInt[0][0]);
@@ -936,11 +919,7 @@ static void sort_shop_inventory(void)
 }
 
 /* ---- Two-player shop readout ----------------------------------------------------------
- * The left panel lists both players' scores and the gear each one flies. Bounds are the
- * backdrop's inner viewport (logical x 21..134, y 18..145): item names run up to 133px in
- * TINY_FONT, wider than that panel, so a value that does not fit wraps onto an indented
- * continuation row instead of running under the menu column at x=166.
- */
+ * Wrap long item names within the left panel instead of under the menu column. */
 #define SHOP_2P_TOP     26   // first row
 #define SHOP_2P_X       25   // player rows
 #define SHOP_2P_SUB_X   31   // indented detail rows
@@ -3385,11 +3364,7 @@ static void JE_drawEndlessCourseMods(void)
 	if (course < 0 || course >= endlessCourseCount())
 		return;
 
-	// The course's danger grade, centred in the slot under the map: "RANK " in the help-line beige,
-	// then the letter tinted by danger (green F -> red S+++, endlessRankHue). Both go through
-	// endlessModText so they share a uniform black outline, keeping the red end from blending
-	// into the red slot, and the shadow stays a single colour across the whole line. Shown for every
-	// valid course, including Calm ones that have no mod rows below.
+	// Center the outlined rank under the map, tinting only the grade by danger.
 	const char *rank  = endlessCourseRank(course);
 	const int   level = endlessCourseRankLevel(course);
 	char full[16];
@@ -3898,17 +3873,7 @@ static void draw_help_bar_right(const char *text, const char *right, unsigned in
 	JE_textShade(VGAScreen, help_bar_right_x(text, right), 187, right, bank, brightness, DARKEN);
 }
 
-/* Online play: the peer's round trip, flush right on the help bar opposite the description.
- *
- * The bar is composed once per pass of the shop's outer loop -- that is, only when the player
- * moves the cursor -- so the figure needs its own per-frame repaint or it would sit frozen at
- * whatever it read when the selection last changed. The pixels underneath are kept from the
- * moment the bar is composed, because DARKEN's drop shadow is not idempotent and redrawing over
- * the previous frame would blacken it a step at a time.
- *
- * The saved band is sized for the widest figure rather than the current one, so a number that
- * shrinks ("Ping: 120 ms" -> "Ping: 98 ms") leaves no tail behind.
- */
+/* Repaint ping every frame from a saved maximum-width help-bar band. DARKEN is not idempotent. */
 #define PING_BAND_Y      186
 #define PING_BAND_H       12
 #define PING_BAND_RIGHT  (ENDLESS_COURSE_PAYOUT_RIGHT + 2)  // DARKEN's shadow sits a pixel right
@@ -4239,11 +4204,7 @@ void JE_drawMainMenuHelpText(void)
 	}
 	
 	JE_textShade(VGAScreen, 10, 187, tempStr, 14, 1, DARKEN);
-	// Endless: money goes flush right in a highlight colour so it stands out -- Chart a Course runs
-	// under a different palette (see the defines above), so its payout gets a palette-safe pair
-	// instead of the E-Shop's. An offered perk's stack count is not money and keeps the description's
-	// own colour. An `else if`, because the two never coexist: only the perk pick sets ownedStr, and
-	// only on the rows where the decline's buyout doesn't apply.
+	// Right-align prices and payouts with palette-specific highlighting; perk stack counts stay neutral.
 	if (costStr[0] != '\0')
 	{
 		const bool course = (curMenu == MENU_PLAY_NEXT_LEVEL);
@@ -4641,11 +4602,7 @@ bool debugLevelJumpTake(void)
 }
 
 /* ---- Debug level browser: the network hand-off ------------------------------------------
- * The browser is a local screen, but the level it picks is simulation state: both machines
- * have to load the same map or nothing after that agrees. This staging area carries the pick
- * from the browser to the shop's start-of-level rendezvous, which puts it on the wire; the
- * player who did not pick adopts it there and enters the same level.
- * Cleared whenever the shop opens, so a pick can only ever apply to the launch it was made for. */
+ * Stage a local level pick for the next network launch, then clear it when the shop reopens. */
 static struct
 {
 	bool    armed;

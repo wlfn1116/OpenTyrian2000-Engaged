@@ -20,24 +20,15 @@
 // entry. Call once, as early as possible in main() (before any file access).
 void vita_platform_init(void);
 
-// Show the on-screen keyboard (there is no physical keyboard). Writes the entered text
-// into out (NUL-terminated). `initial` pre-fills it, `guide` becomes the dialog title,
-// and `numeric` asks for the system number pad. `max_len` caps the entry length
-// (0 = out_size-1). Returns true if the user confirmed, false if they cancelled (out is
-// then left at `initial`). Blocks (modal) while up. Drives sceImeDialog natively -- see
-// vita_swkbd for why SDL_StartTextInput must never be used for this.
+// Show the modal system keyboard. On cancel, out retains initial.
+// max_len == 0 permits out_size - 1 bytes.
 bool vita_swkbd(char *out, size_t out_size, size_t max_len,
                 const char *initial, const char *guide, bool numeric);
 
-// This console's own IPv4 address, in network byte order (the layout SDL_net's IPaddress.host
-// uses). SceNet exposes no interface enumeration, so the netplay lobby has no other way to
-// show a host their address. Returns false if the network is down or the address is unknown.
-// vita_net.c must have brought the net stack up first (SDLNet_Init).
+// Return the console's IPv4 address in network byte order after SDLNet_Init.
 bool vita_get_local_ip(uint32_t *out);
 
-// Native output resolution of the Vita LCD: a fixed 960x544. Either pointer may be NULL.
-// (Mirrors switch_get_output_size, which varies with the dock state; the Vita panel is
-// a single fixed size, so this is constant.)
+// Return the fixed 960x544 output size. Either pointer may be NULL.
 void vita_get_output_size(int *w, int *h);
 
 #endif // __vita__

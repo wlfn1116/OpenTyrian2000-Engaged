@@ -1,11 +1,7 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Rollback netcode implementation.  See net_rollback.h for the model.
- *
- * Frame numbering: sim frames are 1-based within a level; frame 0 means
- * "before the first tick".  All ring indexing is frame % NRB_HIST with a tag
- * word, so stale slots can never masquerade as current ones.
+ * Rollback netcode implementation. Frames are 1-based; tagged ring slots reject stale entries.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -227,23 +223,16 @@ static Uint32 last_resend_tick;
 static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 
 /* --- Desync recovery ------------------------------------------------------------
- *
- * On a canary mismatch the HOST streams its whole registered sim state over the
- * acknowledged channel (PACKET_RESYNC) and the joiner adopts it; both then reset
- * the frame machinery exactly as at level start (new input epoch, frame 1), so
- * every in-flight datagram of the abandoned timeline is refused by the guards
- * that already police level boundaries.
+ * The host streams registered state over PACKET_RESYNC. After adoption both peers begin a new
+ * input epoch, so existing level-boundary guards reject packets from the old timeline.
  *
  * Chunk layout after the 4-byte reliable header:
  *   [4]  Uint16 gen          attempt id within the level; NAK carries the gen refused
  *   [6]  Uint16 chunk index  0xFFFF = NAK (joiner could not assemble/adopt)
  *   [8]  Uint16 chunk count
  *   [10] Uint16 payload bytes
- * Chunk 0's payload begins with a 12-byte preamble: registry size (layout
- * guard -- same-build peers only), compressed total, FNV-1a of the compressed
- * stream.  Payload is a zero-run RLE of the wire-safe snapshot: the dead pool
- * slots are canonicalized to zero first, so the dominant arrays compress to
- * nearly nothing.
+ * Chunk 0 starts with registry size, compressed size, and FNV-1a checksum. Payload uses zero-run
+ * RLE after dead pool slots are canonicalized.
  */
 #define NRB_RS_HDR       12
 #define NRB_RS_PRE       12
@@ -255,10 +244,7 @@ static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 #define NRB_RS_ABS_TIME_OUT      60000    /* ms for the whole attempt             */
 #define NRB_RS_ADOPT_TIME_OUT    6000     /* ms to answer a fully delivered stream */
 
-/* Why the joiner refused, in the NAK's spare word.  Without it the host cannot tell
- * "try again" from "no stream will ever pass", and a permanent refusal burned the
- * whole budget re-sending identical bytes at a peer that had already stopped
- * listening -- see nrb_resync_recv's layout branch. */
+/* NAK reason: retry transient failures, but stop after a permanent layout mismatch. */
 #define NRB_NAK_RETRY    0u               /* transient: stall, checksum, short assembly */
 #define NRB_NAK_FATAL    1u               /* permanent: layout/build mismatch           */
 
@@ -839,20 +825,12 @@ static void nrb_check_canary(const NrbCanary *const peer)
 	{
 		++canary_mismatches;
 
-		/* ONE full report per level: a desync repeats every frame afterwards,
-		 * and each report is a multi-KB crashlog entry -- writing one per tick
-		 * once ballooned the log to 12 MB and dragged the game down with disk
-		 * I/O.  Later mismatches only bump the counter. */
+		/* Write one detailed report per level; later mismatches only increment the counter. */
 		if (!canary_reported)
 		{
 			canary_reported = true;
 
-			/* The most diagnostic single fact: does the peer's state for frame N
-			 * equal OUR state for N-1 or N+1?  That distinguishes "the sims
-			 * diverged" from "the frame counters slipped by one" -- completely
-			 * different bugs that look identical in a plain hash mismatch. */
-			/* Frame 1 has no N-1 to compare against, and an empty canary slot reads
-			 * as tag 0 -- which would match and report a skew that never happened. */
+			/* Compare adjacent frames to distinguish state divergence from frame-counter skew. */
 			const NrbCanary *m1 = &canary[(peer->tag - 1) % NRB_HIST];
 			const NrbCanary *p1 = &canary[(peer->tag + 1) % NRB_HIST];
 			const char *skew = "";
@@ -897,10 +875,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 			         (unsigned long)stat_rollbacks, (unsigned long)stat_deepest,
 			         (unsigned long)stat_resim_frames, skew);
 
-			/* Every field the mismatching hashes cover, as this machine computed
-			 * them for the disputed frame.  The peer's log carries the same block
-			 * for its own detection frame; diffing the two names the culprit slot
-			 * and field directly. */
+			/* Log the raw fields behind each disputed hash for comparison with the peer. */
 			{
 				const NetSimDetail *d = &canary_detail[peer->tag % NRB_HIST];
 
@@ -912,12 +887,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 					              "  P%d: x=%ld y=%ld armor=%ld shield=%ld alive=%ld cash=%ld\n",
 					              i + 1, (long)d->p[i].x, (long)d->p[i].y, (long)d->p[i].armor,
 					              (long)d->p[i].shield, (long)d->p[i].alive, (long)d->p[i].cash);
-				/* Which pool moved.  The wire carries only the combined hash, so
-				 * these five lines are what turns "pools DIFFER" into a subsystem.
-				 * Printed BEFORE the enemy table: this block and the shot rows are
-				 * bounded and are what a pool divergence needs, while the enemy
-				 * table can run to 100 rows and is the right thing to lose if the
-				 * entry runs out of room. */
+				/* Print bounded pool detail before the potentially long enemy table. */
 				const NetSimPools *x = &canary_pools[peer->tag % NRB_HIST];
 				off = nrb_apf(detail, sizeof(detail), off,
 				              "  pools: explosions %08x (%u live)  repeating %08x (%u)\n"
@@ -928,10 +898,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 				              (unsigned)x->player_shots, (unsigned)x->n_pshot,
 				              (unsigned)x->sound);
 
-				/* The player-shot pool is the only hashed pool whose rows a
-				 * position/armor dump cannot reconstruct, and a desync that moves
-				 * only this hash is otherwise a dead end.  Capped, so say so when
-				 * the cap bites rather than letting the list read as complete. */
+				/* Include a bounded player-shot sample; other pool state is covered elsewhere. */
 				if (x->n_pshot > 0)
 				{
 					const Uint16 shown = x->n_pshot < NET_SIM_DETAIL_SHOTS
@@ -1046,27 +1013,9 @@ static void nrb_compare_canary(void)
 }
 
 /* --- Confirmed-frame request processing (pause / in-game menu) -----------------
- *
- * The in-game menu writes SIMULATION state from outside the tuple stream (a debug
- * loadout edit, a difficulty change), so the two machines have to run it having
- * simulated the same frames.  Opening it the moment its frame is confirmed does
- * not achieve that: each machine is then at its own prediction depth past that
- * frame, so the frames in between get the change on one machine and not the
- * other -- and with the inputs still matching, no rollback ever corrects it.
- *
- * A request seen on frame f therefore SCHEDULES the menu for f + NRB_REQ_LEAD,
- * and both machines stall on that frame until it is final.  The lead has to
- * exceed the deepest a machine can be past f when it first notices the request.
- * remote_contig sits below f until f's truth lands, and the prediction gate holds
- * nrb_cur to remote_contig + ROLLBACK_MAX_PREDICT, so nrb_cur <= f - 1 + PREDICT
- * at that point; the notice can slip by one further frame when verified_upto
- * advances inside a stall AFTER this ran, which puts the worst case at
- * f + ROLLBACK_MAX_PREDICT.  A frame of slack on top keeps it off the boundary.
- *
- * Pause is deliberately NOT scheduled: JE_pauseGame is presentation and a network
- * rendezvous only, it writes nothing the sim reads, and scheduling it would put a
- * third of a second between the keypress and the game stopping.
- */
+ * The in-game menu changes state outside the input tuples. Schedule it beyond the maximum prediction
+ * lead, then stall until both peers confirm that frame. Pause is only a presentation rendezvous and
+ * remains immediate. */
 #define NRB_REQ_LEAD (ROLLBACK_MAX_PREDICT + 2)
 
 static void nrb_process_requests(void)
@@ -1083,9 +1032,7 @@ static void nrb_process_requests(void)
 
 		if (bits & RB_REQ_MENU)
 		{
-			/* Two presses a few frames apart fold into one opening: the earlier
-			 * schedule stands, and a later one joins it rather than queueing a
-			 * second menu behind the first. */
+			/* Coalesce nearby requests into the earliest scheduled opening. */
 			const Uint32 at = f + NRB_REQ_LEAD;
 			if (req_at == 0 || at < req_at)
 				req_at = at;
@@ -1102,16 +1049,8 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	/* Highest frame the timeline we are about to discard ever simulated. */
 	const Uint32 high = (resim_active && resim_target > nrb_cur) ? resim_target : nrb_cur;
 
-	/* Forget what that timeline CONSUMED for K..high -- it consumed nothing yet.
-	 *
-	 * This matters for frames the re-simulation takes no input from at all: a
-	 * dead ship and the level-end fade both return out of JE_playerMovement
-	 * before nrb_get_remote(), so the re-simulated frame never re-stamps its
-	 * slot.  The stale entry then mismatched the same arrived truth again, and
-	 * the driver rolled back to the same frame forever -- a silent infinite
-	 * loop (no frame ever completed, so nothing beat the hang watchdog and the
-	 * peer stalled out on "peer too far behind").  Both players dying within a
-	 * few frames of each other was the reliable way to reach it. */
+	/* Clear consumed-input records for the discarded timeline. Early-return frames may not stamp
+	 * them again; retaining stale records can trigger an endless rollback to K. */
 	for (Uint32 f = K; f <= high; ++f)
 		if (remote_used[f % NRB_HIST].tag == f)
 			memset(&remote_used[f % NRB_HIST], 0, sizeof(remote_used[0]));
@@ -1561,32 +1500,21 @@ static int nrb_resync_send_once(void)
 			continue;
 		}
 
-		/* Keep at most half the reliable queue in flight: the peer acknowledges
-		 * on RECEIPT, before consumption, so a full window could overflow its
-		 * inbound queue -- and acknowledged-but-dropped is the one loss this
-		 * channel cannot see.  The joiner's index check catches it anyway; the
-		 * half window keeps it from happening. */
+		/* Keep half the reliable queue free because receipt ACKs precede consumption. */
 		while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
 		{
 			nrb_resync_send_chunk(stream, total, chunks, sent);
 			++sent;
 		}
 
-		/* Delivered is not adopted.  This used to be the success test outright, and
-		 * the comment above already says why it cannot be: the joiner acknowledges on
-		 * receipt.  A joiner that refused the stream and stopped listening still acked
-		 * every chunk of it, so the host declared victory, advanced the epoch, and left
-		 * the two machines on timelines neither could reach -- both then sat in the
-		 * peer-too-far-behind stall until the session died.  Wait for the joiner to say
-		 * it adopted; the loop above turns that ACK into outcome 1. */
+		/* Transport delivery is not adoption; wait for the joiner's explicit resync ACK. */
 		if (sent == chunks && network_ack_backlog() == 0)
 		{
 			if (delivered_at == 0)
 				delivered_at = SDL_GetTicks();
 			else if (SDL_GetTicks() - delivered_at > NRB_RS_ADOPT_TIME_OUT)
 			{
-				/* Every byte landed and the joiner said nothing either way.  Worth one
-				 * more attempt, but never worth resetting our own timeline over. */
+				/* Retry an unanswered delivery without resetting the host timeline. */
 				snprintf(fail_ctx, sizeof(fail_ctx),
 				         "the joiner took the whole stream (%lu chunks) but never answered "
 				         "within %d ms -- not adopted, so our timeline stands",
@@ -1903,20 +1831,14 @@ static bool nrb_resync_receive(void)
 		if (resync_used >= NRB_RS_MAX || resync_layout_bad)
 			resync_notice = false;
 
-		/* The host no longer resets its timeline on delivery alone, so a refused
-		 * stream leaves both machines where they were -- desynced, but on the same
-		 * timeline and still playable.  Only a peer that has genuinely run out of
-		 * ways to agree is worth halting for. */
+		/* A refused stream leaves both peers on the old timeline; halt only after exhausting retries. */
 		if (assembled && resync_used >= NRB_RS_MAX)
 			network_tyrian_halt(7, false);
 	}
 	return false;
 }
 
-/* An inbound PACKET_RESYNC sits at the head of the reliable queue.  Host: only
- * a NAK matters (the joiner failed after our acks came home) -- answer it with
- * a fresh stream.  Joiner: assemble and adopt.  True = the timeline was reset;
- * the caller abandons whatever it was doing and presents. */
+/* Dispatch the queued resync packet. True means adoption reset the timeline. */
 static bool nrb_resync_dispatch(void)
 {
 	if (packet_in[0] == NULL || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_RESYNC)
@@ -1928,18 +1850,10 @@ static bool nrb_resync_dispatch(void)
 		return false;
 	}
 
-	/* A finished attempt leaves the rest of its stream in flight, and the joiner
-	 * had no budget test of its own -- so the first leftover chunk opened attempt
-	 * 4 of 3, which then blocked the whole game for the 8 s progress timeout
-	 * waiting for a preamble the host had already given up on sending.  The
-	 * counter is per level and the layout latch per session; both mean "no
-	 * receive can succeed", so drop the chunk and keep the queue moving. */
+	/* Drop leftover chunks once the attempt budget or session layout has made adoption impossible. */
 	if (!network_is_host && (resync_used >= NRB_RS_MAX || resync_layout_bad))
 	{
-		/* Answer a stream RESTART rather than swallowing it: silence is what let a
-		 * host keep streaming to a peer that had permanently stopped listening, and
-		 * then reset its timeline on the transport acks alone.  Bounded to chunk 0 so
-		 * an in-flight stream's remaining chunks stay silent. */
+		/* Reject a permanently incompatible restart at chunk 0; ignore its remaining chunks. */
 		if (resync_layout_bad && SDLNet_Read16(&packet_in[0]->data[6]) == 0)
 			nrb_resync_send_nak(SDLNet_Read16(&packet_in[0]->data[4]), NRB_NAK_FATAL);
 		network_update();
@@ -2160,21 +2074,12 @@ NrbStep nrb_driver(void)
 		if (haltGame)
 			reallyEndLevel = true;
 
-		/* "Quit to outpost" from the in-game menu is not a predicted event: the
-		 * menu is itself a rendezvous (both machines enter it on the same
-		 * confirmed frame and agree on the quit through PACKET_GAME_QUIT), and it
-		 * lands at a frame the rollback can no longer reach.  Making the exit wait
-		 * for one more frame of peer input therefore deadlocks the machine that
-		 * happens to be a frame ahead: the peer has already torn the level down
-		 * and will never send it. */
+		/* The synchronized in-game menu confirms Quit to Outpost out of band. */
 		if (reallyEndLevel)
 			end_agreed = true;
 	}
 
-	/* Irreversible transition gate: the level may only actually end once the
-	 * frame that ended it is confirmed -- a predicted "end" can be rolled back
-	 * (the restore rewinds reallyEndLevel itself).  An end the two machines
-	 * already agreed on out of band needs no such confirmation. */
+	/* Confirm predicted level ends; out-of-band menu agreement needs no extra frame. */
 	if (reallyEndLevel && !end_agreed)
 	{
 		const Uint32 wait_start = SDL_GetTicks();
@@ -2190,13 +2095,7 @@ NrbStep nrb_driver(void)
 			if (K != 0)
 				return nrb_begin_resim(K);
 
-			/* Safety valve: a peer that is still playing sends a frame every
-			 * tick, and every modal that stops it (pause, in-game menu) is
-			 * entered on the same confirmed frame by both machines -- so a peer
-			 * that has simulated NOTHING for this long while we are trying to
-			 * end the level has left it by some route we did not model.  Exit
-			 * anyway rather than sit here until the wedge timeout: the shop's
-			 * start-of-level handshake is the next rendezvous either way. */
+			/* If the peer stops producing frames, rely on the next shop rendezvous instead of wedging. */
 			if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
 			{
 				char detail[192];

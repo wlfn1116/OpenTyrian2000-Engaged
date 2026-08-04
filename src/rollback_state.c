@@ -1,27 +1,9 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Central rollback registration for every extern-visible piece of in-level
- * simulation state.  File-local statics are registered by their own files
- * (tyrian2.c, varz.c, backgrnd.c); this file covers everything a header
- * declares.
- *
- * DELIBERATE EXCLUSIONS -- these live OUTSIDE the sim boundary and restoring
- * them would be wrong, not just wasteful:
- *   - live input state (keysactive, mouse/joystick accumulators, newkey,
- *     pause/menu/changefire latches, demo-file cursor): input enters the sim
- *     only through the per-frame RbInput tuples;
- *   - the variable-timestep ship integrator (vt_* in tyrian2.c): it is the
- *     live-input source for the local ship, never replayed;
- *   - render/present state (render list, interpolation mirrors, HUD caches,
- *     pacing clocks): a replayed tick redraws from restored sim state;
- *   - superpixels[] (1.2 MB of purely cosmetic sparks -- never collided, never
- *     read by logic).  JE_doSP still RUNS during re-simulation so its mt_rand
- *     draws keep the RNG stream aligned; a rollback can at worst double a few
- *     sparks for a moment.
- *   - the endless effect layer (zone timer, turbodrive decay, gravity carries,
- *     damage over time): endless is not a replayed mode.  Nothing that re-runs
- *     a tick may be armed while it is active -- see rollback_selftest_active().
+ * Central registration for externally visible simulation state. File-local statics register in
+ * their owning files. Live input, variable-timestep integration, presentation state, cosmetic
+ * sparks, and Endless effects remain outside the rollback boundary.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

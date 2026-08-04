@@ -397,15 +397,7 @@ typedef enum
 	MENU_ITEM_ARCADE_SHIP_BASE,  // keep LAST: ids BASE+0..BASE+8 are the 9 arcade ships
 } MenuItemId;
 
-/* Rows that only exist under some condition; everything else is always shown.
- * A row hidden here costs no slot at all -- the menu loop builds its item list
- * through this, so drawing, cursor movement and mouse hits all skip it.
- *
- * No row uses it at the moment, so it is an unconditional true: Clear Logs did,
- * hidden while Network Log was off, which stopped making sense once it cleared
- * crash logs too -- turning the net switch off would have put every log already
- * written out of reach. The filter stays because the menu loop is built around
- * it; a new conditional row becomes a `switch (id)` here again. */
+// Central visibility filter for setup rows; currently all rows are visible.
 static bool isMenuItemVisible(MenuItemId id)
 {
 	(void)id;
@@ -782,11 +774,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			},
 		},
 		[MENU_ARCADE_TWEAKS] = {
-			// The first two rows cover 1-player Arcade, 2-player Arcade (local and online) and
-			// the Super Arcade secret ships; Rear Gun Scale is ONE-player only, because in a 2P
-			// game the rear bay is already player 2's life counter.  SuperTyrian (ENGAGE) is out
-			// of all three: one fixed scripted loadout balanced on its own terms, not a ship you
-			// pick.
+			// Rear Gun Scale is one-player only; the two-player rear bay belongs to player 2.
 			.header = "Arcade",
 			.items = {
 				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },

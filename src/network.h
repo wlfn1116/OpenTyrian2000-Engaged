@@ -33,15 +33,11 @@
 #endif
 #endif
 
-// 320 (was 256): the rollback input packet carries a 48-byte header plus up to
-// 16 x 14-byte redundant input records = 272 bytes.  In the header rather than
-// network.c so bulk senders (the resync stream) can size and throttle to it.
+// Covers the 48-byte rollback header plus sixteen 14-byte redundant input records.
 #define NET_PACKET_SIZE   320
 #define NET_PACKET_QUEUE  16
 
-// Longest player name, enforced at network_set_player_name (so every entry path -- lobby,
-// config file, command line -- gets the same clamp) and on receive.  10 keeps the in-game
-// "<name> got <item>" line inside the text bar even against the longest item names.
+// Keeps "<name> got <item>" inside the in-game text bar.
 #define NET_NAME_MAX      10
 
 #define PACKET_ACKNOWLEDGE   0x00    //
@@ -77,33 +73,24 @@ extern char *network_opponent_host;
 extern Uint16 network_player_port, network_opponent_port;
 extern char *network_player_name, *network_opponent_name;
 
-// The port the lobby offers when hosting.  Kept apart from network_player_port, which is the
-// port actually bound and which a joiner deliberately sets to 0 (any free port) -- persisting
-// that would wipe out the host port the player chose.
+// Persisted host port. Joiners bind network_player_port to any free port instead.
 extern Uint16 network_listen_port;
 
-// The player slot the lobby claims when hosting: 1, or 2 to fly the Dragonwing.  A preference,
-// unlike networkHostPlayerNum, which is what the live session settled on.
+// Persisted host slot preference: 1, or 2 for the Dragonwing.
 extern int network_host_player;
 extern int network_host_game_speed;
 
-// Set by the in-game lobby before network_connect(). The host listens, picks which player it
-// flies, and dictates every simulation-affecting setting for the session (see
-// network_settings_*). The joiner takes the other slot. Command-line netplay (params.c) still
-// sets these directly.
+// Lobby connection role. The host also supplies the session settings and player slots.
 extern bool network_is_host;
 
-// True once this session has written its LAST LEVEL backup (slot 22), i.e. gameplay was
-// reached and there is a coherent pre-level state worth offering to save when the session
-// dies.  Cleared by network_shutdown.
+// True after gameplay writes a coherent LAST LEVEL backup. Cleared by network_shutdown.
 extern bool network_session_saveable;
 
 // True once the lobby has taken over setup, so the startup path in opentyr.c knows not to
 // treat isNetworkGame as "connect immediately from argv".
 extern bool network_from_lobby;
 
-// Replace the player name, handling the fact that it starts as a static empty string and is
-// heap-owned thereafter.  Passing NULL or "" puts it back to the static empty string.
+// Replace the heap-owned player name; NULL or "" restores the static empty string.
 void network_set_player_name(const char *name);
 
 // A host found by LAN discovery.
@@ -116,17 +103,11 @@ typedef struct
 NetworkHostInfo;
 
 #ifdef WITH_NETWORK
-// This machine's own addresses, network byte order, for showing a host what to read out and
-// for aiming directed broadcasts. Wraps SDLNet_GetLocalAddresses and falls back to the
-// console's own "what is my IP" service where SDL_net cannot enumerate interfaces. Zero is a
-// normal answer (network down, or an interface list nobody can produce).
+// Local addresses in network byte order. Returns zero if none are available.
 int network_local_addresses(IPaddress *out, int max);
 
-// Broadcast a probe on every local interface and collect replies for `timeout_ms`.  Uses its
-// own short-lived socket, so it must NOT be called while a game socket is open.  Returns how
-// many distinct hosts were found (at most `max`).  Zero is a normal answer: broadcast may be
-// blocked by a firewall, or nobody is hosting.  `poll` (may be NULL) is called every few
-// milliseconds so the caller's screen and cursor stay alive through the blocking wait.
+// Discover up to max LAN hosts with a short-lived socket. Do not call while a game socket is
+// open. poll may be NULL and keeps the UI responsive during the blocking wait.
 int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void));
 #endif
 
@@ -138,14 +119,10 @@ extern UDPpacket *packet_in[], *packet_out[],
 
 extern uint thisPlayerNum;
 
-// The slot the host is flying (1 or 2).  Everything the host decides for both machines --
-// episode, difficulty, a debug-menu edit made by both at once -- keys off this rather than
-// spelling the host as "player 1", which it no longer has to be.  Command-line netplay has no
-// host and leaves it at 1, so whoever is player 1 decides there, exactly as before.
+// Live host slot. Host-authoritative decisions key off this instead of assuming player 1.
 extern uint networkHostPlayerNum;
 
-// Append the live netcode diagnostics to a crash report; crashlog_state.c calls this for
-// the game-state dump.  Safe from a fault handler: reads only statics, no SDL_net calls.
+// Append static netcode diagnostics to a crash report without calling SDL_net.
 void network_write_diagnostics(FILE *f);
 
 extern JE_boolean haltGame;
@@ -156,18 +133,14 @@ extern JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 #ifdef WITH_NETWORK
 #include <setjmp.h>
 
-// Landing pad for a mid-game network teardown: once armed (opentyr.c's main
-// loop, just before the title screen), network_tyrian_halt cleans the session
-// up and longjmps back there instead of exiting the process.
+// Recovery point for tearing down a failed session without exiting the process.
 extern jmp_buf network_bailout_env;
 extern bool network_bailout_armed;
 
 void network_prepare(Uint16 type);
 bool network_send(int len);
 
-// Send packet_out_temp without entering the acknowledgement queue.  Rollback
-// input packets are redundant by construction and must never be retransmitted
-// by the reliability layer.
+// Send redundant rollback input without entering the acknowledgement queue.
 bool network_send_unacked(int len);
 
 // Any packet (including keep-alives) received recently?  Distinguishes a slow
@@ -183,9 +156,7 @@ bool network_update(void);
 
 bool network_is_sync(void);
 
-// Outbound acknowledged packets still awaiting their ACK.  The resync stream
-// throttles on this: network_send halts the game on a full queue, so a bulk
-// sender has to know how much room is left before each send.
+// Unacknowledged outbound packets, used to throttle bulk resync transfers.
 int network_ack_backlog(void);
 
 void network_state_prepare(void);
@@ -199,55 +170,32 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync);
 
 int network_init(void);
 
-// Close the socket and free every queue, leaving the module ready for another network_init().
-// The lobby needs this: a refused or cancelled connection has to unwind back to the menu
-// instead of taking the process down with it, which is all the original code could do.
+// Close the socket and queues, leaving the module ready for another network_init().
 void network_shutdown(void);
 
-// Simulation-affecting settings (weapon tweaks, spark trails, episode weapon data, game
-// speed, xmas data set) are host-authoritative: the joiner adopts the host's values for the
-// duration of the session and gets its own back on disconnect. Settings that only change
-// what a machine draws or hears stay local.
-//   ..._pack   writes the local settings into a connect packet at `offset`
-//   ..._adopt  applies a received block, stashing the local values first
-//   ..._restore puts the stashed local values back (no-op if never adopted)
-// Returns the number of bytes written/read so the caller can place the player name after it.
+// Pack, adopt, and restore host-authoritative simulation settings. Presentation settings remain
+// local. The return value is the encoded byte count.
 int  network_settings_pack(Uint8 *buf);
 int  network_settings_adopt(const Uint8 *buf);
 void network_settings_check_layout(const Uint8 *buf);
 void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
-// 0..15 simulation settings; 16..19 the sender's rollback layout fingerprint;
-// 20..23 its snapshot size.  The last two are not adopted -- they are compared,
-// so a session that can never hand over state knows it at connect.
+// Bytes 0..15 are settings; 16..23 identify the rollback layout and snapshot size.
 #define NETWORK_SETTINGS_SIZE 24
 
-// Debug Mode across the wire.  The debug menu rewrites simulation state directly -- either
-// player's loadout, cash, armor and shield, the cheat flags, difficulty, the expert tunables --
-// so an edit made on one machine would leave the two sims playing different games.  The machine
-// that edited publishes the whole block; the peer adopts it verbatim.
-//   ..._mark     take the live state as the baseline (call when the debug menu opens)
-//   ..._changed  true if the live state differs from the last published/adopted block
-//   ..._send     publish the live state (bumps the generation; no-op if nothing changed)
-//   ..._pump     adopt a block waiting at the head of the inbound queue, if any
-// `in_level` tells the adopt path whether a gameplay HUD is on screen to repaint.
+// Synchronize debug-menu simulation state. mark snapshots the baseline, changed compares it,
+// send publishes updates, and pump adopts queued updates. in_level enables HUD repainting.
 void network_debug_sync_mark(void);
 bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
 bool network_debug_sync_pump(bool in_level);
-// Expert tunables the block has room for.  Exposed so varz.c, which owns the table, can assert
-// it still fits -- the send/adopt loops stop at this many and would drop a later one in silence.
+// Capacity of the wire block; varz.c asserts that its expert-tunable table fits.
 #define NETWORK_DEBUG_EXPERT_SLOTS 8
 
-// Summary of the parts of the simulation that must match between the two machines, split into
-// three independent pieces so a mismatch says WHICH part diverged.  That distinction matters:
-// a differing RNG draw count means the two sims really are running different games, whereas
-// matching draws with differing state points at the check itself being wrong.
+// Independent simulation hashes used to identify the first divergent subsystem.
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash);
 
-// Raw copy of every field network_sim_state() hashes, captured at the same moment, so the
-// desync report can print the disputed frame itself; the two machines' logs then diff
-// line-by-line to the culprit slot and field.  `type` rides along unhashed for readability.
+// Raw fields behind network_sim_state(), captured for line-by-line desync reports.
 typedef struct
 {
 	Sint32 x, y, armor, shield, alive, cash;
@@ -274,19 +222,8 @@ NetSimDetail;
 
 void network_sim_detail(NetSimDetail *out);
 
-// The object pools the two hashes above never reach: explosions, repeating explosions,
-// enemy shots, player shots, the sound queue.  A divergence that lands here first --
-// a shot spawned on one machine only, a sound slot drawn from a shifted RNG stream --
-// changes no position and no armor, so it stayed invisible until it eventually moved
-// one, thousands of frames later and far from its cause.  Returns the combined hash
-// that rides the wire; fills `detail` (may be NULL) with the per-pool breakdown, which
-// only the desync report reads: there is one spare word in the input header, so the
-// wire says THAT the pools diverged and the two logs say WHICH one.
-// Rows behind the player-shot hash.  Every other pool that can diverge is either tiny or
-// already visible through positions and armor; the shot pool is neither, and a PC<->console
-// desync that moved ONLY this hash could not be localized any further from the logs.  Bounded
-// because the pool holds 8000 slots and the report is a fixed-size crashlog entry -- a
-// divergence shows up in the first handful of live slots or not at all.
+// Hash object pools omitted by network_sim_state(). detail may be NULL; when provided it records
+// per-pool values and a bounded sample of player shots for desync reports.
 #define NET_SIM_DETAIL_SHOTS 24
 
 typedef struct
@@ -311,13 +248,10 @@ Uint32 network_sim_pools(NetSimPools *detail);
 // once-per-level report and the rollback canary's first report both do).
 void network_diag_note_desync(int level);
 
-// While false, a mismatch is reported once per level and play continues.  The check is new and
-// unproven; halting a working game on a false positive would be worse than the divergence it is
-// meant to catch, so it earns the right to stop the game only once it has been shown correct.
+// When false, report at most one mismatch per level and continue play.
 extern bool networkDesyncHalt;
 
-// State packet layout.  Bytes 4..27 were already full (deltas, buttons, requests, difficulty,
-// both ships' positions, curLoc), so this extends the packet rather than reusing a field.
+// State packet extension; bytes 4..27 belong to the original state fields.
 #define NET_STATE_RAND   28  // Uint32: mt_rand draws since the level's fixed reseed
 #define NET_STATE_PHASH  32  // Uint32: player state
 #define NET_STATE_EHASH  36  // Uint32: live enemy state
@@ -325,9 +259,7 @@ extern bool networkDesyncHalt;
 
 void JE_clearSpecialRequests(void);
 
-/* No keep-alives during a rollback re-simulation: the replay must not process
- * inbound packets mid-pass (rollback_resim is declared in rollback.h; declared
- * here loosely to keep this widely-included header light). */
+/* Re-simulation must not process keep-alives or inbound packets mid-pass. */
 extern bool rollback_resim;
 
 #define NETWORK_KEEP_ALIVE() \

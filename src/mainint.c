@@ -730,11 +730,7 @@ static int save_effective_episode(const JE_SaveFileType *rec)
 	return episode;
 }
 
-// net2p pins the menu to the 2-player page for the online host: paging is hidden, saves whose
-// episode the session lacks (episodeAvail was intersected at connect) are unselectable, and the
-// chosen slot is returned so the caller can send its record to the joiner.
-// saving turns it into a save menu (the disconnect dialog uses it): every regular slot becomes
-// a target for the standard JE_operation name-entry flow, and Exit leaves when done.
+// net2p pins the two-player page and returns the chosen slot. saving selects the standard save flow.
 int JE_loadScreen(bool net2p, bool saving)
 {
 	set_menu_centered(true);
@@ -2644,14 +2640,7 @@ typedef struct
 	bool done;
 } DeathMenuFade;
 
-/* Steps the death menu's music fade, called from every spot that menu blocks in so the ramp
- * keeps running whatever the player is doing. The level track is silent DEATH_MENU_FADE_MS after
- * the panel appeared, at which point the song is stopped and the master volume handed back at its
- * configured level for whichever screen comes next.
- *
- * Ramps the master volume rather than calling fade_song(), whose length isn't ours to pick: that
- * one is 6 s on both MIDI backends and a per-song count of OPL ticks. This way the half second is
- * the half second, and it is the same half second on every backend. */
+/* Fade the level track over DEATH_MENU_FADE_MS on every music backend, then restore master volume. */
 static void death_menu_fade_music(DeathMenuFade *fade)
 {
 	if (fade->done)
@@ -2678,11 +2667,7 @@ static void death_menu_fade_music(DeathMenuFade *fade)
 	set_volume(tyrMusicVolume, fxVolume);
 }
 
-/* Endless death prompt, put up over the frozen death frame while the level music still plays.
- * Built on JE_inGameSetup's arrangement -- shaded panel, VGAScreen2 as the redraw background,
- * hover/click alongside keyboard and joystick -- so the cursor behaves as it does in the pause
- * menu. Esc and right-click are deliberately inert: the run's fate is one of the three rows,
- * so a stray press can't discard it. Hardcore never gets here (see tyrian2.c JE_main). */
+/* Relaxed-mode death prompt. Esc and right-click are inert; one of the three rows must be chosen. */
 EndlessDeathChoice JE_endlessDeathMenu(void)
 {
 	SDL_Surface *const temp_surface = VGAScreen;
@@ -2701,14 +2686,10 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 	static const char title[] = "SHIP DESTROYED";
 
-	// Bank 15 is the text ramp and `value` slides a glyph's shades along it, so the sign that reads
-	// right depends on where the font's glyph body sits: normal_font's is shade 13 (near the top,
-	// wants negatives, and a positive would clamp the bright half into a slab), small_font's is only
-	// shade 7 and needs a positive or it lands in the near-black end of the ramp.
+	// Font bodies occupy different parts of bank 15, so their shade offsets use opposite signs.
 	const int titleValue = -1, rowValueOn = -2, rowValueOff = -4, helpValue = 4;
 
-	// Size the panel to its widest line: the help strings are long enough that guessing at the
-	// small_font metrics would sooner or later run text off the panel.
+	// Size the panel to its widest line.
 	int contentW = JE_textWidth(title, normal_font);
 	for (int i = 0; i < (int)COUNTOF(rowName); ++i)
 	{
@@ -2716,14 +2697,11 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		contentW = MAX(contentW, JE_textWidth(rowHelp[i], small_font));
 	}
 
-	// Centred on the PLAYFIELD, not the frame: composite_playfield lays the playfield down at
-	// screen x 0 and the HUD owns everything from PLAYFIELD_WIDTH (299) right, so a frame-centred
-	// panel slides under the HUD. The cap keeps a strip of playfield showing either side.
+	// Center within the playfield, excluding the right-side HUD.
 	const int panelW = MIN(contentW + 24, PLAYFIELD_WIDTH - 32);
 	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
 
-	// Same for the vertical: composite_playfield copies 184 rows to screen y 0..183 and the bottom
-	// HUD message bar owns everything under that, so centring on vga_height sits the panel low.
+	// Center within the 184-row playfield above the message bar.
 	const int playfieldRows = 184, panelH = 104;
 	const int py0 = (playfieldRows - panelH) / 2, py1 = py0 + panelH;
 
@@ -2731,9 +2709,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	const int rowY0 = py0 + 34, rowPitch = 18, rowH = 14;
 	const int rowX0 = px0 + 6, rowX1 = px1 - 6;
 
-	// Only the MENU palette actually holds a ramp at bank 15 (entries 240-255). Level palettes put
-	// flat white there, or noise, or (palette 5) a black hole at 254 that eats the brightest pixel
-	// of every letter. Borrow the menu ramp for the panel, hand the level's back on exit.
+	// Borrow the menu's bank-15 text ramp; level palettes do not define it consistently.
 	SDL_Color savedRamp[16];
 	memcpy(savedRamp, &colors[240], sizeof(savedRamp));
 	memcpy(&colors[240], &palettes[0][240], sizeof(savedRamp));
@@ -2747,10 +2723,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	int selected = 0;
 	bool firstFrame = true;
 
-	// The level music starts ramping away the moment the panel is up and is gone half a second
-	// later. Anchored HERE, a hair before the first present, and not to the death: the player can
-	// cut the wreck animation short and be looking at these rows within a frame of dying, and that
-	// early menu takes its half second from when it appeared just the same.
+	// Start the fade when the panel appears, even if the wreck animation was skipped.
 	DeathMenuFade deathFade = { SDL_GetTicks(), -1, false };
 
 	for (bool done = false; !done; )
@@ -2777,11 +2750,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 		if (firstFrame)
 		{
-			// Only now that the panel is up: a fire button still held from the fatal hit would
-			// otherwise pick a row instantly, and waiting before the present would just freeze
-			// the death frame for as long as it stays down. Hand-rolled rather than wait_noinput
-			// because the button that brought the menu up early is often the one being mashed:
-			// the release can be seconds away, and the fade shouldn't wait on it.
+			// Ignore controls held through the fatal hit without delaying the first presentation or fade.
 			firstFrame = false;
 
 			service_SDL_events(false);
@@ -4005,11 +3974,7 @@ static const struct { int id; const char *heading; } dbgRows[] = {
 // dbgRows, leaving it unreachable in the menu. Bump DBG_HEADING_COUNT when adding a heading.
 COMPILE_TIME_ASSERT(dbg_rows_cover_every_row, DBG_DISPLAY_ROWS == DBG_ROW_COUNT + DBG_HEADING_COUNT);
 
-/* Rows the current mode has nothing to say about are dropped rather than shown inert: the player
- * selector outside a two-player game, and in a network game the endless effect layer (a second
- * body of simulation state, none of which is on the wire). dbgVis[] is that filtered view --
- * indices into dbgRows -- and every index the menu carries around (selection, scroll, hit test)
- * indexes IT, never dbgRows directly. Rebuilt at every open. */
+/* dbgVis maps visible rows to dbgRows for the current mode. Rebuilt whenever the menu opens. */
 static int dbgVis[DBG_DISPLAY_ROWS];
 static int dbgVisCount;
 
@@ -4855,11 +4820,7 @@ void JE_debugMenu(bool center)
 					}
 					break;
 				}
-				// Applies the typed value (built digit-by-digit, capped, so no overflow). Not income,
-				// so it is declared via endlessCashDebugOverwrite rather than endlessCashCredit: the
-				// ledger books the difference as ENDLESS_CASH_OTHER (or as spending) without tripping
-				// the audit warning. A hand-edited wallet is why the crash log's "untagged" line can
-				// be nonzero without an income path having actually gone missing.
+				// Declare debug wallet overwrites without classifying them as earned income.
 				case DBG_ADD_CASH:
 #if defined(__SWITCH__) || defined(__vita__)
 					// No physical keyboard on the consoles: pop the software keyboard to fill the field.
@@ -5897,11 +5858,7 @@ void JE_endLevelAni(void)
 		}
 	}
 
-	// The endless effect layer drives its own ramp and keeps the player's chosen base difficulty
-	// fixed (its levers key off difficultyLevel too), so the vanilla score-based bump must not fire
-	// -- Normal would silently climb to Hard mid-run. The campaign behavior the debug layer
-	// suppresses rather than adds to: the scaling readout only means anything if the difficulty
-	// it is computed at holds still between levels.
+	// Endless effects require a fixed base difficulty; skip the vanilla score-based adjustment.
 	if (difficultyAdjust && !endlessFxActive())
 		adjust_difficulty();
 
@@ -6411,12 +6368,7 @@ static void JE_drawDebugOverlays(void)
 		snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
 		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
 
-		// Netplay health.  PRED is the one that explains a jumpy peer ship: it is how
-		// many frames of pure guesswork the peer's position is extrapolated over
-		// before real input lands, so it bounds how far the ship can be flung before
-		// a correction yanks it back.  RB is rollbacks per 100 frames / deepest.
-		// DESYNC counts canary mismatches -- non-zero means the simulations actually
-		// diverged and nothing will repair them; that is a different bug from jitter.
+		// PRED is prediction lead; RB is rollback rate/depth; DESYNC counts canary mismatches.
 		if (nrb_active())
 		{
 			Uint32 predict, depth, rate, desyncs;
@@ -6437,22 +6389,8 @@ static void JE_drawDebugOverlays(void)
 
 #ifdef WITH_NETWORK
 /* --- Own-ship replay history ------------------------------------------------------------
- *
- * Lockstep replays BOTH players at the same logical tick. The remote player's state comes
- * from the packet that just arrived; ours has to come from network_delay ticks ago.
- *
- * That used to be read out of packet_state_out[network_delay] -- i.e. by counting backwards
- * through the outbound queue -- which only lines up if the outbound and inbound queues shift
- * in perfect lockstep forever. They don't: a resend, a duplicate or a queue hiccup slides one
- * of them by a tick, and from then on the two machines are replaying our ship at different
- * ticks. One tick of movement is one pixel, which is exactly the drift the desync detector
- * kept reporting.
- *
- * Keying on the sync number removes the assumption. Every state packet carries the tick it
- * belongs to; we record our own state under that number and, when a remote packet for tick s
- * arrives, replay our own tick s. Both machines then reconstruct the identical pair for the
- * identical tick no matter what the queues did.
- */
+ * Index local lockstep state by packet sequence, not queue position, so resends and duplicates
+ * cannot shift the replayed tick. */
 #define NET_OWN_RING 16  // >= NET_PACKET_QUEUE, so an entry outlives the queue that names it
 
 static Sint16 net_own_x[NET_OWN_RING], net_own_y[NET_OWN_RING];
@@ -6491,9 +6429,7 @@ static int hud_superbomb_p1_right(void)
 
 int hud_fps_row(void)
 {
-	// The bottom-right corner stacks upward: player 2's score on the bottom row, its
-	// superbomb icons above that, then this counter. One-player leaves the corner free --
-	// player 1's score and superbombs are both on the opposite side -- so it stays put.
+	// Stack above player 2's score and superbombs; one-player leaves this corner free.
 	if (!twoPlayerMode || galagaMode)
 		return HUD_SCORE_Y + 1;
 
@@ -6522,12 +6458,7 @@ int hud_bottom_band_top(void)
 	return top;
 }
 
-/* The top corners carry each player's name label, lives row and (player 1) the special-weapon
- * icon. A centred TOP boss bar shares those rows, so it needs their horizontal extent.
- *
- * These mirror the layout arithmetic in JE_inGameDisplays below rather than sharing it, the
- * same way boss_bar_hud_left_shift mirrors draw_boss_bars_enhanced -- keep the two in step.
- */
+/* Horizontal extent of the top HUD clusters. Keep in step with JE_inGameDisplays. */
 static int hud_player_name_width(int index)
 {
 	char name[21];
@@ -6547,10 +6478,7 @@ static bool hud_lives_shown(void)
  */
 #define HUD_LIVES_ICONS_MAX 4
 
-/* Left edge of player 2's collapsed lives count, right-aligned so its last painted pixel lands 3px
- * left of the icon at PLAYFIELD_WIDTH + 7 -- the mirror of player 1's count starting 3px right of
- * its icon. The icon paints columns 0..10 of its 12px cell, and FULL_SHADE adds a 1px outline.
- */
+/* Left edge of player 2's collapsed lives count, mirrored from player 1's layout. */
 static int hud_lives_count_left(const char *count)
 {
 	return PLAYFIELD_WIDTH + 4 - JE_textWidth(count, TINY_FONT);
@@ -6625,17 +6553,8 @@ void JE_inGameDisplays(void)
 	char stemp[21];
 	char tempstr[256];
 
-	// Scores sit in the bottom corners of the playfield: player 1 left-aligned, player 2
-	// right-aligned as its exact mirror. This is playfield (game_screen) space, so the visible
-	// edges are PLAYFIELD_LEFT..PLAYFIELD_RIGHT and both corners follow the widescreen width.
-	// (The old code left-aligned player 2 at a fixed +200, which was tied to the original 320px
-	// layout and drifted away from the right edge as the playfield widened.)
-	//
-	// Mirroring the inset exactly needs the two quirks of this text: JE_textWidth counts a
-	// trailing inter-character pixel after the last glyph, and FULL_SHADE outlines the string
-	// one pixel each way. Player 1's ink starts at PLAYFIELD_LEFT + SCORE_INSET, so its shadow
-	// starts one pixel earlier; putting player 2's shadow the same distance inside the right
-	// edge gives x = PLAYFIELD_RIGHT - width - 1, which lands the ink at the mirrored inset too.
+	// Mirror player scores inside the playfield edges. Account for JE_textWidth's trailing pixel and
+	// FULL_SHADE's one-pixel outline.
 	const int SCORE_INSET = 3;
 
 	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
@@ -7485,15 +7404,8 @@ redo:
 	accelXC = 0;
 	accelYC = 0;
 
-	// When the variable-timestep ship owns this player, skip the original
-	// position/velocity movement here — the render-rate integrator drives it.
-	// Player 2 docked as the Dragonwing is the exception: the sim places it from player 1's
-	// position every tick, so VT leaves it alone and the original path below must still run.
-	// Which physics tail the SIMULATION runs.  In rollback netplay this must be
-	// identical on both machines no matter what each machine's own presentation
-	// settings say -- the friction/velocity tail, the ship-tracking shot deltas
-	// and the banking pick (it spawns NortSparks: shots + RNG draws) all key off
-	// it -- so the session adopts the HOST's choice via the settings handshake.
+	// Select the ship-physics path. Rollback peers use the host's choice; a docked Dragonwing still
+	// follows the fixed-tick path that pins it to player 1.
 	const bool vt_sim_owns = (isNetworkGame && nrb_active())
 	                       ? (nrb_session_vt() && frameCountMax > 0 && !endLevel)
 	                       : vt_ship_owns();
@@ -7556,13 +7468,7 @@ redo:
 					this_player->is_alive = true;
 					endLevel = false;
 
-					// Arcade life boost: the scaled ceilings ARE what a high life count buys, so a
-					// respawn puts both gauges back ON them. Halving them -- the vanilla refill,
-					// still used below when the boost is off -- cancels the boost out exactly
-					// where it should matter most: you come back at 50% either way, and on a
-					// light hull half the ceiling lands so near the ship's own armour that the
-					// boost looks like it did nothing. Losing the life (and the weapon level
-					// that life IS in arcade) is the cost of dying; the ceilings are not.
+					// Life-scaled arcade ships respawn with both gauges at their new ceilings.
 					const bool boostedRefill = arcade_life_scaling_active();
 
 					if (galagaMode || episodeNum == 4 || boostedRefill)
@@ -7960,12 +7866,7 @@ redo:
 					buttons |= button[i];
 				}
 
-				// ABSOLUTE position, not the delta this used to send. A delta is only
-				// meaningful once, so a single packet that is lost and rebuilt imperfectly
-				// from the XOR parity leaves the two machines permanently offset -- exactly
-				// the 1px drifts the desync detector was reporting. An absolute position is
-				// idempotent: whatever happened to earlier packets, both machines land on the
-				// same number and any divergence heals on the next tick instead of compounding.
+				// Absolute positions are idempotent when a lost packet is reconstructed.
 				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
 				SDLNet_Write16(this_player->y, &packet_state_out[0]->data[6]);
 				SDLNet_Write16(accelXC,        &packet_state_out[0]->data[8]);
@@ -8104,14 +8005,8 @@ redo:
 #endif
 
 		/*Street-Fighter codes*/
-		// NEVER take this branch in a network game. It rebuilds the direction from THIS
-		// machine's live controls, but JE_playerMovement runs for both players on both
-		// machines -- so the remote player's twiddle detection would be fed the local
-		// player's input, the two SFCurrentCode streams would diverge, and with them
-		// anything a twiddle triggers (the Dragonwing link, for one). The synced path below
-		// derives the direction from the position delta both machines agreed on instead.
-		// A self-test replay likewise never reads live controls: it feeds the detector
-		// the recorded target from the live pass.
+		// Network play derives twiddle direction from synchronized movement. Self-test replay
+		// uses the recorded target; neither path may sample current local controls.
 		if (rollback_selftest_active() && rollback_resim)
 		{
 			const RbInput *st = rollback_st_get(playerNum_ - 1);
@@ -8178,11 +8073,7 @@ redo:
 
 			/*Linking Routines*/
 
-			// "Did this player press a direction this tick."  In rollback netplay
-			// this must come from the tuple's intent bits: the position compare
-			// reads the sender's dock pin against the local one, and those differ
-			// whenever the carrier moves (the pin embeds the sender's predicted
-			// copy of player 1) -- a phantom move that flapped the link.
+			// Rollback uses tuple intent because docked positions include each peer's predicted carrier.
 			const bool linkMoved = haveLinkIntent
 				? (linkIntent & RB_MOVE_MASK) != 0
 				: (this_player->x != *mouseX_ || this_player->y != *mouseY_);
@@ -8398,17 +8289,8 @@ redo:
 			this_player->x_velocity = player[0].x_velocity;
 			this_player->y_velocity = 4;
 
-			// Keep the ship x/y history running while docked.  Trailing sidekicks
-			// (Companion Ship Gerund and the rest of style 1/3) are anchored to
-			// old_x/old_y, and only the unfused branch above ever shifted it -- so
-			// the moment the pair fused the trail froze in place and the sidekicks
-			// stopped following, even though the fused ship is still moving.  The
-			// carrier drags this ship around, so the history has to track that.
-			//
-			// Movement is measured against the newest stored entry rather than the
-			// tick-start mouseX_/mouseY_ the unfused branch uses: the pin above
-			// rewrites x/y outright, so a tick-delta reads as movement even when
-			// the fused pair is parked.
+			// Keep docked position history current for trailing sidekicks. Compare with the newest stored
+			// position because the dock pin rewrites x/y every tick.
 			if (this_player->x != this_player->old_x[COUNTOF(player->old_x) - 1] ||
 			    this_player->y != this_player->old_y[COUNTOF(player->old_x) - 1])
 			{
@@ -8751,21 +8633,13 @@ redo:
 								const uint item_power = galagaMode ? 0 : arcade_weapon_power(this_player, temp) - 1,
 								           item_mode = (temp == REAR_WEAPON) ? this_player->weapon_mode - 1 : 0;
 
-								// Zica Laser (port 5) Lv11 tweaks. Length "Long" swaps the vanilla
-								// Lv11 shot for two LV10-length side beams; the "Buff" adds the Lv10
-								// centre beam. The primary shot pays the port's power cost; the extra
-								// beams fire drain-free so the combined weapon still costs one shot,
-								// but only when the primary actually went out (see below).
+								// Zica Lv11: Long uses side beams; Buff adds the center beam. Extras share one power cost.
 								const bool zica_l11 = (item == 5 && item_power == 10);
 								JE_word l11_primary = weaponPort[item].op[item_mode][item_power];
 								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 									l11_primary = ZICA_LONG_WEAP_LEFT;
 
-								// Opening Salvo perk (endless): the main (front) gun is firing. Reset its idle
-								// timer and, if the pause was long enough, arm the charged-volley flag that
-								// player_shot_create reads to boost + power-free the shots. The flag rides the
-								// rest of this tick, so the rear weapon and both sidekicks firing alongside are
-								// boosted too; endlessOpeningSalvoTick clears it at the start of the next tick.
+								// Arm Opening Salvo for every weapon fired during this tick's front-gun volley.
 								if (endlessFxActive() && temp == SHOT_FRONT && this_player == &player[0])
 									endlessOpeningSalvoConsume();
 
@@ -9004,11 +8878,7 @@ redo:
 										this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
 										this_player->sidekick[i].animation_enabled = true;
 
-										// "Yes (fastest)": player_shot_create just set shotRepeat from the shot
-										// we fired (the top charge stage when Instant Charge holds it maxed,
-										// whose shotrepeat is the SLOWEST). Override it with the quickest
-										// charge stage's shotrepeat so full-power blasts come out at stage-0
-										// speed.
+										// Fast autofire uses the shortest repeat among all charge stages.
 										if (chargeSidekickAutofire == CHARGE_AUTOFIRE_FAST && this_option->pwr > 0)
 										{
 											JE_byte fastest = weapons[this_option->wpnum].shotrepeat;
@@ -9190,21 +9060,11 @@ void JE_mainGamePlayerFunctions(void)
 	if (background3x1)
 		mapX3Ofs_f = mapXOfs_f;
 
-	// Stock-mode (Extra Parallax OFF) fine-tune for the bg2 overlay (EP1 TYRIAN clouds etc.). The
-	// artifact is sub-pixel: at the far-left extreme mapX2Ofs is 36 (int) but 36.667 (float), and
-	// the smoothed replay rounds that fraction UP, drawing the clouds 1px right of their true pixel.
-	// Snap the fraction to 0 so the smoothed render lands on the integer pixel with no spill on
-	// either edge. Integer mapX2Ofs and glued layer-2 enemies are untouched; this affects only the
-	// render-list interpolation path.
+	// At the stock left edge, snap bg2 interpolation to the integer anchor to prevent a one-pixel shift.
 	if (bg2CrispLeft)
 		mapX2Ofs_f = (float)mapX2Ofs;
 
-	// Layer 2 (bg2 overlay) right-edge coverage guard. Its 336px strip is 1px too narrow to reach
-	// PLAYFIELD_RIGHT once the parallax pushes mapX2Ofs to -2, leaving a 1px cloud gap at the far
-	// right. The near layer bottoms out at -1, which just covers 322, so clamp layer 2 to that same
-	// floor. Both the integer and float offsets are clamped so the smoothed replay agrees; costs a
-	// ~1px pan freeze over the last few px of travel. Not gated on the mode -- the gap is present
-	// either way.
+	// Clamp bg2 to -1 so its 336-pixel strip covers the right edge in both integer and smooth paths.
 	if (mapX2Ofs < -1)
 	{
 		mapX2Ofs = -1;
@@ -9326,13 +9186,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						shotMultiPos[SHOT_FRONT] = 0;
 						shotRepeat[SHOT_FRONT] = 10;
 
-						// A Super Arcade ball carries a colour, 1-5, rather than a weapon, and the
-						// enemydie handler repaints every ball it drops into that range (JE_main,
-						// tyrian2.c). A ball a level script spawns DIRECTLY never passes through
-						// that repaint, and this branch claims every evalue above 30000 -- so a
-						// rear/sidekick/special ball arriving here would index far past the end of
-						// the ship's five-weapon row. Clamp to the last slot: colours 1-5 are
-						// untouched, so nothing the game actually drops behaves differently.
+						// Clamp script-spawned values that were not repainted to a Super Arcade color slot.
 						uint saSlot = (uint)(evalue - 30000 - 1);
 						if (saSlot >= COUNTOF(SAWeapon[0]))
 							saSlot = COUNTOF(SAWeapon[0]) - 1;
@@ -9509,11 +9363,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					else
 					{
 						this_player->armor += evalue - 20000;
-						// Endless: an armour pickup tops up to the reinforced hull max, not the classic 28.
-						// Under debug campaign mods the classic 28 stays the FLOOR: the effect layer may
-					// only RAISE the cap (an Ablative Plating hull above 28), never lower it, so
-					// merely switching the layer on can't nerf pickups for a light-hulled ship.
-					// Arcade tops up to the lives-scaled ceiling, which is what "max armour" means there.
+					// Endless and arcade use their raised hull ceiling; campaign effects never lower the classic 28.
 					const uint armorCap = (endlessMode || arcade_life_scaling_active())
 					                    ? this_player->initial_armor
 					                    : (endlessCampaignMods && this_player->initial_armor > 28)

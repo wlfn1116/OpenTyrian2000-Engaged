@@ -24,56 +24,28 @@
 
 Player player[2];
 
-/* Arcade only, Super Arcade secret ships included.  Nothing here is per-ship: both ceilings are
- * derived from whatever hull and shield the ship itself was shipped with, so the secret ships need
- * no table of their own -- the U-Ship climbs from its 8 hull and the Nort Ship is already past a
- * full bar at 30 and simply stays there.  SuperTyrian stays out: it is a single fixed loadout
- * balanced around the Stalker 21.126, not a ship you pick.  `arcadeLifeBoost` is the Game Tweaks
- * row; in a network game the host's copy of it binds the session (network.c). */
+/* Arcade life scaling derives its ceilings from each ship's stock hull and shield. SuperTyrian is
+ * excluded; network games use the host's arcadeLifeBoost setting. */
 bool arcade_life_scaling_active(void)
 {
 	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian;
 }
 
-/* Rear-gun scaling.  In the arcade modes a life count IS a weapon power level -- player 1's front
- * bay, player 2's rear bay (`lives = &weapon[p].power`, JE_initPlayerData) -- so a 1P arcade front
- * gun climbs with every extra life while the rear gun sits at whatever level its own power-up balls
- * left it at, which is level 1 for most of a run.  With the Arcade row on, the life count feeds the
- * rear gun too, on top of whatever its own pickups have banked.
- *
- * ONE-PLAYER only -- 1P Arcade and the Super Arcade secret ships -- and not SuperTyrian (ENGAGE),
- * which flies one fixed scripted loadout.  Two-player is deliberately out rather than merely inert:
- * there the rear bay IS player 2's life counter, so "add the life count to the rear gun" would be
- * adding a number to itself.  (Player 1's rear bay does not fire in a 2P game either -- the firing
- * loop in JE_playerMovement gives each ship one bay -- so nothing is lost by excluding the mode.)
- * The twoPlayerMode test matters even though onePlayerAction is set: galaga mode raises
- * twoPlayerMode mid-level when the dragonwing spawns, with onePlayerAction still true. */
+/* In one-player arcade modes, rear-gun power combines its own pickups with lives - 1. Two-player
+ * is excluded because player 2's rear-bay power is also the life counter. */
 bool arcade_rear_scale_active(void)
 {
 	return arcadeRearGunScale && onePlayerAction && !twoPlayerMode && !superTyrian;
 }
 
-/* The power level a bay actually fires at.  Everything except a scaled arcade rear gun just reads
- * its own stored power.
- *
- * The scaled rear gun STACKS the two sources: its stored power is the base (level 1 plus one for
- * every rear power-up ball the run has banked) and the life count adds `lives - 1` on top.  So a
- * rear ball is always worth a level rather than vanishing under a bigger life count, and because
- * the life term can only ever add, the gun never fires below its own stored power -- a death costs
- * the life it took and nothing that was paid for with pickups.
- *
- * Nothing is written back: the stored power keeps accumulating on its own, so the row can be
- * flipped mid-run and the gun that was earned is still there when it goes off again. */
+/* Effective bay power. Arcade rear scaling adds lives - 1 without changing stored pickup power. */
 uint arcade_weapon_power(const Player *this_player, uint port)
 {
 	uint power = this_player->items.weapon[port].power;
 
 	if (port == REAR_WEAPON && arcade_rear_scale_active())
 	{
-		// Never scale a bay that IS its owner's life counter: `lives` aliases weapon[p].power
-		// (JE_initPlayerData), so for player 2 that bay is the rear one and the line below would
-		// be adding the number to itself.  The 1P-only gate above already rules that out; the
-		// check keeps the arithmetic correct on its own terms if the gate is ever widened.
+		// Player 2's rear-bay power aliases the life counter.
 		const Uint8 *const life_counter = this_player->lives;
 
 		if (life_counter != &this_player->items.weapon[port].power && *life_counter > 1)
@@ -125,9 +97,7 @@ static uint arcade_carry_gauge(uint current, uint old_max, uint new_max)
 	return (current * new_max + old_max / 2) / old_max;
 }
 
-/* No arcade guard here on purpose: with scaling off both ceilings evaluate to the plain hull and
- * `mpwr * 2` that the rest of the game already holds, so this is a no-op in the campaign and in
- * endless -- and switching the Game Tweaks row off still walks an inflated ceiling back down. */
+/* Keep this mode-independent so disabling the tweak also restores inflated ceilings. */
 void arcade_rescale_to_lives(Player *this_player)
 {
 	bool changed = false;
@@ -135,8 +105,7 @@ void arcade_rescale_to_lives(Player *this_player)
 	const uint armor_max = arcade_armor_max(this_player);
 	if (this_player->initial_armor != armor_max)
 	{
-		// Proportional, not absolute: a life gained must not hand out free hull, and a life lost
-		// must not leave the gauge reading over its own maximum.
+		// Preserve the damage ratio when the maximum changes.
 		this_player->armor = arcade_carry_gauge(this_player->armor, this_player->initial_armor, armor_max);
 		this_player->initial_armor = armor_max;
 		changed = true;
@@ -150,9 +119,7 @@ void arcade_rescale_to_lives(Player *this_player)
 		changed = true;
 	}
 
-	// Both gauges are event-painted, and a life picked up mid-level paints neither -- the new
-	// ceilings would sit unshown until the next hit or shield tick. Flag it instead of drawing:
-	// the tick's repaint poll (tyrian2.c) is the one place that is safe during a rollback resim.
+	// Defer repainting to the rollback-safe tick poll in tyrian2.c.
 	if (changed)
 		hud_bars_dirty = true;
 }
@@ -164,10 +131,7 @@ void calc_purple_balls_needed(Player *this_player)
 	this_player->purple_balls_needed = purple_balls_required[*this_player->lives];
 }
 
-// Credit cash that fell out of the playfield to whoever collected it. Only player 1's share is a
-// run's earnings, so in endless that goes through the ledger; every other case is a plain credit.
-// Use this instead of `this_player->cash += n` for anything picked up, or the endless run-over tally
-// files it under "untagged".
+// Credit collected cash. Player 1's Endless income must pass through the run ledger.
 void player_award_pickup_cash(Player *this_player, long amount)
 {
 	if (endlessMode && this_player == &player[0])

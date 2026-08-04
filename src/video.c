@@ -56,12 +56,7 @@ int render_supersample_filter = SS_FILTER_NONE;
 static void update_native_scaler_dims(void);
 static void native_output_size(int *out_w, int *out_h);
 
-// Supersample factor that lands one sub-pixel sample on every screen pixel of the
-// presented image. The output/logical ratio is fractional, so round it UP: the buffer
-// covers every screen pixel and the present pass averages the slight overshoot back
-// down to the exact size. Shared by the Native sub-pixel setting (uncapped, up to
-// RENDER_SUPERSAMPLE_LIMIT) and by Auto under the Native scaler (which then takes the
-// ordinary RENDER_SUPERSAMPLE_MAX ceiling with every other Auto case).
+// Native supersample factor. Round the output/logical ratio up so every output pixel is sampled.
 #ifndef __vita__  // unused there: the Vita forces 1x below
 static int display_supersample_factor(void)
 {
@@ -80,10 +75,7 @@ static int display_supersample_factor(void)
 }
 #endif
 
-// Resolve the configured supersample factor: Auto follows the scaler's integer
-// factor (2x/Scale2x/hq2x -> 2, ...), so the sub-pixel buffer is exactly the
-// resolution the user already chose to run the game at. Native follows the display
-// instead, and is the one setting the RENDER_SUPERSAMPLE_MAX ceiling doesn't bind.
+// Auto follows the scaler factor; Native follows the display and ignores RENDER_SUPERSAMPLE_MAX.
 int effective_supersample(void)
 {
 	if (!smoothMotion)
@@ -560,11 +552,8 @@ static void fit_rect_to_aspect(SDL_Rect *const r, int win_w, int win_h, float as
 	}
 }
 
-// Size the presented image actually occupies on screen: the logical screen fitted into
-// the live window under the current scaling mode. This is what the Native scaler renders
-// at (one texel per screen pixel, so the final present never rescales) and what the Native
-// sub-pixel factor is measured against. Falls back to the logical size before the window
-// exists.
+// Fitted output size used by the Native scaler and Native sub-pixel factor. Before window creation,
+// return the logical size.
 static void native_output_size(int *out_w, int *out_h)
 {
 	SDL_Rect r = { 0, 0, vga_width, vga_height };
@@ -746,10 +735,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	last_output_rect = dst_rect;
 }
 
-// Re-present the last composed frame without re-running the software scaler. Used to keep the
-// display refreshing while a modal SYSTEM overlay is up -- specifically the Vita IME dialog,
-// which the system compositor only draws while the app keeps presenting frames. Cheap: just
-// re-copies the existing output texture. No-op before the first real present.
+// Re-present the existing output texture for modal system overlays such as the Vita IME.
 void video_repeat_last_present(void)
 {
 	if (main_window_renderer == NULL)
@@ -924,12 +910,7 @@ void present_hi(SDL_Surface *hi)
 	last_output_rect = dst_rect;
 }
 
-// Re-present the current logical frame at the live window size, recovering the window after
-// the drawable was invalidated (fullscreen toggle, window/scaler resize, Switch dock/undock,
-// expose). The backbuffer goes stale on such a change, but the game may be parked in an
-// input-wait loop that won't redraw on its own, so it would "sit on the frame" until the next
-// keypress. Presents one 1x frame from the live VGAScreen; any in-game smooth/hi present loop
-// resumes on the next iteration.
+// Restore an invalidated drawable from the current logical frame while input-wait loops are idle.
 void video_repaint(void)
 {
 	if (main_window_renderer == NULL)

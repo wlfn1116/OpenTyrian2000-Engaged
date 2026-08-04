@@ -318,11 +318,7 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Mode:         %s%s\n", endlessRunModeName(endlessRunMode),
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
-		// Read as-is, deliberately: this runs from a crash handler, so it does not call
-		// endlessCashAudit first -- worth less than poking live state mid-crash. A nonzero
-		// "untagged" line means a path bypassed the credit/debit/trade interface (or the debug
-		// Add Cash screen overwrote the wallet) -- worth chasing down. Sinks print negated,
-		// under the sources.
+		// Read the ledger without auditing from the crash path. Print sinks as negative values.
 		fprintf(f, "  Cash earned:  %llu  (spent %llu)\n",
 		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent);
 		for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)

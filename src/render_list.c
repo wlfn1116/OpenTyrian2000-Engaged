@@ -371,12 +371,7 @@ void rl_finalize(void)
 		if (rl_id_extrapolates(id))
 			continue;
 
-		// Velocity hint the recorder seeded (blit_enemy stamps per-tick enemy
-		// motion; zero for everything that never sets one).  When positional
-		// pairing fails -- a BLINKING sprite like the arcade pickup balls is
-		// hidden every other tick, so its blit count flips 0/1 forever -- fall
-		// back to this hint instead of snapping, and the blinker glides like
-		// every other entity.
+		// Use the recorded velocity when blinking sprites cannot be paired by position.
 		const int hint_dx = c->dx, hint_dy = c->dy;
 
 		c->dx = 0;

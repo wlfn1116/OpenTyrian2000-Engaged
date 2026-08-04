@@ -149,10 +149,7 @@ void player_award_pickup_cash(Player *, long amount);
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);
 
-// Arcade lives -> survivability.  In the arcade modes a ship's shield and armour ceilings grow
-// with its life count: the hull's own numbers at 1 life, a full 28-unit bar at the 11-life max.
-// Both maxima are pure integer functions of items[] + lives, so the two machines in a network
-// game derive the same numbers without anything extra on the wire.  See notes.md.
+// Arcade lives scale armour and shields from the hull values to a full bar.
 #define ARCADE_LIVES_MAX 11  // the cap JE_eventSystem/mainint enforce on *player[].lives
 #define ARCADE_FULL_BAR  28  // both HUD gauges top out here (strongest shield is mpwr 14 -> 28)
 

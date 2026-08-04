@@ -533,9 +533,7 @@ void JE_drawOptions(void)
 
 	JE_drawOptionsHUD();
 
-	// A silent rollback re-simulation swallows blit_sprite but not the box fill, so a
-	// resim pass that re-crosses a sidekick pickup wipes the HUD icon.  Flag it for a
-	// repaint once a non-silent pass comes around.
+	// Repaint after silent replay suppresses the icon blit but not its box fill.
 	if (rollback_resim_silent)
 		hud_sidekicks_dirty = true;
 
@@ -879,10 +877,7 @@ static bool special_is_flare(JE_byte sidx)
 	return (st >= 5 && st <= 11) || st == 16;
 }
 
-// Debug twiddle autofire runs its own pipeline: flareFromTwiddle marks the flare
-// as the twiddle's (the equipped special keeps firing) and twiddleFlareShotWait
-// paces its shots independently of shotRepeat[SHOT_SPECIAL].  File scope (not
-// function-local) so the rollback snapshot registry can reach them.
+// Debug twiddle autofire has separate flare ownership and pacing. File scope exposes it to rollback.
 static JE_boolean flareFromTwiddle = false;
 static JE_word twiddleFlareShotWait = 0;
 static JE_word twiddleWait = 0;
@@ -1105,15 +1100,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			}
 			else
 			{
-				// Scatter across the full visible playfield. The old constant 280 was the
-				// pre-widescreen play width, so Minefield-style specials never reached the
-				// widened right edge; PLAYFIELD_LEFT + [0,PLAYFIELD_WIDTH) is the on-screen
-				// span in game_screen coords (see composite_playfield / video.h).
-				// Y spans the full 184-row playfield (vanilla stopped at 180).
-				// The two draws MUST be sequenced: as arguments they were unordered, and MSVC
-				// evaluates right-to-left where GCC goes left-to-right, so PC and console put
-				// the same pair of numbers in opposite coordinates -- identical draw counts,
-				// different shot positions, i.e. a desync no RNG check could see (notes.md).
+				// Scatter across the full widescreen playfield. Sequence RNG draws so compilers cannot
+				// assign them to opposite coordinates.
 				const int scatter_x = PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH;
 				const int scatter_y = mt_rand() % 184;
 				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, mouseX, mouseY, specialWeaponWpn, playerNum);
@@ -1344,10 +1332,7 @@ static bool gauge_flash_any(void)
 	return false;
 }
 
-// The gauges are event-painted with raw fills, which a silent rollback pass does NOT
-// suppress (only blits are) -- so mid-re-simulation paints put rolled-back values on the
-// HUD, a visible flicker under netplay's frequent shallow rollbacks.  The painters below
-// go quiet during silent passes and raise this flag; a non-silent tick repaints once.
+// Silent replay defers raw gauge painting and requests one live repaint.
 bool hud_bars_dirty = false;
 
 // Draw-only repaint of both gauges from current state onto the HUD surface.
@@ -1546,10 +1531,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
 	}
 
-	// Presentation only, and armed only on the LIVE pass: a rollback replay re-crossing this
-	// damage would restart the flash, and the counters deliberately sit outside the snapshot
-	// registry -- registered, every shallow netplay rollback rewound them to an older, higher
-	// value, so the white flash kept replaying as a visible gauge flicker.
+	// Arm presentation-only gauge flashes only on the live pass; rollback must not restart them.
 	const int gi = (this_player == &player[1]) ? 1 : 0;
 	if (!rollback_resim && gaugeFlashShield && this_player->shield < oldShield)
 		shieldGaugeFlash[gi] = GAUGE_FLASH_START;
@@ -1606,11 +1588,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		}
 	}
 
-	// Failsafe perk (endless): the same hull hit leaves the ship briefly untouchable, which is what
-	// breaks up the volley that would otherwise finish a nearly-dead run. EXTENDS rather than assigns,
-	// so it can't cut short a longer window already running -- notably the 100 ticks a spent revive
-	// just granted above. Dead ships are skipped; their respawn sets its own invulnerability. The
-	// existing post-hit transparency flash (mainint.c) is the readout, so this needs no tell of its own.
+	// Failsafe extends hull-hit invulnerability without shortening a longer revive/respawn window.
 	if (endlessFxActive() && this_player == &player[0] && cmHullHit && this_player->is_alive)
 	{
 		const uint failsafe = (uint)endlessPerkFailsafeTicks();
@@ -1650,9 +1628,7 @@ JE_word JE_portConfigs(void)
 	return tempW = weaponPort[player[player_index].items.weapon[REAR_WEAPON].id].opnum;
 }
 
-// Online, the ship this machine is NOT flying gets its gauges dimmed (same hue, quarter
-// shade), so whose bars are whose reads at a glance.  Every repaint rewrites the bar pixels
-// before the shade runs, so the dim never compounds.
+// Dim the remote ship's gauges after each repaint; the shade never compounds.
 static bool gauge_is_remote(uint i)
 {
 	return isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2 && i != thisPlayerNum - 1;
@@ -1665,11 +1641,7 @@ static void gauge_dim_rect(int x1, int y1, int x2, int y2)
 	JE_barShade(VGAScreen, x1, y1, x2, y2);
 }
 
-// Two-player HUD (local and online): "P1"/"P2" under each player's gauge block, so which block
-// belongs to whom reads at a glance.  Painted into the HUD alongside the level name at level
-// start, so it is already there under the fade-in; nothing drawn during play covers those rows.
-// Bank 9 is the shield gauge's own blue, so the tag tracks the HUD under any level palette, and
-// the cardinal black outline separates it from the panel art it sits on.
+// Label two-player gauge blocks in the shield bank, before the level fade-in.
 void JE_drawPlayerTags(void)
 {
 	if (!twoPlayerMode || galagaMode)
@@ -1679,16 +1651,10 @@ void JE_drawPlayerTags(void)
 		JE_textShade(VGAScreen, HUD_X(289), 59 + 134 * i, (i == 0) ? "P1" : "P2", 0, 5, FULL_SHADE);
 }
 
-// Two-player gauge units. The 0.8 squeeze fits the one-player scale into the shorter 2P strip,
-// but JE_dBar3 paints 2*units+1 rows and JE_wipeShieldArmorBars only clears 45 -- so 22 units
-// (what 27 and 28 round to) puts the bar's top row outside what the wipe reaches, where it
-// sticks. Cap at the tallest bar the strip actually holds. Only those two values are affected,
-// and armour could already reach them without any of the lives scaling.
+// Cap two-player gauge units to the 45-row region JE_wipeShieldArmorBars clears.
 #define HUD_2P_GAUGE_UNITS_MAX 21
 
-// Extra rows the 2P gauges take at the top (see JE_dBar3). The band pitch left the 2P bars one
-// row short of the 45 the wipe clears, unlike the 1P bars which fill their slot exactly; this
-// hands that row back, so at 21 units the bar tops out at y-44 -- still inside the wipe.
+// Extend two-player bars into the final row covered by the wipe.
 #define HUD_2P_GAUGE_TOP_PAD 1
 static int hud_2p_gauge_units(uint value)
 {

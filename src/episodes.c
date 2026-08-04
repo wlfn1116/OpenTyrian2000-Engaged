@@ -64,19 +64,8 @@ JE_boolean jumpBackToEpisode1;
 JE_byte chargeLaserSlot = 0;
 
 // ---- Unused shop sprites -------------------------------------------------------------
-// The shop sheet (newsh1.shp) lays its icons out as 2x2 blocks on a 19-wide grid, giving 72
-// slots; the shipped item data plus the engine's own cursors/arrows reference only 61 of them.
-// The other 11 are finished, unique artwork nothing ever draws.
-//
-// Meanwhile the ports the ep1-5 campaign never sells are exactly the ones with no icon of their
-// own: all four NortShip/SuperTyrian guns draw the Pulse-Cannon's 7, People Pretzels and Dragon
-// Flame share the Multi-Cannon's 87, and Shuruiken Field / Protron Wave / The Orange Juicer ship
-// with itemgraphic 0 and land on the 167 placeholder below. In the campaign this is invisible --
-// those weapons are never on a shop shelf. Endless offers every port, so the duplicates end up
-// stacked in one menu, several rows deep of the same picture.
-//
-// This table spends the spare icons on them. A few entries deliberately reuse an existing icon
-// rather than a spare one, where that reads better than a unique-but-unrelated picture.
+// Assign newsh1.shp's eleven unreferenced icons to weapons that lack distinct shop art. Endless
+// exposes these otherwise campaign-only ports together, making duplicate placeholders visible.
 static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
 {
 	{ 31,  15 },  // Guided Bombs
@@ -165,10 +154,7 @@ static void JE_addChargeLaserCannon(void)
 	if (slot == 0)
 		return;  // no spare slot in this episode's item data
 
-	// The six charge stages (fired as wpnum + charge, 0..5), verbatim from DOS weapons
-	// 452..457 (byte-identical across TYRIAN{1,2,3}.LVL). Each is one straight-up bolt
-	// differing only in fire rate, damage, and sprite; rate SLOWS and damage RISES with
-	// charge. All other fields are zero, hence the memset.
+	// Six DOS charge stages, weapons 452..457; unused fields remain zero.
 	static const struct { JE_byte shotrepeat, attack; JE_word sg; } stage[6] =
 	{
 		{  4,  2, 260 },  // charge 0: fast, weak
@@ -221,11 +207,8 @@ static void JE_addChargeLaserCannon(void)
 static JE_shortint zicaNativeSx[8], zicaNativeBx[8];
 static bool zicaNativeCaptured = false;
 
-// Apply the configured Zica Lv11 tweaks (config.h: zicaLaserBase / zicaLaserLength):
-//  1. shape the base Lv11 weapon (wpn 209) to the chosen horizontal pattern (SHORT shots);
-//  2. build the two LV10-length side beams (scratch wpns) the LONG length fires instead.
-// The Lv10 centre beam ("Buff") and the short-vs-long choice are handled at fire time
-// (mainint.c / game_menu.c); this only prepares the weapon data. Safe to call repeatedly.
+// Prepare the configured Zica Lv11 short pattern and long side-beam templates. Fire-time code
+// selects the templates and optional center beam.
 static void JE_applyZicaLaserConfig(void)
 {
 	const int wn11 = weaponPort[5].op[0][10];  // Zica Laser (port 5), Lv11 weapon (209)
@@ -263,12 +246,8 @@ static void JE_applyZicaLaserConfig(void)
 		memcpy(weapons[wn11].bx, spread ? bx_spread : bx_straight, sizeof(bx_spread));
 	}
 
-	// (2) Build the two LONG side beams: full copies of the Lv10 beam (8 solid segments,
-	// so they look and reach like the real Lv10 shot) placed left/right. The Lv10 template
-	// is ship-locked (sx=120); zicaLaserLock chooses how the side beams move:
-	//   Lock on  -> stay ship-locked (glued to the ship). A locked shot can't drift,
-	//               so both patterns become two locked columns.
-	//   Lock off -> free-flying (default): columns go straight up (sx=0), spread drifts (sx=+-1).
+	// Build long side beams from the Lv10 template. Lock keeps them ship-bound; otherwise columns
+	// travel straight and the spread pattern drifts outward.
 	memcpy(&weapons[ZICA_LONG_WEAP_LEFT],  &weapons[wn10], sizeof(JE_WeaponType));
 	memcpy(&weapons[ZICA_LONG_WEAP_RIGHT], &weapons[wn10], sizeof(JE_WeaponType));
 	for (int i = 0; i < 8; ++i)
@@ -375,10 +354,8 @@ static void JE_applySuperSparks(void)
 	JE_retagWeaponSparks(706, superSparkMode[SSW_ICE], icePlain, iceTagged, COUNTOF(icePlain));
 }
 
-// Weapons whose ep1-3 vs ep4/5 item data differ beyond the superspark trail. epDiffMode[]
-// forces either data set (Auto = keep the running episode's); every field is rewritten from
-// the shipped constants, so it is idempotent exactly like JE_applySuperSparks. Only the
-// meaningful [0..max-1] pattern slots are touched (higher slots carry editor garbage).
+// Apply episode-specific weapon data from shipped constants. Auto keeps the running episode;
+// only active pattern slots are rewritten.
 static void JE_applyEpDiffs(void)
 {
 	for (int w = 0; w < EDW_COUNT; ++w)
@@ -533,10 +510,7 @@ void JE_labelAmmoSidekicks(void)
 		char label[16];
 		int label_len = snprintf(label, sizeof(label), "Ammo %d",
 		                         endlessPerkSidekickAmmo(ammoBaseAmmo[i]));
-		// snprintf reports the length it WOULD have written (so a truncated label over-reports) and
-		// a negative on encoding failure. Clamp to what the buffer actually holds: the column
-		// arithmetic below is unsigned, so a negative length would turn into a huge count and the
-		// clamp meant to protect the 30-char name field would sail straight past it.
+		// Clamp snprintf's reported length to the bytes actually stored before unsigned arithmetic.
 		if (label_len < 0)
 			label_len = 0;
 		else if (label_len > (int)sizeof(label) - 1)
@@ -755,9 +729,7 @@ void JE_loadItemDat(void)
 
 	JE_applyEpDiffs();              // force the configured ep1-3/ep4-5 data on the other diff weapons
 
-	// Wobbley's first animation frame ships as stray sprite 166 (a neighbouring small-pod
-	// graphic) while the rest of its loop is the 246/265/284/303 wobble; snap frame 0 to the
-	// base rest frame so it no longer flashes the wrong pod once per cycle.
+	// Replace Wobbley's stray first-frame sprite with its normal rest frame.
 	for (int i = 0; i <= OPTION_NUM; ++i)
 		if (strncmp(options[i].name, "Wobbley", 7) == 0 && options[i].gr[0] == 166)
 			options[i].gr[0] = options[i].gr[1];

@@ -81,16 +81,8 @@
 
 bool isNetworkGame = false;
 
-// Ticks of input delay, and the single most important number for how netplay feels.
-//
-// It is NOT just input lag -- it is how far ahead of the other machine we are allowed to run,
-// so it caps the tick rate at roughly network_delay / round-trip-time. At 35Hz that means a
-// 30ms round trip needs at least 2 to sustain full speed, and anything less makes the whole
-// game run in slow motion and stutter on every jitter spike. Values above 1 additionally
-// enable the XOR parity packets that can rebuild a single lost state packet.
-//
-// 3 is the safe default: it sustains full speed up to roughly an 85ms round trip. Drop it to
-// 2 on a fast LAN for less input lag; raise it if the game stutters.
+// Input-delay ticks also bound how far either peer may run ahead. Values above 1 enable
+// single-packet XOR recovery. Default 3 supports roughly 85ms RTT at 35Hz.
 int network_delay = 3;
 
 char *network_opponent_host = NULL;
@@ -281,12 +273,7 @@ bool network_send_unacked(int len)
 // send packet and place it in queue to be acknowledged
 bool network_send(int len)
 {
-	// Queue room is checked BEFORE the send.  The other order put the datagram on the wire and
-	// only then discovered there was nowhere to file it, returning without advancing
-	// last_out_sync -- so every later packet went out reusing that sequence number, and the peer
-	// dropped one of each pair as a duplicate.  A full queue means NET_PACKET_QUEUE rendezvous
-	// packets outstanding with no acknowledgement at all, which is a dead link, not congestion:
-	// report it as one rather than play on with a corrupt sequence.
+	// Reserve queue space before sending so every datagram receives a unique sequence number.
 	Uint16 i = last_out_sync - queue_out_sync;
 	if (i >= NET_PACKET_QUEUE)
 	{
@@ -348,12 +335,8 @@ int network_ping_ms(void)
 	return (int)(ping_ema + 0.5f);
 }
 
-// Consume at most one inbound datagram: 1 = one handled, 0 = none waiting, -1 = receive error.
-//
-// A receive error is neither fatal nor logged.  On Windows an ICMP port-unreachable -- which the
-// connect handshake produces routinely, and which also lands the moment the peer's process dies --
-// fails the NEXT recv on this socket with WSAECONNRESET, once per ICMP and without disturbing the
-// datagram queue.  Callers must read -1 as "nothing this time" rather than as a dead link.
+// Consume at most one datagram. A receive error is transient: Windows reports ICMP unreachable as
+// WSAECONNRESET on the next receive without disturbing queued datagrams.
 static int network_recv_one(void)
 {
 	switch (SDLNet_UDP_Recv(net_socket, packet_temp))
@@ -414,12 +397,7 @@ static int network_recv_one(void)
 				packet_temp->channel = 0;
 			}
 
-			// SDL_net reports a channel only when the source host AND port both match a binding.
-			// A NAT that does not reuse the forwarded port for the peer's outbound traffic makes
-			// every reply arrive unmatched, so the handshake never completes and the joiner waits
-			// on "Connecting..." forever with nothing logged on either side.  The peer's address
-			// is its identity; the source port is its NAT's business.  Sends are unaffected --
-			// they still go to channel 0, the address that was dialled and is actually forwarded.
+			// Accept the known peer by host address even if NAT rewrites its outbound source port.
 			const bool from_peer = packet_temp->channel == 0 ||
 			                       (peer_addr_known && packet_temp->address.host == ip.host);
 
@@ -487,15 +465,7 @@ static int network_recv_one(void)
 							}
 							else
 							{
-								// inbound packet queue overflow/underflow
-								// under normal circumstances, this is okay
-								//
-								// ...except for one case worth counting: `i` just past the window
-								// is a NEW packet arriving with all 16 slots still unconsumed (a
-								// stalled receiver mid-resync).  It is acknowledged below and then
-								// lost -- the one loss an acknowledged channel cannot see, and what
-								// a resync abort's "chunk index skip" means.  A huge `i` is only a
-								// stale duplicate of an already-consumed packet.
+								// Count near-window overflow; larger gaps are stale duplicates.
 								if ((Uint16)(i - NET_PACKET_QUEUE) < NET_PACKET_QUEUE)
 									++net_diag.acked_dropped;
 							}
@@ -505,10 +475,7 @@ static int network_recv_one(void)
 						// fall through
 
 					case PACKET_KEEP_ALIVE:
-						// Bounce the ping probe back the moment it lands, so what the sender
-						// measures is the link and not our keep-alive timer's phase.  The type
-						// has to be re-checked because the acknowledged packets above fall
-						// through to here, and their data[4] is payload rather than a stamp.
+						// Echo ping stamps immediately. Re-check the type because reliable packets fall through.
 						if (SDLNet_Read16(&packet_temp->data[0]) == PACKET_KEEP_ALIVE &&
 						    packet_temp->len >= 8)
 						{
@@ -1274,18 +1241,12 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	// or the cursor below can never move off wherever the ship left it.
 	mouseSetRelative(false);
 
-	// A session that died under this player mid-game (peer quit, link lost, desync) leaves
-	// the run hanging: offer to keep it before unwinding.  Voluntary quits (err 0) had the
-	// shop's Save Game; pre-game failures have nothing to save (the flag is only ever set
-	// once gameplay wrote a LAST LEVEL backup).  Keep-alives inside the menus deliver the
-	// remaining acks the attempt_sync wait below otherwise handles.
+	// Offer a coherent LAST LEVEL backup after an involuntary mid-game disconnect.
 	if (err != 0 && network_session_saveable && network_bailout_armed)
 	{
 		if (networkDisconnectSavePrompt(err_msg[err]))
 		{
-			// Restore the pre-level outpost state (the LAST LEVEL backup) and run the standard
-			// save menu on it: what gets written is the same state a game-over reload or a
-			// later host resume uses, not this level's half-flown progress.
+			// Save the pre-level outpost state, not partial progress from the interrupted level.
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
 			JE_loadScreen(true, true);
 		}
@@ -1360,32 +1321,8 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 }
 
 /* --- Host-authoritative simulation settings ---------------------------------------------
- *
- * Lockstep means both machines simulate the whole world from the same inputs, so every
- * setting that changes the simulation has to agree.  The ones below were verified to reach
- * the sim rather than just the screen:
- *
- *   superSparkMode[]  gates whether a weapon leaves a trail, and each trail spark costs two
- *                     mt_rand draws (JE_doSP, varz.c) -- a mismatch desyncs the RNG stream
- *                     immediately.  extraSparks and superSparkClassicCap only resize the
- *                     spark ring buffer and draw no extra randomness, so they stay local.
- *   epDiffMode[]      per-weapon episode data; two entries change shot patterns outright.
- *   zicaLaser*        Lv11 shot pattern, length and the extra Lv10 beam.
- *   wallopSecondBolt  adds a second bolt per volley (episodes.c).
- *   chargeLaserCannon changes what the shared shop stocks.
- *   restoreBaseDispensers wakes enemies 80-83.
- *   arcadeLifeBoost   scales both ships' shield and armour ceilings with their life counts
- *                     (player.c), which decides how much damage each of them survives.
- *   arcadeRandomBalls re-rolls each arcade weapon ball as it spawns, costing one mt_rand draw
- *                     per ball (JE_makeEnemy, tyrian2.c) -- and both ships pick the balls up
- *                     out of a shared world, so this has to be one shared choice.
- *   xmasMode          selects a different shape/data set.
- *   gameSpeed         scales the tick rate the whole sim runs at.  A host option in the
- *                     lobby (network_host_game_speed), applied at connect and synced here.
- *
- * Purely presentational settings (gauge gradients, boss/enemy bars, parallax, smooth motion,
- * fps cap, gamma, input device) are deliberately absent: they should stay per-player.
- */
+ * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
+ * shared pickups, data sets, or tick rate. Rendering, audio, and local input settings stay local. */
 static bool settings_stashed = false;
 static struct
 {
@@ -1439,11 +1376,8 @@ int network_settings_pack(Uint8 *buf)
 	return NETWORK_SETTINGS_SIZE;
 }
 
-/* Both machines run this against the peer's settings block -- the joiner adopts the
- * host's simulation settings, but the layout is a mutual property and the HOST is the
- * side that streams, so a one-sided check would leave it spending the level's recovery
- * budget on bytes the joiner can never take.  Recovery is retired for the session on a
- * mismatch; the desync canary is untouched, so a divergence is still reported. */
+/* Both peers compare layouts because the host streams state and the joiner adopts it. A mismatch
+ * disables recovery but retains desync detection. */
 void network_settings_check_layout(const Uint8 *buf)
 {
 	const Uint32 their_fp   = SDLNet_Read32(&buf[16]);
@@ -1576,22 +1510,8 @@ void network_settings_restore(void)
 }
 
 /* --- Debug Mode across the wire ----------------------------------------------------------
- *
- * The debug menu writes simulation state straight into the globals, so an edit made on one
- * machine (a loadout swap, a cheat, a difficulty change) would leave the two sims playing
- * different games from the next tick on.  The editing machine publishes the whole block and
- * the peer adopts it verbatim -- no field-by-field diffing, so a block can never be applied
- * half-way.
- *
- * Where it is safe to apply is a property of where the debug menu can be OPENED from: the
- * in-game options menu (a rendezvous -- the peer is parked in JE_doInGameSetup's wait loop)
- * and the shop (nobody is simulating).  The packet is reliable and ordered, so it always
- * lands before the PACKET_WAITING that releases the peer.
- *
- * Armor and shield ride along rather than being re-derived: the sender already ran the hull
- * swap's re-armor, and reproducing "was this a hull swap?" on the far side is guesswork the
- * two machines have no reason to agree on.
- */
+ * Publish debug-menu state as one reliable block while both peers are in a menu rendezvous.
+ * Armor and shield are transmitted because the sender has already applied any hull change. */
 #define NDS_GEN        4    /* Uint32: generation of the block            */
 #define NDS_SENDER     8    /* Uint8:  publishing player number, 1 or 2   */
 #define NDS_DIFFICULTY 9    /* Uint8                                      */
@@ -1759,16 +1679,7 @@ bool network_debug_sync_pump(bool in_level)
 }
 
 /* --- Desync detection -------------------------------------------------------------------
- *
- * Nothing in the original netcode ever checked that the two simulations still agreed: a
- * single diverging RNG draw left both players happily playing different games with no
- * indication anything was wrong.  This folds the state that must match into one word.
- *
- * mt_rand_count leads deliberately.  Network levels reseed to a fixed constant, so it is
- * directly comparable, and it catches divergence a tick or two before it shows up in
- * anything visible.  Player and enemy state is sampled after it as a backstop for
- * divergence that somehow consumes the same amount of randomness.
- */
+ * Compare RNG draw count plus player and enemy state. Network levels share a fixed RNG seed. */
 bool networkDesyncHalt = false;
 
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash)
@@ -1982,12 +1893,7 @@ void network_diag_note_desync(int level)
 }
 
 /* --- Crash-log network section ------------------------------------------------------------
- *
- * Appended to every crash/hang/note report via crashlog_write_game_state, so each NETWORK
- * DESYNC / STALL / RESYNC entry carries the session's whole health picture.  Reads only
- * statics in this TU (plus the rollback module's own writer) -- no SDL_net calls, safe from
- * a fault handler or the watchdog thread.
- */
+ * Reads only static diagnostics and is safe from fault handlers. */
 void network_write_diagnostics(FILE *f)
 {
 	if (f == NULL)
@@ -2125,12 +2031,7 @@ void network_shutdown(void)
 }
 
 /* --- LAN discovery ----------------------------------------------------------------------
- *
- * Runs on its own short-lived socket so it cannot disturb a game in progress, and so it can
- * be used from the lobby before any game socket exists.  Probes go to each interface's
- * subnet broadcast address as well as the global one: some stacks and firewalls permit one
- * and not the other, and a duplicate probe costs nothing.
- */
+ * Use a short-lived socket and probe both interface and global broadcast addresses. */
 int network_local_addresses(IPaddress *out, int max)
 {
 	if (out == NULL || max < 1)

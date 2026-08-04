@@ -32,11 +32,8 @@ int      endlessArmorBonus = 0;
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
-// The run's cash ledger. Every wallet movement is DECLARED at the source -- income through
-// endlessCashCredit, spending through endlessCashDebit, the upgrade shop's full-refund trades
-// through the Begin/Commit bracket -- so the run-over tally is exact by construction. The mark
-// mirrors the wallet after every declared move; endlessCashAudit is the assertion that nothing
-// moved it undeclared, booking (and warning about) any drift rather than letting it net away.
+// Run cash ledger. The mark mirrors the wallet after each declared credit, debit, or trade;
+// endlessCashAudit books and reports any undeclared drift.
 Uint64 endlessRunCashEarned = 0;
 Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
@@ -46,8 +43,7 @@ static ulong endlessCashMark = 0;
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
 #define ENDLESS_CASH_TALLY_MAX  999999999999ULL
 
-// Lower case: these read as a list under a heading, not as titles. Order tracks EndlessCashSource,
-// which is append-only, so "starting stake" sits at the tail rather than in chronological order.
+// Order tracks the append-only EndlessCashSource enum.
 static const char *const endlessCashSourceNames[ENDLESS_CASH_SOURCES] = {
 	"kills", "pickups", "bounties", "zone clears", "interest", "gambling", "declined perks", "untagged",
 	"starting stake", "gear sold",
@@ -77,18 +73,14 @@ static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 {
 	if ((unsigned)src >= ENDLESS_CASH_SOURCES)
 		src = ENDLESS_CASH_OTHER;
-	// Clamp against the TOTAL first, then apply that same figure to the source, so the breakdown sums
-	// to the total even in the (unreachable) saturating case -- clamping the two independently would
-	// let them disagree.
+	// Clamp once so the total and source breakdown cannot diverge.
 	if (amount > ENDLESS_CASH_TALLY_MAX - endlessRunCashEarned)
 		amount = ENDLESS_CASH_TALLY_MAX - endlessRunCashEarned;
 	endlessRunCashEarned += amount;
 	endlessCashBySource[src] += amount;
 }
 
-// The drift check behind endlessCashAudit and endlessCashDebugOverwrite: book any undeclared wallet
-// movement (a rise as "untagged" income, a fall as plain spending) and re-anchor the mark. It must
-// run before any re-mark over a drifted wallet, or the drift would silently net away.
+// Book undeclared wallet drift, then re-anchor the ledger mark.
 static void endlessCashReconcile(bool warn)
 {
 	const ulong now = player[0].cash;
@@ -112,7 +104,7 @@ void endlessCashAudit(void)
 	endlessCashReconcile(true);
 }
 
-// The debug screen's wallet overwrite is declared, just not classifiable -- book it without the noise.
+// Treat debug wallet edits as declared but unclassified.
 void endlessCashDebugOverwrite(void)
 {
 	if (!endlessMode)
@@ -155,15 +147,13 @@ void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
 	endlessCashMark = player[0].cash;
 }
 
-// Cash that was placed rather than earned -- the starting stake, a save being loaded, a sortie
-// snapshot being reverted -- moves the mark without booking anything either way.
+// Re-anchor after loading or restoring cash that was not earned in this run.
 void endlessCashResync(void)
 {
 	endlessCashMark = player[0].cash;
 }
 
-// Wallet snapshot carried from Begin to Commit. The upgrade sub-menu shows a FAKE balance between
-// the two, so the pair must bracket exactly one shop transaction with nothing booking in between.
+// The upgrade menu shows a temporary balance; Begin/Commit must bracket one transaction.
 static ulong endlessTradeBefore = 0;
 
 void endlessShopTradeBegin(void)
@@ -174,10 +164,7 @@ void endlessShopTradeBegin(void)
 	endlessTradeBefore = player[0].cash;
 }
 
-// The upgrade shop refunds gear at full price, so a sell-back must not read as income the way an
-// undeclared rise does. Gear falls are booked into their own sink; a rise cancels against that sink
-// (churn nets to zero on both totals) and only the excess -- selling gear the run GRANTED, which
-// booked nothing when acquired -- is credited, labelled rather than "untagged".
+// Full-refund trades cancel prior gear spending. Only excess from granted gear counts as income.
 void endlessShopTradeCommit(void)
 {
 	if (!endlessMode)
@@ -278,9 +265,7 @@ int endlessPerkOffersAtDepth(int depth)
 	return endlessMilestoneKindOfZone(depth) ? ENDLESS_PERK_OFFERS_MILESTONE : ENDLESS_PERK_OFFERS;
 }
 
-// Run mode from the seed screen. Relaxed adds the death menu; Hardcore disables saving and locks
-// the outpost after a mid-zone bail. Standard sits between them: the run ends when the ship does.
-// (It is "Standard" rather than "Normal" so nothing here reads as the Normal difficulty.)
+// Seed-screen run mode: Relaxed allows retries; Standard ends on death; Hardcore also disables saves.
 EndlessRunMode endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 
 const char *endlessRunModeName(EndlessRunMode mode)
@@ -293,9 +278,7 @@ const char *endlessRunModeName(EndlessRunMode mode)
 	}
 }
 
-// The all-time records are stored in opentyrian.cfg, including for Hardcore runs. One per mode:
-// reaching Zone 40 on Relaxed says nothing about how deep you can fly Hardcore, so a mode's record
-// only ever moves under that mode.
+// Per-mode all-time records, stored in opentyrian.cfg.
 int endlessBestZone[ENDLESS_RUNMODE_COUNT] = { 0 };
 static int endlessBestZoneAtRunStart = 0;
 
@@ -625,20 +608,13 @@ static void endlessDrawRunEndBackdrop(void)
 	memcpy(&colors[240], &palettes[0][240], 16 * sizeof(colors[0]));
 }
 
-// A destroyed ship gets the death menu (JE_endlessDeathMenu) rather than GAME OVER and the run
-// summary. The level loop skips the GAME OVER wait for it, and JE_main puts the
-// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and in Standard a
-// fatal hit is the end of the run.
-// The death menu exists because any player can just press esc during the death explosion animation
-// and get to the pause menu and effectively have the same choices -- which is why the modes that do
-// NOT offer it close that route off (endlessDeathLocksMenu).
+// Relaxed deaths open JE_endlessDeathMenu instead of going directly to the run summary.
 bool endlessDeathMenuDue(void)
 {
 	return endlessMode && endlessRunMode == ENDLESS_RUNMODE_RELAXED && endlessSortieValid();
 }
 
-// The other half of that bargain: with no death menu on offer, the pause menu's Quit Level row would
-// be a free trip back to the outpost mid-explosion, so Standard and Hardcore shut the menu itself.
+// Standard and Hardcore lock the pause menu after death to prevent a Quit Level escape.
 bool endlessDeathLocksMenu(void)
 {
 	return endlessMode && endlessRunMode != ENDLESS_RUNMODE_RELAXED;
@@ -684,9 +660,7 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
-	// Everything the run took in and everything it burned, rather than the wallet at the moment of
-	// death -- that mostly measures how recently you last spent. The two differ by the balance left,
-	// so a hoarder and a spender with the same earnings read very differently here.
+	// Report lifetime income and spending, not only the final balance.
 	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
 	RUNEND_ROW("Cash spent:", "$%llu", (unsigned long long)endlessRunCashSpent);
 
@@ -696,10 +670,7 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
 
-	// The all-time record is not part of the run tally, so it closes the screen centered under the
-	// milestone line instead. Each mode keeps its own record, so the number carries the mode's
-	// initial (25 H) -- otherwise a Relaxed best and a Hardcore best would read as the same zone.
-	// Show the gain when positive.
+	// Show the matching mode initial and any positive record gain.
 	char recordLine[64];
 	const int best = endlessBestZone[endlessRunMode];
 	const int recordGain = best - endlessBestZoneAtStart();
@@ -742,8 +713,7 @@ void endlessOnRunEnd(void)
 	const int closeLines = (closingTail != NULL) ? 2 : 1;   // the milestone line, plus the sign-off at 250
 	int step = 18;
 	int total;
-	// Squeeze the row pitch down to the glyph height first, then the two gaps: the deepest runs carry
-	// the most stat rows AND the extra sign-off line, and there are only 200 scanlines to spend.
+	// Tighten row pitch and gaps to fit the deepest-run summary in 200 scanlines.
 	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH
 	                + tailGap + lineH
 	                + (closeLines - 1) * (recordGap + lineH)

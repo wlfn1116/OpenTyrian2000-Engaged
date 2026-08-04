@@ -392,161 +392,64 @@ it keeps the key it was written under before the mode was renamed) and
 
 ### Run Over screen
 
-`endlessOnRunEnd` (endless.c) is a two-column tally: only `RUN OVER`, the "You fell in
-Zone N" epitaph and the closing milestone line are centred. Every stat is a `{label,
-value}` row drawn by `endlessGlowRow` -- label at the block's left edge, value flush to
-its right edge. The block is sized to the widest label plus the widest value plus a
-30px gap and then centred as a unit, so both columns stay aligned whatever a run
-produced (a hand-typed 23-character seed is the wide case; the gap squeezes before
-anything clips).
+`endlessOnRunEnd` draws stats as aligned label/value columns. `endlessGlowRow`
+sizes and centres the block; `JE_outTextGlowMulti` animates both strings together.
+Two separate `JE_outTextGlow` calls would animate sequentially.
 
-A row cannot be two `JE_outTextGlow` calls: that function *animates* (12 up frames,
-then a decay to `textGlowBrightness`, pumping `JE_showVGA` itself), so two calls would
-glow the label and the value one after the other and take twice as long. Hence
-`JE_outTextGlowMulti` (fonthand.c), which drives several strings at their own x through
-one animation; `JE_outTextGlow` is now a one-string wrapper over it.
+The furthest-zone value includes the run-mode initial, for example `25 H`.
+`endlessMilestoneEpilogue` adds the post-Zone-250 sign-off.
 
-The furthest-zone value carries the mode's initial (`25 H`), taken from
-`endlessRunModeName(...)[0]`, because each mode has its own record.
-
-Past Zone 250 the milestone line has nowhere further to go, so
-`endlessMilestoneEpilogue` prints a sign-off ("Thank you for playing.") beneath it --
-kept separate so the in-universe beat still lands before the game steps out from
-behind it.
-
-Vertical fit: the glyph heights are exactly 20px (`FONT_SHAPES`) and 13px
-(`SMALL_FONT_SHAPES`), so 13 is a hard floor for the row pitch. `step` shrinks from 18
-to 13, then `titleGap` and `tailGap` shrink to 6, until the whole thing fits in 182px.
-Worst case -- 8 rows with the hull bonus present *and* the Zone 250 sign-off -- lands
-at 194px, y=3, bottom 197: tight against the 200px screen but nothing clips.
+The layout must fit 182px. Row pitch may shrink from 18 to 13px, the small-font
+height, and title/tail gaps may shrink to 6px. The eight-row worst case ends at
+screen row 197.
 
 ### Cash ledger
 
-Every wallet movement in a run passes through one explicit interface (endless.c):
-`endlessCashCredit(amount, src)` for income, `endlessCashDebit(amount, sink)` for
-purchases and penalties (clamped to the wallet), and the
-`endlessShopTradeBegin`/`endlessShopTradeCommit` bracket for the upgrade shop. Each
-books against a breakdown -- `EndlessCashSource` for earnings, `EndlessCashSink` for
-spending -- and re-marks the ledger's wallet mirror, so the run-over totals are
-exact by construction, with no reconciliation in the normal path.
-`player_award_pickup_cash` (player.c) wraps the credit for playfield pickups, which
-pay whoever collected them.
+All run cash uses `endlessCashCredit`, `endlessCashDebit`, or the
+`endlessShopTradeBegin`/`endlessShopTradeCommit` bracket. Credits and debits update
+the source/sink breakdowns and the wallet mirror. Playfield pickups use
+`player_award_pickup_cash`.
 
-The old reconciler survives only as `endlessCashAudit`, a debugging assertion run
-from the gameplay tick, the save/sortie capture, run end, and the top of every
-credit/debit. If the wallet drifted from the mark, some path bypassed the interface:
-it warns on stderr and still books the drift (a rise as "untagged" income, a fall as
-plain spending) so the totals stay wallet-true even then. A nonzero "untagged" line
-in the crash-log breakdown is that warning made durable -- the one legitimate cause
-is the debug Add Cash screen, which declares its overwrite through
-`endlessCashDebugOverwrite` (same booking, no warning).
+`endlessCashAudit` reports and books any direct wallet change that bypasses the
+interface. The debug Add Cash path declares its overwrite through
+`endlessCashDebugOverwrite`, so it does not warn.
 
-The upgrade shop is a full-refund market that *assigns* a recomputed balance
-(`player[0].cash = JE_cashLeft()`) rather than subtracting, so it is bracketed
-instead of debited: `endlessShopTradeBegin` (game_menu.c, sub-menu entry) snapshots
-the wallet while it is still real, and every exit's `JE_cashLeft()` assignment is
-followed by `endlessShopTradeCommit`, which books exactly one transaction's delta. A
-fall books as `ENDLESS_SINK_GEAR` spending; a rise cancels against that sink first
--- buy gear and sell it back and neither run-over total moves, in any order -- and
-only the excess books as income, labelled "gear sold" (`ENDLESS_CASH_TRADEIN`). The
-excess is real money the run was handed in kind: liquidating GRANTED gear, which
-booked nothing when acquired (the starting Atomic RailGun sold at the first outpost
-is the canonical case).
+The upgrade shop assigns `JE_cashLeft()` rather than debiting each purchase.
+Begin snapshots the real wallet; Commit books the net delta. Refunds cancel gear
+spending first. Any excess from selling granted equipment is gear-sale income.
+Do not audit or book cash while the shop displays its temporary balance.
 
-Invariant: `earned - spent == wallet` (the Zone 1 stake is booked as
-`ENDLESS_CASH_START`, so there is no separate starting term), the source breakdown
-sums to `earned`, and the sinks sum to `spent` less anything the audit had to book.
-The trade commit preserves it from both sides: a refund raises the wallet by
-`cancel + excess`, lowers spent by `cancel` and raises earned by `excess`. The one
-place `player[0].cash` is deliberately *fake* is the upgrade sub-menu between Begin
-and the exits; no credit, debit, or audit may run in that window. Both breakdowns
-persist in endless.sav (sources since v17, sinks since v19 -- v18 briefly stored
-only the gear sink), each with spare on-disk slots so appending an enum entry needs
-no version bump.
+The invariant is `earned - spent == wallet`; source totals equal earnings and
+sink totals equal spending. Sources persist since save v17 and sinks since v19
+(v18 stored only the gear sink). Both arrays reserve spare on-disk slots.
 
 ### Death and retries
 
-A destroyed ship in a **Relaxed** run gets `JE_endlessDeathMenu` (mainint.c) over
-the frozen death frame before `endlessOnRunEnd`: Restart Zone, Return to Outpost,
-End Run. It is built on `JE_inGameSetup`'s arrangement so the cursor, hover and
-joystick behave identically, and Esc/right-click are inert so nothing discards a
-run by accident.
+A destroyed ship in Relaxed mode opens `JE_endlessDeathMenu` over the frozen
+playfield: Restart Zone, Return to Outpost, or End Run. It uses the in-game menu's
+keyboard, mouse, joystick, and cursor behavior; Esc and right-click do nothing.
+Standard and Hardcore use GAME OVER and lock the pause menu after the fatal hit.
 
-`endlessDeathMenuDue()` gates both halves. The level loop's GAME OVER branch reads
-it and sets `reallyEndLevel` instead of drawing GAME OVER and waiting on a press —
-the menu offers the same beat plus two ways to keep the run, so leaving GAME OVER
-in front of it only cost a keypress. The frame frozen under the panel is therefore
-the clean playfield.
+Live-level panels must:
 
-Three drawing constraints, all easy to get wrong:
+- copy `palettes[0][240..255]` into the active text ramp, then restore `colors`
+  without applying it before the caller fades out;
+- use font-appropriate brightness offsets (`normal_font` is centred higher in
+  the ramp than `small_font` and `TINY_FONT`);
+- centre within the 299x184 playfield, not the full frame and HUD.
 
-- **Bank 15 is the text ramp in the menu palette only.** Of the 24 palettes in
-  `palette.dat`, entries 240-255 are a usable ramp in about a third (0, 5, 7, 8, 10,
-  17, 18, 19, 21, 23); half are a flat block of white, 3 and 22 are flat green, 20
-  and 23 are unordered noise, and **palette 5 has a black hole at index 254**, which
-  turns the brightest pixel of every glyph black -- the "corrupted letters" look.
-  Any panel drawn over a live level must borrow the ramp (`memcpy(&colors[240],
-  &palettes[0][240], ...)` + `set_palette(colors, 240, 255)`);
-  `endlessDrawRunEndBackdrop` does the same after loading its PCX. On exit put the
-  level's entries back in `colors` for whoever sets the palette next, but do **not**
-  re-apply them -- the panel is still on screen while the caller fades to black, and
-  pushing the level ramp back under it wrecks the letters again for the whole fade.
-- **The `value` sign follows the font, not taste.** It slides a glyph's shades along
-  the bank, and each font's body sits somewhere different: `normal_font` at shade 13
-  (so it wants negatives -- a positive clamps its bright half into a slab) and
-  `small_font`/`TINY_FONT` at shade 7 (so a negative buries it in the near-black end;
-  the pause menu's help line is +6 for this reason). Measured off `tyrian.shp`.
-- `composite_playfield` lays the playfield down at screen x 0, 184 rows tall. The HUD
-  owns everything from `PLAYFIELD_WIDTH` (299) right and the message bar everything
-  below row 183, so an overlay centred on `vga_width`/`vga_height` sits low and to the
-  right. Centre on `PLAYFIELD_WIDTH` and 184 instead.
+Wreck dismissal is armed only after all inputs are released. `newkey` includes
+keyboard repeat and synthesized joystick keydowns, so it is not an edge test.
+Esc remains reserved for the pause menu in Relaxed mode.
 
-Any input except Esc during the wreck animation cuts it short and brings the menu
-up (`exploding_ticks > 0` branch of the GAME OVER block, recording `RB_EV_DISMISS`
-like the GAME OVER dismiss it replaces). Esc is excluded so it still reaches the
-pause menu -- the one Hardcore locks out at exactly this moment.
+Restart Zone calls `clear_song_selection()` because `fade_song()` leaves the same
+track selected; otherwise `play_song()` may skip reloading it and leave it quiet.
 
-That test waits on `deathSkipArmed`, set once nothing is held. **`newkey` does not
-mean "a new key was pressed"**: `service_SDL_events` raises it for SDL keyboard
-auto-repeat, and `push_joysticks_as_keyboard` pushes a synthetic KEYDOWN for every
-held stick direction each call (`direction_pressed` is edge *or* repeat-after-delay).
-Steering through the fatal hit -- constant under a movement modifier -- therefore
-skipped the explosion on its first tick. Any "did the player just press something"
-test in the level loop needs the same guard.
-
-**Restart Zone has to drop the song selection.** `start_level_first` fades the song on
-the way in and later calls `play_song(levelSong - 1)`, which reloads only when the song
-NUMBER changes -- and `fade_song` leaves a track *selected at volume 1* rather than
-stopped (`lds_fade` ramps `allvolume` down to 1 and returns with `playing` still
-**true**; only a `hardfade` clears it). Every other level entry arrives from a screen
-playing something else, so that reload undoes the fade for it. A zone retry names the
-same track, early-outs, and the level plays under the tail of the fade in silence. The
-branch calls `clear_song_selection()` (loudness.c) so the retry reloads like any other
-entry.
-
-Both retries revert the launch snapshot. Return to Outpost is literally the Quit
-Level path (`endlessRestoreSortie` then `endlessBetweenLevels`). Restart Zone uses
-`endlessRestartSortie`, which differs from the unlocked restore in two ways that
-matter:
-
-- it keeps the post-pick one-shots (purchased buff, sabotage charge, Long Con) as
-  the snapshot restored them, because the relaunch replays that same course pick;
-  refunding them the way the unlocked path does would spend them twice;
-- it clears `endlessResumeVisit` and calls `endlessArmLockedRelaunch` itself,
-  because no outpost visit will run to consume the flag and arm the level.
-
-Neither Standard nor Hardcore reaches the menu -- `endlessDeathMenuDue()` is Relaxed-only,
-so both fall back to the GAME OVER wait and the run summary, which is exactly the flow
-that predates the menu.
-
-The two gates are halves of one rule, so they are separate predicates:
-`endlessDeathMenuDue()` says a mode *offers* a retry, `endlessDeathLocksMenu()` says it
-does not and therefore drops `ingamemenu_pressed` in the level loop from the moment
-`all_players_dead()` goes true. Without the second, Esc during the explosion reaches
-the pause menu and its Quit Level row turns a fatal hit into a free trip to the
-outpost -- the very hole the death menu was built to bring out into the open. Relaxed
-is the only mode that leaves the menu open there, because it hands out the retry
-openly instead.
+Both retry paths restore the launch snapshot. Return to Outpost uses the Quit
+Level path. Restart Zone keeps post-pick one-shots, clears `endlessResumeVisit`,
+and calls `endlessArmLockedRelaunch()` because no outpost visit will arm the level.
+`endlessDeathMenuDue()` controls retry availability; `endlessDeathLocksMenu()`
+blocks the pause-menu escape in modes where death ends the run.
 
 ### Mode and effects
 
@@ -1203,110 +1106,29 @@ so neither can be borrowed without cutting a game sound.
 
 ### Crash-log diagnostics
 
-Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the
-offline rollback selftest — are written by `crashlog_note_net` to their own
-net log (same report format as the crash log), so they cannot bury a real crash
-report; the crash log keeps only process failures and recovered would-be-crashes.
+Netplay health events use `crashlog_note_net`; process failures use the crash log.
+The Network Log setting is checked inside the logging functions, not at each call
+site.
 
-`Setup > Enhancements > Game Tweaks > Network > Network Log`
-(`crashlog_set_netlog_enabled`, persisted as
-`[enhancements] net_log`, on by default) is the master switch, checked inside
-`crashlog_note_net`/`crashlog_netlog_line` rather than at each of their ~20 call
-sites.
+Logs are created lazily under `log/` and named with the launch timestamp. Windows
+tries the executable directory, working directory, then `%TEMP%`. The session
+stamp is set before crash handlers are installed; the lazy fallback covers earlier
+reports. Files are append-only and are not rotated.
 
-Both logs live in a `log` folder beside the executable and are named for the
-launch they belong to — `log\opentyrian_log_2026-08-04_143012.log`,
-`log\opentyrian_net_<same stamp>.log` — so a session writes at most one of each,
-"the log" and "this run" are the same object when someone is asked for one, and
-no report is ever overwritten by a later run. The folder is what makes an
-accumulating history tolerable: reports pile up out of the way instead of in the
-game directory, and an install that has never had trouble has no folder at all.
-`open_log_file` creates it on demand (`make_log_dir`, `CreateDirectoryA` treating
-`ERROR_ALREADY_EXISTS` as success) under the first of three roots that takes it —
-exe dir, working directory, `%TEMP%` (`log_roots`), the last two being fallbacks
-for a read-only install. `log_dir_path` is the same path without the create, for
-the delete/sweep paths, which must not conjure an empty folder in a root this
-install never writes to.
-`install_crash_handler` fixes `s_sessionStamp` (`build_session_stamp`) before any
-handler is armed, still single-threaded, so every writer that follows composes
-the same name; `log_filename` re-derives it lazily only to cover a report raised
-before that, where an unnamed log would be worse than a slightly late stamp.
-Neither file is created until something is written to it, which is what makes
-"no file" mean "this run had nothing to report" — the old scheme got that for the
-net log by deleting the previous one at startup, and this gets it for both
-without deleting anything. Nothing rotates and nothing is swept, so
-`open_log_file` can open `"a"` unconditionally: there is no stale file to clear,
-the two flags that tracked first-write-of-session are gone, and two instances
-started in the same second stack their reports rather than one truncating the
-other's. Rotation is gone with them, and with it the constraint that forced it to
-run at startup: `MoveFileEx` had no business in a path whose writers are fault
-handlers. `CreateDirectoryA` does run there, but it is no worse than the `fopen`
-already on that path, and only on the first report of a session.
-
-What `crashlog_netlog_begin_session` still does is sweep the fixed-name and
-numbered net logs older builds left (`opentyrian_net.log`,
-`opentyrian_net.1..3.log`), loose in each of the three roots since they predate
-the folder, so a stale one cannot pose as a current one. Those were rewritten
-every launch by contract, so deleting them is what the build that wrote them
-would have done; the crash chain is left alone, being real reports.
-`main()` calls it right after `JE_loadConfiguration` — not from
-`install_crash_handler`, which runs long before the config is read and so could
-not honour the switch (off must leave the files untouched).
+`crashlog_netlog_begin_session`, called after configuration loads, removes legacy
+fixed-name and numbered net logs. It leaves legacy crash reports intact.
 
 Every online session is bracketed in the net log: `network_connect` writes a
-`NETWORK SESSION START` line (role, netcode, recovery, delay) the moment the
-sync handshake completes, and `network_shutdown` a `SESSION END` line with the
-session's desync/stall totals before it wipes `net_diag`. These go through
-`crashlog_netlog_line` — header line plus detail only, no context/stack body —
-so the brackets stay cheap. The point is falsifiability: a session with no
-entries between its brackets was healthy, a missing file means logging never
-ran, and neither state is confusable with the other. (Prompted by a real
-desync that left an empty-looking log; between the startup reset and a build
-predating the net-log split there was no way to tell which had happened.)
+start line after sync and an end line with desync/stall totals at shutdown. A log
+with nothing between them records a healthy session.
 
-On non-Windows (Switch/Vita), `crashlog_note_net` and `crashlog_netlog_line`
-are real now, not stubs: reduced entries (timestamped header + detail, no
-stack — there is no walker there) written under the same folder and naming,
-`<user dir>/log/opentyrian_net_<launch time>.log`. `make_log_dir` is a
-best-effort `mkdir(dir, 0700)` per write, mirroring what `config.c` already does
-for the user directory itself — a genuine failure surfaces at the `fopen` that
-follows, not there — and `log_dir` is the same path without the create, for the
-scan. `install_crash_handler` is otherwise a stub there, but it is the main
-thread at startup, so it pins the name (`netlog_filename`) for the same reason
-Windows pins its stamp there — otherwise the name would read as the time of the
-first entry, which is not what a reader would take it for. `sweep_legacy_net_logs`
-is a plain `remove` of the fixed and numbered names, loose in the user directory.
-The other crashlog entry points stay no-ops on consoles.
+Switch and Vita write reduced net entries under `<user dir>/log/`; other crash-log
+entry points remain stubs. Their startup hook still fixes the session filename.
 
-`Clear Logs`, alongside the switch (`crashlog_clear_logs`), deletes every log the
-game has written — crash and net alike, this session's included — a console-only
-row, since on PC the files sit in a folder beside the executable and can be
-deleted there. With logs now accumulating by timestamp rather than being
-overwritten, a console with no file manager needs a way to reclaim them, so
-"clear" became delete-all rather than truncate-the-one: Windows enumerates with
-`FindFirstFileA`, consoles walk the directory with `readdir`, and both sweep the
-log folder *and* the root beside it, since the loose legacy names sit there.
-
-Both match on `LOG_PREFIX` (`opentyrian_`) rather than a bare `*.log`, which is
-what makes a delete-all safe to point at directories the game does not own: the
-`%TEMP%` fallback root, and the console user directory that also holds the saves
-and config. Widening from the net stem to the shared prefix is the whole of
-"clear all logs, not just the net ones" — it takes in the crash logs and the
-legacy fixed/numbered names for free, and cannot reach anything another program
-wrote. It returns whether anything went, so the row can report `Cleared` against
-`No Logs`. A later entry in the same session just starts its log over under the
-same name — the unconditional `"a"` recreates it, and the folder too if the clear
-left it empty and something else removed it.
-
-The row is compiled in only for Switch/Vita. It used to be hidden while Network
-Log was off ("nothing to clear while nothing is written"), which stopped making
-sense once it cleared crash logs too: switching the net log off would have put
-every log already written out of reach. So `isMenuItemVisible` in `runOptionsMenu`
-now has no conditional rows and returns true unconditionally. The filter itself
-stays, because the menu loop is built on it: it builds a per-frame list of
-visible rows, so a hidden row occupies no slot in drawing, cursor movement or
-mouse hit-testing (all of which index that one list), and the selection is
-clamped in case a row vanishes under it.
+Console `Clear Logs` removes current and legacy crash/net logs. Deletion matches
+the `opentyrian_` prefix in both the log directory and legacy root, so unrelated
+files are untouched. The row remains visible when network logging is disabled.
+`isMenuItemVisible` is retained as the setup menu's central row filter.
 
 The lockstep detector's once-per-level latch (`tyrian2.c`) compares
 `mainLevel`, not `curLoc` — it originally latched on `curLoc`, which advances
@@ -1499,15 +1321,9 @@ changes.
 
 ## Crash logging
 
-The Windows logger writes a stack trace and guarded game-state dump to
-`log\opentyrian_log_<launch time>.log`. Netplay health events
-(`crashlog_note_net`) go to a separate `log\opentyrian_net_<same stamp>.log` in
-the same format, so a lossy session cannot bury a real crash report; only genuine
-process failures and recovered would-be-crashes use the crash log. Both are
-created only when there is something to write — the `log` folder included — so a
-session leaves one, both, or neither, and never overwrites an earlier session's.
-The net log additionally has its own on/off setting — see Netplay > Crash-log
-diagnostics.
+The Windows crash log contains a stack trace and guarded game-state dump. Netplay
+events use the separate net log described under Networking > Crash-log diagnostics.
+Both are created on first use under `log/` and named with the launch timestamp.
 
 The watchdog suspends the main thread only long enough to capture its context,
 then resumes it before symbol loading and stack walking. Those operations may

@@ -28,10 +28,7 @@
 
 #include <assert.h>
 
-// Map tiles are 24x24px. Rows draw two extra tiles beyond the playfield width so
-// coverage is guaranteed at any horizontal scroll: a single extra tile left an
-// uncovered strip on the right edge (intermittent black bars) when the scroll
-// was negative.
+// Two extra tiles cover negative horizontal scroll without exposing the right edge.
 #define BG_TILE_W 24
 #define BG_TILE_COUNT (PLAYFIELD_WIDTH / BG_TILE_W + 2)
 
@@ -44,11 +41,7 @@
 JE_word backPos, backPos2, backPos3;
 JE_word backMove, backMove2, backMove3;
 
-// Endless SMOOTH scroll boost: the extra scroll (px) applied to each background layer this
-// tick, computed once per tick in tyrian2.c via endlessScrollExtraPx() (fractional carry, so
-// the boosted scroll advances by a near-constant px/tick instead of whole `backMove` lumps ->
-// no velocity pulse). Layers 2/3 read these in draw_background_* here; the enemy scroll-track
-// and rep_explosions read them in tyrian2.c so they ride the same smooth delta. 0 when off.
+// Per-layer Endless smooth-scroll increments; zero when inactive.
 int endlessScrollExtraPx1 = 0, endlessScrollExtraPx2 = 0, endlessScrollExtraPx3 = 0;
 
 // See backgrnd.h: true during the sim tick (advance scroll as normal), false
@@ -60,12 +53,9 @@ bool background_advance = true;
 int bgScrollDeltaY[4] = { 0, 0, 0, 0 };
 int bgMarginRows = 1;
 
-// See backgrnd.h. Un-floored parallax offsets captured at each layer's draw site:
-// bg_layer_dx = this tick's FLOAT scroll delta, bg_layer_frac = the floored-away fraction.
+// Unfloored parallax offsets captured where each layer is drawn.
 float mapXOfs_f, mapX2Ofs_f, mapX3Ofs_f;
-// Un-floored mirrors of oldMapXOfs / oldMapX3Ofs (the previous tick's offsets, reused as
-// the parallax anchor for some enemy groups). Set beside their integer versions so
-// enemies on those anchors get the matching sub-pixel fraction (see tyrian2.c blit_enemy).
+// Previous-tick offsets used by layer-bound enemies.
 float oldMapXOfs_f, oldMapX3Ofs_f;
 float bg_layer_dx[4]   = { 0.0f, 0.0f, 0.0f, 0.0f };  // index 1..3
 float bg_layer_frac[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -73,23 +63,17 @@ float bg_layer_xofs[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 bool  bg_layer_xofs_valid[4] = { false, false, false, false };
 static float bg_layer_ofs_prev[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-// VERTICAL counterparts of bg_layer_dx/frac: bg_layer_dy (FLOAT scroll rate) + bg_layer_yfrac
-// (sub-pixel remainder), gated by bg_smooth_y_active. See backgrnd.h.
+// Vertical scroll rate and subpixel remainder for each layer.
 float bg_layer_dy[4]    = { 0.0f, 0.0f, 0.0f, 0.0f };
 float bg_layer_yfrac[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 bool  bg_smooth_y_active = false;
 
-// this-tick (non-lagged) vertical scroll rate + sub-pixel fraction per layer [1..3]. bg_layer_dy/
-// bg_layer_yfrac above are lagged one tick to match all entities and the BACKGROUND rows of layers
-// 1/2 (recorded PRE-advance). Background LAYER 3 instead needs the current values because
-// draw_background_3 advances backPos3 before drawing. Set in tyrian2.c beside the publish; 0 when
-// no modifier and on full-speed integer-rate layers.
+// Current-tick values for layer 3, which advances before drawing. Layers 1 and 2 use the
+// lagged values above to match their recorded rows and entities.
 float bg_layer_yfrac_now[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 float bg_layer_dy_now[4]    = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-// Record layer L's float scroll delta and fractional offset for this tick's draw. `cur_f`
-// is the un-floored offset, `cur_int` the whole-pixel one the row was recorded at. A large
-// jump (level load / warp) snaps the delta to 0, like the render list's own >40px guard.
+// Record a layer's float delta and fractional offset. Loads and warps snap the delta.
 static void bg_set_layer_dx(int layer, float cur_f, int cur_int)
 {
 	float d = cur_f - bg_layer_ofs_prev[layer];
@@ -672,13 +656,7 @@ void filter_screen_apply_scaled(SDL_Surface *surface, JE_shortint col, JE_shorti
 	}
 }
 
-// One tick of the level fade-in / flash ramp.  This is simulation state, so it belongs
-// in the tick body and NOT in the draw path it used to live in (inside JE_filterScreen):
-// a rollback re-simulation restores levelBrightness and then jumps back to the top of the
-// loop from the netcode driver, so only the presented pass ever advanced it.  A peer whose
-// input kept mispredicting -- the guest flying around from the first frame of the level --
-// rewound the fade every tick and pushed it forward once, holding the other machine at its
-// starting darkness for as long as the rollbacks lasted.
+// Advance fade simulation independently of presentation and rollback re-simulation.
 void JE_advanceLevelFade(void)
 {
 	if (!filterActive || !filterFade)

@@ -1,15 +1,8 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Rollback state engine: a registry of every piece of in-level simulation
- * state, a ring of whole-state snapshots keyed by sim frame, and a
- * single-player self-test that proves the registry is complete.
- *
- * The registry is the load-bearing part.  Rollback netcode re-simulates past
- * ticks from a restored snapshot; ANY sim-affecting variable missing from the
- * registry survives the restore and corrupts the replay.  The self-test
- * (snapshot -> tick -> restore -> re-tick -> compare every registered byte)
- * catches exactly that class of omission, offline, with no second machine.
+ * Rollback state registry, frame-indexed snapshot ring, and single-player completeness test.
+ * Every simulation variable that survives a restore must be registered.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -38,20 +31,8 @@
 #define ROLLBACK_MAX_PREDICT 10
 #define ROLLBACK_RING        (ROLLBACK_MAX_PREDICT + 3)
 
-/* --- Re-simulation mode -------------------------------------------------------
- *
- * rollback_resim: the current pass through the level loop is a REPLAY of a tick
- * that already ran once.  Everything that must happen once per real tick is
- * suppressed: sound playback (the queue is drained silently), live input
- * sampling (input comes from the recorded per-frame tuples), SDL event
- * pumping, demo-file writes, network keep-alives.
- *
- * rollback_resim_silent: additionally suppress render capture.  True for every
- * replay pass except the one whose output is presented.
- *
- * Both are false in all single-player and local-2P play unless the self-test
- * is explicitly enabled, so the suppression gates are inert by default.
- */
+/* Re-simulation mode. rollback_resim suppresses one-shot I/O and live input; the silent variant
+ * also suppresses render capture until the presented replay pass. */
 extern bool rollback_resim;
 extern bool rollback_resim_silent;
 
@@ -72,11 +53,8 @@ size_t rollback_state_size(void);
  * registry described (the layout fingerprint) but are not about to roll back. */
 void rollback_ensure_registered(void);
 
-/* A hash of the registry's SHAPE: item count, and every item's name, size and
- * offset.  Two machines can only adopt each other's wire snapshots if this and
- * rollback_state_size() both agree, so the connect handshake trades it and a
- * session that cannot ever recover says so up front instead of discovering it
- * at the first desync -- when the failed attempt costs both machines the level. */
+/* Hash of registry names, sizes, and offsets. Peers require this and state size to match before
+ * exchanging snapshots. */
 Uint32 rollback_layout_fingerprint(void);
 
 /* --- Snapshot ring, keyed by sim frame ---------------------------------------- */
@@ -86,29 +64,15 @@ void rollback_snapshot(Uint32 frame);
 bool rollback_have_frame(Uint32 frame);
 bool rollback_restore(Uint32 frame);
 
-/* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
- *
- * A snapshot buffer holds a handful of raw pointers, valid only in the process
- * that took it.  Export rewrites each one as a tag or array offset (every
- * target is a fixed global, so the encoding is exact) and proves it by decoding
- * its own output back and comparing; adopt rewrites them into THIS process's
- * pointers and restores.  Same-build peers only -- the layout is the registry's.
- */
+/* Wire-safe snapshots encode registered pointers as tags or global-array offsets. Export verifies
+ * its encoding locally; adoption requires a matching registry layout. */
 bool rollback_wire_export(Uint8 *dst);   /* dst: rollback_state_size() bytes    */
 bool rollback_wire_adopt(Uint8 *buf);    /* decodes in place, then restores     */
-/* Zero every DEAD slot of the big object pools in LIVE state, so that after an
- * adopt both machines are byte-identical (a spawn may read a recycled slot).
- * enemy[] is exempt: a new enemy deliberately inherits its slot's sprite bank
- * when its own isn't loaded (APPROACH), so dead enemy slots ship as data. */
+/* Zero dead object-pool slots before export. enemy[] is exempt because APPROACH spawns can inherit
+ * a recycled slot's sprite bank. */
 void rollback_wire_canonicalize(void);
 
-/* --- Per-frame input tuples ----------------------------------------------------
- *
- * The simulation's only doors for player input.  In netplay the wire carries
- * these; in the self-test they let a replayed tick reproduce the live-sampled
- * tick exactly.  x/y are the ABSOLUTE post-movement ship position -- idempotent
- * on replay, like the lockstep wire format before it.
- */
+/* Per-frame simulation input. x/y are absolute post-movement positions, making replay idempotent. */
 typedef struct
 {
 	Sint16 x, y;            /* ship position after the movement routine        */
@@ -136,26 +100,16 @@ typedef struct
 #define RB_EV_DEMO_END     (1u << 9)   /* self-test only: demo ran out this tick    */
 #define RB_EV_DISMISS      (1u << 10)  /* self-test only: game-over/demo dismissed  */
 
-/* Docked-link movement intent: did this player really press a direction this
- * tick, and along which dominant axis (ties go vertical, matching the classic
- * |dx|>|dy| turret test).  The linking routines must read these instead of
- * comparing tuple x/y against the local tick-start snapshot: a docked player's
- * tuple position embeds the sender's OWN dock pin -- computed from its
- * possibly-predicted copy of the carrier -- so the position compare reads as
- * phantom movement whenever the carrier moves, flapping the link every tick. */
+/* Docked-link movement intent and dominant axis. Tuple positions include the sender's dock pin, so
+ * comparing positions would mistake carrier movement for local input. */
 #define RB_MOVE_LEFT       (1u << 11)
 #define RB_MOVE_RIGHT      (1u << 12)
 #define RB_MOVE_UP         (1u << 13)
 #define RB_MOVE_DOWN       (1u << 14)
 #define RB_MOVE_MASK       (RB_MOVE_LEFT | RB_MOVE_RIGHT | RB_MOVE_UP | RB_MOVE_DOWN)
 
-/* --- Single-player self-test ---------------------------------------------------
- *
- * When enabled (config key rollback_selftest), every in-level tick runs twice:
- * once live, then restored + replayed from the recorded tuples, and every
- * registered byte is compared.  A mismatch names the first divergent item --
- * that item (or something feeding it) is missing from the registry.
- */
+/* Single-player self-test. Replay each tick from its snapshot and report the first differing
+ * registered item. */
 extern bool rollback_selftest;                 /* config toggle                  */
 bool rollback_selftest_active(void);           /* on && in-level && !netplay     */
 /* Flip the toggle (debug menu).  Arms the registry + ring when switched on

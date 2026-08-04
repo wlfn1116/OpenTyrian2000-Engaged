@@ -20,14 +20,8 @@
 
 #include "opentyr.h"
 
-/* In-game multiplayer setup: host on a chosen port, or join by address.  Replaces the
- * command-line-only path that was the original engine's sole way into a network game.
- *
- * Returns true when a connection is established and the caller should start a network game
- * (isNetworkGame, thisPlayerNum and the host's settings are all set up by then).  Returns
- * false when the player backed out or the attempt failed, in which case nothing is left
- * initialised and the title screen should simply be shown again.
- */
+/* Run the in-game host/join flow. True means the session is initialized; false leaves network
+ * state clean and returns to the title screen. */
 bool networkLobby(void);
 
 #endif /* NET_LOBBY_H */

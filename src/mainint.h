@@ -98,15 +98,7 @@ int JE_loadScreen(bool net2p, bool saving);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
 
-/* Bottom-band HUD layout, in playfield (game_screen) space.
- *
- * Several readouts want the bottom corners, so they claim space in a fixed precedence and
- * everything below yields to everything above it -- which keeps the resolution acyclic:
- *   1. the scores          fixed anchors, never move
- *   2. the FPS counter     stacks above player 2's score
- *   3. the boss bars       clear 1 and 2 (these helpers)
- *   4. the endless readout clears 1, 2 and 3
- */
+/* Bottom-band HUD precedence: scores, FPS, boss bars, then the Endless readout. */
 int hud_fps_row(void);            // text row the FPS counter occupies
 int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere across the width
 int hud_bottom_right_top(void);   // ...and in the bottom-right corner alone

@@ -28,9 +28,7 @@ void vita_platform_init(void)
 	sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
 }
 
-// The dialog speaks UTF-16; the game speaks UTF-8 (ASCII in practice -- the fields
-// filter, and the font has no glyphs beyond it). BMP-only converters cover that;
-// anything wider (surrogate pairs) is dropped rather than mis-encoded.
+// Convert BMP UTF-16 to UTF-8; drop unsupported surrogate pairs.
 
 static void swkbd_utf8_to_utf16(const char *src, SceWChar16 *dst, size_t dst_cap)
 {
@@ -114,9 +112,7 @@ bool vita_swkbd(char *out, size_t out_size, size_t max_len,
 	if (cap > SCE_IME_DIALOG_MAX_TEXT_LENGTH)
 		cap = SCE_IME_DIALOG_MAX_TEXT_LENGTH;
 
-	// The dialog reads these for its whole lifetime, so they cannot be stack locals
-	// of a frame that might unwind on an error path; static is safe here because the
-	// dialog is modal and the game is single-threaded.
+	// The modal dialog retains these buffers for its lifetime.
 	static SceWChar16 kbTitle[SCE_IME_DIALOG_MAX_TITLE_LENGTH];
 	static SceWChar16 kbInitial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
 	static SceWChar16 kbInput[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1];
@@ -125,13 +121,8 @@ bool vita_swkbd(char *out, size_t out_size, size_t max_len,
 	swkbd_utf8_to_utf16(initial, kbInitial, cap + 1);
 	SDL_memset(kbInput, 0, sizeof(kbInput));
 
-	// Own the dialog natively instead of going through SDL_StartTextInput: SDL's Vita
-	// backend also tracks the dialog and terminates it from inside SDL_PollEvent the
-	// moment it finishes, which raced everything the old loop here did afterwards
-	// (status polls and a second sceImeDialogTerm on the already-torn-down dialog) and
-	// froze the game whenever a field closed.  This way SDL never knows the dialog is
-	// up; its only involvement is SDL_RenderPresent, whose sceCommonDialogUpdate call
-	// composites the dialog each frame.
+	// Own the IME natively. SDL_PollEvent otherwise terminates it before this loop finishes cleanup;
+	// SDL_RenderPresent still lets the system compositor draw it.
 	SceImeDialogParam param;
 	sceImeDialogParamInit(&param);
 	param.supportedLanguages = 0;
@@ -164,9 +155,7 @@ bool vita_swkbd(char *out, size_t out_size, size_t max_len,
 
 	for (int frame = 0; ; ++frame)
 	{
-		// Presenting is what draws the dialog and services its input; the pump is only
-		// to keep SDL's queue from pooling up (the dialog owns the controls, and with
-		// text input never started SDL's event path leaves the dialog alone).
+		// Present to service the IME; pump SDL only to drain unrelated queued events.
 		video_repeat_last_present();
 		while (SDL_PollEvent(&ev)) { }
 
@@ -190,13 +179,7 @@ bool vita_swkbd(char *out, size_t out_size, size_t max_len,
 
 	while (SDL_PollEvent(&ev)) { }   // drop anything the dialog session left queued
 
-	// The raw drains above also swallow release edges -- above all the FINGERUP of the tap
-	// that opened this field, which lands ~100ms in.  Its FINGERDOWN already latched
-	// mousedown through the normal event path, so with the release eaten the flag stays
-	// true with no release ever coming, and the lobby's wait_noinput() wind-down spins on
-	// it forever (the freeze reported on every touch-opened field).  Nothing is really
-	// held once the dialog is gone, so force the level flags down; newkey/newmouse are
-	// edge flags the call sites already clear themselves.
+	// The dialog drain can consume the opening tap's release edge; clear held-state latches on exit.
 	keydown = false;
 	mousedown = false;
 
