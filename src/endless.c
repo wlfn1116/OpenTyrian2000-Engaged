@@ -439,14 +439,21 @@ static void endlessDrawRunEndBackdrop(void)
 
 // A destroyed ship gets the death menu (JE_endlessDeathMenu) rather than GAME OVER and the run
 // summary. The level loop skips the GAME OVER wait for it, and JE_main puts the
-// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and Normal keeps the
-// pre-menu flow where a fatal hit is the end of the run.
+// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and in Normal a fatal
+// hit is the end of the run.
 // The death menu exists because any player can just press esc during the death explosion animation
-// and get to the pause menu and effectively have the same choices. Normal leaves that escape hatch
-// open too -- it just doesn't advertise it.
+// and get to the pause menu and effectively have the same choices -- which is why the modes that do
+// NOT offer it close that route off (endlessDeathLocksMenu).
 bool endlessDeathMenuDue(void)
 {
 	return endlessMode && endlessRunMode == ENDLESS_RUNMODE_RELAXED && endlessSortieValid();
+}
+
+// The other half of that bargain: with no death menu on offer, the pause menu's Quit Level row would
+// be a free trip back to the outpost mid-explosion, so Normal and Hardcore shut the menu itself.
+bool endlessDeathLocksMenu(void)
+{
+	return endlessMode && endlessRunMode != ENDLESS_RUNMODE_RELAXED;
 }
 
 void endlessOnRunEnd(void)

@@ -3015,9 +3015,9 @@ start_level:
 		else
 		{
 			// Endless death in Relaxed: the frozen death frame gets a choice before the run summary.
-			// Normal and Hardcore skip it and go straight to GAME OVER plus the summary; Hardcore also
-			// locks its pause menu from the moment the ship dies (see the ingamemenu_pressed gate in
-			// the level loop), so Quit Level is no way out of a fatal hit there either.
+			// Normal and Hardcore skip it and go straight to GAME OVER plus the summary, and both lock
+			// their pause menu from the moment the ship dies (see the ingamemenu_pressed gate in the
+			// level loop), so Quit Level is no way out of a fatal hit there either.
 			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
 			if (endlessDeathMenuDue() && all_players_dead())
 				deathPick = JE_endlessDeathMenu();
@@ -5266,7 +5266,7 @@ draw_player_shot_loop_end:
 
 				// Endless death menu: fire, Enter, a click -- anything but Esc -- cuts the wreck
 				// animation short and brings the menu up. Esc is left alone so it still opens the
-				// pause menu (which is exactly what Hardcore locks out at this point).
+				// pause menu (which is exactly what Normal and Hardcore lock out at this point).
 				//
 				// Only a press made after LETTING GO of whatever was held when the hit landed
 				// counts. `newkey` is raised by keyboard auto-repeat as well as by the synthetic
@@ -5394,11 +5394,11 @@ draw_player_shot_loop_end:
 				JE_pauseGame();
 		}
 
-		// Endless Hardcore: the pause menu is off-limits from the moment the ship dies. Its Quit
-		// Level row returns to the outpost, which during the death explosion would turn a fatal hit
-		// into a free retry -- the one thing Hardcore does not allow. (Relaxed offers that retry
-		// openly through the death menu; Normal leaves this hatch open, see JE_main.)
-		if (ingamemenu_pressed && endlessMode && endlessHardcore() && all_players_dead())
+		// Endless Normal and Hardcore: the pause menu is off-limits from the moment the ship dies.
+		// Its Quit Level row returns to the outpost, which during the death explosion would turn a
+		// fatal hit into a free retry -- the one thing neither mode allows. (Relaxed offers that
+		// retry openly through the death menu instead; see JE_main.)
+		if (ingamemenu_pressed && endlessDeathLocksMenu() && all_players_dead())
 			ingamemenu_pressed = false;
 
 		if (ingamemenu_pressed)

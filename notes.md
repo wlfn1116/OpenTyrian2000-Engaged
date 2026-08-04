@@ -485,11 +485,16 @@ matter:
 
 Neither Normal nor Hardcore reaches the menu -- `endlessDeathMenuDue()` is Relaxed-only,
 so both fall back to the GAME OVER wait and the run summary, which is exactly the flow
-that predates the menu. Hardcore additionally drops `ingamemenu_pressed` in the level
-loop from the moment `all_players_dead()` goes true, so the pause menu's Quit Level
-row cannot turn a fatal hit into a free trip to the outpost during the explosion.
-Normal keeps that row: the menu was added because Esc during the explosion already
-reached it, and Normal is defined as "the game before the menu", cheese included.
+that predates the menu.
+
+The two gates are halves of one rule, so they are separate predicates:
+`endlessDeathMenuDue()` says a mode *offers* a retry, `endlessDeathLocksMenu()` says it
+does not and therefore drops `ingamemenu_pressed` in the level loop from the moment
+`all_players_dead()` goes true. Without the second, Esc during the explosion reaches
+the pause menu and its Quit Level row turns a fatal hit into a free trip to the
+outpost -- the very hole the death menu was built to bring out into the open. Relaxed
+is the only mode that leaves the menu open there, because it hands out the retry
+openly instead.
 
 ### Mode and effects
 

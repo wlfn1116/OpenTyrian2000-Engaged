@@ -74,13 +74,13 @@ The start screen takes a seed and a run mode.
 | Mode | Saving | Dying |
 | --- | --- | --- |
 | Relaxed | Anytime | A choice over the wreck: retry the zone, return to the outpost, or end the run |
-| Normal | Anytime | Ends the run |
+| Normal | Anytime | Ends the run, and the pause menu is locked from the fatal hit |
 | Hardcore | Never | Ends the run, and the pause menu is locked from the fatal hit |
 
-The mode is fixed for the whole run and travels with its save. Normal and
-Hardcore both end the run on a fatal hit; the difference is that Normal can still
-save, and its pause menu stays open during the explosion, so Quit Level remains a
-(deliberate, slower) way to fall back to the outpost.
+The mode is fixed for the whole run and travels with its save. A fatal hit is
+final in both Normal and Hardcore -- neither lets you slip out through the pause
+menu while the wreck is still exploding. What separates them is everything before
+that: Normal saves the last level and you can still choose a different course.
 
 Difficulty sets your starting cash and how fast depth scaling ramps:
 
@@ -358,9 +358,8 @@ the loadout, cash, perks and shop stock you had when the zone started. Nothing
 picked up in the failed attempt is kept.
 
 Normal and Hardcore get no such choice: the wreck goes straight to GAME OVER and
-the summary. Hardcore also closes off its pause menu the moment the ship dies, so
-its Quit Level row is no escape from a fatal hit either; Normal leaves that row
-available.
+the summary. Both also close off the pause menu the moment the ship dies, so its
+Quit Level row is no escape from a fatal hit either.
 
 ### Saving
 

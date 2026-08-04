@@ -338,6 +338,10 @@ void endlessHoistStartWeapon(void);
 // A destroyed ship gets the death menu instead of GAME OVER and the run summary.
 bool endlessDeathMenuDue(void);
 
+// True once the ship is dead in a mode that does not hand out retries: the pause menu is closed off
+// from that moment, so its Quit Level row cannot become one.
+bool endlessDeathLocksMenu(void);
+
 void endlessOnRunEnd(void);
 
 // Hardcore quits show the same final summary as death.
