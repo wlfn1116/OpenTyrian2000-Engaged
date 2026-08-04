@@ -179,6 +179,12 @@ extern JE_byte chargeLaserSlot;  // option slot of the re-added Charge-Laser Can
 void JE_loadItemDat(void);
 void JE_initEpisode(JE_byte newEpisode);
 
+// Hand the shop sheet's 11 never-referenced 2x2 icons to the weapons/sidekicks that otherwise
+// share another item's icon (or fall back to the 167 placeholder). Reads `unusedShopSprites`;
+// restores the shipped icons when it is off, so the Game Tweaks row takes effect between games
+// without an item reload. Idempotent.
+void JE_applyUnusedShopSprites(void);
+
 // Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
 // player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded
 // internally against no-op work, so the shop and JE_drawOptions can just call it.

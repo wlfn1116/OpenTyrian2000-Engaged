@@ -348,6 +348,7 @@ extern bool restoreBaseDispensers;  // wake the dormant dispenser bases (enemy 8
 extern bool arcadeLifeBoost;    // arcade modes: lives scale the shield and armour ceilings (player.c)
 extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, tyrian2.c)
 extern bool arcadeRearGunScale; // 1P arcade: lives raise the rear gun on top of its own pickups (player.c)
+extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to items that share one (episodes.c)
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 extern Config opentyrian_config;

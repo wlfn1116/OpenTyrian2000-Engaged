@@ -380,6 +380,7 @@ typedef enum
 	MENU_ITEM_EPDIFF_MODE,          // shared "Version:" row inside those submenus (see currentDiffWeapon)
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
+	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
 	MENU_ITEM_ARCADE_TWEAKS,        // opens the Arcade submenu (the three rows below)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
@@ -598,6 +599,11 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		restoreBaseDispensers = !restoreBaseDispensers;
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_UNUSED_SPRITES:
+		unusedShopSprites = !unusedShopSprites;
+		JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_ARCADE_LIFE_BOOST:
 		arcadeLifeBoost = !arcadeLifeBoost;
 		JE_playSampleNum(S_CURSOR);
@@ -769,6 +775,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_NETWORK_MENU, "Network...", "Diagnostics for online play." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
+				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
@@ -1274,6 +1281,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, restoreBaseDispensers ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_UNUSED_SPRITES:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, unusedShopSprites ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_ARCADE_LIFE_BOOST:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeLifeBoost ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -1481,9 +1492,17 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_SPARKS_CAP:
 									case MENU_ITEM_WALLOP_BOLT:
 									case MENU_ITEM_EPDIFF_MODE:
+									case MENU_ITEM_ZICA_BASE:
+									case MENU_ITEM_ZICA_LENGTH:
+									case MENU_ITEM_ZICA_LOCK:
+									case MENU_ITEM_ZICA_BUFF:
+									case MENU_ITEM_CHARGE_LASER:
+									case MENU_ITEM_BASE_DISPENSERS:
+									case MENU_ITEM_CUSTOM_WEAPONS:
 									case MENU_ITEM_ARCADE_LIFE_BOOST:
 									case MENU_ITEM_ARCADE_RANDOM_BALLS:
 									case MENU_ITEM_ARCADE_REAR_SCALE:
+									case MENU_ITEM_UNUSED_SPRITES:
 									case MENU_ITEM_SIDEKICK_AUTOFIRE:
 									case MENU_ITEM_RICH_MODE:
 									case MENU_ITEM_CONSTANT_PLAY:
@@ -2155,6 +2174,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_BASE_DISPENSERS:
 				{
 					restoreBaseDispensers = !restoreBaseDispensers;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_UNUSED_SPRITES:
+				{
+					unusedShopSprites = !unusedShopSprites;
+					JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

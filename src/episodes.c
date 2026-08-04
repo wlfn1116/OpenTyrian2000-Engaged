@@ -63,6 +63,88 @@ JE_boolean jumpBackToEpisode1;
 // was free; the shop loader (tyrian2.c) reads this.
 JE_byte chargeLaserSlot = 0;
 
+// ---- Unused shop sprites -------------------------------------------------------------
+// The shop sheet (newsh1.shp) lays its icons out as 2x2 blocks on a 19-wide grid, giving 72
+// slots; the shipped item data plus the engine's own cursors/arrows reference only 61 of them.
+// The other 11 are finished, unique artwork nothing ever draws.
+//
+// Meanwhile the ports the ep1-5 campaign never sells are exactly the ones with no icon of their
+// own: all four NortShip/SuperTyrian guns draw the Pulse-Cannon's 7, People Pretzels and Dragon
+// Flame share the Multi-Cannon's 87, and Shuruiken Field / Protron Wave / The Orange Juicer ship
+// with itemgraphic 0 and land on the 167 placeholder below. In the campaign this is invisible --
+// those weapons are never on a shop shelf. Endless offers every port, so the duplicates end up
+// stacked in one menu, several rows deep of the same picture.
+//
+// This table spends the spare icons on them. Protron Wave (34) deliberately keeps 167.
+static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
+{
+	{ 31,  15 },  // Guided Bombs
+	{ 32, 191 },  // Shuruiken Field       (was the 167 placeholder)
+	{ 33,  39 },  // Poison Bomb
+	{ 35, 205 },  // The Orange Juicer     (was the 167 placeholder)
+	{ 36,  17 },  // NortShip Super Pulse
+	{ 37,  15 },  // NortShip Spreader
+	{ 38,  43 },  // NortShip Spreader B
+	{ 44, 167 },  // Pretzel Missile
+	{ 46, 167 },  // People Pretzels
+	{ 47,  39 },  // Dragon Flame
+};
+
+// Sidekicks get the same treatment. The Charge-Laser's slot differs per episode, so it is
+// resolved at capture time rather than hard-coded (0 = the toggle re-added nothing).
+#define UNUSED_SPRITE_ZICA_CHARGER 12  // "Zica SuperCharger" (verified in all three item tables)
+#define UNUSED_SPRITE_FLYING_PUNCH 32  // "Flying Punch"      (likewise)
+static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
+{
+	{ UNUSED_SPRITE_ZICA_CHARGER,  45 },
+	{ UNUSED_SPRITE_FLYING_PUNCH, 203 },
+};
+#define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
+
+// Shipped icons, snapshotted straight after the item load so the toggle can be flipped both
+// ways between games without a reload. unusedSpriteBaseLaser is the Charge-Laser slot's own
+// icon (193), kept beside the slot it was read from.
+static JE_word unusedSpriteBasePort[COUNTOF(unusedSpritePorts)];
+static JE_word unusedSpriteBaseOpt[COUNTOF(unusedSpriteOptions)];
+static JE_word unusedSpriteBaseLaser;
+static JE_byte unusedSpriteLaserSlot;
+static bool    unusedSpriteCaptured = false;
+
+// Snapshot the as-shipped icons. Must run AFTER the 167 placeholder pass and after
+// JE_addChargeLaserCannon, so the baseline is what the shops would really have drawn.
+static void JE_captureUnusedShopSprites(void)
+{
+	for (unsigned int i = 0; i < COUNTOF(unusedSpritePorts); ++i)
+		unusedSpriteBasePort[i] = weaponPort[unusedSpritePorts[i].port].itemgraphic;
+	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
+		unusedSpriteBaseOpt[i] = options[unusedSpriteOptions[i].opt].itemgraphic;
+
+	unusedSpriteLaserSlot = chargeLaserSlot;
+	unusedSpriteBaseLaser = (chargeLaserSlot > 0) ? options[chargeLaserSlot].itemgraphic : 0;
+
+	unusedSpriteCaptured = true;
+}
+
+void JE_applyUnusedShopSprites(void)
+{
+	if (!unusedSpriteCaptured)
+		return;  // nothing loaded yet; the load path captures then calls us
+
+	for (unsigned int i = 0; i < COUNTOF(unusedSpritePorts); ++i)
+		weaponPort[unusedSpritePorts[i].port].itemgraphic =
+			unusedShopSprites ? unusedSpritePorts[i].gr : unusedSpriteBasePort[i];
+
+	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
+		options[unusedSpriteOptions[i].opt].itemgraphic =
+			unusedShopSprites ? unusedSpriteOptions[i].gr : unusedSpriteBaseOpt[i];
+
+	// The Charge-Laser only exists while its own toggle is on; if it was never added, or the
+	// slot moved since capture, leave it alone rather than writing into someone else's item.
+	if (unusedSpriteLaserSlot > 0 && unusedSpriteLaserSlot == chargeLaserSlot)
+		options[unusedSpriteLaserSlot].itemgraphic =
+			unusedShopSprites ? UNUSED_SPRITE_CHARGE_LASER_GR : unusedSpriteBaseLaser;
+}
+
 static void JE_addChargeLaserCannon(void)
 {
 	// Claim the first free ("None") sidekick slot; free slots differ per episode, so
@@ -693,6 +775,11 @@ void JE_loadItemDat(void)
 		if (shields[i].itemgraphic == 0 && shields[i].name[0] && strncmp(shields[i].name, "None", 4) != 0)
 			shields[i].itemgraphic = 167;
 
+	// Snapshot the shipped icons (placeholders included) and then, if the toggle is on, hand the
+	// sheet's 11 unreferenced icons to the weapons that would otherwise share someone else's.
+	JE_captureUnusedShopSprites();
+	JE_applyUnusedShopSprites();
+
 	customWeaponInit();             // claim a free port + compile the user's custom weapon
 
 	// Last, so the snapshot sees every slot as the shops will: after the Charge-Laser and the
@@ -711,6 +798,7 @@ void JE_initEpisode(JE_byte newEpisode)
 		JE_applyZicaLaserConfig();
 		JE_applySuperSparks();      // likewise reapply the superspark trail modes (self-correcting)
 		JE_applyEpDiffs();          // and the other per-weapon ep1-3/ep4-5 choices
+		JE_applyUnusedShopSprites();  // ...and the shop-icon choice (restores the shipped icons when off)
 		return;
 	}
 

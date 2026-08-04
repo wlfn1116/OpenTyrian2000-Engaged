@@ -337,6 +337,10 @@ bool arcadeRandomBalls = false;
    balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
    player.c). Two-player is out -- there the rear bay already IS player 2's life counter. */
 bool arcadeRearGunScale = false;
+/* Spend the shop sheet's 11 never-referenced icons on the weapons and sidekicks that ship
+   sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
+   Cosmetic and shop-only; it matters most in Endless, which offers every port at once. */
+bool unusedShopSprites = true;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
@@ -675,6 +679,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "arcade_rear_gun_scale", &arcade_rear_gun_scale);
 		arcadeRearGunScale = (arcade_rear_gun_scale != 0);
 
+		int unused_shop_sprites = unusedShopSprites ? 1 : 0;
+		config_get_int_option(section, "unused_shop_sprites", &unused_shop_sprites);
+		unusedShopSprites = (unused_shop_sprites != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -890,6 +898,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "arcade_life_boost", arcadeLifeBoost ? 1 : 0);
 	config_set_int_option(section, "arcade_random_balls", arcadeRandomBalls ? 1 : 0);
 	config_set_int_option(section, "arcade_rear_gun_scale", arcadeRearGunScale ? 1 : 0);
+	config_set_int_option(section, "unused_shop_sprites", unusedShopSprites ? 1 : 0);
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);
