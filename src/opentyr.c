@@ -380,8 +380,10 @@ typedef enum
 	MENU_ITEM_EPDIFF_MODE,          // shared "Version:" row inside those submenus (see currentDiffWeapon)
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
+	MENU_ITEM_ARCADE_TWEAKS,        // opens the Arcade submenu (the three rows below)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
+	MENU_ITEM_ARCADE_REAR_SCALE,    // arcade rear gun fires at the life count too
 	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
 	MENU_ITEM_CUSTOM_WEAPONS,
 	MENU_ITEM_CUSTOM_CREATOR,
@@ -594,6 +596,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		arcadeRandomBalls = !arcadeRandomBalls;
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_ARCADE_REAR_SCALE:
+		arcadeRearGunScale = !arcadeRearGunScale;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_SIDEKICK_AUTOFIRE:
 		cycleSidekickAutofire(dir);
 		JE_playSampleNum(S_CURSOR);
@@ -646,6 +652,7 @@ typedef enum
 	MENU_EPDIFF_PUNCH,
 	MENU_EPDIFF_PRETZEL,
 	MENU_EPDIFF_DRAGON,
+	MENU_ARCADE_TWEAKS,  // Game Tweaks -> Arcade (settings); MENU_ARCADE below is the ship picker
 	MENU_EXTRA,
 	MENU_ARCADE,
 	MENU_CMDLINE,
@@ -748,12 +755,26 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_SUPERSPARKS, "Superspark Weapons...", "Weapons whose spark trails differ per episode." },
 				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other weapons that differ between Ep 1-3 and Ep 4-5." },
+				{ MENU_ITEM_ARCADE_TWEAKS, "Arcade...", "Tweaks for the arcade and Super Arcade modes." },
 				{ MENU_ITEM_NETWORK_MENU, "Network...", "Diagnostics for online play." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
-				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Arcade Life Boost:", "Arcade lives raise your shield and armor caps." },
-				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Arcade modes: randomize the weapon each ball gives." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
+				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
+				{ -1 }
+			},
+		},
+		[MENU_ARCADE_TWEAKS] = {
+			// The first two rows cover 1-player Arcade, 2-player Arcade (local and online) and
+			// the Super Arcade secret ships; Rear Gun Scale is ONE-player only, because in a 2P
+			// game the rear bay is already player 2's life counter.  SuperTyrian (ENGAGE) is out
+			// of all three: one fixed scripted loadout balanced on its own terms, not a ship you
+			// pick.
+			.header = "Arcade",
+			.items = {
+				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
+				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Randomize the weapon each pickup ball gives." },
+				{ MENU_ITEM_ARCADE_REAR_SCALE, "Rear Gun Scale:", "Rear gun power rises with your life count too." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
@@ -1255,6 +1276,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeRandomBalls ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_ARCADE_REAR_SCALE:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeRearGunScale ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_SIDEKICK_AUTOFIRE:
 			{
 				// Off/On/Charged are the reachable modes; "Fast" only shows if the
@@ -1441,6 +1466,9 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_SPARKS_CAP:
 									case MENU_ITEM_WALLOP_BOLT:
 									case MENU_ITEM_EPDIFF_MODE:
+									case MENU_ITEM_ARCADE_LIFE_BOOST:
+									case MENU_ITEM_ARCADE_RANDOM_BALLS:
+									case MENU_ITEM_ARCADE_REAR_SCALE:
 									case MENU_ITEM_SIDEKICK_AUTOFIRE:
 									case MENU_ITEM_RICH_MODE:
 									case MENU_ITEM_CONSTANT_PLAY:
@@ -1654,6 +1682,15 @@ static bool runOptionsMenu(MenuId startMenu)
 
 					menuParents[MENU_GAME_TWEAKS] = currentMenu;
 					currentMenu = MENU_GAME_TWEAKS;
+					selectedMenuItemIndexes[currentMenu] = 0;
+					break;
+				}
+				case MENU_ITEM_ARCADE_TWEAKS:
+				{
+					JE_playSampleNum(S_SELECT);
+
+					menuParents[MENU_ARCADE_TWEAKS] = currentMenu;
+					currentMenu = MENU_ARCADE_TWEAKS;
 					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}
@@ -2115,6 +2152,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_ARCADE_RANDOM_BALLS:
 				{
 					arcadeRandomBalls = !arcadeRandomBalls;
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_ARCADE_REAR_SCALE:
+				{
+					arcadeRearGunScale = !arcadeRearGunScale;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

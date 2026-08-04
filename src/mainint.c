@@ -8662,7 +8662,11 @@ redo:
 							}
 							else if (button[1-1])
 							{
-								const uint item_power = galagaMode ? 0 : this_player->items.weapon[temp].power - 1,
+								// Not the raw stored power: the arcade "Rear Gun Scale" row lets a rear bay
+								// fire at the life count instead (arcade_weapon_power, player.c).  The
+								// fire cursor needs no reset when that level moves -- player_shot_create
+								// wraps shotMultiPos on >= max, so a shorter pattern self-corrects.
+								const uint item_power = galagaMode ? 0 : arcade_weapon_power(this_player, temp) - 1,
 								           item_mode = (temp == REAR_WEAPON) ? this_player->weapon_mode - 1 : 0;
 
 								// Zica Laser (port 5) Lv11 tweaks. Length "Long" swaps the vanilla

@@ -3810,9 +3810,14 @@ level_loop:
 		// sits 2px left of the classic anchor, one row taller and 6px wider; the extra width is
 		// spread across the SAME 11 slots (some land 3px wide, some 2px) so one gradient shade
 		// still means exactly one level. One-player keeps the classic 11x2px strip.
+		//
+		// The bar reads the level the gun FIRES at, not its stored power, so an arcade rear gun
+		// scaled to the life count (arcade_weapon_power, player.c) shows the strength it actually
+		// has. The two agree everywhere else. old_weapon_bar caches that same effective value, so
+		// gaining or losing a life repaints the rear bar along with the front one.
 		for (uint i = 0; i < 2; ++i)
 		{
-			uint item_power = player[twoPlayerMode ? i : 0].items.weapon[i].power;
+			uint item_power = arcade_weapon_power(&player[twoPlayerMode ? i : 0], i);
 
 			if (old_weapon_bar[i] != item_power)
 			{

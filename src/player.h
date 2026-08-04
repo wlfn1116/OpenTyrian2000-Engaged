@@ -153,6 +153,8 @@ void handle_got_purple_ball(Player *);
 #define ARCADE_FULL_BAR  28  // both HUD gauges top out here (strongest shield is mpwr 14 -> 28)
 
 bool arcade_life_scaling_active(void);
+bool arcade_rear_scale_active(void);     // 1P arcade only: lives raise the rear gun above its pickups
+uint arcade_weapon_power(const Player *, uint port);  // the level a bay fires at, 1-11
 uint arcade_armor_max(const Player *);   // == hull_armor outside the arcade modes
 uint arcade_shield_max(const Player *);  // == shields[].mpwr * 2 outside the arcade modes
 void arcade_rescale_to_lives(Player *);  // re-derive both ceilings after a life is gained or lost

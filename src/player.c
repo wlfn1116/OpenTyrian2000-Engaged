@@ -34,6 +34,59 @@ bool arcade_life_scaling_active(void)
 	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian;
 }
 
+/* Rear-gun scaling.  In the arcade modes a life count IS a weapon power level -- player 1's front
+ * bay, player 2's rear bay (`lives = &weapon[p].power`, JE_initPlayerData) -- so a 1P arcade front
+ * gun climbs with every extra life while the rear gun sits at whatever level its own power-up balls
+ * left it at, which is level 1 for most of a run.  With the Arcade row on, the life count feeds the
+ * rear gun too, on top of whatever its own pickups have banked.
+ *
+ * ONE-PLAYER only -- 1P Arcade and the Super Arcade secret ships -- and not SuperTyrian (ENGAGE),
+ * which flies one fixed scripted loadout.  Two-player is deliberately out rather than merely inert:
+ * there the rear bay IS player 2's life counter, so "add the life count to the rear gun" would be
+ * adding a number to itself.  (Player 1's rear bay does not fire in a 2P game either -- the firing
+ * loop in JE_playerMovement gives each ship one bay -- so nothing is lost by excluding the mode.)
+ * The twoPlayerMode test matters even though onePlayerAction is set: galaga mode raises
+ * twoPlayerMode mid-level when the dragonwing spawns, with onePlayerAction still true. */
+bool arcade_rear_scale_active(void)
+{
+	return arcadeRearGunScale && onePlayerAction && !twoPlayerMode && !superTyrian;
+}
+
+/* The power level a bay actually fires at.  Everything except a scaled arcade rear gun just reads
+ * its own stored power.
+ *
+ * The scaled rear gun STACKS the two sources: its stored power is the base (level 1 plus one for
+ * every rear power-up ball the run has banked) and the life count adds `lives - 1` on top.  So a
+ * rear ball is always worth a level rather than vanishing under a bigger life count, and because
+ * the life term can only ever add, the gun never fires below its own stored power -- a death costs
+ * the life it took and nothing that was paid for with pickups.
+ *
+ * Nothing is written back: the stored power keeps accumulating on its own, so the row can be
+ * flipped mid-run and the gun that was earned is still there when it goes off again. */
+uint arcade_weapon_power(const Player *this_player, uint port)
+{
+	uint power = this_player->items.weapon[port].power;
+
+	if (port == REAR_WEAPON && arcade_rear_scale_active())
+	{
+		// Never scale a bay that IS its owner's life counter: `lives` aliases weapon[p].power
+		// (JE_initPlayerData), so for player 2 that bay is the rear one and the line below would
+		// be adding the number to itself.  The 1P-only gate above already rules that out; the
+		// check keeps the arithmetic correct on its own terms if the gate is ever widened.
+		const Uint8 *const life_counter = this_player->lives;
+
+		if (life_counter != &this_player->items.weapon[port].power && *life_counter > 1)
+			power += *life_counter - 1;
+	}
+
+	if (power < 1)
+		power = 1;
+	else if (power > 11)  // the same ceiling power_up_weapon enforces
+		power = 11;
+
+	return power;
+}
+
 /* Linear from `base` at 1 life to a full bar at ARCADE_LIVES_MAX.  Integer throughout: this runs
  * inside the simulation, so both machines in a network game must land on the same byte. */
 static uint arcade_scaled_max(uint base, uint lives)
