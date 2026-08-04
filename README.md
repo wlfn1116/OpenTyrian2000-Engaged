@@ -54,7 +54,7 @@ difficulty and most of the payout.
 
 Runs are seeded, so the same seed and choices reproduce the same levels, shops,
 courses and perks. A run mode picked at the start sets how forgiving it is:
-Relaxed offers a retry over the wreck, Normal ends the run there, and Hardcore
+Relaxed offers a retry over the wreck, Standard ends the run there, and Hardcore
 also disables checkpoints.
 
 ### Weapons and music

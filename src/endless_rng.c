@@ -95,7 +95,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 
 	char seed[ENDLESS_SEED_MAXLEN] = "";
 	size_t len = 0;
-	EndlessRunMode mode = ENDLESS_RUNMODE_NORMAL;
+	EndlessRunMode mode = ENDLESS_RUNMODE_STANDARD;
 
 	enum { ROW_SEED, ROW_RANDOM, ROW_MODE, ROW_START, ROW_COUNT };
 	int selected = ROW_SEED;
@@ -142,7 +142,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 		switch (mode)
 		{
 		case ENDLESS_RUNMODE_HARDCORE: modeHelp = "Hardcore: no saving, and no second chances."; break;
-		case ENDLESS_RUNMODE_NORMAL:   modeHelp = "Normal: save anytime; a fatal hit ends the run."; break;
+		case ENDLESS_RUNMODE_STANDARD: modeHelp = "Standard: save anytime; a fatal hit ends the run."; break;
 		default:                       modeHelp = "Relaxed: save anytime; a fatal hit offers a retry."; break;
 		}
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 4,

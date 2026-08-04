@@ -3025,7 +3025,7 @@ start_level:
 		else
 		{
 			// Endless death in Relaxed: the frozen death frame gets a choice before the run summary.
-			// Normal and Hardcore skip it and go straight to GAME OVER plus the summary, and both lock
+			// Standard and Hardcore skip it and go straight to GAME OVER plus the summary, and both lock
 			// their pause menu from the moment the ship dies (see the ingamemenu_pressed gate in the
 			// level loop), so Quit Level is no way out of a fatal hit there either.
 			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
@@ -4660,7 +4660,11 @@ level_loop:
 											else
 											{
 												// in galaga mode player 2 is sidekick, so give cash to player 1
-												player[galagaMode ? 0 : playerNum - 1].cash += enemy[temp2].evalue;
+												Player *const paid = &player[galagaMode ? 0 : playerNum - 1];
+												if (endlessMode && paid == &player[0])
+													endlessAddCash(enemy[temp2].evalue, ENDLESS_CASH_KILL);
+												else
+													paid->cash += enemy[temp2].evalue;
 											}
 										}
 
@@ -5284,7 +5288,7 @@ draw_player_shot_loop_end:
 
 				// Endless death menu: fire, Enter, a click -- anything but Esc -- cuts the wreck
 				// animation short and brings the menu up. Esc is left alone so it still opens the
-				// pause menu (which is exactly what Normal and Hardcore lock out at this point).
+				// pause menu (which is exactly what Standard and Hardcore lock out at this point).
 				//
 				// Only a press made after LETTING GO of whatever was held when the hit landed
 				// counts. `newkey` is raised by keyboard auto-repeat as well as by the synthetic
@@ -5438,7 +5442,7 @@ draw_player_shot_loop_end:
 				JE_pauseGame();
 		}
 
-		// Endless Normal and Hardcore: the pause menu is off-limits from the moment the ship dies.
+		// Endless Standard and Hardcore: the pause menu is off-limits from the moment the ship dies.
 		// Its Quit Level row returns to the outpost, which during the death explosion would turn a
 		// fatal hit into a free retry -- the one thing neither mode allows. (Relaxed offers that
 		// retry openly through the death menu instead; see JE_main.)
@@ -7467,7 +7471,7 @@ bool newEndlessGame(void)
 	// Choose the run seed (random or typed) and the run mode before the difficulty picker.
 	// Cancelling here backs all the way out to the title, exactly like cancelling difficulty.
 	char seedbuf[ENDLESS_SEED_MAXLEN];
-	EndlessRunMode runMode = ENDLESS_RUNMODE_NORMAL;
+	EndlessRunMode runMode = ENDLESS_RUNMODE_STANDARD;
 	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode))
 	{
 		endlessMode = false;
@@ -7497,8 +7501,12 @@ bool newEndlessGame(void)
 	gameLoaded = true;
 	difficultyLevel = initialDifficulty;
 
-	player[0].cash = endlessStartingCash();  // difficulty-based starting cash for the first shop
-	endlessCashResync();  // the stake is handed to you, so it is not part of what the run earns
+	// Difficulty-based starting cash for the first shop. Emptied and then credited THROUGH the ledger
+	// rather than assigned: the stake is the run's first income, and anything the previous game left
+	// in the wallet is not this run's money. Keeps earned - spent == wallet true from zone 1.
+	player[0].cash = 0;
+	endlessCashResync();
+	endlessAddCash(endlessStartingCash(), ENDLESS_CASH_START);
 
 	endlessApplyStartingLoadout();  // Atomic RailGun front gun (the depth-0 outpost re-applies it too)
 

@@ -373,7 +373,7 @@ is why the field must carry it.
 | 12 | Star Charts and Breakthrough debt |
 | 13 | Five stored perk offers |
 | 14 | Rapid Charger merged into Rapid Recharge |
-| 15 | Run mode (Relaxed / Normal / Hardcore) |
+| 15 | Run mode (Relaxed / Standard / Hardcore) |
 
 Append fields and guard reads by version. Older records use their historical
 field widths.
@@ -385,7 +385,8 @@ The all-time best zone is stored in `opentyrian.cfg`, not the sidecar, so Hardco
 runs can update it. Record a zone when it starts and write the config immediately.
 `endlessBestZone` is indexed by `EndlessRunMode` -- one record per mode, and only the
 running mode's slot can move. Config keys are `best_zone` (Relaxed, the original
-single-record key, so an existing record survives), `best_zone_normal` and
+single-record key, so an existing record survives), `best_zone_normal` (Standard --
+it keeps the key it was written under before the mode was renamed) and
 `best_zone_hardcore`. `endlessRecordRunStart` baselines the record for the run-over
 "up N" line, so callers must set `endlessRunMode` *before* calling it.
 
@@ -408,9 +409,45 @@ one animation; `JE_outTextGlow` is now a one-string wrapper over it.
 The furthest-zone value carries the mode's initial (`25 H`), taken from
 `endlessRunModeName(...)[0]`, because each mode has its own record.
 
-Vertical fit: `step` shrinks from 18 toward 14 until title, body and closing line fit
-in 176px. Adding rows eats that budget -- the worst case today (hull bonus present)
-lands at 180px, which still clears the 200px screen with ~10px margins.
+Past Zone 250 the milestone line has nowhere further to go, so
+`endlessMilestoneEpilogue` prints a sign-off ("Thank you for playing.") beneath it --
+kept separate so the in-universe beat still lands before the game steps out from
+behind it.
+
+Vertical fit: the glyph heights are exactly 20px (`FONT_SHAPES`) and 13px
+(`SMALL_FONT_SHAPES`), so 13 is a hard floor for the row pitch. `step` shrinks from 18
+to 13, then `titleGap` and `tailGap` shrink to 6, until the whole thing fits in 182px.
+Worst case -- 8 rows with the hull bonus present *and* the Zone 250 sign-off -- lands
+at 194px, y=3, bottom 197: tight against the 200px screen but nothing clips.
+
+### Cash ledger
+
+Income is declared, spending is reconciled. `endlessAddCash(amount, src)` (endless.c)
+is the only way cash should enter the wallet in a run: it credits `player[0]`, books
+the amount against an `EndlessCashSource`, and re-marks. `player_award_pickup_cash`
+(player.c) wraps it for the playfield pickups, which credit whoever collected them.
+
+Spending has no call site to hook -- the outpost *assigns* a recomputed balance
+(`player[0].cash = JE_cashLeft()`) instead of subtracting -- so `endlessCashSample`
+reconciles the wallet against a high-water mark: a fall books into
+`endlessRunCashSpent`, an undeclared rise into `ENDLESS_CASH_OTHER`. A nonzero
+"untagged" line in the crash-log breakdown means an income path skipped
+`endlessAddCash` (or the debug Add Cash screen overwrote the wallet).
+
+`endlessAddCash` reconciles *before* crediting. Re-marking over a wallet that already
+drifted erases whatever moved it: buy in the E-Shop, then decline a perk before any
+gameplay tick, and the purchase would never reach the spent total.
+
+The reconciler must run between every fall and the next rise, or the stale mark
+swallows that rise. `endlessGameplayTick` runs it every tick, so the first tick of a
+zone re-marks after all the shopping. The gamble is the only place a debit and a
+credit land with no tick between them, so it reconciles around its own wager.
+
+Invariant: `earned - spent == wallet` (the Zone 1 stake is booked as
+`ENDLESS_CASH_START`, so there is no separate starting term), and the breakdown sums
+to `earned`. The one place `player[0].cash` is deliberately *fake* is the outpost's
+upgrade sub-menu, which inflates it by the equipped item's trade-in value; every exit
+restores the real balance first, so nothing may sample in between.
 
 ### Death and retries
 
@@ -483,7 +520,7 @@ matter:
 - it clears `endlessResumeVisit` and calls `endlessArmLockedRelaunch` itself,
   because no outpost visit will run to consume the flag and arm the level.
 
-Neither Normal nor Hardcore reaches the menu -- `endlessDeathMenuDue()` is Relaxed-only,
+Neither Standard nor Hardcore reaches the menu -- `endlessDeathMenuDue()` is Relaxed-only,
 so both fall back to the GAME OVER wait and the run summary, which is exactly the flow
 that predates the menu.
 

@@ -318,7 +318,14 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Mode:         %s%s\n", endlessRunModeName(endlessRunMode),
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
-		fprintf(f, "  Cash earned:  %llu\n", (unsigned long long)endlessRunCashEarned);
+		// A nonzero "untagged" line means an income path skipped endlessAddCash and the reconciler
+		// had to guess -- worth chasing down.
+		fprintf(f, "  Cash earned:  %llu  (spent %llu)\n",
+		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent);
+		for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
+			if (endlessCashBySource[i] != 0)
+				fprintf(f, "    %-15s %llu\n", endlessCashSourceName((EndlessCashSource)i),
+				        (unsigned long long)endlessCashBySource[i]);
 		write_endless_mods(f, endlessActiveMods);
 		fprintf(f, "  Armor bonus:  %d\n", endlessArmorBonus);
 		const char *seed = endlessSeedString();

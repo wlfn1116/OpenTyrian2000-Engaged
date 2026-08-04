@@ -32,20 +32,74 @@ int      endlessArmorBonus = 0;
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
-// Total cash earned this run. Cash arrives through a dozen scattered paths -- enemy value, pickups,
-// the clear bonus, bank interest, gamble wins, declined perks -- and leaves through two shops, one of
-// which ASSIGNS a recomputed balance (JE_cashLeft) rather than subtracting. So rather than tag every
-// site, this watches the balance and banks each rise.
+// The run's cash ledger. Income is DECLARED at the source (endlessAddCash), so the run-over tally can
+// break down where a run's money came from. What can't be declared is the outgoing side: the outpost
+// assigns a recomputed balance (player[0].cash = JE_cashLeft()) instead of subtracting, so there is no
+// debit to hook. endlessCashSample reconciles instead -- it compares the wallet against a high-water
+// mark and books the difference, a fall as spending and a rise as ENDLESS_CASH_OTHER.
 //
-// The one rule that keeps it honest: a sample must fall between every DROP and the next rise, or the
-// stale high-water mark swallows that rise. endlessGameplayTick samples every tick, so the first tick
-// of a zone re-marks after all the shopping; the gamble is the only place a debit and a credit land
-// without a tick between them, so it samples around its own wager.
+// The rule that keeps the reconciler honest: it must run between every FALL and the next rise, or the
+// stale mark swallows that rise. endlessGameplayTick runs it every tick, so the first tick of a zone
+// re-marks after all the shopping; the gamble is the only place a debit and a credit land with no tick
+// between them, so it reconciles around its own wager.
 Uint64 endlessRunCashEarned = 0;
+Uint64 endlessRunCashSpent  = 0;
+Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
 static ulong endlessCashMark = 0;
 
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
-#define ENDLESS_CASH_EARNED_MAX  999999999999ULL
+#define ENDLESS_CASH_TALLY_MAX  999999999999ULL
+
+// Lower case: these read as a list under a heading, not as titles. Order tracks EndlessCashSource,
+// which is append-only, so "starting stake" sits at the tail rather than in chronological order.
+static const char *const endlessCashSourceNames[ENDLESS_CASH_SOURCES] = {
+	"kills", "pickups", "bounties", "zone clears", "interest", "gambling", "declined perks", "untagged",
+	"starting stake",
+};
+
+const char *endlessCashSourceName(EndlessCashSource src)
+{
+	return ((unsigned)src < ENDLESS_CASH_SOURCES) ? endlessCashSourceNames[src] : "";
+}
+
+static void endlessCashAddSat(Uint64 *tally, Uint64 amount)
+{
+	*tally = (amount > ENDLESS_CASH_TALLY_MAX - *tally) ? ENDLESS_CASH_TALLY_MAX : *tally + amount;
+}
+
+static void endlessCashCredit(Uint64 amount, EndlessCashSource src)
+{
+	if ((unsigned)src >= ENDLESS_CASH_SOURCES)
+		src = ENDLESS_CASH_OTHER;
+	// Clamp against the TOTAL first, then apply that same figure to the source, so the breakdown sums
+	// to the total even in the (unreachable) saturating case -- clamping the two independently would
+	// let them disagree.
+	if (amount > ENDLESS_CASH_TALLY_MAX - endlessRunCashEarned)
+		amount = ENDLESS_CASH_TALLY_MAX - endlessRunCashEarned;
+	endlessRunCashEarned += amount;
+	endlessCashBySource[src] += amount;
+}
+
+void endlessAddCash(long amount, EndlessCashSource src)
+{
+	if (amount <= 0)
+		return;
+	if (!endlessMode)
+	{
+		player[0].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
+		return;
+	}
+
+	// Settle any drift FIRST. Re-marking over an unreconciled wallet would erase whatever moved it:
+	// an undeclared rise would vanish silently instead of surfacing as ENDLESS_CASH_OTHER, and a
+	// purchase not yet re-marked (a shop visit with no gameplay tick since) would never reach the
+	// spent total. Both would break earned - spent == wallet.
+	endlessCashSample();
+
+	player[0].cash += (ulong)amount;
+	endlessCashCredit((Uint64)amount, src);
+	endlessCashMark = player[0].cash;   // declared, so the reconciler must not book it a second time
+}
 
 void endlessCashSample(void)
 {
@@ -53,16 +107,14 @@ void endlessCashSample(void)
 		return;
 	const ulong now = player[0].cash;
 	if (now > endlessCashMark)
-	{
-		const Uint64 gain = (Uint64)(now - endlessCashMark);
-		endlessRunCashEarned = (gain > ENDLESS_CASH_EARNED_MAX - endlessRunCashEarned)
-		                     ? ENDLESS_CASH_EARNED_MAX : endlessRunCashEarned + gain;
-	}
-	endlessCashMark = now;   // also the re-mark after a purchase, which must never read as a loss
+		endlessCashCredit((Uint64)(now - endlessCashMark), ENDLESS_CASH_OTHER);
+	else if (now < endlessCashMark)
+		endlessCashAddSat(&endlessRunCashSpent, (Uint64)(endlessCashMark - now));
+	endlessCashMark = now;
 }
 
 // Cash that was placed rather than earned -- the starting stake, a save being loaded, a sortie
-// snapshot being reverted -- moves the mark without crediting the run.
+// snapshot being reverted -- moves the mark without booking anything either way.
 void endlessCashResync(void)
 {
 	endlessCashMark = player[0].cash;
@@ -143,14 +195,15 @@ int endlessPerkOffersAtDepth(int depth)
 }
 
 // Run mode from the seed screen. Relaxed adds the death menu; Hardcore disables saving and locks
-// the outpost after a mid-zone bail. Normal sits between them: the run ends when the ship does.
+// the outpost after a mid-zone bail. Standard sits between them: the run ends when the ship does.
+// (It is "Standard" rather than "Normal" so nothing here reads as the Normal difficulty.)
 EndlessRunMode endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 
 const char *endlessRunModeName(EndlessRunMode mode)
 {
 	switch (mode)
 	{
-	case ENDLESS_RUNMODE_NORMAL:   return "Normal";
+	case ENDLESS_RUNMODE_STANDARD: return "Standard";
 	case ENDLESS_RUNMODE_HARDCORE: return "Hardcore";
 	default:                       return "Relaxed";
 	}
@@ -188,6 +241,8 @@ void endlessResetRun(void)
 	endlessRunKills   = 0;
 	endlessRunBossKills = 0;
 	endlessRunCashEarned = 0;
+	endlessRunCashSpent  = 0;
+	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
 	endlessPurchasedMods = 0;
 	endlessBuffKind = 0;
@@ -488,8 +543,8 @@ static void endlessDrawRunEndBackdrop(void)
 
 // A destroyed ship gets the death menu (JE_endlessDeathMenu) rather than GAME OVER and the run
 // summary. The level loop skips the GAME OVER wait for it, and JE_main puts the
-// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and in Normal a fatal
-// hit is the end of the run.
+// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and in Standard a
+// fatal hit is the end of the run.
 // The death menu exists because any player can just press esc during the death explosion animation
 // and get to the pause menu and effectively have the same choices -- which is why the modes that do
 // NOT offer it close that route off (endlessDeathLocksMenu).
@@ -499,7 +554,7 @@ bool endlessDeathMenuDue(void)
 }
 
 // The other half of that bargain: with no death menu on offer, the pause menu's Quit Level row would
-// be a free trip back to the outpost mid-explosion, so Normal and Hardcore shut the menu itself.
+// be a free trip back to the outpost mid-explosion, so Standard and Hardcore shut the menu itself.
 bool endlessDeathLocksMenu(void)
 {
 	return endlessMode && endlessRunMode != ENDLESS_RUNMODE_RELAXED;
@@ -543,9 +598,11 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
-	// Everything the run took in, not what survived the shops -- the wallet at the moment of death
-	// mostly measures how recently you last spent.
+	// Everything the run took in and everything it burned, rather than the wallet at the moment of
+	// death -- that mostly measures how recently you last spent. The two differ by the balance left,
+	// so a hoarder and a spender with the same earnings read very differently here.
 	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
+	RUNEND_ROW("Cash spent:", "$%llu", (unsigned long long)endlessRunCashSpent);
 
 	if (endlessArmorBonus > 0)
 		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);

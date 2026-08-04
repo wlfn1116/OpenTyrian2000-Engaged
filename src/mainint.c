@@ -4853,7 +4853,12 @@ void JE_debugMenu(bool center)
 					}
 					break;
 				}
-				case DBG_ADD_CASH:  // apply the typed value (built digit-by-digit, capped, so no overflow)
+				// Applies the typed value (built digit-by-digit, capped, so no overflow). Deliberately
+				// NOT routed through endlessAddCash: this is not income, it is the debug screen
+				// overwriting the wallet. In an endless run the reconciler books the difference as
+				// ENDLESS_CASH_OTHER (or as spending), so a hand-edited wallet is why the crash log's
+				// "untagged" line might be nonzero without an income path having actually gone missing.
+				case DBG_ADD_CASH:
 #if defined(__SWITCH__) || defined(__vita__)
 					// No physical keyboard on the consoles: pop the software keyboard to fill the field.
 					console_swkbd(dbgCashStr, sizeof(dbgCashStr), cashMaxDigits, dbgCashStr, "Add Cash", true);
@@ -9292,7 +9297,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 				{
 					if (evalue == 30000)  // spawn dragonwing in galaga mode, otherwise just a purple ball
 					{
-						this_player->cash += 100;
+						player_award_pickup_cash(this_player, 100);
 
 						if (!galagaMode)
 						{
@@ -9302,7 +9307,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						{
 							// spawn the dragonwing?
 							if (twoPlayerMode)
-								this_player->cash += 2400;
+								player_award_pickup_cash(this_player, 2400);
 							twoPlayerMode = true;
 							twoPlayerLinked = true;
 							player[1].items.weapon[REAR_WEAPON].power = 1;
@@ -9334,7 +9339,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						// if picked up already-owned weapon, power weapon up
 						if (tempW == player[0].items.weapon[FRONT_WEAPON].id)
 						{
-							this_player->cash += 1000;
+							player_award_pickup_cash(this_player, 1000);
 							power_up_weapon(this_player, FRONT_WEAPON);
 						}
 						// else weapon also gives purple ball
@@ -9344,7 +9349,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						}
 
 						player[0].items.weapon[FRONT_WEAPON].id = tempW;
-						this_player->cash += 200;
+						player_award_pickup_cash(this_player, 200);
 						soundQueue[7] = S_POWERUP;
 						enemyAvail[z] = 1;
 					}
@@ -9352,7 +9357,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						if (playerNum_ == 1)
 						{
-							this_player->cash += 250;
+							player_award_pickup_cash(this_player, 250);
 							player[0].items.special = evalue - 32100;
 							shotMultiPos[SHOT_SPECIAL] = 0;
 							shotRepeat[SHOT_SPECIAL] = 10;
@@ -9416,11 +9421,11 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							soundQueue[7] = S_POWERUP;
 						}
 						if (enemyAvail[z] == 1)
-							this_player->cash += 250;
+							player_award_pickup_cash(this_player, 250);
 					}
 					else if (evalue > 31000)
 					{
-						this_player->cash += 250;
+						player_award_pickup_cash(this_player, 250);
 						if (playerNum_ == 2)
 						{
 							if (isNetworkGame)
@@ -9480,7 +9485,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 								shotMultiPos[SHOT_SPECIAL2] = 0;
 								shotRepeat[SHOT_SPECIAL2] = 0;
 							}
-							this_player->cash += 250;
+							player_award_pickup_cash(this_player, 250);
 						}
 
 					}
@@ -9610,7 +9615,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else
 					{
-						this_player->cash += evalue;
+						player_award_pickup_cash(this_player, evalue);
 					}
 					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
 				}

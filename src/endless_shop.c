@@ -612,33 +612,33 @@ static void endlessApplyGambleOutcome(int id, long cost)
 {
 	switch (id)
 	{
-	case EGO_JACKPOT: { const long win = cost * 5; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "JACKPOT!  +$%ld", win); break; }
-	case EGO_MEGAJACKPOT: { const long win = 1000000; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "MEGA JACKPOT!  +$%ld", win); break; }
-	case EGO_WIN:     { const long win = cost * 2; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Win!  +$%ld", win); break; }
+	case EGO_JACKPOT: { const long win = cost * 5; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "JACKPOT!  +$%ld", win); break; }
+	case EGO_MEGAJACKPOT: { const long win = 1000000; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "MEGA JACKPOT!  +$%ld", win); break; }
+	case EGO_WIN:     { const long win = cost * 2; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Win!  +$%ld", win); break; }
 	case EGO_REVIVE:
 		if (!endlessReviveHeld)
 		{ endlessReviveHeld = true; SDL_strlcpy(endlessGambleMsg, "Won a REVIVE token!", sizeof endlessGambleMsg); }
 		else
-		{ const long win = cost * 4; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Revive held --  +$%ld", win); }
+		{ const long win = cost * 4; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Revive held --  +$%ld", win); }
 		break;
 	case EGO_PERK:
 		endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // the E-Shop dispatch opens MENU_PERKS when endlessGambleWonPerk() is set
 		if (endlessPerkChoiceCount() > 0)
 		{ endlessGamblePerkWon = true; SDL_strlcpy(endlessGambleMsg, "Won a free perk pick!", sizeof endlessGambleMsg); }
 		else
-		{ const long win = cost * 3; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Perks maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Perks maxed --  +$%ld", win); }
 		break;
 	case EGO_HULL:
 		if (endlessArmorBonus < endlessHullMax())
 		{ endlessArmorBonus += ENDLESS_HULL_STEP; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Hull tier!  +%d armor", ENDLESS_HULL_STEP); }
 		else
-		{ const long win = cost * 3; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Hull maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Hull maxed --  +$%ld", win); }
 		break;
 	case EGO_OVERCLOCK:  // +1 permanent front-gun power (the bait that makes Meltdown sting)
 		if ((int)player[0].items.weapon[FRONT_WEAPON].power < 11)
 		{ ++player[0].items.weapon[FRONT_WEAPON].power; SDL_strlcpy(endlessGambleMsg, "Overclocked!  +1 gun power", sizeof endlessGambleMsg); }
 		else
-		{ const long win = cost * 3; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Guns maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Guns maxed --  +$%ld", win); }
 		break;
 	case EGO_SPECIAL: endlessGrantSpecial(); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Won a special weapon! (%s)", endlessLastSpecialName); break;
 	case EGO_ARSENAL:
@@ -648,7 +648,7 @@ static void endlessApplyGambleOutcome(int id, long cost)
 		if (got > 0)
 			snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Arsenal!  +%d bombs", got);
 		else
-		{ const long win = cost * 2; player[0].cash += win; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Bombs full --  +$%ld", win); }
+		{ const long win = cost * 2; endlessAddCash(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Bombs full --  +$%ld", win); }
 		break;
 	}
 	case EGO_SECONDWIND:
@@ -660,7 +660,7 @@ static void endlessApplyGambleOutcome(int id, long cost)
 		const int maxA = player[0].initial_armor > 0 ? player[0].initial_armor : 1;
 		const int miss = maxA - (int)player[0].armor;
 		const long win = cost * 2 + (long)cost * 3 * (miss > 0 ? miss : 0) / maxA;
-		player[0].cash += win;
+		endlessAddCash(win, ENDLESS_CASH_GAMBLE);
 		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Blood money!  +$%ld", win);
 		break;
 	}
@@ -683,21 +683,27 @@ static void endlessApplyGambleOutcome(int id, long cost)
 	case EGO_DOUBLENOTHING:  // a straight coin-flip on your entire cash pile
 		if (endlessRand() % 2)
 		{
-			if (player[0].cash > 1000000000UL)
-				player[0].cash = 2000000000UL;   // clamp so the doubling can't wrap the counter
+			// Clamped at 2e9 so the doubling can't wrap the wallet. Booked as the DELTA rather than
+			// the new total, so the ledger records the same number the player was shown -- except
+			// when the clamp lands below the pile it is clamping (a wallet already past 2e9), which
+			// is a cut, not a win: assign it and let the reconciler book the fall.
+			const ulong pile = player[0].cash;
+			const ulong doubled = (pile > 1000000000UL) ? 2000000000UL : pile * 2;
+			if (doubled > pile)
+				endlessAddCash((long)(doubled - pile), ENDLESS_CASH_GAMBLE);
 			else
-				player[0].cash *= 2;
+				player[0].cash = doubled;
 			SDL_strlcpy(endlessGambleMsg, "DOUBLED! The pile is yours.", sizeof endlessGambleMsg);
 		}
 		else
 		{ player[0].cash = 0; SDL_strlcpy(endlessGambleMsg, "NOTHING. Wiped clean.", sizeof endlessGambleMsg); }
 		break;
-	case EGO_REFUND: player[0].cash += cost; SDL_strlcpy(endlessGambleMsg, "Machine jammed -- fee back.", sizeof endlessGambleMsg); break;
+	case EGO_REFUND: endlessAddCash(cost, ENDLESS_CASH_GAMBLE); SDL_strlcpy(endlessGambleMsg, "Machine jammed -- fee back.", sizeof endlessGambleMsg); break;
 	case EGO_NOTHING: SDL_strlcpy(endlessGambleMsg, "Nothing. The house wins.", sizeof endlessGambleMsg); break;
 	case EGO_LOANSHARK:  // a fortune now, a permanent tax on every price for the rest of the run
 	{
 		const long win = cost * 3;  // scales off the live fee (like the other wins) so it stays a real lump sum -- borrowing against your future
-		player[0].cash += win;
+		endlessAddCash(win, ENDLESS_CASH_GAMBLE);
 		endlessShopTax += 25;  // compounds if you take the deal twice -- debt you never climb out of
 		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Loan shark: +$%ld, +25%% tax", win);
 		break;
@@ -866,9 +872,12 @@ bool endlessTryGamble(void)
 	const long cost = endlessGamblePrice();
 	if (player[0].cash < (ulong)cost)
 		return false;
-	endlessCashSample();   // bank anything still unsampled BEFORE the wager leaves the wallet...
+	// The first call is load-bearing: without it an undeclared rise sitting in the wallet would net
+	// against the wager and be lost from BOTH totals. The second only settles the wager on the spot
+	// -- whatever runs next would settle it anyway -- but it keeps the ledger true at every instant.
+	endlessCashSample();
 	player[0].cash -= cost;
-	endlessCashSample();   // ...and re-mark after it, so the payout below reads as the full win
+	endlessCashSample();
 
 	// A few ultra-rare outcomes are rolled apart from the 0..99 ladder below, since their odds don't fit
 	// a percentile bucket. One shared 1-in-5000 draw keeps each exact: value 0 = the dream MEGA JACKPOT
@@ -961,9 +970,8 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 		if (interest > icap)
 			interest = icap;
 		bonus = endlessClearBonus() * endlessPerkCashPercent() / 100;  // Scavenger perk scales the clear bonus
-		player[0].cash += interest;
-		player[0].cash += bonus;
-		endlessCashSample();   // bank the payout before the shop starts spending it
+		endlessAddCash(interest, ENDLESS_CASH_INTEREST);
+		endlessAddCash(bonus, ENDLESS_CASH_CLEAR);
 	}
 	if (interestOut)
 		*interestOut = interest;

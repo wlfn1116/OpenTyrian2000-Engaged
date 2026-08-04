@@ -39,15 +39,19 @@ Uint64   endlessSortieOutpostMods = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 16
+#define ENDLESS_SAVE_VERSION 17
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
 #define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE
 #define ENDLESS_SAVE_OFFERS_V12 3
 
+// Spare cash-source slots, so appending an EndlessCashSource needs no version bump.
+#define ENDLESS_SAVE_CASH_SOURCES 12
+
 // Perk IDs are on-disk slots; widen the block and bump the version together.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
+COMPILE_TIME_ASSERT(endless_save_cash_sources_fit, ENDLESS_CASH_SOURCES <= ENDLESS_SAVE_CASH_SOURCES);
 
 typedef struct {
 	bool used;
@@ -113,10 +117,12 @@ typedef struct {
 	Uint8  breakthroughOwed;  // BREAKTHROUGH: bonus perk picks still owed (a count -- two can queue)
 
 	// Added in v15.
-	Uint8  runMode;  // EndlessRunMode: the run's Relaxed/Normal/Hardcore choice (never Hardcore on disk)
+	Uint8  runMode;  // EndlessRunMode: the run's Relaxed/Standard/Hardcore choice (never Hardcore on disk)
 
-	// Added in v16.
+	// Added in v16 (which stored this one field alone), widened in v17.
 	Uint64 cashEarned;  // running total of cash taken in, for the run-over tally
+	Uint64 cashSpent;   // ...and of everything that left the wallet
+	Uint64 cashBySource[ENDLESS_SAVE_CASH_SOURCES];  // the earnings breakdown, indexed by EndlessCashSource
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -240,9 +246,12 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutU8(f, r->starChartsOwed);              // v12 boons owed to a later outpost
 	endlessPutU8(f, r->breakthroughOwed);
 
-	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Normal / Hardcore
+	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Standard / Hardcore
 
-	endlessPutU64(f, r->cashEarned);                 // v16 run cash-earned tally
+	endlessPutU64(f, r->cashEarned);                 // v16 cash ledger (earned alone)...
+	endlessPutU64(f, r->cashSpent);                  // ...widened in v17: spent, then the breakdown
+	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
+		endlessPutU64(f, r->cashBySource[i]);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -436,7 +445,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	if (version >= 12 && (!endlessGetU8(f, &r->starChartsOwed) || !endlessGetU8(f, &r->breakthroughOwed)))
 		return false;
 
-	// v15 run mode. Older records predate Normal and were all written by a build whose only
+	// v15 run mode. Older records predate Standard and were all written by a build whose only
 	// saveable run behaved like Relaxed, so the memset above (runMode 0) already resumes them right.
 	if (version >= 15)
 	{
@@ -446,10 +455,32 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			r->runMode = ENDLESS_RUNMODE_RELAXED;
 	}
 
-	// v16 cash-earned tally. Older records lack it -- the memset above left it 0, so a run resumed
-	// from a pre-v16 save counts only what it takes in from here on.
-	if (version >= 16 && !endlessGetU64(f, &r->cashEarned))
-		return false;
+	// Cash ledger. Pre-v16 records lack it entirely -- the memset above left every field 0, so such a
+	// run resumes counting only what it takes in and spends from here on.
+	//
+	// v16 stored cashEarned ALONE; v17 added cashSpent and the per-source breakdown. The two layouts
+	// have to stay distinguishable: reading a v16 file with the v17 layout short-reads, and a short
+	// read aborts the whole sidecar -- which would silently discard every slot's run, not just this
+	// field. Hence the separate version rather than a wider v16.
+	if (version >= 16)
+	{
+		if (!endlessGetU64(f, &r->cashEarned))
+			return false;
+		if (version >= 17)
+		{
+			if (!endlessGetU64(f, &r->cashSpent))
+				return false;
+			for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
+				if (!endlessGetU64(f, &r->cashBySource[i]))
+					return false;
+		}
+		else
+		{
+			// A v16 run knew what it had earned but not how, nor what it had spent. Book the lot as
+			// untagged rather than leaving a breakdown that doesn't sum to the total.
+			r->cashBySource[ENDLESS_CASH_OTHER] = r->cashEarned;
+		}
+	}
 	return true;
 }
 
@@ -581,11 +612,15 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->breakthroughOwed = (Uint8)((endlessBreakthroughOwed < 0) ? 0
 	                             : (endlessBreakthroughOwed > 255 ? 255 : endlessBreakthroughOwed));
 
-	// Run mode (v15). On disk this is only ever Relaxed or Normal (Hardcore never saves), but the
+	// Run mode (v15). On disk this is only ever Relaxed or Standard (Hardcore never saves), but the
 	// sortie snapshot shares this record, and there it carries a Hardcore run's mode across a bail.
 	r->runMode = (Uint8)endlessRunMode;
 
-	r->cashEarned = endlessRunCashEarned;   // v16 run cash-earned tally
+	// v16 cash ledger. The spare on-disk slots past ENDLESS_CASH_SOURCES stay zeroed by the memset.
+	r->cashEarned = endlessRunCashEarned;
+	r->cashSpent  = endlessRunCashSpent;
+	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
+		r->cashBySource[i] = endlessCashBySource[i];
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -685,10 +720,13 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 		endlessSortieHave  = true;
 	}
 
-	// Cash-earned tally (v16). endlessResetRun above zeroed it, which is also what a pre-v16 record
+	// Cash ledger (v16). endlessResetRun above zeroed it all, which is also what a pre-v16 record
 	// restores as. The mark is re-anchored to whatever wallet this record is being laid over -- the
 	// two sortie paths below re-anchor again after they memcpy the snapshotted loadout back.
 	endlessRunCashEarned = r->cashEarned;
+	endlessRunCashSpent  = r->cashSpent;
+	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
+		endlessCashBySource[i] = r->cashBySource[i];
 	endlessCashResync();
 
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll
@@ -782,7 +820,7 @@ void endlessRestoreSortie(void)
 	}
 	else
 	{
-		// Relaxed / Normal: the outpost reopens UNLOCKED and the player re-picks a course through
+		// Relaxed / Standard: the outpost reopens UNLOCKED and the player re-picks a course through
 		// endlessSelectCourse, which re-consumes these one-shots. Restore their PRE-pick values so a
 		// bought buff / queued sabotage / Long Con carry to the next course instead of being lost.
 		endlessLockedSortie       = false;
@@ -948,7 +986,8 @@ void endlessDebugConfigLoad(const ConfigSection *section)
 // The all-time records live in opentyrian.cfg so Hardcore runs can update theirs. One key per run
 // mode. "best_zone" is the original single-record key and stays the Relaxed slot, so an existing
 // record carries over -- and lands in the mode that claims the least, since the build that wrote it
-// had no Normal and never saved a Hardcore run's progress anywhere else either.
+// had no Standard and never saved a Hardcore run's progress anywhere else either. Standard likewise
+// keeps its original "best_zone_normal" key from before the mode was renamed, so its record survives.
 static const char *const endlessBestZoneKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone", "best_zone_normal", "best_zone_hardcore",
 };

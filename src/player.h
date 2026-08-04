@@ -142,6 +142,10 @@ static inline bool all_players_alive(void)
 }
 
 void calc_purple_balls_needed(Player *);
+// Cash off the playfield. Routes player 1's share through the endless ledger; use it for every
+// pickup credit so the run-over earnings breakdown stays accurate.
+void player_award_pickup_cash(Player *, long amount);
+
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);
 

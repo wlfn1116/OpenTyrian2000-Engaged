@@ -50,7 +50,7 @@ themselves are unedited. The difficulty comes from depth scaling and sector
 modifiers.
 
 How much a fatal hit costs you is your call: every run picks a mode on the start
-screen -- **Relaxed**, **Normal** or **Hardcore** -- ranging from a free retry of
+screen -- **Relaxed**, **Standard** or **Hardcore** -- ranging from a free retry of
 the zone to no saving at all. See [Starting a run](#starting-a-run).
 
 The loop is:
@@ -74,13 +74,13 @@ The start screen takes a seed and a run mode.
 | Mode | Saving | Dying |
 | --- | --- | --- |
 | Relaxed | Anytime | A choice over the wreck: retry the zone, return to the outpost, or end the run |
-| Normal | Anytime | Ends the run, and the pause menu is locked from the fatal hit |
+| Standard | Anytime | Ends the run, and the pause menu is locked from the fatal hit |
 | Hardcore | Never | Ends the run, and the pause menu is locked from the fatal hit |
 
 The mode is fixed for the whole run and travels with its save. A fatal hit is
-final in both Normal and Hardcore -- neither lets you slip out through the pause
+final in both Standard and Hardcore -- neither lets you slip out through the pause
 menu while the wreck is still exploding. What separates them is everything before
-that: Normal saves the last level and you can still choose a different course.
+that: Standard saves the last level and you can still choose a different course.
 
 Difficulty sets your starting cash and how fast depth scaling ramps:
 
@@ -357,13 +357,13 @@ Either retry rolls the run back to the launch snapshot, the way Quit Level does:
 the loadout, cash, perks and shop stock you had when the zone started. Nothing
 picked up in the failed attempt is kept.
 
-Normal and Hardcore get no such choice: the wreck goes straight to GAME OVER and
+Standard and Hardcore get no such choice: the wreck goes straight to GAME OVER and
 the summary. Both also close off the pause menu the moment the ship dies, so its
 Quit Level row is no escape from a fatal hit either.
 
 ### Saving
 
-Relaxed and Normal runs checkpoint at the outpost, in `endless.sav`. Hardcore
+Relaxed and Standard runs checkpoint at the outpost, in `endless.sav`. Hardcore
 runs never save. Quit Level restores the launch snapshot and drops you back into the
 same committed sortie.
 
@@ -631,7 +631,7 @@ On Windows these sit next to the executable, on Linux in
 | --- | --- |
 | `opentyrian.cfg` | Settings, high scores, furthest Endless zone per mode |
 | `tyrian.sav` | Campaign and 2-player saves |
-| `endless.sav` | The current Relaxed or Normal Endless run |
+| `endless.sav` | The current Relaxed or Standard Endless run |
 | `log/opentyrian_log_<time>.log` | Crash report, Windows only, written only if the game falls over |
 | `log/opentyrian_net_<time>.log` | Online session log |
 

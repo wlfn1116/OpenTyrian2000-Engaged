@@ -141,11 +141,39 @@ extern int endlessRunDepth;
 extern int endlessRunKills;
 extern int endlessRunBossKills;
 
-// Total cash EARNED over the run, as opposed to what is left in the wallet after the shops.
-// Saturating, so no run can wrap it. See endlessCashSample in endless.c for how it is kept.
+// Where a run's cash came from. Append new sources at the TAIL: the save block carries spare slots
+// (ENDLESS_SAVE_CASH_SOURCES), so growing this list needs no save-version bump.
+typedef enum {
+	ENDLESS_CASH_KILL = 0,   // enemy value, paid the instant a ship is destroyed
+	ENDLESS_CASH_PICKUP,     // cash and gems collected off the playfield
+	ENDLESS_CASH_BOUNTY,     // Elite / Champion kill bounties
+	ENDLESS_CASH_CLEAR,      // the zone-clear bonus
+	ENDLESS_CASH_INTEREST,   // bank interest on unspent cash
+	ENDLESS_CASH_GAMBLE,     // E-Shop gamble winnings
+	ENDLESS_CASH_PERK,       // the cash taken instead of a perk
+	ENDLESS_CASH_OTHER,      // undeclared: the reconciler saw a rise no endlessAddCash announced
+	ENDLESS_CASH_START,      // the difficulty-based stake the run is handed at zone 1
+	ENDLESS_CASH_SOURCES
+} EndlessCashSource;
+
+// THE way cash should enter the wallet in endless: credits player[0] and records where it came from.
+// Safe to call with endless off (campaign mods award bounties too) -- it credits and skips the tally.
+void endlessAddCash(long amount, EndlessCashSource src);
+
+// Run totals for the run-over tally. Earned is the sum of endlessCashBySource; spent is everything
+// that left the wallet -- purchases, gamble wagers, and the machine's crueller outcomes. All
+// saturating, so no run can wrap them.
 extern Uint64 endlessRunCashEarned;
-void endlessCashSample(void);   // bank any rise in player[0].cash since the last sample
-void endlessCashResync(void);   // re-anchor the sampler without banking (run start, load, sortie revert)
+extern Uint64 endlessRunCashSpent;
+extern Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES];
+const char *endlessCashSourceName(EndlessCashSource src);
+
+// The reconciler behind endlessAddCash: banks any UNdeclared move in player[0].cash -- a rise into
+// ENDLESS_CASH_OTHER, a fall into the spent total. The spend side has no call site to hook because
+// the outpost assigns a recomputed balance (JE_cashLeft) instead of subtracting, so it needs this;
+// a nonzero ENDLESS_CASH_OTHER means an income path forgot to call endlessAddCash.
+void endlessCashSample(void);
+void endlessCashResync(void);   // re-anchor without banking either way (run start, load, sortie revert)
 
 // Count one logical enemy. All kill paths go through enemy_logical_death.
 void endlessCountKill(int linknum);
@@ -173,7 +201,7 @@ void endlessRecordConfigLoad(const ConfigSection *section);
 // How forgiving the run is. Picked on the seed screen, fixed for the whole run.
 typedef enum {
 	ENDLESS_RUNMODE_RELAXED = 0,  // a fatal hit opens the death menu: retry the zone, or back to the outpost
-	ENDLESS_RUNMODE_NORMAL,       // a fatal hit ends the run (the pause menu's Quit Level is still a bail)
+	ENDLESS_RUNMODE_STANDARD,     // a fatal hit ends the run (the pause menu's Quit Level is still a bail)
 	ENDLESS_RUNMODE_HARDCORE,     // no saving, and no bail once the ship is hit
 	ENDLESS_RUNMODE_COUNT
 }
@@ -184,7 +212,8 @@ extern EndlessRunMode endlessRunMode;
 // Hardcore disables all run saves.
 static inline bool endlessHardcore(void) { return endlessRunMode == ENDLESS_RUNMODE_HARDCORE; }
 
-// "Relaxed" / "Normal" / "Hardcore".
+// "Relaxed" / "Standard" / "Hardcore". The first letter is used as the mode initial on the run-over
+// screen, so the three names must keep distinct initials.
 const char *endlessRunModeName(EndlessRunMode mode);
 
 // Returns false when the seed screen is cancelled.

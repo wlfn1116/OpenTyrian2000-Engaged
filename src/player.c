@@ -18,6 +18,7 @@
  */
 #include "player.h"
 
+#include "endless.h"
 #include "episodes.h"
 #include "varz.h"  // hud_bars_dirty
 
@@ -163,6 +164,18 @@ void calc_purple_balls_needed(Player *this_player)
 	this_player->purple_balls_needed = purple_balls_required[*this_player->lives];
 }
 
+// Credit cash that fell out of the playfield to whoever collected it. Only player 1's share is a
+// run's earnings, so in endless that goes through the ledger; every other case is a plain credit.
+// Use this instead of `this_player->cash += n` for anything picked up, or the endless run-over tally
+// files it under "untagged".
+void player_award_pickup_cash(Player *this_player, long amount)
+{
+	if (endlessMode && this_player == &player[0])
+		endlessAddCash(amount, ENDLESS_CASH_PICKUP);
+	else
+		this_player->cash += amount;
+}
+
 bool power_up_weapon(Player *this_player, uint port)
 {
 	const bool can_power_up = this_player->items.weapon[port].id != 0 &&  // not None
@@ -177,7 +190,7 @@ bool power_up_weapon(Player *this_player, uint port)
 	}
 	else  // cash consolation prize
 	{
-		this_player->cash += 1000;
+		player_award_pickup_cash(this_player, 1000);
 	}
 	
 	return can_power_up;
