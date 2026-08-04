@@ -533,6 +533,14 @@ static void endlessWriteAllSlots(void)
 // Snapshot the live run AND the current outpost into a record.
 static void endlessCaptureCurrent(EndlessSlotRec *r)
 {
+	// Settle the cash ledger before copying it. The wallet this record is snapshotted ALONGSIDE (in
+	// tyrian.sav for a save, in endlessSortiePlayer for a sortie) is the live one, so a ledger that
+	// still owes a reconcile would be stored disagreeing with it -- and since the restore re-anchors
+	// the mark to the wallet, an outpost purchase made with no gameplay tick since would be dropped
+	// from the spent total for good. Safe here: neither caller runs while the upgrade sub-menu is
+	// showing its fake trade-in balance.
+	endlessCashSample();
+
 	memset(r, 0, sizeof(*r));
 	r->used = true;
 

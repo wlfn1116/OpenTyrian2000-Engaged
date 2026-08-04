@@ -318,8 +318,11 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Mode:         %s%s\n", endlessRunModeName(endlessRunMode),
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
-		// A nonzero "untagged" line means an income path skipped endlessAddCash and the reconciler
-		// had to guess -- worth chasing down.
+		// Read as-is, deliberately: this runs from a crash handler, so it does not call
+		// endlessCashSample to settle the ledger first. The totals can therefore lag by one
+		// unreconciled purchase -- fine for a diagnostic dump, and worth less than poking live
+		// state mid-crash. A nonzero "untagged" line means an income path skipped endlessAddCash
+		// (or the debug Add Cash screen overwrote the wallet) -- worth chasing down.
 		fprintf(f, "  Cash earned:  %llu  (spent %llu)\n",
 		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent);
 		for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
