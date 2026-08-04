@@ -5880,6 +5880,16 @@ new_game:
 						break;
 
 					case 'I': /*Load Items Available Information*/
+						// Endless stocks its own outpost and snapshots it after JE_loadMap, so this
+						// campaign list would become the stock a bail restores. Read the rows
+						// anyway, or the script parser falls out of step with the file.
+						if (endlessMode)
+						{
+							for (int i = 0; i < 9; ++i)
+								read_encrypted_pascal_string(s, sizeof(s), ep_f);
+							break;
+						}
+
 						memset(&itemAvail, 0, sizeof(itemAvail));
 
 						for (int i = 0; i < 9; ++i)
@@ -5890,7 +5900,7 @@ new_game:
 							strncpy(buf, (strlen(s) > 8) ? s + 8 : "", sizeof(buf));
 
 							int j = 0, temp;
-							while (str_pop_int(buf, &temp))
+							while (j < (int)COUNTOF(itemAvail[i]) && str_pop_int(buf, &temp))
 								itemAvail[i][j++] = temp;
 							itemAvailMax[i] = j;
 						}
@@ -5907,8 +5917,7 @@ new_game:
 							if (itemAvailMax[6] < 10) itemAvail[6][itemAvailMax[6]++] = chargeLaserSlot;
 						}
 
-						if (!endlessMode)
-							JE_itemScreen();
+						JE_itemScreen();
 						break;
 
 					case 'L':

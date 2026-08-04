@@ -345,6 +345,7 @@ void endlessResetRun(void)
 	endlessSortiePreCleanse = 0;
 	endlessSortiePreLongCon = 0;
 	endlessSortieOutpostMods = 0;
+	endlessSortieOutpostEp = 0;
 	// New runs override this after reset, and a loaded/reverted one restores the saved mode.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';

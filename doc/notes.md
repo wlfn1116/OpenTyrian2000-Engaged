@@ -297,6 +297,25 @@ Restart Zone calls `clear_song_selection()` so the unchanged track reloads after
 uses the Quit Level path. Restart Zone clears `endlessResumeVisit` and arms the
 locked relaunch.
 
+The outpost owns `itemAvail`. A level script's `']I'` replaces it with that
+level's campaign shop list, and `JE_loadMap` runs before `endlessCaptureSortie`,
+so `']I'` reads its nine rows and discards them under `endlessMode`. Skipping the
+reads would leave the script parser out of step with the file.
+
+Stock is stored as item ids, which resolve against the item tables of the episode
+that generated them. `JE_initEpisode` loads ep1-3 from `tyrian.hdt` and ep4/5 from
+the level file, so `endlessSortieOutpostEp` records the outpost's episode and
+`endlessRestoreSortie` restores it before the shop redraws. Both retry paths carry
+that field and `endlessSortieOutpostMods` across the reset inside
+`endlessApplyCurrent`. It needs no save field, because an Endless checkpoint is
+only written at an outpost and `tyrian.sav` already holds the episode.
+
+The two item table sets differ in the Gencore Solar Shield icon, two ship
+illustrations, The Stalker 21.126 price (65535 against 30000), and the weapon data
+covered by the Episode Differences menu. Other campaign writes in the same parser
+need no guard: `']e'`, `']g'` and `']2'` sections are excluded from the Endless
+pool, and `endlessRegenerateLevel` clears the rest.
+
 Use `endlessMode` for run structure, saves, prices, and pickup substitution. Use
 `endlessFxActive()` for combat scaling, modifiers, perks, and enemy tiers.
 Campaign debug mode can enable effects without run structure. Effect helpers are

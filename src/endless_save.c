@@ -32,6 +32,9 @@ int      endlessSortiePreCleanse   = 0;
 int      endlessSortiePreLongCon   = 0;
 // Mutators captured when the outpost opens. An unlocked bail must restore this previous-sector set.
 Uint64   endlessSortieOutpostMods = 0;
+// Episode captured with them. Shop stock is item ids, and each episode loads its own item tables,
+// so a bail must restore this before the outpost redraws. See "Death, retries" in doc/notes.md.
+JE_byte  endlessSortieOutpostEp = 0;
 
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
@@ -787,12 +790,19 @@ void endlessRestoreSortie(void)
 	const int      preCleanse  = endlessSortiePreCleanse;
 	const int      preLongCon  = endlessSortiePreLongCon;
 	const Uint64   outpostMods = endlessSortieOutpostMods;
+	const JE_byte  outpostEp   = endlessSortieOutpostEp;
 
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); arms endlessResumeVisit (also cleared endlessSortieHave via endlessResetRun)
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout (wins over the superbombs field applyCurrent touched)
 	endlessActiveMods   = endlessSortieModsV;                         // the committed level's mutators (for the relaunch)
 	endlessSortieHave   = true;                                       // committed-level state remains valid
 	endlessSortieOutpostMods = outpostMods;                           // preserve the same outpost modifiers
+	endlessSortieOutpostEp   = outpostEp;                             // and its item data
+
+	// The restored stock is item ids, so reload the tables it was drawn against before the outpost
+	// redraws. Both branches below reselect an episode when they relaunch.
+	if (outpostEp != 0 && outpostEp != episodeNum)
+		JE_initEpisode(outpostEp);
 
 	if (endlessHardcore())
 	{
@@ -822,14 +832,16 @@ void endlessRestartSortie(void)
 	if (!endlessSortieHave)
 		return;
 
-	const Uint64 outpostMods = endlessSortieOutpostMods;  // rescue it from the reset inside the apply
+	const Uint64  outpostMods = endlessSortieOutpostMods;  // rescue these from the reset inside the apply
+	const JE_byte outpostEp   = endlessSortieOutpostEp;
 
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); also arms endlessResumeVisit
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid
 	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
-	// Preserve outpost modifiers for a later bail from the restarted zone.
+	// Preserve outpost modifiers and episode for a later bail from the restarted zone.
 	endlessSortieOutpostMods = outpostMods;
+	endlessSortieOutpostEp   = outpostEp;
 
 	endlessCashResync();           // the reverted wallet is the new baseline (the tally rode in on the record)
 	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here

@@ -988,6 +988,9 @@ void endlessBetweenLevels(void)
 	// Preserve the previous sector's modifiers so a later bail reopens this outpost unchanged.
 	if (!endlessLockedSortie)
 		endlessSortieOutpostMods = endlessActiveMods;
+	// The episode needs no such guard: every path here leaves episodeNum on the outpost's own,
+	// a locked reopen included, since the bail restores it first.
+	endlessSortieOutpostEp = episodeNum;
 
 	// Set the outpost track every visit; milestone charts use the warning track.
 	songBuy = endlessMilestoneKind() ? ENDLESS_MILESTONE_SHOP_SONG : DEFAULT_SONG_BUY;

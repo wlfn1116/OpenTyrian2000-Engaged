@@ -324,5 +324,6 @@ extern unsigned endlessSortiePrePurchased; // one-shots snapshotted pre-consumpt
 extern int      endlessSortiePreCleanse;   // so a non-hardcore bail can restore them
 extern int      endlessSortiePreLongCon;
 extern Uint64   endlessSortieOutpostMods;  // mutators in force at the outpost this sortie launched from
+extern JE_byte  endlessSortieOutpostEp;    // episode whose item data that outpost was stocked against
 
 #endif // ENDLESS_INTERNAL_H
