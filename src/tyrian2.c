@@ -3014,10 +3014,10 @@ start_level:
 		}
 		else
 		{
-			// Endless death with Hardcore off: the frozen death frame gets a choice before the run
-			// summary. Hardcore skips it -- and its pause menu is locked out from the moment the ship
-			// dies (see the ingamemenu_pressed gate in the level loop), so Quit Level is no way out
-			// of a fatal hit either.
+			// Endless death in Relaxed: the frozen death frame gets a choice before the run summary.
+			// Normal and Hardcore skip it and go straight to GAME OVER plus the summary; Hardcore also
+			// locks its pause menu from the moment the ship dies (see the ingamemenu_pressed gate in
+			// the level loop), so Quit Level is no way out of a fatal hit there either.
 			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
 			if (endlessDeathMenuDue() && all_players_dead())
 				deathPick = JE_endlessDeathMenu();
@@ -5396,9 +5396,9 @@ draw_player_shot_loop_end:
 
 		// Endless Hardcore: the pause menu is off-limits from the moment the ship dies. Its Quit
 		// Level row returns to the outpost, which during the death explosion would turn a fatal hit
-		// into a free retry -- the one thing Hardcore does not allow. (With Hardcore off the death
-		// menu offers that retry openly; see JE_main.)
-		if (ingamemenu_pressed && endlessMode && endlessHardcore && all_players_dead())
+		// into a free retry -- the one thing Hardcore does not allow. (Relaxed offers that retry
+		// openly through the death menu; Normal leaves this hatch open, see JE_main.)
+		if (ingamemenu_pressed && endlessMode && endlessHardcore() && all_players_dead())
 			ingamemenu_pressed = false;
 
 		if (ingamemenu_pressed)
@@ -7420,11 +7420,11 @@ bool newEndlessGame(void)
 	JE_initEpisode(1);
 	initial_episode_num = episodeNum;
 
-	// Choose the run seed (random or typed) and the Hardcore toggle before the difficulty picker.
+	// Choose the run seed (random or typed) and the run mode before the difficulty picker.
 	// Cancelling here backs all the way out to the title, exactly like cancelling difficulty.
 	char seedbuf[ENDLESS_SEED_MAXLEN];
-	bool hardcore = false;
-	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &hardcore))
+	EndlessRunMode runMode = ENDLESS_RUNMODE_NORMAL;
+	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode))
 	{
 		endlessMode = false;
 		play_song(SONG_TITLE);
@@ -7441,7 +7441,7 @@ bool newEndlessGame(void)
 
 	endlessResetRun();
 	endlessSetSeed(seedbuf);  // establish the run's seeded structural RNG (endlessResetRun blanked it)
-	endlessHardcore = hardcore;  // apply the seed screen's Hardcore choice (endlessResetRun cleared it)
+	endlessRunMode = runMode;  // apply the seed screen's mode choice (endlessResetRun reset it)
 	endlessRecordRunStart();  // baseline the all-time record so this run's "(+n)" measures only what IT gained
 
 	endlessMode = true;

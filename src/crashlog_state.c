@@ -315,7 +315,7 @@ void crashlog_write_game_state(FILE *f)
 	{
 		fprintf(f, "\nEndless run:\n");
 		fprintf(f, "  Depth:        %d\n", endlessRunDepth);
-		fprintf(f, "  Hardcore:     %s%s\n", endlessHardcore ? "YES" : "no",
+		fprintf(f, "  Mode:         %s%s\n", endlessRunModeName(endlessRunMode),
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
 		write_endless_mods(f, endlessActiveMods);

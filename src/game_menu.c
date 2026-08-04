@@ -2071,7 +2071,7 @@ void JE_itemScreen(void)
 
 				// Endless hardcore forbids all saving/loading, so the Alt+S / Alt+L quick keys are
 				// disabled too (not just the menu rows).
-				if (curMenu != MENU_LOAD_SAVE && !(endlessMode && endlessHardcore))
+				if (curMenu != MENU_LOAD_SAVE && !(endlessMode && endlessHardcore()))
 				{
 					if (keysactive[SDL_SCANCODE_S] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]))
 					{
@@ -3305,7 +3305,7 @@ void JE_drawMenuChoices(void)
 		// Endless hardcore: NO saving of any kind -- grey out Load Game (item 2) and Save Game
 		// (item 3) in the shop options submenu so the disabled rows read as disabled. (Items 2/3
 		// sit above the Switch-only Touch row, so this holds on Switch too.)
-		if (endlessMode && endlessHardcore && curMenu == MENU_OPTIONS && (x == 2 || x == 3))
+		if (endlessMode && endlessHardcore() && curMenu == MENU_OPTIONS && (x == 2 || x == 3))
 			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
 	}
 }
@@ -8762,7 +8762,7 @@ void JE_menuFunction(JE_byte select)
 		case 3:  // Save Game
 			// Endless hardcore forbids ALL saving/loading (these rows are greyed out in
 			// JE_drawMenuChoices); a deny beep confirms the press did nothing.
-			if (endlessMode && endlessHardcore)
+			if (endlessMode && endlessHardcore())
 			{
 				JE_playSampleNum(S_SPRING);
 				break;

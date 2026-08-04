@@ -317,7 +317,10 @@ void JE_updateWarning(SDL_Surface * screen)
 	}
 }
 
-void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
+// Glow several strings in as ONE line: same animation, same timing, each string at its own x.
+// (A caller that ran JE_outTextGlow twice would play the effect twice and take twice as long --
+// the Endless run summary needs a left-aligned label and a right-aligned value to arrive together.)
+void JE_outTextGlowMulti(SDL_Surface * screen, const int *x, int y, const char *const *s, int count)
 {
 	JE_integer z;
 	JE_byte c = 15;
@@ -327,15 +330,19 @@ void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
 		c = 7;
 	}
 
-	JE_outTextAdjust(screen, x - 1, y,     s, 0, -12, textGlowFont, false);
-	JE_outTextAdjust(screen, x,     y - 1, s, 0, -12, textGlowFont, false);
-	JE_outTextAdjust(screen, x + 1, y,     s, 0, -12, textGlowFont, false);
-	JE_outTextAdjust(screen, x,     y + 1, s, 0, -12, textGlowFont, false);
+	for (int i = 0; i < count; i++)
+	{
+		JE_outTextAdjust(screen, x[i] - 1, y,     s[i], 0, -12, textGlowFont, false);
+		JE_outTextAdjust(screen, x[i],     y - 1, s[i], 0, -12, textGlowFont, false);
+		JE_outTextAdjust(screen, x[i] + 1, y,     s[i], 0, -12, textGlowFont, false);
+		JE_outTextAdjust(screen, x[i],     y + 1, s[i], 0, -12, textGlowFont, false);
+	}
 	if (frameCountMax > 0)
 		for (z = 1; z <= 12; z++)
 		{
 			setDelay(frameCountMax);
-			JE_outTextAdjust(screen, x, y, s, c, z - 10, textGlowFont, false);
+			for (int i = 0; i < count; i++)
+				JE_outTextAdjust(screen, x[i], y, s[i], c, z - 10, textGlowFont, false);
 			if (JE_anyButton())
 			{
 				frameCountMax = 0;
@@ -350,7 +357,8 @@ void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
 	for (z = (frameCountMax == 0) ? 6 : 12; z >= textGlowBrightness; z--)
 	{
 		setDelay(frameCountMax);
-		JE_outTextAdjust(screen, x, y, s, c, z - 10, textGlowFont, false);
+		for (int i = 0; i < count; i++)
+			JE_outTextAdjust(screen, x[i], y, s[i], c, z - 10, textGlowFont, false);
 		if (JE_anyButton())
 		{
 			frameCountMax = 0;
@@ -363,4 +371,9 @@ void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
 		wait_delay();
 	}
 	textGlowBrightness = 6;
+}
+
+void JE_outTextGlow(SDL_Surface * screen, int x, int y, const char *s)
+{
+	JE_outTextGlowMulti(screen, &x, y, &s, 1);
 }

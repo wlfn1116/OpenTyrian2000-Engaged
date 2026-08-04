@@ -34,7 +34,7 @@ int      endlessSortiePreLongCon   = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 14
+#define ENDLESS_SAVE_VERSION 15
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -106,6 +106,9 @@ typedef struct {
 	// Deferred boons, added in v12.
 	Uint8  starChartsOwed;    // STAR CHARTS: the next ordinary chart still owes its full route slate
 	Uint8  breakthroughOwed;  // BREAKTHROUGH: bonus perk picks still owed (a count -- two can queue)
+
+	// Added in v15.
+	Uint8  runMode;  // EndlessRunMode: the run's Relaxed/Normal/Hardcore choice (never Hardcore on disk)
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -228,6 +231,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 
 	endlessPutU8(f, r->starChartsOwed);              // v12 boons owed to a later outpost
 	endlessPutU8(f, r->breakthroughOwed);
+
+	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Normal / Hardcore
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -420,6 +425,16 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// so a resumed pre-v12 run simply owes nothing (it can only ever have been charted in a v12 build).
 	if (version >= 12 && (!endlessGetU8(f, &r->starChartsOwed) || !endlessGetU8(f, &r->breakthroughOwed)))
 		return false;
+
+	// v15 run mode. Older records predate Normal and were all written by a build whose only
+	// saveable run behaved like Relaxed, so the memset above (runMode 0) already resumes them right.
+	if (version >= 15)
+	{
+		if (!endlessGetU8(f, &r->runMode))
+			return false;
+		if (r->runMode >= ENDLESS_RUNMODE_COUNT)
+			r->runMode = ENDLESS_RUNMODE_RELAXED;
+	}
 	return true;
 }
 
@@ -550,6 +565,10 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->starChartsOwed   = endlessStarChartsOwed ? 1 : 0;   // v12 boons owed to a later outpost
 	r->breakthroughOwed = (Uint8)((endlessBreakthroughOwed < 0) ? 0
 	                             : (endlessBreakthroughOwed > 255 ? 255 : endlessBreakthroughOwed));
+
+	// Run mode (v15). On disk this is only ever Relaxed or Normal (Hardcore never saves), but the
+	// sortie snapshot shares this record, and there it carries a Hardcore run's mode across a bail.
+	r->runMode = (Uint8)endlessRunMode;
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -625,6 +644,12 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// resumes owing nothing.
 	endlessStarChartsOwed   = r->starChartsOwed != 0;
 	endlessBreakthroughOwed = r->breakthroughOwed;
+
+	// Run mode (v15). endlessResetRun above reset it to Relaxed, which is also what a pre-v15 record
+	// (runMode 0) resumes as. A bail/retry goes through here too, so this is what keeps a Hardcore
+	// run Hardcore across the reset the sortie restore performs.
+	endlessRunMode = (r->runMode < ENDLESS_RUNMODE_COUNT) ? (EndlessRunMode)r->runMode
+	                                                      : ENDLESS_RUNMODE_RELAXED;
 
 	endlessRestoreSavedCourses(r);
 
@@ -711,22 +736,19 @@ void endlessRestoreSortie(void)
 	if (!endlessSortieHave)
 		return;
 
-	// Grab run-scoped state before endlessApplyCurrent -> endlessResetRun clobbers it. A bail is a
-	// retry of the same run, so its hardcore mode must survive the reset (the reset is meant for the
-	// save/resume path, which starts a fresh non-hardcore run) -- otherwise the very first bail would
-	// silently un-lock the outpost AND re-enable saving for the rest of the run.
-	const bool     wasHardcore = endlessHardcore;
+	// Grab the one-shots before endlessApplyCurrent -> endlessResetRun clobbers them. (The run mode
+	// needs no such rescue: it rides in the snapshot record itself, so the reset the apply performs
+	// is undone by the apply -- a bail can never silently un-lock the outpost or re-enable saving.)
 	const unsigned preBuff     = endlessSortiePrePurchased;
 	const int      preCleanse  = endlessSortiePreCleanse;
 	const int      preLongCon  = endlessSortiePreLongCon;
 
-	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state; arms endlessResumeVisit (also cleared endlessSortieHave via endlessResetRun)
+	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); arms endlessResumeVisit (also cleared endlessSortieHave via endlessResetRun)
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout (wins over the superbombs field applyCurrent touched)
 	endlessActiveMods   = endlessSortieModsV;                         // the committed level's mutators (for the relaunch)
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid -- keep the invariant
-	endlessHardcore     = wasHardcore;                                // keep the run's mode across the reset
 
-	if (endlessHardcore)
+	if (endlessHardcore())
 	{
 		// Hardcore: the reopened outpost is LOCKED to the launch-time choices. The relaunch re-arms
 		// the committed level directly (endlessArmLockedRelaunch), so the post-pick snapshot's zeroed
@@ -735,7 +757,7 @@ void endlessRestoreSortie(void)
 	}
 	else
 	{
-		// Non-hardcore: the outpost reopens UNLOCKED and the player re-picks a course through
+		// Relaxed / Normal: the outpost reopens UNLOCKED and the player re-picks a course through
 		// endlessSelectCourse, which re-consumes these one-shots. Restore their PRE-pick values so a
 		// bought buff / queued sabotage / Long Con carry to the next course instead of being lost.
 		endlessLockedSortie       = false;
@@ -756,12 +778,9 @@ void endlessRestartSortie(void)
 	if (!endlessSortieHave)
 		return;
 
-	const bool wasHardcore = endlessHardcore;  // survives endlessApplyCurrent -> endlessResetRun
-
-	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state; also arms endlessResumeVisit
+	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); also arms endlessResumeVisit
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid
-	endlessHardcore     = wasHardcore;
 	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
 
 	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here
@@ -887,14 +906,21 @@ void endlessDebugConfigLoad(const ConfigSection *section)
 	}
 }
 
-// The all-time record lives in opentyrian.cfg so Hardcore runs can update it.
+// The all-time records live in opentyrian.cfg so Hardcore runs can update theirs. One key per run
+// mode. "best_zone" is the original single-record key and stays the Relaxed slot, so an existing
+// record carries over -- and lands in the mode that claims the least, since the build that wrote it
+// had no Normal and never saved a Hardcore run's progress anywhere else either.
+static const char *const endlessBestZoneKey[ENDLESS_RUNMODE_COUNT] = {
+	"best_zone", "best_zone_normal", "best_zone_hardcore",
+};
 
 void endlessRecordConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
 		return;
 
-	config_set_int_option(section, "best_zone", endlessBestZone);
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+		config_set_int_option(section, endlessBestZoneKey[m], endlessBestZone[m]);
 }
 
 void endlessRecordConfigLoad(const ConfigSection *section)
@@ -902,8 +928,11 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 	if (section == NULL)
 		return;
 
-	int best = 0;
-	config_get_int_option(section, "best_zone", &best);
-	endlessBestZone = (best > 0) ? best : 0;   // a hand-edited negative reads as "no record yet"
-	endlessRecordRunStart();                   // nothing is running yet, so the baseline is the record
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+	{
+		int best = 0;
+		config_get_int_option(section, endlessBestZoneKey[m], &best);
+		endlessBestZone[m] = (best > 0) ? best : 0;   // a hand-edited negative reads as "no record yet"
+	}
+	endlessRecordRunStart();   // nothing is running yet, so the baseline is the record
 }

@@ -351,6 +351,12 @@ stores both run state and the current outpost snapshot.
 The checkpoint is written at outpost entry. Hardcore suppresses it. Quit Level
 restores the launch snapshot.
 
+The run's mode (`endlessRunMode`, v15) is part of the record, so a resumed run keeps
+it -- and so does a bail, since `endlessRestoreSortie`/`endlessRestartSortie` revert
+through the same capture/apply pair. A pre-v15 record reads as Relaxed. Hardcore
+never writes a record to disk, but it does write the in-memory sortie snapshot, which
+is why the field must carry it.
+
 `ENDLESS_SAVE_VERSION` is authoritative. Current history:
 
 | Version | Change |
@@ -367,6 +373,7 @@ restores the launch snapshot.
 | 12 | Star Charts and Breakthrough debt |
 | 13 | Five stored perk offers |
 | 14 | Rapid Charger merged into Rapid Recharge |
+| 15 | Run mode (Relaxed / Normal / Hardcore) |
 
 Append fields and guard reads by version. Older records use their historical
 field widths.
@@ -376,10 +383,38 @@ members is safe; deleting or reordering one requires migration of both arrays.
 
 The all-time best zone is stored in `opentyrian.cfg`, not the sidecar, so Hardcore
 runs can update it. Record a zone when it starts and write the config immediately.
+`endlessBestZone` is indexed by `EndlessRunMode` -- one record per mode, and only the
+running mode's slot can move. Config keys are `best_zone` (Relaxed, the original
+single-record key, so an existing record survives), `best_zone_normal` and
+`best_zone_hardcore`. `endlessRecordRunStart` baselines the record for the run-over
+"up N" line, so callers must set `endlessRunMode` *before* calling it.
+
+### Run Over screen
+
+`endlessOnRunEnd` (endless.c) is a two-column tally: only `RUN OVER`, the "You fell in
+Zone N" epitaph and the closing milestone line are centred. Every stat is a `{label,
+value}` row drawn by `endlessGlowRow` -- label at the block's left edge, value flush to
+its right edge. The block is sized to the widest label plus the widest value plus a
+30px gap and then centred as a unit, so both columns stay aligned whatever a run
+produced (a hand-typed 23-character seed is the wide case; the gap squeezes before
+anything clips).
+
+A row cannot be two `JE_outTextGlow` calls: that function *animates* (12 up frames,
+then a decay to `textGlowBrightness`, pumping `JE_showVGA` itself), so two calls would
+glow the label and the value one after the other and take twice as long. Hence
+`JE_outTextGlowMulti` (fonthand.c), which drives several strings at their own x through
+one animation; `JE_outTextGlow` is now a one-string wrapper over it.
+
+The furthest-zone value carries the mode's initial (`25 H`), taken from
+`endlessRunModeName(...)[0]`, because each mode has its own record.
+
+Vertical fit: `step` shrinks from 18 toward 14 until title, body and closing line fit
+in 176px. Adding rows eats that budget -- the worst case today (hull bonus present)
+lands at 180px, which still clears the 200px screen with ~10px margins.
 
 ### Death and retries
 
-A destroyed ship in a non-Hardcore run gets `JE_endlessDeathMenu` (mainint.c) over
+A destroyed ship in a **Relaxed** run gets `JE_endlessDeathMenu` (mainint.c) over
 the frozen death frame before `endlessOnRunEnd`: Restart Zone, Return to Outpost,
 End Run. It is built on `JE_inGameSetup`'s arrangement so the cursor, hover and
 joystick behave identically, and Esc/right-click are inert so nothing discards a
@@ -448,9 +483,13 @@ matter:
 - it clears `endlessResumeVisit` and calls `endlessArmLockedRelaunch` itself,
   because no outpost visit will run to consume the flag and arm the level.
 
-Hardcore never reaches the menu, and `ingamemenu_pressed` is dropped in the level
+Neither Normal nor Hardcore reaches the menu -- `endlessDeathMenuDue()` is Relaxed-only,
+so both fall back to the GAME OVER wait and the run summary, which is exactly the flow
+that predates the menu. Hardcore additionally drops `ingamemenu_pressed` in the level
 loop from the moment `all_players_dead()` goes true, so the pause menu's Quit Level
 row cannot turn a fatal hit into a free trip to the outpost during the explosion.
+Normal keeps that row: the menu was added because Esc during the explosion already
+reached it, and Normal is defined as "the game before the menu", cheese included.
 
 ### Mode and effects
 

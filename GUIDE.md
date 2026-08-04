@@ -49,6 +49,10 @@ Endless mode builds a run out of the shipped Tyrian levels. The levels
 themselves are unedited. The difficulty comes from depth scaling and sector
 modifiers.
 
+How much a fatal hit costs you is your call: every run picks a mode on the start
+screen -- **Relaxed**, **Normal** or **Hardcore** -- ranging from a free retry of
+the zone to no saving at all. See [Starting a run](#starting-a-run).
+
 The loop is:
 
 ```text
@@ -56,17 +60,27 @@ outpost -> choose a course -> clear the zone -> outpost
 ```
 
 There is no last zone. Death ends the run unless you own a revive, though a
-non-Hardcore run gets one more choice first. Clearing Zone 100 rolls the credits,
+Relaxed run gets one more choice first. Clearing Zone 100 rolls the credits,
 then the run carries on.
 
 ### Starting a run
 
-The start screen takes a seed and a Hardcore setting.
+The start screen takes a seed and a run mode.
 
 - A blank seed generates a random one.
 - The same seed and choices reproduce levels, music, courses, shops, and perks.
 - Combat randomness is not seeded.
-- Hardcore disables saving. Quitting or dying ends the run.
+
+| Mode | Saving | Dying |
+| --- | --- | --- |
+| Relaxed | Anytime | A choice over the wreck: retry the zone, return to the outpost, or end the run |
+| Normal | Anytime | Ends the run |
+| Hardcore | Never | Ends the run, and the pause menu is locked from the fatal hit |
+
+The mode is fixed for the whole run and travels with its save. Normal and
+Hardcore both end the run on a fatal hit; the difference is that Normal can still
+save, and its pause menu stays open during the explosion, so Quit Level remains a
+(deliberate, slower) way to fall back to the outpost.
 
 Difficulty sets your starting cash and how fast depth scaling ramps:
 
@@ -329,7 +343,7 @@ E-Shop. Elite and champion bounties pay on the kill. Shop prices rise with depth
 A revive spends itself first: it refills the hull, clears enemy shots, briefly
 stops enemy fire, and the zone carries on.
 
-Without one, a non-Hardcore run puts a choice over the wreck. It stands in for
+Without one, a Relaxed run puts a choice over the wreck. It stands in for
 GAME OVER, so no extra keypress is needed to reach it, and fire, Enter or a click
 during the explosion brings it up early. Esc still opens the pause menu instead:
 
@@ -343,14 +357,21 @@ Either retry rolls the run back to the launch snapshot, the way Quit Level does:
 the loadout, cash, perks and shop stock you had when the zone started. Nothing
 picked up in the failed attempt is kept.
 
-Hardcore gets no such choice, and its pause menu closes off the moment the ship
-dies, so its Quit Level row is no escape from a fatal hit either.
+Normal and Hardcore get no such choice: the wreck goes straight to GAME OVER and
+the summary. Hardcore also closes off its pause menu the moment the ship dies, so
+its Quit Level row is no escape from a fatal hit either; Normal leaves that row
+available.
 
 ### Saving
 
-Non-Hardcore runs checkpoint at the outpost, in `endless.sav`. Hardcore runs
-never save. Quit Level restores the launch snapshot and drops you back into the
-same committed sortie. Your furthest zone is kept in `opentyrian.cfg`.
+Relaxed and Normal runs checkpoint at the outpost, in `endless.sav`. Hardcore
+runs never save. Quit Level restores the launch snapshot and drops you back into the
+same committed sortie.
+
+Your furthest zone is kept in `opentyrian.cfg`, one record per mode: Zone 40 on
+Relaxed says nothing about how deep you can fly Hardcore, so each mode's record
+only moves under that mode. The Run Over screen names the one it is showing with
+its initial, as in `Furthest zone: 25 H`.
 
 With Debug Mode on, **Endless Effects** applies the scaling, modifiers, elites
 and perks to a normal campaign without the Endless run structure around it.
@@ -605,9 +626,9 @@ On Windows these sit next to the executable, on Linux in
 
 | File | Contents |
 | --- | --- |
-| `opentyrian.cfg` | Settings, high scores, furthest Endless zone |
+| `opentyrian.cfg` | Settings, high scores, furthest Endless zone per mode |
 | `tyrian.sav` | Campaign and 2-player saves |
-| `endless.sav` | The current non-Hardcore Endless run |
+| `endless.sav` | The current Relaxed or Normal Endless run |
 | `log/opentyrian_log_<time>.log` | Crash report, Windows only, written only if the game falls over |
 | `log/opentyrian_net_<time>.log` | Online session log |
 

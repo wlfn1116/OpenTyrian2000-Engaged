@@ -106,11 +106,24 @@ int endlessPerkOffersAtDepth(int depth)
 	return endlessMilestoneKindOfZone(depth) ? ENDLESS_PERK_OFFERS_MILESTONE : ENDLESS_PERK_OFFERS;
 }
 
-// Hardcore disables saving and locks the outpost after a mid-zone bail.
-bool endlessHardcore = false;
+// Run mode from the seed screen. Relaxed adds the death menu; Hardcore disables saving and locks
+// the outpost after a mid-zone bail. Normal sits between them: the run ends when the ship does.
+EndlessRunMode endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 
-// The all-time record is stored in opentyrian.cfg, including for Hardcore runs.
-int endlessBestZone = 0;
+const char *endlessRunModeName(EndlessRunMode mode)
+{
+	switch (mode)
+	{
+	case ENDLESS_RUNMODE_NORMAL:   return "Normal";
+	case ENDLESS_RUNMODE_HARDCORE: return "Hardcore";
+	default:                       return "Relaxed";
+	}
+}
+
+// The all-time records are stored in opentyrian.cfg, including for Hardcore runs. One per mode:
+// reaching Zone 40 on Relaxed says nothing about how deep you can fly Hardcore, so a mode's record
+// only ever moves under that mode.
+int endlessBestZone[ENDLESS_RUNMODE_COUNT] = { 0 };
 static int endlessBestZoneAtRunStart = 0;
 
 #define ENDLESS_BEST_ZONE_MAX 99999  // a sanity ceiling on what a hand-edited config can claim
@@ -118,14 +131,17 @@ static int endlessBestZoneAtRunStart = 0;
 // Record a zone when it starts, not after it is cleared.
 void endlessNoteZoneReached(int zone)
 {
-	if (!endlessMode || zone <= endlessBestZone || zone > ENDLESS_BEST_ZONE_MAX)
+	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX)
 		return;
-	endlessBestZone = zone;
+	int *const best = &endlessBestZone[endlessRunMode];
+	if (zone <= *best)
+		return;
+	*best = zone;
 	save_opentyrian_config();
 }
 
-// Snapshot the record for the run-over screen's gain display.
-void endlessRecordRunStart(void) { endlessBestZoneAtRunStart = endlessBestZone; }
+// Snapshot the record for the run-over screen's gain display. Callers set the run's mode first.
+void endlessRecordRunStart(void) { endlessBestZoneAtRunStart = endlessBestZone[endlessRunMode]; }
 int  endlessBestZoneAtStart(void) { return endlessBestZoneAtRunStart; }
 
 void endlessResetRun(void)
@@ -167,8 +183,8 @@ void endlessResetRun(void)
 	endlessSortiePrePurchased = 0;
 	endlessSortiePreCleanse = 0;
 	endlessSortiePreLongCon = 0;
-	// New runs override this after reset; Hardcore runs cannot be resumed.
-	endlessHardcore = false;
+	// New runs override this after reset, and a loaded/reverted one restores the saved mode.
+	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';
 	endlessBaseEp = endlessBaseLvl = endlessPrevBaseEp = endlessPrevBaseLvl = 0;
 	endlessRecentCount = 0;
@@ -376,6 +392,16 @@ static void endlessGlowCentered(int y, unsigned int font, const char *s)
 	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(s, font)) / 2, y, s);
 }
 
+// Draw one stat row: label from the left edge of the block, value flush against its right edge.
+// Both glow in together, as one line -- two JE_outTextGlow calls would play the effect twice.
+static void endlessGlowRow(int left, int right, int y, unsigned int font, const char *label, const char *value)
+{
+	textGlowFont = font;
+	const int xs[2] = { left, right - JE_textWidth(value, font) };
+	const char *const ss[2] = { label, value };
+	JE_outTextGlowMulti(VGAScreen, xs, y, ss, 2);
+}
+
 // Dim the campaign-ending ship art behind the run summary.
 #define ENDLESS_RUNEND_PIC   "tshp2.pcx"
 #define ENDLESS_RUNEND_DIM   32   // percent brightness kept: the ship still reads, the tally still wins
@@ -413,12 +439,14 @@ static void endlessDrawRunEndBackdrop(void)
 
 // A destroyed ship gets the death menu (JE_endlessDeathMenu) rather than GAME OVER and the run
 // summary. The level loop skips the GAME OVER wait for it, and JE_main puts the
-// menu up in its place. Hardcore is excluded by design -- there is no second chance to offer.
+// menu up in its place. Relaxed only: Hardcore has no second chance to offer, and Normal keeps the
+// pre-menu flow where a fatal hit is the end of the run.
 // The death menu exists because any player can just press esc during the death explosion animation
-// and get to the pause menu and effectively have the same choices. 
+// and get to the pause menu and effectively have the same choices. Normal leaves that escape hatch
+// open too -- it just doesn't advertise it.
 bool endlessDeathMenuDue(void)
 {
-	return endlessMode && !endlessHardcore && endlessSortieValid();
+	return endlessMode && endlessRunMode == ENDLESS_RUNMODE_RELAXED && endlessSortieValid();
 }
 
 void endlessOnRunEnd(void)
@@ -435,30 +463,64 @@ void endlessOnRunEnd(void)
 	SDL_Color white = { 255, 255, 255 };
 	set_colors(white, 254, 254);
 
+	// The tally is a two-column block: labels left, values right. Only the headline, the epitaph
+	// and the closing line are centered.
 	// SMALL_FONT_SHAPES lacks several punctuation glyphs, so these lines use words.
-	char lines[8][64] = { { 0 } };
-	int n = 0;
-	#define RUNEND_LINE(...) \
-		do { if (n < (int)COUNTOF(lines)) snprintf(lines[n++], sizeof(lines[0]), __VA_ARGS__); } while (0)
+	char fellLine[48];
+	snprintf(fellLine, sizeof(fellLine), "You fell in Zone %d", endlessRunDepth + 1);
 
-	RUNEND_LINE("You fell in Zone %d", endlessRunDepth + 1);
-	RUNEND_LINE("Zones cleared:   %d", endlessRunDepth);
-	RUNEND_LINE("Enemies destroyed:   %d", endlessRunKills);
-	RUNEND_LINE("Bosses slain:   %d", endlessRunBossKills);
-	RUNEND_LINE("Cash amassed:   $%lu", (unsigned long)player[0].cash);
+	struct { char label[28], value[40]; } rows[10];
+	int n = 0;
+	#define RUNEND_ROW(lbl, ...) \
+		do { \
+			if (n < (int)COUNTOF(rows)) \
+			{ \
+				SDL_strlcpy(rows[n].label, (lbl), sizeof(rows[0].label)); \
+				snprintf(rows[n].value, sizeof(rows[0].value), __VA_ARGS__); \
+				++n; \
+			} \
+		} while (0)
+
+	RUNEND_ROW("Mode:", "%s", endlessRunModeName(endlessRunMode));
+	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
+	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
+	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
+	RUNEND_ROW("Cash amassed:", "$%lu", (unsigned long)player[0].cash);
 
 	if (endlessArmorBonus > 0)
-		RUNEND_LINE("Hull reinforced:   %d", endlessArmorBonus);
+		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);
 
-	RUNEND_LINE("Seed:   %s", endlessSeedString());
+	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 
-	// Show the record gain from this run when positive.
-	const int recordGain = endlessBestZone - endlessBestZoneAtStart();
+	// Each mode keeps its own record, so the value carries the mode's initial (25 H) -- otherwise
+	// a Relaxed best and a Hardcore best would read as the same number. Show the gain when positive.
+	const int best = endlessBestZone[endlessRunMode];
+	const int recordGain = best - endlessBestZoneAtStart();
+	const char modeInitial = endlessRunModeName(endlessRunMode)[0];
 	if (recordGain > 0)
-		RUNEND_LINE("New furthest zone:   %d   up %d", endlessBestZone, recordGain);
+		RUNEND_ROW("New furthest zone:", "%d %c   up %d", best, modeInitial, recordGain);
 	else
-		RUNEND_LINE("Furthest zone:   %d", endlessBestZone);
-	#undef RUNEND_LINE
+		RUNEND_ROW("Furthest zone:", "%d %c", best, modeInitial);
+	#undef RUNEND_ROW
+
+	// Size the block to its widest label and widest value, then center it as a unit so both columns
+	// line up whatever the run produced.
+	int labelW = 0, valueW = 0;
+	for (int i = 0; i < n; ++i)
+	{
+		const int lw = JE_textWidth(rows[i].label, SMALL_FONT_SHAPES);
+		const int vw = JE_textWidth(rows[i].value, SMALL_FONT_SHAPES);
+		if (lw > labelW) labelW = lw;
+		if (vw > valueW) valueW = vw;
+	}
+
+	const int colGap = 30;                    // enough that the two columns read as columns
+	const int blockMax = vga_width - 40;      // ...but never past the margins
+	int blockW = labelW + colGap + valueW;
+	if (blockW > blockMax)
+		blockW = blockMax;                    // squeeze the gap first: the columns meet before anything clips
+	const int blockLeft = (vga_width - blockW) / 2;
+	const int blockRight = blockLeft + blockW;
 
 	// Fit the title, stats, and closing line within the screen.
 	const int titleH  = 20;   // FONT_SHAPES
@@ -466,9 +528,10 @@ void endlessOnRunEnd(void)
 	const int titleGap = 12;  // breathing room under the title
 	const int tailGap  = 10;  // ...and above the closing milestone line
 
+	const int bodyLines = n + 1;   // the epitaph, then one line per row
 	int step = 18;
 	int total;
-	while ((total = titleH + titleGap + (n - 1) * step + lineH + tailGap + lineH) > 176 && step > 14)
+	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH + tailGap + lineH) > 176 && step > 14)
 		--step;
 
 	int y = (vga_height - total) / 2;
@@ -476,8 +539,11 @@ void endlessOnRunEnd(void)
 	endlessGlowCentered(y, FONT_SHAPES, "RUN OVER");
 	y += titleH + titleGap;
 
+	endlessGlowCentered(y, SMALL_FONT_SHAPES, fellLine);
+	y += step;
+
 	for (int i = 0; i < n; ++i, y += step)
-		endlessGlowCentered(y, SMALL_FONT_SHAPES, lines[i]);
+		endlessGlowRow(blockLeft, blockRight, y, SMALL_FONT_SHAPES, rows[i].label, rows[i].value);
 
 	endlessGlowCentered(y - step + lineH + tailGap, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
 
@@ -496,8 +562,8 @@ void endlessOnRunEnd(void)
 
 void endlessEndRunToTitle(void)
 {
-	// A Hardcore quit is final; a normal run may still be resumed.
-	if (endlessHardcore)
+	// A Hardcore quit is final; a saveable run may still be resumed.
+	if (endlessHardcore())
 	{
 		fade_song();
 		endlessOnRunEnd();

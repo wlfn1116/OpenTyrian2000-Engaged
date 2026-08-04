@@ -1044,7 +1044,7 @@ void endlessBetweenLevels(void)
 	// Auto-checkpoint into the bottom "LAST LEVEL" continue slot -- outpost entry is the one
 	// coherent resume point (courses/shop/perks set up; lastLevelName is "ZONE N" already).
 	// Hardcore allows no saving.
-	if (!endlessHardcore)
+	if (!endlessHardcore())
 	{
 		const JE_byte autoSlot = twoPlayerMode ? 22 : 11;
 		JE_saveGame(autoSlot, "LAST LEVEL    ");

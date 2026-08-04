@@ -151,8 +151,9 @@ extern int endlessArmorBonus;
 
 void endlessResetRun(void);
 
-// All-time record. Stored in opentyrian.cfg so Hardcore runs can update it.
-extern int endlessBestZone;
+// All-time record per run mode, indexed by EndlessRunMode. Stored in opentyrian.cfg so Hardcore
+// runs can update theirs.
+extern int endlessBestZone[];
 void endlessNoteZoneReached(int zone);
 void endlessRecordRunStart(void);
 int  endlessBestZoneAtStart(void);
@@ -163,11 +164,25 @@ void endlessRecordConfigLoad(const ConfigSection *section);
 // Run seed. Structural randomness is deterministic; combat randomness is not.
 #define ENDLESS_SEED_MAXLEN 24
 
+// How forgiving the run is. Picked on the seed screen, fixed for the whole run.
+typedef enum {
+	ENDLESS_RUNMODE_RELAXED = 0,  // a fatal hit opens the death menu: retry the zone, or back to the outpost
+	ENDLESS_RUNMODE_NORMAL,       // a fatal hit ends the run (the pause menu's Quit Level is still a bail)
+	ENDLESS_RUNMODE_HARDCORE,     // no saving, and no bail once the ship is hit
+	ENDLESS_RUNMODE_COUNT
+}
+EndlessRunMode;
+
+extern EndlessRunMode endlessRunMode;
+
 // Hardcore disables all run saves.
-extern bool endlessHardcore;
+static inline bool endlessHardcore(void) { return endlessRunMode == ENDLESS_RUNMODE_HARDCORE; }
+
+// "Relaxed" / "Normal" / "Hardcore".
+const char *endlessRunModeName(EndlessRunMode mode);
 
 // Returns false when the seed screen is cancelled.
-bool endlessSeedSelect(char *outSeed, size_t outN, bool *outHardcore);
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);
 
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);
