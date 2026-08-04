@@ -32,6 +32,42 @@ int      endlessArmorBonus = 0;
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
+// Total cash earned this run. Cash arrives through a dozen scattered paths -- enemy value, pickups,
+// the clear bonus, bank interest, gamble wins, declined perks -- and leaves through two shops, one of
+// which ASSIGNS a recomputed balance (JE_cashLeft) rather than subtracting. So rather than tag every
+// site, this watches the balance and banks each rise.
+//
+// The one rule that keeps it honest: a sample must fall between every DROP and the next rise, or the
+// stale high-water mark swallows that rise. endlessGameplayTick samples every tick, so the first tick
+// of a zone re-marks after all the shopping; the gamble is the only place a debit and a credit land
+// without a tick between them, so it samples around its own wager.
+Uint64 endlessRunCashEarned = 0;
+static ulong endlessCashMark = 0;
+
+// 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
+#define ENDLESS_CASH_EARNED_MAX  999999999999ULL
+
+void endlessCashSample(void)
+{
+	if (!endlessMode)
+		return;
+	const ulong now = player[0].cash;
+	if (now > endlessCashMark)
+	{
+		const Uint64 gain = (Uint64)(now - endlessCashMark);
+		endlessRunCashEarned = (gain > ENDLESS_CASH_EARNED_MAX - endlessRunCashEarned)
+		                     ? ENDLESS_CASH_EARNED_MAX : endlessRunCashEarned + gain;
+	}
+	endlessCashMark = now;   // also the re-mark after a purchase, which must never read as a loss
+}
+
+// Cash that was placed rather than earned -- the starting stake, a save being loaded, a sortie
+// snapshot being reverted -- moves the mark without crediting the run.
+void endlessCashResync(void)
+{
+	endlessCashMark = player[0].cash;
+}
+
 // Per-zone timers, advanced by endlessGameplayTick.
 int endlessZoneTicks      = 0;
 int endlessTurbodriveTimer = 0;
@@ -151,6 +187,8 @@ void endlessResetRun(void)
 	endlessArmorBonus = 0;
 	endlessRunKills   = 0;
 	endlessRunBossKills = 0;
+	endlessRunCashEarned = 0;
+	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
 	endlessPurchasedMods = 0;
 	endlessBuffKind = 0;
 	endlessBuffCooldownUntil = 0;
@@ -264,6 +302,10 @@ void endlessGameplayTick(void)
 		return;
 	++endlessZoneTicks;
 
+	// Bank in-level income (enemy value, pickups, bounties) and, on the first tick of a zone,
+	// re-mark after everything the outpost and the E-Shop just spent.
+	endlessCashSample();
+
 	// Overheat drains hull but cannot land the killing blow.
 	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && player[0].armor > 1 && (endlessZoneTicks % 80) == 0)
 	{
@@ -325,65 +367,71 @@ bool endlessTurbodriveActive(void)
 // Run-over flavor text, one line per five-zone band.
 static const char *endlessMilestoneLine(int d)
 {
-	static const char *const lines[] = {
-		"The gate seals shut behind you.",   //   0-4
-		"The zones grow aware of you.",       //   5
-		"The enemy has marked your name.",    //  10
-		"A dark tide rises to meet you.",     //  15
-		"No signal reaches home from here.",  //  20
-		"The swarm hungers, and multiplies.", //  25
-		"Hostile stars wheel overhead.",      //  30
-		"Beyond every chart ever drawn.",     //  35
-		"The enemy tide has no ebb.",         //  40
-		"Every zone bleeds a little more.",   //  45
-		"Few living souls have come this far.", //  50
-		"The stars themselves grow cold.",    //  55
-		"A dreadful hush between the guns.",  //  60
-		"The void hums with ancient malice.", //  65
-		"The abyss has turned to stare back.", //  70
-		"Your name is forgotten out here.",   //  75
-		"Only the guns remember you now.",    //  80
-		"The dark has grown teeth.",          //  85
-		"Past where reason dares to follow.", //  90
-		"The hull screams, and still holds.", //  95
-		"Legends come this far to die.",      // 100
-		"The enemy pours out of nowhere.",    // 105
-		"Reality frays along the seams.",     // 110
-		"The stars burn wrong out here.",     // 115
-		"No light was meant to reach here.",  // 120
-		"The swarm goes on without end.",     // 125
-		"You are their ghost story now.",     // 130
-		"The abyss forgets its own floor.",   // 135
-		"Time itself loses the thread.",      // 140
-		"The last known star winks out.",     // 145
-		"Beyond the beyond, and climbing.",   // 150
-		"These zones should not exist.",      // 155
-		"The void has learned your name.",    // 160
-		"Still it grows. Still you press on.", // 165
-		"No rescue was ever coming.",         // 170
-		"The end is a place. You near it.",   // 175
-		"Further now than death itself.",     // 180
-		"The dark is all that remains.",      // 185
-		"You were never meant to reach here.", // 190
-		"And still the zones unfold.",        // 195
-		"Two hundred zones of ruin behind.",  // 200
-		"The nightmare has no far edge.",     // 205
-		"No sane soul flies these zones.",    // 210
-		"The guns glow white with wrath.",    // 215
-		"The void itself recoils from you.",  // 220
-		"You are the terror they flee.",      // 225
-		"Beyond every legend ever told.",     // 230
-		"Even the dark runs out of dark.",    // 235
-		"The final zones of creation.",       // 240
-		"One breath from the end of all.",    // 245
-		"Thank you for playing.",		      // 250+ (final change)
+	static const char* const lines[] = {
+		"The gate seals shut behind you.",         //   0-4
+		"The last friendly beacon fades.",         //   5
+		"Something is following your signal.",     //  10
+		"The wreckage ahead is still warm.",       //  15
+		"Command has stopped answering.",          //  20
+		"Enemy signals fill every channel.",       //  25
+		"The stars no longer match the charts.",   //  30
+		"Every route leads farther in.",            //  35
+		"The navigation computer refuses course.", //  40
+		"The wrecks are starting to look familiar.", // 45
+		"Something has learned how you fight.",     //  50
+		"The guns have not cooled in hours.",       //  55
+		"A dreadful hush falls between volleys.",  //  60
+		"The hull remembers every impact.",         //  65
+		"No human signal reaches this far.",        //  70
+		"Even the warning lights fall silent.",     //  75
+		"The charts end here.",                     //  80
+		"Nothing living knows these coordinates.", //  85
+		"Reality bends around the wreckage.",       //  90
+		"Your engines run on borrowed time.",       //  95
+		"Legends come this far to die.",            // 100
+		"The enemy no longer sees you as prey.",    // 105
+		"Their fleets gather beyond the static.",   // 110
+		"The stars flicker when you fire.",         // 115
+		"The distress calls are no longer yours.",  // 120
+		"The swarm goes on without end.",           // 125
+		"They tell stories about your ship.",       // 130
+		"Your signal has become a warning.",        // 135
+		"Time loses count between the gunfire.",    // 140
+		"The last known beacon has gone dark.",     // 145
+		"The end of the map was the beginning.",    // 150
+		"These zones should not exist.",            // 155
+		"The next sector is waiting for you.",      // 160
+		"Still it grows. Still you press on.",      // 165
+		"No rescue was ever coming.",               // 170
+		"There are no maps for what comes next.",   // 175
+		"Enemy fleets turn before you arrive.",     // 180
+		"They scatter when your signal appears.",   // 185
+		"The hunters have become the hunted.",      // 190
+		"Only the guns remember you now.",          // 195
+		"Two hundred zones burn behind you.",       // 200
+		"The guns glow white with wrath.",          // 205
+		"Entire fleets vanish in your wake.",       // 210
+		"Your name is now an evacuation order.",    // 215
+		"Even their warships flee your signal.",    // 220
+		"You are the anomaly on their charts.",     // 225
+		"The universe is running out of hiding places.", // 230
+		"Creation grows thin around your ship.",    // 235
+		"There are no more stars ahead.",           // 240
+		"There is nothing left to chart.",          // 245
 	};
+
 	int i = d / 5;
 	if (i < 0)
 		i = 0;
 	if (i >= (int)COUNTOF(lines))
 		i = (int)COUNTOF(lines) - 1;
 	return lines[i];
+}
+
+// The sign-off, printed under the last milestone line once the flavor has nowhere further to go.
+static const char *endlessMilestoneEpilogue(int d)
+{
+	return (d >= 250) ? "Thank you for playing." : NULL;
 }
 
 // Draw centered text on the full widescreen surface.
@@ -459,6 +507,8 @@ bool endlessDeathLocksMenu(void)
 
 void endlessOnRunEnd(void)
 {
+	endlessCashSample();  // catch whatever the killing tick paid out before the tally is printed
+
 	// Draw the run summary over the dimmed ship illustration.
 	VGAScreen = VGAScreenSeg;
 	JE_clr256(VGAScreen);
@@ -493,7 +543,9 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
-	RUNEND_ROW("Cash amassed:", "$%lu", (unsigned long)player[0].cash);
+	// Everything the run took in, not what survived the shops -- the wallet at the moment of death
+	// mostly measures how recently you last spent.
+	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
 
 	if (endlessArmorBonus > 0)
 		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);
@@ -533,18 +585,36 @@ void endlessOnRunEnd(void)
 	const int blockLeft = (vga_width - blockW) / 2;
 	const int blockRight = blockLeft + blockW;
 
-	// Fit the title, stats, and closing line within the screen.
+	// Fit the title, stats, and closing lines within the screen.
+	const char *const closingLine = endlessMilestoneLine(endlessRunDepth + 1);
+	const char *const closingTail = endlessMilestoneEpilogue(endlessRunDepth + 1);
+
 	const int titleH  = 20;   // FONT_SHAPES
 	const int lineH   = 13;   // SMALL_FONT_SHAPES
-	const int titleGap = 12;  // breathing room under the title
-	const int tailGap  = 10;  // ...and above the closing milestone line
-	const int recordGap = 3;  // the record hangs off that line as its own beat, not a new block
+	const int recordGap = 3;  // the record hangs off the closing line as its own beat, not a new block
+	int titleGap = 12;        // breathing room under the title
+	int tailGap  = 10;        // ...and above the closing milestone line
 
-	const int bodyLines = n + 1;   // the epitaph, then one line per row
+	const int bodyLines = n + 1;                            // the epitaph, then one line per row
+	const int closeLines = (closingTail != NULL) ? 2 : 1;   // the milestone line, plus the sign-off at 250
 	int step = 18;
 	int total;
-	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH + tailGap + lineH + recordGap + lineH) > 176 && step > 14)
-		--step;
+	// Squeeze the row pitch down to the glyph height first, then the two gaps: the deepest runs carry
+	// the most stat rows AND the extra sign-off line, and there are only 200 scanlines to spend.
+	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH
+	                + tailGap + lineH
+	                + (closeLines - 1) * (recordGap + lineH)
+	                + recordGap + lineH) > 182)
+	{
+		if (step > lineH)
+			--step;
+		else if (titleGap > 6)
+			--titleGap;
+		else if (tailGap > 6)
+			--tailGap;
+		else
+			break;
+	}
 
 	int y = (vga_height - total) / 2;
 
@@ -557,8 +627,13 @@ void endlessOnRunEnd(void)
 	for (int i = 0; i < n; ++i, y += step)
 		endlessGlowRow(blockLeft, blockRight, y, SMALL_FONT_SHAPES, rows[i].label, rows[i].value);
 
-	const int closingY = y - step + lineH + tailGap;
-	endlessGlowCentered(closingY, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
+	int closingY = y - step + lineH + tailGap;
+	endlessGlowCentered(closingY, SMALL_FONT_SHAPES, closingLine);
+	if (closingTail != NULL)
+	{
+		closingY += lineH + recordGap;   // the sign-off stays with the line it follows from
+		endlessGlowCentered(closingY, SMALL_FONT_SHAPES, closingTail);
+	}
 	endlessGlowCentered(closingY + lineH + recordGap, SMALL_FONT_SHAPES, recordLine);
 
 	// Ignore held controls, then wait for fresh input.

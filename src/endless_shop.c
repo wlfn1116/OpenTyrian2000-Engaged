@@ -828,6 +828,10 @@ static void endlessApplyGambleOutcome(int id, long cost)
 		break;
 	}
 	}
+
+	// A win here is the one credit that lands between two debits with no gameplay tick in between,
+	// so the run's cash-earned tally has to be told about it on the spot.
+	endlessCashSample();
 }
 
 // Map a 0..99 roll to an outcome ID, reproducing the weighted ladder and its sub-rolls exactly
@@ -862,7 +866,9 @@ bool endlessTryGamble(void)
 	const long cost = endlessGamblePrice();
 	if (player[0].cash < (ulong)cost)
 		return false;
+	endlessCashSample();   // bank anything still unsampled BEFORE the wager leaves the wallet...
 	player[0].cash -= cost;
+	endlessCashSample();   // ...and re-mark after it, so the payout below reads as the full win
 
 	// A few ultra-rare outcomes are rolled apart from the 0..99 ladder below, since their odds don't fit
 	// a percentile bucket. One shared 1-in-5000 draw keeps each exact: value 0 = the dream MEGA JACKPOT
@@ -957,6 +963,7 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 		bonus = endlessClearBonus() * endlessPerkCashPercent() / 100;  // Scavenger perk scales the clear bonus
 		player[0].cash += interest;
 		player[0].cash += bonus;
+		endlessCashSample();   // bank the payout before the shop starts spending it
 	}
 	if (interestOut)
 		*interestOut = interest;

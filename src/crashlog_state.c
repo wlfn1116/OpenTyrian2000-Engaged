@@ -318,6 +318,7 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Mode:         %s%s\n", endlessRunModeName(endlessRunMode),
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
+		fprintf(f, "  Cash earned:  %llu\n", (unsigned long long)endlessRunCashEarned);
 		write_endless_mods(f, endlessActiveMods);
 		fprintf(f, "  Armor bonus:  %d\n", endlessArmorBonus);
 		const char *seed = endlessSeedString();

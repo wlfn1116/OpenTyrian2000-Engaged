@@ -141,6 +141,12 @@ extern int endlessRunDepth;
 extern int endlessRunKills;
 extern int endlessRunBossKills;
 
+// Total cash EARNED over the run, as opposed to what is left in the wallet after the shops.
+// Saturating, so no run can wrap it. See endlessCashSample in endless.c for how it is kept.
+extern Uint64 endlessRunCashEarned;
+void endlessCashSample(void);   // bank any rise in player[0].cash since the last sample
+void endlessCashResync(void);   // re-anchor the sampler without banking (run start, load, sortie revert)
+
 // Count one logical enemy. All kill paths go through enemy_logical_death.
 void endlessCountKill(int linknum);
 

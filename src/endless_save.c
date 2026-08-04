@@ -39,7 +39,7 @@ Uint64   endlessSortieOutpostMods = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 15
+#define ENDLESS_SAVE_VERSION 16
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -114,6 +114,9 @@ typedef struct {
 
 	// Added in v15.
 	Uint8  runMode;  // EndlessRunMode: the run's Relaxed/Normal/Hardcore choice (never Hardcore on disk)
+
+	// Added in v16.
+	Uint64 cashEarned;  // running total of cash taken in, for the run-over tally
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -238,6 +241,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutU8(f, r->breakthroughOwed);
 
 	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Normal / Hardcore
+
+	endlessPutU64(f, r->cashEarned);                 // v16 run cash-earned tally
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -440,6 +445,11 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		if (r->runMode >= ENDLESS_RUNMODE_COUNT)
 			r->runMode = ENDLESS_RUNMODE_RELAXED;
 	}
+
+	// v16 cash-earned tally. Older records lack it -- the memset above left it 0, so a run resumed
+	// from a pre-v16 save counts only what it takes in from here on.
+	if (version >= 16 && !endlessGetU64(f, &r->cashEarned))
+		return false;
 	return true;
 }
 
@@ -574,6 +584,8 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	// Run mode (v15). On disk this is only ever Relaxed or Normal (Hardcore never saves), but the
 	// sortie snapshot shares this record, and there it carries a Hardcore run's mode across a bail.
 	r->runMode = (Uint8)endlessRunMode;
+
+	r->cashEarned = endlessRunCashEarned;   // v16 run cash-earned tally
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -672,6 +684,12 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 		endlessSortieFile  = (JE_byte)r->sortieFile;
 		endlessSortieHave  = true;
 	}
+
+	// Cash-earned tally (v16). endlessResetRun above zeroed it, which is also what a pre-v16 record
+	// restores as. The mark is re-anchored to whatever wallet this record is being laid over -- the
+	// two sortie paths below re-anchor again after they memcpy the snapshotted loadout back.
+	endlessRunCashEarned = r->cashEarned;
+	endlessCashResync();
 
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll
 }
@@ -778,6 +796,8 @@ void endlessRestoreSortie(void)
 		// The relaunch doesn't need it: the re-pick sets the mods for whatever course is chosen next.
 		endlessActiveMods         = endlessSortieOutpostMods;
 	}
+
+	endlessCashResync();  // the reverted wallet is the new baseline; the tally rode in on the record
 }
 
 bool endlessSortieValid(void) { return endlessSortieHave; }
@@ -801,6 +821,7 @@ void endlessRestartSortie(void)
 	// -- so its mutators have to survive the restart, or that bail would reopen the shop with none.
 	endlessSortieOutpostMods = outpostMods;
 
+	endlessCashResync();           // the reverted wallet is the new baseline (the tally rode in on the record)
 	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here
 	endlessArmLockedRelaunch();    // re-arm the committed level: episode, section, level file, mutators
 }

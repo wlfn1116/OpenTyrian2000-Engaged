@@ -7498,6 +7498,7 @@ bool newEndlessGame(void)
 	difficultyLevel = initialDifficulty;
 
 	player[0].cash = endlessStartingCash();  // difficulty-based starting cash for the first shop
+	endlessCashResync();  // the stake is handed to you, so it is not part of what the run earns
 
 	endlessApplyStartingLoadout();  // Atomic RailGun front gun (the depth-0 outpost re-applies it too)
 

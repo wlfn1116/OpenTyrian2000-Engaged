@@ -532,6 +532,7 @@ long endlessPerkDeclineBonus(void)
 void endlessDeclinePerk(void)
 {
 	player[0].cash += endlessPerkDeclineBonus();
+	endlessCashSample();   // the shop may open next and spend it -- bank it as earned first
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
 

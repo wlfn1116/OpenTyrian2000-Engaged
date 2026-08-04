@@ -8751,6 +8751,10 @@ void JE_menuFunction(JE_byte select)
 			upgradeSubPrevSel = 0;    // force the view to snap to the selection on entry
 			curMenu = MENU_UPGRADE_SUB;
 			lastCurSel = curSel[MENU_UPGRADE_SUB];
+			// Shop with the equipped item's trade-in value folded in; both exits below restore the real
+			// balance (player[0].cash = JE_cashLeft()). NOTE for endless: this is the one place
+			// player[0].cash is deliberately fake, so nothing between here and those exits may call
+			// endlessCashSample() -- it would bank the trade-in as run earnings.
 			player[0].cash = player[0].cash * 2 - JE_cashLeft();
 		}
 		break;
