@@ -41,10 +41,12 @@ int      endlessRunBossKills = 0;
 // The rule that keeps the reconciler honest: it must run between every FALL and the next rise, or the
 // stale mark swallows that rise. endlessGameplayTick runs it every tick, so the first tick of a zone
 // re-marks after all the shopping; the gamble is the only place a debit and a credit land with no tick
-// between them, so it reconciles around its own wager.
+// between them, so it reconciles around its own wager. The upgrade shop's full-refund trade-ins get
+// their own bracket (endlessShopTradeSettle) so gear churn cannot inflate either run-over total.
 Uint64 endlessRunCashEarned = 0;
 Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
+Uint64 endlessCashGearSpent = 0;
 static ulong endlessCashMark = 0;
 
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
@@ -54,7 +56,7 @@ static ulong endlessCashMark = 0;
 // which is append-only, so "starting stake" sits at the tail rather than in chronological order.
 static const char *const endlessCashSourceNames[ENDLESS_CASH_SOURCES] = {
 	"kills", "pickups", "bounties", "zone clears", "interest", "gambling", "declined perks", "untagged",
-	"starting stake",
+	"starting stake", "gear sold",
 };
 
 const char *endlessCashSourceName(EndlessCashSource src)
@@ -118,6 +120,35 @@ void endlessCashSample(void)
 void endlessCashResync(void)
 {
 	endlessCashMark = player[0].cash;
+}
+
+// The upgrade shop refunds gear at full price, so a sell-back must not read as income the way an
+// undeclared rise does. Gear falls are tracked in their own slice of the spent total; a rise cancels
+// against that slice (churn nets to zero on both totals) and only the excess -- selling gear the run
+// GRANTED, which booked nothing when acquired -- is credited, labelled rather than "untagged".
+void endlessShopTradeSettle(void)
+{
+	if (!endlessMode)
+		return;
+	const ulong now = player[0].cash;
+	if (now > endlessCashMark)
+	{
+		const Uint64 refund = (Uint64)(now - endlessCashMark);
+		Uint64 cancel = (refund < endlessCashGearSpent) ? refund : endlessCashGearSpent;
+		if (cancel > endlessRunCashSpent)   // unreachable (gear slice never exceeds the total), kept for the unsigned math
+			cancel = endlessRunCashSpent;
+		endlessCashGearSpent -= cancel;
+		endlessRunCashSpent  -= cancel;
+		if (refund > cancel)
+			endlessCashCredit(refund - cancel, ENDLESS_CASH_TRADEIN);
+	}
+	else if (now < endlessCashMark)
+	{
+		const Uint64 fall = (Uint64)(endlessCashMark - now);
+		endlessCashAddSat(&endlessRunCashSpent, fall);
+		endlessCashAddSat(&endlessCashGearSpent, fall);
+	}
+	endlessCashMark = now;
 }
 
 // Per-zone timers, advanced by endlessGameplayTick.
@@ -242,6 +273,7 @@ void endlessResetRun(void)
 	endlessRunBossKills = 0;
 	endlessRunCashEarned = 0;
 	endlessRunCashSpent  = 0;
+	endlessCashGearSpent = 0;
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
 	endlessPurchasedMods = 0;
@@ -582,7 +614,9 @@ void endlessOnRunEnd(void)
 	char fellLine[48];
 	snprintf(fellLine, sizeof(fellLine), "You fell in Zone %d", endlessRunDepth + 1);
 
-	struct { char label[28], value[40]; } rows[10];
+	// Zero-initialized for the analyzer (C6001): it cannot correlate the n guard with which
+	// entries the width loop below reads.
+	struct { char label[28], value[40]; } rows[10] = { 0 };
 	int n = 0;
 	#define RUNEND_ROW(lbl, ...) \
 		do { \

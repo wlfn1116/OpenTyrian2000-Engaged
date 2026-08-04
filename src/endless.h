@@ -153,6 +153,7 @@ typedef enum {
 	ENDLESS_CASH_PERK,       // the cash taken instead of a perk
 	ENDLESS_CASH_OTHER,      // undeclared: the reconciler saw a rise no endlessAddCash announced
 	ENDLESS_CASH_START,      // the difficulty-based stake the run is handed at zone 1
+	ENDLESS_CASH_TRADEIN,    // gear sold beyond what buying it booked as spent (granted gear, e.g. the starting gun)
 	ENDLESS_CASH_SOURCES
 } EndlessCashSource;
 
@@ -166,6 +167,7 @@ void endlessAddCash(long amount, EndlessCashSource src);
 extern Uint64 endlessRunCashEarned;
 extern Uint64 endlessRunCashSpent;
 extern Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES];
+extern Uint64 endlessCashGearSpent;   // the refundable-gear slice of spent; trade-ins cancel against it
 const char *endlessCashSourceName(EndlessCashSource src);
 
 // The reconciler behind endlessAddCash: banks any UNdeclared move in player[0].cash -- a rise into
@@ -174,6 +176,12 @@ const char *endlessCashSourceName(EndlessCashSource src);
 // a nonzero ENDLESS_CASH_OTHER means an income path forgot to call endlessAddCash.
 void endlessCashSample(void);
 void endlessCashResync(void);   // re-anchor without banking either way (run start, load, sortie revert)
+
+// Settle the upgrade-shop transaction a JE_cashLeft() exit assignment just committed. A fall is
+// gear spending; a rise cancels booked gear spending first (so churning gear moves neither total)
+// and only the excess books as income. The entry side samples while the wallet is still real
+// (game_menu.c), so this sees exactly one transaction's delta.
+void endlessShopTradeSettle(void);
 
 // Count one logical enemy. All kill paths go through enemy_logical_death.
 void endlessCountKill(int linknum);

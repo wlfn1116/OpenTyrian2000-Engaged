@@ -39,7 +39,7 @@ Uint64   endlessSortieOutpostMods = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 17
+#define ENDLESS_SAVE_VERSION 18
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -123,6 +123,9 @@ typedef struct {
 	Uint64 cashEarned;  // running total of cash taken in, for the run-over tally
 	Uint64 cashSpent;   // ...and of everything that left the wallet
 	Uint64 cashBySource[ENDLESS_SAVE_CASH_SOURCES];  // the earnings breakdown, indexed by EndlessCashSource
+
+	// Added in v18.
+	Uint64 cashGearSpent;  // the refundable-gear slice of cashSpent (trade-in refunds cancel against it)
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -252,6 +255,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutU64(f, r->cashSpent);                  // ...widened in v17: spent, then the breakdown
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
 		endlessPutU64(f, r->cashBySource[i]);
+
+	endlessPutU64(f, r->cashGearSpent);              // v18 refundable-gear slice of the spent total
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -481,6 +486,15 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			r->cashBySource[ENDLESS_CASH_OTHER] = r->cashEarned;
 		}
 	}
+
+	// v18: the gear slice behind trade-in cancelling. An older record resumes with it at 0 (the
+	// memset), so gear bought before the save sells as "gear sold" income instead of cancelling --
+	// the pre-v18 behaviour, and still consistent with earned - spent == wallet.
+	if (version >= 18)
+	{
+		if (!endlessGetU64(f, &r->cashGearSpent))
+			return false;
+	}
 	return true;
 }
 
@@ -629,6 +643,7 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->cashSpent  = endlessRunCashSpent;
 	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 		r->cashBySource[i] = endlessCashBySource[i];
+	r->cashGearSpent = endlessCashGearSpent;  // v18
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -735,6 +750,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessRunCashSpent  = r->cashSpent;
 	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 		endlessCashBySource[i] = r->cashBySource[i];
+	endlessCashGearSpent = r->cashGearSpent;
 	endlessCashResync();
 
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll

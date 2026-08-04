@@ -323,8 +323,9 @@ void crashlog_write_game_state(FILE *f)
 		// unreconciled purchase -- fine for a diagnostic dump, and worth less than poking live
 		// state mid-crash. A nonzero "untagged" line means an income path skipped endlessAddCash
 		// (or the debug Add Cash screen overwrote the wallet) -- worth chasing down.
-		fprintf(f, "  Cash earned:  %llu  (spent %llu)\n",
-		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent);
+		fprintf(f, "  Cash earned:  %llu  (spent %llu, of it gear %llu)\n",
+		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent,
+		        (unsigned long long)endlessCashGearSpent);
 		for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 			if (endlessCashBySource[i] != 0)
 				fprintf(f, "    %-15s %llu\n", endlessCashSourceName((EndlessCashSource)i),

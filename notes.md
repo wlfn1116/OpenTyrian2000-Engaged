@@ -443,11 +443,30 @@ swallows that rise. `endlessGameplayTick` runs it every tick, so the first tick 
 zone re-marks after all the shopping. The gamble is the only place a debit and a
 credit land with no tick between them, so it reconciles around its own wager.
 
+The upgrade shop is a full-refund market, so its transactions get their own bracket
+instead of the generic reconcile -- otherwise every net-positive visit (selling gear
+back, downgrading weapon power) read as an undeclared rise and inflated Cash earned
+as "untagged". Entering the sub-menu samples while the wallet is still real, and
+every exit's `JE_cashLeft()` assignment is followed by `endlessShopTradeSettle`
+(endless.c), which therefore sees exactly one transaction's delta. A fall books as
+spending *and* into `endlessCashGearSpent`, the refundable-gear slice of the spent
+total; a rise cancels against that slice first -- buy gear and sell it back and
+neither run-over total moves, in any order -- and only the excess books as income,
+labelled "gear sold" (`ENDLESS_CASH_TRADEIN`). The excess is real money the run was
+handed in kind: it is liquidating GRANTED gear, which booked nothing when acquired
+(the starting Atomic RailGun sold at the first outpost is the canonical case). The
+slice is per-run state, persisted as save v18 (`cashGearSpent`); an older record
+resumes with it at 0, so pre-save gear sells as income -- the pre-v18 behaviour, and
+still invariant-true.
+
 Invariant: `earned - spent == wallet` (the Zone 1 stake is booked as
 `ENDLESS_CASH_START`, so there is no separate starting term), and the breakdown sums
-to `earned`. The one place `player[0].cash` is deliberately *fake* is the outpost's
-upgrade sub-menu, which inflates it by the equipped item's trade-in value; every exit
-restores the real balance first, so nothing may sample in between.
+to `earned`. The trade-in settle preserves it from both sides: a refund raises the
+wallet by `cancel + excess`, lowers spent by `cancel` and raises earned by `excess`.
+The one place `player[0].cash` is deliberately *fake* is the outpost's upgrade
+sub-menu, which inflates it by the equipped item's trade-in value; every exit
+restores the real balance first, so nothing may sample in between -- the bracket
+above depends on that window staying sample-free.
 
 ### Death and retries
 

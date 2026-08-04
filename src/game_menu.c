@@ -2313,6 +2313,7 @@ void JE_itemScreen(void)
 						selection == menuChoices[MENU_UPGRADE_SUB])
 					{
 						player[0].cash = JE_cashLeft();
+						endlessShopTradeSettle();
 						curMenu = MENU_UPGRADES;
 						JE_playSampleNum(S_ITEM);
 					}
@@ -2459,6 +2460,7 @@ void JE_itemScreen(void)
 						player[0].items = old_items[0];
 						curSel[MENU_UPGRADE_SUB] = lastCurSel;
 						player[0].cash = JE_cashLeft();
+						endlessShopTradeSettle();
 					}
 
 					if (curMenu != MENU_DATA_CUBE_SUB)
@@ -8751,10 +8753,12 @@ void JE_menuFunction(JE_byte select)
 			upgradeSubPrevSel = 0;    // force the view to snap to the selection on entry
 			curMenu = MENU_UPGRADE_SUB;
 			lastCurSel = curSel[MENU_UPGRADE_SUB];
-			// Shop with the equipped item's trade-in value folded in; both exits below restore the real
-			// balance (player[0].cash = JE_cashLeft()). NOTE for endless: this is the one place
-			// player[0].cash is deliberately fake, so nothing between here and those exits may call
-			// endlessCashSample() -- it would bank the trade-in as run earnings.
+			// Shop with the equipped item's trade-in value folded in; every exit restores the real
+			// balance (player[0].cash = JE_cashLeft()) and then runs endlessShopTradeSettle. NOTE for
+			// endless: the wallet is deliberately fake until then, so nothing in between may call
+			// endlessCashSample() -- the sample HERE runs while it is still real, settling everything
+			// pending so the exit settle sees exactly this transaction's delta.
+			endlessCashSample();
 			player[0].cash = player[0].cash * 2 - JE_cashLeft();
 		}
 		break;
@@ -8820,6 +8824,7 @@ void JE_menuFunction(JE_byte select)
 			JE_playSampleNum(S_ITEM);
 
 			player[0].cash = JE_cashLeft();
+			endlessShopTradeSettle();
 			curMenu = MENU_UPGRADES;
 		}
 		break;
