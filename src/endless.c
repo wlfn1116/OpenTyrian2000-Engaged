@@ -499,17 +499,20 @@ void endlessOnRunEnd(void)
 		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);
 
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
+	#undef RUNEND_ROW
 
-	// Each mode keeps its own record, so the value carries the mode's initial (25 H) -- otherwise
-	// a Relaxed best and a Hardcore best would read as the same number. Show the gain when positive.
+	// The all-time record is not part of the run tally, so it closes the screen centered under the
+	// milestone line instead. Each mode keeps its own record, so the number carries the mode's
+	// initial (25 H) -- otherwise a Relaxed best and a Hardcore best would read as the same zone.
+	// Show the gain when positive.
+	char recordLine[64];
 	const int best = endlessBestZone[endlessRunMode];
 	const int recordGain = best - endlessBestZoneAtStart();
 	const char modeInitial = endlessRunModeName(endlessRunMode)[0];
 	if (recordGain > 0)
-		RUNEND_ROW("New furthest zone:", "%d %c   up %d", best, modeInitial, recordGain);
+		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d %c   up %d", best, modeInitial, recordGain);
 	else
-		RUNEND_ROW("Furthest zone:", "%d %c", best, modeInitial);
-	#undef RUNEND_ROW
+		snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d %c", best, modeInitial);
 
 	// Size the block to its widest label and widest value, then center it as a unit so both columns
 	// line up whatever the run produced.
@@ -535,11 +538,12 @@ void endlessOnRunEnd(void)
 	const int lineH   = 13;   // SMALL_FONT_SHAPES
 	const int titleGap = 12;  // breathing room under the title
 	const int tailGap  = 10;  // ...and above the closing milestone line
+	const int recordGap = 3;  // the record hangs off that line as its own beat, not a new block
 
 	const int bodyLines = n + 1;   // the epitaph, then one line per row
 	int step = 18;
 	int total;
-	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH + tailGap + lineH) > 176 && step > 14)
+	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH + tailGap + lineH + recordGap + lineH) > 176 && step > 14)
 		--step;
 
 	int y = (vga_height - total) / 2;
@@ -553,7 +557,9 @@ void endlessOnRunEnd(void)
 	for (int i = 0; i < n; ++i, y += step)
 		endlessGlowRow(blockLeft, blockRight, y, SMALL_FONT_SHAPES, rows[i].label, rows[i].value);
 
-	endlessGlowCentered(y - step + lineH + tailGap, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
+	const int closingY = y - step + lineH + tailGap;
+	endlessGlowCentered(closingY, SMALL_FONT_SHAPES, endlessMilestoneLine(endlessRunDepth + 1));
+	endlessGlowCentered(closingY + lineH + recordGap, SMALL_FONT_SHAPES, recordLine);
 
 	// Ignore held controls, then wait for fresh input.
 	wait_noinput(true, true, true);
