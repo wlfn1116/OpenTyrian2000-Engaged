@@ -608,17 +608,23 @@ On Windows these sit next to the executable, on Linux in
 | `opentyrian.cfg` | Settings, high scores, furthest Endless zone |
 | `tyrian.sav` | Campaign and 2-player saves |
 | `endless.sav` | The current non-Hardcore Endless run |
-| `opentyrian_log.log` | Crash report, Windows only, written only if the game falls over |
-| `opentyrian_net.log` | Online session log |
+| `log/opentyrian_log_<time>.log` | Crash report, Windows only, written only if the game falls over |
+| `log/opentyrian_net_<time>.log` | Online session log |
 
-Both logs start fresh each launch. Older crash logs are kept beside the live one,
-numbered `.1.log` upwards. The net log keeps no history, and none is written if
-the session had nothing to report.
+Both logs go in a `log` folder the game creates beside the others, and carry the
+time the game was started, so each launch writes at most one of each —
+`log/opentyrian_net_2026-08-04_143012.log` — and never overwrites an earlier one.
+Neither file is created until there is something to put in it: a launch that
+neither crashed nor went online leaves nothing behind, and a copy of the game
+that has never had trouble has no `log` folder at all. Nothing is rotated or
+deleted, so empty the folder yourself once you're done with what's in it.
 
-If you hit a desync, attach `opentyrian_net.log` from **both** machines to the
-report. Each side logs the disputed frame as it computed it, and comparing the
-two points at what diverged. A session with nothing between its start and end
-lines was healthy.
+If you hit a desync, attach the net log from **both** machines to the report
+(match them up by their timestamps). Each side logs the disputed frame as it
+computed it, and comparing the two points at what diverged. A session with
+nothing between its start and end lines was healthy.
 
-The net log can be turned off, and cleared on consoles, under **Setup >
-Enhancements > Game Tweaks > Network**.
+The net log can be turned off under **Setup > Enhancements > Game Tweaks >
+Network**. On Switch and Vita the same menu has a **Clear Logs** row, which
+deletes every log the game has saved — there's no file manager on those to do it
+with. It works whether or not the net log is switched on.

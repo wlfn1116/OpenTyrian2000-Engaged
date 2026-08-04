@@ -17,11 +17,11 @@ void crashlog_report_fatal(const char *event, const char *detail);
 // latch: the session continues, so a genuinely fatal crash later still logs. Windows only.
 void crashlog_note(const char *event, const char *detail);
 
-// Same report format, but written to the NETWORK log (opentyrian_net.log, the single per-session
-// log started alongside the crash log) instead of the crash log. For netplay health events --
-// desyncs, stalls, resyncs -- which are link/session trouble rather than process failures, so a
-// lossy session can't bury a real crash report. All platforms: consoles write a reduced entry
-// (header + detail, no stack) to opentyrian_net.log in the user directory.
+// Same report format, but written to the NETWORK log (log/opentyrian_net_<launch time>.log, this
+// session's own log, created on its first entry) instead of the crash log. For netplay health
+// events -- desyncs, stalls, resyncs -- which are link/session trouble rather than process
+// failures, so a lossy session can't bury a real crash report. All platforms: consoles write a
+// reduced entry (header + detail, no stack) to their net log in the user directory.
 void crashlog_note_net(const char *event, const char *detail);
 
 // Short timestamped net-log entry with no context/stack body. For session bookkeeping (the
@@ -30,22 +30,25 @@ void crashlog_note_net(const char *event, const char *detail);
 void crashlog_netlog_line(const char *event, const char *detail);
 
 // Net-log master switch (menu: Setup -> Network Log, persisted in the config). Off means nothing
-// touches opentyrian_net.log at all: no entries, and an existing log is left where it is. On by
-// default; config.c applies the saved value at load, after the handlers are already installed.
+// touches the net logs at all: no entries, no file created, and existing logs left where they
+// are. On by default; config.c applies the saved value at load, after the handlers are installed.
 void crashlog_set_netlog_enabled(bool enabled);
 bool crashlog_get_netlog_enabled(void);
 
-// Start this process's net log: the previous session's opentyrian_net.log is DELETED (along with
-// any numbered opentyrian_net.N.log an older build left behind) so there is exactly one net log,
-// it only ever holds the running session, and it is absent when this one logs nothing. Call once
-// from main() AFTER the config is read, so the switch above is the saved one, and before any
-// netplay. No-op while the switch is off.
+// Sweep the fixed-name / numbered net logs (opentyrian_net.log, opentyrian_net.N.log) older builds
+// kept loose beside the executable, which were rewritten each launch by contract. Nothing is
+// reserved for this session: its log is log/opentyrian_net_<launch time>.log and comes into
+// existence only on the first entry -- folder included -- so a session with nothing to report
+// leaves no file and no earlier log is ever overwritten. Call once from main() AFTER the config is
+// read, so the switch above is the saved one, and before any netplay. No-op while the switch is off.
 void crashlog_netlog_begin_session(void);
 
-// Zero the network log: an existing opentyrian_net.log is truncated to nothing, and none is
-// created if there isn't one. Behind the consoles' "Clear Net Log" row, where there is no file
-// manager to drop this session's log and start it over. Returns true if there was one to clear.
-bool crashlog_clear_netlog(void);
+// Delete every log this game has written -- crash and net alike, this session's included, matched
+// on the shared opentyrian_*.log naming so nothing else in the directory is touched. Behind the
+// consoles' "Clear Logs" row, where there is no file manager to prune them with. Returns true if
+// at least one was deleted, false if there were none. Not gated on the net-log switch: logs
+// already written stay reachable after it is turned off.
+bool crashlog_clear_logs(void);
 
 // Append the live game-state snapshot to an open crash report. Defined in crashlog_state.c
 // (its own <windows.h>-free TU) and invoked by the crash/hang/CRT-fatal paths. Reads only
@@ -63,7 +66,7 @@ const char *crashlog_get_phase(void);
 // Hang watchdog: catches a hard main-thread hang (infinite loop / deadlock) that the crash
 // handler can't (no exception fires). Call watchdog_init() once at startup ON THE MAIN THREAD,
 // and watchdog_heartbeat() from a spot the main loop hits every iteration (service_SDL_events).
-// If the heartbeat stalls, the watchdog writes the stuck main-thread stack to opentyrian_log.log.
+// If the heartbeat stalls, the watchdog writes the stuck main-thread stack to this session's log.
 // Windows only; a no-op elsewhere.
 void watchdog_init(void);
 void watchdog_heartbeat(void);

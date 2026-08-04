@@ -25,8 +25,11 @@ tyrian.sav
 /stderr.txt
 /stdout.txt
 
-# Crash / diagnostic log (crashlog.c)
-/opentyrian_log.log
+# Crash / diagnostic logs (crashlog.c) -- one per launch, named for its start time,
+# in a log folder the game creates.  The loose patterns catch older builds' leftovers.
+/log/
+/opentyrian_log*.log
+/opentyrian_net*.log
 /endless_crash.log
 /endless_hang.log
 

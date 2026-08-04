@@ -29,21 +29,27 @@
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "psapi.lib")
 
-// Two logs, written next to the executable.  The crash log holds every kind of hard process
-// failure (exception, hang, abort, CRT fatal); the net log holds netplay health events (desyncs,
-// stalls, resyncs) so they can't bury a real crash report.  Both are started fresh once per
-// session, so the live file always belongs to the running process: the crash log rotates into a
-// numbered chain at startup, while the net log keeps no history at all -- the previous session's
-// is deleted as soon as the config has been read (crashlog_netlog_begin_session).
-#define LOG_STEM        "opentyrian_log"
-#define NETLOG_STEM     "opentyrian_net"
-#define LOG_FILENAME    LOG_STEM ".log"
-#define NETLOG_FILENAME NETLOG_STEM ".log"
+// Two logs, written to a "log" folder next to the executable (created on demand).  The crash log
+// holds every kind of hard process failure (exception, hang, abort, CRT fatal); the net log holds
+// netplay health events (desyncs, stalls, resyncs) so they can't bury a real crash report.
+// Neither file exists until there is something to put in it, and each is named for the launch it
+// belongs to -- log\opentyrian_log_2026-08-04_143012.log -- so one session writes at most one of
+// each, a session with nothing to report leaves none at all, and no report is ever overwritten by
+// a later run.  Nothing is rotated and nothing is deleted: the timestamp in the name is the
+// history, and the folder is what keeps that history from silting up the game directory.
+#define LOG_DIR     "log"
+#define LOG_PREFIX  "opentyrian_"        // what every log this game writes starts with
+#define LOG_STEM    LOG_PREFIX "log"
+#define NETLOG_STEM LOG_PREFIX "net"
 
-// How many previous crash logs to keep alongside the live one (opentyrian_log.1.log ... .N.log).
-// The net log keeps none; the same depth is swept for stale opentyrian_net.N.log left by builds
-// that did rotate it.
-#define LOG_ROTATE_KEEP 3
+// Enough for "<stem>_YYYY-MM-DD_HHMMSS.log" with room to spare.
+#define LOG_NAME_MAX 64
+
+// The numbered generations older builds kept beside each live log (opentyrian_net.1.log ... .N.log).
+// Only the net log's are swept, and only once at startup: those were rewritten every launch by
+// contract, so dropping them is what the build that wrote them would have done. The crash chain is
+// left where it is -- those are real reports somebody may still want.
+#define LEGACY_NETLOG_KEEP 3
 
 extern const char *opentyrian_str;      // opentyr.c
 extern const char *opentyrian_version;  // opentyr.c
@@ -54,14 +60,8 @@ extern const char *opentyrian_commit;   // opentyr.c
 // re-armable, so it doesn't use this.
 static volatile LONG s_reporting = 0;
 
-// First report of the session truncates; later ones append (keeps a HANG + later crash in one
-// file).  Each log tracks its own flag.
-static volatile LONG s_logOpened = 0;
-static volatile LONG s_netLogOpened = 0;
-
-// Set once the previous session's net log has been deleted this run, so it happens exactly
-// once whether it was the startup call or a first entry that got there first.
-static volatile LONG s_netLogRetired = 0;
+// Set once the net logs older builds left behind have been swept this run.
+static volatile LONG s_legacyNetLogsSwept = 0;
 
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static volatile LONG s_netLogEnabled = 1;
@@ -75,6 +75,10 @@ static volatile PVOID s_reportedAddr = NULL;
 // and tell whether the faulting thread is the main thread or a background one (SDL audio, etc.).
 static DWORD     s_mainThreadId = 0;
 static ULONGLONG s_startTick    = 0;
+
+// "YYYY-MM-DD_HHMMSS" for this launch, fixed once so every report of a session lands in the same
+// pair of files. Built at install time on the main thread, before any handler is armed.
+static char s_sessionStamp[24];
 
 // Serializes the single-threaded dbghelp session (Sym*/StackWalk64) so a crash walk and a hang
 // walk can't corrupt each other. Recursive, so a fault while held can still re-enter and report.
@@ -96,31 +100,85 @@ static void log_path(char *out, size_t outSize, const char *filename)
 	snprintf(out, outSize, "%s%s", exePath, filename);
 }
 
-// Open a log, falling back through writable locations if the exe dir is read-only: next to
-// the exe, then the working directory, then %TEMP%. NULL only if all fail. The first report of
-// a session truncates, later ones append, so a non-fatal hang followed by a crash is kept as
-// two stacked reports.
-static FILE *open_log_file(const char *filename, volatile LONG *openedFlag)
+// Fix the session stamp. Called at install time; the lazy call in log_filename covers a report
+// raised before install_crash_handler ran -- there shouldn't be one, but an unnamed log is worse.
+static void build_session_stamp(void)
 {
-	const char *mode = (InterlockedExchange(openedFlag, 1) == 0) ? "w" : "a";
+	time_t now = time(NULL);
+	struct tm lt;
+	if (localtime_s(&lt, &now) != 0 ||
+	    strftime(s_sessionStamp, sizeof(s_sessionStamp), "%Y-%m-%d_%H%M%S", &lt) == 0)
+		snprintf(s_sessionStamp, sizeof(s_sessionStamp), "unknown");
+}
 
-	char path[MAX_PATH + 32];
+// "<stem>_<session stamp>.log" -- the same name for every report of this launch.
+static void log_filename(char *out, size_t outSize, const char *stem)
+{
+	if (s_sessionStamp[0] == '\0')
+		build_session_stamp();
+	snprintf(out, outSize, "%s_%s.log", stem, s_sessionStamp);
+}
 
-	log_path(path, sizeof(path), filename);
-	FILE *f = fopen(path, mode);
-	if (f != NULL)
-		return f;
+// The roots a log folder may be placed under, in the order they're tried: next to the exe, the
+// working directory, then %TEMP%. The last two are fallbacks for a read-only install directory.
+// Each ends in a separator. Returns how many were filled in.
+static int log_roots(char roots[3][MAX_PATH])
+{
+	int count = 0;
 
-	f = fopen(filename, mode);  // current working directory
-	if (f != NULL)
-		return f;
+	log_path(roots[count], MAX_PATH, "");  // exe dir, trailing backslash kept
+	if (roots[count][0] != '\0')
+		++count;
 
-	char tmp[MAX_PATH];
-	DWORD n = GetTempPathA(sizeof(tmp), tmp);
-	if (n > 0 && n < sizeof(tmp))
+	snprintf(roots[count++], MAX_PATH, ".\\");
+
+	DWORD n = GetTempPathA(MAX_PATH, roots[count]);
+	if (n > 0 && n < MAX_PATH)
+		++count;
+
+	return count;
+}
+
+// "<root>log\" -- the writing form, which creates the folder if it isn't there. False if it can't
+// be created, which is the signal to fall through to the next root.
+static bool make_log_dir(const char *root, char *out, size_t outSize)
+{
+	char dir[MAX_PATH];
+	snprintf(dir, sizeof(dir), "%s%s", root, LOG_DIR);
+
+	if (!CreateDirectoryA(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+		return false;
+
+	snprintf(out, outSize, "%s\\", dir);
+	return true;
+}
+
+// "<root>log\" without creating anything -- for the delete/sweep paths, which must not conjure an
+// empty folder in a root this install never writes to.
+static void log_dir_path(const char *root, char *out, size_t outSize)
+{
+	snprintf(out, outSize, "%s%s\\", root, LOG_DIR);
+}
+
+// Open a log in the first root whose log folder can be made and written to. NULL only if none can.
+// Always appends: the name carries the launch time, so there is never a stale file to clear out,
+// and two instances started within the same second stack their reports rather than one truncating
+// the other's.
+static FILE *open_log_file(const char *filename)
+{
+	char roots[3][MAX_PATH];
+	int count = log_roots(roots);
+
+	for (int i = 0; i < count; ++i)
 	{
-		snprintf(path, sizeof(path), "%s%s", tmp, filename);
-		f = fopen(path, mode);
+		char dir[MAX_PATH];
+		if (!make_log_dir(roots[i], dir, sizeof(dir)))
+			continue;
+
+		char path[MAX_PATH + LOG_NAME_MAX];
+		snprintf(path, sizeof(path), "%s%s", dir, filename);
+
+		FILE *f = fopen(path, "a");
 		if (f != NULL)
 			return f;
 	}
@@ -129,89 +187,70 @@ static FILE *open_log_file(const char *filename, volatile LONG *openedFlag)
 
 static FILE *open_log(void)
 {
-	return open_log_file(LOG_FILENAME, &s_logOpened);
+	char name[LOG_NAME_MAX];
+	log_filename(name, sizeof(name), LOG_STEM);
+	return open_log_file(name);
 }
 
-// Build "<exe dir>\<stem>.<n>.log" for n >= 1, or "<exe dir>\<stem>.log" for n == 0.
-static void rotated_log_path(char *out, size_t outSize, const char *stem, int n)
-{
-	char name[80];
-	if (n <= 0)
-		snprintf(name, sizeof(name), "%s.log", stem);
-	else
-		snprintf(name, sizeof(name), "%s.%d.log", stem, n);
-	log_path(out, outSize, name);
-}
-
-// Rotate one executable-directory log chain: the crash log at startup, before fault handlers are
-// armed. A missing live log does not shift older reports. (The net log keeps no chain -- see
-// discard_previous_net_log.)
-static void rotate_log_chain(const char *stem)
-{
-	char live[MAX_PATH + 32];
-	rotated_log_path(live, sizeof(live), stem, 0);
-	if (GetFileAttributesA(live) == INVALID_FILE_ATTRIBUTES)
-		return;  // nothing new to preserve
-
-	char src[MAX_PATH + 32], dst[MAX_PATH + 32];
-
-	// Move oldest-first so each destination is free before its move: .(KEEP-1) -> .KEEP (discarding
-	// the previous oldest), ..., .1 -> .2, then the live log -> .1. A missing generation just makes
-	// one MoveFileEx fail harmlessly.
-	for (int n = LOG_ROTATE_KEEP - 1; n >= 0; --n)
-	{
-		rotated_log_path(src, sizeof(src), stem, n);
-		rotated_log_path(dst, sizeof(dst), stem, n + 1);
-		MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING);
-	}
-}
-
-// Every place open_log_file could have put a net log, in the order it tries them: next to the exe,
-// the working directory, then %TEMP%. Returns how many entries were filled in.
-static int netlog_candidate_paths(char paths[3][MAX_PATH + 32])
-{
-	int count = 0;
-
-	log_path(paths[count++], MAX_PATH + 32, NETLOG_FILENAME);
-	snprintf(paths[count++], MAX_PATH + 32, "%s", NETLOG_FILENAME);  // current working directory
-
-	char tmp[MAX_PATH];
-	DWORD n = GetTempPathA(sizeof(tmp), tmp);
-	if (n > 0 && n < sizeof(tmp))
-		snprintf(paths[count++], MAX_PATH + 32, "%s%s", tmp, NETLOG_FILENAME);
-
-	return count;
-}
-
-// Delete the previous session's net log, once per run, and sweep any numbered generations an
-// older build left behind: there is only ever one opentyrian_net.log and it belongs to the run
-// going now. Deleting rather than rotating means a launch that logs nothing leaves no net log at
-// all, which is the honest reading of "nothing to report".
-static void discard_previous_net_log(void)
-{
-	if (InterlockedExchange(&s_netLogRetired, 1) != 0)
-		return;
-
-	char paths[3][MAX_PATH + 32];
-	int count = netlog_candidate_paths(paths);
-	for (int i = 0; i < count; ++i)
-		DeleteFileA(paths[i]);  // absent / locked -> fails harmlessly
-
-	for (int n = 1; n <= LOG_ROTATE_KEEP; ++n)
-	{
-		char stale[MAX_PATH + 32];
-		rotated_log_path(stale, sizeof(stale), NETLOG_STEM, n);
-		DeleteFileA(stale);
-	}
-}
-
-// The previous log is normally discarded at startup, so what this opens is always the running
-// session's; discarding here as well covers a Network Log switched on after that point. The
-// truncate-on-first-write in open_log_file is the backstop for a delete that failed.
 static FILE *open_net_log(void)
 {
-	discard_previous_net_log();
-	return open_log_file(NETLOG_FILENAME, &s_netLogOpened);
+	char name[LOG_NAME_MAX];
+	log_filename(name, sizeof(name), NETLOG_STEM);
+	return open_log_file(name);
+}
+
+// Delete every "<prefix>*.log" in `dir`, returning how many went. Matching on the game's own
+// filename prefix rather than a bare *.log is what makes this safe to point at a shared directory
+// (a %TEMP% fallback, the working directory): nothing another program wrote can match.
+static int delete_logs_in(const char *dir, const char *prefix)
+{
+	char pattern[MAX_PATH + LOG_NAME_MAX];
+	snprintf(pattern, sizeof(pattern), "%s%s*.log", dir, prefix);
+
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(pattern, &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return 0;
+
+	int deleted = 0;
+	do
+	{
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue;
+
+		char path[MAX_PATH + LOG_NAME_MAX];
+		snprintf(path, sizeof(path), "%s%s", dir, fd.cFileName);
+		if (DeleteFileA(path))
+			++deleted;
+	} while (FindNextFileA(h, &fd));
+
+	FindClose(h);
+	return deleted;
+}
+
+// Remove the fixed-name and numbered net logs older builds left behind, once per run, so a stale
+// opentyrian_net.log can't be mistaken for one of this build's timestamped ones. Those predate the
+// log folder, so they sit loose in the roots. Only the net log's -- see LEGACY_NETLOG_KEEP.
+static void sweep_legacy_net_logs(void)
+{
+	if (InterlockedExchange(&s_legacyNetLogsSwept, 1) != 0)
+		return;
+
+	char roots[3][MAX_PATH];
+	int count = log_roots(roots);
+	for (int i = 0; i < count; ++i)
+	{
+		char path[MAX_PATH + LOG_NAME_MAX];
+
+		snprintf(path, sizeof(path), "%s%s.log", roots[i], NETLOG_STEM);
+		DeleteFileA(path);  // absent / locked -> fails harmlessly
+
+		for (int n = 1; n <= LEGACY_NETLOG_KEEP; ++n)
+		{
+			snprintf(path, sizeof(path), "%s%s.%d.log", roots[i], NETLOG_STEM, n);
+			DeleteFileA(path);
+		}
+	}
 }
 
 void crashlog_set_netlog_enabled(bool enabled)
@@ -224,37 +263,37 @@ bool crashlog_get_netlog_enabled(void)
 	return s_netLogEnabled != 0;
 }
 
-// Delete the previous session's net log, so opentyrian_net.log only ever holds the run that is
-// going now (and is absent when this run logged nothing). Called after the config load, late
-// enough for the master switch to be the saved one: off still means untouched.
+// This session's net log names itself, so there is nothing to reserve or clear out; all this does
+// is drop the leftovers of older builds. Called after the config load, late enough for the master
+// switch to be the saved one: off still means untouched.
 void crashlog_netlog_begin_session(void)
 {
 	if (!crashlog_get_netlog_enabled())
 		return;
 
-	discard_previous_net_log();
+	sweep_legacy_net_logs();
 }
 
-// Truncate the live net log wherever open_log_file would have found it, first hit wins. Only an
-// existing log is opened, so a clear never leaves an empty file behind where there was none.
-bool crashlog_clear_netlog(void)
+// Delete every log this game has written -- crash and net alike, this session's included: each
+// root's log folder, plus the root itself for the loose ones older builds wrote. Returns true if
+// at least one went; false means there were none. A later entry in this session simply starts its
+// log over under the same name -- open_log_file remakes the folder if this took it down to empty.
+bool crashlog_clear_logs(void)
 {
-	char paths[3][MAX_PATH + 32];
-	int count = netlog_candidate_paths(paths);
+	char roots[3][MAX_PATH];
+	int count = log_roots(roots);
 
+	int deleted = 0;
 	for (int i = 0; i < count; ++i)
 	{
-		if (GetFileAttributesA(paths[i]) == INVALID_FILE_ATTRIBUTES)
-			continue;
+		char dir[MAX_PATH];
+		log_dir_path(roots[i], dir, sizeof(dir));
 
-		FILE *f = fopen(paths[i], "w");
-		if (f == NULL)
-			continue;
-
-		fclose(f);
-		return true;
+		deleted += delete_logs_in(dir, LOG_PREFIX);
+		deleted += delete_logs_in(roots[i], LOG_PREFIX);
 	}
-	return false;
+
+	return deleted > 0;
 }
 
 // Human-readable name for a Windows structured-exception code.
@@ -713,9 +752,9 @@ void install_crash_handler(void)
 	s_mainThreadId = GetCurrentThreadId();
 	s_startTick    = GetTickCount64();
 
-	// Preserve the previous session's crash log before we arm the handlers that could overwrite it.
-	// Still single-threaded here with no handler installed, so this can't race a live report.
-	rotate_log_chain(LOG_STEM);
+	// Name this session's logs before anything can want one. Still single-threaded here with no
+	// handler installed, so the stamp is settled before any report could race for it.
+	build_session_stamp();
 
 	// Two catches so a real fault is hard to miss: the vectored handler (crash_veh) is primary, the
 	// top-level filter a backup for whatever it doesn't take. SetUnhandledExceptionFilter alone can
@@ -826,59 +865,102 @@ void watchdog_init(void)
 
 // No crash handler or stack walker here, but netplay still needs its health log -- a desync
 // against a console peer otherwise leaves no trace on that side. Reduced entries (header +
-// detail only) go to opentyrian_net.log in the user directory, appended within a session but
-// never across one: crashlog_netlog_begin_session deletes the previous log first.
+// detail only) go to log/opentyrian_net_<launch time>.log under the user directory: one file per
+// session, written only if that session had something to report, and never overwritten by a
+// later run. Same folder and naming as the Windows logs, minus the crash log there is no walker
+// for.
 
 #include "config.h"
 #include "file.h"
 #include "opentyr.h"
 
+#include <dirent.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
-#define NETLOG_FILENAME "opentyrian_net.log"
-#define NETLOG_STALE    "opentyrian_net.1.log"  // left by builds that kept one previous session
+#define LOG_DIR            "log"
+#define LOG_PREFIX         "opentyrian_"  // what every log this game writes starts with
+#define NETLOG_STEM        LOG_PREFIX "net"
+#define NETLOG_NAME_MAX    48    // "<stem>_YYYY-MM-DD_HHMMSS.log" and room to spare
+#define LEGACY_NETLOG_KEEP 3     // numbered generations older builds kept beside the live log
 
 // Net-log master switch (Setup -> Network Log); see crashlog.h.
 static bool s_netLogEnabled = true;
 
-// Backstop for a failed discard (read-only card, remove unsupported): the session's first entry
-// truncates whatever is there, later ones append.
-static bool s_netLogOpened = false;
+// Set once the net logs older builds left behind have been swept this run.
+static bool s_legacyNetLogsSwept = false;
 
-// Set once the previous session's log has been deleted this run.
-static bool s_netLogRetired = false;
+// This session's log name, fixed at startup so it reads as the launch time rather than whenever
+// the first entry happened to land.
+static char s_netLogName[NETLOG_NAME_MAX];
 
-static FILE *netlog_open(const char *mode)
+static const char *netlog_filename(void)
 {
-	return dir_fopen(get_user_directory(), NETLOG_FILENAME, mode);
+	if (s_netLogName[0] == '\0')
+	{
+		time_t now = time(NULL);
+		const struct tm *lt = localtime(&now);
+		char stamp[24] = "unknown";
+		if (lt != NULL)
+			strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H%M%S", lt);
+		snprintf(s_netLogName, sizeof(s_netLogName), "%s_%s.log", NETLOG_STEM, stamp);
+	}
+	return s_netLogName;
 }
 
-// Delete the previous session's log and leave no numbered copy behind, so opentyrian_net.log is
-// always the running session's -- the only net log there is, and absent when this one logged
-// nothing.
-static void discard_previous_net_log(void)
+// "<user dir>/log", without creating it -- the delete/scan paths must not conjure an empty folder.
+static const char *log_dir(void)
 {
-	if (s_netLogRetired)
+	static char dir[560];
+
+	if (dir[0] == '\0')
+		snprintf(dir, sizeof(dir), "%s/%s", get_user_directory(), LOG_DIR);
+
+	return dir;
+}
+
+// Same path, created on demand. Best-effort, exactly like the user directory's own mkdir in
+// config.c: a genuine failure surfaces at the fopen that follows rather than here.
+static const char *make_log_dir(void)
+{
+	const char *dir = log_dir();
+	const int mkdir_result = mkdir(dir, 0700);  // already there -> EEXIST, harmless
+	(void)mkdir_result;
+	return dir;
+}
+
+// Remove the fixed-name and numbered logs older builds left behind, once per run: those were
+// rewritten every launch by contract, so dropping them is what the build that wrote them would
+// have done, and it stops a stale opentyrian_net.log posing as a current one. They predate the
+// log folder, so they sit loose in the user directory.
+static void sweep_legacy_net_logs(void)
+{
+	if (s_legacyNetLogsSwept)
 		return;
-	s_netLogRetired = true;
+	s_legacyNetLogsSwept = true;
 
 	const char *dir = get_user_directory();
 	char path[600];
 
-	snprintf(path, sizeof(path), "%s/%s", dir, NETLOG_FILENAME);
+	snprintf(path, sizeof(path), "%s/%s.log", dir, NETLOG_STEM);
 	remove(path);  // nothing there -> fails harmlessly
 
-	snprintf(path, sizeof(path), "%s/%s", dir, NETLOG_STALE);
-	remove(path);
+	for (int n = 1; n <= LEGACY_NETLOG_KEEP; ++n)
+	{
+		snprintf(path, sizeof(path), "%s/%s.%d.log", dir, NETLOG_STEM, n);
+		remove(path);
+	}
 }
 
-// Off means untouched, so a log switched on later discards at its first entry instead.
+// This session's log names itself, so there is nothing to reserve; all this does is drop the
+// leftovers of older builds. Off means untouched.
 void crashlog_netlog_begin_session(void)
 {
 	if (!s_netLogEnabled)
 		return;
 
-	discard_previous_net_log();
+	sweep_legacy_net_logs();
 }
 
 static void netlog_write(const char *event, const char *detail)
@@ -886,12 +968,11 @@ static void netlog_write(const char *event, const char *detail)
 	if (!s_netLogEnabled)
 		return;
 
-	discard_previous_net_log();
-
-	FILE *f = netlog_open(s_netLogOpened ? "a" : "w");
+	// Always appends: the name carries the launch time, so there is never a stale file to clear,
+	// and a clear mid-session just starts this one over (folder included).
+	FILE *f = dir_fopen(make_log_dir(), netlog_filename(), "a");
 	if (f == NULL)
 		return;
-	s_netLogOpened = true;
 
 	time_t now = time(NULL);
 	const struct tm *lt = localtime(&now);
@@ -907,7 +988,10 @@ static void netlog_write(const char *event, const char *detail)
 	fclose(f);
 }
 
-void install_crash_handler(void) { }
+// Nothing to install, but this is the main thread at startup: pin the session stamp here so the
+// log is named for when the session began.
+void install_crash_handler(void) { (void)netlog_filename(); }
+
 void watchdog_init(void) { }
 void watchdog_heartbeat(void) { }
 void crashlog_report_fatal(const char *event, const char *detail) { (void)event; (void)detail; }
@@ -926,21 +1010,48 @@ void crashlog_netlog_line(const char *event, const char *detail)
 void crashlog_set_netlog_enabled(bool enabled) { s_netLogEnabled = enabled; }
 bool crashlog_get_netlog_enabled(void) { return s_netLogEnabled; }
 
-// Probe for the log before truncating it, so clearing when there is nothing to clear does not
-// create an empty one -- and so the menu can report which of the two happened.
-bool crashlog_clear_netlog(void)
+// Delete every "opentyrian_*.log" in `dir`, returning how many went. Matching on the game's own
+// filename prefix rather than a bare *.log keeps this safe to point at the user directory, which
+// holds the saves and config as well; it takes in the timestamped logs, the fixed and numbered
+// names older builds wrote, and the crash logs the desktop build names the same way -- everything
+// this game logs, not just the net side of it.
+static int delete_logs_in(const char *dir)
 {
-	FILE *f = netlog_open("r");
-	if (f == NULL)
-		return false;
-	fclose(f);
+	DIR *d = opendir(dir);
+	if (d == NULL)
+		return 0;
 
-	f = netlog_open("w");
-	if (f == NULL)
-		return false;
+	int deleted = 0;
+	const struct dirent *e;
+	while ((e = readdir(d)) != NULL)
+	{
+		const size_t len = strlen(e->d_name);
+		if (len < sizeof(LOG_PREFIX) - 1 + 4)
+			continue;
+		if (strncmp(e->d_name, LOG_PREFIX, sizeof(LOG_PREFIX) - 1) != 0)
+			continue;
+		if (strcmp(e->d_name + len - 4, ".log") != 0)
+			continue;
 
-	fclose(f);
-	return true;
+		char path[600];
+		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+		if (remove(path) == 0)
+			++deleted;
+	}
+	closedir(d);
+
+	return deleted;
+}
+
+// Delete every log the system holds, this session's included -- there is no file manager on a
+// console to prune them with. The log folder plus the user directory itself, for the loose ones
+// older builds wrote. Returns true if at least one went, so the menu can tell "cleared" from
+// "there was nothing there".
+bool crashlog_clear_logs(void)
+{
+	const int deleted = delete_logs_in(log_dir()) + delete_logs_in(get_user_directory());
+
+	return deleted > 0;
 }
 
 #endif

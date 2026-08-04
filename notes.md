@@ -1109,9 +1109,8 @@ so neither can be borrowed without cutting a game sound.
 
 Netplay health events — desyncs, stalls, resyncs, livelocks, timeouts, the
 offline rollback selftest — are written by `crashlog_note_net` to their own
-`opentyrian_net.log` (same report format as the crash log, but no history kept),
-so they cannot bury a real crash report; the crash log keeps only process
-failures and recovered would-be-crashes.
+net log (same report format as the crash log), so they cannot bury a real crash
+report; the crash log keeps only process failures and recovered would-be-crashes.
 
 `Setup > Enhancements > Game Tweaks > Network > Network Log`
 (`crashlog_set_netlog_enabled`, persisted as
@@ -1119,22 +1118,44 @@ failures and recovered would-be-crashes.
 `crashlog_note_net`/`crashlog_netlog_line` rather than at each of their ~20 call
 sites.
 
-There is exactly one `opentyrian_net.log` and it holds the running session and
-nothing else, so "the log" and "this run" are the same object when someone is
-asked for one — no `.1.log` generations to pick the right one out of.
-`crashlog_netlog_begin_session` (`discard_previous_net_log`, once-only latch)
-`DeleteFileA`s the previous session's log in all three places `open_log_file`
-could have put it (exe dir, working directory, `%TEMP%`) plus any stale
-`opentyrian_net.1..3.log` an older rotating build left, and `main()` calls it
-right after `JE_loadConfiguration` — not from `install_crash_handler`, which runs
-long before the config is read and so could not honour the switch (off must leave
-the file untouched). `open_net_log` discards too, through the same latch, which
-covers a Network Log switched on mid-session. Deleting rather than truncating is
-what makes "no file" mean "this run logged nothing"; the truncate-on-first-write
-in `open_log_file` stays as the backstop for a delete that could not run.
-The crash log keeps its rotation chain: it is the record you want history of, it
-must be rotated before the handlers that write it are armed, and its writers can
-be fault handlers, where MoveFileEx calls do not belong.
+Both logs live in a `log` folder beside the executable and are named for the
+launch they belong to — `log\opentyrian_log_2026-08-04_143012.log`,
+`log\opentyrian_net_<same stamp>.log` — so a session writes at most one of each,
+"the log" and "this run" are the same object when someone is asked for one, and
+no report is ever overwritten by a later run. The folder is what makes an
+accumulating history tolerable: reports pile up out of the way instead of in the
+game directory, and an install that has never had trouble has no folder at all.
+`open_log_file` creates it on demand (`make_log_dir`, `CreateDirectoryA` treating
+`ERROR_ALREADY_EXISTS` as success) under the first of three roots that takes it —
+exe dir, working directory, `%TEMP%` (`log_roots`), the last two being fallbacks
+for a read-only install. `log_dir_path` is the same path without the create, for
+the delete/sweep paths, which must not conjure an empty folder in a root this
+install never writes to.
+`install_crash_handler` fixes `s_sessionStamp` (`build_session_stamp`) before any
+handler is armed, still single-threaded, so every writer that follows composes
+the same name; `log_filename` re-derives it lazily only to cover a report raised
+before that, where an unnamed log would be worse than a slightly late stamp.
+Neither file is created until something is written to it, which is what makes
+"no file" mean "this run had nothing to report" — the old scheme got that for the
+net log by deleting the previous one at startup, and this gets it for both
+without deleting anything. Nothing rotates and nothing is swept, so
+`open_log_file` can open `"a"` unconditionally: there is no stale file to clear,
+the two flags that tracked first-write-of-session are gone, and two instances
+started in the same second stack their reports rather than one truncating the
+other's. Rotation is gone with them, and with it the constraint that forced it to
+run at startup: `MoveFileEx` had no business in a path whose writers are fault
+handlers. `CreateDirectoryA` does run there, but it is no worse than the `fopen`
+already on that path, and only on the first report of a session.
+
+What `crashlog_netlog_begin_session` still does is sweep the fixed-name and
+numbered net logs older builds left (`opentyrian_net.log`,
+`opentyrian_net.1..3.log`), loose in each of the three roots since they predate
+the folder, so a stale one cannot pose as a current one. Those were rewritten
+every launch by contract, so deleting them is what the build that wrote them
+would have done; the crash chain is left alone, being real reports.
+`main()` calls it right after `JE_loadConfiguration` — not from
+`install_crash_handler`, which runs long before the config is read and so could
+not honour the switch (off must leave the files untouched).
 
 Every online session is bracketed in the net log: `network_connect` writes a
 `NETWORK SESSION START` line (role, netcode, recovery, delay) the moment the
@@ -1149,24 +1170,47 @@ predating the net-log split there was no way to tell which had happened.)
 
 On non-Windows (Switch/Vita), `crashlog_note_net` and `crashlog_netlog_line`
 are real now, not stubs: reduced entries (timestamped header + detail, no
-stack — there is no walker there) written to `opentyrian_net.log` in
-`get_user_directory()`, appended within a session and never across one.
-`discard_previous_net_log` there is a plain `remove` of the live log, plus one of
-the `opentyrian_net.1.log` older builds used to keep — a failure at either step is
-harmless, because the session's first entry opens `"w"` and later ones `"a"`,
-which makes the log session-only even where the delete could not run. The other
-crashlog entry points stay no-ops on consoles.
+stack — there is no walker there) written under the same folder and naming,
+`<user dir>/log/opentyrian_net_<launch time>.log`. `make_log_dir` is a
+best-effort `mkdir(dir, 0700)` per write, mirroring what `config.c` already does
+for the user directory itself — a genuine failure surfaces at the `fopen` that
+follows, not there — and `log_dir` is the same path without the create, for the
+scan. `install_crash_handler` is otherwise a stub there, but it is the main
+thread at startup, so it pins the name (`netlog_filename`) for the same reason
+Windows pins its stamp there — otherwise the name would read as the time of the
+first entry, which is not what a reader would take it for. `sweep_legacy_net_logs`
+is a plain `remove` of the fixed and numbered names, loose in the user directory.
+The other crashlog entry points stay no-ops on consoles.
 
-`Clear Net Log`, alongside the switch (`crashlog_clear_netlog`), truncates the
-live log on demand — a console-only row, since on PC the file sits next to the
-executable and can be deleted there. It probes for the log before opening it
-`"w"`, so clearing when there is none creates no empty file, and the menu reports
-which of the two happened. The
-row is compiled in only for Switch/Vita and is further hidden while Network Log
-is off, through the new `isMenuItemVisible` filter in `runOptionsMenu`: the menu
-loop now builds a per-frame list of visible rows, so a hidden row occupies no
-slot in drawing, cursor movement or mouse hit-testing (all of which index that
-one list), and the selection is clamped in case a row vanishes under it.
+`Clear Logs`, alongside the switch (`crashlog_clear_logs`), deletes every log the
+game has written — crash and net alike, this session's included — a console-only
+row, since on PC the files sit in a folder beside the executable and can be
+deleted there. With logs now accumulating by timestamp rather than being
+overwritten, a console with no file manager needs a way to reclaim them, so
+"clear" became delete-all rather than truncate-the-one: Windows enumerates with
+`FindFirstFileA`, consoles walk the directory with `readdir`, and both sweep the
+log folder *and* the root beside it, since the loose legacy names sit there.
+
+Both match on `LOG_PREFIX` (`opentyrian_`) rather than a bare `*.log`, which is
+what makes a delete-all safe to point at directories the game does not own: the
+`%TEMP%` fallback root, and the console user directory that also holds the saves
+and config. Widening from the net stem to the shared prefix is the whole of
+"clear all logs, not just the net ones" — it takes in the crash logs and the
+legacy fixed/numbered names for free, and cannot reach anything another program
+wrote. It returns whether anything went, so the row can report `Cleared` against
+`No Logs`. A later entry in the same session just starts its log over under the
+same name — the unconditional `"a"` recreates it, and the folder too if the clear
+left it empty and something else removed it.
+
+The row is compiled in only for Switch/Vita. It used to be hidden while Network
+Log was off ("nothing to clear while nothing is written"), which stopped making
+sense once it cleared crash logs too: switching the net log off would have put
+every log already written out of reach. So `isMenuItemVisible` in `runOptionsMenu`
+now has no conditional rows and returns true unconditionally. The filter itself
+stays, because the menu loop is built on it: it builds a per-frame list of
+visible rows, so a hidden row occupies no slot in drawing, cursor movement or
+mouse hit-testing (all of which index that one list), and the selection is
+clamped in case a row vanishes under it.
 
 The lockstep detector's once-per-level latch (`tyrian2.c`) compares
 `mainLevel`, not `curLoc` — it originally latched on `curLoc`, which advances
@@ -1360,11 +1404,13 @@ changes.
 ## Crash logging
 
 The Windows logger writes a stack trace and guarded game-state dump to
-`opentyrian_log.log`. Netplay health events (`crashlog_note_net`) go to a
-separate `opentyrian_net.log` in the same format, so a lossy session cannot
-bury a real crash report; only genuine process failures and recovered
-would-be-crashes use the crash log. That log has its own on/off setting and keeps
-no history: one file, the current session's — see Netplay > Crash-log
+`log\opentyrian_log_<launch time>.log`. Netplay health events
+(`crashlog_note_net`) go to a separate `log\opentyrian_net_<same stamp>.log` in
+the same format, so a lossy session cannot bury a real crash report; only genuine
+process failures and recovered would-be-crashes use the crash log. Both are
+created only when there is something to write — the `log` folder included — so a
+session leaves one, both, or neither, and never overwrites an earlier session's.
+The net log additionally has its own on/off setting — see Netplay > Crash-log
 diagnostics.
 
 The watchdog suspends the main thread only long enough to capture its context,
