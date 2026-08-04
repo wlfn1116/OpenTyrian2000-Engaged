@@ -30,6 +30,11 @@ static JE_byte  endlessSortieFile  = 0;
 unsigned endlessSortiePrePurchased = 0;
 int      endlessSortiePreCleanse   = 0;
 int      endlessSortiePreLongCon   = 0;
+// The mutators in force at the outpost the sortie launched FROM (captured on opening it), which is
+// the previous sector's set -- not the committed level's. An unlocked bail reopens that same outpost,
+// so it must price and stock itself off these, or the level's own Merchant's Favor / Cursed Bounty
+// would leak backwards into a shop the player already visited.
+Uint64   endlessSortieOutpostMods = 0;
 
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
@@ -742,11 +747,13 @@ void endlessRestoreSortie(void)
 	const unsigned preBuff     = endlessSortiePrePurchased;
 	const int      preCleanse  = endlessSortiePreCleanse;
 	const int      preLongCon  = endlessSortiePreLongCon;
+	const Uint64   outpostMods = endlessSortieOutpostMods;
 
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); arms endlessResumeVisit (also cleared endlessSortieHave via endlessResetRun)
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout (wins over the superbombs field applyCurrent touched)
 	endlessActiveMods   = endlessSortieModsV;                         // the committed level's mutators (for the relaunch)
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid -- keep the invariant
+	endlessSortieOutpostMods = outpostMods;                           // still the same outpost -- keep its mutators across the reset
 
 	if (endlessHardcore())
 	{
@@ -764,6 +771,12 @@ void endlessRestoreSortie(void)
 		endlessPurchasedMods      = preBuff;
 		endlessCleanseChargeCount = preCleanse;
 		endlessLongCon            = preLongCon;
+		// ...and put the OUTPOST's own mutators back, undoing the committed-level set applied above.
+		// That set is a promise about the sector AHEAD, so letting it stand would apply the abandoned
+		// level's shop-facing effects (Merchant's Favor's discount, Cursed Bounty's barren reroll) to
+		// the shop the player is bailing back into -- a discount farmable by launching and quitting.
+		// The relaunch doesn't need it: the re-pick sets the mods for whatever course is chosen next.
+		endlessActiveMods         = endlessSortieOutpostMods;
 	}
 }
 
@@ -778,10 +791,15 @@ void endlessRestartSortie(void)
 	if (!endlessSortieHave)
 		return;
 
+	const Uint64 outpostMods = endlessSortieOutpostMods;  // rescue it from the reset inside the apply
+
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); also arms endlessResumeVisit
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid
 	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
+	// The outpost this zone launched from is unchanged, and a later bail out of the retry reopens it
+	// -- so its mutators have to survive the restart, or that bail would reopen the shop with none.
+	endlessSortieOutpostMods = outpostMods;
 
 	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here
 	endlessArmLockedRelaunch();    // re-arm the committed level: episode, section, level file, mutators

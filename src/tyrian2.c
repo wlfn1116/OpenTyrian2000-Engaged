@@ -1216,6 +1216,16 @@ static bool link_cue_state = false;
 // Input state, not sim state: unregistered, reset at level start (as link_cue_state above).
 static bool deathSkipArmed = false;
 
+// Ticks the endless death menu has let GAME OVER stand before opening itself. Reset at level
+// start alongside deathSkipArmed.
+static uint deathGameOverTicks = 0;
+
+// The beat runs as long as the game-over song does, within these bounds (sim ticks, ~35/s at
+// normal speed): the floor covers a jingle that never plays at all -- music off, audio disabled --
+// and would otherwise read as already finished on its first tick, the cap one that never ends.
+#define DEATH_GAMEOVER_TICKS_MIN 70   // ~2s
+#define DEATH_GAMEOVER_TICKS_MAX 700  // ~20s
+
 // Generator power bar render state: a HUD overlay on VGAScreenSeg, redrawn every presented
 // frame at an interpolated level with a sub-pixel anti-aliased top edge.
 static bool power_gauge_active = false;
@@ -3019,10 +3029,17 @@ start_level:
 			// their pause menu from the moment the ship dies (see the ingamemenu_pressed gate in the
 			// level loop), so Quit Level is no way out of a fatal hit there either.
 			EndlessDeathChoice deathPick = ENDLESS_DEATH_END_RUN;
+
+			// The death menu ramps the music away itself, over the half second after its panel goes
+			// up: it blocks for as long as the player takes to choose, and start_level has just put
+			// the master volume back to full (undoing what the explosion's musicFade took off), so
+			// fading only once it returns left the level track blaring under the panel the whole
+			// time. It hands the master volume back before it returns.
 			if (endlessDeathMenuDue() && all_players_dead())
 				deathPick = JE_endlessDeathMenu();
+			else
+				fade_song();
 
-			fade_song();
 			fade_black(10);
 
 			if (endlessMode && deathPick == ENDLESS_DEATH_RESTART)
@@ -3438,6 +3455,7 @@ start_level_first:
 	twoPlayerLinked = false;
 	link_cue_state = false;
 	deathSkipArmed = false;
+	deathGameOverTicks = 0;
 	linkGunDirec = M_PI;
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -5294,10 +5312,10 @@ draw_player_shot_loop_end:
 			}
 			else
 			{
-				// The endless death menu replaces GAME OVER outright: it offers the same "press
-				// something to move on" beat and two ways to keep the run, so leaving GAME OVER in
-				// front of it would only cost the player an extra keypress.
-				if (play_demo || normalBonusLevelCurrent || bonusLevelCurrent || endlessDeathMenuDue())
+				// The endless death menu gets the whole GAME OVER beat like any other death --
+				// text, jingle, the level still running behind it -- and then opens by itself
+				// below, where a campaign death sits waiting for a press.
+				if (play_demo || normalBonusLevelCurrent || bonusLevelCurrent)
 					reallyEndLevel = true;
 				else
 				{
@@ -5312,12 +5330,38 @@ draw_player_shot_loop_end:
 					if (!play_demo)
 					{
 						play_song(SONG_GAMEOVER);
+						// Cancelling the ramp the fatal hit started isn't optional here, the same
+						// way it isn't for the level-end jingle above: the volume restore alone
+						// lasts one tick, then the ramp resumes from where the wreck animation left
+						// it and walks the game-over song down to the fade floor over the next few
+						// seconds. It has always been played half-audible.
+						musicFade = false;
 						set_volume(tyrMusicVolume, fxVolume);
 					}
 					// Drop any input still held/queued from the moment of death, so
 					// GAME OVER doesn't dismiss itself instantly — require a fresh press.
 					newkey = newmouse = false;
 					firstGameOver = false;
+				}
+
+				// Endless death menu: let the game-over song play itself out over GAME OVER, then
+				// bring the menu up without asking for a press. Every backend clears `playing` when
+				// a one-shot song ends (lds_update, midi_finished), which is the beat this waits
+				// on; DEATH_GAMEOVER_TICKS_MIN/MAX bound it for the songs that never start or never
+				// finish. A press still cuts it short, just below.
+				if (endlessDeathMenuDue() && !play_demo && !rollback_resim)
+				{
+					++deathGameOverTicks;
+
+					if ((!playing && deathGameOverTicks >= DEATH_GAMEOVER_TICKS_MIN) ||
+					    deathGameOverTicks >= DEATH_GAMEOVER_TICKS_MAX)
+					{
+						reallyEndLevel = true;
+						// Not live input, but it lands on the same one-shot: record it so a
+						// self-test replay of this tick ends the level where this one did.
+						if (rollback_selftest_active())
+							rollback_st_event(RB_EV_DISMISS);
+					}
 				}
 
 				if (!play_demo && !rollback_resim)

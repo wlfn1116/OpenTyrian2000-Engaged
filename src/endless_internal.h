@@ -323,5 +323,6 @@ extern bool     endlessSortieHave;         // a launch-time snapshot exists
 extern unsigned endlessSortiePrePurchased; // one-shots snapshotted pre-consumption at the course pick,
 extern int      endlessSortiePreCleanse;   // so a non-hardcore bail can restore them
 extern int      endlessSortiePreLongCon;
+extern Uint64   endlessSortieOutpostMods;  // mutators in force at the outpost this sortie launched from
 
 #endif // ENDLESS_INTERNAL_H

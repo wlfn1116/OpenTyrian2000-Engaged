@@ -1051,6 +1051,13 @@ void endlessBetweenLevels(void)
 		endlessSaveSlot(autoSlot);  // side-effect-free run capture into the sidecar (endlessMode is true here)
 	}
 
+	// Remember what is in force WHILE this outpost is open (the sector just flown, which is what its
+	// prices and stock are keyed off). A bail out of the next level reopens this very outpost and
+	// restores this set, so the level's own mutators can't reach back and re-price it.
+	// A locked retry outpost is the same visit reopened, not a new one -- it keeps the original value.
+	if (!endlessLockedSortie)
+		endlessSortieOutpostMods = endlessActiveMods;
+
 	// Pin the shop's theme. A random level's ']i' can leave songBuy on that level's own track, so
 	// it is set here every visit -- which also makes it survive a save/load for free, being
 	// re-derived from the saved run depth. An outpost charting a MILESTONE swaps in the warning

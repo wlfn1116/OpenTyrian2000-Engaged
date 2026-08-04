@@ -75,12 +75,14 @@ JE_byte chargeLaserSlot = 0;
 // those weapons are never on a shop shelf. Endless offers every port, so the duplicates end up
 // stacked in one menu, several rows deep of the same picture.
 //
-// This table spends the spare icons on them. Protron Wave (34) deliberately keeps 167.
+// This table spends the spare icons on them. A few entries deliberately reuse an existing icon
+// rather than a spare one, where that reads better than a unique-but-unrelated picture.
 static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
 {
 	{ 31,  15 },  // Guided Bombs
 	{ 32, 191 },  // Shuruiken Field       (was the 167 placeholder)
 	{ 33,  39 },  // Poison Bomb
+	{ 34,  77 },  // Protron Wave          (was the 167 placeholder; shares Protron Z's icon)
 	{ 35, 205 },  // The Orange Juicer     (was the 167 placeholder)
 	{ 36,  17 },  // NortShip Super Pulse
 	{ 37,  15 },  // NortShip Spreader

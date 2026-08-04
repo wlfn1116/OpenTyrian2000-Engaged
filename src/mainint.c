@@ -2635,6 +2635,49 @@ JE_boolean JE_inGameSetup(void)
 	return result;
 }
 
+#define DEATH_MENU_FADE_MS 500  // panel up -> level music gone
+
+typedef struct
+{
+	Uint32 since;  // SDL_GetTicks when the panel went up
+	int volume;    // last master volume pushed, -1 for none yet
+	bool done;
+} DeathMenuFade;
+
+/* Steps the death menu's music fade, called from every spot that menu blocks in so the ramp
+ * keeps running whatever the player is doing. The level track is silent DEATH_MENU_FADE_MS after
+ * the panel appeared, at which point the song is stopped and the master volume handed back at its
+ * configured level for whichever screen comes next.
+ *
+ * Ramps the master volume rather than calling fade_song(), whose length isn't ours to pick: that
+ * one is 6 s on both MIDI backends and a per-song count of OPL ticks. This way the half second is
+ * the half second, and it is the same half second on every backend. */
+static void death_menu_fade_music(DeathMenuFade *fade)
+{
+	if (fade->done)
+		return;
+
+	const Uint32 elapsed = SDL_GetTicks() - fade->since;
+
+	if (elapsed < DEATH_MENU_FADE_MS)
+	{
+		const int volume = tyrMusicVolume - tyrMusicVolume * (int)elapsed / DEATH_MENU_FADE_MS;
+		if (volume != fade->volume)  // the pollers run far finer than the ramp has steps
+		{
+			fade->volume = volume;
+			set_volume((Uint8)volume, fxVolume);
+		}
+		return;
+	}
+
+	fade->done = true;
+
+	// Stop, not fade_song: the master volume goes straight back up on the next line, and a song
+	// still ramping down under its own steam would be heard swelling back in.
+	stop_song();
+	set_volume(tyrMusicVolume, fxVolume);
+}
+
 /* Endless death prompt, put up over the frozen death frame while the level music still plays.
  * Built on JE_inGameSetup's arrangement -- shaded panel, VGAScreen2 as the redraw background,
  * hover/click alongside keyboard and joystick -- so the cursor behaves as it does in the pause
@@ -2704,6 +2747,12 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	int selected = 0;
 	bool firstFrame = true;
 
+	// The level music starts ramping away the moment the panel is up and is gone half a second
+	// later. Anchored HERE, a hair before the first present, and not to the death: the player can
+	// cut the wreck animation short and be looking at these rows within a frame of dying, and that
+	// early menu takes its half second from when it appeared just the same.
+	DeathMenuFade deathFade = { SDL_GetTicks(), -1, false };
+
 	for (bool done = false; !done; )
 	{
 		// Restore background.
@@ -2730,15 +2779,29 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		{
 			// Only now that the panel is up: a fire button still held from the fatal hit would
 			// otherwise pick a row instantly, and waiting before the present would just freeze
-			// the death frame for as long as it stays down.
+			// the death frame for as long as it stays down. Hand-rolled rather than wait_noinput
+			// because the button that brought the menu up early is often the one being mashed:
+			// the release can be seconds away, and the fade shouldn't wait on it.
 			firstFrame = false;
-			wait_noinput(true, true, true);
+
+			service_SDL_events(false);
+			while (keydown || mousedown || joydown)
+			{
+				death_menu_fade_music(&deathFade);
+
+				SDL_Delay(1);
+				poll_joysticks();
+				service_SDL_events(false);
+			}
+
 			newkey = newmouse = false;
 		}
 
 		bool mouseMoved = false;
 		do
 		{
+			death_menu_fade_music(&deathFade);
+
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
 			const Uint16 oldMouseX = mouse_x;
@@ -2815,7 +2878,18 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		}
 	}
 
-	wait_noinput(true, true, true);  // don't let the confirming press carry into the next screen
+	// Don't let the confirming press carry into the next screen -- and a row picked inside that
+	// first half second leaves the ramp part-way, so run it out here instead of cutting the track
+	// off at whatever volume it had reached.
+	service_SDL_events(false);
+	while (keydown || mousedown || joydown || !deathFade.done)
+	{
+		death_menu_fade_music(&deathFade);
+
+		SDL_Delay(1);
+		poll_joysticks();
+		service_SDL_events(false);
+	}
 
 	// Put the level's ramp back in `colors` for whoever sets the palette next, but do NOT push it
 	// to the screen: the panel is still up while the caller fades to black, and re-applying the
