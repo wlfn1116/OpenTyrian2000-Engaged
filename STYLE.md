@@ -1,8 +1,7 @@
 # Project style
 
 These rules apply to code and documentation owned by OpenTyrian2000 Engaged.
-Their purpose is readable code and reviewable diffs, not uniform formatting of
-the project's history.
+They keep new work readable and diffs reviewable while preserving project history.
 
 ## Scope
 
@@ -38,7 +37,8 @@ the project's history.
   have a short explanation.
 - Do not sort includes automatically; several platform headers are order-sensitive.
 
-The root `.clang-format` describes these defaults. It is an aid, not authority:
+The root `.clang-format` describes these defaults. Review every result before
+keeping it:
 
 ```sh
 git clang-format <base-commit>
@@ -83,31 +83,58 @@ whole tree.
 
 ## Comments
 
-- Comment invariants, ownership, units, compatibility constraints, and reasons
-  the obvious implementation is wrong.
+- Comment invariants, ownership, units, compatibility constraints, and choices
+  that would otherwise be unclear.
 - Do not narrate the next line or restate a clear name.
 - Do not write long comment walls. Keep comments to one to three direct
   sentences. If an explanation needs more space, put it in the relevant section
   of `notes.md` and leave only a short summary or section pointer beside the code.
 - Wire layouts, persistent formats, and public API contracts may use longer
   comments when every detail is necessary at the call site.
-- Use sentence case and neutral wording. Avoid rhetorical questions, bug-story
-  prose, ALL-CAPS emphasis, decorative banners, jokes, and claims such as
-  "obvious", "simple", or "guaranteed" unless they are part of a contract.
+- Use sentence case and neutral wording. Avoid bug-story prose, decorative
+  banners, and jokes.
 - Do not duplicate documentation. Keep one authoritative explanation and link
   or refer to it from other locations.
 - Remove stale comments. Do not preserve an obsolete explanation as history.
 - A TODO must name a concrete missing action and why it remains. Include an issue
   reference when one exists.
 
+## Prose
+
+- Write plain, direct prose specific to this project. AI-style filler and
+  templated phrasing are prohibited.
+- Do not use em dashes (U+2014). Use a period, comma, colon, or parentheses.
+- Do not use formulaic contrasts such as "it is not X, it is Y", "not X, but Y",
+  or "not only X, but also Y". State the relevant fact directly.
+- Avoid canned introductions, repeated conclusions, empty transitions,
+  rhetorical questions, fake quotations, sales language, and inflated claims.
+- Use bold and headings only when they improve navigation. Do not emphasize
+  ordinary facts with ALL-CAPS words or excessive formatting.
+- Do not call something "obvious", "simple", "easy", or "guaranteed" unless the
+  word defines a tested contract.
+
 ## Documentation
 
+- Documentation must match the code and observed runtime behavior in the same
+  commit. Changes to behavior, defaults, menu names, paths, controls, supported
+  platforms, save formats, or network formats must update their authoritative
+  documentation at the same time.
+- Verify factual claims against the current implementation and the affected
+  runtime path. Remove stale or unverifiable claims immediately. Do not leave a
+  correction beside obsolete text.
 - `README.md` is the concise project overview and build entry point.
-- `GUIDE.md` documents current player-visible behavior.
+- `GUIDE.md` explains how players use features and covers relevant player-visible
+  behavior.
 - `notes.md` records maintainer invariants, compatibility constraints, and
   non-obvious implementation decisions.
 - Platform build and packaging details belong in the corresponding platform
   README.
+- Keep `README.md` and `GUIDE.md` readable for a general audience. Omit private
+  function names, internal data flow, bug history, debugging internals, and
+  exhaustive edge cases unless a player needs that information to use or
+  troubleshoot the feature. Put necessary maintainer detail in `notes.md`.
+- Concision must preserve user-visible limitations, compatibility requirements,
+  destructive effects, and instructions required to use a feature correctly.
 - Describe current behavior in present tense. Keep implementation history only
   when it explains a compatibility or migration requirement.
 - Use exact menu names, paths, units, modes, and platform names.
@@ -130,3 +157,5 @@ Before finishing a style-only change:
    successful build does not prove gameplay, save migration, netplay, or hardware
    behavior.
 5. Leave unrelated worktree changes, generated files, and vendor code untouched.
+6. Review changed prose for documentation drift, long comment walls, duplicated
+   detail, em dashes, formulaic contrasts, and AI-style filler.
