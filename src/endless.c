@@ -412,8 +412,10 @@ static void endlessDrawRunEndBackdrop(void)
 }
 
 // A destroyed ship gets the death menu (JE_endlessDeathMenu) rather than GAME OVER and the run
-// summary. Consulted twice: the level loop skips the GAME OVER wait for it, and JE_main puts the
+// summary. The level loop skips the GAME OVER wait for it, and JE_main puts the
 // menu up in its place. Hardcore is excluded by design -- there is no second chance to offer.
+// The death menu exists because any player can just press esc during the death explosion animation
+// and get to the pause menu and effectively have the same choices. 
 bool endlessDeathMenuDue(void)
 {
 	return endlessMode && !endlessHardcore && endlessSortieValid();
