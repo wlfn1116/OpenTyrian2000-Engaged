@@ -7,7 +7,7 @@ open-source port of the DOS game Tyrian.
 
 The original campaigns play as they always did. What the fork adds:
 
-- a 356x200 widescreen playfield
+- a 356x200 widescreen frame with a wider 299-pixel playfield
 - smooth display-rate rendering, with optional sub-pixel supersampling
 - **Endless mode**, a roguelite run built from the shipped levels
 - a custom weapon editor
@@ -36,8 +36,9 @@ On PC, put the executable beside the `data` directory.
 
 ### Widescreen and motion
 
-The playfield is 356x200 instead of 320x200, with the HUD still at the right
-edge. Menus keep their original 320-pixel layout, centred.
+The frame is 356x200 instead of 320x200. The playfield is 299 pixels wide, with
+the 57-pixel HUD still at the right edge. Menus keep their original 320-pixel
+layout, centred.
 
 The simulation still runs at 35 Hz. Smooth Motion interpolates the world at the
 display rate, and in single-player the ship moves at the display rate too, which

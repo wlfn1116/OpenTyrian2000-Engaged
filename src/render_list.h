@@ -218,13 +218,13 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale);
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
 
 // Capture the residual: pixels in `reference` (the authoritative frame) that a
-// blit-only replay doesn't reproduce — non-blit draws like superpixels and boss-
+// blit-only replay doesn't reproduce; non-blit draws like superpixels and boss-
 // health bars. `scratch` is a same-size 8-bit work surface. Call after the tick draws.
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch);
 
 // Capture residual from a before/after diff of the authoritative frame. Used on
 // feedback (smoothie) levels to grab only the overlays drawn after the per-pixel
-// filters (boss bar, in-game displays) — a blit-only replay can't rebuild the
+// filters (boss bar, in-game displays); a blit-only replay can't rebuild the
 // evolved plasma, so the full capture would wrongly flag the filtered playfield.
 void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after);
 

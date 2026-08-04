@@ -53,7 +53,7 @@ static void rb_log_open(void)
 	{
 		/* Fully buffered, with a big buffer: the trace writes a line per tick for
 		 * a whole demo, and on a console every unbuffered line is its own SD-card
-		 * write -- enough I/O to disturb the frame timing being measured. */
+		 * write; enough I/O to disturb the frame timing being measured. */
 		static char buf[64 * 1024];
 		setvbuf(rb_log_file, buf, _IOFBF, sizeof(buf));
 	}
@@ -81,7 +81,7 @@ static void rb_log(const char *fmt, ...)
 	fputc('\n', rb_log_file);
 }
 
-/* --- Registry ----------------------------------------------------------------- */
+/* State registry. */
 
 typedef struct
 {
@@ -143,7 +143,7 @@ size_t rollback_state_size(void)
 	return rb_total_size;
 }
 
-/* --- Snapshot ring ------------------------------------------------------------ */
+/* Snapshot ring. */
 
 static Uint8 *rb_ring[ROLLBACK_RING];
 static Uint32 rb_ring_frame[ROLLBACK_RING];
@@ -245,10 +245,8 @@ bool rollback_restore(Uint32 frame)
 static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz);
 static bool rb_reloc_walk(Uint8 *buf, bool encode);
 
-/* --- Demo trace: per-item state hashes ----------------------------------------
- * Hash relocated snapshots so process-specific pointer addresses do not create false differences.
- * player[].lives remains process-specific because restore fixups derive it. Disabled by default;
- * enable only a narrow frame window because each tick emits hundreds of lines. */
+/* Demo traces hash relocated state to exclude process-specific pointers.
+ * Keep tracing to narrow frame windows because each tick emits hundreds of rows. */
 #define RB_TRACE_ITEMS_FROM 1
 #define RB_TRACE_ITEMS_TO   0
 
@@ -262,7 +260,7 @@ static bool rb_trace_snapshot(void)
 	return rb_reloc_walk(rb_trace_buf, true);
 }
 
-/* FNV-1a over one entry's relocated bytes.  Raw entries only -- the single
+/* FNV-1a over one entry's relocated bytes.  Raw entries only; the single
  * callback entry is the RNG, whose draw count the trace carries verbatim. */
 static Uint32 rb_item_hash(const RbItem *it)
 {
@@ -276,16 +274,14 @@ static Uint32 rb_item_hash(const RbItem *it)
 	return h;
 }
 
-/* --- Wire-safe snapshot (netplay desync recovery) ------------------------------
- * Registered pointer fields and their targets:
+/* Wire snapshots encode registered pointers as stable table indices or element offsets:
  *   enemy[].sprite2s     one of six fixed sprite-sheet globals, or NULL
  *   enemy[].enemydatofs  &enemyDat[i] (tyrian2.c JE_makeEnemy), or NULL
  *   shipGrPtr/shipGr2ptr &spriteSheet9 or &spriteSheetT2000 (varz.c), or NULL
- *   mapY*Pos, BKwrap*    into megaData{1,2,3}.mainmap -- fixed globals, so an
+ *   mapY*Pos, BKwrap*    into megaData{1,2,3}.mainmap; fixed globals, so an
  *                        element offset relocates exactly (mapYPos can sit one
  *                        element BEFORE the array: the level-init -1)
- *   player[].lives       re-derived by the restore fixup; never encoded
- */
+ *   player[].lives       re-derived by the restore fixup; never encoded */
 
 enum
 {
@@ -508,7 +504,7 @@ bool rollback_wire_export(Uint8 *dst)
 
 	/* Prove the payload: decode a copy and compare it against live state (which
 	 * rb_save_to just captured and nothing has touched since).  A mismatch means
-	 * an encode/decode bug or an unregistered relocation -- refuse to ship it. */
+	 * an encode/decode bug or an unregistered relocation; refuse to ship it. */
 	Uint8 *chk = malloc(rb_total_size);
 	if (!chk)
 		return false;
@@ -614,7 +610,7 @@ static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz)
 	return bad;
 }
 
-/* --- Per-tick input tuples (self-test) ----------------------------------------
+/* Per-tick input tuples for the self-test.
  *
  * The self-test replays exactly one tick, so a single record (not a ring) is
  * enough: both players' tuples plus tick-wide event bits.
@@ -651,7 +647,7 @@ Uint16 rollback_st_events(void)
 	return st_event_bits;
 }
 
-/* --- Self-test driver --------------------------------------------------------- */
+/* Self-test driver. */
 
 static Uint32 st_frame = 0;
 static bool   st_verifying = false;   /* replay pass in flight             */
@@ -843,7 +839,7 @@ void rollback_level_end(void)
 	rb_log_flush();  /* the level's trace is complete; get it on disk */
 }
 
-/* --- Registration root --------------------------------------------------------
+/* Registration root.
  *
  * The extern-global list lives in rollback_state.c; files with sim-relevant
  * statics export a <file>_register_rollback() collected here.
@@ -875,7 +871,7 @@ void rollback_register_all(void)
 
 /* Registry shape, not registry contents.  Names go in because two builds can
  * reach the same total by different routes, and offsets go in because the wire
- * snapshot is positional -- an item that merely MOVED would corrupt the peer
+ * snapshot is positional; an item that merely MOVED would corrupt the peer
  * just as thoroughly as one that changed size. */
 Uint32 rollback_layout_fingerprint(void)
 {

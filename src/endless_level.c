@@ -204,7 +204,7 @@ bool endlessMilestoneZone(void)
 	return endlessMode && endlessMilestoneKind() != 0;
 }
 
-// Whether this zone shows the "light cone" spotlight -- rolled in endlessRegenerateLevel.
+// Whether this zone shows the "light cone" spotlight; rolled in endlessRegenerateLevel.
 static bool endlessLightCone = false;
 
 bool endlessLightConeActive(void) { return endlessLightCone; }

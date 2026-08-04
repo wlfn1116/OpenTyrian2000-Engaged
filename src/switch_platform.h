@@ -28,8 +28,8 @@ bool switch_swkbd(char *out, size_t out_size, size_t max_len,
                   const char *initial, const char *guide, bool numeric);
 
 // This console's own IPv4 address, in network byte order (the layout SDL_net's IPaddress.host
-// uses). Needed because SDL_net cannot enumerate interfaces here -- libnx services no
-// SIOCGIFCONF -- so the netplay lobby has no other way to show a host their address.
+// uses). Needed because SDL_net cannot enumerate interfaces here; libnx services no
+// SIOCGIFCONF, leaving the lobby no other way to show the host address.
 // Returns false if the network is down or the address is not known.
 bool switch_get_local_ip(uint32_t *out);
 

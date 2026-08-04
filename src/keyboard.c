@@ -101,8 +101,6 @@ void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 
 void init_keyboard(void)
 {
-	//SDL_EnableKeyRepeat(500, 60); TODO Find if SDL2 has an equivalent.
-
 	newkey = newmouse = false;
 	keydown = mousedown = false;
 
@@ -363,8 +361,8 @@ void service_SDL_events(JE_boolean clear_new)
 #if defined(__SWITCH__) || defined(__vita__)
 			// Touchscreen. In menus (absolute mouse mode) a touch is a tap-to-click at the
 			// touched point. During gameplay (relative mouse mode, set by mouseSetRelative)
-			// a drag steers the ship RELATIVELY -- fed through the same relative-motion
-			// channel the render-rate ship reads -- so circling a thumb anywhere circles
+			// a drag steers the ship RELATIVELY; fed through the same relative-motion
+			// channel read by render-rate movement. Circling a thumb anywhere circles
 			// the ship, like a trackpad. tfinger coords are normalised [0,1] to the window.
 			case SDL_FINGERDOWN:
 			case SDL_FINGERMOTION:
@@ -372,8 +370,7 @@ void service_SDL_events(JE_boolean clear_new)
 			{
 #ifdef __vita__
 				// The Vita has two touch panels: front (touch device 0) and rear (device 1).
-				// Ignore the rear panel entirely -- it's very easy to brush accidentally while
-				// holding the console. Only the front screen drives the pointer / ship.
+				// Ignore rear touch so normal grip cannot steer or click.
 				if (SDL_GetNumTouchDevices() >= 2 && ev.tfinger.touchId == SDL_GetTouchDevice(1))
 					break;
 #endif
@@ -445,7 +442,6 @@ void service_SDL_events(JE_boolean clear_new)
 				break;
 
 			case SDL_QUIT:
-				/* TODO: Call the cleanup code here. */
 				exit(0);
 				break;
 		}
@@ -454,7 +450,6 @@ void service_SDL_events(JE_boolean clear_new)
 
 void JE_clearKeyboard(void)
 {
-	// /!\ Doesn't seems important. I think. D:
 }
 
 /* A typed digit (0-9) from a scancode, or -1. Both the number row and the keypad. */

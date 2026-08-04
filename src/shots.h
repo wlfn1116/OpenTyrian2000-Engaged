@@ -32,17 +32,17 @@ typedef struct {
 	// Endless pierce lockout, PER BULLET (endless_combat.c). It has to live here and not on the
 	// enemy: a per-enemy lock let the first bullet of a tick lock the hull and threw away every
 	// other bullet that tick, which for an 8-bullet piercing weapon like the Mega Cannon meant
-	// discarding 7 of 8 hits -- the weapon stopped doing damage at all. Per bullet, all eight still
+	// discarding 7 of 8 hits; the weapon stopped doing damage at all. Per bullet, all eight still
 	// land; each is merely stopped from re-hitting the same hull on every single tick it overlaps,
 	// which is the actual thing being taxed.
 	JE_byte pierceLock;       // sim ticks before this bullet may deal damage again
 	JE_byte pierceLockCarry;  // sub-tick remainder, so the lockout can ramp in fractions of a tick
 	JE_byte pierceLockPending;// largest lockout (1/100 tick) charged during the CURRENT tick, banked
-	                          // until the top of the next pass -- see the hit site for why
+	                          // until the top of the next pass; see the hit site for why
 } PlayerShotDataType;
 
 // Player-shot pool size, bumped from the original 81 so a sustained special (e.g. an autofired
-// Minefield) — or a wide custom weapon — can't fill the pool and starve the main weapon. The
+// Minefield) or a wide custom weapon cannot fill the pool and starve the main weapon. The
 // render-list id range gates this: ids RL_ID_PSHOT_BASE(3000)+slot must stay below the next id
 // range (RL_ID_ESHOT_BASE), so those bases were re-spaced (see render_list.h) to give the pool
 // room. 8000 comfortably covers the widest possible weapon (255 bullets x ~30 concurrent volleys);
@@ -72,5 +72,13 @@ JE_integer player_shot_create(
 	JE_word portnum, uint shot_i, JE_word px, JE_word py,
 	JE_word mousex, JE_word mousey,
 	JE_word wpnum, JE_byte playernum);
+
+/** Creates the chain-reaction child of a shot that just hit, at the impact point.
+ * \a salvo_boost carries the parent's endless Opening Salvo tag onto every child bullet and
+ * replaces the live salvo-window test.
+ */
+JE_integer player_shot_create_chained(
+	JE_word px, JE_word py, JE_word mousex, JE_word mousey,
+	JE_word wpnum, JE_byte playernum, bool salvo_boost);
 
 #endif // SHOTS_H

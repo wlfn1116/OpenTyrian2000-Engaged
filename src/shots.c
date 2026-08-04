@@ -28,7 +28,7 @@
 #include "video.h"
 #include "varz.h"
 
-// I'm pretty sure the last extra entry is never used.
+// The extra entry preserves the original allocation size.
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
 JE_byte shotAvail[MAX_PWEAPON]; /* [1..MaxPWeapon] */   /*0:Avail 1-255:Duration left*/
 
@@ -87,18 +87,6 @@ void simulate_player_shots(void)
 					shotAvail[z] = 0;
 					goto draw_player_shot_loop_end;
 				}
-
-/*				if (shot->shotTrail != 255)
-				{
-					if (shot->shotTrail == 98)
-					{
-						JE_setupExplosion(shot->shotX - shot->shotXM, shot->shotY - shot->shotYM, shot->shotTrail);
-					}
-					else
-					{
-						JE_setupExplosion(shot->shotX, shot->shotY, shot->shotTrail);
-					}
-				}*/
 
 				JE_word anim_frame = shot->shotGr + shot->shotAni;
 				if (++shot->shotAni == shot->shotAniMax)
@@ -345,7 +333,7 @@ bool player_shot_move_and_draw(
 		// rate position on the attached axis so the beam base stays on the gun; the
 		// travelling axis extrapolates (see ship_attach in render_list.c). Velocity is
 		// this tick's real on-screen delta (post-accel, post-circle, post ship-lock), so
-		// the exact motion extrapolates — fast shots exit the top cleanly, recycled slots
+		// the exact motion extrapolates; fast shots exit the top cleanly, recycled slots
 		// never streak.
 		rl_current_id = RL_ID_PSHOT_BASE + shot_id;
 		// The linked-Dragonwing aim markers are recreated every tick, so their
@@ -409,7 +397,7 @@ bool player_shot_move_and_draw(
 				sprite_frame = sprite_frame % 1000;
 			}
 			// salvoBoost 1 = first drawn tick (always the launch flash), stepping to 2 for the
-			// flight trail -- which a weapon with its own boosted plume doesn't need. Both stay
+			// flight trail, which a weapon with its own boosted plume does not need. Both stay
 			// truthy, which is all the collision-time damage bonus tests.
 			if (shot->salvoBoost)
 			{
@@ -443,6 +431,12 @@ bool player_shot_move_and_draw(
 	return true;
 }
 
+// Opening Salvo tag for the shots created by the next player_shot_create call, replacing the live
+// window test. Only player_shot_create_chained sets these, and it clears them before returning, so
+// they never span a sim tick and need no rollback entry.
+static bool salvoBoostOverride = false;    // take the tag from salvoBoostFromParent
+static bool salvoBoostFromParent = false;  // the chain parent's tag, valid while the override is set
+
 JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY, JE_word wpNum, JE_byte playerNum)
 {
 	static const JE_byte soundChannel[11] /* [1..11] */ = {0, 2, 4, 4, 2, 2, 5, 5, 1, 4, 1};
@@ -470,7 +464,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 	// Endless kill-fire BOON (Turbodrive / Overdrive): the boosted fire rate must not drain the
 	// generator faster, so shots fired during the window are power-free. An evil curse fires SLOWER,
-	// so it gets no such break -- normal power cost applies.
+	// so it gets no such break; normal power cost applies.
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		power_use = 0;
 
@@ -488,6 +482,13 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 	if (weapon->sound > 0)
 		soundQueue[soundChannel[bay_i]] = weapon->sound;
+
+	// Endless Opening Salvo perk: tag the shots that belong to a charged volley, so the collision
+	// applies the damage bonus only to those. A chain-reaction child takes its parent's tag and
+	// ignores the window, which keeps the bonus with the volley that launched the carrier.
+	const JE_byte salvo_tag = (salvoBoostOverride
+	                           ? salvoBoostFromParent
+	                           : (endlessFxActive() && endlessOpeningSalvoVolleyActive())) ? 1 : 0;
 
 	int shot_id = MAX_PWEAPON;
 	/*Rot*/
@@ -510,9 +511,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 		PlayerShotDataType* shot = &playerShotData[shot_id];
 		shot->chainReaction = 0;
-		// Endless Opening Salvo perk: tag this shot if it belongs to a charged volley, so the
-		// collision applies the damage bonus only to those shots (not every shot on screen).
-		shot->salvoBoost = (endlessFxActive() && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
+		shot->salvoBoost = salvo_tag;
 		// A recycled slot must not inherit the previous bullet's pierce lockout.
 		shot->pierceLock = 0;
 		shot->pierceLockCarry = 0;
@@ -560,8 +559,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 		shot->shotTrail = weapon->trail;
 
-		// Tyrian 2000: I'm not sure precisely how it does it in the original game, but trail 198 results in
-		// only the Flying Punch's center tile having a trail. This replicates that behavior
+		// For trail 198, only the Flying Punch center tile leaves a trail.
 		if (shot->shotTrail == 198 && shotMultiPos[bay_i] > 1)
 		{
 			shot->shotTrail = 255;
@@ -706,7 +704,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 		shotRepeat[bay_i] = weapon->shotrepeat;
 		// Endless Evil Turbodrive/Overdrive curse: JAM the guns by lengthening the cooldown as the
-		// kill combo climbs (0 unless an evil kill-fire window is up). Main/sidekick guns only -- the
+		// kill combo climbs (0 unless an evil kill-fire window is up). Main/sidekick guns only; the
 		// special bays run their own cadence (see varz.c). shotRepeat is a byte, so clamp.
 		if (endlessFxActive() && bay_i != SHOT_SPECIAL && bay_i != SHOT_SPECIAL2)
 		{
@@ -719,5 +717,20 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		}
 	}
 
+	return shot_id;
+}
+
+// A chain-reaction carrier deals no damage of its own: it is consumed on impact and replaced by the
+// weapon named in its attack byte, which is what the enemy actually takes. The carrier's Opening
+// Salvo tag passes down so a bomb fired in a charged window still explodes for the boost once the
+// window has closed, and a carrier that loiters past one cannot pick the boost up from a later volley.
+JE_integer player_shot_create_chained(JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY,
+                                      JE_word wpNum, JE_byte playerNum, bool salvoBoost)
+{
+	salvoBoostOverride = true;
+	salvoBoostFromParent = salvoBoost;
+	const JE_integer shot_id = player_shot_create(0, SHOT_MISC, PX, PY, mouseX, mouseY, wpNum, playerNum);
+	salvoBoostOverride = false;
+	salvoBoostFromParent = false;
 	return shot_id;
 }

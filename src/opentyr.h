@@ -28,8 +28,8 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-// For the handful of functions that exit() rather than return. Purely an annotation -- it generates
-// no code -- but without it every caller reads as "might carry on", so a bail-out on a failed
+// For the handful of functions that exit() rather than return. Purely an annotation; it generates
+// no code. Without it, callers appear able to continue after a failed
 // allocation looks to analysis like a null dereference on the next line.
 #if defined(_MSC_VER)
 #define OT_NORETURN __declspec(noreturn)
@@ -49,7 +49,7 @@
 
 // States an invariant to static analysis. Generates no code, and is nothing at all off MSVC. Only
 // for bounds guaranteed by a helper the analyser can't see through (a clamp behind a call, a global
-// whose real range is set elsewhere) and that have been checked by hand -- an OT_ASSUME that isn't
+// whose real range is set elsewhere) and that have been checked by hand; an OT_ASSUME that isn't
 // true silences a real bug instead of a false one.
 #if defined(_MSC_VER)
 #define OT_ASSUME(e) __analysis_assume(e)

@@ -27,14 +27,7 @@ static void permute(const char *argv[], int *first_nonopt, int *first_opt, int a
 static int parse_short_opt(int argc, const char *const argv[], const Options *options, Option *option);
 static int parse_long_opt(int argc, const char *const argv[], const Options *options, Option *option);
 
-/*!
- * \brief Locate a character in a a string.
- * 
- * \param[in] s the string
- * \param[in] c the character
- * \return the pointer to the first occurrence of \p c in \p s if there is an occurrences;
- *         otherwise the pointer to the terminating NUL character of \p s
- */
+/*! Returns the first occurrence of \p c, or the terminating NUL character. */
 static char *ot_strchrnul(const char *s, int c);
 
 Option parse_args(int argc, const char *argv[], const Options *options)
@@ -223,13 +216,13 @@ static int parse_long_opt(int argc, const char *const argv[], const Options *opt
 				else  // arg is missing
 				{
 					option->value = OPTION_MISSING_ARG;
-					// can't break, gotta check for ambiguity
+					// Continue scanning for an ambiguous match.
 				}
 			}
 			
 			if (arg_opt_len == strlen(options->long_opt)) // exact match
 				break;
-			// can't break for partial match, gotta check for ambiguity
+			// Partial matches must also be checked for ambiguity.
 		}
 	}
 	

@@ -17,23 +17,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-/*
- * This file is largely based on (and named after) a set of common reading/
- * writing functions used in Quake engines.  Its purpose is to allow extraction
- * of bytes, words, and dwords in a safe, endian adjusted environment and should
- * probably be used in any situation where checking for buffer overflows
- * manually makes the code a godawful mess.
- *
- * Currently this is only used by the animation decoding.
- *
- * This file is written with the intention of being easily converted into a
- * class capable of throwing exceptions if data is out of range.
- *
- * If an operation fails, subsequent operations will also fail.  The sizebuf
- * is assumed to be in an invalid state.  This COULD be changed pretty easily
- * and in normal Quake IIRC it is.  But our MO is to bail on failure, not
- * figure out what went wrong (making throws perfect).
- */
+/* Endian-aware bounded buffer access adapted from Quake-style size buffers.
+ * An error latches for all later operations because animation decoding aborts
+ * the complete record after any failed read or write. */
 #include "sizebuf.h"
 
 #include "SDL_endian.h"
@@ -120,10 +106,7 @@ void SZ_Seek(sizebuf_t * sz, long count, int mode)
 		sz->error = false;
 }
 
-/* The code below makes use of pointer casts, similar to what is in efread.
- * It's not the ONLY way to write ints to a stream, but it's probably the
- * cleanest of the lot.  Better to have it here than littered all over the code.
- */
+/* Integer access stays centralized so bounds and endian handling remain paired. */
 unsigned int MSG_ReadByte(sizebuf_t * sz)
 {
 	unsigned int ret;

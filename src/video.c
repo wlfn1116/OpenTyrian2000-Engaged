@@ -99,8 +99,8 @@ int effective_supersample(void)
 		else
 			factor = scalers[scaler].width / vga_width;
 
-		// A 1x scaler would resolve Auto to 1x — no sub-pixel motion at all, a
-		// pointless state — so Auto always supersamples at least 2x.
+		// A 1x scaler would resolve Auto to 1x; no sub-pixel motion at all, a
+		// pointless state. Auto therefore supersamples at least 2x.
 		if (factor < 2)
 			factor = 2;
 	}
@@ -142,7 +142,7 @@ static int hi_stage_w = 0, hi_stage_h = 0;
 
 static ScalerFunction scaler_function;
 
-#ifndef __vita__  // side-gradient cache -- unused on Vita (plain black pillarbox)
+#ifndef __vita__  // side-gradient cache; unused on Vita (plain black pillarbox)
 static Uint8 gradient_cache[256][MENU_X_OFFSET];
 static Uint32 last_gradient_palette[256];
 static bool gradient_cache_valid = false;
@@ -296,7 +296,7 @@ static void init_texture(void)
 	// The Native scaler sizes its texture from the live window; refresh first.
 	update_native_scaler_dims();
 
-	int bpp = 32; // TODOSDL2
+	int bpp = 32; // renderer texture format
 	Uint32 format = bpp == 32 ? SDL_PIXELFORMAT_RGB888 : SDL_PIXELFORMAT_RGB565;
 	int scaler_w = scalers[scaler].width;
 	int scaler_h = scalers[scaler].height;
@@ -364,7 +364,7 @@ void reinit_fullscreen(int new_display)
 
 #if defined(__SWITCH__) || defined(__vita__)
 	// Consoles have one always-fullscreen display and the SDL driver owns the window size.
-	// Forcing FULLSCREEN_DESKTOP here pinned the Switch buffer to 1080p -- leave it untouched.
+	// Forcing FULLSCREEN_DESKTOP here pinned the Switch buffer to 1080p; leave it untouched.
 	return;
 #endif
 
@@ -452,7 +452,7 @@ void toggle_fullscreen(void)
 
 bool init_scaler(unsigned int new_scaler)
 {
-	int bpp = main_window_tex_format->BitsPerPixel; // TODOSDL2
+	int bpp = main_window_tex_format->BitsPerPixel; // preserve the active texture depth
 
 	scaler = new_scaler;
 
@@ -603,7 +603,7 @@ static void update_native_scaler_dims(void)
 
 // Windowed size for the Native scaler (which has no fixed output size to restore):
 // the largest integer multiple of the logical screen that fits the desktop's usable
-// area — a big, clean window.
+// area; a big, clean window.
 static void native_windowed_size(int *out_w, int *out_h)
 {
 	int factor = 1;
@@ -774,7 +774,7 @@ static bool ensure_hi_texture(int w, int h)
 
 // (Re)create the intermediate render target for the sharp-bilinear prescale (or the
 // minification halving pass). Returns NULL on failure; callers fall back to a direct
-// linear copy — softer, never broken.
+// linear copy; softer, never broken.
 static SDL_Texture *ensure_hi_stage(int w, int h)
 {
 	if (hi_stage != NULL && hi_stage_w == w && hi_stage_h == h)
@@ -806,7 +806,7 @@ void present_hi(SDL_Surface *hi)
 	{
 		// Can't build the hi texture (GPU limit / OOM): show the frame through the
 		// classic path rather than nothing. It arrives NxN, which the scaler can't
-		// take, so just present the logical screen — one soft frame, no crash.
+		// take, so just present the logical screen; one soft frame, no crash.
 		scale_and_flip(VGAScreen);
 		return;
 	}
@@ -835,7 +835,7 @@ void present_hi(SDL_Surface *hi)
 	}
 
 	// Fit into the same on-screen rectangle the classic path would use (sized from
-	// the LOGICAL screen + the scaler texture), so supersampling only adds detail —
+	// the LOGICAL screen + the scaler texture), so supersampling only adds detail;
 	// it never zooms or resizes the output.
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(VGAScreen, &dst_rect);
@@ -847,7 +847,7 @@ void present_hi(SDL_Surface *hi)
 
 	if (render_supersample_filter == SS_FILTER_NONE)
 	{
-		// None: no filtering at any ratio — point-sample the hi frame straight to the
+		// None: no filtering at any ratio; point-sample the hi frame straight to the
 		// output. The supersampled detail is dropped rather than blended (raw, aliased
 		// pixels); for when zero smoothing is wanted over the antialias supersampling
 		// normally buys. Skips both the magnify and minify special-casing below.
@@ -857,7 +857,7 @@ void present_hi(SDL_Surface *hi)
 	{
 		if (render_supersample_filter == SS_FILTER_SHARP)
 		{
-			// Sharp: plain nearest magnification — hard pixel blocks at any output
+			// Sharp: plain nearest magnification; hard pixel blocks at any output
 			// size, exactly the classic fullscreen look. (Magnification repeats
 			// texels rather than dropping them, so there is no motion shimmer.)
 			direct_mode = SDL_ScaleModeNearest;
@@ -922,7 +922,7 @@ void video_repaint(void)
 // present (a resolution change / dock transition the game didn't initiate a redraw for),
 // or when `force` is set (an EXPOSED / render-targets-reset event, where the size is
 // unchanged but the backbuffer contents were lost). Cheap in the common case: one size
-// query, no present -- so it's safe to call on every event-pump pass.
+// query without a present, making it safe on every event-pump pass.
 void video_repaint_if_stale(bool force)
 {
 	if (main_window == NULL || main_window_renderer == NULL)
@@ -939,7 +939,7 @@ void video_repaint_if_stale(bool force)
 	}
 }
 
-#ifndef __vita__  // gradient helpers -- unused on Vita, which draws a plain black pillarbox
+#ifndef __vita__  // gradient helpers; unused on Vita, which draws a plain black pillarbox
 static Uint8 nearest_palette_index(Uint8 r, Uint8 g, Uint8 b)
 {
 	int best = 0;

@@ -1,7 +1,8 @@
 # Nintendo Switch homebrew build
 
 This target builds `opentyrian2000.nro` for the Homebrew Launcher or a Switch
-emulator. It is not an eShop release and requires a homebrew-capable system.
+emulator. It requires a homebrew-capable system and is distributed separately
+from the Nintendo eShop.
 
 ## Requirements
 
@@ -61,8 +62,9 @@ Text-entry screens open the Switch software keyboard.
 
 ## Networking
 
-Two-player netplay is available from the Network entry on the main menu. Both
-machines must be on the same network; the port is UDP 1333 by default.
+Two-player netplay is available from **2 Player Online Arcade** on the main
+menu. Both machines must be on the same network; the port is UDP 1333 by
+default.
 
 Find LAN Games discovers a host on the same subnet, so neither player normally
 has to type an address. The host screen shows this console's IP for the cases

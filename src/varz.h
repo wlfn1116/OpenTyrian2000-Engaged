@@ -46,7 +46,7 @@ enum
 // Enemy-shot pool. ENEMY_SHOT_MAX sizes the enemyShot[]/enemyShotAvail[] arrays AND is the pool
 // cap used in ENDLESS mode, where the "rising tide" fans out many extra enemy bullets. Normal
 // (non-endless) play stays capped at ENEMY_SHOT_NORMAL (the original 60), so those levels fire
-// exactly as before -- the enemy-shot creation loop (tyrian2.c) picks the cap by mode. The pool
+// exactly as before; the enemy-shot creation loop (tyrian2.c) picks the cap by mode. The pool
 // must stay below the render-list id headroom: RL_ID_ESHOT_BASE + slot < RL_ID_EXPL_BASE, i.e.
 // ENEMY_SHOT_MAX <= 1000 (see render_list.h).
 #define ENEMY_SHOT_NORMAL  60   // non-endless cap (= original behaviour)
@@ -56,7 +56,7 @@ enum
 
 #define MAX_EXPLOSIONS           200
 #define MAX_REPEATING_EXPLOSIONS 20
-#define MAX_SUPERPIXELS          50000  // was 101; global spark ring buffer -- bigger = denser/longer explosion showers
+#define MAX_SUPERPIXELS          50000  // was 101; global spark ring buffer; bigger = denser/longer explosion showers
 #define SUPERPIXELS_CLASSIC      101  // the original DOS spark cap; the "Extra Sparks" toggle (extraSparks, config.c) picks between the two
 
 struct JE_SingleEnemyType
@@ -358,7 +358,7 @@ extern JE_byte    debugTwiddleSpecial;      /* debug: selected twiddle's special
 extern JE_boolean debugAutofireTwiddle;     /* debug: auto-fire the selected twiddle while fire is held */
 extern JE_boolean debugTwiddleTrigger;      /* debug: one-shot fire request from the debug menu */
 extern JE_boolean debugToggleFire;          /* debug: fire button toggles auto-fire on/off */
-extern JE_boolean debugToggleFireActive;    /* debug: Toggle Fire latch -- currently auto-firing */
+extern JE_boolean debugToggleFireActive;    /* debug: Toggle Fire latch; currently auto-firing */
 
 // "Autofire Charge Sidekicks" mode (cycled in the debug menu). Governs whether a
 // charge sidekick (pwr > 0) fires while the main fire button is held.
@@ -369,7 +369,7 @@ enum
 	CHARGE_AUTOFIRE_FULL = 2,  // autofires on the main button only when fully charged
 	CHARGE_AUTOFIRE_FAST = 3,  // like ON, but reloads at the fastest charge stage's shotrepeat;
 	                           // paired with Instant Charge this fires full-power shots at top speed
-	CHARGE_AUTOFIRE_NUM  = 4,  // (append new modes; the value is saved per slot -- don't renumber)
+	CHARGE_AUTOFIRE_NUM  = 4,  // (append new modes; the value is saved per slot; don't renumber)
 };
 extern JE_byte    chargeSidekickAutofire;
 extern JE_boolean dispenserBasesActive;

@@ -1,14 +1,6 @@
-#---------------------------------------------------------------------------------
-# OpenTyrian 2000 Engaged -- Nintendo Switch homebrew build
-#
-# Produces opentyrian2000.nro for the Homebrew Launcher (Atmosphere/CFW) or an
-# emulator. Based on the standard devkitPro libnx application template.
-#
-# Requires devkitPro with: switch-dev  switch-sdl2   (dkp-pacman -S ...)
-# Build from this directory:  make
-#---------------------------------------------------------------------------------
+# Nintendo Switch homebrew build, based on the devkitPro libnx template.
+# Requires switch-dev, switch-sdl2, and switch-sdl2_net. Run `make` here.
 .SUFFIXES:
-#---------------------------------------------------------------------------------
 
 ifeq ($(strip $(DEVKITPRO)),)
 $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitpro")
@@ -17,9 +9,7 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libnx/switch_rules
 
-#---------------------------------------------------------------------------------
-# Metadata baked into the .nro (shown in the Homebrew Launcher)
-#---------------------------------------------------------------------------------
+# Homebrew Launcher metadata
 APP_TITLE   := OpenTyrian 2000 Engaged
 APP_AUTHOR  := wlfn / OpenTyrian Team
 
@@ -32,22 +22,18 @@ ifeq ($(strip $(APP_VERSION)),)
     APP_VERSION := 0.0.0
 endif
 
-#---------------------------------------------------------------------------------
-# TARGET   is the output filename (opentyrian2000.nro / .elf)
+# TARGET   is the output filename (opentyrian2000.nro and .elf)
 # BUILD    is the intermediate object directory
 # SOURCES  are the directories scanned for .c/.cpp/.s
 # INCLUDES are the directories scanned for .h
 # ROMFS    is packed read-only into the .nro and mounted at romfs:/
-#---------------------------------------------------------------------------------
 TARGET   := opentyrian2000
 BUILD    := build
 SOURCES  := ../src
 INCLUDES := ../src
 ROMFS    := romfs
 
-#---------------------------------------------------------------------------------
-# options for code generation
-#---------------------------------------------------------------------------------
+# Code generation
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
 # SDL2 build flags come from the switch-portlibs pkg-config wrapper. Resolve it by
@@ -56,41 +42,20 @@ ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 # (If your devkitPro lacks this wrapper, see switch/README.md for the literal flags.)
 PKGCONF := $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config
 
-# __SWITCH__ is defined automatically by devkitA64; -fsigned-char keeps the
-# behaviour the game assumes on x86 (ARM chars are unsigned by default).
-#
-# -ffp-contract=off: gcc otherwise fuses `a*b + c` into a single FMADD (one rounding
-# instead of two), which MSVC's /fp:precise never does -- so the same float expression
-# gave the PC and this build different answers. Netplay is cross-platform, so the
-# simulation's float results have to match bit for bit.
-#
-# -DNDEBUG: this is a RELEASE build (it's what players run), so compile out assert()
-# exactly like the desktop MSVC Release config does. Without it, asserts are LIVE, and
-# several are latent tripwires the engine relies on NDEBUG to elide -- e.g. blit_sprite()
-# asserts on an out-of-range sprite index that the endless shop legitimately produces
-# (draw_ship_illustration with a ship whose big graphic isn't in the illustrated set),
-# and JE_loadCompShapesB asserts data==NULL. On desktop Release those are silent no-ops
-# (the code then returns/skips gracefully); on Switch a live assert -> abort() -> _exit()
-# closes the game with NO Atmosphere crash report (looks like a silent crash). Keep -g so
-# the ELF still symbolises real faults for crash-report decoding (see switch/README / memory).
-#
-# -Wno-format-truncation: matches the root Makefile. The engine's snprintf calls build fixed-width
-# on-screen strings where a clamped tail is the intended behaviour, and gcc can't see the real
-# value ranges, so -Wall's version of this check only produces noise here.
+# Signed char matches the engine's x86 assumptions; unfused floats preserve
+# cross-platform netplay parity. NDEBUG matches desktop Release behavior, while
+# debug symbols remain available for crash reports. Fixed-width display strings
+# intentionally permit snprintf truncation.
 CFLAGS := -g -Wall -Wno-format-truncation -O2 -DNDEBUG -ffunction-sections -fsigned-char \
           -ffp-contract=off $(ARCH)
 
-# TYRIAN_DIR is a compile-time fallback data path the engine expects to be defined
-# (desktop builds pass it too). On Switch the sdmc:/ and romfs: paths prepended in
-# file.c take priority, so this is only a last-resort placeholder.
-# WITH_NETWORK turns on the netplay lobby and the rollback netcode. It needs SDL2_net
-# (dkp-pacman -S switch-sdl2_net) and socketInitializeDefault(), which switch_platform.c
-# calls -- libnx leaves the BSD socket layer unmounted until then.
+# TYRIAN_DIR is a fallback behind the sdmc:/ and romfs: paths. WITH_NETWORK uses
+# switch-sdl2_net and the socket initialization in switch_platform.c.
 CFLAGS += $(INCLUDE) -D__SWITCH__ -DWITH_NETWORK -DTYRIAN_DIR='"."' $(shell $(PKGCONF) sdl2 SDL2_net --cflags)
 
 # Short commit id for the title screen. CI passes OPENTYRIAN_COMMIT in the
 # environment (git can be absent inside the container); local builds ask git.
-# Empty -> the define is omitted and the game hides the commit line.
+# An empty value omits the title-screen commit line.
 OPENTYRIAN_COMMIT ?= $(shell git -C $(TOPDIR)/.. rev-parse --short HEAD 2>/dev/null)
 ifneq ($(strip $(OPENTYRIAN_COMMIT)),)
     CFLAGS += -DOPENTYRIAN_COMMIT='"$(OPENTYRIAN_COMMIT)"'
@@ -105,18 +70,11 @@ LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $
 # SDL2_net comes first so the static linker resolves its SDL2 references.
 LIBS := $(shell $(PKGCONF) sdl2 SDL2_net --libs --static) -lnx -lm
 
-#---------------------------------------------------------------------------------
-# list of directories containing libraries, this must be the top level
-# containing include and lib
-#---------------------------------------------------------------------------------
+# Library roots containing include/ and lib/
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
-#---------------------------------------------------------------------------------
-# no real need to edit anything past this point unless you need to add additional
-# rules for different file extensions
-#---------------------------------------------------------------------------------
+# Standard devkitPro recursive-build rules
 ifneq ($(BUILD),$(notdir $(CURDIR)))
-#---------------------------------------------------------------------------------
 
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
@@ -130,9 +88,7 @@ CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 
-#---------------------------------------------------------------------------------
-# use CXX for linking C++ projects, CC for standard C
-#---------------------------------------------------------------------------------
+# Select the linker from the source language.
 ifeq ($(strip $(CPPFILES)),)
 	export LD := $(CC)
 else
@@ -193,7 +149,6 @@ endif
 
 .PHONY: $(BUILD) clean all
 
-#---------------------------------------------------------------------------------
 all: $(BUILD)
 
 $(BUILD):
@@ -204,20 +159,17 @@ clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(TARGET).nro $(TARGET).nacp $(TARGET).elf
 
-#---------------------------------------------------------------------------------
 else
 .PHONY: all
 
 DEPENDS := $(OFILES:.o=.d)
 
-#---------------------------------------------------------------------------------
-# main targets
-#---------------------------------------------------------------------------------
+# Main targets
 all: $(OUTPUT).nro
 
 # switch_rules provides the recipes: %.nro (runs elf2nro ... $(NROFLAGS)) and %.nacp.
-# NROFLAGS are command-line args to elf2nro, NOT prerequisites -- the .nro just needs
-# the linked .elf plus the generated .nacp metadata.
+# NROFLAGS are elf2nro arguments, not prerequisites. The .nro depends on the
+# linked .elf and generated .nacp metadata.
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 $(OUTPUT).elf: $(OFILES)
 
@@ -225,6 +177,4 @@ $(OFILES_SRC): $(HFILES)
 
 -include $(DEPENDS)
 
-#---------------------------------------------------------------------------------
 endif
-#---------------------------------------------------------------------------------

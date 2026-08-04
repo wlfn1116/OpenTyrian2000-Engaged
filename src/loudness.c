@@ -24,7 +24,7 @@
 #include "opentyr.h"
 #include "params.h"
 
-// Optional MIDI music backends -- FluidSynth or the OS synth (see loudness.h and
+// Optional MIDI music backends; FluidSynth or the OS synth (see loudness.h and
 // OPL stays the default.
 #ifdef WITH_MIDI
 #include <midiproc.h>
@@ -55,7 +55,7 @@ MusicDevice music_device = OPL;
 char soundfont[4096] = { 0 };
 
 // True once FluidSynth is the active MIDI backend AND a readable SoundFont is
-// configured -- i.e. the user's .sf2 will actually be heard. Surfaced in the
+// configured; i.e. the user's .sf2 will actually be heard. Surfaced in the
 // Sound menu and crash log so the choice is confirmable (see init_audio()).
 bool midi_soundfont_loaded = false;
 
@@ -277,7 +277,7 @@ static const char *exe_dir(void)
 }
 
 // Scan one directory for loadable SoundFonts, keeping the newest seen so far in
-// best/bestTime -- which may already hold a match from an earlier directory, so the
+// best/bestTime. It may already hold a match from an earlier directory, so the
 // newest across every scanned directory wins. best[] is a full path, left untouched
 // when this directory holds nothing newer.
 static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize, FILETIME *bestTime)
@@ -310,7 +310,7 @@ static void scan_dir_for_soundfont(const char *dir, char *best, size_t bestSize,
 #endif
 
 // Find the newest loadable SoundFont sitting next to the .exe or in the data folder.
-// Returns false with `out` empty when there is none -- the condition that grays
+// Returns false with `out` empty when there is none; the condition that grays
 // FluidSynth out in the Sound menu (see soundfont_available()).
 static bool find_soundfont(char *out, size_t outSize)
 {
@@ -327,7 +327,7 @@ static bool find_soundfont(char *out, size_t outSize)
 
 // Cached "is there a SoundFont FluidSynth could load?": -1 unscanned, 0 none, 1 found.
 // The Sound menu asks on every redraw, so the directory scan runs once per audio
-// (re)start -- init_audio() clears it, and any music-device change restarts audio.
+// (re)start; init_audio() clears it, and any music-device change restarts audio.
 static int soundfont_scan = -1;
 
 // If no SoundFont is configured, adopt the newest one found next to the .exe or in
@@ -335,7 +335,7 @@ static int soundfont_scan = -1;
 static void autodetect_soundfont(void)
 {
 	if (soundfont[0] != '\0')
-		return;  // an explicit config/CLI soundfont already chosen -- respect it
+		return;  // an explicit config/CLI soundfont already chosen; respect it
 	find_soundfont(soundfont, sizeof(soundfont));
 }
 
@@ -384,7 +384,7 @@ bool soundfont_available(void)
 	return soundfont_scan != 0;
 }
 
-#else  /* !WITH_MIDI -- FluidSynth isn't compiled in, so no SoundFont can be used */
+#else  /* !WITH_MIDI; FluidSynth isn't compiled in, so no SoundFont can be used */
 
 bool soundfont_available(void) { return false; }
 
@@ -716,8 +716,8 @@ void play_song(unsigned int song_num)  // FKA NortSong.playSong
 }
 
 // Forget which song is selected, so the next play_song() reloads the track even when it names the
-// one already up. That same-song early-out is normally right -- it stops a re-issued jingle
-// restarting every tick -- but fade_song leaves a song SELECTED at volume 1 rather than stopped,
+// one already up. That same-song early-out is normally right; it stops a re-issued jingle
+// restarting every tick. fade_song leaves a song selected at volume 1 rather than stopped,
 // so a screen that fades out and then returns to the same track has no other way to be heard.
 void clear_song_selection(void)
 {

@@ -28,14 +28,10 @@
 
 #define SAVE_FILES_NUM (11 * 2)
 
-/* These are necessary because the size of the structure has changed from the original, but we
-   need to know the original sizes in order to find things in TYRIAN.SAV */
+/* Legacy record sizes are required to locate fields in TYRIAN.SAV. */
 #define SAVE_FILES_SIZE 2552
 #define SIZEOF_SAVEGAMETEMP SAVE_FILES_SIZE + 4 + 100
 #define SAVE_FILE_SIZE (SIZEOF_SAVEGAMETEMP - 4)
-
-/*#define SAVE_FILES_SIZE (2502 - 4)
-#define SAVE_FILE_SIZE (SAVE_FILES_SIZE)*/
 
 enum
 {
@@ -196,7 +192,7 @@ extern JE_SaveGameTemp saveTemp;
 extern JE_word editorLevel;
 extern int fps_cap;
 
-/* ---- Enhancements (Setup -> Enhancements...) ---- */
+/* Enhancement settings. */
 
 typedef enum
 {
@@ -322,7 +318,7 @@ extern bool gaugeFlashArmor;
 
 // Zica Laser Lv11 tweaks (menu: Enhancements -> Weapon Tweaks). Three independent axes:
 //   Base   : the Lv11 horizontal shot pattern, forced in every episode.
-//   Length : Lv11 shot length -- Short (vanilla) or Long (as long as the Lv10 beam).
+//   Length : Lv11 shot length; Short (vanilla) or Long (as long as the Lv10 beam).
 //   Buff   : also fire the Lv10 ship-locked beam alongside the Lv11 shots.
 // The defaults (Auto / Short / off) reproduce vanilla Tyrian exactly.
 enum

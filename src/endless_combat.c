@@ -671,7 +671,7 @@ int endlessKillBuffColorBank(void)
 	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL)
 		return 4;
 	if (endlessActiveMods & ENDLESS_MOD_OVERBLAST)
-		return 9;   // blue -- the damage-only buff
+		return 9;   // blue; the damage-only buff
 	return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
 }
 
@@ -688,18 +688,17 @@ int endlessKillBuffFireMultiplier(void)
 int endlessKillBuffDamagePercent(void)
 {
 	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_DMGUP))
-		return 0;  // only the DAMAGE buffs (Overdrive/Overblast) grant a bonus -- Turbodrive is fire-only
+		return 0;  // Overdrive and Overblast grant damage; Turbodrive affects fire rate only.
 	int pct = endlessBuffCharge * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
 	pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
 	return pct;
 }
 
-// Extra shotRepeat decrements this tick while a kill-fire BOON is up (multiplier = dec+1; the combo
-// ramp up top). Returns 0 during an evil curse -- those SLOW fire (see endlessKillFireJamTicks).
+// Extra shotRepeat decrements for a kill-fire boon. Hostile variants use endlessKillFireJamTicks.
 int endlessKillBuffFireDecrements(void)
 {
 	if (!(endlessActiveMods & ENDLESS_MOD_FIREBOOST))
-		return 0;  // only Turbodrive/Overdrive quicken fire (not Overblast); the evil mirrors slow it
+		return 0;  // Turbodrive and Overdrive quicken fire; Overblast does not.
 	int steps = endlessComboKills / ENDLESS_COMBO_KILLS_PER_STEP;
 	if (steps > ENDLESS_COMBO_MAX_STEPS)
 		steps = ENDLESS_COMBO_MAX_STEPS;
@@ -1033,10 +1032,8 @@ bool endlessScrollBoostActive(void)
 	return endlessScrollBoostPercent() != 0;
 }
 
-// Sub-pixel carries for the smooth-scroll distributor below.  File scope (not
-// function-local) so the rollback snapshot registry can reach them: they run on
-// EVERY level (not just endless), and their published fractions anchor sky-glue
-// enemy spawns -- a replayed tick must resume them from the same point.
+// File-scope carries let rollback restore campaign and Endless scroll fractions.
+// Enemy spawn anchors depend on these values resuming at the same tick.
 static int scrollExtraCarry[3] = { 0, 0, 0 };
 static int scrollExtraTrem[3]  = { 0, 0, 0 };
 
@@ -1220,12 +1217,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	endlessCampaignMods = saveCamp;
 }
 
-/* --- Rollback state registration ---------------------------------------------
- *
- * Only the pieces that mutate on EVERY level belong here (the smooth-scroll
- * carries).  Endless-mode-only state is out of scope: netplay cannot enter
- * endless, and the single-player self-test focuses on the campaign path.
- */
+/* Register only scroll state shared by campaign and Endless gameplay. */
 #include "rollback.h"
 
 void endless_combat_register_rollback(void)

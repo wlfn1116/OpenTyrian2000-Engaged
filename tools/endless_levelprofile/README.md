@@ -14,7 +14,7 @@ Run this only when the data or mapping changes:
 ```sh
 DOTNET_ROLL_FORWARD=Major dotnet \
   /path/to/Tyrian2000Atlas.dll \
-  --exportthreat threat.csv /path/to/OpenTyrian2000-widescreen/data
+  --exportthreat threat.csv /path/to/OpenTyrian2000-Engaged/data
 
 python gen_profile.py
 ```

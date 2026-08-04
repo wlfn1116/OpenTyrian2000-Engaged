@@ -50,7 +50,7 @@ static int dbar_voffset(int z)
 
 // Draw a 9px gauge with an up, down, left, or right brightness gradient.
 // topPad grows the bar by that many rows at the top without touching the bottom row or the
-// 2px band pitch -- the two-player strip uses 1 so its four gauges reach the full height the
+// 2px band pitch; the two-player strip uses 1 so its four gauges reach the full height the
 // wipe already clears (the one-player bars fill their slot exactly and pass 0).
 void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad)
 {

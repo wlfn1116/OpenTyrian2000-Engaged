@@ -64,13 +64,14 @@ Copy `OpenTyrian2000.vpk` to the Vita and install it with VitaShell.
 
 Bindings and touch sensitivity are configurable. Text fields use the system IME.
 
-MIDI is disabled. If performance is poor, reduce Sub-pixel in the Graphics menu;
-the port normally forces the inexpensive presentation path.
+MIDI is disabled. The port forces Sub-pixel rendering to 1x while retaining
+Smooth Motion interpolation.
 
 ## Networking
 
-Two-player netplay is available from the Network entry on the main menu. Both
-machines must be on the same network; the port is UDP 1333 by default.
+Two-player netplay is available from **2 Player Online Arcade** on the main
+menu. Both machines must be on the same network; the port is UDP 1333 by
+default.
 
 Find LAN Games discovers a host on the same subnet, so neither player normally
 has to type an address. The host screen shows this console's IP for the cases

@@ -1,7 +1,7 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * SceNet backing for the SDL_net subset the netplay code uses -- see vita_net.h.
+ * SceNet backing for the SDL_net subset the netplay code uses; see vita_net.h.
  */
 #include "vita_net.h"
 

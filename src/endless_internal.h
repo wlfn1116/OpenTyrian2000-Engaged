@@ -36,7 +36,7 @@ extern int  endlessBreakthroughOwed;
 // Shop playback is zero-based; levelSong is one-based. Keep these paired.
 #define ENDLESS_MILESTONE_SHOP_SONG     26
 #define ENDLESS_MILESTONE_SHOP_SONG_LVL 27
-#define ENDLESS_FINALE_SHOP_SONG        24  // "The final edge" -- only the outpost charting the credits zone, pre-credits
+#define ENDLESS_FINALE_SHOP_SONG        24  // "The final edge"; only the outpost charting the credits zone, pre-credits
 #define ENDLESS_FINALE_SHOP_SONG_LVL    25
 
 #define ENDLESS_CREDITS_ZONE 100  // zones cleared before the run rolls the credits (once per run, at the outpost that follows)
@@ -197,7 +197,7 @@ bool endlessAdrenalineActive(void);           // Adrenaline owned and armor belo
 // Outpost state.
 extern long endlessRerollCost;        // escalating outpost prices, reset each visit
 extern int  endlessHullCost;
-extern long endlessShopEntryCash;     // cash on entering the shop -- the E-Shop cash-fraction buys price off this
+extern long endlessShopEntryCash;     // cash on entering the shop; the E-Shop cash-fraction buys price off this
 
 // A purchased kill-fire modifier is folded in after course selection.
 extern unsigned endlessPurchasedMods;
@@ -272,7 +272,7 @@ extern const EndlessTheme endlessBreakthroughThemes[5];
 	ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_STARCHARTS | \
 	ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_CLEANSIGNALS )
 
-Uint64      endlessMakeTheEndMods(void);   // "The End" -- the sector every GRAND milestone deals
+Uint64      endlessMakeTheEndMods(void);   // "The End"; the sector every GRAND milestone deals
 Uint64      endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint64 must, Uint64 forbid);
 const char *endlessComboNameSalted(Uint64 mods, unsigned salt);  // salt steps a GENERATED pick to the next word
 int         endlessSynergyBonus(Uint64 mods);

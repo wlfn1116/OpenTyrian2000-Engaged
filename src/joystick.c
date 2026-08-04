@@ -173,7 +173,7 @@ void poll_joystick(int j)
 	// Make the RIGHT analog stick drive the ship exactly like the LEFT one. Both consoles'
 	// SDL ports expose 4 axes (0/1 = left stick, 2/3 = right stick); the left-stick axis and
 	// the d-pad button already occupy both assignment slots of every direction, so the right
-	// stick can't be added as a normal binding -- fold its deflection into analog_direction[]
+	// stick can't be added as a normal binding; fold its deflection into analog_direction[]
 	// (which feeds both the digital direction[] and the analog x/y) in the loop below.
 	const bool switch_right_stick = SDL_JoystickNumAxes(joystick[j].handle) >= 4;
 #endif
@@ -221,8 +221,8 @@ void poll_joystick(int j)
 		joystick[j].input_pressed |= joystick[j].action_pressed[d];
 	}
 	
-	// "menu" (action[4]) acts as BACK / cancel in menus (Escape) -- matching how it toggles
-	// the in-game menu closed and the B-is-back convention -- NOT as a second confirm. Only
+	// "menu" (action[4]) acts as BACK / cancel in menus (Escape); matching how it toggles
+	// the in-game menu closed and the B-is-back convention; NOT as a second confirm. Only
 	// "fire" confirms/selects; change-fire / menu / pause all cancel.
 	joystick[j].confirm = joystick[j].action[0];
 	joystick[j].cancel = joystick[j].action[1] || joystick[j].action[4] || joystick[j].action[5];
@@ -276,8 +276,8 @@ void push_joysticks_as_keyboard(void)
 			continue;
 		
 		// A single button bound to BOTH a confirm action (fire/menu) and a cancel action
-		// (change-fire/pause) -- e.g. the Switch B button left on its default "change fire"
-		// (=cancel) while also bound to "menu" (=confirm) -- would otherwise push Return AND
+		// (change-fire/pause); e.g. the Switch B button left on its default "change fire"
+		// (=cancel) while also bound to "menu" (=confirm); would otherwise push Return AND
 		// Escape, making a menu select and go back at once (which can crash debug screens).
 		// Fire only one; prefer cancel (back), which is non-destructive and matches the
 		// B-is-back convention.
@@ -432,7 +432,7 @@ void reset_joystick_assignments(int j)
 		{
 			int btn = (int)(a - 4);
 #if defined(__SWITCH__)
-			// Buttons 4/5 are the analog-stick clicks on switch-sdl2 — poor defaults for
+			// Buttons 4/5 are analog-stick clicks in switch-sdl2 and are unsuitable for
 			// "menu" and "pause". Use Plus (10) and Minus (11), the natural system buttons.
 			if (a == 8) btn = 10;       // assignment_names[8] = "menu"
 			else if (a == 9) btn = 11;  // assignment_names[9] = "pause"
@@ -631,11 +631,7 @@ void code_to_assignment(Joystick_assignment *assignment, const char *buffer)
 	assignment->negative_axis = (toupper(direction) == '-');
 }
 
-/* gives the short (6 or less characters) identifier for a joystick assignment
- * 
- * two of these per direction/action is all that can fit on the joystick config screen,
- * assuming two digits for the axis/button/hat number
- */
+/* Returns a six-character code so two bindings fit beside one action. */
 const char *assignment_to_code(const Joystick_assignment *assignment)
 {
 	static char name[7];
@@ -668,13 +664,10 @@ const char *assignment_to_code(const Joystick_assignment *assignment)
 	return name;
 }
 
-// captures joystick input for configuring assignments
-// returns false if non-joystick input was detected
-// TODO: input from joystick other than the one being configured probably should not be ignored
+/* Captures joystick j; input from other joysticks is ignored. */
 bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 {
-	// get initial joystick state to compare against to see if anything was pressed
-	
+	/* Capture the initial state for edge detection. */
 	const int axes = SDL_JoystickNumAxes(joystick[j].handle);
 	Sint16 *axis = malloc(axes * sizeof(*axis));
 	for (int i = 0; i < axes; i++)

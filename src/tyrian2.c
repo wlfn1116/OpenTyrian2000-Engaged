@@ -76,14 +76,14 @@ static bool arcadeSuperPickupRandomActive(void);
 // MARTYRDOM and SEEKER ROUNDS both act on enemyShot[] (spawned/moved here in tyrian2.c), so their
 // spawn/movement code lives with the pool while the per-modifier decisions live in endless_combat.c.
 
-#define ENDLESS_MARTYR_POOL_MARGIN   48    // suppress the whole burst unless at least (shots + this) enemy-shot slots are free -- the "pool nearly full" guard
+#define ENDLESS_MARTYR_POOL_MARGIN   48    // suppress the whole burst unless at least (shots + this) enemy-shot slots are free; the "pool nearly full" guard
 #define ENDLESS_MARTYR_SHOT_SPEED    3.0f  // slow bullets, as specified ("four slow cardinal shots")
 #define ENDLESS_MARTYR_SHOT_DMG      4     // base per-bullet damage, scaled by the sector's shot-damage ramp
 #define ENDLESS_MARTYR_SHOT_DURATION 120   // ticks before a burst bullet self-expires (also culled off-screen)
 #define ENDLESS_TWO_PI               6.28318531f
 
 // MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
-// pool -- 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
+// pool; 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
 // nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite is Martyrdom's own
 // fixed graphic (endlessMartyrShotSprite), so a death burst always looks the same wherever it happens.
 static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
@@ -99,7 +99,7 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 		if (enemyShotAvail[b] == 1)
 			++freeSlots;
 	if (freeSlots < shots + ENDLESS_MARTYR_POOL_MARGIN)
-		return;                          // pool nearly full -- suppress the burst
+		return;                          // pool nearly full; suppress the burst
 
 	int dmg = (ENDLESS_MARTYR_SHOT_DMG * endlessShotDamagePercent() + 50) / 100;
 	dmg = (dmg < 1) ? 1 : (dmg > 255) ? 255 : dmg;
@@ -128,12 +128,12 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 		enemyShot[b].duration = ENDLESS_MARTYR_SHOT_DURATION;
 		enemyShot[b].animate = 0;
 		enemyShot[b].animax = 0;
-		enemyShot[b].seekerArm = 0;      // radial by design -- never a seeker
+		enemyShot[b].seekerArm = 0;      // radial by design; never a seeker
 	}
 }
 
 // SHOCKWAVE (endless boon): an elite/champion death vaporises every enemy bullet within `radius` of it
-// (a negative radius clears the whole field -- what a boss bar emptying does). Only touches the
+// (a negative radius clears the whole field; what a boss bar emptying does). Only touches the
 // enemy-shot pool, never enemy[], so unlike the Chain Reaction pulse below it is safe to fire straight
 // from a death site inside the player-shot loop: it cannot disturb that loop's linkgroup bookkeeping.
 static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
@@ -159,8 +159,8 @@ static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
 // A destroyed enemy emits a pulse that damages nearby NORMAL-tier fodder. Kills only QUEUE a pulse
 // here (with the enemy's screen position); the queue is drained once the whole player-shot loop
 // finishes (chain_reaction_process). Deferring keeps the pulse OUT of the shot loop's own linkgroup
-// bookkeeping -- so it can't corrupt the kill tally mid-loop -- and makes it non-recursive by
-// construction (a chain kill enqueues nothing).
+// bookkeeping, preventing kill-tally mutation and recursive pulses inside the loop.
+// By construction, a chain kill enqueues nothing.
 #define CHAIN_QUEUE_MAX 64
 static struct { int x, y; } chainPulse[CHAIN_QUEUE_MAX];
 static int chainPulseN = 0;
@@ -218,7 +218,7 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind)
 }
 
 // Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
-// depletes (a plain kill -- no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
+// depletes (a plain kill; no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
 // Elites, champions, bosses, staged-death enemies and score pickups are left for real kills.
 static void chain_reaction_process(void)
 {
@@ -264,14 +264,14 @@ static void chain_reaction_process(void)
 					chip = enemy[e].armorleft - 1;             // leave a linked tile alive on 1 armor
 				if (chip > 0)
 				{
-					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives -- spark so the arc is visible
+					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives; spark so the arc is visible
 					JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
 				}
 			}
 			else
 			{
 				// Vaporised. QUIET: a chain pop pays nothing (it only ever destroys lone,
-				// non-elite fodder) and must not queue another pulse -- but it still has to feed
+				// non-elite fodder) and must not queue another pulse. It still feeds
 				// the dedup latches, or a later elite reusing this linknum reads as another tile
 				// of the last one and goes unpaid / unswept.
 				enemy_logical_death(e, ENEMY_DEATH_QUIET);
@@ -295,9 +295,9 @@ static void chain_reaction_process(void)
 // SEEKER ROUNDS: the single mid-flight course correction (a bounded ~23-degree turn toward the
 // player), applied once per shot at ~half a second (see the enemy-shot movement loop). Rotates the
 // velocity toward the player while preserving its speed; if the player already sits within the max
-// turn, it aims straight instead. NOT continuous homing -- the caller disarms the shot afterwards.
+// turn, it aims straight instead. NOT continuous homing; the caller disarms the shot afterwards.
 #define ENDLESS_SEEKER_DELAY_TICKS 17     // ~0.5s at the 35Hz sim before the one correction fires
-#define ENDLESS_SEEKER_TURN_COS 0.9205f   // cos(~23 deg) -- the max single-shot turn
+#define ENDLESS_SEEKER_TURN_COS 0.9205f   // cos(~23 deg); the max single-shot turn
 #define ENDLESS_SEEKER_TURN_SIN 0.3907f   // sin(~23 deg)
 static void endlessSeekerCorrect(EnemyShotType *s)
 {
@@ -326,7 +326,7 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 		s->sxm = (JE_integer)roundf(vx * ENDLESS_SEEKER_TURN_COS - vy * sn);
 		s->sym = (JE_integer)roundf(vx * sn + vy * ENDLESS_SEEKER_TURN_COS);
 	}
-	if (s->sxm == 0 && s->sym == 0)                  // rounding zeroed a tiny vector -- keep it moving
+	if (s->sxm == 0 && s->sym == 0)                  // rounding zeroed a tiny vector; keep it moving
 	{
 		s->sxm = (JE_integer)roundf(vx);
 		s->sym = (JE_integer)roundf(vy);
@@ -337,7 +337,7 @@ boss_bar_t boss_bar[2];
 
 // Is this linkgroup one the level put a boss health bar on? The `linknum != 0` guard is the whole
 // point (see tyrian2.h): an idle bar slot and an unlinked enemy both read 0, so without it every
-// ordinary enemy on the level answers yes whenever a slot is free -- which handed them the boss HP
+// ordinary enemy answers yes whenever a slot is free, incorrectly granting boss health
 // multiplier, the boss branch of the Executioner perk, and (in endless) the pierce lockout.
 bool enemy_has_boss_bar(JE_byte linknum)
 {
@@ -384,7 +384,7 @@ static SDL_Surface *render_gs = NULL;
 static SDL_Surface *smoothie_frame = NULL;
 
 // (Re)create a lazily-allocated 8-bit surface at scale x the logical size. A factor
-// change discards the old content — fine for the plasma base: the contractive filters
+// change discards the old content; fine for the plasma base: the contractive filters
 // rebuild it from black within a couple of frames (masked by any level fade).
 static SDL_Surface *ensure_scaled_surface(SDL_Surface **surf, int scale)
 {
@@ -661,7 +661,7 @@ static void vt_ship_step_player(int p, float dt)
 		mdx = mxr * VT_MOUSE_SENS;
 		mdy = myr * VT_MOUSE_SENS;
 
-		// Stash the raw mouse direction for the twiddle-code detector, un-inverted —
+		// Stash the raw mouse direction for the twiddle-code detector, un-inverted;
 		// the detector applies the "inverted controls" flip itself, like keyboard.
 		vt_twiddle_mx[p] += mxr;
 		vt_twiddle_my[p] += myr;
@@ -754,7 +754,7 @@ static void vt_ship_step_player(int p, float dt)
 // Netplay: publish VT's current (unlagged) position into the ship, so the netcode picks it up
 // as this tick's absolute. Called from JE_playerMovement after the tick-start snapshot and
 // before the netcode reads and restores the ship, so what goes on the wire is exactly where
-// VT has steered to -- and both machines then place the ship on the same absolute number.
+// VT has reached, then both machines place the ship at that absolute coordinate.
 void vt_ship_commit_net(int player_index)
 {
 	if (!vt_ship_owns() || !isNetworkGame)
@@ -778,7 +778,7 @@ void vt_ship_commit_net(int player_index)
 }
 
 // The other player in a network game: its ship is placed from the deltas arriving on the wire,
-// so VT must not integrate input for it -- that input belongs to the machine it is sitting at.
+// so VT must not integrate input for it; that input belongs to the machine it is sitting at.
 static bool vt_player_is_net_remote(int p)
 {
 	return isNetworkGame && (uint)(p + 1) != thisPlayerNum;
@@ -786,7 +786,7 @@ static bool vt_player_is_net_remote(int p)
 
 // True while the sim, not VT, owns this ship's position.  Player 2 docked to player 1 as the
 // Dragonwing is placed from player 1's position every tick (mainint.c), so VT must keep its
-// hands off until it undocks -- at which point the seed-on-large-jump check picks it back up.
+// hands off until it undocks; at which point the seed-on-large-jump check picks it back up.
 static bool vt_player_is_sim_driven(int p)
 {
 	return vt_player_is_net_remote(p) || (p == 1 && twoPlayerLinked);
@@ -804,8 +804,8 @@ void vt_ship_step(float dt)  // dt = this frame's fraction of a 35Hz tick
 		{
 			vt_seeded[p] = false;
 
-			// In netplay VT owns no ship's rendering at all -- update_ship_override() runs
-			// immediately after this and drives both ships -- so leave the channel alone.
+			// In netplay VT owns no ship's rendering at all; update_ship_override() runs
+			// immediately after this and drives both ships. Leave the channel unchanged.
 			if (!isNetworkGame)
 			{
 				if (p == 1 && twoPlayerLinked)
@@ -896,7 +896,7 @@ void vt_ship_tick(void)  // once per 35Hz tick, before ship_pred_on_tick()
 // Per-tick ship movement for shots that track the ship (delta_x_shot_move, e.g. the
 // laser). VT moves the ship BETWEEN ticks, so vanilla's intra-tick delta reads ~0;
 // supply current pos vs the previous tick snapshot instead. (ship_tick_x/y still hold
-// the previous tick here — ship_pred_on_tick updates them after JE_playerMovement.)
+// the previous tick here; ship_pred_on_tick updates them after JE_playerMovement.)
 void vt_ship_shot_delta(int player_index, int *out_dx, int *out_dy)
 {
 	const int p = (player_index <= 0) ? 0 : 1;
@@ -927,7 +927,7 @@ void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy)
 	*out_dy = 0;
 
 	// Twiddle codes are cardinal sequences (diagonals are ignored), so collapse the
-	// flick to its dominant axis — a hand flick is never perfectly straight, and its
+	// flick to its dominant axis; a hand flick is never perfectly straight, and its
 	// off-axis drift would read as a diagonal. Movement itself stays in vt_ship_step.
 	if (fabsf(ax) >= fabsf(ay))
 	{
@@ -1080,7 +1080,7 @@ static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int
 
 // Block-expand the 1x HUD onto the hi frame: the right-hand HUD column for the
 // playfield rows, and the full width below the playfield. The HUD is tick-drawn
-// 1x art (plus the per-frame power gauge), so expanding is exact — it looks
+// 1x art (plus the per-frame power gauge), so expanding is exact; it looks
 // identical to the classic path.
 static void expand_hud_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 {
@@ -1129,8 +1129,8 @@ static bool deathSkipArmed = false;
 static uint deathGameOverTicks = 0;
 
 // The beat runs as long as the game-over song does, within these bounds (sim ticks, ~35/s at
-// normal speed): the floor covers a jingle that never plays at all -- music off, audio disabled --
-// and would otherwise read as already finished on its first tick, the cap one that never ends.
+// normal speed): the floor covers a jingle that never plays, music-off, or audio-disabled run
+// that would otherwise finish on its first tick; the cap covers a song that never ends.
 #define DEATH_GAMEOVER_TICKS_MIN 70   // ~2s
 #define DEATH_GAMEOVER_TICKS_MAX 700  // ~20s
 
@@ -1267,7 +1267,7 @@ static void draw_power_gauge(float power_value, float salvo_frac)
 	draw_gauge_bar(power_value * PG_BAR_MAX / (float)PG_POWER_MAX, salvo_frac, 0);
 }
 
-// The arcade modes have no generator, so its gauge slot sits empty -- hand it to the life
+// The arcade modes have no generator, so its gauge slot sits empty; hand it to the life
 // counter instead: one segment per life, full bar at ARCADE_LIVES_MAX. The fill height is
 // integer-divided so it lands exactly on a segment boundary (no anti-aliased top edge on a
 // value that only ever moves in whole steps).
@@ -1301,7 +1301,7 @@ void JE_starShowVGA(void)
 
 			// Supersample factor for this present pass (Auto follows the scaler; see
 			// video.h). The hi path needs its buffers; on any allocation failure it
-			// degrades to the classic 1x path — never to a missing frame.
+			// degrades to the classic 1x path; never to a missing frame.
 			int rss = can_interp ? effective_supersample() : 1;
 			const bool use_hi = rss > 1 && ensure_hi_buffers(rss);
 			if (!use_hi)
@@ -1356,8 +1356,8 @@ void JE_starShowVGA(void)
 					const float alpha = sim_accumulator / period;
 					debug_interp_alpha = alpha;  // expose for the perf overlay
 					// Extrapolate the ship for this frame whenever VT is not the thing moving
-					// it. In netplay VT owns the *input* but never the position -- the wire
-					// does -- so both ships still need the interpolator here, or they would
+					// it. In netplay VT owns the *input* but never the position; the wire
+					// does. Both ships still need interpolation here or they would
 					// step a whole tick at a time.
 					if (!vt_owns || isNetworkGame)
 						update_ship_override(alpha);
@@ -1425,7 +1425,7 @@ void JE_starShowVGA(void)
 
 			// Advance the persistent plasma base one filter step to this tick's plasma,
 			// the base for the next tick's interpolated frames. This is the only place
-			// the smoothie feedback accumulates — exactly once per tick, like the sim.
+			// the smoothie feedback accumulates; exactly once per tick, like the sim.
 			if (anySmoothies && bg_feedback != NULL)
 				rl_replay_bg(bg_feedback, 1.0f, rss);
 		}
@@ -1516,7 +1516,7 @@ static int eventScrollSkyRatio100 = 0;
 static int eventScrollSkyPhase100 = 0;
 
 // One-tick-lagged smooth-scroll publication buffers (see the scroll block in the
-// level loop).  File scope so the rollback registry can snapshot them --
+// level loop). File scope lets the rollback registry snapshot them;
 // bgSmoothFracPend feeds eventScrollSkyPhase100, which anchors sky-glue spawns.
 static float bgSmoothRatePend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 static float bgSmoothFracPend[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1756,7 +1756,7 @@ static bool enemy_stuck_above_screen(unsigned int i)
 
 // True if this enemy's link group still has a member the player can reach. Killing ANY member of a
 // linkgroup cascades the whole group away, so one reachable partner means the group is a live,
-// winnable fight and nothing here is orphaned -- HARVEST's parked anchor shares linknum 10 with the
+// winnable fight and nothing here is orphaned; HARVEST's parked anchor shares linknum 10 with the
 // 12 shootable boss pieces resting at ey ~ +4/+32 for the entire fight. linknum 0 means "unlinked":
 // those never cascade (the death loop skips link 0), so each is its own group and is never rescued.
 static bool enemy_link_group_reachable(unsigned int i)
@@ -2092,7 +2092,7 @@ static bool enemy_rides_layer2(const struct JE_SingleEnemyType *e)
 void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just drawing
 {
 	// JE_drawEnemy(25) is only ever the sky bank (slots 0..24), the one batch whose layer-2
-	// ride lives in eyc rather than tempBackMove -- the same structural identity the event
+	// ride lives in eyc rather than tempBackMove; the same structural identity the event
 	// spawner uses (its case 0 adjusts sky spawns by backMove2).
 	const bool skyBank = (enemyOffset == 25);
 
@@ -2121,7 +2121,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				enemy[i].scroll_ylayer = (JE_byte)tempScrollYLayer;
 			}
 
-			// Endless: decide once (per linkgroup) this enemy's tier -- 0 undecided, 1 normal,
+			// Endless: decide once (per linkgroup) this enemy's tier; 0 undecided, 1 normal,
 			// 2 elite, 3 champion; score pickups and invincible (255-armor) enemies excluded.
 			if (endlessFxActive() && enemy[i].eliteState == 0)
 			{
@@ -2161,7 +2161,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 
 			// Draw/animate gate vs the VISIBLE window [PLAYFIELD_LEFT, PLAYFIELD_RIGHT] (vanilla:
 			// 0..262, gate -29..300). Right: +38 so a 2x2 (spans ex-6..ex+17) is fully hidden
-			// before it stops drawing -- the old +29-off-PLAYFIELD_WIDTH bound cut it with pixels
+			// before it stops drawing; the old +29-off-PLAYFIELD_WIDTH bound cut it with pixels
 			// still visible at the right edge. Left: -28, not -29, because blit_sprite2 doesn't
 			// clip X and a left tile at blit x -34 row-wraps its first column onto the previous
 			// row's last VISIBLE column (322); one less keeps the wrap inside the cropped margin.
@@ -2425,7 +2425,7 @@ enemy_still_exists:
 							// Endless revive grace: for ~3s after a revive token is spent, every gun on
 							// the field is stunned. Bailing HERE (not around the whole turret loop) means
 							// the cooldown that was just reloaded still runs down and the non-shooting
-							// turret behaviours -- the magnets, the Savara boss's launch puffs -- carry on
+							// turret behaviours; the magnets, the Savara boss's launch puffs; carry on
 							// as normal; only the bullets are withheld.
 							if (endlessReviveGraceActive())
 								break;
@@ -2709,16 +2709,12 @@ void JE_main(void)
 
 	int lastEnemyOnScreen;
 
-	/* NOTE: BEGIN MAIN PROGRAM HERE after LOADING A GAME OR STARTING A NEW ONE */
-
-	/* ----------- GAME ROUTINES ------------------------------------- */
-	/* We need to jump to the beginning to make space for the routines */
-	/* --------------------------------------------------------------- */
+	/* Initial Endless outpost. */
 	if (endlessMode)
 	{
 		// First level of the run: run the starting shop before level 1 (the normal between-
 		// level flow only runs after a level clears). The shop's Start Level submenu IS the
-		// course choice -- it sets mainLevel + the mutators and launches.
+		// course choice; it sets mainLevel + the mutators and launches.
 		endlessBetweenLevels();
 
 		// Player chose Quit Game in the shop instead of charting a course: end the run and
@@ -2732,7 +2728,7 @@ void JE_main(void)
 
 	goto start_level_first;
 
-	/*------------------------------GAME LOOP-----------------------------------*/
+	/* Level transition. */
 
 	/* Startlevel is called after a previous level is over.  If the first level
 	   is started for a gaming session, startlevelfirst is called instead and
@@ -2745,7 +2741,7 @@ start_level:
 	rollback_level_end();
 
 	// A script's music fade (event 34) drops the MASTER volume and is normally undone by the
-	// event 35 that follows it. Every exit from a level -- clear, death, Quit Level -- can strand
+	// event 35 that follows it. Every exit from a level; clear, death, Quit Level; can strand
 	// that ramp part-way, and only the next level start put the volume back, so the level-end
 	// jingle and the shop/outpost after it played at the fade floor.
 	musicFade = false;
@@ -2794,7 +2790,7 @@ start_level:
 	if (!play_demo)
 	{
 		// Endless "Quit Level": don't end the run. Revert to the launch-time snapshot and reopen the
-		// buy/sell menu LOCKED to those choices -- relaunch the same level, or save/load, or quit the
+		// buy/sell menu LOCKED to those choices; relaunch the same level, or save/load, or quit the
 		// run. No depth++ and no level-clear screen: this is a retry, not a completed zone.
 		if (endlessMode && endlessQuitToOutpost && endlessSortieValid())
 		{
@@ -2955,7 +2951,7 @@ start_level_first:
 	// entry; this covers the buy/sell-menu load, where JE_loadMap bailed out above.)
 	if (endlessMode && endlessResumePending())
 	{
-		gameLoaded = false;      // consumed -- don't let the shop see it and close instantly
+		gameLoaded = false;      // consumed; don't let the shop see it and close instantly
 		endlessBetweenLevels();  // reopens the SAVED outpost snapshot (no reroll)
 		if (mainLevel == 0)      // player quit the outpost
 		{
@@ -3165,7 +3161,7 @@ start_level_first:
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
-		// Half a charge to start, as ever -- but off the arcade lives-scaled ceiling, which is
+		// Start at half of the Arcade lives-scaled ceiling, which is
 		// just the shield item's own mpwr*2 outside the arcade modes.
 		player[i].shield_max = arcade_shield_max(&player[i]);
 		player[i].shield     = startShieldFull ? player[i].shield_max : player[i].shield_max / 2;
@@ -3465,7 +3461,7 @@ level_loop:
 
 	// Frame boundary: snapshot this frame's pre-tick state (netplay rollback and
 	// self-test), then apply the previous frame's sim-affecting request bits.
-	// Runs on re-simulation passes too -- that application is part of the frame.
+	// Runs on re-simulation passes too; that application is part of the frame.
 #ifdef WITH_NETWORK
 	nrb_frame_begin();
 #endif
@@ -3473,8 +3469,6 @@ level_loop:
 
 	// New sim pass: advance the enemy velocity-hint generation (blit_enemy).
 	++rl_enemy_gen;
-
-	//tempScreenSeg = game_screen; /* side-effect of game_screen */
 
 	if (isNetworkGame)
 	{
@@ -3520,7 +3514,7 @@ level_loop:
 	                 ((*player[0].lives == 1 && player[0].exploding_ticks == 0) || (!onePlayerAction && !twoPlayerMode)) &&
 	                 ((*player[1].lives == 1 && player[1].exploding_ticks == 0) || !twoPlayerMode);
 
-	/*-----MUSIC FADE------*/
+	/* Music fade. */
 	if (musicFade)
 	{
 		if (tempVolume > 10)
@@ -3560,21 +3554,21 @@ level_loop:
 
 		extend_playfield_right_column(VGAScreenSeg);
 
-		/*-----------------------Message Bar------------------------*/
+		/* Message bar. */
 		// Live passes only: a re-simulated tick already counted down on its first
-		// pass, and blit_sprite is a no-op in silent passes -- a 1->0 crossing
+		// pass, and blit_sprite is a no-op in silent passes; a 1->0 crossing
 		// landing there would swallow the erase and leave the bar poisoned with
 		// stale glyphs the next message then draws over.
 		if (!rollback_resim && textErase > 0 && --textErase == 0)
 			blit_sprite(VGAScreenSeg, 16, 189, OPTION_SHAPES, 36);  // in-game message area
 
-		/*------------------------Shield Gen-------------------------*/
+		/* Shield generator. */
 		if (galagaMode)
 		{
 			for (uint i = 0; i < COUNTOF(player); ++i)
 				player[i].shield = 0;
 
-			// spawned dragonwing died :(
+			// Disable two-player mode if the spawned Dragonwing died.
 			if (*player[1].lives == 0 || player[1].armor == 0)
 				twoPlayerMode = false;
 
@@ -3615,7 +3609,7 @@ level_loop:
 				}
 			}
 			// endless AUXILIARY REACTOR: the recharge is free this sector, so the generator no longer
-			// gates it either -- an empty reserve must not stall a recharge that costs nothing.
+			// gates it either; an empty reserve must not stall a recharge that costs nothing.
 			else if (player[0].is_alive && player[0].shield < player[0].shield_max
 			         && (power > shieldT || endlessShieldRegenFree())
 			         && !endlessShieldRegenOff())  // endless SHIELDLESS / DEADGEN: shields never recharge
@@ -3636,7 +3630,7 @@ level_loop:
 			}
 		}
 
-		/*---------------------Weapon Display-------------------------*/
+		/* Weapon display. */
 		// Eleven gradient slots show effective weapon power. In Arcade this also tracks lives
 		// and any rear-gun scaling; the wider two-player bar keeps the same slot count.
 		for (uint i = 0; i < 2; ++i)
@@ -3670,7 +3664,7 @@ level_loop:
 			}
 		}
 
-		/*------------------------Power Bar-------------------------*/
+		/* Power bar. */
 		if (twoPlayerMode || onePlayerAction)
 		{
 			power = 900;
@@ -3717,7 +3711,7 @@ level_loop:
 	// Cleared each tick; JE_doSpecialShot re-sets it while the Zinglon blast is live.
 	zinglonPillarActive = false;
 
-	/*---------------------------EVENTS-------------------------*/
+	/* Events. */
 	while (eventRec[eventLoc-1].eventtime <= curLoc && eventLoc <= maxEvent)
 		JE_eventSystem();
 
@@ -3730,9 +3724,9 @@ level_loop:
 	/* SMOOTHIES! */
 	JE_checkSmoothies();
 	if (anySmoothies)
-		VGAScreen = VGAScreen2;  // this makes things complicated, but we do it anyway :(
+		VGAScreen = VGAScreen2;  // Smoothie effects use the secondary buffer.
 
-	/* --- BACKGROUNDS --- */
+	/* Backgrounds. */
 	/* --- BACKGROUND 1 --- */
 
 	// A boosted scroll can advance more than one tile (28px) per tick, so widen the render
@@ -3756,7 +3750,7 @@ level_loop:
 		JE_clr256(VGAScreen);
 
 	/*Set Movement of background 1*/
-	// base1ScrollPx: px layer 1 (and the event pointer) actually scrolled this tick -- 0 on a
+	// base1ScrollPx: px layer 1 (and the event pointer) actually scrolled this tick; 0 on a
 	// delay-gated "off" tick (map1YDelayMax > 1). Feeds the smooth overclock boost below so it
 	// fills the off-ticks instead of pulsing with the (0-on-off-ticks) instantaneous backMove.
 	int base1ScrollPx = 0;
@@ -3860,8 +3854,7 @@ level_loop:
 		VGAScreen = game_screen;
 	}
 
-	/*-----------------------BACKGROUNDS------------------------*/
-	/*-----------------------BACKGROUND 2------------------------*/
+	/* Background layer 2. */
 	if (background2over == 3)
 	{
 		draw_background_2(VGAScreen);
@@ -3896,7 +3889,7 @@ level_loop:
 
 	endlessGroupHoming();
 
-	/*-----------------------Ground Enemy------------------------*/
+	/* Ground enemies. */
 	lastEnemyOnScreen = enemyOnScreen;
 
 	tempMapXOfs = mapXOfs + PLAYFIELD_X_SHIFT;
@@ -3937,8 +3930,7 @@ level_loop:
 		JE_darkenBackground(neat);
 	}
 
-	/*-----------------------BACKGROUNDS------------------------*/
-	/*-----------------------BACKGROUND 2------------------------*/
+	/* Background layer 2. */
 	if (!(smoothies[2-1] && processorType < 4) &&
 	    !(smoothies[1-1] && processorType == 3))
 	{
@@ -4036,7 +4028,7 @@ level_loop:
 	// Per-pixel on-screen kill gate: precompute, once per tick, whether each live enemy has at
 	// least one opaque pixel of its current frame inside the visible playfield. Derived from the
 	// same stored state the collision below reads, so the verdict is deterministic and stays in
-	// lock-step with the hit test -- no draw dependency, no lag on the "over" layers. The shot
+	// lock-step with the hit test; no draw dependency, no lag on the "over" layers. The shot
 	// loop reads enemyVisible[b] instead of re-deriving a fixed bounding box per enemy.
 	bool enemyVisible[COUNTOF(enemy)];
 	for (unsigned int ev = 0; ev < COUNTOF(enemy); ev++)
@@ -4047,7 +4039,7 @@ level_loop:
 	{
 		if (shotAvail[z] != 0)
 		{
-			// The endless pierce lockout ages here -- once per bullet per sim tick, immediately
+			// The endless pierce lockout ages here; once per bullet per sim tick, immediately
 			// before this bullet's own collision pass reads it.
 			{
 				PlayerShotDataType *ps = &playerShotData[z];
@@ -4092,7 +4084,7 @@ level_loop:
 			//
 			// shotDmg is an ENCODED byte, not a plain quantity: 99 means "ice, no damage" and
 			// 250..255 means "piercing, damage = value - 250" (see the decode below and shots.c).
-			// Never scale the raw byte -- decode first, scale only the real damage, re-encode.
+			// Never scale the raw byte; decode first, scale only the real damage, re-encode.
 			if (endlessFxActive())
 			{
 				int dmgPct = endlessPlayerDamagePercent();
@@ -4103,7 +4095,7 @@ level_loop:
 				{
 					const int pierceMark = (damage >= 250) ? 250 : 0;
 					const int raw = damage - pierceMark;
-					int scaled = (raw * dmgPct + 50) / 100;   // round, don't truncate -- see below
+					int scaled = (raw * dmgPct + 50) / 100;   // round, don't truncate; see below
 					if (raw > 0)
 					{
 						if (scaled < 1)
@@ -4132,7 +4124,7 @@ level_loop:
 					bool collided;
 
 					// On-screen gate: a shot may only damage an enemy while at least one opaque
-					// pixel of its CURRENT sprite frame is inside the visible playfield -- else a
+					// pixel of its CURRENT sprite frame is inside the visible playfield; else a
 					// shot flying up past the top of the screen kills enemies that haven't
 					// scrolled into view yet. Precomputed this tick in enemyVisible[] (above) from
 					// the same stored state read here, so it tracks enemies that grow through
@@ -4170,8 +4162,11 @@ level_loop:
 					{
 						if (chain > 0)
 						{
+							// The Zinglon pseudo-shot clears chain above, so this slot always has
+							// playerShotData behind it.
 							shotMultiPos[SHOT_MISC] = 0;
-							b = player_shot_create(0, SHOT_MISC, tempShotX, tempShotY, mouseX, mouseY, chain, playerNum);
+							b = player_shot_create_chained(tempShotX, tempShotY, mouseX, mouseY, chain, playerNum,
+							                               playerShotData[z].salvoBoost != 0);
 							shotAvail[z] = 0;
 							goto draw_player_shot_loop_end;
 						}
@@ -4236,7 +4231,7 @@ level_loop:
 						}
 
 						// Executioner perk (endless): a badly wounded target takes extra damage. Taken
-						// off the RAW shot damage, BEFORE the accumulator below divides it -- a
+						// off the RAW shot damage, BEFORE the accumulator below divides it; a
 						// percentage of a post-divide 1 or 2 armor points truncates to nothing, i.e.
 						// to zero against exactly the depth-scaled bosses the perk exists for. The
 						// wounded TEST still reads armor, which the multiplier never touches.
@@ -4246,7 +4241,7 @@ level_loop:
 							: 0;
 
 						// Armor points the bonus actually bought, which is what the shot-carry paths at the
-						// bottom have to undo -- they work in post-divide space, so the raw bonus is the
+						// bottom have to undo; they work in post-divide space, so the raw bonus is the
 						// wrong quantity to subtract there.
 						int execBonus;
 
@@ -4363,7 +4358,7 @@ level_loop:
 											else
 											{
 												// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
-												// the one helper -- never inline any of them here again (see tyrian2.h).
+												// the one helper; never inline any of them here again (see tyrian2.h).
 												enemy_logical_death(temp3, ENEMY_DEATH_FULL);
 											}
 
@@ -4485,7 +4480,7 @@ level_loop:
 										else
 										{
 											// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
-											// the one helper -- never inline any of them here again (see tyrian2.h).
+											// the one helper; never inline any of them here again (see tyrian2.h).
 											enemy_logical_death(temp2, ENEMY_DEATH_FULL);
 										}
 
@@ -4542,21 +4537,19 @@ draw_player_shot_loop_end:
 		player[i].last_y_shot_move = player[i].y;
 	}
 	
-	/*=================================*/
-	/*=======Collisions Detection======*/
-	/*=================================*/
+	/* Collision detection. */
 	
 	for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
 		if (player[i].is_alive && !endLevel)
 			JE_playerCollide(&player[i], i + 1);
 	
 	if (firstGameOver)
-		JE_mainGamePlayerFunctions();      /*--------PLAYER DRAW+MOVEMENT---------*/
+		JE_mainGamePlayerFunctions();      /* Player draw and movement. */
 
 	if (!endLevel)
-	{    /*MAIN DRAWING IS STOPPED STARTING HERE*/
+	{    /* Draw the active level. */
 
-		/* Draw Enemy Shots */
+		/* Draw enemy shots. */
 		for (int z = 0; z < ENEMY_SHOT_MAX; z++)
 		{
 			if (enemyShotAvail[z] == 0)
@@ -4729,7 +4722,7 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	/*-------------------------- Sequenced Explosions -------------------------*/
+	/* Sequenced explosions. */
 	enemyStillExploding = false;
 	for (int i = 0; i < MAX_REPEATING_EXPLOSIONS; i++)
 	{
@@ -4771,7 +4764,7 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	/*---------------------------- Draw Explosions ----------------------------*/
+	/* Draw explosions. */
 	for (int j = 0; j < MAX_EXPLOSIONS; j++)
 	{
 		if (explosions[j].ttl != 0)
@@ -4796,7 +4789,7 @@ draw_player_shot_loop_end:
 			{
 				// X guard (display only; ttl still runs): the blitters don't clip X, so a
 				// far-offscreen explosion (e.g. a kill just past the left cull margin) would
-				// row-wrap its pixels onto the opposite edge -- which the widescreen crop
+				// row-wrap pixels onto the opposite edge, which the widescreen crop
 				// makes VISIBLE (vanilla hid that region under the HUD). Both bounds are
 				// well past fully-hidden, so nothing on-screen is lost.
 				if (explosions[j].x > -12 && explosions[j].x < 344)
@@ -4821,8 +4814,7 @@ draw_player_shot_loop_end:
 	if (!portConfigChange)
 		portConfigDone = true;
 
-	/*-----------------------BACKGROUNDS------------------------*/
-	/*-----------------------BACKGROUND 2------------------------*/
+	/* Background layer 2. */
 	if (!(smoothies[2-1] && processorType < 4) &&
 	    !(smoothies[1-1] && processorType == 3))
 	{
@@ -4848,7 +4840,7 @@ draw_player_shot_loop_end:
 	if (anySmoothies && !rollback_resim_silent)
 		memcpy(VGAScreen2->pixels, game_screen->pixels, (size_t)game_screen->h * game_screen->pitch);
 
-	/*-------------------------Warning---------------------------*/
+	/* Warning indicator. */
 	if ((player[0].is_alive && player[0].armor < 6) ||
 	    (twoPlayerMode && !galagaMode && player[1].is_alive && player[1].armor < 6))
 	{
@@ -4915,7 +4907,7 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	/*------- Random Explosions --------*/
+	/* Random explosions. */
 	// Full visible playfield: 280 is the pre-widescreen width and stops short of the widened right
 	// edge (see composite_playfield / video.h); 184 = full playfield height (vanilla stopped at 180).
 	if (randomExplosions && mt_rand() % 10 == 1)
@@ -4955,9 +4947,7 @@ draw_player_shot_loop_end:
 		}
 	}
 
-	/*=================================*/
-	/*=======The Sound Routine=========*/
-	/*=================================*/
+	/* Sound queue. */
 	if (firstGameOver)
 	{
 		temp = 0;
@@ -4975,7 +4965,7 @@ draw_player_shot_loop_end:
 
 				// A rollback re-simulation drains the queue silently: these ticks'
 				// sounds already played when the tick first ran.  The temp/temp3
-				// writes above still happen -- they are registered scratch state
+				// writes above still happen; they are registered scratch state
 				// and a replayed tick must mutate them identically.
 				if (!rollback_resim)
 					multiSamplePlay(soundSamples[temp-1], soundSampleCount[temp-1], temp2, temp3);
@@ -4991,7 +4981,7 @@ draw_player_shot_loop_end:
 		returnActive = false;
 	}
 
-	/*-------      DEbug      ---------*/
+	/* Debug counters. */
 	debugTime = SDL_GetTicks();
 	tempW = lastmouse_but;
 
@@ -5024,7 +5014,7 @@ draw_player_shot_loop_end:
 		frameCountMax = (frameCountMax == 2) ? 3 : 2;
 	}
 
-	/*--------  Level Timer    ---------*/
+	/* Level timer. */
 	if (levelTimer && levelTimerCountdown > 0)
 	{
 		levelTimerCountdown--;
@@ -5063,7 +5053,7 @@ draw_player_shot_loop_end:
 		JE_dString(VGAScreen, counter_x, 2, buffer, SMALL_FONT_SHAPES);
 	}
 
-	/*GAME OVER*/
+	/* Game over. */
 	if (!constantPlay && !constantDie)
 	{
 		if (allPlayersGone)
@@ -5118,7 +5108,7 @@ draw_player_shot_loop_end:
 						set_volume(tyrMusicVolume, fxVolume);
 					}
 					// Drop any input still held/queued from the moment of death, so
-					// GAME OVER doesn't dismiss itself instantly — require a fresh press.
+					// GAME OVER doesn't dismiss itself instantly; require a fresh press.
 					newkey = newmouse = false;
 					firstGameOver = false;
 				}
@@ -5215,7 +5205,7 @@ draw_player_shot_loop_end:
 
 		// Endless Standard and Hardcore: the pause menu is off-limits from the moment the ship dies.
 		// Its Quit Level row returns to the outpost, which during the death explosion would turn a
-		// fatal hit into a free retry -- the one thing neither mode allows. (Relaxed offers that
+		// fatal hit into a free retry; the one thing neither mode allows. (Relaxed offers that
 		// retry openly through the death menu instead; see JE_main.)
 		if (ingamemenu_pressed && endlessDeathLocksMenu() && all_players_dead())
 			ingamemenu_pressed = false;
@@ -5450,8 +5440,8 @@ draw_player_shot_loop_end:
 		if (render_list_recording)
 			rl_rec_filter_screen(levelFilter, levelBrightness);
 
-		// Smoothie residual: any full-screen grade -- colour flare (levelFilter != -99) or
-		// brightness-only flash (levelBrightness != -99) -- must hit the pre-overlay snapshot too,
+		// Smoothie residual: any full-screen grade; colour flare (levelFilter != -99) or
+		// brightness-only flash (levelBrightness != -99); must hit the pre-overlay snapshot too,
 		// or it bakes into the residual and freezes the playfield.
 		if (anySmoothies)
 			JE_filterScreenApply(VGAScreen2, levelFilter, levelBrightness);
@@ -5532,7 +5522,7 @@ typedef enum
 
 // Composite one frame of a picture wipe at boundary position z: the old image
 // (VGAScreen2) and the new image (pic_buffer) meet at row/column z. These are the
-// original per-step inner loops verbatim -- only the outer pacing changes, in
+// original per-step inner loops verbatim; only the outer pacing changes, in
 // animate_picture_wipe below.
 static void compose_wipe_frame(WipeKind kind, int z, const Uint8 *pic_buffer)
 {
@@ -6086,7 +6076,7 @@ new_game:
 					case 'V':
 						if (!constantPlay)
 						{
-							/* TODO: NETWORK */
+							/* Picture wipes run outside synchronized simulation. */
 							memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 							JE_word tempX = atoi(s + 3);
@@ -6104,7 +6094,7 @@ new_game:
 					case 'R':
 						if (!constantPlay)
 						{
-							/* TODO: NETWORK */
+							/* Picture wipes run outside synchronized simulation. */
 							memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
 							JE_word tempX = atoi(s + 3);
@@ -6213,8 +6203,8 @@ new_game:
 					case 'T':
 						if (timedBattleMode)
 						{
-							// ]T[ 43 44 45 46 47 -- Episode 1
-							// ]T[ 03 03 04 05 06 -- Episode 5
+							// ]T[ 43 44 45 46 47; Episode 1
+							// ]T[ 03 03 04 05 06; Episode 5
 							mainLevel = atoi(s + (timeBattleSelection * 3));
 							jumpSection = true;
 						}
@@ -6247,7 +6237,7 @@ new_game:
 	set_menu_centered(false);
 
 	// The scan above set lvlFileNum from the section's first ']L', but a caller may need a LATER
-	// ']L' in the same section (Episode 1 section 3's second TYRIAN cut) -- reachable via the endless
+	// ']L' in the same section (Episode 1 section 3's second TYRIAN cut); reachable via the endless
 	// pool or the debug/level-select menu. select_level and the endless commit paths stash that in
 	// forcedLvlFileNum; apply it here, then consume it so normal campaign progression is untouched.
 	if (forcedLvlFileNum != 0)
@@ -6317,13 +6307,9 @@ new_game:
 		fread_s8_die( &eventRec[x].eventdat6, 1, level_f);
 		fread_u8_die( &eventRec[x].eventdat4, 1, level_f);
 	}
-	eventRec[x].eventtime = 65500;  /*Not needed but just in case*/
+	eventRec[x].eventtime = 65500;  /* Sentinel event. */
 
-	/*debuginfo('Level loaded.');*/
-
-	/*debuginfo('Loading Map');*/
-
-	/* MAP SHAPE LOOKUP TABLE - Each map is directly after level */
+	/* Map shape lookup table; each map follows its level data. */
 	for (temp = 0; temp < 3; temp++)
 	{
 		fread_u16_die(mapSh[temp], sizeof(*mapSh) / sizeof(JE_word), level_f);
@@ -6410,7 +6396,7 @@ new_game:
 	fclose(shpFile);
 
 	fread_u8_die(mapBuf, 14 * 300, level_f);
-	bufLoc = 0;              /* MAP NUMBER 1 */
+	bufLoc = 0;              /* Map 1. */
 	for (y = 0; y < 300; y++)
 	{
 		for (x = 0; x < 14; x++)
@@ -6421,7 +6407,7 @@ new_game:
 	}
 
 	fread_u8_die(mapBuf, 14 * 600, level_f);
-	bufLoc = 0;              /* MAP NUMBER 2 */
+	bufLoc = 0;              /* Map 2. */
 	for (y = 0; y < 600; y++)
 	{
 		for (x = 0; x < 14; x++)
@@ -6432,7 +6418,7 @@ new_game:
 	}
 
 	fread_u8_die(mapBuf, 15 * 600, level_f);
-	bufLoc = 0;              /* MAP NUMBER 3 */
+	bufLoc = 0;              /* Map 3. */
 	for (y = 0; y < 600; y++)
 	{
 		for (x = 0; x < 15; x++)
@@ -6444,19 +6430,14 @@ new_game:
 
 	fclose(level_f);
 
-	/* Note: The map data is automatically calculated with the correct mapsh
-	value and then the pointer is calculated using the formula (MAPSH-1)*168.
-	Then, we'll automatically add S2Ofs to get the exact offset location into
-	the shape table! This makes it VERY FAST! */
-
-	/*debuginfo('Map file done.');*/
+	/* Map shape pointers use (MAPSH - 1) * 168 plus S2Ofs. */
 	/* End of find loop for LEVEL??.DAT */
 }
 
 #ifdef WITH_NETWORK
 void networkStartScreen(void)
 {
-	// A lobby game is already connected by the time we get here -- the lobby had to do it
+	// A lobby game is already connected by the time we get here; the lobby had to do it
 	// itself so that a failed or cancelled attempt could return to the menu.  Command-line
 	// netplay has no lobby, so it still connects here.
 	if (!network_from_lobby)
@@ -6473,7 +6454,7 @@ void networkStartScreen(void)
 	else
 	{
 		// Already connected, but the joiner's wait screen below composes itself by copying
-		// VGAScreen2, so it still needs the backdrop staged there -- otherwise it draws over
+		// VGAScreen2, so it still needs the backdrop staged there; otherwise it draws over
 		// whatever the lobby happened to leave behind.
 		JE_loadPic(VGAScreen2, 2, false);
 		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
@@ -6537,7 +6518,7 @@ void networkStartScreen(void)
 
 			// The length matters: packet_copy fills only the first `len` bytes of a reused
 			// buffer, so a short packet would set the episode and difficulty from whatever the
-			// previous one left behind -- a desync before the first tick.  Discard it and keep
+			// previous one left behind; a desync before the first tick.  Discard it and keep
 			// waiting; a peer that never sends a whole one times out as a lost connection.
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_DETAILS &&
 			    packet_in[0]->len >= 8)
@@ -6565,7 +6546,7 @@ void networkStartScreen(void)
 
 		if (packet_in[0]->len >= 8 + SAVE_RECORD_PACKED_SIZE)
 		{
-			// Resume form: adopt the host's save record wholesale.  Input devices stay ours --
+			// Resume form: adopt the host's save record wholesale. Input devices stay local;
 			// they name hardware on the host's desk, not simulation state.
 			JE_SaveFileType rec;
 			save_record_unpack(&rec, &packet_in[0]->data[8]);
@@ -7029,8 +7010,8 @@ bool newGame(void)
 
 #ifdef WITH_NETWORK
 		// The multiplayer lobby connected us from inside the mode menu.  networkStartScreen()
-		// runs the episode/difficulty handshake -- the host picks and sends, the joiner waits
-		// and receives -- and sets both ships and purses up, so none of the single-player
+		// runs the episode/difficulty handshake; the host picks and sends, the joiner waits
+		// and receives, then initializes both ships and purses. No single-player
 		// setup below applies.
 		if (isNetworkGame)
 		{
@@ -7297,17 +7278,13 @@ void JE_readTextSync(void)
 	JE_dString(VGAScreen, 10, 160, "Waiting for other player.", SMALL_FONT_SHAPES);
 	JE_showVGA();
 
-	/* TODO: NETWORK */
-
 	do
 	{
 		setjasondelay(2);
 
-		/* TODO: NETWORK */
-
 		wait_delay();
 
-	} while (0 /* TODO: NETWORK */);
+	} while (0);
 #endif
 }
 
@@ -7378,7 +7355,7 @@ Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI)
 	return 0;
 }
 
-/* --- Arcade weapon-ball randomizer -------------------------------------------------------
+/* Arcade weapon-ball randomizer.
  * Reroll each weapon pickup within its class using pools derived from the current episode's
  * enemyDat. Purple and +1 power balls are unchanged. */
 enum
@@ -7545,7 +7522,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	// Dispenser restore: the dormant 2x2 base (pieces 80-83) gets its cousin hatch's
 	// cadence so the shipped 17-frame open/close cycle finally plays; same-tick creation
 	// keeps all four quadrants in sync. Piece 80's trigger fires the actual volley
-	// (aimed top shot + lightning column) -- see dispenser_fire.
+	// (aimed top shot + lightning column); see dispenser_fire.
 	if (dispenserBasesActive && eDatI >= 80 && eDatI <= 83)
 	{
 		enemy->launchfreq = 40;
@@ -8472,7 +8449,7 @@ void JE_eventSystem(void)
 
 				if (eventRec[eventLoc-1].eventdat == 533 && (lives == 11 || (mt_rand() % 15) < lives))
 				{
-					// enemy will drop random special weapon -- in endless, a front/rear powerup
+					// enemy will drop random special weapon; in endless, a front/rear powerup
 					// or the 5000 gem instead (specials already come from cubes and orbs there)
 					eventRec[eventLoc-1].eventdat = endlessMode ? endlessPowerupDropEnemy()
 					                                            : 829 + (mt_rand() % 6);
@@ -8491,7 +8468,7 @@ void JE_eventSystem(void)
 
 	case 34: /* Start Music Fade */
 		// A milestone zone is pinned to its own theme (endlessPickLevelMusic), so the script's
-		// fade is ignored too -- a level that fades here and swaps tracks at event 35 would
+		// fade is ignored too; a level that fades here and swaps tracks at event 35 would
 		// otherwise leave the pinned song stuck at the fade floor for the rest of the zone.
 		if (firstGameOver && !endlessMilestoneZone())
 		{
@@ -8579,7 +8556,7 @@ void JE_eventSystem(void)
 			if (eventRec[eventLoc-1].eventdat == 533 && (lives == 11 || (mt_rand() % 15) < lives))
 			{
 				// same endless swap as event 33 (this arcade-only variant never fires in endless,
-				// but the two substitutions are otherwise identical -- keep them that way)
+				// but the two substitutions are otherwise identical; keep them that way)
 				eventRec[eventLoc-1].eventdat = endlessMode ? endlessPowerupDropEnemy()
 				                                            : 829 + (mt_rand() % 6);
 			}
@@ -8836,7 +8813,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 75:;
-		bool temp_no_clue = false; // TODO: figure out what this is doing
+		bool temp_no_clue = false; // whether the requested link range contains a live stationary enemy
 
 		for (temp = 0; temp < 100; temp++)
 		{
@@ -8960,46 +8937,36 @@ void JE_whoa(void)
 	unsigned int screenSize, topBorder, bottomBorder;
 	Uint8 * TempScreen1, * TempScreen2, * TempScreenSwap;
 
-	/* 'whoa' gets us that nifty screen fade used when you type in
-	 * 'engage'.  We need two temporary screen buffers (char arrays can
-	 * work too, but these screens already exist) for our effect.
-	 * This could probably be a lot more efficient (there's probably a
-	 * way to get vgascreen as one of the temp buffers), but it's only called
-	 * once so don't worry about it. */
+	/* Fade used by the "engage" code. Existing secondary screens provide the
+	 * two temporary buffers. */
 
 	TempScreen1  = game_screen->pixels;
 	TempScreen2  = VGAScreen2->pixels;
 
 	screenSize   = VGAScreenSeg->h * VGAScreenSeg->pitch;
-	topBorder    = VGAScreenSeg->pitch * 4; /* Seems an arbitrary number of lines */
+	topBorder    = VGAScreenSeg->pitch * 4; /* Four excluded rows. */
 	bottomBorder = VGAScreenSeg->pitch * 7;
 
-	/* Okay, one disadvantage to using other screens as temp buffers: they
-	 * need to be the right size.  I doubt they'll ever be anything but 320x200,
-	 * but just in case, these asserts will clue in whoever stumbles across
-	 * the problem.  You can fix it with the stack or malloc. */
+	/* Both temporary surfaces must cover the active surface. */
 	assert((unsigned)VGAScreen2->h  * VGAScreen2->pitch >= screenSize &&
 	       (unsigned)game_screen->h * game_screen->pitch >= screenSize);
 
-	/* Clear the top and bottom borders.  We don't want to process
-	 * them and we don't want to draw them. */
+	/* Exclude the top and bottom borders from processing and drawing. */
 	memset((Uint8 *)VGAScreenSeg->pixels, 0, topBorder);
 	memset((Uint8 *)VGAScreenSeg->pixels + screenSize - bottomBorder, 0, bottomBorder);
 
-	/* Copy our test subject to one of the temporary buffers.  Blank the other */
+	/* Seed one temporary buffer with the screen and clear the other. */
 	memset(TempScreen1, 0, screenSize);
 	memcpy(TempScreen2, VGAScreenSeg->pixels, VGAScreenSeg->h * VGAScreenSeg->pitch);
 
 	service_SDL_events(true);
-	timer = 300; /* About 300 rounds is enough to make the screen mostly black */
+	timer = 300; /* Enough diffusion rounds to leave the screen nearly black. */
 
 	do
 	{
 		setDelay(1);
 
-		/* This gets us our 'whoa' effect with pixel bleeding magic.
-		 * I'm willing to bet the guy who originally wrote the asm was goofing
-		 * around on acid and thought this looked good enough to use. */
+		/* Diffuse neighboring pixels into the fading trail. */
 		for (i = screenSize - bottomBorder, j = topBorder / 2; i > 0; i--, j++)
 		{
 			offset = j + i/8192 - 4;
@@ -9012,7 +8979,7 @@ void JE_whoa(void)
 			TempScreen1[j] = color;
 		}
 
-		/* Now copy that mess to the buffer. */
+		/* Copy the next diffusion frame to the display buffer. */
 		memcpy((Uint8 *)VGAScreenSeg->pixels + topBorder, TempScreen1 + topBorder, screenSize - bottomBorder);
 
 		JE_showVGA();
@@ -9202,7 +9169,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 		const int clearTop = 48, clearBot = 158;  // between the top & bottom corner HUD
 		const int fullTop  = 8;                   // clear of the top WARNING strip
 		// A full-height column only happens on the HUD-free right side in one-player, where
-		// the FPS counter may still be sitting in the corner -- stop above it if so.
+		// the FPS counter may still be sitting in the corner; stop above it if so.
 		const int fullBotLimit = hud_bottom_right_top() - 2;
 		const int fullBot  = (fullBotLimit < 176) ? fullBotLimit : 176;
 
@@ -9364,7 +9331,7 @@ static void draw_enemy_hp_bar(int id, int boxL, int boxR, int boxT, int boxB, fl
 
 	// Record the bar so the replay reproduces AND interpolates it with its enemy
 	// (id = RL_ID_ENEMYBAR_BASE + slot). It stays out of the residual via recording
-	// (normal levels) / pre-snapshot call order (smoothie levels) — see the call sites.
+	// (normal levels) / pre-snapshot call order (smoothie levels); see the call sites.
 	if (render_list_recording)
 	{
 		rl_current_id = id;
@@ -9494,7 +9461,7 @@ void draw_boss_bar(void)
 		if (armor > 255 || armor == 0)  // boss dead?
 		{
 			boss_bar[b].link_num = 0;
-			// Tally "Bosses slain" here -- the one definitive moment a boss that actually
+			// Tally "Bosses slain" here; the one definitive moment a boss that actually
 			// had a health bar is destroyed. Each such boss counts exactly once (the bar is
 			// skipped once link_num is 0); high-armor mini-bosses that never spawn a bar
 			// are never counted.
@@ -9578,7 +9545,7 @@ int boss_bar_hud_left_shift(int hudRightX)
 	return (hudRightX >= leftmostX) ? (hudRightX - leftmostX + 4) : 0;  // +4px clearance
 }
 
-// True while an Enhanced BOTTOM horizontal boss bar is shown -- it can span near the full
+// True while an Enhanced BOTTOM horizontal boss bar is shown; it can span near the full
 // playfield width and sits close to the bottom edge, unlike TOP which never reaches there.
 bool boss_bar_hud_needs_up_shift(void)
 {
@@ -9603,7 +9570,7 @@ int boss_bar_bottom_band_top(void)
 	return botAnchor - (rows * BOSS_BAR_THICK + (rows - 1) * BOSS_BAR_GAP) + 1;
 }
 
-/* --- Rollback state registration ---------------------------------------------
+/* Rollback state registration.
  * File-local simulation state only. VT input integration, presentation pacing, and render-side
  * scroll mirrors remain outside the rollback boundary. */
 #include "rollback.h"
@@ -9618,7 +9585,7 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
 	/* The latch that arms them.  It flips false->true inside the tick, so a replay of
 	 * the level's FIRST tick found it already set and took vt_ship_shot_delta's other
-	 * branch -- the shot-move deltas and the aim anchors came out swapped, which is
+	 * branch; the shot-move deltas and the aim anchors came out swapped, which is
 	 * what the self-test reported as three items diverging on tick 1. */
 	rollback_register("t2.shipPredHave",     &ship_pred_have_tick, sizeof(ship_pred_have_tick));
 	rollback_register("t2.tempMapXOfsFrac",  &tempMapXOfs_frac, sizeof(tempMapXOfs_frac));

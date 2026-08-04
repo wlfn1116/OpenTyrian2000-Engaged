@@ -280,10 +280,7 @@ static void free_song(void)
 	g_loop_idx = 0;
 }
 
-// Double `cap` (from a 256 floor) until it covers `need` and grow the block to match, returning the
-// new block -- or NULL, leaving the ORIGINAL valid and still owned by the caller. Never assign
-// realloc's result straight back over the pointer: that leaks the block on failure, then writes
-// through NULL.
+// Grow from a 256-entry floor until `need` fits. Failure returns NULL and preserves the original block.
 static void *grow_buf(void *old, size_t *cap, size_t need, size_t elem)
 {
 	size_t ncap = *cap;
@@ -414,7 +411,7 @@ static bool parse_smf(const Uint8 *data, size_t size)
 		}
 	}
 
-	if (ntmp == 0) goto oom;  // nothing usable parsed -- same cleanup as a failed grow
+	if (ntmp == 0) goto oom;  // use the allocation-failure cleanup path
 
 	qsort(tmp, ntmp, sizeof(*tmp), cmp_tmp);
 
@@ -577,7 +574,7 @@ void fm_stop(void)
 	if (g_thread != NULL)
 	{
 		SDL_AtomicSet(&g_stop, 1);
-		SDL_WaitThread(g_thread, NULL);  // returns promptly -- the thread polls g_stop
+		SDL_WaitThread(g_thread, NULL);  // returns promptly; the thread polls g_stop
 		g_thread = NULL;
 	}
 	SDL_AtomicSet(&g_active, 0);
@@ -647,7 +644,7 @@ void fm_set_volume(uint8_t vol255)
 
 bool fm_soundfont_loaded(void) { return g_sf_loaded; }
 
-#else  /* !WITH_MIDI -- no FluidSynth; loudness.c only calls these WITH_MIDI */
+#else  /* !WITH_MIDI; no FluidSynth; loudness.c only calls these WITH_MIDI */
 
 bool fm_init(const char *soundfont, int sample_rate) { (void)soundfont; (void)sample_rate; return false; }
 void fm_quit(void) {}

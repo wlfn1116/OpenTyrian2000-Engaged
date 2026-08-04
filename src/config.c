@@ -229,19 +229,9 @@ bool linkSounds    = true;  // 2P fuse/unfuse clink+spring (Setup > Sound)
 /* When off: debug menu and debug level select hidden; buy/sell and pause menus
    keep their stock layout. */
 bool debugMode     = true;
-/* Wider horizontal background parallax: a strafe sweeps all three layers across their full map
-   width (revealing the ~1 tile normally hidden off the left) instead of the narrow stock sway.
-   Where the mid/deep layers over-pan past their map's side edge, the edge continues as a
-   horizontally-flipped mirror of itself (backgrnd.c bg_mirror_setup/bg_mirror_tile) instead of
-   ending in a content seam. Off restores the exact original amplitude and draw. Read as the
-   parallax_span selector in mainint.c and the mirror gate in backgrnd.c. Off by default. */
+/* Extends horizontal parallax to the full map span. Off preserves the stock amplitude. */
 bool extraParallax = false;
-/* Where a background layer's read window slides past its map row's side edge, continue it as
-   a horizontally-flipped mirror image (backgrnd.c bg_mirror_setup/bg_mirror_tile). Works in
-   both parallax modes: Extra Parallax over-pans the mid/deep layers far past their edges, and
-   even the stock span uncovers ~12px of layer 3's left edge at far-left. Off = the original
-   draw: the uncovered span shows adjacent-row tiles (the visible content seam), with the
-   pointer clamped in bounds only under Extra Parallax (stock keeps its harmless edge read). */
+/* Reflects columns beyond a map row's edge in both parallax modes. */
 bool mirroredLayers = true;
 /* Thin health bar near an enemy once damaged (draw_enemy_health_bars in tyrian2.c). */
 bool enemyBars       = true;
@@ -324,7 +314,7 @@ bool zicaLaserBuff = true;              /* also fire the Lv10 beam alongside the
    menu (JE_addChargeLaserCannon in episodes.c). */
 bool chargeLaserCannon = true;
 /* Wake the dormant dispenser bases (enemy 80-83; JE_makeEnemy in tyrian2.c). Campaign
-   only -- Endless ignores the toggle and asks the zone instead. */
+   only; Endless ignores the toggle and asks the zone instead. */
 bool restoreBaseDispensers = true;
 /* Arcade modes only: a ship's shield and armour ceilings scale with its life count
    (arcade_life_scaling_active in player.c). Off (the default) leaves the vanilla hull
@@ -335,7 +325,7 @@ bool arcadeLifeBoost = false;
 bool arcadeRandomBalls = false;
 /* One-player arcade only: the life count raises the rear gun on top of its own banked power-up
    balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
-   player.c). Two-player is out -- there the rear bay already IS player 2's life counter. */
+   player.c). Two-player is out; there the rear bay already IS player 2's life counter. */
 bool arcadeRearGunScale = false;
 /* Spend the shop sheet's 11 never-referenced icons on the weapons and sidekicks that ship
    sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
@@ -581,7 +571,7 @@ bool load_opentyrian_config(void)
 				network_host_game_speed = net_game_speed;
 
 			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
-			// link can be tuned without a rebuild -- the host's value is what both sides use.
+			// link can be tuned without a rebuild; the host's value is what both sides use.
 			int net_delay = network_delay;
 			config_get_int_option(section, "net_delay", &net_delay);
 			if (net_delay >= 1 && net_delay <= 6)
@@ -761,13 +751,12 @@ bool load_opentyrian_config(void)
 		customWeaponEditMode = 0;
 	}
 
-	// The Debug Mode endless-effects layer: master toggle, virtual zone, mod mask, perk stacks and
-	// pinned scaling levers. Its own section because it is a whole setup rather than a setting, and
-	// endless_save.c owns the format -- config.c has no business knowing what a perk is.
+	// Store the complete Endless debug setup in its own section. endless_save.c owns
+	// the format so config.c does not depend on perk or modifier details.
 	endlessDebugConfigLoad(config_find_section(config, "endless_debug", NULL));
 
 	// The endless all-time record (furthest zone ever reached), its own section because it is a
-	// player RECORD rather than a setting -- and because it is the one endless value written mid-run.
+	// player record because it is written during a run rather than during config changes.
 	endlessRecordConfigLoad(config_find_section(config, "endless", NULL));
 
 	// Smooth Motion owns the sub-pixel render path. Keep it disabled when motion
@@ -830,7 +819,7 @@ bool save_opentyrian_config(void)
 #endif
 	(void)mkdir_result;
 
-	// Tyrian 2000 doesn't save mouse settings, so we do it ourselves
+	// Persist mouse settings omitted by the Tyrian 2000 save format.
 	section = config_find_or_add_section(config, "mouse", NULL);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
@@ -1147,8 +1136,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 
 void JE_initProcessorType(void)
 {
-	/* SYN: Originally this proc looked at your hardware specs and chose appropriate options. We don't care, so I'll just set
-	   decent defaults here. */
+	/* Hardware detection was removed; use stable defaults on every system. */
 
 	wild = false;
 	superWild = false;
@@ -1308,7 +1296,7 @@ void JE_decryptSaveTemp(void)
 	/* Decrypt save game file */
 	for (x = (SAVE_FILE_SIZE - 1); x >= 0; x--)
 	{
-		// (unsigned) only to make the index's non-negativity local -- x is >= 0 by the loop condition.
+		// (unsigned) only to make the index's non-negativity local; x is >= 0 by the loop condition.
 		const unsigned int k = (unsigned)(x + 1) % 10;
 		OT_ASSUME(k < 10);
 		s2[x] = (JE_byte)saveTemp[x] ^ (JE_byte)(cryptKey[k]);
@@ -1319,9 +1307,7 @@ void JE_decryptSaveTemp(void)
 
 	}
 
-	/* for (x = 0; x < SAVE_FILE_SIZE; x++) printf("%c", s2[x]); */
-
-	/* Check save file for correctitude */
+	/* Verify the save checksum. */
 	y = 0;
 	for (x = 0; x < SAVE_FILE_SIZE; x++)
 	{
@@ -1490,9 +1476,7 @@ void JE_loadConfiguration(void)
 		fread_die(saveTemp, 1, sizeof(saveTemp), fi);
 		JE_decryptSaveTemp();
 
-		/* SYN: The original mostly blasted the save file into raw memory. However, our lives are not so
-		   easy, because the C struct is necessarily a different size. So instead we have to loop
-		   through each record and load fields manually. *emo tear* :'( */
+		/* Load fields individually because the C structure no longer matches the legacy save layout. */
 
 		p = saveTemp;
 		for (z = 0; z < SAVE_FILES_NUM; z++)
@@ -1529,7 +1513,7 @@ void JE_loadConfiguration(void)
 			memcpy(&saveFiles[z].input1, p, sizeof(JE_byte)); p++;
 			memcpy(&saveFiles[z].input2, p, sizeof(JE_byte)); p++;
 			
-			/* booleans were 1 byte in pascal -- working around it */
+			/* booleans were 1 byte in pascal; working around it */
 			Uint8 temp;
 			memcpy(&temp, p, 1); p++;
 			saveFiles[z].gameHasRepeated = temp != 0;
@@ -1570,8 +1554,7 @@ void JE_loadConfiguration(void)
 			saveFiles[z].expertMode = temp != 0;
 		}
 
-		/* SYN: This is truncating to bytes. I have no idea what this is doing or why. */
-		/* TODO: Figure out what this is about and make sure it isn't broken. */
+		/* The legacy save layout stores each score component as one byte. */
 		editorLevel = (saveTemp[SIZEOF_SAVEGAMETEMP - 5] << 8) | saveTemp[SIZEOF_SAVEGAMETEMP - 6];
 
 		// T2K High Scores are unencrypted after saveTemp
@@ -1729,7 +1712,7 @@ void JE_saveConfiguration(void)
 		memcpy(p, &tempSaveFile.input1, sizeof(JE_byte)); p++;
 		memcpy(p, &tempSaveFile.input2, sizeof(JE_byte)); p++;
 		
-		/* booleans were 1 byte in pascal -- working around it */
+		/* booleans were 1 byte in pascal; working around it */
 		Uint8 temp = tempSaveFile.gameHasRepeated != false;
 		memcpy(p, &temp, 1); p++;
 		

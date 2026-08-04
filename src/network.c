@@ -56,13 +56,7 @@
 
 #include <assert.h>
 
-/*                              HERE BE DRAGONS!
- *
- * When I wrote this code I thought it was wonderful... that thought was very
- * wrong.  It works, but good luck understanding how... I don't anymore.
- *
- * Hopefully it'll be rewritten some day.
- */
+/* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
 #define NET_VERSION       13           // increment whenever networking changes might create incompatibility (13: settings block back to 24 bytes, RNG seed removed)
 #define NET_PORT          1333         // UDP
@@ -622,7 +616,7 @@ int network_check(void)
 
 		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while
 		// a player sits in the outpost, so the round trip stays measurable off the menus.  The
-		// four extra bytes cost an old peer nothing -- it reads the header and ignores the rest,
+		// four extra bytes cost an old peer nothing; it reads the header and ignores the rest,
 		// and simply never sends the reply that would produce a reading.
 		static Uint32 keep_alive_tick = 0;
 		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
@@ -820,9 +814,8 @@ bool network_state_update(void)
 
 			const Uint32 waited = SDL_GetTicks() - wait_start;
 
-			// Log the stall once, with enough context to tell a slow peer from a dead one.
-			// keep-alives refresh the liveness timer, so a peer that is running but not
-			// sending state packets would otherwise hang us here silently and forever.
+			// Keep-alives refresh liveness even when state packets stop. Log that stall once
+			// with enough context to distinguish a slow peer from a dead one.
 			if (!stall_reported && waited > 3000)
 			{
 				stall_reported = true;
@@ -984,7 +977,7 @@ int network_connect(void)
 	// The lobby decides the roles, so derive the player number from them; a command-line
 	// game keeps whatever --net-player-number set and is checked for conflicts below.
 	// The joiner's slot is provisional until the host's connect packet names the host's
-	// own -- it has to send before it can know which one that leaves it.
+	// own; it has to send before it can know which one that leaves it.
 	if (network_from_lobby)
 		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
@@ -1043,7 +1036,7 @@ connect_reset:
 
 connect_again:
 	// packet_copy only fills the first `len` bytes of a reused NET_PACKET_SIZE buffer, so reading
-	// past the length gets whatever the PREVIOUS packet left there -- a short connect packet would
+	// past the length gets whatever the PREVIOUS packet left there; a short connect packet would
 	// take the version, delay and whole settings block from stale bytes.  Nothing that speaks this
 	// protocol version sends fewer, so treat it as the version mismatch it is.
 	if (packet_in[0]->len < NET_CONNECT_NAME)
@@ -1111,7 +1104,7 @@ connect_again:
 	network_settings_check_layout(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
 
 	// Only command-line netplay can conflict: both sides were numbered by hand, and nothing
-	// else stops them flying the same ship.  A lobby game is settled above instead -- the
+	// else stops them flying the same ship.  A lobby game is settled above instead; the
 	// joiner's declared number is stale by construction (sent before the host's arrived), so
 	// comparing the two would reject the very case that assignment resolves.
 	if (!network_from_lobby && SDLNet_Read16(&packet_in[0]->data[10]) == thisPlayerNum)
@@ -1128,7 +1121,7 @@ connect_again:
 
 	// The name is whatever trails the settings block.  Take the length from the packet rather
 	// than trusting it to be terminated, tolerate a packet too short to hold one at all, and
-	// hold the sender to the same limit we send under -- the retry path below re-enters here,
+	// hold the sender to the same limit we send under; the retry path below re-enters here,
 	// so anything already allocated is ours to release first.
 	{
 		int name_len = packet_in[0]->len - NET_CONNECT_NAME;
@@ -1204,7 +1197,7 @@ connect_again:
 	return 0;
 }
 
-// something has gone wrong :(
+// Terminate the network session after a local or peer error.
 void network_tyrian_halt(unsigned int err, bool attempt_sync)
 {
 	const char *const err_msg[] = {
@@ -1221,7 +1214,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	quit = true;
 
 	// The desync halt can arrive from inside a re-simulation pass, whose silent flag
-	// suppresses every sprite draw -- including this screen's text and menus.
+	// suppresses every sprite draw; including this screen's text and menus.
 	rollback_resim = false;
 	rollback_resim_silent = false;
 
@@ -1320,7 +1313,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	JE_tyrianHalt(5);
 }
 
-/* --- Host-authoritative simulation settings ---------------------------------------------
+/* Host-authoritative simulation settings.
  * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
  * shared pickups, data sets, or tick rate. Rendering, audio, and local input settings stay local. */
 static bool settings_stashed = false;
@@ -1352,11 +1345,11 @@ int network_settings_pack(Uint8 *buf)
 	flags |= zicaLaserBuff         ? 1 << 1 : 0;
 	flags |= chargeLaserCannon     ? 1 << 2 : 0;
 	flags |= restoreBaseDispensers ? 1 << 3 : 0;
-	flags |= net_rollback          ? 1 << 4 : 0;  // rollback vs lockstep -- host decides
+	flags |= net_rollback          ? 1 << 4 : 0;  // rollback vs lockstep; host decides
 	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
 	// so the host's smooth-motion choice binds the session.
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
-	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery -- host decides
+	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
 
@@ -1509,7 +1502,7 @@ void network_settings_restore(void)
 	settings_stashed = false;
 }
 
-/* --- Debug Mode across the wire ----------------------------------------------------------
+/* Debug Mode wire state.
  * Publish debug-menu state as one reliable block while both peers are in a menu rendezvous.
  * Armor and shield are transmitted because the sender has already applied any hull change. */
 #define NDS_GEN        4    /* Uint32: generation of the block            */
@@ -1526,9 +1519,8 @@ void network_settings_restore(void)
 #define NDS_EXPERT_SLOTS NETWORK_DEBUG_EXPERT_SLOTS
 #define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
 
-// PlayerItems is all Uint8, so it goes on the wire as-is -- but only for as long as that
-// stays true, hence the check.  Growing it is fine; it just has to move NDS_CASH and the
-// offsets below it, and bump NET_VERSION.
+// PlayerItems goes on the wire as flat bytes, enforced by this check. Growing it also
+// requires moving NDS_CASH and later offsets, then bumping NET_VERSION.
 COMPILE_TIME_ASSERT(nds_items_are_flat_bytes, sizeof(PlayerItems) == 13);
 COMPILE_TIME_ASSERT(nds_items_fit_the_slot, 2 * sizeof(PlayerItems) <= NDS_CASH - NDS_ITEMS);
 COMPILE_TIME_ASSERT(nds_block_fits_a_packet, NDS_SIZE <= NET_PACKET_SIZE);
@@ -1594,7 +1586,7 @@ static void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 	expertMode                = (flags & (1 << 9)) != 0;
 	difficultyAdjust          = (flags & (1 << 10)) != 0;
 	// One-shot: both machines resume from the same confirmed frame, so both fire it on the
-	// same tick.  Never cleared here -- a trigger already pending locally must still happen.
+	// same tick.  Never cleared here; a trigger already pending locally must still happen.
 	if (flags & (1 << 11))
 		debugTwiddleTrigger = true;
 
@@ -1678,7 +1670,7 @@ bool network_debug_sync_pump(bool in_level)
 	return true;
 }
 
-/* --- Desync detection -------------------------------------------------------------------
+/* Desync detection.
  * Compare RNG draw count plus player and enemy state. Network levels share a fixed RNG seed. */
 bool networkDesyncHalt = false;
 
@@ -1709,7 +1701,7 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 	}
 	*player_hash = h;
 
-	// Enemies dominate the simulation, so sample the whole table -- position and remaining
+	// Enemies dominate the simulation, so sample the whole table; position and remaining
 	// armor are enough to catch a divergence without hashing every field.  enemyAvail is 1
 	// for a FREE slot (tyrian2.c), so anything else is a live enemy worth hashing; the slot
 	// state itself goes in too, since 0 and 2 are distinct live states.
@@ -1749,7 +1741,7 @@ Uint32 network_sim_pools(NetSimPools *detail)
 	Uint16 live = 0;
 
 	// Slot index goes in with every row: two pools holding the same rows in different
-	// slots are NOT the same state -- the next spawn picks a different slot and the
+	// slots are NOT the same state; the next spawn picks a different slot and the
 	// timelines part for good.
 	for (uint i = 0; i < COUNTOF(explosions); ++i)
 	{
@@ -1892,7 +1884,7 @@ void network_diag_note_desync(int level)
 	}
 }
 
-/* --- Crash-log network section ------------------------------------------------------------
+/* Crash-log network section.
  * Reads only static diagnostics and is safe from fault handlers. */
 void network_write_diagnostics(FILE *f)
 {
@@ -2030,7 +2022,7 @@ void network_shutdown(void)
 	network_settings_restore();
 }
 
-/* --- LAN discovery ----------------------------------------------------------------------
+/* LAN discovery.
  * Use a short-lived socket and probe both interface and global broadcast addresses. */
 int network_local_addresses(IPaddress *out, int max)
 {
@@ -2195,10 +2187,9 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*po
 	return found;
 }
 
-// Stop Windows failing the next recv with WSAECONNRESET after an ICMP port-unreachable (see
-// network_recv_one).  SDL_net keeps the raw handle private, so it is read out of the opaque
-// struct and then proved to be ours -- a datagram socket, on the port SDL_net says it bound --
-// before anything is set on it.  A layout that stops matching simply skips the ioctl.
+// Prevent WSAECONNRESET after an ICMP port-unreachable. SDL_net keeps the raw handle
+// private, so verify its opening members against the reported datagram port before the
+// ioctl; a layout mismatch skips the operation.
 #ifdef _WIN32
 static void network_allow_conn_reset(void)
 {

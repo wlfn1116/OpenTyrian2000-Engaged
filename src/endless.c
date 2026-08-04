@@ -68,7 +68,7 @@ static void endlessCashAddSat(Uint64 *tally, Uint64 amount)
 	*tally = (amount > ENDLESS_CASH_TALLY_MAX - *tally) ? ENDLESS_CASH_TALLY_MAX : *tally + amount;
 }
 
-// Book earned income against a source (ledger only -- the caller moves the wallet).
+// Book income in the ledger; the caller updates the wallet.
 static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 {
 	if ((unsigned)src >= ENDLESS_CASH_SOURCES)
@@ -235,9 +235,9 @@ static bool endlessPerkMilestoneAt(int depth)
 #define ENDLESS_PERK_EVERY 4
 
 // Song IDs are 1-based, like levelSong.
-#define ENDLESS_MILESTONE_SONG_GRAND 35  // "One Mustn't Fall"  -- every 100th zone
-#define ENDLESS_MILESTONE_SONG_PLAIN 37  // "A Field for Mag"   -- the other 50th zones (50, 150, 250, ...)
-#define ENDLESS_MILESTONE_SONG_MINOR 17  // "Tunneling Trolls"  -- the minor milestone (25, 75, 125, ...)
+#define ENDLESS_MILESTONE_SONG_GRAND 35  // "One Mustn't Fall" ; every 100th zone
+#define ENDLESS_MILESTONE_SONG_PLAIN 37  // "A Field for Mag"  ; the other 50th zones (50, 150, 250, ...)
+#define ENDLESS_MILESTONE_SONG_MINOR 17  // "Tunneling Trolls" ; the minor milestone (25, 75, 125, ...)
 
 // The pinned track for a milestone class, or 0 for an ordinary zone.
 JE_byte endlessMilestoneSong(int kind)
@@ -550,7 +550,7 @@ static const char *endlessMilestoneLine(int d)
 	return lines[i];
 }
 
-// The sign-off, printed under the last milestone line once the flavor has nowhere further to go.
+// Sign-off shown after the final milestone line.
 static const char *endlessMilestoneEpilogue(int d)
 {
 	return (d >= 250) ? "Thank you for playing." : NULL;
@@ -563,8 +563,7 @@ static void endlessGlowCentered(int y, unsigned int font, const char *s)
 	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(s, font)) / 2, y, s);
 }
 
-// Draw one stat row: label from the left edge of the block, value flush against its right edge.
-// Both glow in together, as one line -- two JE_outTextGlow calls would play the effect twice.
+// Draw one stat row with a single shared glow effect.
 static void endlessGlowRow(int left, int right, int y, unsigned int font, const char *label, const char *value)
 {
 	textGlowFont = font;
@@ -575,7 +574,7 @@ static void endlessGlowRow(int left, int right, int y, unsigned int font, const 
 
 // Dim the campaign-ending ship art behind the run summary.
 #define ENDLESS_RUNEND_PIC   "tshp2.pcx"
-#define ENDLESS_RUNEND_DIM   32   // percent brightness kept: the ship still reads, the tally still wins
+#define ENDLESS_RUNEND_DIM   32   // retained background brightness, in percent
 
 static void endlessDrawRunEndBackdrop(void)
 {
@@ -636,9 +635,8 @@ void endlessOnRunEnd(void)
 	SDL_Color white = { 255, 255, 255 };
 	set_colors(white, 254, 254);
 
-	// The tally is a two-column block: labels left, values right. Only the headline, the epitaph
-	// and the closing line are centered.
-	// SMALL_FONT_SHAPES lacks several punctuation glyphs, so these lines use words.
+	// The tally uses left-aligned labels and right-aligned values. Other lines are centered.
+	// SMALL_FONT_SHAPES lacks several punctuation glyphs, so the text uses words.
 	char fellLine[48];
 	snprintf(fellLine, sizeof(fellLine), "You fell in Zone %d", endlessRunDepth + 1);
 
@@ -660,7 +658,7 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
-	// Report lifetime income and spending, not only the final balance.
+	// Report lifetime income and spending in addition to the final balance.
 	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
 	RUNEND_ROW("Cash spent:", "$%llu", (unsigned long long)endlessRunCashSpent);
 

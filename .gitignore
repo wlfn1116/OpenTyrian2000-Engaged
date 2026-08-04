@@ -25,8 +25,7 @@ tyrian.sav
 /stderr.txt
 /stdout.txt
 
-# Crash / diagnostic logs (crashlog.c) -- one per launch, named for its start time,
-# in a log folder the game creates.  The loose patterns catch older builds' leftovers.
+# Timestamped crash and diagnostic logs, including names from older builds
 /log/
 /opentyrian_log*.log
 /opentyrian_net*.log
@@ -54,7 +53,7 @@ tyrian.sav
 /switch/*.nso
 /switch/*.elf
 /switch/*.nacp
-# ...but keep the data files users drop into romfs/ out of the repo too
+# Ignore user-supplied romfs data while keeping the placeholder
 /switch/romfs/*
 !/switch/romfs/PUT_DATA_FILES_HERE.txt
 

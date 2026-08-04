@@ -72,7 +72,7 @@ static void sanitizeRawWeapon(JE_WeaponType *w)
 {
 	w->multi = (JE_byte)clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
 	w->max   = (JE_byte)clampi(w->max,   1, CUSTOM_BULLETS_MAX);
-	// NOTE: shotrepeat 0 is valid and important — it fires a shot every tick, which is
+	// NOTE: shotrepeat 0 is valid and important; it fires a shot every tick, which is
 	// what makes a laser render as one solid beam (104 stock weapons rely on it, incl.
 	// every "Laser" power level). Flooring it to 1 halves the fire rate and opens gaps
 	// between beam segments, so do not clamp it here.
@@ -80,7 +80,7 @@ static void sanitizeRawWeapon(JE_WeaponType *w)
 		w->sound = CUSTOM_SOUND_MAX;
 }
 
-// A blank one-bullet design (fires nothing until edited) — what a fresh install
+// A blank one-bullet design (fires nothing until edited); what a fresh install
 // starts with, matching a blank creator canvas.
 static void makeBlankWeapon(JE_WeaponType *w)
 {
@@ -88,7 +88,7 @@ static void makeBlankWeapon(JE_WeaponType *w)
 	sanitizeRawWeapon(w);   // floors multi/max to 1
 }
 
-// A plain two-bullet upward blaster — what the editor's RESET actions restore.
+// A plain two-bullet upward blaster; what the editor's RESET actions restore.
 static void makeDefaultWeapon(JE_WeaponType *w)
 {
 	memset(w, 0, sizeof(*w));
@@ -230,7 +230,7 @@ void customWeaponImportAllLevels(int presetIdx)
 		}
 
 		// Clone the source sidekick's BODY (mount / sprite / animation) too, so importing a
-		// stock sidekick reproduces how it looks and where it sits — e.g. the Micro Sol
+		// stock sidekick reproduces how it looks and where it sits; e.g. the Micro Sol
 		// FrontBlaster comes across front-mounted with its own pod sprite, not just its shot.
 		if (bp->sourceOption > 0 && bp->sourceOption <= OPTION_NUM)
 		{
@@ -243,13 +243,13 @@ void customWeaponImportAllLevels(int presetIdx)
 		}
 	}
 
-	// Adopt the source's name — this is a full editable clone.
+	// Adopt the source's name; this is a full editable clone.
 	strncpy(customWeaponName, bp->name, sizeof(customWeaponName) - 1);
 	customWeaponName[sizeof(customWeaponName) - 1] = '\0';
 }
 
-// Append src's bullet segments onto dst (keeping dst's whole-volley fields), up to CUSTOM_BULLETS_MAX
-// -- the core of "combining" two weapons into one design. dst keeps its fire rate, homing, spiral,
+// Append src's bullet segments onto dst, up to CUSTOM_BULLETS_MAX, while keeping volley-wide fields.
+// dst retains its fire rate, homing, spiral,
 // sound, trail, etc.; only the per-bullet shape/motion arrays grow. Bullets past the cap are dropped.
 static void combineWeaponInto(JE_WeaponType *dst, const JE_WeaponType *src)
 {
@@ -397,7 +397,7 @@ void customWeaponAutoScaleLevels(void)
 
 		JE_WeaponType w = anchor;   // start from the anchor, then scale the power axes
 
-		// Damage per bullet — only real damage (1..98) scales; Ice (99), chain (101..249)
+		// Damage per bullet; only real damage (1..98) scales; Ice (99), chain (101..249)
 		// and piercing (>=250) are semantic codes, left exactly as designed.
 		for (int i = 0; i < baseMulti; ++i)
 		{
@@ -406,14 +406,14 @@ void customWeaponAutoScaleLevels(void)
 				w.attack[i] = (JE_byte)clampi((int)(at * mult + 0.5), 1, 98);
 		}
 
-		// Fire rate — more power fires faster, so the shot period (shotrepeat + 1) scales by
+		// Fire rate; more power fires faster, so the shot period (shotrepeat + 1) scales by
 		// 1/mult. Keeps 0 ("every tick", a solid laser) reachable at the strong end.
 		{
 			const int period = (int)((anchor.shotrepeat + 1) / mult + 0.5);
 			w.shotrepeat = (JE_byte)clampi(period - 1, 0, 255);
 		}
 
-		// Bullet count — more bullets at higher power. Shrink by keeping the centre-most
+		// Bullet count; more bullets at higher power. Shrink by keeping the centre-most
 		// segments; grow by fanning out extra copies of the anchor's segments.
 		const int target = clampi((int)(baseMulti * mult + 0.5), 1, CUSTOM_BULLETS_MAX);
 		if (target < baseMulti)
@@ -523,7 +523,7 @@ int customWeaponAddChargeState(void)
 	++customWeaponChargeStages;
 	// Jump to the new top stage's design so its shot can be tuned right away. Its starting
 	// content is whatever that power level already holds (a copy of the previous top when
-	// the weapon was imported, else the default) — non-destructive, edit it from here.
+	// the weapon was imported, else the default); non-destructive, edit it from here.
 	customWeaponEditLevel = customWeaponChargeStages - 1;
 	return customWeaponEditLevel;
 }

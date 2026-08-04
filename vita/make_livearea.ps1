@@ -16,7 +16,7 @@ function Save-IndexedPng([int]$w, [int]$h, [string]$path) {
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.Clear([System.Drawing.Color]::FromArgb(255, 8, 10, 24))
     if ($script:src -ne $null) {
-        # Scale the source to COVER the target (fill, preserve aspect, centre-crop).
+        # Fill the target while preserving aspect ratio and cropping from the center.
         $sr = $script:src.Width / $script:src.Height
         $tr = $w / $h
         if ($sr -gt $tr) { $dh = $h; $dw = [int][math]::Ceiling($h * $sr) }
@@ -27,7 +27,7 @@ function Save-IndexedPng([int]$w, [int]$h, [string]$path) {
     }
     $g.Dispose()
 
-    # 32bpp -> GIF (adaptive 8bpp palette) -> reload as Format8bppIndexed -> save as indexed PNG.
+    # Quantize through GIF, then save the reloaded indexed image as PNG.
     $ms = New-Object System.IO.MemoryStream
     $canvas.Save($ms, [System.Drawing.Imaging.ImageFormat]::Gif)
     $canvas.Dispose()

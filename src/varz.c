@@ -188,7 +188,7 @@ JE_byte SFExecuted[2]; /* [1..2] */
 JE_byte lvlFileNum;
 // One-shot override for the next level load: forces lvlFileNum after JE_loadMap's section rescan
 // (which otherwise snaps it to the section's first ']L'). Lets a level pool entry / debug pick reach
-// a section's non-first level file -- e.g. Episode 1 section 3's second TYRIAN cut (file 15). Set by
+// a section's non-first level file; e.g. Episode 1 section 3's second TYRIAN cut (file 15). Set by
 // select_level (from its file_num arg) and by the endless commit paths; consumed + cleared by
 // JE_loadMap. 0 = use the section default. See endless_level.c / game_menu.c.
 JE_byte forcedLvlFileNum = 0;
@@ -319,7 +319,7 @@ JE_byte     debugTwiddleSpecial = 0;       /* debug: selected twiddle's special 
 JE_boolean  debugAutofireTwiddle = false;  /* debug: auto-fire the selected twiddle while fire is held */
 JE_boolean  debugTwiddleTrigger = false;   /* debug: one-shot "fire the twiddle now" request from the menu */
 JE_boolean  debugToggleFire = false;       /* debug: fire button toggles auto-fire instead of hold-to-fire */
-JE_boolean  debugToggleFireActive = false; /* debug: the Toggle Fire latch -- ship is currently auto-firing */
+JE_boolean  debugToggleFireActive = false; /* debug: the Toggle Fire latch; ship is currently auto-firing */
 JE_byte     chargeSidekickAutofire = CHARGE_AUTOFIRE_ON;  /* default On; edited by the debug menu + Game Tweaks */
 JE_boolean  dispenserBasesActive = false;  /* this level wakes the dormant dispenser bases (set at level start) */
 JE_boolean  difficultyAdjust = true;
@@ -344,7 +344,7 @@ ExpertSetting expertSettings[] =
 const int expertSettingsCount = (int)(sizeof(expertSettings) / sizeof(expertSettings[0]));
 
 // The debug-sync block carries these across the wire in a fixed number of slots, and its loops
-// simply stop when they run out -- a setting added past the end would go unsynced in silence.
+// simply stop when they run out; a setting added past the end would go unsynced in silence.
 COMPILE_TIME_ASSERT(expert_settings_fit_debug_sync,
                     COUNTOF(expertSettings) <= NETWORK_DEBUG_EXPERT_SLOTS);
 
@@ -406,7 +406,7 @@ void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
 
-	// An "extra" ship (id > 90) is described by extraShips[], not ships[] -- and ships[] holds only
+	// An extra ship (id above 90) is described by extraShips[]; ships[] holds only
 	// SHIP_NUM+1 entries, so indexing it with such an id reads well past the end. Default those to
 	// the standard sheet here; JE_SGr picks the real one for them a few lines down.
 	shipGrPtr = (player[0].items.ship <= SHIP_NUM && ships[player[0].items.ship].shipgraphic > 500)
@@ -424,9 +424,8 @@ void JE_getShipInfo(void)
 	}
 	else
 	{
-		// Only ids > 90 are "extra" ships, so 19..90 land here while ships[] stops at SHIP_NUM --
-		// the same overrun the shipGrPtr guard above already avoids. Fall back to entry 0 rather
-		// than reading off the end if an edited ship or an older save carries a stray id.
+		// Only ids above 90 are extra ships. IDs 19 through 90 fall beyond ships[], so use
+		// entry 0 if an edited ship or older save carries a stray id.
 		const uint shipIdx = (player[0].items.ship <= SHIP_NUM) ? player[0].items.ship : 0;
 		shipGr = ships[shipIdx].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
 		player[0].armor = ships[shipIdx].dmg;
@@ -460,8 +459,8 @@ void JE_getShipInfo(void)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		// Arcade lives scaling: the hull is only the 1-life figure, so keep it and raise the real
-		// ceiling on top of it. Every caller of this treats the result as a full hull restore --
-		// the between-level outpost is one of them -- so the armour follows the new ceiling up.
+		// ceiling on top of it. Every caller treats the result as a full hull restore;
+		// the between-level outpost is one of them, so armor follows the new ceiling.
 		player[i].hull_armor = player[i].armor;
 		player[i].initial_armor = arcade_armor_max(&player[i]);
 		player[i].armor = player[i].initial_armor;
@@ -577,7 +576,7 @@ void JE_drawOptionLevel(void)
 void JE_tyrianHalt(JE_byte code)
 {
 	// code 1 is the "hard error" convention (missing/short data file, bad level record). It reaches
-	// exit() below, which no crash handler sees -- so write a report first. Idempotent, so a path
+	// exit() below bypasses crash handlers, so write a report first. Idempotence lets a path
 	// that already logged the specifics (dir_fopen_die/fread_die) won't be double-reported here.
 	// Normal quits (0), the network-missing notice (5) and the special code 9 are not failures.
 	if (code == 1)
@@ -587,8 +586,6 @@ void JE_tyrianHalt(JE_byte code)
 	deinit_audio();
 	deinit_video();
 	deinit_joysticks();
-
-	/* TODO: NETWORK */
 
 	free_main_shape_tables();
 
@@ -603,11 +600,6 @@ void JE_tyrianHalt(JE_byte code)
 
 	if (code != 9)
 	{
-		/*
-		TODO?
-		JE_drawANSI("exitmsg.bin");
-		JE_gotoXY(1,22);*/
-
 		JE_saveConfiguration();
 	}
 
@@ -615,7 +607,6 @@ void JE_tyrianHalt(JE_byte code)
 
 	if (code == 9)
 	{
-		/* OutputString('call=file0002.EXE' + #0'); TODO? */
 	}
 
 	if (code == 5)
@@ -712,7 +703,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		case 4:
 		{
 			// Opening Salvo: hauls that much harder. exc/eyc are Sint8 and accumulate per firing,
-			// so clamp below -- a wrapped speed would fling the pickup the wrong way.
+			// so clamp below; a wrapped speed would fling the pickup the wrong way.
 			const int pull = endlessOpeningSalvoScale(1);
 			salvo_special_burst(playerNum);
 			for (temp = 0; temp < 100; temp++)
@@ -822,7 +813,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			break;
 		// Repair specials, Opening Salvo x2.5. Vanilla leans on JE_drawArmor's blanket 28 clamp to
 		// bound these, but endless deliberately SKIPS it (reinforced hulls exceed 28), so cap on the
-		// hull's own max -- the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
+		// hull's own max; the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
 		case 13:
 			player[0].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
 			if (endlessFxActive() && player[0].initial_armor > 0 && player[0].armor > player[0].initial_armor)
@@ -1429,7 +1420,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on
 	// real hull damage. Taken here rather than by comparing armor before/after, because the armor
-	// deduction below is skipped entirely under cheatInfiniteArmor -- which would silently disarm
+	// deduction below is skipped under cheatInfiniteArmor, which would otherwise disarm
 	// the perk while testing with invincibility on.
 	bool cmHullHit = false;
 
@@ -1441,7 +1432,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		this_player->shield = 0;
 
 		// Endless AEGIS GATE boon: a hit big enough to punch through the shield is stopped AT the
-		// shield -- the gate spends whatever was left (already zeroed above), eats the remainder and
+		// shield; the gate spends whatever was left (already zeroed above), eats the remainder and
 		// goes on cooldown. Placed BEFORE cmHullHit because a blocked hit never reached the hull, so
 		// it must not arm the Countermeasure burst, deal armor damage, flash the gauge or reach the
 		// death path. The helper arms the cooldown when it answers true, so this is the one asker.
@@ -1462,7 +1453,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 			JE_setupExplosion(this_player->x - 17, this_player->y + 16, 0, 20, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x - 5 , this_player->y + 16, 0, 21, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
-			soundQueue[4] = S_CLINK;   // the "deflected" cue -- deliberately NOT S_SHIELD_HIT / S_HULL_HIT
+			soundQueue[4] = S_CLINK;   // the "deflected" cue; deliberately NOT S_SHIELD_HIT / S_HULL_HIT
 		}
 
 		if (temp > 0)
@@ -1484,7 +1475,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 						// Held revive token: survive the lethal hit. endlessConsumeRevive already
 						// restored armor to full and armed the ~3s enemy-fire stun; here we wipe the
 						// bullet field and grant brief i-frames so the revived ship isn't instantly
-						// re-killed by the same volley. Each cleared bullet pops -- without that the
+						// re-killed by the same volley. Each cleared bullet pops; without that the
 						// wipe was invisible, indistinguishable from the shots simply having missed.
 						this_player->invulnerable_ticks = 100;
 						for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
@@ -1603,7 +1594,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	VGAScreen = game_screen; /* side-effect of game_screen */
 
 	// STATIC DISCHARGE (endless): taking shield/hull damage also bleeds the generator, never more
-	// than the current reserve. Must use the REAL shield+armor drop, not the return value -- that is
+	// than the current reserve. Must use the REAL shield+armor drop, not the return value; that is
 	// 0 whenever the shield fully absorbs a hit, the common early-game case. Only losses count, so a
 	// revive restoring armor can't read as negative. Main player only (its generator is the global
 	// `power`); the helper is 0 when off or under a dead generator.
@@ -1703,7 +1694,7 @@ void JE_drawShield(void)
 // Endless reinforced hulls can exceed the 28-unit armour bar. Draw the overflow as stacked
 // "rollover" layers: each full 28 units rolls the bar over and the next chunk fills from the
 // bottom in a different colour gradient, so a heavily-reinforced hull reads as a stacked, multi-
-// hued bar. Layer palette bases are palette-relative (endless levels vary) -- tuned by eye.
+// hued bar. Layer palette bases are palette-relative (endless levels vary); tuned by eye.
 static void endlessDrawArmorBar(int armor)
 {
 	static const int layerCol[] = { 224, 112, 80, 176, 16, 48, 96, 32 };
@@ -1793,7 +1784,7 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		signed int tempx = roundf(sinf(tempr) * mt_rand_1() * explowidth);
 
 		// Extra Sparks toggle: cap the ring buffer at the big limit or the classic 101. Only the
-		// SPAWN wrap honors the effective cap -- JE_drawSP still sweeps the whole array, so sparks
+		// SPAWN wrap honors the effective cap; JE_drawSP still sweeps the whole array, so sparks
 		// already in flight past the classic cap animate out cleanly when the toggle is turned off.
 		if (++last_superpixel >= cap)
 			last_superpixel = 0;
@@ -1845,7 +1836,7 @@ void JE_drawSP(void)
 	}
 }
 
-/* --- Rollback state registration ---------------------------------------------
+/* Rollback state registration.
  *
  * This file's sim-relevant statics; the extern-visible globals defined here are
  * registered centrally in rollback_state.c.

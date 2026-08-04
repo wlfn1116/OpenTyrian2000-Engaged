@@ -30,13 +30,8 @@
 #include <assert.h>
 #include <string.h>
 
-/*** Structs ***/
-/* The actual header has a lot of fields that are basically useless to us since
- * we both set our own framerate and the format itself only allows for
- * 320x200x8.  Should a (nonexistent) ani be played that doesn't have the same
- * assumed values we are going to use, TOO BAD.  It'll just be treated as
- * corrupt in playback.
- */
+/* Playback accepts only the fixed 320x200x8 format and the engine's frame rate.
+ * Files whose retained header fields violate those assumptions are rejected. */
 #define PALETTE_OFFSET    0x100 // 128 + sizeof(header)
 #define PAGEHEADER_OFFSET 0x500 // PALETTE_OFFSET + sizeof(palette)
 #define ANIM_OFFSET   0x0B00    // PAGEHEADER_OFFSET + sizeof(largepageheader) * 256
@@ -44,18 +39,17 @@
 
 typedef struct anim_FileHeader_s
 {
-	Uint16 nlps;            /* Number of 'pages', max 256. */
-	Uint32 nRecords;        /* Number of 'records', max 65535 */
+	Uint16 nlps;            /* Page count, at most 256. */
+	Uint32 nRecords;        /* Record count, at most 65535. */
 } anim_FileHeader_t;
 
 typedef struct anim_LargePageHeader_s
 {
-	Uint16 baseRecord;      /* The first record's number */
-	Uint16 nRecords;        /* Number of records.  Supposedly there are bit flags but I saw no such code */
-	Uint16 nBytes;	        /* Number of bytes used, excluding headers */
+	Uint16 baseRecord;      /* First record number. */
+	Uint16 nRecords;        /* Record count. */
+	Uint16 nBytes;	        /* Data bytes excluding headers. */
 } anim_LargePageHeader_t;
 
-/*** Globals ***/
 Uint8 CurrentPageBuffer[65536];
 anim_LargePageHeader_t PageHeader[256];
 Uint16 CurrentPageRecordSizes[256];
@@ -69,7 +63,6 @@ FILE * InFile;
 
 static Uint8 AnimScreen[320 * 200];
 
-/*** Function decs ***/
 int JE_playRunSkipDump(Uint8 *, unsigned int);
 void JE_closeAnim(void);
 int JE_loadAnim(const char *);
@@ -77,27 +70,17 @@ int JE_renderFrame(unsigned int);
 int JE_findPage (unsigned int);
 int JE_loadPage(unsigned int);
 
-/*** Implementation ***/
-
-/* Loads the given page into memory.
- *
- * Returns  0 on success or nonzero on failure (bad data)
- */
+/* Returns zero on success and a nonzero value for invalid page data. */
 int JE_loadPage(unsigned int pagenumber)
 {
 	unsigned int i, pageSize;
 
 	if (Curlpnum == pagenumber)
-		return 0; /* Already loaded */
+		return 0;
 	Curlpnum = pagenumber;
 
-	/* We need to seek to the page and load it into our buffer.
-	 * Pages have a fixed size of 0x10000; any left over space is padded
-	 * unless it's the end of the file.
-	 *
-	 * Pages repeat their headers for some reason.  They then have two bytes of
-	 * padding followed by a word for every record.  THEN the data starts.
-	 */
+	/* Each 0x10000-byte page repeats its header, followed by two padding bytes,
+	 * one size word per record, and the compressed record data. */
 	fseek(InFile, ANIM_OFFSET + (pagenumber * ANI_PAGE_SIZE), SEEK_SET);
 	fread_u16_die(&CurrentPageHeader.baseRecord, 1, InFile);
 	fread_u16_die(&CurrentPageHeader.nRecords,   1, InFile);
@@ -106,12 +89,9 @@ int JE_loadPage(unsigned int pagenumber)
 	fseek(InFile, 2, SEEK_CUR);
 	fread_u16_die(CurrentPageRecordSizes, CurrentPageHeader.nRecords, InFile);
 
-	/* What remains is the 'compressed' data */
 	fread_die(CurrentPageBuffer, 1, CurrentPageHeader.nBytes, InFile);
 
-	/* Okay, we've succeeded in all our IO checks.  Now, make sure the
-	 * headers aren't lying or damaged or something.
-	 */
+	/* The record-size table must account for the complete compressed payload. */
 	pageSize = 0;
 	for (i = 0; i < CurrentPageHeader.nRecords; i++)
 		pageSize += CurrentPageRecordSizes[i];
@@ -119,7 +99,6 @@ int JE_loadPage(unsigned int pagenumber)
 	if (pageSize != CurrentPageHeader.nBytes)
 		return -1;
 
-	/* So far, so good */
 	return 0;
 }
 
@@ -136,7 +115,7 @@ int JE_findPage(unsigned int framenumber)
 		}
 	}
 
-	return -1; /* Did not find */
+	return -1;
 }
 
 int JE_renderFrame(unsigned int framenumber)
@@ -160,44 +139,34 @@ void JE_playAnim(const char *animfile, JE_byte startingframe, JE_byte speed)
 	crashlog_set_phase("cutscene / animation");
 
 	if (JE_loadAnim(animfile) != 0)
-		return; /* Failed to open or process file */
+		return;
 
 	set_menu_centered(true);
 	memset(AnimScreen, 0, sizeof(AnimScreen));
 
-	/* Blank screen */
 	JE_clr256(VGAScreen);
 	JE_showVGA();
 
-	/* re FileHeader.nRecords-1: It's -1 in the pascal too.
-	 * The final frame is a delta of the first, and we don't need that.
-	 * We could also, if we ever ended up needing to loop anis, check
-	 * the bools in the header to see if we should render the last
-	 * frame.  But that's never going to be necessary :)
-	 */
+	/* The final record is a delta back to the first frame and is omitted, matching
+	 * the original playback loop. */
 	for (i = startingframe; i < FileHeader.nRecords-1; i++)
 	{
-		/* Handle boring crap */
 		setDelay(speed);
 
-		/* Load required frame.  The loading function is smart enough to not re-load an already loaded frame */
 		pageNum = JE_findPage(i);
 		if (pageNum == -1)
 			break;
 		if (JE_loadPage(pageNum) != 0)
 			break;
 
-		/* render frame. */
 		if (JE_renderFrame(i) != 0)
 			break;
 		JE_showVGA();
 
-		/* Return early if user presses a key */
 		service_SDL_events(true);
 		if (newkey)
 			break;
 
-		/* Wait until we need the next frame */
 		NETWORK_KEEP_ALIVE();
 		wait_delay();
 	}
@@ -205,9 +174,7 @@ void JE_playAnim(const char *animfile, JE_byte startingframe, JE_byte speed)
 	JE_closeAnim();
 }
 
-/* loadAnim opens the file and loads data from it into the header structs.
- * It should take care to clean up after itself should an error occur.
- */
+/* Closes the input file before returning from any validation failure. */
 int JE_loadAnim(const char *filename)
 {
 	unsigned int i;
@@ -222,23 +189,16 @@ int JE_loadAnim(const char *filename)
 	fileSize = ftell_eof(InFile);
 	if (fileSize < ANIM_OFFSET)
 	{
-		/* We don't know the exact size our file should be yet,
-		 * but we do know it should be way more than this */
+		/* The fixed header and page table end at ANIM_OFFSET. */
 		fclose(InFile);
 		return -1;
 	}
 
-	/* Read in the header.  The header is 256 bytes long or so,
-	 * but that includes a lot of padding as well as several
-	 * vars we really don't care about.  We shall check the ID and extract
-	 * the handful of vars we care about.  Every value in the header that
-	 * is constant will be ignored.
-	 */
-
-	fread_die(&temp, 1, 4, InFile); /* The ID, should equal "LPF " */
-	fseek(InFile, 2, SEEK_CUR); /* skip over this word */
-	fread_u16_die(&FileHeader.nlps,     1, InFile); /* Number of pages */
-	fread_u32_die(&FileHeader.nRecords, 1, InFile); /* Number of records */
+	/* Only the signature, page count, and record count vary in the retained header. */
+	fread_die(&temp, 1, 4, InFile);
+	fseek(InFile, 2, SEEK_CUR);
+	fread_u16_die(&FileHeader.nlps,     1, InFile);
+	fread_u32_die(&FileHeader.nRecords, 1, InFile);
 
 	if (memcmp(temp, "LPF ", 4) != 0 ||
 	    FileHeader.nlps == 0  || FileHeader.nRecords == 0 ||
@@ -248,7 +208,6 @@ int JE_loadAnim(const char *filename)
 		return -1;
 	}
 
-	/* Read in headers */
 	fseek(InFile, PAGEHEADER_OFFSET, SEEK_SET);
 	for (i = 0; i < FileHeader.nlps; i++)
 	{
@@ -257,9 +216,7 @@ int JE_loadAnim(const char *filename)
 		fread_u16_die(&PageHeader[i].nBytes,     1, InFile);
 	}
 
-	/* Now we have enough information to calculate the 'expected' file size.
-	 * Our calculation SHOULD be equal to fileSize, but we won't begrudge
-	 * padding */
+	/* Trailing padding is permitted, but every declared page must fit. */
 	if (fileSize < (FileHeader.nlps-1) * ANI_PAGE_SIZE + ANIM_OFFSET
 	  + PageHeader[FileHeader.nlps-1].nBytes
 	  + PageHeader[FileHeader.nlps-1].nRecords * 2 + 8)
@@ -268,7 +225,6 @@ int JE_loadAnim(const char *filename)
 		return -1;
 	}
 
-	/* Now read in the palette. */
 	fseek(InFile, PALETTE_OFFSET, SEEK_SET);
 	for (i = 0; i < 256; i++)
 	{
@@ -280,7 +236,6 @@ int JE_loadAnim(const char *filename)
 	}
 	set_palette(colors, 0, 255);
 
-	/* Whew!  That was hard.  Let's go grab some beers! */
 	return 0;
 }
 
@@ -289,18 +244,9 @@ void JE_closeAnim(void)
 	fclose(InFile);
 }
 
-/* RunSkipDump decompresses the video.  There are three operations, run, skip,
- * and dump.  They can be used in either byte or word variations, making six
- * possible actions, and there's a seventh 'stop' action, which looks
- * like 0x80 0x00 0x00.
- *
- * Run is a memset.
- * Dump is a memcpy.
- * Skip leaves the old data intact and simply increments the pointers.
- *
- * returns 0 on success or 1 if decompressing failed.  Failure to decompress
- * indicates a broken or malicious file; playback should terminate.
- */
+/* RunSkipDump supports byte and word forms of run, skip, and copy, plus the
+ * 0x80 0x00 0x00 stop marker. Skip preserves destination bytes. A nonzero
+ * result marks invalid input and terminates playback. */
 int JE_playRunSkipDump(Uint8 *incomingBuffer, unsigned int IncomingBufferLength)
 {
 	sizebuf_t Buffer_IN, Buffer_OUT;
@@ -321,26 +267,18 @@ int JE_playRunSkipDump(Uint8 *incomingBuffer, unsigned int IncomingBufferLength)
 
 	while (true)
 	{
-		/* Get one byte.  This byte may have flags that tell us more */
 		unsigned int opcode = MSG_ReadByte(pBuffer_IN);
 
-		/* Before we continue, check the error states/
-		 * We should *probably* check these after every read and write, but
-		 * I've rigged it so that the buffers will never go out of bounds.
-		 * So we can afford to be lazy; if the buffer overflows below it will
-		 * silently fail its writes and we'll catch the failure on our next
-		 * run through the loop.  A failure means we should be
-		 * leaving ANYWAY.  The contents of our buffers doesn't matter.
-		 */
+		/* Size-buffer operations latch errors, so the next opcode boundary catches
+		 * any failed read or write before more output is interpreted. */
 		if (SZ_Error(pBuffer_IN) || SZ_Error(pBuffer_OUT))
 			return -1;
 
-		/* Divide into 'short' and 'long' */
-		if (opcode == ANI_LONG_OP) /* long ops */
+		if (opcode == ANI_LONG_OP) /* Long operation. */
 		{
 			opcode = MSG_ReadWord(pBuffer_IN);
 
-			if (opcode == ANI_STOP) /* We are done decompressing.  Leave */
+			if (opcode == ANI_STOP)
 			{
 				break;
 			}

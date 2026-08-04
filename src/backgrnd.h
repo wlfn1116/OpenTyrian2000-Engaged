@@ -72,7 +72,7 @@ extern JE_byte **mapYPos, **mapY2Pos, **mapY3Pos;
 extern JE_integer mapXPos, oldMapXOfs, mapXOfs, mapX2Ofs, mapX2Pos, mapX3Pos, oldMapX3Ofs, mapX3Ofs, tempMapXOfs;
 extern intptr_t mapXbpPos, mapX2bpPos, mapX3bpPos;
 extern JE_byte map1YDelay, map1YDelayMax, map2YDelay, map2YDelayMax;
-extern JE_boolean anySmoothies;  // if yes, I want one :D
+extern JE_boolean anySmoothies;  // any special background filter is active
 extern JE_byte smoothie_data[9];
 
 extern int starfield_speed;
@@ -83,7 +83,7 @@ extern bool background_advance;
 
 void JE_darkenBackground(JE_word neat);
 
-// mirror_w/col0: Extra Parallax edge mirroring -- columns that fall outside the map row
+// mirror_w/col0: Extra Parallax edge mirroring; columns that fall outside the map row
 // render as its horizontally-flipped reflection (see bg_mirror_tile in backgrnd.c).
 // mirror_w 0 = off (stock reads).
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map, int mirror_w, int col0);

@@ -189,7 +189,7 @@ static Uint8 dominant_bank_of(const unsigned int count[16])
 	return (Uint8)best;
 }
 
-/* The palette bank a sprite-TABLE sprite is mostly drawn in -- the blit_sprite side of
+/* The palette bank a sprite-TABLE sprite is mostly drawn in; the blit_sprite side of
  * sprite2_dominant_bank. Walks the run-length stream exactly like the blitters above: 255 = a
  * transparent run whose length is the next byte, 254 = next row, 253 = one transparent pixel.
  */
@@ -286,8 +286,7 @@ void blit_sprite_blend(SDL_Surface *surface, int x, int y, unsigned int table, u
 }
 
 // does not clip on left or right edges of surface
-// unsafe because it doesn't check that value won't overflow into hue
-// we can replace it when we know that we don't rely on that 'feature'
+// Unsafe: value may overflow into hue. Some callers rely on that behavior.
 void blit_sprite_hv_unsafe(SDL_Surface *surface, int x, int y, unsigned int table, unsigned int index, Uint8 hue, Sint8 value)
 {
 	SKIP_IF_SILENT_RESIM();	if (render_list_recording)
@@ -599,7 +598,7 @@ static inline bool sprite2_index_valid(Sprite2_array sprite2s, unsigned int inde
 	return SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]) < sprite2s.size;  // ...and what it points at
 }
 
-/* The palette bank this sprite is mostly drawn in -- its "colour", for effects that want to match
+/* The palette bank this sprite is mostly drawn in; its "colour", for effects that want to match
  * the sprite they spawned from (the endless Opening Salvo trail picks its spark colour this way).
  * Walks the packed sprite exactly like blit_sprite2, so an unpaintable index reads as 0.
  */
@@ -711,7 +710,7 @@ void blit_sprite2_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2
 	}
 }
 
-// True if sprite `index` draws nothing at all -- every control byte is a row advance, so the
+// True if sprite `index` draws nothing at all; every control byte is a row advance, so the
 // frame has no opaque pixel anywhere. Levels use blank frames for pieces the MAP draws (see the
 // kill gate in tyrian2.c), which the pixel test below can never find on screen.
 bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
@@ -731,7 +730,7 @@ bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
 // x/y bookkeeping, minus every surface write): returns true as soon as any OPAQUE pixel of
 // sprite `index` would land inside the window [wx0, wx1] x [wy0, wy1). The kill-gate uses it
 // to ask "is a pixel of this frame actually on screen?" purely from logic state, with no
-// dependency on whether or when the sprite was blitted -- so the answer is deterministic and
+// dependency on whether or when the sprite was blitted. The answer is deterministic and
 // never lags the collision. wx1 is INCLUSIVE (a pixel column); wy1 is EXCLUSIVE (a row count).
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array sprite2s, unsigned int index,
                                  int wx0, int wx1, int wy0, int wy1)
@@ -818,7 +817,7 @@ void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprit
 // Clipping counterpart of blit_sprite2_blend (per-row X clip, mirrors
 // blit_sprite2_clip). Replay-only helper for rl_draw_cmd: an extrapolated shot
 // can be drawn a pixel or two past the surface edge, where the non-clipping
-// version wraps onto the adjacent row -- the brief left-exit-shows-on-the-right
+// version wraps onto the adjacent row; the brief left-exit-shows-on-the-right
 // flash. Not recorded (replays never record).
 void blit_sprite2_blend_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
@@ -1291,8 +1290,8 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 
 // tyrianc.shp is built wrong: bank 11 (the second player-shot sheet, spriteSheet12)
 // is a byte-exact copy of bank 7, so every shot with sg > 500 draws bank 7 art in
-// Christmas mode. No festive version of bank 11 exists anywhere -- in Tyrian 2.1 that
-// same bank is byte-identical in tyrian.shp and tyrianc.shp -- so take it from
+// Christmas mode. No festive version of bank 11 exists anywhere; in Tyrian 2.1 that
+// same bank is byte-identical in tyrian.shp and tyrianc.shp, so take it from
 // tyrian.shp. Both files index 304 sprites in that bank, so the swap is safe.
 static void reload_shot_sprites_2_from_default(void)
 {

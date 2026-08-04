@@ -36,7 +36,7 @@
 extern bool rollback_resim;
 extern bool rollback_resim_silent;
 
-/* --- State registry ----------------------------------------------------------- */
+/* State registry. */
 
 void rollback_register(const char *name, void *ptr, size_t size);
 /* For state that cannot be raw-copied (the RNG holds internal pointers). */
@@ -57,7 +57,7 @@ void rollback_ensure_registered(void);
  * exchanging snapshots. */
 Uint32 rollback_layout_fingerprint(void);
 
-/* --- Snapshot ring, keyed by sim frame ---------------------------------------- */
+/* Snapshot ring keyed by simulation frame. */
 
 void rollback_ring_reset(void);
 void rollback_snapshot(Uint32 frame);

@@ -98,7 +98,7 @@ void JE_dString(SDL_Surface * screen, int x, int y, const char *s, unsigned int 
 void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int font)
 {
 	// Mirror JE_dString's glyph advance exactly (so positions line up with the already-drawn row),
-	// but darken each glyph in place with blit_sprite_dark -- which only touches the glyph-shaped
+	// then darken each glyph in place with blit_sprite_dark, which touches only glyph pixels
 	// pixels, so no box is painted over the background. '~' toggles nothing here and never advances.
 	for (int i = 0; s[i] != '\0'; ++i)
 	{
@@ -255,7 +255,7 @@ void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigne
 }
 
 // brightness is SIGNED: a negative value slides the glyph shades DOWN a palette bank's ramp
-// (TINY_FONT bodies sit at shade 7, edges at 3 -- see the Chart-a-Course threat tints), and
+// (TINY_FONT bodies sit at shade 7, edges at 3; see the Chart-a-Course threat tints), and
 // the blit's value parameter is Sint8 anyway. Keep it >= -2 so the shade-2 edge pixels can't
 // underflow the bank.
 void JE_outTextAndDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int font)
@@ -318,7 +318,7 @@ void JE_updateWarning(SDL_Surface * screen)
 }
 
 // Glow several strings in as ONE line: same animation, same timing, each string at its own x.
-// (A caller that ran JE_outTextGlow twice would play the effect twice and take twice as long --
+// Calling JE_outTextGlow twice would play the effect twice and take twice as long;
 // the Endless run summary needs a left-aligned label and a right-aligned value to arrive together.)
 void JE_outTextGlowMulti(SDL_Surface * screen, const int *x, int y, const char *const *s, int count)
 {

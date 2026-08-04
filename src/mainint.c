@@ -77,7 +77,7 @@ ulong upgradeCost;
 ulong downgradeCost;
 JE_boolean performSave;
 JE_boolean jumpSection;
-JE_boolean useLastBank; /* See if I want to use the last 16 colors for DisplayText */
+JE_boolean useLastBank; /* Use the last 16 colors for DisplayText. */
 
 bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = false;
 
@@ -112,7 +112,7 @@ void JE_drawTextWindow(const char *text)
 // clears both. Endless uses this for the elite/champion kill line (label left, bounty right).
 void JE_drawTextWindowSplit(const char *left, const char *right, int right_x)
 {
-	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area (unconditional -- see JE_drawTextWindow)
+	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area (unconditional; see JE_drawTextWindow)
 
 	textErase = 100;
 	JE_outText(VGAScreenSeg, 20, vga_height - 10, left, 0, 4);
@@ -644,7 +644,7 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 	switch (itemType)
 	{
 	case 2:
-		// ships[] stops at SHIP_NUM, but only ids > 90 are "extra" ships -- so test the array's
+		// ships[] stops at SHIP_NUM, but only ids above 90 are extra ships. Test the array's
 		// own bound, not the extra-ship one, or an id in between reads past the end.
 		cost = (itemNum > SHIP_NUM) ? 100 : ships[itemNum].cost;
 		break;
@@ -1018,7 +1018,7 @@ int JE_loadScreen(bool net2p, bool saving)
 				const size_t saveFileIndex = playersIndex * 11 + selectedIndex;
 
 				// The LAST LEVEL row is the auto slot (JE_operation refuses slot % 11 == 0);
-				// empty slots are fine -- they are what saving is for.
+				// empty slots are fine; they are what saving is for.
 				if ((saveFileIndex + 1) % 11 == 0)
 				{
 					JE_playSampleNum(S_CLINK);
@@ -1702,8 +1702,6 @@ void JE_doInGameSetup(void)
 
 	yourInGameMenuRequest = false;
 
-	//skipStarShowVGA = true;
-
 	mouseSetRelative(true);
 
 	render_list_recording = rl_was_recording;
@@ -2250,7 +2248,7 @@ JE_boolean JE_inGameSetup(void)
 			case MENU_ITEM_SHIP_SENS:
 			{
 				// Same bar style as the volume sliders; middle == the classic 1:1 feel. The marker
-				// slot goes bright once the fill reaches it -- compare drawn bar counts (amt vs mark),
+				// slot goes bright once the fill reaches it; compare drawn bar counts (amt vs mark),
 				// not the raw value, so it flips exactly on the middle bar.
 				const int amt = (ship_sensitivity + 6) / 12;
 				const int mark = (SHIP_SENS_DEFAULT + 6) / 12;
@@ -2291,9 +2289,8 @@ JE_boolean JE_inGameSetup(void)
 			pause_help = endlessMode ? "Give up the level; return to the outpost." : "Quit playing the level.";
 		else if (selectedId == MENU_ITEM_SHIP_SENS)
 			pause_help = SHIP_SENS_HELP;
-		/* Centred in the help box. The floor is the box's inner edge, so a string too wide to
-		 * centre degrades the way the old left-aligned draw did -- running off to the right --
-		 * instead of starting at a negative x, where blit_sprite_hv wraps rows instead of clipping. */
+		/* Center within the help box. Overwide text clamps to its left edge, preventing
+		 * negative-x row wrapping while retaining the prior right-edge overflow. */
 		int xHelpText = xHelpMid - JE_textWidth(pause_help, TINY_FONT) / 2;
 		if (xHelpText < 5 + xHelpOfs)
 			xHelpText = 5 + xHelpOfs;
@@ -2555,7 +2552,7 @@ JE_boolean JE_inGameSetup(void)
 					playerEndLevel = true;
 				}
 
-				// Endless: don't end the run -- flag the game loop to revert this level and reopen
+				// Endless: don't end the run; flag the game loop to revert this level and reopen
 				// the outpost LOCKED to the launch-time choices (see tyrian2.c JE_main). The level
 				// still ends here (result/reallyEndLevel); the loop decides what happens next.
 				if (endlessMode)
@@ -2847,7 +2844,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		}
 	}
 
-	// Don't let the confirming press carry into the next screen -- and a row picked inside that
+	// Do not let the confirming press carry into the next screen. A row picked inside that
 	// first half second leaves the ramp part-way, so run it out here instead of cutting the track
 	// off at whatever volume it had reached.
 	service_SDL_events(false);
@@ -3212,7 +3209,7 @@ static const char *const spriteTableNames[SPRITE_TABLES_MAX] = {
 	"Faces", "Options / Help", "Weapons", "Extra / Endings"
 };
 
-/* ---- compiled (Sprite2) sheet helpers -------------------------------------
+/* Compiled Sprite2 sheet helpers.
  * 12px-wide RLE sprites preceded by a table of 16-bit byte offsets: count is
  * the first offset / 2 and 1-based sprite N starts at offsets[N-1]. */
 static int sprite2_count(const Sprite2_array *a)
@@ -3291,7 +3288,7 @@ static void draw_sprite2_scaled_clip(SDL_Surface *s, int x, int y, const Sprite2
 	}
 }
 
-/* ---- background tile helper (raw 24x28, one byte per pixel) ---------------- */
+/* Background tiles are raw 24x28 one-byte pixels. */
 #define TILE_W 24
 #define TILE_H 28
 static void draw_tile_scaled_clip(SDL_Surface *s, int x, int y, const Uint8 *tile,
@@ -3325,7 +3322,7 @@ static void draw_tile_scaled_clip(SDL_Surface *s, int x, int y, const Uint8 *til
 		}
 }
 
-/* ---- unified sprite source model ------------------------------------------
+/* Unified sprite source model.
  * Main shape tables, compiled (Sprite2) sheets and background tile banks
  * behind one count / dims / exists / draw interface for the viewer. */
 typedef enum { VS_MAIN, VS_SPRITE2, VS_TILE, VS_SPRITE_ARRAY } VSKind;
@@ -3813,12 +3810,12 @@ static int twiddle_special_id(int row)
 static bool debug_special_is_safe(int id)
 {
 	if (id == 0)
-		return true;  // None -- clears the equipped special, no icon drawn
+		return true;  // None; clears the equipped special, no icon drawn
 	if (id < 1 || id > SPECIAL_NUM)
 		return false;
 
 	// Sprite count of spriteSheet10: entry[0] of the Uint16 offset table is the byte offset to
-	// sprite 1 -- i.e. the table's own size -- so entry[0] / 2 is the number of sprites.
+	// sprite 1, which makes entry[0] / 2 the sprite count.
 	unsigned iconMax = 0;
 	if (spriteSheet10.data != NULL && spriteSheet10.size >= sizeof(Uint16))
 		iconMax = SDL_SwapLE16(((Uint16 *)spriteSheet10.data)[0]) / (unsigned)sizeof(Uint16);
@@ -3836,10 +3833,10 @@ static void debug_force_crash(void)
 	*debug_crash_ptr = 0xDEAD;
 }
 
-/* ---- The in-game debug menu: rows, help text, and the grouped display order ------------------
+/* In-game debug menu rows, help text, and group order.
  * The row IDENTITY (DBG_*) and the row ORDER (dbgRows) are deliberately separate tables. Every
  * switch in JE_debugMenu keys off the id, never off a list position, so regrouping the menu or
- * slipping a heading in shifts nothing -- and a new row only has to name itself in three places:
+ * headings do not shift indices, and each new row names itself in three places:
  * the enum, dbgLabel, dbgHelp, then wherever it belongs in dbgRows.
  */
 enum {
@@ -3898,7 +3895,7 @@ static const char *const dbgLabel[DBG_ROW_COUNT] = {
 };
 
 /* One line per row, shown under the list while that row is selected: what it DOES, not what it is
- * called. Keep each under ~40 characters -- that is the panel's inner width in small_font. */
+ * called. Keep each under ~40 characters; that is the panel's inner width in small_font. */
 static const char *const dbgHelp[DBG_ROW_COUNT] = {
 	[DBG_PLAYER]              = "Whose gear the rows below edit",
 	[DBG_SHIP]                = "Swap the hull; red = no such ship",
@@ -3941,7 +3938,7 @@ static const char *const dbgHelp[DBG_ROW_COUNT] = {
 };
 
 /* The display order: the rows above under non-selectable headings (id < 0). Grouping is the whole
- * point -- a flat 34-row list of hull ids, cheats and diagnostics reads as noise. */
+ * point; a flat 34-row list of hull ids, cheats and diagnostics reads as noise. */
 static const struct { int id; const char *heading; } dbgRows[] = {
 	{ -1, "SURVIVAL" },   // first: the rows most often reached for mid-level
 	{ DBG_GOD_MODE, NULL }, { DBG_NOCLIP, NULL }, { DBG_NO_ENEMY_FIRE, NULL },
@@ -4038,7 +4035,7 @@ static int dbgRowStep(int r, int dir)
 	return r;
 }
 
-/* The nearest selectable row at or after `r` (then searching back) -- for any jump that can land
+/* The nearest selectable row at or after `r` (then searching back); for any jump that can land
  * on a heading: clamping, paging, Home/End, a click. */
 static int dbgRowSnap(int r)
 {
@@ -4055,11 +4052,8 @@ static int dbgRowSnap(int r)
 	return r;
 }
 
-/* Flip the endless effect layer on/off for a normal game. Inert during a real endless run, where
- * the layer is already on and flipping the flag would only desync the row's readout. Arming goes
- * through endlessCampaignModsArm(), the same path the tune panel uses, so both entry points drop a
- * previous run's outpost purchases. The config write makes the setup survive a restart immediately
- * -- this is a debug feature, so a crash is a likely way for the session to end. */
+/* Toggle campaign modifier effects outside a real Endless run. Arm through the shared path to clear
+ * stale outpost purchases, then persist immediately for crash-safe debug sessions. */
 static void debug_toggle_campaign_mods(void)
 {
 	if (endlessMode)
@@ -4133,10 +4127,8 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 			player[i].shield = player[i].shield_max;
 	}
 
-	// Both gauges are event-driven -- painted when they change, not every frame -- so they need an
-	// explicit repaint or they keep reading the old ship's numbers. Already on VGAScreenSeg here
-	// (JE_debugMenu switched to it), the surface the HUD lives on. Only when there IS a HUD, though:
-	// JE_drawOptions paints as well as re-seeds, so off-HUD these strand furniture on the shop art.
+	// Repaint the event-driven gauges on a gameplay HUD after changing equipment.
+	// JE_drawOptions also paints, so calling it over shop art would leave HUD elements behind.
 	if (debugMenuOverHud)
 	{
 		JE_wipeShieldArmorBars();
@@ -4147,7 +4139,7 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 }
 
 /* Peer side of a networked debug edit (network.c): the wire block already carried the armor and
- * shield the editing machine ended up with, so nothing is re-derived here -- this only rebuilds
+ * shield the editing machine ended up with, so nothing is re-derived here; this only rebuilds
  * the caches that hang off items[]. `overHud` says a gameplay HUD is on screen to repaint, which
  * the caller knows and this side of the wire does not. */
 void debugLoadoutRefresh(bool overHud)
@@ -4190,7 +4182,7 @@ void JE_debugMenu(bool center)
 
 #ifdef WITH_NETWORK
 	// Baseline for the change test at close: only a real edit is worth putting on the wire.
-	// Taken before the twiddle re-arm below, so that counts as an edit too -- otherwise it
+	// Taken before the twiddle re-arm below, so that counts as an edit too; otherwise it
 	// would quietly overwrite a twiddle the peer had published and never republish it.
 	if (isNetworkGame)
 		network_debug_sync_mark();
@@ -4201,7 +4193,7 @@ void JE_debugMenu(bool center)
 	debugTwiddleSpecial = (JE_byte)twiddle_special_id(dbgTwiddleId);  // keep the armed twiddle in sync
 
 	/* Which player the LOADOUT rows (and Add Cash) act on, 0-based. Two-player games open on your
-	 * own ship -- across the network that is the one you flew in with; locally, player 1. Not
+	 * own ship; across the network that is the one you flew in with; locally, player 1. Not
 	 * remembered between opens: the whole menu reads wrong if you don't notice it is set to the
 	 * other ship. */
 	int dbgPlayer = 0;
@@ -4301,7 +4293,7 @@ void JE_debugMenu(bool center)
 			switch (id)
 			{
 			case DBG_PLAYER:
-				// Across the network, name which ship is yours -- the two machines number the
+				// Across the network, name which ship is yours; the two machines number the
 				// players the same way, so "2" alone doesn't say whose gear you're about to rewrite.
 				if (isNetworkGame && (int)thisPlayerNum == dbgPlayer + 1)
 					snprintf(buf, sizeof(buf), "%d (you)", dbgPlayer + 1);
@@ -4478,7 +4470,7 @@ void JE_debugMenu(bool center)
 				break;
 			case DBG_ENDLESS_FX:
 				// Inside a real endless run the layer is simply on, and this toggle has nothing to
-				// say -- report that rather than a switch that would appear to do nothing.
+				// say; report that rather than a switch that would appear to do nothing.
 				if (endlessMode)
 					sprintf(buf, "%s", "ENDLESS");
 				else
@@ -4561,7 +4553,7 @@ void JE_debugMenu(bool center)
 			fill_rectangle_xy(VGAScreen, px1 - 4, thumb_y, px1 - 3, thumb_y + thumb_h, C_EDGE_HI);
 		}
 
-		/* Footer line 1: what the selected row DOES -- 34 cheats and diagnostics is far too many
+		/* Footer line 1: what the selected row DOES; 34 cheats and diagnostics is far too many
 		 * to carry their meaning in the label alone. Line 2: the keys, named for the platform. */
 		const int shownId = dbgRowId(selected);
 		draw_font_hv(VGAScreen, mid_x, py1 - 17, dbgHelp[shownId], small_font, centered, 15, 1);
@@ -4588,12 +4580,12 @@ void JE_debugMenu(bool center)
 		service_SDL_events(true);
 
 		// The whole game stops while this panel is open, including the packet pump the peer's
-		// liveness test reads -- so without this the other machine declares us disconnected
+		// liveness test reads. Without this, the peer declares a disconnect
 		// after NET_TIME_OUT and halts the game.
 		NETWORK_KEEP_ALIVE();
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown -- same
+		// The shoulder buttons page the list, read raw and synthesized into PageUp/PageDown; same
 		// pattern as the endless debug jump screen (game_menu.c); see the note there.
 		{
 #if defined(__SWITCH__)
@@ -4732,8 +4724,8 @@ void JE_debugMenu(bool center)
 				case DBG_PLAY_SOUND: if (dbgSoundId > 1) --dbgSoundId; break;
 				case DBG_PLAY_MUSIC: if (dbgMusicId > 0) --dbgMusicId; break;
 				case DBG_SPRITE_VIEWER: break;  // opens on Right/Enter
-				// Inside a real endless run the layer is already on and this toggle is inert --
-				// flipping it there would only desync the row's "ENDLESS" readout from the flag.
+				// The layer is already active during an Endless run; changing the flag there
+				// would desynchronize the row's "ENDLESS" readout.
 				case DBG_ENDLESS_FX: debug_toggle_campaign_mods(); break;
 				case DBG_ENDLESS_TUNE: break;  // opens on Right/Enter
 				case DBG_HITBOX: debugHitboxOverlay = !debugHitboxOverlay; break;
@@ -4746,7 +4738,7 @@ void JE_debugMenu(bool center)
 				switch (selId)
 				{
 				// Each of these indexes an array sized [X_NUM + 1], so stepping past X_NUM is an
-				// out-of-bounds read the moment anything looks the item up -- which is where the
+				// out-of-bounds read when the item is first inspected, which is where the
 				// garbage ship graphics came from. Clamp at the top the way Left already does at 0.
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + 1) % (int)COUNTOF(player); break;
 				case DBG_SHIP: if (edit->ship < SHIP_NUM) ++edit->ship; break;
@@ -4877,7 +4869,7 @@ void JE_debugMenu(bool center)
 			default:
 			{
 				/* Inline typed numeric fields (Add Cash, Hang Watchdog): digits append,
-				 * Backspace/Delete removes. Read scancodes directly -- this menu's event
+				 * Backspace/Delete removes. Read scancodes directly; this menu's event
 				 * pump can drop SDL_TEXTINPUT. */
 				char *editStr = (selId == DBG_ADD_CASH)     ? dbgCashStr
 				              : (selId == DBG_HANG_TIMEOUT) ? dbgHangStr
@@ -4952,8 +4944,6 @@ void JE_inGameHelp(void)
 
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
-
-	//tempScreenSeg = VGAScreenSeg;
 
 	JE_clearKeyboard();
 	JE_wipeKey();
@@ -5096,7 +5086,7 @@ void JE_highScoreCheck(void)
 				break;
 		}
 
-		// did you get a high score?
+		// Check for a high score.
 		if (slot < 3)
 		{
 			// shift down old scores
@@ -5402,7 +5392,7 @@ bool load_next_demo(void)
 
 	char demo_filename[9];
 	snprintf(demo_filename, sizeof(demo_filename), "demo.%d", demo_num);
-	demo_file = dir_fopen_die(data_dir(), demo_filename, "rb"); // TODO: only play demos from existing file (instead of dying)
+	demo_file = dir_fopen_die(data_dir(), demo_filename, "rb"); // shipped demo files are required
 
 	difficultyLevel = DIFFICULTY_NORMAL;
 	bonusLevelCurrent = false;
@@ -5579,7 +5569,7 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 	}
 }
 
-// A credits row is a blank spacer when it's the lone "." marker (or empty) -- the same test the
+// A credits row is a blank spacer when it's the lone "." marker (or empty); the same test the
 // roll's draw loop below uses.
 static bool credits_line_blank(const char *s)
 {
@@ -5649,8 +5639,6 @@ void JE_playCredits(void)
 	JE_clr256(VGAScreen);
 	JE_showVGA();
 	fade_palette(colors, 2, 0, 255);
-
-	//tempScreenSeg = VGAScreenSeg;
 
 	const int ticks_max = lines * 20 * 3;
 
@@ -5968,7 +5956,7 @@ void JE_endLevelAni(void)
 	}
 	else if (endlessMode)
 	{
-		// Endless earns cash, not data cubes -- show the clear payout just banked above. No '+' or
+		// Endless earns cash, not data cubes; show the clear payout just banked above. No '+' or
 		// parentheses: SMALL_FONT_SHAPES silently drops those glyphs.
 		char payStr[64];
 		snprintf(payStr, sizeof(payStr), "Zone Bonus:  %ld", endlessBonus);
@@ -6060,7 +6048,7 @@ void JE_endLevelAni(void)
 		} while (!(JE_anyButton() || (frameCountMax == 0 && temp == 1)));
 	}
 
-	wait_noinput(false, false, true); // TODO: should up the joystick repeat temporarily instead
+	wait_noinput(false, false, true); // debounce the dismissing input
 
 	fade_black(15);
 	JE_clr256(VGAScreen);
@@ -6109,7 +6097,7 @@ void JE_operation(JE_byte slot)
 
 	// This screen (name entry + on-screen SAVE/CANCEL buttons) needs the absolute pointer.
 	// If it was opened during gameplay the mouse is in relative mode; force absolute so a
-	// Switch touch is a tap-to-click on the buttons -- in relative mode a touch steers the
+	// Switch touch is a tap-to-click on the buttons; in relative mode a touch steers the
 	// ship, so the buttons never register and the dialog appears frozen. Restored on exit.
 	const bool op_was_relative = mouseGetRelative();
 	mouseSetRelative(false);
@@ -6388,7 +6376,7 @@ static void JE_drawDebugOverlays(void)
 }
 
 #ifdef WITH_NETWORK
-/* --- Own-ship replay history ------------------------------------------------------------
+/* Local ship replay history.
  * Index local lockstep state by packet sequence, not queue position, so resends and duplicates
  * cannot shift the replayed tick. */
 #define NET_OWN_RING 16  // >= NET_PACKET_QUEUE, so an entry outlives the queue that names it
@@ -6413,7 +6401,7 @@ static void net_own_state_load(Uint16 sync, int *x, int *y, Uint16 *buttons)
 }
 #endif
 
-/* --- Bottom-band HUD layout (see mainint.h for the precedence order) --------------------- */
+/* Bottom-band HUD layout; see mainint.h for precedence. */
 
 // The score row's text baseline. FULL_SHADE outlines the glyphs, so the rows actually touched
 // are HUD_SCORE_Y-1 .. HUD_SCORE_Y+8.
@@ -6563,7 +6551,7 @@ void JE_inGameDisplays(void)
 
 		// Ink spans [x, x + width - 2] (width carries that trailing pixel); the shadow widens
 		// it to [x - 1, x + width - 1]. Setting the right shadow edge to PLAYFIELD_RIGHT -
-		// (SCORE_INSET - 1) -- the mirror of player 1's left shadow edge -- rearranges to:
+		// (SCORE_INSET - 1); the mirror of player 1's left shadow edge; rearranges to:
 		const int width = JE_textWidth(tempstr, TINY_FONT);
 		const int x = (i == 0)
 		            ? PLAYFIELD_LEFT + SCORE_INSET
@@ -6576,7 +6564,7 @@ void JE_inGameDisplays(void)
 	}
 
 	// Endless: compact live kill-fire buff readout (Turbodrive / Overdrive), bottom-right of the
-	// playfield -- a combo kill counter ("xN"), the buff's fire/damage bonuses, and a draining
+	// playfield; a combo kill counter ("xN"), the buff's fire/damage bonuses, and a draining
 	// timer bar. Shifts to clear whichever boss bar is shown: UP for a BOTTOM horizontal bar, LEFT
 	// for a RIGHT vertical bar; other layouts never reach the bottom-right corner.
 	if (endlessFxActive() && endlessTurbodriveActive())
@@ -6602,8 +6590,8 @@ void JE_inGameDisplays(void)
 			if (bar_top < floorRow)
 				floorRow = bar_top;
 		}
-		// Endless is one-player, so the superbomb icons march rightward from the far side --
-		// only a long enough row actually reaches under this readout.
+		// Endless is one-player, so superbomb icons march rightward from the far side;
+		// only a long row reaches under this readout.
 		if (player[0].superbombs > 0
 		    && hud_superbomb_p1_right() >= rightX - 60
 		    && HUD_SUPERBOMB_Y < floorRow)
@@ -6622,8 +6610,8 @@ void JE_inGameDisplays(void)
 		JE_textShade(VGAScreen, rightX - JE_textWidth(buf, TINY_FONT), vga_height - 45 + yBase - yShift, buf, bank, 5, FULL_SHADE);
 
 		// Middle line reports the active buff/curse cleanly: a BOON shows only the effects it grants
-		//   -- fire boost (Turbodrive/Overdrive) -> "FIRE xN", damage stacks (Overdrive/Overblast) -> "DMG+N%";
-		//   an evil curse shows its one-word name -- JAMMED (Backfire) / BURNOUT / MISFIRE.
+		//   fire boost (Turbodrive/Overdrive) -> "FIRE xN", damage stacks (Overdrive/Overblast) -> "DMG+N%";
+		//   an evil curse shows its one-word name; JAMMED (Backfire) / BURNOUT / MISFIRE.
 		if (endlessKillFireIsEvil())
 		{
 			snprintf(buf, sizeof(buf), "%s", endlessKillFireEvilName());
@@ -6649,7 +6637,7 @@ void JE_inGameDisplays(void)
 		const int barY1 = vga_height - 26 + yBase - yShift;
 		fill_rectangle_xy(VGAScreen, barX, barY0, rightX, barY1, bank * 16 + 2);  // dark track
 		// Fill with a very weak vertical gradient within the buff's palette bank: brightest on the
-		// top row, one shade darker per row down the bar's 3px height -- a subtle top-to-bottom shade.
+		// top row, one shade darker per row down the bar's 3px height; a subtle top-to-bottom shade.
 		if (fillw > 0)
 			for (int y = barY0; y <= barY1; ++y)
 			{
@@ -6993,7 +6981,7 @@ void JE_mainKeyboardInput(void)
 		/* {IN-GAME RANDOM MUSIC SELECTION} */
 		if (keysactive[SDL_SCANCODE_SCROLLLOCK])
 		{
-			// Draws mt_rand outside the recorded input path -- taints the tick.
+			// Draws mt_rand outside the recorded input path; taints the tick.
 			rollback_taint("random-music");
 			play_song(mt_rand() % MUSIC_NUM);
 		}
@@ -7018,7 +7006,6 @@ void JE_pauseGame(void)
 	SDL_Surface *temp_surface = VGAScreen;
 	VGAScreen = VGAScreenSeg; /* side-effect of game_screen */
 
-	//tempScreenSeg = VGAScreenSeg; // sega000
 	if (!superPause)
 	{
 		JE_dString(VGAScreenSeg, 120, 90, miscText[22], FONT_SHAPES);
@@ -7053,7 +7040,7 @@ void JE_pauseGame(void)
 	}
 #endif
 
-	wait_noinput(false, false, true); // TODO: should up the joystick repeat temporarily instead
+	wait_noinput(false, false, true); // debounce before the next input loop
 
 	do
 	{
@@ -7110,8 +7097,6 @@ void JE_pauseGame(void)
 #endif
 
 	set_volume(tyrMusicVolume, fxVolume);
-
-	//skipStarShowVGA = true;
 
 	VGAScreen = temp_surface; /* side-effect of game_screen */
 
@@ -7336,7 +7321,7 @@ void JE_playerMovement(Player *this_player,
 	if (endlessFxActive() && this_player == &player[0])
 	{
 		endlessGameplayTick();
-		if (endlessConsumeArmorHudDirty())  // the Overheat DoT just shaved hull -- repaint the event-driven armor bar
+		if (endlessConsumeArmorHudDirty())  // the Overheat DoT just shaved hull; repaint the event-driven armor bar
 		{
 			JE_wipeShieldArmorBars();
 			VGAScreen = VGAScreenSeg;
@@ -7365,7 +7350,7 @@ void JE_playerMovement(Player *this_player,
 		}
 
 		// Rapid Recharge perk: extra decrements to the special cooldown gate + each sidekick's
-		// ammo-refill counter (skips main guns). Sampled once per tick -- the decrement accumulator
+		// ammo-refill counter (skips main guns). Sampled once per tick; the decrement accumulator
 		// is stateful and must be read exactly once.
 		{
 			const int specDec = endlessPerkSpecialCooldownDecrements();
@@ -7410,7 +7395,7 @@ redo:
 	                       ? (nrb_session_vt() && frameCountMax > 0 && !endLevel)
 	                       : vt_ship_owns();
 	const bool vt = vt_sim_owns && !(playerNum_ == 2 && twoPlayerLinked);
-	// Which paths this machine's LIVE INPUT flows through -- always the local
+	// Which paths this machine's LIVE INPUT flows through; always the local
 	// setup: these only shape the tuple this machine records, so they are free
 	// to differ per machine.
 	const bool vt_input = vt_ship_owns() && !(playerNum_ == 2 && twoPlayerLinked);
@@ -7558,11 +7543,11 @@ redo:
 		Uint16 linkIntent = 0;
 		bool   haveLinkIntent = false;
 
-		/* --- Movement Routine Beginning --- */
+		/* Movement. */
 
 		// Netplay with the variable-timestep ship: fold the motion VT accumulated since the
 		// last tick into the ship now, between the snapshot above and the netcode below that
-		// reads (and reverts) the difference. Only our own ship -- the other player's motion
+		// reads (and reverts) the difference. Only our own ship; the other player's motion
 		// arrives over the wire. No-op unless VT owns a network game.
 		if (isNetworkGame && playerNum_ == thisPlayerNum && !rollback_resim)
 			vt_ship_commit_net(playerNum_ - 1);
@@ -7722,7 +7707,7 @@ redo:
 						this_player->x += constantLastX;
 					}
 
-					// TODO: check if demo recording still works
+					// Record input transitions in the legacy demo stream.
 					if (record_demo)
 					{
 						bool new_input = false;
@@ -7752,7 +7737,7 @@ redo:
 					}
 				}
 
-				/* Debug Toggle Fire: the fire button is a toggle -- one press starts
+				/* Debug Toggle Fire: the fire button is a toggle; one press starts
 				 * auto-firing, the next press stops it. The latch alone drives
 				 * button[0], so a held button doesn't fire past its press-edge, and
 				 * on the consoles a touch drag (excluded from button[0] above)
@@ -7812,8 +7797,8 @@ redo:
 					accelYC--;
 
 				// Endless SLUGGISH (classic path): the VT ship scales its own move (tyrian2.c); mirror
-				// it here for the Smooth-Motion-off path. Every source -- keyboard, d-pad, mouse, touch,
-				// stick -- has already committed to this_player->x/y above, so rescale this tick's NET
+				// it here for the Smooth-Motion-off path. Every source; keyboard, d-pad, mouse, touch,
+				// stick; has already committed to this_player->x/y above, so rescale this tick's NET
 				// displacement with a sub-pixel carry (like endlessGravityPullX/Y) so a fractional scale
 				// still averages out. player[0] only; a no-op at scale 1.0, so normal play is untouched.
 				if (playerNum_ == 1)
@@ -7839,7 +7824,7 @@ redo:
 			if (isNetworkGame && playerNum_ == thisPlayerNum && nrb_active())
 			{
 				// Rollback: the live values just computed ARE this frame's input
-				// tuple, and the simulation consumes them immediately -- zero
+				// tuple, and the simulation consumes them immediately; zero
 				// local input delay, single-player feel.  The tuple goes on the
 				// wire (redundantly) for the peer to apply or roll back onto.
 				RbInput in;
@@ -7956,7 +7941,7 @@ redo:
 				linkIntent = in.buttons;
 				haveLinkIntent = true;
 			}
-			// else: normal pass, local player -- the live values stand as-is.
+			// else: normal pass, local player; the live values stand as-is.
 		}
 		else if (isNetworkGame && !network_state_is_reset())
 		{
@@ -7982,7 +7967,7 @@ redo:
 			{
 				// Replay OUR ship at the same logical tick the remote packet names, taken from
 				// the sync-keyed history rather than by counting back through the outbound
-				// queue -- see net_own_state_store. This is what guarantees both machines
+				// queue; see net_own_state_store. This is what guarantees both machines
 				// reconstruct the identical pair of positions for the identical tick.
 				const Uint16 tick = SDLNet_Read16(&packet_state_in[0]->data[2]);
 
@@ -8052,7 +8037,7 @@ redo:
 			if (mouseXC < 0) --dirx; else if (mouseXC > 0) ++dirx;  // analog stick (accumulated above;
 			if (mouseYC < 0) --diry; else if (mouseYC > 0) ++diry;  //   mouseYC already flipped if inverted)
 
-			// left => target is to the ship's right (PX_ < mouseX_) etc. — matches the
+			// left => target is to the ship's right (PX_ < mouseX_) etc.; matches the
 			// original "ship leads toward the target" sign the detector expects.
 			int tx = (int)this_player->x - (dirx > 0 ? 1 : dirx < 0 ? -1 : 0);
 			int ty = (int)this_player->y - (diry > 0 ? 1 : diry < 0 ? -1 : 0);
@@ -8069,9 +8054,7 @@ redo:
 
 		if (moveOk)
 		{
-			/* END OF MOVEMENT ROUTINES */
-
-			/*Linking Routines*/
+			/* Linking. */
 
 			// Rollback uses tuple intent because docked positions include each peer's predicted carrier.
 			const bool linkMoved = haveLinkIntent
@@ -8460,9 +8443,8 @@ redo:
 				blit_ship2x2(VGAScreen, this_player->x - 17, this_player->y - 7, *shipGrPtr_, 220);
 				blit_ship2x2(VGAScreen, this_player->x + 7, this_player->y - 7, *shipGrPtr_, 222);
 
-				// The banking trim gets its OWN render-list id. It is drawn only while banked, and
-				// rl_finalize snaps a whole id on any tick whose blit count differs from the last --
-				// so leaving it on the hull's id killed the hull's interpolation every time banking
+				// The banking trim gets its own render-list id. rl_finalize snaps an id when its
+				// blit count changes, so sharing the hull id killed hull interpolation when banking
 				// started or stopped, i.e. constantly while moving. On its own id only the trim
 				// snaps, which is a single sprite appearing anyway.
 				rl_current_id = RL_ID_SHIP_TRIM_BASE + playerNum_;
@@ -8613,7 +8595,7 @@ redo:
 
 					for (temp = min - 1; temp < max; temp++)
 					{
-						// min/max are 1 or 2, so temp is a bay index -- but it is the shared global
+						// min/max are 1 or 2, so temp is a bay index. It is also the shared global
 						// scratch byte, so its range isn't visible at the subscripts below.
 						OT_ASSUME(temp < COUNTOF(this_player->items.weapon));
 						const uint item = this_player->items.weapon[temp].id;
@@ -8628,7 +8610,7 @@ redo:
 							{
 								// Not the raw stored power: the arcade "Rear Gun Scale" row lets a rear bay
 								// fire at the life count instead (arcade_weapon_power, player.c).  The
-								// fire cursor needs no reset when that level moves -- player_shot_create
+								// fire cursor needs no reset when that level moves; player_shot_create
 								// wraps shotMultiPos on >= max, so a shorter pattern self-corrects.
 								const uint item_power = galagaMode ? 0 : arcade_weapon_power(this_player, temp) - 1,
 								           item_mode = (temp == REAR_WEAPON) ? this_player->weapon_mode - 1 : 0;
@@ -8726,7 +8708,7 @@ redo:
 					}
 				}
 
-				/*SUPER BOMB*/
+				/* Super bomb. */
 				temp = playerNum_;
 				if (temp == 0)
 					temp = 1;  /*Get whether player 1 or 2*/
@@ -8743,7 +8725,7 @@ redo:
 						--shotRepeat[SHOT_P1_SUPERBOMB + temp-1];
 					}
 					else if ((button[3-1] || button[2-1]) && !(endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DUD)))
-					{  // Dud (gamble curse): the bombs are aboard but jammed -- the fire press does nothing this sector
+					{  // Dud (gamble curse): the bombs are aboard but jammed; the fire press does nothing this sector
 						--player[bombPlayer].superbombs;
 						shotMultiPos[SHOT_P1_SUPERBOMB + temp-1] = 0;
 						b = player_shot_create(16, SHOT_P1_SUPERBOMB + temp-1, this_player->x, this_player->y, *mouseX_, *mouseY_, 535, playerNum_);
@@ -8956,7 +8938,7 @@ int link_marker_slot[3] = { -1, -1, -1 };
 
 void JE_mainGamePlayerFunctions(void)
 {
-	/*PLAYER MOVEMENT/MOUSE ROUTINES*/
+	/* Player movement and input. */
 
 	// Last tick's aim markers were drawn (and their slots freed) by the shot
 	// pass that just ran; forget them before this tick's movement re-creates
@@ -9017,7 +8999,7 @@ void JE_mainGamePlayerFunctions(void)
 	}
 	else
 	{
-		// Stock amplitude and normalization -- the original parallax formula (the only OFF-mode
+		// Stock amplitude and normalization; the original parallax formula (the only OFF-mode
 		// deviation is the deliberate far-left bg2 sub-pixel snap applied at the very end).
 		const float left_bound = 40.0f;
 		const float right_bound = PLAYFIELD_WIDTH + 64;
@@ -9041,7 +9023,7 @@ void JE_mainGamePlayerFunctions(void)
 
 	oldMapXOfs = mapXOfs;
 	oldMapXOfs_f = mapXOfs_f;  // both still hold the PREVIOUS tick's value here (updated below)
-	mapXOfs    = mapX2Ofs / 2;  // near layer rides half the mid layer -- original coupled ratio
+	mapXOfs    = mapX2Ofs / 2;  // near layer rides half the mid layer; original coupled ratio
 	mapXPos    = mapXOfs % 24;
 	mapXbpPos  = 1 - (mapXOfs / 24);
 
@@ -9472,8 +9454,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
 				}
-				// endless LOW PROFILE boon: the DAMAGING half of this collision uses the shrunk box, while
-				// the outer test above (which also collects pickups and powerups) keeps its full reach --
+				// Endless Low Profile shrinks the damaging collision but keeps the full pickup range;
 				// a boon must not make items harder to grab. endlessHitboxScale is the identity outside
 				// the boon, so every other game tests exactly the 12x14 the outer branch did.
 				else if (this_player->invulnerable_ticks == 0 && enemyAvail[z] == 0 && !noclipMode &&
@@ -9491,13 +9472,12 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
 						playerHit = playerHit * 3 / 2;
 					// Endless depth ramp: the contact damage the PLAYER receives climbs past the mid-game
-					// (+150% by zone 100, up to +500%). Scales only playerHit -- damage_to_enemy above keeps
+					// (+150% by zone 100, up to +500%). Scales only playerHit; damage_to_enemy above keeps
 					// the unscaled collision damage, so enemies aren't ground down any faster by ramming.
 					if (endlessFxActive())
 						playerHit = playerHit * endlessContactDamagePercent() / 100;
 					// Elite/champion tiers ram harder than a plain enemy: elites +25%, champions +50%.
-					// Stacks on top of the depth ramp, so a deep-run champion is a serious hull threat --
-					// unless CLEAN SIGNALS is up, which is what flattens this premium to 100%.
+					// This stacks with the depth ramp unless Clean Signals flattens the premium to 100%.
 					if (endlessFxActive())
 						playerHit = playerHit * endlessEliteContactPercent(enemy[z].eliteState) / 100;
 					if (playerHit > 255)
@@ -9561,7 +9541,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						// Destroy the enemy the player just rammed. NOT a logical kill, and
 						// deliberately NOT routed through enemy_logical_death (tyrian2.c): a ram has
 						// never fed enemyKilled, and the full kill contract would make suiciding into
-						// elites a farming strategy. A balance decision, not an oversight -- flip it
+						// elites a farming strategy. A balance decision, not an oversight; flip it
 						// by swapping the two enemyAvail writes below for enemy_logical_death calls.
 						for (temp2 = 0; temp2 < 100; temp2++)
 						{

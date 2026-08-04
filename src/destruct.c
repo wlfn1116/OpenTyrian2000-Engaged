@@ -17,34 +17,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
- /* File notes:
-  * Two players duke it out in a Scorched Earth style game.
-  * Most of the variables referring to the players are global as
-  * they are often edited and that's how the original was written.
-  *
-  * Currently this file is at its final stage for vanilla destruct.
-  * Almost all of the left/right code duplications is gone.  Most of the
-  * functions have been examined and tightened up, none of the enums
-  * start with '1', and the various large functions have been divided into
-  * smaller chunks.
-  *
-  * Destruct also supports some 'hidden' configuration that's just too awesome
-  * to not have available.  Destruct has no configuration options in game, but
-  * that doesn't stop us from changing various limiting vars and letting
-  * people remap the keyboard.  AIs may also be introduced here; fighting a
-  * stateless AI isn't really challenging after all.
-  *
-  * This hidden config also allows for a hidden game mode!  Though as a custom
-  * game mode wouldn't show up in the data files it forces us to distinguish
-  * between the constant DESTRUCT_MODES (5) and MAX_MODES (6).  DESTRUCT_MODES
-  * is only used with loaded data.
-  *
-  * Things I wanted to do but can't: Remove references to VGAScreen.  For
-  * a multitude of reasons this just isn't feasible.  It would have been nice
-  * to increase the playing field though...
-  */
+/* Destruct is a two-player artillery mode with legacy global player state.
+ * DESTRUCT_MODES counts data-backed modes; MAX_MODES also includes Custom. */
 
-  /*** Headers ***/
 #include "destruct.h"
 
 #include "config.h"
@@ -68,7 +43,6 @@
 
 #include <assert.h>
 
-/*** Defines ***/
 #define MAX_KEY_OPTIONS 4
 
 /* Widescreen Destruct HUD layout.  Each player's readout is a HUD_FRAME_W-wide
@@ -82,7 +56,6 @@
 #define HUD_ROWS           12   /* rows 0..HUD_ROWS-1 are the HUD strip; the playfield is below */
 #define HUD_GAP_LEFT       (HUD_FRAME_LEFT_X + HUD_FRAME_W)  /* first column of the playfield gap between the boxes */
 
-/*** Enums ***/
 enum de_state_t
 {
 	STATE_INIT,
@@ -217,11 +190,8 @@ enum de_move_t
 	MAX_MOVE = 8
 };
 
-/* The tracerlaser is dummied out.  It works but (probably due to the low
- * MAX_SHOTS) is not assigned to anything.  The bomb does not work.
- */
+/* Tracer laser remains unassigned, and the bomb remains nonfunctional. */
 
- /*** Structs ***/
 struct destruct_config_s
 {
 	unsigned int max_shots;
@@ -337,7 +307,6 @@ struct destruct_world_s
 	unsigned int mapFlags;
 };
 
-/*** Function decs ***/
 //Prep functions
 static void JE_destructMain(void);
 static void JE_introScreen(void);
@@ -419,7 +388,7 @@ static void DE_RunTickGravity(void);
 static bool DE_RunTickCheckEndgame(void);
 static bool JE_stabilityCheck(unsigned int, unsigned int);
 
-//sound
+// Sound
 static void DE_RunTickPlaySounds(void);
 static void JE_eSound(unsigned int);
 
@@ -429,13 +398,8 @@ static int center_text(const char* s, unsigned int font)
 	return (vga_width - JE_textWidth(s, font)) / 2;
 }
 
-/*** Weapon configurations ***/
-
-/* Part of me wants to leave these as bytes to save space. */
 static const bool     demolish[MAX_SHOT_TYPES] = { false, false, false, false, false, true, true, true, false, false, false, false, true, false, true, false, true };
-//static const int        shotGr[MAX_SHOT_TYPES] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 101};
 static const int     shotTrail[MAX_SHOT_TYPES] = { TRAILS_NONE, TRAILS_NONE, TRAILS_NONE, TRAILS_NORMAL, TRAILS_NORMAL, TRAILS_NORMAL, TRAILS_FULL, TRAILS_FULL, TRAILS_NONE, TRAILS_NONE, TRAILS_NONE, TRAILS_NORMAL, TRAILS_FULL, TRAILS_NORMAL, TRAILS_FULL, TRAILS_NORMAL, TRAILS_NONE };
-//static const int      shotFuse[MAX_SHOT_TYPES] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0};
 static const int     shotDelay[MAX_SHOT_TYPES] = { 10, 30, 80, 20, 60, 100, 140, 200, 20, 60, 5, 15, 50, 5, 80, 16, 0 };
 static const int     shotSound[MAX_SHOT_TYPES] = { S_SELECT, S_WEAPON_2, S_WEAPON_1, S_WEAPON_7, S_WEAPON_7, S_EXPLOSION_9, S_EXPLOSION_22, S_EXPLOSION_22, S_WEAPON_5, S_WEAPON_13, S_WEAPON_10, S_WEAPON_15, S_WEAPON_15, S_WEAPON_26, S_WEAPON_14, S_WEAPON_7, S_WEAPON_7 };
 static const int     exploSize[MAX_SHOT_TYPES] = { 4, 20, 30, 14, 22, 16, 40, 60, 10, 30, 0, 5, 10, 3, 15, 7, 0 };
@@ -523,7 +487,6 @@ static SDL_Scancode defaultKeyConfig[MAX_PLAYERS][MAX_KEY][MAX_KEY_OPTIONS] =
 	}
 };
 
-/*** Globals ***/
 static SDL_Surface* destructTempScreen;
 static JE_boolean destructFirstTime;
 
@@ -732,14 +695,10 @@ static void load_destruct_config(Config* config_)
 	}
 }
 
-/*** Startup ***/
-
 void JE_destructGame(void)
 {
 	unsigned int i;
 
-	/* This is the entry function.  Any one-time actions we need to
-	 * perform can go in here. */
 	crashlog_set_phase("Destruct minigame");
 	set_menu_centered(false);
 	JE_clr256(VGAScreen);
@@ -844,17 +803,10 @@ static void JE_introScreen(void)
 	JE_showVGA();
 }
 
-/* JE_modeSelect
- *
- * This function prints the DESTRUCT mode selection menu.
- * The return value is the selected mode, or -1 (MODE_NONE)
- * if the user quits.
- */
 static void DrawModeSelectMenu(enum de_mode_t mode)
 {
 	int i;
 
-	/* Helper function of JE_modeSelect.  Do not use elsewhere. */
 	for (i = 0; i < DESTRUCT_MODES; i++)
 		JE_textShade(VGAScreen, center_text(destructModeName[i], TINY_FONT), 82 + i * 12, destructModeName[i], 12, (i == mode) * 4, FULL_SHADE);
 	if (config.allow_custom == true)
@@ -868,20 +820,16 @@ static enum de_mode_t JE_modeSelect(void)
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->h * VGAScreen2->pitch);
 	mode = MODE_5CARDWAR;
 
-	// Draw the menu and fade us in
 	DrawModeSelectMenu(mode);
 
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
-	/* Get input in a loop. */
 	while (true)
 	{
-		/* Re-draw the menu every iteration */
 		DrawModeSelectMenu(mode);
 		JE_showVGA();
 
-		/* Grab keys */
 		newkey = false;
 		do
 		{
@@ -890,15 +838,14 @@ static enum de_mode_t JE_modeSelect(void)
 			SDL_Delay(16);
 		} while (!newkey);
 
-		/* See what was pressed */
 		if (keysactive[SDL_SCANCODE_ESCAPE])
 		{
-			mode = MODE_NONE; /* User is quitting, return failure */
+			mode = MODE_NONE;
 			break;
 		}
 		if (keysactive[SDL_SCANCODE_RETURN])
 		{
-			break; /* User has selected, return choice */
+			break;
 		}
 		if (keysactive[SDL_SCANCODE_UP])
 		{
@@ -938,15 +885,8 @@ static enum de_mode_t JE_modeSelect(void)
 
 static void JE_generateTerrain(void)
 {
-	/* The unique modifiers:
-		Altered generation (really tall)
-		Fuzzy hills
-		Rings of dirt
-
-	   The non-unique ones;:
-		Rings of not dirt (holes)
-		Walls
-	*/
+	/* Tall, fuzzy, and ring terrain are mutually exclusive. Walls and holes
+	 * combine independently with the selected terrain shape. */
 
 	world.mapFlags = MAP_NORMAL;
 
@@ -999,8 +939,7 @@ static void DE_generateBaseTerrain(unsigned int mapFlags, unsigned int* baseWorl
 	unsigned int newheight, HeightMul;
 	float sinewave, sinewave2, cosinewave, cosinewave2;
 
-	/* The 'terrain' is actually the video buffer :).  If it's brown, flu... er,
-	 * brown pixels are what we check for collisions with. */
+	/* Brown framebuffer pixels form the collision terrain. */
 
 	 /* The ranges here are between .01 and roughly 0.07283...*/
 	sinewave = mt_rand_lt1() * M_PI / 50 + 0.01f;
@@ -1026,7 +965,7 @@ static void DE_generateBaseTerrain(unsigned int mapFlags, unsigned int* baseWorl
 		newheight = roundf(sinf(sinewave * i) * HeightMul + sinf(sinewave2 * i) * 15 +
 			cosf(cosinewave * i) * 10 + sinf(cosinewave2 * i) * 15) + 130;
 
-		/* Bind it; we have mins and maxs */
+		/* Clamp the terrain height. */
 		if (newheight < 40)
 			newheight = 40;
 		else if (newheight > 195)
@@ -1070,8 +1009,7 @@ static void DE_generateUnits(unsigned int* baseWorld)
 			destruct_player[i].unit[j].unitY = JE_placementPosition(destruct_player[i].unit[j].unitX - 1, 14, baseWorld);
 			destruct_player[i].unit[j].unitType = basetypes[baseLookup[i][world.destructMode]][(mt_rand() % 10) + 1];
 
-			/* Sats are special cases since they are useless.  They don't count
-			 * as active units and we can't have a team of all sats */
+			/* Satellites do not count as active units. */
 			if (destruct_player[i].unit[j].unitType == UNIT_SATELLITE)
 			{
 				if (numSatellites == basetypes[baseLookup[i][world.destructMode]][0])
@@ -1081,12 +1019,7 @@ static void DE_generateUnits(unsigned int* baseWorld)
 				}
 				else
 				{
-					/* Place the satellite. Note: Earlier we cleared
-					 * space with JE_placementPosition.  Now we are randomly
-					 * placing the sat's Y.  It can be generated in hills
-					 * and there is a clearing underneath it.  This CAN
-					 * be fixed but won't be for classic.
-					 */
+					/* Satellites keep their classic random altitude after terrain clearing. */
 					destruct_player[i].unit[j].unitY = 30 + (mt_rand() % 40);
 					numSatellites++;
 				}
@@ -1096,7 +1029,6 @@ static void DE_generateUnits(unsigned int* baseWorld)
 				destruct_player[i].unitsRemaining++;
 			}
 
-			/* Now just fill in the rest of the unit's values. */
 			destruct_player[i].unit[j].lastMove = 0;
 			destruct_player[i].unit[j].unitYMov = 0;
 			destruct_player[i].unit[j].isYInAir = false;
@@ -1120,7 +1052,6 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 
 	if ((world.mapFlags & MAP_WALLS) == false)
 	{
-		/* Just clear them out */
 		for (i = 0; i < config.max_walls; i++)
 		{
 			gameWorld->mapWalls[i].wallExist = false;
@@ -1132,27 +1063,20 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 
 	do
 	{
-		/* Create a wall.  Decide how tall the wall will be */
 		wallHeight = (mt_rand() % 5) + 1;
 		if (wallHeight > remainWalls)
 		{
 			wallHeight = remainWalls;
 		}
 
-		/* Now find a good place to put the wall. */
 		tries = 0;
 		do
 		{
 			isGood = true;
 			wallX = (mt_rand() % (vga_width - 20)) + 10;
 
-			/* Is this X already occupied?  In the original Tyrian we only
-			 * checked to make sure four units on each side were unobscured.
-			 * That's not very scalable; instead I will check every unit,
-			 * but I'll only try plotting an unobstructed X four times.
-			 * After that we'll cover up what may; having a few units
-			 * stuck behind walls makes things mildly interesting.
-			 */
+			/* Try four unobstructed positions, then accept overlap so generation
+			 * always terminates. */
 			for (i = 0; i < MAX_PLAYERS; i++)
 			{
 				for (j = 0; j < config.max_installations; j++)
@@ -1161,7 +1085,7 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 						(wallX < destruct_player[i].unit[j].unitX + 13))
 					{
 						isGood = false;
-						goto label_outer_break; /* I do feel that outer breaking is a legitimate goto use. */
+						goto label_outer_break;
 					}
 				}
 			}
@@ -1213,8 +1137,7 @@ static void DE_generateRings(SDL_Surface* screen, Uint8 pixel)
 
 static unsigned int aliasDirtPixel(const SDL_Surface* screen, unsigned int x, unsigned int y, const Uint8* s)
 {
-	//A helper function used when aliasing dirt.  That's a messy process;
-	//let's contain the mess here.
+	// Keep the dirt-aliasing neighborhood lookup local to this helper.
 	unsigned int newColor = PIXEL_BLACK;
 
 	if ((y > 0) && (*(s - screen->pitch) == PIXEL_DIRT)) // look up
@@ -1238,8 +1161,6 @@ static void JE_aliasDirt(SDL_Surface* screen)
 	 * pixels.  It's an aliaser, just like it says. */
 	unsigned int x, y;
 
-	/* This is a pointer to a screen.  If you don't like pointer arithmetic,
-	 * you won't like this function. */
 	Uint8* s = screen->pixels;
 	s += 12 * screen->pitch;
 
@@ -1288,13 +1209,8 @@ static unsigned int JE_placementPosition(unsigned int passed_x, unsigned int wid
 {
 	unsigned int i, new_y;
 
-	/* This is the function responsible for carving out chunks of land.
-	 * There's a bug here, but it's a pretty major gameplay altering one:
-	 * areas can be carved out for units that are aerial or in mountains.
-	 * This can result in huge caverns.  Ergo, it's a feature :)
-	 *
-	 * I wondered if it might be better to not carve out land at all.
-	 * On testing I determined that was distracting and added nothing. */
+	/* Flatten the unit footprint to its highest terrain column. This preserves
+	 * the large clearings produced for elevated units. */
 	new_y = 0;
 	for (i = passed_x; i <= passed_x + width - 1; i++)
 	{
@@ -1328,7 +1244,7 @@ static bool JE_stabilityCheck(unsigned int x, unsigned int y)
 		s++;
 	}
 
-	/* If there are fewer than 10 brown pixels we don't consider it a solid base */
+	/* Fewer than ten brown pixels do not form a solid base. */
 	return (numDirtPixels < 10);
 }
 
@@ -1367,7 +1283,7 @@ static void JE_makeExplosion(unsigned int tempPosX, unsigned int tempPosY, enum 
 {
 	unsigned int i, tempExploSize;
 
-	/* First find an open explosion. If we can't find one, return.*/
+	/* Find an available explosion slot. */
 	for (i = 0; i < config.max_explosions; i++)
 		if (exploRec[i].isAvailable == true)
 			break;
@@ -1862,13 +1778,7 @@ static void DE_SmoothPresent(int scale)
 	setDelay(1);   /* keep `target` current for other timing readers */
 }
 
-/* DE_RunTick
- *
- * Runs one tick.  One tick involves handling physics, drawing crap,
- * moving projectiles and explosions, and getting input.
- * Returns true while the game is running or false if the game is
- * to be terminated.
- */
+/* Returns the state requested after one complete Destruct tick. */
 static enum de_state_t DE_RunTick(void)
 {
 	static unsigned int endDelay;
@@ -1880,7 +1790,7 @@ static enum de_state_t DE_RunTick(void)
 
 	/* The smooth present kicks in once we're past the first (fade-in) tick, when the
 	 * user has Smooth Motion on and supersampling is running.  When it does, capture
-	 * the clean terrain now -- before this tick draws units/shots over it -- so the
+	 * the clean terrain before this tick draws units and shots, allowing the
 	 * interpolated frames can be rebuilt from a static background. */
 	const int de_ss = effective_supersample();
 	const bool smooth = smoothMotion && de_ss > 1 && !destructFirstTime && DE_ensureSmoothBuffers(de_ss);
@@ -1968,18 +1878,12 @@ static enum de_state_t DE_RunTick(void)
 	return STATE_CONTINUE;
 }
 
-/* DE_RunTickX
- *
- * Handles something that we do once per tick, such as
- * track ammo and move explosions.
- */
 static void DE_RunTickCycleDeadUnits(void)
 {
 	unsigned int i;
 	struct destruct_unit_s* unit;
 
-	/* This code automatically switches the active unit if it is destroyed
-	 * and skips over the useless satellite */
+	/* Select the next living unit with a valid weapon. */
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
 		if (destruct_player[i].unitsRemaining == 0)
@@ -2067,14 +1971,8 @@ static void DE_GravityDrawUnit(enum de_player_t team, struct destruct_unit_s* un
 
 static void DE_GravityLowerUnit(struct destruct_unit_s* unit)
 {
-	/* units fall at a constant speed.  The heli is an odd case though;
-	 * we simply give it a downward velocity, but due to a buggy implementation
-	 * the chopper didn't lower until you tried to fly it up.  Tyrian 2000 fixes
-	 * this by not making the chopper a special case.  I've decided to actually
-	 * mix both; the chopper is given a slight downward acceleration (simulating
-	 * a 'rocky' takeoff), and it is lowered like a regular unit, but not as
-	 * quickly.
-	 */
+	/* Ground units fall at constant speed. Helicopters retain the slower descent
+	 * and downward velocity used by the Tyrian 2000 behavior. */
 	if (unit->unitY < 199)  /* checking takes time, don't check if it's at the bottom */
 	{
 		if (JE_stabilityCheck(unit->unitX, roundf(unit->unitY)))
@@ -2178,9 +2076,7 @@ static void DE_RunTickExplosions(void)
 			tempPosY = exploRec[i].y + roundf(cosf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
 			tempPosX = exploRec[i].x + roundf(sinf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
 
-			/* Our game allows explosions to wrap around.  This looks to have
-			 * originally been a bug that was left in as being fun, but we are
-			 * going to replicate it w/o risking out of bound arrays. */
+			/* Preserve explosion wrapping without out-of-bounds access. */
 
 			while (tempPosX < 0)
 				tempPosX += vga_width;
@@ -2196,9 +2092,6 @@ static void DE_RunTickExplosions(void)
 					continue;
 			}
 
-			/* And now the drawing.  There are only two types of explosions
-			 * right now; dirt and flares.  Dirt simply draws a brown pixel;
-			 * flares explode and have a star formation. */
 			switch (exploRec[i].exploType)
 			{
 			case EXPL_DIRT:
@@ -2249,13 +2142,10 @@ static void DE_TestExplosionCollision(unsigned int PosX, unsigned int PosY)
 
 static void DE_DestroyUnit(enum de_player_t playerID, struct destruct_unit_s* unit)
 {
-	/* This function call was an evil evil piece of brilliance before.  Go on.
-	 * Look at the older revisions.  It passed the result of a comparison.
-	 * MULTIPLIED.  This is at least a little clearer... */
-	JE_makeExplosion(unit->unitX + 5, roundf(unit->unitY) - 5, (unit->unitType == UNIT_HELI) ? SHOT_SMALL : SHOT_INVALID); /* Helicopters explode like small shots do.  Invalids are their own special case. */
+	JE_makeExplosion(unit->unitX + 5, roundf(unit->unitY) - 5, (unit->unitType == UNIT_HELI) ? SHOT_SMALL : SHOT_INVALID); /* Only helicopters use the small-shot explosion. */
 
-	if (unit->unitType != UNIT_SATELLITE) /* increment score */
-	{ /* todo: change when teams are created. Hacky kludge for now.*/
+	if (unit->unitType != UNIT_SATELLITE)
+	{
 		destruct_player[playerID].unitsRemaining--;
 		destruct_player[((playerID == PLAYER_LEFT) ? PLAYER_RIGHT : PLAYER_LEFT)].score++;
 	}
@@ -2277,7 +2167,6 @@ static void DE_RunTickShots(void)
 		shotRec[i].prev_x = shotRec[i].x;
 		shotRec[i].prev_y = shotRec[i].y;
 
-		/* Move the shot.  Simple displacement */
 		shotRec[i].x += shotRec[i].xmov;
 		shotRec[i].y += shotRec[i].ymov;
 
@@ -2317,7 +2206,7 @@ static void DE_RunTickShots(void)
 			continue;
 		}
 
-		/* Draw the shot (and its trail) first -- even above the map, so it shows
+		/* Draw the shot (and its trail) first; even above the map, so it shows
 		 * in the playfield gap between the HUD boxes.  Only while it's actually
 		 * on-screen; collisions are gated separately below. */
 		tempPosX = roundf(shotRec[i].x);
@@ -2342,7 +2231,7 @@ static void DE_RunTickShots(void)
 			}
 		}
 
-		/* Don't bother checking for collisions above the map :) */
+		/* Skip collision checks above the map. */
 		if (shotRec[i].y <= 14)
 			continue;
 
@@ -2418,7 +2307,7 @@ static void DE_DrawTrails(struct destruct_shot_s* shot, unsigned int count, unsi
 {
 	int i;
 
-	for (i = count - 1; i >= 0; i--) /* going in reverse is important as it affects how we draw */
+	for (i = count - 1; i >= 0; i--) /* Reverse order determines trail layering. */
 	{
 		if (shot->trailc[i] > 0 && shot->traily[i] > 0) /* exists and on-screen (HUD boxes are repainted over) -> draw it */
 		{
@@ -2455,17 +2344,13 @@ static void DE_RunTickAI(void)
 		if (ptrPlayer->is_cpu == false)
 			continue;
 
-		/* I've been thinking, purely hypothetically, about what it would take
-		 * to have multiple computer opponents.  The answer?  A lot of crap
-		 * and a 'target' variable in the destruct_player struct. */
+		/* Each CPU targets the next player slot. */
 		j = i + 1;
 		if (j >= MAX_PLAYERS)
 			j = 0;
 
 		ptrTarget = &(destruct_player[j]);
 		ptrCurUnit = &(ptrPlayer->unit[ptrPlayer->unitSelected]);
-
-		/* This is the start of the original AI.  Heh.  AI. */
 
 		if (ptrPlayer->aiMemory.c_noDown > 0)
 			ptrPlayer->aiMemory.c_noDown--;
@@ -2567,8 +2452,7 @@ static void DE_RunTickAI(void)
 			{
 				if (abs((int)ptrUnit->unitX - (int)ptrCurUnit->unitX) < 8)
 				{
-					/* I get it.  This makes helicopters hover over
-					 * their enemies. */
+					/* Helicopters hover over their targets. */
 					if (ptrUnit->unitType == UNIT_SATELLITE)
 					{
 						ptrPlayer->moves.actions[MOVE_FIRE] = false;
@@ -2628,8 +2512,7 @@ static void DE_RunTickAI(void)
 			ptrPlayer->moves.actions[MOVE_FIRE] = false;
 		}
 
-		/* This last hack was down in the processing section.
-		 * What exactly it was doing there I do not know */
+		/* Laser and airborne units cancel the AI power hold. */
 		if (ptrCurUnit->unitType == UNIT_LASER || ptrCurUnit->isYInAir == true)
 			ptrPlayer->aiMemory.c_Power = 0;
 	}
@@ -2691,7 +2574,7 @@ static void DE_RunTickDrawHUD(void)
 
 	/* Repaint the clean HUD backdrop under the two boxes first, so units or walls
 	 * that poke into the top rows can't scribble on the HUD art.  Only the box
-	 * columns are repainted -- the gap between them (HUD_GAP_LEFT..HUD_FRAME_RIGHT_X)
+	 * columns are repainted; the gap between them (HUD_GAP_LEFT..HUD_FRAME_RIGHT_X)
 	 * is left as live playfield, restored each tick by JE_tempScreenChecking. */
 	for (unsigned int y = 0; y < HUD_ROWS; ++y)
 	{
@@ -2729,11 +2612,7 @@ static void DE_RunTickGetInput(void)
 	unsigned int player_index, key_index, slot_index;
 	SDL_Scancode key;
 
-	/* destruct_player.keys holds our key config.  Players will eventually be
-	 * allowed to can change their key mappings.  destruct_player.moves and
-	 * destruct_player.keys line up; rather than manually checking left and
-	 * right we can just loop through the indexes and set the actions as
-	 * needed. */
+	/* Key and action arrays share indices, including alternate binding slots. */
 	service_SDL_events(true);
 
 	for (player_index = 0; player_index < MAX_PLAYERS; player_index++)
@@ -2747,10 +2626,9 @@ static void DE_RunTickGetInput(void)
 					break;
 				if (keysactive[key] == true)
 				{
-					/* The right key was clearly pressed */
 					destruct_player[player_index].moves.actions[key_index] = true;
 
-					/* Some keys we want to toggle afterwards */
+					/* Consume edge-triggered actions after recording them. */
 					if (key_index == KEY_CHANGE ||
 						key_index == KEY_CYUP ||
 						key_index == KEY_CYDN)
@@ -2770,7 +2648,7 @@ static void DE_RunTickGetInput(void)
 	{
 		poll_joystick(0);
 
-		// Pause quits the minigame -- there is no keyboard Escape on the Switch.
+		// Pause quits the minigame; there is no keyboard Escape on the Switch.
 		if (joystick[0].action_pressed[5])
 			keysactive[SDL_SCANCODE_ESCAPE] = true;
 
@@ -2784,10 +2662,8 @@ static void DE_RunTickGetInput(void)
 			if (joystick[0].direction[1])      act[KEY_RIGHT]  = true;  // aim right / move right
 			if (joystick[0].direction[0])      act[KEY_UP]     = true;  // more power
 			if (joystick[0].direction[2])      act[KEY_DOWN]   = true;  // less power
-			// A controller bound to fire AND weapon-cycle on one physical button (e.g. the R
-			// shoulder set to both "fire" and "right sidekick") would otherwise shoot the tower
-			// every time you cycle. Ignore fire while a weapon-cycle button is held so cycling
-			// never fires; firing is done with its own, non-cycle button.
+			// Ignore fire while a weapon-cycle action is held, preventing dual-bound
+			// controller buttons from firing during a cycle.
 			bool cycling = joystick[0].action[2] || joystick[0].action[3];
 			if (joystick[0].action[0] && !cycling) act[KEY_FIRE] = true;  // fire (held)
 			if (joystick[0].action_pressed[1]) act[KEY_CHANGE] = true;  // change unit (tap)
@@ -2933,7 +2809,7 @@ static void DE_ProcessInput(void)
 	}
 }
 
-// Both cyclers step an int and write the enum back once at the end -- nothing reads unit->shotType
+// Both cyclers step an int and write the enum back once at the end; nothing reads unit->shotType
 // inside the loop. Keeping the wrap on a local puts the bound on weaponSystems[][MAX_SHOT_TYPES]
 // at the subscript itself, rather than on the enum staying inside [SHOT_FIRST, SHOT_LAST], which
 // SHOT_INVALID = -1 can break.
@@ -2964,7 +2840,7 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 	unsigned int i;
 	unsigned int shotIndex;
 
-	/* First, find an empty shot struct we can use */
+	/* Find an available shot slot. */
 	for (i = 0; ; i++)
 	{
 		if (i >= config.max_shots)
@@ -2992,7 +2868,7 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 		shotRec[shotIndex].x = curUnit->unitX + curUnit->lastMove * 2 + 5;
 		shotRec[shotIndex].xmov = 0.02f * curUnit->lastMove * curUnit->lastMove * curUnit->lastMove;
 
-		/* If we are trying in vain to move up off the screen, act differently.*/
+		/* Handle upward movement at the top edge separately. */
 		if (destruct_player[curPlayer].moves.actions[MOVE_UP] && curUnit->unitY < 30)
 		{
 			shotRec[shotIndex].y = curUnit->unitY;
@@ -3014,10 +2890,7 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 
 		if (config.jumper_straight[curPlayer])
 		{
-			/* This is identical to the default case.
-			 * I considered letting the switch fall through
-			 * but that's more confusing to people who aren't used
-			 * to that quirk of switch. */
+			/* Deliberately duplicates the default case for clarity. */
 
 			shotRec[shotIndex].x = curUnit->unitX + 6 - cosf(curUnit->angle) * 10 * direction;
 			shotRec[shotIndex].y = curUnit->unitY - 7 - sinf(curUnit->angle) * 10;
@@ -3062,8 +2935,6 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 	shotRec[shotIndex].prev_y = shotRec[shotIndex].y;
 
 	shotRec[shotIndex].shottype = curUnit->shotType;
-	//shotRec[shotIndex].shotdur = shotFuse[shotRec[shotIndex].shottype];
-
 	shotRec[shotIndex].trailc[0] = 0;
 	shotRec[shotIndex].trailc[1] = 0;
 	shotRec[shotIndex].trailc[2] = 0;
@@ -3138,12 +3009,7 @@ static void DE_LowerPower(struct destruct_unit_s* unit)
 		unit->power = 1;
 }
 
-/* DE_isValidUnit
- *
- * Returns true if the unit's health is above 0 and false
- * otherwise.  This mainly exists because the 'health' var
- * serves two roles and that can get confusing.
- */
+/* Health also serves as the unit-validity marker. */
 static inline bool DE_isValidUnit(struct destruct_unit_s* unit)
 {
 	return unit->health > 0;

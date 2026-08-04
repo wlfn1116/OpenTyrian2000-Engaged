@@ -53,8 +53,8 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 't', 't', "data",              true },
 		
 		{ 'n', 'n', "net",               true },
-		{ 256, 0,   "net-player-name",   true }, // TODO: no short codes because there should
-		{ 257, 0,   "net-player-number", true }, //       be a menu for entering these in the future
+		{ 256, 0,   "net-player-name",   true },
+		{ 257, 0,   "net-player-number", true },
 		{ 'p', 'p', "net-port",          true },
 		{ 'd', 'd', "net-delay",         true },
 		
@@ -210,7 +210,7 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 			
 		case 'l':
-			// Gives you mucho bucks
+			// Enable rich mode.
 			richMode = true;
 			break;
 			
