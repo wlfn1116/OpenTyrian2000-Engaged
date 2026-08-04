@@ -4760,6 +4760,7 @@ void JE_debugMenu(bool center)
 				case DBG_DIFFICULTY: if (difficultyLevel > DIFFICULTY_WIMP) --difficultyLevel; break;
 				case DBG_ADD_CASH:
 					player[editPlayer].cash = cashMax;
+					endlessCashDebugOverwrite();
 					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
@@ -4815,6 +4816,7 @@ void JE_debugMenu(bool center)
 				case DBG_DIFFICULTY: if (difficultyLevel < DIFFICULTY_10) ++difficultyLevel; break;
 				case DBG_ADD_CASH:
 					player[editPlayer].cash = cashMax;
+					endlessCashDebugOverwrite();
 					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
@@ -4853,11 +4855,11 @@ void JE_debugMenu(bool center)
 					}
 					break;
 				}
-				// Applies the typed value (built digit-by-digit, capped, so no overflow). Deliberately
-				// NOT routed through endlessAddCash: this is not income, it is the debug screen
-				// overwriting the wallet. In an endless run the reconciler books the difference as
-				// ENDLESS_CASH_OTHER (or as spending), so a hand-edited wallet is why the crash log's
-				// "untagged" line might be nonzero without an income path having actually gone missing.
+				// Applies the typed value (built digit-by-digit, capped, so no overflow). Not income,
+				// so it is declared via endlessCashDebugOverwrite rather than endlessCashCredit: the
+				// ledger books the difference as ENDLESS_CASH_OTHER (or as spending) without tripping
+				// the audit warning. A hand-edited wallet is why the crash log's "untagged" line can
+				// be nonzero without an income path having actually gone missing.
 				case DBG_ADD_CASH:
 #if defined(__SWITCH__) || defined(__vita__)
 					// No physical keyboard on the consoles: pop the software keyboard to fill the field.
@@ -4869,6 +4871,7 @@ void JE_debugMenu(bool center)
 						for (const char *c = dbgCashStr; *c >= '0' && *c <= '9'; ++c)
 							v = v * 10u + (ulong)(*c - '0');
 						player[editPlayer].cash = v;
+						endlessCashDebugOverwrite();
 					}
 					break;
 				case DBG_HANG_TIMEOUT:  // apply the typed watchdog timeout in seconds (clamps to range)

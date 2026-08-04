@@ -39,19 +39,22 @@ Uint64   endlessSortieOutpostMods = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 18
+#define ENDLESS_SAVE_VERSION 19
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
 #define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE
 #define ENDLESS_SAVE_OFFERS_V12 3
 
-// Spare cash-source slots, so appending an EndlessCashSource needs no version bump.
+// Spare cash-source/sink slots, so appending an EndlessCashSource or EndlessCashSink needs no
+// version bump.
 #define ENDLESS_SAVE_CASH_SOURCES 12
+#define ENDLESS_SAVE_CASH_SINKS   12
 
 // Perk IDs are on-disk slots; widen the block and bump the version together.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
 COMPILE_TIME_ASSERT(endless_save_cash_sources_fit, ENDLESS_CASH_SOURCES <= ENDLESS_SAVE_CASH_SOURCES);
+COMPILE_TIME_ASSERT(endless_save_cash_sinks_fit, ENDLESS_CASH_SINKS <= ENDLESS_SAVE_CASH_SINKS);
 
 typedef struct {
 	bool used;
@@ -124,8 +127,8 @@ typedef struct {
 	Uint64 cashSpent;   // ...and of everything that left the wallet
 	Uint64 cashBySource[ENDLESS_SAVE_CASH_SOURCES];  // the earnings breakdown, indexed by EndlessCashSource
 
-	// Added in v18.
-	Uint64 cashGearSpent;  // the refundable-gear slice of cashSpent (trade-in refunds cancel against it)
+	// Added in v19 (v18 briefly stored only the gear sink as a single field).
+	Uint64 cashBySink[ENDLESS_SAVE_CASH_SINKS];  // the spending breakdown, indexed by EndlessCashSink
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -256,7 +259,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
 		endlessPutU64(f, r->cashBySource[i]);
 
-	endlessPutU64(f, r->cashGearSpent);              // v18 refundable-gear slice of the spent total
+	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)  // v19 spending breakdown
+		endlessPutU64(f, r->cashBySink[i]);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -487,13 +491,20 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		}
 	}
 
-	// v18: the gear slice behind trade-in cancelling. An older record resumes with it at 0 (the
-	// memset), so gear bought before the save sells as "gear sold" income instead of cancelling --
-	// the pre-v18 behaviour, and still consistent with earned - spent == wallet.
-	if (version >= 18)
+	// Spending breakdown. v18 briefly stored only the gear sink (the slice trade-in refunds cancel
+	// against); v19 keeps the full per-sink array. Pre-v18 resumes all-zero (the memset), so gear
+	// bought before the save sells as "gear sold" income instead of cancelling -- older behaviour,
+	// and still consistent with earned - spent == wallet.
+	if (version == 18)
 	{
-		if (!endlessGetU64(f, &r->cashGearSpent))
+		if (!endlessGetU64(f, &r->cashBySink[ENDLESS_SINK_GEAR]))
 			return false;
+	}
+	else if (version >= 19)
+	{
+		for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)
+			if (!endlessGetU64(f, &r->cashBySink[i]))
+				return false;
 	}
 	return true;
 }
@@ -547,13 +558,11 @@ static void endlessWriteAllSlots(void)
 // Snapshot the live run AND the current outpost into a record.
 static void endlessCaptureCurrent(EndlessSlotRec *r)
 {
-	// Settle the cash ledger before copying it. The wallet this record is snapshotted ALONGSIDE (in
-	// tyrian.sav for a save, in endlessSortiePlayer for a sortie) is the live one, so a ledger that
-	// still owes a reconcile would be stored disagreeing with it -- and since the restore re-anchors
-	// the mark to the wallet, an outpost purchase made with no gameplay tick since would be dropped
-	// from the spent total for good. Safe here: neither caller runs while the upgrade sub-menu is
-	// showing its fake trade-in balance.
-	endlessCashSample();
+	// Audit before copying: the ledger must agree with the wallet this record is snapshotted
+	// ALONGSIDE (in tyrian.sav for a save, in endlessSortiePlayer for a sortie), and the restore
+	// re-anchors the mark, so any drift not booked now would be dropped for good. Safe here:
+	// neither caller runs while the upgrade sub-menu is showing its fake trade-in balance.
+	endlessCashAudit();
 
 	memset(r, 0, sizeof(*r));
 	r->used = true;
@@ -638,12 +647,14 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	// sortie snapshot shares this record, and there it carries a Hardcore run's mode across a bail.
 	r->runMode = (Uint8)endlessRunMode;
 
-	// v16 cash ledger. The spare on-disk slots past ENDLESS_CASH_SOURCES stay zeroed by the memset.
+	// v16 cash ledger + v19 sink breakdown. The spare on-disk slots past ENDLESS_CASH_SOURCES /
+	// ENDLESS_CASH_SINKS stay zeroed by the memset.
 	r->cashEarned = endlessRunCashEarned;
 	r->cashSpent  = endlessRunCashSpent;
 	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 		r->cashBySource[i] = endlessCashBySource[i];
-	r->cashGearSpent = endlessCashGearSpent;  // v18
+	for (int i = 0; i < ENDLESS_CASH_SINKS; ++i)
+		r->cashBySink[i] = endlessCashBySink[i];
 }
 
 // Lay a saved record back over the live state. endlessResetRun first, so per-zone/per-visit
@@ -750,7 +761,8 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessRunCashSpent  = r->cashSpent;
 	for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 		endlessCashBySource[i] = r->cashBySource[i];
-	endlessCashGearSpent = r->cashGearSpent;
+	for (int i = 0; i < ENDLESS_CASH_SINKS; ++i)
+		endlessCashBySink[i] = r->cashBySink[i];
 	endlessCashResync();
 
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll

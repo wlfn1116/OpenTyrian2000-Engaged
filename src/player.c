@@ -171,7 +171,7 @@ void calc_purple_balls_needed(Player *this_player)
 void player_award_pickup_cash(Player *this_player, long amount)
 {
 	if (endlessMode && this_player == &player[0])
-		endlessAddCash(amount, ENDLESS_CASH_PICKUP);
+		endlessCashCredit(amount, ENDLESS_CASH_PICKUP);
 	else
 		this_player->cash += amount;
 }

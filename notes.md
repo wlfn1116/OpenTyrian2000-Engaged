@@ -422,51 +422,47 @@ at 194px, y=3, bottom 197: tight against the 200px screen but nothing clips.
 
 ### Cash ledger
 
-Income is declared, spending is reconciled. `endlessAddCash(amount, src)` (endless.c)
-is the only way cash should enter the wallet in a run: it credits `player[0]`, books
-the amount against an `EndlessCashSource`, and re-marks. `player_award_pickup_cash`
-(player.c) wraps it for the playfield pickups, which credit whoever collected them.
+Every wallet movement in a run passes through one explicit interface (endless.c):
+`endlessCashCredit(amount, src)` for income, `endlessCashDebit(amount, sink)` for
+purchases and penalties (clamped to the wallet), and the
+`endlessShopTradeBegin`/`endlessShopTradeCommit` bracket for the upgrade shop. Each
+books against a breakdown -- `EndlessCashSource` for earnings, `EndlessCashSink` for
+spending -- and re-marks the ledger's wallet mirror, so the run-over totals are
+exact by construction, with no reconciliation in the normal path.
+`player_award_pickup_cash` (player.c) wraps the credit for playfield pickups, which
+pay whoever collected them.
 
-Spending has no call site to hook -- the outpost *assigns* a recomputed balance
-(`player[0].cash = JE_cashLeft()`) instead of subtracting -- so `endlessCashSample`
-reconciles the wallet against a high-water mark: a fall books into
-`endlessRunCashSpent`, an undeclared rise into `ENDLESS_CASH_OTHER`. A nonzero
-"untagged" line in the crash-log breakdown means an income path skipped
-`endlessAddCash` (or the debug Add Cash screen overwrote the wallet).
+The old reconciler survives only as `endlessCashAudit`, a debugging assertion run
+from the gameplay tick, the save/sortie capture, run end, and the top of every
+credit/debit. If the wallet drifted from the mark, some path bypassed the interface:
+it warns on stderr and still books the drift (a rise as "untagged" income, a fall as
+plain spending) so the totals stay wallet-true even then. A nonzero "untagged" line
+in the crash-log breakdown is that warning made durable -- the one legitimate cause
+is the debug Add Cash screen, which declares its overwrite through
+`endlessCashDebugOverwrite` (same booking, no warning).
 
-`endlessAddCash` reconciles *before* crediting. Re-marking over a wallet that already
-drifted erases whatever moved it: buy in the E-Shop, then decline a perk before any
-gameplay tick, and the purchase would never reach the spent total.
-
-The reconciler must run between every fall and the next rise, or the stale mark
-swallows that rise. `endlessGameplayTick` runs it every tick, so the first tick of a
-zone re-marks after all the shopping. The gamble is the only place a debit and a
-credit land with no tick between them, so it reconciles around its own wager.
-
-The upgrade shop is a full-refund market, so its transactions get their own bracket
-instead of the generic reconcile -- otherwise every net-positive visit (selling gear
-back, downgrading weapon power) read as an undeclared rise and inflated Cash earned
-as "untagged". Entering the sub-menu samples while the wallet is still real, and
-every exit's `JE_cashLeft()` assignment is followed by `endlessShopTradeSettle`
-(endless.c), which therefore sees exactly one transaction's delta. A fall books as
-spending *and* into `endlessCashGearSpent`, the refundable-gear slice of the spent
-total; a rise cancels against that slice first -- buy gear and sell it back and
-neither run-over total moves, in any order -- and only the excess books as income,
-labelled "gear sold" (`ENDLESS_CASH_TRADEIN`). The excess is real money the run was
-handed in kind: it is liquidating GRANTED gear, which booked nothing when acquired
-(the starting Atomic RailGun sold at the first outpost is the canonical case). The
-slice is per-run state, persisted as save v18 (`cashGearSpent`); an older record
-resumes with it at 0, so pre-save gear sells as income -- the pre-v18 behaviour, and
-still invariant-true.
+The upgrade shop is a full-refund market that *assigns* a recomputed balance
+(`player[0].cash = JE_cashLeft()`) rather than subtracting, so it is bracketed
+instead of debited: `endlessShopTradeBegin` (game_menu.c, sub-menu entry) snapshots
+the wallet while it is still real, and every exit's `JE_cashLeft()` assignment is
+followed by `endlessShopTradeCommit`, which books exactly one transaction's delta. A
+fall books as `ENDLESS_SINK_GEAR` spending; a rise cancels against that sink first
+-- buy gear and sell it back and neither run-over total moves, in any order -- and
+only the excess books as income, labelled "gear sold" (`ENDLESS_CASH_TRADEIN`). The
+excess is real money the run was handed in kind: liquidating GRANTED gear, which
+booked nothing when acquired (the starting Atomic RailGun sold at the first outpost
+is the canonical case).
 
 Invariant: `earned - spent == wallet` (the Zone 1 stake is booked as
-`ENDLESS_CASH_START`, so there is no separate starting term), and the breakdown sums
-to `earned`. The trade-in settle preserves it from both sides: a refund raises the
-wallet by `cancel + excess`, lowers spent by `cancel` and raises earned by `excess`.
-The one place `player[0].cash` is deliberately *fake* is the outpost's upgrade
-sub-menu, which inflates it by the equipped item's trade-in value; every exit
-restores the real balance first, so nothing may sample in between -- the bracket
-above depends on that window staying sample-free.
+`ENDLESS_CASH_START`, so there is no separate starting term), the source breakdown
+sums to `earned`, and the sinks sum to `spent` less anything the audit had to book.
+The trade commit preserves it from both sides: a refund raises the wallet by
+`cancel + excess`, lowers spent by `cancel` and raises earned by `excess`. The one
+place `player[0].cash` is deliberately *fake* is the upgrade sub-menu between Begin
+and the exits; no credit, debit, or audit may run in that window. Both breakdowns
+persist in endless.sav (sources since v17, sinks since v19 -- v18 briefly stored
+only the gear sink), each with spare on-disk slots so appending an enum entry needs
+no version bump.
 
 ### Death and retries
 

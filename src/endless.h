@@ -151,37 +151,54 @@ typedef enum {
 	ENDLESS_CASH_INTEREST,   // bank interest on unspent cash
 	ENDLESS_CASH_GAMBLE,     // E-Shop gamble winnings
 	ENDLESS_CASH_PERK,       // the cash taken instead of a perk
-	ENDLESS_CASH_OTHER,      // undeclared: the reconciler saw a rise no endlessAddCash announced
+	ENDLESS_CASH_OTHER,      // undeclared: the audit saw a rise no endlessCashCredit announced
 	ENDLESS_CASH_START,      // the difficulty-based stake the run is handed at zone 1
 	ENDLESS_CASH_TRADEIN,    // gear sold beyond what buying it booked as spent (granted gear, e.g. the starting gun)
 	ENDLESS_CASH_SOURCES
 } EndlessCashSource;
 
-// THE way cash should enter the wallet in endless: credits player[0] and records where it came from.
-// Safe to call with endless off (campaign mods award bounties too) -- it credits and skips the tally.
-void endlessAddCash(long amount, EndlessCashSource src);
+// Where a run's cash went. Same append-only rule as the sources: the save block carries spare
+// slots (ENDLESS_SAVE_CASH_SINKS), so growing this list needs no save-version bump.
+typedef enum {
+	ENDLESS_SINK_GEAR = 0,   // upgrade-shop trades: guns, power steps, shields, generators, sidekicks
+	ENDLESS_SINK_SUPPLIES,   // E-Shop kit: specials, superbombs, sabotage charges
+	ENDLESS_SINK_BUFF,       // kill-fire buffs: Turbodrive / Overdrive / Overblast
+	ENDLESS_SINK_REVIVE,     // revive tokens
+	ENDLESS_SINK_PERK,       // bought extra perk picks
+	ENDLESS_SINK_REROLL,     // shop-stock rerolls
+	ENDLESS_SINK_HULL,       // Reinforce hull tiers
+	ENDLESS_SINK_GAMBLE,     // wagers and the machine's crueller outcomes
+	ENDLESS_CASH_SINKS
+} EndlessCashSink;
 
-// Run totals for the run-over tally. Earned is the sum of endlessCashBySource; spent is everything
-// that left the wallet -- purchases, gamble wagers, and the machine's crueller outcomes. All
-// saturating, so no run can wrap them.
+// THE endless economy interface: every wallet movement in a run goes through one of these, so the
+// run-over tally is exact by construction, with no reconciliation in the normal path.
+//   Credit pays income in. Safe with endless off (campaign mods award bounties too) -- it credits
+//   and skips the tally. Debit takes a purchase or penalty out, clamped to the wallet.
+//   The upgrade shop's full-refund trades are bracketed instead: Begin snapshots the real wallet
+//   before the sub-menu fakes it, Commit books the committed delta -- a fall as ENDLESS_SINK_GEAR
+//   spending, a rise cancelling booked gear spending first (churn moves neither total) with only
+//   the excess (selling GRANTED gear, e.g. the starting gun) credited as ENDLESS_CASH_TRADEIN.
+void endlessCashCredit(long amount, EndlessCashSource src);
+void endlessCashDebit(Sint64 amount, EndlessCashSink sink);
+void endlessShopTradeBegin(void);
+void endlessShopTradeCommit(void);
+
+// Run totals for the run-over tally. Earned is the sum of endlessCashBySource, spent of
+// endlessCashBySink plus anything the audit had to book. All saturating, so no run can wrap them.
 extern Uint64 endlessRunCashEarned;
 extern Uint64 endlessRunCashSpent;
 extern Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES];
-extern Uint64 endlessCashGearSpent;   // the refundable-gear slice of spent; trade-ins cancel against it
+extern Uint64 endlessCashBySink[ENDLESS_CASH_SINKS];
 const char *endlessCashSourceName(EndlessCashSource src);
+const char *endlessCashSinkName(EndlessCashSink sink);
 
-// The reconciler behind endlessAddCash: banks any UNdeclared move in player[0].cash -- a rise into
-// ENDLESS_CASH_OTHER, a fall into the spent total. The spend side has no call site to hook because
-// the outpost assigns a recomputed balance (JE_cashLeft) instead of subtracting, so it needs this;
-// a nonzero ENDLESS_CASH_OTHER means an income path forgot to call endlessAddCash.
-void endlessCashSample(void);
-void endlessCashResync(void);   // re-anchor without banking either way (run start, load, sortie revert)
-
-// Settle the upgrade-shop transaction a JE_cashLeft() exit assignment just committed. A fall is
-// gear spending; a rise cancels booked gear spending first (so churning gear moves neither total)
-// and only the excess books as income. The entry side samples while the wallet is still real
-// (game_menu.c), so this sees exactly one transaction's delta.
-void endlessShopTradeSettle(void);
+// The old reconciler, demoted to a debugging assertion: if the wallet drifted from the ledger's
+// mark, some path bypassed the interface above -- it warns on stderr and books the drift (a rise
+// as "untagged", a fall as plain spending) so the totals stay wallet-true. Expected to no-op.
+void endlessCashAudit(void);
+void endlessCashResync(void);          // re-anchor without booking either way (run start, load, sortie revert)
+void endlessCashDebugOverwrite(void);  // the debug screen overwrote the wallet: book the delta, no warning
 
 // Count one logical enemy. All kill paths go through enemy_logical_death.
 void endlessCountKill(int linknum);

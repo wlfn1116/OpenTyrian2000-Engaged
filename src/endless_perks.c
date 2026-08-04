@@ -531,7 +531,7 @@ long endlessPerkDeclineBonus(void)
 
 void endlessDeclinePerk(void)
 {
-	endlessAddCash(endlessPerkDeclineBonus(), ENDLESS_CASH_PERK);
+	endlessCashCredit(endlessPerkDeclineBonus(), ENDLESS_CASH_PERK);
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
 

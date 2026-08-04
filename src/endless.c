@@ -32,21 +32,15 @@ int      endlessArmorBonus = 0;
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
-// The run's cash ledger. Income is DECLARED at the source (endlessAddCash), so the run-over tally can
-// break down where a run's money came from. What can't be declared is the outgoing side: the outpost
-// assigns a recomputed balance (player[0].cash = JE_cashLeft()) instead of subtracting, so there is no
-// debit to hook. endlessCashSample reconciles instead -- it compares the wallet against a high-water
-// mark and books the difference, a fall as spending and a rise as ENDLESS_CASH_OTHER.
-//
-// The rule that keeps the reconciler honest: it must run between every FALL and the next rise, or the
-// stale mark swallows that rise. endlessGameplayTick runs it every tick, so the first tick of a zone
-// re-marks after all the shopping; the gamble is the only place a debit and a credit land with no tick
-// between them, so it reconciles around its own wager. The upgrade shop's full-refund trade-ins get
-// their own bracket (endlessShopTradeSettle) so gear churn cannot inflate either run-over total.
+// The run's cash ledger. Every wallet movement is DECLARED at the source -- income through
+// endlessCashCredit, spending through endlessCashDebit, the upgrade shop's full-refund trades
+// through the Begin/Commit bracket -- so the run-over tally is exact by construction. The mark
+// mirrors the wallet after every declared move; endlessCashAudit is the assertion that nothing
+// moved it undeclared, booking (and warning about) any drift rather than letting it net away.
 Uint64 endlessRunCashEarned = 0;
 Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
-Uint64 endlessCashGearSpent = 0;
+Uint64 endlessCashBySink[ENDLESS_CASH_SINKS] = { 0 };
 static ulong endlessCashMark = 0;
 
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
@@ -64,12 +58,22 @@ const char *endlessCashSourceName(EndlessCashSource src)
 	return ((unsigned)src < ENDLESS_CASH_SOURCES) ? endlessCashSourceNames[src] : "";
 }
 
+static const char *const endlessCashSinkNames[ENDLESS_CASH_SINKS] = {
+	"gear", "supplies", "buffs", "revives", "perk picks", "rerolls", "hull", "gambling",
+};
+
+const char *endlessCashSinkName(EndlessCashSink sink)
+{
+	return ((unsigned)sink < ENDLESS_CASH_SINKS) ? endlessCashSinkNames[sink] : "";
+}
+
 static void endlessCashAddSat(Uint64 *tally, Uint64 amount)
 {
 	*tally = (amount > ENDLESS_CASH_TALLY_MAX - *tally) ? ENDLESS_CASH_TALLY_MAX : *tally + amount;
 }
 
-static void endlessCashCredit(Uint64 amount, EndlessCashSource src)
+// Book earned income against a source (ledger only -- the caller moves the wallet).
+static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 {
 	if ((unsigned)src >= ENDLESS_CASH_SOURCES)
 		src = ENDLESS_CASH_OTHER;
@@ -82,7 +86,41 @@ static void endlessCashCredit(Uint64 amount, EndlessCashSource src)
 	endlessCashBySource[src] += amount;
 }
 
-void endlessAddCash(long amount, EndlessCashSource src)
+// The drift check behind endlessCashAudit and endlessCashDebugOverwrite: book any undeclared wallet
+// movement (a rise as "untagged" income, a fall as plain spending) and re-anchor the mark. It must
+// run before any re-mark over a drifted wallet, or the drift would silently net away.
+static void endlessCashReconcile(bool warn)
+{
+	const ulong now = player[0].cash;
+	if (now == endlessCashMark)
+		return;
+	if (warn)
+		fprintf(stderr, "warning: endless cash audit caught an undeclared %s of %llu\n",
+		        (now > endlessCashMark) ? "rise" : "fall",
+		        (unsigned long long)((now > endlessCashMark) ? now - endlessCashMark : endlessCashMark - now));
+	if (now > endlessCashMark)
+		endlessCashBook((Uint64)(now - endlessCashMark), ENDLESS_CASH_OTHER);
+	else
+		endlessCashAddSat(&endlessRunCashSpent, (Uint64)(endlessCashMark - now));
+	endlessCashMark = now;
+}
+
+void endlessCashAudit(void)
+{
+	if (!endlessMode)
+		return;
+	endlessCashReconcile(true);
+}
+
+// The debug screen's wallet overwrite is declared, just not classifiable -- book it without the noise.
+void endlessCashDebugOverwrite(void)
+{
+	if (!endlessMode)
+		return;
+	endlessCashReconcile(false);
+}
+
+void endlessCashCredit(long amount, EndlessCashSource src)
 {
 	if (amount <= 0)
 		return;
@@ -91,28 +129,30 @@ void endlessAddCash(long amount, EndlessCashSource src)
 		player[0].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
 		return;
 	}
-
-	// Settle any drift FIRST. Re-marking over an unreconciled wallet would erase whatever moved it:
-	// an undeclared rise would vanish silently instead of surfacing as ENDLESS_CASH_OTHER, and a
-	// purchase not yet re-marked (a shop visit with no gameplay tick since) would never reach the
-	// spent total. Both would break earned - spent == wallet.
-	endlessCashSample();
-
+	endlessCashReconcile(true);   // any undeclared drift surfaces before the mark moves
 	player[0].cash += (ulong)amount;
-	endlessCashCredit((Uint64)amount, src);
-	endlessCashMark = player[0].cash;   // declared, so the reconciler must not book it a second time
+	endlessCashBook((Uint64)amount, src);
+	endlessCashMark = player[0].cash;
 }
 
-void endlessCashSample(void)
+void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
 {
-	if (!endlessMode)
+	if (amount <= 0)
 		return;
-	const ulong now = player[0].cash;
-	if (now > endlessCashMark)
-		endlessCashCredit((Uint64)(now - endlessCashMark), ENDLESS_CASH_OTHER);
-	else if (now < endlessCashMark)
-		endlessCashAddSat(&endlessRunCashSpent, (Uint64)(endlessCashMark - now));
-	endlessCashMark = now;
+	if (!endlessMode)
+	{
+		player[0].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
+		return;
+	}
+	endlessCashReconcile(true);
+	Uint64 take = (Uint64)amount;
+	if (take > player[0].cash)   // a debit can take at most the wallet
+		take = player[0].cash;
+	player[0].cash -= (ulong)take;
+	endlessCashAddSat(&endlessRunCashSpent, take);
+	if ((unsigned)sink < ENDLESS_CASH_SINKS)
+		endlessCashAddSat(&endlessCashBySink[sink], take);
+	endlessCashMark = player[0].cash;
 }
 
 // Cash that was placed rather than earned -- the starting stake, a save being loaded, a sortie
@@ -122,32 +162,45 @@ void endlessCashResync(void)
 	endlessCashMark = player[0].cash;
 }
 
-// The upgrade shop refunds gear at full price, so a sell-back must not read as income the way an
-// undeclared rise does. Gear falls are tracked in their own slice of the spent total; a rise cancels
-// against that slice (churn nets to zero on both totals) and only the excess -- selling gear the run
-// GRANTED, which booked nothing when acquired -- is credited, labelled rather than "untagged".
-void endlessShopTradeSettle(void)
+// Wallet snapshot carried from Begin to Commit. The upgrade sub-menu shows a FAKE balance between
+// the two, so the pair must bracket exactly one shop transaction with nothing booking in between.
+static ulong endlessTradeBefore = 0;
+
+void endlessShopTradeBegin(void)
 {
 	if (!endlessMode)
 		return;
-	const ulong now = player[0].cash;
-	if (now > endlessCashMark)
+	endlessCashReconcile(true);   // settle drift while the wallet is still real
+	endlessTradeBefore = player[0].cash;
+}
+
+// The upgrade shop refunds gear at full price, so a sell-back must not read as income the way an
+// undeclared rise does. Gear falls are booked into their own sink; a rise cancels against that sink
+// (churn nets to zero on both totals) and only the excess -- selling gear the run GRANTED, which
+// booked nothing when acquired -- is credited, labelled rather than "untagged".
+void endlessShopTradeCommit(void)
+{
+	if (!endlessMode)
+		return;
+	const ulong now = player[0].cash;   // the exit assignment already committed JE_cashLeft()
+	if (now > endlessTradeBefore)
 	{
-		const Uint64 refund = (Uint64)(now - endlessCashMark);
-		Uint64 cancel = (refund < endlessCashGearSpent) ? refund : endlessCashGearSpent;
-		if (cancel > endlessRunCashSpent)   // unreachable (gear slice never exceeds the total), kept for the unsigned math
+		const Uint64 refund = (Uint64)(now - endlessTradeBefore);
+		Uint64 cancel = (refund < endlessCashBySink[ENDLESS_SINK_GEAR]) ? refund : endlessCashBySink[ENDLESS_SINK_GEAR];
+		if (cancel > endlessRunCashSpent)   // unreachable (a sink never exceeds the total), kept for the unsigned math
 			cancel = endlessRunCashSpent;
-		endlessCashGearSpent -= cancel;
-		endlessRunCashSpent  -= cancel;
+		endlessCashBySink[ENDLESS_SINK_GEAR] -= cancel;
+		endlessRunCashSpent -= cancel;
 		if (refund > cancel)
-			endlessCashCredit(refund - cancel, ENDLESS_CASH_TRADEIN);
+			endlessCashBook(refund - cancel, ENDLESS_CASH_TRADEIN);
 	}
-	else if (now < endlessCashMark)
+	else if (now < endlessTradeBefore)
 	{
-		const Uint64 fall = (Uint64)(endlessCashMark - now);
+		const Uint64 fall = (Uint64)(endlessTradeBefore - now);
 		endlessCashAddSat(&endlessRunCashSpent, fall);
-		endlessCashAddSat(&endlessCashGearSpent, fall);
+		endlessCashAddSat(&endlessCashBySink[ENDLESS_SINK_GEAR], fall);
 	}
+	endlessTradeBefore = now;   // idempotent: a stray second commit books nothing
 	endlessCashMark = now;
 }
 
@@ -273,8 +326,8 @@ void endlessResetRun(void)
 	endlessRunBossKills = 0;
 	endlessRunCashEarned = 0;
 	endlessRunCashSpent  = 0;
-	endlessCashGearSpent = 0;
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
+	memset(endlessCashBySink, 0, sizeof(endlessCashBySink));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
 	endlessPurchasedMods = 0;
 	endlessBuffKind = 0;
@@ -389,9 +442,8 @@ void endlessGameplayTick(void)
 		return;
 	++endlessZoneTicks;
 
-	// Bank in-level income (enemy value, pickups, bounties) and, on the first tick of a zone,
-	// re-mark after everything the outpost and the E-Shop just spent.
-	endlessCashSample();
+	// Every wallet movement is declared at source; this is the per-tick drift assertion.
+	endlessCashAudit();
 
 	// Overheat drains hull but cannot land the killing blow.
 	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && player[0].armor > 1 && (endlessZoneTicks % 80) == 0)
@@ -594,7 +646,7 @@ bool endlessDeathLocksMenu(void)
 
 void endlessOnRunEnd(void)
 {
-	endlessCashSample();  // catch whatever the killing tick paid out before the tally is printed
+	endlessCashAudit();  // last drift check before the tally is printed
 
 	// Draw the run summary over the dimmed ship illustration.
 	VGAScreen = VGAScreenSeg;

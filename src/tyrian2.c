@@ -4662,7 +4662,7 @@ level_loop:
 												// in galaga mode player 2 is sidekick, so give cash to player 1
 												Player *const paid = &player[galagaMode ? 0 : playerNum - 1];
 												if (endlessMode && paid == &player[0])
-													endlessAddCash(enemy[temp2].evalue, ENDLESS_CASH_KILL);
+													endlessCashCredit(enemy[temp2].evalue, ENDLESS_CASH_KILL);
 												else
 													paid->cash += enemy[temp2].evalue;
 											}
@@ -7506,7 +7506,7 @@ bool newEndlessGame(void)
 	// in the wallet is not this run's money. Keeps earned - spent == wallet true from zone 1.
 	player[0].cash = 0;
 	endlessCashResync();
-	endlessAddCash(endlessStartingCash(), ENDLESS_CASH_START);
+	endlessCashCredit(endlessStartingCash(), ENDLESS_CASH_START);
 
 	endlessApplyStartingLoadout();  // Atomic RailGun front gun (the depth-0 outpost re-applies it too)
 

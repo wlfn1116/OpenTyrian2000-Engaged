@@ -319,17 +319,20 @@ void crashlog_write_game_state(FILE *f)
 		        endlessLockedSortie ? "  (outpost LOCKED)" : "");
 		fprintf(f, "  Kills:        %d  (bosses %d)\n", endlessRunKills, endlessRunBossKills);
 		// Read as-is, deliberately: this runs from a crash handler, so it does not call
-		// endlessCashSample to settle the ledger first. The totals can therefore lag by one
-		// unreconciled purchase -- fine for a diagnostic dump, and worth less than poking live
-		// state mid-crash. A nonzero "untagged" line means an income path skipped endlessAddCash
-		// (or the debug Add Cash screen overwrote the wallet) -- worth chasing down.
-		fprintf(f, "  Cash earned:  %llu  (spent %llu, of it gear %llu)\n",
-		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent,
-		        (unsigned long long)endlessCashGearSpent);
+		// endlessCashAudit first -- worth less than poking live state mid-crash. A nonzero
+		// "untagged" line means a path bypassed the credit/debit/trade interface (or the debug
+		// Add Cash screen overwrote the wallet) -- worth chasing down. Sinks print negated,
+		// under the sources.
+		fprintf(f, "  Cash earned:  %llu  (spent %llu)\n",
+		        (unsigned long long)endlessRunCashEarned, (unsigned long long)endlessRunCashSpent);
 		for (int i = 0; i < ENDLESS_CASH_SOURCES; ++i)
 			if (endlessCashBySource[i] != 0)
 				fprintf(f, "    %-15s %llu\n", endlessCashSourceName((EndlessCashSource)i),
 				        (unsigned long long)endlessCashBySource[i]);
+		for (int i = 0; i < ENDLESS_CASH_SINKS; ++i)
+			if (endlessCashBySink[i] != 0)
+				fprintf(f, "    %-15s -%llu\n", endlessCashSinkName((EndlessCashSink)i),
+				        (unsigned long long)endlessCashBySink[i]);
 		write_endless_mods(f, endlessActiveMods);
 		fprintf(f, "  Armor bonus:  %d\n", endlessArmorBonus);
 		const char *seed = endlessSeedString();

@@ -535,7 +535,7 @@ void endlessAwardEliteKill(int linknum, int eliteState)
 
 	const bool champion = (eliteState == 3);
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
-	endlessAddCash(bounty, ENDLESS_CASH_BOUNTY);
+	endlessCashCredit(bounty, ENDLESS_CASH_BOUNTY);
 
 	// Keep the cash clear of the HUD.
 	char label[48], cash[24];
