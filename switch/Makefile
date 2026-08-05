@@ -169,8 +169,10 @@ all: $(OUTPUT).nro
 
 # switch_rules provides the recipes: %.nro (runs elf2nro ... $(NROFLAGS)) and %.nacp.
 # NROFLAGS are elf2nro arguments, not prerequisites. The .nro depends on the
-# linked .elf and generated .nacp metadata.
-$(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
+# linked .elf, generated .nacp metadata, and the bundled romfs data files
+# (flat directory, so a top-level wildcard covers everything).
+ROMFS_FILES := $(wildcard $(TOPDIR)/$(ROMFS)/*)
+$(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp $(ROMFS_FILES)
 $(OUTPUT).elf: $(OFILES)
 
 $(OFILES_SRC): $(HFILES)

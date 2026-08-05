@@ -491,21 +491,22 @@ The menu refuses to start a netgame while the FPS Cap is below 35: the simulatio
 runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
-**Host Game** covers the listen port, game type, episode, difficulty, Netcode,
-Desync Recovery, Host Flies, and Game Speed. The host's choices bind the session
-for both machines. Before joining, the other player sees the host, game type,
-episode, and difficulty and can accept or go back. The joiner's own settings are
-left alone and restored afterwards.
+**Host Game** covers the listen port, game type, episode, difficulty, Host Flies,
+Game Speed, Netcode, and Desync Recovery, one row each with the current value on
+the right and a line explaining the highlighted row underneath. The host's
+choices bind the session for both machines. While the other player waits for the
+host to start, they see the same list. The joiner's own settings are left alone
+and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
 | Game Type | **Arcade** keeps the linked Silver Ship and Dragonwing rules. **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. |
 | Difficulty | Starting campaign difficulty. Arcade applies its usual two-player difficulty adjustment. |
-| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
-| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. |
-| Host Flies | Which ship the host takes. Player two is the Dragonwing in Arcade; both slots use full ships in Campaign. Remembered between sessions. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign gives both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
+| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. Greyed out unless Netcode is Rollback. |
 
 **Join by IP Address** takes an address on its own or with a port, like
 `123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
@@ -513,9 +514,16 @@ pre-filled with the last address you used, restarts included, so rejoining the
 same host is Join then Enter.
 
 The outpost help bar shows a **Ping** figure at its right end, updated about
-every one and a half seconds and reading `--` until the first reply. Under
-roughly 85 ms the game runs at full speed on the default network delay of 3. Above
-that it starts to slow, and raising the delay trades input lag for smoothness.
+every one and a half seconds and reading `--` until the first reply. It is
+dropped on rows whose description already reaches that far, rather than being
+pushed up against the sentence. Under roughly 85 ms the game runs at full speed
+on the default network delay of 3. Above that it starts to slow, and raising the
+delay trades input lag for smoothness.
+
+Options in the outpost is the ordinary options page with **Load Game** removed:
+loading mid-session would leave the other machine playing something else. Save
+Game, the volume and sensitivity sliders, and the joystick, keyboard, and mouse
+setup screens all work as usual, and backing out of any of them returns here.
 
 Online Arcade keeps the split two-player sidebar, tags each gauge block **P1**
 or **P2**, and dims the other player's gauges. Online Campaign gives each
@@ -526,8 +534,11 @@ In Campaign, each player chooses and powers up a complete ship independently:
 front and rear weapons, sidekicks, generator, shield, hull, special, cash, and
 weapon mode. The Arcade link, Dragonwing role, shared power rules, and lives do
 not apply. Between levels, both players can use their own shop at the same time.
-Purchases are sent to the peer as they are committed, and leaving the shop waits
-for both players before the next level begins. Endless remains a one-player mode.
+Purchases are sent to the peer as they are committed. Whoever picks a level first
+waits at "Waiting for other player." while the other finishes outfitting; nobody
+is pulled out of the outpost early. Where the route offers a choice of planets and
+the two of you pick different ones, the host's choice is the one you both fly.
+Endless remains a one-player mode.
 
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
@@ -541,10 +552,12 @@ Both machines write their own copy after exchanging their latest shop state, so
 either player can host the resume.
 
 Arcade saves remain compatible with the regular local two-player page. Campaign
-saves carry both complete loadouts, cash totals, weapon powers and modes,
-episode, difficulty, and next-level position. They can only be loaded through
-Online Campaign, not through 1 Player or local 2 Player. Campaign and Arcade
-loads are kept separate in the online load menu.
+saves carry both players in full: each ship and its front and rear weapons with
+their power levels, both sidekicks, generator, shield, special, rear-gun firing
+mode, and cash total, plus the shared episode, difficulty, data cubes, and
+next-level position. Nothing either of you bought is dropped. They can only be
+loaded through Online Campaign, not through 1 Player or local 2 Player. Campaign
+and Arcade loads are kept separate in the online load menu.
 
 If the session ends under you, because the other player quit, the connection
 dropped, or an unrecoverable desync stopped the game, you get **Save Game** or

@@ -37,7 +37,6 @@
 #include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
-#include "net_lobby.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -3456,9 +3455,7 @@ start_level_first:
 			if (!overlay_drawn && SDL_GetTicks() - wait_start > 700)
 			{
 				overlay_drawn = true;
-				JE_barShade(VGAScreen, 3, 60, 257, 80);
-				JE_barShade(VGAScreen, 5, 62, 255, 78);
-				JE_dString(VGAScreen, 10, 65, "Waiting for other player.", SMALL_FONT_SHAPES);
+				JE_drawNetworkNotice("Waiting for other player.");
 				JE_showVGA();
 			}
 
@@ -6536,7 +6533,7 @@ void networkStartScreen(void)
 	if (!network_from_lobby)
 	{
 		JE_loadPic(VGAScreen, 2, false);
-		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 		memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 		JE_dString(VGAScreen, JE_fontCenter("Waiting for other player.", SMALL_FONT_SHAPES), 140, "Waiting for other player.", SMALL_FONT_SHAPES);
 		JE_showVGA();
@@ -6550,7 +6547,7 @@ void networkStartScreen(void)
 		// VGAScreen2, so it still needs the backdrop staged there; otherwise it draws over
 		// whatever the lobby happened to leave behind.
 		JE_loadPic(VGAScreen2, 2, false);
-		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 	}
 
 	twoPlayerMode = true;
@@ -6601,7 +6598,73 @@ void networkStartScreen(void)
 	else
 	{
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->pitch * VGAScreen->h);
-		JE_dString(VGAScreen, JE_fontCenter(networkText[4 - 1], SMALL_FONT_SHAPES), 140, networkText[4 - 1], SMALL_FONT_SHAPES);
+
+		// The whole session as the host settled it: every field below came over in the connect
+		// handshake, so the joiner has it before the details packet arrives.  Shown here rather
+		// than in a confirmation screen after that packet -- by then the host is already in the
+		// outpost, so a prompt there stalls a game that has started.  Laid out like the host's
+		// own menu, so the two screens read as the same list.
+		{
+			const bool campaign = network_game_type == NETWORK_GAME_CAMPAIGN;
+
+			const char *label[8], *value[8];
+			int rows = 0;
+
+			label[rows] = "Host";
+			value[rows++] = network_opponent_name[0] ? network_opponent_name : "(unnamed)";
+			label[rows] = "Game Type";
+			value[rows++] = campaign ? "Campaign" : "Arcade";
+			label[rows] = "Episode";
+			value[rows++] = episode_name[network_host_episode];
+			label[rows] = "Difficulty";
+			value[rows++] = difficultyNameB[network_host_difficulty];
+			if (!campaign)
+			{
+				// Campaign gives both slots the same kind of ship, so there is nothing to say.
+				label[rows] = "You Fly";
+				value[rows++] = thisPlayerNum == 2 ? "Dragonwing" : "Silver Ship";
+			}
+			label[rows] = "Game Speed";
+			// Adopted from the host's settings block, which clamps it; belt and braces, since
+			// anything out of range here would index gameSpeedText[] off its ends.
+			value[rows++] = gameSpeedText[MIN(MAX(gameSpeed, 1), 5) - 1];
+			label[rows] = "Netcode";
+			value[rows++] = nrb_session_mode() ? "Rollback" : "Delay-Based";
+			if (nrb_session_mode())
+			{
+				// Lockstep never runs the compare that arms it, so it has no answer to give.
+				label[rows] = "Desync Recovery";
+				value[rows++] = nrb_session_recovery() ? "On" : "Off";
+			}
+
+			// Same column rule as the host menu: the block is as wide as its widest row, centred,
+			// with labels on its left edge and values on its right.
+			int blockW = 150;
+			for (int i = 0; i < rows; ++i)
+			{
+				blockW = MAX(blockW, JE_textWidth(label[i], small_font) + 20
+				                     + JE_textWidth(value[i], small_font));
+			}
+			blockW = MIN(blockW, 300);
+
+			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
+			const int xValue = xLabel + blockW;
+
+			// Centre the list and the waiting line together in the space under the title.
+			const int dyRow = 12, gapToWait = 20, waitH = 14;
+			const int yTop = 40 + (196 - 40 - (rows * dyRow + gapToWait + waitH)) / 2;
+
+			for (int i = 0; i < rows; ++i)
+			{
+				const int y = yTop + dyRow * i;
+				draw_font_hv_shadow(VGAScreen, xLabel, y, label[i], small_font, left_aligned, 15, 2, false, 1);
+				draw_font_hv_shadow(VGAScreen, xValue, y, value[i], small_font, right_aligned, 15, 4, false, 1);
+			}
+
+			JE_dString(VGAScreen, JE_fontCenter(networkText[4 - 1], SMALL_FONT_SHAPES),
+			           yTop + rows * dyRow + gapToWait, networkText[4 - 1], SMALL_FONT_SHAPES);
+		}
+
 		JE_showVGA();
 
 		// until opponent sends details packet
@@ -6652,12 +6715,6 @@ void networkStartScreen(void)
 		}
 		network_host_episode = their_episode;
 		network_host_difficulty = their_difficulty;
-		if (network_from_lobby && !networkLobbyConfirmDetails())
-		{
-			network_prepare(PACKET_QUIT);
-			network_send(4);
-			network_tyrian_halt(0, true);
-		}
 
 		if (details_packet->len >= 10 + SAVE_RECORD_PACKED_SIZE)
 		{

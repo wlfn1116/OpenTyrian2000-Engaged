@@ -203,6 +203,9 @@ void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
 bool network_shop_pump(void);
 bool network_shop_peer_done(void);
+// Take the level the host left the outpost for. Call once both players are done, never before:
+// the joiner has to be allowed to finish shopping first.
+void network_shop_adopt_host_level(void);
 void network_shop_end(void);
 void network_shop_sync_for_save(void);
 
@@ -296,6 +299,7 @@ static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }
 static inline bool network_shop_pump(void) { return false; }
 static inline bool network_shop_peer_done(void) { return true; }
+static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }
 static inline void network_shop_sync_for_save(void) { }
 #endif

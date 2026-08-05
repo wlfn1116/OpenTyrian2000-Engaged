@@ -1288,7 +1288,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	else
 	{
 		JE_loadPic(VGAScreen, 2, false);
-		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 		JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
 
 		JE_showVGA();
@@ -1529,6 +1529,13 @@ static bool network_shop_peer_ready;
 static bool network_shop_save_ready;
 static bool network_shop_active;
 
+// The level the host committed to when it left the outpost.  Held rather than applied: writing
+// jumpSection straight out of the packet ended the joiner's outpost visit the moment the host
+// picked a planet, mid-purchase.  network_shop_adopt_host_level() applies it once the joiner is
+// done too, which is also where the host's pick wins a disagreement.
+static bool network_shop_host_committed;
+static JE_byte network_shop_host_level;
+
 enum
 {
 	SHOP_SYNC_DONE = 1 << 0,
@@ -1603,6 +1610,7 @@ void network_shop_begin(void)
 	network_shop_save_request = 0;
 	network_shop_peer_ready = false;
 	network_shop_save_ready = false;
+	network_shop_host_committed = false;
 	network_shop_active = isNetworkGame && coopCampaignMode;
 	if (isNetworkGame && coopCampaignMode)
 		network_shop_send_state(false);
@@ -1647,10 +1655,10 @@ bool network_shop_pump(void)
 			if (flags & SHOP_SYNC_DONE)
 			{
 				network_shop_peer_ready = true;
-				if (sender == networkHostPlayerNum)
+				if (sender == networkHostPlayerNum && SDLNet_Read16(&packet_in[0]->data[12]) != 0)
 				{
-					mainLevel = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
-					jumpSection = SDLNet_Read16(&packet_in[0]->data[12]) != 0;
+					network_shop_host_committed = true;
+					network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
 				}
 			}
 
@@ -1669,6 +1677,17 @@ bool network_shop_pump(void)
 bool network_shop_peer_done(void)
 {
 	return network_shop_peer_ready;
+}
+
+void network_shop_adopt_host_level(void)
+{
+	// Both players choose freely, so the two picks can differ; the host's is the one the
+	// session loads.  A no-op on the host, and on a joiner the host never sent a level to.
+	if (!network_shop_host_committed)
+		return;
+
+	mainLevel = network_shop_host_level;
+	jumpSection = true;
 }
 
 void network_shop_end(void)

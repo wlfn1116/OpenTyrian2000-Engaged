@@ -51,6 +51,9 @@ void JE_nextEpisode(void);
 void JE_helpSystem(JE_byte startTopic);
 void JE_doInGameSetup(void);
 JE_boolean JE_inGameSetup(void);
+// One-line "the other machine is not with us yet" panel over a frozen gameplay frame. Draws into
+// whatever VGAScreen points at, so callers must have pointed it at VGAScreenSeg first.
+void JE_drawNetworkNotice(const char *text);
 
 // Endless death prompt (Hardcore off only), shown over the frozen death frame before the run
 // summary. Values double as the row order.

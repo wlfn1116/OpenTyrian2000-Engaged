@@ -1127,13 +1127,9 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		if (overlay_for != wait_start)
 		{
 			overlay_for = wait_start;
-			JE_barShade(VGAScreen, 3, 60, 257, 80);
-			JE_barShade(VGAScreen, 5, 62, 255, 78);
 			// This wait IS the recovery when one is in play; the machine on the
 			// other side of it stops simulating to stream or adopt state.
-			JE_dString(VGAScreen, 10, 65,
-			           resync_notice ? "Resyncing players." : "Waiting for other player.",
-			           SMALL_FONT_SHAPES);
+			JE_drawNetworkNotice(resync_notice ? "Resyncing players." : "Waiting for other player.");
 			last_present = 0;
 		}
 		if (SDL_GetTicks() - last_present > 100)

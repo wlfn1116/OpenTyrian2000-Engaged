@@ -33,7 +33,9 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 {
 	{  1, 34,  2,  3,  4,  5,                  0, 0, 0, 0, 0 },
 	{  6,  7,  8,  9, 10, 11, 11, 12,                0, 0, 0 },
-	{ 13, 14, 15, 15, 16, 17, 35, 12,                0, 0, 0 },
+	// [2] Options and [11] its online form (no Load Game). 0 marks the Sensitivity row, which has
+	// no line in the data file; JE_drawMainMenuHelpText supplies one.
+	{ 13, 14, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -42,7 +44,7 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{  4, 30, 30,  3,  5,                   0, 0, 0, 0, 0, 0 },
 	{  4, 37, 12,                     0, 0, 0, 0, 0, 0, 0, 0 },
-	{ 16, 17, 15, 15, 12,                   0, 0, 0, 0, 0, 0 },
+	{ 14, 15, 15,  0, 16, 17, 35, 12,                0, 0, 0 },
 	{ 31, 31, 31, 31, 32, 12,                  0, 0, 0, 0, 0 },
 	{  4, 34,  3,  5,                    0, 0, 0, 0, 0, 0, 0 },
 	{ 35, 35, 35, 36, 12,                   0, 0, 0, 0, 0, 0 },
@@ -116,6 +118,14 @@ void read_encrypted_pascal_string(char *s, size_t size, FILE *f)
 
 	memcpy(s, buffer, len);
 	s[len] = '\0';
+}
+
+// Drop trailing blanks from a string read out of the data file.
+static void rtrim_string(char *s)
+{
+	size_t len = strlen(s);
+	while (len > 0 && s[len - 1] == ' ')
+		s[--len] = '\0';
 }
 
 void skip_pascal_string(FILE *f)
@@ -290,10 +300,14 @@ void JE_loadHelpText(void)
 		read_encrypted_pascal_string(gameSpeedText[i], sizeof(gameSpeedText[i]), f);
 	skip_pascal_string(f);
 
-	// episode names
+	// episode names.  The data file pads some of them out to a fixed width (episode 2 most
+	// visibly), which shifts every centred or right-aligned draw of the name by the padding.
 	skip_pascal_string(f);
 	for (unsigned int i = 0; i < COUNTOF(episode_name); ++i)
+	{
 		read_encrypted_pascal_string(episode_name[i], sizeof(episode_name[i]), f);
+		rtrim_string(episode_name[i]);
+	}
 	skip_pascal_string(f);
 
 	// difficulty names

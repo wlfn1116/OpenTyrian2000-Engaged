@@ -1924,6 +1924,25 @@ JE_boolean JE_gammaCheck(void)
 	return temp;
 }
 
+void JE_drawNetworkNotice(const char *text)
+{
+	// Drawn into VGAScreenSeg, so this is display space: the playfield is x in [0, PLAYFIELD_WIDTH)
+	// and y in [0, 184), with the HUD to the right of it.  Centre on that, not on the frame -- a
+	// frame-centred panel slides its right edge under the HUD and sits low, the same way the
+	// endless death menu did.  See JE_endlessDeathMenu, which centres on the same box.
+	const int playfieldRows = 184;
+	const int panelW = MIN(JE_textWidth(text, normal_font) + 28, PLAYFIELD_WIDTH - 16);
+	const int panelH = 26;
+
+	const int px0 = (PLAYFIELD_WIDTH - panelW) / 2, px1 = px0 + panelW;
+	const int py0 = (playfieldRows - panelH) / 2, py1 = py0 + panelH;
+
+	JE_barShade(VGAScreen, px0, py0, px1, py1);
+	JE_barShade(VGAScreen, px0 + 2, py0 + 2, px1 - 2, py1 - 2);
+	JE_dString(VGAScreen, (px0 + px1) / 2 - JE_textWidth(text, normal_font) / 2, py0 + 7,
+	           text, SMALL_FONT_SHAPES);
+}
+
 void JE_doInGameSetup(void)
 {
 	// A modal UI mid-tick (which may even change sim-affecting settings) makes
@@ -2013,9 +2032,7 @@ void JE_doInGameSetup(void)
 
 		if (!yourInGameMenuRequest)
 		{
-			JE_barShade(VGAScreen, 3, 60, 257, 80); /*Help Box*/
-			JE_barShade(VGAScreen, 5, 62, 255, 78);
-			JE_dString(VGAScreen, 10, 65, "Other player in options menu.", SMALL_FONT_SHAPES);
+			JE_drawNetworkNotice("Other player in options menu.");
 			JE_showVGA();
 
 			while (true)
@@ -7661,6 +7678,34 @@ static void rb_apply_tuple(const RbInput *in, Player *this_player,
 	*link_angle = (float)in->linkAngle * (float)(2.0 * M_PI / 65536.0);
 }
 
+/* Repaint one sidekick's ammo gauge as it fires or refills.  `wipe` clears the old bar first,
+ * which a discharge needs and a refill does not.
+ *
+ * Two things this must not do.  Online Campaign simulates BOTH ships through here, but the HUD
+ * strip belongs to one of them, so a gauge is only painted by its owner -- otherwise the other
+ * player's magazine ends up on your HUD, under sidekick icons you may not even have.  And these
+ * are plain fills, which a silent re-simulation pass still executes (only sprite blits are
+ * suppressed), so they would paint rolled-back values; defer those to the dirty-flag repaint
+ * that settles the whole strip on the next presented frame. */
+static void JE_drawSidekickAmmoGauge(JE_byte playerNum, uint slot, int ammo, int ammo_max, bool wipe)
+{
+	if ((uint)(playerNum - 1) != hud_sidekick_player_index())
+		return;
+
+	if (rollback_resim_silent)
+	{
+		hud_sidekicks_dirty = true;
+		return;
+	}
+
+	const int y = hud_sidekick_ammo_y(slot);
+	const int hud_x = HUD_X(284);
+
+	if (wipe)
+		fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 2, 0);
+	draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), ammo);
+}
+
 void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
@@ -9166,10 +9211,7 @@ redo:
 										if (this_player->sidekick[i].ammo < ammo_max)
 											++this_player->sidekick[i].ammo;
 
-										// draw sidekick refill ammo gauge
-									const int y = hud_sidekick_y[split_arcade_mode() ? 1 : 0][i] + 13;
-										const int hud_x = HUD_X(284);
-										draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), this_player->sidekick[i].ammo);
+										JE_drawSidekickAmmoGauge(playerNum_, i, this_player->sidekick[i].ammo, ammo_max, false);
 									}
 
 									if (button[1 + i] && (cheatInfiniteSidekickAmmo || this_player->sidekick[i].ammo > 0))
@@ -9186,14 +9228,8 @@ redo:
 										this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
 										this_player->sidekick[i].animation_enabled = true;
 
-										// draw sidekick discharge ammo gauge
-										const int y = hud_sidekick_y[split_arcade_mode() ? 1 : 0][i] + 13;
 										if (!cheatInfiniteSidekickAmmo)
-										{
-											const int hud_x = HUD_X(284);
-											fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 2, 0);
-											draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), this_player->sidekick[i].ammo);
-										}
+											JE_drawSidekickAmmoGauge(playerNum_, i, this_player->sidekick[i].ammo, ammo_max, true);
 									}
 								}
 								else  // has infinite ammo

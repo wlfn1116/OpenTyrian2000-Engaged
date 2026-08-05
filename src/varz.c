@@ -545,10 +545,6 @@ void JE_drawOptions(void)
 
 	JE_drawOptionsHUD();
 
-	// Repaint after silent replay suppresses the icon blit but not its box fill.
-	if (rollback_resim_silent)
-		hud_sidekicks_dirty = true;
-
 	VGAScreen = temp_surface;
 
 	JE_drawOptionLevel();
@@ -556,11 +552,31 @@ void JE_drawOptions(void)
 
 bool hud_sidekicks_dirty = false;
 
+uint hud_sidekick_player_index(void)
+{
+	// The strip has room for one ship's pods. Online Campaign simulates both, so it shows the
+	// local one; a split two-player game gives the pods to player two; otherwise player one.
+	return coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1u : 0u);
+}
+
+int hud_sidekick_ammo_y(uint slot)
+{
+	return hud_sidekick_y[split_arcade_mode() ? 1 : 0][slot] + 13;
+}
+
 // Draw-only companion to JE_drawOptions: repaints the sidekick HUD boxes from current state.
 void JE_drawOptionsHUD(void)
 {
-	const uint player_index = coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1 : 0);
-	Player *this_player = &player[player_index];
+	// A silent re-simulation pass suppresses sprite blits but still runs plain fills, so
+	// painting here would clear the box and never put the icon back. Leave the strip alone and
+	// let the level loop settle it on the next presented frame.
+	if (rollback_resim_silent)
+	{
+		hud_sidekicks_dirty = true;
+		return;
+	}
+
+	Player *this_player = &player[hud_sidekick_player_index()];
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{

@@ -67,7 +67,7 @@ enum
 	MENU_DATA_CUBE_SUB   =  8,
 	MENU_2_PLAYER_ARCADE =  9,
 	MENU_1_PLAYER_ARCADE = 10,  // Also networked games.
-	MENU_LIMITED_OPTIONS = 11,  // Keeps online-safe options and Save; hides Load.
+	MENU_LIMITED_OPTIONS = 11,  // The options page minus Load Game; see OPT_* below.
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
@@ -78,6 +78,19 @@ enum
 
 // Center of the asymmetric monitor readout used by shop cash and Endless rank.
 #define MENU_MONITOR_CENTER_X 77
+
+/* Rows of the options page, numbered as MENU_OPTIONS draws them. MENU_LIMITED_OPTIONS is the
+ * same page with Load Game dropped, so on it every row below sits one higher: go through
+ * options_row() / options_full_row() rather than writing either numbering down twice. */
+enum
+{
+	OPT_LOAD = 2, OPT_SAVE, OPT_MUSIC, OPT_SOUND, OPT_SENS, OPT_JOYSTICK, OPT_KEYBOARD,
+	OPT_MOUSE, OPT_EXIT,
+	OPTIONS_ROWS = OPT_EXIT - OPT_LOAD + 1,
+};
+
+// Baseline of an options row, matching JE_drawMenuChoices' 16px pitch.
+#define OPTIONS_ROW_Y(row) (38 + ((row) - 2) * 16)
 
 /*** Structs ***/
 struct cube_struct
@@ -109,6 +122,18 @@ static JE_byte curItemType, curItem, cursor;
 static JE_boolean leftPower, rightPower, rightPowerAfford;
 static JE_byte currentCube;
 static uint shopPlayerIndex;
+
+// Where a full-page options row lands on the page now open.
+static int options_row(int fullRow)
+{
+	return (curMenu == MENU_LIMITED_OPTIONS) ? fullRow - 1 : fullRow;
+}
+
+// ...and back: which full-page row a selection on the page now open stands for.
+static int options_full_row(int row)
+{
+	return (curMenu == MENU_LIMITED_OPTIONS) ? row + 1 : row;
+}
 
 uint JE_shopPlayerIndex(void)
 {
@@ -177,7 +202,10 @@ static PlayerItems old_items[2];  // shared shop-entry snapshots
 static struct cube_struct cube[4];
 
 static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };  // [16]=E-Shop: 5 buys + Done; [17]=Perks: 3 + decline (set at runtime)
-static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 2, 1, 1, 1 };  // [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
+// 1-based target menu for Esc. [14]=Mouse Setup goes back to Options like the other config
+// screens do; it read 2 (Upgrade Ship), which is not where it was opened from.
+// [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
+static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1 };
 static const JE_byte itemAvailMap[7] = { 1, 2, 3, 9, 4, 6, 7 };
 static const JE_word planetX[21] = { 200, 150, 240, 300, 270, 280, 320, 260, 220, 150, 160, 210, 80, 240, 220, 180, 310, 330, 150, 240, 200 };
 static const JE_word planetY[21] = {  40,  90,  90,  80, 170,  30,  50, 130, 120, 150, 220, 200, 80,  50, 160,  10,  55,  55,  90,  90,  40 };
@@ -848,8 +876,8 @@ static void configure_custom_weapon_menu(void)
 	}
 }
 
-/* Insert Sensitivity after Sound Volume in both options menus. Shift labels once; menuChoices
- * resets on each JE_itemScreen entry. */
+/* Insert Sensitivity after Sound Volume in the options menu, then build the online page from it.
+ * Shift labels once; menuChoices resets on each JE_itemScreen entry. */
 static void configure_options_sens_menu(void)
 {
 	const size_t entrySize = sizeof(menuInt[0][0]);
@@ -864,18 +892,19 @@ static void configure_options_sens_menu(void)
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
 		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
-		// MENU_LIMITED_OPTIONS (menuInt[12]): item 6 (Exit, label [5]) moves down to item 8 ([7]),
-		// making room for Sens at 6 and Save Game at 7 (online sessions can save; loading stays
-		// host-side, at session start).
-		SDL_strlcpy(menuInt[12][7], menuInt[12][5], entrySize);  // Exit
-		SDL_strlcpy(menuInt[12][6], menuInt[3][2], entrySize);   // new item 7: Save Game (label from the full menu)
-		SDL_strlcpy(menuInt[12][5], "Sens", entrySize);  // new item 6
+		// MENU_LIMITED_OPTIONS (menuInt[12]) is the same page with Load Game dropped, rather than
+		// the data file's much shorter DOS network menu: an online session offers everything the
+		// offline one does except loading, which mid-session would strand the other machine.
+		// Everything below the missing row therefore sits one row higher here than there.
+		SDL_strlcpy(menuInt[12][0], menuInt[3][0], entrySize);  // title
+		for (int i = 1; i <= OPTIONS_ROWS - 1; ++i)
+			SDL_strlcpy(menuInt[12][i], menuInt[3][i + 1], entrySize);
 
 		shifted = true;
 	}
 
-	menuChoices[MENU_OPTIONS] = menuChoicesDefault[MENU_OPTIONS] + 1;                  // 9 -> 10
-	menuChoices[MENU_LIMITED_OPTIONS] = menuChoicesDefault[MENU_LIMITED_OPTIONS] + 2;  // 6 -> 8
+	menuChoices[MENU_OPTIONS] = OPTIONS_ROWS + 1;              // rows 2..10
+	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS;          // rows 2..9 (no Load Game)
 }
 
 /* Map the resolved shop submenu to a static crash-log phase string.
@@ -978,6 +1007,24 @@ static int draw_2p_info_row(int x, int y, int bright, const char *label, const c
 	JE_textShade(VGAScreen, row_x, y, line, 15, bright, FULL_SHADE);
 	return y + SHOP_2P_ROW_H;
 }
+
+#ifdef WITH_NETWORK
+// Dim the outpost and centre a notice over it while the other machine catches up.  The shop draws
+// into the 320-wide legacy menu field, so centring is on that rather than on the wider frame.
+// `detail` may be NULL when there is nothing to add under the headline.
+static void shopWaitNotice(const char *text, const char *detail)
+{
+	JE_barShade(VGAScreen, 3, 3, LEGACY_WIDTH - 4, 196);
+	JE_barShade(VGAScreen, 1, 1, LEGACY_WIDTH - 2, 198);
+
+	JE_dString(VGAScreen, JE_fontCenter(text, SMALL_FONT_SHAPES), 92, text, SMALL_FONT_SHAPES);
+	if (detail != NULL)
+	{
+		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 110, detail,
+		                    small_font, centered, 15, 4, false, 1);
+	}
+}
+#endif
 
 void JE_itemScreen(void)
 {
@@ -1643,16 +1690,19 @@ void JE_itemScreen(void)
 		{
 			// Round the bar count (+6) exactly like the in-game Esc menu, so the same
 			// volume never draws a different number of bars in the two menus.
-			JE_barDrawShadow(VGAScreen, 225, 70, 1, music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
-			JE_barDrawShadow(VGAScreen, 225, 86, 1, samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
-			// Ship sensitivity (item 6, y=102): same bar style as the two volume rows above. The
-			// marker slot goes bright once the fill reaches it; compare drawn bar counts (amt vs
-			// mark), not the raw value, so it flips exactly on the middle bar.
+			JE_barDrawShadow(VGAScreen, 225, OPTIONS_ROW_Y(options_row(OPT_MUSIC)), 1,
+			                 music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
+			JE_barDrawShadow(VGAScreen, 225, OPTIONS_ROW_Y(options_row(OPT_SOUND)), 1,
+			                 samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
+			// Ship sensitivity: same bar style as the two volume rows above. The marker slot goes
+			// bright once the fill reaches it; compare drawn bar counts (amt vs mark), not the raw
+			// value, so it flips exactly on the middle bar.
 			{
+				const int y = OPTIONS_ROW_Y(options_row(OPT_SENS));
 				const int amt = (ship_sensitivity + 6) / 12;
 				const int mark = (SHIP_SENS_DEFAULT + 6) / 12;
-				JE_barDrawShadow(VGAScreen, 225, 102, 1, 16, amt, 3, 13);
-				JE_barDrawMark(VGAScreen, 225, 102,
+				JE_barDrawShadow(VGAScreen, 225, y, 1, 16, amt, 3, 13);
+				JE_barDrawMark(VGAScreen, 225, y,
 				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 3, 13);
 			}
 		}
@@ -2183,7 +2233,11 @@ void JE_itemScreen(void)
 			if (curMenu == MENU_OPTIONS ||
 			    curMenu == MENU_LIMITED_OPTIONS)
 			{
-				if ((mouseX >= (225 - 4)) && (mouseY >= 70) && (mouseY <= 82))
+				const int yMusic = OPTIONS_ROW_Y(options_row(OPT_MUSIC));
+				const int ySound = OPTIONS_ROW_Y(options_row(OPT_SOUND));
+				const int ySens  = OPTIONS_ROW_Y(options_row(OPT_SENS));
+
+				if ((mouseX >= (225 - 4)) && (mouseY >= yMusic) && (mouseY <= yMusic + 12))
 				{
 					if (music_disabled)
 					{
@@ -2191,7 +2245,7 @@ void JE_itemScreen(void)
 						restart_song();
 					}
 
-					curSel[MENU_OPTIONS] = 4;
+					curSel[curMenu] = options_row(OPT_MUSIC);
 
 					// Same bar-width -> value mapping as the in-game Esc menu (continuous over
 					// the full bar), instead of the old quantize-to-12 step.
@@ -2200,21 +2254,21 @@ void JE_itemScreen(void)
 					tyrMusicVolume = MIN(MAX(0, value), 255);
 				}
 
-				if ((mouseX >= (225 - 4)) && (mouseY >= 86) && (mouseY <= 98))
+				if ((mouseX >= (225 - 4)) && (mouseY >= ySound) && (mouseY <= ySound + 12))
 				{
 					samples_disabled = false;
 
-					curSel[MENU_OPTIONS] = 5;
+					curSel[curMenu] = options_row(OPT_SOUND);
 
 					const int w = ((255 + 6) / 12) * (3 + 1) - 1;
 					const int value = (mouseX - 225) * 255 / (w - 1);
 					fxVolume = MIN(MAX(0, value), 255);
 				}
 
-				// Ship sensitivity bar (item 6, y=102): drag to set, same feel as the volume bars.
-				if ((mouseX >= (225 - 4)) && (mouseY >= 102) && (mouseY <= 114))
+				// Ship sensitivity bar: drag to set, same feel as the volume bars.
+				if ((mouseX >= (225 - 4)) && (mouseY >= ySens) && (mouseY <= ySens + 12))
 				{
-					curSel[curMenu] = 6;
+					curSel[curMenu] = options_row(OPT_SENS);
 
 					const int w = ((SHIP_SENS_MAX + 6) / 12) * (3 + 1) - 1;
 					const int value = (mouseX - 225) * SHIP_SENS_MAX / (w - 1);
@@ -2432,17 +2486,10 @@ void JE_itemScreen(void)
 					curMenu = oldMenu;
 					newPal = oldPal;
 				}
-				else if (curMenu == MENU_LOAD_SAVE && isNetworkGame)
-				{
-					// Online reached this menu from Limited Options; menuEsc's target is the
-					// full options menu, which a network session must never enter.
-					newPal = 1;
-					curMenu = MENU_LIMITED_OPTIONS;
-				}
-				else if (curMenu == MENU_LIMITED_OPTIONS && coopCampaignMode)
+				else if (curMenu == MENU_LIMITED_OPTIONS)
 				{
 					newPal = 1;
-					curMenu = MENU_FULL_GAME;
+					curMenu = coopCampaignMode ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
@@ -2467,6 +2514,12 @@ void JE_itemScreen(void)
 						newPal = 1;
 
 					curMenu = menuEsc[curMenu] - 1;
+
+					// Every sub-screen of the options page (save/load, joystick, keyboard, mouse)
+					// has menuEsc pointing at the offline page. Online must land on its own, or
+					// backing out of one reintroduces the Load Game row mid-session.
+					if (curMenu == MENU_OPTIONS && isNetworkGame)
+						curMenu = MENU_LIMITED_OPTIONS;
 				}
 				break;
 
@@ -2637,11 +2690,11 @@ void JE_itemScreen(void)
 
 				switch (curMenu)
 				{
-				case 2:
-				case 11:
-					switch (curSel[curMenu])
+				case MENU_OPTIONS:
+				case MENU_LIMITED_OPTIONS:
+					switch (options_full_row(curSel[curMenu]))
 					{
-					case 4:
+					case OPT_MUSIC:
 						JE_changeVolume(&tyrMusicVolume, -12, &fxVolume, 0);
 						if (music_disabled)
 						{
@@ -2649,11 +2702,11 @@ void JE_itemScreen(void)
 							restart_song();
 						}
 						break;
-					case 5:
+					case OPT_SOUND:
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, -12);
 						samples_disabled = false;
 						break;
-					case 6:
+					case OPT_SENS:
 						ship_sensitivity -= 12;
 						if (ship_sensitivity < 0)
 							ship_sensitivity = 0;
@@ -2735,11 +2788,11 @@ void JE_itemScreen(void)
 
 				switch (curMenu)
 				{
-				case 2:
-				case 11:
-					switch (curSel[curMenu])
+				case MENU_OPTIONS:
+				case MENU_LIMITED_OPTIONS:
+					switch (options_full_row(curSel[curMenu]))
 					{
-					case 4:
+					case OPT_MUSIC:
 						JE_changeVolume(&tyrMusicVolume, 12, &fxVolume, 0);
 						if (music_disabled)
 						{
@@ -2747,11 +2800,11 @@ void JE_itemScreen(void)
 							restart_song();
 						}
 						break;
-					case 5:
+					case OPT_SOUND:
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, 12);
 						samples_disabled = false;
 						break;
-					case 6:
+					case OPT_SENS:
 						ship_sensitivity += 12;
 						if (ship_sensitivity > SHIP_SENS_MAX)
 							ship_sensitivity = SHIP_SENS_MAX;
@@ -2784,10 +2837,27 @@ void JE_itemScreen(void)
 #ifdef WITH_NETWORK
 	if (!quit && isNetworkGame)
 	{
+		// Both rendezvous below are the same wait as far as the player is concerned, so the
+		// notice goes up once and stays: shading twice would darken the frame twice over.
+		// Campaign is the one that can wait a long time -- whoever picks a level first waits
+		// for the other to finish outfitting, and an outpost that merely stops responding
+		// reads as a hang.
+		shopWaitNotice("Waiting for other player.",
+		               coopCampaignMode ? "They are still in the outpost." : NULL);
+
+		// The rendezvous below is the last point where both machines are still in menu code, so
+		// it is where the level they are about to load has to be agreed on.  A debug-browser pick
+		// rides along in the WAITING packet; whichever player made one drags the other into it.
+		// Read here rather than at the send: the campaign hand-off just below has to know a pick
+		// is staged, since a pick outranks the route.
+		JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
+		const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
+
 		if (coopCampaignMode)
 		{
 			shopPlayer()->last_items = shopPlayer()->items;
 			network_shop_send_state(true);
+
 			while (!network_shop_peer_done())
 			{
 				service_SDL_events(false);
@@ -2802,18 +2872,16 @@ void JE_itemScreen(void)
 				network_check();
 				SDL_Delay(16);
 			}
+
+			// Both have committed, so a disagreement can be settled: the host's planet is the one
+			// the session flies.  Deferred to here on purpose -- applied on arrival it would end
+			// the other player's outpost visit the instant the host picked.  A staged browser pick
+			// is exempt: it beats the route on both machines, and taking the host's route here
+			// would leave us loading it while the host adopts the pick below.
+			if (!myPick)
+				network_shop_adopt_host_level();
 			network_shop_end();
 		}
-
-		JE_barShade(VGAScreen, 3, 3, 316, 196);
-		JE_barShade(VGAScreen, 1, 1, 318, 198);
-		JE_dString(VGAScreen, 10, 160, "Waiting for other player.", SMALL_FONT_SHAPES);
-
-		// This rendezvous is the last point where both machines are still in menu code, so it
-		// is where the level they are about to load has to be agreed on.  A debug-browser pick
-		// rides along in the WAITING packet; whichever player made one drags the other into it.
-		JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
-		const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
 
 		network_prepare(PACKET_WAITING);
 		packet_out_temp->data[4] = myPick ? 1 : 0;
@@ -3933,7 +4001,13 @@ static void save_help_bar_ping_band(const char *text)
 {
 	ping_shown = false;
 
-	ping_band_x = help_bar_right_x(text, PING_WIDEST);
+	// Only ever drawn flush against the bar's right edge.  Several outpost rows carry a
+	// description long enough to reach that far; there the figure is dropped rather than
+	// shunted left to butt against the sentence, which reads as part of it.
+	ping_band_x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(PING_WIDEST, TINY_FONT);
+	if (ping_band_x < 10 + JE_textWidth(text, TINY_FONT) + 5)
+		return;
+
 	ping_band_w = PING_BAND_RIGHT - ping_band_x;
 	if (ping_band_w > PING_BAND_MAX_W)
 		ping_band_w = PING_BAND_MAX_W;
@@ -4184,19 +4258,15 @@ void JE_drawMainMenuHelpText(void)
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
 		}
-		else if ((curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS) && curSel[curMenu] >= 6)
+		else if (curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS)
 		{
-			// The ship-sensitivity row sits at item 6; items below it shift down one, so
-			// read each shifted item's ORIGINAL help slot (temp-1) and supply the row's own text.
-			// The limited (online) menu also inserts Save Game at 7, so its tail shifts by two.
-			if (curSel[curMenu] == 6)
+			// Both pages are covered row-for-row by menuHelp, which reserves a 0 for the
+			// sensitivity bar; the data file has no line for a row this port added.
+			const int help = menuHelp[curMenu][temp];
+			if (help == 0)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
-			else if (curMenu == MENU_LIMITED_OPTIONS && curSel[curMenu] == 7)
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[MENU_OPTIONS][3 - 2]) - 1], sizeof(tempStr));  // the full menu's Save Game help
-			else if (curMenu == MENU_LIMITED_OPTIONS)
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 2]) - 1], sizeof(tempStr));
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[help - 1], sizeof(tempStr));
 		}
 		else
 		{
@@ -8737,11 +8807,15 @@ void JE_menuFunction(JE_byte select)
 		}
 		break;
 
+	// One page, two row numberings: the online one has no Load Game, so options_full_row()
+	// maps whichever is open back onto the OPT_* names.  The volume and sensitivity rows are
+	// bars, adjusted with left/right, and do nothing on Enter.
 	case MENU_OPTIONS:
-		switch (select)
+	case MENU_LIMITED_OPTIONS:
+		switch (options_full_row(select))
 		{
-		case 2:  // Load Game
-		case 3:  // Save Game
+		case OPT_LOAD:
+		case OPT_SAVE:
 			// Endless hardcore forbids ALL saving/loading (these rows are greyed out in
 			// JE_drawMenuChoices); a deny beep confirms the press did nothing.
 			if (endlessMode && endlessHardcore())
@@ -8750,22 +8824,21 @@ void JE_menuFunction(JE_byte select)
 				break;
 			}
 			curMenu = MENU_LOAD_SAVE;
-			performSave = (select == 3);  // item 2 = Load, item 3 = Save
+			performSave = (options_full_row(select) == OPT_SAVE);
 			quikSave = false;
 			break;
-		// Item 6 is the ship-sensitivity bar (adjusted via left/right); the config rows
-		// below it and Exit each shift down by one.
-		case 7:
+		case OPT_JOYSTICK:
 			curMenu = MENU_JOYSTICK_CONFIG;
 			break;
-		case 8:
+		case OPT_KEYBOARD:
 			curMenu = MENU_KEYBOARD_CONFIG;
 			break;
-		case 9:
+		case OPT_MOUSE:
 			curMenu = MENU_MOUSE_CONFIG;
 			break;
-		case 10:
-			curMenu = MENU_FULL_GAME;
+		case OPT_EXIT:
+			// Online Arcade runs its own front page; everything else goes back to buy/sell.
+			curMenu = (isNetworkGame && !coopCampaignMode) ? MENU_1_PLAYER_ARCADE : MENU_FULL_GAME;
 			break;
 		}
 		break;
@@ -8951,7 +9024,7 @@ void JE_menuFunction(JE_byte select)
 			} while (inputDevice[temp] == inputDevice[temp == 0 ? 1 : 0]);
 			break;
 		case 5:
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 6:
 			if (debugMode)
@@ -9019,27 +9092,6 @@ void JE_menuFunction(JE_byte select)
 				gameLoaded = true;
 				mainLevel = 0;
 			}
-			break;
-		}
-		break;
-
-	case MENU_LIMITED_OPTIONS:
-		switch (select)
-		{
-		case 2:
-			curMenu = MENU_JOYSTICK_CONFIG;
-			break;
-		case 3:
-			curMenu = MENU_KEYBOARD_CONFIG;
-			break;
-		// Item 6 is the ship-sensitivity bar; 7 = Save Game (2-player page), Exit sits at 8.
-		case 7:
-			curMenu = MENU_LOAD_SAVE;
-			performSave = true;
-			quikSave = false;
-			break;
-		case 8:
-			curMenu = coopCampaignMode ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
 			break;
 		}
 		break;
@@ -9139,7 +9191,7 @@ joystick_assign_done:
 			JE_doShipSpecs();
 			break;
 		case 4:
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 5:
 			if (debugMode)
@@ -9192,7 +9244,7 @@ joystick_assign_done:
 				memcpy(mouseSettings, defaultMouseSettings, sizeof(mouseSettings));
 				break;
 			case 6:
-				curMenu = MENU_OPTIONS;
+				curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 				break;
 		}
 	}

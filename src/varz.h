@@ -454,6 +454,11 @@ JE_word JE_SGr(JE_word ship, Sprite2_array **ptr);
 void JE_drawOptions(void);
 void JE_resetPlayerOptions(Player *this_player);
 void JE_drawOptionsHUD(void);
+// Whose sidekick pods the HUD strip belongs to, and the ammo-gauge row inside it. Online
+// Campaign simulates both ships, so anything painting the strip has to ask rather than paint
+// for whichever player it happens to be simulating.
+uint hud_sidekick_player_index(void);
+int  hud_sidekick_ammo_y(uint slot);
 void JE_drawPlayerTags(void);  // two-player HUD "P1"/"P2" marks; no-op otherwise
 extern bool hud_sidekicks_dirty;
 

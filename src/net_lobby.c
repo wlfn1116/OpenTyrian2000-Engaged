@@ -493,6 +493,11 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 
 // Everything that has to be settled before the machine starts listening.  Returns true to go
 // ahead and host, with the port applied and the slot choice made; false to go back.
+//
+// Laid out like the Endless record page: a centred block of small-font "Label ....... Value"
+// rows, one line of help for whichever row the cursor is on, and the two actions under it in
+// the menu font.  Spelling every setting out in full on its own normal-font row made the
+// screen a wall of text; the value column carries that now.
 static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 {
 	enum
@@ -501,24 +506,56 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_TYPE,
 		ITEM_EPISODE,
 		ITEM_DIFFICULTY,
-		ITEM_NETCODE,
-		ITEM_RECOVERY,
 		ITEM_PLAYER,
 		ITEM_SPEED,
-		ITEM_START,
+		ITEM_NETCODE,
+		ITEM_RECOVERY,
+		SETTING_COUNT,
+		ITEM_START = SETTING_COUNT,
 		ITEM_BACK,
 		ITEM_COUNT,
 	};
 
+	static const char *const itemLabel[SETTING_COUNT] =
+	{
+		"Listen Port", "Game Type", "Episode", "Difficulty",
+		"Host Flies", "Game Speed", "Netcode", "Desync Recovery",
+	};
+
+	static const char *const itemHelp[ITEM_COUNT] =
+	{
+		"The port other players connect to.",
+		"Campaign plays the story; Arcade is a score run.",
+		"Which episode the session plays.",
+		"Applies to both players for the whole game.",
+		"Which ship you take; the joiner gets the other.",
+		"Game speed, forced on both players.",
+		"Rollback hides latency; delay-based is lockstep.",
+		"Repairs a desync from the host's state.",
+		"Open the port and wait for a player.",
+		"Return to the online multiplayer menu.",
+	};
+
+	// Shown in place of the Desync Recovery help while the row is dead.
+	static const char recoveryLockedHelp[] = "Only rollback netcode can detect a desync.";
+
+	static const char *const actionLabel[] = { "Start Hosting", "Back" };
+
 	char status[64] = "";
 
 	size_t selectedIndex = ITEM_START;
-	int wItem[ITEM_COUNT] = { 0 };
+	int wAction[COUNTOF(actionLabel)] = { 0 };
 
-	const int yItems = 37;
-	const int dyItems = 14;
-	const int hItem = 12;
-	const int yGroupGap = 5;
+	// Eight small-font rows, the help line, and the two actions, fitted between the title
+	// (large_font tops out 20px tall, so it can reach y=40) and the 200-row screen.
+	const int ySettings = 46;
+	const int dySettings = 12;
+	const int hSetting = 10;
+	const int yHelp = 145;
+	const int yActions = 158;
+	const int dyActions = 16;
+	const int hAction = 13;
+	const int yStatus = 191;
 
 	lobbyPrepareBackdrop("Host Game");
 
@@ -530,51 +567,83 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		if (recoveryLocked)
 			net_desync_recovery = false;
 
-		char portItem[32];
-		snprintf(portItem, sizeof(portItem), "Listen Port: %s", port_buf[0] ? port_buf : "(none)");
+		// Campaign gives both slots an identical, independently equipped ship, so which one the
+		// host takes decides nothing; the row only exists to pick the Dragonwing in Arcade.
+		const bool playerHidden = network_game_type == NETWORK_GAME_CAMPAIGN;
+		if (playerHidden && selectedIndex == ITEM_PLAYER)
+			selectedIndex = ITEM_SPEED;
 
-		char speedItem[32];
-		snprintf(speedItem, sizeof(speedItem), "Game Speed: %s", gameSpeedText[network_host_game_speed - 1]);
-		char episodeItem[48];
-		snprintf(episodeItem, sizeof(episodeItem), "Episode: %s", episode_name[network_host_episode]);
-		char difficultyItem[48];
-		snprintf(difficultyItem, sizeof(difficultyItem), "Difficulty: %s", difficultyNameB[network_host_difficulty]);
+		const char *itemValue[SETTING_COUNT];
+		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
+		itemValue[ITEM_TYPE] = network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade";
+		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
+		itemValue[ITEM_DIFFICULTY] = difficultyNameB[network_host_difficulty];
+		itemValue[ITEM_PLAYER] = network_host_player == 2
+		                       ? (network_game_type == NETWORK_GAME_CAMPAIGN ? "Player 2" : "Dragonwing")
+		                       : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Player 1" : "Silver Ship");
+		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
+		itemValue[ITEM_NETCODE] = net_rollback ? "Rollback" : "Delay-Based";
+		itemValue[ITEM_RECOVERY] = net_desync_recovery ? "On" : "Off";
 
-		const char *items[ITEM_COUNT];
-		items[ITEM_PORT] = portItem;
-		items[ITEM_TYPE] = network_game_type == NETWORK_GAME_CAMPAIGN
-		                 ? "Game Type: Campaign"
-		                 : "Game Type: Arcade";
-		items[ITEM_EPISODE] = episodeItem;
-		items[ITEM_DIFFICULTY] = difficultyItem;
-		items[ITEM_NETCODE] = net_rollback
-		                    ? "Netcode: Rollback"
-		                    : "Netcode: Delay-Based";
-		items[ITEM_RECOVERY] = net_desync_recovery
-		                     ? "Desync Recovery: On"
-		                     : "Desync Recovery: Off";
-		items[ITEM_PLAYER] = network_host_player == 2
-		                   ? (network_game_type == NETWORK_GAME_CAMPAIGN ? "Host Flies: Player 2" : "Host Flies: Dragonwing")
-		                   : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Host Flies: Player 1" : "Host Flies: Silver Ship");
-		items[ITEM_SPEED] = speedItem;
-		items[ITEM_START] = "Start Hosting";
-		items[ITEM_BACK] = "Back";
+		// A hidden row leaves no gap: the ones under it move up, so `rowY` is the single place
+		// the draw and the hit test agree on where a row ended up (-1 = not on screen).
+		int rowY[SETTING_COUNT];
+		int shown = 0;
+		for (int i = 0; i < SETTING_COUNT; ++i)
+			rowY[i] = (i == ITEM_PLAYER && playerHidden) ? -1 : ySettings + dySettings * shown++;
+
+		// Size the block to its widest visible row and hang the columns off its edges, so no
+		// value shifts the labels as it changes.  The floor keeps a screenful of short values
+		// from looking cramped; the ceiling keeps a long data-file name inside the 320px field.
+		int blockW = 150;
+		for (int i = 0; i < SETTING_COUNT; ++i)
+		{
+			if (rowY[i] < 0)
+				continue;
+			blockW = MAX(blockW, JE_textWidth(itemLabel[i], small_font) + 20
+			                     + JE_textWidth(itemValue[i], small_font));
+		}
+		blockW = MIN(blockW, 300);
+
+		const int xLabel = LOBBY_XCENTER - blockW / 2;
+		const int xValue = xLabel + blockW;
 
 		lobbyRestoreBackdrop();
 
-		for (size_t i = 0; i < ITEM_COUNT; ++i)
+		for (int i = 0; i < SETTING_COUNT; ++i)
 		{
-			wItem[i] = JE_textWidth(items[i], normal_font);
-			const int x = LOBBY_XCENTER - wItem[i] / 2;
-			const int y = yItems + dyItems * (int)i + (i >= ITEM_START ? yGroupGap : 0);
+			if (rowY[i] < 0)
+				continue;
 
+			const bool selected = (int)selectedIndex == i;
 			const bool disabled = i == ITEM_RECOVERY && recoveryLocked;
-			draw_font_hv_shadow(VGAScreen, x, y, items[i], normal_font, left_aligned, 15,
-			                    -4 + (i == selectedIndex ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+
+			// small_font sits low in bank 15, so its offsets run positive; a negative one
+			// is what makes a row read as unavailable.
+			const int labelValue = disabled ? -1 : (selected ? 6 : 2);
+			const int valueValue = disabled ? -1 : (selected ? 6 : 4);
+
+			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], itemLabel[i], small_font, left_aligned, 15,
+			                    labelValue, false, 1);
+			draw_font_hv_shadow(VGAScreen, xValue, rowY[i], itemValue[i], small_font, right_aligned, 15,
+			                    valueValue, false, 1);
+		}
+
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp,
+		                    (selectedIndex == ITEM_RECOVERY && recoveryLocked)
+		                        ? recoveryLockedHelp : itemHelp[selectedIndex],
+		                    small_font, centered, 15, 2, false, 1);
+
+		for (uint i = 0; i < COUNTOF(actionLabel); ++i)
+		{
+			wAction[i] = JE_textWidth(actionLabel[i], normal_font);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yActions + dyActions * (int)i, actionLabel[i],
+			                    normal_font, centered, 15,
+			                    -4 + (selectedIndex == ITEM_START + i ? 2 : 0), false, 2);
 		}
 
 		if (status[0])
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 187, status, normal_font, centered, 15, -3, false, 2);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yStatus, status, small_font, centered, 15, 6, false, 1);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
@@ -599,11 +668,27 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			{
 				if (i == ITEM_RECOVERY && recoveryLocked)
 					continue;
+				if (i < SETTING_COUNT && rowY[i] < 0)
+					continue;
 
-				const int x = LOBBY_XCENTER - wItem[i] / 2;
-				const int y = yItems + dyItems * (int)i + (i >= ITEM_START ? yGroupGap : 0);
+				int x0, x1, y;
+				if (i < SETTING_COUNT)
+				{
+					// The whole label-to-value span answers, gap included.
+					x0 = xLabel;
+					x1 = xValue;
+					y = rowY[i];
+				}
+				else
+				{
+					x0 = LOBBY_XCENTER - wAction[i - ITEM_START] / 2;
+					x1 = x0 + wAction[i - ITEM_START];
+					y = yActions + dyActions * (int)(i - ITEM_START);
+				}
 
-				if (mouse_x >= x && mouse_x < x + wItem[i] && mouse_y >= y && mouse_y < y + hItem)
+				const int h = i < SETTING_COUNT ? hSetting : hAction;
+
+				if (mouse_x >= x0 && mouse_x < x1 && mouse_y >= y && mouse_y < y + h)
 				{
 					if (selectedIndex != i)
 					{
@@ -629,18 +714,22 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			switch (lastkey_scan)
 			{
+			// Both walks step over anything the frame above left off the screen: the dead
+			// recovery row, and the slot row a Campaign session has no use for.
 			case SDL_SCANCODE_UP:
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
-				while (selectedIndex == ITEM_RECOVERY && recoveryLocked);
+				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
+				       (selectedIndex == ITEM_PLAYER && playerHidden));
 				break;
 
 			case SDL_SCANCODE_DOWN:
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
-				while (selectedIndex == ITEM_RECOVERY && recoveryLocked);
+				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
+				       (selectedIndex == ITEM_PLAYER && playerHidden));
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -649,14 +738,11 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				action = true;
 				break;
 
-			// The value rows answer to left/right as well, the way every other
-			// setting in the game does.
+			// Every cycling row answers to left/right as well, the way every other
+			// setting in the game does.  The port opens a field, so it stays Enter-only.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_TYPE || selectedIndex == ITEM_EPISODE ||
-				    selectedIndex == ITEM_DIFFICULTY || selectedIndex == ITEM_PLAYER ||
-				    selectedIndex == ITEM_RECOVERY || selectedIndex == ITEM_NETCODE ||
-				    selectedIndex == ITEM_SPEED)
+				if (selectedIndex < SETTING_COUNT && selectedIndex != ITEM_PORT)
 				{
 					action = true;
 					if (lastkey_scan == SDL_SCANCODE_LEFT)
@@ -789,93 +875,6 @@ static void lobbyAbort(const char *status)
 	SDL_strlcpy(lobby_status, status, sizeof(lobby_status));
 }
 
-bool networkLobbyConfirmDetails(void)
-{
-	int selected = 0;
-	const char *const actions[] = { "Join Game", "Back" };
-	int widths[COUNTOF(actions)] = { 0 };
-
-	lobbyPrepareBackdrop("Host Settings");
-	for (;;)
-	{
-		char hostLine[48], typeLine[32], episodeLine[48], difficultyLine[48];
-		snprintf(hostLine, sizeof(hostLine), "Host: %s",
-		         network_opponent_name[0] ? network_opponent_name : "(unnamed)");
-		snprintf(typeLine, sizeof(typeLine), "Game Type: %s",
-		         network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
-		snprintf(episodeLine, sizeof(episodeLine), "Episode: %s", episode_name[network_host_episode]);
-		snprintf(difficultyLine, sizeof(difficultyLine), "Difficulty: %s",
-		         difficultyNameB[network_host_difficulty]);
-
-		lobbyRestoreBackdrop();
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 55, hostLine, normal_font, centered, 15, -3, false, 2);
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 75, typeLine, normal_font, centered, 15, -3, false, 2);
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 92, episodeLine, normal_font, centered, 15, -3, false, 2);
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 109, difficultyLine, normal_font, centered, 15, -3, false, 2);
-
-		for (uint i = 0; i < COUNTOF(actions); ++i)
-		{
-			widths[i] = JE_textWidth(actions[i], normal_font);
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER - widths[i] / 2, 142 + 22 * (int)i,
-			                    actions[i], normal_font, left_aligned, 15,
-			                    -4 + ((int)i == selected ? 2 : 0), false, 2);
-		}
-
-		mouseCursor = MOUSE_POINTER_NORMAL;
-		service_SDL_events(true);
-		JE_mouseStart();
-		JE_showVGA();
-		JE_mouseReplace();
-
-		const bool mouseMoved = lobbyWaitForInput();
-		bool action = false;
-		if (mouseMoved || newmouse)
-		{
-			for (uint i = 0; i < COUNTOF(actions); ++i)
-			{
-				const int x = LOBBY_XCENTER - widths[i] / 2;
-				const int y = 142 + 22 * (int)i;
-				if (mouse_x >= x && mouse_x < x + widths[i] && mouse_y >= y && mouse_y < y + 13)
-				{
-					if (selected != (int)i)
-						JE_playSampleNum(S_CURSOR);
-					selected = (int)i;
-					if (newmouse && lastmouse_but == SDL_BUTTON_LEFT)
-						action = true;
-				}
-			}
-		}
-		if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT)
-			return false;
-		if (newkey)
-		{
-			switch (lastkey_scan)
-			{
-			case SDL_SCANCODE_UP:
-			case SDL_SCANCODE_DOWN:
-				selected = 1 - selected;
-				JE_playSampleNum(S_CURSOR);
-				break;
-			case SDL_SCANCODE_RETURN:
-			case SDL_SCANCODE_KP_ENTER:
-			case SDL_SCANCODE_SPACE:
-				action = true;
-				break;
-			case SDL_SCANCODE_ESCAPE:
-				return false;
-			default:
-				break;
-			}
-		}
-
-		if (action)
-		{
-			JE_playSampleNum(selected == 0 ? S_SELECT : S_SPRING);
-			return selected == 0;
-		}
-	}
-}
-
 // Shared setup for both roles.  Returns true once connected.
 static bool lobbyStartSession(bool as_host)
 {
@@ -885,8 +884,11 @@ static bool lobbyStartSession(bool as_host)
 
 	// The host takes the slot it asked for; the joiner assumes it is hosted by a player 1 and
 	// corrects itself from the host's connect packet, which is the first word it gets on the
-	// subject (see network_connect).
-	networkHostPlayerNum = (as_host && network_host_player == 2) ? 2 : 1;
+	// subject (see network_connect).  Campaign offers no such choice -- both slots fly the same
+	// kind of ship -- so it always hosts as player 1, leaving network_host_player as the Arcade
+	// preference it is remembered for.
+	const bool slotChoiceApplies = network_game_type != NETWORK_GAME_CAMPAIGN;
+	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;
 	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
 	if (network_init() != 0)
@@ -897,7 +899,7 @@ static bool lobbyStartSession(bool as_host)
 
 	// Draw the waiting screen before connecting: network_connect() blocks until the peer
 	// appears, so whatever is on screen now is what the player looks at while it waits.
-	lobbyPrepareBackdrop("Multiplayer");
+	lobbyPrepareBackdrop("Online Multiplayer");
 	lobbyRestoreBackdrop();
 	draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 70,
 	                    as_host ? "Waiting for a player to join..." : "Connecting...",
@@ -977,15 +979,15 @@ bool networkLobby(void)
 		items[ITEM_BACK] = "Back";
 
 		if (restart)
-			lobbyPrepareBackdrop("Multiplayer");
+			lobbyPrepareBackdrop("Online Multiplayer");
 		lobbyRestoreBackdrop();
 
 		if (fpsLocked)
 		{
 			// The lock replaces the menu wholesale: no rows at all, just the notice.
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Multiplayer cannot be played below 35 fps",
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 90, "Online Multiplayer cannot be played below",
 			                    normal_font, centered, 15, -1, false, 2);
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 102, "due to stability concerns.",
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 102, "35 fps due to stability concerns.",
 			                    normal_font, centered, 15, -1, false, 2);
 			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 160, "Esc to go back",
 			                    normal_font, centered, 15, -5, false, 2);
@@ -1204,7 +1206,7 @@ bool networkLobby(void)
 
 		case ITEM_NAME:
 			JE_playSampleNum(S_SELECT);
-			if (lobbyTextEntry("Multiplayer", "Your Nickname:", name_buf, sizeof(name_buf), filterName, false))
+			if (lobbyTextEntry("Online Multiplayer", "Your Nickname:", name_buf, sizeof(name_buf), filterName, false))
 				network_set_player_name(name_buf);
 			break;
 

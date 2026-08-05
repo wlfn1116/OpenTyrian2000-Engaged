@@ -479,8 +479,12 @@ conflict behavior.
 `coopCampaignMode` is the online-only rules flag. `arcade_rules_active()` and
 `split_arcade_mode()` keep the established one-player, local two-player, and
 Online Arcade branches unchanged. The host publishes game type, episode, and
-difficulty in `PACKET_CONNECT`; the joiner confirms the same values before the
-session begins. Changing those fields requires a `NET_VERSION` bump.
+difficulty in `PACKET_CONNECT`; the joiner validates the same values against
+`PACKET_DETAILS` before the session begins. Changing those fields requires a
+`NET_VERSION` bump. The joiner is not prompted to accept them: `PACKET_DETAILS`
+only arrives once the host has already left its start menu, so a prompt there
+would stall a session that has begun. The connect-time host name and game type
+are shown on the joiner's waiting screen instead.
 
 Both peers simulate both complete ships. State that was historically held in
 single-player globals, including generator charge, shot repeat counters,
@@ -495,9 +499,31 @@ the sole writer of that state. Save requests use a two-way request/acknowledgeme
 checkpoint, and the final shop rendezvous waits for both players. Modal shop
 loops continue servicing acknowledgements and keep-alives.
 
+Each player leaves the outpost by choosing a level, and the two picks can differ.
+The host's is authoritative, but it is held rather than applied on arrival:
+`network_shop_adopt_host_level()` writes `mainLevel` and `jumpSection` only after
+the local player has also finished, so the host committing cannot end the other
+player's outpost visit mid-purchase.
+
+`MENU_LIMITED_OPTIONS` is the options page with Load Game removed, built from
+`menuInt[3]` by `configure_options_sens_menu()` rather than from the data file's
+shorter DOS network menu. Its rows therefore sit one higher than the offline
+page's; `options_row()` and `options_full_row()` are the only place that offset is
+written down, and every row is named by the `OPT_*` enum. Sub-screens reached from
+either page (`MENU_LOAD_SAVE`, joystick, keyboard, mouse) have `menuEsc` pointing
+at `MENU_OPTIONS`, so the Esc handler redirects to the online page when
+`isNetworkGame`.
+
 Campaign HUD rendering is local: each machine draws the one-player sidebar for
 its controlled ship. Names and cash totals for both players are drawn inside the
 playfield. Online Arcade retains the split gauges and link presentation.
+
+Both ships run the whole per-player simulation on both machines, so anything that
+paints the shared HUD from inside it has to ask whose strip it is rather than
+paint for whichever player it is simulating. `hud_sidekick_player_index()` (varz.c)
+is that rule; the sidekick ammo gauge goes through it, as does
+`JE_drawOptionsHUD()`. Getting it wrong puts the other player's magazine on your
+HUD, under sidekick icons you may not own.
 
 ### Reliable channel
 
@@ -599,7 +625,9 @@ pass:
 
 - `textErase` decrements only on live passes, and a new message always redraws
   the message-bar background.
-- Sidekick HUD changes set `hud_sidekicks_dirty` during a silent replay.
+- Sidekick HUD changes set `hud_sidekicks_dirty` during a silent replay. The rule
+  lives inside `JE_drawOptionsHUD()` and the ammo-gauge painter rather than at the
+  call sites, so a new caller cannot forget it.
 - Shield and armor changes set `hud_bars_dirty`; restore paths request a repaint.
 - Gauge flash counters and link sound cues are presentation state.
 - `SFX_CUE_CHANNEL` is reserved for presentation cues.
