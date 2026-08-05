@@ -550,6 +550,23 @@ clamped gauge and shield ceiling mark within that cleared region.
 Help-bar values right-align to `ENDLESS_COURSE_PAYOUT_RIGHT`. Descriptions leave
 room for prices and stack counts. Navigation-map planets iterate `mapPNum`.
 
+Shop icons are two-by-two blocks on the nineteen-wide `newsh1.shp` grid, so a
+base index also claims `+1`, `+19`, and `+20`. Only `weaponPort`, `powerSys`,
+`options`, and `shields` index that sheet through `itemgraphic`. Specials index
+`spriteSheet10`, and ships use `shipgraphic` against `spriteSheet9` or the
+Tyrian 2000 sheet, so `ships[].itemgraphic` is unused. A zero `itemgraphic` on a
+special is meaningful: the equip guards reject it, which keeps script-only
+specials out of play.
+
+`JE_applyUnusedShopSprites` rewrites icons for the Unused Sprites option. Its
+capture pass runs after the placeholder fallback and after
+`JE_addChargeLaserCannon`, so the stored baseline matches what the shops would
+otherwise draw, and before `customWeaponInit`, which claims unrelated slots.
+Apply is idempotent and writes the baseline back when the option is off, so
+`JE_initEpisode` and the menu handlers can call it without an item reload. The
+Charge-Laser slot moves between episodes, so its write is guarded against
+`chargeLaserSlot`.
+
 ## Weapons
 
 Episode-specific changes apply after item data loads and remain idempotent.

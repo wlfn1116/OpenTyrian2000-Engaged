@@ -542,6 +542,7 @@ never used:
 - Needle Laser and Bubble Gum-Gun sounds
 - the cut Charge-Laser sidekick
 - Ice Base Shots
+- Unused Sprites
 - sidekick autofire
 
 **Ice Base Shots**, on by default, wakes the dormant dispenser bases on Camanis
@@ -552,6 +553,18 @@ hatch stands open, the eye fires a player-aimed shot and the orb below discharge
 a fast four-segment bolt straight down. Endless ignores the toggle. Up to Zone 50
 each zone has a 50/50 chance of waking them, fixed by the run seed, and from Zone
 50 they are always awake.
+
+**Unused Sprites**, on by default, gives distinct shop icons to items that share
+another item's picture. The shop icon sheet carries eleven finished icons the
+game never draws, while several weapons reuse the Pulse-Cannon or Multi-Cannon
+icon and three had no icon at all. Switched on, twenty-one weapons and sidekicks
+take a different icon, among them the NortShip guns, Atomic RailGun, Dragon
+Frost, Wobbley, Satellite Marlo, and the Charge-Laser Cannon. A few reuse a
+related item's icon so each family reads together: Protron Wave matches Protron
+Z, Sonic Impulse matches Sonic Wave, and Tropical Cherry Companion matches
+Banana Blast. Most of these weapons are sold only in Endless, where every port
+can appear in one list. Switching the option off restores the original icons.
+Nothing about the weapons themselves changes.
 
 ## Other enhancements
 

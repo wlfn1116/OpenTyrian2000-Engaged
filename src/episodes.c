@@ -76,19 +76,29 @@ static const struct { JE_byte port; JE_word gr; } unusedSpritePorts[] =
 	{ 36,  17 },  // NortShip Super Pulse
 	{ 37,  15 },  // NortShip Spreader
 	{ 38,  43 },  // NortShip Spreader B
+	{ 39, 191 },  // Atomic RailGun
+	{ 41,  41 },  // Sonic Impulse         (shares Sonic Wave's icon)
+	{ 42, 205 },  // RetroBall
 	{ 44, 167 },  // Pretzel Missile
+	{ 45,  43 },  // Dragon Frost
 	{ 46, 167 },  // People Pretzels
 	{ 47,  39 },  // Dragon Flame
 };
 
 // Sidekicks get the same treatment. The Charge-Laser's slot differs per episode, so it is
 // resolved at capture time rather than hard-coded (0 = the toggle re-added nothing).
-#define UNUSED_SPRITE_ZICA_CHARGER 12  // "Zica SuperCharger" (verified in all three item tables)
-#define UNUSED_SPRITE_FLYING_PUNCH 32  // "Flying Punch"      (likewise)
+#define UNUSED_SPRITE_WOBBLEY          5  // "Wobbley" (verified in all three item tables)
+#define UNUSED_SPRITE_ZICA_CHARGER    12  // "Zica SuperCharger"         (likewise)
+#define UNUSED_SPRITE_TROPICAL_CHERRY 29  // "Tropical Cherry Companion" (likewise)
+#define UNUSED_SPRITE_SATELLITE_MARLO 30  // "Satellite Marlo"           (likewise)
+#define UNUSED_SPRITE_FLYING_PUNCH    32  // "Flying Punch"              (likewise)
 static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 {
-	{ UNUSED_SPRITE_ZICA_CHARGER,  45 },
-	{ UNUSED_SPRITE_FLYING_PUNCH, 203 },
+	{ UNUSED_SPRITE_WOBBLEY,         129 },
+	{ UNUSED_SPRITE_ZICA_CHARGER,     45 },
+	{ UNUSED_SPRITE_TROPICAL_CHERRY,   3 },  // shares the Banana Blast icon
+	{ UNUSED_SPRITE_SATELLITE_MARLO, 205 },
+	{ UNUSED_SPRITE_FLYING_PUNCH,    203 },
 };
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
@@ -101,8 +111,8 @@ static JE_word unusedSpriteBaseLaser;
 static JE_byte unusedSpriteLaserSlot;
 static bool    unusedSpriteCaptured = false;
 
-// Snapshot the as-shipped icons. Must run AFTER the 167 placeholder pass and after
-// JE_addChargeLaserCannon, so the baseline is what the shops would really have drawn.
+// Snapshot the as-shipped icons. Runs after the 167 placeholder pass and after
+// JE_addChargeLaserCannon, so the baseline is what the shops would otherwise draw.
 static void JE_captureUnusedShopSprites(void)
 {
 	for (unsigned int i = 0; i < COUNTOF(unusedSpritePorts); ++i)
