@@ -131,7 +131,7 @@ Switch, and Vita targets:
 ```
 
 `.\build-all.ps1 -Help` lists every option. The console targets need their own
-toolchains:
+toolchains: 
 
 - [Nintendo Switch build](switch/README.md)
 - [PlayStation Vita build](vita/README.md)
