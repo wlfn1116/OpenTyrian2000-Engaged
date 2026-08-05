@@ -284,10 +284,48 @@ Uint32 rollback_state_hash(void)
 		return 0;
 
 	Uint32 h = 2166136261u;
-	for (size_t i = 0; i < rb_total_size; ++i)
+	for (int item = 0; item < rb_item_count; ++item)
 	{
-		h ^= rb_trace_buf[i];
-		h *= 16777619u;
+		const RbItem *const it = &rb_items[item];
+		const Uint8 *const bytes = rb_trace_buf + it->offset;
+
+		/* Legacy replay fixtures hash the pre-Campaign registry byte stream. Preserve that
+		 * projection when the mode is inactive, while Campaign canaries cover every new field. */
+		if (!coopCampaignMode && strcmp(it->name, "coopCampaignMode") == 0)
+			continue;
+		if (!coopCampaignMode && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
+		{
+			const size_t prefix = offsetof(Player, generator_power);
+			const size_t suffix = offsetof(Player, x);
+			const size_t legacy_payload = prefix + sizeof(Player) - suffix;
+			const size_t legacy_stride = (legacy_payload + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+			for (uint p = 0; p < COUNTOF(player); ++p)
+			{
+				const Uint8 *const player_bytes = bytes + p * sizeof(Player);
+				for (size_t i = 0; i < prefix; ++i)
+				{
+					h ^= player_bytes[i];
+					h *= 16777619u;
+				}
+				for (size_t i = suffix; i < sizeof(Player); ++i)
+				{
+					h ^= player_bytes[i];
+					h *= 16777619u;
+				}
+				for (size_t i = legacy_payload; i < legacy_stride; ++i)
+				{
+					h ^= 0;
+					h *= 16777619u;
+				}
+			}
+			continue;
+		}
+
+		for (size_t i = 0; i < it->size; ++i)
+		{
+			h ^= bytes[i];
+			h *= 16777619u;
+		}
 	}
 	return h;
 }

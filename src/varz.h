@@ -452,6 +452,7 @@ void JE_getShipInfo(void);
 JE_word JE_SGr(JE_word ship, Sprite2_array **ptr);
 
 void JE_drawOptions(void);
+void JE_resetPlayerOptions(Player *this_player);
 void JE_drawOptionsHUD(void);
 void JE_drawPlayerTags(void);  // two-player HUD "P1"/"P2" marks; no-op otherwise
 extern bool hud_sidekicks_dirty;

@@ -44,8 +44,8 @@
 #define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
 #define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
 
-#define PACKET_CONNECT       0x10    // version, delay, episodes, player_number, name
-#define PACKET_DETAILS       0x11    // episode, difficulty
+#define PACKET_CONNECT       0x10    // version, delay, episodes, player, game type/settings, name
+#define PACKET_DETAILS       0x11    // game type, episode, difficulty, optional save record
 
 #define PACKET_QUIT          0x20    // 
 #define PACKET_WAITING       0x21    // 
@@ -55,6 +55,7 @@
 #define PACKET_GAME_PAUSE    0x31    //
 #define PACKET_GAME_MENU     0x32    //
 #define PACKET_DEBUG_SYNC    0x33    // generation, sender, <debug state block>  (see network_debug_sync_send)
+#define PACKET_SHOP_SYNC     0x34    // sender, sequence, flags, route, cash, mode, ack, items
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -79,6 +80,17 @@ extern Uint16 network_listen_port;
 // Persisted host slot preference: 1, or 2 for the Dragonwing.
 extern int network_host_player;
 extern int network_host_game_speed;
+
+typedef enum
+{
+	NETWORK_GAME_ARCADE = 0,
+	NETWORK_GAME_CAMPAIGN = 1,
+}
+NetworkGameType;
+
+extern NetworkGameType network_game_type;
+extern int network_host_episode;
+extern int network_host_difficulty;
 
 // Lobby connection role. The host also supplies the session settings and player slots.
 extern bool network_is_host;
@@ -186,6 +198,14 @@ void network_settings_restore(void);
 // Bytes 0..15 are settings; 16..23 identify the rollback layout and snapshot size.
 #define NETWORK_SETTINGS_SIZE 24
 
+void network_shop_begin(void);
+void network_shop_send_state(bool done);
+void network_shop_send_transaction(void);
+bool network_shop_pump(void);
+bool network_shop_peer_done(void);
+void network_shop_end(void);
+void network_shop_sync_for_save(void);
+
 // Synchronize debug-menu simulation state. mark snapshots the baseline, changed compares it,
 // send publishes updates, and pump adopts queued updates. in_level enables HUD repainting.
 void network_debug_sync_mark(void);
@@ -271,6 +291,13 @@ extern bool rollback_resim;
 #else
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
+static inline void network_shop_begin(void) { }
+static inline void network_shop_send_state(bool done) { (void)done; }
+static inline void network_shop_send_transaction(void) { }
+static inline bool network_shop_pump(void) { return false; }
+static inline bool network_shop_peer_done(void) { return true; }
+static inline void network_shop_end(void) { }
+static inline void network_shop_sync_for_save(void) { }
 #endif
 
 #endif /* NETWORK_H */

@@ -90,6 +90,33 @@ typedef struct
 	uint superbombs;
 	uint purple_balls_needed;
 	
+	// Online Campaign gives each ship the single-player generator and firing state. The original
+	// globals remain the active scratch context so the weapon code itself stays unchanged.
+	Uint16 generator_power;
+	Uint16 generator_power_add;
+	Uint8 shield_wait;
+	Uint8 shot_repeat[11];
+	Uint8 shot_multi_pos[11];
+	bool port_config_change;
+	bool port_config_done;
+	float option_satellite_rotate;
+	Sint32 option_attachment_move[2];
+	bool option_attachment_linked[2];
+	bool option_attachment_return[2];
+	bool special_fire_held;
+	Uint8 zinglon_duration;
+	Uint8 astral_duration;
+	Uint16 flare_duration;
+	bool flare_start;
+	Sint8 flare_color_change;
+	Uint8 special_wait;
+	Uint8 next_special_wait;
+	bool spray_special;
+	Sint8 special_weapon_filter;
+	Sint8 special_weapon_freq;
+	Uint16 special_weapon_wpn;
+	bool special_link_to_player;
+
 	int x, y;
 	int old_x[20], old_y[20];
 	
@@ -125,6 +152,8 @@ Player;
 
 extern Player player[2];
 
+uint gameplay_local_player_index(void);
+
 // Rounds per segment on the sidekick ammo gauge, sized so a full magazine is at most ten
 // segments and stays inside the 29px HUD strip. Rounding UP matters now that the endless
 // Ordnance Reserves perk produces magazines that aren't round numbers (a 26-round magazine
@@ -159,5 +188,7 @@ uint arcade_weapon_power(const Player *, uint port);  // the level a bay fires a
 uint arcade_armor_max(const Player *);   // == hull_armor outside the arcade modes
 uint arcade_shield_max(const Player *);  // == shields[].mpwr * 2 outside the arcade modes
 void arcade_rescale_to_lives(Player *);  // re-derive both ceilings after a life is gained or lost
+
+void coop_ship_runtime_reset(void);
 
 #endif // PLAYER_H

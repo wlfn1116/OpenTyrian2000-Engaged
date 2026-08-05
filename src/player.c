@@ -20,15 +20,22 @@
 
 #include "endless.h"
 #include "episodes.h"
+#include "network.h"
 #include "varz.h"  // hud_bars_dirty
 
 Player player[2];
+
+uint gameplay_local_player_index(void)
+{
+	return coopCampaignMode && isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2
+	     ? thisPlayerNum - 1 : 0;
+}
 
 /* Arcade life scaling derives its ceilings from each ship's stock hull and shield. SuperTyrian is
  * excluded; network games use the host's arcadeLifeBoost setting. */
 bool arcade_life_scaling_active(void)
 {
-	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian;
+	return arcadeLifeBoost && arcade_rules_active() && !superTyrian;
 }
 
 /* In one-player arcade modes, rear-gun power combines its own pickups with lives - 1. Two-player
@@ -148,6 +155,8 @@ bool power_up_weapon(Player *this_player, uint port)
 	{
 		++this_player->items.weapon[port].power;
 		shotMultiPos[port] = 0; // shared per-port firing cursor
+		if (coopCampaignMode)
+			this_player->shot_multi_pos[port] = 0;
 
 		calc_purple_balls_needed(this_player);
 		arcade_rescale_to_lives(this_player);  // this port IS the life counter in arcade modes

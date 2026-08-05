@@ -116,10 +116,9 @@ bool gameplaySelect(void)
 			// "Endless" is inserted after the full-game entry; every other label still comes
 			// from gameplay_name[] (full game = [1], the rest map straight across after the
 			// insert: Arcade = [2], Timed = [3], 2P = [4], Network = [5]).
-			// The network entry's shipped label is "Modem/Network Game", which describes an
-			// era rather than the mode; it is plain two-player arcade over a network now.
+			// The lobby now contains both online Arcade and Campaign.
 			const char *const text = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
-			                       : (i == MENU_ITEM_NETWORK)             ? "2 Player Online Arcade"
+			                       : (i == MENU_ITEM_NETWORK)             ? "Online"
 			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
 			                       :                                        gameplay_name[i];
 
@@ -291,6 +290,7 @@ bool gameplaySelect(void)
 				onePlayerAction = false;
 				timedBattleMode = false;
 				endlessMode = false;
+				coopCampaignMode = false;
 				twoPlayerMode = true;  // networkStartScreen() sets the rest up
 				return true;
 #else

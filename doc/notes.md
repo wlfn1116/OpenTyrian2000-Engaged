@@ -418,8 +418,9 @@ Headings are non-selectable, and navigation skips them. Filtered views own
 selection, scrolling, and hit testing.
 
 Mid-level loadout edits refresh cached ship data through the normal in-level
-path. Only a ship change restores armor. Player two remains the Dragonwing role,
-so its sprite and armor do not follow an edited hull ID.
+path. Only a ship change restores armor. In Arcade, player two remains the
+Dragonwing role, so its sprite and armor do not follow an edited hull ID. Online
+Campaign gives both players the selected full ship.
 
 Menu ID 15 is an intentional hole left by the removed level grid. The Endless
 editor stages jump values until launch and applies tuning values when leaving
@@ -466,11 +467,37 @@ bump. Rendering, audio, and local input settings remain local.
 
 `network_is_host` selects the machine that listens and decides session settings.
 `networkHostPlayerNum` selects the ship slot that machine flies. Slot-specific
-rules remain keyed to player number because player two is the Dragonwing.
+Arcade rules remain keyed to player number because player two is the Dragonwing.
+Online Campaign gives both slots the complete one-player ship model.
 
 The joiner's initial slot is provisional in an in-game lobby. The host's choice
 settles both slots. Command-line netplay retains its historical equal-slot
 conflict behavior.
+
+### Online campaign mode
+
+`coopCampaignMode` is the online-only rules flag. `arcade_rules_active()` and
+`split_arcade_mode()` keep the established one-player, local two-player, and
+Online Arcade branches unchanged. The host publishes game type, episode, and
+difficulty in `PACKET_CONNECT`; the joiner confirms the same values before the
+session begins. Changing those fields requires a `NET_VERSION` bump.
+
+Both peers simulate both complete ships. State that was historically held in
+single-player globals, including generator charge, shot repeat counters,
+sidekick attachment, special cooldowns, and Zinglon state, lives in each
+`Player` during Campaign and is part of the rollback registry. The active ship's
+state is loaded around its movement step and saved immediately afterwards.
+
+The shop uses `JE_shopPlayerIndex()` for local presentation and purchasing.
+`PACKET_SHOP_SYNC` publishes an ordered transaction input carrying the owner's
+resulting cash, loadout, weapon mode, and route after each commit. Each owner is
+the sole writer of that state. Save requests use a two-way request/acknowledgement
+checkpoint, and the final shop rendezvous waits for both players. Modal shop
+loops continue servicing acknowledgements and keep-alives.
+
+Campaign HUD rendering is local: each machine draws the one-player sidebar for
+its controlled ship. Names and cash totals for both players are drawn inside the
+playfield. Online Arcade retains the split gauges and link presentation.
 
 ### Reliable channel
 
@@ -599,15 +626,23 @@ Clear Logs removes only recognized OpenTyrian log names.
 
 Online games use the existing two-player page in `tyrian.sav`, slots 12 through
 22. Slot 22 remains the automatic LAST LEVEL backup and is read-only in the menu.
-Online and local two-player sessions intentionally share these slots.
+Arcade records remain compatible with local two-player. Campaign records are
+tagged and accepted only while loading an Online Campaign session.
 
-`save_record_pack` and `save_record_unpack` define the 77-byte little-endian
+`save_record_pack` and `save_record_unpack` define the 81-byte little-endian
 network record. A resumed `PACKET_DETAILS` appends that record after its normal
-eight-byte prefix. The joiner keeps its own live input-device assignments.
+ten-byte prefix. The joiner keeps its own live input-device assignments.
+
+The existing `highScore2` field carries a Campaign marker plus the weapon powers
+and modes not represented by the legacy two-player record. The two `PlayerItems`
+blocks and cash fields then preserve both full loadouts without changing the
+fixed `tyrian.sav` layout or checksum. Shop saves first complete a bidirectional
+state checkpoint so both machines serialize the same transaction boundary.
 
 The host selects New Game or Load Game after connection. Network load menus stay
-on the two-player page, filter unavailable episodes, and keep the peer alive.
-Alt+L is disabled online; Alt+S opens the shared two-player save page.
+on the two-player page, filter unavailable episodes and mismatched game types,
+and keep the peer alive. Alt+L is disabled online; Alt+S opens the shared
+two-player save page except while a purchase preview is active.
 
 An involuntary disconnect after gameplay offers a save based on the pre-level
 LAST LEVEL backup. The prompt clears silent rollback state before drawing and

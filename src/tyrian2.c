@@ -37,6 +37,7 @@
 #include "mainint.h"
 #include "mouse.h"
 #include "mtrand.h"
+#include "net_lobby.h"
 #include "network.h"
 #include "nortsong.h"
 #include "nortvars.h"
@@ -1116,6 +1117,29 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 	JE_barBright(surface, x0, 0, x1, bottom);
 }
 
+static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate)
+{
+	if (coopCampaignMode)
+	{
+		for (uint p = 0; p < COUNTOF(player); ++p)
+		{
+			if (player[p].zinglon_duration < 1)
+				continue;
+			const int duration = player[p].zinglon_duration + 1;
+			const int width = 25 - abs(duration - 25);
+			const float offset = interpolate ? rl_get_ship_override_dx(p) : 0.0f;
+			const int cx = round_signed(((float)player[p].x + 7.0f + offset) * scale);
+			draw_zinglon_pillar(surface, cx, width, scale);
+		}
+	}
+	else if (zinglonPillarActive)
+	{
+		const float offset = interpolate ? rl_get_ship_override_dx(0) : 0.0f;
+		const int cx = round_signed(((float)zinglonPillarCX + offset) * scale);
+		draw_zinglon_pillar(surface, cx, zinglonPillarTemp, scale);
+	}
+}
+
 // Last PRESENTED twoPlayerLinked value, for the fuse/unfuse sound cue edge detector
 // in the level loop.  Presentation state: unregistered, reset at level start.
 static bool link_cue_state = false;
@@ -1297,8 +1321,7 @@ void JE_starShowVGA(void)
 	{
 		// Zinglon pillar at the tick position: baseline for the non-interpolated
 		// present paths; the interp loop below redraws it shifted after replay.
-		if (zinglonPillarActive)
-			draw_zinglon_pillar(game_screen, zinglonPillarCX, zinglonPillarTemp, 1);
+		draw_active_zinglon_pillars(game_screen, 1, false);
 
 		composite_playfield(game_screen);
 
@@ -1386,10 +1409,7 @@ void JE_starShowVGA(void)
 
 					// Zinglon pillar onto the freshly-interpolated frame, centred on the
 					// ship's render-rate position so it glides rather than snapping.
-					if (zinglonPillarActive)
-						draw_zinglon_pillar(interp_buf,
-						                    round_signed(((float)zinglonPillarCX + rl_get_ship_override_dx(0)) * rss),
-						                    zinglonPillarTemp, rss);
+					draw_active_zinglon_pillars(interp_buf, rss, true);
 
 					draw_boss_bar_present(interp_buf, rss, alpha);
 
@@ -3015,7 +3035,7 @@ start_level_first:
 		player[i].last_y_shot_move = player[i].y;
 	}
 	
-	JE_loadPic(VGAScreen, twoPlayerMode ? 6 : 3, false);
+	JE_loadPic(VGAScreen, split_arcade_mode() ? 6 : 3, false);
 
 	// Relocate the HUD to the new right edge when the playfield is wider
 	const int hud_shift = vga_width - LEGACY_WIDTH;
@@ -3034,7 +3054,7 @@ start_level_first:
 	// Two-player HUD: left-align the name exactly as the one-player HUD does, only nudged off the
 	// classic y76 so it sits vertically centred in its black readout instead of low against the frame.
 	int nameX = HUD_X(268), nameY = 118;
-	if (twoPlayerMode)
+	if (split_arcade_mode())
 	{
 		enum { BOX_Y = 71, BOX_H = 12, TEXT_H = 6 };
 		nameY = BOX_Y + (BOX_H - TEXT_H) / 2;
@@ -3365,6 +3385,8 @@ start_level_first:
 	zinglonDuration = 0;
 	specialWait = 0;
 	nextSpecialWait = 0;
+	if (coopCampaignMode)
+		coop_ship_runtime_reset();
 	for (uint i = 0; i < 2; i++)  /*Launch the Attachments!*/
 	{
 		optionAttachmentMove[i]   = 0;
@@ -3520,8 +3542,8 @@ level_loop:
 		mapY3Pos = (BKwrap3to > BKwrap3) ? BKwrap3to - (BKwrap3 - mapY3Pos) / 15 * 15 : BKwrap3to;
 
 	allPlayersGone = all_players_dead() &&
-	                 ((*player[0].lives == 1 && player[0].exploding_ticks == 0) || (!onePlayerAction && !twoPlayerMode)) &&
-	                 ((*player[1].lives == 1 && player[1].exploding_ticks == 0) || !twoPlayerMode);
+	                 ((*player[0].lives == 1 && player[0].exploding_ticks == 0) || !arcade_rules_active()) &&
+	                 ((*player[1].lives == 1 && player[1].exploding_ticks == 0) || !arcade_rules_active());
 
 	/* Music fade. */
 	if (musicFade)
@@ -3602,7 +3624,29 @@ level_loop:
 		}
 		else // not galagaMode
 		{
-			if (twoPlayerMode)
+			if (coopCampaignMode)
+			{
+				bool shield_changed = false;
+				for (uint i = 0; i < COUNTOF(player); ++i)
+				{
+					Player *const this_player = &player[i];
+					const int regen_cost = shields[this_player->items.shield].tpwr * 20;
+					this_player->generator_power = MIN(900,
+						this_player->generator_power + this_player->generator_power_add);
+
+					if (this_player->is_alive && this_player->shield < this_player->shield_max &&
+					    this_player->generator_power > regen_cost && --this_player->shield_wait == 0)
+					{
+						this_player->shield_wait = 15;
+						this_player->generator_power -= regen_cost;
+						++this_player->shield;
+						shield_changed = true;
+					}
+				}
+				if (shield_changed)
+					JE_drawShield();
+			}
+			else if (twoPlayerMode)
 			{
 				if (--shieldWait == 0)
 				{
@@ -3644,18 +3688,19 @@ level_loop:
 		// and any rear-gun scaling; the wider two-player bar keeps the same slot count.
 		for (uint i = 0; i < 2; ++i)
 		{
-			uint item_power = arcade_weapon_power(&player[twoPlayerMode ? i : 0], i);
+			const uint hud_player = gameplay_local_player_index();
+			uint item_power = arcade_weapon_power(&player[coopCampaignMode ? hud_player : (twoPlayerMode ? i : 0)], i);
 
 			if (old_weapon_bar[i] != item_power)
 			{
 				old_weapon_bar[i] = item_power;
 
 				enum { WEAPON_BAR_SLOTS = 11 };
-				const int width  = twoPlayerMode ? 28 : WEAPON_BAR_SLOTS * 2,
-				          height = twoPlayerMode ? 3 : 2;  // rows y .. y + height
+				const int width  = split_arcade_mode() ? 28 : WEAPON_BAR_SLOTS * 2,
+				          height = split_arcade_mode() ? 3 : 2;  // rows y .. y + height
 
-				const int x = HUD_X(twoPlayerMode ? 284 : 289),
-				          y = (i == 0) ? (twoPlayerMode ? 5 : 17) : (twoPlayerMode ? 99 : 38);
+				const int x = HUD_X(split_arcade_mode() ? 284 : 289),
+				          y = (i == 0) ? (split_arcade_mode() ? 5 : 17) : (split_arcade_mode() ? 99 : 38);
 
 				fill_rectangle_xy(VGAScreenSeg, x, y, x + width - 1, y + height, 0);
 
@@ -3674,7 +3719,7 @@ level_loop:
 		}
 
 		/* Power bar. */
-		if (twoPlayerMode || onePlayerAction)
+		if (arcade_rules_active())
 		{
 			power = 900;
 			power_gauge_active = false;
@@ -3682,6 +3727,18 @@ level_loop:
 			// One-player Arcade modes use the unused generator gauge for lives.
 			if (onePlayerAction)
 				draw_lives_gauge(*player[0].lives);
+		}
+		else if (coopCampaignMode)
+		{
+			const uint hud_player = gameplay_local_player_index();
+			power = player[hud_player].generator_power;
+			powerAdd = player[hud_player].generator_power_add;
+			power_render_prev = power_render_cur;
+			power_render_cur = (int)power;
+			salvo_render_prev = salvo_render_cur = 0;
+			power_gauge_active = true;
+			lastPower = power / 10;
+			draw_power_gauge((float)power, 0.0f);
 		}
 		else
 		{
@@ -4142,8 +4199,26 @@ level_loop:
 
 					if (z == MAX_PWEAPON - 1)
 					{
-						temp = 25 - abs(zinglonDuration - 25);
-						collided = abs(enemy[b].ex + enemy[b].mapoffset - (player[0].x + 7)) < temp;
+						if (coopCampaignMode)
+						{
+							collided = false;
+							temp = 0;
+							for (uint p = 0; p < COUNTOF(player); ++p)
+							{
+								const int width = 25 - abs((int)player[p].zinglon_duration - 25);
+								if (player[p].zinglon_duration > 1 &&
+								    abs(enemy[b].ex + enemy[b].mapoffset - (player[p].x + 7)) < width)
+								{
+									collided = true;
+									temp = MAX(temp, width);
+								}
+							}
+						}
+						else
+						{
+							temp = 25 - abs(zinglonDuration - 25);
+							collided = abs(enemy[b].ex + enemy[b].mapoffset - (player[0].x + 7)) < temp;
+						}
 						temp2 = 9;
 						chain = 0;
 						// The Zinglon pillar is a pseudo-shot with no playerShotData entry, so it
@@ -5835,7 +5910,7 @@ new_game:
 
 					case '2':  // two-player section jump
 						temp = atoi(s + 3);
-						if (twoPlayerMode || onePlayerAction)
+						if (arcade_rules_active())
 						{
 							mainLevel = temp;
 							jumpSection = true;
@@ -5991,7 +6066,7 @@ new_game:
 
 						JE_nextEpisode();
 
-						if (jumpBackToEpisode1 && !twoPlayerMode)
+						if (jumpBackToEpisode1 && !arcade_rules_active())
 						{
 							JE_loadPic(VGAScreen, 1, false); // huh?
 							JE_clr256(VGAScreen);
@@ -6479,6 +6554,7 @@ void networkStartScreen(void)
 	}
 
 	twoPlayerMode = true;
+	coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 	bool resumed = false;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
@@ -6491,23 +6567,28 @@ void networkStartScreen(void)
 		if (resumeSlot > 0)
 		{
 			network_prepare(PACKET_DETAILS);
-			SDLNet_Write16(episodeNum, &packet_out_temp->data[4]);
-			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[6]);
-			save_record_pack(&packet_out_temp->data[8], &saveFiles[resumeSlot - 1]);
-			network_send(8 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
+			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
+			SDLNet_Write16(episodeNum, &packet_out_temp->data[6]);
+			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
+			save_record_pack(&packet_out_temp->data[10], &saveFiles[resumeSlot - 1]);
+			network_send(10 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
 			resumed = true;
 		}
-		else if (resumeSlot == 0 && episodeSelect() && difficultySelect())
+		else if (resumeSlot == 0)
 		{
+			JE_initEpisode(network_host_episode);
+			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
-			difficultyLevel++;  /*Make it one step harder for 2-player mode!*/
+			if (!coopCampaignMode)
+				difficultyLevel++;  /*Make Arcade one step harder for 2-player mode.*/
 
 			network_prepare(PACKET_DETAILS);
-			SDLNet_Write16(episodeNum, &packet_out_temp->data[4]);
-			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[6]);
-			network_send(8);  // PACKET_DETAILS
+			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
+			SDLNet_Write16(episodeNum, &packet_out_temp->data[6]);
+			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
+			network_send(10);  // PACKET_DETAILS
 		}
 		else
 		{
@@ -6539,7 +6620,7 @@ void networkStartScreen(void)
 			// previous one left behind; a desync before the first tick.  Discard it and keep
 			// waiting; a peer that never sends a whole one times out as a lost connection.
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_DETAILS &&
-			    packet_in[0]->len >= 8)
+			    packet_in[0]->len >= 10)
 				break;
 
 			network_update();
@@ -6548,31 +6629,48 @@ void networkStartScreen(void)
 			SDL_Delay(16);
 		}
 
-		const int their_episode    = SDLNet_Read16(&packet_in[0]->data[4]);
-		const int their_difficulty = SDLNet_Read16(&packet_in[0]->data[6]);
+		UDPpacket *const details_packet = packet_in[0];
+		if (details_packet == NULL)
+		{
+			network_tyrian_halt(3, false);
+			return;
+		}
+		const int their_game_type  = SDLNet_Read16(&details_packet->data[4]);
+		const int their_episode    = SDLNet_Read16(&details_packet->data[6]);
+		const int their_difficulty = SDLNet_Read16(&details_packet->data[8]);
 
 		// The host picked both from its own menus, so out of range means a corrupt packet, not a
 		// disagreement.  Worth catching here: JE_initEpisode builds level filenames from the
 		// number, and a bad one takes the game down inside the loader instead.
-		if (their_episode < 1 || their_episode > EPISODE_MAX ||
+		if (their_game_type != network_game_type ||
+		    their_episode < 1 || their_episode > EPISODE_MAX ||
 		    their_difficulty < 1 || their_difficulty > DIFFICULTY_10)
 		{
-			fprintf(stderr, "error: opponent sent an unusable episode/difficulty (%d/%d)\n",
-			        their_episode, their_difficulty);
+			fprintf(stderr, "error: opponent sent unusable game details (%d/%d/%d)\n",
+			        their_game_type, their_episode, their_difficulty);
 			network_tyrian_halt(3, false);
 		}
+		network_host_episode = their_episode;
+		network_host_difficulty = their_difficulty;
+		if (network_from_lobby && !networkLobbyConfirmDetails())
+		{
+			network_prepare(PACKET_QUIT);
+			network_send(4);
+			network_tyrian_halt(0, true);
+		}
 
-		if (packet_in[0]->len >= 8 + SAVE_RECORD_PACKED_SIZE)
+		if (details_packet->len >= 10 + SAVE_RECORD_PACKED_SIZE)
 		{
 			// Resume form: adopt the host's save record wholesale. Input devices stay local;
 			// they name hardware on the host's desk, not simulation state.
 			JE_SaveFileType rec;
-			save_record_unpack(&rec, &packet_in[0]->data[8]);
+			save_record_unpack(&rec, &details_packet->data[10]);
 			rec.input1 = inputDevice[0];
 			rec.input2 = inputDevice[1];
 
 			gameJustLoaded = true;
 			JE_loadGameRecord(&rec, true);
+			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 
 			resumed = true;
 		}
@@ -6580,7 +6678,7 @@ void networkStartScreen(void)
 		{
 			JE_initEpisode(their_episode);
 			difficultyLevel = their_difficulty;
-			initialDifficulty = difficultyLevel - 1;
+			initialDifficulty = difficultyLevel - (coopCampaignMode ? 0 : 1);
 		}
 		fade_black(10);
 
@@ -6589,10 +6687,25 @@ void networkStartScreen(void)
 
 	if (!resumed)
 	{
-		for (uint i = 0; i < COUNTOF(player); ++i)
-			player[i].cash = 0;
-
-		player[0].items.ship = 11;  // Silver Ship
+		if (coopCampaignMode)
+		{
+			static const Uint32 initial_cash[] = { 10000, 15000, 20000, 30000, 20000 };
+			const Uint32 cash = initial_cash[episodeNum - 1];
+			player[1].items = player[0].items;
+			player[1].last_items = player[0].last_items;
+			for (uint i = 0; i < COUNTOF(player); ++i)
+			{
+				player[i].cash = cash;
+				player[i].is_dragonwing = false;
+				player[i].lives = &player[i].items.weapon[i].power;
+			}
+		}
+		else
+		{
+			for (uint i = 0; i < COUNTOF(player); ++i)
+				player[i].cash = 0;
+			player[0].items.ship = 11;  // Silver Ship
+		}
 	}
 
 	while (!network_is_sync())
@@ -7427,7 +7540,7 @@ void JE_buildArcadeBallPools(void)
 static bool arcadeRandomPickupsOn(void)
 {
 	return arcadeRandomBalls
-	    && (onePlayerAction || twoPlayerMode)
+	    && arcade_rules_active()
 	    && !superTyrian
 	    && !galagaMode
 	    && !timedBattleMode
@@ -8454,7 +8567,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 33: /* Enemy From other Enemies */
-		if (!((eventRec[eventLoc-1].eventdat == 512 || eventRec[eventLoc-1].eventdat == 513) && (twoPlayerMode || onePlayerAction || superTyrian)))
+		if (!((eventRec[eventLoc-1].eventdat == 512 || eventRec[eventLoc-1].eventdat == 513) && (arcade_rules_active() || superTyrian)))
 		{
 			if (superArcadeMode != SA_NONE)
 			{
@@ -8578,7 +8691,7 @@ void JE_eventSystem(void)
 				eventRec[eventLoc-1].eventdat = endlessMode ? endlessPowerupDropEnemy()
 				                                            : 829 + (mt_rand() % 6);
 			}
-			if (twoPlayerMode || onePlayerAction)
+			if (arcade_rules_active())
 			{
 				for (temp = 0; temp < 100; temp++)
 				{
@@ -8593,7 +8706,7 @@ void JE_eventSystem(void)
 		if (eventRec[eventLoc-1].eventdat3 != 0)
 			damageRate = eventRec[eventLoc-1].eventdat3;
 
-		if (eventRec[eventLoc-1].eventdat2 == 0 || twoPlayerMode || onePlayerAction)
+		if (eventRec[eventLoc-1].eventdat2 == 0 || arcade_rules_active())
 		{
 			difficultyLevel += eventRec[eventLoc-1].eventdat;
 			if (difficultyLevel < DIFFICULTY_EASY)
@@ -8741,12 +8854,12 @@ void JE_eventSystem(void)
 		break;
 
 	case 63:  // skip events if not in 2-player mode
-		if (!twoPlayerMode && !onePlayerAction)
+		if (!arcade_rules_active())
 			eventLoc += eventRec[eventLoc-1].eventdat;
 		break;
 
 	case 64:
-		if (!(eventRec[eventLoc-1].eventdat == 6 && twoPlayerMode && difficultyLevel > DIFFICULTY_NORMAL))
+		if (!(eventRec[eventLoc-1].eventdat == 6 && split_arcade_mode() && difficultyLevel > DIFFICULTY_NORMAL))
 		{
 			smoothies[eventRec[eventLoc-1].eventdat-1] = eventRec[eventLoc-1].eventdat2;
 			temp = eventRec[eventLoc-1].eventdat;
@@ -8896,7 +9009,7 @@ void JE_eventSystem(void)
 		break;
 
 	case 80:  // skip events if in 2-player mode
-		if (twoPlayerMode)
+		if (split_arcade_mode())
 			eventLoc += eventRec[eventLoc-1].eventdat;
 		break;
 
@@ -8908,7 +9021,17 @@ void JE_eventSystem(void)
 		break;
 
 	case 82: /*Give SPECIAL WEAPON*/
-		player[0].items.special = eventRec[eventLoc-1].eventdat;
+		for (uint p = 0; p < (coopCampaignMode ? COUNTOF(player) : 1u); ++p)
+		{
+			player[p].items.special = eventRec[eventLoc-1].eventdat;
+			if (coopCampaignMode)
+			{
+				player[p].shot_multi_pos[SHOT_SPECIAL] = 0;
+				player[p].shot_repeat[SHOT_SPECIAL] = 0;
+				player[p].shot_multi_pos[SHOT_SPECIAL2] = 0;
+				player[p].shot_repeat[SHOT_SPECIAL2] = 0;
+			}
+		}
 		shotMultiPos[SHOT_SPECIAL] = 0;
 		shotRepeat[SHOT_SPECIAL] = 0;
 		shotMultiPos[SHOT_SPECIAL2] = 0;

@@ -76,6 +76,7 @@ void rollback_state_register_globals(void)
 	REG(shipGr);   REG(shipGrPtr);
 	REG(shipGr2);  REG(shipGr2ptr);
 	REG(twoPlayerMode);        /* galaga mode clears this mid-level         */
+	REG(coopCampaignMode);
 	REG(galagaMode);
 	REG(galagaShotFreq);
 	REG(galagaLife);

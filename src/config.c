@@ -179,6 +179,7 @@ JE_boolean extraGame;
 JE_boolean engageMode;
 
 JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian;
+JE_boolean coopCampaignMode;
 JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 JE_boolean endlessCampaignMods;  // debug: endless EFFECTS in a normal game (see endlessFxActive)
 JE_boolean trentWin = false;
@@ -980,6 +981,7 @@ static void pitems_to_playeritems(PlayerItems *items, const JE_PItemsType pItems
 
 void JE_saveGame(JE_byte slot, const char *name)
 {
+	const Uint32 coop_save_tag = 0xc74f0000u;
 	saveFiles[slot-1].initialDifficulty = initialDifficulty;
 	saveFiles[slot-1].gameHasRepeated = gameHasRepeated;
 	saveFiles[slot-1].level = saveLevel;
@@ -1039,6 +1041,16 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
+	saveFiles[slot - 1].highScore2 = 0;
+	if (coopCampaignMode)
+	{
+		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
+		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
+		                   | ((player[0].weapon_mode & 0x0f) << 8)
+		                   | ((player[1].weapon_mode & 0x0f) << 12);
+		saveFiles[slot - 1].highScore2 = (JE_longint)(coop_save_tag | extra);
+	}
+
 	JE_saveConfiguration();
 }
 
@@ -1052,6 +1064,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	superTyrian = false;
 	onePlayerAction = false;
 	twoPlayerMode = false;
+	coopCampaignMode = false;
 	extraGame = false;
 	galagaMode = false;
 	timedBattleMode = false;
@@ -1060,6 +1073,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	initialDifficulty = rec->initialDifficulty;
 	gameHasRepeated   = rec->gameHasRepeated;
 	twoPlayerMode     = twoP;
+	coopCampaignMode  = isNetworkGame && twoP && save_record_is_coop_campaign(rec);
 	difficultyLevel   = rec->difficulty;
 
 	pitems_to_playeritems(&player[0].items, rec->items, &initial_episode_num);
@@ -1078,6 +1092,12 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		onePlayerAction = false;
 
 		pitems_to_playeritems(&player[1].items, rec->lastItems, NULL);
+		if (coopCampaignMode)
+		{
+			player[1].is_dragonwing = false;
+			player[0].last_items = player[0].items;
+			player[1].last_items = player[1].items;
+		}
 	}
 	else
 	{
@@ -1114,6 +1134,16 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	{
 		// if two-player, use first player's front and second player's rear weapon
 		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
+	}
+	if (coopCampaignMode)
+	{
+		const Uint32 extra = (Uint32)rec->highScore2;
+		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
+		player[1].items.weapon[FRONT_WEAPON].power = (extra >> 4) & 0x0f;
+		player[0].weapon_mode = (extra >> 8) & 0x0f;
+		player[1].weapon_mode = (extra >> 12) & 0x0f;
+		if (player[0].weapon_mode == 0) player[0].weapon_mode = 1;
+		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
 	}
 
 	int episode = rec->episode;
@@ -1853,6 +1883,11 @@ void JE_saveConfiguration(void)
  * save with this and the joiner applies it through JE_loadGameRecord, so both machines start the
  * resumed session from byte-identical state. */
 
+bool save_record_is_coop_campaign(const JE_SaveFileType *rec)
+{
+	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc74f0000u;
+}
+
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 {
 	Uint8 *p = buf;
@@ -1866,6 +1901,8 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	Uint32 u32 = SDL_SwapLE32((Uint32)rec->score);
 	memcpy(p, &u32, 4); p += 4;
 	u32 = SDL_SwapLE32((Uint32)rec->score2);
+	memcpy(p, &u32, 4); p += 4;
+	u32 = SDL_SwapLE32((Uint32)rec->highScore2);
 	memcpy(p, &u32, 4); p += 4;
 
 	memcpy(p, rec->levelName, sizeof(rec->levelName)); p += sizeof(rec->levelName);
@@ -1910,6 +1947,8 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	rec->score = (JE_longint)SDL_SwapLE32(u32);
 	memcpy(&u32, p, 4); p += 4;
 	rec->score2 = (JE_longint)SDL_SwapLE32(u32);
+	memcpy(&u32, p, 4); p += 4;
+	rec->highScore2 = (JE_longint)SDL_SwapLE32(u32);
 
 	memcpy(rec->levelName, p, sizeof(rec->levelName)); p += sizeof(rec->levelName);
 	rec->levelName[sizeof(rec->levelName) - 1] = '\0';

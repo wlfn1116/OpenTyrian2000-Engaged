@@ -168,6 +168,18 @@ extern JE_boolean extraGame;
 // (** ALE **, TIME WAR, SQUADRON). Cleared at the top of every JE_loadMap.
 extern JE_boolean engageMode;
 extern JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian, trentWin;
+// Online Campaign has two independent ships but keeps the normal campaign economy and scripts.
+extern JE_boolean coopCampaignMode;
+
+static inline bool arcade_rules_active(void)
+{
+	return onePlayerAction || (twoPlayerMode && !coopCampaignMode);
+}
+
+static inline bool split_arcade_mode(void)
+{
+	return twoPlayerMode && !coopCampaignMode;
+}
 extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 // Debug Mode only: run endless mode's EFFECT layer (difficulty levers, sector mutators, perks,
 // elites) inside a normal campaign/arcade game, without any of its structure. Lives beside
@@ -363,11 +375,11 @@ void JE_loadGame(JE_byte slot);
 // record received from the host.  twoP tells it which loadout layout the record uses.
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
-// Fixed little-endian packed form of a save record, used by the network resume handshake
-// (everything JE_loadGameRecord applies; high scores stay out).
-#define SAVE_RECORD_PACKED_SIZE 77
+// Fixed little-endian packed form of a save record, used by the network resume handshake.
+#define SAVE_RECORD_PACKED_SIZE 81
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
+bool save_record_is_coop_campaign(const JE_SaveFileType *rec);
 
 void JE_encryptSaveTemp(void);
 void JE_decryptSaveTemp(void);

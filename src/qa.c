@@ -553,7 +553,7 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
 	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 77
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 81
 #ifdef WITH_NETWORK
 	         && NETWORK_SETTINGS_SIZE == 24
 #endif
@@ -584,7 +584,7 @@ static void qa_test_save_record_wire(void)
 	src.episode = 5; src.difficulty = DIFFICULTY_LORD_OF_GAME;
 	src.secretHint = 3; src.input1 = 1; src.input2 = 2;
 	src.gameHasRepeated = true; src.initialDifficulty = DIFFICULTY_HARD;
-	src.highScore1 = 0x11111111; src.highScore2 = 0x22222222;
+	src.highScore1 = 0x11111111; src.highScore2 = (JE_longint)0xc74f4321u;
 	strcpy(src.highScoreName, "NOT SENT"); src.highScoreDiff = 9;
 	src.autoFireSpecial = true; src.chargeSidekickAutofire = 2;
 	src.difficultyAdjust = true; src.cheatInfiniteSidekickAmmo = true;
@@ -593,22 +593,24 @@ static void qa_test_save_record_wire(void)
 	memset(guarded, 0xa5, sizeof(guarded));
 	save_record_pack(packed, &src);
 	qa_check(guarded[0] == 0xa5 && guarded[sizeof(guarded) - 1] == 0xa5,
-	         "save-record packing writes exactly its fixed 77-byte frame");
+	         "save-record packing writes exactly its fixed 81-byte frame");
 	save_record_unpack(&dst, packed);
 	save_record_pack(repacked, &dst);
 	qa_check(memcmp(packed, repacked, sizeof(repacked)) == 0,
 	         "network save record pack/unpack round-trips every serialized field");
-	qa_check(dst.encode == 0 && dst.highScore1 == 0 && dst.highScore2 == 0
+	qa_check(dst.encode == 0 && dst.highScore1 == 0 && dst.highScore2 == src.highScore2
 	         && dst.highScoreName[0] == '\0' && dst.highScoreDiff == 0,
-	         "network save record leaves non-wire metadata cleared");
+	         "network save record preserves campaign data and clears non-wire metadata");
+	qa_check(save_record_is_coop_campaign(&dst),
+	         "network save record preserves the Online Campaign type marker");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields
 	         && dst.cheatInfiniteArmor && dst.expertMode,
 	         "network save record preserves all boolean gameplay flags");
 
 	/* Hostile fixed-width strings still have to become safe C strings on receipt. */
-	memset(packed + 34, 'L', 11);
-	memset(packed + 45, 'N', 15);
+	memset(packed + 38, 'L', 11);
+	memset(packed + 49, 'N', 15);
 	save_record_unpack(&dst, packed);
 	qa_check(dst.levelName[sizeof(dst.levelName) - 1] == '\0'
 	         && dst.name[sizeof(dst.name) - 1] == '\0',

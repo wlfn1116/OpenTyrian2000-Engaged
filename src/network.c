@@ -58,12 +58,15 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       13           // increment whenever networking changes might create incompatibility (13: settings block back to 24 bytes, RNG seed removed)
+#define NET_VERSION       14           // v14 adds the lobby game type and campaign settings
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
-// then the host's simulation settings, then the null-terminated player name.
-#define NET_CONNECT_SETTINGS  12
+// game type, episode, difficulty, then the host's simulation settings and player name.
+#define NET_CONNECT_GAME_TYPE 12
+#define NET_CONNECT_EPISODE   14
+#define NET_CONNECT_DIFFICULTY 16
+#define NET_CONNECT_SETTINGS  18
 #define NET_CONNECT_NAME      (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
@@ -91,6 +94,9 @@ int network_host_player = 1;
 // Session game speed, a host option (1..5, 4 = Normal); the joiner adopts it from the
 // settings block like every other sim-binding choice.
 int network_host_game_speed = 4;
+NetworkGameType network_game_type = NETWORK_GAME_ARCADE;
+int network_host_episode = 1;
+int network_host_difficulty = DIFFICULTY_NORMAL;
 
 static char empty_string[] = "";
 char *network_player_name = empty_string,
@@ -464,6 +470,7 @@ static int network_recv_one(void)
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
 					case PACKET_DEBUG_SYNC:
+					case PACKET_SHOP_SYNC:
 					case PACKET_RESYNC:
 						{
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
@@ -940,6 +947,9 @@ static void send_connect_packet(Uint16 episodes_local)
 	SDLNet_Write16(network_delay,  &packet_out_temp->data[6]);
 	SDLNet_Write16(episodes_local, &packet_out_temp->data[8]);
 	SDLNet_Write16(thisPlayerNum,  &packet_out_temp->data[10]);
+	SDLNet_Write16(network_game_type, &packet_out_temp->data[NET_CONNECT_GAME_TYPE]);
+	SDLNet_Write16(network_host_episode, &packet_out_temp->data[NET_CONNECT_EPISODE]);
+	SDLNet_Write16(network_host_difficulty, &packet_out_temp->data[NET_CONNECT_DIFFICULTY]);
 	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
@@ -1083,6 +1093,21 @@ connect_again:
 				network_tyrian_halt(5, true);
 			}
 			network_delay = host_delay;
+
+			const int host_game_type = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_GAME_TYPE]);
+			const int host_episode = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_EPISODE]);
+			const int host_difficulty = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_DIFFICULTY]);
+			if ((host_game_type != NETWORK_GAME_ARCADE && host_game_type != NETWORK_GAME_CAMPAIGN) ||
+			    host_episode < 1 || host_episode > EPISODE_MAX ||
+			    host_difficulty < DIFFICULTY_EASY || host_difficulty > DIFFICULTY_LORD_OF_GAME)
+			{
+				fprintf(stderr, "error: host sent unusable lobby settings (%d/%d/%d)\n",
+				        host_game_type, host_episode, host_difficulty);
+				network_tyrian_halt(5, true);
+			}
+			network_game_type = (NetworkGameType)host_game_type;
+			network_host_episode = host_episode;
+			network_host_difficulty = host_difficulty;
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
 
@@ -1315,6 +1340,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		network_from_lobby = false;
 		network_is_host = false;
 		twoPlayerMode = false;
+		coopCampaignMode = false;
 		haltGame = false;
 		JE_clearSpecialRequests();
 
@@ -1494,6 +1520,179 @@ int network_settings_adopt(const Uint8 *buf)
 		gameSpeed = 4;
 
 	return NETWORK_SETTINGS_SIZE;
+}
+
+static Uint16 network_shop_sequence;
+static Uint16 network_shop_peer_sequence;
+static Uint16 network_shop_save_request;
+static bool network_shop_peer_ready;
+static bool network_shop_save_ready;
+static bool network_shop_active;
+
+enum
+{
+	SHOP_SYNC_DONE = 1 << 0,
+	SHOP_SYNC_SAVE_REQUEST = 1 << 1,
+	SHOP_SYNC_SAVE_ACK = 1 << 2,
+	SHOP_SYNC_TRANSACTION = 1 << 3,
+};
+
+static int network_shop_pack_items(Uint8 *buf, const PlayerItems *items)
+{
+	int n = 0;
+	buf[n++] = items->ship;
+	buf[n++] = items->generator;
+	buf[n++] = items->shield;
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		buf[n++] = items->weapon[i].id;
+		buf[n++] = items->weapon[i].power;
+	}
+	buf[n++] = items->sidekick[0];
+	buf[n++] = items->sidekick[1];
+	buf[n++] = items->special;
+	buf[n++] = items->sidekick_series;
+	buf[n++] = items->sidekick_level;
+	buf[n++] = items->super_arcade_mode;
+	return n;
+}
+
+static int network_shop_unpack_items(PlayerItems *items, const Uint8 *buf)
+{
+	int n = 0;
+	items->ship = buf[n++];
+	items->generator = buf[n++];
+	items->shield = buf[n++];
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		items->weapon[i].id = buf[n++];
+		items->weapon[i].power = buf[n++];
+	}
+	items->sidekick[0] = buf[n++];
+	items->sidekick[1] = buf[n++];
+	items->special = buf[n++];
+	items->sidekick_series = buf[n++];
+	items->sidekick_level = buf[n++];
+	items->super_arcade_mode = buf[n++];
+	return n;
+}
+
+static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
+{
+	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return 0;
+
+	const Player *const this_player = &player[thisPlayerNum - 1];
+	const Uint16 sequence = ++network_shop_sequence;
+	network_prepare(PACKET_SHOP_SYNC);
+	SDLNet_Write16(thisPlayerNum, &packet_out_temp->data[4]);
+	SDLNet_Write16(sequence, &packet_out_temp->data[6]);
+	SDLNet_Write16(flags, &packet_out_temp->data[8]);
+	SDLNet_Write16(mainLevel, &packet_out_temp->data[10]);
+	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
+	SDLNet_Write32(this_player->cash, &packet_out_temp->data[14]);
+	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[18]);
+	SDLNet_Write16(acknowledge, &packet_out_temp->data[20]);
+	const int item_size = network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
+	network_send(22 + item_size);
+	return sequence;
+}
+
+void network_shop_begin(void)
+{
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_save_ready = false;
+	network_shop_active = isNetworkGame && coopCampaignMode;
+	if (isNetworkGame && coopCampaignMode)
+		network_shop_send_state(false);
+}
+
+void network_shop_send_state(bool done)
+{
+	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_send_packet(done ? SHOP_SYNC_DONE : 0, 0);
+}
+
+void network_shop_send_transaction(void)
+{
+	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
+}
+
+bool network_shop_pump(void)
+{
+	if (!isNetworkGame || !coopCampaignMode || packet_in[0] == NULL ||
+	    SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
+		return false;
+
+	if (packet_in[0]->len >= 35)
+	{
+		const uint sender = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 sequence = SDLNet_Read16(&packet_in[0]->data[6]);
+		if (sender >= 1 && sender <= 2 && sender != thisPlayerNum && sequence > network_shop_peer_sequence)
+		{
+			Player *const peer = &player[sender - 1];
+			const Uint16 flags = SDLNet_Read16(&packet_in[0]->data[8]);
+			network_shop_peer_sequence = sequence;
+			peer->cash = SDLNet_Read32(&packet_in[0]->data[14]);
+			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[18]);
+			network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
+			peer->last_items = peer->items;
+
+			if (flags & SHOP_SYNC_DONE)
+			{
+				network_shop_peer_ready = true;
+				if (sender == networkHostPlayerNum)
+				{
+					mainLevel = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
+					jumpSection = SDLNet_Read16(&packet_in[0]->data[12]) != 0;
+				}
+			}
+
+			if (flags & SHOP_SYNC_SAVE_REQUEST)
+				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
+			if ((flags & SHOP_SYNC_SAVE_ACK) &&
+			    SDLNet_Read16(&packet_in[0]->data[20]) == network_shop_save_request)
+				network_shop_save_ready = true;
+		}
+	}
+
+	network_update();
+	return true;
+}
+
+bool network_shop_peer_done(void)
+{
+	return network_shop_peer_ready;
+}
+
+void network_shop_end(void)
+{
+	network_shop_active = false;
+}
+
+void network_shop_sync_for_save(void)
+{
+	if (!isNetworkGame || !coopCampaignMode || !network_shop_active || !network_peer_alive())
+		return;
+
+	network_shop_save_ready = false;
+	network_shop_save_request = network_shop_send_packet(SHOP_SYNC_SAVE_REQUEST, 0);
+	while (!network_shop_save_ready)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		if (network_shop_pump())
+			continue;
+		network_update();
+		network_check();
+		SDL_Delay(16);
+	}
 }
 
 void network_settings_restore(void)
@@ -2031,6 +2230,12 @@ void network_shutdown(void)
 	host_awaiting_peer = false;
 	peer_addr_known = false;
 	network_session_saveable = false;
+	network_shop_active = false;
+	network_shop_sequence = 0;
+	network_shop_peer_sequence = 0;
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_save_ready = false;
 
 	nrb_set_session_mode(false);
 	nrb_set_session_recovery(false);
@@ -2365,6 +2570,113 @@ int network_test_peer(int rounds)
 			return 1;
 		}
 	}
+
+	/* Exercise the campaign shop protocol through the same hostile proxy. Both peers publish
+	 * independent loadouts, then request a simultaneous save checkpoint and rendezvous. */
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	Player *const local = &player[thisPlayerNum - 1];
+	Player *const peer = &player[2 - thisPlayerNum];
+	memset(&local->items, 0, sizeof(local->items));
+	local->items.ship = (Uint8)thisPlayerNum;
+	local->items.generator = 2;
+	local->items.shield = 4;
+	local->items.weapon[FRONT_WEAPON].id = (Uint8)(1 + thisPlayerNum);
+	local->items.weapon[FRONT_WEAPON].power = (Uint8)(2 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].id = (Uint8)(10 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].power = (Uint8)(3 + thisPlayerNum);
+	local->cash = 50000u + thisPlayerNum * 100u;
+	local->weapon_mode = thisPlayerNum;
+	network_shop_begin();
+
+	const Uint32 peer_cash = 50000u + (3u - thisPlayerNum) * 100u;
+	const Uint32 shop_start = SDL_GetTicks();
+	while (peer->cash != peer_cash && SDL_GetTicks() - shop_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (peer->cash != peer_cash || peer->items.ship != 3u - thisPlayerNum ||
+	    peer->items.weapon[REAR_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop baseline did not converge\n");
+		return 1;
+	}
+
+	network_prepare(PACKET_WAITING);
+	SDLNet_Write32(0x53484f50u, &packet_out_temp->data[4]);
+	if (!network_send(8))
+		return 1;
+	const Uint32 shop_ready_start = SDL_GetTicks();
+	bool shop_ready = false;
+	while (!shop_ready && SDL_GetTicks() - shop_ready_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		if (packet_in[0] != NULL)
+		{
+			const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+			if (type == PACKET_WAITING && packet_in[0]->len >= 8 &&
+			    SDLNet_Read32(&packet_in[0]->data[4]) == 0x53484f50u)
+				shop_ready = true;
+			network_update();
+		}
+		SDL_Delay(1);
+	}
+	if (!shop_ready)
+	{
+		fprintf(stderr, "network test: campaign shop checkpoint setup timed out\n");
+		return 1;
+	}
+
+	local->cash += 77;
+	local->items.weapon[FRONT_WEAPON].power++;
+	network_shop_send_transaction();
+	const Uint32 transaction_start = SDL_GetTicks();
+	while ((peer->cash != peer_cash + 77 ||
+	        peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum)) &&
+	       SDL_GetTicks() - transaction_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop transaction did not converge\n");
+		return 1;
+	}
+
+	network_shop_sync_for_save();
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign save checkpoint did not converge\n");
+		return 1;
+	}
+
+	network_shop_send_state(true);
+	const Uint32 done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: campaign shop rendezvous timed out\n");
+		return 1;
+	}
+	network_shop_end();
 
 	const Uint32 sync_start = SDL_GetTicks();
 	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)

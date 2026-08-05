@@ -414,6 +414,8 @@ void JE_getShipInfo(void)
 	shipGr2ptr = &spriteSheet9;
 
 	powerAdd  = powerSys[player[0].items.generator].power;
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		player[i].generator_power_add = powerSys[player[i].items.generator].power;
 
 	extraShip = player[0].items.ship > 90;
 	if (extraShip)
@@ -449,6 +451,13 @@ void JE_getShipInfo(void)
 		JE_byte base2 = (player[1].items.ship - 91) * 15;
 		shipGr2 = JE_SGr(player[1].items.ship - 90, &shipGr2ptr);
 		player[1].armor = extraShips[base2 + 7]; /* bug? */
+	}
+	else if (coopCampaignMode)
+	{
+		const uint shipIdx = (player[1].items.ship <= SHIP_NUM) ? player[1].items.ship : 0;
+		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
+		shipGr2 = ships[shipIdx].shipgraphic - (shipGr2ptr == &spriteSheetT2000 ? 500 : 0);
+		player[1].armor = ships[shipIdx].dmg;
 	}
 	else
 	{
@@ -495,17 +504,8 @@ JE_word JE_SGr(JE_word ship, Sprite2_array **ptr)
 	return GR[tempW-1];
 }
 
-void JE_drawOptions(void)
+void JE_resetPlayerOptions(Player *this_player)
 {
-	SDL_Surface *temp_surface = VGAScreen;
-	VGAScreen = VGAScreenSeg;
-
-	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
-
-
-
-	Player *this_player = &player[twoPlayerMode ? 1 : 0];
-
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
 		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
@@ -529,6 +529,19 @@ void JE_drawOptions(void)
 		this_player->sidekick[i].charge = 0;
 		this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
 	}
+}
+
+void JE_drawOptions(void)
+{
+	SDL_Surface *temp_surface = VGAScreen;
+	VGAScreen = VGAScreenSeg;
+
+	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
+
+	const uint first_player = coopCampaignMode ? 0 : (twoPlayerMode ? 1 : 0);
+	const uint last_player = coopCampaignMode ? COUNTOF(player) : first_player + 1;
+	for (uint p = first_player; p < last_player; ++p)
+		JE_resetPlayerOptions(&player[p]);
 
 	JE_drawOptionsHUD();
 
@@ -546,13 +559,14 @@ bool hud_sidekicks_dirty = false;
 // Draw-only companion to JE_drawOptions: repaints the sidekick HUD boxes from current state.
 void JE_drawOptionsHUD(void)
 {
-	Player *this_player = &player[twoPlayerMode ? 1 : 0];
+	const uint player_index = coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1 : 0);
+	Player *this_player = &player[player_index];
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
 		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
-		const int y = hud_sidekick_y[twoPlayerMode ? 1 : 0][i];
+		const int y = hud_sidekick_y[split_arcade_mode() ? 1 : 0][i];
 
 		const int hud_x = HUD_X(284);
 		fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 15, 0);
@@ -564,7 +578,7 @@ void JE_drawOptionsHUD(void)
 
 void JE_drawOptionLevel(void)
 {
-	if (twoPlayerMode)
+	if (split_arcade_mode())
 	{
 		for (temp = 1; temp <= 3; temp++)
 		{
@@ -655,6 +669,8 @@ static void salvo_special_burst(JE_byte playerNum)
 
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
+	Player *const this_player = coopCampaignMode ? &player[playerNum - 1] : &player[0];
+
 	nextSpecialWait = 0;
 	switch (special[specialType].stype)
 	{
@@ -680,14 +696,14 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			{
 				if (!enemyShotAvail[es])
 				{
-					if (player[0].x > enemyShot[es].sx)
+					if (this_player->x > enemyShot[es].sx)
 						enemyShot[es].sxm -= push;
-					else if (player[0].x < enemyShot[es].sx)
+					else if (this_player->x < enemyShot[es].sx)
 						enemyShot[es].sxm += push;
 
-					if (player[0].y > enemyShot[es].sy)
+					if (this_player->y > enemyShot[es].sy)
 						enemyShot[es].sym -= push;
-					else if (player[0].y < enemyShot[es].sy)
+					else if (this_player->y < enemyShot[es].sy)
 						enemyShot[es].sym += push;
 				}
 			}
@@ -713,14 +729,14 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				{
 					int exc = enemy[temp].exc, eyc = enemy[temp].eyc;
 
-					if (player[0].x > enemy[temp].ex)
+					if (this_player->x > enemy[temp].ex)
 						exc += pull;
-					else if (player[0].x < enemy[temp].ex)
+					else if (this_player->x < enemy[temp].ex)
 						exc -= pull;
 
-					if (player[0].y > enemy[temp].ey)
+					if (this_player->y > enemy[temp].ey)
 						eyc += pull;
-					else if (player[0].y < enemy[temp].ey)
+					else if (this_player->y < enemy[temp].ey)
 						eyc -= pull;
 
 					enemy[temp].exc = (JE_shortint)(exc > 120 ? 120 : (exc < -120 ? -120 : exc));
@@ -754,12 +770,12 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 6:
 					specialWeaponFilter = 1;
 					specialWeaponFreq = 7;
-					flareDuration = endlessPerkSpecialDuration(200 + 25 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(200 + 25 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 7:
 					specialWeaponFilter = 3;
 					specialWeaponFreq = 3;
-					flareDuration = endlessPerkSpecialDuration(50 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(50 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					// zinglonDuration is deliberately NOT stretched: its beam brightness is drawn as
 					// `25 - abs(zinglonDuration - 25)`, a ramp that only works on the stock 50 ticks.
 					zinglonDuration = 50;
@@ -769,26 +785,26 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 8:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 7;
-					flareDuration = endlessPerkSpecialDuration(10 + player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(10 + this_player->items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 9:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = endlessPerkSpecialDuration(8 + 2 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(8 + 2 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					nextSpecialWait = special[specialType].pwr;
 					break;
 				case 10:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = endlessPerkSpecialDuration(14 + 4 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(14 + 4 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					break;
 				case 11:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = special[specialType].pwr;
-					flareDuration = endlessPerkSpecialDuration(10 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
-					astralDuration = endlessPerkSpecialDuration(20 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 255);
+					flareDuration = endlessPerkSpecialDuration(10 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 0);
+					astralDuration = endlessPerkSpecialDuration(20 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 255);
 					break;
 				case 16:
 					specialWeaponFilter = -99;
@@ -815,18 +831,19 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		// bound these, but endless deliberately SKIPS it (reinforced hulls exceed 28), so cap on the
 		// hull's own max; the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
 		case 13:
-			player[0].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
-			if (endlessFxActive() && player[0].initial_armor > 0 && player[0].armor > player[0].initial_armor)
-				player[0].armor = player[0].initial_armor;
-			salvo_special_burst(1);   // repairs are hardwired to a player, not to playerNum
+			this_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && this_player->initial_armor > 0 && this_player->armor > this_player->initial_armor)
+				this_player->armor = this_player->initial_armor;
+			salvo_special_burst(playerNum);
 
 			soundQueue[3] = S_POWERUP;
 			break;
 		case 14:
-			player[1].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
-			if (endlessFxActive() && player[1].initial_armor > 0 && player[1].armor > player[1].initial_armor)
-				player[1].armor = player[1].initial_armor;
-			salvo_special_burst(2);
+			Player *const repair_player = coopCampaignMode ? this_player : &player[1];
+			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && repair_player->initial_armor > 0 && repair_player->armor > repair_player->initial_armor)
+				repair_player->armor = repair_player->initial_armor;
+			salvo_special_burst(coopCampaignMode ? playerNum : 2);
 
 			soundQueue[3] = S_POWERUP;
 			break;
@@ -834,24 +851,40 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		case 17:  // spawn left or right sidekick
 			soundQueue[3] = S_POWERUP;
 
-			if (player[0].items.sidekick[LEFT_SIDEKICK] == special[specialType].wpn)
+			if (this_player->items.sidekick[LEFT_SIDEKICK] == special[specialType].wpn)
 			{
-				player[0].items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
+				this_player->items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
 				shotMultiPos[RIGHT_SIDEKICK] = 0;
 			}
 			else
 			{
-				player[0].items.sidekick[LEFT_SIDEKICK] = special[specialType].wpn;
+				this_player->items.sidekick[LEFT_SIDEKICK] = special[specialType].wpn;
 				shotMultiPos[LEFT_SIDEKICK] = 0;
 			}
 
-			JE_drawOptions();
+			if (coopCampaignMode)
+			{
+				JE_resetPlayerOptions(this_player);
+				JE_drawOptionsHUD();
+			}
+			else
+			{
+				JE_drawOptions();
+			}
 			break;
 
 		case 18:  // spawn right sidekick
-			player[0].items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
+			this_player->items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
 
-			JE_drawOptions();
+			if (coopCampaignMode)
+			{
+				JE_resetPlayerOptions(this_player);
+				JE_drawOptionsHUD();
+			}
+			else
+			{
+				JE_drawOptions();
+			}
 
 			soundQueue[4] = S_POWERUP;
 
@@ -875,8 +908,11 @@ static JE_word twiddleWait = 0;
 
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
+	Player *const this_player = coopCampaignMode ? &player[playerNum - 1] : &player[0];
+	const int special_mouse_x = coopCampaignMode && playerNum == 2 ? mouseXB : mouseX;
+	const int special_mouse_y = coopCampaignMode && playerNum == 2 ? mouseYB : mouseY;
 
-	if (player[0].items.special > 0)
+	if (this_player->items.special > 0 && (!coopCampaignMode || playerNum == thisPlayerNum))
 	{
 		if (shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 && flareDuration < 2 && zinglonDuration < 2)
 			blit_sprite2(VGAScreen, 47, 4, spriteSheet9, 94);
@@ -946,7 +982,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		VGAScreen = game_screen; /* side-effect of game_screen */
 	}
 
-	if (playerNum == 1 && player[0].items.special > 0)
+	if ((playerNum == 1 || coopCampaignMode) && this_player->items.special > 0)
 	{  /*Main Begin*/
 
 		if (superArcadeMode > 0 && (button[2-1] || button[3-1]))
@@ -958,21 +994,21 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			fireButtonHeld = false;
 		}
 		else if (shotRepeat[SHOT_SPECIAL] == 0 && !fireButtonHeld &&
-		         (flareDuration == 0 || (flareFromTwiddle && !special_is_flare(player[0].items.special))) &&
+		         (flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		         specialWait == 0)
 		{
 			fireButtonHeld = true;
-			JE_specialComplete(playerNum, player[0].items.special);
+			JE_specialComplete(playerNum, this_player->items.special);
 		}
 
 	}  /*Main End*/
 
-	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && playerNum == 1 && player[0].items.special > 0 &&
+	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && (playerNum == 1 || coopCampaignMode) && this_player->items.special > 0 &&
 		shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 &&
-		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(player[0].items.special))) &&
+		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		(button[0] || (superArcadeMode != SA_NONE && (button[1] || button[2]))))
 	{
-		JE_specialComplete(playerNum, player[0].items.special);
+		JE_specialComplete(playerNum, this_player->items.special);
 	}
 
 	// Debug: force-fire the selected twiddle's special. Runs after the equipped
@@ -1079,14 +1115,14 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 					if (twiddleFlareShotWait == 0)
 					{
 						const int savedSR = shotRepeat[SHOT_SPECIAL];
-						b = player_shot_create(0, SHOT_SPECIAL, player[0].x, player[0].y, mouseX, mouseY, specialWeaponWpn, playerNum);
+						b = player_shot_create(0, SHOT_SPECIAL, this_player->x, this_player->y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 						twiddleFlareShotWait = shotRepeat[SHOT_SPECIAL];  // capture the mine cadence
 						shotRepeat[SHOT_SPECIAL] = savedSR;
 					}
 				}
 				else if (shotRepeat[SHOT_SPECIAL] == 0)
 				{
-					b = player_shot_create(0, SHOT_SPECIAL, player[0].x, player[0].y, mouseX, mouseY, specialWeaponWpn, playerNum);
+					b = player_shot_create(0, SHOT_SPECIAL, this_player->x, this_player->y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 				}
 			}
 			else
@@ -1095,7 +1131,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 				// assign them to opposite coordinates.
 				const int scatter_x = PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH;
 				const int scatter_y = mt_rand() % 184;
-				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, mouseX, mouseY, specialWeaponWpn, playerNum);
+				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 			}
 
 			if (spraySpecial && b != MAX_PWEAPON)
@@ -1138,13 +1174,13 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		// Record the pillar for the render layer (JE_starShowVGA) instead of drawing:
 		// into game_screen it would snap at 35Hz and freeze the scrolled background.
 		zinglonPillarActive = true;
-		zinglonPillarCX = player[0].x + 7;
+		zinglonPillarCX = this_player->x + 7;
 		zinglonPillarTemp = temp;
 
 		// Opening Salvo: the pillar is a brightness effect, not a sprite, so it has no colour to
 		// trail. Scatter sparks up the beam in the salvo's green, width following its own ramp.
 		if (endlessOpeningSalvoVolleyActive() && temp > 0)
-			JE_doSP(player[0].x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
+			JE_doSP(this_player->x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
 
 		zinglonDuration--;
 		if (zinglonDuration % 5 == 0)
@@ -1372,18 +1408,19 @@ void JE_wipeShieldArmorBars(void)
 		return;
 	}
 
-	if (!twoPlayerMode || galagaMode)
+	const uint player_index = gameplay_local_player_index();
+	if (!split_arcade_mode() || galagaMode)
 	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[0].shield * 2, 0);
+		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[player_index].shield * 2, 0);
 	}
 	else
 	{
 		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 60 - 44, HUD_X(278), 60, 0);
 		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 194 - 44, HUD_X(278), 194, 0);
 	}
-	if (!twoPlayerMode || galagaMode)
+	if (!split_arcade_mode() || galagaMode)
 	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 137, HUD_X(315), 194 - (player[0].armor > 28 ? 28 : player[0].armor) * 2, 0);
+		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 137, HUD_X(315), 194 - (player[player_index].armor > 28 ? 28 : player[player_index].armor) * 2, 0);
 	}
 	else
 	{
@@ -1615,7 +1652,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 JE_word JE_portConfigs(void)
 {
-	const uint player_index = twoPlayerMode ? 1 : 0;
+	const uint player_index = coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1 : 0);
 	return tempW = weaponPort[player[player_index].items.weapon[REAR_WEAPON].id].opnum;
 }
 
@@ -1635,7 +1672,7 @@ static void gauge_dim_rect(int x1, int y1, int x2, int y2)
 // Label two-player gauge blocks in the shield bank, before the level fade-in.
 void JE_drawPlayerTags(void)
 {
-	if (!twoPlayerMode || galagaMode)
+	if (!split_arcade_mode() || galagaMode)
 		return;
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -1672,7 +1709,7 @@ void JE_drawShield(void)
 		return;
 	}
 
-	if (twoPlayerMode && !galagaMode)
+	if (split_arcade_mode() && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
@@ -1686,8 +1723,9 @@ void JE_drawShield(void)
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]), 0);
-		draw_shield_ceiling_mark(HUD_X(270), 194, player[0].shield, player[0].shield_max, 0);
+		const uint i = gameplay_local_player_index();
+		JE_dBar3(VGAScreen, HUD_X(270), 194, player[i].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0);
+		draw_shield_ceiling_mark(HUD_X(270), 194, player[i].shield, player[i].shield_max, 0);
 	}
 }
 
@@ -1731,7 +1769,7 @@ void JE_drawArmor(void)
 		return;
 	}
 
-	if (twoPlayerMode && !galagaMode)
+	if (split_arcade_mode() && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
@@ -1746,7 +1784,8 @@ void JE_drawArmor(void)
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[0]), 0);
+		const uint i = gameplay_local_player_index();
+		JE_dBar3(VGAScreen, HUD_X(307), 194, player[i].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0);
 	}
 }
 

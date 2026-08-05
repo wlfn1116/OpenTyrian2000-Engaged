@@ -19,6 +19,7 @@
 
 #include "config.h"
 #include "console_platform.h"
+#include "episodes.h"
 #include "file.h"
 #include "font.h"
 #include "fonthand.h"
@@ -26,6 +27,7 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mouse.h"
+#include "menus.h"
 #include "net_rollback.h"
 #include "network.h"
 #include "nortsong.h"
@@ -51,6 +53,41 @@
 // "Address" rather than an '@'-style label.
 
 static char lobby_status[64];  // transient one-line feedback under the menu
+
+static const int lobby_difficulties[] =
+{
+	DIFFICULTY_EASY,
+	DIFFICULTY_NORMAL,
+	DIFFICULTY_HARD,
+	DIFFICULTY_IMPOSSIBLE,
+	DIFFICULTY_SUICIDE,
+	DIFFICULTY_LORD_OF_GAME,
+};
+
+static int lobbyCycleEpisode(int episode, int direction)
+{
+	for (int tries = 0; tries < EPISODE_MAX; ++tries)
+	{
+		episode += direction;
+		if (episode > EPISODE_MAX)
+			episode = 1;
+		else if (episode < 1)
+			episode = EPISODE_MAX;
+		if (episodeAvail[episode - 1])
+			return episode;
+	}
+	return 1;
+}
+
+static int lobbyCycleDifficulty(int difficulty, int direction)
+{
+	int index = 0;
+	for (uint i = 0; i < COUNTOF(lobby_difficulties); ++i)
+		if (lobby_difficulties[i] == difficulty)
+			index = (int)i;
+	index = (index + direction + (int)COUNTOF(lobby_difficulties)) % (int)COUNTOF(lobby_difficulties);
+	return lobby_difficulties[index];
+}
 
 // Render the backdrop and title into VGAScreen2 once; each frame then restores from it
 // instead of re-decoding the picture (the pattern the other menus in menus.c use).
@@ -461,6 +498,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	enum
 	{
 		ITEM_PORT = 0,
+		ITEM_TYPE,
+		ITEM_EPISODE,
+		ITEM_DIFFICULTY,
 		ITEM_NETCODE,
 		ITEM_RECOVERY,
 		ITEM_PLAYER,
@@ -475,12 +515,10 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	size_t selectedIndex = ITEM_START;
 	int wItem[ITEM_COUNT] = { 0 };
 
-	// Seven rows plus a gap separating the settings from Start Hosting/Back; the block
-	// starts high enough that the last row stays clear of the status line at y=175.
-	const int yItems = 52;
-	const int dyItems = 17;
-	const int hItem = 13;
-	const int yGroupGap = 8;  // extra space above ITEM_START
+	const int yItems = 37;
+	const int dyItems = 14;
+	const int hItem = 12;
+	const int yGroupGap = 5;
 
 	lobbyPrepareBackdrop("Host Game");
 
@@ -497,9 +535,18 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		char speedItem[32];
 		snprintf(speedItem, sizeof(speedItem), "Game Speed: %s", gameSpeedText[network_host_game_speed - 1]);
+		char episodeItem[48];
+		snprintf(episodeItem, sizeof(episodeItem), "Episode: %s", episode_name[network_host_episode]);
+		char difficultyItem[48];
+		snprintf(difficultyItem, sizeof(difficultyItem), "Difficulty: %s", difficultyNameB[network_host_difficulty]);
 
 		const char *items[ITEM_COUNT];
 		items[ITEM_PORT] = portItem;
+		items[ITEM_TYPE] = network_game_type == NETWORK_GAME_CAMPAIGN
+		                 ? "Game Type: Campaign"
+		                 : "Game Type: Arcade";
+		items[ITEM_EPISODE] = episodeItem;
+		items[ITEM_DIFFICULTY] = difficultyItem;
 		items[ITEM_NETCODE] = net_rollback
 		                    ? "Netcode: Rollback"
 		                    : "Netcode: Delay-Based";
@@ -507,8 +554,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		                     ? "Desync Recovery: On"
 		                     : "Desync Recovery: Off";
 		items[ITEM_PLAYER] = network_host_player == 2
-		                   ? "Host Flies: Dragonwing"
-		                   : "Host Flies: Silver Ship";
+		                   ? (network_game_type == NETWORK_GAME_CAMPAIGN ? "Host Flies: Player 2" : "Host Flies: Dragonwing")
+		                   : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Host Flies: Player 1" : "Host Flies: Silver Ship");
 		items[ITEM_SPEED] = speedItem;
 		items[ITEM_START] = "Start Hosting";
 		items[ITEM_BACK] = "Back";
@@ -527,7 +574,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		}
 
 		if (status[0])
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 175, status, normal_font, centered, 15, -3, false, 2);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 187, status, normal_font, centered, 15, -3, false, 2);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
@@ -606,8 +653,10 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// setting in the game does.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_PLAYER || selectedIndex == ITEM_RECOVERY ||
-				    selectedIndex == ITEM_NETCODE || selectedIndex == ITEM_SPEED)
+				if (selectedIndex == ITEM_TYPE || selectedIndex == ITEM_EPISODE ||
+				    selectedIndex == ITEM_DIFFICULTY || selectedIndex == ITEM_PLAYER ||
+				    selectedIndex == ITEM_RECOVERY || selectedIndex == ITEM_NETCODE ||
+				    selectedIndex == ITEM_SPEED)
 				{
 					action = true;
 					if (lastkey_scan == SDL_SCANCODE_LEFT)
@@ -647,6 +696,22 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 		}
 
+		case ITEM_TYPE:
+			JE_playSampleNum(S_CLICK);
+			network_game_type = network_game_type == NETWORK_GAME_CAMPAIGN
+			                        ? NETWORK_GAME_ARCADE : NETWORK_GAME_CAMPAIGN;
+			break;
+
+		case ITEM_EPISODE:
+			JE_playSampleNum(S_CLICK);
+			network_host_episode = lobbyCycleEpisode(network_host_episode, cycleDir);
+			break;
+
+		case ITEM_DIFFICULTY:
+			JE_playSampleNum(S_CLICK);
+			network_host_difficulty = lobbyCycleDifficulty(network_host_difficulty, cycleDir);
+			break;
+
 		case ITEM_NETCODE:
 			// Rollback (local input lands the same tick, the peer is predicted and
 			// corrected) vs the original delay-based lockstep.  Host-authoritative:
@@ -668,8 +733,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 
 		case ITEM_PLAYER:
-			// Player 2 is the Dragonwing, so this is the row that lets a host fly it; the
-			// joiner is told which slot is left during the handshake.
+			// Arcade's player 2 is the Dragonwing; Campaign labels the two full-ship slots.
+			// The joiner is told which slot remains during the handshake.
 			JE_playSampleNum(S_CLICK);
 			network_host_player = (network_host_player == 2) ? 1 : 2;
 			break;
@@ -722,6 +787,93 @@ static void lobbyAbort(const char *status)
 	network_is_host = false;
 
 	SDL_strlcpy(lobby_status, status, sizeof(lobby_status));
+}
+
+bool networkLobbyConfirmDetails(void)
+{
+	int selected = 0;
+	const char *const actions[] = { "Join Game", "Back" };
+	int widths[COUNTOF(actions)] = { 0 };
+
+	lobbyPrepareBackdrop("Host Settings");
+	for (;;)
+	{
+		char hostLine[48], typeLine[32], episodeLine[48], difficultyLine[48];
+		snprintf(hostLine, sizeof(hostLine), "Host: %s",
+		         network_opponent_name[0] ? network_opponent_name : "(unnamed)");
+		snprintf(typeLine, sizeof(typeLine), "Game Type: %s",
+		         network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
+		snprintf(episodeLine, sizeof(episodeLine), "Episode: %s", episode_name[network_host_episode]);
+		snprintf(difficultyLine, sizeof(difficultyLine), "Difficulty: %s",
+		         difficultyNameB[network_host_difficulty]);
+
+		lobbyRestoreBackdrop();
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 55, hostLine, normal_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 75, typeLine, normal_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 92, episodeLine, normal_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 109, difficultyLine, normal_font, centered, 15, -3, false, 2);
+
+		for (uint i = 0; i < COUNTOF(actions); ++i)
+		{
+			widths[i] = JE_textWidth(actions[i], normal_font);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER - widths[i] / 2, 142 + 22 * (int)i,
+			                    actions[i], normal_font, left_aligned, 15,
+			                    -4 + ((int)i == selected ? 2 : 0), false, 2);
+		}
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		service_SDL_events(true);
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		const bool mouseMoved = lobbyWaitForInput();
+		bool action = false;
+		if (mouseMoved || newmouse)
+		{
+			for (uint i = 0; i < COUNTOF(actions); ++i)
+			{
+				const int x = LOBBY_XCENTER - widths[i] / 2;
+				const int y = 142 + 22 * (int)i;
+				if (mouse_x >= x && mouse_x < x + widths[i] && mouse_y >= y && mouse_y < y + 13)
+				{
+					if (selected != (int)i)
+						JE_playSampleNum(S_CURSOR);
+					selected = (int)i;
+					if (newmouse && lastmouse_but == SDL_BUTTON_LEFT)
+						action = true;
+				}
+			}
+		}
+		if (newmouse && lastmouse_but == SDL_BUTTON_RIGHT)
+			return false;
+		if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+			case SDL_SCANCODE_DOWN:
+				selected = 1 - selected;
+				JE_playSampleNum(S_CURSOR);
+				break;
+			case SDL_SCANCODE_RETURN:
+			case SDL_SCANCODE_KP_ENTER:
+			case SDL_SCANCODE_SPACE:
+				action = true;
+				break;
+			case SDL_SCANCODE_ESCAPE:
+				return false;
+			default:
+				break;
+			}
+		}
+
+		if (action)
+		{
+			JE_playSampleNum(selected == 0 ? S_SELECT : S_SPRING);
+			return selected == 0;
+		}
+	}
 }
 
 // Shared setup for both roles.  Returns true once connected.

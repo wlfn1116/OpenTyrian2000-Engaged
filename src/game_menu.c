@@ -67,7 +67,7 @@ enum
 	MENU_DATA_CUBE_SUB   =  8,
 	MENU_2_PLAYER_ARCADE =  9,
 	MENU_1_PLAYER_ARCADE = 10,  // Also networked games.
-	MENU_LIMITED_OPTIONS = 11,  // Hides save/load menus.
+	MENU_LIMITED_OPTIONS = 11,  // Keeps online-safe options and Save; hides Load.
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
@@ -108,6 +108,17 @@ static JE_byte curSel[MENU_MAX]; /* [1..maxmenu] */
 static JE_byte curItemType, curItem, cursor;
 static JE_boolean leftPower, rightPower, rightPowerAfford;
 static JE_byte currentCube;
+static uint shopPlayerIndex;
+
+uint JE_shopPlayerIndex(void)
+{
+	return shopPlayerIndex;
+}
+
+static Player *shopPlayer(void)
+{
+	return &player[shopPlayerIndex];
+}
 
 // Endless: MENU_PERKS doubles as the forced perk PICK and (with this flag set) a read-only perk
 // LIST; the flag keeps the two uses' dispatch / Esc / help / draw behaviour apart.
@@ -198,7 +209,7 @@ static void ensure_equipped_items_visible(void)
 	 * via the debug menu. */
 	for (int i = 0; i < 7; i++)
 	{
-		int item = *playeritem_map(&player[0].items, i);
+		int item = *playeritem_map(&shopPlayer()->items, i);
 
 		int slot = 0;
 		for (; slot < itemAvailMax[itemAvailMap[i] - 1]; ++slot)
@@ -353,7 +364,7 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 
 JE_longint JE_cashLeft(void)
 {
-	JE_longint tempL = player[0].cash;
+	JE_longint tempL = shopPlayer()->cash;
 
 	// Only the seven real item rows (curSel 2..8) map to a player item and have a price.
 	// Action rows like "Custom" and "Done" don't; mapping them would index playeritem_map
@@ -361,7 +372,7 @@ JE_longint JE_cashLeft(void)
 	if (curSel[MENU_UPGRADES] < 2 || curSel[MENU_UPGRADES] > 8)
 		return tempL;
 
-	JE_word itemNum = *playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2);
+	JE_word itemNum = *playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2);
 
 	tempL -= JE_getCost(curSel[MENU_UPGRADES], itemNum);
 
@@ -381,7 +392,7 @@ JE_longint JE_cashLeft(void)
 			else
 				base_cost = base_cost * expertUpgradeCostMult;
 		}
-		for (uint i = 1; i < player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power; ++i)
+		for (uint i = 1; i < shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power; ++i)
 		{
 			long step_cost = weapon_upgrade_cost(base_cost, i);
 			tempL -= step_cost;
@@ -824,7 +835,7 @@ static void configure_custom_weapon_menu(void)
 		savedDoneValid = true;
 	}
 
-	if (customWeaponEnabled)
+	if (customWeaponEnabled && !(isNetworkGame && coopCampaignMode))
 	{
 		menuChoices[MENU_UPGRADES] = 10;
 		SDL_strlcpy(menuInt[2][8], "Custom", entrySize);   // item 9
@@ -971,6 +982,7 @@ static int draw_2p_info_row(int x, int y, int bright, const char *label, const c
 void JE_itemScreen(void)
 {
 	bool quit = false;
+	shopPlayerIndex = isNetworkGame && coopCampaignMode ? gameplay_local_player_index() : 0;
 
 	crashlog_set_phase("shop / buy-sell menu");
 
@@ -993,6 +1005,8 @@ void JE_itemScreen(void)
 	configure_custom_weapon_menu();
 	configure_options_sens_menu();
 	configure_endless_shop_menu();
+	if (isNetworkGame && coopCampaignMode)
+		network_shop_begin();
 
 	play_song(songBuy);
 
@@ -1032,7 +1046,7 @@ void JE_itemScreen(void)
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	for (int i = 0; i < 7; i++)
 	{
-		int item = *playeritem_map(&player[0].last_items, i);
+		int item = *playeritem_map(&shopPlayer()->last_items, i);
 
 		int slot = 0;
 
@@ -1069,10 +1083,10 @@ void JE_itemScreen(void)
 
 		if (curMenu == MENU_FULL_GAME)
 		{
-			if (twoPlayerMode)
+			if (split_arcade_mode())
 				curMenu = MENU_2_PLAYER_ARCADE;
 
-			if (isNetworkGame || onePlayerAction)
+			if ((isNetworkGame && !coopCampaignMode) || onePlayerAction)
 				curMenu = MENU_1_PLAYER_ARCADE;
 
 			if (superTyrian)
@@ -1080,6 +1094,8 @@ void JE_itemScreen(void)
 		}
 
 		set_shop_phase();  // crash-log breadcrumb: record which shop submenu is now open
+		while (network_shop_pump())
+			;
 
 		// Keep the sidekick "Ammo N" labels current: an endless perk pick can grow every magazine
 		// without leaving this screen. A no-op unless the bonus actually moved.
@@ -1100,8 +1116,8 @@ void JE_itemScreen(void)
 		    (curSel[curMenu] == 3 || curSel[curMenu] == 4))
 		{
 			// Reset temporary power levels when selecting either weapon bay.
-			const uint item       = player[0].items.weapon[curSel[MENU_UPGRADES] - 3].id,
-			           item_power = player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power,
+			const uint item       = shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].id,
+			           item_power = shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power,
 			           i = curSel[MENU_UPGRADES] - 2;  // 1 or 2 (front or rear)
 
 			// set power level of owned weapon
@@ -1315,7 +1331,7 @@ void JE_itemScreen(void)
 		{
 			/* Move cursor until we hit either "Done" or a weapon the player can afford */
 			while (curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB] &&
-				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > (unsigned long)player[0].cash)
+				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > (unsigned long)shopPlayer()->cash)
 			{
 				curSel[MENU_UPGRADE_SUB] += lastDirection;
 				if (curSel[MENU_UPGRADE_SUB] < 2)
@@ -1327,12 +1343,12 @@ void JE_itemScreen(void)
 			if (curSel[MENU_UPGRADE_SUB] == menuChoices[MENU_UPGRADE_SUB])
 			{
 				/* If cursor on "Done", use previous weapon */
-				*playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2) = *playeritem_map(&old_items[0], curSel[MENU_UPGRADES] - 2);
+				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) = *playeritem_map(&old_items[shopPlayerIndex], curSel[MENU_UPGRADES] - 2);
 			}
 			else
 			{
 				/* Otherwise display the selected weapon */
-				*playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2) = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2];
+				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2];
 			}
 
 			/* Get power level info for front and rear weapons */
@@ -1348,7 +1364,7 @@ void JE_itemScreen(void)
 				else
 				{
 					const uint port = curSel[MENU_UPGRADES] - 3,  // 0 or 1 (front or back)
-					           item_level = player[0].items.weapon[port].power;
+					           item_level = shopPlayer()->items.weapon[port].power;
 
 					// calculate upgradeCost
 					JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2]);
@@ -1416,7 +1432,7 @@ void JE_itemScreen(void)
 					temp_cost = 0;
 				}
 
-				int afford_shade = (temp_cost > (unsigned long)player[0].cash) ? 4 : 0;  // can player afford current weapon at all
+				int afford_shade = (temp_cost > (unsigned long)shopPlayer()->cash) ? 4 : 0;  // can player afford current weapon at all
 
 				temp = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][tempW-1]; /* Item ID */
 				switch (curSel[MENU_UPGRADES]-1)
@@ -1450,7 +1466,7 @@ void JE_itemScreen(void)
 				JE_getShipInfo();
 
 				/* item-owned marker (pulled left of the scroll bar when it is shown) */
-				if (temp == *playeritem_map(&old_items[0], curSel[MENU_UPGRADES] - 2) && temp != 0 && tempW != menuChoices[curMenu]-1)
+				if (temp == *playeritem_map(&old_items[shopPlayerIndex], curSel[MENU_UPGRADES] - 2) && temp != 0 && tempW != menuChoices[curMenu]-1)
 				{
 					const bool sub_has_scrollbar = sub_total_rows > visible_rows;
 					const int marker_bar_right = sub_has_scrollbar ? 288 : 300;
@@ -1506,7 +1522,7 @@ void JE_itemScreen(void)
 		      curMenu == MENU_KEYBOARD_CONFIG ||
 		      curMenu == MENU_LOAD_SAVE ||
 		      curMenu >= MENU_1_PLAYER_ARCADE) &&
-		     !twoPlayerMode) ||
+		     !split_arcade_mode()) ||
 		    (curMenu == MENU_UPGRADE_SUB &&
 		     (curSel[MENU_UPGRADES] >= 1 && curSel[MENU_UPGRADES] <= 6)))
 		{
@@ -1514,7 +1530,7 @@ void JE_itemScreen(void)
 			{
 				char buf[20];
 
-				snprintf(buf, sizeof buf, "%lu", (unsigned long)player[0].cash);
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)shopPlayer()->cash);
 				// Centre the cash total in the monitor slot, matching the endless course RANK readout
 				// (same slot, same row) instead of growing rightward from a fixed left edge.
 				// y172: DARKEN draws the body at y+1, so this lands on row 173; level with the RANK.
@@ -1526,7 +1542,7 @@ void JE_itemScreen(void)
 				// rollover rows (same 28-per-layer rollover as the in-game HUD armour bar) so it
 				// can't march off the panel into the shield gauge. Layer colours tunable.
 				static const int shopArmorLayerCol[] = { 14, 30, 46, 62, 78, 94, 110, 126 };
-				int a = player[0].armor;
+				int a = shopPlayer()->armor;
 				for (int L = 0; a > 0 && L < (int)COUNTOF(shopArmorLayerCol); ++L)
 				{
 					JE_barDrawShadow(VGAScreen, 42, 152, 3, shopArmorLayerCol[L], (a > 28) ? 28 : a, 2, 13);
@@ -1534,13 +1550,13 @@ void JE_itemScreen(void)
 				}
 			}
 			else
-				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, player[0].armor, 2, 13);
+				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, shopPlayer()->armor, 2, 13);
 			// Shield ceiling rescaled so a full 28-unit gauge fills exactly 10 bars and every weaker
 			// shield proportionally fewer; matching the in-game gauge. Reading the ceiling rather
 			// than the item's mpwr also shows the arcade lives scaling growing it between levels.
 			// Rounded to the nearest bar; None (mpwr 0) draws nothing; clamped so it can't overrun.
 			{
-				int shieldBars = (int)((arcade_shield_max(&player[0]) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
+				int shieldBars = (int)((arcade_shield_max(shopPlayer()) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
 				if (shieldBars > 10)
 					shieldBars = 10;
 				JE_barDrawShadow(VGAScreen, 104, 152, 1, 14, shieldBars, 2, 13);
@@ -1555,7 +1571,7 @@ void JE_itemScreen(void)
 			(curMenu == MENU_UPGRADE_SUB &&
 				(curSel[MENU_UPGRADES] == 2 || curSel[MENU_UPGRADES] == 5)))
 		{
-			if (twoPlayerMode)
+			if (split_arcade_mode())
 			{
 				char buf[80];
 				int y = SHOP_2P_TOP;
@@ -1584,9 +1600,9 @@ void JE_itemScreen(void)
 					if (i == 0)
 					{
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Front gun:",
-							weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name);
+							weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name);
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Special:",
-							special[player[0].items.special].name);
+							special[shopPlayer()->items.special].name);
 						y += 4;  // gap between the two blocks
 					}
 					else
@@ -1611,9 +1627,9 @@ void JE_itemScreen(void)
 				helpBoxBrightness = 1;
 
 				JE_textShade(VGAScreen, 25, 50, superShips[SA+1], 15, 0, FULL_SHADE);
-				JE_helpBox(VGAScreen,   25, 60, weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name, 22);
+				JE_helpBox(VGAScreen,   25, 60, weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name, 22);
 				JE_textShade(VGAScreen, 25, 120, superShips[SA+2], 15, 0, FULL_SHADE);
-				JE_helpBox(VGAScreen,   25, 130, special[player[0].items.special].name, 22);
+				JE_helpBox(VGAScreen,   25, 130, special[shopPlayer()->items.special].name, 22);
 			}
 			else
 			{
@@ -1773,6 +1789,8 @@ void JE_itemScreen(void)
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
 				NETWORK_KEEP_ALIVE();
+				while (network_shop_pump())
+					;
 
 				mouseCursor = MOUSE_POINTER_NORMAL;
 
@@ -2002,11 +2020,11 @@ void JE_itemScreen(void)
 						if (down && !shoulder_was[s] &&
 						    curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
 						{
-							const uint opnum = weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum;
+							const uint opnum = weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum;
 							if (s == 0)
-								player[0].weapon_mode = (player[0].weapon_mode > 1) ? player[0].weapon_mode - 1 : opnum;
-							else if (++player[0].weapon_mode > opnum)
-								player[0].weapon_mode = 1;
+								shopPlayer()->weapon_mode = (shopPlayer()->weapon_mode > 1) ? shopPlayer()->weapon_mode - 1 : opnum;
+							else if (++shopPlayer()->weapon_mode > opnum)
+								shopPlayer()->weapon_mode = 1;
 						}
 						shoulder_was[s] = down;
 					}
@@ -2032,9 +2050,9 @@ void JE_itemScreen(void)
 						// keep the front/rear weapon power preview in sync, as the arrows do
 						if (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4)
 						{
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 							if (curSel[MENU_UPGRADES] == 4)
-								player[0].weapon_mode = 1;
+								shopPlayer()->weapon_mode = 1;
 						}
 					}
 					JE_playSampleNum(S_CURSOR);
@@ -2042,9 +2060,11 @@ void JE_itemScreen(void)
 					inputDetected = true;  // redraw at the new selection
 				}
 
-				// Endless hardcore forbids all saving/loading, so the Alt+S / Alt+L quick keys are
-				// disabled too (not just the menu rows).
-				if (curMenu != MENU_LOAD_SAVE && !(endlessMode && endlessHardcore()))
+				// Endless Hardcore forbids quick save/load. Online Campaign also blocks Alt+S while
+				// an item preview is temporarily mutating the local loadout and cash.
+				if (curMenu != MENU_LOAD_SAVE &&
+				    (!(isNetworkGame && coopCampaignMode) || curMenu != MENU_UPGRADE_SUB) &&
+				    !(endlessMode && endlessHardcore()))
 				{
 					if (keysactive[SDL_SCANCODE_S] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]))
 					{
@@ -2285,8 +2305,9 @@ void JE_itemScreen(void)
 					if (curMenu == MENU_UPGRADE_SUB &&
 						selection == menuChoices[MENU_UPGRADE_SUB])
 					{
-						player[0].cash = JE_cashLeft();
+						shopPlayer()->cash = JE_cashLeft();
 						endlessShopTradeCommit();
+						network_shop_send_transaction();
 						curMenu = MENU_UPGRADES;
 						JE_playSampleNum(S_ITEM);
 					}
@@ -2300,14 +2321,14 @@ void JE_itemScreen(void)
 						else
 						{
 							if (curMenu == MENU_UPGRADE_SUB &&
-								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > (unsigned long)player[0].cash)
+								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > (unsigned long)shopPlayer()->cash)
 							{
 								JE_playSampleNum(S_CLINK);
 							}
 							else
 							{
 								if (curSel[MENU_UPGRADES] == 4)
-									player[0].weapon_mode = 1;
+									shopPlayer()->weapon_mode = 1;
 
 								curSel[curMenu] = selection;
 							}
@@ -2316,7 +2337,7 @@ void JE_itemScreen(void)
 							if (curMenu == MENU_UPGRADE_SUB &&
 								(curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 							{
-								player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB] - 2];
+								shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB] - 2];
 							}
 						}
 					}
@@ -2336,7 +2357,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (leftPower)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2353,7 +2374,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (rightPower && rightPowerAfford)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2372,8 +2393,8 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
 				{
 					// cycle weapon modes
-					if (++player[0].weapon_mode > weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum)
-						player[0].weapon_mode = 1;
+					if (++shopPlayer()->weapon_mode > weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum)
+						shopPlayer()->weapon_mode = 1;
 				}
 				break;
 
@@ -2383,7 +2404,7 @@ void JE_itemScreen(void)
 
 				// if front or rear weapon, update "Done" power level
 				if (curMenu == MENU_UPGRADE_SUB && (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
-					temp_weapon_power[itemAvailMax[itemAvailMap[curSel[MENU_UPGRADES]-2]-1]] = player[0].items.weapon[curSel[MENU_UPGRADES]-3].power;
+					temp_weapon_power[itemAvailMax[itemAvailMap[curSel[MENU_UPGRADES]-2]-1]] = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
 				JE_menuFunction(curSel[curMenu]);
 				break;
@@ -2418,6 +2439,11 @@ void JE_itemScreen(void)
 					newPal = 1;
 					curMenu = MENU_LIMITED_OPTIONS;
 				}
+				else if (curMenu == MENU_LIMITED_OPTIONS && coopCampaignMode)
+				{
+					newPal = 1;
+					curMenu = MENU_FULL_GAME;
+				}
 				else if (menuEsc[curMenu] == 0)
 				{
 					if (JE_quitRequest())
@@ -2430,10 +2456,11 @@ void JE_itemScreen(void)
 				{
 					if (curMenu == MENU_UPGRADE_SUB)  // leaving upgrade menu without buying
 					{
-						player[0].items = old_items[0];
+						shopPlayer()->items = old_items[shopPlayerIndex];
 						curSel[MENU_UPGRADE_SUB] = lastCurSel;
-						player[0].cash = JE_cashLeft();
+						shopPlayer()->cash = JE_cashLeft();
 						endlessShopTradeCommit();
+						network_shop_send_transaction();
 					}
 
 					if (curMenu != MENU_DATA_CUBE_SUB)
@@ -2489,9 +2516,9 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB &&
 				    (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 				{
-					player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+					shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 					if (curSel[MENU_UPGRADES] == 4)
-						player[0].weapon_mode = 1;
+						shopPlayer()->weapon_mode = 1;
 				}
 
 				// if joystick config, skip disabled items when digital
@@ -2520,9 +2547,9 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB &&
 				    (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 				{
-					player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+					shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 					if (curSel[MENU_UPGRADES] == 4)
-						player[0].weapon_mode = 1;
+						shopPlayer()->weapon_mode = 1;
 				}
 
 				// if in joystick config, skip disabled items when digital
@@ -2639,7 +2666,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (leftPower)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2737,7 +2764,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (rightPower && rightPowerAfford)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2757,6 +2784,27 @@ void JE_itemScreen(void)
 #ifdef WITH_NETWORK
 	if (!quit && isNetworkGame)
 	{
+		if (coopCampaignMode)
+		{
+			shopPlayer()->last_items = shopPlayer()->items;
+			network_shop_send_state(true);
+			while (!network_shop_peer_done())
+			{
+				service_SDL_events(false);
+				mouseCursor = MOUSE_POINTER_NORMAL;
+				JE_mouseStart();
+				JE_showVGA();
+				JE_mouseReplace();
+
+				if (network_shop_pump() || network_debug_sync_pump(false))
+					continue;
+				network_update();
+				network_check();
+				SDL_Delay(16);
+			}
+			network_shop_end();
+		}
+
 		JE_barShade(VGAScreen, 3, 3, 316, 196);
 		JE_barShade(VGAScreen, 1, 1, 318, 198);
 		JE_dString(VGAScreen, 10, 160, "Waiting for other player.", SMALL_FONT_SHAPES);
@@ -2844,10 +2892,10 @@ void draw_ship_illustration(void)
 
 	// ship
 	{
-		assert(player[0].items.ship > 0);
+		assert(shopPlayer()->items.ship > 0);
 
-		const int sprite_id = (player[0].items.ship < COUNTOF(ships))  // shipedit ships get a default
-		                      ? ships[player[0].items.ship].bigshipgraphic - 1
+		const int sprite_id = (shopPlayer()->items.ship < COUNTOF(ships))  // shipedit ships get a default
+		                      ? ships[shopPlayer()->items.ship].bigshipgraphic - 1
 		                      : 31;
 
 		const int ship_x[] = { 31, 0, 0, 0, 35, 31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 30 },
@@ -2884,11 +2932,11 @@ void draw_ship_illustration(void)
 
 	// generator
 	{
-		assert(player[0].items.generator > 0 && player[0].items.generator < 7);
+		assert(shopPlayer()->items.generator > 0 && shopPlayer()->items.generator < 7);
 
-		const int sprite_id = (player[0].items.generator == 1)  // generator 1 and generator 2 have the same sprite
-		                      ? player[0].items.generator + 15
-		                      : player[0].items.generator + 14;
+		const int sprite_id = (shopPlayer()->items.generator == 1)  // generator 1 and generator 2 have the same sprite
+		                      ? shopPlayer()->items.generator + 15
+		                      : shopPlayer()->items.generator + 14;
 
 		const int generator_x[5] = { 62, 64, 67, 66, 63 },
 		          generator_y[5] = { 84, 85, 86, 84, 97 };
@@ -2934,7 +2982,7 @@ void draw_ship_illustration(void)
 
 	for (int slot = FRONT_WEAPON; slot <= REAR_WEAPON; ++slot)
 	{
-		const int id = player[0].items.weapon[slot].id;
+		const int id = shopPlayer()->items.weapon[slot].id;
 		if (id <= 0 || id >= 60 || weapon_sprites[id] < 0)
 			continue;
 
@@ -2978,11 +3026,11 @@ void draw_ship_illustration(void)
 	}
 
 	// sidekicks
-	JE_drawItem(6, player[0].items.sidekick[LEFT_SIDEKICK], 3, 84);
-	JE_drawItem(7, player[0].items.sidekick[RIGHT_SIDEKICK], 129, 84);
+	JE_drawItem(6, shopPlayer()->items.sidekick[LEFT_SIDEKICK], 3, 84);
+	JE_drawItem(7, shopPlayer()->items.sidekick[RIGHT_SIDEKICK], 129, 84);
 
 	// shield
-	blit_sprite_hv(VGAScreenSeg, 28, 23, OPTION_SHAPES, 26, 15, shields[player[0].items.shield].mpwr - 10);
+	blit_sprite_hv(VGAScreenSeg, 28, 23, OPTION_SHAPES, 26, 15, shields[shopPlayer()->items.shield].mpwr - 10);
 }
 
 void load_cubes(void)
@@ -3746,17 +3794,17 @@ void JE_initWeaponView(void)
 {
 	fill_rectangle_xy(VGAScreen, 8, 8, 144, 177, 0);
 
-	player[0].sidekick[LEFT_SIDEKICK].x = 72 - 15;
-	player[0].sidekick[LEFT_SIDEKICK].y = 120;
-	player[0].sidekick[RIGHT_SIDEKICK].x = 72 + 15;
-	player[0].sidekick[RIGHT_SIDEKICK].y = 120;
+	shopPlayer()->sidekick[LEFT_SIDEKICK].x = 72 - 15;
+	shopPlayer()->sidekick[LEFT_SIDEKICK].y = 120;
+	shopPlayer()->sidekick[RIGHT_SIDEKICK].x = 72 + 15;
+	shopPlayer()->sidekick[RIGHT_SIDEKICK].y = 120;
 
-	player[0].x = 72;
-	player[0].y = 110;
-	player[0].delta_x_shot_move = 0;
-	player[0].delta_y_shot_move = 0;
-	player[0].last_x_explosion_follow = 72;
-	player[0].last_y_explosion_follow = 110;
+	shopPlayer()->x = 72;
+	shopPlayer()->y = 110;
+	shopPlayer()->delta_x_shot_move = 0;
+	shopPlayer()->delta_y_shot_move = 0;
+	shopPlayer()->last_x_explosion_follow = 72;
+	shopPlayer()->last_y_explosion_follow = 110;
 	power = 500;
 	lastPower = 500;
 	menu_power_prev = menu_power_cur = 500;  // reset gauge interpolation state
@@ -4454,7 +4502,7 @@ void JE_genItemMenu(JE_byte itemNum)
 	menuChoices[MENU_UPGRADE_SUB] = itemAvailMax[itemAvailMap[itemNum - 2] - 1] + 2;
 
 	temp3 = 2;
-	temp2 = *playeritem_map(&player[0].items, itemNum - 2);
+	temp2 = *playeritem_map(&shopPlayer()->items, itemNum - 2);
 
 	strcpy(menuInt[5][0], menuInt[2][itemNum - 1]);
 
@@ -8490,7 +8538,7 @@ void JE_menuFunction(JE_byte select)
 			curMenu = MENU_UPGRADES;
 			break;
 		case 5: //options
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 6: //nextlevel
 			if (endlessMode && endlessLockedSortie)
@@ -8551,8 +8599,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment): only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else
 			{
@@ -8664,13 +8712,13 @@ void JE_menuFunction(JE_byte select)
 				// Equipped: reflect the new loadout so the shop keeps it and the custom
 				// weapon shows in its Front/Rear weapon list.
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 		}
 		else // selected item to upgrade
 		{
-			old_items[0] = player[0].items;
+			old_items[shopPlayerIndex] = shopPlayer()->items;
 
 			weaponSimTime = 0;
 			lastDirection = 1;
@@ -8681,11 +8729,11 @@ void JE_menuFunction(JE_byte select)
 			curMenu = MENU_UPGRADE_SUB;
 			lastCurSel = curSel[MENU_UPGRADE_SUB];
 			// Shop with the equipped item's trade-in value folded in; every exit restores the real
-			// balance (player[0].cash = JE_cashLeft()) and books the delta via endlessShopTradeCommit.
+			// balance (shop player cash = JE_cashLeft()) and books the delta via endlessShopTradeCommit.
 			// NOTE for endless: the wallet is deliberately FAKE between Begin and those exits, so no
 			// credit, debit, or audit may run in the window.
 			endlessShopTradeBegin();
-			player[0].cash = player[0].cash * 2 - JE_cashLeft();
+			shopPlayer()->cash = shopPlayer()->cash * 2 - JE_cashLeft();
 		}
 		break;
 
@@ -8749,8 +8797,9 @@ void JE_menuFunction(JE_byte select)
 		{
 			JE_playSampleNum(S_ITEM);
 
-			player[0].cash = JE_cashLeft();
+			shopPlayer()->cash = JE_cashLeft();
 			endlessShopTradeCommit();
+			network_shop_send_transaction();
 			curMenu = MENU_UPGRADES;
 		}
 		break;
@@ -8910,8 +8959,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -8951,8 +9000,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -8990,7 +9039,7 @@ void JE_menuFunction(JE_byte select)
 			quikSave = false;
 			break;
 		case 8:
-			curMenu = MENU_1_PLAYER_ARCADE;
+			curMenu = coopCampaignMode ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
 			break;
 		}
 		break;
@@ -9098,8 +9147,8 @@ joystick_assign_done:
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -9148,7 +9197,7 @@ joystick_assign_done:
 		}
 	}
 
-	old_items[0] = player[0].items;
+	old_items[shopPlayerIndex] = shopPlayer()->items;
 }
 
 void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
@@ -9166,26 +9215,26 @@ void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
 	JE_rectangle(screen, 1, 1, 318, 198, 35);
 
 	verticalHeight = 9;
-	JE_outText(screen, 10, 2, ships[player[0].items.ship].name, 12, 3);
-	JE_helpBox(screen, 100, 20, shipInfo[player[0].items.ship-1][0], 40);
-	JE_helpBox(screen, 100, 100, shipInfo[player[0].items.ship-1][1], 40);
+	JE_outText(screen, 10, 2, ships[shopPlayer()->items.ship].name, 12, 3);
+	JE_helpBox(screen, 100, 20, shipInfo[shopPlayer()->items.ship-1][0], 40);
+	JE_helpBox(screen, 100, 100, shipInfo[shopPlayer()->items.ship-1][1], 40);
 	verticalHeight = 7;
 
 	JE_outText(screen, JE_fontCenter(miscText[4], TINY_FONT), 190, miscText[4], 12, 2);
 
 	//now draw the green ship over that.
 	//This hardcoded stuff is for positioning our little ship graphic
-	if (player[0].items.ship > 90)
+	if (shopPlayer()->items.ship > 90)
 	{
 		temp_index = 32;
 	}
-	else if (player[0].items.ship > 0)
+	else if (shopPlayer()->items.ship > 0)
 	{
-		temp_index = ships[player[0].items.ship].bigshipgraphic;
+		temp_index = ships[shopPlayer()->items.ship].bigshipgraphic;
 	}
 	else
 	{
-		temp_index = ships[old_items[0].ship].bigshipgraphic;
+		temp_index = ships[old_items[shopPlayerIndex].ship].bigshipgraphic;
 	}
 
 	switch (temp_index)
@@ -9253,25 +9302,25 @@ static void JE_drawSimSidekicks(void)
 {
 	for (uint i = 0; i < 2; ++i)
 	{
-		const JE_OptionType *o = &options[player[0].items.sidekick[i]];
+		const JE_OptionType *o = &options[shopPlayer()->items.sidekick[i]];
 		if (o->option == 0)
 			continue;  // slot empty ("None")
 
 		// The equipped option can change as you browse the shop without the frame counter being
 		// reset, so keep it in range before indexing gr[], then advance it like gameplay.
-		if (player[0].sidekick[i].animation_frame >= o->ani)
-			player[0].sidekick[i].animation_frame = 0;
-		if (player[0].sidekick[i].animation_enabled)
+		if (shopPlayer()->sidekick[i].animation_frame >= o->ani)
+			shopPlayer()->sidekick[i].animation_frame = 0;
+		if (shopPlayer()->sidekick[i].animation_enabled)
 		{
-			if (++player[0].sidekick[i].animation_frame >= o->ani)
+			if (++shopPlayer()->sidekick[i].animation_frame >= o->ani)
 			{
-				player[0].sidekick[i].animation_frame = 0;
-				player[0].sidekick[i].animation_enabled = (o->option == 1);
+				shopPlayer()->sidekick[i].animation_frame = 0;
+				shopPlayer()->sidekick[i].animation_enabled = (o->option == 1);
 			}
 		}
 
-		const int x = player[0].sidekick[i].x, y = player[0].sidekick[i].y;
-		const uint sprite = o->gr[player[0].sidekick[i].animation_frame];
+		const int x = shopPlayer()->sidekick[i].x, y = shopPlayer()->sidekick[i].y;
+		const uint sprite = o->gr[shopPlayer()->sidekick[i].animation_frame];
 
 		// Tag the body like gameplay so JE_weaponSimSmoothPresent's rl_replay_interp can
 		// match it across ticks; otherwise a moving pod (orbiting satellite) steps at the
@@ -9301,10 +9350,10 @@ void JE_weaponSimUpdate(void)
 		if (!rightPower || !rightPowerAfford)
 			blit_sprite(VGAScreenSeg, 119, 149, OPTION_SHAPES, 14);  // upgrade disabled
 
-		temp = player[0].items.weapon[curSel[MENU_UPGRADES]-3].power;
+		temp = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
 		if ((curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
-			&& weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum == 2
+			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2
 			&& (weaponSimTime >= 75))
 		{
 			// [/] Rear Weapon Mode
@@ -9345,7 +9394,7 @@ void JE_weaponSimUpdate(void)
 	else
 		blit_sprite(VGAScreenSeg, 20, 146, OPTION_SHAPES, 17);  // hide power level interface
 
-	JE_drawItem(1, player[0].items.ship, player[0].x - 5, player[0].y - 7);
+	JE_drawItem(1, shopPlayer()->items.ship, shopPlayer()->x - 5, shopPlayer()->y - 7);
 
 	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
 }
@@ -9359,8 +9408,8 @@ void JE_weaponViewFrame(void)
 
 	update_and_draw_starfield(VGAScreen, 1);
 
-	mouseX = player[0].x;
-	mouseY = player[0].y;
+	mouseX = shopPlayer()->x;
+	mouseY = shopPlayer()->y;
 
 	// Endless perks quicken the guns in the preview as in play: apply the fire-rate perks' extra
 	// shotRepeat decrements once per tick, so the preview's fire cadence (and the generator drain on
@@ -9383,9 +9432,9 @@ void JE_weaponViewFrame(void)
 		}
 		else
 		{
-			const uint item       = player[0].items.weapon[i].id,
-			           item_power = player[0].items.weapon[i].power - 1,
-			           item_mode = (i == REAR_WEAPON) ? player[0].weapon_mode - 1 : 0;
+			const uint item       = shopPlayer()->items.weapon[i].id,
+			           item_power = shopPlayer()->items.weapon[i].power - 1,
+			           item_mode = (i == REAR_WEAPON) ? shopPlayer()->weapon_mode - 1 : 0;
 
 			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions)
 			// so the preview matches. Long swaps in the two LV10-length side beams; Buff
@@ -9396,16 +9445,16 @@ void JE_weaponViewFrame(void)
 			if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 				l11_primary = ZICA_LONG_WEAP_LEFT;
 
-			b = player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, l11_primary, 1);
+			b = player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, l11_primary, 1);
 
 			if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
 			{
 				JE_word saved_poweruse = weaponPort[item].poweruse;
 				weaponPort[item].poweruse = 0;
 				if (zicaLaserLength == ZICA_LEN_LONG)
-					player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, ZICA_LONG_WEAP_RIGHT, 1);
+					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, ZICA_LONG_WEAP_RIGHT, 1);
 				if (zicaLaserBuff)
-					player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, weaponPort[item].op[item_mode][9], 1);
+					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, weaponPort[item].op[item_mode][9], 1);
 				weaponPort[item].poweruse = saved_poweruse;
 			}
 		}
@@ -9414,46 +9463,46 @@ void JE_weaponViewFrame(void)
 	// Position + fire both sidekicks, mirroring the gameplay mounts so the preview is faithful:
 	// side pods (tr 0), front pods (tr 2), and orbiting satellites (tr 4) use their gameplay
 	// offsets; trailing companions (tr 1/3) keep a side-by-side layout.
-	const bool bothFront = options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 2
-	                    && options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 2;
+	const bool bothFront = options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 2
+	                    && options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 2;
 
 	// advance the shared satellite angle exactly like gameplay
-	if (options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 4
-	    && options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 4)
+	if (options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 4
+	    && options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 4)
 		optionSatelliteRotate += 0.2f;
-	else if (options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 4
-	         || options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 4)
+	else if (options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 4
+	         || options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 4)
 		optionSatelliteRotate += 0.15f;
 
 	for (uint i = 0; i < 2; ++i)
 	{
-		const uint item = player[0].items.sidekick[i];
+		const uint item = shopPlayer()->items.sidekick[i];
 		const JE_OptionType *o = &options[item];
 		const uint shot_i = (i == LEFT_SIDEKICK) ? SHOT_LEFT_SIDEKICK : SHOT_RIGHT_SIDEKICK;
 
 		switch (o->tr)
 		{
 		case 0:  // fixed side pod (e.g. Zica Supercharger)
-			player[0].sidekick[i].x = player[0].x + ((i == LEFT_SIDEKICK) ? -14 : 16);
-			player[0].sidekick[i].y = player[0].y;
+			shopPlayer()->sidekick[i].x = shopPlayer()->x + ((i == LEFT_SIDEKICK) ? -14 : 16);
+			shopPlayer()->sidekick[i].y = shopPlayer()->y;
 			break;
 		case 2:  // front-mounted
-			player[0].sidekick[i].x = !bothFront ? player[0].x
-			                        : (i == LEFT_SIDEKICK ? player[0].x - FRONT_OPTION_SPREAD
-			                                              : player[0].x + FRONT_OPTION_SPREAD);
-			player[0].sidekick[i].y = MAX(10, player[0].y - 20);
+			shopPlayer()->sidekick[i].x = !bothFront ? shopPlayer()->x
+			                        : (i == LEFT_SIDEKICK ? shopPlayer()->x - FRONT_OPTION_SPREAD
+			                                              : shopPlayer()->x + FRONT_OPTION_SPREAD);
+			shopPlayer()->sidekick[i].y = MAX(10, shopPlayer()->y - 20);
 			break;
 		case 4:  // orbiting satellite (e.g. Satellite Marlo); the two slots orbit opposite ends
 		{
 			const int dx = roundf(sinf(optionSatelliteRotate) * 20),
 			          dy = roundf(cosf(optionSatelliteRotate) * 20);
-			player[0].sidekick[i].x = player[0].x + ((i == LEFT_SIDEKICK) ? dx : -dx);
-			player[0].sidekick[i].y = player[0].y + ((i == LEFT_SIDEKICK) ? dy : -dy);
+			shopPlayer()->sidekick[i].x = shopPlayer()->x + ((i == LEFT_SIDEKICK) ? dx : -dx);
+			shopPlayer()->sidekick[i].y = shopPlayer()->y + ((i == LEFT_SIDEKICK) ? dy : -dy);
 			break;
 		}
 		default:  // trailing companions (tr 1/3); deliberately side by side, not gameplay-faithful
-			player[0].sidekick[i].x = (i == LEFT_SIDEKICK) ? 72 - 15 : 72 + 15;
-			player[0].sidekick[i].y = 120;
+			shopPlayer()->sidekick[i].x = (i == LEFT_SIDEKICK) ? 72 - 15 : 72 + 15;
+			shopPlayer()->sidekick[i].y = 120;
 			break;
 		}
 
@@ -9465,8 +9514,8 @@ void JE_weaponViewFrame(void)
 			}
 			else
 			{
-				b = player_shot_create(o->wport, shot_i, player[0].sidekick[i].x, player[0].sidekick[i].y, mouseX, mouseY, o->wpnum, 1);
-				player[0].sidekick[i].animation_enabled = true;  // animate the body while it fires
+				b = player_shot_create(o->wport, shot_i, shopPlayer()->sidekick[i].x, shopPlayer()->sidekick[i].y, mouseX, mouseY, o->wpnum, 1);
+				shopPlayer()->sidekick[i].animation_enabled = true;  // animate the body while it fires
 			}
 		}
 	}
@@ -9484,7 +9533,7 @@ void JE_weaponViewFrame(void)
 	blit_sprite(VGAScreenSeg, 0, 0, OPTION_SHAPES, 12); // upgrade interface
 
 	// weapon mode indicator
-	if (player[0].weapon_mode == 1)
+	if (shopPlayer()->weapon_mode == 1)
 	{
 		blit_sprite(VGAScreenSeg, 3, 56, OPTION_SHAPES, 18);  // lit
 		blit_sprite(VGAScreenSeg, 3, 64, OPTION_SHAPES, 19);  // unlit

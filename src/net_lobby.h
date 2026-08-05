@@ -23,5 +23,6 @@
 /* Run the in-game host/join flow. True means the session is initialized; false leaves network
  * state clean and returns to the title screen. */
 bool networkLobby(void);
+bool networkLobbyConfirmDetails(void);
 
 #endif /* NET_LOBBY_H */
