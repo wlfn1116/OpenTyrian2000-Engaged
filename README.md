@@ -38,7 +38,7 @@ On PC, put the executable beside the `data` directory.
 
 The frame is 356x200 instead of 320x200. The playfield is 299 pixels wide, with
 the 57-pixel HUD still at the right edge. Menus keep their original 320-pixel
-layout, centred.
+layout, centred, with a gradient fadeout.
 
 The simulation still runs at 35 Hz. Smooth Motion interpolates the world at the
 display rate, and in single-player the ship moves at the display rate too, which
