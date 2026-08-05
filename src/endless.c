@@ -7,6 +7,7 @@
 #include "custom_weapon.h"
 #include "episodes.h"
 #include "fonthand.h"
+#include "helptext.h"
 #include "keyboard.h"
 #include "loudness.h"
 #include "mainint.h"
@@ -278,66 +279,200 @@ const char *endlessRunModeName(EndlessRunMode mode)
 	}
 }
 
-// Per-mode all-time records, stored in opentyrian.cfg.
-int  endlessBestZone[ENDLESS_RUNMODE_COUNT] = { 0 };
-bool endlessBestZoneCustom[ENDLESS_RUNMODE_COUNT] = { false };
+// All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
+// difficulty it started on, or the untagged one if that difficulty is outside the six below.
+int  endlessBestZoneUntagged[ENDLESS_RUNMODE_COUNT] = { 0 };
+bool endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_COUNT] = { false };
 static int endlessBestZoneAtRunStart = 0;
 
-// Custom-weapon usage. A shot out of the custom port arms the zone flag; clearing that zone
-// promotes it to the run, which is what marks the record. The zone flag is cleared at every zone
-// start, so the outpost's weapon editor and shop previews never count as combat use.
+const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
+	DIFFICULTY_EASY, DIFFICULTY_NORMAL, DIFFICULTY_HARD,
+	DIFFICULTY_IMPOSSIBLE, DIFFICULTY_SUICIDE, DIFFICULTY_LORD_OF_GAME,
+};
+
+int  endlessBestZoneDiff[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { 0 } };
+bool endlessBestZoneDiffCustom[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { false } };
+
+int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot)
+{
+	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+		return 0;
+	return endlessBestZoneDiff[mode][slot];
+}
+
+int endlessDifficultySlot(int difficulty)
+{
+	for (int i = 0; i < ENDLESS_DIFFICULTY_COUNT; ++i)
+		if (endlessDifficultyLevel[i] == difficulty)
+			return i;
+	return -1;
+}
+
+// Custom-weapon usage. A shot out of the custom port arms the zone flag, and the end of that zone
+// promotes it to the run. Only a running zone can arm it, which is what keeps the outpost weapon
+// editor and shop previews out of the record.
 bool endlessRunUsedCustom = false;
 static bool endlessCustomFiredZone = false;
+static bool endlessCustomZoneRunning = false;
 
 void endlessNoteCustomWeaponShot(void)
 {
-	if (endlessMode)
+	// Only a shot fired inside a running zone counts. The outpost's weapon editor and the shop's
+	// weapon preview fire through the same path, and neither is a zone.
+	if (endlessMode && endlessCustomZoneRunning)
 		endlessCustomFiredZone = true;
 }
 
-void endlessResetCustomWeaponZone(void) { endlessCustomFiredZone = false; }
+void endlessResetCustomWeaponZone(void)
+{
+	endlessCustomFiredZone = false;
+	endlessCustomZoneRunning = true;
+}
 
 #define ENDLESS_BEST_ZONE_MAX 99999  // a sanity ceiling on what a hand-edited config can claim
+
+// The one record the running run writes to, and its mark.
+static void endlessRunRecord(int **zone, bool **mark)
+{
+	const int slot = endlessDifficultySlot(initialDifficulty);
+	if (slot >= 0)
+	{
+		*zone = &endlessBestZoneDiff[endlessRunMode][slot];
+		*mark = &endlessBestZoneDiffCustom[endlessRunMode][slot];
+	}
+	else
+	{
+		*zone = &endlessBestZoneUntagged[endlessRunMode];
+		*mark = &endlessBestZoneUntaggedCustom[endlessRunMode];
+	}
+}
 
 // Record a zone when it starts, not after it is cleared.
 void endlessNoteZoneReached(int zone)
 {
-	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX || zone <= endlessBestZone[endlessRunMode])
+	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX)
 		return;
-	endlessBestZone[endlessRunMode] = zone;
-	endlessBestZoneCustom[endlessRunMode] = endlessRunUsedCustom;
+
+	int *best;
+	bool *mark;
+	endlessRunRecord(&best, &mark);
+	if (zone <= *best)
+		return;
+
+	*best = zone;
+	*mark = endlessRunUsedCustom;
 	save_opentyrian_config();
 }
 
-// The custom mark is earned mid-run, after the record it belongs to was already stamped: the zone
-// that sets a record is stamped before it is flown, and a run that only matches the record never
-// stamps at all. Both need the mark written after the fact, while this run still stands at the
-// record depth. A deeper record predates the run, so it keeps whatever mark it earned.
+// Mark the record this run set, after the fact: a record is stamped as its zone is entered, before
+// that zone is flown. Ownership must come from the run-start baseline rather than the run depth;
+// see the Save format section of doc/notes.md.
 static void endlessMarkRecordCustom(void)
 {
-	if (endlessBestZoneCustom[endlessRunMode] || endlessBestZone[endlessRunMode] > endlessRunDepth)
+	int *best;
+	bool *mark;
+	endlessRunRecord(&best, &mark);
+	if (*mark || *best <= endlessBestZoneAtRunStart)
 		return;
-	endlessBestZoneCustom[endlessRunMode] = true;
+
+	*mark = true;
 	save_opentyrian_config();
 }
 
-const char *endlessRecordCustomMark(EndlessRunMode mode)
+// A zone the custom weapon fired in counts once that zone is over, however it ended: cleared, died
+// in, or bailed out of. Idempotent, so every path out of a zone can call it.
+void endlessCustomWeaponZoneEnd(void)
 {
-	const bool custom = (mode >= 0 && mode < ENDLESS_RUNMODE_COUNT) && endlessBestZoneCustom[mode];
-	return custom ? " C" : "";
+	if (!endlessMode)
+		return;
+
+	if (endlessCustomFiredZone)
+		endlessRunUsedCustom = true;
+	endlessCustomFiredZone = false;
+	endlessCustomZoneRunning = false;
+
+	if (endlessRunUsedCustom)
+		endlessMarkRecordCustom();
 }
 
-void endlessClearRecord(EndlessRunMode mode)
+int endlessBestZoneAny(EndlessRunMode mode)
+{
+	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+		return 0;
+
+	int best = endlessBestZoneUntagged[mode];
+	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
+		if (endlessBestZoneDiff[mode][d] > best)
+			best = endlessBestZoneDiff[mode][d];
+	return best;
+}
+
+const char *endlessRecordAnyCustomMark(EndlessRunMode mode)
+{
+	// Whichever record is the deepest owns the mark, and a tie takes the first marked one.
+	const int best = endlessBestZoneAny(mode);
+	if (best <= 0)
+		return "";
+
+	if (endlessBestZoneUntagged[mode] == best && endlessBestZoneUntaggedCustom[mode])
+		return " C";
+	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
+		if (endlessBestZoneDiff[mode][d] == best && endlessBestZoneDiffCustom[mode][d])
+			return " C";
+	return "";
+}
+
+const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot)
+{
+	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+		return "";
+	return endlessBestZoneDiffCustom[mode][slot] ? " C" : "";
+}
+
+void endlessClearDeepestRecord(EndlessRunMode mode)
 {
 	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
 		return;
-	endlessBestZone[mode] = 0;
-	endlessBestZoneCustom[mode] = false;
+	const int best = endlessBestZoneAny(mode);
+	if (best <= 0)
+		return;
+
+	// Every record standing at that depth goes, so one confirmation always moves the figure and
+	// what remains below it is what the mode now shows.
+	if (endlessBestZoneUntagged[mode] == best)
+	{
+		endlessBestZoneUntagged[mode] = 0;
+		endlessBestZoneUntaggedCustom[mode] = false;
+	}
+	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
+	{
+		if (endlessBestZoneDiff[mode][d] == best)
+		{
+			endlessBestZoneDiff[mode][d] = 0;
+			endlessBestZoneDiffCustom[mode][d] = false;
+		}
+	}
 	save_opentyrian_config();
 }
 
-// Snapshot the record for the run-over screen's gain display. Callers set the run's mode first.
-void endlessRecordRunStart(void) { endlessBestZoneAtRunStart = endlessBestZone[endlessRunMode]; }
+void endlessClearRecordDifficulty(EndlessRunMode mode, int slot)
+{
+	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+		return;
+	endlessBestZoneDiff[mode][slot] = 0;
+	endlessBestZoneDiffCustom[mode][slot] = false;
+	save_opentyrian_config();
+}
+
+// Baseline the record this run will write to, so the run-over gain measures that record alone.
+// Callers set the run's mode and difficulty first.
+void endlessRecordRunStart(void)
+{
+	int *best;
+	bool *mark;
+	endlessRunRecord(&best, &mark);
+	endlessBestZoneAtRunStart = *best;
+}
 int  endlessBestZoneAtStart(void) { return endlessBestZoneAtRunStart; }
 
 void endlessResetRun(void)
@@ -459,12 +594,7 @@ void endlessOnSectorCleared(void)
 	if (endlessActiveMods & ENDLESS_MOD_BREAKTHROUGH)
 		++endlessBreakthroughOwed;
 
-	// Firing a custom weapon only counts as using one once its zone is finished. The caller has
-	// already advanced endlessRunDepth, so the mark can go straight onto a record this run holds.
-	if (endlessCustomFiredZone)
-		endlessRunUsedCustom = true;
-	if (endlessRunUsedCustom)
-		endlessMarkRecordCustom();
+	endlessCustomWeaponZoneEnd();
 }
 
 // Time-based and player-side modifiers.
@@ -672,6 +802,7 @@ bool endlessDeathLocksMenu(void)
 void endlessOnRunEnd(void)
 {
 	endlessCashAudit();  // last drift check before the tally is printed
+	endlessCustomWeaponZoneEnd();  // a run that died mid-zone still flew whatever it was holding
 
 	// Draw the run summary over the dimmed ship illustration.
 	VGAScreen = VGAScreenSeg;
@@ -704,7 +835,10 @@ void endlessOnRunEnd(void)
 			} \
 		} while (0)
 
-	RUNEND_ROW("Mode:", "%s", endlessRunModeName(endlessRunMode));
+	// Records are kept per mode and difficulty, so the summary names both.
+	const int runDifficulty = (initialDifficulty >= 0 && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
+	                        ? initialDifficulty : 0;
+	RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
@@ -718,12 +852,15 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
 
-	// The record shown is the one for the mode being played, so it needs no mode name. Show a
-	// trailing C when a custom weapon set it, and any positive record gain.
+	// The record shown is the one this run wrote to, its mode's on the difficulty it was played,
+	// which the Mode row above names. Show a trailing C when a custom weapon set it, and any gain.
 	char recordLine[64];
-	const int best = endlessBestZone[endlessRunMode];
+	int *bestRecord;
+	bool *bestMark;
+	endlessRunRecord(&bestRecord, &bestMark);
+	const int best = *bestRecord;
 	const int recordGain = best - endlessBestZoneAtStart();
-	const char *const customMark = endlessRecordCustomMark(endlessRunMode);
+	const char *const customMark = *bestMark ? " C" : "";
 	if (recordGain > 0)
 		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d%s   up %d", best, customMark, recordGain);
 	else
@@ -800,12 +937,21 @@ void endlessOnRunEnd(void)
 
 	// Ignore held controls, then wait for fresh input.
 	wait_noinput(true, true, true);
+
+	// Ramp whatever is still playing away over the next half second, the same cue the Relaxed
+	// death menu uses when its panel goes up. The callers leave the track running for it, and the
+	// ramp starts here so the whole of it is ticked by the loop below.
+	MusicFadeOut songFade;
+	music_fade_out_init(&songFade);
+
 	do
 	{
+		music_fade_out_tick(&songFade);
 		setDelay(1);
 		wait_delay();
 	} while (!JE_anyButton());
 
+	music_fade_out_finish(&songFade);   // dismissed mid-ramp must not strand the master volume
 	wait_noinput(false, false, true);
 	fade_black(15);
 	JE_clr256(VGAScreen);
@@ -813,11 +959,9 @@ void endlessOnRunEnd(void)
 
 void endlessEndRunToTitle(void)
 {
-	// A Hardcore quit is final; a saveable run may still be resumed.
+	// A Hardcore quit is final; a saveable run may still be resumed. The outpost track keeps
+	// playing into the summary, which ramps it away itself.
 	if (endlessHardcore())
-	{
-		fade_song();
 		endlessOnRunEnd();
-	}
 	endlessMode = false;
 }

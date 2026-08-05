@@ -980,7 +980,7 @@ static bool runOptionsMenu(MenuId startMenu)
 	const int xMenuItem = xCenter - wMenuItem / 2;
 	const int xMenuItemName = xMenuItem;
 	const int xMenuItemValue = xMenuItemName + wMenuItemName;
-	const int yMenuItems = 37;
+	int yMenuItems = 37;   // first row; raised for a menu whose rows have to be compressed
 	int dyMenuItems = 21;  // row pitch; compressed when a menu has many rows (see below)
 	const int hMenuItem = 13;
 
@@ -1032,10 +1032,16 @@ static bool runOptionsMenu(MenuId startMenu)
 
 		// Tighten the row pitch when the classic 21px spacing would run off the bottom
 		// (the Graphics menu outgrew it): fit the last row's baseline within y<=172 so
-		// its 13px height clears the bottom text strip at y=192.
+		// its 13px height clears the bottom text strip at y=192. A menu long enough to need that
+		// also starts higher, spending the gap under the header so the rows it does fit stay as
+		// far apart as they can.
+		yMenuItems = 37;
 		dyMenuItems = 21;
 		if (menuItemsCount > 1 && yMenuItems + dyMenuItems * (int)(menuItemsCount - 1) > 172)
+		{
+			yMenuItems = 30;
 			dyMenuItems = (172 - yMenuItems) / (int)(menuItemsCount - 1);
+		}
 
 		// Draw menu items.
 

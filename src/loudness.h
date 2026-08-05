@@ -72,6 +72,23 @@ void clear_song_selection(void);
 void set_volume(Uint8 musicVolume, Uint8 sampleVolume);
 void set_music_disabled(bool disabled);  // toggle music on/off (pauses/resumes MIDI too)
 
+// A short master-volume ramp to silence, for a screen that comes up over a playing track. Unlike
+// fade_song it takes the same time on every backend, which is what makes it usable as a cue.
+// Init when the screen appears, tick it from that screen's wait loop, and finish before leaving so
+// a screen dismissed mid-ramp cannot strand the master volume down.
+#define MUSIC_FADE_OUT_MS 500
+
+typedef struct
+{
+	Uint32 since;  // SDL_GetTicks when the ramp started
+	int volume;    // last master volume pushed, -1 for none yet
+	bool done;
+} MusicFadeOut;
+
+void music_fade_out_init(MusicFadeOut *fade);
+void music_fade_out_tick(MusicFadeOut *fade);
+void music_fade_out_finish(MusicFadeOut *fade);
+
 // Channels 0-7 belong to the sim's soundQueue slots; this one is reserved for
 // presentation-side cues so playing them can never cut a queued game sound.
 #define SFX_CUE_CHANNEL 8

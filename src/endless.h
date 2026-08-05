@@ -199,17 +199,25 @@ extern int endlessArmorBonus;
 
 void endlessResetRun(void);
 
-// All-time record per run mode, indexed by EndlessRunMode. Stored in opentyrian.cfg so Hardcore
-// runs can update theirs. endlessBestZoneCustom marks a record set with a custom weapon in use.
-extern int  endlessBestZone[];
-extern bool endlessBestZoneCustom[];
+// All-time records, stored in opentyrian.cfg so Hardcore runs can update theirs. A run writes the
+// record for the difficulty it was started on; the figure for a mode as a whole is derived from
+// those, so it can never disagree with the breakdown behind it.
 void endlessNoteZoneReached(int zone);
 void endlessRecordRunStart(void);
 int  endlessBestZoneAtStart(void);
 
-// A custom weapon only counts once the run has fought with it: a shot has to leave the custom
-// port (shots.c calls this for every one) and its zone has to be cleared.
+// The six difficulties an Endless run can start on, in difficulty-select order. That order is the
+// on-disk order of the per-difficulty records too, so append to it rather than reordering it.
+#define ENDLESS_DIFFICULTY_COUNT 6
+extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
+
+// Slot a difficulty level occupies, or -1 when runs on it are not broken out.
+int endlessDifficultySlot(int difficulty);
+
+// A custom weapon only counts once the run has fought with it: a shot has to leave the custom port
+// inside a running zone (shots.c calls this for every one), and that zone has to end.
 void endlessNoteCustomWeaponShot(void);
+void endlessCustomWeaponZoneEnd(void);
 extern bool endlessRunUsedCustom;
 
 void endlessRecordConfigSave(ConfigSection *section);
@@ -235,12 +243,20 @@ static inline bool endlessHardcore(void) { return endlessRunMode == ENDLESS_RUNM
 // "Relaxed" / "Standard" / "Hardcore", as shown on the seed, run-over and Zone Records screens.
 const char *endlessRunModeName(EndlessRunMode mode);
 
-// " C" when a custom weapon set that mode's record, otherwise an empty string. Every record is
-// shown against a named mode, so the zone number carries this mark alone.
-const char *endlessRecordCustomMark(EndlessRunMode mode);
+// The mode's record on one difficulty slot, and its deepest on any of them. The latter also counts
+// the untagged record a config written before the breakdown existed still carries.
+int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot);
+int endlessBestZoneAny(EndlessRunMode mode);
 
-// Erase one mode's record. Destructive, so only call it behind a confirmation.
-void endlessClearRecord(EndlessRunMode mode);
+// " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
+// against a named mode and difficulty, so the zone number carries this mark alone.
+const char *endlessRecordAnyCustomMark(EndlessRunMode mode);
+const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot);
+
+// Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
+// a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
+void endlessClearDeepestRecord(EndlessRunMode mode);
+void endlessClearRecordDifficulty(EndlessRunMode mode, int slot);
 
 // Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);

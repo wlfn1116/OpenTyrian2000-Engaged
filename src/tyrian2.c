@@ -2869,9 +2869,10 @@ start_level:
 			// the master volume back to full (undoing what the explosion's musicFade took off), so
 			// fading only once it returns left the level track blaring under the panel the whole
 			// time. It hands the master volume back before it returns.
+			// An Endless run keeps its track for the run-over summary, which ramps it away itself.
 			if (endlessDeathMenuDue() && all_players_dead())
 				deathPick = JE_endlessDeathMenu();
-			else
+			else if (!endlessMode)
 				fade_song();
 
 			fade_black(10);

@@ -74,6 +74,18 @@ void endlessResetZoneEffects(void);
 // Per-zone half of the custom-weapon tracking behind endlessRunUsedCustom.
 void endlessResetCustomWeaponZone(void);
 
+// Record storage. The per-difficulty pair is indexed [EndlessRunMode][difficulty slot]; readers
+// outside the module go through endlessBestZoneForDifficulty and endlessRecordDiffCustomMark.
+extern int  endlessBestZoneDiff[][ENDLESS_DIFFICULTY_COUNT];
+extern bool endlessBestZoneDiffCustom[][ENDLESS_DIFFICULTY_COUNT];
+
+// The untagged pair is a mode's record belonging to no difficulty, which is only what a config
+// written before the breakdown existed carries in. It keeps the original `best_zone` config keys
+// and counts towards endlessBestZoneAny, so those records survive without inventing a difficulty
+// for them. Nothing writes it unless a run starts on a difficulty outside the six.
+extern int  endlessBestZoneUntagged[];
+extern bool endlessBestZoneUntaggedCustom[];
+
 // Combat state.
 extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out

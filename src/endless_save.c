@@ -985,6 +985,16 @@ static const char *const endlessBestZoneCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_custom", "best_zone_normal_custom", "best_zone_hardcore_custom",
 };
 
+// The per-difficulty breakdown, one key per mode: the zones as a comma-separated list in
+// endlessDifficultyLevel order, and their custom marks as a string of 0 and 1 in the same order.
+// A shorter or absent value leaves the remaining slots empty, so the list can grow.
+static const char *const endlessBestZoneDiffKey[ENDLESS_RUNMODE_COUNT] = {
+	"best_zone_diff", "best_zone_normal_diff", "best_zone_hardcore_diff",
+};
+static const char *const endlessBestZoneDiffCustomKey[ENDLESS_RUNMODE_COUNT] = {
+	"best_zone_diff_custom", "best_zone_normal_diff_custom", "best_zone_hardcore_diff_custom",
+};
+
 void endlessRecordConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
@@ -992,8 +1002,21 @@ void endlessRecordConfigSave(ConfigSection *section)
 
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 	{
-		config_set_int_option(section, endlessBestZoneKey[m], endlessBestZone[m]);
-		config_set_int_option(section, endlessBestZoneCustomKey[m], endlessBestZoneCustom[m] ? 1 : 0);
+		config_set_int_option(section, endlessBestZoneKey[m], endlessBestZoneUntagged[m]);
+		config_set_int_option(section, endlessBestZoneCustomKey[m], endlessBestZoneUntaggedCustom[m] ? 1 : 0);
+
+		char zones[ENDLESS_DIFFICULTY_COUNT * 8], marks[ENDLESS_DIFFICULTY_COUNT + 1];
+		size_t len = 0;
+		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
+		{
+			len += snprintf(zones + len, sizeof(zones) - len, "%s%d",
+			                (d > 0) ? "," : "", endlessBestZoneDiff[m][d]);
+			marks[d] = endlessBestZoneDiffCustom[m][d] ? '1' : '0';
+		}
+		marks[ENDLESS_DIFFICULTY_COUNT] = '\0';
+
+		config_set_string_option(section, endlessBestZoneDiffKey[m], zones);
+		config_set_string_option(section, endlessBestZoneDiffCustomKey[m], marks);
 	}
 }
 
@@ -1006,11 +1029,37 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 	{
 		int best = 0;
 		config_get_int_option(section, endlessBestZoneKey[m], &best);
-		endlessBestZone[m] = (best > 0) ? best : 0;   // a hand-edited negative reads as "no record yet"
+		endlessBestZoneUntagged[m] = (best > 0) ? best : 0;  // a hand-edited negative reads as "no record"
 
 		int custom = 0;
 		config_get_int_option(section, endlessBestZoneCustomKey[m], &custom);
-		endlessBestZoneCustom[m] = (endlessBestZone[m] > 0) && (custom != 0);
+		endlessBestZoneUntaggedCustom[m] = (endlessBestZoneUntagged[m] > 0) && (custom != 0);
+
+		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
+		{
+			endlessBestZoneDiff[m][d] = 0;
+			endlessBestZoneDiffCustom[m][d] = false;
+		}
+
+		const char *zones = NULL;
+		if (config_get_string_option(section, endlessBestZoneDiffKey[m], &zones) && zones != NULL)
+		{
+			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && *zones != '\0'; ++d)
+			{
+				const int zone = (int)strtol(zones, NULL, 10);
+				endlessBestZoneDiff[m][d] = (zone > 0) ? zone : 0;
+
+				const char *const comma = strchr(zones, ',');
+				zones = (comma != NULL) ? comma + 1 : "";
+			}
+		}
+
+		const char *marks = NULL;
+		if (config_get_string_option(section, endlessBestZoneDiffCustomKey[m], &marks) && marks != NULL)
+		{
+			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && marks[d] != '\0'; ++d)
+				endlessBestZoneDiffCustom[m][d] = (endlessBestZoneDiff[m][d] > 0) && (marks[d] == '1');
+		}
 	}
 	endlessRecordRunStart();   // nothing is running yet, so the baseline is the record
 }

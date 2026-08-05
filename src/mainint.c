@@ -1263,22 +1263,56 @@ void JE_sortHighScores(void)
 }
 
 // The Endless high-score page. Endless keeps no score table, so the page lists the furthest zone
-// each run mode has reached and erases one on request, behind the same confirmation the rest of the
-// game uses for a destructive choice.
+// each run mode has reached; selecting one opens that mode's breakdown by difficulty, where a
+// record is erased behind the same confirmation the rest of the game uses for a destructive choice.
 
-// Page geometry, shared by the draw and input halves below.
+// A mode's breakdown has one row per difficulty, plus a leading row for its record on any of them.
+#define ENDLESS_PAGE_MODE_ROWS  ENDLESS_RUNMODE_COUNT
+#define ENDLESS_PAGE_DIFF_ROWS  (ENDLESS_DIFFICULTY_COUNT + 1)
+#define ENDLESS_PAGE_ROW_ANY    0   // the any-difficulty row; the rest are difficulty slot + 1
+
+// Page geometry, shared by the draw and input halves below. The breakdown carries more than twice
+// the rows, so it runs a tighter pitch and starts higher.
 static const int endlessPageXCenter = 160;      // center of the 320px menu field
 static const int endlessPageRowY0 = 78, endlessPageRowDy = 13, endlessPageRowH = 11;
+static const int endlessPageDiffY0 = 70, endlessPageDiffDy = 11, endlessPageDiffH = 10;
+static const int endlessPageDiffGap = 5;   // sets the any-difficulty row apart from the six under it
 static const int endlessPageConfirmY0 = 100, endlessPageConfirmDy = 14, endlessPageConfirmH = 13;
 
 static const char *const endlessPageConfirmChoice[] = { "No, Keep It", "Yes, Erase It" };
 
 // The note lines are the widest thing on the page, so they set the block the rows line up inside.
+// The mode list swaps the second one for its own; both lists size to the whole set, so their
+// columns agree as you move between them.
 static const char *const endlessPageNote[] =
 {
 	"C = a custom weapon was used during the run.",
 	"Selecting a record erases it, once you confirm.",
+	"Select a mode to break it down by difficulty.",
 };
+#define ENDLESS_PAGE_NOTE_ERASE 1   // shown under the breakdown
+#define ENDLESS_PAGE_NOTE_MODES 2   // ...and this one under the mode list
+
+// Label for a breakdown row: the any-difficulty row, else the difficulty's own name.
+static const char *endlessPageDiffName(int row)
+{
+	if (row == ENDLESS_PAGE_ROW_ANY)
+		return "Any Difficulty";
+	return difficultyNameB[endlessDifficultyLevel[row - 1]];
+}
+
+// The zone and custom mark a breakdown row shows.
+static int endlessPageDiffZone(EndlessRunMode mode, int row)
+{
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(mode)
+	                                     : endlessBestZoneForDifficulty(mode, row - 1);
+}
+
+static const char *endlessPageDiffMark(EndlessRunMode mode, int row)
+{
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessRecordAnyCustomMark(mode)
+	                                     : endlessRecordDiffCustomMark(mode, row - 1);
+}
 
 // Center that block and hang the columns off its edges: labels start at the left, zones end
 // right-aligned on xZoneRight, and the custom mark takes the strip after it so a marked record
@@ -1294,13 +1328,51 @@ static void endlessPageColumns(int *xLabel, int *xZoneRight)
 	*xZoneRight = *xLabel + blockW - JE_textWidth(" C", small_font);
 }
 
-static void JE_drawEndlessRecordPage(int selectedMode, bool confirmErase, int confirmChoice)
+// One "Label ....... 58 C" row. The mark's own leading space is the gap after the zone.
+static void endlessPageDrawRow(int xLabel, int xZoneRight, int y, const char *label,
+                               int zoneValue, const char *mark, bool selected)
 {
+	char text[32], zone[16];
+	snprintf(text, sizeof(text), "%s:", label);
+	if (zoneValue > 0)
+		snprintf(zone, sizeof(zone), "%d", zoneValue);
+	else
+		SDL_strlcpy(zone, "None", sizeof(zone));
+
+	const int labelShade = selected ? 6 : 0, zoneShade = selected ? 6 : 2;
+	JE_textShade(VGAScreen, xLabel, y, text, 15, labelShade, FULL_SHADE);
+	JE_textShade(VGAScreen, xZoneRight - JE_textWidth(zone, small_font), y, zone, 15, zoneShade, FULL_SHADE);
+	JE_textShade(VGAScreen, xZoneRight, y, mark, 15, zoneShade, FULL_SHADE);
+}
+
+// Row baseline on either list. The breakdown's any-difficulty row summarises the six below it, so
+// it stands off from them rather than reading as one of them.
+static int endlessPageRowY(bool subOpen, int row)
+{
+	if (!subOpen)
+		return endlessPageRowY0 + endlessPageRowDy * row;
+	return endlessPageDiffY0 + endlessPageDiffDy * row
+	       + ((row > ENDLESS_PAGE_ROW_ANY) ? endlessPageDiffGap : 0);
+}
+
+static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selectedRow,
+                                     bool confirmErase, int confirmChoice)
+{
+	int xLabel, xZoneRight;
+	endlessPageColumns(&xLabel, &xZoneRight);
+
 	if (confirmErase)
 	{
-		char question[64];
-		snprintf(question, sizeof(question), "Erase the %s record?",
-		         endlessRunModeName((EndlessRunMode)selectedMode));
+		// Name exactly what is about to go, since the breakdown makes "the Relaxed record"
+		// ambiguous on its own. The any-difficulty row holds no record of its own, so erasing it
+		// takes the deepest one under it and the row falls back to whatever is left.
+		char question[80];
+		if (selectedRow == ENDLESS_PAGE_ROW_ANY)
+			snprintf(question, sizeof(question), "Erase the deepest %s record?",
+			         endlessRunModeName((EndlessRunMode)selectedMode));
+		else
+			snprintf(question, sizeof(question), "Erase the %s record on %s?",
+			         endlessRunModeName((EndlessRunMode)selectedMode), endlessPageDiffName(selectedRow));
 
 		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Are You Sure?",
 		                    normal_font, centered, 15, -3, false, 2);
@@ -1321,59 +1393,99 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool confirmErase, int co
 		return;
 	}
 
+	if (subOpen)
+	{
+		char header[48];
+		snprintf(header, sizeof(header), "%s by Difficulty",
+		         endlessRunModeName((EndlessRunMode)selectedMode));
+		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, header, normal_font, centered, 15, -3, false, 2);
+
+		for (int i = 0; i < ENDLESS_PAGE_DIFF_ROWS; ++i)
+		{
+			endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(true, i),
+			                   endlessPageDiffName(i),
+			                   endlessPageDiffZone((EndlessRunMode)selectedMode, i),
+			                   endlessPageDiffMark((EndlessRunMode)selectedMode, i),
+			                   i == selectedRow);
+		}
+
+		const int yNote = endlessPageRowY(true, ENDLESS_PAGE_DIFF_ROWS - 1) + 17;
+		JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
+		JE_textShade(VGAScreen, xLabel, yNote + 10, endlessPageNote[ENDLESS_PAGE_NOTE_ERASE],
+		             15, 2, FULL_SHADE);
+		return;
+	}
+
 	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Furthest Zone",
 	                    normal_font, centered, 15, -3, false, 2);
 
-	int xLabel, xZoneRight;
-	endlessPageColumns(&xLabel, &xZoneRight);
-
-	for (int i = 0; i < ENDLESS_RUNMODE_COUNT; ++i)
+	for (int i = 0; i < ENDLESS_PAGE_MODE_ROWS; ++i)
 	{
 		const EndlessRunMode mode = (EndlessRunMode)i;
-		const int y = endlessPageRowY0 + endlessPageRowDy * i;
-		const bool selected = i == selectedMode;
-		const int labelShade = selected ? 6 : 0, zoneShade = selected ? 6 : 2;
-
-		char label[32], zone[16];
-		snprintf(label, sizeof(label), "%s:", endlessRunModeName(mode));
-		if (endlessBestZone[mode] > 0)
-			snprintf(zone, sizeof(zone), "%d", endlessBestZone[mode]);
-		else
-			SDL_strlcpy(zone, "None", sizeof(zone));
-
-		JE_textShade(VGAScreen, xLabel, y, label, 15, labelShade, FULL_SHADE);
-		JE_textShade(VGAScreen, xZoneRight - JE_textWidth(zone, small_font), y, zone, 15, zoneShade, FULL_SHADE);
-		// The mark's own leading space is the gap between it and the zone.
-		JE_textShade(VGAScreen, xZoneRight, y, endlessRecordCustomMark(mode), 15, zoneShade, FULL_SHADE);
+		endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(false, i),
+		                   endlessRunModeName(mode), endlessBestZoneAny(mode),
+		                   endlessRecordAnyCustomMark(mode), i == selectedMode);
 	}
 
-	const int yNote = endlessPageRowY0 + endlessPageRowDy * ENDLESS_RUNMODE_COUNT + 16;
-	for (int i = 0; i < (int)COUNTOF(endlessPageNote); ++i)
-		JE_textShade(VGAScreen, xLabel, yNote + 11 * i, endlessPageNote[i], 15, 2, FULL_SHADE);
+	const int yNote = endlessPageRowY0 + endlessPageRowDy * ENDLESS_PAGE_MODE_ROWS + 16;
+	JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
+	JE_textShade(VGAScreen, xLabel, yNote + 11, endlessPageNote[ENDLESS_PAGE_NOTE_MODES],
+	             15, 2, FULL_SHADE);
 }
 
-// Answer a pending erase. Confirming is the only path that touches a record.
-static void JE_endlessRecordPageAnswer(int selectedMode, bool *confirmErase, int confirmChoice)
+// Everything the Endless page navigates between, so the two halves pass one thing around.
+typedef struct
 {
-	if (confirmChoice == 1)
+	int  mode;           // selected run mode on the mode list, and the mode a breakdown belongs to
+	bool subOpen;        // showing that mode's breakdown rather than the mode list
+	int  row;            // selected breakdown row (ENDLESS_PAGE_ROW_ANY, else difficulty slot + 1)
+	bool confirmErase;   // an erase is waiting on an answer
+	int  confirmChoice;  // which answer the cursor sits on
+} EndlessPageState;
+
+// Answer a pending erase. Confirming is the only path that touches a record.
+static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
+{
+	if (choice == 1)
 	{
-		endlessClearRecord((EndlessRunMode)selectedMode);
+		if (page->row == ENDLESS_PAGE_ROW_ANY)
+			endlessClearDeepestRecord((EndlessRunMode)page->mode);
+		else
+			endlessClearRecordDifficulty((EndlessRunMode)page->mode, page->row - 1);
 		JE_playSampleNum(S_ITEM);
 	}
 	else
 	{
 		JE_playSampleNum(S_SPRING);
 	}
-	*confirmErase = false;
+	page->confirmErase = false;
+}
+
+// Ask about the selected breakdown row, unless it has no record to lose.
+static void JE_endlessRecordPageArm(EndlessPageState *page)
+{
+	if (endlessPageDiffZone((EndlessRunMode)page->mode, page->row) > 0)
+	{
+		page->confirmErase = true;
+		page->confirmChoice = 0;   // always opens on "No, Keep It"
+		JE_playSampleNum(S_SELECT);
+	}
+	else
+	{
+		JE_playSampleNum(S_SPRING);   // nothing to erase
+	}
 }
 
 // Endless-page input. Returns true when it consumed the tick, which leaves the shared paging and
 // exit handling untouched. A pending erase consumes everything, so nothing else can act under it.
-static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int *confirmChoice)
+static bool JE_endlessRecordPageInput(EndlessPageState *page)
 {
+	const int rows = page->subOpen ? ENDLESS_PAGE_DIFF_ROWS : ENDLESS_PAGE_MODE_ROWS;
+	const int rowH = page->subOpen ? endlessPageDiffH : endlessPageRowH;
+
 	if (newmouse)
 	{
-		if (*confirmErase)
+		if (page->confirmErase)
 		{
 			if (lastmouse_but == SDL_BUTTON_LEFT)
 			{
@@ -1384,7 +1496,7 @@ static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int
 					if (mouse_y >= y && mouse_y < y + endlessPageConfirmH
 					    && mouse_x >= endlessPageXCenter - w / 2 && mouse_x < endlessPageXCenter + w / 2)
 					{
-						JE_endlessRecordPageAnswer(*selectedMode, confirmErase, i);
+						JE_endlessRecordPageAnswer(page, i);
 						return true;
 					}
 				}
@@ -1392,9 +1504,16 @@ static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int
 			else if (lastmouse_but == SDL_BUTTON_RIGHT)
 			{
 				JE_playSampleNum(S_SPRING);
-				*confirmErase = false;
+				page->confirmErase = false;
 			}
 			return true;   // a pending answer never falls through to paging or exit
+		}
+
+		if (lastmouse_but == SDL_BUTTON_RIGHT && page->subOpen)
+		{
+			JE_playSampleNum(S_SPRING);   // back to the mode list, not out of the screen
+			page->subOpen = false;
+			return true;
 		}
 
 		if (lastmouse_but == SDL_BUTTON_LEFT)
@@ -1402,22 +1521,25 @@ static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int
 			int xLabel, xZoneRight;
 			endlessPageColumns(&xLabel, &xZoneRight);
 
-			for (int i = 0; i < ENDLESS_RUNMODE_COUNT; ++i)
+			for (int i = 0; i < rows; ++i)
 			{
-				const int y = endlessPageRowY0 + endlessPageRowDy * i;
+				const int y = endlessPageRowY(page->subOpen, i);
 				// The whole label-to-record span is clickable, gaps included.
-				if (mouse_y >= y && mouse_y < y + endlessPageRowH
+				if (mouse_y >= y && mouse_y < y + rowH
 				    && mouse_x >= xLabel && mouse_x < endlessPageXCenter + (endlessPageXCenter - xLabel))
 				{
-					*selectedMode = i;
-					if (endlessBestZone[i] > 0)
+					if (page->subOpen)
 					{
-						*confirmErase = true;
-						*confirmChoice = 0;   // always opens on "No, Keep It"
-						JE_playSampleNum(S_SELECT);
+						page->row = i;
+						JE_endlessRecordPageArm(page);
 					}
 					else
-						JE_playSampleNum(S_SPRING);   // nothing to erase
+					{
+						page->mode = i;
+						page->subOpen = true;
+						page->row = ENDLESS_PAGE_ROW_ANY;
+						JE_playSampleNum(S_SELECT);
+					}
 					return true;
 				}
 			}
@@ -1434,14 +1556,18 @@ static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int
 	case SDL_SCANCODE_DOWN:
 	{
 		const int step = (lastkey_scan == SDL_SCANCODE_UP) ? -1 : 1;
-		if (*confirmErase)
+		if (page->confirmErase)
 		{
 			const int n = (int)COUNTOF(endlessPageConfirmChoice);
-			*confirmChoice = (*confirmChoice + n + step) % n;
+			page->confirmChoice = (page->confirmChoice + n + step) % n;
+		}
+		else if (page->subOpen)
+		{
+			page->row = (page->row + rows + step) % rows;
 		}
 		else
 		{
-			*selectedMode = (*selectedMode + ENDLESS_RUNMODE_COUNT + step) % ENDLESS_RUNMODE_COUNT;
+			page->mode = (page->mode + rows + step) % rows;
 		}
 		JE_playSampleNum(S_CURSOR);
 		return true;
@@ -1449,30 +1575,35 @@ static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int
 	case SDL_SCANCODE_RETURN:
 	case SDL_SCANCODE_KP_ENTER:
 	{
-		if (*confirmErase)
-		{
-			JE_endlessRecordPageAnswer(*selectedMode, confirmErase, *confirmChoice);
-		}
-		else if (endlessBestZone[*selectedMode] > 0)
-		{
-			*confirmErase = true;
-			*confirmChoice = 0;   // always opens on "No, Keep It"
-			JE_playSampleNum(S_SELECT);
-		}
+		if (page->confirmErase)
+			JE_endlessRecordPageAnswer(page, page->confirmChoice);
+		else if (page->subOpen)
+			JE_endlessRecordPageArm(page);
 		else
 		{
-			JE_playSampleNum(S_SPRING);   // nothing to erase
+			page->subOpen = true;   // a mode row opens its breakdown; erasing happens in there
+			page->row = ENDLESS_PAGE_ROW_ANY;
+			JE_playSampleNum(S_SELECT);
 		}
 		return true;
 	}
 	default:
-		// Esc backs out of a pending answer instead of the screen; anything else it swallows.
-		if (*confirmErase)
+		// Esc unwinds one level at a time; anything else a pending answer or breakdown swallows.
+		if (page->confirmErase)
 		{
 			if (lastkey_scan == SDL_SCANCODE_ESCAPE)
 			{
 				JE_playSampleNum(S_SPRING);
-				*confirmErase = false;
+				page->confirmErase = false;
+			}
+			return true;
+		}
+		if (page->subOpen)
+		{
+			if (lastkey_scan == SDL_SCANCODE_ESCAPE)
+			{
+				JE_playSampleNum(S_SPRING);
+				page->subOpen = false;
 			}
 			return true;
 		}
@@ -1494,11 +1625,8 @@ void JE_highScoreScreen(void)
 	const size_t episodeCount = 9;
 	const size_t endlessPage = episodeCount - 1;
 
-	// Endless page state: which mode row the cursor is on, whether its erase is awaiting an answer,
-	// and which answer that cursor sits on.
-	int endlessMode = 0;
-	bool confirmErase = false;
-	int confirmChoice = 0;
+	// Endless page state: the mode list, a mode's breakdown by difficulty, and a pending erase.
+	EndlessPageState endlessPageState = { 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
 
 	const int xCenter = 160; // center of 320px menu field
 	const int yMenuHeader = 3;
@@ -1554,7 +1682,9 @@ void JE_highScoreScreen(void)
 		draw_font_hv_shadow(VGAScreen, xCenter, yEpisodeHeader, buffer, normal_font, centered, 15, -3, false, 2);
 
 		if (episodeIndex == endlessPage)
-			JE_drawEndlessRecordPage(endlessMode, confirmErase, confirmChoice);
+			JE_drawEndlessRecordPage(endlessPageState.mode, endlessPageState.subOpen,
+			                         endlessPageState.row, endlessPageState.confirmErase,
+			                         endlessPageState.confirmChoice);
 
 		// Draw 1-player scores.
 		if (boardOnePlayer >= 0)
@@ -1600,10 +1730,12 @@ void JE_highScoreScreen(void)
 			}			
 		}
 
-		// Draw paging controls. A pending erase owns the page, so paging away is not offered.
-
-		const bool leftControlVisible = episodeIndex > 0 && !confirmErase;
-		const bool rightControlVisible = episodeIndex < episodeCount - 1 && !confirmErase;
+		// Draw paging controls. A breakdown or a pending erase owns the page, so paging away is
+		// not offered until the player has backed out of it.
+		const bool endlessBusy = episodeIndex == endlessPage
+		                      && (endlessPageState.subOpen || endlessPageState.confirmErase);
+		const bool leftControlVisible = episodeIndex > 0 && !endlessBusy;
+		const bool rightControlVisible = episodeIndex < episodeCount - 1 && !endlessBusy;
 
 		if (leftControlVisible)
 			blit_sprite2x2(VGAScreen, xLeftControl, yControls, shopSpriteSheet, 279);
@@ -1611,8 +1743,8 @@ void JE_highScoreScreen(void)
 		if (rightControlVisible)
 			blit_sprite2x2(VGAScreen, xRightControl, yControls, shopSpriteSheet, 281);
 
-		// The paging hint is wrong while an erase is pending: left and right do nothing then.
-		if (!confirmErase)
+		// The paging hint is wrong while the page owns the input: left and right do nothing then.
+		if (!endlessBusy)
 		{
 			helpBoxColor = 15;
 			JE_helpBox(VGAScreen, 103, vga_height - 18, miscText[56], 25);
@@ -1645,8 +1777,7 @@ void JE_highScoreScreen(void)
 
 		// Handle interaction.
 
-		if (episodeIndex == endlessPage
-		    && JE_endlessRecordPageInput(&endlessMode, &confirmErase, &confirmChoice))
+		if (episodeIndex == endlessPage && JE_endlessRecordPageInput(&endlessPageState))
 			continue;
 
 		bool leftAction = false;
@@ -2873,41 +3004,6 @@ JE_boolean JE_inGameSetup(void)
 	return result;
 }
 
-#define DEATH_MENU_FADE_MS 500  // panel up -> level music gone
-
-typedef struct
-{
-	Uint32 since;  // SDL_GetTicks when the panel went up
-	int volume;    // last master volume pushed, -1 for none yet
-	bool done;
-} DeathMenuFade;
-
-/* Fade the level track over DEATH_MENU_FADE_MS on every music backend, then restore master volume. */
-static void death_menu_fade_music(DeathMenuFade *fade)
-{
-	if (fade->done)
-		return;
-
-	const Uint32 elapsed = SDL_GetTicks() - fade->since;
-
-	if (elapsed < DEATH_MENU_FADE_MS)
-	{
-		const int volume = tyrMusicVolume - tyrMusicVolume * (int)elapsed / DEATH_MENU_FADE_MS;
-		if (volume != fade->volume)  // the pollers run far finer than the ramp has steps
-		{
-			fade->volume = volume;
-			set_volume((Uint8)volume, fxVolume);
-		}
-		return;
-	}
-
-	fade->done = true;
-
-	// Stop, not fade_song: the master volume goes straight back up on the next line, and a song
-	// still ramping down under its own steam would be heard swelling back in.
-	stop_song();
-	set_volume(tyrMusicVolume, fxVolume);
-}
 
 /* Relaxed-mode death prompt. Esc and right-click are inert; one of the three rows must be chosen. */
 EndlessDeathChoice JE_endlessDeathMenu(void)
@@ -2966,7 +3062,8 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	bool firstFrame = true;
 
 	// Start the fade when the panel appears, even if the wreck animation was skipped.
-	DeathMenuFade deathFade = { SDL_GetTicks(), -1, false };
+	MusicFadeOut deathFade;
+	music_fade_out_init(&deathFade);
 
 	for (bool done = false; !done; )
 	{
@@ -2998,7 +3095,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 			service_SDL_events(false);
 			while (keydown || mousedown || joydown)
 			{
-				death_menu_fade_music(&deathFade);
+				music_fade_out_tick(&deathFade);
 
 				SDL_Delay(1);
 				poll_joysticks();
@@ -3011,7 +3108,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		bool mouseMoved = false;
 		do
 		{
-			death_menu_fade_music(&deathFade);
+			music_fade_out_tick(&deathFade);
 
 			SDL_Delay(1);  // fine poll so the cursor redraws at display rate on motion
 
@@ -3095,7 +3192,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	service_SDL_events(false);
 	while (keydown || mousedown || joydown || !deathFade.done)
 	{
-		death_menu_fade_music(&deathFade);
+		music_fade_out_tick(&deathFade);
 
 		SDL_Delay(1);
 		poll_joysticks();

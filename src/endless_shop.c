@@ -910,6 +910,10 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 
 void endlessBetweenLevels(void)
 {
+	// Reaching the outpost ends whatever zone came before it, cleared or bailed out of, and closes
+	// it so the weapon editor and shop previews reachable from here cannot count as combat use.
+	endlessCustomWeaponZoneEnd();
+
 	// Pin the planet map before the first shop and after random level jumps.
 	mapOrigin = 1;
 	mapPNum = 1;

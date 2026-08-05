@@ -791,6 +791,45 @@ void fade_song(void)  // FKA Player.selectSong($C001)
 	SDL_UnlockAudioDevice(audioDevice);
 }
 
+void music_fade_out_init(MusicFadeOut *fade)
+{
+	fade->since = SDL_GetTicks();
+	fade->volume = -1;
+	fade->done = false;
+}
+
+void music_fade_out_tick(MusicFadeOut *fade)
+{
+	if (fade->done)
+		return;
+
+	const Uint32 elapsed = SDL_GetTicks() - fade->since;
+	if (elapsed >= MUSIC_FADE_OUT_MS)
+	{
+		music_fade_out_finish(fade);
+		return;
+	}
+
+	const int volume = tyrMusicVolume - tyrMusicVolume * (int)elapsed / MUSIC_FADE_OUT_MS;
+	if (volume != fade->volume)  // the pollers run far finer than the ramp has steps
+	{
+		fade->volume = volume;
+		set_volume((Uint8)volume, fxVolume);
+	}
+}
+
+void music_fade_out_finish(MusicFadeOut *fade)
+{
+	if (fade->done)
+		return;
+	fade->done = true;
+
+	// Stop, not fade_song: the master volume goes straight back up on the next line, and a song
+	// still ramping down under its own steam would be heard swelling back in.
+	stop_song();
+	set_volume(tyrMusicVolume, fxVolume);
+}
+
 void set_volume(Uint8 musicVolume_, Uint8 sampleVolume_)  // FKA NortSong.setVol and Player.setVol
 {
 	if (audio_disabled)

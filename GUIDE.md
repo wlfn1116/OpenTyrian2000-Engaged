@@ -370,33 +370,46 @@ Relaxed and Standard runs checkpoint at the outpost, in `endless.sav`. Hardcore
 runs never save. Quit Level restores the launch snapshot and drops you back into the
 same committed sortie.
 
-Your furthest zone is kept in `opentyrian.cfg`, one record per mode: Zone 40 on
-Relaxed says nothing about how deep you can fly Hardcore, so each mode's record
-only moves under that mode. Every screen shows a record against the mode it
-belongs to, so the Run Over screen shows only the record for the mode you were
-playing, as in `Furthest zone: 25`.
+Your furthest zone is kept in `opentyrian.cfg`, one record per mode and
+difficulty: Zone 40 on Relaxed Easy says nothing about how deep you can fly
+Hardcore, so each record only moves under the mode and difficulty that set it.
+The Run Over screen shows the one you were playing for, as in
+`Furthest zone: 25`, with the mode and difficulty named on its **Mode** row.
 
-The seed screen shows the same record for whichever mode is selected, so it
-changes as you step through Relaxed, Standard and Hardcore.
+The seed screen shows the deepest record for whichever mode is selected, across
+all difficulties, since it is picked before you choose one.
 
 All three records also have their own page in **High Scores** on the title
 screen, reached by paging right past the episode and Timed Battle boards to the
-last one, **Endless**. It lists every mode with the zone it stands at, and says
-under the list what the `C` means and that selecting a record is what erases it.
+last one, **Endless**. It lists every mode with the zone it stands at.
 
-To erase one, move to it with Up/Down and select it. The page then asks **Are
-You Sure?** and opens on **No, Keep It**, so reaching the wipe means
-deliberately moving down to **Yes, Erase It** and selecting that. Esc backs out
-of the question rather than leaving the screen. Only the mode you picked is
-erased, and an erased record cannot be recovered.
+Selecting a mode opens its breakdown by difficulty: a row for each of Easy,
+Normal, Hard, Impossible, Suicide and Lord of Game, above them an **Any
+Difficulty** row. A run sets the record for the difficulty it was started on, and
+the **Any Difficulty** row simply shows the deepest of them, which is what the
+mode list and the seed screen show.
 
-A record set with a custom weapon in use carries a trailing `C`, as in
-`Furthest zone: 58 C`, which the Zone Records menu spells out at the bottom of
-the screen. Designing or previewing one costs you nothing: the mark
-is only earned by clearing a zone with shots fired from the custom weapon,
-whether it is flying as your front gun, rear gun or sidekick. One such zone
-marks the whole run, including a run that only matches the record rather than
-beating it. Flying deeper without a custom weapon sets a fresh record and drops
+The breakdown is where records are erased. Move to one with Up/Down and select
+it. The page then asks **Are You Sure?** and opens on **No, Keep It**, so
+reaching the wipe means deliberately moving down to **Yes, Erase It** and
+selecting that. Esc unwinds one step at a time: out of the question, then back to
+the mode list, then off the screen. An erased record cannot be recovered.
+
+Erasing **Any Difficulty** erases the deepest record under it, and the row then
+shows the next deepest. It only reads `None` once every difficulty below it does.
+Records a game already had before the breakdown existed stay on that row, since
+there is no way to know which difficulty earned them, and erasing it clears those
+the same way.
+
+A record carries a trailing `C`, as in `Furthest zone: 58 C`, when the run that
+set it flew a custom weapon, which the Endless high-score page spells out under
+the list. It takes one zone with shots fired from the weapon, whether it is
+flying as your front gun, rear gun or sidekick, and that zone counts however it
+ends: cleared, died in, or left through the pause menu. Designing or previewing a
+weapon costs you nothing, since neither happens inside a zone.
+
+The mark belongs to the record, not to you, so it only appears on a record your
+run actually set. Beating your own marked record without a custom weapon drops
 the `C`.
 
 With Debug Mode on, **Endless Effects** applies the scaling, modifiers, elites

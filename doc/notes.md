@@ -280,32 +280,63 @@ The best zone is stored in `opentyrian.cfg`, indexed by `EndlessRunMode`.
 Standard compatibility key, and Hardcore uses `best_zone_hardcore`. Set the run
 mode before calling `endlessRecordRunStart`.
 
+Records are per difficulty, indexed by a slot in `endlessDifficultyLevel`, the
+six levels `difficultySelect` can return. That array's order is the on-disk
+order, so append to it rather than reordering it. One key per mode holds the
+zones as a comma-separated list and another holds their custom marks as a string
+of 0 and 1; a short or absent value leaves the remaining slots empty, which is
+how the list grows. A run writes exactly one record, chosen by `endlessRunRecord`
+from `initialDifficulty`, which `newEndlessGame` fixes before the run and
+`JE_loadGame` restores.
+
+`endlessRecordRunStart` baselines the same record, so the run-over gain measures
+that record alone rather than a mode-wide figure a different difficulty may hold.
+The records themselves live in `endless_internal.h`; readers elsewhere go through
+`endlessBestZoneForDifficulty` and `endlessRecordDiffCustomMark`.
+`endlessBestZoneAny` derives a mode's figure as the deepest of its records, for
+the mode list and the seed screen, which is picked before a difficulty exists. It
+cannot disagree with the breakdown behind it, and `endlessClearDeepestRecord`
+erases every record standing at that depth so one confirmation always moves the
+figure. The old per-mode `best_zone` keys survive as `endlessBestZoneUntagged`
+(endless_internal.h), which counts towards the derived figure but is written only
+by a run on a difficulty outside the six. That keeps records from a config
+written before the breakdown existed without inventing a difficulty for them.
+
 Each record also stores whether a custom weapon was in use, under the same key
-plus `_custom`. `player_shot_create` reports every shot leaving
-`customWeaponPort` (the custom sidekick fires through that port too), which arms
-a per-zone flag; `endlessOnSectorCleared` promotes it to `endlessRunUsedCustom`,
-so only a cleared zone counts. `endlessResetZoneEffects` clears the zone flag at
-every zone start, which is what keeps outpost editor and shop previews out of the
-record.
+plus `_custom`. One rule covers it: a record shows the mark when the run that set
+it flew a custom weapon in a zone. `player_shot_create` reports every shot
+leaving `customWeaponPort` (the custom sidekick fires through that port too), and
+`endlessNoteCustomWeaponShot` arms a per-zone flag, but only while a zone is
+running. That gate, not the timing of anything else, is what keeps the outpost
+weapon editor and the shop's weapon preview out of the record: both fire through
+the same path and neither is a zone.
+
+`endlessCustomWeaponZoneEnd` promotes the flag to `endlessRunUsedCustom` and
+closes the zone. It is idempotent and every way out of a zone calls it: a clear
+through `endlessOnSectorCleared`, the outpost through `endlessBetweenLevels`, and
+a run that ended mid-zone through `endlessOnRunEnd`. Do not narrow it back to
+clears only, or dying in the zone you flew the weapon in loses the mark.
 
 `endlessSeedSelect` shows the selected mode's record. `JE_highScoreScreen` gained
-a ninth page after the five episodes and three Timed Battles, which lists all
-three records and erases one through `endlessClearRecord`. Endless has no score
+a ninth page after the five episodes and three Timed Battles, which lists the
+three modes, opens a mode's breakdown by difficulty, and erases a row through
+`endlessClearDeepestRecord` or `endlessClearRecordDifficulty`. Endless has no score
 table, so that page draws itself: `JE_drawEndlessRecordPage` and
-`JE_endlessRecordPageInput` share the `endlessPage*` geometry, and the input half
-returns whether it consumed the tick, which is what keeps paging and exit in the
-screen's own shared handling. Erasing is menu steps rather than a keypress so it
-works on a controller. A pending answer swallows every input and always opens on
-No, so it also hides the paging arrows and the paging hint, neither of which does
-anything while it is up.
+`JE_endlessRecordPageInput` share the `endlessPage*` geometry and one
+`EndlessPageState`, and the input half returns whether it consumed the tick,
+which is what keeps paging and exit in the screen's own shared handling. Erasing
+is menu steps rather than a keypress so it works on a controller. A breakdown or
+a pending answer swallows every input and hides the paging arrows and hint,
+neither of which does anything while one is up; Esc unwinds one level per press.
+The answer always opens on No.
 
 `endlessPageColumns` derives the page's two columns from the widest note line and
 centers that block, so the layout stays centered if the notes are reworded. Zones
 are right-aligned on a column that leaves the custom mark its own strip, which is
 why a record ends flush with the notes whether or not it carries the mark.
 
-Every screen shows a record against a named mode, so `endlessRecordCustomMark`
-supplies the trailing " C" alone. The page's two note lines explain that mark and
+Every screen shows a record against a named mode, so the mark accessors supply
+the trailing " C" alone. The page's two note lines explain that mark and
 warn what selecting a row leads to. The first uses `=`, which exists in TINY_FONT
 but not in the two larger shape tables, so keep that character out of
 `normal_font` and `large_font` strings. Do not route those notes through
@@ -313,17 +344,26 @@ but not in the two larger shape tables, so keep that character out of
 downward, so a long string at the bottom of a screen loses its tail.
 
 The mark is written in two places, because it is earned after the record it
-belongs to was stamped. `endlessNoteZoneReached` stamps depth and mark together
-when the run goes deeper, but it runs at zone start, before that zone is flown,
-and a run that only matches the record never reaches the assignment at all. So
-`endlessOnSectorCleared` also calls `endlessMarkRecordCustom`, which marks the
-record whenever the run is standing at or past its depth. Nothing clears a mark
-in place: it goes away when an unassisted run sets a deeper record.
+belongs to was stamped. `endlessNoteZoneReached` stamps zone and mark together as
+a zone is entered, before it is flown, so `endlessMarkRecordCustom` writes it
+after the fact. That one tests ownership against `endlessBestZoneAtRunStart`, not
+against `endlessRunDepth`: a stamped record is always one ahead of the depth
+while its zone is being flown, so a depth test rejects exactly the record the run
+just set. Nothing clears a mark in place; it goes away when an unassisted run
+sets a deeper record.
 
 ### Death, retries, and effects
 
 Relaxed mode opens `JE_endlessDeathMenu` over the frozen playfield. Standard and
 Hardcore use GAME OVER and lock the pause menu after the fatal hit.
+
+Both that menu and the run-over summary ramp the track away with `MusicFadeOut`
+(loudness.h): init when the screen is up, tick it from that screen's wait loop,
+finish before leaving so a screen dismissed mid-ramp cannot strand the master
+volume down. It exists because `fade_song` takes six seconds on the MIDI backends
+and a backend-dependent time elsewhere, which is too vague to use as a cue. The
+paths into the summary deliberately leave their track playing for it, so do not
+put a `fade_song` back in front of `endlessOnRunEnd`.
 
 Live-level panels copy `palettes[0][240..255]` into the active text ramp, use the
 correct brightness for each font, center within the 299x184 playfield, and
