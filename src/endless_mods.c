@@ -3,6 +3,10 @@
 #include "endless.h"
 #include "endless_internal.h"
 #include "endless_levelprofile.h"
+#include "fonthand.h"
+
+#include <stdio.h>
+#include <string.h>
 
 
 const EndlessMod endlessModTable[] = {
@@ -1214,6 +1218,107 @@ static const char *const endlessMixedGenericNames[] = {
 	"Trade Winds", "Two Way Street", "Uneasy Truce", "Velvet Trap",
 	"Weigh the Odds", "With Strings",
 };
+
+static const char *endlessAllTableName(unsigned index, Uint64 *mods)
+{
+	for (unsigned p = 0; p < COUNTOF(endlessThemePools); ++p)
+	{
+		if (index < endlessThemePools[p].n)
+		{
+			if (mods != NULL)
+				*mods = endlessThemePools[p].tbl[index].mods;
+			return endlessThemePools[p].tbl[index].name;
+		}
+		index -= endlessThemePools[p].n;
+	}
+
+	static const struct { const char *const *names; unsigned n; } genericPools[] = {
+		{ endlessGenericNames,      COUNTOF(endlessGenericNames) },
+		{ endlessBoonGenericNames,  COUNTOF(endlessBoonGenericNames) },
+		{ endlessMixedGenericNames, COUNTOF(endlessMixedGenericNames) },
+	};
+	for (unsigned p = 0; p < COUNTOF(genericPools); ++p)
+	{
+		if (index < genericPools[p].n)
+		{
+			if (mods != NULL)
+				*mods = 0;
+			return genericPools[p].names[index];
+		}
+		index -= genericPools[p].n;
+	}
+	return NULL;
+}
+
+static bool endlessTableNameValid(const char *name)
+{
+	if (name == NULL || name[0] == '\0' || strlen(name) >= 24)
+		return false;  // menuInt course labels are char[24]
+	for (const unsigned char *p = (const unsigned char *)name; *p != '\0'; ++p)
+		if (*p != ' ' && font_ascii[*p] < 0)
+			return false;
+	return true;
+}
+
+bool endlessValidateModifierTables(char *detail, size_t detailSize)
+{
+	Uint64 registered = 0;
+	unsigned nameCount = 0;
+	for (unsigned p = 0; p < COUNTOF(endlessThemePools); ++p)
+		nameCount += endlessThemePools[p].n;
+	nameCount += COUNTOF(endlessGenericNames) + COUNTOF(endlessBoonGenericNames)
+	           + COUNTOF(endlessMixedGenericNames);
+
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	for (unsigned i = 0; i < COUNTOF(endlessModTable); ++i)
+	{
+		const Uint64 bit = endlessModTable[i].bit;
+		if (bit == 0 || (bit & (bit - 1)) != 0 || (registered & bit) != 0)
+		{
+			if (detail != NULL && detailSize != 0)
+				snprintf(detail, detailSize, "modifier row %u has a zero, composite, or duplicate bit", i);
+			return false;
+		}
+		registered |= bit;
+	}
+
+	for (unsigned i = 0; i < nameCount; ++i)
+	{
+		Uint64 mods = 0;
+		const char *name = endlessAllTableName(i, &mods);
+		if (!endlessTableNameValid(name))
+		{
+			if (detail != NULL && detailSize != 0)
+				snprintf(detail, detailSize, "name row %u is empty, too long, or contains an invisible glyph", i);
+			return false;
+		}
+		if (mods != 0)
+		{
+			if ((mods & ~(registered | ENDLESS_MOD_GRAVITY_OMNI)) != 0
+			 || ((mods & ENDLESS_MOD_GRAVITY_OMNI) && !(mods & ENDLESS_MOD_GRAVITY))
+			 || endlessPopCount64(mods & ENDLESS_MOD_KILLFIRE_ANY) > 1)
+			{
+				if (detail != NULL && detailSize != 0)
+					snprintf(detail, detailSize, "theme '%s' has an unknown or incompatible modifier set", name);
+				return false;
+			}
+		}
+		for (unsigned j = i + 1; j < nameCount; ++j)
+		{
+			const char *other = endlessAllTableName(j, NULL);
+			if (strcmp(name, other) == 0)
+			{
+				if (detail != NULL && detailSize != 0)
+					snprintf(detail, detailSize, "duplicate course name '%s'", name);
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
 
 // `salt` advances generated names to resolve per-visit collisions. Curated names ignore it.
 const char *endlessComboNameSalted(Uint64 mods, unsigned salt)
