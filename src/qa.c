@@ -785,7 +785,13 @@ static void qa_test_network_settings(void)
 	const JE_boolean savedScroll = smoothScroll;
 	const bool savedSessionMode = nrb_session_mode(), savedSessionVt = nrb_session_vt();
 	const bool savedSessionRecovery = nrb_session_recovery();
-	Uint8 guarded[NETWORK_SETTINGS_SIZE + 2], *const packet = guarded + 1;
+	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
+	 * aligned payload instead of making the alignment itself part of this bounds test. */
+	union {
+		Uint32 align;
+		Uint8 bytes[NETWORK_SETTINGS_SIZE + 8];
+	} guarded;
+	Uint8 *const packet = guarded.bytes + 4;
 
 	for (int i = 0; i < SSW_COUNT; ++i)
 		superSparkMode[i] = i % SUPER_SPARKS_COUNT;
@@ -798,10 +804,10 @@ static void qa_test_network_settings(void)
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
-	memset(guarded, 0x5a, sizeof(guarded));
+	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
-	qa_check(packed == NETWORK_SETTINGS_SIZE && guarded[0] == 0x5a
-	         && guarded[sizeof(guarded) - 1] == 0x5a,
+	qa_check(packed == NETWORK_SETTINGS_SIZE && guarded.bytes[3] == 0x5a
+	         && guarded.bytes[4 + NETWORK_SETTINGS_SIZE] == 0x5a,
 	         "network settings packing writes exactly its fixed 24-byte block");
 
 	/* A joiner has different local preferences before it adopts the host block. */

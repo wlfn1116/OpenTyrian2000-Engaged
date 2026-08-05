@@ -2376,6 +2376,18 @@ int network_test_peer(int rounds)
 	if (!network_is_sync())
 		return 1;
 
+	/* An ACK is intentionally not reliable itself. If the peer's ACK for our final payload was
+	 * dropped, it needs us to keep the socket alive long enough to resend that payload and receive
+	 * another ACK. Earlier rounds naturally get this grace from the next round; the last one needs
+	 * an explicit bounded drain before either test process exits. */
+	const Uint32 drain_start = SDL_GetTicks();
+	while (SDL_GetTicks() - drain_start < NET_RETRY * 3 + 200)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+
 	printf("NETWORK TEST PASS player=%u rounds=%d ping=%dms\n",
 	       thisPlayerNum, rounds, network_ping_ms());
 	return 0;
