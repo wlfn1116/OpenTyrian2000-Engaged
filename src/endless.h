@@ -200,11 +200,17 @@ extern int endlessArmorBonus;
 void endlessResetRun(void);
 
 // All-time record per run mode, indexed by EndlessRunMode. Stored in opentyrian.cfg so Hardcore
-// runs can update theirs.
-extern int endlessBestZone[];
+// runs can update theirs. endlessBestZoneCustom marks a record set with a custom weapon in use.
+extern int  endlessBestZone[];
+extern bool endlessBestZoneCustom[];
 void endlessNoteZoneReached(int zone);
 void endlessRecordRunStart(void);
 int  endlessBestZoneAtStart(void);
+
+// A custom weapon only counts once the run has fought with it: a shot has to leave the custom
+// port (shots.c calls this for every one) and its zone has to be cleared.
+void endlessNoteCustomWeaponShot(void);
+extern bool endlessRunUsedCustom;
 
 void endlessRecordConfigSave(ConfigSection *section);
 void endlessRecordConfigLoad(const ConfigSection *section);
@@ -226,9 +232,15 @@ extern EndlessRunMode endlessRunMode;
 // Hardcore disables all run saves.
 static inline bool endlessHardcore(void) { return endlessRunMode == ENDLESS_RUNMODE_HARDCORE; }
 
-// "Relaxed" / "Standard" / "Hardcore". The first letter is used as the mode initial on the run-over
-// screen, so the three names must keep distinct initials.
+// "Relaxed" / "Standard" / "Hardcore", as shown on the seed, run-over and Zone Records screens.
 const char *endlessRunModeName(EndlessRunMode mode);
+
+// " C" when a custom weapon set that mode's record, otherwise an empty string. Every record is
+// shown against a named mode, so the zone number carries this mark alone.
+const char *endlessRecordCustomMark(EndlessRunMode mode);
+
+// Erase one mode's record. Destructive, so only call it behind a confirmation.
+void endlessClearRecord(EndlessRunMode mode);
 
 // Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);

@@ -101,6 +101,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 	int selected = ROW_SEED;
 
 	const int xCenter = 320 / 2;
+	const int yRecord = 42;
 	const int yRows   = 82;
 	const int dyRows  = 20;
 	const int hRow    = 15;
@@ -119,6 +120,15 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 	while (!done)
 	{
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// The record belongs to the mode selected below, so it follows the Mode row.
+		char recordLine[48];
+		if (endlessBestZone[mode] > 0)
+			snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s",
+			         endlessBestZone[mode], endlessRecordCustomMark(mode));
+		else
+			SDL_strlcpy(recordLine, "No zone record yet", sizeof(recordLine));
+		draw_font_hv_shadow(VGAScreen, xCenter, yRecord, recordLine, small_font, centered, 15, 4, false, 1);
 
 		char seedRow[48];
 		if (len > 0)

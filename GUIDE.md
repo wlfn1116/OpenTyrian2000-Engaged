@@ -372,8 +372,32 @@ same committed sortie.
 
 Your furthest zone is kept in `opentyrian.cfg`, one record per mode: Zone 40 on
 Relaxed says nothing about how deep you can fly Hardcore, so each mode's record
-only moves under that mode. The Run Over screen names the one it is showing with
-its initial, as in `Furthest zone: 25 H`.
+only moves under that mode. Every screen shows a record against the mode it
+belongs to, so the Run Over screen shows only the record for the mode you were
+playing, as in `Furthest zone: 25`.
+
+The seed screen shows the same record for whichever mode is selected, so it
+changes as you step through Relaxed, Standard and Hardcore.
+
+All three records also have their own page in **High Scores** on the title
+screen, reached by paging right past the episode and Timed Battle boards to the
+last one, **Endless**. It lists every mode with the zone it stands at, and says
+under the list what the `C` means and that selecting a record is what erases it.
+
+To erase one, move to it with Up/Down and select it. The page then asks **Are
+You Sure?** and opens on **No, Keep It**, so reaching the wipe means
+deliberately moving down to **Yes, Erase It** and selecting that. Esc backs out
+of the question rather than leaving the screen. Only the mode you picked is
+erased, and an erased record cannot be recovered.
+
+A record set with a custom weapon in use carries a trailing `C`, as in
+`Furthest zone: 58 C`, which the Zone Records menu spells out at the bottom of
+the screen. Designing or previewing one costs you nothing: the mark
+is only earned by clearing a zone with shots fired from the custom weapon,
+whether it is flying as your front gun, rear gun or sidekick. One such zone
+marks the whole run, including a run that only matches the record rather than
+beating it. Flying deeper without a custom weapon sets a fresh record and drops
+the `C`.
 
 With Debug Mode on, **Endless Effects** applies the scaling, modifiers, elites
 and perks to a normal campaign without the Endless run structure around it.

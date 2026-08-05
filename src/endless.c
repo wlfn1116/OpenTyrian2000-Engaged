@@ -279,20 +279,60 @@ const char *endlessRunModeName(EndlessRunMode mode)
 }
 
 // Per-mode all-time records, stored in opentyrian.cfg.
-int endlessBestZone[ENDLESS_RUNMODE_COUNT] = { 0 };
+int  endlessBestZone[ENDLESS_RUNMODE_COUNT] = { 0 };
+bool endlessBestZoneCustom[ENDLESS_RUNMODE_COUNT] = { false };
 static int endlessBestZoneAtRunStart = 0;
+
+// Custom-weapon usage. A shot out of the custom port arms the zone flag; clearing that zone
+// promotes it to the run, which is what marks the record. The zone flag is cleared at every zone
+// start, so the outpost's weapon editor and shop previews never count as combat use.
+bool endlessRunUsedCustom = false;
+static bool endlessCustomFiredZone = false;
+
+void endlessNoteCustomWeaponShot(void)
+{
+	if (endlessMode)
+		endlessCustomFiredZone = true;
+}
+
+void endlessResetCustomWeaponZone(void) { endlessCustomFiredZone = false; }
 
 #define ENDLESS_BEST_ZONE_MAX 99999  // a sanity ceiling on what a hand-edited config can claim
 
 // Record a zone when it starts, not after it is cleared.
 void endlessNoteZoneReached(int zone)
 {
-	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX)
+	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX || zone <= endlessBestZone[endlessRunMode])
 		return;
-	int *const best = &endlessBestZone[endlessRunMode];
-	if (zone <= *best)
+	endlessBestZone[endlessRunMode] = zone;
+	endlessBestZoneCustom[endlessRunMode] = endlessRunUsedCustom;
+	save_opentyrian_config();
+}
+
+// The custom mark is earned mid-run, after the record it belongs to was already stamped: the zone
+// that sets a record is stamped before it is flown, and a run that only matches the record never
+// stamps at all. Both need the mark written after the fact, while this run still stands at the
+// record depth. A deeper record predates the run, so it keeps whatever mark it earned.
+static void endlessMarkRecordCustom(void)
+{
+	if (endlessBestZoneCustom[endlessRunMode] || endlessBestZone[endlessRunMode] > endlessRunDepth)
 		return;
-	*best = zone;
+	endlessBestZoneCustom[endlessRunMode] = true;
+	save_opentyrian_config();
+}
+
+const char *endlessRecordCustomMark(EndlessRunMode mode)
+{
+	const bool custom = (mode >= 0 && mode < ENDLESS_RUNMODE_COUNT) && endlessBestZoneCustom[mode];
+	return custom ? " C" : "";
+}
+
+void endlessClearRecord(EndlessRunMode mode)
+{
+	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+		return;
+	endlessBestZone[mode] = 0;
+	endlessBestZoneCustom[mode] = false;
 	save_opentyrian_config();
 }
 
@@ -305,6 +345,8 @@ void endlessResetRun(void)
 	endlessRunDepth   = 0;
 	endlessActiveMods = 0;
 	endlessArmorBonus = 0;
+	endlessRunUsedCustom = false;
+	endlessCustomFiredZone = false;
 	endlessRunKills   = 0;
 	endlessRunBossKills = 0;
 	endlessRunCashEarned = 0;
@@ -416,6 +458,13 @@ void endlessOnSectorCleared(void)
 		endlessStarChartsOwed = true;
 	if (endlessActiveMods & ENDLESS_MOD_BREAKTHROUGH)
 		++endlessBreakthroughOwed;
+
+	// Firing a custom weapon only counts as using one once its zone is finished. The caller has
+	// already advanced endlessRunDepth, so the mark can go straight onto a record this run holds.
+	if (endlessCustomFiredZone)
+		endlessRunUsedCustom = true;
+	if (endlessRunUsedCustom)
+		endlessMarkRecordCustom();
 }
 
 // Time-based and player-side modifiers.
@@ -669,15 +718,16 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
 
-	// Show the matching mode initial and any positive record gain.
+	// The record shown is the one for the mode being played, so it needs no mode name. Show a
+	// trailing C when a custom weapon set it, and any positive record gain.
 	char recordLine[64];
 	const int best = endlessBestZone[endlessRunMode];
 	const int recordGain = best - endlessBestZoneAtStart();
-	const char modeInitial = endlessRunModeName(endlessRunMode)[0];
+	const char *const customMark = endlessRecordCustomMark(endlessRunMode);
 	if (recordGain > 0)
-		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d %c   up %d", best, modeInitial, recordGain);
+		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d%s   up %d", best, customMark, recordGain);
 	else
-		snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d %c", best, modeInitial);
+		snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s", best, customMark);
 
 	// Size the block to its widest label and widest value, then center it as a unit so both columns
 	// line up whatever the run produced.

@@ -289,6 +289,7 @@ void endlessResetZoneEffects(void)
 	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
+	endlessResetCustomWeaponZone();  // outpost editor and shop previews must not count as combat use
 }
 
 // Dormant dispenser bases: a coin per zone up to ENDLESS_DISPENSER_ALWAYS_ZONE,

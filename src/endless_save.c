@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 19
+#define ENDLESS_SAVE_VERSION 20
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -129,6 +129,9 @@ typedef struct {
 
 	// Added in v19 (v18 briefly stored only the gear sink as a single field).
 	Uint64 cashBySink[ENDLESS_SAVE_CASH_SINKS];  // the spending breakdown, indexed by EndlessCashSink
+
+	// Added in v20.
+	Uint8  usedCustom;  // 1 = the run has cleared a zone firing the custom weapon
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -256,6 +259,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)  // v19 spending breakdown
 		endlessPutU64(f, r->cashBySink[i]);
+
+	endlessPutU8(f, r->usedCustom);                  // v20 custom-weapon record mark
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -482,6 +487,11 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 			if (!endlessGetU64(f, &r->cashBySink[i]))
 				return false;
 	}
+
+	// Pre-v20 records resume unmarked, so their record only gains a C if the rest of the run earns it.
+	if (version >= 20 && !endlessGetU8(f, &r->usedCustom))
+		return false;
+
 	return true;
 }
 
@@ -626,6 +636,8 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 		r->cashBySource[i] = endlessCashBySource[i];
 	for (int i = 0; i < ENDLESS_CASH_SINKS; ++i)
 		r->cashBySink[i] = endlessCashBySink[i];
+
+	r->usedCustom = endlessRunUsedCustom ? 1 : 0;   // v20 custom-weapon record mark
 }
 
 // Reset transient state, restore the saved run and outpost, then reopen the saved visit without a reroll.
@@ -635,6 +647,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 
 	endlessRunDepth      = r->runDepth;
 	endlessArmorBonus    = r->armorBonus;
+	endlessRunUsedCustom = r->usedCustom != 0;
 	endlessRunKills      = r->runKills;
 	endlessRunBossKills  = r->runBossKills;
 	endlessBuffCharge    = r->buffCharge;
@@ -966,13 +979,22 @@ static const char *const endlessBestZoneKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone", "best_zone_normal", "best_zone_hardcore",
 };
 
+// Whether each record above was set with a custom weapon in use. Absent from a config written
+// before the mark existed, which reads as an unassisted record.
+static const char *const endlessBestZoneCustomKey[ENDLESS_RUNMODE_COUNT] = {
+	"best_zone_custom", "best_zone_normal_custom", "best_zone_hardcore_custom",
+};
+
 void endlessRecordConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
 		return;
 
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+	{
 		config_set_int_option(section, endlessBestZoneKey[m], endlessBestZone[m]);
+		config_set_int_option(section, endlessBestZoneCustomKey[m], endlessBestZoneCustom[m] ? 1 : 0);
+	}
 }
 
 void endlessRecordConfigLoad(const ConfigSection *section)
@@ -985,6 +1007,10 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 		int best = 0;
 		config_get_int_option(section, endlessBestZoneKey[m], &best);
 		endlessBestZone[m] = (best > 0) ? best : 0;   // a hand-edited negative reads as "no record yet"
+
+		int custom = 0;
+		config_get_int_option(section, endlessBestZoneCustomKey[m], &custom);
+		endlessBestZoneCustom[m] = (endlessBestZone[m] > 0) && (custom != 0);
 	}
 	endlessRecordRunStart();   // nothing is running yet, so the baseline is the record
 }

@@ -1262,6 +1262,224 @@ void JE_sortHighScores(void)
 	}
 }
 
+// The Endless high-score page. Endless keeps no score table, so the page lists the furthest zone
+// each run mode has reached and erases one on request, behind the same confirmation the rest of the
+// game uses for a destructive choice.
+
+// Page geometry, shared by the draw and input halves below.
+static const int endlessPageXCenter = 160;      // center of the 320px menu field
+static const int endlessPageRowY0 = 78, endlessPageRowDy = 13, endlessPageRowH = 11;
+static const int endlessPageConfirmY0 = 100, endlessPageConfirmDy = 14, endlessPageConfirmH = 13;
+
+static const char *const endlessPageConfirmChoice[] = { "No, Keep It", "Yes, Erase It" };
+
+// The note lines are the widest thing on the page, so they set the block the rows line up inside.
+static const char *const endlessPageNote[] =
+{
+	"C = a custom weapon was used during the run.",
+	"Selecting a record erases it, once you confirm.",
+};
+
+// Center that block and hang the columns off its edges: labels start at the left, zones end
+// right-aligned on xZoneRight, and the custom mark takes the strip after it so a marked record
+// still ends flush with the notes. Both columns come from the block, not from the current records,
+// so nothing shifts as those change.
+static void endlessPageColumns(int *xLabel, int *xZoneRight)
+{
+	int blockW = 0;
+	for (int i = 0; i < (int)COUNTOF(endlessPageNote); ++i)
+		blockW = MAX(blockW, JE_textWidth(endlessPageNote[i], small_font));
+
+	*xLabel = endlessPageXCenter - blockW / 2;
+	*xZoneRight = *xLabel + blockW - JE_textWidth(" C", small_font);
+}
+
+static void JE_drawEndlessRecordPage(int selectedMode, bool confirmErase, int confirmChoice)
+{
+	if (confirmErase)
+	{
+		char question[64];
+		snprintf(question, sizeof(question), "Erase the %s record?",
+		         endlessRunModeName((EndlessRunMode)selectedMode));
+
+		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Are You Sure?",
+		                    normal_font, centered, 15, -3, false, 2);
+		JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(question, small_font) / 2, 80,
+		             question, 15, 2, FULL_SHADE);
+
+		for (int i = 0; i < (int)COUNTOF(endlessPageConfirmChoice); ++i)
+		{
+			draw_font_hv_shadow(VGAScreen, endlessPageXCenter, endlessPageConfirmY0 + endlessPageConfirmDy * i,
+			                    endlessPageConfirmChoice[i], normal_font, centered, 15,
+			                    i == confirmChoice ? -1 : -4, false, 2);
+		}
+
+		static const char note[] = "A record cannot be brought back.";
+		JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(note, small_font) / 2,
+		             endlessPageConfirmY0 + endlessPageConfirmDy * (int)COUNTOF(endlessPageConfirmChoice) + 10,
+		             note, 15, 2, FULL_SHADE);
+		return;
+	}
+
+	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Furthest Zone",
+	                    normal_font, centered, 15, -3, false, 2);
+
+	int xLabel, xZoneRight;
+	endlessPageColumns(&xLabel, &xZoneRight);
+
+	for (int i = 0; i < ENDLESS_RUNMODE_COUNT; ++i)
+	{
+		const EndlessRunMode mode = (EndlessRunMode)i;
+		const int y = endlessPageRowY0 + endlessPageRowDy * i;
+		const bool selected = i == selectedMode;
+		const int labelShade = selected ? 6 : 0, zoneShade = selected ? 6 : 2;
+
+		char label[32], zone[16];
+		snprintf(label, sizeof(label), "%s:", endlessRunModeName(mode));
+		if (endlessBestZone[mode] > 0)
+			snprintf(zone, sizeof(zone), "%d", endlessBestZone[mode]);
+		else
+			SDL_strlcpy(zone, "None", sizeof(zone));
+
+		JE_textShade(VGAScreen, xLabel, y, label, 15, labelShade, FULL_SHADE);
+		JE_textShade(VGAScreen, xZoneRight - JE_textWidth(zone, small_font), y, zone, 15, zoneShade, FULL_SHADE);
+		// The mark's own leading space is the gap between it and the zone.
+		JE_textShade(VGAScreen, xZoneRight, y, endlessRecordCustomMark(mode), 15, zoneShade, FULL_SHADE);
+	}
+
+	const int yNote = endlessPageRowY0 + endlessPageRowDy * ENDLESS_RUNMODE_COUNT + 16;
+	for (int i = 0; i < (int)COUNTOF(endlessPageNote); ++i)
+		JE_textShade(VGAScreen, xLabel, yNote + 11 * i, endlessPageNote[i], 15, 2, FULL_SHADE);
+}
+
+// Answer a pending erase. Confirming is the only path that touches a record.
+static void JE_endlessRecordPageAnswer(int selectedMode, bool *confirmErase, int confirmChoice)
+{
+	if (confirmChoice == 1)
+	{
+		endlessClearRecord((EndlessRunMode)selectedMode);
+		JE_playSampleNum(S_ITEM);
+	}
+	else
+	{
+		JE_playSampleNum(S_SPRING);
+	}
+	*confirmErase = false;
+}
+
+// Endless-page input. Returns true when it consumed the tick, which leaves the shared paging and
+// exit handling untouched. A pending erase consumes everything, so nothing else can act under it.
+static bool JE_endlessRecordPageInput(int *selectedMode, bool *confirmErase, int *confirmChoice)
+{
+	if (newmouse)
+	{
+		if (*confirmErase)
+		{
+			if (lastmouse_but == SDL_BUTTON_LEFT)
+			{
+				for (int i = 0; i < (int)COUNTOF(endlessPageConfirmChoice); ++i)
+				{
+					const int y = endlessPageConfirmY0 + endlessPageConfirmDy * i;
+					const int w = JE_textWidth(endlessPageConfirmChoice[i], normal_font);
+					if (mouse_y >= y && mouse_y < y + endlessPageConfirmH
+					    && mouse_x >= endlessPageXCenter - w / 2 && mouse_x < endlessPageXCenter + w / 2)
+					{
+						JE_endlessRecordPageAnswer(*selectedMode, confirmErase, i);
+						return true;
+					}
+				}
+			}
+			else if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				JE_playSampleNum(S_SPRING);
+				*confirmErase = false;
+			}
+			return true;   // a pending answer never falls through to paging or exit
+		}
+
+		if (lastmouse_but == SDL_BUTTON_LEFT)
+		{
+			int xLabel, xZoneRight;
+			endlessPageColumns(&xLabel, &xZoneRight);
+
+			for (int i = 0; i < ENDLESS_RUNMODE_COUNT; ++i)
+			{
+				const int y = endlessPageRowY0 + endlessPageRowDy * i;
+				// The whole label-to-record span is clickable, gaps included.
+				if (mouse_y >= y && mouse_y < y + endlessPageRowH
+				    && mouse_x >= xLabel && mouse_x < endlessPageXCenter + (endlessPageXCenter - xLabel))
+				{
+					*selectedMode = i;
+					if (endlessBestZone[i] > 0)
+					{
+						*confirmErase = true;
+						*confirmChoice = 0;   // always opens on "No, Keep It"
+						JE_playSampleNum(S_SELECT);
+					}
+					else
+						JE_playSampleNum(S_SPRING);   // nothing to erase
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	if (!newkey)
+		return false;
+
+	switch (lastkey_scan)
+	{
+	case SDL_SCANCODE_UP:
+	case SDL_SCANCODE_DOWN:
+	{
+		const int step = (lastkey_scan == SDL_SCANCODE_UP) ? -1 : 1;
+		if (*confirmErase)
+		{
+			const int n = (int)COUNTOF(endlessPageConfirmChoice);
+			*confirmChoice = (*confirmChoice + n + step) % n;
+		}
+		else
+		{
+			*selectedMode = (*selectedMode + ENDLESS_RUNMODE_COUNT + step) % ENDLESS_RUNMODE_COUNT;
+		}
+		JE_playSampleNum(S_CURSOR);
+		return true;
+	}
+	case SDL_SCANCODE_RETURN:
+	case SDL_SCANCODE_KP_ENTER:
+	{
+		if (*confirmErase)
+		{
+			JE_endlessRecordPageAnswer(*selectedMode, confirmErase, *confirmChoice);
+		}
+		else if (endlessBestZone[*selectedMode] > 0)
+		{
+			*confirmErase = true;
+			*confirmChoice = 0;   // always opens on "No, Keep It"
+			JE_playSampleNum(S_SELECT);
+		}
+		else
+		{
+			JE_playSampleNum(S_SPRING);   // nothing to erase
+		}
+		return true;
+	}
+	default:
+		// Esc backs out of a pending answer instead of the screen; anything else it swallows.
+		if (*confirmErase)
+		{
+			if (lastkey_scan == SDL_SCANCODE_ESCAPE)
+			{
+				JE_playSampleNum(S_SPRING);
+				*confirmErase = false;
+			}
+			return true;
+		}
+		return false;
+	}
+}
+
 void JE_highScoreScreen(void)
 {
 	set_menu_centered(true);
@@ -1272,8 +1490,15 @@ void JE_highScoreScreen(void)
 	bool restart = true;
 
 	size_t episodeIndex = 0;
-	// Five episodes, three timed battles
-	const size_t episodeCount = 8;
+	// Five episodes, three timed battles, then the Endless records
+	const size_t episodeCount = 9;
+	const size_t endlessPage = episodeCount - 1;
+
+	// Endless page state: which mode row the cursor is on, whether its erase is awaiting an answer,
+	// and which answer that cursor sits on.
+	int endlessMode = 0;
+	bool confirmErase = false;
+	int confirmChoice = 0;
 
 	const int xCenter = 160; // center of 320px menu field
 	const int yMenuHeader = 3;
@@ -1300,7 +1525,15 @@ void JE_highScoreScreen(void)
 		// Restore background and header.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		if (episodeIndex < 5)
+		if (episodeIndex == endlessPage)
+		{
+			SDL_strlcpy(buffer, "Endless", sizeof(buffer));
+
+			// No score board: the Endless page lists the per-mode zone records instead.
+			boardOnePlayer = -1;
+			boardTwoPlayer = -1;
+		}
+		else if (episodeIndex < 5)
 		{
 			snprintf(buffer, sizeof(buffer), "%s", episode_name[episodeIndex + 1]);
 
@@ -1320,10 +1553,14 @@ void JE_highScoreScreen(void)
 		// Draw episode header.
 		draw_font_hv_shadow(VGAScreen, xCenter, yEpisodeHeader, buffer, normal_font, centered, 15, -3, false, 2);
 
-		// Draw 1-player scores.
-		draw_font_hv_shadow(VGAScreen, xCenter, 55, miscText[46], normal_font, centered, 15, -3, false, 2);
+		if (episodeIndex == endlessPage)
+			JE_drawEndlessRecordPage(endlessMode, confirmErase, confirmChoice);
 
-		for (Uint8 i = 0; i < 3; ++i)
+		// Draw 1-player scores.
+		if (boardOnePlayer >= 0)
+			draw_font_hv_shadow(VGAScreen, xCenter, 55, miscText[46], normal_font, centered, 15, -3, false, 2);
+
+		for (Uint8 i = 0; boardOnePlayer >= 0 && i < 3; ++i)
 		{
 			const int y = 75 + 10 * i;
 
@@ -1363,10 +1600,10 @@ void JE_highScoreScreen(void)
 			}			
 		}
 
-		// Draw paging controls.
+		// Draw paging controls. A pending erase owns the page, so paging away is not offered.
 
-		const bool leftControlVisible = episodeIndex > 0;
-		const bool rightControlVisible = episodeIndex < episodeCount - 1;
+		const bool leftControlVisible = episodeIndex > 0 && !confirmErase;
+		const bool rightControlVisible = episodeIndex < episodeCount - 1 && !confirmErase;
 
 		if (leftControlVisible)
 			blit_sprite2x2(VGAScreen, xLeftControl, yControls, shopSpriteSheet, 279);
@@ -1374,8 +1611,12 @@ void JE_highScoreScreen(void)
 		if (rightControlVisible)
 			blit_sprite2x2(VGAScreen, xRightControl, yControls, shopSpriteSheet, 281);
 
-		helpBoxColor = 15;
-		JE_helpBox(VGAScreen, 103, vga_height - 18, miscText[56], 25);
+		// The paging hint is wrong while an erase is pending: left and right do nothing then.
+		if (!confirmErase)
+		{
+			helpBoxColor = 15;
+			JE_helpBox(VGAScreen, 103, vga_height - 18, miscText[56], 25);
+		}
 
 		if (restart)
 		{
@@ -1403,6 +1644,10 @@ void JE_highScoreScreen(void)
 		} while (!(newkey || newmouse));
 
 		// Handle interaction.
+
+		if (episodeIndex == endlessPage
+		    && JE_endlessRecordPageInput(&endlessMode, &confirmErase, &confirmChoice))
+			continue;
 
 		bool leftAction = false;
 		bool rightAction = false;

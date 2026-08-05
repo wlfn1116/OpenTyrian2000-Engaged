@@ -19,6 +19,7 @@
 #include "shots.h"
 
 #include "config.h"
+#include "custom_weapon.h"
 #include "endless.h"
 #include "mainint.h"
 #include "player.h"
@@ -482,6 +483,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 
 	if (weapon->sound > 0)
 		soundQueue[soundChannel[bay_i]] = weapon->sound;
+
+	// The shot is paid for, so the gun has fired. Endless marks its record with a C when that gun is
+	// the custom weapon; the custom sidekick fires through the same port, so one test covers all bays.
+	if (customWeaponPort > 0 && portNum == (JE_word)customWeaponPort)
+		endlessNoteCustomWeaponShot();
 
 	// Endless Opening Salvo perk: tag the shots that belong to a charged volley, so the collision
 	// applies the damage bonus only to those. A chain-reaction child takes its parent's tag and

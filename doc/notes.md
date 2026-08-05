@@ -269,6 +269,7 @@ the run mode across a retry or bail.
 | 17 | Total spent and source breakdown |
 | 18 | Gear-spending sink |
 | 19 | Full spending breakdown |
+| 20 | Custom-weapon record mark |
 
 Append fields and guard reads by version. Older records retain their historical
 field widths. Perk IDs are persisted in owned stacks and pending offers; append
@@ -278,6 +279,46 @@ The best zone is stored in `opentyrian.cfg`, indexed by `EndlessRunMode`.
 `best_zone` remains the Relaxed compatibility key, `best_zone_normal` remains the
 Standard compatibility key, and Hardcore uses `best_zone_hardcore`. Set the run
 mode before calling `endlessRecordRunStart`.
+
+Each record also stores whether a custom weapon was in use, under the same key
+plus `_custom`. `player_shot_create` reports every shot leaving
+`customWeaponPort` (the custom sidekick fires through that port too), which arms
+a per-zone flag; `endlessOnSectorCleared` promotes it to `endlessRunUsedCustom`,
+so only a cleared zone counts. `endlessResetZoneEffects` clears the zone flag at
+every zone start, which is what keeps outpost editor and shop previews out of the
+record.
+
+`endlessSeedSelect` shows the selected mode's record. `JE_highScoreScreen` gained
+a ninth page after the five episodes and three Timed Battles, which lists all
+three records and erases one through `endlessClearRecord`. Endless has no score
+table, so that page draws itself: `JE_drawEndlessRecordPage` and
+`JE_endlessRecordPageInput` share the `endlessPage*` geometry, and the input half
+returns whether it consumed the tick, which is what keeps paging and exit in the
+screen's own shared handling. Erasing is menu steps rather than a keypress so it
+works on a controller. A pending answer swallows every input and always opens on
+No, so it also hides the paging arrows and the paging hint, neither of which does
+anything while it is up.
+
+`endlessPageColumns` derives the page's two columns from the widest note line and
+centers that block, so the layout stays centered if the notes are reworded. Zones
+are right-aligned on a column that leaves the custom mark its own strip, which is
+why a record ends flush with the notes whether or not it carries the mark.
+
+Every screen shows a record against a named mode, so `endlessRecordCustomMark`
+supplies the trailing " C" alone. The page's two note lines explain that mark and
+warn what selecting a row leads to. The first uses `=`, which exists in TINY_FONT
+but not in the two larger shape tables, so keep that character out of
+`normal_font` and `large_font` strings. Do not route those notes through
+`JE_helpBox`: it wraps at its `boxwidth` in characters and draws each line
+downward, so a long string at the bottom of a screen loses its tail.
+
+The mark is written in two places, because it is earned after the record it
+belongs to was stamped. `endlessNoteZoneReached` stamps depth and mark together
+when the run goes deeper, but it runs at zone start, before that zone is flown,
+and a run that only matches the record never reaches the assignment at all. So
+`endlessOnSectorCleared` also calls `endlessMarkRecordCustom`, which marks the
+record whenever the run is standing at or past its depth. Nothing clears a mark
+in place: it goes away when an unassisted run sets a deeper record.
 
 ### Death, retries, and effects
 

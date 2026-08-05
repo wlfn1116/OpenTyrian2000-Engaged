@@ -71,6 +71,9 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 // Shared effect reset. It must not consume structural RNG.
 void endlessResetZoneEffects(void);
 
+// Per-zone half of the custom-weapon tracking behind endlessRunUsedCustom.
+void endlessResetCustomWeaponZone(void);
+
 // Combat state.
 extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out
