@@ -48,6 +48,49 @@ jobs:
           path: data
           retention-days: 1
 
+  tests:
+    name: Correctness suite
+    needs: data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-net-dev
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: test-data
+
+      - name: Build testable game
+        run: make -j"$(nproc)"
+
+      - name: Unit, migration, replay, and network tests
+        run: make test TEST_DATA=test-data
+
+  sanitizers:
+    name: ASan + UBSan
+    needs: data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-net-dev
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: test-data
+
+      - name: Build and run sanitizer suite
+        run: make -j"$(nproc)" sanitize-test TEST_DATA=test-data
+
   windows:
     name: Windows x86-64
     needs: data
@@ -71,6 +114,18 @@ jobs:
         with:
           name: tyrian2000-data
           path: pkg/data
+
+      - name: Correctness suite (Windows)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          python testing\run_unit_suite.py `
+            --exe .\opentyrian-x64-Release.exe --data pkg\data
+          python testing\run_replay_fixtures.py `
+            --exe .\opentyrian-x64-Release.exe --data pkg\data
+          python testing\network_fault_test.py `
+            --exe .\opentyrian-x64-Release.exe --data pkg\data --base-port 46100
 
       - name: Package 7z
         run: |
@@ -220,7 +275,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, linux, switch, vita]
+    needs: [windows, linux, switch, vita, tests, sanitizers]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -248,7 +303,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux, switch, vita]
+    needs: [windows, linux, switch, vita, tests, sanitizers]
     runs-on: ubuntu-latest
     permissions:
       contents: write

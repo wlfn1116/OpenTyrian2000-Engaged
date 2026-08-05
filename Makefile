@@ -41,10 +41,19 @@ icondir ?= $(datarootdir)/icons
 gamesdir ?= $(datadir)/games
 
 TARGET := opentyrian2000
+SAN_TARGET := opentyrian2000-sanitize
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:src/%.c=obj/%.o)
 DEPS := $(SRCS:src/%.c=obj/%.d)
+SAN_OBJS := $(SRCS:src/%.c=obj/sanitize/%.o)
+SAN_DEPS := $(SRCS:src/%.c=obj/sanitize/%.d)
+
+PYTHON ?= python3
+TEST_DATA ?= data
+TEST_FIXTURES ?= testing/fixtures/endless
+SANITIZER_FLAGS := -O1 -g3 -fno-omit-frame-pointer -fno-sanitize-recover=all \
+                   -fsanitize=address,undefined
 
 ifeq ($(WITH_NETWORK), true)
     EXTRA_CPPFLAGS += -DWITH_NETWORK
@@ -112,6 +121,31 @@ debug : CFLAGS += -O0
 debug : CFLAGS += -g3
 debug : all
 
+.PHONY : test test-unit test-replay test-network
+test : test-unit test-replay test-network
+
+test-unit : $(TARGET)
+	$(PYTHON) testing/run_unit_suite.py --exe ./$(TARGET) --data "$(TEST_DATA)" \
+		--fixtures "$(TEST_FIXTURES)"
+
+test-replay : $(TARGET)
+	$(PYTHON) testing/run_replay_fixtures.py --exe ./$(TARGET) --data "$(TEST_DATA)"
+
+test-network : $(TARGET)
+	$(PYTHON) testing/network_fault_test.py --exe ./$(TARGET) --data "$(TEST_DATA)"
+
+.PHONY : sanitizer sanitize-test
+sanitizer : $(SAN_TARGET)
+
+sanitize-test : $(SAN_TARGET)
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		$(PYTHON) testing/run_unit_suite.py --exe ./$(SAN_TARGET) --data "$(TEST_DATA)" \
+		--fixtures "$(TEST_FIXTURES)"
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		$(PYTHON) testing/run_replay_fixtures.py --exe ./$(SAN_TARGET) --data "$(TEST_DATA)"
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		$(PYTHON) testing/network_fault_test.py --exe ./$(SAN_TARGET) --data "$(TEST_DATA)" --rounds 24
+
 .PHONY : installdirs
 installdirs :
 	mkdir -p $(DESTDIR)$(bindir)
@@ -152,13 +186,22 @@ uninstall :
 clean :
 	rm -f $(OBJS)
 	rm -f $(DEPS)
-	rm -f $(TARGET)
+	rm -f $(SAN_OBJS)
+	rm -f $(SAN_DEPS)
+	rm -f $(TARGET) $(SAN_TARGET)
 
 $(TARGET) : $(OBJS)
 	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -o $@ $^ $(ALL_LDLIBS)
 
--include $(DEPS)
+$(SAN_TARGET) : $(SAN_OBJS)
+	$(CC) $(ALL_CFLAGS) $(SANITIZER_FLAGS) $(ALL_LDFLAGS) -o $@ $^ $(ALL_LDLIBS)
+
+-include $(DEPS) $(SAN_DEPS)
 
 obj/%.o : src/%.c
 	@mkdir -p "$(dir $@)"
 	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c -o $@ $<
+
+obj/sanitize/%.o : src/%.c
+	@mkdir -p "$(dir $@)"
+	$(CC) $(ALL_CPPFLAGS) -UNDEBUG $(ALL_CFLAGS) $(SANITIZER_FLAGS) -c -o $@ $<

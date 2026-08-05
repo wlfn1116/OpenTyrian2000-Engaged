@@ -173,6 +173,9 @@ int network_init(void);
 // Close the socket and queues, leaving the module ready for another network_init().
 void network_shutdown(void);
 
+/* Automated two-process reliable-channel exercise used by the fault proxy. */
+int network_test_peer(int rounds);
+
 // Pack, adopt, and restore host-authoritative simulation settings. Presentation settings remain
 // local. The return value is the encoded byte count.
 int  network_settings_pack(Uint8 *buf);

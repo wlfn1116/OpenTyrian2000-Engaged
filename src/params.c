@@ -24,6 +24,7 @@
 #include "loudness.h"
 #include "network.h"
 #include "opentyr.h"
+#include "qa.h"
 #include "varz.h"
 #include "xmas.h"
 
@@ -31,6 +32,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 JE_boolean richMode = false, constantPlay = false, constantDie = false;
@@ -63,6 +65,13 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 'k', 'k', "death",             false },
 		{ 'r', 'r', "record",            false },
 		{ 'l', 'l', "loot",              false },
+
+		{ 300, 0,   "test-suite",        false },
+		{ 301, 0,   "test-fixtures",     true },
+		{ 302, 0,   "test-replay",       true },
+		{ 303, 0,   "test-replay-ticks", true },
+		{ 304, 0,   "test-replay-hash",  true },
+		{ 305, 0,   "test-net-rounds",   true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -212,6 +221,26 @@ void JE_paramCheck(int argc, char *argv[])
 		case 'l':
 			// Enable rich mode.
 			richMode = true;
+			break;
+
+		case 300:
+			qa_test_suite = true;
+			break;
+		case 301:
+			qa_fixture_dir = option.arg;
+			break;
+		case 302:
+			qa_replay_demo = atoi(option.arg);
+			break;
+		case 303:
+			qa_replay_ticks = strtoul(option.arg, NULL, 10);
+			break;
+		case 304:
+			qa_replay_expect = (Uint32)strtoul(option.arg, NULL, 16);
+			qa_replay_expect_set = true;
+			break;
+		case 305:
+			qa_net_rounds = atoi(option.arg);
 			break;
 			
 		default:

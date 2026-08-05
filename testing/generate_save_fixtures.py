@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Generate the independent Endless v3-v20 migration corpus."""
+
+from __future__ import annotations
+
+import argparse
+import struct
+from pathlib import Path
+
+
+PERKS_OLD = 16
+PERKS_NEW = 32
+OFFERS_OLD = 3
+OFFERS_NEW = 5
+COURSES = 5
+RECENT = 5
+CASH_SLOTS = 12
+
+
+def u8(value: int) -> bytes:
+    return struct.pack("<B", value)
+
+
+def i32(value: int) -> bytes:
+    return struct.pack("<i", value)
+
+
+def u32(value: int) -> bytes:
+    return struct.pack("<I", value)
+
+
+def u64(value: int) -> bytes:
+    return struct.pack("<Q", value)
+
+
+def fixed(text: str, width: int) -> bytes:
+    raw = text.encode("ascii")
+    assert len(raw) < width
+    return raw + bytes(width - len(raw))
+
+
+def record(version: int) -> bytes:
+    out = bytearray()
+    out += u8(1)  # used
+
+    choice_count = 3 if version < 14 else 2
+    common_i32 = [
+        42, 7, 1234, 12, 3, 2, 5, 4, 9, 6,
+        111, 222, 333, 444, 555, 666,
+        1, 2, choice_count, 1, 1,
+    ]
+    out += b"".join(i32(value) for value in common_i32)
+    out += u32(0x1234)
+    out += bytes([1, 1, 0, 1, 1, 0])  # revive, rigged, won, pending, lastSec, forced
+
+    perk_count = PERKS_NEW if version >= 11 else PERKS_OLD
+    perks = bytearray(perk_count)
+    if version < 14:
+        perks[10] = 2  # Rapid Recharge before merge
+        perks[14] = 3  # removed Rapid Charger
+        perks[15] = 4  # shifts down to current slot 14
+    else:
+        perks[10] = 5
+        perks[14] = 4
+    out += perks
+    out += fixed("fixture gamble", 48)
+    out += fixed("fixture special", 31)
+
+    offer_count = OFFERS_NEW if version >= 13 else OFFERS_OLD
+    offers = [14, 15, 2] if version < 14 else [14, 2]
+    offers += [0] * (offer_count - len(offers))
+    out += b"".join(i32(value) for value in offers)
+
+    out += b"".join(i32(value) for value in [1, 0, 0, 0, 0])
+    course_mod = 0x100001234 if version >= 7 else 0x1234
+    encoder = u64 if version >= 7 else u32
+    out += b"".join(encoder(course_mod if index == 0 else 0) for index in range(COURSES))
+    out += bytes([1, 0, 0, 0, 0])
+    if version >= 8:
+        out += bytes([1, 0, 0, 0, 0])
+
+    out += bytes(range(90))
+    out += bytes([3] * 9)
+    out += fixed(f"fixture-v{version:02d}", 24)
+
+    if version >= 4:
+        out += u8(1)
+        out += (u64(0x100005141) if version >= 7 else u32(0x5141))
+        out += u8(1) + i32(1) + u8(1)
+    if version >= 5:
+        out += i32(77)
+    if version >= 6:
+        out += u8(2)
+        out += b"".join(i32(value) for value in [1, 2, 0, 0, 0])
+        out += bytes([1, 2, 0, 0, 0])
+    if version >= 9:
+        out += u8(1)
+    if version >= 10:
+        out += u8(4) + i32(41)
+    if version >= 12:
+        out += bytes([1, 2])
+    if version >= 15:
+        out += u8(1)  # Standard
+    if version >= 16:
+        out += u64(10000)
+        if version >= 17:
+            out += u64(2000)
+            out += b"".join(u64((index + 1) * 10) for index in range(CASH_SLOTS))
+    if version == 18:
+        out += u64(900)
+    elif version >= 19:
+        out += b"".join(u64((index + 1) * 20) for index in range(CASH_SLOTS))
+    if version >= 20:
+        out += u8(1)
+
+    return bytes(out)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=Path("testing/fixtures/endless"))
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+
+    for version in range(3, 21):
+        payload = b"OTES" + bytes([version, 1]) + record(version)
+        path = args.output / f"v{version:02d}.sav"
+        path.write_bytes(payload)
+        print(f"{path}: {len(payload)} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

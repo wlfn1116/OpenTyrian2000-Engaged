@@ -64,4 +64,12 @@ tyrian.sav
 # Collected deliverables (build-all.ps1 copies the .exe/.pdb/.nro/.vpk here)
 /build/
 /test
-/testing
+/testing/data/
+/testing/out/
+/testing/__pycache__/
+/testing/*.cfg
+/testing/*.dll
+/testing/*.exe
+/testing/*.log
+/testing/*.sav
+/rollback_selftest.log

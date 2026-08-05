@@ -45,6 +45,7 @@
 #include "pcxload.h"
 #include "pcxmast.h"
 #include "picload.h"
+#include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "net_rollback.h"
@@ -1285,6 +1286,13 @@ static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
 
 void JE_starShowVGA(void)
 {
+	if (qa_fast_forward)
+	{
+		quitRequested = false;
+		skipStarShowVGA = false;
+		return;
+	}
+
 	if (!playerEndLevel && !skipStarShowVGA)
 	{
 		// Zinglon pillar at the tick position: baseline for the non-interpolated

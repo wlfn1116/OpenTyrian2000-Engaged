@@ -39,6 +39,8 @@ bool rollback_resim_silent = false;
 
 bool rollback_selftest = false;
 unsigned long rollback_selftest_ticks = 0, rollback_selftest_failures = 0;
+static unsigned long rollback_selftest_limit = 0;
+static Uint32 rollback_selftest_limit_hash = 0;
 
 /* Self-test results go to their own file next to the executable: this build is
  * a Windows-subsystem app, so stderr is a black hole. */
@@ -274,6 +276,33 @@ static Uint32 rb_item_hash(const RbItem *it)
 	return h;
 }
 
+Uint32 rollback_state_hash(void)
+{
+	if (rb_ring[0] == NULL)
+		rollback_register_all();
+	if (!rb_trace_snapshot())
+		return 0;
+
+	Uint32 h = 2166136261u;
+	for (size_t i = 0; i < rb_total_size; ++i)
+	{
+		h ^= rb_trace_buf[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+void rollback_selftest_set_limit(unsigned long ticks)
+{
+	rollback_selftest_limit = ticks;
+	rollback_selftest_limit_hash = 0;
+}
+
+Uint32 rollback_selftest_bounded_hash(void)
+{
+	return rollback_selftest_limit_hash;
+}
+
 /* Wire snapshots encode registered pointers as stable table indices or element offsets:
  *   enemy[].sprite2s     one of six fixed sprite-sheet globals, or NULL
  *   enemy[].enemydatofs  &enemyDat[i] (tyrian2.c JE_makeEnemy), or NULL
@@ -281,13 +310,14 @@ static Uint32 rb_item_hash(const RbItem *it)
  *   mapY*Pos, BKwrap*    into megaData{1,2,3}.mainmap; fixed globals, so an
  *                        element offset relocates exactly (mapYPos can sit one
  *                        element BEFORE the array: the level-init -1)
- *   player[].lives       re-derived by the restore fixup; never encoded */
+ *   player[].lives       encoded as the player index, then re-derived locally */
 
 enum
 {
 	RB_RELOC_SHEET,   /* Sprite2_array*: rb_sheet_tab index                     */
 	RB_RELOC_SHIP,    /* Sprite2_array*: rb_ship_tab index                      */
 	RB_RELOC_EDAT,    /* void*: element index into enemyDat                     */
+	RB_RELOC_LIVES,   /* JE_byte*: player index; points inside player[].items   */
 	RB_RELOC_MAP1,    /* JE_byte**: element offset into megaData1.mainmap       */
 	RB_RELOC_MAP2,
 	RB_RELOC_MAP3,
@@ -314,6 +344,7 @@ typedef struct
 RbReloc;
 
 static const RbReloc rb_relocs[] = {
+	{ "player",     offsetof(Player, lives),                            sizeof(Player),                    COUNTOF(player), RB_RELOC_LIVES },
 	{ "enemy",      offsetof(struct JE_SingleEnemyType, sprite2s),    sizeof(struct JE_SingleEnemyType), 100, RB_RELOC_SHEET },
 	{ "enemy",      offsetof(struct JE_SingleEnemyType, enemydatofs), sizeof(struct JE_SingleEnemyType), 100, RB_RELOC_EDAT  },
 	{ "shipGrPtr",  0, 0, 1, RB_RELOC_SHIP },
@@ -393,6 +424,18 @@ static bool rb_reloc_encode_field(Uint8 *field, int kind)
 		rb_field_write_code(field, (Uint32)idx);
 		return true;
 	}
+	case RB_RELOC_LIVES:
+	{
+		for (uint i = 0; i < COUNTOF(player); ++i)
+		{
+			if (v == &player[i].items.weapon[i].power)
+			{
+				rb_field_write_code(field, i);
+				return true;
+			}
+		}
+		return false;
+	}
 	default:
 	{
 		if (v == NULL)
@@ -436,6 +479,11 @@ static bool rb_reloc_decode_field(Uint8 *field, int kind)
 			return false;
 		else
 			v = &enemyDat[code];
+		break;
+	case RB_RELOC_LIVES:
+		if (code >= COUNTOF(player))
+			return false;
+		v = &player[code].items.weapon[code].power;
 		break;
 	default:
 	{
@@ -824,6 +872,12 @@ bool rollback_selftest_tick(void)
 			       rollback_state_size());
 			rb_log_flush();
 		}
+	}
+
+	if (rollback_selftest_limit != 0 && rollback_selftest_ticks >= rollback_selftest_limit)
+	{
+		rollback_selftest_limit_hash = rollback_state_hash();
+		reallyEndLevel = true;
 	}
 	return false;
 }

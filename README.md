@@ -143,6 +143,21 @@ sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
 make
 ```
 
+## Automated testing
+
+With the freeware game data in `data/`, run the project-owned correctness suite
+and the Linux sanitizer build with:
+
+```sh
+make test
+make sanitize-test
+```
+
+The suite covers rollback restore and bounded deterministic demo replays, every
+supported Endless save revision, malformed save/resync inputs, seeded course
+properties, and two real network peers under injected faults. See
+[testing/README.md](testing/README.md) for fixture and runner details.
+
 Running a Linux build, including the release tarball, only needs the SDL2
 runtime libraries. Package names vary by distro:
 

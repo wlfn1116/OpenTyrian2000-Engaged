@@ -429,6 +429,22 @@ static int network_recv_one(void)
 						break;
 
 					case PACKET_CONNECT:
+						/*
+						 * A delayed/duplicated handshake may arrive after gameplay packets.
+						 * Resetting queue_in_sync here would discard the live receive window.
+						 */
+						if (connected)
+						{
+							const Uint16 connect_sync = SDLNet_Read16(&packet_temp->data[2]);
+							if (connect_sync == queue_in_sync)
+							{
+								packets_shift_up(packet_in, NET_PACKET_QUEUE);
+								++queue_in_sync;
+							}
+							network_acknowledge(connect_sync);
+							last_in_tick = SDL_GetTicks();
+							break;
+						}
 						queue_in_sync = SDLNet_Read16(&packet_temp->data[2]);
 
 						for (int i = 0; i < NET_PACKET_QUEUE; i++)
@@ -2269,6 +2285,99 @@ int network_init(void)
 
 	net_initialized = true;
 
+	return 0;
+}
+
+int network_test_peer(int rounds)
+{
+	if (rounds < 1 || rounds > 1000)
+		return 2;
+	if (network_connect() != 0)
+		return 1;
+
+	/* Retried connect packets may still be queued behind the handshake. */
+	for (int guard = 0; guard < 100 && packet_in[0] != NULL; ++guard)
+	{
+		if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_CONNECT)
+			break;
+		network_update();
+		network_check();
+	}
+
+	for (int round = 0; round < rounds; ++round)
+	{
+		const Uint32 payload = 0x51410000u ^ ((Uint32)thisPlayerNum << 12) ^ (Uint32)round;
+		network_prepare(PACKET_WAITING);
+		SDLNet_Write32(payload, &packet_out_temp->data[4]);
+		if (!network_send(8))
+			return 1;
+
+		const Uint32 started = SDL_GetTicks();
+		bool received = false;
+		while (SDL_GetTicks() - started < 12000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			if (packet_in[0] != NULL)
+			{
+				const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+				if (type == PACKET_WAITING && packet_in[0]->len >= 8)
+				{
+					const Uint32 expect = 0x51410000u ^ ((Uint32)(3 - thisPlayerNum) << 12) ^ (Uint32)round;
+					const Uint32 got = SDLNet_Read32(&packet_in[0]->data[4]);
+					network_update();
+					if (got != expect)
+					{
+						fprintf(stderr, "network test: round %d payload %08x != %08x\n",
+						        round, (unsigned)got, (unsigned)expect);
+						return 1;
+					}
+					received = true;
+					break;
+				}
+				network_update();
+			}
+			SDL_Delay(1);
+		}
+		if (!received)
+		{
+			fprintf(stderr, "network test: timed out in round %d (ack backlog %d, next type %04x)\n",
+			        round, network_ack_backlog(),
+			        packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0);
+			return 1;
+		}
+
+		/*
+		 * Gameplay exchanges stay within a bounded lead over the peer.  Keep the test
+		 * inside that same reliable window: a deliberately lost ACK
+		 * must be recovered by the retry path before the next round is queued.
+		 */
+		const Uint32 ack_start = SDL_GetTicks();
+		while (!network_is_sync() && SDL_GetTicks() - ack_start < 12000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			SDL_Delay(1);
+		}
+		if (!network_is_sync())
+		{
+			fprintf(stderr, "network test: acknowledgement timed out in round %d\n", round);
+			return 1;
+		}
+	}
+
+	const Uint32 sync_start = SDL_GetTicks();
+	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!network_is_sync())
+		return 1;
+
+	printf("NETWORK TEST PASS player=%u rounds=%d ping=%dms\n",
+	       thisPlayerNum, rounds, network_ping_ms());
 	return 0;
 }
 

@@ -664,14 +664,13 @@ static void load_song(unsigned int song_num)  // FKA NortSong.loadSong
 
 void play_song(unsigned int song_num)  // FKA NortSong.playSong
 {
+	if (audio_disabled)
+		return;
 	if (song_num >= song_count)
 	{
 		fprintf(stderr, "warning: song %d does not exist\n", song_num + 1);
 		return;
 	}
-	if (audio_disabled)
-		return;
-
 #ifdef WITH_MIDI
 	if (music_device & IS_MIDI_DEVICE)
 	{

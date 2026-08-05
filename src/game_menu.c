@@ -217,6 +217,7 @@ static void ensure_equipped_items_visible(void)
 
 uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOut)
 {
+	static bool missingLevelWarned[EPISODE_MAX][256];
 	const unsigned int levelFileCount = JE_levelFileCount(episode);
 	if (levelFileCount == 0)
 		return 0;
@@ -254,8 +255,15 @@ uint JE_getLevelSections(int episode, JE_byte *out, JE_byte *fileOut, uint maxOu
 				const int fileNum = atoi(s + 25);
 				if (fileNum < 1 || (unsigned int)fileNum > levelFileCount)
 				{
-					fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
-					        episode, (unsigned int)section, fileNum);
+					const bool inWarnTable = episode >= 1 && episode <= EPISODE_MAX
+					                      && fileNum >= 0 && fileNum < 256;
+					if (!inWarnTable || !missingLevelWarned[episode - 1][fileNum])
+					{
+						fprintf(stderr, "warning: episode %d section %u references missing level file %d\n",
+						        episode, (unsigned int)section, fileNum);
+						if (inWarnTable)
+							missingLevelWarned[episode - 1][fileNum] = true;
+					}
 					continue;
 				}
 

@@ -26,6 +26,7 @@
 #include "rollback.h"
 
 #include <stdio.h>
+#include <stddef.h>
 
 /* Config default; the host's value decides for the session (settings block). */
 extern bool net_rollback;
@@ -80,6 +81,10 @@ void nrb_handle_packet(const Uint8 *data, int len);
 /* Append the rollback module's live state to the crash log's Network section
  * (network_write_diagnostics calls this when the session runs rollback). */
 void nrb_write_diagnostics(FILE *f);
+
+/* Resync serialization primitives, exported for fuzz/property tests. */
+size_t nrb_resync_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap);
+size_t nrb_resync_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap);
 #endif
 
 #endif /* NET_ROLLBACK_H */

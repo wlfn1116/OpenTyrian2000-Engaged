@@ -495,6 +495,200 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	return true;
 }
 
+int endlessSaveCurrentVersion(void)
+{
+	return ENDLESS_SAVE_VERSION;
+}
+
+static bool endlessTestDecode(const Uint8 *bytes, size_t size, EndlessSlotRec *rec, int *version)
+{
+	FILE *f = tmpfile();
+	if (f == NULL)
+		return false;
+	if (size != 0 && fwrite(bytes, 1, size, f) != size)
+	{
+		fclose(f);
+		return false;
+	}
+	rewind(f);
+
+	Uint8 hdr[6];
+	const bool okay = fread(hdr, 1, sizeof(hdr), f) == sizeof(hdr)
+	               && memcmp(hdr, "OTES", 4) == 0
+	               && hdr[4] >= 3 && hdr[4] <= ENDLESS_SAVE_VERSION
+	               && hdr[5] >= 1 && hdr[5] <= SAVE_FILES_NUM
+	               && endlessReadRec(f, rec, hdr[4]);
+	if (okay && version != NULL)
+		*version = hdr[4];
+	fclose(f);
+	return okay;
+}
+
+static bool endlessTestEncode(const EndlessSlotRec *rec, Uint8 **bytes, size_t *size)
+{
+	FILE *f = tmpfile();
+	if (f == NULL)
+		return false;
+	const Uint8 hdr[6] = { 'O', 'T', 'E', 'S', ENDLESS_SAVE_VERSION, 1 };
+	if (fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr))
+	{
+		fclose(f);
+		return false;
+	}
+	endlessWriteRec(f, rec);
+	const long end = ftell(f);
+	if (end <= 0 || ferror(f))
+	{
+		fclose(f);
+		return false;
+	}
+	rewind(f);
+
+	*bytes = malloc((size_t)end);
+	*size = (size_t)end;
+	const bool okay = *bytes != NULL && fread(*bytes, 1, *size, f) == *size;
+	if (!okay)
+	{
+		free(*bytes);
+		*bytes = NULL;
+		*size = 0;
+	}
+	fclose(f);
+	return okay;
+}
+
+static void endlessTestDetail(char *detail, size_t detailSize, const char *message)
+{
+	if (detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", message);
+}
+
+bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
+{
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	FILE *f = fopen(path, "rb");
+	if (f == NULL)
+	{
+		endlessTestDetail(detail, detailSize, "fixture missing");
+		return false;
+	}
+	fseek(f, 0, SEEK_END);
+	const long fileSize = ftell(f);
+	rewind(f);
+	if (fileSize <= 0 || fileSize > 1024 * 1024)
+	{
+		fclose(f);
+		endlessTestDetail(detail, detailSize, "fixture size invalid");
+		return false;
+	}
+	Uint8 *bytes = malloc((size_t)fileSize);
+	if (bytes == NULL || fread(bytes, 1, (size_t)fileSize, f) != (size_t)fileSize)
+	{
+		free(bytes);
+		fclose(f);
+		endlessTestDetail(detail, detailSize, "fixture read failed");
+		return false;
+	}
+	fclose(f);
+
+	EndlessSlotRec first, second;
+	int version = 0;
+	if (!endlessTestDecode(bytes, (size_t)fileSize, &first, &version))
+	{
+		free(bytes);
+		endlessTestDetail(detail, detailSize, "fixture did not decode");
+		return false;
+	}
+
+	/* Independent fixture sentinels, including the v14 removed-perk migration. */
+	if (!first.used || first.runDepth != 42 || first.armorBonus != 7
+	    || strncmp(first.seed, "fixture-v", 9) != 0
+	    || first.perkOwned[PERK_SPECIALCD] != 5 || first.perkOwned[14] != 4
+	    || first.perkChoiceN != 2 || first.perkChoice[0] != 14 || first.perkChoice[1] != 2
+	    || first.courseCnt != 1 || first.courseEp[0] != 1 || first.courseSec[0] != 1)
+	{
+		free(bytes);
+		endlessTestDetail(detail, detailSize, "migration sentinels differ");
+		return false;
+	}
+	if ((version < 8 && first.courseFile[0] != 0)
+	    || (version >= 8 && first.courseFile[0] != 1)
+	    || (version < 15 && first.runMode != ENDLESS_RUNMODE_RELAXED)
+	    || (version >= 15 && first.runMode != ENDLESS_RUNMODE_STANDARD)
+	    || (version < 20 && first.usedCustom != 0)
+	    || (version >= 20 && first.usedCustom != 1))
+	{
+		free(bytes);
+		endlessTestDetail(detail, detailSize, "version defaults differ");
+		return false;
+	}
+
+	Uint8 *encoded1 = NULL, *encoded2 = NULL;
+	size_t encoded1Size = 0, encoded2Size = 0;
+	if (!endlessTestEncode(&first, &encoded1, &encoded1Size)
+	    || !endlessTestDecode(encoded1, encoded1Size, &second, NULL)
+	    || !endlessTestEncode(&second, &encoded2, &encoded2Size)
+	    || encoded1Size != encoded2Size || memcmp(encoded1, encoded2, encoded1Size) != 0)
+	{
+		free(bytes); free(encoded1); free(encoded2);
+		endlessTestDetail(detail, detailSize, "current-format round trip is unstable");
+		return false;
+	}
+	free(encoded1);
+	free(encoded2);
+
+	/* Every strict prefix must fail cleanly. Sanitizers enforce the memory-safety half. */
+	for (size_t cut = 0; cut < (size_t)fileSize; ++cut)
+	{
+		EndlessSlotRec junk;
+		if (endlessTestDecode(bytes, cut, &junk, NULL))
+		{
+			free(bytes);
+			endlessTestDetail(detail, detailSize, "truncated fixture was accepted");
+			return false;
+		}
+	}
+	/* Oversized and randomized inputs exercise all length guards without trusting their contents. */
+	const size_t oversizedSize = (size_t)fileSize + 65536;
+	Uint8 *oversized = malloc(oversizedSize);
+	if (oversized == NULL)
+	{
+		free(bytes);
+		endlessTestDetail(detail, detailSize, "fuzz allocation failed");
+		return false;
+	}
+	memcpy(oversized, bytes, (size_t)fileSize);
+	memset(oversized + fileSize, 0xa5, oversizedSize - (size_t)fileSize);
+	EndlessSlotRec oversizedRec;
+	if (!endlessTestDecode(oversized, oversizedSize, &oversizedRec, NULL))
+	{
+		free(oversized); free(bytes);
+		endlessTestDetail(detail, detailSize, "oversized input damaged the valid prefix");
+		return false;
+	}
+	free(oversized);
+
+	Uint32 rng = 0x45534f54u ^ (Uint32)version;
+	for (unsigned pass = 0; pass < 128; ++pass)
+	{
+		rng = rng * 1664525u + 1013904223u;
+		const size_t n = rng % 1024;
+		Uint8 fuzz[1024];
+		for (size_t i = 0; i < n; ++i)
+		{
+			rng = rng * 1664525u + 1013904223u;
+			fuzz[i] = (Uint8)(rng >> 24);
+		}
+		EndlessSlotRec junk;
+		(void)endlessTestDecode(fuzz, n, &junk, NULL);
+	}
+
+	free(bytes);
+	return true;
+}
+
 // Load all slot records. Any sidecar-level error marks the optional cache unused.
 static void endlessReadAllSlots(void)
 {
@@ -506,7 +700,8 @@ static void endlessReadAllSlots(void)
 
 	Uint8 hdr[6];
 	if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)
-	    || memcmp(hdr, "OTES", 4) != 0 || hdr[4] < 3 || hdr[4] > ENDLESS_SAVE_VERSION)
+	    || memcmp(hdr, "OTES", 4) != 0 || hdr[4] < 3 || hdr[4] > ENDLESS_SAVE_VERSION
+	    || hdr[5] > SAVE_FILES_NUM)
 	{
 		fclose(f);  // accept v3 (pre-locked-sortie), v4 and v5; anything else is "no endless save"
 		return;

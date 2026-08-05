@@ -43,6 +43,7 @@
 #include "palette.h"
 #include "params.h"
 #include "picload.h"
+#include "qa.h"
 #include "rollback.h"
 #include "sprite.h"
 #include "console_platform.h"
@@ -2615,6 +2616,30 @@ int main(int argc, char *argv[])
 
 	JE_loadExtraShapes();  /*Editship*/
 
+	if (qa_test_suite)
+	{
+		const int result = qa_run_unit_suite();
+		SDL_Quit();
+		return result;
+	}
+
+	if (qa_replay_demo != 0)
+	{
+		const int result = qa_run_replay_fixture();
+		SDL_Quit();
+		return result;
+	}
+
+#ifdef WITH_NETWORK
+	if (qa_net_rounds > 0)
+	{
+		/* Exercise the production lobby roles: player 1 listens, player 2 joins. */
+		network_from_lobby = true;
+		network_is_host = thisPlayerNum == 1;
+		networkHostPlayerNum = 1;
+	}
+#endif
+
 	if (isNetworkGame)
 	{
 #ifdef WITH_NETWORK
@@ -2627,6 +2652,16 @@ int main(int argc, char *argv[])
 		JE_tyrianHalt(5);
 #endif
 	}
+
+#ifdef WITH_NETWORK
+	if (qa_net_rounds > 0)
+	{
+		const int result = network_test_peer(qa_net_rounds);
+		network_shutdown();
+		SDL_Quit();
+		return result;
+	}
+#endif
 
 #ifdef NDEBUG
 	if (!isNetworkGame)

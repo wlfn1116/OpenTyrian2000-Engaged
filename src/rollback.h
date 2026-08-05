@@ -56,6 +56,8 @@ void rollback_ensure_registered(void);
 /* Hash of registry names, sizes, and offsets. Peers require this and state size to match before
  * exchanging snapshots. */
 Uint32 rollback_layout_fingerprint(void);
+/* Address-independent FNV-1a of the complete registered state. */
+Uint32 rollback_state_hash(void);
 
 /* Snapshot ring keyed by simulation frame. */
 
@@ -135,5 +137,8 @@ const RbInput *rollback_st_get(int player0);
 Uint16 rollback_st_events(void);
 
 extern unsigned long rollback_selftest_ticks, rollback_selftest_failures;
+/* Bounded automated replay support; zero disables the bound. */
+void rollback_selftest_set_limit(unsigned long ticks);
+Uint32 rollback_selftest_bounded_hash(void);
 
 #endif /* ROLLBACK_H */

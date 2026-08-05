@@ -9,6 +9,7 @@
 #include "opentyr.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 
 // Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
@@ -628,5 +629,9 @@ const char *endlessPerkDesc(int id);         // perk one-line effect description
 int         endlessPerkMaxStack(int id);     // max stacks this perk allows
 int         endlessPerkGetOwned(int id);     // current owned stacks
 void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
+
+/* Save-codec regression hooks used by the project-owned migration/fuzz suite. */
+int  endlessSaveCurrentVersion(void);
+bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize);
 
 #endif // ENDLESS_H

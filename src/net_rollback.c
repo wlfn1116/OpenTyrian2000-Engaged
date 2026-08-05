@@ -1189,7 +1189,7 @@ static Uint32 nrb_rs_hash(const Uint8 *p, size_t n)
 
 /* Zero-run RLE uses token 0x00 plus a two-byte run; nonzero tokens prefix literal lengths.
  * Runs shorter than four bytes stay literal. Return zero on destination overflow. */
-static size_t nrb_rs_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
+size_t nrb_resync_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
 {
 	size_t in = 0, out = 0;
 	while (in < n)
@@ -1231,7 +1231,7 @@ static size_t nrb_rs_compress(const Uint8 *src, size_t n, Uint8 *dst, size_t cap
 	return out;
 }
 
-static size_t nrb_rs_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
+size_t nrb_resync_expand(const Uint8 *src, size_t n, Uint8 *dst, size_t cap)
 {
 	size_t in = 0, out = 0;
 	while (in < n)
@@ -1392,7 +1392,7 @@ static int nrb_resync_send_once(void)
 		return -1;
 	}
 
-	const size_t comp_sz = nrb_rs_compress(raw, state_sz, stream + NRB_RS_PRE, cap);
+	const size_t comp_sz = nrb_resync_compress(raw, state_sz, stream + NRB_RS_PRE, cap);
 	free(raw);
 	if (comp_sz == 0)
 	{
@@ -1761,7 +1761,7 @@ static bool nrb_resync_receive(void)
 			{
 				raw = malloc(state_sz);
 				adopted = raw != NULL &&
-				          nrb_rs_expand(comp, comp_total, raw, state_sz) == state_sz &&
+				          nrb_resync_expand(comp, comp_total, raw, state_sz) == state_sz &&
 				          rollback_wire_adopt(raw);
 				if (!adopted)
 					abort = "state adopt failed (expand, relocation, or memory)";
