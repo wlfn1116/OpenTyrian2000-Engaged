@@ -522,8 +522,8 @@ same host is Join then Enter.
 
 The outpost help bar shows a **Ping** figure at its right end, updated about
 every one and a half seconds and reading `--` until the first reply. It is
-dropped on rows whose description already reaches that far, rather than being
-pushed up against the sentence. Under roughly 85 ms the game runs at full speed
+dropped on rows that already have something at that edge, a price or a stack
+count among them, rather than being pushed up against the sentence. Under roughly 85 ms the game runs at full speed
 on the default network delay of 3. Above that it starts to slow, and raising the
 delay trades input lag for smoothness.
 

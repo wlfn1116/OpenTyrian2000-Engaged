@@ -9230,7 +9230,8 @@ redo:
 					{
 						--shotRepeat[SHOT_P1_SUPERBOMB + temp-1];
 					}
-					else if ((button[3-1] || button[2-1]) && !(endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DUD)))
+					else if ((button[3-1] || button[2-1])
+					         && !(endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DUD)))
 					{  // Dud (gamble curse): the bombs are aboard but jammed; the fire press does nothing this sector
 						--player[bombPlayer].superbombs;
 						shotMultiPos[SHOT_P1_SUPERBOMB + temp-1] = 0;

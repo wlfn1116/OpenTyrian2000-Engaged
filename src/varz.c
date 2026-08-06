@@ -1505,7 +1505,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Nitro (gamble deal): the hull is stripped for raw firepower, so any hit that lands is fatal.
 	// Push the damage past every shield+armor total; a held revive can still catch the lethal blow
 	// on the death path below, which keeps the interaction honest rather than an unavoidable game-over.
-	if (endlessFxShip(this_player) && (endlessActiveMods & ENDLESS_MOD_NITRO))
+	if (endlessFxShip(this_player) && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_NITRO))
 		temp = 255;
 
 	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on

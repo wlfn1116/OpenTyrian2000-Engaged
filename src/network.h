@@ -223,6 +223,10 @@ bool network_endless_run_receive(Uint32 timeout_ms);
  * Pass the choice on the host, -1 on the joiner; -1 comes back if nothing arrived. */
 int network_endless_death_sync(int hostChoice);
 
+/* Both machines announce they are ready for a level, then resynchronize the state queues. Only
+ * needed on a path that starts a level without passing through the outpost. */
+void network_level_rendezvous(void);
+
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
@@ -334,6 +338,7 @@ extern bool rollback_resim;
 #else
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
+static inline void network_level_rendezvous(void) { }
 static inline void network_shop_begin(void) { }
 static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }

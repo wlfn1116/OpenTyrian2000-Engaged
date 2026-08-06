@@ -2868,6 +2868,8 @@ start_level:
 				fade_black(10);
 
 			debugLevelJumpReturn();
+			// Another level reached without passing through the outpost; same handshake owed.
+			network_level_rendezvous();
 			goto start_level_first;
 		}
 
@@ -2938,6 +2940,11 @@ start_level:
 			if (endlessMode && deathPick == ENDLESS_DEATH_RESTART)
 			{
 				endlessRestartSortie();  // revert to the launch snapshot and re-arm the same zone
+
+				// This path reaches a level without going through the outpost, so it owes the
+				// level-start handshake the shop would otherwise have done.
+				if (endlessCoop())
+					network_level_rendezvous();
 
 				// Force a same-song retry to reload after start_level_first fades the current track.
 				clear_song_selection();
