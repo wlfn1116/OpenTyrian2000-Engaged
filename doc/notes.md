@@ -508,8 +508,11 @@ player's outpost visit mid-purchase.
 Credit sharing is `coopSharedCredit`, packed as settings bit 9 and adopted into
 `coop_set_session_shared_credit()`, so both machines award identical cash.
 `player_award_pickup_cash` and `player_award_kill_cash` are the only two credit
-paths; the shared branch pays both players and bypasses the Endless ledger, which
-Campaign never uses.
+paths. The shared branch pays both players, and routes this machine's own share
+through `endlessCashCredit` rather than adding to the wallet directly. Campaign
+has no ledger to reach, but Endless does: paying past it made every shared credit
+undeclared drift, so the audit warned on each one and the run summary filed the
+whole run's income under "other" instead of the source that earned it.
 
 ### Leaving the outpost
 

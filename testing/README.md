@@ -21,6 +21,17 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   gauge segment bounds;
 - legacy and per-difficulty record derivation, effect gates that prevent Endless modifiers from
   leaking into normal play, and non-overlapping render/object-pool identity ranges;
+- the online mode split across every reachable combination of the two-player, arcade and co-op
+  flags, the wallet each machine spends in all three online modes, arcade's immunity to the
+  co-op credit settings, the two-wallet campaign economy, the co-op campaign record board, the
+  strings the online menus print, and pause being refused in all three online modes;
+- online Endless co-op as a matrix: credit mode against Double Pickups against Scavenger
+  stacks against which machine is asking; all sixteen pairings of what the two ships are
+  flying against Combo Feed and against who fired the killing shot; per-player perk stacking
+  and its caps; the outpost and every E-Shop button from both machines, with their refusal
+  gates and per-player price escalation and RNG streams; downed, revive-token and
+  revive-at-outpost states against all three run modes; reactive-danger targeting; all four
+  course-chooser modes; the co-op wire block; and whole-session scenarios that combine them;
 - 768 deterministic course seeds across early, milestone, and deep-run depths, checking
   structural/gameplay RNG isolation, repeatability, launchable levels, unique display-safe names,
   danger/payout ordering, modifier compatibility, exact milestone rank distributions, and payout bounds;

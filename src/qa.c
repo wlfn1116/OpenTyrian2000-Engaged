@@ -36,7 +36,7 @@ bool qa_fast_forward = false;
 static unsigned qa_checks;
 static unsigned qa_failures;
 
-static void qa_check(bool okay, const char *what)
+void qa_check(bool okay, const char *what)
 {
 	++qa_checks;
 	if (!okay)
@@ -1631,6 +1631,8 @@ int qa_run_unit_suite(void)
 	qa_test_kill_fire_wiring();
 	qa_test_coop_combo_and_pickups();
 	qa_test_peer_left_level();
+	qa_test_online_suite();
+	qa_test_endless_suite();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

@@ -171,8 +171,16 @@ static void player_credit_cash(Player *this_player, long amount, EndlessCashSour
 {
 	if (coop_credit_is_shared())
 	{
+		/* Both wallets earn the full amount. This machine's own share still goes through the
+		 * run ledger, or an Endless run books every shared payment as undeclared drift: the
+		 * audit warns, and the summary files the lot under "other" instead of what earned it. */
 		for (uint i = 0; i < COUNTOF(player); ++i)
-			player[i].cash += amount;
+		{
+			if (endlessMode && i == endlessEconomyIndex())
+				endlessCashCredit(amount, endless_source);
+			else
+				player[i].cash += amount;
+		}
 		return;
 	}
 
