@@ -595,7 +595,10 @@ Split of responsibility inside a run:
   fixed width and the receiver checks the packet is long enough before reading.
 - Local only, never sent: `itemAvail` (each machine shows its own player's
   shelves) and the cash ledger, which follows `endlessEconomyIndex()` and so
-  tallies this machine's own ship.
+  tallies this machine's own ship. `player_credit_cash` routes through the ledger
+  on that same index: gating it on player 1 outright had the joiner booking its
+  partner's earnings into its own wallet and paying its own straight past the
+  ledger. Solo the two indices are the same, which is why it read as correct.
 
 Perks are stored as `endlessPerkTakenBy[2][PERK_COUNT]`, one row per player, and
 `endlessPerkOwned` is their capped sum, recomputed by `endlessPerkRederive`.
@@ -615,6 +618,22 @@ player's purchases. `endlessLocalPlayerCharts` answers the Host / Guest /
 Alternating / 50-50 setting; the coin flip derives from `endlessSplitMixSeed` of
 the depth rather than drawing, so it cannot depend on how much either player
 shopped.
+
+The player who is not charting waits for that index *before* committing, in
+`shopEndlessAwaitCourse(true)`: Esc stays a way back into the outpost for as long
+as the wait lasts, and a session that somehow agreed neither of them was charting
+is something both players can walk out of instead of a screen with no live key.
+A locked outpost and a loaded game skip the commit entirely, since both arrive
+with the route already armed. The un-escapable form of the wait remains as the
+backstop for reaching the rendezvous with no index at all.
+
+That backstop, and any other outpost wait that outlives the peer's departure, has
+to leave the reliable queue alone when `network_shop_departure_pending()` is
+true. `network_update()` on a `PACKET_WAITING` at the head throws away the packet
+the level-start handshake three lines later is the one waiting for, and that
+handshake has no timeout: the machine that ate it sat on "Waiting for other
+player." forever while the other loaded the level. The two-peer fault test drives
+the whole departure for exactly this reason; removing the guard fails it.
 
 `endlessPlayerDowned[]` latches a ship that lost its hull while its partner flew
 on. It gates the reactive dangers and the per-tick effects, and
@@ -638,7 +657,8 @@ death nothing can claim, such as a despawn), taken from the shot's
 `playerNumber` at both kill sites. `endlessCountKill` uses it for the Combo Feed
 setting and `endlessAwardEliteKill` for the bounty, which then follows the same
 Shared / Individual credit rule as any other kill cash. An unclaimable kill feeds
-both streaks, so neither ship is punished for it.
+both streaks, so neither ship is punished for it, and its bounty pays player 1:
+"the local player" would have paid a different wallet on each machine.
 
 Double Pickups rides settings-flags bit 10 and `coop_pickups_are_doubled` gates
 itself on Individual credit, so the flag can be stored On without doing anything
@@ -669,7 +689,15 @@ that sat idle and is spent by the gun that fires, so `endlessSalvoIdle` and
 The in-game menu's Quit means "back to the outpost" in Endless, for both
 players: `endlessCoopPeerQuitLevel` sets `endlessQuitToOutpost` on the peer,
 which is the same thing the local press does. Campaign and Arcade keep treating
-it as the end of the session.
+it as the end of the session, and only they set `haltGame`, which the level
+warning screen reads as "stop the game" and an Endless relaunch would run into.
+
+Three paths read the peer's `PACKET_GAME_QUIT`, and all three have to agree that
+a quit is not a clear, or the machine that stayed banks the zone and deepens
+while the one that quit reopens the same outpost. From there the pair is a zone
+apart for the rest of the run, charting from slates that no longer match. The
+rollback stall's copy of the rule is `nrb_peer_left_level()`, named rather than
+inlined so the suite can drive it.
 
 Which ship an effect is being computed for is `endlessFxPlayer()`, set by
 `endlessSetFxPlayer` at the few places that work through the players in turn:

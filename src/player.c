@@ -165,7 +165,7 @@ bool coop_pickups_are_doubled(void)
 	return coop_mode_active() && coop_session_double_pickups && !coop_credit_is_shared();
 }
 
-// Credit earned cash. Player 1's Endless income must pass through the run ledger; Online
+// Credit earned cash. This machine's own Endless income must pass through the run ledger; Online
 // Campaign's Shared credit pays the full amount to both players instead of to one.
 static void player_credit_cash(Player *this_player, long amount, EndlessCashSource endless_source)
 {
@@ -176,7 +176,10 @@ static void player_credit_cash(Player *this_player, long amount, EndlessCashSour
 		return;
 	}
 
-	if (endlessMode && this_player == &player[0])
+	// The ledger tracks the wallet of whoever is sitting at this keyboard, so the gate has to name
+	// that same ship. Naming player 1 outright meant the joiner booked its partner's earnings into
+	// its own wallet and paid its own earnings straight past the ledger. Solo, the two are one.
+	if (endlessMode && this_player == &player[endlessEconomyIndex()])
 		endlessCashCredit(amount, endless_source);
 	else
 		this_player->cash += amount;

@@ -596,9 +596,13 @@ A gamble is yours: the cash, gear and drives it hands out or takes away are the
 gambler's. Its rarer outcomes change the next sector instead (a shop discount, a
 bulked-up boss, a rush of rammers), and those land on the pair.
 
-While the charting player is on the course list the other sees "Partner is
-charting a course." Esc there goes back into the outpost, the same as in
-Campaign, and both of you keep shopping until you are ready.
+Only one of you charts, so the other's Start Level puts up "Partner is charting a
+course." and waits there for the sector they pick. Esc goes back into the outpost
+for as long as that wait lasts, so nothing is committed by looking, and both of
+you keep shopping until you are ready.
+
+Quitting a zone from the in-game menu takes both of you back to the same outpost
+you launched from. Neither player banks the zone: it was given up, not finished.
 
 A ship that runs out of hull does not end the zone while its partner is still
 flying. It spectates until the zone finishes, and comes back at the next outpost
