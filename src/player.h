@@ -174,6 +174,16 @@ void calc_purple_balls_needed(Player *);
 // Cash off the playfield. Routes player 1's share through the endless ledger; use it for every
 // pickup credit so the run-over earnings breakdown stays accurate.
 void player_award_pickup_cash(Player *, long amount);
+// Cash off a destroyed enemy, credited to the player whose shot killed it.
+void player_award_kill_cash(Player *, long amount);
+
+/* Online Campaign credit sharing.
+ * coopSharedCredit is the host's stored preference; the session value arrives in the connect
+ * packet's settings block, so both machines award identical cash. Shared pays every kill and
+ * score pickup to both players at full value; Individual pays the shot's owner or the collector. */
+extern bool coopSharedCredit;
+void coop_set_session_shared_credit(bool shared);
+bool coop_credit_is_shared(void);
 
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);

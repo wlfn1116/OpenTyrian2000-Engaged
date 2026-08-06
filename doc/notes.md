@@ -505,6 +505,55 @@ The host's is authoritative, but it is held rather than applied on arrival:
 the local player has also finished, so the host committing cannot end the other
 player's outpost visit mid-purchase.
 
+Credit sharing is `coopSharedCredit`, packed as settings bit 9 and adopted into
+`coop_set_session_shared_credit()`, so both machines award identical cash.
+`player_award_pickup_cash` and `player_award_kill_cash` are the only two credit
+paths; the shared branch pays both players and bypasses the Endless ledger, which
+Campaign never uses.
+
+### Leaving the outpost
+
+`shopLeaveOutpost()` runs inside the shop loop rather than after it, so a
+withdrawn commit only has to clear `jumpSection` for the loop to reopen the
+outpost. `ShopOutpostRoute` is captured before anything can pick a level and is
+what the withdrawal restores, along with a staged debug-browser pick.
+
+`shopCampaignRendezvous()` settles the commit in two steps because it must be
+impossible for one machine to leave while the other is going back. Step one
+publishes DONE and accepts Esc until the peer's DONE arrives; step two publishes
+LOCK and waits for the peer's. A machine may withdraw only before it has seen the
+peer's DONE, so the retract window closes for both at the same event, and the
+ordered channel makes a received LOCK proof that no withdrawal can still follow.
+DONE and LOCK are state bits carried by every `PACKET_SHOP_SYNC`, not events, and
+the receiver assigns rather than latches them.
+
+Step two is also the one place both machines are guaranteed to be draining the
+inbound queue, which is why `network_custom_weapon_publish()` is called there.
+
+### Custom weapons online
+
+Both machines fly both ships, so each player's design has to exist on both.
+`CUSTOM_WEAPON_OWNERS` reserved sets are claimed by `customWeaponClaimSlots()`:
+one weapon port, one sidekick option and one scratch weapon range per player
+index. Ownership is by player index, never by local versus remote, or the two
+machines would disagree about which port a `PlayerItems` id names.
+`customWeaponPort` and `customSidekickSlot` stay as the editor's own, resolved
+through `customWeaponLocalOwner()`.
+
+Reloading item data wipes those slots, and a network game reloads at every level
+start, so `customWeaponInit()` ends in `customWeaponMaterializeAll()`, which
+rebuilds the peer's adopted design as well as the local one.
+
+`customWeaponSerializeDesign` writes only each level's populated bullet slots,
+which keeps an ordinary weapon near two kilobytes against a
+`CUSTOM_WEAPON_WIRE_MAX` worst case of about 45. `PACKET_CUSTOM_WEAPON` carries
+it as numbered chunks. Transport delivery is not enough: the inbound queue is
+`NET_PACKET_QUEUE` deep and only advances as the application consumes it, so the
+receiver answers a completed generation with a chunk count of zero and the sender
+resends the generation until that answer arrives. A per-generation chunk bitmap
+makes a resend idempotent. A design that does not decode is refused rather than
+compiled, and both refusal and non-delivery are recorded in the net log.
+
 `MENU_LIMITED_OPTIONS` is the options page with Load Game removed, built from
 `menuInt[3]` by `configure_options_sens_menu()` rather than from the data file's
 shorter DOS network menu. Its rows therefore sit one higher than the offline
@@ -716,9 +765,10 @@ Charge-Laser slot moves between episodes, so its write is guarded against
 Episode-specific changes apply after item data loads and remain idempotent.
 Projectile graphics above 1000 encode a superspark palette bank and base sprite.
 
-The custom weapon uses spare runtime slots. Imported designs are clamped and
-otherwise copied exactly. Every design retains at least one segment and one power
-state. Persistence records have fixed field widths.
+The custom weapon uses spare runtime slots, one reserved set per player index; see
+Custom weapons online for how the sets are claimed and kept live. Imported designs
+are clamped and otherwise copied exactly. Every design retains at least one segment
+and one power state. Persistence records have fixed field widths.
 
 A shot with `poweruse` temporarily zero bypasses both power cost and generator
 availability. Extra beams also require the primary shot to succeed. The Zica

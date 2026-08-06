@@ -540,6 +540,75 @@ static void qa_test_weapon_editor(void)
 	customWeaponMaterialize();
 }
 
+/* The Online Campaign design exchange. Both machines fly both ships, so a design that decodes
+ * to anything other than what was encoded is a desync; a short or hostile stream must be
+ * refused rather than compiled. */
+static void qa_test_custom_weapon_wire(void)
+{
+	const int owner = CUSTOM_WEAPON_OWNERS - 1;
+	const int port = customWeaponOwnerPort[owner];
+	if (port <= 0 || port > PORT_NUM)
+	{
+		qa_check(false, "custom weapon owner slots were reserved during startup");
+		return;
+	}
+
+	customWeaponResetAllLevels();
+	SDL_strlcpy(customWeaponName, "QA Wire Gun", sizeof(customWeaponName));
+	customWeaponCost = 12500;
+	customWeaponPowerUse = 7;
+	customWeaponModes = CUSTOM_WEAPON_MODES;
+	customWeaponChargeStages = 4;
+	customWeaponRaw[0][0].multi = 3;
+	customWeaponRaw[0][0].max = 3;
+	customWeaponRaw[0][0].sy[2] = -9;   /* signed field: the wire carries bytes */
+	customWeaponRaw[0][0].sg[2] = 1234;
+	customWeaponRaw[1][10].attack[0] = 99;
+	customWeaponMaterialize();
+
+	Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
+	if (stream == NULL)
+	{
+		qa_check(false, "custom weapon wire buffer allocation");
+		return;
+	}
+
+	const size_t total = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+	qa_check(total > 0 && total <= CUSTOM_WEAPON_WIRE_MAX,
+	         "custom weapon design encodes inside its declared wire bound");
+
+	qa_check(customWeaponSerializeDesign(stream, 8) == 0,
+	         "custom weapon encoder reports failure instead of running past a short buffer");
+
+	const size_t reencoded = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+	qa_check(reencoded == total && customWeaponAdoptDesign(owner, stream, total),
+	         "custom weapon design decodes into the other player's reserved slots");
+
+	const int scratch = CUSTOM_WEAP_BASE + owner * CUSTOM_WEAPON_MODES * CUSTOM_POWER_LEVELS;
+	qa_check(weaponPort[port].opnum == CUSTOM_WEAPON_MODES
+	         && weaponPort[port].cost == 12500 && weaponPort[port].poweruse == 7
+	         && weapons[scratch].multi == 3 && weapons[scratch].sy[2] == -9
+	         && weapons[scratch].sg[2] == 1234
+	         && weapons[scratch + CUSTOM_POWER_LEVELS + 10].attack[0] == 99,
+	         "adopted design reaches the port and every scratch weapon slot intact");
+
+	qa_check(!customWeaponAdoptDesign(owner, stream, total / 2)
+	         && !customWeaponAdoptDesign(owner, stream, 2)
+	         && !customWeaponAdoptDesign(-1, stream, total)
+	         && !customWeaponAdoptDesign(CUSTOM_WEAPON_OWNERS, stream, total),
+	         "custom weapon decoder refuses a truncated stream and an out-of-range owner");
+
+	stream[0] = CUSTOM_WEAPON_WIRE_VERSION + 1;
+	qa_check(!customWeaponAdoptDesign(owner, stream, total),
+	         "custom weapon decoder refuses an unknown wire version");
+
+	free(stream);
+
+	// Leave the reserved port as the item data had it; nothing else in this run owns it.
+	customWeaponResetAllLevels();
+	customWeaponMaterialize();
+}
+
 static void qa_test_fixed_pool_layout(void)
 {
 	qa_check(RL_ID_ENEMY_BASE + (int)COUNTOF(enemy) <= RL_ID_ENEMYBAR_BASE
@@ -787,6 +856,8 @@ static void qa_test_network_settings(void)
 	const JE_boolean savedScroll = smoothScroll;
 	const bool savedSessionMode = nrb_session_mode(), savedSessionVt = nrb_session_vt();
 	const bool savedSessionRecovery = nrb_session_recovery();
+	const bool savedSharedCredit = coopSharedCredit;
+	const JE_boolean savedCoopCampaign = coopCampaignMode;
 	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
 	 * aligned payload instead of making the alignment itself part of this bounds test. */
 	union {
@@ -805,6 +876,7 @@ static void qa_test_network_settings(void)
 	arcadeLifeBoost = true; arcadeRandomBalls = false;
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
+	coopSharedCredit = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
 	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
@@ -820,6 +892,8 @@ static void qa_test_network_settings(void)
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true;
 	xmasMode = 0; gameSpeed = 5;
+	coop_set_session_shared_credit(false);
+	coopCampaignMode = true;
 	qa_check(network_settings_adopt(packet) == NETWORK_SETTINGS_SIZE,
 	         "network settings decoder consumes its exact fixed block");
 	bool arraysMatch = true;
@@ -829,7 +903,8 @@ static void qa_test_network_settings(void)
 	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
 	         && !arcadeRandomBalls && xmasMode == 1 && gameSpeed == 2
-	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery(),
+	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
+	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
 	network_settings_restore();
 	arraysMatch = true;
@@ -864,6 +939,9 @@ static void qa_test_network_settings(void)
 	nrb_set_session_mode(savedSessionMode);
 	nrb_set_session_vt(savedSessionVt);
 	nrb_set_session_recovery(savedSessionRecovery);
+	coopSharedCredit = savedSharedCredit;
+	coop_set_session_shared_credit(savedSharedCredit);
+	coopCampaignMode = savedCoopCampaign;
 #else
 	qa_check(true, "network settings round trip skipped without networking");
 #endif
@@ -987,6 +1065,7 @@ int qa_run_unit_suite(void)
 	qa_test_perk_registry();
 	qa_test_record_readers();
 	qa_test_weapon_editor();
+	qa_test_custom_weapon_wire();
 	qa_test_fixed_pool_layout();
 	qa_test_save_record_wire();
 	qa_test_cash_ledger();

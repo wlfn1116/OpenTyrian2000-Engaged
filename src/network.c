@@ -31,6 +31,7 @@
 #include "config.h"
 #include "console_platform.h"
 #include "crashlog.h"
+#include "custom_weapon.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -55,10 +56,11 @@
 #include "video.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       14           // v14 adds the lobby game type and campaign settings
+#define NET_VERSION       15           // v15 adds campaign credit sharing and custom weapons
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -471,6 +473,7 @@ static int network_recv_one(void)
 					case PACKET_GAME_MENU:
 					case PACKET_DEBUG_SYNC:
 					case PACKET_SHOP_SYNC:
+					case PACKET_CUSTOM_WEAPON:
 					case PACKET_RESYNC:
 						{
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
@@ -1013,6 +1016,7 @@ int network_connect(void)
 	nrb_set_session_mode(net_rollback);
 	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
 	nrb_set_session_recovery(net_desync_recovery);
+	coop_set_session_shared_credit(coopSharedCredit);
 
 connect_reset:
 	// A listening host has no address to send to yet, so it stays quiet until the joiner
@@ -1394,6 +1398,7 @@ int network_settings_pack(Uint8 *buf)
 	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
+	flags |= coopSharedCredit      ? 1 << 9 : 0;  // Campaign credit sharing; host decides
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1500,6 +1505,7 @@ int network_settings_adopt(const Uint8 *buf)
 	nrb_set_session_mode((flags & (1 << 4)) != 0);
 	nrb_set_session_vt((flags & (1 << 5)) != 0);
 	nrb_set_session_recovery((flags & (1 << 6)) != 0);
+	coop_set_session_shared_credit((flags & (1 << 9)) != 0);
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -1526,6 +1532,9 @@ static Uint16 network_shop_sequence;
 static Uint16 network_shop_peer_sequence;
 static Uint16 network_shop_save_request;
 static bool network_shop_peer_ready;
+static bool network_shop_peer_lock;
+static bool network_shop_local_ready;
+static bool network_shop_local_locked;
 static bool network_shop_save_ready;
 static bool network_shop_active;
 
@@ -1536,12 +1545,15 @@ static bool network_shop_active;
 static bool network_shop_host_committed;
 static JE_byte network_shop_host_level;
 
+/* DONE and LOCK describe the sender's state at send time rather than an event, so every shop
+ * packet carries both and the receiver assigns them. That is what lets a commit be withdrawn. */
 enum
 {
 	SHOP_SYNC_DONE = 1 << 0,
 	SHOP_SYNC_SAVE_REQUEST = 1 << 1,
 	SHOP_SYNC_SAVE_ACK = 1 << 2,
 	SHOP_SYNC_TRANSACTION = 1 << 3,
+	SHOP_SYNC_LOCK = 1 << 4,
 };
 
 static int network_shop_pack_items(Uint8 *buf, const PlayerItems *items)
@@ -1591,6 +1603,13 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 
 	const Player *const this_player = &player[thisPlayerNum - 1];
 	const Uint16 sequence = ++network_shop_sequence;
+
+	// Ride our current rendezvous state on every packet, whatever it was sent for.
+	if (network_shop_local_ready)
+		flags |= SHOP_SYNC_DONE;
+	if (network_shop_local_locked)
+		flags |= SHOP_SYNC_LOCK;
+
 	network_prepare(PACKET_SHOP_SYNC);
 	SDLNet_Write16(thisPlayerNum, &packet_out_temp->data[4]);
 	SDLNet_Write16(sequence, &packet_out_temp->data[6]);
@@ -1609,6 +1628,9 @@ void network_shop_begin(void)
 {
 	network_shop_save_request = 0;
 	network_shop_peer_ready = false;
+	network_shop_peer_lock = false;
+	network_shop_local_ready = false;
+	network_shop_local_locked = false;
 	network_shop_save_ready = false;
 	network_shop_host_committed = false;
 	network_shop_active = isNetworkGame && coopCampaignMode;
@@ -1621,7 +1643,26 @@ void network_shop_send_state(bool done)
 	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
 		return;
 
-	network_shop_send_packet(done ? SHOP_SYNC_DONE : 0, 0);
+	network_shop_local_ready = done;
+	if (!done)
+		network_shop_local_locked = false;
+	network_shop_send_packet(0, 0);
+}
+
+// Step two of the outpost rendezvous, which is what keeps a withdrawal from racing a departure.
+// See "Leaving the outpost" in doc/notes.md.
+void network_shop_set_locked(bool locked)
+{
+	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_local_locked = locked;
+	network_shop_send_packet(0, 0);
+}
+
+bool network_shop_peer_locked(void)
+{
+	return network_shop_peer_lock;
 }
 
 void network_shop_send_transaction(void)
@@ -1632,10 +1673,257 @@ void network_shop_send_transaction(void)
 	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
 }
 
+/* Custom weapon design exchange. A design is chunked over the reliable channel and the receiver
+ * answers a completed generation with a chunk count of zero; see "Custom weapons online" in
+ * doc/notes.md for why transport delivery alone is not enough. */
+#define NCW_OWNER      4    /* Uint8:  publishing player number, 1 or 2      */
+#define NCW_GEN        6    /* Uint16: publication, so a stale stream is dropped */
+#define NCW_CHUNK      8    /* Uint16: chunk index                           */
+#define NCW_COUNT     10    /* Uint16: chunk total, or 0 for an acknowledgement */
+#define NCW_LEN       12    /* Uint16: payload bytes in this chunk            */
+#define NCW_HDR       14
+#define NCW_PAYLOAD   (NET_PACKET_SIZE - NCW_HDR)
+#define NCW_ATTEMPTS   3    /* whole-stream retries before giving up          */
+#define NCW_ATTEMPT_MS 6000 /* ms to get one attempt acknowledged             */
+
+static Uint16 network_custom_gen;
+static Uint32 network_custom_out_hash;  // last design the peer took; 0 = nothing published yet
+static bool   network_custom_acked;
+static Uint16 network_custom_in_gen;
+static Uint32 network_custom_in_have;
+static Uint32 network_custom_in_count;
+static int    network_custom_in_owner = -1;
+static size_t network_custom_in_len;
+static Uint8 *network_custom_in_buf;
+static Uint8 *network_custom_in_seen;
+
+static void network_custom_in_reset(void)
+{
+	network_custom_in_owner = -1;
+	network_custom_in_count = 0;
+	network_custom_in_have = 0;
+	network_custom_in_len = 0;
+	free(network_custom_in_buf);
+	free(network_custom_in_seen);
+	network_custom_in_buf = NULL;
+	network_custom_in_seen = NULL;
+}
+
+void network_custom_weapon_reset(void)
+{
+	network_custom_in_reset();
+	network_custom_out_hash = 0;
+	network_custom_acked = false;
+}
+
+static void network_custom_send_ack(Uint16 gen)
+{
+	network_prepare(PACKET_CUSTOM_WEAPON);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+static bool network_custom_weapon_receive(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return true;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return true;
+	}
+
+	if (count == 0)  // the peer took the generation we are publishing
+	{
+		if (gen == network_custom_gen)
+			network_custom_acked = true;
+		network_update();
+		return true;
+	}
+
+	if (chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (size_t)count * NCW_PAYLOAD > CUSTOM_WEAPON_WIRE_MAX)
+	{
+		network_update();
+		return true;
+	}
+
+	if (network_custom_in_buf == NULL || network_custom_in_gen != gen ||
+	    network_custom_in_count != count || network_custom_in_owner != (int)sender - 1)
+	{
+		network_custom_in_reset();
+		network_custom_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_custom_in_seen = calloc((size_t)count, 1);
+		if (network_custom_in_buf == NULL || network_custom_in_seen == NULL)
+		{
+			network_custom_in_reset();
+			network_update();
+			return true;
+		}
+		network_custom_in_gen = gen;
+		network_custom_in_count = count;
+		network_custom_in_owner = (int)sender - 1;
+	}
+
+	memcpy(network_custom_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_custom_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_custom_in_seen[chunk])
+	{
+		network_custom_in_seen[chunk] = 1;
+		++network_custom_in_have;
+	}
+
+	if (network_custom_in_have >= count && network_custom_in_len > 0)
+	{
+		const int owner = network_custom_in_owner;
+		const size_t total = network_custom_in_len;
+		Uint8 *const stream = network_custom_in_buf;
+
+		network_custom_in_buf = NULL;  // the adopt call owns the bytes
+		if (!customWeaponAdoptDesign(owner, stream, total))
+		{
+			crashlog_netlog_line("CUSTOM WEAPON REFUSED",
+			                     "the peer's design did not decode; its ship keeps the "
+			                     "placeholder weapon and the two machines would disagree.");
+		}
+		free(stream);
+		network_custom_in_reset();
+
+		// Answer whether or not the design decoded: resending would produce the same bytes.
+		network_custom_send_ack(gen);
+	}
+
+	network_update();
+	return true;
+}
+
+/* Publish from a point where the peer is known to be draining its inbound queue: the outpost
+ * rendezvous is the one place both machines are guaranteed to be in a pump loop. */
+void network_custom_weapon_publish(void)
+{
+	// Nothing to publish while the feature is off: the port stays a placeholder and no ship can
+	// be carrying the weapon. Turning it on and equipping goes through the next rendezvous.
+	if (!isNetworkGame || !coopCampaignMode || !customWeaponEnabled ||
+	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	// FNV-1a over the encoded design: this runs on the way out of every outpost visit, and
+	// most of those fly the same weapon as the last one.
+	Uint32 hash = 2166136261u;
+	for (size_t i = 0; i < total; ++i)
+	{
+		hash ^= stream[i];
+		hash *= 16777619u;
+	}
+	if (hash == 0)
+		hash = 1;  // 0 means "nothing published yet"
+	if (hash == network_custom_out_hash)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_custom_gen;
+	network_custom_acked = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_custom_acked; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_custom_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			// Keep half the reliable queue free: transport acknowledgements arrive ahead of
+			// consumption, and the shop's own traffic still has to fit alongside this.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_CUSTOM_WEAPON);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			// Drain our own inbound: the peer publishes from the same rendezvous, and its
+			// acknowledgement is behind whatever it has already sent us.
+			while (network_shop_pump() || network_debug_sync_pump(false))
+				;
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_custom_acked)
+	{
+		crashlog_netlog_line("CUSTOM WEAPON NOT DELIVERED",
+		                     "the peer never acknowledged the design; its copy of this ship "
+		                     "keeps the placeholder weapon, which the canary reports as a desync.");
+		network_custom_out_hash = 0;  // start over at the next outpost
+	}
+	else
+	{
+		network_custom_out_hash = hash;
+	}
+
+	free(stream);
+}
+
 bool network_shop_pump(void)
 {
-	if (!isNetworkGame || !coopCampaignMode || packet_in[0] == NULL ||
-	    SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
+	if (!isNetworkGame || !coopCampaignMode || packet_in[0] == NULL)
+		return false;
+
+	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
+		return network_custom_weapon_receive();
+
+	if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
 		return false;
 
 	if (packet_in[0]->len >= 35)
@@ -1652,14 +1940,17 @@ bool network_shop_pump(void)
 			network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
 			peer->last_items = peer->items;
 
-			if (flags & SHOP_SYNC_DONE)
+			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
+			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
+
+			// A withdrawn commit takes the route with it, or the host's abandoned planet would
+			// still drag the session there once both sides finally leave.
+			network_shop_host_committed = false;
+			if (network_shop_peer_ready && sender == networkHostPlayerNum &&
+			    SDLNet_Read16(&packet_in[0]->data[12]) != 0)
 			{
-				network_shop_peer_ready = true;
-				if (sender == networkHostPlayerNum && SDLNet_Read16(&packet_in[0]->data[12]) != 0)
-				{
-					network_shop_host_committed = true;
-					network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
-				}
+				network_shop_host_committed = true;
+				network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
 			}
 
 			if (flags & SHOP_SYNC_SAVE_REQUEST)
@@ -2221,6 +2512,8 @@ void network_shutdown(void)
 	// Reset every sync counter, or a second session would start mid-sequence.
 	debug_sync_gen = 0;
 	memset(debug_sync_last, 0, sizeof(debug_sync_last));
+	network_custom_weapon_reset();
+	network_shop_sequence = network_shop_peer_sequence = 0;
 	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;
 	last_in_tick = last_out_tick = 0;
 	last_state_in_sync = last_state_out_sync = 0;

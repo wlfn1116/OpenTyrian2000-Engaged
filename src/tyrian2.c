@@ -4539,10 +4539,7 @@ level_loop:
 											{
 												// in galaga mode player 2 is sidekick, so give cash to player 1
 												Player *const paid = &player[galagaMode ? 0 : playerNum - 1];
-												if (endlessMode && paid == &player[0])
-													endlessCashCredit(enemy[temp2].evalue, ENDLESS_CASH_KILL);
-												else
-													paid->cash += enemy[temp2].evalue;
+												player_award_kill_cash(paid, enemy[temp2].evalue);
 											}
 										}
 
@@ -6618,7 +6615,12 @@ void networkStartScreen(void)
 			value[rows++] = episode_name[network_host_episode];
 			label[rows] = "Difficulty";
 			value[rows++] = difficultyNameB[network_host_difficulty];
-			if (!campaign)
+			if (campaign)
+			{
+				label[rows] = "Credit";
+				value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
+			}
+			else
 			{
 				// Campaign gives both slots the same kind of ship, so there is nothing to say.
 				label[rows] = "You Fly";

@@ -138,13 +138,44 @@ void calc_purple_balls_needed(Player *this_player)
 	this_player->purple_balls_needed = purple_balls_required[*this_player->lives];
 }
 
-// Credit collected cash. Player 1's Endless income must pass through the run ledger.
-void player_award_pickup_cash(Player *this_player, long amount)
+bool coopSharedCredit = true;
+static bool coop_session_shared_credit = true;
+
+void coop_set_session_shared_credit(bool shared)
 {
+	coop_session_shared_credit = shared;
+}
+
+bool coop_credit_is_shared(void)
+{
+	return coopCampaignMode && coop_session_shared_credit;
+}
+
+// Credit earned cash. Player 1's Endless income must pass through the run ledger; Online
+// Campaign's Shared credit pays the full amount to both players instead of to one.
+static void player_credit_cash(Player *this_player, long amount, EndlessCashSource endless_source)
+{
+	if (coop_credit_is_shared())
+	{
+		for (uint i = 0; i < COUNTOF(player); ++i)
+			player[i].cash += amount;
+		return;
+	}
+
 	if (endlessMode && this_player == &player[0])
-		endlessCashCredit(amount, ENDLESS_CASH_PICKUP);
+		endlessCashCredit(amount, endless_source);
 	else
 		this_player->cash += amount;
+}
+
+void player_award_pickup_cash(Player *this_player, long amount)
+{
+	player_credit_cash(this_player, amount, ENDLESS_CASH_PICKUP);
+}
+
+void player_award_kill_cash(Player *this_player, long amount)
+{
+	player_credit_cash(this_player, amount, ENDLESS_CASH_KILL);
 }
 
 bool power_up_weapon(Player *this_player, uint port)

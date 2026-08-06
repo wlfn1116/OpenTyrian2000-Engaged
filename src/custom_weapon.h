@@ -20,10 +20,15 @@
 // exceed the old cap. The editor exposes exactly this many segments.
 #define CUSTOM_BULLETS_MAX WEAPON_MULTI_MAX
 
-// Scratch weapon slots for the compiled custom designs: one per (mode, level),
-// CUSTOM_WEAP_BASE + mode*CUSTOM_POWER_LEVELS + (level-1). Lives in the unused
-// WEAP_END1(818)..WEAP_START2(1000) gap, past the Charge-Laser (900-905) and Zica
-// side-beams (906-907); 2 modes x 11 levels = 910..931 fits.
+// Online Campaign gives each player slot its own reserved weapon port, sidekick option and
+// scratch weapon range, so both designs are live at once and mean the same thing on both
+// machines. Everything outside Online Campaign uses owner 0 only.
+#define CUSTOM_WEAPON_OWNERS 2
+
+// Scratch weapon slots for the compiled custom designs: one per (owner, mode, level),
+// CUSTOM_WEAP_BASE + (owner*CUSTOM_WEAPON_MODES + mode)*CUSTOM_POWER_LEVELS + (level-1). Lives
+// in the unused WEAP_END1(818)..WEAP_START2(1000) gap, past the Charge-Laser (900-905) and Zica
+// side-beams (906-907); 2 owners x 2 modes x 11 levels = 910..953 fits.
 #define CUSTOM_WEAP_BASE 910
 
 // Highest sound sample the engine can play (see sndmast.h SFX_COUNT).
@@ -66,11 +71,19 @@ extern int customWeaponEditMode;    // 0 .. CUSTOM_WEAPON_MODES-1
 // Master feature toggle (shows the "Custom" buy/sell row; gates equipping).
 extern bool customWeaponEnabled;
 
-// Port index claimed for the custom weapon (resolved at init). 0 = none free.
+// Port index claimed for this machine's own custom weapon (resolved at init). 0 = none free.
 extern int customWeaponPort;
 
-// Option (sidekick) slot claimed for the custom weapon's sidekick (0 = none free).
+// Option (sidekick) slot claimed for this machine's own custom sidekick (0 = none free).
 extern int customSidekickSlot;
+
+// The reserved slots per owner. Index with the player index, not with local/remote: both
+// machines must agree on which port carries which player's weapon. 0 = none free.
+extern int customWeaponOwnerPort[CUSTOM_WEAPON_OWNERS];
+extern int customSidekickOwnerSlot[CUSTOM_WEAPON_OWNERS];
+
+// The owner index the editor, the preview and Equip write. Always 0 outside Online Campaign.
+int customWeaponLocalOwner(void);
 
 // Sidekick body appearance. Mount style selects position and sprite sheet;
 // animation and charge stages advance from Sprite by FrameStep.
@@ -112,9 +125,8 @@ int customBulletMaxPower(int presetIdx);
 // JE_loadItemDat() (also safe to call again; it never clobbers a loaded design).
 void customWeaponInit(void);
 
-// Copy every power level's raw design into weapons[CUSTOM_WEAP_BASE + level] and
-// wire up weaponPort[customWeaponPort] + the sidekick. Safe to call after
-// every edit.
+// Copy every power level's raw design into this owner's scratch weapon slots and wire up its
+// port and sidekick. Safe to call after every edit.
 void customWeaponMaterialize(void);
 
 // Equip the (freshly materialized) custom weapon into the player's front/rear bay
@@ -199,5 +211,21 @@ int  customWeaponLibraryDelete(void);
 // single slot from the working copy when no file exists yet, migrating an old single weapon).
 void customWeaponLibraryLoad(void);
 void customWeaponLibrarySave(void);
+
+/* Online Campaign design exchange. Serialize writes this machine's working copy; Adopt installs
+ * a received one into another player's reserved slots without touching the editor. The format is
+ * versioned and self-delimiting, and Adopt clamps everything it reads. */
+#define CUSTOM_WEAPON_WIRE_VERSION 1
+
+// Upper bound on the encoded size: the fixed header plus every (mode, level) at full width.
+#define CUSTOM_WEAPON_WIRE_MAX \
+	(64 + CUSTOM_WEAPON_MODES * CUSTOM_POWER_LEVELS * (18 + 8 * CUSTOM_BULLETS_MAX))
+
+size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap);
+bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len);
+
+// Claim and compile the reserved slots both players need. Idempotent; call when a Campaign
+// session reaches the outpost.
+void customWeaponNetPrepare(void);
 
 #endif // CUSTOM_WEAPON_H

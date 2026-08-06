@@ -56,6 +56,7 @@
 #define PACKET_GAME_MENU     0x32    //
 #define PACKET_DEBUG_SYNC    0x33    // generation, sender, <debug state block>  (see network_debug_sync_send)
 #define PACKET_SHOP_SYNC     0x34    // sender, sequence, flags, route, cash, mode, ack, items
+#define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -203,6 +204,17 @@ void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
 bool network_shop_pump(void);
 bool network_shop_peer_done(void);
+// Second step of the outpost rendezvous. Lock once the peer is done too, then wait for its lock;
+// a peer that withdrew instead clears network_shop_peer_done and the wait starts over.
+void network_shop_set_locked(bool locked);
+bool network_shop_peer_locked(void);
+
+/* Publish this machine's custom weapon design so the peer can fly and simulate it. Both ships
+ * run on both machines, so a design that only exists on one of them is a desync. Sending is
+ * chunked over the reliable channel and blocks until delivered; call it from the outpost only.
+ * Incoming chunks are consumed by network_shop_pump. */
+void network_custom_weapon_publish(void);
+void network_custom_weapon_reset(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:
 // the joiner has to be allowed to finish shopping first.
 void network_shop_adopt_host_level(void);
@@ -299,6 +311,10 @@ static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }
 static inline bool network_shop_pump(void) { return false; }
 static inline bool network_shop_peer_done(void) { return true; }
+static inline void network_shop_set_locked(bool locked) { (void)locked; }
+static inline bool network_shop_peer_locked(void) { return true; }
+static inline void network_custom_weapon_publish(void) { }
+static inline void network_custom_weapon_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }
 static inline void network_shop_sync_for_save(void) { }

@@ -863,7 +863,7 @@ static void configure_custom_weapon_menu(void)
 		savedDoneValid = true;
 	}
 
-	if (customWeaponEnabled && !(isNetworkGame && coopCampaignMode))
+	if (customWeaponEnabled)
 	{
 		menuChoices[MENU_UPGRADES] = 10;
 		SDL_strlcpy(menuInt[2][8], "Custom", entrySize);   // item 9
@@ -1011,8 +1011,8 @@ static int draw_2p_info_row(int x, int y, int bright, const char *label, const c
 #ifdef WITH_NETWORK
 // Dim the outpost and centre a notice over it while the other machine catches up.  The shop draws
 // into the 320-wide legacy menu field, so centring is on that rather than on the wider frame.
-// `detail` may be NULL when there is nothing to add under the headline.
-static void shopWaitNotice(const char *text, const char *detail)
+// `detail` and `hint` may be NULL when there is nothing to add under the headline.
+static void shopWaitNotice(const char *text, const char *detail, const char *hint)
 {
 	JE_barShade(VGAScreen, 3, 3, LEGACY_WIDTH - 4, 196);
 	JE_barShade(VGAScreen, 1, 1, LEGACY_WIDTH - 2, 198);
@@ -1022,6 +1022,184 @@ static void shopWaitNotice(const char *text, const char *detail)
 	{
 		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 110, detail,
 		                    small_font, centered, 15, 4, false, 1);
+	}
+	if (hint != NULL)
+	{
+		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 122, hint,
+		                    small_font, centered, 15, 2, false, 1);
+	}
+}
+
+// Keep the waiting frame alive and the cursor moving during a rendezvous.
+static void shopWaitFrame(void)
+{
+	service_SDL_events(false);
+	mouseCursor = MOUSE_POINTER_NORMAL;
+	JE_mouseStart();
+	JE_showVGA();
+	JE_mouseReplace();
+}
+
+/* The Campaign half of leaving the outpost. Returns false when the player withdrew and wants to
+ * go on outfitting; "Leaving the outpost" in doc/notes.md covers why it takes two steps. */
+static bool shopCampaignRendezvous(void)
+{
+	network_shop_send_state(true);
+
+	for (;;)
+	{
+		// Step one: both committed. Esc withdraws, but only until the peer's commit lands,
+		// because from that point the peer is allowed to lock and stop listening.
+		while (!network_shop_peer_done())
+		{
+			shopWaitFrame();
+
+			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+			{
+				newkey = false;
+				JE_playSampleNum(S_SPRING);
+				network_shop_send_state(false);
+				return false;
+			}
+			newkey = false;
+
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			network_update();
+			network_check();
+			SDL_Delay(16);
+		}
+
+		// Both machines are now in this loop draining packets, which is the one window wide
+		// enough for a custom weapon design. It is a no-op unless the design changed.
+		network_custom_weapon_publish();
+
+		// Step two: publish the lock and wait for the peer's. A withdrawal already in flight
+		// clears the peer's commit here, which unlocks us and reopens the first wait.
+		network_shop_set_locked(true);
+		while (!network_shop_peer_locked() && network_shop_peer_done())
+		{
+			shopWaitFrame();
+			newkey = false;
+
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			network_update();
+			network_check();
+			SDL_Delay(16);
+		}
+
+		if (network_shop_peer_done())
+			return true;
+
+		network_shop_set_locked(false);
+	}
+}
+
+// The outpost's route before a level was picked, so a withdrawn commit can put it back.
+typedef struct
+{
+	JE_byte mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum;
+}
+ShopOutpostRoute;
+
+/* Hand the outpost over to the level both machines are about to load. In Campaign a player who
+ * is still waiting may withdraw, which restores `route`, clears jumpSection and returns; the
+ * shop loop then reads that as "still outfitting" and reopens the outpost. */
+static void shopLeaveOutpost(const ShopOutpostRoute *route)
+{
+	// Both rendezvous below are the same wait as far as the player is concerned, so the
+	// notice goes up once and stays: shading twice would darken the frame twice over.
+	// Campaign is the one that can wait a long time -- whoever picks a level first waits
+	// for the other to finish outfitting, and an outpost that merely stops responding
+	// reads as a hang.
+	shopWaitNotice("Waiting for other player.",
+	               coopCampaignMode ? "They are still in the outpost." : NULL,
+	               coopCampaignMode ? "Press Esc to go back." : NULL);
+
+	// The rendezvous below is the last point where both machines are still in menu code, so
+	// it is where the level they are about to load has to be agreed on.  A debug-browser pick
+	// rides along in the WAITING packet; whichever player made one drags the other into it.
+	// Read here rather than at the send: the campaign hand-off just below has to know a pick
+	// is staged, since a pick outranks the route.
+	JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
+	const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
+
+	if (coopCampaignMode)
+	{
+		shopPlayer()->last_items = shopPlayer()->items;
+
+		if (!shopCampaignRendezvous())
+		{
+			mainLevel = route->mainLevel;
+			nextLevel = route->nextLevel;
+			lvlFileNum = route->lvlFileNum;
+			forcedLvlFileNum = route->forcedLvlFileNum;
+			jumpSection = false;
+			gameLoaded = false;
+			debugLevelPickReset();
+
+			curMenu = MENU_FULL_GAME;
+			newPal = 1;
+			return;
+		}
+
+		// Both have committed, so a disagreement can be settled: the host's planet is the one
+		// the session flies.  Deferred to here on purpose -- applied on arrival it would end
+		// the other player's outpost visit the instant the host picked.  A staged browser pick
+		// is exempt: it beats the route on both machines, and taking the host's route here
+		// would leave us loading it while the host adopts the pick below.
+		if (!myPick)
+			network_shop_adopt_host_level();
+		network_shop_end();
+	}
+
+	network_prepare(PACKET_WAITING);
+	packet_out_temp->data[4] = myPick ? 1 : 0;
+	packet_out_temp->data[5] = myPickEp;
+	packet_out_temp->data[6] = myPickSec;
+	packet_out_temp->data[7] = myPickFile;
+	network_send(8);  // PACKET_WAITING + debug level pick
+
+	while (true)
+	{
+		shopWaitFrame();
+
+		// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
+		// and ordered), so both machines load the level with the same loadouts.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			// Adopt the other player's browser pick.  If we made one too the host's wins,
+			// so the two machines can never resolve the tie in opposite directions.
+			if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
+			    (!myPick || !network_is_host))
+			{
+				debugLevelPickApply(packet_in[0]->data[5],
+				                    packet_in[0]->data[6],
+				                    packet_in[0]->data[7]);
+			}
+
+			network_update();
+			break;
+		}
+
+		network_update();
+		network_check();
+
+		SDL_Delay(16);
+	}
+
+	network_state_reset();
+
+	while (!network_is_sync())
+	{
+		shopWaitFrame();
+
+		network_check();
+		SDL_Delay(16);
 	}
 }
 #endif
@@ -1053,7 +1231,13 @@ void JE_itemScreen(void)
 	configure_options_sens_menu();
 	configure_endless_shop_menu();
 	if (isNetworkGame && coopCampaignMode)
+	{
 		network_shop_begin();
+
+		// Both machines fly both ships, so each player's design needs its own reserved slots
+		// here; the designs themselves are exchanged at the rendezvous on the way out.
+		customWeaponNetPrepare();
+	}
 
 	play_song(songBuy);
 
@@ -1089,6 +1273,12 @@ void JE_itemScreen(void)
 	}
 
 	int temp_weapon_power[7]; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
+
+#ifdef WITH_NETWORK
+	// Taken before anything can pick a level, so a withdrawn commit restores the arrival route
+	// rather than whichever one an earlier attempt happened to leave behind.
+	const ShopOutpostRoute outpostRoute = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
+#endif
 
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	for (int i = 0; i < 7; i++)
@@ -2832,118 +3022,15 @@ void JE_itemScreen(void)
 			}
 		}
 
-	} while (!(quit || gameLoaded || jumpSection));
-
 #ifdef WITH_NETWORK
-	if (!quit && isNetworkGame)
-	{
-		// Both rendezvous below are the same wait as far as the player is concerned, so the
-		// notice goes up once and stays: shading twice would darken the frame twice over.
-		// Campaign is the one that can wait a long time -- whoever picks a level first waits
-		// for the other to finish outfitting, and an outpost that merely stops responding
-		// reads as a hang.
-		shopWaitNotice("Waiting for other player.",
-		               coopCampaignMode ? "They are still in the outpost." : NULL);
-
-		// The rendezvous below is the last point where both machines are still in menu code, so
-		// it is where the level they are about to load has to be agreed on.  A debug-browser pick
-		// rides along in the WAITING packet; whichever player made one drags the other into it.
-		// Read here rather than at the send: the campaign hand-off just below has to know a pick
-		// is staged, since a pick outranks the route.
-		JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
-		const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
-
-		if (coopCampaignMode)
-		{
-			shopPlayer()->last_items = shopPlayer()->items;
-			network_shop_send_state(true);
-
-			while (!network_shop_peer_done())
-			{
-				service_SDL_events(false);
-				mouseCursor = MOUSE_POINTER_NORMAL;
-				JE_mouseStart();
-				JE_showVGA();
-				JE_mouseReplace();
-
-				if (network_shop_pump() || network_debug_sync_pump(false))
-					continue;
-				network_update();
-				network_check();
-				SDL_Delay(16);
-			}
-
-			// Both have committed, so a disagreement can be settled: the host's planet is the one
-			// the session flies.  Deferred to here on purpose -- applied on arrival it would end
-			// the other player's outpost visit the instant the host picked.  A staged browser pick
-			// is exempt: it beats the route on both machines, and taking the host's route here
-			// would leave us loading it while the host adopts the pick below.
-			if (!myPick)
-				network_shop_adopt_host_level();
-			network_shop_end();
-		}
-
-		network_prepare(PACKET_WAITING);
-		packet_out_temp->data[4] = myPick ? 1 : 0;
-		packet_out_temp->data[5] = myPickEp;
-		packet_out_temp->data[6] = myPickSec;
-		packet_out_temp->data[7] = myPickFile;
-		network_send(8);  // PACKET_WAITING + debug level pick
-
-		while (true)
-		{
-			service_SDL_events(false);
-			// Keep the mouse cursor alive while we wait on the other player.
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
-			// and ordered), so both machines load the level with the same loadouts.
-			if (network_debug_sync_pump(false))
-				continue;
-
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
-			{
-				// Adopt the other player's browser pick.  If we made one too the host's wins,
-				// so the two machines can never resolve the tie in opposite directions.
-				if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
-				    (!myPick || !network_is_host))
-				{
-					debugLevelPickApply(packet_in[0]->data[5],
-					                    packet_in[0]->data[6],
-					                    packet_in[0]->data[7]);
-				}
-
-				network_update();
-				break;
-			}
-
-			network_update();
-			network_check();
-
-			SDL_Delay(16);
-		}
-
-		network_state_reset();
-	}
-
-	if (isNetworkGame)
-	{
-		while (!network_is_sync())
-		{
-			service_SDL_events(false);
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			network_check();
-			SDL_Delay(16);
-		}
-	}
+		// Leaving the outpost is a rendezvous with the other machine.  It sits inside the loop
+		// so a withdrawn Campaign commit can simply carry on: it clears jumpSection, and the
+		// condition below then reads this visit as unfinished.
+		if (isNetworkGame && !quit && (gameLoaded || jumpSection))
+			shopLeaveOutpost(&outpostRoute);
 #endif
+
+	} while (!(quit || gameLoaded || jumpSection));
 
 	if (gameLoaded)
 		fade_black(10);
@@ -8777,7 +8864,8 @@ void JE_menuFunction(JE_byte select)
 		}
 		else if (customWeaponEnabled && select == 9) // Custom: open the creator, equip from there
 		{
-			if (JE_customWeaponCreator(true))
+			const bool equipped = JE_customWeaponCreator(true);
+			if (equipped)
 			{
 				// Equipped: reflect the new loadout so the shop keeps it and the custom
 				// weapon shows in its Front/Rear weapon list.
@@ -8785,6 +8873,11 @@ void JE_menuFunction(JE_byte select)
 				old_items[shopPlayerIndex] = shopPlayer()->items;
 				shopPlayer()->last_items = shopPlayer()->items;
 			}
+
+			// The new loadout has to reach the other machine like any other purchase; the
+			// design behind it goes out at the rendezvous.
+			if (equipped)
+				network_shop_send_transaction();
 		}
 		else // selected item to upgrade
 		{

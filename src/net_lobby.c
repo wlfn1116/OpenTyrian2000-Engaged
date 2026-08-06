@@ -34,6 +34,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "player.h"
 #include "sprite.h"
 #include "vga256d.h"
 #include "video.h"
@@ -507,6 +508,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_EPISODE,
 		ITEM_DIFFICULTY,
 		ITEM_PLAYER,
+		ITEM_CREDIT,
 		ITEM_SPEED,
 		ITEM_NETCODE,
 		ITEM_RECOVERY,
@@ -519,7 +521,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	static const char *const itemLabel[SETTING_COUNT] =
 	{
 		"Listen Port", "Game Type", "Episode", "Difficulty",
-		"Host Flies", "Game Speed", "Netcode", "Desync Recovery",
+		"Host Flies", "Credit", "Game Speed", "Netcode", "Desync Recovery",
 	};
 
 	static const char *const itemHelp[ITEM_COUNT] =
@@ -529,6 +531,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		"Which episode the session plays.",
 		"Applies to both players for the whole game.",
 		"Which ship you take; the joiner gets the other.",
+		"Shared pays a kill or pickup to both players.",
 		"Game speed, forced on both players.",
 		"Rollback hides latency; delay-based is lockstep.",
 		"Repairs a desync from the host's state.",
@@ -569,8 +572,14 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		// Campaign gives both slots an identical, independently equipped ship, so which one the
 		// host takes decides nothing; the row only exists to pick the Dragonwing in Arcade.
-		const bool playerHidden = network_game_type == NETWORK_GAME_CAMPAIGN;
+		// Credit sharing is the opposite way round, so exactly one of the two rows is ever on
+		// screen and the block keeps its height either way.
+		const bool campaign = network_game_type == NETWORK_GAME_CAMPAIGN;
+		const bool playerHidden = campaign;
+		const bool creditHidden = !campaign;
 		if (playerHidden && selectedIndex == ITEM_PLAYER)
+			selectedIndex = ITEM_CREDIT;
+		else if (creditHidden && selectedIndex == ITEM_CREDIT)
 			selectedIndex = ITEM_SPEED;
 
 		const char *itemValue[SETTING_COUNT];
@@ -579,8 +588,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
 		itemValue[ITEM_DIFFICULTY] = difficultyNameB[network_host_difficulty];
 		itemValue[ITEM_PLAYER] = network_host_player == 2
-		                       ? (network_game_type == NETWORK_GAME_CAMPAIGN ? "Player 2" : "Dragonwing")
-		                       : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Player 1" : "Silver Ship");
+		                       ? (campaign ? "Player 2" : "Dragonwing")
+		                       : (campaign ? "Player 1" : "Silver Ship");
+		itemValue[ITEM_CREDIT] = coopSharedCredit ? "Shared" : "Individual";
 		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
 		itemValue[ITEM_NETCODE] = net_rollback ? "Rollback" : "Delay-Based";
 		itemValue[ITEM_RECOVERY] = net_desync_recovery ? "On" : "Off";
@@ -590,7 +600,10 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		int rowY[SETTING_COUNT];
 		int shown = 0;
 		for (int i = 0; i < SETTING_COUNT; ++i)
-			rowY[i] = (i == ITEM_PLAYER && playerHidden) ? -1 : ySettings + dySettings * shown++;
+		{
+			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden);
+			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
+		}
 
 		// Size the block to its widest visible row and hang the columns off its edges, so no
 		// value shifts the labels as it changes.  The floor keeps a screenful of short values
@@ -721,7 +734,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				do
 					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
 				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
-				       (selectedIndex == ITEM_PLAYER && playerHidden));
+				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
+				       (selectedIndex == ITEM_CREDIT && creditHidden));
 				break;
 
 			case SDL_SCANCODE_DOWN:
@@ -729,7 +743,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				do
 					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
 				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
-				       (selectedIndex == ITEM_PLAYER && playerHidden));
+				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
+				       (selectedIndex == ITEM_CREDIT && creditHidden));
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -823,6 +838,14 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// The joiner is told which slot remains during the handshake.
 			JE_playSampleNum(S_CLICK);
 			network_host_player = (network_host_player == 2) ? 1 : 2;
+			break;
+
+		case ITEM_CREDIT:
+			// Shared pays a kill or a score pickup to both players in full; Individual pays
+			// the shot's owner or the collector.  The host's value binds the session (settings
+			// block bit 9) so both machines award the same cash.
+			JE_playSampleNum(S_CLICK);
+			coopSharedCredit = !coopSharedCredit;
 			break;
 
 		case ITEM_SPEED:

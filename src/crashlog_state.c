@@ -306,6 +306,13 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Name:         '%.30s'\n", customWeaponName);
 		fprintf(f, "  Port=%d sidekickSlot=%d equip=%d cost=%d\n",
 		        customWeaponPort, customSidekickSlot, customWeaponEquipSlot, customWeaponCost);
+		if (coopCampaignMode)
+		{
+			// Both players' reserved slots: a mismatch here is a Campaign desync waiting to happen.
+			fprintf(f, "  Owner slots:  P1 port=%d sk=%d, P2 port=%d sk=%d\n",
+			        customWeaponOwnerPort[0], customSidekickOwnerSlot[0],
+			        customWeaponOwnerPort[1], customSidekickOwnerSlot[1]);
+		}
 		fprintf(f, "  Library:      %d weapon(s), editing slot %d\n",
 		        customWeaponLibCount, customWeaponCurrentSlot);
 	}

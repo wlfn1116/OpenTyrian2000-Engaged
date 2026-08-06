@@ -491,12 +491,12 @@ The menu refuses to start a netgame while the FPS Cap is below 35: the simulatio
 runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
-**Host Game** covers the listen port, game type, episode, difficulty, Host Flies,
-Game Speed, Netcode, and Desync Recovery, one row each with the current value on
-the right and a line explaining the highlighted row underneath. The host's
-choices bind the session for both machines. While the other player waits for the
-host to start, they see the same list. The joiner's own settings are left alone
-and restored afterwards.
+**Host Game** covers the listen port, game type, episode, difficulty, Host Flies
+or Credit, Game Speed, Netcode, and Desync Recovery, one row each with the
+current value on the right and a line explaining the highlighted row underneath.
+The host's choices bind the session for both machines. While the other player
+waits for the host to start, they see the same list. The joiner's own settings
+are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
@@ -504,6 +504,7 @@ and restored afterwards.
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. |
 | Difficulty | Starting campaign difficulty. Arcade applies its usual two-player difficulty adjustment. |
 | Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign gives both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
+| Credit | Campaign only, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
 | Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. Greyed out unless Netcode is Rollback. |
@@ -539,6 +540,16 @@ waits at "Waiting for other player." while the other finishes outfitting; nobody
 is pulled out of the outpost early. Where the route offers a choice of planets and
 the two of you pick different ones, the host's choice is the one you both fly.
 Endless remains a one-player mode.
+
+While you are waiting, **Esc** takes you back into the outpost to change
+equipment or pick a different planet. The waiting screen says so. Once the other
+player has picked their level too, the pair of you are committed and Esc no
+longer answers; the level loads a moment later.
+
+Custom weapons work in Campaign, one design each. Your design is sent to the
+other machine on the way out of the outpost, so both of you fly and see the real
+thing. Sending it happens once per changed design and can hold the "Waiting for
+other player." screen for a moment on a large weapon.
 
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
@@ -597,6 +608,10 @@ section.
 | Ctrl+S | Save now |
 | Esc | Cancel a number being entered, otherwise save and return |
 | Right-click | Save and return |
+
+In Online Campaign each player brings their own design. The two are kept apart, so
+you can both fly a custom weapon in the same session without either of you seeing
+the other's in your shop.
 
 ## Restored and tweakable content
 
