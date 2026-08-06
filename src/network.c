@@ -50,6 +50,7 @@
 #include "opentyr.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "rollback.h"
 #include "shots.h"
 #include "sprite.h"
@@ -3268,7 +3269,37 @@ int network_init(void)
 	return 0;
 }
 
-int network_test_peer(int rounds)
+/* Shared close for every scenario: settle the reliable channel, then hold the socket open long
+ * enough that a dropped ACK for the last payload can still be re-earned before we exit. */
+static int net_test_finish(int rounds)
+{
+	const Uint32 sync_start = SDL_GetTicks();
+	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!network_is_sync())
+	{
+		fprintf(stderr, "network test: the reliable channel never settled\n");
+		return 1;
+	}
+
+	const Uint32 drain_start = SDL_GetTicks();
+	while (SDL_GetTicks() - drain_start < NET_RETRY * 3 + 200)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+
+	printf("NETWORK TEST PASS player=%u rounds=%d scenario=%d ping=%dms\n",
+	       thisPlayerNum, rounds, qa_net_scenario, network_ping_ms());
+	return 0;
+}
+
+int network_test_peer(int rounds, int scenario)
 {
 	if (rounds < 1 || rounds > 1000)
 		return 2;
@@ -3344,6 +3375,16 @@ int network_test_peer(int rounds)
 			fprintf(stderr, "network test: acknowledgement timed out in round %d\n", round);
 			return 1;
 		}
+	}
+
+	/* The rounds above establish a live, synchronized session; each scenario then drives one
+	 * mode's own protocol over it. */
+	if (scenario != 0)
+	{
+		const int rc = (scenario == 1) ? qa_net_campaign_phases() : qa_net_endless_phases();
+		if (rc != 0)
+			return rc;
+		return net_test_finish(rounds);
 	}
 
 	/* The Relaxed death prompt. One player reads it for as long as they like while the other waits
@@ -3650,31 +3691,7 @@ int network_test_peer(int rounds)
 	coopEndlessMode = false;
 	coopCampaignMode = true;
 
-	const Uint32 sync_start = SDL_GetTicks();
-	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
-	{
-		watchdog_heartbeat();
-		network_check();
-		SDL_Delay(1);
-	}
-	if (!network_is_sync())
-		return 1;
-
-	/* An ACK is intentionally not reliable itself. If the peer's ACK for our final payload was
-	 * dropped, it needs us to keep the socket alive long enough to resend that payload and receive
-	 * another ACK. Earlier rounds naturally get this grace from the next round; the last one needs
-	 * an explicit bounded drain before either test process exits. */
-	const Uint32 drain_start = SDL_GetTicks();
-	while (SDL_GetTicks() - drain_start < NET_RETRY * 3 + 200)
-	{
-		watchdog_heartbeat();
-		network_check();
-		SDL_Delay(1);
-	}
-
-	printf("NETWORK TEST PASS player=%u rounds=%d ping=%dms\n",
-	       thisPlayerNum, rounds, network_ping_ms());
-	return 0;
+	return net_test_finish(rounds);
 }
 
 #else
