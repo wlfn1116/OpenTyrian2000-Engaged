@@ -28,29 +28,35 @@
 #define ENDLESS_REAL_WEAPON_PORTS 47
 
 // Escalating outpost prices, reset each visit.
-long endlessRerollCost = 0;
-int  endlessHullCost   = 0;
+long endlessRerollCost[2] = { 0, 0 };
+int  endlessHullCost[2]   = { 0, 0 };
 
 // Store the visit's kill-fire purchase until course selection folds it into the next sector.
-unsigned endlessPurchasedMods = 0;
+unsigned endlessPurchasedMods[2] = { 0, 0 };
 // Which kill-fire buff was bought this visit (mutually exclusive): 0 none, 1 Turbodrive,
 // 2 Overdrive.
-int endlessBuffKind = 0;
+int endlessBuffKind[2] = { 0, 0 };
 // Overblast damage stacks rise per kill and reset when the kill-fire window closes.
 int endlessOverdriveStacks = 0;
 
 // Absolute run depth at which kill-fire purchases unlock, or zero when available.
-int endlessBuffCooldownUntil = 0;
+int endlessBuffCooldownUntil[2] = { 0, 0 };
 
 // E-Shop state.
 // Buff "charge" scales the kill-fire window/damage with the cash paid (normalized by depth,
 // cap 20). Reset each run.
-int endlessBuffCharge = 0;
+int endlessBuffCharge[2] = { 0, 0 };
 int endlessBuffWindowTicks(void)  // base kill-fire window, extended by charge (up to ~2.5x)
 {
 	// charge 0 -> 1.0x (~2s), charge 10 -> 1.75x (~3.5s), charge 20 -> 2.5x (~5s)
-	return ENDLESS_TURBODRIVE_TICKS * (40 + 3 * endlessBuffCharge) / 40;
+	// A sector runs one kill-fire window for both ships, so the larger payment sets its length.
+	return ENDLESS_TURBODRIVE_TICKS * (40 + 3 * endlessBuffChargePaid()) / 40;
 }
+
+// The player the outpost is spending for, and their wallet.
+static uint me(void)          { return endlessEconomyIndex(); }
+static Player *shopper(void)  { return &player[endlessEconomyIndex()]; }
+static ulong shopperCash(void) { return player[endlessEconomyIndex()].cash; }
 static int endlessBuffChargeFromPaid(long paid)  // cash paid -> charge tier (normalized by depth), cap 20
 {
 	const long unit = 2000 + (long)endlessRunDepth * 150;
@@ -59,20 +65,20 @@ static int endlessBuffChargeFromPaid(long paid)  // cash paid -> charge tier (no
 }
 
 // Revives and cleanse charges persist for the run. Their visit prices reset in endlessResetShopPrices.
-bool endlessReviveHeld = false;
-int  endlessRevivesUsed = 0;
-int  endlessCleanseChargeCount = 0;
-long endlessBombCost = 0, endlessExtraPerkCost = 0, endlessCleanseCost = 0;
-char endlessGambleMsg[48] = "";
-bool endlessGamblePerkWon = false;  // a gamble handed out a free perk pick; the E-Shop dispatch opens MENU_PERKS
-int  endlessShopTax = 0;            // Loan Shark: permanent +% on every shop price for the rest of the run
-bool endlessGambleRigged = false;   // Rigged rolls twice and keeps the worse result
-int  endlessLongCon = 0;            // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due (0 = none)
+bool endlessReviveHeld[2] = { false, false };
+int  endlessRevivesUsed[2] = { 0, 0 };
+int  endlessCleanseChargeCount[2] = { 0, 0 };
+long endlessBombCost[2] = { 0, 0 }, endlessExtraPerkCost[2] = { 0, 0 }, endlessCleanseCost[2] = { 0, 0 };
+char endlessGambleMsg[2][48] = { "", "" };
+bool endlessGamblePerkWon[2] = { false, false };  // a gamble handed out a free perk pick; the E-Shop dispatch opens MENU_PERKS
+int  endlessShopTax[2] = { 0, 0 };            // Loan Shark: permanent +% on every shop price for the rest of the run
+bool endlessGambleRigged[2] = { false, false };   // Rigged rolls twice and keeps the worse result
+int  endlessLongCon[2] = { 0, 0 };            // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due (0 = none)
 bool endlessResumeVisit   = false;  // a save was just loaded: the next outpost restores its snapshot instead of rerolling (consumed by endlessBetweenLevels)
 bool endlessCreditsShown  = false;  // the zone-100 credits roll has already played this run; rides the save so reloading the zone-101 outpost doesn't replay it
 
 // Cash-fraction purchases use the entry balance so their prices remain fixed during the visit.
-long endlessShopEntryCash = 0;
+long endlessShopEntryCash[2] = { 0, 0 };
 
 #define ENDLESS_HULL_STEP 6      // +armor per hull upgrade
 #define ENDLESS_HULL_BASE 60     // starting cap on the run-persistent armor bonus (zone 0)
@@ -107,9 +113,13 @@ long endlessStartingCash(void)
 
 void endlessApplyStartingLoadout(void)
 {
-	player[0].items.weapon[FRONT_WEAPON].id = ENDLESS_START_FRONT_WEAPON;
-	player[0].items.weapon[FRONT_WEAPON].power = 1;
-	player[0].last_items = player[0].items;  // keep the shop's "already owned" list in sync
+	// Both ships launch with the same gun; a co-op run outfits them apart from here on.
+	for (uint p = 0; p < (endlessCoop() ? COUNTOF(player) : 1u); ++p)
+	{
+		player[p].items.weapon[FRONT_WEAPON].id = ENDLESS_START_FRONT_WEAPON;
+		player[p].items.weapon[FRONT_WEAPON].power = 1;
+		player[p].last_items = player[p].items;  // keep the shop's "already owned" list in sync
+	}
 }
 
 // Move the starting gun to the first row after inventory sorting at the initial outpost.
@@ -246,7 +256,7 @@ static void endlessFillCategory(int availIdx, JE_byte costType, int idMax, bool 
 	// Shuffle uniformly on the structural stream and take the requested count.
 	for (int i = poolN - 1; i > 0; --i)
 	{
-		const int j = (int)(endlessRand() % (Uint32)(i + 1));
+		const int j = (int)(endlessRandFor(me()) % (Uint32)(i + 1));
 		const JE_byte t = pool[i]; pool[i] = pool[j]; pool[j] = t;
 	}
 	for (int i = 0; i < poolN && n < want; ++i)
@@ -268,7 +278,7 @@ static void endlessFillShop(void)
 
 	// Seed each category with the player's live equipped item, never the stale
 	// last_items, so a reroll keeps whatever is on the ship.
-	const PlayerItems *it = &player[0].items;
+	const PlayerItems *it = &shopper()->items;
 
 	// Front and rear share one id pool: fill front first (holding back the equipped rear), then
 	// rear excluding the front row, so no weapon id lands in both menus at once.
@@ -324,35 +334,35 @@ static long endlessRebuy(long cost, long num, long den, long add)
 
 void endlessResetShopPrices(void)
 {
-	endlessRerollCost = ENDLESS_PRICE_REROLL_BASE + (long)endlessRunDepth * ENDLESS_PRICE_REROLL_PER_ZONE;
-	endlessHullCost   = ENDLESS_PRICE_HULL_BASE + endlessRunDepth * ENDLESS_PRICE_HULL_PER_ZONE;
-	endlessBombCost   = ENDLESS_PRICE_BOMB_BASE + (long)endlessRunDepth * ENDLESS_PRICE_BOMB_PER_ZONE;
-	endlessExtraPerkCost = ENDLESS_PRICE_EXTRAPERK_BASE + (long)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
-	endlessCleanseCost = ENDLESS_PRICE_CLEANSE_BASE + (long)endlessRunDepth * ENDLESS_PRICE_CLEANSE_PER_ZONE;
-	endlessCleanseChargeCount = 0;  // fresh visit: no pending sabotage strips carried in
-	endlessGambleMsg[0] = '\0';
-	endlessPurchasedMods = 0;   // fresh visit: no pending buff
-	endlessBuffKind = 0;        // a kill-fire buff (Turbodrive or Overdrive) can be bought again
-	endlessLastSpecialName[0] = '\0';             // no special bought yet this visit
-	endlessShopEntryCash = (long)player[0].cash;  // freeze the cash-fraction buy prices for this visit
+	endlessRerollCost[me()] = ENDLESS_PRICE_REROLL_BASE + (long)endlessRunDepth * ENDLESS_PRICE_REROLL_PER_ZONE;
+	endlessHullCost[me()]   = ENDLESS_PRICE_HULL_BASE + endlessRunDepth * ENDLESS_PRICE_HULL_PER_ZONE;
+	endlessBombCost[me()]   = ENDLESS_PRICE_BOMB_BASE + (long)endlessRunDepth * ENDLESS_PRICE_BOMB_PER_ZONE;
+	endlessExtraPerkCost[me()] = ENDLESS_PRICE_EXTRAPERK_BASE + (long)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
+	endlessCleanseCost[me()] = ENDLESS_PRICE_CLEANSE_BASE + (long)endlessRunDepth * ENDLESS_PRICE_CLEANSE_PER_ZONE;
+	endlessCleanseChargeCount[me()] = 0;  // fresh visit: no pending sabotage strips carried in
+	endlessGambleMsg[me()][0] = '\0';
+	endlessPurchasedMods[me()] = 0;   // fresh visit: no pending buff
+	endlessBuffKind[me()] = 0;        // a kill-fire buff (Turbodrive or Overdrive) can be bought again
+	endlessLastSpecialName[me()][0] = '\0';       // no special bought yet this visit
+	endlessShopEntryCash[me()] = (long)shopperCash();  // freeze the cash-fraction buy prices for this visit
 }
 
-long endlessRerollPrice(void) { return endlessRerollCost; }
-int  endlessHullPrice(void)   { return endlessHullCost; }
-bool endlessHullMaxed(void)   { return endlessArmorBonus >= endlessHullMax(); }
+long endlessRerollPrice(void) { return endlessRerollCost[me()]; }
+int  endlessHullPrice(void)   { return endlessHullCost[me()]; }
+bool endlessHullMaxed(void)   { return endlessArmorBonus[me()] >= endlessHullMax(); }
 
 // Cash-fraction purchases use the entry balance and apply to the next sector.
 // Only one of the three kill-fire buffs per visit; Buy Special is a single premium buy.
 static long endlessCashFraction(long num, long den)
 {
-	return endlessShopEntryCash * num / den;
+	return endlessShopEntryCash[me()] * num / den;
 }
 
 long endlessTurbodrivePrice(void) { return endlessCashFraction(2, 3); }    // 66 percent
 long endlessOverblastPrice(void)  { return endlessCashFraction(3, 4); }    // 75 percent
 long endlessOverdrivePrice(void)  { return endlessCashFraction(19, 20); }  // 95 percent
 long endlessSpecialPrice(void)    { return endlessCashFraction(4, 5); }    // 80 percent
-int  endlessBuffKindBought(void)  { return endlessBuffKind; }
+int  endlessBuffKindBought(void)  { return endlessBuffKind[me()]; }
 
 // Kill-fire purchases share a depth-scaled cooldown stored as an absolute unlock depth.
 #define ENDLESS_BUFF_COOLDOWN_BASE        2
@@ -365,22 +375,22 @@ static int endlessBuffCooldownLength(void)
 		n += (endlessRunDepth - ENDLESS_BUFF_COOLDOWN_RAMP_START) / ENDLESS_BUFF_COOLDOWN_RAMP_STEP;
 	return n;
 }
-static void endlessArmBuffCooldown(void) { endlessBuffCooldownUntil = endlessRunDepth + endlessBuffCooldownLength(); }
+static void endlessArmBuffCooldown(void) { endlessBuffCooldownUntil[me()] = endlessRunDepth + endlessBuffCooldownLength(); }
 
-bool endlessBuffOnCooldown(void)   { return endlessRunDepth < endlessBuffCooldownUntil; }
-int  endlessBuffCooldownLeft(void) { int d = endlessBuffCooldownUntil - endlessRunDepth; return (d > 0) ? d : 0; }
+bool endlessBuffOnCooldown(void)   { return endlessRunDepth < endlessBuffCooldownUntil[me()]; }
+int  endlessBuffCooldownLeft(void) { int d = endlessBuffCooldownUntil[me()] - endlessRunDepth; return (d > 0) ? d : 0; }
 
 // Kill-fire purchases share affordability, visit, effect-exclusivity, and recharge gates.
 static bool endlessTryBuyKillFire(long cost, unsigned bit, int kind)
 {
-	if (endlessBuffKind != 0 || endlessBuffOnCooldown() || cost < 1 || player[0].cash < (ulong)cost)
+	if (endlessBuffKind[me()] != 0 || endlessBuffOnCooldown() || cost < 1 || shopperCash() < (ulong)cost)
 		return false;
 	endlessCashDebit(cost, ENDLESS_SINK_BUFF);
-	endlessBuffCharge = endlessBuffChargeFromPaid(cost);  // larger spend extends the window and damage
+	endlessBuffCharge[me()] = endlessBuffChargeFromPaid(cost);  // larger spend extends the window and damage
 	// OR'd into the next sector in endlessSelectCourse. Replacing the whole kill-fire field keeps it
 	// to one effect at a time, which also clears any gambled curse.
-	endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | bit;
-	endlessBuffKind = kind;
+	endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | bit;
+	endlessBuffKind[me()] = kind;
 	endlessArmBuffCooldown();  // lock all three kill-fire buys for the scaled recharge
 	return true;
 }
@@ -402,7 +412,33 @@ bool endlessTryBuyOverblast(void)   // Overdrive damage stacks without the fire 
 
 // The kill-fire buff bits bought this shop visit but not yet applied (endlessSelectCourse ORs
 // them into the next sector). Exposed so the debug level-select can fold them in too.
-unsigned endlessPendingMods(void) { return endlessPurchasedMods; }
+unsigned endlessPendingMods(void) { return endlessPurchasedMods[me()]; }
+
+/* Both players' purchases for the sector they are about to fly. A sector carries at most one
+ * kill-fire effect, so when the two bought different ones the stronger boon wins and a boon
+ * always beats a gambled curse. */
+unsigned endlessMergePurchasedMods(void)
+{
+	unsigned mods = endlessPurchasedMods[0];
+	if (endlessEffectPlayers() > 1)
+		mods |= endlessPurchasedMods[1];
+
+	static const unsigned killFireRank[] = {
+		ENDLESS_MOD_OVERDRIVE, ENDLESS_MOD_OVERBLAST, ENDLESS_MOD_TURBODRIVE,
+		ENDLESS_MOD_BURNOUT, ENDLESS_MOD_MISFIRE, ENDLESS_MOD_BACKFIRE,
+	};
+	for (unsigned i = 0; i < COUNTOF(killFireRank); ++i)
+		if (mods & killFireRank[i])
+			return (mods & ~(unsigned)ENDLESS_MOD_KILLFIRE_ANY) | killFireRank[i];
+	return mods;
+}
+
+// The largest kill-fire charge either player paid for, which is what sets the shared window.
+int endlessBuffChargePaid(void)
+{
+	return (endlessEffectPlayers() > 1) ? MAX(endlessBuffCharge[0], endlessBuffCharge[1])
+	                                    : endlessBuffCharge[0];
+}
 
 // Purchased kill-fire effects replace charted effects rather than combining with them.
 // No-Elites also supersedes No-Champions.
@@ -419,50 +455,51 @@ Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased)
 bool endlessTryBuySpecial(void)
 {
 	long cost = endlessSpecialPrice();
-	if (cost < 1 || player[0].cash < (ulong)cost)
+	if (cost < 1 || shopperCash() < (ulong)cost)
 		return false;
 	endlessCashDebit(cost, ENDLESS_SINK_SUPPLIES);
-	endlessGrantSpecial();  // equips a random valid special (+ HUD message in-level)
+	endlessGrantSpecial(me());  // equips a random valid special (+ HUD message in-level)
 	return true;
 }
 
 // Buy one superbomb.
-long endlessBombPrice(void) { return endlessBombCost; }
-bool endlessBombFull(void)  { return player[0].superbombs >= 10; }
+long endlessBombPrice(void) { return endlessBombCost[me()]; }
+bool endlessBombFull(void)  { return shopper()->superbombs >= 10; }
 bool endlessTryBuyBomb(void)
 {
-	if (player[0].superbombs >= 10 || player[0].cash < (ulong)endlessBombCost)
+	if (shopper()->superbombs >= 10 || shopperCash() < (ulong)endlessBombCost[me()])
 		return false;
-	endlessCashDebit(endlessBombCost, ENDLESS_SINK_SUPPLIES);
-	++player[0].superbombs;
-	endlessBombCost = endlessRebuy(endlessBombCost, ENDLESS_REBUY_BOMB_NUM, ENDLESS_REBUY_BOMB_DEN, 0);
+	endlessCashDebit(endlessBombCost[me()], ENDLESS_SINK_SUPPLIES);
+	++shopper()->superbombs;
+	endlessBombCost[me()] = endlessRebuy(endlessBombCost[me()], ENDLESS_REBUY_BOMB_NUM, ENDLESS_REBUY_BOMB_DEN, 0);
 	return true;
 }
 
 // A revive survives one lethal hit and restores full hull. Its price doubles after each use.
 long endlessRevivePrice(void)
 {
-	const int steps = endlessRevivesUsed > 5 ? 5 : endlessRevivesUsed;
+	const int steps = endlessRevivesUsed[me()] > 5 ? 5 : endlessRevivesUsed[me()];
 	return (150000 + (long)endlessRunDepth * 10000) * (1 << steps);
 }
-bool endlessReviveArmed(void) { return endlessReviveHeld; }
+bool endlessReviveArmed(void) { return endlessReviveHeld[me()]; }
 bool endlessTryBuyRevive(void)
 {
 	const long cost = endlessRevivePrice();
-	if (endlessReviveHeld || player[0].cash < (ulong)cost)
+	if (endlessReviveHeld[me()] || shopperCash() < (ulong)cost)
 		return false;
 	endlessCashDebit(cost, ENDLESS_SINK_REVIVE);
-	endlessReviveHeld = true;
+	endlessReviveHeld[me()] = true;
 	return true;
 }
-// Consume a revive and arm its grace period. The caller clears the screen on success.
-bool endlessConsumeRevive(void)
+// Consume player p's revive and arm its grace period. The caller clears the screen on success.
+// Runs inside the simulation, so it must not read the local machine's economy index.
+bool endlessConsumeRevive(uint p)
 {
-	if (!endlessMode || !endlessReviveHeld)
+	if (!endlessMode || p >= COUNTOF(player) || !endlessReviveHeld[p])
 		return false;
-	endlessReviveHeld = false;
-	++endlessRevivesUsed;
-	player[0].armor = player[0].initial_armor;  // full hull restore
+	endlessReviveHeld[p] = false;
+	++endlessRevivesUsed[p];
+	player[p].armor = player[p].initial_armor;  // full hull restore
 	endlessReviveGraceArm();
 	return true;
 }
@@ -470,35 +507,35 @@ bool endlessConsumeRevive(void)
 // Extra perk: the E-Shop opens the perk menu after purchase.
 long endlessExtraPerkPrice(void)
 {
-	// Base = depth price, doubled per buy this visit (endlessExtraPerkCost). Surcharge = a capped
+	// Base = depth price, doubled per buy this visit (endlessExtraPerkCost[me()]). Surcharge = a capped
 	// per-owned-perk % on top, recomputed live so it climbs as you actually accumulate perks.
 	int surcharge = endlessPerkTotalOwned() * ENDLESS_EXTRA_PERK_OWNED_PCT;
 	if (surcharge > ENDLESS_EXTRA_PERK_OWNED_CAP)
 		surcharge = ENDLESS_EXTRA_PERK_OWNED_CAP;
-	return endlessExtraPerkCost * (100 + surcharge) / 100;
+	return endlessExtraPerkCost[me()] * (100 + surcharge) / 100;
 }
 bool endlessTryBuyExtraPerk(void)
 {
 	const long price = endlessExtraPerkPrice();  // single source of truth: the same value shown in the E-Shop help line
-	if (player[0].cash < (ulong)price)
+	if (shopperCash() < (ulong)price)
 		return false;
 	endlessCashDebit(price, ENDLESS_SINK_PERK);
-	endlessExtraPerkCost = endlessRebuy(endlessExtraPerkCost, ENDLESS_REBUY_EXTRAPERK_NUM, ENDLESS_REBUY_EXTRAPERK_DEN, 0);
+	endlessExtraPerkCost[me()] = endlessRebuy(endlessExtraPerkCost[me()], ENDLESS_REBUY_EXTRAPERK_NUM, ENDLESS_REBUY_EXTRAPERK_DEN, 0);
 	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS_BOUGHT);  // dispatch opens MENU_PERKS to pick one of four
 	return true;
 }
 
 // Sabotage charges strip the worst modifier from the next chosen course.
-long endlessCleansePrice(void)   { return endlessCleanseCost; }
-int  endlessCleanseCharges(void) { return endlessCleanseChargeCount; }
-bool endlessCleanseMaxed(void)   { return endlessCleanseChargeCount >= ENDLESS_CLEANSE_MAX_CHARGES; }
+long endlessCleansePrice(void)   { return endlessCleanseCost[me()]; }
+int  endlessCleanseCharges(void) { return endlessCleanseChargeCount[me()]; }
+bool endlessCleanseMaxed(void)   { return endlessCleanseChargeCount[me()] >= ENDLESS_CLEANSE_MAX_CHARGES; }
 bool endlessTryBuyCleanse(void)
 {
-	if (endlessCleanseMaxed() || player[0].cash < (ulong)endlessCleanseCost)
+	if (endlessCleanseMaxed() || shopperCash() < (ulong)endlessCleanseCost[me()])
 		return false;
-	endlessCashDebit(endlessCleanseCost, ENDLESS_SINK_SUPPLIES);
-	++endlessCleanseChargeCount;
-	endlessCleanseCost = endlessRebuy(endlessCleanseCost, ENDLESS_REBUY_CLEANSE_NUM, ENDLESS_REBUY_CLEANSE_DEN, 0);
+	endlessCashDebit(endlessCleanseCost[me()], ENDLESS_SINK_SUPPLIES);
+	++endlessCleanseChargeCount[me()];
+	endlessCleanseCost[me()] = endlessRebuy(endlessCleanseCost[me()], ENDLESS_REBUY_CLEANSE_NUM, ENDLESS_REBUY_CLEANSE_DEN, 0);
 	return true;
 }
 // Strip the single most-dangerous hostile bit from a modifier set (one per cleanse charge).
@@ -525,13 +562,15 @@ Uint64 endlessStripWorstMod(Uint64 mods)
 	return mods;
 }
 
+#define GAMBLE_MSG_LEN sizeof endlessGambleMsg[0]
+
 // Gamble outcomes use a depth-scaled fee and existing run-state levers.
 long endlessGamblePrice(void) { return 25000 + (long)endlessRunDepth * 2000; }  // limits repeated jackpot fishing
-const char *endlessGambleResult(void) { return endlessGambleMsg; }
-bool endlessGambleWonPerk(void) { return endlessGamblePerkWon; }
+const char *endlessGambleResult(void) { return endlessGambleMsg[me()]; }
+bool endlessGambleWonPerk(void) { return endlessGamblePerkWon[me()]; }
 // Clear the one-dispatch perk flag after opening its menu.
-void endlessClearGamblePerk(void) { endlessGamblePerkWon = false; }
-int  endlessShopTaxPercent(void) { return endlessShopTax; }
+void endlessClearGamblePerk(void) { endlessGamblePerkWon[me()] = false; }
+int  endlessShopTaxPercent(void) { return endlessShopTax[me()]; }
 // Outcome IDs are stable and aligned with endlessGambleOutcomeNames.
 enum {
 	EGO_JACKPOT, EGO_WIN, EGO_REVIVE, EGO_PERK, EGO_HULL, EGO_OVERCLOCK, EGO_SPECIAL,
@@ -561,224 +600,229 @@ static const char *const endlessGambleOutcomeNames[EGO_COUNT] = {
 // Apply one outcome without charging or rolling. `cost` scales cash outcomes.
 static void endlessApplyGambleOutcome(int id, long cost)
 {
+	char *const msg = endlessGambleMsg[me()];
+
 	switch (id)
 	{
-	case EGO_JACKPOT: { const long win = cost * 5; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "JACKPOT!  +$%ld", win); break; }
-	case EGO_MEGAJACKPOT: { const long win = 1000000; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "MEGA JACKPOT!  +$%ld", win); break; }
-	case EGO_WIN:     { const long win = cost * 2; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Win!  +$%ld", win); break; }
+	case EGO_JACKPOT: { const long win = cost * 5; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "JACKPOT!  +$%ld", win); break; }
+	case EGO_MEGAJACKPOT: { const long win = 1000000; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "MEGA JACKPOT!  +$%ld", win); break; }
+	case EGO_WIN:     { const long win = cost * 2; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Win!  +$%ld", win); break; }
 	case EGO_REVIVE:
-		if (!endlessReviveHeld)
-		{ endlessReviveHeld = true; SDL_strlcpy(endlessGambleMsg, "Won a REVIVE token!", sizeof endlessGambleMsg); }
+		if (!endlessReviveHeld[me()])
+		{ endlessReviveHeld[me()] = true; SDL_strlcpy(msg, "Won a REVIVE token!", GAMBLE_MSG_LEN); }
 		else
-		{ const long win = cost * 4; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Revive held --  +$%ld", win); }
+		{ const long win = cost * 4; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Revive held --  +$%ld", win); }
 		break;
 	case EGO_PERK:
 		endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // the E-Shop dispatch opens MENU_PERKS when endlessGambleWonPerk() is set
 		if (endlessPerkChoiceCount() > 0)
-		{ endlessGamblePerkWon = true; SDL_strlcpy(endlessGambleMsg, "Won a free perk pick!", sizeof endlessGambleMsg); }
+		{ endlessGamblePerkWon[me()] = true; SDL_strlcpy(msg, "Won a free perk pick!", GAMBLE_MSG_LEN); }
 		else
-		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Perks maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Perks maxed --  +$%ld", win); }
 		break;
 	case EGO_HULL:
-		if (endlessArmorBonus < endlessHullMax())
-		{ endlessArmorBonus += ENDLESS_HULL_STEP; snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Hull tier!  +%d armor", ENDLESS_HULL_STEP); }
+		if (endlessArmorBonus[me()] < endlessHullMax())
+		{ endlessArmorBonus[me()] += ENDLESS_HULL_STEP; snprintf(msg, GAMBLE_MSG_LEN, "Hull tier!  +%d armor", ENDLESS_HULL_STEP); }
 		else
-		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Hull maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Hull maxed --  +$%ld", win); }
 		break;
 	case EGO_OVERCLOCK:  // +1 permanent front-gun power (the bait that makes Meltdown sting)
-		if ((int)player[0].items.weapon[FRONT_WEAPON].power < 11)
-		{ ++player[0].items.weapon[FRONT_WEAPON].power; SDL_strlcpy(endlessGambleMsg, "Overclocked!  +1 gun power", sizeof endlessGambleMsg); }
+		if ((int)shopper()->items.weapon[FRONT_WEAPON].power < 11)
+		{ ++shopper()->items.weapon[FRONT_WEAPON].power; SDL_strlcpy(msg, "Overclocked!  +1 gun power", GAMBLE_MSG_LEN); }
 		else
-		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Guns maxed --  +$%ld", win); }
+		{ const long win = cost * 3; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Guns maxed --  +$%ld", win); }
 		break;
-	case EGO_SPECIAL: endlessGrantSpecial(); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Won a special weapon! (%s)", endlessLastSpecialName); break;
+	case EGO_SPECIAL: endlessGrantSpecial(me()); snprintf(msg, GAMBLE_MSG_LEN, "Won a special weapon! (%s)", endlessLastSpecialName[me()]); break;
 	case EGO_ARSENAL:
 	{
 		int got = 0;
-		while (player[0].superbombs < 10) { ++player[0].superbombs; ++got; }
+		while (shopper()->superbombs < 10) { ++shopper()->superbombs; ++got; }
 		if (got > 0)
-			snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Arsenal!  +%d bombs", got);
+			snprintf(msg, GAMBLE_MSG_LEN, "Arsenal!  +%d bombs", got);
 		else
-		{ const long win = cost * 2; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Bombs full --  +$%ld", win); }
+		{ const long win = cost * 2; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Bombs full --  +$%ld", win); }
 		break;
 	}
 	case EGO_SECONDWIND:
-		player[0].armor = player[0].initial_armor;  // full hull restore (bonuses stack on top, as with Revive)
-		SDL_strlcpy(endlessGambleMsg, "Second wind! Hull restored.", sizeof endlessGambleMsg);
+		shopper()->armor = shopper()->initial_armor;  // full hull restore (bonuses stack on top, as with Revive)
+		SDL_strlcpy(msg, "Second wind! Hull restored.", GAMBLE_MSG_LEN);
 		break;
 	case EGO_BLOODMONEY:  // floor of a normal Win, plus a fat bonus the more wrecked your hull is
 	{
-		const int maxA = player[0].initial_armor > 0 ? player[0].initial_armor : 1;
-		const int miss = maxA - (int)player[0].armor;
+		const int maxA = shopper()->initial_armor > 0 ? shopper()->initial_armor : 1;
+		const int miss = maxA - (int)shopper()->armor;
 		const long win = cost * 2 + (long)cost * 3 * (miss > 0 ? miss : 0) / maxA;
 		endlessCashCredit(win, ENDLESS_CASH_GAMBLE);
-		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Blood money!  +$%ld", win);
+		snprintf(msg, GAMBLE_MSG_LEN, "Blood money!  +$%ld", win);
 		break;
 	}
 	case EGO_OVERBLAST:
-		endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_OVERBLAST;
-		SDL_strlcpy(endlessGambleMsg, "Overblast next sector!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_OVERBLAST;
+		SDL_strlcpy(msg, "Overblast next sector!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_OVERCHARGE:
-		endlessPurchasedMods |= ENDLESS_MOD_OVERCHARGE;
-		SDL_strlcpy(endlessGambleMsg, "Overcharged next sector!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_OVERCHARGE;
+		SDL_strlcpy(msg, "Overcharged next sector!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_FAVOR:
-		endlessPurchasedMods |= ENDLESS_MOD_FAVOR;
-		SDL_strlcpy(endlessGambleMsg, "Favor: cheap shop next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_FAVOR;
+		SDL_strlcpy(msg, "Favor: cheap shop next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_GOLDEN:
-		endlessPurchasedMods |= ENDLESS_MOD_BOUNTY;
-		SDL_strlcpy(endlessGambleMsg, "Golden touch: big clear next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_BOUNTY;
+		SDL_strlcpy(msg, "Golden touch: big clear next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_DOUBLENOTHING:  // a straight coin-flip on your entire cash pile
-		if (endlessRand() % 2)
+		if (endlessRandFor(me()) % 2)
 		{
 			// Clamp at two billion and book the signed wallet delta.
-			const ulong pile = player[0].cash;
+			const ulong pile = shopperCash();
 			const ulong doubled = (pile > 1000000000UL) ? 2000000000UL : pile * 2;
 			if (doubled > pile)
 				endlessCashCredit((long)(doubled - pile), ENDLESS_CASH_GAMBLE);
 			else
 				endlessCashDebit((Sint64)(pile - doubled), ENDLESS_SINK_GAMBLE);
-			SDL_strlcpy(endlessGambleMsg, "DOUBLED! The pile is yours.", sizeof endlessGambleMsg);
+			SDL_strlcpy(msg, "DOUBLED! The pile is yours.", GAMBLE_MSG_LEN);
 		}
 		else
-		{ endlessCashDebit((Sint64)player[0].cash, ENDLESS_SINK_GAMBLE); SDL_strlcpy(endlessGambleMsg, "NOTHING. Wiped clean.", sizeof endlessGambleMsg); }
+		{ endlessCashDebit((Sint64)shopperCash(), ENDLESS_SINK_GAMBLE); SDL_strlcpy(msg, "NOTHING. Wiped clean.", GAMBLE_MSG_LEN); }
 		break;
-	case EGO_REFUND: endlessCashCredit(cost, ENDLESS_CASH_GAMBLE); SDL_strlcpy(endlessGambleMsg, "Machine jammed -- fee back.", sizeof endlessGambleMsg); break;
-	case EGO_NOTHING: SDL_strlcpy(endlessGambleMsg, "Nothing. The house wins.", sizeof endlessGambleMsg); break;
+	case EGO_REFUND: endlessCashCredit(cost, ENDLESS_CASH_GAMBLE); SDL_strlcpy(msg, "Machine jammed -- fee back.", GAMBLE_MSG_LEN); break;
+	case EGO_NOTHING: SDL_strlcpy(msg, "Nothing. The house wins.", GAMBLE_MSG_LEN); break;
 	case EGO_LOANSHARK:  // a fortune now, a permanent tax on every price for the rest of the run
 	{
 		const long win = cost * 3;  // scales with the live fee
 		endlessCashCredit(win, ENDLESS_CASH_GAMBLE);
-		endlessShopTax += 25;  // repeated outcomes compound
-		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Loan shark: +$%ld, +25%% tax", win);
+		endlessShopTax[me()] += 25;  // repeated outcomes compound
+		snprintf(msg, GAMBLE_MSG_LEN, "Loan shark: +$%ld, +25%% tax", win);
 		break;
 	}
 	case EGO_NITRO:  // +damage next sector, but any hit is fatal (see varz.c damage path)
-		endlessPurchasedMods |= (ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO);
-		SDL_strlcpy(endlessGambleMsg, "Nitro: +power, one hit kills!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= (ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO);
+		SDL_strlcpy(msg, "Nitro: +power, one hit kills!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_OVERHEAT:  // kills quicken your guns, but the hull cooks (see endlessGameplayTick DoT)
-		endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_TURBODRIVE;
-		endlessPurchasedMods |= ENDLESS_MOD_OVERHEAT;
-		SDL_strlcpy(endlessGambleMsg, "Overheat: fast guns, hull cooks!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_TURBODRIVE;
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_OVERHEAT;
+		SDL_strlcpy(msg, "Overheat: fast guns, hull cooks!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_GLASSCANNON:  // +2 permanent gun power, but shave permanent max hull
 	{
-		const int pw = (int)player[0].items.weapon[FRONT_WEAPON].power;
-		player[0].items.weapon[FRONT_WEAPON].power = (pw + 2 > 11) ? 11 : (pw + 2);
-		const int floorBonus = 8 - (int)player[0].initial_armor;  // keep effective max hull >= ~8
-		endlessArmorBonus -= 2 * ENDLESS_HULL_STEP;
-		if (endlessArmorBonus < floorBonus)
-			endlessArmorBonus = floorBonus;
-		if ((int)player[0].armor + endlessArmorBonus < 1)  // never leave the hull sitting at 0 in the shop
-			player[0].armor = (JE_byte)(1 - endlessArmorBonus);
-		SDL_strlcpy(endlessGambleMsg, "Glass cannon: +2 power, -hull!", sizeof endlessGambleMsg);
+		const int pw = (int)shopper()->items.weapon[FRONT_WEAPON].power;
+		shopper()->items.weapon[FRONT_WEAPON].power = (pw + 2 > 11) ? 11 : (pw + 2);
+		const int floorBonus = 8 - (int)shopper()->initial_armor;  // keep effective max hull >= ~8
+		endlessArmorBonus[me()] -= 2 * ENDLESS_HULL_STEP;
+		if (endlessArmorBonus[me()] < floorBonus)
+			endlessArmorBonus[me()] = floorBonus;
+		if ((int)shopper()->armor + endlessArmorBonus[me()] < 1)  // never leave the hull sitting at 0 in the shop
+			shopper()->armor = (JE_byte)(1 - endlessArmorBonus[me()]);
+		SDL_strlcpy(msg, "Glass cannon: +2 power, -hull!", GAMBLE_MSG_LEN);
 		break;
 	}
 	case EGO_MELTDOWN:  // -1 permanent gun power
-		if ((int)player[0].items.weapon[FRONT_WEAPON].power > 1)
-		{ --player[0].items.weapon[FRONT_WEAPON].power; SDL_strlcpy(endlessGambleMsg, "Meltdown!  -1 gun power.", sizeof endlessGambleMsg); }
+		if ((int)shopper()->items.weapon[FRONT_WEAPON].power > 1)
+		{ --shopper()->items.weapon[FRONT_WEAPON].power; SDL_strlcpy(msg, "Meltdown!  -1 gun power.", GAMBLE_MSG_LEN); }
 		else
-			SDL_strlcpy(endlessGambleMsg, "Guns already stripped bare.", sizeof endlessGambleMsg);
+			SDL_strlcpy(msg, "Guns already stripped bare.", GAMBLE_MSG_LEN);
 		break;
 	case EGO_STICKY:  // steal the equipped special
-		if (player[0].items.special > 0)
+		if (shopper()->items.special > 0)
 		{
-			player[0].items.special = 0;
+			shopper()->items.special = 0;
 			shotMultiPos[SHOT_SPECIAL]  = 0; shotRepeat[SHOT_SPECIAL]  = 0;
 			shotMultiPos[SHOT_SPECIAL2] = 0; shotRepeat[SHOT_SPECIAL2] = 0;
-			SDL_strlcpy(endlessGambleMsg, "Sticky fingers: special gone!", sizeof endlessGambleMsg);
+			SDL_strlcpy(msg, "Sticky fingers: special gone!", GAMBLE_MSG_LEN);
 		}
 		else
-		{ const long loss = (long)(player[0].cash / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Frisked!  -$%ld", loss); }
+		{ const long loss = (long)(shopperCash() / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Frisked!  -$%ld", loss); }
 		break;
 	case EGO_RUSTBUCKET:  // knock a shield or generator down a tier
-		if (player[0].items.shield > 1 && (endlessRand() % 2))
-		{ --player[0].items.shield; SDL_strlcpy(endlessGambleMsg, "Rustbucket: shield sags!", sizeof endlessGambleMsg); }
-		else if (player[0].items.generator > 1)
-		{ --player[0].items.generator; SDL_strlcpy(endlessGambleMsg, "Rustbucket: reactor sags!", sizeof endlessGambleMsg); }
-		else if (player[0].items.shield > 1)
-		{ --player[0].items.shield; SDL_strlcpy(endlessGambleMsg, "Rustbucket: shield sags!", sizeof endlessGambleMsg); }
+		if (shopper()->items.shield > 1 && (endlessRandFor(me()) % 2))
+		{ --shopper()->items.shield; SDL_strlcpy(msg, "Rustbucket: shield sags!", GAMBLE_MSG_LEN); }
+		else if (shopper()->items.generator > 1)
+		{ --shopper()->items.generator; SDL_strlcpy(msg, "Rustbucket: reactor sags!", GAMBLE_MSG_LEN); }
+		else if (shopper()->items.shield > 1)
+		{ --shopper()->items.shield; SDL_strlcpy(msg, "Rustbucket: shield sags!", GAMBLE_MSG_LEN); }
 		else
-		{ const long loss = (long)(player[0].cash / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Gear too cheap -- $%ld gone", loss); }
+		{ const long loss = (long)(shopperCash() / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Gear too cheap -- $%ld gone", loss); }
 		break;
 	case EGO_AMNESIA:  // erase a random owned perk
 	{
 		int owned[PERK_COUNT], n = 0;
 		for (int i = 0; i < PERK_COUNT; ++i)
-			if (endlessPerkOwned[i] > 0)
+			if (endlessPerkTakenBy[me()][i] > 0)   // only your own picks are yours to forget
 				owned[n++] = i;
 		if (n > 0)
-		{ --endlessPerkOwned[owned[endlessRand() % (unsigned)n]]; SDL_strlcpy(endlessGambleMsg, "Amnesia: a perk erased!", sizeof endlessGambleMsg); }
+		{
+			endlessPerkGrant(me(), owned[endlessRandFor(me()) % (unsigned)n], -1);
+			SDL_strlcpy(msg, "Amnesia: a perk erased!", GAMBLE_MSG_LEN);
+		}
 		else
-		{ const long loss = (long)(player[0].cash / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Mind blank -- robbed  -$%ld", loss); }
+		{ const long loss = (long)(shopperCash() / 10); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Mind blank -- robbed  -$%ld", loss); }
 		break;
 	}
 	case EGO_DUD:  // fill bombs, then jam them for the next sector
-		while (player[0].superbombs < 10)
-			++player[0].superbombs;
-		endlessPurchasedMods |= ENDLESS_MOD_DUD;
-		SDL_strlcpy(endlessGambleMsg, "Loaded up... duds next sector!", sizeof endlessGambleMsg);
+		while (shopper()->superbombs < 10)
+			++shopper()->superbombs;
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_DUD;
+		SDL_strlcpy(msg, "Loaded up... duds next sector!", GAMBLE_MSG_LEN);
 		break;
-	case EGO_SWINDLED: { const long loss = (long)(player[0].cash / 5); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Swindled!  -$%ld", loss); break; }
+	case EGO_SWINDLED: { const long loss = (long)(shopperCash() / 5); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Swindled!  -$%ld", loss); break; }
 	case EGO_CURSE_JAM:
-		endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_BACKFIRE;
-		SDL_strlcpy(endlessGambleMsg, "Cursed: guns jam next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_BACKFIRE;
+		SDL_strlcpy(msg, "Cursed: guns jam next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_CURSE_FAIL:
-		endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_BURNOUT;
-		SDL_strlcpy(endlessGambleMsg, "Cursed: guns fail next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_BURNOUT;
+		SDL_strlcpy(msg, "Cursed: guns fail next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_CURSE_MISFIRE:
-		endlessPurchasedMods = (endlessPurchasedMods & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_MISFIRE;
-		SDL_strlcpy(endlessGambleMsg, "Cursed: guns misfire next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] = (endlessPurchasedMods[me()] & ~ENDLESS_MOD_KILLFIRE_ANY) | ENDLESS_MOD_MISFIRE;
+		SDL_strlcpy(msg, "Cursed: guns misfire next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_CURSE_FRENZY:
-		endlessPurchasedMods |= ENDLESS_MOD_FRENZY;
-		SDL_strlcpy(endlessGambleMsg, "Cursed: fast fire next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_FRENZY;
+		SDL_strlcpy(msg, "Cursed: fast fire next!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_MARKED:
-		endlessPurchasedMods |= ENDLESS_MOD_MARKED;
-		SDL_strlcpy(endlessGambleMsg, "Marked: the next boss bulks up!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_MARKED;
+		SDL_strlcpy(msg, "Marked: the next boss bulks up!", GAMBLE_MSG_LEN);
 		break;
 	case EGO_LONGCON:
-		endlessLongCon = 3;  // an APEX ambush comes due three sectors from now (endlessSelectCourse)
-		SDL_strlcpy(endlessGambleMsg, "The long con... something coming.", sizeof endlessGambleMsg);
+		endlessLongCon[me()] = 3;  // an APEX ambush comes due three sectors from now (endlessSelectCourse)
+		SDL_strlcpy(msg, "The long con... something coming.", GAMBLE_MSG_LEN);
 		break;
 	case EGO_ROBBED:
-		if (player[0].superbombs > 0)
-			--player[0].superbombs;
-		SDL_strlcpy(endlessGambleMsg, "Robbed: lost a bomb.", sizeof endlessGambleMsg);
+		if (shopper()->superbombs > 0)
+			--shopper()->superbombs;
+		SDL_strlcpy(msg, "Robbed: lost a bomb.", GAMBLE_MSG_LEN);
 		break;
 	case EGO_DISARMED:
-		if (endlessReviveHeld)
-		{ endlessReviveHeld = false; SDL_strlcpy(endlessGambleMsg, "Disarmed! Revive gone.", sizeof endlessGambleMsg); }
+		if (endlessReviveHeld[me()])
+		{ endlessReviveHeld[me()] = false; SDL_strlcpy(msg, "Disarmed! Revive gone.", GAMBLE_MSG_LEN); }
 		else
-		{ const long loss = (long)(player[0].cash / 5); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Pickpocketed!  -$%ld", loss); }
+		{ const long loss = (long)(shopperCash() / 5); endlessCashDebit(loss, ENDLESS_SINK_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Pickpocketed!  -$%ld", loss); }
 		break;
 	case EGO_PSYCH:  // the cruel fake-out: flashes a jackpot, then snatches a little extra
 	{
-		const long loss = (player[0].cash < (ulong)cost) ? (long)player[0].cash : cost;
+		const long loss = (shopperCash() < (ulong)cost) ? (long)shopperCash() : cost;
 		endlessCashDebit(loss, ENDLESS_SINK_GAMBLE);
-		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "'JACKPOT!' ...psych. -$%ld", loss);
+		snprintf(msg, GAMBLE_MSG_LEN, "'JACKPOT!' ...psych. -$%ld", loss);
 		break;
 	}
 	case EGO_RIGGED:
-		endlessGambleRigged = true;  // the next pull rolls twice and keeps the worse
-		SDL_strlcpy(endlessGambleMsg, "The house is watching you...", sizeof endlessGambleMsg);
+		endlessGambleRigged[me()] = true;  // the next pull rolls twice and keeps the worse
+		SDL_strlcpy(msg, "The house is watching you...", GAMBLE_MSG_LEN);
 		break;
 	case EGO_RAMPAGE:  // the original brutal Kamikaze as a jackpot-of-doom: rammers next sector
-		endlessPurchasedMods |= ENDLESS_MOD_RAMPAGE;
-		SDL_strlcpy(endlessGambleMsg, "KAMIKAZE RUSH! Rammers next!", sizeof endlessGambleMsg);
+		endlessPurchasedMods[me()] |= ENDLESS_MOD_RAMPAGE;
+		SDL_strlcpy(msg, "KAMIKAZE RUSH! Rammers next!", GAMBLE_MSG_LEN);
 		break;
 	default:  // EGO_CLEANED removes half the current cash
 	{
-		const long loss = (long)(player[0].cash / 2);
+		const long loss = (long)(shopperCash() / 2);
 		endlessCashDebit(loss, ENDLESS_SINK_GAMBLE);
-		snprintf(endlessGambleMsg, sizeof endlessGambleMsg, "Cleaned out!  -$%ld", loss);
+		snprintf(msg, GAMBLE_MSG_LEN, "Cleaned out!  -$%ld", loss);
 		break;
 	}
 	}
@@ -788,37 +832,37 @@ static void endlessApplyGambleOutcome(int id, long cost)
 static int endlessRollToOutcome(int roll)
 {
 	if (roll < 5)  return EGO_JACKPOT;
-	if (roll < 12) { switch (endlessRand() % 3) { case 0: return EGO_REVIVE; case 1: return EGO_HULL; default: return EGO_OVERCLOCK; } }  // EGO_PERK pulled out -> now a 1/2500 ultra-rare draw (endlessTryGamble)
+	if (roll < 12) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_REVIVE; case 1: return EGO_HULL; default: return EGO_OVERCLOCK; } }  // EGO_PERK pulled out -> now a 1/2500 ultra-rare draw (endlessTryGamble)
 	if (roll < 24) return EGO_WIN;
 	if (roll < 31) return EGO_SPECIAL;
-	if (roll < 37) { switch (endlessRand() % 3) { case 0: return EGO_ARSENAL; case 1: return EGO_SECONDWIND; default: return EGO_BLOODMONEY; } }
-	if (roll < 43) return (endlessRand() % 2) ? EGO_OVERBLAST : EGO_OVERCHARGE;
+	if (roll < 37) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_ARSENAL; case 1: return EGO_SECONDWIND; default: return EGO_BLOODMONEY; } }
+	if (roll < 43) return (endlessRandFor(me()) % 2) ? EGO_OVERBLAST : EGO_OVERCHARGE;
 	if (roll < 48) return EGO_FAVOR;
 	if (roll < 52) return EGO_GOLDEN;
 	if (roll < 56) return EGO_DOUBLENOTHING;
 	if (roll < 59) return EGO_REFUND;
 	if (roll < 62) return EGO_NOTHING;
 	if (roll < 66) return EGO_LOANSHARK;
-	if (roll < 71) { switch (endlessRand() % 3) { case 0: return EGO_NITRO; case 1: return EGO_OVERHEAT; default: return EGO_GLASSCANNON; } }
-	if (roll < 78) { switch (endlessRand() % 5) { case 0: return EGO_MELTDOWN; case 1: return EGO_STICKY; case 2: return EGO_RUSTBUCKET; case 3: return EGO_AMNESIA; default: return EGO_DUD; } }
+	if (roll < 71) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_NITRO; case 1: return EGO_OVERHEAT; default: return EGO_GLASSCANNON; } }
+	if (roll < 78) { switch (endlessRandFor(me()) % 5) { case 0: return EGO_MELTDOWN; case 1: return EGO_STICKY; case 2: return EGO_RUSTBUCKET; case 3: return EGO_AMNESIA; default: return EGO_DUD; } }
 	if (roll < 84) return EGO_SWINDLED;
-	if (roll < 90) { switch (endlessRand() % 5) { case 0: return EGO_CURSE_JAM; case 1: return EGO_CURSE_FAIL; case 2: return EGO_CURSE_MISFIRE; default: return EGO_CURSE_FRENZY; } }
-	if (roll < 94) return (endlessRand() % 2) ? EGO_MARKED : EGO_LONGCON;
-	if (roll < 97) { switch (endlessRand() % 4) { case 0: return EGO_ROBBED; case 1: return EGO_DISARMED; case 2: return EGO_PSYCH; default: return EGO_RIGGED; } }
+	if (roll < 90) { switch (endlessRandFor(me()) % 5) { case 0: return EGO_CURSE_JAM; case 1: return EGO_CURSE_FAIL; case 2: return EGO_CURSE_MISFIRE; default: return EGO_CURSE_FRENZY; } }
+	if (roll < 94) return (endlessRandFor(me()) % 2) ? EGO_MARKED : EGO_LONGCON;
+	if (roll < 97) { switch (endlessRandFor(me()) % 4) { case 0: return EGO_ROBBED; case 1: return EGO_DISARMED; case 2: return EGO_PSYCH; default: return EGO_RIGGED; } }
 	return EGO_CLEANED;
 }
 
 bool endlessTryGamble(void)
 {
-	endlessGamblePerkWon = false;  // cleared each pull; set only by the free-perk outcome
+	endlessGamblePerkWon[me()] = false;  // cleared each pull; set only by the free-perk outcome
 
 	const long cost = endlessGamblePrice();
-	if (player[0].cash < (ulong)cost)
+	if (shopperCash() < (ulong)cost)
 		return false;
 	endlessCashDebit(cost, ENDLESS_SINK_GAMBLE);
 
 	// A shared 1-in-5000 draw selects Mega Jackpot, Rampage, or either free-perk slot.
-	const Uint32 ultraRare = endlessRand() % 5000;
+	const Uint32 ultraRare = endlessRandFor(me()) % 5000;
 	if (ultraRare == 0)
 	{
 		endlessApplyGambleOutcome(EGO_MEGAJACKPOT, cost);
@@ -835,13 +879,13 @@ bool endlessTryGamble(void)
 		return true;
 	}
 
-	int roll = (int)(endlessRand() % 100);
-	if (endlessGambleRigged)  // roll twice and keep the higher outcome ID
+	int roll = (int)(endlessRandFor(me()) % 100);
+	if (endlessGambleRigged[me()])  // roll twice and keep the higher outcome ID
 	{
-		const int second = (int)(endlessRand() % 100);
+		const int second = (int)(endlessRandFor(me()) % 100);
 		if (second > roll)
 			roll = second;
-		endlessGambleRigged = false;
+		endlessGambleRigged[me()] = false;
 	}
 
 	endlessApplyGambleOutcome(endlessRollToOutcome(roll), cost);
@@ -855,20 +899,20 @@ void endlessForceGambleOutcome(int id)
 {
 	if (!endlessMode || id < 0 || id >= EGO_COUNT)
 		return;
-	endlessGamblePerkWon = false;
+	endlessGamblePerkWon[me()] = false;
 	endlessApplyGambleOutcome(id, endlessGamblePrice());  // no fee charged: this is a test trigger
-	if (endlessGamblePerkWon)      // choices are already generated
+	if (endlessGamblePerkWon[me()])      // choices are already generated
 		endlessPerkPending = true; // open now or at the next shop gate
-	endlessGamblePerkWon = false;  // the debug screen has no E-Shop dispatch to consume the inline-perk flag
+	endlessGamblePerkWon[me()] = false;  // the debug screen has no E-Shop dispatch to consume the inline-perk flag
 }
 
 // Reroll the shop stock (rarity-by-depth) for the current price. Returns true if bought.
 bool endlessTryReroll(void)
 {
-	if (player[0].cash < (ulong)endlessRerollCost)
+	if (shopperCash() < (ulong)endlessRerollCost[me()])
 		return false;
-	endlessCashDebit(endlessRerollCost, ENDLESS_SINK_REROLL);
-	endlessRerollCost = endlessRebuy(endlessRerollCost, ENDLESS_REBUY_REROLL_NUM, ENDLESS_REBUY_REROLL_DEN, ENDLESS_REBUY_REROLL_ADD);
+	endlessCashDebit(endlessRerollCost[me()], ENDLESS_SINK_REROLL);
+	endlessRerollCost[me()] = endlessRebuy(endlessRerollCost[me()], ENDLESS_REBUY_REROLL_NUM, ENDLESS_REBUY_REROLL_DEN, ENDLESS_REBUY_REROLL_ADD);
 	endlessFillShop();
 	return true;
 }
@@ -876,11 +920,11 @@ bool endlessTryReroll(void)
 // Buy a run-persistent +armor hull upgrade for the current price. Returns true if bought.
 bool endlessTryReinforce(void)
 {
-	if (endlessArmorBonus >= endlessHullMax() || player[0].cash < (ulong)endlessHullCost)
+	if (endlessArmorBonus[me()] >= endlessHullMax() || shopperCash() < (ulong)endlessHullCost[me()])
 		return false;
-	endlessCashDebit(endlessHullCost, ENDLESS_SINK_HULL);
-	endlessArmorBonus += ENDLESS_HULL_STEP;
-	endlessHullCost = endlessHullCost * ENDLESS_REBUY_HULL_NUM / ENDLESS_REBUY_HULL_DEN + ENDLESS_REBUY_HULL_ADD;  // int-typed: kept in int arithmetic
+	endlessCashDebit(endlessHullCost[me()], ENDLESS_SINK_HULL);
+	endlessArmorBonus[me()] += ENDLESS_HULL_STEP;
+	endlessHullCost[me()] = endlessHullCost[me()] * ENDLESS_REBUY_HULL_NUM / ENDLESS_REBUY_HULL_DEN + ENDLESS_REBUY_HULL_ADD;  // int-typed: kept in int arithmetic
 	return true;
 }
 
@@ -893,7 +937,7 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 		// Bank interest on unspent cash: 10% base, raised by the Financier perk. Split into
 		// whole hundreds plus the remainder so a big bank can't overflow the rate multiply.
 		const int rate = endlessPerkInterestPercent();
-		interest = (long)(player[0].cash / 100 * rate + player[0].cash % 100 * rate / 100);
+		interest = (long)(shopperCash() / 100 * rate + shopperCash() % 100 * rate / 100);
 		// Scale the interest cap with depth and rate while retaining a ceiling.
 		long icap = (3000 + (long)endlessRunDepth * 80) * rate / ENDLESS_INTEREST_BASE_PCT;
 		if (interest > icap)

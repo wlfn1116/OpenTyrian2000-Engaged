@@ -170,15 +170,23 @@ extern JE_boolean engageMode;
 extern JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian, trentWin;
 // Online Campaign has two independent ships but keeps the normal campaign economy and scripts.
 extern JE_boolean coopCampaignMode;
+// Online Endless is the same two independent ships around an Endless run (see endless.c).
+extern JE_boolean coopEndlessMode;
+
+// Online co-op of either kind: two full ships, the cash economy and a networked outpost.
+static inline bool coop_mode_active(void)
+{
+	return coopCampaignMode || coopEndlessMode;
+}
 
 static inline bool arcade_rules_active(void)
 {
-	return onePlayerAction || (twoPlayerMode && !coopCampaignMode);
+	return onePlayerAction || (twoPlayerMode && !coop_mode_active());
 }
 
 static inline bool split_arcade_mode(void)
 {
-	return twoPlayerMode && !coopCampaignMode;
+	return twoPlayerMode && !coop_mode_active();
 }
 extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 // Debug Mode only: run endless mode's EFFECT layer (difficulty levers, sector mutators, perks,
@@ -379,7 +387,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 #define SAVE_RECORD_PACKED_SIZE 81
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
-bool save_record_is_coop_campaign(const JE_SaveFileType *rec);
+bool save_record_is_coop(const JE_SaveFileType *rec);
 
 void JE_encryptSaveTemp(void);
 void JE_decryptSaveTemp(void);

@@ -44,7 +44,35 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
-JE_byte endlessPerkOwned[PERK_COUNT]; // stack counts, reset each run
+JE_byte endlessPerkOwned[PERK_COUNT];        // effective stack counts: the capped sum of the rows below
+JE_byte endlessPerkTakenBy[2][PERK_COUNT];   // who picked what; each machine owns its own row
+
+/* Perks are the run's shared upgrades: both ships fly under every stack either player took. Rows
+ * are kept apart so the two machines can merge picks without either one clobbering the other. */
+void endlessPerkRederive(void)
+{
+	for (int i = 0; i < PERK_COUNT; ++i)
+	{
+		int total = endlessPerkTakenBy[0][i] + endlessPerkTakenBy[1][i];
+		if (total > endlessPerkTable[i].maxStack)
+			total = endlessPerkTable[i].maxStack;
+		endlessPerkOwned[i] = (JE_byte)total;
+	}
+}
+
+// Move player p's holding of one perk. Negative takes a stack back (the Amnesia gamble).
+void endlessPerkGrant(uint p, int id, int delta)
+{
+	if (p >= COUNTOF(endlessPerkTakenBy) || id < 0 || id >= PERK_COUNT)
+		return;
+	int n = endlessPerkTakenBy[p][id] + delta;
+	if (n < 0)
+		n = 0;
+	if (n > endlessPerkTable[id].maxStack)
+		n = endlessPerkTable[id].maxStack;
+	endlessPerkTakenBy[p][id] = (JE_byte)n;
+	endlessPerkRederive();
+}
 int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
@@ -117,8 +145,12 @@ static int endlessAccumSteps(int *accum, int rate)
 
 bool endlessAdrenalineActive(void)
 {
-	return endlessPerkOwned[PERK_ADRENALINE] > 0 && player[0].initial_armor > 0
-	    && player[0].armor * ENDLESS_PERK_ADRENALINE_HP < player[0].initial_armor;
+	// Any hurt ship arms it; a co-op partner in trouble is trouble for the pair.
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		if (endlessPerkOwned[PERK_ADRENALINE] > 0 && player[p].initial_armor > 0
+		    && player[p].armor * ENDLESS_PERK_ADRENALINE_HP < player[p].initial_armor)
+			return true;
+	return false;
 }
 
 // Fire-rate decrement percentage, including Adrenaline when `hurtBonus` is true.
@@ -412,7 +444,7 @@ void endlessGeneratePerkChoices(int offers)
 	endlessPerkChoiceN = n < offers ? n : offers;
 	for (int i = 0; i < endlessPerkChoiceN; ++i)
 	{
-		int j = i + (int)(endlessRand() % (unsigned)(n - i));
+		int j = i + (int)(endlessRandFor(endlessEconomyIndex()) % (unsigned)(n - i));
 		int t = pool[i]; pool[i] = pool[j]; pool[j] = t;
 		endlessPerkChoice[i] = pool[i];
 	}
@@ -456,7 +488,7 @@ void endlessTakePerk(int i)
 		return;
 	const int id = endlessPerkChoice[i];
 	if (endlessPerkOwned[id] < endlessPerkTable[id].maxStack)
-		++endlessPerkOwned[id];
+		endlessPerkGrant(endlessEconomyIndex(), id, 1);
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
 
@@ -499,5 +531,6 @@ void endlessPerkSetOwned(int id, int n)
 		n = 0;
 	if (n > endlessPerkTable[id].maxStack)
 		n = endlessPerkTable[id].maxStack;
-	endlessPerkOwned[id] = (JE_byte)n;
+	endlessPerkTakenBy[endlessEconomyIndex()][id] = (JE_byte)n;
+	endlessPerkRederive();
 }

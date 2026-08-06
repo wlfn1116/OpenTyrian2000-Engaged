@@ -27,7 +27,7 @@ Player player[2];
 
 uint gameplay_local_player_index(void)
 {
-	return coopCampaignMode && isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2
+	return coop_mode_active() && isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2
 	     ? thisPlayerNum - 1 : 0;
 }
 
@@ -148,7 +148,7 @@ void coop_set_session_shared_credit(bool shared)
 
 bool coop_credit_is_shared(void)
 {
-	return coopCampaignMode && coop_session_shared_credit;
+	return coop_mode_active() && coop_session_shared_credit;
 }
 
 // Credit earned cash. Player 1's Endless income must pass through the run ledger; Online
@@ -186,7 +186,7 @@ bool power_up_weapon(Player *this_player, uint port)
 	{
 		++this_player->items.weapon[port].power;
 		shotMultiPos[port] = 0; // shared per-port firing cursor
-		if (coopCampaignMode)
+		if (coop_mode_active())
 			this_player->shot_multi_pos[port] = 0;
 
 		calc_purple_balls_needed(this_player);

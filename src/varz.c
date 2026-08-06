@@ -402,6 +402,20 @@ JE_boolean  linkToPlayer;
 JE_word shipGr, shipGr2;
 Sprite2_array *shipGrPtr, *shipGr2ptr;
 
+/* Endless run-persistent hull: the outpost Reinforce tier plus the Ablative Plating perk. The perk
+ * half can be NEGATIVE (Glass Cannon), so the result is clamped at both ends. Reinforce is
+ * endlessMode-only: a campaign running the effect layer under Debug Mode has no shop to buy it at. */
+static void endlessApplyHullBonus(uint p)
+{
+	if (!endlessFxActive())
+		return;
+
+	int a = (int)player[p].armor + endlessPerkArmorBonus();
+	if (endlessMode)
+		a += endlessArmorBonus[p];
+	player[p].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // byte-safe, so no JE_byte armor path wraps
+}
+
 void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
@@ -433,17 +447,7 @@ void JE_getShipInfo(void)
 		player[0].armor = ships[shipIdx].dmg;
 	}
 
-	// Endless: apply the run-persistent hull upgrades (outpost Reinforce + Ablative Plating perk;
-	// the perk bonus can be NEGATIVE with Glass Cannon, so clamp the result to at least 1 armor).
-	// The Reinforce half is endlessMode-only: it is bought at an outpost, and a campaign game
-	// running the effect layer under Debug Mode has no shop to have bought it at.
-	if (endlessFxActive())
-	{
-		int a = (int)player[0].armor + endlessPerkArmorBonus();
-		if (endlessMode)
-			a += endlessArmorBonus;
-		player[0].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // clamp both ends: >=1, and byte-safe so no JE_byte armor path wraps
-	}
+	endlessApplyHullBonus(0);
 
 	extraShip2 = player[1].items.ship > 90;
 	if (extraShip2)
@@ -452,7 +456,7 @@ void JE_getShipInfo(void)
 		shipGr2 = JE_SGr(player[1].items.ship - 90, &shipGr2ptr);
 		player[1].armor = extraShips[base2 + 7]; /* bug? */
 	}
-	else if (coopCampaignMode)
+	else if (coop_mode_active())
 	{
 		const uint shipIdx = (player[1].items.ship <= SHIP_NUM) ? player[1].items.ship : 0;
 		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
@@ -464,6 +468,9 @@ void JE_getShipInfo(void)
 		shipGr2 = 0;
 		player[1].armor = 10;
 	}
+
+	if (coopEndlessMode)
+		endlessApplyHullBonus(1);
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
@@ -538,8 +545,8 @@ void JE_drawOptions(void)
 
 	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
 
-	const uint first_player = coopCampaignMode ? 0 : (twoPlayerMode ? 1 : 0);
-	const uint last_player = coopCampaignMode ? COUNTOF(player) : first_player + 1;
+	const uint first_player = coop_mode_active() ? 0 : (twoPlayerMode ? 1 : 0);
+	const uint last_player = coop_mode_active() ? COUNTOF(player) : first_player + 1;
 	for (uint p = first_player; p < last_player; ++p)
 		JE_resetPlayerOptions(&player[p]);
 
@@ -556,7 +563,7 @@ uint hud_sidekick_player_index(void)
 {
 	// The strip has room for one ship's pods. Online Campaign simulates both, so it shows the
 	// local one; a split two-player game gives the pods to player two; otherwise player one.
-	return coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1u : 0u);
+	return coop_mode_active() ? gameplay_local_player_index() : (twoPlayerMode ? 1u : 0u);
 }
 
 int hud_sidekick_ammo_y(uint slot)
@@ -685,7 +692,7 @@ static void salvo_special_burst(JE_byte playerNum)
 
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
-	Player *const this_player = coopCampaignMode ? &player[playerNum - 1] : &player[0];
+	Player *const this_player = coop_mode_active() ? &player[playerNum - 1] : &player[0];
 
 	nextSpecialWait = 0;
 	switch (special[specialType].stype)
@@ -855,11 +862,11 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			soundQueue[3] = S_POWERUP;
 			break;
 		case 14:
-			Player *const repair_player = coopCampaignMode ? this_player : &player[1];
+			Player *const repair_player = coop_mode_active() ? this_player : &player[1];
 			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
 			if (endlessFxActive() && repair_player->initial_armor > 0 && repair_player->armor > repair_player->initial_armor)
 				repair_player->armor = repair_player->initial_armor;
-			salvo_special_burst(coopCampaignMode ? playerNum : 2);
+			salvo_special_burst(coop_mode_active() ? playerNum : 2);
 
 			soundQueue[3] = S_POWERUP;
 			break;
@@ -878,7 +885,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				shotMultiPos[LEFT_SIDEKICK] = 0;
 			}
 
-			if (coopCampaignMode)
+			if (coop_mode_active())
 			{
 				JE_resetPlayerOptions(this_player);
 				JE_drawOptionsHUD();
@@ -892,7 +899,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		case 18:  // spawn right sidekick
 			this_player->items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
 
-			if (coopCampaignMode)
+			if (coop_mode_active())
 			{
 				JE_resetPlayerOptions(this_player);
 				JE_drawOptionsHUD();
@@ -924,11 +931,11 @@ static JE_word twiddleWait = 0;
 
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
-	Player *const this_player = coopCampaignMode ? &player[playerNum - 1] : &player[0];
-	const int special_mouse_x = coopCampaignMode && playerNum == 2 ? mouseXB : mouseX;
-	const int special_mouse_y = coopCampaignMode && playerNum == 2 ? mouseYB : mouseY;
+	Player *const this_player = coop_mode_active() ? &player[playerNum - 1] : &player[0];
+	const int special_mouse_x = coop_mode_active() && playerNum == 2 ? mouseXB : mouseX;
+	const int special_mouse_y = coop_mode_active() && playerNum == 2 ? mouseYB : mouseY;
 
-	if (this_player->items.special > 0 && (!coopCampaignMode || playerNum == thisPlayerNum))
+	if (this_player->items.special > 0 && (!coop_mode_active() || playerNum == thisPlayerNum))
 	{
 		if (shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 && flareDuration < 2 && zinglonDuration < 2)
 			blit_sprite2(VGAScreen, 47, 4, spriteSheet9, 94);
@@ -998,7 +1005,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		VGAScreen = game_screen; /* side-effect of game_screen */
 	}
 
-	if ((playerNum == 1 || coopCampaignMode) && this_player->items.special > 0)
+	if ((playerNum == 1 || coop_mode_active()) && this_player->items.special > 0)
 	{  /*Main Begin*/
 
 		if (superArcadeMode > 0 && (button[2-1] || button[3-1]))
@@ -1019,7 +1026,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 	}  /*Main End*/
 
-	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && (playerNum == 1 || coopCampaignMode) && this_player->items.special > 0 &&
+	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && (playerNum == 1 || coop_mode_active()) && this_player->items.special > 0 &&
 		shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 &&
 		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		(button[0] || (superArcadeMode != SA_NONE && (button[1] || button[2]))))
@@ -1445,6 +1452,33 @@ void JE_wipeShieldArmorBars(void)
 	}
 }
 
+/* Which ships carry the Endless effect layer: both of them in an online co-op run, player 1
+ * otherwise (the campaign debug layer only ever equips one). */
+static bool endlessFxShip(const Player *this_player)
+{
+	return endlessFxActive() && (coopEndlessMode || this_player == &player[0]);
+}
+
+/* The generator reserve belonging to the ship being hit. In co-op each ship keeps its own and the
+ * global `power` is only the scratch context the weapon code runs in, which is NOT loaded at the
+ * damage sites (see coop_ship_runtime_load in mainint.c). */
+static int endlessGeneratorGet(const Player *this_player)
+{
+	return coop_mode_active() ? (int)this_player->generator_power : (int)power;
+}
+
+static void endlessGeneratorSet(Player *this_player, int v)
+{
+	if (v < 0)
+		v = 0;
+	if (v > 900)
+		v = 900;
+	if (coop_mode_active())
+		this_player->generator_power = (Uint16)v;
+	else
+		power = (uint)v;
+}
+
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
@@ -1459,7 +1493,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Endless Bulwark relic: soften each incoming hit by a flat amount, but always leave at
 	// least 1 damage (only the main player carries perks; a lone hit of 0 is left untouched).
-	if (endlessFxActive() && temp > 1 && this_player == &player[0])
+	if (endlessFxShip(this_player) && temp > 1)
 	{
 		int t = (int)temp - endlessPlayerDamageReduce();
 		temp = (t < 1) ? 1 : (JE_byte)t;
@@ -1468,7 +1502,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Nitro (gamble deal): the hull is stripped for raw firepower, so any hit that lands is fatal.
 	// Push the damage past every shield+armor total; a held revive can still catch the lethal blow
 	// on the death path below, which keeps the interaction honest rather than an unavoidable game-over.
-	if (endlessFxActive() && this_player == &player[0] && (endlessActiveMods & ENDLESS_MOD_NITRO))
+	if (endlessFxShip(this_player) && (endlessActiveMods & ENDLESS_MOD_NITRO))
 		temp = 255;
 
 	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on
@@ -1489,7 +1523,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		// goes on cooldown. Placed BEFORE cmHullHit because a blocked hit never reached the hull, so
 		// it must not arm the Countermeasure burst, deal armor damage, flash the gauge or reach the
 		// death path. The helper arms the cooldown when it answers true, so this is the one asker.
-		if (endlessFxActive() && this_player == &player[0] && temp > 0
+		if (endlessFxShip(this_player) && temp > 0
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
 			temp = 0;
@@ -1523,7 +1557,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 				if (this_player->is_alive && !youAreCheating)
 				{
-					if (endlessMode && this_player == &player[0] && endlessConsumeRevive())
+					if (endlessMode && endlessConsumeRevive((uint)(this_player - &player[0])))
 					{
 						// Held revive token: survive the lethal hit. endlessConsumeRevive already
 						// restored armor to full and armed the ~3s enemy-fire stun; here we wipe the
@@ -1585,21 +1619,17 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into
 	// the generator. Main player only; re-cap at the generator ceiling since the tick's own recharge/cap
 	// already ran. shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
-	if (endlessFxActive() && this_player == &player[0] && this_player->shield < oldShield)
+	if (endlessFxShip(this_player) && this_player->shield < oldShield)
 	{
 		const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
 		                                           shields[this_player->items.shield].tpwr);
 		if (gained > 0)
-		{
-			power += gained;
-			if (power > 900)
-				power = 900;
-		}
+			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) + gained);
 	}
 
 	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst
 	// that vaporises enemy projectiles around the ship (radius grows at 2 stacks), on a shared cooldown.
-	if (endlessFxActive() && this_player == &player[0] && cmHullHit)
+	if (endlessFxShip(this_player) && cmHullHit)
 	{
 		const int cmRadius = endlessPerkCountermeasureRadius();  // 0 unless owned AND off cooldown
 		if (cmRadius > 0)
@@ -1633,7 +1663,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	}
 
 	// Failsafe extends hull-hit invulnerability without shortening a longer revive/respawn window.
-	if (endlessFxActive() && this_player == &player[0] && cmHullHit && this_player->is_alive)
+	if (endlessFxShip(this_player) && cmHullHit && this_player->is_alive)
 	{
 		const uint failsafe = (uint)endlessPerkFailsafeTicks();
 		if (this_player->invulnerable_ticks < failsafe)
@@ -1651,15 +1681,15 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// 0 whenever the shield fully absorbs a hit, the common early-game case. Only losses count, so a
 	// revive restoring armor can't read as negative. Main player only (its generator is the global
 	// `power`); the helper is 0 when off or under a dead generator.
-	if (endlessFxActive() && this_player == &player[0])
+	if (endlessFxShip(this_player))
 	{
 		int lost = 0;
 		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
 		if (this_player->armor  < oldArmor)  lost += oldArmor  - this_player->armor;
 		if (lost > 0)
 		{
-			unsigned drain = endlessStaticDischargeDrain((unsigned)lost);
-			power = (power > drain) ? power - drain : 0;
+			const int drain = (int)endlessStaticDischargeDrain((unsigned)lost);
+			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) - drain);
 		}
 	}
 
@@ -1668,7 +1698,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 JE_word JE_portConfigs(void)
 {
-	const uint player_index = coopCampaignMode ? gameplay_local_player_index() : (twoPlayerMode ? 1 : 0);
+	const uint player_index = coop_mode_active() ? gameplay_local_player_index() : (twoPlayerMode ? 1 : 0);
 	return tempW = weaponPort[player[player_index].items.weapon[REAR_WEAPON].id].opnum;
 }
 

@@ -16,6 +16,7 @@
 #include "nortvars.h"
 #include "palette.h"
 #include "pcxload.h"
+#include "network.h"
 #include "player.h"
 #include "sprite.h"
 #include "tyrian2.h"
@@ -29,7 +30,7 @@
 
 int      endlessRunDepth  = 0;
 Uint64   endlessActiveMods = 0;
-int      endlessArmorBonus = 0;
+int      endlessArmorBonus[2] = { 0, 0 };
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
@@ -40,6 +41,93 @@ Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
 Uint64 endlessCashBySink[ENDLESS_CASH_SINKS] = { 0 };
 static ulong endlessCashMark = 0;
+
+/* Online co-op. The sector is shared; wallets, gear and personal upgrades are not. Each machine
+ * outfits, spends for and tallies its OWN ship, and mirrors the other's state at the outpost. */
+
+uint endlessEconomyIndex(void)
+{
+	return coopEndlessMode ? gameplay_local_player_index() : 0;
+}
+
+uint endlessPartnerIndex(void)
+{
+	return coopEndlessMode ? 1 - gameplay_local_player_index() : 0;
+}
+
+// This machine's wallet, which is the one the run ledger follows.
+static ulong endlessWallet(void)
+{
+	return player[endlessEconomyIndex()].cash;
+}
+
+// Ships a per-player effect has to walk. One outside co-op, so solo behaviour is untouched.
+uint endlessEffectPlayers(void)
+{
+	return coopEndlessMode ? (uint)COUNTOF(player) : 1u;
+}
+
+EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
+bool endlessCoopHostCharts = true;
+bool endlessPlayerDowned[2] = { false, false };
+
+const char *endlessCourseChooserName(EndlessCourseChooser mode)
+{
+	switch (mode)
+	{
+	case ENDLESS_PICK_GUEST:     return "Guest";
+	case ENDLESS_PICK_ALTERNATE: return "Alternating";
+	case ENDLESS_PICK_COINFLIP:  return "50-50";
+	default:                     return "Host";
+	}
+}
+
+bool endlessLocalPlayerCharts(void)
+{
+	if (!endlessCoop())
+		return true;
+
+	switch (endlessCourseChooser)
+	{
+	case ENDLESS_PICK_GUEST:     return !network_is_host;
+	case ENDLESS_PICK_ALTERNATE: return endlessCoopHostCharts == network_is_host;
+	case ENDLESS_PICK_COINFLIP:
+		// Derived from the seed rather than drawn from a stream, so the coin never depends on how
+		// much either player has shopped and both machines read the same side of it.
+		return (((endlessSplitMixSeed((Uint64)endlessRunDepth * 4 + 1) >> 33) & 1) != 0) == network_is_host;
+	default:                     return network_is_host;
+	}
+}
+
+void endlessAdvanceCourseTurn(void)
+{
+	if (endlessCoop() && endlessCourseChooser == ENDLESS_PICK_ALTERNATE)
+		endlessCoopHostCharts = !endlessCoopHostCharts;
+}
+
+bool endlessAnyPlayerFlying(void)
+{
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		if (player[p].is_alive && !endlessPlayerDowned[p])
+			return true;
+	return false;
+}
+
+/* A partner who went down mid-zone comes back at the outpost the survivor reached: full hull,
+ * no shield, everything they owned still theirs. */
+void endlessReviveDownedAtOutpost(void)
+{
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+	{
+		if (!endlessPlayerDowned[p])
+			continue;
+		endlessPlayerDowned[p] = false;
+		player[p].is_alive = true;
+		player[p].exploding_ticks = 0;
+		player[p].armor = player[p].initial_armor;
+		player[p].shield = 0;
+	}
+}
 
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
 #define ENDLESS_CASH_TALLY_MAX  999999999999ULL
@@ -84,7 +172,7 @@ static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 // Book undeclared wallet drift, then re-anchor the ledger mark.
 static void endlessCashReconcile(bool warn)
 {
-	const ulong now = player[0].cash;
+	const ulong now = endlessWallet();
 	if (now == endlessCashMark)
 		return;
 	if (warn)
@@ -119,13 +207,13 @@ void endlessCashCredit(long amount, EndlessCashSource src)
 		return;
 	if (!endlessMode)
 	{
-		player[0].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
+		player[endlessEconomyIndex()].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
 		return;
 	}
 	endlessCashReconcile(true);   // any undeclared drift surfaces before the mark moves
-	player[0].cash += (ulong)amount;
+	player[endlessEconomyIndex()].cash += (ulong)amount;
 	endlessCashBook((Uint64)amount, src);
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
@@ -134,24 +222,24 @@ void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
 		return;
 	if (!endlessMode)
 	{
-		player[0].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
+		player[endlessEconomyIndex()].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
 		return;
 	}
 	endlessCashReconcile(true);
 	Uint64 take = (Uint64)amount;
-	if (take > player[0].cash)   // a debit can take at most the wallet
-		take = player[0].cash;
-	player[0].cash -= (ulong)take;
+	if (take > endlessWallet())   // a debit can take at most the wallet
+		take = endlessWallet();
+	player[endlessEconomyIndex()].cash -= (ulong)take;
 	endlessCashAddSat(&endlessRunCashSpent, take);
 	if ((unsigned)sink < ENDLESS_CASH_SINKS)
 		endlessCashAddSat(&endlessCashBySink[sink], take);
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 // Re-anchor after loading or restoring cash that was not earned in this run.
 void endlessCashResync(void)
 {
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 // The upgrade menu shows a temporary balance; Begin/Commit must bracket one transaction.
@@ -162,7 +250,7 @@ void endlessShopTradeBegin(void)
 	if (!endlessMode)
 		return;
 	endlessCashReconcile(true);   // settle drift while the wallet is still real
-	endlessTradeBefore = player[0].cash;
+	endlessTradeBefore = endlessWallet();
 }
 
 // Full-refund trades cancel prior gear spending. Only excess from granted gear counts as income.
@@ -170,7 +258,7 @@ void endlessShopTradeCommit(void)
 {
 	if (!endlessMode)
 		return;
-	const ulong now = player[0].cash;   // the exit assignment already committed JE_cashLeft()
+	const ulong now = endlessWallet();   // the exit assignment already committed JE_cashLeft()
 	if (now > endlessTradeBefore)
 	{
 		const Uint64 refund = (Uint64)(now - endlessTradeBefore);
@@ -479,7 +567,6 @@ void endlessResetRun(void)
 {
 	endlessRunDepth   = 0;
 	endlessActiveMods = 0;
-	endlessArmorBonus = 0;
 	endlessRunUsedCustom = false;
 	endlessCustomFiredZone = false;
 	endlessRunKills   = 0;
@@ -489,9 +576,6 @@ void endlessResetRun(void)
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	memset(endlessCashBySink, 0, sizeof(endlessCashBySink));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
-	endlessPurchasedMods = 0;
-	endlessBuffKind = 0;
-	endlessBuffCooldownUntil = 0;
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
 	endlessPerkPending = false;
@@ -507,29 +591,41 @@ void endlessResetRun(void)
 	endlessSalvoIdle = ENDLESS_PERK_SALVO_IDLE;
 	endlessSalvoWindow = 0;
 	endlessCmCooldown = 0;
-	endlessBuffCharge = 0;
-	endlessReviveHeld = false;
-	endlessRevivesUsed = 0;
-	endlessCleanseChargeCount = 0;
-	endlessGamblePerkWon = false;
-	endlessShopTax = 0;
-	endlessGambleRigged = false;
-	endlessLongCon = 0;
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
 	endlessSortieHave = false;
-	endlessSortiePrePurchased = 0;
-	endlessSortiePreCleanse = 0;
-	endlessSortiePreLongCon = 0;
+	memset(endlessSortiePrePurchased, 0, sizeof(endlessSortiePrePurchased));
+	memset(endlessSortiePreCleanse, 0, sizeof(endlessSortiePreCleanse));
+	memset(endlessSortiePreLongCon, 0, sizeof(endlessSortiePreLongCon));
 	endlessSortieOutpostMods = 0;
 	endlessSortieOutpostEp = 0;
+	endlessCoopHostCharts = true;
 	// New runs override this after reset, and a loaded/reverted one restores the saved mode.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';
 	endlessBaseEp = endlessBaseLvl = endlessPrevBaseEp = endlessPrevBaseLvl = 0;
 	endlessRecentCount = 0;
-	player[0].superbombs = 0;
-	memset(endlessPerkOwned, 0, sizeof(endlessPerkOwned));
+
+	// Everything a player owns for themselves.
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessArmorBonus[p] = 0;
+		endlessPurchasedMods[p] = 0;
+		endlessBuffKind[p] = 0;
+		endlessBuffCooldownUntil[p] = 0;
+		endlessBuffCharge[p] = 0;
+		endlessReviveHeld[p] = false;
+		endlessRevivesUsed[p] = 0;
+		endlessCleanseChargeCount[p] = 0;
+		endlessGamblePerkWon[p] = false;
+		endlessShopTax[p] = 0;
+		endlessGambleRigged[p] = false;
+		endlessLongCon[p] = 0;
+		endlessPlayerDowned[p] = false;
+		player[p].superbombs = 0;
+	}
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
 	endlessSetSeed("");
 }
 
@@ -538,15 +634,18 @@ void endlessCampaignModsArm(void)
 {
 	if (endlessMode)
 		return;
-	endlessArmorBonus = 0;
-	endlessBuffCharge = 0;
-	endlessBuffKind = 0;
-	endlessPurchasedMods = 0;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessArmorBonus[p] = 0;
+		endlessBuffCharge[p] = 0;
+		endlessBuffKind[p] = 0;
+		endlessPurchasedMods[p] = 0;
+		endlessReviveHeld[p] = false;
+		endlessCleanseChargeCount[p] = 0;
+		endlessShopTax[p] = 0;
+	}
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
-	endlessReviveHeld = false;
-	endlessCleanseChargeCount = 0;
-	endlessShopTax = 0;
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
 	endlessPerkPending = false;
@@ -577,11 +676,15 @@ void endlessCountKill(int linknum)
 	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
 		endlessRetaliationTimer = ENDLESS_RETALIATION_TICKS;
 
-	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max).
+	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max). One roll feeds
+	// both ships, so the draw count stays the same whether the run is solo or co-op.
 	if (endlessPerkOwned[PERK_SIPHON] > 0
-	    && (int)(mt_rand() % 100) < endlessPerkOwned[PERK_SIPHON] * ENDLESS_PERK_SIPHON_PCT
-	    && player[0].armor < player[0].initial_armor)
-		++player[0].armor;
+	    && (int)(mt_rand() % 100) < endlessPerkOwned[PERK_SIPHON] * ENDLESS_PERK_SIPHON_PCT)
+	{
+		for (uint p = 0; p < endlessEffectPlayers(); ++p)
+			if (!endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+				++player[p].armor;
+	}
 }
 
 // Bank post-clear boons before the next sector changes endlessActiveMods.
@@ -609,10 +712,14 @@ void endlessGameplayTick(void)
 	endlessCashAudit();
 
 	// Overheat drains hull but cannot land the killing blow.
-	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && player[0].armor > 1 && (endlessZoneTicks % 80) == 0)
+	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && (endlessZoneTicks % 80) == 0)
 	{
-		--player[0].armor;
-		endlessArmorHudDirty = true;
+		for (uint p = 0; p < endlessEffectPlayers(); ++p)
+			if (!endlessPlayerDowned[p] && player[p].armor > 1)
+			{
+				--player[p].armor;
+				endlessArmorHudDirty = true;
+			}
 	}
 
 	if (endlessTurbodriveTimer > 0)
@@ -644,8 +751,9 @@ void endlessGameplayTick(void)
 		if (++endlessRegenTick >= ENDLESS_PERK_REGEN_TICKS / endlessPerkOwned[PERK_REGEN])
 		{
 			endlessRegenTick = 0;
-			if (player[0].armor < player[0].initial_armor)
-				++player[0].armor;
+			for (uint p = 0; p < endlessEffectPlayers(); ++p)
+				if (!endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+					++player[p].armor;
 		}
 	}
 
@@ -846,8 +954,8 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
 	RUNEND_ROW("Cash spent:", "$%llu", (unsigned long long)endlessRunCashSpent);
 
-	if (endlessArmorBonus > 0)
-		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);
+	if (endlessArmorBonus[endlessEconomyIndex()] > 0)
+		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus[endlessEconomyIndex()]);
 
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW

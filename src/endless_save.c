@@ -27,9 +27,9 @@ static JE_byte  endlessSortieSec   = 0;
 static int      endlessSortieEp    = 0;
 static JE_byte  endlessSortieFile  = 0;
 // One-shot purchases are captured before course selection consumes them.
-unsigned endlessSortiePrePurchased = 0;
-int      endlessSortiePreCleanse   = 0;
-int      endlessSortiePreLongCon   = 0;
+unsigned endlessSortiePrePurchased[2] = { 0, 0 };
+int      endlessSortiePreCleanse[2]   = { 0, 0 };
+int      endlessSortiePreLongCon[2]   = { 0, 0 };
 // Mutators captured when the outpost opens. An unlocked bail must restore this previous-sector set.
 Uint64   endlessSortieOutpostMods = 0;
 // Episode captured with them. Shop stock is item ids, and each episode loads its own item tables,
@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 20
+#define ENDLESS_SAVE_VERSION 21
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -132,6 +132,19 @@ typedef struct {
 
 	// Added in v20.
 	Uint8  usedCustom;  // 1 = the run has cleared a zone firing the custom weapon
+
+	/* Added in v21 for online co-op. Slot 0 is the run's only player outside co-op, and a v20
+	 * record loads into it, so a single-player run resumes exactly as it used to. */
+	Uint8  coopHostCharts;   // Alternating course picks: is the host charting the next one?
+	Uint8  courseChooser;    // EndlessCourseChooser the run was started under
+	Sint32 armorBonus2;      // player 2's Reinforce tier
+	Sint32 revivesUsed2, shopTax2, longCon2, buffKind2, buffCharge2, buffCooldownUntil2;
+	Sint32 rerollCost2, hullCost2, bombCost2, extraPerkCost2, cleanseCost2, shopEntryCash2;
+	Sint32 superbombs2, cleanseCharges2;
+	Uint32 purchasedMods2;
+	Uint8  reviveHeld2, gambleRigged2, downed[2];
+	Uint8  perkTakenBy[2][ENDLESS_SAVE_PERKS];   // who picked what; the effective stacks are their sum
+	Uint64 playerRng[2];                          // each player's own outpost draw stream
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -261,6 +274,26 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 		endlessPutU64(f, r->cashBySink[i]);
 
 	endlessPutU8(f, r->usedCustom);                  // v20 custom-weapon record mark
+
+	// v21 online co-op: the second player's own half of the outpost, plus the shared turn flag.
+	endlessPutU8(f, r->coopHostCharts);
+	endlessPutU8(f, r->courseChooser);
+	const Sint32 coop32[] = {
+		r->armorBonus2, r->revivesUsed2, r->shopTax2, r->longCon2, r->buffKind2, r->buffCharge2,
+		r->buffCooldownUntil2, r->rerollCost2, r->hullCost2, r->bombCost2, r->extraPerkCost2,
+		r->cleanseCost2, r->shopEntryCash2, r->superbombs2, r->cleanseCharges2,
+	};
+	for (unsigned i = 0; i < COUNTOF(coop32); ++i)
+		endlessPutU32(f, (Uint32)coop32[i]);
+	endlessPutU32(f, r->purchasedMods2);
+	endlessPutU8(f, r->reviveHeld2);
+	endlessPutU8(f, r->gambleRigged2);
+	endlessPutU8(f, r->downed[0]);
+	endlessPutU8(f, r->downed[1]);
+	endlessPutBytes(f, r->perkTakenBy[0], ENDLESS_SAVE_PERKS);
+	endlessPutBytes(f, r->perkTakenBy[1], ENDLESS_SAVE_PERKS);
+	endlessPutU64(f, r->playerRng[0]);
+	endlessPutU64(f, r->playerRng[1]);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -491,6 +524,41 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// Pre-v20 records resume unmarked, so their record only gains a C if the rest of the run earns it.
 	if (version >= 20 && !endlessGetU8(f, &r->usedCustom))
 		return false;
+
+	// Pre-v21 records are single-player: the zero-filled second slot leaves that player with
+	// nothing bought, and the perk rows are rebuilt from the effective stacks below.
+	if (version >= 21)
+	{
+		if (!endlessGetU8(f, &r->coopHostCharts) || !endlessGetU8(f, &r->courseChooser))
+			return false;
+		Sint32 *const coop32[] = {
+			&r->armorBonus2, &r->revivesUsed2, &r->shopTax2, &r->longCon2, &r->buffKind2,
+			&r->buffCharge2, &r->buffCooldownUntil2, &r->rerollCost2, &r->hullCost2, &r->bombCost2,
+			&r->extraPerkCost2, &r->cleanseCost2, &r->shopEntryCash2, &r->superbombs2,
+			&r->cleanseCharges2,
+		};
+		for (unsigned i = 0; i < COUNTOF(coop32); ++i)
+		{
+			Uint32 t;
+			if (!endlessGetU32(f, &t))
+				return false;
+			*coop32[i] = (Sint32)t;
+		}
+		if (!endlessGetU32(f, &r->purchasedMods2)
+		    || !endlessGetU8(f, &r->reviveHeld2) || !endlessGetU8(f, &r->gambleRigged2)
+		    || !endlessGetU8(f, &r->downed[0]) || !endlessGetU8(f, &r->downed[1])
+		    || !endlessGetBytes(f, r->perkTakenBy[0], ENDLESS_SAVE_PERKS)
+		    || !endlessGetBytes(f, r->perkTakenBy[1], ENDLESS_SAVE_PERKS)
+		    || !endlessGetU64(f, &r->playerRng[0]) || !endlessGetU64(f, &r->playerRng[1]))
+			return false;
+		if (r->courseChooser >= ENDLESS_PICK_COUNT)
+			r->courseChooser = ENDLESS_PICK_HOST;
+	}
+	else
+	{
+		r->coopHostCharts = 1;
+		memcpy(r->perkTakenBy[0], r->perkOwned, ENDLESS_SAVE_PERKS);
+	}
 
 	return true;
 }
@@ -746,34 +814,64 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->used = true;
 
 	r->runDepth      = endlessRunDepth;
-	r->armorBonus    = endlessArmorBonus;
+	r->armorBonus    = endlessArmorBonus[0];
 	r->runKills      = endlessRunKills;
 	r->runBossKills  = endlessRunBossKills;
-	r->buffCharge    = endlessBuffCharge;
-	r->buffCooldownUntil = endlessBuffCooldownUntil;
-	r->revivesUsed   = endlessRevivesUsed;
-	r->shopTax       = endlessShopTax;
-	r->longCon       = endlessLongCon;
+	r->buffCharge    = endlessBuffCharge[0];
+	r->buffCooldownUntil = endlessBuffCooldownUntil[0];
+	r->revivesUsed   = endlessRevivesUsed[0];
+	r->shopTax       = endlessShopTax[0];
+	r->longCon       = endlessLongCon[0];
 	r->perkDepthDone = endlessPerkDepthDone;
 	r->superbombs    = player[0].superbombs;
-	r->reviveHeld    = endlessReviveHeld ? 1 : 0;
-	r->gambleRigged  = endlessGambleRigged ? 1 : 0;
+	r->reviveHeld    = endlessReviveHeld[0] ? 1 : 0;
+	r->gambleRigged  = endlessGambleRigged[0] ? 1 : 0;
 	for (int i = 0; i < ENDLESS_SAVE_PERKS; ++i)
+	{
 		r->perkOwned[i] = (i < PERK_COUNT) ? endlessPerkOwned[i] : 0;
+		r->perkTakenBy[0][i] = (i < PERK_COUNT) ? endlessPerkTakenBy[0][i] : 0;
+		r->perkTakenBy[1][i] = (i < PERK_COUNT) ? endlessPerkTakenBy[1][i] : 0;
+	}
 
-	r->rerollCost    = (Sint32)endlessRerollCost;
-	r->hullCost      = endlessHullCost;
-	r->bombCost      = (Sint32)endlessBombCost;
-	r->extraPerkCost = (Sint32)endlessExtraPerkCost;
-	r->cleanseCost   = (Sint32)endlessCleanseCost;
-	r->shopEntryCash = (Sint32)endlessShopEntryCash;
-	r->purchasedMods = endlessPurchasedMods;
-	r->buffKind      = endlessBuffKind;
-	r->cleanseCharges= endlessCleanseChargeCount;
-	r->gamblePerkWon = endlessGamblePerkWon ? 1 : 0;
+	r->rerollCost    = (Sint32)endlessRerollCost[0];
+	r->hullCost      = endlessHullCost[0];
+	r->bombCost      = (Sint32)endlessBombCost[0];
+	r->extraPerkCost = (Sint32)endlessExtraPerkCost[0];
+	r->cleanseCost   = (Sint32)endlessCleanseCost[0];
+	r->shopEntryCash = (Sint32)endlessShopEntryCash[0];
+	r->purchasedMods = endlessPurchasedMods[0];
+	r->buffKind      = endlessBuffKind[0];
+	r->cleanseCharges= endlessCleanseChargeCount[0];
+	r->gamblePerkWon = endlessGamblePerkWon[0] ? 1 : 0;
 	r->perkPending   = endlessPerkPending ? 1 : 0;
-	SDL_strlcpy(r->gambleMsg, endlessGambleMsg, sizeof(r->gambleMsg));
-	SDL_strlcpy(r->lastSpecialName, endlessLastSpecialName, sizeof(r->lastSpecialName));
+	SDL_strlcpy(r->gambleMsg, endlessGambleMsg[0], sizeof(r->gambleMsg));
+	SDL_strlcpy(r->lastSpecialName, endlessLastSpecialName[0], sizeof(r->lastSpecialName));
+
+	// v21: the other player's own half, and the run-wide co-op settings.
+	r->coopHostCharts = endlessCoopHostCharts ? 1 : 0;
+	r->courseChooser  = (Uint8)endlessCourseChooser;
+	r->armorBonus2    = endlessArmorBonus[1];
+	r->revivesUsed2   = endlessRevivesUsed[1];
+	r->shopTax2       = endlessShopTax[1];
+	r->longCon2       = endlessLongCon[1];
+	r->buffKind2      = endlessBuffKind[1];
+	r->buffCharge2    = endlessBuffCharge[1];
+	r->buffCooldownUntil2 = endlessBuffCooldownUntil[1];
+	r->rerollCost2    = (Sint32)endlessRerollCost[1];
+	r->hullCost2      = endlessHullCost[1];
+	r->bombCost2      = (Sint32)endlessBombCost[1];
+	r->extraPerkCost2 = (Sint32)endlessExtraPerkCost[1];
+	r->cleanseCost2   = (Sint32)endlessCleanseCost[1];
+	r->shopEntryCash2 = (Sint32)endlessShopEntryCash[1];
+	r->superbombs2    = (Sint32)player[1].superbombs;
+	r->cleanseCharges2= endlessCleanseChargeCount[1];
+	r->purchasedMods2 = endlessPurchasedMods[1];
+	r->reviveHeld2    = endlessReviveHeld[1] ? 1 : 0;
+	r->gambleRigged2  = endlessGambleRigged[1] ? 1 : 0;
+	r->downed[0]      = endlessPlayerDowned[0] ? 1 : 0;
+	r->downed[1]      = endlessPlayerDowned[1] ? 1 : 0;
+	r->playerRng[0]   = endlessPlayerRngState[0];
+	r->playerRng[1]   = endlessPlayerRngState[1];
 
 	r->perkChoiceN = endlessPerkChoiceN;
 	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
@@ -841,40 +939,75 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessResetRun();
 
 	endlessRunDepth      = r->runDepth;
-	endlessArmorBonus    = r->armorBonus;
+	endlessArmorBonus[0] = r->armorBonus;
 	endlessRunUsedCustom = r->usedCustom != 0;
 	endlessRunKills      = r->runKills;
 	endlessRunBossKills  = r->runBossKills;
-	endlessBuffCharge    = r->buffCharge;
-	endlessBuffCooldownUntil = r->buffCooldownUntil;
-	endlessRevivesUsed   = r->revivesUsed;
-	endlessShopTax       = r->shopTax;
-	endlessLongCon       = r->longCon;
+	endlessBuffCharge[0] = r->buffCharge;
+	endlessBuffCooldownUntil[0] = r->buffCooldownUntil;
+	endlessRevivesUsed[0] = r->revivesUsed;
+	endlessShopTax[0]    = r->shopTax;
+	endlessLongCon[0]    = r->longCon;
 	endlessPerkDepthDone = r->perkDepthDone;
 	player[0].superbombs = (r->superbombs < 0) ? 0 : (r->superbombs > 10 ? 10 : r->superbombs);
-	endlessReviveHeld    = r->reviveHeld != 0;
-	endlessGambleRigged  = r->gambleRigged != 0;
+	endlessReviveHeld[0] = r->reviveHeld != 0;
+	endlessGambleRigged[0] = r->gambleRigged != 0;
 	for (int i = 0; i < PERK_COUNT && i < ENDLESS_SAVE_PERKS; ++i)
 	{
-		int v = r->perkOwned[i];
 		const int maxs = endlessPerkTable[i].maxStack;
-		endlessPerkOwned[i] = (JE_byte)(v < 0 ? 0 : (v > maxs ? maxs : v));
+		for (int p = 0; p < 2; ++p)
+		{
+			const int v = r->perkTakenBy[p][i];
+			endlessPerkTakenBy[p][i] = (JE_byte)(v < 0 ? 0 : (v > maxs ? maxs : v));
+		}
 	}
+	endlessPerkRederive();
 
-	endlessRerollCost         = r->rerollCost;
-	endlessHullCost           = r->hullCost;
-	endlessBombCost           = r->bombCost;
-	endlessExtraPerkCost      = r->extraPerkCost;
-	endlessCleanseCost        = r->cleanseCost;
-	endlessShopEntryCash      = r->shopEntryCash;
-	endlessPurchasedMods      = r->purchasedMods;
-	endlessBuffKind           = r->buffKind;
-	endlessCleanseChargeCount = r->cleanseCharges;
-	endlessGamblePerkWon      = r->gamblePerkWon != 0;
-	endlessPerkPending        = r->perkPending != 0;
-	SDL_strlcpy(endlessGambleMsg, r->gambleMsg, sizeof(endlessGambleMsg));
-	SDL_strlcpy(endlessLastSpecialName, r->lastSpecialName, sizeof(endlessLastSpecialName));
+	endlessRerollCost[0]         = r->rerollCost;
+	endlessHullCost[0]           = r->hullCost;
+	endlessBombCost[0]           = r->bombCost;
+	endlessExtraPerkCost[0]      = r->extraPerkCost;
+	endlessCleanseCost[0]        = r->cleanseCost;
+	endlessShopEntryCash[0]      = r->shopEntryCash;
+	endlessPurchasedMods[0]      = r->purchasedMods;
+	endlessBuffKind[0]           = r->buffKind;
+	endlessCleanseChargeCount[0] = r->cleanseCharges;
+	endlessGamblePerkWon[0]      = r->gamblePerkWon != 0;
+	endlessPerkPending           = r->perkPending != 0;
+	SDL_strlcpy(endlessGambleMsg[0], r->gambleMsg, sizeof(endlessGambleMsg[0]));
+	SDL_strlcpy(endlessLastSpecialName[0], r->lastSpecialName, sizeof(endlessLastSpecialName[0]));
+
+	// v21 co-op half. A pre-v21 record leaves it zeroed, which is a player who bought nothing.
+	endlessCoopHostCharts        = r->coopHostCharts != 0;
+	endlessCourseChooser         = (EndlessCourseChooser)r->courseChooser;
+	endlessArmorBonus[1]         = r->armorBonus2;
+	endlessRevivesUsed[1]        = r->revivesUsed2;
+	endlessShopTax[1]            = r->shopTax2;
+	endlessLongCon[1]            = r->longCon2;
+	endlessBuffKind[1]           = r->buffKind2;
+	endlessBuffCharge[1]         = r->buffCharge2;
+	endlessBuffCooldownUntil[1]  = r->buffCooldownUntil2;
+	endlessRerollCost[1]         = r->rerollCost2;
+	endlessHullCost[1]           = r->hullCost2;
+	endlessBombCost[1]           = r->bombCost2;
+	endlessExtraPerkCost[1]      = r->extraPerkCost2;
+	endlessCleanseCost[1]        = r->cleanseCost2;
+	endlessShopEntryCash[1]      = r->shopEntryCash2;
+	player[1].superbombs         = (r->superbombs2 < 0) ? 0u : (r->superbombs2 > 10 ? 10u : (uint)r->superbombs2);
+	endlessCleanseChargeCount[1] = r->cleanseCharges2;
+	endlessPurchasedMods[1]      = r->purchasedMods2;
+	endlessReviveHeld[1]         = r->reviveHeld2 != 0;
+	endlessGambleRigged[1]       = r->gambleRigged2 != 0;
+	endlessPlayerDowned[0]       = r->downed[0] != 0;
+	endlessPlayerDowned[1]       = r->downed[1] != 0;
 	endlessSetSeed(r->seed);  // restore the run seed (endlessResetRun blanked it); rehashes + primes the stream
+	// ...then put each player's own draw stream back where the save left it, so a resumed outpost
+	// deals the same next hand. A pre-v21 record has none: endlessSetSeed already primed a pair.
+	if (r->playerRng[0] != 0 || r->playerRng[1] != 0)
+	{
+		endlessPlayerRngState[0] = r->playerRng[0];
+		endlessPlayerRngState[1] = r->playerRng[1];
+	}
 
 	endlessPerkChoiceN = endlessClamp(r->perkChoiceN, 0, ENDLESS_SAVE_OFFERS);
 	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
@@ -950,6 +1083,16 @@ void endlessSaveSlot(JE_byte slot)
 	endlessWriteAllSlots();
 }
 
+// Does this save slot hold an Endless run? Used by the load screen to keep Endless and Campaign
+// sessions from offering each other's saves.
+bool endlessSlotHasRun(JE_byte slot)
+{
+	if (slot < 1 || slot > SAVE_FILES_NUM)
+		return false;
+	endlessReadAllSlots();
+	return endlessSlotCache[slot - 1].used;
+}
+
 bool endlessLoadSlot(JE_byte slot)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM)
@@ -994,9 +1137,12 @@ void endlessRestoreSortie(void)
 		return;
 
 	// Preserve one-shot state across endlessApplyCurrent's reset. Run mode is stored in the record.
-	const unsigned preBuff     = endlessSortiePrePurchased;
-	const int      preCleanse  = endlessSortiePreCleanse;
-	const int      preLongCon  = endlessSortiePreLongCon;
+	unsigned preBuff[COUNTOF(endlessSortiePrePurchased)];
+	int      preCleanse[COUNTOF(endlessSortiePreCleanse)];
+	int      preLongCon[COUNTOF(endlessSortiePreLongCon)];
+	memcpy(preBuff, endlessSortiePrePurchased, sizeof(preBuff));
+	memcpy(preCleanse, endlessSortiePreCleanse, sizeof(preCleanse));
+	memcpy(preLongCon, endlessSortiePreLongCon, sizeof(preLongCon));
 	const Uint64   outpostMods = endlessSortieOutpostMods;
 	const JE_byte  outpostEp   = endlessSortieOutpostEp;
 
@@ -1020,10 +1166,10 @@ void endlessRestoreSortie(void)
 	else
 	{
 		// Relaxed and Standard reopen before course selection, so restore pre-pick one-shots.
-		endlessLockedSortie       = false;
-		endlessPurchasedMods      = preBuff;
-		endlessCleanseChargeCount = preCleanse;
-		endlessLongCon            = preLongCon;
+		endlessLockedSortie = false;
+		memcpy(endlessPurchasedMods, preBuff, sizeof(endlessPurchasedMods));
+		memcpy(endlessCleanseChargeCount, preCleanse, sizeof(endlessCleanseChargeCount));
+		memcpy(endlessLongCon, preLongCon, sizeof(endlessLongCon));
 		// Restore the outpost's modifiers; the next course selection replaces them.
 		endlessActiveMods         = endlessSortieOutpostMods;
 	}

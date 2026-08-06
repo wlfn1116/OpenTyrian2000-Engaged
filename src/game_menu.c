@@ -1114,8 +1114,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	// for the other to finish outfitting, and an outpost that merely stops responding
 	// reads as a hang.
 	shopWaitNotice("Waiting for other player.",
-	               coopCampaignMode ? "They are still in the outpost." : NULL,
-	               coopCampaignMode ? "Press Esc to go back." : NULL);
+	               coop_mode_active() ? "They are still in the outpost." : NULL,
+	               coop_mode_active() ? "Press Esc to go back." : NULL);
 
 	// The rendezvous below is the last point where both machines are still in menu code, so
 	// it is where the level they are about to load has to be agreed on.  A debug-browser pick
@@ -1125,7 +1125,7 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
 	const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
 
-	if (coopCampaignMode)
+	if (coop_mode_active())
 	{
 		shopPlayer()->last_items = shopPlayer()->items;
 
@@ -1207,7 +1207,7 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 void JE_itemScreen(void)
 {
 	bool quit = false;
-	shopPlayerIndex = isNetworkGame && coopCampaignMode ? gameplay_local_player_index() : 0;
+	shopPlayerIndex = isNetworkGame && coop_mode_active() ? gameplay_local_player_index() : 0;
 
 	crashlog_set_phase("shop / buy-sell menu");
 
@@ -1230,7 +1230,7 @@ void JE_itemScreen(void)
 	configure_custom_weapon_menu();
 	configure_options_sens_menu();
 	configure_endless_shop_menu();
-	if (isNetworkGame && coopCampaignMode)
+	if (isNetworkGame && coop_mode_active())
 	{
 		network_shop_begin();
 
@@ -1323,7 +1323,7 @@ void JE_itemScreen(void)
 			if (split_arcade_mode())
 				curMenu = MENU_2_PLAYER_ARCADE;
 
-			if ((isNetworkGame && !coopCampaignMode) || onePlayerAction)
+			if ((isNetworkGame && !coop_mode_active()) || onePlayerAction)
 				curMenu = MENU_1_PLAYER_ARCADE;
 
 			if (superTyrian)
@@ -2303,7 +2303,7 @@ void JE_itemScreen(void)
 				// Endless Hardcore forbids quick save/load. Online Campaign also blocks Alt+S while
 				// an item preview is temporarily mutating the local loadout and cash.
 				if (curMenu != MENU_LOAD_SAVE &&
-				    (!(isNetworkGame && coopCampaignMode) || curMenu != MENU_UPGRADE_SUB) &&
+				    (!(isNetworkGame && coop_mode_active()) || curMenu != MENU_UPGRADE_SUB) &&
 				    !(endlessMode && endlessHardcore()))
 				{
 					if (keysactive[SDL_SCANCODE_S] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]))
@@ -2679,7 +2679,7 @@ void JE_itemScreen(void)
 				else if (curMenu == MENU_LIMITED_OPTIONS)
 				{
 					newPal = 1;
-					curMenu = coopCampaignMode ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
+					curMenu = coop_mode_active() ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
@@ -8931,7 +8931,7 @@ void JE_menuFunction(JE_byte select)
 			break;
 		case OPT_EXIT:
 			// Online Arcade runs its own front page; everything else goes back to buy/sell.
-			curMenu = (isNetworkGame && !coopCampaignMode) ? MENU_1_PLAYER_ARCADE : MENU_FULL_GAME;
+			curMenu = (isNetworkGame && !coop_mode_active()) ? MENU_1_PLAYER_ARCADE : MENU_FULL_GAME;
 			break;
 		}
 		break;

@@ -276,6 +276,16 @@ static Uint32 rb_item_hash(const RbItem *it)
 	return h;
 }
 
+/* Registry entries that only a co-op session moves. The trace hash skips them while no such
+ * session is running, so single-player replay fixtures keep hashing the byte stream they were
+ * recorded against. Endless entries all carry the "endless." prefix. */
+static bool rb_item_is_coop_only(const char *name)
+{
+	return strcmp(name, "coopCampaignMode") == 0
+	    || strcmp(name, "coopEndlessMode") == 0
+	    || strncmp(name, "endless.", 8) == 0;
+}
+
 Uint32 rollback_state_hash(void)
 {
 	if (rb_ring[0] == NULL)
@@ -289,11 +299,11 @@ Uint32 rollback_state_hash(void)
 		const RbItem *const it = &rb_items[item];
 		const Uint8 *const bytes = rb_trace_buf + it->offset;
 
-		/* Legacy replay fixtures hash the pre-Campaign registry byte stream. Preserve that
-		 * projection when the mode is inactive, while Campaign canaries cover every new field. */
-		if (!coopCampaignMode && strcmp(it->name, "coopCampaignMode") == 0)
+		/* Legacy replay fixtures hash the pre-co-op registry byte stream. Preserve that projection
+		 * while no co-op session is running; the co-op canaries cover every field added since. */
+		if (!coop_mode_active() && rb_item_is_coop_only(it->name))
 			continue;
-		if (!coopCampaignMode && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
+		if (!coop_mode_active() && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
 		{
 			const size_t prefix = offsetof(Player, generator_power);
 			const size_t suffix = offsetof(Player, x);

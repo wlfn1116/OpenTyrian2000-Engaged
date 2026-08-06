@@ -1118,7 +1118,7 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 
 static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate)
 {
-	if (coopCampaignMode)
+	if (coop_mode_active())
 	{
 		for (uint p = 0; p < COUNTOF(player); ++p)
 		{
@@ -3384,7 +3384,7 @@ start_level_first:
 	zinglonDuration = 0;
 	specialWait = 0;
 	nextSpecialWait = 0;
-	if (coopCampaignMode)
+	if (coop_mode_active())
 		coop_ship_runtime_reset();
 	for (uint i = 0; i < 2; i++)  /*Launch the Attachments!*/
 	{
@@ -3621,7 +3621,7 @@ level_loop:
 		}
 		else // not galagaMode
 		{
-			if (coopCampaignMode)
+			if (coop_mode_active())
 			{
 				bool shield_changed = false;
 				for (uint i = 0; i < COUNTOF(player); ++i)
@@ -3686,7 +3686,7 @@ level_loop:
 		for (uint i = 0; i < 2; ++i)
 		{
 			const uint hud_player = gameplay_local_player_index();
-			uint item_power = arcade_weapon_power(&player[coopCampaignMode ? hud_player : (twoPlayerMode ? i : 0)], i);
+			uint item_power = arcade_weapon_power(&player[coop_mode_active() ? hud_player : (twoPlayerMode ? i : 0)], i);
 
 			if (old_weapon_bar[i] != item_power)
 			{
@@ -3725,7 +3725,7 @@ level_loop:
 			if (onePlayerAction)
 				draw_lives_gauge(*player[0].lives);
 		}
-		else if (coopCampaignMode)
+		else if (coop_mode_active())
 		{
 			const uint hud_player = gameplay_local_player_index();
 			power = player[hud_player].generator_power;
@@ -4196,7 +4196,7 @@ level_loop:
 
 					if (z == MAX_PWEAPON - 1)
 					{
-						if (coopCampaignMode)
+						if (coop_mode_active())
 						{
 							collided = false;
 							temp = 0;
@@ -6549,6 +6549,7 @@ void networkStartScreen(void)
 
 	twoPlayerMode = true;
 	coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
+	coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 	bool resumed = false;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
@@ -6575,7 +6576,7 @@ void networkStartScreen(void)
 			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
-			if (!coopCampaignMode)
+			if (!coop_mode_active())
 				difficultyLevel++;  /*Make Arcade one step harder for 2-player mode.*/
 
 			network_prepare(PACKET_DETAILS);
@@ -6730,6 +6731,7 @@ void networkStartScreen(void)
 			gameJustLoaded = true;
 			JE_loadGameRecord(&rec, true);
 			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
+			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
 			resumed = true;
 		}
@@ -6737,7 +6739,7 @@ void networkStartScreen(void)
 		{
 			JE_initEpisode(their_episode);
 			difficultyLevel = their_difficulty;
-			initialDifficulty = difficultyLevel - (coopCampaignMode ? 0 : 1);
+			initialDifficulty = difficultyLevel - (coop_mode_active() ? 0 : 1);
 		}
 		fade_black(10);
 
@@ -6746,7 +6748,7 @@ void networkStartScreen(void)
 
 	if (!resumed)
 	{
-		if (coopCampaignMode)
+		if (coop_mode_active())
 		{
 			static const Uint32 initial_cash[] = { 10000, 15000, 20000, 30000, 20000 };
 			const Uint32 cash = initial_cash[episodeNum - 1];
@@ -9080,10 +9082,10 @@ void JE_eventSystem(void)
 		break;
 
 	case 82: /*Give SPECIAL WEAPON*/
-		for (uint p = 0; p < (coopCampaignMode ? COUNTOF(player) : 1u); ++p)
+		for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
 		{
 			player[p].items.special = eventRec[eventLoc-1].eventdat;
-			if (coopCampaignMode)
+			if (coop_mode_active())
 			{
 				player[p].shot_multi_pos[SHOT_SPECIAL] = 0;
 				player[p].shot_repeat[SHOT_SPECIAL] = 0;

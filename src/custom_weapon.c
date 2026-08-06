@@ -1501,7 +1501,7 @@ static void customWeaponMaterializeAll(void)
 	const int local = customWeaponLocalOwner();
 	customWeaponMaterialize();
 
-	if (!isNetworkGame || !coopCampaignMode)
+	if (!isNetworkGame || !coop_mode_active())
 		return;
 
 	for (int owner = 0; owner < CUSTOM_WEAPON_OWNERS; ++owner)

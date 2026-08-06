@@ -731,12 +731,21 @@ static int save_effective_episode(const JE_SaveFileType *rec)
 	return episode;
 }
 
-static bool save_type_compatible(const JE_SaveFileType *rec, bool net2p)
+// Which sessions may load `slot`. The record's co-op tag says it carries two full loadouts;
+// the Endless sidecar says whether a run sits behind it, which is what separates the two
+// online co-op lobbies from each other.
+static bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 {
-	const bool campaign = save_record_is_coop_campaign(rec);
+	const bool coop = save_record_is_coop(rec);
 	if (isNetworkGame && net2p)
-		return campaign == (network_game_type == NETWORK_GAME_CAMPAIGN);
-	return !campaign;
+	{
+		if (network_game_type == NETWORK_GAME_ENDLESS)
+			return coop && endlessSlotHasRun(slot);
+		if (network_game_type == NETWORK_GAME_CAMPAIGN)
+			return coop && !endlessSlotHasRun(slot);
+		return !coop;
+	}
+	return !coop;
 }
 
 // net2p pins the two-player page and returns the chosen slot. saving selects the standard save flow.
@@ -809,7 +818,8 @@ int JE_loadScreen(bool net2p, bool saving)
 			const int saveEpisode = save_effective_episode(saveFile);
 			const bool epLocked = net2p && !saving && !disabled &&
 			                      (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1]);
-			const bool typeLocked = !saving && !disabled && !save_type_compatible(saveFile, net2p);
+			const bool typeLocked = !saving && !disabled &&
+			                      !save_type_compatible(saveFile, (JE_byte)(playersIndex * 11 + i + 1), net2p);
 
 			char buffer[22];
 
@@ -1051,7 +1061,7 @@ int JE_loadScreen(bool net2p, bool saving)
 
 				if (saveFile->level == 0 ||  // "EMPTY SLOT"
 				    (net2p && (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1])) ||
-				    !save_type_compatible(saveFile, net2p))
+				    !save_type_compatible(saveFile, (JE_byte)(saveFileIndex + 1), net2p))
 				{
 					JE_playSampleNum(S_CLINK);
 				}
@@ -1221,6 +1231,7 @@ void JE_initPlayerData(void)
 	superTyrian = false;
 	twoPlayerMode = false;
 	coopCampaignMode = false;
+	coopEndlessMode = false;
 	timedBattleMode = false;
 	endlessMode = false;
 
@@ -6220,7 +6231,7 @@ void JE_endLevelAni(void)
 	if (difficultyAdjust && !endlessFxActive())
 		adjust_difficulty();
 
-	for (uint p = 0; p < (coopCampaignMode ? COUNTOF(player) : 1u); ++p)
+	for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
 		player[p].last_items = player[p].items;
 	strcpy(lastLevelName, levelName);
 
@@ -6921,7 +6932,7 @@ void JE_inGameDisplays(void)
 
 	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
 	{
-		if (coopCampaignMode)
+		if (coop_mode_active())
 			snprintf(tempstr, sizeof(tempstr), "%s %lu", JE_getName(i + 1), (unsigned long)player[i].cash);
 		else
 			snprintf(tempstr, sizeof(tempstr), "%lu", (unsigned long)player[i].cash);
@@ -7071,16 +7082,16 @@ void JE_inGameDisplays(void)
 	}
 
 	/*Super Bombs!!*/
-	const uint first_bomb_player = coopCampaignMode ? local_player : 0;
-	const uint last_bomb_player = coopCampaignMode ? local_player + 1 : COUNTOF(player);
+	const uint first_bomb_player = coop_mode_active() ? local_player : 0;
+	const uint last_bomb_player = coop_mode_active() ? local_player + 1 : COUNTOF(player);
 	for (uint i = first_bomb_player; i < last_bomb_player; ++i)
 	{
-		int x = coopCampaignMode || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
+		int x = coop_mode_active() || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
 
 		for (uint j = player[i].superbombs; j > 0; --j)
 		{
 			blit_sprite2(VGAScreen, x, 160, spriteSheet9, 304);
-			x += (coopCampaignMode || i == 0) ? 12 : -12;
+			x += (coop_mode_active() || i == 0) ? 12 : -12;
 		}
 	}
 
@@ -7716,7 +7727,7 @@ void JE_playerMovement(Player *this_player,
 	JE_integer mouseXC, mouseYC;
 	JE_integer accelXC, accelYC;
 
-	if (playerNum_ == 2 || !twoPlayerMode || coopCampaignMode)
+	if (playerNum_ == 2 || !twoPlayerMode || coop_mode_active())
 	{
 		tempW = weaponPort[this_player->items.weapon[REAR_WEAPON].id].opnum;
 
@@ -8996,7 +9007,7 @@ redo:
 				{
 					int min, max;
 
-					if (!twoPlayerMode || coopCampaignMode)
+					if (!twoPlayerMode || coop_mode_active())
 						min = 1, max = 2;
 					else
 						min = max = playerNum_;
@@ -9055,7 +9066,7 @@ redo:
 				}
 
 				/*Super Charge Weapons*/
-				if (playerNum_ == 2 && !coopCampaignMode)
+				if (playerNum_ == 2 && !coop_mode_active())
 				{
 
 					if (!twoPlayerLinked)
@@ -9179,7 +9190,7 @@ redo:
 					break;
 				}
 
-				if (playerNum_ == 2 || !twoPlayerMode || coopCampaignMode)
+				if (playerNum_ == 2 || !twoPlayerMode || coop_mode_active())
 				{
 					for (uint i = 0; i < COUNTOF(player->items.sidekick); ++i)
 					{
@@ -9279,7 +9290,7 @@ redo:
 	} // moveOK
 
 	// draw sidekicks
-	if ((playerNum_ == 2 || !twoPlayerMode || coopCampaignMode) && !endLevel)
+	if ((playerNum_ == 2 || !twoPlayerMode || coop_mode_active()) && !endLevel)
 	{
 		for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 		{
@@ -9445,12 +9456,12 @@ void JE_mainGamePlayerFunctions(void)
 
 	if (twoPlayerMode)
 	{
-		if (coopCampaignMode)
+		if (coop_mode_active())
 			coop_ship_runtime_load(&player[0]);
 		JE_playerMovement(&player[0],
 		                  !galagaMode ? inputDevice[0] : 0, 1, shipGr, shipGrPtr,
 		                  &mouseX, &mouseY);
-		if (coopCampaignMode)
+		if (coop_mode_active())
 		{
 			coop_ship_runtime_save(&player[0]);
 			if (!player[0].port_config_change)
@@ -9460,7 +9471,7 @@ void JE_mainGamePlayerFunctions(void)
 		JE_playerMovement(&player[1],
 		                  !galagaMode ? inputDevice[1] : 0, 2, shipGr2, shipGr2ptr,
 		                  &mouseXB, &mouseYB);
-		if (coopCampaignMode)
+		if (coop_mode_active())
 		{
 			coop_ship_runtime_save(&player[1]);
 			if (!player[1].port_config_change)
@@ -9701,7 +9712,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue > 32100)
 					{
-						if (playerNum_ == 1 || coopCampaignMode)
+						if (playerNum_ == 1 || coop_mode_active())
 						{
 							player_award_pickup_cash(this_player, 250);
 							this_player->items.special = evalue - 32100;
@@ -9709,7 +9720,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							shotRepeat[SHOT_SPECIAL] = 10;
 							shotMultiPos[SHOT_SPECIAL2] = 0;
 							shotRepeat[SHOT_SPECIAL2] = 0;
-							if (coopCampaignMode)
+							if (coop_mode_active())
 							{
 								this_player->shot_multi_pos[SHOT_SPECIAL] = 0;
 								this_player->shot_repeat[SHOT_SPECIAL] = 10;
@@ -9718,7 +9729,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							}
 
 							if (isNetworkGame)
-								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coopCampaignMode ? playerNum_ : 1), miscTextB[4-1], special[evalue - 32100].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], special[evalue - 32100].name);
 							else if (twoPlayerMode)
 								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], special[evalue - 32100].name);
 							else
@@ -9730,7 +9741,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue > 32000)
 					{
-						if (coopCampaignMode)
+						if (coop_mode_active())
 						{
 							enemyAvail[z] = 1;
 							for (uint i = 0; i < COUNTOF(this_player->items.sidekick); ++i)
@@ -9792,7 +9803,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					else if (evalue > 31000)
 					{
 						player_award_pickup_cash(this_player, 250);
-						if (coopCampaignMode)
+						if (coop_mode_active())
 						{
 							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(playerNum_), miscTextB[4-1], weaponPort[evalue - 31000].name);
 							JE_drawTextWindow(tempStr);
@@ -9828,17 +9839,17 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue > 30000)
 					{
-						if (coopCampaignMode || (playerNum_ == 1 && twoPlayerMode))
+						if (coop_mode_active() || (playerNum_ == 1 && twoPlayerMode))
 						{
 							if (isNetworkGame)
-								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coopCampaignMode ? playerNum_ : 1), miscTextB[4-1], weaponPort[evalue - 30000].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], weaponPort[evalue - 30000].name);
 							else
 								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], weaponPort[evalue - 30000].name);
 							JE_drawTextWindow(tempStr);
-							Player *const pickup_player = coopCampaignMode ? this_player : &player[0];
+							Player *const pickup_player = coop_mode_active() ? this_player : &player[0];
 							pickup_player->items.weapon[FRONT_WEAPON].id = evalue - 30000;
 							shotMultiPos[SHOT_FRONT] = 0;
-							if (coopCampaignMode)
+							if (coop_mode_active())
 								pickup_player->shot_multi_pos[SHOT_FRONT] = 0;
 							enemyAvail[z] = 1;
 							soundQueue[7] = S_POWERUP;
@@ -9853,7 +9864,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							soundQueue[7] = S_POWERUP;
 						}
 
-						if (enemyAvail[z] == 1 && !coopCampaignMode)
+						if (enemyAvail[z] == 1 && !coop_mode_active())
 						{
 							player[0].items.special = specialArcadeWeapon[evalue - 30000-1];
 							if (player[0].items.special > 0)
@@ -9900,7 +9911,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 				}
 				else if (evalue > 10000 && enemyAvail[z] == 2)
 				{
-					if (endlessMode) { enemyAvail[z] = 1; soundQueue[7] = S_POWERUP; endlessGrantSpecial(); }  /* secret orb -> random special in endless (no map warp) */ else if (!bonusLevel)
+					if (endlessMode) { enemyAvail[z] = 1; soundQueue[7] = S_POWERUP; endlessGrantSpecial((uint)(this_player - &player[0])); }  /* secret orb -> random special in endless (no map warp) */ else if (!bonusLevel)
 					{
 						play_song(30);  /*Zanac*/
 						bonusLevel = true;
@@ -9928,32 +9939,32 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						cubeMax++;
 						soundQueue[3] = V_DATA_CUBE;
 										if (endlessMode)  // datacubes don't accumulate in endless (cube data is inconsistent / crashes)
-											{ cubeMax--; soundQueue[3] = S_POWERUP; endlessGrantSpecial(); }  /* datacube -> random special in endless */
+											{ cubeMax--; soundQueue[3] = S_POWERUP; endlessGrantSpecial((uint)(this_player - &player[0])); }  /* datacube -> random special in endless */
 					}
 					else if (evalue == -1)  // got front weapon powerup
 					{
 						if (isNetworkGame)
-							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coopCampaignMode ? playerNum_ : 1), miscTextB[4-1], miscText[45-1]);
+							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], miscText[45-1]);
 						else if (twoPlayerMode)
 							snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], miscText[45-1]);
 						else
 							strcpy(tempStr, miscText[45-1]);
 						JE_drawTextWindow(tempStr);
 
-						power_up_weapon(coopCampaignMode ? this_player : &player[0], FRONT_WEAPON);
+						power_up_weapon(coop_mode_active() ? this_player : &player[0], FRONT_WEAPON);
 						soundQueue[7] = S_POWERUP;
 					}
 					else if (evalue == -2)  // got rear weapon powerup
 					{
 						if (isNetworkGame)
-							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coopCampaignMode ? playerNum_ : 2), miscTextB[4-1], miscText[46-1]);
+							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 2), miscTextB[4-1], miscText[46-1]);
 						else if (twoPlayerMode)
 							snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[44-1], miscText[46-1]);
 						else
 							strcpy(tempStr, miscText[46-1]);
 						JE_drawTextWindow(tempStr);
 
-						power_up_weapon(coopCampaignMode ? this_player : (twoPlayerMode ? &player[1] : &player[0]), REAR_WEAPON);
+						power_up_weapon(coop_mode_active() ? this_player : (twoPlayerMode ? &player[1] : &player[0]), REAR_WEAPON);
 						soundQueue[7] = S_POWERUP;
 					}
 					else if (evalue == -3)
@@ -9970,15 +9981,15 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue == -5)
 					{
-						Player *const hotdog_player = coopCampaignMode ? this_player : &player[0];
+						Player *const hotdog_player = coop_mode_active() ? this_player : &player[0];
 						hotdog_player->items.weapon[FRONT_WEAPON].id = 25;  // HOT DOG!
 						hotdog_player->items.weapon[REAR_WEAPON].id = 26;
-						if (!coopCampaignMode)
+						if (!coop_mode_active())
 							player[1].items.weapon[REAR_WEAPON].id = 26;
 
 						hotdog_player->last_items = hotdog_player->items;
 
-						if (coopCampaignMode)
+						if (coop_mode_active())
 						{
 							hotdog_player->weapon_mode = 1;
 							memset(hotdog_player->shot_multi_pos, 0, sizeof(hotdog_player->shot_multi_pos));

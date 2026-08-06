@@ -86,12 +86,25 @@ typedef enum
 {
 	NETWORK_GAME_ARCADE = 0,
 	NETWORK_GAME_CAMPAIGN = 1,
+	NETWORK_GAME_ENDLESS = 2,
+	NETWORK_GAME_TYPE_COUNT
 }
 NetworkGameType;
 
 extern NetworkGameType network_game_type;
 extern int network_host_episode;
 extern int network_host_difficulty;
+
+// Endless lobby settings, chosen by the host and adopted by the joiner from the connect packet.
+// Kept as plain ints so network.h stays independent of endless.h; the run applies them as the
+// EndlessRunMode / EndlessCourseChooser they stand for.
+#define NET_ENDLESS_SEED_MAX 24
+extern char network_host_endless_seed[NET_ENDLESS_SEED_MAX];
+extern int  network_host_endless_run_mode;
+extern int  network_host_endless_chooser;
+
+// Adopt the host's Endless block from the connect packet, clamping every field.
+void network_endless_adopt(const Uint8 *buf);
 
 // Lobby connection role. The host also supplies the session settings and player slots.
 extern bool network_is_host;
