@@ -6569,7 +6569,7 @@ new_game:
 static void networkEndlessNewRun(void)
 {
 	endlessResetRun();
-	endlessSetSeed(network_host_endless_seed);
+	endlessSetSeed(network_endless_session_seed);
 	endlessRunMode = (EndlessRunMode)network_host_endless_run_mode;
 	endlessCourseChooser = (EndlessCourseChooser)network_host_endless_chooser;
 	endlessCoopComboShared = network_host_endless_combo_shared;
@@ -6722,7 +6722,7 @@ void networkStartScreen(void)
 				label[rows] = "Combo Feed";
 				value[rows++] = network_host_endless_combo_shared ? "Shared" : "Individual";
 				label[rows] = "Seed";
-				value[rows++] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
+				value[rows++] = network_endless_session_seed[0] ? network_endless_session_seed : "(random)";
 			}
 			if (coop)
 			{

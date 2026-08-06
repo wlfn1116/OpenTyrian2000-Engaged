@@ -1053,6 +1053,7 @@ static bool shopCampaignRendezvous(void)
 		while (!network_shop_peer_done())
 		{
 			shopWaitFrame();
+			network_shop_keepalive();
 
 			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 			{
@@ -1080,6 +1081,7 @@ static bool shopCampaignRendezvous(void)
 		while (!network_shop_peer_locked() && network_shop_peer_done())
 		{
 			shopWaitFrame();
+			network_shop_keepalive();
 			newkey = false;
 
 			if (network_shop_pump() || network_debug_sync_pump(false))
@@ -1121,6 +1123,7 @@ static int shopEndlessAwaitCourse(bool escapable)
 	while (escapable || SDL_GetTicks() - started < 8000)
 	{
 		shopWaitFrame();
+		network_shop_keepalive();
 
 		if (escapable && newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
@@ -8899,6 +8902,9 @@ void JE_menuFunction(JE_byte select)
 		else
 			endlessTakePerk(select - 2);        // offers are rows 2.., choice index = select - 2
 		endlessPerkPending = false;             // consumed; can't return this visit
+		// Both are purchases as far as the other machine is concerned: the perk row and the wallet
+		// both moved, and its mirror of this ship is stale until it hears so.
+		network_shop_send_transaction();
 		JE_playSampleNum(S_SELECT);
 		curMenu = MENU_FULL_GAME;
 		break;
@@ -8912,6 +8918,7 @@ void JE_menuFunction(JE_byte select)
 		{
 			if (endlessTryBuyExtraPerk())
 			{
+				network_shop_send_transaction();
 				JE_playSampleNum(S_SELECT);
 				endlessPerkListMode = false;   // a real forced PICK, not the read-only list
 				configure_endless_perk_menu();
@@ -8939,6 +8946,8 @@ void JE_menuFunction(JE_byte select)
 			case 12: bought = endlessTryGamble();         break;  // random good/bad outcome (pinned last)
 			}
 			JE_playSampleNum(bought ? S_SELECT : S_SPRING);
+			if (bought)
+				network_shop_send_transaction();  // cash, drives, charges and tokens all live in the block
 			if (bought && select == 2)  // a reroll regenerated the stock: re-sort so None sinks to the bottom
 			{
 				sort_shop_inventory();

@@ -530,6 +530,22 @@ the receiver assigns rather than latches them.
 Step two is also the one place both machines are guaranteed to be draining the
 inbound queue, which is why `network_custom_weapon_publish()` is called there.
 
+Those bits are state, so a machine has to be told them again whenever its view is
+reset. `network_shop_begin()` clears what it knew about the peer, which is right
+for a fresh visit and wrong for a partner who committed while this machine was
+still on its way to the outpost: that commit was announced exactly once, into the
+reset, and the two then waited on each other with nothing left to say. Two things
+close it. `SHOP_SYNC_HELLO` rides the packet `network_shop_begin()` sends and asks
+the peer to restate where it stands (its reply carries no HELLO, so it is one
+exchange, never a volley). `network_shop_keepalive()` re-announces every 400ms
+from any loop that waits on the peer, which also covers a restatement that was
+dropped. It is gated on `network_is_sync()`: the reliable queue is 16 deep and
+overflowing it ends the session, so a partner parked in a screen that does not
+drain the queue is never beaten at.
+
+Every outpost purchase publishes, including the E-Shop and the perk pick, which
+previously only reached the peer at the rendezvous.
+
 ### Custom weapons online
 
 Both machines fly both ships, so each player's design has to exist on both.
@@ -641,6 +657,13 @@ on. It gates the reactive dangers and the per-tick effects, and
 unregistered latch would resurrect or re-kill a ship across a correction. Both
 ships down is an ordinary death, and in Relaxed the host publishes its death-menu
 choice through `network_endless_death_sync` so both machines take the same branch.
+
+A blank seed in the lobby means "roll one", the same as leaving the solo seed
+screen empty. `network_endless_session_begin()` settles it host-side before the
+connect packet carries it, into `network_endless_session_seed` rather than the
+lobby field, so the row stays "(random)" and the next session rolls again instead
+of silently repeating this one. Sending the blank through was hashing the empty
+string, which dealt every online run the same zones.
 
 Resuming an online run streams the host's sidecar record over
 `PACKET_ENDLESS_RUN`, chunked the same way a custom weapon design is, and the

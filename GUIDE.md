@@ -567,7 +567,7 @@ zone counter; wallets, stock and gear belong to one player each.
 
 | Endless Setup row | What it does |
 | --- | --- |
-| Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own. |
+| Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own, which the joiner's summary screen shows you once the session starts. |
 | Run Mode | **Relaxed**, **Standard** or **Hardcore**, exactly as in a solo run. Relaxed opens the death menu when both ships are down, Standard ends the run there, and Hardcore does that and saves nothing. |
 | Charts Course | Who picks the next sector: **Host**, **Guest**, **Alternating** (turn about, and the turn is kept in the save), or **50-50** (a coin flip from the run seed, so both machines land on the same side of it). |
 | Combo Feed | Whose kill-fire streak a kill feeds. **Individual** (default) counts a kill for the ship whose shot destroyed it, so a drive you paid for is worth what your own shooting earns. **Shared** has every kill feed both streaks. A kill neither of you can be credited with feeds both either way. |
