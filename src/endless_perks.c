@@ -76,8 +76,10 @@ void endlessPerkGrant(uint p, int id, int delta)
 int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];  // this visit's offered perk ids
 int endlessPerkChoiceN = 0;           // how many are offered (0..ENDLESS_PERK_OFFERS_MILESTONE)
 int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
-int endlessSalvoIdle = 0;             // Opening Salvo: ticks the main gun has sat idle (reset each run)
-int endlessSalvoWindow = 0;           // Opening Salvo: ticks left in a consumed salvo (reset each run)
+/* Opening Salvo charges on a gun sitting idle and is spent by that gun firing, so both are per
+ * ship: one shared charge had the second ship's fire spending the first ship's salvo. */
+int endlessSalvoIdle[2] = { 0, 0 };   // ticks the main gun has sat idle (reset each run)
+int endlessSalvoWindow[2] = { 0, 0 }; // ticks left in a consumed salvo (reset each run)
 int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
 // Last depth whose post-zone perk was resolved, or -1. This prevents duplicate picks on reload.
 int endlessPerkDepthDone = -1;
@@ -162,16 +164,18 @@ static int endlessPerkFireRate(bool hurtBonus)
 	return rate;
 }
 
-// Apply Rapid Cyclers and, while hurt, Adrenaline through a fractional accumulator.
+/* Apply Rapid Cyclers and, while hurt, Adrenaline through a fractional accumulator. One carry
+ * per ship: both ships tick through here, and a shared carry would have each of them consuming
+ * the other's remainder, halving the rate for both. */
 int endlessPerkFireDecrements(void)
 {
-	static int accum = 0;
+	static int accum[2] = { 0, 0 };
 	if (!endlessFxActive())
 	{
-		accum = 0;
+		accum[0] = accum[1] = 0;
 		return 0;
 	}
-	return endlessAccumSteps(&accum, endlessPerkFireRate(true));
+	return endlessAccumSteps(&accum[endlessFxPlayer()], endlessPerkFireRate(true));
 }
 
 // The preview includes Rapid Cyclers but not Adrenaline because zones start at full hull.
@@ -191,13 +195,14 @@ int endlessPerkPreviewFireDecrements(void)
 // Charge sidekicks have no magazine to refill; endlessPerkChargeTicks covers them instead.
 int endlessPerkSpecialCooldownDecrements(void)
 {
-	static int accum = 0;
+	static int accum[2] = { 0, 0 };
 	if (!endlessFxActive())
 	{
-		accum = 0;
+		accum[0] = accum[1] = 0;
 		return 0;
 	}
-	return endlessAccumSteps(&accum, endlessPerkOwned[PERK_SPECIALCD] * ENDLESS_PERK_SPECIALCD_PCT);
+	return endlessAccumSteps(&accum[endlessFxPlayer()],
+	                         endlessPerkOwned[PERK_SPECIALCD] * ENDLESS_PERK_SPECIALCD_PCT);
 }
 
 // The special-fire path combines this run perk with the debug autoFireSpecial flag.
@@ -277,34 +282,48 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
 }
 
-// endlessSalvoIdle charges the salvo; endlessSalvoWindow tracks its active period.
+// endlessSalvoIdle[endlessFxPlayer()] charges the salvo; endlessSalvoWindow[endlessFxPlayer()] tracks its active period. Both are per
+// ship: the charge belongs to the gun that sat idle, and the gun that fires is the one that spends it.
 
-// Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires.
-void endlessOpeningSalvoTick(void)
+// One ship's start-of-tick housekeeping.
+static void endlessOpeningSalvoTickOne(void)
 {
-	if (endlessSalvoWindow > 0)
+	if (endlessSalvoWindow[endlessFxPlayer()] > 0)
 	{
-		--endlessSalvoWindow;          // real time, not held-fire time: the gauge counts it down
+		--endlessSalvoWindow[endlessFxPlayer()];          // real time, not held-fire time: the gauge counts it down
 		return;                        // and no second charge banks while one runs
 	}
-	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle < 1000000)
-		++endlessSalvoIdle;            // capped so a very long idle can't overflow
+	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle[endlessFxPlayer()] < 1000000)
+		++endlessSalvoIdle[endlessFxPlayer()];            // capped so a very long idle can't overflow
 }
 
 // Consume a charged salvo without extending an active window.
 bool endlessOpeningSalvoConsume(void)
 {
-	if (endlessSalvoWindow > 0)
+	if (endlessSalvoWindow[endlessFxPlayer()] > 0)
 		return true;
 
-	const bool charged = endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE;
-	endlessSalvoIdle = 0;
+	const bool charged = endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE;
+	endlessSalvoIdle[endlessFxPlayer()] = 0;
 	if (charged)
-		endlessSalvoWindow = ENDLESS_PERK_SALVO_WINDOW;
+		endlessSalvoWindow[endlessFxPlayer()] = ENDLESS_PERK_SALVO_WINDOW;
 	return charged;
 }
 
-bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoWindow > 0; }
+// Start-of-tick housekeeping, from endlessGameplayTick, before any weapon fires. Run-wide, so it
+// walks the ships rather than trusting the effect context, which is player 1 at that point.
+void endlessOpeningSalvoTick(void)
+{
+	const uint saved = endlessFxPlayer();
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+	{
+		endlessSetFxPlayer(p);
+		endlessOpeningSalvoTickOne();
+	}
+	endlessSetFxPlayer(saved);
+}
+
+bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endlessSalvoWindow[endlessFxPlayer()] > 0; }
 
 // How much of the generator gauge reads green, 0..100: a full bar while a charge is banked, then
 // the share of the spent window still to run, so the green recedes as the salvo burns down.
@@ -312,9 +331,9 @@ int endlessOpeningSalvoGaugePercent(void)
 {
 	if (!endlessFxActive() || endlessPerkOwned[PERK_SALVO] == 0)
 		return 0;
-	if (endlessSalvoWindow > 0)
-		return endlessSalvoWindow * 100 / ENDLESS_PERK_SALVO_WINDOW;
-	return (endlessSalvoIdle >= ENDLESS_PERK_SALVO_IDLE) ? 100 : 0;
+	if (endlessSalvoWindow[endlessFxPlayer()] > 0)
+		return endlessSalvoWindow[endlessFxPlayer()] * 100 / ENDLESS_PERK_SALVO_WINDOW;
+	return (endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE) ? 100 : 0;
 }
 
 // x2.5 a non-damage special magnitude (repulsor push, heal, invuln duration) while a window is up.
@@ -367,8 +386,11 @@ int endlessPerkFailsafeTicks(void)
 // Start each zone with countermeasures ready and Opening Salvo charged.
 void endlessResetZonePerkTimers(void)
 {
-	endlessSalvoIdle   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait would be dead time here
-	endlessSalvoWindow = 0;                        // no half-spent salvo carries over
+	for (unsigned p = 0; p < COUNTOF(endlessSalvoIdle); ++p)
+	{
+		endlessSalvoIdle[p]   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait is dead time here
+		endlessSalvoWindow[p] = 0;                        // no half-spent salvo carries over
+	}
 	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
 }
 

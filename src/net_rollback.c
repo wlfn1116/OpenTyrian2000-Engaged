@@ -1488,7 +1488,7 @@ static int nrb_resync_send_once(void)
 				playerEndLevel = true;
 				end_agreed = true;
 				if (coopEndlessMode)
-					endlessCoopPeerQuit = true;
+					endlessCoopPeerQuitLevel();
 				outcome = 3;
 			}
 			else if (type == PACKET_WAITING || type == PACKET_DETAILS)
@@ -1642,7 +1642,7 @@ static bool nrb_resync_receive(void)
 				playerEndLevel = true;
 				end_agreed = true;
 				if (coopEndlessMode)
-					endlessCoopPeerQuit = true;
+					endlessCoopPeerQuitLevel();
 				level_over = true;
 				break;
 			}

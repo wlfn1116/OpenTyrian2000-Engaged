@@ -611,9 +611,9 @@ Endless high-score page lists each run mode twice, **1P** and **2P**, and a co-o
 run only ever writes the 2P side. Everything else about the page (the breakdown by
 difficulty, the custom-weapon mark, erasing a record) works the same on both.
 
-If either of you leaves through the in-game menu the session ends for both, but
-the run does not: outside Hardcore it is still in its save from the last outpost,
-and the other player goes back to the title rather than to a run-over summary.
+**Quit** in the in-game menu means the same thing online as it does alone: the
+zone is abandoned and both of you go back to the outpost you launched it from,
+with the loadout you launched it with. It does not end the run or the session.
 
 ### Saving and resuming an online game
 

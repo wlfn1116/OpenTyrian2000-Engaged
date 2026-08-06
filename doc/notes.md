@@ -642,6 +642,23 @@ kill-fire windows (`endlessTurbodriveTimer`, `endlessComboKills`,
 drives at once. A kill feeds both windows; only a ship whose own mask carries a
 drive gets anything from it.
 
+The Endless per-tick work is split in two. `endlessGameplayTick` advances the
+run's own clocks and stays on player 1; `endlessPerShipTick` (mainint.c) is
+everything a ship does for itself, and co-op runs it for BOTH ships. Gating that
+half on player 1, as it originally was, left the second ship with no drive, no
+Rapid Cyclers and no gravity while every rule function still answered correctly
+in isolation. It is a named function rather than an inline block so the test
+suite can call it and cover the gate itself.
+
+Opening Salvo is per ship for the same reason: the charge belongs to the gun
+that sat idle and is spent by the gun that fires, so `endlessSalvoIdle` and
+`endlessSalvoWindow` are `[2]` and `endlessOpeningSalvoTick` walks the ships.
+
+The in-game menu's Quit means "back to the outpost" in Endless, for both
+players: `endlessCoopPeerQuitLevel` sets `endlessQuitToOutpost` on the peer,
+which is the same thing the local press does. Campaign and Arcade keep treating
+it as the end of the session.
+
 Which ship an effect is being computed for is `endlessFxPlayer()`, set by
 `endlessSetFxPlayer` at the few places that work through the players in turn:
 `JE_playerMovement` (cadence, tint and the ship blit), `JE_playerDamage`,

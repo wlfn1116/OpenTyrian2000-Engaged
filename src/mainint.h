@@ -43,6 +43,8 @@ void JE_drawTextWindow(const char *text);
 void JE_drawTextWindowSplit(const char *left, const char *right, int right_x);
 void JE_initPlayerData(void);
 void JE_highScoreScreen(void);
+// One ship's Endless per-tick work; see the definition in mainint.c.
+void endlessPerShipTick(Player *this_player);
 void JE_gammaCorrect_func(JE_byte *col, JE_real r);
 void JE_gammaCorrect(Palette *colorBuffer, JE_byte gamma);
 JE_boolean JE_gammaCheck(void);

@@ -1833,7 +1833,7 @@ void JE_drawArmor(void)
 	}
 	else if (endlessFxActive())
 	{
-		endlessDrawArmorBar(player[0].armor);
+		endlessDrawArmorBar(player[gameplay_local_player_index()].armor);
 	}
 	else
 	{
