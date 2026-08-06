@@ -634,30 +634,6 @@ static void configure_buysell_debug_menu(void)
 /* Endless swaps the shop's front-menu items 2/3 (Data Cubes -> E-Shop, Ship Specs -> Perks) and
  * captures the stock labels so a campaign shop restores them. The E-Shop labels carry live prices,
  * so this is called again after each buy. */
-/* Which E-Shop rows a co-op purchase reaches. Personal buys land on the buyer's own ship;
- * run-wide ones change the sector or the run's shared perk collection, so both players get them
- * however paid for them. Indexed by menu row (curSel[MENU_ESHOP]). */
-static bool endless_eshop_row_is_personal(int row)
-{
-	switch (row)
-	{
-	case 3:   // Sector Sabotage: strips a modifier off the sector both ships fly
-	case 5:   // Extra Perk: perks are the run's shared upgrades
-	case 7:   // the three kill-fire drives are sector modifiers, so they cover the pair
-	case 8:
-	case 9:
-		return false;
-	default:
-		return true;
-	}
-}
-
-// The one-character marker the row carries in co-op, and the phrase its help line ends with.
-static const char *endless_eshop_row_tag(int row)
-{
-	return endless_eshop_row_is_personal(row) ? "P " : "R ";
-}
-
 static void configure_endless_shop_menu(void)
 {
 	static char stockCubes[sizeof(menuInt[1][1])];
@@ -698,17 +674,6 @@ static void configure_endless_shop_menu(void)
 		SDL_strlcpy(e[11], "Buy Gamble", sizeof(e[11]));
 		SDL_strlcpy(e[12], "Done", sizeof(e[12]));
 		menuChoices[MENU_ESHOP] = 13;
-
-		// Co-op marks every buy with who it lands on; the help line spells the marker out.
-		if (endlessCoop())
-		{
-			for (int row = 2; row < menuChoices[MENU_ESHOP]; ++row)
-			{
-				char tagged[sizeof(e[0])];
-				snprintf(tagged, sizeof(tagged), "%s%s", endless_eshop_row_tag(row), e[row - 1]);
-				SDL_strlcpy(e[row - 1], tagged, sizeof(e[row - 1]));
-			}
-		}
 	}
 	else
 	{
@@ -1235,8 +1200,10 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		// the session flies.  Deferred to here on purpose -- applied on arrival it would end
 		// the other player's outpost visit the instant the host picked.  A staged browser pick
 		// is exempt: it beats the route on both machines, and taking the host's route here
-		// would leave us loading it while the host adopts the pick below.
-		if (!myPick)
+		// would leave us loading it while the host adopts the pick below.  Endless is exempt
+		// too: its packets carry a course index in that field, never a level, and the pair
+		// already agreed on the sector above.
+		if (!myPick && !endlessCoop())
 			network_shop_adopt_host_level();
 		network_shop_end();
 	}
@@ -1253,8 +1220,10 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		shopWaitFrame();
 
 		// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
-		// and ordered), so both machines load the level with the same loadouts.
-		if (network_debug_sync_pump(false))
+		// and ordered), so both machines load the level with the same loadouts.  The peer's
+		// last outpost packet can be ahead of it too, and an unread one at the head of the
+		// queue stops WAITING from ever arriving.
+		if (network_debug_sync_pump(false) || network_shop_pump())
 			continue;
 
 		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
@@ -4282,7 +4251,6 @@ void JE_drawMainMenuHelpText(void)
 		{
 			// The E-Shop has no menuHelp[] row, so supply each entry's help directly. The
 			// description goes in tempStr; the price goes in costStr, drawn HIGHLIGHTED after it.
-			const int eshopRow = curSel[MENU_ESHOP];
 			switch (curSel[MENU_ESHOP])
 			{
 			case 2:
@@ -4391,13 +4359,6 @@ void JE_drawMainMenuHelpText(void)
 				SDL_strlcpy(tempStr, "Return to the buy/sell menu.", sizeof(tempStr));
 				break;
 			}
-
-			// Co-op: spell out the marker the row carries, after whatever the case above wrote.
-			if (endlessCoop() && eshopRow < menuChoices[MENU_ESHOP])
-			{
-				SDL_strlcat(tempStr, endless_eshop_row_is_personal(eshopRow)
-				                     ? "  P: yours only." : "  R: the whole run.", sizeof(tempStr));
-			}
 		}
 		else if (curMenu == MENU_PERKS)
 		{
@@ -4496,8 +4457,9 @@ void JE_drawMainMenuHelpText(void)
 
 	// Endless: show the run's seed on the E-Shop help line, right-aligned opposite "Open the
 	// E-Shop." so it's always visible from the outpost. Bank/brightness tuned by eye to read as
-	// secondary chrome (not a price).
-	if (endlessMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
+	// secondary chrome (not a price). Online, the round trip below owns that edge and the seed
+	// is on the lobby and joiner screens instead, so the two never overprint each other.
+	if (endlessMode && !isNetworkGame && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
 	{
 		char seedStr[16 + ENDLESS_SEED_MAXLEN];
 		snprintf(seedStr, sizeof(seedStr), "Seed: %s", endlessSeedString());
@@ -4508,8 +4470,8 @@ void JE_drawMainMenuHelpText(void)
 		JE_textShade(VGAScreen, seed_x, 187, seedStr, 14, 3, DARKEN);
 	}
 
-	// Online play's round trip takes the same right edge. It never competes with the figures
-	// above for it: those are all endless, which is single-player.
+	// Online play's round trip takes the same right edge, and wins it: the endless seed above
+	// stands down online for exactly that reason.
 	ping_shown = false;
 	if (isNetworkGame)
 	{

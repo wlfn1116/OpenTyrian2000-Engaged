@@ -220,6 +220,81 @@ JE_SaveGameTemp saveTemp;
 
 T2KHighScoreType t2kHighScores[20][3];
 
+COMPILE_TIME_ASSERT(coop_campaign_score_episodes, COOP_CAMPAIGN_SCORE_EPISODES == EPISODE_MAX);
+CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
+
+/* One line per episode: "score|difficulty|names". A missing or short value leaves the rest of
+ * the episodes empty, so the list can grow. */
+void coopCampaignScoreConfigSave(ConfigSection *section)
+{
+	if (section == NULL)
+		return;
+
+	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
+	{
+		char key[32], line[64];
+		snprintf(key, sizeof(key), "coop_campaign_%d", e + 1);
+		snprintf(line, sizeof(line), "%d|%u|%s", coopCampaignScores[e].score,
+		         (unsigned)coopCampaignScores[e].difficulty, coopCampaignScores[e].name);
+		config_set_string_option(section, key, line);
+	}
+}
+
+void coopCampaignScoreConfigLoad(const ConfigSection *section)
+{
+	memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
+	if (section == NULL)
+		return;
+
+	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "coop_campaign_%d", e + 1);
+
+		const char *line = NULL;
+		if (!config_get_string_option(section, key, &line) || line == NULL)
+			continue;
+
+		const long score = strtol(line, NULL, 10);
+		coopCampaignScores[e].score = (score > 0) ? (Sint32)score : 0;
+
+		const char *p = strchr(line, '|');
+		if (p == NULL)
+			continue;
+		const long diff = strtol(p + 1, NULL, 10);
+		coopCampaignScores[e].difficulty = (diff > 0 && diff <= DIFFICULTY_10) ? (Uint8)diff : 0;
+
+		p = strchr(p + 1, '|');
+		if (p != NULL)
+			SDL_strlcpy(coopCampaignScores[e].name, p + 1, sizeof(coopCampaignScores[e].name));
+	}
+}
+
+/* Called once a co-op Campaign run is over. The pair earned together, so the board keeps their
+ * combined cash under both names; there is no name-entry dialog because the lobby already knows
+ * who they are, and a modal here would leave the other machine waiting on a dead screen. */
+void coopCampaignScoreNote(void)
+{
+	const int e = initial_episode_num - 1;
+	if (!coopCampaignMode || e < 0 || e >= COOP_CAMPAIGN_SCORE_EPISODES)
+		return;
+
+	const Sint64 total = (Sint64)player[0].cash + (Sint64)player[1].cash;
+	if (total <= coopCampaignScores[e].score)
+		return;
+
+	coopCampaignScores[e].score = (total > 0x7fffffff) ? 0x7fffffff : (Sint32)total;
+	coopCampaignScores[e].difficulty = (Uint8)initialDifficulty;
+
+	const char *const mine = (network_player_name != NULL && network_player_name[0])
+	                       ? network_player_name : "Player 1";
+	const char *const theirs = (network_opponent_name != NULL && network_opponent_name[0])
+	                         ? network_opponent_name : "Player 2";
+	snprintf(coopCampaignScores[e].name, sizeof(coopCampaignScores[e].name), "%s and %s", mine, theirs);
+
+	save_opentyrian_config();
+}
+
 JE_word editorLevel;   /*Initial value 800*/
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
@@ -764,6 +839,7 @@ bool load_opentyrian_config(void)
 	// The endless all-time record (furthest zone ever reached), its own section because it is a
 	// player record because it is written during a run rather than during config changes.
 	endlessRecordConfigLoad(config_find_section(config, "endless", NULL));
+	coopCampaignScoreConfigLoad(config_find_section(config, "coop_scores", NULL));
 
 	// Smooth Motion owns the sub-pixel render path. Keep it disabled when motion
 	// interpolation is off, then apply the scaler constraint to the final state.
@@ -937,6 +1013,12 @@ bool save_opentyrian_config(void)
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	endlessRecordConfigSave(section);
+
+	// Online co-op Campaign's own board, beside the Endless records for the same reason.
+	section = config_find_or_add_section(config, "coop_scores", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	coopCampaignScoreConfigSave(section);
 
 	FILE *file = dir_fopen(get_user_directory(), "opentyrian.cfg", "w");
 	if (file == NULL)

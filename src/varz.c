@@ -1482,6 +1482,9 @@ static void endlessGeneratorSet(Player *this_player, int v)
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
+	// Nitro and the rest of the personal deals belong to the ship being hit.
+	endlessSetFxPlayer((uint)(this_player - &player[0]));
+
 	int playerDamage = 0;
 	soundQueue[7] = S_SHIELD_HIT;
 

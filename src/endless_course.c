@@ -42,7 +42,8 @@ static int endlessCourseBaseDanger(int i)
 // `cleansedOut`; The Long Con remains hidden until launch.
 static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 {
-	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i], endlessMergePurchasedMods());
+	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i],
+	                                              endlessPurchasedMods[endlessEconomyIndex()]);
 	int charges = 0;
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 		charges += endlessCleanseChargeCount[p];
@@ -1255,13 +1256,12 @@ JE_byte endlessSelectCourse(int i)
 	if (endlessCourseEp[i] != episodeNum)
 		JE_initEpisode(endlessCourseEp[i]);  // load that episode's data (arsenal is shared)
 	forcedLvlFileNum = endlessCourseFile[i];  // load this course's exact level file (see JE_loadMap)
-	// Apply the same purchase and Sabotage passes used to price and color the course card. A
-	// co-op sector runs one modifier set, so both players' purchases and charges go into it.
-	endlessActiveMods = endlessFoldPurchasedMods(endlessCourseMod[i], endlessMergePurchasedMods());
+	// Apply the same Sabotage pass used to price and colour the course card, then hand each
+	// player their own effect mask: what they bought for themselves boosts them alone.
+	endlessActiveMods = endlessCourseMod[i];
 	int charges = 0;
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		endlessPurchasedMods[p] = 0;                     // consumed by this sector
 		charges += endlessCleanseChargeCount[p];
 		endlessCleanseChargeCount[p] = 0;
 	}
@@ -1273,6 +1273,10 @@ JE_byte endlessSelectCourse(int i)
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 		if (endlessLongCon[p] > 0 && --endlessLongCon[p] == 0)
 			endlessActiveMods |= ENDLESS_MOD_APEX;
+
+	endlessApplyPurchasedMods();   // personal buys to their buyer, the rest to the sector
+	for (uint p = 0; p < COUNTOF(endlessPurchasedMods); ++p)
+		endlessPurchasedMods[p] = 0;   // consumed by this sector
 	endlessLastEp = endlessCourseEp[i];
 	endlessLastSec = endlessCourseSec[i];
 	return endlessCourseSec[i];

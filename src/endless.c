@@ -71,6 +71,28 @@ uint endlessEffectPlayers(void)
 EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
 bool endlessCoopHostCharts = true;
 bool endlessPlayerDowned[2] = { false, false };
+bool endlessCoopPeerQuit = false;
+
+Uint64 endlessPlayerMods[2] = { 0, 0 };
+static uint endlessFxPlayerIdx = 0;
+
+void endlessSetFxPlayer(uint p) { endlessFxPlayerIdx = (p < COUNTOF(player)) ? p : 0; }
+uint endlessFxPlayer(void)      { return coopEndlessMode ? endlessFxPlayerIdx : 0; }
+
+/* Split what each player bought: the personal half lands on their own mask, the rest (a shop
+ * discount, a bulked-up boss, a rush of rammers) changes the sector for both. Called once, when
+ * the course is committed. */
+void endlessApplyPurchasedMods(void)
+{
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		endlessActiveMods |= endlessPurchasedMods[p] & ~ENDLESS_PERSONAL_MOD_MASK;
+
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		const Uint64 mine = endlessPurchasedMods[p] & ENDLESS_PERSONAL_MOD_MASK;
+		endlessPlayerMods[p] = endlessFoldPurchasedMods(endlessActiveMods, mine);
+	}
+}
 
 const char *endlessCourseChooserName(EndlessCourseChooser mode)
 {
@@ -283,7 +305,7 @@ void endlessShopTradeCommit(void)
 
 // Per-zone timers, advanced by endlessGameplayTick.
 int endlessZoneTicks      = 0;
-int endlessTurbodriveTimer = 0;
+int endlessTurbodriveTimer[2] = { 0, 0 };
 int endlessRetaliationTimer = 0;
 
 // Rewards banked on sector clear and paid at the next outpost.
@@ -368,10 +390,12 @@ const char *endlessRunModeName(EndlessRunMode mode)
 	}
 }
 
-// All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
-// difficulty it started on, or the untagged one if that difficulty is outside the six below.
-int  endlessBestZoneUntagged[ENDLESS_RUNMODE_COUNT] = { 0 };
-bool endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_COUNT] = { false };
+/* All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
+ * difficulty it started on, or the untagged one if that difficulty is outside the six below.
+ * The outer index is crew size: two ships reach depths a solo run cannot, so the two sets of
+ * records never meet. */
+int  endlessBestZoneUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { 0 } };
+bool endlessBestZoneUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { false } };
 static int endlessBestZoneAtRunStart = 0;
 
 const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
@@ -379,14 +403,27 @@ const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
 	DIFFICULTY_IMPOSSIBLE, DIFFICULTY_SUICIDE, DIFFICULTY_LORD_OF_GAME,
 };
 
-int  endlessBestZoneDiff[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { 0 } };
-bool endlessBestZoneDiffCustom[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { false } };
+int  endlessBestZoneDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { 0 } } };
+bool endlessBestZoneDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { false } } };
 
-int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot)
+int endlessRecordTable(void) { return coopEndlessMode ? 1 : 0; }
+
+const char *endlessRecordTableName(int players)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	return (players == 1) ? "2 Players" : "1 Player";
+}
+
+static bool endlessRecordArgsOk(int players, EndlessRunMode mode)
+{
+	return players >= 0 && players < ENDLESS_PLAYER_TABLES
+	    && mode >= 0 && mode < ENDLESS_RUNMODE_COUNT;
+}
+
+int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot)
+{
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return 0;
-	return endlessBestZoneDiff[mode][slot];
+	return endlessBestZoneDiff[players][mode][slot];
 }
 
 int endlessDifficultySlot(int difficulty)
@@ -426,23 +463,19 @@ static void endlessRunRecord(int **zone, bool **mark)
 	const int slot = endlessDifficultySlot(initialDifficulty);
 	if (slot >= 0)
 	{
-		*zone = &endlessBestZoneDiff[endlessRunMode][slot];
-		*mark = &endlessBestZoneDiffCustom[endlessRunMode][slot];
+		*zone = &endlessBestZoneDiff[endlessRecordTable()][endlessRunMode][slot];
+		*mark = &endlessBestZoneDiffCustom[endlessRecordTable()][endlessRunMode][slot];
 	}
 	else
 	{
-		*zone = &endlessBestZoneUntagged[endlessRunMode];
-		*mark = &endlessBestZoneUntaggedCustom[endlessRunMode];
+		*zone = &endlessBestZoneUntagged[endlessRecordTable()][endlessRunMode];
+		*mark = &endlessBestZoneUntaggedCustom[endlessRecordTable()][endlessRunMode];
 	}
 }
 
 // Record a zone when it starts, not after it is cleared.
 void endlessNoteZoneReached(int zone)
 {
-	// Two ships is a different game; a co-op run leaves the solo records alone.
-	if (coopEndlessMode)
-		return;
-
 	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX)
 		return;
 
@@ -488,72 +521,72 @@ void endlessCustomWeaponZoneEnd(void)
 		endlessMarkRecordCustom();
 }
 
-int endlessBestZoneAny(EndlessRunMode mode)
+int endlessBestZoneAny(int players, EndlessRunMode mode)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+	if (!endlessRecordArgsOk(players, mode))
 		return 0;
 
-	int best = endlessBestZoneUntagged[mode];
+	int best = endlessBestZoneUntagged[players][mode];
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[mode][d] > best)
-			best = endlessBestZoneDiff[mode][d];
+		if (endlessBestZoneDiff[players][mode][d] > best)
+			best = endlessBestZoneDiff[players][mode][d];
 	return best;
 }
 
-const char *endlessRecordAnyCustomMark(EndlessRunMode mode)
+const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode)
 {
 	// Whichever record is the deepest owns the mark, and a tie takes the first marked one.
-	const int best = endlessBestZoneAny(mode);
+	const int best = endlessBestZoneAny(players, mode);
 	if (best <= 0)
 		return "";
 
-	if (endlessBestZoneUntagged[mode] == best && endlessBestZoneUntaggedCustom[mode])
+	if (endlessBestZoneUntagged[players][mode] == best && endlessBestZoneUntaggedCustom[players][mode])
 		return " C";
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[mode][d] == best && endlessBestZoneDiffCustom[mode][d])
+		if (endlessBestZoneDiff[players][mode][d] == best && endlessBestZoneDiffCustom[players][mode][d])
 			return " C";
 	return "";
 }
 
-const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot)
+const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return "";
-	return endlessBestZoneDiffCustom[mode][slot] ? " C" : "";
+	return endlessBestZoneDiffCustom[players][mode][slot] ? " C" : "";
 }
 
-void endlessClearDeepestRecord(EndlessRunMode mode)
+void endlessClearDeepestRecord(int players, EndlessRunMode mode)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+	if (!endlessRecordArgsOk(players, mode))
 		return;
-	const int best = endlessBestZoneAny(mode);
+	const int best = endlessBestZoneAny(players, mode);
 	if (best <= 0)
 		return;
 
 	// Every record standing at that depth goes, so one confirmation always moves the figure and
 	// what remains below it is what the mode now shows.
-	if (endlessBestZoneUntagged[mode] == best)
+	if (endlessBestZoneUntagged[players][mode] == best)
 	{
-		endlessBestZoneUntagged[mode] = 0;
-		endlessBestZoneUntaggedCustom[mode] = false;
+		endlessBestZoneUntagged[players][mode] = 0;
+		endlessBestZoneUntaggedCustom[players][mode] = false;
 	}
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 	{
-		if (endlessBestZoneDiff[mode][d] == best)
+		if (endlessBestZoneDiff[players][mode][d] == best)
 		{
-			endlessBestZoneDiff[mode][d] = 0;
-			endlessBestZoneDiffCustom[mode][d] = false;
+			endlessBestZoneDiff[players][mode][d] = 0;
+			endlessBestZoneDiffCustom[players][mode][d] = false;
 		}
 	}
 	save_opentyrian_config();
 }
 
-void endlessClearRecordDifficulty(EndlessRunMode mode, int slot)
+void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return;
-	endlessBestZoneDiff[mode][slot] = 0;
-	endlessBestZoneDiffCustom[mode][slot] = false;
+	endlessBestZoneDiff[players][mode][slot] = 0;
+	endlessBestZoneDiffCustom[players][mode][slot] = false;
 	save_opentyrian_config();
 }
 
@@ -581,8 +614,10 @@ void endlessResetRun(void)
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	memset(endlessCashBySink, 0, sizeof(endlessCashBySink));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
 	endlessPerkPending = false;
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
@@ -649,8 +684,9 @@ void endlessCampaignModsArm(void)
 		endlessCleanseChargeCount[p] = 0;
 		endlessShopTax[p] = 0;
 	}
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
 	endlessPerkPending = false;
@@ -668,14 +704,19 @@ void endlessCountKill(int linknum)
 	lastCountedLink = linknum;
 
 	++endlessRunKills;
-	// Boss kills are counted when their health bar empties.
-	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_ANY)
+	// Boss kills are counted when their health bar empties. A kill feeds both ships' windows;
+	// only the ship whose own mask carries the drive gets anything out of it.
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		endlessTurbodriveTimer = endlessBuffWindowTicks();
-		++endlessComboKills;
+		if (endlessPlayerMods[p] & ENDLESS_MOD_KILLFIRE_ANY)
+		{
+			endlessTurbodriveTimer[p] = endlessBuffWindowTicks();
+			++endlessComboKills[p];
+		}
+		if ((endlessPlayerMods[p] & ENDLESS_MOD_STACKED)
+		    && endlessOverdriveStacks[p] < ENDLESS_OVERDRIVE_MAX_STACKS)
+			++endlessOverdriveStacks[p];
 	}
-	if ((endlessActiveMods & ENDLESS_MOD_STACKED) && endlessOverdriveStacks < ENDLESS_OVERDRIVE_MAX_STACKS)
-		++endlessOverdriveStacks;
 
 	// Retaliation refreshes its window but does not stack.
 	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
@@ -716,24 +757,25 @@ void endlessGameplayTick(void)
 	// Every wallet movement is declared at source; this is the per-tick drift assertion.
 	endlessCashAudit();
 
-	// Overheat drains hull but cannot land the killing blow.
-	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && (endlessZoneTicks % 80) == 0)
+	// Overheat drains hull but cannot land the killing blow. It is a deal one player took, so
+	// only that player's hull cooks.
+	if ((endlessZoneTicks % 80) == 0)
 	{
 		for (uint p = 0; p < endlessEffectPlayers(); ++p)
-			if (!endlessPlayerDowned[p] && player[p].armor > 1)
+			if ((endlessPlayerMods[p] & ENDLESS_MOD_OVERHEAT) && !endlessPlayerDowned[p]
+			    && player[p].armor > 1)
 			{
 				--player[p].armor;
 				endlessArmorHudDirty = true;
 			}
 	}
 
-	if (endlessTurbodriveTimer > 0)
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		--endlessTurbodriveTimer;
-		if (endlessTurbodriveTimer == 0)
+		if (endlessTurbodriveTimer[p] > 0 && --endlessTurbodriveTimer[p] == 0)
 		{
-			endlessOverdriveStacks = 0;
-			endlessComboKills = 0;
+			endlessOverdriveStacks[p] = 0;
+			endlessComboKills[p] = 0;
 		}
 	}
 
@@ -772,11 +814,12 @@ void endlessGameplayTick(void)
 void endless_register_rollback(void)
 {
 	rollback_register("endless.activeMods", &endlessActiveMods, sizeof(endlessActiveMods));
+	rollback_register("endless.playerMods", endlessPlayerMods, sizeof(endlessPlayerMods));
 	rollback_register("endless.zoneTicks", &endlessZoneTicks, sizeof(endlessZoneTicks));
-	rollback_register("endless.turboTimer", &endlessTurbodriveTimer, sizeof(endlessTurbodriveTimer));
+	rollback_register("endless.turboTimer", endlessTurbodriveTimer, sizeof(endlessTurbodriveTimer));
 	rollback_register("endless.retalTimer", &endlessRetaliationTimer, sizeof(endlessRetaliationTimer));
-	rollback_register("endless.comboKills", &endlessComboKills, sizeof(endlessComboKills));
-	rollback_register("endless.odStacks", &endlessOverdriveStacks, sizeof(endlessOverdriveStacks));
+	rollback_register("endless.comboKills", endlessComboKills, sizeof(endlessComboKills));
+	rollback_register("endless.odStacks", endlessOverdriveStacks, sizeof(endlessOverdriveStacks));
 	rollback_register("endless.runKills", &endlessRunKills, sizeof(endlessRunKills));
 	rollback_register("endless.runBossKills", &endlessRunBossKills, sizeof(endlessRunBossKills));
 	rollback_register("endless.customFired", &endlessCustomFiredZone, sizeof(endlessCustomFiredZone));
@@ -804,7 +847,7 @@ bool endlessConsumeArmorHudDirty(void)
 
 bool endlessTurbodriveActive(void)
 {
-	return endlessFxActive() && endlessTurbodriveTimer > 0;
+	return endlessFxActive() && endlessTurbodriveTimer[endlessFxPlayer()] > 0;
 }
 
 // Run-over flavor text, one line per five-zone band.
