@@ -101,6 +101,11 @@ extern int network_host_difficulty;
 // EndlessRunMode / EndlessCourseChooser they stand for.
 #define NET_ENDLESS_SEED_MAX 24
 extern char network_host_endless_seed[NET_ENDLESS_SEED_MAX];
+/* The seed the session actually runs on: the host's field, or a rolled one when it was left
+ * blank for "(random)". Settled once by the host before the connect packet, adopted from it
+ * by the joiner, and read by everything that starts or displays the run. */
+extern char network_endless_session_seed[NET_ENDLESS_SEED_MAX];
+void network_endless_session_begin(void);
 extern int  network_host_endless_run_mode;
 extern int  network_host_endless_chooser;
 extern bool network_host_endless_combo_shared;
@@ -236,6 +241,8 @@ bool network_shop_peer_done(void);
 // True while the reliable queue holds a packet the level-start handshake is the one to read;
 // an outpost wait must leave it alone rather than advance the queue past it.
 bool network_shop_departure_pending(void);
+// Re-announce our rendezvous state; call from any loop that waits on the peer at the outpost.
+void network_shop_keepalive(void);
 // Endless: the sector index the peer committed to, or -1 while it has committed to none.
 int  network_shop_peer_course(void);
 // Course slates never grow past this; the receiver rejects anything outside it.
@@ -349,6 +356,7 @@ static inline void network_shop_send_transaction(void) { }
 static inline bool network_shop_pump(void) { return false; }
 static inline bool network_shop_peer_done(void) { return true; }
 static inline bool network_shop_departure_pending(void) { return false; }
+static inline void network_shop_keepalive(void) { }
 static inline int network_shop_peer_course(void) { return -1; }
 static inline void network_shop_set_locked(bool locked) { (void)locked; }
 static inline bool network_shop_peer_locked(void) { return true; }

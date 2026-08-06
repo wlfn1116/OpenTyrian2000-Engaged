@@ -1187,6 +1187,11 @@ static bool lobbyStartSession(bool as_host)
 	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;
 	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
+	// Settle the run seed before the connect packet goes out with it; the joiner takes it from
+	// there. A blank field rolls one, so "(random)" means a different run each time it is hosted.
+	if (as_host)
+		network_endless_session_begin();
+
 	if (network_init() != 0)
 	{
 		lobbyAbort(as_host ? "Could not open that port." : "Could not start networking.");

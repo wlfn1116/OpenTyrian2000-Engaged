@@ -107,6 +107,7 @@ int network_host_difficulty = DIFFICULTY_NORMAL;
 
 // Endless lobby block. Blank seed means "roll one when the run starts".
 char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
+char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
 int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
 int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
 bool network_host_endless_combo_shared = false;
@@ -968,7 +969,7 @@ static void send_connect_packet(Uint16 episodes_local)
 	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
-	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_host_endless_seed,
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_endless_session_seed,
 	       NET_ENDLESS_SEED_MAX);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
@@ -1556,8 +1557,8 @@ void network_endless_adopt(const Uint8 *buf)
 	network_host_endless_run_mode = buf[0];
 	network_host_endless_chooser = buf[1];
 	network_host_endless_combo_shared = buf[2] != 0;
-	memcpy(network_host_endless_seed, &buf[3], NET_ENDLESS_SEED_MAX);
-	network_host_endless_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
+	memcpy(network_endless_session_seed, &buf[3], NET_ENDLESS_SEED_MAX);
+	network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
 
 	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)
 		network_host_endless_run_mode = ENDLESS_RUNMODE_STANDARD;
@@ -1568,10 +1569,25 @@ void network_endless_adopt(const Uint8 *buf)
 	// characters onto the seed-name line the run-over screen prints.
 	for (int i = 0; i < NET_ENDLESS_SEED_MAX; ++i)
 	{
-		const unsigned char c = (unsigned char)network_host_endless_seed[i];
+		const unsigned char c = (unsigned char)network_endless_session_seed[i];
 		if (c != '\0' && (c < 32 || c >= 127))
-			network_host_endless_seed[i] = '?';
+			network_endless_session_seed[i] = '?';
 	}
+}
+
+/* Settle the seed this session actually runs on, host side, before the connect packet carries it.
+ * A blank lobby field means "roll one", which is what the seed screen does for a solo run; sending
+ * the blank straight through hashed the empty string instead and dealt every online run the same
+ * zones. Rolled into a session copy, so the lobby row stays "(random)" and the next session rolls
+ * again rather than silently repeating this one. */
+void network_endless_session_begin(void)
+{
+	SDL_strlcpy(network_endless_session_seed, network_host_endless_seed,
+	            sizeof(network_endless_session_seed));
+
+	if (network_endless_session_seed[0] == '\0')
+		snprintf(network_endless_session_seed, sizeof(network_endless_session_seed), "%lu",
+		         (unsigned long)(1u + mt_rand() % 999999999u));
 }
 
 static Uint16 network_shop_sequence;
@@ -1583,6 +1599,8 @@ static bool network_shop_local_ready;
 static bool network_shop_local_locked;
 static bool network_shop_save_ready;
 static bool network_shop_active;
+static Uint32 network_shop_beat_at;
+#define NET_SHOP_BEAT 400   // ms between re-announcements while waiting on the peer
 
 // The level the host committed to when it left the outpost.  Held rather than applied: writing
 // jumpSection straight out of the packet ended the joiner's outpost visit the moment the host
@@ -1603,6 +1621,7 @@ enum
 	SHOP_SYNC_SAVE_ACK = 1 << 2,
 	SHOP_SYNC_TRANSACTION = 1 << 3,
 	SHOP_SYNC_LOCK = 1 << 4,
+	SHOP_SYNC_HELLO = 1 << 5,   // "I just opened an outpost; tell me where you are"
 };
 
 static int network_shop_pack_items(Uint8 *buf, const PlayerItems *items)
@@ -1687,9 +1706,42 @@ void network_shop_begin(void)
 	network_shop_save_ready = false;
 	network_shop_host_committed = false;
 	network_shop_peer_pick = -1;
+	network_shop_beat_at = SDL_GetTicks();
 	network_shop_active = isNetworkGame && coop_mode_active();
 	if (isNetworkGame && coop_mode_active())
-		network_shop_send_state(false);
+	{
+		// Everything above forgets what the peer had told us, which is right for a new visit and
+		// wrong for a peer that committed while we were still on the way here. HELLO asks them to
+		// say it again, so the reset cannot swallow a commit that was announced exactly once.
+		network_shop_local_ready = false;
+		network_shop_local_locked = false;
+		network_shop_send_packet(SHOP_SYNC_HELLO, 0);
+	}
+}
+
+/* Re-announce our rendezvous state while waiting on the peer. DONE, LOCK and the sector index are
+ * state carried by every packet rather than events, and the other machine drops its view of ours
+ * whenever it opens an outpost of its own (network_shop_begin). A player who committed before
+ * their partner had even reached that outpost announced it exactly once, into a reset, and from
+ * there the two waited on each other for good. Rate limited, and only ever sent from a wait: a
+ * machine still shopping has its own traffic and nothing to re-announce. */
+void network_shop_keepalive(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	// Never more than one of these in flight. The reliable queue is 16 deep and overflowing it
+	// takes the session down, so a partner parked in a screen that does not drain the queue (the
+	// weapon editor, ship specs, a save prompt) must not be beaten at until they come back.
+	if (!network_is_sync())
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+	if (now - network_shop_beat_at < NET_SHOP_BEAT)
+		return;
+
+	network_shop_beat_at = now;
+	network_shop_send_packet(0, 0);
 }
 
 void network_shop_send_state(bool done)
@@ -2334,6 +2386,10 @@ bool network_shop_pump(void)
 				                       ? course : -1;
 			}
 
+			// Answer a peer that has just opened its outpost with where we stand. Our reply carries
+			// no HELLO of its own, so this is one exchange and never a volley.
+			if (flags & SHOP_SYNC_HELLO)
+				network_shop_send_packet(0, 0);
 			if (flags & SHOP_SYNC_SAVE_REQUEST)
 				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
 			if ((flags & SHOP_SYNC_SAVE_ACK) &&
@@ -3484,8 +3540,6 @@ int network_test_peer(int rounds)
 	network_shop_end();
 	endlessCoopCourse = -1;
 	jumpSection = false;
-	coopEndlessMode = false;
-	coopCampaignMode = true;
 
 	/* The level-start handshake exactly as shopLeaveOutpost runs it. */
 	network_prepare(PACKET_WAITING);
@@ -3513,6 +3567,48 @@ int network_test_peer(int rounds)
 		return 1;
 	}
 	network_state_reset();
+
+	/* One player reaching the next outpost and committing before the other has even opened theirs.
+	 * The slower machine drains the queue on the way in, as every screen between a level and an
+	 * outpost does, and then network_shop_begin drops what it learned; a commit announced exactly
+	 * once lands in that gap and the two wait on each other for good. The handshake above is the
+	 * barrier that puts both peers at the same point before this starts. */
+	network_shop_begin();
+	if (charting)
+	{
+		const Uint32 slow_start = SDL_GetTicks();
+		while (SDL_GetTicks() - slow_start < 800)
+		{
+			watchdog_heartbeat();
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+		network_shop_begin();     /* ...and only now opens its own outpost */
+	}
+	network_shop_send_state(true);
+
+	/* Both peers keep pumping until the outpost is left, exactly as the shop loop does, so the
+	 * later arrival's HELLO is answered whether or not the other is still inside a wait. */
+	const Uint32 late_start = SDL_GetTicks();
+	while (SDL_GetTicks() - late_start < 4000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		network_shop_keepalive();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: a commit made before the peer opened its outpost was lost\n");
+		return 1;
+	}
+	network_shop_end();
+
+	coopEndlessMode = false;
+	coopCampaignMode = true;
 
 	const Uint32 sync_start = SDL_GetTicks();
 	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
