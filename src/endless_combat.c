@@ -523,7 +523,7 @@ int endlessEliteContactPercent(int eliteState)
 }
 
 // The link latch pays one bounty per logical enemy.
-void endlessAwardEliteKill(int linknum, int eliteState)
+void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 {
 	if (!endlessFxActive())
 		return;
@@ -535,7 +535,9 @@ void endlessAwardEliteKill(int linknum, int eliteState)
 
 	const bool champion = (eliteState == 3);
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
-	endlessCashCredit(bounty, ENDLESS_CASH_BOUNTY);
+	// A bounty is kill cash: it follows the same Shared / Individual rule as every other kill.
+	player_award_kill_cash(&player[(killer == ENDLESS_KILLER_NONE) ? (int)endlessEconomyIndex() : killer],
+	                       bounty);
 
 	// Keep the cash clear of the HUD.
 	char label[48], cash[24];

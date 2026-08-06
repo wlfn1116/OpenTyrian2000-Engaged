@@ -311,18 +311,21 @@ static void lobbyEndlessMenu(void)
 		ITEM_SEED = 0,
 		ITEM_RUNMODE,
 		ITEM_CHOOSER,
+		ITEM_COMBO,
 		SETTING_COUNT,
 		ITEM_BACK = SETTING_COUNT,
 		ITEM_COUNT,
 	};
 
-	static const char *const itemLabel[SETTING_COUNT] = { "Seed", "Run Mode", "Charts Course" };
+	static const char *const itemLabel[SETTING_COUNT] =
+		{ "Seed", "Run Mode", "Charts Course", "Combo Feed" };
 
 	static const char *const itemHelp[ITEM_COUNT] =
 	{
 		"A named seed repeats a run; blank rolls one.",
 		"How a fatal hit and saving are handled.",
 		"Who picks the next sector at the outpost.",
+		"Whose drive streak a kill feeds.",
 		"Return to the host settings.",
 	};
 
@@ -351,6 +354,7 @@ static void lobbyEndlessMenu(void)
 		itemValue[ITEM_SEED] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
 		itemValue[ITEM_RUNMODE] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_CHOOSER] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
+		itemValue[ITEM_COMBO] = network_host_endless_combo_shared ? "Shared" : "Individual";
 
 		int blockW = 150;
 		for (int i = 0; i < SETTING_COUNT; ++i)
@@ -462,7 +466,8 @@ static void lobbyEndlessMenu(void)
 
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_RUNMODE || selectedIndex == ITEM_CHOOSER)
+				if (selectedIndex == ITEM_RUNMODE || selectedIndex == ITEM_CHOOSER
+				    || selectedIndex == ITEM_COMBO)
 				{
 					action = true;
 					if (lastkey_scan == SDL_SCANCODE_LEFT)
@@ -505,6 +510,13 @@ static void lobbyEndlessMenu(void)
 			JE_playSampleNum(S_CLICK);
 			network_host_endless_chooser =
 				(network_host_endless_chooser + ENDLESS_PICK_COUNT + cycleDir) % ENDLESS_PICK_COUNT;
+			break;
+
+		case ITEM_COMBO:
+			// Individual keeps each ship's kill-fire streak its own, which is what a drive one
+			// player paid for is worth; Shared has every kill feed both.
+			JE_playSampleNum(S_CLICK);
+			network_host_endless_combo_shared = !network_host_endless_combo_shared;
 			break;
 
 		default:
@@ -729,6 +741,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_DIFFICULTY,
 		ITEM_PLAYER,
 		ITEM_CREDIT,
+		ITEM_DOUBLE,
 		ITEM_SPEED,
 		ITEM_NETCODE,
 		ITEM_RECOVERY,
@@ -741,7 +754,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	static const char *const itemLabel[SETTING_COUNT] =
 	{
 		"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty",
-		"Host Flies", "Credit", "Game Speed", "Netcode", "Desync Recovery",
+		"Host Flies", "Credit", "Double Pickups", "Game Speed", "Netcode", "Desync Recovery",
 	};
 
 	static const char *const itemHelp[ITEM_COUNT] =
@@ -753,6 +766,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		"Applies to both players for the whole game.",
 		"Which ship you take; the joiner gets the other.",
 		"Shared pays a kill or pickup to both players.",
+		"Individual splits the take; this pays pickups twice.",
 		"Game speed, forced on both players.",
 		"Rollback hides latency; delay-based is lockstep.",
 		"Repairs a desync from the host's state.",
@@ -772,11 +786,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 	// Eight small-font rows, the help line, and the two actions, fitted between the title
 	// (large_font tops out 20px tall, so it can reach y=40) and the 200-row screen.
-	const int ySettings = 46;
-	const int dySettings = 12;
+	// Nine rows at most (a co-op lobby paying Individual), fitted between the title and the help.
+	const int ySettings = 44;
+	const int dySettings = 11;
 	const int hSetting = 10;
-	const int yHelp = 145;
-	const int yActions = 158;
+	const int yHelp = 148;
+	const int yActions = 160;
 	const int dyActions = 16;
 	const int hAction = 13;
 	const int yStatus = 191;
@@ -801,6 +816,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		const bool creditHidden = !coop;
 		const bool episodeHidden = endless;
 		const bool endlessHidden = !endless;
+		// Doubling pickups is only meaningful when the take is split in the first place.
+		const bool doubleHidden = creditHidden || coopSharedCredit;
 		if (playerHidden && selectedIndex == ITEM_PLAYER)
 			selectedIndex = ITEM_CREDIT;
 		else if (creditHidden && selectedIndex == ITEM_CREDIT)
@@ -809,6 +826,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			selectedIndex = ITEM_ENDLESS;
 		else if (endlessHidden && selectedIndex == ITEM_ENDLESS)
 			selectedIndex = ITEM_DIFFICULTY;
+		if (doubleHidden && selectedIndex == ITEM_DOUBLE)
+			selectedIndex = ITEM_SPEED;
 
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
@@ -821,6 +840,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		                       ? (coop ? "Player 2" : "Dragonwing")
 		                       : (coop ? "Player 1" : "Silver Ship");
 		itemValue[ITEM_CREDIT] = coopSharedCredit ? "Shared" : "Individual";
+		itemValue[ITEM_DOUBLE] = coopDoublePickups ? "On" : "Off";
 		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
 		itemValue[ITEM_NETCODE] = net_rollback ? "Rollback" : "Delay-Based";
 		itemValue[ITEM_RECOVERY] = net_desync_recovery ? "On" : "Off";
@@ -832,7 +852,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		for (int i = 0; i < SETTING_COUNT; ++i)
 		{
 			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden)
-			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden);
+			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden)
+			                 || (i == ITEM_DOUBLE && doubleHidden);
 			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
 		}
 
@@ -968,7 +989,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
-				       (selectedIndex == ITEM_ENDLESS && endlessHidden));
+				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
+				       (selectedIndex == ITEM_DOUBLE && doubleHidden));
 				break;
 
 			case SDL_SCANCODE_DOWN:
@@ -979,7 +1001,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
-				       (selectedIndex == ITEM_ENDLESS && endlessHidden));
+				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
+				       (selectedIndex == ITEM_DOUBLE && doubleHidden));
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -1081,6 +1104,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// The joiner is told which slot remains during the handshake.
 			JE_playSampleNum(S_CLICK);
 			network_host_player = (network_host_player == 2) ? 1 : 2;
+			break;
+
+		case ITEM_DOUBLE:
+			// Compensates the split rather than beating it: a pickup pays its collector twice,
+			// so a pair sharing the field ends up near what one player alone would have taken.
+			JE_playSampleNum(S_CLICK);
+			coopDoublePickups = !coopDoublePickups;
 			break;
 
 		case ITEM_CREDIT:

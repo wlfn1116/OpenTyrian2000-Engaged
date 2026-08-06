@@ -185,6 +185,13 @@ extern bool coopSharedCredit;
 void coop_set_session_shared_credit(bool shared);
 bool coop_credit_is_shared(void);
 
+/* Individual credit splits between two wallets what one player would have earned alone. Double
+ * Pickups pays every cash and gem pickup twice over to make up part of that; it is meaningless
+ * under Shared, where both already collect in full, so the row only shows under Individual. */
+extern bool coopDoublePickups;
+void coop_set_session_double_pickups(bool on);
+bool coop_pickups_are_doubled(void);
+
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);
 

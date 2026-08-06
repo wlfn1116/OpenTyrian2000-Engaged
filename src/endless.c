@@ -68,6 +68,7 @@ uint endlessEffectPlayers(void)
 	return coopEndlessMode ? (uint)COUNTOF(player) : 1u;
 }
 
+bool endlessCoopComboShared = false;
 EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
 bool endlessCoopHostCharts = true;
 bool endlessPlayerDowned[2] = { false, false };
@@ -702,7 +703,7 @@ void endlessCampaignModsArm(void)
 	endlessPerkPending = false;
 }
 
-void endlessCountKill(int linknum)
+void endlessCountKill(int linknum, int killer)
 {
 	if (!endlessFxActive())
 		return;
@@ -714,10 +715,16 @@ void endlessCountKill(int linknum)
 	lastCountedLink = linknum;
 
 	++endlessRunKills;
-	// Boss kills are counted when their health bar empties. A kill feeds both ships' windows;
-	// only the ship whose own mask carries the drive gets anything out of it.
+	/* Boss kills are counted when their health bar empties. Whose streak a kill feeds is the
+	 * session's Combo Feed setting: Individual credits the ship that fired the shot, Shared feeds
+	 * both. A kill nothing can be credited with feeds both either way, so neither ship's streak
+	 * is punished for a death it could not have claimed. */
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
+		if (endlessCoop() && !endlessCoopComboShared
+		    && killer != ENDLESS_KILLER_NONE && (uint)killer != p)
+			continue;
+
 		if (endlessPlayerMods[p] & ENDLESS_MOD_KILLFIRE_ANY)
 		{
 			endlessTurbodriveTimer[p] = endlessBuffWindowTicksFor(p);

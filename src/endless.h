@@ -52,6 +52,12 @@ typedef enum {
 }
 EndlessCourseChooser;
 
+/* Whose combo a kill feeds. Individual keeps each ship's kill-fire streak its own, which is what
+ * a drive one player paid for is worth; Shared has every kill feed both. Host-authoritative. */
+extern bool endlessCoopComboShared;
+// A kill nobody can be credited with, so neither player's streak is punished for it.
+#define ENDLESS_KILLER_NONE (-1)
+
 extern EndlessCourseChooser endlessCourseChooser;  // host-authoritative session setting
 extern bool endlessCoopHostCharts;                 // Alternating: is the host charting this one?
 const char *endlessCourseChooserName(EndlessCourseChooser mode);
@@ -246,8 +252,9 @@ void endlessCashAudit(void);
 void endlessCashResync(void);          // re-anchor without booking either way (run start, load, sortie revert)
 void endlessCashDebugOverwrite(void);  // the debug screen overwrote the wallet: book the delta, no warning
 
-// Count one logical enemy. All kill paths go through enemy_logical_death.
-void endlessCountKill(int linknum);
+// Count one logical enemy, credited to `killer` (0/1, or ENDLESS_KILLER_NONE when nothing can
+// claim it). All kill paths go through enemy_logical_death.
+void endlessCountKill(int linknum, int killer);
 
 extern Uint64 endlessActiveMods;
 
@@ -657,7 +664,7 @@ int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown sca
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
 
 // Call for every logical death so ordinary enemies break the link-group latch.
-void endlessAwardEliteKill(int linknum, int eliteState);
+void endlessAwardEliteKill(int linknum, int eliteState, int killer);
 
 // Run-persistent perks.
 extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate

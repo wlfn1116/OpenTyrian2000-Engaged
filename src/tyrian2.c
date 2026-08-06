@@ -187,7 +187,7 @@ static void chain_queue_kill(int screenX, int y, int linknum)
 // Central kill path for tallies, link-group latches, bounties, and reactive effects.
 // Despawns and collision removals are not kills. Quiet deaths update bookkeeping
 // without chaining more effects.
-void enemy_logical_death(unsigned int i, enemy_death_kind kind)
+void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 {
 	enemyAvail[i] = 1;
 	enemyKilled++;
@@ -201,8 +201,8 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind)
 	// endlessFxActive(), so outside an endless run these cost a call and nothing else. The two
 	// decide-functions are evaluated here rather than at the point of use so that a QUIET death still
 	// feeds their latches; neither touches the shot pool, so pulling them above the sweep is safe.
-	endlessCountKill(linknum);
-	endlessAwardEliteKill(linknum, elite);
+	endlessCountKill(linknum, killer);
+	endlessAwardEliteKill(linknum, elite, killer);
 	const int shockRadius = endlessShockwaveRadius(linknum, elite);
 	const int martyrShots = endlessMartyrdomBurstShots(linknum, elite);
 
@@ -275,7 +275,7 @@ static void chain_reaction_process(void)
 				// non-elite fodder) and must not queue another pulse. It still feeds
 				// the dedup latches, or a later elite reusing this linknum reads as another tile
 				// of the last one and goes unpaid / unswept.
-				enemy_logical_death(e, ENEMY_DEATH_QUIET);
+				enemy_logical_death(e, ENEMY_DEATH_QUIET, ENDLESS_KILLER_NONE);
 				if (enemyDat[enemy[e].enemytype].esize == 1)
 				{
 					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
@@ -4474,7 +4474,9 @@ level_loop:
 											{
 												// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
 												// the one helper; never inline any of them here again (see tyrian2.h).
-												enemy_logical_death(temp3, ENEMY_DEATH_FULL);
+												enemy_logical_death(temp3, ENEMY_DEATH_FULL,
+											                    playerNum >= 1 ? (int)playerNum - 1
+											                                   : ENDLESS_KILLER_NONE);
 											}
 
 											enemy[temp3].aniwhenfire = 0;
@@ -4593,7 +4595,9 @@ level_loop:
 										{
 											// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
 											// the one helper; never inline any of them here again (see tyrian2.h).
-											enemy_logical_death(temp2, ENEMY_DEATH_FULL);
+											enemy_logical_death(temp2, ENEMY_DEATH_FULL,
+										                    playerNum >= 1 ? (int)playerNum - 1
+										                                   : ENDLESS_KILLER_NONE);
 										}
 
 										if (enemyDat[enemy[temp2].enemytype].esize == 1)
@@ -6568,6 +6572,7 @@ static void networkEndlessNewRun(void)
 	endlessSetSeed(network_host_endless_seed);
 	endlessRunMode = (EndlessRunMode)network_host_endless_run_mode;
 	endlessCourseChooser = (EndlessCourseChooser)network_host_endless_chooser;
+	endlessCoopComboShared = network_host_endless_combo_shared;
 	endlessRecordRunStart();
 
 	endlessMode = true;
@@ -6693,7 +6698,7 @@ void networkStartScreen(void)
 			const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 			const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
 
-			const char *label[11], *value[11];
+			const char *label[13], *value[13];
 			int rows = 0;
 
 			label[rows] = "Host";
@@ -6714,6 +6719,8 @@ void networkStartScreen(void)
 				value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 				label[rows] = "Charts Course";
 				value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
+				label[rows] = "Combo Feed";
+				value[rows++] = network_host_endless_combo_shared ? "Shared" : "Individual";
 				label[rows] = "Seed";
 				value[rows++] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
 			}
@@ -6721,6 +6728,11 @@ void networkStartScreen(void)
 			{
 				label[rows] = "Credit";
 				value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
+				if (!coop_credit_is_shared())
+				{
+					label[rows] = "Double Pickups";
+					value[rows++] = coop_pickups_are_doubled() ? "On" : "Off";
+				}
 			}
 			else
 			{
@@ -6755,11 +6767,13 @@ void networkStartScreen(void)
 			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
 			const int xValue = xLabel + blockW;
 
-			// Centre the list and the waiting line together under the title. An Endless lobby has
-			// ten rows to show, so the pitch has to leave that many clear of both the large-font
-			// title above (which reaches y=40) and the bottom of the screen.
-			const int dyRow = 11, gapToWait = 18, waitH = 12;
-			const int yTop = 44 + (196 - 44 - (rows * dyRow + gapToWait + waitH)) / 2;
+			// Centre the list and the waiting line together under the title, which is large-font
+			// and reaches y=40. A full Endless block runs to twelve rows, more than a comfortable
+			// pitch fits, so the longest lists tighten by a pixel rather than running off the
+			// bottom; everything shorter keeps the roomier spacing.
+			const int dyRow = (rows >= 11) ? 10 : 11;
+			const int gapToWait = 14, waitH = 12;
+			const int yTop = 42 + (196 - 42 - (rows * dyRow + gapToWait + waitH)) / 2;
 
 			for (int i = 0; i < rows; ++i)
 			{
