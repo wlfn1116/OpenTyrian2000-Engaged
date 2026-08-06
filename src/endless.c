@@ -71,7 +71,14 @@ uint endlessEffectPlayers(void)
 EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
 bool endlessCoopHostCharts = true;
 bool endlessPlayerDowned[2] = { false, false };
-bool endlessCoopPeerQuit = false;
+/* The peer pressed Quit in the in-game menu. Endless answers it the way the local press is
+ * answered: revert to the launch snapshot and reopen the outpost, together. Anything the sortie
+ * snapshot cannot restore leaves the run where it was, so this is never a teardown. */
+void endlessCoopPeerQuitLevel(void)
+{
+	if (endlessCoop() && endlessSortieValid())
+		endlessQuitToOutpost = true;
+}
 
 Uint64 endlessPlayerMods[2] = { 0, 0 };
 static uint endlessFxPlayerIdx = 0;
@@ -628,8 +635,11 @@ void endlessResetRun(void)
 	endlessLastSong = 0;
 	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;
-	endlessSalvoIdle = ENDLESS_PERK_SALVO_IDLE;
-	endlessSalvoWindow = 0;
+	for (unsigned p = 0; p < COUNTOF(endlessSalvoIdle); ++p)
+	{
+		endlessSalvoIdle[p] = ENDLESS_PERK_SALVO_IDLE;
+		endlessSalvoWindow[p] = 0;
+	}
 	endlessCmCooldown = 0;
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
@@ -831,8 +841,8 @@ void endless_register_rollback(void)
 	rollback_register("endless.perkOwned", endlessPerkOwned, sizeof(endlessPerkOwned));
 	rollback_register("endless.perkTakenBy", endlessPerkTakenBy, sizeof(endlessPerkTakenBy));
 	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
-	rollback_register("endless.salvoIdle", &endlessSalvoIdle, sizeof(endlessSalvoIdle));
-	rollback_register("endless.salvoWindow", &endlessSalvoWindow, sizeof(endlessSalvoWindow));
+	rollback_register("endless.salvoIdle", endlessSalvoIdle, sizeof(endlessSalvoIdle));
+	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
 	rollback_register("endless.cmCooldown", &endlessCmCooldown, sizeof(endlessCmCooldown));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
 }

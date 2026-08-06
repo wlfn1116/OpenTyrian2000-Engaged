@@ -60,10 +60,10 @@ void endlessAdvanceCourseTurn(void);   // call once a course has been committed
 
 // A downed player spectates until the zone ends, then revives at the outpost.
 extern bool endlessPlayerDowned[2];
-/* The other player left the session from the in-game menu. The level ends with playerEndLevel
- * set, which on its own reads as this player's death; the run is not over, so the level-end path
- * checks this and skips the summary. */
-extern bool endlessCoopPeerQuit;
+/* The other player used the in-game menu's Quit. In Endless that means "back to the outpost",
+ * the same as pressing it here, so the peer joins them there rather than being torn down; the
+ * level ends with playerEndLevel set, which on its own would read as this player's death. */
+void endlessCoopPeerQuitLevel(void);
 bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
 // Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
 // still flying, and player 1 outside co-op.

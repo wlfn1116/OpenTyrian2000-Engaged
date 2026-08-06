@@ -2146,7 +2146,7 @@ void JE_doInGameSetup(void)
 						reallyEndLevel = true;
 						playerEndLevel = true;;
 						if (coopEndlessMode)
-							endlessCoopPeerQuit = true;
+							endlessCoopPeerQuitLevel();
 
 						network_check();
 						break;
@@ -7799,6 +7799,52 @@ static void JE_drawSidekickAmmoGauge(JE_byte playerNum, uint slot, int ammo, int
 	draw_segmented_gauge(VGAScreenSeg, hud_x, y, 112, 2, 2, AMMO_GAUGE_STEP(ammo_max), ammo);
 }
 
+/* Endless per-tick work one ship does for itself: the pull it feels, the cadence its own drive
+ * and perks buy it, and its own sidekick refills. Co-op runs this for BOTH ships; the run-wide
+ * clocks in JE_playerMovement stay on player 1, but gating THIS on player 1 left the second ship
+ * flying with no drive, no Rapid Cyclers and no gravity. Every other mode has a single ship
+ * carrying the effect layer, so it keeps the original gate.
+ *
+ * Called from JE_playerMovement with the effect context already on this ship, and directly by the
+ * test suite, which is the only way the gate itself gets covered. */
+void endlessPerShipTick(Player *this_player)
+{
+	if (!endlessFxActive() || !(coopEndlessMode || this_player == &player[0]))
+		return;
+
+	if (!vt_ship_owns())  // the VT ship (normal play) applies gravity in vt_ship_step
+	{
+		// X is nonzero only for an omnidirectional well; both axes are clamped to the playfield
+		// at the end of JE_playerMovement, so a sideways/up pull just pins the ship at that edge.
+		this_player->x += endlessGravityPullX();
+		this_player->y += endlessGravityPullY();
+	}
+
+	// Quicken the guns: the Rapid Cyclers perk every tick, plus the kill-fire buff during a
+	// TURBODRIVE/Turbodrive streak. Both feed the same shotRepeat-decrement loop. Floor at 0
+	// (not 1): the fire gate fires when shotRepeat hits 0, so flooring at 1 capped fire at one
+	// shot every 2 ticks. Zeroing lets a big buff/perk stack reach one shot per tick.
+	const int dec = endlessPerkFireDecrements()
+	              + (endlessTurbodriveActive() ? endlessKillBuffFireDecrements() : 0);
+	for (unsigned i = 0; i < COUNTOF(shotRepeat); i++)
+		for (int k = 0; k < dec && shotRepeat[i] > 0; k++)
+			--shotRepeat[i];
+
+	// Rapid Recharge perk: extra decrements to the special cooldown gate + each sidekick's
+	// ammo-refill counter (skips main guns). The accumulator is stateful and read exactly once.
+	const int specDec = endlessPerkSpecialCooldownDecrements();
+	for (int k = 0; k < specDec && shotRepeat[SHOT_SPECIAL] > 0; k++)
+		--shotRepeat[SHOT_SPECIAL];
+
+	for (uint i = 0; i < COUNTOF(this_player->sidekick); i++)
+	{
+		if (this_player->sidekick[i].ammo_max <= 0)
+			continue;  // only weapons that actually use recharging ammo
+		for (int k = 0; k < specDec && this_player->sidekick[i].ammo_refill_ticks > 0; k++)
+			--this_player->sidekick[i].ammo_refill_ticks;
+	}
+}
+
 void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
@@ -7820,8 +7866,9 @@ void JE_playerMovement(Player *this_player,
 			this_player->weapon_mode = 1;
 	}
 
-	// Endless per-tick hooks (main player only, once per tick): advance the zone timer +
-	// turbodrive decay, apply the GRAVITY pull, and quicken the guns during a TURBODRIVE streak.
+	/* Endless run-wide per-tick hooks. These advance the run's own clocks, so they run ONCE a
+	 * tick and player 1 is the ship that carries them. Everything a ship owns for itself is in
+	 * the per-ship block below, which every ship reaches. */
 	if (endlessFxActive() && this_player == &player[0])
 	{
 		endlessGameplayTick();
@@ -7833,44 +7880,9 @@ void JE_playerMovement(Player *this_player,
 			JE_drawArmor();
 			VGAScreen = game_screen;
 		}
-		if (!vt_ship_owns())  // the VT ship (normal play) applies gravity in vt_ship_step
-		{
-			// X is nonzero only for an omnidirectional well; both axes are clamped to the playfield
-			// at the end of JE_playerMovement, so a sideways/up pull just pins the ship at that edge.
-			this_player->x += endlessGravityPullX();
-			this_player->y += endlessGravityPullY();
-		}
-		// Quicken the guns: the Rapid Cyclers perk every tick, plus the kill-fire buff during a
-		// TURBODRIVE/Turbodrive streak. Both feed the same shotRepeat-decrement loop.
-		{
-			// Floor at 0 (not 1): the fire gate below fires when shotRepeat hits 0, so flooring
-			// at 1 capped fire at one shot every 2 ticks. Zeroing lets a big buff/perk stack reach
-			// the true engine limit of one shot per tick.
-			const int dec = endlessPerkFireDecrements()
-			              + (endlessTurbodriveActive() ? endlessKillBuffFireDecrements() : 0);
-			for (unsigned i = 0; i < COUNTOF(shotRepeat); i++)
-				for (int k = 0; k < dec && shotRepeat[i] > 0; k++)
-					--shotRepeat[i];
-		}
-
-		// Rapid Recharge perk: extra decrements to the special cooldown gate + each sidekick's
-		// ammo-refill counter (skips main guns). Sampled once per tick; the decrement accumulator
-		// is stateful and must be read exactly once.
-		{
-			const int specDec = endlessPerkSpecialCooldownDecrements();
-			for (int k = 0; k < specDec && shotRepeat[SHOT_SPECIAL] > 0; k++)
-				--shotRepeat[SHOT_SPECIAL];
-
-			// this_player == &player[0] here (see the guard above), so these are the live sidekicks.
-			for (uint i = 0; i < COUNTOF(this_player->sidekick); i++)
-			{
-				if (this_player->sidekick[i].ammo_max <= 0)
-					continue;  // only weapons that actually use recharging ammo
-				for (int k = 0; k < specDec && this_player->sidekick[i].ammo_refill_ticks > 0; k++)
-					--this_player->sidekick[i].ammo_refill_ticks;
-			}
-		}
 	}
+
+	endlessPerShipTick(this_player);
 
 #ifdef WITH_NETWORK
 	// Lockstep state packets; rollback mode replaces them with the input stream.
@@ -9128,7 +9140,8 @@ redo:
 									l11_primary = ZICA_LONG_WEAP_LEFT;
 
 								// Arm Opening Salvo for every weapon fired during this tick's front-gun volley.
-								if (endlessFxActive() && temp == SHOT_FRONT && this_player == &player[0])
+								if (endlessFxActive() && temp == SHOT_FRONT
+								    && (coopEndlessMode || this_player == &player[0]))
 									endlessOpeningSalvoConsume();
 
 								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);

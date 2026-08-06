@@ -1131,6 +1131,92 @@ static void qa_test_kill_fire_drives(void)
 	endlessMode = savedEndless;
 }
 
+/* The wiring, not the rules: the per-tick block in JE_playerMovement is what turns a drive into
+ * a faster gun, and it used to run for player 1 alone. Re-create exactly what it does for each
+ * ship in turn and check the cooldowns actually move for both. */
+static void qa_test_kill_fire_wiring(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	const Uint64 savedActive = endlessActiveMods;
+	const int savedKills = endlessRunKills;
+
+	endlessMode = true;
+	coopEndlessMode = true;
+	memset(endlessPerkOwned, 0, sizeof(endlessPerkOwned));
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+
+	// Both ships buy Turbodrive; both should have their guns quickened.
+	endlessActiveMods = 0;
+	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE;
+	endlessPurchasedMods[1] = ENDLESS_MOD_TURBODRIVE;
+	endlessBuffCharge[0] = endlessBuffCharge[1] = 0;
+	endlessApplyPurchasedMods();
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	for (int k = 0; k < 30; ++k)
+		endlessCountKill(0);
+
+	int dropped[2] = { 0, 0 };
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessSetFxPlayer(p);              // JE_playerMovement sets this from this_player
+		shotRepeat[SHOT_FRONT] = 100;
+		endlessPerShipTick(&player[p]);     // the real per-tick block, gate included
+		dropped[p] = 100 - shotRepeat[SHOT_FRONT];
+	}
+	qa_check(dropped[0] > 0 && dropped[1] > 0,
+	         "a drive quickens the guns of every ship that bought one, not just player 1");
+
+	// Only player 2 buys one: player 1's guns must stay at their stock cadence.
+	endlessActiveMods = 0;
+	endlessPurchasedMods[0] = 0;
+	endlessPurchasedMods[1] = ENDLESS_MOD_TURBODRIVE;
+	endlessApplyPurchasedMods();
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	for (int k = 0; k < 30; ++k)
+		endlessCountKill(0);
+
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessSetFxPlayer(p);
+		shotRepeat[SHOT_FRONT] = 100;
+		endlessPerShipTick(&player[p]);
+		dropped[p] = 100 - shotRepeat[SHOT_FRONT];
+	}
+	qa_check(dropped[0] == 0 && dropped[1] > 0,
+	         "a drive the second ship bought quickens the second ship alone");
+
+	/* Opening Salvo charges on an idle gun and is spent by the gun that fires, so one ship
+	 * shooting must not spend the other's charge. */
+	endlessPerkTakenBy[0][PERK_SALVO] = 1;
+	endlessPerkRederive();
+	endlessResetZonePerkTimers();      // both ships start a zone charged
+	endlessSetFxPlayer(0);
+	qa_check(endlessOpeningSalvoConsume() && endlessOpeningSalvoVolleyActive(),
+	         "the first ship spends its own Opening Salvo");
+	endlessSetFxPlayer(1);
+	qa_check(!endlessOpeningSalvoVolleyActive(),
+	         "...and the second ship's salvo is still banked");
+	qa_check(endlessOpeningSalvoConsume() && endlessOpeningSalvoVolleyActive(),
+	         "...for the second ship to spend itself");
+
+	endlessSetFxPlayer(0);
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessResetZonePerkTimers();
+	endlessActiveMods = savedActive;
+	endlessRunKills = savedKills;
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -1367,6 +1453,7 @@ int qa_run_unit_suite(void)
 	qa_test_network_settings();
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
+	qa_test_kill_fire_wiring();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

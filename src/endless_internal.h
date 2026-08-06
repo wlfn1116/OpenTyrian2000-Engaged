@@ -210,8 +210,8 @@ void endlessPerkGrant(uint p, int id, int delta);
 extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];
 extern int endlessPerkChoiceN;
 extern int endlessRegenTick;
-extern int endlessSalvoIdle;
-extern int endlessSalvoWindow;
+extern int endlessSalvoIdle[2];
+extern int endlessSalvoWindow[2];
 extern int endlessCmCooldown;
 
 void endlessResetZonePerkTimers(void);

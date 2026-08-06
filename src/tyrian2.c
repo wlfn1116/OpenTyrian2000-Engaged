@@ -2836,19 +2836,6 @@ start_level:
 			goto start_level_first;   // re-run the same level (endlessCaptureSortie re-snapshots + clears the lock)
 		}
 
-		// The other player left the session. The run itself is intact and, outside Hardcore,
-		// already on disk from the outpost autosave, so end the session quietly: the run-over
-		// summary belongs to a run that ended, and this one did not.
-		if (endlessCoopPeerQuit)
-		{
-			endlessCoopPeerQuit = false;
-			fade_song();
-			fade_black(10);
-			endlessMode = false;
-			mainLevel = 0;
-			return;
-		}
-
 		// Was the level that just ran picked straight out of the debug level browser? Consume the
 		// flag whatever the answer, so it can never carry over to a campaign-reached level.
 		const bool fromDebugBrowser = debugLevelJumpTake();
