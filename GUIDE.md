@@ -636,7 +636,10 @@ Save from the shop with Options > **Save Game**, or Alt+S while no purchase
 preview is open. The page's last slot is written automatically at the start of
 every level as `LAST LEVEL`; save into a numbered slot to keep a separate run.
 Both machines write their own copy after exchanging their latest shop state, so
-either player can host the resume.
+either player can host the resume. If the other machine goes quiet while that
+exchange is in flight, the save is written anyway after a few seconds rather than
+leaving you stuck on it; their ship is then stored as of the last state you had
+from them, so save again once they are back.
 
 Arcade saves remain compatible with the regular local two-player page. Campaign
 and Endless saves carry both players in full: each ship and its front and rear weapons with

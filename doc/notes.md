@@ -934,6 +934,50 @@ An involuntary disconnect after gameplay offers a save based on the pre-level
 LAST LEVEL backup. The prompt clears silent rollback state before drawing and
 keeps acknowledgement traffic moving while open.
 
+`network_shop_sync_for_save` waits on the peer's acknowledgement, and that wait
+is a real synchronization point: both machines serialize the same transaction
+boundary through it. It consumes shop traffic and a debug block queued ahead of
+the acknowledgement, then keeps the queue moving on anything else, because the
+acknowledgement is behind whatever is at the head and stopping there strands the
+save. Two exceptions to that:
+
+- `PACKET_GAME_QUIT` is left alone. It was acknowledged on arrival, so the peer
+  counts it delivered and never repeats it; consuming it here means the quit
+  handler never sees the peer leave.
+- The wait is bounded by `NET_SHOP_SAVE_WAIT` and by peer liveness. It had
+  neither, and a peer that vanished between the request and the reply held the
+  game in the loop with no way out.
+
+Breaking on *any* foreign head instead looks tidier and is wrong: the base wire
+scenario's save checkpoint stops converging, because the packet at the head is
+usually transient rendezvous traffic and the acknowledgement is behind it.
+
+### Reaching a queued debug block
+
+`network_debug_sync_pump` inspects only the head. The reliable queue is ordered
+and indexed by sequence number, so nothing can be lifted out of the middle of it:
+a block sitting behind outpost traffic is reachable only to a caller that also
+runs `network_shop_pump`. Every wait pairs the two for that reason.
+
+### Wire-scenario barriers do not scale
+
+`qa_net.c` barriers are numbered announcements on `PACKET_WAITING`, completing on
+"the peer has reached at least here". That holds for the two barriers the
+campaign and Endless scenarios use. It does not hold as more are added: a
+six-barrier phase failed roughly one run in four, with a peer stalled on an
+announcement that never arrived and `network_acked_dropped` reporting zero, so
+the packet was neither dropped into a full window nor retransmitted. The receive
+window showed a hole at the head (`network_inbound_depth` above zero with a null
+head) that did not heal inside twelve seconds.
+
+That is unexplained and is the reason the debug-sync exchange is pinned in
+`qa_online.c` rather than driven over the wire. Settle it before building a
+deeper wire scenario on the barrier mechanism, since a gameplay scenario needs
+many more barriers than the outpost ones do. Suspects, in order: the retry path
+resends only `packet_out[0]`, and `network_send` resets `last_out_tick` only
+while `network_is_sync()`, so the two interact whenever a peer stays silent for
+long stretches — which a barrier waiter does.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. Sidekick body
