@@ -486,6 +486,11 @@ static int network_recv_one(void)
 					case PACKET_DEBUG_SYNC:
 					case PACKET_SHOP_SYNC:
 					case PACKET_CUSTOM_WEAPON:
+					// Every packet the Endless co-op channel carries: the run transfer on resume,
+					// the death-prompt choice, and the "I have left the level" notice. Missing from
+					// this list, all three were dropped here unread and unacknowledged, so the whole
+					// channel was write-only however carefully both ends waited on it.
+					case PACKET_ENDLESS_RUN:
 					case PACKET_RESYNC:
 						{
 							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
@@ -2152,9 +2157,13 @@ int network_endless_death_sync(int hostChoice)
 		JE_mouseReplace();
 		network_check();
 
-		// Say so periodically: the host may still be finishing the level, where waiting on
-		// frames this machine will never send is what wedges it.
-		if (announced == 0 || SDL_GetTicks() - announced > 250)
+		// Say so: the host may still be finishing the level, where waiting on frames this machine
+		// will never send is what wedges it. This is a reliable packet, so once is enough and
+		// repeating it is what hurt: unacknowledged copies stacked up behind a host that was
+		// reading the prompt until the outbound queue overflowed and took the session down. The
+		// re-send is a slow safety net, and never more than one of them is ever in flight.
+		if (announced == 0
+		    || (network_is_sync() && SDL_GetTicks() - announced > 5000))
 		{
 			announced = SDL_GetTicks();
 			network_prepare(PACKET_ENDLESS_RUN);
@@ -3336,6 +3345,37 @@ int network_test_peer(int rounds)
 			return 1;
 		}
 	}
+
+	/* The Relaxed death prompt. One player reads it for as long as they like while the other waits
+	 * on their answer, and that answer still has to arrive: it travels on the Endless co-op channel,
+	 * which nothing else in this test exercises. The reader services the socket exactly the way
+	 * JE_endlessDeathMenu's frame does. */
+	twoPlayerMode = true;
+	coopEndlessMode = true;
+	if (thisPlayerNum == networkHostPlayerNum)
+	{
+		const Uint32 reading = SDL_GetTicks();
+		while (SDL_GetTicks() - reading < 5000)
+		{
+			watchdog_heartbeat();
+			network_check();               /* exactly what JE_endlessDeathMenu's frame does */
+			while (network_shop_pump())
+				;
+			SDL_Delay(16);
+		}
+		network_endless_death_sync((int)ENDLESS_DEATH_OUTPOST);
+	}
+	else
+	{
+		const int adopted = network_endless_death_sync(-1);
+		if (adopted != (int)ENDLESS_DEATH_OUTPOST)
+		{
+			fprintf(stderr, "network test: death choice came back as %d, not Return to Outpost\n",
+			        adopted);
+			return 1;
+		}
+	}
+	coopEndlessMode = false;
 
 	/* Exercise the campaign shop protocol through the same hostile proxy. Both peers publish
 	 * independent loadouts, then request a simultaneous save checkpoint and rendezvous. */

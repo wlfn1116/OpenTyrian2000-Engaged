@@ -3238,7 +3238,12 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 			// Online: the other player is sitting on its own wait screen for as long as this
 			// takes to read, and a screen nobody pumps reads to it as a dead connection.
+			// Acknowledging is not enough on its own: their wait announces itself over and over,
+			// and a receive queue nothing drains fills up and then drops what arrives after it,
+			// acknowledged, so everything they send from here on is quietly lost.
 			NETWORK_KEEP_ALIVE();
+			while (network_shop_pump())
+				;
 
 			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
