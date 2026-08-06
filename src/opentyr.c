@@ -2656,7 +2656,7 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 	if (qa_net_rounds > 0)
 	{
-		const int result = network_test_peer(qa_net_rounds);
+		const int result = network_test_peer(qa_net_rounds, qa_net_scenario);
 		network_shutdown();
 		SDL_Quit();
 		return result;

@@ -13,21 +13,23 @@ import time
 from pathlib import Path
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exe", type=Path, required=True)
-    parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--rounds", type=int, default=48)
-    parser.add_argument("--base-port", type=int, default=45100)
-    args = parser.parse_args()
+# Each scenario is a separate pair of peers on its own ports, so one mode's protocol cannot
+# leave state behind for the next. Rounds are only the warm-up that establishes the session;
+# the campaign and Endless scenarios spend their time in their own protocols instead.
+SCENARIOS = (
+    (0, "base", 48),
+    (1, "campaign", 6),
+    (2, "endless", 6),
+)
 
-    executable = args.exe.resolve()
-    data_dir = args.data.resolve()
 
-    host_addr = ("127.0.0.1", args.base_port)
-    proxy_a_addr = ("127.0.0.1", args.base_port + 1)
-    join_addr = ("127.0.0.1", args.base_port + 2)
-    proxy_b_addr = ("127.0.0.1", args.base_port + 3)
+def run_scenario(
+    executable: Path, data_dir: Path, base_port: int, scenario: int, rounds: int
+) -> tuple[int, str, dict[str, int]]:
+    host_addr = ("127.0.0.1", base_port)
+    proxy_a_addr = ("127.0.0.1", base_port + 1)
+    join_addr = ("127.0.0.1", base_port + 2)
+    proxy_b_addr = ("127.0.0.1", base_port + 3)
 
     proxy_a = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     proxy_b = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -38,7 +40,8 @@ def main() -> int:
 
     common = [
         "--no-sound", "--no-joystick", "--no-xmas", "--data", str(data_dir),
-        "--test-net-rounds", str(args.rounds),
+        "--test-net-rounds", str(rounds),
+        "--test-net-scenario", str(scenario),
     ]
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
                 "--net-port", str(host_addr[1]), "--net-player-number", "1"]
@@ -51,7 +54,7 @@ def main() -> int:
     join = subprocess.Popen(join_cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     started = time.monotonic()
-    deadline = started + 45
+    deadline = started + 90
     pause_to = 0.0
     pause_triggered = False
     queue: list[tuple[float, int, socket.socket, tuple[str, int], bytes]] = []
@@ -114,7 +117,7 @@ def main() -> int:
                         break
                     schedule(0 if source is proxy_a else 1, payload)
         else:
-            raise TimeoutError("network peers did not finish within 45 seconds")
+            raise TimeoutError("network peers did not finish within 90 seconds")
     except Exception as exc:
         print(f"network fault test: {exc}")
         for process in (host, join):
@@ -126,18 +129,57 @@ def main() -> int:
 
     host_out, _ = host.communicate(timeout=5)
     join_out, _ = join.communicate(timeout=5)
-    print("--- host ---")
-    print(host_out, end="")
-    print("--- joiner ---")
-    print(join_out, end="")
-    print("faults:", " ".join(f"{name}={count}" for name, count in injected.items()))
+    transcript = f"--- host ---\n{host_out}--- joiner ---\n{join_out}"
+    failed = host.returncode != 0 or join.returncode != 0
+    return (1 if failed else 0), transcript, injected
 
-    missing = [name for name, count in injected.items() if count == 0]
-    if host.returncode != 0 or join.returncode != 0 or missing:
-        if missing:
-            print("network fault test: uninjected conditions:", ", ".join(missing))
-        return 1
-    return 0
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exe", type=Path, required=True)
+    parser.add_argument("--data", type=Path, required=True)
+    parser.add_argument("--rounds", type=int, default=48)
+    parser.add_argument("--base-port", type=int, default=45100)
+    parser.add_argument(
+        "--scenario", type=int, default=-1,
+        help="run one scenario by id instead of all of them",
+    )
+    args = parser.parse_args()
+
+    executable = args.exe.resolve()
+    data_dir = args.data.resolve()
+
+    selected = [s for s in SCENARIOS if args.scenario in (-1, s[0])]
+    if not selected:
+        print(f"network fault test: no such scenario {args.scenario}")
+        return 2
+
+    status = 0
+    # Every fault kind has to be injected somewhere across the run, not necessarily in each
+    # scenario: the short ones do not carry enough packets to hit every modulus.
+    totals = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
+
+    for index, (scenario, name, default_rounds) in enumerate(selected):
+        rounds = args.rounds if scenario == 0 else default_rounds
+        # Fresh ports per scenario so a lingering packet cannot reach the next pair.
+        base_port = args.base_port + index * 10
+        print(f"=== scenario {scenario} ({name}), {rounds} rounds, port {base_port} ===")
+        result, transcript, injected = run_scenario(
+            executable, data_dir, base_port, scenario, rounds
+        )
+        print(transcript, end="")
+        print("faults:", " ".join(f"{k}={v}" for k, v in injected.items()))
+        for key, value in injected.items():
+            totals[key] += value
+        if result != 0:
+            print(f"network fault test: scenario {scenario} ({name}) failed")
+            status = 1
+
+    missing = [name for name, count in totals.items() if count == 0]
+    if missing:
+        print("network fault test: uninjected conditions:", ", ".join(missing))
+        status = 1
+    return status
 
 
 if __name__ == "__main__":

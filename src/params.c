@@ -72,6 +72,7 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 303, 0,   "test-replay-ticks", true },
 		{ 304, 0,   "test-replay-hash",  true },
 		{ 305, 0,   "test-net-rounds",   true },
+		{ 306, 0,   "test-net-scenario", true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -241,6 +242,9 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 305:
 			qa_net_rounds = atoi(option.arg);
+			break;
+		case 306:
+			qa_net_scenario = atoi(option.arg);
 			break;
 			
 		default:

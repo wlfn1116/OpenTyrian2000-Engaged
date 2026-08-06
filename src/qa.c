@@ -31,6 +31,7 @@ unsigned long qa_replay_ticks = 0;
 bool qa_replay_expect_set = false;
 Uint32 qa_replay_expect = 0;
 int qa_net_rounds = 0;
+int qa_net_scenario = 0;
 bool qa_fast_forward = false;
 
 static unsigned qa_checks;

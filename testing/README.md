@@ -37,7 +37,20 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   danger/payout ordering, modifier compatibility, exact milestone rank distributions, and payout bounds;
 - bounded shipped-demo replays with zero rollback divergence and fixed registered-state hashes;
 - two real UDP peers behind a deterministic proxy that injects latency, loss, reordering,
-  duplication, and a complete traffic pause.
+  duplication, and a complete traffic pause, in three scenarios on their own ports:
+  - *base*: the reliable channel round-trip, the Relaxed death prompt, and the original
+    campaign-shop and Endless-outpost rendezvous sequences;
+  - *campaign*: two complete and different loadouts converging in both directions, six rounds
+    of interleaved purchases from both machines at once, a save checkpoint that moves nothing,
+    and a rendezvous where one machine finishes long before the other;
+  - *endless*: both ships holding different drives, paid charges, hull tiers, tokens, debts and
+    perk slates, all crossing intact and combining the same way on both machines; Individual
+    credit with Double Pickups; one ship down while the other flies on, and its revive at the
+    outpost; the charted sector index surviving the rendezvous; the Relaxed both-down prompt;
+    and the whole run record adopted by the joiner.
+
+  Run one on its own with `--scenario N`. Each peer asserts what it should be seeing of the
+  other, so a field that crosses in only one direction fails on the side that did not get it.
 
 Regenerate save fixtures only when intentionally changing the migration corpus:
 
