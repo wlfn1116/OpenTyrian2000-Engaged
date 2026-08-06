@@ -337,7 +337,8 @@ void endlessResetShopPrices(void)
 	endlessRerollCost[me()] = ENDLESS_PRICE_REROLL_BASE + (long)endlessRunDepth * ENDLESS_PRICE_REROLL_PER_ZONE;
 	endlessHullCost[me()]   = ENDLESS_PRICE_HULL_BASE + endlessRunDepth * ENDLESS_PRICE_HULL_PER_ZONE;
 	endlessBombCost[me()]   = ENDLESS_PRICE_BOMB_BASE + (long)endlessRunDepth * ENDLESS_PRICE_BOMB_PER_ZONE;
-	endlessExtraPerkCost[me()] = ENDLESS_PRICE_EXTRAPERK_BASE + (long)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
+	endlessExtraPerkCost[me()] = ENDLESS_PRICE_EXTRAPERK_BASE
+	                           + (long)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
 	endlessCleanseCost[me()] = ENDLESS_PRICE_CLEANSE_BASE + (long)endlessRunDepth * ENDLESS_PRICE_CLEANSE_PER_ZONE;
 	endlessCleanseChargeCount[me()] = 0;  // fresh visit: no pending sabotage strips carried in
 	endlessGambleMsg[me()][0] = '\0';
@@ -375,7 +376,10 @@ static int endlessBuffCooldownLength(void)
 		n += (endlessRunDepth - ENDLESS_BUFF_COOLDOWN_RAMP_START) / ENDLESS_BUFF_COOLDOWN_RAMP_STEP;
 	return n;
 }
-static void endlessArmBuffCooldown(void) { endlessBuffCooldownUntil[me()] = endlessRunDepth + endlessBuffCooldownLength(); }
+static void endlessArmBuffCooldown(void)
+{
+	endlessBuffCooldownUntil[me()] = endlessRunDepth + endlessBuffCooldownLength();
+}
 
 bool endlessBuffOnCooldown(void)   { return endlessRunDepth < endlessBuffCooldownUntil[me()]; }
 int  endlessBuffCooldownLeft(void) { int d = endlessBuffCooldownUntil[me()] - endlessRunDepth; return (d > 0) ? d : 0; }

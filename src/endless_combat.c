@@ -1263,4 +1263,17 @@ void endless_combat_register_rollback(void)
 {
 	rollback_register("ec.scrollCarry", scrollExtraCarry, sizeof(scrollExtraCarry));
 	rollback_register("ec.scrollTrem",  scrollExtraTrem, sizeof(scrollExtraTrem));
+
+	/* Everything below is decided inside a tick, so a re-simulation has to replay it from the same
+	 * value. The one-shot latches matter most: an unregistered dedup guard makes its event
+	 * unrepeatable, and an unregistered revive latch resurrects or kills the wrong ship. */
+	rollback_register("endless.eliteLink", endlessEliteLink, sizeof(endlessEliteLink));
+	rollback_register("endless.martyrLink", &endlessMartyrLastLink, sizeof(endlessMartyrLastLink));
+	rollback_register("endless.shockLink", &endlessShockwaveLastLink, sizeof(endlessShockwaveLastLink));
+	rollback_register("endless.bountyLink", &endlessBountyLastLink, sizeof(endlessBountyLastLink));
+	rollback_register("endless.aegisCd", &endlessAegisCooldown, sizeof(endlessAegisCooldown));
+	rollback_register("endless.reviveGrace", &endlessReviveGrace, sizeof(endlessReviveGrace));
+	rollback_register("endless.staticLock", &endlessStaticLockout, sizeof(endlessStaticLockout));
+	rollback_register("endless.gravityDir", &endlessGravityDirX, sizeof(endlessGravityDirX));
+	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
 }

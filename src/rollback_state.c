@@ -41,6 +41,7 @@
 void varz_register_rollback(void);
 void backgrnd_register_rollback(void);
 void endless_combat_register_rollback(void);
+void endless_register_rollback(void);
 
 /* player[].lives is an interior pointer into player[].items (mainint.c
  * JE_initPlayerData).  A raw copy restores a correct value only because
@@ -77,6 +78,7 @@ void rollback_state_register_globals(void)
 	REG(shipGr2);  REG(shipGr2ptr);
 	REG(twoPlayerMode);        /* galaga mode clears this mid-level         */
 	REG(coopCampaignMode);
+	REG(coopEndlessMode);
 	REG(galagaMode);
 	REG(galagaShotFreq);
 	REG(galagaLife);
@@ -284,4 +286,5 @@ void rollback_state_register_globals(void)
 	varz_register_rollback();
 	backgrnd_register_rollback();
 	endless_combat_register_rollback();
+	endless_register_rollback();
 }

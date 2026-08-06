@@ -2899,7 +2899,23 @@ start_level:
 			// time. It hands the master volume back before it returns.
 			// An Endless run keeps its track for the run-over summary, which ramps it away itself.
 			if (endlessDeathMenuDue() && all_players_dead())
-				deathPick = JE_endlessDeathMenu();
+			{
+				// One run, so one decision: the host chooses for the pair and the joiner adopts it.
+				if (endlessCoop() && thisPlayerNum != networkHostPlayerNum)
+				{
+					JE_drawTextWindow("Waiting for the host to choose.");
+					JE_showVGA();
+					const int adopted = network_endless_death_sync(-1);
+					deathPick = (adopted >= 0 && adopted <= ENDLESS_DEATH_END_RUN)
+					          ? (EndlessDeathChoice)adopted : ENDLESS_DEATH_END_RUN;
+				}
+				else
+				{
+					deathPick = JE_endlessDeathMenu();
+					if (endlessCoop())
+						network_endless_death_sync((int)deathPick);
+				}
+			}
 			else if (!endlessMode)
 				fade_song();
 
@@ -3624,19 +3640,23 @@ level_loop:
 		{
 			if (coop_mode_active())
 			{
+				// Each ship recharges off its own generator. The Endless sector modifiers and the
+				// Shield Matrix perk apply to both, exactly as they do to a solo run.
+				const bool regenOff  = endlessShieldRegenOff();
+				const bool regenFree = endlessShieldRegenFree();
 				bool shield_changed = false;
 				for (uint i = 0; i < COUNTOF(player); ++i)
 				{
 					Player *const this_player = &player[i];
-					const int regen_cost = shields[this_player->items.shield].tpwr * 20;
-					this_player->generator_power = MIN(900,
-						this_player->generator_power + this_player->generator_power_add);
+					const int regen_cost = regenFree ? 0 : shields[this_player->items.shield].tpwr * 20;
+					const uint add = endlessGeneratorPowerAdd(this_player->generator_power_add);
+					this_player->generator_power = (Uint16)MIN(900u, this_player->generator_power + add);
 
-					if (this_player->is_alive && this_player->shield < this_player->shield_max &&
+					if (!regenOff && this_player->is_alive && this_player->shield < this_player->shield_max &&
 					    this_player->generator_power > regen_cost && --this_player->shield_wait == 0)
 					{
-						this_player->shield_wait = 15;
-						this_player->generator_power -= regen_cost;
+						this_player->shield_wait = (Uint8)endlessPerkShieldWait(15);
+						this_player->generator_power -= (Uint16)regen_cost;
 						++this_player->shield;
 						shield_changed = true;
 					}

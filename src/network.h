@@ -219,6 +219,10 @@ void network_settings_restore(void);
 void network_endless_run_publish(void);
 bool network_endless_run_receive(Uint32 timeout_ms);
 
+/* Both ships down at once: the host publishes its death-menu choice and the joiner adopts it.
+ * Pass the choice on the host, -1 on the joiner; -1 comes back if nothing arrived. */
+int network_endless_death_sync(int hostChoice);
+
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
@@ -340,6 +344,7 @@ static inline void network_shop_set_locked(bool locked) { (void)locked; }
 static inline bool network_shop_peer_locked(void) { return true; }
 static inline void network_endless_run_publish(void) { }
 static inline bool network_endless_run_receive(Uint32 timeout_ms) { (void)timeout_ms; return false; }
+static inline int network_endless_death_sync(int hostChoice) { return hostChoice; }
 static inline void network_custom_weapon_publish(void) { }
 static inline void network_custom_weapon_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }

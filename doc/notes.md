@@ -574,6 +574,72 @@ is that rule; the sidekick ammo gauge goes through it, as does
 `JE_drawOptionsHUD()`. Getting it wrong puts the other player's magazine on your
 HUD, under sidekick icons you may not own.
 
+### Endless online
+
+`coopEndlessMode` is the Endless half of online co-op; `coop_mode_active()` is
+either kind and is what the shared plumbing (ship runtime, HUD, pickups, shop
+netcode, save tag) keys off. `coopCampaignMode` now means the Campaign lobby
+alone.
+
+Split of responsibility inside a run:
+
+- Run-wide and derived identically on both machines from the seed, depth and
+  difficulty: the course slate, the sector's modifiers, zone depth and kills,
+  milestones, deferred Star Charts and Breakthrough picks. Nothing about these
+  travels.
+- Per player, owned by that player's machine and mirrored to the peer on every
+  `PACKET_SHOP_SYNC`: wallet, gear, superbombs, Reinforce tier, revive token,
+  pending sector purchases, Sabotage charges, Loan Shark tax, The Long Con,
+  shop prices and the perk row. `endlessPackPlayerBlock` /
+  `endlessUnpackPlayerBlock` are that block; `ENDLESS_PLAYER_BLOCK_SIZE` is its
+  fixed width and the receiver checks the packet is long enough before reading.
+- Local only, never sent: `itemAvail` (each machine shows its own player's
+  shelves) and the cash ledger, which follows `endlessEconomyIndex()` and so
+  tallies this machine's own ship.
+
+Perks are stored as `endlessPerkTakenBy[2][PERK_COUNT]`, one row per player, and
+`endlessPerkOwned` is their capped sum, recomputed by `endlessPerkRederive`.
+Every write goes through `endlessPerkGrant`. Rows merge without either machine
+clobbering the other, which a single shared array could not do.
+
+Outpost draws (stock, rerolls, gambles, perk slates) run on
+`endlessRandFor(player)`, forked from the run seed by `endlessReseedPlayers` at
+each outpost. The structural stream `endlessRand()` keeps generating the course
+slate alone, so a reroll can never shift a later zone's layout for either player.
+
+The sector is committed at the rendezvous, not at the pick: `endlessCoopCourse`
+holds the charting player's index, rides the shop packet in the field Campaign
+uses for `mainLevel`, and both machines call `endlessSelectCourse` on it once
+both are done shopping. Folding earlier would use a stale copy of the other
+player's purchases. `endlessLocalPlayerCharts` answers the Host / Guest /
+Alternating / 50-50 setting; the coin flip derives from `endlessSplitMixSeed` of
+the depth rather than drawing, so it cannot depend on how much either player
+shopped.
+
+`endlessPlayerDowned[]` latches a ship that lost its hull while its partner flew
+on. It gates the reactive dangers and the per-tick effects, and
+`endlessReviveDownedAtOutpost` clears it. It is registered rollback state: an
+unregistered latch would resurrect or re-kill a ship across a correction. Both
+ships down is an ordinary death, and in Relaxed the host publishes its death-menu
+choice through `network_endless_death_sync` so both machines take the same branch.
+
+Resuming an online run streams the host's sidecar record over
+`PACKET_ENDLESS_RUN`, chunked the same way a custom weapon design is, and the
+joiner adopts it with `endlessRunAdopt`. The same packet carries the death-menu
+choice under a sentinel chunk count of 0xffff.
+
+Endless save v21 appends the second player's half, the course-chooser setting,
+the alternating-turn flag, both perk rows and both RNG streams. A v20 or earlier
+record loads into slot 0 with the second slot zeroed and the perk rows rebuilt
+from the effective stacks, so a solo run resumes unchanged.
+
+Deviation from the original design note: the three kill-fire drives are tagged
+run-wide rather than personal. They are implemented as bits in
+`endlessActiveMods`, the sector's own modifier set, which both ships fly under;
+making them personal would mean splitting the whole kill-fire combo pipeline
+(`endlessTurbodriveTimer`, `endlessComboKills`, `endlessOverdriveStacks`) per
+player and attributing every kill to a shooter.
+
 ### Reliable channel
 
 The reliable UDP layer follows three rules:

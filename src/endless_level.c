@@ -290,6 +290,9 @@ void endlessResetZoneEffects(void)
 	endlessOverdriveStacks = 0;
 	endlessComboKills = 0;
 	endlessResetCustomWeaponZone();  // outpost editor and shop previews must not count as combat use
+	// Both ships start every zone in the air, whatever a late outpost packet said about the last one.
+	for (unsigned p = 0; p < COUNTOF(endlessPlayerDowned); ++p)
+		endlessPlayerDowned[p] = false;
 }
 
 // Dormant dispenser bases: a coin per zone up to ENDLESS_DISPENSER_ALWAYS_ZONE,
