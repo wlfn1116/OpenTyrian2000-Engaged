@@ -74,3 +74,4 @@ tyrian.sav
 /testing/log/
 /testing/*.sav
 /rollback_selftest.log
+/endless.sav
