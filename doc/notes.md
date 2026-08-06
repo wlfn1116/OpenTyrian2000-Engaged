@@ -670,6 +670,23 @@ Resuming an online run streams the host's sidecar record over
 joiner adopts it with `endlessRunAdopt`. The same packet carries the death-menu
 choice under a sentinel chunk count of 0xffff.
 
+A packet type only reaches `packet_in[]` if `network_check()` names it in the
+reliable-delivery switch. `PACKET_ENDLESS_RUN` was missing from that list, so
+every packet on the channel was dropped there unread and unacknowledged and the
+whole thing was write-only: the resume transfer, the "I have left the level"
+notice, and the death-prompt choice, which is why picking Return to Outpost left
+the other player waiting on a screen for an answer that could never arrive. Add
+new types to that switch and to nothing else; the sender side looks perfectly
+healthy without it, ack backlog included.
+
+The prompt is read for as long as the player takes, so its frame has to drain the
+queue and not merely acknowledge: the other machine's wait announces itself, and
+a receive queue nothing advances fills and then silently drops what follows.
+`JE_endlessDeathMenu` pumps for that reason. The announcement itself is sent once,
+with a slow re-send behind `network_is_sync()`; repeating it several times a
+second stacked unacknowledged copies until the waiter's own outbound queue
+overflowed and ended the session.
+
 Endless save v21 appends the second player's half, the course-chooser setting,
 the alternating-turn flag, both perk rows and both RNG streams. A v20 or earlier
 record loads into slot 0 with the second slot zeroed and the perk rows rebuilt
