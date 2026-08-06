@@ -1290,9 +1290,39 @@ static void qa_test_coop_combo_and_pickups(void)
 	qa_check(player[0].cash == 250 && player[1].cash == 250,
 	         "...and Shared pays the plain amount to both");
 
+	/* An elite bounty is kill cash and follows the shooter, and one nothing can claim has to pay
+	 * the same ship on both machines: paying "the local player" put it in a different wallet on
+	 * each side of the session. Run this as the joiner, where the two answers differ. */
+	const JE_boolean savedNetGame = isNetworkGame;
+	const JE_byte savedPlayerNum = thisPlayerNum;
+	isNetworkGame = true;
+	thisPlayerNum = 2;
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	endlessMode = true;
+	endlessActiveMods = 0;
+	coop_set_session_shared_credit(false);
+	coop_set_session_double_pickups(false);
+	qa_check(endlessEconomyIndex() == 1, "the joiner's own wallet is player 2's");
+
+	player[0].cash = player[1].cash = 0;
+	endlessCashResync();  // the run ledger books player 1's income; re-anchor after every reset
+	endlessAwardEliteKill(41, 2, 1);
+	qa_check(player[1].cash > 0 && player[0].cash == 0, "an elite bounty pays the ship that killed it");
+
+	const Uint32 shooterBounty = player[1].cash;
+	player[0].cash = player[1].cash = 0;
+	endlessCashResync();
+	endlessAwardEliteKill(42, 2, ENDLESS_KILLER_NONE);
+	qa_check(player[0].cash == shooterBounty && player[1].cash == 0,
+	         "...and an unclaimable one pays player 1, the same ship on both machines");
+
+	player[0].cash = player[1].cash = 0;
+	endlessCashResync();
+	thisPlayerNum = savedPlayerNum;
+	isNetworkGame = savedNetGame;
 	coop_set_session_double_pickups(false);
 	coop_set_session_shared_credit(true);
-	player[0].cash = player[1].cash = 0;
 	coopCampaignMode = savedCampaign;
 	coopEndlessMode = savedCoop;
 	endlessMode = savedEndless;
@@ -1303,6 +1333,54 @@ static void qa_test_coop_combo_and_pickups(void)
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
 	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+}
+
+/* The peer leaving a level under us. Drives the real departure rule the rollback stall uses,
+ * because the bug it covers was not in what any of these functions return: a quit was ending the
+ * level without saying it was a quit, so the machine that stayed banked the zone and deepened
+ * while the one that quit reopened the same outpost. */
+static void qa_test_peer_left_level(void)
+{
+#ifdef WITH_NETWORK
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	const JE_boolean savedEnd = reallyEndLevel, savedPlayerEnd = playerEndLevel;
+	const bool savedQuit = endlessQuitToOutpost;
+
+	endlessMode = true;
+	coopEndlessMode = true;
+	endlessCaptureSortie();  // a peer quit only reopens an outpost there is a launch snapshot for
+	qa_check(endlessSortieValid(), "the quit cases below have a sortie to fall back to");
+
+	reallyEndLevel = false;
+	playerEndLevel = false;
+	endlessQuitToOutpost = false;
+	qa_check(!nrb_peer_left_level(0), "an empty queue does not end the level");
+	qa_check(!reallyEndLevel && !playerEndLevel, "...and touches nothing");
+
+	qa_check(nrb_peer_left_level(PACKET_WAITING), "a peer at the level handshake ends the level");
+	qa_check(reallyEndLevel && !playerEndLevel && !endlessQuitToOutpost,
+	         "...as a cleared zone, which is what reaching that handshake means");
+
+	reallyEndLevel = false;
+	qa_check(nrb_peer_left_level(PACKET_GAME_QUIT), "a peer quit ends the level too");
+	qa_check(reallyEndLevel && playerEndLevel,
+	         "...but not as a clear: the zone was given up, not finished");
+	qa_check(endlessQuitToOutpost,
+	         "...and Endless reopens the same outpost, so neither player deepens alone");
+
+	// Campaign has no outpost to fall back to, so a quit there stays a quit.
+	coopEndlessMode = false;
+	endlessQuitToOutpost = false;
+	reallyEndLevel = playerEndLevel = false;
+	qa_check(nrb_peer_left_level(PACKET_GAME_QUIT) && playerEndLevel && !endlessQuitToOutpost,
+	         "outside Endless a peer quit leaves the run-reopening flag alone");
+
+	endlessQuitToOutpost = savedQuit;
+	playerEndLevel = savedPlayerEnd;
+	reallyEndLevel = savedEnd;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+#endif
 }
 
 static void qa_test_network_settings(void)
@@ -1552,6 +1630,7 @@ int qa_run_unit_suite(void)
 	qa_test_kill_fire_drives();
 	qa_test_kill_fire_wiring();
 	qa_test_coop_combo_and_pickups();
+	qa_test_peer_left_level();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

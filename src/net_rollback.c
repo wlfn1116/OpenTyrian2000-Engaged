@@ -1091,6 +1091,35 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	return NRB_STEP_RESIM;
 }
 
+/* A peer that has reached a between-levels handshake is never going to produce the frames a stall
+ * is waiting for. Every packet named here is only ever sent from outside a level, so one at the
+ * head of the reliable queue settles it: end ours as well, out of band. The packet stays where it
+ * is; the rendezvous that follows is what reads it. `head` is 0 when the queue is empty.
+ *
+ * Returns true when the level was ended. Called by the stall pump and directly by the test suite,
+ * which is the only way the quit case below gets covered. */
+bool nrb_peer_left_level(Uint16 head)
+{
+	if (head != PACKET_WAITING && head != PACKET_DETAILS && head != PACKET_GAME_QUIT
+	    && head != PACKET_SHOP_SYNC && head != PACKET_ENDLESS_RUN)
+		return false;
+
+	reallyEndLevel = true;
+	end_agreed = true;
+
+	/* A quit is not a clear. Both other paths that read this packet say so; while this one
+	 * stayed silent the peer banked the zone and deepened while the player who quit reopened
+	 * the same outpost, and the pair spent the rest of the run one zone apart, charting from
+	 * slates that no longer matched. */
+	if (head == PACKET_GAME_QUIT)
+	{
+		playerEndLevel = true;
+		if (coopEndlessMode)
+			endlessCoopPeerQuitLevel();
+	}
+	return true;
+}
+
 /* Pump the world while stalled: OS events, inbound packets, periodic input
  * resend (the peer may be waiting on a lost packet), bounded by timeout.
  * Returns true when an inbound desync recovery reset the timeline underneath
@@ -1156,21 +1185,8 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		crashlog_note_net("ROLLBACK STALL", detail);
 	}
 
-	/* A peer that has reached a between-levels handshake is never going to produce the frames
-	 * this wait needs.  Every packet below is only ever sent from outside a level, so one at the
-	 * head of the reliable queue settles it: end ours as well, out of band.  Leave the packet
-	 * where it is; the rendezvous that follows is what reads it. */
-	if (packet_in[0] != NULL)
-	{
-		const Uint16 head = SDLNet_Read16(&packet_in[0]->data[0]);
-		if (head == PACKET_WAITING || head == PACKET_DETAILS || head == PACKET_GAME_QUIT
-		    || head == PACKET_SHOP_SYNC || head == PACKET_ENDLESS_RUN)
-		{
-			reallyEndLevel = true;
-			end_agreed = true;
-			return true;
-		}
-	}
+	if (nrb_peer_left_level(packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0))
+		return true;
 
 	// A LIVE peer that is merely slow (menus, loading, level tally) must never
 	// trip the disconnect: keep-alives hold the link open indefinitely, with a

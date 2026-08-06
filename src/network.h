@@ -233,6 +233,9 @@ void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
 bool network_shop_pump(void);
 bool network_shop_peer_done(void);
+// True while the reliable queue holds a packet the level-start handshake is the one to read;
+// an outpost wait must leave it alone rather than advance the queue past it.
+bool network_shop_departure_pending(void);
 // Endless: the sector index the peer committed to, or -1 while it has committed to none.
 int  network_shop_peer_course(void);
 // Course slates never grow past this; the receiver rejects anything outside it.
@@ -345,6 +348,7 @@ static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }
 static inline bool network_shop_pump(void) { return false; }
 static inline bool network_shop_peer_done(void) { return true; }
+static inline bool network_shop_departure_pending(void) { return false; }
 static inline int network_shop_peer_course(void) { return -1; }
 static inline void network_shop_set_locked(bool locked) { (void)locked; }
 static inline bool network_shop_peer_locked(void) { return true; }

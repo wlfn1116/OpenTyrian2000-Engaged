@@ -1103,16 +1103,31 @@ static void select_level(JE_word section, JE_byte file_num);
  * path already carries, so the waiter only has to know it is a course index there. */
 int endlessCoopCourse = -1;
 
-/* The non-charting player's side of the pick. Both machines are already committed and pumping by
- * the time this runs, so the index only has to survive one keep-alive round trip. */
-static int shopEndlessAwaitCourse(void)
+/* The non-charting player's side of the pick: hold at the outpost until the charting player
+ * publishes a sector. Returns the index, or -1 when the player backed out.
+ *
+ * `escapable` is the normal case, before this machine has committed to leaving: Esc is still a way
+ * back to the outpost, and the wait has no deadline because the other player may shop for as long
+ * as they like. Committing first and waiting afterwards is what made a session that agreed on
+ * nobody charting unrecoverable -- both players sat on a wait screen with no key that did
+ * anything. The un-escapable form is the backstop for arriving at the rendezvous with no index,
+ * which is a divergence already; it takes the first route rather than waiting on it. */
+static int shopEndlessAwaitCourse(bool escapable)
 {
-	shopWaitNotice("Partner is charting a course.", "They pick the next sector.", NULL);
+	shopWaitNotice("Partner is charting a course.", "They pick the next sector.",
+	               escapable ? "Press Esc to go back." : NULL);
 
 	const Uint32 started = SDL_GetTicks();
-	while (SDL_GetTicks() - started < 30000)
+	while (escapable || SDL_GetTicks() - started < 8000)
 	{
 		shopWaitFrame();
+
+		if (escapable && newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			newkey = false;
+			JE_playSampleNum(S_SPRING);
+			return -1;
+		}
 		newkey = false;
 
 		const int course = network_shop_peer_course();
@@ -1121,6 +1136,15 @@ static int shopEndlessAwaitCourse(void)
 
 		if (network_shop_pump() || network_debug_sync_pump(false))
 			continue;
+
+		// Committed, and the peer is already at the departure handshake: no sector is coming, and
+		// the network_update below would swallow the very packet that handshake waits on.
+		if (!escapable && network_shop_departure_pending())
+			break;
+
+		if (escapable && !network_peer_alive())
+			return -1;
+
 		network_update();
 		network_check();
 		SDL_Delay(16);
@@ -1185,12 +1209,16 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 
 		/* Endless commits its sector here rather than at the pick, so both players' purchases are
 		 * in before the modifiers are folded. Both machines run endlessSelectCourse on the same
-		 * index and reach the same sector; nothing about it travels except the index itself. */
-		if (endlessCoop())
+		 * index and reach the same sector; nothing about it travels except the index itself.
+		 *
+		 * A locked outpost has no pick to make: it relaunches the committed level, already armed
+		 * identically on both machines, and a loaded game brought its route with it. Charting
+		 * either of those would throw that route away for a course nobody chose. */
+		if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
 		{
 			int course = endlessCoopCourse;
 			if (course < 0)
-				course = shopEndlessAwaitCourse();
+				course = shopEndlessAwaitCourse(false);
 			endlessAdvanceCourseTurn();
 			select_level(endlessSelectCourse(course), 0);
 			endlessCoopCourse = -1;
@@ -8765,11 +8793,19 @@ void JE_menuFunction(JE_byte select)
 				endlessArmLockedRelaunch();
 				break;
 			}
-			// Online Endless: the other player does not chart this one, so their Play Next Level
-			// hands straight over to the rendezvous, which applies whatever course arrives.
+			// Online Endless: the other player charts this one, so Play Next Level waits here for
+			// the sector they pick and only then commits to leaving. Waiting first keeps Esc
+			// working the whole time and keeps this machine out of a rendezvous it would have no
+			// way out of if the pair somehow agreed that neither of them was charting.
 			if (endlessCoop() && !endlessLocalPlayerCharts())
 			{
-				endlessCoopCourse = -1;
+				const int course = shopEndlessAwaitCourse(true);
+				if (course < 0)
+				{
+					newPal = 1;  // the notice shaded the frame; the loop repaints under a fresh palette
+					break;
+				}
+				endlessCoopCourse = course;
 				jumpSection = true;
 				break;
 			}

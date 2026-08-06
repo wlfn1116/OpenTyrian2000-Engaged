@@ -3039,7 +3039,10 @@ JE_boolean JE_inGameSetup(void)
 				if (isNetworkGame)
 				{
 					/*Tell other computer to exit*/
-					haltGame = true;
+					// Endless quits to the outpost rather than out of the session, and the level
+					// warning screen halts the game outright on a set haltGame; playerEndLevel is
+					// what sends the peer the quit either way.
+					haltGame = !endlessMode;
 					playerEndLevel = true;
 				}
 

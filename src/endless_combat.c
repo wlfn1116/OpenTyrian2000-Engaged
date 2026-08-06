@@ -536,8 +536,10 @@ void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 	const bool champion = (eliteState == 3);
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
 	// A bounty is kill cash: it follows the same Shared / Individual rule as every other kill.
-	player_award_kill_cash(&player[(killer == ENDLESS_KILLER_NONE) ? (int)endlessEconomyIndex() : killer],
-	                       bounty);
+	// A kill nothing can claim pays player 1, the same ship on both machines; endlessEconomyIndex
+	// is whoever is sitting at this keyboard, so paying that would have paid a different wallet
+	// on each side of the session.
+	player_award_kill_cash(&player[(killer == ENDLESS_KILLER_NONE) ? 0 : killer], bounty);
 
 	// Keep the cash clear of the HUD.
 	char label[48], cash[24];

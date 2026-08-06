@@ -2346,6 +2346,18 @@ bool network_shop_pump(void)
 	return true;
 }
 
+/* True when the packet at the head of the reliable queue is one the departure handshake that
+ * follows an outpost wait is the one meant to read. A wait loop that calls network_update on it
+ * throws it away, and that handshake then waits forever for something already gone. */
+bool network_shop_departure_pending(void)
+{
+	if (packet_in[0] == NULL)
+		return false;
+
+	const Uint16 head = SDLNet_Read16(&packet_in[0]->data[0]);
+	return head == PACKET_WAITING || head == PACKET_DETAILS || head == PACKET_GAME_QUIT;
+}
+
 bool network_shop_peer_done(void)
 {
 	return network_shop_peer_ready;
@@ -3375,6 +3387,132 @@ int network_test_peer(int rounds)
 		return 1;
 	}
 	network_shop_end();
+
+	/* Endless outpost: one machine charts the sector and the other has to come out of the same
+	 * rendezvous already holding that index, because nothing publishes it afterwards. Ordered the
+	 * way shopLeaveOutpost orders it, including the waiter committing first and the charting
+	 * player sending uncommitted packets (course -1) before it picks. */
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	network_shop_begin();
+
+	const bool charting = (thisPlayerNum == networkHostPlayerNum);
+	const int test_course = 3;
+	endlessCoopCourse = -1;
+	jumpSection = true;
+
+	if (!charting)
+		network_shop_send_state(true);
+
+	if (charting)
+	{
+		/* Still shopping: these carry no course, and the waiter must not be left holding one. */
+		for (int i = 0; i < 3; ++i)
+		{
+			network_shop_send_transaction();
+			const Uint32 tick = SDL_GetTicks();
+			while (SDL_GetTicks() - tick < 60)
+			{
+				watchdog_heartbeat();
+				network_check();
+				while (network_shop_pump())
+					;
+				SDL_Delay(1);
+			}
+		}
+		endlessCoopCourse = test_course;
+		network_shop_send_state(true);
+	}
+
+	const Uint32 endless_done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - endless_done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: endless outpost rendezvous timed out\n");
+		return 1;
+	}
+
+	network_shop_set_locked(true);
+	const Uint32 endless_lock_start = SDL_GetTicks();
+	while (!network_shop_peer_locked() && SDL_GetTicks() - endless_lock_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_locked())
+	{
+		fprintf(stderr, "network test: endless outpost lock timed out\n");
+		return 1;
+	}
+
+	if (!charting && network_shop_peer_course() != test_course)
+	{
+		fprintf(stderr, "network test: endless course index did not survive the rendezvous (%d)\n",
+		        network_shop_peer_course());
+		return 1;
+	}
+
+	/* The waiter leaves later than the charting player: it still has a sector to look up and
+	 * mutators to fold. Whatever it does with the queue in that window, the level handshake below
+	 * has to still find the packet the peer sent, so linger here the way that lookup does. */
+	if (!charting)
+	{
+		const Uint32 linger_start = SDL_GetTicks();
+		while (SDL_GetTicks() - linger_start < 700)
+		{
+			watchdog_heartbeat();
+			if (network_shop_pump())
+				continue;
+			if (network_shop_departure_pending())
+				break;
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+	}
+
+	network_shop_end();
+	endlessCoopCourse = -1;
+	jumpSection = false;
+	coopEndlessMode = false;
+	coopCampaignMode = true;
+
+	/* The level-start handshake exactly as shopLeaveOutpost runs it. */
+	network_prepare(PACKET_WAITING);
+	network_send(4);
+	const Uint32 depart_start = SDL_GetTicks();
+	bool departed = false;
+	while (!departed && SDL_GetTicks() - depart_start < 12000)
+	{
+		watchdog_heartbeat();
+		if (network_shop_pump())
+			continue;
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			network_update();
+			departed = true;
+			break;
+		}
+		network_update();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!departed)
+	{
+		fprintf(stderr, "network test: endless outpost departure handshake timed out\n");
+		return 1;
+	}
+	network_state_reset();
 
 	const Uint32 sync_start = SDL_GetTicks();
 	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
