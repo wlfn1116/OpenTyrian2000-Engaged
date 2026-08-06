@@ -658,6 +658,14 @@ Campaign has its own board in `coopCampaignScores` (config section
 without a name-entry dialog: the lobby already knows both names, and a modal at
 that point would leave the other machine on an unpumped screen.
 
+`JE_itemScreen` performs the level-start handshake (both machines publish
+`PACKET_WAITING`, then `network_state_reset` and a resync) on the way out of the
+outpost. A path that reaches a level WITHOUT passing through it owes the same
+handshake, or one machine starts simulating while the other is still loading and
+the peer's stall gate is the first thing to notice: Restart Zone off the Endless
+death menu and the ENGAGE debug-browser return both call
+`network_level_rendezvous` for that reason.
+
 Two rules keep a session from wedging when one machine leaves a level first.
 `nrb_stall_pump` treats a `PACKET_WAITING`, `PACKET_DETAILS`, `PACKET_GAME_QUIT`,
 `PACKET_SHOP_SYNC` or `PACKET_ENDLESS_RUN` at the head of the reliable queue as

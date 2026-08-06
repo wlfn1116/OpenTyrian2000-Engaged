@@ -2221,6 +2221,58 @@ bool network_endless_run_receive(Uint32 timeout_ms)
 	return done;
 }
 
+/* The handshake every level start needs: both machines announce they are ready, then the state
+ * queues are reset and resynchronized. JE_itemScreen does this itself on the way out of the
+ * outpost; a path that reaches a level without passing through it (Restart Zone off the Endless
+ * death menu) has to call this instead, or one machine starts simulating while the other is still
+ * loading and the peer's stall gate is the first thing to notice. */
+void network_level_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_WAITING);
+	network_send(4);
+
+	const Uint32 started = SDL_GetTicks();
+	while (SDL_GetTicks() - started < 30000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			network_check();
+			network_update();   // consume it, or the next wait reads this one as its release
+			break;
+		}
+
+		network_update();
+		network_check();
+		if (!network_peer_alive())
+			break;
+		SDL_Delay(16);
+	}
+
+	network_state_reset();
+	while (!network_is_sync() && network_peer_alive())
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		network_check();
+		SDL_Delay(16);
+	}
+}
+
 bool network_shop_pump(void)
 {
 	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)

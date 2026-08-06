@@ -668,6 +668,10 @@ void endlessDropCubeGem(int slot)
 }
 
 // Kill-fire HUD values.
+/* Everything from here to the ship tint reads the CURRENT ship's mask and its own window: a
+ * drive belongs to whoever bought it. A charted one sits in endlessActiveMods, which
+ * endlessApplyPurchasedMods folds into both players' masks, so a sector that deals a drive deals
+ * it to the pair. Sector-wide effects below keep reading endlessActiveMods directly. */
 int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer[endlessFxPlayer()]; }
 int endlessKillBuffTicksMax(void)  { return endlessBuffWindowTicks(); }
 
@@ -777,7 +781,7 @@ static const float endlessGravityHeadings[16][2] = {
 
 void endlessRollGravityDir(void)
 {
-	if (endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_GRAVITY_OMNI))
+	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
 	{
 		const unsigned h = endlessRand() % COUNTOF(endlessGravityHeadings);
 		endlessGravityDirX = endlessGravityHeadings[h][0];
@@ -793,7 +797,7 @@ void endlessRollGravityDir(void)
 float endlessGravityDrift(void)
 {
 	// A bare OMNI bit can be set by the debug editor.
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
+	if (!endlessFxActive() || !(endlessActiveMods & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
 		return 0.0f;
 	float g = (ENDLESS_GRAVITY_BASE + ENDLESS_GRAVITY_PER_ZONE * (float)endlessRunDepth)
 	        * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -830,7 +834,7 @@ int endlessGravityPullY(void)
 #define ENDLESS_SLUGGISH_MAX      0.55f
 float endlessMoveScale(void)
 {
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SLUGGISH))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
 		return 1.0f;
 	float slow = (ENDLESS_SLUGGISH_BASE + ENDLESS_SLUGGISH_PER_ZONE * (float)endlessRunDepth)
 	           * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -841,14 +845,14 @@ float endlessMoveScale(void)
 
 bool endlessShieldRegenOff(void)
 {
-	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
+	return endlessFxActive() && (endlessActiveMods & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
 }
 
 // Keep Dead Generator non-zero so every main gun eventually fires.
 #define ENDLESS_DEADGEN_POWER_ADD 2u
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 {
-	if (endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DEADGEN))
+	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return ENDLESS_DEADGEN_POWER_ADD;
 	// Static uses the same recharge seam as Dead Generator.
 	if (endlessStaticLockoutActive())
@@ -859,14 +863,14 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 // Reactive boons.
 bool endlessShieldRegenFree(void)
 {
-	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_AUXREACTOR);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
 }
 
 // Apply Low Profile at damage tests so pickup reach remains unchanged.
 #define ENDLESS_LOWPROFILE_PCT 75
 int endlessHitboxScale(int area)
 {
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_LOWPROFILE))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_LOWPROFILE))
 		return area;
 	int a = area * ENDLESS_LOWPROFILE_PCT / 100;
 	return (a < 1) ? 1 : a;
@@ -904,7 +908,7 @@ void endlessReviveGraceTick(void)
 // A true result spends the cooldown and must be honored by the caller.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_AEGIS))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
 		return false;
 	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
 		return false;
@@ -918,7 +922,7 @@ bool endlessAegisGateConsume(int shieldBefore, int spill)
 
 bool endlessShockwaveActive(void)
 {
-	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SHOCKWAVE);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SHOCKWAVE);
 }
 
 int endlessShockwaveRadius(int linknum, int eliteState)
@@ -964,7 +968,7 @@ uint endlessDangerTargetPlayer(int fromX, int fromY)
 // Modifier decisions used by engine-owned object pools.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_MARTYRDOM))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
 		return 0;
 	if (linknum != 0 && linknum == endlessMartyrLastLink)
 		return 0;
@@ -978,7 +982,7 @@ JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 
 bool endlessSeekerActive(void)
 {
-	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SEEKER);
+	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SEEKER);
 }
 
 // Static combines a raw power drain with a recharge lockout.
@@ -1002,7 +1006,7 @@ void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
 
 unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 {
-	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_STATIC) || (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DEADGEN))
+	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return 0;
 	// A new hit may extend but never shorten the active lockout.
 	int lock = (int)actualDamage * ENDLESS_STATIC_LOCKOUT_PER_DMG;
@@ -1058,9 +1062,9 @@ int endlessScrollBoostPercent(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	if (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP))
+	if (endlessActiveMods & (ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP))
 		return 220;
-	if (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM))
+	if (endlessActiveMods & (ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM))
 		return 70;
 	return 0;
 }

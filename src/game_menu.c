@@ -4470,10 +4470,12 @@ void JE_drawMainMenuHelpText(void)
 		JE_textShade(VGAScreen, seed_x, 187, seedStr, 14, 3, DARKEN);
 	}
 
-	// Online play's round trip takes the same right edge, and wins it: the endless seed above
-	// stands down online for exactly that reason.
+	// Online play's round trip takes the same right edge, and anything already standing there
+	// outranks it: a price is what the player is deciding on, and the endless seed stands down
+	// online for the same reason. The figure is dropped rather than shunted left, where it would
+	// butt against the sentence and read as part of it.
 	ping_shown = false;
-	if (isNetworkGame)
+	if (isNetworkGame && costStr[0] == '\0' && ownedStr[0] == '\0')
 	{
 		// No band means a description long enough to reach the right edge on its own, which
 		// leaves nowhere to put or restore the figure, so it must not

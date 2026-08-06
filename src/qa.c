@@ -920,6 +920,26 @@ static void qa_test_endless_coop(void)
 	         && (endlessActiveMods & ENDLESS_MOD_FAVOR),
 	         "the sector's own modifiers and the shop-side buys stay shared");
 
+	/* A drive the SECTOR deals is not a purchase: it reaches both ships. One that a player then
+	 * buys for themselves replaces it on their own mask alone. */
+	endlessActiveMods = ENDLESS_MOD_TURBODRIVE;
+	endlessPurchasedMods[0] = 0;
+	endlessPurchasedMods[1] = 0;
+	endlessApplyPurchasedMods();
+	qa_check((endlessPlayerMods[0] & ENDLESS_MOD_TURBODRIVE)
+	         && (endlessPlayerMods[1] & ENDLESS_MOD_TURBODRIVE),
+	         "a charted drive reaches both ships");
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
+	endlessApplyPurchasedMods();
+	qa_check((endlessPlayerMods[0] & ENDLESS_MOD_TURBODRIVE)
+	         && !(endlessPlayerMods[0] & ENDLESS_MOD_OVERBLAST),
+	         "...and a partner who bought nothing keeps flying it");
+	qa_check((endlessPlayerMods[1] & ENDLESS_MOD_OVERBLAST)
+	         && !(endlessPlayerMods[1] & ENDLESS_MOD_TURBODRIVE),
+	         "...while the buyer's own drive replaces it for them alone");
+	endlessActiveMods = 0;
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+
 	endlessBuffCharge[0] = 4;
 	endlessBuffCharge[1] = 15;
 	endlessSetFxPlayer(1);
