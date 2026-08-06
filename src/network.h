@@ -192,6 +192,15 @@ bool network_is_sync(void);
 // Unacknowledged outbound packets, used to throttle bulk resync transfers.
 int network_ack_backlog(void);
 
+// Reliable packets still queued for consumption, and the type at the head (0 when empty).
+// Diagnostic: they say whether a stalled wait is starved or wedged behind a head nobody claims.
+int network_inbound_depth(void);
+Uint16 network_inbound_head(void);
+
+// Reliable packets acknowledged into a full receive window and therefore lost for good. Nonzero
+// means something stopped draining the queue; the transport cannot recover these.
+Uint32 network_acked_dropped(void);
+
 void network_state_prepare(void);
 int network_state_send(void);
 bool network_state_update(void);
@@ -208,6 +217,10 @@ void network_shutdown(void);
 
 /* Automated two-process reliable-channel exercise used by the fault proxy. */
 int network_test_peer(int rounds, int scenario);
+
+// True once a test peer has outlived its wall-clock ceiling. Every wire-scenario wait checks it,
+// so a wedged run reports where it stopped instead of being killed by the harness.
+bool network_test_expired(void);
 
 // Pack, adopt, and restore host-authoritative simulation settings. Presentation settings remain
 // local. The return value is the encoded byte count.
@@ -269,7 +282,17 @@ void network_shop_sync_for_save(void);
 void network_debug_sync_mark(void);
 bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
+/* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted out
+ * of the middle of it. A block queued behind outpost traffic is therefore only reachable to a
+ * caller that also runs network_shop_pump; a wait that pumps debug state alone never gets to it. */
 bool network_debug_sync_pump(bool in_level);
+/* The block itself, exposed the way network_settings_pack is: a round trip through these is what
+ * catches a field the debug menu edits and the wire does not carry, which is otherwise only
+ * visible as the two machines quietly simulating different games. adopt applies every clamp. */
+int  network_debug_state_size(void);
+void network_debug_state_pack(Uint8 *buf);
+void network_debug_state_adopt(const Uint8 *buf, bool in_level);
+
 // Capacity of the wire block; varz.c asserts that its expert-tunable table fits.
 #define NETWORK_DEBUG_EXPERT_SLOTS 8
 

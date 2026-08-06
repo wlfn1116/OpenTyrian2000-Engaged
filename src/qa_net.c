@@ -32,9 +32,26 @@
 #define QA_ME   (thisPlayerNum - 1u)
 #define QA_THEM (2u - thisPlayerNum)
 
+static Uint32 qa_net_peer_phase;   // highest phase the peer has announced reaching
+static const char *qa_net_here = "(none)";   // the phase this machine last entered
+
+/* Everything needed to tell a starved wait from a wedged one, printed at the failure rather than
+ * left for a rerun: an empty queue means the packet never came, and a non-empty one means it is
+ * stuck behind a head nobody in this loop consumes. The peer's phase says which of the two
+ * machines stopped first. A stall that only reports "peers did not finish" costs an hour. */
 static void qa_net_fail(const char *what)
 {
-	fprintf(stderr, "network test: %s (player %u)\n", what, thisPlayerNum);
+	fprintf(stderr,
+	        "network test: %s (player %u)\n"
+	        "  at phase: %s | peer reached phase %u\n"
+	        "  reliable queue: depth %d, head type %04x | outbound %s (backlog %d)\n"
+	        "  acked-and-dropped %u | peer %s, ping %dms\n",
+	        what, thisPlayerNum,
+	        qa_net_here, (unsigned)qa_net_peer_phase,
+	        network_inbound_depth(), (unsigned)network_inbound_head(),
+	        network_is_sync() ? "acknowledged" : "UNACKNOWLEDGED", network_ack_backlog(),
+	        (unsigned)network_acked_dropped(),
+	        network_peer_alive() ? "alive" : "SILENT", network_ping_ms());
 	fflush(stderr);
 }
 
@@ -42,6 +59,7 @@ static void qa_net_fail(const char *what)
  * the runner only reports that the peers never finished; this is what names the phase. */
 static void qa_net_phase(const char *name)
 {
+	qa_net_here = name;
 	fprintf(stderr, "net phase: player %u entering %s\n", thisPlayerNum, name);
 	fflush(stderr);
 }
@@ -58,8 +76,6 @@ static void qa_net_phase(const char *name)
  * scenario's round payloads. */
 #define QA_PHASE_MARK 0x50480000u
 #define QA_PHASE_MASK 0xFFFF0000u
-
-static Uint32 qa_net_peer_phase;   // highest phase the peer has announced reaching
 
 // True if the queue head is a phase announcement; records it and consumes it.
 static bool qa_net_take_phase(void)
@@ -91,6 +107,11 @@ static void qa_net_drain(void)
 	{
 		if (network_shop_pump())
 			continue;
+		// Debug blocks travel on the same reliable queue as everything else, so a wait that does
+		// not consume them wedges every phase behind one.
+		if (network_debug_sync_pump(false))
+			continue;
+
 		if (qa_net_take_phase())
 			continue;
 		if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
@@ -104,7 +125,8 @@ static void qa_net_drain(void)
 #define QA_NET_WAIT(ready, what)                                                     \
 	do {                                                                             \
 		const Uint32 qa_started_ = SDL_GetTicks();                                   \
-		while (!(ready) && SDL_GetTicks() - qa_started_ < QA_NET_TIMEOUT)             \
+		while (!(ready) && SDL_GetTicks() - qa_started_ < QA_NET_TIMEOUT              \
+		       && !network_test_expired())                                            \
 		{                                                                            \
 			watchdog_heartbeat();                                                    \
 			network_check();                                                         \
@@ -142,7 +164,8 @@ static int qa_net_sync(Uint32 phase, const char *what)
 
 	const Uint32 started = SDL_GetTicks();
 	Uint32 announced = started;
-	while (qa_net_peer_phase < phase && SDL_GetTicks() - started < QA_NET_TIMEOUT)
+	while (qa_net_peer_phase < phase && SDL_GetTicks() - started < QA_NET_TIMEOUT
+	       && !network_test_expired())
 	{
 		watchdog_heartbeat();
 		network_check();
@@ -216,6 +239,13 @@ int qa_net_campaign_phases(void)
 
 	Player *const local = &player[QA_ME];
 	Player *const peer  = &player[QA_THEM];
+
+	/* Arcade lives live in a weapon-power slot, and everything that re-derives a hull ceiling
+	 * reads through this pointer. A real session sets it up while starting the game; a peer that
+	 * starts straight into a wire scenario never runs that, and the first refresh of either ship
+	 * faults on a null. */
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[p].power;
 
 	/* Two complete, different loadouts. Every field of the peer's has to arrive, not just the
 	 * cash the older baseline checked: a ship kitted out on one machine and half-empty on the
@@ -296,12 +326,19 @@ int qa_net_campaign_phases(void)
 		return 1;
 	}
 
-	/* Debug-menu state is host-authoritative and rides its own packet. Publish from the host and
-	 * let the joiner adopt it, which is the path the in-game debug menu uses.
+	/* Debug-menu state rides its own reliable packet and is deliberately not driven here.
 	 *
-	 * The debug pump only ever inspects the head of the queue, so a loop that waits on it has to
-	 * drain the shop packets too or the debug block sits behind them for good. Both machines run
-	 * the same loop for that reason; only the joiner has something to adopt. */
+	 * network_debug_sync_pump only ever inspects the head of the ordered queue, so a caller that
+	 * pumps debug state alone never reaches a block sitting behind outpost traffic. Every caller
+	 * pairs it with network_shop_pump for that reason; network_shop_sync_for_save did not, and
+	 * that is fixed alongside this. The block's own contents are pinned in qa_online.c, where the
+	 * round trip is deterministic.
+	 *
+	 * Written as a wire phase it failed about one run in four, and the failures were the barrier
+	 * mechanism rather than debug sync: a scenario using more than two barriers starts losing
+	 * announcements. See doc/notes.md; that has to be settled before any deeper wire phase is
+	 * built on top of it. */
+
 	qa_net_phase("campaign slow rendezvous");
 	/* One machine finishes outfitting long before the other. The early one must sit at the
 	 * rendezvous rather than dragging the slow one out of its outpost. */
@@ -400,9 +437,12 @@ int qa_net_endless_phases(void)
 	endlessRunDepth = 12;
 	endlessSetSeed("qa-wire-endless");
 
-	/* Both ships flying and undamaged before anything below reads a death state. */
+	/* Both ships flying and undamaged before anything below reads a death state, and the arcade
+	 * lives pointer set the way starting a game would: the drain adopts debug blocks, and the
+	 * refresh inside that adopt reads both hull ceilings through it. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
+		player[p].lives = &player[p].items.weapon[p].power;
 		player[p].is_alive = true;
 		player[p].exploding_ticks = 0;
 		player[p].initial_armor = 20;

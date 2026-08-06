@@ -732,6 +732,34 @@ int network_ack_backlog(void)
 	return (Uint16)(last_out_sync - queue_out_sync);
 }
 
+// Reliable packets waiting to be consumed, head included.  Diagnostic: a wait that stalls with a
+// non-empty queue is stalled on a head nobody claims, which names the bug on sight.
+int network_inbound_depth(void)
+{
+	int depth = 0;
+	for (int i = 0; i < NET_PACKET_QUEUE; ++i)
+	{
+		if (packet_in[i] != NULL)
+			++depth;
+	}
+	return depth;
+}
+
+// Type of the packet at the head of the reliable queue, or 0 when it is empty.
+Uint16 network_inbound_head(void)
+{
+	return packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0;
+}
+
+/* Reliable packets that arrived past the end of the receive window. They were acknowledged on the
+ * way in, so the sender considers them delivered and will never send them again: each one is a
+ * reliable packet permanently lost. Nonzero means the queue was allowed to fill, which is a bug
+ * in whoever was supposed to be draining it, not a transport problem. */
+Uint32 network_acked_dropped(void)
+{
+	return net_diag.acked_dropped;
+}
+
 // prepare new state for sending
 void network_state_prepare(void)
 {
@@ -2450,6 +2478,11 @@ void network_shop_end(void)
 	network_shop_active = false;
 }
 
+/* Both machines write the same two loadouts, so the save waits on the peer confirming what it
+ * holds. Bounded: the save is worth having with one stale ship in it, and is not worth hanging
+ * the game over. */
+#define NET_SHOP_SAVE_WAIT 6000
+
 void network_shop_sync_for_save(void)
 {
 	if (!isNetworkGame || !coop_mode_active() || !network_shop_active || !network_peer_alive())
@@ -2457,12 +2490,36 @@ void network_shop_sync_for_save(void)
 
 	network_shop_save_ready = false;
 	network_shop_save_request = network_shop_send_packet(SHOP_SYNC_SAVE_REQUEST, 0);
+
+	const Uint32 started = SDL_GetTicks();
 	while (!network_shop_save_ready)
 	{
 		watchdog_heartbeat();
 		service_SDL_events(false);
+
 		if (network_shop_pump())
 			continue;
+
+		// The acknowledgement rides the shop channel and a debug block can be queued ahead of it.
+		// Without this the block is dropped rather than adopted and the peer's debug edit is lost
+		// on this machine alone.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		/* The peer has left. No acknowledgement is coming, and consuming the notice to reach the
+		 * queue behind it destroys it: it was acknowledged on arrival, so the peer counts it
+		 * delivered and never repeats it, and the quit handler then never sees it. */
+		if (network_inbound_head() == PACKET_GAME_QUIT)
+			break;
+
+		// A peer that goes quiet between the request and the reply must not hold the game here.
+		// The save is worth having with one stale ship in it; it is not worth hanging over.
+		if (!network_peer_alive() || SDL_GetTicks() - started > NET_SHOP_SAVE_WAIT)
+			break;
+
+		/* Everything else at the head is transient rendezvous traffic, and consuming it is what
+		 * keeps the acknowledgement behind it reachable -- this wait is a real synchronization
+		 * point and the two machines serialize the same transaction boundary through it. */
 		network_update();
 		network_check();
 		SDL_Delay(16);
@@ -2521,9 +2578,14 @@ COMPILE_TIME_ASSERT(nds_block_fits_a_packet, NDS_SIZE <= NET_PACKET_SIZE);
 static Uint32 debug_sync_gen = 0;
 static Uint8 debug_sync_last[NDS_SIZE];   // what we last published or adopted, for the change test
 
+int network_debug_state_size(void)
+{
+	return NDS_SIZE;
+}
+
 /* Everything from NDS_DIFFICULTY on; the packet header, generation and sender are stamped by
  * the send path, and left zero here so two packings of the same state compare equal. */
-static void network_debug_state_pack(Uint8 *buf)
+void network_debug_state_pack(Uint8 *buf)
 {
 	memset(buf, 0, NDS_SIZE);
 
@@ -2559,7 +2621,7 @@ static void network_debug_state_pack(Uint8 *buf)
 		SDLNet_Write16((Uint16)*expertSettings[i].value, &buf[NDS_EXPERT + i * 2]);
 }
 
-static void network_debug_state_adopt(const Uint8 *buf, bool in_level)
+void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 {
 	const Uint16 flags = SDLNet_Read16(&buf[NDS_FLAGS]);
 
@@ -3269,6 +3331,21 @@ int network_init(void)
 	return 0;
 }
 
+/* Hard ceiling on a whole test-peer run.
+ *
+ * Comfortably inside the harness's own patience (testing/network_fault_test.py gives the pair 90
+ * seconds), so a wedged peer reaches its own diagnostic and exits non-zero rather than being
+ * killed with the reason still in its buffer. Every wait in qa_net.c honours it too, so the run
+ * ends where it stopped making progress instead of at whichever timeout happens to be next. */
+#define NET_TEST_CEILING 70000
+
+static Uint32 net_test_started;
+
+bool network_test_expired(void)
+{
+	return SDL_GetTicks() - net_test_started > NET_TEST_CEILING;
+}
+
 /* Shared close for every scenario: settle the reliable channel, then hold the socket open long
  * enough that a dropped ACK for the last payload can still be re-earned before we exit. */
 static int net_test_finish(int rounds)
@@ -3301,6 +3378,8 @@ static int net_test_finish(int rounds)
 
 int network_test_peer(int rounds, int scenario)
 {
+	net_test_started = SDL_GetTicks();
+
 	if (rounds < 1 || rounds > 1000)
 		return 2;
 	if (network_connect() != 0)
@@ -3317,6 +3396,15 @@ int network_test_peer(int rounds, int scenario)
 
 	for (int round = 0; round < rounds; ++round)
 	{
+		if (network_test_expired())
+		{
+			fprintf(stderr, "network test: wall-clock ceiling reached in round %d of %d "
+			                "(queue depth %d, head type %04x, outbound %s)\n",
+			        round, rounds, network_inbound_depth(), (unsigned)network_inbound_head(),
+			        network_is_sync() ? "acknowledged" : "UNACKNOWLEDGED");
+			return 1;
+		}
+
 		const Uint32 payload = 0x51410000u ^ ((Uint32)thisPlayerNum << 12) ^ (Uint32)round;
 		network_prepare(PACKET_WAITING);
 		SDLNet_Write32(payload, &packet_out_temp->data[4]);

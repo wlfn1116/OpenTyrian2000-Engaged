@@ -11,6 +11,7 @@
 #include "endless.h"
 #include "episodes.h"
 #include "fonthand.h"
+#include "lvlmast.h"
 #include "mainint.h"
 #include "network.h"
 #include "player.h"
@@ -626,6 +627,121 @@ static void qa_online_pause_matrix(void)
 	qa_modes_clear();
 }
 
+/* ---- the debug-menu wire block ------------------------------------------------------- */
+
+#ifdef WITH_NETWORK
+/* Everything the debug menu can change has to survive a round trip through the block, because
+ * both machines simulate both ships: a cheat or a tuning value that takes on one of them alone is
+ * two different games. The failure this is built to catch is a field added to the menu and not to
+ * the block -- it stays at whatever the receiving machine had, which no amount of play-testing on
+ * one machine will show.
+ *
+ * Deterministic, unlike the same exchange over a wire: pack, mutate everything, adopt, and the
+ * mutations have to be gone. The re-pack afterwards is the part with teeth, since it compares the
+ * whole block rather than the fields this test happened to think of. */
+static void qa_debug_block_roundtrip(void)
+{
+	const int size = network_debug_state_size();
+	Uint8 published[320], readback[320];
+
+	if (size <= 0 || (size_t)size > sizeof(published))
+	{
+		qa_check(false, "the debug wire block fits the packet buffer");
+		return;
+	}
+
+	const JE_boolean savedNet = isNetworkGame;
+	Player savedShips[2];
+	memcpy(savedShips, player, sizeof(savedShips));
+	isNetworkGame = true;
+
+	// JE_getShipInfo runs inside the adopt and reads both hull ceilings through this.
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[p].power;
+
+	difficultyLevel        = DIFFICULTY_HARD;
+	cheatInfiniteShields   = true;
+	cheatInfiniteArmor     = false;
+	cheatInfiniteGenerator = true;
+	cheatNoEnemyFire       = true;
+	cheatInstantCharge     = false;
+	cheatInfiniteSidekickAmmo = true;
+	autoFireSpecial        = true;
+	debugAutofireTwiddle   = false;
+	debugToggleFire        = true;
+	expertMode             = true;
+	difficultyAdjust       = false;
+	noclipMode             = 1;
+	chargeSidekickAutofire = 2;
+	debugTwiddleSpecial    = 3;
+	expertBossHpMult       = 7;
+	expertEnemyArmorPct    = 150;
+	network_debug_state_pack(published);
+
+	// Opposite of every one of them, so a field the block does not carry stays visibly wrong.
+	difficultyLevel        = DIFFICULTY_WIMP;
+	cheatInfiniteShields   = false;
+	cheatInfiniteArmor     = true;
+	cheatInfiniteGenerator = false;
+	cheatNoEnemyFire       = false;
+	cheatInstantCharge     = true;
+	cheatInfiniteSidekickAmmo = false;
+	autoFireSpecial        = false;
+	debugAutofireTwiddle   = true;
+	debugToggleFire        = false;
+	expertMode             = false;
+	difficultyAdjust       = true;
+	noclipMode             = 2;
+	chargeSidekickAutofire = 0;
+	debugTwiddleSpecial    = 9;
+	expertBossHpMult       = 2;
+	expertEnemyArmorPct    = 250;
+
+	network_debug_state_adopt(published, false);
+
+	qa_check(difficultyLevel == DIFFICULTY_HARD, "the debug block carries the difficulty");
+	qa_check(cheatInfiniteShields && !cheatInfiniteArmor && cheatInfiniteGenerator
+	         && cheatNoEnemyFire && !cheatInstantCharge && cheatInfiniteSidekickAmmo,
+	         "the debug block carries every cheat flag");
+	qa_check(autoFireSpecial && !debugAutofireTwiddle && debugToggleFire
+	         && expertMode && !difficultyAdjust,
+	         "the debug block carries the firing and expert-mode flags");
+	qa_check(noclipMode == 1, "the debug block carries noclip");
+	qa_check(chargeSidekickAutofire == 2, "the debug block carries the sidekick autofire mode");
+	qa_check(debugTwiddleSpecial == 3, "the debug block carries the armed twiddle");
+	qa_check(expertBossHpMult == 7 && expertEnemyArmorPct == 150,
+	         "the debug block carries the expert tunables");
+
+	/* The whole-block check. Every field is compared, including any this test does not name, so a
+	 * value that the menu edits and the block leaves behind fails here even when nothing above
+	 * mentions it. */
+	network_debug_state_pack(readback);
+	qa_check(memcmp(published, readback, (size_t)size) == 0,
+	         "a debug block re-packed after adopting it is the same block");
+
+	/* Hostile bytes. These arrive from a peer and index tables directly, so the adopt clamps them
+	 * rather than trusting the sender. */
+	Uint8 hostile[320];
+	memcpy(hostile, published, (size_t)size);
+	hostile[9]  = 0x7f;   // difficulty, well past DIFFICULTY_10
+	hostile[12] = 0xff;   // noclip
+	hostile[13] = 0xff;   // charge autofire
+	hostile[14] = 0xff;   // armed twiddle
+	network_debug_state_adopt(hostile, false);
+
+	qa_check(difficultyLevel >= DIFFICULTY_WIMP && difficultyLevel <= DIFFICULTY_10,
+	         "an out-of-range difficulty from a peer is clamped, not indexed with");
+	qa_check(noclipMode < NOCLIP_NUM, "an out-of-range noclip mode from a peer is clamped");
+	qa_check(chargeSidekickAutofire < CHARGE_AUTOFIRE_NUM,
+	         "an out-of-range sidekick autofire mode from a peer is clamped");
+	qa_check(debugTwiddleSpecial <= SPECIAL_NUM,
+	         "an out-of-range armed twiddle from a peer is clamped");
+
+	memcpy(player, savedShips, sizeof(savedShips));
+	isNetworkGame = savedNet;
+}
+#endif
+
 /* ---- entry point -------------------------------------------------------------------- */
 
 void qa_test_online_suite(void)
@@ -640,6 +756,9 @@ void qa_test_online_suite(void)
 	qa_campaign_score_matrix();
 	qa_online_strings_matrix();
 	qa_online_pause_matrix();
+#ifdef WITH_NETWORK
+	qa_debug_block_roundtrip();
+#endif
 
 	qa_online_restore(&saved);
 }
