@@ -31,7 +31,7 @@ extern Uint64 endlessPlayerRngState[2];
 #define ENDLESS_TURBODRIVE_TICKS 70
 #define ENDLESS_RETALIATION_TICKS 35
 extern int endlessZoneTicks;
-extern int endlessTurbodriveTimer;
+extern int endlessTurbodriveTimer[2];   // kill-fire window, per player
 extern int endlessRetaliationTimer;
 
 // Rewards banked on clear and spent at a later outpost.
@@ -81,18 +81,18 @@ void endlessResetCustomWeaponZone(void);
 
 // Record storage. The per-difficulty pair is indexed [EndlessRunMode][difficulty slot]; readers
 // outside the module go through endlessBestZoneForDifficulty and endlessRecordDiffCustomMark.
-extern int  endlessBestZoneDiff[][ENDLESS_DIFFICULTY_COUNT];
-extern bool endlessBestZoneDiffCustom[][ENDLESS_DIFFICULTY_COUNT];
+extern int  endlessBestZoneDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+extern bool endlessBestZoneDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 
 // The untagged pair is a mode's record belonging to no difficulty, which is only what a config
 // written before the breakdown existed carries in. It keeps the original `best_zone` config keys
 // and counts towards endlessBestZoneAny, so those records survive without inventing a difficulty
 // for them. Nothing writes it unless a run starts on a difficulty outside the six.
-extern int  endlessBestZoneUntagged[];
-extern bool endlessBestZoneUntaggedCustom[];
+extern int  endlessBestZoneUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
+extern bool endlessBestZoneUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 
 // Combat state.
-extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
+extern int  endlessComboKills[2];       // +1 per kill while a kill-fire window is up, reset when it lapses
 extern char endlessLastSpecialName[2][31]; // name of the last special weapon each player was handed
 
 bool endlessStaticLockoutActive(void);
@@ -231,13 +231,12 @@ extern long endlessShopEntryCash[2];  // cash on entering the shop; the E-Shop c
 // Purchased kill-fire modifiers are folded in after course selection; both players' are.
 extern unsigned endlessPurchasedMods[2];
 extern int endlessBuffKind[2];           // which buff was bought: 0 none, 1 Turbodrive, 2 Overdrive
-extern int endlessOverdriveStacks;       // +1 per kill while the window is up (capped), reset when it lapses
+extern int endlessOverdriveStacks[2];    // +1 per kill while the window is up (capped), reset when it lapses
 extern int endlessBuffCooldownUntil[2];  // run depth at which the kill-fire buys unlock again (0 = no lock)
 extern int endlessBuffCharge[2];         // cash-paid tier that scales the window/damage (0..20)
 
 int endlessBuffWindowTicks(void);     // base kill-fire window, extended by the largest charge paid
-int endlessBuffChargePaid(void);      // that largest charge, for the damage bonus that also scales with it
-unsigned endlessMergePurchasedMods(void);  // both players' pending sector modifiers, one kill-fire bit
+int endlessBuffChargePaid(void);      // the current ship's own charge, which also scales its damage
 
 extern bool endlessReviveHeld[2];          // a held revive token survives one lethal hit
 extern int  endlessRevivesUsed[2];         // revives spent this run (the price doubles per use)

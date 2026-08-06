@@ -24,6 +24,22 @@ uint    endlessEconomyIndex(void);
 uint    endlessPartnerIndex(void);
 // Ships a per-player Endless effect walks: two in co-op, one otherwise.
 uint    endlessEffectPlayers(void);
+
+/* Sector modifiers as ONE ship sees them: the charted set, plus whatever that player bought for
+ * themselves. A drive one player paid for boosts that player alone, on both machines.
+ * endlessFxPlayer is the ship whose effects are being computed; every caller that works through
+ * the players in turn sets it, and it is 0 outside co-op. */
+extern Uint64 endlessPlayerMods[2];
+void endlessSetFxPlayer(uint p);
+uint endlessFxPlayer(void);
+
+// Bits a purchase applies to the buyer alone. Everything else it can buy changes the sector.
+#define ENDLESS_PERSONAL_MOD_MASK ((Uint64)( \
+	ENDLESS_MOD_KILLFIRE_ANY | ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO | \
+	ENDLESS_MOD_OVERHEAT | ENDLESS_MOD_DUD))
+
+// Fold each player's purchases into their own mask; the shared bits go into endlessActiveMods.
+void endlessApplyPurchasedMods(void);
 static inline bool endlessCoop(void) { return endlessMode && coopEndlessMode; }
 
 // Who charts the next course. Persisted in the run save and the lobby block, so append only.
@@ -44,6 +60,10 @@ void endlessAdvanceCourseTurn(void);   // call once a course has been committed
 
 // A downed player spectates until the zone ends, then revives at the outpost.
 extern bool endlessPlayerDowned[2];
+/* The other player left the session from the in-game menu. The level ends with playerEndLevel
+ * set, which on its own reads as this player's death; the run is not over, so the level-end path
+ * checks this and skips the summary. */
+extern bool endlessCoopPeerQuit;
 bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
 // Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
 // still flying, and player 1 outside co-op.
@@ -248,6 +268,12 @@ int  endlessBestZoneAtStart(void);
 #define ENDLESS_DIFFICULTY_COUNT 6
 extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
 
+/* Records are kept apart by crew size: two ships clear zones a solo run cannot, so the two are
+ * never compared. Index 0 is a one-player run, 1 an online co-op one. */
+#define ENDLESS_PLAYER_TABLES 2
+int endlessRecordTable(void);   // which table the run in progress writes
+const char *endlessRecordTableName(int players);
+
 // Slot a difficulty level occupies, or -1 when runs on it are not broken out.
 int endlessDifficultySlot(int difficulty);
 
@@ -282,18 +308,18 @@ const char *endlessRunModeName(EndlessRunMode mode);
 
 // The mode's record on one difficulty slot, and its deepest on any of them. The latter also counts
 // the untagged record a config written before the breakdown existed still carries.
-int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot);
-int endlessBestZoneAny(EndlessRunMode mode);
+int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot);
+int endlessBestZoneAny(int players, EndlessRunMode mode);
 
 // " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
 // against a named mode and difficulty, so the zone number carries this mark alone.
-const char *endlessRecordAnyCustomMark(EndlessRunMode mode);
-const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot);
+const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode);
+const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot);
 
 // Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
 // a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
-void endlessClearDeepestRecord(EndlessRunMode mode);
-void endlessClearRecordDifficulty(EndlessRunMode mode, int slot);
+void endlessClearDeepestRecord(int players, EndlessRunMode mode);
+void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot);
 
 // Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);

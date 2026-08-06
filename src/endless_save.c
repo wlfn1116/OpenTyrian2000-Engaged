@@ -1444,28 +1444,41 @@ static const char *const endlessBestZoneDiffCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_diff_custom", "best_zone_normal_diff_custom", "best_zone_hardcore_diff_custom",
 };
 
+/* The co-op table lives under the same key with a "_2p" tail. A config written before the split
+ * has none of them, which reads as an empty set of co-op records. */
+static void endlessRecordKey(char *out, size_t n, const char *base, int players)
+{
+	snprintf(out, n, "%s%s", base, (players == 1) ? "_2p" : "");
+}
+
 void endlessRecordConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
 		return;
 
+	for (int t = 0; t < ENDLESS_PLAYER_TABLES; ++t)
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 	{
-		config_set_int_option(section, endlessBestZoneKey[m], endlessBestZoneUntagged[m]);
-		config_set_int_option(section, endlessBestZoneCustomKey[m], endlessBestZoneUntaggedCustom[m] ? 1 : 0);
+		char key[64];
+		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t);
+		config_set_int_option(section, key, endlessBestZoneUntagged[t][m]);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t);
+		config_set_int_option(section, key, endlessBestZoneUntaggedCustom[t][m] ? 1 : 0);
 
 		char zones[ENDLESS_DIFFICULTY_COUNT * 8], marks[ENDLESS_DIFFICULTY_COUNT + 1];
 		size_t len = 0;
 		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 		{
 			len += snprintf(zones + len, sizeof(zones) - len, "%s%d",
-			                (d > 0) ? "," : "", endlessBestZoneDiff[m][d]);
-			marks[d] = endlessBestZoneDiffCustom[m][d] ? '1' : '0';
+			                (d > 0) ? "," : "", endlessBestZoneDiff[t][m][d]);
+			marks[d] = endlessBestZoneDiffCustom[t][m][d] ? '1' : '0';
 		}
 		marks[ENDLESS_DIFFICULTY_COUNT] = '\0';
 
-		config_set_string_option(section, endlessBestZoneDiffKey[m], zones);
-		config_set_string_option(section, endlessBestZoneDiffCustomKey[m], marks);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t);
+		config_set_string_option(section, key, zones);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t);
+		config_set_string_option(section, key, marks);
 	}
 }
 
@@ -1474,29 +1487,34 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 	if (section == NULL)
 		return;
 
+	for (int t = 0; t < ENDLESS_PLAYER_TABLES; ++t)
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 	{
+		char key[64];
 		int best = 0;
-		config_get_int_option(section, endlessBestZoneKey[m], &best);
-		endlessBestZoneUntagged[m] = (best > 0) ? best : 0;  // a hand-edited negative reads as "no record"
+		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t);
+		config_get_int_option(section, key, &best);
+		endlessBestZoneUntagged[t][m] = (best > 0) ? best : 0;  // a hand-edited negative reads as "no record"
 
 		int custom = 0;
-		config_get_int_option(section, endlessBestZoneCustomKey[m], &custom);
-		endlessBestZoneUntaggedCustom[m] = (endlessBestZoneUntagged[m] > 0) && (custom != 0);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t);
+		config_get_int_option(section, key, &custom);
+		endlessBestZoneUntaggedCustom[t][m] = (endlessBestZoneUntagged[t][m] > 0) && (custom != 0);
 
 		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 		{
-			endlessBestZoneDiff[m][d] = 0;
-			endlessBestZoneDiffCustom[m][d] = false;
+			endlessBestZoneDiff[t][m][d] = 0;
+			endlessBestZoneDiffCustom[t][m][d] = false;
 		}
 
 		const char *zones = NULL;
-		if (config_get_string_option(section, endlessBestZoneDiffKey[m], &zones) && zones != NULL)
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t);
+		if (config_get_string_option(section, key, &zones) && zones != NULL)
 		{
 			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && *zones != '\0'; ++d)
 			{
 				const int zone = (int)strtol(zones, NULL, 10);
-				endlessBestZoneDiff[m][d] = (zone > 0) ? zone : 0;
+				endlessBestZoneDiff[t][m][d] = (zone > 0) ? zone : 0;
 
 				const char *const comma = strchr(zones, ',');
 				zones = (comma != NULL) ? comma + 1 : "";
@@ -1504,10 +1522,11 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 		}
 
 		const char *marks = NULL;
-		if (config_get_string_option(section, endlessBestZoneDiffCustomKey[m], &marks) && marks != NULL)
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t);
+		if (config_get_string_option(section, key, &marks) && marks != NULL)
 		{
 			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && marks[d] != '\0'; ++d)
-				endlessBestZoneDiffCustom[m][d] = (endlessBestZoneDiff[m][d] > 0) && (marks[d] == '1');
+				endlessBestZoneDiffCustom[t][m][d] = (endlessBestZoneDiff[t][m][d] > 0) && (marks[d] == '1');
 		}
 	}
 	endlessRecordRunStart();   // nothing is running yet, so the baseline is the record

@@ -633,12 +633,42 @@ the alternating-turn flag, both perk rows and both RNG streams. A v20 or earlier
 record loads into slot 0 with the second slot zeroed and the perk rows rebuilt
 from the effective stacks, so a solo run resumes unchanged.
 
-Deviation from the original design note: the three kill-fire drives are tagged
-run-wide rather than personal. They are implemented as bits in
-`endlessActiveMods`, the sector's own modifier set, which both ships fly under;
-making them personal would mean splitting the whole kill-fire combo pipeline
-(`endlessTurbodriveTimer`, `endlessComboKills`, `endlessOverdriveStacks`) per
-player and attributing every kill to a shooter.
+Personal sector effects have their own mask. `endlessActiveMods` is what the
+sector charted, and `endlessPlayerMods[p]` is that plus whatever player p bought
+for themselves; `ENDLESS_PERSONAL_MOD_MASK` is the split, and
+`endlessApplyPurchasedMods` performs it once when the course is committed. The
+kill-fire windows (`endlessTurbodriveTimer`, `endlessComboKills`,
+`endlessOverdriveStacks`) are per player too, so two ships can fly different
+drives at once. A kill feeds both windows; only a ship whose own mask carries a
+drive gets anything from it.
+
+Which ship an effect is being computed for is `endlessFxPlayer()`, set by
+`endlessSetFxPlayer` at the few places that work through the players in turn:
+`JE_playerMovement` (cadence, tint and the ship blit), `JE_playerDamage`,
+`player_shot_create`, the shot-damage site in tyrian2.c (the shooter, from
+`playerShotData[].playerNumber`), and the two HUD readouts (the local ship). It
+is 0 outside co-op, so single-player behaviour is untouched.
+
+Zone records are kept per crew size: `endlessBestZoneDiff[table][mode][slot]`
+with table 0 solo and 1 co-op, `endlessRecordTable()` choosing the one a run
+writes. The co-op half lives under the same config keys with a `_2p` tail, so a
+config written before the split reads as an empty co-op set. Online co-op
+Campaign has its own board in `coopCampaignScores` (config section
+`coop_scores`), one best run per episode, written by `coopCampaignScoreNote`
+without a name-entry dialog: the lobby already knows both names, and a modal at
+that point would leave the other machine on an unpumped screen.
+
+Two rules keep a session from wedging when one machine leaves a level first.
+`nrb_stall_pump` treats a `PACKET_WAITING`, `PACKET_DETAILS`, `PACKET_GAME_QUIT`,
+`PACKET_SHOP_SYNC` or `PACKET_ENDLESS_RUN` at the head of the reliable queue as
+"the peer is between levels" and ends the local level out of band; without it a
+peer that is alive (keep-alives) but gone holds the stall open for the absolute
+wedge cap. `JE_endlessDeathMenu` sends keep-alives while it is read, and the
+joiner waiting on the host's choice announces itself with the run packet's
+`0xfffe` sentinel so the host is released even if it is still finishing the
+level. A peer that quits through the in-game menu sets `endlessCoopPeerQuit`,
+which the level-end path checks before the death branch: `playerEndLevel` on its
+own would read as this player's death and print the run-over summary.
 
 ### Reliable channel
 

@@ -381,7 +381,11 @@ all difficulties, since it is picked before you choose one.
 
 All three records also have their own page in **High Scores** on the title
 screen, reached by paging right past the episode and Timed Battle boards to the
-last one, **Endless**. It lists every mode with the zone it stands at.
+last two: **2 Player Campaign** and **Endless**. The Endless page lists every run
+mode at both crew sizes with the zone it stands at; the 2 Player Campaign page
+lists the best combined cash each episode has been finished with online, and who
+was flying. That board is separate from the two-player scores on the episode
+pages, which belong to Arcade.
 
 Selecting a mode opens its breakdown by difficulty: a row for each of Easy,
 Normal, Hard, Impossible, Suicide and Lord of Game, above them an **Any
@@ -568,20 +572,24 @@ zone counter; wallets, stock and gear belong to one player each.
 
 Both of you shop at the same outpost at the same time, each with your own stock,
 your own prices and your own wallet. Rerolling changes only your own shelves, and
-one player's rerolls and gambles never move what the other is dealt. The E-Shop
-marks every buy: **P** lands on your ship alone, **R** covers the whole run. The
-help line under the row spells the marker out.
+one player's rerolls and gambles never move what the other is dealt. Almost
+everything you buy is yours alone: guns and gear, Reinforce hull tiers, a Revive
+token, bombs, a Special Weapon, and the kill-fire drives.
 
-| Buy | Reaches |
-| --- | --- |
-| Shop Reroll, Reinforce, Special Weapon, Revive, Bomb, Gamble | The buyer (**P**) |
-| Sector Sabotage, Extra Perk, Turbodrive, Overblast, Overdrive | The whole run (**R**) |
+Turbodrive, Overblast and Overdrive belong to the ship that paid for them. One of
+you can be flying Turbodrive while the other stacks Overblast, each with their own
+window and their own combo, and the buyer's ship glows in that drive's colour on
+both screens. The kill-fire readout in the corner is your own drive's.
 
-Perks are the run's shared upgrades: you each pick from your own slate and both
-ships fly under everything either of you took, up to each perk's normal maximum.
-The kill-fire drives are sector modifiers, so a drive one of you paid for covers
-the pair; if you buy different ones the stronger boon wins, and a boon always
-beats a gambled curse. Sabotage charges add up to the same three-strip cap.
+Two buys reach further than the ship that made them: **Sector Sabotage** strips a
+danger off the sector you both fly, and **Extra Perk** adds to the run's shared
+perk collection. Perks work that way throughout: you each pick from your own slate
+and both ships fly under everything either of you took, up to each perk's normal
+maximum. Sabotage charges from the two of you add up to the same three-strip cap.
+
+A gamble is yours: the cash, gear and drives it hands out or takes away are the
+gambler's. Its rarer outcomes change the next sector instead (a shop discount, a
+bulked-up boss, a rush of rammers), and those land on the pair.
 
 While the charting player is on the course list the other sees "Partner is
 charting a course." Esc there goes back into the outpost, the same as in
@@ -595,10 +603,17 @@ Seeker corrections and every other danger that picks a target go for the nearer
 ship still flying and ignore a downed one. With both ships down the run mode
 decides what happens, and in Relaxed the host makes the choice for the pair.
 
-The zone-clear bonus and bank interest are each player's own. Zone records are
-left alone by a co-op run: two ships is a different game, so the solo records on
-the Zone Records page are not compared against it. The run-over screen shows
-what you personally earned and spent.
+The zone-clear bonus and bank interest are each player's own. The run-over screen
+shows what you personally earned and spent.
+
+Two ships reach depths a solo run cannot, so co-op keeps its own records: the
+Endless high-score page lists each run mode twice, **1P** and **2P**, and a co-op
+run only ever writes the 2P side. Everything else about the page (the breakdown by
+difficulty, the custom-weapon mark, erasing a record) works the same on both.
+
+If either of you leaves through the in-game menu the session ends for both, but
+the run does not: outside Hardcore it is still in its save from the last outpost,
+and the other player goes back to the title rather than to a run-over summary.
 
 ### Saving and resuming an online game
 

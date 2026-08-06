@@ -2063,6 +2063,7 @@ void network_endless_run_publish(void)
  * what happens next. The host picks and publishes; the joiner waits for the answer. Carried on the
  * run packet under a sentinel chunk count, so no separate message type is needed. */
 #define NET_ENDLESS_DEATH_SENTINEL 0xffff
+#define NET_ENDLESS_LEFT_LEVEL     0xfffe   /* "I am out of the level"; frees a peer still in it */
 
 int network_endless_death_sync(int hostChoice)
 {
@@ -2083,6 +2084,7 @@ int network_endless_death_sync(int hostChoice)
 	}
 
 	const Uint32 started = SDL_GetTicks();
+	Uint32 announced = 0;
 	while (SDL_GetTicks() - started < 60000)
 	{
 		watchdog_heartbeat();
@@ -2093,13 +2095,33 @@ int network_endless_death_sync(int hostChoice)
 		JE_mouseReplace();
 		network_check();
 
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
-		    && packet_in[0]->len >= NCW_HDR
-		    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == NET_ENDLESS_DEATH_SENTINEL)
+		// Say so periodically: the host may still be finishing the level, where waiting on
+		// frames this machine will never send is what wedges it.
+		if (announced == 0 || SDL_GetTicks() - announced > 250)
 		{
-			const int choice = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
-			network_update();
-			return choice;
+			announced = SDL_GetTicks();
+			network_prepare(PACKET_ENDLESS_RUN);
+			packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+			packet_out_temp->data[NCW_OWNER + 1] = 0;
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_GEN]);
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+			SDLNet_Write16(NET_ENDLESS_LEFT_LEVEL, &packet_out_temp->data[NCW_COUNT]);
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+			network_send(NCW_HDR);
+		}
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+		    && packet_in[0]->len >= NCW_HDR)
+		{
+			const Uint16 count = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+			if (count == NET_ENDLESS_DEATH_SENTINEL)
+			{
+				const int choice = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+				network_update();
+				return choice;
+			}
+			network_update();   // our own announcement echoed back, or a stale chunk
+			continue;
 		}
 
 		network_update();

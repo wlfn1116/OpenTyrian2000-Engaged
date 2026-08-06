@@ -21,6 +21,7 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "endless.h"
 #include "fonthand.h"
 #include "keyboard.h"
 #include "mainint.h"
@@ -1155,6 +1156,22 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		crashlog_note_net("ROLLBACK STALL", detail);
 	}
 
+	/* A peer that has reached a between-levels handshake is never going to produce the frames
+	 * this wait needs.  Every packet below is only ever sent from outside a level, so one at the
+	 * head of the reliable queue settles it: end ours as well, out of band.  Leave the packet
+	 * where it is; the rendezvous that follows is what reads it. */
+	if (packet_in[0] != NULL)
+	{
+		const Uint16 head = SDLNet_Read16(&packet_in[0]->data[0]);
+		if (head == PACKET_WAITING || head == PACKET_DETAILS || head == PACKET_GAME_QUIT
+		    || head == PACKET_SHOP_SYNC || head == PACKET_ENDLESS_RUN)
+		{
+			reallyEndLevel = true;
+			end_agreed = true;
+			return true;
+		}
+	}
+
 	// A LIVE peer that is merely slow (menus, loading, level tally) must never
 	// trip the disconnect: keep-alives hold the link open indefinitely, with a
 	// generous absolute cap as the wedge backstop.
@@ -1470,6 +1487,8 @@ static int nrb_resync_send_once(void)
 				reallyEndLevel = true;
 				playerEndLevel = true;
 				end_agreed = true;
+				if (coopEndlessMode)
+					endlessCoopPeerQuit = true;
 				outcome = 3;
 			}
 			else if (type == PACKET_WAITING || type == PACKET_DETAILS)
@@ -1622,6 +1641,8 @@ static bool nrb_resync_receive(void)
 				reallyEndLevel = true;
 				playerEndLevel = true;
 				end_agreed = true;
+				if (coopEndlessMode)
+					endlessCoopPeerQuit = true;
 				level_over = true;
 				break;
 			}

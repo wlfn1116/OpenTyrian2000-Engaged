@@ -341,56 +341,59 @@ static void qa_test_perk_registry(void)
 
 static void qa_test_record_readers(void)
 {
-	int savedDiff[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
-	bool savedDiffCustom[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
-	int savedUntagged[ENDLESS_RUNMODE_COUNT];
-	bool savedUntaggedCustom[ENDLESS_RUNMODE_COUNT];
+	int  savedDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+	bool savedDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+	int  savedUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
+	bool savedUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 	memcpy(savedDiff, endlessBestZoneDiff, sizeof(savedDiff));
 	memcpy(savedDiffCustom, endlessBestZoneDiffCustom, sizeof(savedDiffCustom));
-	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
-	{
-		savedUntagged[m] = endlessBestZoneUntagged[m];
-		savedUntaggedCustom[m] = endlessBestZoneUntaggedCustom[m];
-	}
+	memcpy(savedUntagged, endlessBestZoneUntagged, sizeof(savedUntagged));
+	memcpy(savedUntaggedCustom, endlessBestZoneUntaggedCustom, sizeof(savedUntaggedCustom));
 	memset(endlessBestZoneDiff, 0, sizeof(savedDiff));
 	memset(endlessBestZoneDiffCustom, 0, sizeof(savedDiffCustom));
-	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
-	{
-		endlessBestZoneUntagged[m] = 0;
-		endlessBestZoneUntaggedCustom[m] = false;
-	}
+	memset(endlessBestZoneUntagged, 0, sizeof(savedUntagged));
+	memset(endlessBestZoneUntaggedCustom, 0, sizeof(savedUntaggedCustom));
 
-	endlessBestZoneDiff[ENDLESS_RUNMODE_STANDARD][0] = 20;
-	endlessBestZoneDiff[ENDLESS_RUNMODE_STANDARD][1] = 20;
-	endlessBestZoneDiffCustom[ENDLESS_RUNMODE_STANDARD][1] = true;
-	endlessBestZoneUntagged[ENDLESS_RUNMODE_STANDARD] = 15;
-	endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_STANDARD] = true;
-	qa_check(endlessBestZoneAny(ENDLESS_RUNMODE_STANDARD) == 20
-	         && strcmp(endlessRecordAnyCustomMark(ENDLESS_RUNMODE_STANDARD), " C") == 0,
+	endlessBestZoneDiff[0][ENDLESS_RUNMODE_STANDARD][0] = 20;
+	endlessBestZoneDiff[0][ENDLESS_RUNMODE_STANDARD][1] = 20;
+	endlessBestZoneDiffCustom[0][ENDLESS_RUNMODE_STANDARD][1] = true;
+	endlessBestZoneUntagged[0][ENDLESS_RUNMODE_STANDARD] = 15;
+	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = true;
+	qa_check(endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 20
+	         && strcmp(endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
 	         "deepest record derives its custom mark from any marked record tied at that depth");
-	endlessBestZoneUntagged[ENDLESS_RUNMODE_STANDARD] = 25;
-	endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_STANDARD] = false;
-	qa_check(endlessBestZoneAny(ENDLESS_RUNMODE_STANDARD) == 25
-	         && endlessRecordAnyCustomMark(ENDLESS_RUNMODE_STANDARD)[0] == '\0',
+	endlessBestZoneUntagged[0][ENDLESS_RUNMODE_STANDARD] = 25;
+	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = false;
+	qa_check(endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25
+	         && endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD)[0] == '\0',
 	         "legacy untagged record survives and owns the mode-wide mark when deepest");
-	endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_STANDARD] = true;
-	qa_check(strcmp(endlessRecordAnyCustomMark(ENDLESS_RUNMODE_STANDARD), " C") == 0,
+	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = true;
+	qa_check(strcmp(endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
 	         "legacy untagged custom mark is retained");
+
+	/* The two crew sizes keep separate books: a solo record is invisible to the co-op table. */
+	endlessBestZoneDiff[1][ENDLESS_RUNMODE_STANDARD][0] = 60;
+	qa_check(endlessBestZoneAny(1, ENDLESS_RUNMODE_STANDARD) == 60
+	         && endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25,
+	         "one-player and two-player zone records are kept apart");
+	endlessClearDeepestRecord(1, ENDLESS_RUNMODE_STANDARD);
+	qa_check(endlessBestZoneAny(1, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25,
+	         "erasing a co-op record leaves the solo one standing");
+
 	bool difficultyMap = true;
 	for (int i = 0; i < ENDLESS_DIFFICULTY_COUNT; ++i)
 		difficultyMap &= endlessDifficultySlot(endlessDifficultyLevel[i]) == i;
 	qa_check(difficultyMap && endlessDifficultySlot(-999) == -1
-	         && endlessBestZoneAny((EndlessRunMode)-1) == 0
-	         && endlessBestZoneForDifficulty(ENDLESS_RUNMODE_STANDARD, -1) == 0,
+	         && endlessBestZoneAny(0, (EndlessRunMode)-1) == 0
+	         && endlessBestZoneAny(-1, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneForDifficulty(0, ENDLESS_RUNMODE_STANDARD, -1) == 0,
 	         "record readers preserve difficulty ordering and reject invalid indices");
 
 	memcpy(endlessBestZoneDiff, savedDiff, sizeof(savedDiff));
 	memcpy(endlessBestZoneDiffCustom, savedDiffCustom, sizeof(savedDiffCustom));
-	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
-	{
-		endlessBestZoneUntagged[m] = savedUntagged[m];
-		endlessBestZoneUntaggedCustom[m] = savedUntaggedCustom[m];
-	}
+	memcpy(endlessBestZoneUntagged, savedUntagged, sizeof(savedUntagged));
+	memcpy(endlessBestZoneUntaggedCustom, savedUntaggedCustom, sizeof(savedUntaggedCustom));
 }
 
 static Uint32 qa_prng(Uint32 *state)
@@ -901,21 +904,31 @@ static void qa_test_endless_coop(void)
 	         && endlessPerkOwned[PERK_DAMAGE] == MIN(4, endlessPerkMaxStack(PERK_DAMAGE)),
 	         "endless perks are the capped sum of both players' picks");
 
-	/* A sector runs one kill-fire effect, so the better of the two purchases wins. */
+	/* A drive belongs to the ship that bought it; the sector-changing half of a purchase does not. */
+	endlessActiveMods = ENDLESS_MOD_FORTIFIED;
 	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_FAVOR;
-	endlessPurchasedMods[1] = ENDLESS_MOD_OVERDRIVE;
-	const unsigned merged = endlessMergePurchasedMods();
-	qa_check((merged & ENDLESS_MOD_OVERDRIVE) && !(merged & ENDLESS_MOD_TURBODRIVE)
-	         && (merged & ENDLESS_MOD_FAVOR),
-	         "merged sector purchases keep one kill-fire bit and every other buy");
-	endlessPurchasedMods[0] = ENDLESS_MOD_BURNOUT;
 	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
-	qa_check((endlessMergePurchasedMods() & ENDLESS_MOD_OVERBLAST) != 0
-	         && (endlessMergePurchasedMods() & ENDLESS_MOD_BURNOUT) == 0,
-	         "a bought boon outranks a gambled curse in the merged sector");
+	endlessApplyPurchasedMods();
+	qa_check((endlessPlayerMods[0] & ENDLESS_MOD_TURBODRIVE)
+	         && !(endlessPlayerMods[0] & ENDLESS_MOD_OVERBLAST),
+	         "a bought drive reaches only the ship that bought it");
+	qa_check((endlessPlayerMods[1] & ENDLESS_MOD_OVERBLAST)
+	         && !(endlessPlayerMods[1] & ENDLESS_MOD_TURBODRIVE),
+	         "...and the other ship keeps its own");
+	qa_check((endlessPlayerMods[0] & ENDLESS_MOD_FORTIFIED)
+	         && (endlessPlayerMods[1] & ENDLESS_MOD_FORTIFIED)
+	         && (endlessActiveMods & ENDLESS_MOD_FAVOR),
+	         "the sector's own modifiers and the shop-side buys stay shared");
+
+	endlessBuffCharge[0] = 4;
 	endlessBuffCharge[1] = 15;
-	qa_check(endlessBuffChargePaid() == 15,
-	         "the shared kill-fire window takes the larger charge paid");
+	endlessSetFxPlayer(1);
+	qa_check(endlessBuffChargePaid() == 15, "the kill-fire window follows the ship being computed");
+	endlessSetFxPlayer(0);
+	qa_check(endlessBuffChargePaid() == 4, "...and the other ship reads its own charge");
+	endlessActiveMods = 0;
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
+	endlessBuffCharge[0] = endlessBuffCharge[1] = 0;
 
 	/* Course picking. Every mode has to answer the same way on both machines. */
 	endlessCourseChooser = ENDLESS_PICK_HOST;

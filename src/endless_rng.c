@@ -139,9 +139,9 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 
 		// The record belongs to the mode selected below, so it follows the Mode row.
 		char recordLine[48];
-		if (endlessBestZoneAny(mode) > 0)
+		if (endlessBestZoneAny(0, mode) > 0)
 			snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s",
-			         endlessBestZoneAny(mode), endlessRecordAnyCustomMark(mode));
+			         endlessBestZoneAny(0, mode), endlessRecordAnyCustomMark(0, mode));
 		else
 			SDL_strlcpy(recordLine, "No zone record yet", sizeof(recordLine));
 		draw_font_hv_shadow(VGAScreen, xCenter, yRecord, recordLine, small_font, centered, 15, 4, false, 1);

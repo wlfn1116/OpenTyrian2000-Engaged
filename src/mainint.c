@@ -1147,6 +1147,10 @@ void JE_nextEpisode(void)
 		JE_highScoreCheck();
 	}
 
+	// Online co-op Campaign has its own board and no name-entry dialog; see coopCampaignScoreNote.
+	if (episodeNum == initial_episode_num && !gameHasRepeated && !constantPlay)
+		coopCampaignScoreNote();
+
 	unsigned int newEpisode = JE_findNextEpisode();
 
 	if (jumpBackToEpisode1)
@@ -1288,15 +1292,18 @@ void JE_sortHighScores(void)
 // each run mode has reached; selecting one opens that mode's breakdown by difficulty, where a
 // record is erased behind the same confirmation the rest of the game uses for a destructive choice.
 
-// A mode's breakdown has one row per difficulty, plus a leading row for its record on any of them.
-#define ENDLESS_PAGE_MODE_ROWS  ENDLESS_RUNMODE_COUNT
+/* One row per run mode and crew size: the three solo modes, then the three co-op ones. A mode's
+ * breakdown has one row per difficulty, plus a leading row for its record on any of them. */
+#define ENDLESS_PAGE_MODE_ROWS  (ENDLESS_RUNMODE_COUNT * ENDLESS_PLAYER_TABLES)
+#define ENDLESS_PAGE_ROW_TABLE(row) ((row) / ENDLESS_RUNMODE_COUNT)
+#define ENDLESS_PAGE_ROW_MODE(row)  ((row) % ENDLESS_RUNMODE_COUNT)
 #define ENDLESS_PAGE_DIFF_ROWS  (ENDLESS_DIFFICULTY_COUNT + 1)
 #define ENDLESS_PAGE_ROW_ANY    0   // the any-difficulty row; the rest are difficulty slot + 1
 
 // Page geometry, shared by the draw and input halves below. The breakdown carries more than twice
 // the rows, so it runs a tighter pitch and starts higher.
 static const int endlessPageXCenter = 160;      // center of the 320px menu field
-static const int endlessPageRowY0 = 78, endlessPageRowDy = 13, endlessPageRowH = 11;
+static const int endlessPageRowY0 = 66, endlessPageRowDy = 13, endlessPageRowH = 11;
 static const int endlessPageDiffY0 = 70, endlessPageDiffDy = 11, endlessPageDiffH = 10;
 static const int endlessPageDiffGap = 5;   // sets the any-difficulty row apart from the six under it
 static const int endlessPageConfirmY0 = 100, endlessPageConfirmDy = 14, endlessPageConfirmH = 13;
@@ -1324,16 +1331,26 @@ static const char *endlessPageDiffName(int row)
 }
 
 // The zone and custom mark a breakdown row shows.
-static int endlessPageDiffZone(EndlessRunMode mode, int row)
+static int endlessPageDiffZone(int players, EndlessRunMode mode, int row)
 {
-	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(mode)
-	                                     : endlessBestZoneForDifficulty(mode, row - 1);
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(players, mode)
+	                                     : endlessBestZoneForDifficulty(players, mode, row - 1);
 }
 
-static const char *endlessPageDiffMark(EndlessRunMode mode, int row)
+static const char *endlessPageDiffMark(int players, EndlessRunMode mode, int row)
 {
-	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessRecordAnyCustomMark(mode)
-	                                     : endlessRecordDiffCustomMark(mode, row - 1);
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessRecordAnyCustomMark(players, mode)
+	                                     : endlessRecordDiffCustomMark(players, mode, row - 1);
+}
+
+// A mode row's label carries its crew size, since the two sets sit in one list.
+static const char *endlessPageModeName(int row)
+{
+	static char buf[32];
+	snprintf(buf, sizeof(buf), "%s %s",
+	         (ENDLESS_PAGE_ROW_TABLE(row) == 1) ? "2P" : "1P",
+	         endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(row)));
+	return buf;
 }
 
 // Center that block and hang the columns off its edges: labels start at the left, zones end
@@ -1377,6 +1394,45 @@ static int endlessPageRowY(bool subOpen, int row)
 	       + ((row > ENDLESS_PAGE_ROW_ANY) ? endlessPageDiffGap : 0);
 }
 
+/* The online co-op Campaign board: the best combined cash each episode has been finished with,
+ * and who was flying. Read-only, so it needs no selection or erase machinery. */
+static void JE_drawCoopCampaignPage(void)
+{
+	static const char note[] = "The best combined cash for each episode, online.";
+
+	const int blockW = JE_textWidth(note, small_font);
+	const int xLabel = endlessPageXCenter - blockW / 2;
+	const int xRight = xLabel + blockW;
+
+	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Two Players, One Campaign",
+	                    normal_font, centered, 15, -3, false, 2);
+
+	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
+	{
+		const int y = 78 + 13 * e;
+		char label[40], value[32];
+		snprintf(label, sizeof(label), "%s:", episode_name[e + 1]);
+		if (coopCampaignScores[e].score > 0)
+			snprintf(value, sizeof(value), "%d", coopCampaignScores[e].score);
+		else
+			SDL_strlcpy(value, "None", sizeof(value));
+
+		JE_textShade(VGAScreen, xLabel, y, label, 15, 0, FULL_SHADE);
+		JE_textShade(VGAScreen, xRight - JE_textWidth(value, small_font), y, value, 15, 2, FULL_SHADE);
+
+		// The names go on their own indented line, so a long pair cannot run into the figure.
+		if (coopCampaignScores[e].score > 0 && coopCampaignScores[e].name[0] != '\0')
+		{
+			char who[64];
+			snprintf(who, sizeof(who), "%s  (%s)", coopCampaignScores[e].name,
+			         difficultyNameB[MIN(coopCampaignScores[e].difficulty, DIFFICULTY_10)]);
+			JE_textShade(VGAScreen, xLabel + 8, y + 6, who, 15, 4, FULL_SHADE);
+		}
+	}
+
+	JE_textShade(VGAScreen, xLabel, 78 + 13 * COOP_CAMPAIGN_SCORE_EPISODES + 8, note, 15, 2, FULL_SHADE);
+}
+
 static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selectedRow,
                                      bool confirmErase, int confirmChoice)
 {
@@ -1417,17 +1473,20 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selecte
 
 	if (subOpen)
 	{
-		char header[48];
-		snprintf(header, sizeof(header), "%s by Difficulty",
-		         endlessRunModeName((EndlessRunMode)selectedMode));
+		char header[64];
+		snprintf(header, sizeof(header), "%s %s by Difficulty",
+		         endlessRecordTableName(ENDLESS_PAGE_ROW_TABLE(selectedMode)),
+		         endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode)));
 		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, header, normal_font, centered, 15, -3, false, 2);
 
 		for (int i = 0; i < ENDLESS_PAGE_DIFF_ROWS; ++i)
 		{
 			endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(true, i),
 			                   endlessPageDiffName(i),
-			                   endlessPageDiffZone((EndlessRunMode)selectedMode, i),
-			                   endlessPageDiffMark((EndlessRunMode)selectedMode, i),
+			                   endlessPageDiffZone(ENDLESS_PAGE_ROW_TABLE(selectedMode),
+			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
+			                   endlessPageDiffMark(ENDLESS_PAGE_ROW_TABLE(selectedMode),
+			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
 			                   i == selectedRow);
 		}
 
@@ -1443,10 +1502,11 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selecte
 
 	for (int i = 0; i < ENDLESS_PAGE_MODE_ROWS; ++i)
 	{
-		const EndlessRunMode mode = (EndlessRunMode)i;
+		const int table = ENDLESS_PAGE_ROW_TABLE(i);
+		const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(i);
 		endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(false, i),
-		                   endlessRunModeName(mode), endlessBestZoneAny(mode),
-		                   endlessRecordAnyCustomMark(mode), i == selectedMode);
+		                   endlessPageModeName(i), endlessBestZoneAny(table, mode),
+		                   endlessRecordAnyCustomMark(table, mode), i == selectedMode);
 	}
 
 	const int yNote = endlessPageRowY0 + endlessPageRowDy * ENDLESS_PAGE_MODE_ROWS + 16;
@@ -1470,10 +1530,12 @@ static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
 {
 	if (choice == 1)
 	{
+		const int table = ENDLESS_PAGE_ROW_TABLE(page->mode);
+		const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode);
 		if (page->row == ENDLESS_PAGE_ROW_ANY)
-			endlessClearDeepestRecord((EndlessRunMode)page->mode);
+			endlessClearDeepestRecord(table, mode);
 		else
-			endlessClearRecordDifficulty((EndlessRunMode)page->mode, page->row - 1);
+			endlessClearRecordDifficulty(table, mode, page->row - 1);
 		JE_playSampleNum(S_ITEM);
 	}
 	else
@@ -1486,7 +1548,8 @@ static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
 // Ask about the selected breakdown row, unless it has no record to lose.
 static void JE_endlessRecordPageArm(EndlessPageState *page)
 {
-	if (endlessPageDiffZone((EndlessRunMode)page->mode, page->row) > 0)
+	if (endlessPageDiffZone(ENDLESS_PAGE_ROW_TABLE(page->mode),
+	                        (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode), page->row) > 0)
 	{
 		page->confirmErase = true;
 		page->confirmChoice = 0;   // always opens on "No, Keep It"
@@ -1643,9 +1706,10 @@ void JE_highScoreScreen(void)
 	bool restart = true;
 
 	size_t episodeIndex = 0;
-	// Five episodes, three timed battles, then the Endless records
-	const size_t episodeCount = 9;
+	// Five episodes, three timed battles, the online co-op Campaign board, then the Endless records
+	const size_t episodeCount = 10;
 	const size_t endlessPage = episodeCount - 1;
+	const size_t coopPage = episodeCount - 2;
 
 	// Endless page state: the mode list, a mode's breakdown by difficulty, and a pending erase.
 	EndlessPageState endlessPageState = { 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
@@ -1683,6 +1747,14 @@ void JE_highScoreScreen(void)
 			boardOnePlayer = -1;
 			boardTwoPlayer = -1;
 		}
+		else if (episodeIndex == coopPage)
+		{
+			SDL_strlcpy(buffer, "2 Player Campaign", sizeof(buffer));
+
+			// Its own board, drawn below: one best run per episode rather than a top three.
+			boardOnePlayer = -1;
+			boardTwoPlayer = -1;
+		}
 		else if (episodeIndex < 5)
 		{
 			snprintf(buffer, sizeof(buffer), "%s", episode_name[episodeIndex + 1]);
@@ -1707,6 +1779,8 @@ void JE_highScoreScreen(void)
 			JE_drawEndlessRecordPage(endlessPageState.mode, endlessPageState.subOpen,
 			                         endlessPageState.row, endlessPageState.confirmErase,
 			                         endlessPageState.confirmChoice);
+		else if (episodeIndex == coopPage)
+			JE_drawCoopCampaignPage();
 
 		// Draw 1-player scores.
 		if (boardOnePlayer >= 0)
@@ -2071,6 +2145,8 @@ void JE_doInGameSetup(void)
 					{
 						reallyEndLevel = true;
 						playerEndLevel = true;;
+						if (coopEndlessMode)
+							endlessCoopPeerQuit = true;
 
 						network_check();
 						break;
@@ -3156,6 +3232,10 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 			push_joysticks_as_keyboard();
 			service_SDL_events(false);
+
+			// Online: the other player is sitting on its own wait screen for as long as this
+			// takes to read, and a screen nobody pumps reads to it as a dead connection.
+			NETWORK_KEEP_ALIVE();
 
 			mouseMoved = mouse_x != oldMouseX || mouse_y != oldMouseY;
 		} while (!(newkey || newmouse || mouseMoved));
@@ -6954,7 +7034,9 @@ void JE_inGameDisplays(void)
 	// Endless: compact live kill-fire buff readout (Turbodrive / Overdrive), bottom-right of the
 	// playfield; a combo kill counter ("xN"), the buff's fire/damage bonuses, and a draining
 	// timer bar. Shifts to clear whichever boss bar is shown: UP for a BOTTOM horizontal bar, LEFT
-	// for a RIGHT vertical bar; other layouts never reach the bottom-right corner.
+	// for a RIGHT vertical bar; other layouts never reach the bottom-right corner. A drive is
+	// personal, so the readout is the local ship's.
+	endlessSetFxPlayer(gameplay_local_player_index());
 	if (endlessFxActive() && endlessTurbodriveActive())
 	{
 		const int bank = endlessKillBuffColorBank();
@@ -7726,6 +7808,9 @@ void JE_playerMovement(Player *this_player,
 {
 	JE_integer mouseXC, mouseYC;
 	JE_integer accelXC, accelYC;
+
+	// Everything from here to the ship blit is this ship's: its own drives, tint and cadence.
+	endlessSetFxPlayer((uint)(this_player - &player[0]));
 
 	if (playerNum_ == 2 || !twoPlayerMode || coop_mode_active())
 	{

@@ -1186,7 +1186,8 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 	const int dir = gaugeGradGenerator;   // GaugeGradientDir
 
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
-	// condition that gates the free power.
+	// condition that gates the free power.  The gauge is the local ship's.
+	endlessSetFxPlayer(gameplay_local_player_index());
 	int base = PG_BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
@@ -2835,6 +2836,19 @@ start_level:
 			goto start_level_first;   // re-run the same level (endlessCaptureSortie re-snapshots + clears the lock)
 		}
 
+		// The other player left the session. The run itself is intact and, outside Hardcore,
+		// already on disk from the outpost autosave, so end the session quietly: the run-over
+		// summary belongs to a run that ended, and this one did not.
+		if (endlessCoopPeerQuit)
+		{
+			endlessCoopPeerQuit = false;
+			fade_song();
+			fade_black(10);
+			endlessMode = false;
+			mainLevel = 0;
+			return;
+		}
+
 		// Was the level that just ran picked straight out of the debug level browser? Consume the
 		// flag whatever the answer, so it can never carry over to a campaign-reached level.
 		const bool fromDebugBrowser = debugLevelJumpTake();
@@ -2957,6 +2971,9 @@ start_level:
 				mainLevel = 0;
 				return;
 			}
+
+			// A co-op Campaign pair that went down still earned what they earned.
+			coopCampaignScoreNote();
 
 			JE_loadGame(twoPlayerMode ? 22 : 11);
 			if (doNotSaveBackup)
@@ -4171,6 +4188,8 @@ level_loop:
 			// Never scale the raw byte; decode first, scale only the real damage, re-encode.
 			if (endlessFxActive())
 			{
+				endlessSetFxPlayer(playerShotData[z].playerNumber >= 1
+				                   ? (uint)playerShotData[z].playerNumber - 1 : 0);
 				int dmgPct = endlessPlayerDamagePercent();
 				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
 				if (z != MAX_PWEAPON - 1 && playerShotData[z].salvoBoost)

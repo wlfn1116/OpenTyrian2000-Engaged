@@ -37,7 +37,7 @@ unsigned endlessPurchasedMods[2] = { 0, 0 };
 // 2 Overdrive.
 int endlessBuffKind[2] = { 0, 0 };
 // Overblast damage stacks rise per kill and reset when the kill-fire window closes.
-int endlessOverdriveStacks = 0;
+int endlessOverdriveStacks[2] = { 0, 0 };
 
 // Absolute run depth at which kill-fire purchases unlock, or zero when available.
 int endlessBuffCooldownUntil[2] = { 0, 0 };
@@ -49,7 +49,6 @@ int endlessBuffCharge[2] = { 0, 0 };
 int endlessBuffWindowTicks(void)  // base kill-fire window, extended by charge (up to ~2.5x)
 {
 	// charge 0 -> 1.0x (~2s), charge 10 -> 1.75x (~3.5s), charge 20 -> 2.5x (~5s)
-	// A sector runs one kill-fire window for both ships, so the larger payment sets its length.
 	return ENDLESS_TURBODRIVE_TICKS * (40 + 3 * endlessBuffChargePaid()) / 40;
 }
 
@@ -418,30 +417,10 @@ bool endlessTryBuyOverblast(void)   // Overdrive damage stacks without the fire 
 // them into the next sector). Exposed so the debug level-select can fold them in too.
 unsigned endlessPendingMods(void) { return endlessPurchasedMods[me()]; }
 
-/* Both players' purchases for the sector they are about to fly. A sector carries at most one
- * kill-fire effect, so when the two bought different ones the stronger boon wins and a boon
- * always beats a gambled curse. */
-unsigned endlessMergePurchasedMods(void)
-{
-	unsigned mods = endlessPurchasedMods[0];
-	if (endlessEffectPlayers() > 1)
-		mods |= endlessPurchasedMods[1];
-
-	static const unsigned killFireRank[] = {
-		ENDLESS_MOD_OVERDRIVE, ENDLESS_MOD_OVERBLAST, ENDLESS_MOD_TURBODRIVE,
-		ENDLESS_MOD_BURNOUT, ENDLESS_MOD_MISFIRE, ENDLESS_MOD_BACKFIRE,
-	};
-	for (unsigned i = 0; i < COUNTOF(killFireRank); ++i)
-		if (mods & killFireRank[i])
-			return (mods & ~(unsigned)ENDLESS_MOD_KILLFIRE_ANY) | killFireRank[i];
-	return mods;
-}
-
-// The largest kill-fire charge either player paid for, which is what sets the shared window.
+// What the ship whose effects are being computed paid for its own drive.
 int endlessBuffChargePaid(void)
 {
-	return (endlessEffectPlayers() > 1) ? MAX(endlessBuffCharge[0], endlessBuffCharge[1])
-	                                    : endlessBuffCharge[0];
+	return endlessBuffCharge[endlessFxPlayer()];
 }
 
 // Purchased kill-fire effects replace charted effects rather than combining with them.

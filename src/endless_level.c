@@ -282,13 +282,13 @@ void endlessResetZoneEffects(void)
 {
 	endlessResetElites();
 	endlessZoneTicks = 0;          // ENRAGE ramp
-	endlessTurbodriveTimer = 0;    // TURBODRIVE / Overdrive window
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));  // kill-fire windows
 	endlessRetaliationTimer = 0;   // RETALIATION window
 	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
 	endlessReviveGraceReset();     // ...and no leftover revive stun: the next zone opens shooting
 	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
 	endlessResetCustomWeaponZone();  // outpost editor and shop previews must not count as combat use
 	// Both ships start every zone in the air, whatever a late outpost packet said about the last one.
 	for (unsigned p = 0; p < COUNTOF(endlessPlayerDowned); ++p)

@@ -20,7 +20,7 @@
 #include <string.h>
 
 // Combo count remains uncapped; only derived bonuses cap.
-int endlessComboKills = 0;
+int endlessComboKills[2] = { 0, 0 };
 #define ENDLESS_COMBO_KILLS_PER_STEP 25
 #define ENDLESS_COMBO_MAX_STEPS       8
 
@@ -668,24 +668,24 @@ void endlessDropCubeGem(int slot)
 }
 
 // Kill-fire HUD values.
-int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer; }
+int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer[endlessFxPlayer()]; }
 int endlessKillBuffTicksMax(void)  { return endlessBuffWindowTicks(); }
 
 int endlessKillBuffComboCount(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessComboKills;
+	return endlessComboKills[endlessFxPlayer()];
 }
 
 // Matches the player tint.
 int endlessKillBuffColorBank(void)
 {
-	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL)
 		return 4;
-	if (endlessActiveMods & ENDLESS_MOD_OVERBLAST)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERBLAST)
 		return 9;   // blue; the damage-only buff
-	return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
+	return (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
 }
 
 // The buff's current fire-rate MULTIPLIER (1 = none; 2x..10x from the combo ramp). Derived from
@@ -700,19 +700,19 @@ int endlessKillBuffFireMultiplier(void)
 
 int endlessKillBuffDamagePercent(void)
 {
-	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_DMGUP))
+	if (!endlessTurbodriveActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
 		return 0;  // Overdrive and Overblast grant damage; Turbodrive affects fire rate only.
 	int pct = endlessBuffChargePaid() * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
-	pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
+	pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
 	return pct;
 }
 
 // Extra shotRepeat decrements for a kill-fire boon. Hostile variants use endlessKillFireJamTicks.
 int endlessKillBuffFireDecrements(void)
 {
-	if (!(endlessActiveMods & ENDLESS_MOD_FIREBOOST))
+	if (!(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_FIREBOOST))
 		return 0;  // Turbodrive and Overdrive quicken fire; Overblast does not.
-	int steps = endlessComboKills / ENDLESS_COMBO_KILLS_PER_STEP;
+	int steps = endlessComboKills[endlessFxPlayer()] / ENDLESS_COMBO_KILLS_PER_STEP;
 	if (steps > ENDLESS_COMBO_MAX_STEPS)
 		steps = ENDLESS_COMBO_MAX_STEPS;
 	return 1 + steps;
@@ -722,29 +722,29 @@ int endlessKillBuffFireDecrements(void)
 bool endlessKillFireIsEvil(void)
 {
 	return endlessFxActive() && endlessTurbodriveActive()
-	    && (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL);
+	    && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL);
 }
 
 // Additional shotRepeat cooldown while Backfire or Burnout is active.
 int endlessKillFireJamTicks(void)
 {
-	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_FIREJAM))
+	if (!endlessTurbodriveActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_FIREJAM))
 		return 0;
-	int steps = endlessComboKills / ENDLESS_COMBO_KILLS_PER_STEP;
+	int steps = endlessComboKills[endlessFxPlayer()] / ENDLESS_COMBO_KILLS_PER_STEP;
 	if (steps > ENDLESS_COMBO_MAX_STEPS)
 		steps = ENDLESS_COMBO_MAX_STEPS;
 	int add = ENDLESS_EVIL_JAM_BASE + steps * ENDLESS_EVIL_JAM_PER_STEP;
-	if (endlessActiveMods & ENDLESS_MOD_BURNOUT)
-		add += endlessOverdriveStacks * ENDLESS_EVIL_JAM_STACK_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_BURNOUT)
+		add += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_EVIL_JAM_STACK_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 	return add;
 }
 
 // Damage penalty from Burnout or Misfire.
 int endlessKillBuffEvilDamagePenalty(void)
 {
-	if (!endlessKillFireIsEvil() || !(endlessActiveMods & ENDLESS_MOD_DMGDOWN))
+	if (!endlessKillFireIsEvil() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN))
 		return 0;
-	return endlessOverdriveStacks * ENDLESS_EVIL_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	return endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_EVIL_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 }
 
 // HUD label for the active hostile kill-fire effect.
@@ -752,9 +752,9 @@ const char *endlessKillFireEvilName(void)
 {
 	if (!endlessKillFireIsEvil())
 		return "";
-	if (endlessActiveMods & ENDLESS_MOD_BURNOUT)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_BURNOUT)
 		return "BURNOUT";
-	if (endlessActiveMods & ENDLESS_MOD_MISFIRE)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_MISFIRE)
 		return "MISFIRE";
 	return "JAMMED";
 }
@@ -777,7 +777,7 @@ static const float endlessGravityHeadings[16][2] = {
 
 void endlessRollGravityDir(void)
 {
-	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
+	if (endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_GRAVITY_OMNI))
 	{
 		const unsigned h = endlessRand() % COUNTOF(endlessGravityHeadings);
 		endlessGravityDirX = endlessGravityHeadings[h][0];
@@ -793,7 +793,7 @@ void endlessRollGravityDir(void)
 float endlessGravityDrift(void)
 {
 	// A bare OMNI bit can be set by the debug editor.
-	if (!endlessFxActive() || !(endlessActiveMods & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI)))
 		return 0.0f;
 	float g = (ENDLESS_GRAVITY_BASE + ENDLESS_GRAVITY_PER_ZONE * (float)endlessRunDepth)
 	        * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -830,7 +830,7 @@ int endlessGravityPullY(void)
 #define ENDLESS_SLUGGISH_MAX      0.55f
 float endlessMoveScale(void)
 {
-	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_SLUGGISH))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SLUGGISH))
 		return 1.0f;
 	float slow = (ENDLESS_SLUGGISH_BASE + ENDLESS_SLUGGISH_PER_ZONE * (float)endlessRunDepth)
 	           * (float)endlessDifficultyRampPercent() / 100.0f;
@@ -841,14 +841,14 @@ float endlessMoveScale(void)
 
 bool endlessShieldRegenOff(void)
 {
-	return endlessFxActive() && (endlessActiveMods & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
+	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEADGEN));
 }
 
 // Keep Dead Generator non-zero so every main gun eventually fires.
 #define ENDLESS_DEADGEN_POWER_ADD 2u
 unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 {
-	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_DEADGEN))
+	if (endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DEADGEN))
 		return ENDLESS_DEADGEN_POWER_ADD;
 	// Static uses the same recharge seam as Dead Generator.
 	if (endlessStaticLockoutActive())
@@ -859,14 +859,14 @@ unsigned endlessGeneratorPowerAdd(unsigned normalAdd)
 // Reactive boons.
 bool endlessShieldRegenFree(void)
 {
-	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_AUXREACTOR);
+	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_AUXREACTOR);
 }
 
 // Apply Low Profile at damage tests so pickup reach remains unchanged.
 #define ENDLESS_LOWPROFILE_PCT 75
 int endlessHitboxScale(int area)
 {
-	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_LOWPROFILE))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_LOWPROFILE))
 		return area;
 	int a = area * ENDLESS_LOWPROFILE_PCT / 100;
 	return (a < 1) ? 1 : a;
@@ -904,7 +904,7 @@ void endlessReviveGraceTick(void)
 // A true result spends the cooldown and must be honored by the caller.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
-	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_AEGIS))
 		return false;
 	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
 		return false;
@@ -918,7 +918,7 @@ bool endlessAegisGateConsume(int shieldBefore, int spill)
 
 bool endlessShockwaveActive(void)
 {
-	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SHOCKWAVE);
+	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SHOCKWAVE);
 }
 
 int endlessShockwaveRadius(int linknum, int eliteState)
@@ -964,7 +964,7 @@ uint endlessDangerTargetPlayer(int fromX, int fromY)
 // Modifier decisions used by engine-owned object pools.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
-	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_MARTYRDOM))
 		return 0;
 	if (linknum != 0 && linknum == endlessMartyrLastLink)
 		return 0;
@@ -978,7 +978,7 @@ JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 
 bool endlessSeekerActive(void)
 {
-	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SEEKER);
+	return endlessFxActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_SEEKER);
 }
 
 // Static combines a raw power drain with a recharge lockout.
@@ -1002,7 +1002,7 @@ void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
 
 unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 {
-	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
+	if (!endlessFxActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_STATIC) || (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DEADGEN))
 		return 0;
 	// A new hit may extend but never shorten the active lockout.
 	int lock = (int)actualDamage * ENDLESS_STATIC_LOCKOUT_PER_DMG;
@@ -1025,10 +1025,10 @@ int endlessPlayerDamagePercent(void)
 	ENDLESS_OVERRIDE(ESO_PLAYERDMG);
 	if (!endlessFxActive())
 		return 100;
-	int pct = (endlessActiveMods & ENDLESS_MOD_OVERCHARGE) ? 150 : 100;
-	if ((endlessActiveMods & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
-		pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
-	if (endlessTurbodriveActive() && (endlessActiveMods & ENDLESS_MOD_DMGUP))
+	int pct = (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERCHARGE) ? 150 : 100;
+	if ((endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
+		pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	if (endlessTurbodriveActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
 		pct += endlessBuffChargePaid() * 2;
 	pct += endlessPerkOwned[PERK_DAMAGE] * ENDLESS_PERK_DAMAGE_PCT;
 	if (endlessPerkOwned[PERK_GLASSCANNON])
@@ -1036,7 +1036,7 @@ int endlessPlayerDamagePercent(void)
 	if (endlessAdrenalineActive())
 		pct += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_DMG;
 	// Apply hostile damage cuts after every bonus.
-	if ((endlessActiveMods & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
+	if ((endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
 	{
 		pct -= endlessKillBuffEvilDamagePenalty();
 		if (pct < ENDLESS_EVIL_DMG_FLOOR)
@@ -1058,9 +1058,9 @@ int endlessScrollBoostPercent(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	if (endlessActiveMods & (ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP))
+	if (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP))
 		return 220;
-	if (endlessActiveMods & (ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM))
+	if (endlessPlayerMods[endlessFxPlayer()] & (ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM))
 		return 70;
 	return 0;
 }
@@ -1125,11 +1125,11 @@ int endlessShipTintFilter(void)
 		return 0;
 	if (endlessTurbodriveActive())
 	{
-		if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL)
+		if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL)
 			return ENDLESS_EVIL_SHIP_FILTER;
-		if (endlessActiveMods & ENDLESS_MOD_OVERBLAST)
+		if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERBLAST)
 			return ENDLESS_OVERBLAST_SHIP_FILTER;
-		return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE)
+		return (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERDRIVE)
 		       ? ENDLESS_OVERDRIVE_SHIP_FILTER
 		       : ENDLESS_TURBODRIVE_SHIP_FILTER;
 	}

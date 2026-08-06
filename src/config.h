@@ -120,6 +120,25 @@ typedef struct
 // First 10 are timed battle, next 10 are episodes
 extern T2KHighScoreType t2kHighScores[20][3];
 
+/* Online co-op Campaign leaves its own board: an arcade pair and a campaign pair earn on
+ * completely different economies, so mixing them into the shared two-player table would compare
+ * two things that are not comparable. One best run per episode, kept in opentyrian.cfg rather
+ * than in tyrian.sav's fixed high-score block. */
+typedef struct
+{
+	Sint32 score;      // the two players' combined cash
+	char   name[30];   // both player names, as the lobby knew them
+	Uint8  difficulty;
+}
+CoopCampaignScore;
+
+#define COOP_CAMPAIGN_SCORE_EPISODES 5   // asserted against EPISODE_MAX in config.c
+extern CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
+void coopCampaignScoreConfigSave(ConfigSection *section);
+void coopCampaignScoreConfigLoad(const ConfigSection *section);
+// Record the finished run if it beats that episode's standing best.
+void coopCampaignScoreNote(void);
+
 extern const JE_byte cryptKey[10];
 extern const DosKeySettings defaultDosKeySettings;  // fka defaultKeySettings
 extern const KeySettings defaultKeySettings;
