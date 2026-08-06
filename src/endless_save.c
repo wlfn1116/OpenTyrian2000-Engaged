@@ -134,7 +134,7 @@ typedef struct {
 	Uint8  usedCustom;  // 1 = the run has cleared a zone firing the custom weapon
 
 	/* Added in v21 for online co-op. Slot 0 is the run's only player outside co-op, and a v20
-	 * record loads into it, so a single-player run resumes exactly as it used to. */
+	 * record loads into it, so a single-player run resumes exactly just as it used to. */
 	Uint8  coopHostCharts;   // Alternating course picks: is the host charting the next one?
 	Uint8  courseChooser;    // EndlessCourseChooser the run was started under
 	Sint32 armorBonus2;      // player 2's Reinforce tier
