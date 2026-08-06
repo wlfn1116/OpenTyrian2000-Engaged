@@ -7919,6 +7919,8 @@ redo:
 			{
 				this_player->is_alive = false;
 				this_player->exploding_ticks = 60;
+				if (coopEndlessMode)
+					endlessPlayerDowned[this_player - &player[0]] = true;
 				levelEnd = 40;
 			}
 

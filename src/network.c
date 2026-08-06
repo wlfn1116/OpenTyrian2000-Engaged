@@ -33,6 +33,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
+#include "game_menu.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -1585,6 +1586,9 @@ static bool network_shop_active;
 static bool network_shop_host_committed;
 static JE_byte network_shop_host_level;
 
+// Endless: the sector index the peer published, or -1 while it has committed to none.
+static int network_shop_peer_pick = -1;
+
 /* DONE and LOCK describe the sender's state at send time rather than an event, so every shop
  * packet carries both and the receiver assigns them. That is what lets a commit be withdrawn. */
 enum
@@ -1654,13 +1658,17 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 	SDLNet_Write16(thisPlayerNum, &packet_out_temp->data[4]);
 	SDLNet_Write16(sequence, &packet_out_temp->data[6]);
 	SDLNet_Write16(flags, &packet_out_temp->data[8]);
-	SDLNet_Write16(mainLevel, &packet_out_temp->data[10]);
+	// Endless publishes the chosen sector index here; Campaign publishes the level it jumped to.
+	SDLNet_Write16(coopEndlessMode ? (Uint16)(endlessCoopCourse + 1) : mainLevel,
+	               &packet_out_temp->data[10]);
 	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
 	SDLNet_Write32(this_player->cash, &packet_out_temp->data[14]);
 	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[18]);
 	SDLNet_Write16(acknowledge, &packet_out_temp->data[20]);
-	const int item_size = network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
-	network_send(22 + item_size);
+	int len = 22 + network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
+	if (coopEndlessMode)
+		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
+	network_send(len);
 	return sequence;
 }
 
@@ -1673,6 +1681,7 @@ void network_shop_begin(void)
 	network_shop_local_locked = false;
 	network_shop_save_ready = false;
 	network_shop_host_committed = false;
+	network_shop_peer_pick = -1;
 	network_shop_active = isNetworkGame && coop_mode_active();
 	if (isNetworkGame && coop_mode_active())
 		network_shop_send_state(false);
@@ -1955,6 +1964,186 @@ void network_custom_weapon_publish(void)
 	free(stream);
 }
 
+/* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
+ * reason: transport delivery alone does not mean the peer has consumed the bytes. */
+static Uint16 network_endless_gen;
+static bool   network_endless_acked;
+
+static void network_endless_send_ack(Uint16 gen)
+{
+	network_prepare(PACKET_ENDLESS_RUN);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+void network_endless_run_publish(void)
+{
+	if (!isNetworkGame || !coopEndlessMode || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(ENDLESS_RUN_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = endlessRunSerialize(stream, ENDLESS_RUN_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_endless_gen;
+	network_endless_acked = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_endless_acked; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_endless_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_ENDLESS_RUN);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			if (packet_in[0] != NULL
+			    && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+			    && packet_in[0]->len >= NCW_HDR
+			    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == 0)
+			{
+				if (SDLNet_Read16(&packet_in[0]->data[NCW_GEN]) == gen)
+					network_endless_acked = true;
+				network_update();
+			}
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_endless_acked)
+	{
+		crashlog_netlog_line("ENDLESS RUN NOT DELIVERED",
+		                     "the joiner never acknowledged the resumed run; the two machines would "
+		                     "start the session from different zones.");
+	}
+
+	free(stream);
+}
+
+bool network_endless_run_receive(Uint32 timeout_ms)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return false;
+
+	Uint8 *buf = NULL;
+	Uint8 *seen = NULL;
+	Uint32 have = 0, count = 0;
+	Uint16 gen = 0;
+	size_t total = 0;
+	bool done = false;
+
+	const Uint32 started = SDL_GetTicks();
+	while (!done && SDL_GetTicks() - started < timeout_ms)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		network_check();
+
+		if (packet_in[0] == NULL || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_ENDLESS_RUN
+		    || packet_in[0]->len < NCW_HDR)
+		{
+			network_update();
+			SDL_Delay(8);
+			continue;
+		}
+
+		const Uint16 pgen  = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+		const Uint32 chunk = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+		const Uint32 total_chunks = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+		const Uint32 plen  = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+		if (total_chunks == 0 || chunk >= total_chunks || plen > NCW_PAYLOAD
+		    || (Uint32)packet_in[0]->len < NCW_HDR + plen
+		    || (size_t)total_chunks * NCW_PAYLOAD > ENDLESS_RUN_WIRE_MAX)
+		{
+			network_update();
+			continue;
+		}
+
+		if (buf == NULL || gen != pgen || count != total_chunks)
+		{
+			free(buf);
+			free(seen);
+			buf = calloc((size_t)total_chunks, NCW_PAYLOAD);
+			seen = calloc((size_t)total_chunks, 1);
+			if (buf == NULL || seen == NULL)
+			{
+				free(buf);
+				free(seen);
+				return false;
+			}
+			gen = pgen;
+			count = total_chunks;
+			have = 0;
+			total = 0;
+		}
+
+		memcpy(buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+		if (chunk == count - 1)
+			total = (size_t)chunk * NCW_PAYLOAD + plen;
+		if (!seen[chunk])
+		{
+			seen[chunk] = 1;
+			++have;
+		}
+		network_update();
+
+		if (have >= count && total > 0)
+		{
+			done = endlessRunAdopt(buf, total);
+			network_endless_send_ack(gen);   // answer either way: a resend produces the same bytes
+			break;
+		}
+	}
+
+	free(buf);
+	free(seen);
+	return done;
+}
+
 bool network_shop_pump(void)
 {
 	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)
@@ -1962,6 +2151,13 @@ bool network_shop_pump(void)
 
 	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
 		return network_custom_weapon_receive();
+
+	// A late duplicate of the resume transfer: the run is already adopted, so drop it.
+	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN)
+	{
+		network_update();
+		return true;
+	}
 
 	if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
 		return false;
@@ -1977,8 +2173,10 @@ bool network_shop_pump(void)
 			network_shop_peer_sequence = sequence;
 			peer->cash = SDLNet_Read32(&packet_in[0]->data[14]);
 			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[18]);
-			network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
+			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
 			peer->last_items = peer->items;
+			if (coopEndlessMode && packet_in[0]->len >= 22 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
+				endlessUnpackPlayerBlock(&packet_in[0]->data[22 + item_size], sender - 1);
 
 			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
 			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
@@ -1991,6 +2189,15 @@ bool network_shop_pump(void)
 			{
 				network_shop_host_committed = true;
 				network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
+			}
+
+			// Endless: any peer may be the one charting, and the index is good the moment it
+			// arrives (biased by one so zero still reads as "nothing committed").
+			if (coopEndlessMode)
+			{
+				const int course = (int)SDLNet_Read16(&packet_in[0]->data[10]) - 1;
+				network_shop_peer_pick = (course >= 0 && course < ENDLESS_MAX_COURSE_SLOTS)
+				                       ? course : -1;
 			}
 
 			if (flags & SHOP_SYNC_SAVE_REQUEST)
@@ -2008,6 +2215,11 @@ bool network_shop_pump(void)
 bool network_shop_peer_done(void)
 {
 	return network_shop_peer_ready;
+}
+
+int network_shop_peer_course(void)
+{
+	return network_shop_peer_pick;
 }
 
 void network_shop_adopt_host_level(void)

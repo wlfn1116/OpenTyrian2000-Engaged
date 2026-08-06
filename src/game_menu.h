@@ -88,4 +88,7 @@ void JE_drawShipSpecs(SDL_Surface *, SDL_Surface *);
 void JE_weaponSimUpdate(void);
 void JE_weaponViewFrame(void);
 
+// Online Endless: the sector index the charting player committed to, or -1 for none.
+extern int endlessCoopCourse;
+
 #endif // GAME_MENU_H

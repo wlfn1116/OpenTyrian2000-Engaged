@@ -1579,6 +1579,10 @@ JE_byte JE_playerDamage(JE_byte temp,
 							levelTimer = false;
 						this_player->is_alive = false;
 						this_player->exploding_ticks = 60;
+						// A co-op ship that goes down spectates until the zone ends; the outpost the
+						// survivor reaches puts it back in the air. Both down is an ordinary death.
+						if (coopEndlessMode)
+							endlessPlayerDowned[this_player - &player[0]] = true;
 						levelEnd = 40;
 						tempVolume = tyrMusicVolume;
 						soundQueue[1] = S_EXPLOSION_22;
