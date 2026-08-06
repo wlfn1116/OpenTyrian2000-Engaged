@@ -18,4 +18,11 @@ extern bool qa_fast_forward;
 int qa_run_unit_suite(void);
 int qa_run_replay_fixture(void);
 
+// Shared check primitive, so a suite can live in its own translation unit.
+void qa_check(bool okay, const char *what);
+// Online Endless co-op: outpost, E-shop, perks, drives, downed/revive, restart (qa_endless.c).
+void qa_test_endless_suite(void);
+// Online Arcade and Campaign: the mode-flag split, two-wallet economy, records (qa_online.c).
+void qa_test_online_suite(void);
+
 #endif /* QA_H */
