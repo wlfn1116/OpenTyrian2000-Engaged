@@ -507,10 +507,11 @@ are left alone and restored afterwards.
 | --- | --- |
 | Game Type | **Arcade** keeps the linked Silver Ship and Dragonwing rules. **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. |
-| Endless Setup | Endless only. Opens a page with the run seed, the run mode, and who charts each course. |
+| Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
 | Difficulty | Starting campaign or Endless difficulty. Arcade applies its usual two-player difficulty adjustment. |
 | Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign and Endless give both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
+| Double Pickups | Individual credit only, so the row is not shown under Shared. **On** pays every cash and gem pickup twice over to whoever flew into it, which puts a split take back near what one player alone would have collected. Kill cash is not doubled. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
 | Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. Greyed out unless Netcode is Rollback. |
@@ -569,6 +570,7 @@ zone counter; wallets, stock and gear belong to one player each.
 | Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own. |
 | Run Mode | **Relaxed**, **Standard** or **Hardcore**, exactly as in a solo run. Relaxed opens the death menu when both ships are down, Standard ends the run there, and Hardcore does that and saves nothing. |
 | Charts Course | Who picks the next sector: **Host**, **Guest**, **Alternating** (turn about, and the turn is kept in the save), or **50-50** (a coin flip from the run seed, so both machines land on the same side of it). |
+| Combo Feed | Whose kill-fire streak a kill feeds. **Individual** (default) counts a kill for the ship whose shot destroyed it, so a drive you paid for is worth what your own shooting earns. **Shared** has every kill feed both streaks. A kill neither of you can be credited with feeds both either way. |
 
 Both of you shop at the same outpost at the same time, each with your own stock,
 your own prices and your own wallet. Rerolling changes only your own shelves, and
@@ -579,7 +581,10 @@ token, bombs, a Special Weapon, and the kill-fire drives.
 Turbodrive, Overblast and Overdrive belong to the ship that paid for them. One of
 you can be flying Turbodrive while the other stacks Overblast, each with their own
 window and their own combo, and the buyer's ship glows in that drive's colour on
-both screens. The kill-fire readout in the corner is your own drive's.
+both screens. The kill-fire readout in the corner is your own drive's. Under the
+default Individual combo feed your streak counts your own kills, so a drive is
+worth what you shoot with it; a sector that deals a drive still deals it to both
+of you.
 
 Two buys reach further than the ship that made them: **Sector Sabotage** strips a
 danger off the sector you both fly, and **Extra Perk** adds to the run's shared

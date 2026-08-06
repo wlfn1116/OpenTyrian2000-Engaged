@@ -103,6 +103,7 @@ extern int network_host_difficulty;
 extern char network_host_endless_seed[NET_ENDLESS_SEED_MAX];
 extern int  network_host_endless_run_mode;
 extern int  network_host_endless_chooser;
+extern bool network_host_endless_combo_shared;
 
 // Adopt the host's Endless block from the connect packet, clamping every field.
 void network_endless_adopt(const Uint8 *buf);

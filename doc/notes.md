@@ -633,6 +633,18 @@ the alternating-turn flag, both perk rows and both RNG streams. A v20 or earlier
 record loads into slot 0 with the second slot zeroed and the perk rows rebuilt
 from the effective stacks, so a solo run resumes unchanged.
 
+`enemy_logical_death` carries the killer (0/1, or `ENDLESS_KILLER_NONE` for a
+death nothing can claim, such as a despawn), taken from the shot's
+`playerNumber` at both kill sites. `endlessCountKill` uses it for the Combo Feed
+setting and `endlessAwardEliteKill` for the bounty, which then follows the same
+Shared / Individual credit rule as any other kill cash. An unclaimable kill feeds
+both streaks, so neither ship is punished for it.
+
+Double Pickups rides settings-flags bit 10 and `coop_pickups_are_doubled` gates
+itself on Individual credit, so the flag can be stored On without doing anything
+under Shared. Combo Feed rides a byte in the connect packet's Endless block
+(widened to 3 + seed, NET_VERSION 17).
+
 Personal sector effects have their own mask. `endlessActiveMods` is what the
 sector charted, and `endlessPlayerMods[p]` is that plus whatever player p bought
 for themselves; `ENDLESS_PERSONAL_MOD_MASK` is the split, and

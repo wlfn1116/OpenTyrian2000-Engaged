@@ -48,7 +48,7 @@ typedef enum
 }
 enemy_death_kind;
 
-void enemy_logical_death(unsigned int i, enemy_death_kind kind);
+void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer);
 
 extern float debug_interp_alpha;  // last presented interpolation fraction
 

@@ -62,7 +62,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       16           // v16 adds the Endless lobby type and its settings
+#define NET_VERSION       17           // v17 adds Double Pickups and the Endless combo feed
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -73,7 +73,7 @@
 #define NET_CONNECT_DIFFICULTY 16
 #define NET_CONNECT_SETTINGS  18
 #define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
-#define NET_CONNECT_ENDLESS_SIZE (2 + NET_ENDLESS_SEED_MAX)   // run mode, course chooser, seed
+#define NET_CONNECT_ENDLESS_SIZE (3 + NET_ENDLESS_SEED_MAX)   // run mode, chooser, combo feed, seed
 #define NET_CONNECT_NAME      (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
@@ -109,6 +109,7 @@ int network_host_difficulty = DIFFICULTY_NORMAL;
 char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
 int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
 int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
+bool network_host_endless_combo_shared = false;
 
 static char empty_string[] = "";
 char *network_player_name = empty_string,
@@ -966,7 +967,8 @@ static void send_connect_packet(Uint16 episodes_local)
 	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
 	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
-	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 2], network_host_endless_seed,
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_host_endless_seed,
 	       NET_ENDLESS_SEED_MAX);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
@@ -1414,7 +1416,8 @@ int network_settings_pack(Uint8 *buf)
 	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
-	flags |= coopSharedCredit      ? 1 << 9 : 0;  // Campaign credit sharing; host decides
+	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
+	flags |= coopDoublePickups     ? 1 << 10 : 0; // ...and whether Individual pays pickups twice
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1522,6 +1525,7 @@ int network_settings_adopt(const Uint8 *buf)
 	nrb_set_session_vt((flags & (1 << 5)) != 0);
 	nrb_set_session_recovery((flags & (1 << 6)) != 0);
 	coop_set_session_shared_credit((flags & (1 << 9)) != 0);
+	coop_set_session_double_pickups((flags & (1 << 10)) != 0);
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -1551,7 +1555,8 @@ void network_endless_adopt(const Uint8 *buf)
 {
 	network_host_endless_run_mode = buf[0];
 	network_host_endless_chooser = buf[1];
-	memcpy(network_host_endless_seed, &buf[2], NET_ENDLESS_SEED_MAX);
+	network_host_endless_combo_shared = buf[2] != 0;
+	memcpy(network_host_endless_seed, &buf[3], NET_ENDLESS_SEED_MAX);
 	network_host_endless_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
 
 	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)

@@ -1045,7 +1045,7 @@ static void qa_test_kill_fire_drives(void)
 
 		// Enough kills to climb a step of the combo ramp and stack the damage terms.
 		for (int k = 0; k < 60; ++k)
-			endlessCountKill(0);
+			endlessCountKill(0, ENDLESS_KILLER_NONE);
 
 		endlessSetFxPlayer(0);
 		char detail[96];
@@ -1105,7 +1105,7 @@ static void qa_test_kill_fire_drives(void)
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
 	endlessSetFxPlayer(0);   // the context stays on player 0 across the whole burst
 	for (int k = 0; k < 30; ++k)
-		endlessCountKill(0);
+		endlessCountKill(0, ENDLESS_KILLER_NONE);
 
 	qa_check(endlessTurbodriveTimer[0] == endlessBuffWindowTicksFor(0)
 	         && endlessTurbodriveTimer[1] == endlessBuffWindowTicksFor(1)
@@ -1155,7 +1155,7 @@ static void qa_test_kill_fire_wiring(void)
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
 	for (int k = 0; k < 30; ++k)
-		endlessCountKill(0);
+		endlessCountKill(0, ENDLESS_KILLER_NONE);
 
 	int dropped[2] = { 0, 0 };
 	for (uint p = 0; p < 2; ++p)
@@ -1176,7 +1176,7 @@ static void qa_test_kill_fire_wiring(void)
 	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
 	for (int k = 0; k < 30; ++k)
-		endlessCountKill(0);
+		endlessCountKill(0, ENDLESS_KILLER_NONE);
 
 	for (uint p = 0; p < 2; ++p)
 	{
@@ -1217,6 +1217,94 @@ static void qa_test_kill_fire_wiring(void)
 	endlessMode = savedEndless;
 }
 
+/* Whose combo a kill feeds, and what Individual credit does to a pickup. */
+static void qa_test_coop_combo_and_pickups(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	const JE_boolean savedCampaign = coopCampaignMode;
+	const Uint64 savedActive = endlessActiveMods;
+	const int savedKills = endlessRunKills;
+	const bool savedShared = endlessCoopComboShared;
+
+	endlessMode = true;
+	coopEndlessMode = true;
+	memset(endlessPerkOwned, 0, sizeof(endlessPerkOwned));
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+
+	// Both ships fly a drive, so either one's streak could climb.
+	endlessActiveMods = ENDLESS_MOD_TURBODRIVE;
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+	endlessApplyPurchasedMods();
+
+	endlessCoopComboShared = false;
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	for (int k = 0; k < 12; ++k)
+		endlessCountKill(0, 0);          // player 1 does all the shooting
+	qa_check(endlessComboKills[0] == 12 && endlessComboKills[1] == 0,
+	         "Individual combo feed keeps one ship's kills out of the other's streak");
+	qa_check(endlessTurbodriveTimer[0] > 0 && endlessTurbodriveTimer[1] == 0,
+	         "...and only the shooter's drive window opens");
+
+	for (int k = 0; k < 5; ++k)
+		endlessCountKill(0, 1);          // now player 2 takes some
+	qa_check(endlessComboKills[0] == 12 && endlessComboKills[1] == 5,
+	         "...each ship counting its own");
+
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	endlessCountKill(0, ENDLESS_KILLER_NONE);
+	qa_check(endlessComboKills[0] == 1 && endlessComboKills[1] == 1,
+	         "a kill nothing can claim feeds both, so neither streak is punished for it");
+
+	endlessCoopComboShared = true;
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	for (int k = 0; k < 7; ++k)
+		endlessCountKill(0, 0);
+	qa_check(endlessComboKills[0] == 7 && endlessComboKills[1] == 7,
+	         "Shared combo feed has every kill feed both streaks");
+
+	/* Double Pickups compensates a split take, and only a split take. */
+	coopEndlessMode = false;
+	coopCampaignMode = true;
+	endlessMode = false;
+
+	coop_set_session_shared_credit(false);
+	coop_set_session_double_pickups(true);
+	qa_check(coop_pickups_are_doubled(), "Double Pickups applies under Individual credit");
+
+	player[0].cash = 0;
+	player[1].cash = 0;
+	player_award_pickup_cash(&player[0], 250);
+	qa_check(player[0].cash == 500 && player[1].cash == 0,
+	         "a doubled pickup pays its collector twice and nobody else");
+
+	player[0].cash = 0;
+	player_award_kill_cash(&player[0], 250);
+	qa_check(player[0].cash == 250, "...and leaves kill cash alone");
+
+	coop_set_session_shared_credit(true);
+	qa_check(!coop_pickups_are_doubled(),
+	         "Double Pickups stands down under Shared credit, where both already collect in full");
+	player[0].cash = player[1].cash = 0;
+	player_award_pickup_cash(&player[0], 250);
+	qa_check(player[0].cash == 250 && player[1].cash == 250,
+	         "...and Shared pays the plain amount to both");
+
+	coop_set_session_double_pickups(false);
+	coop_set_session_shared_credit(true);
+	player[0].cash = player[1].cash = 0;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+	endlessCoopComboShared = savedShared;
+	endlessActiveMods = savedActive;
+	endlessRunKills = savedKills;
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -1236,6 +1324,7 @@ static void qa_test_network_settings(void)
 	const bool savedSessionMode = nrb_session_mode(), savedSessionVt = nrb_session_vt();
 	const bool savedSessionRecovery = nrb_session_recovery();
 	const bool savedSharedCredit = coopSharedCredit;
+	const bool savedDoublePickups = coopDoublePickups;
 	const JE_boolean savedCoopCampaign = coopCampaignMode;
 	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
 	 * aligned payload instead of making the alignment itself part of this bounds test. */
@@ -1256,6 +1345,7 @@ static void qa_test_network_settings(void)
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	coopSharedCredit = true;
+	coopDoublePickups = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
 	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
@@ -1285,6 +1375,11 @@ static void qa_test_network_settings(void)
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
+	// Doubling is carried in the same word but is inert under Shared, so check the flag itself
+	// by flipping the credit mode the adopted value sits behind.
+	coop_set_session_shared_credit(false);
+	qa_check(coop_pickups_are_doubled(), "...including whether Individual pays pickups twice");
+	coop_set_session_shared_credit(true);
 	network_settings_restore();
 	arraysMatch = true;
 	for (int i = 0; i < SSW_COUNT; ++i) arraysMatch &= superSparkMode[i] == SUPER_SPARKS_OFF;
@@ -1319,7 +1414,9 @@ static void qa_test_network_settings(void)
 	nrb_set_session_vt(savedSessionVt);
 	nrb_set_session_recovery(savedSessionRecovery);
 	coopSharedCredit = savedSharedCredit;
+	coopDoublePickups = savedDoublePickups;
 	coop_set_session_shared_credit(savedSharedCredit);
+	coop_set_session_double_pickups(savedDoublePickups);
 	coopCampaignMode = savedCoopCampaign;
 #else
 	qa_check(true, "network settings round trip skipped without networking");
@@ -1454,6 +1551,7 @@ int qa_run_unit_suite(void)
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
 	qa_test_kill_fire_wiring();
+	qa_test_coop_combo_and_pickups();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

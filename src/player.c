@@ -151,6 +151,20 @@ bool coop_credit_is_shared(void)
 	return coop_mode_active() && coop_session_shared_credit;
 }
 
+bool coopDoublePickups = false;
+static bool coop_session_double_pickups = false;
+
+void coop_set_session_double_pickups(bool on)
+{
+	coop_session_double_pickups = on;
+}
+
+bool coop_pickups_are_doubled(void)
+{
+	// Never under Shared: both players already take every pickup at its full value there.
+	return coop_mode_active() && coop_session_double_pickups && !coop_credit_is_shared();
+}
+
 // Credit earned cash. Player 1's Endless income must pass through the run ledger; Online
 // Campaign's Shared credit pays the full amount to both players instead of to one.
 static void player_credit_cash(Player *this_player, long amount, EndlessCashSource endless_source)
@@ -170,6 +184,8 @@ static void player_credit_cash(Player *this_player, long amount, EndlessCashSour
 
 void player_award_pickup_cash(Player *this_player, long amount)
 {
+	if (coop_pickups_are_doubled())
+		amount *= 2;
 	player_credit_cash(this_player, amount, ENDLESS_CASH_PICKUP);
 }
 
