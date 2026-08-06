@@ -235,7 +235,8 @@ extern int endlessOverdriveStacks[2];    // +1 per kill while the window is up (
 extern int endlessBuffCooldownUntil[2];  // run depth at which the kill-fire buys unlock again (0 = no lock)
 extern int endlessBuffCharge[2];         // cash-paid tier that scales the window/damage (0..20)
 
-int endlessBuffWindowTicks(void);     // base kill-fire window, extended by the largest charge paid
+int endlessBuffWindowTicks(void);     // base kill-fire window for the ship being computed
+int endlessBuffWindowTicksFor(uint p);// ...and for one named ship, for the kill loop
 int endlessBuffChargePaid(void);      // the current ship's own charge, which also scales its damage
 
 extern bool endlessReviveHeld[2];          // a held revive token survives one lethal hit

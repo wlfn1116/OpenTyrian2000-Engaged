@@ -1008,6 +1008,129 @@ static void qa_test_endless_coop(void)
 	endlessMode = savedEndless;
 }
 
+/* Every kill-fire drive, driven through the real kill path: the window has to open, the boon has
+ * to grant what it advertises and nothing it does not, and a curse has to bite. */
+static void qa_test_kill_fire_drives(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	const Uint64 savedActive = endlessActiveMods;
+	const int savedKills = endlessRunKills;
+
+	endlessMode = true;
+	coopEndlessMode = true;
+	memset(endlessPerkOwned, 0, sizeof(endlessPerkOwned));
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+
+	struct { Uint64 bit; const char *name; bool fire; bool damage; bool jam; const char *evil; } drives[] = {
+		{ ENDLESS_MOD_TURBODRIVE, "Turbodrive", true,  false, false, "" },
+		{ ENDLESS_MOD_OVERBLAST,  "Overblast",  false, true,  false, "" },
+		{ ENDLESS_MOD_OVERDRIVE,  "Overdrive",  true,  true,  false, "" },
+		{ ENDLESS_MOD_BACKFIRE,   "Backfire",   false, false, true,  "JAMMED" },
+		{ ENDLESS_MOD_BURNOUT,    "Burnout",    false, false, true,  "BURNOUT" },
+		{ ENDLESS_MOD_MISFIRE,    "Misfire",    false, false, false, "MISFIRE" },
+	};
+
+	for (unsigned d = 0; d < COUNTOF(drives); ++d)
+	{
+		// Player 0 buys the drive; player 1 buys nothing and must come away with nothing.
+		endlessActiveMods = 0;
+		endlessPurchasedMods[0] = (unsigned)drives[d].bit;
+		endlessPurchasedMods[1] = 0;
+		endlessBuffCharge[0] = 10;
+		endlessBuffCharge[1] = 0;
+		endlessApplyPurchasedMods();
+		memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+		memset(endlessComboKills, 0, sizeof(endlessComboKills));
+		memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+
+		// Enough kills to climb a step of the combo ramp and stack the damage terms.
+		for (int k = 0; k < 60; ++k)
+			endlessCountKill(0);
+
+		endlessSetFxPlayer(0);
+		char detail[96];
+		snprintf(detail, sizeof(detail), "%s opens its kill-fire window", drives[d].name);
+		qa_check(endlessTurbodriveActive() && endlessComboKills[0] == 60, detail);
+
+		snprintf(detail, sizeof(detail), "%s window length follows the charge its buyer paid",
+		         drives[d].name);
+		qa_check(endlessTurbodriveTimer[0] == endlessBuffWindowTicksFor(0)
+		         && endlessBuffWindowTicksFor(0) > endlessBuffWindowTicksFor(1), detail);
+
+		snprintf(detail, sizeof(detail), "%s %s the guns", drives[d].name,
+		         drives[d].fire ? "quickens" : "leaves the cadence alone");
+		qa_check((endlessKillBuffFireDecrements() > 0) == drives[d].fire, detail);
+
+		snprintf(detail, sizeof(detail), "%s %s shot damage", drives[d].name,
+		         drives[d].damage ? "stacks" : "does not stack");
+		qa_check((endlessKillBuffDamagePercent() > 0) == drives[d].damage, detail);
+
+		snprintf(detail, sizeof(detail), "%s %s", drives[d].name,
+		         drives[d].jam ? "jams the guns" : "does not jam the guns");
+		qa_check((endlessKillFireJamTicks() > 0) == drives[d].jam, detail);
+
+		const bool evil = drives[d].evil[0] != '\0';
+		snprintf(detail, sizeof(detail), "%s reads as %s", drives[d].name, evil ? "a curse" : "a boon");
+		qa_check(endlessKillFireIsEvil() == evil
+		         && strcmp(endlessKillFireEvilName(), drives[d].evil) == 0, detail);
+
+		snprintf(detail, sizeof(detail), "%s moves the buyer's shot damage the right way",
+		         drives[d].name);
+		const int dmg = endlessPlayerDamagePercent();
+		qa_check(drives[d].damage ? (dmg > 100) : (evil ? (dmg <= 100) : (dmg == 100)), detail);
+
+		// The partner bought nothing, so none of it reaches them.
+		endlessSetFxPlayer(1);
+		snprintf(detail, sizeof(detail), "%s leaves the other ship untouched", drives[d].name);
+		qa_check(!endlessTurbodriveActive() && endlessKillBuffFireDecrements() == 0
+		         && endlessKillBuffDamagePercent() == 0 && endlessKillFireJamTicks() == 0
+		         && endlessPlayerDamagePercent() == 100 && endlessShipTintFilter() == 0, detail);
+
+		endlessSetFxPlayer(0);
+		snprintf(detail, sizeof(detail), "%s tints the buyer's hull", drives[d].name);
+		qa_check(endlessShipTintFilter() != 0, detail);
+	}
+
+	/* Two ships, two different drives bought at two different prices. Each has to come away with
+	 * its own window length: the kill loop reads the charge of the ship it is opening the window
+	 * for, not whichever ship the effect context happened to be pointing at. */
+	endlessActiveMods = 0;
+	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE;
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
+	endlessBuffCharge[0] = 0;
+	endlessBuffCharge[1] = 20;
+	endlessApplyPurchasedMods();
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	endlessSetFxPlayer(0);   // the context stays on player 0 across the whole burst
+	for (int k = 0; k < 30; ++k)
+		endlessCountKill(0);
+
+	qa_check(endlessTurbodriveTimer[0] == endlessBuffWindowTicksFor(0)
+	         && endlessTurbodriveTimer[1] == endlessBuffWindowTicksFor(1)
+	         && endlessTurbodriveTimer[1] > endlessTurbodriveTimer[0],
+	         "each ship's window is as long as its own drive was paid for");
+
+	endlessSetFxPlayer(0);
+	const bool p0 = endlessKillBuffFireDecrements() > 0 && endlessKillBuffDamagePercent() == 0;
+	endlessSetFxPlayer(1);
+	const bool p1 = endlessKillBuffFireDecrements() == 0 && endlessKillBuffDamagePercent() > 0;
+	qa_check(p0 && p1, "two ships fly different drives at once, each getting only its own");
+
+	endlessSetFxPlayer(0);
+	endlessActiveMods = savedActive;
+	endlessRunKills = savedKills;
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+	endlessBuffCharge[0] = endlessBuffCharge[1] = 0;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -1243,6 +1366,7 @@ int qa_run_unit_suite(void)
 	qa_test_effect_gates();
 	qa_test_network_settings();
 	qa_test_endless_coop();
+	qa_test_kill_fire_drives();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

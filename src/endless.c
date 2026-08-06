@@ -710,7 +710,7 @@ void endlessCountKill(int linknum)
 	{
 		if (endlessPlayerMods[p] & ENDLESS_MOD_KILLFIRE_ANY)
 		{
-			endlessTurbodriveTimer[p] = endlessBuffWindowTicks();
+			endlessTurbodriveTimer[p] = endlessBuffWindowTicksFor(p);
 			++endlessComboKills[p];
 		}
 		if ((endlessPlayerMods[p] & ENDLESS_MOD_STACKED)
