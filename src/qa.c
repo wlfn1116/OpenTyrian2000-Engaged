@@ -841,6 +841,140 @@ static void qa_test_effect_gates(void)
 	endlessActiveMods = savedMods;
 }
 
+/* Online Endless: the block each machine publishes for its own player, the way two players'
+ * purchases fold into one sector, and who charts the next course. */
+static void qa_test_endless_coop(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	const bool savedHost = network_is_host;
+	const EndlessCourseChooser savedChooser = endlessCourseChooser;
+	const bool savedHostCharts = endlessCoopHostCharts;
+	const int savedDepth = endlessRunDepth;
+
+	endlessMode = true;
+	coopEndlessMode = true;
+
+	/* The wire block round trips through the peer's slot without touching the sender's. */
+	endlessArmorBonus[0] = 24;
+	endlessPurchasedMods[0] = ENDLESS_MOD_OVERDRIVE;
+	endlessBuffKind[0] = ENDLESS_BUFF_KIND_OVERDRIVE;
+	endlessBuffCharge[0] = 7;
+	endlessBuffCooldownUntil[0] = 12;
+	endlessCleanseChargeCount[0] = 2;
+	endlessLongCon[0] = 3;
+	endlessShopTax[0] = 50;
+	endlessRevivesUsed[0] = 4;
+	endlessRerollCost[0] = 91000;
+	endlessHullCost[0] = 45000;
+	endlessShopEntryCash[0] = 1234567;
+	endlessReviveHeld[0] = true;
+	endlessGambleRigged[0] = true;
+	endlessPlayerDowned[0] = true;
+	player[0].superbombs = 6;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkTakenBy[0][PERK_DAMAGE] = 2;
+	endlessPerkRederive();
+
+	union {
+		Uint32 align;
+		Uint8 bytes[ENDLESS_PLAYER_BLOCK_SIZE + 8];
+	} guarded;
+	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
+	const int packed = endlessPackPlayerBlock(guarded.bytes + 4, 0);
+	qa_check(packed == ENDLESS_PLAYER_BLOCK_SIZE,
+	         "endless co-op player block packs its declared width");
+	qa_check(guarded.bytes[3] == 0x5a && guarded.bytes[4 + ENDLESS_PLAYER_BLOCK_SIZE] == 0x5a,
+	         "endless co-op player block stays inside its buffer");
+
+	endlessUnpackPlayerBlock(guarded.bytes + 4, 1);
+	qa_check(endlessArmorBonus[1] == 24 && endlessPurchasedMods[1] == ENDLESS_MOD_OVERDRIVE
+	         && endlessBuffKind[1] == ENDLESS_BUFF_KIND_OVERDRIVE && endlessBuffCharge[1] == 7
+	         && endlessBuffCooldownUntil[1] == 12 && endlessCleanseChargeCount[1] == 2
+	         && endlessLongCon[1] == 3 && endlessShopTax[1] == 50 && endlessRevivesUsed[1] == 4
+	         && endlessRerollCost[1] == 91000 && endlessHullCost[1] == 45000
+	         && endlessShopEntryCash[1] == 1234567,
+	         "endless co-op player block restores every numeric field");
+	qa_check(endlessReviveHeld[1] && endlessGambleRigged[1] && endlessPlayerDowned[1]
+	         && player[1].superbombs == 6,
+	         "endless co-op player block restores the one-shot latches and bombs");
+	qa_check(endlessPerkTakenBy[1][PERK_DAMAGE] == 2
+	         && endlessPerkOwned[PERK_DAMAGE] == MIN(4, endlessPerkMaxStack(PERK_DAMAGE)),
+	         "endless perks are the capped sum of both players' picks");
+
+	/* A sector runs one kill-fire effect, so the better of the two purchases wins. */
+	endlessPurchasedMods[0] = ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_FAVOR;
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERDRIVE;
+	const unsigned merged = endlessMergePurchasedMods();
+	qa_check((merged & ENDLESS_MOD_OVERDRIVE) && !(merged & ENDLESS_MOD_TURBODRIVE)
+	         && (merged & ENDLESS_MOD_FAVOR),
+	         "merged sector purchases keep one kill-fire bit and every other buy");
+	endlessPurchasedMods[0] = ENDLESS_MOD_BURNOUT;
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERBLAST;
+	qa_check((endlessMergePurchasedMods() & ENDLESS_MOD_OVERBLAST) != 0
+	         && (endlessMergePurchasedMods() & ENDLESS_MOD_BURNOUT) == 0,
+	         "a bought boon outranks a gambled curse in the merged sector");
+	endlessBuffCharge[1] = 15;
+	qa_check(endlessBuffChargePaid() == 15,
+	         "the shared kill-fire window takes the larger charge paid");
+
+	/* Course picking. Every mode has to answer the same way on both machines. */
+	endlessCourseChooser = ENDLESS_PICK_HOST;
+	network_is_host = true;
+	qa_check(endlessLocalPlayerCharts(), "Host picking charts on the host");
+	network_is_host = false;
+	qa_check(!endlessLocalPlayerCharts(), "Host picking does not chart on the joiner");
+
+	endlessCourseChooser = ENDLESS_PICK_GUEST;
+	qa_check(endlessLocalPlayerCharts(), "Guest picking charts on the joiner");
+	network_is_host = true;
+	qa_check(!endlessLocalPlayerCharts(), "Guest picking does not chart on the host");
+
+	endlessCourseChooser = ENDLESS_PICK_ALTERNATE;
+	endlessCoopHostCharts = true;
+	qa_check(endlessLocalPlayerCharts(), "Alternating starts on the host");
+	endlessAdvanceCourseTurn();
+	qa_check(!endlessLocalPlayerCharts(), "Alternating hands the next course to the joiner");
+	network_is_host = false;
+	qa_check(endlessLocalPlayerCharts(), "...and the joiner sees the same turn");
+
+	/* The coin flip is derived from the seed, so it never depends on how much either player
+	 * shopped, and exactly one machine charts each zone. */
+	endlessCourseChooser = ENDLESS_PICK_COINFLIP;
+	endlessSetSeed("qa-coinflip");
+	bool split = false, alwaysAgree = true;
+	for (int zone = 0; zone < 24; ++zone)
+	{
+		endlessRunDepth = zone;
+		network_is_host = true;
+		const bool hostCharts = endlessLocalPlayerCharts();
+		network_is_host = false;
+		const bool guestCharts = endlessLocalPlayerCharts();
+		if (hostCharts == guestCharts)
+			alwaysAgree = false;
+		if (hostCharts)
+			split = true;
+	}
+	qa_check(alwaysAgree, "the 50-50 coin gives exactly one machine each course");
+	qa_check(split, "the 50-50 coin lands on the host at least once in 24 zones");
+
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessArmorBonus[p] = 0; endlessPurchasedMods[p] = 0; endlessBuffKind[p] = 0;
+		endlessBuffCharge[p] = 0; endlessBuffCooldownUntil[p] = 0; endlessCleanseChargeCount[p] = 0;
+		endlessLongCon[p] = 0; endlessShopTax[p] = 0; endlessRevivesUsed[p] = 0;
+		endlessReviveHeld[p] = false; endlessGambleRigged[p] = false; endlessPlayerDowned[p] = false;
+		player[p].superbombs = 0;
+	}
+	endlessRunDepth = savedDepth;
+	endlessCoopHostCharts = savedHostCharts;
+	endlessCourseChooser = savedChooser;
+	network_is_host = savedHost;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -1075,6 +1209,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_scaling();
 	qa_test_effect_gates();
 	qa_test_network_settings();
+	qa_test_endless_coop();
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();

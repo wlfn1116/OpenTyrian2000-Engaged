@@ -12,6 +12,7 @@
 #include "loudness.h"
 #include "mainint.h"
 #include "mtrand.h"
+#include "rollback.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "palette.h"
@@ -438,6 +439,10 @@ static void endlessRunRecord(int **zone, bool **mark)
 // Record a zone when it starts, not after it is cleared.
 void endlessNoteZoneReached(int zone)
 {
+	// Two ships is a different game; a co-op run leaves the solo records alone.
+	if (coopEndlessMode)
+		return;
+
 	if (!endlessMode || zone > ENDLESS_BEST_ZONE_MAX)
 		return;
 
@@ -759,6 +764,34 @@ void endlessGameplayTick(void)
 
 	endlessOpeningSalvoTick();    // Opening Salvo perk: advance the main-gun idle timer
 	endlessCountermeasureTick();  // Countermeasure Suite perk: advance the burst cooldown
+}
+
+/* The run and per-zone state a re-simulated tick has to see exactly as the live pass did. The
+ * sector's own modifiers and the perk collection do not move inside a level, but a desync
+ * recovery adopts the peer's whole snapshot, so they travel with it. */
+void endless_register_rollback(void)
+{
+	rollback_register("endless.activeMods", &endlessActiveMods, sizeof(endlessActiveMods));
+	rollback_register("endless.zoneTicks", &endlessZoneTicks, sizeof(endlessZoneTicks));
+	rollback_register("endless.turboTimer", &endlessTurbodriveTimer, sizeof(endlessTurbodriveTimer));
+	rollback_register("endless.retalTimer", &endlessRetaliationTimer, sizeof(endlessRetaliationTimer));
+	rollback_register("endless.comboKills", &endlessComboKills, sizeof(endlessComboKills));
+	rollback_register("endless.odStacks", &endlessOverdriveStacks, sizeof(endlessOverdriveStacks));
+	rollback_register("endless.runKills", &endlessRunKills, sizeof(endlessRunKills));
+	rollback_register("endless.runBossKills", &endlessRunBossKills, sizeof(endlessRunBossKills));
+	rollback_register("endless.customFired", &endlessCustomFiredZone, sizeof(endlessCustomFiredZone));
+	rollback_register("endless.eliteRng", &endlessEliteRngState, sizeof(endlessEliteRngState));
+	rollback_register("endless.armorBonus", endlessArmorBonus, sizeof(endlessArmorBonus));
+	rollback_register("endless.downed", endlessPlayerDowned, sizeof(endlessPlayerDowned));
+	rollback_register("endless.reviveHeld", endlessReviveHeld, sizeof(endlessReviveHeld));
+	rollback_register("endless.revivesUsed", endlessRevivesUsed, sizeof(endlessRevivesUsed));
+	rollback_register("endless.perkOwned", endlessPerkOwned, sizeof(endlessPerkOwned));
+	rollback_register("endless.perkTakenBy", endlessPerkTakenBy, sizeof(endlessPerkTakenBy));
+	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
+	rollback_register("endless.salvoIdle", &endlessSalvoIdle, sizeof(endlessSalvoIdle));
+	rollback_register("endless.salvoWindow", &endlessSalvoWindow, sizeof(endlessSalvoWindow));
+	rollback_register("endless.cmCooldown", &endlessCmCooldown, sizeof(endlessCmCooldown));
+	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
 }
 
 // Consume the event-driven armor-bar repaint flag.

@@ -634,6 +634,30 @@ static void configure_buysell_debug_menu(void)
 /* Endless swaps the shop's front-menu items 2/3 (Data Cubes -> E-Shop, Ship Specs -> Perks) and
  * captures the stock labels so a campaign shop restores them. The E-Shop labels carry live prices,
  * so this is called again after each buy. */
+/* Which E-Shop rows a co-op purchase reaches. Personal buys land on the buyer's own ship;
+ * run-wide ones change the sector or the run's shared perk collection, so both players get them
+ * however paid for them. Indexed by menu row (curSel[MENU_ESHOP]). */
+static bool endless_eshop_row_is_personal(int row)
+{
+	switch (row)
+	{
+	case 3:   // Sector Sabotage: strips a modifier off the sector both ships fly
+	case 5:   // Extra Perk: perks are the run's shared upgrades
+	case 7:   // the three kill-fire drives are sector modifiers, so they cover the pair
+	case 8:
+	case 9:
+		return false;
+	default:
+		return true;
+	}
+}
+
+// The one-character marker the row carries in co-op, and the phrase its help line ends with.
+static const char *endless_eshop_row_tag(int row)
+{
+	return endless_eshop_row_is_personal(row) ? "P " : "R ";
+}
+
 static void configure_endless_shop_menu(void)
 {
 	static char stockCubes[sizeof(menuInt[1][1])];
@@ -674,6 +698,17 @@ static void configure_endless_shop_menu(void)
 		SDL_strlcpy(e[11], "Buy Gamble", sizeof(e[11]));
 		SDL_strlcpy(e[12], "Done", sizeof(e[12]));
 		menuChoices[MENU_ESHOP] = 13;
+
+		// Co-op marks every buy with who it lands on; the help line spells the marker out.
+		if (endlessCoop())
+		{
+			for (int row = 2; row < menuChoices[MENU_ESHOP]; ++row)
+			{
+				char tagged[sizeof(e[0])];
+				snprintf(tagged, sizeof(tagged), "%s%s", endless_eshop_row_tag(row), e[row - 1]);
+				SDL_strlcpy(e[row - 1], tagged, sizeof(e[row - 1]));
+			}
+		}
 	}
 	else
 	{
@@ -4247,6 +4282,7 @@ void JE_drawMainMenuHelpText(void)
 		{
 			// The E-Shop has no menuHelp[] row, so supply each entry's help directly. The
 			// description goes in tempStr; the price goes in costStr, drawn HIGHLIGHTED after it.
+			const int eshopRow = curSel[MENU_ESHOP];
 			switch (curSel[MENU_ESHOP])
 			{
 			case 2:
@@ -4354,6 +4390,13 @@ void JE_drawMainMenuHelpText(void)
 			default:
 				SDL_strlcpy(tempStr, "Return to the buy/sell menu.", sizeof(tempStr));
 				break;
+			}
+
+			// Co-op: spell out the marker the row carries, after whatever the case above wrote.
+			if (endlessCoop() && eshopRow < menuChoices[MENU_ESHOP])
+			{
+				SDL_strlcat(tempStr, endless_eshop_row_is_personal(eshopRow)
+				                     ? "  P: yours only." : "  R: the whole run.", sizeof(tempStr));
 			}
 		}
 		else if (curMenu == MENU_PERKS)

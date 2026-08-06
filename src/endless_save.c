@@ -1125,7 +1125,8 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessReviveHeld[p] = buf[n++] != 0;
 	endlessGambleRigged[p] = buf[n++] != 0;
 	endlessPlayerDowned[p] = buf[n++] != 0;
-	player[p].superbombs = MIN((uint)buf[n++], 10u);
+	const uint bombs = buf[n++];   // MIN evaluates twice, so the read has to happen first
+	player[p].superbombs = MIN(bombs, 10u);
 
 	Sint32 fields[12];
 	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)

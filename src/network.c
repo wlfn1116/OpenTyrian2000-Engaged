@@ -2059,6 +2059,61 @@ void network_endless_run_publish(void)
 	free(stream);
 }
 
+/* Both ships going down at once ends the zone on both machines, but only one of them may decide
+ * what happens next. The host picks and publishes; the joiner waits for the answer. Carried on the
+ * run packet under a sentinel chunk count, so no separate message type is needed. */
+#define NET_ENDLESS_DEATH_SENTINEL 0xffff
+
+int network_endless_death_sync(int hostChoice)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return hostChoice;
+
+	if (hostChoice >= 0)
+	{
+		network_prepare(PACKET_ENDLESS_RUN);
+		packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+		packet_out_temp->data[NCW_OWNER + 1] = 0;
+		SDLNet_Write16(0, &packet_out_temp->data[NCW_GEN]);
+		SDLNet_Write16((Uint16)hostChoice, &packet_out_temp->data[NCW_CHUNK]);
+		SDLNet_Write16(NET_ENDLESS_DEATH_SENTINEL, &packet_out_temp->data[NCW_COUNT]);
+		SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+		network_send(NCW_HDR);
+		return hostChoice;
+	}
+
+	const Uint32 started = SDL_GetTicks();
+	while (SDL_GetTicks() - started < 60000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		network_check();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+		    && packet_in[0]->len >= NCW_HDR
+		    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == NET_ENDLESS_DEATH_SENTINEL)
+		{
+			const int choice = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+			network_update();
+			return choice;
+		}
+
+		network_update();
+		if (!network_peer_alive())
+			break;
+		SDL_Delay(16);
+	}
+
+	crashlog_netlog_line("ENDLESS DEATH CHOICE TIMEOUT",
+	                     "the host never published what to do after a shared death; this machine "
+	                     "ended the run rather than guessing.");
+	return -1;
+}
+
 bool network_endless_run_receive(Uint32 timeout_ms)
 {
 	if (!isNetworkGame || !coopEndlessMode)

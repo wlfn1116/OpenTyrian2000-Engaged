@@ -491,20 +491,22 @@ The menu refuses to start a netgame while the FPS Cap is below 35: the simulatio
 runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
-**Host Game** covers the listen port, game type, episode, difficulty, Host Flies
-or Credit, Game Speed, Netcode, and Desync Recovery, one row each with the
-current value on the right and a line explaining the highlighted row underneath.
+**Host Game** covers the listen port, game type, episode or Endless Setup,
+difficulty, Host Flies or Credit, Game Speed, Netcode, and Desync Recovery, one
+row each with the current value on the right and a line explaining the highlighted
+row underneath.
 The host's choices bind the session for both machines. While the other player
 waits for the host to start, they see the same list. The joiner's own settings
 are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
-| Game Type | **Arcade** keeps the linked Silver Ship and Dragonwing rules. **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. |
-| Episode | Starting episode for a new game. Only episodes installed on the host are offered. |
-| Difficulty | Starting campaign difficulty. Arcade applies its usual two-player difficulty adjustment. |
-| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign gives both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
-| Credit | Campaign only, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. |
+| Game Type | **Arcade** keeps the linked Silver Ship and Dragonwing rules. **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. |
+| Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. |
+| Endless Setup | Endless only. Opens a page with the run seed, the run mode, and who charts each course. |
+| Difficulty | Starting campaign or Endless difficulty. Arcade applies its usual two-player difficulty adjustment. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign and Endless give both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
+| Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
 | Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. Greyed out unless Netcode is Rollback. |
@@ -527,9 +529,9 @@ Game, the volume and sensitivity sliders, and the joystick, keyboard, and mouse
 setup screens all work as usual, and backing out of any of them returns here.
 
 Online Arcade keeps the split two-player sidebar, tags each gauge block **P1**
-or **P2**, and dims the other player's gauges. Online Campaign gives each
-machine the normal one-player sidebar for its local ship. Both player names and
-cash totals remain visible along the bottom of the playfield.
+or **P2**, and dims the other player's gauges. Online Campaign and Online Endless
+give each machine the normal one-player sidebar for its local ship. Both player
+names and cash totals remain visible along the bottom of the playfield.
 
 In Campaign, each player chooses and powers up a complete ship independently:
 front and rear weapons, sidekicks, generator, shield, hull, special, cash, and
@@ -539,7 +541,6 @@ Purchases are sent to the peer as they are committed. Whoever picks a level firs
 waits at "Waiting for other player." while the other finishes outfitting; nobody
 is pulled out of the outpost early. Where the route offers a choice of planets and
 the two of you pick different ones, the host's choice is the one you both fly.
-Endless remains a one-player mode.
 
 While you are waiting, **Esc** takes you back into the outpost to change
 equipment or pick a different planet. The waiting screen says so. Once the other
@@ -554,6 +555,51 @@ other player." screen for a moment on a large weapon.
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
 
+### Online Endless
+
+The Endless lobby flies the roguelite with two ships. One run, one sector, one
+zone counter; wallets, stock and gear belong to one player each.
+
+| Endless Setup row | What it does |
+| --- | --- |
+| Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own. |
+| Run Mode | **Relaxed**, **Standard** or **Hardcore**, exactly as in a solo run. Relaxed opens the death menu when both ships are down, Standard ends the run there, and Hardcore does that and saves nothing. |
+| Charts Course | Who picks the next sector: **Host**, **Guest**, **Alternating** (turn about, and the turn is kept in the save), or **50-50** (a coin flip from the run seed, so both machines land on the same side of it). |
+
+Both of you shop at the same outpost at the same time, each with your own stock,
+your own prices and your own wallet. Rerolling changes only your own shelves, and
+one player's rerolls and gambles never move what the other is dealt. The E-Shop
+marks every buy: **P** lands on your ship alone, **R** covers the whole run. The
+help line under the row spells the marker out.
+
+| Buy | Reaches |
+| --- | --- |
+| Shop Reroll, Reinforce, Special Weapon, Revive, Bomb, Gamble | The buyer (**P**) |
+| Sector Sabotage, Extra Perk, Turbodrive, Overblast, Overdrive | The whole run (**R**) |
+
+Perks are the run's shared upgrades: you each pick from your own slate and both
+ships fly under everything either of you took, up to each perk's normal maximum.
+The kill-fire drives are sector modifiers, so a drive one of you paid for covers
+the pair; if you buy different ones the stronger boon wins, and a boon always
+beats a gambled curse. Sabotage charges add up to the same three-strip cap.
+
+While the charting player is on the course list the other sees "Partner is
+charting a course." Esc there goes back into the outpost, the same as in
+Campaign, and both of you keep shopping until you are ready.
+
+A ship that runs out of hull does not end the zone while its partner is still
+flying. It spectates until the zone finishes, and comes back at the next outpost
+with a full hull and no shield, keeping everything it owned. A revive token still
+fires first, so it is spent before the ship goes down at all. Homing shots,
+Seeker corrections and every other danger that picks a target go for the nearer
+ship still flying and ignore a downed one. With both ships down the run mode
+decides what happens, and in Relaxed the host makes the choice for the pair.
+
+The zone-clear bonus and bank interest are each player's own. Zone records are
+left alone by a co-op run: two ships is a different game, so the solo records on
+the Zone Records page are not compared against it. The run-over screen shows
+what you personally earned and spent.
+
 ### Saving and resuming an online game
 
 Save from the shop with Options > **Save Game**, or Alt+S while no purchase
@@ -563,18 +609,24 @@ Both machines write their own copy after exchanging their latest shop state, so
 either player can host the resume.
 
 Arcade saves remain compatible with the regular local two-player page. Campaign
-saves carry both players in full: each ship and its front and rear weapons with
+and Endless saves carry both players in full: each ship and its front and rear weapons with
 their power levels, both sidekicks, generator, shield, special, rear-gun firing
 mode, and cash total, plus the shared episode, difficulty, data cubes, and
 next-level position. Nothing either of you bought is dropped. They can only be
-loaded through Online Campaign, not through 1 Player or local 2 Player. Campaign
-and Arcade loads are kept separate in the online load menu.
+loaded through Online Campaign or Online Endless, not through 1 Player or local
+2 Player, and each lobby type only offers its own. An Endless save also carries
+the run behind it: zone, seed, perks, both players' upgrades and the course
+slate. Resuming redraws each player's shop shelves from the seed, so a reroll
+bought before saving is not carried over.
 
 If the session ends under you, because the other player quit, the connection
 dropped, or an unrecoverable desync stopped the game, you get **Save Game** or
 **Don't Save** before the title screen. Save Game opens the 2-player save page
 with the run rolled back to the outpost before the current level, the same point
 a game over returns to.
+
+Hardcore Endless saves nothing at all, so an online Hardcore run cannot be
+resumed.
 
 To resume, host as usual. Once the other player connects, the host picks between
 **New Game** and **Load Game**. Load Game opens the load menu fixed to the
