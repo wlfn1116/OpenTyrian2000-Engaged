@@ -32,6 +32,7 @@
 #include "console_platform.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "endless.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -60,16 +61,19 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       15           // v15 adds campaign credit sharing and custom weapons
+#define NET_VERSION       16           // v16 adds the Endless lobby type and its settings
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
-// game type, episode, difficulty, then the host's simulation settings and player name.
+// game type, episode, difficulty, the host's simulation settings, its Endless lobby block, and
+// finally the player name.
 #define NET_CONNECT_GAME_TYPE 12
 #define NET_CONNECT_EPISODE   14
 #define NET_CONNECT_DIFFICULTY 16
 #define NET_CONNECT_SETTINGS  18
-#define NET_CONNECT_NAME      (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+#define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+#define NET_CONNECT_ENDLESS_SIZE (2 + NET_ENDLESS_SEED_MAX)   // run mode, course chooser, seed
+#define NET_CONNECT_NAME      (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -99,6 +103,11 @@ int network_host_game_speed = 4;
 NetworkGameType network_game_type = NETWORK_GAME_ARCADE;
 int network_host_episode = 1;
 int network_host_difficulty = DIFFICULTY_NORMAL;
+
+// Endless lobby block. Blank seed means "roll one when the run starts".
+char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
+int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
+int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
 
 static char empty_string[] = "";
 char *network_player_name = empty_string,
@@ -954,6 +963,10 @@ static void send_connect_packet(Uint16 episodes_local)
 	SDLNet_Write16(network_host_episode, &packet_out_temp->data[NET_CONNECT_EPISODE]);
 	SDLNet_Write16(network_host_difficulty, &packet_out_temp->data[NET_CONNECT_DIFFICULTY]);
 	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
+	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 2], network_host_endless_seed,
+	       NET_ENDLESS_SEED_MAX);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -1101,7 +1114,7 @@ connect_again:
 			const int host_game_type = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_GAME_TYPE]);
 			const int host_episode = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_EPISODE]);
 			const int host_difficulty = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_DIFFICULTY]);
-			if ((host_game_type != NETWORK_GAME_ARCADE && host_game_type != NETWORK_GAME_CAMPAIGN) ||
+			if (host_game_type < 0 || host_game_type >= NETWORK_GAME_TYPE_COUNT ||
 			    host_episode < 1 || host_episode > EPISODE_MAX ||
 			    host_difficulty < DIFFICULTY_EASY || host_difficulty > DIFFICULTY_LORD_OF_GAME)
 			{
@@ -1114,6 +1127,7 @@ connect_again:
 			network_host_difficulty = host_difficulty;
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
 
 			// The adopted gameSpeed only sets the global; push it through to the
 			// tick-rate machinery so the joiner runs at the host's chosen speed.
@@ -1345,6 +1359,7 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		network_is_host = false;
 		twoPlayerMode = false;
 		coopCampaignMode = false;
+		coopEndlessMode = false;
 		haltGame = false;
 		JE_clearSpecialRequests();
 
@@ -1528,6 +1543,31 @@ int network_settings_adopt(const Uint8 *buf)
 	return NETWORK_SETTINGS_SIZE;
 }
 
+// The Endless lobby block travels beside the settings block and binds the run the same way.
+COMPILE_TIME_ASSERT(net_endless_seed_fits, NET_ENDLESS_SEED_MAX == ENDLESS_SEED_MAXLEN);
+
+void network_endless_adopt(const Uint8 *buf)
+{
+	network_host_endless_run_mode = buf[0];
+	network_host_endless_chooser = buf[1];
+	memcpy(network_host_endless_seed, &buf[2], NET_ENDLESS_SEED_MAX);
+	network_host_endless_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
+
+	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)
+		network_host_endless_run_mode = ENDLESS_RUNMODE_STANDARD;
+	if (network_host_endless_chooser < 0 || network_host_endless_chooser >= ENDLESS_PICK_COUNT)
+		network_host_endless_chooser = ENDLESS_PICK_HOST;
+
+	// Only printable ASCII reaches the seed hash, so a hostile packet cannot smuggle control
+	// characters onto the seed-name line the run-over screen prints.
+	for (int i = 0; i < NET_ENDLESS_SEED_MAX; ++i)
+	{
+		const unsigned char c = (unsigned char)network_host_endless_seed[i];
+		if (c != '\0' && (c < 32 || c >= 127))
+			network_host_endless_seed[i] = '?';
+	}
+}
+
 static Uint16 network_shop_sequence;
 static Uint16 network_shop_peer_sequence;
 static Uint16 network_shop_save_request;
@@ -1598,7 +1638,7 @@ static int network_shop_unpack_items(PlayerItems *items, const Uint8 *buf)
 
 static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 {
-	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
 		return 0;
 
 	const Player *const this_player = &player[thisPlayerNum - 1];
@@ -1633,14 +1673,14 @@ void network_shop_begin(void)
 	network_shop_local_locked = false;
 	network_shop_save_ready = false;
 	network_shop_host_committed = false;
-	network_shop_active = isNetworkGame && coopCampaignMode;
-	if (isNetworkGame && coopCampaignMode)
+	network_shop_active = isNetworkGame && coop_mode_active();
+	if (isNetworkGame && coop_mode_active())
 		network_shop_send_state(false);
 }
 
 void network_shop_send_state(bool done)
 {
-	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
 		return;
 
 	network_shop_local_ready = done;
@@ -1653,7 +1693,7 @@ void network_shop_send_state(bool done)
 // See "Leaving the outpost" in doc/notes.md.
 void network_shop_set_locked(bool locked)
 {
-	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
 		return;
 
 	network_shop_local_locked = locked;
@@ -1667,7 +1707,7 @@ bool network_shop_peer_locked(void)
 
 void network_shop_send_transaction(void)
 {
-	if (!isNetworkGame || !coopCampaignMode || thisPlayerNum < 1 || thisPlayerNum > 2)
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
 		return;
 
 	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
@@ -1820,7 +1860,7 @@ void network_custom_weapon_publish(void)
 {
 	// Nothing to publish while the feature is off: the port stays a placeholder and no ship can
 	// be carrying the weapon. Turning it on and equipping goes through the next rendezvous.
-	if (!isNetworkGame || !coopCampaignMode || !customWeaponEnabled ||
+	if (!isNetworkGame || !coop_mode_active() || !customWeaponEnabled ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
@@ -1917,7 +1957,7 @@ void network_custom_weapon_publish(void)
 
 bool network_shop_pump(void)
 {
-	if (!isNetworkGame || !coopCampaignMode || packet_in[0] == NULL)
+	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)
 		return false;
 
 	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
@@ -1988,7 +2028,7 @@ void network_shop_end(void)
 
 void network_shop_sync_for_save(void)
 {
-	if (!isNetworkGame || !coopCampaignMode || !network_shop_active || !network_peer_alive())
+	if (!isNetworkGame || !coop_mode_active() || !network_shop_active || !network_peer_alive())
 		return;
 
 	network_shop_save_ready = false;

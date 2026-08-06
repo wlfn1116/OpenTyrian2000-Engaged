@@ -14,6 +14,39 @@
 // Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
 
+/* Online co-op. Both ships fly a shared run: the sector, its modifiers and the course slate are
+ * run-wide, while wallets, stock, gear and the personal upgrades below belong to one player each.
+ * See "Endless online" in doc/notes.md. */
+
+// The ship this machine outfits and spends for: player 1 solo, the local ship in co-op.
+uint    endlessEconomyIndex(void);
+// ...and the other one, which is the same ship outside co-op.
+uint    endlessPartnerIndex(void);
+// Ships a per-player Endless effect walks: two in co-op, one otherwise.
+uint    endlessEffectPlayers(void);
+static inline bool endlessCoop(void) { return endlessMode && coopEndlessMode; }
+
+// Who charts the next course. Persisted in the run save and the lobby block, so append only.
+typedef enum {
+	ENDLESS_PICK_HOST = 0,
+	ENDLESS_PICK_GUEST,
+	ENDLESS_PICK_ALTERNATE,   // takes turns; the turn flag rides the run save
+	ENDLESS_PICK_COINFLIP,    // seeded from the run RNG, so both machines agree
+	ENDLESS_PICK_COUNT
+}
+EndlessCourseChooser;
+
+extern EndlessCourseChooser endlessCourseChooser;  // host-authoritative session setting
+extern bool endlessCoopHostCharts;                 // Alternating: is the host charting this one?
+const char *endlessCourseChooserName(EndlessCourseChooser mode);
+bool endlessLocalPlayerCharts(void);   // does this machine pick the next course?
+void endlessAdvanceCourseTurn(void);   // call once a course has been committed
+
+// A downed player spectates until the zone ends, then revives at the outpost.
+extern bool endlessPlayerDowned[2];
+bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
+void endlessReviveDownedAtOutpost(void);
+
 // Number of active modifier bits.
 static inline int endlessPopCount64(Uint64 v)
 {
@@ -195,8 +228,8 @@ void endlessCountKill(int linknum);
 
 extern Uint64 endlessActiveMods;
 
-// Run-persistent Reinforce bonus.
-extern int endlessArmorBonus;
+// Run-persistent Reinforce bonus, per player.
+extern int endlessArmorBonus[2];
 
 void endlessResetRun(void);
 
@@ -266,6 +299,7 @@ void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);
 
 // Sidecar save keyed by the normal save slot.
+bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveSlot(JE_byte slot);
 bool endlessLoadSlot(JE_byte slot);
 bool endlessResumePending(void);
@@ -347,9 +381,9 @@ long endlessBombPrice(void);
 bool endlessBombFull(void);
 bool endlessTryBuyBomb(void);
 long endlessRevivePrice(void);
-bool endlessReviveArmed(void);       // a revive token is currently held
+bool endlessReviveArmed(void);       // a revive token is currently held by the shopping player
 bool endlessTryBuyRevive(void);
-bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
+bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
@@ -427,8 +461,8 @@ void endlessEndRunToTitle(void);
 // Apply the level-clear payout and return its components.
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 
-// Replace Endless data cubes and secret orbs with a safe special.
-void endlessGrantSpecial(void);
+// Replace Endless data cubes and secret orbs with a safe special for player p.
+void endlessGrantSpecial(uint p);
 
 // Replace an embedded data cube with a gem at the enemy slot.
 void endlessDropCubeGem(int slot);

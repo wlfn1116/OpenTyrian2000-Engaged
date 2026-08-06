@@ -180,6 +180,7 @@ JE_boolean engageMode;
 
 JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian;
 JE_boolean coopCampaignMode;
+JE_boolean coopEndlessMode;
 JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 JE_boolean endlessCampaignMods;  // debug: endless EFFECTS in a normal game (see endlessFxActive)
 JE_boolean trentWin = false;
@@ -1047,7 +1048,7 @@ void JE_saveGame(JE_byte slot, const char *name)
 	}
 
 	saveFiles[slot - 1].highScore2 = 0;
-	if (coopCampaignMode)
+	if (coop_mode_active())
 	{
 		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
 		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
@@ -1070,6 +1071,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	onePlayerAction = false;
 	twoPlayerMode = false;
 	coopCampaignMode = false;
+	coopEndlessMode = false;
 	extraGame = false;
 	galagaMode = false;
 	timedBattleMode = false;
@@ -1078,7 +1080,9 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	initialDifficulty = rec->initialDifficulty;
 	gameHasRepeated   = rec->gameHasRepeated;
 	twoPlayerMode     = twoP;
-	coopCampaignMode  = isNetworkGame && twoP && save_record_is_coop_campaign(rec);
+	// The tag only says the record carries two full loadouts; which co-op lobby is flying it is
+	// the session's own business, so the network start path assigns the pair after this returns.
+	coopCampaignMode  = isNetworkGame && twoP && save_record_is_coop(rec);
 	difficultyLevel   = rec->difficulty;
 
 	pitems_to_playeritems(&player[0].items, rec->items, &initial_episode_num);
@@ -1097,7 +1101,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		onePlayerAction = false;
 
 		pitems_to_playeritems(&player[1].items, rec->lastItems, NULL);
-		if (coopCampaignMode)
+		if (coop_mode_active())
 		{
 			player[1].is_dragonwing = false;
 			player[0].last_items = player[0].items;
@@ -1140,7 +1144,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		// if two-player, use first player's front and second player's rear weapon
 		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
 	}
-	if (coopCampaignMode)
+	if (coop_mode_active())
 	{
 		const Uint32 extra = (Uint32)rec->highScore2;
 		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
@@ -1888,7 +1892,7 @@ void JE_saveConfiguration(void)
  * save with this and the joiner applies it through JE_loadGameRecord, so both machines start the
  * resumed session from byte-identical state. */
 
-bool save_record_is_coop_campaign(const JE_SaveFileType *rec)
+bool save_record_is_coop(const JE_SaveFileType *rec)
 {
 	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc74f0000u;
 }

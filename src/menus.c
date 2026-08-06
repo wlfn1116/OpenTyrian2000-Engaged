@@ -291,6 +291,8 @@ bool gameplaySelect(void)
 				timedBattleMode = false;
 				endlessMode = false;
 				coopCampaignMode = false;
+				coopEndlessMode = false;
+				endlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 				twoPlayerMode = true;  // networkStartScreen() sets the rest up
 				return true;
 #else

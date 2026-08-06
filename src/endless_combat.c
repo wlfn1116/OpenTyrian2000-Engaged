@@ -554,11 +554,11 @@ static unsigned endlessHudIconCount(void)
 	return SDL_SwapLE16(((Uint16 *)spriteSheet10.data)[0]) / (unsigned)sizeof(Uint16);
 }
 
-char endlessLastSpecialName[31] = "";
+char endlessLastSpecialName[2][31] = { "", "" };
 
-const char *endlessLastGrantedSpecial(void) { return endlessLastSpecialName; }
+const char *endlessLastGrantedSpecial(void) { return endlessLastSpecialName[endlessEconomyIndex()]; }
 
-void endlessGrantSpecial(void)
+void endlessGrantSpecial(uint p)
 {
 	if (!endlessFxActive())
 		return;
@@ -581,7 +581,7 @@ void endlessGrantSpecial(void)
 	// Avoid returning the equipped special when another valid choice exists.
 	if (n > 1)
 	{
-		const JE_byte current = player[0].items.special;
+		const JE_byte current = player[p].items.special;
 		for (int i = 0; i < n; ++i)
 			if (pool[i] == current)
 			{
@@ -591,23 +591,32 @@ void endlessGrantSpecial(void)
 	}
 
 	const JE_byte id = pool[mt_rand() % n];
-	player[0].items.special = id;
+	player[p].items.special = id;
 	shotMultiPos[SHOT_SPECIAL]  = 0;
 	shotRepeat[SHOT_SPECIAL]    = 0;
 	shotMultiPos[SHOT_SPECIAL2] = 0;
 	shotRepeat[SHOT_SPECIAL2]   = 0;
+	if (coop_mode_active())
+	{
+		// Co-op keeps each ship's own firing cursors; the globals above are only the scratch pair.
+		player[p].shot_multi_pos[SHOT_SPECIAL]  = 0;
+		player[p].shot_repeat[SHOT_SPECIAL]     = 0;
+		player[p].shot_multi_pos[SHOT_SPECIAL2] = 0;
+		player[p].shot_repeat[SHOT_SPECIAL2]    = 0;
+	}
 
 	// Item names may be space-padded in the data.
+	char *const name = endlessLastSpecialName[p];
+	const size_t nameSize = sizeof(endlessLastSpecialName[0]);
 	const char *s = special[id].name;
 	while (*s == ' ' || *s == '\t')
 		++s;
-	SDL_strlcpy(endlessLastSpecialName, s, sizeof(endlessLastSpecialName));
-	for (size_t len = strlen(endlessLastSpecialName);
-	     len > 0 && (endlessLastSpecialName[len - 1] == ' ' || endlessLastSpecialName[len - 1] == '\t'); )
-		endlessLastSpecialName[--len] = '\0';
+	SDL_strlcpy(name, s, nameSize);
+	for (size_t len = strlen(name); len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t'); )
+		name[--len] = '\0';
 
 	char msg[64];
-	snprintf(msg, sizeof(msg), "Special weapon:  %s", endlessLastSpecialName);
+	snprintf(msg, sizeof(msg), "Special weapon:  %s", name);
 	JE_drawTextWindow(msg);
 }
 
@@ -618,7 +627,11 @@ void endlessGrantSpecial(void)
 
 static bool endlessPortCanPowerUp(uint port)
 {
-	return player[0].items.weapon[port].id != 0 && player[0].items.weapon[port].power < 11;
+	// Either ship having room keeps the pickup on the field for whoever can still take it.
+	for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
+		if (player[p].items.weapon[port].id != 0 && player[p].items.weapon[port].power < 11)
+			return true;
+	return false;
 }
 
 // Pick a port now; validate capacity when the pickup actually spawns.
@@ -689,7 +702,7 @@ int endlessKillBuffDamagePercent(void)
 {
 	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_DMGUP))
 		return 0;  // Overdrive and Overblast grant damage; Turbodrive affects fire rate only.
-	int pct = endlessBuffCharge * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
+	int pct = endlessBuffChargePaid() * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
 	pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
 	return pct;
 }
@@ -990,7 +1003,7 @@ int endlessPlayerDamagePercent(void)
 	if ((endlessActiveMods & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
 		pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 	if (endlessTurbodriveActive() && (endlessActiveMods & ENDLESS_MOD_DMGUP))
-		pct += endlessBuffCharge * 2;
+		pct += endlessBuffChargePaid() * 2;
 	pct += endlessPerkOwned[PERK_DAMAGE] * ENDLESS_PERK_DAMAGE_PCT;
 	if (endlessPerkOwned[PERK_GLASSCANNON])
 		pct += ENDLESS_PERK_GLASS_DMG;

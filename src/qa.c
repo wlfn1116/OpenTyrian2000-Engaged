@@ -115,8 +115,11 @@ static void qa_reset_course_inputs(const char *seed, int depth, int difficulty)
 	endlessLastSec = 0;
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
-	endlessPurchasedMods = 0;
-	endlessCleanseChargeCount = 0;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessPurchasedMods[p] = 0;
+		endlessCleanseChargeCount[p] = 0;
+	}
 	for (int p = 0; p < endlessPerkCount(); ++p)
 		endlessPerkSetOwned(p, 0);
 	endlessReseed((Uint64)depth * 2);
@@ -288,7 +291,7 @@ static void qa_test_perk_registry(void)
 	         "perk accessors safely reject invalid identifiers");
 
 	endlessSetSeed("qa-perk-offers");
-	endlessReseed(0x5151);
+	endlessReseedPlayers(0x5151);   // the slate is dealt from the offered player's own stream
 	endlessGeneratePerkChoices(999);
 	int first[ENDLESS_PERK_OFFERS_MILESTONE];
 	memcpy(first, endlessPerkChoice, sizeof(first));
@@ -300,10 +303,10 @@ static void qa_test_perk_registry(void)
 			offersValid &= endlessPerkChoice[i] != endlessPerkChoice[j];
 	}
 	qa_check(offersValid, "perk offers clamp to their persisted array and contain no duplicates");
-	endlessReseed(0x5151);
+	endlessReseedPlayers(0x5151);
 	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS_MILESTONE);
 	qa_check(memcmp(first, endlessPerkChoice, sizeof(first)) == 0,
-	         "perk offer generation is deterministic on the structural RNG");
+	         "perk offer generation is deterministic on the per-player RNG");
 	endlessGeneratePerkChoices(-999);
 	qa_check(endlessPerkChoiceCount() == 0 && endlessPerkChoiceName(0)[0] == '\0'
 	         && endlessPerkChoiceDesc(-1)[0] == '\0',
@@ -670,7 +673,7 @@ static void qa_test_save_record_wire(void)
 	qa_check(dst.encode == 0 && dst.highScore1 == 0 && dst.highScore2 == src.highScore2
 	         && dst.highScoreName[0] == '\0' && dst.highScoreDiff == 0,
 	         "network save record preserves campaign data and clears non-wire metadata");
-	qa_check(save_record_is_coop_campaign(&dst),
+	qa_check(save_record_is_coop(&dst),
 	         "network save record preserves the Online Campaign type marker");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields

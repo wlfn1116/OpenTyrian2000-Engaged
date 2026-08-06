@@ -306,7 +306,7 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Name:         '%.30s'\n", customWeaponName);
 		fprintf(f, "  Port=%d sidekickSlot=%d equip=%d cost=%d\n",
 		        customWeaponPort, customSidekickSlot, customWeaponEquipSlot, customWeaponCost);
-		if (coopCampaignMode)
+		if (coop_mode_active())
 		{
 			// Both players' reserved slots: a mismatch here is a Campaign desync waiting to happen.
 			fprintf(f, "  Owner slots:  P1 port=%d sk=%d, P2 port=%d sk=%d\n",
@@ -337,7 +337,7 @@ void crashlog_write_game_state(FILE *f)
 				fprintf(f, "    %-15s -%llu\n", endlessCashSinkName((EndlessCashSink)i),
 				        (unsigned long long)endlessCashBySink[i]);
 		write_endless_mods(f, endlessActiveMods);
-		fprintf(f, "  Armor bonus:  %d\n", endlessArmorBonus);
+		fprintf(f, "  Armor bonus:  %d / %d\n", endlessArmorBonus[0], endlessArmorBonus[1]);
 		const char *seed = endlessSeedString();
 		if (seed != NULL)
 			fprintf(f, "  Seed:         '%.*s'\n", ENDLESS_SEED_MAXLEN, seed);
