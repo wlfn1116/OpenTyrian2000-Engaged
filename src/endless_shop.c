@@ -958,6 +958,9 @@ void endlessBetweenLevels(void)
 	// it so the weapon editor and shop previews reachable from here cannot count as combat use.
 	endlessCustomWeaponZoneEnd();
 
+	// A partner who went down mid-zone is back on their feet here: full hull, no shield.
+	endlessReviveDownedAtOutpost();
+
 	// Pin the planet map before the first shop and after random level jumps.
 	mapOrigin = 1;
 	mapPNum = 1;
@@ -1003,8 +1006,11 @@ void endlessBetweenLevels(void)
 	}
 	else
 	{
-		// Seed structural generation by depth. Player-timed draws cannot shift later zone layouts.
+		// Seed structural generation by depth. Player-timed draws cannot shift later zone layouts,
+		// and each player's own stream is forked from the same point so a reroll or a gamble on one
+		// machine never moves what the other is dealt.
 		endlessReseed((Uint64)endlessRunDepth * 2);
+		endlessReseedPlayers((Uint64)endlessRunDepth * 2);
 
 		endlessGenerateCourses();
 		endlessResetShopPrices();

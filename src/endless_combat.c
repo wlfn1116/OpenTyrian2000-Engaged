@@ -935,6 +935,32 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 	return (eliteState == 3) ? ENDLESS_SHOCKWAVE_CHAMPION_RADIUS : ENDLESS_SHOCKWAVE_ELITE_RADIUS;
 }
 
+/* Which ship a homing or course-correcting shot goes for: the nearer one still flying. A downed
+ * co-op partner neither triggers a reactive danger nor attracts one, so the survivor is the only
+ * target while they spectate. Integer distance keeps the choice identical on both machines. */
+uint endlessDangerTargetPlayer(int fromX, int fromY)
+{
+	if (!coopEndlessMode)
+		return 0;
+
+	uint best = 0;
+	long bestDist = -1;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		if (!player[p].is_alive || endlessPlayerDowned[p])
+			continue;
+		const long dx = (long)player[p].x - fromX;
+		const long dy = (long)player[p].y - fromY;
+		const long dist = dx * dx + dy * dy;
+		if (bestDist < 0 || dist < bestDist)
+		{
+			bestDist = dist;
+			best = p;
+		}
+	}
+	return best;
+}
+
 // Modifier decisions used by engine-owned object pools.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {

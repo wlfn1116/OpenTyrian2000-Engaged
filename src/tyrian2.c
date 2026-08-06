@@ -306,8 +306,9 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 	const float speed = sqrtf(vx * vx + vy * vy);
 	if (speed < 0.5f)
 		return;                          // a near-stationary shot has no heading to bend
-	const float dx = (float)((int)player[0].x - s->sx);
-	const float dy = (float)((int)player[0].y - s->sy);
+	const Player *const target = &player[endlessDangerTargetPlayer(s->sx, s->sy)];
+	const float dx = (float)((int)target->x - s->sx);
+	const float dy = (float)((int)target->y - s->sy);
 	const float dmag = sqrtf(dx * dx + dy * dy);
 	if (dmag < 0.5f)
 		return;
@@ -4641,12 +4642,16 @@ draw_player_shot_loop_end:
 					enemyShot[z].seekerArm = 0;   // one correction only
 				}
 
+				// Homing shots chase the nearer ship still flying; solo play keeps player 1.
+				const Player *const homeTo =
+					&player[endlessFxActive() ? endlessDangerTargetPlayer(enemyShot[z].sx, enemyShot[z].sy) : 0];
+
 				enemyShot[z].sxm += enemyShot[z].sxc;
 				enemyShot[z].sx += enemyShot[z].sxm;
 
 				if (enemyShot[z].tx != 0)
 				{
-					if (enemyShot[z].sx > player[0].x)
+					if (enemyShot[z].sx > homeTo->x)
 					{
 						if (enemyShot[z].sxm > -enemyShot[z].tx)
 							enemyShot[z].sxm--;
@@ -4663,7 +4668,7 @@ draw_player_shot_loop_end:
 
 				if (enemyShot[z].ty != 0)
 				{
-					if (enemyShot[z].sy > player[0].y)
+					if (enemyShot[z].sy > homeTo->y)
 					{
 						if (enemyShot[z].sym > -enemyShot[z].ty)
 							enemyShot[z].sym--;
@@ -6522,6 +6527,49 @@ new_game:
 }
 
 #ifdef WITH_NETWORK
+/* Start a fresh online Endless run. Everything it needs came over in the connect packet, so both
+ * machines build the same run without exchanging anything further. */
+static void networkEndlessNewRun(void)
+{
+	endlessResetRun();
+	endlessSetSeed(network_host_endless_seed);
+	endlessRunMode = (EndlessRunMode)network_host_endless_run_mode;
+	endlessCourseChooser = (EndlessCourseChooser)network_host_endless_chooser;
+	endlessRecordRunStart();
+
+	endlessMode = true;
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		player[i].is_dragonwing = false;
+		player[i].lives = &player[i].items.weapon[i].power;
+		player[i].items = player[0].items;
+		player[i].last_items = player[0].last_items;
+		player[i].cash = 0;
+	}
+
+	// The stake is the run's first income for each ship, booked so earned - spent stays true.
+	endlessCashResync();
+	endlessCashCredit(endlessStartingCash(), ENDLESS_CASH_START);
+	player[endlessPartnerIndex()].cash = player[endlessEconomyIndex()].cash;
+
+	endlessApplyStartingLoadout();
+	endlessReseedPlayers(0);
+}
+
+/* Resume an online Endless run: the host loads it from its own sidecar and streams the record,
+ * and the joiner adopts it. Each machine then redraws its own shop stock from the seed. */
+static bool networkEndlessResume(JE_byte slot)
+{
+	if (thisPlayerNum == networkHostPlayerNum)
+	{
+		if (!endlessLoadSlot(slot))
+			return false;
+		network_endless_run_publish();
+		return true;
+	}
+	return network_endless_run_receive(20000);
+}
+
 void networkStartScreen(void)
 {
 	// A lobby game is already connected by the time we get here; the lobby had to do it
@@ -6568,11 +6616,17 @@ void networkStartScreen(void)
 			save_record_pack(&packet_out_temp->data[10], &saveFiles[resumeSlot - 1]);
 			network_send(10 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
+			// The save record carries the two loadouts; the Endless run behind them is its own
+			// sidecar, so it follows on the reliable channel before either machine plays a tick.
+			if (coopEndlessMode && !networkEndlessResume((JE_byte)resumeSlot))
+				coopEndlessMode = false;   // no usable run: fall back to a plain co-op campaign
+
 			resumed = true;
 		}
 		else if (resumeSlot == 0)
 		{
-			JE_initEpisode(network_host_episode);
+			// Endless traverses episodes as it deepens, so it always opens on the first one.
+			JE_initEpisode(coopEndlessMode ? 1 : network_host_episode);
 			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
@@ -6603,20 +6657,34 @@ void networkStartScreen(void)
 		// outpost, so a prompt there stalls a game that has started.  Laid out like the host's
 		// own menu, so the two screens read as the same list.
 		{
-			const bool campaign = network_game_type == NETWORK_GAME_CAMPAIGN;
+			const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
+			const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
 
-			const char *label[8], *value[8];
+			const char *label[11], *value[11];
 			int rows = 0;
 
 			label[rows] = "Host";
 			value[rows++] = network_opponent_name[0] ? network_opponent_name : "(unnamed)";
 			label[rows] = "Game Type";
-			value[rows++] = campaign ? "Campaign" : "Arcade";
-			label[rows] = "Episode";
-			value[rows++] = episode_name[network_host_episode];
+			value[rows++] = endless ? "Endless"
+			              : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
+			if (!endless)
+			{
+				label[rows] = "Episode";
+				value[rows++] = episode_name[network_host_episode];
+			}
 			label[rows] = "Difficulty";
 			value[rows++] = difficultyNameB[network_host_difficulty];
-			if (campaign)
+			if (endless)
+			{
+				label[rows] = "Run Mode";
+				value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+				label[rows] = "Charts Course";
+				value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
+				label[rows] = "Seed";
+				value[rows++] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
+			}
+			if (coop)
 			{
 				label[rows] = "Credit";
 				value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
@@ -6708,7 +6776,7 @@ void networkStartScreen(void)
 		// The host picked both from its own menus, so out of range means a corrupt packet, not a
 		// disagreement.  Worth catching here: JE_initEpisode builds level filenames from the
 		// number, and a bad one takes the game down inside the loader instead.
-		if (their_game_type != network_game_type ||
+		if (their_game_type != (int)network_game_type ||
 		    their_episode < 1 || their_episode > EPISODE_MAX ||
 		    their_difficulty < 1 || their_difficulty > DIFFICULTY_10)
 		{
@@ -6733,6 +6801,9 @@ void networkStartScreen(void)
 			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
+			if (coopEndlessMode && !networkEndlessResume(0))
+				coopEndlessMode = false;
+
 			resumed = true;
 		}
 		else
@@ -6748,7 +6819,11 @@ void networkStartScreen(void)
 
 	if (!resumed)
 	{
-		if (coop_mode_active())
+		if (coopEndlessMode)
+		{
+			networkEndlessNewRun();
+		}
+		else if (coop_mode_active())
 		{
 			static const Uint32 initial_cash[] = { 10000, 15000, 20000, 30000, 20000 };
 			const Uint32 cash = initial_cash[episodeNum - 1];
@@ -7195,16 +7270,11 @@ bool newGame(void)
 {
 	if (gameplaySelect())
 	{
-		// Endless was picked in the mode menu: newEndlessGame does its own difficulty select
-		// and full setup (episode 1, starting cash, flags) and resets endlessMode on cancel.
-		if (endlessMode)
-			return newEndlessGame();
-
 #ifdef WITH_NETWORK
 		// The multiplayer lobby connected us from inside the mode menu.  networkStartScreen()
 		// runs the episode/difficulty handshake; the host picks and sends, the joiner waits
-		// and receives, then initializes both ships and purses. No single-player
-		// setup below applies.
+		// and receives, then initializes both ships and purses. An Endless lobby builds its run
+		// there too, so this has to come before the single-player Endless setup below.
 		if (isNetworkGame)
 		{
 			networkStartScreen();
@@ -7213,6 +7283,11 @@ bool newGame(void)
 			return true;
 		}
 #endif
+
+		// Endless was picked in the mode menu: newEndlessGame does its own difficulty select
+		// and full setup (episode 1, starting cash, flags) and resets endlessMode on cancel.
+		if (endlessMode)
+			return newEndlessGame();
 
 		if (timedBattleMode)
 		{

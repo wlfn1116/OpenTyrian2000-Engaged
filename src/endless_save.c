@@ -1083,6 +1083,113 @@ void endlessSaveSlot(JE_byte slot)
 	endlessWriteAllSlots();
 }
 
+/* One player's own half of the outpost, as the other machine needs to see it. Fixed width and
+ * endian-safe: it travels on the shop sync packet (network.c). */
+int endlessPackPlayerBlock(Uint8 *buf, uint p)
+{
+	if (p >= COUNTOF(player))
+		return 0;
+
+	int n = 0;
+	buf[n++] = endlessReviveHeld[p] ? 1 : 0;
+	buf[n++] = endlessGambleRigged[p] ? 1 : 0;
+	buf[n++] = endlessPlayerDowned[p] ? 1 : 0;
+	buf[n++] = (Uint8)MIN(player[p].superbombs, 10u);
+
+	const Sint32 fields[12] = {
+		endlessArmorBonus[p], (Sint32)endlessPurchasedMods[p], endlessBuffKind[p],
+		endlessBuffCharge[p], endlessBuffCooldownUntil[p], endlessCleanseChargeCount[p],
+		endlessLongCon[p], endlessShopTax[p], endlessRevivesUsed[p],
+		(Sint32)endlessRerollCost[p], endlessHullCost[p], (Sint32)endlessShopEntryCash[p],
+	};
+	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
+	{
+		const Uint32 v = (Uint32)fields[i];
+		buf[n]     = (Uint8)(v >> 24);
+		buf[n + 1] = (Uint8)(v >> 16);
+		buf[n + 2] = (Uint8)(v >> 8);
+		buf[n + 3] = (Uint8)v;
+	}
+
+	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS; ++i)
+		buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
+	return n;
+}
+
+void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
+{
+	if (p >= COUNTOF(player))
+		return;
+
+	int n = 0;
+	endlessReviveHeld[p] = buf[n++] != 0;
+	endlessGambleRigged[p] = buf[n++] != 0;
+	endlessPlayerDowned[p] = buf[n++] != 0;
+	player[p].superbombs = MIN((uint)buf[n++], 10u);
+
+	Sint32 fields[12];
+	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
+	{
+		fields[i] = (Sint32)(((Uint32)buf[n] << 24) | ((Uint32)buf[n + 1] << 16)
+		                     | ((Uint32)buf[n + 2] << 8) | (Uint32)buf[n + 3]);
+	}
+
+	endlessArmorBonus[p]         = fields[0];
+	endlessPurchasedMods[p]      = (unsigned)fields[1];
+	endlessBuffKind[p]           = fields[2];
+	endlessBuffCharge[p]         = fields[3];
+	endlessBuffCooldownUntil[p]  = fields[4];
+	endlessCleanseChargeCount[p] = fields[5];
+	endlessLongCon[p]            = fields[6];
+	endlessShopTax[p]            = fields[7];
+	endlessRevivesUsed[p]        = fields[8];
+	endlessRerollCost[p]         = fields[9];
+	endlessHullCost[p]           = fields[10];
+	endlessShopEntryCash[p]      = fields[11];
+
+	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS && i < PERK_COUNT; ++i)
+	{
+		const int maxs = endlessPerkTable[i].maxStack;
+		endlessPerkTakenBy[p][i] = (JE_byte)MIN((int)buf[n + i], maxs);
+	}
+	endlessPerkRederive();
+}
+
+/* Online co-op resume: the host serializes the live run through the same versioned codec the
+ * sidecar uses and the joiner adopts it, so both machines resume from byte-identical state.
+ * Each machine's own shop stock is redrawn from the seed rather than sent (see "Endless online"
+ * in doc/notes.md). */
+size_t endlessRunSerialize(Uint8 *out, size_t max)
+{
+	if (!endlessMode || out == NULL)
+		return 0;
+
+	EndlessSlotRec rec;
+	endlessCaptureCurrent(&rec);
+
+	Uint8 *bytes = NULL;
+	size_t size = 0;
+	if (!endlessTestEncode(&rec, &bytes, &size) || size > max)
+	{
+		free(bytes);
+		return 0;
+	}
+	memcpy(out, bytes, size);
+	free(bytes);
+	return size;
+}
+
+bool endlessRunAdopt(const Uint8 *bytes, size_t len)
+{
+	EndlessSlotRec rec;
+	if (bytes == NULL || !endlessTestDecode(bytes, len, &rec, NULL) || !rec.used)
+		return false;
+
+	endlessApplyCurrent(&rec);
+	endlessMode = true;
+	return true;
+}
+
 // Does this save slot hold an Endless run? Used by the load screen to keep Endless and Campaign
 // sessions from offering each other's saves.
 bool endlessSlotHasRun(JE_byte slot)

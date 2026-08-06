@@ -57,6 +57,7 @@
 #define PACKET_DEBUG_SYNC    0x33    // generation, sender, <debug state block>  (see network_debug_sync_send)
 #define PACKET_SHOP_SYNC     0x34    // sender, sequence, flags, route, cash, mode, ack, items
 #define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
+#define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -212,11 +213,21 @@ void network_settings_restore(void);
 // Bytes 0..15 are settings; 16..23 identify the rollback layout and snapshot size.
 #define NETWORK_SETTINGS_SIZE 24
 
+/* Publish the host's Endless run to the joiner, which is how a resumed online run starts both
+ * machines from the same record. Chunked over the reliable channel and blocking until delivered;
+ * the joiner calls network_endless_run_receive from its own wait loop. */
+void network_endless_run_publish(void);
+bool network_endless_run_receive(Uint32 timeout_ms);
+
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
 bool network_shop_pump(void);
 bool network_shop_peer_done(void);
+// Endless: the sector index the peer committed to, or -1 while it has committed to none.
+int  network_shop_peer_course(void);
+// Course slates never grow past this; the receiver rejects anything outside it.
+#define ENDLESS_MAX_COURSE_SLOTS 5
 // Second step of the outpost rendezvous. Lock once the peer is done too, then wait for its lock;
 // a peer that withdrew instead clears network_shop_peer_done and the wait starts over.
 void network_shop_set_locked(bool locked);
@@ -324,8 +335,11 @@ static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }
 static inline bool network_shop_pump(void) { return false; }
 static inline bool network_shop_peer_done(void) { return true; }
+static inline int network_shop_peer_course(void) { return -1; }
 static inline void network_shop_set_locked(bool locked) { (void)locked; }
 static inline bool network_shop_peer_locked(void) { return true; }
+static inline void network_endless_run_publish(void) { }
+static inline bool network_endless_run_receive(Uint32 timeout_ms) { (void)timeout_ms; return false; }
 static inline void network_custom_weapon_publish(void) { }
 static inline void network_custom_weapon_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }

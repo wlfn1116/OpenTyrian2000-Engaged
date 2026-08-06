@@ -1040,7 +1040,7 @@ static void shopWaitFrame(void)
 	JE_mouseReplace();
 }
 
-/* The Campaign half of leaving the outpost. Returns false when the player withdrew and wants to
+/* The co-op half of leaving the outpost. Returns false when the player withdrew and wants to
  * go on outfitting; "Leaving the outpost" in doc/notes.md covers why it takes two steps. */
 static bool shopCampaignRendezvous(void)
 {
@@ -1096,6 +1096,44 @@ static bool shopCampaignRendezvous(void)
 	}
 }
 
+static void select_level(JE_word section, JE_byte file_num);
+
+/* Online Endless: the sector the charting player picked, or -1 while none is committed. It is
+ * published on the shop packet as `mainLevel` (see network_shop_send_packet), which the campaign
+ * path already carries, so the waiter only has to know it is a course index there. */
+int endlessCoopCourse = -1;
+
+/* The non-charting player's side of the pick. Both machines are already committed and pumping by
+ * the time this runs, so the index only has to survive one keep-alive round trip. */
+static int shopEndlessAwaitCourse(void)
+{
+	shopWaitNotice("Partner is charting a course.", "They pick the next sector.", NULL);
+
+	const Uint32 started = SDL_GetTicks();
+	while (SDL_GetTicks() - started < 30000)
+	{
+		shopWaitFrame();
+		newkey = false;
+
+		const int course = network_shop_peer_course();
+		if (course >= 0)
+			return course;
+
+		if (network_shop_pump() || network_debug_sync_pump(false))
+			continue;
+		network_update();
+		network_check();
+		SDL_Delay(16);
+	}
+
+	// A peer that never sent one has torn the outpost down some other way; the first route is
+	// always launchable, so take it rather than hanging here.
+	crashlog_netlog_line("ENDLESS COURSE TIMEOUT",
+	                     "the charting player never published a sector; this machine took the "
+	                     "first route on the slate, which the canary will report if they differ.");
+	return 0;
+}
+
 // The outpost's route before a level was picked, so a withdrawn commit can put it back.
 typedef struct
 {
@@ -1137,11 +1175,25 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			forcedLvlFileNum = route->forcedLvlFileNum;
 			jumpSection = false;
 			gameLoaded = false;
+			endlessCoopCourse = -1;
 			debugLevelPickReset();
 
 			curMenu = MENU_FULL_GAME;
 			newPal = 1;
 			return;
+		}
+
+		/* Endless commits its sector here rather than at the pick, so both players' purchases are
+		 * in before the modifiers are folded. Both machines run endlessSelectCourse on the same
+		 * index and reach the same sector; nothing about it travels except the index itself. */
+		if (endlessCoop())
+		{
+			int course = endlessCoopCourse;
+			if (course < 0)
+				course = shopEndlessAwaitCourse();
+			endlessAdvanceCourseTurn();
+			select_level(endlessSelectCourse(course), 0);
+			endlessCoopCourse = -1;
 		}
 
 		// Both have committed, so a disagreement can be settled: the host's planet is the one
@@ -8706,6 +8758,14 @@ void JE_menuFunction(JE_byte select)
 				endlessArmLockedRelaunch();
 				break;
 			}
+			// Online Endless: the other player does not chart this one, so their Play Next Level
+			// hands straight over to the rendezvous, which applies whatever course arrives.
+			if (endlessCoop() && !endlessLocalPlayerCharts())
+			{
+				endlessCoopCourse = -1;
+				jumpSection = true;
+				break;
+			}
 			curMenu = MENU_PLAY_NEXT_LEVEL;
 			newPal = 18;
 			if (endlessMode)
@@ -8941,6 +9001,13 @@ void JE_menuFunction(JE_byte select)
 		{
 			curMenu = MENU_FULL_GAME;
 			newPal = 1;
+		}
+		else if (endlessCoop())
+		{
+			// Online Endless: hold the pick until both players have finished shopping, so the
+			// sector is folded from a complete pair of purchase sets (see shopLeaveOutpost).
+			endlessCoopCourse = (int)curSelect - 2;
+			jumpSection = true;
 		}
 		else if (endlessMode)
 		{

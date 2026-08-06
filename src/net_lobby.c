@@ -18,6 +18,7 @@
 #include "net_lobby.h"
 
 #include "config.h"
+#include "endless.h"
 #include "console_platform.h"
 #include "episodes.h"
 #include "file.h"
@@ -295,6 +296,224 @@ static bool filterDigits(char c)
 	return c >= '0' && c <= '9';
 }
 
+// A run seed is hashed, never parsed, so any printable character is fair game.
+static bool filterSeed(char c)
+{
+	return c >= 32 && c < 127;
+}
+
+/* The Endless lobby's own settings. They live on their own page because the host menu is already
+ * eight rows deep and the block has to stay inside the 200-row screen. */
+static void lobbyEndlessMenu(void)
+{
+	enum
+	{
+		ITEM_SEED = 0,
+		ITEM_RUNMODE,
+		ITEM_CHOOSER,
+		SETTING_COUNT,
+		ITEM_BACK = SETTING_COUNT,
+		ITEM_COUNT,
+	};
+
+	static const char *const itemLabel[SETTING_COUNT] = { "Seed", "Run Mode", "Charts Course" };
+
+	static const char *const itemHelp[ITEM_COUNT] =
+	{
+		"A named seed repeats a run; blank rolls one.",
+		"How a fatal hit and saving are handled.",
+		"Who picks the next sector at the outpost.",
+		"Return to the host settings.",
+	};
+
+	static const char *const runModeHelp[ENDLESS_RUNMODE_COUNT] =
+	{
+		"Relaxed: a fatal hit offers a retry.",
+		"Standard: a fatal hit ends the run.",
+		"Hardcore: no saving, and no second chances.",
+	};
+
+	size_t selectedIndex = ITEM_SEED;
+	int wBack = 0;
+
+	const int ySettings = 60;
+	const int dySettings = 14;
+	const int hSetting = 12;
+	const int yHelp = 120;
+	const int yModeHelp = 134;
+	const int yBack = 158;
+
+	lobbyPrepareBackdrop("Endless Setup");
+
+	for (;;)
+	{
+		const char *itemValue[SETTING_COUNT];
+		itemValue[ITEM_SEED] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
+		itemValue[ITEM_RUNMODE] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+		itemValue[ITEM_CHOOSER] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
+
+		int blockW = 150;
+		for (int i = 0; i < SETTING_COUNT; ++i)
+		{
+			blockW = MAX(blockW, JE_textWidth(itemLabel[i], small_font) + 20
+			                     + JE_textWidth(itemValue[i], small_font));
+		}
+		blockW = MIN(blockW, 300);
+
+		const int xLabel = LOBBY_XCENTER - blockW / 2;
+		const int xValue = xLabel + blockW;
+
+		lobbyRestoreBackdrop();
+
+		for (int i = 0; i < SETTING_COUNT; ++i)
+		{
+			const bool selected = (int)selectedIndex == i;
+			const int y = ySettings + dySettings * i;
+			draw_font_hv_shadow(VGAScreen, xLabel, y, itemLabel[i], small_font, left_aligned, 15,
+			                    selected ? 6 : 2, false, 1);
+			draw_font_hv_shadow(VGAScreen, xValue, y, itemValue[i], small_font, right_aligned, 15,
+			                    selected ? 6 : 4, false, 1);
+		}
+
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, itemHelp[selectedIndex],
+		                    small_font, centered, 15, 2, false, 1);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yModeHelp,
+		                    runModeHelp[network_host_endless_run_mode % ENDLESS_RUNMODE_COUNT],
+		                    small_font, centered, 15, 4, false, 1);
+
+		wBack = JE_textWidth("Back", normal_font);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yBack, "Back", normal_font, centered, 15,
+		                    -4 + (selectedIndex == ITEM_BACK ? 2 : 0), false, 2);
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		service_SDL_events(true);
+
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		const bool mouseMoved = lobbyWaitForInput();
+
+		bool action = false;
+		int cycleDir = 1;
+
+		if (mouseMoved || newmouse)
+		{
+			for (size_t i = 0; i < ITEM_COUNT; ++i)
+			{
+				int x0, x1, y;
+				if (i < SETTING_COUNT)
+				{
+					x0 = xLabel;
+					x1 = xValue;
+					y = ySettings + dySettings * (int)i;
+				}
+				else
+				{
+					x0 = LOBBY_XCENTER - wBack / 2;
+					x1 = x0 + wBack;
+					y = yBack;
+				}
+
+				const int h = i < SETTING_COUNT ? hSetting : 13;
+				if (mouse_x >= x0 && mouse_x < x1 && mouse_y >= y && mouse_y < y + h)
+				{
+					if (selectedIndex != i)
+					{
+						JE_playSampleNum(S_CURSOR);
+						selectedIndex = i;
+					}
+					if (newmouse && lastmouse_but == SDL_BUTTON_LEFT)
+						action = true;
+					break;
+				}
+			}
+		}
+
+		if (newmouse)
+		{
+			if (lastmouse_but == SDL_BUTTON_RIGHT)
+			{
+				JE_playSampleNum(S_SPRING);
+				return;
+			}
+		}
+		else if (newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
+				break;
+
+			case SDL_SCANCODE_DOWN:
+				JE_playSampleNum(S_CURSOR);
+				selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
+				break;
+
+			case SDL_SCANCODE_RETURN:
+			case SDL_SCANCODE_KP_ENTER:
+			case SDL_SCANCODE_SPACE:
+				action = true;
+				break;
+
+			case SDL_SCANCODE_LEFT:
+			case SDL_SCANCODE_RIGHT:
+				if (selectedIndex == ITEM_RUNMODE || selectedIndex == ITEM_CHOOSER)
+				{
+					action = true;
+					if (lastkey_scan == SDL_SCANCODE_LEFT)
+						cycleDir = -1;
+				}
+				break;
+
+			case SDL_SCANCODE_ESCAPE:
+				JE_playSampleNum(S_SPRING);
+				return;
+
+			default:
+				break;
+			}
+		}
+
+		if (!action)
+			continue;
+
+		switch (selectedIndex)
+		{
+		case ITEM_SEED:
+			JE_playSampleNum(S_SELECT);
+			// A cancelled field leaves the seed alone; clearing it is done by accepting a blank.
+			if (!lobbyTextEntry("Endless Setup", "Run seed:", network_host_endless_seed,
+			                    sizeof(network_host_endless_seed), filterSeed, false))
+			{
+				network_host_endless_seed[0] = '\0';
+			}
+			lobbyPrepareBackdrop("Endless Setup");
+			break;
+
+		case ITEM_RUNMODE:
+			JE_playSampleNum(S_CLICK);
+			network_host_endless_run_mode =
+				(network_host_endless_run_mode + ENDLESS_RUNMODE_COUNT + cycleDir) % ENDLESS_RUNMODE_COUNT;
+			break;
+
+		case ITEM_CHOOSER:
+			JE_playSampleNum(S_CLICK);
+			network_host_endless_chooser =
+				(network_host_endless_chooser + ENDLESS_PICK_COUNT + cycleDir) % ENDLESS_PICK_COUNT;
+			break;
+
+		default:
+			JE_playSampleNum(S_SPRING);
+			return;
+		}
+	}
+}
+
 // Ports we can actually bind and dial: 49152 up is the ephemeral range the joiner's own socket
 // is drawn from.  Used for the listen port and for a typed ":port" suffix alike.
 static bool lobbyValidPort(const char *text, Uint16 *out)
@@ -506,6 +725,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_PORT = 0,
 		ITEM_TYPE,
 		ITEM_EPISODE,
+		ITEM_ENDLESS,
 		ITEM_DIFFICULTY,
 		ITEM_PLAYER,
 		ITEM_CREDIT,
@@ -520,15 +740,16 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 	static const char *const itemLabel[SETTING_COUNT] =
 	{
-		"Listen Port", "Game Type", "Episode", "Difficulty",
+		"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty",
 		"Host Flies", "Credit", "Game Speed", "Netcode", "Desync Recovery",
 	};
 
 	static const char *const itemHelp[ITEM_COUNT] =
 	{
 		"The port other players connect to.",
-		"Campaign plays the story; Arcade is a score run.",
+		"Campaign and Endless share cash; Arcade scores.",
 		"Which episode the session plays.",
+		"Seed, run mode, and who charts each course.",
 		"Applies to both players for the whole game.",
 		"Which ship you take; the joiner gets the other.",
 		"Shared pays a kill or pickup to both players.",
@@ -570,26 +791,35 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		if (recoveryLocked)
 			net_desync_recovery = false;
 
-		// Campaign gives both slots an identical, independently equipped ship, so which one the
-		// host takes decides nothing; the row only exists to pick the Dragonwing in Arcade.
-		// Credit sharing is the opposite way round, so exactly one of the two rows is ever on
-		// screen and the block keeps its height either way.
-		const bool campaign = network_game_type == NETWORK_GAME_CAMPAIGN;
-		const bool playerHidden = campaign;
-		const bool creditHidden = !campaign;
+		/* Both co-op types give the two slots the same kind of ship, so which one the host takes
+		 * decides nothing there; that row only exists to pick the Dragonwing in Arcade, and Credit
+		 * is the opposite way round. Endless always starts at episode 1 and brings its own settings
+		 * page instead. Exactly two of the four rows show at a time, so the block keeps its height. */
+		const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
+		const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
+		const bool playerHidden = coop;
+		const bool creditHidden = !coop;
+		const bool episodeHidden = endless;
+		const bool endlessHidden = !endless;
 		if (playerHidden && selectedIndex == ITEM_PLAYER)
 			selectedIndex = ITEM_CREDIT;
 		else if (creditHidden && selectedIndex == ITEM_CREDIT)
 			selectedIndex = ITEM_SPEED;
+		if (episodeHidden && selectedIndex == ITEM_EPISODE)
+			selectedIndex = ITEM_ENDLESS;
+		else if (endlessHidden && selectedIndex == ITEM_ENDLESS)
+			selectedIndex = ITEM_DIFFICULTY;
 
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
-		itemValue[ITEM_TYPE] = network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade";
+		itemValue[ITEM_TYPE] = endless ? "Endless"
+		                     : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
 		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
+		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_DIFFICULTY] = difficultyNameB[network_host_difficulty];
 		itemValue[ITEM_PLAYER] = network_host_player == 2
-		                       ? (campaign ? "Player 2" : "Dragonwing")
-		                       : (campaign ? "Player 1" : "Silver Ship");
+		                       ? (coop ? "Player 2" : "Dragonwing")
+		                       : (coop ? "Player 1" : "Silver Ship");
 		itemValue[ITEM_CREDIT] = coopSharedCredit ? "Shared" : "Individual";
 		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
 		itemValue[ITEM_NETCODE] = net_rollback ? "Rollback" : "Delay-Based";
@@ -601,7 +831,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		int shown = 0;
 		for (int i = 0; i < SETTING_COUNT; ++i)
 		{
-			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden);
+			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden)
+			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden);
 			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
 		}
 
@@ -735,7 +966,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
 				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
-				       (selectedIndex == ITEM_CREDIT && creditHidden));
+				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
+				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
+				       (selectedIndex == ITEM_ENDLESS && endlessHidden));
 				break;
 
 			case SDL_SCANCODE_DOWN:
@@ -744,7 +977,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
 				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
-				       (selectedIndex == ITEM_CREDIT && creditHidden));
+				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
+				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
+				       (selectedIndex == ITEM_ENDLESS && endlessHidden));
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -754,10 +989,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				break;
 
 			// Every cycling row answers to left/right as well, the way every other
-			// setting in the game does.  The port opens a field, so it stays Enter-only.
+			// setting in the game does.  The port and the Endless page open a screen of
+			// their own, so those stay Enter-only.
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex < SETTING_COUNT && selectedIndex != ITEM_PORT)
+				if (selectedIndex < SETTING_COUNT && selectedIndex != ITEM_PORT
+				    && selectedIndex != ITEM_ENDLESS)
 				{
 					action = true;
 					if (lastkey_scan == SDL_SCANCODE_LEFT)
@@ -799,8 +1036,14 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		case ITEM_TYPE:
 			JE_playSampleNum(S_CLICK);
-			network_game_type = network_game_type == NETWORK_GAME_CAMPAIGN
-			                        ? NETWORK_GAME_ARCADE : NETWORK_GAME_CAMPAIGN;
+			network_game_type = (NetworkGameType)((network_game_type + NETWORK_GAME_TYPE_COUNT + cycleDir)
+			                                      % NETWORK_GAME_TYPE_COUNT);
+			break;
+
+		case ITEM_ENDLESS:
+			JE_playSampleNum(S_SELECT);
+			lobbyEndlessMenu();
+			lobbyPrepareBackdrop("Host Game");
 			break;
 
 		case ITEM_EPISODE:
@@ -910,7 +1153,7 @@ static bool lobbyStartSession(bool as_host)
 	// subject (see network_connect).  Campaign offers no such choice -- both slots fly the same
 	// kind of ship -- so it always hosts as player 1, leaving network_host_player as the Arcade
 	// preference it is remembered for.
-	const bool slotChoiceApplies = network_game_type != NETWORK_GAME_CAMPAIGN;
+	const bool slotChoiceApplies = network_game_type == NETWORK_GAME_ARCADE;
 	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;
 	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 

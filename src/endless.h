@@ -45,6 +45,9 @@ void endlessAdvanceCourseTurn(void);   // call once a course has been committed
 // A downed player spectates until the zone ends, then revives at the outpost.
 extern bool endlessPlayerDowned[2];
 bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
+// Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
+// still flying, and player 1 outside co-op.
+uint endlessDangerTargetPlayer(int fromX, int fromY);
 void endlessReviveDownedAtOutpost(void);
 
 // Number of active modifier bits.
@@ -298,9 +301,26 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);
 
+// Re-fork both players' outpost draw streams from the run seed.
+void endlessReseedPlayers(Uint64 salt);
+
 // Sidecar save keyed by the normal save slot.
 bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveSlot(JE_byte slot);
+
+/* Everything one Endless co-op player owns for themselves that the other machine also has to
+ * know: the run-wide sector effects are derived identically on both sides, but these are bought.
+ * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
+#define ENDLESS_PLAYER_BLOCK_PERKS 32
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS)
+int  endlessPackPlayerBlock(Uint8 *buf, uint p);
+void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
+
+/* Online co-op resume. The host serializes the live run in the sidecar's own versioned format
+ * and the joiner adopts it. Returns 0 / false when there is nothing usable. */
+#define ENDLESS_RUN_WIRE_MAX 4096
+size_t endlessRunSerialize(Uint8 *out, size_t max);
+bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
 bool endlessLoadSlot(JE_byte slot);
 bool endlessResumePending(void);
 
