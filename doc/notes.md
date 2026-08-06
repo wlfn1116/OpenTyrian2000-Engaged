@@ -796,15 +796,20 @@ records. It is unacknowledged and idempotent.
 - `network_check()` drains up to `NET_DRAIN_MAX`; callers do not add another
   drain loop.
 - The level epoch separates frames from different levels.
-- Menu and pause request bits are processed from received truth outside the
-  simulation misprediction test.
+- Menu request bits are processed from received truth outside the simulation
+  misprediction test.
 - Received canaries queue until the local frame can be compared.
 - The pool hash covers player shots, enemy shots, explosions, repeating
   explosions, and the sound queue.
 
 An in-game menu request schedules frame `f + NRB_REQ_LEAD`, and both peers stall
-there until it is final. Pause changes presentation state only and remains
-immediate.
+there until it is final.
+
+Pause is offline-only. `JE_pauseGame` returns immediately under `isNetworkGame`,
+the level loop swallows the key and the focus-loss edge without raising a
+request, and neither `RB_REQ_PAUSE` nor state-packet request bit 0 is set or
+honoured. Both stay reserved so the wire layout is unchanged. A halt on one
+machine alone strands the other, and losing window focus is not consent to it.
 
 `shipGr` and `shipGrPtr` are registered derivations of the selected ship.
 `JE_getShipInfo` also restores armor, so it cannot be used as a restore fixup.
@@ -860,9 +865,9 @@ that application-level acknowledgement. Fatal layout refusal uses a reasoned
 NAK and retires recovery on both peers. Recovery is capped at three attempts per
 level.
 
-`PACKET_WAITING` is a paired rendezvous. Menu release, pause release, shop exit,
-and level start consume it in the same order on both machines. Loops that inspect
-packets during a rendezvous must leave unmatched waiting packets queued.
+`PACKET_WAITING` is a paired rendezvous. Menu release, shop exit, and level start
+consume it in the same order on both machines. Loops that inspect packets during
+a rendezvous must leave unmatched waiting packets queued.
 
 The level-start barrier completes map and sprite loading before the simulation
 fade begins. `JE_advanceLevelFade` advances the fade inside the tick so rollback

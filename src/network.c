@@ -62,7 +62,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       17           // v17 adds Double Pickups and the Endless combo feed
+#define NET_VERSION       18           // v18 drops the pause rendezvous: online cannot pause
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -218,7 +218,7 @@ JE_boolean haltGame = false;
 JE_boolean moveOk;
 
 /* Special Requests */
-JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
+JE_boolean skipLevelRequest, helpRequest, nortShipRequest;
 JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 
 #ifdef WITH_NETWORK
@@ -3690,7 +3690,6 @@ void network_write_diagnostics(FILE *f)
 
 void JE_clearSpecialRequests(void)
 {
-	pauseRequest = false;
 	inGameMenuRequest = false;
 	skipLevelRequest = false;
 	helpRequest = false;

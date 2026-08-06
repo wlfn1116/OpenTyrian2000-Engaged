@@ -160,7 +160,7 @@ void network_write_diagnostics(FILE *f);
 
 extern JE_boolean haltGame;
 extern JE_boolean moveOk;
-extern JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
+extern JE_boolean skipLevelRequest, helpRequest, nortShipRequest;
 extern JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 
 #ifdef WITH_NETWORK

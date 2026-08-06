@@ -1021,8 +1021,7 @@ static void nrb_process_requests(void)
 		const Uint16 rbits = (remote_hist[f % NRB_HIST].tag == f) ? remote_hist[f % NRB_HIST].in.buttons : 0;
 		const Uint16 bits = lbits | rbits;
 
-		if (bits & RB_REQ_PAUSE)
-			JE_pauseGame();
+		// RB_REQ_PAUSE is dead: online cannot pause, so a set bit from any source is ignored.
 
 		if (bits & RB_REQ_MENU)
 		{
@@ -2029,8 +2028,8 @@ NrbStep nrb_driver(void)
 				s->in.difficulty = (Uint8)difficultyLevel;
 			s->tag = nrb_cur;
 		}
-		s->in.buttons |= (pauseRequest      ? RB_REQ_PAUSE     : 0) |
-		                 (inGameMenuRequest ? RB_REQ_MENU      : 0) |
+		// RB_REQ_PAUSE is never sent: online cannot pause. The bit stays reserved.
+		s->in.buttons |= (inGameMenuRequest ? RB_REQ_MENU      : 0) |
 		                 (skipLevelRequest  ? RB_REQ_SKIPLEVEL : 0) |
 		                 (nortShipRequest   ? RB_REQ_NORTSHIP  : 0);
 		nrb_send_input();

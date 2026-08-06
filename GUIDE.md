@@ -560,6 +560,12 @@ other player." screen for a moment on a large weapon.
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
 
+**P does not pause an online game**, in Arcade, Campaign or Endless alike, and
+neither does clicking away to another window: your ship keeps flying while you
+are not looking at it. Only one machine would have stopped, and the other player
+would be left holding a session that had gone quiet. Esc still opens the in-game
+menu, which is the way out of a level.
+
 ### Online Endless
 
 The Endless lobby flies the roguelite with two ships. One run, one sector, one
