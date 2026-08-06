@@ -6755,8 +6755,9 @@ void networkStartScreen(void)
 			}
 
 			// Same column rule as the host menu: the block is as wide as its widest row, centred,
-			// with labels on its left edge and values on its right.
-			int blockW = 150;
+			// with labels on its left edge and values on its right. The floor keeps a screenful of
+			// short values from looking cramped without stretching the columns apart.
+			int blockW = 140;
 			for (int i = 0; i < rows; ++i)
 			{
 				blockW = MAX(blockW, JE_textWidth(label[i], small_font) + 20
@@ -6767,9 +6768,11 @@ void networkStartScreen(void)
 			const int xLabel = LEGACY_WIDTH / 2 - blockW / 2;
 			const int xValue = xLabel + blockW;
 
-			// Centre the list and the waiting line together in the space under the title.
-			const int dyRow = 12, gapToWait = 20, waitH = 14;
-			const int yTop = 40 + (196 - 40 - (rows * dyRow + gapToWait + waitH)) / 2;
+			// Centre the list and the waiting line together under the title. An Endless lobby has
+			// ten rows to show, so the pitch has to leave that many clear of both the large-font
+			// title above (which reaches y=40) and the bottom of the screen.
+			const int dyRow = 11, gapToWait = 18, waitH = 12;
+			const int yTop = 44 + (196 - 44 - (rows * dyRow + gapToWait + waitH)) / 2;
 
 			for (int i = 0; i < rows; ++i)
 			{

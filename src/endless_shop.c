@@ -46,10 +46,17 @@ int endlessBuffCooldownUntil[2] = { 0, 0 };
 // Buff "charge" scales the kill-fire window/damage with the cash paid (normalized by depth,
 // cap 20). Reset each run.
 int endlessBuffCharge[2] = { 0, 0 };
-int endlessBuffWindowTicks(void)  // base kill-fire window, extended by charge (up to ~2.5x)
+// Base kill-fire window for one ship, extended by what that ship paid for its drive:
+// charge 0 -> 1.0x (~2s), charge 10 -> 1.75x (~3.5s), charge 20 -> 2.5x (~5s).
+int endlessBuffWindowTicksFor(uint p)
 {
-	// charge 0 -> 1.0x (~2s), charge 10 -> 1.75x (~3.5s), charge 20 -> 2.5x (~5s)
-	return ENDLESS_TURBODRIVE_TICKS * (40 + 3 * endlessBuffChargePaid()) / 40;
+	const int charge = endlessBuffCharge[(p < COUNTOF(endlessBuffCharge)) ? p : 0];
+	return ENDLESS_TURBODRIVE_TICKS * (40 + 3 * charge) / 40;
+}
+
+int endlessBuffWindowTicks(void)
+{
+	return endlessBuffWindowTicksFor(endlessFxPlayer());
 }
 
 // The player the outpost is spending for, and their wallet.
