@@ -5313,13 +5313,14 @@ draw_player_shot_loop_end:
 			}
 		}
 
+		/* Online has no pause: it stops one machine's clock and not the other's, and losing
+		 * window focus is not a reason to halt a session the other player is still flying.
+		 * Swallow the press so a held key or a queued joystick button cannot bank it. */
 		if (pause_pressed || !windowHasFocus)
 		{
 			pause_pressed = false;
 
-			if (isNetworkGame)
-				pauseRequest = true;
-			else
+			if (!isNetworkGame)
 				JE_pauseGame();
 		}
 
@@ -5433,8 +5434,8 @@ draw_player_shot_loop_end:
 	{
 		if (!reallyEndLevel)
 		{
-			Uint16 requests = (pauseRequest == true) |
-			                  (inGameMenuRequest == true) << 1 |
+			// Bit 0 was the pause request. Online cannot pause, so it stays clear.
+			Uint16 requests = (inGameMenuRequest == true) << 1 |
 			                  (skipLevelRequest == true) << 2 |
 			                  (nortShipRequest == true) << 3;
 			SDLNet_Write16(requests,        &packet_state_out[0]->data[14]);
@@ -5502,10 +5503,8 @@ draw_player_shot_loop_end:
 				}
 
 				requests = SDLNet_Read16(&packet_state_in[0]->data[14]) ^ SDLNet_Read16(&packet_state_out[network_delay]->data[14]);
-				if (requests & 1)
-				{
-					JE_pauseGame();
-				}
+				// Bit 0 was the pause request. Nothing online sets it now; the bit stays
+				// reserved so the state packet keeps its layout.
 				if (requests & 2)
 				{
 					yourInGameMenuRequest = SDLNet_Read16(&packet_state_out[network_delay]->data[14]) & 2;

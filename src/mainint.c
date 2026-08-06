@@ -7471,6 +7471,11 @@ void JE_mainKeyboardInput(void)
 
 void JE_pauseGame(void)
 {
+	// Pause is offline-only. It halts this machine alone, so online it would strand the
+	// other player; this guard holds whatever route the call arrived by.
+	if (isNetworkGame)
+		return;
+
 	// A modal UI mid-tick makes the tick non-replayable; skip self-test verify.
 	rollback_taint("pause");
 
@@ -7497,30 +7502,6 @@ void JE_pauseGame(void)
 
 	set_volume(tyrMusicVolume / 2, fxVolume);
 
-#ifdef WITH_NETWORK
-	if (isNetworkGame)
-	{
-		network_prepare(PACKET_GAME_PAUSE);
-		network_send(4);  // PACKET_GAME_PAUSE
-
-		while (true)
-		{
-			service_SDL_events(false);
-
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_GAME_PAUSE)
-			{
-				network_update();
-				break;
-			}
-
-			network_update();
-			network_check();
-
-			SDL_Delay(16);
-		}
-	}
-#endif
-
 	wait_noinput(false, false, true); // debounce before the next input loop
 
 	do
@@ -7533,49 +7514,11 @@ void JE_pauseGame(void)
 		if ((newkey && lastkey_scan != SDL_SCANCODE_LCTRL && lastkey_scan != SDL_SCANCODE_RCTRL && lastkey_scan != SDL_SCANCODE_LALT && lastkey_scan != SDL_SCANCODE_RALT) ||
 			JE_mousePosition(&mouseX, &mouseY) > 0)
 		{
-#ifdef WITH_NETWORK
-			if (isNetworkGame)
-			{
-				network_prepare(PACKET_WAITING);
-				network_send(4);  // PACKET_WAITING
-			}
-#endif
 			done = true;
 		}
 
-#ifdef WITH_NETWORK
-		if (isNetworkGame)
-		{
-			network_check();
-
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
-			{
-				network_check();
-
-				done = true;
-			}
-		}
-#endif
-
 		wait_delay();
 	} while (!done);
-
-#ifdef WITH_NETWORK
-	if (isNetworkGame)
-	{
-		while (!network_is_sync())
-		{
-			service_SDL_events(false);
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			network_check();
-			SDL_Delay(16);
-		}
-	}
-#endif
 
 	set_volume(tyrMusicVolume, fxVolume);
 
