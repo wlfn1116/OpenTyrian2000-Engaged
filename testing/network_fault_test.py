@@ -19,33 +19,53 @@ from pathlib import Path
 # Each scenario is a separate pair of peers on its own ports, so one mode's protocol cannot
 # leave state behind for the next. Rounds are only the warm-up that establishes the session;
 # the campaign and Endless scenarios spend their time in their own protocols instead.
+# Rows are (id, name, rounds, deadline seconds, part of the default full run).
 SCENARIOS = (
-    (0, "base", 48),
-    (1, "campaign", 6),
-    (2, "endless", 6),
-    (3, "barriers", 6),
+    (0, "base", 48, 90, True),
+    (1, "campaign", 6, 90, True),
+    (2, "endless", 6, 90, True),
+    (3, "barriers", 6, 90, True),
     # The joiner reports a skewed wire version; success is both peers rejecting the handshake
     # with the mismatch message and exiting on their own, not a hang or a half-open session.
-    (4, "version-mismatch", 2),
+    (4, "version-mismatch", 2, 90, True),
     # Real gameplay: both peers fly the first Arcade level under rollback with scripted
     # movement. 5 must stay desync-free while rollbacks happen; 6 bends one joiner frame and
     # must detect the desync and repair it through a recovery epoch.
-    (5, "gameplay", 0),
-    (6, "desync-recovery", 0),
+    (5, "gameplay", 0, 90, True),
+    (6, "desync-recovery", 0, 90, True),
     # Two-stage save/resume: the pair flies and saves the LAST LEVEL slot on exit, then the
     # same pair (same scratch directories) resumes it, host loading and the joiner adopting
     # the resume form; the resumed level must fly desync-free.
-    (7, "save-resume", 0),
+    (7, "save-resume", 0, 90, True),
     # The proxy goes completely silent for 8 seconds mid-level, then returns. Shorter than the
     # dead-link timeout, so the session has to ride it out and still finish clean.
-    (8, "outage", 0),
+    (8, "outage", 0, 90, True),
     # The joiner is killed mid-level. The host must reach its clean connection-lost path and
     # exit with the message on its own, not hang until this harness's deadline.
-    (9, "peer-vanish", 0),
-    # Three sidekick mount combinations (front+side vs trailing pair; double front vs
-    # satellite+chaser; satellite pair vs chaser+front), flown with scripted fire. Any mount
-    # whose simulation reads unregistered or local-only state desyncs here.
-    (10, "sidekick-combos", 0),
+    (9, "peer-vanish", 0, 90, True),
+    # Four sidekick mount combinations (front+side vs trailing pair; double front vs
+    # satellite+chaser; satellite pair vs chaser+front; ammo-limited+charge-up vs a custom
+    # design+satellite), flown with scripted fire. Any mount whose simulation reads
+    # unregistered or local-only state desyncs here.
+    (10, "sidekick-combos", 0, 90, True),
+    # Both peers press Esc on the same rollback frame; host-wins arbitration must leave one
+    # menu, one waiter, and a clean reliable queue behind (no stale PACKET_WAITING).
+    (11, "menu-race", 0, 90, True),
+    # Online Endless flown across ten zones, one forced modifier slate per zone covering every
+    # charted bit, with the real outpost rendezvous between zones. The peers print their view
+    # of both wallets at each outpost and the harness requires the sequences identical.
+    (12, "endless-zones", 0, 480, True),
+    # Online Campaign flown across the first two levels of episode 1, the real shop protocol
+    # (with each ship flying its own custom weapon design) between them, the episode 1 -> 2
+    # transition, and the first level of episode 2.
+    (13, "campaign-shop", 0, 300, True),
+    # The peers take the production lobby roles: the host arms Individual credit + Double
+    # Pickups from its own config, the joiner adopts the settings block, and scripted in-sim
+    # pickups then have to pay the same doubled wallets on both machines.
+    (14, "double-pickups", 0, 120, True),
+    # Accelerated session-length soak: a long single-level flight watching the working set and
+    # the session counters. Run it with --scenario 15; the default full run skips it.
+    (15, "soak", 0, 480, False),
 )
 
 
@@ -53,6 +73,7 @@ def run_scenario(
     executable: Path, data_dir: Path, base_port: int, scenario: int, rounds: int,
     extra_common: list[str] | None = None,
     host_dir: str | None = None, join_dir: str | None = None,
+    deadline_s: int = 90,
 ) -> tuple[int, str, dict[str, int]]:
     host_addr = ("127.0.0.1", base_port)
     proxy_a_addr = ("127.0.0.1", base_port + 1)
@@ -76,6 +97,20 @@ def run_scenario(
     if scenario == 6:
         # Both peers know a desync is expected; only the joiner actually bends the frame.
         common += ["--test-net-corrupt-frame", "300"]
+    if scenario == 11:
+        common += ["--test-net-gameplay-ticks", "700", "--test-net-menu-frame", "300"]
+    if scenario == 12:
+        # The tick figure is a runaway backstop; the zone count is what ends the run.
+        common += ["--test-net-gameplay-ticks", "1000000",
+                   "--test-net-game-type", "2", "--test-net-zones", "10"]
+    if scenario == 13:
+        common += ["--test-net-gameplay-ticks", "1000000",
+                   "--test-net-game-type", "1", "--test-net-zones", "3"]
+    if scenario == 14:
+        common += ["--test-net-gameplay-ticks", "700",
+                   "--test-net-game-type", "1", "--test-net-lobby-settings"]
+    if scenario == 15:
+        common += ["--test-net-gameplay-ticks", "12000"]
     if extra_common:
         common += extra_common
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
@@ -100,7 +135,7 @@ def run_scenario(
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     started = time.monotonic()
-    deadline = started + 90
+    deadline = started + deadline_s
     pause_to = 0.0
     pause_triggered = False
     outage_to = 0.0
@@ -180,7 +215,7 @@ def run_scenario(
                         break
                     schedule(0 if source is proxy_a else 1, payload)
         else:
-            raise TimeoutError("network peers did not finish within 90 seconds")
+            raise TimeoutError(f"network peers did not finish within {deadline_s} seconds")
     except Exception as exc:
         print(f"network fault test: {exc}")
         for process in (host, join):
@@ -207,8 +242,8 @@ def run_scenario(
         # exit with the message, well before this harness's deadline would have killed it.
         detected = ("Network connection was lost" in host_out and host.returncode != 0)
         return (0 if detected else 1), transcript, injected
-    if scenario == 0:
-        # Soak check: the base exchange must not grow the working set. The peers print zero
+    if scenario in (0, 15):
+        # Soak check: the exchange must not grow the working set. The peers print zero
         # start figures on platforms without the probe, which skips the comparison.
         for line in (host_out + join_out).splitlines():
             match = re.match(r"NETWORK TEST MEM player=\d+ start=(\d+) end=(\d+) kb", line)
@@ -217,6 +252,29 @@ def run_scenario(
                 if growth > 16384:
                     print(f"network fault test: working set grew {growth} kb over the session")
                     return 1, transcript, injected
+    if scenario == 12:
+        # Both machines derive both wallets; the printed sequences must be identical, and the
+        # forced Apex/Legion/Elite Pack zones must actually have paid a bounty by the end.
+        host_wallets = [l for l in host_out.splitlines() if l.startswith("NET ZONE WALLETS")]
+        join_wallets = [l for l in join_out.splitlines() if l.startswith("NET ZONE WALLETS")]
+        if len(host_wallets) < 11 or host_wallets != join_wallets:
+            print("network fault test: the peers' zone wallet lines differ or are short "
+                  f"({len(host_wallets)} vs {len(join_wallets)})")
+            return 1, transcript, injected
+        final = re.search(r"bounty=(\d+)", host_wallets[-1])
+        if final is None or int(final.group(1)) == 0:
+            print("network fault test: no elite bounty was ever paid across the forced zones")
+            return 1, transcript, injected
+    if scenario == 13:
+        if ("driving the episode transition" not in host_out
+                or "driving the episode transition" not in join_out):
+            print("network fault test: the campaign run never drove the episode transition")
+            return 1, transcript, injected
+    if scenario == 14:
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "net session flags: shared=0 doubled=1" not in out:
+                print(f"network fault test: the {who} did not arm Individual + Double Pickups")
+                return 1, transcript, injected
 
     failed = host.returncode != 0 or join.returncode != 0
     return (1 if failed else 0), transcript, injected
@@ -237,7 +295,8 @@ def main() -> int:
     executable = args.exe.resolve()
     data_dir = args.data.resolve()
 
-    selected = [s for s in SCENARIOS if args.scenario in (-1, s[0])]
+    selected = [s for s in SCENARIOS
+                if (args.scenario == -1 and s[4]) or args.scenario == s[0]]
     if not selected:
         print(f"network fault test: no such scenario {args.scenario}")
         return 2
@@ -247,16 +306,17 @@ def main() -> int:
     # scenario: the short ones do not carry enough packets to hit every modulus.
     totals = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
 
-    for index, (scenario, name, default_rounds) in enumerate(selected):
+    for index, (scenario, name, default_rounds, deadline_s, _default_run) in enumerate(selected):
         rounds = args.rounds if scenario == 0 else default_rounds
-        # Fresh ports per scenario so a lingering packet cannot reach the next pair.
-        base_port = args.base_port + index * 10
+        # Fresh ports per scenario so a lingering packet cannot reach the next pair; the
+        # sidekick matrix runs four pairs of its own inside its range.
+        base_port = args.base_port + index * 20
         print(f"=== scenario {scenario} ({name}), {rounds} rounds, port {base_port} ===")
         if scenario == 10:
             result = 0
             transcript = ""
             injected = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
-            for profile in (1, 2, 3):
+            for profile in (1, 2, 3, 4):
                 r, t, inj = run_scenario(
                     executable, data_dir, base_port + (profile - 1) * 4, scenario, rounds,
                     extra_common=["--test-net-gameplay-ticks", "700",
@@ -287,7 +347,7 @@ def main() -> int:
             transcript = f"[stage 1: play and save]\n{t1}[stage 2: resume]\n{t2}"
         else:
             result, transcript, injected = run_scenario(
-                executable, data_dir, base_port, scenario, rounds
+                executable, data_dir, base_port, scenario, rounds, deadline_s=deadline_s
             )
         print(transcript, end="")
         print("faults:", " ".join(f"{k}={v}" for k, v in injected.items()))

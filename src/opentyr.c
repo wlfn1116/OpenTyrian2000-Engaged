@@ -23,6 +23,7 @@
 #include "custom_weapon.h"
 #include "destruct.h"
 #include "editship.h"
+#include "endless.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -2639,10 +2640,55 @@ int main(int argc, char *argv[])
 		networkHostPlayerNum = 1;
 	}
 
-	/* Command-line peers have no lobby roles, and the desync recovery path acts on the host
-	 * role alone. The gameplay wire test keeps the command-line start (no menus) and assigns
-	 * the role the lobby would have. */
-	if (qa_net_gameplay_ticks > 0)
+	/* Gameplay wire scenarios beyond Arcade: the harness names the mode, and both peers must
+	 * simply be configured alike (there is no lobby to adopt from). The Endless session
+	 * settings are the fixed QA slate: Standard run mode, host charts, shared Combo Feed,
+	 * pinned seed. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_game_type >= 0
+	    && qa_net_game_type < NETWORK_GAME_TYPE_COUNT)
+	{
+		network_game_type = (NetworkGameType)qa_net_game_type;
+		if (network_game_type == NETWORK_GAME_ENDLESS)
+		{
+			network_host_endless_run_mode = (int)ENDLESS_RUNMODE_STANDARD;
+			network_host_endless_chooser = (int)ENDLESS_PICK_HOST;
+			network_host_endless_combo_shared = true;
+			SDL_strlcpy(network_endless_session_seed, "qa-wire-zones",
+			            sizeof(network_endless_session_seed));
+		}
+	}
+
+	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run
+	 * into the death menus, which these scenarios do not model. Set on both peers alike, so
+	 * the simulations agree. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_zones > 0)
+		cheatInfiniteArmor = true;
+
+	/* The doubled-pickups scenario proves the session-flag arming end to end: the peers take
+	 * the production lobby roles, the host arms Individual credit plus Double Pickups from
+	 * its own config, and the joiner starts from the opposite values, which the settings
+	 * block in the connect packet must replace. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_lobby_settings)
+	{
+		network_from_lobby = true;
+		if (thisPlayerNum == 1)
+		{
+			coopSharedCredit = false;
+			coopDoublePickups = true;
+		}
+		else
+		{
+			coopSharedCredit = true;
+			coopDoublePickups = false;
+		}
+	}
+
+	/* Command-line peers have no lobby to hand out roles, and the desync recovery dispatch
+	 * and menu arbitration act on the host role alone. Assign player 1 the role the lobby
+	 * would have. Settings stay configured-by-hand on both sides; only the role is filled in.
+	 * isNetworkGame here always means --net: the lobby cannot have run yet, and the QA
+	 * lobby-settings mode above still numbers its peers the same way. */
+	if (isNetworkGame)
 	{
 		network_is_host = thisPlayerNum == 1;
 		networkHostPlayerNum = 1;
@@ -2698,8 +2744,9 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 		// A lobby session that has run its course: close the socket and hand the joiner its
 		// own settings back, so the title screen behaves like a normal single-player one and
-		// a second session can be started cleanly.  (Command-line netplay reconnects instead.)
-		if (isNetworkGame && network_from_lobby)
+		// a second session can be started cleanly.  (Command-line netplay reconnects instead,
+		// and the QA lobby-settings peers are command-line peers under lobby roles.)
+		if (isNetworkGame && network_from_lobby && !qa_net_lobby_run())
 		{
 			network_shutdown();
 
@@ -2722,7 +2769,7 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 		// A command-line network game has no title screen: it connects straight away, every
 		// time round the loop.  A lobby game reaches the same handshake from the menu below.
-		if (isNetworkGame && !network_from_lobby)
+		if (isNetworkGame && (!network_from_lobby || qa_net_lobby_run()))
 		{
 			networkStartScreen();
 		}

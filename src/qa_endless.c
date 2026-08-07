@@ -1252,6 +1252,28 @@ static void qa_scenario_suite(void)
 		qa_check(endlessHardcore() == (modes[m] == ENDLESS_RUNMODE_HARDCORE), label);
 	}
 
+	/* The no-save rule is pinned in the data layer, not only in the menus: JE_saveGame and
+	 * endlessSaveSlot both refuse mid-Hardcore-run and leave the slot exactly as it was.
+	 * Driven for Hardcore only; the refusal returns before the config write, so the case is
+	 * safe in-process, while a Standard-mode positive call would write the runner's real
+	 * save file (the migration fixtures and wire scenario 7 cover that side). */
+	{
+		const JE_SaveFileType original = saveFiles[22 - 1];
+		JE_SaveFileType marked;
+		qa_session(0);
+		qa_clear_ships();
+		endlessRunMode = ENDLESS_RUNMODE_HARDCORE;
+		endlessRunDepth = 9;
+		player[0].cash = 123456;
+		memset(&saveFiles[22 - 1], 0x5a, sizeof(saveFiles[22 - 1]));
+		marked = saveFiles[22 - 1];
+		JE_saveGame(22, "HARDCORE QA");
+		endlessSaveSlot(22);
+		qa_check(memcmp(&marked, &saveFiles[22 - 1], sizeof(marked)) == 0,
+		         "Hardcore: a mid-run save attempt leaves the record untouched at the data level");
+		saveFiles[22 - 1] = original;
+	}
+
 	/* A session where the host turned Shared credit on: both ships bank every kill and every
 	 * pickup in full, so neither has to hang back, and Double Pickups stands down. */
 	for (int local = 0; local <= 1; ++local)

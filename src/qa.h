@@ -30,6 +30,32 @@ extern int qa_net_resume_slot;
 // Sidekick mount profile for the gameplay wire tests; 0 keeps the stock loadout.
 extern int qa_net_loadout;
 void qa_net_apply_loadout(int profile);
+
+/* Simultaneous in-game-menu race: both peers raise the request on this frame (0 = off), which
+ * is the documented both-players-press-Esc case host-wins arbitration has to settle. */
+extern unsigned long qa_net_menu_frame;
+// Game type for a command-line gameplay run: -1 keeps Arcade, else a NetworkGameType value.
+extern int qa_net_game_type;
+/* Multi-level gameplay runs: fly until this many levels/zones have been CLEARED (each level is
+ * ended by script at QA_NET_ZONE_END_FRAME), then report the session verdict at the next
+ * outpost. 0 keeps the plain bounded flight that reports at the tick limit. */
+extern int qa_net_zones;
+extern int qa_net_zones_cleared;
+#define QA_NET_ZONE_END_FRAME 500
+/* Lobby-settings run: peers take the production lobby roles, the host arms Individual credit
+ * plus Double Pickups from its own config, and the joiner adopts the settings block from the
+ * connect packet; scripted in-sim pickups then drive the doubled payment rule on both sims. */
+extern bool qa_net_lobby_settings;
+/* True while a lobby-settings wire run keeps command-line peers under the lobby roles: the
+ * main loop must still treat them as command-line (no title screen, no lobby teardown). */
+static inline bool qa_net_lobby_run(void)
+{
+	return qa_net_gameplay_ticks > 0 && qa_net_lobby_settings;
+}
+// Forced modifier slate for the Endless zone at this depth (identical on both machines).
+Uint64 qa_net_zone_mods(int depth);
+// Zones target reached: print the session verdict (net_rollback.c) and exit the peer.
+void qa_net_zone_verdict(void);
 extern bool qa_fast_forward;
 
 int qa_run_unit_suite(void);

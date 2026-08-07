@@ -174,6 +174,7 @@ static Uint32 verified_upto;            /* sim used truth through this frame  */
 static Uint32 req_done;                 /* pause/menu processed through this  */
 static Uint32 req_at;                   /* frame the menu opens after; 0=none */
 static bool   req_local_menu;           /* our own press, not the peer's      */
+static bool   req_host_menu;            /* the host machine's press is among the coalesced ones */
 static Uint32 peer_acked;               /* peer holds all our frames <= this  */
 static Uint32 remote_contig;            /* we hold all peer frames <= this    */
 static Uint32 remote_newest;            /* newest peer frame seen (timesync)  */
@@ -219,6 +220,8 @@ static Uint32 canary_mismatches;        /* further ones only counted          */
  * level restart resets those, and the verdict has to see what happened across the whole run. */
 static Uint16 qa_corrupt_epoch = 0xFFFF;
 static Uint32 qa_desyncs_total, qa_resyncs_total;
+static Uint32 qa_rollbacks_session;   /* rollbacks across the whole run; levels reset stat_* */
+static bool   qa_menu_ran;   /* the scripted simultaneous-menu rendezvous completed */
 
 /* Timesync: rolling frame-advantage estimate, exchanged both ways. */
 static float  adv_ema;
@@ -330,6 +333,7 @@ static void nrb_reset_core(void)
 	end_agreed = false;
 	req_at = 0;
 	req_local_menu = false;
+	req_host_menu = false;
 
 	/* Until the peer's first packet, predict "parked at spawn, no buttons".
 	 * Ship spawn positions are part of deterministic level init, so both
@@ -365,6 +369,9 @@ void nrb_frame_begin(void)
 
 	if (qa_net_gameplay_ticks > 0 && nrb_cur == 1 && !rollback_resim)
 	{
+		// Re-mark now that this level's one-time asset loads have landed, so the soak
+		// figure measures the session's own traffic and state, not sprite sheets.
+		network_test_mem_mark();
 		fprintf(stderr, "net gameplay: level running (epoch %u)\n", (unsigned)nrb_epoch);
 		fflush(stderr);
 	}
@@ -1056,6 +1063,11 @@ static void nrb_process_requests(void)
 			if (req_at == 0 || at < req_at)
 				req_at = at;
 			req_local_menu |= (lbits & RB_REQ_MENU) != 0;
+
+			/* Both machines read the same verified records, so both derive the same answer to
+			 * "did the host press?", which is what the arbitration below decides on. */
+			const Uint16 hbits = (thisPlayerNum == networkHostPlayerNum) ? lbits : rbits;
+			req_host_menu |= (hbits & RB_REQ_MENU) != 0;
 		}
 	}
 }
@@ -1099,6 +1111,7 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	rl_abort_record();  /* drop the aborted pass's partial render recording */
 
 	++stat_rollbacks;
+	++qa_rollbacks_session;
 	stat_resim_frames += high - K + 1;
 	if (high - K + 1 > stat_deepest)
 		stat_deepest = high - K + 1;
@@ -2027,18 +2040,41 @@ static void nrb_qa_gameplay_verdict(void)
 	else
 	{
 		/* No divergence allowed, and the run must have actually exercised a rollback, or the
-		 * proxy's faults never reached the prediction path and this proved nothing. */
-		rc = (qa_desyncs_total == 0 && stat_deepest >= 1) ? 0 : 1;
+		 * proxy's faults never reached the prediction path and this proved nothing. The
+		 * session counter matters for multi-zone runs: every level reset wipes stat_deepest,
+		 * and the verdict may fire from an outpost. */
+		rc = (qa_desyncs_total == 0 && (stat_deepest >= 1 || qa_rollbacks_session >= 1)) ? 0 : 1;
+	}
+
+	if (qa_net_menu_frame > 0)
+	{
+		/* The scripted race must have reached the menu, and arbitration must leave the
+		 * reliable queue clean: a stale PACKET_WAITING here is the leftover release the
+		 * unarbitrated race produced, which a later rendezvous would misread. */
+		if (!qa_menu_ran)
+		{
+			fprintf(stderr, "net gameplay: the scripted menu race never reached the menu\n");
+			rc = 1;
+		}
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			fprintf(stderr, "net gameplay: stale PACKET_WAITING left after the menu rendezvous\n");
+			rc = 1;
+		}
 	}
 
 	// The save/resume scenario's first stage: bank the LAST LEVEL record the resume will load.
 	if (qa_net_save_exit && rc == 0)
 		JE_saveGame(22, "LAST LEVEL    ");
 
-	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu\n",
+	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu"
+	       " rollbacks=%lu gen=%u zones=%d\n",
 	       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, (unsigned long)nrb_cur,
 	       (unsigned)nrb_epoch, (unsigned long)stat_deepest,
-	       (unsigned long)qa_desyncs_total, (unsigned long)qa_resyncs_total);
+	       (unsigned long)qa_desyncs_total, (unsigned long)qa_resyncs_total,
+	       (unsigned long)qa_rollbacks_session, (unsigned)resync_gen, qa_net_zones_cleared);
+	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n", thisPlayerNum,
+	       (unsigned long)network_test_mem_start_kb(), (unsigned long)network_test_mem_now_kb());
 	fflush(stdout);
 
 	const Uint32 start = SDL_GetTicks();
@@ -2049,6 +2085,13 @@ static void nrb_qa_gameplay_verdict(void)
 		SDL_Delay(1);
 	}
 	exit(rc);
+}
+
+/* Multi-zone wire runs reach their target between levels, where the outpost hook has the zone
+ * count; the verdict itself is the same session-scoped one the tick limit uses. */
+void qa_net_zone_verdict(void)
+{
+	nrb_qa_gameplay_verdict();
 }
 
 NrbStep nrb_driver(void)
@@ -2103,6 +2146,10 @@ NrbStep nrb_driver(void)
 				s->in.difficulty = (Uint8)difficultyLevel;
 			s->tag = nrb_cur;
 		}
+		// Wire-test menu race: both peers raise the request on the same frame, which is
+		// the documented simultaneous-Esc case the arbitration above has to settle.
+		if (qa_net_menu_frame > 0 && nrb_cur == qa_net_menu_frame)
+			inGameMenuRequest = true;
 		// RB_REQ_PAUSE is never sent: online cannot pause. The bit stays reserved.
 		s->in.buttons |= (inGameMenuRequest ? RB_REQ_MENU      : 0) |
 		                 (skipLevelRequest  ? RB_REQ_SKIPLEVEL : 0) |
@@ -2160,9 +2207,25 @@ NrbStep nrb_driver(void)
 			break;
 		}
 
-		const bool local_menu = req_local_menu;
+		/* Host-wins arbitration for a simultaneous request: when both players' presses
+		 * coalesced into this one opening, only the host takes the menu branch and the
+		 * joiner waits on the host's menu instead. Without it both machines took the
+		 * local branch and each sent a PACKET_WAITING nobody consumed; a later
+		 * rendezvous (or the stall pump's peer-left-level rule) read the leftover as
+		 * its own release. */
+		const bool local_menu = req_local_menu
+		    && (thisPlayerNum == networkHostPlayerNum || !req_host_menu);
 		req_at = 0;
 		req_local_menu = false;
+		req_host_menu = false;
+
+		if (qa_net_menu_frame > 0)
+		{
+			qa_menu_ran = true;
+			fprintf(stderr, "net gameplay: menu rendezvous at frame %lu (local branch: %d)\n",
+			        (unsigned long)nrb_cur, local_menu ? 1 : 0);
+			fflush(stderr);
+		}
 
 		yourInGameMenuRequest = local_menu;
 		JE_doInGameSetup();
@@ -2288,6 +2351,7 @@ void nrb_write_diagnostics(FILE *f)
 
 #else /* !WITH_NETWORK */
 
+void qa_net_zone_verdict(void) {}
 Uint32 nrb_frame(void) { return 0; }
 void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs)
 {

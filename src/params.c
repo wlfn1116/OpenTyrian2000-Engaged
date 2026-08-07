@@ -79,6 +79,10 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 310, 0,   "test-net-save-exit", false },
 		{ 311, 0,   "test-net-resume-slot", true },
 		{ 312, 0,   "test-net-loadout", true },
+		{ 313, 0,   "test-net-menu-frame", true },
+		{ 314, 0,   "test-net-game-type", true },
+		{ 315, 0,   "test-net-zones", true },
+		{ 316, 0,   "test-net-lobby-settings", false },
 
 		{ 0, 0, NULL, false}
 	};
@@ -269,6 +273,18 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 312:
 			qa_net_loadout = atoi(option.arg);
+			break;
+		case 313:
+			qa_net_menu_frame = strtoul(option.arg, NULL, 10);
+			break;
+		case 314:
+			qa_net_game_type = atoi(option.arg);
+			break;
+		case 315:
+			qa_net_zones = atoi(option.arg);
+			break;
+		case 316:
+			qa_net_lobby_settings = true;
 			break;
 
 		default:

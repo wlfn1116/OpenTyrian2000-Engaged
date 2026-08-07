@@ -1073,6 +1073,12 @@ void endlessSaveSlot(JE_byte slot)
 	if (slot < 1 || slot > SAVE_FILES_NUM)
 		return;
 
+	// The data-level half of the Hardcore no-save rule (the other half is JE_saveGame).
+	// A plain no-op, not the clear branch: JE_saveGame refused too, so whatever record
+	// the slot held before the attempt is still there and still owns its sidecar.
+	if (endlessMode && endlessHardcore())
+		return;
+
 	endlessReadAllSlots();
 	if (endlessMode)
 		endlessCaptureCurrent(&endlessSlotCache[slot - 1]);

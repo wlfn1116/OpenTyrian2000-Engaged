@@ -15,6 +15,14 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   materialization bounds, and exact bullet, charge, and library capacities;
 - modifier, theme-name, and perk-registry integrity (unique persisted bits and names, visible
   font glyphs, menu-width limits, valid combinations, clamped stacks, and bounded distinct offers);
+- a per-modifier online parity matrix: every registry modifier's derived combat parameters
+  (scaling snapshot, gravity vectors, shockwave and martyrdom radii, regen gates, and the rest)
+  computed identically for both player numbers, both network modes, both host roles, and both
+  ships;
+- sidekick and linked-pair simulation state (ammo, refill, charge, satellite angle, attachment
+  latches, link flag and turret angle) surviving a rollback restore exactly;
+- arcade specifics: purple-ball pricing bounds and the maxed-gun cash fallback, the link-gun
+  weapon table, and the split two-player gauge geometry against its wipe region;
 - cash-ledger conservation across ordinary spending, temporary upgrade balances, refunds,
   trade-ins, duplicate commits, and over-wallet debits;
 - arcade life/hull/rear-gun scaling, damage-ratio preservation, alias avoidance, and HUD ammo
@@ -51,6 +59,18 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
 
   Run one on its own with `--scenario N`. Each peer asserts what it should be seeing of the
   other, so a field that crosses in only one direction fails on the side that did not get it.
+
+  The full harness (`testing/network_fault_test.py` standalone) adds the gameplay scenarios:
+  version-mismatch rejection (4), a real Arcade level flown desync-free under rollback (5), a
+  deliberate corruption repaired through a recovery epoch (6), save mid-session and resume the
+  pair (7), an eight-second blackout ridden out (8), the host's clean exit when the joiner
+  vanishes (9), four sidekick mount matrices including ammo-limited, charge-up, and custom
+  designs (10), both players pressing Esc on the same frame with host-wins arbitration (11),
+  ten Online Endless zones each under a forced modifier slate with cross-peer wallet
+  comparison (12), an Online Campaign arc with the real shop protocol, per-ship custom
+  weapons, and the episode 1 to 2 transition (13), and the Double Pickups lobby settings
+  armed end to end with scripted in-simulation pickups (14). Scenario 15 is an accelerated
+  soak (a long flight watching the working set); it runs only when selected explicitly.
 
 Regenerate save fixtures only when intentionally changing the migration corpus:
 

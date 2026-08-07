@@ -1129,8 +1129,8 @@ int network_connect(void)
 		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
 	// Session flags from our own config.  A lobby joiner overwrites these when it adopts the
-	// host's settings block; command-line games have no host, so both sides must simply be
-	// configured alike (as with network_delay).
+	// host's settings block; a command-line game assigns player 1 the host role (opentyr.c)
+	// but adopts nothing, so both sides must simply be configured alike (as with network_delay).
 	network_arm_local_session();
 
 connect_reset:
@@ -1263,8 +1263,9 @@ connect_again:
 	}
 	else
 	{
-		// Command-line netplay has no host: both sides were configured by hand, so a
-		// disagreement is still a hard error rather than something to resolve.
+		// Command-line netplay only fills in the host ROLE (player 1, for recovery and
+		// arbitration); both sides were configured by hand, so a disagreement is still a
+		// hard error rather than something to resolve.
 		if (SDLNet_Read16(&packet_in[0]->data[6]) != network_delay)
 		{
 			fprintf(stderr, "error: network delay did not match opponent's\n");
@@ -3461,6 +3462,23 @@ static unsigned long net_test_rss_start_kb;
 bool network_test_expired(void)
 {
 	return SDL_GetTicks() - net_test_started > NET_TEST_CEILING;
+}
+
+/* The gameplay wire runs print the same working-set pair as the base scenario, so the harness
+ * can apply its soak check to a long flight too. Mark once when the session is up. */
+void network_test_mem_mark(void)
+{
+	net_test_rss_start_kb = net_test_rss_kb();
+}
+
+unsigned long network_test_mem_start_kb(void)
+{
+	return net_test_rss_start_kb;
+}
+
+unsigned long network_test_mem_now_kb(void)
+{
+	return net_test_rss_kb();
 }
 
 /* Shared close for every scenario: settle the reliable channel, then hold the socket open long
