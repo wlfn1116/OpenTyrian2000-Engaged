@@ -627,6 +627,93 @@ static void qa_online_pause_matrix(void)
 	qa_modes_clear();
 }
 
+/* ---- hostile inbound packets --------------------------------------------------------- */
+
+#ifdef WITH_NETWORK
+// Place a crafted packet at the head of the reliable queue, as network_check would have.
+static void qa_inject_packet(const Uint8 *data, int len)
+{
+	if (packet_in[0] == NULL)
+		packet_in[0] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	memcpy(packet_in[0]->data, data, (size_t)len);
+	packet_in[0]->len = len;
+}
+
+/* Malformed and hostile reliable packets through the real pumps. Every case has to be consumed
+ * or refused without a crash and without adopting anything a clamp should have stopped; the
+ * transport acknowledged these on arrival, so the pumps are the only line of defence. */
+static void qa_hostile_packets(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedTwo = twoPlayerMode, savedCampaign = coopCampaignMode;
+	const bool savedEndless = coopEndlessMode;
+	const uint savedThis = thisPlayerNum;
+	Player savedPeer = player[1];
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	thisPlayerNum = 1;
+
+	Uint8 raw[NET_PACKET_SIZE];
+
+	/* Truncated shop state: too short to parse, still consumed so the queue keeps moving. */
+	memset(raw, 0xFF, sizeof(raw));
+	SDLNet_Write16(PACKET_SHOP_SYNC, &raw[0]);
+	const Uint32 cashBefore = player[1].cash;
+	qa_inject_packet(raw, 10);
+	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].cash == cashBefore,
+	         "a truncated shop packet is consumed without adopting anything");
+
+	/* Hostile full shop state: every payload byte lit. The out-of-range course index has to
+	 * clamp to "nothing committed"; flags are zero so the pump owes no reply. */
+	memset(raw, 0xFF, sizeof(raw));
+	SDLNet_Write16(PACKET_SHOP_SYNC, &raw[0]);
+	SDLNet_Write16(2, &raw[4]);        // sender: the peer
+	SDLNet_Write16(1000, &raw[6]);     // sequence, past anything seen
+	SDLNet_Write16(0, &raw[8]);        // flags
+	qa_inject_packet(raw, 40);
+	qa_check(network_shop_pump() && network_shop_peer_course() == -1,
+	         "an out-of-range charted course from a hostile packet reads as none");
+
+	/* Truncated debug block: refused (the pump only adopts whole blocks), left for its caller. */
+	memset(raw, 0xEE, sizeof(raw));
+	SDLNet_Write16(PACKET_DEBUG_SYNC, &raw[0]);
+	qa_inject_packet(raw, 8);
+	qa_check(!network_debug_sync_pump(false) && packet_in[0] != NULL,
+	         "a truncated debug block is refused rather than adopted");
+	network_update();
+
+	/* Custom weapon chunk with absurd counts: the clamps have to reject it before the memcpy
+	 * and allocation it would otherwise size. */
+	memset(raw, 0xFF, sizeof(raw));
+	SDLNet_Write16(PACKET_CUSTOM_WEAPON, &raw[0]);
+	raw[4] = 2;                        // owner: the peer
+	SDLNet_Write16(1, &raw[6]);        // generation
+	SDLNet_Write16(0xFFFF, &raw[8]);   // chunk index
+	SDLNet_Write16(0xFFFF, &raw[10]);  // chunk count
+	SDLNet_Write16(0xFFFF, &raw[12]);  // payload length
+	qa_inject_packet(raw, 20);
+	qa_check(network_shop_pump() && packet_in[0] == NULL,
+	         "an absurd custom-weapon chunk is consumed and refused");
+
+	/* A stray Endless run chunk outside the resume wait is a late duplicate; dropped. */
+	memset(raw, 0xDD, sizeof(raw));
+	SDLNet_Write16(PACKET_ENDLESS_RUN, &raw[0]);
+	qa_inject_packet(raw, 24);
+	qa_check(network_shop_pump() && packet_in[0] == NULL,
+	         "a stray Endless run chunk is consumed as a late duplicate");
+
+	player[1] = savedPeer;
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedEndless;
+	thisPlayerNum = savedThis;
+}
+#endif
+
 /* ---- the debug-menu wire block ------------------------------------------------------- */
 
 #ifdef WITH_NETWORK
@@ -758,6 +845,8 @@ void qa_test_online_suite(void)
 	qa_online_pause_matrix();
 #ifdef WITH_NETWORK
 	qa_debug_block_roundtrip();
+	qa_test_net_lobby_strings();
+	qa_hostile_packets();
 #endif
 
 	qa_online_restore(&saved);

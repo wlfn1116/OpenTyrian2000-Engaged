@@ -73,6 +73,9 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 304, 0,   "test-replay-hash",  true },
 		{ 305, 0,   "test-net-rounds",   true },
 		{ 306, 0,   "test-net-scenario", true },
+		{ 307, 0,   "test-net-version-skew", true },
+		{ 308, 0,   "test-net-gameplay-ticks", true },
+		{ 309, 0,   "test-net-corrupt-frame", true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -246,7 +249,16 @@ void JE_paramCheck(int argc, char *argv[])
 		case 306:
 			qa_net_scenario = atoi(option.arg);
 			break;
-			
+		case 307:
+			qa_net_version_skew = atoi(option.arg);
+			break;
+		case 308:
+			qa_net_gameplay_ticks = strtoul(option.arg, NULL, 10);
+			break;
+		case 309:
+			qa_net_corrupt_frame = strtoul(option.arg, NULL, 10);
+			break;
+
 		default:
 			assert(false);
 			break;

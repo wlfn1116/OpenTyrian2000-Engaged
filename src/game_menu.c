@@ -42,6 +42,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
@@ -1293,6 +1294,14 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 
 void JE_itemScreen(void)
 {
+	// A gameplay wire test drives the level itself; there is no player to walk the outpost.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: outpost skipped\n");
+		fflush(stderr);
+		return;
+	}
+
 	bool quit = false;
 	shopPlayerIndex = isNetworkGame && coop_mode_active() ? gameplay_local_player_index() : 0;
 
@@ -4648,6 +4657,11 @@ JE_boolean JE_quitRequest(void)
 		{
 			service_SDL_events(true);
 			setDelay(4);
+
+			// A player thinking on this prompt must not read as a dead connection.
+			NETWORK_KEEP_ALIVE();
+			while (network_shop_pump())
+				;
 
 			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
 			JE_textShade(VGAScreen, 70, 60, miscText[28], 0, 5, FULL_SHADE);
@@ -8259,6 +8273,12 @@ bool JE_customWeaponCreator(bool canEquip)
 	{
 		setDelay(3);
 
+		// A design session lasts minutes. The peer needs the keep-alives, and this machine
+		// still owes acknowledgements and adoption for whatever the partner does meanwhile.
+		NETWORK_KEEP_ALIVE();
+		while (network_shop_pump())
+			;
+
 		if (cwNoticeTicks > 0)
 			--cwNoticeTicks;
 		if (cwDeleteConfirmTicks > 0)
@@ -9115,6 +9135,12 @@ void JE_menuFunction(JE_byte select)
 			do
 			{
 				setDelay(1);
+
+				// The capture blocks until a key arrives; online, the wait can outlast the
+				// peer's timeout unless the connection is serviced through it.
+				NETWORK_KEEP_ALIVE();
+				while (network_shop_pump())
+					;
 
 				col += colC;
 				if (col < 243 || col > 248)

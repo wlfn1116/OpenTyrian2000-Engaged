@@ -1282,12 +1282,48 @@ static void qa_scenario_suite(void)
 
 /* ---- entry point -------------------------------------------------------------------- */
 
+/* Every gamble outcome, fired through the debug trigger from both machines. The assertions are
+ * the invariants an outcome must never break whichever effect it rolls: wallets stay inside 32
+ * bits, the combined perk holding stays within its caps, and nothing runs away. A broken clamp
+ * in any outcome's effect shows up here as a wrapped or runaway value. */
+static void qa_gamble_matrix(void)
+{
+	char label[160];
+
+	for (uint slot = 0; slot < 2; ++slot)
+	{
+		qa_session(slot);
+		qa_clear_ships();
+
+		for (int id = 0; id < endlessGambleOutcomeCount(); ++id)
+		{
+			player[0].cash = player[1].cash = 100000;
+			endlessCashResync();
+			endlessForceGambleOutcome(id);
+
+			bool sane = player[0].cash < 0x40000000u && player[1].cash < 0x40000000u
+			         && player[slot].superbombs <= 10;
+			endlessPerkRederive();
+			for (int perk = 0; perk < endlessPerkCount() && sane; ++perk)
+				sane = endlessPerkOwned[perk] <= endlessPerkMaxStack(perk);
+
+			snprintf(label, sizeof(label),
+			         "gamble outcome %d (%s) from machine %u keeps the run's invariants",
+			         id, endlessGambleOutcomeName(id), slot + 1);
+			qa_check(sane, label);
+		}
+
+		endlessPerkPending = false;
+	}
+}
+
 void qa_test_endless_suite(void)
 {
 	QaEndlessEnv saved;
 	qa_env_save(&saved);
 
 	qa_economy_matrix();
+	qa_gamble_matrix();
 	qa_drive_matrix();
 	qa_perk_matrix();
 	qa_outpost_matrix();

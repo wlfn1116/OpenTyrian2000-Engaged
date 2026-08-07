@@ -36,6 +36,7 @@
 #include "palette.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "sprite.h"
 #include "vga256d.h"
 #include "video.h"
@@ -64,6 +65,62 @@ static const int lobby_difficulties[] =
 	DIFFICULTY_IMPOSSIBLE,
 	DIFFICULTY_SUICIDE,
 	DIFFICULTY_LORD_OF_GAME,
+};
+
+/* Row labels, help lines and value names for the host and Endless settings pages. At file
+ * scope so qa_test_net_lobby_strings below can measure each against its row budget; a row
+ * that outgrows it overlaps its neighbour only on whichever machine opens that screen. */
+static const char *const lobbyHostLabel[] =
+{
+	"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty",
+	"Host Flies", "Credit", "Double Pickups", "Game Speed", "Netcode", "Desync Recovery",
+};
+
+static const char *const lobbyHostHelp[] =
+{
+	"The port other players connect to.",
+	"Campaign and Endless share cash; Arcade scores.",
+	"Which episode the session plays.",
+	"Seed, run mode, and who charts each course.",
+	"Applies to both players for the whole game.",
+	"Which ship you take; the joiner gets the other.",
+	"Shared pays a kill or pickup to both players.",
+	"Individual splits the take; this pays pickups twice.",
+	"Game speed, forced on both players.",
+	"Rollback hides latency; delay-based is lockstep.",
+	"Repairs a desync from the host's state.",
+	"Open the port and wait for a player.",
+	"Return to the online multiplayer menu.",
+};
+
+// Shown in place of the Desync Recovery help while the row is dead.
+static const char lobbyHostRecoveryLockedHelp[] = "Only rollback netcode can detect a desync.";
+
+static const char *const lobbyHostAction[] = { "Start Hosting", "Back" };
+
+static const char *const lobbyTypeValue[]    = { "Arcade", "Campaign", "Endless" };
+static const char *const lobbyPlayerValue[]  = { "Player 1", "Player 2", "Silver Ship", "Dragonwing" };
+static const char *const lobbyCreditValue[]  = { "Shared", "Individual" };
+static const char *const lobbyOnOffValue[]   = { "On", "Off" };
+static const char *const lobbyNetcodeValue[] = { "Rollback", "Delay-Based" };
+
+static const char *const lobbyEndlessLabel[] =
+	{ "Seed", "Run Mode", "Charts Course", "Combo Feed" };
+
+static const char *const lobbyEndlessHelp[] =
+{
+	"A named seed repeats a run; blank rolls one.",
+	"How a fatal hit and saving are handled.",
+	"Who picks the next sector at the outpost.",
+	"Whose drive streak a kill feeds.",
+	"Return to the host settings.",
+};
+
+static const char *const lobbyEndlessRunModeHelp[] =
+{
+	"Relaxed: a fatal hit offers a retry.",
+	"Standard: a fatal hit ends the run.",
+	"Hardcore: no saving, and no second chances.",
 };
 
 static int lobbyCycleEpisode(int episode, int direction)
@@ -317,24 +374,10 @@ static void lobbyEndlessMenu(void)
 		ITEM_COUNT,
 	};
 
-	static const char *const itemLabel[SETTING_COUNT] =
-		{ "Seed", "Run Mode", "Charts Course", "Combo Feed" };
-
-	static const char *const itemHelp[ITEM_COUNT] =
-	{
-		"A named seed repeats a run; blank rolls one.",
-		"How a fatal hit and saving are handled.",
-		"Who picks the next sector at the outpost.",
-		"Whose drive streak a kill feeds.",
-		"Return to the host settings.",
-	};
-
-	static const char *const runModeHelp[ENDLESS_RUNMODE_COUNT] =
-	{
-		"Relaxed: a fatal hit offers a retry.",
-		"Standard: a fatal hit ends the run.",
-		"Hardcore: no saving, and no second chances.",
-	};
+	COMPILE_TIME_ASSERT(endless_lobby_labels, COUNTOF(lobbyEndlessLabel) == SETTING_COUNT);
+	COMPILE_TIME_ASSERT(endless_lobby_help, COUNTOF(lobbyEndlessHelp) == ITEM_COUNT);
+	COMPILE_TIME_ASSERT(endless_lobby_mode_help,
+	                    COUNTOF(lobbyEndlessRunModeHelp) == ENDLESS_RUNMODE_COUNT);
 
 	size_t selectedIndex = ITEM_SEED;
 	int wBack = 0;
@@ -354,12 +397,12 @@ static void lobbyEndlessMenu(void)
 		itemValue[ITEM_SEED] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
 		itemValue[ITEM_RUNMODE] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_CHOOSER] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
-		itemValue[ITEM_COMBO] = network_host_endless_combo_shared ? "Shared" : "Individual";
+		itemValue[ITEM_COMBO] = network_host_endless_combo_shared ? lobbyCreditValue[0] : lobbyCreditValue[1];
 
 		int blockW = 150;
 		for (int i = 0; i < SETTING_COUNT; ++i)
 		{
-			blockW = MAX(blockW, JE_textWidth(itemLabel[i], small_font) + 20
+			blockW = MAX(blockW, JE_textWidth(lobbyEndlessLabel[i], small_font) + 20
 			                     + JE_textWidth(itemValue[i], small_font));
 		}
 		blockW = MIN(blockW, 300);
@@ -373,16 +416,16 @@ static void lobbyEndlessMenu(void)
 		{
 			const bool selected = (int)selectedIndex == i;
 			const int y = ySettings + dySettings * i;
-			draw_font_hv_shadow(VGAScreen, xLabel, y, itemLabel[i], small_font, left_aligned, 15,
+			draw_font_hv_shadow(VGAScreen, xLabel, y, lobbyEndlessLabel[i], small_font, left_aligned, 15,
 			                    selected ? 6 : 2, false, 1);
 			draw_font_hv_shadow(VGAScreen, xValue, y, itemValue[i], small_font, right_aligned, 15,
 			                    selected ? 6 : 4, false, 1);
 		}
 
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, itemHelp[selectedIndex],
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, lobbyEndlessHelp[selectedIndex],
 		                    small_font, centered, 15, 2, false, 1);
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yModeHelp,
-		                    runModeHelp[network_host_endless_run_mode % ENDLESS_RUNMODE_COUNT],
+		                    lobbyEndlessRunModeHelp[network_host_endless_run_mode % ENDLESS_RUNMODE_COUNT],
 		                    small_font, centered, 15, 4, false, 1);
 
 		wBack = JE_textWidth("Back", normal_font);
@@ -751,38 +794,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_COUNT,
 	};
 
-	static const char *const itemLabel[SETTING_COUNT] =
-	{
-		"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty",
-		"Host Flies", "Credit", "Double Pickups", "Game Speed", "Netcode", "Desync Recovery",
-	};
-
-	static const char *const itemHelp[ITEM_COUNT] =
-	{
-		"The port other players connect to.",
-		"Campaign and Endless share cash; Arcade scores.",
-		"Which episode the session plays.",
-		"Seed, run mode, and who charts each course.",
-		"Applies to both players for the whole game.",
-		"Which ship you take; the joiner gets the other.",
-		"Shared pays a kill or pickup to both players.",
-		"Individual splits the take; this pays pickups twice.",
-		"Game speed, forced on both players.",
-		"Rollback hides latency; delay-based is lockstep.",
-		"Repairs a desync from the host's state.",
-		"Open the port and wait for a player.",
-		"Return to the online multiplayer menu.",
-	};
-
-	// Shown in place of the Desync Recovery help while the row is dead.
-	static const char recoveryLockedHelp[] = "Only rollback netcode can detect a desync.";
-
-	static const char *const actionLabel[] = { "Start Hosting", "Back" };
+	COMPILE_TIME_ASSERT(host_lobby_labels, COUNTOF(lobbyHostLabel) == SETTING_COUNT);
+	COMPILE_TIME_ASSERT(host_lobby_help, COUNTOF(lobbyHostHelp) == ITEM_COUNT);
 
 	char status[64] = "";
 
 	size_t selectedIndex = ITEM_START;
-	int wAction[COUNTOF(actionLabel)] = { 0 };
+	int wAction[COUNTOF(lobbyHostAction)] = { 0 };
 
 	// Eight small-font rows, the help line, and the two actions, fitted between the title
 	// (large_font tops out 20px tall, so it can reach y=40) and the 200-row screen.
@@ -831,19 +849,18 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
-		itemValue[ITEM_TYPE] = endless ? "Endless"
-		                     : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
+		itemValue[ITEM_TYPE] = lobbyTypeValue[network_game_type];
 		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
 		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_DIFFICULTY] = difficultyNameB[network_host_difficulty];
 		itemValue[ITEM_PLAYER] = network_host_player == 2
-		                       ? (coop ? "Player 2" : "Dragonwing")
-		                       : (coop ? "Player 1" : "Silver Ship");
-		itemValue[ITEM_CREDIT] = coopSharedCredit ? "Shared" : "Individual";
-		itemValue[ITEM_DOUBLE] = coopDoublePickups ? "On" : "Off";
+		                       ? (coop ? lobbyPlayerValue[1] : lobbyPlayerValue[3])
+		                       : (coop ? lobbyPlayerValue[0] : lobbyPlayerValue[2]);
+		itemValue[ITEM_CREDIT] = coopSharedCredit ? lobbyCreditValue[0] : lobbyCreditValue[1];
+		itemValue[ITEM_DOUBLE] = coopDoublePickups ? lobbyOnOffValue[0] : lobbyOnOffValue[1];
 		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
-		itemValue[ITEM_NETCODE] = net_rollback ? "Rollback" : "Delay-Based";
-		itemValue[ITEM_RECOVERY] = net_desync_recovery ? "On" : "Off";
+		itemValue[ITEM_NETCODE] = net_rollback ? lobbyNetcodeValue[0] : lobbyNetcodeValue[1];
+		itemValue[ITEM_RECOVERY] = net_desync_recovery ? lobbyOnOffValue[0] : lobbyOnOffValue[1];
 
 		// A hidden row leaves no gap: the ones under it move up, so `rowY` is the single place
 		// the draw and the hit test agree on where a row ended up (-1 = not on screen).
@@ -865,7 +882,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			if (rowY[i] < 0)
 				continue;
-			blockW = MAX(blockW, JE_textWidth(itemLabel[i], small_font) + 20
+			blockW = MAX(blockW, JE_textWidth(lobbyHostLabel[i], small_font) + 20
 			                     + JE_textWidth(itemValue[i], small_font));
 		}
 		blockW = MIN(blockW, 300);
@@ -888,7 +905,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			const int labelValue = disabled ? -1 : (selected ? 6 : 2);
 			const int valueValue = disabled ? -1 : (selected ? 6 : 4);
 
-			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], itemLabel[i], small_font, left_aligned, 15,
+			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], lobbyHostLabel[i], small_font, left_aligned, 15,
 			                    labelValue, false, 1);
 			draw_font_hv_shadow(VGAScreen, xValue, rowY[i], itemValue[i], small_font, right_aligned, 15,
 			                    valueValue, false, 1);
@@ -896,13 +913,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp,
 		                    (selectedIndex == ITEM_RECOVERY && recoveryLocked)
-		                        ? recoveryLockedHelp : itemHelp[selectedIndex],
+		                        ? lobbyHostRecoveryLockedHelp : lobbyHostHelp[selectedIndex],
 		                    small_font, centered, 15, 2, false, 1);
 
-		for (uint i = 0; i < COUNTOF(actionLabel); ++i)
+		for (uint i = 0; i < COUNTOF(lobbyHostAction); ++i)
 		{
-			wAction[i] = JE_textWidth(actionLabel[i], normal_font);
-			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yActions + dyActions * (int)i, actionLabel[i],
+			wAction[i] = JE_textWidth(lobbyHostAction[i], normal_font);
+			draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yActions + dyActions * (int)i, lobbyHostAction[i],
 			                    normal_font, centered, 15,
 			                    -4 + (selectedIndex == ITEM_START + i ? 2 : 0), false, 2);
 		}
@@ -1519,6 +1536,119 @@ bool networkLobby(void)
 		default:
 			break;
 		}
+	}
+}
+
+/* ---- string checks ------------------------------------------------------------------- */
+
+/* Run by qa_test_online_suite. Rows are label + 20px gap + value hung off a block clamped to
+ * 300px, so a pair past that is two columns drawn into each other; help lines are centred on
+ * a 320px field. Checked here because an overflow is only visible on whichever machine opens
+ * the screen with that value selected. */
+
+static bool lobbyStringDrawable(const char *s)
+{
+	if (s == NULL || s[0] == '\0')
+		return false;
+	for (const unsigned char *p = (const unsigned char *)s; *p != '\0'; ++p)
+		if (*p != ' ' && font_ascii[*p] < 0)
+			return false;
+	return true;
+}
+
+static void lobbyCheckRow(const char *rowLabel, const char *value)
+{
+	char label[160];
+	snprintf(label, sizeof(label), "lobby row '%s' fits its value '%s'", rowLabel, value);
+	qa_check(lobbyStringDrawable(value)
+	         && JE_textWidth(rowLabel, small_font) + 20 + JE_textWidth(value, small_font) <= 300,
+	         label);
+}
+
+static void lobbyCheckHelp(const char *help)
+{
+	char label[160];
+	snprintf(label, sizeof(label), "lobby help line fits: '%s'", help);
+	qa_check(lobbyStringDrawable(help) && JE_textWidth(help, small_font) <= 300, label);
+}
+
+// The widest string of len-1 characters the filter admits, by tiling its widest glyph.
+static void lobbyWorstString(char *out, size_t len, bool (*filter)(char))
+{
+	int widest = -1;
+	char pick = '0';
+	for (unsigned char c = 33; c < 127; ++c)
+	{
+		if (!filter((char)c) || font_ascii[c] < 0)
+			continue;
+
+		const char one[2] = { (char)c, '\0' };
+		const int w = JE_textWidth(one, small_font);
+		if (w > widest)
+		{
+			widest = w;
+			pick = (char)c;
+		}
+	}
+	memset(out, pick, len - 1);
+	out[len - 1] = '\0';
+}
+
+void qa_test_net_lobby_strings(void)
+{
+	// Host rows, in lobbyHostLabel order, against every value the row can show.
+	char portWorst[6];
+	lobbyWorstString(portWorst, sizeof(portWorst), filterDigits);
+	lobbyCheckRow(lobbyHostLabel[0], "(none)");
+	lobbyCheckRow(lobbyHostLabel[0], portWorst);
+	for (uint i = 0; i < COUNTOF(lobbyTypeValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[1], lobbyTypeValue[i]);
+	for (int e = 1; e <= EPISODE_MAX; ++e)
+		lobbyCheckRow(lobbyHostLabel[2], episode_name[e]);
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+		lobbyCheckRow(lobbyHostLabel[3], endlessRunModeName((EndlessRunMode)m));
+	for (uint d = 0; d < COUNTOF(lobby_difficulties); ++d)
+		lobbyCheckRow(lobbyHostLabel[4], difficultyNameB[lobby_difficulties[d]]);
+	for (uint i = 0; i < COUNTOF(lobbyPlayerValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[5], lobbyPlayerValue[i]);
+	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[6], lobbyCreditValue[i]);
+	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[7], lobbyOnOffValue[i]);
+	for (uint s = 0; s < COUNTOF(gameSpeedText); ++s)
+		lobbyCheckRow(lobbyHostLabel[8], gameSpeedText[s]);
+	for (uint i = 0; i < COUNTOF(lobbyNetcodeValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[9], lobbyNetcodeValue[i]);
+	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[10], lobbyOnOffValue[i]);
+
+	// Endless page rows, in lobbyEndlessLabel order. The seed is user-typed, so its worst
+	// case is the widest glyph its entry filter admits, tiled to the field's limit.
+	char seedWorst[NET_ENDLESS_SEED_MAX];
+	lobbyWorstString(seedWorst, sizeof(seedWorst), filterSeed);
+	lobbyCheckRow(lobbyEndlessLabel[0], "(random)");
+	lobbyCheckRow(lobbyEndlessLabel[0], seedWorst);
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+		lobbyCheckRow(lobbyEndlessLabel[1], endlessRunModeName((EndlessRunMode)m));
+	for (int c = 0; c < ENDLESS_PICK_COUNT; ++c)
+		lobbyCheckRow(lobbyEndlessLabel[2], endlessCourseChooserName((EndlessCourseChooser)c));
+	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
+		lobbyCheckRow(lobbyEndlessLabel[3], lobbyCreditValue[i]);
+
+	for (uint i = 0; i < COUNTOF(lobbyHostHelp); ++i)
+		lobbyCheckHelp(lobbyHostHelp[i]);
+	lobbyCheckHelp(lobbyHostRecoveryLockedHelp);
+	for (uint i = 0; i < COUNTOF(lobbyEndlessHelp); ++i)
+		lobbyCheckHelp(lobbyEndlessHelp[i]);
+	for (uint i = 0; i < COUNTOF(lobbyEndlessRunModeHelp); ++i)
+		lobbyCheckHelp(lobbyEndlessRunModeHelp[i]);
+
+	for (uint i = 0; i < COUNTOF(lobbyHostAction); ++i)
+	{
+		char label[96];
+		snprintf(label, sizeof(label), "lobby action '%s' fits", lobbyHostAction[i]);
+		qa_check(lobbyStringDrawable(lobbyHostAction[i])
+		         && JE_textWidth(lobbyHostAction[i], normal_font) <= 300, label);
 	}
 }
 

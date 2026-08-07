@@ -46,6 +46,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "net_rollback.h"
@@ -3215,6 +3216,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 			{
 				music_fade_out_tick(&deathFade);
 
+				NETWORK_KEEP_ALIVE();
 				SDL_Delay(1);
 				poll_joysticks();
 				service_SDL_events(false);
@@ -3321,6 +3323,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	{
 		music_fade_out_tick(&deathFade);
 
+		NETWORK_KEEP_ALIVE();
 		SDL_Delay(1);
 		poll_joysticks();
 		service_SDL_events(false);
@@ -8296,6 +8299,14 @@ redo:
 				// tuple, and the simulation consumes them immediately; zero
 				// local input delay, single-player feel.  The tuple goes on the
 				// wire (redundantly) for the peer to apply or roll back onto.
+				// Wire-test gameplay: wiggle the ship so held-input prediction is repeatedly
+				// wrong and the rollback path does real work under injected loss.
+				if (qa_net_gameplay_ticks > 0)
+				{
+					const int wiggle = ((nrb_frame() >> 3) & 1) ? 2 : -2;
+					this_player->x = MIN(MAX(this_player->x + wiggle, 60), 240);
+				}
+
 				RbInput in;
 				rb_fill_tuple(&in, this_player, *mouseX_, *mouseY_,
 				              accelXC, accelYC, link_gun_analog, link_gun_angle);
