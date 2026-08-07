@@ -1282,6 +1282,38 @@ static void qa_scenario_suite(void)
 
 /* ---- entry point -------------------------------------------------------------------- */
 
+/* Which run modes offer the death prompt at all, driven through its real gates. Relaxed offers
+ * the three-choice menu when a launch snapshot exists; Standard and Hardcore skip it and lock
+ * the pause menu instead, so a fatal hit has no quiet exit there. */
+static void qa_death_prompt_matrix(void)
+{
+	char label[128];
+	const bool savedHave = endlessSortieHave;
+
+	qa_session(0);
+	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
+	{
+		endlessRunMode = (EndlessRunMode)m;
+		const bool relaxed = m == ENDLESS_RUNMODE_RELAXED;
+
+		endlessSortieHave = true;
+		snprintf(label, sizeof(label), "run mode %d %s the death prompt", m,
+		         relaxed ? "offers" : "skips");
+		qa_check(endlessDeathMenuDue() == relaxed, label);
+
+		snprintf(label, sizeof(label), "run mode %d %s the pause menu after death", m,
+		         relaxed ? "keeps" : "locks");
+		qa_check(endlessDeathLocksMenu() == !relaxed, label);
+
+		// Without a launch snapshot there is nothing to restart, whatever the mode.
+		endlessSortieHave = false;
+		snprintf(label, sizeof(label), "run mode %d skips the prompt with no snapshot", m);
+		qa_check(!endlessDeathMenuDue(), label);
+	}
+
+	endlessSortieHave = savedHave;
+}
+
 /* Every gamble outcome, fired through the debug trigger from both machines. The assertions are
  * the invariants an outcome must never break whichever effect it rolls: wallets stay inside 32
  * bits, the combined perk holding stays within its caps, and nothing runs away. A broken clamp
@@ -1324,6 +1356,8 @@ void qa_test_endless_suite(void)
 
 	qa_economy_matrix();
 	qa_gamble_matrix();
+	qa_death_prompt_matrix();
+	qa_test_endless_death_menu();
 	qa_drive_matrix();
 	qa_perk_matrix();
 	qa_outpost_matrix();

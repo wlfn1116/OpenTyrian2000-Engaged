@@ -208,6 +208,27 @@ static int qa_net_sync(Uint32 phase, const char *what)
 			return qa_rc_;                           \
 	} while (0)
 
+/* Drain until the link is quiet: everything acknowledged, nothing at the head, and a beat of
+ * silence. A blocking chunked transfer consumes only its own packets, so a straggling or
+ * proxy-duplicated announcement still in flight when one starts wedges it for good. Bounded,
+ * like every wait here. */
+static void qa_net_settle(void)
+{
+	const Uint32 started = SDL_GetTicks();
+	Uint32 quiet = SDL_GetTicks();
+
+	while (SDL_GetTicks() - started < 5000 && !network_test_expired())
+	{
+		watchdog_heartbeat();
+		if (network_check() > 0 || packet_in[0] != NULL || !network_is_sync())
+			quiet = SDL_GetTicks();
+		qa_net_drain();
+		if (SDL_GetTicks() - quiet > 600)
+			break;
+		SDL_Delay(1);
+	}
+}
+
 /* ---- online campaign ---------------------------------------------------------------- */
 
 // A loadout no other slot would produce, so a field arriving from the wrong ship is visible.
@@ -377,7 +398,11 @@ int qa_net_campaign_phases(void)
 
 	qa_net_phase("campaign slow rendezvous");
 	/* One machine finishes outfitting long before the other. The early one must sit at the
-	 * rendezvous rather than dragging the slow one out of its outpost. */
+	 * rendezvous rather than dragging the slow one out of its outpost. The host also leaves
+	 * for a level of its own choosing, which the joiner must adopt: both players can point at
+	 * different planets, and the host's pick is the one the session flies. */
+	const JE_byte savedMainLevel = mainLevel;
+	const JE_boolean savedJump = jumpSection;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
 		const Uint32 slow = SDL_GetTicks();
@@ -390,10 +415,29 @@ int qa_net_campaign_phases(void)
 				;
 			SDL_Delay(1);
 		}
+		mainLevel = 7;
+		jumpSection = true;
+	}
+	else
+	{
+		mainLevel = 3;   // the joiner's own pick, which must lose
+		jumpSection = true;
 	}
 	network_shop_send_state(true);
 	QA_NET_WAIT(network_shop_peer_done(),
 	            "the campaign outpost rendezvous did not complete");
+
+	if (thisPlayerNum != networkHostPlayerNum)
+	{
+		network_shop_adopt_host_level();
+		if (mainLevel != 7)
+		{
+			qa_net_fail("the joiner did not adopt the host's level pick");
+			return 1;
+		}
+	}
+	mainLevel = savedMainLevel;
+	jumpSection = savedJump;
 
 	network_shop_end();
 	coopCampaignMode = false;
@@ -649,39 +693,53 @@ int qa_net_endless_phases(void)
 	endlessCoopCourse = -1;
 	jumpSection = false;
 
-	/* ---- both ships down: the Relaxed prompt ---- */
+	/* ---- both ships down: the Relaxed prompt, all three answers ---- */
 
 	/* The host reads the death menu for as long as it likes and the joiner waits on the
-	 * answer; that answer travels on the Endless co-op channel. */
-	endlessPlayerDowned[0] = endlessPlayerDowned[1] = true;
-	if (endlessAnyPlayerFlying())
+	 * answer, which travels on the Endless co-op channel. Each of the menu's three choices
+	 * is its own exchange, the way three separate deaths would be, and each has to arrive
+	 * as itself: the joiner's whole next act (relaunch, outpost, run summary) hangs on it. */
+	static const int deathChoice[] = {
+		(int)ENDLESS_DEATH_RESTART, (int)ENDLESS_DEATH_OUTPOST, (int)ENDLESS_DEATH_END_RUN };
+	static char deathPhase[32];
+	for (uint c = 0; c < COUNTOF(deathChoice); ++c)
 	{
-		qa_net_fail("both ships down still reported somebody flying");
-		return 1;
-	}
-	if (charting)
-	{
-		const Uint32 reading = SDL_GetTicks();
-		while (SDL_GetTicks() - reading < 1500)
+		endlessPlayerDowned[0] = endlessPlayerDowned[1] = true;
+		if (endlessAnyPlayerFlying())
 		{
-			watchdog_heartbeat();
-			network_check();
-			while (network_shop_pump())
-				;
-			SDL_Delay(16);
-		}
-		network_endless_death_sync((int)ENDLESS_DEATH_RESTART);
-	}
-	else
-	{
-		const int adopted = network_endless_death_sync(-1);
-		if (adopted != (int)ENDLESS_DEATH_RESTART)
-		{
-			qa_net_fail("the host's Restart Zone choice did not reach the joiner");
+			qa_net_fail("both ships down still reported somebody flying");
 			return 1;
 		}
+
+		if (charting)
+		{
+			/* Read the menu for a while; the joiner's wait announces itself and sits. */
+			const Uint32 reading = SDL_GetTicks();
+			while (SDL_GetTicks() - reading < 500)
+			{
+				watchdog_heartbeat();
+				network_check();
+				while (network_shop_pump())
+					;
+				SDL_Delay(16);
+			}
+			network_endless_death_sync(deathChoice[c]);
+		}
+		else
+		{
+			const int adopted = network_endless_death_sync(-1);
+			if (adopted != deathChoice[c])
+			{
+				qa_net_fail("a death-menu choice did not reach the joiner as itself");
+				return 1;
+			}
+		}
+		endlessPlayerDowned[0] = endlessPlayerDowned[1] = false;
+
+		/* Barrier, so the next exchange cannot read this one's leftovers. */
+		snprintf(deathPhase, sizeof(deathPhase), "Endless death choice %u", c);
+		QA_NET_SYNC(5 + c, deathPhase);
 	}
-	endlessPlayerDowned[0] = endlessPlayerDowned[1] = false;
 
 	/* ---- the whole run record, host to joiner ---- */
 
@@ -689,9 +747,10 @@ int qa_net_endless_phases(void)
 	 *
 	 * Last, deliberately. The transfer is a blocking chunked push, so for as long as it runs
 	 * the host is reading for its own acknowledgements and nothing else; a phase tag sent at
-	 * it in that window is gone. Nothing follows it here, so nothing can be lost that way.
-	 * The death rendezvous just above leaves both machines aligned to start it. */
+	 * it in that window is gone. Nothing follows it here, and the settle below clears any
+	 * straggling announcement before either machine commits to it. */
 	qa_net_phase("Endless run transfer");
+	qa_net_settle();
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
 		endlessRunKills = 4321;

@@ -23,6 +23,10 @@ extern int qa_net_version_skew;
  * canary has a real divergence to find and the recovery stream something to repair. */
 extern unsigned long qa_net_gameplay_ticks;
 extern unsigned long qa_net_corrupt_frame;
+/* Save/resume across the wire: save_exit writes the LAST LEVEL slot as a passing gameplay run
+ * exits; resume_slot makes the host auto-load that slot, so the joiner adopts the resume form. */
+extern bool qa_net_save_exit;
+extern int qa_net_resume_slot;
 extern bool qa_fast_forward;
 
 int qa_run_unit_suite(void);
@@ -36,6 +40,8 @@ void qa_test_endless_suite(void);
 void qa_test_online_suite(void);
 // Lobby row, value, help and action strings against their width budgets (net_lobby.c).
 void qa_test_net_lobby_strings(void);
+// The Relaxed death prompt's rows and widths against the choice enum (mainint.c).
+void qa_test_endless_death_menu(void);
 
 /* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in
  * testing/network_fault_test.py. Zero on success; both peers assert what they see of the other. */

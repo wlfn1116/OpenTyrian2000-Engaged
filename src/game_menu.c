@@ -1060,6 +1060,9 @@ static bool shopCampaignRendezvous(void)
 			{
 				newkey = false;
 				JE_playSampleNum(S_SPRING);
+				// Revoke any charted sector before the withdrawal publishes, or the packet
+				// still carries it and the two machines can chart different courses.
+				endlessCoopCourse = -1;
 				network_shop_send_state(false);
 				return false;
 			}

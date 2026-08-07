@@ -687,9 +687,17 @@ bool difficultySelect(void)
 // Host start choice. Returns a loaded slot (1-based), 0 for new game, or -1 to cancel.
 int networkHostStartSelect(void)
 {
-	// A gameplay wire test has no player at the menu; it always starts a new game.
+	// A gameplay wire test has no player at the menu: it loads the planted save the way the
+	// menu would, or starts a new game.
 	if (qa_net_gameplay_ticks > 0)
 	{
+		if (qa_net_resume_slot > 0 && qa_net_resume_slot <= SAVE_FILES_NUM)
+		{
+			JE_loadGame((JE_byte)qa_net_resume_slot);
+			fprintf(stderr, "net gameplay: host auto-loads slot %d\n", qa_net_resume_slot);
+			fflush(stderr);
+			return qa_net_resume_slot;
+		}
 		fprintf(stderr, "net gameplay: host auto-selects New Game\n");
 		fflush(stderr);
 		return 0;

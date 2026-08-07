@@ -2031,6 +2031,10 @@ static void nrb_qa_gameplay_verdict(void)
 		rc = (qa_desyncs_total == 0 && stat_deepest >= 1) ? 0 : 1;
 	}
 
+	// The save/resume scenario's first stage: bank the LAST LEVEL record the resume will load.
+	if (qa_net_save_exit && rc == 0)
+		JE_saveGame(22, "LAST LEVEL    ");
+
 	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu\n",
 	       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, (unsigned long)nrb_cur,
 	       (unsigned)nrb_epoch, (unsigned long)stat_deepest,

@@ -1036,7 +1036,7 @@ waiting for a soak to reach it.
 
 ### Gameplay wire scenarios
 
-Scenarios 4 to 6 in `testing/network_fault_test.py` go beyond the outpost
+Scenarios 4 to 9 in `testing/network_fault_test.py` go beyond the outpost
 protocols. 4 gives the joiner a skewed wire version (`--test-net-version-skew`
 offsets both what the connect packet advertises and what the peer's packet is
 compared against); success is both peers rejecting the handshake with the
@@ -1057,9 +1057,49 @@ per-level ones. Command-line peers have no lobby roles and the recovery
 dispatch acts on the host role alone, so the gameplay test assigns player 1
 the role the lobby would have.
 
+Scenario 7 is save/resume in two stages over the same scratch directories: the
+pair flies and banks the LAST LEVEL slot on exit (`--test-net-save-exit`), then
+relaunches with the host auto-loading it (`--test-net-resume-slot`) so the
+joiner adopts the `PACKET_DETAILS` resume form; the resumed level must fly
+desync-free, which it cannot if either machine resumed to different state. This
+scenario is what found the `net_last_host` clobber: the remembered lobby host
+was applied after command-line parsing and overrode `--net`'s target.
+
+Scenario 8 blacks the proxy out completely for 8 seconds mid-level, inside the
+dead-link timeout; the session must ride it out and still finish clean.
+Scenario 9 kills the joiner mid-level; the host must reach its own clean
+"Network connection was lost" exit rather than hang. The base scenario also
+prints a working-set figure after the handshake and at the finish
+(`NETWORK TEST MEM`), and the harness fails a session whose memory grew.
+
+The endless scenario exchanges all three Relaxed death-prompt choices, host to
+joiner, one exchange per choice the way three separate deaths would arrive. The
+campaign scenario ends with the host leaving for a level the joiner did not
+pick, adopted through `network_shop_adopt_host_level`.
+
 The harness gives each peer its own scratch working directory: the game writes
 `tyrian.cfg` and saves into the cwd, and a shared directory leaks state between
-runs and races the two peers against each other.
+runs and races the two peers against each other. A caller can pass directories
+in to carry saves across stages, which is how the resume scenario works.
+
+### Esc during an online session
+
+Every Esc path reachable online was audited (2026-08-07). All are safe: they
+either back out locally, withdraw through the shop protocol, or send a quit
+notice the peer acts on. Two were fixed to get there: cancelling the lobby's
+connect wait now sends a best-effort `PACKET_QUIT` to whoever it may already
+have been talking to (a joiner mid-connect has no timeout and would otherwise
+wait on its own Esc alone), and an Endless charting player who withdraws from
+the rendezvous clears `endlessCoopCourse` before the withdrawal publishes, or
+the packet still carried the sector and the two machines could chart different
+courses. The Relaxed death prompt deliberately ignores Esc: one of its three
+rows must be chosen, so the joiner's wait always gets an answer.
+
+One latent race is documented rather than fixed: both players pressing Esc on
+the same rollback frame makes both machines take the local-menu branch, each
+sending a `PACKET_WAITING` that neither consumes. The leftovers are read by a
+later wait as its release. Rare, self-limiting, and worth a real arbitration
+(host wins the simultaneous request) if it ever bites in play.
 
 ## UI and sprite safety
 
