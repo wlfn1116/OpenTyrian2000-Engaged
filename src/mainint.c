@@ -5846,6 +5846,17 @@ void JE_highScoreCheck(void)
 }
 
 // increases game difficulty based on player's total score / total of players' scores
+/* Whether the vanilla score-based drift between levels runs at all. An Endless run is pinned to the
+ * rung it launched on, solo and online alike: depth scaling is that mode's difficulty curve, and a
+ * base that wandered underneath it would move every sector's danger rating, payout and shop pricing
+ * with it. The rung a level can shift for itself (episode five, or a script's change-difficulty
+ * event) is snapshotted into oldDifficultyLevel at level start and put back at level end, so those
+ * never accumulate either -- between the two, Normal stays Normal for a whole run. */
+bool difficulty_adjust_active(void)
+{
+	return difficultyAdjust && !endlessFxActive();
+}
+
 void adjust_difficulty(void)
 {
 	const float score_multiplier[10] =
@@ -6376,8 +6387,7 @@ void JE_endLevelAni(void)
 		}
 	}
 
-	// Endless effects require a fixed base difficulty; skip the vanilla score-based adjustment.
-	if (difficultyAdjust && !endlessFxActive())
+	if (difficulty_adjust_active())
 		adjust_difficulty();
 
 	for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)

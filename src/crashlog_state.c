@@ -249,6 +249,10 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "  scroll: stopBackgrounds=%d(num=%d) forceEvents=%d  parkedAbove=%u stallTicks=%u\n",
 	        stopBackgrounds, (int)stopBackgroundNum, forceEvents,
 	        (unsigned)enemyParkedAbove, (unsigned)mapStopStallTicks);
+	// The clamp on every enemy-body contact hit (JE_playerMovement): 2 from level start, and only
+	// a script's change-difficulty event moves it. A 0 here means nothing can ram a ship for the
+	// rest of the level, which is what "collisions stopped hurting" looks like from the cockpit.
+	fprintf(f, "  damageRate=%u\n", (unsigned)damageRate);
 	if (levelTimer)
 		fprintf(f, "  levelTimer countdown=%u\n", (unsigned)levelTimerCountdown);
 

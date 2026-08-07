@@ -8,6 +8,7 @@
 #include "config.h"
 #include "endless.h"
 #include "endless_internal.h"
+#include "mainint.h"
 #include "network.h"
 #include "player.h"
 #include "tyrian2.h"
@@ -1013,6 +1014,71 @@ static void qa_danger_target_matrix(void)
 	qa_check(endlessDangerTargetPlayer(250, 100) == 0,
 	         "outside co-op every danger aims at the only ship");
 	coopEndlessMode = true;
+
+	/* A homing enemy commits to one ship for life instead of re-rolling, and gives up on a ship
+	 * that goes down. The roll itself is the coin toss; both sides have to be reachable. */
+	qa_clear_ships();
+	qa_check(endlessHomingTargetPlayer(0) == 0 && endlessHomingTargetPlayer(1) == 1,
+	         "a homing enemy chases the ship it rolled, not the nearer one");
+	endlessPlayerDowned[1] = true;
+	qa_check(endlessHomingTargetPlayer(1) == 0,
+	         "...and falls to the survivor once that ship is down");
+	endlessPlayerDowned[1] = false;
+	qa_check(endlessHomingTargetPlayer(200) < COUNTOF(player),
+	         "a stored side outside the ship array still names a slot inside it");
+
+	bool sawShip[2] = { false, false };
+	for (int i = 0; i < 200; ++i)
+		sawShip[endlessRollHomingTarget() & 1u] = true;
+	qa_check(sawShip[0] && sawShip[1], "the homing coin toss reaches both ships");
+
+	coopEndlessMode = false;
+	qa_check(endlessRollHomingTarget() == 0 && endlessHomingTargetPlayer(1) == 0,
+	         "outside co-op a homing enemy takes ship one and spends no roll on it");
+	coopEndlessMode = true;
+}
+
+/* ---- 6b. the run keeps the difficulty it launched with ------------------------------ */
+
+/* Endless pins its rung: depth scaling is that mode's difficulty curve, and the vanilla
+ * score-based drift moving underneath it would re-price every sector's danger and payout
+ * mid-run. Solo and online alike, and whatever the player's own difficultyAdjust setting says. */
+static void qa_endless_difficulty_pinned(void)
+{
+	const JE_boolean savedAdjust = difficultyAdjust;
+	const JE_boolean savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+
+	for (int adjust = 0; adjust <= 1; ++adjust)
+	{
+		difficultyAdjust = (adjust != 0);
+
+		endlessMode = false;
+		endlessCampaignMods = false;
+		coopEndlessMode = false;
+		qa_check(difficulty_adjust_active() == (adjust != 0),
+		         "outside Endless the score-based drift follows the player's own setting");
+
+		endlessMode = true;
+		qa_check(!difficulty_adjust_active(),
+		         "a solo Endless run keeps the rung it launched with");
+
+		coopEndlessMode = true;
+		qa_check(!difficulty_adjust_active(),
+		         "...and so does an online one, however the setting is left");
+		coopEndlessMode = false;
+
+		endlessMode = false;
+		endlessCampaignMods = true;
+		qa_check(!difficulty_adjust_active(),
+		         "...and a campaign running the Endless effect layer, which scales the same way");
+	}
+
+	difficultyAdjust = savedAdjust;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	coopEndlessMode = savedCoop;
 }
 
 /* ---- 7. who charts the next course -------------------------------------------------- */
@@ -1500,6 +1566,7 @@ void qa_test_endless_suite(void)
 	qa_eshop_matrix();
 	qa_death_revive_matrix();
 	qa_danger_target_matrix();
+	qa_endless_difficulty_pinned();
 	qa_chooser_matrix();
 	qa_wire_matrix();
 	qa_scenario_suite();
