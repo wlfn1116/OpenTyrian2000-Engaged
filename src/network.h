@@ -279,10 +279,13 @@ int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none
 bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);
 
-/* Settle the Endless zone jump across both machines BEFORE the course is folded, and report
- * whether one is in play; a caller that gets true must skip the fold, or it rebuilds the sector
- * over the top of the jump. See the definition for why the ordering is the whole fix. */
-bool network_endless_jump_sync(void);
+/* The Endless debug zone jump. Announced the instant START ZONE is pressed, while the partner is
+ * still in its outpost, because the partner may be sitting in a wait for a course this machine
+ * has just decided not to chart -- and this announcement is what releases it. Neither side ever
+ * blocks on the other here. Poll before folding the course: true means a jump is in play (ours or
+ * the peer's, host winning a tie) and the fold must be skipped, or it rebuilds the sector over it. */
+void network_endless_jump_publish(void);
+bool network_endless_jump_poll(void);
 
 /* Both machines announce they are ready for a level, then resynchronize the state queues. Only
  * needed on a path that starts a level without passing through the outpost. */
