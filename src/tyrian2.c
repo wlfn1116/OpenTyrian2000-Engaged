@@ -735,6 +735,16 @@ static void vt_ship_step_player(int p, float dt)
 		vt_x[p] += step_x;
 		vt_y[p] += step_y;
 
+		// Apply render-rate-independent Endless gravity; the bounds below handle every heading.
+		// The same two lines, in the same place, as the offline path further down: both exits of
+		// this branch return before reaching those, so online the well pulled nothing at all --
+		// on either ship, because the classic fallback in JE_playerMovement is gated behind
+		// !vt_ship_owns() and Smooth Motion is on by default. It lands in vt_x/vt_y like every
+		// other component of the move, so vt_ship_commit_net carries it into the tick's delta and
+		// the simulation receives it exactly once.
+		vt_x[p] += endlessGravityDriftX() * dt;
+		vt_y[p] += endlessGravityDriftY() * dt;
+
 		// Match the simulation bounds, including player 1's tighter two-player bottom edge.
 		const float botMargin = (float)((p == 0) ? SHIP_BOTTOM_MARGIN - 6 : SHIP_BOTTOM_MARGIN);
 
