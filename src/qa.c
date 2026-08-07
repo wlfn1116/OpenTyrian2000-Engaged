@@ -32,6 +32,9 @@ bool qa_replay_expect_set = false;
 Uint32 qa_replay_expect = 0;
 int qa_net_rounds = 0;
 int qa_net_scenario = 0;
+int qa_net_version_skew = 0;
+unsigned long qa_net_gameplay_ticks = 0;
+unsigned long qa_net_corrupt_frame = 0;
 bool qa_fast_forward = false;
 
 static unsigned qa_checks;
@@ -1502,6 +1505,65 @@ static void qa_test_network_settings(void)
 #endif
 }
 
+/* The Endless lobby block rides the connect packet beside the settings block. Every field the
+ * joiner adopts has to arrive, and every out-of-range byte has to be clamped, not indexed with. */
+static void qa_test_network_endless_lobby(void)
+{
+#ifdef WITH_NETWORK
+	const int savedMode = network_host_endless_run_mode;
+	const int savedChooser = network_host_endless_chooser;
+	const bool savedCombo = network_host_endless_combo_shared;
+	char savedSeed[NET_ENDLESS_SEED_MAX], savedHostSeed[NET_ENDLESS_SEED_MAX];
+	memcpy(savedSeed, network_endless_session_seed, sizeof(savedSeed));
+	memcpy(savedHostSeed, network_host_endless_seed, sizeof(savedHostSeed));
+
+	Uint8 block[3 + NET_ENDLESS_SEED_MAX];
+	memset(block, 0, sizeof(block));
+	block[0] = (Uint8)ENDLESS_RUNMODE_HARDCORE;
+	block[1] = (Uint8)(ENDLESS_PICK_COUNT - 1);
+	block[2] = 1;
+	memcpy(&block[3], "qa-seed-123", sizeof("qa-seed-123"));
+	network_endless_adopt(block);
+	qa_check(network_host_endless_run_mode == ENDLESS_RUNMODE_HARDCORE
+	         && network_host_endless_chooser == ENDLESS_PICK_COUNT - 1
+	         && network_host_endless_combo_shared
+	         && strcmp(network_endless_session_seed, "qa-seed-123") == 0,
+	         "joiner adopts every field of the host's Endless lobby block");
+
+	memset(block, 0xEE, sizeof(block));
+	network_endless_adopt(block);
+	qa_check(network_host_endless_run_mode == ENDLESS_RUNMODE_STANDARD
+	         && network_host_endless_chooser == ENDLESS_PICK_HOST,
+	         "out-of-range Endless lobby bytes are clamped to their defaults");
+
+	bool seedScrubbed = network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] == '\0'
+	                 && network_endless_session_seed[0] != '\0';
+	for (int i = 0; network_endless_session_seed[i] != '\0'; ++i)
+		seedScrubbed = seedScrubbed && network_endless_session_seed[i] == '?';
+	qa_check(seedScrubbed,
+	         "a hostile Endless seed is scrubbed to printable characters and terminated");
+
+	network_host_endless_seed[0] = '\0';
+	network_endless_session_begin();
+	qa_check(network_endless_session_seed[0] != '\0',
+	         "a blank lobby seed rolls a session seed instead of hashing the empty string");
+
+	SDL_strlcpy(network_host_endless_seed, "fixed", sizeof(network_host_endless_seed));
+	network_endless_session_begin();
+	qa_check(strcmp(network_endless_session_seed, "fixed") == 0
+	         && strcmp(network_host_endless_seed, "fixed") == 0,
+	         "a named lobby seed is carried into the session verbatim");
+
+	network_host_endless_run_mode = savedMode;
+	network_host_endless_chooser = savedChooser;
+	network_host_endless_combo_shared = savedCombo;
+	memcpy(network_endless_session_seed, savedSeed, sizeof(savedSeed));
+	memcpy(network_host_endless_seed, savedHostSeed, sizeof(savedHostSeed));
+#else
+	qa_check(true, "Endless lobby block skipped without networking");
+#endif
+}
+
 static void qa_test_resync_serialization(void)
 {
 #ifdef WITH_NETWORK
@@ -1627,6 +1689,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_scaling();
 	qa_test_effect_gates();
 	qa_test_network_settings();
+	qa_test_network_endless_lobby();
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
 	qa_test_kill_fire_wiring();

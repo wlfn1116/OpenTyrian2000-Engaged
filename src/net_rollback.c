@@ -28,6 +28,7 @@
 #include "network.h"
 #include "nortsong.h"
 #include "player.h"
+#include "qa.h"
 #include "render_list.h"
 #include "sprite.h"
 #include "varz.h"
@@ -214,6 +215,11 @@ static Uint32    canary_checked_upto;   /* newest peer frame already compared */
 static bool   canary_reported;          /* one full report per level          */
 static Uint32 canary_mismatches;        /* further ones only counted          */
 
+/* Wire-test bookkeeping. Session-scoped, unlike the per-level counters above: a recovery or a
+ * level restart resets those, and the verdict has to see what happened across the whole run. */
+static Uint16 qa_corrupt_epoch = 0xFFFF;
+static Uint32 qa_desyncs_total, qa_resyncs_total;
+
 /* Timesync: rolling frame-advantage estimate, exchanged both ways. */
 static float  adv_ema;
 static Sint16 their_adv_x8;
@@ -356,6 +362,25 @@ void nrb_frame_begin(void)
 	/* Snapshot BEFORE the request application: the application is part of this
 	 * frame's simulation and must repeat on a re-simulation pass. */
 	rollback_snapshot(nrb_cur);
+
+	if (qa_net_gameplay_ticks > 0 && nrb_cur == 1 && !rollback_resim)
+	{
+		fprintf(stderr, "net gameplay: level running (epoch %u)\n", (unsigned)nrb_epoch);
+		fflush(stderr);
+	}
+
+	/* Wire-test desync: the joiner bends one frame of the epoch that first reaches it, after
+	 * the snapshot so every simulation pass through that frame bends it exactly once. Armor,
+	 * because the input tuples carry positions and would repair those; the divergence is then
+	 * stable until a recovery opens a later epoch, where the gate goes quiet. */
+	if (qa_net_corrupt_frame > 0 && thisPlayerNum != networkHostPlayerNum
+	    && nrb_cur == qa_net_corrupt_frame)
+	{
+		if (qa_corrupt_epoch == 0xFFFF)
+			qa_corrupt_epoch = nrb_epoch;
+		if (nrb_epoch == qa_corrupt_epoch && player[0].armor > 6)
+			player[0].armor -= 5;
+	}
 
 	if (nrb_cur >= 2)
 	{
@@ -820,6 +845,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 	    ours->curLoc != peer->curLoc || ours->linked != peer->linked)
 	{
 		++canary_mismatches;
+		++qa_desyncs_total;
 
 		/* Write one detailed report per level; later mismatches only increment the counter. */
 		if (!canary_reported)
@@ -1390,6 +1416,7 @@ static void nrb_resync_send_ack(Uint16 gen)
 static int nrb_resync_send_once(void)
 {
 	++resync_used;
+	++qa_resyncs_total;
 	++resync_gen;
 	nrb_notice_resync();
 
@@ -1621,6 +1648,7 @@ static bool nrb_resync_receive(void)
 	bool reported = false;
 
 	++resync_used;
+	++qa_resyncs_total;
 	nrb_notice_resync();
 
 	for (;;)
@@ -1979,10 +2007,53 @@ static void nrb_timesync(void)
 
 /* Rollback driver. */
 
+/* Bounded wire-test run: report what the netcode did and leave the process. The peer already
+ * holds the redundant input stream for the frames it still owes itself, so a short drain is
+ * enough for it to finish on its own. */
+static void nrb_qa_gameplay_verdict(void)
+{
+	int rc;
+	if (qa_net_corrupt_frame > 0)
+	{
+		/* A recovery must have run and the timeline being flown at the limit must be clean
+		 * again. Only the host requires its own detection: it is the side that initiates, so
+		 * a recovery on the host implies one, while the joiner can adopt the stream before
+		 * its own compare ever fires. Totals are session-scoped because both a recovery and
+		 * a level restart wipe the per-level counters. */
+		const bool detected = (thisPlayerNum == networkHostPlayerNum)
+		                    ? qa_desyncs_total >= 1 : true;
+		rc = (detected && qa_resyncs_total >= 1 && canary_mismatches == 0) ? 0 : 1;
+	}
+	else
+	{
+		/* No divergence allowed, and the run must have actually exercised a rollback, or the
+		 * proxy's faults never reached the prediction path and this proved nothing. */
+		rc = (qa_desyncs_total == 0 && stat_deepest >= 1) ? 0 : 1;
+	}
+
+	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu\n",
+	       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, (unsigned long)nrb_cur,
+	       (unsigned)nrb_epoch, (unsigned long)stat_deepest,
+	       (unsigned long)qa_desyncs_total, (unsigned long)qa_resyncs_total);
+	fflush(stdout);
+
+	const Uint32 start = SDL_GetTicks();
+	while (SDL_GetTicks() - start < 1200)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	exit(rc);
+}
+
 NrbStep nrb_driver(void)
 {
 	if (!nrb_active())
 		return NRB_STEP_PRESENT;
+
+	if (qa_net_gameplay_ticks > 0 && !resim_active && nrb_cur > qa_net_gameplay_ticks)
+		nrb_qa_gameplay_verdict();
 
 	if (resim_active)
 	{

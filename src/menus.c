@@ -32,6 +32,7 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "qa.h"
 #include "sprite.h"
 #include "vga256d.h"
 #include "video.h"
@@ -686,6 +687,14 @@ bool difficultySelect(void)
 // Host start choice. Returns a loaded slot (1-based), 0 for new game, or -1 to cancel.
 int networkHostStartSelect(void)
 {
+	// A gameplay wire test has no player at the menu; it always starts a new game.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: host auto-selects New Game\n");
+		fflush(stderr);
+		return 0;
+	}
+
 	static const char *const menu_item[] = { "New Game", "Load Game" };
 	const size_t menuItemsCount = COUNTOF(menu_item);
 

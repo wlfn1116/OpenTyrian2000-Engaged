@@ -7,8 +7,10 @@ import argparse
 import heapq
 import os
 import select
+import shutil
 import socket
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -20,6 +22,15 @@ SCENARIOS = (
     (0, "base", 48),
     (1, "campaign", 6),
     (2, "endless", 6),
+    (3, "barriers", 6),
+    # The joiner reports a skewed wire version; success is both peers rejecting the handshake
+    # with the mismatch message and exiting on their own, not a hang or a half-open session.
+    (4, "version-mismatch", 2),
+    # Real gameplay: both peers fly the first Arcade level under rollback with scripted
+    # movement. 5 must stay desync-free while rollbacks happen; 6 bends one joiner frame and
+    # must detect the desync and repair it through a recovery epoch.
+    (5, "gameplay", 0),
+    (6, "desync-recovery", 0),
 )
 
 
@@ -43,15 +54,28 @@ def run_scenario(
         "--test-net-rounds", str(rounds),
         "--test-net-scenario", str(scenario),
     ]
+    if scenario in (5, 6):
+        common += ["--test-net-gameplay-ticks", "700"]
+    if scenario == 6:
+        # Both peers know a desync is expected; only the joiner actually bends the frame.
+        common += ["--test-net-corrupt-frame", "300"]
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
                 "--net-port", str(host_addr[1]), "--net-player-number", "1"]
     join_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_b_addr[1]}",
                 "--net-port", str(join_addr[1]), "--net-player-number", "2"]
+    if scenario == 4:
+        join_cmd += ["--test-net-version-skew", "1"]
 
     env = os.environ.copy()
     env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-    host = subprocess.Popen(host_cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    join = subprocess.Popen(join_cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Each peer gets its own scratch working directory: the game writes tyrian.cfg and saves
+    # into the cwd, and a shared one leaks state between runs and races between the peers.
+    host_dir = tempfile.mkdtemp(prefix="otnet_host_")
+    join_dir = tempfile.mkdtemp(prefix="otnet_join_")
+    host = subprocess.Popen(host_cmd, env=env, cwd=host_dir,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    join = subprocess.Popen(join_cmd, env=env, cwd=join_dir,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     started = time.monotonic()
     deadline = started + 90
@@ -129,7 +153,15 @@ def run_scenario(
 
     host_out, _ = host.communicate(timeout=5)
     join_out, _ = join.communicate(timeout=5)
+    for scratch in (host_dir, join_dir):
+        shutil.rmtree(scratch, ignore_errors=True)
     transcript = f"--- host ---\n{host_out}--- joiner ---\n{join_out}"
+    if scenario == 4:
+        # Success inverts: both peers must reject the handshake on their own and say why.
+        rejected = ("Network version mismatch" in host_out
+                    and "Network version mismatch" in join_out
+                    and host.returncode != 0 and join.returncode != 0)
+        return (0 if rejected else 1), transcript, injected
     failed = host.returncode != 0 or join.returncode != 0
     return (1 if failed else 0), transcript, injected
 
@@ -175,8 +207,10 @@ def main() -> int:
             print(f"network fault test: scenario {scenario} ({name}) failed")
             status = 1
 
+    # Only a full run carries enough packets to hit every fault modulus; a single short
+    # scenario (version-mismatch exchanges two packets) legitimately misses some.
     missing = [name for name, count in totals.items() if count == 0]
-    if missing:
+    if missing and args.scenario == -1:
         print("network fault test: uninjected conditions:", ", ".join(missing))
         status = 1
     return status

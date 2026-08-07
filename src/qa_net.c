@@ -131,6 +131,7 @@ static void qa_net_drain(void)
 			watchdog_heartbeat();                                                    \
 			network_check();                                                         \
 			network_shop_keepalive();                                                \
+			qa_net_phase_keepalive();                                                 \
 			qa_net_drain();                                                           \
 			SDL_Delay(1);                                                            \
 		}                                                                            \
@@ -150,11 +151,29 @@ static void qa_net_drain(void)
  * The outpost's own done/lock rendezvous is not the thing to build this out of: it is designed
  * for one visit per level, so driving it repeatedly leaves the previous phase's ready and lock
  * flags standing, and the next barrier reads them as an arrival that has not happened. */
+static Uint32 qa_net_my_phase;      // highest phase this machine has announced
+static Uint32 qa_net_announced_at;  // when it last said so
+
 static void qa_net_announce(Uint32 phase)
 {
+	if (phase > qa_net_my_phase)
+		qa_net_my_phase = phase;
+	qa_net_announced_at = SDL_GetTicks();
+
 	network_prepare(PACKET_WAITING);
 	SDLNet_Write32(QA_PHASE_MARK | phase, &packet_out_temp->data[4]);
 	network_send(8);
+}
+
+/* Announcements are state, not events: a product wait that legitimately consumes transient
+ * rendezvous traffic (the save checkpoint does) can eat one unrecorded, and the announcer has
+ * moved on and never says it again. Every wait re-broadcasts the highest phase reached, rate
+ * limited and never more than one in flight, the way the outpost keepalive re-announces. */
+static void qa_net_phase_keepalive(void)
+{
+	if (qa_net_my_phase == 0 || SDL_GetTicks() - qa_net_announced_at < 250 || !network_is_sync())
+		return;
+	qa_net_announce(qa_net_my_phase);
 }
 
 static int qa_net_sync(Uint32 phase, const char *what)
@@ -163,25 +182,13 @@ static int qa_net_sync(Uint32 phase, const char *what)
 	qa_net_announce(phase);
 
 	const Uint32 started = SDL_GetTicks();
-	Uint32 announced = started;
 	while (qa_net_peer_phase < phase && SDL_GetTicks() - started < QA_NET_TIMEOUT
 	       && !network_test_expired())
 	{
 		watchdog_heartbeat();
 		network_check();
 		qa_net_drain();
-
-		/* Say it again now and then. Reliable delivery gets the packet to the peer but not
-		 * necessarily to a peer that was reading for it — a partner inside a blocking chunked
-		 * transfer drops whatever that transfer is not waiting on. Hold to one in flight, the
-		 * way the outpost keepalive does, so the reliable queue cannot overflow. */
-		const Uint32 now = SDL_GetTicks();
-		if (now - announced > 250 && network_is_sync())
-		{
-			announced = now;
-			qa_net_announce(phase);
-		}
-
+		qa_net_phase_keepalive();
 		network_shop_keepalive();
 		SDL_Delay(1);
 	}
@@ -326,18 +333,47 @@ int qa_net_campaign_phases(void)
 		return 1;
 	}
 
-	/* Debug-menu state rides its own reliable packet and is deliberately not driven here.
-	 *
-	 * network_debug_sync_pump only ever inspects the head of the ordered queue, so a caller that
-	 * pumps debug state alone never reaches a block sitting behind outpost traffic. Every caller
-	 * pairs it with network_shop_pump for that reason; network_shop_sync_for_save did not, and
-	 * that is fixed alongside this. The block's own contents are pinned in qa_online.c, where the
-	 * round trip is deterministic.
-	 *
-	 * Written as a wire phase it failed about one run in four, and the failures were the barrier
-	 * mechanism rather than debug sync: a scenario using more than two barriers starts losing
-	 * announcements. See doc/notes.md; that has to be settled before any deeper wire phase is
-	 * built on top of it. */
+	/* ---- the debug menu, across the wire ---- */
+
+	/* One machine edits and both must end up holding the same values, in either direction. The
+	 * block's contents are pinned in qa_online.c; this drives the delivery itself, on the same
+	 * reliable queue as the outpost traffic. The adopt also rewrites both ships from the
+	 * sender's view, which has to be a no-op here: both machines converged above. */
+	const bool hosting = (thisPlayerNum == networkHostPlayerNum);
+	const PlayerItems debugItemsBefore = local->items;
+
+	qa_net_phase("campaign debug host edit");
+	network_debug_sync_mark();
+	if (hosting)
+	{
+		difficultyLevel = DIFFICULTY_HARD;
+		noclipMode = 1;
+		cheatNoEnemyFire = true;
+		network_debug_sync_send();
+	}
+	QA_NET_WAIT(difficultyLevel == DIFFICULTY_HARD && noclipMode == 1 && cheatNoEnemyFire,
+	            "the host's debug edit did not reach both machines");
+	QA_NET_SYNC(3, "campaign debug host edit done");
+
+	qa_net_phase("campaign debug joiner edit");
+	if (!hosting)
+	{
+		difficultyLevel = DIFFICULTY_EASY;
+		noclipMode = 0;
+		cheatNoEnemyFire = false;
+		chargeSidekickAutofire = 1;
+		network_debug_sync_send();
+	}
+	QA_NET_WAIT(difficultyLevel == DIFFICULTY_EASY && noclipMode == 0 && !cheatNoEnemyFire
+	            && chargeSidekickAutofire == 1,
+	            "the joiner's debug edit did not reach both machines");
+	QA_NET_SYNC(4, "campaign debug joiner edit done");
+
+	if (memcmp(&local->items, &debugItemsBefore, sizeof(debugItemsBefore)) != 0)
+	{
+		qa_net_fail("adopting a debug block moved this machine's own loadout");
+		return 1;
+	}
 
 	qa_net_phase("campaign slow rendezvous");
 	/* One machine finishes outfitting long before the other. The early one must sit at the
@@ -698,6 +734,23 @@ int qa_net_endless_phases(void)
 	coop_set_session_double_pickups(false);
 	coopEndlessMode = false;
 	endlessMode = false;
+	return 0;
+}
+
+/* ---- barrier storm ------------------------------------------------------------------- */
+
+/* Nothing but barriers, back to back. Any scenario deep enough to need many rendezvous
+ * inherits whatever the barrier mechanism does under loss, so it is pinned here on its own,
+ * away from any mode's protocol. See doc/notes.md on wire-scenario barriers. */
+int qa_net_barrier_phases(void)
+{
+	static char name[24];
+
+	for (Uint32 phase = 1; phase <= 40; ++phase)
+	{
+		snprintf(name, sizeof(name), "barrier %u", (unsigned)phase);
+		QA_NET_SYNC(phase, name);
+	}
 	return 0;
 }
 

@@ -1148,6 +1148,10 @@ void endlessOnRunEnd(void)
 	do
 	{
 		music_fade_out_tick(&songFade);
+		// The tally has no time limit and an online run is still a session while it is read.
+		NETWORK_KEEP_ALIVE();
+		while (network_shop_pump())
+			;
 		setDelay(1);
 		wait_delay();
 	} while (!JE_anyButton());

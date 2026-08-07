@@ -161,6 +161,10 @@ UDPpacket *packet_in[NET_PACKET_QUEUE] = { NULL },
 static Uint16 last_out_sync = 0, queue_in_sync = 0, queue_out_sync = 0, last_ack_sync = 0;
 static Uint32 last_in_tick = 0, last_out_tick = 0;
 
+// Wire tests start the sequence space here instead of zero, so every scenario crosses the
+// Uint16 wraparound as part of its normal run. Zero outside the tests.
+static Uint16 qa_seq_base = 0;
+
 UDPpacket *packet_state_in[NET_PACKET_QUEUE] = { NULL };
 static UDPpacket *packet_state_in_xor[NET_PACKET_QUEUE] = { NULL };
 UDPpacket *packet_state_out[NET_PACKET_QUEUE] = { NULL };
@@ -292,15 +296,37 @@ bool network_send(int len)
 	Uint16 i = last_out_sync - queue_out_sync;
 	if (i >= NET_PACKET_QUEUE)
 	{
-		fprintf(stderr, "error: outbound packet queue overflow\n");
+		/* A full window is backpressure, not a dead link: the oldest packet is simply not
+		 * acknowledged yet. Hold the sender here with the socket serviced until a slot frees,
+		 * and only a peer that never frees one is treated as lost. The prepared packet has to
+		 * be preserved across the wait: servicing the socket overwrites packet_out_temp with
+		 * acknowledgements and ping replies. */
+		Uint8 pending[NET_PACKET_SIZE];
+		memcpy(pending, packet_out_temp->data, (size_t)len);
 
-		crashlog_note_net("NETWORK QUEUE OVERFLOW",
-		              "no acknowledgement for a full outbound queue; treating the link as lost");
+		const Uint32 wait_start = SDL_GetTicks();
+		while ((i = (Uint16)(last_out_sync - queue_out_sync)) >= NET_PACKET_QUEUE
+		       && SDL_GetTicks() - wait_start < NET_TIME_OUT && !quit)
+		{
+			watchdog_heartbeat();
+			network_check();
+			SDL_Delay(1);
+		}
 
-		if (!quit)
-			network_tyrian_halt(2, false);
+		memcpy(packet_out_temp->data, pending, (size_t)len);
 
-		return false;
+		if (i >= NET_PACKET_QUEUE)
+		{
+			fprintf(stderr, "error: outbound packet queue overflow\n");
+
+			crashlog_note_net("NETWORK QUEUE OVERFLOW",
+			              "no acknowledgement for a full outbound queue; treating the link as lost");
+
+			if (!quit)
+				network_tyrian_halt(2, false);
+
+			return false;
+		}
 	}
 
 	bool temp = network_send_no_ack(len);
@@ -310,7 +336,9 @@ bool network_send(int len)
 
 	last_out_sync++;
 
-	if (network_is_sync())
+	// The retry timer belongs to the queue head. Starting it on any later send instead pushes
+	// the head's retransmission into the future for as long as new sends keep coming.
+	if (i == 0)
 		last_out_tick = SDL_GetTicks();
 
 	return temp;
@@ -330,6 +358,22 @@ static int network_acknowledge(Uint16 sync)
 static bool network_is_alive(void)
 {
 	return (SDL_GetTicks() - last_in_tick < NET_TIME_OUT || SDL_GetTicks() - last_state_in_tick < NET_TIME_OUT);
+}
+
+/* Retransmit interval, adapted to the measured round trip. NET_RETRY is sized for a link with
+ * nothing known about it; holding a 40ms link to it turns every lost packet into a two-thirds
+ * of a second stall. Floor well above jitter so a slow reply is not answered with a duplicate. */
+static Uint32 net_retry_interval(void)
+{
+	if (!ping_valid)
+		return NET_RETRY;
+
+	Uint32 interval = (Uint32)(ping_ema + 0.5f) * 2 + 60;
+	if (interval < 120)
+		interval = 120;
+	if (interval > NET_RETRY)
+		interval = NET_RETRY;
+	return interval;
 }
 
 // Exported liveness for the rollback stall logic: a peer sitting in menus for
@@ -421,21 +465,27 @@ static int network_recv_one(void)
 				switch (SDLNet_Read16(&packet_temp->data[0]))
 				{
 					case PACKET_ACKNOWLEDGE:
-						if ((Uint16)(SDLNet_Read16(&packet_temp->data[2]) - last_ack_sync) < NET_PACKET_QUEUE)
+					{
+						const Uint16 ack = SDLNet_Read16(&packet_temp->data[2]);
+						const Uint16 i = ack - queue_out_sync;
+
+						// Only an acknowledgement for a packet still outstanding may advance the
+						// bookkeeping. Anything else is a stale duplicate or forged; trusting it
+						// drifts queue_out_sync off last_out_sync and the send path reads that
+						// as an overflow.
+						if (i >= (Uint16)(last_out_sync - queue_out_sync))
 						{
-							last_ack_sync = SDLNet_Read16(&packet_temp->data[2]);
+							last_in_tick = SDL_GetTicks();
+							break;
 						}
 
+						if ((Uint16)(ack - last_ack_sync) < NET_PACKET_QUEUE)
+							last_ack_sync = ack;
+
+						if (packet_out[i])
 						{
-							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_out_sync;
-							if (i < NET_PACKET_QUEUE)
-							{
-								if (packet_out[i])
-								{
-									SDLNet_FreePacket(packet_out[i]);
-									packet_out[i] = NULL;
-								}
-							}
+							SDLNet_FreePacket(packet_out[i]);
+							packet_out[i] = NULL;
 						}
 
 						// remove acknowledged packets from queue
@@ -448,6 +498,7 @@ static int network_recv_one(void)
 
 						last_in_tick = SDL_GetTicks();
 						break;
+					}
 
 					case PACKET_CONNECT:
 						/*
@@ -673,18 +724,26 @@ int network_check(void)
 		}
 	}
 
-	// retry
-	if (packet_out[0] && SDL_GetTicks() - last_out_tick > NET_RETRY)
+	// Retry everything still unacknowledged, oldest first. Resending only the head would drain
+	// a backlog at one packet per retry interval when the acks for the rest were lost with it.
+	if (packet_out[0] && SDL_GetTicks() - last_out_tick > net_retry_interval())
 	{
-		if (!SDLNet_UDP_Send(net_socket, 0, packet_out[0]))
+		for (int i = 0; i < NET_PACKET_QUEUE; i++)
 		{
-			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
-			++net_diag.send_errors;
-			return -1;
+			if (packet_out[i] == NULL)
+				continue;
+
+			if (!SDLNet_UDP_Send(net_socket, 0, packet_out[i]))
+			{
+				printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+				++net_diag.send_errors;
+				return -1;
+			}
+
+			++net_diag.dg_out;
+			++net_diag.retries;
 		}
 
-		++net_diag.dg_out;
-		++net_diag.retries;
 		last_out_tick = SDL_GetTicks();
 	}
 
@@ -721,10 +780,12 @@ bool network_update(void)
 	return false;
 }
 
-// has opponent gotten all the packets we've sent?
+/* True when every reliable packet sent has been acknowledged. Measured off the queue itself
+ * rather than the acknowledgement high-water mark, which reads ahead of an unacknowledged head
+ * whenever the ack for it was lost. See doc/notes.md on the reliable-channel retry rules. */
 bool network_is_sync(void)
 {
-	return (queue_out_sync - last_ack_sync == 1);
+	return network_ack_backlog() == 0;
 }
 
 int network_ack_backlog(void)
@@ -992,7 +1053,8 @@ static void send_connect_packet(Uint16 episodes_local)
 		name_len = NET_NAME_MAX;
 
 	network_prepare(PACKET_CONNECT);
-	SDLNet_Write16(NET_VERSION,    &packet_out_temp->data[4]);
+	// qa_net_version_skew is zero outside the wire tests; the mismatch scenario offsets it.
+	SDLNet_Write16((Uint16)(NET_VERSION + qa_net_version_skew), &packet_out_temp->data[4]);
 	SDLNet_Write16(network_delay,  &packet_out_temp->data[6]);
 	SDLNet_Write16(episodes_local, &packet_out_temp->data[8]);
 	SDLNet_Write16(thisPlayerNum,  &packet_out_temp->data[10]);
@@ -1111,8 +1173,8 @@ connect_reset:
 	}
 
 	// The joiner is known now, so a listening host can finally introduce itself.  last_out_sync
-	// only advances on an acknowledged send, so zero means the connect packet is still owed.
-	if (listening && last_out_sync == 0)
+	// only advances on a send, so sitting at its starting value means the connect is still owed.
+	if (listening && last_out_sync == qa_seq_base)
 		send_connect_packet(episodes_local);
 
 connect_again:
@@ -1125,7 +1187,9 @@ connect_again:
 		fprintf(stderr, "error: malformed connect packet from opponent (%d bytes)\n", packet_in[0]->len);
 		network_tyrian_halt(4, true);
 	}
-	if (SDLNet_Read16(&packet_in[0]->data[4]) != NET_VERSION)
+	// Compared against the same skewed value the connect packet advertises, so the mismatch
+	// wire scenario models a peer whose build constant genuinely differs.
+	if (SDLNet_Read16(&packet_in[0]->data[4]) != (Uint16)(NET_VERSION + qa_net_version_skew))
 	{
 		fprintf(stderr, "error: network version did not match opponent's\n");
 		network_tyrian_halt(4, true);
@@ -1317,6 +1381,15 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 	if (err >= COUNTOF(err_msg))
 		err = 0;
+
+	// A test peer has no player to press a button; report the halt and exit non-zero so the
+	// harness reads the reason instead of killing a process parked on the message screen.
+	if (qa_net_rounds > 0 || qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
+		fflush(stderr);
+		exit(1);
+	}
 
 	fade_black(10);
 
@@ -3363,11 +3436,17 @@ static int net_test_finish(int rounds)
 		return 1;
 	}
 
+	/* Leave only once the peer has gone quiet: a fixed window can close while a delayed link
+	 * still owes the peer an acknowledgement, and whoever exits first strands the other in a
+	 * retry loop against a closed socket. Bounded, in case the peer never settles. */
 	const Uint32 drain_start = SDL_GetTicks();
-	while (SDL_GetTicks() - drain_start < NET_RETRY * 3 + 200)
+	Uint32 last_traffic = drain_start;
+	while (SDL_GetTicks() - drain_start < 8000
+	       && (SDL_GetTicks() - last_traffic < 1500 || SDL_GetTicks() - drain_start < NET_RETRY))
 	{
 		watchdog_heartbeat();
-		network_check();
+		if (network_check() > 0)
+			last_traffic = SDL_GetTicks();
 		SDL_Delay(1);
 	}
 
@@ -3382,6 +3461,13 @@ int network_test_peer(int rounds, int scenario)
 
 	if (rounds < 1 || rounds > 1000)
 		return 2;
+
+	/* Start the reliable sequence space just short of the Uint16 wrap, so every scenario
+	 * crosses it in its normal course. The receive side adopts the sender's base from the
+	 * connect packet, the way it adopts any starting sequence. */
+	qa_seq_base = 0xFFD0;
+	last_out_sync = queue_out_sync = last_ack_sync = qa_seq_base;
+
 	if (network_connect() != 0)
 		return 1;
 
@@ -3469,7 +3555,19 @@ int network_test_peer(int rounds, int scenario)
 	 * mode's own protocol over it. */
 	if (scenario != 0)
 	{
-		const int rc = (scenario == 1) ? qa_net_campaign_phases() : qa_net_endless_phases();
+		int rc;
+		switch (scenario)
+		{
+		case 1:
+			rc = qa_net_campaign_phases();
+			break;
+		case 2:
+			rc = qa_net_endless_phases();
+			break;
+		default:
+			rc = qa_net_barrier_phases();
+			break;
+		}
 		if (rc != 0)
 			return rc;
 		return net_test_finish(rounds);

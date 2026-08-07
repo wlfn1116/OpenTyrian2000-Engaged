@@ -549,6 +549,34 @@ drain the queue is never beaten at.
 Every outpost purchase publishes, including the E-Shop and the perk pick, which
 previously only reached the peer at the rendezvous.
 
+### Keep-alive audit
+
+The peer declares this machine dead after `NET_TIME_OUT` (16s) without traffic,
+and only `network_check()` sends the keep-alives, so every screen a player can
+sit on during an online session must reach it at least every few seconds. Of the
+frame-service helpers, only `wait_input`, `wait_noinput`, `menuWaitForInput`
+(menus.c), `lobbyWaitForInput`, `JE_outTextGlow`/`JE_outCharGlow` and the
+`NETWORK_KEEP_ALIVE()` macro service the network. `service_SDL_events`,
+`service_wait_delay`, `wait_delay`, `JE_showVGA`, `shopWaitFrame` and
+`menuWaitWithSmoothCursor` do not; a loop built only on those starves the link.
+`network_shop_keepalive()` is not a substitute either: it only sends, rate
+limited, and never drains.
+
+Audited screens, all serviced as of this audit: the lobby menus and their text
+entries (pre-session), both connect waits, the outpost and every submenu of it,
+ship specs, save/load and both confirm dialogs, the options pages and both
+input-capture screens, the custom weapon editor, the debug menus, the in-game
+menu and its waits, the help overlay, the Endless death prompt and run-over
+tally, both chunked transfers, the level rendezvous, level text, level-end and
+episode-end screens, the credits, and the halt paths. Five of those starved the
+link until this audit and were fixed by adding `NETWORK_KEEP_ALIVE()` (paired
+with a `network_shop_pump` drain where the outpost protocol can be active):
+the custom weapon editor, the quit confirm dialog, the keyboard and joystick
+capture screens, and the Endless run-over tally.
+
+When adding a new screen reachable online, service the connection in its wait
+loop and extend this list.
+
 ### Custom weapons online
 
 Both machines fly both ships, so each player's design has to exist on both.
@@ -780,12 +808,31 @@ own would read as this player's death and print the run-over summary.
 
 ### Reliable channel
 
-The reliable UDP layer follows three rules:
+The reliable UDP layer follows these rules:
 
 - A receive error does not prove the link is dead. Wait loops sleep on
   `network_check() <= 0`.
-- Outbound queue room is checked before sending and assigning a sequence number.
 - Packet fields are read only when the received length covers them.
+- `network_is_sync()` is `network_ack_backlog() == 0`: every reliable packet
+  sent has been acknowledged and removed from the queue. The acknowledgement
+  high-water mark is not usable for this. It reads ahead of an unacknowledged
+  head whenever the ack for it was lost, and senders gated on it keep queueing.
+- The retry timer belongs to the queue head and starts when a packet becomes
+  it. Restarting it on later sends postpones the head's retransmission for as
+  long as new sends keep coming, so a 250ms keepalive cadence would starve
+  retransmission entirely.
+- A retry resends everything still unacknowledged, oldest first. Resending only
+  the head drains a stale backlog at one packet per interval. The interval
+  follows the measured round trip (twice the keep-alive ping plus margin,
+  clamped to [120, `NET_RETRY`] ticks).
+- A full outbound window in `network_send` is backpressure, not a dead link.
+  The sender services the socket until a slot frees, preserving the prepared
+  packet across the wait because acknowledgement and ping replies overwrite
+  `packet_out_temp`. Only a peer that frees nothing within `NET_TIME_OUT` is
+  treated as lost.
+- An acknowledgement is trusted only for a packet still outstanding. Anything
+  else drifts `queue_out_sync` off `last_out_sync`, and the send path reads
+  that as an overflow.
 
 The sender keeps at most half of `NET_PACKET_QUEUE` outstanding during a resync.
 This prevents transport acknowledgements from filling the receiver's inbound
@@ -959,24 +1006,60 @@ and indexed by sequence number, so nothing can be lifted out of the middle of it
 a block sitting behind outpost traffic is reachable only to a caller that also
 runs `network_shop_pump`. Every wait pairs the two for that reason.
 
-### Wire-scenario barriers do not scale
+### Wire-scenario barriers
 
 `qa_net.c` barriers are numbered announcements on `PACKET_WAITING`, completing on
-"the peer has reached at least here". That holds for the two barriers the
-campaign and Endless scenarios use. It does not hold as more are added: a
-six-barrier phase failed roughly one run in four, with a peer stalled on an
-announcement that never arrived and `network_acked_dropped` reporting zero, so
-the packet was neither dropped into a full window nor retransmitted. The receive
-window showed a hole at the head (`network_inbound_depth` above zero with a null
-head) that did not heal inside twelve seconds.
+"the peer has reached at least here". Scenarios may use as many as they need.
+The stall that used to appear past two barriers was the reliable channel, not
+the barrier design: the old retry rules let a keepalive cadence postpone the
+head's retransmission indefinitely and drained a backlog one packet per
+interval, and the outbound window treated fullness as a dead link. The rules
+that replaced them are in the reliable-channel section above.
 
-That is unexplained and is the reason the debug-sync exchange is pinned in
-`qa_online.c` rather than driven over the wire. Settle it before building a
-deeper wire scenario on the barrier mechanism, since a gameplay scenario needs
-many more barriers than the outpost ones do. Suspects, in order: the retry path
-resends only `packet_out[0]`, and `network_send` resets `last_out_tick` only
-while `network_is_sync()`, so the two interact whenever a peer stays silent for
-long stretches — which a barrier waiter does.
+Wire scenario 3 (`qa_net_barrier_phases`, forty barriers and nothing else) is
+the reproducer: against the old rules it failed about one run in six, one peer
+stalled with a fifteen-deep unacknowledged backlog or halted by queue overflow
+mid-ladder. In a live game that overflow was a healthy session dying with
+"Network connection was lost" after a few seconds of one-way loss at an outpost
+rendezvous. A test peer that hits a session halt exits non-zero with the halt
+message instead of sitting on the "press a button" screen.
+
+Phase announcements are re-broadcast state, not events: every qa_net wait
+re-announces the highest phase this machine has reached, rate limited to one in
+flight. A product wait that legitimately consumes transient rendezvous traffic
+(the save checkpoint does) can eat an announcement unrecorded, and the announcer
+has moved on and never says it again.
+
+Every test-peer scenario starts its reliable sequence space at 0xFFD0, so the
+Uint16 wraparound is crossed in the normal course of every run rather than
+waiting for a soak to reach it.
+
+### Gameplay wire scenarios
+
+Scenarios 4 to 6 in `testing/network_fault_test.py` go beyond the outpost
+protocols. 4 gives the joiner a skewed wire version (`--test-net-version-skew`
+offsets both what the connect packet advertises and what the peer's packet is
+compared against); success is both peers rejecting the handshake with the
+mismatch message and exiting on their own.
+
+Scenarios 5 and 6 fly the first Arcade level on two real peers through the
+fault proxy, using the command-line start with its screens answered by test
+hooks (`qa_net_gameplay_ticks`): the host auto-picks New Game, the outpost and
+briefing are skipped, movement is a scripted wiggle so held-input prediction
+keeps being wrong and the rollback path does real work, and the run reports a
+verdict and exits at the frame limit. 5 requires zero canary mismatches and at
+least one real rollback. 6 also bends one joiner frame's armor
+(`qa_net_corrupt_frame`) after the snapshot, armor because the input tuples
+carry positions and would repair those; its verdict requires the bend detected,
+a recovery run, and the timeline being flown at the limit clean again, on
+session-scoped counters because a recovery and a level restart both wipe the
+per-level ones. Command-line peers have no lobby roles and the recovery
+dispatch acts on the host role alone, so the gameplay test assigns player 1
+the role the lobby would have.
+
+The harness gives each peer its own scratch working directory: the game writes
+`tyrian.cfg` and saves into the cwd, and a shared directory leaks state between
+runs and races the two peers against each other.
 
 ## UI and sprite safety
 

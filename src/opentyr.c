@@ -2638,6 +2638,15 @@ int main(int argc, char *argv[])
 		network_is_host = thisPlayerNum == 1;
 		networkHostPlayerNum = 1;
 	}
+
+	/* Command-line peers have no lobby roles, and the desync recovery path acts on the host
+	 * role alone. The gameplay wire test keeps the command-line start (no menus) and assigns
+	 * the role the lobby would have. */
+	if (qa_net_gameplay_ticks > 0)
+	{
+		network_is_host = thisPlayerNum == 1;
+		networkHostPlayerNum = 1;
+	}
 #endif
 
 	if (isNetworkGame)

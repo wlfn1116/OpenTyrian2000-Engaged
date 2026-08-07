@@ -2738,6 +2738,12 @@ void JE_main(void)
 
 	int lastEnemyOnScreen;
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: JE_main entered\n");
+		fflush(stderr);
+	}
+
 	/* Initial Endless outpost. */
 	if (endlessMode)
 	{
@@ -3453,6 +3459,12 @@ start_level_first:
 	// Rendezvous after loading so both peers begin the simulation-driven fade together.
 	if (isNetworkGame)
 	{
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: level rendezvous\n");
+			fflush(stderr);
+		}
+
 		network_prepare(PACKET_WAITING);
 		network_send(4);  // PACKET_WAITING
 
@@ -5776,6 +5788,13 @@ void JE_loadMap(void)
 
 	crashlog_set_phase("loading level map");
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: JE_loadMap mainLevel=%d gameLoaded=%d\n",
+		        (int)mainLevel, (int)gameLoaded);
+		fflush(stderr);
+	}
+
 	lastCubeMax = cubeMax;
 
 	/*Defaults*/
@@ -5861,6 +5880,12 @@ new_game:
 
 				strcpy(s, " ");
 				read_encrypted_pascal_string(s, sizeof(s), ep_f);
+
+				if (qa_net_gameplay_ticks > 0 && s[0] == ']')
+				{
+					fprintf(stderr, "net gameplay: script ]%c\n", s[1]);
+					fflush(stderr);
+				}
 
 				if (s[0] == ']')
 				{
@@ -6040,6 +6065,11 @@ new_game:
 						break;
 
 					case 'L':
+						if (qa_net_gameplay_ticks > 0)
+						{
+							fprintf(stderr, "net gameplay: level record read\n");
+							fflush(stderr);
+						}
 						nextLevel = atoi(s + 9);
 						SDL_strlcpy(levelName, s + 13, 10);
 						levelSong = atoi(s + 22);
@@ -6636,6 +6666,11 @@ void networkStartScreen(void)
 	coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 	coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 	bool resumed = false;
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: connected, player %u\n", thisPlayerNum);
+		fflush(stderr);
+	}
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
 		fade_black(10);
@@ -6904,6 +6939,12 @@ void networkStartScreen(void)
 
 		network_check();
 		SDL_Delay(16);
+	}
+
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: details settled, starting the game\n");
+		fflush(stderr);
 	}
 }
 #endif /* WITH_NETWORK */
@@ -7644,6 +7685,10 @@ void JE_displayText(void)
 
 	do
 	{
+		// A gameplay wire test has no player to press past the briefing.
+		if (qa_net_gameplay_ticks > 0)
+			break;
+
 		if (levelWarningDisplay)
 			JE_updateWarning(VGAScreen);
 
