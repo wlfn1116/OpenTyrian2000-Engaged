@@ -1034,7 +1034,9 @@ static void shopWaitNotice(const char *text, const char *detail, const char *hin
 	}
 }
 
-// Keep the waiting frame alive and the cursor moving during a rendezvous.
+// Keep the waiting frame alive and the cursor moving during a rendezvous. Paced here rather than
+// by a delay in the callers: every one of them can skip its own loop tail with a `continue`, and
+// this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
 static void shopWaitFrame(void)
 {
 	service_SDL_events(false);
@@ -1042,6 +1044,8 @@ static void shopWaitFrame(void)
 	JE_mouseStart();
 	JE_showVGA();
 	JE_mouseReplace();
+	if (!output_vsync)
+		limit_render_fps();
 }
 
 /* The co-op half of leaving the outpost. Returns false when the player withdrew and wants to
@@ -1121,7 +1125,6 @@ static bool shopCampaignRendezvous(void)
 			}
 			network_update();
 			network_check();
-			SDL_Delay(16);
 		}
 
 		if (qa_net_gameplay_ticks > 0)
@@ -1160,7 +1163,6 @@ static bool shopCampaignRendezvous(void)
 			}
 			network_update();
 			network_check();
-			SDL_Delay(16);
 		}
 
 		if (peerDeparted || network_shop_peer_done())
@@ -1231,7 +1233,6 @@ static int shopEndlessAwaitCourse(bool escapable)
 
 		network_update();
 		network_check();
-		SDL_Delay(16);
 	}
 
 	// A peer that never sent one has torn the outpost down some other way; the first route is
@@ -1372,8 +1373,6 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 
 		network_update();
 		network_check();
-
-		SDL_Delay(16);
 	}
 
 	network_state_reset();
@@ -1383,7 +1382,6 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		shopWaitFrame();
 
 		network_check();
-		SDL_Delay(16);
 	}
 }
 
