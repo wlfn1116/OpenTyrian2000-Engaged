@@ -143,7 +143,8 @@ typedef struct {
 	Sint32 superbombs2, cleanseCharges2;
 	Uint32 purchasedMods2;
 	Uint8  reviveHeld2, gambleRigged2, downed[2];
-	Uint8  perkTakenBy[2][ENDLESS_SAVE_PERKS];   // who picked what; the effective stacks are their sum
+	Uint8  perkTakenBy[2][ENDLESS_SAVE_PERKS];   // who picked what; perks are personal, so this IS
+	                                             // each ship's holding (perkOwned is the legacy sum)
 	Uint64 playerRng[2];                          // each player's own outpost draw stream
 } EndlessSlotRec;
 
@@ -1357,11 +1358,12 @@ void endlessDebugConfigSave(ConfigSection *section)
 	snprintf(buf, sizeof(buf), "%016" PRIX64, (Uint64)endlessActiveMods);
 	config_set_string_option(section, "mods", buf);
 
-	// Store two hex digits per perk in the serialized PERK_* order.
+	// Store two hex digits per perk in the serialized PERK_* order. endlessPerkSetOwned reads this
+	// back, so write the row it writes: this machine's own.
 	char perks[2 * PERK_COUNT + 1];
 	int n = 0;
 	for (int p = 0; p < PERK_COUNT && n + 2 < (int)sizeof(perks); ++p)
-		n += snprintf(perks + n, sizeof(perks) - (size_t)n, "%02X", endlessPerkOwned[p] & 0xFF);
+		n += snprintf(perks + n, sizeof(perks) - (size_t)n, "%02X", endlessPerkGetOwned(p) & 0xFF);
 	perks[n] = '\0';
 	config_set_string_option(section, "perks", perks);
 

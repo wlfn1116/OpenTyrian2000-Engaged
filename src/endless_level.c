@@ -289,6 +289,7 @@ void endlessResetZoneEffects(void)
 	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	endlessResetKillDedup();       // no link number carried in from the last zone's final kill
 	endlessResetCustomWeaponZone();  // outpost editor and shop previews must not count as combat use
 	// Both ships start every zone in the air, whatever a late outpost packet said about the last one.
 	for (unsigned p = 0; p < COUNTOF(endlessPlayerDowned); ++p)

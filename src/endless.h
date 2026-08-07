@@ -62,6 +62,7 @@ extern EndlessCourseChooser endlessCourseChooser;  // host-authoritative session
 extern bool endlessCoopHostCharts;                 // Alternating: is the host charting this one?
 const char *endlessCourseChooserName(EndlessCourseChooser mode);
 bool endlessLocalPlayerCharts(void);   // does this machine pick the next course?
+uint endlessChartingPlayerIndex(void); // which SEAT picks it, identical on both machines
 void endlessAdvanceCourseTurn(void);   // call once a course has been committed
 
 // A downed player spectates until the zone ends, then revives at the outpost.
@@ -612,8 +613,8 @@ int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is gran
 int endlessKillBuffDamagePercent(void); // shot-damage bonus % the buff is granting (0 during Turbodrive)
 int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (the combo ramp; Turbodrive and Overdrive alike)
 int  endlessPerkSpecialCooldownDecrements(void); // Rapid Recharge perk: extra cooldown decrements/tick, applied by the caller to the special-weapon gate AND sidekick ammo refill
-int   endlessGravityPullX(void);        // GRAVITY: per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
-int   endlessGravityPullY(void);        // GRAVITY: per-tick vertical nudge (classic non-VT ship path)
+int   endlessGravityPullX(uint p);      // GRAVITY: ship p's per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
+int   endlessGravityPullY(uint p);      // GRAVITY: ship p's per-tick vertical nudge (classic non-VT ship path)
 float endlessGravityDrift(void);        // GRAVITY: pull magnitude in px per 35Hz tick (direction-agnostic)
 float endlessGravityDriftX(void);       // GRAVITY: horizontal drag component in px/tick (VT ship path; nonzero only for an omni well)
 float endlessGravityDriftY(void);       // GRAVITY: vertical drag component in px/tick (VT ship path)
@@ -714,6 +715,7 @@ int         endlessPerkCount(void);          // number of perks (PERK_COUNT)
 const char *endlessPerkName(int id);         // perk display name
 const char *endlessPerkDesc(int id);         // perk one-line effect description (for the perk-list help)
 int         endlessPerkMaxStack(int id);     // max stacks this perk allows
+// Perks are personal, so both sides of this pair name THIS machine's own player's stacks.
 int         endlessPerkGetOwned(int id);     // current owned stacks
 void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
 

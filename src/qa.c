@@ -46,6 +46,8 @@ int qa_net_game_type = -1;
 int qa_net_zones = 0;
 int qa_net_zones_cleared = 0;
 bool qa_net_lobby_settings = false;
+bool qa_net_arcade_separate = false;
+bool qa_net_scrollock = false;
 
 /* The forced modifier slate per Endless wire zone. Ten depths cover every charted modifier bit
  * (the gamble-only and banked-boon bits included); depths past the table fly unmodified. Each
@@ -896,8 +898,9 @@ static void qa_test_cash_ledger(void)
 }
 
 /* Elite and champion bounties across the whole session surface: both machines, both credit
- * modes, the Bounty perk, and Double Pickups, which is pickup-only and must not touch kill
- * cash. The wallet outcomes have to be identical whichever machine simulates the kill. */
+ * modes, the Bounty perk, and Double Earnings, which covers bounties the way it covers every
+ * other combat payment. The wallet outcomes have to be identical whichever machine simulates
+ * the kill. */
 static void qa_test_bounty_matrix(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -925,17 +928,20 @@ static void qa_test_bounty_matrix(void)
 	{
 		thisPlayerNum = machine;
 		coop_set_session_shared_credit(shared != 0);
-		coop_set_session_double_pickups(doubled != 0);
+		coop_set_session_double_earnings(doubled != 0);
 		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 		if (perk)
-			endlessPerkGrant(0, PERK_BOUNTY, 1);
+			endlessPerkGrant(1, PERK_BOUNTY, 1);   // personal: the KILLER's own perk sizes it
 		endlessPerkRederive();
 
 		player[0].cash = player[1].cash = 0;
 		endlessCashResync();
 		endlessAwardEliteKill(++link, champ ? 3 : 2, 1);   // player 2's kill
 
-		const long want = champ ? endlessChampionBounty() : endlessEliteBounty();
+		endlessSetFxPlayer(1);   // read the figure the killer's row produced
+		const long base = champ ? endlessChampionBounty() : endlessEliteBounty();
+		endlessSetFxPlayer(0);
+		const long want = (doubled && !shared) ? base * 2 : base;  // Double Earnings covers bounties
 		const bool okay = shared
 		                ? (player[0].cash == (ulong)want && player[1].cash == (ulong)want)
 		                : (player[1].cash == (ulong)want && player[0].cash == 0);
@@ -951,7 +957,7 @@ static void qa_test_bounty_matrix(void)
 	endlessPerkRederive();
 	endlessCashResync();
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	isNetworkGame = savedNet;
 	twoPlayerMode = savedTwo;
 	coopCampaignMode = savedCampaign;
@@ -988,7 +994,7 @@ static void qa_test_zone_payout(void)
 	{
 		thisPlayerNum = machine;
 		coop_set_session_shared_credit(false);
-		coop_set_session_double_pickups(false);
+		coop_set_session_double_earnings(false);
 		player[0].cash = 10000;
 		player[1].cash = 40000;
 		endlessCashResync();
@@ -1186,8 +1192,9 @@ static void qa_test_endless_coop(void)
 	         && player[1].superbombs == 6,
 	         "endless co-op player block restores the one-shot latches and bombs");
 	qa_check(endlessPerkTakenBy[1][PERK_DAMAGE] == 2
-	         && endlessPerkOwned[PERK_DAMAGE] == MIN(4, endlessPerkMaxStack(PERK_DAMAGE)),
-	         "endless perks are the capped sum of both players' picks");
+	         && endlessPerkEffective(1, PERK_DAMAGE) == 2
+	         && endlessPerkEffective(0, PERK_DAMAGE) == endlessPerkTakenBy[0][PERK_DAMAGE],
+	         "endless perks stay their owner's row through the wire block");
 
 	/* A drive belongs to the ship that bought it; the sector-changing half of a purchase does not. */
 	endlessActiveMods = ENDLESS_MOD_FORTIFIED;
@@ -1474,8 +1481,10 @@ static void qa_test_kill_fire_wiring(void)
 	         "a drive the second ship bought quickens the second ship alone");
 
 	/* Opening Salvo charges on an idle gun and is spent by the gun that fires, so one ship
-	 * shooting must not spend the other's charge. */
+	 * shooting must not spend the other's charge; and the perk is personal, so a ship that
+	 * never picked it has no salvo to spend at all. */
 	endlessPerkTakenBy[0][PERK_SALVO] = 1;
+	endlessPerkTakenBy[1][PERK_SALVO] = 1;
 	endlessPerkRederive();
 	endlessResetZonePerkTimers();      // both ships start a zone charged
 	endlessSetFxPlayer(0);
@@ -1486,6 +1495,12 @@ static void qa_test_kill_fire_wiring(void)
 	         "...and the second ship's salvo is still banked");
 	qa_check(endlessOpeningSalvoConsume() && endlessOpeningSalvoVolleyActive(),
 	         "...for the second ship to spend itself");
+
+	endlessPerkTakenBy[1][PERK_SALVO] = 0;
+	endlessPerkRederive();
+	endlessResetZonePerkTimers();
+	qa_check(!endlessOpeningSalvoConsume(),
+	         "a ship that never picked Opening Salvo has none to spend");
 
 	endlessSetFxPlayer(0);
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
@@ -1548,14 +1563,14 @@ static void qa_test_coop_combo_and_pickups(void)
 	qa_check(endlessComboKills[0] == 7 && endlessComboKills[1] == 7,
 	         "Shared combo feed has every kill feed both streaks");
 
-	/* Double Pickups compensates a split take, and only a split take. */
+	/* Double Earnings compensates a split take, and only a split take. */
 	coopEndlessMode = false;
 	coopCampaignMode = true;
 	endlessMode = false;
 
 	coop_set_session_shared_credit(false);
-	coop_set_session_double_pickups(true);
-	qa_check(coop_pickups_are_doubled(), "Double Pickups applies under Individual credit");
+	coop_set_session_double_earnings(true);
+	qa_check(coop_earnings_are_doubled(), "Double Earnings applies under Individual credit");
 
 	player[0].cash = 0;
 	player[1].cash = 0;
@@ -1565,11 +1580,11 @@ static void qa_test_coop_combo_and_pickups(void)
 
 	player[0].cash = 0;
 	player_award_kill_cash(&player[0], 250);
-	qa_check(player[0].cash == 250, "...and leaves kill cash alone");
+	qa_check(player[0].cash == 500, "...and covers kill cash the same way");
 
 	coop_set_session_shared_credit(true);
-	qa_check(!coop_pickups_are_doubled(),
-	         "Double Pickups stands down under Shared credit, where both already collect in full");
+	qa_check(!coop_earnings_are_doubled(),
+	         "Double Earnings stands down under Shared credit, where both already collect in full");
 	player[0].cash = player[1].cash = 0;
 	player_award_pickup_cash(&player[0], 250);
 	qa_check(player[0].cash == 250 && player[1].cash == 250,
@@ -1587,7 +1602,7 @@ static void qa_test_coop_combo_and_pickups(void)
 	endlessMode = true;
 	endlessActiveMods = 0;
 	coop_set_session_shared_credit(false);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	qa_check(endlessEconomyIndex() == 1, "the joiner's own wallet is player 2's");
 
 	player[0].cash = player[1].cash = 0;
@@ -1606,7 +1621,7 @@ static void qa_test_coop_combo_and_pickups(void)
 	endlessCashResync();
 	thisPlayerNum = savedPlayerNum;
 	isNetworkGame = savedNetGame;
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	coop_set_session_shared_credit(true);
 	coopCampaignMode = savedCampaign;
 	coopEndlessMode = savedCoop;
@@ -1679,6 +1694,7 @@ static void qa_test_network_settings(void)
 	const int savedWallop = wallopSecondBolt;
 	const bool savedCharge = chargeLaserCannon, savedDispensers = restoreBaseDispensers;
 	const bool savedLifeBoost = arcadeLifeBoost, savedRandomBalls = arcadeRandomBalls;
+	const bool savedRearScale = arcadeRearGunScale;
 	const int savedXmas = xmasMode;
 	const JE_byte savedSpeed = gameSpeed;
 	const bool savedRollbackConfig = net_rollback, savedRecoveryConfig = net_desync_recovery;
@@ -1687,7 +1703,7 @@ static void qa_test_network_settings(void)
 	const bool savedSessionMode = nrb_session_mode(), savedSessionVt = nrb_session_vt();
 	const bool savedSessionRecovery = nrb_session_recovery();
 	const bool savedSharedCredit = coopSharedCredit;
-	const bool savedDoublePickups = coopDoublePickups;
+	const bool savedDoublePickups = coopDoubleEarnings;
 	const JE_boolean savedCoopCampaign = coopCampaignMode;
 	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
 	 * aligned payload instead of making the alignment itself part of this bounds test. */
@@ -1704,11 +1720,11 @@ static void qa_test_network_settings(void)
 	zicaLaserBase = ZICA_BASE_EP4; zicaLaserLength = ZICA_LEN_LONG;
 	zicaLaserLock = true; zicaLaserBuff = false; wallopSecondBolt = SUPER_SPARKS_ON;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
-	arcadeLifeBoost = true; arcadeRandomBalls = false;
+	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	coopSharedCredit = true;
-	coopDoublePickups = true;
+	coopDoubleEarnings = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
 	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
@@ -1722,7 +1738,7 @@ static void qa_test_network_settings(void)
 	zicaLaserBase = ZICA_BASE_AUTO; zicaLaserLength = ZICA_LEN_SHORT;
 	zicaLaserLock = false; zicaLaserBuff = true; wallopSecondBolt = SUPER_SPARKS_OFF;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
-	arcadeLifeBoost = false; arcadeRandomBalls = true;
+	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
 	xmasMode = 0; gameSpeed = 5;
 	coop_set_session_shared_credit(false);
 	coopCampaignMode = true;
@@ -1734,14 +1750,14 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && zicaLaserLength == ZICA_LEN_LONG
 	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
-	         && !arcadeRandomBalls && xmasMode == 1 && gameSpeed == 2
+	         && !arcadeRandomBalls && arcadeRearGunScale && xmasMode == 1 && gameSpeed == 2
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
 	// Doubling is carried in the same word but is inert under Shared, so check the flag itself
 	// by flipping the credit mode the adopted value sits behind.
 	coop_set_session_shared_credit(false);
-	qa_check(coop_pickups_are_doubled(), "...including whether Individual pays pickups twice");
+	qa_check(coop_earnings_are_doubled(), "...including whether Individual pays pickups twice");
 	coop_set_session_shared_credit(true);
 	network_settings_restore();
 	arraysMatch = true;
@@ -1750,30 +1766,30 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && zicaLaserLength == ZICA_LEN_SHORT
 	         && !zicaLaserLock && zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
-	         && arcadeRandomBalls && xmasMode == 0 && gameSpeed == 5,
+	         && arcadeRandomBalls && !arcadeRearGunScale && xmasMode == 0 && gameSpeed == 5,
 	         "leaving a network session restores every local simulation preference");
 
 	/* The host runs on flags armed from its own config; the joiner adopts the block packed
 	 * from that same config. The two must land on identical session behavior, or the pair
-	 * splits at the first payout: Double Pickups was armed on the joiner alone, and every
+	 * splits at the first payout: Double Earnings was armed on the joiner alone, and every
 	 * pickup desynced the wallets by its own value. */
 	coopSharedCredit = false;
-	coopDoublePickups = true;
+	coopDoubleEarnings = true;
 	net_rollback = true;
 	net_desync_recovery = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
 	coopCampaignMode = true;
 	coop_set_session_shared_credit(true);    // stale session values the arm must replace,
-	coop_set_session_double_pickups(false);  // or a missed flag hides behind leftovers
+	coop_set_session_double_earnings(false);  // or a missed flag hides behind leftovers
 	network_arm_local_session();
-	const bool hostDoubled = coop_pickups_are_doubled();
+	const bool hostDoubled = coop_earnings_are_doubled();
 	const bool hostShared = coop_credit_is_shared();
 	network_settings_pack(packet);
 	coop_set_session_shared_credit(true);     // a joiner arrives holding other values
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	network_settings_adopt(packet);
 	qa_check(hostDoubled && !hostShared
-	         && coop_pickups_are_doubled() == hostDoubled
+	         && coop_earnings_are_doubled() == hostDoubled
 	         && coop_credit_is_shared() == hostShared,
 	         "host arming and joiner adoption produce the same credit session");
 	network_settings_restore();
@@ -1795,6 +1811,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = savedZicaLock; zicaLaserBuff = savedZicaBuff; wallopSecondBolt = savedWallop;
 	chargeLaserCannon = savedCharge; restoreBaseDispensers = savedDispensers;
 	arcadeLifeBoost = savedLifeBoost; arcadeRandomBalls = savedRandomBalls;
+	arcadeRearGunScale = savedRearScale;
 	xmasMode = savedXmas; gameSpeed = savedSpeed;
 	net_rollback = savedRollbackConfig; net_desync_recovery = savedRecoveryConfig;
 	vt_ship = savedVt; smoothMotion = savedMotion; smoothScroll = savedScroll;
@@ -1802,9 +1819,9 @@ static void qa_test_network_settings(void)
 	nrb_set_session_vt(savedSessionVt);
 	nrb_set_session_recovery(savedSessionRecovery);
 	coopSharedCredit = savedSharedCredit;
-	coopDoublePickups = savedDoublePickups;
+	coopDoubleEarnings = savedDoublePickups;
 	coop_set_session_shared_credit(savedSharedCredit);
-	coop_set_session_double_pickups(savedDoublePickups);
+	coop_set_session_double_earnings(savedDoublePickups);
 	coopCampaignMode = savedCoopCampaign;
 #else
 	qa_check(true, "network settings round trip skipped without networking");

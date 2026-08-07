@@ -180,6 +180,7 @@ JE_boolean engageMode;
 
 JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian;
 JE_boolean coopCampaignMode;
+JE_boolean arcadeSeparateMode;
 JE_boolean coopEndlessMode;
 JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 JE_boolean endlessCampaignMods;  // debug: endless EFFECTS in a normal game (see endlessFxActive)
@@ -670,10 +671,15 @@ bool load_opentyrian_config(void)
 			// (player.h).  Host-authoritative; Campaign sessions only.
 			config_get_bool_option(section, "net_campaign_shared_credit", &coopSharedCredit);
 
-			// Individual credit only: pay every cash and gem pickup twice (player.h). And whether
-			// an Endless kill feeds both ships' combo streaks or only the shooter's.
-			config_get_bool_option(section, "net_coop_double_pickups", &coopDoublePickups);
+			// Individual credit only: pay combat cash (pickups, kills, bounties) twice
+			// (player.h). The key keeps its historical name; renaming would drop the
+			// setting from existing configs. And whether an Endless kill feeds both
+			// ships' combo streaks or only the shooter's.
+			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
 			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
+
+			// Online Arcade: the classic linked pair, or two Separate personal arcades.
+			config_get_bool_option(section, "net_arcade_separate", &arcadeSeparateShips);
 
 			// Single-player determinism harness: verify the rollback snapshot
 			// every tick (see rollback.h).  Costs a second sim pass per tick.
@@ -954,7 +960,8 @@ bool save_opentyrian_config(void)
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
 	config_set_bool_option(section, "net_desync_recovery", net_desync_recovery, OFF_ON);
 	config_set_bool_option(section, "net_campaign_shared_credit", coopSharedCredit, OFF_ON);
-	config_set_bool_option(section, "net_coop_double_pickups", coopDoublePickups, OFF_ON);
+	config_set_bool_option(section, "net_coop_double_pickups", coopDoubleEarnings, OFF_ON);
+	config_set_bool_option(section, "net_arcade_separate", arcadeSeparateShips, OFF_ON);
 	config_set_bool_option(section, "net_endless_combo_shared", network_host_endless_combo_shared, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
@@ -1087,6 +1094,7 @@ void JE_saveGame(JE_byte slot, const char *name)
 		return;
 
 	const Uint32 coop_save_tag = 0xc74f0000u;
+	const Uint32 dual_arcade_save_tag = 0xc7a50000u;
 	saveFiles[slot-1].initialDifficulty = initialDifficulty;
 	saveFiles[slot-1].gameHasRepeated = gameHasRepeated;
 	saveFiles[slot-1].level = saveLevel;
@@ -1146,14 +1154,23 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
+	/* The two pItems blocks carry weapon ids but no powers, and `power[]` above only reaches
+	 * player one's front bay and player two's rear one. That is the whole loadout for the linked
+	 * pair, where player two's rear bay IS its life counter, and half of it for every session
+	 * flying two complete ships: co-op, and the three dual-ship arcade shapes, where ship two's
+	 * lives sit on its own FRONT gun and would be lost. The missing two powers and both weapon
+	 * modes ride the unused second high-score field, under a tag that says which shape wrote it.
+	 * Separate arcade gets its own tag: save_record_is_coop() gates the co-op lobbies, and an
+	 * arcade record must not start answering to it. */
 	saveFiles[slot - 1].highScore2 = 0;
-	if (coop_mode_active())
+	if (dual_ship_mode())
 	{
 		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
 		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
 		                   | ((player[0].weapon_mode & 0x0f) << 8)
 		                   | ((player[1].weapon_mode & 0x0f) << 12);
-		saveFiles[slot - 1].highScore2 = (JE_longint)(coop_save_tag | extra);
+		saveFiles[slot - 1].highScore2 =
+			(JE_longint)((coop_mode_active() ? coop_save_tag : dual_arcade_save_tag) | extra);
 	}
 
 	JE_saveConfiguration();
@@ -1243,7 +1260,10 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		// if two-player, use first player's front and second player's rear weapon
 		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
 	}
-	if (coop_mode_active())
+	/* Keyed on what the record says it is, not on what this session is: a record written by a
+	 * two-complete-ships session carries the other half of both loadouts, and it has to come
+	 * back whichever lobby is reading it. */
+	if (save_record_is_coop(rec) || save_record_is_dual_arcade(rec))
 	{
 		const Uint32 extra = (Uint32)rec->highScore2;
 		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
@@ -1253,6 +1273,13 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		if (player[0].weapon_mode == 0) player[0].weapon_mode = 1;
 		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
 	}
+
+	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this
+	 * is the one path that installs a loadout without going through newGame(). A resumed
+	 * Separate arcade left on newGame()'s linked binding would spend ship two's rear-gun power
+	 * every time it died, and hand it the wrong life count on the way in. */
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
 	int episode = rec->episode;
 
@@ -1994,6 +2021,22 @@ void JE_saveConfiguration(void)
 bool save_record_is_coop(const JE_SaveFileType *rec)
 {
 	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc74f0000u;
+}
+
+/* The arcade half of the same marker: two complete ships, but arcade rules and two scores rather
+ * than a shared campaign purse. Deliberately NOT save_record_is_coop, which is what admits a
+ * record to the Campaign and Endless lobbies. */
+bool save_record_is_dual_arcade(const JE_SaveFileType *rec)
+{
+	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc7a50000u;
+}
+
+/* Which ruleset each of the record's two ships was flying, read straight out of the loadout
+ * blocks (pItems[2], the super_arcade_mode byte). Ship two only means anything on a record that
+ * carries two of them; a one-ship record's second block is player one's `last_items`. */
+uint save_record_sa_ship(const JE_SaveFileType *rec, uint p)
+{
+	return p == 0 ? rec->items[2] : rec->lastItems[2];
 }
 
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)

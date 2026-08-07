@@ -153,6 +153,13 @@ Player;
 extern Player player[2];
 
 uint gameplay_local_player_index(void);
+// The weapon bay whose power byte is player p's arcade life counter; bind player[].lives with it.
+uint player_lives_port(uint p);
+// The Super Arcade ship this ship flies (1..SA) or SA_NONE; the two can differ online.
+uint player_sa_ship(const Player *);
+// The front gun a Super Arcade colour ball hands this ship: the ball carries a slot, and the
+// slot is read out of the COLLECTOR's own arsenal, so one colour pays two ships differently.
+uint player_sa_ball_weapon(const Player *, uint slot);
 
 // Rounds per segment on the sidekick ammo gauge, sized so a full magazine is at most ten
 // segments and stays inside the 29px HUD strip. Rounding UP matters now that the endless
@@ -176,6 +183,8 @@ void calc_purple_balls_needed(Player *);
 void player_award_pickup_cash(Player *, long amount);
 // Cash off a destroyed enemy, credited to the player whose shot killed it.
 void player_award_kill_cash(Player *, long amount);
+// An elite or champion bounty: the kill rules, booked under the ledger's own bounty row.
+void player_award_bounty_cash(Player *, long amount);
 
 /* Online Campaign credit sharing.
  * coopSharedCredit is the host's stored preference; the session value arrives in the connect
@@ -188,9 +197,15 @@ bool coop_credit_is_shared(void);
 /* Individual credit splits between two wallets what one player would have earned alone. Double
  * Pickups pays every cash and gem pickup twice over to make up part of that; it is meaningless
  * under Shared, where both already collect in full, so the row only shows under Individual. */
-extern bool coopDoublePickups;
-void coop_set_session_double_pickups(bool on);
-bool coop_pickups_are_doubled(void);
+// Online Arcade lobby preference: fly the classic linked pair, or two Separate personal
+// arcades. The session flag it arms is arcadeSeparateMode (config.h).
+extern bool arcadeSeparateShips;
+
+// Double Earnings: under Individual credit, combat income (pickups, kills, bounties) pays
+// twice to compensate the split take. Shared credit stands it down.
+extern bool coopDoubleEarnings;
+void coop_set_session_double_earnings(bool on);
+bool coop_earnings_are_doubled(void);
 
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);

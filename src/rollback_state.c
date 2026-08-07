@@ -46,11 +46,12 @@ void endless_register_rollback(void);
 /* player[].lives is an interior pointer into player[].items (mainint.c
  * JE_initPlayerData).  A raw copy restores a correct value only because
  * player[] is a fixed global; re-derive it anyway so the snapshot can never
- * leave a dangling alias. */
+ * leave a dangling alias.  player_lives_port names the same bay the live
+ * binding used, so a restore cannot move a ship's life counter. */
 static void rb_fixup_player_lives(void)
 {
 	for (uint i = 0; i < COUNTOF(player); ++i)
-		player[i].lives = &player[i].items.weapon[i].power;
+		player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
 }
 
 #define REG(var)       rollback_register(#var, &(var), sizeof(var))

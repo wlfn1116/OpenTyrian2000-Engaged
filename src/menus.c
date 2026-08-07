@@ -34,6 +34,7 @@
 #include "picload.h"
 #include "qa.h"
 #include "sprite.h"
+#include "varz.h"  // SA_NONE, for clearing the one-player rulesets before an online session
 #include "vga256d.h"
 #include "video.h"
 
@@ -293,6 +294,8 @@ bool gameplaySelect(void)
 				endlessMode = false;
 				coopCampaignMode = false;
 				coopEndlessMode = false;
+				superTyrian = false;
+				superArcadeMode = SA_NONE;
 				endlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 				twoPlayerMode = true;  // networkStartScreen() sets the rest up
 				return true;

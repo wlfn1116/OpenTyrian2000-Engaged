@@ -44,11 +44,31 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
-JE_byte endlessPerkOwned[PERK_COUNT];        // effective stack counts: the capped sum of the rows below
+JE_byte endlessPerkOwned[PERK_COUNT];        // combined view of the rows below, for diagnostics
 JE_byte endlessPerkTakenBy[2][PERK_COUNT];   // who picked what; each machine owns its own row
 
-/* Perks are the run's shared upgrades: both ships fly under every stack either player took. Rows
- * are kept apart so the two machines can merge picks without either one clobbering the other. */
+/* Perks are personal: a stack affects only the ship that picked it, and every effect reads the
+ * owning ship's row (solo play is row 0). endlessPerkOwned keeps the capped combined view for
+ * diagnostics; nothing gameplay-facing reads it. */
+JE_byte endlessPerkEffective(uint p, int id)
+{
+	if (p >= COUNTOF(endlessPerkTakenBy) || id < 0 || id >= PERK_COUNT)
+		return 0;
+	return endlessPerkTakenBy[p][id];
+}
+
+// The stacks in effect for the ship the current effect context names.
+static JE_byte perkFx(int id)
+{
+	return endlessPerkEffective(endlessFxPlayer(), id);
+}
+
+// The stacks of whoever is sitting at this keyboard: shop pricing, offers, and menu text.
+static JE_byte perkMine(int id)
+{
+	return endlessPerkEffective(endlessEconomyIndex(), id);
+}
+
 void endlessPerkRederive(void)
 {
 	for (int i = 0; i < PERK_COUNT; ++i)
@@ -88,16 +108,16 @@ int endlessPerkDepthDone = -1;
 // elite/champion bounties and the "Take the Cash" perk buyout.
 int endlessPerkCashPercent(void)
 {
-	return 100 + endlessPerkOwned[PERK_CASH] * ENDLESS_PERK_CASH_PCT;
+	return 100 + perkFx(PERK_CASH) * ENDLESS_PERK_CASH_PCT;
 }
 
-// Perk stacks the player currently holds, summed across every perk. Both sides of the perk market
-// price off it: the extra-perk surcharge (endlessExtraPerkPrice) and the buyout below.
+// Perk stacks this machine's own player holds, summed across every perk. Both sides of the perk
+// market price off it: the extra-perk surcharge (endlessExtraPerkPrice) and the buyout below.
 int endlessPerkTotalOwned(void)
 {
 	int total = 0;
 	for (int i = 0; i < PERK_COUNT; ++i)
-		total += endlessPerkOwned[i];
+		total += perkMine(i);
 	return total;
 }
 
@@ -108,23 +128,24 @@ int endlessPerkInterestPercent(void)
 {
 	if (!endlessFxActive())
 		return ENDLESS_INTEREST_BASE_PCT;
-	return ENDLESS_INTEREST_BASE_PCT + endlessPerkOwned[PERK_FINANCIER] * ENDLESS_PERK_INTEREST_PCT;
+	return ENDLESS_INTEREST_BASE_PCT + perkFx(PERK_FINANCIER) * ENDLESS_PERK_INTEREST_PCT;
 }
 
-// Financier's shop-price multiplier in basis points; it composes with other modifiers.
+// Financier's shop-price multiplier in basis points; it composes with other modifiers. A shop
+// price belongs to whoever is buying, the same player endlessShopTaxPercent charges.
 int endlessPerkShopCostBp(void)
 {
 	if (!endlessFxActive())
 		return 10000;
-	return 10000 - endlessPerkOwned[PERK_FINANCIER] * ENDLESS_PERK_DISCOUNT_BP;
+	return 10000 - perkMine(PERK_FINANCIER) * ENDLESS_PERK_DISCOUNT_BP;
 }
 
 // +max armor from the Ablative Plating perk; added to the ship's armor each level start (varz.c),
 // alongside the outpost hull upgrade (endlessArmorBonus).
 int endlessPerkArmorBonus(void)
 {
-	int bonus = endlessPerkOwned[PERK_ARMOR] * ENDLESS_PERK_ARMOR_STEP;
-	if (endlessPerkOwned[PERK_GLASSCANNON])
+	int bonus = perkFx(PERK_ARMOR) * ENDLESS_PERK_ARMOR_STEP;
+	if (perkFx(PERK_GLASSCANNON))
 		bonus -= ENDLESS_PERK_GLASS_ARMOR;  // Glass Cannon relic drawback (varz.c clamps armor >= 1)
 	return bonus;
 }
@@ -145,37 +166,41 @@ static int endlessAccumSteps(int *accum, int rate)
 	return steps;
 }
 
+/* Personal on both halves: the stacks are the ship's own, and so is the hull that arms them. A
+ * partner in trouble used to arm it too, which under personal perks would have let one ship's
+ * damage drive the other ship's perk. */
 bool endlessAdrenalineActive(void)
 {
-	// Any hurt ship arms it; a co-op partner in trouble is trouble for the pair.
-	for (uint p = 0; p < endlessEffectPlayers(); ++p)
-		if (endlessPerkOwned[PERK_ADRENALINE] > 0 && player[p].initial_armor > 0
-		    && player[p].armor * ENDLESS_PERK_ADRENALINE_HP < player[p].initial_armor)
-			return true;
-	return false;
+	const uint p = endlessFxPlayer();
+	return perkFx(PERK_ADRENALINE) > 0 && player[p].initial_armor > 0
+	    && player[p].armor * ENDLESS_PERK_ADRENALINE_HP < player[p].initial_armor;
 }
 
 // Fire-rate decrement percentage, including Adrenaline when `hurtBonus` is true.
 static int endlessPerkFireRate(bool hurtBonus)
 {
-	int rate = endlessPerkOwned[PERK_FIRERATE] * ENDLESS_PERK_FIRE_PCT;
+	int rate = perkFx(PERK_FIRERATE) * ENDLESS_PERK_FIRE_PCT;
 	if (hurtBonus && endlessAdrenalineActive())
-		rate += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_PCT;
+		rate += perkFx(PERK_ADRENALINE) * ENDLESS_PERK_ADRENALINE_PCT;
 	return rate;
 }
 
 /* Apply Rapid Cyclers and, while hurt, Adrenaline through a fractional accumulator. One carry
  * per ship: both ships tick through here, and a shared carry would have each of them consuming
- * the other's remainder, halving the rate for both. */
+ * the other's remainder, halving the rate for both. Simulation state, in the rollback registry:
+ * which tick a carry crosses a whole step decides which tick a gun fires, and a re-simulated
+ * frame advancing an unregistered carry again had the two machines firing a tick apart. */
+int endlessPerkFireAccum[2];
+int endlessPerkSpecialCdAccum[2];
+
 int endlessPerkFireDecrements(void)
 {
-	static int accum[2] = { 0, 0 };
 	if (!endlessFxActive())
 	{
-		accum[0] = accum[1] = 0;
+		endlessPerkFireAccum[0] = endlessPerkFireAccum[1] = 0;
 		return 0;
 	}
-	return endlessAccumSteps(&accum[endlessFxPlayer()], endlessPerkFireRate(true));
+	return endlessAccumSteps(&endlessPerkFireAccum[endlessFxPlayer()], endlessPerkFireRate(true));
 }
 
 // The preview includes Rapid Cyclers but not Adrenaline because zones start at full hull.
@@ -195,20 +220,19 @@ int endlessPerkPreviewFireDecrements(void)
 // Charge sidekicks have no magazine to refill; endlessPerkChargeTicks covers them instead.
 int endlessPerkSpecialCooldownDecrements(void)
 {
-	static int accum[2] = { 0, 0 };
 	if (!endlessFxActive())
 	{
-		accum[0] = accum[1] = 0;
+		endlessPerkSpecialCdAccum[0] = endlessPerkSpecialCdAccum[1] = 0;
 		return 0;
 	}
-	return endlessAccumSteps(&accum[endlessFxPlayer()],
-	                         endlessPerkOwned[PERK_SPECIALCD] * ENDLESS_PERK_SPECIALCD_PCT);
+	return endlessAccumSteps(&endlessPerkSpecialCdAccum[endlessFxPlayer()],
+	                         perkFx(PERK_SPECIALCD) * ENDLESS_PERK_SPECIALCD_PCT);
 }
 
 // The special-fire path combines this run perk with the debug autoFireSpecial flag.
 bool endlessPerkAutoFireSpecial(void)
 {
-	return endlessFxActive() && endlessPerkOwned[PERK_AUTOSPECIAL] > 0;
+	return endlessFxActive() && perkFx(PERK_AUTOSPECIAL) > 0;
 }
 
 // Efficient Coils perk: power-use scale per main-weapon shot (100 = normal, lower = cheaper);
@@ -217,16 +241,16 @@ int endlessPerkPowerUsePercent(void)
 {
 	if (!endlessFxActive())
 		return 100;
-	const int pct = 100 - endlessPerkOwned[PERK_POWERUSE] * ENDLESS_PERK_POWERUSE_PCT;
+	const int pct = 100 - perkFx(PERK_POWERUSE) * ENDLESS_PERK_POWERUSE_PCT;
 	return pct < ENDLESS_PERK_POWERUSE_MIN ? ENDLESS_PERK_POWERUSE_MIN : pct;
 }
 
 // Shorten an interval per perk stack, without dropping below `minimum`.
 static int endlessPerkShorten(int base, int perk, int step, int minimum)
 {
-	if (!endlessFxActive() || endlessPerkOwned[perk] == 0)
+	if (!endlessFxActive() || perkFx(perk) == 0)
 		return base;
-	const int v = base - endlessPerkOwned[perk] * step;
+	const int v = base - perkFx(perk) * step;
 	return v < minimum ? minimum : v;
 }
 
@@ -253,26 +277,31 @@ int endlessPerkShotSpeedPercent(void)
 {
 	if (!endlessFxActive())
 		return 100;
-	return 100 + endlessPerkOwned[PERK_SHOTSPEED] * ENDLESS_PERK_SHOTSPEED_PCT;
+	return 100 + perkFx(PERK_SHOTSPEED) * ENDLESS_PERK_SHOTSPEED_PCT;
 }
 
-// Radar adds the shipped level name to each Chart-a-Course help line.
+// Radar adds the shipped level name to each Chart-a-Course help line, for the player who owns it.
 bool endlessPerkRadarActive(void)
 {
-	return endlessFxActive() && endlessPerkOwned[PERK_RADAR] > 0;
+	return endlessFxActive() && perkMine(PERK_RADAR) > 0;
 }
 
-// Add Surveyor routes after the RNG roll so the seed stream remains unchanged.
+/* Add Surveyor routes after the RNG roll so the seed stream remains unchanged. The slate is
+ * shared, so the stacks that widen it are the charting seat's own; both machines derive that
+ * seat identically, and the slates stay in step. */
 int endlessPerkSurveyorRoutes(void)
 {
-	return endlessFxActive() ? endlessPerkOwned[PERK_SURVEYOR] * ENDLESS_PERK_SURVEYOR_ROUTES : 0;
+	if (!endlessFxActive())
+		return 0;
+	return endlessPerkEffective(endlessChartingPlayerIndex(), PERK_SURVEYOR)
+	     * ENDLESS_PERK_SURVEYOR_ROUTES;
 }
 
 // Calculate Executioner from raw shot damage before boss or elite scaling.
 // `fullHp` is the latched healthbar maximum; zero means the target has not been hit.
 int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss)
 {
-	const int stacks = endlessFxActive() ? endlessPerkOwned[PERK_EXECUTIONER] : 0;
+	const int stacks = endlessFxActive() ? perkFx(PERK_EXECUTIONER) : 0;
 	if (stacks == 0 || damage <= 0 || fullHp <= 0 || armorleft <= 0 || armorleft >= 255)
 		return 0;
 	const int threshold = boss ? ENDLESS_PERK_EXEC_BOSS_PCT : ENDLESS_PERK_EXEC_HP_PCT;
@@ -293,7 +322,7 @@ static void endlessOpeningSalvoTickOne(void)
 		--endlessSalvoWindow[endlessFxPlayer()];          // real time, not held-fire time: the gauge counts it down
 		return;                        // and no second charge banks while one runs
 	}
-	if (endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle[endlessFxPlayer()] < 1000000)
+	if (perkFx(PERK_SALVO) > 0 && endlessSalvoIdle[endlessFxPlayer()] < 1000000)
 		++endlessSalvoIdle[endlessFxPlayer()];            // capped so a very long idle can't overflow
 }
 
@@ -303,7 +332,7 @@ bool endlessOpeningSalvoConsume(void)
 	if (endlessSalvoWindow[endlessFxPlayer()] > 0)
 		return true;
 
-	const bool charged = endlessPerkOwned[PERK_SALVO] > 0 && endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE;
+	const bool charged = perkFx(PERK_SALVO) > 0 && endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE;
 	endlessSalvoIdle[endlessFxPlayer()] = 0;
 	if (charged)
 		endlessSalvoWindow[endlessFxPlayer()] = ENDLESS_PERK_SALVO_WINDOW;
@@ -329,7 +358,7 @@ bool endlessOpeningSalvoVolleyActive(void) { return endlessFxActive() && endless
 // the share of the spent window still to run, so the green recedes as the salvo burns down.
 int endlessOpeningSalvoGaugePercent(void)
 {
-	if (!endlessFxActive() || endlessPerkOwned[PERK_SALVO] == 0)
+	if (!endlessFxActive() || perkFx(PERK_SALVO) == 0)
 		return 0;
 	if (endlessSalvoWindow[endlessFxPlayer()] > 0)
 		return endlessSalvoWindow[endlessFxPlayer()] * 100 / ENDLESS_PERK_SALVO_WINDOW;
@@ -352,7 +381,7 @@ int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT;
 // Refund a percentage of absorbed shield cost per stack. The caller clamps generator power.
 int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 {
-	const int stacks = endlessFxActive() ? endlessPerkOwned[PERK_KINETIC] : 0;
+	const int stacks = endlessFxActive() ? perkFx(PERK_KINETIC) : 0;
 	if (stacks == 0 || shieldAbsorbed <= 0 || tpwr <= 0)
 		return 0;
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
@@ -368,9 +397,9 @@ void endlessCountermeasureTick(void)
 // Return the ready projectile-clear radius. The caller must re-arm the cooldown after firing.
 int endlessPerkCountermeasureRadius(void)
 {
-	if (!endlessFxActive() || endlessPerkOwned[PERK_COUNTERMEASURE] == 0 || endlessCmCooldown > 0)
+	if (!endlessFxActive() || perkFx(PERK_COUNTERMEASURE) == 0 || endlessCmCooldown > 0)
 		return 0;
-	return (endlessPerkOwned[PERK_COUNTERMEASURE] >= 2) ? ENDLESS_PERK_CM_RADIUS2 : ENDLESS_PERK_CM_RADIUS1;
+	return (perkFx(PERK_COUNTERMEASURE) >= 2) ? ENDLESS_PERK_CM_RADIUS2 : ENDLESS_PERK_CM_RADIUS1;
 }
 
 void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
@@ -380,7 +409,7 @@ int endlessPerkFailsafeTicks(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessPerkOwned[PERK_FAILSAFE] * ENDLESS_PERK_FAILSAFE_TICKS;
+	return perkFx(PERK_FAILSAFE) * ENDLESS_PERK_FAILSAFE_TICKS;
 }
 
 // Start each zone with countermeasures ready and Opening Salvo charged.
@@ -395,15 +424,15 @@ void endlessResetZonePerkTimers(void)
 }
 
 // Pulse application lives at the player-shot kill sites in tyrian2.c.
-bool endlessPerkChainReactionActive(void) { return endlessFxActive() && endlessPerkOwned[PERK_CHAINRXN] > 0; }
+bool endlessPerkChainReactionActive(void) { return endlessFxActive() && perkFx(PERK_CHAINRXN) > 0; }
 int  endlessPerkChainRadius(void)         { return ENDLESS_PERK_CHAIN_RADIUS; }
 
 // Scale pulse damage with ordinary enemy health, without dropping below its base value.
 int endlessPerkChainDamage(void)
 {
-	if (!endlessFxActive() || endlessPerkOwned[PERK_CHAINRXN] == 0)
+	if (!endlessFxActive() || perkFx(PERK_CHAINRXN) == 0)
 		return 0;
-	const int base = endlessPerkOwned[PERK_CHAINRXN] * ENDLESS_PERK_CHAIN_DMG;
+	const int base = perkFx(PERK_CHAINRXN) * ENDLESS_PERK_CHAIN_DMG;
 	const int scaled = base * endlessArmorPercent() / 100;
 	return (scaled < base) ? base : scaled;
 }
@@ -416,7 +445,7 @@ int endlessPerkAmmoPercent(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessPerkOwned[PERK_ORDNANCE] * ENDLESS_PERK_AMMO_PCT;
+	return perkFx(PERK_ORDNANCE) * ENDLESS_PERK_AMMO_PCT;
 }
 
 // Leave charge and infinite sidekicks at zero. Round a magazine bonus up and cap it for the HUD.
@@ -445,9 +474,9 @@ int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo)
 // Extend a special duration; `cap` protects byte-wide fields, and zero disables the cap.
 int endlessPerkSpecialDuration(int base, int cap)
 {
-	if (!endlessFxActive() || endlessPerkOwned[PERK_ORDNANCE] == 0 || base <= 0)
+	if (!endlessFxActive() || perkFx(PERK_ORDNANCE) == 0 || base <= 0)
 		return base;
-	const int v = base * (100 + endlessPerkOwned[PERK_ORDNANCE] * ENDLESS_PERK_SPECDUR_PCT) / 100;
+	const int v = base * (100 + perkFx(PERK_ORDNANCE) * ENDLESS_PERK_SPECDUR_PCT) / 100;
 	return (cap > 0 && v > cap) ? cap : v;
 }
 
@@ -459,7 +488,7 @@ void endlessGeneratePerkChoices(int offers)
 
 	int pool[PERK_COUNT] = { 0 }, n = 0;
 	for (int i = 0; i < PERK_COUNT; ++i)
-		if (endlessPerkOwned[i] < endlessPerkTable[i].maxStack)
+		if (perkMine(i) < endlessPerkTable[i].maxStack)   // room in the picker's own row
 			pool[n++] = i;
 
 	// Partial Fisher-Yates: shuffle the first min(offers, n) slots and take them.
@@ -499,7 +528,7 @@ const char *endlessPerkChoiceOwnedText(int i)
 	if (i < 0 || i >= endlessPerkChoiceN)
 		return "";
 	const int id = endlessPerkChoice[i];
-	snprintf(buf, sizeof(buf), "Owned %d/%d", endlessPerkOwned[id], endlessPerkTable[id].maxStack);
+	snprintf(buf, sizeof(buf), "Owned %d/%d", perkMine(id), endlessPerkTable[id].maxStack);
 	return buf;
 }
 
@@ -509,7 +538,7 @@ void endlessTakePerk(int i)
 	if (i < 0 || i >= endlessPerkChoiceN)
 		return;
 	const int id = endlessPerkChoice[i];
-	if (endlessPerkOwned[id] < endlessPerkTable[id].maxStack)
+	if (perkMine(id) < endlessPerkTable[id].maxStack)
 		endlessPerkGrant(endlessEconomyIndex(), id, 1);
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
@@ -529,7 +558,14 @@ long endlessPerkDeclineBonus(void)
 	long cash = endlessClearBase() * ENDLESS_PERK_DECLINE_MULT / 10;
 	cash = cash * offers / ENDLESS_PERK_OFFERS;
 	cash = cash * (100 + surcharge) / 100;
-	return cash * endlessPerkCashPercent() / 100;  // Scavenger, as on every other endless cash source
+
+	// Scavenger, as on every other endless cash source. The buyout is taken by the player at
+	// this keyboard, so name them while their rate is read.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(endlessEconomyIndex());
+	cash = cash * endlessPerkCashPercent() / 100;
+	endlessSetFxPlayer(fxSaved);
+	return cash;
 }
 
 void endlessDeclinePerk(void)
@@ -543,7 +579,8 @@ int         endlessPerkCount(void)          { return PERK_COUNT; }
 const char *endlessPerkName(int id)         { return (id >= 0 && id < PERK_COUNT) ? endlessPerkTable[id].name : ""; }
 const char *endlessPerkDesc(int id)         { return (id >= 0 && id < PERK_COUNT) ? endlessPerkTable[id].desc : ""; }
 int         endlessPerkMaxStack(int id)     { return (id >= 0 && id < PERK_COUNT) ? endlessPerkTable[id].maxStack : 0; }
-int         endlessPerkGetOwned(int id)     { return (id >= 0 && id < PERK_COUNT) ? endlessPerkOwned[id] : 0; }
+// Perks are personal, so this reads the row endlessPerkSetOwned writes: this machine's own.
+int         endlessPerkGetOwned(int id)     { return endlessPerkEffective(endlessEconomyIndex(), id); }
 
 void endlessPerkSetOwned(int id, int n)
 {

@@ -482,7 +482,8 @@ void gauge_flash_present(float alpha);
 extern bool hud_bars_dirty;
 void JE_repaintShieldArmorBars(void);
 
-JE_word JE_portConfigs(void);
+// Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
+JE_word JE_portConfigs(const Player *this_player);
 
 /*SuperPixels*/
 // classic_cap forces the classic 101-spark limit for this call even when extraSparks is on

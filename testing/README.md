@@ -33,10 +33,12 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   flags, the wallet each machine spends in all three online modes, arcade's immunity to the
   co-op credit settings, the two-wallet campaign economy, the co-op campaign record board, the
   strings the online menus print, and pause being refused in all three online modes;
-- online Endless co-op as a matrix: credit mode against Double Pickups against Scavenger
+- online Endless co-op as a matrix: credit mode against Double Earnings against Scavenger
   stacks against which machine is asking; all sixteen pairings of what the two ships are
-  flying against Combo Feed and against who fired the killing shot; per-player perk stacking
-  and its caps; the outpost and every E-Shop button from both machines, with their refusal
+  flying against Combo Feed and against who fired the killing shot; personal perk stacking,
+  its per-row caps, and the registry pair the debug screen drives; the online arcade shape
+  against Linked and Separate ships, with each Separate ship's own life-counter alias held
+  across a rollback restore; the outpost and every E-Shop button from both machines, with their refusal
   gates and per-player price escalation and RNG streams; downed, revive-token and
   revive-at-outpost states against all three run modes; reactive-danger targeting; all four
   course-chooser modes; the co-op wire block; and whole-session scenarios that combine them;
@@ -52,8 +54,9 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
     of interleaved purchases from both machines at once, a save checkpoint that moves nothing,
     and a rendezvous where one machine finishes long before the other;
   - *endless*: both ships holding different drives, paid charges, hull tiers, tokens, debts and
-    perk slates, all crossing intact and combining the same way on both machines; Individual
-    credit with Double Pickups; one ship down while the other flies on, and its revive at the
+    perk slates, all crossing intact and staying their owner's alone on both machines;
+    Individual credit with Double Earnings covering pickup, kill and bounty cash; one ship
+    down while the other flies on, and its revive at the
     outpost; the charted sector index surviving the rendezvous; the Relaxed both-down prompt;
     and the whole run record adopted by the joiner.
 
@@ -68,9 +71,19 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   designs (10), both players pressing Esc on the same frame with host-wins arbitration (11),
   ten Online Endless zones each under a forced modifier slate with cross-peer wallet
   comparison (12), an Online Campaign arc with the real shop protocol, per-ship custom
-  weapons, and the episode 1 to 2 transition (13), and the Double Pickups lobby settings
-  armed end to end with scripted in-simulation pickups (14). Scenario 15 is an accelerated
-  soak (a long flight watching the working set); it runs only when selected explicitly.
+  weapons, and the episode 1 to 2 transition (13), the Double Earnings lobby settings
+  armed end to end with scripted in-simulation pickups (14), an Arcade level flown with
+  Separate ships, which both peers must report flying (16), Online SuperTyrian on the
+  Scrollock variant with both Stalkers reporting the SuperTyrian ruleset (17), and Online
+  Super Arcade with the two peers picking different ships through the announcement protocol,
+  scripted colour-ball grants that must hand each ship the gun its own arsenal keeps in that
+  slot, and both peers required to print identical grant lines (18). Scenario 15 is an
+  accelerated soak (a long flight watching the working set); it runs only when selected
+  explicitly.
+
+  The harness drains both peers' pipes on reader threads for the whole run. Reading only at
+  the end deadlocks a talkative peer once the OS pipe buffer fills: its next print blocks, it
+  stops servicing the socket, and the partner reads the silence as a lost connection.
 
 Regenerate save fixtures only when intentionally changing the migration corpus:
 

@@ -100,6 +100,11 @@ bool str_pop_int(char *str, int *val);
 // net2p pins it to the 2-player page for the online host and returns the loaded slot;
 // saving turns it into a save menu (returns 0; the saving happens inside).
 int JE_loadScreen(bool net2p, bool saving);
+/* Which sessions may load a given record. The save pages show an incompatible slot dimmed and
+ * unselectable rather than hiding it. Public for the unit suite: the rule now separates three
+ * arcade lobbies that share one slot page, and loading across them would resume with a loadout
+ * the session's own rules never issue. */
+bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
 
@@ -108,10 +113,30 @@ int hud_fps_row(void);            // text row the FPS counter occupies
 int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere across the width
 int hud_bottom_right_top(void);   // ...and in the bottom-right corner alone
 
-// Horizontal extent of the top corner clusters (name label, lives row, special-weapon icon),
+// Horizontal extent of the top corner clusters (name label, lives row, special-weapon block),
 // so a centred TOP boss bar stops short of them instead of being clipped to a legacy constant.
 int hud_top_left_right_edge(void);
 int hud_top_right_left_edge(void);
+
+/* The special-weapon block at the top of the playfield: the 2x2 item icon, and beside it the
+ * ready light JE_doSpecialShot draws. It belongs to the ship whose HUD this machine draws, and
+ * sits on that ship's own side above that ship's name and lives, which drop by
+ * HUD_LIVES_Y_SPECIAL - HUD_LIVES_Y to clear it. varz.c draws the light and mainint.c the icon;
+ * both read these, and the boss bar reads the edges above. */
+#define HUD_SPECIAL_ICON_W   24  // blit_sprite2x2: two 12px columns...
+#define HUD_SPECIAL_ICON_H   28  // ...by two 14px rows
+#define HUD_SPECIAL_ICON_Y    1
+#define HUD_SPECIAL_LIGHT_W  12  // one sprite2 column...
+#define HUD_SPECIAL_LIGHT_H  14
+#define HUD_SPECIAL_LIGHT_Y   8  // ...centred against the icon's rows
+#define HUD_LIVES_NAME_RISE   7  // rows the name label sits above the lives row
+#define HUD_LIVES_Y          15
+#define HUD_LIVES_Y_SPECIAL  37  // pushed below the icon when this ship holds a special
+bool hud_special_block_shown(uint p);   // ship p's special is the one drawn at the top
+bool hud_special_on_right(uint p);      // ...mirrored into the right corner, not the left one
+int  hud_special_icon_x(uint p);
+int  hud_special_light_x(uint p);
+int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_LIVES_NAME_RISE above
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 

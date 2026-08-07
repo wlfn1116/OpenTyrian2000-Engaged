@@ -58,6 +58,7 @@
 #define PACKET_SHOP_SYNC     0x34    // sender, sequence, flags, route, cash, mode, ack, items
 #define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
+#define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -88,9 +89,18 @@ typedef enum
 	NETWORK_GAME_ARCADE = 0,
 	NETWORK_GAME_CAMPAIGN = 1,
 	NETWORK_GAME_ENDLESS = 2,
+	NETWORK_GAME_SUPERTYRIAN = 3,
+	NETWORK_GAME_SUPERARCADE = 4,
 	NETWORK_GAME_TYPE_COUNT
 }
 NetworkGameType;
+
+/* The two one-player rulesets flown online. Both give each player a complete ship of their own,
+ * so they run in the Separate arcade shape (config.h) rather than as the linked pair. */
+static inline bool network_game_type_is_super(NetworkGameType t)
+{
+	return t == NETWORK_GAME_SUPERTYRIAN || t == NETWORK_GAME_SUPERARCADE;
+}
 
 extern NetworkGameType network_game_type;
 extern int network_host_episode;
@@ -199,7 +209,7 @@ Uint16 network_inbound_head(void);
 
 // Reliable packets acknowledged into a full receive window and therefore lost for good. Nonzero
 // means something stopped draining the queue; the transport cannot recover these.
-Uint32 network_acked_dropped(void);
+Uint32 network_window_overflow(void);
 
 void network_state_prepare(void);
 int network_state_send(void);
@@ -250,6 +260,16 @@ bool network_endless_run_receive(Uint32 timeout_ms);
 /* Both ships down at once: the host publishes its death-menu choice and the joiner adopts it.
  * Pass the choice on the host, -1 on the joiner; -1 comes back if nothing arrived. */
 int network_endless_death_sync(int hostChoice);
+
+// Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
+void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq);
+
+/* Online Super Arcade ship picks. Each player chooses their own ship (they may match), so the
+ * pick is announced rather than dictated: publish this machine's, then wait for the peer's.
+ * Reliable, so a lost announcement is retransmitted rather than deadlocking the pair. */
+void network_sa_ship_publish(int ship);
+int  network_sa_ship_peer(void);    // 0 until the peer's pick has arrived
+void network_sa_ship_reset(void);
 
 /* Both machines announce they are ready for a level, then resynchronize the state queues. Only
  * needed on a path that starts a level without passing through the outpost. */
@@ -382,6 +402,9 @@ extern bool rollback_resim;
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
 static inline void network_level_rendezvous(void) { }
+static inline void network_sa_ship_publish(int ship) { (void)ship; }
+static inline int network_sa_ship_peer(void) { return 0; }
+static inline void network_sa_ship_reset(void) { }
 static inline void network_shop_begin(void) { }
 static inline void network_shop_send_state(bool done) { (void)done; }
 static inline void network_shop_send_transaction(void) { }

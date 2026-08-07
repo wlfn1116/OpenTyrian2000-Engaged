@@ -83,6 +83,8 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 314, 0,   "test-net-game-type", true },
 		{ 315, 0,   "test-net-zones", true },
 		{ 316, 0,   "test-net-lobby-settings", false },
+		{ 317, 0,   "test-net-arcade-separate", false },
+		{ 318, 0,   "test-net-scrollock", false },
 
 		{ 0, 0, NULL, false}
 	};
@@ -285,6 +287,12 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 316:
 			qa_net_lobby_settings = true;
+			break;
+		case 317:
+			qa_net_arcade_separate = true;
+			break;
+		case 318:
+			qa_net_scrollock = true;
 			break;
 
 		default:

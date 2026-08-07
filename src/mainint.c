@@ -735,7 +735,7 @@ static int save_effective_episode(const JE_SaveFileType *rec)
 // Which sessions may load `slot`. The record's co-op tag says it carries two full loadouts;
 // the Endless sidecar says whether a run sits behind it, which is what separates the two
 // online co-op lobbies from each other.
-static bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
+bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 {
 	const bool coop = save_record_is_coop(rec);
 	if (isNetworkGame && net2p)
@@ -744,9 +744,26 @@ static bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool 
 			return coop && endlessSlotHasRun(slot);
 		if (network_game_type == NETWORK_GAME_CAMPAIGN)
 			return coop && !endlessSlotHasRun(slot);
-		return !coop;
+		if (coop)
+			return false;
+
+		/* The three arcade lobbies fly different ships out of the same slot page, and the record
+		 * is what says which. A record's ships must match the ruleset resuming it: SuperTyrian's
+		 * Stalker pair, a Super Arcade record's two chosen hulls, or neither. Loading across
+		 * would resume with a loadout the session's own rules never issue, and (Linked against a
+		 * two-complete-ships record) with ship two's life counter on the wrong bay. */
+		if (save_record_is_dual_arcade(rec) != arcade_separate_mode())
+			return false;
+		const uint sa1 = save_record_sa_ship(rec, 0), sa2 = save_record_sa_ship(rec, 1);
+		if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
+			return sa1 == SA_SUPERTYRIAN && sa2 == SA_SUPERTYRIAN;
+		if (network_game_type == NETWORK_GAME_SUPERARCADE)
+			return sa1 >= 1 && sa1 <= SA && sa2 >= 1 && sa2 <= SA;
+		return sa1 == SA_NONE && sa2 == SA_NONE;
 	}
-	return !coop;
+	// Local play: the linked pair and the one-player pages never wrote a dual-ship record, and
+	// cannot fly one back.
+	return !coop && !save_record_is_dual_arcade(rec);
 }
 
 // net2p pins the two-player page and returns the chosen slot. saving selects the standard save flow.
@@ -1223,6 +1240,11 @@ void JE_initPlayerData(void)
 	for (uint i = 0; i < COUNTOF(player[0].items.sidekick); ++i)
 		player[0].items.sidekick[i] = 0;          // None
 	player[0].items.special = 0;                  // None
+	// Which Super Arcade ruleset a ship flies now lives on the ship (player_sa_ship), because
+	// online Super Arcade gives the two players different ones. It therefore has to be cleared
+	// with the rest of the loadout: left over from a previous Super Arcade run it would hand a
+	// plain arcade ship that ship's ball table and its paired special.
+	player[0].items.super_arcade_mode = SA_NONE;
 
 	player[0].last_items = player[0].items;
 
@@ -1238,6 +1260,7 @@ void JE_initPlayerData(void)
 	twoPlayerMode = false;
 	coopCampaignMode = false;
 	coopEndlessMode = false;
+	arcadeSeparateMode = false;
 	timedBattleMode = false;
 	endlessMode = false;
 
@@ -1254,7 +1277,7 @@ void JE_initPlayerData(void)
 		player[p].armor = player[p].hull_armor = ships[player[p].items.ship].dmg;
 
 		player[p].is_dragonwing = (p == 1);
-		player[p].lives = &player[p].items.weapon[p].power;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
 	}
 
@@ -4612,7 +4635,7 @@ static void debug_apply_loadout_change(int pnum, bool shipChanged)
 	// one doesn't have, and weapon_mode can outrun the new port's configuration count.
 	memset(shotMultiPos, 0, sizeof(shotMultiPos));
 	for (uint i = 0; i < COUNTOF(player); ++i)
-		if (player[i].weapon_mode > JE_portConfigs())
+		if (player[i].weapon_mode > JE_portConfigs(&player[i]))
 			player[i].weapon_mode = 1;
 
 	JE_getShipInfo();   // shipGr + shipGrPtr, hull, initial_armor, hit box, powerAdd
@@ -6356,7 +6379,7 @@ void JE_endLevelAni(void)
 	if (difficultyAdjust && !endlessFxActive())
 		adjust_difficulty();
 
-	for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
+	for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)
 		player[p].last_items = player[p].items;
 	strcpy(lastLevelName, levelName);
 
@@ -6982,13 +7005,53 @@ static int hud_lives_count_left(const char *count)
 	return PLAYFIELD_WIDTH + 4 - JE_textWidth(count, TINY_FONT);
 }
 
+/* Special block geometry. Player one's icon sits inside the left playfield edge with its ready
+ * light just past it; player two's mirrors that against the right, right-aligned on the same
+ * anchor its name label uses. Only the ship this machine draws the HUD for gets a block, so a
+ * Separate-arcade joiner cannot paint its special over player one's row. */
+#define HUD_SPECIAL_GAP       1   // between the icon and its ready light
+#define HUD_SPECIAL_P1_X     25
+#define HUD_SPECIAL_P2_RIGHT (PLAYFIELD_WIDTH + 22)   // the anchor hud_top_right_left_edge mirrors
+
+bool hud_special_block_shown(uint p)
+{
+	return p < COUNTOF(player) && p == gameplay_local_player_index()
+	    && player[p].items.special > 0;
+}
+
+bool hud_special_on_right(uint p)
+{
+	// Only the arcade puts a name and lives row under the block, so only there does ship two
+	// have a corner of its own to mirror into. Co-op has neither row, and both machines keep
+	// the historical left corner.
+	return p == 1 && hud_lives_shown();
+}
+
+int hud_special_icon_x(uint p)
+{
+	return hud_special_on_right(p) ? HUD_SPECIAL_P2_RIGHT - HUD_SPECIAL_ICON_W
+	                               : HUD_SPECIAL_P1_X;
+}
+
+int hud_special_light_x(uint p)
+{
+	const int iconX = hud_special_icon_x(p);
+	return hud_special_on_right(p) ? iconX - HUD_SPECIAL_GAP - HUD_SPECIAL_LIGHT_W
+	                               : iconX + HUD_SPECIAL_ICON_W + HUD_SPECIAL_GAP;
+}
+
+int hud_lives_row_y(uint p)
+{
+	return hud_special_block_shown(p) ? HUD_LIVES_Y_SPECIAL : HUD_LIVES_Y;
+}
+
 int hud_top_left_right_edge(void)
 {
 	int right = 0;
 	const uint local_player = gameplay_local_player_index();
 
-	if (player[local_player].items.special > 0)
-		right = 49;  // the 2x2 special-weapon icon blitted at x25
+	if (hud_special_block_shown(local_player) && !hud_special_on_right(local_player))
+		right = hud_special_light_x(local_player) + HUD_SPECIAL_LIGHT_W;
 
 	if (hud_lives_shown())
 	{
@@ -7010,8 +7073,14 @@ int hud_top_left_right_edge(void)
 
 int hud_top_right_left_edge(void)
 {
+	int left = PLAYFIELD_RIGHT + 1;  // nothing claimed over there
+	const uint local_player = gameplay_local_player_index();
+
+	if (hud_special_block_shown(local_player) && hud_special_on_right(local_player))
+		left = hud_special_light_x(local_player);
+
 	if (!twoPlayerMode || galagaMode || !hud_lives_shown())
-		return PLAYFIELD_RIGHT + 1;  // nothing claimed over there
+		return left;
 
 	const uint lives = *player[1].lives;
 
@@ -7022,7 +7091,10 @@ int hud_top_right_left_edge(void)
 	                     : (lives >= 1) ? PLAYFIELD_WIDTH + 7 - ((int)lives - 1) * 12
 	                                    : PLAYFIELD_WIDTH + 7;
 
-	return (name_left < lives_left) ? name_left : lives_left;
+	if (name_left < left)  left = name_left;
+	if (lives_left < left) left = lives_left;
+
+	return left;
 }
 
 int hud_bottom_right_top(void)
@@ -7058,7 +7130,9 @@ void JE_inGameDisplays(void)
 
 	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
 	{
-		if (coop_mode_active())
+		// Name the two scores whenever the ships are independent; the linked pair reads as one
+		// team and has no room for it.
+		if (dual_ship_mode())
 			snprintf(tempstr, sizeof(tempstr), "%s %lu", JE_getName(i + 1), (unsigned long)player[i].cash);
 		else
 			snprintf(tempstr, sizeof(tempstr), "%lu", (unsigned long)player[i].cash);
@@ -7164,8 +7238,9 @@ void JE_inGameDisplays(void)
 
 	/*Special Weapon?*/
 	const uint local_player = gameplay_local_player_index();
-	if (player[local_player].items.special > 0)
-		blit_sprite2x2(VGAScreen, 25, 1, spriteSheet10, special[player[local_player].items.special].itemgraphic);
+	if (hud_special_block_shown(local_player))
+		blit_sprite2x2(VGAScreen, hud_special_icon_x(local_player), HUD_SPECIAL_ICON_Y,
+		               spriteSheet10, special[player[local_player].items.special].itemgraphic);
 
 	/*Lives Left*/
 	if (arcade_rules_active())
@@ -7174,7 +7249,9 @@ void JE_inGameDisplays(void)
 		{
 			const uint lives = *player[temp].lives;
 
-			int y = (temp == 0 && player[0].items.special > 0) ? 35 : 15;
+			// Only the ship carrying the special block moves down for it, so a Separate-arcade
+			// joiner drops its own row and leaves player one's where it was.
+			int y = hud_lives_row_y((uint)temp);
 			// P2 anchors ride the widened playfield edge (legacy 270/250 would float
 			// mid-field now), matching the name label's PLAYFIELD_WIDTH mapping below.
 			tempW = (temp == 0) ? 30 : PLAYFIELD_WIDTH + 7;
@@ -7205,21 +7282,23 @@ void JE_inGameDisplays(void)
 			}
 
 			tempW = (temp == 0) ? 28 : (PLAYFIELD_WIDTH + 22 - JE_textWidth(stemp, TINY_FONT));
-			JE_textShade(VGAScreen, tempW, y - 7, stemp, 2, 6, FULL_SHADE);
+			JE_textShade(VGAScreen, tempW, y - HUD_LIVES_NAME_RISE, stemp, 2, 6, FULL_SHADE);
 		}
 	}
 
 	/*Super Bombs!!*/
-	const uint first_bomb_player = coop_mode_active() ? local_player : 0;
-	const uint last_bomb_player = coop_mode_active() ? local_player + 1 : COUNTOF(player);
+	// Each ship carries its own stock in a dual-ship session, so this machine shows only its
+	// own row; the linked pair shows both, player two's counted in from the right edge.
+	const uint first_bomb_player = dual_ship_mode() ? local_player : 0;
+	const uint last_bomb_player = dual_ship_mode() ? local_player + 1 : COUNTOF(player);
 	for (uint i = first_bomb_player; i < last_bomb_player; ++i)
 	{
-		int x = coop_mode_active() || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
+		int x = dual_ship_mode() || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
 
 		for (uint j = player[i].superbombs; j > 0; --j)
 		{
 			blit_sprite2(VGAScreen, x, 160, spriteSheet9, 304);
-			x += (coop_mode_active() || i == 0) ? 12 : -12;
+			x += (dual_ship_mode() || i == 0) ? 12 : -12;
 		}
 	}
 
@@ -7278,7 +7357,7 @@ void JE_mainKeyboardInput(void)
 					player[0].items.shield = extraShips[z + 8];
 					memset(shotMultiPos, 0, sizeof(shotMultiPos));
 
-					if (player[0].weapon_mode > JE_portConfigs())
+					if (player[0].weapon_mode > JE_portConfigs(&player[0]))
 						player[0].weapon_mode = 1;
 
 					tempW = player[0].armor;
@@ -7322,7 +7401,7 @@ void JE_mainKeyboardInput(void)
 					player[1].items.shield = extraShips[z + 8];
 					memset(shotMultiPos, 0, sizeof(shotMultiPos));
 
-					if (player[1].weapon_mode > JE_portConfigs())
+					if (player[1].weapon_mode > JE_portConfigs(&player[1]))
 						player[1].weapon_mode = 1;
 
 					tempW = player[1].armor;
@@ -7805,8 +7884,9 @@ void endlessPerShipTick(Player *this_player)
 	{
 		// X is nonzero only for an omnidirectional well; both axes are clamped to the playfield
 		// at the end of JE_playerMovement, so a sideways/up pull just pins the ship at that edge.
-		this_player->x += endlessGravityPullX();
-		this_player->y += endlessGravityPullY();
+		const uint p = (uint)(this_player - player);
+		this_player->x += endlessGravityPullX(p);
+		this_player->y += endlessGravityPullY(p);
 	}
 
 	// Quicken the guns: the Rapid Cyclers perk every tick, plus the kill-fire buff during a
@@ -7847,7 +7927,7 @@ void JE_playerMovement(Player *this_player,
 	// Everything from here to the ship blit is this ship's: its own drives, tint and cadence.
 	endlessSetFxPlayer((uint)(this_player - &player[0]));
 
-	if (playerNum_ == 2 || !twoPlayerMode || coop_mode_active())
+	if (playerNum_ == 2 || !twoPlayerMode || dual_ship_mode())
 	{
 		tempW = weaponPort[this_player->items.weapon[REAR_WEAPON].id].opnum;
 
@@ -9080,22 +9160,33 @@ redo:
 					{
 						shotMultiPos[SHOT_REAR] = 0;
 
-						if (superArcadeMode != SA_NONE && superArcadeMode <= SA_LASTSHIP)
+						// Super Arcade swaps this ship's paired special instead of cycling a rear
+						// bay. Per ship: online the two players may be flying different Super
+						// Arcade ships, each with its own A/B pair.
+						const uint sa_ship = player_sa_ship(this_player);
+						if (sa_ship != SA_NONE && sa_ship <= SA_LASTSHIP)
 						{
 							shotMultiPos[SHOT_SPECIAL] = 0;
 							shotMultiPos[SHOT_SPECIAL2] = 0;
-							if (player[0].items.special == SASpecialWeapon[superArcadeMode-1])
+							if (this_player->items.special == SASpecialWeapon[sa_ship-1])
 							{
-								player[0].items.special = SASpecialWeaponB[superArcadeMode-1];
+								this_player->items.special = SASpecialWeaponB[sa_ship-1];
 								this_player->weapon_mode = 2;
 							}
 							else
 							{
-								player[0].items.special = SASpecialWeapon[superArcadeMode-1];
+								this_player->items.special = SASpecialWeapon[sa_ship-1];
 								this_player->weapon_mode = 1;
 							}
+							if (dual_ship_mode())
+							{
+								this_player->shot_multi_pos[SHOT_SPECIAL] = 0;
+								this_player->shot_multi_pos[SHOT_SPECIAL2] = 0;
+							}
 						}
-						else if (++this_player->weapon_mode > JE_portConfigs())
+						// This ship's own bay: the partner's toggle is simulated here too, and
+						// wrapping it against the local gun kept the change off this screen.
+						else if (++this_player->weapon_mode > JE_portConfigs(this_player))
 							this_player->weapon_mode = 1;
 
 						JE_drawPortConfigButtons();
@@ -9114,7 +9205,7 @@ redo:
 				{
 					int min, max;
 
-					if (!twoPlayerMode || coop_mode_active())
+					if (!twoPlayerMode || dual_ship_mode())
 						min = 1, max = 2;
 					else
 						min = max = playerNum_;
@@ -9174,7 +9265,8 @@ redo:
 				}
 
 				/*Super Charge Weapons*/
-				if (playerNum_ == 2 && !coop_mode_active())
+				// The charge meter is the Dragonwing's, so only the linked pair grows one.
+				if (playerNum_ == 2 && !dual_ship_mode())
 				{
 
 					if (!twoPlayerLinked)
@@ -9299,7 +9391,7 @@ redo:
 					break;
 				}
 
-				if (playerNum_ == 2 || !twoPlayerMode || coop_mode_active())
+				if (playerNum_ == 2 || !twoPlayerMode || dual_ship_mode())
 				{
 					for (uint i = 0; i < COUNTOF(player->items.sidekick); ++i)
 					{
@@ -9399,7 +9491,7 @@ redo:
 	} // moveOK
 
 	// draw sidekicks
-	if ((playerNum_ == 2 || !twoPlayerMode || coop_mode_active()) && !endLevel)
+	if ((playerNum_ == 2 || !twoPlayerMode || dual_ship_mode()) && !endLevel)
 	{
 		for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 		{
@@ -9565,12 +9657,12 @@ void JE_mainGamePlayerFunctions(void)
 
 	if (twoPlayerMode)
 	{
-		if (coop_mode_active())
+		if (dual_ship_mode())
 			coop_ship_runtime_load(&player[0]);
 		JE_playerMovement(&player[0],
 		                  !galagaMode ? inputDevice[0] : 0, 1, shipGr, shipGrPtr,
 		                  &mouseX, &mouseY);
-		if (coop_mode_active())
+		if (dual_ship_mode())
 		{
 			coop_ship_runtime_save(&player[0]);
 			if (!player[0].port_config_change)
@@ -9580,7 +9672,7 @@ void JE_mainGamePlayerFunctions(void)
 		JE_playerMovement(&player[1],
 		                  !galagaMode ? inputDevice[1] : 0, 2, shipGr2, shipGr2ptr,
 		                  &mouseXB, &mouseYB);
-		if (coop_mode_active())
+		if (dual_ship_mode())
 		{
 			coop_ship_runtime_save(&player[1]);
 			if (!player[1].port_config_change)
@@ -9795,15 +9887,15 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						shotMultiPos[SHOT_FRONT] = 0;
 						shotRepeat[SHOT_FRONT] = 10;
 
-						// Clamp script-spawned values that were not repainted to a Super Arcade color slot.
-						uint saSlot = (uint)(evalue - 30000 - 1);
-						if (saSlot >= COUNTOF(SAWeapon[0]))
-							saSlot = COUNTOF(SAWeapon[0]) - 1;
-
-						tempW = SAWeapon[superArcadeMode-1][saSlot];
+						/* The ball carries a colour, and the colour is a slot in the COLLECTOR's own
+						 * arsenal: online the two may fly different Super Arcade ships, so one red
+						 * ball hands each of them the gun their own ship keeps in that slot.
+						 * player_sa_ball_weapon clamps a script-spawned value that was never
+						 * repainted to a real colour slot. */
+						tempW = player_sa_ball_weapon(this_player, (uint)(evalue - 30000 - 1));
 
 						// if picked up already-owned weapon, power weapon up
-						if (tempW == player[0].items.weapon[FRONT_WEAPON].id)
+						if (tempW == this_player->items.weapon[FRONT_WEAPON].id)
 						{
 							player_award_pickup_cash(this_player, 1000);
 							power_up_weapon(this_player, FRONT_WEAPON);
@@ -9814,14 +9906,16 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							handle_got_purple_ball(this_player);
 						}
 
-						player[0].items.weapon[FRONT_WEAPON].id = tempW;
+						this_player->items.weapon[FRONT_WEAPON].id = tempW;
+						if (dual_ship_mode())
+							this_player->shot_multi_pos[SHOT_FRONT] = 0;
 						player_award_pickup_cash(this_player, 200);
 						soundQueue[7] = S_POWERUP;
 						enemyAvail[z] = 1;
 					}
 					else if (evalue > 32100)
 					{
-						if (playerNum_ == 1 || coop_mode_active())
+						if (playerNum_ == 1 || dual_ship_mode())
 						{
 							player_award_pickup_cash(this_player, 250);
 							this_player->items.special = evalue - 32100;
@@ -9829,7 +9923,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							shotRepeat[SHOT_SPECIAL] = 10;
 							shotMultiPos[SHOT_SPECIAL2] = 0;
 							shotRepeat[SHOT_SPECIAL2] = 0;
-							if (coop_mode_active())
+							if (dual_ship_mode())
 							{
 								this_player->shot_multi_pos[SHOT_SPECIAL] = 0;
 								this_player->shot_repeat[SHOT_SPECIAL] = 10;
@@ -9838,7 +9932,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							}
 
 							if (isNetworkGame)
-								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], special[evalue - 32100].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], special[evalue - 32100].name);
 							else if (twoPlayerMode)
 								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], special[evalue - 32100].name);
 							else
@@ -9850,7 +9944,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue > 32000)
 					{
-						if (coop_mode_active())
+						if (dual_ship_mode())
 						{
 							enemyAvail[z] = 1;
 							for (uint i = 0; i < COUNTOF(this_player->items.sidekick); ++i)
@@ -9912,7 +10006,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					else if (evalue > 31000)
 					{
 						player_award_pickup_cash(this_player, 250);
-						if (coop_mode_active())
+						if (dual_ship_mode())
 						{
 							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(playerNum_), miscTextB[4-1], weaponPort[evalue - 31000].name);
 							JE_drawTextWindow(tempStr);
@@ -9948,17 +10042,17 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue > 30000)
 					{
-						if (coop_mode_active() || (playerNum_ == 1 && twoPlayerMode))
+						if (dual_ship_mode() || (playerNum_ == 1 && twoPlayerMode))
 						{
 							if (isNetworkGame)
-								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], weaponPort[evalue - 30000].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], weaponPort[evalue - 30000].name);
 							else
 								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], weaponPort[evalue - 30000].name);
 							JE_drawTextWindow(tempStr);
-							Player *const pickup_player = coop_mode_active() ? this_player : &player[0];
+							Player *const pickup_player = dual_ship_mode() ? this_player : &player[0];
 							pickup_player->items.weapon[FRONT_WEAPON].id = evalue - 30000;
 							shotMultiPos[SHOT_FRONT] = 0;
-							if (coop_mode_active())
+							if (dual_ship_mode())
 								pickup_player->shot_multi_pos[SHOT_FRONT] = 0;
 							enemyAvail[z] = 1;
 							soundQueue[7] = S_POWERUP;
@@ -9975,13 +10069,22 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 						if (enemyAvail[z] == 1 && !coop_mode_active())
 						{
-							player[0].items.special = specialArcadeWeapon[evalue - 30000-1];
-							if (player[0].items.special > 0)
+							// The arcade gun's paired special follows the same ship the gun went to.
+							Player *const special_player = arcade_separate_mode() ? this_player : &player[0];
+							special_player->items.special = specialArcadeWeapon[evalue - 30000-1];
+							if (special_player->items.special > 0)
 							{
 								shotMultiPos[SHOT_SPECIAL] = 0;
 								shotRepeat[SHOT_SPECIAL] = 0;
 								shotMultiPos[SHOT_SPECIAL2] = 0;
 								shotRepeat[SHOT_SPECIAL2] = 0;
+								if (arcade_separate_mode())
+								{
+									special_player->shot_multi_pos[SHOT_SPECIAL] = 0;
+									special_player->shot_repeat[SHOT_SPECIAL] = 0;
+									special_player->shot_multi_pos[SHOT_SPECIAL2] = 0;
+									special_player->shot_repeat[SHOT_SPECIAL2] = 0;
+								}
 							}
 							player_award_pickup_cash(this_player, 250);
 						}
@@ -10053,27 +10156,27 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					else if (evalue == -1)  // got front weapon powerup
 					{
 						if (isNetworkGame)
-							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 1), miscTextB[4-1], miscText[45-1]);
+							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], miscText[45-1]);
 						else if (twoPlayerMode)
 							snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], miscText[45-1]);
 						else
 							strcpy(tempStr, miscText[45-1]);
 						JE_drawTextWindow(tempStr);
 
-						power_up_weapon(coop_mode_active() ? this_player : &player[0], FRONT_WEAPON);
+						power_up_weapon(dual_ship_mode() ? this_player : &player[0], FRONT_WEAPON);
 						soundQueue[7] = S_POWERUP;
 					}
 					else if (evalue == -2)  // got rear weapon powerup
 					{
 						if (isNetworkGame)
-							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(coop_mode_active() ? playerNum_ : 2), miscTextB[4-1], miscText[46-1]);
+							snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 2), miscTextB[4-1], miscText[46-1]);
 						else if (twoPlayerMode)
 							snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[44-1], miscText[46-1]);
 						else
 							strcpy(tempStr, miscText[46-1]);
 						JE_drawTextWindow(tempStr);
 
-						power_up_weapon(coop_mode_active() ? this_player : (twoPlayerMode ? &player[1] : &player[0]), REAR_WEAPON);
+						power_up_weapon(dual_ship_mode() ? this_player : (twoPlayerMode ? &player[1] : &player[0]), REAR_WEAPON);
 						soundQueue[7] = S_POWERUP;
 					}
 					else if (evalue == -3)
@@ -10090,15 +10193,15 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					}
 					else if (evalue == -5)
 					{
-						Player *const hotdog_player = coop_mode_active() ? this_player : &player[0];
+						Player *const hotdog_player = dual_ship_mode() ? this_player : &player[0];
 						hotdog_player->items.weapon[FRONT_WEAPON].id = 25;  // HOT DOG!
 						hotdog_player->items.weapon[REAR_WEAPON].id = 26;
-						if (!coop_mode_active())
+						if (!dual_ship_mode())
 							player[1].items.weapon[REAR_WEAPON].id = 26;
 
 						hotdog_player->last_items = hotdog_player->items;
 
-						if (coop_mode_active())
+						if (dual_ship_mode())
 						{
 							hotdog_player->weapon_mode = 1;
 							memset(hotdog_player->shot_multi_pos, 0, sizeof(hotdog_player->shot_multi_pos));

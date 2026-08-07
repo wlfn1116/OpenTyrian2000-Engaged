@@ -116,7 +116,7 @@ static void qa_env_restore(const QaEndlessEnv *e)
 	coopCampaignMode = e->coopCampaign; coopEndlessMode = e->coopEndless;
 	endlessMode = e->endless;
 	coop_set_session_shared_credit(true);   // player.c defaults
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	endlessSetFxPlayer(0);
 	endlessCashResync();
 }
@@ -191,7 +191,7 @@ static const char *qa_drive_name(unsigned bit)
 
 /* ---- 1. the two-wallet economy ------------------------------------------------------ */
 
-/* Credit mode x Double Pickups x Scavenger stacks x which machine, against the real award
+/* Credit mode x Double Earnings x Scavenger stacks x which machine, against the real award
  * calls. The wallet arithmetic is the part a player sees; the ledger attribution underneath
  * is what the run summary prints, so both are checked. */
 static void qa_economy_matrix(void)
@@ -206,17 +206,17 @@ static void qa_economy_matrix(void)
 		qa_session((uint)local);
 		qa_clear_ships();
 		coop_set_session_shared_credit(shared != 0);
-		coop_set_session_double_pickups(dbl != 0);
+		coop_set_session_double_earnings(dbl != 0);
 
 		const bool doubling = (dbl != 0) && (shared == 0);
 		snprintf(label, sizeof(label),
-		         "%s credit + Double Pickups %s: doubling is %s",
+		         "%s credit + Double Earnings %s: doubling is %s",
 		         shared ? "Shared" : "Individual", dbl ? "on" : "off",
 		         doubling ? "live" : "stood down");
-		qa_check(coop_pickups_are_doubled() == doubling, label);
+		qa_check(coop_earnings_are_doubled() == doubling, label);
 
 		/* A pickup. Shared pays both in full; Individual pays only its collector, doubled
-		 * when the host turned Double Pickups on to compensate the split. */
+		 * when the host turned Double Earnings on to compensate the split. */
 		qa_clear_ledger();
 		player[0].cash = player[1].cash = 0;
 		player_award_pickup_cash(&player[payee], 100);
@@ -233,19 +233,32 @@ static void qa_economy_matrix(void)
 		         payee + 1, local + 1, wantOther);
 		qa_check((long)player[1 - payee].cash == wantOther, label);
 
-		/* Kill cash never doubles: Double Pickups is aimed at the collector's half of a
-		 * split take, not at what the guns earn. */
+		/* Kill cash and bounty cash follow the same rule: Double Earnings covers combat
+		 * income whole, so a split take is compensated whatever earned it. */
 		qa_clear_ledger();
 		player[0].cash = player[1].cash = 0;
 		player_award_kill_cash(&player[payee], 100);
 		snprintf(label, sizeof(label),
-		         "%s/%s kill cash to P%d from machine %d is never doubled",
-		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, local + 1);
-		qa_check((long)player[payee].cash == (shared ? 100 : 100), label);
+		         "%s/%s kill cash to P%d from machine %d pays %ld to the killer",
+		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, local + 1,
+		         wantPayee);
+		qa_check((long)player[payee].cash == wantPayee, label);
 		snprintf(label, sizeof(label),
 		         "%s/%s kill cash to P%d from machine %d reaches the partner only when Shared",
 		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, local + 1);
-		qa_check((long)player[1 - payee].cash == (shared ? 100 : 0), label);
+		qa_check((long)player[1 - payee].cash == wantOther, label);
+
+		qa_clear_ledger();
+		player[0].cash = player[1].cash = 0;
+		player_award_bounty_cash(&player[payee], 150);
+		snprintf(label, sizeof(label),
+		         "%s/%s bounty to P%d from machine %d follows the kill rule and books as BOUNTY",
+		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, local + 1);
+		qa_check((long)player[payee].cash == (shared ? 150 : (doubling ? 300 : 150))
+		         && (payee != local
+		             || endlessCashBySource[ENDLESS_CASH_BOUNTY]
+		                == (Uint64)(shared ? 150 : (doubling ? 300 : 150))),
+		         label);
 
 		/* The run ledger follows the wallet of whoever is at this keyboard. Income into that
 		 * wallet has to land against the source that earned it, or the run summary reports
@@ -263,8 +276,8 @@ static void qa_economy_matrix(void)
 		}
 	}
 
-	/* Scavenger is a run-wide perk: the stacks either player took add up, and the cash
-	 * multiplier both ships earn under is derived from that combined holding. */
+	/* Scavenger is personal: each ship earns at the rate its own stacks set, whatever the
+	 * partner picked. The fx context names whose rate is being read. */
 	qa_session(0);
 	qa_clear_ships();
 	for (int a = 0; a <= 2; ++a)
@@ -273,14 +286,17 @@ static void qa_economy_matrix(void)
 		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 		endlessPerkGrant(0, PERK_CASH, a);
 		endlessPerkGrant(1, PERK_CASH, b);
-		const int cap = endlessPerkMaxStack(PERK_CASH);
-		const int want = (a + b > cap) ? cap : a + b;
+		endlessSetFxPlayer(0);
 		snprintf(label, sizeof(label),
-		         "Scavenger %d on P1 + %d on P2 is held as %d by the run", a, b, want);
-		qa_check(endlessPerkOwned[PERK_CASH] == (JE_byte)want, label);
+		         "Scavenger %d on P1 + %d on P2 pays P1 at %d%%",
+		         a, b, 100 + a * ENDLESS_PERK_CASH_PCT);
+		qa_check(endlessPerkCashPercent() == 100 + a * ENDLESS_PERK_CASH_PCT, label);
+		endlessSetFxPlayer(1);
 		snprintf(label, sizeof(label),
-		         "...and pays both ships at %d%%", 100 + want * ENDLESS_PERK_CASH_PCT);
-		qa_check(endlessPerkCashPercent() == 100 + want * ENDLESS_PERK_CASH_PCT, label);
+		         "Scavenger %d on P1 + %d on P2 pays P2 at %d%%",
+		         a, b, 100 + b * ENDLESS_PERK_CASH_PCT);
+		qa_check(endlessPerkCashPercent() == 100 + b * ENDLESS_PERK_CASH_PCT, label);
+		endlessSetFxPlayer(0);
 	}
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkRederive();
@@ -412,8 +428,8 @@ static void qa_drive_matrix(void)
 
 /* ---- 3. perks ----------------------------------------------------------------------- */
 
-/* Perks are run-wide from a per-player slate: each ship picks its own, both fly the combined
- * holding, and the combination is capped at each perk's normal maximum. */
+/* Perks are personal, picked from a per-player slate: each ship flies its own row, each row
+ * caps at the perk's normal maximum, and neither row leaks into the other's effects. */
 static void qa_perk_matrix(void)
 {
 	char label[192];
@@ -426,12 +442,13 @@ static void qa_perk_matrix(void)
 		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 		endlessPerkRederive();
 
-		/* Both players stacking the same perk to its cap must not exceed it. */
+		/* Each ship stacks to its own cap; each row reads back its own count and no more. */
 		endlessPerkGrant(0, id, cap);
 		endlessPerkGrant(1, id, cap);
 		snprintf(label, sizeof(label),
-		         "perk %d: both ships at full stacks still hold only the cap of %d", id, cap);
-		qa_check(endlessPerkOwned[id] == (JE_byte)cap, label);
+		         "perk %d: each ship holds its own full stack of %d", id, cap);
+		qa_check(endlessPerkEffective(0, id) == (JE_byte)cap
+		         && endlessPerkEffective(1, id) == (JE_byte)cap, label);
 
 		/* One ship giving a stack back leaves the other's holding intact. */
 		endlessPerkGrant(0, id, -cap);
@@ -440,8 +457,9 @@ static void qa_perk_matrix(void)
 		qa_check(endlessPerkTakenBy[0][id] == 0 && endlessPerkTakenBy[1][id] == (JE_byte)cap,
 		         label);
 		snprintf(label, sizeof(label),
-		         "perk %d: ...and the run still holds what P2 kept", id);
-		qa_check(endlessPerkOwned[id] == (JE_byte)cap, label);
+		         "perk %d: ...and only P2's row still carries it", id);
+		qa_check(endlessPerkEffective(0, id) == 0 && endlessPerkEffective(1, id) == (JE_byte)cap,
+		         label);
 
 		/* A grant past the cap clamps rather than wrapping the byte. */
 		endlessPerkGrant(0, id, cap + 5);
@@ -462,13 +480,56 @@ static void qa_perk_matrix(void)
 	qa_check(endlessPerkTakenBy[0][PERK_DAMAGE] == 0 && endlessPerkTakenBy[1][PERK_DAMAGE] == 0,
 	         "a perk grant outside the player or perk range is dropped");
 
-	/* Total-owned drives the extra-perk surcharge, and must count both ships' picks. */
+	/* Total-owned drives the extra-perk surcharge, priced off the buyer's own collection. */
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_DAMAGE, 1);
 	endlessPerkGrant(1, PERK_ARMOR, 1);
 	endlessPerkRederive();
-	qa_check(endlessPerkTotalOwned() == 2,
-	         "the run's perk total counts what either ship picked");
+	qa_check(endlessPerkTotalOwned() == 1,
+	         "the perk surcharge counts only the buyer's own picks");
+
+	/* Adrenaline is personal on both halves: the ship's own stacks, and the ship's own hull that
+	 * arms them. A partner's damage arming it would have one ship's trouble firing the other's
+	 * perk, which is the shared model this run no longer uses. */
+	qa_clear_ships();
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_ADRENALINE, 1);
+	endlessPerkRederive();
+	player[0].initial_armor = player[1].initial_armor = 30;
+	player[0].armor = 30;
+	player[1].armor = 1;                 // only the partner is in trouble
+	endlessSetFxPlayer(0);
+	qa_check(!endlessAdrenalineActive(),
+	         "Adrenaline stays down while its owner is whole and only the partner is hurt");
+	player[0].armor = 1;
+	qa_check(endlessAdrenalineActive(), "...and arms once its owner's own hull is the hurt one");
+	endlessSetFxPlayer(1);
+	qa_check(!endlessAdrenalineActive(),
+	         "a ship that never picked Adrenaline gets nothing from being hurt");
+	endlessSetFxPlayer(0);
+	qa_clear_ships();
+
+	/* The registry pair the debug screen and the campaign-mods config both drive has to name one
+	 * row, not two: a get that read the combined holding would let the debug menu write its
+	 * partner's stacks into its own row the moment it was opened from either machine. */
+	for (int local = 0; local <= 1; ++local)
+	{
+		qa_session((uint)local);
+		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+		endlessPerkGrant(1 - (uint)local, PERK_DAMAGE, 2);   // the partner's picks, not ours
+		endlessPerkRederive();
+		snprintf(label, sizeof(label),
+		         "machine %d: the perk registry reads its own row, not the pair's", local + 1);
+		qa_check(endlessPerkGetOwned(PERK_DAMAGE) == 0, label);
+
+		endlessPerkSetOwned(PERK_DAMAGE, 3);
+		snprintf(label, sizeof(label),
+		         "machine %d: setting a perk writes the row the get reads back", local + 1);
+		qa_check(endlessPerkGetOwned(PERK_DAMAGE) == 3
+		         && endlessPerkTakenBy[local][PERK_DAMAGE] == 3
+		         && endlessPerkTakenBy[1 - local][PERK_DAMAGE] == 2, label);
+	}
+	qa_session(0);
 
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkRederive();
@@ -1128,7 +1189,7 @@ static void qa_wire_matrix(void)
  * report: several settings at once, in the order a run reaches them. */
 static void qa_scenario_suite(void)
 {
-	/* Two different drives, Relaxed, Individual cash with Double Pickups on, a Scavenger
+	/* Two different drives, Relaxed, Individual cash with Double Earnings on, a Scavenger
 	 * stack on one ship only, then one ship goes down and the survivor restarts the zone. */
 	for (int local = 0; local <= 1; ++local)
 	{
@@ -1139,7 +1200,7 @@ static void qa_scenario_suite(void)
 
 		endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 		coop_set_session_shared_credit(false);
-		coop_set_session_double_pickups(true);
+		coop_set_session_double_earnings(true);
 		endlessCoopComboShared = false;
 		endlessRunDepth = 5;
 
@@ -1151,11 +1212,16 @@ static void qa_scenario_suite(void)
 		endlessBuffCharge[0] = 6;
 		endlessBuffCharge[1] = 11;
 
-		/* Only P2 took Scavenger. It is a run-wide perk, so both ships earn under it. */
+		/* Only P2 took Scavenger. Perks are personal, so only P2 earns at the raised rate. */
 		endlessPerkGrant(1, PERK_CASH, 1);
+		endlessSetFxPlayer(1);
 		snprintf(label, sizeof(label),
-		         "machine %d: one ship's Scavenger raises the rate the run earns at", local + 1);
+		         "machine %d: P2's Scavenger raises only P2's earning rate", local + 1);
 		qa_check(endlessPerkCashPercent() == 100 + ENDLESS_PERK_CASH_PCT, label);
+		endlessSetFxPlayer(0);
+		snprintf(label, sizeof(label),
+		         "machine %d: P1 still earns at the stock rate", local + 1);
+		qa_check(endlessPerkCashPercent() == 100, label);
 
 		/* Each ship flies only its own drive. */
 		snprintf(label, sizeof(label),
@@ -1174,7 +1240,7 @@ static void qa_scenario_suite(void)
 		         "machine %d: P1's kills feed only P1's streak", local + 1);
 		qa_check(endlessComboKills[0] == 4 && endlessComboKills[1] == 0, label);
 
-		/* P2 collects a pickup. Individual + Double Pickups pays double, to P2 alone. */
+		/* P2 collects a pickup. Individual + Double Earnings pays double, to P2 alone. */
 		player[0].cash = player[1].cash = 0;
 		endlessCashResync();
 		player_award_pickup_cash(&player[1], 500);
@@ -1275,7 +1341,7 @@ static void qa_scenario_suite(void)
 	}
 
 	/* A session where the host turned Shared credit on: both ships bank every kill and every
-	 * pickup in full, so neither has to hang back, and Double Pickups stands down. */
+	 * pickup in full, so neither has to hang back, and Double Earnings stands down. */
 	for (int local = 0; local <= 1; ++local)
 	{
 		char label[192];
@@ -1283,7 +1349,7 @@ static void qa_scenario_suite(void)
 		qa_clear_ships();
 		qa_clear_ledger();
 		coop_set_session_shared_credit(true);
-		coop_set_session_double_pickups(true);
+		coop_set_session_double_earnings(true);
 
 		player[0].cash = player[1].cash = 0;
 		player_award_kill_cash(&player[local], 300);
@@ -1293,12 +1359,12 @@ static void qa_scenario_suite(void)
 		         local + 1);
 		qa_check(player[0].cash == 500 && player[1].cash == 500, label);
 		snprintf(label, sizeof(label),
-		         "machine %d: Double Pickups does not double under Shared", local + 1);
-		qa_check(!coop_pickups_are_doubled(), label);
+		         "machine %d: Double Earnings does not double under Shared", local + 1);
+		qa_check(!coop_earnings_are_doubled(), label);
 	}
 
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessRunDepth = 0;
 }

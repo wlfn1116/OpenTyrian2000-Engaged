@@ -480,13 +480,14 @@ int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 	                    0, ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE);
 }
 
-// Special-tier bounty, including Bounty Hunter and Scavenger.
+// Special-tier bounty, including Bounty Hunter and Scavenger: personal perks, so both read the
+// fx ship's row, which the award site points at the killer.
 long endlessEliteBounty(void)
 {
 	long b = 150 + (long)endlessRunDepth * 40;
 	if (b > 2500)
 		b = 2500;
-	if (endlessPerkOwned[PERK_BOUNTY])
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_BOUNTY))
 		b *= 2;
 	return b * endlessPerkCashPercent() / 100;
 }
@@ -495,7 +496,7 @@ long endlessChampionBounty(void)
 	long b = 350 + (long)endlessRunDepth * 90;
 	if (b > 6000)
 		b = 6000;
-	if (endlessPerkOwned[PERK_BOUNTY])
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_BOUNTY))
 		b *= 2;
 	return b * endlessPerkCashPercent() / 100;
 }
@@ -534,17 +535,24 @@ void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 		return;
 
 	const bool champion = (eliteState == 3);
+	// The killer's own Bounty Hunter and Scavenger stacks size the payment (personal perks),
+	// so the fx context names the killer while the figure is derived.
+	const uint fxSaved = endlessFxPlayer();
+	const uint payee = (killer == ENDLESS_KILLER_NONE) ? 0 : (uint)killer;
+	endlessSetFxPlayer(payee);
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
-	// A bounty is kill cash: it follows the same Shared / Individual rule as every other kill.
-	// A kill nothing can claim pays player 1, the same ship on both machines; endlessEconomyIndex
-	// is whoever is sitting at this keyboard, so paying that would have paid a different wallet
-	// on each side of the session.
-	player_award_kill_cash(&player[(killer == ENDLESS_KILLER_NONE) ? 0 : killer], bounty);
+	endlessSetFxPlayer(fxSaved);
+	// A bounty is kill cash under its own ledger row: it follows the same Shared / Individual
+	// credit and Double Earnings rules as every other kill. A kill nothing can claim pays
+	// player 1, the same ship on both machines; endlessEconomyIndex is whoever is sitting at
+	// this keyboard, so paying that would have paid a different wallet on each side.
+	player_award_bounty_cash(&player[payee], bounty);
 
-	// Keep the cash clear of the HUD.
+	// Keep the cash clear of the HUD, showing what was actually paid.
+	const long paid = coop_earnings_are_doubled() ? bounty * 2 : bounty;
 	char label[48], cash[24];
 	snprintf(label, sizeof(label), "%s Enemy destroyed!", champion ? "Champion" : "Elite");
-	snprintf(cash, sizeof(cash), "+%ld", bounty);
+	snprintf(cash, sizeof(cash), "+%ld", paid);
 	JE_drawTextWindowSplit(label, cash, 244);
 }
 
@@ -783,6 +791,14 @@ static const float endlessGravityHeadings[16][2] = {
 	{  0.000f, -1.000f }, {  0.383f, -0.924f }, {  0.707f, -0.707f }, {  0.924f, -0.383f },
 };
 
+/* The classic (non-VT) ship path applies gravity in whole pixels and carries the fraction here,
+ * one pair per ship: both ships pull every tick, and a shared carry would hand one ship the step
+ * the other's fraction earned. Simulation state, so it is in the rollback registry; as a pair of
+ * function-local statics it sat outside every snapshot, each re-simulated frame advanced it
+ * again, and the two machines drifted a pixel apart within a zone. */
+static float endlessGravityCarryX[2];
+static float endlessGravityCarryY[2];
+
 void endlessRollGravityDir(void)
 {
 	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
@@ -796,6 +812,10 @@ void endlessRollGravityDir(void)
 		endlessGravityDirX = 0.0f;
 		endlessGravityDirY = 1.0f;
 	}
+
+	// Zone start: neither ship owes or is owed a fraction from the previous zone.
+	memset(endlessGravityCarryX, 0, sizeof(endlessGravityCarryX));
+	memset(endlessGravityCarryY, 0, sizeof(endlessGravityCarryY));
 }
 
 float endlessGravityDrift(void)
@@ -814,21 +834,23 @@ float endlessGravityDrift(void)
 float endlessGravityDriftX(void) { return endlessGravityDrift() * endlessGravityDirX; }
 float endlessGravityDriftY(void) { return endlessGravityDrift() * endlessGravityDirY; }
 
-// Classic movement carries the fractional drift independently on each axis.
-int endlessGravityPullX(void)
+// Classic movement carries the fractional drift independently per ship and per axis.
+int endlessGravityPullX(uint p)
 {
-	static float accum = 0.0f;
-	accum += endlessGravityDriftX();
-	const int step = (int)accum;
-	accum -= (float)step;
+	if (p >= COUNTOF(endlessGravityCarryX))
+		return 0;
+	endlessGravityCarryX[p] += endlessGravityDriftX();
+	const int step = (int)endlessGravityCarryX[p];
+	endlessGravityCarryX[p] -= (float)step;
 	return step;
 }
-int endlessGravityPullY(void)
+int endlessGravityPullY(uint p)
 {
-	static float accum = 0.0f;
-	accum += endlessGravityDriftY();
-	const int step = (int)accum;
-	accum -= (float)step;
+	if (p >= COUNTOF(endlessGravityCarryY))
+		return 0;
+	endlessGravityCarryY[p] += endlessGravityDriftY();
+	const int step = (int)endlessGravityCarryY[p];
+	endlessGravityCarryY[p] -= (float)step;
 	return step;
 }
 
@@ -1038,11 +1060,11 @@ int endlessPlayerDamagePercent(void)
 		pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 	if (endlessTurbodriveActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
 		pct += endlessBuffChargePaid() * 2;
-	pct += endlessPerkOwned[PERK_DAMAGE] * ENDLESS_PERK_DAMAGE_PCT;
-	if (endlessPerkOwned[PERK_GLASSCANNON])
+	pct += endlessPerkEffective(endlessFxPlayer(), PERK_DAMAGE) * ENDLESS_PERK_DAMAGE_PCT;
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_GLASSCANNON))
 		pct += ENDLESS_PERK_GLASS_DMG;
 	if (endlessAdrenalineActive())
-		pct += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_DMG;
+		pct += endlessPerkEffective(endlessFxPlayer(), PERK_ADRENALINE) * ENDLESS_PERK_ADRENALINE_DMG;
 	// Apply hostile damage cuts after every bonus.
 	if ((endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
 	{
@@ -1058,7 +1080,7 @@ int endlessPlayerDamageReduce(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessPerkOwned[PERK_BULWARK] * ENDLESS_PERK_BULWARK;
+	return endlessPerkEffective(endlessFxPlayer(), PERK_BULWARK) * ENDLESS_PERK_BULWARK;
 }
 
 // Shared scroll multiplier for layers and layer-bound fixed motion.
@@ -1284,4 +1306,6 @@ void endless_combat_register_rollback(void)
 	rollback_register("endless.staticLock", &endlessStaticLockout, sizeof(endlessStaticLockout));
 	rollback_register("endless.gravityDir", &endlessGravityDirX, sizeof(endlessGravityDirX));
 	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
+	rollback_register("endless.gravityCarryX", endlessGravityCarryX, sizeof(endlessGravityCarryX));
+	rollback_register("endless.gravityCarryY", endlessGravityCarryY, sizeof(endlessGravityCarryY));
 }

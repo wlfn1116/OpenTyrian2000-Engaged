@@ -10,12 +10,17 @@
 #include "config.h"
 #include "endless.h"
 #include "episodes.h"
+#include "font.h"      // small_font, for measuring the picker's names against its columns
 #include "fonthand.h"
+#include "helptext.h"  // superShips[]
 #include "lvlmast.h"
 #include "mainint.h"
 #include "network.h"
 #include "player.h"
+#include "rollback.h"
+#include "tyrian2.h"  // the online start screen's difficulty bump, Super Arcade equip, picker layout
 #include "varz.h"
+#include "video.h"  // PLAYFIELD_LEFT / PLAYFIELD_RIGHT, for the HUD block geometry check
 
 #include <stdio.h>
 #include <string.h>
@@ -25,6 +30,7 @@
 typedef struct
 {
 	JE_boolean twoPlayer, onePlayer, coopCampaign, coopEndless, endless, superTyrian, linked;
+	JE_boolean arcadeSeparate;
 	bool netGame, host, lifeBoost;
 	uint playerNum;
 	Player ships[2];
@@ -40,7 +46,7 @@ static void qa_online_save(QaOnlineEnv *e)
 	e->twoPlayer = twoPlayerMode;       e->onePlayer = onePlayerAction;
 	e->coopCampaign = coopCampaignMode; e->coopEndless = coopEndlessMode;
 	e->endless = endlessMode;           e->superTyrian = superTyrian;
-	e->linked = twoPlayerLinked;
+	e->linked = twoPlayerLinked;        e->arcadeSeparate = arcadeSeparateMode;
 	e->netGame = isNetworkGame;         e->host = network_is_host;
 	e->lifeBoost = arcadeLifeBoost;     e->playerNum = thisPlayerNum;
 	e->episode = initial_episode_num;   e->difficulty = initialDifficulty;
@@ -57,12 +63,12 @@ static void qa_online_restore(const QaOnlineEnv *e)
 	initialDifficulty = e->difficulty;  initial_episode_num = e->episode;
 	thisPlayerNum = e->playerNum;       arcadeLifeBoost = e->lifeBoost;
 	network_is_host = e->host;          isNetworkGame = e->netGame;
-	twoPlayerLinked = e->linked;
+	twoPlayerLinked = e->linked;        arcadeSeparateMode = e->arcadeSeparate;
 	superTyrian = e->superTyrian;       endlessMode = e->endless;
 	coopEndlessMode = e->coopEndless;   coopCampaignMode = e->coopCampaign;
 	onePlayerAction = e->onePlayer;     twoPlayerMode = e->twoPlayer;
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 }
 
 // Clear every mode flag, so each case names exactly the ones it means to switch on.
@@ -75,6 +81,7 @@ static void qa_modes_clear(void)
 	endlessMode = false;
 	superTyrian = false;
 	twoPlayerLinked = false;
+	arcadeSeparateMode = false;
 }
 
 static void qa_wallets_clear(void)
@@ -181,6 +188,28 @@ static void qa_mode_split_matrix(void)
 	endlessMode = true;
 	qa_check(!arcade_rules_active() && !split_arcade_mode() && coop_mode_active(),
 	         "online Endless: two ships on the roguelite, no arcade rules");
+
+	/* Separate arcade is the sixth shape: the arcade ruleset, but two independent ships instead
+	 * of the linked pair, so it takes the single-player HUD and every per-ship path. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	arcadeSeparateMode = true;
+	qa_check(arcade_rules_active() && arcade_separate_mode() && !split_arcade_mode()
+	         && dual_ship_mode() && !coop_mode_active(),
+	         "Separate arcade: arcade rules, two own ships, and no split HUD");
+
+	/* The two co-op modes own the ship pairing outright, so the flag says nothing there, and it
+	 * says nothing at all until a second ship exists. Both matter: it is session state that
+	 * outlives the lobby row, and a leftover must not reshape the next game. */
+	coopCampaignMode = true;
+	qa_check(!arcade_separate_mode() && !arcade_rules_active() && coop_mode_active(),
+	         "a Separate flag left set does not touch an online campaign");
+	coopCampaignMode = false;
+	twoPlayerMode = false;
+	qa_check(!arcade_separate_mode() && !dual_ship_mode(),
+	         "...nor a one-ship game, which has no second ship to separate");
+
+	qa_modes_clear();
 	isNetworkGame = false;
 }
 
@@ -204,6 +233,25 @@ static void qa_local_index_matrix(void)
 		snprintf(label, sizeof(label),
 		         "online arcade from machine %d still works ship one's shared wallet", slot);
 		qa_check(gameplay_local_player_index() == 0, label);
+
+		/* Separate arcade: each machine owns its own ship, so the HUD sidebar, the specials and
+		 * the wallet all follow the local slot the way co-op's do. */
+		qa_modes_clear();
+		twoPlayerMode = true;
+		arcadeSeparateMode = true;
+		snprintf(label, sizeof(label),
+		         "Separate arcade from machine %d owns ship %d", slot, slot);
+		qa_check(gameplay_local_player_index() == (uint)(slot - 1), label);
+		snprintf(label, sizeof(label),
+		         "Separate arcade from machine %d shows its own sidekicks", slot);
+		qa_check(hud_sidekick_player_index() == (uint)(slot - 1), label);
+
+		/* The linked pair hangs the pods off ship two on both machines. */
+		qa_modes_clear();
+		twoPlayerMode = true;
+		snprintf(label, sizeof(label),
+		         "linked arcade from machine %d still shows ship two's sidekicks", slot);
+		qa_check(hud_sidekick_player_index() == 1, label);
 
 		/* Online campaign and Endless: each machine owns its own ship's wallet. */
 		qa_modes_clear();
@@ -247,45 +295,50 @@ static void qa_local_index_matrix(void)
 
 /* ---- 3. arcade keeps its own economy ------------------------------------------------ */
 
-/* The Credit and Double Pickups settings belong to the two co-op modes. Arcade has one wallet,
+/* The Credit and Double Earnings settings belong to the two co-op modes. Arcade has one wallet,
  * so both must stand down there even when the host left them switched on. */
 static void qa_arcade_economy_matrix(void)
 {
 	char label[224];
 
+	for (int separate = 0; separate <= 1; ++separate)
 	for (int shared = 0; shared <= 1; ++shared)
 	for (int dbl = 0; dbl <= 1; ++dbl)
 	for (int slot = 1; slot <= 2; ++slot)
 	{
+		const char *const ships = separate ? "Separate" : "Linked";
+
 		qa_modes_clear();
 		twoPlayerMode = true;
+		arcadeSeparateMode = (separate != 0);
 		isNetworkGame = true;
 		thisPlayerNum = (uint)slot;
 		coop_set_session_shared_credit(shared != 0);
-		coop_set_session_double_pickups(dbl != 0);
+		coop_set_session_double_earnings(dbl != 0);
 
 		snprintf(label, sizeof(label),
-		         "online arcade from machine %d ignores Credit=%s", slot,
+		         "%s online arcade from machine %d ignores Credit=%s", ships, slot,
 		         shared ? "Shared" : "Individual");
 		qa_check(!coop_credit_is_shared(), label);
 		snprintf(label, sizeof(label),
-		         "online arcade from machine %d ignores Double Pickups=%s", slot,
+		         "%s online arcade from machine %d ignores Double Earnings=%s", ships, slot,
 		         dbl ? "on" : "off");
-		qa_check(!coop_pickups_are_doubled(), label);
+		qa_check(!coop_earnings_are_doubled(), label);
 
-		/* So a pickup pays its collector once, and nobody else. */
+		/* So a pickup pays its collector once, and nobody else. Separate arcade is where that
+		 * matters most: two scores are being kept, and neither may be fed by the other's run. */
 		qa_wallets_clear();
 		player_award_pickup_cash(&player[0], 400);
 		snprintf(label, sizeof(label),
-		         "online arcade pickup pays its collector once (Credit=%s, 2x=%s)",
-		         shared ? "Shared" : "Individual", dbl ? "on" : "off");
+		         "%s online arcade pickup pays its collector once (Credit=%s, 2x=%s)",
+		         ships, shared ? "Shared" : "Individual", dbl ? "on" : "off");
 		qa_check(player[0].cash == 400 && player[1].cash == 0, label);
 
 		qa_wallets_clear();
 		player_award_kill_cash(&player[1], 400);
 		snprintf(label, sizeof(label),
-		         "online arcade kill cash pays its shooter once (Credit=%s, 2x=%s)",
-		         shared ? "Shared" : "Individual", dbl ? "on" : "off");
+		         "%s online arcade kill cash pays its shooter once (Credit=%s, 2x=%s)",
+		         ships, shared ? "Shared" : "Individual", dbl ? "on" : "off");
 		qa_check(player[1].cash == 400 && player[0].cash == 0, label);
 	}
 
@@ -294,7 +347,7 @@ static void qa_arcade_economy_matrix(void)
 	twoPlayerMode = true;
 	isNetworkGame = false;
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(true);
+	coop_set_session_double_earnings(true);
 	qa_wallets_clear();
 	player_award_pickup_cash(&player[0], 400);
 	qa_check(player[0].cash == 400 && player[1].cash == 0,
@@ -318,14 +371,287 @@ static void qa_arcade_economy_matrix(void)
 	qa_check(!arcade_life_scaling_active(),
 	         "an online Endless run has no lives to scale hulls to");
 	qa_modes_clear();
+	twoPlayerMode = true;
+	arcadeSeparateMode = true;
+	qa_check(arcade_life_scaling_active(),
+	         "Separate arcade scales each hull to its own lives, like every other arcade game");
+	qa_modes_clear();
 	onePlayerAction = true;
 	superTyrian = true;
 	qa_check(!arcade_life_scaling_active(), "SuperTyrian is excluded from arcade hull scaling");
 
 	qa_modes_clear();
 	isNetworkGame = false;
+	arcadeLifeBoost = false;
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
+}
+
+/* ---- 3b. Separate arcade gives each ship its own life counter ------------------------ */
+
+/* player[].lives aliases a weapon-power byte, and which bay it aliases differs by mode: the
+ * linked pair puts player two's on the Dragonwing's rear gun, Separate arcade gives each ship
+ * its own front gun. Every binding site reads player_lives_port, so a rollback restore cannot
+ * hand a ship a different counter than the one it started the level with. */
+static void qa_separate_arcade_lives(void)
+{
+	qa_modes_clear();
+	twoPlayerMode = true;
+	qa_check(player_lives_port(0) == FRONT_WEAPON && player_lives_port(1) == REAR_WEAPON,
+	         "the linked pair counts player two's lives on the Dragonwing's rear bay");
+
+	arcadeSeparateMode = true;
+	qa_check(player_lives_port(0) == FRONT_WEAPON && player_lives_port(1) == FRONT_WEAPON,
+	         "Separate arcade counts each ship's lives on its own front gun");
+
+	/* Bind both ships the way the network start screen does, then spend a life on each and read
+	 * the counters back through the aliased bytes. Crossed aliases would show up here as one
+	 * ship's death moving the other's gun power. */
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].items.weapon[FRONT_WEAPON].power = 4;
+		player[p].items.weapon[REAR_WEAPON].power = 7;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	}
+	--(*player[0].lives);
+	qa_check(player[0].items.weapon[FRONT_WEAPON].power == 3
+	         && player[0].items.weapon[REAR_WEAPON].power == 7
+	         && player[1].items.weapon[FRONT_WEAPON].power == 4,
+	         "a Separate arcade death spends only that ship's own front-gun life counter");
+
+	--(*player[1].lives);
+	qa_check(player[1].items.weapon[FRONT_WEAPON].power == 3
+	         && player[1].items.weapon[REAR_WEAPON].power == 7,
+	         "...and the second ship's counter is its front gun too, not the rear bay");
+
+	/* The rollback registry re-derives the alias after every restore; if it used a different
+	 * rule than the binding above, ship two's counter would jump to the rear bay each frame.
+	 * The ring is allocated lazily, so claim it before the first snapshot writes into it. */
+	rollback_state_hash();
+	rollback_snapshot(0x5EAAu);
+	player[0].lives = player[1].lives = NULL;
+	qa_check(rollback_restore(0x5EAAu)
+	         && player[0].lives == &player[0].items.weapon[FRONT_WEAPON].power
+	         && player[1].lives == &player[1].items.weapon[FRONT_WEAPON].power,
+	         "a rollback restore leaves each Separate arcade ship on its own life counter");
+
+	arcadeSeparateMode = false;
+	rollback_snapshot(0x5EABu);
+	player[0].lives = player[1].lives = NULL;
+	qa_check(rollback_restore(0x5EABu)
+	         && player[0].lives == &player[0].items.weapon[FRONT_WEAPON].power
+	         && player[1].lives == &player[1].items.weapon[REAR_WEAPON].power,
+	         "...and the linked pair is restored onto the bays it flies with");
+
+	/* Rear-gun scaling adds lives - 1 to the rear bay's power. That is only safe where the rear
+	 * bay is not itself the life counter, which rules out the linked pair and nothing else. */
+	const bool savedRearScale = arcadeRearGunScale;
+	arcadeRearGunScale = true;
+
+	qa_modes_clear();
+	onePlayerAction = true;
+	qa_check(arcade_rear_scale_active(), "one-player arcade scales the rear gun with lives");
+	qa_modes_clear();
+	twoPlayerMode = true;
+	qa_check(!arcade_rear_scale_active(),
+	         "the linked pair does not: player two's rear bay IS its life counter");
+	arcadeSeparateMode = true;
+	qa_check(arcade_rear_scale_active(),
+	         "Separate arcade does: each ship counts lives on its own front gun");
+	qa_modes_clear();
+	coopCampaignMode = true;
+	qa_check(!arcade_rear_scale_active(), "an online campaign has no lives to scale a gun with");
+	qa_modes_clear();
+	onePlayerAction = true;
+	superTyrian = true;
+	qa_check(!arcade_rear_scale_active(), "SuperTyrian is excluded from rear-gun scaling");
+
+	arcadeRearGunScale = savedRearScale;
+	qa_modes_clear();
+}
+
+/* ---- 3c. the special-weapon block at the top of the playfield ------------------------ */
+
+// Do two axis-aligned rectangles share a pixel? Half-open on the right and bottom edges.
+static bool qa_rects_overlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh)
+{
+	return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+}
+
+/* The special-weapon icon and its ready light sit above the owning ship's name and lives, on
+ * that ship's own side. Drawn straight into playfield space with no clipping or precedence of
+ * their own, so the placement is checked here: nothing overlaps, the pair stays inside the
+ * playfield, and the top-cluster edges a centred TOP boss bar reads cover the whole block. */
+static void qa_special_block_geometry(void)
+{
+	char label[224];
+
+	for (int slot = 1; slot <= 2; ++slot)
+	{
+		const uint local = (uint)(slot - 1);
+
+		qa_modes_clear();
+		twoPlayerMode = true;
+		arcadeSeparateMode = true;
+		isNetworkGame = true;
+		thisPlayerNum = (uint)slot;
+		for (uint p = 0; p < COUNTOF(player); ++p)
+			player[p].items.special = 1;
+
+		snprintf(label, sizeof(label),
+		         "machine %d draws the special block for its own ship and no other", slot);
+		qa_check(hud_special_block_shown(local) && !hud_special_block_shown(1 - local), label);
+
+		const int iconX = hud_special_icon_x(local);
+		const int lightX = hud_special_light_x(local);
+		const int rowY = hud_lives_row_y(local);
+		const int nameY = rowY - HUD_LIVES_NAME_RISE;
+
+		snprintf(label, sizeof(label),
+		         "machine %d: the ready light sits beside the special icon, not on it", slot);
+		qa_check(!qa_rects_overlap(iconX, HUD_SPECIAL_ICON_Y, HUD_SPECIAL_ICON_W, HUD_SPECIAL_ICON_H,
+		                           lightX, HUD_SPECIAL_LIGHT_Y, HUD_SPECIAL_LIGHT_W, HUD_SPECIAL_LIGHT_H),
+		         label);
+
+		/* The name label is the widest thing on the row, so it is what the block has to clear;
+		 * the lives icons sit HUD_LIVES_NAME_RISE below it and clear it in turn. */
+		const int blockBottom = MAX(HUD_SPECIAL_ICON_Y + HUD_SPECIAL_ICON_H,
+		                            HUD_SPECIAL_LIGHT_Y + HUD_SPECIAL_LIGHT_H);
+		snprintf(label, sizeof(label),
+		         "machine %d: the block clears its own ship's name row (block ends %d, name at %d)",
+		         slot, blockBottom - 1, nameY);
+		qa_check(rowY == HUD_LIVES_Y_SPECIAL && nameY >= blockBottom, label);
+
+		snprintf(label, sizeof(label),
+		         "machine %d: the other ship's row does not move for a special it does not hold",
+		         slot);
+		qa_check(hud_lives_row_y(1 - local) == HUD_LIVES_Y, label);
+
+		snprintf(label, sizeof(label),
+		         "machine %d: the whole block stays inside the playfield", slot);
+		qa_check(iconX >= PLAYFIELD_LEFT && lightX >= PLAYFIELD_LEFT
+		         && iconX + HUD_SPECIAL_ICON_W <= PLAYFIELD_RIGHT + 1
+		         && lightX + HUD_SPECIAL_LIGHT_W <= PLAYFIELD_RIGHT + 1, label);
+
+		/* A centred TOP boss bar stops at these edges, so both have to cover the block or the
+		 * bar draws straight through it. */
+		const int blockLeft = MIN(iconX, lightX);
+		const int blockRight = MAX(iconX + HUD_SPECIAL_ICON_W, lightX + HUD_SPECIAL_LIGHT_W);
+		snprintf(label, sizeof(label),
+		         "machine %d: a TOP boss bar is told about the block on ship %d's side",
+		         slot, slot);
+		qa_check(hud_special_on_right(local) ? hud_top_right_left_edge() <= blockLeft
+		                                     : hud_top_left_right_edge() >= blockRight, label);
+	}
+
+	/* Co-op has no name or lives row under the block, so there is no second corner to mirror
+	 * into and both machines keep the historical left one. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	isNetworkGame = true;
+	thisPlayerNum = 2;
+	player[1].items.special = 1;
+	qa_check(hud_special_block_shown(1) && !hud_special_on_right(1)
+	         && hud_special_icon_x(1) == 25
+	         && hud_top_left_right_edge() >= hud_special_light_x(1) + HUD_SPECIAL_LIGHT_W,
+	         "an online campaign joiner draws its block in the same corner the host does");
+
+	/* No special held, no block, and the row sits back at its stock height. */
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].items.special = 0;
+	qa_check(!hud_special_block_shown(0) && !hud_special_block_shown(1)
+	         && hud_lives_row_y(0) == HUD_LIVES_Y && hud_lives_row_y(1) == HUD_LIVES_Y,
+	         "with no special held there is no block and no row shift");
+
+	/* The linked pair shares one HUD sidebar, so both machines draw ship one's block. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	isNetworkGame = true;
+	thisPlayerNum = 2;
+	player[1].items.special = 1;
+	qa_check(!hud_special_block_shown(0) && !hud_special_block_shown(1),
+	         "the linked pair draws no block for a special player two somehow holds");
+	player[0].items.special = 1;
+	qa_check(hud_special_block_shown(0) && hud_special_icon_x(0) == 25,
+	         "...and ship one's block stays in its historical corner");
+
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].items.special = 0;
+	qa_modes_clear();
+	isNetworkGame = false;
+	thisPlayerNum = 1;
+}
+
+/* ---- 3d. the rear-gun mode toggle is each ship's own --------------------------------- */
+
+/* weapon_mode is per ship and its toggle rides the networked button tuple, so both machines
+ * simulate both ships' toggles. The pattern count the toggle wraps against has to be the
+ * toggling ship's own bay: answering with the local ship's had a partner's change wrap away on
+ * one machine and never reach that screen at all. */
+static void qa_rear_gun_mode_matrix(void)
+{
+	char label[224];
+	const PlayerItems savedItems[2] = { player[0].items, player[1].items };
+
+	/* Two rear bays whose pattern counts differ, so reading the wrong ship's is visible. */
+	int wide = 0, narrow = 0;
+	for (int id = 1; id <= PORT_NUM; ++id)
+	{
+		if (weaponPort[id].opnum > weaponPort[wide].opnum)
+			wide = id;
+		if (narrow == 0 || weaponPort[id].opnum < weaponPort[narrow].opnum)
+			narrow = id;
+	}
+	qa_check(wide > 0 && narrow > 0 && weaponPort[wide].opnum > weaponPort[narrow].opnum,
+	         "the weapon ports offer differing rear-gun pattern counts to test against");
+
+	for (int slot = 1; slot <= 2; ++slot)
+	for (int mode = 0; mode <= 2; ++mode)
+	{
+		qa_modes_clear();
+		twoPlayerMode = true;
+		isNetworkGame = true;
+		thisPlayerNum = (uint)slot;
+		const char *shape = "Separate arcade";
+		if (mode == 1)      { coopCampaignMode = true; shape = "online campaign"; }
+		else if (mode == 2) { coopEndlessMode = true; endlessMode = true; shape = "online Endless"; }
+		else                { arcadeSeparateMode = true; }
+
+		player[0].items.weapon[REAR_WEAPON].id = (Uint8)narrow;
+		player[1].items.weapon[REAR_WEAPON].id = (Uint8)wide;
+
+		snprintf(label, sizeof(label),
+		         "%s from machine %d: each ship's rear bay answers with its own pattern count",
+		         shape, slot);
+		qa_check(JE_portConfigs(&player[0]) == weaponPort[narrow].opnum
+		         && JE_portConfigs(&player[1]) == weaponPort[wide].opnum, label);
+
+		/* The toggle's own wrap, run the way JE_playerMovement runs it, on the ship the
+		 * partner is flying. Both machines must land on the same mode. */
+		player[1].weapon_mode = weaponPort[wide].opnum;   // one short of wrapping
+		if (++player[1].weapon_mode > JE_portConfigs(&player[1]))
+			player[1].weapon_mode = 1;
+		snprintf(label, sizeof(label),
+		         "%s from machine %d: ship two's toggle wraps on ship two's own bay",
+		         shape, slot);
+		qa_check(player[1].weapon_mode == 1, label);
+
+		player[1].weapon_mode = 1;
+		if (++player[1].weapon_mode > JE_portConfigs(&player[1]))
+			player[1].weapon_mode = 1;
+		snprintf(label, sizeof(label),
+		         "%s from machine %d: ...and advances instead of wrapping while it has room",
+		         shape, slot);
+		qa_check(player[1].weapon_mode == 2, label);
+	}
+
+	player[0].items = savedItems[0];
+	player[1].items = savedItems[1];
+	player[0].weapon_mode = player[1].weapon_mode = 1;
+	qa_modes_clear();
+	isNetworkGame = false;
+	thisPlayerNum = 1;
 }
 
 /* ---- 4. the campaign's two wallets -------------------------------------------------- */
@@ -346,7 +672,7 @@ static void qa_campaign_economy_matrix(void)
 		isNetworkGame = true;
 		thisPlayerNum = (uint)slot;
 		coop_set_session_shared_credit(shared != 0);
-		coop_set_session_double_pickups(dbl != 0);
+		coop_set_session_double_earnings(dbl != 0);
 
 		const bool doubling = (dbl != 0) && (shared == 0);
 
@@ -368,9 +694,9 @@ static void qa_campaign_economy_matrix(void)
 		qa_wallets_clear();
 		player_award_kill_cash(&player[payee], 300);
 		snprintf(label, sizeof(label),
-		         "campaign %s/%s: P%d's kill cash is not doubled, from machine %d",
-		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, slot);
-		qa_check((long)player[payee].cash == 300, label);
+		         "campaign %s/%s: P%d's kill cash pays them %ld from machine %d",
+		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, wantPayee, slot);
+		qa_check((long)player[payee].cash == wantPayee, label);
 		snprintf(label, sizeof(label),
 		         "campaign %s/%s: P%d's kill cash reaches the partner only when Shared (machine %d)",
 		         shared ? "Shared" : "Individual", dbl ? "2x" : "1x", payee + 1, slot);
@@ -383,7 +709,7 @@ static void qa_campaign_economy_matrix(void)
 	isNetworkGame = true;
 	thisPlayerNum = 1;
 	coop_set_session_shared_credit(false);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	endlessRunCashEarned = 0;
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	qa_wallets_clear();
@@ -395,7 +721,7 @@ static void qa_campaign_economy_matrix(void)
 	isNetworkGame = false;
 	thisPlayerNum = 1;
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 }
 
 /* ---- 5. the co-op campaign record board --------------------------------------------- */
@@ -744,7 +1070,7 @@ static void qa_debug_block_roundtrip(void)
 
 	// JE_getShipInfo runs inside the adopt and reads both hull ceilings through this.
 	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[p].power;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
 	difficultyLevel        = DIFFICULTY_HARD;
 	cheatInfiniteShields   = true;
@@ -829,6 +1155,456 @@ static void qa_debug_block_roundtrip(void)
 }
 #endif
 
+/* ---- 9. the two one-player rulesets, flown online ------------------------------------ */
+
+/* SuperTyrian and Super Arcade are single-player modes given a second ship. Neither shares
+ * anything: two Stalkers with their own twiddle state, or two different Super Arcade hulls with
+ * their own ball tables and their own paired specials. What can go wrong is a rule that used to
+ * be allowed to read the session-wide superArcadeMode, because solo there was only ever one
+ * ship to read it for. */
+static void qa_super_online_matrix(void)
+{
+	char label[224];
+	const PlayerItems savedItems[2] = { player[0].items, player[1].items };
+
+	/* --- the loadouts each mode issues --- */
+
+	/* Super Arcade: each player picked their own, and both machines equip both ships from the
+	 * settled pair. Every ship in the table, against every other. */
+	for (int mine = 1; mine <= SA; ++mine)
+	for (int theirs = 1; theirs <= SA; ++theirs)
+	{
+		networkSuperArcadeEquip(&player[0], mine);
+		networkSuperArcadeEquip(&player[1], theirs);
+
+		snprintf(label, sizeof(label),
+		         "Super Arcade ships %d and %d each fly their own hull, gun and special",
+		         mine, theirs);
+		qa_check(player[0].items.ship == SAShip[mine - 1]
+		         && player[1].items.ship == SAShip[theirs - 1]
+		         && player[0].items.weapon[FRONT_WEAPON].id == SAWeapon[mine - 1][0]
+		         && player[1].items.weapon[FRONT_WEAPON].id == SAWeapon[theirs - 1][0]
+		         && player[0].items.special == SASpecialWeapon[mine - 1]
+		         && player[1].items.special == SASpecialWeapon[theirs - 1], label);
+
+		snprintf(label, sizeof(label),
+		         "...and carries its own ruleset on the ship, not in a session global (%d/%d)",
+		         mine, theirs);
+		qa_check(player_sa_ship(&player[0]) == (uint)mine
+		         && player_sa_ship(&player[1]) == (uint)theirs, label);
+
+		/* Super Arcade issues no rear gun, so the rear bay must not be inherited from whatever
+		 * the previous game left in the slot. */
+		snprintf(label, sizeof(label), "Super Arcade ship %d takes no rear gun", mine);
+		qa_check(player[0].items.weapon[REAR_WEAPON].id == 0, label);
+
+		/* The ball table is what the colour slots resolve against: every slot, both ships. */
+		for (uint slot = 0; slot < COUNTOF(SAWeapon[0]); ++slot)
+		{
+			snprintf(label, sizeof(label),
+			         "colour slot %u pays ship %d and ship %d out of their own arsenals",
+			         slot, mine, theirs);
+			qa_check(player_sa_ball_weapon(&player[0], slot) == SAWeapon[mine - 1][slot]
+			         && player_sa_ball_weapon(&player[1], slot) == SAWeapon[theirs - 1][slot],
+			         label);
+		}
+	}
+
+	/* The Nort Ship is the one hull that arrives with sidekicks attached. */
+	networkSuperArcadeEquip(&player[0], SA_NORTSHIPZ);
+	qa_check(player[0].items.sidekick[LEFT_SIDEKICK] == 24
+	         && player[0].items.sidekick[RIGHT_SIDEKICK] == 24,
+	         "the Nort Ship still brings its pair of Companion Ship Quicksilvers online");
+
+	/* One colour, two different guns: the whole point of the per-ship lookup, and the thing a
+	 * session-wide read would silently get right only when both players picked the same ship. */
+	networkSuperArcadeEquip(&player[0], 1);
+	networkSuperArcadeEquip(&player[1], 2);
+	bool anyDiffer = false;
+	for (uint slot = 0; slot < COUNTOF(SAWeapon[0]); ++slot)
+		if (player_sa_ball_weapon(&player[0], slot) != player_sa_ball_weapon(&player[1], slot))
+			anyDiffer = true;
+	qa_check(anyDiffer, "one colour ball hands two different Super Arcade ships different guns");
+
+	/* Identical picks are allowed, and then the same colour does pay the same gun. */
+	networkSuperArcadeEquip(&player[1], 1);
+	qa_check(player_sa_ball_weapon(&player[0], 2) == player_sa_ball_weapon(&player[1], 2),
+	         "two players who picked the same ship get the same gun off the same colour");
+
+	/* Hostile inputs: the slot indexes a fixed-width row, and the ruleset byte rides the save
+	 * record and the wire. Neither may read past its table. */
+	qa_check(player_sa_ball_weapon(&player[0], 99) == SAWeapon[0][COUNTOF(SAWeapon[0]) - 1],
+	         "a colour slot past the table clamps to the last one instead of reading past it");
+	player[1].items.super_arcade_mode = 200;   // neither a hull nor SuperTyrian
+	qa_check(player_sa_ship(&player[1]) == (uint)SA_NONE
+	         && player_sa_ball_weapon(&player[1], 0) == SAWeapon[0][0],
+	         "an out-of-range ruleset byte reads as no Super Arcade ship, on the first table");
+	player[1].items.super_arcade_mode = SA_SUPERTYRIAN;
+	qa_check(player_sa_ship(&player[1]) == (uint)SA_NONE,
+	         "SuperTyrian is not a Super Arcade hull, so it indexes no ball table");
+
+	/* --- what the difficulty field means, per game type --- */
+
+	/* The host adds a bump to the lobby's difficulty and the joiner subtracts the same one, so
+	 * the two land on one initialDifficulty. Both halves call this; a type where they disagreed
+	 * would run the two machines on different rules from the first frame. */
+	const NetworkGameType savedType = network_game_type;
+	static const struct { NetworkGameType type; bool separate; int bump; const char *why; } bumps[] =
+	{
+		{ NETWORK_GAME_ARCADE,      false, 1, "the linked pair concentrates two players' fire on one hull" },
+		{ NETWORK_GAME_ARCADE,      true,  0, "two Separate personal arcades keep the solo curve" },
+		{ NETWORK_GAME_CAMPAIGN,    false, 0, "an online campaign flies two full ships, like Endless" },
+		{ NETWORK_GAME_ENDLESS,     false, 0, "online Endless flies two full ships" },
+		{ NETWORK_GAME_SUPERTYRIAN, true,  0, "SuperTyrian keeps its own curve; the field is its variant" },
+		{ NETWORK_GAME_SUPERARCADE, true,  1, "Super Arcade adds the step newSuperArcadeGame adds solo" },
+	};
+	for (uint i = 0; i < COUNTOF(bumps); ++i)
+	{
+		qa_modes_clear();
+		twoPlayerMode = true;
+		isNetworkGame = true;
+		network_game_type = bumps[i].type;
+		if (bumps[i].type == NETWORK_GAME_CAMPAIGN)  coopCampaignMode = true;
+		if (bumps[i].type == NETWORK_GAME_ENDLESS) { coopEndlessMode = true; endlessMode = true; }
+		arcadeSeparateMode = bumps[i].separate;
+
+		snprintf(label, sizeof(label), "difficulty bump for game type %d (%s ships): %s",
+		         (int)bumps[i].type, bumps[i].separate ? "Separate" : "Linked", bumps[i].why);
+		qa_check(networkDifficultyBump() == bumps[i].bump, label);
+
+		/* And the round trip the two machines actually perform. */
+		const int lobbyPick = DIFFICULTY_NORMAL;
+		const int sent = lobbyPick + networkDifficultyBump();
+		snprintf(label, sizeof(label),
+		         "...and the joiner recovers the host's own initialDifficulty from it (type %d)",
+		         (int)bumps[i].type);
+		qa_check(sent - networkDifficultyBump() == lobbyPick, label);
+	}
+	network_game_type = savedType;
+
+	/* SuperTyrian's two variants ride the difficulty field, because that is what they are: the
+	 * solo mode reads Scroll Lock and picks between the same two rungs. */
+	qa_check(DIFFICULTY_LORD_OF_GAME != DIFFICULTY_SUICIDE,
+	         "SuperTyrian's Standard and Scrollock variants are two distinct rungs");
+
+	/* --- SuperTyrian's own exclusions, now that a second ship exists --- */
+
+	qa_modes_clear();
+	twoPlayerMode = true;
+	arcadeSeparateMode = true;
+	superTyrian = true;
+	qa_check(dual_ship_mode() && arcade_separate_mode() && !coop_mode_active(),
+	         "online SuperTyrian runs as two personal ships, not as the linked pair");
+	const bool savedBoost = arcadeLifeBoost, savedRear = arcadeRearGunScale;
+	arcadeLifeBoost = arcadeRearGunScale = true;
+	qa_check(!arcade_life_scaling_active() && !arcade_rear_scale_active(),
+	         "...and is still excluded from hull scaling and rear-gun scaling, as it is solo");
+	arcadeLifeBoost = savedBoost;
+	arcadeRearGunScale = savedRear;
+
+	player[0].items = savedItems[0];
+	player[1].items = savedItems[1];
+	qa_modes_clear();
+	isNetworkGame = false;
+}
+
+/* ---- 10. the Super Arcade ship picker ------------------------------------------------ */
+
+/* Nine ship names in two columns, hit-tested for the mouse and stepped by the arrow keys. The
+ * names come out of the data file, so their widths are not known until they are measured: this
+ * checks the real strings against the real layout rather than trusting the column pitch. */
+static void qa_sa_picker_layout(void)
+{
+	char label[224];
+
+	// The hull sprite is blitted 2x2 under the list, and the two status lines sit under that.
+	const int listBottom = sa_pick_name_y(SA_PICK_ROWS - 1) + SA_PICK_ROW_H;
+	qa_check(listBottom <= SA_PICK_SHIP_Y,
+	         "the ship list ends before the hull picture starts");
+	qa_check(SA_PICK_SHIP_Y + 28 <= SA_PICK_STATUS_Y && SA_PICK_STATUS_Y < SA_PICK_PEER_Y
+	         && SA_PICK_PEER_Y + 8 <= 200,
+	         "the hull, the status line and the partner's pick stack without overlapping");
+	qa_check(sa_pick_name_y(0) >= SA_PICK_HEADER_Y + 15,
+	         "the first row clears the header");
+
+	for (int i = 0; i < SA; ++i)
+	{
+		const int x = sa_pick_name_x(i);
+		const int w = JE_textWidth(superShips[i + 1], small_font);
+
+		snprintf(label, sizeof(label), "ship name %d (\"%s\") fits its column",
+		         i + 1, superShips[i + 1]);
+		// The right column has to stop inside the 320px field; the left, before the right starts.
+		qa_check(w > 0 && x + w <= (i < SA_PICK_ROWS ? SA_PICK_COL_X + SA_PICK_COL_DX : 320) - 4,
+		         label);
+
+		// Two names on the same row in different columns must not share a pixel.
+		if (i >= SA_PICK_ROWS)
+		{
+			const int left = i - SA_PICK_ROWS;
+			snprintf(label, sizeof(label), "ship names %d and %d share a row without colliding",
+			         left + 1, i + 1);
+			qa_check(sa_pick_name_y(i) == sa_pick_name_y(left)
+			         && sa_pick_name_x(left) + JE_textWidth(superShips[left + 1], small_font) < x,
+			         label);
+		}
+	}
+
+	// Every index has a distinct cell, so a click can only ever mean one ship.
+	for (int i = 0; i < SA; ++i)
+	for (int j = i + 1; j < SA; ++j)
+	{
+		snprintf(label, sizeof(label), "picker cells %d and %d are distinct", i + 1, j + 1);
+		qa_check(sa_pick_name_x(i) != sa_pick_name_x(j) || sa_pick_name_y(i) != sa_pick_name_y(j),
+		         label);
+	}
+
+	// The status lines the screen can show, against the same field the names use.
+	static const char *const status[] =
+	{
+		"Choose your ship.", "Waiting for the other player...", "Both ready.",
+	};
+	for (uint i = 0; i < COUNTOF(status); ++i)
+	{
+		snprintf(label, sizeof(label), "picker status line \"%s\" fits the screen", status[i]);
+		qa_check(JE_textWidth(status[i], small_font) <= 300, label);
+	}
+	for (int i = 0; i < SA; ++i)
+	{
+		char line[64];
+		snprintf(line, sizeof(line), "Player 2 flies %s", superShips[i + 1]);
+		snprintf(label, sizeof(label), "the partner's pick line fits for ship %d", i + 1);
+		qa_check(JE_textWidth(line, small_font) <= 300, label);
+	}
+}
+
+/* ---- 11. saving a session that flies two complete arcade ships ----------------------- */
+
+/* A save record was built for one ship plus a linked partner: two pItems blocks, but only two of
+ * the four weapon powers, and no second weapon mode. Every session that flies two complete ships
+ * needs the other half, and the three arcade shapes need it most: ship two's lives ARE its front
+ * gun's power there, so without it a resumed run hands the second player a life count nobody
+ * ever earned. */
+static void qa_dual_arcade_save_roundtrip(void)
+{
+	// The two-player LAST LEVEL slot, which is the one an online arcade session writes and the
+	// one its resume reads. Saved and put back at the end, so a real record here survives.
+	enum { QA_SAVE_SLOT = 22 };
+	char label[224];
+	const PlayerItems savedItems[2] = { player[0].items, player[1].items };
+	const JE_SaveFileType savedSlot = saveFiles[QA_SAVE_SLOT - 1];
+	const int savedLevel = saveLevel;
+
+	for (int mode = 0; mode < 3; ++mode)
+	{
+		const char *const shape = mode == 0 ? "Separate arcade"
+		                        : mode == 1 ? "online Super Arcade" : "online SuperTyrian";
+		qa_modes_clear();
+		twoPlayerMode = true;
+		arcadeSeparateMode = true;
+		isNetworkGame = true;
+		saveLevel = 3;
+
+		if (mode == 1)
+		{
+			networkSuperArcadeEquip(&player[0], 3);
+			networkSuperArcadeEquip(&player[1], 6);
+			// The session global carries ship one's pick (networkStartScreen), and JE_saveGame
+			// writes it into ship one's block; without it the record would say SA_NONE there.
+			superArcadeMode = (JE_byte)player[0].items.super_arcade_mode;
+		}
+		else
+		{
+			for (uint p = 0; p < COUNTOF(player); ++p)
+			{
+				player[p].items.ship = mode == 2 ? 13 : 8;
+				player[p].items.weapon[FRONT_WEAPON].id = mode == 2 ? 39 : 1;
+				player[p].items.weapon[REAR_WEAPON].id = 15;
+				player[p].items.super_arcade_mode = mode == 2 ? SA_SUPERTYRIAN : SA_NONE;
+			}
+			superTyrian = (mode == 2);
+		}
+
+		/* Distinct values in all four bays and both modes, so a crossed field is visible. */
+		player[0].items.weapon[FRONT_WEAPON].power = 5;   // ship one's lives
+		player[0].items.weapon[REAR_WEAPON].power = 9;
+		player[1].items.weapon[FRONT_WEAPON].power = 2;   // ship two's lives
+		player[1].items.weapon[REAR_WEAPON].power = 7;
+		player[0].weapon_mode = 3;
+		player[1].weapon_mode = 4;
+		for (uint p = 0; p < COUNTOF(player); ++p)
+			player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		const PlayerItems wrote[2] = { player[0].items, player[1].items };
+
+		JE_saveGame(QA_SAVE_SLOT, "QA DUAL SHIPS ");
+		const JE_SaveFileType *const rec = &saveFiles[QA_SAVE_SLOT - 1];
+
+		snprintf(label, sizeof(label), "a %s record is marked dual-ship, and NOT as co-op", shape);
+		qa_check(save_record_is_dual_arcade(rec) && !save_record_is_coop(rec), label);
+
+		/* Wipe the live loadouts, then read the record back the way a resume does. */
+		memset(&player[0].items, 0, sizeof(player[0].items));
+		memset(&player[1].items, 0, sizeof(player[1].items));
+		player[0].weapon_mode = player[1].weapon_mode = 0;
+		JE_loadGameRecord(rec, true);
+
+		snprintf(label, sizeof(label), "%s: both hulls and both front guns come back", shape);
+		qa_check(player[0].items.ship == wrote[0].ship && player[1].items.ship == wrote[1].ship
+		         && player[0].items.weapon[FRONT_WEAPON].id == wrote[0].weapon[FRONT_WEAPON].id
+		         && player[1].items.weapon[FRONT_WEAPON].id == wrote[1].weapon[FRONT_WEAPON].id,
+		         label);
+
+		snprintf(label, sizeof(label),
+		         "%s: all four bay powers survive, so ship two keeps its own life count", shape);
+		qa_check(player[0].items.weapon[FRONT_WEAPON].power == 5
+		         && player[0].items.weapon[REAR_WEAPON].power == 9
+		         && player[1].items.weapon[FRONT_WEAPON].power == 2
+		         && player[1].items.weapon[REAR_WEAPON].power == 7, label);
+
+		snprintf(label, sizeof(label), "%s: each ship keeps its own rear-gun mode", shape);
+		qa_check(player[0].weapon_mode == 3 && player[1].weapon_mode == 4, label);
+
+		snprintf(label, sizeof(label),
+		         "%s: the load rebinds each ship's life counter to the bay this shape uses", shape);
+		qa_check(player[0].lives == &player[0].items.weapon[FRONT_WEAPON].power
+		         && player[1].lives == &player[1].items.weapon[FRONT_WEAPON].power
+		         && *player[1].lives == 2, label);
+
+		snprintf(label, sizeof(label), "%s: each ship's own ruleset rides the record", shape);
+		qa_check(save_record_sa_ship(rec, 0) == (uint)wrote[0].super_arcade_mode
+		         && save_record_sa_ship(rec, 1) == (uint)wrote[1].super_arcade_mode
+		         && player[0].items.super_arcade_mode == wrote[0].super_arcade_mode
+		         && player[1].items.super_arcade_mode == wrote[1].super_arcade_mode, label);
+
+		/* And which lobby may pick that record up. The three arcade types share one slot page,
+		 * so the record is the only thing that says which of them wrote it. */
+		const NetworkGameType savedType = network_game_type;
+		// In the same order as the modes above: Separate, Super Arcade, SuperTyrian.
+		static const NetworkGameType arcadeTypes[] =
+		{
+			NETWORK_GAME_ARCADE, NETWORK_GAME_SUPERARCADE, NETWORK_GAME_SUPERTYRIAN,
+		};
+		for (uint t = 0; t < COUNTOF(arcadeTypes); ++t)
+		{
+			network_game_type = arcadeTypes[t];
+			const bool want = ((int)t == mode);
+			snprintf(label, sizeof(label), "a %s record %s offered to a game-type-%d lobby",
+			         shape, want ? "is" : "is not", (int)arcadeTypes[t]);
+			qa_check(save_type_compatible(rec, QA_SAVE_SLOT, true) == want, label);
+		}
+
+		/* ...and never to the linked pair, which would put ship two's lives on the wrong bay. */
+		network_game_type = NETWORK_GAME_ARCADE;
+		arcadeSeparateMode = false;
+		snprintf(label, sizeof(label), "a %s record is not offered to a Linked arcade lobby", shape);
+		qa_check(!save_type_compatible(rec, QA_SAVE_SLOT, true), label);
+		snprintf(label, sizeof(label), "...nor to a local two-player game (%s)", shape);
+		isNetworkGame = false;
+		qa_check(!save_type_compatible(rec, QA_SAVE_SLOT, true)
+		         && !save_type_compatible(rec, QA_SAVE_SLOT, false), label);
+		isNetworkGame = true;
+		network_game_type = savedType;
+	}
+
+	/* The linked pair still writes a plain record, and still gets it back. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	isNetworkGame = true;
+	saveLevel = 3;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].items.ship = p == 0 ? 11 : 12;
+		player[p].items.super_arcade_mode = SA_NONE;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	}
+	player[1].items.weapon[REAR_WEAPON].power = 6;   // the Dragonwing's lives
+	JE_saveGame(QA_SAVE_SLOT, "QA LINKED PAIR");
+	qa_check(!save_record_is_dual_arcade(&saveFiles[QA_SAVE_SLOT - 1])
+	         && !save_record_is_coop(&saveFiles[QA_SAVE_SLOT - 1]),
+	         "a linked arcade pair still writes a plain record, marked neither way");
+	network_game_type = NETWORK_GAME_ARCADE;
+	qa_check(save_type_compatible(&saveFiles[QA_SAVE_SLOT - 1], QA_SAVE_SLOT, true),
+	         "...which a Linked arcade lobby still loads");
+	JE_loadGameRecord(&saveFiles[QA_SAVE_SLOT - 1], true);
+	qa_check(player[1].lives == &player[1].items.weapon[REAR_WEAPON].power
+	         && *player[1].lives == 6,
+	         "...and the Dragonwing's life counter is still its rear bay");
+
+	saveFiles[QA_SAVE_SLOT - 1] = savedSlot;
+	saveLevel = savedLevel;
+	player[0].items = savedItems[0];
+	player[1].items = savedItems[1];
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	superArcadeMode = SA_NONE;   // the loads above adopted the records' rulesets
+	qa_modes_clear();
+	isNetworkGame = false;
+}
+
+#ifdef WITH_NETWORK
+/* ---- 12. the Super Arcade ship announcement ------------------------------------------ */
+
+/* Each player announces their own pick and nobody dictates, so the only thing this protocol has
+ * to get right is that the value crossing the wire is a ship, and that it came from the OTHER
+ * machine. Both are load-bearing: the number indexes SAShip[] and a SAWeapon row. */
+static void qa_sa_ship_packet(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const uint savedThis = thisPlayerNum;
+
+	isNetworkGame = true;
+	thisPlayerNum = 1;
+
+	Uint8 raw[NET_PACKET_SIZE];
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_SA_SHIP, &raw[0]);
+
+	network_sa_ship_reset();
+	qa_check(network_sa_ship_peer() == 0, "no pick has arrived until one does");
+
+	/* A well-formed announcement from the peer. */
+	raw[4] = 2;  raw[5] = 5;
+	qa_inject_packet(raw, 6);
+	qa_check(network_sa_ship_peer() == 5 && packet_in[0] == NULL,
+	         "the peer's pick is adopted and its packet retired from the queue");
+
+	/* Out of range, both ends of it: refused, and the pick already held stands. */
+	raw[4] = 2;  raw[5] = 0;
+	qa_inject_packet(raw, 6);
+	qa_check(network_sa_ship_peer() == 5, "ship 0 is not a ship, and does not replace the pick");
+	raw[5] = (Uint8)(SA + 1);
+	qa_inject_packet(raw, 6);
+	qa_check(network_sa_ship_peer() == 5, "a ship past the table does not replace it either");
+	raw[5] = 255;
+	qa_inject_packet(raw, 6);
+	qa_check(network_sa_ship_peer() == 5, "...nor does a byte that is not a ship at all");
+
+	/* This machine's own announcement, reflected back: it is not the peer's. */
+	network_sa_ship_reset();
+	raw[4] = 1;  raw[5] = 4;
+	qa_inject_packet(raw, 6);
+	qa_check(network_sa_ship_peer() == 0,
+	         "a machine's own announcement coming back is not read as its partner's");
+
+	/* Truncated: adopted from nobody, but still retired, or it blocks the queue for good. */
+	network_sa_ship_reset();
+	raw[4] = 2;  raw[5] = 7;
+	qa_inject_packet(raw, 5);
+	qa_check(network_sa_ship_peer() == 0 && packet_in[0] == NULL,
+	         "a truncated announcement is not adopted, and does not jam the queue");
+
+	/* Publishing clamps at the source too, so a corrupted local value never leaves. */
+	network_sa_ship_reset();
+	network_sa_ship_publish(0);
+	network_sa_ship_publish(SA + 1);
+	qa_check(network_sa_ship_peer() == 0, "publishing a non-ship announces nothing");
+
+	network_sa_ship_reset();
+	isNetworkGame = savedNet;
+	thisPlayerNum = savedThis;
+}
+#endif
+
 /* ---- entry point -------------------------------------------------------------------- */
 
 void qa_test_online_suite(void)
@@ -839,14 +1615,21 @@ void qa_test_online_suite(void)
 	qa_mode_split_matrix();
 	qa_local_index_matrix();
 	qa_arcade_economy_matrix();
+	qa_separate_arcade_lives();
+	qa_special_block_geometry();
+	qa_rear_gun_mode_matrix();
 	qa_campaign_economy_matrix();
 	qa_campaign_score_matrix();
 	qa_online_strings_matrix();
 	qa_online_pause_matrix();
+	qa_super_online_matrix();
+	qa_sa_picker_layout();
+	qa_dual_arcade_save_roundtrip();
 #ifdef WITH_NETWORK
 	qa_debug_block_roundtrip();
 	qa_test_net_lobby_strings();
 	qa_hostile_packets();
+	qa_sa_ship_packet();
 #endif
 
 	qa_online_restore(&saved);

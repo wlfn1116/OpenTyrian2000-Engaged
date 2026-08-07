@@ -33,6 +33,10 @@ extern Uint64 endlessPlayerRngState[2];
 extern int endlessZoneTicks;
 extern int endlessTurbodriveTimer[2];   // kill-fire window, per player
 extern int endlessRetaliationTimer;
+// Fractional fire-rate and special-cooldown carries, per ship (endless_perks.c). Rollback state:
+// which tick they cross a whole step decides which tick a gun fires.
+extern int endlessPerkFireAccum[2];
+extern int endlessPerkSpecialCdAccum[2];
 
 // Rewards banked on clear and spent at a later outpost.
 extern bool endlessStarChartsOwed;
@@ -75,6 +79,7 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
 // Shared effect reset. It must not consume structural RNG.
 void endlessResetZoneEffects(void);
+void endlessResetKillDedup(void);   // clear the multi-part kill dedup guard at zone start
 
 // Per-zone half of the custom-weapon tracking behind endlessRunUsedCustom.
 void endlessResetCustomWeaponZone(void);
@@ -198,11 +203,13 @@ typedef struct {
 } EndlessPerk;
 
 extern const EndlessPerk endlessPerkTable[PERK_COUNT];
-/* Perks are run-wide: both ships fly under every stack either player picks. endlessPerkTakenBy
- * is the storage each machine owns a row of, and endlessPerkOwned is their capped sum, which is
- * what every effect reads. Route writes through endlessPerkGrant / endlessPerkRederive. */
+/* Perks are personal: a stack affects only the ship that picked it. endlessPerkTakenBy is the
+ * storage each machine owns a row of; endlessPerkEffective(p, id) is what effects read (through
+ * the fx-ship context or an explicit seat), and endlessPerkOwned keeps the capped combined view
+ * for diagnostics only. Route writes through endlessPerkGrant / endlessPerkRederive. */
 extern JE_byte endlessPerkOwned[PERK_COUNT];
 extern JE_byte endlessPerkTakenBy[2][PERK_COUNT];
+JE_byte endlessPerkEffective(uint p, int id);
 void endlessPerkRederive(void);
 void endlessPerkGrant(uint p, int id, int delta);
 /* The offered slate, the pending gate and the resolved depth all describe THIS machine's player:

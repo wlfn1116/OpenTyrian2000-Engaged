@@ -68,7 +68,9 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       18           // v18 drops the pause rendezvous: online cannot pause
+#define NET_VERSION       19           /* v19: Double Earnings covers kill and bounty cash,
+                                          Endless perks are per-ship, and Arcade carries the
+                                          Linked / Separate ships setting and Rear Gun Scale */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -204,7 +206,7 @@ static struct
 	Uint32 recv_errors, send_errors;            // socket-level failures (ICMP resets etc.)
 	Uint32 bad_packets;                         // unknown type on the game channel
 	Uint32 retries;                             // reliable-channel retransmits
-	Uint32 acked_dropped;                       // reliable packets acked into a full queue, then lost
+	Uint32 window_overflow;                     // reliable packets that arrived past the receive window
 	Uint32 state_in, state_out, state_late;     // state stream; late = outside the queue window
 	Uint32 xor_rebuilds;                        // lost state packets reconstructed from parity
 	Uint32 resend_req_sent, resend_req_served;  // state resend requests
@@ -548,21 +550,37 @@ static int network_recv_one(void)
 					// this list, all three were dropped here unread and unacknowledged, so the whole
 					// channel was write-only however carefully both ends waited on it.
 					case PACKET_ENDLESS_RUN:
+					// Online Super Arcade's ship announcement. Same reason as the Endless block
+					// above: a reliable type missing from this list is queued nowhere and never
+					// acknowledged, so the sender retransmits forever and the pair deadlocks.
+					case PACKET_SA_SHIP:
 					case PACKET_RESYNC:
 						{
-							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
-							if (i < NET_PACKET_QUEUE)
+							const Uint16 sync = SDLNet_Read16(&packet_temp->data[2]);
+							/* Signed so the comparison is wraparound-safe: behind the window is a
+							 * packet already consumed, ahead of it is one there is no room for. */
+							const Sint16 slot = (Sint16)(sync - queue_in_sync);
+							if (slot >= 0 && slot < NET_PACKET_QUEUE)
 							{
-								if (packet_in[i] == NULL)
-									packet_in[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-								packet_copy(packet_in[i], packet_temp);
+								if (packet_in[slot] == NULL)
+									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+								packet_copy(packet_in[slot], packet_temp);
 							}
-							else
+							else if (slot >= NET_PACKET_QUEUE)
 							{
-								// Count near-window overflow; larger gaps are stale duplicates.
-								if ((Uint16)(i - NET_PACKET_QUEUE) < NET_PACKET_QUEUE)
-									++net_diag.acked_dropped;
+								/* Past the end of the receive window, so there is nowhere to put it.
+								 * Do NOT acknowledge: an acknowledgement here tells the sender it was
+								 * delivered and it is never sent again, and the window only advances
+								 * as packets are consumed, so it can never come back. That is a
+								 * permanent one-way deafness, not a hiccup. Withholding the
+								 * acknowledgement leaves it queued at the sender, which retransmits
+								 * once this end has drained enough to take it. */
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
 							}
+							// Behind the window: consumed already, and the sender is repeating it
+							// because our acknowledgement was lost. Acknowledge it again below.
 						}
 
 						network_acknowledge(SDLNet_Read16(&packet_temp->data[2]));
@@ -821,9 +839,9 @@ Uint16 network_inbound_head(void)
  * way in, so the sender considers them delivered and will never send them again: each one is a
  * reliable packet permanently lost. Nonzero means the queue was allowed to fill, which is a bug
  * in whoever was supposed to be draining it, not a transport problem. */
-Uint32 network_acked_dropped(void)
+Uint32 network_window_overflow(void)
 {
-	return net_diag.acked_dropped;
+	return net_diag.window_overflow;
 }
 
 // prepare new state for sending
@@ -1489,6 +1507,10 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		twoPlayerMode = false;
 		coopCampaignMode = false;
 		coopEndlessMode = false;
+		arcadeSeparateMode = false;
+		superTyrian = false;
+		superArcadeMode = SA_NONE;
+		network_sa_ship_reset();
 		haltGame = false;
 		JE_clearSpecialRequests();
 
@@ -1503,19 +1525,6 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	JE_tyrianHalt(5);
 }
 
-/* Every session flag the settings block carries, armed from this machine's own config. The
- * host's own arming and the joiner's adoption must cover the same set: a flag the block
- * carries but the host never arms locally splits the two simulations at the first place it
- * pays out. Double Pickups was exactly that, and every pickup desynced by its own value. */
-void network_arm_local_session(void)
-{
-	nrb_set_session_mode(net_rollback);
-	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery);
-	coop_set_session_shared_credit(coopSharedCredit);
-	coop_set_session_double_pickups(coopDoublePickups);
-}
-
 /* Host-authoritative simulation settings.
  * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
  * shared pickups, data sets, or tick rate. Rendering, audio, and local input settings stay local. */
@@ -1528,8 +1537,10 @@ static struct
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
+	bool arcadeRearGunScale;
 	int  xmasMode;
 	JE_byte gameSpeed;
+	JE_boolean arcadeSeparateMode;
 }
 settings_local;
 
@@ -1556,7 +1567,9 @@ int network_settings_pack(Uint8 *buf)
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
 	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
-	flags |= coopDoublePickups     ? 1 << 10 : 0; // ...and whether Individual pays pickups twice
+	flags |= coopDoubleEarnings     ? 1 << 10 : 0; // ...and whether Individual pays combat cash twice
+	flags |= arcadeSeparateShips    ? 1 << 11 : 0; // Arcade: two Separate personal ships; host decides
+	flags |= arcadeRearGunScale     ? 1 << 12 : 0; // ...and whether lives raise the rear gun
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1614,9 +1627,31 @@ static void network_settings_stash(void)
 	settings_local.restoreBaseDispensers = restoreBaseDispensers;
 	settings_local.arcadeLifeBoost      = arcadeLifeBoost;
 	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
+	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
 	settings_local.xmasMode             = xmasMode;
 	settings_local.gameSpeed            = gameSpeed;
+	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
+	// otherwise reshape the next LOCAL two-player arcade, which never armed it.
+	settings_local.arcadeSeparateMode   = arcadeSeparateMode;
 	settings_stashed = true;
+}
+
+/* Every session flag the settings block carries, armed from this machine's own config. The
+ * host's own arming and the joiner's adoption must cover the same set: a flag the block
+ * carries but the host never arms locally splits the two simulations at the first place it
+ * pays out. Double Earnings was exactly that, and every pickup desynced by its own value. */
+void network_arm_local_session(void)
+{
+	// Arming writes session state the local preferences have to survive, so take the same
+	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
+	network_settings_stash();
+
+	nrb_set_session_mode(net_rollback);
+	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
+	nrb_set_session_recovery(net_desync_recovery);
+	coop_set_session_shared_credit(coopSharedCredit);
+	coop_set_session_double_earnings(coopDoubleEarnings);
+	arcadeSeparateMode = arcadeSeparateShips;
 }
 
 // Session game speed: the host applies its lobby choice here and the joiner adopts it from
@@ -1664,7 +1699,9 @@ int network_settings_adopt(const Uint8 *buf)
 	nrb_set_session_vt((flags & (1 << 5)) != 0);
 	nrb_set_session_recovery((flags & (1 << 6)) != 0);
 	coop_set_session_shared_credit((flags & (1 << 9)) != 0);
-	coop_set_session_double_pickups((flags & (1 << 10)) != 0);
+	coop_set_session_double_earnings((flags & (1 << 10)) != 0);
+	arcadeSeparateMode = (flags & (1 << 11)) != 0;
+	arcadeRearGunScale = (flags & (1 << 12)) != 0;
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -2335,6 +2372,54 @@ int network_endless_death_sync(int hostChoice)
 	return -1;
 }
 
+/* Online Super Arcade ship picks. Each player announces their own and nobody dictates, so this is
+ * a plain announcement rather than a host-authoritative setting; identical picks are allowed. Both
+ * halves are non-blocking on purpose: the picker screen stays interactive and pumps network_check
+ * itself, so a player who has already chosen can watch for their partner without the wait freezing
+ * the screen. The reliable channel retransmits a lost announcement, so neither side has to repeat
+ * itself. */
+static int net_sa_ship_peer_pick = 0;
+
+void network_sa_ship_reset(void)
+{
+	net_sa_ship_peer_pick = 0;
+}
+
+void network_sa_ship_publish(int ship)
+{
+	if (!isNetworkGame || ship < 1 || ship > SA)
+		return;
+
+	network_prepare(PACKET_SA_SHIP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (Uint8)ship;
+	network_send(6);
+}
+
+int network_sa_ship_peer(void)
+{
+	if (!isNetworkGame)
+		return 0;
+
+	// Only ever retire a ship announcement: draining whatever else heads the queue is how the
+	// outpost used to eat the packet a later wait was blocking on. A truncated one is retired
+	// too, adopted from nobody; left at the head it would block the queue for good.
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_SA_SHIP)
+	{
+		if (packet_in[0]->len >= 6)
+		{
+			const uint sender = packet_in[0]->data[4];
+			const int ship = packet_in[0]->data[5];
+			// Clamped: the value indexes SAShip[] and a SAWeapon row on both machines.
+			if (sender != thisPlayerNum && ship >= 1 && ship <= SA)
+				net_sa_ship_peer_pick = ship;
+		}
+		network_update();
+	}
+
+	return net_sa_ship_peer_pick;
+}
+
 bool network_endless_run_receive(Uint32 timeout_ms)
 {
 	if (!isNetworkGame || !coopEndlessMode)
@@ -2561,6 +2646,15 @@ bool network_shop_peer_done(void)
 	return network_shop_peer_ready;
 }
 
+// Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
+void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq)
+{
+	*localDone = network_shop_local_ready ? 1 : 0;
+	*localLock = network_shop_local_locked ? 1 : 0;
+	*mySeq = (int)network_shop_sequence;
+	*peerSeq = (int)network_shop_peer_sequence;
+}
+
 int network_shop_peer_course(void)
 {
 	return network_shop_peer_pick;
@@ -2646,8 +2740,10 @@ void network_settings_restore(void)
 	restoreBaseDispensers = settings_local.restoreBaseDispensers;
 	arcadeLifeBoost       = settings_local.arcadeLifeBoost;
 	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
+	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
+	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
 
 	settings_stashed = false;
 }
@@ -3090,7 +3186,7 @@ void network_write_diagnostics(FILE *f)
 		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu   acked-dropped=%lu\n",
 		        last_out_sync, last_ack_sync, network_ack_backlog(), out_held,
 		        queue_in_sync, in_held, (unsigned long)net_diag.retries,
-		        (unsigned long)net_diag.acked_dropped);
+		        (unsigned long)net_diag.window_overflow);
 	}
 
 	fprintf(f, "  State ch:     in_sync=%u out_sync=%u   sent=%lu recv=%lu late-dropped=%lu\n",

@@ -300,10 +300,11 @@ Uint32 rollback_state_hash(void)
 		const Uint8 *const bytes = rb_trace_buf + it->offset;
 
 		/* Legacy replay fixtures hash the pre-co-op registry byte stream. Preserve that projection
-		 * while no co-op session is running; the co-op canaries cover every field added since. */
-		if (!coop_mode_active() && rb_item_is_coop_only(it->name))
+		 * while no dual-ship session is running; the per-ship block it skips is live state in
+		 * Separate arcade as much as in co-op, and the co-op canaries cover the rest. */
+		if (!dual_ship_mode() && rb_item_is_coop_only(it->name))
 			continue;
-		if (!coop_mode_active() && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
+		if (!dual_ship_mode() && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
 		{
 			const size_t prefix = offsetof(Player, generator_power);
 			const size_t suffix = offsetof(Player, x);

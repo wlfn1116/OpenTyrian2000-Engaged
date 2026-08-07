@@ -43,9 +43,16 @@ extern int qa_net_zones;
 extern int qa_net_zones_cleared;
 #define QA_NET_ZONE_END_FRAME 500
 /* Lobby-settings run: peers take the production lobby roles, the host arms Individual credit
- * plus Double Pickups from its own config, and the joiner adopts the settings block from the
+ * plus Double Earnings from its own config, and the joiner adopts the settings block from the
  * connect packet; scripted in-sim pickups then drive the doubled payment rule on both sims. */
 extern bool qa_net_lobby_settings;
+/* Separate-arcade run: both peers arm the host's Separate ships setting, so the flight exercises
+ * two independent arcade ships (own lives, guns, sidekicks, specials and generator) across the
+ * wire. Any per-ship state left in a shared global desyncs the pair. */
+extern bool qa_net_arcade_separate;
+/* SuperTyrian wire runs: fly the Scrollock variant rather than the standard one. Both peers must
+ * be given it, since a test peer has no lobby to publish it from. */
+extern bool qa_net_scrollock;
 /* True while a lobby-settings wire run keeps command-line peers under the lobby roles: the
  * main loop must still treat them as command-line (no title screen, no lobby teardown). */
 static inline bool qa_net_lobby_run(void)

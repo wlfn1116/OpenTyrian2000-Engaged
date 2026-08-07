@@ -102,6 +102,9 @@ player hosting.
   playfield, Arcade gauge tagging, and a session log for diagnosing desyncs.
 
 The host chooses Arcade or Campaign, episode, difficulty, and network settings.
+Arcade runs either as the classic linked Silver Ship and Dragonwing pair, or as two
+Separate personal ships: the single-player arcade game twice over in one level,
+each player with their own HUD, lives, weapons and score.
 The joiner confirms those game settings before entering. Joiners keep their own
 local settings, which are restored afterwards. [GUIDE.md](GUIDE.md#online-play)
 covers each lobby row, the saving and resuming flow, and what to attach to a
