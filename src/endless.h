@@ -75,6 +75,10 @@ bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not 
 // Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
 // still flying, and player 1 outside co-op.
 uint endlessDangerTargetPlayer(int fromX, int fromY);
+// A homing enemy picks its ship by coin toss when it is created (0 outside co-op, and no roll is
+// spent there), and keeps it for life unless that ship goes down.
+uint endlessRollHomingTarget(void);
+uint endlessHomingTargetPlayer(uint stored);
 void endlessReviveDownedAtOutpost(void);
 
 // Number of active modifier bits.

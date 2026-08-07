@@ -155,6 +155,13 @@ static int lobbyCycleDifficulty(int difficulty, int direction)
 	return lobby_difficulties[index];
 }
 
+/* SuperTyrian reads the difficulty field as its variant, so selecting it moves that one field off
+ * the ladder and onto Standard/Scrollock. Both are also ladder rungs (Lord of Game and Suicide),
+ * so the two meanings are indistinguishable once swapped: these park each side while the other is
+ * showing, and cycling the type through SuperTyrian and back out puts the rung it found back. */
+static int lobbyLadderDifficulty = DIFFICULTY_NORMAL;
+static int lobbySuperTyrianVariant = DIFFICULTY_LORD_OF_GAME;
+
 // Render the backdrop and title into VGAScreen2 once; each frame then restores from it
 // instead of re-decoding the picture (the pattern the other menus in menus.c use).
 static void lobbyPrepareBackdrop(const char *title)
@@ -1110,16 +1117,30 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		}
 
 		case ITEM_TYPE:
+		{
 			JE_playSampleNum(S_CLICK);
+			const bool wasVariant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 			network_game_type = (NetworkGameType)((network_game_type + NETWORK_GAME_TYPE_COUNT + cycleDir)
 			                                      % NETWORK_GAME_TYPE_COUNT);
-			// SuperTyrian reads the difficulty field as its variant, so land on one of the two the
-			// moment the type is selected; a ladder value left over would read as "Standard" while
-			// the session actually flew at it.
-			if (network_game_type == NETWORK_GAME_SUPERTYRIAN
-			    && network_host_difficulty != DIFFICULTY_SUICIDE)
-				network_host_difficulty = DIFFICULTY_LORD_OF_GAME;
+			// Crossing into or out of SuperTyrian changes what the difficulty row means, so park
+			// the value it is leaving behind and take back the one it is returning to. Without the
+			// swap a ladder rung left over would read as "Standard" while the session flew at it,
+			// and cycling back out would strand the row on Lord of Game.
+			if ((network_game_type == NETWORK_GAME_SUPERTYRIAN) != wasVariant)
+			{
+				if (wasVariant)
+				{
+					lobbySuperTyrianVariant = network_host_difficulty;
+					network_host_difficulty = lobbyLadderDifficulty;
+				}
+				else
+				{
+					lobbyLadderDifficulty = network_host_difficulty;
+					network_host_difficulty = lobbySuperTyrianVariant;
+				}
+			}
 			break;
+		}
 
 		case ITEM_ENDLESS:
 			JE_playSampleNum(S_SELECT);

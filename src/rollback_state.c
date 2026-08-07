@@ -128,9 +128,9 @@ void rollback_state_register_globals(void)
 
 	/* Specials, charge weapons, and sidekicks. */
 	REG(zinglonDuration);
-	REG(zinglonPillarActive);
-	REG(zinglonPillarCX);
-	REG(zinglonPillarTemp);
+	REG_ARR(zinglonPillarActive);
+	REG_ARR(zinglonPillarCX);
+	REG_ARR(zinglonPillarTemp);
 	REG(astralDuration);
 	REG(flareDuration);
 	REG(flareStart);

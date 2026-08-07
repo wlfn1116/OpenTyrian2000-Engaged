@@ -81,6 +81,9 @@ int networkDifficultyBump(void);
 /* Equip one ship for the Super Arcade run it chose (1..SA). Both machines call it for both
  * ships, each from the pair of picks the announcement protocol settled. */
 void networkSuperArcadeEquip(Player *this_player, int ship);
+/* Equip one ship for an online SuperTyrian run. Its own function, and public, for the same reason
+ * as the one above: the unit suite pins the loadout it issues to both ships. */
+void networkSuperTyrianEquip(Player *this_player);
 #endif
 bool titleScreen(void);
 bool newGame(void);
@@ -100,6 +103,8 @@ bool newSuperTyrianGame(void);
 #define SA_PICK_SHIP_Y    128   // the highlighted hull, blitted 2x2 (28px tall)
 #define SA_PICK_STATUS_Y  168
 #define SA_PICK_PEER_Y    180
+// Shown on the partner line while this player waits: the pick can still be taken back.
+#define SA_PICK_UNPICK_HINT "Esc to pick again."
 static inline int sa_pick_name_x(int i) { return SA_PICK_COL_X + (i / SA_PICK_ROWS) * SA_PICK_COL_DX; }
 static inline int sa_pick_name_y(int i) { return SA_PICK_TOP_Y + (i % SA_PICK_ROWS) * SA_PICK_ROW_H; }
 bool newEndlessGame(void);

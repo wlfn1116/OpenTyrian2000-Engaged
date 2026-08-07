@@ -516,7 +516,7 @@ are left alone and restored afterwards.
 | Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. |
 | Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
-| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment; Separate arcade does not. Super Arcade adds the same step a solo Super Arcade run adds. |
+| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship — Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade — plays exactly the rung chosen here, with no adjustment. |
 | Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
 | Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
 | Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. |
@@ -560,8 +560,10 @@ setting. After the host presses Start, each player chooses their own ship from
 the nine Super Arcade ships, with the highlighted hull drawn below the list; move
 with the arrow keys or the mouse and confirm with Enter or a click. The two picks
 are independent and may match. Whoever chooses first sees "Waiting for the other
-player..." and then which ship their partner picked; Esc before choosing leaves
-the session. Weapon balls keep the same colors on every ship, so when both of you
+player..." and then which ship their partner picked. A choice is not final while
+you are still waiting: Esc (or a right-click) takes it back so you can pick a
+different ship, right up until your partner chooses and the game starts. Esc
+before choosing anything leaves the session instead. Weapon balls keep the same colors on every ship, so when both of you
 fly into the same color, each ship gets the weapon its own arsenal keeps in that
 slot, and the paired special (both variants, switched with the rear-mode key)
 belongs to each ship separately.

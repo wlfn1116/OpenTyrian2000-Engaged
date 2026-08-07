@@ -1210,6 +1210,24 @@ static void qa_super_online_matrix(void)
 		}
 	}
 
+	/* SuperTyrian: one loadout, issued to both ships. Ship two's slot is the only one that does not
+	 * start from a cleared rear bay -- the fresh-game data hands it the linked pair's Dragonwing
+	 * arsenal, Vulcan Cannon and all -- so the equip runs from the pair it would have inherited. */
+	player[0].items.weapon[REAR_WEAPON].id = 5;    // whatever the previous game left in the bay
+	player[1].items.weapon[REAR_WEAPON].id = 15;   // the Dragonwing's own Vulcan Cannon
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		networkSuperTyrianEquip(&player[i]);
+
+		snprintf(label, sizeof(label), "online SuperTyrian ship %u flies the Stalker and RailGun", i + 1);
+		qa_check(player[i].items.ship == 13
+		         && player[i].items.weapon[FRONT_WEAPON].id == 39
+		         && player[i].items.super_arcade_mode == SA_SUPERTYRIAN, label);
+
+		snprintf(label, sizeof(label), "...and takes no rear gun (ship %u)", i + 1);
+		qa_check(player[i].items.weapon[REAR_WEAPON].id == 0, label);
+	}
+
 	/* The Nort Ship is the one hull that arrives with sidekicks attached. */
 	networkSuperArcadeEquip(&player[0], SA_NORTSHIPZ);
 	qa_check(player[0].items.sidekick[LEFT_SIDEKICK] == 24
@@ -1256,7 +1274,7 @@ static void qa_super_online_matrix(void)
 		{ NETWORK_GAME_CAMPAIGN,    false, 0, "an online campaign flies two full ships, like Endless" },
 		{ NETWORK_GAME_ENDLESS,     false, 0, "online Endless flies two full ships" },
 		{ NETWORK_GAME_SUPERTYRIAN, true,  0, "SuperTyrian keeps its own curve; the field is its variant" },
-		{ NETWORK_GAME_SUPERARCADE, true,  1, "Super Arcade adds the step newSuperArcadeGame adds solo" },
+		{ NETWORK_GAME_SUPERARCADE, true,  0, "Super Arcade plays the rung the host picked, not a step above it" },
 	};
 	for (uint i = 0; i < COUNTOF(bumps); ++i)
 	{
@@ -1363,6 +1381,7 @@ static void qa_sa_picker_layout(void)
 	static const char *const status[] =
 	{
 		"Choose your ship.", "Waiting for the other player...", "Both ready.",
+		SA_PICK_UNPICK_HINT,
 	};
 	for (uint i = 0; i < COUNTOF(status); ++i)
 	{
@@ -1544,9 +1563,11 @@ static void qa_dual_arcade_save_roundtrip(void)
 #ifdef WITH_NETWORK
 /* ---- 12. the Super Arcade ship announcement ------------------------------------------ */
 
-/* Each player announces their own pick and nobody dictates, so the only thing this protocol has
- * to get right is that the value crossing the wire is a ship, and that it came from the OTHER
- * machine. Both are load-bearing: the number indexes SAShip[] and a SAWeapon row. */
+/* Each player announces their own pick and nobody dictates, so the things this protocol has to get
+ * right are that the value crossing the wire is a ship and that it came from the OTHER machine --
+ * the number indexes SAShip[] and a SAWeapon row. Zero is the one value that is not a ship and is
+ * still legal: it takes a pick back. The byte after it is the sender's acknowledgement of OUR pick,
+ * and it is what stops either machine leaving while the other could still change ships. */
 static void qa_sa_ship_packet(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -1562,28 +1583,41 @@ static void qa_sa_ship_packet(void)
 	network_sa_ship_reset();
 	qa_check(network_sa_ship_peer() == 0, "no pick has arrived until one does");
 
-	/* A well-formed announcement from the peer. */
-	raw[4] = 2;  raw[5] = 5;
-	qa_inject_packet(raw, 6);
+	/* A well-formed announcement from the peer, carrying their acknowledgement of ours. */
+	raw[4] = 2;  raw[5] = 5;  raw[6] = 1;
+	qa_inject_packet(raw, 7);
 	qa_check(network_sa_ship_peer() == 5 && packet_in[0] == NULL,
 	         "the peer's pick is adopted and its packet retired from the queue");
+	qa_check(network_sa_ship_peer_saw_us(), "...and their acknowledgement of our own comes with it");
 
-	/* Out of range, both ends of it: refused, and the pick already held stands. */
-	raw[4] = 2;  raw[5] = 0;
-	qa_inject_packet(raw, 6);
-	qa_check(network_sa_ship_peer() == 5, "ship 0 is not a ship, and does not replace the pick");
+	/* Zero is the pick taken back: the peer is choosing again, so they no longer hold ours. */
+	raw[5] = 0;  raw[6] = 0;
+	qa_inject_packet(raw, 7);
+	qa_check(network_sa_ship_peer() == 0 && !network_sa_ship_peer_saw_us(),
+	         "ship 0 takes the peer's pick back, and their acknowledgement with it");
+
+	/* Out of range: refused, and the pick already held stands. */
+	raw[5] = 6;  raw[6] = 0;
+	qa_inject_packet(raw, 7);
+	qa_check(network_sa_ship_peer() == 6, "a fresh pick replaces the one that was taken back");
 	raw[5] = (Uint8)(SA + 1);
-	qa_inject_packet(raw, 6);
-	qa_check(network_sa_ship_peer() == 5, "a ship past the table does not replace it either");
+	qa_inject_packet(raw, 7);
+	qa_check(network_sa_ship_peer() == 6, "a ship past the table does not replace the pick");
 	raw[5] = 255;
+	qa_inject_packet(raw, 7);
+	qa_check(network_sa_ship_peer() == 6, "...nor does a byte that is not a ship at all");
+
+	/* An announcement short of the acknowledgement byte reads as a pick nobody has answered. */
+	raw[5] = 4;  raw[6] = 1;
 	qa_inject_packet(raw, 6);
-	qa_check(network_sa_ship_peer() == 5, "...nor does a byte that is not a ship at all");
+	qa_check(network_sa_ship_peer() == 4 && !network_sa_ship_peer_saw_us(),
+	         "an announcement with no acknowledgement byte is a pick and nothing more");
 
 	/* This machine's own announcement, reflected back: it is not the peer's. */
 	network_sa_ship_reset();
-	raw[4] = 1;  raw[5] = 4;
-	qa_inject_packet(raw, 6);
-	qa_check(network_sa_ship_peer() == 0,
+	raw[4] = 1;  raw[5] = 4;  raw[6] = 1;
+	qa_inject_packet(raw, 7);
+	qa_check(network_sa_ship_peer() == 0 && !network_sa_ship_peer_saw_us(),
 	         "a machine's own announcement coming back is not read as its partner's");
 
 	/* Truncated: adopted from nobody, but still retired, or it blocks the queue for good. */
@@ -1593,10 +1627,11 @@ static void qa_sa_ship_packet(void)
 	qa_check(network_sa_ship_peer() == 0 && packet_in[0] == NULL,
 	         "a truncated announcement is not adopted, and does not jam the queue");
 
-	/* Publishing clamps at the source too, so a corrupted local value never leaves. */
+	/* Publishing clamps at the source too, so a corrupted local value never leaves. Zero is a
+	 * legal announcement now, so the refused values are the ones outside 0..SA. */
 	network_sa_ship_reset();
-	network_sa_ship_publish(0);
-	network_sa_ship_publish(SA + 1);
+	network_sa_ship_publish(-1, false);
+	network_sa_ship_publish(SA + 1, false);
 	qa_check(network_sa_ship_peer() == 0, "publishing a non-ship announces nothing");
 
 	network_sa_ship_reset();
