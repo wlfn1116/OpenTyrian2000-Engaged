@@ -1197,7 +1197,8 @@ void JE_nextEpisode(void)
 	fade_palette(colors, 15, 0, 255);
 
 	JE_wipeKey();
-	if (!constantPlay)
+	// A gameplay wire test has no player to press past the episode banner.
+	if (!constantPlay && qa_net_gameplay_ticks == 0)
 	{
 		do
 		{
@@ -2084,7 +2085,8 @@ void JE_doInGameSetup(void)
 
 	if (yourInGameMenuRequest)
 	{
-		if (JE_inGameSetup())
+		// A gameplay wire test has no player at the menu: it closes immediately, no quit.
+		if (qa_net_gameplay_ticks == 0 && JE_inGameSetup())
 		{
 			reallyEndLevel = true;
 			playerEndLevel = true;
@@ -2139,16 +2141,22 @@ void JE_doInGameSetup(void)
 				{
 					if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 					{
+						// Consume the release, or it sits at the head of the reliable queue
+						// for the rest of the level and the next rendezvous reads it as its
+						// own, released one packet early from then on.
+						network_update();
 						network_check();
 						break;
 					}
 					else if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_GAME_QUIT)
 					{
 						reallyEndLevel = true;
-						playerEndLevel = true;;
+						playerEndLevel = true;
 						if (coopEndlessMode)
 							endlessCoopPeerQuitLevel();
 
+						// Left queued on purpose: the level-end paths are the ones that read
+						// a peer's quit (see nrb_peer_left_level).
 						network_check();
 						break;
 					}
@@ -6535,7 +6543,8 @@ void JE_endLevelAni(void)
 	temp2 = twoPlayerMode ? 150 : 160;
 	JE_outTextGlow(VGAScreenSeg, 90, temp2, miscText[5-1]);
 
-	if (!constantPlay)
+	// A gameplay wire test has no player to press past the level-complete screen.
+	if (!constantPlay && qa_net_gameplay_ticks == 0)
 	{
 		do
 		{

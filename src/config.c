@@ -1079,6 +1079,13 @@ static void pitems_to_playeritems(PlayerItems *items, const JE_PItemsType pItems
 
 void JE_saveGame(JE_byte slot, const char *name)
 {
+	// Hardcore forbids saving at the data level, not only in the menus that offer it: any
+	// path that reaches here mid-run (a stale disconnect-save flag, a future menu) must
+	// leave the slot exactly as it was.  endlessSaveSlot refuses under the same rule, so
+	// the campaign record and its endless sidecar stay a pair.
+	if (endlessMode && endlessHardcore())
+		return;
+
 	const Uint32 coop_save_tag = 0xc74f0000u;
 	saveFiles[slot-1].initialDifficulty = initialDifficulty;
 	saveFiles[slot-1].gameHasRepeated = gameHasRepeated;

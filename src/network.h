@@ -222,6 +222,11 @@ int network_test_peer(int rounds, int scenario);
 // so a wedged run reports where it stopped instead of being killed by the harness.
 bool network_test_expired(void);
 
+// Working-set probe shared by the base scenario and the gameplay verdicts (zero off Windows).
+void network_test_mem_mark(void);
+unsigned long network_test_mem_start_kb(void);
+unsigned long network_test_mem_now_kb(void);
+
 // Arm every session flag from this machine's own config, the same set the settings block
 // carries. The host runs on these; the joiner's adoption then overwrites them.
 void network_arm_local_session(void);

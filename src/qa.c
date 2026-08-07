@@ -12,12 +12,14 @@
 #include "mtrand.h"
 #include "net_rollback.h"
 #include "network.h"
+#include "nortvars.h"
 #include "player.h"
 #include "render_list.h"
 #include "rollback.h"
 #include "shots.h"
 #include "tyrian2.h"
 #include "varz.h"
+#include "video.h"
 
 #include "SDL.h"
 
@@ -39,6 +41,43 @@ unsigned long qa_net_corrupt_frame = 0;
 bool qa_net_save_exit = false;
 int qa_net_resume_slot = 0;
 int qa_net_loadout = 0;
+unsigned long qa_net_menu_frame = 0;
+int qa_net_game_type = -1;
+int qa_net_zones = 0;
+int qa_net_zones_cleared = 0;
+bool qa_net_lobby_settings = false;
+
+/* The forced modifier slate per Endless wire zone. Ten depths cover every charted modifier bit
+ * (the gamble-only and banked-boon bits included); depths past the table fly unmodified. Each
+ * row respects the compatibility rules course generation enforces (see qa_mods_compatible).
+ * Both machines derive the slate from the depth alone, so it can never diverge. */
+Uint64 qa_net_zone_mods(int depth)
+{
+	static const Uint64 slate[] = {
+		ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH | ENDLESS_MOD_GRAVITY,
+		ENDLESS_MOD_APEX | ENDLESS_MOD_SHOCKWAVE | ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_BOUNTY,
+		ENDLESS_MOD_LEGION | ENDLESS_MOD_SEEKER | ENDLESS_MOD_RETALIATION,
+		ENDLESS_MOD_ELITEPACK | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT
+			| ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_OVERCHARGE,
+		ENDLESS_MOD_NOELITE | ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI
+			| ENDLESS_MOD_STATIC | ENDLESS_MOD_SHIELDLESS,
+		ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_CLEANSIGNALS | ENDLESS_MOD_DILATION
+			| ENDLESS_MOD_KAMIKAZE | ENDLESS_MOD_ENRAGE,
+		ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_SLIPSTREAM
+			| ENDLESS_MOD_AEGIS | ENDLESS_MOD_LOWPROFILE,
+		ENDLESS_MOD_BACKFIRE | ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP
+			| ENDLESS_MOD_FLAKSCREEN | ENDLESS_MOD_AUXREACTOR | ENDLESS_MOD_DEADGEN,
+		ENDLESS_MOD_MISFIRE | ENDLESS_MOD_HOMING | (Uint64)ENDLESS_MOD_RAMPAGE
+			| ENDLESS_MOD_GIANTKILLER | ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_FAVOR,
+		ENDLESS_MOD_OVERBLAST | ENDLESS_MOD_CURSED | ENDLESS_MOD_MARKED | ENDLESS_MOD_NITRO
+			| ENDLESS_MOD_OVERHEAT | ENDLESS_MOD_DUD
+			| ENDLESS_MOD_STARCHARTS | ENDLESS_MOD_BREAKTHROUGH,
+	};
+
+	if (depth < 0 || depth >= (int)COUNTOF(slate))
+		return 0;
+	return slate[depth];
+}
 
 // First sidekick whose mount style matches, for the wire tests' loadout profiles. Styles:
 // 0 side pod, 1/3 trailing companion, 2 front pod, 4 orbiting satellite.
@@ -46,6 +85,22 @@ static JE_byte qa_first_sidekick_with_tr(JE_byte tr)
 {
 	for (uint i = 1; i <= OPTION_NUM; ++i)
 		if (options[i].tr == tr && options[i].name[0] != '\0')
+			return (JE_byte)i;
+	return 0;
+}
+
+static JE_byte qa_first_sidekick_with_ammo(void)
+{
+	for (uint i = 1; i <= OPTION_NUM; ++i)
+		if (options[i].ammo > 0 && options[i].name[0] != '\0')
+			return (JE_byte)i;
+	return 0;
+}
+
+static JE_byte qa_first_sidekick_with_charge(void)
+{
+	for (uint i = 1; i <= OPTION_NUM; ++i)
+		if (options[i].pwr > 0 && options[i].name[0] != '\0')
 			return (JE_byte)i;
 	return 0;
 }
@@ -82,6 +137,35 @@ void qa_net_apply_loadout(int profile)
 		player[1].items.sidekick[0] = chase ? chase : trail;
 		player[1].items.sidekick[1] = front;
 		break;
+	case 4:
+	{
+		/* Ammo-limited and charge-up kicks against a custom design and a satellite: the
+		 * counters all live in player[].sidekick and must cross rollback intact. The custom
+		 * design is the identical startup default on both machines, adopted into owner 1's
+		 * slots the way the outpost exchange would deliver it, so both simulations hold the
+		 * same compiled sidekick. */
+		const JE_byte ammoKick = qa_first_sidekick_with_ammo();
+		const JE_byte chargeKick = qa_first_sidekick_with_charge();
+		JE_byte customKick = 0;
+
+		customWeaponEnabled = true;
+		customWeaponNetPrepare();
+		Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
+		if (stream != NULL)
+		{
+			const size_t total = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+			if (total > 0 && customWeaponAdoptDesign(1, stream, total)
+			    && customSidekickOwnerSlot[1] > 0)
+				customKick = (JE_byte)customSidekickOwnerSlot[1];
+			free(stream);
+		}
+
+		player[0].items.sidekick[0] = ammoKick ? ammoKick : side;
+		player[0].items.sidekick[1] = chargeKick ? chargeKick : trail;
+		player[1].items.sidekick[0] = customKick ? customKick : sat;
+		player[1].items.sidekick[1] = sat;
+		break;
+	}
 	default:
 		return;
 	}
@@ -1844,6 +1928,276 @@ static void qa_test_resync_serialization(void)
 #endif
 }
 
+/* One sample of every modifier-derived combat parameter, memcmp-comparable (zeroed first, so
+ * padding cannot differ). Floats are compared by bit pattern: parity means bit-identical. */
+typedef struct
+{
+	EndlessScaling s;
+	Uint32 gravity, gravityX, gravityY, moveScale;
+	int scrollPct, genAdd, hitbox, contactElite, contactChamp;
+	int shockElite, shockChamp, martyrElite, martyrChamp;
+	int champFire, champDmg;
+	unsigned staticDrain;
+	Uint8 regenOff, regenFree, seeker, scrollActive;
+} QaModParity;
+
+static Uint32 qa_float_bits(float v)
+{
+	Uint32 bits;
+	memcpy(&bits, &v, sizeof(bits));
+	return bits;
+}
+
+static void qa_mod_parity_sample(int zone, Uint64 mods, uint fx, QaModParity *out)
+{
+	memset(out, 0, sizeof(*out));
+
+	endlessActiveMods = mods;
+	endlessPlayerMods[0] = endlessPlayerMods[1] = mods;
+	endlessRunDepth = zone;
+	difficultyLevel = DIFFICULTY_HARD;
+
+	// Identical structural draws on every machine: the omni-gravity heading and the per-level
+	// special-tier latches are seeded state, so reseed and reset before each sample.
+	endlessReseed((Uint64)zone * 2);
+	endlessResetZoneEffects();
+	endlessResetElites();
+	endlessSetFxPlayer(fx);
+
+	endlessScalingSnapshot(zone, DIFFICULTY_HARD, mods, &out->s);
+	out->gravity = qa_float_bits(endlessGravityDrift());
+	out->gravityX = qa_float_bits(endlessGravityDriftX());
+	out->gravityY = qa_float_bits(endlessGravityDriftY());
+	out->moveScale = qa_float_bits(endlessMoveScale());
+	out->scrollPct = endlessScrollBoostPercent();
+	out->genAdd = (int)endlessGeneratorPowerAdd(4);
+	out->hitbox = endlessHitboxScale(12);
+	out->contactElite = endlessEliteContactPercent(2);
+	out->contactChamp = endlessEliteContactPercent(3);
+	out->shockElite = endlessShockwaveRadius(5, 2);
+	out->shockChamp = endlessShockwaveRadius(6, 3);
+	out->martyrElite = endlessMartyrdomBurstShots(7, 2);
+	out->martyrChamp = endlessMartyrdomBurstShots(8, 3);
+	out->champFire = endlessChampionFireDelayPercent();
+	out->champDmg = endlessChampionShotDamagePercent();
+	out->staticDrain = endlessStaticDischargeDrain(10);
+	out->regenOff = endlessShieldRegenOff() ? 1 : 0;
+	out->regenFree = endlessShieldRegenFree() ? 1 : 0;
+	out->seeker = endlessSeekerActive() ? 1 : 0;
+	out->scrollActive = endlessScrollBoostActive() ? 1 : 0;
+}
+
+/* Every sector modifier's derived combat parameters, identical whichever machine computes them:
+ * both thisPlayerNum values, both isNetworkGame values, both host roles, and both fx players. A
+ * lever that read local-only state here would tilt one machine's simulation and desync the pair
+ * a frame later. */
+static void qa_test_modifier_online_parity(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedHost = network_is_host;
+	const uint savedThis = thisPlayerNum;
+	const bool savedEndless = endlessMode, savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
+	const Uint64 savedActive = endlessActiveMods;
+	Uint64 savedPlayerMods[2];
+	const int savedDepth = endlessRunDepth;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	memcpy(savedPlayerMods, endlessPlayerMods, sizeof(savedPlayerMods));
+
+	endlessMode = true;
+	unsigned rows = 0;
+
+	for (unsigned m = 0; m < COUNTOF(endlessModTable); ++m)
+	{
+		Uint64 mods = endlessModTable[m].bit;
+		if (mods == ENDLESS_MOD_GRAVITY_OMNI)
+			mods |= ENDLESS_MOD_GRAVITY;   // omni is a heading for GRAVITY, never alone
+
+		static const int zones[] = { 6, 64 };
+		for (unsigned z = 0; z < COUNTOF(zones); ++z)
+		for (uint fx = 0; fx < 2; ++fx)
+		{
+			QaModParity want;
+			bool haveWant = false;
+			bool same = true;
+
+			for (int net = 0; net <= 1; ++net)
+			for (uint machine = 1; machine <= 2; ++machine)
+			{
+				isNetworkGame = net != 0;
+				coopEndlessMode = net != 0;
+				twoPlayerMode = net != 0;
+				thisPlayerNum = machine;
+				network_is_host = machine == 1;
+
+				QaModParity got;
+				qa_mod_parity_sample(zones[z], mods, fx, &got);
+				if (!haveWant)
+				{
+					want = got;
+					haveWant = true;
+				}
+				else
+				{
+					same &= memcmp(&want, &got, sizeof(got)) == 0;
+				}
+			}
+
+			if (!same || !haveWant)
+			{
+				char label[160];
+				snprintf(label, sizeof(label),
+				         "modifier %016llx (zone %d, ship %u) derives identically on "
+				         "every machine and mode",
+				         (unsigned long long)mods, zones[z], fx);
+				qa_check(false, label);
+			}
+			++rows;
+		}
+	}
+	qa_check(rows > 0, "modifier online-parity matrix covered the registry");
+	printf("# modifier online parity: %u modifier/zone/ship rows\n", rows);
+
+	memcpy(endlessPlayerMods, savedPlayerMods, sizeof(savedPlayerMods));
+	endlessActiveMods = savedActive;
+	endlessRunDepth = savedDepth;
+	difficultyLevel = savedDifficulty;
+	twoPlayerMode = savedTwo;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+	thisPlayerNum = savedThis;
+	network_is_host = savedHost;
+	isNetworkGame = savedNet;
+	endlessSetFxPlayer(0);
+}
+
+/* Sidekick simulation counters across rollback: ammo, refill, charge, the satellite angle, the
+ * attachment latches, and the linked-pair state all live in registered state and must survive a
+ * snapshot restore exactly. A counter outside the registry replays wrong after a correction. */
+static void qa_test_sidekick_rollback_state(void)
+{
+	const Player savedPlayer = player[0];
+	const JE_boolean savedLinked = twoPlayerLinked;
+	const JE_real savedDirec = linkGunDirec;
+
+	player[0].sidekick[0].ammo = 7;
+	player[0].sidekick[0].ammo_refill_ticks = 13;
+	player[0].sidekick[1].charge = 4;
+	player[0].sidekick[1].charge_ticks = 9;
+	player[0].option_satellite_rotate = 1.25f;
+	player[0].option_attachment_move[0] = -3;
+	player[0].option_attachment_linked[0] = true;
+	player[0].option_attachment_return[1] = true;
+	twoPlayerLinked = true;
+	linkGunDirec = 2.5;
+
+	rollback_snapshot(0x51DEu);
+	player[0].sidekick[0].ammo = 1;
+	player[0].sidekick[0].ammo_refill_ticks = 0;
+	player[0].sidekick[1].charge = 0;
+	player[0].sidekick[1].charge_ticks = 0;
+	player[0].option_satellite_rotate = 0.0f;
+	player[0].option_attachment_move[0] = 5;
+	player[0].option_attachment_linked[0] = false;
+	player[0].option_attachment_return[1] = false;
+	twoPlayerLinked = false;
+	linkGunDirec = 0.0;
+
+	qa_check(rollback_restore(0x51DEu)
+	         && player[0].sidekick[0].ammo == 7
+	         && player[0].sidekick[0].ammo_refill_ticks == 13
+	         && player[0].sidekick[1].charge == 4
+	         && player[0].sidekick[1].charge_ticks == 9
+	         && player[0].option_satellite_rotate == 1.25f
+	         && player[0].option_attachment_move[0] == -3
+	         && player[0].option_attachment_linked[0]
+	         && player[0].option_attachment_return[1]
+	         && twoPlayerLinked
+	         && linkGunDirec == 2.5,
+	         "sidekick ammo, charge, satellite, attachment, and link state survive a rollback");
+
+	player[0] = savedPlayer;
+	twoPlayerLinked = savedLinked;
+	linkGunDirec = savedDirec;
+}
+
+/* Arcade specifics: the purple-ball economy bounds, the link-gun weapon table, and the split
+ * two-player gauge geometry against the wipe region it must stay inside. */
+static void qa_test_arcade_matrices(void)
+{
+	const Player savedPlayer = player[0];
+	char label[128];
+
+	// The purple-ball counter follows the life table for every reachable life count and the
+	// power ceiling holds; a maxed gun pays cash instead of an out-of-range power step.
+	Player p = player[0];
+	Uint8 lives;
+	p.lives = &lives;
+	bool ballBounds = true;
+	for (lives = 0; lives <= ARCADE_LIVES_MAX + 1; ++lives)
+	{
+		calc_purple_balls_needed(&p);
+		ballBounds &= p.purple_balls_needed >= 1 && p.purple_balls_needed <= 50;
+	}
+	qa_check(ballBounds, "purple-ball pricing stays inside its table for every life count");
+
+	lives = 5;
+	p.items.weapon[FRONT_WEAPON].id = 1;
+	p.items.weapon[FRONT_WEAPON].power = 11;
+	p.cash = 0;
+	p.is_dragonwing = false;
+	p.purple_balls_needed = 1;
+	handle_got_purple_ball(&p);
+	qa_check(p.items.weapon[FRONT_WEAPON].power == 11 && p.cash == 1000,
+	         "a purple ball at maximum power pays cash instead of a power step");
+	p.purple_balls_needed = 3;
+	handle_got_purple_ball(&p);
+	qa_check(p.purple_balls_needed == 2 && p.cash == 1000,
+	         "an unearned purple ball decrements the counter and pays nothing");
+
+	bool linkTable = true;
+	for (unsigned i = 0; i < COUNTOF(linkGunWeapons); ++i)
+		linkTable &= linkGunWeapons[i] <= WEAP_NUM;
+	qa_check(linkTable, "every link-gun rear weapon maps to a real weapon entry");
+
+	// Split-HUD gauge geometry: a full two-player gauge (21 units, one row of top pad) must
+	// stay inside the 45-row band the wipe clears; painted rows outside it would never be
+	// erased. Painted directly at the two player strides and measured off the pixels.
+	if (VGAScreen != NULL && VGAScreen->format->BytesPerPixel == 1)
+	{
+		for (int stride = 0; stride < 2; ++stride)
+		{
+			const int x = 100, y = 60 + 134 * stride;
+			Uint8 *const pixels = (Uint8 *)VGAScreen->pixels;
+
+			for (int row = y - 60; row <= y + 2; ++row)
+				memset(pixels + (size_t)row * VGAScreen->pitch + x - 2, 0, 14);
+
+			JE_dBar3(VGAScreen, x, y, 21, 144, 0, 0, 1);
+
+			int top = -1, bottom = -1;
+			for (int row = y - 60; row <= y + 2; ++row)
+			{
+				bool any = false;
+				for (int col = x; col <= x + 8; ++col)
+					any |= pixels[(size_t)row * VGAScreen->pitch + col] != 0;
+				if (any)
+				{
+					if (top < 0)
+						top = row;
+					bottom = row;
+				}
+			}
+
+			snprintf(label, sizeof(label),
+			         "player %d split gauge paints exactly the 45-row band the wipe clears",
+			         stride + 1);
+			qa_check(top == y - 44 && bottom == y, label);
+		}
+	}
+
+	player[0] = savedPlayer;
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -1911,6 +2265,9 @@ int qa_run_unit_suite(void)
 	qa_test_bounty_matrix();
 	qa_test_zone_payout();
 	qa_test_arcade_scaling();
+	qa_test_arcade_matrices();
+	qa_test_sidekick_rollback_state();
+	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();

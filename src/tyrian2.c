@@ -2899,13 +2899,38 @@ start_level:
 
 		if ((!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel)
 		{
+			if (qa_net_gameplay_ticks > 0)
+			{
+				++qa_net_zones_cleared;
+				fprintf(stderr, "net gameplay: level cleared (%d of %d)\n",
+				        qa_net_zones_cleared, qa_net_zones);
+				fflush(stderr);
+			}
+
 			if (endlessMode)
 			{
 				endlessRunDepth++;
 				endlessOnSectorCleared();  // bank the boons that pay out at the NEXT outpost (Star Charts / Breakthrough)
 			}
 			else
+			{
 				mainLevel = nextLevel;
+
+#ifdef WITH_NETWORK
+				/* Wire campaign run: after the second-to-last scheduled clear, drive the
+				 * episode's own ]Q transition (episode 1 section 26) instead of flying the
+				 * rest of the episode; the final scheduled level is then the next episode's
+				 * first. Both machines take the jump from the same cleared-level count. */
+				if (qa_net_gameplay_ticks > 0 && qa_net_zones > 0 && episodeNum == 1
+				    && network_game_type == NETWORK_GAME_CAMPAIGN
+				    && qa_net_zones_cleared == qa_net_zones - 1)
+				{
+					mainLevel = 26;
+					fprintf(stderr, "net gameplay: driving the episode transition\n");
+					fflush(stderr);
+				}
+#endif
+			}
 
 			JE_endLevelAni();  // level-complete screen first...
 
@@ -5433,6 +5458,25 @@ draw_player_shot_loop_end:
 	// driver is skipped by re-simulated frames (JE_advanceLevelFade).
 	JE_advanceLevelFade();
 
+#ifdef WITH_NETWORK
+	/* Wire-test scripted events, keyed to the frame counter so re-simulation passes replay
+	 * them exactly. The pickup grants drive the doubled-pickups payment rule inside the sim
+	 * on both machines; the scripted level end turns a bounded flight into a cleared zone so
+	 * the whole between-level machinery runs over the wire. */
+	if (qa_net_gameplay_ticks > 0 && isNetworkGame && nrb_active())
+	{
+		if (qa_net_lobby_settings && nrb_frame() >= 200 && nrb_frame() <= 320
+		    && nrb_frame() % 40 == 0)
+			player_award_pickup_cash(&player[(nrb_frame() / 40) & 1], 75);
+
+		if (qa_net_zones > 0 && nrb_frame() == QA_NET_ZONE_END_FRAME && !endLevel)
+		{
+			endLevel = true;
+			levelEnd = 40;
+		}
+	}
+#endif
+
 	/*Network Update*/
 #ifdef WITH_NETWORK
 	if (isNetworkGame && nrb_active())
@@ -6643,8 +6687,10 @@ void networkStartScreen(void)
 {
 	// A lobby game is already connected by the time we get here; the lobby had to do it
 	// itself so that a failed or cancelled attempt could return to the menu.  Command-line
-	// netplay has no lobby, so it still connects here.
-	if (!network_from_lobby)
+	// netplay has no lobby, so it still connects here.  The lobby-settings wire scenario
+	// runs command-line peers UNDER the lobby roles (the host listens, the joiner adopts
+	// the settings block), so it connects here too.
+	if (!network_from_lobby || (qa_net_gameplay_ticks > 0 && qa_net_lobby_settings))
 	{
 		JE_loadPic(VGAScreen, 2, false);
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
@@ -6949,7 +6995,12 @@ void networkStartScreen(void)
 
 	if (qa_net_gameplay_ticks > 0)
 	{
+		// The session flags as this machine armed or adopted them (the doubled-pickups
+		// scenario asserts both peers print the same pair), and the soak baseline.
+		network_test_mem_mark();
 		fprintf(stderr, "net gameplay: details settled, starting the game\n");
+		fprintf(stderr, "net session flags: shared=%d doubled=%d\n",
+		        coop_credit_is_shared() ? 1 : 0, coop_pickups_are_doubled() ? 1 : 0);
 		fflush(stderr);
 	}
 }

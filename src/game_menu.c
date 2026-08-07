@@ -24,6 +24,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
+#include "endless_internal.h"  // the QA auto-visit reaches the perk and course internals
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -1047,6 +1048,12 @@ static bool shopCampaignRendezvous(void)
 {
 	network_shop_send_state(true);
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: rendezvous committed\n");
+		fflush(stderr);
+	}
+
 	for (;;)
 	{
 		// Step one: both committed. Esc withdraws, but only until the peer's commit lands,
@@ -1075,6 +1082,12 @@ static bool shopCampaignRendezvous(void)
 			SDL_Delay(16);
 		}
 
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: rendezvous peer done\n");
+			fflush(stderr);
+		}
+
 		// Both machines are now in this loop draining packets, which is the one window wide
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
@@ -1096,7 +1109,14 @@ static bool shopCampaignRendezvous(void)
 		}
 
 		if (network_shop_peer_done())
+		{
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: rendezvous locked\n");
+				fflush(stderr);
+			}
 			return true;
+		}
 
 		network_shop_set_locked(false);
 	}
@@ -1243,6 +1263,12 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		network_shop_end();
 	}
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: departure handshake\n");
+		fflush(stderr);
+	}
+
 	network_prepare(PACKET_WAITING);
 	packet_out_temp->data[4] = myPick ? 1 : 0;
 	packet_out_temp->data[5] = myPickEp;
@@ -1293,13 +1319,134 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		SDL_Delay(16);
 	}
 }
+
+/* A gameplay wire test has no player to walk the outpost, but online co-op still owes it the
+ * outpost protocol: the purchase exchange, the perk pick, the custom-weapon designs, the course
+ * rendezvous and the level-start handshake all live here. Endless charts the scripted course
+ * for this depth under its forced modifier slate (qa_net_zone_mods); Campaign authors and
+ * equips each ship's own custom weapon design. */
+static void qa_shop_auto_visit(void)
+{
+	const ShopOutpostRoute route = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
+	const uint me = thisPlayerNum - 1u;
+
+	if (endlessMode)
+	{
+		/* The zone-end wallets, as this machine derives them. The harness compares these
+		 * lines across the two peers; both machines simulate both wallets, so any
+		 * difference is a payment-rule divergence even before the canary would see it. */
+		printf("NET ZONE WALLETS depth=%d p1=%lu p2=%lu bounty=%llu mods=%016llx\n",
+		       endlessRunDepth, (unsigned long)player[0].cash, (unsigned long)player[1].cash,
+		       (unsigned long long)endlessCashBySource[ENDLESS_CASH_BOUNTY],
+		       (unsigned long long)endlessActiveMods);
+		fflush(stdout);
+	}
+
+	// The scheduled zones are flown; report the whole session and leave. Exiting outright
+	// would strand a peer still confirming its final level end (its stall escape needs this
+	// machine's packets), so hold a last barrier until the peer's own announcement arrives.
+	if (qa_net_zones > 0 && qa_net_zones_cleared >= qa_net_zones)
+	{
+		network_prepare(PACKET_WAITING);
+		network_send(4);  // PACKET_WAITING (final barrier)
+
+		const Uint32 barrier = SDL_GetTicks();
+		while (SDL_GetTicks() - barrier < 20000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			if (packet_in[0] != NULL
+			    && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+			{
+				network_update();
+				break;
+			}
+			SDL_Delay(1);
+		}
+		qa_net_zone_verdict();
+	}
+
+	fprintf(stderr, "net gameplay: outpost auto-visit (depth %d)\n",
+	        endlessMode ? endlessRunDepth : -1);
+	fflush(stderr);
+
+	shopPlayerIndex = gameplay_local_player_index();
+	debugLevelPickReset();
+	network_shop_begin();
+	customWeaponNetPrepare();
+
+	// A queued perk pick: take the first offer for this machine's own ship through the real
+	// grant path; the shop packets publish it and the peer's own pick arrives the same way.
+	if (endlessMode && endlessPerkPending)
+	{
+		if (endlessPerkChoiceCount() > 0)
+			endlessPerkGrant(me, endlessPerkChoice[0], 1);
+		endlessPerkPending = false;
+	}
+
+	if (coopCampaignMode)
+	{
+		// A small design of this machine's own, distinct per ship, compiled and equipped as
+		// the front gun; the rendezvous publishes it so both machines fly both designs.
+		customWeaponEnabled = true;
+		SDL_strlcpy(customWeaponName, thisPlayerNum == 1 ? "QA Wire Alpha" : "QA Wire Beta",
+		            sizeof(customWeaponName));
+		customWeaponRaw[0][0].multi = 2;
+		customWeaponRaw[0][0].max = 2;
+		customWeaponRaw[0][0].attack[0] = (JE_byte)(8 + thisPlayerNum);
+		customWeaponNetPrepare();
+		player[me].items.weapon[FRONT_WEAPON].id =
+			(Uint8)customWeaponOwnerPort[customWeaponLocalOwner()];
+	}
+
+	// A scripted purchase, so every visit exercises the transaction path in both directions.
+	shopPlayer()->cash += 100u + thisPlayerNum;
+	network_shop_send_transaction();
+
+	if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
+	{
+		const int course = 0;
+		endlessCourseMod[course] = qa_net_zone_mods(endlessRunDepth);
+		if (endlessLocalPlayerCharts())
+		{
+			endlessCoopCourse = course;
+		}
+		else
+		{
+			const int got = shopEndlessAwaitCourse(true);
+			if (got >= 0)
+				endlessCoopCourse = got;
+		}
+		jumpSection = true;   // the sector itself is folded at the rendezvous
+	}
+	else
+	{
+		// The campaign departure is a planet pick; take the first one on this outpost's map.
+		select_level(mapSection[0], 0);
+	}
+
+	shopLeaveOutpost(&route);
+
+	fprintf(stderr, "net gameplay: outpost auto-visit done (mainLevel %d)\n", (int)mainLevel);
+	fflush(stderr);
+}
 #endif
 
 void JE_itemScreen(void)
 {
 	// A gameplay wire test drives the level itself; there is no player to walk the outpost.
+	// Online co-op still owes the outpost protocol, which the auto-visit runs without a menu.
 	if (qa_net_gameplay_ticks > 0)
 	{
+#ifdef WITH_NETWORK
+		if (isNetworkGame && coop_mode_active())
+		{
+			qa_shop_auto_visit();
+			return;
+		}
+#endif
 		fprintf(stderr, "net gameplay: outpost skipped\n");
 		fflush(stderr);
 		return;

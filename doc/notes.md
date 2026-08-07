@@ -1098,13 +1098,50 @@ Scenario 9 kills the joiner mid-level; the host must reach its own clean
 prints a working-set figure after the handshake and at the finish
 (`NETWORK TEST MEM`), and the harness fails a session whose memory grew.
 
-Scenario 10 flies three sidekick mount combinations with scripted fire
+Scenario 10 flies four sidekick mount combinations with scripted fire
 (`--test-net-loadout`, applied identically on both machines; the fire buttons
 are forced where the input devices would have been sampled): front pod + side
-pod against a trailing pair, double front against satellite + chaser, and a
-satellite pair against chaser + front. A mount whose simulation reads
-unregistered or local-only state desyncs here. The gameplay scenarios all fire
-constantly since the same hook serves them.
+pod against a trailing pair, double front against satellite + chaser, a
+satellite pair against chaser + front, and ammo-limited + charge-up kicks
+against a custom design + satellite. The custom design is the identical startup
+default on both machines, adopted into owner 1's slots the way the outpost
+exchange would deliver it. A mount whose simulation reads unregistered or
+local-only state desyncs here. The gameplay scenarios all fire constantly since
+the same hook serves them.
+
+Scenarios 11 to 15 extend the same harness. 11 raises the in-game-menu request
+on both machines on the same frame (`--test-net-menu-frame`) and requires the
+host-wins arbitration to leave a clean reliable queue. 12 and 13 are multi-level
+runs (`--test-net-game-type`, `--test-net-zones`): the outpost auto-visit in
+game_menu.c (`qa_shop_auto_visit`) stands in for the player, running the real
+shop protocol (purchases, perk picks, custom weapon designs, the course
+rendezvous and the departure handshake), and a frame-keyed scripted level end
+(`QA_NET_ZONE_END_FRAME`, replayed identically by re-simulation passes) turns
+each bounded flight into a cleared level. 12 flies ten Online Endless zones,
+each charted with a forced modifier slate (`qa_net_zone_mods`) that covers
+every registry bit across the run; both peers print their view of both wallets
+at every outpost and the harness requires the sequences identical, plus a
+nonzero elite bounty by the end. Multi-zone runs set `cheatInfiniteArmor` on
+both peers so the scripted wiggle cannot die into the death menus, and the
+verdict holds a final `PACKET_WAITING` barrier before exiting, because a peer
+still confirming its last level end needs the other machine's packets to
+escape its stall. 13 flies the first two campaign levels with the shop between
+them, each ship flying its own custom weapon design, then jumps the pair into
+episode 1's `]Q` section (26) to drive the real episode transition and flies
+the first level of episode 2. 14 runs the peers under the production lobby
+roles (`--test-net-lobby-settings`): the host arms Individual credit plus
+Double Pickups from its own config, the joiner starts from the opposite values
+and must adopt the settings block, and frame-keyed in-simulation pickup grants
+then have to pay the same doubled wallets on both machines. 15 is the
+accelerated soak, a 12000-tick flight watched by the same working-set check as
+the base scenario (the baseline is re-marked at each level start so one-time
+sprite loads stay out of the figure); it runs only when selected explicitly.
+
+Command-line netplay now assigns player 1 the host role at startup (opentyr.c),
+for real sessions and test peers alike: the desync recovery dispatch and the
+menu arbitration act on the host role alone, and a session without one silently
+ran with recovery disabled. Settings stay configured-by-hand on both sides;
+only the role is filled in.
 
 The endless scenario exchanges all three Relaxed death-prompt choices, host to
 joiner, one exchange per choice the way three separate deaths would arrive. The
@@ -1129,11 +1166,21 @@ the packet still carried the sector and the two machines could chart different
 courses. The Relaxed death prompt deliberately ignores Esc: one of its three
 rows must be chosen, so the joiner's wait always gets an answer.
 
-One latent race is documented rather than fixed: both players pressing Esc on
-the same rollback frame makes both machines take the local-menu branch, each
-sending a `PACKET_WAITING` that neither consumes. The leftovers are read by a
-later wait as its release. Rare, self-limiting, and worth a real arbitration
-(host wins the simultaneous request) if it ever bites in play.
+Simultaneous presses are arbitrated: when both players' menu requests coalesce
+into one scheduled opening, only the host takes the local-menu branch and the
+joiner waits on the host's menu (`req_host_menu` in net_rollback.c). Both
+machines derive "did the host press" from the same verified input records, so
+the two sides always take complementary branches. Without it both machines took
+the local branch and each sent a `PACKET_WAITING` nobody consumed. The
+menu-race wire scenario presses Esc on both machines on the same frame and
+fails on any stale `PACKET_WAITING` left behind.
+
+The same scenario found that the menu release itself leaked: the waiting
+machine broke out of its wait on the release `PACKET_WAITING` without consuming
+it (`network_check` where `network_update` was needed), so every later
+rendezvous on that machine was released one packet early. The peer's
+`PACKET_GAME_QUIT` in that wait stays queued on purpose; the level-end paths
+are the ones that read a quit.
 
 ## UI and sprite safety
 
