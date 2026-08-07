@@ -27,6 +27,9 @@ extern unsigned long qa_net_corrupt_frame;
  * exits; resume_slot makes the host auto-load that slot, so the joiner adopts the resume form. */
 extern bool qa_net_save_exit;
 extern int qa_net_resume_slot;
+// Sidekick mount profile for the gameplay wire tests; 0 keeps the stock loadout.
+extern int qa_net_loadout;
+void qa_net_apply_loadout(int profile);
 extern bool qa_fast_forward;
 
 int qa_run_unit_suite(void);

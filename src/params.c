@@ -78,6 +78,7 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 309, 0,   "test-net-corrupt-frame", true },
 		{ 310, 0,   "test-net-save-exit", false },
 		{ 311, 0,   "test-net-resume-slot", true },
+		{ 312, 0,   "test-net-loadout", true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -265,6 +266,9 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 311:
 			qa_net_resume_slot = atoi(option.arg);
+			break;
+		case 312:
+			qa_net_loadout = atoi(option.arg);
 			break;
 
 		default:

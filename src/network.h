@@ -222,6 +222,10 @@ int network_test_peer(int rounds, int scenario);
 // so a wedged run reports where it stopped instead of being killed by the harness.
 bool network_test_expired(void);
 
+// Arm every session flag from this machine's own config, the same set the settings block
+// carries. The host runs on these; the joiner's adoption then overwrites them.
+void network_arm_local_session(void);
+
 // Pack, adopt, and restore host-authoritative simulation settings. Presentation settings remain
 // local. The return value is the encoded byte count.
 int  network_settings_pack(Uint8 *buf);

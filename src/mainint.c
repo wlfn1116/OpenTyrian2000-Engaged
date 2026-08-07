@@ -8035,6 +8035,17 @@ redo:
 		button[3-1] = false;
 		button[4-1] = false;
 
+		// Wire-test gameplay: scripted fire, so the weapons and every sidekick mount do real
+		// work. Applied where the devices would have been sampled; a replay pass takes its
+		// input from the recorded tuple instead.
+		if (qa_net_gameplay_ticks > 0 && (!isNetworkGame || playerNum_ == thisPlayerNum)
+		    && !rollback_resim && !endLevel)
+		{
+			button[0] = true;
+			button[1] = ((nrb_frame() >> 4) & 1) != 0;
+			button[2] = ((nrb_frame() >> 5) & 1) != 0;
+		}
+
 		// Movement intent consumed by the linking routines below: taken from this
 		// player's rollback tuple when one exists (wire-carried, so both machines
 		// agree), else derived classically from the tick's position delta.

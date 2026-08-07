@@ -255,6 +255,10 @@ void rollback_state_register_globals(void)
 	REG(map2YDelay);  REG(map2YDelayMax);
 	REG_ARR(smoothie_data);
 	REG(starfield_speed);
+	/* Script events toggle these mid-level, and smoothies[8] flips the vertical control axis,
+	 * so a replayed tick must start them from the same point or inputs read differently. */
+	REG_ARR(smoothies);
+	REG(starShowVGASpecialCode);
 	REG(endlessScrollExtraPx1);
 	REG(endlessScrollExtraPx2);
 	REG(endlessScrollExtraPx3);

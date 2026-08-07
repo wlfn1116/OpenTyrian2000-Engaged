@@ -10,6 +10,7 @@
 #include "endless_internal.h"
 #include "network.h"
 #include "player.h"
+#include "tyrian2.h"
 #include "varz.h"
 
 #include <stdio.h>
@@ -1282,6 +1283,52 @@ static void qa_scenario_suite(void)
 
 /* ---- entry point -------------------------------------------------------------------- */
 
+/* The flip/spotlight derivation, online and offline alike. Network games used to clear the
+ * smoothie flags wholesale, which silently disabled Topsy Turvy, the scripted inverted-control
+ * levels, and the light cone for every online session. */
+static void qa_modifier_display_matrix(void)
+{
+	const JE_boolean savedInvert = smoothies[9 - 1];
+	const JE_boolean savedCone = smoothies[6 - 1];
+	const JE_byte savedCode = starShowVGASpecialCode;
+	const Uint64 savedMods = endlessActiveMods;
+	const JE_boolean savedNet = isNetworkGame;
+
+	qa_session(0);
+	for (int net = 0; net <= 1; ++net)
+	{
+		isNetworkGame = net != 0;
+		const char *const where = net ? "online" : "solo";
+		char label[128];
+
+		endlessActiveMods = ENDLESS_MOD_TOPSY;
+		smoothies[9 - 1] = false;
+		smoothies[6 - 1] = false;
+		JE_deriveStarShowSpecial();
+		snprintf(label, sizeof(label), "Topsy Turvy flips the screen and controls %s", where);
+		qa_check(starShowVGASpecialCode == 1 && smoothies[9 - 1], label);
+
+		endlessActiveMods = 0;
+		smoothies[9 - 1] = false;
+		smoothies[6 - 1] = false;
+		JE_deriveStarShowSpecial();
+		snprintf(label, sizeof(label), "no flip without the modifier %s", where);
+		qa_check(starShowVGASpecialCode == 0 && !smoothies[9 - 1], label);
+
+		// A level whose own script inverted the controls keeps its flip.
+		smoothies[9 - 1] = true;
+		JE_deriveStarShowSpecial();
+		snprintf(label, sizeof(label), "a scripted inverted-control level keeps its flip %s", where);
+		qa_check(starShowVGASpecialCode == 1 && smoothies[9 - 1], label);
+	}
+
+	smoothies[9 - 1] = savedInvert;
+	smoothies[6 - 1] = savedCone;
+	starShowVGASpecialCode = savedCode;
+	endlessActiveMods = savedMods;
+	isNetworkGame = savedNet;
+}
+
 /* Which run modes offer the death prompt at all, driven through its real gates. Relaxed offers
  * the three-choice menu when a launch snapshot exists; Standard and Hardcore skip it and lock
  * the pause menu instead, so a fatal hit has no quiet exit there. */
@@ -1358,6 +1405,7 @@ void qa_test_endless_suite(void)
 	qa_gamble_matrix();
 	qa_death_prompt_matrix();
 	qa_test_endless_death_menu();
+	qa_modifier_display_matrix();
 	qa_drive_matrix();
 	qa_perk_matrix();
 	qa_outpost_matrix();

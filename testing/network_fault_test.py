@@ -42,6 +42,10 @@ SCENARIOS = (
     # The joiner is killed mid-level. The host must reach its clean connection-lost path and
     # exit with the message on its own, not hang until this harness's deadline.
     (9, "peer-vanish", 0),
+    # Three sidekick mount combinations (front+side vs trailing pair; double front vs
+    # satellite+chaser; satellite pair vs chaser+front), flown with scripted fire. Any mount
+    # whose simulation reads unregistered or local-only state desyncs here.
+    (10, "sidekick-combos", 0),
 )
 
 
@@ -248,7 +252,21 @@ def main() -> int:
         # Fresh ports per scenario so a lingering packet cannot reach the next pair.
         base_port = args.base_port + index * 10
         print(f"=== scenario {scenario} ({name}), {rounds} rounds, port {base_port} ===")
-        if scenario == 7:
+        if scenario == 10:
+            result = 0
+            transcript = ""
+            injected = dict(loss=0, duplication=0, reordering=0, delay=0, pause=0)
+            for profile in (1, 2, 3):
+                r, t, inj = run_scenario(
+                    executable, data_dir, base_port + (profile - 1) * 4, scenario, rounds,
+                    extra_common=["--test-net-gameplay-ticks", "700",
+                                  "--test-net-loadout", str(profile)])
+                transcript += f"[loadout {profile}]\n{t}"
+                for key, value in inj.items():
+                    injected[key] += value
+                if r != 0:
+                    result = 1
+        elif scenario == 7:
             # Two stages over the same scratch directories: play-and-save, then resume it.
             host_dir = tempfile.mkdtemp(prefix="otnet_host_")
             join_dir = tempfile.mkdtemp(prefix="otnet_join_")

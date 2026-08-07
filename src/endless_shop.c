@@ -11,6 +11,7 @@
 #include "lvlmast.h"
 #include "mainint.h"
 #include "musmast.h"
+#include "network.h"
 #include "palette.h"
 #include "player.h"
 #include "sprite.h"
@@ -918,23 +919,49 @@ bool endlessTryReinforce(void)
 	return true;
 }
 
-// Bank interest and the clear bonus before the level-end total is drawn. Return both amounts.
+// One player's bank interest for this zone: 10% base, raised by the Financier perk, capped by
+// depth. Split into whole hundreds plus the remainder so a big bank can't overflow the multiply.
+static long endlessInterestOn(ulong bank)
+{
+	const int rate = endlessPerkInterestPercent();
+	long interest = (long)(bank / 100 * rate + bank % 100 * rate / 100);
+	long icap = (3000 + (long)endlessRunDepth * 80) * rate / ENDLESS_INTEREST_BASE_PCT;
+	if (interest > icap)
+		interest = icap;
+	return interest;
+}
+
+/* Bank interest and the clear bonus before the level-end total is drawn. Returns the local
+ * player's amounts for the tally. Every participating ship is paid on every machine: each earns
+ * interest on its own bank and its own clear bonus, so both sides of an online session derive
+ * the same wallets. Paying only the local wallet left each machine's view of the partner short
+ * and skipped the Shared-credit session entirely. Only the local share enters the run ledger,
+ * the same rule player_credit_cash applies to kills. */
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 {
 	long interest = 0, bonus = 0;
 	if (endlessMode && endlessRunDepth > 0)
 	{
-		// Bank interest on unspent cash: 10% base, raised by the Financier perk. Split into
-		// whole hundreds plus the remainder so a big bank can't overflow the rate multiply.
-		const int rate = endlessPerkInterestPercent();
-		interest = (long)(shopperCash() / 100 * rate + shopperCash() % 100 * rate / 100);
-		// Scale the interest cap with depth and rate while retaining a ceiling.
-		long icap = (3000 + (long)endlessRunDepth * 80) * rate / ENDLESS_INTEREST_BASE_PCT;
-		if (interest > icap)
-			interest = icap;
-		bonus = endlessClearBonus() * endlessPerkCashPercent() / 100;  // Scavenger perk scales the clear bonus
-		endlessCashCredit(interest, ENDLESS_CASH_INTEREST);
-		endlessCashCredit(bonus, ENDLESS_CASH_CLEAR);
+		const long clear = endlessClearBonus() * endlessPerkCashPercent() / 100;  // Scavenger scales it
+
+		const uint mine = endlessEconomyIndex();
+		const uint count = (isNetworkGame && coop_mode_active()) ? 2 : 1;
+		for (uint n = 0; n < count; ++n)
+		{
+			const uint p = (count == 2) ? n : mine;
+			const long pay = endlessInterestOn(player[p].cash);
+			if (p == mine)
+			{
+				interest = pay;
+				bonus = clear;
+				endlessCashCredit(interest, ENDLESS_CASH_INTEREST);
+				endlessCashCredit(bonus, ENDLESS_CASH_CLEAR);
+			}
+			else
+			{
+				player[p].cash += (ulong)(pay + clear);
+			}
+		}
 	}
 	if (interestOut)
 		*interestOut = interest;
@@ -1027,6 +1054,13 @@ void endlessBetweenLevels(void)
 		const JE_byte autoSlot = twoPlayerMode ? 22 : 11;
 		JE_saveGame(autoSlot, "LAST LEVEL    ");
 		endlessSaveSlot(autoSlot);  // side-effect-free run capture into the sidecar (endlessMode is true here)
+
+#ifdef WITH_NETWORK
+		// The checkpoint just written is what the disconnect dialog offers to keep (network.c).
+		// Without this an online Endless session never armed the offer at all.
+		if (isNetworkGame)
+			network_session_saveable = true;
+#endif
 	}
 
 	// Preserve the previous sector's modifiers so a later bail reopens this outpost unchanged.

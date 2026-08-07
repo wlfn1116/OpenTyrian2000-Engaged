@@ -156,6 +156,37 @@ static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
 		soundQueue[4] = S_WEAPON_7;   // the same point-defense "thunk" the Countermeasure burst uses
 }
 
+/* The flip/spotlight special code and the inverted-control flag, derived each tick from the
+ * level's smoothie script state and the Endless modifiers. Runs identically online: the inputs
+ * are level data and the synced course, so both machines derive the same values, and clearing
+ * them for network games (the old behavior) silently disabled Topsy Turvy, inverted-control
+ * levels and the light cone for every online session. */
+void JE_deriveStarShowSpecial(void)
+{
+	starShowVGASpecialCode = smoothies[9-1] + (smoothies[6-1] << 1);
+
+	// Endless decouples the light-cone spotlight (special code 2) from the level's own script:
+	// strip a spotlight any level would set by default, and show it only for the zones that
+	// rolled the seeded 1-in-10 chance (endlessRegenerateLevel). Inverted-control levels (code
+	// 1, or the rare code 3) are left alone so their flipped display and controls stay in sync.
+	// The spotlight rework is endless-only: it re-rolls a property of the SHIPPED level, which
+	// only makes sense when the level was picked at random. A campaign level keeps its own.
+	if (endlessMode)
+	{
+		if (starShowVGASpecialCode == 2)
+			starShowVGASpecialCode = 0;
+		if (starShowVGASpecialCode == 0 && endlessLightConeActive())
+			starShowVGASpecialCode = 2;
+	}
+
+	// Topsy Turvy uses the boss screen flip, including its matching control inversion.
+	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_TOPSY))
+	{
+		smoothies[9 - 1] = true;
+		starShowVGASpecialCode = 1;
+	}
+}
+
 // Chain Reaction.
 // A destroyed enemy emits a pulse that damages nearby NORMAL-tier fodder. Kills only QUEUE a pulse
 // here (with the enemy's screen position); the queue is drained once the whole player-shot loop
@@ -3538,36 +3569,7 @@ level_loop:
 	// New sim pass: advance the enemy velocity-hint generation (blit_enemy).
 	++rl_enemy_gen;
 
-	if (isNetworkGame)
-	{
-		smoothies[9-1] = false;
-		smoothies[6-1] = false;
-	}
-	else
-	{
-		starShowVGASpecialCode = smoothies[9-1] + (smoothies[6-1] << 1);
-
-		// Endless decouples the light-cone spotlight (special code 2) from the level's own script:
-		// strip a spotlight any level would set by default, and show it only for the zones that
-		// rolled the seeded 1-in-10 chance (endlessRegenerateLevel). Inverted-control levels (code
-		// 1, or the rare code 3) are left alone so their flipped display and controls stay in sync.
-		// The spotlight rework is endless-only: it re-rolls a property of the SHIPPED level, which
-		// only makes sense when the level was picked at random. A campaign level keeps its own.
-		if (endlessMode)
-		{
-			if (starShowVGASpecialCode == 2)
-				starShowVGASpecialCode = 0;
-			if (starShowVGASpecialCode == 0 && endlessLightConeActive())
-				starShowVGASpecialCode = 2;
-		}
-
-		// Topsy Turvy uses the boss screen flip, including its matching control inversion.
-		if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_TOPSY))
-		{
-			smoothies[9 - 1] = true;
-			starShowVGASpecialCode = 1;
-		}
-	}
+	JE_deriveStarShowSpecial();
 
 	/*Background Wrapping*/
 	// Preserve whole-row overshoot when boosted scroll crosses a wrap; stop wraps remain pinned.
@@ -6926,6 +6928,10 @@ void networkStartScreen(void)
 				player[i].cash = 0;
 			player[0].items.ship = 11;  // Silver Ship
 		}
+
+		// Gameplay wire tests: both machines mount the same scripted sidekick combination.
+		if (qa_net_gameplay_ticks > 0 && qa_net_loadout > 0)
+			qa_net_apply_loadout(qa_net_loadout);
 	}
 
 	while (!network_is_sync())

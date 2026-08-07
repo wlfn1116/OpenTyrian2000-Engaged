@@ -5,6 +5,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
+#include "episodes.h"
 #include "endless_internal.h"
 #include "fonthand.h"
 #include "mainint.h"
@@ -37,6 +38,59 @@ unsigned long qa_net_gameplay_ticks = 0;
 unsigned long qa_net_corrupt_frame = 0;
 bool qa_net_save_exit = false;
 int qa_net_resume_slot = 0;
+int qa_net_loadout = 0;
+
+// First sidekick whose mount style matches, for the wire tests' loadout profiles. Styles:
+// 0 side pod, 1/3 trailing companion, 2 front pod, 4 orbiting satellite.
+static JE_byte qa_first_sidekick_with_tr(JE_byte tr)
+{
+	for (uint i = 1; i <= OPTION_NUM; ++i)
+		if (options[i].tr == tr && options[i].name[0] != '\0')
+			return (JE_byte)i;
+	return 0;
+}
+
+/* Sidekick mount combinations for the gameplay wire tests, applied identically on both
+ * machines. The profiles cross the styles the mounts differ most in: front pods fire from the
+ * nose, side pods ride fixed offsets, trailing companions integrate motion history, and
+ * satellites orbit on a shared angle. */
+void qa_net_apply_loadout(int profile)
+{
+	const JE_byte side  = qa_first_sidekick_with_tr(0);
+	const JE_byte trail = qa_first_sidekick_with_tr(1);
+	const JE_byte front = qa_first_sidekick_with_tr(2);
+	const JE_byte chase = qa_first_sidekick_with_tr(3);
+	const JE_byte sat   = qa_first_sidekick_with_tr(4);
+
+	switch (profile)
+	{
+	case 1:
+		player[0].items.sidekick[0] = front;
+		player[0].items.sidekick[1] = side;
+		player[1].items.sidekick[0] = trail;
+		player[1].items.sidekick[1] = trail;
+		break;
+	case 2:
+		player[0].items.sidekick[0] = front;
+		player[0].items.sidekick[1] = front;
+		player[1].items.sidekick[0] = sat;
+		player[1].items.sidekick[1] = chase ? chase : trail;
+		break;
+	case 3:
+		player[0].items.sidekick[0] = sat;
+		player[0].items.sidekick[1] = sat;
+		player[1].items.sidekick[0] = chase ? chase : trail;
+		player[1].items.sidekick[1] = front;
+		break;
+	default:
+		return;
+	}
+
+	fprintf(stderr, "net gameplay: loadout %d (sidekicks %u+%u vs %u+%u)\n", profile,
+	        player[0].items.sidekick[0], player[0].items.sidekick[1],
+	        player[1].items.sidekick[0], player[1].items.sidekick[1]);
+	fflush(stderr);
+}
 bool qa_fast_forward = false;
 
 static unsigned qa_checks;
@@ -757,6 +811,147 @@ static void qa_test_cash_ledger(void)
 	endlessCashResync();
 }
 
+/* Elite and champion bounties across the whole session surface: both machines, both credit
+ * modes, the Bounty perk, and Double Pickups, which is pickup-only and must not touch kill
+ * cash. The wallet outcomes have to be identical whichever machine simulates the kill. */
+static void qa_test_bounty_matrix(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedTwo = twoPlayerMode, savedCampaign = coopCampaignMode;
+	const bool savedCoop = coopEndlessMode, savedEndless = endlessMode;
+	const uint savedThis = thisPlayerNum;
+	const Uint64 savedMods = endlessActiveMods;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	endlessMode = true;
+	endlessActiveMods = 0;
+
+	char label[160];
+	int link = 50;
+	for (uint machine = 1; machine <= 2; ++machine)
+	for (int shared = 0; shared <= 1; ++shared)
+	for (int doubled = 0; doubled <= 1; ++doubled)
+	for (int perk = 0; perk <= 1; ++perk)
+	for (int champ = 0; champ <= 1; ++champ)
+	{
+		thisPlayerNum = machine;
+		coop_set_session_shared_credit(shared != 0);
+		coop_set_session_double_pickups(doubled != 0);
+		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+		if (perk)
+			endlessPerkGrant(0, PERK_BOUNTY, 1);
+		endlessPerkRederive();
+
+		player[0].cash = player[1].cash = 0;
+		endlessCashResync();
+		endlessAwardEliteKill(++link, champ ? 3 : 2, 1);   // player 2's kill
+
+		const long want = champ ? endlessChampionBounty() : endlessEliteBounty();
+		const bool okay = shared
+		                ? (player[0].cash == (ulong)want && player[1].cash == (ulong)want)
+		                : (player[1].cash == (ulong)want && player[0].cash == 0);
+		snprintf(label, sizeof(label),
+		         "%s bounty (machine %u, %s credit, double %d, perk %d) pays the right wallets",
+		         champ ? "champion" : "elite", machine,
+		         shared ? "Shared" : "Individual", doubled, perk);
+		qa_check(okay && want > 0, label);
+	}
+
+	player[0].cash = player[1].cash = 0;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessCashResync();
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_pickups(false);
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+	thisPlayerNum = savedThis;
+	endlessActiveMods = savedMods;
+}
+
+/* The level-clear payout, which each machine derives for BOTH ships: interest on each ship's
+ * own bank plus each ship's clear bonus, identical whichever machine runs it. Paying only the
+ * local wallet left each machine's view of the partner short and skipped Shared entirely. */
+static void qa_test_zone_payout(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedTwo = twoPlayerMode, savedCampaign = coopCampaignMode;
+	const bool savedCoop = coopEndlessMode, savedEndless = endlessMode;
+	const uint savedThis = thisPlayerNum;
+	const int savedDepth = endlessRunDepth;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	endlessMode = true;
+	endlessRunDepth = 5;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+
+	ulong out[2][2];
+	for (uint machine = 1; machine <= 2; ++machine)
+	{
+		thisPlayerNum = machine;
+		coop_set_session_shared_credit(false);
+		coop_set_session_double_pickups(false);
+		player[0].cash = 10000;
+		player[1].cash = 40000;
+		endlessCashResync();
+		long interest = 0, bonus = 0;
+		endlessApplyLevelPayout(&interest, &bonus);
+		out[machine - 1][0] = player[0].cash;
+		out[machine - 1][1] = player[1].cash;
+		qa_check(interest > 0 && bonus > 0,
+		         "the zone tally reports the local ship's own interest and bonus");
+	}
+	qa_check(out[0][0] == out[1][0] && out[0][1] == out[1][1],
+	         "both machines derive the same wallets from the zone payout");
+	qa_check(out[0][1] - 40000 > out[0][0] - 10000,
+	         "zone interest follows each ship's own bank");
+
+	thisPlayerNum = 1;
+	coop_set_session_shared_credit(true);
+	player[0].cash = player[1].cash = 20000;
+	endlessCashResync();
+	endlessApplyLevelPayout(NULL, NULL);
+	qa_check(player[0].cash == player[1].cash && player[0].cash > 20000,
+	         "Shared credit's equal wallets stay equal through the zone payout");
+
+	isNetworkGame = false;
+	twoPlayerMode = false;
+	coopEndlessMode = false;
+	player[0].cash = 10000;
+	player[1].cash = 777;
+	endlessCashResync();
+	endlessApplyLevelPayout(NULL, NULL);
+	qa_check(player[1].cash == 777 && player[0].cash > 10000,
+	         "a solo zone payout touches one wallet");
+
+	player[0].cash = player[1].cash = 0;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessCashResync();
+	coop_set_session_shared_credit(true);
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+	thisPlayerNum = savedThis;
+	endlessRunDepth = savedDepth;
+}
+
 static void qa_test_arcade_scaling(void)
 {
 	const bool savedBoost = arcadeLifeBoost, savedRear = arcadeRearGunScale;
@@ -1474,6 +1669,31 @@ static void qa_test_network_settings(void)
 	         && arcadeRandomBalls && xmasMode == 0 && gameSpeed == 5,
 	         "leaving a network session restores every local simulation preference");
 
+	/* The host runs on flags armed from its own config; the joiner adopts the block packed
+	 * from that same config. The two must land on identical session behavior, or the pair
+	 * splits at the first payout: Double Pickups was armed on the joiner alone, and every
+	 * pickup desynced the wallets by its own value. */
+	coopSharedCredit = false;
+	coopDoublePickups = true;
+	net_rollback = true;
+	net_desync_recovery = true;
+	vt_ship = true; smoothMotion = true; smoothScroll = true;
+	coopCampaignMode = true;
+	coop_set_session_shared_credit(true);    // stale session values the arm must replace,
+	coop_set_session_double_pickups(false);  // or a missed flag hides behind leftovers
+	network_arm_local_session();
+	const bool hostDoubled = coop_pickups_are_doubled();
+	const bool hostShared = coop_credit_is_shared();
+	network_settings_pack(packet);
+	coop_set_session_shared_credit(true);     // a joiner arrives holding other values
+	coop_set_session_double_pickups(false);
+	network_settings_adopt(packet);
+	qa_check(hostDoubled && !hostShared
+	         && coop_pickups_are_doubled() == hostDoubled
+	         && coop_credit_is_shared() == hostShared,
+	         "host arming and joiner adoption produce the same credit session");
+	network_settings_restore();
+
 	memset(packet, 0xff, NETWORK_SETTINGS_SIZE);
 	network_settings_adopt(packet);
 	bool malformedClamped = true;
@@ -1688,6 +1908,8 @@ int qa_run_unit_suite(void)
 	qa_test_fixed_pool_layout();
 	qa_test_save_record_wire();
 	qa_test_cash_ledger();
+	qa_test_bounty_matrix();
+	qa_test_zone_payout();
 	qa_test_arcade_scaling();
 	qa_test_effect_gates();
 	qa_test_network_settings();
