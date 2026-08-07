@@ -1197,6 +1197,10 @@ int endlessCoopCourse = -1;
  * nobody charting unrecoverable -- both players sat on a wait screen with no key that did
  * anything. The un-escapable form is the backstop for arriving at the rendezvous with no index,
  * which is a divergence already; it takes the first route rather than waiting on it. */
+/* Returned instead of a sector index when the partner took a debug zone jump: there is no course
+ * to wait for, and the caller should leave the outpost with the jump the poll just adopted. */
+#define SHOP_COURSE_JUMPED (-2)
+
 static int shopEndlessAwaitCourse(bool escapable)
 {
 	shopWaitNotice("Partner is charting a course.", "They pick the next sector.",
@@ -1219,6 +1223,12 @@ static int shopEndlessAwaitCourse(bool escapable)
 		const int course = network_shop_peer_course();
 		if (course >= 0)
 			return course;
+
+		// A partner who took a debug zone jump is never going to chart anything, so their
+		// announcement has to end this wait too -- otherwise both machines sit here, one waiting
+		// for a course and the other already gone. The jump replaces the course outright.
+		if (network_endless_jump_poll())
+			return SHOP_COURSE_JUMPED;
 
 		if (network_shop_pump() || network_debug_sync_pump(false))
 			continue;
@@ -1303,7 +1313,7 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		 * below and not after: folding rebuilds the sector from the slate and would overwrite the
 		 * jump on whichever machine folded. Both machines then skip the fold together, which also
 		 * keeps the course slate and the charting turn identical on the two sides. */
-		const bool endlessJumping = endlessCoop() && network_endless_jump_sync();
+		const bool endlessJumping = endlessCoop() && network_endless_jump_poll();
 
 		if (endlessCoop() && !endlessLockedSortie && !gameLoaded && !endlessJumping)
 		{
@@ -6468,6 +6478,10 @@ static bool endlessDebugScreen(bool jumpMode)
 							                    : dbgPerks[p] > 255 ? 255 : dbgPerks[p]);
 						endless_jump_pick_stage((Uint16)endlessRunDepth, endlessActiveMods,
 						                        staged, (JE_byte)n);
+						// Tell the partner NOW, not at the departure: they may be sitting in a
+						// wait for a course this machine has just stopped charting, and this is
+						// what releases it. Waiting to announce is what left both sides stuck.
+						network_endless_jump_publish();
 					}
 					chosen = true;
 					done = true;
@@ -9160,6 +9174,14 @@ void JE_menuFunction(JE_byte select)
 			if (endlessCoop() && !endlessLocalPlayerCharts())
 			{
 				const int course = shopEndlessAwaitCourse(true);
+				if (course == SHOP_COURSE_JUMPED)
+				{
+					// The partner jumped; their level and run state are already adopted. Leave
+					// with no course of our own, and the fold is skipped on both machines.
+					endlessCoopCourse = -1;
+					jumpSection = true;
+					break;
+				}
 				if (course < 0)
 				{
 					newPal = 1;  // the notice shaded the frame; the loop repaints under a fresh palette
