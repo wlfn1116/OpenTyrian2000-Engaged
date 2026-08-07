@@ -1,4 +1,4 @@
-/*
+﻿/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -1128,13 +1128,10 @@ int network_connect(void)
 	if (network_from_lobby)
 		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
-	// Netcode mode: start from our own config.  A lobby joiner overwrites this
-	// when it adopts the host's settings block; command-line games have no host,
-	// so both sides must simply be configured alike (as with network_delay).
-	nrb_set_session_mode(net_rollback);
-	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery);
-	coop_set_session_shared_credit(coopSharedCredit);
+	// Session flags from our own config.  A lobby joiner overwrites these when it adopts the
+	// host's settings block; command-line games have no host, so both sides must simply be
+	// configured alike (as with network_delay).
+	network_arm_local_session();
 
 connect_reset:
 	// A listening host has no address to send to yet, so it stays quiet until the joiner
@@ -1427,6 +1424,10 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		{
 			// Save the pre-level outpost state, not partial progress from the interrupted level.
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
+			// The Endless run rides its own sidecar; restore it too, or the re-save captures
+			// the interrupted level's run state behind an outpost-time record.
+			if (endlessMode)
+				endlessLoadSlot(22);
 			JE_loadScreen(true, true);
 		}
 	}
@@ -1499,6 +1500,19 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	SDLNet_Quit();
 
 	JE_tyrianHalt(5);
+}
+
+/* Every session flag the settings block carries, armed from this machine's own config. The
+ * host's own arming and the joiner's adoption must cover the same set: a flag the block
+ * carries but the host never arms locally splits the two simulations at the first place it
+ * pays out. Double Pickups was exactly that, and every pickup desynced by its own value. */
+void network_arm_local_session(void)
+{
+	nrb_set_session_mode(net_rollback);
+	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
+	nrb_set_session_recovery(net_desync_recovery);
+	coop_set_session_shared_credit(coopSharedCredit);
+	coop_set_session_double_pickups(coopDoublePickups);
 }
 
 /* Host-authoritative simulation settings.

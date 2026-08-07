@@ -549,6 +549,32 @@ drain the queue is never beaten at.
 Every outpost purchase publishes, including the E-Shop and the perk pick, which
 previously only reached the peer at the rendezvous.
 
+### Session flags arm on both sides
+
+Every flag the settings block carries must be armed by
+`network_arm_local_session()` from the host's own config and adopted by the
+joiner from the block, the same set in both places. A flag the block carries
+but the arm misses runs the two simulations on different rules from the first
+place it pays out. Double Pickups was exactly that: the joiner adopted it, the
+host never armed it, and every pickup desynced the wallets by its own value,
+one desync-recovery stall after another for the whole session. The unit suite
+pins host arming against joiner adoption with stale session values in place.
+
+Payouts must go to deterministic wallets. `endlessCashCredit` pays the local
+keyboard's wallet and is for outpost-time, self-only flows; anything paid
+during or at the end of a level has to name the player index and run on both
+machines (`endlessAwardEliteKill`, `endlessApplyLevelPayout`, the kill and
+pickup paths). The zone payout pays every participating ship its own interest
+and clear bonus on both machines for that reason.
+
+The flip/spotlight code (`JE_deriveStarShowSpecial`) runs identically online;
+network games used to clear it wholesale, which disabled Topsy Turvy, scripted
+inverted-control levels and the light cone for every online session.
+`smoothies[]` and `starShowVGASpecialCode` are rollback-registered since the
+inverted-control flag reads back into input handling; the replay fixture
+hashes were regenerated for that registry addition after verifying the sim
+bit-identical with the registration removed.
+
 ### Keep-alive audit
 
 The peer declares this machine dead after `NET_TIME_OUT` (16s) without traffic,
@@ -1071,6 +1097,14 @@ Scenario 9 kills the joiner mid-level; the host must reach its own clean
 "Network connection was lost" exit rather than hang. The base scenario also
 prints a working-set figure after the handshake and at the finish
 (`NETWORK TEST MEM`), and the harness fails a session whose memory grew.
+
+Scenario 10 flies three sidekick mount combinations with scripted fire
+(`--test-net-loadout`, applied identically on both machines; the fire buttons
+are forced where the input devices would have been sampled): front pod + side
+pod against a trailing pair, double front against satellite + chaser, and a
+satellite pair against chaser + front. A mount whose simulation reads
+unregistered or local-only state desyncs here. The gameplay scenarios all fire
+constantly since the same hook serves them.
 
 The endless scenario exchanges all three Relaxed death-prompt choices, host to
 joiner, one exchange per choice the way three separate deaths would arrive. The
