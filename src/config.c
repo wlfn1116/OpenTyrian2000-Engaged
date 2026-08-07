@@ -612,7 +612,10 @@ bool load_opentyrian_config(void)
 				network_set_player_name(name);
 
 			const char *host;
-			if (config_get_string_option(section, "net_last_host", &host) && host[0] != '\0')
+			// A command-line game (--net) already named its target; the remembered lobby
+			// host is a prefill for the join screen and must not clobber it.
+			if (!isNetworkGame
+			    && config_get_string_option(section, "net_last_host", &host) && host[0] != '\0')
 			{
 				free(network_opponent_host);
 				network_opponent_host = malloc_die(strlen(host) + 1);

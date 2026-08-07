@@ -24,6 +24,11 @@
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
 #endif
+// Working-set probe for the wire tests' soak check (net_test_rss_kb).
+#include <psapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "psapi.lib")
+#endif
 #endif
 
 #include "network.h"
@@ -1156,7 +1161,18 @@ connect_reset:
 			// From the lobby, backing out of "waiting for player" has to return to the menu.
 			// Only a command-line game (which has no menu to return to) still exits here.
 			if (network_from_lobby)
+			{
+				/* Best effort, repeated because nothing will retry it: whoever we may already
+				 * have been talking to gets told, or they sit out the dead-link timeout (and a
+				 * joiner still mid-connect has no timeout at all, only its own Esc). */
+				if (peer_addr_known)
+				{
+					network_prepare(PACKET_QUIT);
+					for (int i = 0; i < 3; ++i)
+						network_send_no_ack(4);
+				}
 				return -1;
+			}
 			network_tyrian_halt(0, false);
 		}
 
@@ -3404,6 +3420,19 @@ int network_init(void)
 	return 0;
 }
 
+/* Working-set probe for the soak check: the harness compares the figure printed after the
+ * handshake against the one at the finish, so growth across a session's traffic is visible.
+ * Windows only; other platforms print zero and the harness skips the comparison. */
+static unsigned long net_test_rss_kb(void)
+{
+#ifdef _WIN32
+	PROCESS_MEMORY_COUNTERS pmc;
+	if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+		return (unsigned long)(pmc.WorkingSetSize / 1024);
+#endif
+	return 0;
+}
+
 /* Hard ceiling on a whole test-peer run.
  *
  * Comfortably inside the harness's own patience (testing/network_fault_test.py gives the pair 90
@@ -3413,6 +3442,7 @@ int network_init(void)
 #define NET_TEST_CEILING 70000
 
 static Uint32 net_test_started;
+static unsigned long net_test_rss_start_kb;
 
 bool network_test_expired(void)
 {
@@ -3452,6 +3482,8 @@ static int net_test_finish(int rounds)
 
 	printf("NETWORK TEST PASS player=%u rounds=%d scenario=%d ping=%dms\n",
 	       thisPlayerNum, rounds, qa_net_scenario, network_ping_ms());
+	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n",
+	       thisPlayerNum, net_test_rss_start_kb, net_test_rss_kb());
 	return 0;
 }
 
@@ -3479,6 +3511,8 @@ int network_test_peer(int rounds, int scenario)
 		network_update();
 		network_check();
 	}
+
+	net_test_rss_start_kb = net_test_rss_kb();
 
 	for (int round = 0; round < rounds; ++round)
 	{

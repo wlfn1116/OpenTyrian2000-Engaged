@@ -35,6 +35,8 @@ int qa_net_scenario = 0;
 int qa_net_version_skew = 0;
 unsigned long qa_net_gameplay_ticks = 0;
 unsigned long qa_net_corrupt_frame = 0;
+bool qa_net_save_exit = false;
+int qa_net_resume_slot = 0;
 bool qa_fast_forward = false;
 
 static unsigned qa_checks;

@@ -3125,6 +3125,42 @@ JE_boolean JE_inGameSetup(void)
 
 
 /* Relaxed-mode death prompt. Esc and right-click are inert; one of the three rows must be chosen. */
+/* The Relaxed death prompt's rows, one per EndlessDeathChoice. At file scope so
+ * qa_test_endless_death_menu below can measure every line against the panel's width clamp. */
+static const char *const endlessDeathRowName[] = { "Restart Zone", "Return to Outpost", "End Run" };
+static const char *const endlessDeathRowHelp[] =
+{
+	"Fly this zone again as you launched it.",
+	"Back to the outpost for a new course.",
+	"End the run and see the summary.",
+};
+static const char endlessDeathTitle[] = "SHIP DESTROYED";
+
+/* Pinned without the input loop: the rows cover the whole choice enum, and every line fits
+ * the panel, whose width self-sizes but clamps at the playfield's edge and would clip. */
+void qa_test_endless_death_menu(void)
+{
+	COMPILE_TIME_ASSERT(death_rows_cover_choices,
+	                    COUNTOF(endlessDeathRowName) == ENDLESS_DEATH_END_RUN + 1);
+	COMPILE_TIME_ASSERT(death_help_covers_choices,
+	                    COUNTOF(endlessDeathRowHelp) == ENDLESS_DEATH_END_RUN + 1);
+
+	char label[128];
+	const int widthMax = PLAYFIELD_WIDTH - 32 - 24;  // the panel clamp, minus its padding
+
+	qa_check(JE_textWidth(endlessDeathTitle, normal_font) <= widthMax,
+	         "the death prompt's title fits its panel");
+	for (uint i = 0; i < COUNTOF(endlessDeathRowName); ++i)
+	{
+		snprintf(label, sizeof(label), "death prompt row '%s' fits its panel",
+		         endlessDeathRowName[i]);
+		qa_check(JE_textWidth(endlessDeathRowName[i], normal_font) <= widthMax, label);
+		snprintf(label, sizeof(label), "death prompt help '%s' fits its panel",
+		         endlessDeathRowHelp[i]);
+		qa_check(JE_textWidth(endlessDeathRowHelp[i], small_font) <= widthMax, label);
+	}
+}
+
 EndlessDeathChoice JE_endlessDeathMenu(void)
 {
 	SDL_Surface *const temp_surface = VGAScreen;
@@ -3133,25 +3169,15 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
 
-	static const char *const rowName[] = { "Restart Zone", "Return to Outpost", "End Run" };
-	static const char *const rowHelp[] =
-	{
-		"Fly this zone again as you launched it.",
-		"Back to the outpost for a new course.",
-		"End the run and see the summary.",
-	};
-
-	static const char title[] = "SHIP DESTROYED";
-
 	// Font bodies occupy different parts of bank 15, so their shade offsets use opposite signs.
 	const int titleValue = -1, rowValueOn = -2, rowValueOff = -4, helpValue = 4;
 
 	// Size the panel to its widest line.
-	int contentW = JE_textWidth(title, normal_font);
-	for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+	int contentW = JE_textWidth(endlessDeathTitle, normal_font);
+	for (int i = 0; i < (int)COUNTOF(endlessDeathRowName); ++i)
 	{
-		contentW = MAX(contentW, JE_textWidth(rowName[i], normal_font));
-		contentW = MAX(contentW, JE_textWidth(rowHelp[i], small_font));
+		contentW = MAX(contentW, JE_textWidth(endlessDeathRowName[i], normal_font));
+		contentW = MAX(contentW, JE_textWidth(endlessDeathRowHelp[i], small_font));
 	}
 
 	// Center within the playfield, excluding the right-side HUD.
@@ -3189,15 +3215,15 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 		// Restore background.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		draw_font_hv_shadow(VGAScreen, midX, py0 + 10, title, normal_font, centered, 15, titleValue, false, 2);
+		draw_font_hv_shadow(VGAScreen, midX, py0 + 10, endlessDeathTitle, normal_font, centered, 15, titleValue, false, 2);
 
-		for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+		for (int i = 0; i < (int)COUNTOF(endlessDeathRowName); ++i)
 		{
-			draw_font_hv_shadow(VGAScreen, midX, rowY0 + rowPitch * i, rowName[i], normal_font, centered,
+			draw_font_hv_shadow(VGAScreen, midX, rowY0 + rowPitch * i, endlessDeathRowName[i], normal_font, centered,
 			                    15, i == selected ? rowValueOn : rowValueOff, false, 2);
 		}
 
-		draw_font_hv_shadow(VGAScreen, midX, py1 - 16, rowHelp[selected], small_font, centered, 15, helpValue, true, 1);
+		draw_font_hv_shadow(VGAScreen, midX, py1 - 16, endlessDeathRowHelp[selected], small_font, centered, 15, helpValue, true, 1);
 
 		service_SDL_events(true);
 
@@ -3254,7 +3280,7 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 
 		if ((mouseMoved || newmouse) && mouse_x >= rowX0 && mouse_x < rowX1)
 		{
-			for (int i = 0; i < (int)COUNTOF(rowName); ++i)
+			for (int i = 0; i < (int)COUNTOF(endlessDeathRowName); ++i)
 			{
 				const int y = rowY0 + rowPitch * i;
 				if (mouse_y < y - 2 || mouse_y >= y - 2 + rowH)
@@ -3286,14 +3312,14 @@ EndlessDeathChoice JE_endlessDeathMenu(void)
 			{
 				JE_playSampleNum(S_CURSOR);
 
-				selected = selected == 0 ? (int)COUNTOF(rowName) - 1 : selected - 1;
+				selected = selected == 0 ? (int)COUNTOF(endlessDeathRowName) - 1 : selected - 1;
 				break;
 			}
 			case SDL_SCANCODE_DOWN:
 			{
 				JE_playSampleNum(S_CURSOR);
 
-				selected = selected == (int)COUNTOF(rowName) - 1 ? 0 : selected + 1;
+				selected = selected == (int)COUNTOF(endlessDeathRowName) - 1 ? 0 : selected + 1;
 				break;
 			}
 			case SDL_SCANCODE_SPACE:

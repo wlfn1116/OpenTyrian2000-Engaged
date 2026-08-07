@@ -76,6 +76,8 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 307, 0,   "test-net-version-skew", true },
 		{ 308, 0,   "test-net-gameplay-ticks", true },
 		{ 309, 0,   "test-net-corrupt-frame", true },
+		{ 310, 0,   "test-net-save-exit", false },
+		{ 311, 0,   "test-net-resume-slot", true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -257,6 +259,12 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 309:
 			qa_net_corrupt_frame = strtoul(option.arg, NULL, 10);
+			break;
+		case 310:
+			qa_net_save_exit = true;
+			break;
+		case 311:
+			qa_net_resume_slot = atoi(option.arg);
 			break;
 
 		default:
