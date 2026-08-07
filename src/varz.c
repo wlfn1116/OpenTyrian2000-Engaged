@@ -289,12 +289,14 @@ EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
 /* Player Shot Data */
 JE_byte     zinglonDuration;
 
-/* Soul-of-Zinglon light pillar render request: JE_doSpecialShot records the pillar
-   here each tick instead of drawing it, so JE_starShowVGA can draw it at the render-
-   rate ship position rather than frozen into the 35Hz residual. */
-bool        zinglonPillarActive = false;
-int         zinglonPillarCX = 0;    /* pillar centre x in game_screen coords */
-int         zinglonPillarTemp = 0;  /* pillar half-width */
+/* Soul-of-Zinglon light pillar render request, one per ship: JE_doSpecialShot records the
+   pillar here each tick instead of drawing it, so JE_starShowVGA can draw it at the render-
+   rate ship position rather than frozen into the 35Hz residual. Per ship because both can
+   have one up at once, and because zinglonDuration stops at 1 rather than reaching 0, so the
+   counter alone cannot tell a live pillar from a spent one. */
+bool        zinglonPillarActive[2] = { false, false };
+int         zinglonPillarCX[2] = { 0, 0 };    /* pillar centre x in game_screen coords */
+int         zinglonPillarTemp[2] = { 0, 0 };  /* pillar half-width */
 
 JE_byte     astralDuration;
 JE_word     flareDuration;
@@ -1212,9 +1214,9 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 		// Record the pillar for the render layer (JE_starShowVGA) instead of drawing:
 		// into game_screen it would snap at 35Hz and freeze the scrolled background.
-		zinglonPillarActive = true;
-		zinglonPillarCX = this_player->x + 7;
-		zinglonPillarTemp = temp;
+		zinglonPillarActive[special_player] = true;
+		zinglonPillarCX[special_player] = this_player->x + 7;
+		zinglonPillarTemp[special_player] = temp;
 
 		// Opening Salvo: the pillar is a brightness effect, not a sprite, so it has no colour to
 		// trail. Scatter sparks up the beam in the salvo's green, width following its own ramp.

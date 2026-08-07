@@ -1520,7 +1520,11 @@ void JE_itemScreen(void)
 	}
 
 	bool quit = false;
-	shopPlayerIndex = isNetworkGame && coop_mode_active() ? gameplay_local_player_index() : 0;
+	// Every dual-ship session, not just co-op: Separate arcade (the shape online Super Arcade and
+	// SuperTyrian fly) gives each machine a complete ship of its own, so this page has to read the
+	// local one or both players are shown ship one's hull, guns and cash. The helper answers 0 for
+	// everything that shares a single arsenal, so solo and the linked pair keep ship one.
+	shopPlayerIndex = gameplay_local_player_index();
 
 	crashlog_set_phase("shop / buy-sell menu");
 
@@ -2170,8 +2174,13 @@ void JE_itemScreen(void)
 			{
 				helpBoxColor = 15;
 				helpBoxBrightness = 4;
+				// The hull named here is this ship's own, not the session global: online the two
+				// players pick separately, and the global carries ship one's pick. It still decides
+				// whether the panel is drawn at all, and answers for the one path that clears the
+				// ship's byte without it (the game-over reload), so it stays the fallback.
+				const uint sa_ship = player_sa_ship(shopPlayer());
 				if (!superTyrian)
-					JE_helpBox(VGAScreen, 35, 25, superShips[superArcadeMode], 18);
+					JE_helpBox(VGAScreen, 35, 25, superShips[sa_ship != SA_NONE ? sa_ship : superArcadeMode], 18);
 				else
 					JE_helpBox(VGAScreen, 35, 25, superShips[SA+3], 18);
 				helpBoxBrightness = 1;

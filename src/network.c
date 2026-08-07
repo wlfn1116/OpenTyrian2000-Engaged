@@ -46,6 +46,7 @@
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "loudness.h"
 #include "mainint.h"
 #include "menus.h"
 #include "mouse.h"
@@ -1423,6 +1424,22 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		exit(1);
 	}
 
+	// The session is over; take the music with it rather than leaving the level's track playing
+	// under a dead-link screen. Half a second, the ramp the death screen already uses; it runs
+	// before the fade to black so the last frame holds while the music goes, and finishes with
+	// the song stopped and the master volume back where the next screen expects it.
+	{
+		MusicFadeOut songFade;
+		music_fade_out_init(&songFade);
+		while (!songFade.done)
+		{
+			music_fade_out_tick(&songFade);
+			service_SDL_events(false);
+			JE_showVGA();
+			SDL_Delay(4);
+		}
+	}
+
 	fade_black(10);
 
 	VGAScreen = VGAScreenSeg;
@@ -2378,22 +2395,30 @@ int network_endless_death_sync(int hostChoice)
  * itself, so a player who has already chosen can watch for their partner without the wait freezing
  * the screen. The reliable channel retransmits a lost announcement, so neither side has to repeat
  * itself. */
-static int net_sa_ship_peer_pick = 0;
+static int  net_sa_ship_peer_pick = 0;
+static bool net_sa_ship_peer_saw_us = false;
 
 void network_sa_ship_reset(void)
 {
 	net_sa_ship_peer_pick = 0;
+	net_sa_ship_peer_saw_us = false;
 }
 
-void network_sa_ship_publish(int ship)
+void network_sa_ship_publish(int ship, bool seen_peer)
 {
-	if (!isNetworkGame || ship < 1 || ship > SA)
+	if (!isNetworkGame || ship < 0 || ship > SA)
 		return;
 
 	network_prepare(PACKET_SA_SHIP);
 	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
-	packet_out_temp->data[5] = (Uint8)ship;
-	network_send(6);
+	packet_out_temp->data[5] = (Uint8)ship;          // 0 = taken back
+	packet_out_temp->data[6] = seen_peer ? 1 : 0;
+	network_send(7);
+}
+
+bool network_sa_ship_peer_saw_us(void)
+{
+	return isNetworkGame && net_sa_ship_peer_saw_us;
 }
 
 int network_sa_ship_peer(void)
@@ -2410,9 +2435,13 @@ int network_sa_ship_peer(void)
 		{
 			const uint sender = packet_in[0]->data[4];
 			const int ship = packet_in[0]->data[5];
-			// Clamped: the value indexes SAShip[] and a SAWeapon row on both machines.
-			if (sender != thisPlayerNum && ship >= 1 && ship <= SA)
+			// Clamped: the value indexes SAShip[] and a SAWeapon row on both machines. Zero is a
+			// pick taken back, which is why the range starts there and not at one.
+			if (sender != thisPlayerNum && ship >= 0 && ship <= SA)
+			{
 				net_sa_ship_peer_pick = ship;
+				net_sa_ship_peer_saw_us = packet_in[0]->len >= 7 && packet_in[0]->data[6] != 0;
+			}
 		}
 		network_update();
 	}

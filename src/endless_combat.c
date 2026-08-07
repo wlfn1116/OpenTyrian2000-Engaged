@@ -991,6 +991,31 @@ uint endlessDangerTargetPlayer(int fromX, int fromY)
 	return best;
 }
 
+/* Which ship a homing enemy chases, rolled once when it is created. Vanilla tracking always went
+ * for ship one, so in co-op the homing modifiers left the second player alone entirely; a coin
+ * toss per enemy splits the pressure. Rolled at creation rather than per tick so a chaser commits
+ * to one ship instead of jittering toward the midpoint of the two. */
+uint endlessRollHomingTarget(void)
+{
+	if (!coopEndlessMode)
+		return 0;
+	return mt_rand() & 1u;
+}
+
+/* ...and read back at the moment it matters, because the ship it picked may have gone down since.
+ * A downed partner is not chased, the same rule the curving shots follow. */
+uint endlessHomingTargetPlayer(uint stored)
+{
+	if (!coopEndlessMode)
+		return 0;
+	if (stored < COUNTOF(player) && player[stored].is_alive && !endlessPlayerDowned[stored])
+		return stored;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		if (player[p].is_alive && !endlessPlayerDowned[p])
+			return p;
+	return 0;
+}
+
 // Modifier decisions used by engine-owned object pools.
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {

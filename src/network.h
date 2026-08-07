@@ -266,9 +266,16 @@ void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *p
 
 /* Online Super Arcade ship picks. Each player chooses their own ship (they may match), so the
  * pick is announced rather than dictated: publish this machine's, then wait for the peer's.
- * Reliable, so a lost announcement is retransmitted rather than deadlocking the pair. */
-void network_sa_ship_publish(int ship);
-int  network_sa_ship_peer(void);    // 0 until the peer's pick has arrived
+ * Reliable, so a lost announcement is retransmitted rather than deadlocking the pair.
+ *
+ * A pick can be taken back while the peer has not made one, so the announcement carries two
+ * things: the ship (0 = taken back) and whether the sender has the other pick in hand. The
+ * second is what makes the retraction safe to offer. Neither machine may leave the picker until
+ * the peer has acknowledged its ship that way, and nobody retracts once they have the peer's
+ * ship -- so by the time either side leaves, the pair it leaves with can no longer change. */
+void network_sa_ship_publish(int ship, bool seen_peer);
+int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
+bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);
 
 /* Both machines announce they are ready for a level, then resynchronize the state queues. Only
@@ -402,8 +409,9 @@ extern bool rollback_resim;
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
 static inline void network_level_rendezvous(void) { }
-static inline void network_sa_ship_publish(int ship) { (void)ship; }
+static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
+static inline bool network_sa_ship_peer_saw_us(void) { return false; }
 static inline void network_sa_ship_reset(void) { }
 static inline void network_shop_begin(void) { }
 static inline void network_shop_send_state(bool done) { (void)done; }

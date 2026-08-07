@@ -94,6 +94,7 @@ struct JE_SingleEnemyType
 	JE_shortint edani;
 	JE_byte     eliteState; /* endless: 0=undecided, 1=normal, 2=elite, 3=champion (endless_combat.c) */
 	JE_boolean  groupHomed;
+	JE_byte     homeTarget; /* endless co-op: which ship this enemy's tracking chases, 0 or 1 */
 	JE_byte     filter;
 	JE_integer  evalue;
 	JE_integer  fixedmovey;
@@ -321,9 +322,9 @@ extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
 extern JE_byte zinglonDuration;
-extern bool zinglonPillarActive;
-extern int zinglonPillarCX;
-extern int zinglonPillarTemp;
+extern bool zinglonPillarActive[2];
+extern int zinglonPillarCX[2];
+extern int zinglonPillarTemp[2];
 extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;
