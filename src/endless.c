@@ -136,6 +136,27 @@ void endlessAdvanceCourseTurn(void)
 		endlessCoopHostCharts = !endlessCoopHostCharts;
 }
 
+/* The SEAT charting the next course, as both machines derive it (solo: player 1). The charting
+ * machine is a per-machine question (endlessLocalPlayerCharts); this is the shared one, which
+ * personal perks that shape the slate (Surveyor) read. */
+uint endlessChartingPlayerIndex(void)
+{
+	if (!endlessCoop())
+		return 0;
+
+	bool hostCharts;
+	switch (endlessCourseChooser)
+	{
+	case ENDLESS_PICK_GUEST:     hostCharts = false; break;
+	case ENDLESS_PICK_ALTERNATE: hostCharts = endlessCoopHostCharts; break;
+	case ENDLESS_PICK_COINFLIP:
+		hostCharts = ((endlessSplitMixSeed((Uint64)endlessRunDepth * 4 + 1) >> 33) & 1) != 0;
+		break;
+	default:                     hostCharts = true; break;
+	}
+	return hostCharts ? (networkHostPlayerNum - 1u) : (2u - networkHostPlayerNum);
+}
+
 bool endlessAnyPlayerFlying(void)
 {
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
@@ -703,16 +724,25 @@ void endlessCampaignModsArm(void)
 	endlessPerkPending = false;
 }
 
+/* Multi-part enemies share a nonzero link number and count once; this is that dedup guard.
+ * Simulation state, in the rollback registry: left function-local it survived into every
+ * re-simulation pass, which then skipped the kill it had already counted, and the combo feed
+ * (and with it the Turbodrive fire rate) came out different on the two machines. */
+static int endlessLastCountedLink = 0;
+
+void endlessResetKillDedup(void)
+{
+	endlessLastCountedLink = 0;
+}
+
 void endlessCountKill(int linknum, int killer)
 {
 	if (!endlessFxActive())
 		return;
 
-	// Multi-part enemies share a nonzero link number and count once.
-	static int lastCountedLink = 0;
-	if (linknum != 0 && linknum == lastCountedLink)
+	if (linknum != 0 && linknum == endlessLastCountedLink)
 		return;
-	lastCountedLink = linknum;
+	endlessLastCountedLink = linknum;
 
 	++endlessRunKills;
 	/* Boss kills are counted when their health bar empties. Whose streak a kill feeds is the
@@ -739,14 +769,15 @@ void endlessCountKill(int linknum, int killer)
 	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
 		endlessRetaliationTimer = ENDLESS_RETALIATION_TICKS;
 
-	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max). One roll feeds
-	// both ships, so the draw count stays the same whether the run is solo or co-op.
-	if (endlessPerkOwned[PERK_SIPHON] > 0
-	    && (int)(mt_rand() % 100) < endlessPerkOwned[PERK_SIPHON] * ENDLESS_PERK_SIPHON_PCT)
+	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max). Personal: each
+	// owning ship rolls its own chance from its own stacks, in seat order so the draws stay
+	// deterministic across the pair.
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		for (uint p = 0; p < endlessEffectPlayers(); ++p)
-			if (!endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
-				++player[p].armor;
+		const JE_byte stacks = endlessPerkEffective(p, PERK_SIPHON);
+		if (stacks > 0 && (int)(mt_rand() % 100) < stacks * ENDLESS_PERK_SIPHON_PCT
+		    && !endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+			++player[p].armor;
 	}
 }
 
@@ -810,15 +841,14 @@ void endlessGameplayTick(void)
 	endlessReviveGraceTick();
 
 	// Nanorepair perk: regenerate 1 armor every so often (interval shortens with more stacks).
-	if (endlessPerkOwned[PERK_REGEN] > 0)
+	// Personal: one running clock, and each owning ship heals on its own stack's cadence.
+	++endlessRegenTick;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		if (++endlessRegenTick >= ENDLESS_PERK_REGEN_TICKS / endlessPerkOwned[PERK_REGEN])
-		{
-			endlessRegenTick = 0;
-			for (uint p = 0; p < endlessEffectPlayers(); ++p)
-				if (!endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
-					++player[p].armor;
-		}
+		const JE_byte stacks = endlessPerkEffective(p, PERK_REGEN);
+		if (stacks > 0 && endlessRegenTick % (ENDLESS_PERK_REGEN_TICKS / stacks) == 0
+		    && !endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+			++player[p].armor;
 	}
 
 	endlessOpeningSalvoTick();    // Opening Salvo perk: advance the main-gun idle timer
@@ -852,6 +882,20 @@ void endless_register_rollback(void)
 	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
 	rollback_register("endless.cmCooldown", &endlessCmCooldown, sizeof(endlessCmCooldown));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
+
+	/* The run ledger is written by simulation events (a kill pays, a bounty pays), so it has to
+	 * be undone with them. Left out, a speculative frame that pays and is then rolled back keeps
+	 * its entry while the wallet is restored, and the level's re-simulations book the same income
+	 * over and over. The two machines re-simulate different amounts, so their run summaries stop
+	 * agreeing, and every restore reads to the audit as undeclared drift. */
+	rollback_register("endless.cashEarned", &endlessRunCashEarned, sizeof(endlessRunCashEarned));
+	rollback_register("endless.cashSpent", &endlessRunCashSpent, sizeof(endlessRunCashSpent));
+	rollback_register("endless.cashBySource", endlessCashBySource, sizeof(endlessCashBySource));
+	rollback_register("endless.cashBySink", endlessCashBySink, sizeof(endlessCashBySink));
+	rollback_register("endless.cashMark", &endlessCashMark, sizeof(endlessCashMark));
+	rollback_register("endless.perkFireAccum", endlessPerkFireAccum, sizeof(endlessPerkFireAccum));
+	rollback_register("endless.perkCdAccum", endlessPerkSpecialCdAccum, sizeof(endlessPerkSpecialCdAccum));
+	rollback_register("endless.killDedup", &endlessLastCountedLink, sizeof(endlessLastCountedLink));
 }
 
 // Consume the event-driven armor-bar repaint flag.

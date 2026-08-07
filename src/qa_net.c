@@ -50,7 +50,7 @@ static void qa_net_fail(const char *what)
 	        qa_net_here, (unsigned)qa_net_peer_phase,
 	        network_inbound_depth(), (unsigned)network_inbound_head(),
 	        network_is_sync() ? "acknowledged" : "UNACKNOWLEDGED", network_ack_backlog(),
-	        (unsigned)network_acked_dropped(),
+	        (unsigned)network_window_overflow(),
 	        network_peer_alive() ? "alive" : "SILENT", network_ping_ms());
 	fflush(stderr);
 }
@@ -273,7 +273,7 @@ int qa_net_campaign_phases(void)
 	 * starts straight into a wire scenario never runs that, and the first refresh of either ship
 	 * faults on a null. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
-		player[p].lives = &player[p].items.weapon[p].power;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
 	/* Two complete, different loadouts. Every field of the peer's has to arrive, not just the
 	 * cash the older baseline checked: a ship kitted out on one machine and half-empty on the
@@ -522,7 +522,7 @@ int qa_net_endless_phases(void)
 	 * refresh inside that adopt reads both hull ceilings through it. */
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
-		player[p].lives = &player[p].items.weapon[p].power;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 		player[p].is_alive = true;
 		player[p].exploding_ticks = 0;
 		player[p].initial_armor = 20;
@@ -571,26 +571,27 @@ int qa_net_endless_phases(void)
 		return 1;
 	}
 
-	/* Perks are run-wide from two private slates, so both machines have to derive the same
-	 * combined holding once each side's picks have crossed. */
+	/* Perks are personal, picked from two private slates, so each row has to arrive intact
+	 * and stay its owner's alone on both machines. */
 	endlessPerkRederive();
-	if (endlessPerkOwned[PERK_ARMOR] != (JE_byte)MIN(3, endlessPerkMaxStack(PERK_ARMOR))
-	    || endlessPerkOwned[PERK_CASH] != 1 || endlessPerkOwned[PERK_DAMAGE] != 1)
+	if (endlessPerkEffective(0, PERK_CASH) != 1 || endlessPerkEffective(0, PERK_ARMOR) != 1
+	    || endlessPerkEffective(1, PERK_DAMAGE) != 1 || endlessPerkEffective(1, PERK_ARMOR) != 2
+	    || endlessPerkEffective(0, PERK_DAMAGE) != 0 || endlessPerkEffective(1, PERK_CASH) != 0)
 	{
-		qa_net_fail("the two ships' perk slates did not combine the same way on both machines");
+		qa_net_fail("the two ships' perk rows did not stay their own on both machines");
 		return 1;
 	}
 
 	/* ---- the session settings both machines have to agree on ---- */
 
-	/* Individual credit with Double Pickups on: each ship banks double what it collects and
+	/* Individual credit with Double Earnings on: each ship banks double what it collects and
 	 * nothing of what the other does. Both machines simulate both ships, so the cash each
 	 * derives has to match, which is what the exchange below actually proves. */
 	coop_set_session_shared_credit(false);
-	coop_set_session_double_pickups(true);
-	if (!coop_pickups_are_doubled())
+	coop_set_session_double_earnings(true);
+	if (!coop_earnings_are_doubled())
 	{
-		qa_net_fail("Double Pickups did not take under Individual credit");
+		qa_net_fail("Double Earnings did not take under Individual credit");
 		return 1;
 	}
 
@@ -602,10 +603,17 @@ int qa_net_endless_phases(void)
 		qa_net_fail("a doubled pickup did not pay its collector alone");
 		return 1;
 	}
+	player_award_kill_cash(&player[QA_ME], 100);
+	player_award_bounty_cash(&player[QA_ME], 50);
+	if (player[QA_ME].cash != 1300u)
+	{
+		qa_net_fail("Double Earnings did not cover kill and bounty cash");
+		return 1;
+	}
 	network_shop_send_transaction();
-	QA_NET_WAIT(player[QA_THEM].cash == 1000u,
-	            "the partner's doubled pickup did not reach this machine");
-	QA_NET_SYNC(2, "Endless pickup credit");
+	QA_NET_WAIT(player[QA_THEM].cash == 1300u,
+	            "the partner's doubled combat earnings did not reach this machine");
+	QA_NET_SYNC(2, "Endless combat credit");
 
 	/* ---- one ship goes down, the survivor carries the zone ---- */
 
@@ -782,15 +790,15 @@ int qa_net_endless_phases(void)
 			qa_net_fail("the adopted run record lost a ship's holding");
 			return 1;
 		}
-		if (endlessPerkOwned[PERK_ARMOR] != (JE_byte)MIN(3, endlessPerkMaxStack(PERK_ARMOR)))
+		if (endlessPerkEffective(0, PERK_ARMOR) != 1 || endlessPerkEffective(1, PERK_ARMOR) != 2)
 		{
-			qa_net_fail("the adopted run record lost the combined perk holding");
+			qa_net_fail("the adopted run record lost a ship's perk row");
 			return 1;
 		}
 	}
 
 	coop_set_session_shared_credit(true);
-	coop_set_session_double_pickups(false);
+	coop_set_session_double_earnings(false);
 	coopEndlessMode = false;
 	endlessMode = false;
 	return 0;

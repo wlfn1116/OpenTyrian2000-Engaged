@@ -426,9 +426,13 @@ ones: one icon on your last life, two on your second-to-last. It matches the
 outpost's **Lives:** row. Past four it collapses to one icon and a number, so
 eleven lives reads as a ship and "11".
 
-### Arcade Life Boost
+### Arcade tweaks
 
-**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, off by default.
+**Setup > Enhancements > Game Tweaks > Arcade** holds the three arcade switches:
+Life Boost, Random Pickups and Rear Gun Scale, all off by default. Online, the
+host's three settings bind the session for both machines.
+
+### Life Boost
 
 Lives buy durability as well as retries, in 1 Player Arcade, 2 Player Arcade,
 Online Arcade and on the Super Arcade secret ships. Each ship's shield
@@ -439,8 +443,9 @@ between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 | Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
 | --- | --- | --- | --- | --- |
 | 1 Player Arcade | Stalker | 15 | 10 | 28 |
-| 2 Player (and Online Arcade) | Silver Ship | 10 | 10 | 28 |
-| 2 Player (and Online Arcade) | Dragonwing | 10 | 10 | 28 |
+| 2 Player (and Linked Online Arcade) | Silver Ship | 10 | 10 | 28 |
+| 2 Player (and Linked Online Arcade) | Dragonwing | 10 | 10 | 28 |
+| Separate Online Arcade, both ships | Stalker | 15 | 10 | 28 |
 
 Gaining a life raises both ceilings at once and carries damage across
 proportionally, so a ship at half armor stays at half armor. Losing one shrinks
@@ -453,14 +458,11 @@ across the nine. All nine carry the stock Gencore High Energy Shield, so their
 shields climb 10 to 28 alike. The Nort-Ship Z's 30 hull is already past the bar
 and stays there. SuperTyrian is excluded.
 
-Off, every ship keeps its stock hull and shield. Online, the host's setting binds
-the session.
+Off, every ship keeps its stock hull and shield.
 
 The shield gauge's full-charge line is on both gauges of the two-player HUD now.
 
 ### Random Pickups
-
-**Setup > Enhancements > Game Tweaks > Random Pickups**, off by default.
 
 Weapon balls are hand-placed in the level scripts, so a level always drops the
 same guns in the same order. On, each ball is re-rolled as it spawns, in 1 Player
@@ -483,7 +485,13 @@ Super Arcade balls carry a color rather than a weapon, and the color picks a slo
 in the current ship's five-gun arsenal. Normally they cycle 1-2-3-4-5. Rolled
 instead, a ship can draw the same gun twice running, but never one it cannot fly.
 
-Online, the host's setting binds the session.
+### Rear Gun Scale
+
+On, your rear gun fires at its own collected power plus your lives minus one, so
+a stocked-up run gets a wider rear spread without spending pickups on it. It
+applies in 1 Player Arcade and in Separate Online Arcade. The linked two-player
+pair is excluded: player two's rear-gun power is also that ship's life counter,
+so raising one would raise the other. SuperTyrian is excluded as well.
 
 ## Online play
 
@@ -496,22 +504,24 @@ runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
 **Host Game** covers the listen port, game type, episode or Endless Setup,
-difficulty, Host Flies or Credit, Game Speed, Netcode, and Desync Recovery, one
-row each with the current value on the right and a line explaining the highlighted
-row underneath.
+difficulty, Ships and Host Flies or Credit, Game Speed, Netcode, and Desync
+Recovery, one row each with the current value on the right and a line explaining
+the highlighted row underneath.
 The host's choices bind the session for both machines. While the other player
 waits for the host to start, they see the same list. The joiner's own settings
 are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
-| Game Type | **Arcade** keeps the linked Silver Ship and Dragonwing rules. **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. |
+| Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. |
 | Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
-| Difficulty | Starting campaign or Endless difficulty. Arcade applies its usual two-player difficulty adjustment. |
-| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Arcade only, and remembered between sessions; Campaign and Endless give both slots the same kind of ship, so the row is not shown and the host always flies as player one. |
+| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment; Separate arcade does not. Super Arcade adds the same step a solo Super Arcade run adds. |
+| Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
+| Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
-| Double Pickups | Individual credit only, so the row is not shown under Shared. **On** pays every cash and gem pickup twice over to whoever flew into it, which puts a split take back near what one player alone would have collected. Kill cash is not doubled. |
+| Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
 | Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. Greyed out unless Netcode is Rollback. |
@@ -533,10 +543,28 @@ loading mid-session would leave the other machine playing something else. Save
 Game, the volume and sensitivity sliders, and the joystick, keyboard, and mouse
 setup screens all work as usual, and backing out of any of them returns here.
 
-Online Arcade keeps the split two-player sidebar, tags each gauge block **P1**
-or **P2**, and dims the other player's gauges. Online Campaign and Online Endless
-give each machine the normal one-player sidebar for its local ship. Both player
-names and cash totals remain visible along the bottom of the playfield.
+Online Arcade with Linked ships keeps the split two-player sidebar, tags each
+gauge block **P1** or **P2**, and dims the other player's gauges. Separate ships,
+Online Campaign and Online Endless give each machine the normal one-player sidebar
+for its local ship. Both player names and cash totals remain visible along the
+bottom of the playfield.
+
+**Online SuperTyrian** is two SuperTyrian runs side by side: both players fly the
+Stalker 21.126 with the Atomic RailGun, and the SuperTyrian twiddle combos work
+for each ship independently, exactly as in the solo mode. There is no difficulty
+row; the Variant row picks Standard or Scrollock for both players. Everything
+else plays like Separate arcade: own lives, own guns, own score.
+
+**Online Super Arcade** starts with a ship-picking screen instead of a lobby ship
+setting. After the host presses Start, each player chooses their own ship from
+the nine Super Arcade ships, with the highlighted hull drawn below the list; move
+with the arrow keys or the mouse and confirm with Enter or a click. The two picks
+are independent and may match. Whoever chooses first sees "Waiting for the other
+player..." and then which ship their partner picked; Esc before choosing leaves
+the session. Weapon balls keep the same colors on every ship, so when both of you
+fly into the same color, each ship gets the weapon its own arsenal keeps in that
+slot, and the paired special (both variants, switched with the rear-mode key)
+belongs to each ship separately.
 
 In Campaign, each player chooses and powers up a complete ship independently:
 front and rear weapons, sidekicks, generator, shield, hull, special, cash, and
@@ -592,11 +620,15 @@ default Individual combo feed your streak counts your own kills, so a drive is
 worth what you shoot with it; a sector that deals a drive still deals it to both
 of you.
 
-Two buys reach further than the ship that made them: **Sector Sabotage** strips a
-danger off the sector you both fly, and **Extra Perk** adds to the run's shared
-perk collection. Perks work that way throughout: you each pick from your own slate
-and both ships fly under everything either of you took, up to each perk's normal
-maximum. Sabotage charges from the two of you add up to the same three-strip cap.
+Perks are personal. You each pick from your own slate, and a stack works on the
+ship that took it and no other, up to that perk's normal maximum on each of your
+rows. Your Perks list, the Owned counts on a perk offer, and the surcharge an
+**Extra Perk** costs all read your own collection. Two perks act on a screen you
+share rather than on a ship: **Surveyor** widens the course slate when its owner is
+the one charting, and **Radar** names the levels for the player holding it. One buy
+still reaches further than the ship that made it: **Sector Sabotage** strips a
+danger off the sector you both fly, and sabotage charges from the two of you add up
+to the same three-strip cap.
 
 A gamble is yours: the cash, gear and drives it hands out or takes away are the
 gambler's. Its rarer outcomes change the next sector instead (a shop discount, a
@@ -641,7 +673,11 @@ exchange is in flight, the save is written anyway after a few seconds rather tha
 leaving you stuck on it; their ship is then stored as of the last state you had
 from them, so save again once they are back.
 
-Arcade saves remain compatible with the regular local two-player page. Campaign
+Linked arcade saves remain compatible with the regular local two-player page.
+Separate arcade, SuperTyrian and Super Arcade saves carry both complete ships,
+lives and rulesets included (a Super Arcade save remembers which ship each of you
+picked), and can only be resumed through the same game type that wrote them; the
+other arcade lobbies and local play show them dimmed. Campaign
 and Endless saves carry both players in full: each ship and its front and rear weapons with
 their power levels, both sidekicks, generator, shield, special, rear-gun firing
 mode, and cash total, plus the shared episode, difficulty, data cubes, and

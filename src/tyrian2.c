@@ -1150,7 +1150,7 @@ static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scal
 
 static void draw_active_zinglon_pillars(SDL_Surface *surface, int scale, bool interpolate)
 {
-	if (coop_mode_active())
+	if (dual_ship_mode())
 	{
 		for (uint p = 0; p < COUNTOF(player); ++p)
 		{
@@ -3061,6 +3061,12 @@ start_level_first:
 	doNotSaveBackup = false;
 	JE_loadMap();
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: JE_loadMap returned (mainLevel %d)\n", (int)mainLevel);
+		fflush(stderr);
+	}
+
 	if (mainLevel == 0)  // if quit itemscreen
 		return;          // back to titlescreen
 
@@ -3084,6 +3090,11 @@ start_level_first:
 		endlessRegenerateLevel();
 		endlessCaptureSortie();  // snapshot the launch-time loadout + committed level for a possible Quit Level retry
 		endlessNoteZoneReached(endlessRunDepth + 1);  // launching a zone IS reaching it: advance the all-time record
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: endless level regenerated\n");
+			fflush(stderr);
+		}
 	}
 	else
 		endlessCampaignLevelStart();  // debug campaign mods: the effect layer's per-level reset (no-op when off)
@@ -3474,7 +3485,7 @@ start_level_first:
 	zinglonDuration = 0;
 	specialWait = 0;
 	nextSpecialWait = 0;
-	if (coop_mode_active())
+	if (dual_ship_mode())
 		coop_ship_runtime_reset();
 	for (uint i = 0; i < 2; i++)  /*Launch the Attachments!*/
 	{
@@ -3688,10 +3699,11 @@ level_loop:
 		}
 		else // not galagaMode
 		{
-			if (coop_mode_active())
+			if (dual_ship_mode())
 			{
 				// Each ship recharges off its own generator. The Endless sector modifiers and the
-				// Shield Matrix perk apply to both, exactly as they do to a solo run.
+				// Shield Matrix perk apply to both, exactly as they do to a solo run. Separate
+				// arcade rides the same path; its generators sit pinned at full.
 				const bool regenOff  = endlessShieldRegenOff();
 				const bool regenFree = endlessShieldRegenFree();
 				bool shield_changed = false;
@@ -3757,7 +3769,7 @@ level_loop:
 		for (uint i = 0; i < 2; ++i)
 		{
 			const uint hud_player = gameplay_local_player_index();
-			uint item_power = arcade_weapon_power(&player[coop_mode_active() ? hud_player : (twoPlayerMode ? i : 0)], i);
+			uint item_power = arcade_weapon_power(&player[dual_ship_mode() ? hud_player : (twoPlayerMode ? i : 0)], i);
 
 			if (old_weapon_bar[i] != item_power)
 			{
@@ -3792,9 +3804,18 @@ level_loop:
 			power = 900;
 			power_gauge_active = false;
 
-			// One-player Arcade modes use the unused generator gauge for lives.
+			// Separate arcade swaps per-ship generators through the movement pass, so the
+			// classic infinite-power rule has to reach those copies too.
+			if (arcade_separate_mode())
+				for (uint p = 0; p < COUNTOF(player); ++p)
+					player[p].generator_power = 900;
+
+			// One-player Arcade modes use the unused generator gauge for lives; Separate
+			// arcade shows this machine's own ship.
 			if (onePlayerAction)
 				draw_lives_gauge(*player[0].lives);
+			else if (arcade_separate_mode())
+				draw_lives_gauge(*player[gameplay_local_player_index()].lives);
 		}
 		else if (coop_mode_active())
 		{
@@ -4269,7 +4290,7 @@ level_loop:
 
 					if (z == MAX_PWEAPON - 1)
 					{
-						if (coop_mode_active())
+						if (dual_ship_mode())
 						{
 							collided = false;
 							temp = 0;
@@ -5469,6 +5490,27 @@ draw_player_shot_loop_end:
 		    && nrb_frame() % 40 == 0)
 			player_award_pickup_cash(&player[(nrb_frame() / 40) & 1], 75);
 
+		/* Online Super Arcade: walk the colour slots and hand each one to both ships, through the
+		 * same rule the real ball pickup uses. The two fly different hulls, so a colour resolved
+		 * against a session-wide ship rather than the collector's own would arm both with one gun,
+		 * which is simulation state and desyncs the pair on the next shot. Reported once per slot,
+		 * outside re-simulation, which replays it. */
+		if (network_game_type == NETWORK_GAME_SUPERARCADE && nrb_frame() >= 200
+		    && nrb_frame() <= 400 && nrb_frame() % 50 == 0)
+		{
+			const uint slot = (uint)(nrb_frame() / 50) - 4;   // 0..4
+			const uint w1 = player_sa_ball_weapon(&player[0], slot);
+			const uint w2 = player_sa_ball_weapon(&player[1], slot);
+			player[0].items.weapon[FRONT_WEAPON].id = (Uint8)w1;
+			player[1].items.weapon[FRONT_WEAPON].id = (Uint8)w2;
+			player[0].shot_multi_pos[SHOT_FRONT] = player[1].shot_multi_pos[SHOT_FRONT] = 0;
+			if (!rollback_resim)
+			{
+				printf("NET SA BALL slot=%u p1=%u p2=%u\n", slot, w1, w2);
+				fflush(stdout);
+			}
+		}
+
 		if (qa_net_zones > 0 && nrb_frame() == QA_NET_ZONE_END_FRAME && !endLevel)
 		{
 			endLevel = true;
@@ -6432,6 +6474,12 @@ new_game:
 		} while (!loadLevelOk);
 	}
 
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: level script done\n");
+		fflush(stderr);
+	}
+
 	if (play_demo)
 		load_next_demo();
 	else
@@ -6654,7 +6702,7 @@ static void networkEndlessNewRun(void)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		player[i].is_dragonwing = false;
-		player[i].lives = &player[i].items.weapon[i].power;
+		player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
 		player[i].items = player[0].items;
 		player[i].last_items = player[0].last_items;
 		player[i].cash = 0;
@@ -6681,6 +6729,214 @@ static bool networkEndlessResume(JE_byte slot)
 		return true;
 	}
 	return network_endless_run_receive(20000);
+}
+
+/* Steps the host adds to the lobby's difficulty, which the joiner subtracts again so both land on
+ * the same initialDifficulty. The linked pair plays one step harder because two players concentrate
+ * fire on one hull; Super Arcade adds its own step, the one newSuperArcadeGame adds in a solo run.
+ * Two Separate personal arcades and SuperTyrian keep the curve their solo modes use. */
+int networkDifficultyBump(void)
+{
+	if (network_game_type == NETWORK_GAME_SUPERARCADE)
+		return 1;
+	return dual_ship_mode() ? 0 : 1;
+}
+
+/* Online Super Arcade ship choice: each player picks their own from the nine, they may match, and
+ * neither is dictated by the host. Nothing about the level depends on the pair of picks (the balls
+ * carry a colour, and the colour is a slot in the collector's own arsenal), so the two only have
+ * to meet before the game starts. Returns 1..SA, or 0 if the session died waiting.
+ *
+ * Its own loop rather than menus.c's episodeSelect: this one has to service the link while it is
+ * open, and it keeps drawing after this player has chosen so the wait for the partner is visible
+ * instead of a frozen screen. */
+static int networkSuperArcadeShipSelect(void)
+{
+	// Command-line netplay reaches here without the title screen having loaded these.
+	if (shopSpriteSheet.data == NULL)
+		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
+
+	network_sa_ship_reset();
+
+	int selected = 0;                 // index into SAShip, 0..SA-1
+	int chosen = 0;                   // 1..SA once this player has committed
+	int peer = 0;
+	bool restart = true;
+	int wName[SA] = { 0 };
+	// This screen redraws every frame (it has to: the peer's pick can land at any moment), so
+	// hover is re-evaluated only on real motion, or a parked cursor would veto the arrow keys.
+	Sint32 lastSeenMouseX = mouse_x, lastSeenMouseY = mouse_y;
+
+	// Wire runs have no keyboard: take the slot's own ship so the two peers differ on purpose.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		chosen = (thisPlayerNum == 2) ? 2 : 1;
+		network_sa_ship_publish(chosen);
+	}
+
+	while (true)
+	{
+		if (restart)
+		{
+			JE_loadPic(VGAScreen2, 2, false);
+			draw_font_hv_shadow(VGAScreen2, 320 / 2, SA_PICK_HEADER_Y, superShips[0], large_font,
+			                    centered, 15, -3, false, 2);
+		}
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Nine names in two columns; the pick is the player's own, so the partner's is only
+		// reported, never enforced.
+		for (int i = 0; i < SA; ++i)
+		{
+			const bool onIt = (i == selected);
+			wName[i] = JE_textWidth(superShips[i + 1], small_font);
+			draw_font_hv_shadow(VGAScreen, sa_pick_name_x(i), sa_pick_name_y(i), superShips[i + 1],
+			                    small_font, left_aligned, 15,
+			                    -4 + (onIt ? 4 : 0) + (chosen == i + 1 ? 2 : 0), false, 2);
+		}
+
+		// The highlighted hull, so a name that means nothing yet still shows what it flies.
+		const JE_word gr = ships[SAShip[selected]].shipgraphic;
+		if (gr > 500)
+			blit_sprite2x2(VGAScreen, 320 / 2 - 12, SA_PICK_SHIP_Y, spriteSheetT2000, gr - 500);
+		else if (gr == 1)
+		{
+			// Nort Ship: shipgraphic 1 is a sentinel, so its two halves are blitted by hand.
+			blit_sprite2x2(VGAScreen, 320 / 2 - 24, SA_PICK_SHIP_Y, spriteSheet9, 220);
+			blit_sprite2x2(VGAScreen, 320 / 2,      SA_PICK_SHIP_Y, spriteSheet9, 222);
+		}
+		else
+			blit_sprite2x2(VGAScreen, 320 / 2 - 12, SA_PICK_SHIP_Y, spriteSheet9, gr);
+
+		const char *status = chosen == 0
+		                   ? "Choose your ship."
+		                   : (peer == 0 ? "Waiting for the other player..." : "Both ready.");
+		draw_font_hv_shadow(VGAScreen, 320 / 2, SA_PICK_STATUS_Y, status, small_font, centered, 15, 2, false, 1);
+		// The partner's pick, as soon as it lands: it changes nothing here, but a player who
+		// chose first should see something happen when the other one commits.
+		if (peer != 0)
+		{
+			char line[64];
+			snprintf(line, sizeof(line), "Player %u flies %s", thisPlayerNum == 2 ? 1u : 2u, superShips[peer]);
+			draw_font_hv_shadow(VGAScreen, 320 / 2, SA_PICK_PEER_Y, line, small_font, centered, 15, -2, false, 1);
+		}
+
+		// Every other menu screen fades in on its first composed frame; this one reaches here
+		// straight out of the handshake's fade_black, so without it the whole screen is drawn
+		// under a black palette and the player sees nothing at all.
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (restart)
+		{
+			fade_palette(colors, 10, 0, 255);
+			restart = false;
+		}
+
+		service_SDL_events(false);
+		network_check();
+		peer = network_sa_ship_peer();
+
+		if (chosen != 0 && peer != 0 && network_is_sync())
+			return chosen;
+		if (!network_peer_alive())
+			return 0;
+
+		// Hover and click, like every other ship or episode menu. Only before committing: the
+		// pick is announced the moment it is made, so it cannot be taken back.
+		const bool mouseMoved = mouse_x != lastSeenMouseX || mouse_y != lastSeenMouseY;
+		lastSeenMouseX = mouse_x;
+		lastSeenMouseY = mouse_y;
+		if (chosen == 0 && (newmouse || mouseMoved))
+		{
+			for (int i = 0; i < SA; ++i)
+			{
+				const int x = sa_pick_name_x(i), y = sa_pick_name_y(i);
+				if (mouse_x < x || mouse_x >= x + wName[i] || mouse_y < y || mouse_y >= y + SA_PICK_ROW_H)
+					continue;
+
+				if (selected != i)
+				{
+					JE_playSampleNum(S_CURSOR);
+					selected = i;
+				}
+				if (newmouse && lastmouse_but == SDL_BUTTON_LEFT
+				    && lastmouse_x >= x && lastmouse_x < x + wName[i]
+				    && lastmouse_y >= y && lastmouse_y < y + SA_PICK_ROW_H)
+				{
+					JE_playSampleNum(S_SELECT);
+					chosen = i + 1;
+					network_sa_ship_publish(chosen);
+				}
+				break;
+			}
+			newmouse = false;
+		}
+
+		if (chosen == 0 && newkey)
+		{
+			switch (lastkey_scan)
+			{
+			case SDL_SCANCODE_UP:
+				JE_playSampleNum(S_CURSOR);
+				selected = (selected == 0) ? SA - 1 : selected - 1;
+				break;
+
+			case SDL_SCANCODE_DOWN:
+				JE_playSampleNum(S_CURSOR);
+				selected = (selected == SA - 1) ? 0 : selected + 1;
+				break;
+
+			case SDL_SCANCODE_LEFT:
+			case SDL_SCANCODE_RIGHT:
+				JE_playSampleNum(S_CURSOR);
+				selected = (selected + SA_PICK_ROWS) % SA;   // hop between the two columns
+				break;
+
+			case SDL_SCANCODE_RETURN:
+			case SDL_SCANCODE_KP_ENTER:
+			case SDL_SCANCODE_SPACE:
+				JE_playSampleNum(S_SELECT);
+				chosen = selected + 1;
+				network_sa_ship_publish(chosen);
+				break;
+
+			case SDL_SCANCODE_ESCAPE:
+				// Backing out before committing leaves the session; the partner is sitting on
+				// this same screen and has to be told, or it waits out the dead-link timeout.
+				JE_playSampleNum(S_SPRING);
+				network_prepare(PACKET_QUIT);
+				network_send(4);  // PACKET QUIT
+				network_tyrian_halt(0, true);   // does not return
+				break;
+
+			default:
+				break;
+			}
+			newkey = false;
+		}
+
+		SDL_Delay(16);
+	}
+}
+
+/* Equip one ship for the Super Arcade run it chose. Mirrors newSuperArcadeGame's loadout, and
+ * records the ship on the ship (player_sa_ship) so the balls, the paired special and the save
+ * record all read the right arsenal for each player independently. */
+void networkSuperArcadeEquip(Player *this_player, int ship)
+{
+	const uint i = (uint)ship - 1;
+
+	this_player->items.ship = SAShip[i];
+	this_player->items.super_arcade_mode = (Uint8)ship;
+	this_player->items.weapon[FRONT_WEAPON].id = SAWeapon[i][0];
+	this_player->items.weapon[REAR_WEAPON].id = 0;   // Super Arcade issues no rear gun
+	this_player->items.special = SASpecialWeapon[i];
+	if (ship == SA_NORTSHIPZ)
+		for (uint s = 0; s < COUNTOF(this_player->items.sidekick); ++s)
+			this_player->items.sidekick[s] = 24;  // Companion Ship Quicksilver
+	this_player->last_items = this_player->items;
 }
 
 void networkStartScreen(void)
@@ -6713,6 +6969,12 @@ void networkStartScreen(void)
 	twoPlayerMode = true;
 	coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 	coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
+	/* The two one-player rulesets flown online give each player a complete ship, so they run in
+	 * the Separate arcade shape whatever the host's Ships preference says. Armed here rather than
+	 * from the settings block: the block carries a lobby preference, and this is the game type
+	 * deciding for itself. */
+	if (network_game_type_is_super(network_game_type))
+		arcadeSeparateMode = true;
 	bool resumed = false;
 	if (qa_net_gameplay_ticks > 0)
 	{
@@ -6750,8 +7012,7 @@ void networkStartScreen(void)
 			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
-			if (!coop_mode_active())
-				difficultyLevel++;  /*Make Arcade one step harder for 2-player mode.*/
+			difficultyLevel += networkDifficultyBump();
 
 			network_prepare(PACKET_DETAILS);
 			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
@@ -6779,6 +7040,7 @@ void networkStartScreen(void)
 		{
 			const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 			const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
+			const bool superTyrianGame = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 
 			const char *label[13], *value[13];
 			int rows = 0;
@@ -6786,15 +7048,24 @@ void networkStartScreen(void)
 			label[rows] = "Host";
 			value[rows++] = network_opponent_name[0] ? network_opponent_name : "(unnamed)";
 			label[rows] = "Game Type";
-			value[rows++] = endless ? "Endless"
-			              : (network_game_type == NETWORK_GAME_CAMPAIGN ? "Campaign" : "Arcade");
+			switch (network_game_type)
+			{
+			case NETWORK_GAME_ENDLESS:      value[rows++] = "Endless";      break;
+			case NETWORK_GAME_CAMPAIGN:     value[rows++] = "Campaign";     break;
+			case NETWORK_GAME_SUPERTYRIAN:  value[rows++] = "SuperTyrian";  break;
+			case NETWORK_GAME_SUPERARCADE:  value[rows++] = "Super Arcade"; break;
+			default:                        value[rows++] = "Arcade";       break;
+			}
 			if (!endless)
 			{
 				label[rows] = "Episode";
 				value[rows++] = episode_name[network_host_episode];
 			}
-			label[rows] = "Difficulty";
-			value[rows++] = difficultyNameB[network_host_difficulty];
+			// SuperTyrian has no ladder; the same field carries which of its two variants this is.
+			label[rows] = superTyrianGame ? "Variant" : "Difficulty";
+			value[rows++] = superTyrianGame
+			              ? (network_host_difficulty == DIFFICULTY_SUICIDE ? "Scrollock" : "Standard")
+			              : difficultyNameB[network_host_difficulty];
 			if (endless)
 			{
 				label[rows] = "Run Mode";
@@ -6812,9 +7083,19 @@ void networkStartScreen(void)
 				value[rows++] = coop_credit_is_shared() ? "Shared" : "Individual";
 				if (!coop_credit_is_shared())
 				{
-					label[rows] = "Double Pickups";
-					value[rows++] = coop_pickups_are_doubled() ? "On" : "Off";
+					label[rows] = "Double Earnings";
+					value[rows++] = coop_earnings_are_doubled() ? "On" : "Off";
 				}
+			}
+			else if (network_game_type == NETWORK_GAME_SUPERARCADE)
+			{
+				label[rows] = "Ships";
+				value[rows++] = "You choose";   // each player picks their own on the next screen
+			}
+			else if (arcadeSeparateMode)
+			{
+				label[rows] = "Ships";
+				value[rows++] = "Separate";
 			}
 			else
 			{
@@ -6942,7 +7223,7 @@ void networkStartScreen(void)
 		{
 			JE_initEpisode(their_episode);
 			difficultyLevel = their_difficulty;
-			initialDifficulty = difficultyLevel - (coop_mode_active() ? 0 : 1);
+			initialDifficulty = difficultyLevel - networkDifficultyBump();
 		}
 		fade_black(10);
 
@@ -6965,14 +7246,67 @@ void networkStartScreen(void)
 			{
 				player[i].cash = cash;
 				player[i].is_dragonwing = false;
-				player[i].lives = &player[i].items.weapon[i].power;
+				player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
 			}
 		}
 		else
 		{
 			for (uint i = 0; i < COUNTOF(player); ++i)
 				player[i].cash = 0;
-			player[0].items.ship = 11;  // Silver Ship
+
+			if (arcade_separate_mode())
+			{
+				if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
+				{
+					// Two SuperTyrian runs side by side: the same Stalker 21.126 and Atomic
+					// RailGun newSuperTyrianGame issues, and the twiddle tables key off the
+					// superTyrian flag, whose combo state is already per player.
+					superTyrian = true;
+					for (uint i = 0; i < COUNTOF(player); ++i)
+					{
+						player[i].items.ship = 13;                     // The Stalker 21.126
+						player[i].items.weapon[FRONT_WEAPON].id = 39;  // Atomic RailGun
+						player[i].items.super_arcade_mode = SA_SUPERTYRIAN;
+						player[i].last_items = player[i].items;
+					}
+				}
+				else if (network_game_type == NETWORK_GAME_SUPERARCADE)
+				{
+					// Each player chose their own ship on the screen above; the host's is what
+					// the session global names, because the save record packs player one's from
+					// it (JE_saveGame) and reads it back the same way.
+					const int mine = networkSuperArcadeShipSelect();
+					const int theirs = network_sa_ship_peer();
+					if (mine == 0 || theirs == 0)
+						network_tyrian_halt(3, false);   // the pair never met; do not guess a ship
+					const uint me = thisPlayerNum >= 2 ? 1u : 0u;
+					networkSuperArcadeEquip(&player[me], mine);
+					networkSuperArcadeEquip(&player[1 - me], theirs);
+					superArcadeMode = (JE_byte)player[0].items.super_arcade_mode;
+					fade_black(10);
+				}
+				else
+				{
+					// Two personal arcades, each the one-player arcade game: both fly the Stalker
+					// off the same fresh arsenal, and each ship's life counter is its own front
+					// gun. newGame() gives a solo arcade run exactly this ship.
+					player[0].items.ship = 8;  // Stalker
+					// Neither ship flies a Super Arcade ruleset here, and the save record's own
+					// discriminator is these two bytes, so say so rather than inherit it.
+					player[0].items.super_arcade_mode = SA_NONE;
+					player[1].items = player[0].items;
+				}
+				for (uint i = 0; i < COUNTOF(player); ++i)
+				{
+					player[i].is_dragonwing = false;
+					player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
+					player[i].last_items = player[i].items;
+				}
+			}
+			else
+			{
+				player[0].items.ship = 11;  // Silver Ship
+			}
 		}
 
 		// Gameplay wire tests: both machines mount the same scripted sidekick combination.
@@ -6999,8 +7333,13 @@ void networkStartScreen(void)
 		// scenario asserts both peers print the same pair), and the soak baseline.
 		network_test_mem_mark();
 		fprintf(stderr, "net gameplay: details settled, starting the game\n");
-		fprintf(stderr, "net session flags: shared=%d doubled=%d\n",
-		        coop_credit_is_shared() ? 1 : 0, coop_pickups_are_doubled() ? 1 : 0);
+		// sa1/sa2 are the two ships' own rulesets, raw (1..SA a Super Arcade hull, 254 SuperTyrian,
+		// 0 neither). Both machines equip both ships, so the pair has to read identically here or
+		// the picks never really crossed the wire.
+		fprintf(stderr, "net session flags: shared=%d doubled=%d separate=%d st=%d sa1=%d sa2=%d\n",
+		        coop_credit_is_shared() ? 1 : 0, coop_earnings_are_doubled() ? 1 : 0,
+		        arcade_separate_mode() ? 1 : 0, superTyrian ? 1 : 0,
+		        (int)player[0].items.super_arcade_mode, (int)player[1].items.super_arcade_mode);
 		fflush(stderr);
 	}
 }
@@ -7523,6 +7862,10 @@ bool newSuperArcadeGame(unsigned int i)
 
 		player[0].cash = 0;
 
+		// Record the ship on the ship, not only in the session global: every SAWeapon and
+		// SASpecialWeapon read is per ship now (player_sa_ship), because online Super Arcade
+		// lets the two players fly different ones.
+		player[0].items.super_arcade_mode = (Uint8)(i + 1);
 		player[0].items.weapon[FRONT_WEAPON].id = SAWeapon[i][0];
 		player[0].items.special = SASpecialWeapon[i];
 		if (superArcadeMode == SA_NORTSHIPZ)
@@ -9308,10 +9651,10 @@ void JE_eventSystem(void)
 		break;
 
 	case 82: /*Give SPECIAL WEAPON*/
-		for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
+		for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)
 		{
 			player[p].items.special = eventRec[eventLoc-1].eventdat;
-			if (coop_mode_active())
+			if (dual_ship_mode())
 			{
 				player[p].shot_multi_pos[SHOT_SPECIAL] = 0;
 				player[p].shot_repeat[SHOT_SPECIAL] = 0;

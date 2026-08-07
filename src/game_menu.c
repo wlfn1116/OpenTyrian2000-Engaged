@@ -705,11 +705,12 @@ static void configure_endless_perk_list_menu(void)
 {
 	SDL_strlcpy(menuInt[MENU_PERKS + 1][0], "Perks", sizeof(menuInt[MENU_PERKS + 1][0]));  // title, drawn by JE_drawMenuHeader
 
+	// Perks are personal, so the list is this player's own collection.
 	const int total = endlessPerkCount();
 	const int cap   = (int)(sizeof(perkListId) / sizeof(perkListId[0]));
 	int n = 0;
 	for (int id = 0; id < total && n < cap; ++id)
-		if (endlessPerkGetOwned(id) > 0)
+		if (endlessPerkEffective(endlessEconomyIndex(), id) > 0)
 			perkListId[n++] = id;
 
 	if (n == 0)              // nothing earned yet: a single "(none yet)" info row
@@ -779,7 +780,8 @@ static void draw_endless_perk_list(void)
 		if (id >= 0)
 		{
 			char cnt[16];
-			snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
+			snprintf(cnt, sizeof(cnt), "%d/%d",
+			         endlessPerkEffective(endlessEconomyIndex(), id), endlessPerkMaxStack(id));
 
 			char cline[18];
 			if (selected)  // match the row's highlight so the count brightens with its name
@@ -1054,14 +1056,49 @@ static bool shopCampaignRendezvous(void)
 		fflush(stderr);
 	}
 
+	Uint32 qaBeat = SDL_GetTicks();
+	(void)qaBeat;
+#define QA_RENDEZVOUS_TRACE(which)                                                              \
+	do {                                                                                        \
+		if (qa_net_gameplay_ticks > 0 && SDL_GetTicks() - qaBeat > 2000)                        \
+		{                                                                                       \
+			qaBeat = SDL_GetTicks();                                                            \
+			int qaLD, qaLL, qaMySeq, qaPeerSeq;                                                 \
+			network_shop_debug_state(&qaLD, &qaLL, &qaMySeq, &qaPeerSeq);                       \
+			fprintf(stderr, "net gameplay: rendezvous waiting (%s) done=%d lock=%d head=%04x"   \
+			                " sync=%d mine=%d/%d seq=%d peerseq=%d\n",                          \
+			        (which), network_shop_peer_done() ? 1 : 0,                                  \
+			        network_shop_peer_locked() ? 1 : 0,                                         \
+			        packet_in[0] ? (unsigned)SDLNet_Read16(&packet_in[0]->data[0]) : 0u,        \
+			        network_is_sync() ? 1 : 0, qaLD, qaLL, qaMySeq, qaPeerSeq);                 \
+			fflush(stderr);                                                                     \
+		}                                                                                       \
+	} while (0)
+
+	/* A peer whose departure packet is already at the head of our queue is past BOTH steps of
+	 * this rendezvous: it announced commit and lock ahead of that packet and has stopped
+	 * announcing anything since. Two things follow, and both are load-bearing.
+	 *
+	 * Waiting on a re-announcement that is never coming is a deadlock, so the departure stands in
+	 * for the state we missed -- and we can only have missed it, never be about to receive it,
+	 * because the channel is ordered and its departure is already here.
+	 *
+	 * And that packet must be left where it is. It belongs to the handshake in shopLeaveOutpost
+	 * a few lines further on; network_update here would throw away the very thing that handshake
+	 * then waits on for good. Endless is where this bites: the non-charting player waits for a
+	 * sector before committing, so the two machines reach this rendezvous a long way apart, and
+	 * the one that arrives second can find the other already gone. */
+	bool peerDeparted = false;
+
 	for (;;)
 	{
 		// Step one: both committed. Esc withdraws, but only until the peer's commit lands,
 		// because from that point the peer is allowed to lock and stop listening.
-		while (!network_shop_peer_done())
+		while (!network_shop_peer_done() && !peerDeparted)
 		{
 			shopWaitFrame();
 			network_shop_keepalive();
+			QA_RENDEZVOUS_TRACE("commit");
 
 			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 			{
@@ -1077,6 +1114,11 @@ static bool shopCampaignRendezvous(void)
 
 			if (network_shop_pump() || network_debug_sync_pump(false))
 				continue;
+			if (network_shop_departure_pending())
+			{
+				peerDeparted = true;
+				break;
+			}
 			network_update();
 			network_check();
 			SDL_Delay(16);
@@ -1084,7 +1126,8 @@ static bool shopCampaignRendezvous(void)
 
 		if (qa_net_gameplay_ticks > 0)
 		{
-			fprintf(stderr, "net gameplay: rendezvous peer done\n");
+			fprintf(stderr, "net gameplay: rendezvous peer done%s\n",
+			        peerDeparted ? " (already departed)" : "");
 			fflush(stderr);
 		}
 
@@ -1092,27 +1135,40 @@ static bool shopCampaignRendezvous(void)
 		// enough for a custom weapon design. It is a no-op unless the design changed.
 		network_custom_weapon_publish();
 
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: rendezvous publishing lock\n");
+			fflush(stderr);
+		}
+
 		// Step two: publish the lock and wait for the peer's. A withdrawal already in flight
 		// clears the peer's commit here, which unlocks us and reopens the first wait.
 		network_shop_set_locked(true);
-		while (!network_shop_peer_locked() && network_shop_peer_done())
+		while (!network_shop_peer_locked() && network_shop_peer_done() && !peerDeparted)
 		{
 			shopWaitFrame();
 			network_shop_keepalive();
+			QA_RENDEZVOUS_TRACE("lock");
 			newkey = false;
 
 			if (network_shop_pump() || network_debug_sync_pump(false))
 				continue;
+			if (network_shop_departure_pending())
+			{
+				peerDeparted = true;
+				break;
+			}
 			network_update();
 			network_check();
 			SDL_Delay(16);
 		}
 
-		if (network_shop_peer_done())
+		if (peerDeparted || network_shop_peer_done())
 		{
 			if (qa_net_gameplay_ticks > 0)
 			{
-				fprintf(stderr, "net gameplay: rendezvous locked\n");
+				fprintf(stderr, "net gameplay: rendezvous locked%s\n",
+				        peerDeparted ? " (peer already departed)" : "");
 				fflush(stderr);
 			}
 			return true;
@@ -1120,6 +1176,7 @@ static bool shopCampaignRendezvous(void)
 
 		network_shop_set_locked(false);
 	}
+#undef QA_RENDEZVOUS_TRACE
 }
 
 static void select_level(JE_word section, JE_byte file_num);
@@ -1244,11 +1301,21 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
 		{
 			int course = endlessCoopCourse;
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: folding course %d\n", course);
+				fflush(stderr);
+			}
 			if (course < 0)
 				course = shopEndlessAwaitCourse(false);
 			endlessAdvanceCourseTurn();
 			select_level(endlessSelectCourse(course), 0);
 			endlessCoopCourse = -1;
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: course folded (mainLevel %d)\n", (int)mainLevel);
+				fflush(stderr);
+			}
 		}
 
 		// Both have committed, so a disagreement can be settled: the host's planet is the one

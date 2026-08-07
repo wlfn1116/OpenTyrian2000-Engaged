@@ -12,6 +12,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -60,12 +61,24 @@ SCENARIOS = (
     # transition, and the first level of episode 2.
     (13, "campaign-shop", 0, 300, True),
     # The peers take the production lobby roles: the host arms Individual credit + Double
-    # Pickups from its own config, the joiner adopts the settings block, and scripted in-sim
+    # Earnings from its own config, the joiner adopts the settings block, and scripted in-sim
     # pickups then have to pay the same doubled wallets on both machines.
-    (14, "double-pickups", 0, 120, True),
+    (14, "double-earnings", 0, 120, True),
     # Accelerated session-length soak: a long single-level flight watching the working set and
     # the session counters. Run it with --scenario 15; the default full run skips it.
     (15, "soak", 0, 480, False),
+    # Online Arcade with Separate ships: two independent arcade ships flying one level, each
+    # with its own lives, guns, sidekicks, specials and generator. Per-ship state left in a
+    # shared global shows up here as a desync, the same way the linked pair's would.
+    (16, "arcade-separate", 0, 90, True),
+    # Online SuperTyrian: both peers fly the Stalker 21.126 with the Atomic RailGun and the
+    # SuperTyrian twiddle table, on the Scrollock variant (the field every other type reads as
+    # difficulty). Per-player twiddle state that leaked into a shared global desyncs here.
+    (17, "supertyrian", 0, 90, True),
+    # Online Super Arcade: the peers pick DIFFERENT ships through the announcement protocol, and
+    # both machines must equip both. A colour-ball grant is then scripted into the flight, which
+    # has to hand each ship the gun ITS OWN arsenal keeps in that slot.
+    (18, "super-arcade", 0, 90, True),
 )
 
 
@@ -111,6 +124,13 @@ def run_scenario(
                    "--test-net-game-type", "1", "--test-net-lobby-settings"]
     if scenario == 15:
         common += ["--test-net-gameplay-ticks", "12000"]
+    if scenario == 16:
+        common += ["--test-net-gameplay-ticks", "700", "--test-net-arcade-separate"]
+    if scenario == 17:
+        common += ["--test-net-gameplay-ticks", "700",
+                   "--test-net-game-type", "3", "--test-net-scrollock"]
+    if scenario == 18:
+        common += ["--test-net-gameplay-ticks", "700", "--test-net-game-type", "4"]
     if extra_common:
         common += extra_common
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
@@ -133,6 +153,21 @@ def run_scenario(
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     join = subprocess.Popen(join_cmd, env=env, cwd=join_dir,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    # Drain both pipes for the whole run. Reading only at the end deadlocks a talkative peer:
+    # the OS pipe buffer fills, its next print blocks, it stops servicing the socket, and the
+    # partner reads that silence as a lost connection. The long Endless run tripped this at
+    # whichever print happened to fill the buffer, which made it look like a netcode hang.
+    def pump(stream, sink: list[str]) -> None:
+        for line in stream:
+            sink.append(line)
+
+    host_lines: list[str] = []
+    join_lines: list[str] = []
+    pumps = (threading.Thread(target=pump, args=(host.stdout, host_lines), daemon=True),
+             threading.Thread(target=pump, args=(join.stdout, join_lines), daemon=True))
+    for thread in pumps:
+        thread.start()
 
     started = time.monotonic()
     deadline = started + deadline_s
@@ -225,12 +260,19 @@ def run_scenario(
         proxy_a.close()
         proxy_b.close()
 
-    host_out, _ = host.communicate(timeout=5)
-    join_out, _ = join.communicate(timeout=5)
+    host.wait(timeout=5)
+    join.wait(timeout=5)
+    for thread in pumps:
+        thread.join(timeout=5)
+    host_out = "".join(host_lines)
+    join_out = "".join(join_lines)
     if own_dirs:
         for scratch in (host_dir, join_dir):
             shutil.rmtree(scratch, ignore_errors=True)
-    transcript = f"--- host ---\n{host_out}--- joiner ---\n{join_out}"
+    # Exit codes belong in the transcript: a peer that died mid-run leaves output that simply
+    # stops, which reads exactly like a hang until you see the code that killed it.
+    transcript = (f"--- host (exit {host.returncode}) ---\n{host_out}"
+                  f"--- joiner (exit {join.returncode}) ---\n{join_out}")
     if scenario == 4:
         # Success inverts: both peers must reject the handshake on their own and say why.
         rejected = ("Network version mismatch" in host_out
@@ -273,8 +315,45 @@ def run_scenario(
     if scenario == 14:
         for out, who in ((host_out, "host"), (join_out, "joiner")):
             if "net session flags: shared=0 doubled=1" not in out:
-                print(f"network fault test: the {who} did not arm Individual + Double Pickups")
+                print(f"network fault test: the {who} did not arm Individual + Double Earnings")
                 return 1, transcript, injected
+    if scenario == 16:
+        # A run that quietly fell back to the linked pair would pass the desync check while
+        # proving nothing, so require both peers to report the Separate session.
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "separate=1 st=0 sa1=0 sa2=0" not in out:
+                print(f"network fault test: the {who} did not fly Separate arcade ships")
+                return 1, transcript, injected
+    if scenario == 17:
+        # 254 is SA_SUPERTYRIAN: both ships, on both machines, on the SuperTyrian ruleset.
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "separate=1 st=1 sa1=254 sa2=254" not in out:
+                print(f"network fault test: the {who} did not fly online SuperTyrian")
+                return 1, transcript, injected
+    if scenario == 18:
+        # The picks crossed the wire only if BOTH machines ended up with ship 1 in slot one and
+        # ship 2 in slot two; a peer that fell back to its own pick for both would read 1/1.
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "separate=1 st=0 sa1=1 sa2=2" not in out:
+                print(f"network fault test: the {who} did not equip both Super Arcade picks")
+                return 1, transcript, injected
+        # ...and the scripted colour-ball grant has to resolve per ship, so the two ships end the
+        # flight holding the guns their own arsenals keep in that slot.
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            balls = [l for l in out.splitlines() if l.startswith("NET SA BALL")]
+            if not balls:
+                print(f"network fault test: the {who} never resolved a Super Arcade colour ball")
+                return 1, transcript, injected
+        host_balls = [l for l in host_out.splitlines() if l.startswith("NET SA BALL")]
+        join_balls = [l for l in join_out.splitlines() if l.startswith("NET SA BALL")]
+        if host_balls != join_balls:
+            print("network fault test: the peers disagree on what the colour balls handed out")
+            return 1, transcript, injected
+        if not any("p1=" in l and "p2=" in l and l.split("p1=")[1].split()[0]
+                   != l.split("p2=")[1].split()[0] for l in host_balls):
+            print("network fault test: one colour ball handed both ships the same gun; "
+                  "the slot was not resolved against each ship's own arsenal")
+            return 1, transcript, injected
 
     failed = host.returncode != 0 or join.returncode != 0
     return (1 if failed else 0), transcript, injected

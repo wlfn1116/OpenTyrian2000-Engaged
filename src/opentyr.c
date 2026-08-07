@@ -776,7 +776,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			},
 		},
 		[MENU_ARCADE_TWEAKS] = {
-			// Rear Gun Scale is one-player only; the two-player rear bay belongs to player 2.
+			// Rear Gun Scale skips the linked pair alone: player two's rear bay is its life
+			// counter there (arcade_rear_scale_active). All three bind the session online.
 			.header = "Arcade",
 			.items = {
 				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
@@ -2648,6 +2649,11 @@ int main(int argc, char *argv[])
 	    && qa_net_game_type < NETWORK_GAME_TYPE_COUNT)
 	{
 		network_game_type = (NetworkGameType)qa_net_game_type;
+		// SuperTyrian has no difficulty ladder: the field carries its variant, and the lobby only
+		// ever leaves one of the two in it. A test peer has no lobby, so pin the same one here as
+		// the lobby would, or the pair flies a rung the mode cannot be started on.
+		if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
+			network_host_difficulty = qa_net_scrollock ? DIFFICULTY_SUICIDE : DIFFICULTY_LORD_OF_GAME;
 		if (network_game_type == NETWORK_GAME_ENDLESS)
 		{
 			network_host_endless_run_mode = (int)ENDLESS_RUNMODE_STANDARD;
@@ -2659,13 +2665,15 @@ int main(int argc, char *argv[])
 	}
 
 	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run
-	 * into the death menus, which these scenarios do not model. Set on both peers alike, so
-	 * the simulations agree. */
-	if (qa_net_gameplay_ticks > 0 && qa_net_zones > 0)
+	 * into the death menus, which these scenarios do not model. SuperTyrian's two rungs kill
+	 * the wiggle inside the frame budget too, and every death restarts the level so the
+	 * at-frame-N verdict never fires. Set on both peers alike, so the simulations agree. */
+	if (qa_net_gameplay_ticks > 0
+	    && (qa_net_zones > 0 || network_game_type_is_super(network_game_type)))
 		cheatInfiniteArmor = true;
 
 	/* The doubled-pickups scenario proves the session-flag arming end to end: the peers take
-	 * the production lobby roles, the host arms Individual credit plus Double Pickups from
+	 * the production lobby roles, the host arms Individual credit plus Double Earnings from
 	 * its own config, and the joiner starts from the opposite values, which the settings
 	 * block in the connect packet must replace. */
 	if (qa_net_gameplay_ticks > 0 && qa_net_lobby_settings)
@@ -2674,14 +2682,19 @@ int main(int argc, char *argv[])
 		if (thisPlayerNum == 1)
 		{
 			coopSharedCredit = false;
-			coopDoublePickups = true;
+			coopDoubleEarnings = true;
 		}
 		else
 		{
 			coopSharedCredit = true;
-			coopDoublePickups = false;
+			coopDoubleEarnings = false;
 		}
 	}
+
+	/* The Separate-arcade scenario. Command-line peers adopt nothing, so both arm the host's
+	 * ships setting from their own config, exactly as the two sides of a real lobby end up. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_arcade_separate)
+		arcadeSeparateShips = true;
 
 	/* Command-line peers have no lobby to hand out roles, and the desync recovery dispatch
 	 * and menu arbitration act on the host role alone. Assign player 1 the role the lobby
@@ -2754,6 +2767,7 @@ int main(int argc, char *argv[])
 			network_from_lobby = false;
 			network_is_host = false;
 			twoPlayerMode = false;
+			arcadeSeparateMode = false;
 		}
 #endif
 

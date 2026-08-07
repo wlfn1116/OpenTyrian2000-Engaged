@@ -72,20 +72,21 @@ static const int lobby_difficulties[] =
  * that outgrows it overlaps its neighbour only on whichever machine opens that screen. */
 static const char *const lobbyHostLabel[] =
 {
-	"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty",
-	"Host Flies", "Credit", "Double Pickups", "Game Speed", "Netcode", "Desync Recovery",
+	"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty", "Ships",
+	"Host Flies", "Credit", "Double Earnings", "Game Speed", "Netcode", "Desync Recovery",
 };
 
 static const char *const lobbyHostHelp[] =
 {
 	"The port other players connect to.",
-	"Campaign and Endless share cash; Arcade scores.",
+	"Campaign and Endless share cash; the rest score.",
 	"Which episode the session plays.",
 	"Seed, run mode, and who charts each course.",
 	"Applies to both players for the whole game.",
+	"Linked is the classic pair; Separate, a ship each.",
 	"Which ship you take; the joiner gets the other.",
 	"Shared pays a kill or pickup to both players.",
-	"Individual splits the take; this pays pickups twice.",
+	"Individual splits the take; combat cash pays twice.",
 	"Game speed, forced on both players.",
 	"Rollback hides latency; delay-based is lockstep.",
 	"Repairs a desync from the host's state.",
@@ -98,8 +99,14 @@ static const char lobbyHostRecoveryLockedHelp[] = "Only rollback netcode can det
 
 static const char *const lobbyHostAction[] = { "Start Hosting", "Back" };
 
-static const char *const lobbyTypeValue[]    = { "Arcade", "Campaign", "Endless" };
+static const char *const lobbyTypeValue[]    = { "Arcade", "Campaign", "Endless",
+                                                 "SuperTyrian", "Super Arcade" };
+// SuperTyrian has no difficulty ladder, only the two variants the solo mode picks with Scroll Lock.
+static const char *const lobbyVariantValue[] = { "Standard", "Scrollock" };
+static const char lobbyVariantLabel[] = "Variant";
+static const char lobbyVariantHelp[] = "Scrollock is the gentler SuperTyrian run.";
 static const char *const lobbyPlayerValue[]  = { "Player 1", "Player 2", "Silver Ship", "Dragonwing" };
+static const char *const lobbyShipsValue[]   = { "Linked", "Separate" };
 static const char *const lobbyCreditValue[]  = { "Shared", "Individual" };
 static const char *const lobbyOnOffValue[]   = { "On", "Off" };
 static const char *const lobbyNetcodeValue[] = { "Rollback", "Delay-Based" };
@@ -782,6 +789,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		ITEM_EPISODE,
 		ITEM_ENDLESS,
 		ITEM_DIFFICULTY,
+		ITEM_SHIPS,
 		ITEM_PLAYER,
 		ITEM_CREDIT,
 		ITEM_DOUBLE,
@@ -830,14 +838,24 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		 * page instead. Exactly two of the four rows show at a time, so the block keeps its height. */
 		const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 		const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
-		const bool playerHidden = coop;
+		/* SuperTyrian and Super Arcade are the one-player rulesets flown as two personal ships, so
+		 * they settle Ships and Host Flies themselves; SuperTyrian replaces the difficulty ladder
+		 * with its two variants, and Super Arcade picks no ship here at all (each player chooses
+		 * their own on the screen that follows). */
+		const bool super = network_game_type_is_super(network_game_type);
+		const bool variant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
+		// The Ships row is Arcade's own; Host Flies only means anything for the Linked pair.
+		const bool shipsHidden = coop || super;
+		const bool playerHidden = coop || super || arcadeSeparateShips;
 		const bool creditHidden = !coop;
 		const bool episodeHidden = endless;
 		const bool endlessHidden = !endless;
 		// Doubling pickups is only meaningful when the take is split in the first place.
 		const bool doubleHidden = creditHidden || coopSharedCredit;
+		if (shipsHidden && selectedIndex == ITEM_SHIPS)
+			selectedIndex = coop ? ITEM_CREDIT : ITEM_SPEED;
 		if (playerHidden && selectedIndex == ITEM_PLAYER)
-			selectedIndex = ITEM_CREDIT;
+			selectedIndex = coop ? ITEM_CREDIT : ITEM_SPEED;
 		else if (creditHidden && selectedIndex == ITEM_CREDIT)
 			selectedIndex = ITEM_SPEED;
 		if (episodeHidden && selectedIndex == ITEM_EPISODE)
@@ -847,17 +865,29 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		if (doubleHidden && selectedIndex == ITEM_DOUBLE)
 			selectedIndex = ITEM_SPEED;
 
+		/* One row wears two names: SuperTyrian's variant sits where every other type keeps its
+		 * difficulty, because that is what it is on the wire (Standard is Lord of Game, Scrollock
+		 * is Suicide), and PACKET_DETAILS already carries it. */
+		const char *itemLabel[SETTING_COUNT];
+		for (int i = 0; i < SETTING_COUNT; ++i)
+			itemLabel[i] = lobbyHostLabel[i];
+		if (variant)
+			itemLabel[ITEM_DIFFICULTY] = lobbyVariantLabel;
+
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
 		itemValue[ITEM_TYPE] = lobbyTypeValue[network_game_type];
 		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
 		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
-		itemValue[ITEM_DIFFICULTY] = difficultyNameB[network_host_difficulty];
+		itemValue[ITEM_DIFFICULTY] = variant
+		                           ? lobbyVariantValue[network_host_difficulty == DIFFICULTY_SUICIDE ? 1 : 0]
+		                           : difficultyNameB[network_host_difficulty];
+		itemValue[ITEM_SHIPS] = arcadeSeparateShips ? lobbyShipsValue[1] : lobbyShipsValue[0];
 		itemValue[ITEM_PLAYER] = network_host_player == 2
 		                       ? (coop ? lobbyPlayerValue[1] : lobbyPlayerValue[3])
 		                       : (coop ? lobbyPlayerValue[0] : lobbyPlayerValue[2]);
 		itemValue[ITEM_CREDIT] = coopSharedCredit ? lobbyCreditValue[0] : lobbyCreditValue[1];
-		itemValue[ITEM_DOUBLE] = coopDoublePickups ? lobbyOnOffValue[0] : lobbyOnOffValue[1];
+		itemValue[ITEM_DOUBLE] = coopDoubleEarnings ? lobbyOnOffValue[0] : lobbyOnOffValue[1];
 		itemValue[ITEM_SPEED] = gameSpeedText[network_host_game_speed - 1];
 		itemValue[ITEM_NETCODE] = net_rollback ? lobbyNetcodeValue[0] : lobbyNetcodeValue[1];
 		itemValue[ITEM_RECOVERY] = net_desync_recovery ? lobbyOnOffValue[0] : lobbyOnOffValue[1];
@@ -870,7 +900,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden)
 			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden)
-			                 || (i == ITEM_DOUBLE && doubleHidden);
+			                 || (i == ITEM_DOUBLE && doubleHidden) || (i == ITEM_SHIPS && shipsHidden);
 			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
 		}
 
@@ -882,7 +912,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			if (rowY[i] < 0)
 				continue;
-			blockW = MAX(blockW, JE_textWidth(lobbyHostLabel[i], small_font) + 20
+			blockW = MAX(blockW, JE_textWidth(itemLabel[i], small_font) + 20
 			                     + JE_textWidth(itemValue[i], small_font));
 		}
 		blockW = MIN(blockW, 300);
@@ -905,15 +935,18 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			const int labelValue = disabled ? -1 : (selected ? 6 : 2);
 			const int valueValue = disabled ? -1 : (selected ? 6 : 4);
 
-			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], lobbyHostLabel[i], small_font, left_aligned, 15,
+			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], itemLabel[i], small_font, left_aligned, 15,
 			                    labelValue, false, 1);
 			draw_font_hv_shadow(VGAScreen, xValue, rowY[i], itemValue[i], small_font, right_aligned, 15,
 			                    valueValue, false, 1);
 		}
 
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp,
-		                    (selectedIndex == ITEM_RECOVERY && recoveryLocked)
-		                        ? lobbyHostRecoveryLockedHelp : lobbyHostHelp[selectedIndex],
+		const char *helpLine = lobbyHostHelp[selectedIndex];
+		if (selectedIndex == ITEM_RECOVERY && recoveryLocked)
+			helpLine = lobbyHostRecoveryLockedHelp;
+		else if (selectedIndex == ITEM_DIFFICULTY && variant)
+			helpLine = lobbyVariantHelp;
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, helpLine,
 		                    small_font, centered, 15, 2, false, 1);
 
 		for (uint i = 0; i < COUNTOF(lobbyHostAction); ++i)
@@ -1007,7 +1040,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
 				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
-				       (selectedIndex == ITEM_DOUBLE && doubleHidden));
+				       (selectedIndex == ITEM_DOUBLE && doubleHidden) ||
+				       (selectedIndex == ITEM_SHIPS && shipsHidden));
 				break;
 
 			case SDL_SCANCODE_DOWN:
@@ -1019,7 +1053,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
 				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
-				       (selectedIndex == ITEM_DOUBLE && doubleHidden));
+				       (selectedIndex == ITEM_DOUBLE && doubleHidden) ||
+				       (selectedIndex == ITEM_SHIPS && shipsHidden));
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -1078,6 +1113,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			JE_playSampleNum(S_CLICK);
 			network_game_type = (NetworkGameType)((network_game_type + NETWORK_GAME_TYPE_COUNT + cycleDir)
 			                                      % NETWORK_GAME_TYPE_COUNT);
+			// SuperTyrian reads the difficulty field as its variant, so land on one of the two the
+			// moment the type is selected; a ladder value left over would read as "Standard" while
+			// the session actually flew at it.
+			if (network_game_type == NETWORK_GAME_SUPERTYRIAN
+			    && network_host_difficulty != DIFFICULTY_SUICIDE)
+				network_host_difficulty = DIFFICULTY_LORD_OF_GAME;
 			break;
 
 		case ITEM_ENDLESS:
@@ -1093,7 +1134,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		case ITEM_DIFFICULTY:
 			JE_playSampleNum(S_CLICK);
-			network_host_difficulty = lobbyCycleDifficulty(network_host_difficulty, cycleDir);
+			// SuperTyrian's two variants ride the same field; every other type cycles the ladder.
+			if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
+				network_host_difficulty = (network_host_difficulty == DIFFICULTY_SUICIDE)
+				                        ? DIFFICULTY_LORD_OF_GAME : DIFFICULTY_SUICIDE;
+			else
+				network_host_difficulty = lobbyCycleDifficulty(network_host_difficulty, cycleDir);
 			break;
 
 		case ITEM_NETCODE:
@@ -1116,6 +1162,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			net_desync_recovery = !net_desync_recovery;
 			break;
 
+		case ITEM_SHIPS:
+			// Linked flies the classic Silver + Dragonwing pair; Separate gives each player
+			// their own single-player-style arcade ship. Host-authoritative (settings bit 11).
+			JE_playSampleNum(S_CLICK);
+			arcadeSeparateShips = !arcadeSeparateShips;
+			break;
+
 		case ITEM_PLAYER:
 			// Arcade's player 2 is the Dragonwing; Campaign labels the two full-ship slots.
 			// The joiner is told which slot remains during the handshake.
@@ -1127,7 +1180,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// Compensates the split rather than beating it: a pickup pays its collector twice,
 			// so a pair sharing the field ends up near what one player alone would have taken.
 			JE_playSampleNum(S_CLICK);
-			coopDoublePickups = !coopDoublePickups;
+			coopDoubleEarnings = !coopDoubleEarnings;
 			break;
 
 		case ITEM_CREDIT:
@@ -1609,18 +1662,23 @@ void qa_test_net_lobby_strings(void)
 		lobbyCheckRow(lobbyHostLabel[3], endlessRunModeName((EndlessRunMode)m));
 	for (uint d = 0; d < COUNTOF(lobby_difficulties); ++d)
 		lobbyCheckRow(lobbyHostLabel[4], difficultyNameB[lobby_difficulties[d]]);
+	// The same row under its SuperTyrian name and values.
+	for (uint i = 0; i < COUNTOF(lobbyVariantValue); ++i)
+		lobbyCheckRow(lobbyVariantLabel, lobbyVariantValue[i]);
+	for (uint i = 0; i < COUNTOF(lobbyShipsValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[5], lobbyShipsValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyPlayerValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[5], lobbyPlayerValue[i]);
+		lobbyCheckRow(lobbyHostLabel[6], lobbyPlayerValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[6], lobbyCreditValue[i]);
+		lobbyCheckRow(lobbyHostLabel[7], lobbyCreditValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[7], lobbyOnOffValue[i]);
+		lobbyCheckRow(lobbyHostLabel[8], lobbyOnOffValue[i]);
 	for (uint s = 0; s < COUNTOF(gameSpeedText); ++s)
-		lobbyCheckRow(lobbyHostLabel[8], gameSpeedText[s]);
+		lobbyCheckRow(lobbyHostLabel[9], gameSpeedText[s]);
 	for (uint i = 0; i < COUNTOF(lobbyNetcodeValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[9], lobbyNetcodeValue[i]);
+		lobbyCheckRow(lobbyHostLabel[10], lobbyNetcodeValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[10], lobbyOnOffValue[i]);
+		lobbyCheckRow(lobbyHostLabel[11], lobbyOnOffValue[i]);
 
 	// Endless page rows, in lobbyEndlessLabel order. The seed is user-typed, so its worst
 	// case is the widest glyph its entry filter admits, tiled to the field's limit.
@@ -1638,6 +1696,7 @@ void qa_test_net_lobby_strings(void)
 	for (uint i = 0; i < COUNTOF(lobbyHostHelp); ++i)
 		lobbyCheckHelp(lobbyHostHelp[i]);
 	lobbyCheckHelp(lobbyHostRecoveryLockedHelp);
+	lobbyCheckHelp(lobbyVariantHelp);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessHelp); ++i)
 		lobbyCheckHelp(lobbyEndlessHelp[i]);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessRunModeHelp); ++i)

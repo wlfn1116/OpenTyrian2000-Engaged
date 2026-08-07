@@ -936,20 +936,22 @@ static long endlessInterestOn(ulong bank)
  * interest on its own bank and its own clear bonus, so both sides of an online session derive
  * the same wallets. Paying only the local wallet left each machine's view of the partner short
  * and skipped the Shared-credit session entirely. Only the local share enters the run ledger,
- * the same rule player_credit_cash applies to kills. */
+ * the same rule player_credit_cash applies to kills. Perks are personal, so each ship's own
+ * Financier and Scavenger stacks price its own interest and clear bonus. */
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 {
 	long interest = 0, bonus = 0;
 	if (endlessMode && endlessRunDepth > 0)
 	{
-		const long clear = endlessClearBonus() * endlessPerkCashPercent() / 100;  // Scavenger scales it
-
+		const uint fxSaved = endlessFxPlayer();
 		const uint mine = endlessEconomyIndex();
 		const uint count = (isNetworkGame && coop_mode_active()) ? 2 : 1;
 		for (uint n = 0; n < count; ++n)
 		{
 			const uint p = (count == 2) ? n : mine;
+			endlessSetFxPlayer(p);
 			const long pay = endlessInterestOn(player[p].cash);
+			const long clear = endlessClearBonus() * endlessPerkCashPercent() / 100;
 			if (p == mine)
 			{
 				interest = pay;
@@ -962,6 +964,7 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 				player[p].cash += (ulong)(pay + clear);
 			}
 		}
+		endlessSetFxPlayer(fxSaved);
 	}
 	if (interestOut)
 		*interestOut = interest;

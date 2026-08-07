@@ -198,14 +198,32 @@ static inline bool coop_mode_active(void)
 	return coopCampaignMode || coopEndlessMode;
 }
 
+// Online Arcade with Separate ships: two personal single-player-style arcades sharing the
+// level. Session-scoped, armed from the host's lobby setting; never saved.
+extern JE_boolean arcadeSeparateMode;
+
+static inline bool arcade_separate_mode(void)
+{
+	return twoPlayerMode && !coop_mode_active() && arcadeSeparateMode;
+}
+
+/* Two full, independent ships each flying their own arsenal: online co-op of either kind, or
+ * Separate arcade. It does not imply the co-op economy; credit settings and outposts stay
+ * co-op-only. */
+static inline bool dual_ship_mode(void)
+{
+	return coop_mode_active() || arcade_separate_mode();
+}
+
 static inline bool arcade_rules_active(void)
 {
 	return onePlayerAction || (twoPlayerMode && !coop_mode_active());
 }
 
+// The classic linked pair: the split two-player HUD, docking, and the Dragonwing.
 static inline bool split_arcade_mode(void)
 {
-	return twoPlayerMode && !coop_mode_active();
+	return twoPlayerMode && !coop_mode_active() && !arcadeSeparateMode;
 }
 extern JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 // Debug Mode only: run endless mode's EFFECT layer (difficulty levers, sector mutators, perks,
@@ -407,6 +425,10 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);
+// ...and the arcade shapes that also fly two complete ships (Separate, Super Arcade, SuperTyrian).
+bool save_record_is_dual_arcade(const JE_SaveFileType *rec);
+// The Super Arcade ship (1..SA), SA_SUPERTYRIAN, or SA_NONE each of the record's two ships flies.
+uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
 
 void JE_encryptSaveTemp(void);
 void JE_decryptSaveTemp(void);

@@ -74,11 +74,34 @@ void JE_loadMap(void);
 void JE_deriveStarShowSpecial(void);
 #ifdef WITH_NETWORK
 void networkStartScreen(void);
+/* Steps the host adds to the lobby's difficulty and the joiner subtracts again, so both land on
+ * the same initialDifficulty. Public so the unit suite can pin the two halves against each other
+ * for every game type; a mismatch would run the two machines on different rules. */
+int networkDifficultyBump(void);
+/* Equip one ship for the Super Arcade run it chose (1..SA). Both machines call it for both
+ * ships, each from the pair of picks the announcement protocol settled. */
+void networkSuperArcadeEquip(Player *this_player, int ship);
 #endif
 bool titleScreen(void);
 bool newGame(void);
 bool newSuperArcadeGame(unsigned int i);
 bool newSuperTyrianGame(void);
+
+/* Online Super Arcade's ship picker (networkStartScreen). The nine names go in two columns,
+ * hit-tested for the mouse and stepped by the arrow keys, so the layout is declared here rather
+ * than buried in the draw: the unit suite measures the real names against it and fails if a
+ * column would clip or a row would collide with the hull below. */
+#define SA_PICK_HEADER_Y   16
+#define SA_PICK_ROWS        5   // rows in the left column; the right one takes the remainder
+#define SA_PICK_TOP_Y      44
+#define SA_PICK_ROW_H      16
+#define SA_PICK_COL_X      40
+#define SA_PICK_COL_DX    136
+#define SA_PICK_SHIP_Y    128   // the highlighted hull, blitted 2x2 (28px tall)
+#define SA_PICK_STATUS_Y  168
+#define SA_PICK_PEER_Y    180
+static inline int sa_pick_name_x(int i) { return SA_PICK_COL_X + (i / SA_PICK_ROWS) * SA_PICK_COL_DX; }
+static inline int sa_pick_name_y(int i) { return SA_PICK_TOP_Y + (i % SA_PICK_ROWS) * SA_PICK_ROW_H; }
 bool newEndlessGame(void);
 void JE_readTextSync(void);
 void JE_displayText(void);
