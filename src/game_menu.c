@@ -1299,7 +1299,13 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		 * A locked outpost has no pick to make: it relaunches the committed level, already armed
 		 * identically on both machines, and a loaded game brought its route with it. Charting
 		 * either of those would throw that route away for a course nobody chose. */
-		if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
+		/* A debug zone jump replaces the course outright, so it has to be settled before the fold
+		 * below and not after: folding rebuilds the sector from the slate and would overwrite the
+		 * jump on whichever machine folded. Both machines then skip the fold together, which also
+		 * keeps the course slate and the charting turn identical on the two sides. */
+		const bool endlessJumping = endlessCoop() && network_endless_jump_sync();
+
+		if (endlessCoop() && !endlessLockedSortie && !gameLoaded && !endlessJumping)
 		{
 			int course = endlessCoopCourse;
 			if (qa_net_gameplay_ticks > 0)
@@ -1337,12 +1343,26 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 		fflush(stderr);
 	}
 
+	// The Endless zone jump's run state rides in the same packet as the level pick, because the
+	// two are one decision: the level alone would put the peer in the right file at the wrong
+	// depth, with the wrong modifiers, generating a different sector from the first tick.
+	Uint16 myJumpDepth = 0;
+	Uint64 myJumpMods = 0;
+	JE_byte myJumpPerks[ENDLESS_JUMP_PERK_MAX], myJumpPerkCount = 0;
+	const bool myJump = endlessJumpPickGet(&myJumpDepth, &myJumpMods, myJumpPerks, &myJumpPerkCount);
+
 	network_prepare(PACKET_WAITING);
 	packet_out_temp->data[4] = myPick ? 1 : 0;
 	packet_out_temp->data[5] = myPickEp;
 	packet_out_temp->data[6] = myPickSec;
 	packet_out_temp->data[7] = myPickFile;
-	network_send(8);  // PACKET_WAITING + debug level pick
+	packet_out_temp->data[8] = myJump ? 1 : 0;
+	SDLNet_Write16(myJumpDepth, &packet_out_temp->data[9]);
+	for (int b = 0; b < 8; ++b)   // mods, little end first; NET_ENDLESS_JUMP_MODS
+		packet_out_temp->data[11 + b] = (Uint8)(myJumpMods >> (8 * b));
+	packet_out_temp->data[19] = myJumpPerkCount;
+	memcpy(&packet_out_temp->data[20], myJumpPerks, myJumpPerkCount);
+	network_send(20 + myJumpPerkCount);  // PACKET_WAITING + debug level pick + endless jump
 
 	while (true)
 	{
@@ -1365,6 +1385,22 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 				debugLevelPickApply(packet_in[0]->data[5],
 				                    packet_in[0]->data[6],
 				                    packet_in[0]->data[7]);
+			}
+
+			// The Endless jump's run state, settled the same way and by the same rule, so a
+			// double jump can never leave one machine's depth against the other's level.
+			if (packet_in[0]->len >= 20 && packet_in[0]->data[8] != 0 &&
+			    (!myJump || !network_is_host))
+			{
+				const JE_byte count = packet_in[0]->data[19];
+				// Trust the length, not the count byte: a truncated packet must not be read past.
+				const size_t have = (size_t)packet_in[0]->len - 20;
+				const JE_byte take = (JE_byte)(count < have ? count : have);
+				Uint64 mods = 0;
+				for (int b = 0; b < 8; ++b)
+					mods |= (Uint64)packet_in[0]->data[11 + b] << (8 * b);
+				endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[9]), mods,
+				                     &packet_in[0]->data[20], take);
 			}
 
 			network_update();
@@ -5128,6 +5164,66 @@ static void debug_level_pick_stage(JE_byte episode, JE_byte section, JE_byte fil
 void debugLevelPickReset(void)
 {
 	debugPick.armed = false;
+	endlessJumpPickReset();
+}
+
+/* The Endless jump's run state, staged beside the level pick above. Depth, the folded modifier
+ * mask and the perk stacks all feed sector generation, so the peer needs every one of them to
+ * build the zone this machine is about to build. */
+static struct {
+	bool    armed;
+	Uint16  depth;
+	Uint64  mods;
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX];
+	JE_byte perkCount;
+} endlessJumpPick;
+
+static void endless_jump_pick_stage(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+{
+	if (perkCount > ENDLESS_JUMP_PERK_MAX)
+		perkCount = ENDLESS_JUMP_PERK_MAX;
+
+	endlessJumpPick.armed = true;
+	endlessJumpPick.depth = depth;
+	endlessJumpPick.mods = mods;
+	endlessJumpPick.perkCount = perkCount;
+	memcpy(endlessJumpPick.perks, perks, perkCount);
+}
+
+void endlessJumpPickReset(void)
+{
+	endlessJumpPick.armed = false;
+}
+
+bool endlessJumpPickGet(Uint16 *depth, Uint64 *mods, JE_byte *perks, JE_byte *perkCount)
+{
+	if (!endlessJumpPick.armed)
+		return false;
+
+	*depth = endlessJumpPick.depth;
+	*mods = endlessJumpPick.mods;
+	*perkCount = endlessJumpPick.perkCount;
+	memcpy(perks, endlessJumpPick.perks, endlessJumpPick.perkCount);
+	return true;
+}
+
+void endlessJumpPickApply(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+{
+	if (perkCount > ENDLESS_JUMP_PERK_MAX)
+		perkCount = ENDLESS_JUMP_PERK_MAX;
+
+	endlessRunDepth = depth;
+	endlessActiveMods = mods;
+
+	// Clamped against this build's own table rather than the sender's count, so a peer that
+	// knows more perks than we do cannot write past the end of ours.
+	int n = endlessPerkCount();
+	if (n > perkCount)
+		n = perkCount;
+	for (int p = 0; p < n; ++p)
+		endlessPerkSetOwned(p, perks[p]);
+
+	endless_jump_pick_stage(depth, mods, perks, perkCount);
 }
 
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum)
@@ -6347,6 +6443,10 @@ static bool endlessDebugScreen(bool jumpMode)
 						if (episodeNum != startEp)
 							initial_episode_num = episodeNum;
 						select_level(sec, 0);
+						// Stage the level this machine LANDED on, not the fact that it rolled: the
+						// peer must adopt the concrete result, or its own roll would send it
+						// somewhere else entirely.
+						debug_level_pick_stage((JE_byte)episodeNum, sec, 0);
 					}
 					else
 					{
@@ -6355,6 +6455,19 @@ static bool endlessDebugScreen(bool jumpMode)
 						if (episodeNum != startEp)
 							initial_episode_num = episodeNum;
 						select_level(allLevelSec[dbgBase], allLevelFile[dbgBase]);  // sets forcedLvlFileNum
+						debug_level_pick_stage((JE_byte)allLevelEp[dbgBase],
+						                       (JE_byte)allLevelSec[dbgBase],
+						                       (JE_byte)allLevelFile[dbgBase]);
+					}
+					// ...and the run state around it, which the level pick alone does not carry.
+					{
+						JE_byte staged[ENDLESS_JUMP_PERK_MAX];
+						int n = NPERKS < ENDLESS_JUMP_PERK_MAX ? NPERKS : ENDLESS_JUMP_PERK_MAX;
+						for (int p = 0; p < n; ++p)
+							staged[p] = (JE_byte)(dbgPerks[p] < 0 ? 0
+							                    : dbgPerks[p] > 255 ? 255 : dbgPerks[p]);
+						endless_jump_pick_stage((Uint16)endlessRunDepth, endlessActiveMods,
+						                        staged, (JE_byte)n);
 					}
 					chosen = true;
 					done = true;

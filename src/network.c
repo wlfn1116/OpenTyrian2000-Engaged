@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       19           /* v19: Double Earnings covers kill and bounty cash,
+#define NET_VERSION       20           /* v20: the departure handshake carries the Endless debug
+                                          zone jump (depth, folded modifiers, perk stacks) beside
+                                          the level pick, and PACKET_SA_SHIP carries a retractable
+                                          pick plus the peer's acknowledgement of ours.
+                                          v19: Double Earnings covers kill and bounty cash,
                                           Endless perks are per-ship, and Arcade carries the
                                           Linked / Separate ships setting and Rear Gun Scale */
 #define NET_PORT          1333         // UDP
@@ -556,6 +560,8 @@ static int network_recv_one(void)
 					// above: a reliable type missing from this list is queued nowhere and never
 					// acknowledged, so the sender retransmits forever and the pair deadlocks.
 					case PACKET_SA_SHIP:
+					// The Endless zone jump, settled before the course is folded. Same rule again.
+					case PACKET_ENDLESS_JUMP:
 					case PACKET_RESYNC:
 						{
 							const Uint16 sync = SDLNet_Read16(&packet_temp->data[2]);
@@ -2422,6 +2428,96 @@ void network_sa_ship_publish(int ship, bool seen_peer)
 bool network_sa_ship_peer_saw_us(void)
 {
 	return isNetworkGame && net_sa_ship_peer_saw_us;
+}
+
+/* The Endless debug zone jump, settled BEFORE the course is folded. That ordering is the whole
+ * point: folding rebuilds the sector from the course slate -- level, modifiers and all -- so a
+ * jump exchanged after it survives only on the machine that did not fold, and the pair lands in
+ * different levels. Both machines announce what they staged (or that they staged nothing), adopt
+ * the winner, and then both skip the fold together, so the course slate and whose turn it is to
+ * chart stay identical on both sides. Host wins if both jumped. */
+bool network_endless_jump_sync(void)
+{
+	Uint16 depth = 0;
+	Uint64 mods = 0;
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX], perkCount = 0;
+	JE_byte ep = 0, sec = 0, file = 0;
+
+	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
+	const bool myLevel = debugLevelPickGet(&ep, &sec, &file);
+
+	if (!isNetworkGame || !coopEndlessMode)
+		return mine;
+
+	network_prepare(PACKET_ENDLESS_JUMP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (mine && myLevel) ? 1 : 0;   // a jump is only usable with its level
+	SDLNet_Write16(depth, &packet_out_temp->data[6]);
+	for (int b = 0; b < 8; ++b)
+		packet_out_temp->data[8 + b] = (Uint8)(mods >> (8 * b));
+	packet_out_temp->data[16] = ep;
+	packet_out_temp->data[17] = sec;
+	packet_out_temp->data[18] = file;
+	packet_out_temp->data[19] = perkCount;
+	memcpy(&packet_out_temp->data[20], perks, perkCount);
+	network_send(20 + perkCount);
+
+	// Every departure passes through here, so the wait is a real rendezvous rather than a poll:
+	// the peer always sends, even to say it staged nothing.
+	bool theirs = false;
+	const Uint32 started = SDL_GetTicks();
+	while (SDL_GetTicks() - started < 20000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+		network_check();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_JUMP)
+		{
+			if (packet_in[0]->len >= 20 && packet_in[0]->data[4] != (Uint8)thisPlayerNum)
+			{
+				if (packet_in[0]->data[5] != 0 && (!mine || !network_is_host))
+				{
+					// Trust the length over the count byte, and clamp the perk block to what our
+					// own table can hold; a peer that knows more perks must not write past it.
+					const size_t have = (size_t)packet_in[0]->len - 20;
+					const JE_byte n = (JE_byte)(packet_in[0]->data[19] < have
+					                            ? packet_in[0]->data[19] : have);
+					Uint64 peerMods = 0;
+					for (int b = 0; b < 8; ++b)
+						peerMods |= (Uint64)packet_in[0]->data[8 + b] << (8 * b);
+					debugLevelPickApply(packet_in[0]->data[16], packet_in[0]->data[17],
+					                    packet_in[0]->data[18]);
+					endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[6]), peerMods,
+					                     &packet_in[0]->data[20], n);
+					theirs = true;
+				}
+				else if (packet_in[0]->data[5] != 0)
+				{
+					theirs = true;   // ours wins the tie, but a jump is still in play
+				}
+				network_update();
+				return mine || theirs;
+			}
+			network_update();   // our own announcement echoed back
+			continue;
+		}
+
+		network_update();
+		if (!network_peer_alive())
+			break;
+	}
+
+	crashlog_netlog_line("ENDLESS JUMP SYNC TIMEOUT",
+	                     "the peer never answered the zone-jump exchange; this machine folded its "
+	                     "course as usual rather than launching a jump the peer knows nothing of.");
+	return false;
 }
 
 int network_sa_ship_peer(void)

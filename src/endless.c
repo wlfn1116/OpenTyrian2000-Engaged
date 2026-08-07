@@ -1083,7 +1083,14 @@ void endlessOnRunEnd(void)
 	// Records are kept per mode and difficulty, so the summary names both.
 	const int runDifficulty = (initialDifficulty >= 0 && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
 	                        ? initialDifficulty : 0;
-	RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
+	// Two ships change what every other row on this screen means -- the kills, the cash, the zones
+	// reached -- so the mode has to say which it was rather than leaving a co-op run to be read as
+	// a solo one.
+	if (endlessCoop())
+		RUNEND_ROW("Mode:", "%s, %s, Multiplayer", endlessRunModeName(endlessRunMode),
+		           difficultyNameB[runDifficulty]);
+	else
+		RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
