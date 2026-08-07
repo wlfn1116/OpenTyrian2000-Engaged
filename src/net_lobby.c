@@ -94,9 +94,6 @@ static const char *const lobbyHostHelp[] =
 	"Return to the online multiplayer menu.",
 };
 
-// Shown in place of the Desync Recovery help while the row is dead.
-static const char lobbyHostRecoveryLockedHelp[] = "Only rollback netcode can detect a desync.";
-
 static const char *const lobbyHostAction[] = { "Start Hosting", "Back" };
 
 static const char *const lobbyTypeValue[]    = { "Arcade", "Campaign", "Endless",
@@ -833,10 +830,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 	for (;;)
 	{
-		// Desync recovery is a rollback-only repair: the lockstep path never runs the
-		// canary compare that arms it, so delay-based forces the row off and dead.
-		const bool recoveryLocked = !net_rollback;
-		if (recoveryLocked)
+		// Desync recovery is a rollback-only repair: the lockstep path never runs the canary
+		// compare that arms it, so delay-based forces the setting off and takes the row off the
+		// page entirely. It was never reachable while locked, so showing it dimmed only offered
+		// a choice that was not there.
+		const bool recoveryHidden = !net_rollback;
+		if (recoveryHidden)
 			net_desync_recovery = false;
 
 		/* Both co-op types give the two slots the same kind of ship, so which one the host takes
@@ -871,6 +870,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			selectedIndex = ITEM_DIFFICULTY;
 		if (doubleHidden && selectedIndex == ITEM_DOUBLE)
 			selectedIndex = ITEM_SPEED;
+		if (recoveryHidden && selectedIndex == ITEM_RECOVERY)
+			selectedIndex = ITEM_NETCODE;   // the row that took it away
 
 		/* One row wears two names: SuperTyrian's variant sits where every other type keeps its
 		 * difficulty, because that is what it is on the wire (Standard is Lord of Game, Scrollock
@@ -907,7 +908,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden)
 			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden)
-			                 || (i == ITEM_DOUBLE && doubleHidden) || (i == ITEM_SHIPS && shipsHidden);
+			                 || (i == ITEM_DOUBLE && doubleHidden) || (i == ITEM_SHIPS && shipsHidden)
+			                 || (i == ITEM_RECOVERY && recoveryHidden);
 			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
 		}
 
@@ -935,12 +937,10 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				continue;
 
 			const bool selected = (int)selectedIndex == i;
-			const bool disabled = i == ITEM_RECOVERY && recoveryLocked;
 
-			// small_font sits low in bank 15, so its offsets run positive; a negative one
-			// is what makes a row read as unavailable.
-			const int labelValue = disabled ? -1 : (selected ? 6 : 2);
-			const int valueValue = disabled ? -1 : (selected ? 6 : 4);
+			// small_font sits low in bank 15, so its offsets run positive.
+			const int labelValue = selected ? 6 : 2;
+			const int valueValue = selected ? 6 : 4;
 
 			draw_font_hv_shadow(VGAScreen, xLabel, rowY[i], itemLabel[i], small_font, left_aligned, 15,
 			                    labelValue, false, 1);
@@ -949,9 +949,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		}
 
 		const char *helpLine = lobbyHostHelp[selectedIndex];
-		if (selectedIndex == ITEM_RECOVERY && recoveryLocked)
-			helpLine = lobbyHostRecoveryLockedHelp;
-		else if (selectedIndex == ITEM_DIFFICULTY && variant)
+		if (selectedIndex == ITEM_DIFFICULTY && variant)
 			helpLine = lobbyVariantHelp;
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, helpLine,
 		                    small_font, centered, 15, 2, false, 1);
@@ -988,8 +986,6 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			for (size_t i = 0; i < ITEM_COUNT; ++i)
 			{
-				if (i == ITEM_RECOVERY && recoveryLocked)
-					continue;
 				if (i < SETTING_COUNT && rowY[i] < 0)
 					continue;
 
@@ -1036,13 +1032,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		{
 			switch (lastkey_scan)
 			{
-			// Both walks step over anything the frame above left off the screen: the dead
-			// recovery row, and the slot row a Campaign session has no use for.
+			// Both walks step over anything the frame above left off the screen: the recovery
+			// row a delay-based session has no use for, and the slot row a Campaign one hasn't.
 			case SDL_SCANCODE_UP:
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
-				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
+				while ((selectedIndex == ITEM_RECOVERY && recoveryHidden) ||
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
@@ -1055,7 +1051,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
-				while ((selectedIndex == ITEM_RECOVERY && recoveryLocked) ||
+				while ((selectedIndex == ITEM_RECOVERY && recoveryHidden) ||
 				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
 				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
 				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
@@ -1176,9 +1172,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			// On a detected desync the host streams its state and the joiner adopts
 			// it; one hitch instead of a divergent rest-of-level.  The host's
 			// value binds the session (settings block bit 6), like every other
-			// sim-affecting setting; rollback sessions only.
-			if (recoveryLocked)
-				break;
+			// sim-affecting setting; rollback sessions only, and off the page otherwise.
 			JE_playSampleNum(S_CLICK);
 			net_desync_recovery = !net_desync_recovery;
 			break;
@@ -1716,7 +1710,6 @@ void qa_test_net_lobby_strings(void)
 
 	for (uint i = 0; i < COUNTOF(lobbyHostHelp); ++i)
 		lobbyCheckHelp(lobbyHostHelp[i]);
-	lobbyCheckHelp(lobbyHostRecoveryLockedHelp);
 	lobbyCheckHelp(lobbyVariantHelp);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessHelp); ++i)
 		lobbyCheckHelp(lobbyEndlessHelp[i]);

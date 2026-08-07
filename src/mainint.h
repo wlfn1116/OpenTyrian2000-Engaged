@@ -77,6 +77,9 @@ bool JE_extraMenu(void);
 void JE_inGameHelp(void);
 void JE_sortHighScores(void);
 void JE_highScoreCheck(void);
+// Whether the score-based difficulty drift between levels runs; false for the whole of an Endless
+// run, which stays on the rung it launched with. Public so the unit suite can pin that.
+bool difficulty_adjust_active(void);
 void adjust_difficulty(void);
 
 bool load_next_demo(void);

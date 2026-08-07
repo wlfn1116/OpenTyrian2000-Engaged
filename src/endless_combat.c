@@ -10,6 +10,7 @@
 #include "lvlmast.h"
 #include "mainint.h"
 #include "mtrand.h"
+#include "network.h"
 #include "player.h"
 #include "sprite.h"
 #include "tyrian2.h"
@@ -548,11 +549,17 @@ void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 	// this keyboard, so paying that would have paid a different wallet on each side.
 	player_award_bounty_cash(&player[payee], bounty);
 
-	// Keep the cash clear of the HUD, showing what was actually paid.
+	// Keep the cash clear of the HUD, showing what was actually paid. Online there are two
+	// wallets, so the figure is worth nothing without whose it is: name the killer beside it.
+	// A kill nobody can claim pays ship one by rule rather than by merit, so that one stays a
+	// bare figure instead of crediting a player who did not fire.
 	const long paid = coop_earnings_are_doubled() ? bounty * 2 : bounty;
-	char label[48], cash[24];
+	char label[48], cash[48];
 	snprintf(label, sizeof(label), "%s Enemy destroyed!", champion ? "Champion" : "Elite");
-	snprintf(cash, sizeof(cash), "+%ld", paid);
+	if (isNetworkGame && dual_ship_mode() && killer != ENDLESS_KILLER_NONE)
+		snprintf(cash, sizeof(cash), "%s +%ld", JE_getName((JE_byte)(payee + 1)), paid);
+	else
+		snprintf(cash, sizeof(cash), "+%ld", paid);
 	JE_drawTextWindowSplit(label, cash, 244);
 }
 
