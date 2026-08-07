@@ -6309,6 +6309,12 @@ void JE_playCredits(void)
 		}
 
 		NETWORK_KEEP_ALIVE();
+		// The zone-100 roll happens at an outpost both machines are sitting in, and it is minutes
+		// long. Holding the link is not enough on its own: the peer keeps announcing its outpost
+		// state on the reliable channel, and an unread head of that queue blocks the rendezvous
+		// this outpost ends with, so drain it while the credits play.
+		while (network_shop_pump())
+			;
 
 		if (smoothMotion)
 		{
@@ -6575,7 +6581,18 @@ void JE_endLevelAni(void)
 		temp = 0;
 	}
 	temp2 = twoPlayerMode ? 150 : 160;
-	JE_outTextGlow(VGAScreenSeg, 90, temp2, miscText[5-1]);
+	// Endless adds a payout block under the scores (Zone Bonus, and Bank Interest below it), and
+	// two players add a second score line above that, so the two-player y lands this right on top
+	// of the last of them. Give it its own row clear of the block and centre it properly rather
+	// than hanging it off a fixed left edge that was only ever centred for one line width.
+	if (endlessMode)
+	{
+		temp2 = 168;
+		JE_outTextGlow(VGAScreenSeg, JE_fontCenter(miscText[5-1], SMALL_FONT_SHAPES), temp2,
+		               miscText[5-1]);
+	}
+	else
+		JE_outTextGlow(VGAScreenSeg, 90, temp2, miscText[5-1]);
 
 	// A gameplay wire test has no player to press past the level-complete screen.
 	if (!constantPlay && qa_net_gameplay_ticks == 0)
@@ -8409,19 +8426,24 @@ redo:
 				// it here for the Smooth-Motion-off path. Every source; keyboard, d-pad, mouse, touch,
 				// stick; has already committed to this_player->x/y above, so rescale this tick's NET
 				// displacement with a sub-pixel carry (like endlessGravityPullX/Y) so a fractional scale
-				// still averages out. player[0] only; a no-op at scale 1.0, so normal play is untouched.
-				if (playerNum_ == 1)
+				// still averages out. A no-op at scale 1.0, so normal play is untouched. Both ships:
+				// this used to run for player one alone, which left the partner flying at full speed
+				// through a sector whose whole point is that it slows you down. The carry is per ship
+				// for the same reason -- one shared remainder would leak one ship's motion into the
+				// other's, and the two are simulated back to back inside a single tick.
 				{
+					const uint sluggishIdx = (playerNum_ >= 2) ? 1u : 0u;
 					const float ms = endlessMoveScale();
 					if (ms < 1.0f)
 					{
-						static float carryX = 0.0f, carryY = 0.0f;
+						static float carryXs[2] = { 0.0f, 0.0f }, carryYs[2] = { 0.0f, 0.0f };
+						float carryX = carryXs[sluggishIdx], carryY = carryYs[sluggishIdx];
 						const float wantX = (float)(this_player->x - sluggishStartX) * ms + carryX;
 						const float wantY = (float)(this_player->y - sluggishStartY) * ms + carryY;
 						const int   dX = (int)(wantX >= 0.0f ? wantX + 0.5f : wantX - 0.5f);
 						const int   dY = (int)(wantY >= 0.0f ? wantY + 0.5f : wantY - 0.5f);
-						carryX = wantX - (float)dX;
-						carryY = wantY - (float)dY;
+						carryXs[sluggishIdx] = wantX - (float)dX;
+						carryYs[sluggishIdx] = wantY - (float)dY;
 						this_player->x = sluggishStartX + dX;
 						this_player->y = sluggishStartY + dY;
 					}

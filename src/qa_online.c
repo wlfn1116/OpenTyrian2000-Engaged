@@ -12,6 +12,7 @@
 #include "episodes.h"
 #include "font.h"      // small_font, for measuring the picker's names against its columns
 #include "fonthand.h"
+#include "game_menu.h"  // the Endless zone jump's staging, carried by the departure handshake
 #include "helptext.h"  // superShips[]
 #include "lvlmast.h"
 #include "mainint.h"
@@ -1640,6 +1641,60 @@ static void qa_sa_ship_packet(void)
 }
 #endif
 
+/* ---- 13. the Endless debug zone jump crosses the wire -------------------------------- */
+
+/* A zone jump is one decision made of four parts: the level, the depth, the folded modifier mask
+ * and the perk stacks. The level rides the browser-pick fields the campaign already publishes;
+ * the other three are what this block carries. A peer that adopted only the level would open the
+ * right file at the wrong depth with the wrong modifiers and generate a different sector, which
+ * is a desync from the first tick -- so what matters is that all of it survives the round trip,
+ * and that a hostile or truncated block cannot be read past. */
+static void qa_endless_jump_pick(void)
+{
+	const JE_boolean savedEndless = endlessMode;
+	const int savedDepth = endlessRunDepth;
+	const Uint64 savedMods = endlessActiveMods;
+	endlessMode = true;
+
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX];
+	JE_byte count = 0;
+	Uint16 depth = 0;
+	Uint64 mods = 0;
+
+	endlessJumpPickReset();
+	qa_check(!endlessJumpPickGet(&depth, &mods, perks, &count),
+	         "no zone jump is staged until one is made");
+
+	/* The round trip, with a mask that uses both halves of the 64 bits: the modifier set outgrew
+	 * 32 bits (see the TOPSY/SLUGGISH widening), so a 32-bit path would silently drop the top. */
+	const Uint64 wide = 0x8000000400000002ull;
+	endlessJumpPickApply(37, wide, (const JE_byte[]){ 3, 0, 1 }, 3);
+	qa_check(endlessRunDepth == 37 && endlessActiveMods == wide,
+	         "an adopted zone jump lands the peer's depth and its whole 64-bit modifier mask");
+	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count)
+	         && depth == 37 && mods == wide && count == 3
+	         && perks[0] == 3 && perks[1] == 0 && perks[2] == 1,
+	         "...and re-stages it, so it reads back exactly as it was published");
+
+	/* A count past this build's perk table must clamp against ours, not the sender's. */
+	JE_byte many[ENDLESS_JUMP_PERK_MAX];
+	memset(many, 1, sizeof(many));
+	endlessJumpPickApply(1, 0, many, ENDLESS_JUMP_PERK_MAX);
+	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count) && count <= ENDLESS_JUMP_PERK_MAX,
+	         "a perk block at the array's limit is taken without running past it");
+	endlessJumpPickApply(1, 0, many, (JE_byte)(ENDLESS_JUMP_PERK_MAX + 40));
+	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count) && count == ENDLESS_JUMP_PERK_MAX,
+	         "...and a count past that clamps to what the array can hold");
+
+	endlessJumpPickReset();
+	qa_check(!endlessJumpPickGet(&depth, &mods, perks, &count),
+	         "leaving the outpost clears the staged jump, so it fires once and not every level");
+
+	endlessMode = savedEndless;
+	endlessRunDepth = savedDepth;
+	endlessActiveMods = savedMods;
+}
+
 /* ---- entry point -------------------------------------------------------------------- */
 
 void qa_test_online_suite(void)
@@ -1665,6 +1720,7 @@ void qa_test_online_suite(void)
 	qa_test_net_lobby_strings();
 	qa_hostile_packets();
 	qa_sa_ship_packet();
+	qa_endless_jump_pick();
 #endif
 
 	qa_online_restore(&saved);

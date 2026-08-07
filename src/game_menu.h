@@ -83,6 +83,15 @@ void debugLevelJumpReturn(void);
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum);
 void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum);
 void debugLevelPickReset(void);
+
+/* The Endless zone jump's other half. A level pick alone is not enough there: the jump also sets
+ * the run's depth, its folded modifiers and its perk stacks, and all three feed sector generation,
+ * so a peer that adopted only the level would build a different zone from the same file. The
+ * jumping machine stages this beside the level pick and the departure handshake carries both. */
+#define ENDLESS_JUMP_PERK_MAX 32
+bool endlessJumpPickGet(Uint16 *depth, Uint64 *mods, JE_byte *perks, JE_byte *perkCount);
+void endlessJumpPickApply(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount);
+void endlessJumpPickReset(void);
 bool JE_customWeaponCreator(bool canEquip);
 void JE_drawShipSpecs(SDL_Surface *, SDL_Surface *);
 void JE_weaponSimUpdate(void);

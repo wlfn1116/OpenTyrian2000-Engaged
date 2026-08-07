@@ -59,6 +59,7 @@
 #define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
+#define PACKET_ENDLESS_JUMP  0x38    // sender, armed, depth, mods, level pick, perk stacks
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -277,6 +278,11 @@ void network_sa_ship_publish(int ship, bool seen_peer);
 int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
 bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);
+
+/* Settle the Endless zone jump across both machines BEFORE the course is folded, and report
+ * whether one is in play; a caller that gets true must skip the fold, or it rebuilds the sector
+ * over the top of the jump. See the definition for why the ordering is the whole fix. */
+bool network_endless_jump_sync(void);
 
 /* Both machines announce they are ready for a level, then resynchronize the state queues. Only
  * needed on a path that starts a level without passing through the outpost. */

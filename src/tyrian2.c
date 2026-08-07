@@ -3846,7 +3846,15 @@ level_loop:
 			power_render_prev = power_render_cur;
 			power_render_cur = (int)power;
 			salvo_render_prev = salvo_render_cur;
-			salvo_render_cur = endlessOpeningSalvoGaugePercent();
+			// The gauge belongs to the ship THIS machine flies, so name it: the fx context is
+			// left wherever the last simulated ship put it, which in co-op is not necessarily
+			// ours, and the green then tracked the partner's Opening Salvo instead of our own.
+			{
+				const uint fxSaved = endlessFxPlayer();
+				endlessSetFxPlayer(gameplay_local_player_index());
+				salvo_render_cur = endlessOpeningSalvoGaugePercent();
+				endlessSetFxPlayer(fxSaved);
+			}
 			power_gauge_active = true;
 			lastPower = power / 10;  // keep the legacy counter consistent
 
