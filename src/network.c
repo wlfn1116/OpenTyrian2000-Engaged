@@ -52,6 +52,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "nortsong.h"
 #include "nortvars.h"
 #include "opentyr.h"
 #include "picload.h"
@@ -1171,6 +1172,8 @@ connect_reset:
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
@@ -1200,8 +1203,6 @@ connect_reset:
 
 		network_update();
 		network_check();
-
-		SDL_Delay(16);
 	}
 
 	// The joiner is known now, so a listening host can finally introduce itself.  last_out_sync
@@ -1348,6 +1349,8 @@ connect_again:
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		// got a duplicate packet; process it again (but why?)
 		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
@@ -1358,8 +1361,6 @@ connect_again:
 		// maybe opponent didn't get our packet
 		if (SDL_GetTicks() - last_out_tick > NET_RETRY)
 			goto connect_reset;
-
-		SDL_Delay(16);
 	}
 
 	// send another packet since sometimes the network syncs without both connect packets exchanged
@@ -1486,9 +1487,10 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 				JE_mouseStart();
 				JE_showVGA();
 				JE_mouseReplace();
+				if (!output_vsync)
+					limit_render_fps();
 
 				network_check();
-				SDL_Delay(16);
 			}
 		}
 
@@ -1502,8 +1504,8 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 				JE_mouseStart();
 				JE_showVGA();
 				JE_mouseReplace();
-
-				SDL_Delay(16);
+				if (!output_vsync)
+					limit_render_fps();
 			}
 		}
 	}
@@ -2342,6 +2344,8 @@ int network_endless_death_sync(int hostChoice)
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 		network_check();
 
 		// Say so: the host may still be finishing the level, where waiting on frames this machine
@@ -2380,7 +2384,6 @@ int network_endless_death_sync(int hostChoice)
 		network_update();
 		if (!network_peer_alive())
 			break;
-		SDL_Delay(16);
 	}
 
 	crashlog_netlog_line("ENDLESS DEATH CHOICE TIMEOUT",
@@ -2556,6 +2559,8 @@ void network_level_rendezvous(void)
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 		{
@@ -2568,7 +2573,6 @@ void network_level_rendezvous(void)
 		network_check();
 		if (!network_peer_alive())
 			break;
-		SDL_Delay(16);
 	}
 
 	network_state_reset();
@@ -2580,9 +2584,10 @@ void network_level_rendezvous(void)
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		network_check();
-		SDL_Delay(16);
 	}
 }
 

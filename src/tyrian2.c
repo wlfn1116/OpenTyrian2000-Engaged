@@ -6864,6 +6864,11 @@ static int networkSuperArcadeShipSelect(void)
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		// Paced like every other menu: vsync-on paces through JE_showVGA itself, and off it
+		// follows the render-fps cap. The cursor is an 8-bit sprite composited into the frame, so
+		// it only moves when one is presented -- a flat 16ms delay walked it against the display.
+		if (!output_vsync)
+			limit_render_fps();
 		if (restart)
 		{
 			fade_palette(colors, 10, 0, 255);
@@ -6997,8 +7002,6 @@ static int networkSuperArcadeShipSelect(void)
 			}
 			newkey = false;
 		}
-
-		SDL_Delay(16);
 	}
 }
 
@@ -7254,6 +7257,8 @@ void networkStartScreen(void)
 			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
+			if (!output_vsync)
+				limit_render_fps();
 
 			// The length matters: packet_copy fills only the first `len` bytes of a reused
 			// buffer, so a short packet would set the episode and difficulty from whatever the
@@ -7265,8 +7270,6 @@ void networkStartScreen(void)
 
 			network_update();
 			network_check();
-
-			SDL_Delay(16);
 		}
 
 		UDPpacket *const details_packet = packet_in[0];
@@ -7410,9 +7413,10 @@ void networkStartScreen(void)
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		network_check();
-		SDL_Delay(16);
 	}
 
 	if (qa_net_gameplay_ticks > 0)

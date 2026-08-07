@@ -2089,6 +2089,8 @@ void JE_doInGameSetup(void)
 			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
+			if (!output_vsync)
+				limit_render_fps();
 
 			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_GAME_MENU)
 			{
@@ -2098,8 +2100,6 @@ void JE_doInGameSetup(void)
 
 			network_update();
 			network_check();
-
-			SDL_Delay(16);
 		}
 
 		VGAScreen = save_surface;
@@ -2154,6 +2154,8 @@ void JE_doInGameSetup(void)
 				JE_mouseStart();
 				JE_showVGA();
 				JE_mouseReplace();
+				if (!output_vsync)
+					limit_render_fps();
 
 				// The other player may be in the debug menu: adopt whatever it rewrote before the
 				// WAITING that releases us.  Reliable and ordered, so it always arrives first.
@@ -2187,8 +2189,6 @@ void JE_doInGameSetup(void)
 
 				network_update();
 				network_check();
-
-				SDL_Delay(16);
 			}
 		}
 		else
@@ -2209,6 +2209,8 @@ void JE_doInGameSetup(void)
 			JE_mouseStart();
 			JE_showVGA();
 			JE_mouseReplace();
+			if (!output_vsync)
+				limit_render_fps();
 
 			// Both players can reach the menu on the same frame, in which case neither ran the
 			// wait loop above and this is where a debug block from the other one turns up.
@@ -2216,7 +2218,6 @@ void JE_doInGameSetup(void)
 				continue;
 
 			network_check();
-			SDL_Delay(16);
 		}
 
 		VGAScreen = temp_surface; /* side-effect of game_screen */
