@@ -58,12 +58,13 @@ uint player_sa_ball_weapon(const Player *this_player, uint slot)
 }
 
 /* Which weapon bay's power byte doubles as a ship's life counter. The linked arcade pair aliases
- * player two's onto the Dragonwing's rear bay; Separate arcade gives each ship its own front gun,
- * exactly as a solo arcade run does. Every site that binds player[].lives must use this, or a
- * rollback restore re-derives a different alias than the one the level started with. */
+ * player two's onto the Dragonwing's rear bay; every two-full-ship session (Separate arcade, the
+ * co-op ENGAGE mini-games) gives each ship its own front gun, exactly as a solo arcade run does.
+ * Every site that binds player[].lives must use this, or a rollback restore re-derives a
+ * different alias than the one the level started with. */
 uint player_lives_port(uint p)
 {
-	if (arcade_separate_mode())
+	if (dual_ship_mode())
 		return FRONT_WEAPON;
 	return (p < COUNTOF(player)) ? p : FRONT_WEAPON;
 }

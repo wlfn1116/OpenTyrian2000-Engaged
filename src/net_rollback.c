@@ -422,10 +422,11 @@ void nrb_frame_begin(void)
 
 		if (bits & RB_REQ_SKIPLEVEL)
 		{
-			levelTimer = true;
-			levelTimerCountdown = 0;
-			endLevel = true;
-			levelEnd = 40;
+			// The same exit the solo debug row takes: end outright. The F2-cheat variant
+			// (levelTimer with countdown 0) reads as "the level's timer expired", and a
+			// timed level then runs its fail branches during the wind-down -- a TIME WAR
+			// skipped that way came out failed instead of cleared.
+			reallyEndLevel = true;
 		}
 		if (bits & RB_REQ_NORTSHIP)
 		{
