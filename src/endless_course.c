@@ -42,9 +42,15 @@ static int endlessCourseBaseDanger(int i)
 // `cleansedOut`; The Long Con remains hidden until launch.
 static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 {
-	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i], endlessPurchasedMods);
+	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i],
+	                                              endlessPurchasedMods[endlessEconomyIndex()]);
+	int charges = 0;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		charges += endlessCleanseChargeCount[p];
+	if (charges > ENDLESS_CLEANSE_MAX_CHARGES)
+		charges = ENDLESS_CLEANSE_MAX_CHARGES;
 	Uint64 kept = folded;
-	for (int c = 0; c < endlessCleanseChargeCount; ++c)
+	for (int c = 0; c < charges; ++c)
 		kept = endlessStripWorstMod(kept);
 	if (cleansedOut != NULL)
 		*cleansedOut = folded & ~kept;
@@ -1240,22 +1246,37 @@ JE_byte endlessSelectCourse(int i)
 	}
 
 	// Save one-shot purchases so a normal mid-zone bail can restore them.
-	endlessSortiePrePurchased = endlessPurchasedMods;
-	endlessSortiePreCleanse   = endlessCleanseChargeCount;
-	endlessSortiePreLongCon   = endlessLongCon;
+	for (uint p = 0; p < COUNTOF(endlessSortiePrePurchased); ++p)
+	{
+		endlessSortiePrePurchased[p] = endlessPurchasedMods[p];
+		endlessSortiePreCleanse[p]   = endlessCleanseChargeCount[p];
+		endlessSortiePreLongCon[p]   = endlessLongCon[p];
+	}
 
 	if (endlessCourseEp[i] != episodeNum)
 		JE_initEpisode(endlessCourseEp[i]);  // load that episode's data (arsenal is shared)
 	forcedLvlFileNum = endlessCourseFile[i];  // load this course's exact level file (see JE_loadMap)
-	// Apply the same purchase and Sabotage passes used to price and color the course card.
-	endlessActiveMods = endlessFoldPurchasedMods(endlessCourseMod[i], endlessPurchasedMods);
-	endlessPurchasedMods = 0;                                        // consumed by this sector
-	for (int c = 0; c < endlessCleanseChargeCount; ++c)  // Sabotage: strip the worst hostile bit per charge
+	// Apply the same Sabotage pass used to price and colour the course card, then hand each
+	// player their own effect mask: what they bought for themselves boosts them alone.
+	endlessActiveMods = endlessCourseMod[i];
+	int charges = 0;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+	{
+		charges += endlessCleanseChargeCount[p];
+		endlessCleanseChargeCount[p] = 0;
+	}
+	if (charges > ENDLESS_CLEANSE_MAX_CHARGES)
+		charges = ENDLESS_CLEANSE_MAX_CHARGES;           // the run-wide cap, however it was paid for
+	for (int c = 0; c < charges; ++c)  // Sabotage: strip the worst hostile bit per charge
 		endlessActiveMods = endlessStripWorstMod(endlessActiveMods);
-	endlessCleanseChargeCount = 0;
 	// Add The Long Con's Apex ambush after cleansing so Sabotage cannot remove it.
-	if (endlessLongCon > 0 && --endlessLongCon == 0)
-		endlessActiveMods |= ENDLESS_MOD_APEX;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		if (endlessLongCon[p] > 0 && --endlessLongCon[p] == 0)
+			endlessActiveMods |= ENDLESS_MOD_APEX;
+
+	endlessApplyPurchasedMods();   // personal buys to their buyer, the rest to the sector
+	for (uint p = 0; p < COUNTOF(endlessPurchasedMods); ++p)
+		endlessPurchasedMods[p] = 0;   // consumed by this sector
 	endlessLastEp = endlessCourseEp[i];
 	endlessLastSec = endlessCourseSec[i];
 	return endlessCourseSec[i];

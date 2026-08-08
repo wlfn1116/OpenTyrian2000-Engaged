@@ -55,7 +55,10 @@ void JE_pix3(SDL_Surface *surface, int x, int y, JE_byte c)
 
 void JE_rectangle(SDL_Surface *surface, int a, int b, int c, int d, int e) /* x1, y1, x2, y2, color */
 {
-	if (a < surface->pitch && b < surface->h &&
+	/* Both bounds: a negative coordinate passed the old upper-bound-only check and sent the
+	 * memsets below a huge negative offset (a poisoned Destruct terrain column crashed here). */
+	if (a >= 0 && b >= 0 && c >= 0 && d >= 0 &&
+	    a < surface->pitch && b < surface->h &&
 	    c < surface->pitch && d < surface->h)
 	{
 		Uint8 *vga = surface->pixels;

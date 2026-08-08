@@ -505,9 +505,15 @@ static void JE_captureAmmoSidekickBases(void)
 // it does nothing until the perk bonus actually changes.
 void JE_labelAmmoSidekicks(void)
 {
+	// Personal perks: the shop names show the magazine this machine's own player would fly.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(endlessEconomyIndex());
 	const int pct = endlessPerkAmmoPercent();
 	if (pct == ammoLabelPct)
+	{
+		endlessSetFxPlayer(fxSaved);
 		return;
+	}
 	ammoLabelPct = pct;
 
 	for (int i = 1; i <= OPTION_NUM; ++i)
@@ -541,6 +547,8 @@ void JE_labelAmmoSidekicks(void)
 		memcpy(options[i].name + col, label, label_len);
 		options[i].name[col + label_len] = '\0';
 	}
+
+	endlessSetFxPlayer(fxSaved);
 }
 
 void JE_loadItemDat(void)

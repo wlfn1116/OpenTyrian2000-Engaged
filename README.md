@@ -74,10 +74,10 @@ works.
 
 ## Online play
 
-Two-player arcade over the network, set up entirely in-game. **2 Player Online
-Arcade** on the main menu opens a lobby with Host Game, Find LAN Games, and Join
-by IP Address. On a shared network, LAN discovery finds the host without anyone
-typing an address. The game uses UDP port 1333 by default.
+Two-player Arcade and Campaign over the network, set up entirely in-game.
+**Online** on the main menu opens a lobby with Host Game, Find LAN Games, and
+Join by IP Address. On a shared network, LAN discovery finds the host without
+anyone typing an address. The game uses UDP port 1333 by default.
 
 Windows, Linux, Switch and Vita players can all play each other, as long as
 everyone is on the same version. Every build runs the same simulation tick for
@@ -91,15 +91,24 @@ player hosting.
   lockstep is still selectable in the host's lobby.
 - **Desync recovery.** If the two machines drift apart, the host ships its whole
   game state across and both resume from it.
+- **Full Campaign co-op.** Each player flies a complete independent ship through
+  the episode, earns and spends their own cash, and can use their own shop at the
+  same time between levels. Each machine shows the familiar one-player sidebar
+  for its local ship.
 - **Save and resume.** Save from the shop mid-session, or when a session drops
-  under you. Online games share the regular 2-player save page, so a run can move
-  between couch co-op and online.
-- A ping readout in the outpost, per-player gauge tagging in the HUD, and a
-  session log for diagnosing desyncs.
+  under you. Campaign saves preserve both loadouts and are loaded through Online
+  Campaign; Arcade saves retain their local two-player compatibility.
+- A ping readout in the outpost, player names and cash inside the Campaign
+  playfield, Arcade gauge tagging, and a session log for diagnosing desyncs.
 
-The host's lobby choices bind the session. Joiners keep their own settings, which
-are restored afterwards. [GUIDE.md](GUIDE.md#online-play) covers each lobby row,
-the saving and resuming flow, and what to attach to a desync report.
+The host chooses Arcade or Campaign, episode, difficulty, and network settings.
+Arcade runs either as the classic linked Silver Ship and Dragonwing pair, or as two
+Separate personal ships: the single-player arcade game twice over in one level,
+each player with their own HUD, lives, weapons and score.
+The joiner confirms those game settings before entering. Joiners keep their own
+local settings, which are restored afterwards. [GUIDE.md](GUIDE.md#online-play)
+covers each lobby row, the saving and resuming flow, and what to attach to a
+desync report.
 
 ## Controls
 

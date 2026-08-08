@@ -276,6 +276,16 @@ static Uint32 rb_item_hash(const RbItem *it)
 	return h;
 }
 
+/* Registry entries that only a co-op session moves. The trace hash skips them while no such
+ * session is running, so single-player replay fixtures keep hashing the byte stream they were
+ * recorded against. Endless entries all carry the "endless." prefix. */
+static bool rb_item_is_coop_only(const char *name)
+{
+	return strcmp(name, "coopCampaignMode") == 0
+	    || strcmp(name, "coopEndlessMode") == 0
+	    || strncmp(name, "endless.", 8) == 0;
+}
+
 Uint32 rollback_state_hash(void)
 {
 	if (rb_ring[0] == NULL)
@@ -284,10 +294,49 @@ Uint32 rollback_state_hash(void)
 		return 0;
 
 	Uint32 h = 2166136261u;
-	for (size_t i = 0; i < rb_total_size; ++i)
+	for (int item = 0; item < rb_item_count; ++item)
 	{
-		h ^= rb_trace_buf[i];
-		h *= 16777619u;
+		const RbItem *const it = &rb_items[item];
+		const Uint8 *const bytes = rb_trace_buf + it->offset;
+
+		/* Legacy replay fixtures hash the pre-co-op registry byte stream. Preserve that projection
+		 * while no dual-ship session is running; the per-ship block it skips is live state in
+		 * Separate arcade as much as in co-op, and the co-op canaries cover the rest. */
+		if (!dual_ship_mode() && rb_item_is_coop_only(it->name))
+			continue;
+		if (!dual_ship_mode() && strcmp(it->name, "player") == 0 && it->size == sizeof(player))
+		{
+			const size_t prefix = offsetof(Player, generator_power);
+			const size_t suffix = offsetof(Player, x);
+			const size_t legacy_payload = prefix + sizeof(Player) - suffix;
+			const size_t legacy_stride = (legacy_payload + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
+			for (uint p = 0; p < COUNTOF(player); ++p)
+			{
+				const Uint8 *const player_bytes = bytes + p * sizeof(Player);
+				for (size_t i = 0; i < prefix; ++i)
+				{
+					h ^= player_bytes[i];
+					h *= 16777619u;
+				}
+				for (size_t i = suffix; i < sizeof(Player); ++i)
+				{
+					h ^= player_bytes[i];
+					h *= 16777619u;
+				}
+				for (size_t i = legacy_payload; i < legacy_stride; ++i)
+				{
+					h ^= 0;
+					h *= 16777619u;
+				}
+			}
+			continue;
+		}
+
+		for (size_t i = 0; i < it->size; ++i)
+		{
+			h ^= bytes[i];
+			h *= 16777619u;
+		}
 	}
 	return h;
 }

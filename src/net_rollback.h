@@ -49,6 +49,12 @@ bool nrb_session_recovery(void);
 /* Sim frame currently being simulated (1-based; 0 = before the first tick). */
 Uint32 nrb_frame(void);
 
+/* End the level out of band because the packet at the head of the reliable queue says the peer
+ * has already left it. `head` is the packet type, or 0 for an empty queue; returns true when the
+ * level was ended. A quit is flagged as one, so Endless reopens the outpost instead of banking a
+ * clear the peer never made. */
+bool nrb_peer_left_level(Uint16 head);
+
 /* Perf-overlay counters: current prediction lead, maximum rollback depth, rollbacks per 100 frames,
  * and canary mismatch count. */
 void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs);

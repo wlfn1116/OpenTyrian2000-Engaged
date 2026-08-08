@@ -22,6 +22,7 @@
 #include "config_file.h"
 #include "file.h"
 #include "keyboard.h"
+#include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
 #include "params.h"
@@ -695,6 +696,12 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 	do
 	{
 		setDelay(1);
+
+		// The capture blocks until a control arrives; online, the wait can outlast the
+		// peer's timeout unless the connection is serviced through it.
+		NETWORK_KEEP_ALIVE();
+		while (network_shop_pump())
+			;
 
 		SDL_JoystickUpdate();
 		

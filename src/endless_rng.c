@@ -75,11 +75,27 @@ Uint32 endlessEliteRand(void)
 	return endlessSplitMixNext(&endlessEliteRngState);
 }
 
+/* Outpost draws each player makes for themselves (stock, rerolls, gambles, perk slates) run on
+ * their own stream, so one player's shopping never shifts what the other is later dealt. */
+Uint64 endlessPlayerRngState[2] = { 0, 0 };
+
+Uint32 endlessRandFor(uint p)
+{
+	return endlessSplitMixNext(&endlessPlayerRngState[p < COUNTOF(endlessPlayerRngState) ? p : 0]);
+}
+
+void endlessReseedPlayers(Uint64 salt)
+{
+	for (unsigned p = 0; p < COUNTOF(endlessPlayerRngState); ++p)
+		endlessPlayerRngState[p] = endlessSplitMixSeed(salt * 4 + 2 + p);
+}
+
 void endlessSetSeed(const char *s)
 {
 	SDL_strlcpy(endlessRunSeed, (s != NULL) ? s : "", sizeof(endlessRunSeed));
 	endlessSeedHash = endlessHashString(endlessRunSeed);
 	endlessReseed(0);
+	endlessReseedPlayers(0);
 }
 
 const char *endlessSeedString(void)
@@ -123,9 +139,9 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 
 		// The record belongs to the mode selected below, so it follows the Mode row.
 		char recordLine[48];
-		if (endlessBestZoneAny(mode) > 0)
+		if (endlessBestZoneAny(0, mode) > 0)
 			snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s",
-			         endlessBestZoneAny(mode), endlessRecordAnyCustomMark(mode));
+			         endlessBestZoneAny(0, mode), endlessRecordAnyCustomMark(0, mode));
 		else
 			SDL_strlcpy(recordLine, "No zone record yet", sizeof(recordLine));
 		draw_font_hv_shadow(VGAScreen, xCenter, yRecord, recordLine, small_font, centered, 15, 4, false, 1);

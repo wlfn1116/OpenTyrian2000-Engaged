@@ -90,6 +90,33 @@ typedef struct
 	uint superbombs;
 	uint purple_balls_needed;
 	
+	// Online Campaign gives each ship the single-player generator and firing state. The original
+	// globals remain the active scratch context so the weapon code itself stays unchanged.
+	Uint16 generator_power;
+	Uint16 generator_power_add;
+	Uint8 shield_wait;
+	Uint8 shot_repeat[11];
+	Uint8 shot_multi_pos[11];
+	bool port_config_change;
+	bool port_config_done;
+	float option_satellite_rotate;
+	Sint32 option_attachment_move[2];
+	bool option_attachment_linked[2];
+	bool option_attachment_return[2];
+	bool special_fire_held;
+	Uint8 zinglon_duration;
+	Uint8 astral_duration;
+	Uint16 flare_duration;
+	bool flare_start;
+	Sint8 flare_color_change;
+	Uint8 special_wait;
+	Uint8 next_special_wait;
+	bool spray_special;
+	Sint8 special_weapon_filter;
+	Sint8 special_weapon_freq;
+	Uint16 special_weapon_wpn;
+	bool special_link_to_player;
+
 	int x, y;
 	int old_x[20], old_y[20];
 	
@@ -125,6 +152,15 @@ Player;
 
 extern Player player[2];
 
+uint gameplay_local_player_index(void);
+// The weapon bay whose power byte is player p's arcade life counter; bind player[].lives with it.
+uint player_lives_port(uint p);
+// The Super Arcade ship this ship flies (1..SA) or SA_NONE; the two can differ online.
+uint player_sa_ship(const Player *);
+// The front gun a Super Arcade colour ball hands this ship: the ball carries a slot, and the
+// slot is read out of the COLLECTOR's own arsenal, so one colour pays two ships differently.
+uint player_sa_ball_weapon(const Player *, uint slot);
+
 // Rounds per segment on the sidekick ammo gauge, sized so a full magazine is at most ten
 // segments and stays inside the 29px HUD strip. Rounding UP matters now that the endless
 // Ordnance Reserves perk produces magazines that aren't round numbers (a 26-round magazine
@@ -145,6 +181,31 @@ void calc_purple_balls_needed(Player *);
 // Cash off the playfield. Routes player 1's share through the endless ledger; use it for every
 // pickup credit so the run-over earnings breakdown stays accurate.
 void player_award_pickup_cash(Player *, long amount);
+// Cash off a destroyed enemy, credited to the player whose shot killed it.
+void player_award_kill_cash(Player *, long amount);
+// An elite or champion bounty: the kill rules, booked under the ledger's own bounty row.
+void player_award_bounty_cash(Player *, long amount);
+
+/* Online Campaign credit sharing.
+ * coopSharedCredit is the host's stored preference; the session value arrives in the connect
+ * packet's settings block, so both machines award identical cash. Shared pays every kill and
+ * score pickup to both players at full value; Individual pays the shot's owner or the collector. */
+extern bool coopSharedCredit;
+void coop_set_session_shared_credit(bool shared);
+bool coop_credit_is_shared(void);
+
+/* Individual credit splits between two wallets what one player would have earned alone. Double
+ * Pickups pays every cash and gem pickup twice over to make up part of that; it is meaningless
+ * under Shared, where both already collect in full, so the row only shows under Individual. */
+// Online Arcade lobby preference: fly the classic linked pair, or two Separate personal
+// arcades. The session flag it arms is arcadeSeparateMode (config.h).
+extern bool arcadeSeparateShips;
+
+// Double Earnings: under Individual credit, combat income (pickups, kills, bounties) pays
+// twice to compensate the split take. Shared credit stands it down.
+extern bool coopDoubleEarnings;
+void coop_set_session_double_earnings(bool on);
+bool coop_earnings_are_doubled(void);
 
 bool power_up_weapon(Player *, uint port);
 void handle_got_purple_ball(Player *);
@@ -159,5 +220,7 @@ uint arcade_weapon_power(const Player *, uint port);  // the level a bay fires a
 uint arcade_armor_max(const Player *);   // == hull_armor outside the arcade modes
 uint arcade_shield_max(const Player *);  // == shields[].mpwr * 2 outside the arcade modes
 void arcade_rescale_to_lives(Player *);  // re-derive both ceilings after a life is gained or lost
+
+void coop_ship_runtime_reset(void);
 
 #endif // PLAYER_H

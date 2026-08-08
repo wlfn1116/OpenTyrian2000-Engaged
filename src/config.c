@@ -24,6 +24,7 @@
 #include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
 #include "episodes.h"
 #include "file.h"
+#include "helptext.h"      // DESTRUCT_MODES bounds the persisted battle mode
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
@@ -179,6 +180,9 @@ JE_boolean extraGame;
 JE_boolean engageMode;
 
 JE_boolean twoPlayerMode, twoPlayerLinked, onePlayerAction, timedBattleMode, superTyrian;
+JE_boolean coopCampaignMode;
+JE_boolean arcadeSeparateMode;
+JE_boolean coopEndlessMode;
 JE_boolean endlessMode;  // Endless roguelite mode (see endless.c)
 JE_boolean endlessCampaignMods;  // debug: endless EFFECTS in a normal game (see endlessFxActive)
 JE_boolean trentWin = false;
@@ -217,6 +221,81 @@ JE_SaveFilesType saveFiles; /*array[1..saveLevelnum] of savefiletype;*/
 JE_SaveGameTemp saveTemp;
 
 T2KHighScoreType t2kHighScores[20][3];
+
+COMPILE_TIME_ASSERT(coop_campaign_score_episodes, COOP_CAMPAIGN_SCORE_EPISODES == EPISODE_MAX);
+CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
+
+/* One line per episode: "score|difficulty|names". A missing or short value leaves the rest of
+ * the episodes empty, so the list can grow. */
+void coopCampaignScoreConfigSave(ConfigSection *section)
+{
+	if (section == NULL)
+		return;
+
+	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
+	{
+		char key[32], line[64];
+		snprintf(key, sizeof(key), "coop_campaign_%d", e + 1);
+		snprintf(line, sizeof(line), "%d|%u|%s", coopCampaignScores[e].score,
+		         (unsigned)coopCampaignScores[e].difficulty, coopCampaignScores[e].name);
+		config_set_string_option(section, key, line);
+	}
+}
+
+void coopCampaignScoreConfigLoad(const ConfigSection *section)
+{
+	memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
+	if (section == NULL)
+		return;
+
+	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "coop_campaign_%d", e + 1);
+
+		const char *line = NULL;
+		if (!config_get_string_option(section, key, &line) || line == NULL)
+			continue;
+
+		const long score = strtol(line, NULL, 10);
+		coopCampaignScores[e].score = (score > 0) ? (Sint32)score : 0;
+
+		const char *p = strchr(line, '|');
+		if (p == NULL)
+			continue;
+		const long diff = strtol(p + 1, NULL, 10);
+		coopCampaignScores[e].difficulty = (diff > 0 && diff <= DIFFICULTY_10) ? (Uint8)diff : 0;
+
+		p = strchr(p + 1, '|');
+		if (p != NULL)
+			SDL_strlcpy(coopCampaignScores[e].name, p + 1, sizeof(coopCampaignScores[e].name));
+	}
+}
+
+/* Called once a co-op Campaign run is over. The pair earned together, so the board keeps their
+ * combined cash under both names; there is no name-entry dialog because the lobby already knows
+ * who they are, and a modal here would leave the other machine waiting on a dead screen. */
+void coopCampaignScoreNote(void)
+{
+	const int e = initial_episode_num - 1;
+	if (!coopCampaignMode || e < 0 || e >= COOP_CAMPAIGN_SCORE_EPISODES)
+		return;
+
+	const Sint64 total = (Sint64)player[0].cash + (Sint64)player[1].cash;
+	if (total <= coopCampaignScores[e].score)
+		return;
+
+	coopCampaignScores[e].score = (total > 0x7fffffff) ? 0x7fffffff : (Sint32)total;
+	coopCampaignScores[e].difficulty = (Uint8)initialDifficulty;
+
+	const char *const mine = (network_player_name != NULL && network_player_name[0])
+	                       ? network_player_name : "Player 1";
+	const char *const theirs = (network_opponent_name != NULL && network_opponent_name[0])
+	                         ? network_opponent_name : "Player 2";
+	snprintf(coopCampaignScores[e].name, sizeof(coopCampaignScores[e].name), "%s and %s", mine, theirs);
+
+	save_opentyrian_config();
+}
 
 JE_word editorLevel;   /*Initial value 800*/
 
@@ -425,10 +504,11 @@ bool load_opentyrian_config(void)
 	{
 		for (size_t i = 0; i < COUNTOF(keySettings); ++i)
 		{
-			const char *keyName;
-			if (config_get_string_option(section, keySettingNames[i], &keyName))
+			// Not `keyName`: helptext.h (included for DESTRUCT_MODES) owns a global of that name.
+			const char *scancodeName;
+			if (config_get_string_option(section, keySettingNames[i], &scancodeName))
 			{
-				SDL_Scancode scancode = SDL_GetScancodeFromName(keyName);
+				SDL_Scancode scancode = SDL_GetScancodeFromName(scancodeName);
 				if (scancode != SDL_SCANCODE_UNKNOWN)
 					keySettings[i] = scancode;
 			}
@@ -535,7 +615,10 @@ bool load_opentyrian_config(void)
 				network_set_player_name(name);
 
 			const char *host;
-			if (config_get_string_option(section, "net_last_host", &host) && host[0] != '\0')
+			// A command-line game (--net) already named its target; the remembered lobby
+			// host is a prefill for the join screen and must not clobber it.
+			if (!isNetworkGame
+			    && config_get_string_option(section, "net_last_host", &host) && host[0] != '\0')
 			{
 				free(network_opponent_host);
 				network_opponent_host = malloc_die(strlen(host) + 1);
@@ -570,6 +653,12 @@ bool load_opentyrian_config(void)
 			if (net_game_speed >= 1 && net_game_speed <= 5)
 				network_host_game_speed = net_game_speed;
 
+			// Which Destruct battle a Destruct session fights (0..4, the data-backed modes).
+			int net_destruct_mode = network_host_destruct_mode;
+			config_get_int_option(section, "net_host_destruct_mode", &net_destruct_mode);
+			if (net_destruct_mode >= 0 && net_destruct_mode < DESTRUCT_MODES)
+				network_host_destruct_mode = net_destruct_mode;
+
 			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
 			// link can be tuned without a rebuild; the host's value is what both sides use.
 			int net_delay = network_delay;
@@ -585,6 +674,20 @@ bool load_opentyrian_config(void)
 			// Repair a detected desync by streaming the host's state to the
 			// joiner (net_rollback.h).  Host-authoritative; rollback sessions only.
 			config_get_bool_option(section, "net_desync_recovery", &net_desync_recovery);
+
+			// Online Campaign: pay every kill and score pickup to both players
+			// (player.h).  Host-authoritative; Campaign sessions only.
+			config_get_bool_option(section, "net_campaign_shared_credit", &coopSharedCredit);
+
+			// Individual credit only: pay combat cash (pickups, kills, bounties) twice
+			// (player.h). The key keeps its historical name; renaming would drop the
+			// setting from existing configs. And whether an Endless kill feeds both
+			// ships' combo streaks or only the shooter's.
+			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
+			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
+
+			// Online Arcade: the classic linked pair, or two Separate personal arcades.
+			config_get_bool_option(section, "net_arcade_separate", &arcadeSeparateShips);
 
 			// Single-player determinism harness: verify the rollback snapshot
 			// every tick (see rollback.h).  Costs a second sim pass per tick.
@@ -758,6 +861,7 @@ bool load_opentyrian_config(void)
 	// The endless all-time record (furthest zone ever reached), its own section because it is a
 	// player record because it is written during a run rather than during config changes.
 	endlessRecordConfigLoad(config_find_section(config, "endless", NULL));
+	coopCampaignScoreConfigLoad(config_find_section(config, "coop_scores", NULL));
 
 	// Smooth Motion owns the sub-pixel render path. Keep it disabled when motion
 	// interpolation is off, then apply the scaler constraint to the final state.
@@ -804,10 +908,11 @@ bool save_opentyrian_config(void)
 
 	for (size_t i = 0; i < COUNTOF(keySettings); ++i)
 	{
-		const char *keyName = SDL_GetScancodeName(keySettings[i]);
-		if (keyName[0] == '\0')
-			keyName = NULL;
-		config_set_string_option(section, keySettingNames[i], keyName);
+		// Not `keyName`: helptext.h (included for DESTRUCT_MODES) owns a global of that name.
+		const char *scancodeName = SDL_GetScancodeName(keySettings[i]);
+		if (scancodeName[0] == '\0')
+			scancodeName = NULL;
+		config_set_string_option(section, keySettingNames[i], scancodeName);
 	}
 
 	// Best-effort: the directory almost always exists already, and a genuine failure surfaces at the
@@ -860,9 +965,14 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
+	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
 	config_set_bool_option(section, "net_desync_recovery", net_desync_recovery, OFF_ON);
+	config_set_bool_option(section, "net_campaign_shared_credit", coopSharedCredit, OFF_ON);
+	config_set_bool_option(section, "net_coop_double_pickups", coopDoubleEarnings, OFF_ON);
+	config_set_bool_option(section, "net_arcade_separate", arcadeSeparateShips, OFF_ON);
+	config_set_bool_option(section, "net_endless_combo_shared", network_host_endless_combo_shared, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)
@@ -931,6 +1041,12 @@ bool save_opentyrian_config(void)
 		exit(EXIT_FAILURE);  // out of memory
 	endlessRecordConfigSave(section);
 
+	// Online co-op Campaign's own board, beside the Endless records for the same reason.
+	section = config_find_or_add_section(config, "coop_scores", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	coopCampaignScoreConfigSave(section);
+
 	FILE *file = dir_fopen(get_user_directory(), "opentyrian.cfg", "w");
 	if (file == NULL)
 		return false;
@@ -980,6 +1096,15 @@ static void pitems_to_playeritems(PlayerItems *items, const JE_PItemsType pItems
 
 void JE_saveGame(JE_byte slot, const char *name)
 {
+	// Hardcore forbids saving at the data level, not only in the menus that offer it: any
+	// path that reaches here mid-run (a stale disconnect-save flag, a future menu) must
+	// leave the slot exactly as it was.  endlessSaveSlot refuses under the same rule, so
+	// the campaign record and its endless sidecar stay a pair.
+	if (endlessMode && endlessHardcore())
+		return;
+
+	const Uint32 coop_save_tag = 0xc74f0000u;
+	const Uint32 dual_arcade_save_tag = 0xc7a50000u;
 	saveFiles[slot-1].initialDifficulty = initialDifficulty;
 	saveFiles[slot-1].gameHasRepeated = gameHasRepeated;
 	saveFiles[slot-1].level = saveLevel;
@@ -1039,6 +1164,25 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
+	/* The two pItems blocks carry weapon ids but no powers, and `power[]` above only reaches
+	 * player one's front bay and player two's rear one. That is the whole loadout for the linked
+	 * pair, where player two's rear bay IS its life counter, and half of it for every session
+	 * flying two complete ships: co-op, and the three dual-ship arcade shapes, where ship two's
+	 * lives sit on its own FRONT gun and would be lost. The missing two powers and both weapon
+	 * modes ride the unused second high-score field, under a tag that says which shape wrote it.
+	 * Separate arcade gets its own tag: save_record_is_coop() gates the co-op lobbies, and an
+	 * arcade record must not start answering to it. */
+	saveFiles[slot - 1].highScore2 = 0;
+	if (dual_ship_mode())
+	{
+		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
+		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
+		                   | ((player[0].weapon_mode & 0x0f) << 8)
+		                   | ((player[1].weapon_mode & 0x0f) << 12);
+		saveFiles[slot - 1].highScore2 =
+			(JE_longint)((coop_mode_active() ? coop_save_tag : dual_arcade_save_tag) | extra);
+	}
+
 	JE_saveConfiguration();
 }
 
@@ -1052,6 +1196,8 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	superTyrian = false;
 	onePlayerAction = false;
 	twoPlayerMode = false;
+	coopCampaignMode = false;
+	coopEndlessMode = false;
 	extraGame = false;
 	galagaMode = false;
 	timedBattleMode = false;
@@ -1060,6 +1206,9 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	initialDifficulty = rec->initialDifficulty;
 	gameHasRepeated   = rec->gameHasRepeated;
 	twoPlayerMode     = twoP;
+	// The tag only says the record carries two full loadouts; which co-op lobby is flying it is
+	// the session's own business, so the network start path assigns the pair after this returns.
+	coopCampaignMode  = isNetworkGame && twoP && save_record_is_coop(rec);
 	difficultyLevel   = rec->difficulty;
 
 	pitems_to_playeritems(&player[0].items, rec->items, &initial_episode_num);
@@ -1078,6 +1227,12 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		onePlayerAction = false;
 
 		pitems_to_playeritems(&player[1].items, rec->lastItems, NULL);
+		if (coop_mode_active())
+		{
+			player[1].is_dragonwing = false;
+			player[0].last_items = player[0].items;
+			player[1].last_items = player[1].items;
+		}
 	}
 	else
 	{
@@ -1115,6 +1270,26 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		// if two-player, use first player's front and second player's rear weapon
 		player[twoPlayerMode ? port : 0].items.weapon[port].power = rec->power[port];
 	}
+	/* Keyed on what the record says it is, not on what this session is: a record written by a
+	 * two-complete-ships session carries the other half of both loadouts, and it has to come
+	 * back whichever lobby is reading it. */
+	if (save_record_is_coop(rec) || save_record_is_dual_arcade(rec))
+	{
+		const Uint32 extra = (Uint32)rec->highScore2;
+		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
+		player[1].items.weapon[FRONT_WEAPON].power = (extra >> 4) & 0x0f;
+		player[0].weapon_mode = (extra >> 8) & 0x0f;
+		player[1].weapon_mode = (extra >> 12) & 0x0f;
+		if (player[0].weapon_mode == 0) player[0].weapon_mode = 1;
+		if (player[1].weapon_mode == 0) player[1].weapon_mode = 1;
+	}
+
+	/* Which weapon bay each ship counts lives on depends on the shape of the session, and this
+	 * is the one path that installs a loadout without going through newGame(). A resumed
+	 * Separate arcade left on newGame()'s linked binding would spend ship two's rear-gun power
+	 * every time it died, and hand it the wrong life count on the way in. */
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
 	int episode = rec->episode;
 
@@ -1853,6 +2028,27 @@ void JE_saveConfiguration(void)
  * save with this and the joiner applies it through JE_loadGameRecord, so both machines start the
  * resumed session from byte-identical state. */
 
+bool save_record_is_coop(const JE_SaveFileType *rec)
+{
+	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc74f0000u;
+}
+
+/* The arcade half of the same marker: two complete ships, but arcade rules and two scores rather
+ * than a shared campaign purse. Deliberately NOT save_record_is_coop, which is what admits a
+ * record to the Campaign and Endless lobbies. */
+bool save_record_is_dual_arcade(const JE_SaveFileType *rec)
+{
+	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc7a50000u;
+}
+
+/* Which ruleset each of the record's two ships was flying, read straight out of the loadout
+ * blocks (pItems[2], the super_arcade_mode byte). Ship two only means anything on a record that
+ * carries two of them; a one-ship record's second block is player one's `last_items`. */
+uint save_record_sa_ship(const JE_SaveFileType *rec, uint p)
+{
+	return p == 0 ? rec->items[2] : rec->lastItems[2];
+}
+
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 {
 	Uint8 *p = buf;
@@ -1866,6 +2062,8 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	Uint32 u32 = SDL_SwapLE32((Uint32)rec->score);
 	memcpy(p, &u32, 4); p += 4;
 	u32 = SDL_SwapLE32((Uint32)rec->score2);
+	memcpy(p, &u32, 4); p += 4;
+	u32 = SDL_SwapLE32((Uint32)rec->highScore2);
 	memcpy(p, &u32, 4); p += 4;
 
 	memcpy(p, rec->levelName, sizeof(rec->levelName)); p += sizeof(rec->levelName);
@@ -1910,6 +2108,8 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	rec->score = (JE_longint)SDL_SwapLE32(u32);
 	memcpy(&u32, p, 4); p += 4;
 	rec->score2 = (JE_longint)SDL_SwapLE32(u32);
+	memcpy(&u32, p, 4); p += 4;
+	rec->highScore2 = (JE_longint)SDL_SwapLE32(u32);
 
 	memcpy(rec->levelName, p, sizeof(rec->levelName)); p += sizeof(rec->levelName);
 	rec->levelName[sizeof(rec->levelName) - 1] = '\0';

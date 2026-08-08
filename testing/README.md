@@ -15,18 +15,75 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   materialization bounds, and exact bullet, charge, and library capacities;
 - modifier, theme-name, and perk-registry integrity (unique persisted bits and names, visible
   font glyphs, menu-width limits, valid combinations, clamped stacks, and bounded distinct offers);
+- a per-modifier online parity matrix: every registry modifier's derived combat parameters
+  (scaling snapshot, gravity vectors, shockwave and martyrdom radii, regen gates, and the rest)
+  computed identically for both player numbers, both network modes, both host roles, and both
+  ships;
+- sidekick and linked-pair simulation state (ammo, refill, charge, satellite angle, attachment
+  latches, link flag and turret angle) surviving a rollback restore exactly;
+- arcade specifics: purple-ball pricing bounds and the maxed-gun cash fallback, the link-gun
+  weapon table, and the split two-player gauge geometry against its wipe region;
 - cash-ledger conservation across ordinary spending, temporary upgrade balances, refunds,
   trade-ins, duplicate commits, and over-wallet debits;
 - arcade life/hull/rear-gun scaling, damage-ratio preservation, alias avoidance, and HUD ammo
   gauge segment bounds;
 - legacy and per-difficulty record derivation, effect gates that prevent Endless modifiers from
   leaking into normal play, and non-overlapping render/object-pool identity ranges;
+- the online mode split across every reachable combination of the two-player, arcade and co-op
+  flags, the wallet each machine spends in all three online modes, arcade's immunity to the
+  co-op credit settings, the two-wallet campaign economy, the co-op campaign record board, the
+  strings the online menus print, and pause being refused in all three online modes;
+- online Endless co-op as a matrix: credit mode against Double Earnings against Scavenger
+  stacks against which machine is asking; all sixteen pairings of what the two ships are
+  flying against Combo Feed and against who fired the killing shot; personal perk stacking,
+  its per-row caps, and the registry pair the debug screen drives; the online arcade shape
+  against Linked and Separate ships, with each Separate ship's own life-counter alias held
+  across a rollback restore; the outpost and every E-Shop button from both machines, with their refusal
+  gates and per-player price escalation and RNG streams; downed, revive-token and
+  revive-at-outpost states against all three run modes; reactive-danger targeting; all four
+  course-chooser modes; the co-op wire block; and whole-session scenarios that combine them;
 - 768 deterministic course seeds across early, milestone, and deep-run depths, checking
   structural/gameplay RNG isolation, repeatability, launchable levels, unique display-safe names,
   danger/payout ordering, modifier compatibility, exact milestone rank distributions, and payout bounds;
 - bounded shipped-demo replays with zero rollback divergence and fixed registered-state hashes;
 - two real UDP peers behind a deterministic proxy that injects latency, loss, reordering,
-  duplication, and a complete traffic pause.
+  duplication, and a complete traffic pause, in three scenarios on their own ports:
+  - *base*: the reliable channel round-trip, the Relaxed death prompt, and the original
+    campaign-shop and Endless-outpost rendezvous sequences;
+  - *campaign*: two complete and different loadouts converging in both directions, six rounds
+    of interleaved purchases from both machines at once, a save checkpoint that moves nothing,
+    and a rendezvous where one machine finishes long before the other;
+  - *endless*: both ships holding different drives, paid charges, hull tiers, tokens, debts and
+    perk slates, all crossing intact and staying their owner's alone on both machines;
+    Individual credit with Double Earnings covering pickup, kill and bounty cash; one ship
+    down while the other flies on, and its revive at the
+    outpost; the charted sector index surviving the rendezvous; the Relaxed both-down prompt;
+    and the whole run record adopted by the joiner.
+
+  Run one on its own with `--scenario N`. Each peer asserts what it should be seeing of the
+  other, so a field that crosses in only one direction fails on the side that did not get it.
+
+  The full harness (`testing/network_fault_test.py` standalone) adds the gameplay scenarios:
+  version-mismatch rejection (4), a real Arcade level flown desync-free under rollback (5), a
+  deliberate corruption repaired through a recovery epoch (6), save mid-session and resume the
+  pair (7), an eight-second blackout ridden out (8), the host's clean exit when the joiner
+  vanishes (9), four sidekick mount matrices including ammo-limited, charge-up, and custom
+  designs (10), both players pressing Esc on the same frame with host-wins arbitration (11),
+  ten Online Endless zones each under a forced modifier slate with cross-peer wallet
+  comparison (12), an Online Campaign arc with the real shop protocol, per-ship custom
+  weapons, and the episode 1 to 2 transition (13), the Double Earnings lobby settings
+  armed end to end with scripted in-simulation pickups (14), an Arcade level flown with
+  Separate ships, which both peers must report flying (16), Online SuperTyrian on the
+  Scrollock variant with both Stalkers reporting the SuperTyrian ruleset (17), and Online
+  Super Arcade with the two peers picking different ships through the announcement protocol,
+  scripted colour-ball grants that must hand each ship the gun its own arsenal keeps in that
+  slot, and both peers required to print identical grant lines (18). Scenario 15 is an
+  accelerated soak (a long flight watching the working set); it runs only when selected
+  explicitly.
+
+  The harness drains both peers' pipes on reader threads for the whole run. Reading only at
+  the end deadlocks a talkative peer once the OS pipe buffer fills: its next print blocks, it
+  stops servicing the socket, and the partner reads the silence as a lost connection.
 
 Regenerate save fixtures only when intentionally changing the migration corpus:
 

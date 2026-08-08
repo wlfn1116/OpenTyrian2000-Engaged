@@ -22,12 +22,21 @@ void   endlessReseed(Uint64 salt);
 Uint64 endlessSplitMixSeed(Uint64 salt);
 Uint32 endlessEliteRand(void);
 
+// Per-player structural RNG: a reroll or gamble on one machine must not shift the other's draws.
+Uint32 endlessRandFor(uint p);
+void   endlessReseedPlayers(Uint64 salt);
+extern Uint64 endlessPlayerRngState[2];
+
 // Per-zone timers.
 #define ENDLESS_TURBODRIVE_TICKS 70
 #define ENDLESS_RETALIATION_TICKS 35
 extern int endlessZoneTicks;
-extern int endlessTurbodriveTimer;
+extern int endlessTurbodriveTimer[2];   // kill-fire window, per player
 extern int endlessRetaliationTimer;
+// Fractional fire-rate and special-cooldown carries, per ship (endless_perks.c). Rollback state:
+// which tick they cross a whole step decides which tick a gun fires.
+extern int endlessPerkFireAccum[2];
+extern int endlessPerkSpecialCdAccum[2];
 
 // Rewards banked on clear and spent at a later outpost.
 extern bool endlessStarChartsOwed;
@@ -70,25 +79,26 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
 
 // Shared effect reset. It must not consume structural RNG.
 void endlessResetZoneEffects(void);
+void endlessResetKillDedup(void);   // clear the multi-part kill dedup guard at zone start
 
 // Per-zone half of the custom-weapon tracking behind endlessRunUsedCustom.
 void endlessResetCustomWeaponZone(void);
 
 // Record storage. The per-difficulty pair is indexed [EndlessRunMode][difficulty slot]; readers
 // outside the module go through endlessBestZoneForDifficulty and endlessRecordDiffCustomMark.
-extern int  endlessBestZoneDiff[][ENDLESS_DIFFICULTY_COUNT];
-extern bool endlessBestZoneDiffCustom[][ENDLESS_DIFFICULTY_COUNT];
+extern int  endlessBestZoneDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+extern bool endlessBestZoneDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
 
 // The untagged pair is a mode's record belonging to no difficulty, which is only what a config
 // written before the breakdown existed carries in. It keeps the original `best_zone` config keys
 // and counts towards endlessBestZoneAny, so those records survive without inventing a difficulty
 // for them. Nothing writes it unless a run starts on a difficulty outside the six.
-extern int  endlessBestZoneUntagged[];
-extern bool endlessBestZoneUntaggedCustom[];
+extern int  endlessBestZoneUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
+extern bool endlessBestZoneUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 
 // Combat state.
-extern int  endlessComboKills;          // +1 per kill while a kill-fire window is up, reset when it lapses
-extern char endlessLastSpecialName[31]; // name of the last special weapon endlessGrantSpecial handed out
+extern int  endlessComboKills[2];       // +1 per kill while a kill-fire window is up, reset when it lapses
+extern char endlessLastSpecialName[2][31]; // name of the last special weapon each player was handed
 
 bool endlessStaticLockoutActive(void);
 void endlessStaticLockoutTick(void);
@@ -193,13 +203,23 @@ typedef struct {
 } EndlessPerk;
 
 extern const EndlessPerk endlessPerkTable[PERK_COUNT];
+/* Perks are personal: a stack affects only the ship that picked it. endlessPerkTakenBy is the
+ * storage each machine owns a row of; endlessPerkEffective(p, id) is what effects read (through
+ * the fx-ship context or an explicit seat), and endlessPerkOwned keeps the capped combined view
+ * for diagnostics only. Route writes through endlessPerkGrant / endlessPerkRederive. */
 extern JE_byte endlessPerkOwned[PERK_COUNT];
+extern JE_byte endlessPerkTakenBy[2][PERK_COUNT];
+JE_byte endlessPerkEffective(uint p, int id);
+void endlessPerkRederive(void);
+void endlessPerkGrant(uint p, int id, int delta);
+/* The offered slate, the pending gate and the resolved depth all describe THIS machine's player:
+ * both sides roll their own slate from their own stream at the same outpost. */
 extern int endlessPerkChoice[ENDLESS_PERK_OFFERS_MILESTONE];
 extern int endlessPerkChoiceN;
 extern int endlessRegenTick;
-extern int endlessSalvoIdle;
-extern int endlessSalvoWindow;
-extern int endlessCmCooldown;
+extern int endlessSalvoIdle[2];
+extern int endlessSalvoWindow[2];
+extern int endlessCmCooldown[2];
 
 void endlessResetZonePerkTimers(void);
 extern int endlessPerkDepthDone;
@@ -209,31 +229,34 @@ int endlessPerkInterestPercent(void);         // bank-interest rate, % of unspen
 int endlessPerkTotalOwned(void);              // perk stacks held, summed across every perk
 bool endlessAdrenalineActive(void);           // Adrenaline owned and armor below its hurt threshold
 
-// Outpost state.
-extern long endlessRerollCost;        // escalating outpost prices, reset each visit
-extern int  endlessHullCost;
-extern long endlessShopEntryCash;     // cash on entering the shop; the E-Shop cash-fraction buys price off this
+/* Outpost state. Everything indexed [2] is one player's own; solo runs use slot 0 alone. Each
+ * machine owns its local player's slot and mirrors the peer's from the shop packet. */
+extern long endlessRerollCost[2];     // escalating outpost prices, reset each visit
+extern int  endlessHullCost[2];
+extern long endlessShopEntryCash[2];  // cash on entering the shop; the E-Shop cash-fraction buys price off this
 
-// A purchased kill-fire modifier is folded in after course selection.
-extern unsigned endlessPurchasedMods;
-extern int endlessBuffKind;           // which buff was bought: 0 none, 1 Turbodrive, 2 Overdrive
-extern int endlessOverdriveStacks;    // +1 per kill while the window is up (capped), reset when it lapses
-extern int endlessBuffCooldownUntil;  // run depth at which the kill-fire buys unlock again (0 = no lock)
-extern int endlessBuffCharge;         // cash-paid tier that scales the window/damage (0..20)
+// Purchased kill-fire modifiers are folded in after course selection; both players' are.
+extern unsigned endlessPurchasedMods[2];
+extern int endlessBuffKind[2];           // which buff was bought: 0 none, 1 Turbodrive, 2 Overdrive
+extern int endlessOverdriveStacks[2];    // +1 per kill while the window is up (capped), reset when it lapses
+extern int endlessBuffCooldownUntil[2];  // run depth at which the kill-fire buys unlock again (0 = no lock)
+extern int endlessBuffCharge[2];         // cash-paid tier that scales the window/damage (0..20)
 
-int endlessBuffWindowTicks(void);     // base kill-fire window, extended by charge (up to ~2.5x)
+int endlessBuffWindowTicks(void);     // base kill-fire window for the ship being computed
+int endlessBuffWindowTicksFor(uint p);// ...and for one named ship, for the kill loop
+int endlessBuffChargePaid(void);      // the current ship's own charge, which also scales its damage
 
-extern bool endlessReviveHeld;          // a held revive token survives one lethal hit
-extern int  endlessRevivesUsed;         // revives spent this run (the price doubles per use)
-extern int  endlessCleanseChargeCount;  // pre-bought strips of the worst mutator off the next course
-extern long endlessBombCost, endlessExtraPerkCost, endlessCleanseCost;
-extern char endlessGambleMsg[48];       // last gamble outcome, for the E-Shop help line
-extern bool endlessGamblePerkWon;       // a gamble handed out a free perk pick; the dispatch opens MENU_PERKS
-extern int  endlessShopTax;             // Loan Shark: permanent +% on every shop price for the rest of the run
-extern bool endlessGambleRigged;        // Rigged: the NEXT gamble secretly rolls twice and keeps the worse result
-extern int  endlessLongCon;             // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due
-extern bool endlessResumeVisit;         // a save was just loaded: the next outpost restores its snapshot
-extern bool endlessCreditsShown;        // the zone-100 credits roll already played this run (rides the save)
+extern bool endlessReviveHeld[2];          // a held revive token survives one lethal hit
+extern int  endlessRevivesUsed[2];         // revives spent this run (the price doubles per use)
+extern int  endlessCleanseChargeCount[2];  // pre-bought strips of the worst mutator off the next course
+extern long endlessBombCost[2], endlessExtraPerkCost[2], endlessCleanseCost[2];
+extern char endlessGambleMsg[2][48];       // last gamble outcome, for the E-Shop help line
+extern bool endlessGamblePerkWon[2];       // a gamble handed out a free perk pick; the dispatch opens MENU_PERKS
+extern int  endlessShopTax[2];             // Loan Shark: permanent +% on every shop price for the rest of the run
+extern bool endlessGambleRigged[2];        // Rigged: the NEXT gamble secretly rolls twice and keeps the worse result
+extern int  endlessLongCon[2];             // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due
+extern bool endlessResumeVisit;            // a save was just loaded: the next outpost restores its snapshot
+extern bool endlessCreditsShown;           // the zone-100 credits roll already played this run (rides the save)
 
 long   endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
 long   endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
@@ -337,9 +360,9 @@ void endlessNameCourseBaseLevels(void);
 
 // Quit Level launch snapshot.
 extern bool     endlessSortieHave;         // a launch-time snapshot exists
-extern unsigned endlessSortiePrePurchased; // one-shots snapshotted pre-consumption at the course pick,
-extern int      endlessSortiePreCleanse;   // so a non-hardcore bail can restore them
-extern int      endlessSortiePreLongCon;
+extern unsigned endlessSortiePrePurchased[2]; // one-shots snapshotted pre-consumption at the course pick,
+extern int      endlessSortiePreCleanse[2];   // so a non-hardcore bail can restore them
+extern int      endlessSortiePreLongCon[2];
 extern Uint64   endlessSortieOutpostMods;  // mutators in force at the outpost this sortie launched from
 extern JE_byte  endlessSortieOutpostEp;    // episode whose item data that outpost was stocked against
 

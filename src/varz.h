@@ -94,6 +94,7 @@ struct JE_SingleEnemyType
 	JE_shortint edani;
 	JE_byte     eliteState; /* endless: 0=undecided, 1=normal, 2=elite, 3=champion (endless_combat.c) */
 	JE_boolean  groupHomed;
+	JE_byte     homeTarget; /* endless co-op: which ship this enemy's tracking chases, 0 or 1 */
 	JE_byte     filter;
 	JE_integer  evalue;
 	JE_integer  fixedmovey;
@@ -321,9 +322,9 @@ extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
 extern JE_byte zinglonDuration;
-extern bool zinglonPillarActive;
-extern int zinglonPillarCX;
-extern int zinglonPillarTemp;
+extern bool zinglonPillarActive[2];
+extern int zinglonPillarCX[2];
+extern int zinglonPillarTemp[2];
 extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;
@@ -452,7 +453,13 @@ void JE_getShipInfo(void);
 JE_word JE_SGr(JE_word ship, Sprite2_array **ptr);
 
 void JE_drawOptions(void);
+void JE_resetPlayerOptions(Player *this_player);
 void JE_drawOptionsHUD(void);
+// Whose sidekick pods the HUD strip belongs to, and the ammo-gauge row inside it. Online
+// Campaign simulates both ships, so anything painting the strip has to ask rather than paint
+// for whichever player it happens to be simulating.
+uint hud_sidekick_player_index(void);
+int  hud_sidekick_ammo_y(uint slot);
 void JE_drawPlayerTags(void);  // two-player HUD "P1"/"P2" marks; no-op otherwise
 extern bool hud_sidekicks_dirty;
 
@@ -476,7 +483,8 @@ void gauge_flash_present(float alpha);
 extern bool hud_bars_dirty;
 void JE_repaintShieldArmorBars(void);
 
-JE_word JE_portConfigs(void);
+// Firing patterns this ship's rear bay offers; clamp its weapon_mode against its own, not another's.
+JE_word JE_portConfigs(const Player *this_player);
 
 /*SuperPixels*/
 // classic_cap forces the classic 101-spark limit for this call even when extraSparks is on

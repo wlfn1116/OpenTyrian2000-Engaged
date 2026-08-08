@@ -20,22 +20,69 @@
 
 #include "endless.h"
 #include "episodes.h"
+#include "network.h"
 #include "varz.h"  // hud_bars_dirty
 
 Player player[2];
+
+uint gameplay_local_player_index(void)
+{
+	// Every dual-ship session gives each machine a ship of its own to read: both co-op modes and
+	// Separate arcade. The linked arcade pair shares one HUD sidebar, so it stays on ship one.
+	return dual_ship_mode() && isNetworkGame && thisPlayerNum >= 1 && thisPlayerNum <= 2
+	     ? thisPlayerNum - 1 : 0;
+}
+
+/* The Super Arcade ship this ship flies (1..SA), or SA_NONE. Online Super Arcade lets each player
+ * pick their own, so every SAWeapon / SASpecialWeapon read has to be per ship rather than off the
+ * session-wide superArcadeMode. Clamped: the value rides the save record and the wire. */
+uint player_sa_ship(const Player *this_player)
+{
+	const uint sa = this_player->items.super_arcade_mode;
+	return (sa >= 1 && sa <= SA) ? sa : (uint)SA_NONE;
+}
+
+/* The front gun a Super Arcade colour ball hands THIS ship. Every ball wears the same colour on
+ * every ship; the colour is a slot, and the slot is looked up in the collector's own arsenal, so
+ * online the two players can pick the same ball off the field and each get their own ship's gun
+ * for it. A ship with no Super Arcade ruleset (a scripted ball in a plain game) reads the first
+ * ship's table, which is what the single-player path has always done. */
+uint player_sa_ball_weapon(const Player *this_player, uint slot)
+{
+	// Script-spawned values are not guaranteed to name a real colour slot.
+	if (slot >= COUNTOF(SAWeapon[0]))
+		slot = COUNTOF(SAWeapon[0]) - 1;
+
+	const uint sa_ship = player_sa_ship(this_player);
+	return SAWeapon[(sa_ship != SA_NONE ? sa_ship : 1u) - 1][slot];
+}
+
+/* Which weapon bay's power byte doubles as a ship's life counter. The linked arcade pair aliases
+ * player two's onto the Dragonwing's rear bay; Separate arcade gives each ship its own front gun,
+ * exactly as a solo arcade run does. Every site that binds player[].lives must use this, or a
+ * rollback restore re-derives a different alias than the one the level started with. */
+uint player_lives_port(uint p)
+{
+	if (arcade_separate_mode())
+		return FRONT_WEAPON;
+	return (p < COUNTOF(player)) ? p : FRONT_WEAPON;
+}
 
 /* Arcade life scaling derives its ceilings from each ship's stock hull and shield. SuperTyrian is
  * excluded; network games use the host's arcadeLifeBoost setting. */
 bool arcade_life_scaling_active(void)
 {
-	return arcadeLifeBoost && (onePlayerAction || twoPlayerMode) && !superTyrian;
+	return arcadeLifeBoost && arcade_rules_active() && !superTyrian;
 }
 
-/* In one-player arcade modes, rear-gun power combines its own pickups with lives - 1. Two-player
- * is excluded because player 2's rear-bay power is also the life counter. */
+/* Rear-gun power combines its own pickups with lives - 1. The linked pair is excluded because
+ * player two's rear-bay power is also its life counter; Separate arcade counts lives on each
+ * ship's own front gun (player_lives_port), so its rear bay is free to scale. */
 bool arcade_rear_scale_active(void)
 {
-	return arcadeRearGunScale && onePlayerAction && !twoPlayerMode && !superTyrian;
+	if (!arcadeRearGunScale || superTyrian)
+		return false;
+	return (onePlayerAction && !twoPlayerMode) || arcade_separate_mode();
 }
 
 /* Effective bay power. Arcade rear scaling adds lives - 1 without changing stored pickup power. */
@@ -127,17 +174,95 @@ void arcade_rescale_to_lives(Player *this_player)
 void calc_purple_balls_needed(Player *this_player)
 {
 	static const uint purple_balls_required[12] = { 1, 1, 2, 4, 8, 12, 16, 20, 25, 30, 40, 50 };
-	
-	this_player->purple_balls_needed = purple_balls_required[*this_player->lives];
+
+	// The alias behind lives is a weapon-power byte, which hostile save records can set past
+	// the table; clamp rather than read whatever happens to sit after it.
+	uint lives = *this_player->lives;
+	if (lives >= COUNTOF(purple_balls_required))
+		lives = COUNTOF(purple_balls_required) - 1;
+	this_player->purple_balls_needed = purple_balls_required[lives];
 }
 
-// Credit collected cash. Player 1's Endless income must pass through the run ledger.
-void player_award_pickup_cash(Player *this_player, long amount)
+bool coopSharedCredit = true;
+static bool coop_session_shared_credit = true;
+
+void coop_set_session_shared_credit(bool shared)
 {
-	if (endlessMode && this_player == &player[0])
-		endlessCashCredit(amount, ENDLESS_CASH_PICKUP);
+	coop_session_shared_credit = shared;
+}
+
+bool coop_credit_is_shared(void)
+{
+	return coop_mode_active() && coop_session_shared_credit;
+}
+
+// Lobby preference for Online Arcade; the session flag it arms is arcadeSeparateMode (config.h).
+bool arcadeSeparateShips = false;
+
+bool coopDoubleEarnings = false;
+static bool coop_session_double_earnings = false;
+
+void coop_set_session_double_earnings(bool on)
+{
+	coop_session_double_earnings = on;
+}
+
+bool coop_earnings_are_doubled(void)
+{
+	// Never under Shared: both players already take every payment at its full value there.
+	return coop_mode_active() && coop_session_double_earnings && !coop_credit_is_shared();
+}
+
+// Credit earned cash. This machine's own Endless income must pass through the run ledger; Online
+// Campaign's Shared credit pays the full amount to both players instead of to one.
+static void player_credit_cash(Player *this_player, long amount, EndlessCashSource endless_source)
+{
+	if (coop_credit_is_shared())
+	{
+		/* Both wallets earn the full amount. This machine's own share still goes through the
+		 * run ledger, or an Endless run books every shared payment as undeclared drift: the
+		 * audit warns, and the summary files the lot under "other" instead of what earned it. */
+		for (uint i = 0; i < COUNTOF(player); ++i)
+		{
+			if (endlessMode && i == endlessEconomyIndex())
+				endlessCashCredit(amount, endless_source);
+			else
+				player[i].cash += amount;
+		}
+		return;
+	}
+
+	// The ledger tracks the wallet of whoever is sitting at this keyboard, so the gate has to name
+	// that same ship. Naming player 1 outright meant the joiner booked its partner's earnings into
+	// its own wallet and paid its own earnings straight past the ledger. Solo, the two are one.
+	if (endlessMode && this_player == &player[endlessEconomyIndex()])
+		endlessCashCredit(amount, endless_source);
 	else
 		this_player->cash += amount;
+}
+
+void player_award_pickup_cash(Player *this_player, long amount)
+{
+	if (coop_earnings_are_doubled())
+		amount *= 2;
+	player_credit_cash(this_player, amount, ENDLESS_CASH_PICKUP);
+}
+
+void player_award_kill_cash(Player *this_player, long amount)
+{
+	// Double Earnings covers combat income whole: kills and the bounties built on them, not
+	// only pickups. Zone bonuses and bank interest stay at face value.
+	if (coop_earnings_are_doubled())
+		amount *= 2;
+	player_credit_cash(this_player, amount, ENDLESS_CASH_KILL);
+}
+
+void player_award_bounty_cash(Player *this_player, long amount)
+{
+	// A bounty is kill cash under its own ledger row, so the run summary can name it.
+	if (coop_earnings_are_doubled())
+		amount *= 2;
+	player_credit_cash(this_player, amount, ENDLESS_CASH_BOUNTY);
 }
 
 bool power_up_weapon(Player *this_player, uint port)
@@ -148,6 +273,8 @@ bool power_up_weapon(Player *this_player, uint port)
 	{
 		++this_player->items.weapon[port].power;
 		shotMultiPos[port] = 0; // shared per-port firing cursor
+		if (dual_ship_mode())
+			this_player->shot_multi_pos[port] = 0;
 
 		calc_purple_balls_needed(this_player);
 		arcade_rescale_to_lives(this_player);  // this port IS the life counter in arcade modes
