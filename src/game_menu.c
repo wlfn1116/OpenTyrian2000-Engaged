@@ -1392,6 +1392,14 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
 			    (!myPick || !network_is_host))
 			{
+				// The apply's capture records "home" for the jump's return, and this machine
+				// may have committed its own planet already, leaving mainLevel on that
+				// destination -- an ENGAGE one would then bounce a later quit into ** ALE **.
+				// Put the outpost's route back first; the apply re-arms the level fields.
+				mainLevel = route->mainLevel;
+				nextLevel = route->nextLevel;
+				lvlFileNum = route->lvlFileNum;
+				forcedLvlFileNum = route->forcedLvlFileNum;
 				debugLevelPickApply(packet_in[0]->data[5],
 				                    packet_in[0]->data[6],
 				                    packet_in[0]->data[7]);

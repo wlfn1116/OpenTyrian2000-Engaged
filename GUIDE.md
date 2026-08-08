@@ -11,7 +11,7 @@ content. This guide explains those additions.
 | Start an Endless run | Main menu > 1 Player Endless |
 | Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
 | Smooth out scrolling and movement | Setup > Graphics > Sub-pixel |
-| Play with a friend | Main menu > Online |
+| Play with a friend | Main menu > Online Multiplayer |
 | Design a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Change boss and enemy health bars | Setup > Enhancements |
 | Turn restored content on or off | Setup > Enhancements > Game Tweaks |
@@ -128,17 +128,20 @@ Both tiers are palette-shifted. Linked enemy parts share one tier and pay one
 bounty. Bosses can be promoted too.
 
 The natural share starts at 2%, reaches about 25% near zone 37, and caps at 80%.
-Sector modifiers override it: Elite Pack forces 50%, Apex makes everything elite
-or champion, Legion makes everything a champion, No Champions demotes champions
-to elites, No Elites removes both, Giant Killer strips their health multiplier,
-and Clean Signals strips their weapon bonuses.
+Sector modifiers override it: Elite Pack forces 50%, Apex Swarm makes everything
+elite or champion, Legion makes everything a champion, No Champions demotes
+champions to elites, No Elites removes both, Giant Killer strips their health
+multiplier, and Clean Signals strips their weapon bonuses.
 
 ### Sector modifiers
 
 Course cards list threats in red and boons in green. Hostile modifiers raise
 danger and payout together. Most boons lower one or both.
 
-`Pays` is a multiple of the base clear reward, so `+1.0` adds one base reward.
+A card names the sector itself rather than its parts, and describes each
+modifier by its effect, so the names below are the ones Debug Mode's Endless
+Effects list uses. `Pays` is a multiple of the base clear reward, so `+1.0` adds
+one base reward.
 
 #### Threats
 
@@ -151,22 +154,22 @@ danger and payout together. Most boons lower one or both.
 | Enrage | Enemy fire accelerates over time | +1.0 |
 | Gravity Well | Pulls the ship down, or along a fixed random heading | +0.8 |
 | Elite Pack | 50% special enemies | +2.0 |
-| Apex | 100% special enemies | +4.0 |
+| Apex Swarm | 100% special enemies | +4.0 |
 | Legion | 100% champions | +5.0 |
 | Overclock | Faster enemy fire, shots, and scrolling | +1.6 |
 | Overload | Stronger Overclock | +3.0 |
 | Slipstream | Faster scrolling | +0.6 |
-| Warp | Much faster scrolling | +2.0 |
+| Warp Speed | Much faster scrolling | +2.0 |
 | Light homing | Weak enemy homing | +0.6 |
 | Kamikaze | Moderate enemy homing | +1.2 |
 | Rampage | Strong homing and more contact damage | +5.0 |
 | Topsy Turvy | Flips the playfield and controls | +1.0 |
 | Molasses | Slows the player ship | +1.5 |
-| Shieldless | Disables shield recharge | +1.2 |
+| No Shield Regen | Disables shield recharge | +1.2 |
 | Dead Generator | Disables shield recharge and starves the main gun | +3.0 |
 | Martyrdom | Killed enemies fire a final radial burst | +1.8 |
-| Seeker | Enemy shots make one delayed correction | +1.4 |
-| Static | Damage drains and briefly disables generator recharge | +1.1 |
+| Seeker Rounds | Enemy shots make one delayed correction | +1.4 |
+| Static Discharge | Damage drains and briefly disables generator recharge | +1.1 |
 | Retaliation | Kills briefly speed up enemy fire | +1.5 |
 | Backfire | Kills briefly jam your guns | +1.2 |
 | Burnout | Backfire plus stacking fire and damage penalties | +1.8 |
@@ -184,12 +187,12 @@ Enrage is on a timer. Retaliation is refreshed by kills.
 | --- | --- | ---: |
 | Fragile | Less enemy health | -0.5 |
 | Bounty | Larger clear reward | +3.0 |
-| Cursed | Large reward; next shop is empty | +4.0 |
+| Cursed Bounty | Large reward; next shop is empty | +4.0 |
 | Turbodrive | Kills briefly speed up your guns | 0 |
-| Overcharge | More player damage | 0 |
+| Overcharged | More player damage | 0 |
 | Overdrive | Turbodrive and Overblast | 0 |
 | Overblast | Kills stack player damage | 0 |
-| Dilation | Slower enemy shots | 0 |
+| Time Dilation | Slower enemy shots | 0 |
 | Merchant Favor | Lower prices at the next outpost | 0 |
 | No Champions | Downgrades champions to elites | 0 |
 | No Elites | Removes elites and champions | 0 |
@@ -497,9 +500,9 @@ so raising one would raise the other. SuperTyrian is excluded as well.
 
 ## Online play
 
-**Online** on the main menu opens the Multiplayer screen: Host Game, Find LAN
-Games, Join by IP Address, and Your Nickname, the name the other player sees.
-The game uses UDP port 1333.
+**Online Multiplayer** on the main menu opens a screen of the same name: Host
+Game, Find LAN Games, Join by IP Address, and Your Nickname, the name the other
+player sees. The game uses UDP port 1333 unless the host changes it.
 
 The menu refuses to start a netgame while the FPS Cap is below 35: the simulation
 runs at 35 Hz, and a lower render cap drags both players down to the capped
@@ -516,6 +519,7 @@ are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
+| Listen Port | The UDP port this machine listens on, 1333 unless you change it. Always shown, and the joiner must use the same one. |
 | Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). **Destruct** fights the artillery mini-game head to head (see Online Destruct). |
 | Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
@@ -552,7 +556,9 @@ Online Arcade with Linked ships keeps the split two-player sidebar, tags each
 gauge block **P1** or **P2**, and dims the other player's gauges. Separate ships,
 Online Campaign and Online Endless give each machine the normal one-player sidebar
 for its local ship. Both player names and cash totals remain visible along the
-bottom of the playfield.
+bottom of the playfield. On levels dark enough to light the playfield with a
+cone from the ship, every online mode anchors the cone to the ship you fly:
+the other ship stays in the dark on your screen and lights itself on theirs.
 
 **Online SuperTyrian** is two SuperTyrian runs side by side: both players fly the
 Stalker 21.126 with the Atomic RailGun, and the SuperTyrian twiddle combos work
@@ -586,6 +592,18 @@ While you are waiting, **Esc** takes you back into the outpost to change
 equipment or pick a different planet. The waiting screen says so. Once the other
 player has picked their level too, the pair of you are committed and Esc no
 longer answers; the level loads a moment later.
+
+The hidden mini-games work online, and both ships fly them as equals: each of
+you gets the same issued Stalker 21.126 with the mini-game's own kit and three
+lives. Where the route offers **\*\* ALE \*\*** or **SQUADRON**, the host's
+planet pick decides for the pair like any other disagreement; **TIME WAR** only
+shows itself when both ships have the Stalker 21.126 equipped, never for just
+one. Dying, or quitting from the Esc menu, puts both of you back at the outpost
+you launched from with ships, cash, and rules exactly as they were, so a
+mini-game visit costs the pair nothing. \*\* ALE \*\* and SQUADRON are endless,
+and that is the only way out of them. TIME WAR can be cleared, and clearing it
+does what it does in single player: the rest of the campaign carries on as a
+SuperTyrian run, flown with whatever each of you cleared it with.
 
 Custom weapons work in Campaign and Endless, one design each. Your design is
 sent to the other machine on the way out of the outpost, so both of you fly and
@@ -873,9 +891,9 @@ can still press them by hand. The cheat rows only work in a normal solo game.
 
 | Backend | Requirement |
 | --- | --- |
-| OPL | None; default |
+| OPL3 | None; default |
 | FluidSynth | A SoundFont file (`.sf2`, `.sf3`, `.sf`) |
-| System synth | Windows x86-64 |
+| Native MIDI | Windows x86-64 |
 
 Pick one on **Setup > Sound > Music Synth**. MIDI songs loop at their internal
 loop point.

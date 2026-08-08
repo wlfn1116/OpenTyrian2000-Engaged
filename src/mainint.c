@@ -1196,6 +1196,12 @@ void JE_nextEpisode(void)
 
 	if (jumpBackToEpisode1)
 	{
+		// Drawn before the credits, not after: their ship animation draws mt_rand a variable
+		// number of times and a keypress cuts the roll short, so the two machines' streams part
+		// company in there. Ahead of it both are still on the level's lockstep stream (reseeded
+		// at level start, draw counts verified by the canary), so the pair agrees on the joke.
+		const bool superCarrot = (mt_rand() % 6) == 0;
+
 		if (episodeNum > 2 &&
 			!constantPlay && !endlessMode)
 		{
@@ -1203,18 +1209,24 @@ void JE_nextEpisode(void)
 		}
 
 		// randomly give player the SuperCarrot
-		if ((mt_rand() % 6) == 0)
+		if (superCarrot)
 		{
-			player[0].items.ship = 2;                      // SuperCarrot
-			player[0].items.weapon[FRONT_WEAPON].id = 23;  // Banana Blast
-			player[0].items.weapon[REAR_WEAPON].id = 24;   // Banana Blast Rear
+			// Every ship flying its own arsenal gets the whole joke. Vanilla's lone player-two
+			// line below is the linked pair's shared one, where the rear bay IS ship two.
+			for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)
+			{
+				player[p].items.ship = 2;                      // SuperCarrot
+				player[p].items.weapon[FRONT_WEAPON].id = 23;  // Banana Blast
+				player[p].items.weapon[REAR_WEAPON].id = 24;   // Banana Blast Rear
 
-			for (uint i = 0; i < COUNTOF(player[0].items.weapon); ++i)
-				player[0].items.weapon[i].power = 1;
+				for (uint i = 0; i < COUNTOF(player[p].items.weapon); ++i)
+					player[p].items.weapon[i].power = 1;
 
-			player[1].items.weapon[REAR_WEAPON].id = 24;   // Banana Blast Rear
+				player[p].last_items = player[p].items;
+			}
 
-			player[0].last_items = player[0].items;
+			if (!dual_ship_mode())
+				player[1].items.weapon[REAR_WEAPON].id = 24;   // Banana Blast Rear
 		}
 	}
 
@@ -5898,12 +5910,19 @@ void adjust_difficulty(void)
 
 	assert(initialDifficulty > 0 && initialDifficulty < 10);
 
-	const ulong score = twoPlayerMode ? (player[0].cash + player[1].cash) : JE_totalScore(&player[0]),
+	// Vanilla's two-player branch counts raw cash: the linked arcade has no shops, so cash IS
+	// the score. Co-op ships shop like solo players -- score each like one (cash spent lives
+	// on as equipment value) and average the pair, or a stocked-up pair reads as broke.
+	const bool linkedScoring = twoPlayerMode && !coop_mode_active();
+
+	const ulong score = linkedScoring ? player[0].cash + player[1].cash
+	                  : twoPlayerMode ? (JE_totalScore(&player[0]) + JE_totalScore(&player[1])) / 2
+	                                  : JE_totalScore(&player[0]),
 	            adjusted_score = roundf(score * score_multiplier[initialDifficulty]);
 
 	uint new_difficulty = 0;
 
-	if (twoPlayerMode)
+	if (linkedScoring)
 	{
 		if (adjusted_score < 10000)
 			new_difficulty = DIFFICULTY_EASY;
@@ -7002,7 +7021,7 @@ static int hud_superbomb_p1_right(void)
 int hud_fps_row(void)
 {
 	// Stack above player 2's score and superbombs; one-player leaves this corner free.
-	if (!twoPlayerMode || galagaMode)
+	if (!twoPlayerMode || (galagaMode && !coop_mode_active()))
 		return HUD_SCORE_Y + 1;
 
 	if (player[1].superbombs > 0)
@@ -7130,7 +7149,7 @@ int hud_top_right_left_edge(void)
 	if (hud_special_block_shown(local_player) && hud_special_on_right(local_player))
 		left = hud_special_light_x(local_player);
 
-	if (!twoPlayerMode || galagaMode || !hud_lives_shown())
+	if (!twoPlayerMode || (galagaMode && !coop_mode_active()) || !hud_lives_shown())
 		return left;
 
 	const uint lives = *player[1].lives;
@@ -7153,7 +7172,7 @@ int hud_bottom_right_top(void)
 	// Nothing claimed: report a row below the playfield so callers clamp to their own limit.
 	int top = vga_height;
 
-	if (twoPlayerMode && !galagaMode)
+	if (twoPlayerMode && (!galagaMode || coop_mode_active()))
 	{
 		top = HUD_SCORE_Y - 1;  // player 2's score lives in this corner
 		if (player[1].superbombs > 0)
@@ -7179,7 +7198,8 @@ void JE_inGameDisplays(void)
 	// FULL_SHADE's one-pixel outline.
 	const int SCORE_INSET = 3;
 
-	for (uint i = 0; i < ((twoPlayerMode && !galagaMode) ? 2 : 1); ++i)
+	// Galaga hides the wing's score, but co-op's second ship is a player with a wallet.
+	for (uint i = 0; i < ((twoPlayerMode && (!galagaMode || coop_mode_active())) ? 2 : 1); ++i)
 	{
 		// Name the two scores whenever the ships are independent; the linked pair reads as one
 		// team and has no room for it.
@@ -7296,7 +7316,9 @@ void JE_inGameDisplays(void)
 	/*Lives Left*/
 	if (arcade_rules_active())
 	{
-		for (int temp = 0; temp < (onePlayerAction ? 1 : 2); temp++)
+		// One-player Action draws one row -- except in co-op, whose mini-games fly two
+		// full ships and give each its own row, the same as Separate arcade.
+		for (int temp = 0; temp < ((onePlayerAction && !dual_ship_mode()) ? 1 : 2); temp++)
 		{
 			const uint lives = *player[temp].lives;
 
@@ -8082,7 +8104,9 @@ redo:
 					shotMultiPos[playerNum_-1] = 0;
 					calc_purple_balls_needed(this_player);
 					twoPlayerLinked = false;
-					if (galagaMode)
+					// Galaga loses the spawned wing on a respawn; co-op's second ship is a
+					// player, not a wing, so the pair stays a pair.
+					if (galagaMode && !coop_mode_active())
 						twoPlayerMode = false;
 					this_player->y = SHIP_BOTTOM_MARGIN;
 					this_player->invulnerable_ticks = 100;
@@ -8112,7 +8136,7 @@ redo:
 				}
 				else
 				{
-					if (galagaMode)
+					if (galagaMode && !coop_mode_active())
 						twoPlayerMode = false;
 					if (allPlayersGone && isNetworkGame)
 						reallyEndLevel = true;
@@ -9928,12 +9952,17 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							// spawn the dragonwing?
 							if (twoPlayerMode)
 								player_award_pickup_cash(this_player, 2400);
-							twoPlayerMode = true;
-							twoPlayerLinked = true;
-							player[1].items.weapon[REAR_WEAPON].power = 1;
-							arcade_rescale_to_lives(&player[1]);  // that power IS the spawned wing's life count
-							player[1].armor = 10;
-							player[1].is_alive = true;
+							// Co-op already flies two independent ships: the ball only pays,
+							// and must not link the pair or clobber the second ship's state.
+							if (!coop_mode_active())
+							{
+								twoPlayerMode = true;
+								twoPlayerLinked = true;
+								player[1].items.weapon[REAR_WEAPON].power = 1;
+								arcade_rescale_to_lives(&player[1]);  // that power IS the spawned wing's life count
+								player[1].armor = 10;
+								player[1].is_alive = true;
+							}
 						}
 						enemyAvail[z] = 1;
 						soundQueue[7] = S_POWERUP;

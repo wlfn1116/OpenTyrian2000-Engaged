@@ -2837,7 +2837,7 @@ start_level:
 
 	mouseSetRelative(false);
 
-	if (galagaMode)
+	if (galagaMode && !coop_mode_active())
 		twoPlayerMode = false;
 
 	JE_clearKeyboard();
@@ -2901,12 +2901,12 @@ start_level:
 
 		const bool cleared = (!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel;
 
-		// ENGAGE mini-games (** ALE **, TIME WAR, SQUADRON) are campaign dead ends: clearing one
-		// falls into the episode's END GAME section, dying reloads the "LAST LEVEL" backup save.
-		// Neither exists behind a browser jump, so both just restart the game at level 1 of the
-		// next episode. Show the level-complete screen if it was cleared, then give the player
-		// back the outpost they launched from instead of running the ending.
-		if (fromDebugBrowser && engageMode)
+		// ENGAGE mini-game quits and deaths behind a browser jump hand back the outpost the
+		// jump was made from. A cleared TIME WAR is exempt: it always converts the run to
+		// SuperTyrian and carries on through the ']Q' flow below, however it was entered --
+		// online, an entry-flag mismatch here would split the pair between "return to the
+		// outpost" and "carry on", stranding one machine at a rendezvous nobody answers.
+		if (fromDebugBrowser && engageMode && !(cleared && !galagaMode))
 		{
 			if (cleared)
 				JE_endLevelAni();
@@ -2943,13 +2943,6 @@ start_level:
 			else
 			{
 				mainLevel = nextLevel;
-
-				// Clearing TIME WAR converts the run to SuperTyrian and the campaign carries
-				// on through the ']Q' flow, exactly as in solo play. ']e' also dropped
-				// twoPlayerMode for the mini-game; put the two-ship shape back so the pair
-				// stays on the 2P save page and the networked outpost.
-				if (engageMode && coop_mode_active())
-					twoPlayerMode = true;
 
 #ifdef WITH_NETWORK
 				/* Wire campaign run: after the second-to-last scheduled clear, drive the
@@ -3716,8 +3709,9 @@ level_loop:
 			for (uint i = 0; i < COUNTOF(player); ++i)
 				player[i].shield = 0;
 
-			// Disable two-player mode if the spawned Dragonwing died.
-			if (*player[1].lives == 0 || player[1].armor == 0)
+			// Disable two-player mode if the spawned Dragonwing died. Co-op's second ship
+			// is a player with the normal death handling, not a spawned wing.
+			if (!coop_mode_active() && (*player[1].lives == 0 || player[1].armor == 0))
 				twoPlayerMode = false;
 
 			if (player[0].cash >= (unsigned)galagaLife)
@@ -3850,18 +3844,19 @@ level_loop:
 			power = 900;
 			power_gauge_active = false;
 
-			// Separate arcade swaps per-ship generators through the movement pass, so the
-			// classic infinite-power rule has to reach those copies too.
-			if (arcade_separate_mode())
+			// Every session that swaps per-ship generators through the movement pass needs
+			// the classic infinite-power rule pushed into those copies too: Separate arcade
+			// and the co-op ENGAGE mini-games alike, or the ships drain dry and stop firing.
+			if (dual_ship_mode())
 				for (uint p = 0; p < COUNTOF(player); ++p)
 					player[p].generator_power = 900;
 
-			// One-player Arcade modes use the unused generator gauge for lives; Separate
-			// arcade shows this machine's own ship.
-			if (onePlayerAction)
-				draw_lives_gauge(*player[0].lives);
-			else if (arcade_separate_mode())
+			// One-player Arcade modes use the unused generator gauge for lives; two-ship
+			// sessions show this machine's own ship.
+			if (dual_ship_mode())
 				draw_lives_gauge(*player[gameplay_local_player_index()].lives);
+			else if (onePlayerAction)
+				draw_lives_gauge(*player[0].lives);
 		}
 		else if (coop_mode_active())
 		{
@@ -6081,10 +6076,15 @@ new_game:
 					case 'g':
 						galagaMode = true;   /*GALAGA mode*/
 
-						player[1].items = player[0].items;
-						player[1].items.weapon[REAR_WEAPON].id = 15;  // Vulcan Cannon
-						for (uint i = 0; i < COUNTOF(player[1].items.sidekick); ++i)
-							player[1].items.sidekick[i] = 0;          // None
+						// Solo arms the spawnable wing here. Co-op equipped both ships in ']e'
+						// already and flies them like the solo ship: front gun only, no Vulcan.
+						if (!coop_mode_active())
+						{
+							player[1].items = player[0].items;
+							player[1].items.weapon[REAR_WEAPON].id = 15;  // Vulcan Cannon
+							for (uint i = 0; i < COUNTOF(player[1].items.sidekick); ++i)
+								player[1].items.sidekick[i] = 0;          // None
+						}
 						break;
 
 					case 'x':
@@ -6097,21 +6097,29 @@ new_game:
 						constantDie = false;
 						onePlayerAction = true;
 						superTyrian = true;
-						twoPlayerMode = false;
+						// Online co-op flies the mini-game with both ships; solo drops to the
+						// single ship exactly as shipped.
+						if (!coop_mode_active())
+							twoPlayerMode = false;
 
-						player[0].cash = 0;
+						// Co-op issues the mini-game loadout to both players as equals; TIME WAR
+						// has no ']g' to copy it onto ship two, so it happens here.
+						for (uint p = 0; p < (coop_mode_active() ? 2u : 1u); ++p)
+						{
+							player[p].cash = 0;
 
-						player[0].items.ship = 13;                     // The Stalker 21.126
-						player[0].items.weapon[FRONT_WEAPON].id = 39;  // Atomic RailGun
-						player[0].items.weapon[REAR_WEAPON].id = 0;    // None
-						for (uint i = 0; i < COUNTOF(player[0].items.sidekick); ++i)
-							player[0].items.sidekick[i] = 0;           // None
-						player[0].items.generator = 2;                 // Advanced MR-12
-						player[0].items.shield = 4;                    // Advanced Integrity Field
-						player[0].items.special = 0;                   // None
+							player[p].items.ship = 13;                     // The Stalker 21.126
+							player[p].items.weapon[FRONT_WEAPON].id = 39;  // Atomic RailGun
+							player[p].items.weapon[REAR_WEAPON].id = 0;    // None
+							for (uint i = 0; i < COUNTOF(player[p].items.sidekick); ++i)
+								player[p].items.sidekick[i] = 0;           // None
+							player[p].items.generator = 2;                 // Advanced MR-12
+							player[p].items.shield = 4;                    // Advanced Integrity Field
+							player[p].items.special = 0;                   // None
 
-						player[0].items.weapon[FRONT_WEAPON].power = 3;
-						player[0].items.weapon[REAR_WEAPON].power = 1;
+							player[p].items.weapon[FRONT_WEAPON].power = 3;
+							player[p].items.weapon[REAR_WEAPON].power = 1;
+						}
 						break;
 
 					case 'J':  // section jump

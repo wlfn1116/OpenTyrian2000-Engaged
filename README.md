@@ -77,9 +77,10 @@ works.
 
 Two-player games over the network, set up entirely in-game: Arcade, full
 Campaign and Endless co-op, SuperTyrian, Super Arcade, and the Destruct
-mini-game. **Online** on the main menu opens a lobby with Host Game, Find LAN
-Games, and Join by IP Address. On a shared network, LAN discovery finds the
-host without anyone typing an address. The game uses UDP port 1333 by default.
+mini-game. **Online Multiplayer** on the main menu opens a lobby with Host Game,
+Find LAN Games, and Join by IP Address. On a shared network, LAN discovery finds
+the host without anyone typing an address. The game uses UDP port 1333 by
+default.
 
 Windows, Linux, Switch and Vita players can all play each other, as long as
 everyone is on the same version. Every build runs the same simulation tick for
@@ -96,7 +97,8 @@ player hosting.
 - **Full Campaign co-op.** Each player flies a complete independent ship through
   the episode, earns and spends their own cash, and can use their own shop at the
   same time between levels. Each machine shows the familiar one-player sidebar
-  for its local ship.
+  for its local ship. The hidden ENGAGE mini-games play in co-op too, both ships
+  issued the same kit.
 - **Endless co-op.** The whole roguelite with two ships: one shared run, sector
   and zone counter, while wallets, shop stock, perks and kill-fire drives belong
   to one player each. A downed ship spectates the rest of the zone and rejoins

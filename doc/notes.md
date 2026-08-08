@@ -1520,6 +1520,128 @@ swallows the press that opened the screen, since a held pad button auto-repeats
 into fresh `newkey` edges, and a headless wire peer (`qa_net_gameplay_ticks`)
 confirms itself on arrival.
 
+### ENGAGE mini-games in Online Campaign
+
+The `]e` script command (\*\* ALE \*\*, TIME WAR, SQUADRON) rewrites player
+one's loadout, zeroes their cash, and forces `superTyrian`, `onePlayerAction`
+and -- solo only -- `twoPlayerMode = false`; `]g` on the galaga pair
+additionally clones that loadout over player two. The mode flips are why the
+mini-games needed care online:
+
+- Co-op keeps `twoPlayerMode` through the whole mini-game so both ships fly it
+  (the movement loop's two-ship branch is keyed on that flag). Every galaga
+  drop site is gated on `!coop_mode_active()`: the 30000-ball's wing spawn
+  (which would link the pair and clobber the joiner's live ship -- in co-op it
+  only pays), the respawn and out-of-lives drops in `JE_playerDamage`, the
+  per-tick "spawned Dragonwing died" check, and the level-end reset. Solo keeps
+  the vanilla one-ship-plus-spawned-wing rules exactly.
+- Co-op mini-games issue the ENGAGE loadout to BOTH ships (`]e` loops over the
+  pair; `]g` hands the galaga Vulcan to both), and `player_lives_port()` now
+  answers FRONT for every `dual_ship_mode()` session, so each ship counts three
+  lives on its own front gun instead of player two aliasing onto a rear bay.
+- The classic arcade infinite-generator rule (`power = 900` under
+  `arcade_rules_active()`) must reach the per-ship generator copies in every
+  session that swaps them through the movement pass -- the push is keyed on
+  `dual_ship_mode()`, not `arcade_separate_mode()`. Keying it on Separate alone
+  left co-op mini-game ships draining a generator nothing refilled (the co-op
+  regen branch is the `else` of the arcade branch), which read as "nobody can
+  shoot" a second into ** ALE **.
+- The arcade lives HUD in co-op mini-games draws both ships' rows and the local
+  ship's gauge (Separate-arcade shape); the galaga score/fps corner reservations
+  keep player two's corner in co-op.
+- `shopLeaveOutpost` restores the outpost route before adopting a peer's
+  debug-browser pick: the adopting machine may have committed its own planet
+  already, and the capture inside `debugLevelPickApply` would then record that
+  destination as the jump's return "home" -- quitting the picked level bounced
+  that machine into the mini-game its dead commit pointed at (the
+  quit-SQUADRON-land-in-\*\* ALE \*\* report) while the peer went to its
+  outpost.
+
+- Every wipe/quit reload and pre-level backup goes through `backup_save_slot()`
+  (tyrian2.c): slot 22 whenever `twoPlayerMode || isNetworkGame`. Keying the
+  reload on `twoPlayerMode` alone (the old code) read each machine's *local
+  solo* slot 11 after a mini-game death -- `]e` had cleared the flag -- so the
+  two sims restored two unrelated saves and desynced on the first frame of the
+  reloaded level, with the session flipped to solo flags. The slot-22 record is
+  written by `]b` at the pre-mini-game outpost in lockstep, so both machines
+  restore identical coop state and land back at that outpost. The same path
+  covers Esc-menu quits (`PACKET_GAME_QUIT` mirrors `playerEndLevel`) and the
+  nrb peer-left endings.
+- A cleared TIME WAR keeps its vanilla meaning: `]Q` -> `JE_nextEpisode`, the
+  campaign carries on under SuperTyrian rules with the loadouts as flown --
+  and it does so for EVERY entry path, debug browser included (the browser
+  branch exempts `cleared && !galagaMode`). Online, an entry-flag mismatch on
+  that branch split the pair between "return to the outpost" and "carry on",
+  stranding one machine at `network_level_rendezvous` (30s timeout on a faded
+  screen) while the other ran the ending alone; one shared path removes the
+  split by construction. `superTyrian` and `onePlayerAction` deliberately
+  survive; `]e` does not set `items.super_arcade_mode`, so a save made during
+  the carry-on resumes as a normal campaign (vanilla quirk, symmetric).
+- The between-level cutscene chain (`]P` pics, `]W` briefings, `]Q`) is safe
+  online as-is: text screens auto-advance on their `]W` delay digit, and
+  `JE_displayText`/`JE_outCharGlow` pump `NETWORK_KEEP_ALIVE()`, so a slow
+  reader cannot starve the link; the pair re-meets at the next outpost's shop
+  handshake, which tolerates one side arriving late. `JE_readTextSync` (`]S`)
+  is a vanilla `#if 0` stub -- do not lean on it for synchronization.
+- The online debug skip (`RB_REQ_SKIPLEVEL`) ends the level the way the solo
+  debug row does: `reallyEndLevel` alone. Its old body was the F2-cheat's fake
+  timer expiry (`levelTimer` with countdown 0 plus a 40-tick `endLevel`
+  wind-down), which is a *fail* exit: the natural end only clears `levelTimer`
+  when time remains, so the flag survived into the script and armed every `]t`
+  "you failed" branch, and the wind-down ran extra event ticks -- a TIME WAR
+  skipped that way came out failed (and shifted difficulty) online while solo
+  stayed clean.
+- `adjust_difficulty` scores a co-op pair as two solo players (mean of the two
+  `JE_totalScore`s against the solo thresholds). Vanilla's two-player branch
+  counts raw cash -- correct for the shopless linked arcade where cash is the
+  score, but a co-op pair spends its cash on equipment and read as broke (the
+  drift is `MAX`-only, so the miscount could never raise, only fail to).
+- The galaga rounds are authored endless; `engageGalagaEnd` routes a
+  hypothetical clear of one into the same outpost reload in coop rather than
+  letting galaga flags continue into the campaign. Solo keeps every vanilla
+  behavior, including the slot-11 reload.
+- `]w` (the Time War door) requires both ships in a `dual_ship_mode()` session
+  to fly the Stalker 21.126. One machine evaluating it from a lone Stalker
+  would be a scripted fork taken from synced state, so it stays deterministic
+  either way; requiring both is a design choice, not a sync fix.
+- Entry needs no special handling: the mini-game planets ride the normal
+  outpost departure, where `network_shop_adopt_host_level()` already settles a
+  host/joiner disagreement in the host's favor.
+- The `]h`/`]H` difficulty gates read `initialDifficulty`, which both machines
+  hold identically (host sends lobby+bump, joiner subtracts the bump;
+  resume adopts the host's record), so the hard-only levels -- ep1's harder
+  SAVARA and TYRIAN maps, ep3's TYRIAN X -- appear consistently online. The old
+  slot-11 reload was the one thing that skewed `initialDifficulty` between
+  machines (the 9-vs-15 TYRIAN map split in desync reports).
+- NET_VERSION 23: a v22 peer still reloads its local solo save at a mini-game
+  exit, so the versions must not pair.
+
+The light-cone spotlight (`starShowVGASpecialCode == 2`) is anchored to the
+local machine's own ship in `composite_playfield`/`composite_playfield_hi`
+(`thisPlayerNum >= 2` picks player two on the joiner). The composite runs at
+present time and feeds nothing back into the sim, so the two machines drawing
+different cones cannot desync.
+
+### The episode loop (`JE_nextEpisode`)
+
+Between levels the RNG is only in lockstep up to the first screen that draws
+from it on its own schedule. `JE_playCredits` is exactly that: its ship
+animation draws `mt_rand` per pass and a keypress ends the roll early, so
+after it the two machines hold different streams. The SuperCarrot grant is
+therefore decided *before* the credits run, while both are still on the
+level's stream (reseeded at level start, draw counts canary-verified) -- drawn
+after, the pair disagreed about the joke. Divergence past that point is
+harmless only because every level start reseeds; anything added between here
+and the next level that must match on both machines has to be settled ahead of
+the credits too, or sent.
+
+The grant itself equips every ship that flies its own arsenal
+(`dual_ship_mode()`). Vanilla's single `player[1]` line hands out a rear gun
+because in the linked pair that bay *is* ship two; a co-op ship needs the whole
+hull. `wait_input` and `JE_displayText` both pump the link (`network_check`
+sends the keep-alives), so the banner, codes screen and credits cannot time the
+peer out.
+
 ## UI and sprite safety
 
 All `Sprite2_array` blits pass through `sprite2_index_valid`. Sidekick body
