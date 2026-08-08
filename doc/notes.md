@@ -150,6 +150,19 @@ addresses each pixel from its own clipped coordinates. Behaviour is unchanged
 for every case vanilla could reach (only trailing rows clip there, where the
 misalignment had nothing left to corrupt).
 
+Wall placement had a memory-safety bug older than the port: `baseMap[vga_width]`
+is immediately followed in `destruct_world_s` by the `VGAScreen` pointer, and a
+wall footprint at the maximum `wallX` (`vga_width - 11`, 12 wide) reads one
+column past the array -- the pointer's low half, ~3 billion, which
+`JE_placementPosition`'s flatten then wrote back across a dozen real columns.
+The next `DE_drawBaseTerrain` handed that to `JE_rectangle`, whose guard only
+checked the UPPER bounds; as a negative int it slipped through into a wild
+memset (the 2026-08-08 Backspace-reroll crash). Vanilla had the same overflow
+at 320 wide. Fixed at both ends: the placement footprint clamps to the array,
+and `JE_rectangle` rejects negative coordinates like `JE_pix` always has. It
+was also an online desync source -- each machine flattened its own pointer
+bits into the terrain, so the poisoned maps differed per machine.
+
 The window is also SOLID now, not just visible. The shot collision pass used to
 skip everything at `y <= 14` (vanilla's ceiling, from when the HUD strip covered
 those rows full-width), which made anything standing in the window a ghost. In
