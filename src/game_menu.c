@@ -1152,6 +1152,49 @@ static bool shopCampaignRendezvous(void)
 			shopWaitFrame();
 			network_shop_keepalive();
 			QA_RENDEZVOUS_TRACE("lock");
+
+			/* The notice promises Esc for as long as the pair is still in the outpost, so this
+			 * step has to answer it too. Withdrawing here races the peer reading the lock we
+			 * just published and leaving on it, so the withdrawal only stands once that is ruled
+			 * out: drop the lock, then give the peer long enough to either fall back with us (it
+			 * reads the cleared commit and reopens its own first wait) or turn up at the
+			 * departure handshake. A peer already there cannot be recalled -- it is waiting on
+			 * our handshake packet and nothing else -- so that case re-commits and carries on,
+			 * which is what pressing Esc a moment later would have done anyway. */
+			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+			{
+				newkey = false;
+				network_shop_set_locked(false);
+				network_shop_send_state(false);
+
+				const Uint32 until = SDL_GetTicks() + 1500;
+				bool departed = false;
+				while (!departed && SDL_GetTicks() < until)
+				{
+					shopWaitFrame();
+					network_shop_keepalive();
+					if (network_shop_pump() || network_debug_sync_pump(false))
+						continue;
+					departed = network_shop_departure_pending();
+					if (departed)
+						break;
+					network_update();
+					network_check();
+				}
+
+				if (!departed)
+				{
+					JE_playSampleNum(S_SPRING);
+					endlessCoopCourse = -1;
+					return false;
+				}
+
+				// Too late to take it back; leave with them.
+				network_shop_send_state(true);
+				network_shop_set_locked(true);
+				peerDeparted = true;
+				break;
+			}
 			newkey = false;
 
 			if (network_shop_pump() || network_debug_sync_pump(false))

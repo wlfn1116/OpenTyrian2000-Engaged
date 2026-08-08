@@ -589,9 +589,11 @@ is pulled out of the outpost early. Where the route offers a choice of planets a
 the two of you pick different ones, the host's choice is the one you both fly.
 
 While you are waiting, **Esc** takes you back into the outpost to change
-equipment or pick a different planet. The waiting screen says so. Once the other
-player has picked their level too, the pair of you are committed and Esc no
-longer answers; the level loads a moment later.
+equipment or pick a different planet. The waiting screen says so, and it holds
+for as long as you are both still in the outpost: your partner picking their
+level does not take the option away from you. The one moment it does not answer
+is the last one, once your partner has left the outpost and is waiting on the
+level itself; there is nobody left to call back, so the level loads instead.
 
 The hidden mini-games work online, and both ships fly them as equals: each of
 you gets the same issued Stalker 21.126 with the mini-game's own kit and three
