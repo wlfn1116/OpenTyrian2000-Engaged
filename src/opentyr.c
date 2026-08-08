@@ -23,6 +23,7 @@
 #include "custom_weapon.h"
 #include "destruct.h"
 #include "editship.h"
+#include "endless.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -775,7 +776,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			},
 		},
 		[MENU_ARCADE_TWEAKS] = {
-			// Rear Gun Scale is one-player only; the two-player rear bay belongs to player 2.
+			// Rear Gun Scale skips the linked pair alone: player two's rear bay is its life
+			// counter there (arcade_rear_scale_active). All three bind the session online.
 			.header = "Arcade",
 			.items = {
 				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
@@ -2638,6 +2640,72 @@ int main(int argc, char *argv[])
 		network_is_host = thisPlayerNum == 1;
 		networkHostPlayerNum = 1;
 	}
+
+	/* Gameplay wire scenarios beyond Arcade: the harness names the mode, and both peers must
+	 * simply be configured alike (there is no lobby to adopt from). The Endless session
+	 * settings are the fixed QA slate: Standard run mode, host charts, shared Combo Feed,
+	 * pinned seed. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_game_type >= 0
+	    && qa_net_game_type < NETWORK_GAME_TYPE_COUNT)
+	{
+		network_game_type = (NetworkGameType)qa_net_game_type;
+		// SuperTyrian has no difficulty ladder: the field carries its variant, and the lobby only
+		// ever leaves one of the two in it. A test peer has no lobby, so pin the same one here as
+		// the lobby would, or the pair flies a rung the mode cannot be started on.
+		if (network_game_type == NETWORK_GAME_SUPERTYRIAN)
+			network_host_difficulty = qa_net_scrollock ? DIFFICULTY_SUICIDE : DIFFICULTY_LORD_OF_GAME;
+		if (network_game_type == NETWORK_GAME_ENDLESS)
+		{
+			network_host_endless_run_mode = (int)ENDLESS_RUNMODE_STANDARD;
+			network_host_endless_chooser = (int)ENDLESS_PICK_HOST;
+			network_host_endless_combo_shared = true;
+			SDL_strlcpy(network_endless_session_seed, "qa-wire-zones",
+			            sizeof(network_endless_session_seed));
+		}
+	}
+
+	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run
+	 * into the death menus, which these scenarios do not model. SuperTyrian's two rungs kill
+	 * the wiggle inside the frame budget too, and every death restarts the level so the
+	 * at-frame-N verdict never fires. Set on both peers alike, so the simulations agree. */
+	if (qa_net_gameplay_ticks > 0
+	    && (qa_net_zones > 0 || network_game_type_is_super(network_game_type)))
+		cheatInfiniteArmor = true;
+
+	/* The doubled-pickups scenario proves the session-flag arming end to end: the peers take
+	 * the production lobby roles, the host arms Individual credit plus Double Earnings from
+	 * its own config, and the joiner starts from the opposite values, which the settings
+	 * block in the connect packet must replace. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_lobby_settings)
+	{
+		network_from_lobby = true;
+		if (thisPlayerNum == 1)
+		{
+			coopSharedCredit = false;
+			coopDoubleEarnings = true;
+		}
+		else
+		{
+			coopSharedCredit = true;
+			coopDoubleEarnings = false;
+		}
+	}
+
+	/* The Separate-arcade scenario. Command-line peers adopt nothing, so both arm the host's
+	 * ships setting from their own config, exactly as the two sides of a real lobby end up. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_arcade_separate)
+		arcadeSeparateShips = true;
+
+	/* Command-line peers have no lobby to hand out roles, and the desync recovery dispatch
+	 * and menu arbitration act on the host role alone. Assign player 1 the role the lobby
+	 * would have. Settings stay configured-by-hand on both sides; only the role is filled in.
+	 * isNetworkGame here always means --net: the lobby cannot have run yet, and the QA
+	 * lobby-settings mode above still numbers its peers the same way. */
+	if (isNetworkGame)
+	{
+		network_is_host = thisPlayerNum == 1;
+		networkHostPlayerNum = 1;
+	}
 #endif
 
 	if (isNetworkGame)
@@ -2656,7 +2724,7 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 	if (qa_net_rounds > 0)
 	{
-		const int result = network_test_peer(qa_net_rounds);
+		const int result = network_test_peer(qa_net_rounds, qa_net_scenario);
 		network_shutdown();
 		SDL_Quit();
 		return result;
@@ -2689,8 +2757,9 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 		// A lobby session that has run its course: close the socket and hand the joiner its
 		// own settings back, so the title screen behaves like a normal single-player one and
-		// a second session can be started cleanly.  (Command-line netplay reconnects instead.)
-		if (isNetworkGame && network_from_lobby)
+		// a second session can be started cleanly.  (Command-line netplay reconnects instead,
+		// and the QA lobby-settings peers are command-line peers under lobby roles.)
+		if (isNetworkGame && network_from_lobby && !qa_net_lobby_run())
 		{
 			network_shutdown();
 
@@ -2698,6 +2767,7 @@ int main(int argc, char *argv[])
 			network_from_lobby = false;
 			network_is_host = false;
 			twoPlayerMode = false;
+			arcadeSeparateMode = false;
 		}
 #endif
 
@@ -2713,7 +2783,7 @@ int main(int argc, char *argv[])
 #ifdef WITH_NETWORK
 		// A command-line network game has no title screen: it connects straight away, every
 		// time round the loop.  A lobby game reaches the same handshake from the menu below.
-		if (isNetworkGame && !network_from_lobby)
+		if (isNetworkGame && (!network_from_lobby || qa_net_lobby_run()))
 		{
 			networkStartScreen();
 		}

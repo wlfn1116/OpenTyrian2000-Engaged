@@ -24,6 +24,7 @@
 #include "crashlog.h"
 #include "custom_weapon.h"
 #include "endless.h"
+#include "endless_internal.h"  // the QA auto-visit reaches the perk and course internals
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -42,6 +43,7 @@
 #include "pcxmast.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
@@ -67,7 +69,7 @@ enum
 	MENU_DATA_CUBE_SUB   =  8,
 	MENU_2_PLAYER_ARCADE =  9,
 	MENU_1_PLAYER_ARCADE = 10,  // Also networked games.
-	MENU_LIMITED_OPTIONS = 11,  // Hides save/load menus.
+	MENU_LIMITED_OPTIONS = 11,  // The options page minus Load Game; see OPT_* below.
 	MENU_JOYSTICK_CONFIG = 12,
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
@@ -78,6 +80,19 @@ enum
 
 // Center of the asymmetric monitor readout used by shop cash and Endless rank.
 #define MENU_MONITOR_CENTER_X 77
+
+/* Rows of the options page, numbered as MENU_OPTIONS draws them. MENU_LIMITED_OPTIONS is the
+ * same page with Load Game dropped, so on it every row below sits one higher: go through
+ * options_row() / options_full_row() rather than writing either numbering down twice. */
+enum
+{
+	OPT_LOAD = 2, OPT_SAVE, OPT_MUSIC, OPT_SOUND, OPT_SENS, OPT_JOYSTICK, OPT_KEYBOARD,
+	OPT_MOUSE, OPT_EXIT,
+	OPTIONS_ROWS = OPT_EXIT - OPT_LOAD + 1,
+};
+
+// Baseline of an options row, matching JE_drawMenuChoices' 16px pitch.
+#define OPTIONS_ROW_Y(row) (38 + ((row) - 2) * 16)
 
 /*** Structs ***/
 struct cube_struct
@@ -108,6 +123,29 @@ static JE_byte curSel[MENU_MAX]; /* [1..maxmenu] */
 static JE_byte curItemType, curItem, cursor;
 static JE_boolean leftPower, rightPower, rightPowerAfford;
 static JE_byte currentCube;
+static uint shopPlayerIndex;
+
+// Where a full-page options row lands on the page now open.
+static int options_row(int fullRow)
+{
+	return (curMenu == MENU_LIMITED_OPTIONS) ? fullRow - 1 : fullRow;
+}
+
+// ...and back: which full-page row a selection on the page now open stands for.
+static int options_full_row(int row)
+{
+	return (curMenu == MENU_LIMITED_OPTIONS) ? row + 1 : row;
+}
+
+uint JE_shopPlayerIndex(void)
+{
+	return shopPlayerIndex;
+}
+
+static Player *shopPlayer(void)
+{
+	return &player[shopPlayerIndex];
+}
 
 // Endless: MENU_PERKS doubles as the forced perk PICK and (with this flag set) a read-only perk
 // LIST; the flag keeps the two uses' dispatch / Esc / help / draw behaviour apart.
@@ -166,7 +204,10 @@ static PlayerItems old_items[2];  // shared shop-entry snapshots
 static struct cube_struct cube[4];
 
 static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };  // [16]=E-Shop: 5 buys + Done; [17]=Perks: 3 + decline (set at runtime)
-static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 2, 1, 1, 1 };  // [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
+// 1-based target menu for Esc. [14]=Mouse Setup goes back to Options like the other config
+// screens do; it read 2 (Upgrade Ship), which is not where it was opened from.
+// [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
+static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1 };
 static const JE_byte itemAvailMap[7] = { 1, 2, 3, 9, 4, 6, 7 };
 static const JE_word planetX[21] = { 200, 150, 240, 300, 270, 280, 320, 260, 220, 150, 160, 210, 80, 240, 220, 180, 310, 330, 150, 240, 200 };
 static const JE_word planetY[21] = {  40,  90,  90,  80, 170,  30,  50, 130, 120, 150, 220, 200, 80,  50, 160,  10,  55,  55,  90,  90,  40 };
@@ -198,7 +239,7 @@ static void ensure_equipped_items_visible(void)
 	 * via the debug menu. */
 	for (int i = 0; i < 7; i++)
 	{
-		int item = *playeritem_map(&player[0].items, i);
+		int item = *playeritem_map(&shopPlayer()->items, i);
 
 		int slot = 0;
 		for (; slot < itemAvailMax[itemAvailMap[i] - 1]; ++slot)
@@ -353,7 +394,7 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 
 JE_longint JE_cashLeft(void)
 {
-	JE_longint tempL = player[0].cash;
+	JE_longint tempL = shopPlayer()->cash;
 
 	// Only the seven real item rows (curSel 2..8) map to a player item and have a price.
 	// Action rows like "Custom" and "Done" don't; mapping them would index playeritem_map
@@ -361,7 +402,7 @@ JE_longint JE_cashLeft(void)
 	if (curSel[MENU_UPGRADES] < 2 || curSel[MENU_UPGRADES] > 8)
 		return tempL;
 
-	JE_word itemNum = *playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2);
+	JE_word itemNum = *playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2);
 
 	tempL -= JE_getCost(curSel[MENU_UPGRADES], itemNum);
 
@@ -381,7 +422,7 @@ JE_longint JE_cashLeft(void)
 			else
 				base_cost = base_cost * expertUpgradeCostMult;
 		}
-		for (uint i = 1; i < player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power; ++i)
+		for (uint i = 1; i < shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power; ++i)
 		{
 			long step_cost = weapon_upgrade_cost(base_cost, i);
 			tempL -= step_cost;
@@ -664,11 +705,12 @@ static void configure_endless_perk_list_menu(void)
 {
 	SDL_strlcpy(menuInt[MENU_PERKS + 1][0], "Perks", sizeof(menuInt[MENU_PERKS + 1][0]));  // title, drawn by JE_drawMenuHeader
 
+	// Perks are personal, so the list is this player's own collection.
 	const int total = endlessPerkCount();
 	const int cap   = (int)(sizeof(perkListId) / sizeof(perkListId[0]));
 	int n = 0;
 	for (int id = 0; id < total && n < cap; ++id)
-		if (endlessPerkGetOwned(id) > 0)
+		if (endlessPerkEffective(endlessEconomyIndex(), id) > 0)
 			perkListId[n++] = id;
 
 	if (n == 0)              // nothing earned yet: a single "(none yet)" info row
@@ -738,7 +780,8 @@ static void draw_endless_perk_list(void)
 		if (id >= 0)
 		{
 			char cnt[16];
-			snprintf(cnt, sizeof(cnt), "%d/%d", endlessPerkGetOwned(id), endlessPerkMaxStack(id));
+			snprintf(cnt, sizeof(cnt), "%d/%d",
+			         endlessPerkEffective(endlessEconomyIndex(), id), endlessPerkMaxStack(id));
 
 			char cline[18];
 			if (selected)  // match the row's highlight so the count brightens with its name
@@ -837,8 +880,8 @@ static void configure_custom_weapon_menu(void)
 	}
 }
 
-/* Insert Sensitivity after Sound Volume in both options menus. Shift labels once; menuChoices
- * resets on each JE_itemScreen entry. */
+/* Insert Sensitivity after Sound Volume in the options menu, then build the online page from it.
+ * Shift labels once; menuChoices resets on each JE_itemScreen entry. */
 static void configure_options_sens_menu(void)
 {
 	const size_t entrySize = sizeof(menuInt[0][0]);
@@ -853,18 +896,19 @@ static void configure_options_sens_menu(void)
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
 		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
-		// MENU_LIMITED_OPTIONS (menuInt[12]): item 6 (Exit, label [5]) moves down to item 8 ([7]),
-		// making room for Sens at 6 and Save Game at 7 (online sessions can save; loading stays
-		// host-side, at session start).
-		SDL_strlcpy(menuInt[12][7], menuInt[12][5], entrySize);  // Exit
-		SDL_strlcpy(menuInt[12][6], menuInt[3][2], entrySize);   // new item 7: Save Game (label from the full menu)
-		SDL_strlcpy(menuInt[12][5], "Sens", entrySize);  // new item 6
+		// MENU_LIMITED_OPTIONS (menuInt[12]) is the same page with Load Game dropped, rather than
+		// the data file's much shorter DOS network menu: an online session offers everything the
+		// offline one does except loading, which mid-session would strand the other machine.
+		// Everything below the missing row therefore sits one row higher here than there.
+		SDL_strlcpy(menuInt[12][0], menuInt[3][0], entrySize);  // title
+		for (int i = 1; i <= OPTIONS_ROWS - 1; ++i)
+			SDL_strlcpy(menuInt[12][i], menuInt[3][i + 1], entrySize);
 
 		shifted = true;
 	}
 
-	menuChoices[MENU_OPTIONS] = menuChoicesDefault[MENU_OPTIONS] + 1;                  // 9 -> 10
-	menuChoices[MENU_LIMITED_OPTIONS] = menuChoicesDefault[MENU_LIMITED_OPTIONS] + 2;  // 6 -> 8
+	menuChoices[MENU_OPTIONS] = OPTIONS_ROWS + 1;              // rows 2..10
+	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS;          // rows 2..9 (no Load Game)
 }
 
 /* Map the resolved shop submenu to a static crash-log phase string.
@@ -968,9 +1012,563 @@ static int draw_2p_info_row(int x, int y, int bright, const char *label, const c
 	return y + SHOP_2P_ROW_H;
 }
 
+#ifdef WITH_NETWORK
+// Dim the outpost and centre a notice over it while the other machine catches up.  The shop draws
+// into the 320-wide legacy menu field, so centring is on that rather than on the wider frame.
+// `detail` and `hint` may be NULL when there is nothing to add under the headline.
+static void shopWaitNotice(const char *text, const char *detail, const char *hint)
+{
+	JE_barShade(VGAScreen, 3, 3, LEGACY_WIDTH - 4, 196);
+	JE_barShade(VGAScreen, 1, 1, LEGACY_WIDTH - 2, 198);
+
+	JE_dString(VGAScreen, JE_fontCenter(text, SMALL_FONT_SHAPES), 92, text, SMALL_FONT_SHAPES);
+	if (detail != NULL)
+	{
+		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 110, detail,
+		                    small_font, centered, 15, 4, false, 1);
+	}
+	if (hint != NULL)
+	{
+		draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 122, hint,
+		                    small_font, centered, 15, 2, false, 1);
+	}
+}
+
+// Keep the waiting frame alive and the cursor moving during a rendezvous. Paced here rather than
+// by a delay in the callers: every one of them can skip its own loop tail with a `continue`, and
+// this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
+static void shopWaitFrame(void)
+{
+	service_SDL_events(false);
+	mouseCursor = MOUSE_POINTER_NORMAL;
+	JE_mouseStart();
+	JE_showVGA();
+	JE_mouseReplace();
+	if (!output_vsync)
+		limit_render_fps();
+}
+
+/* The co-op half of leaving the outpost. Returns false when the player withdrew and wants to
+ * go on outfitting; "Leaving the outpost" in doc/notes.md covers why it takes two steps. */
+static bool shopCampaignRendezvous(void)
+{
+	network_shop_send_state(true);
+
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: rendezvous committed\n");
+		fflush(stderr);
+	}
+
+	Uint32 qaBeat = SDL_GetTicks();
+	(void)qaBeat;
+#define QA_RENDEZVOUS_TRACE(which)                                                              \
+	do {                                                                                        \
+		if (qa_net_gameplay_ticks > 0 && SDL_GetTicks() - qaBeat > 2000)                        \
+		{                                                                                       \
+			qaBeat = SDL_GetTicks();                                                            \
+			int qaLD, qaLL, qaMySeq, qaPeerSeq;                                                 \
+			network_shop_debug_state(&qaLD, &qaLL, &qaMySeq, &qaPeerSeq);                       \
+			fprintf(stderr, "net gameplay: rendezvous waiting (%s) done=%d lock=%d head=%04x"   \
+			                " sync=%d mine=%d/%d seq=%d peerseq=%d\n",                          \
+			        (which), network_shop_peer_done() ? 1 : 0,                                  \
+			        network_shop_peer_locked() ? 1 : 0,                                         \
+			        packet_in[0] ? (unsigned)SDLNet_Read16(&packet_in[0]->data[0]) : 0u,        \
+			        network_is_sync() ? 1 : 0, qaLD, qaLL, qaMySeq, qaPeerSeq);                 \
+			fflush(stderr);                                                                     \
+		}                                                                                       \
+	} while (0)
+
+	/* A peer whose departure packet is already at the head of our queue is past BOTH steps of
+	 * this rendezvous: it announced commit and lock ahead of that packet and has stopped
+	 * announcing anything since. Two things follow, and both are load-bearing.
+	 *
+	 * Waiting on a re-announcement that is never coming is a deadlock, so the departure stands in
+	 * for the state we missed -- and we can only have missed it, never be about to receive it,
+	 * because the channel is ordered and its departure is already here.
+	 *
+	 * And that packet must be left where it is. It belongs to the handshake in shopLeaveOutpost
+	 * a few lines further on; network_update here would throw away the very thing that handshake
+	 * then waits on for good. Endless is where this bites: the non-charting player waits for a
+	 * sector before committing, so the two machines reach this rendezvous a long way apart, and
+	 * the one that arrives second can find the other already gone. */
+	bool peerDeparted = false;
+
+	for (;;)
+	{
+		// Step one: both committed. Esc withdraws, but only until the peer's commit lands,
+		// because from that point the peer is allowed to lock and stop listening.
+		while (!network_shop_peer_done() && !peerDeparted)
+		{
+			shopWaitFrame();
+			network_shop_keepalive();
+			QA_RENDEZVOUS_TRACE("commit");
+
+			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+			{
+				newkey = false;
+				JE_playSampleNum(S_SPRING);
+				// Revoke any charted sector before the withdrawal publishes, or the packet
+				// still carries it and the two machines can chart different courses.
+				endlessCoopCourse = -1;
+				network_shop_send_state(false);
+				return false;
+			}
+			newkey = false;
+
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			if (network_shop_departure_pending())
+			{
+				peerDeparted = true;
+				break;
+			}
+			network_update();
+			network_check();
+		}
+
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: rendezvous peer done%s\n",
+			        peerDeparted ? " (already departed)" : "");
+			fflush(stderr);
+		}
+
+		// Both machines are now in this loop draining packets, which is the one window wide
+		// enough for a custom weapon design. It is a no-op unless the design changed.
+		network_custom_weapon_publish();
+
+		if (qa_net_gameplay_ticks > 0)
+		{
+			fprintf(stderr, "net gameplay: rendezvous publishing lock\n");
+			fflush(stderr);
+		}
+
+		// Step two: publish the lock and wait for the peer's. A withdrawal already in flight
+		// clears the peer's commit here, which unlocks us and reopens the first wait.
+		network_shop_set_locked(true);
+		while (!network_shop_peer_locked() && network_shop_peer_done() && !peerDeparted)
+		{
+			shopWaitFrame();
+			network_shop_keepalive();
+			QA_RENDEZVOUS_TRACE("lock");
+			newkey = false;
+
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			if (network_shop_departure_pending())
+			{
+				peerDeparted = true;
+				break;
+			}
+			network_update();
+			network_check();
+		}
+
+		if (peerDeparted || network_shop_peer_done())
+		{
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: rendezvous locked%s\n",
+				        peerDeparted ? " (peer already departed)" : "");
+				fflush(stderr);
+			}
+			return true;
+		}
+
+		network_shop_set_locked(false);
+	}
+#undef QA_RENDEZVOUS_TRACE
+}
+
+static void select_level(JE_word section, JE_byte file_num);
+
+/* Online Endless: the sector the charting player picked, or -1 while none is committed. It is
+ * published on the shop packet as `mainLevel` (see network_shop_send_packet), which the campaign
+ * path already carries, so the waiter only has to know it is a course index there. */
+int endlessCoopCourse = -1;
+
+/* The non-charting player's side of the pick: hold at the outpost until the charting player
+ * publishes a sector. Returns the index, or -1 when the player backed out.
+ *
+ * `escapable` is the normal case, before this machine has committed to leaving: Esc is still a way
+ * back to the outpost, and the wait has no deadline because the other player may shop for as long
+ * as they like. Committing first and waiting afterwards is what made a session that agreed on
+ * nobody charting unrecoverable -- both players sat on a wait screen with no key that did
+ * anything. The un-escapable form is the backstop for arriving at the rendezvous with no index,
+ * which is a divergence already; it takes the first route rather than waiting on it. */
+/* Returned instead of a sector index when the partner took a debug zone jump: there is no course
+ * to wait for, and the caller should leave the outpost with the jump the poll just adopted. */
+#define SHOP_COURSE_JUMPED (-2)
+
+static int shopEndlessAwaitCourse(bool escapable)
+{
+	shopWaitNotice("Partner is charting a course.", "They pick the next sector.",
+	               escapable ? "Press Esc to go back." : NULL);
+
+	const Uint32 started = SDL_GetTicks();
+	while (escapable || SDL_GetTicks() - started < 8000)
+	{
+		shopWaitFrame();
+		network_shop_keepalive();
+
+		if (escapable && newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			newkey = false;
+			JE_playSampleNum(S_SPRING);
+			return -1;
+		}
+		newkey = false;
+
+		const int course = network_shop_peer_course();
+		if (course >= 0)
+			return course;
+
+		// A partner who took a debug zone jump is never going to chart anything, so their
+		// announcement has to end this wait too -- otherwise both machines sit here, one waiting
+		// for a course and the other already gone. The jump replaces the course outright.
+		if (network_endless_jump_poll())
+			return SHOP_COURSE_JUMPED;
+
+		if (network_shop_pump() || network_debug_sync_pump(false))
+			continue;
+
+		// Committed, and the peer is already at the departure handshake: no sector is coming, and
+		// the network_update below would swallow the very packet that handshake waits on.
+		if (!escapable && network_shop_departure_pending())
+			break;
+
+		if (escapable && !network_peer_alive())
+			return -1;
+
+		network_update();
+		network_check();
+	}
+
+	// A peer that never sent one has torn the outpost down some other way; the first route is
+	// always launchable, so take it rather than hanging here.
+	crashlog_netlog_line("ENDLESS COURSE TIMEOUT",
+	                     "the charting player never published a sector; this machine took the "
+	                     "first route on the slate, which the canary will report if they differ.");
+	return 0;
+}
+
+// The outpost's route before a level was picked, so a withdrawn commit can put it back.
+typedef struct
+{
+	JE_byte mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum;
+}
+ShopOutpostRoute;
+
+/* Hand the outpost over to the level both machines are about to load. In Campaign a player who
+ * is still waiting may withdraw, which restores `route`, clears jumpSection and returns; the
+ * shop loop then reads that as "still outfitting" and reopens the outpost. */
+static void shopLeaveOutpost(const ShopOutpostRoute *route)
+{
+	// Both rendezvous below are the same wait as far as the player is concerned, so the
+	// notice goes up once and stays: shading twice would darken the frame twice over.
+	// Campaign is the one that can wait a long time -- whoever picks a level first waits
+	// for the other to finish outfitting, and an outpost that merely stops responding
+	// reads as a hang.
+	shopWaitNotice("Waiting for other player.",
+	               coop_mode_active() ? "They are still in the outpost." : NULL,
+	               coop_mode_active() ? "Press Esc to go back." : NULL);
+
+	// The rendezvous below is the last point where both machines are still in menu code, so
+	// it is where the level they are about to load has to be agreed on.  A debug-browser pick
+	// rides along in the WAITING packet; whichever player made one drags the other into it.
+	// Read here rather than at the send: the campaign hand-off just below has to know a pick
+	// is staged, since a pick outranks the route.
+	JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
+	const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
+
+	if (coop_mode_active())
+	{
+		shopPlayer()->last_items = shopPlayer()->items;
+
+		if (!shopCampaignRendezvous())
+		{
+			mainLevel = route->mainLevel;
+			nextLevel = route->nextLevel;
+			lvlFileNum = route->lvlFileNum;
+			forcedLvlFileNum = route->forcedLvlFileNum;
+			jumpSection = false;
+			gameLoaded = false;
+			endlessCoopCourse = -1;
+			debugLevelPickReset();
+
+			curMenu = MENU_FULL_GAME;
+			newPal = 1;
+			return;
+		}
+
+		/* Endless commits its sector here rather than at the pick, so both players' purchases are
+		 * in before the modifiers are folded. Both machines run endlessSelectCourse on the same
+		 * index and reach the same sector; nothing about it travels except the index itself.
+		 *
+		 * A locked outpost has no pick to make: it relaunches the committed level, already armed
+		 * identically on both machines, and a loaded game brought its route with it. Charting
+		 * either of those would throw that route away for a course nobody chose. */
+		/* A debug zone jump replaces the course outright, so it has to be settled before the fold
+		 * below and not after: folding rebuilds the sector from the slate and would overwrite the
+		 * jump on whichever machine folded. Both machines then skip the fold together, which also
+		 * keeps the course slate and the charting turn identical on the two sides. */
+		const bool endlessJumping = endlessCoop() && network_endless_jump_poll();
+
+		if (endlessCoop() && !endlessLockedSortie && !gameLoaded && !endlessJumping)
+		{
+			int course = endlessCoopCourse;
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: folding course %d\n", course);
+				fflush(stderr);
+			}
+			if (course < 0)
+				course = shopEndlessAwaitCourse(false);
+			endlessAdvanceCourseTurn();
+			select_level(endlessSelectCourse(course), 0);
+			endlessCoopCourse = -1;
+			if (qa_net_gameplay_ticks > 0)
+			{
+				fprintf(stderr, "net gameplay: course folded (mainLevel %d)\n", (int)mainLevel);
+				fflush(stderr);
+			}
+		}
+
+		// Both have committed, so a disagreement can be settled: the host's planet is the one
+		// the session flies.  Deferred to here on purpose -- applied on arrival it would end
+		// the other player's outpost visit the instant the host picked.  A staged browser pick
+		// is exempt: it beats the route on both machines, and taking the host's route here
+		// would leave us loading it while the host adopts the pick below.  Endless is exempt
+		// too: its packets carry a course index in that field, never a level, and the pair
+		// already agreed on the sector above.
+		if (!myPick && !endlessCoop())
+			network_shop_adopt_host_level();
+		network_shop_end();
+	}
+
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: departure handshake\n");
+		fflush(stderr);
+	}
+
+	// The Endless zone jump's run state rides in the same packet as the level pick, because the
+	// two are one decision: the level alone would put the peer in the right file at the wrong
+	// depth, with the wrong modifiers, generating a different sector from the first tick.
+	Uint16 myJumpDepth = 0;
+	Uint64 myJumpMods = 0;
+	JE_byte myJumpPerks[ENDLESS_JUMP_PERK_MAX], myJumpPerkCount = 0;
+	const bool myJump = endlessJumpPickGet(&myJumpDepth, &myJumpMods, myJumpPerks, &myJumpPerkCount);
+
+	network_prepare(PACKET_WAITING);
+	packet_out_temp->data[4] = myPick ? 1 : 0;
+	packet_out_temp->data[5] = myPickEp;
+	packet_out_temp->data[6] = myPickSec;
+	packet_out_temp->data[7] = myPickFile;
+	packet_out_temp->data[8] = myJump ? 1 : 0;
+	SDLNet_Write16(myJumpDepth, &packet_out_temp->data[9]);
+	for (int b = 0; b < 8; ++b)   // mods, little end first; NET_ENDLESS_JUMP_MODS
+		packet_out_temp->data[11 + b] = (Uint8)(myJumpMods >> (8 * b));
+	packet_out_temp->data[19] = myJumpPerkCount;
+	memcpy(&packet_out_temp->data[20], myJumpPerks, myJumpPerkCount);
+	network_send(20 + myJumpPerkCount);  // PACKET_WAITING + debug level pick + endless jump
+
+	while (true)
+	{
+		shopWaitFrame();
+
+		// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
+		// and ordered), so both machines load the level with the same loadouts.  The peer's
+		// last outpost packet can be ahead of it too, and an unread one at the head of the
+		// queue stops WAITING from ever arriving.
+		if (network_debug_sync_pump(false) || network_shop_pump())
+			continue;
+
+		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			// Adopt the other player's browser pick.  If we made one too the host's wins,
+			// so the two machines can never resolve the tie in opposite directions.
+			if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
+			    (!myPick || !network_is_host))
+			{
+				debugLevelPickApply(packet_in[0]->data[5],
+				                    packet_in[0]->data[6],
+				                    packet_in[0]->data[7]);
+			}
+
+			// The Endless jump's run state, settled the same way and by the same rule, so a
+			// double jump can never leave one machine's depth against the other's level.
+			if (packet_in[0]->len >= 20 && packet_in[0]->data[8] != 0 &&
+			    (!myJump || !network_is_host))
+			{
+				const JE_byte count = packet_in[0]->data[19];
+				// Trust the length, not the count byte: a truncated packet must not be read past.
+				const size_t have = (size_t)packet_in[0]->len - 20;
+				const JE_byte take = (JE_byte)(count < have ? count : have);
+				Uint64 mods = 0;
+				for (int b = 0; b < 8; ++b)
+					mods |= (Uint64)packet_in[0]->data[11 + b] << (8 * b);
+				endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[9]), mods,
+				                     &packet_in[0]->data[20], take);
+			}
+
+			network_update();
+			break;
+		}
+
+		network_update();
+		network_check();
+	}
+
+	network_state_reset();
+
+	while (!network_is_sync())
+	{
+		shopWaitFrame();
+
+		network_check();
+	}
+}
+
+/* A gameplay wire test has no player to walk the outpost, but online co-op still owes it the
+ * outpost protocol: the purchase exchange, the perk pick, the custom-weapon designs, the course
+ * rendezvous and the level-start handshake all live here. Endless charts the scripted course
+ * for this depth under its forced modifier slate (qa_net_zone_mods); Campaign authors and
+ * equips each ship's own custom weapon design. */
+static void qa_shop_auto_visit(void)
+{
+	const ShopOutpostRoute route = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
+	const uint me = thisPlayerNum - 1u;
+
+	if (endlessMode)
+	{
+		/* The zone-end wallets, as this machine derives them. The harness compares these
+		 * lines across the two peers; both machines simulate both wallets, so any
+		 * difference is a payment-rule divergence even before the canary would see it. */
+		printf("NET ZONE WALLETS depth=%d p1=%lu p2=%lu bounty=%llu mods=%016llx\n",
+		       endlessRunDepth, (unsigned long)player[0].cash, (unsigned long)player[1].cash,
+		       (unsigned long long)endlessCashBySource[ENDLESS_CASH_BOUNTY],
+		       (unsigned long long)endlessActiveMods);
+		fflush(stdout);
+	}
+
+	// The scheduled zones are flown; report the whole session and leave. Exiting outright
+	// would strand a peer still confirming its final level end (its stall escape needs this
+	// machine's packets), so hold a last barrier until the peer's own announcement arrives.
+	if (qa_net_zones > 0 && qa_net_zones_cleared >= qa_net_zones)
+	{
+		network_prepare(PACKET_WAITING);
+		network_send(4);  // PACKET_WAITING (final barrier)
+
+		const Uint32 barrier = SDL_GetTicks();
+		while (SDL_GetTicks() - barrier < 20000)
+		{
+			watchdog_heartbeat();
+			network_check();
+			if (network_shop_pump() || network_debug_sync_pump(false))
+				continue;
+			if (packet_in[0] != NULL
+			    && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+			{
+				network_update();
+				break;
+			}
+			SDL_Delay(1);
+		}
+		qa_net_zone_verdict();
+	}
+
+	fprintf(stderr, "net gameplay: outpost auto-visit (depth %d)\n",
+	        endlessMode ? endlessRunDepth : -1);
+	fflush(stderr);
+
+	shopPlayerIndex = gameplay_local_player_index();
+	debugLevelPickReset();
+	network_shop_begin();
+	customWeaponNetPrepare();
+
+	// A queued perk pick: take the first offer for this machine's own ship through the real
+	// grant path; the shop packets publish it and the peer's own pick arrives the same way.
+	if (endlessMode && endlessPerkPending)
+	{
+		if (endlessPerkChoiceCount() > 0)
+			endlessPerkGrant(me, endlessPerkChoice[0], 1);
+		endlessPerkPending = false;
+	}
+
+	if (coopCampaignMode)
+	{
+		// A small design of this machine's own, distinct per ship, compiled and equipped as
+		// the front gun; the rendezvous publishes it so both machines fly both designs.
+		customWeaponEnabled = true;
+		SDL_strlcpy(customWeaponName, thisPlayerNum == 1 ? "QA Wire Alpha" : "QA Wire Beta",
+		            sizeof(customWeaponName));
+		customWeaponRaw[0][0].multi = 2;
+		customWeaponRaw[0][0].max = 2;
+		customWeaponRaw[0][0].attack[0] = (JE_byte)(8 + thisPlayerNum);
+		customWeaponNetPrepare();
+		player[me].items.weapon[FRONT_WEAPON].id =
+			(Uint8)customWeaponOwnerPort[customWeaponLocalOwner()];
+	}
+
+	// A scripted purchase, so every visit exercises the transaction path in both directions.
+	shopPlayer()->cash += 100u + thisPlayerNum;
+	network_shop_send_transaction();
+
+	if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
+	{
+		const int course = 0;
+		endlessCourseMod[course] = qa_net_zone_mods(endlessRunDepth);
+		if (endlessLocalPlayerCharts())
+		{
+			endlessCoopCourse = course;
+		}
+		else
+		{
+			const int got = shopEndlessAwaitCourse(true);
+			if (got >= 0)
+				endlessCoopCourse = got;
+		}
+		jumpSection = true;   // the sector itself is folded at the rendezvous
+	}
+	else
+	{
+		// The campaign departure is a planet pick; take the first one on this outpost's map.
+		select_level(mapSection[0], 0);
+	}
+
+	shopLeaveOutpost(&route);
+
+	fprintf(stderr, "net gameplay: outpost auto-visit done (mainLevel %d)\n", (int)mainLevel);
+	fflush(stderr);
+}
+#endif
+
 void JE_itemScreen(void)
 {
+	// A gameplay wire test drives the level itself; there is no player to walk the outpost.
+	// Online co-op still owes the outpost protocol, which the auto-visit runs without a menu.
+	if (qa_net_gameplay_ticks > 0)
+	{
+#ifdef WITH_NETWORK
+		if (isNetworkGame && coop_mode_active())
+		{
+			qa_shop_auto_visit();
+			return;
+		}
+#endif
+		fprintf(stderr, "net gameplay: outpost skipped\n");
+		fflush(stderr);
+		return;
+	}
+
 	bool quit = false;
+	// Every dual-ship session, not just co-op: Separate arcade (the shape online Super Arcade and
+	// SuperTyrian fly) gives each machine a complete ship of its own, so this page has to read the
+	// local one or both players are shown ship one's hull, guns and cash. The helper answers 0 for
+	// everything that shares a single arsenal, so solo and the linked pair keep ship one.
+	shopPlayerIndex = gameplay_local_player_index();
 
 	crashlog_set_phase("shop / buy-sell menu");
 
@@ -993,6 +1591,14 @@ void JE_itemScreen(void)
 	configure_custom_weapon_menu();
 	configure_options_sens_menu();
 	configure_endless_shop_menu();
+	if (isNetworkGame && coop_mode_active())
+	{
+		network_shop_begin();
+
+		// Both machines fly both ships, so each player's design needs its own reserved slots
+		// here; the designs themselves are exchanged at the rendezvous on the way out.
+		customWeaponNetPrepare();
+	}
 
 	play_song(songBuy);
 
@@ -1029,10 +1635,16 @@ void JE_itemScreen(void)
 
 	int temp_weapon_power[7]; // assumes there'll never be more than 6 weapons to choose from, 7th is "Done"
 
+#ifdef WITH_NETWORK
+	// Taken before anything can pick a level, so a withdrawn commit restores the arrival route
+	// rather than whichever one an earlier attempt happened to leave behind.
+	const ShopOutpostRoute outpostRoute = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
+#endif
+
 	/* JE: (* Check for where Pitems and Select match up - if no match then add to the itemavail list *) */
 	for (int i = 0; i < 7; i++)
 	{
-		int item = *playeritem_map(&player[0].last_items, i);
+		int item = *playeritem_map(&shopPlayer()->last_items, i);
 
 		int slot = 0;
 
@@ -1069,10 +1681,10 @@ void JE_itemScreen(void)
 
 		if (curMenu == MENU_FULL_GAME)
 		{
-			if (twoPlayerMode)
+			if (split_arcade_mode())
 				curMenu = MENU_2_PLAYER_ARCADE;
 
-			if (isNetworkGame || onePlayerAction)
+			if ((isNetworkGame && !coop_mode_active()) || onePlayerAction)
 				curMenu = MENU_1_PLAYER_ARCADE;
 
 			if (superTyrian)
@@ -1080,6 +1692,8 @@ void JE_itemScreen(void)
 		}
 
 		set_shop_phase();  // crash-log breadcrumb: record which shop submenu is now open
+		while (network_shop_pump())
+			;
 
 		// Keep the sidekick "Ammo N" labels current: an endless perk pick can grow every magazine
 		// without leaving this screen. A no-op unless the bonus actually moved.
@@ -1100,8 +1714,8 @@ void JE_itemScreen(void)
 		    (curSel[curMenu] == 3 || curSel[curMenu] == 4))
 		{
 			// Reset temporary power levels when selecting either weapon bay.
-			const uint item       = player[0].items.weapon[curSel[MENU_UPGRADES] - 3].id,
-			           item_power = player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power,
+			const uint item       = shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].id,
+			           item_power = shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power,
 			           i = curSel[MENU_UPGRADES] - 2;  // 1 or 2 (front or rear)
 
 			// set power level of owned weapon
@@ -1315,7 +1929,7 @@ void JE_itemScreen(void)
 		{
 			/* Move cursor until we hit either "Done" or a weapon the player can afford */
 			while (curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB] &&
-				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > (unsigned long)player[0].cash)
+				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > (unsigned long)shopPlayer()->cash)
 			{
 				curSel[MENU_UPGRADE_SUB] += lastDirection;
 				if (curSel[MENU_UPGRADE_SUB] < 2)
@@ -1327,12 +1941,12 @@ void JE_itemScreen(void)
 			if (curSel[MENU_UPGRADE_SUB] == menuChoices[MENU_UPGRADE_SUB])
 			{
 				/* If cursor on "Done", use previous weapon */
-				*playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2) = *playeritem_map(&old_items[0], curSel[MENU_UPGRADES] - 2);
+				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) = *playeritem_map(&old_items[shopPlayerIndex], curSel[MENU_UPGRADES] - 2);
 			}
 			else
 			{
 				/* Otherwise display the selected weapon */
-				*playeritem_map(&player[0].items, curSel[MENU_UPGRADES] - 2) = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2];
+				*playeritem_map(&shopPlayer()->items, curSel[MENU_UPGRADES] - 2) = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2];
 			}
 
 			/* Get power level info for front and rear weapons */
@@ -1348,7 +1962,7 @@ void JE_itemScreen(void)
 				else
 				{
 					const uint port = curSel[MENU_UPGRADES] - 3,  // 0 or 1 (front or back)
-					           item_level = player[0].items.weapon[port].power;
+					           item_level = shopPlayer()->items.weapon[port].power;
 
 					// calculate upgradeCost
 					JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][curSel[MENU_UPGRADE_SUB]-2]);
@@ -1416,7 +2030,7 @@ void JE_itemScreen(void)
 					temp_cost = 0;
 				}
 
-				int afford_shade = (temp_cost > (unsigned long)player[0].cash) ? 4 : 0;  // can player afford current weapon at all
+				int afford_shade = (temp_cost > (unsigned long)shopPlayer()->cash) ? 4 : 0;  // can player afford current weapon at all
 
 				temp = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][tempW-1]; /* Item ID */
 				switch (curSel[MENU_UPGRADES]-1)
@@ -1450,7 +2064,7 @@ void JE_itemScreen(void)
 				JE_getShipInfo();
 
 				/* item-owned marker (pulled left of the scroll bar when it is shown) */
-				if (temp == *playeritem_map(&old_items[0], curSel[MENU_UPGRADES] - 2) && temp != 0 && tempW != menuChoices[curMenu]-1)
+				if (temp == *playeritem_map(&old_items[shopPlayerIndex], curSel[MENU_UPGRADES] - 2) && temp != 0 && tempW != menuChoices[curMenu]-1)
 				{
 					const bool sub_has_scrollbar = sub_total_rows > visible_rows;
 					const int marker_bar_right = sub_has_scrollbar ? 288 : 300;
@@ -1506,7 +2120,7 @@ void JE_itemScreen(void)
 		      curMenu == MENU_KEYBOARD_CONFIG ||
 		      curMenu == MENU_LOAD_SAVE ||
 		      curMenu >= MENU_1_PLAYER_ARCADE) &&
-		     !twoPlayerMode) ||
+		     !split_arcade_mode()) ||
 		    (curMenu == MENU_UPGRADE_SUB &&
 		     (curSel[MENU_UPGRADES] >= 1 && curSel[MENU_UPGRADES] <= 6)))
 		{
@@ -1514,7 +2128,7 @@ void JE_itemScreen(void)
 			{
 				char buf[20];
 
-				snprintf(buf, sizeof buf, "%lu", (unsigned long)player[0].cash);
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)shopPlayer()->cash);
 				// Centre the cash total in the monitor slot, matching the endless course RANK readout
 				// (same slot, same row) instead of growing rightward from a fixed left edge.
 				// y172: DARKEN draws the body at y+1, so this lands on row 173; level with the RANK.
@@ -1526,7 +2140,7 @@ void JE_itemScreen(void)
 				// rollover rows (same 28-per-layer rollover as the in-game HUD armour bar) so it
 				// can't march off the panel into the shield gauge. Layer colours tunable.
 				static const int shopArmorLayerCol[] = { 14, 30, 46, 62, 78, 94, 110, 126 };
-				int a = player[0].armor;
+				int a = shopPlayer()->armor;
 				for (int L = 0; a > 0 && L < (int)COUNTOF(shopArmorLayerCol); ++L)
 				{
 					JE_barDrawShadow(VGAScreen, 42, 152, 3, shopArmorLayerCol[L], (a > 28) ? 28 : a, 2, 13);
@@ -1534,13 +2148,13 @@ void JE_itemScreen(void)
 				}
 			}
 			else
-				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, player[0].armor, 2, 13);
+				JE_barDrawShadow(VGAScreen, 42, 152, 3, 14, shopPlayer()->armor, 2, 13);
 			// Shield ceiling rescaled so a full 28-unit gauge fills exactly 10 bars and every weaker
 			// shield proportionally fewer; matching the in-game gauge. Reading the ceiling rather
 			// than the item's mpwr also shows the arcade lives scaling growing it between levels.
 			// Rounded to the nearest bar; None (mpwr 0) draws nothing; clamped so it can't overrun.
 			{
-				int shieldBars = (int)((arcade_shield_max(&player[0]) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
+				int shieldBars = (int)((arcade_shield_max(shopPlayer()) * 10 + ARCADE_FULL_BAR / 2) / ARCADE_FULL_BAR);
 				if (shieldBars > 10)
 					shieldBars = 10;
 				JE_barDrawShadow(VGAScreen, 104, 152, 1, 14, shieldBars, 2, 13);
@@ -1555,7 +2169,7 @@ void JE_itemScreen(void)
 			(curMenu == MENU_UPGRADE_SUB &&
 				(curSel[MENU_UPGRADES] == 2 || curSel[MENU_UPGRADES] == 5)))
 		{
-			if (twoPlayerMode)
+			if (split_arcade_mode())
 			{
 				char buf[80];
 				int y = SHOP_2P_TOP;
@@ -1584,9 +2198,9 @@ void JE_itemScreen(void)
 					if (i == 0)
 					{
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Front gun:",
-							weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name);
+							weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name);
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Special:",
-							special[player[0].items.special].name);
+							special[shopPlayer()->items.special].name);
 						y += 4;  // gap between the two blocks
 					}
 					else
@@ -1604,16 +2218,21 @@ void JE_itemScreen(void)
 			{
 				helpBoxColor = 15;
 				helpBoxBrightness = 4;
+				// The hull named here is this ship's own, not the session global: online the two
+				// players pick separately, and the global carries ship one's pick. It still decides
+				// whether the panel is drawn at all, and answers for the one path that clears the
+				// ship's byte without it (the game-over reload), so it stays the fallback.
+				const uint sa_ship = player_sa_ship(shopPlayer());
 				if (!superTyrian)
-					JE_helpBox(VGAScreen, 35, 25, superShips[superArcadeMode], 18);
+					JE_helpBox(VGAScreen, 35, 25, superShips[sa_ship != SA_NONE ? sa_ship : superArcadeMode], 18);
 				else
 					JE_helpBox(VGAScreen, 35, 25, superShips[SA+3], 18);
 				helpBoxBrightness = 1;
 
 				JE_textShade(VGAScreen, 25, 50, superShips[SA+1], 15, 0, FULL_SHADE);
-				JE_helpBox(VGAScreen,   25, 60, weaponPort[player[0].items.weapon[FRONT_WEAPON].id].name, 22);
+				JE_helpBox(VGAScreen,   25, 60, weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name, 22);
 				JE_textShade(VGAScreen, 25, 120, superShips[SA+2], 15, 0, FULL_SHADE);
-				JE_helpBox(VGAScreen,   25, 130, special[player[0].items.special].name, 22);
+				JE_helpBox(VGAScreen,   25, 130, special[shopPlayer()->items.special].name, 22);
 			}
 			else
 			{
@@ -1627,16 +2246,19 @@ void JE_itemScreen(void)
 		{
 			// Round the bar count (+6) exactly like the in-game Esc menu, so the same
 			// volume never draws a different number of bars in the two menus.
-			JE_barDrawShadow(VGAScreen, 225, 70, 1, music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
-			JE_barDrawShadow(VGAScreen, 225, 86, 1, samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
-			// Ship sensitivity (item 6, y=102): same bar style as the two volume rows above. The
-			// marker slot goes bright once the fill reaches it; compare drawn bar counts (amt vs
-			// mark), not the raw value, so it flips exactly on the middle bar.
+			JE_barDrawShadow(VGAScreen, 225, OPTIONS_ROW_Y(options_row(OPT_MUSIC)), 1,
+			                 music_disabled ? 12 : 16, (tyrMusicVolume + 6) / 12, 3, 13);
+			JE_barDrawShadow(VGAScreen, 225, OPTIONS_ROW_Y(options_row(OPT_SOUND)), 1,
+			                 samples_disabled ? 12 : 16, (fxVolume + 6) / 12, 3, 13);
+			// Ship sensitivity: same bar style as the two volume rows above. The marker slot goes
+			// bright once the fill reaches it; compare drawn bar counts (amt vs mark), not the raw
+			// value, so it flips exactly on the middle bar.
 			{
+				const int y = OPTIONS_ROW_Y(options_row(OPT_SENS));
 				const int amt = (ship_sensitivity + 6) / 12;
 				const int mark = (SHIP_SENS_DEFAULT + 6) / 12;
-				JE_barDrawShadow(VGAScreen, 225, 102, 1, 16, amt, 3, 13);
-				JE_barDrawMark(VGAScreen, 225, 102,
+				JE_barDrawShadow(VGAScreen, 225, y, 1, 16, amt, 3, 13);
+				JE_barDrawMark(VGAScreen, 225, y,
 				               amt >= mark ? SHIP_SENS_MARK_COL : SHIP_SENS_MARK_COL_DIM, mark, 3, 13);
 			}
 		}
@@ -1773,6 +2395,8 @@ void JE_itemScreen(void)
 			/* Animate the active menu and handle events that do not need the outer input path. */
 
 				NETWORK_KEEP_ALIVE();
+				while (network_shop_pump())
+					;
 
 				mouseCursor = MOUSE_POINTER_NORMAL;
 
@@ -2002,11 +2626,11 @@ void JE_itemScreen(void)
 						if (down && !shoulder_was[s] &&
 						    curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
 						{
-							const uint opnum = weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum;
+							const uint opnum = weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum;
 							if (s == 0)
-								player[0].weapon_mode = (player[0].weapon_mode > 1) ? player[0].weapon_mode - 1 : opnum;
-							else if (++player[0].weapon_mode > opnum)
-								player[0].weapon_mode = 1;
+								shopPlayer()->weapon_mode = (shopPlayer()->weapon_mode > 1) ? shopPlayer()->weapon_mode - 1 : opnum;
+							else if (++shopPlayer()->weapon_mode > opnum)
+								shopPlayer()->weapon_mode = 1;
 						}
 						shoulder_was[s] = down;
 					}
@@ -2032,9 +2656,9 @@ void JE_itemScreen(void)
 						// keep the front/rear weapon power preview in sync, as the arrows do
 						if (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4)
 						{
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 							if (curSel[MENU_UPGRADES] == 4)
-								player[0].weapon_mode = 1;
+								shopPlayer()->weapon_mode = 1;
 						}
 					}
 					JE_playSampleNum(S_CURSOR);
@@ -2042,9 +2666,11 @@ void JE_itemScreen(void)
 					inputDetected = true;  // redraw at the new selection
 				}
 
-				// Endless hardcore forbids all saving/loading, so the Alt+S / Alt+L quick keys are
-				// disabled too (not just the menu rows).
-				if (curMenu != MENU_LOAD_SAVE && !(endlessMode && endlessHardcore()))
+				// Endless Hardcore forbids quick save/load. Online Campaign also blocks Alt+S while
+				// an item preview is temporarily mutating the local loadout and cash.
+				if (curMenu != MENU_LOAD_SAVE &&
+				    (!(isNetworkGame && coop_mode_active()) || curMenu != MENU_UPGRADE_SUB) &&
+				    !(endlessMode && endlessHardcore()))
 				{
 					if (keysactive[SDL_SCANCODE_S] && (keysactive[SDL_SCANCODE_LALT] || keysactive[SDL_SCANCODE_RALT]))
 					{
@@ -2163,7 +2789,11 @@ void JE_itemScreen(void)
 			if (curMenu == MENU_OPTIONS ||
 			    curMenu == MENU_LIMITED_OPTIONS)
 			{
-				if ((mouseX >= (225 - 4)) && (mouseY >= 70) && (mouseY <= 82))
+				const int yMusic = OPTIONS_ROW_Y(options_row(OPT_MUSIC));
+				const int ySound = OPTIONS_ROW_Y(options_row(OPT_SOUND));
+				const int ySens  = OPTIONS_ROW_Y(options_row(OPT_SENS));
+
+				if ((mouseX >= (225 - 4)) && (mouseY >= yMusic) && (mouseY <= yMusic + 12))
 				{
 					if (music_disabled)
 					{
@@ -2171,7 +2801,7 @@ void JE_itemScreen(void)
 						restart_song();
 					}
 
-					curSel[MENU_OPTIONS] = 4;
+					curSel[curMenu] = options_row(OPT_MUSIC);
 
 					// Same bar-width -> value mapping as the in-game Esc menu (continuous over
 					// the full bar), instead of the old quantize-to-12 step.
@@ -2180,21 +2810,21 @@ void JE_itemScreen(void)
 					tyrMusicVolume = MIN(MAX(0, value), 255);
 				}
 
-				if ((mouseX >= (225 - 4)) && (mouseY >= 86) && (mouseY <= 98))
+				if ((mouseX >= (225 - 4)) && (mouseY >= ySound) && (mouseY <= ySound + 12))
 				{
 					samples_disabled = false;
 
-					curSel[MENU_OPTIONS] = 5;
+					curSel[curMenu] = options_row(OPT_SOUND);
 
 					const int w = ((255 + 6) / 12) * (3 + 1) - 1;
 					const int value = (mouseX - 225) * 255 / (w - 1);
 					fxVolume = MIN(MAX(0, value), 255);
 				}
 
-				// Ship sensitivity bar (item 6, y=102): drag to set, same feel as the volume bars.
-				if ((mouseX >= (225 - 4)) && (mouseY >= 102) && (mouseY <= 114))
+				// Ship sensitivity bar: drag to set, same feel as the volume bars.
+				if ((mouseX >= (225 - 4)) && (mouseY >= ySens) && (mouseY <= ySens + 12))
 				{
-					curSel[curMenu] = 6;
+					curSel[curMenu] = options_row(OPT_SENS);
 
 					const int w = ((SHIP_SENS_MAX + 6) / 12) * (3 + 1) - 1;
 					const int value = (mouseX - 225) * SHIP_SENS_MAX / (w - 1);
@@ -2285,8 +2915,9 @@ void JE_itemScreen(void)
 					if (curMenu == MENU_UPGRADE_SUB &&
 						selection == menuChoices[MENU_UPGRADE_SUB])
 					{
-						player[0].cash = JE_cashLeft();
+						shopPlayer()->cash = JE_cashLeft();
 						endlessShopTradeCommit();
+						network_shop_send_transaction();
 						curMenu = MENU_UPGRADES;
 						JE_playSampleNum(S_ITEM);
 					}
@@ -2300,14 +2931,14 @@ void JE_itemScreen(void)
 						else
 						{
 							if (curMenu == MENU_UPGRADE_SUB &&
-								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > (unsigned long)player[0].cash)
+								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > (unsigned long)shopPlayer()->cash)
 							{
 								JE_playSampleNum(S_CLINK);
 							}
 							else
 							{
 								if (curSel[MENU_UPGRADES] == 4)
-									player[0].weapon_mode = 1;
+									shopPlayer()->weapon_mode = 1;
 
 								curSel[curMenu] = selection;
 							}
@@ -2316,7 +2947,7 @@ void JE_itemScreen(void)
 							if (curMenu == MENU_UPGRADE_SUB &&
 								(curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 							{
-								player[0].items.weapon[curSel[MENU_UPGRADES] - 3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB] - 2];
+								shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB] - 2];
 							}
 						}
 					}
@@ -2336,7 +2967,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (leftPower)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2353,7 +2984,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (rightPower && rightPowerAfford)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2372,8 +3003,8 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB && curSel[MENU_UPGRADES] == 4)
 				{
 					// cycle weapon modes
-					if (++player[0].weapon_mode > weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum)
-						player[0].weapon_mode = 1;
+					if (++shopPlayer()->weapon_mode > weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum)
+						shopPlayer()->weapon_mode = 1;
 				}
 				break;
 
@@ -2383,7 +3014,7 @@ void JE_itemScreen(void)
 
 				// if front or rear weapon, update "Done" power level
 				if (curMenu == MENU_UPGRADE_SUB && (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
-					temp_weapon_power[itemAvailMax[itemAvailMap[curSel[MENU_UPGRADES]-2]-1]] = player[0].items.weapon[curSel[MENU_UPGRADES]-3].power;
+					temp_weapon_power[itemAvailMax[itemAvailMap[curSel[MENU_UPGRADES]-2]-1]] = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
 				JE_menuFunction(curSel[curMenu]);
 				break;
@@ -2411,12 +3042,10 @@ void JE_itemScreen(void)
 					curMenu = oldMenu;
 					newPal = oldPal;
 				}
-				else if (curMenu == MENU_LOAD_SAVE && isNetworkGame)
+				else if (curMenu == MENU_LIMITED_OPTIONS)
 				{
-					// Online reached this menu from Limited Options; menuEsc's target is the
-					// full options menu, which a network session must never enter.
 					newPal = 1;
-					curMenu = MENU_LIMITED_OPTIONS;
+					curMenu = coop_mode_active() ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
@@ -2430,16 +3059,23 @@ void JE_itemScreen(void)
 				{
 					if (curMenu == MENU_UPGRADE_SUB)  // leaving upgrade menu without buying
 					{
-						player[0].items = old_items[0];
+						shopPlayer()->items = old_items[shopPlayerIndex];
 						curSel[MENU_UPGRADE_SUB] = lastCurSel;
-						player[0].cash = JE_cashLeft();
+						shopPlayer()->cash = JE_cashLeft();
 						endlessShopTradeCommit();
+						network_shop_send_transaction();
 					}
 
 					if (curMenu != MENU_DATA_CUBE_SUB)
 						newPal = 1;
 
 					curMenu = menuEsc[curMenu] - 1;
+
+					// Every sub-screen of the options page (save/load, joystick, keyboard, mouse)
+					// has menuEsc pointing at the offline page. Online must land on its own, or
+					// backing out of one reintroduces the Load Game row mid-session.
+					if (curMenu == MENU_OPTIONS && isNetworkGame)
+						curMenu = MENU_LIMITED_OPTIONS;
 				}
 				break;
 
@@ -2489,9 +3125,9 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB &&
 				    (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 				{
-					player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+					shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 					if (curSel[MENU_UPGRADES] == 4)
-						player[0].weapon_mode = 1;
+						shopPlayer()->weapon_mode = 1;
 				}
 
 				// if joystick config, skip disabled items when digital
@@ -2520,9 +3156,9 @@ void JE_itemScreen(void)
 				if (curMenu == MENU_UPGRADE_SUB &&
 				    (curSel[MENU_UPGRADES] == 3 || curSel[MENU_UPGRADES] == 4))
 				{
-					player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+					shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 					if (curSel[MENU_UPGRADES] == 4)
-						player[0].weapon_mode = 1;
+						shopPlayer()->weapon_mode = 1;
 				}
 
 				// if in joystick config, skip disabled items when digital
@@ -2610,11 +3246,11 @@ void JE_itemScreen(void)
 
 				switch (curMenu)
 				{
-				case 2:
-				case 11:
-					switch (curSel[curMenu])
+				case MENU_OPTIONS:
+				case MENU_LIMITED_OPTIONS:
+					switch (options_full_row(curSel[curMenu]))
 					{
-					case 4:
+					case OPT_MUSIC:
 						JE_changeVolume(&tyrMusicVolume, -12, &fxVolume, 0);
 						if (music_disabled)
 						{
@@ -2622,11 +3258,11 @@ void JE_itemScreen(void)
 							restart_song();
 						}
 						break;
-					case 5:
+					case OPT_SOUND:
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, -12);
 						samples_disabled = false;
 						break;
-					case 6:
+					case OPT_SENS:
 						ship_sensitivity -= 12;
 						if (ship_sensitivity < 0)
 							ship_sensitivity = 0;
@@ -2639,7 +3275,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (leftPower)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = --temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2708,11 +3344,11 @@ void JE_itemScreen(void)
 
 				switch (curMenu)
 				{
-				case 2:
-				case 11:
-					switch (curSel[curMenu])
+				case MENU_OPTIONS:
+				case MENU_LIMITED_OPTIONS:
+					switch (options_full_row(curSel[curMenu]))
 					{
-					case 4:
+					case OPT_MUSIC:
 						JE_changeVolume(&tyrMusicVolume, 12, &fxVolume, 0);
 						if (music_disabled)
 						{
@@ -2720,11 +3356,11 @@ void JE_itemScreen(void)
 							restart_song();
 						}
 						break;
-					case 5:
+					case OPT_SOUND:
 						JE_changeVolume(&tyrMusicVolume, 0, &fxVolume, 12);
 						samples_disabled = false;
 						break;
-					case 6:
+					case OPT_SENS:
 						ship_sensitivity += 12;
 						if (ship_sensitivity > SHIP_SENS_MAX)
 							ship_sensitivity = SHIP_SENS_MAX;
@@ -2737,7 +3373,7 @@ void JE_itemScreen(void)
 					case 3:
 					case 4:
 						if (rightPower && rightPowerAfford)
-							player[0].items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
+							shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power = ++temp_weapon_power[curSel[MENU_UPGRADE_SUB]-2];
 						else
 							JE_playSampleNum(S_CLINK);
 
@@ -2752,82 +3388,15 @@ void JE_itemScreen(void)
 			}
 		}
 
-	} while (!(quit || gameLoaded || jumpSection));
-
 #ifdef WITH_NETWORK
-	if (!quit && isNetworkGame)
-	{
-		JE_barShade(VGAScreen, 3, 3, 316, 196);
-		JE_barShade(VGAScreen, 1, 1, 318, 198);
-		JE_dString(VGAScreen, 10, 160, "Waiting for other player.", SMALL_FONT_SHAPES);
-
-		// This rendezvous is the last point where both machines are still in menu code, so it
-		// is where the level they are about to load has to be agreed on.  A debug-browser pick
-		// rides along in the WAITING packet; whichever player made one drags the other into it.
-		JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
-		const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
-
-		network_prepare(PACKET_WAITING);
-		packet_out_temp->data[4] = myPick ? 1 : 0;
-		packet_out_temp->data[5] = myPickEp;
-		packet_out_temp->data[6] = myPickSec;
-		packet_out_temp->data[7] = myPickFile;
-		network_send(8);  // PACKET_WAITING + debug level pick
-
-		while (true)
-		{
-			service_SDL_events(false);
-			// Keep the mouse cursor alive while we wait on the other player.
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
-			// and ordered), so both machines load the level with the same loadouts.
-			if (network_debug_sync_pump(false))
-				continue;
-
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
-			{
-				// Adopt the other player's browser pick.  If we made one too the host's wins,
-				// so the two machines can never resolve the tie in opposite directions.
-				if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
-				    (!myPick || !network_is_host))
-				{
-					debugLevelPickApply(packet_in[0]->data[5],
-					                    packet_in[0]->data[6],
-					                    packet_in[0]->data[7]);
-				}
-
-				network_update();
-				break;
-			}
-
-			network_update();
-			network_check();
-
-			SDL_Delay(16);
-		}
-
-		network_state_reset();
-	}
-
-	if (isNetworkGame)
-	{
-		while (!network_is_sync())
-		{
-			service_SDL_events(false);
-			mouseCursor = MOUSE_POINTER_NORMAL;
-			JE_mouseStart();
-			JE_showVGA();
-			JE_mouseReplace();
-
-			network_check();
-			SDL_Delay(16);
-		}
-	}
+		// Leaving the outpost is a rendezvous with the other machine.  It sits inside the loop
+		// so a withdrawn Campaign commit can simply carry on: it clears jumpSection, and the
+		// condition below then reads this visit as unfinished.
+		if (isNetworkGame && !quit && (gameLoaded || jumpSection))
+			shopLeaveOutpost(&outpostRoute);
 #endif
+
+	} while (!(quit || gameLoaded || jumpSection));
 
 	if (gameLoaded)
 		fade_black(10);
@@ -2844,10 +3413,10 @@ void draw_ship_illustration(void)
 
 	// ship
 	{
-		assert(player[0].items.ship > 0);
+		assert(shopPlayer()->items.ship > 0);
 
-		const int sprite_id = (player[0].items.ship < COUNTOF(ships))  // shipedit ships get a default
-		                      ? ships[player[0].items.ship].bigshipgraphic - 1
+		const int sprite_id = (shopPlayer()->items.ship < COUNTOF(ships))  // shipedit ships get a default
+		                      ? ships[shopPlayer()->items.ship].bigshipgraphic - 1
 		                      : 31;
 
 		const int ship_x[] = { 31, 0, 0, 0, 35, 31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 30 },
@@ -2884,11 +3453,11 @@ void draw_ship_illustration(void)
 
 	// generator
 	{
-		assert(player[0].items.generator > 0 && player[0].items.generator < 7);
+		assert(shopPlayer()->items.generator > 0 && shopPlayer()->items.generator < 7);
 
-		const int sprite_id = (player[0].items.generator == 1)  // generator 1 and generator 2 have the same sprite
-		                      ? player[0].items.generator + 15
-		                      : player[0].items.generator + 14;
+		const int sprite_id = (shopPlayer()->items.generator == 1)  // generator 1 and generator 2 have the same sprite
+		                      ? shopPlayer()->items.generator + 15
+		                      : shopPlayer()->items.generator + 14;
 
 		const int generator_x[5] = { 62, 64, 67, 66, 63 },
 		          generator_y[5] = { 84, 85, 86, 84, 97 };
@@ -2934,7 +3503,7 @@ void draw_ship_illustration(void)
 
 	for (int slot = FRONT_WEAPON; slot <= REAR_WEAPON; ++slot)
 	{
-		const int id = player[0].items.weapon[slot].id;
+		const int id = shopPlayer()->items.weapon[slot].id;
 		if (id <= 0 || id >= 60 || weapon_sprites[id] < 0)
 			continue;
 
@@ -2978,11 +3547,11 @@ void draw_ship_illustration(void)
 	}
 
 	// sidekicks
-	JE_drawItem(6, player[0].items.sidekick[LEFT_SIDEKICK], 3, 84);
-	JE_drawItem(7, player[0].items.sidekick[RIGHT_SIDEKICK], 129, 84);
+	JE_drawItem(6, shopPlayer()->items.sidekick[LEFT_SIDEKICK], 3, 84);
+	JE_drawItem(7, shopPlayer()->items.sidekick[RIGHT_SIDEKICK], 129, 84);
 
 	// shield
-	blit_sprite_hv(VGAScreenSeg, 28, 23, OPTION_SHAPES, 26, 15, shields[player[0].items.shield].mpwr - 10);
+	blit_sprite_hv(VGAScreenSeg, 28, 23, OPTION_SHAPES, 26, 15, shields[shopPlayer()->items.shield].mpwr - 10);
 }
 
 void load_cubes(void)
@@ -3746,17 +4315,17 @@ void JE_initWeaponView(void)
 {
 	fill_rectangle_xy(VGAScreen, 8, 8, 144, 177, 0);
 
-	player[0].sidekick[LEFT_SIDEKICK].x = 72 - 15;
-	player[0].sidekick[LEFT_SIDEKICK].y = 120;
-	player[0].sidekick[RIGHT_SIDEKICK].x = 72 + 15;
-	player[0].sidekick[RIGHT_SIDEKICK].y = 120;
+	shopPlayer()->sidekick[LEFT_SIDEKICK].x = 72 - 15;
+	shopPlayer()->sidekick[LEFT_SIDEKICK].y = 120;
+	shopPlayer()->sidekick[RIGHT_SIDEKICK].x = 72 + 15;
+	shopPlayer()->sidekick[RIGHT_SIDEKICK].y = 120;
 
-	player[0].x = 72;
-	player[0].y = 110;
-	player[0].delta_x_shot_move = 0;
-	player[0].delta_y_shot_move = 0;
-	player[0].last_x_explosion_follow = 72;
-	player[0].last_y_explosion_follow = 110;
+	shopPlayer()->x = 72;
+	shopPlayer()->y = 110;
+	shopPlayer()->delta_x_shot_move = 0;
+	shopPlayer()->delta_y_shot_move = 0;
+	shopPlayer()->last_x_explosion_follow = 72;
+	shopPlayer()->last_y_explosion_follow = 110;
 	power = 500;
 	lastPower = 500;
 	menu_power_prev = menu_power_cur = 500;  // reset gauge interpolation state
@@ -3885,7 +4454,13 @@ static void save_help_bar_ping_band(const char *text)
 {
 	ping_shown = false;
 
-	ping_band_x = help_bar_right_x(text, PING_WIDEST);
+	// Only ever drawn flush against the bar's right edge.  Several outpost rows carry a
+	// description long enough to reach that far; there the figure is dropped rather than
+	// shunted left to butt against the sentence, which reads as part of it.
+	ping_band_x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(PING_WIDEST, TINY_FONT);
+	if (ping_band_x < 10 + JE_textWidth(text, TINY_FONT) + 5)
+		return;
+
 	ping_band_w = PING_BAND_RIGHT - ping_band_x;
 	if (ping_band_w > PING_BAND_MAX_W)
 		ping_band_w = PING_BAND_MAX_W;
@@ -4136,19 +4711,15 @@ void JE_drawMainMenuHelpText(void)
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[12 - 1], sizeof(tempStr));  // Done
 		}
-		else if ((curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS) && curSel[curMenu] >= 6)
+		else if (curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS)
 		{
-			// The ship-sensitivity row sits at item 6; items below it shift down one, so
-			// read each shifted item's ORIGINAL help slot (temp-1) and supply the row's own text.
-			// The limited (online) menu also inserts Save Game at 7, so its tail shifts by two.
-			if (curSel[curMenu] == 6)
+			// Both pages are covered row-for-row by menuHelp, which reserves a 0 for the
+			// sensitivity bar; the data file has no line for a row this port added.
+			const int help = menuHelp[curMenu][temp];
+			if (help == 0)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
-			else if (curMenu == MENU_LIMITED_OPTIONS && curSel[curMenu] == 7)
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[MENU_OPTIONS][3 - 2]) - 1], sizeof(tempStr));  // the full menu's Save Game help
-			else if (curMenu == MENU_LIMITED_OPTIONS)
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 2]) - 1], sizeof(tempStr));
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[(menuHelp[curMenu][temp - 1]) - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[help - 1], sizeof(tempStr));
 		}
 		else
 		{
@@ -4196,8 +4767,9 @@ void JE_drawMainMenuHelpText(void)
 
 	// Endless: show the run's seed on the E-Shop help line, right-aligned opposite "Open the
 	// E-Shop." so it's always visible from the outpost. Bank/brightness tuned by eye to read as
-	// secondary chrome (not a price).
-	if (endlessMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
+	// secondary chrome (not a price). Online, the round trip below owns that edge and the seed
+	// is on the lobby and joiner screens instead, so the two never overprint each other.
+	if (endlessMode && !isNetworkGame && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
 	{
 		char seedStr[16 + ENDLESS_SEED_MAXLEN];
 		snprintf(seedStr, sizeof(seedStr), "Seed: %s", endlessSeedString());
@@ -4208,10 +4780,12 @@ void JE_drawMainMenuHelpText(void)
 		JE_textShade(VGAScreen, seed_x, 187, seedStr, 14, 3, DARKEN);
 	}
 
-	// Online play's round trip takes the same right edge. It never competes with the figures
-	// above for it: those are all endless, which is single-player.
+	// Online play's round trip takes the same right edge, and anything already standing there
+	// outranks it: a price is what the player is deciding on, and the endless seed stands down
+	// online for the same reason. The figure is dropped rather than shunted left, where it would
+	// butt against the sentence and read as part of it.
 	ping_shown = false;
-	if (isNetworkGame)
+	if (isNetworkGame && costStr[0] == '\0' && ownedStr[0] == '\0')
 	{
 		// No band means a description long enough to reach the right edge on its own, which
 		// leaves nowhere to put or restore the figure, so it must not
@@ -4354,6 +4928,11 @@ JE_boolean JE_quitRequest(void)
 			service_SDL_events(true);
 			setDelay(4);
 
+			// A player thinking on this prompt must not read as a dead connection.
+			NETWORK_KEEP_ALIVE();
+			while (network_shop_pump())
+				;
+
 			blit_sprite(VGAScreen, 50, 50, OPTION_SHAPES, 35);  // message box
 			JE_textShade(VGAScreen, 70, 60, miscText[28], 0, 5, FULL_SHADE);
 			JE_helpBox(VGAScreen, 70, 90, miscText[30], 30);
@@ -4454,7 +5033,7 @@ void JE_genItemMenu(JE_byte itemNum)
 	menuChoices[MENU_UPGRADE_SUB] = itemAvailMax[itemAvailMap[itemNum - 2] - 1] + 2;
 
 	temp3 = 2;
-	temp2 = *playeritem_map(&player[0].items, itemNum - 2);
+	temp2 = *playeritem_map(&shopPlayer()->items, itemNum - 2);
 
 	strcpy(menuInt[5][0], menuInt[2][itemNum - 1]);
 
@@ -4595,6 +5174,66 @@ static void debug_level_pick_stage(JE_byte episode, JE_byte section, JE_byte fil
 void debugLevelPickReset(void)
 {
 	debugPick.armed = false;
+	endlessJumpPickReset();
+}
+
+/* The Endless jump's run state, staged beside the level pick above. Depth, the folded modifier
+ * mask and the perk stacks all feed sector generation, so the peer needs every one of them to
+ * build the zone this machine is about to build. */
+static struct {
+	bool    armed;
+	Uint16  depth;
+	Uint64  mods;
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX];
+	JE_byte perkCount;
+} endlessJumpPick;
+
+static void endless_jump_pick_stage(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+{
+	if (perkCount > ENDLESS_JUMP_PERK_MAX)
+		perkCount = ENDLESS_JUMP_PERK_MAX;
+
+	endlessJumpPick.armed = true;
+	endlessJumpPick.depth = depth;
+	endlessJumpPick.mods = mods;
+	endlessJumpPick.perkCount = perkCount;
+	memcpy(endlessJumpPick.perks, perks, perkCount);
+}
+
+void endlessJumpPickReset(void)
+{
+	endlessJumpPick.armed = false;
+}
+
+bool endlessJumpPickGet(Uint16 *depth, Uint64 *mods, JE_byte *perks, JE_byte *perkCount)
+{
+	if (!endlessJumpPick.armed)
+		return false;
+
+	*depth = endlessJumpPick.depth;
+	*mods = endlessJumpPick.mods;
+	*perkCount = endlessJumpPick.perkCount;
+	memcpy(perks, endlessJumpPick.perks, endlessJumpPick.perkCount);
+	return true;
+}
+
+void endlessJumpPickApply(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+{
+	if (perkCount > ENDLESS_JUMP_PERK_MAX)
+		perkCount = ENDLESS_JUMP_PERK_MAX;
+
+	endlessRunDepth = depth;
+	endlessActiveMods = mods;
+
+	// Clamped against this build's own table rather than the sender's count, so a peer that
+	// knows more perks than we do cannot write past the end of ours.
+	int n = endlessPerkCount();
+	if (n > perkCount)
+		n = perkCount;
+	for (int p = 0; p < n; ++p)
+		endlessPerkSetOwned(p, perks[p]);
+
+	endless_jump_pick_stage(depth, mods, perks, perkCount);
 }
 
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum)
@@ -5814,6 +6453,10 @@ static bool endlessDebugScreen(bool jumpMode)
 						if (episodeNum != startEp)
 							initial_episode_num = episodeNum;
 						select_level(sec, 0);
+						// Stage the level this machine LANDED on, not the fact that it rolled: the
+						// peer must adopt the concrete result, or its own roll would send it
+						// somewhere else entirely.
+						debug_level_pick_stage((JE_byte)episodeNum, sec, 0);
 					}
 					else
 					{
@@ -5822,6 +6465,23 @@ static bool endlessDebugScreen(bool jumpMode)
 						if (episodeNum != startEp)
 							initial_episode_num = episodeNum;
 						select_level(allLevelSec[dbgBase], allLevelFile[dbgBase]);  // sets forcedLvlFileNum
+						debug_level_pick_stage((JE_byte)allLevelEp[dbgBase],
+						                       (JE_byte)allLevelSec[dbgBase],
+						                       (JE_byte)allLevelFile[dbgBase]);
+					}
+					// ...and the run state around it, which the level pick alone does not carry.
+					{
+						JE_byte staged[ENDLESS_JUMP_PERK_MAX];
+						int n = NPERKS < ENDLESS_JUMP_PERK_MAX ? NPERKS : ENDLESS_JUMP_PERK_MAX;
+						for (int p = 0; p < n; ++p)
+							staged[p] = (JE_byte)(dbgPerks[p] < 0 ? 0
+							                    : dbgPerks[p] > 255 ? 255 : dbgPerks[p]);
+						endless_jump_pick_stage((Uint16)endlessRunDepth, endlessActiveMods,
+						                        staged, (JE_byte)n);
+						// Tell the partner NOW, not at the departure: they may be sitting in a
+						// wait for a course this machine has just stopped charting, and this is
+						// what releases it. Waiting to announce is what left both sides stuck.
+						network_endless_jump_publish();
 					}
 					chosen = true;
 					done = true;
@@ -7964,6 +8624,12 @@ bool JE_customWeaponCreator(bool canEquip)
 	{
 		setDelay(3);
 
+		// A design session lasts minutes. The peer needs the keep-alives, and this machine
+		// still owes acknowledgements and adoption for whatever the partner does meanwhile.
+		NETWORK_KEEP_ALIVE();
+		while (network_shop_pump())
+			;
+
 		if (cwNoticeTicks > 0)
 			--cwNoticeTicks;
 		if (cwDeleteConfirmTicks > 0)
@@ -8490,7 +9156,7 @@ void JE_menuFunction(JE_byte select)
 			curMenu = MENU_UPGRADES;
 			break;
 		case 5: //options
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 6: //nextlevel
 			if (endlessMode && endlessLockedSortie)
@@ -8499,6 +9165,30 @@ void JE_menuFunction(JE_byte select)
 				// course choice, no re-run of endlessSelectCourse). Arms jumpSection -> the shop loop
 				// exits and JE_loadMap loads the level.
 				endlessArmLockedRelaunch();
+				break;
+			}
+			// Online Endless: the other player charts this one, so Play Next Level waits here for
+			// the sector they pick and only then commits to leaving. Waiting first keeps Esc
+			// working the whole time and keeps this machine out of a rendezvous it would have no
+			// way out of if the pair somehow agreed that neither of them was charting.
+			if (endlessCoop() && !endlessLocalPlayerCharts())
+			{
+				const int course = shopEndlessAwaitCourse(true);
+				if (course == SHOP_COURSE_JUMPED)
+				{
+					// The partner jumped; their level and run state are already adopted. Leave
+					// with no course of our own, and the fold is skipped on both machines.
+					endlessCoopCourse = -1;
+					jumpSection = true;
+					break;
+				}
+				if (course < 0)
+				{
+					newPal = 1;  // the notice shaded the frame; the loop repaints under a fresh palette
+					break;
+				}
+				endlessCoopCourse = course;
+				jumpSection = true;
 				break;
 			}
 			curMenu = MENU_PLAY_NEXT_LEVEL;
@@ -8551,8 +9241,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment): only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else
 			{
@@ -8591,6 +9281,9 @@ void JE_menuFunction(JE_byte select)
 		else
 			endlessTakePerk(select - 2);        // offers are rows 2.., choice index = select - 2
 		endlessPerkPending = false;             // consumed; can't return this visit
+		// Both are purchases as far as the other machine is concerned: the perk row and the wallet
+		// both moved, and its mirror of this ship is stale until it hears so.
+		network_shop_send_transaction();
 		JE_playSampleNum(S_SELECT);
 		curMenu = MENU_FULL_GAME;
 		break;
@@ -8604,6 +9297,7 @@ void JE_menuFunction(JE_byte select)
 		{
 			if (endlessTryBuyExtraPerk())
 			{
+				network_shop_send_transaction();
 				JE_playSampleNum(S_SELECT);
 				endlessPerkListMode = false;   // a real forced PICK, not the read-only list
 				configure_endless_perk_menu();
@@ -8631,6 +9325,8 @@ void JE_menuFunction(JE_byte select)
 			case 12: bought = endlessTryGamble();         break;  // random good/bad outcome (pinned last)
 			}
 			JE_playSampleNum(bought ? S_SELECT : S_SPRING);
+			if (bought)
+				network_shop_send_transaction();  // cash, drives, charges and tokens all live in the block
 			if (bought && select == 2)  // a reroll regenerated the stock: re-sort so None sinks to the bottom
 			{
 				sort_shop_inventory();
@@ -8659,18 +9355,24 @@ void JE_menuFunction(JE_byte select)
 		}
 		else if (customWeaponEnabled && select == 9) // Custom: open the creator, equip from there
 		{
-			if (JE_customWeaponCreator(true))
+			const bool equipped = JE_customWeaponCreator(true);
+			if (equipped)
 			{
 				// Equipped: reflect the new loadout so the shop keeps it and the custom
 				// weapon shows in its Front/Rear weapon list.
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
+
+			// The new loadout has to reach the other machine like any other purchase; the
+			// design behind it goes out at the rendezvous.
+			if (equipped)
+				network_shop_send_transaction();
 		}
 		else // selected item to upgrade
 		{
-			old_items[0] = player[0].items;
+			old_items[shopPlayerIndex] = shopPlayer()->items;
 
 			weaponSimTime = 0;
 			lastDirection = 1;
@@ -8681,19 +9383,23 @@ void JE_menuFunction(JE_byte select)
 			curMenu = MENU_UPGRADE_SUB;
 			lastCurSel = curSel[MENU_UPGRADE_SUB];
 			// Shop with the equipped item's trade-in value folded in; every exit restores the real
-			// balance (player[0].cash = JE_cashLeft()) and books the delta via endlessShopTradeCommit.
+			// balance (shop player cash = JE_cashLeft()) and books the delta via endlessShopTradeCommit.
 			// NOTE for endless: the wallet is deliberately FAKE between Begin and those exits, so no
 			// credit, debit, or audit may run in the window.
 			endlessShopTradeBegin();
-			player[0].cash = player[0].cash * 2 - JE_cashLeft();
+			shopPlayer()->cash = shopPlayer()->cash * 2 - JE_cashLeft();
 		}
 		break;
 
+	// One page, two row numberings: the online one has no Load Game, so options_full_row()
+	// maps whichever is open back onto the OPT_* names.  The volume and sensitivity rows are
+	// bars, adjusted with left/right, and do nothing on Enter.
 	case MENU_OPTIONS:
-		switch (select)
+	case MENU_LIMITED_OPTIONS:
+		switch (options_full_row(select))
 		{
-		case 2:  // Load Game
-		case 3:  // Save Game
+		case OPT_LOAD:
+		case OPT_SAVE:
 			// Endless hardcore forbids ALL saving/loading (these rows are greyed out in
 			// JE_drawMenuChoices); a deny beep confirms the press did nothing.
 			if (endlessMode && endlessHardcore())
@@ -8702,22 +9408,21 @@ void JE_menuFunction(JE_byte select)
 				break;
 			}
 			curMenu = MENU_LOAD_SAVE;
-			performSave = (select == 3);  // item 2 = Load, item 3 = Save
+			performSave = (options_full_row(select) == OPT_SAVE);
 			quikSave = false;
 			break;
-		// Item 6 is the ship-sensitivity bar (adjusted via left/right); the config rows
-		// below it and Exit each shift down by one.
-		case 7:
+		case OPT_JOYSTICK:
 			curMenu = MENU_JOYSTICK_CONFIG;
 			break;
-		case 8:
+		case OPT_KEYBOARD:
 			curMenu = MENU_KEYBOARD_CONFIG;
 			break;
-		case 9:
+		case OPT_MOUSE:
 			curMenu = MENU_MOUSE_CONFIG;
 			break;
-		case 10:
-			curMenu = MENU_FULL_GAME;
+		case OPT_EXIT:
+			// Online Arcade runs its own front page; everything else goes back to buy/sell.
+			curMenu = (isNetworkGame && !coop_mode_active()) ? MENU_1_PLAYER_ARCADE : MENU_FULL_GAME;
 			break;
 		}
 		break;
@@ -8727,6 +9432,13 @@ void JE_menuFunction(JE_byte select)
 		{
 			curMenu = MENU_FULL_GAME;
 			newPal = 1;
+		}
+		else if (endlessCoop())
+		{
+			// Online Endless: hold the pick until both players have finished shopping, so the
+			// sector is folded from a complete pair of purchase sets (see shopLeaveOutpost).
+			endlessCoopCourse = (int)curSelect - 2;
+			jumpSection = true;
 		}
 		else if (endlessMode)
 		{
@@ -8749,8 +9461,9 @@ void JE_menuFunction(JE_byte select)
 		{
 			JE_playSampleNum(S_ITEM);
 
-			player[0].cash = JE_cashLeft();
+			shopPlayer()->cash = JE_cashLeft();
 			endlessShopTradeCommit();
+			network_shop_send_transaction();
 			curMenu = MENU_UPGRADES;
 		}
 		break;
@@ -8781,6 +9494,12 @@ void JE_menuFunction(JE_byte select)
 			do
 			{
 				setDelay(1);
+
+				// The capture blocks until a key arrives; online, the wait can outlast the
+				// peer's timeout unless the connection is serviced through it.
+				NETWORK_KEEP_ALIVE();
+				while (network_shop_pump())
+					;
 
 				col += colC;
 				if (col < 243 || col > 248)
@@ -8902,7 +9621,7 @@ void JE_menuFunction(JE_byte select)
 			} while (inputDevice[temp] == inputDevice[temp == 0 ? 1 : 0]);
 			break;
 		case 5:
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 6:
 			if (debugMode)
@@ -8910,8 +9629,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -8951,8 +9670,8 @@ void JE_menuFunction(JE_byte select)
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -8970,27 +9689,6 @@ void JE_menuFunction(JE_byte select)
 				gameLoaded = true;
 				mainLevel = 0;
 			}
-			break;
-		}
-		break;
-
-	case MENU_LIMITED_OPTIONS:
-		switch (select)
-		{
-		case 2:
-			curMenu = MENU_JOYSTICK_CONFIG;
-			break;
-		case 3:
-			curMenu = MENU_KEYBOARD_CONFIG;
-			break;
-		// Item 6 is the ship-sensitivity bar; 7 = Save Game (2-player page), Exit sits at 8.
-		case 7:
-			curMenu = MENU_LOAD_SAVE;
-			performSave = true;
-			quikSave = false;
-			break;
-		case 8:
-			curMenu = MENU_1_PLAYER_ARCADE;
 			break;
 		}
 		break;
@@ -9090,7 +9788,7 @@ joystick_assign_done:
 			JE_doShipSpecs();
 			break;
 		case 4:
-			curMenu = MENU_OPTIONS;
+			curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 			break;
 		case 5:
 			if (debugMode)
@@ -9098,8 +9796,8 @@ joystick_assign_done:
 				// Debug Menu (equipment); only present when Debug Mode is on.
 				JE_debugMenu(true);
 				ensure_equipped_items_visible();
-				old_items[0] = player[0].items;
-				player[0].last_items = player[0].items;
+				old_items[shopPlayerIndex] = shopPlayer()->items;
+				shopPlayer()->last_items = shopPlayer()->items;
 			}
 			else if (JE_quitRequest())
 			{
@@ -9143,12 +9841,12 @@ joystick_assign_done:
 				memcpy(mouseSettings, defaultMouseSettings, sizeof(mouseSettings));
 				break;
 			case 6:
-				curMenu = MENU_OPTIONS;
+				curMenu = isNetworkGame ? MENU_LIMITED_OPTIONS : MENU_OPTIONS;
 				break;
 		}
 	}
 
-	old_items[0] = player[0].items;
+	old_items[shopPlayerIndex] = shopPlayer()->items;
 }
 
 void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
@@ -9166,26 +9864,26 @@ void JE_drawShipSpecs(SDL_Surface * screen, SDL_Surface * temp_screen)
 	JE_rectangle(screen, 1, 1, 318, 198, 35);
 
 	verticalHeight = 9;
-	JE_outText(screen, 10, 2, ships[player[0].items.ship].name, 12, 3);
-	JE_helpBox(screen, 100, 20, shipInfo[player[0].items.ship-1][0], 40);
-	JE_helpBox(screen, 100, 100, shipInfo[player[0].items.ship-1][1], 40);
+	JE_outText(screen, 10, 2, ships[shopPlayer()->items.ship].name, 12, 3);
+	JE_helpBox(screen, 100, 20, shipInfo[shopPlayer()->items.ship-1][0], 40);
+	JE_helpBox(screen, 100, 100, shipInfo[shopPlayer()->items.ship-1][1], 40);
 	verticalHeight = 7;
 
 	JE_outText(screen, JE_fontCenter(miscText[4], TINY_FONT), 190, miscText[4], 12, 2);
 
 	//now draw the green ship over that.
 	//This hardcoded stuff is for positioning our little ship graphic
-	if (player[0].items.ship > 90)
+	if (shopPlayer()->items.ship > 90)
 	{
 		temp_index = 32;
 	}
-	else if (player[0].items.ship > 0)
+	else if (shopPlayer()->items.ship > 0)
 	{
-		temp_index = ships[player[0].items.ship].bigshipgraphic;
+		temp_index = ships[shopPlayer()->items.ship].bigshipgraphic;
 	}
 	else
 	{
-		temp_index = ships[old_items[0].ship].bigshipgraphic;
+		temp_index = ships[old_items[shopPlayerIndex].ship].bigshipgraphic;
 	}
 
 	switch (temp_index)
@@ -9253,25 +9951,25 @@ static void JE_drawSimSidekicks(void)
 {
 	for (uint i = 0; i < 2; ++i)
 	{
-		const JE_OptionType *o = &options[player[0].items.sidekick[i]];
+		const JE_OptionType *o = &options[shopPlayer()->items.sidekick[i]];
 		if (o->option == 0)
 			continue;  // slot empty ("None")
 
 		// The equipped option can change as you browse the shop without the frame counter being
 		// reset, so keep it in range before indexing gr[], then advance it like gameplay.
-		if (player[0].sidekick[i].animation_frame >= o->ani)
-			player[0].sidekick[i].animation_frame = 0;
-		if (player[0].sidekick[i].animation_enabled)
+		if (shopPlayer()->sidekick[i].animation_frame >= o->ani)
+			shopPlayer()->sidekick[i].animation_frame = 0;
+		if (shopPlayer()->sidekick[i].animation_enabled)
 		{
-			if (++player[0].sidekick[i].animation_frame >= o->ani)
+			if (++shopPlayer()->sidekick[i].animation_frame >= o->ani)
 			{
-				player[0].sidekick[i].animation_frame = 0;
-				player[0].sidekick[i].animation_enabled = (o->option == 1);
+				shopPlayer()->sidekick[i].animation_frame = 0;
+				shopPlayer()->sidekick[i].animation_enabled = (o->option == 1);
 			}
 		}
 
-		const int x = player[0].sidekick[i].x, y = player[0].sidekick[i].y;
-		const uint sprite = o->gr[player[0].sidekick[i].animation_frame];
+		const int x = shopPlayer()->sidekick[i].x, y = shopPlayer()->sidekick[i].y;
+		const uint sprite = o->gr[shopPlayer()->sidekick[i].animation_frame];
 
 		// Tag the body like gameplay so JE_weaponSimSmoothPresent's rl_replay_interp can
 		// match it across ticks; otherwise a moving pod (orbiting satellite) steps at the
@@ -9301,10 +9999,10 @@ void JE_weaponSimUpdate(void)
 		if (!rightPower || !rightPowerAfford)
 			blit_sprite(VGAScreenSeg, 119, 149, OPTION_SHAPES, 14);  // upgrade disabled
 
-		temp = player[0].items.weapon[curSel[MENU_UPGRADES]-3].power;
+		temp = shopPlayer()->items.weapon[curSel[MENU_UPGRADES]-3].power;
 
 		if ((curMenu == MENU_UPGRADE_SUB) && (curSel[MENU_UPGRADES] == 4)
-			&& weaponPort[player[0].items.weapon[REAR_WEAPON].id].opnum == 2
+			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2
 			&& (weaponSimTime >= 75))
 		{
 			// [/] Rear Weapon Mode
@@ -9345,7 +10043,7 @@ void JE_weaponSimUpdate(void)
 	else
 		blit_sprite(VGAScreenSeg, 20, 146, OPTION_SHAPES, 17);  // hide power level interface
 
-	JE_drawItem(1, player[0].items.ship, player[0].x - 5, player[0].y - 7);
+	JE_drawItem(1, shopPlayer()->items.ship, shopPlayer()->x - 5, shopPlayer()->y - 7);
 
 	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
 }
@@ -9359,8 +10057,8 @@ void JE_weaponViewFrame(void)
 
 	update_and_draw_starfield(VGAScreen, 1);
 
-	mouseX = player[0].x;
-	mouseY = player[0].y;
+	mouseX = shopPlayer()->x;
+	mouseY = shopPlayer()->y;
 
 	// Endless perks quicken the guns in the preview as in play: apply the fire-rate perks' extra
 	// shotRepeat decrements once per tick, so the preview's fire cadence (and the generator drain on
@@ -9383,9 +10081,9 @@ void JE_weaponViewFrame(void)
 		}
 		else
 		{
-			const uint item       = player[0].items.weapon[i].id,
-			           item_power = player[0].items.weapon[i].power - 1,
-			           item_mode = (i == REAR_WEAPON) ? player[0].weapon_mode - 1 : 0;
+			const uint item       = shopPlayer()->items.weapon[i].id,
+			           item_power = shopPlayer()->items.weapon[i].power - 1,
+			           item_mode = (i == REAR_WEAPON) ? shopPlayer()->weapon_mode - 1 : 0;
 
 			// Zica Laser Lv11 tweaks: mirror the in-game fire (JE_mainGamePlayerFunctions)
 			// so the preview matches. Long swaps in the two LV10-length side beams; Buff
@@ -9396,16 +10094,16 @@ void JE_weaponViewFrame(void)
 			if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 				l11_primary = ZICA_LONG_WEAP_LEFT;
 
-			b = player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, l11_primary, 1);
+			b = player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, l11_primary, 1);
 
 			if (b < MAX_PWEAPON && zica_l11 && (zicaLaserLength == ZICA_LEN_LONG || zicaLaserBuff))
 			{
 				JE_word saved_poweruse = weaponPort[item].poweruse;
 				weaponPort[item].poweruse = 0;
 				if (zicaLaserLength == ZICA_LEN_LONG)
-					player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, ZICA_LONG_WEAP_RIGHT, 1);
+					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, ZICA_LONG_WEAP_RIGHT, 1);
 				if (zicaLaserBuff)
-					player_shot_create(item, i, player[0].x, player[0].y, mouseX, mouseY, weaponPort[item].op[item_mode][9], 1);
+					player_shot_create(item, i, shopPlayer()->x, shopPlayer()->y, mouseX, mouseY, weaponPort[item].op[item_mode][9], 1);
 				weaponPort[item].poweruse = saved_poweruse;
 			}
 		}
@@ -9414,46 +10112,46 @@ void JE_weaponViewFrame(void)
 	// Position + fire both sidekicks, mirroring the gameplay mounts so the preview is faithful:
 	// side pods (tr 0), front pods (tr 2), and orbiting satellites (tr 4) use their gameplay
 	// offsets; trailing companions (tr 1/3) keep a side-by-side layout.
-	const bool bothFront = options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 2
-	                    && options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 2;
+	const bool bothFront = options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 2
+	                    && options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 2;
 
 	// advance the shared satellite angle exactly like gameplay
-	if (options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 4
-	    && options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 4)
+	if (options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 4
+	    && options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 4)
 		optionSatelliteRotate += 0.2f;
-	else if (options[player[0].items.sidekick[LEFT_SIDEKICK]].tr == 4
-	         || options[player[0].items.sidekick[RIGHT_SIDEKICK]].tr == 4)
+	else if (options[shopPlayer()->items.sidekick[LEFT_SIDEKICK]].tr == 4
+	         || options[shopPlayer()->items.sidekick[RIGHT_SIDEKICK]].tr == 4)
 		optionSatelliteRotate += 0.15f;
 
 	for (uint i = 0; i < 2; ++i)
 	{
-		const uint item = player[0].items.sidekick[i];
+		const uint item = shopPlayer()->items.sidekick[i];
 		const JE_OptionType *o = &options[item];
 		const uint shot_i = (i == LEFT_SIDEKICK) ? SHOT_LEFT_SIDEKICK : SHOT_RIGHT_SIDEKICK;
 
 		switch (o->tr)
 		{
 		case 0:  // fixed side pod (e.g. Zica Supercharger)
-			player[0].sidekick[i].x = player[0].x + ((i == LEFT_SIDEKICK) ? -14 : 16);
-			player[0].sidekick[i].y = player[0].y;
+			shopPlayer()->sidekick[i].x = shopPlayer()->x + ((i == LEFT_SIDEKICK) ? -14 : 16);
+			shopPlayer()->sidekick[i].y = shopPlayer()->y;
 			break;
 		case 2:  // front-mounted
-			player[0].sidekick[i].x = !bothFront ? player[0].x
-			                        : (i == LEFT_SIDEKICK ? player[0].x - FRONT_OPTION_SPREAD
-			                                              : player[0].x + FRONT_OPTION_SPREAD);
-			player[0].sidekick[i].y = MAX(10, player[0].y - 20);
+			shopPlayer()->sidekick[i].x = !bothFront ? shopPlayer()->x
+			                        : (i == LEFT_SIDEKICK ? shopPlayer()->x - FRONT_OPTION_SPREAD
+			                                              : shopPlayer()->x + FRONT_OPTION_SPREAD);
+			shopPlayer()->sidekick[i].y = MAX(10, shopPlayer()->y - 20);
 			break;
 		case 4:  // orbiting satellite (e.g. Satellite Marlo); the two slots orbit opposite ends
 		{
 			const int dx = roundf(sinf(optionSatelliteRotate) * 20),
 			          dy = roundf(cosf(optionSatelliteRotate) * 20);
-			player[0].sidekick[i].x = player[0].x + ((i == LEFT_SIDEKICK) ? dx : -dx);
-			player[0].sidekick[i].y = player[0].y + ((i == LEFT_SIDEKICK) ? dy : -dy);
+			shopPlayer()->sidekick[i].x = shopPlayer()->x + ((i == LEFT_SIDEKICK) ? dx : -dx);
+			shopPlayer()->sidekick[i].y = shopPlayer()->y + ((i == LEFT_SIDEKICK) ? dy : -dy);
 			break;
 		}
 		default:  // trailing companions (tr 1/3); deliberately side by side, not gameplay-faithful
-			player[0].sidekick[i].x = (i == LEFT_SIDEKICK) ? 72 - 15 : 72 + 15;
-			player[0].sidekick[i].y = 120;
+			shopPlayer()->sidekick[i].x = (i == LEFT_SIDEKICK) ? 72 - 15 : 72 + 15;
+			shopPlayer()->sidekick[i].y = 120;
 			break;
 		}
 
@@ -9465,8 +10163,8 @@ void JE_weaponViewFrame(void)
 			}
 			else
 			{
-				b = player_shot_create(o->wport, shot_i, player[0].sidekick[i].x, player[0].sidekick[i].y, mouseX, mouseY, o->wpnum, 1);
-				player[0].sidekick[i].animation_enabled = true;  // animate the body while it fires
+				b = player_shot_create(o->wport, shot_i, shopPlayer()->sidekick[i].x, shopPlayer()->sidekick[i].y, mouseX, mouseY, o->wpnum, 1);
+				shopPlayer()->sidekick[i].animation_enabled = true;  // animate the body while it fires
 			}
 		}
 	}
@@ -9484,7 +10182,7 @@ void JE_weaponViewFrame(void)
 	blit_sprite(VGAScreenSeg, 0, 0, OPTION_SHAPES, 12); // upgrade interface
 
 	// weapon mode indicator
-	if (player[0].weapon_mode == 1)
+	if (shopPlayer()->weapon_mode == 1)
 	{
 		blit_sprite(VGAScreenSeg, 3, 56, OPTION_SHAPES, 18);  // lit
 		blit_sprite(VGAScreenSeg, 3, 64, OPTION_SHAPES, 19);  // unlit

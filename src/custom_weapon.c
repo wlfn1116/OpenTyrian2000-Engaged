@@ -3,8 +3,10 @@
 #include "custom_weapon.h"
 
 #include "config.h"
+#include "config_file.h"  // COMPILE_TIME_ASSERT
 #include "episodes.h"
 #include "file.h"
+#include "network.h"
 #include "player.h"
 #include "sprite.h"
 
@@ -29,6 +31,18 @@ bool customWeaponEnabled   = true;
 int  customWeaponPort      = 0;
 int  customSidekickSlot    = 0;
 
+int  customWeaponOwnerPort[CUSTOM_WEAPON_OWNERS];
+int  customSidekickOwnerSlot[CUSTOM_WEAPON_OWNERS];
+
+// One published design per owner. Owner 0 is also what the working globals compile into, so
+// the record exists even in a one-player game; only Online Campaign ever fills owner 1.
+static CustomWeaponSlot customWeaponOwnerDesign[CUSTOM_WEAPON_OWNERS];
+static bool             customWeaponOwnerDefined[CUSTOM_WEAPON_OWNERS];
+
+COMPILE_TIME_ASSERT(custom_scratch_slots_fit_the_gap,
+                    CUSTOM_WEAP_BASE + CUSTOM_WEAPON_OWNERS * CUSTOM_WEAPON_MODES *
+                    CUSTOM_POWER_LEVELS <= WEAP_START2);
+
 // Sidekick body appearance (see custom_weapon.h). Defaults reproduce the previous hardcoded
 // side pod (the cut Charge-Laser's known-good frame in spriteSheet9).
 int  customSidekickMount     = 0;   // side pod
@@ -52,10 +66,52 @@ static inline int clampi(int v, int lo, int hi)
 	return (v < lo) ? lo : (v > hi) ? hi : v;
 }
 
-// The scratch weapon slot backing (mode, level).
-static int customScratchSlot(int mode, int level)
+// The scratch weapon slot backing (owner, mode, level).
+static int customScratchSlot(int owner, int mode, int level)
 {
-	return CUSTOM_WEAP_BASE + mode * CUSTOM_POWER_LEVELS + level;
+	return CUSTOM_WEAP_BASE + (owner * CUSTOM_WEAPON_MODES + mode) * CUSTOM_POWER_LEVELS + level;
+}
+
+int customWeaponLocalOwner(void)
+{
+	const int owner = (int)gameplay_local_player_index();
+	return clampi(owner, 0, CUSTOM_WEAPON_OWNERS - 1);
+}
+
+// Copy the editable globals into / out of a design record. The library slots, the reserved
+// per-owner slots and the wire format all go through these, so a design has one definition.
+static void customDesignStore(CustomWeaponSlot *s)
+{
+	SDL_strlcpy(s->name, customWeaponName, sizeof(s->name));
+	s->cost         = customWeaponCost;
+	s->powerUse     = customWeaponPowerUse;
+	s->equipSlot    = customWeaponEquipSlot;
+	s->itemGraphic  = customWeaponItemGraphic;
+	s->chargeStages = customWeaponChargeStages;
+	s->modes        = customWeaponModes;
+	s->sidekickMount     = customSidekickMount;
+	s->sidekickSprite    = customSidekickSprite;
+	s->sidekickFrames    = customSidekickFrames;
+	s->sidekickFrameStep = customSidekickFrameStep;
+	s->sidekickAnimate   = customSidekickAnimate;
+	memcpy(s->raw, customWeaponRaw, sizeof(customWeaponRaw));
+}
+
+static void customDesignLoad(const CustomWeaponSlot *s)
+{
+	SDL_strlcpy(customWeaponName, s->name, sizeof(customWeaponName));
+	customWeaponCost         = s->cost;
+	customWeaponPowerUse     = s->powerUse;
+	customWeaponEquipSlot    = s->equipSlot;
+	customWeaponItemGraphic  = s->itemGraphic;
+	customWeaponChargeStages = s->chargeStages;
+	customWeaponModes        = clampi(s->modes, 1, CUSTOM_WEAPON_MODES);
+	customSidekickMount      = s->sidekickMount;
+	customSidekickSprite     = s->sidekickSprite;
+	customSidekickFrames     = s->sidekickFrames;
+	customSidekickFrameStep  = s->sidekickFrameStep;
+	customSidekickAnimate    = s->sidekickAnimate;
+	memcpy(customWeaponRaw, s->raw, sizeof(customWeaponRaw));
 }
 
 int customBulletMaxPower(int presetIdx)
@@ -604,82 +660,102 @@ int customSidekickSpriteCount(int mount)
 	return SDL_SwapLE16(((const Uint16 *)s->data)[0]) / 2;   // offset table's first entry = #sprites * 2
 }
 
-// Synthesize the custom sidekick (an options[] entry firing the compiled custom weapon);
-// rebuilt whenever the weapon changes. It fires the mode-0 designs: with charge (pwr > 0)
-// the engine fires wpnum + charge, and the consecutive level slots make the per-level curve
-// the charge ramp. Body appearance comes from the customSidekick* globals.
-static void customSidekickMaterialize(void)
+// Synthesize an owner's custom sidekick (an options[] entry firing that owner's compiled
+// weapon); rebuilt whenever the design changes. It fires the mode-0 designs: with charge
+// (pwr > 0) the engine fires wpnum + charge, and the consecutive level slots make the
+// per-level curve the charge ramp. Body appearance comes from the design record.
+static void customSidekickMaterialize(int owner, const CustomWeaponSlot *design)
 {
-	if (customSidekickSlot <= 0 || customSidekickSlot > OPTION_NUM)
+	const int slot = customSidekickOwnerSlot[owner];
+	if (slot <= 0 || slot > OPTION_NUM)
 		return;
 
 	// A charge sidekick fires wpnum + charge (charge in 0..pwr), so it needs a valid
-	// weapon at each of those slots. customWeaponChargeStages is the shot COUNT (1..11),
-	// so pwr = count - 1, and the top stage stays within our compiled mode-0 levels
-	// (CUSTOM_WEAP_BASE .. CUSTOM_WEAP_BASE + CUSTOM_POWER_LEVELS-1).
-	const int pwr = clampi(customWeaponChargeStages - 1, 0, CUSTOM_POWER_LEVELS - 1);
+	// weapon at each of those slots. chargeStages is the shot count (1..11), so
+	// pwr = count - 1, and the top stage stays within this owner's mode-0 levels.
+	const int pwr = clampi(design->chargeStages - 1, 0, CUSTOM_POWER_LEVELS - 1);
 
-	const int mount   = clampi(customSidekickMount,     0, CUSTOM_SIDEKICK_MOUNTS - 1);
-	const int frames  = clampi(customSidekickFrames,    1, 20);
-	const int step    = clampi(customSidekickFrameStep, 0, 40);
-	const int animate = clampi(customSidekickAnimate,   1, 2);
+	const int mount   = clampi(design->sidekickMount,     0, CUSTOM_SIDEKICK_MOUNTS - 1);
+	const int frames  = clampi(design->sidekickFrames,    1, 20);
+	const int step    = clampi(design->sidekickFrameStep, 0, 40);
+	const int animate = clampi(design->sidekickAnimate,   1, 2);
 
 	// Clamp 1-based body sprite reads, including charge frames and 2x2 mount offsets.
 	const int count = customSidekickSpriteCount(mount);
 	const int extra = (mount == 1 || mount == 2) ? 20 : 0;          // blit_sprite2x2 index+1/+19/+20
 	const int hiIdx = (count > 0 && count - pwr - extra >= 1) ? count - pwr - extra : 1;
-	const int base  = clampi(customSidekickSprite, 1, hiIdx);
+	const int base  = clampi(design->sidekickSprite, 1, hiIdx);
 
-	JE_OptionType *o = &options[customSidekickSlot];
+	JE_OptionType *o = &options[slot];
 	memset(o, 0, sizeof(*o));
-	SDL_strlcpy(o->name, customWeaponName, sizeof(o->name));
+	SDL_strlcpy(o->name, design->name, sizeof(o->name));
 	o->pwr         = (JE_byte)pwr;                   // 0 = instant fire; N = N more charge shots
 	o->itemgraphic = 193;                            // valid shop icon
-	o->cost        = (JE_word)clampi(customWeaponCost, 0, 64000);
+	o->cost        = (JE_word)clampi(design->cost, 0, 64000);
 	o->tr          = (JE_byte)mount;                 // mount style (also selects the body sprite sheet)
 	o->option      = (JE_byte)animate;               // 1 = animate while firing, 2 = always
 	o->opspd       = 3;
 	o->ani         = (JE_byte)frames;
 	for (int f = 0; f < 20; ++f)                     // simple flip-book: base, base+step, base+2*step, ...
 		o->gr[f] = (JE_word)clampi((f < frames) ? base + f * step : base, 1, hiIdx);
-	o->wport       = (JE_byte)customWeaponPort;      // fires through the custom port ...
-	o->wpnum       = CUSTOM_WEAP_BASE;               // ... mode-0 level 1 (+ charge steps up levels)
+	o->wport       = (JE_byte)customWeaponOwnerPort[owner];  // fires through that owner's port ...
+	o->wpnum       = (JE_word)customScratchSlot(owner, 0, 0);  // ... mode-0 level 1 (+ charge steps up)
 	o->ammo        = 0;                              // infinite
 	o->stop        = true;
 	o->icongr      = 6;
 }
 
-void customWeaponMaterialize(void)
+void customWeaponMaterializeOwner(int owner)
 {
-	if (customWeaponPort <= 0 || customWeaponPort > PORT_NUM)
+	if (owner < 0 || owner >= CUSTOM_WEAPON_OWNERS)
 		return;
 
-	customWeaponModes = clampi(customWeaponModes, 1, CUSTOM_WEAPON_MODES);
+	const int port = customWeaponOwnerPort[owner];
+	if (port <= 0 || port > PORT_NUM)
+		return;
+
+	CustomWeaponSlot *const design = &customWeaponOwnerDesign[owner];
+	const int modes = clampi(design->modes, 1, CUSTOM_WEAPON_MODES);
 
 	// Compile every (mode, level): the design already IS a weapon struct, so this is
 	// a plain copy into its own scratch slot (kept separate from the source weapons).
 	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
 		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
 		{
-			sanitizeRawWeapon(&customWeaponRaw[m][p]);
-			weapons[customScratchSlot(m, p)] = customWeaponRaw[m][p];
+			sanitizeRawWeapon(&design->raw[m][p]);
+			weapons[customScratchSlot(owner, m, p)] = design->raw[m][p];
 		}
 
 	// The reserved port: fire mode M, power level P (1..11) fires the matching slot.
 	// A single-mode weapon points op[1] at the mode-0 slots so a rear-gun toggle is a
 	// no-op instead of firing an undesigned bank.
-	SDL_strlcpy(weaponPort[customWeaponPort].name, customWeaponName, sizeof(weaponPort[customWeaponPort].name));
-	weaponPort[customWeaponPort].opnum = (JE_byte)customWeaponModes;
+	SDL_strlcpy(weaponPort[port].name, design->name, sizeof(weaponPort[port].name));
+	weaponPort[port].opnum = (JE_byte)modes;
 	for (int p = 0; p < 11; ++p)
 	{
-		weaponPort[customWeaponPort].op[0][p] = customScratchSlot(0, p);
-		weaponPort[customWeaponPort].op[1][p] = customScratchSlot(customWeaponModes >= 2 ? 1 : 0, p);
+		weaponPort[port].op[0][p] = (JE_word)customScratchSlot(owner, 0, p);
+		weaponPort[port].op[1][p] = (JE_word)customScratchSlot(owner, modes >= 2 ? 1 : 0, p);
 	}
-	weaponPort[customWeaponPort].cost        = (JE_word)clampi(customWeaponCost, 0, 64000);
-	weaponPort[customWeaponPort].itemgraphic = (JE_word)clampi(customWeaponItemGraphic, 1, 237);  // shop/HUD icon
-	weaponPort[customWeaponPort].poweruse    = (JE_word)clampi(customWeaponPowerUse, 0, 255);
+	weaponPort[port].cost        = (JE_word)clampi(design->cost, 0, 64000);
+	weaponPort[port].itemgraphic = (JE_word)clampi(design->itemGraphic, 1, 237);  // shop/HUD icon
+	weaponPort[port].poweruse    = (JE_word)clampi(design->powerUse, 0, 255);
 
-	customSidekickMaterialize();  // keep the sidekick in sync with the weapon
+	customSidekickMaterialize(owner, design);  // keep the sidekick in sync with the weapon
+	customWeaponOwnerDefined[owner] = true;
+}
+
+void customWeaponMaterialize(void)
+{
+	customWeaponModes = clampi(customWeaponModes, 1, CUSTOM_WEAPON_MODES);
+
+	const int owner = customWeaponLocalOwner();
+	customDesignStore(&customWeaponOwnerDesign[owner]);
+	customWeaponMaterializeOwner(owner);
+
+	// The editor edits in place, so take the sanitized weapons back.
+	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
+		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
+			customWeaponRaw[m][p] = customWeaponOwnerDesign[owner].raw[m][p];
 
 	// Reset live fire cursors and cooldowns after replacing the compiled weapon.
 	memset(shotMultiPos, 0, sizeof(shotMultiPos));
@@ -703,31 +779,34 @@ bool customWeaponEquip(void)
 
 	customWeaponMaterialize();
 
+	// Online Campaign fits it to the ship this machine flies; every other mode has only one.
+	Player *const this_player = &player[gameplay_local_player_index()];
+
 	switch (customWeaponEquipSlot)
 	{
 	case CUSTOM_EQUIP_REAR:
-		player[0].items.weapon[REAR_WEAPON].id = (Uint8)customWeaponPort;
-		player[0].items.weapon[REAR_WEAPON].power = 1;
+		this_player->items.weapon[REAR_WEAPON].id = (Uint8)customWeaponPort;
+		this_player->items.weapon[REAR_WEAPON].power = 1;
 		break;
 	case CUSTOM_EQUIP_LEFT:
 		if (customSidekickSlot <= 0)
 			return false;
-		player[0].items.sidekick[LEFT_SIDEKICK] = (Uint8)customSidekickSlot;
+		this_player->items.sidekick[LEFT_SIDEKICK] = (Uint8)customSidekickSlot;
 		break;
 	case CUSTOM_EQUIP_RIGHT:
 		if (customSidekickSlot <= 0)
 			return false;
-		player[0].items.sidekick[RIGHT_SIDEKICK] = (Uint8)customSidekickSlot;
+		this_player->items.sidekick[RIGHT_SIDEKICK] = (Uint8)customSidekickSlot;
 		break;
 	case CUSTOM_EQUIP_BOTH:
 		if (customSidekickSlot <= 0)
 			return false;
-		player[0].items.sidekick[LEFT_SIDEKICK]  = (Uint8)customSidekickSlot;
-		player[0].items.sidekick[RIGHT_SIDEKICK] = (Uint8)customSidekickSlot;
+		this_player->items.sidekick[LEFT_SIDEKICK]  = (Uint8)customSidekickSlot;
+		this_player->items.sidekick[RIGHT_SIDEKICK] = (Uint8)customSidekickSlot;
 		break;
 	default:  // CUSTOM_EQUIP_FRONT
-		player[0].items.weapon[FRONT_WEAPON].id = (Uint8)customWeaponPort;
-		player[0].items.weapon[FRONT_WEAPON].power = 1;
+		this_player->items.weapon[FRONT_WEAPON].id = (Uint8)customWeaponPort;
+		this_player->items.weapon[FRONT_WEAPON].power = 1;
 		break;
 	}
 	return true;
@@ -950,48 +1029,223 @@ void customWeaponDeserializeLevel(int mode, int level, const char *str)
 	deserializeRaw(&customWeaponRaw[mode][level], str);
 }
 
+/* Online Campaign design exchange.
+ * Little-endian, self-delimiting, and only as long as the design needs: each (mode, level)
+ * writes its populated bullet slots and a count, so an ordinary weapon is a couple of kilobytes
+ * rather than the 45 KB the full-width arrays would take. */
+typedef struct
+{
+	Uint8       *buf;
+	size_t       cap, pos;
+	bool         overflow;
+}
+CustomWireOut;
+
+static void wirePutU8(CustomWireOut *w, int v)
+{
+	if (w->pos >= w->cap)
+	{
+		w->overflow = true;
+		return;
+	}
+	w->buf[w->pos++] = (Uint8)(v & 0xff);
+}
+
+static void wirePutU16(CustomWireOut *w, int v)
+{
+	wirePutU8(w, v & 0xff);
+	wirePutU8(w, (v >> 8) & 0xff);
+}
+
+typedef struct
+{
+	const Uint8 *buf;
+	size_t       len, pos;
+	bool         truncated;
+}
+CustomWireIn;
+
+static int wireGetU8(CustomWireIn *r)
+{
+	if (r->pos >= r->len)
+	{
+		r->truncated = true;
+		return 0;
+	}
+	return r->buf[r->pos++];
+}
+
+static int wireGetS8(CustomWireIn *r)
+{
+	return (int)(Sint8)(Uint8)wireGetU8(r);
+}
+
+static int wireGetU16(CustomWireIn *r)
+{
+	const int lo = wireGetU8(r);
+	return lo | (wireGetU8(r) << 8);
+}
+
+static void wirePutWeapon(CustomWireOut *w, const JE_WeaponType *weapon)
+{
+	const int nb = usedBulletCount(weapon);
+
+	wirePutU8(w, nb);
+	wirePutU16(w, weapon->drain);
+	wirePutU8(w, weapon->shotrepeat);
+	wirePutU8(w, weapon->multi);
+	wirePutU16(w, weapon->weapani);
+	wirePutU8(w, weapon->max);
+	wirePutU8(w, weapon->tx);
+	wirePutU8(w, weapon->ty);
+	wirePutU8(w, weapon->aim);
+	for (int i = 0; i < nb; ++i)
+	{
+		wirePutU8(w, weapon->attack[i]);
+		wirePutU8(w, weapon->del[i]);
+		wirePutU8(w, weapon->sx[i]);
+		wirePutU8(w, weapon->sy[i]);
+		wirePutU8(w, weapon->bx[i]);
+		wirePutU8(w, weapon->by[i]);
+		wirePutU16(w, weapon->sg[i]);
+	}
+	wirePutU8(w, weapon->acceleration);
+	wirePutU8(w, weapon->accelerationx);
+	wirePutU8(w, weapon->circlesize);
+	wirePutU8(w, weapon->sound);
+	wirePutU8(w, weapon->trail);
+	wirePutU8(w, weapon->shipblastfilter);
+}
+
+static void wireGetWeapon(CustomWireIn *r, JE_WeaponType *weapon)
+{
+	memset(weapon, 0, sizeof(*weapon));
+
+	const int nb = clampi(wireGetU8(r), 0, CUSTOM_BULLETS_MAX);
+	weapon->drain      = (JE_word)wireGetU16(r);
+	weapon->shotrepeat = (JE_byte)wireGetU8(r);
+	weapon->multi      = (JE_byte)wireGetU8(r);
+	weapon->weapani    = (JE_word)wireGetU16(r);
+	weapon->max        = (JE_byte)wireGetU8(r);
+	weapon->tx         = (JE_byte)wireGetU8(r);
+	weapon->ty         = (JE_byte)wireGetU8(r);
+	weapon->aim        = (JE_byte)wireGetU8(r);
+	for (int i = 0; i < nb; ++i)
+	{
+		weapon->attack[i] = (JE_byte)wireGetU8(r);
+		weapon->del[i]    = (JE_byte)wireGetU8(r);
+		weapon->sx[i]     = (JE_shortint)wireGetS8(r);
+		weapon->sy[i]     = (JE_shortint)wireGetS8(r);
+		weapon->bx[i]     = (JE_shortint)wireGetS8(r);
+		weapon->by[i]     = (JE_shortint)wireGetS8(r);
+		weapon->sg[i]     = (JE_word)wireGetU16(r);
+	}
+	weapon->acceleration    = (JE_shortint)wireGetS8(r);
+	weapon->accelerationx   = (JE_shortint)wireGetS8(r);
+	weapon->circlesize      = (JE_byte)wireGetU8(r);
+	weapon->sound           = (JE_byte)wireGetU8(r);
+	weapon->trail           = (JE_byte)wireGetU8(r);
+	weapon->shipblastfilter = (JE_byte)wireGetU8(r);
+
+	sanitizeRawWeapon(weapon);
+}
+
+size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap)
+{
+	// Zeroed first so the unused tail of the fixed-width name is not stack residue: the two
+	// machines have to produce the same bytes for the same design.
+	CustomWeaponSlot design;
+	memset(&design, 0, sizeof(design));
+	customDesignStore(&design);
+
+	CustomWireOut w = { buf, cap, 0, false };
+
+	wirePutU8(&w, CUSTOM_WEAPON_WIRE_VERSION);
+	wirePutU8(&w, CUSTOM_WEAPON_MODES);
+	wirePutU8(&w, CUSTOM_POWER_LEVELS);
+	for (size_t i = 0; i < sizeof(design.name); ++i)
+		wirePutU8(&w, (Uint8)design.name[i]);
+	wirePutU16(&w, clampi(design.cost, 0, 64000));
+	wirePutU16(&w, clampi(design.powerUse, 0, 255));
+	wirePutU8(&w, clampi(design.equipSlot, 0, CUSTOM_EQUIP_COUNT - 1));
+	wirePutU16(&w, clampi(design.itemGraphic, 1, 237));
+	wirePutU8(&w, clampi(design.chargeStages, 1, CUSTOM_POWER_LEVELS));
+	wirePutU8(&w, clampi(design.modes, 1, CUSTOM_WEAPON_MODES));
+	wirePutU8(&w, clampi(design.sidekickMount, 0, CUSTOM_SIDEKICK_MOUNTS - 1));
+	wirePutU16(&w, clampi(design.sidekickSprite, 1, 65535));
+	wirePutU8(&w, clampi(design.sidekickFrames, 1, 20));
+	wirePutU8(&w, clampi(design.sidekickFrameStep, 0, 40));
+	wirePutU8(&w, clampi(design.sidekickAnimate, 1, 2));
+
+	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
+		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
+			wirePutWeapon(&w, &design.raw[m][p]);
+
+	return w.overflow ? 0 : w.pos;
+}
+
+bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
+{
+	if (owner < 0 || owner >= CUSTOM_WEAPON_OWNERS || len < 4)
+		return false;
+
+	CustomWireIn r = { buf, len, 0, false };
+	if (wireGetU8(&r) != CUSTOM_WEAPON_WIRE_VERSION)
+		return false;
+
+	const int modes  = clampi(wireGetU8(&r), 1, CUSTOM_WEAPON_MODES);
+	const int levels = clampi(wireGetU8(&r), 1, CUSTOM_POWER_LEVELS);
+
+	CustomWeaponSlot *const design = &customWeaponOwnerDesign[owner];
+	memset(design, 0, sizeof(*design));
+
+	for (size_t i = 0; i < sizeof(design->name); ++i)
+		design->name[i] = (char)wireGetU8(&r);
+	design->name[sizeof(design->name) - 1] = '\0';
+
+	design->cost              = clampi(wireGetU16(&r), 0, 64000);
+	design->powerUse          = clampi(wireGetU16(&r), 0, 255);
+	design->equipSlot         = clampi(wireGetU8(&r), 0, CUSTOM_EQUIP_COUNT - 1);
+	design->itemGraphic       = clampi(wireGetU16(&r), 1, 237);
+	design->chargeStages      = clampi(wireGetU8(&r), 1, CUSTOM_POWER_LEVELS);
+	design->modes             = clampi(wireGetU8(&r), 1, CUSTOM_WEAPON_MODES);
+	design->sidekickMount     = clampi(wireGetU8(&r), 0, CUSTOM_SIDEKICK_MOUNTS - 1);
+	design->sidekickSprite    = clampi(wireGetU16(&r), 1, 65535);
+	design->sidekickFrames    = clampi(wireGetU8(&r), 1, 20);
+	design->sidekickFrameStep = clampi(wireGetU8(&r), 0, 40);
+	design->sidekickAnimate   = clampi(wireGetU8(&r), 1, 2);
+
+	// A build with more modes or levels than the sender simply leaves the extra ones blank.
+	for (int m = 0; m < modes; ++m)
+		for (int p = 0; p < levels; ++p)
+			wireGetWeapon(&r, &design->raw[m][p]);
+
+	// A short stream reads as zeros from the cut onwards, which is a blank weapon rather than
+	// a wild index, but it is still not the design the peer flies. Refuse it.
+	if (r.truncated)
+	{
+		memset(design, 0, sizeof(*design));
+		return false;
+	}
+
+	customWeaponMaterializeOwner(owner);
+	return true;
+}
+
 // Weapon library.
 
-// Copy the editable globals into / out of a library slot.
 static void storeToSlot(int i)
 {
 	if (i < 0 || i >= CUSTOM_WEAPON_LIB_MAX)
 		return;
-	CustomWeaponSlot *s = &customWeaponLib[i];
-	SDL_strlcpy(s->name, customWeaponName, sizeof(s->name));
-	s->cost         = customWeaponCost;
-	s->powerUse     = customWeaponPowerUse;
-	s->equipSlot    = customWeaponEquipSlot;
-	s->itemGraphic  = customWeaponItemGraphic;
-	s->chargeStages = customWeaponChargeStages;
-	s->modes        = customWeaponModes;
-	s->sidekickMount     = customSidekickMount;
-	s->sidekickSprite    = customSidekickSprite;
-	s->sidekickFrames    = customSidekickFrames;
-	s->sidekickFrameStep = customSidekickFrameStep;
-	s->sidekickAnimate   = customSidekickAnimate;
-	memcpy(s->raw, customWeaponRaw, sizeof(customWeaponRaw));
+	customDesignStore(&customWeaponLib[i]);
 }
 
 static void loadFromSlot(int i)
 {
 	if (i < 0 || i >= CUSTOM_WEAPON_LIB_MAX)
 		return;
-	const CustomWeaponSlot *s = &customWeaponLib[i];
-	strncpy(customWeaponName, s->name, sizeof(customWeaponName) - 1);
-	customWeaponName[sizeof(customWeaponName) - 1] = '\0';
-	customWeaponCost         = s->cost;
-	customWeaponPowerUse     = s->powerUse;
-	customWeaponEquipSlot    = s->equipSlot;
-	customWeaponItemGraphic  = s->itemGraphic;
-	customWeaponChargeStages = s->chargeStages;
-	customWeaponModes        = clampi(s->modes, 1, CUSTOM_WEAPON_MODES);
-	customSidekickMount      = s->sidekickMount;
-	customSidekickSprite     = s->sidekickSprite;
-	customSidekickFrames     = s->sidekickFrames;
-	customSidekickFrameStep  = s->sidekickFrameStep;
-	customSidekickAnimate    = s->sidekickAnimate;
-	memcpy(customWeaponRaw, s->raw, sizeof(customWeaponRaw));
+	customDesignLoad(&customWeaponLib[i]);
 	customWeaponEditLevel = 0;   // open the switched-to weapon at level 1 / mode 1
 	customWeaponEditMode  = 0;
 }
@@ -1179,6 +1433,82 @@ void customWeaponLibraryLoad(void)
 	loadFromSlot(customWeaponCurrentSlot);   // working copy <- the saved current weapon
 }
 
+// A weapon port is available if the item data left it as a placeholder, or if we already claimed
+// it: a second claim pass runs against ports our own materialize has since renamed.
+static bool customPortIsSpare(int port)
+{
+	if (weaponPort[port].name[0] == '\0' || SDL_strcasecmp(weaponPort[port].name, "Test") == 0)
+		return true;
+
+	for (int i = 0; i < CUSTOM_WEAPON_OWNERS; ++i)
+		if (customWeaponOwnerPort[i] == port)
+			return true;
+
+	return false;
+}
+
+static bool customOptionIsSpare(int option)
+{
+	if (option == chargeLaserSlot)
+		return false;
+	if (strncmp(options[option].name, "None", 4) == 0)
+		return true;
+
+	for (int i = 0; i < CUSTOM_WEAPON_OWNERS; ++i)
+		if (customSidekickOwnerSlot[i] == option)
+			return true;
+
+	return false;
+}
+
+/* Claim the reserved port and sidekick option for each owner, top down, so a real item is never
+ * clobbered: the Tyrian 2000 data fills every port name but leaves ports 48-60 as dummy "Test"
+ * placeholders, and the item tables end in several "None" sidekicks. A sidekick slot can come
+ * back 0 (none free), which equipping handles. See "Custom weapons online" in doc/notes.md. */
+static void customWeaponClaimSlots(void)
+{
+	int port = PORT_NUM;
+	int option = OPTION_NUM;
+
+	for (int owner = 0; owner < CUSTOM_WEAPON_OWNERS; ++owner)
+	{
+		int claimedPort = 0;
+		for (; port >= 1 && claimedPort == 0; --port)
+			if (customPortIsSpare(port))
+				claimedPort = port;
+
+		// The fallback still gives the owners distinct slots, so nothing aliases.
+		customWeaponOwnerPort[owner] = (claimedPort != 0) ? claimedPort : PORT_NUM - owner;
+
+		int claimedOption = 0;
+		for (; option >= 1 && claimedOption == 0; --option)
+			if (customOptionIsSpare(option))
+				claimedOption = option;
+
+		customSidekickOwnerSlot[owner] = claimedOption;
+	}
+
+	const int owner = customWeaponLocalOwner();
+	customWeaponPort = customWeaponOwnerPort[owner];
+	customSidekickSlot = customSidekickOwnerSlot[owner];
+}
+
+/* Compile our own working copy plus any design the other player has published. Reloading the
+ * item data wipes the reserved slots, and a network game does that at every level start, so the
+ * peer's ship would otherwise be left holding an unbuilt placeholder weapon: a desync. */
+static void customWeaponMaterializeAll(void)
+{
+	const int local = customWeaponLocalOwner();
+	customWeaponMaterialize();
+
+	if (!isNetworkGame || !coop_mode_active())
+		return;
+
+	for (int owner = 0; owner < CUSTOM_WEAPON_OWNERS; ++owner)
+		if (owner != local && customWeaponOwnerDefined[owner])
+			customWeaponMaterializeOwner(owner);
+}
+
 void customWeaponInit(void)
 {
 	buildBulletPresets();
@@ -1226,35 +1556,12 @@ void customWeaponInit(void)
 		customWeaponLibraryLoad();
 	}
 
-	// Claim a spare port slot so we never clobber a real weapon. The Tyrian 2000
-	// data fills every port name, but ports 48-60 are dummy "Test" placeholders
-	// (verified against data/tyrian.hdt); scan from the top for an empty or "Test" slot.
-	customWeaponPort = 0;
-	for (int i = PORT_NUM; i >= 1; --i)
-	{
-		if (weaponPort[i].name[0] == '\0' || SDL_strcasecmp(weaponPort[i].name, "Test") == 0)
-		{
-			customWeaponPort = i;
-			break;
-		}
-	}
-	if (customWeaponPort == 0)
-		customWeaponPort = PORT_NUM;  // fallback: last slot
+	customWeaponClaimSlots();
+	customWeaponMaterializeAll();
+}
 
-	// Claim a spare option (sidekick) slot for the sidekick: scan from the top for a
-	// "None" placeholder, skipping the one the Charge-Laser may have taken. 0 = none
-	// free (sidekick equipping is then unavailable, handled gracefully at equip time).
-	customSidekickSlot = 0;
-	for (int i = OPTION_NUM; i >= 1; --i)
-	{
-		if (i == chargeLaserSlot)
-			continue;
-		if (strncmp(options[i].name, "None", 4) == 0)
-		{
-			customSidekickSlot = i;
-			break;
-		}
-	}
-
-	customWeaponMaterialize();  // compile all modes/levels + build the sidekick option
+void customWeaponNetPrepare(void)
+{
+	customWeaponClaimSlots();
+	customWeaponMaterializeAll();
 }

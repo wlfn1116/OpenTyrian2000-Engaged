@@ -41,15 +41,17 @@
 void varz_register_rollback(void);
 void backgrnd_register_rollback(void);
 void endless_combat_register_rollback(void);
+void endless_register_rollback(void);
 
 /* player[].lives is an interior pointer into player[].items (mainint.c
  * JE_initPlayerData).  A raw copy restores a correct value only because
  * player[] is a fixed global; re-derive it anyway so the snapshot can never
- * leave a dangling alias. */
+ * leave a dangling alias.  player_lives_port names the same bay the live
+ * binding used, so a restore cannot move a ship's life counter. */
 static void rb_fixup_player_lives(void)
 {
 	for (uint i = 0; i < COUNTOF(player); ++i)
-		player[i].lives = &player[i].items.weapon[i].power;
+		player[i].lives = &player[i].items.weapon[player_lives_port(i)].power;
 }
 
 #define REG(var)       rollback_register(#var, &(var), sizeof(var))
@@ -76,6 +78,8 @@ void rollback_state_register_globals(void)
 	REG(shipGr);   REG(shipGrPtr);
 	REG(shipGr2);  REG(shipGr2ptr);
 	REG(twoPlayerMode);        /* galaga mode clears this mid-level         */
+	REG(coopCampaignMode);
+	REG(coopEndlessMode);
 	REG(galagaMode);
 	REG(galagaShotFreq);
 	REG(galagaLife);
@@ -124,9 +128,9 @@ void rollback_state_register_globals(void)
 
 	/* Specials, charge weapons, and sidekicks. */
 	REG(zinglonDuration);
-	REG(zinglonPillarActive);
-	REG(zinglonPillarCX);
-	REG(zinglonPillarTemp);
+	REG_ARR(zinglonPillarActive);
+	REG_ARR(zinglonPillarCX);
+	REG_ARR(zinglonPillarTemp);
 	REG(astralDuration);
 	REG(flareDuration);
 	REG(flareStart);
@@ -252,6 +256,10 @@ void rollback_state_register_globals(void)
 	REG(map2YDelay);  REG(map2YDelayMax);
 	REG_ARR(smoothie_data);
 	REG(starfield_speed);
+	/* Script events toggle these mid-level, and smoothies[8] flips the vertical control axis,
+	 * so a replayed tick must start them from the same point or inputs read differently. */
+	REG_ARR(smoothies);
+	REG(starShowVGASpecialCode);
 	REG(endlessScrollExtraPx1);
 	REG(endlessScrollExtraPx2);
 	REG(endlessScrollExtraPx3);
@@ -283,4 +291,5 @@ void rollback_state_register_globals(void)
 	varz_register_rollback();
 	backgrnd_register_rollback();
 	endless_combat_register_rollback();
+	endless_register_rollback();
 }

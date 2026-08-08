@@ -11,7 +11,7 @@ content. This guide explains those additions.
 | Start an Endless run | Main menu > 1 Player Endless |
 | Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
 | Smooth out scrolling and movement | Setup > Graphics > Sub-pixel |
-| Play with a friend | Main menu > 2 Player Online Arcade |
+| Play with a friend | Main menu > Online |
 | Design a weapon | Setup > Enhancements > Custom Weapon Creator |
 | Change boss and enemy health bars | Setup > Enhancements |
 | Turn restored content on or off | Setup > Enhancements > Game Tweaks |
@@ -381,7 +381,11 @@ all difficulties, since it is picked before you choose one.
 
 All three records also have their own page in **High Scores** on the title
 screen, reached by paging right past the episode and Timed Battle boards to the
-last one, **Endless**. It lists every mode with the zone it stands at.
+last two: **2 Player Campaign** and **Endless**. The Endless page lists every run
+mode at both crew sizes with the zone it stands at; the 2 Player Campaign page
+lists the best combined cash each episode has been finished with online, and who
+was flying. That board is separate from the two-player scores on the episode
+pages, which belong to Arcade.
 
 Selecting a mode opens its breakdown by difficulty: a row for each of Easy,
 Normal, Hard, Impossible, Suicide and Lord of Game, above them an **Any
@@ -422,12 +426,16 @@ ones: one icon on your last life, two on your second-to-last. It matches the
 outpost's **Lives:** row. Past four it collapses to one icon and a number, so
 eleven lives reads as a ship and "11".
 
-### Arcade Life Boost
+### Arcade tweaks
 
-**Setup > Enhancements > Game Tweaks > Arcade Life Boost**, off by default.
+**Setup > Enhancements > Game Tweaks > Arcade** holds the three arcade switches:
+Life Boost, Random Pickups and Rear Gun Scale, all off by default. Online, the
+host's three settings bind the session for both machines.
+
+### Life Boost
 
 Lives buy durability as well as retries, in 1 Player Arcade, 2 Player Arcade,
-2 Player Online Arcade and on the Super Arcade secret ships. Each ship's shield
+Online Arcade and on the Super Arcade secret ships. Each ship's shield
 and armor ceilings scale off its own life count. At 1 life they are the vanilla
 numbers, and at the 11-life maximum both gauges reach a full bar. Growth in
 between is even, so six lives puts the Stalker at 22 armor and 19 shield.
@@ -435,8 +443,9 @@ between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 | Mode | Ship | Armor at 1 life | Shield at 1 life | Either, at 11 lives |
 | --- | --- | --- | --- | --- |
 | 1 Player Arcade | Stalker | 15 | 10 | 28 |
-| 2 Player (and Online) | Silver Ship | 10 | 10 | 28 |
-| 2 Player (and Online) | Dragonwing | 10 | 10 | 28 |
+| 2 Player (and Linked Online Arcade) | Silver Ship | 10 | 10 | 28 |
+| 2 Player (and Linked Online Arcade) | Dragonwing | 10 | 10 | 28 |
+| Separate Online Arcade, both ships | Stalker | 15 | 10 | 28 |
 
 Gaining a life raises both ceilings at once and carries damage across
 proportionally, so a ship at half armor stays at half armor. Losing one shrinks
@@ -449,18 +458,15 @@ across the nine. All nine carry the stock Gencore High Energy Shield, so their
 shields climb 10 to 28 alike. The Nort-Ship Z's 30 hull is already past the bar
 and stays there. SuperTyrian is excluded.
 
-Off, every ship keeps its stock hull and shield. Online, the host's setting binds
-the session.
+Off, every ship keeps its stock hull and shield.
 
 The shield gauge's full-charge line is on both gauges of the two-player HUD now.
 
 ### Random Pickups
 
-**Setup > Enhancements > Game Tweaks > Random Pickups**, off by default.
-
 Weapon balls are hand-placed in the level scripts, so a level always drops the
 same guns in the same order. On, each ball is re-rolled as it spawns, in 1 Player
-Arcade, 2 Player Arcade, 2 Player Online Arcade and on the Super Arcade ships.
+Arcade, 2 Player Arcade, Online Arcade and on the Super Arcade ships.
 
 A ball only becomes another of its own kind, so a rear-gun drop is still a rear
 gun. Each episode rolls from its own arsenal.
@@ -479,28 +485,48 @@ Super Arcade balls carry a color rather than a weapon, and the color picks a slo
 in the current ship's five-gun arsenal. Normally they cycle 1-2-3-4-5. Rolled
 instead, a ship can draw the same gun twice running, but never one it cannot fly.
 
-Online, the host's setting binds the session.
+### Rear Gun Scale
+
+On, your rear gun fires at its own collected power plus your lives minus one, so
+a stocked-up run gets a wider rear spread without spending pickups on it. It
+applies in 1 Player Arcade and in Separate Online Arcade. The linked two-player
+pair is excluded: player two's rear-gun power is also that ship's life counter,
+so raising one would raise the other. SuperTyrian is excluded as well.
 
 ## Online play
 
-**2 Player Online Arcade** on the main menu opens the Multiplayer screen: Host
-Game, Find LAN Games, Join by IP Address, and Your Nickname, the name the other
-player sees. The game uses UDP port 1333.
+**Online** on the main menu opens the Multiplayer screen: Host Game, Find LAN
+Games, Join by IP Address, and Your Nickname, the name the other player sees.
+The game uses UDP port 1333.
 
 The menu refuses to start a netgame while the FPS Cap is below 35: the simulation
 runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
-**Host Game** covers the listen port, Netcode, Desync Recovery, Host Flies, and
-Game Speed. The host's choices bind the session for both machines. The joiner's
-own settings are left alone and restored afterwards.
+**Host Game** covers the listen port, game type, episode or Endless Setup,
+difficulty, Ships and Host Flies or Credit, Game Speed, Netcode, and Desync
+Recovery, one row each with the current value on the right and a line explaining
+the highlighted row underneath. The rows adapt to the game type: Destruct swaps
+the episode and difficulty rows for its own Battle Mode row.
+The host's choices bind the session for both machines. While the other player
+waits for the host to start, they see the same list. The joiner's own settings
+are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
-| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
-| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. |
-| Host Flies | Which ship you take: player one, or player two (the Dragonwing). Remembered between sessions. |
-| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
+| Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). **Destruct** fights the artillery mini-game head to head (see Online Destruct). |
+| Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
+| Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
+| Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
+| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship — Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade — plays exactly the rung chosen here, with no adjustment. |
+| Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
+| Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the same row reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
+| Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
+| Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
+| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, since its speed is the rate the two machines trade packets at; your speed for the other game types is left untouched. |
+| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct always plays delay-based and hides the row (and Desync Recovery with it); your rollback preference for the main game is left untouched. |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback — Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. |
 
 **Join by IP Address** takes an address on its own or with a port, like
 `123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
@@ -508,30 +534,215 @@ pre-filled with the last address you used, restarts included, so rejoining the
 same host is Join then Enter.
 
 The outpost help bar shows a **Ping** figure at its right end, updated about
-every one and a half seconds and reading `--` until the first reply. Under
-roughly 85 ms the game runs at full speed on the default network delay of 3. Above
-that it starts to slow, and raising the delay trades input lag for smoothness.
+every one and a half seconds and reading `--` until the first reply. It is
+dropped on rows that already have something at that edge, a price or a stack
+count among them, rather than being pushed up against the sentence. Under roughly 85 ms the game runs at full speed
+on the default network delay of 3. Above that it starts to slow, and raising the
+delay trades input lag for smoothness.
 
-In any two-player game the sidebar tags each gauge block **P1** or **P2**.
-Online, the other player's gauges are dimmed as well.
+Options in the outpost is the ordinary options page with **Load Game** removed:
+loading mid-session would leave the other machine playing something else. Save
+Game, the volume and sensitivity sliders, and the joystick, keyboard, and mouse
+setup screens all work as usual, and backing out of any of them returns here.
+
+Online Arcade with Linked ships keeps the split two-player sidebar, tags each
+gauge block **P1** or **P2**, and dims the other player's gauges. Separate ships,
+Online Campaign and Online Endless give each machine the normal one-player sidebar
+for its local ship. Both player names and cash totals remain visible along the
+bottom of the playfield.
+
+**Online SuperTyrian** is two SuperTyrian runs side by side: both players fly the
+Stalker 21.126 with the Atomic RailGun, and the SuperTyrian twiddle combos work
+for each ship independently, exactly as in the solo mode. There is no difficulty
+row; the Variant row picks Standard or Scrollock for both players. Everything
+else plays like Separate arcade: own lives, own guns, own score.
+
+**Online Super Arcade** starts with a ship-picking screen instead of a lobby ship
+setting. After the host presses Start, each player chooses their own ship from
+the nine Super Arcade ships, with the highlighted hull drawn below the list; move
+with the arrow keys or the mouse and confirm with Enter or a click. The two picks
+are independent and may match. Whoever chooses first sees "Waiting for the other
+player..." and then which ship their partner picked. A choice is not final while
+you are still waiting: Esc (or a right-click) takes it back so you can pick a
+different ship, right up until your partner chooses and the game starts. Esc
+before choosing anything leaves the session instead. Weapon balls keep the same colors on every ship, so when both of you
+fly into the same color, each ship gets the weapon its own arsenal keeps in that
+slot, and the paired special (both variants, switched with the rear-mode key)
+belongs to each ship separately.
+
+In Campaign, each player chooses and powers up a complete ship independently:
+front and rear weapons, sidekicks, generator, shield, hull, special, cash, and
+weapon mode. The Arcade link, Dragonwing role, shared power rules, and lives do
+not apply. Between levels, both players can use their own shop at the same time.
+Purchases are sent to the peer as they are committed. Whoever picks a level first
+waits at "Waiting for other player." while the other finishes outfitting; nobody
+is pulled out of the outpost early. Where the route offers a choice of planets and
+the two of you pick different ones, the host's choice is the one you both fly.
+
+While you are waiting, **Esc** takes you back into the outpost to change
+equipment or pick a different planet. The waiting screen says so. Once the other
+player has picked their level too, the pair of you are committed and Esc no
+longer answers; the level loads a moment later.
+
+Custom weapons work in Campaign, one design each. Your design is sent to the
+other machine on the way out of the outpost, so both of you fly and see the real
+thing. Sending it happens once per changed design and can hold the "Waiting for
+other player." screen for a moment on a large weapon.
 
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
 
+**P does not pause an online game**, in Arcade, Campaign or Endless alike, and
+neither does clicking away to another window: your ship keeps flying while you
+are not looking at it. Only one machine would have stopped, and the other player
+would be left holding a session that had gone quiet. Esc still opens the in-game
+menu, which is the way out of a level. (Online Destruct is the one exception:
+its P is a shared pause that freezes both machines together.)
+
+### Online Endless
+
+The Endless lobby flies the roguelite with two ships. One run, one sector, one
+zone counter; wallets, stock and gear belong to one player each.
+
+| Endless Setup row | What it does |
+| --- | --- |
+| Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own, which the joiner's summary screen shows you once the session starts. |
+| Run Mode | **Relaxed**, **Standard** or **Hardcore**, exactly as in a solo run. Relaxed opens the death menu when both ships are down, Standard ends the run there, and Hardcore does that and saves nothing. |
+| Charts Course | Who picks the next sector: **Host**, **Guest**, **Alternating** (turn about, and the turn is kept in the save), or **50-50** (a coin flip from the run seed, so both machines land on the same side of it). |
+| Combo Feed | Whose kill-fire streak a kill feeds. **Individual** (default) counts a kill for the ship whose shot destroyed it, so a drive you paid for is worth what your own shooting earns. **Shared** has every kill feed both streaks. A kill neither of you can be credited with feeds both either way. |
+
+Both of you shop at the same outpost at the same time, each with your own stock,
+your own prices and your own wallet. Rerolling changes only your own shelves, and
+one player's rerolls and gambles never move what the other is dealt. Almost
+everything you buy is yours alone: guns and gear, Reinforce hull tiers, a Revive
+token, bombs, a Special Weapon, and the kill-fire drives.
+
+Turbodrive, Overblast and Overdrive belong to the ship that paid for them. One of
+you can be flying Turbodrive while the other stacks Overblast, each with their own
+window and their own combo, and the buyer's ship glows in that drive's colour on
+both screens. The kill-fire readout in the corner is your own drive's. Under the
+default Individual combo feed your streak counts your own kills, so a drive is
+worth what you shoot with it; a sector that deals a drive still deals it to both
+of you.
+
+Perks are personal. You each pick from your own slate, and a stack works on the
+ship that took it and no other, up to that perk's normal maximum on each of your
+rows. Your Perks list, the Owned counts on a perk offer, and the surcharge an
+**Extra Perk** costs all read your own collection. Two perks act on a screen you
+share rather than on a ship: **Surveyor** widens the course slate when its owner is
+the one charting, and **Radar** names the levels for the player holding it. One buy
+still reaches further than the ship that made it: **Sector Sabotage** strips a
+danger off the sector you both fly, and sabotage charges from the two of you add up
+to the same three-strip cap.
+
+A gamble is yours: the cash, gear and drives it hands out or takes away are the
+gambler's. Its rarer outcomes change the next sector instead (a shop discount, a
+bulked-up boss, a rush of rammers), and those land on the pair.
+
+Only one of you charts, so the other's Start Level puts up "Partner is charting a
+course." and waits there for the sector they pick. Esc goes back into the outpost
+for as long as that wait lasts, so nothing is committed by looking, and both of
+you keep shopping until you are ready.
+
+Quitting a zone from the in-game menu takes both of you back to the same outpost
+you launched from. Neither player banks the zone: it was given up, not finished.
+
+A ship that runs out of hull does not end the zone while its partner is still
+flying. It spectates until the zone finishes, and comes back at the next outpost
+with a full hull and no shield, keeping everything it owned. A revive token still
+fires first, so it is spent before the ship goes down at all. Homing shots,
+Seeker corrections and every other danger that picks a target go for the nearer
+ship still flying and ignore a downed one. With both ships down the run mode
+decides what happens, and in Relaxed the host makes the choice for the pair.
+
+The zone-clear bonus and bank interest are each player's own. The run-over screen
+shows what you personally earned and spent.
+
+Two ships reach depths a solo run cannot, so co-op keeps its own records: the
+Endless high-score page lists each run mode twice, **1P** and **2P**, and a co-op
+run only ever writes the 2P side. Everything else about the page (the breakdown by
+difficulty, the custom-weapon mark, erasing a record) works the same on both.
+
+**Quit** in the in-game menu means the same thing online as it does alone: the
+zone is abandoned and both of you go back to the outpost you launched it from,
+with the loadout you launched it with. It does not end the run or the session.
+
+### Online Destruct
+
+The Destruct game type puts the two of you on opposite ends of the artillery
+mini-game: the host mans the side the lobby's Host Flies row names, the joiner
+gets the other, and the Battle Mode row picks which of the five battles you
+fight. There are no menus after the lobby — once the joiner connects, both
+machines land on the Destruct title card, which repeats the battle, your side,
+and your opponent's name. The card is a barrier: press any key (or a controller
+button) when you have read it, and the first map fades in once **both** of you
+have. The two lines at the bottom say where that stands — your own state above,
+the other player's below — so a card that will not move is telling you who it is
+waiting on. There is no time limit, so Esc there leaves the session for both of
+you if the other player has walked away.
+
+Both machines generate every map from a seed the host rolled for the session,
+so you fight on the same terrain, under the same walls, to the same randomly
+chosen soundtrack. When one side's last installation falls, the survivor scores
+the battle's points, and after a short beat the next round starts on fresh
+terrain. Scores accumulate for as long as the session runs, exactly like the
+local game.
+
+Controls are the local game's, with one convenience: both keyboard layouts
+steer **your own side**, so the arrow-key layout and the C/V/A/Z layout work no
+matter which side you man, and a controller does too. The function keys behave
+online as follows:
+
+| Key | Online meaning |
+| --- | --- |
+| P | Shared pause. Freezes the battle on both machines until either player presses it again. |
+| Backspace | New round for both players, current scores kept — the same map-reroll it is locally. |
+| Esc | Ends the session for both players, back to their own menus. A controller's pause button does the same. |
+| F1, F10, F11 | Disabled online: the help screen would stall the connection, and the CPU toggles would split the simulation. |
+
+Destruct sessions play on the delay-based lockstep regardless of the Netcode
+preference, so your inputs land after the session's network delay, like the
+classic online mode. They also play at Normal game speed on both machines: the
+lobby's Game Speed row is hidden for Destruct, because the speed there is the
+rate the two machines trade state packets at rather than anything in the battle.
+Nothing about a Destruct session is saved except the two
+lobby rows — the Battle Mode and which side you man — which are remembered for
+the next time you host.
+
 ### Saving and resuming an online game
 
-Save from the shop with Options > **Save Game**, or Alt+S anywhere in the shop.
-Online games share the regular 2-player save page, so a session saved online can
-be continued on the couch and vice versa. The page's last slot is written
-automatically at the start of every level as `LAST LEVEL`, so an online session
-overwrites that slot's local 2-player backup. Save into a numbered slot to keep a
-run. Both machines write their own copy, so either player can host the resume.
+Save from the shop with Options > **Save Game**, or Alt+S while no purchase
+preview is open. The page's last slot is written automatically at the start of
+every level as `LAST LEVEL`; save into a numbered slot to keep a separate run.
+Both machines write their own copy after exchanging their latest shop state, so
+either player can host the resume. If the other machine goes quiet while that
+exchange is in flight, the save is written anyway after a few seconds rather than
+leaving you stuck on it; their ship is then stored as of the last state you had
+from them, so save again once they are back.
+
+Linked arcade saves remain compatible with the regular local two-player page.
+Separate arcade, SuperTyrian and Super Arcade saves carry both complete ships,
+lives and rulesets included (a Super Arcade save remembers which ship each of you
+picked), and can only be resumed through the same game type that wrote them; the
+other arcade lobbies and local play show them dimmed. Campaign
+and Endless saves carry both players in full: each ship and its front and rear weapons with
+their power levels, both sidekicks, generator, shield, special, rear-gun firing
+mode, and cash total, plus the shared episode, difficulty, data cubes, and
+next-level position. Nothing either of you bought is dropped. They can only be
+loaded through Online Campaign or Online Endless, not through 1 Player or local
+2 Player, and each lobby type only offers its own. An Endless save also carries
+the run behind it: zone, seed, perks, both players' upgrades and the course
+slate. Resuming redraws each player's shop shelves from the seed, so a reroll
+bought before saving is not carried over.
 
 If the session ends under you, because the other player quit, the connection
 dropped, or an unrecoverable desync stopped the game, you get **Save Game** or
 **Don't Save** before the title screen. Save Game opens the 2-player save page
 with the run rolled back to the outpost before the current level, the same point
 a game over returns to.
+
+Hardcore Endless saves nothing at all, so an online Hardcore run cannot be
+resumed.
 
 To resume, host as usual. Once the other player connects, the host picks between
 **New Game** and **Load Game**. Load Game opens the load menu fixed to the
@@ -565,6 +776,10 @@ section.
 | Ctrl+S | Save now |
 | Esc | Cancel a number being entered, otherwise save and return |
 | Right-click | Save and return |
+
+In Online Campaign each player brings their own design. The two are kept apart, so
+you can both fly a custom weapon in the same session without either of you seeing
+the other's in your shop.
 
 ## Restored and tweakable content
 
@@ -626,10 +841,11 @@ browser. The menu changes the game live: loadout, cash, cheats, difficulty, and
 the expert multipliers.
 
 In a two-player game an **Edit Player** row at the top of the LOADOUT group picks
-whose gear the rows below it change. Player two flies the Dragonwing, so swapping
-that player's hull changes the hit box but not the sprite or armour. Online, the
-game stays connected while the menu is open and every change is sent to the other
-player. Endless Effects and the Rollback Self-Test are unavailable online.
+whose gear the rows below it change. In Arcade, player two flies the Dragonwing,
+so swapping that player's hull changes the hit box but not the sprite or armour.
+In Campaign, both players use the selected full ship. Online, the game stays
+connected while the menu is open and every change is sent to the other player.
+Endless Effects and the Rollback Self-Test are unavailable online.
 
 The DIAGNOSTICS group holds the inspection tools. **Rollback Self-Test** replays
 every tick and compares the result, checking that the snapshot online play rides

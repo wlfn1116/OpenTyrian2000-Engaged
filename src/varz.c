@@ -289,12 +289,14 @@ EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
 /* Player Shot Data */
 JE_byte     zinglonDuration;
 
-/* Soul-of-Zinglon light pillar render request: JE_doSpecialShot records the pillar
-   here each tick instead of drawing it, so JE_starShowVGA can draw it at the render-
-   rate ship position rather than frozen into the 35Hz residual. */
-bool        zinglonPillarActive = false;
-int         zinglonPillarCX = 0;    /* pillar centre x in game_screen coords */
-int         zinglonPillarTemp = 0;  /* pillar half-width */
+/* Soul-of-Zinglon light pillar render request, one per ship: JE_doSpecialShot records the
+   pillar here each tick instead of drawing it, so JE_starShowVGA can draw it at the render-
+   rate ship position rather than frozen into the 35Hz residual. Per ship because both can
+   have one up at once, and because zinglonDuration stops at 1 rather than reaching 0, so the
+   counter alone cannot tell a live pillar from a spent one. */
+bool        zinglonPillarActive[2] = { false, false };
+int         zinglonPillarCX[2] = { 0, 0 };    /* pillar centre x in game_screen coords */
+int         zinglonPillarTemp[2] = { 0, 0 };  /* pillar half-width */
 
 JE_byte     astralDuration;
 JE_word     flareDuration;
@@ -402,6 +404,24 @@ JE_boolean  linkToPlayer;
 JE_word shipGr, shipGr2;
 Sprite2_array *shipGrPtr, *shipGr2ptr;
 
+/* Endless run-persistent hull: the outpost Reinforce tier plus the Ablative Plating perk. The perk
+ * half can be NEGATIVE (Glass Cannon), so the result is clamped at both ends. Reinforce is
+ * endlessMode-only: a campaign running the effect layer under Debug Mode has no shop to buy it at. */
+static void endlessApplyHullBonus(uint p)
+{
+	if (!endlessFxActive())
+		return;
+
+	// Personal perks: the plating (or Glass Cannon drawback) on this hull is this ship's own.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(p);
+	int a = (int)player[p].armor + endlessPerkArmorBonus();
+	endlessSetFxPlayer(fxSaved);
+	if (endlessMode)
+		a += endlessArmorBonus[p];
+	player[p].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // byte-safe, so no JE_byte armor path wraps
+}
+
 void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
@@ -414,6 +434,8 @@ void JE_getShipInfo(void)
 	shipGr2ptr = &spriteSheet9;
 
 	powerAdd  = powerSys[player[0].items.generator].power;
+	for (uint i = 0; i < COUNTOF(player); ++i)
+		player[i].generator_power_add = powerSys[player[i].items.generator].power;
 
 	extraShip = player[0].items.ship > 90;
 	if (extraShip)
@@ -431,17 +453,7 @@ void JE_getShipInfo(void)
 		player[0].armor = ships[shipIdx].dmg;
 	}
 
-	// Endless: apply the run-persistent hull upgrades (outpost Reinforce + Ablative Plating perk;
-	// the perk bonus can be NEGATIVE with Glass Cannon, so clamp the result to at least 1 armor).
-	// The Reinforce half is endlessMode-only: it is bought at an outpost, and a campaign game
-	// running the effect layer under Debug Mode has no shop to have bought it at.
-	if (endlessFxActive())
-	{
-		int a = (int)player[0].armor + endlessPerkArmorBonus();
-		if (endlessMode)
-			a += endlessArmorBonus;
-		player[0].armor = (a < 1) ? 1 : (a > 250 ? 250 : a);  // clamp both ends: >=1, and byte-safe so no JE_byte armor path wraps
-	}
+	endlessApplyHullBonus(0);
 
 	extraShip2 = player[1].items.ship > 90;
 	if (extraShip2)
@@ -450,11 +462,21 @@ void JE_getShipInfo(void)
 		shipGr2 = JE_SGr(player[1].items.ship - 90, &shipGr2ptr);
 		player[1].armor = extraShips[base2 + 7]; /* bug? */
 	}
+	else if (dual_ship_mode())
+	{
+		const uint shipIdx = (player[1].items.ship <= SHIP_NUM) ? player[1].items.ship : 0;
+		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
+		shipGr2 = ships[shipIdx].shipgraphic - (shipGr2ptr == &spriteSheetT2000 ? 500 : 0);
+		player[1].armor = ships[shipIdx].dmg;
+	}
 	else
 	{
 		shipGr2 = 0;
 		player[1].armor = 10;
 	}
+
+	if (coopEndlessMode)
+		endlessApplyHullBonus(1);
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
@@ -495,16 +517,11 @@ JE_word JE_SGr(JE_word ship, Sprite2_array **ptr)
 	return GR[tempW-1];
 }
 
-void JE_drawOptions(void)
+void JE_resetPlayerOptions(Player *this_player)
 {
-	SDL_Surface *temp_surface = VGAScreen;
-	VGAScreen = VGAScreenSeg;
-
-	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
-
-
-
-	Player *this_player = &player[twoPlayerMode ? 1 : 0];
+	// Personal perks: Ordnance Reserves and Rapid Recharge size this ship's own magazines.
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer((uint)(this_player - player));
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
@@ -530,11 +547,22 @@ void JE_drawOptions(void)
 		this_player->sidekick[i].charge_ticks = endlessPerkChargeTicks(20);
 	}
 
-	JE_drawOptionsHUD();
+	endlessSetFxPlayer(fxSaved);
+}
 
-	// Repaint after silent replay suppresses the icon blit but not its box fill.
-	if (rollback_resim_silent)
-		hud_sidekicks_dirty = true;
+void JE_drawOptions(void)
+{
+	SDL_Surface *temp_surface = VGAScreen;
+	VGAScreen = VGAScreenSeg;
+
+	JE_labelAmmoSidekicks();  // keep the shop names in step with the magazines we're about to load
+
+	const uint first_player = dual_ship_mode() ? 0 : (twoPlayerMode ? 1 : 0);
+	const uint last_player = dual_ship_mode() ? COUNTOF(player) : first_player + 1;
+	for (uint p = first_player; p < last_player; ++p)
+		JE_resetPlayerOptions(&player[p]);
+
+	JE_drawOptionsHUD();
 
 	VGAScreen = temp_surface;
 
@@ -543,16 +571,38 @@ void JE_drawOptions(void)
 
 bool hud_sidekicks_dirty = false;
 
+uint hud_sidekick_player_index(void)
+{
+	// The strip has room for one ship's pods. A dual-ship game simulates both, so it shows
+	// the local one; the split linked pair gives the pods to player two; otherwise player one.
+	return dual_ship_mode() ? gameplay_local_player_index()
+	                        : (split_arcade_mode() ? 1u : 0u);
+}
+
+int hud_sidekick_ammo_y(uint slot)
+{
+	return hud_sidekick_y[split_arcade_mode() ? 1 : 0][slot] + 13;
+}
+
 // Draw-only companion to JE_drawOptions: repaints the sidekick HUD boxes from current state.
 void JE_drawOptionsHUD(void)
 {
-	Player *this_player = &player[twoPlayerMode ? 1 : 0];
+	// A silent re-simulation pass suppresses sprite blits but still runs plain fills, so
+	// painting here would clear the box and never put the icon back. Leave the strip alone and
+	// let the level loop settle it on the next presented frame.
+	if (rollback_resim_silent)
+	{
+		hud_sidekicks_dirty = true;
+		return;
+	}
+
+	Player *this_player = &player[hud_sidekick_player_index()];
 
 	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
 	{
 		JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
-		const int y = hud_sidekick_y[twoPlayerMode ? 1 : 0][i];
+		const int y = hud_sidekick_y[split_arcade_mode() ? 1 : 0][i];
 
 		const int hud_x = HUD_X(284);
 		fill_rectangle_xy(VGAScreenSeg, hud_x, y, hud_x + 28, y + 15, 0);
@@ -564,7 +614,7 @@ void JE_drawOptionsHUD(void)
 
 void JE_drawOptionLevel(void)
 {
-	if (twoPlayerMode)
+	if (split_arcade_mode())
 	{
 		for (temp = 1; temp <= 3; temp++)
 		{
@@ -655,6 +705,8 @@ static void salvo_special_burst(JE_byte playerNum)
 
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
+	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
+
 	nextSpecialWait = 0;
 	switch (special[specialType].stype)
 	{
@@ -680,14 +732,14 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			{
 				if (!enemyShotAvail[es])
 				{
-					if (player[0].x > enemyShot[es].sx)
+					if (this_player->x > enemyShot[es].sx)
 						enemyShot[es].sxm -= push;
-					else if (player[0].x < enemyShot[es].sx)
+					else if (this_player->x < enemyShot[es].sx)
 						enemyShot[es].sxm += push;
 
-					if (player[0].y > enemyShot[es].sy)
+					if (this_player->y > enemyShot[es].sy)
 						enemyShot[es].sym -= push;
-					else if (player[0].y < enemyShot[es].sy)
+					else if (this_player->y < enemyShot[es].sy)
 						enemyShot[es].sym += push;
 				}
 			}
@@ -713,14 +765,14 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				{
 					int exc = enemy[temp].exc, eyc = enemy[temp].eyc;
 
-					if (player[0].x > enemy[temp].ex)
+					if (this_player->x > enemy[temp].ex)
 						exc += pull;
-					else if (player[0].x < enemy[temp].ex)
+					else if (this_player->x < enemy[temp].ex)
 						exc -= pull;
 
-					if (player[0].y > enemy[temp].ey)
+					if (this_player->y > enemy[temp].ey)
 						eyc += pull;
-					else if (player[0].y < enemy[temp].ey)
+					else if (this_player->y < enemy[temp].ey)
 						eyc -= pull;
 
 					enemy[temp].exc = (JE_shortint)(exc > 120 ? 120 : (exc < -120 ? -120 : exc));
@@ -754,12 +806,12 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 6:
 					specialWeaponFilter = 1;
 					specialWeaponFreq = 7;
-					flareDuration = endlessPerkSpecialDuration(200 + 25 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(200 + 25 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 7:
 					specialWeaponFilter = 3;
 					specialWeaponFreq = 3;
-					flareDuration = endlessPerkSpecialDuration(50 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(50 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					// zinglonDuration is deliberately NOT stretched: its beam brightness is drawn as
 					// `25 - abs(zinglonDuration - 25)`, a ramp that only works on the stock 50 ticks.
 					zinglonDuration = 50;
@@ -769,26 +821,26 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				case 8:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 7;
-					flareDuration = endlessPerkSpecialDuration(10 + player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(10 + this_player->items.weapon[FRONT_WEAPON].power, 0);
 					break;
 				case 9:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = endlessPerkSpecialDuration(8 + 2 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(8 + 2 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					nextSpecialWait = special[specialType].pwr;
 					break;
 				case 10:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = 8;
-					flareDuration = endlessPerkSpecialDuration(14 + 4 * player[0].items.weapon[FRONT_WEAPON].power, 0);
+					flareDuration = endlessPerkSpecialDuration(14 + 4 * this_player->items.weapon[FRONT_WEAPON].power, 0);
 					linkToPlayer = true;
 					break;
 				case 11:
 					specialWeaponFilter = -99;
 					specialWeaponFreq = special[specialType].pwr;
-					flareDuration = endlessPerkSpecialDuration(10 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 0);
-					astralDuration = endlessPerkSpecialDuration(20 + 10 * player[0].items.weapon[FRONT_WEAPON].power, 255);
+					flareDuration = endlessPerkSpecialDuration(10 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 0);
+					astralDuration = endlessPerkSpecialDuration(20 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 255);
 					break;
 				case 16:
 					specialWeaponFilter = -99;
@@ -804,29 +856,32 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			player[playerNum-1].invulnerable_ticks = endlessOpeningSalvoScale(endlessPerkSpecialDuration(temp2 * 10, 0));
 			salvo_special_burst(playerNum);
 
-			if (superArcadeMode > 0 && superArcadeMode <= SA)
+			// A Super Arcade ship's own invulnerability burst, so it belongs to the firing ship.
+			if (player_sa_ship(this_player) != SA_NONE)
 			{
 				shotRepeat[SHOT_SPECIAL] = 250;
-				b = player_shot_create(0, SHOT_SPECIAL2, player[0].x, player[0].y, mouseX, mouseY, 707, 1);
-				player[0].invulnerable_ticks = 100;
+				b = player_shot_create(0, SHOT_SPECIAL2, this_player->x, this_player->y,
+				                       mouseX, mouseY, 707, playerNum);
+				this_player->invulnerable_ticks = 100;
 			}
 			break;
 		// Repair specials, Opening Salvo x2.5. Vanilla leans on JE_drawArmor's blanket 28 clamp to
 		// bound these, but endless deliberately SKIPS it (reinforced hulls exceed 28), so cap on the
 		// hull's own max; the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
 		case 13:
-			player[0].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
-			if (endlessFxActive() && player[0].initial_armor > 0 && player[0].armor > player[0].initial_armor)
-				player[0].armor = player[0].initial_armor;
-			salvo_special_burst(1);   // repairs are hardwired to a player, not to playerNum
+			this_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && this_player->initial_armor > 0 && this_player->armor > this_player->initial_armor)
+				this_player->armor = this_player->initial_armor;
+			salvo_special_burst(playerNum);
 
 			soundQueue[3] = S_POWERUP;
 			break;
 		case 14:
-			player[1].armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
-			if (endlessFxActive() && player[1].initial_armor > 0 && player[1].armor > player[1].initial_armor)
-				player[1].armor = player[1].initial_armor;
-			salvo_special_burst(2);
+			Player *const repair_player = dual_ship_mode() ? this_player : &player[1];
+			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
+			if (endlessFxActive() && repair_player->initial_armor > 0 && repair_player->armor > repair_player->initial_armor)
+				repair_player->armor = repair_player->initial_armor;
+			salvo_special_burst(dual_ship_mode() ? playerNum : 2);
 
 			soundQueue[3] = S_POWERUP;
 			break;
@@ -834,24 +889,40 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		case 17:  // spawn left or right sidekick
 			soundQueue[3] = S_POWERUP;
 
-			if (player[0].items.sidekick[LEFT_SIDEKICK] == special[specialType].wpn)
+			if (this_player->items.sidekick[LEFT_SIDEKICK] == special[specialType].wpn)
 			{
-				player[0].items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
+				this_player->items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
 				shotMultiPos[RIGHT_SIDEKICK] = 0;
 			}
 			else
 			{
-				player[0].items.sidekick[LEFT_SIDEKICK] = special[specialType].wpn;
+				this_player->items.sidekick[LEFT_SIDEKICK] = special[specialType].wpn;
 				shotMultiPos[LEFT_SIDEKICK] = 0;
 			}
 
-			JE_drawOptions();
+			if (dual_ship_mode())
+			{
+				JE_resetPlayerOptions(this_player);
+				JE_drawOptionsHUD();
+			}
+			else
+			{
+				JE_drawOptions();
+			}
 			break;
 
 		case 18:  // spawn right sidekick
-			player[0].items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
+			this_player->items.sidekick[RIGHT_SIDEKICK] = special[specialType].wpn;
 
-			JE_drawOptions();
+			if (dual_ship_mode())
+			{
+				JE_resetPlayerOptions(this_player);
+				JE_drawOptionsHUD();
+			}
+			else
+			{
+				JE_drawOptions();
+			}
 
 			soundQueue[4] = S_POWERUP;
 
@@ -875,13 +946,19 @@ static JE_word twiddleWait = 0;
 
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
+	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
+	const int special_mouse_x = dual_ship_mode() && playerNum == 2 ? mouseXB : mouseX;
+	const int special_mouse_y = dual_ship_mode() && playerNum == 2 ? mouseYB : mouseY;
 
-	if (player[0].items.special > 0)
+	// The ready light sits beside the special block's icon, never on it (see mainint.h), and only
+	// beside the one this machine actually draws.
+	const uint special_player = (uint)(this_player - player);
+	if (hud_special_block_shown(special_player))
 	{
-		if (shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 && flareDuration < 2 && zinglonDuration < 2)
-			blit_sprite2(VGAScreen, 47, 4, spriteSheet9, 94);
-		else
-			blit_sprite2(VGAScreen, 47, 4, spriteSheet9, 93);
+		const bool ready = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
+		                && flareDuration < 2 && zinglonDuration < 2;
+		blit_sprite2(VGAScreen, hud_special_light_x(special_player), HUD_SPECIAL_LIGHT_Y,
+		             spriteSheet9, ready ? 94 : 93);
 	}
 
 	if (shotRepeat[SHOT_SPECIAL] > 0)
@@ -946,7 +1023,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		VGAScreen = game_screen; /* side-effect of game_screen */
 	}
 
-	if (playerNum == 1 && player[0].items.special > 0)
+	if ((playerNum == 1 || dual_ship_mode()) && this_player->items.special > 0)
 	{  /*Main Begin*/
 
 		if (superArcadeMode > 0 && (button[2-1] || button[3-1]))
@@ -958,21 +1035,21 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			fireButtonHeld = false;
 		}
 		else if (shotRepeat[SHOT_SPECIAL] == 0 && !fireButtonHeld &&
-		         (flareDuration == 0 || (flareFromTwiddle && !special_is_flare(player[0].items.special))) &&
+		         (flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		         specialWait == 0)
 		{
 			fireButtonHeld = true;
-			JE_specialComplete(playerNum, player[0].items.special);
+			JE_specialComplete(playerNum, this_player->items.special);
 		}
 
 	}  /*Main End*/
 
-	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && playerNum == 1 && player[0].items.special > 0 &&
+	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && (playerNum == 1 || dual_ship_mode()) && this_player->items.special > 0 &&
 		shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 &&
-		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(player[0].items.special))) &&
+		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		(button[0] || (superArcadeMode != SA_NONE && (button[1] || button[2]))))
 	{
-		JE_specialComplete(playerNum, player[0].items.special);
+		JE_specialComplete(playerNum, this_player->items.special);
 	}
 
 	// Debug: force-fire the selected twiddle's special. Runs after the equipped
@@ -1079,14 +1156,14 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 					if (twiddleFlareShotWait == 0)
 					{
 						const int savedSR = shotRepeat[SHOT_SPECIAL];
-						b = player_shot_create(0, SHOT_SPECIAL, player[0].x, player[0].y, mouseX, mouseY, specialWeaponWpn, playerNum);
+						b = player_shot_create(0, SHOT_SPECIAL, this_player->x, this_player->y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 						twiddleFlareShotWait = shotRepeat[SHOT_SPECIAL];  // capture the mine cadence
 						shotRepeat[SHOT_SPECIAL] = savedSR;
 					}
 				}
 				else if (shotRepeat[SHOT_SPECIAL] == 0)
 				{
-					b = player_shot_create(0, SHOT_SPECIAL, player[0].x, player[0].y, mouseX, mouseY, specialWeaponWpn, playerNum);
+					b = player_shot_create(0, SHOT_SPECIAL, this_player->x, this_player->y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 				}
 			}
 			else
@@ -1095,7 +1172,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 				// assign them to opposite coordinates.
 				const int scatter_x = PLAYFIELD_LEFT + mt_rand() % PLAYFIELD_WIDTH;
 				const int scatter_y = mt_rand() % 184;
-				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, mouseX, mouseY, specialWeaponWpn, playerNum);
+				b = player_shot_create(0, SHOT_SPECIAL, scatter_x, scatter_y, special_mouse_x, special_mouse_y, specialWeaponWpn, playerNum);
 			}
 
 			if (spraySpecial && b != MAX_PWEAPON)
@@ -1137,14 +1214,14 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 		// Record the pillar for the render layer (JE_starShowVGA) instead of drawing:
 		// into game_screen it would snap at 35Hz and freeze the scrolled background.
-		zinglonPillarActive = true;
-		zinglonPillarCX = player[0].x + 7;
-		zinglonPillarTemp = temp;
+		zinglonPillarActive[special_player] = true;
+		zinglonPillarCX[special_player] = this_player->x + 7;
+		zinglonPillarTemp[special_player] = temp;
 
 		// Opening Salvo: the pillar is a brightness effect, not a sprite, so it has no colour to
 		// trail. Scatter sparks up the beam in the salvo's green, width following its own ramp.
 		if (endlessOpeningSalvoVolleyActive() && temp > 0)
-			JE_doSP(player[0].x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
+			JE_doSP(this_player->x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
 
 		zinglonDuration--;
 		if (zinglonDuration % 5 == 0)
@@ -1372,18 +1449,19 @@ void JE_wipeShieldArmorBars(void)
 		return;
 	}
 
-	if (!twoPlayerMode || galagaMode)
+	const uint player_index = gameplay_local_player_index();
+	if (!split_arcade_mode() || galagaMode)
 	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[0].shield * 2, 0);
+		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[player_index].shield * 2, 0);
 	}
 	else
 	{
 		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 60 - 44, HUD_X(278), 60, 0);
 		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 194 - 44, HUD_X(278), 194, 0);
 	}
-	if (!twoPlayerMode || galagaMode)
+	if (!split_arcade_mode() || galagaMode)
 	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 137, HUD_X(315), 194 - (player[0].armor > 28 ? 28 : player[0].armor) * 2, 0);
+		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 137, HUD_X(315), 194 - (player[player_index].armor > 28 ? 28 : player[player_index].armor) * 2, 0);
 	}
 	else
 	{
@@ -1392,9 +1470,39 @@ void JE_wipeShieldArmorBars(void)
 	}
 }
 
+/* Which ships carry the Endless effect layer: both of them in an online co-op run, player 1
+ * otherwise (the campaign debug layer only ever equips one). */
+static bool endlessFxShip(const Player *this_player)
+{
+	return endlessFxActive() && (coopEndlessMode || this_player == &player[0]);
+}
+
+/* The generator reserve belonging to the ship being hit. In a dual-ship session each ship keeps
+ * its own and the global `power` is only the scratch context the weapon code runs in, which is
+ * NOT loaded at the damage sites (see coop_ship_runtime_load in mainint.c). */
+static int endlessGeneratorGet(const Player *this_player)
+{
+	return dual_ship_mode() ? (int)this_player->generator_power : (int)power;
+}
+
+static void endlessGeneratorSet(Player *this_player, int v)
+{
+	if (v < 0)
+		v = 0;
+	if (v > 900)
+		v = 900;
+	if (dual_ship_mode())
+		this_player->generator_power = (Uint16)v;
+	else
+		power = (uint)v;
+}
+
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
+	// Nitro and the rest of the personal deals belong to the ship being hit.
+	endlessSetFxPlayer((uint)(this_player - &player[0]));
+
 	int playerDamage = 0;
 	soundQueue[7] = S_SHIELD_HIT;
 
@@ -1406,7 +1514,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 	// Endless Bulwark relic: soften each incoming hit by a flat amount, but always leave at
 	// least 1 damage (only the main player carries perks; a lone hit of 0 is left untouched).
-	if (endlessFxActive() && temp > 1 && this_player == &player[0])
+	if (endlessFxShip(this_player) && temp > 1)
 	{
 		int t = (int)temp - endlessPlayerDamageReduce();
 		temp = (t < 1) ? 1 : (JE_byte)t;
@@ -1415,7 +1523,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Nitro (gamble deal): the hull is stripped for raw firepower, so any hit that lands is fatal.
 	// Push the damage past every shield+armor total; a held revive can still catch the lethal blow
 	// on the death path below, which keeps the interaction honest rather than an unavoidable game-over.
-	if (endlessFxActive() && this_player == &player[0] && (endlessActiveMods & ENDLESS_MOD_NITRO))
+	if (endlessFxShip(this_player) && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_NITRO))
 		temp = 255;
 
 	// Endless Countermeasure Suite perk: set the moment a hit punches THROUGH the shields, i.e. on
@@ -1436,7 +1544,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 		// goes on cooldown. Placed BEFORE cmHullHit because a blocked hit never reached the hull, so
 		// it must not arm the Countermeasure burst, deal armor damage, flash the gauge or reach the
 		// death path. The helper arms the cooldown when it answers true, so this is the one asker.
-		if (endlessFxActive() && this_player == &player[0] && temp > 0
+		if (endlessFxShip(this_player) && temp > 0
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
 			temp = 0;
@@ -1470,7 +1578,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 
 				if (this_player->is_alive && !youAreCheating)
 				{
-					if (endlessMode && this_player == &player[0] && endlessConsumeRevive())
+					if (endlessMode && endlessConsumeRevive((uint)(this_player - &player[0])))
 					{
 						// Held revive token: survive the lethal hit. endlessConsumeRevive already
 						// restored armor to full and armed the ~3s enemy-fire stun; here we wipe the
@@ -1492,6 +1600,10 @@ JE_byte JE_playerDamage(JE_byte temp,
 							levelTimer = false;
 						this_player->is_alive = false;
 						this_player->exploding_ticks = 60;
+						// A co-op ship that goes down spectates until the zone ends; the outpost the
+						// survivor reaches puts it back in the air. Both down is an ordinary death.
+						if (coopEndlessMode)
+							endlessPlayerDowned[this_player - &player[0]] = true;
 						levelEnd = 40;
 						tempVolume = tyrMusicVolume;
 						soundQueue[1] = S_EXPLOSION_22;
@@ -1532,21 +1644,17 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into
 	// the generator. Main player only; re-cap at the generator ceiling since the tick's own recharge/cap
 	// already ran. shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
-	if (endlessFxActive() && this_player == &player[0] && this_player->shield < oldShield)
+	if (endlessFxShip(this_player) && this_player->shield < oldShield)
 	{
 		const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
 		                                           shields[this_player->items.shield].tpwr);
 		if (gained > 0)
-		{
-			power += gained;
-			if (power > 900)
-				power = 900;
-		}
+			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) + gained);
 	}
 
 	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst
 	// that vaporises enemy projectiles around the ship (radius grows at 2 stacks), on a shared cooldown.
-	if (endlessFxActive() && this_player == &player[0] && cmHullHit)
+	if (endlessFxShip(this_player) && cmHullHit)
 	{
 		const int cmRadius = endlessPerkCountermeasureRadius();  // 0 unless owned AND off cooldown
 		if (cmRadius > 0)
@@ -1580,7 +1688,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 	}
 
 	// Failsafe extends hull-hit invulnerability without shortening a longer revive/respawn window.
-	if (endlessFxActive() && this_player == &player[0] && cmHullHit && this_player->is_alive)
+	if (endlessFxShip(this_player) && cmHullHit && this_player->is_alive)
 	{
 		const uint failsafe = (uint)endlessPerkFailsafeTicks();
 		if (this_player->invulnerable_ticks < failsafe)
@@ -1598,25 +1706,28 @@ JE_byte JE_playerDamage(JE_byte temp,
 	// 0 whenever the shield fully absorbs a hit, the common early-game case. Only losses count, so a
 	// revive restoring armor can't read as negative. Main player only (its generator is the global
 	// `power`); the helper is 0 when off or under a dead generator.
-	if (endlessFxActive() && this_player == &player[0])
+	if (endlessFxShip(this_player))
 	{
 		int lost = 0;
 		if (this_player->shield < oldShield) lost += oldShield - this_player->shield;
 		if (this_player->armor  < oldArmor)  lost += oldArmor  - this_player->armor;
 		if (lost > 0)
 		{
-			unsigned drain = endlessStaticDischargeDrain((unsigned)lost);
-			power = (power > drain) ? power - drain : 0;
+			const int drain = (int)endlessStaticDischargeDrain((unsigned)lost);
+			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) - drain);
 		}
 	}
 
 	return playerDamage;
 }
 
-JE_word JE_portConfigs(void)
+/* How many firing patterns one ship's rear bay offers. Per ship, because every caller clamps a
+ * named ship's weapon_mode: online, both machines simulate both ships, and answering with the
+ * local ship's count had a partner's toggle wrap against the wrong gun on one side, so the mode
+ * change never reached the other client. */
+JE_word JE_portConfigs(const Player *this_player)
 {
-	const uint player_index = twoPlayerMode ? 1 : 0;
-	return tempW = weaponPort[player[player_index].items.weapon[REAR_WEAPON].id].opnum;
+	return tempW = weaponPort[this_player->items.weapon[REAR_WEAPON].id].opnum;
 }
 
 // Dim the remote ship's gauges after each repaint; the shade never compounds.
@@ -1635,7 +1746,7 @@ static void gauge_dim_rect(int x1, int y1, int x2, int y2)
 // Label two-player gauge blocks in the shield bank, before the level fade-in.
 void JE_drawPlayerTags(void)
 {
-	if (!twoPlayerMode || galagaMode)
+	if (!split_arcade_mode() || galagaMode)
 		return;
 
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -1672,7 +1783,7 @@ void JE_drawShield(void)
 		return;
 	}
 
-	if (twoPlayerMode && !galagaMode)
+	if (split_arcade_mode() && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
@@ -1686,8 +1797,9 @@ void JE_drawShield(void)
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(270), 194, player[0].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[0]), 0);
-		draw_shield_ceiling_mark(HUD_X(270), 194, player[0].shield, player[0].shield_max, 0);
+		const uint i = gameplay_local_player_index();
+		JE_dBar3(VGAScreen, HUD_X(270), 194, player[i].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0);
+		draw_shield_ceiling_mark(HUD_X(270), 194, player[i].shield, player[i].shield_max, 0);
 	}
 }
 
@@ -1731,7 +1843,7 @@ void JE_drawArmor(void)
 		return;
 	}
 
-	if (twoPlayerMode && !galagaMode)
+	if (split_arcade_mode() && !galagaMode)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
@@ -1742,11 +1854,12 @@ void JE_drawArmor(void)
 	}
 	else if (endlessFxActive())
 	{
-		endlessDrawArmorBar(player[0].armor);
+		endlessDrawArmorBar(player[gameplay_local_player_index()].armor);
 	}
 	else
 	{
-		JE_dBar3(VGAScreen, HUD_X(307), 194, player[0].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[0]), 0);
+		const uint i = gameplay_local_player_index();
+		JE_dBar3(VGAScreen, HUD_X(307), 194, player[i].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0);
 	}
 }
 

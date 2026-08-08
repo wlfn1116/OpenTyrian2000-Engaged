@@ -12,10 +12,12 @@
 #include "loudness.h"
 #include "mainint.h"
 #include "mtrand.h"
+#include "rollback.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "palette.h"
 #include "pcxload.h"
+#include "network.h"
 #include "player.h"
 #include "sprite.h"
 #include "tyrian2.h"
@@ -29,7 +31,7 @@
 
 int      endlessRunDepth  = 0;
 Uint64   endlessActiveMods = 0;
-int      endlessArmorBonus = 0;
+int      endlessArmorBonus[2] = { 0, 0 };
 int      endlessRunKills = 0;
 int      endlessRunBossKills = 0;
 
@@ -40,6 +42,144 @@ Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
 Uint64 endlessCashBySink[ENDLESS_CASH_SINKS] = { 0 };
 static ulong endlessCashMark = 0;
+
+/* Online co-op. The sector is shared; wallets, gear and personal upgrades are not. Each machine
+ * outfits, spends for and tallies its OWN ship, and mirrors the other's state at the outpost. */
+
+uint endlessEconomyIndex(void)
+{
+	return coopEndlessMode ? gameplay_local_player_index() : 0;
+}
+
+uint endlessPartnerIndex(void)
+{
+	return coopEndlessMode ? 1 - gameplay_local_player_index() : 0;
+}
+
+// This machine's wallet, which is the one the run ledger follows.
+static ulong endlessWallet(void)
+{
+	return player[endlessEconomyIndex()].cash;
+}
+
+// Ships a per-player effect has to walk. One outside co-op, so solo behaviour is untouched.
+uint endlessEffectPlayers(void)
+{
+	return coopEndlessMode ? (uint)COUNTOF(player) : 1u;
+}
+
+bool endlessCoopComboShared = false;
+EndlessCourseChooser endlessCourseChooser = ENDLESS_PICK_HOST;
+bool endlessCoopHostCharts = true;
+bool endlessPlayerDowned[2] = { false, false };
+/* The peer pressed Quit in the in-game menu. Endless answers it the way the local press is
+ * answered: revert to the launch snapshot and reopen the outpost, together. Anything the sortie
+ * snapshot cannot restore leaves the run where it was, so this is never a teardown. */
+void endlessCoopPeerQuitLevel(void)
+{
+	if (endlessCoop() && endlessSortieValid())
+		endlessQuitToOutpost = true;
+}
+
+Uint64 endlessPlayerMods[2] = { 0, 0 };
+static uint endlessFxPlayerIdx = 0;
+
+void endlessSetFxPlayer(uint p) { endlessFxPlayerIdx = (p < COUNTOF(player)) ? p : 0; }
+uint endlessFxPlayer(void)      { return coopEndlessMode ? endlessFxPlayerIdx : 0; }
+
+/* Split what each player bought: the personal half lands on their own mask, the rest (a shop
+ * discount, a bulked-up boss, a rush of rammers) changes the sector for both. Called once, when
+ * the course is committed. */
+void endlessApplyPurchasedMods(void)
+{
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		endlessActiveMods |= endlessPurchasedMods[p] & ~ENDLESS_PERSONAL_MOD_MASK;
+
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		const Uint64 mine = endlessPurchasedMods[p] & ENDLESS_PERSONAL_MOD_MASK;
+		endlessPlayerMods[p] = endlessFoldPurchasedMods(endlessActiveMods, mine);
+	}
+}
+
+const char *endlessCourseChooserName(EndlessCourseChooser mode)
+{
+	switch (mode)
+	{
+	case ENDLESS_PICK_GUEST:     return "Guest";
+	case ENDLESS_PICK_ALTERNATE: return "Alternating";
+	case ENDLESS_PICK_COINFLIP:  return "50-50";
+	default:                     return "Host";
+	}
+}
+
+bool endlessLocalPlayerCharts(void)
+{
+	if (!endlessCoop())
+		return true;
+
+	switch (endlessCourseChooser)
+	{
+	case ENDLESS_PICK_GUEST:     return !network_is_host;
+	case ENDLESS_PICK_ALTERNATE: return endlessCoopHostCharts == network_is_host;
+	case ENDLESS_PICK_COINFLIP:
+		// Derived from the seed rather than drawn from a stream, so the coin never depends on how
+		// much either player has shopped and both machines read the same side of it.
+		return (((endlessSplitMixSeed((Uint64)endlessRunDepth * 4 + 1) >> 33) & 1) != 0) == network_is_host;
+	default:                     return network_is_host;
+	}
+}
+
+void endlessAdvanceCourseTurn(void)
+{
+	if (endlessCoop() && endlessCourseChooser == ENDLESS_PICK_ALTERNATE)
+		endlessCoopHostCharts = !endlessCoopHostCharts;
+}
+
+/* The SEAT charting the next course, as both machines derive it (solo: player 1). The charting
+ * machine is a per-machine question (endlessLocalPlayerCharts); this is the shared one, which
+ * personal perks that shape the slate (Surveyor) read. */
+uint endlessChartingPlayerIndex(void)
+{
+	if (!endlessCoop())
+		return 0;
+
+	bool hostCharts;
+	switch (endlessCourseChooser)
+	{
+	case ENDLESS_PICK_GUEST:     hostCharts = false; break;
+	case ENDLESS_PICK_ALTERNATE: hostCharts = endlessCoopHostCharts; break;
+	case ENDLESS_PICK_COINFLIP:
+		hostCharts = ((endlessSplitMixSeed((Uint64)endlessRunDepth * 4 + 1) >> 33) & 1) != 0;
+		break;
+	default:                     hostCharts = true; break;
+	}
+	return hostCharts ? (networkHostPlayerNum - 1u) : (2u - networkHostPlayerNum);
+}
+
+bool endlessAnyPlayerFlying(void)
+{
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		if (player[p].is_alive && !endlessPlayerDowned[p])
+			return true;
+	return false;
+}
+
+/* A partner who went down mid-zone comes back at the outpost the survivor reached: full hull,
+ * no shield, everything they owned still theirs. */
+void endlessReviveDownedAtOutpost(void)
+{
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+	{
+		if (!endlessPlayerDowned[p])
+			continue;
+		endlessPlayerDowned[p] = false;
+		player[p].is_alive = true;
+		player[p].exploding_ticks = 0;
+		player[p].armor = player[p].initial_armor;
+		player[p].shield = 0;
+	}
+}
 
 // 12 digits: high enough that no run reaches it, low enough that the run-over column can print it.
 #define ENDLESS_CASH_TALLY_MAX  999999999999ULL
@@ -84,7 +224,7 @@ static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 // Book undeclared wallet drift, then re-anchor the ledger mark.
 static void endlessCashReconcile(bool warn)
 {
-	const ulong now = player[0].cash;
+	const ulong now = endlessWallet();
 	if (now == endlessCashMark)
 		return;
 	if (warn)
@@ -119,13 +259,13 @@ void endlessCashCredit(long amount, EndlessCashSource src)
 		return;
 	if (!endlessMode)
 	{
-		player[0].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
+		player[endlessEconomyIndex()].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
 		return;
 	}
 	endlessCashReconcile(true);   // any undeclared drift surfaces before the mark moves
-	player[0].cash += (ulong)amount;
+	player[endlessEconomyIndex()].cash += (ulong)amount;
 	endlessCashBook((Uint64)amount, src);
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
@@ -134,24 +274,24 @@ void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
 		return;
 	if (!endlessMode)
 	{
-		player[0].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
+		player[endlessEconomyIndex()].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
 		return;
 	}
 	endlessCashReconcile(true);
 	Uint64 take = (Uint64)amount;
-	if (take > player[0].cash)   // a debit can take at most the wallet
-		take = player[0].cash;
-	player[0].cash -= (ulong)take;
+	if (take > endlessWallet())   // a debit can take at most the wallet
+		take = endlessWallet();
+	player[endlessEconomyIndex()].cash -= (ulong)take;
 	endlessCashAddSat(&endlessRunCashSpent, take);
 	if ((unsigned)sink < ENDLESS_CASH_SINKS)
 		endlessCashAddSat(&endlessCashBySink[sink], take);
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 // Re-anchor after loading or restoring cash that was not earned in this run.
 void endlessCashResync(void)
 {
-	endlessCashMark = player[0].cash;
+	endlessCashMark = endlessWallet();
 }
 
 // The upgrade menu shows a temporary balance; Begin/Commit must bracket one transaction.
@@ -162,7 +302,7 @@ void endlessShopTradeBegin(void)
 	if (!endlessMode)
 		return;
 	endlessCashReconcile(true);   // settle drift while the wallet is still real
-	endlessTradeBefore = player[0].cash;
+	endlessTradeBefore = endlessWallet();
 }
 
 // Full-refund trades cancel prior gear spending. Only excess from granted gear counts as income.
@@ -170,7 +310,7 @@ void endlessShopTradeCommit(void)
 {
 	if (!endlessMode)
 		return;
-	const ulong now = player[0].cash;   // the exit assignment already committed JE_cashLeft()
+	const ulong now = endlessWallet();   // the exit assignment already committed JE_cashLeft()
 	if (now > endlessTradeBefore)
 	{
 		const Uint64 refund = (Uint64)(now - endlessTradeBefore);
@@ -194,7 +334,7 @@ void endlessShopTradeCommit(void)
 
 // Per-zone timers, advanced by endlessGameplayTick.
 int endlessZoneTicks      = 0;
-int endlessTurbodriveTimer = 0;
+int endlessTurbodriveTimer[2] = { 0, 0 };
 int endlessRetaliationTimer = 0;
 
 // Rewards banked on sector clear and paid at the next outpost.
@@ -279,10 +419,12 @@ const char *endlessRunModeName(EndlessRunMode mode)
 	}
 }
 
-// All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
-// difficulty it started on, or the untagged one if that difficulty is outside the six below.
-int  endlessBestZoneUntagged[ENDLESS_RUNMODE_COUNT] = { 0 };
-bool endlessBestZoneUntaggedCustom[ENDLESS_RUNMODE_COUNT] = { false };
+/* All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
+ * difficulty it started on, or the untagged one if that difficulty is outside the six below.
+ * The outer index is crew size: two ships reach depths a solo run cannot, so the two sets of
+ * records never meet. */
+int  endlessBestZoneUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { 0 } };
+bool endlessBestZoneUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { false } };
 static int endlessBestZoneAtRunStart = 0;
 
 const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
@@ -290,14 +432,27 @@ const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
 	DIFFICULTY_IMPOSSIBLE, DIFFICULTY_SUICIDE, DIFFICULTY_LORD_OF_GAME,
 };
 
-int  endlessBestZoneDiff[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { 0 } };
-bool endlessBestZoneDiffCustom[ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { false } };
+int  endlessBestZoneDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { 0 } } };
+bool endlessBestZoneDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { false } } };
 
-int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot)
+int endlessRecordTable(void) { return coopEndlessMode ? 1 : 0; }
+
+const char *endlessRecordTableName(int players)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	return (players == 1) ? "2 Players" : "1 Player";
+}
+
+static bool endlessRecordArgsOk(int players, EndlessRunMode mode)
+{
+	return players >= 0 && players < ENDLESS_PLAYER_TABLES
+	    && mode >= 0 && mode < ENDLESS_RUNMODE_COUNT;
+}
+
+int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot)
+{
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return 0;
-	return endlessBestZoneDiff[mode][slot];
+	return endlessBestZoneDiff[players][mode][slot];
 }
 
 int endlessDifficultySlot(int difficulty)
@@ -337,13 +492,13 @@ static void endlessRunRecord(int **zone, bool **mark)
 	const int slot = endlessDifficultySlot(initialDifficulty);
 	if (slot >= 0)
 	{
-		*zone = &endlessBestZoneDiff[endlessRunMode][slot];
-		*mark = &endlessBestZoneDiffCustom[endlessRunMode][slot];
+		*zone = &endlessBestZoneDiff[endlessRecordTable()][endlessRunMode][slot];
+		*mark = &endlessBestZoneDiffCustom[endlessRecordTable()][endlessRunMode][slot];
 	}
 	else
 	{
-		*zone = &endlessBestZoneUntagged[endlessRunMode];
-		*mark = &endlessBestZoneUntaggedCustom[endlessRunMode];
+		*zone = &endlessBestZoneUntagged[endlessRecordTable()][endlessRunMode];
+		*mark = &endlessBestZoneUntaggedCustom[endlessRecordTable()][endlessRunMode];
 	}
 }
 
@@ -395,72 +550,72 @@ void endlessCustomWeaponZoneEnd(void)
 		endlessMarkRecordCustom();
 }
 
-int endlessBestZoneAny(EndlessRunMode mode)
+int endlessBestZoneAny(int players, EndlessRunMode mode)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+	if (!endlessRecordArgsOk(players, mode))
 		return 0;
 
-	int best = endlessBestZoneUntagged[mode];
+	int best = endlessBestZoneUntagged[players][mode];
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[mode][d] > best)
-			best = endlessBestZoneDiff[mode][d];
+		if (endlessBestZoneDiff[players][mode][d] > best)
+			best = endlessBestZoneDiff[players][mode][d];
 	return best;
 }
 
-const char *endlessRecordAnyCustomMark(EndlessRunMode mode)
+const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode)
 {
 	// Whichever record is the deepest owns the mark, and a tie takes the first marked one.
-	const int best = endlessBestZoneAny(mode);
+	const int best = endlessBestZoneAny(players, mode);
 	if (best <= 0)
 		return "";
 
-	if (endlessBestZoneUntagged[mode] == best && endlessBestZoneUntaggedCustom[mode])
+	if (endlessBestZoneUntagged[players][mode] == best && endlessBestZoneUntaggedCustom[players][mode])
 		return " C";
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[mode][d] == best && endlessBestZoneDiffCustom[mode][d])
+		if (endlessBestZoneDiff[players][mode][d] == best && endlessBestZoneDiffCustom[players][mode][d])
 			return " C";
 	return "";
 }
 
-const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot)
+const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return "";
-	return endlessBestZoneDiffCustom[mode][slot] ? " C" : "";
+	return endlessBestZoneDiffCustom[players][mode][slot] ? " C" : "";
 }
 
-void endlessClearDeepestRecord(EndlessRunMode mode)
+void endlessClearDeepestRecord(int players, EndlessRunMode mode)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT)
+	if (!endlessRecordArgsOk(players, mode))
 		return;
-	const int best = endlessBestZoneAny(mode);
+	const int best = endlessBestZoneAny(players, mode);
 	if (best <= 0)
 		return;
 
 	// Every record standing at that depth goes, so one confirmation always moves the figure and
 	// what remains below it is what the mode now shows.
-	if (endlessBestZoneUntagged[mode] == best)
+	if (endlessBestZoneUntagged[players][mode] == best)
 	{
-		endlessBestZoneUntagged[mode] = 0;
-		endlessBestZoneUntaggedCustom[mode] = false;
+		endlessBestZoneUntagged[players][mode] = 0;
+		endlessBestZoneUntaggedCustom[players][mode] = false;
 	}
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 	{
-		if (endlessBestZoneDiff[mode][d] == best)
+		if (endlessBestZoneDiff[players][mode][d] == best)
 		{
-			endlessBestZoneDiff[mode][d] = 0;
-			endlessBestZoneDiffCustom[mode][d] = false;
+			endlessBestZoneDiff[players][mode][d] = 0;
+			endlessBestZoneDiffCustom[players][mode][d] = false;
 		}
 	}
 	save_opentyrian_config();
 }
 
-void endlessClearRecordDifficulty(EndlessRunMode mode, int slot)
+void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot)
 {
-	if (mode < 0 || mode >= ENDLESS_RUNMODE_COUNT || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return;
-	endlessBestZoneDiff[mode][slot] = 0;
-	endlessBestZoneDiffCustom[mode][slot] = false;
+	endlessBestZoneDiff[players][mode][slot] = 0;
+	endlessBestZoneDiffCustom[players][mode][slot] = false;
 	save_opentyrian_config();
 }
 
@@ -479,7 +634,6 @@ void endlessResetRun(void)
 {
 	endlessRunDepth   = 0;
 	endlessActiveMods = 0;
-	endlessArmorBonus = 0;
 	endlessRunUsedCustom = false;
 	endlessCustomFiredZone = false;
 	endlessRunKills   = 0;
@@ -489,11 +643,10 @@ void endlessResetRun(void)
 	memset(endlessCashBySource, 0, sizeof(endlessCashBySource));
 	memset(endlessCashBySink, 0, sizeof(endlessCashBySink));
 	endlessCashResync();   // whatever is in the wallet right now was not earned by the run starting here
-	endlessPurchasedMods = 0;
-	endlessBuffKind = 0;
-	endlessBuffCooldownUntil = 0;
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessPlayerMods, 0, sizeof(endlessPlayerMods));
 	endlessPerkPending = false;
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
@@ -504,32 +657,47 @@ void endlessResetRun(void)
 	endlessLastSong = 0;
 	endlessLastSongDepth = -1;
 	endlessRegenTick = 0;
-	endlessSalvoIdle = ENDLESS_PERK_SALVO_IDLE;
-	endlessSalvoWindow = 0;
-	endlessCmCooldown = 0;
-	endlessBuffCharge = 0;
-	endlessReviveHeld = false;
-	endlessRevivesUsed = 0;
-	endlessCleanseChargeCount = 0;
-	endlessGamblePerkWon = false;
-	endlessShopTax = 0;
-	endlessGambleRigged = false;
-	endlessLongCon = 0;
+	for (unsigned p = 0; p < COUNTOF(endlessSalvoIdle); ++p)
+	{
+		endlessSalvoIdle[p] = ENDLESS_PERK_SALVO_IDLE;
+		endlessSalvoWindow[p] = 0;
+	}
+	memset(endlessCmCooldown, 0, sizeof(endlessCmCooldown));
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
 	endlessSortieHave = false;
-	endlessSortiePrePurchased = 0;
-	endlessSortiePreCleanse = 0;
-	endlessSortiePreLongCon = 0;
+	memset(endlessSortiePrePurchased, 0, sizeof(endlessSortiePrePurchased));
+	memset(endlessSortiePreCleanse, 0, sizeof(endlessSortiePreCleanse));
+	memset(endlessSortiePreLongCon, 0, sizeof(endlessSortiePreLongCon));
 	endlessSortieOutpostMods = 0;
 	endlessSortieOutpostEp = 0;
+	endlessCoopHostCharts = true;
 	// New runs override this after reset, and a loaded/reverted one restores the saved mode.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';
 	endlessBaseEp = endlessBaseLvl = endlessPrevBaseEp = endlessPrevBaseLvl = 0;
 	endlessRecentCount = 0;
-	player[0].superbombs = 0;
-	memset(endlessPerkOwned, 0, sizeof(endlessPerkOwned));
+
+	// Everything a player owns for themselves.
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessArmorBonus[p] = 0;
+		endlessPurchasedMods[p] = 0;
+		endlessBuffKind[p] = 0;
+		endlessBuffCooldownUntil[p] = 0;
+		endlessBuffCharge[p] = 0;
+		endlessReviveHeld[p] = false;
+		endlessRevivesUsed[p] = 0;
+		endlessCleanseChargeCount[p] = 0;
+		endlessGamblePerkWon[p] = false;
+		endlessShopTax[p] = 0;
+		endlessGambleRigged[p] = false;
+		endlessLongCon[p] = 0;
+		endlessPlayerDowned[p] = false;
+		player[p].superbombs = 0;
+	}
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
 	endlessSetSeed("");
 }
 
@@ -538,50 +706,79 @@ void endlessCampaignModsArm(void)
 {
 	if (endlessMode)
 		return;
-	endlessArmorBonus = 0;
-	endlessBuffCharge = 0;
-	endlessBuffKind = 0;
-	endlessPurchasedMods = 0;
-	endlessOverdriveStacks = 0;
-	endlessComboKills = 0;
-	endlessReviveHeld = false;
-	endlessCleanseChargeCount = 0;
-	endlessShopTax = 0;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		endlessArmorBonus[p] = 0;
+		endlessBuffCharge[p] = 0;
+		endlessBuffKind[p] = 0;
+		endlessPurchasedMods[p] = 0;
+		endlessReviveHeld[p] = false;
+		endlessCleanseChargeCount[p] = 0;
+		endlessShopTax[p] = 0;
+	}
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
 	endlessPerkPending = false;
 }
 
-void endlessCountKill(int linknum)
+/* Multi-part enemies share a nonzero link number and count once; this is that dedup guard.
+ * Simulation state, in the rollback registry: left function-local it survived into every
+ * re-simulation pass, which then skipped the kill it had already counted, and the combo feed
+ * (and with it the Turbodrive fire rate) came out different on the two machines. */
+static int endlessLastCountedLink = 0;
+
+void endlessResetKillDedup(void)
+{
+	endlessLastCountedLink = 0;
+}
+
+void endlessCountKill(int linknum, int killer)
 {
 	if (!endlessFxActive())
 		return;
 
-	// Multi-part enemies share a nonzero link number and count once.
-	static int lastCountedLink = 0;
-	if (linknum != 0 && linknum == lastCountedLink)
+	if (linknum != 0 && linknum == endlessLastCountedLink)
 		return;
-	lastCountedLink = linknum;
+	endlessLastCountedLink = linknum;
 
 	++endlessRunKills;
-	// Boss kills are counted when their health bar empties.
-	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_ANY)
+	/* Boss kills are counted when their health bar empties. Whose streak a kill feeds is the
+	 * session's Combo Feed setting: Individual credits the ship that fired the shot, Shared feeds
+	 * both. A kill nothing can be credited with feeds both either way, so neither ship's streak
+	 * is punished for a death it could not have claimed. */
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		endlessTurbodriveTimer = endlessBuffWindowTicks();
-		++endlessComboKills;
+		if (endlessCoop() && !endlessCoopComboShared
+		    && killer != ENDLESS_KILLER_NONE && (uint)killer != p)
+			continue;
+
+		if (endlessPlayerMods[p] & ENDLESS_MOD_KILLFIRE_ANY)
+		{
+			endlessTurbodriveTimer[p] = endlessBuffWindowTicksFor(p);
+			++endlessComboKills[p];
+		}
+		if ((endlessPlayerMods[p] & ENDLESS_MOD_STACKED)
+		    && endlessOverdriveStacks[p] < ENDLESS_OVERDRIVE_MAX_STACKS)
+			++endlessOverdriveStacks[p];
 	}
-	if ((endlessActiveMods & ENDLESS_MOD_STACKED) && endlessOverdriveStacks < ENDLESS_OVERDRIVE_MAX_STACKS)
-		++endlessOverdriveStacks;
 
 	// Retaliation refreshes its window but does not stack.
 	if (endlessActiveMods & ENDLESS_MOD_RETALIATION)
 		endlessRetaliationTimer = ENDLESS_RETALIATION_TICKS;
 
-	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max).
-	if (endlessPerkOwned[PERK_SIPHON] > 0
-	    && (int)(mt_rand() % 100) < endlessPerkOwned[PERK_SIPHON] * ENDLESS_PERK_SIPHON_PCT
-	    && player[0].armor < player[0].initial_armor)
-		++player[0].armor;
+	// Siphon perk: a per-kill chance to restore 1 armor (up to the ship's max). Personal: each
+	// owning ship rolls its own chance from its own stacks, in seat order so the draws stay
+	// deterministic across the pair.
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+	{
+		const JE_byte stacks = endlessPerkEffective(p, PERK_SIPHON);
+		if (stacks > 0 && (int)(mt_rand() % 100) < stacks * ENDLESS_PERK_SIPHON_PCT
+		    && !endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+			++player[p].armor;
+	}
 }
 
 // Bank post-clear boons before the next sector changes endlessActiveMods.
@@ -608,20 +805,25 @@ void endlessGameplayTick(void)
 	// Every wallet movement is declared at source; this is the per-tick drift assertion.
 	endlessCashAudit();
 
-	// Overheat drains hull but cannot land the killing blow.
-	if ((endlessActiveMods & ENDLESS_MOD_OVERHEAT) && player[0].armor > 1 && (endlessZoneTicks % 80) == 0)
+	// Overheat drains hull but cannot land the killing blow. It is a deal one player took, so
+	// only that player's hull cooks.
+	if ((endlessZoneTicks % 80) == 0)
 	{
-		--player[0].armor;
-		endlessArmorHudDirty = true;
+		for (uint p = 0; p < endlessEffectPlayers(); ++p)
+			if ((endlessPlayerMods[p] & ENDLESS_MOD_OVERHEAT) && !endlessPlayerDowned[p]
+			    && player[p].armor > 1)
+			{
+				--player[p].armor;
+				endlessArmorHudDirty = true;
+			}
 	}
 
-	if (endlessTurbodriveTimer > 0)
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		--endlessTurbodriveTimer;
-		if (endlessTurbodriveTimer == 0)
+		if (endlessTurbodriveTimer[p] > 0 && --endlessTurbodriveTimer[p] == 0)
 		{
-			endlessOverdriveStacks = 0;
-			endlessComboKills = 0;
+			endlessOverdriveStacks[p] = 0;
+			endlessComboKills[p] = 0;
 		}
 	}
 
@@ -639,18 +841,61 @@ void endlessGameplayTick(void)
 	endlessReviveGraceTick();
 
 	// Nanorepair perk: regenerate 1 armor every so often (interval shortens with more stacks).
-	if (endlessPerkOwned[PERK_REGEN] > 0)
+	// Personal: one running clock, and each owning ship heals on its own stack's cadence.
+	++endlessRegenTick;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 	{
-		if (++endlessRegenTick >= ENDLESS_PERK_REGEN_TICKS / endlessPerkOwned[PERK_REGEN])
-		{
-			endlessRegenTick = 0;
-			if (player[0].armor < player[0].initial_armor)
-				++player[0].armor;
-		}
+		const JE_byte stacks = endlessPerkEffective(p, PERK_REGEN);
+		if (stacks > 0 && endlessRegenTick % (ENDLESS_PERK_REGEN_TICKS / stacks) == 0
+		    && !endlessPlayerDowned[p] && player[p].armor < player[p].initial_armor)
+			++player[p].armor;
 	}
 
 	endlessOpeningSalvoTick();    // Opening Salvo perk: advance the main-gun idle timer
 	endlessCountermeasureTick();  // Countermeasure Suite perk: advance the burst cooldown
+}
+
+/* The run and per-zone state a re-simulated tick has to see exactly as the live pass did. The
+ * sector's own modifiers and the perk collection do not move inside a level, but a desync
+ * recovery adopts the peer's whole snapshot, so they travel with it. */
+void endless_register_rollback(void)
+{
+	rollback_register("endless.activeMods", &endlessActiveMods, sizeof(endlessActiveMods));
+	rollback_register("endless.playerMods", endlessPlayerMods, sizeof(endlessPlayerMods));
+	rollback_register("endless.zoneTicks", &endlessZoneTicks, sizeof(endlessZoneTicks));
+	rollback_register("endless.turboTimer", endlessTurbodriveTimer, sizeof(endlessTurbodriveTimer));
+	rollback_register("endless.retalTimer", &endlessRetaliationTimer, sizeof(endlessRetaliationTimer));
+	rollback_register("endless.comboKills", endlessComboKills, sizeof(endlessComboKills));
+	rollback_register("endless.odStacks", endlessOverdriveStacks, sizeof(endlessOverdriveStacks));
+	rollback_register("endless.runKills", &endlessRunKills, sizeof(endlessRunKills));
+	rollback_register("endless.runBossKills", &endlessRunBossKills, sizeof(endlessRunBossKills));
+	rollback_register("endless.customFired", &endlessCustomFiredZone, sizeof(endlessCustomFiredZone));
+	rollback_register("endless.eliteRng", &endlessEliteRngState, sizeof(endlessEliteRngState));
+	rollback_register("endless.armorBonus", endlessArmorBonus, sizeof(endlessArmorBonus));
+	rollback_register("endless.downed", endlessPlayerDowned, sizeof(endlessPlayerDowned));
+	rollback_register("endless.reviveHeld", endlessReviveHeld, sizeof(endlessReviveHeld));
+	rollback_register("endless.revivesUsed", endlessRevivesUsed, sizeof(endlessRevivesUsed));
+	rollback_register("endless.perkOwned", endlessPerkOwned, sizeof(endlessPerkOwned));
+	rollback_register("endless.perkTakenBy", endlessPerkTakenBy, sizeof(endlessPerkTakenBy));
+	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
+	rollback_register("endless.salvoIdle", endlessSalvoIdle, sizeof(endlessSalvoIdle));
+	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
+	rollback_register("endless.cmCooldown", endlessCmCooldown, sizeof(endlessCmCooldown));
+	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
+
+	/* The run ledger is written by simulation events (a kill pays, a bounty pays), so it has to
+	 * be undone with them. Left out, a speculative frame that pays and is then rolled back keeps
+	 * its entry while the wallet is restored, and the level's re-simulations book the same income
+	 * over and over. The two machines re-simulate different amounts, so their run summaries stop
+	 * agreeing, and every restore reads to the audit as undeclared drift. */
+	rollback_register("endless.cashEarned", &endlessRunCashEarned, sizeof(endlessRunCashEarned));
+	rollback_register("endless.cashSpent", &endlessRunCashSpent, sizeof(endlessRunCashSpent));
+	rollback_register("endless.cashBySource", endlessCashBySource, sizeof(endlessCashBySource));
+	rollback_register("endless.cashBySink", endlessCashBySink, sizeof(endlessCashBySink));
+	rollback_register("endless.cashMark", &endlessCashMark, sizeof(endlessCashMark));
+	rollback_register("endless.perkFireAccum", endlessPerkFireAccum, sizeof(endlessPerkFireAccum));
+	rollback_register("endless.perkCdAccum", endlessPerkSpecialCdAccum, sizeof(endlessPerkSpecialCdAccum));
+	rollback_register("endless.killDedup", &endlessLastCountedLink, sizeof(endlessLastCountedLink));
 }
 
 // Consume the event-driven armor-bar repaint flag.
@@ -663,7 +908,7 @@ bool endlessConsumeArmorHudDirty(void)
 
 bool endlessTurbodriveActive(void)
 {
-	return endlessFxActive() && endlessTurbodriveTimer > 0;
+	return endlessFxActive() && endlessTurbodriveTimer[endlessFxPlayer()] > 0;
 }
 
 // Run-over flavor text, one line per five-zone band.
@@ -838,7 +1083,14 @@ void endlessOnRunEnd(void)
 	// Records are kept per mode and difficulty, so the summary names both.
 	const int runDifficulty = (initialDifficulty >= 0 && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
 	                        ? initialDifficulty : 0;
-	RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
+	// Two ships change what every other row on this screen means -- the kills, the cash, the zones
+	// reached -- so the mode has to say which it was rather than leaving a co-op run to be read as
+	// a solo one.
+	if (endlessCoop())
+		RUNEND_ROW("Mode:", "%s, %s, Multiplayer", endlessRunModeName(endlessRunMode),
+		           difficultyNameB[runDifficulty]);
+	else
+		RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
@@ -846,8 +1098,8 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Cash earned:", "$%llu", (unsigned long long)endlessRunCashEarned);
 	RUNEND_ROW("Cash spent:", "$%llu", (unsigned long long)endlessRunCashSpent);
 
-	if (endlessArmorBonus > 0)
-		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus);
+	if (endlessArmorBonus[endlessEconomyIndex()] > 0)
+		RUNEND_ROW("Hull reinforced:", "%d", endlessArmorBonus[endlessEconomyIndex()]);
 
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
@@ -947,6 +1199,10 @@ void endlessOnRunEnd(void)
 	do
 	{
 		music_fade_out_tick(&songFade);
+		// The tally has no time limit and an online run is still a session while it is read.
+		NETWORK_KEEP_ALIVE();
+		while (network_shop_pump())
+			;
 		setDelay(1);
 		wait_delay();
 	} while (!JE_anyButton());

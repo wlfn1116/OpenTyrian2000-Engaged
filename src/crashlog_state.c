@@ -249,6 +249,10 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "  scroll: stopBackgrounds=%d(num=%d) forceEvents=%d  parkedAbove=%u stallTicks=%u\n",
 	        stopBackgrounds, (int)stopBackgroundNum, forceEvents,
 	        (unsigned)enemyParkedAbove, (unsigned)mapStopStallTicks);
+	// The clamp on every enemy-body contact hit (JE_playerMovement): 2 from level start, and only
+	// a script's change-difficulty event moves it. A 0 here means nothing can ram a ship for the
+	// rest of the level, which is what "collisions stopped hurting" looks like from the cockpit.
+	fprintf(f, "  damageRate=%u\n", (unsigned)damageRate);
 	if (levelTimer)
 		fprintf(f, "  levelTimer countdown=%u\n", (unsigned)levelTimerCountdown);
 
@@ -306,6 +310,13 @@ void crashlog_write_game_state(FILE *f)
 		fprintf(f, "  Name:         '%.30s'\n", customWeaponName);
 		fprintf(f, "  Port=%d sidekickSlot=%d equip=%d cost=%d\n",
 		        customWeaponPort, customSidekickSlot, customWeaponEquipSlot, customWeaponCost);
+		if (coop_mode_active())
+		{
+			// Both players' reserved slots: a mismatch here is a Campaign desync waiting to happen.
+			fprintf(f, "  Owner slots:  P1 port=%d sk=%d, P2 port=%d sk=%d\n",
+			        customWeaponOwnerPort[0], customSidekickOwnerSlot[0],
+			        customWeaponOwnerPort[1], customSidekickOwnerSlot[1]);
+		}
 		fprintf(f, "  Library:      %d weapon(s), editing slot %d\n",
 		        customWeaponLibCount, customWeaponCurrentSlot);
 	}
@@ -330,7 +341,7 @@ void crashlog_write_game_state(FILE *f)
 				fprintf(f, "    %-15s -%llu\n", endlessCashSinkName((EndlessCashSink)i),
 				        (unsigned long long)endlessCashBySink[i]);
 		write_endless_mods(f, endlessActiveMods);
-		fprintf(f, "  Armor bonus:  %d\n", endlessArmorBonus);
+		fprintf(f, "  Armor bonus:  %d / %d\n", endlessArmorBonus[0], endlessArmorBonus[1]);
 		const char *seed = endlessSeedString();
 		if (seed != NULL)
 			fprintf(f, "  Seed:         '%.*s'\n", ENDLESS_SEED_MAXLEN, seed);

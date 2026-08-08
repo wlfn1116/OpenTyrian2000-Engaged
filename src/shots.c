@@ -440,6 +440,9 @@ static bool salvoBoostFromParent = false;  // the chain parent's tag, valid whil
 
 JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY, JE_word wpNum, JE_byte playerNum)
 {
+	// The free-power and gun-jam rules below belong to whichever ship is firing.
+	endlessSetFxPlayer(playerNum >= 1 ? (uint)playerNum - 1 : 0);
+
 	static const JE_byte soundChannel[11] /* [1..11] */ = {0, 2, 4, 4, 2, 2, 5, 5, 1, 4, 1};
 
 	// Bounds check

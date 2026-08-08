@@ -71,5 +71,8 @@ tyrian.sav
 /testing/*.dll
 /testing/*.exe
 /testing/*.log
+/testing/log/
 /testing/*.sav
 /rollback_selftest.log
+/endless.sav
+/testing/guest

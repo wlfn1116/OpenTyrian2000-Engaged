@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the independent Endless v3-v20 migration corpus."""
+"""Generate the independent Endless v3-v21 migration corpus."""
 
 from __future__ import annotations
 
@@ -112,6 +112,23 @@ def record(version: int) -> bytes:
         out += b"".join(u64((index + 1) * 20) for index in range(CASH_SLOTS))
     if version >= 20:
         out += u8(1)
+    if version >= 21:
+        out += u8(1)   # coopHostCharts
+        out += u8(2)   # courseChooser: Alternating
+        coop_i32 = [
+            13, 3, 25, 2, 1, 4, 8,
+            777, 888, 999, 1010, 1111, 1212,
+            5, 2,
+        ]
+        out += b"".join(i32(value) for value in coop_i32)
+        out += u32(0x4321)                     # purchasedMods2
+        out += bytes([1, 0, 0, 1])             # reviveHeld2, rigged2, downed[0], downed[1]
+        rows = bytearray(PERKS_NEW * 2)
+        rows[10] = 3                           # player 1 took three of perk 10...
+        rows[14] = 4
+        rows[PERKS_NEW + 10] = 2               # ...and player 2 two more
+        out += bytes(rows)
+        out += u64(0x0123456789abcdef) + u64(0xfedcba9876543210)
 
     return bytes(out)
 
@@ -122,7 +139,7 @@ def main() -> int:
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
-    for version in range(3, 21):
+    for version in range(3, 22):
         payload = b"OTES" + bytes([version, 1]) + record(version)
         path = args.output / f"v{version:02d}.sav"
         path.write_bytes(payload)

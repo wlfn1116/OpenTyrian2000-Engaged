@@ -6,10 +6,12 @@
 #include "config.h"
 #include "custom_weapon.h"
 #include "episodes.h"
+#include "helptext.h"
 #include "joystick.h"
 #include "lvlmast.h"
 #include "mainint.h"
 #include "mtrand.h"
+#include "network.h"
 #include "player.h"
 #include "sprite.h"
 #include "tyrian2.h"
@@ -20,7 +22,7 @@
 #include <string.h>
 
 // Combo count remains uncapped; only derived bonuses cap.
-int endlessComboKills = 0;
+int endlessComboKills[2] = { 0, 0 };
 #define ENDLESS_COMBO_KILLS_PER_STEP 25
 #define ENDLESS_COMBO_MAX_STEPS       8
 
@@ -480,13 +482,14 @@ int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 	                    0, ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE);
 }
 
-// Special-tier bounty, including Bounty Hunter and Scavenger.
+// Special-tier bounty, including Bounty Hunter and Scavenger: personal perks, so both read the
+// fx ship's row, which the award site points at the killer.
 long endlessEliteBounty(void)
 {
 	long b = 150 + (long)endlessRunDepth * 40;
 	if (b > 2500)
 		b = 2500;
-	if (endlessPerkOwned[PERK_BOUNTY])
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_BOUNTY))
 		b *= 2;
 	return b * endlessPerkCashPercent() / 100;
 }
@@ -495,7 +498,7 @@ long endlessChampionBounty(void)
 	long b = 350 + (long)endlessRunDepth * 90;
 	if (b > 6000)
 		b = 6000;
-	if (endlessPerkOwned[PERK_BOUNTY])
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_BOUNTY))
 		b *= 2;
 	return b * endlessPerkCashPercent() / 100;
 }
@@ -523,7 +526,7 @@ int endlessEliteContactPercent(int eliteState)
 }
 
 // The link latch pays one bounty per logical enemy.
-void endlessAwardEliteKill(int linknum, int eliteState)
+void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 {
 	if (!endlessFxActive())
 		return;
@@ -534,13 +537,30 @@ void endlessAwardEliteKill(int linknum, int eliteState)
 		return;
 
 	const bool champion = (eliteState == 3);
+	// The killer's own Bounty Hunter and Scavenger stacks size the payment (personal perks),
+	// so the fx context names the killer while the figure is derived.
+	const uint fxSaved = endlessFxPlayer();
+	const uint payee = (killer == ENDLESS_KILLER_NONE) ? 0 : (uint)killer;
+	endlessSetFxPlayer(payee);
 	const long bounty = champion ? endlessChampionBounty() : endlessEliteBounty();
-	endlessCashCredit(bounty, ENDLESS_CASH_BOUNTY);
+	endlessSetFxPlayer(fxSaved);
+	// A bounty is kill cash under its own ledger row: it follows the same Shared / Individual
+	// credit and Double Earnings rules as every other kill. A kill nothing can claim pays
+	// player 1, the same ship on both machines; endlessEconomyIndex is whoever is sitting at
+	// this keyboard, so paying that would have paid a different wallet on each side.
+	player_award_bounty_cash(&player[payee], bounty);
 
-	// Keep the cash clear of the HUD.
-	char label[48], cash[24];
+	// Keep the cash clear of the HUD, showing what was actually paid. Online there are two
+	// wallets, so the figure is worth nothing without whose it is: name the killer beside it.
+	// A kill nobody can claim pays ship one by rule rather than by merit, so that one stays a
+	// bare figure instead of crediting a player who did not fire.
+	const long paid = coop_earnings_are_doubled() ? bounty * 2 : bounty;
+	char label[48], cash[48];
 	snprintf(label, sizeof(label), "%s Enemy destroyed!", champion ? "Champion" : "Elite");
-	snprintf(cash, sizeof(cash), "+%ld", bounty);
+	if (isNetworkGame && dual_ship_mode() && killer != ENDLESS_KILLER_NONE)
+		snprintf(cash, sizeof(cash), "%s +%ld", JE_getName((JE_byte)(payee + 1)), paid);
+	else
+		snprintf(cash, sizeof(cash), "+%ld", paid);
 	JE_drawTextWindowSplit(label, cash, 244);
 }
 
@@ -554,11 +574,11 @@ static unsigned endlessHudIconCount(void)
 	return SDL_SwapLE16(((Uint16 *)spriteSheet10.data)[0]) / (unsigned)sizeof(Uint16);
 }
 
-char endlessLastSpecialName[31] = "";
+char endlessLastSpecialName[2][31] = { "", "" };
 
-const char *endlessLastGrantedSpecial(void) { return endlessLastSpecialName; }
+const char *endlessLastGrantedSpecial(void) { return endlessLastSpecialName[endlessEconomyIndex()]; }
 
-void endlessGrantSpecial(void)
+void endlessGrantSpecial(uint p)
 {
 	if (!endlessFxActive())
 		return;
@@ -581,7 +601,7 @@ void endlessGrantSpecial(void)
 	// Avoid returning the equipped special when another valid choice exists.
 	if (n > 1)
 	{
-		const JE_byte current = player[0].items.special;
+		const JE_byte current = player[p].items.special;
 		for (int i = 0; i < n; ++i)
 			if (pool[i] == current)
 			{
@@ -591,23 +611,38 @@ void endlessGrantSpecial(void)
 	}
 
 	const JE_byte id = pool[mt_rand() % n];
-	player[0].items.special = id;
+	player[p].items.special = id;
 	shotMultiPos[SHOT_SPECIAL]  = 0;
 	shotRepeat[SHOT_SPECIAL]    = 0;
 	shotMultiPos[SHOT_SPECIAL2] = 0;
 	shotRepeat[SHOT_SPECIAL2]   = 0;
+	if (coop_mode_active())
+	{
+		// Co-op keeps each ship's own firing cursors; the globals above are only the scratch pair.
+		player[p].shot_multi_pos[SHOT_SPECIAL]  = 0;
+		player[p].shot_repeat[SHOT_SPECIAL]     = 0;
+		player[p].shot_multi_pos[SHOT_SPECIAL2] = 0;
+		player[p].shot_repeat[SHOT_SPECIAL2]    = 0;
+	}
 
 	// Item names may be space-padded in the data.
+	char *const name = endlessLastSpecialName[p];
+	const size_t nameSize = sizeof(endlessLastSpecialName[0]);
 	const char *s = special[id].name;
 	while (*s == ' ' || *s == '\t')
 		++s;
-	SDL_strlcpy(endlessLastSpecialName, s, sizeof(endlessLastSpecialName));
-	for (size_t len = strlen(endlessLastSpecialName);
-	     len > 0 && (endlessLastSpecialName[len - 1] == ' ' || endlessLastSpecialName[len - 1] == '\t'); )
-		endlessLastSpecialName[--len] = '\0';
+	SDL_strlcpy(name, s, nameSize);
+	for (size_t len = strlen(name); len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t'); )
+		name[--len] = '\0';
 
+	// Two ships share one message bar, so name whoever the grant went to, in the same
+	// "<who> got <what>" phrasing the weapon-ball pickups use. Solo keeps the label,
+	// which is what tells you a datacube/orb handed out a special at all.
 	char msg[64];
-	snprintf(msg, sizeof(msg), "Special weapon:  %s", endlessLastSpecialName);
+	if (dual_ship_mode())
+		snprintf(msg, sizeof(msg), "%s %s %s", JE_getName((JE_byte)(p + 1)), miscTextB[4-1], name);
+	else
+		snprintf(msg, sizeof(msg), "Special weapon:  %s", name);
 	JE_drawTextWindow(msg);
 }
 
@@ -618,7 +653,11 @@ void endlessGrantSpecial(void)
 
 static bool endlessPortCanPowerUp(uint port)
 {
-	return player[0].items.weapon[port].id != 0 && player[0].items.weapon[port].power < 11;
+	// Either ship having room keeps the pickup on the field for whoever can still take it.
+	for (uint p = 0; p < (coop_mode_active() ? COUNTOF(player) : 1u); ++p)
+		if (player[p].items.weapon[port].id != 0 && player[p].items.weapon[port].power < 11)
+			return true;
+	return false;
 }
 
 // Pick a port now; validate capacity when the pickup actually spawns.
@@ -655,24 +694,28 @@ void endlessDropCubeGem(int slot)
 }
 
 // Kill-fire HUD values.
-int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer; }
+/* Everything from here to the ship tint reads the CURRENT ship's mask and its own window: a
+ * drive belongs to whoever bought it. A charted one sits in endlessActiveMods, which
+ * endlessApplyPurchasedMods folds into both players' masks, so a sector that deals a drive deals
+ * it to the pair. Sector-wide effects below keep reading endlessActiveMods directly. */
+int endlessKillBuffTicksLeft(void) { return endlessTurbodriveTimer[endlessFxPlayer()]; }
 int endlessKillBuffTicksMax(void)  { return endlessBuffWindowTicks(); }
 
 int endlessKillBuffComboCount(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessComboKills;
+	return endlessComboKills[endlessFxPlayer()];
 }
 
 // Matches the player tint.
 int endlessKillBuffColorBank(void)
 {
-	if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL)
 		return 4;
-	if (endlessActiveMods & ENDLESS_MOD_OVERBLAST)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERBLAST)
 		return 9;   // blue; the damage-only buff
-	return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
+	return (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERDRIVE) ? 7 : 12;
 }
 
 // The buff's current fire-rate MULTIPLIER (1 = none; 2x..10x from the combo ramp). Derived from
@@ -687,19 +730,19 @@ int endlessKillBuffFireMultiplier(void)
 
 int endlessKillBuffDamagePercent(void)
 {
-	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_DMGUP))
+	if (!endlessTurbodriveActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
 		return 0;  // Overdrive and Overblast grant damage; Turbodrive affects fire rate only.
-	int pct = endlessBuffCharge * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
-	pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
+	int pct = endlessBuffChargePaid() * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
+	pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
 	return pct;
 }
 
 // Extra shotRepeat decrements for a kill-fire boon. Hostile variants use endlessKillFireJamTicks.
 int endlessKillBuffFireDecrements(void)
 {
-	if (!(endlessActiveMods & ENDLESS_MOD_FIREBOOST))
+	if (!(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_FIREBOOST))
 		return 0;  // Turbodrive and Overdrive quicken fire; Overblast does not.
-	int steps = endlessComboKills / ENDLESS_COMBO_KILLS_PER_STEP;
+	int steps = endlessComboKills[endlessFxPlayer()] / ENDLESS_COMBO_KILLS_PER_STEP;
 	if (steps > ENDLESS_COMBO_MAX_STEPS)
 		steps = ENDLESS_COMBO_MAX_STEPS;
 	return 1 + steps;
@@ -709,29 +752,29 @@ int endlessKillBuffFireDecrements(void)
 bool endlessKillFireIsEvil(void)
 {
 	return endlessFxActive() && endlessTurbodriveActive()
-	    && (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL);
+	    && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL);
 }
 
 // Additional shotRepeat cooldown while Backfire or Burnout is active.
 int endlessKillFireJamTicks(void)
 {
-	if (!endlessTurbodriveActive() || !(endlessActiveMods & ENDLESS_MOD_FIREJAM))
+	if (!endlessTurbodriveActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_FIREJAM))
 		return 0;
-	int steps = endlessComboKills / ENDLESS_COMBO_KILLS_PER_STEP;
+	int steps = endlessComboKills[endlessFxPlayer()] / ENDLESS_COMBO_KILLS_PER_STEP;
 	if (steps > ENDLESS_COMBO_MAX_STEPS)
 		steps = ENDLESS_COMBO_MAX_STEPS;
 	int add = ENDLESS_EVIL_JAM_BASE + steps * ENDLESS_EVIL_JAM_PER_STEP;
-	if (endlessActiveMods & ENDLESS_MOD_BURNOUT)
-		add += endlessOverdriveStacks * ENDLESS_EVIL_JAM_STACK_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_BURNOUT)
+		add += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_EVIL_JAM_STACK_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 	return add;
 }
 
 // Damage penalty from Burnout or Misfire.
 int endlessKillBuffEvilDamagePenalty(void)
 {
-	if (!endlessKillFireIsEvil() || !(endlessActiveMods & ENDLESS_MOD_DMGDOWN))
+	if (!endlessKillFireIsEvil() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN))
 		return 0;
-	return endlessOverdriveStacks * ENDLESS_EVIL_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	return endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_EVIL_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 }
 
 // HUD label for the active hostile kill-fire effect.
@@ -739,9 +782,9 @@ const char *endlessKillFireEvilName(void)
 {
 	if (!endlessKillFireIsEvil())
 		return "";
-	if (endlessActiveMods & ENDLESS_MOD_BURNOUT)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_BURNOUT)
 		return "BURNOUT";
-	if (endlessActiveMods & ENDLESS_MOD_MISFIRE)
+	if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_MISFIRE)
 		return "MISFIRE";
 	return "JAMMED";
 }
@@ -762,6 +805,14 @@ static const float endlessGravityHeadings[16][2] = {
 	{  0.000f, -1.000f }, {  0.383f, -0.924f }, {  0.707f, -0.707f }, {  0.924f, -0.383f },
 };
 
+/* The classic (non-VT) ship path applies gravity in whole pixels and carries the fraction here,
+ * one pair per ship: both ships pull every tick, and a shared carry would hand one ship the step
+ * the other's fraction earned. Simulation state, so it is in the rollback registry; as a pair of
+ * function-local statics it sat outside every snapshot, each re-simulated frame advanced it
+ * again, and the two machines drifted a pixel apart within a zone. */
+static float endlessGravityCarryX[2];
+static float endlessGravityCarryY[2];
+
 void endlessRollGravityDir(void)
 {
 	if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_GRAVITY_OMNI))
@@ -775,6 +826,10 @@ void endlessRollGravityDir(void)
 		endlessGravityDirX = 0.0f;
 		endlessGravityDirY = 1.0f;
 	}
+
+	// Zone start: neither ship owes or is owed a fraction from the previous zone.
+	memset(endlessGravityCarryX, 0, sizeof(endlessGravityCarryX));
+	memset(endlessGravityCarryY, 0, sizeof(endlessGravityCarryY));
 }
 
 float endlessGravityDrift(void)
@@ -793,21 +848,23 @@ float endlessGravityDrift(void)
 float endlessGravityDriftX(void) { return endlessGravityDrift() * endlessGravityDirX; }
 float endlessGravityDriftY(void) { return endlessGravityDrift() * endlessGravityDirY; }
 
-// Classic movement carries the fractional drift independently on each axis.
-int endlessGravityPullX(void)
+// Classic movement carries the fractional drift independently per ship and per axis.
+int endlessGravityPullX(uint p)
 {
-	static float accum = 0.0f;
-	accum += endlessGravityDriftX();
-	const int step = (int)accum;
-	accum -= (float)step;
+	if (p >= COUNTOF(endlessGravityCarryX))
+		return 0;
+	endlessGravityCarryX[p] += endlessGravityDriftX();
+	const int step = (int)endlessGravityCarryX[p];
+	endlessGravityCarryX[p] -= (float)step;
 	return step;
 }
-int endlessGravityPullY(void)
+int endlessGravityPullY(uint p)
 {
-	static float accum = 0.0f;
-	accum += endlessGravityDriftY();
-	const int step = (int)accum;
-	accum -= (float)step;
+	if (p >= COUNTOF(endlessGravityCarryY))
+		return 0;
+	endlessGravityCarryY[p] += endlessGravityDriftY();
+	const int step = (int)endlessGravityCarryY[p];
+	endlessGravityCarryY[p] -= (float)step;
 	return step;
 }
 
@@ -863,15 +920,20 @@ int endlessHitboxScale(int area)
 #define ENDLESS_AEGIS_COOLDOWN  70
 #define ENDLESS_AEGIS_MIN_SPILL  2
 
-static int endlessAegisCooldown = 0;
+// One gate per ship: a block on one hull must not spend the partner's.
+static int endlessAegisCooldown[2] = { 0, 0 };
 
 void endlessAegisTick(void)
 {
-	if (endlessAegisCooldown > 0)
-		--endlessAegisCooldown;
+	for (unsigned p = 0; p < COUNTOF(endlessAegisCooldown); ++p)
+		if (endlessAegisCooldown[p] > 0)
+			--endlessAegisCooldown[p];
 }
 
-void endlessAegisReset(void) { endlessAegisCooldown = 0; }
+void endlessAegisReset(void)
+{
+	memset(endlessAegisCooldown, 0, sizeof(endlessAegisCooldown));
+}
 
 // Revive grace window.
 #define ENDLESS_REVIVE_GRACE_TICKS 105
@@ -888,14 +950,16 @@ void endlessReviveGraceTick(void)
 		--endlessReviveGrace;
 }
 
-// A true result spends the cooldown and must be honored by the caller.
+// A true result spends the cooldown and must be honored by the caller. JE_playerDamage names the
+// hit ship as the fx player, so the gate spent here is that ship's own.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
 		return false;
-	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
+	int *const cd = &endlessAegisCooldown[endlessFxPlayer()];
+	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || *cd > 0)
 		return false;
-	endlessAegisCooldown = ENDLESS_AEGIS_COOLDOWN;
+	*cd = ENDLESS_AEGIS_COOLDOWN;
 	return true;
 }
 
@@ -920,6 +984,57 @@ int endlessShockwaveRadius(int linknum, int eliteState)
 		return 0;
 
 	return (eliteState == 3) ? ENDLESS_SHOCKWAVE_CHAMPION_RADIUS : ENDLESS_SHOCKWAVE_ELITE_RADIUS;
+}
+
+/* Which ship a homing or course-correcting shot goes for: the nearer one still flying. A downed
+ * co-op partner neither triggers a reactive danger nor attracts one, so the survivor is the only
+ * target while they spectate. Integer distance keeps the choice identical on both machines. */
+uint endlessDangerTargetPlayer(int fromX, int fromY)
+{
+	if (!coopEndlessMode)
+		return 0;
+
+	uint best = 0;
+	long bestDist = -1;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		if (!player[p].is_alive || endlessPlayerDowned[p])
+			continue;
+		const long dx = (long)player[p].x - fromX;
+		const long dy = (long)player[p].y - fromY;
+		const long dist = dx * dx + dy * dy;
+		if (bestDist < 0 || dist < bestDist)
+		{
+			bestDist = dist;
+			best = p;
+		}
+	}
+	return best;
+}
+
+/* Which ship a homing enemy chases, rolled once when it is created. Vanilla tracking always went
+ * for ship one, so in co-op the homing modifiers left the second player alone entirely; a coin
+ * toss per enemy splits the pressure. Rolled at creation rather than per tick so a chaser commits
+ * to one ship instead of jittering toward the midpoint of the two. */
+uint endlessRollHomingTarget(void)
+{
+	if (!coopEndlessMode)
+		return 0;
+	return mt_rand() & 1u;
+}
+
+/* ...and read back at the moment it matters, because the ship it picked may have gone down since.
+ * A downed partner is not chased, the same rule the curving shots follow. */
+uint endlessHomingTargetPlayer(uint stored)
+{
+	if (!coopEndlessMode)
+		return 0;
+	if (stored < COUNTOF(player) && player[stored].is_alive && !endlessPlayerDowned[stored])
+		return stored;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		if (player[p].is_alive && !endlessPlayerDowned[p])
+			return p;
+	return 0;
 }
 
 // Modifier decisions used by engine-owned object pools.
@@ -949,30 +1064,39 @@ bool endlessSeekerActive(void)
 #define ENDLESS_STATIC_LOCKOUT_MIN     25
 #define ENDLESS_STATIC_LOCKOUT_MAX     70
 
-static int endlessStaticLockout = 0;
+// One lockout per ship: the hit ship's generator stalls, the partner's keeps charging.
+static int endlessStaticLockout[2] = { 0, 0 };
 
-bool endlessStaticLockoutActive(void) { return endlessFxActive() && endlessStaticLockout > 0; }
+bool endlessStaticLockoutActive(void)
+{
+	return endlessFxActive() && endlessStaticLockout[endlessFxPlayer()] > 0;
+}
 
 void endlessStaticLockoutTick(void)
 {
-	if (endlessStaticLockout > 0)
-		--endlessStaticLockout;
+	for (unsigned p = 0; p < COUNTOF(endlessStaticLockout); ++p)
+		if (endlessStaticLockout[p] > 0)
+			--endlessStaticLockout[p];
 }
 
-void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
+void endlessStaticLockoutReset(void)
+{
+	memset(endlessStaticLockout, 0, sizeof(endlessStaticLockout));
+}
 
 unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return 0;
-	// A new hit may extend but never shorten the active lockout.
+	// A new hit may extend but never shorten the active lockout. The fx context is the hit ship
+	// (JE_playerDamage), so only that ship's recharge stalls.
 	int lock = (int)actualDamage * ENDLESS_STATIC_LOCKOUT_PER_DMG;
 	if (lock < ENDLESS_STATIC_LOCKOUT_MIN)
 		lock = ENDLESS_STATIC_LOCKOUT_MIN;
 	if (lock > ENDLESS_STATIC_LOCKOUT_MAX)
 		lock = ENDLESS_STATIC_LOCKOUT_MAX;
-	if (lock > endlessStaticLockout)
-		endlessStaticLockout = lock;
+	if (lock > endlessStaticLockout[endlessFxPlayer()])
+		endlessStaticLockout[endlessFxPlayer()] = lock;
 
 	unsigned drain = actualDamage * ENDLESS_STATIC_POWER_PER_DMG;
 	if (drain < ENDLESS_STATIC_POWER_MIN)
@@ -986,18 +1110,18 @@ int endlessPlayerDamagePercent(void)
 	ENDLESS_OVERRIDE(ESO_PLAYERDMG);
 	if (!endlessFxActive())
 		return 100;
-	int pct = (endlessActiveMods & ENDLESS_MOD_OVERCHARGE) ? 150 : 100;
-	if ((endlessActiveMods & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
-		pct += endlessOverdriveStacks * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
-	if (endlessTurbodriveActive() && (endlessActiveMods & ENDLESS_MOD_DMGUP))
-		pct += endlessBuffCharge * 2;
-	pct += endlessPerkOwned[PERK_DAMAGE] * ENDLESS_PERK_DAMAGE_PCT;
-	if (endlessPerkOwned[PERK_GLASSCANNON])
+	int pct = (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERCHARGE) ? 150 : 100;
+	if ((endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP) && endlessTurbodriveActive())
+		pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
+	if (endlessTurbodriveActive() && (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
+		pct += endlessBuffChargePaid() * 2;
+	pct += endlessPerkEffective(endlessFxPlayer(), PERK_DAMAGE) * ENDLESS_PERK_DAMAGE_PCT;
+	if (endlessPerkEffective(endlessFxPlayer(), PERK_GLASSCANNON))
 		pct += ENDLESS_PERK_GLASS_DMG;
 	if (endlessAdrenalineActive())
-		pct += endlessPerkOwned[PERK_ADRENALINE] * ENDLESS_PERK_ADRENALINE_DMG;
+		pct += endlessPerkEffective(endlessFxPlayer(), PERK_ADRENALINE) * ENDLESS_PERK_ADRENALINE_DMG;
 	// Apply hostile damage cuts after every bonus.
-	if ((endlessActiveMods & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
+	if ((endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGDOWN) && endlessTurbodriveActive())
 	{
 		pct -= endlessKillBuffEvilDamagePenalty();
 		if (pct < ENDLESS_EVIL_DMG_FLOOR)
@@ -1011,7 +1135,7 @@ int endlessPlayerDamageReduce(void)
 {
 	if (!endlessFxActive())
 		return 0;
-	return endlessPerkOwned[PERK_BULWARK] * ENDLESS_PERK_BULWARK;
+	return endlessPerkEffective(endlessFxPlayer(), PERK_BULWARK) * ENDLESS_PERK_BULWARK;
 }
 
 // Shared scroll multiplier for layers and layer-bound fixed motion.
@@ -1086,11 +1210,11 @@ int endlessShipTintFilter(void)
 		return 0;
 	if (endlessTurbodriveActive())
 	{
-		if (endlessActiveMods & ENDLESS_MOD_KILLFIRE_EVIL)
+		if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_KILLFIRE_EVIL)
 			return ENDLESS_EVIL_SHIP_FILTER;
-		if (endlessActiveMods & ENDLESS_MOD_OVERBLAST)
+		if (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERBLAST)
 			return ENDLESS_OVERBLAST_SHIP_FILTER;
-		return (endlessActiveMods & ENDLESS_MOD_OVERDRIVE)
+		return (endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_OVERDRIVE)
 		       ? ENDLESS_OVERDRIVE_SHIP_FILTER
 		       : ENDLESS_TURBODRIVE_SHIP_FILTER;
 	}
@@ -1224,4 +1348,19 @@ void endless_combat_register_rollback(void)
 {
 	rollback_register("ec.scrollCarry", scrollExtraCarry, sizeof(scrollExtraCarry));
 	rollback_register("ec.scrollTrem",  scrollExtraTrem, sizeof(scrollExtraTrem));
+
+	/* Everything below is decided inside a tick, so a re-simulation has to replay it from the same
+	 * value. The one-shot latches matter most: an unregistered dedup guard makes its event
+	 * unrepeatable, and an unregistered revive latch resurrects or kills the wrong ship. */
+	rollback_register("endless.eliteLink", endlessEliteLink, sizeof(endlessEliteLink));
+	rollback_register("endless.martyrLink", &endlessMartyrLastLink, sizeof(endlessMartyrLastLink));
+	rollback_register("endless.shockLink", &endlessShockwaveLastLink, sizeof(endlessShockwaveLastLink));
+	rollback_register("endless.bountyLink", &endlessBountyLastLink, sizeof(endlessBountyLastLink));
+	rollback_register("endless.aegisCd", endlessAegisCooldown, sizeof(endlessAegisCooldown));
+	rollback_register("endless.reviveGrace", &endlessReviveGrace, sizeof(endlessReviveGrace));
+	rollback_register("endless.staticLock", endlessStaticLockout, sizeof(endlessStaticLockout));
+	rollback_register("endless.gravityDir", &endlessGravityDirX, sizeof(endlessGravityDirX));
+	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
+	rollback_register("endless.gravityCarryX", endlessGravityCarryX, sizeof(endlessGravityCarryX));
+	rollback_register("endless.gravityCarryY", endlessGravityCarryY, sizeof(endlessGravityCarryY));
 }

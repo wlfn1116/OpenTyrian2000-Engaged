@@ -21,12 +21,14 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "endless.h"
 #include "fonthand.h"
 #include "keyboard.h"
 #include "mainint.h"
 #include "network.h"
 #include "nortsong.h"
 #include "player.h"
+#include "qa.h"
 #include "render_list.h"
 #include "sprite.h"
 #include "varz.h"
@@ -172,6 +174,7 @@ static Uint32 verified_upto;            /* sim used truth through this frame  */
 static Uint32 req_done;                 /* pause/menu processed through this  */
 static Uint32 req_at;                   /* frame the menu opens after; 0=none */
 static bool   req_local_menu;           /* our own press, not the peer's      */
+static bool   req_host_menu;            /* the host machine's press is among the coalesced ones */
 static Uint32 peer_acked;               /* peer holds all our frames <= this  */
 static Uint32 remote_contig;            /* we hold all peer frames <= this    */
 static Uint32 remote_newest;            /* newest peer frame seen (timesync)  */
@@ -212,6 +215,13 @@ static int       peer_pend_n;
 static Uint32    canary_checked_upto;   /* newest peer frame already compared */
 static bool   canary_reported;          /* one full report per level          */
 static Uint32 canary_mismatches;        /* further ones only counted          */
+
+/* Wire-test bookkeeping. Session-scoped, unlike the per-level counters above: a recovery or a
+ * level restart resets those, and the verdict has to see what happened across the whole run. */
+static Uint16 qa_corrupt_epoch = 0xFFFF;
+static Uint32 qa_desyncs_total, qa_resyncs_total;
+static Uint32 qa_rollbacks_session;   /* rollbacks across the whole run; levels reset stat_* */
+static bool   qa_menu_ran;   /* the scripted simultaneous-menu rendezvous completed */
 
 /* Timesync: rolling frame-advantage estimate, exchanged both ways. */
 static float  adv_ema;
@@ -323,6 +333,7 @@ static void nrb_reset_core(void)
 	end_agreed = false;
 	req_at = 0;
 	req_local_menu = false;
+	req_host_menu = false;
 
 	/* Until the peer's first packet, predict "parked at spawn, no buttons".
 	 * Ship spawn positions are part of deterministic level init, so both
@@ -355,6 +366,28 @@ void nrb_frame_begin(void)
 	/* Snapshot BEFORE the request application: the application is part of this
 	 * frame's simulation and must repeat on a re-simulation pass. */
 	rollback_snapshot(nrb_cur);
+
+	if (qa_net_gameplay_ticks > 0 && nrb_cur == 1 && !rollback_resim)
+	{
+		// Re-mark now that this level's one-time asset loads have landed, so the soak
+		// figure measures the session's own traffic and state, not sprite sheets.
+		network_test_mem_mark();
+		fprintf(stderr, "net gameplay: level running (epoch %u)\n", (unsigned)nrb_epoch);
+		fflush(stderr);
+	}
+
+	/* Wire-test desync: the joiner bends one frame of the epoch that first reaches it, after
+	 * the snapshot so every simulation pass through that frame bends it exactly once. Armor,
+	 * because the input tuples carry positions and would repair those; the divergence is then
+	 * stable until a recovery opens a later epoch, where the gate goes quiet. */
+	if (qa_net_corrupt_frame > 0 && thisPlayerNum != networkHostPlayerNum
+	    && nrb_cur == qa_net_corrupt_frame)
+	{
+		if (qa_corrupt_epoch == 0xFFFF)
+			qa_corrupt_epoch = nrb_epoch;
+		if (nrb_epoch == qa_corrupt_epoch && player[0].armor > 6)
+			player[0].armor -= 5;
+	}
 
 	if (nrb_cur >= 2)
 	{
@@ -819,6 +852,7 @@ static void nrb_check_canary(const NrbCanary *const peer)
 	    ours->curLoc != peer->curLoc || ours->linked != peer->linked)
 	{
 		++canary_mismatches;
+		++qa_desyncs_total;
 
 		/* Write one detailed report per level; later mismatches only increment the counter. */
 		if (!canary_reported)
@@ -1020,8 +1054,7 @@ static void nrb_process_requests(void)
 		const Uint16 rbits = (remote_hist[f % NRB_HIST].tag == f) ? remote_hist[f % NRB_HIST].in.buttons : 0;
 		const Uint16 bits = lbits | rbits;
 
-		if (bits & RB_REQ_PAUSE)
-			JE_pauseGame();
+		// RB_REQ_PAUSE is dead: online cannot pause, so a set bit from any source is ignored.
 
 		if (bits & RB_REQ_MENU)
 		{
@@ -1030,6 +1063,11 @@ static void nrb_process_requests(void)
 			if (req_at == 0 || at < req_at)
 				req_at = at;
 			req_local_menu |= (lbits & RB_REQ_MENU) != 0;
+
+			/* Both machines read the same verified records, so both derive the same answer to
+			 * "did the host press?", which is what the arbitration below decides on. */
+			const Uint16 hbits = (thisPlayerNum == networkHostPlayerNum) ? lbits : rbits;
+			req_host_menu |= (hbits & RB_REQ_MENU) != 0;
 		}
 	}
 }
@@ -1073,6 +1111,7 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	rl_abort_record();  /* drop the aborted pass's partial render recording */
 
 	++stat_rollbacks;
+	++qa_rollbacks_session;
 	stat_resim_frames += high - K + 1;
 	if (high - K + 1 > stat_deepest)
 		stat_deepest = high - K + 1;
@@ -1088,6 +1127,35 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	rollback_resim = true;
 	rollback_resim_silent = (K < resim_target);
 	return NRB_STEP_RESIM;
+}
+
+/* A peer that has reached a between-levels handshake is never going to produce the frames a stall
+ * is waiting for. Every packet named here is only ever sent from outside a level, so one at the
+ * head of the reliable queue settles it: end ours as well, out of band. The packet stays where it
+ * is; the rendezvous that follows is what reads it. `head` is 0 when the queue is empty.
+ *
+ * Returns true when the level was ended. Called by the stall pump and directly by the test suite,
+ * which is the only way the quit case below gets covered. */
+bool nrb_peer_left_level(Uint16 head)
+{
+	if (head != PACKET_WAITING && head != PACKET_DETAILS && head != PACKET_GAME_QUIT
+	    && head != PACKET_SHOP_SYNC && head != PACKET_ENDLESS_RUN)
+		return false;
+
+	reallyEndLevel = true;
+	end_agreed = true;
+
+	/* A quit is not a clear. Both other paths that read this packet say so; while this one
+	 * stayed silent the peer banked the zone and deepened while the player who quit reopened
+	 * the same outpost, and the pair spent the rest of the run one zone apart, charting from
+	 * slates that no longer matched. */
+	if (head == PACKET_GAME_QUIT)
+	{
+		playerEndLevel = true;
+		if (coopEndlessMode)
+			endlessCoopPeerQuitLevel();
+	}
+	return true;
 }
 
 /* Pump the world while stalled: OS events, inbound packets, periodic input
@@ -1127,13 +1195,9 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		if (overlay_for != wait_start)
 		{
 			overlay_for = wait_start;
-			JE_barShade(VGAScreen, 3, 60, 257, 80);
-			JE_barShade(VGAScreen, 5, 62, 255, 78);
 			// This wait IS the recovery when one is in play; the machine on the
 			// other side of it stops simulating to stream or adopt state.
-			JE_dString(VGAScreen, 10, 65,
-			           resync_notice ? "Resyncing players." : "Waiting for other player.",
-			           SMALL_FONT_SHAPES);
+			JE_drawNetworkNotice(resync_notice ? "Resyncing players." : "Waiting for other player.");
 			last_present = 0;
 		}
 		if (SDL_GetTicks() - last_present > 100)
@@ -1158,6 +1222,9 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 		         (unsigned long)peer_acked, (unsigned long)remote_newest);
 		crashlog_note_net("ROLLBACK STALL", detail);
 	}
+
+	if (nrb_peer_left_level(packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0))
+		return true;
 
 	// A LIVE peer that is merely slow (menus, loading, level tally) must never
 	// trip the disconnect: keep-alives hold the link open indefinitely, with a
@@ -1362,6 +1429,7 @@ static void nrb_resync_send_ack(Uint16 gen)
 static int nrb_resync_send_once(void)
 {
 	++resync_used;
+	++qa_resyncs_total;
 	++resync_gen;
 	nrb_notice_resync();
 
@@ -1474,6 +1542,8 @@ static int nrb_resync_send_once(void)
 				reallyEndLevel = true;
 				playerEndLevel = true;
 				end_agreed = true;
+				if (coopEndlessMode)
+					endlessCoopPeerQuitLevel();
 				outcome = 3;
 			}
 			else if (type == PACKET_WAITING || type == PACKET_DETAILS)
@@ -1591,6 +1661,7 @@ static bool nrb_resync_receive(void)
 	bool reported = false;
 
 	++resync_used;
+	++qa_resyncs_total;
 	nrb_notice_resync();
 
 	for (;;)
@@ -1626,6 +1697,8 @@ static bool nrb_resync_receive(void)
 				reallyEndLevel = true;
 				playerEndLevel = true;
 				end_agreed = true;
+				if (coopEndlessMode)
+					endlessCoopPeerQuitLevel();
 				level_over = true;
 				break;
 			}
@@ -1947,10 +2020,87 @@ static void nrb_timesync(void)
 
 /* Rollback driver. */
 
+/* Bounded wire-test run: report what the netcode did and leave the process. The peer already
+ * holds the redundant input stream for the frames it still owes itself, so a short drain is
+ * enough for it to finish on its own. */
+static void nrb_qa_gameplay_verdict(void)
+{
+	int rc;
+	if (qa_net_corrupt_frame > 0)
+	{
+		/* A recovery must have run and the timeline being flown at the limit must be clean
+		 * again. Only the host requires its own detection: it is the side that initiates, so
+		 * a recovery on the host implies one, while the joiner can adopt the stream before
+		 * its own compare ever fires. Totals are session-scoped because both a recovery and
+		 * a level restart wipe the per-level counters. */
+		const bool detected = (thisPlayerNum == networkHostPlayerNum)
+		                    ? qa_desyncs_total >= 1 : true;
+		rc = (detected && qa_resyncs_total >= 1 && canary_mismatches == 0) ? 0 : 1;
+	}
+	else
+	{
+		/* No divergence allowed, and the run must have actually exercised a rollback, or the
+		 * proxy's faults never reached the prediction path and this proved nothing. The
+		 * session counter matters for multi-zone runs: every level reset wipes stat_deepest,
+		 * and the verdict may fire from an outpost. */
+		rc = (qa_desyncs_total == 0 && (stat_deepest >= 1 || qa_rollbacks_session >= 1)) ? 0 : 1;
+	}
+
+	if (qa_net_menu_frame > 0)
+	{
+		/* The scripted race must have reached the menu, and arbitration must leave the
+		 * reliable queue clean: a stale PACKET_WAITING here is the leftover release the
+		 * unarbitrated race produced, which a later rendezvous would misread. */
+		if (!qa_menu_ran)
+		{
+			fprintf(stderr, "net gameplay: the scripted menu race never reached the menu\n");
+			rc = 1;
+		}
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			fprintf(stderr, "net gameplay: stale PACKET_WAITING left after the menu rendezvous\n");
+			rc = 1;
+		}
+	}
+
+	// The save/resume scenario's first stage: bank the LAST LEVEL record the resume will load.
+	if (qa_net_save_exit && rc == 0)
+		JE_saveGame(22, "LAST LEVEL    ");
+
+	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu"
+	       " rollbacks=%lu gen=%u zones=%d\n",
+	       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, (unsigned long)nrb_cur,
+	       (unsigned)nrb_epoch, (unsigned long)stat_deepest,
+	       (unsigned long)qa_desyncs_total, (unsigned long)qa_resyncs_total,
+	       (unsigned long)qa_rollbacks_session, (unsigned)resync_gen, qa_net_zones_cleared);
+	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n", thisPlayerNum,
+	       (unsigned long)network_test_mem_start_kb(), (unsigned long)network_test_mem_now_kb());
+	fflush(stdout);
+
+	const Uint32 start = SDL_GetTicks();
+	while (SDL_GetTicks() - start < 1200)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	exit(rc);
+}
+
+/* Multi-zone wire runs reach their target between levels, where the outpost hook has the zone
+ * count; the verdict itself is the same session-scoped one the tick limit uses. */
+void qa_net_zone_verdict(void)
+{
+	nrb_qa_gameplay_verdict();
+}
+
 NrbStep nrb_driver(void)
 {
 	if (!nrb_active())
 		return NRB_STEP_PRESENT;
+
+	if (qa_net_gameplay_ticks > 0 && !resim_active && nrb_cur > qa_net_gameplay_ticks)
+		nrb_qa_gameplay_verdict();
 
 	if (resim_active)
 	{
@@ -1996,8 +2146,12 @@ NrbStep nrb_driver(void)
 				s->in.difficulty = (Uint8)difficultyLevel;
 			s->tag = nrb_cur;
 		}
-		s->in.buttons |= (pauseRequest      ? RB_REQ_PAUSE     : 0) |
-		                 (inGameMenuRequest ? RB_REQ_MENU      : 0) |
+		// Wire-test menu race: both peers raise the request on the same frame, which is
+		// the documented simultaneous-Esc case the arbitration above has to settle.
+		if (qa_net_menu_frame > 0 && nrb_cur == qa_net_menu_frame)
+			inGameMenuRequest = true;
+		// RB_REQ_PAUSE is never sent: online cannot pause. The bit stays reserved.
+		s->in.buttons |= (inGameMenuRequest ? RB_REQ_MENU      : 0) |
 		                 (skipLevelRequest  ? RB_REQ_SKIPLEVEL : 0) |
 		                 (nortShipRequest   ? RB_REQ_NORTSHIP  : 0);
 		nrb_send_input();
@@ -2053,9 +2207,25 @@ NrbStep nrb_driver(void)
 			break;
 		}
 
-		const bool local_menu = req_local_menu;
+		/* Host-wins arbitration for a simultaneous request: when both players' presses
+		 * coalesced into this one opening, only the host takes the menu branch and the
+		 * joiner waits on the host's menu instead. Without it both machines took the
+		 * local branch and each sent a PACKET_WAITING nobody consumed; a later
+		 * rendezvous (or the stall pump's peer-left-level rule) read the leftover as
+		 * its own release. */
+		const bool local_menu = req_local_menu
+		    && (thisPlayerNum == networkHostPlayerNum || !req_host_menu);
 		req_at = 0;
 		req_local_menu = false;
+		req_host_menu = false;
+
+		if (qa_net_menu_frame > 0)
+		{
+			qa_menu_ran = true;
+			fprintf(stderr, "net gameplay: menu rendezvous at frame %lu (local branch: %d)\n",
+			        (unsigned long)nrb_cur, local_menu ? 1 : 0);
+			fflush(stderr);
+		}
 
 		yourInGameMenuRequest = local_menu;
 		JE_doInGameSetup();
@@ -2181,6 +2351,7 @@ void nrb_write_diagnostics(FILE *f)
 
 #else /* !WITH_NETWORK */
 
+void qa_net_zone_verdict(void) {}
 Uint32 nrb_frame(void) { return 0; }
 void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs)
 {

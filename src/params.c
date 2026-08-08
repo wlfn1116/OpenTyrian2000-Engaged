@@ -72,6 +72,19 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 303, 0,   "test-replay-ticks", true },
 		{ 304, 0,   "test-replay-hash",  true },
 		{ 305, 0,   "test-net-rounds",   true },
+		{ 306, 0,   "test-net-scenario", true },
+		{ 307, 0,   "test-net-version-skew", true },
+		{ 308, 0,   "test-net-gameplay-ticks", true },
+		{ 309, 0,   "test-net-corrupt-frame", true },
+		{ 310, 0,   "test-net-save-exit", false },
+		{ 311, 0,   "test-net-resume-slot", true },
+		{ 312, 0,   "test-net-loadout", true },
+		{ 313, 0,   "test-net-menu-frame", true },
+		{ 314, 0,   "test-net-game-type", true },
+		{ 315, 0,   "test-net-zones", true },
+		{ 316, 0,   "test-net-lobby-settings", false },
+		{ 317, 0,   "test-net-arcade-separate", false },
+		{ 318, 0,   "test-net-scrollock", false },
 
 		{ 0, 0, NULL, false}
 	};
@@ -242,7 +255,46 @@ void JE_paramCheck(int argc, char *argv[])
 		case 305:
 			qa_net_rounds = atoi(option.arg);
 			break;
-			
+		case 306:
+			qa_net_scenario = atoi(option.arg);
+			break;
+		case 307:
+			qa_net_version_skew = atoi(option.arg);
+			break;
+		case 308:
+			qa_net_gameplay_ticks = strtoul(option.arg, NULL, 10);
+			break;
+		case 309:
+			qa_net_corrupt_frame = strtoul(option.arg, NULL, 10);
+			break;
+		case 310:
+			qa_net_save_exit = true;
+			break;
+		case 311:
+			qa_net_resume_slot = atoi(option.arg);
+			break;
+		case 312:
+			qa_net_loadout = atoi(option.arg);
+			break;
+		case 313:
+			qa_net_menu_frame = strtoul(option.arg, NULL, 10);
+			break;
+		case 314:
+			qa_net_game_type = atoi(option.arg);
+			break;
+		case 315:
+			qa_net_zones = atoi(option.arg);
+			break;
+		case 316:
+			qa_net_lobby_settings = true;
+			break;
+		case 317:
+			qa_net_arcade_separate = true;
+			break;
+		case 318:
+			qa_net_scrollock = true;
+			break;
+
 		default:
 			assert(false);
 			break;

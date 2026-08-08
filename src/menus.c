@@ -32,7 +32,9 @@
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "qa.h"
 #include "sprite.h"
+#include "varz.h"  // SA_NONE, for clearing the one-player rulesets before an online session
 #include "vga256d.h"
 #include "video.h"
 
@@ -116,10 +118,9 @@ bool gameplaySelect(void)
 			// "Endless" is inserted after the full-game entry; every other label still comes
 			// from gameplay_name[] (full game = [1], the rest map straight across after the
 			// insert: Arcade = [2], Timed = [3], 2P = [4], Network = [5]).
-			// The network entry's shipped label is "Modem/Network Game", which describes an
-			// era rather than the mode; it is plain two-player arcade over a network now.
+			// The lobby now contains both online Arcade and Campaign.
 			const char *const text = (i == MENU_ITEM_ENDLESS)             ? "1 Player Endless"
-			                       : (i == MENU_ITEM_NETWORK)             ? "2 Player Online Arcade"
+			                       : (i == MENU_ITEM_NETWORK)             ? "Online Multiplayer"
 			                       : (i == MENU_ITEM_1_PLAYER_FULL_GAME)  ? gameplay_name[1]
 			                       :                                        gameplay_name[i];
 
@@ -291,6 +292,11 @@ bool gameplaySelect(void)
 				onePlayerAction = false;
 				timedBattleMode = false;
 				endlessMode = false;
+				coopCampaignMode = false;
+				coopEndlessMode = false;
+				superTyrian = false;
+				superArcadeMode = SA_NONE;
+				endlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 				twoPlayerMode = true;  // networkStartScreen() sets the rest up
 				return true;
 #else
@@ -684,6 +690,22 @@ bool difficultySelect(void)
 // Host start choice. Returns a loaded slot (1-based), 0 for new game, or -1 to cancel.
 int networkHostStartSelect(void)
 {
+	// A gameplay wire test has no player at the menu: it loads the planted save the way the
+	// menu would, or starts a new game.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		if (qa_net_resume_slot > 0 && qa_net_resume_slot <= SAVE_FILES_NUM)
+		{
+			JE_loadGame((JE_byte)qa_net_resume_slot);
+			fprintf(stderr, "net gameplay: host auto-loads slot %d\n", qa_net_resume_slot);
+			fflush(stderr);
+			return qa_net_resume_slot;
+		}
+		fprintf(stderr, "net gameplay: host auto-selects New Game\n");
+		fflush(stderr);
+		return 0;
+	}
+
 	static const char *const menu_item[] = { "New Game", "Load Game" };
 	const size_t menuItemsCount = COUNTOF(menu_item);
 
@@ -709,7 +731,7 @@ int networkHostStartSelect(void)
 			JE_loadPic(VGAScreen2, 2, false);
 
 			// Same header the lobby screens carry.
-			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 		}
 
 		// Restore background.
@@ -886,7 +908,7 @@ bool networkDisconnectSavePrompt(const char *message)
 		{
 			JE_loadPic(VGAScreen2, 2, false);
 
-			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+			draw_font_hv_shadow(VGAScreen2, xCenter, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 
 			// The message is part of the backdrop; only the two options redraw per frame.
 			JE_dString(VGAScreen2, JE_fontCenter(message, SMALL_FONT_SHAPES), yMessage, message, SMALL_FONT_SHAPES);

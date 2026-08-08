@@ -14,6 +14,73 @@
 // Combat effects can be enabled in a campaign without enabling Endless run flow.
 static inline bool endlessFxActive(void) { return endlessMode || endlessCampaignMods; }
 
+/* Online co-op. Both ships fly a shared run: the sector, its modifiers and the course slate are
+ * run-wide, while wallets, stock, gear and the personal upgrades below belong to one player each.
+ * See "Endless online" in doc/notes.md. */
+
+// The ship this machine outfits and spends for: player 1 solo, the local ship in co-op.
+uint    endlessEconomyIndex(void);
+// ...and the other one, which is the same ship outside co-op.
+uint    endlessPartnerIndex(void);
+// Ships a per-player Endless effect walks: two in co-op, one otherwise.
+uint    endlessEffectPlayers(void);
+
+/* Sector modifiers as ONE ship sees them: the charted set, plus whatever that player bought for
+ * themselves. A drive one player paid for boosts that player alone, on both machines.
+ * endlessFxPlayer is the ship whose effects are being computed; every caller that works through
+ * the players in turn sets it, and it is 0 outside co-op. */
+extern Uint64 endlessPlayerMods[2];
+void endlessSetFxPlayer(uint p);
+uint endlessFxPlayer(void);
+
+// Bits a purchase applies to the buyer alone. Everything else it can buy changes the sector.
+#define ENDLESS_PERSONAL_MOD_MASK ((Uint64)( \
+	ENDLESS_MOD_KILLFIRE_ANY | ENDLESS_MOD_OVERCHARGE | ENDLESS_MOD_NITRO | \
+	ENDLESS_MOD_OVERHEAT | ENDLESS_MOD_DUD))
+
+// Fold each player's purchases into their own mask; the shared bits go into endlessActiveMods.
+void endlessApplyPurchasedMods(void);
+static inline bool endlessCoop(void) { return endlessMode && coopEndlessMode; }
+
+// Who charts the next course. Persisted in the run save and the lobby block, so append only.
+typedef enum {
+	ENDLESS_PICK_HOST = 0,
+	ENDLESS_PICK_GUEST,
+	ENDLESS_PICK_ALTERNATE,   // takes turns; the turn flag rides the run save
+	ENDLESS_PICK_COINFLIP,    // seeded from the run RNG, so both machines agree
+	ENDLESS_PICK_COUNT
+}
+EndlessCourseChooser;
+
+/* Whose combo a kill feeds. Individual keeps each ship's kill-fire streak its own, which is what
+ * a drive one player paid for is worth; Shared has every kill feed both. Host-authoritative. */
+extern bool endlessCoopComboShared;
+// A kill nobody can be credited with, so neither player's streak is punished for it.
+#define ENDLESS_KILLER_NONE (-1)
+
+extern EndlessCourseChooser endlessCourseChooser;  // host-authoritative session setting
+extern bool endlessCoopHostCharts;                 // Alternating: is the host charting this one?
+const char *endlessCourseChooserName(EndlessCourseChooser mode);
+bool endlessLocalPlayerCharts(void);   // does this machine pick the next course?
+uint endlessChartingPlayerIndex(void); // which SEAT picks it, identical on both machines
+void endlessAdvanceCourseTurn(void);   // call once a course has been committed
+
+// A downed player spectates until the zone ends, then revives at the outpost.
+extern bool endlessPlayerDowned[2];
+/* The other player used the in-game menu's Quit. In Endless that means "back to the outpost",
+ * the same as pressing it here, so the peer joins them there rather than being torn down; the
+ * level ends with playerEndLevel set, which on its own would read as this player's death. */
+void endlessCoopPeerQuitLevel(void);
+bool endlessAnyPlayerFlying(void);     // at least one ship still alive and not downed
+// Which ship a homing or course-correcting shot at (fromX, fromY) goes for: the nearer one
+// still flying, and player 1 outside co-op.
+uint endlessDangerTargetPlayer(int fromX, int fromY);
+// A homing enemy picks its ship by coin toss when it is created (0 outside co-op, and no roll is
+// spent there), and keeps it for life unless that ship goes down.
+uint endlessRollHomingTarget(void);
+uint endlessHomingTargetPlayer(uint stored);
+void endlessReviveDownedAtOutpost(void);
+
 // Number of active modifier bits.
 static inline int endlessPopCount64(Uint64 v)
 {
@@ -190,13 +257,14 @@ void endlessCashAudit(void);
 void endlessCashResync(void);          // re-anchor without booking either way (run start, load, sortie revert)
 void endlessCashDebugOverwrite(void);  // the debug screen overwrote the wallet: book the delta, no warning
 
-// Count one logical enemy. All kill paths go through enemy_logical_death.
-void endlessCountKill(int linknum);
+// Count one logical enemy, credited to `killer` (0/1, or ENDLESS_KILLER_NONE when nothing can
+// claim it). All kill paths go through enemy_logical_death.
+void endlessCountKill(int linknum, int killer);
 
 extern Uint64 endlessActiveMods;
 
-// Run-persistent Reinforce bonus.
-extern int endlessArmorBonus;
+// Run-persistent Reinforce bonus, per player.
+extern int endlessArmorBonus[2];
 
 void endlessResetRun(void);
 
@@ -211,6 +279,12 @@ int  endlessBestZoneAtStart(void);
 // on-disk order of the per-difficulty records too, so append to it rather than reordering it.
 #define ENDLESS_DIFFICULTY_COUNT 6
 extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
+
+/* Records are kept apart by crew size: two ships clear zones a solo run cannot, so the two are
+ * never compared. Index 0 is a one-player run, 1 an online co-op one. */
+#define ENDLESS_PLAYER_TABLES 2
+int endlessRecordTable(void);   // which table the run in progress writes
+const char *endlessRecordTableName(int players);
 
 // Slot a difficulty level occupies, or -1 when runs on it are not broken out.
 int endlessDifficultySlot(int difficulty);
@@ -246,18 +320,18 @@ const char *endlessRunModeName(EndlessRunMode mode);
 
 // The mode's record on one difficulty slot, and its deepest on any of them. The latter also counts
 // the untagged record a config written before the breakdown existed still carries.
-int endlessBestZoneForDifficulty(EndlessRunMode mode, int slot);
-int endlessBestZoneAny(EndlessRunMode mode);
+int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot);
+int endlessBestZoneAny(int players, EndlessRunMode mode);
 
 // " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
 // against a named mode and difficulty, so the zone number carries this mark alone.
-const char *endlessRecordAnyCustomMark(EndlessRunMode mode);
-const char *endlessRecordDiffCustomMark(EndlessRunMode mode, int slot);
+const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode);
+const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot);
 
 // Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
 // a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
-void endlessClearDeepestRecord(EndlessRunMode mode);
-void endlessClearRecordDifficulty(EndlessRunMode mode, int slot);
+void endlessClearDeepestRecord(int players, EndlessRunMode mode);
+void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot);
 
 // Returns false when the seed screen is cancelled.
 bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);
@@ -265,8 +339,26 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);
 
+// Re-fork both players' outpost draw streams from the run seed.
+void endlessReseedPlayers(Uint64 salt);
+
 // Sidecar save keyed by the normal save slot.
+bool endlessSlotHasRun(JE_byte slot);
 void endlessSaveSlot(JE_byte slot);
+
+/* Everything one Endless co-op player owns for themselves that the other machine also has to
+ * know: the run-wide sector effects are derived identically on both sides, but these are bought.
+ * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
+#define ENDLESS_PLAYER_BLOCK_PERKS 32
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS)
+int  endlessPackPlayerBlock(Uint8 *buf, uint p);
+void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
+
+/* Online co-op resume. The host serializes the live run in the sidecar's own versioned format
+ * and the joiner adopts it. Returns 0 / false when there is nothing usable. */
+#define ENDLESS_RUN_WIRE_MAX 4096
+size_t endlessRunSerialize(Uint8 *out, size_t max);
+bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
 bool endlessLoadSlot(JE_byte slot);
 bool endlessResumePending(void);
 
@@ -347,9 +439,9 @@ long endlessBombPrice(void);
 bool endlessBombFull(void);
 bool endlessTryBuyBomb(void);
 long endlessRevivePrice(void);
-bool endlessReviveArmed(void);       // a revive token is currently held
+bool endlessReviveArmed(void);       // a revive token is currently held by the shopping player
 bool endlessTryBuyRevive(void);
-bool endlessConsumeRevive(void);     // spend a held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
+bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
@@ -427,8 +519,8 @@ void endlessEndRunToTitle(void);
 // Apply the level-clear payout and return its components.
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 
-// Replace Endless data cubes and secret orbs with a safe special.
-void endlessGrantSpecial(void);
+// Replace Endless data cubes and secret orbs with a safe special for player p.
+void endlessGrantSpecial(uint p);
 
 // Replace an embedded data cube with a gem at the enemy slot.
 void endlessDropCubeGem(int slot);
@@ -525,8 +617,8 @@ int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is gran
 int endlessKillBuffDamagePercent(void); // shot-damage bonus % the buff is granting (0 during Turbodrive)
 int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (the combo ramp; Turbodrive and Overdrive alike)
 int  endlessPerkSpecialCooldownDecrements(void); // Rapid Recharge perk: extra cooldown decrements/tick, applied by the caller to the special-weapon gate AND sidekick ammo refill
-int   endlessGravityPullX(void);        // GRAVITY: per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
-int   endlessGravityPullY(void);        // GRAVITY: per-tick vertical nudge (classic non-VT ship path)
+int   endlessGravityPullX(uint p);      // GRAVITY: ship p's per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
+int   endlessGravityPullY(uint p);      // GRAVITY: ship p's per-tick vertical nudge (classic non-VT ship path)
 float endlessGravityDrift(void);        // GRAVITY: pull magnitude in px per 35Hz tick (direction-agnostic)
 float endlessGravityDriftX(void);       // GRAVITY: horizontal drag component in px/tick (VT ship path; nonzero only for an omni well)
 float endlessGravityDriftY(void);       // GRAVITY: vertical drag component in px/tick (VT ship path)
@@ -577,7 +669,7 @@ int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown sca
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
 
 // Call for every logical death so ordinary enemies break the link-group latch.
-void endlessAwardEliteKill(int linknum, int eliteState);
+void endlessAwardEliteKill(int linknum, int eliteState, int killer);
 
 // Run-persistent perks.
 extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate
@@ -627,6 +719,7 @@ int         endlessPerkCount(void);          // number of perks (PERK_COUNT)
 const char *endlessPerkName(int id);         // perk display name
 const char *endlessPerkDesc(int id);         // perk one-line effect description (for the perk-list help)
 int         endlessPerkMaxStack(int id);     // max stacks this perk allows
+// Perks are personal, so both sides of this pair name THIS machine's own player's stacks.
 int         endlessPerkGetOwned(int id);     // current owned stacks
 void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
 

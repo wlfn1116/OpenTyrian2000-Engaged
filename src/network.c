@@ -1,4 +1,4 @@
-/*
+﻿/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -24,6 +24,11 @@
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
 #endif
+// Working-set probe for the wire tests' soak check (net_test_rss_kb).
+#include <psapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "psapi.lib")
+#endif
 #endif
 
 #include "network.h"
@@ -31,6 +36,9 @@
 #include "config.h"
 #include "console_platform.h"
 #include "crashlog.h"
+#include "custom_weapon.h"
+#include "endless.h"
+#include "game_menu.h"
 #include "episodes.h"
 #include "file.h"
 #include "font.h"
@@ -38,15 +46,18 @@
 #include "helptext.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "loudness.h"
 #include "mainint.h"
 #include "menus.h"
 #include "mouse.h"
 #include "mtrand.h"
 #include "net_rollback.h"
+#include "nortsong.h"
 #include "nortvars.h"
 #include "opentyr.h"
 #include "picload.h"
 #include "player.h"
+#include "qa.h"
 #include "rollback.h"
 #include "shots.h"
 #include "sprite.h"
@@ -55,16 +66,35 @@
 #include "video.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       13           // increment whenever networking changes might create incompatibility (13: settings block back to 24 bytes, RNG seed removed)
+#define NET_VERSION       21           /* v21: online Destruct; the connect packet grows a
+                                          Destruct block (battle mode and terrain seed), the state
+                                          stream doubles as its lockstep input exchange, and its
+                                          title card is a PACKET_WAITING barrier both must clear.
+                                          v20: the departure handshake carries the Endless debug
+                                          zone jump (depth, folded modifiers, perk stacks) beside
+                                          the level pick, and PACKET_SA_SHIP carries a retractable
+                                          pick plus the peer's acknowledgement of ours.
+                                          v19: Double Earnings covers kill and bounty cash,
+                                          Endless perks are per-ship, and Arcade carries the
+                                          Linked / Separate ships setting and Rear Gun Scale */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
-// then the host's simulation settings, then the null-terminated player name.
-#define NET_CONNECT_SETTINGS  12
-#define NET_CONNECT_NAME      (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+// game type, episode, difficulty, the host's simulation settings, its Endless lobby block, its
+// Destruct lobby block, and finally the player name.
+#define NET_CONNECT_GAME_TYPE 12
+#define NET_CONNECT_EPISODE   14
+#define NET_CONNECT_DIFFICULTY 16
+#define NET_CONNECT_SETTINGS  18
+#define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
+#define NET_CONNECT_ENDLESS_SIZE (3 + NET_ENDLESS_SEED_MAX)   // run mode, chooser, combo feed, seed
+#define NET_CONNECT_DESTRUCT  (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
+#define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
+#define NET_CONNECT_NAME      (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -91,6 +121,20 @@ int network_host_player = 1;
 // Session game speed, a host option (1..5, 4 = Normal); the joiner adopts it from the
 // settings block like every other sim-binding choice.
 int network_host_game_speed = 4;
+NetworkGameType network_game_type = NETWORK_GAME_ARCADE;
+int network_host_episode = 1;
+int network_host_difficulty = DIFFICULTY_NORMAL;
+
+// Endless lobby block. Blank seed means "roll one when the run starts".
+char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
+char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
+int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
+int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
+bool network_host_endless_combo_shared = false;
+
+// Destruct lobby block. The seed is per session; every round hashes it with the round number.
+int    network_host_destruct_mode = 0;    // MODE_5CARDWAR
+Uint32 network_destruct_session_seed = 0;
 
 static char empty_string[] = "";
 char *network_player_name = empty_string,
@@ -140,6 +184,10 @@ UDPpacket *packet_in[NET_PACKET_QUEUE] = { NULL },
 static Uint16 last_out_sync = 0, queue_in_sync = 0, queue_out_sync = 0, last_ack_sync = 0;
 static Uint32 last_in_tick = 0, last_out_tick = 0;
 
+// Wire tests start the sequence space here instead of zero, so every scenario crosses the
+// Uint16 wraparound as part of its normal run. Zero outside the tests.
+static Uint16 qa_seq_base = 0;
+
 UDPpacket *packet_state_in[NET_PACKET_QUEUE] = { NULL };
 static UDPpacket *packet_state_in_xor[NET_PACKET_QUEUE] = { NULL };
 UDPpacket *packet_state_out[NET_PACKET_QUEUE] = { NULL };
@@ -174,7 +222,7 @@ static struct
 	Uint32 recv_errors, send_errors;            // socket-level failures (ICMP resets etc.)
 	Uint32 bad_packets;                         // unknown type on the game channel
 	Uint32 retries;                             // reliable-channel retransmits
-	Uint32 acked_dropped;                       // reliable packets acked into a full queue, then lost
+	Uint32 window_overflow;                     // reliable packets that arrived past the receive window
 	Uint32 state_in, state_out, state_late;     // state stream; late = outside the queue window
 	Uint32 xor_rebuilds;                        // lost state packets reconstructed from parity
 	Uint32 resend_req_sent, resend_req_served;  // state resend requests
@@ -198,7 +246,7 @@ JE_boolean haltGame = false;
 JE_boolean moveOk;
 
 /* Special Requests */
-JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
+JE_boolean skipLevelRequest, helpRequest, nortShipRequest;
 JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 
 #ifdef WITH_NETWORK
@@ -271,15 +319,37 @@ bool network_send(int len)
 	Uint16 i = last_out_sync - queue_out_sync;
 	if (i >= NET_PACKET_QUEUE)
 	{
-		fprintf(stderr, "error: outbound packet queue overflow\n");
+		/* A full window is backpressure, not a dead link: the oldest packet is simply not
+		 * acknowledged yet. Hold the sender here with the socket serviced until a slot frees,
+		 * and only a peer that never frees one is treated as lost. The prepared packet has to
+		 * be preserved across the wait: servicing the socket overwrites packet_out_temp with
+		 * acknowledgements and ping replies. */
+		Uint8 pending[NET_PACKET_SIZE];
+		memcpy(pending, packet_out_temp->data, (size_t)len);
 
-		crashlog_note_net("NETWORK QUEUE OVERFLOW",
-		              "no acknowledgement for a full outbound queue; treating the link as lost");
+		const Uint32 wait_start = SDL_GetTicks();
+		while ((i = (Uint16)(last_out_sync - queue_out_sync)) >= NET_PACKET_QUEUE
+		       && SDL_GetTicks() - wait_start < NET_TIME_OUT && !quit)
+		{
+			watchdog_heartbeat();
+			network_check();
+			SDL_Delay(1);
+		}
 
-		if (!quit)
-			network_tyrian_halt(2, false);
+		memcpy(packet_out_temp->data, pending, (size_t)len);
 
-		return false;
+		if (i >= NET_PACKET_QUEUE)
+		{
+			fprintf(stderr, "error: outbound packet queue overflow\n");
+
+			crashlog_note_net("NETWORK QUEUE OVERFLOW",
+			              "no acknowledgement for a full outbound queue; treating the link as lost");
+
+			if (!quit)
+				network_tyrian_halt(2, false);
+
+			return false;
+		}
 	}
 
 	bool temp = network_send_no_ack(len);
@@ -289,7 +359,9 @@ bool network_send(int len)
 
 	last_out_sync++;
 
-	if (network_is_sync())
+	// The retry timer belongs to the queue head. Starting it on any later send instead pushes
+	// the head's retransmission into the future for as long as new sends keep coming.
+	if (i == 0)
 		last_out_tick = SDL_GetTicks();
 
 	return temp;
@@ -309,6 +381,22 @@ static int network_acknowledge(Uint16 sync)
 static bool network_is_alive(void)
 {
 	return (SDL_GetTicks() - last_in_tick < NET_TIME_OUT || SDL_GetTicks() - last_state_in_tick < NET_TIME_OUT);
+}
+
+/* Retransmit interval, adapted to the measured round trip. NET_RETRY is sized for a link with
+ * nothing known about it; holding a 40ms link to it turns every lost packet into a two-thirds
+ * of a second stall. Floor well above jitter so a slow reply is not answered with a duplicate. */
+static Uint32 net_retry_interval(void)
+{
+	if (!ping_valid)
+		return NET_RETRY;
+
+	Uint32 interval = (Uint32)(ping_ema + 0.5f) * 2 + 60;
+	if (interval < 120)
+		interval = 120;
+	if (interval > NET_RETRY)
+		interval = NET_RETRY;
+	return interval;
 }
 
 // Exported liveness for the rollback stall logic: a peer sitting in menus for
@@ -400,21 +488,27 @@ static int network_recv_one(void)
 				switch (SDLNet_Read16(&packet_temp->data[0]))
 				{
 					case PACKET_ACKNOWLEDGE:
-						if ((Uint16)(SDLNet_Read16(&packet_temp->data[2]) - last_ack_sync) < NET_PACKET_QUEUE)
+					{
+						const Uint16 ack = SDLNet_Read16(&packet_temp->data[2]);
+						const Uint16 i = ack - queue_out_sync;
+
+						// Only an acknowledgement for a packet still outstanding may advance the
+						// bookkeeping. Anything else is a stale duplicate or forged; trusting it
+						// drifts queue_out_sync off last_out_sync and the send path reads that
+						// as an overflow.
+						if (i >= (Uint16)(last_out_sync - queue_out_sync))
 						{
-							last_ack_sync = SDLNet_Read16(&packet_temp->data[2]);
+							last_in_tick = SDL_GetTicks();
+							break;
 						}
 
+						if ((Uint16)(ack - last_ack_sync) < NET_PACKET_QUEUE)
+							last_ack_sync = ack;
+
+						if (packet_out[i])
 						{
-							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_out_sync;
-							if (i < NET_PACKET_QUEUE)
-							{
-								if (packet_out[i])
-								{
-									SDLNet_FreePacket(packet_out[i]);
-									packet_out[i] = NULL;
-								}
-							}
+							SDLNet_FreePacket(packet_out[i]);
+							packet_out[i] = NULL;
 						}
 
 						// remove acknowledged packets from queue
@@ -427,6 +521,7 @@ static int network_recv_one(void)
 
 						last_in_tick = SDL_GetTicks();
 						break;
+					}
 
 					case PACKET_CONNECT:
 						/*
@@ -436,11 +531,36 @@ static int network_recv_one(void)
 						if (connected)
 						{
 							const Uint16 connect_sync = SDLNet_Read16(&packet_temp->data[2]);
-							if (connect_sync == queue_in_sync)
+							const Sint16 slot = (Sint16)(connect_sync - queue_in_sync);
+							if (slot == 0)
 							{
+								// At the head: discard it by advancing the window past it.
 								packets_shift_up(packet_in, NET_PACKET_QUEUE);
 								++queue_in_sync;
 							}
+							else if (slot > 0 && slot < NET_PACKET_QUEUE)
+							{
+								/* Ahead of the head (the handshake's trailing connect, reordered
+								 * past a younger packet).  Acknowledging it without occupying its
+								 * sequence slot leaves a hole at the head of the window: an
+								 * acknowledged packet is never resent, the window cannot advance
+								 * past an empty head, and everything later parks behind the gap
+								 * for good.  Place it like any reliable packet instead; whoever
+								 * finds it at the head throws it away. */
+								if (packet_in[slot] == NULL)
+									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+								packet_copy(packet_in[slot], packet_temp);
+							}
+							else if (slot >= NET_PACKET_QUEUE)
+							{
+								// No room to place it; withhold the acknowledgement so the
+								// retransmit arrives once the window has drained (same rule as
+								// the general placement path below).
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
+							}
+							// Behind the window: consumed already; just re-acknowledge.
 							network_acknowledge(connect_sync);
 							last_in_tick = SDL_GetTicks();
 							break;
@@ -464,21 +584,46 @@ static int network_recv_one(void)
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
 					case PACKET_DEBUG_SYNC:
+					case PACKET_SHOP_SYNC:
+					case PACKET_CUSTOM_WEAPON:
+					// Every packet the Endless co-op channel carries: the run transfer on resume,
+					// the death-prompt choice, and the "I have left the level" notice. Missing from
+					// this list, all three were dropped here unread and unacknowledged, so the whole
+					// channel was write-only however carefully both ends waited on it.
+					case PACKET_ENDLESS_RUN:
+					// Online Super Arcade's ship announcement. Same reason as the Endless block
+					// above: a reliable type missing from this list is queued nowhere and never
+					// acknowledged, so the sender retransmits forever and the pair deadlocks.
+					case PACKET_SA_SHIP:
+					// The Endless zone jump, settled before the course is folded. Same rule again.
+					case PACKET_ENDLESS_JUMP:
 					case PACKET_RESYNC:
 						{
-							Uint16 i = SDLNet_Read16(&packet_temp->data[2]) - queue_in_sync;
-							if (i < NET_PACKET_QUEUE)
+							const Uint16 sync = SDLNet_Read16(&packet_temp->data[2]);
+							/* Signed so the comparison is wraparound-safe: behind the window is a
+							 * packet already consumed, ahead of it is one there is no room for. */
+							const Sint16 slot = (Sint16)(sync - queue_in_sync);
+							if (slot >= 0 && slot < NET_PACKET_QUEUE)
 							{
-								if (packet_in[i] == NULL)
-									packet_in[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-								packet_copy(packet_in[i], packet_temp);
+								if (packet_in[slot] == NULL)
+									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+								packet_copy(packet_in[slot], packet_temp);
 							}
-							else
+							else if (slot >= NET_PACKET_QUEUE)
 							{
-								// Count near-window overflow; larger gaps are stale duplicates.
-								if ((Uint16)(i - NET_PACKET_QUEUE) < NET_PACKET_QUEUE)
-									++net_diag.acked_dropped;
+								/* Past the end of the receive window, so there is nowhere to put it.
+								 * Do NOT acknowledge: an acknowledgement here tells the sender it was
+								 * delivered and it is never sent again, and the window only advances
+								 * as packets are consumed, so it can never come back. That is a
+								 * permanent one-way deafness, not a hiccup. Withholding the
+								 * acknowledgement leaves it queued at the sender, which retransmits
+								 * once this end has drained enough to take it. */
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
 							}
+							// Behind the window: consumed already, and the sender is repeating it
+							// because our acknowledgement was lost. Acknowledge it again below.
 						}
 
 						network_acknowledge(SDLNet_Read16(&packet_temp->data[2]));
@@ -645,18 +790,26 @@ int network_check(void)
 		}
 	}
 
-	// retry
-	if (packet_out[0] && SDL_GetTicks() - last_out_tick > NET_RETRY)
+	// Retry everything still unacknowledged, oldest first. Resending only the head would drain
+	// a backlog at one packet per retry interval when the acks for the rest were lost with it.
+	if (packet_out[0] && SDL_GetTicks() - last_out_tick > net_retry_interval())
 	{
-		if (!SDLNet_UDP_Send(net_socket, 0, packet_out[0]))
+		for (int i = 0; i < NET_PACKET_QUEUE; i++)
 		{
-			printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
-			++net_diag.send_errors;
-			return -1;
+			if (packet_out[i] == NULL)
+				continue;
+
+			if (!SDLNet_UDP_Send(net_socket, 0, packet_out[i]))
+			{
+				printf("SDLNet_UDP_Send: %s\n", SDL_GetError());
+				++net_diag.send_errors;
+				return -1;
+			}
+
+			++net_diag.dg_out;
+			++net_diag.retries;
 		}
 
-		++net_diag.dg_out;
-		++net_diag.retries;
 		last_out_tick = SDL_GetTicks();
 	}
 
@@ -693,15 +846,45 @@ bool network_update(void)
 	return false;
 }
 
-// has opponent gotten all the packets we've sent?
+/* True when every reliable packet sent has been acknowledged. Measured off the queue itself
+ * rather than the acknowledgement high-water mark, which reads ahead of an unacknowledged head
+ * whenever the ack for it was lost. See doc/notes.md on the reliable-channel retry rules. */
 bool network_is_sync(void)
 {
-	return (queue_out_sync - last_ack_sync == 1);
+	return network_ack_backlog() == 0;
 }
 
 int network_ack_backlog(void)
 {
 	return (Uint16)(last_out_sync - queue_out_sync);
+}
+
+// Reliable packets waiting to be consumed, head included.  Diagnostic: a wait that stalls with a
+// non-empty queue is stalled on a head nobody claims, which names the bug on sight.
+int network_inbound_depth(void)
+{
+	int depth = 0;
+	for (int i = 0; i < NET_PACKET_QUEUE; ++i)
+	{
+		if (packet_in[i] != NULL)
+			++depth;
+	}
+	return depth;
+}
+
+// Type of the packet at the head of the reliable queue, or 0 when it is empty.
+Uint16 network_inbound_head(void)
+{
+	return packet_in[0] != NULL ? SDLNet_Read16(&packet_in[0]->data[0]) : 0;
+}
+
+/* Reliable packets that arrived past the end of the receive window. They were acknowledged on the
+ * way in, so the sender considers them delivered and will never send them again: each one is a
+ * reliable packet permanently lost. Nonzero means the queue was allowed to fill, which is a bug
+ * in whoever was supposed to be draining it, not a transport problem. */
+Uint32 network_window_overflow(void)
+{
+	return net_diag.window_overflow;
 }
 
 // prepare new state for sending
@@ -936,11 +1119,22 @@ static void send_connect_packet(Uint16 episodes_local)
 		name_len = NET_NAME_MAX;
 
 	network_prepare(PACKET_CONNECT);
-	SDLNet_Write16(NET_VERSION,    &packet_out_temp->data[4]);
+	// qa_net_version_skew is zero outside the wire tests; the mismatch scenario offsets it.
+	SDLNet_Write16((Uint16)(NET_VERSION + qa_net_version_skew), &packet_out_temp->data[4]);
 	SDLNet_Write16(network_delay,  &packet_out_temp->data[6]);
 	SDLNet_Write16(episodes_local, &packet_out_temp->data[8]);
 	SDLNet_Write16(thisPlayerNum,  &packet_out_temp->data[10]);
+	SDLNet_Write16(network_game_type, &packet_out_temp->data[NET_CONNECT_GAME_TYPE]);
+	SDLNet_Write16(network_host_episode, &packet_out_temp->data[NET_CONNECT_EPISODE]);
+	SDLNet_Write16(network_host_difficulty, &packet_out_temp->data[NET_CONNECT_DIFFICULTY]);
 	network_settings_pack(&packet_out_temp->data[NET_CONNECT_SETTINGS]);
+	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_endless_session_seed,
+	       NET_ENDLESS_SEED_MAX);
+	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
+	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -997,12 +1191,10 @@ int network_connect(void)
 	if (network_from_lobby)
 		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
-	// Netcode mode: start from our own config.  A lobby joiner overwrites this
-	// when it adopts the host's settings block; command-line games have no host,
-	// so both sides must simply be configured alike (as with network_delay).
-	nrb_set_session_mode(net_rollback);
-	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery);
+	// Session flags from our own config.  A lobby joiner overwrites these when it adopts the
+	// host's settings block; a command-line game assigns player 1 the host role (opentyr.c)
+	// but adopts nothing, so both sides must simply be configured alike (as with network_delay).
+	network_arm_local_session();
 
 connect_reset:
 	// A listening host has no address to send to yet, so it stays quiet until the joiner
@@ -1023,13 +1215,26 @@ connect_reset:
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
 			// From the lobby, backing out of "waiting for player" has to return to the menu.
 			// Only a command-line game (which has no menu to return to) still exits here.
 			if (network_from_lobby)
+			{
+				/* Best effort, repeated because nothing will retry it: whoever we may already
+				 * have been talking to gets told, or they sit out the dead-link timeout (and a
+				 * joiner still mid-connect has no timeout at all, only its own Esc). */
+				if (peer_addr_known)
+				{
+					network_prepare(PACKET_QUIT);
+					for (int i = 0; i < 3; ++i)
+						network_send_no_ack(4);
+				}
 				return -1;
+			}
 			network_tyrian_halt(0, false);
 		}
 
@@ -1041,13 +1246,11 @@ connect_reset:
 
 		network_update();
 		network_check();
-
-		SDL_Delay(16);
 	}
 
 	// The joiner is known now, so a listening host can finally introduce itself.  last_out_sync
-	// only advances on an acknowledged send, so zero means the connect packet is still owed.
-	if (listening && last_out_sync == 0)
+	// only advances on a send, so sitting at its starting value means the connect is still owed.
+	if (listening && last_out_sync == qa_seq_base)
 		send_connect_packet(episodes_local);
 
 connect_again:
@@ -1060,7 +1263,9 @@ connect_again:
 		fprintf(stderr, "error: malformed connect packet from opponent (%d bytes)\n", packet_in[0]->len);
 		network_tyrian_halt(4, true);
 	}
-	if (SDLNet_Read16(&packet_in[0]->data[4]) != NET_VERSION)
+	// Compared against the same skewed value the connect packet advertises, so the mismatch
+	// wire scenario models a peer whose build constant genuinely differs.
+	if (SDLNet_Read16(&packet_in[0]->data[4]) != (Uint16)(NET_VERSION + qa_net_version_skew))
 	{
 		fprintf(stderr, "error: network version did not match opponent's\n");
 		network_tyrian_halt(4, true);
@@ -1084,7 +1289,30 @@ connect_again:
 			}
 			network_delay = host_delay;
 
+			const int host_game_type = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_GAME_TYPE]);
+			const int host_episode = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_EPISODE]);
+			const int host_difficulty = SDLNet_Read16(&packet_in[0]->data[NET_CONNECT_DIFFICULTY]);
+			if (host_game_type < 0 || host_game_type >= NETWORK_GAME_TYPE_COUNT ||
+			    host_episode < 1 || host_episode > EPISODE_MAX ||
+			    host_difficulty < DIFFICULTY_EASY || host_difficulty > DIFFICULTY_LORD_OF_GAME)
+			{
+				fprintf(stderr, "error: host sent unusable lobby settings (%d/%d/%d)\n",
+				        host_game_type, host_episode, host_difficulty);
+				network_tyrian_halt(5, true);
+			}
+			network_game_type = (NetworkGameType)host_game_type;
+			network_host_episode = host_episode;
+			network_host_difficulty = host_difficulty;
+
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
+			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
+
+			// The Destruct block. The mode indexes battle-mode tables on both machines, so a
+			// corrupt byte is clamped rather than trusted; any seed value is a playable seed.
+			network_host_destruct_mode = packet_in[0]->data[NET_CONNECT_DESTRUCT];
+			if (network_host_destruct_mode < 0 || network_host_destruct_mode >= DESTRUCT_MODES)
+				network_host_destruct_mode = 0;
+			network_destruct_session_seed = SDLNet_Read32(&packet_in[0]->data[NET_CONNECT_DESTRUCT + 1]);
 
 			// The adopted gameSpeed only sets the global; push it through to the
 			// tick-rate machinery so the joiner runs at the host's chosen speed.
@@ -1105,8 +1333,9 @@ connect_again:
 	}
 	else
 	{
-		// Command-line netplay has no host: both sides were configured by hand, so a
-		// disagreement is still a hard error rather than something to resolve.
+		// Command-line netplay only fills in the host ROLE (player 1, for recovery and
+		// arbitration); both sides were configured by hand, so a disagreement is still a
+		// hard error rather than something to resolve.
 		if (SDLNet_Read16(&packet_in[0]->data[6]) != network_delay)
 		{
 			fprintf(stderr, "error: network delay did not match opponent's\n");
@@ -1170,6 +1399,8 @@ connect_again:
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
 
 		// got a duplicate packet; process it again (but why?)
 		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
@@ -1180,8 +1411,6 @@ connect_again:
 		// maybe opponent didn't get our packet
 		if (SDL_GetTicks() - last_out_tick > NET_RETRY)
 			goto connect_reset;
-
-		SDL_Delay(16);
 	}
 
 	// send another packet since sometimes the network syncs without both connect packets exchanged
@@ -1237,6 +1466,31 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	if (err >= COUNTOF(err_msg))
 		err = 0;
 
+	// A test peer has no player to press a button; report the halt and exit non-zero so the
+	// harness reads the reason instead of killing a process parked on the message screen.
+	if (qa_net_rounds > 0 || qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
+		fflush(stderr);
+		exit(1);
+	}
+
+	// The session is over; take the music with it rather than leaving the level's track playing
+	// under a dead-link screen. Half a second, the ramp the death screen already uses; it runs
+	// before the fade to black so the last frame holds while the music goes, and finishes with
+	// the song stopped and the master volume back where the next screen expects it.
+	{
+		MusicFadeOut songFade;
+		music_fade_out_init(&songFade);
+		while (!songFade.done)
+		{
+			music_fade_out_tick(&songFade);
+			service_SDL_events(false);
+			JE_showVGA();
+			SDL_Delay(4);
+		}
+	}
+
 	fade_black(10);
 
 	VGAScreen = VGAScreenSeg;
@@ -1257,13 +1511,17 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		{
 			// Save the pre-level outpost state, not partial progress from the interrupted level.
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
+			// The Endless run rides its own sidecar; restore it too, or the re-save captures
+			// the interrupted level's run state behind an outpost-time record.
+			if (endlessMode)
+				endlessLoadSlot(22);
 			JE_loadScreen(true, true);
 		}
 	}
 	else
 	{
 		JE_loadPic(VGAScreen, 2, false);
-		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Multiplayer", large_font, centered, 15, -3, false, 2);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
 		JE_dString(VGAScreen, JE_fontCenter(err_msg[err], SMALL_FONT_SHAPES), 140, err_msg[err], SMALL_FONT_SHAPES);
 
 		JE_showVGA();
@@ -1279,9 +1537,10 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 				JE_mouseStart();
 				JE_showVGA();
 				JE_mouseReplace();
+				if (!output_vsync)
+					limit_render_fps();
 
 				network_check();
-				SDL_Delay(16);
 			}
 		}
 
@@ -1295,8 +1554,8 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 				JE_mouseStart();
 				JE_showVGA();
 				JE_mouseReplace();
-
-				SDL_Delay(16);
+				if (!output_vsync)
+					limit_render_fps();
 			}
 		}
 	}
@@ -1315,6 +1574,12 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		network_from_lobby = false;
 		network_is_host = false;
 		twoPlayerMode = false;
+		coopCampaignMode = false;
+		coopEndlessMode = false;
+		arcadeSeparateMode = false;
+		superTyrian = false;
+		superArcadeMode = SA_NONE;
+		network_sa_ship_reset();
 		haltGame = false;
 		JE_clearSpecialRequests();
 
@@ -1341,8 +1606,10 @@ static struct
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
+	bool arcadeRearGunScale;
 	int  xmasMode;
 	JE_byte gameSpeed;
+	JE_boolean arcadeSeparateMode;
 }
 settings_local;
 
@@ -1356,18 +1623,27 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = EDW_COUNT - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
+	// Destruct is not covered by the rollback registry, so its sessions are lockstep no matter
+	// what the host's netcode preference says; forced here AND in network_arm_local_session so
+	// the packed bit and the host's own session agree.
+	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+
 	Uint16 flags = 0;
 	flags |= zicaLaserLock         ? 1 << 0 : 0;
 	flags |= zicaLaserBuff         ? 1 << 1 : 0;
 	flags |= chargeLaserCannon     ? 1 << 2 : 0;
 	flags |= restoreBaseDispensers ? 1 << 3 : 0;
-	flags |= net_rollback          ? 1 << 4 : 0;  // rollback vs lockstep; host decides
+	flags |= rollback_applies      ? 1 << 4 : 0;  // rollback vs lockstep; host decides
 	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
 	// so the host's smooth-motion choice binds the session.
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
-	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery; host decides
+	flags |= (net_desync_recovery && rollback_applies) ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
+	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
+	flags |= coopDoubleEarnings     ? 1 << 10 : 0; // ...and whether Individual pays combat cash twice
+	flags |= arcadeSeparateShips    ? 1 << 11 : 0; // Arcade: two Separate personal ships; host decides
+	flags |= arcadeRearGunScale     ? 1 << 12 : 0; // ...and whether lives raise the rear gun
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1425,18 +1701,51 @@ static void network_settings_stash(void)
 	settings_local.restoreBaseDispensers = restoreBaseDispensers;
 	settings_local.arcadeLifeBoost      = arcadeLifeBoost;
 	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
+	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
 	settings_local.xmasMode             = xmasMode;
 	settings_local.gameSpeed            = gameSpeed;
+	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
+	// otherwise reshape the next LOCAL two-player arcade, which never armed it.
+	settings_local.arcadeSeparateMode   = arcadeSeparateMode;
 	settings_stashed = true;
+}
+
+/* Every session flag the settings block carries, armed from this machine's own config. The
+ * host's own arming and the joiner's adoption must cover the same set: a flag the block
+ * carries but the host never arms locally splits the two simulations at the first place it
+ * pays out. Double Earnings was exactly that, and every pickup desynced by its own value. */
+void network_arm_local_session(void)
+{
+	// Arming writes session state the local preferences have to survive, so take the same
+	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
+	network_settings_stash();
+
+	// Same forced-lockstep rule the settings block packs: Destruct has no rollback registry.
+	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+
+	nrb_set_session_mode(rollback_applies);
+	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
+	nrb_set_session_recovery(net_desync_recovery && rollback_applies);
+	coop_set_session_shared_credit(coopSharedCredit);
+	coop_set_session_double_earnings(coopDoubleEarnings);
+	arcadeSeparateMode = arcadeSeparateShips;
 }
 
 // Session game speed: the host applies its lobby choice here and the joiner adopts it from
 // the settings block in the connect packet.  Command-line netplay has no host, so both sides
 // pin Normal.  network_settings_restore puts the player's own speed back afterward.
+//
+// Destruct is Normal whatever the host's stored preference says: it paces one lockstep tick
+// per delay unit, so the speed only decides how fast the two machines trade state packets.
+// The lobby hides the row to match, and the block packed below carries the forced value to
+// the joiner.
 void network_settings_apply_session_speed(void)
 {
+	const bool host_picks_speed = network_from_lobby && network_is_host
+	                           && network_game_type != NETWORK_GAME_DESTRUCT;
+
 	network_settings_stash();
-	gameSpeed = (network_from_lobby && network_is_host) ? (JE_byte)network_host_game_speed : 4;
+	gameSpeed = host_picks_speed ? (JE_byte)network_host_game_speed : 4;
 	JE_initProcessorType();
 	JE_setNewGameSpeed();
 }
@@ -1474,6 +1783,10 @@ int network_settings_adopt(const Uint8 *buf)
 	nrb_set_session_mode((flags & (1 << 4)) != 0);
 	nrb_set_session_vt((flags & (1 << 5)) != 0);
 	nrb_set_session_recovery((flags & (1 << 6)) != 0);
+	coop_set_session_shared_credit((flags & (1 << 9)) != 0);
+	coop_set_session_double_earnings((flags & (1 << 10)) != 0);
+	arcadeSeparateMode = (flags & (1 << 11)) != 0;
+	arcadeRearGunScale = (flags & (1 << 12)) != 0;
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -1496,6 +1809,1157 @@ int network_settings_adopt(const Uint8 *buf)
 	return NETWORK_SETTINGS_SIZE;
 }
 
+// The Endless lobby block travels beside the settings block and binds the run the same way.
+COMPILE_TIME_ASSERT(net_endless_seed_fits, NET_ENDLESS_SEED_MAX == ENDLESS_SEED_MAXLEN);
+
+void network_endless_adopt(const Uint8 *buf)
+{
+	network_host_endless_run_mode = buf[0];
+	network_host_endless_chooser = buf[1];
+	network_host_endless_combo_shared = buf[2] != 0;
+	memcpy(network_endless_session_seed, &buf[3], NET_ENDLESS_SEED_MAX);
+	network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
+
+	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)
+		network_host_endless_run_mode = ENDLESS_RUNMODE_STANDARD;
+	if (network_host_endless_chooser < 0 || network_host_endless_chooser >= ENDLESS_PICK_COUNT)
+		network_host_endless_chooser = ENDLESS_PICK_HOST;
+
+	// Only printable ASCII reaches the seed hash, so a hostile packet cannot smuggle control
+	// characters onto the seed-name line the run-over screen prints.
+	for (int i = 0; i < NET_ENDLESS_SEED_MAX; ++i)
+	{
+		const unsigned char c = (unsigned char)network_endless_session_seed[i];
+		if (c != '\0' && (c < 32 || c >= 127))
+			network_endless_session_seed[i] = '?';
+	}
+}
+
+/* Settle the seed this session actually runs on, host side, before the connect packet carries it.
+ * A blank lobby field means "roll one", which is what the seed screen does for a solo run; sending
+ * the blank straight through hashed the empty string instead and dealt every online run the same
+ * zones. Rolled into a session copy, so the lobby row stays "(random)" and the next session rolls
+ * again rather than silently repeating this one. */
+void network_endless_session_begin(void)
+{
+	SDL_strlcpy(network_endless_session_seed, network_host_endless_seed,
+	            sizeof(network_endless_session_seed));
+
+	if (network_endless_session_seed[0] == '\0')
+		snprintf(network_endless_session_seed, sizeof(network_endless_session_seed), "%lu",
+		         (unsigned long)(1u + mt_rand() % 999999999u));
+}
+
+/* Roll the Destruct terrain seed, host side, before the connect packet carries it. Per session,
+ * so two matches hosted back to back fight different maps. */
+void network_destruct_session_begin(void)
+{
+	network_destruct_session_seed = (Uint32)mt_rand();
+}
+
+static Uint16 network_shop_sequence;
+static Uint16 network_shop_peer_sequence;
+static Uint16 network_shop_save_request;
+static bool network_shop_peer_ready;
+static bool network_shop_peer_lock;
+static bool network_shop_local_ready;
+static bool network_shop_local_locked;
+static bool network_shop_save_ready;
+static bool network_shop_active;
+static Uint32 network_shop_beat_at;
+#define NET_SHOP_BEAT 400   // ms between re-announcements while waiting on the peer
+
+// The level the host committed to when it left the outpost.  Held rather than applied: writing
+// jumpSection straight out of the packet ended the joiner's outpost visit the moment the host
+// picked a planet, mid-purchase.  network_shop_adopt_host_level() applies it once the joiner is
+// done too, which is also where the host's pick wins a disagreement.
+static bool network_shop_host_committed;
+static JE_byte network_shop_host_level;
+
+// Endless: the sector index the peer published, or -1 while it has committed to none.
+static int network_shop_peer_pick = -1;
+
+/* DONE and LOCK describe the sender's state at send time rather than an event, so every shop
+ * packet carries both and the receiver assigns them. That is what lets a commit be withdrawn. */
+enum
+{
+	SHOP_SYNC_DONE = 1 << 0,
+	SHOP_SYNC_SAVE_REQUEST = 1 << 1,
+	SHOP_SYNC_SAVE_ACK = 1 << 2,
+	SHOP_SYNC_TRANSACTION = 1 << 3,
+	SHOP_SYNC_LOCK = 1 << 4,
+	SHOP_SYNC_HELLO = 1 << 5,   // "I just opened an outpost; tell me where you are"
+};
+
+static int network_shop_pack_items(Uint8 *buf, const PlayerItems *items)
+{
+	int n = 0;
+	buf[n++] = items->ship;
+	buf[n++] = items->generator;
+	buf[n++] = items->shield;
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		buf[n++] = items->weapon[i].id;
+		buf[n++] = items->weapon[i].power;
+	}
+	buf[n++] = items->sidekick[0];
+	buf[n++] = items->sidekick[1];
+	buf[n++] = items->special;
+	buf[n++] = items->sidekick_series;
+	buf[n++] = items->sidekick_level;
+	buf[n++] = items->super_arcade_mode;
+	return n;
+}
+
+static int network_shop_unpack_items(PlayerItems *items, const Uint8 *buf)
+{
+	int n = 0;
+	items->ship = buf[n++];
+	items->generator = buf[n++];
+	items->shield = buf[n++];
+	for (uint i = 0; i < COUNTOF(items->weapon); ++i)
+	{
+		items->weapon[i].id = buf[n++];
+		items->weapon[i].power = buf[n++];
+	}
+	items->sidekick[0] = buf[n++];
+	items->sidekick[1] = buf[n++];
+	items->special = buf[n++];
+	items->sidekick_series = buf[n++];
+	items->sidekick_level = buf[n++];
+	items->super_arcade_mode = buf[n++];
+	return n;
+}
+
+static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return 0;
+
+	const Player *const this_player = &player[thisPlayerNum - 1];
+	const Uint16 sequence = ++network_shop_sequence;
+
+	// Ride our current rendezvous state on every packet, whatever it was sent for.
+	if (network_shop_local_ready)
+		flags |= SHOP_SYNC_DONE;
+	if (network_shop_local_locked)
+		flags |= SHOP_SYNC_LOCK;
+
+	network_prepare(PACKET_SHOP_SYNC);
+	SDLNet_Write16(thisPlayerNum, &packet_out_temp->data[4]);
+	SDLNet_Write16(sequence, &packet_out_temp->data[6]);
+	SDLNet_Write16(flags, &packet_out_temp->data[8]);
+	// Endless publishes the chosen sector index here; Campaign publishes the level it jumped to.
+	SDLNet_Write16(coopEndlessMode ? (Uint16)(endlessCoopCourse + 1) : mainLevel,
+	               &packet_out_temp->data[10]);
+	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
+	SDLNet_Write32(this_player->cash, &packet_out_temp->data[14]);
+	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[18]);
+	SDLNet_Write16(acknowledge, &packet_out_temp->data[20]);
+	int len = 22 + network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
+	if (coopEndlessMode)
+		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
+	network_send(len);
+	return sequence;
+}
+
+void network_shop_begin(void)
+{
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_peer_lock = false;
+	network_shop_local_ready = false;
+	network_shop_local_locked = false;
+	network_shop_save_ready = false;
+	network_shop_host_committed = false;
+	network_shop_peer_pick = -1;
+	network_shop_beat_at = SDL_GetTicks();
+	network_shop_active = isNetworkGame && coop_mode_active();
+	if (isNetworkGame && coop_mode_active())
+	{
+		// Everything above forgets what the peer had told us, which is right for a new visit and
+		// wrong for a peer that committed while we were still on the way here. HELLO asks them to
+		// say it again, so the reset cannot swallow a commit that was announced exactly once.
+		network_shop_local_ready = false;
+		network_shop_local_locked = false;
+		network_shop_send_packet(SHOP_SYNC_HELLO, 0);
+	}
+}
+
+/* Re-announce our rendezvous state while waiting on the peer. DONE, LOCK and the sector index are
+ * state carried by every packet rather than events, and the other machine drops its view of ours
+ * whenever it opens an outpost of its own (network_shop_begin). A player who committed before
+ * their partner had even reached that outpost announced it exactly once, into a reset, and from
+ * there the two waited on each other for good. Rate limited, and only ever sent from a wait: a
+ * machine still shopping has its own traffic and nothing to re-announce. */
+void network_shop_keepalive(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	// Never more than one of these in flight. The reliable queue is 16 deep and overflowing it
+	// takes the session down, so a partner parked in a screen that does not drain the queue (the
+	// weapon editor, ship specs, a save prompt) must not be beaten at until they come back.
+	if (!network_is_sync())
+		return;
+
+	const Uint32 now = SDL_GetTicks();
+	if (now - network_shop_beat_at < NET_SHOP_BEAT)
+		return;
+
+	network_shop_beat_at = now;
+	network_shop_send_packet(0, 0);
+}
+
+void network_shop_send_state(bool done)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_local_ready = done;
+	if (!done)
+		network_shop_local_locked = false;
+	network_shop_send_packet(0, 0);
+}
+
+// Step two of the outpost rendezvous, which is what keeps a withdrawal from racing a departure.
+// See "Leaving the outpost" in doc/notes.md.
+void network_shop_set_locked(bool locked)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_local_locked = locked;
+	network_shop_send_packet(0, 0);
+}
+
+bool network_shop_peer_locked(void)
+{
+	return network_shop_peer_lock;
+}
+
+void network_shop_send_transaction(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
+		return;
+
+	network_shop_send_packet(SHOP_SYNC_TRANSACTION, 0);
+}
+
+/* Custom weapon design exchange. A design is chunked over the reliable channel and the receiver
+ * answers a completed generation with a chunk count of zero; see "Custom weapons online" in
+ * doc/notes.md for why transport delivery alone is not enough. */
+#define NCW_OWNER      4    /* Uint8:  publishing player number, 1 or 2      */
+#define NCW_GEN        6    /* Uint16: publication, so a stale stream is dropped */
+#define NCW_CHUNK      8    /* Uint16: chunk index                           */
+#define NCW_COUNT     10    /* Uint16: chunk total, or 0 for an acknowledgement */
+#define NCW_LEN       12    /* Uint16: payload bytes in this chunk            */
+#define NCW_HDR       14
+#define NCW_PAYLOAD   (NET_PACKET_SIZE - NCW_HDR)
+#define NCW_ATTEMPTS   3    /* whole-stream retries before giving up          */
+#define NCW_ATTEMPT_MS 6000 /* ms to get one attempt acknowledged             */
+
+static Uint16 network_custom_gen;
+static Uint32 network_custom_out_hash;  // last design the peer took; 0 = nothing published yet
+static bool   network_custom_acked;
+static Uint16 network_custom_in_gen;
+static Uint32 network_custom_in_have;
+static Uint32 network_custom_in_count;
+static int    network_custom_in_owner = -1;
+static size_t network_custom_in_len;
+static Uint8 *network_custom_in_buf;
+static Uint8 *network_custom_in_seen;
+
+static void network_custom_in_reset(void)
+{
+	network_custom_in_owner = -1;
+	network_custom_in_count = 0;
+	network_custom_in_have = 0;
+	network_custom_in_len = 0;
+	free(network_custom_in_buf);
+	free(network_custom_in_seen);
+	network_custom_in_buf = NULL;
+	network_custom_in_seen = NULL;
+}
+
+void network_custom_weapon_reset(void)
+{
+	network_custom_in_reset();
+	network_custom_out_hash = 0;
+	network_custom_acked = false;
+}
+
+static void network_custom_send_ack(Uint16 gen)
+{
+	network_prepare(PACKET_CUSTOM_WEAPON);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+static bool network_custom_weapon_receive(void)
+{
+	const int len = packet_in[0]->len;
+	if (len < NCW_HDR)
+	{
+		network_update();
+		return true;
+	}
+
+	const uint   sender = packet_in[0]->data[NCW_OWNER];
+	const Uint16 gen    = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+	const Uint32 chunk  = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+	const Uint32 count  = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+	const Uint32 plen   = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+	if (sender < 1 || sender > 2 || sender == thisPlayerNum)
+	{
+		network_update();
+		return true;
+	}
+
+	if (count == 0)  // the peer took the generation we are publishing
+	{
+		if (gen == network_custom_gen)
+			network_custom_acked = true;
+		network_update();
+		return true;
+	}
+
+	if (chunk >= count || plen > NCW_PAYLOAD || (Uint32)len < NCW_HDR + plen ||
+	    (size_t)count * NCW_PAYLOAD > CUSTOM_WEAPON_WIRE_MAX)
+	{
+		network_update();
+		return true;
+	}
+
+	if (network_custom_in_buf == NULL || network_custom_in_gen != gen ||
+	    network_custom_in_count != count || network_custom_in_owner != (int)sender - 1)
+	{
+		network_custom_in_reset();
+		network_custom_in_buf = calloc((size_t)count, NCW_PAYLOAD);
+		network_custom_in_seen = calloc((size_t)count, 1);
+		if (network_custom_in_buf == NULL || network_custom_in_seen == NULL)
+		{
+			network_custom_in_reset();
+			network_update();
+			return true;
+		}
+		network_custom_in_gen = gen;
+		network_custom_in_count = count;
+		network_custom_in_owner = (int)sender - 1;
+	}
+
+	memcpy(network_custom_in_buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+	if (chunk == count - 1)
+		network_custom_in_len = (size_t)chunk * NCW_PAYLOAD + plen;
+	if (!network_custom_in_seen[chunk])
+	{
+		network_custom_in_seen[chunk] = 1;
+		++network_custom_in_have;
+	}
+
+	if (network_custom_in_have >= count && network_custom_in_len > 0)
+	{
+		const int owner = network_custom_in_owner;
+		const size_t total = network_custom_in_len;
+		Uint8 *const stream = network_custom_in_buf;
+
+		network_custom_in_buf = NULL;  // the adopt call owns the bytes
+		if (!customWeaponAdoptDesign(owner, stream, total))
+		{
+			crashlog_netlog_line("CUSTOM WEAPON REFUSED",
+			                     "the peer's design did not decode; its ship keeps the "
+			                     "placeholder weapon and the two machines would disagree.");
+		}
+		free(stream);
+		network_custom_in_reset();
+
+		// Answer whether or not the design decoded: resending would produce the same bytes.
+		network_custom_send_ack(gen);
+	}
+
+	network_update();
+	return true;
+}
+
+/* Publish from a point where the peer is known to be draining its inbound queue: the outpost
+ * rendezvous is the one place both machines are guaranteed to be in a pump loop. */
+void network_custom_weapon_publish(void)
+{
+	// Nothing to publish while the feature is off: the port stays a placeholder and no ship can
+	// be carrying the weapon. Turning it on and equipping goes through the next rendezvous.
+	if (!isNetworkGame || !coop_mode_active() || !customWeaponEnabled ||
+	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(CUSTOM_WEAPON_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = customWeaponSerializeDesign(stream, CUSTOM_WEAPON_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	// FNV-1a over the encoded design: this runs on the way out of every outpost visit, and
+	// most of those fly the same weapon as the last one.
+	Uint32 hash = 2166136261u;
+	for (size_t i = 0; i < total; ++i)
+	{
+		hash ^= stream[i];
+		hash *= 16777619u;
+	}
+	if (hash == 0)
+		hash = 1;  // 0 means "nothing published yet"
+	if (hash == network_custom_out_hash)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_custom_gen;
+	network_custom_acked = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_custom_acked; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_custom_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			// Keep half the reliable queue free: transport acknowledgements arrive ahead of
+			// consumption, and the shop's own traffic still has to fit alongside this.
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_CUSTOM_WEAPON);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			// Drain our own inbound: the peer publishes from the same rendezvous, and its
+			// acknowledgement is behind whatever it has already sent us.
+			while (network_shop_pump() || network_debug_sync_pump(false))
+				;
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_custom_acked)
+	{
+		crashlog_netlog_line("CUSTOM WEAPON NOT DELIVERED",
+		                     "the peer never acknowledged the design; its copy of this ship "
+		                     "keeps the placeholder weapon, which the canary reports as a desync.");
+		network_custom_out_hash = 0;  // start over at the next outpost
+	}
+	else
+	{
+		network_custom_out_hash = hash;
+	}
+
+	free(stream);
+}
+
+/* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
+ * reason: transport delivery alone does not mean the peer has consumed the bytes. */
+static Uint16 network_endless_gen;
+static bool   network_endless_acked;
+
+static void network_endless_send_ack(Uint16 gen)
+{
+	network_prepare(PACKET_ENDLESS_RUN);
+	packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[NCW_OWNER + 1] = 0;
+	SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_COUNT]);
+	SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+	network_send(NCW_HDR);
+}
+
+void network_endless_run_publish(void)
+{
+	if (!isNetworkGame || !coopEndlessMode || !network_peer_alive())
+		return;
+
+	Uint8 *const stream = malloc(ENDLESS_RUN_WIRE_MAX);
+	if (stream == NULL)
+		return;
+
+	const size_t total = endlessRunSerialize(stream, ENDLESS_RUN_WIRE_MAX);
+	if (total == 0)
+	{
+		free(stream);
+		return;
+	}
+
+	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
+	const Uint16 gen = ++network_endless_gen;
+	network_endless_acked = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_endless_acked; ++attempt)
+	{
+		const Uint32 started = SDL_GetTicks();
+		Uint32 sent = 0;
+
+		while (!network_endless_acked && SDL_GetTicks() - started < NCW_ATTEMPT_MS)
+		{
+			while (sent < chunks && network_ack_backlog() < NET_PACKET_QUEUE / 2)
+			{
+				const size_t from = (size_t)sent * NCW_PAYLOAD;
+				const size_t plen = MIN(total - from, (size_t)NCW_PAYLOAD);
+
+				network_prepare(PACKET_ENDLESS_RUN);
+				packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+				packet_out_temp->data[NCW_OWNER + 1] = 0;
+				SDLNet_Write16(gen, &packet_out_temp->data[NCW_GEN]);
+				SDLNet_Write16((Uint16)sent, &packet_out_temp->data[NCW_CHUNK]);
+				SDLNet_Write16((Uint16)chunks, &packet_out_temp->data[NCW_COUNT]);
+				SDLNet_Write16((Uint16)plen, &packet_out_temp->data[NCW_LEN]);
+				memcpy(&packet_out_temp->data[NCW_HDR], stream + from, plen);
+				network_send(NCW_HDR + (int)plen);
+				++sent;
+			}
+
+			watchdog_heartbeat();
+			service_SDL_events(false);
+			network_check();
+
+			if (packet_in[0] != NULL
+			    && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+			    && packet_in[0]->len >= NCW_HDR
+			    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == 0)
+			{
+				if (SDLNet_Read16(&packet_in[0]->data[NCW_GEN]) == gen)
+					network_endless_acked = true;
+				network_update();
+			}
+
+			if (!network_peer_alive())
+				break;
+
+			SDL_Delay(4);
+		}
+
+		if (!network_peer_alive())
+			break;
+	}
+
+	if (!network_endless_acked)
+	{
+		crashlog_netlog_line("ENDLESS RUN NOT DELIVERED",
+		                     "the joiner never acknowledged the resumed run; the two machines would "
+		                     "start the session from different zones.");
+	}
+
+	free(stream);
+}
+
+/* Both ships going down at once ends the zone on both machines, but only one of them may decide
+ * what happens next. The host picks and publishes; the joiner waits for the answer. Carried on the
+ * run packet under a sentinel chunk count, so no separate message type is needed. */
+#define NET_ENDLESS_DEATH_SENTINEL 0xffff
+#define NET_ENDLESS_LEFT_LEVEL     0xfffe   /* "I am out of the level"; frees a peer still in it */
+
+int network_endless_death_sync(int hostChoice)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return hostChoice;
+
+	if (hostChoice >= 0)
+	{
+		network_prepare(PACKET_ENDLESS_RUN);
+		packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+		packet_out_temp->data[NCW_OWNER + 1] = 0;
+		SDLNet_Write16(0, &packet_out_temp->data[NCW_GEN]);
+		SDLNet_Write16((Uint16)hostChoice, &packet_out_temp->data[NCW_CHUNK]);
+		SDLNet_Write16(NET_ENDLESS_DEATH_SENTINEL, &packet_out_temp->data[NCW_COUNT]);
+		SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+		network_send(NCW_HDR);
+		return hostChoice;
+	}
+
+	const Uint32 started = SDL_GetTicks();
+	Uint32 announced = 0;
+	while (SDL_GetTicks() - started < 60000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+		network_check();
+
+		// Say so: the host may still be finishing the level, where waiting on frames this machine
+		// will never send is what wedges it. This is a reliable packet, so once is enough and
+		// repeating it is what hurt: unacknowledged copies stacked up behind a host that was
+		// reading the prompt until the outbound queue overflowed and took the session down. The
+		// re-send is a slow safety net, and never more than one of them is ever in flight.
+		if (announced == 0
+		    || (network_is_sync() && SDL_GetTicks() - announced > 5000))
+		{
+			announced = SDL_GetTicks();
+			network_prepare(PACKET_ENDLESS_RUN);
+			packet_out_temp->data[NCW_OWNER] = (Uint8)thisPlayerNum;
+			packet_out_temp->data[NCW_OWNER + 1] = 0;
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_GEN]);
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_CHUNK]);
+			SDLNet_Write16(NET_ENDLESS_LEFT_LEVEL, &packet_out_temp->data[NCW_COUNT]);
+			SDLNet_Write16(0, &packet_out_temp->data[NCW_LEN]);
+			network_send(NCW_HDR);
+		}
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
+		    && packet_in[0]->len >= NCW_HDR)
+		{
+			const Uint16 count = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+			if (count == NET_ENDLESS_DEATH_SENTINEL)
+			{
+				const int choice = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+				network_update();
+				return choice;
+			}
+			network_update();   // our own announcement echoed back, or a stale chunk
+			continue;
+		}
+
+		network_update();
+		if (!network_peer_alive())
+			break;
+	}
+
+	crashlog_netlog_line("ENDLESS DEATH CHOICE TIMEOUT",
+	                     "the host never published what to do after a shared death; this machine "
+	                     "ended the run rather than guessing.");
+	return -1;
+}
+
+/* Online Super Arcade ship picks. Each player announces their own and nobody dictates, so this is
+ * a plain announcement rather than a host-authoritative setting; identical picks are allowed. Both
+ * halves are non-blocking on purpose: the picker screen stays interactive and pumps network_check
+ * itself, so a player who has already chosen can watch for their partner without the wait freezing
+ * the screen. The reliable channel retransmits a lost announcement, so neither side has to repeat
+ * itself. */
+static int  net_sa_ship_peer_pick = 0;
+static bool net_sa_ship_peer_saw_us = false;
+
+void network_sa_ship_reset(void)
+{
+	net_sa_ship_peer_pick = 0;
+	net_sa_ship_peer_saw_us = false;
+}
+
+void network_sa_ship_publish(int ship, bool seen_peer)
+{
+	if (!isNetworkGame || ship < 0 || ship > SA)
+		return;
+
+	network_prepare(PACKET_SA_SHIP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (Uint8)ship;          // 0 = taken back
+	packet_out_temp->data[6] = seen_peer ? 1 : 0;
+	network_send(7);
+}
+
+bool network_sa_ship_peer_saw_us(void)
+{
+	return isNetworkGame && net_sa_ship_peer_saw_us;
+}
+
+/* The Endless debug zone jump, settled BEFORE the course is folded. That ordering is the whole
+ * point: folding rebuilds the sector from the course slate -- level, modifiers and all -- so a
+ * jump exchanged after it survives only on the machine that did not fold, and the pair lands in
+ * different levels. Both machines announce what they staged (or that they staged nothing), adopt
+ * the winner, and then both skip the fold together, so the course slate and whose turn it is to
+ * chart stay identical on both sides. Host wins if both jumped. */
+void network_endless_jump_publish(void)
+{
+	Uint16 depth = 0;
+	Uint64 mods = 0;
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX], perkCount = 0;
+	JE_byte ep = 0, sec = 0, file = 0;
+
+	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
+	const bool myLevel = debugLevelPickGet(&ep, &sec, &file);
+
+	// Announced the moment START ZONE is pressed, while the partner is still sitting in the
+	// outpost. That timing is the fix: the jumper must never block waiting for an answer, because
+	// the partner's own wait (for a course this machine is no longer going to chart) is exactly
+	// what this announcement releases. Two waits facing each other is the deadlock.
+	if (!isNetworkGame || !coopEndlessMode || !mine || !myLevel)
+		return;
+
+	network_prepare(PACKET_ENDLESS_JUMP);
+	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
+	packet_out_temp->data[5] = (mine && myLevel) ? 1 : 0;   // a jump is only usable with its level
+	SDLNet_Write16(depth, &packet_out_temp->data[6]);
+	for (int b = 0; b < 8; ++b)
+		packet_out_temp->data[8 + b] = (Uint8)(mods >> (8 * b));
+	packet_out_temp->data[16] = ep;
+	packet_out_temp->data[17] = sec;
+	packet_out_temp->data[18] = file;
+	packet_out_temp->data[19] = perkCount;
+	memcpy(&packet_out_temp->data[20], perks, perkCount);
+	network_send(20 + perkCount);
+}
+
+/* Non-blocking counterpart: retire a jump announcement if one heads the reliable queue and adopt
+ * it. Returns whether a jump is in play at all -- ours, or one just taken from the peer. Never
+ * waits: the partner may be minutes away in its own outpost, and a wait here is what wedged the
+ * pair. Both machines call this before folding the course, and a true answer means skip the fold. */
+bool network_endless_jump_poll(void)
+{
+	Uint16 depth = 0;
+	Uint64 mods = 0;
+	JE_byte perks[ENDLESS_JUMP_PERK_MAX], perkCount = 0;
+	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
+
+	if (!isNetworkGame || !coopEndlessMode)
+		return mine;
+
+	network_check();
+
+	// Only ever retire a jump announcement. Draining whatever else heads the queue is how the
+	// outpost eats the packet a later wait is blocking on (see network_sa_ship_peer).
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_JUMP)
+	{
+		const bool ours = packet_in[0]->data[4] == (Uint8)thisPlayerNum;
+		bool theirs = false;
+
+		if (!ours && packet_in[0]->len >= 20 && packet_in[0]->data[5] != 0)
+		{
+			// The host's jump wins if both jumped, so the two can never resolve it opposite ways.
+			if (!mine || !network_is_host)
+			{
+				// Trust the length over the count byte, and clamp the perk block to what our own
+				// table holds; a peer that knows more perks must not write past the end of ours.
+				const size_t have = (size_t)packet_in[0]->len - 20;
+				const JE_byte n = (JE_byte)(packet_in[0]->data[19] < have
+				                            ? packet_in[0]->data[19] : have);
+				Uint64 peerMods = 0;
+				for (int b = 0; b < 8; ++b)
+					peerMods |= (Uint64)packet_in[0]->data[8 + b] << (8 * b);
+				debugLevelPickApply(packet_in[0]->data[16], packet_in[0]->data[17],
+				                    packet_in[0]->data[18]);
+				endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[6]), peerMods,
+				                     &packet_in[0]->data[20], n);
+			}
+			theirs = true;
+		}
+
+		network_update();
+		return mine || theirs;
+	}
+
+	return mine;
+}
+
+int network_sa_ship_peer(void)
+{
+	if (!isNetworkGame)
+		return 0;
+
+	// The handshake's trailing connect can be placed in the window to keep it gap-free
+	// (see PACKET_CONNECT's connected path).  Stale by definition this deep in the session,
+	// and this screen's wait is the head's only consumer, so throw it away or the pick
+	// behind it never reaches the head.
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
+	// Only ever retire a ship announcement: draining whatever else heads the queue is how the
+	// outpost used to eat the packet a later wait was blocking on. A truncated one is retired
+	// too, adopted from nobody; left at the head it would block the queue for good.
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_SA_SHIP)
+	{
+		if (packet_in[0]->len >= 6)
+		{
+			const uint sender = packet_in[0]->data[4];
+			const int ship = packet_in[0]->data[5];
+			// Clamped: the value indexes SAShip[] and a SAWeapon row on both machines. Zero is a
+			// pick taken back, which is why the range starts there and not at one.
+			if (sender != thisPlayerNum && ship >= 0 && ship <= SA)
+			{
+				net_sa_ship_peer_pick = ship;
+				net_sa_ship_peer_saw_us = packet_in[0]->len >= 7 && packet_in[0]->data[6] != 0;
+			}
+		}
+		network_update();
+	}
+
+	return net_sa_ship_peer_pick;
+}
+
+bool network_endless_run_receive(Uint32 timeout_ms)
+{
+	if (!isNetworkGame || !coopEndlessMode)
+		return false;
+
+	Uint8 *buf = NULL;
+	Uint8 *seen = NULL;
+	Uint32 have = 0, count = 0;
+	Uint16 gen = 0;
+	size_t total = 0;
+	bool done = false;
+
+	const Uint32 started = SDL_GetTicks();
+	while (!done && SDL_GetTicks() - started < timeout_ms)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		network_check();
+
+		if (packet_in[0] == NULL || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_ENDLESS_RUN
+		    || packet_in[0]->len < NCW_HDR)
+		{
+			network_update();
+			SDL_Delay(8);
+			continue;
+		}
+
+		const Uint16 pgen  = SDLNet_Read16(&packet_in[0]->data[NCW_GEN]);
+		const Uint32 chunk = SDLNet_Read16(&packet_in[0]->data[NCW_CHUNK]);
+		const Uint32 total_chunks = SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]);
+		const Uint32 plen  = SDLNet_Read16(&packet_in[0]->data[NCW_LEN]);
+
+		if (total_chunks == 0 || chunk >= total_chunks || plen > NCW_PAYLOAD
+		    || (Uint32)packet_in[0]->len < NCW_HDR + plen
+		    || (size_t)total_chunks * NCW_PAYLOAD > ENDLESS_RUN_WIRE_MAX)
+		{
+			network_update();
+			continue;
+		}
+
+		if (buf == NULL || gen != pgen || count != total_chunks)
+		{
+			free(buf);
+			free(seen);
+			buf = calloc((size_t)total_chunks, NCW_PAYLOAD);
+			seen = calloc((size_t)total_chunks, 1);
+			if (buf == NULL || seen == NULL)
+			{
+				free(buf);
+				free(seen);
+				return false;
+			}
+			gen = pgen;
+			count = total_chunks;
+			have = 0;
+			total = 0;
+		}
+
+		memcpy(buf + (size_t)chunk * NCW_PAYLOAD, &packet_in[0]->data[NCW_HDR], plen);
+		if (chunk == count - 1)
+			total = (size_t)chunk * NCW_PAYLOAD + plen;
+		if (!seen[chunk])
+		{
+			seen[chunk] = 1;
+			++have;
+		}
+		network_update();
+
+		if (have >= count && total > 0)
+		{
+			done = endlessRunAdopt(buf, total);
+			network_endless_send_ack(gen);   // answer either way: a resend produces the same bytes
+			break;
+		}
+	}
+
+	free(buf);
+	free(seen);
+	return done;
+}
+
+/* The handshake every level start needs: both machines announce they are ready, then the state
+ * queues are reset and resynchronized. JE_itemScreen does this itself on the way out of the
+ * outpost; a path that reaches a level without passing through it (Restart Zone off the Endless
+ * death menu) has to call this instead, or one machine starts simulating while the other is still
+ * loading and the peer's stall gate is the first thing to notice. */
+void network_level_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_WAITING);
+	network_send(4);
+
+	const Uint32 started = SDL_GetTicks();
+	while (SDL_GetTicks() - started < 30000)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			network_check();
+			network_update();   // consume it, or the next wait reads this one as its release
+			break;
+		}
+
+		network_update();
+		network_check();
+		if (!network_peer_alive())
+			break;
+	}
+
+	network_state_reset();
+	while (!network_is_sync() && network_peer_alive())
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+		if (!output_vsync)
+			limit_render_fps();
+
+		network_check();
+	}
+}
+
+/* The online Destruct title screen's both-ready barrier, split into an announcement and a poll
+ * rather than reusing network_level_rendezvous above: that one owns the wait, and this screen has
+ * to keep drawing (and keep reporting which side is still to confirm) while it holds. */
+void network_destruct_ready_publish(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_WAITING);
+	network_send(4);  // PACKET_WAITING (Destruct title barrier)
+}
+
+bool network_destruct_ready_peer(void)
+{
+	if (!isNetworkGame)
+		return false;
+
+	network_check();
+
+	// The handshake's trailing connect can be placed in the window to keep it gap-free (see
+	// PACKET_CONNECT's connected path). Stale by the time the minigame starts, and this wait is
+	// the head's only consumer, so throw it away or the announcement behind it never surfaces.
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+	{
+		network_update();   // consume it, or it heads the queue for the rest of the session
+		return true;
+	}
+
+	return false;
+}
+
+bool network_shop_pump(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)
+		return false;
+
+	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CUSTOM_WEAPON)
+		return network_custom_weapon_receive();
+
+	// A late duplicate of the resume transfer: the run is already adopted, so drop it.
+	if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN)
+	{
+		network_update();
+		return true;
+	}
+
+	if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
+		return false;
+
+	if (packet_in[0]->len >= 35)
+	{
+		const uint sender = SDLNet_Read16(&packet_in[0]->data[4]);
+		const Uint16 sequence = SDLNet_Read16(&packet_in[0]->data[6]);
+		if (sender >= 1 && sender <= 2 && sender != thisPlayerNum && sequence > network_shop_peer_sequence)
+		{
+			Player *const peer = &player[sender - 1];
+			const Uint16 flags = SDLNet_Read16(&packet_in[0]->data[8]);
+			network_shop_peer_sequence = sequence;
+			peer->cash = SDLNet_Read32(&packet_in[0]->data[14]);
+			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[18]);
+			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
+			peer->last_items = peer->items;
+			if (coopEndlessMode && packet_in[0]->len >= 22 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
+				endlessUnpackPlayerBlock(&packet_in[0]->data[22 + item_size], sender - 1);
+
+			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
+			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
+
+			// A withdrawn commit takes the route with it, or the host's abandoned planet would
+			// still drag the session there once both sides finally leave.
+			network_shop_host_committed = false;
+			if (network_shop_peer_ready && sender == networkHostPlayerNum &&
+			    SDLNet_Read16(&packet_in[0]->data[12]) != 0)
+			{
+				network_shop_host_committed = true;
+				network_shop_host_level = (JE_byte)SDLNet_Read16(&packet_in[0]->data[10]);
+			}
+
+			// Endless: any peer may be the one charting, and the index is good the moment it
+			// arrives (biased by one so zero still reads as "nothing committed").
+			if (coopEndlessMode)
+			{
+				const int course = (int)SDLNet_Read16(&packet_in[0]->data[10]) - 1;
+				network_shop_peer_pick = (course >= 0 && course < ENDLESS_MAX_COURSE_SLOTS)
+				                       ? course : -1;
+			}
+
+			// Answer a peer that has just opened its outpost with where we stand. Our reply carries
+			// no HELLO of its own, so this is one exchange and never a volley.
+			if (flags & SHOP_SYNC_HELLO)
+				network_shop_send_packet(0, 0);
+			if (flags & SHOP_SYNC_SAVE_REQUEST)
+				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
+			if ((flags & SHOP_SYNC_SAVE_ACK) &&
+			    SDLNet_Read16(&packet_in[0]->data[20]) == network_shop_save_request)
+				network_shop_save_ready = true;
+		}
+	}
+
+	network_update();
+	return true;
+}
+
+/* True when the packet at the head of the reliable queue is one the departure handshake that
+ * follows an outpost wait is the one meant to read. A wait loop that calls network_update on it
+ * throws it away, and that handshake then waits forever for something already gone. */
+bool network_shop_departure_pending(void)
+{
+	if (packet_in[0] == NULL)
+		return false;
+
+	const Uint16 head = SDLNet_Read16(&packet_in[0]->data[0]);
+	return head == PACKET_WAITING || head == PACKET_DETAILS || head == PACKET_GAME_QUIT;
+}
+
+bool network_shop_peer_done(void)
+{
+	return network_shop_peer_ready;
+}
+
+// Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
+void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq)
+{
+	*localDone = network_shop_local_ready ? 1 : 0;
+	*localLock = network_shop_local_locked ? 1 : 0;
+	*mySeq = (int)network_shop_sequence;
+	*peerSeq = (int)network_shop_peer_sequence;
+}
+
+int network_shop_peer_course(void)
+{
+	return network_shop_peer_pick;
+}
+
+void network_shop_adopt_host_level(void)
+{
+	// Both players choose freely, so the two picks can differ; the host's is the one the
+	// session loads.  A no-op on the host, and on a joiner the host never sent a level to.
+	if (!network_shop_host_committed)
+		return;
+
+	mainLevel = network_shop_host_level;
+	jumpSection = true;
+}
+
+void network_shop_end(void)
+{
+	network_shop_active = false;
+}
+
+/* Both machines write the same two loadouts, so the save waits on the peer confirming what it
+ * holds. Bounded: the save is worth having with one stale ship in it, and is not worth hanging
+ * the game over. */
+#define NET_SHOP_SAVE_WAIT 6000
+
+void network_shop_sync_for_save(void)
+{
+	if (!isNetworkGame || !coop_mode_active() || !network_shop_active || !network_peer_alive())
+		return;
+
+	network_shop_save_ready = false;
+	network_shop_save_request = network_shop_send_packet(SHOP_SYNC_SAVE_REQUEST, 0);
+
+	const Uint32 started = SDL_GetTicks();
+	while (!network_shop_save_ready)
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+
+		if (network_shop_pump())
+			continue;
+
+		// The acknowledgement rides the shop channel and a debug block can be queued ahead of it.
+		// Without this the block is dropped rather than adopted and the peer's debug edit is lost
+		// on this machine alone.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		/* The peer has left. No acknowledgement is coming, and consuming the notice to reach the
+		 * queue behind it destroys it: it was acknowledged on arrival, so the peer counts it
+		 * delivered and never repeats it, and the quit handler then never sees it. */
+		if (network_inbound_head() == PACKET_GAME_QUIT)
+			break;
+
+		// A peer that goes quiet between the request and the reply must not hold the game here.
+		// The save is worth having with one stale ship in it; it is not worth hanging over.
+		if (!network_peer_alive() || SDL_GetTicks() - started > NET_SHOP_SAVE_WAIT)
+			break;
+
+		/* Everything else at the head is transient rendezvous traffic, and consuming it is what
+		 * keeps the acknowledgement behind it reachable -- this wait is a real synchronization
+		 * point and the two machines serialize the same transaction boundary through it. */
+		network_update();
+		network_check();
+		SDL_Delay(16);
+	}
+}
+
 void network_settings_restore(void)
 {
 	if (!settings_stashed)
@@ -1512,8 +2976,10 @@ void network_settings_restore(void)
 	restoreBaseDispensers = settings_local.restoreBaseDispensers;
 	arcadeLifeBoost       = settings_local.arcadeLifeBoost;
 	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
+	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
+	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
 
 	settings_stashed = false;
 }
@@ -1548,9 +3014,14 @@ COMPILE_TIME_ASSERT(nds_block_fits_a_packet, NDS_SIZE <= NET_PACKET_SIZE);
 static Uint32 debug_sync_gen = 0;
 static Uint8 debug_sync_last[NDS_SIZE];   // what we last published or adopted, for the change test
 
+int network_debug_state_size(void)
+{
+	return NDS_SIZE;
+}
+
 /* Everything from NDS_DIFFICULTY on; the packet header, generation and sender are stamped by
  * the send path, and left zero here so two packings of the same state compare equal. */
-static void network_debug_state_pack(Uint8 *buf)
+void network_debug_state_pack(Uint8 *buf)
 {
 	memset(buf, 0, NDS_SIZE);
 
@@ -1586,7 +3057,7 @@ static void network_debug_state_pack(Uint8 *buf)
 		SDLNet_Write16((Uint16)*expertSettings[i].value, &buf[NDS_EXPERT + i * 2]);
 }
 
-static void network_debug_state_adopt(const Uint8 *buf, bool in_level)
+void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 {
 	const Uint16 flags = SDLNet_Read16(&buf[NDS_FLAGS]);
 
@@ -1951,7 +3422,7 @@ void network_write_diagnostics(FILE *f)
 		fprintf(f, "  Reliable ch:  out=%u acked=%u backlog=%d (%d held)   in=%u (%d held)   retries=%lu   acked-dropped=%lu\n",
 		        last_out_sync, last_ack_sync, network_ack_backlog(), out_held,
 		        queue_in_sync, in_held, (unsigned long)net_diag.retries,
-		        (unsigned long)net_diag.acked_dropped);
+		        (unsigned long)net_diag.window_overflow);
 	}
 
 	fprintf(f, "  State ch:     in_sync=%u out_sync=%u   sent=%lu recv=%lu late-dropped=%lu\n",
@@ -2003,6 +3474,8 @@ void network_shutdown(void)
 	// Reset every sync counter, or a second session would start mid-sequence.
 	debug_sync_gen = 0;
 	memset(debug_sync_last, 0, sizeof(debug_sync_last));
+	network_custom_weapon_reset();
+	network_shop_sequence = network_shop_peer_sequence = 0;
 	last_out_sync = queue_in_sync = queue_out_sync = last_ack_sync = 0;
 	last_in_tick = last_out_tick = 0;
 	last_state_in_sync = last_state_out_sync = 0;
@@ -2031,6 +3504,12 @@ void network_shutdown(void)
 	host_awaiting_peer = false;
 	peer_addr_known = false;
 	network_session_saveable = false;
+	network_shop_active = false;
+	network_shop_sequence = 0;
+	network_shop_peer_sequence = 0;
+	network_shop_save_request = 0;
+	network_shop_peer_ready = false;
+	network_shop_save_ready = false;
 
 	nrb_set_session_mode(false);
 	nrb_set_session_recovery(false);
@@ -2288,10 +3767,103 @@ int network_init(void)
 	return 0;
 }
 
-int network_test_peer(int rounds)
+/* Working-set probe for the soak check: the harness compares the figure printed after the
+ * handshake against the one at the finish, so growth across a session's traffic is visible.
+ * Windows only; other platforms print zero and the harness skips the comparison. */
+static unsigned long net_test_rss_kb(void)
 {
+#ifdef _WIN32
+	PROCESS_MEMORY_COUNTERS pmc;
+	if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+		return (unsigned long)(pmc.WorkingSetSize / 1024);
+#endif
+	return 0;
+}
+
+/* Hard ceiling on a whole test-peer run.
+ *
+ * Comfortably inside the harness's own patience (testing/network_fault_test.py gives the pair 90
+ * seconds), so a wedged peer reaches its own diagnostic and exits non-zero rather than being
+ * killed with the reason still in its buffer. Every wait in qa_net.c honours it too, so the run
+ * ends where it stopped making progress instead of at whichever timeout happens to be next. */
+#define NET_TEST_CEILING 70000
+
+static Uint32 net_test_started;
+static unsigned long net_test_rss_start_kb;
+
+bool network_test_expired(void)
+{
+	return SDL_GetTicks() - net_test_started > NET_TEST_CEILING;
+}
+
+/* The gameplay wire runs print the same working-set pair as the base scenario, so the harness
+ * can apply its soak check to a long flight too. Mark once when the session is up. */
+void network_test_mem_mark(void)
+{
+	net_test_rss_start_kb = net_test_rss_kb();
+}
+
+unsigned long network_test_mem_start_kb(void)
+{
+	return net_test_rss_start_kb;
+}
+
+unsigned long network_test_mem_now_kb(void)
+{
+	return net_test_rss_kb();
+}
+
+/* Shared close for every scenario: settle the reliable channel, then hold the socket open long
+ * enough that a dropped ACK for the last payload can still be re-earned before we exit. */
+static int net_test_finish(int rounds)
+{
+	const Uint32 sync_start = SDL_GetTicks();
+	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!network_is_sync())
+	{
+		fprintf(stderr, "network test: the reliable channel never settled\n");
+		return 1;
+	}
+
+	/* Leave only once the peer has gone quiet: a fixed window can close while a delayed link
+	 * still owes the peer an acknowledgement, and whoever exits first strands the other in a
+	 * retry loop against a closed socket. Bounded, in case the peer never settles. */
+	const Uint32 drain_start = SDL_GetTicks();
+	Uint32 last_traffic = drain_start;
+	while (SDL_GetTicks() - drain_start < 8000
+	       && (SDL_GetTicks() - last_traffic < 1500 || SDL_GetTicks() - drain_start < NET_RETRY))
+	{
+		watchdog_heartbeat();
+		if (network_check() > 0)
+			last_traffic = SDL_GetTicks();
+		SDL_Delay(1);
+	}
+
+	printf("NETWORK TEST PASS player=%u rounds=%d scenario=%d ping=%dms\n",
+	       thisPlayerNum, rounds, qa_net_scenario, network_ping_ms());
+	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n",
+	       thisPlayerNum, net_test_rss_start_kb, net_test_rss_kb());
+	return 0;
+}
+
+int network_test_peer(int rounds, int scenario)
+{
+	net_test_started = SDL_GetTicks();
+
 	if (rounds < 1 || rounds > 1000)
 		return 2;
+
+	/* Start the reliable sequence space just short of the Uint16 wrap, so every scenario
+	 * crosses it in its normal course. The receive side adopts the sender's base from the
+	 * connect packet, the way it adopts any starting sequence. */
+	qa_seq_base = 0xFFD0;
+	last_out_sync = queue_out_sync = last_ack_sync = qa_seq_base;
+
 	if (network_connect() != 0)
 		return 1;
 
@@ -2304,8 +3876,19 @@ int network_test_peer(int rounds)
 		network_check();
 	}
 
+	net_test_rss_start_kb = net_test_rss_kb();
+
 	for (int round = 0; round < rounds; ++round)
 	{
+		if (network_test_expired())
+		{
+			fprintf(stderr, "network test: wall-clock ceiling reached in round %d of %d "
+			                "(queue depth %d, head type %04x, outbound %s)\n",
+			        round, rounds, network_inbound_depth(), (unsigned)network_inbound_head(),
+			        network_is_sync() ? "acknowledged" : "UNACKNOWLEDGED");
+			return 1;
+		}
+
 		const Uint32 payload = 0x51410000u ^ ((Uint32)thisPlayerNum << 12) ^ (Uint32)round;
 		network_prepare(PACKET_WAITING);
 		SDLNet_Write32(payload, &packet_out_temp->data[4]);
@@ -2366,31 +3949,333 @@ int network_test_peer(int rounds)
 		}
 	}
 
-	const Uint32 sync_start = SDL_GetTicks();
-	while (!network_is_sync() && SDL_GetTicks() - sync_start < 12000)
+	/* The rounds above establish a live, synchronized session; each scenario then drives one
+	 * mode's own protocol over it. */
+	if (scenario != 0)
+	{
+		int rc;
+		switch (scenario)
+		{
+		case 1:
+			rc = qa_net_campaign_phases();
+			break;
+		case 2:
+			rc = qa_net_endless_phases();
+			break;
+		default:
+			rc = qa_net_barrier_phases();
+			break;
+		}
+		if (rc != 0)
+			return rc;
+		return net_test_finish(rounds);
+	}
+
+	/* The Relaxed death prompt. One player reads it for as long as they like while the other waits
+	 * on their answer, and that answer still has to arrive: it travels on the Endless co-op channel,
+	 * which nothing else in this test exercises. The reader services the socket exactly the way
+	 * JE_endlessDeathMenu's frame does. */
+	twoPlayerMode = true;
+	coopEndlessMode = true;
+	if (thisPlayerNum == networkHostPlayerNum)
+	{
+		const Uint32 reading = SDL_GetTicks();
+		while (SDL_GetTicks() - reading < 5000)
+		{
+			watchdog_heartbeat();
+			network_check();               /* exactly what JE_endlessDeathMenu's frame does */
+			while (network_shop_pump())
+				;
+			SDL_Delay(16);
+		}
+		network_endless_death_sync((int)ENDLESS_DEATH_OUTPOST);
+	}
+	else
+	{
+		const int adopted = network_endless_death_sync(-1);
+		if (adopted != (int)ENDLESS_DEATH_OUTPOST)
+		{
+			fprintf(stderr, "network test: death choice came back as %d, not Return to Outpost\n",
+			        adopted);
+			return 1;
+		}
+	}
+	coopEndlessMode = false;
+
+	/* Exercise the campaign shop protocol through the same hostile proxy. Both peers publish
+	 * independent loadouts, then request a simultaneous save checkpoint and rendezvous. */
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	Player *const local = &player[thisPlayerNum - 1];
+	Player *const peer = &player[2 - thisPlayerNum];
+	memset(&local->items, 0, sizeof(local->items));
+	local->items.ship = (Uint8)thisPlayerNum;
+	local->items.generator = 2;
+	local->items.shield = 4;
+	local->items.weapon[FRONT_WEAPON].id = (Uint8)(1 + thisPlayerNum);
+	local->items.weapon[FRONT_WEAPON].power = (Uint8)(2 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].id = (Uint8)(10 + thisPlayerNum);
+	local->items.weapon[REAR_WEAPON].power = (Uint8)(3 + thisPlayerNum);
+	local->cash = 50000u + thisPlayerNum * 100u;
+	local->weapon_mode = thisPlayerNum;
+	network_shop_begin();
+
+	const Uint32 peer_cash = 50000u + (3u - thisPlayerNum) * 100u;
+	const Uint32 shop_start = SDL_GetTicks();
+	while (peer->cash != peer_cash && SDL_GetTicks() - shop_start < 12000)
 	{
 		watchdog_heartbeat();
 		network_check();
+		while (network_shop_pump())
+			;
 		SDL_Delay(1);
 	}
-	if (!network_is_sync())
+	if (peer->cash != peer_cash || peer->items.ship != 3u - thisPlayerNum ||
+	    peer->items.weapon[REAR_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop baseline did not converge\n");
 		return 1;
+	}
 
-	/* An ACK is intentionally not reliable itself. If the peer's ACK for our final payload was
-	 * dropped, it needs us to keep the socket alive long enough to resend that payload and receive
-	 * another ACK. Earlier rounds naturally get this grace from the next round; the last one needs
-	 * an explicit bounded drain before either test process exits. */
-	const Uint32 drain_start = SDL_GetTicks();
-	while (SDL_GetTicks() - drain_start < NET_RETRY * 3 + 200)
+	network_prepare(PACKET_WAITING);
+	SDLNet_Write32(0x53484f50u, &packet_out_temp->data[4]);
+	if (!network_send(8))
+		return 1;
+	const Uint32 shop_ready_start = SDL_GetTicks();
+	bool shop_ready = false;
+	while (!shop_ready && SDL_GetTicks() - shop_ready_start < 12000)
 	{
 		watchdog_heartbeat();
 		network_check();
+		if (packet_in[0] != NULL)
+		{
+			const Uint16 type = SDLNet_Read16(&packet_in[0]->data[0]);
+			if (type == PACKET_WAITING && packet_in[0]->len >= 8 &&
+			    SDLNet_Read32(&packet_in[0]->data[4]) == 0x53484f50u)
+				shop_ready = true;
+			network_update();
+		}
 		SDL_Delay(1);
 	}
+	if (!shop_ready)
+	{
+		fprintf(stderr, "network test: campaign shop checkpoint setup timed out\n");
+		return 1;
+	}
 
-	printf("NETWORK TEST PASS player=%u rounds=%d ping=%dms\n",
-	       thisPlayerNum, rounds, network_ping_ms());
-	return 0;
+	local->cash += 77;
+	local->items.weapon[FRONT_WEAPON].power++;
+	network_shop_send_transaction();
+	const Uint32 transaction_start = SDL_GetTicks();
+	while ((peer->cash != peer_cash + 77 ||
+	        peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum)) &&
+	       SDL_GetTicks() - transaction_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign shop transaction did not converge\n");
+		return 1;
+	}
+
+	network_shop_sync_for_save();
+	if (peer->cash != peer_cash + 77 ||
+	    peer->items.weapon[FRONT_WEAPON].power != 3u + (3u - thisPlayerNum))
+	{
+		fprintf(stderr, "network test: campaign save checkpoint did not converge\n");
+		return 1;
+	}
+
+	network_shop_send_state(true);
+	const Uint32 done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: campaign shop rendezvous timed out\n");
+		return 1;
+	}
+	network_shop_end();
+
+	/* Endless outpost: one machine charts the sector and the other has to come out of the same
+	 * rendezvous already holding that index, because nothing publishes it afterwards. Ordered the
+	 * way shopLeaveOutpost orders it, including the waiter committing first and the charting
+	 * player sending uncommitted packets (course -1) before it picks. */
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	network_shop_begin();
+
+	const bool charting = (thisPlayerNum == networkHostPlayerNum);
+	const int test_course = 3;
+	endlessCoopCourse = -1;
+	jumpSection = true;
+
+	if (!charting)
+		network_shop_send_state(true);
+
+	if (charting)
+	{
+		/* Still shopping: these carry no course, and the waiter must not be left holding one. */
+		for (int i = 0; i < 3; ++i)
+		{
+			network_shop_send_transaction();
+			const Uint32 tick = SDL_GetTicks();
+			while (SDL_GetTicks() - tick < 60)
+			{
+				watchdog_heartbeat();
+				network_check();
+				while (network_shop_pump())
+					;
+				SDL_Delay(1);
+			}
+		}
+		endlessCoopCourse = test_course;
+		network_shop_send_state(true);
+	}
+
+	const Uint32 endless_done_start = SDL_GetTicks();
+	while (!network_shop_peer_done() && SDL_GetTicks() - endless_done_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: endless outpost rendezvous timed out\n");
+		return 1;
+	}
+
+	network_shop_set_locked(true);
+	const Uint32 endless_lock_start = SDL_GetTicks();
+	while (!network_shop_peer_locked() && SDL_GetTicks() - endless_lock_start < 12000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_locked())
+	{
+		fprintf(stderr, "network test: endless outpost lock timed out\n");
+		return 1;
+	}
+
+	if (!charting && network_shop_peer_course() != test_course)
+	{
+		fprintf(stderr, "network test: endless course index did not survive the rendezvous (%d)\n",
+		        network_shop_peer_course());
+		return 1;
+	}
+
+	/* The waiter leaves later than the charting player: it still has a sector to look up and
+	 * mutators to fold. Whatever it does with the queue in that window, the level handshake below
+	 * has to still find the packet the peer sent, so linger here the way that lookup does. */
+	if (!charting)
+	{
+		const Uint32 linger_start = SDL_GetTicks();
+		while (SDL_GetTicks() - linger_start < 700)
+		{
+			watchdog_heartbeat();
+			if (network_shop_pump())
+				continue;
+			if (network_shop_departure_pending())
+				break;
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+	}
+
+	network_shop_end();
+	endlessCoopCourse = -1;
+	jumpSection = false;
+
+	/* The level-start handshake exactly as shopLeaveOutpost runs it. */
+	network_prepare(PACKET_WAITING);
+	network_send(4);
+	const Uint32 depart_start = SDL_GetTicks();
+	bool departed = false;
+	while (!departed && SDL_GetTicks() - depart_start < 12000)
+	{
+		watchdog_heartbeat();
+		if (network_shop_pump())
+			continue;
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		{
+			network_update();
+			departed = true;
+			break;
+		}
+		network_update();
+		network_check();
+		SDL_Delay(1);
+	}
+	if (!departed)
+	{
+		fprintf(stderr, "network test: endless outpost departure handshake timed out\n");
+		return 1;
+	}
+	network_state_reset();
+
+	/* One player reaching the next outpost and committing before the other has even opened theirs.
+	 * The slower machine drains the queue on the way in, as every screen between a level and an
+	 * outpost does, and then network_shop_begin drops what it learned; a commit announced exactly
+	 * once lands in that gap and the two wait on each other for good. The handshake above is the
+	 * barrier that puts both peers at the same point before this starts. */
+	network_shop_begin();
+	if (charting)
+	{
+		const Uint32 slow_start = SDL_GetTicks();
+		while (SDL_GetTicks() - slow_start < 800)
+		{
+			watchdog_heartbeat();
+			network_update();
+			network_check();
+			SDL_Delay(1);
+		}
+		network_shop_begin();     /* ...and only now opens its own outpost */
+	}
+	network_shop_send_state(true);
+
+	/* Both peers keep pumping until the outpost is left, exactly as the shop loop does, so the
+	 * later arrival's HELLO is answered whether or not the other is still inside a wait. */
+	const Uint32 late_start = SDL_GetTicks();
+	while (SDL_GetTicks() - late_start < 4000)
+	{
+		watchdog_heartbeat();
+		network_check();
+		network_shop_keepalive();
+		while (network_shop_pump())
+			;
+		SDL_Delay(1);
+	}
+	if (!network_shop_peer_done())
+	{
+		fprintf(stderr, "network test: a commit made before the peer opened its outpost was lost\n");
+		return 1;
+	}
+	network_shop_end();
+
+	coopEndlessMode = false;
+	coopCampaignMode = true;
+
+	return net_test_finish(rounds);
 }
 
 #else
@@ -2406,7 +4291,6 @@ void network_write_diagnostics(FILE *f)
 
 void JE_clearSpecialRequests(void)
 {
-	pauseRequest = false;
 	inGameMenuRequest = false;
 	skipLevelRequest = false;
 	helpRequest = false;

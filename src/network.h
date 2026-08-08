@@ -44,8 +44,8 @@
 #define PACKET_KEEP_ALIVE    0x01    // send stamp (echoed back as PACKET_PING_REPLY)
 #define PACKET_PING_REPLY    0x02    // the keep-alive's stamp, verbatim  (not acknowledged)
 
-#define PACKET_CONNECT       0x10    // version, delay, episodes, player_number, name
-#define PACKET_DETAILS       0x11    // episode, difficulty
+#define PACKET_CONNECT       0x10    // version, delay, episodes, player, game type/settings, name
+#define PACKET_DETAILS       0x11    // game type, episode, difficulty, optional save record
 
 #define PACKET_QUIT          0x20    // 
 #define PACKET_WAITING       0x21    // 
@@ -55,6 +55,11 @@
 #define PACKET_GAME_PAUSE    0x31    //
 #define PACKET_GAME_MENU     0x32    //
 #define PACKET_DEBUG_SYNC    0x33    // generation, sender, <debug state block>  (see network_debug_sync_send)
+#define PACKET_SHOP_SYNC     0x34    // sender, sequence, flags, route, cash, mode, ack, items
+#define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
+#define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
+#define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
+#define PACKET_ENDLESS_JUMP  0x38    // sender, armed, depth, mods, level pick, perk stacks
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)
@@ -79,6 +84,54 @@ extern Uint16 network_listen_port;
 // Persisted host slot preference: 1, or 2 for the Dragonwing.
 extern int network_host_player;
 extern int network_host_game_speed;
+
+typedef enum
+{
+	NETWORK_GAME_ARCADE = 0,
+	NETWORK_GAME_CAMPAIGN = 1,
+	NETWORK_GAME_ENDLESS = 2,
+	NETWORK_GAME_SUPERTYRIAN = 3,
+	NETWORK_GAME_SUPERARCADE = 4,
+	NETWORK_GAME_DESTRUCT = 5,
+	NETWORK_GAME_TYPE_COUNT
+}
+NetworkGameType;
+
+/* The two one-player rulesets flown online. Both give each player a complete ship of their own,
+ * so they run in the Separate arcade shape (config.h) rather than as the linked pair. */
+static inline bool network_game_type_is_super(NetworkGameType t)
+{
+	return t == NETWORK_GAME_SUPERTYRIAN || t == NETWORK_GAME_SUPERARCADE;
+}
+
+extern NetworkGameType network_game_type;
+extern int network_host_episode;
+extern int network_host_difficulty;
+
+// Endless lobby settings, chosen by the host and adopted by the joiner from the connect packet.
+// Kept as plain ints so network.h stays independent of endless.h; the run applies them as the
+// EndlessRunMode / EndlessCourseChooser they stand for.
+#define NET_ENDLESS_SEED_MAX 24
+extern char network_host_endless_seed[NET_ENDLESS_SEED_MAX];
+/* The seed the session actually runs on: the host's field, or a rolled one when it was left
+ * blank for "(random)". Settled once by the host before the connect packet, adopted from it
+ * by the joiner, and read by everything that starts or displays the run. */
+extern char network_endless_session_seed[NET_ENDLESS_SEED_MAX];
+void network_endless_session_begin(void);
+extern int  network_host_endless_run_mode;
+extern int  network_host_endless_chooser;
+extern bool network_host_endless_combo_shared;
+
+// Adopt the host's Endless block from the connect packet, clamping every field.
+void network_endless_adopt(const Uint8 *buf);
+
+/* The Destruct lobby block: which of the five data-backed battle modes the session plays
+ * (the per-machine Custom mode never goes online), and the terrain seed every round derives
+ * from. The side the host mans rides the existing host-slot field (1 = left, 2 = right).
+ * Settled by the host before the connect packet goes out; the joiner adopts both from it. */
+extern int network_host_destruct_mode;
+extern Uint32 network_destruct_session_seed;
+void network_destruct_session_begin(void);
 
 // Lobby connection role. The host also supplies the session settings and player slots.
 extern bool network_is_host;
@@ -127,7 +180,7 @@ void network_write_diagnostics(FILE *f);
 
 extern JE_boolean haltGame;
 extern JE_boolean moveOk;
-extern JE_boolean pauseRequest, skipLevelRequest, helpRequest, nortShipRequest;
+extern JE_boolean skipLevelRequest, helpRequest, nortShipRequest;
 extern JE_boolean yourInGameMenuRequest, inGameMenuRequest;
 
 #ifdef WITH_NETWORK
@@ -159,6 +212,15 @@ bool network_is_sync(void);
 // Unacknowledged outbound packets, used to throttle bulk resync transfers.
 int network_ack_backlog(void);
 
+// Reliable packets still queued for consumption, and the type at the head (0 when empty).
+// Diagnostic: they say whether a stalled wait is starved or wedged behind a head nobody claims.
+int network_inbound_depth(void);
+Uint16 network_inbound_head(void);
+
+// Reliable packets acknowledged into a full receive window and therefore lost for good. Nonzero
+// means something stopped draining the queue; the transport cannot recover these.
+Uint32 network_window_overflow(void);
+
 void network_state_prepare(void);
 int network_state_send(void);
 bool network_state_update(void);
@@ -174,7 +236,20 @@ int network_init(void);
 void network_shutdown(void);
 
 /* Automated two-process reliable-channel exercise used by the fault proxy. */
-int network_test_peer(int rounds);
+int network_test_peer(int rounds, int scenario);
+
+// True once a test peer has outlived its wall-clock ceiling. Every wire-scenario wait checks it,
+// so a wedged run reports where it stopped instead of being killed by the harness.
+bool network_test_expired(void);
+
+// Working-set probe shared by the base scenario and the gameplay verdicts (zero off Windows).
+void network_test_mem_mark(void);
+unsigned long network_test_mem_start_kb(void);
+unsigned long network_test_mem_now_kb(void);
+
+// Arm every session flag from this machine's own config, the same set the settings block
+// carries. The host runs on these; the joiner's adoption then overwrites them.
+void network_arm_local_session(void);
 
 // Pack, adopt, and restore host-authoritative simulation settings. Presentation settings remain
 // local. The return value is the encoded byte count.
@@ -186,12 +261,98 @@ void network_settings_restore(void);
 // Bytes 0..15 are settings; 16..23 identify the rollback layout and snapshot size.
 #define NETWORK_SETTINGS_SIZE 24
 
+/* Publish the host's Endless run to the joiner, which is how a resumed online run starts both
+ * machines from the same record. Chunked over the reliable channel and blocking until delivered;
+ * the joiner calls network_endless_run_receive from its own wait loop. */
+void network_endless_run_publish(void);
+bool network_endless_run_receive(Uint32 timeout_ms);
+
+/* Both ships down at once: the host publishes its death-menu choice and the joiner adopts it.
+ * Pass the choice on the host, -1 on the joiner; -1 comes back if nothing arrived. */
+int network_endless_death_sync(int hostChoice);
+
+// Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
+void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq);
+
+/* Online Super Arcade ship picks. Each player chooses their own ship (they may match), so the
+ * pick is announced rather than dictated: publish this machine's, then wait for the peer's.
+ * Reliable, so a lost announcement is retransmitted rather than deadlocking the pair.
+ *
+ * A pick can be taken back while the peer has not made one, so the announcement carries two
+ * things: the ship (0 = taken back) and whether the sender has the other pick in hand. The
+ * second is what makes the retraction safe to offer. Neither machine may leave the picker until
+ * the peer has acknowledged its ship that way, and nobody retracts once they have the peer's
+ * ship -- so by the time either side leaves, the pair it leaves with can no longer change. */
+void network_sa_ship_publish(int ship, bool seen_peer);
+int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
+bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
+void network_sa_ship_reset(void);
+
+/* The Endless debug zone jump. Announced the instant START ZONE is pressed, while the partner is
+ * still in its outpost, because the partner may be sitting in a wait for a course this machine
+ * has just decided not to chart -- and this announcement is what releases it. Neither side ever
+ * blocks on the other here. Poll before folding the course: true means a jump is in play (ours or
+ * the peer's, host winning a tie) and the fold must be skipped, or it rebuilds the sector over it. */
+void network_endless_jump_publish(void);
+bool network_endless_jump_poll(void);
+
+/* Both machines announce they are ready for a level, then resynchronize the state queues. Only
+ * needed on a path that starts a level without passing through the outpost. */
+void network_level_rendezvous(void);
+
+/* The online Destruct title screen's barrier: neither session starts until both players have
+ * confirmed. Non-blocking, so the screen keeps drawing and can report where the pair stands --
+ * publish once when this player is ready, then poll for the peer's announcement every frame. */
+void network_destruct_ready_publish(void);
+bool network_destruct_ready_peer(void);
+
+void network_shop_begin(void);
+void network_shop_send_state(bool done);
+void network_shop_send_transaction(void);
+bool network_shop_pump(void);
+bool network_shop_peer_done(void);
+// True while the reliable queue holds a packet the level-start handshake is the one to read;
+// an outpost wait must leave it alone rather than advance the queue past it.
+bool network_shop_departure_pending(void);
+// Re-announce our rendezvous state; call from any loop that waits on the peer at the outpost.
+void network_shop_keepalive(void);
+// Endless: the sector index the peer committed to, or -1 while it has committed to none.
+int  network_shop_peer_course(void);
+// Course slates never grow past this; the receiver rejects anything outside it.
+#define ENDLESS_MAX_COURSE_SLOTS 5
+// Second step of the outpost rendezvous. Lock once the peer is done too, then wait for its lock;
+// a peer that withdrew instead clears network_shop_peer_done and the wait starts over.
+void network_shop_set_locked(bool locked);
+bool network_shop_peer_locked(void);
+
+/* Publish this machine's custom weapon design so the peer can fly and simulate it. Both ships
+ * run on both machines, so a design that only exists on one of them is a desync. Sending is
+ * chunked over the reliable channel and blocks until delivered; call it from the outpost only.
+ * Incoming chunks are consumed by network_shop_pump. */
+void network_custom_weapon_publish(void);
+void network_custom_weapon_reset(void);
+// Take the level the host left the outpost for. Call once both players are done, never before:
+// the joiner has to be allowed to finish shopping first.
+void network_shop_adopt_host_level(void);
+void network_shop_end(void);
+void network_shop_sync_for_save(void);
+
 // Synchronize debug-menu simulation state. mark snapshots the baseline, changed compares it,
 // send publishes updates, and pump adopts queued updates. in_level enables HUD repainting.
 void network_debug_sync_mark(void);
 bool network_debug_sync_changed(void);
 void network_debug_sync_send(void);
+/* pump only inspects the head, because the reliable queue is ordered and nothing can be lifted out
+ * of the middle of it. A block queued behind outpost traffic is therefore only reachable to a
+ * caller that also runs network_shop_pump; a wait that pumps debug state alone never gets to it. */
 bool network_debug_sync_pump(bool in_level);
+/* The block itself, exposed the way network_settings_pack is: a round trip through these is what
+ * catches a field the debug menu edits and the wire does not carry, which is otherwise only
+ * visible as the two machines quietly simulating different games. adopt applies every clamp. */
+int  network_debug_state_size(void);
+void network_debug_state_pack(Uint8 *buf);
+void network_debug_state_adopt(const Uint8 *buf, bool in_level);
+
 // Capacity of the wire block; varz.c asserts that its expert-tunable table fits.
 #define NETWORK_DEBUG_EXPERT_SLOTS 8
 
@@ -271,6 +432,31 @@ extern bool rollback_resim;
 #else
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
+static inline void network_level_rendezvous(void) { }
+static inline void network_destruct_ready_publish(void) { }
+static inline bool network_destruct_ready_peer(void) { return false; }
+static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
+static inline int network_sa_ship_peer(void) { return 0; }
+static inline bool network_sa_ship_peer_saw_us(void) { return false; }
+static inline void network_sa_ship_reset(void) { }
+static inline void network_shop_begin(void) { }
+static inline void network_shop_send_state(bool done) { (void)done; }
+static inline void network_shop_send_transaction(void) { }
+static inline bool network_shop_pump(void) { return false; }
+static inline bool network_shop_peer_done(void) { return true; }
+static inline bool network_shop_departure_pending(void) { return false; }
+static inline void network_shop_keepalive(void) { }
+static inline int network_shop_peer_course(void) { return -1; }
+static inline void network_shop_set_locked(bool locked) { (void)locked; }
+static inline bool network_shop_peer_locked(void) { return true; }
+static inline void network_endless_run_publish(void) { }
+static inline bool network_endless_run_receive(Uint32 timeout_ms) { (void)timeout_ms; return false; }
+static inline int network_endless_death_sync(int hostChoice) { return hostChoice; }
+static inline void network_custom_weapon_publish(void) { }
+static inline void network_custom_weapon_reset(void) { }
+static inline void network_shop_adopt_host_level(void) { }
+static inline void network_shop_end(void) { }
+static inline void network_shop_sync_for_save(void) { }
 #endif
 
 #endif /* NETWORK_H */
