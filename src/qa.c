@@ -744,6 +744,12 @@ static void qa_test_custom_weapon_wire(void)
 	         && weapons[scratch + CUSTOM_POWER_LEVELS + 10].attack[0] == 99,
 	         "adopted design reaches the port and every scratch weapon slot intact");
 
+	// A peer's weapon fires through its own reserved port, and the record mark must still see it.
+	qa_check(customWeaponPortIsCustom((JE_word)customWeaponOwnerPort[0])
+	         && customWeaponPortIsCustom((JE_word)port)
+	         && !customWeaponPortIsCustom(1),
+	         "the fired-a-custom-weapon test covers every owner's port, not just the local one");
+
 	qa_check(!customWeaponAdoptDesign(owner, stream, total / 2)
 	         && !customWeaponAdoptDesign(owner, stream, 2)
 	         && !customWeaponAdoptDesign(-1, stream, total)
