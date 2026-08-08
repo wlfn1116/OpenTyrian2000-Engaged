@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // PERK_* order is serialized. Append entries here and in endless_internal.h; never renumber them.
 const EndlessPerk endlessPerkTable[PERK_COUNT] = {
@@ -100,7 +101,9 @@ int endlessRegenTick = 0;             // Nanorepair countdown (reset each run)
  * ship: one shared charge had the second ship's fire spending the first ship's salvo. */
 int endlessSalvoIdle[2] = { 0, 0 };   // ticks the main gun has sat idle (reset each run)
 int endlessSalvoWindow[2] = { 0, 0 }; // ticks left in a consumed salvo (reset each run)
-int endlessCmCooldown = 0;            // Countermeasure Suite: ticks until the next burst is ready (reset each run)
+// Countermeasure Suite: ticks until each ship's next burst is ready (reset each run). Per ship,
+// because the perk is personal: one hull's burst must not disarm the partner's.
+int endlessCmCooldown[2] = { 0, 0 };
 // Last depth whose post-zone perk was resolved, or -1. This prevents duplicate picks on reload.
 int endlessPerkDepthDone = -1;
 
@@ -387,22 +390,28 @@ int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
 }
 
-// endlessGameplayTick advances the countermeasure cooldown.
+// endlessGameplayTick advances both ships' countermeasure cooldowns.
 void endlessCountermeasureTick(void)
 {
-	if (endlessCmCooldown > 0)
-		--endlessCmCooldown;
+	for (unsigned p = 0; p < COUNTOF(endlessCmCooldown); ++p)
+		if (endlessCmCooldown[p] > 0)
+			--endlessCmCooldown[p];
 }
 
-// Return the ready projectile-clear radius. The caller must re-arm the cooldown after firing.
+// Return the ready projectile-clear radius. The caller must re-arm the cooldown after firing;
+// both read the fx ship, which JE_playerDamage points at the hull that was hit.
 int endlessPerkCountermeasureRadius(void)
 {
-	if (!endlessFxActive() || perkFx(PERK_COUNTERMEASURE) == 0 || endlessCmCooldown > 0)
+	if (!endlessFxActive() || perkFx(PERK_COUNTERMEASURE) == 0
+	    || endlessCmCooldown[endlessFxPlayer()] > 0)
 		return 0;
 	return (perkFx(PERK_COUNTERMEASURE) >= 2) ? ENDLESS_PERK_CM_RADIUS2 : ENDLESS_PERK_CM_RADIUS1;
 }
 
-void endlessCountermeasureFired(void) { endlessCmCooldown = ENDLESS_PERK_CM_COOLDOWN; }
+void endlessCountermeasureFired(void)
+{
+	endlessCmCooldown[endlessFxPlayer()] = ENDLESS_PERK_CM_COOLDOWN;
+}
 
 // A hull hit grants invulnerability. The active window prevents it from chaining.
 int endlessPerkFailsafeTicks(void)
@@ -420,7 +429,8 @@ void endlessResetZonePerkTimers(void)
 		endlessSalvoIdle[p]   = ENDLESS_PERK_SALVO_IDLE;  // charged: the 2s wait is dead time here
 		endlessSalvoWindow[p] = 0;                        // no half-spent salvo carries over
 	}
-	endlessCmCooldown  = 0;  // Countermeasure Suite: first burst of the sector is always ready
+	// Countermeasure Suite: each ship's first burst of the sector is always ready.
+	memset(endlessCmCooldown, 0, sizeof(endlessCmCooldown));
 }
 
 // Pulse application lives at the player-shot kill sites in tyrian2.c.

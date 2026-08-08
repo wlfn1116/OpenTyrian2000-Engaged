@@ -219,7 +219,7 @@ extern int endlessPerkChoiceN;
 extern int endlessRegenTick;
 extern int endlessSalvoIdle[2];
 extern int endlessSalvoWindow[2];
-extern int endlessCmCooldown;
+extern int endlessCmCooldown[2];
 
 void endlessResetZonePerkTimers(void);
 extern int endlessPerkDepthDone;

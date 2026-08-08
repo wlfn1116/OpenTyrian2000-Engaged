@@ -662,7 +662,7 @@ void endlessResetRun(void)
 		endlessSalvoIdle[p] = ENDLESS_PERK_SALVO_IDLE;
 		endlessSalvoWindow[p] = 0;
 	}
-	endlessCmCooldown = 0;
+	memset(endlessCmCooldown, 0, sizeof(endlessCmCooldown));
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
 	endlessSortieHave = false;
@@ -880,7 +880,7 @@ void endless_register_rollback(void)
 	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
 	rollback_register("endless.salvoIdle", endlessSalvoIdle, sizeof(endlessSalvoIdle));
 	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
-	rollback_register("endless.cmCooldown", &endlessCmCooldown, sizeof(endlessCmCooldown));
+	rollback_register("endless.cmCooldown", endlessCmCooldown, sizeof(endlessCmCooldown));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
 
 	/* The run ledger is written by simulation events (a kill pays, a bounty pays), so it has to
