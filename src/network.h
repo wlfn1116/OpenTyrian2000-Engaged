@@ -30,6 +30,46 @@
 #include "vita_net.h"
 #else
 #include "SDL_net.h"
+
+/* SDL_net's byte-order helpers store whole words, which is undefined behaviour on the
+ * unaligned fields inside packed records (e.g. the cash slots of the shop-sync and
+ * debug-sync blocks).  These byte-wise equivalents keep the same big-endian wire format. */
+static inline void net_bytes_write16(Uint16 value, void *areap)
+{
+	Uint8 *area = (Uint8 *)areap;
+	area[0] = (Uint8)(value >> 8);
+	area[1] = (Uint8)value;
+}
+
+static inline void net_bytes_write32(Uint32 value, void *areap)
+{
+	Uint8 *area = (Uint8 *)areap;
+	area[0] = (Uint8)(value >> 24);
+	area[1] = (Uint8)(value >> 16);
+	area[2] = (Uint8)(value >> 8);
+	area[3] = (Uint8)value;
+}
+
+static inline Uint16 net_bytes_read16(const void *areap)
+{
+	const Uint8 *area = (const Uint8 *)areap;
+	return (Uint16)(((Uint16)area[0] << 8) | area[1]);
+}
+
+static inline Uint32 net_bytes_read32(const void *areap)
+{
+	const Uint8 *area = (const Uint8 *)areap;
+	return ((Uint32)area[0] << 24) | ((Uint32)area[1] << 16) | ((Uint32)area[2] << 8) | area[3];
+}
+
+#undef SDLNet_Write16
+#undef SDLNet_Write32
+#undef SDLNet_Read16
+#undef SDLNet_Read32
+#define SDLNet_Write16 net_bytes_write16
+#define SDLNet_Write32 net_bytes_write32
+#define SDLNet_Read16  net_bytes_read16
+#define SDLNet_Read32  net_bytes_read32
 #endif
 #endif
 
