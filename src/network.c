@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       22           /* v22: online Destruct drops the shared pause; its
+#define NET_VERSION       23           /* v23: ENGAGE mini-game exits reload the 2P LAST LEVEL
+                                          slot and a TIME WAR clear keeps the coop pair shape;
+                                          a v22 peer reloads its local solo save there instead,
+                                          so the two sims part ways the moment one ends.
+                                          v22: online Destruct drops the shared pause; its
                                           control bit is neither sent nor honoured, and a v21
                                           peer pressing P would freeze its own sim while ours
                                           runs on, so the versions must not pair.

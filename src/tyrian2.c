@@ -1009,8 +1009,11 @@ static void composite_playfield(SDL_Surface *playfield)
 	}
 	else if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
-		lighty = 172 - player[0].y;
-		lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - player[0].x;
+		// The cone follows the ship this machine flies; the peer's ship stays in the
+		// dark here and lights its own screen. Presentation only, nothing simulated.
+		const Player *lit = &player[(isNetworkGame && thisPlayerNum >= 2) ? 1 : 0];
+		lighty = 172 - lit->y;
+		lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - lit->x;
 
 		for (y = 184; y; y--)
 		{
@@ -1076,8 +1079,10 @@ static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int
 	}
 	else if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
-		const int lighty = (172 - player[0].y) * scale;
-		const int lightx = ((PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - player[0].x) * scale;
+		// Same local-ship anchor as composite_playfield.
+		const Player *lit = &player[(isNetworkGame && thisPlayerNum >= 2) ? 1 : 0];
+		const int lighty = (172 - lit->y) * scale;
+		const int lightx = ((PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - lit->x) * scale;
 		const int band = 5 * scale;
 
 		for (int y = rows; y; y--)
@@ -2772,6 +2777,14 @@ draw_enemy_end:
 	player[0].x += 25;
 }
 
+/* Which slot the LAST LEVEL backup lives in. Keyed on the session, not on twoPlayerMode: an
+ * ENGAGE mini-game (']e') and every galaga level end drop that flag mid-game, and an online pair
+ * that fell back to the solo slot would each reload a different local save and desync. */
+static JE_byte backup_save_slot(void)
+{
+	return (twoPlayerMode || isNetworkGame) ? 22 : 11;
+}
+
 void JE_main(void)
 {
 	char buffer[256];
@@ -2886,6 +2899,8 @@ start_level:
 		// flag whatever the answer, so it can never carry over to a campaign-reached level.
 		const bool fromDebugBrowser = debugLevelJumpTake();
 
+		const bool cleared = (!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel;
+
 		// ENGAGE mini-games (** ALE **, TIME WAR, SQUADRON) are campaign dead ends: clearing one
 		// falls into the episode's END GAME section, dying reloads the "LAST LEVEL" backup save.
 		// Neither exists behind a browser jump, so both just restart the game at level 1 of the
@@ -2893,7 +2908,6 @@ start_level:
 		// back the outpost they launched from instead of running the ending.
 		if (fromDebugBrowser && engageMode)
 		{
-			const bool cleared = (!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel;
 			if (cleared)
 				JE_endLevelAni();
 			fade_song();
@@ -2906,7 +2920,12 @@ start_level:
 			goto start_level_first;
 		}
 
-		if ((!all_players_dead() || normalBonusLevelCurrent || bonusLevelCurrent) && !playerEndLevel)
+		// The galaga ENGAGE rounds (** ALE ** and SQUADRON) are authored endless: dying or
+		// quitting is the only way out. If a modified map ever runs one dry, an online pair
+		// takes the quit route back to the outpost rather than dragging galaga flags on.
+		const bool engageGalagaEnd = engageMode && galagaMode && coop_mode_active();
+
+		if (cleared && !engageGalagaEnd)
 		{
 			if (qa_net_gameplay_ticks > 0)
 			{
@@ -2924,6 +2943,13 @@ start_level:
 			else
 			{
 				mainLevel = nextLevel;
+
+				// Clearing TIME WAR converts the run to SuperTyrian and the campaign carries
+				// on through the ']Q' flow, exactly as in solo play. ']e' also dropped
+				// twoPlayerMode for the mini-game; put the two-ship shape back so the pair
+				// stays on the 2P save page and the networked outpost.
+				if (engageMode && coop_mode_active())
+					twoPlayerMode = true;
 
 #ifdef WITH_NETWORK
 				/* Wire campaign run: after the second-to-last scheduled clear, drive the
@@ -3047,7 +3073,7 @@ start_level:
 			// A co-op Campaign pair that went down still earned what they earned.
 			coopCampaignScoreNote();
 
-			JE_loadGame(twoPlayerMode ? 22 : 11);
+			JE_loadGame(backup_save_slot());
 			if (doNotSaveBackup)
 			{
 				superTyrian = false;
@@ -3360,7 +3386,7 @@ start_level_first:
 	// outpost instead, the one coherent resume point.
 	if (!play_demo && !doNotSaveBackup && !timedBattleMode && !endlessMode)
 	{
-		temp = twoPlayerMode ? 22 : 11;
+		temp = backup_save_slot();
 		JE_saveGame(temp, "LAST LEVEL    ");
 		endlessSaveSlot(temp);  // not in endless mode: drops any stale endless sidecar record for this slot
 
@@ -6105,7 +6131,10 @@ new_game:
 
 					case 'w':  // Stalker 21.126 section jump
 						temp = atoi(s + 3);   /*Allowed to go to Time War?*/
-						if (player[0].items.ship == 13)
+						// A session with two full ships needs two tickets: the Time War door
+						// only opens when both are flying the Stalker 21.126.
+						if (player[0].items.ship == 13
+						    && (!dual_ship_mode() || player[1].items.ship == 13))
 						{
 							mainLevel = temp;
 							jumpSection = true;
@@ -6136,7 +6165,7 @@ new_game:
 
 					case 'b':
 						// Online rides the 2-player LAST LEVEL slot; solo keeps the original slot 11.
-						temp = isNetworkGame ? 22 : 11;
+						temp = backup_save_slot();
 						if (!endlessMode)  // mid-level savepoint: unstable for endless; it autosaves at the outpost instead (endlessBetweenLevels)
 						{
 							JE_saveGame(temp, "LAST LEVEL    ");
