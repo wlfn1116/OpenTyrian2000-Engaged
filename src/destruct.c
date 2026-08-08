@@ -1455,16 +1455,23 @@ static unsigned int JE_placementPosition(unsigned int passed_x, unsigned int wid
 {
 	unsigned int i, new_y;
 
+	/* The footprint is clamped to the map: baseMap[vga_width] is immediately followed by the
+	 * world's VGAScreen pointer, and the widest wall footprint (wallX up to vga_width-11, 12
+	 * wide) reaches one column past the array -- which read the pointer's low half as a
+	 * terrain height, flattened 3 billion into a dozen real columns, and sent JE_rectangle a
+	 * negative row to memset when the next round drew that terrain. */
+	const unsigned int last_x = MIN(passed_x + width - 1, (unsigned int)vga_width - 1);
+
 	/* Flatten the unit footprint to its highest terrain column. This preserves
 	 * the large clearings produced for elevated units. */
 	new_y = 0;
-	for (i = passed_x; i <= passed_x + width - 1; i++)
+	for (i = passed_x; i <= last_x; i++)
 	{
 		if (new_y < world[i])
 			new_y = world[i];
 	}
 
-	for (i = passed_x; i <= passed_x + width - 1; i++)
+	for (i = passed_x; i <= last_x; i++)
 	{
 		world[i] = new_y;
 	}
