@@ -6,6 +6,7 @@
 #include "config.h"
 #include "custom_weapon.h"
 #include "episodes.h"
+#include "helptext.h"
 #include "joystick.h"
 #include "lvlmast.h"
 #include "mainint.h"
@@ -634,8 +635,14 @@ void endlessGrantSpecial(uint p)
 	for (size_t len = strlen(name); len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t'); )
 		name[--len] = '\0';
 
+	// Two ships share one message bar, so name whoever the grant went to, in the same
+	// "<who> got <what>" phrasing the weapon-ball pickups use. Solo keeps the label,
+	// which is what tells you a datacube/orb handed out a special at all.
 	char msg[64];
-	snprintf(msg, sizeof(msg), "Special weapon:  %s", name);
+	if (dual_ship_mode())
+		snprintf(msg, sizeof(msg), "%s %s %s", JE_getName((JE_byte)(p + 1)), miscTextB[4-1], name);
+	else
+		snprintf(msg, sizeof(msg), "Special weapon:  %s", name);
 	JE_drawTextWindow(msg);
 }
 
