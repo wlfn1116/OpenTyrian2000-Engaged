@@ -93,17 +93,38 @@ bool pause_pressed = false, ingamemenu_pressed = false, changefire_pressed = fal
 
 static Uint8 debug_menu_backup[DEBUG_MENU_WIDTH * DEBUG_MENU_HEIGHT];
 
-/* Draws a message at the bottom text window on the playing screen.
- * The erase is unconditional: textErase == 0 no longer proves the bar is
+/* The message bar's last line, held so a live pass can paint it again.  Both painters below
+ * run inside the simulation, and a silent rollback re-simulation drops the bar sprite and
+ * every glyph; online that is exactly how the other ship's pickups get announced, so the
+ * "<name> got <item>" line would vanish whenever its frame was corrected.  JE_main repaints
+ * from here on the next pass that reaches the screen (see hud_message_dirty). */
+static char text_window_left[96];
+static char text_window_right[32];
+static int text_window_right_x;
+bool hud_message_dirty = false;
+
+/* The erase is unconditional: textErase == 0 no longer proves the bar is
  * clean, because the countdown's own erase can be swallowed when the 1->0
  * crossing lands in a silent rollback re-simulation pass (sprite blits are
  * no-ops there).  Redrawing the bar background is cheap and self-heals. */
-void JE_drawTextWindow(const char *text)
+void JE_repaintTextWindow(void)
 {
 	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
 
+	JE_outText(VGAScreenSeg, 20, vga_height - 10, text_window_left, 0, 4);
+	if (text_window_right[0] != '\0')
+		JE_outText(VGAScreenSeg, text_window_right_x - JE_textWidth(text_window_right, TINY_FONT), vga_height - 10, text_window_right, 0, 4);
+}
+
+// Draws a message at the bottom text window on the playing screen.
+void JE_drawTextWindow(const char *text)
+{
+	SDL_strlcpy(text_window_left, text, sizeof(text_window_left));
+	text_window_right[0] = '\0';
+	hud_message_dirty = rollback_resim_silent;
+
 	textErase = 100;
-	JE_outText(VGAScreenSeg, 20, vga_height - 10, text, 0, 4);
+	JE_repaintTextWindow();
 }
 
 // As JE_drawTextWindow, but splits the line: `left` stays left-aligned in the normal x=20 slot,
@@ -113,11 +134,13 @@ void JE_drawTextWindow(const char *text)
 // clears both. Endless uses this for the elite/champion kill line (label left, bounty right).
 void JE_drawTextWindowSplit(const char *left, const char *right, int right_x)
 {
-	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area (unconditional; see JE_drawTextWindow)
+	SDL_strlcpy(text_window_left, left, sizeof(text_window_left));
+	SDL_strlcpy(text_window_right, right, sizeof(text_window_right));
+	text_window_right_x = right_x;
+	hud_message_dirty = rollback_resim_silent;
 
 	textErase = 100;
-	JE_outText(VGAScreenSeg, 20, vga_height - 10, left, 0, 4);
-	JE_outText(VGAScreenSeg, right_x - JE_textWidth(right, TINY_FONT), vga_height - 10, right, 0, 4);
+	JE_repaintTextWindow();
 }
 
 void JE_outCharGlow(JE_word x, JE_word y, const char *s)

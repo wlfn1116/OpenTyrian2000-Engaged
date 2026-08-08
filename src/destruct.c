@@ -32,10 +32,13 @@
 #include "keyboard.h"
 #include "loudness.h"
 #include "mtrand.h"
+#include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
 #include "palette.h"
 #include "picload.h"
+#include "qa.h"
+#include "sim_math.h"
 #include "sprite.h"
 #include "varz.h"
 #include "vga256d.h"
@@ -510,6 +513,29 @@ static bool   destruct_sim_timing_init = false;
 static Uint64 destruct_sim_freq = 0, destruct_sim_last = 0;
 static float  destruct_sim_accum = 0.0f;
 
+#ifdef WITH_NETWORK
+/* Online Destruct rides the delay-based lockstep state stream the main game already has: every
+ * tick each machine publishes one byte of action bits and one of control bits, then blocks until
+ * the peer's packet for the same logical tick is here (XOR parity and resend requests included,
+ * all in network.c).  The inputs APPLIED are both sides' bytes from network_delay ticks ago --
+ * our own replayed out of the outbound queue, the peer's from the arrived packet -- so the two
+ * machines run the identical input pair at the identical tick and the sim never needs to cross
+ * the wire at all.  See DE_NetExchange. */
+static bool de_net = false;                  /* this Destruct run is an online session */
+static enum de_player_t de_net_local_side;   /* the side this machine's controls drive */
+static unsigned int de_net_round;            /* rounds started; salts the shared terrain seed */
+static bool de_net_paused;
+static bool de_net_desync_noted;
+static bool de_net_have_inputs;              /* false inside the initial delay window */
+static Uint8 de_net_local_bits, de_net_peer_bits;
+
+/* Control bits (state packet byte 5).  QUIT ends the session for both sides at the same tick;
+ * PAUSE toggles a shared freeze; NEWMAP is the online Backspace, a fresh round for both. */
+#define DE_NET_CTRL_QUIT   0x01
+#define DE_NET_CTRL_PAUSE  0x02
+#define DE_NET_CTRL_NEWMAP 0x04
+#endif
+
 static int de_round(float v)
 {
 	return (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
@@ -699,12 +725,59 @@ void JE_destructGame(void)
 {
 	unsigned int i;
 
-	crashlog_set_phase("Destruct minigame");
 	set_menu_centered(false);
 	JE_clr256(VGAScreen);
 	JE_showVGA();
 
 	load_destruct_config(&opentyrian_config);
+
+#ifdef WITH_NETWORK
+	de_net = isNetworkGame;
+	crashlog_set_phase(de_net ? "Destruct minigame (online)" : "Destruct minigame");
+	if (de_net)
+	{
+		de_net_local_side = thisPlayerNum == 2 ? PLAYER_RIGHT : PLAYER_LEFT;
+		de_net_round = 0;
+		de_net_paused = false;
+		de_net_desync_noted = false;
+		de_net_have_inputs = false;
+
+		/* Everything the config file can vary about the SIMULATION is pinned to the shipped
+		 * defaults for the session: the two machines' files have no reason to agree, and any
+		 * difference here is a desync (crater aliasing rewrites collision pixels, so it counts).
+		 * Both jumpers fire straight so neither side mans the buggy one.  The next offline game
+		 * reloads the file, so nothing needs restoring. */
+		config.max_shots = 40;
+		config.max_explosions = 40;
+		config.min_walls = 20;
+		config.max_walls = 20;
+		config.allow_custom = false;
+		config.alwaysalias = false;
+		config.ai[0] = config.ai[1] = false;
+		config.jumper_straight[0] = config.jumper_straight[1] = true;
+		weaponSystems[UNIT_LASER][SHOT_LASERTRACER] = false;
+		/* max_installations bounds the unit-select wrap, so it is sim state too.  It is
+		 * derived below as a MAX over basetypes' counts -- including the two custom army
+		 * sizes this machine's config sets -- and it never shrinks across visits, so pin
+		 * the inputs AND the accumulator back to the shipped values. */
+		basetypes[8][0] = basetypes[9][0] = 5;
+		config.max_installations = 10;
+
+		network_state_reset();
+	}
+#else
+	crashlog_set_phase("Destruct minigame");
+#endif
+
+	/* A network teardown longjmps straight out of the tick loop, skipping the frees at the
+	 * bottom; releasing the previous visit's buffers here keeps that path leak-free. */
+	free(shotRec);
+	free(exploRec);
+	free(world.mapWalls);
+	free(destruct_player[PLAYER_LEFT].unit);
+	destruct_player[PLAYER_LEFT].unit = NULL;
+	free(destruct_player[PLAYER_RIGHT].unit);
+	destruct_player[PLAYER_RIGHT].unit = NULL;
 
 	//malloc things that have customizable sizes
 	shotRec = malloc_die(sizeof(struct destruct_shot_s) * config.max_shots);
@@ -732,10 +805,15 @@ void JE_destructGame(void)
 
 	//and of course exit actions go here.
 	free(shotRec);
+	shotRec = NULL;
 	free(exploRec);
+	exploRec = NULL;
 	free(world.mapWalls);
+	world.mapWalls = NULL;
 	free(destruct_player[PLAYER_LEFT].unit);
+	destruct_player[PLAYER_LEFT].unit = NULL;
 	free(destruct_player[PLAYER_RIGHT].unit);
+	destruct_player[PLAYER_RIGHT].unit = NULL;
 
 	if (destruct_hi != NULL)    { SDL_FreeSurface(destruct_hi);    destruct_hi = NULL; }
 	if (destruct_bg_hi != NULL) { SDL_FreeSurface(destruct_bg_hi); destruct_bg_hi = NULL; }
@@ -756,6 +834,16 @@ static void JE_destructMain(void)
 
 	while (true)
 	{
+#ifdef WITH_NETWORK
+		// Online, the battle was picked in the host's lobby and adopted from the connect
+		// packet; there is no mode select to disagree on.  Clamped again here because it
+		// indexes baseLookup/basetypes, and this is the last stop before it does.
+		if (de_net)
+			world.destructMode = (network_host_destruct_mode >= 0
+			                      && network_host_destruct_mode < DESTRUCT_MODES)
+			                   ? (enum de_mode_t)network_host_destruct_mode : MODE_5CARDWAR;
+		else
+#endif
 		world.destructMode = JE_modeSelect();
 
 		if (world.destructMode == MODE_NONE)
@@ -768,6 +856,14 @@ static void JE_destructMain(void)
 			JE_loadPic(VGAScreen, 11, false);
 			DE_widenHUDBackdrop(VGAScreen);
 
+#ifdef WITH_NETWORK
+			// Every map derives from the shared session seed and the round number, so both
+			// machines generate identical worlds (and pick the same song) without exchanging
+			// a byte of them.
+			if (de_net)
+				mt_srand(network_destruct_session_seed + 0x9E3779B9u * de_net_round++);
+#endif
+
 			DE_ResetUnits();
 			DE_ResetLevel();
 			do
@@ -777,20 +873,154 @@ static void JE_destructMain(void)
 
 			fade_black(25);
 		} while (curState == STATE_RELOAD);
+
+#ifdef WITH_NETWORK
+		// An online session is one sitting: the quit verdict ended it on both machines at the
+		// same tick, and the main loop tears the connection down from here.
+		if (de_net)
+			break;
+#endif
 	}
 	set_menu_centered(true);
 }
 
+/* Composed from the backdrop stashed in VGAScreen2 rather than drawn straight over the screen:
+ * online the two lines at the bottom track both players' readiness, so the whole title is redrawn
+ * every frame.  The two flags mean nothing offline, where the screen is composed once. */
+static void DE_composeIntro(bool localReady, bool peerReady)
+{
+	memcpy(VGAScreen->pixels, VGAScreen2->pixels, VGAScreen->h * VGAScreen->pitch);
+	JE_outText(VGAScreen, center_text(specialName[SA_DESTRUCT - 1], TINY_FONT), 90, specialName[SA_DESTRUCT - 1], 12, 5);
+
+#ifdef WITH_NETWORK
+	// The joiner never saw the host's settings screen, so this is where both sides read what
+	// the session is: the battle, the side this machine mans, and who is on the other one.
+	if (de_net)
+	{
+		char line[64];
+
+		snprintf(line, sizeof(line), "Online Destruct - %s",
+		         destructModeName[(network_host_destruct_mode >= 0
+		                           && network_host_destruct_mode < DESTRUCT_MODES)
+		                          ? network_host_destruct_mode : 0]);
+		JE_outText(VGAScreen, center_text(line, TINY_FONT), 110, line, 15, 4);
+
+		snprintf(line, sizeof(line), "You command the %s side.",
+		         de_net_local_side == PLAYER_LEFT ? "left" : "right");
+		JE_outText(VGAScreen, center_text(line, TINY_FONT), 120, line, 15, 2);
+
+		if (network_opponent_name[0] != '\0')
+		{
+			snprintf(line, sizeof(line), "Your opponent: %s", network_opponent_name);
+			JE_outText(VGAScreen, center_text(line, TINY_FONT), 130, line, 15, 2);
+		}
+
+		// In place of the offline hints below: online neither F1 nor F10 does anything (the help
+		// screen would stall the state stream, the AI toggle would fork the two sims), and this
+		// screen is a barrier, so what belongs here is where the pair stands.
+		const char* const own = localReady ? "You are ready."
+		                                   : "Press any key when you are ready.";
+		const char* const other = peerReady ? "The other player is ready."
+		                                    : "Waiting for the other player...";
+		const char* const leave = "Esc leaves the session.";
+		JE_outText(VGAScreen, center_text(own, TINY_FONT), 170, own, localReady ? 12 : 15, 4);
+		JE_outText(VGAScreen, center_text(other, TINY_FONT), 180, other, peerReady ? 12 : 15, 2);
+		JE_outText(VGAScreen, center_text(leave, TINY_FONT), 190, leave, 15, 2);
+		return;
+	}
+#endif
+
+	(void)localReady;
+	(void)peerReady;
+
+	JE_outText(VGAScreen, center_text(miscText[64], TINY_FONT), 180, miscText[64], 15, 2);
+	JE_outText(VGAScreen, center_text(miscText[65], TINY_FONT), 190, miscText[65], 15, 2);
+}
+
+#ifdef WITH_NETWORK
+/* Online, the title screen is a barrier: this machine announces that its player is ready and holds
+ * here until the other machine's announcement arrives, so nobody is still reading which side they
+ * command while the other is already firing.  Unbounded on purpose -- the peer sits on this same
+ * screen keeping the link alive, a timeout would start one session without the other, and Escape
+ * is the way out instead. */
+static void DE_netIntroBarrier(void)
+{
+	bool localReady = false, peerReady = false;
+
+	// Nothing counts until the press that opened this screen is let go: a key still down from the
+	// lobby confirms the barrier before it can be read, and a held pad button auto-repeats into
+	// fresh presses.  Bounded, so a drifting stick cannot lock the screen out instead.
+	bool armed = false;
+	const Uint32 armDeadline = SDL_GetTicks() + 500;
+
+	// A headless wire peer has nobody to press anything; it is ready as soon as it arrives.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		localReady = true;
+		network_destruct_ready_publish();
+	}
+
+	while (true)
+	{
+		DE_composeIntro(localReady, peerReady);
+		JE_showVGA();
+		if (!output_vsync)
+			limit_render_fps();
+
+		watchdog_heartbeat();
+		push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on Switch)
+		service_SDL_events(false);
+
+		if (!armed)
+		{
+			armed = (!newkey && !joydown) || SDL_GetTicks() >= armDeadline;
+			newkey = false;
+		}
+		else if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			// The one key that does not confirm.  The wait has no timeout, so this is the way out
+			// when the other player has walked away from theirs; they are sitting on this same
+			// screen and have to be told, or they wait out the dead-link timeout instead.
+			network_prepare(PACKET_QUIT);
+			network_send(4);  // PACKET_QUIT
+			network_tyrian_halt(0, true);   // does not return
+		}
+		else if (!localReady && newkey)
+		{
+			localReady = true;
+			newkey = false;
+			network_destruct_ready_publish();
+		}
+
+		if (network_destruct_ready_peer())   // doubles as this frame's keep-alive
+			peerReady = true;
+
+		// Not until our own announcement is acknowledged: leaving with it unretired puts a
+		// retransmit in front of the state stream on the very first tick.
+		if ((localReady && peerReady && network_is_sync()) || !network_peer_alive())
+			break;
+	}
+
+	newkey = false;
+}
+#endif
+
 static void JE_introScreen(void)
 {
 	memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->h * VGAScreen2->pitch);
-	JE_outText(VGAScreen, center_text(specialName[SA_DESTRUCT - 1], TINY_FONT), 90, specialName[SA_DESTRUCT - 1], 12, 5);
-	JE_outText(VGAScreen, center_text(miscText[64], TINY_FONT), 180, miscText[64], 15, 2);
-	JE_outText(VGAScreen, center_text(miscText[65], TINY_FONT), 190, miscText[65], 15, 2);
+
+	DE_composeIntro(false, false);
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
 	newkey = false;
+#ifdef WITH_NETWORK
+	if (de_net)
+	{
+		DE_netIntroBarrier();
+	}
+	else
+#endif
 	while (!newkey)
 	{
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
@@ -962,8 +1192,11 @@ static void DE_generateBaseTerrain(unsigned int mapFlags, unsigned int* baseWorl
 	/* Now compute a height for each of our lines. */
 	for (i = 1; i <= vga_width - 2; i++)
 	{
-		newheight = roundf(sinf(sinewave * i) * HeightMul + sinf(sinewave2 * i) * 15 +
-			cosf(cosinewave * i) * 10 + sinf(cosinewave2 * i) * 15) + 130;
+		/* sim_ trig throughout the generator and the tick: the terrain is collision state and
+		 * libm's sinf/cosf differ across platforms (see sim_math.h); an online PC<->console
+		 * pair would grow different mountains from the same seed. */
+		newheight = roundf(sim_sinf(sinewave * i) * HeightMul + sim_sinf(sinewave2 * i) * 15 +
+			sim_cosf(cosinewave * i) * 10 + sim_sinf(cosinewave2 * i) * 15) + 130;
 
 		/* Clamp the terrain height. */
 		if (newheight < 40)
@@ -1059,7 +1292,9 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 		return;
 	}
 
-	remainWalls = (rand() % (config.max_walls - config.min_walls + 1)) + config.min_walls;
+	/* mt_rand, not libc rand(): the wall count is part of the map, and online both machines
+	 * must draw it from the seeded generator (libc's stream is never reseeded in step). */
+	remainWalls = (mt_rand() % (config.max_walls - config.min_walls + 1)) + config.min_walls;
 
 	do
 	{
@@ -1095,12 +1330,23 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 
 		} while (isGood == false && tries < 5);
 
-		/* We now have a valid X.  Create the wall. */
-		for (i = 1; i <= wallHeight; i++)
+		/* We now have a valid X.  Create the wall, capped where the sky window between the
+		 * HUD boxes begins: five blocks on a terrain peak (y clamps at 40) used to reach
+		 * y = -30, hanging the tower's top in the window -- and wrapping the unsigned wallY.
+		 * The terrain clamp leaves at least two blocks of headroom; the MAX guards the
+		 * loop's termination (remainWalls must shrink) if that clamp ever moves. */
 		{
-			gameWorld->mapWalls[remainWalls - i].wallExist = true;
-			gameWorld->mapWalls[remainWalls - i].wallX = wallX;
-			gameWorld->mapWalls[remainWalls - i].wallY = JE_placementPosition(wallX, 12, gameWorld->baseMap) - 14 * i;
+			const unsigned int baseY = JE_placementPosition(wallX, 12, gameWorld->baseMap);
+			const unsigned int headroom = MAX((baseY - HUD_ROWS) / 14, 1u);
+			if (wallHeight > headroom)
+				wallHeight = headroom;
+
+			for (i = 1; i <= wallHeight; i++)
+			{
+				gameWorld->mapWalls[remainWalls - i].wallExist = true;
+				gameWorld->mapWalls[remainWalls - i].wallX = wallX;
+				gameWorld->mapWalls[remainWalls - i].wallY = baseY - 14 * i;
+			}
 		}
 
 		remainWalls -= wallHeight;
@@ -1124,8 +1370,8 @@ static void DE_generateRings(SDL_Surface* screen, Uint8 pixel)
 		for (j = 1; j <= tempSize * tempSize * 2; j++)
 		{
 			tempRadian = mt_rand_lt1() * (2 * M_PI);
-			tempPosY2 = tempPosY1 + roundf(cosf(tempRadian) * (mt_rand_lt1() * 0.1f + 0.9f) * tempSize);
-			tempPosX2 = tempPosX1 + roundf(sinf(tempRadian) * (mt_rand_lt1() * 0.1f + 0.9f) * tempSize);
+			tempPosY2 = tempPosY1 + roundf(sim_cosf(tempRadian) * (mt_rand_lt1() * 0.1f + 0.9f) * tempSize);
+			tempPosX2 = tempPosX1 + roundf(sim_sinf(tempRadian) * (mt_rand_lt1() * 0.1f + 0.9f) * tempSize);
 			if ((tempPosY2 > 12) && (tempPosY2 < 200) &&
 				(tempPosX2 > 0) && (tempPosX2 < vga_width - 1))
 			{
@@ -1354,38 +1600,32 @@ static void JE_superPixel(unsigned int tempPosX, unsigned int tempPosY)
 		{   0,   0,   1,   0,   0 }
 	};
 
-	int x, y, maxX, maxY;
-	unsigned int rowLen;
-	Uint8* s;
+	/* Each pixel is addressed from its own clipped coordinates.  A walking pointer cannot do it:
+	 * the star starts two rows and two columns back, so a flare near an edge underflows the
+	 * unsigned start offset, and skipping a clipped row leaves the pointer short by the five
+	 * columns that row would have stepped -- every row after it lands five pixels to the left. */
+	const int maxX = destructTempScreen->pitch;
+	const int maxY = destructTempScreen->h;
+	Uint8* const pixels = destructTempScreen->pixels;
 
-	maxX = destructTempScreen->pitch;
-	maxY = destructTempScreen->h;
-
-	rowLen = destructTempScreen->pitch;
-	s = destructTempScreen->pixels;
-	s += (rowLen * (tempPosY - 2)) + (tempPosX - 2);
-
-	for (y = 0; y < 5; y++, s += rowLen - 5)
+	for (int y = 0; y < 5; y++)
 	{
-		if ((signed)tempPosY + y - 2 < 0 ||    /* would be out of bounds */
-			(signed)tempPosY + y - 2 >= maxY)
-		{
+		const int py = (int)tempPosY + y - 2;
+		if (py < 0 || py >= maxY)
 			continue;
-		}
 
-		for (x = 0; x < 5; x++, s++)
+		for (int x = 0; x < 5; x++)
 		{
-			if ((signed)tempPosX + x - 2 < 0 ||
-				(signed)tempPosX + x - 2 >= maxX)
-			{
+			const int px = (int)tempPosX + x - 2;
+			if (px < 0 || px >= maxX)
 				continue;
-			}
 
 			if (starPattern[y][x] == 0)
 				continue;  /* this is just to speed it up */
 
 			/* at this point *s is our pixel.  Our constant arrays tell us what
 			 * to do with it. */
+			Uint8* const s = pixels + (size_t)py * maxX + px;
 			if (*s < starPattern[y][x])
 				*s = starPattern[y][x];
 			else if (*s + starIntensity[y][x] > 255)
@@ -1663,6 +1903,14 @@ static void DE_DrawShotsScaled(SDL_Surface* hi, int scale, float alpha)
 		if (shotRec[i].isAvailable)
 			continue;
 
+		/* The tick draw shows a shot -- head AND trails -- only while the head is on-screen
+		 * (DE_RunTickShots).  Off the top, the trail slots freeze un-decayed, so without the
+		 * same gate here the smooth present keeps repainting those frozen pixels at the exit
+		 * point for as long as the shot hangs above the screen: on a full-power lob, seconds
+		 * of what reads as stuck debris in the sky window. */
+		if (shotRec[i].y < 0 || shotRec[i].y >= vga_height)
+			continue;
+
 		Uint8 headColor = (shotColor[shotRec[i].shottype] << 4) - 3;
 
 		/* Trail: historical positions, drawn where the sim left them (no interpolation). */
@@ -1778,6 +2026,239 @@ static void DE_SmoothPresent(int scale)
 	setDelay(1);   /* keep `target` current for other timing readers */
 }
 
+#ifdef WITH_NETWORK
+
+/* Local action bits for this tick.  Online, BOTH keyboard layouts drive the local side --
+ * whichever side that is -- so the arrow-key layout and the CVAZ layout both work, and the pad
+ * maps to the local side alone.  Edge-triggered keys are consumed exactly as offline. */
+static Uint8 DE_NetLocalActions(void)
+{
+	Uint8 bits = 0;
+
+	for (unsigned int key_index = 0; key_index < MAX_KEY; key_index++)
+	{
+		for (unsigned int player_index = 0; player_index < MAX_PLAYERS; player_index++)
+		{
+			for (unsigned int slot_index = 0; slot_index < MAX_KEY_OPTIONS; slot_index++)
+			{
+				const SDL_Scancode key = destruct_player[player_index].keys.Config[key_index][slot_index];
+				if (key == SDL_SCANCODE_UNKNOWN)
+					break;
+				if (keysactive[key])
+				{
+					bits |= 1 << key_index;
+					if (key_index == KEY_CHANGE || key_index == KEY_CYUP || key_index == KEY_CYDN)
+						keysactive[key] = false;
+				}
+			}
+		}
+	}
+
+	if (joysticks > 0)
+	{
+		poll_joystick(0);
+
+		if (joystick[0].direction[3]) bits |= 1 << KEY_LEFT;
+		if (joystick[0].direction[1]) bits |= 1 << KEY_RIGHT;
+		if (joystick[0].direction[0]) bits |= 1 << KEY_UP;
+		if (joystick[0].direction[2]) bits |= 1 << KEY_DOWN;
+		// Same dual-bound guard as the offline pad mapping: no firing mid-cycle.
+		const bool cycling = joystick[0].action[2] || joystick[0].action[3];
+		if (joystick[0].action[0] && !cycling) bits |= 1 << KEY_FIRE;
+		if (joystick[0].action_pressed[1]) bits |= 1 << KEY_CHANGE;
+		if (joystick[0].action_pressed[2]) bits |= 1 << KEY_CYDN;
+		if (joystick[0].action_pressed[3]) bits |= 1 << KEY_CYUP;
+		// Pad pause = leave, like offline (no keyboard on the consoles); routed through the
+		// quit control bit by the gather below.
+		if (joystick[0].action_pressed[5]) keysactive[SDL_SCANCODE_ESCAPE] = true;
+	}
+
+	return bits;
+}
+
+// The session-level keys, consumed here so the offline handlers at the bottom of the tick can
+// never act on them a second time behind the exchange's back.
+static Uint8 DE_NetLocalControls(void)
+{
+	Uint8 bits = 0;
+
+	if (keysactive[SDL_SCANCODE_ESCAPE])
+	{
+		keysactive[SDL_SCANCODE_ESCAPE] = false;
+		bits |= DE_NET_CTRL_QUIT;
+	}
+	if (keysactive[SDL_SCANCODE_P])
+	{
+		keysactive[SDL_SCANCODE_P] = false;
+		bits |= DE_NET_CTRL_PAUSE;
+	}
+	if (keysactive[SDL_SCANCODE_BACKSPACE])
+	{
+		keysactive[SDL_SCANCODE_BACKSPACE] = false;
+		bits |= DE_NET_CTRL_NEWMAP;
+	}
+
+	return bits;
+}
+
+static Uint32 de_net_hash_u32(Uint32 h, Uint32 v)
+{
+	return (h ^ v) * 16777619u;
+}
+
+static Uint32 de_net_float_bits(float f)
+{
+	Uint32 u;
+	memcpy(&u, &f, sizeof(u));
+	return u;
+}
+
+/* Desync canary: a summary of everything the lockstep is supposed to keep identical.  Pixel
+ * state (the dirt) is left out as too expensive per tick; a divergence there moves a unit or
+ * shot within a few ticks and lands in here anyway. */
+static Uint32 DE_NetSimHash(void)
+{
+	Uint32 h = 2166136261u;
+
+	for (unsigned int p = 0; p < MAX_PLAYERS; ++p)
+	{
+		const struct destruct_player_s* pl = &destruct_player[p];
+		h = de_net_hash_u32(h, pl->unitsRemaining);
+		h = de_net_hash_u32(h, pl->unitSelected);
+		h = de_net_hash_u32(h, pl->shotDelay);
+		h = de_net_hash_u32(h, pl->score);
+
+		for (unsigned int u = 0; u < config.max_installations; ++u)
+		{
+			const struct destruct_unit_s* unit = &pl->unit[u];
+			if (unit->health <= 0)
+				continue;
+			h = de_net_hash_u32(h, unit->unitX);
+			h = de_net_hash_u32(h, de_net_float_bits(unit->unitY));
+			h = de_net_hash_u32(h, (Uint32)unit->health);
+			h = de_net_hash_u32(h, de_net_float_bits(unit->angle));
+			h = de_net_hash_u32(h, de_net_float_bits(unit->power));
+			h = de_net_hash_u32(h, (Uint32)unit->unitType);
+			h = de_net_hash_u32(h, (Uint32)unit->shotType);
+		}
+	}
+
+	for (unsigned int s = 0; s < config.max_shots; ++s)
+	{
+		if (shotRec[s].isAvailable)
+			continue;
+		h = de_net_hash_u32(h, de_net_float_bits(shotRec[s].x));
+		h = de_net_hash_u32(h, de_net_float_bits(shotRec[s].y));
+	}
+
+	return h;
+}
+
+/* One lockstep exchange, run at the top of every online tick: sample local input, publish it,
+ * block until the peer's packet for the same logical tick is here, and settle what the tick is
+ * (simulate / new round / session over).  The action bits it leaves in de_net_local_bits and
+ * de_net_peer_bits are applied at the same point of the tick the offline path reads its keys. */
+static enum de_state_t DE_NetExchange(void)
+{
+	service_SDL_events(true);
+
+	const Uint8 actions = DE_NetLocalActions();
+	const Uint8 controls = DE_NetLocalControls();
+
+	network_state_prepare();
+	packet_state_out[0]->data[4] = actions;
+	packet_state_out[0]->data[5] = controls;
+	SDLNet_Write32(mt_rand_count,   &packet_state_out[0]->data[NET_STATE_RAND]);
+	SDLNet_Write32(DE_NetSimHash(), &packet_state_out[0]->data[NET_STATE_PHASH]);
+	network_state_send();
+
+	de_net_have_inputs = false;
+	if (!network_state_update())
+		return STATE_CONTINUE;   /* the initial delay window: send only, apply nothing */
+
+	/* Our own bytes for the peer packet's logical tick, replayed out of the outbound queue the
+	 * way the main game's lockstep replays its ship (see JE_playerMovement). */
+	const Uint8 ownActions   = packet_state_out[network_delay]->data[4];
+	const Uint8 ownControls  = packet_state_out[network_delay]->data[5];
+	const Uint8 peerActions  = packet_state_in[0]->data[4];
+	const Uint8 peerControls = packet_state_in[0]->data[5];
+
+	/* Both canaries were written before their tick's inputs applied, so a mismatch is a real
+	 * divergence, not skew.  One report per session; play continues (the classic destruct rule
+	 * of thumb: a desynced artillery duel is still more fun than a halted one). */
+	if (!de_net_desync_noted)
+	{
+		const Uint32 theirRand = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_RAND]);
+		const Uint32 ourRand   = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_RAND]);
+		const Uint32 theirHash = SDLNet_Read32(&packet_state_in[0]->data[NET_STATE_PHASH]);
+		const Uint32 ourHash   = SDLNet_Read32(&packet_state_out[network_delay]->data[NET_STATE_PHASH]);
+
+		if (theirRand != ourRand || theirHash != ourHash)
+		{
+			de_net_desync_noted = true;
+
+			char detail[192];
+			snprintf(detail, sizeof(detail),
+			         "Destruct round %u, player %u, delay %d\n"
+			         "  rand draws : local %lu  remote %lu\n"
+			         "  sim hash   : local %08lx  remote %08lx",
+			         de_net_round, thisPlayerNum, network_delay,
+			         (unsigned long)ourRand, (unsigned long)theirRand,
+			         (unsigned long)ourHash, (unsigned long)theirHash);
+			crashlog_netlog_line("DESTRUCT DESYNC", detail);
+			network_diag_note_desync(-1);
+		}
+	}
+
+	const Uint8 bothControls = ownControls | peerControls;
+
+	// Both machines consume the same bit at the same logical tick, so both leave together.
+	if (bothControls & DE_NET_CTRL_QUIT)
+		return STATE_INIT;
+
+	// A toggle, so two presses landing the same tick cancel out -- identically on both sides.
+	if (((ownControls ^ peerControls) & DE_NET_CTRL_PAUSE) != 0)
+		de_net_paused = !de_net_paused;
+
+	if (!de_net_paused && (bothControls & DE_NET_CTRL_NEWMAP))
+		return STATE_RELOAD;
+
+	de_net_local_bits = ownActions;
+	de_net_peer_bits = peerActions;
+	de_net_have_inputs = true;
+
+	return STATE_CONTINUE;
+}
+
+// The delayed input pair, applied where the offline path samples its keys.  Inside the delay
+// window there is nothing to apply and DE_ResetActions has already cleared every move.
+static void DE_NetApplyMoves(void)
+{
+	if (!de_net_have_inputs)
+		return;
+
+	bool* localMoves = destruct_player[de_net_local_side].moves.actions;
+	bool* peerMoves = destruct_player[1 - de_net_local_side].moves.actions;
+
+	for (int i = 0; i < MAX_MOVE; ++i)
+	{
+		localMoves[i] = (de_net_local_bits & (1 << i)) != 0;
+		peerMoves[i] = (de_net_peer_bits & (1 << i)) != 0;
+	}
+}
+
+/* A paused online tick: the sim is untouched (both machines skip it for the same ticks, so
+ * determinism holds), but the exchange above keeps running, which is what carries the unpause. */
+static enum de_state_t DE_NetPauseTick(void)
+{
+	JE_outText(VGAScreen, center_text(miscText[22], TINY_FONT), 90, miscText[22], 12, 5);
+	JE_showVGA();
+	wait_delay();
+	return STATE_CONTINUE;
+}
+
+#endif  /* WITH_NETWORK */
+
 /* Returns the state requested after one complete Destruct tick. */
 static enum de_state_t DE_RunTick(void)
 {
@@ -1786,6 +2267,21 @@ static enum de_state_t DE_RunTick(void)
 	setDelay(1);
 
 	memset(soundQueue, 0, sizeof(soundQueue));
+
+#ifdef WITH_NETWORK
+	// The lockstep exchange leads the tick so a shared pause can freeze the whole thing --
+	// including the explosion-glow fade in JE_tempScreenChecking below, which is sim state.
+	if (de_net)
+	{
+		const enum de_state_t netVerdict = DE_NetExchange();
+		if (netVerdict != STATE_CONTINUE)
+			return netVerdict;
+
+		if (de_net_paused)
+			return DE_NetPauseTick();
+	}
+#endif
+
 	JE_tempScreenChecking();
 
 	/* The smooth present kicks in once we're past the first (fade-in) tick, when the
@@ -1818,6 +2314,11 @@ static enum de_state_t DE_RunTick(void)
 		endDelay = 0;
 	}
 
+#ifdef WITH_NETWORK
+	if (de_net)
+		DE_NetApplyMoves();
+	else
+#endif
 	DE_RunTickGetInput();
 	DE_ProcessInput();
 
@@ -1833,7 +2334,14 @@ static enum de_state_t DE_RunTick(void)
 
 	DE_RunTickPlaySounds();
 
-	/* The rest of this cruft needs to be put in appropriate sections */
+	/* The rest of this cruft needs to be put in appropriate sections.  All of it is offline-only:
+	 * online, pause and quit travel as control bits (the exchange consumed the keys already), the
+	 * AI toggles would fork the two sims on the spot, and the help screen blocks the state stream
+	 * long enough to read as a dead connection. */
+#ifdef WITH_NETWORK
+	if (!de_net)
+#endif
+	{
 	if (keysactive[SDL_SCANCODE_F10])
 	{
 		destruct_player[PLAYER_LEFT].is_cpu = !destruct_player[PLAYER_LEFT].is_cpu;
@@ -1855,6 +2363,7 @@ static enum de_state_t DE_RunTick(void)
 		JE_helpScreen();
 		keysactive[lastkey_scan] = false;
 	}
+	}
 
 	/* Present the tick.  In smooth mode this loop spans the tick period, drawing
 	 * interpolated supersampled frames; otherwise just wait out the period. */
@@ -1862,6 +2371,13 @@ static enum de_state_t DE_RunTick(void)
 		DE_SmoothPresent(de_ss);
 	else
 		wait_delay();
+
+#ifdef WITH_NETWORK
+	// Online, leaving and reloading are lockstep verdicts settled by the exchange up top; a
+	// local key acting here would end one machine's round and not the other's.
+	if (de_net)
+		return STATE_CONTINUE;
+#endif
 
 	if (keysactive[SDL_SCANCODE_ESCAPE])
 	{
@@ -2073,8 +2589,8 @@ static void DE_RunTickExplosions(void)
 			/* An explosion is comprised of multiple 'flares' that fan out.
 			   Calculate where this 'flare' will end up */
 			tempRadian = mt_rand_lt1() * (2 * M_PI);
-			tempPosY = exploRec[i].y + roundf(cosf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
-			tempPosX = exploRec[i].x + roundf(sinf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
+			tempPosY = exploRec[i].y + roundf(sim_cosf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
+			tempPosX = exploRec[i].x + roundf(sim_sinf(tempRadian) * mt_rand_lt1() * exploRec[i].explowidth);
 
 			/* Preserve explosion wrapping without out-of-bounds access. */
 
@@ -2083,12 +2599,16 @@ static void DE_RunTickExplosions(void)
 			while (tempPosX >= vga_width)
 				tempPosX -= vga_width;
 
-			/* We don't draw our explosion if it's out of bounds vertically.  In
-			 * the gap between the HUD boxes the playfield runs to the top of the
-			 * screen, so allow flares up there; elsewhere keep them below the HUD. */
+			/* We don't draw our explosion if it's out of bounds vertically.  In the gap between
+			 * the HUD boxes the playfield runs to the top of the screen, so a flare may show up
+			 * there -- but only the glow, which fades itself back to black one shade per tick
+			 * (DE_blendTempPixel).  A dirt flare is terrain, and above the HUD line there is no
+			 * ground for it to join and nothing that ever repaints it, so one left up there hangs
+			 * in the window for the rest of the round.  Dirt keeps the classic ceiling. */
 			{
-				bool inGap = (tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X);
-				if (tempPosY >= 200 || tempPosY <= (inGap ? 0 : 15))
+				const bool inSky = tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X
+				                && exploRec[i].exploType == EXPL_NORMAL;
+				if (tempPosY >= 200 || tempPosY <= (inSky ? 0 : 15))
 					continue;
 			}
 
@@ -2173,7 +2693,13 @@ static void DE_RunTickShots(void)
 		/* If the shot can bounce off the map, bounce it */
 		if (shotBounce[shotRec[i].shottype])
 		{
-			if (shotRec[i].y > 199 || shotRec[i].y < 14)
+			/* The ceiling follows the sky window: between the HUD boxes a bouncing shot may
+			 * climb to the top of the screen instead of rebounding off thin air at y=14 in
+			 * the middle of the open window.  Over the boxes the classic ceiling stands (a
+			 * shot that drifts out of the window while high self-corrects on the flip). */
+			const float ceiling = (shotRec[i].x >= HUD_GAP_LEFT && shotRec[i].x < HUD_FRAME_RIGHT_X)
+			                    ? 1.0f : 14.0f;
+			if (shotRec[i].y > 199 || shotRec[i].y < ceiling)
 			{
 				shotRec[i].y -= shotRec[i].ymov;
 				shotRec[i].ymov = -shotRec[i].ymov;
@@ -2231,9 +2757,15 @@ static void DE_RunTickShots(void)
 			}
 		}
 
-		/* Skip collision checks above the map. */
-		if (shotRec[i].y <= 14)
-			continue;
+		/* Skip collision checks above the map -- except in the sky window between the HUD
+		 * boxes, where the playfield runs to the top of the screen and whatever stands up
+		 * there (a wall top, a ring's dirt at rows 12-14) has to be solid, not a ghost the
+		 * shots pass through.  Over the HUD boxes the classic ceiling stands. */
+		{
+			const bool inSky = tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X;
+			if (shotRec[i].y <= (inSky ? 0 : 14))
+				continue;
+		}
 
 		tempPosY = roundf(shotRec[i].y);
 
@@ -2892,17 +3424,17 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 		{
 			/* Deliberately duplicates the default case for clarity. */
 
-			shotRec[shotIndex].x = curUnit->unitX + 6 - cosf(curUnit->angle) * 10 * direction;
-			shotRec[shotIndex].y = curUnit->unitY - 7 - sinf(curUnit->angle) * 10;
-			shotRec[shotIndex].xmov = -cosf(curUnit->angle) * curUnit->power * direction;
-			shotRec[shotIndex].ymov = -sinf(curUnit->angle) * curUnit->power;
+			shotRec[shotIndex].x = curUnit->unitX + 6 - sim_cosf(curUnit->angle) * 10 * direction;
+			shotRec[shotIndex].y = curUnit->unitY - 7 - sim_sinf(curUnit->angle) * 10;
+			shotRec[shotIndex].xmov = -sim_cosf(curUnit->angle) * curUnit->power * direction;
+			shotRec[shotIndex].ymov = -sim_sinf(curUnit->angle) * curUnit->power;
 		}
 		else
 		{
 			/* This is not identical to the default case. */
 
 			shotRec[shotIndex].x = curUnit->unitX + 2;
-			shotRec[shotIndex].xmov = -cosf(curUnit->angle) * curUnit->power * direction;
+			shotRec[shotIndex].xmov = -sim_cosf(curUnit->angle) * curUnit->power * direction;
 
 			if (curUnit->isYInAir == true)
 			{
@@ -2919,10 +3451,10 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 
 	default:
 
-		shotRec[shotIndex].x = curUnit->unitX + 6 - cosf(curUnit->angle) * 10 * direction;
-		shotRec[shotIndex].y = curUnit->unitY - 7 - sinf(curUnit->angle) * 10;
-		shotRec[shotIndex].xmov = -cosf(curUnit->angle) * curUnit->power * direction;
-		shotRec[shotIndex].ymov = -sinf(curUnit->angle) * curUnit->power;
+		shotRec[shotIndex].x = curUnit->unitX + 6 - sim_cosf(curUnit->angle) * 10 * direction;
+		shotRec[shotIndex].y = curUnit->unitY - 7 - sim_sinf(curUnit->angle) * 10;
+		shotRec[shotIndex].xmov = -sim_cosf(curUnit->angle) * curUnit->power * direction;
+		shotRec[shotIndex].ymov = -sim_sinf(curUnit->angle) * curUnit->power;
 		break;
 	}
 

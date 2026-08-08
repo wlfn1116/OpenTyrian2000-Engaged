@@ -114,7 +114,10 @@ static void qa_net_drain(void)
 
 		if (qa_net_take_phase())
 			continue;
-		if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		// PACKET_CONNECT: the handshake's trailing connect, placed in the window to keep it
+		// gap-free (see network.c); always stale once the session is running.
+		if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING ||
+		    SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
 			network_update();   // some other rendezvous packet; keep the queue moving
 		else
 			break;

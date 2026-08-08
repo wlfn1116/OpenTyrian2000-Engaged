@@ -5144,6 +5144,16 @@ draw_player_shot_loop_end:
 		JE_repaintShieldArmorBars();
 	}
 
+	// And the message bar, whose line is posted from inside the simulation: the pickup that
+	// announces it often lands on a corrected frame, and that pass draws nothing. The erase
+	// countdown bounds it, so a line that already expired is not resurrected.
+	if (hud_message_dirty && !rollback_resim_silent)
+	{
+		hud_message_dirty = false;
+		if (textErase > 0)
+			JE_repaintTextWindow();
+	}
+
 	// Play link cues from presented state so rollback neither loses nor repeats them.
 	if (!rollback_resim_silent && twoPlayerLinked != link_cue_state)
 	{
@@ -7082,6 +7092,31 @@ void networkStartScreen(void)
 		// whatever the lobby happened to leave behind.
 		JE_loadPic(VGAScreen2, 2, false);
 		draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Online Multiplayer", large_font, centered, 15, -3, false, 2);
+	}
+
+	// A Destruct session was settled entirely in the lobby -- battle mode, sides and terrain
+	// seed all rode the connect packet -- so there is no episode/difficulty handshake to run
+	// and none of the main game's session shape (two ships, purses, co-op flags) applies.
+	// Wait out the reliable channel, then let the main loop dispatch into the minigame.
+	if (network_game_type == NETWORK_GAME_DESTRUCT)
+	{
+		while (!network_is_sync())
+		{
+			service_SDL_events(false);
+
+			mouseCursor = MOUSE_POINTER_NORMAL;
+			JE_mouseStart();
+			JE_showVGA();
+			JE_mouseReplace();
+			if (!output_vsync)
+				limit_render_fps();
+
+			network_check();
+		}
+
+		fade_black(10);
+		loadDestruct = true;
+		return;
 	}
 
 	twoPlayerMode = true;

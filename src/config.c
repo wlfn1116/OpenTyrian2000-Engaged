@@ -24,6 +24,7 @@
 #include "endless.h"       // endlessDebugConfigLoad/Save ([endless_debug] section)
 #include "episodes.h"
 #include "file.h"
+#include "helptext.h"      // DESTRUCT_MODES bounds the persisted battle mode
 #include "joystick.h"
 #include "keyboard.h"
 #include "loudness.h"
@@ -503,10 +504,11 @@ bool load_opentyrian_config(void)
 	{
 		for (size_t i = 0; i < COUNTOF(keySettings); ++i)
 		{
-			const char *keyName;
-			if (config_get_string_option(section, keySettingNames[i], &keyName))
+			// Not `keyName`: helptext.h (included for DESTRUCT_MODES) owns a global of that name.
+			const char *scancodeName;
+			if (config_get_string_option(section, keySettingNames[i], &scancodeName))
 			{
-				SDL_Scancode scancode = SDL_GetScancodeFromName(keyName);
+				SDL_Scancode scancode = SDL_GetScancodeFromName(scancodeName);
 				if (scancode != SDL_SCANCODE_UNKNOWN)
 					keySettings[i] = scancode;
 			}
@@ -650,6 +652,12 @@ bool load_opentyrian_config(void)
 			config_get_int_option(section, "net_host_game_speed", &net_game_speed);
 			if (net_game_speed >= 1 && net_game_speed <= 5)
 				network_host_game_speed = net_game_speed;
+
+			// Which Destruct battle a Destruct session fights (0..4, the data-backed modes).
+			int net_destruct_mode = network_host_destruct_mode;
+			config_get_int_option(section, "net_host_destruct_mode", &net_destruct_mode);
+			if (net_destruct_mode >= 0 && net_destruct_mode < DESTRUCT_MODES)
+				network_host_destruct_mode = net_destruct_mode;
 
 			// Tick-rate cap vs input lag; see the comment on network_delay. Exposed here so a
 			// link can be tuned without a rebuild; the host's value is what both sides use.
@@ -900,10 +908,11 @@ bool save_opentyrian_config(void)
 
 	for (size_t i = 0; i < COUNTOF(keySettings); ++i)
 	{
-		const char *keyName = SDL_GetScancodeName(keySettings[i]);
-		if (keyName[0] == '\0')
-			keyName = NULL;
-		config_set_string_option(section, keySettingNames[i], keyName);
+		// Not `keyName`: helptext.h (included for DESTRUCT_MODES) owns a global of that name.
+		const char *scancodeName = SDL_GetScancodeName(keySettings[i]);
+		if (scancodeName[0] == '\0')
+			scancodeName = NULL;
+		config_set_string_option(section, keySettingNames[i], scancodeName);
 	}
 
 	// Best-effort: the directory almost always exists already, and a genuine failure surfaces at the
@@ -956,6 +965,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
+	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
 	config_set_bool_option(section, "net_rollback", net_rollback, OFF_ON);
 	config_set_bool_option(section, "net_desync_recovery", net_desync_recovery, OFF_ON);

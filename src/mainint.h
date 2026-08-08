@@ -39,8 +39,13 @@ extern bool pause_pressed, ingamemenu_pressed, changefire_pressed;
 
 /*void JE_textMenuWait(JE_word waittime, JE_boolean dogamma);*/
 
+// Set when a message-bar line was posted from a silent rollback pass, which drew nothing;
+// JE_main clears it by repainting the held line on the next pass that reaches the screen.
+extern bool hud_message_dirty;
+
 void JE_drawTextWindow(const char *text);
 void JE_drawTextWindowSplit(const char *left, const char *right, int right_x);
+void JE_repaintTextWindow(void);
 void JE_initPlayerData(void);
 void JE_highScoreScreen(void);
 // One ship's Endless per-tick work; see the definition in mainint.c.
