@@ -1622,6 +1622,29 @@ local machine's own ship in `composite_playfield`/`composite_playfield_hi`
 present time and feeds nothing back into the sim, so the two machines drawing
 different cones cannot desync.
 
+### Withdrawing from the outpost rendezvous
+
+`shopLeaveOutpost` puts its notice up once and leaves it there, so every wait
+below it inherits the "Press Esc to go back" line and each one has to be able
+to honour it. Both steps of `shopCampaignRendezvous` now do:
+
+- Step one (waiting for the peer's commit) withdraws outright: clear the
+  charted sector, re-announce uncommitted, return false.
+- Step two (our lock published, waiting for theirs) cannot simply withdraw --
+  the peer may be reading that lock and leaving on it right now. It drops the
+  lock and the commit, then waits up to 1.5 s to see which happened. No
+  departure packet in that window means the peer read the withdrawal and
+  reopened its own first wait, so the withdrawal stands; a departure means the
+  peer is already at the handshake waiting on our packet and nothing can recall
+  it, so we re-commit and leave with them. Both outcomes are states the peer
+  already handles, which is why this cannot strand either machine.
+
+Past that, in the departure handshake and the state-sync barrier, both machines
+are committed and the level is loading; the hint is briefly stale there by
+design. A peer that withdraws clears its commit, which drops the other machine
+out of step two and back into step one, so the pair never sits in mismatched
+steps.
+
 ### The episode loop (`JE_nextEpisode`)
 
 Between levels the RNG is only in lockstep up to the first screen that draws
