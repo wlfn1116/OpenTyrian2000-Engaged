@@ -70,17 +70,18 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       21           /* v21: online Destruct; the connect packet grows a
+#define NET_VERSION       22           /* v22: online Destruct drops the shared pause; its
+                                          control bit is neither sent nor honoured, and a v21
+                                          peer pressing P would freeze its own sim while ours
+                                          runs on, so the versions must not pair.
+                                          v21: online Destruct; the connect packet grows a
                                           Destruct block (battle mode and terrain seed), the state
                                           stream doubles as its lockstep input exchange, and its
                                           title card is a PACKET_WAITING barrier both must clear.
                                           v20: the departure handshake carries the Endless debug
                                           zone jump (depth, folded modifiers, perk stacks) beside
                                           the level pick, and PACKET_SA_SHIP carries a retractable
-                                          pick plus the peer's acknowledgement of ours.
-                                          v19: Double Earnings covers kill and bounty cash,
-                                          Endless perks are per-ship, and Arcade carries the
-                                          Linked / Separate ships setting and Rear Gun Scale */
+                                          pick plus the peer's acknowledgement of ours. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,

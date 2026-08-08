@@ -524,15 +524,14 @@ static float  destruct_sim_accum = 0.0f;
 static bool de_net = false;                  /* this Destruct run is an online session */
 static enum de_player_t de_net_local_side;   /* the side this machine's controls drive */
 static unsigned int de_net_round;            /* rounds started; salts the shared terrain seed */
-static bool de_net_paused;
 static bool de_net_desync_noted;
 static bool de_net_have_inputs;              /* false inside the initial delay window */
 static Uint8 de_net_local_bits, de_net_peer_bits;
 
 /* Control bits (state packet byte 5).  QUIT ends the session for both sides at the same tick;
- * PAUSE toggles a shared freeze; NEWMAP is the online Backspace, a fresh round for both. */
+ * NEWMAP is the online Backspace, a fresh round for both.  Pause is offline-only, the rule
+ * every online mode follows (see JE_pauseGame), so bit 0x02 stays deliberately unused. */
 #define DE_NET_CTRL_QUIT   0x01
-#define DE_NET_CTRL_PAUSE  0x02
 #define DE_NET_CTRL_NEWMAP 0x04
 #endif
 
@@ -738,7 +737,6 @@ void JE_destructGame(void)
 	{
 		de_net_local_side = thisPlayerNum == 2 ? PLAYER_RIGHT : PLAYER_LEFT;
 		de_net_round = 0;
-		de_net_paused = false;
 		de_net_desync_noted = false;
 		de_net_have_inputs = false;
 
@@ -2094,11 +2092,6 @@ static Uint8 DE_NetLocalControls(void)
 		keysactive[SDL_SCANCODE_ESCAPE] = false;
 		bits |= DE_NET_CTRL_QUIT;
 	}
-	if (keysactive[SDL_SCANCODE_P])
-	{
-		keysactive[SDL_SCANCODE_P] = false;
-		bits |= DE_NET_CTRL_PAUSE;
-	}
 	if (keysactive[SDL_SCANCODE_BACKSPACE])
 	{
 		keysactive[SDL_SCANCODE_BACKSPACE] = false;
@@ -2223,11 +2216,7 @@ static enum de_state_t DE_NetExchange(void)
 	if (bothControls & DE_NET_CTRL_QUIT)
 		return STATE_INIT;
 
-	// A toggle, so two presses landing the same tick cancel out -- identically on both sides.
-	if (((ownControls ^ peerControls) & DE_NET_CTRL_PAUSE) != 0)
-		de_net_paused = !de_net_paused;
-
-	if (!de_net_paused && (bothControls & DE_NET_CTRL_NEWMAP))
+	if (bothControls & DE_NET_CTRL_NEWMAP)
 		return STATE_RELOAD;
 
 	de_net_local_bits = ownActions;
@@ -2254,16 +2243,6 @@ static void DE_NetApplyMoves(void)
 	}
 }
 
-/* A paused online tick: the sim is untouched (both machines skip it for the same ticks, so
- * determinism holds), but the exchange above keeps running, which is what carries the unpause. */
-static enum de_state_t DE_NetPauseTick(void)
-{
-	JE_outText(VGAScreen, center_text(miscText[22], TINY_FONT), 90, miscText[22], 12, 5);
-	JE_showVGA();
-	wait_delay();
-	return STATE_CONTINUE;
-}
-
 #endif  /* WITH_NETWORK */
 
 /* Returns the state requested after one complete Destruct tick. */
@@ -2276,16 +2255,13 @@ static enum de_state_t DE_RunTick(void)
 	memset(soundQueue, 0, sizeof(soundQueue));
 
 #ifdef WITH_NETWORK
-	// The lockstep exchange leads the tick so a shared pause can freeze the whole thing --
-	// including the explosion-glow fade in JE_tempScreenChecking below, which is sim state.
+	// The lockstep exchange leads the tick so its verdicts (leave, new round) settle
+	// before any sim state moves, the explosion-glow fade below included.
 	if (de_net)
 	{
 		const enum de_state_t netVerdict = DE_NetExchange();
 		if (netVerdict != STATE_CONTINUE)
 			return netVerdict;
-
-		if (de_net_paused)
-			return DE_NetPauseTick();
 	}
 #endif
 
@@ -2342,9 +2318,10 @@ static enum de_state_t DE_RunTick(void)
 	DE_RunTickPlaySounds();
 
 	/* The rest of this cruft needs to be put in appropriate sections.  All of it is offline-only:
-	 * online, pause and quit travel as control bits (the exchange consumed the keys already), the
-	 * AI toggles would fork the two sims on the spot, and the help screen blocks the state stream
-	 * long enough to read as a dead connection. */
+	 * online, quit travels as a control bit (the exchange consumed the key already), pause would
+	 * strand the other player so P is dead like every online mode's, the AI toggles would fork
+	 * the two sims on the spot, and the help screen blocks the state stream long enough to read
+	 * as a dead connection. */
 #ifdef WITH_NETWORK
 	if (!de_net)
 #endif
