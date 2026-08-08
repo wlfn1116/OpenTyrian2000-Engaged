@@ -536,6 +536,82 @@ static void qa_perk_matrix(void)
 	endlessPerkRederive();
 }
 
+/* ---- 3b. per-ship reactive timers ---------------------------------------------------- */
+
+/* The reactive danger and perk timers belong to one hull each: the Aegis gate, the Static
+ * Discharge recharge lockout, the Countermeasure Suite cooldown and the Shield Matrix interval.
+ * A shared timer had one ship's event disarming or slowing the partner. */
+static void qa_reactive_state_matrix(void)
+{
+	qa_session(0);
+	qa_clear_ships();
+
+	/* Aegis: a block arms only the blocking ship's cooldown, and each recovers on its own. */
+	endlessActiveMods = ENDLESS_MOD_AEGIS;
+	endlessAegisReset();
+	endlessSetFxPlayer(0);
+	qa_check(endlessAegisGateConsume(10, 5), "P1's Aegis gate blocks its first overflow hit");
+	qa_check(!endlessAegisGateConsume(10, 5), "...and P1's own gate is then on cooldown");
+	endlessSetFxPlayer(1);
+	qa_check(endlessAegisGateConsume(10, 5), "P1's block leaves P2's gate armed for P2's hit");
+	endlessSetFxPlayer(0);
+	for (int t = 0; t < 200; ++t)   // past any cooldown length
+		endlessAegisTick();
+	qa_check(endlessAegisGateConsume(10, 5), "the gate recharges per ship, not per pair");
+	endlessAegisReset();
+
+	/* Static Discharge: the hit ship's recharge stalls, the partner's keeps charging. */
+	endlessActiveMods = ENDLESS_MOD_STATIC;
+	endlessStaticLockoutReset();
+	endlessSetFxPlayer(0);
+	qa_check(endlessStaticDischargeDrain(5) > 0, "a hit on P1 bleeds P1's generator");
+	qa_check(endlessGeneratorPowerAdd(7) == 0, "...and stalls P1's own recharge");
+	endlessSetFxPlayer(1);
+	qa_check(endlessGeneratorPowerAdd(7) == 7,
+	         "P2's generator keeps charging through P1's lockout");
+	endlessSetFxPlayer(0);
+	endlessStaticLockoutReset();
+	qa_check(endlessGeneratorPowerAdd(7) == 7, "the zone-start reset clears every ship's lockout");
+	endlessActiveMods = 0;
+
+	/* Countermeasures: each ship's burst re-arms its own cooldown at its own stack radius. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_COUNTERMEASURE, 1);
+	endlessPerkGrant(1, PERK_COUNTERMEASURE, 2);
+	endlessResetZonePerkTimers();
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1,
+	         "P1's countermeasures are ready at its own one-stack radius");
+	endlessCountermeasureFired();
+	qa_check(endlessPerkCountermeasureRadius() == 0, "...and firing puts P1 on cooldown");
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS2,
+	         "P1's burst leaves P2's wider suite armed");
+	endlessCountermeasureFired();
+	for (int t = 0; t < ENDLESS_PERK_CM_COOLDOWN; ++t)
+		endlessCountermeasureTick();
+	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS2,
+	         "the tick re-arms P2");
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1,
+	         "...and P1 alongside it");
+
+	/* Shield Matrix reads the ship being computed; the regen loop names each ship in turn. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(1, PERK_SHIELDREGEN, 2);
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkShieldWait(15) == 15,
+	         "P2's Shield Matrix leaves P1's regen interval stock");
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkShieldWait(15) == 15 - 2 * ENDLESS_PERK_SHIELDRGN_STEP,
+	         "...while P2 regenerates at its own quickened interval");
+	endlessSetFxPlayer(0);
+
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessResetZonePerkTimers();
+}
+
 /* ---- 4. the outpost, two shelves at once -------------------------------------------- */
 
 /* Both players shop the same outpost at the same time with their own wallet, their own prices
@@ -1562,6 +1638,7 @@ void qa_test_endless_suite(void)
 	qa_modifier_display_matrix();
 	qa_drive_matrix();
 	qa_perk_matrix();
+	qa_reactive_state_matrix();
 	qa_outpost_matrix();
 	qa_eshop_matrix();
 	qa_death_revive_matrix();

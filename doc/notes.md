@@ -919,6 +919,12 @@ suite can call it and cover the gate itself.
 Opening Salvo is per ship for the same reason: the charge belongs to the gun
 that sat idle and is spent by the gun that fires, so `endlessSalvoIdle` and
 `endlessSalvoWindow` are `[2]` and `endlessOpeningSalvoTick` walks the ships.
+The reactive timers follow the same rule: the Aegis Gate cooldown, the Static
+Discharge recharge lockout and the Countermeasure Suite cooldown are all `[2]`,
+indexed by the fx ship, so one hull's block, hit or burst never spends the
+partner's. The dual-ship shield-regen loop in tyrian2.c names each ship as it
+computes it, which is what points the Shield Matrix interval and the lockout
+read at that ship's own row.
 
 The in-game menu's Quit means "back to the outpost" in Endless, for both
 players: `endlessCoopPeerQuitLevel` sets `endlessQuitToOutpost` on the peer,

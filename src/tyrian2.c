@@ -3717,15 +3717,18 @@ level_loop:
 		{
 			if (dual_ship_mode())
 			{
-				// Each ship recharges off its own generator. The Endless sector modifiers and the
-				// Shield Matrix perk apply to both, exactly as they do to a solo run. Separate
-				// arcade rides the same path; its generators sit pinned at full.
+				// Each ship recharges off its own generator. The sector modifiers reach both ships;
+				// the Shield Matrix perk and the Static Discharge lockout are each ship's own, so
+				// the loop names the ship it is computing. Separate arcade rides the same path; its
+				// generators sit pinned at full.
 				const bool regenOff  = endlessShieldRegenOff();
 				const bool regenFree = endlessShieldRegenFree();
+				const uint fxSaved = endlessFxPlayer();
 				bool shield_changed = false;
 				for (uint i = 0; i < COUNTOF(player); ++i)
 				{
 					Player *const this_player = &player[i];
+					endlessSetFxPlayer(i);
 					const int regen_cost = regenFree ? 0 : shields[this_player->items.shield].tpwr * 20;
 					const uint add = endlessGeneratorPowerAdd(this_player->generator_power_add);
 					this_player->generator_power = (Uint16)MIN(900u, this_player->generator_power + add);
@@ -3739,6 +3742,7 @@ level_loop:
 						shield_changed = true;
 					}
 				}
+				endlessSetFxPlayer(fxSaved);
 				if (shield_changed)
 					JE_drawShield();
 			}

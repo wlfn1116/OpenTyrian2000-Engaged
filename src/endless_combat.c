@@ -913,15 +913,20 @@ int endlessHitboxScale(int area)
 #define ENDLESS_AEGIS_COOLDOWN  70
 #define ENDLESS_AEGIS_MIN_SPILL  2
 
-static int endlessAegisCooldown = 0;
+// One gate per ship: a block on one hull must not spend the partner's.
+static int endlessAegisCooldown[2] = { 0, 0 };
 
 void endlessAegisTick(void)
 {
-	if (endlessAegisCooldown > 0)
-		--endlessAegisCooldown;
+	for (unsigned p = 0; p < COUNTOF(endlessAegisCooldown); ++p)
+		if (endlessAegisCooldown[p] > 0)
+			--endlessAegisCooldown[p];
 }
 
-void endlessAegisReset(void) { endlessAegisCooldown = 0; }
+void endlessAegisReset(void)
+{
+	memset(endlessAegisCooldown, 0, sizeof(endlessAegisCooldown));
+}
 
 // Revive grace window.
 #define ENDLESS_REVIVE_GRACE_TICKS 105
@@ -938,14 +943,16 @@ void endlessReviveGraceTick(void)
 		--endlessReviveGrace;
 }
 
-// A true result spends the cooldown and must be honored by the caller.
+// A true result spends the cooldown and must be honored by the caller. JE_playerDamage names the
+// hit ship as the fx player, so the gate spent here is that ship's own.
 bool endlessAegisGateConsume(int shieldBefore, int spill)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_AEGIS))
 		return false;
-	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || endlessAegisCooldown > 0)
+	int *const cd = &endlessAegisCooldown[endlessFxPlayer()];
+	if (shieldBefore <= 0 || spill < ENDLESS_AEGIS_MIN_SPILL || *cd > 0)
 		return false;
-	endlessAegisCooldown = ENDLESS_AEGIS_COOLDOWN;
+	*cd = ENDLESS_AEGIS_COOLDOWN;
 	return true;
 }
 
@@ -1050,30 +1057,39 @@ bool endlessSeekerActive(void)
 #define ENDLESS_STATIC_LOCKOUT_MIN     25
 #define ENDLESS_STATIC_LOCKOUT_MAX     70
 
-static int endlessStaticLockout = 0;
+// One lockout per ship: the hit ship's generator stalls, the partner's keeps charging.
+static int endlessStaticLockout[2] = { 0, 0 };
 
-bool endlessStaticLockoutActive(void) { return endlessFxActive() && endlessStaticLockout > 0; }
+bool endlessStaticLockoutActive(void)
+{
+	return endlessFxActive() && endlessStaticLockout[endlessFxPlayer()] > 0;
+}
 
 void endlessStaticLockoutTick(void)
 {
-	if (endlessStaticLockout > 0)
-		--endlessStaticLockout;
+	for (unsigned p = 0; p < COUNTOF(endlessStaticLockout); ++p)
+		if (endlessStaticLockout[p] > 0)
+			--endlessStaticLockout[p];
 }
 
-void endlessStaticLockoutReset(void) { endlessStaticLockout = 0; }
+void endlessStaticLockoutReset(void)
+{
+	memset(endlessStaticLockout, 0, sizeof(endlessStaticLockout));
+}
 
 unsigned endlessStaticDischargeDrain(unsigned actualDamage)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_STATIC) || (endlessActiveMods & ENDLESS_MOD_DEADGEN))
 		return 0;
-	// A new hit may extend but never shorten the active lockout.
+	// A new hit may extend but never shorten the active lockout. The fx context is the hit ship
+	// (JE_playerDamage), so only that ship's recharge stalls.
 	int lock = (int)actualDamage * ENDLESS_STATIC_LOCKOUT_PER_DMG;
 	if (lock < ENDLESS_STATIC_LOCKOUT_MIN)
 		lock = ENDLESS_STATIC_LOCKOUT_MIN;
 	if (lock > ENDLESS_STATIC_LOCKOUT_MAX)
 		lock = ENDLESS_STATIC_LOCKOUT_MAX;
-	if (lock > endlessStaticLockout)
-		endlessStaticLockout = lock;
+	if (lock > endlessStaticLockout[endlessFxPlayer()])
+		endlessStaticLockout[endlessFxPlayer()] = lock;
 
 	unsigned drain = actualDamage * ENDLESS_STATIC_POWER_PER_DMG;
 	if (drain < ENDLESS_STATIC_POWER_MIN)
@@ -1333,9 +1349,9 @@ void endless_combat_register_rollback(void)
 	rollback_register("endless.martyrLink", &endlessMartyrLastLink, sizeof(endlessMartyrLastLink));
 	rollback_register("endless.shockLink", &endlessShockwaveLastLink, sizeof(endlessShockwaveLastLink));
 	rollback_register("endless.bountyLink", &endlessBountyLastLink, sizeof(endlessBountyLastLink));
-	rollback_register("endless.aegisCd", &endlessAegisCooldown, sizeof(endlessAegisCooldown));
+	rollback_register("endless.aegisCd", endlessAegisCooldown, sizeof(endlessAegisCooldown));
 	rollback_register("endless.reviveGrace", &endlessReviveGrace, sizeof(endlessReviveGrace));
-	rollback_register("endless.staticLock", &endlessStaticLockout, sizeof(endlessStaticLockout));
+	rollback_register("endless.staticLock", endlessStaticLockout, sizeof(endlessStaticLockout));
 	rollback_register("endless.gravityDir", &endlessGravityDirX, sizeof(endlessGravityDirX));
 	rollback_register("endless.gravityDirY", &endlessGravityDirY, sizeof(endlessGravityDirY));
 	rollback_register("endless.gravityCarryX", endlessGravityCarryX, sizeof(endlessGravityCarryX));
