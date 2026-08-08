@@ -410,7 +410,9 @@ set it flew a custom weapon, which the Endless high-score page spells out under
 the list. It takes one zone with shots fired from the weapon, whether it is
 flying as your front gun, rear gun or sidekick, and that zone counts however it
 ends: cleared, died in, or left through the pause menu. Designing or previewing a
-weapon costs you nothing, since neither happens inside a zone.
+weapon costs you nothing, since neither happens inside a zone. In an online run
+either ship's custom weapon counts, even if your own **Custom Weapons** row is
+off, and both machines mark their records alike.
 
 The mark belongs to the record, not to you, so it only appears on a record your
 run actually set. Beating your own marked record without a custom weapon drops

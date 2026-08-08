@@ -191,7 +191,7 @@ static bool endlessItemBuyable(JE_byte costType, int id)
 	case 2: name = ships[id].name;    break;  // ship
 	case 3:                                    // front weapon
 	case 4:                                    // rear weapon
-		if (id == customWeaponPort)
+		if (customWeaponPortIsCustom((JE_word)id))
 			return false;
 		name = weaponPort[id].name;
 		if (SDL_strncasecmp(name, "Test", 4) == 0)
@@ -201,7 +201,7 @@ static bool endlessItemBuyable(JE_byte costType, int id)
 	case 6: name = powerSys[id].name; break;  // generator
 	case 7:                                    // left sidekick
 	case 8:                                    // right sidekick
-		if (id == customSidekickSlot)
+		if (customSidekickSlotIsCustom(id))
 			return false;
 		name = options[id].name;
 		if (strncmp(name, "None", 4) == 0)

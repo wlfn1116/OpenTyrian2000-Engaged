@@ -85,6 +85,10 @@ extern int customSidekickOwnerSlot[CUSTOM_WEAPON_OWNERS];
 // The owner index the editor, the preview and Equip write. Always 0 outside Online Campaign.
 int customWeaponLocalOwner(void);
 
+// True when the port / option slot is any owner's reserved custom one, local player's or a peer's.
+bool customWeaponPortIsCustom(JE_word port);
+bool customSidekickSlotIsCustom(int option);
+
 // Sidekick body appearance. Mount style selects position and sprite sheet;
 // animation and charge stages advance from Sprite by FrameStep.
 #define CUSTOM_SIDEKICK_MOUNTS 5   // tr values 0..4 are all valid mount styles

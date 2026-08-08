@@ -78,6 +78,25 @@ int customWeaponLocalOwner(void)
 	return clampi(owner, 0, CUSTOM_WEAPON_OWNERS - 1);
 }
 
+/* Sim-side "is this a custom weapon" test. It must cover every owner's port, not just
+ * customWeaponPort: that global names the local owner's port, which differs per machine online,
+ * and the Endless record flag it feeds is registered state that must match on both. */
+bool customWeaponPortIsCustom(JE_word port)
+{
+	for (int i = 0; i < CUSTOM_WEAPON_OWNERS; ++i)
+		if (customWeaponOwnerPort[i] != 0 && customWeaponOwnerPort[i] == (int)port)
+			return true;
+	return false;
+}
+
+bool customSidekickSlotIsCustom(int option)
+{
+	for (int i = 0; i < CUSTOM_WEAPON_OWNERS; ++i)
+		if (customSidekickOwnerSlot[i] != 0 && customSidekickOwnerSlot[i] == option)
+			return true;
+	return false;
+}
+
 // Copy the editable globals into / out of a design record. The library slots, the reserved
 // per-owner slots and the wire format all go through these, so a design has one definition.
 static void customDesignStore(CustomWeaponSlot *s)

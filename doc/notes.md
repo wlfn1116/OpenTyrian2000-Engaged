@@ -780,7 +780,10 @@ one weapon port, one sidekick option and one scratch weapon range per player
 index. Ownership is by player index, never by local versus remote, or the two
 machines would disagree about which port a `PlayerItems` id names.
 `customWeaponPort` and `customSidekickSlot` stay as the editor's own, resolved
-through `customWeaponLocalOwner()`.
+through `customWeaponLocalOwner()`. The same rule binds sim-side tests: the
+Endless record flag is registered state, so the shot path asks
+`customWeaponPortIsCustom()` — every owner's port — never `customWeaponPort`,
+which names a different port on each machine.
 
 Reloading item data wipes those slots, and a network game reloads at every level
 start, so `customWeaponInit()` ends in `customWeaponMaterializeAll()`, which
