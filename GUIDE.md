@@ -520,15 +520,15 @@ are left alone and restored afterwards.
 | Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
 | Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
-| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship — Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade — plays exactly the rung chosen here, with no adjustment. |
+| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship (Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade) plays exactly the rung chosen here, with no adjustment. |
 | Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
 | Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
-| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the same row reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the row is titled **Host Fights On** and reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
 | Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, since its speed is the rate the two machines trade packets at; your speed for the other game types is left untouched. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct always plays delay-based and hides the row (and Desync Recovery with it); your rollback preference for the main game is left untouched. |
-| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback — Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback: Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. |
 
 **Join by IP Address** takes an address on its own or with a port, like
 `123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
@@ -538,9 +538,10 @@ same host is Join then Enter.
 The outpost help bar shows a **Ping** figure at its right end, updated about
 every one and a half seconds and reading `--` until the first reply. It is
 dropped on rows that already have something at that edge, a price or a stack
-count among them, rather than being pushed up against the sentence. Under roughly 85 ms the game runs at full speed
-on the default network delay of 3. Above that it starts to slow, and raising the
-delay trades input lag for smoothness.
+count among them, rather than being pushed up against the sentence. Under
+roughly 85 ms the game runs at full speed on the default network delay of 3.
+Above that it starts to slow, and raising the delay trades input lag for
+smoothness.
 
 Options in the outpost is the ordinary options page with **Load Game** removed:
 loading mid-session would leave the other machine playing something else. Save
@@ -567,10 +568,10 @@ are independent and may match. Whoever chooses first sees "Waiting for the other
 player..." and then which ship their partner picked. A choice is not final while
 you are still waiting: Esc (or a right-click) takes it back so you can pick a
 different ship, right up until your partner chooses and the game starts. Esc
-before choosing anything leaves the session instead. Weapon balls keep the same colors on every ship, so when both of you
-fly into the same color, each ship gets the weapon its own arsenal keeps in that
-slot, and the paired special (both variants, switched with the rear-mode key)
-belongs to each ship separately.
+before choosing anything leaves the session instead. Weapon balls keep the same
+colors on every ship, so when both of you fly into the same color, each ship
+gets the weapon its own arsenal keeps in that slot, and the paired special (both
+variants, switched with the rear-mode key) belongs to each ship separately.
 
 In Campaign, each player chooses and powers up a complete ship independently:
 front and rear weapons, sidekicks, generator, shield, hull, special, cash, and
@@ -586,20 +587,19 @@ equipment or pick a different planet. The waiting screen says so. Once the other
 player has picked their level too, the pair of you are committed and Esc no
 longer answers; the level loads a moment later.
 
-Custom weapons work in Campaign, one design each. Your design is sent to the
-other machine on the way out of the outpost, so both of you fly and see the real
-thing. Sending it happens once per changed design and can hold the "Waiting for
-other player." screen for a moment on a large weapon.
+Custom weapons work in Campaign and Endless, one design each. Your design is
+sent to the other machine on the way out of the outpost, so both of you fly and
+see the real thing. Sending it happens once per changed design and can hold the
+"Waiting for other player." screen for a moment on a large weapon.
 
 At the start of each level both machines wait for each other. A slower loader
 shows "Waiting for other player." before the two fade in together.
 
-**P does not pause an online game**, in Arcade, Campaign or Endless alike, and
+**P does not pause an online game**, in any game type, Destruct included, and
 neither does clicking away to another window: your ship keeps flying while you
 are not looking at it. Only one machine would have stopped, and the other player
 would be left holding a session that had gone quiet. Esc still opens the in-game
-menu, which is the way out of a level. (Online Destruct is the one exception:
-its P is a shared pause that freezes both machines together.)
+menu, which is the way out of a level.
 
 ### Online Endless
 
@@ -672,14 +672,14 @@ with the loadout you launched it with. It does not end the run or the session.
 ### Online Destruct
 
 The Destruct game type puts the two of you on opposite ends of the artillery
-mini-game: the host mans the side the lobby's Host Flies row names, the joiner
+mini-game: the host mans the side the lobby's Host Fights On row names, the joiner
 gets the other, and the Battle Mode row picks which of the five battles you
-fight. There are no menus after the lobby — once the joiner connects, both
+fight. There are no menus after the lobby: once the joiner connects, both
 machines land on the Destruct title card, which repeats the battle, your side,
 and your opponent's name. The card is a barrier: press any key (or a controller
 button) when you have read it, and the first map fades in once **both** of you
-have. The two lines at the bottom say where that stands — your own state above,
-the other player's below — so a card that will not move is telling you who it is
+have. The two lines at the bottom say where that stands (your own state above,
+the other player's below), so a card that will not move is telling you who it is
 waiting on. There is no time limit, so Esc there leaves the session for both of
 you if the other player has walked away.
 
@@ -697,8 +697,8 @@ online as follows:
 
 | Key | Online meaning |
 | --- | --- |
-| P | Shared pause. Freezes the battle on both machines until either player presses it again. |
-| Backspace | New round for both players, current scores kept — the same map-reroll it is locally. |
+| P | Disabled online: pause is offline-only here, the same rule as every other game type. |
+| Backspace | New round for both players, current scores kept: the same map-reroll it is locally. |
 | Esc | Ends the session for both players, back to their own menus. A controller's pause button does the same. |
 | F1, F10, F11 | Disabled online: the help screen would stall the connection, and the CPU toggles would split the simulation. |
 
@@ -707,9 +707,8 @@ preference, so your inputs land after the session's network delay, like the
 classic online mode. They also play at Normal game speed on both machines: the
 lobby's Game Speed row is hidden for Destruct, because the speed there is the
 rate the two machines trade state packets at rather than anything in the battle.
-Nothing about a Destruct session is saved except the two
-lobby rows — the Battle Mode and which side you man — which are remembered for
-the next time you host.
+Nothing about a Destruct session is saved except the two lobby rows (the Battle
+Mode and which side you man), which are remembered for the next time you host.
 
 ### Saving and resuming an online game
 
@@ -726,11 +725,11 @@ Linked arcade saves remain compatible with the regular local two-player page.
 Separate arcade, SuperTyrian and Super Arcade saves carry both complete ships,
 lives and rulesets included (a Super Arcade save remembers which ship each of you
 picked), and can only be resumed through the same game type that wrote them; the
-other arcade lobbies and local play show them dimmed. Campaign
-and Endless saves carry both players in full: each ship and its front and rear weapons with
-their power levels, both sidekicks, generator, shield, special, rear-gun firing
-mode, and cash total, plus the shared episode, difficulty, data cubes, and
-next-level position. Nothing either of you bought is dropped. They can only be
+other arcade lobbies and local play show them dimmed. Campaign and Endless saves
+carry both players in full: each ship and its front and rear weapons with their
+power levels, both sidekicks, generator, shield, special, rear-gun firing mode,
+and cash total, plus the shared episode, difficulty, data cubes, and next-level
+position. Nothing either of you bought is dropped. They can only be
 loaded through Online Campaign or Online Endless, not through 1 Player or local
 2 Player, and each lobby type only offers its own. An Endless save also carries
 the run behind it: zone, seed, perks, both players' upgrades and the course
@@ -779,9 +778,9 @@ section.
 | Esc | Cancel a number being entered, otherwise save and return |
 | Right-click | Save and return |
 
-In Online Campaign each player brings their own design. The two are kept apart, so
-you can both fly a custom weapon in the same session without either of you seeing
-the other's in your shop.
+In Online Campaign and Online Endless each player brings their own design. The
+two are kept apart, so you can both fly a custom weapon in the same session
+without either of you seeing the other's in your shop.
 
 ## Restored and tweakable content
 
@@ -847,6 +846,7 @@ whose gear the rows below it change. In Arcade, player two flies the Dragonwing,
 so swapping that player's hull changes the hit box but not the sprite or armour.
 In Campaign, both players use the selected full ship. Online, the game stays
 connected while the menu is open and every change is sent to the other player.
+A zone jump in Online Endless moves both players to the chosen zone together.
 Endless Effects and the Rollback Self-Test are unavailable online.
 
 The DIAGNOSTICS group holds the inspection tools. **Rollback Self-Test** replays

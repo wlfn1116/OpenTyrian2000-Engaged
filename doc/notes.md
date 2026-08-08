@@ -1485,10 +1485,9 @@ canary (`DE_NetExchange` in destruct.c). Applied inputs are both sides' bytes
 from `network_delay` ticks ago -- our own replayed from
 `packet_state_out[network_delay]`, the peer's from the arrived packet -- so
 both machines run the identical pair at the identical tick. Control bits: QUIT
-(Esc, ends the session on both at the same tick), PAUSE (a shared toggle; the
-exchange leads the tick so a pause freezes even the explosion-glow fade in
-`JE_tempScreenChecking`, which is collision-adjacent state), NEWMAP
-(Backspace's round reroll). The desync canary reports once per session to the
+(Esc, ends the session on both at the same tick) and NEWMAP (Backspace's round
+reroll). Pause is offline-only here as in every online mode; control bit 0x02
+stays deliberately unused. The desync canary reports once per session to the
 net log and play continues.
 
 Every map is generated from `network_destruct_session_seed + golden_ratio *

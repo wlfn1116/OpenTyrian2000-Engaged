@@ -11,7 +11,8 @@ The original campaigns play as they always did. What the fork adds:
 - smooth display-rate rendering, with optional sub-pixel supersampling
 - **Endless mode**, a roguelite run built from the shipped levels
 - a custom weapon editor
-- **cross-platform online play** with rollback netcode
+- **cross-platform online play** with rollback netcode and six hostable game
+  types
 - content the original game shipped but never used, each behind its own toggle
 - expanded health bars, menus, and debug tools
 - optional FluidSynth and system MIDI playback (Windows)
@@ -74,10 +75,11 @@ works.
 
 ## Online play
 
-Two-player Arcade and Campaign over the network, set up entirely in-game.
-**Online** on the main menu opens a lobby with Host Game, Find LAN Games, and
-Join by IP Address. On a shared network, LAN discovery finds the host without
-anyone typing an address. The game uses UDP port 1333 by default.
+Two-player games over the network, set up entirely in-game: Arcade, full
+Campaign and Endless co-op, SuperTyrian, Super Arcade, and the Destruct
+mini-game. **Online** on the main menu opens a lobby with Host Game, Find LAN
+Games, and Join by IP Address. On a shared network, LAN discovery finds the
+host without anyone typing an address. The game uses UDP port 1333 by default.
 
 Windows, Linux, Switch and Vita players can all play each other, as long as
 everyone is on the same version. Every build runs the same simulation tick for
@@ -95,16 +97,24 @@ player hosting.
   the episode, earns and spends their own cash, and can use their own shop at the
   same time between levels. Each machine shows the familiar one-player sidebar
   for its local ship.
+- **Endless co-op.** The whole roguelite with two ships: one shared run, sector
+  and zone counter, while wallets, shop stock, perks and kill-fire drives belong
+  to one player each. A downed ship spectates the rest of the zone and rejoins
+  at the next outpost. Co-op runs keep their own 2P records.
 - **Save and resume.** Save from the shop mid-session, or when a session drops
-  under you. Campaign saves preserve both loadouts and are loaded through Online
-  Campaign; Arcade saves retain their local two-player compatibility.
-- A ping readout in the outpost, player names and cash inside the Campaign
+  under you. Campaign and Endless saves carry both complete ships and load back
+  through the lobby that wrote them; linked Arcade saves keep their local
+  two-player compatibility.
+- A ping readout in the outpost, player names and cash along the bottom of the
   playfield, Arcade gauge tagging, and a session log for diagnosing desyncs.
 
-The host chooses Arcade or Campaign, episode, difficulty, and network settings.
-Arcade runs either as the classic linked Silver Ship and Dragonwing pair, or as two
-Separate personal ships: the single-player arcade game twice over in one level,
-each player with their own HUD, lives, weapons and score.
+The host chooses the game type, episode, difficulty, and network settings,
+including whether kills and pickups pay both players in full or each ship earns
+its own. Arcade runs either as the classic linked Silver Ship and Dragonwing
+pair, or as two Separate personal ships: the single-player arcade game twice
+over in one level, each player with their own HUD, lives, weapons and score.
+SuperTyrian and Super Arcade fly the two one-player rulesets with a ship each,
+and Destruct fights any of its five battle modes across two machines.
 The joiner confirms those game settings before entering. Joiners keep their own
 local settings, which are restored afterwards. [GUIDE.md](GUIDE.md#online-play)
 covers each lobby row, the saving and resuming flow, and what to attach to a

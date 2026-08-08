@@ -105,6 +105,7 @@ static const char lobbyVariantLabel[] = "Variant";
 static const char lobbyVariantHelp[] = "Scrollock is the gentler SuperTyrian run.";
 static const char *const lobbyPlayerValue[]  = { "Player 1", "Player 2", "Silver Ship", "Dragonwing" };
 // Destruct wears the Host Flies row as a side pick, the way SuperTyrian rebadges Difficulty.
+static const char lobbySideLabel[] = "Host Fights On";
 static const char *const lobbySideValue[]    = { "Left Side", "Right Side" };
 static const char lobbySideHelp[] = "Which side you man; the joiner gets the other.";
 static const char *const lobbyShipsValue[]   = { "Linked", "Separate" };
@@ -704,6 +705,11 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 
+		// Drop whatever opened this screen before waiting for a fresh press, like every other
+		// lobby loop: the Enter or click that started the search stays latched through the
+		// whole discovery window and would read here as an instant join of the top host.
+		service_SDL_events(true);
+
 		JE_mouseStart();
 		JE_showVGA();
 		JE_mouseReplace();
@@ -893,6 +899,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			itemLabel[i] = lobbyHostLabel[i];
 		if (variant)
 			itemLabel[ITEM_DIFFICULTY] = lobbyVariantLabel;
+		// Destruct's rebadge of Host Flies: a side is fought on, not flown.
+		if (destruct)
+			itemLabel[ITEM_PLAYER] = lobbySideLabel;
 
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
@@ -1702,9 +1711,9 @@ void qa_test_net_lobby_strings(void)
 		lobbyCheckRow(lobbyHostLabel[6], lobbyShipsValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyPlayerValue); ++i)
 		lobbyCheckRow(lobbyHostLabel[7], lobbyPlayerValue[i]);
-	// ...and the same row wearing Destruct's side names.
+	// ...and the same row wearing Destruct's name and side values.
 	for (uint i = 0; i < COUNTOF(lobbySideValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[7], lobbySideValue[i]);
+		lobbyCheckRow(lobbySideLabel, lobbySideValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
 		lobbyCheckRow(lobbyHostLabel[8], lobbyCreditValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
