@@ -72,7 +72,7 @@ static const int lobby_difficulties[] =
  * that outgrows it overlaps its neighbour only on whichever machine opens that screen. */
 static const char *const lobbyHostLabel[] =
 {
-	"Listen Port", "Game Type", "Episode", "Endless Setup", "Difficulty", "Ships",
+	"Listen Port", "Game Type", "Battle Mode", "Episode", "Endless Setup", "Difficulty", "Ships",
 	"Host Flies", "Credit", "Double Earnings", "Game Speed", "Netcode", "Desync Recovery",
 };
 
@@ -80,6 +80,7 @@ static const char *const lobbyHostHelp[] =
 {
 	"The port other players connect to.",
 	"Campaign and Endless share cash; the rest score.",
+	"Which Destruct battle both players fight.",
 	"Which episode the session plays.",
 	"Seed, run mode, and who charts each course.",
 	"Applies to both players for the whole game.",
@@ -97,12 +98,15 @@ static const char *const lobbyHostHelp[] =
 static const char *const lobbyHostAction[] = { "Start Hosting", "Back" };
 
 static const char *const lobbyTypeValue[]    = { "Arcade", "Campaign", "Endless",
-                                                 "SuperTyrian", "Super Arcade" };
+                                                 "SuperTyrian", "Super Arcade", "Destruct" };
 // SuperTyrian has no difficulty ladder, only the two variants the solo mode picks with Scroll Lock.
 static const char *const lobbyVariantValue[] = { "Standard", "Scrollock" };
 static const char lobbyVariantLabel[] = "Variant";
 static const char lobbyVariantHelp[] = "Scrollock is the gentler SuperTyrian run.";
 static const char *const lobbyPlayerValue[]  = { "Player 1", "Player 2", "Silver Ship", "Dragonwing" };
+// Destruct wears the Host Flies row as a side pick, the way SuperTyrian rebadges Difficulty.
+static const char *const lobbySideValue[]    = { "Left Side", "Right Side" };
+static const char lobbySideHelp[] = "Which side you man; the joiner gets the other.";
 static const char *const lobbyShipsValue[]   = { "Linked", "Separate" };
 static const char *const lobbyCreditValue[]  = { "Shared", "Individual" };
 static const char *const lobbyOnOffValue[]   = { "On", "Off" };
@@ -790,6 +794,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	{
 		ITEM_PORT = 0,
 		ITEM_TYPE,
+		ITEM_BATTLE,
 		ITEM_EPISODE,
 		ITEM_ENDLESS,
 		ITEM_DIFFICULTY,
@@ -833,15 +838,15 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		// Desync recovery is a rollback-only repair: the lockstep path never runs the canary
 		// compare that arms it, so delay-based forces the setting off and takes the row off the
 		// page entirely. It was never reachable while locked, so showing it dimmed only offered
-		// a choice that was not there.
-		const bool recoveryHidden = !net_rollback;
-		if (recoveryHidden)
+		// a choice that was not there.  (Destruct hides the row too, below, but without clearing
+		// the setting: it is a main-game preference the minigame has no business rewriting.)
+		if (!net_rollback)
 			net_desync_recovery = false;
 
 		/* Both co-op types give the two slots the same kind of ship, so which one the host takes
 		 * decides nothing there; that row only exists to pick the Dragonwing in Arcade, and Credit
 		 * is the opposite way round. Endless always starts at episode 1 and brings its own settings
-		 * page instead. Exactly two of the four rows show at a time, so the block keeps its height. */
+		 * page instead. */
 		const bool endless = network_game_type == NETWORK_GAME_ENDLESS;
 		const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
 		/* SuperTyrian and Super Arcade are the one-player rulesets flown as two personal ships, so
@@ -850,28 +855,35 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		 * their own on the screen that follows). */
 		const bool super = network_game_type_is_super(network_game_type);
 		const bool variant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
-		// The Ships row is Arcade's own; Host Flies only means anything for the Linked pair.
-		const bool shipsHidden = coop || super;
-		const bool playerHidden = coop || super || arcadeSeparateShips;
-		const bool creditHidden = !coop;
-		const bool episodeHidden = endless;
-		const bool endlessHidden = !endless;
+		/* Destruct brings its own battle-mode row and mans a side rather than flying a ship; it
+		 * has no episode, no difficulty ladder, no rollback (lockstep only, so the netcode pair
+		 * goes with it), and no speed choice: its tick is the rate the two machines trade state
+		 * packets at, so both sides play it at Normal. */
+		const bool destruct = network_game_type == NETWORK_GAME_DESTRUCT;
+
+		bool hidden[SETTING_COUNT];
+		hidden[ITEM_PORT]       = false;
+		hidden[ITEM_TYPE]       = false;
+		hidden[ITEM_BATTLE]     = !destruct;
+		hidden[ITEM_EPISODE]    = endless || destruct;
+		hidden[ITEM_ENDLESS]    = !endless;
+		hidden[ITEM_DIFFICULTY] = destruct;
+		// The Ships row is Arcade's own; Host Flies only means anything for the Linked pair,
+		// and doubles as Destruct's side pick.
+		hidden[ITEM_SHIPS]      = coop || super || destruct;
+		hidden[ITEM_PLAYER]     = destruct ? false : (coop || super || arcadeSeparateShips);
+		hidden[ITEM_CREDIT]     = !coop;
 		// Doubling pickups is only meaningful when the take is split in the first place.
-		const bool doubleHidden = creditHidden || coopSharedCredit;
-		if (shipsHidden && selectedIndex == ITEM_SHIPS)
-			selectedIndex = coop ? ITEM_CREDIT : ITEM_SPEED;
-		if (playerHidden && selectedIndex == ITEM_PLAYER)
-			selectedIndex = coop ? ITEM_CREDIT : ITEM_SPEED;
-		else if (creditHidden && selectedIndex == ITEM_CREDIT)
-			selectedIndex = ITEM_SPEED;
-		if (episodeHidden && selectedIndex == ITEM_EPISODE)
-			selectedIndex = ITEM_ENDLESS;
-		else if (endlessHidden && selectedIndex == ITEM_ENDLESS)
-			selectedIndex = ITEM_DIFFICULTY;
-		if (doubleHidden && selectedIndex == ITEM_DOUBLE)
-			selectedIndex = ITEM_SPEED;
-		if (recoveryHidden && selectedIndex == ITEM_RECOVERY)
-			selectedIndex = ITEM_NETCODE;   // the row that took it away
+		hidden[ITEM_DOUBLE]     = !coop || coopSharedCredit;
+		// Like the netcode rows, hidden without clearing: the stored speed is the host's
+		// preference for every other game type, which Destruct has no business rewriting.
+		hidden[ITEM_SPEED]      = destruct;
+		hidden[ITEM_NETCODE]    = destruct;
+		hidden[ITEM_RECOVERY]   = !net_rollback || destruct;
+
+		// A row the current game type hides cannot stay selected; settle on the next visible one.
+		while (selectedIndex < SETTING_COUNT && hidden[selectedIndex])
+			selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
 
 		/* One row wears two names: SuperTyrian's variant sits where every other type keeps its
 		 * difficulty, because that is what it is on the wire (Standard is Lord of Game, Scrollock
@@ -885,13 +897,18 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
 		itemValue[ITEM_TYPE] = lobbyTypeValue[network_game_type];
+		itemValue[ITEM_BATTLE] = destructModeName[(network_host_destruct_mode >= 0
+		                          && network_host_destruct_mode < DESTRUCT_MODES)
+		                         ? network_host_destruct_mode : 0];
 		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
 		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_DIFFICULTY] = variant
 		                           ? lobbyVariantValue[network_host_difficulty == DIFFICULTY_SUICIDE ? 1 : 0]
 		                           : difficultyNameB[network_host_difficulty];
 		itemValue[ITEM_SHIPS] = arcadeSeparateShips ? lobbyShipsValue[1] : lobbyShipsValue[0];
-		itemValue[ITEM_PLAYER] = network_host_player == 2
+		itemValue[ITEM_PLAYER] = destruct
+		                       ? lobbySideValue[network_host_player == 2 ? 1 : 0]
+		                       : network_host_player == 2
 		                       ? (coop ? lobbyPlayerValue[1] : lobbyPlayerValue[3])
 		                       : (coop ? lobbyPlayerValue[0] : lobbyPlayerValue[2]);
 		itemValue[ITEM_CREDIT] = coopSharedCredit ? lobbyCreditValue[0] : lobbyCreditValue[1];
@@ -905,13 +922,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		int rowY[SETTING_COUNT];
 		int shown = 0;
 		for (int i = 0; i < SETTING_COUNT; ++i)
-		{
-			const bool hidden = (i == ITEM_PLAYER && playerHidden) || (i == ITEM_CREDIT && creditHidden)
-			                 || (i == ITEM_EPISODE && episodeHidden) || (i == ITEM_ENDLESS && endlessHidden)
-			                 || (i == ITEM_DOUBLE && doubleHidden) || (i == ITEM_SHIPS && shipsHidden)
-			                 || (i == ITEM_RECOVERY && recoveryHidden);
-			rowY[i] = hidden ? -1 : ySettings + dySettings * shown++;
-		}
+			rowY[i] = hidden[i] ? -1 : ySettings + dySettings * shown++;
 
 		// Size the block to its widest visible row and hang the columns off its edges, so no
 		// value shifts the labels as it changes.  The floor keeps a screenful of short values
@@ -951,6 +962,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		const char *helpLine = lobbyHostHelp[selectedIndex];
 		if (selectedIndex == ITEM_DIFFICULTY && variant)
 			helpLine = lobbyVariantHelp;
+		else if (selectedIndex == ITEM_PLAYER && destruct)
+			helpLine = lobbySideHelp;
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, helpLine,
 		                    small_font, centered, 15, 2, false, 1);
 
@@ -1038,26 +1051,14 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex == 0) ? ITEM_COUNT - 1 : selectedIndex - 1;
-				while ((selectedIndex == ITEM_RECOVERY && recoveryHidden) ||
-				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
-				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
-				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
-				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
-				       (selectedIndex == ITEM_DOUBLE && doubleHidden) ||
-				       (selectedIndex == ITEM_SHIPS && shipsHidden));
+				while (selectedIndex < SETTING_COUNT && hidden[selectedIndex]);
 				break;
 
 			case SDL_SCANCODE_DOWN:
 				JE_playSampleNum(S_CURSOR);
 				do
 					selectedIndex = (selectedIndex + 1) % ITEM_COUNT;
-				while ((selectedIndex == ITEM_RECOVERY && recoveryHidden) ||
-				       (selectedIndex == ITEM_PLAYER && playerHidden) ||
-				       (selectedIndex == ITEM_CREDIT && creditHidden) ||
-				       (selectedIndex == ITEM_EPISODE && episodeHidden) ||
-				       (selectedIndex == ITEM_ENDLESS && endlessHidden) ||
-				       (selectedIndex == ITEM_DOUBLE && doubleHidden) ||
-				       (selectedIndex == ITEM_SHIPS && shipsHidden));
+				while (selectedIndex < SETTING_COUNT && hidden[selectedIndex]);
 				break;
 
 			case SDL_SCANCODE_RETURN:
@@ -1138,6 +1139,14 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 		}
 
+		case ITEM_BATTLE:
+			// The five data-backed battles only: Custom is built from each machine's own config
+			// file, so the two players would generate different armies from the same seed.
+			JE_playSampleNum(S_CLICK);
+			network_host_destruct_mode =
+				(network_host_destruct_mode + DESTRUCT_MODES + cycleDir) % DESTRUCT_MODES;
+			break;
+
 		case ITEM_ENDLESS:
 			JE_playSampleNum(S_SELECT);
 			lobbyEndlessMenu();
@@ -1185,7 +1194,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			break;
 
 		case ITEM_PLAYER:
-			// Arcade's player 2 is the Dragonwing; Campaign labels the two full-ship slots.
+			// Arcade's player 2 is the Dragonwing; Destruct's is the right-hand side.
 			// The joiner is told which slot remains during the handshake.
 			JE_playSampleNum(S_CLICK);
 			network_host_player = (network_host_player == 2) ? 1 : 2;
@@ -1208,7 +1217,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		case ITEM_SPEED:
 			// Forced on both players for the session: the host applies it at connect and
-			// the joiner adopts it from the settings block (see network_connect).
+			// the joiner adopts it from the settings block (see network_connect).  Destruct
+			// hides the row and pins Normal instead.
 			JE_playSampleNum(S_CLICK);
 			network_host_game_speed += cycleDir;
 			if (network_host_game_speed > 5)
@@ -1267,15 +1277,20 @@ static bool lobbyStartSession(bool as_host)
 	// corrects itself from the host's connect packet, which is the first word it gets on the
 	// subject (see network_connect).  Campaign offers no such choice -- both slots fly the same
 	// kind of ship -- so it always hosts as player 1, leaving network_host_player as the Arcade
-	// preference it is remembered for.
-	const bool slotChoiceApplies = network_game_type == NETWORK_GAME_ARCADE;
+	// preference it is remembered for.  Destruct reads the same slot as its side: 1 left, 2 right.
+	const bool slotChoiceApplies = network_game_type == NETWORK_GAME_ARCADE
+	                            || network_game_type == NETWORK_GAME_DESTRUCT;
 	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;
 	thisPlayerNum = as_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
-	// Settle the run seed before the connect packet goes out with it; the joiner takes it from
-	// there. A blank field rolls one, so "(random)" means a different run each time it is hosted.
+	// Settle the run seeds before the connect packet goes out with them; the joiner takes both
+	// from there. A blank Endless field rolls one, so "(random)" means a different run each time
+	// it is hosted; the Destruct terrain seed is always rolled fresh.
 	if (as_host)
+	{
 		network_endless_session_begin();
+		network_destruct_session_begin();
+	}
 
 	if (network_init() != 0)
 	{
@@ -1671,29 +1686,35 @@ void qa_test_net_lobby_strings(void)
 	lobbyCheckRow(lobbyHostLabel[0], portWorst);
 	for (uint i = 0; i < COUNTOF(lobbyTypeValue); ++i)
 		lobbyCheckRow(lobbyHostLabel[1], lobbyTypeValue[i]);
+	// The battle-mode names come out of the data file, so they are measured, not trusted.
+	for (int m = 0; m < DESTRUCT_MODES; ++m)
+		lobbyCheckRow(lobbyHostLabel[2], destructModeName[m]);
 	for (int e = 1; e <= EPISODE_MAX; ++e)
-		lobbyCheckRow(lobbyHostLabel[2], episode_name[e]);
+		lobbyCheckRow(lobbyHostLabel[3], episode_name[e]);
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
-		lobbyCheckRow(lobbyHostLabel[3], endlessRunModeName((EndlessRunMode)m));
+		lobbyCheckRow(lobbyHostLabel[4], endlessRunModeName((EndlessRunMode)m));
 	for (uint d = 0; d < COUNTOF(lobby_difficulties); ++d)
-		lobbyCheckRow(lobbyHostLabel[4], difficultyNameB[lobby_difficulties[d]]);
+		lobbyCheckRow(lobbyHostLabel[5], difficultyNameB[lobby_difficulties[d]]);
 	// The same row under its SuperTyrian name and values.
 	for (uint i = 0; i < COUNTOF(lobbyVariantValue); ++i)
 		lobbyCheckRow(lobbyVariantLabel, lobbyVariantValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyShipsValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[5], lobbyShipsValue[i]);
+		lobbyCheckRow(lobbyHostLabel[6], lobbyShipsValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyPlayerValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[6], lobbyPlayerValue[i]);
+		lobbyCheckRow(lobbyHostLabel[7], lobbyPlayerValue[i]);
+	// ...and the same row wearing Destruct's side names.
+	for (uint i = 0; i < COUNTOF(lobbySideValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[7], lobbySideValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[7], lobbyCreditValue[i]);
+		lobbyCheckRow(lobbyHostLabel[8], lobbyCreditValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[8], lobbyOnOffValue[i]);
+		lobbyCheckRow(lobbyHostLabel[9], lobbyOnOffValue[i]);
 	for (uint s = 0; s < COUNTOF(gameSpeedText); ++s)
-		lobbyCheckRow(lobbyHostLabel[9], gameSpeedText[s]);
+		lobbyCheckRow(lobbyHostLabel[10], gameSpeedText[s]);
 	for (uint i = 0; i < COUNTOF(lobbyNetcodeValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[10], lobbyNetcodeValue[i]);
+		lobbyCheckRow(lobbyHostLabel[11], lobbyNetcodeValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyOnOffValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[11], lobbyOnOffValue[i]);
+		lobbyCheckRow(lobbyHostLabel[12], lobbyOnOffValue[i]);
 
 	// Endless page rows, in lobbyEndlessLabel order. The seed is user-typed, so its worst
 	// case is the widest glyph its entry filter admits, tiled to the field's limit.
@@ -1711,6 +1732,7 @@ void qa_test_net_lobby_strings(void)
 	for (uint i = 0; i < COUNTOF(lobbyHostHelp); ++i)
 		lobbyCheckHelp(lobbyHostHelp[i]);
 	lobbyCheckHelp(lobbyVariantHelp);
+	lobbyCheckHelp(lobbySideHelp);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessHelp); ++i)
 		lobbyCheckHelp(lobbyEndlessHelp[i]);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessRunModeHelp); ++i)

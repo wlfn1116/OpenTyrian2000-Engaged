@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       20           /* v20: the departure handshake carries the Endless debug
+#define NET_VERSION       21           /* v21: online Destruct; the connect packet grows a
+                                          Destruct block (battle mode and terrain seed), the state
+                                          stream doubles as its lockstep input exchange, and its
+                                          title card is a PACKET_WAITING barrier both must clear.
+                                          v20: the departure handshake carries the Endless debug
                                           zone jump (depth, folded modifiers, perk stacks) beside
                                           the level pick, and PACKET_SA_SHIP carries a retractable
                                           pick plus the peer's acknowledgement of ours.
@@ -80,15 +84,17 @@
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
-// game type, episode, difficulty, the host's simulation settings, its Endless lobby block, and
-// finally the player name.
+// game type, episode, difficulty, the host's simulation settings, its Endless lobby block, its
+// Destruct lobby block, and finally the player name.
 #define NET_CONNECT_GAME_TYPE 12
 #define NET_CONNECT_EPISODE   14
 #define NET_CONNECT_DIFFICULTY 16
 #define NET_CONNECT_SETTINGS  18
 #define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
 #define NET_CONNECT_ENDLESS_SIZE (3 + NET_ENDLESS_SEED_MAX)   // run mode, chooser, combo feed, seed
-#define NET_CONNECT_NAME      (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
+#define NET_CONNECT_DESTRUCT  (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
+#define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
+#define NET_CONNECT_NAME      (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
 
 #define NET_RETRY         640          // ticks to wait for packet acknowledgment before resending
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
@@ -125,6 +131,10 @@ char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
 int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
 int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
 bool network_host_endless_combo_shared = false;
+
+// Destruct lobby block. The seed is per session; every round hashes it with the round number.
+int    network_host_destruct_mode = 0;    // MODE_5CARDWAR
+Uint32 network_destruct_session_seed = 0;
 
 static char empty_string[] = "";
 char *network_player_name = empty_string,
@@ -521,11 +531,36 @@ static int network_recv_one(void)
 						if (connected)
 						{
 							const Uint16 connect_sync = SDLNet_Read16(&packet_temp->data[2]);
-							if (connect_sync == queue_in_sync)
+							const Sint16 slot = (Sint16)(connect_sync - queue_in_sync);
+							if (slot == 0)
 							{
+								// At the head: discard it by advancing the window past it.
 								packets_shift_up(packet_in, NET_PACKET_QUEUE);
 								++queue_in_sync;
 							}
+							else if (slot > 0 && slot < NET_PACKET_QUEUE)
+							{
+								/* Ahead of the head (the handshake's trailing connect, reordered
+								 * past a younger packet).  Acknowledging it without occupying its
+								 * sequence slot leaves a hole at the head of the window: an
+								 * acknowledged packet is never resent, the window cannot advance
+								 * past an empty head, and everything later parks behind the gap
+								 * for good.  Place it like any reliable packet instead; whoever
+								 * finds it at the head throws it away. */
+								if (packet_in[slot] == NULL)
+									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+								packet_copy(packet_in[slot], packet_temp);
+							}
+							else if (slot >= NET_PACKET_QUEUE)
+							{
+								// No room to place it; withhold the acknowledgement so the
+								// retransmit arrives once the window has drained (same rule as
+								// the general placement path below).
+								++net_diag.window_overflow;
+								last_in_tick = SDL_GetTicks();
+								break;
+							}
+							// Behind the window: consumed already; just re-acknowledge.
 							network_acknowledge(connect_sync);
 							last_in_tick = SDL_GetTicks();
 							break;
@@ -1098,6 +1133,8 @@ static void send_connect_packet(Uint16 episodes_local)
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
 	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_endless_session_seed,
 	       NET_ENDLESS_SEED_MAX);
+	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
+	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
 	memcpy(&packet_out_temp->data[NET_CONNECT_NAME], network_player_name, name_len);
 	packet_out_temp->data[NET_CONNECT_NAME + name_len] = '\0';
 	network_send(NET_CONNECT_NAME + name_len + 1);
@@ -1269,6 +1306,13 @@ connect_again:
 
 			network_settings_adopt(&packet_in[0]->data[NET_CONNECT_SETTINGS]);
 			network_endless_adopt(&packet_in[0]->data[NET_CONNECT_ENDLESS]);
+
+			// The Destruct block. The mode indexes battle-mode tables on both machines, so a
+			// corrupt byte is clamped rather than trusted; any seed value is a playable seed.
+			network_host_destruct_mode = packet_in[0]->data[NET_CONNECT_DESTRUCT];
+			if (network_host_destruct_mode < 0 || network_host_destruct_mode >= DESTRUCT_MODES)
+				network_host_destruct_mode = 0;
+			network_destruct_session_seed = SDLNet_Read32(&packet_in[0]->data[NET_CONNECT_DESTRUCT + 1]);
 
 			// The adopted gameSpeed only sets the global; push it through to the
 			// tick-rate machinery so the joiner runs at the host's chosen speed.
@@ -1579,16 +1623,21 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = EDW_COUNT - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
+	// Destruct is not covered by the rollback registry, so its sessions are lockstep no matter
+	// what the host's netcode preference says; forced here AND in network_arm_local_session so
+	// the packed bit and the host's own session agree.
+	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+
 	Uint16 flags = 0;
 	flags |= zicaLaserLock         ? 1 << 0 : 0;
 	flags |= zicaLaserBuff         ? 1 << 1 : 0;
 	flags |= chargeLaserCannon     ? 1 << 2 : 0;
 	flags |= restoreBaseDispensers ? 1 << 3 : 0;
-	flags |= net_rollback          ? 1 << 4 : 0;  // rollback vs lockstep; host decides
+	flags |= rollback_applies      ? 1 << 4 : 0;  // rollback vs lockstep; host decides
 	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
 	// so the host's smooth-motion choice binds the session.
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
-	flags |= net_desync_recovery   ? 1 << 6 : 0;  // desync recovery; host decides
+	flags |= (net_desync_recovery && rollback_applies) ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
 	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
@@ -1671,9 +1720,12 @@ void network_arm_local_session(void)
 	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
 	network_settings_stash();
 
-	nrb_set_session_mode(net_rollback);
+	// Same forced-lockstep rule the settings block packs: Destruct has no rollback registry.
+	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+
+	nrb_set_session_mode(rollback_applies);
 	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery);
+	nrb_set_session_recovery(net_desync_recovery && rollback_applies);
 	coop_set_session_shared_credit(coopSharedCredit);
 	coop_set_session_double_earnings(coopDoubleEarnings);
 	arcadeSeparateMode = arcadeSeparateShips;
@@ -1682,10 +1734,18 @@ void network_arm_local_session(void)
 // Session game speed: the host applies its lobby choice here and the joiner adopts it from
 // the settings block in the connect packet.  Command-line netplay has no host, so both sides
 // pin Normal.  network_settings_restore puts the player's own speed back afterward.
+//
+// Destruct is Normal whatever the host's stored preference says: it paces one lockstep tick
+// per delay unit, so the speed only decides how fast the two machines trade state packets.
+// The lobby hides the row to match, and the block packed below carries the forced value to
+// the joiner.
 void network_settings_apply_session_speed(void)
 {
+	const bool host_picks_speed = network_from_lobby && network_is_host
+	                           && network_game_type != NETWORK_GAME_DESTRUCT;
+
 	network_settings_stash();
-	gameSpeed = (network_from_lobby && network_is_host) ? (JE_byte)network_host_game_speed : 4;
+	gameSpeed = host_picks_speed ? (JE_byte)network_host_game_speed : 4;
 	JE_initProcessorType();
 	JE_setNewGameSpeed();
 }
@@ -1788,6 +1848,13 @@ void network_endless_session_begin(void)
 	if (network_endless_session_seed[0] == '\0')
 		snprintf(network_endless_session_seed, sizeof(network_endless_session_seed), "%lu",
 		         (unsigned long)(1u + mt_rand() % 999999999u));
+}
+
+/* Roll the Destruct terrain seed, host side, before the connect packet carries it. Per session,
+ * so two matches hosted back to back fight different maps. */
+void network_destruct_session_begin(void)
+{
+	network_destruct_session_seed = (Uint32)mt_rand();
 }
 
 static Uint16 network_shop_sequence;
@@ -2523,6 +2590,13 @@ int network_sa_ship_peer(void)
 	if (!isNetworkGame)
 		return 0;
 
+	// The handshake's trailing connect can be placed in the window to keep it gap-free
+	// (see PACKET_CONNECT's connected path).  Stale by definition this deep in the session,
+	// and this screen's wait is the head's only consumer, so throw it away or the pick
+	// behind it never reaches the head.
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
 	// Only ever retire a ship announcement: draining whatever else heads the queue is how the
 	// outpost used to eat the packet a later wait was blocking on. A truncated one is retired
 	// too, adopted from nobody; left at the head it would block the queue for good.
@@ -2683,6 +2757,40 @@ void network_level_rendezvous(void)
 
 		network_check();
 	}
+}
+
+/* The online Destruct title screen's both-ready barrier, split into an announcement and a poll
+ * rather than reusing network_level_rendezvous above: that one owns the wait, and this screen has
+ * to keep drawing (and keep reporting which side is still to confirm) while it holds. */
+void network_destruct_ready_publish(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_WAITING);
+	network_send(4);  // PACKET_WAITING (Destruct title barrier)
+}
+
+bool network_destruct_ready_peer(void)
+{
+	if (!isNetworkGame)
+		return false;
+
+	network_check();
+
+	// The handshake's trailing connect can be placed in the window to keep it gap-free (see
+	// PACKET_CONNECT's connected path). Stale by the time the minigame starts, and this wait is
+	// the head's only consumer, so throw it away or the announcement behind it never surfaces.
+	while (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_CONNECT)
+		network_update();
+
+	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+	{
+		network_update();   // consume it, or it heads the queue for the rest of the session
+		return true;
+	}
+
+	return false;
 }
 
 bool network_shop_pump(void)

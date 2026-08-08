@@ -506,24 +506,26 @@ machine's rate. Set the cap to 35 or higher, or Uncapped.
 **Host Game** covers the listen port, game type, episode or Endless Setup,
 difficulty, Ships and Host Flies or Credit, Game Speed, Netcode, and Desync
 Recovery, one row each with the current value on the right and a line explaining
-the highlighted row underneath.
+the highlighted row underneath. The rows adapt to the game type: Destruct swaps
+the episode and difficulty rows for its own Battle Mode row.
 The host's choices bind the session for both machines. While the other player
 waits for the host to start, they see the same list. The joiner's own settings
 are left alone and restored afterwards.
 
 | Lobby row | What it does |
 | --- | --- |
-| Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). |
-| Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. |
+| Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). **Destruct** fights the artillery mini-game head to head (see Online Destruct). |
+| Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
+| Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
 | Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
 | Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship — Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade — plays exactly the rung chosen here, with no adjustment. |
 | Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
 | Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
-| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the same row reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
 | Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
-| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. |
-| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. |
+| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, since its speed is the rate the two machines trade packets at; your speed for the other game types is left untouched. |
+| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct always plays delay-based and hides the row (and Desync Recovery with it); your rollback preference for the main game is left untouched. |
 | Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback — Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. |
 
 **Join by IP Address** takes an address on its own or with a port, like
@@ -594,7 +596,8 @@ shows "Waiting for other player." before the two fade in together.
 neither does clicking away to another window: your ship keeps flying while you
 are not looking at it. Only one machine would have stopped, and the other player
 would be left holding a session that had gone quiet. Esc still opens the in-game
-menu, which is the way out of a level.
+menu, which is the way out of a level. (Online Destruct is the one exception:
+its P is a shared pause that freezes both machines together.)
 
 ### Online Endless
 
@@ -663,6 +666,48 @@ difficulty, the custom-weapon mark, erasing a record) works the same on both.
 **Quit** in the in-game menu means the same thing online as it does alone: the
 zone is abandoned and both of you go back to the outpost you launched it from,
 with the loadout you launched it with. It does not end the run or the session.
+
+### Online Destruct
+
+The Destruct game type puts the two of you on opposite ends of the artillery
+mini-game: the host mans the side the lobby's Host Flies row names, the joiner
+gets the other, and the Battle Mode row picks which of the five battles you
+fight. There are no menus after the lobby — once the joiner connects, both
+machines land on the Destruct title card, which repeats the battle, your side,
+and your opponent's name. The card is a barrier: press any key (or a controller
+button) when you have read it, and the first map fades in once **both** of you
+have. The two lines at the bottom say where that stands — your own state above,
+the other player's below — so a card that will not move is telling you who it is
+waiting on. There is no time limit, so Esc there leaves the session for both of
+you if the other player has walked away.
+
+Both machines generate every map from a seed the host rolled for the session,
+so you fight on the same terrain, under the same walls, to the same randomly
+chosen soundtrack. When one side's last installation falls, the survivor scores
+the battle's points, and after a short beat the next round starts on fresh
+terrain. Scores accumulate for as long as the session runs, exactly like the
+local game.
+
+Controls are the local game's, with one convenience: both keyboard layouts
+steer **your own side**, so the arrow-key layout and the C/V/A/Z layout work no
+matter which side you man, and a controller does too. The function keys behave
+online as follows:
+
+| Key | Online meaning |
+| --- | --- |
+| P | Shared pause. Freezes the battle on both machines until either player presses it again. |
+| Backspace | New round for both players, current scores kept — the same map-reroll it is locally. |
+| Esc | Ends the session for both players, back to their own menus. A controller's pause button does the same. |
+| F1, F10, F11 | Disabled online: the help screen would stall the connection, and the CPU toggles would split the simulation. |
+
+Destruct sessions play on the delay-based lockstep regardless of the Netcode
+preference, so your inputs land after the session's network delay, like the
+classic online mode. They also play at Normal game speed on both machines: the
+lobby's Game Speed row is hidden for Destruct, because the speed there is the
+rate the two machines trade state packets at rather than anything in the battle.
+Nothing about a Destruct session is saved except the two
+lobby rows — the Battle Mode and which side you man — which are remembered for
+the next time you host.
 
 ### Saving and resuming an online game
 

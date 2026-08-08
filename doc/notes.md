@@ -128,6 +128,52 @@ wide.
 `PLAYFIELD_LEFT` is the compositor crop offset. `PLAYFIELD_X_SHIFT` is a separate
 background-tile phase. Use a surface's pitch when stepping rows.
 
+Destruct is its own layout: two 144px HUD frames pinned flush to the screen
+edges, with rows `0..HUD_ROWS-1` between them left as open sky so shots crossing
+it stay visible. That window is transient-only. `destructTempScreen` is the
+persistent world -- terrain plus explosion glow -- and the sole thing that
+clears itself there is the 241..255 fade in `DE_blendTempPixel`; anything else
+written above the HUD line is never repainted, never falls, and (below the
+`y <= 14` collision gate) cannot even be shot away, so it hangs in the window
+for the rest of the round. Hence `DE_RunTickExplosions` lets only `EXPL_NORMAL`
+flares up there and keeps `EXPL_DIRT` at the classic `y > 15` ceiling. Every
+other painter already stops short of the window: `DE_generateRings` gates on
+`y > 12`, the base terrain clamps to `y >= 40`, and `DE_widenHUDBackdrop` blacks
+the gap before the round's `VGAScreen -> temp` copy.
+
+The window also made two latent `JE_superPixel` bugs reachable, both from its
+walking pointer: the star starts at `(x-2, y-2)`, so `rowLen * (tempPosY - 2)`
+underflowed in unsigned arithmetic at `y == 1` into a ~4GB pointer jump, and a
+row skipped by the bounds check still took the loop's `s += rowLen - 5` without
+the inner loop's five steps, shifting every row after it 5px left. It now
+addresses each pixel from its own clipped coordinates. Behaviour is unchanged
+for every case vanilla could reach (only trailing rows clip there, where the
+misalignment had nothing left to corrupt).
+
+The window is also SOLID now, not just visible. The shot collision pass used to
+skip everything at `y <= 14` (vanilla's ceiling, from when the HUD strip covered
+those rows full-width), which made anything standing in the window a ghost. In
+the gap columns the skip now reaches to the top of the screen; over the boxes
+the classic ceiling stands. The things that can stand there: wall towers
+(`DE_generateWalls` stacks up to five 14px blocks above terrain that clamps at
+y=40, so a peak tower reached y=-30 -- wrapping its unsigned `wallY` -- and the
+tower height is now capped by the headroom above `HUD_ROWS` instead), and ring
+dirt at rows 13-14 (`DE_generateRings` gates at `y > 12`). Units never enter the
+window: fliers clamp at `unitY >= 24` (hitbox rows 18+) and satellites spawn at
+`y >= 30`. Bouncing shots follow the same rule -- the y=14 bounce ceiling was
+thin air in the middle of the open window, so inside the gap columns it drops
+to y=1.
+
+A third sky-window leak lived in the smooth present, not the sim. The tick draw
+shows a shot -- head and trails both -- only while the head's `y` is on-screen
+(`DE_RunTickShots`), so a shot that exits the top freezes its trail slots
+un-decayed at the exit point; `DE_DrawShotsScaled` had no such gate and kept
+repainting those frozen pixels every presented frame for the whole hang time of
+the lob. The shot list is per-tick state, so what looked like stuck debris was
+really a live redraw at the display rate. The scaled draw now applies the tick
+draw's own head gate before touching head or trails; the classic (non-smooth)
+path never had the leak.
+
 ## Endless mode
 
 ### File ownership
@@ -1008,6 +1054,22 @@ The reliable UDP layer follows these rules:
   can never come back: permanent one-way deafness. The slot arithmetic is
   signed, so a packet from behind the window (consumed already; the ack was
   lost) still re-acknowledges. `network_window_overflow()` counts the drops.
+- The same rule extends to a late `PACKET_CONNECT` on a connected session (the
+  handshake ends with a deliberate trailing connect, and `connect_reset`
+  retries add more). One that arrives AHEAD of the window head -- reordered
+  past a younger packet -- must be placed into its sequence slot like any
+  reliable packet, discarded only once it surfaces at the head. It used to be
+  acknowledged and dropped on the spot, which left a hole at the head of the
+  window: an acknowledged packet is never resent, `network_update` cannot
+  advance past an empty head, and every later reliable packet parked behind
+  the gap for good. Both peers idle with keep-alives flowing (each side's own
+  outbound is fully acknowledged), so nothing times out. The wire suite's
+  Super Arcade scenario was the only place with an untimed dependency on the
+  window right after the handshake -- the ship-pick exchange -- which is why
+  the hole surfaced as a rare scenario-18 wedge; the arcade/SuperTyrian
+  scenarios rode the same hole out through the level rendezvous's 30-second
+  escape. Heads holding a stale connect are consumed by `network_update`
+  waits, `network_sa_ship_peer`, and `qa_net_drain`.
 
 The sender keeps at most half of `NET_PACKET_QUEUE` outstanding during a resync.
 This prevents transport acknowledgements from filling the receiver's inbound
@@ -1383,6 +1445,65 @@ it (`network_check` where `network_update` was needed), so every later
 rendezvous on that machine was released one packet early. The peer's
 `PACKET_GAME_QUIT` in that wait stays queued on purpose; the level-end paths
 are the ones that read a quit.
+
+### Online Destruct
+
+Destruct is `NETWORK_GAME_DESTRUCT`, settled entirely in the lobby: the battle
+mode and a rolled `Uint32` terrain seed travel in the connect packet's Destruct
+block, the host's side rides the existing host-slot field (1 = left), and
+`networkStartScreen` diverts to `loadDestruct` without a `PACKET_DETAILS`
+handshake. Sessions are always delay-based: the minigame is outside the
+rollback registry, so `network_settings_pack` and `network_arm_local_session`
+both force the rollback and recovery bits off for this type. They are also
+always Normal speed: the tick loop paces one lockstep exchange per delay unit
+(`DE_SmoothPresent`), so `gameSpeed` sets how fast the two machines trade state
+packets, not how the battle plays. `network_settings_apply_session_speed` pins
+it before the connect packet is packed, so the joiner adopts the forced value
+along with everything else, and the lobby hides the row rather than clearing
+`network_host_game_speed`, which remains the host's choice for other types.
+
+The tick loop reuses the main game's lockstep state stream (`PACKET_STATE`,
+XOR parity, resends) with its own payload: one action byte and one control byte
+per tick, plus `mt_rand_count` and an FNV hash of units/shots as a desync
+canary (`DE_NetExchange` in destruct.c). Applied inputs are both sides' bytes
+from `network_delay` ticks ago -- our own replayed from
+`packet_state_out[network_delay]`, the peer's from the arrived packet -- so
+both machines run the identical pair at the identical tick. Control bits: QUIT
+(Esc, ends the session on both at the same tick), PAUSE (a shared toggle; the
+exchange leads the tick so a pause freezes even the explosion-glow fade in
+`JE_tempScreenChecking`, which is collision-adjacent state), NEWMAP
+(Backspace's round reroll). The desync canary reports once per session to the
+net log and play continues.
+
+Every map is generated from `network_destruct_session_seed + golden_ratio *
+round` on both machines; nothing about the world crosses the wire. That is why
+every config-file knob that shapes the simulation is pinned to shipped
+defaults for the session in `JE_destructGame` -- shot/explosion/wall pools,
+crater aliasing (it rewrites collision pixels), jumper trajectories, the tracer
+laser, the AI, and `max_installations`, which is a MAX accumulator over the
+config-set custom army sizes and never shrinks across visits. The wall-count
+draw was moved from libc `rand()` to `mt_rand` and the generator/tick trig to
+`sim_sinf`/`sim_cosf` for PC-console determinism. `JE_destructGame` frees the
+previous visit's buffers on entry, because a network teardown longjmps out of
+the tick loop past the frees at the bottom.
+
+The intro card is a both-ready barrier (`DE_netIntroBarrier`). It announces this
+player's confirmation as a `PACKET_WAITING` and holds until the peer's arrives,
+so no machine reaches `DE_NetExchange` while the other is still reading the
+card. It replaced a five-second auto-advance, which existed only because the
+peer's first `network_state_update` gives up after sixteen -- with the barrier
+neither state stream starts early, so that window never opens and the wait needs
+no timeout at all. The wait is unbounded by design: both peers sit on this
+screen pumping keep-alives, and a timeout would start one session without the
+other -- Escape is the way out instead, sending `PACKET_QUIT` before halting so
+an abandoned partner is told rather than left to the dead-link timeout.
+`network_destruct_ready_peer` drains a trailing `PACKET_CONNECT` off the
+head first (the same hole `network_sa_ship_peer` guards), and the barrier will
+not release until this machine's own announcement is acknowledged, or the
+retransmit would head the queue on the first tick. A 500ms arming window
+swallows the press that opened the screen, since a held pad button auto-repeats
+into fresh `newkey` edges, and a headless wire peer (`qa_net_gameplay_ticks`)
+confirms itself on arrival.
 
 ## UI and sprite safety
 

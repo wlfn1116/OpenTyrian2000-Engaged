@@ -92,6 +92,7 @@ typedef enum
 	NETWORK_GAME_ENDLESS = 2,
 	NETWORK_GAME_SUPERTYRIAN = 3,
 	NETWORK_GAME_SUPERARCADE = 4,
+	NETWORK_GAME_DESTRUCT = 5,
 	NETWORK_GAME_TYPE_COUNT
 }
 NetworkGameType;
@@ -123,6 +124,14 @@ extern bool network_host_endless_combo_shared;
 
 // Adopt the host's Endless block from the connect packet, clamping every field.
 void network_endless_adopt(const Uint8 *buf);
+
+/* The Destruct lobby block: which of the five data-backed battle modes the session plays
+ * (the per-machine Custom mode never goes online), and the terrain seed every round derives
+ * from. The side the host mans rides the existing host-slot field (1 = left, 2 = right).
+ * Settled by the host before the connect packet goes out; the joiner adopts both from it. */
+extern int network_host_destruct_mode;
+extern Uint32 network_destruct_session_seed;
+void network_destruct_session_begin(void);
 
 // Lobby connection role. The host also supplies the session settings and player slots.
 extern bool network_is_host;
@@ -291,6 +300,12 @@ bool network_endless_jump_poll(void);
  * needed on a path that starts a level without passing through the outpost. */
 void network_level_rendezvous(void);
 
+/* The online Destruct title screen's barrier: neither session starts until both players have
+ * confirmed. Non-blocking, so the screen keeps drawing and can report where the pair stands --
+ * publish once when this player is ready, then poll for the peer's announcement every frame. */
+void network_destruct_ready_publish(void);
+bool network_destruct_ready_peer(void);
+
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
 void network_shop_send_transaction(void);
@@ -418,6 +433,8 @@ extern bool rollback_resim;
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
 static inline void network_level_rendezvous(void) { }
+static inline void network_destruct_ready_publish(void) { }
+static inline bool network_destruct_ready_peer(void) { return false; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }
