@@ -1419,12 +1419,18 @@ void JE_updateGaugeFlash(void)
 	if (!gauge_flash_any())
 		return;
 
-	for (int i = 0; i < 2; ++i)
+	// One step per REAL tick, which is why the replay passes are excluded: a rollback re-runs ticks
+	// that already spent their step, and a deep enough correction burned a whole glow out inside a
+	// single displayed frame. The arming above is held off the replay passes for the same reason.
+	if (!rollback_resim)
 	{
-		if (shieldGaugeFlash[i] > 0)
-			--shieldGaugeFlash[i];
-		if (armorGaugeFlash[i] > 0)
-			--armorGaugeFlash[i];
+		for (int i = 0; i < 2; ++i)
+		{
+			if (shieldGaugeFlash[i] > 0)
+				--shieldGaugeFlash[i];
+			if (armorGaugeFlash[i] > 0)
+				--armorGaugeFlash[i];
+		}
 	}
 
 	gaugeFlashAlpha = 1.0f;

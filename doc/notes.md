@@ -1270,7 +1270,13 @@ pass:
   lives inside `JE_drawOptionsHUD()` and the ammo-gauge painter rather than at the
   call sites, so a new caller cannot forget it.
 - Shield and armor changes set `hud_bars_dirty`; restore paths request a repaint.
-- Gauge flash counters and link sound cues are presentation state.
+- Gauge flash counters and link sound cues are presentation state. A counter kept
+  out of the registry has to keep BOTH halves of its life on the live pass: the
+  arming in `JE_playerDamage` and the step in `JE_updateGaugeFlash` are each gated
+  on `!rollback_resim`. Gating only the arming still let every replayed tick step
+  the counter again, so a deep enough correction spent a whole six-tick glow inside
+  one displayed frame. Each ship keeps its own row, so one hull's glow can never
+  start or shorten the partner's.
 - `SFX_CUE_CHANNEL` is reserved for presentation cues.
 
 Future event-driven HUD drawing needs the same dirty-flag repaint pattern.

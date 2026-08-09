@@ -2272,6 +2272,46 @@ static void qa_test_arcade_matrices(void)
 	player[0] = savedPlayer;
 }
 
+/* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
+ * to step once per REAL tick and stay each ship's own. Both halves are easy to get wrong online:
+ * a replay pass that steps it again spends a whole glow inside one displayed frame, and a shared
+ * counter would have one ship's hit cutting the partner's glow short. */
+static void qa_test_gauge_flash_lifetime(void)
+{
+	if (VGAScreenSeg == NULL)
+		return;  // the repaint below paints the real HUD surface
+
+	const bool savedResim = rollback_resim, savedDirty = hud_bars_dirty;
+	const int savedShield[2] = { shieldGaugeFlash[0], shieldGaugeFlash[1] };
+	const int savedArmor[2]  = { armorGaugeFlash[0],  armorGaugeFlash[1]  };
+
+	shieldGaugeFlash[0] = shieldGaugeFlash[1] = 6;
+	armorGaugeFlash[0]  = armorGaugeFlash[1]  = 0;
+
+	rollback_resim = true;
+	for (int i = 0; i < 4; ++i)
+		JE_updateGaugeFlash();
+	qa_check(shieldGaugeFlash[0] == 6 && shieldGaugeFlash[1] == 6,
+	         "a rollback replay pass never spends a gauge flash");
+
+	rollback_resim = false;
+	JE_updateGaugeFlash();
+	qa_check(shieldGaugeFlash[0] == 5 && shieldGaugeFlash[1] == 5,
+	         "a live tick steps every ship's gauge flash exactly once");
+
+	// Both ships hit at once, then only one of them: neither run touches the other's counter.
+	shieldGaugeFlash[0] = 6;
+	shieldGaugeFlash[1] = 0;
+	JE_updateGaugeFlash();
+	qa_check(shieldGaugeFlash[0] == 5 && shieldGaugeFlash[1] == 0,
+	         "one ship's damage flash neither starts nor shortens the other's");
+
+	rollback_resim = savedResim;
+	shieldGaugeFlash[0] = savedShield[0]; shieldGaugeFlash[1] = savedShield[1];
+	armorGaugeFlash[0]  = savedArmor[0];  armorGaugeFlash[1]  = savedArmor[1];
+	hud_bars_dirty = savedDirty;
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -2341,6 +2381,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_scaling();
 	qa_test_arcade_matrices();
 	qa_test_sidekick_rollback_state();
+	qa_test_gauge_flash_lifetime();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_network_settings();
