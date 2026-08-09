@@ -81,7 +81,7 @@ co-op, SuperTyrian, Super Arcade, and the Destruct mini-game.
 **Online Multiplayer** on the main menu opens a lobby with Host Game,
 Find LAN Games, and Join by IP Address. On a shared network, LAN discovery finds
 the host without anyone typing an address. The game uses UDP port 1333 by
-default. 
+default.
 
 Windows, Linux, Switch and Vita players can all play each other, as long as
 everyone is on the same version. Every build runs the same simulation tick for
