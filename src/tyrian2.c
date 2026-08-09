@@ -1204,6 +1204,18 @@ static bool power_gauge_active = false;
 static int power_render_prev = 0, power_render_cur = 0;  // `power` (0..900) at the prev/cur tick
 static int salvo_render_prev = 0, salvo_render_cur = 0;  // ...and the salvo green share (0..100)
 
+// The Opening Salvo green share (0..100) for the ship this machine flies. The perk is personal, so
+// the gauge names its ship rather than trusting the fx context, which the last simulated ship
+// leaves pointing at itself -- in co-op that is not necessarily ours.
+static int local_salvo_gauge_percent(void)
+{
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(gameplay_local_player_index());
+	const int pct = endlessOpeningSalvoGaugePercent();
+	endlessSetFxPlayer(fxSaved);
+	return pct;
+}
+
 // Geometry shared by the generator and the arcade lives bar in the same HUD slot.
 enum { PG_Y_BOTTOM = 104, PG_BAR_MAX = 93, PG_BASE = 113, PG_POWER_MAX = 900, PG_SEG_SHADE_MAX = 13 };
 
@@ -1225,11 +1237,14 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 	const int dir = gaugeGradGenerator;   // GaugeGradientDir
 
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
-	// condition that gates the free power.  The gauge is the local ship's.
+	// condition that gates the free power. The gauge is the local ship's, and the context goes back
+	// afterwards: this also runs at render rate, and the sim must not inherit a HUD's fx ship.
+	const uint fxSaved = endlessFxPlayer();
 	endlessSetFxPlayer(gameplay_local_player_index());
 	int base = PG_BASE;
 	if (endlessFxActive() && endlessTurbodriveActive() && !endlessKillFireIsEvil())
 		base = ENDLESS_FREE_POWER_GAUGE_BASE;
+	endlessSetFxPlayer(fxSaved);
 
 	// Opening Salvo paints from the bottom and takes precedence over the kill-fire tint.
 	int salvoRows = (salvo_frac > 0.0f) ? (int)(full * salvo_frac + 0.5f) : 0;
@@ -3869,10 +3884,11 @@ level_loop:
 			powerAdd = player[hud_player].generator_power_add;
 			power_render_prev = power_render_cur;
 			power_render_cur = (int)power;
-			salvo_render_prev = salvo_render_cur = 0;
+			salvo_render_prev = salvo_render_cur;
+			salvo_render_cur = local_salvo_gauge_percent();
 			power_gauge_active = true;
 			lastPower = power / 10;
-			draw_power_gauge((float)power, 0.0f);
+			draw_power_gauge((float)power, salvo_render_cur / 100.0f);
 		}
 		else
 		{
@@ -3885,15 +3901,7 @@ level_loop:
 			power_render_prev = power_render_cur;
 			power_render_cur = (int)power;
 			salvo_render_prev = salvo_render_cur;
-			// The gauge belongs to the ship THIS machine flies, so name it: the fx context is
-			// left wherever the last simulated ship put it, which in co-op is not necessarily
-			// ours, and the green then tracked the partner's Opening Salvo instead of our own.
-			{
-				const uint fxSaved = endlessFxPlayer();
-				endlessSetFxPlayer(gameplay_local_player_index());
-				salvo_render_cur = endlessOpeningSalvoGaugePercent();
-				endlessSetFxPlayer(fxSaved);
-			}
+			salvo_render_cur = local_salvo_gauge_percent();
 			power_gauge_active = true;
 			lastPower = power / 10;  // keep the legacy counter consistent
 

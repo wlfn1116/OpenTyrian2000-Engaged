@@ -1502,8 +1502,32 @@ static void qa_test_kill_fire_wiring(void)
 	qa_check(endlessOpeningSalvoConsume() && endlessOpeningSalvoVolleyActive(),
 	         "...for the second ship to spend itself");
 
+	/* The generator gauge the HUD paints green reads the same per-ship state: full while a charge
+	 * is banked, receding while the spent window burns down, and untouched on the ship that did
+	 * not fire. Co-op draws it for whichever ship the machine flies, so both rows must answer. */
+	endlessResetZonePerkTimers();
+	endlessSetFxPlayer(0);
+	qa_check(endlessOpeningSalvoGaugePercent() == 100, "a banked Opening Salvo fills its owner's gauge");
+	endlessOpeningSalvoConsume();
+	int salvoPct = endlessOpeningSalvoGaugePercent();
+	bool salvoRecedes = (salvoPct > 0);
+	for (int t = 0; t < ENDLESS_PERK_SALVO_WINDOW; ++t)
+	{
+		endlessOpeningSalvoTick();          // the run-wide walk, exactly as the sim tick calls it
+		const int now = endlessOpeningSalvoGaugePercent();
+		if (now > salvoPct)
+			salvoRecedes = false;
+		salvoPct = now;
+	}
+	qa_check(salvoRecedes && salvoPct == 0, "firing drains the gauge as the salvo window runs out");
+	endlessSetFxPlayer(1);
+	qa_check(endlessOpeningSalvoGaugePercent() == 100,
+	         "...and the ship that held its fire still reads a full charge");
+
 	endlessPerkTakenBy[1][PERK_SALVO] = 0;
 	endlessPerkRederive();
+	qa_check(endlessOpeningSalvoGaugePercent() == 0,
+	         "a ship without the perk has no green on its gauge at all");
 	endlessResetZonePerkTimers();
 	qa_check(!endlessOpeningSalvoConsume(),
 	         "a ship that never picked Opening Salvo has none to spend");

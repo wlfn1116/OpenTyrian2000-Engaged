@@ -1807,7 +1807,7 @@ void JE_drawShield(void)
 // "rollover" layers: each full 28 units rolls the bar over and the next chunk fills from the
 // bottom in a different colour gradient, so a heavily-reinforced hull reads as a stacked, multi-
 // hued bar. Layer palette bases are palette-relative (endless levels vary); tuned by eye.
-static void endlessDrawArmorBar(int armor)
+static void endlessDrawArmorBar(int armor, int flash)
 {
 	static const int layerCol[] = { 224, 112, 80, 176, 16, 48, 96, 32 };
 	const int maxLayers = (int)COUNTOF(layerCol);
@@ -1816,7 +1816,6 @@ static void endlessDrawArmorBar(int armor)
 	for (int t = armor; t > 0 && total < maxLayers; t -= 28)
 		++total;
 	const int flashLayer = (total <= 1) ? 0 : total - 1;
-	const int flash = gauge_flash_render(armorGaugeFlash[0]);
 
 	int a = armor;
 	for (int layer = 0; a > 0 && layer < maxLayers; ++layer)
@@ -1854,7 +1853,8 @@ void JE_drawArmor(void)
 	}
 	else if (endlessFxActive())
 	{
-		endlessDrawArmorBar(player[gameplay_local_player_index()].armor);
+		const uint i = gameplay_local_player_index();
+		endlessDrawArmorBar(player[i].armor, gauge_flash_render(armorGaugeFlash[i]));
 	}
 	else
 	{

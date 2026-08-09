@@ -1043,6 +1043,13 @@ suite can call it and cover the gate itself.
 Opening Salvo is per ship for the same reason: the charge belongs to the gun
 that sat idle and is spent by the gun that fires, so `endlessSalvoIdle` and
 `endlessSalvoWindow` are `[2]` and `endlessOpeningSalvoTick` walks the ships.
+Its green on the generator gauge is the same state read for the ship THIS
+machine flies: both HUD branches go through `local_salvo_gauge_percent`
+(tyrian2.c), which names the local ship rather than trusting the fx context the
+last simulated ship left behind. The co-op branch used to pass a hard zero, so
+the perk worked online while its gauge never lit. Every other HUD read that
+picks a row follows the rule — the endless armour bar's rollover layers and the
+damage flash under them both come from `gameplay_local_player_index()`.
 The reactive timers follow the same rule: the Aegis Gate cooldown, the Static
 Discharge recharge lockout and the Countermeasure Suite cooldown are all `[2]`,
 indexed by the fx ship, so one hull's block, hit or burst never spends the
