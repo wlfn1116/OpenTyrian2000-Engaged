@@ -567,6 +567,16 @@ the next local two-player arcade in the Separate shape. All three Arcade tweaks
 are host-authoritative: `arcadeLifeBoost` on bit 7, `arcadeRandomBalls` on bit 8
 and `arcadeRearGunScale` on bit 12, each stashed and restored with the rest.
 
+Under `dual_ship_mode()` every special is its own ship's. The aim goes through
+`special_mouse_x_for` / `special_mouse_y_for` so ship two steers by `mouseXB` /
+`mouseYB`; `JE_specialComplete` and the flare's per-tick spawn share those, since
+the two had drifted and the weapon-type specials were aiming ship two's shot with
+ship one's pointer. No shipped special reaches that path — a weapon steers on
+`del` 98/99/100 and none of the eighteen stype-1 specials carries one inside its
+`max` frames in any episode — but the Custom Weapon Creator can mint one. The two
+repair specials stay distinct: stype 13 mends the ship that fired, stype 14 is
+vanilla's repair-the-OTHER-hull special and mends the partner.
+
 The specials are the sharpest case of that split, and the reason is one line:
 `JE_doSpecialShot` pins `this_player` to `player[0]` unless `dual_ship_mode()`.
 The linked pair therefore has ONE special, triggered by either player through

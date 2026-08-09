@@ -2334,14 +2334,16 @@ static void qa_test_partner_repair_special(void)
 	JE_specialComplete(1, SPECIAL_NUM);
 	qa_check(player[1].armor == 11 && player[0].armor == 10,
 	         "co-op: the partner-repair special mends the OTHER ship, not the firer");
+	player[0].armor = player[1].armor = 10;   // reset, so the second seat is its own check
 	JE_specialComplete(2, SPECIAL_NUM);
-	qa_check(player[0].armor == 11 && player[1].armor == 11,
-	         "...from either seat");
+	qa_check(player[0].armor == 11 && player[1].armor == 10,
+	         "...and mends ship one when ship two fires it");
 
 	// stype 13 is the self-repair, and must not have become the same special.
 	special[SPECIAL_NUM].stype = 13;
+	player[0].armor = player[1].armor = 10;
 	JE_specialComplete(1, SPECIAL_NUM);
-	qa_check(player[0].armor == 12 && player[1].armor == 11,
+	qa_check(player[0].armor == 11 && player[1].armor == 10,
 	         "co-op: the self-repair special still mends the firer");
 
 	// The linked pair shares one arsenal and has no partner ship, so hull two keeps it.

@@ -888,7 +888,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			// Vanilla's repair-the-OTHER-hull special, and co-op keeps that meaning: it heals the
 			// partner. Aiming it at the firer instead made it a second copy of case 13. The linked
 			// pair has no partner ship of its own, so there it stays on hull two.
-			const JE_byte repair_num = dual_ship_mode() ? playerNum : 2;  // TEMPORARY: test sensitivity
+			const JE_byte repair_num = dual_ship_mode() ? (JE_byte)(3 - playerNum) : 2;
 			Player *const repair_player = &player[repair_num - 1];
 			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
 			if (endlessFxActive() && repair_player->initial_armor > 0 && repair_player->armor > repair_player->initial_armor)
