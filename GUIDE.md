@@ -703,8 +703,12 @@ and your opponent's name. The card is a barrier: press any key (or a controller
 button) when you have read it, and the first map fades in once **both** of you
 have. The two lines at the bottom say where that stands (your own state above,
 the other player's below), so a card that will not move is telling you who it is
-waiting on. There is no time limit, so Esc there leaves the session for both of
-you if the other player has walked away.
+waiting on. There is no time limit.
+
+Esc steps back before it steps out: once you have readied, the first press takes
+that ready back, and only a second one leaves. The line at the bottom says which
+it is about to do. Leaving ends the session for both of you, which is the way
+out when the other player has walked away from their card.
 
 Both machines generate every map from a seed the host rolled for the session,
 so you fight on the same terrain, under the same walls, to the same randomly
@@ -744,8 +748,9 @@ only one of each pickup on the field, so a ball you take is a ball they do not.
 Once the joiner connects, both machines land on a Timed Battle card naming the
 level, the difficulty, which player you are, and who you are racing. It is a
 both-ready gate like the Destruct title: press any key when you are ready, and
-the battle starts once the other player has too. Escape leaves the session for
-both of you, so you can back out while the other side is still reading.
+the battle starts once the other player has too. Esc works the same way it does
+there, taking back your ready first and leaving the session on a second press,
+so you can change your mind or back out while the other side is still reading.
 
 A Timed Battle is never offered Load Game, and it does not write to the Timed
 Battle high-score boards: those hold one name per score, and a race produces two.

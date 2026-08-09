@@ -75,9 +75,10 @@ works.
 
 ## Online play
 
-Two-player games over the network, set up entirely in-game: Arcade, full
-Campaign and Endless co-op, SuperTyrian, Super Arcade, and the Destruct
-mini-game. **Online Multiplayer** on the main menu opens a lobby with Host Game,
+Two-player games over the network, set up entirely in-game: Arcade in three
+shapes (linked, separate, or a Timed Battle race), full Campaign and Endless
+co-op, SuperTyrian, Super Arcade, and the Destruct mini-game.
+**Online Multiplayer** on the main menu opens a lobby with Host Game,
 Find LAN Games, and Join by IP Address. On a shared network, LAN discovery finds
 the host without anyone typing an address. The game uses UDP port 1333 by
 default.
@@ -112,9 +113,10 @@ player hosting.
 
 The host chooses the game type, episode, difficulty, and network settings,
 including whether kills and pickups pay both players in full or each ship earns
-its own. Arcade runs either as the classic linked Silver Ship and Dragonwing
-pair, or as two Separate personal ships: the single-player arcade game twice
-over in one level, each player with their own HUD, lives, weapons and score.
+its own. Arcade runs as the classic linked Silver Ship and Dragonwing pair, as
+two Separate personal ships (the single-player arcade game twice over in one
+level, each player with their own HUD, lives, weapons and score), or as a Timed
+Battle, where those two ships race one of the three battle levels for cash.
 SuperTyrian and Super Arcade fly the two one-player rulesets with a ship each,
 and Destruct fights any of its five battle modes across two machines.
 The joiner confirms those game settings before entering. Joiners keep their own
