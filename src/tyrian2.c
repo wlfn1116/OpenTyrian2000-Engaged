@@ -4351,11 +4351,7 @@ level_loop:
 
 					if (z == MAX_PWEAPON - 1)
 					{
-						// Each pillar is tested against the ship that raised it. The single-column path
-						// below cannot serve two: `zinglonDuration` is a global swapped through the
-						// movement pass, so it ends the tick holding the LAST ship's countdown, which
-						// that path would then read at ship one's position.
-						if (twoPlayerMode)
+						if (dual_ship_mode())
 						{
 							collided = false;
 							temp = 0;

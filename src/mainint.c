@@ -9874,15 +9874,10 @@ void JE_mainGamePlayerFunctions(void)
 				player[1].port_config_done = true;
 			astralDuration = MAX(player[0].astral_duration, player[1].astral_duration);
 			zinglonDuration = MAX(player[0].zinglon_duration, player[1].zinglon_duration);
-		}
-		// Either ship's Zinglon pulse arms the pillar, recombined once both passes are done:
-		// JE_doSpecialShot clears this slot on entry, so ship one's pulse is wiped by ship two's
-		// pass and only the last ship to move could ever arm the damage. Galaga runs no specials
-		// at all, which leaves the slot an ordinary shot's to hold, so it is left alone there.
-		if (!galagaMode)
 			shotAvail[MAX_PWEAPON - 1] =
 				((player[0].zinglon_duration > 1 && player[0].zinglon_duration % 5 == 0) ||
 				 (player[1].zinglon_duration > 1 && player[1].zinglon_duration % 5 == 0));
+		}
 	}
 	else
 	{
