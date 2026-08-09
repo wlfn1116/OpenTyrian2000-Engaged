@@ -10,10 +10,10 @@ The original campaigns play as they always did. What the fork adds:
 - a 356x200 widescreen frame with a wider 299-pixel playfield
 - smooth display-rate rendering, with optional sub-pixel supersampling
 - **Endless mode**, a roguelite run built from the shipped levels
-- a custom weapon editor
 - **cross-platform online play** with rollback netcode covering every single
-  game mode in the game (including Destruct)
+  mode in the game (including Destruct)
 - content the original game shipped but never used, each behind its own toggle
+- a custom weapon editor
 - expanded health bars, menus, and debug tools
 - optional FluidSynth and system MIDI playback (Windows)
 - Nintendo Switch and PlayStation Vita homebrew builds
