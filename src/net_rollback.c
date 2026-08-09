@@ -420,13 +420,21 @@ void nrb_frame_begin(void)
 			}
 		}
 
-		if (bits & RB_REQ_SKIPLEVEL)
+		if ((bits & RB_REQ_SKIPLEVEL) && !endLevel)
 		{
-			// The same exit the solo debug row takes: end outright. The F2-cheat variant
-			// (levelTimer with countdown 0) reads as "the level's timer expired", and a
-			// timed level then runs its fail branches during the wind-down -- a TIME WAR
-			// skipped that way came out failed instead of cleared.
-			reallyEndLevel = true;
+			/* The level-clear wind-down, never an outright end. Both machines have to keep
+			 * simulating until they reach it together: `reallyEndLevel` stops this machine's
+			 * sim on the spot, and the frame it never sends is the one the peer's end
+			 * confirmation is waiting on, so whichever consumed the request first walked into
+			 * the cutscene while the other sat on "waiting to confirm level end". The forty
+			 * ticks are what let the request propagate, roll back if it arrived late, and land
+			 * on the same frame on both.
+			 *
+			 * levelTimer and its zeroed countdown are deliberately NOT set here, though the F2
+			 * cheat sets them alongside these two: that pair reads as an expired level timer,
+			 * which arms every ']t' fail branch in the script that follows. */
+			endLevel = true;
+			levelEnd = 40;
 		}
 		if (bits & RB_REQ_NORTSHIP)
 		{

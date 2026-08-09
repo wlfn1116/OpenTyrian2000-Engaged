@@ -1583,14 +1583,24 @@ mini-games needed care online:
   reader cannot starve the link; the pair re-meets at the next outpost's shop
   handshake, which tolerates one side arriving late. `JE_readTextSync` (`]S`)
   is a vanilla `#if 0` stub -- do not lean on it for synchronization.
-- The online debug skip (`RB_REQ_SKIPLEVEL`) ends the level the way the solo
-  debug row does: `reallyEndLevel` alone. Its old body was the F2-cheat's fake
-  timer expiry (`levelTimer` with countdown 0 plus a 40-tick `endLevel`
-  wind-down), which is a *fail* exit: the natural end only clears `levelTimer`
-  when time remains, so the flag survived into the script and armed every `]t`
-  "you failed" branch, and the wind-down ran extra event ticks -- a TIME WAR
-  skipped that way came out failed (and shifted difficulty) online while solo
-  stayed clean.
+- The online debug skip (`RB_REQ_SKIPLEVEL`) sets `endLevel` + `levelEnd = 40`
+  and nothing else. Both halves matter and they pull in opposite directions:
+  - It must be the **wind-down, not `reallyEndLevel`**. That flag stops this
+    machine's sim on the spot, and `nrb_driver`'s end confirmation waits for
+    `verified_upto == nrb_cur` -- the peer's input for the frame this machine
+    now never sends. Whoever consumed the request first walked off into the
+    cutscene while the other sat on "waiting to confirm level end" until the
+    8-second escape or the next between-levels packet freed it. Forty ticks of
+    continued simulation are what let the request propagate, roll back if it
+    landed late, and take effect on the same frame on both machines, which is
+    also what makes them reach `reallyEndLevel` together
+    (`levelEnd == 0`, mainint.c).
+  - It must **not** set `levelTimer` with a zeroed countdown, though the F2
+    cheat sets that pair alongside these two. The natural level end only clears
+    `levelTimer` when time remains, so a zeroed countdown survives into the
+    script and arms every `]t` "you failed" branch.
+  The `!endLevel` guard keeps a re-consumed request (rollback replays the frame)
+  from re-arming the countdown and stretching the wind-down.
 - `adjust_difficulty` scores a co-op pair as two solo players (mean of the two
   `JE_totalScore`s against the solo thresholds). Vanilla's two-player branch
   counts raw cash -- correct for the shopless linked arcade where cash is the
