@@ -361,10 +361,15 @@ void network_level_rendezvous(void);
 
 /* A both-ready barrier for a card that has to keep drawing while it holds: neither session starts
  * until both players have confirmed. Non-blocking, unlike network_level_rendezvous above, so the
- * screen can report where the pair stands -- publish once when this player is ready, then poll for
- * the peer's announcement every frame. Worn by the Destruct title and the Timed Battle card. */
-void network_ready_publish(void);
-bool network_ready_peer(void);
+ * screen can report where the pair stands -- publish whenever this player's answer changes, then
+ * poll for the peer's every frame. Worn by the Destruct title and the Timed Battle card.
+ *
+ * The announcement is retractable, so the poll answers with a state rather than an arrival:
+ * -1 nothing this frame, 0 the peer withdrew, 1 the peer is ready. A release must also wait on
+ * network_is_sync(): the channel is ordered, so a withdrawal sent before the peer's ready was
+ * acknowledged always lands ahead of that acknowledgement, and nobody starts alone. */
+void network_ready_publish(bool ready);
+int network_ready_peer(void);
 
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
@@ -493,8 +498,8 @@ extern bool rollback_resim;
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
 static inline void network_level_rendezvous(void) { }
-static inline void network_ready_publish(void) { }
-static inline bool network_ready_peer(void) { return false; }
+static inline void network_ready_publish(bool ready) { (void)ready; }
+static inline int network_ready_peer(void) { return -1; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }

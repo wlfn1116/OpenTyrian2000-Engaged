@@ -920,7 +920,10 @@ static void DE_composeIntro(bool localReady, bool peerReady)
 		                                   : "Press any key when you are ready.";
 		const char* const other = peerReady ? "The other player is ready."
 		                                    : "Waiting for the other player...";
-		const char* const leave = "Esc leaves the session.";
+		// Esc is a step back rather than a way out while this player stands confirmed, so it takes
+		// two presses to leave from there. Says which one it is about to be.
+		const char* const leave = localReady ? "Esc takes back your ready."
+		                                     : "Esc leaves the session.";
 		JE_outText(VGAScreen, center_text(own, TINY_FONT), 170, own, localReady ? 12 : 15, 4);
 		JE_outText(VGAScreen, center_text(other, TINY_FONT), 180, other, peerReady ? 12 : 15, 2);
 		JE_outText(VGAScreen, center_text(leave, TINY_FONT), 190, leave, 15, 2);
@@ -940,22 +943,24 @@ static void DE_composeIntro(bool localReady, bool peerReady)
  * here until the other machine's announcement arrives, so nobody is still reading which side they
  * command while the other is already firing.  Unbounded on purpose -- the peer sits on this same
  * screen keeping the link alive, a timeout would start one session without the other, and Escape
- * is the way out instead. */
+ * is the way out instead.  Escape takes a confirmation back first, so leaving from ready is two
+ * presses: a barrier that only released and never stepped back had no way to change your mind. */
 static void DE_netIntroBarrier(void)
 {
 	bool localReady = false, peerReady = false;
 
 	// Nothing counts until the press that opened this screen is let go: a key still down from the
 	// lobby confirms the barrier before it can be read, and a held pad button auto-repeats into
-	// fresh presses.  Bounded, so a drifting stick cannot lock the screen out instead.
+	// fresh presses.  Bounded, so a drifting stick cannot lock the screen out instead; a deadline
+	// of zero is the re-arm after a withdrawal, which waits for a real release (that key IS held).
 	bool armed = false;
-	const Uint32 armDeadline = SDL_GetTicks() + 500;
+	Uint32 armDeadline = SDL_GetTicks() + 500;
 
 	// A headless wire peer has nobody to press anything; it is ready as soon as it arrives.
 	if (qa_net_gameplay_ticks > 0)
 	{
 		localReady = true;
-		network_ready_publish();
+		network_ready_publish(true);
 	}
 
 	while (true)
@@ -971,27 +976,43 @@ static void DE_netIntroBarrier(void)
 
 		if (!armed)
 		{
-			armed = (!newkey && !joydown) || SDL_GetTicks() >= armDeadline;
+			armed = (!newkey && !joydown) || (armDeadline != 0 && SDL_GetTicks() >= armDeadline);
 			newkey = false;
 		}
 		else if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
-			// The one key that does not confirm.  The wait has no timeout, so this is the way out
-			// when the other player has walked away from theirs; they are sitting on this same
-			// screen and have to be told, or they wait out the dead-link timeout instead.
-			network_prepare(PACKET_QUIT);
-			network_send(4);  // PACKET_QUIT
-			network_tyrian_halt(0, true);   // does not return
+			newkey = false;
+
+			if (localReady)
+			{
+				// Step back rather than out.  The peer is watching this line, so the withdrawal is
+				// announced like the confirmation was; the release below waits on our own channel
+				// being clear, and the channel is ordered, so a withdrawal sent before the peer's
+				// confirmation was acknowledged always reaches them ahead of that acknowledgement.
+				localReady = false;
+				network_ready_publish(false);
+				armed = false;
+				armDeadline = 0;
+			}
+			else
+			{
+				// The way out, once nothing is standing behind it.  The other player is sitting on
+				// this same screen and has to be told, or they wait out the dead-link timeout.
+				network_prepare(PACKET_QUIT);
+				network_send(4);  // PACKET_QUIT
+				network_tyrian_halt(0, true);   // does not return
+			}
 		}
 		else if (!localReady && newkey)
 		{
 			localReady = true;
 			newkey = false;
-			network_ready_publish();
+			network_ready_publish(true);
 		}
 
-		if (network_ready_peer())   // doubles as this frame's keep-alive
-			peerReady = true;
+		const int peer = network_ready_peer();   // doubles as this frame's keep-alive
+		if (peer >= 0)
+			peerReady = (peer != 0);
 
 		// Not until our own announcement is acknowledged: leaving with it unretired puts a
 		// retransmit in front of the state stream on the very first tick.

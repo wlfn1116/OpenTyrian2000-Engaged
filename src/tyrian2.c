@@ -7122,15 +7122,16 @@ static void networkTimedBattleReady(void)
 
 	// Nothing counts until the press that opened this screen is let go: a key still down from the
 	// menu behind it would confirm the card before it is on screen, and a held pad button
-	// auto-repeats into fresh presses. Bounded, so a drifting stick cannot lock the card instead.
+	// auto-repeats into fresh presses. Bounded, so a drifting stick cannot lock the card instead;
+	// a deadline of zero is the re-arm after a withdrawal, which waits for a real release.
 	bool armed = false;
-	const Uint32 armDeadline = SDL_GetTicks() + 500;
+	Uint32 armDeadline = SDL_GetTicks() + 500;
 
 	// A headless wire peer has nobody to press anything; it is ready as soon as it arrives.
 	if (qa_net_gameplay_ticks > 0)
 	{
 		localReady = true;
-		network_ready_publish();
+		network_ready_publish(true);
 	}
 
 	JE_loadPic(VGAScreen2, 2, false);
@@ -7166,7 +7167,10 @@ static void networkTimedBattleReady(void)
 		draw_font_hv_shadow(VGAScreen, 320 / 2, 162,
 		                    peerReady ? "The other player is ready." : "Waiting for the other player...",
 		                    small_font, centered, 15, peerReady ? 6 : 2, false, 1);
-		draw_font_hv_shadow(VGAScreen, 320 / 2, 178, "Esc leaves the session.",
+		// Esc is a step back rather than a way out while this player stands confirmed, so it takes
+		// two presses to leave from there. Says which one it is about to be.
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 178,
+		                    localReady ? "Esc takes back your ready." : "Esc leaves the session.",
 		                    small_font, centered, 15, 0, false, 1);
 
 		JE_showVGA();
@@ -7184,27 +7188,44 @@ static void networkTimedBattleReady(void)
 
 		if (!armed)
 		{
-			armed = (!newkey && !joydown) || SDL_GetTicks() >= armDeadline;
+			armed = (!newkey && !joydown) || (armDeadline != 0 && SDL_GetTicks() >= armDeadline);
 			newkey = false;
 		}
 		else if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 		{
-			// The one key that does not confirm. Escape backs out of every other screen, and the
-			// other player is sitting on this one: tell them, or they wait out the dead-link
-			// timeout instead of being told the session ended.
-			network_prepare(PACKET_QUIT);
-			network_send(4);  // PACKET_QUIT
-			network_tyrian_halt(0, true);   // does not return
+			newkey = false;
+
+			if (localReady)
+			{
+				// Step back rather than out. The peer is watching this line, so the withdrawal is
+				// announced like the confirmation was; the release below waits on our own channel
+				// being clear, and the channel is ordered, so a withdrawal sent before the peer's
+				// confirmation was acknowledged always reaches them ahead of that acknowledgement.
+				localReady = false;
+				network_ready_publish(false);
+				armed = false;
+				armDeadline = 0;
+			}
+			else
+			{
+				// The way out, once nothing is standing behind it. The other player is sitting on
+				// this same screen and has to be told, or they wait out the dead-link timeout
+				// instead of being told the session ended.
+				network_prepare(PACKET_QUIT);
+				network_send(4);  // PACKET_QUIT
+				network_tyrian_halt(0, true);   // does not return
+			}
 		}
 		else if (!localReady && newkey)
 		{
 			localReady = true;
 			newkey = false;
-			network_ready_publish();
+			network_ready_publish(true);
 		}
 
-		if (network_ready_peer())   // doubles as this frame's keep-alive
-			peerReady = true;
+		const int peer = network_ready_peer();   // doubles as this frame's keep-alive
+		if (peer >= 0)
+			peerReady = (peer != 0);
 
 		// Not until our own announcement is acknowledged: leaving with it unretired puts a
 		// retransmit in front of the state stream on the very first tick.

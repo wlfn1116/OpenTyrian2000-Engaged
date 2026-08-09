@@ -5901,9 +5901,11 @@ void JE_timedBattleResult(void)
 	set_menu_centered(true);
 
 	fade_black(15);
-	// The same backdrop and type as the card the session opened on, so the two read as a pair.
+	// The same backdrop, title and type as the card the session opened on, so the two read as a
+	// pair. Its own name for the mode: timed_battle_name[0] is the picker's header, and this is
+	// not a picker.
 	JE_loadPic(VGAScreen, 2, false);
-	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 20, timed_battle_name[0], large_font,
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 20, "Timed Battle", large_font,
 	                    centered, 15, -3, false, 2);
 	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 48, timed_battle_name[timeBattleSelection],
 	                    normal_font, centered, 15, -3, false, 2);
@@ -5916,7 +5918,9 @@ void JE_timedBattleResult(void)
 		// Name on the left of a fixed column and total right-aligned on it, so a long name cannot
 		// push a total off the panel and neither row's figures wander as the numbers change.
 		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)player[i].cash);
-		const int value = (i == winner) ? 6 : 2;
+		// The menu range for this bank and font: the top of it is white, which this backdrop is
+		// far too dark for. The winner takes the step a selected menu row takes, and no more.
+		const int value = (i == winner) ? -2 : -4;
 		draw_font_hv_shadow(VGAScreen, 60, 84 + 18 * (int)i, name[i], normal_font,
 		                    left_aligned, 15, value, false, 2);
 		draw_font_hv_shadow(VGAScreen, 260, 84 + 18 * (int)i, buffer, normal_font,
@@ -5927,7 +5931,7 @@ void JE_timedBattleResult(void)
 		snprintf(buffer, sizeof(buffer), "%s wins the race.", name[winner]);
 	else
 		snprintf(buffer, sizeof(buffer), "A draw.");
-	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 130, buffer, normal_font, centered, 15, 4, false, 2);
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 130, buffer, normal_font, centered, 15, -3, false, 2);
 
 	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 172, "Press a key", small_font,
 	                    centered, 15, 2, false, 1);

@@ -74,6 +74,9 @@
                                           block spends its last three flag bits on it (which
                                           battle, and that it is one at all), which a v23 peer
                                           reads as zero and plays as a plain arcade episode.
+                                          The both-ready barrier's PACKET_WAITING also grew an
+                                          answer byte, so a confirmation can be withdrawn; a v23
+                                          peer's bare one reads as the ready it always was.
                                           v23: ENGAGE mini-game exits reload the 2P LAST LEVEL
                                           slot and a TIME WAR clear keeps the coop pair shape;
                                           a v22 peer reloads its local solo save there instead,
@@ -2796,19 +2799,20 @@ void network_level_rendezvous(void)
 /* The both-ready barrier the Destruct title and the Timed Battle card hold on, split into an
  * announcement and a poll rather than reusing network_level_rendezvous above: that one owns the
  * wait, and these screens keep drawing (and keep reporting which side is still to confirm). */
-void network_ready_publish(void)
+void network_ready_publish(bool ready)
 {
 	if (!isNetworkGame)
 		return;
 
 	network_prepare(PACKET_WAITING);
-	network_send(4);  // PACKET_WAITING (both-ready barrier)
+	packet_out_temp->data[4] = ready ? 1 : 0;
+	network_send(5);  // PACKET_WAITING + the answer it carries
 }
 
-bool network_ready_peer(void)
+int network_ready_peer(void)
 {
 	if (!isNetworkGame)
-		return false;
+		return -1;
 
 	network_check();
 
@@ -2820,11 +2824,13 @@ bool network_ready_peer(void)
 
 	if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
 	{
+		// Every other rendezvous sends a bare four-byte one, which can only mean "ready" here.
+		const int ready = (packet_in[0]->len >= 5) ? (packet_in[0]->data[4] != 0 ? 1 : 0) : 1;
 		network_update();   // consume it, or it heads the queue for the rest of the session
-		return true;
+		return ready;
 	}
 
-	return false;
+	return -1;
 }
 
 bool network_shop_pump(void)
