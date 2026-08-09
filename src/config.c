@@ -689,6 +689,13 @@ bool load_opentyrian_config(void)
 			// Online Arcade: the classic linked pair, or two Separate personal arcades.
 			config_get_bool_option(section, "net_arcade_separate", &arcadeSeparateShips);
 
+			// Arcade's third shape, and which of the three battles it races.
+			config_get_bool_option(section, "net_arcade_timed_battle", &network_host_timed_battle);
+			int net_battle_level = network_host_battle_level;
+			config_get_int_option(section, "net_battle_level", &net_battle_level);
+			if (net_battle_level >= 1 && net_battle_level <= NET_TIMED_BATTLE_LEVELS)
+				network_host_battle_level = net_battle_level;
+
 			// Single-player determinism harness: verify the rollback snapshot
 			// every tick (see rollback.h).  Costs a second sim pass per tick.
 			config_get_bool_option(section, "rollback_selftest", &rollback_selftest);
@@ -972,6 +979,8 @@ bool save_opentyrian_config(void)
 	config_set_bool_option(section, "net_campaign_shared_credit", coopSharedCredit, OFF_ON);
 	config_set_bool_option(section, "net_coop_double_pickups", coopDoubleEarnings, OFF_ON);
 	config_set_bool_option(section, "net_arcade_separate", arcadeSeparateShips, OFF_ON);
+	config_set_bool_option(section, "net_arcade_timed_battle", network_host_timed_battle, OFF_ON);
+	config_set_int_option(section, "net_battle_level", network_host_battle_level);
 	config_set_bool_option(section, "net_endless_combo_shared", network_host_endless_combo_shared, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);

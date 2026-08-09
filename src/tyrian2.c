@@ -3059,6 +3059,10 @@ start_level:
 
 			if (timedBattleMode)
 			{
+				// Both racers went down before the clock did; the run still had a winner, and
+				// this path never reaches the level-complete tally that would have shown it.
+				if (isNetworkGame)
+					JE_timedBattleResult();
 				mainLevel = 0;
 				return;
 			}
@@ -6534,7 +6538,10 @@ new_game:
 					case 'q':
 						if (timedBattleMode)
 						{
-							JE_highScoreCheck();
+							if (isNetworkGame)
+								JE_timedBattleResult();
+							else
+								JE_highScoreCheck();
 							mainLevel = 0;
 							return;
 						}
@@ -7104,6 +7111,111 @@ void networkSuperTyrianEquip(Player *this_player)
 	this_player->last_items = this_player->items;
 }
 
+/* Online Timed Battle opens on a card both players confirm, the way the Destruct title does.
+ * Without it the race starts the instant the second machine finishes its handshake, scoring from
+ * the first tick while whoever is still reading the lobby loses ground; and the joiner has had
+ * nothing but the details list to tell it what it is about to fly. Unbounded on purpose -- the
+ * peer is sitting on this same screen keeping the link alive -- with Escape as the way out. */
+static void networkTimedBattleReady(void)
+{
+	bool localReady = false, peerReady = false;
+
+	// Nothing counts until the press that opened this screen is let go: a key still down from the
+	// menu behind it would confirm the card before it is on screen, and a held pad button
+	// auto-repeats into fresh presses. Bounded, so a drifting stick cannot lock the card instead.
+	bool armed = false;
+	const Uint32 armDeadline = SDL_GetTicks() + 500;
+
+	// A headless wire peer has nobody to press anything; it is ready as soon as it arrives.
+	if (qa_net_gameplay_ticks > 0)
+	{
+		localReady = true;
+		network_ready_publish();
+	}
+
+	JE_loadPic(VGAScreen2, 2, false);
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 20, "Timed Battle", large_font, centered, 15, -3, false, 2);
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 48, timed_battle_name[timeBattleSelection], normal_font,
+	                    centered, 15, -3, false, 2);
+
+	char line[128];
+	snprintf(line, sizeof(line), "%s   -   You fly as player %u",
+	         difficultyNameB[initialDifficulty], thisPlayerNum);
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 72, line, small_font, centered, 15, 2, false, 1);
+	if (network_opponent_name[0] != '\0')
+	{
+		snprintf(line, sizeof(line), "Racing %s", network_opponent_name);
+		draw_font_hv_shadow(VGAScreen2, 320 / 2, 84, line, small_font, centered, 15, 2, false, 1);
+	}
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 108, "The clock is the level. Whoever banks the most",
+	                    small_font, centered, 15, 4, false, 1);
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 120, "cash before it runs out takes the race.",
+	                    small_font, centered, 15, 4, false, 1);
+
+	bool faded = false;
+
+	for (;;)
+	{
+		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
+
+		// Where the pair stands, brightened as each side commits: the wait has no timeout, so the
+		// screen has to say which of the two it is still waiting on.
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 150,
+		                    localReady ? "You are ready." : "Press a key when you are ready.",
+		                    small_font, centered, 15, localReady ? 6 : 2, false, 1);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 162,
+		                    peerReady ? "The other player is ready." : "Waiting for the other player...",
+		                    small_font, centered, 15, peerReady ? 6 : 2, false, 1);
+		draw_font_hv_shadow(VGAScreen, 320 / 2, 178, "Esc leaves the session.",
+		                    small_font, centered, 15, 0, false, 1);
+
+		JE_showVGA();
+		if (!faded)
+		{
+			fade_palette(colors, 10, 0, 255);
+			faded = true;
+		}
+		if (!output_vsync)
+			limit_render_fps();
+
+		watchdog_heartbeat();
+		push_joysticks_as_keyboard();  // a controller confirms too (no keyboard on the consoles)
+		service_SDL_events(false);
+
+		if (!armed)
+		{
+			armed = (!newkey && !joydown) || SDL_GetTicks() >= armDeadline;
+			newkey = false;
+		}
+		else if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			// The one key that does not confirm. Escape backs out of every other screen, and the
+			// other player is sitting on this one: tell them, or they wait out the dead-link
+			// timeout instead of being told the session ended.
+			network_prepare(PACKET_QUIT);
+			network_send(4);  // PACKET_QUIT
+			network_tyrian_halt(0, true);   // does not return
+		}
+		else if (!localReady && newkey)
+		{
+			localReady = true;
+			newkey = false;
+			network_ready_publish();
+		}
+
+		if (network_ready_peer())   // doubles as this frame's keep-alive
+			peerReady = true;
+
+		// Not until our own announcement is acknowledged: leaving with it unretired puts a
+		// retransmit in front of the state stream on the very first tick.
+		if ((localReady && peerReady && network_is_sync()) || !network_peer_alive())
+			break;
+	}
+
+	newkey = false;
+	fade_black(10);
+}
+
 void networkStartScreen(void)
 {
 	// A lobby game is already connected by the time we get here; the lobby had to do it
@@ -7159,9 +7271,18 @@ void networkStartScreen(void)
 	twoPlayerMode = true;
 	coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 	coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
+	/* Arcade's Timed Battle: two personal arcades racing one battle level for cash, so it is the
+	 * Separate shape with the mode flag the level scripts read (event 84's clock, event 85's
+	 * hatching enemies, and the ']T' jump that picks the section out of the episode). */
+	timedBattleMode = network_timed_battle();
+	if (timedBattleMode)
+	{
+		timeBattleSelection = (JE_byte)network_host_battle_level;
+		arcadeSeparateMode = true;
+	}
 	/* The two one-player rulesets flown online give each player a complete ship, so they run in
-	 * the Separate arcade shape whatever the host's Ships preference says. Armed here rather than
-	 * from the settings block: the block carries a lobby preference, and this is the game type
+	 * the Separate arcade shape whatever the host's Mode row says. Armed here rather than from
+	 * the settings block: the block carries a lobby preference, and this is the game type
 	 * deciding for itself. */
 	if (network_game_type_is_super(network_game_type))
 		arcadeSeparateMode = true;
@@ -7177,8 +7298,9 @@ void networkStartScreen(void)
 
 		// New Game or Load Game.  A load applies the save right in the load menu; its record
 		// rides in the details packet so the joiner adopts the exact same state (difficulty
-		// already carries the 2-player +1 bump).
-		const int resumeSlot = networkHostStartSelect();
+		// already carries the 2-player +1 bump).  A Timed Battle is a single scored run against
+		// a clock with nothing to carry into it, so it is never offered the choice.
+		const int resumeSlot = timedBattleMode ? 0 : networkHostStartSelect();
 		if (resumeSlot > 0)
 		{
 			network_prepare(PACKET_DETAILS);
@@ -7197,8 +7319,11 @@ void networkStartScreen(void)
 		}
 		else if (resumeSlot == 0)
 		{
-			// Endless traverses episodes as it deepens, so it always opens on the first one.
-			JE_initEpisode(coopEndlessMode ? 1 : network_host_episode);
+			// Endless traverses episodes as it deepens, so it always opens on the first one, and a
+			// battle level is reached through the episode that holds it (the ']T' jump list).
+			JE_initEpisode(coopEndlessMode ? 1
+			               : timedBattleMode ? (JE_byte)network_timed_battle_episode(timeBattleSelection)
+			               : network_host_episode);
 			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
@@ -7244,9 +7369,16 @@ void networkStartScreen(void)
 			case NETWORK_GAME_CAMPAIGN:     value[rows++] = "Campaign";     break;
 			case NETWORK_GAME_SUPERTYRIAN:  value[rows++] = "SuperTyrian";  break;
 			case NETWORK_GAME_SUPERARCADE:  value[rows++] = "Super Arcade"; break;
-			default:                        value[rows++] = "Arcade";       break;
+			// Destruct returned above, so the remainder is Arcade in one of its three shapes.
+			default:  value[rows++] = timedBattleMode ? "Timed Battle" : "Arcade";  break;
 			}
-			if (!endless)
+			if (timedBattleMode)
+			{
+				// Same rebadge the host's own Mode/Level pair wears in the lobby.
+				label[rows] = "Level";
+				value[rows++] = timed_battle_name[timeBattleSelection];
+			}
+			else if (!endless)
 			{
 				label[rows] = "Episode";
 				value[rows++] = episode_name[network_host_episode];
@@ -7512,6 +7644,10 @@ void networkStartScreen(void)
 
 		network_check();
 	}
+
+	// A race is scored from the first tick, so it does not begin until both players say so.
+	if (timedBattleMode)
+		networkTimedBattleReady();
 
 	if (qa_net_gameplay_ticks > 0)
 	{

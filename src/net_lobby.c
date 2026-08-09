@@ -72,7 +72,7 @@ static const int lobby_difficulties[] =
  * that outgrows it overlaps its neighbour only on whichever machine opens that screen. */
 static const char *const lobbyHostLabel[] =
 {
-	"Listen Port", "Game Type", "Battle Mode", "Episode", "Endless Setup", "Difficulty", "Ships",
+	"Listen Port", "Game Type", "Mode", "Battle Mode", "Episode", "Endless Setup", "Difficulty",
 	"Host Flies", "Credit", "Double Earnings", "Game Speed", "Netcode", "Desync Recovery",
 };
 
@@ -80,11 +80,11 @@ static const char *const lobbyHostHelp[] =
 {
 	"The port other players connect to.",
 	"Campaign and Endless share cash; the rest score.",
+	"The classic pair, a ship each, or a race for cash.",
 	"Which Destruct battle both players fight.",
 	"Which episode the session plays.",
 	"Seed, run mode, and who charts each course.",
 	"Applies to both players for the whole game.",
-	"Linked is the classic pair; Separate, a ship each.",
 	"Which ship you take; the joiner gets the other.",
 	"Shared pays a kill or pickup to both players.",
 	"Individual splits the take; combat cash pays twice.",
@@ -108,7 +108,12 @@ static const char *const lobbyPlayerValue[]  = { "Player 1", "Player 2", "Silver
 static const char lobbySideLabel[] = "Host Fights On";
 static const char *const lobbySideValue[]    = { "Left Side", "Right Side" };
 static const char lobbySideHelp[] = "Which side you man; the joiner gets the other.";
-static const char *const lobbyShipsValue[]   = { "Linked", "Separate" };
+/* Arcade's shape, in cycle order. Timed Battle is a Separate pair as far as the ships go; what
+ * it changes is what they fly against, so it belongs on this row rather than a fourth one. */
+static const char *const lobbyModeValue[]    = { "Linked", "Separate", "Timed Battle" };
+// Timed Battle races one of three fixed levels, so the Episode row becomes a level pick.
+static const char lobbyBattleLevelLabel[] = "Level";
+static const char lobbyBattleLevelHelp[] = "Which Timed Battle level both players race.";
 static const char *const lobbyCreditValue[]  = { "Shared", "Individual" };
 static const char *const lobbyOnOffValue[]   = { "On", "Off" };
 static const char *const lobbyNetcodeValue[] = { "Rollback", "Delay-Based" };
@@ -145,6 +150,19 @@ static int lobbyCycleEpisode(int episode, int direction)
 			return episode;
 	}
 	return 1;
+}
+
+/* The Mode row's three positions folded into the two flags a session runs on: Timed Battle is a
+ * Separate pair with a battle level, so nothing downstream has to ask about the ships twice. */
+static int lobbyArcadeMode(void)
+{
+	return network_host_timed_battle ? 2 : (arcadeSeparateShips ? 1 : 0);
+}
+
+static void lobbySetArcadeMode(int mode)
+{
+	arcadeSeparateShips = mode >= 1;
+	network_host_timed_battle = mode == 2;
 }
 
 static int lobbyCycleDifficulty(int difficulty, int direction)
@@ -800,11 +818,11 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 	{
 		ITEM_PORT = 0,
 		ITEM_TYPE,
+		ITEM_MODE,
 		ITEM_BATTLE,
 		ITEM_EPISODE,
 		ITEM_ENDLESS,
 		ITEM_DIFFICULTY,
-		ITEM_SHIPS,
 		ITEM_PLAYER,
 		ITEM_CREDIT,
 		ITEM_DOUBLE,
@@ -866,6 +884,10 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		 * goes with it), and no speed choice: its tick is the rate the two machines trade state
 		 * packets at, so both sides play it at Normal. */
 		const bool destruct = network_game_type == NETWORK_GAME_DESTRUCT;
+		/* Arcade's Timed Battle: three fixed levels raced for cash, so the row that names an
+		 * episode names a battle instead. Held on the same row rather than a second one -- the
+		 * session plays exactly one of the two, and only one can ever be answered. */
+		const bool timedBattle = network_timed_battle();
 
 		bool hidden[SETTING_COUNT];
 		hidden[ITEM_PORT]       = false;
@@ -874,9 +896,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		hidden[ITEM_EPISODE]    = endless || destruct;
 		hidden[ITEM_ENDLESS]    = !endless;
 		hidden[ITEM_DIFFICULTY] = destruct;
-		// The Ships row is Arcade's own; Host Flies only means anything for the Linked pair,
+		// The Mode row is Arcade's own; Host Flies only means anything for the Linked pair,
 		// and doubles as Destruct's side pick.
-		hidden[ITEM_SHIPS]      = coop || super || destruct;
+		hidden[ITEM_MODE]       = coop || super || destruct;
 		hidden[ITEM_PLAYER]     = destruct ? false : (coop || super || arcadeSeparateShips);
 		hidden[ITEM_CREDIT]     = !coop;
 		// Doubling pickups is only meaningful when the take is split in the first place.
@@ -902,6 +924,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		// Destruct's rebadge of Host Flies: a side is fought on, not flown.
 		if (destruct)
 			itemLabel[ITEM_PLAYER] = lobbySideLabel;
+		// ...and Timed Battle's of Episode: it races a level, and picks its own episode from it.
+		if (timedBattle)
+			itemLabel[ITEM_EPISODE] = lobbyBattleLevelLabel;
 
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_PORT] = port_buf[0] ? port_buf : "(none)";
@@ -909,12 +934,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		itemValue[ITEM_BATTLE] = destructModeName[(network_host_destruct_mode >= 0
 		                          && network_host_destruct_mode < DESTRUCT_MODES)
 		                         ? network_host_destruct_mode : 0];
-		itemValue[ITEM_EPISODE] = episode_name[network_host_episode];
+		itemValue[ITEM_EPISODE] = timedBattle ? timed_battle_name[network_host_battle_level]
+		                                      : episode_name[network_host_episode];
 		itemValue[ITEM_ENDLESS] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 		itemValue[ITEM_DIFFICULTY] = variant
 		                           ? lobbyVariantValue[network_host_difficulty == DIFFICULTY_SUICIDE ? 1 : 0]
 		                           : difficultyNameB[network_host_difficulty];
-		itemValue[ITEM_SHIPS] = arcadeSeparateShips ? lobbyShipsValue[1] : lobbyShipsValue[0];
+		itemValue[ITEM_MODE] = lobbyModeValue[lobbyArcadeMode()];
 		itemValue[ITEM_PLAYER] = destruct
 		                       ? lobbySideValue[network_host_player == 2 ? 1 : 0]
 		                       : network_host_player == 2
@@ -973,6 +999,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			helpLine = lobbyVariantHelp;
 		else if (selectedIndex == ITEM_PLAYER && destruct)
 			helpLine = lobbySideHelp;
+		else if (selectedIndex == ITEM_EPISODE && timedBattle)
+			helpLine = lobbyBattleLevelHelp;
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, helpLine,
 		                    small_font, centered, 15, 2, false, 1);
 
@@ -1164,7 +1192,12 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 		case ITEM_EPISODE:
 			JE_playSampleNum(S_CLICK);
-			network_host_episode = lobbyCycleEpisode(network_host_episode, cycleDir);
+			// The same row under Timed Battle's name, cycling its three levels instead.
+			if (network_timed_battle())
+				network_host_battle_level = (network_host_battle_level - 1 + cycleDir
+				                             + NET_TIMED_BATTLE_LEVELS) % NET_TIMED_BATTLE_LEVELS + 1;
+			else
+				network_host_episode = lobbyCycleEpisode(network_host_episode, cycleDir);
 			break;
 
 		case ITEM_DIFFICULTY:
@@ -1195,11 +1228,13 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			net_desync_recovery = !net_desync_recovery;
 			break;
 
-		case ITEM_SHIPS:
-			// Linked flies the classic Silver + Dragonwing pair; Separate gives each player
-			// their own single-player-style arcade ship. Host-authoritative (settings bit 11).
+		case ITEM_MODE:
+			// Linked flies the classic Silver + Dragonwing pair; Separate gives each player their
+			// own single-player-style arcade ship, and Timed Battle races that pair of ships
+			// through one battle level for cash. Host-authoritative (settings bits 11 and 13-15).
 			JE_playSampleNum(S_CLICK);
-			arcadeSeparateShips = !arcadeSeparateShips;
+			lobbySetArcadeMode((lobbyArcadeMode() + cycleDir + (int)COUNTOF(lobbyModeValue))
+			                   % (int)COUNTOF(lobbyModeValue));
 			break;
 
 		case ITEM_PLAYER:
@@ -1695,20 +1730,23 @@ void qa_test_net_lobby_strings(void)
 	lobbyCheckRow(lobbyHostLabel[0], portWorst);
 	for (uint i = 0; i < COUNTOF(lobbyTypeValue); ++i)
 		lobbyCheckRow(lobbyHostLabel[1], lobbyTypeValue[i]);
+	for (uint i = 0; i < COUNTOF(lobbyModeValue); ++i)
+		lobbyCheckRow(lobbyHostLabel[2], lobbyModeValue[i]);
 	// The battle-mode names come out of the data file, so they are measured, not trusted.
 	for (int m = 0; m < DESTRUCT_MODES; ++m)
-		lobbyCheckRow(lobbyHostLabel[2], destructModeName[m]);
+		lobbyCheckRow(lobbyHostLabel[3], destructModeName[m]);
 	for (int e = 1; e <= EPISODE_MAX; ++e)
-		lobbyCheckRow(lobbyHostLabel[3], episode_name[e]);
+		lobbyCheckRow(lobbyHostLabel[4], episode_name[e]);
+	// ...and so do the battle-level names the same row shows under Timed Battle's label.
+	for (int b = 1; b <= NET_TIMED_BATTLE_LEVELS; ++b)
+		lobbyCheckRow(lobbyBattleLevelLabel, timed_battle_name[b]);
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
-		lobbyCheckRow(lobbyHostLabel[4], endlessRunModeName((EndlessRunMode)m));
+		lobbyCheckRow(lobbyHostLabel[5], endlessRunModeName((EndlessRunMode)m));
 	for (uint d = 0; d < COUNTOF(lobby_difficulties); ++d)
-		lobbyCheckRow(lobbyHostLabel[5], difficultyNameB[lobby_difficulties[d]]);
+		lobbyCheckRow(lobbyHostLabel[6], difficultyNameB[lobby_difficulties[d]]);
 	// The same row under its SuperTyrian name and values.
 	for (uint i = 0; i < COUNTOF(lobbyVariantValue); ++i)
 		lobbyCheckRow(lobbyVariantLabel, lobbyVariantValue[i]);
-	for (uint i = 0; i < COUNTOF(lobbyShipsValue); ++i)
-		lobbyCheckRow(lobbyHostLabel[6], lobbyShipsValue[i]);
 	for (uint i = 0; i < COUNTOF(lobbyPlayerValue); ++i)
 		lobbyCheckRow(lobbyHostLabel[7], lobbyPlayerValue[i]);
 	// ...and the same row wearing Destruct's name and side values.
@@ -1742,6 +1780,7 @@ void qa_test_net_lobby_strings(void)
 		lobbyCheckHelp(lobbyHostHelp[i]);
 	lobbyCheckHelp(lobbyVariantHelp);
 	lobbyCheckHelp(lobbySideHelp);
+	lobbyCheckHelp(lobbyBattleLevelHelp);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessHelp); ++i)
 		lobbyCheckHelp(lobbyEndlessHelp[i]);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessRunModeHelp); ++i)

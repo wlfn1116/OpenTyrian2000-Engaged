@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       23           /* v23: ENGAGE mini-game exits reload the 2P LAST LEVEL
+#define NET_VERSION       24           /* v24: Arcade's Mode row gained Timed Battle; the settings
+                                          block spends its last three flag bits on it (which
+                                          battle, and that it is one at all), which a v23 peer
+                                          reads as zero and plays as a plain arcade episode.
+                                          v23: ENGAGE mini-game exits reload the 2P LAST LEVEL
                                           slot and a TIME WAR clear keeps the coop pair shape;
                                           a v22 peer reloads its local solo save there instead,
                                           so the two sims part ways the moment one ends.
@@ -129,6 +133,10 @@ int network_host_game_speed = 4;
 NetworkGameType network_game_type = NETWORK_GAME_ARCADE;
 int network_host_episode = 1;
 int network_host_difficulty = DIFFICULTY_NORMAL;
+
+// Arcade's Timed Battle shape and which of the three levels it races (see network.h).
+bool network_host_timed_battle = false;
+int  network_host_battle_level = 1;
 
 // Endless lobby block. Blank seed means "roll one when the run starts".
 char network_host_endless_seed[NET_ENDLESS_SEED_MAX] = "";
@@ -1582,10 +1590,15 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		coopCampaignMode = false;
 		coopEndlessMode = false;
 		arcadeSeparateMode = false;
+		timedBattleMode = false;
 		superTyrian = false;
 		superArcadeMode = SA_NONE;
 		network_sa_ship_reset();
 		haltGame = false;
+		/* The main loop dispatches into Destruct on this flag and clears it when the minigame
+		 * returns; a teardown unwinds past that, so a Destruct session abandoned at its title card
+		 * left it set and the NEXT game started -- whatever it was -- was diverted into Destruct. */
+		loadDestruct = false;
 		JE_clearSpecialRequests();
 
 		longjmp(network_bailout_env, 1);
@@ -1615,6 +1628,8 @@ static struct
 	int  xmasMode;
 	JE_byte gameSpeed;
 	JE_boolean arcadeSeparateMode;
+	bool timedBattle;
+	int  battleLevel;
 }
 settings_local;
 
@@ -1649,6 +1664,9 @@ int network_settings_pack(Uint8 *buf)
 	flags |= coopDoubleEarnings     ? 1 << 10 : 0; // ...and whether Individual pays combat cash twice
 	flags |= arcadeSeparateShips    ? 1 << 11 : 0; // Arcade: two Separate personal ships; host decides
 	flags |= arcadeRearGunScale     ? 1 << 12 : 0; // ...and whether lives raise the rear gun
+	// Arcade's Timed Battle: the shape, and which of the three levels, in the last three bits.
+	flags |= network_timed_battle() ? 1 << 13 : 0;
+	flags |= (Uint16)((network_host_battle_level - 1) & 3) << 14;
 
 	SDLNet_Write16(spark,                    &buf[0]);
 	SDLNet_Write16(epdiff,                   &buf[2]);
@@ -1712,6 +1730,10 @@ static void network_settings_stash(void)
 	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
 	// otherwise reshape the next LOCAL two-player arcade, which never armed it.
 	settings_local.arcadeSeparateMode   = arcadeSeparateMode;
+	// The joiner adopts the host's Timed Battle pick into these, so its own lobby choice -- which
+	// is what the config file keeps -- has to survive a session spent racing somebody else's.
+	settings_local.timedBattle          = network_host_timed_battle;
+	settings_local.battleLevel          = network_host_battle_level;
 	settings_stashed = true;
 }
 
@@ -1792,6 +1814,13 @@ int network_settings_adopt(const Uint8 *buf)
 	coop_set_session_double_earnings((flags & (1 << 10)) != 0);
 	arcadeSeparateMode = (flags & (1 << 11)) != 0;
 	arcadeRearGunScale = (flags & (1 << 12)) != 0;
+
+	// A hostile packet could name a battle that does not exist, and the level number indexes
+	// both the name table and the episode script's jump list, so clamp it into range.
+	network_host_timed_battle = (flags & (1 << 13)) != 0;
+	network_host_battle_level = (int)((flags >> 14) & 3) + 1;
+	if (network_host_battle_level > NET_TIMED_BATTLE_LEVELS)
+		network_host_battle_level = 1;
 
 	zicaLaserBase    = SDLNet_Read16(&buf[6]);
 	zicaLaserLength  = SDLNet_Read16(&buf[8]);
@@ -2764,19 +2793,19 @@ void network_level_rendezvous(void)
 	}
 }
 
-/* The online Destruct title screen's both-ready barrier, split into an announcement and a poll
- * rather than reusing network_level_rendezvous above: that one owns the wait, and this screen has
- * to keep drawing (and keep reporting which side is still to confirm) while it holds. */
-void network_destruct_ready_publish(void)
+/* The both-ready barrier the Destruct title and the Timed Battle card hold on, split into an
+ * announcement and a poll rather than reusing network_level_rendezvous above: that one owns the
+ * wait, and these screens keep drawing (and keep reporting which side is still to confirm). */
+void network_ready_publish(void)
 {
 	if (!isNetworkGame)
 		return;
 
 	network_prepare(PACKET_WAITING);
-	network_send(4);  // PACKET_WAITING (Destruct title barrier)
+	network_send(4);  // PACKET_WAITING (both-ready barrier)
 }
 
-bool network_destruct_ready_peer(void)
+bool network_ready_peer(void)
 {
 	if (!isNetworkGame)
 		return false;
@@ -2985,6 +3014,8 @@ void network_settings_restore(void)
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
 	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
+	network_host_timed_battle = settings_local.timedBattle;
+	network_host_battle_level = settings_local.battleLevel;
 
 	settings_stashed = false;
 }

@@ -148,6 +148,25 @@ extern NetworkGameType network_game_type;
 extern int network_host_episode;
 extern int network_host_difficulty;
 
+/* Arcade's third shape, beside the Linked pair and Separate ships: both players race one of the
+ * three Timed Battle levels for cash. Only Arcade offers it, so the stored flag alone is not the
+ * answer -- ask network_timed_battle(). The level is what timeBattleSelection takes; the episode
+ * it belongs to (1 for the first, 5 for the other two) travels as the episode it is. */
+#define NET_TIMED_BATTLE_LEVELS 3
+extern bool network_host_timed_battle;
+extern int network_host_battle_level;   // 1..NET_TIMED_BATTLE_LEVELS
+
+static inline bool network_timed_battle(void)
+{
+	return network_game_type == NETWORK_GAME_ARCADE && network_host_timed_battle;
+}
+
+// The episode a battle level lives in; JE_initEpisode needs it before the level script runs.
+static inline int network_timed_battle_episode(int level)
+{
+	return level <= 1 ? 1 : 5;
+}
+
 // Endless lobby settings, chosen by the host and adopted by the joiner from the connect packet.
 // Kept as plain ints so network.h stays independent of endless.h; the run applies them as the
 // EndlessRunMode / EndlessCourseChooser they stand for.
@@ -340,11 +359,12 @@ bool network_endless_jump_poll(void);
  * needed on a path that starts a level without passing through the outpost. */
 void network_level_rendezvous(void);
 
-/* The online Destruct title screen's barrier: neither session starts until both players have
- * confirmed. Non-blocking, so the screen keeps drawing and can report where the pair stands --
- * publish once when this player is ready, then poll for the peer's announcement every frame. */
-void network_destruct_ready_publish(void);
-bool network_destruct_ready_peer(void);
+/* A both-ready barrier for a card that has to keep drawing while it holds: neither session starts
+ * until both players have confirmed. Non-blocking, unlike network_level_rendezvous above, so the
+ * screen can report where the pair stands -- publish once when this player is ready, then poll for
+ * the peer's announcement every frame. Worn by the Destruct title and the Timed Battle card. */
+void network_ready_publish(void);
+bool network_ready_peer(void);
 
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
@@ -473,8 +493,8 @@ extern bool rollback_resim;
 #define NETWORK_KEEP_ALIVE()
 #define network_ping_ms() (-1)
 static inline void network_level_rendezvous(void) { }
-static inline void network_destruct_ready_publish(void) { }
-static inline bool network_destruct_ready_peer(void) { return false; }
+static inline void network_ready_publish(void) { }
+static inline bool network_ready_peer(void) { return false; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }

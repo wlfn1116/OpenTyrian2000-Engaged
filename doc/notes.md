@@ -584,13 +584,57 @@ dual-ship session. The block that projection skips (`Player.generator_power`
 through `Player.x`) is live state in Separate arcade exactly as it is in co-op, so
 the gate is `dual_ship_mode()`; single-player replay fixtures are unaffected.
 
+### Online Timed Battle
+
+Arcade's third shape, and the lobby's Mode row is where all three live.
+`network_timed_battle()` is the pair `network_game_type == NETWORK_GAME_ARCADE
+&& network_host_timed_battle`; picking it arms `arcadeSeparateShips` with it, so
+nothing downstream asks about the ships twice. `network_host_battle_level` is
+which of the three battles, and it becomes `timeBattleSelection` for the session.
+
+Both ride the settings block rather than fields of their own -- the shape on bit
+13, the level minus one in bits 14-15, the last three the `Uint16` had. The
+level is not the episode: a battle is reached through the episode holding it
+(`network_timed_battle_episode`, 1 for the first and 5 for the other two), which
+`networkStartScreen` initialises, so it travels to the joiner as the episode it
+is in `PACKET_DETAILS` and the episode script's `]T` jump list picks the section
+out of it. The lobby's Episode row rebadges itself Level and cycles the three
+battle names, the way Difficulty rebadges itself Variant for SuperTyrian.
+
+Nothing in the level scripts needed changing. `timedBattleMode` already gates the
+clock (event 84), the enemies that hatch out of other enemies (event 85), the
+silent countdown and the `]T` jump, and it was already in the rollback registry;
+`timeBattleSelection` is not, and does not need to be -- it is settled before the
+session and constant through it, like `episodeNum`. What was single-player was
+the scoring around them. `JE_endLevelAni` pays the time bonus to both purses (one
+clock, one level) and gives each ship its own lives bonus, and its layout splits:
+solo keeps vanilla's rows with the ship parade moved onto a row of its own,
+clear of the total it used to be drawn through, and a race prints two named bonus
+lines under the shared time bonus instead, having no room for two parades.
+
+A Timed Battle is never offered Load Game -- nothing carries into a scored run
+against a clock -- and it ends on `JE_timedBattleResult` rather than
+`JE_highScoreCheck`: name entry blocks on a keyboard the other machine cannot
+see, and the board is indexed by battle level with one score per row. Both purses
+are settled simulation state and both names came out of the handshake, so the two
+machines compose the same scoreboard without a packet passing. It is reached from
+both exits, the clock's `]q` and the both-dead path, and that second one arrives
+straight from the level with the pillarbox off, so the screen sets and restores
+`set_menu_centered` itself.
+
+`networkTimedBattleReady` is the other both-ready barrier, on the same
+`network_ready_publish` / `network_ready_peer` pair as the Destruct title and for
+the same reason twice over: the joiner has seen nothing but the details list, and
+a race is scored from the first tick, so a machine that started while the other
+was still reading would bank a free lead.
+
 ### Online SuperTyrian and Super Arcade
 
 `network_game_type_is_super()` names the two one-player rulesets flown online.
 Both give each player a complete ship, so `networkStartScreen` arms
 `arcadeSeparateMode` for them directly rather than from the settings block: that
 bit carries the host's Arcade preference, and these two game types settle the
-question themselves. The lobby hides the Ships and Host Flies rows for them.
+question themselves. The lobby hides the Mode and Host Flies rows for them.
 
 SuperTyrian has no difficulty ladder. Its two variants ride the same
 `network_host_difficulty` field every other type reads as difficulty, because that
@@ -1502,7 +1546,8 @@ draw was moved from libc `rand()` to `mt_rand` and the generator/tick trig to
 previous visit's buffers on entry, because a network teardown longjmps out of
 the tick loop past the frees at the bottom.
 
-The intro card is a both-ready barrier (`DE_netIntroBarrier`). It announces this
+The intro card is a both-ready barrier (`DE_netIntroBarrier`; Timed Battle's card
+is the other one). It announces this
 player's confirmation as a `PACKET_WAITING` and holds until the peer's arrives,
 so no machine reaches `DE_NetExchange` while the other is still reading the
 card. It replaced a five-second auto-advance, which existed only because the
@@ -1512,7 +1557,7 @@ no timeout at all. The wait is unbounded by design: both peers sit on this
 screen pumping keep-alives, and a timeout would start one session without the
 other -- Escape is the way out instead, sending `PACKET_QUIT` before halting so
 an abandoned partner is told rather than left to the dead-link timeout.
-`network_destruct_ready_peer` drains a trailing `PACKET_CONNECT` off the
+`network_ready_peer` drains a trailing `PACKET_CONNECT` off the
 head first (the same hole `network_sa_ship_peer` guards), and the barrier will
 not release until this machine's own announcement is acknowledged, or the
 retransmit would head the queue on the first tick. A 500ms arming window
@@ -1575,8 +1620,20 @@ mini-games needed care online:
   stranding one machine at `network_level_rendezvous` (30s timeout on a faded
   screen) while the other ran the ending alone; one shared path removes the
   split by construction. `superTyrian` and `onePlayerAction` deliberately
-  survive; `]e` does not set `items.super_arcade_mode`, so a save made during
-  the carry-on resumes as a normal campaign (vanilla quirk, symmetric).
+  survive, and a save made during the carry-on resumes back into it: `]e` never
+  writes `items.super_arcade_mode`, but `JE_saveGame` re-derives that byte from
+  the live flag (`superTyrian` -> `SA_SUPERTYRIAN`), and `JE_loadGameRecord`
+  reads it back the same way. Both machines write and restore the same record,
+  so the resume is symmetric. Ship two's byte stays `SA_NONE` (only player
+  one's is derived), which is harmless here: `superTyrian` is one global that
+  covers both ships, and a coop record is admitted to its lobby by
+  `save_record_is_coop`, not by the `save_record_sa_ship` bytes the arcade
+  lobbies gate on. A resumed coop session lands with `onePlayerAction` false,
+  since the two-ship branch clears it.
+  Contrast the mini-game exit path, which is where the flags do go away: the
+  `doNotSaveBackup` branch after the backup reload clears `superTyrian`,
+  `onePlayerAction` and `items.super_arcade_mode` outright, so dying or quitting
+  a mini-game returns a plain campaign.
 - The between-level cutscene chain (`]P` pics, `]W` briefings, `]Q`) is safe
   online as-is: text screens auto-advance on their `]W` delay digit, and
   `JE_displayText`/`JE_outCharGlow` pump `NETWORK_KEEP_ALIVE()`, so a slow

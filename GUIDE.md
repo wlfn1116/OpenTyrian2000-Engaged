@@ -450,7 +450,7 @@ between is even, so six lives puts the Stalker at 22 armor and 19 shield.
 | 1 Player Arcade | Stalker | 15 | 10 | 28 |
 | 2 Player (and Linked Online Arcade) | Silver Ship | 10 | 10 | 28 |
 | 2 Player (and Linked Online Arcade) | Dragonwing | 10 | 10 | 28 |
-| Separate Online Arcade, both ships | Stalker | 15 | 10 | 28 |
+| Separate Online Arcade and Timed Battle, both ships | Stalker | 15 | 10 | 28 |
 
 Gaining a life raises both ceilings at once and carries damage across
 proportionally, so a ship at half armor stays at half armor. Losing one shrinks
@@ -494,7 +494,8 @@ instead, a ship can draw the same gun twice running, but never one it cannot fly
 
 On, your rear gun fires at its own collected power plus your lives minus one, so
 a stocked-up run gets a wider rear spread without spending pickups on it. It
-applies in 1 Player Arcade and in Separate Online Arcade. The linked two-player
+applies in 1 Player Arcade and in Separate Online Arcade, Timed Battle included.
+The linked two-player
 pair is excluded: player two's rear-gun power is also that ship's life counter,
 so raising one would raise the other. SuperTyrian is excluded as well.
 
@@ -508,11 +509,12 @@ The menu refuses to start a netgame while the FPS Cap is below 35: the simulatio
 runs at 35 Hz, and a lower render cap drags both players down to the capped
 machine's rate. Set the cap to 35 or higher, or Uncapped.
 
-**Host Game** covers the listen port, game type, episode or Endless Setup,
-difficulty, Ships and Host Flies or Credit, Game Speed, Netcode, and Desync
+**Host Game** covers the listen port, game type, Mode, episode or Endless Setup,
+difficulty, Host Flies or Credit, Game Speed, Netcode, and Desync
 Recovery, one row each with the current value on the right and a line explaining
 the highlighted row underneath. The rows adapt to the game type: Destruct swaps
-the episode and difficulty rows for its own Battle Mode row.
+the episode and difficulty rows for its own Battle Mode row, and Arcade's Timed
+Battle mode swaps the episode row for a Level one.
 The host's choices bind the session for both machines. While the other player
 waits for the host to start, they see the same list. The joiner's own settings
 are left alone and restored afterwards.
@@ -520,14 +522,15 @@ are left alone and restored afterwards.
 | Lobby row | What it does |
 | --- | --- |
 | Listen Port | The UDP port this machine listens on, 1333 unless you change it. Always shown, and the joiner must use the same one. |
-| Game Type | **Arcade** plays the arcade rules, either linked or separate (see Ships). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). **Destruct** fights the artillery mini-game head to head (see Online Destruct). |
+| Game Type | **Arcade** plays the arcade rules in one of three shapes (see Mode). **Campaign** runs a full episode with two independent, fully equipped ships, cash, and shops. **Endless** runs the Endless roguelite with the same two ships. **SuperTyrian** and **Super Arcade** fly the two one-player rulesets with a ship each (see below). **Destruct** fights the artillery mini-game head to head (see Online Destruct). |
+| Mode | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. **Timed Battle** is Separate ships racing one of the three Timed Battle levels for cash (see Online Timed Battle). |
 | Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
+| Level | Timed Battle only, in place of Episode. Which of the three battles both players race. The episode it belongs to comes with it. |
 | Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
-| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship (Separate arcade, Campaign, Endless, SuperTyrian and Super Arcade) plays exactly the rung chosen here, with no adjustment. |
+| Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship (Separate arcade, Timed Battle, Campaign, Endless, SuperTyrian and Super Arcade) plays exactly the rung chosen here, with no adjustment. |
 | Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
-| Ships | Arcade only. **Linked** (default) is the classic pair, the Silver Ship and the Dragonwing sharing one HUD and able to dock. **Separate** gives each player their own Stalker, the ship a solo arcade run flies: two of the single-player arcade game running side by side in one level, each with its own HUD, lives, guns, sidekicks, special, superbombs and score. Balls, weapons and powerups belong to whoever flies into them. |
-| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade gives both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the row is titled **Host Fights On** and reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
+| Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade and Timed Battle give both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the row is titled **Host Fights On** and reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
 | Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, since its speed is the rate the two machines trade packets at; your speed for the other game types is left untouched. |
@@ -729,6 +732,29 @@ lobby's Game Speed row is hidden for Destruct, because the speed there is the
 rate the two machines trade state packets at rather than anything in the battle.
 Nothing about a Destruct session is saved except the two lobby rows (the Battle
 Mode and which side you man), which are remembered for the next time you host.
+
+### Online Timed Battle
+
+Setting the lobby's Mode row to **Timed Battle** turns Arcade into a race. You
+both fly the Stalker of Separate arcade, in the battle level the Level row
+names, and the level is the clock: whoever has banked the most cash when it runs
+out wins. There is no shared purse and no help from the other ship, and there is
+only one of each pickup on the field, so a ball you take is a ball they do not.
+
+Once the joiner connects, both machines land on a Timed Battle card naming the
+level, the difficulty, which player you are, and who you are racing. It is a
+both-ready gate like the Destruct title: press any key when you are ready, and
+the battle starts once the other player has too. Escape leaves the session for
+both of you, so you can back out while the other side is still reading.
+
+A Timed Battle is never offered Load Game, and it does not write to the Timed
+Battle high-score boards: those hold one name per score, and a race produces two.
+It ends on a scoreboard of its own instead, with both totals and who took the
+race, whether the clock ran out or you both went down first. Level totals work
+as they do solo, both bonuses paid to each ship: the time left on the clock when
+the level is cleared, and a thousand a life for whatever each of you had left.
+
+The Mode row and the Level row are remembered for the next time you host.
 
 ### Saving and resuming an online game
 

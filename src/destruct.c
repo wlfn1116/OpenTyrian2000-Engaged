@@ -955,7 +955,7 @@ static void DE_netIntroBarrier(void)
 	if (qa_net_gameplay_ticks > 0)
 	{
 		localReady = true;
-		network_destruct_ready_publish();
+		network_ready_publish();
 	}
 
 	while (true)
@@ -987,10 +987,10 @@ static void DE_netIntroBarrier(void)
 		{
 			localReady = true;
 			newkey = false;
-			network_destruct_ready_publish();
+			network_ready_publish();
 		}
 
-		if (network_destruct_ready_peer())   // doubles as this frame's keep-alive
+		if (network_ready_peer())   // doubles as this frame's keep-alive
 			peerReady = true;
 
 		// Not until our own announcement is acknowledged: leaving with it unretired puts a

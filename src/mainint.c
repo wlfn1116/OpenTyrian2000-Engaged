@@ -5880,6 +5880,81 @@ void JE_highScoreCheck(void)
 	}
 }
 
+/* An online Timed Battle is a race, so it ends on a scoreboard instead of the solo mode's
+ * name-entry dialog: that one blocks on a keyboard, which would strand the other machine, and a
+ * board indexed by battle level has one row per score and no idea two of them arrived together.
+ * Both purses are settled simulation state by the time this runs and the names came out of the
+ * handshake, so the two machines compose the same screen without a packet passing between them. */
+void JE_timedBattleResult(void)
+{
+	const uint me = thisPlayerNum >= 2 ? 1u : 0u;
+	const char *name[2];
+	name[me] = network_player_name[0] ? network_player_name : "You";
+	name[1 - me] = network_opponent_name[0] ? network_opponent_name : "Opponent";
+
+	char buffer[128];
+
+	// Laid out in the legacy 320 space the name-entry screen uses, so it has to be pillarboxed
+	// whichever exit reached it: the clock running out arrives from the script loop with that
+	// already on, but a pair that died out arrives straight from the level, where it is off.
+	const bool prevCentered = (video_get_menu_x_offset() != 0);
+	set_menu_centered(true);
+
+	fade_black(15);
+	// The same backdrop and type as the card the session opened on, so the two read as a pair.
+	JE_loadPic(VGAScreen, 2, false);
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 20, timed_battle_name[0], large_font,
+	                    centered, 15, -3, false, 2);
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 48, timed_battle_name[timeBattleSelection],
+	                    normal_font, centered, 15, -3, false, 2);
+
+	const uint winner = player[0].cash == player[1].cash ? 2u
+	                  : player[0].cash > player[1].cash ? 0u : 1u;
+
+	for (uint i = 0; i < 2; ++i)
+	{
+		// Name on the left of a fixed column and total right-aligned on it, so a long name cannot
+		// push a total off the panel and neither row's figures wander as the numbers change.
+		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)player[i].cash);
+		const int value = (i == winner) ? 6 : 2;
+		draw_font_hv_shadow(VGAScreen, 60, 84 + 18 * (int)i, name[i], normal_font,
+		                    left_aligned, 15, value, false, 2);
+		draw_font_hv_shadow(VGAScreen, 260, 84 + 18 * (int)i, buffer, normal_font,
+		                    right_aligned, 15, value, false, 2);
+	}
+
+	if (winner < 2)
+		snprintf(buffer, sizeof(buffer), "%s wins the race.", name[winner]);
+	else
+		snprintf(buffer, sizeof(buffer), "A draw.");
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 130, buffer, normal_font, centered, 15, 4, false, 2);
+
+	draw_font_hv_shadow(VGAScreen, LEGACY_WIDTH / 2, 172, "Press a key", small_font,
+	                    centered, 15, 2, false, 1);
+
+	JE_showVGA();
+	fade_palette(colors, 15, 0, 255);
+
+	// Service the link while it is up: the peer is sitting on the same screen, and a machine that
+	// stopped answering here would be read as a dropped session rather than a player reading.
+	if (!constantPlay && qa_net_gameplay_ticks == 0)
+	{
+		wait_noinput(true, true, true);
+		do
+		{
+			setDelay(1);
+
+			NETWORK_KEEP_ALIVE();
+
+			service_SDL_events(true);
+			wait_delay();
+		} while (!(newkey || newmouse || JE_anyButton()));
+	}
+
+	fade_black(15);
+	set_menu_centered(prevCentered);
+}
+
 // increases game difficulty based on player's total score / total of players' scores
 /* Whether the vanilla score-based drift between levels runs at all. An Endless run is pinned to the
  * rung it launched on, solo and online alike: depth scaling is that mode's difficulty curve, and a
@@ -6488,28 +6563,60 @@ void JE_endLevelAni(void)
 		JE_outTextGlow(VGAScreenSeg, 30, 50, tempStr);
 	}
 
+	// Time left is one clock for the whole level, so an online pair that beat it beat it together
+	// and both purses take the same bonus.  Banked here, but printed where it fits: solo keeps
+	// vanilla's row above the destruction line, and a race has two score lines in the way, so its
+	// copy goes out below that line instead (both are drawn top to bottom as they are revealed).
+	const int timeBonus = timedBattleMode ? (levelTimerCountdown / 10) * 100 : 0;
 	if (timedBattleMode)
 	{
-		x = (levelTimerCountdown / 10) * 100;
-		sprintf(tempStr, "%s %d", miscTextB[6], x);
-		JE_outTextGlow(VGAScreenSeg, 40, 75, tempStr);
-		player[0].cash += x;
+		for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)
+			player[p].cash += timeBonus;
+
+		if (!dual_ship_mode())
+		{
+			sprintf(tempStr, "%s %d", miscTextB[6], timeBonus);
+			JE_outTextGlow(VGAScreenSeg, 40, 75, tempStr);
+		}
 	}
 
 	temp = (totalEnemy == 0) ? 0 : roundf(enemyKilled * 100 / totalEnemy);
 	sprintf(tempStr, "%s %d%%", miscText[63-1], temp);
 	JE_outTextGlow(VGAScreenSeg, 40, 90, tempStr);
 
+	if (timedBattleMode && dual_ship_mode())
+	{
+		sprintf(tempStr, "%s %d", miscTextB[6], timeBonus);
+		JE_outTextGlow(VGAScreenSeg, 40, 108, tempStr);
+	}
+
 	if (!constantPlay)
 		editorLevel += temp / 5;
 
-	if (timedBattleMode)
+	if (timedBattleMode && dual_ship_mode())
 	{
+		// Two racers, two life counts. The parade below is a solo flourish with no room to run
+		// twice -- a full eleven ships already reach where its own total sits -- so the pair get
+		// a named line each instead, under the shared time bonus.
+		for (uint p = 0; p < COUNTOF(player); ++p)
+		{
+			JE_playSampleNum(S_ITEM);
+
+			x = *player[p].lives * 1000;
+			sprintf(tempStr, "Player %u %s %d", p + 1, miscTextB[7], x);
+			JE_outTextGlow(VGAScreenSeg, 30, 128 + 18 * (int)p, tempStr);
+			player[p].cash += x;
+		}
+	}
+	else if (timedBattleMode)
+	{
+		// The ships parade across a row of their own: at eleven lives they run past x=200, which
+		// is where the total used to sit beside them, and the two ended up drawn through each other.
 		for (temp = 1; temp <= *player[0].lives; temp++)
 		{
 			JE_playSampleNum(S_ITEM);
 			x = 20 + 15 * temp;
-			y = 115;
+			y = 112;
 
 			for (i = -15; i <= 10; i++)
 			{
@@ -6540,7 +6647,7 @@ void JE_endLevelAni(void)
 		}
 		x = *player[0].lives * 1000;
 		sprintf(tempStr, "%s %d", miscTextB[7], x);
-		JE_outTextGlow(VGAScreenSeg, 120, 120, tempStr);
+		JE_outTextGlow(VGAScreenSeg, 40, 143, tempStr);
 		player[0].cash += x;
 	}
 	else if (endlessMode)
@@ -6623,6 +6730,10 @@ void JE_endLevelAni(void)
 		temp = 0;
 	}
 	temp2 = twoPlayerMode ? 150 : 160;
+	// An online battle stacks a time bonus and two ship-bonus rows under the two scores, so the
+	// prompt drops to where Endless keeps its own, below its payout block.
+	if (timedBattleMode && dual_ship_mode())
+		temp2 = 168;
 	// Endless adds a payout block under the scores (Zone Bonus, and Bank Interest below it), and
 	// two players add a second score line above that, so the two-player y lands this right on top
 	// of the last of them. Give it its own row clear of the block and centre it properly rather

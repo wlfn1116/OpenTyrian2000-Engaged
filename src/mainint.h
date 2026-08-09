@@ -82,6 +82,9 @@ bool JE_extraMenu(void);
 void JE_inGameHelp(void);
 void JE_sortHighScores(void);
 void JE_highScoreCheck(void);
+// How an online Timed Battle ends: the two purses side by side and who took the race. Replaces
+// the solo mode's name-entry dialog, which blocks on a keyboard the other machine cannot see.
+void JE_timedBattleResult(void);
 // Whether the score-based difficulty drift between levels runs; false for the whole of an Endless
 // run, which stays on the rung it launched with. Public so the unit suite can pin that.
 bool difficulty_adjust_active(void);
