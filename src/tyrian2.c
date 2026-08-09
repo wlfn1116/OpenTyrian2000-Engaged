@@ -7149,7 +7149,7 @@ static void networkTimedBattleReady(void)
 	}
 	draw_font_hv_shadow(VGAScreen2, 320 / 2, 108, "The clock is the level. Whoever banks the most",
 	                    small_font, centered, 15, 4, false, 1);
-	draw_font_hv_shadow(VGAScreen2, 320 / 2, 120, "cash before it runs out takes the race.",
+	draw_font_hv_shadow(VGAScreen2, 320 / 2, 120, "cash before it runs out wins the timed battle.",
 	                    small_font, centered, 15, 4, false, 1);
 
 	bool faded = false;
