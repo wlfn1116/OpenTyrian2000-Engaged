@@ -703,9 +703,16 @@ static void salvo_special_burst(JE_byte playerNum)
 	JE_doSP(p->x + 7, p->y + 10, 24, 11, ENDLESS_SALVO_SPARK_COLOR, false);
 }
 
+/* The pointer that aims this ship's special. Ship two has one of its own only where the ships are
+ * independent; the linked pair shares a single arsenal, and with it a single aim. */
+static int special_mouse_x_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseXB : mouseX; }
+static int special_mouse_y_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseYB : mouseY; }
+
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
 	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
+	const int special_mouse_x = special_mouse_x_for(playerNum);
+	const int special_mouse_y = special_mouse_y_for(playerNum);
 
 	nextSpecialWait = 0;
 	switch (special[specialType].stype)
@@ -713,9 +720,9 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		/*Weapon*/
 		case 1:
 			if (playerNum == 1)
-				b = player_shot_create(0, SHOT_SPECIAL2, player[0].x, player[0].y, mouseX, mouseY, special[specialType].wpn, playerNum);
+				b = player_shot_create(0, SHOT_SPECIAL2, player[0].x, player[0].y, special_mouse_x, special_mouse_y, special[specialType].wpn, playerNum);
 			else
-				b = player_shot_create(0, SHOT_SPECIAL2, player[1].x, player[1].y, mouseX, mouseY, special[specialType].wpn, playerNum);
+				b = player_shot_create(0, SHOT_SPECIAL2, player[1].x, player[1].y, special_mouse_x, special_mouse_y, special[specialType].wpn, playerNum);
 
 			shotRepeat[SHOT_SPECIAL] = shotRepeat[SHOT_SPECIAL2];
 			break;
@@ -861,7 +868,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			{
 				shotRepeat[SHOT_SPECIAL] = 250;
 				b = player_shot_create(0, SHOT_SPECIAL2, this_player->x, this_player->y,
-				                       mouseX, mouseY, 707, playerNum);
+				                       special_mouse_x, special_mouse_y, 707, playerNum);
 				this_player->invulnerable_ticks = 100;
 			}
 			break;
@@ -877,14 +884,20 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 			soundQueue[3] = S_POWERUP;
 			break;
 		case 14:
-			Player *const repair_player = dual_ship_mode() ? this_player : &player[1];
+		{
+			// Vanilla's repair-the-OTHER-hull special, and co-op keeps that meaning: it heals the
+			// partner. Aiming it at the firer instead made it a second copy of case 13. The linked
+			// pair has no partner ship of its own, so there it stays on hull two.
+			const JE_byte repair_num = dual_ship_mode() ? playerNum : 2;  // TEMPORARY: test sensitivity
+			Player *const repair_player = &player[repair_num - 1];
 			repair_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
 			if (endlessFxActive() && repair_player->initial_armor > 0 && repair_player->armor > repair_player->initial_armor)
 				repair_player->armor = repair_player->initial_armor;
-			salvo_special_burst(dual_ship_mode() ? playerNum : 2);
+			salvo_special_burst(repair_num);
 
 			soundQueue[3] = S_POWERUP;
 			break;
+		}
 
 		case 17:  // spawn left or right sidekick
 			soundQueue[3] = S_POWERUP;
@@ -947,8 +960,8 @@ static JE_word twiddleWait = 0;
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
 	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
-	const int special_mouse_x = dual_ship_mode() && playerNum == 2 ? mouseXB : mouseX;
-	const int special_mouse_y = dual_ship_mode() && playerNum == 2 ? mouseYB : mouseY;
+	const int special_mouse_x = special_mouse_x_for(playerNum);
+	const int special_mouse_y = special_mouse_y_for(playerNum);
 
 	// The ready light sits beside the special block's icon, never on it (see mainint.h), and only
 	// beside the one this machine actually draws.

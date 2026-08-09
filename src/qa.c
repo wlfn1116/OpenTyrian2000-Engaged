@@ -2312,6 +2312,51 @@ static void qa_test_gauge_flash_lifetime(void)
 	hud_bars_dirty = savedDirty;
 }
 
+/* The two repair specials have to stay distinct where there are two hulls. stype 13 mends the ship
+ * that fired; stype 14 is vanilla's repair-the-OTHER-hull special, so in co-op it mends the partner
+ * and in the linked pair it stays on hull two. Driven through a scratch special slot so the test
+ * does not depend on the shipped table being loaded. */
+static void qa_test_partner_repair_special(void)
+{
+	const bool savedTwo = twoPlayerMode, savedCoop = coopCampaignMode, savedSep = arcadeSeparateMode;
+	const Player saved0 = player[0], saved1 = player[1];
+	const JE_byte savedStype = special[SPECIAL_NUM].stype, savedTemp2 = temp2;
+
+	temp2 = 0;                      // heal is temp2 / 4 + 1, so one point
+	special[SPECIAL_NUM].stype = 14;
+	twoPlayerMode = true; coopCampaignMode = true; arcadeSeparateMode = false;
+
+	for (uint p = 0; p < 2; ++p)
+	{
+		player[p].armor = 10;
+		player[p].initial_armor = 50;
+	}
+	JE_specialComplete(1, SPECIAL_NUM);
+	qa_check(player[1].armor == 11 && player[0].armor == 10,
+	         "co-op: the partner-repair special mends the OTHER ship, not the firer");
+	JE_specialComplete(2, SPECIAL_NUM);
+	qa_check(player[0].armor == 11 && player[1].armor == 11,
+	         "...from either seat");
+
+	// stype 13 is the self-repair, and must not have become the same special.
+	special[SPECIAL_NUM].stype = 13;
+	JE_specialComplete(1, SPECIAL_NUM);
+	qa_check(player[0].armor == 12 && player[1].armor == 11,
+	         "co-op: the self-repair special still mends the firer");
+
+	// The linked pair shares one arsenal and has no partner ship, so hull two keeps it.
+	coopCampaignMode = false;
+	special[SPECIAL_NUM].stype = 14;
+	player[0].armor = player[1].armor = 10;
+	JE_specialComplete(1, SPECIAL_NUM);
+	qa_check(player[1].armor == 11 && player[0].armor == 10,
+	         "linked arcade: the partner-repair special stays on hull two");
+
+	special[SPECIAL_NUM].stype = savedStype; temp2 = savedTemp2;
+	twoPlayerMode = savedTwo; coopCampaignMode = savedCoop; arcadeSeparateMode = savedSep;
+	player[0] = saved0; player[1] = saved1;
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -2382,6 +2427,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_matrices();
 	qa_test_sidekick_rollback_state();
 	qa_test_gauge_flash_lifetime();
+	qa_test_partner_repair_special();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_network_settings();
