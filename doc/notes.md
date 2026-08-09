@@ -567,6 +567,16 @@ the next local two-player arcade in the Separate shape. All three Arcade tweaks
 are host-authoritative: `arcadeLifeBoost` on bit 7, `arcadeRandomBalls` on bit 8
 and `arcadeRearGunScale` on bit 12, each stashed and restored with the rest.
 
+One per-ship path keys on `twoPlayerMode` instead, and has to: the Soul-of-Zinglon
+pillar. The linked pair flies two hulls with two specials, so both raise a beam.
+Two places account for it. The collision walks the ships and tests each pillar at
+its own ship's x, because `zinglonDuration` is a global swapped through the
+movement pass and so ends the tick holding the LAST ship's countdown. The damage
+pulse is recombined after both passes, because `JE_doSpecialShot` clears
+`shotAvail[MAX_PWEAPON - 1]` on entry and ship two's pass therefore wipes ship
+one's pulse. Keyed on `dual_ship_mode()`, the linked pair drew two beams backed by
+one column, placed at ship one and sized by ship two's countdown.
+
 Separate arcade starts both ships on the Stalker (ship 8), the same ship
 `newGame()` hands a solo arcade run, from one copy of player one's arsenal.
 
