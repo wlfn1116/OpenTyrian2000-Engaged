@@ -773,6 +773,24 @@ host never armed it, and every pickup desynced the wallets by its own value,
 one desync-recovery stall after another for the whole session. The unit suite
 pins host arming against joiner adoption with stale session values in place.
 
+The same audit caught Expert Mode. Its flag rides the save record and its six
+tunables ride each machine's own `opentyrian.cfg`, and nothing published either
+at connect time -- only `PACKET_DEBUG_SYNC` did, and only when somebody opened
+that menu and changed something, since it sends on a diff against its own
+baseline. Two players who had each set a Boss HP multiplier once therefore
+started a campaign fighting bosses with different health. They travel in the
+settings block now. The flags word at byte 4 was full by then (Timed Battle took
+the last three bits), so the block grew a tail at byte 24: a second flags word
+with fifteen bits still spare, then `NETWORK_EXPERT_SLOTS` Uint16 slots written
+straight off the `expertSettings[]` table, so a seventh tunable needs no wire
+change. Bytes 0..23 kept their offsets. `clamp_expert_settings` runs on adopt
+as well as at config load, so a hostile packet cannot name a 65535x multiplier.
+
+Two things that look like the same class of bug and are not, both checked: the
+Extra Sparks toggle and the per-weapon spark cap only move where `JE_doSP`'s
+ring buffer wraps -- its loop bound is `num`, so the `mt_rand` draw count is
+identical either way -- and Unused Shop Sprites only rewrites `.itemgraphic`.
+
 Payouts must go to deterministic wallets. `endlessCashCredit` pays the local
 keyboard's wallet and is for outpost-time, self-only flows; anything paid
 during or at the end of a level has to name the player index and run on both

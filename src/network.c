@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       24           /* v24: Arcade's Mode row gained Timed Battle; the settings
+#define NET_VERSION       25           /* v25: the settings block grew a tail (24..41) carrying
+                                          Expert Mode and its six tunables, which were host
+                                          preferences nothing published at connect time; a v24
+                                          peer reads the whole connect packet at the old offsets.
+                                          v24: Arcade's Mode row gained Timed Battle; the settings
                                           block spends its last three flag bits on it (which
                                           battle, and that it is one at all), which a v23 peer
                                           reads as zero and plays as a plain arcade episode.
@@ -1615,6 +1619,13 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	JE_tyrianHalt(5);
 }
 
+/* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
+ * layout they always had, so only what is below moved onto new ground. */
+#define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode; fifteen bits spare */
+#define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16               */
+COMPILE_TIME_ASSERT(net_settings_block_fits,
+                    NET_SET_EXPERT + NETWORK_EXPERT_SLOTS * 2 == NETWORK_SETTINGS_SIZE);
+
 /* Host-authoritative simulation settings.
  * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
  * shared pickups, data sets, or tick rate. Rendering, audio, and local input settings stay local. */
@@ -1633,6 +1644,8 @@ static struct
 	JE_boolean arcadeSeparateMode;
 	bool timedBattle;
 	int  battleLevel;
+	JE_boolean expertMode;
+	int  expert[NETWORK_EXPERT_SLOTS];
 }
 settings_local;
 
@@ -1683,6 +1696,15 @@ int network_settings_pack(Uint8 *buf)
 	// Not a setting: our snapshot layout, for the peer to compare against its own.
 	SDLNet_Write32(rollback_layout_fingerprint(),   &buf[16]);
 	SDLNet_Write32((Uint32)rollback_state_size(),   &buf[20]);
+
+	/* Expert Mode and its tunables. The flag rides the save record and the multipliers ride each
+	 * machine's own config, and until this went in nothing published either at connect time: only
+	 * the debug block did, and only when somebody opened that menu. Two players who had once set
+	 * a different Boss HP therefore started a campaign fighting bosses with different health. */
+	SDLNet_Write16(expertMode ? 1 : 0, &buf[NET_SET_FLAGS2]);
+	for (int i = 0; i < NETWORK_EXPERT_SLOTS; ++i)
+		SDLNet_Write16((Uint16)(i < expertSettingsCount ? *expertSettings[i].value : 0),
+		               &buf[NET_SET_EXPERT + i * 2]);
 
 	return NETWORK_SETTINGS_SIZE;
 }
@@ -1737,6 +1759,11 @@ static void network_settings_stash(void)
 	// is what the config file keeps -- has to survive a session spent racing somebody else's.
 	settings_local.timedBattle          = network_host_timed_battle;
 	settings_local.battleLevel          = network_host_battle_level;
+	// The joiner adopts the host's Expert Mode and every multiplier behind it; those are this
+	// machine's own config (and its own save's flag), so they go back when the session does.
+	settings_local.expertMode           = expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		settings_local.expert[i] = *expertSettings[i].value;
 	settings_stashed = true;
 }
 
@@ -1842,6 +1869,14 @@ int network_settings_adopt(const Uint8 *buf)
 		xmasMode = -1;
 	if (gameSpeed < 1 || gameSpeed > 5)
 		gameSpeed = 4;
+
+	// Expert Mode and its tunables, clamped by the same table-driven pass the debug block uses:
+	// every one of these multiplies enemy health, weapon energy or a price, so a hostile packet
+	// must not be able to name 65535 of anything.
+	expertMode = (SDLNet_Read16(&buf[NET_SET_FLAGS2]) & 1) != 0;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);
+	clamp_expert_settings();
 
 	return NETWORK_SETTINGS_SIZE;
 }
@@ -3022,6 +3057,9 @@ void network_settings_restore(void)
 	arcadeSeparateMode    = settings_local.arcadeSeparateMode;
 	network_host_timed_battle = settings_local.timedBattle;
 	network_host_battle_level = settings_local.battleLevel;
+	expertMode                = settings_local.expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = settings_local.expert[i];
 
 	settings_stashed = false;
 }
@@ -3040,7 +3078,7 @@ void network_settings_restore(void)
 #define NDS_CASH      42    /* 2 x Uint32                                 */
 #define NDS_ARMOR     50    /* Uint16 armor, shield, per player           */
 #define NDS_EXPERT    58    /* NDS_EXPERT_SLOTS x Uint16                  */
-#define NDS_EXPERT_SLOTS NETWORK_DEBUG_EXPERT_SLOTS
+#define NDS_EXPERT_SLOTS NETWORK_EXPERT_SLOTS
 #define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
 
 // PlayerItems goes on the wire as flat bytes, enforced by this check. Growing it also

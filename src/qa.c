@@ -782,7 +782,7 @@ static void qa_test_fixed_pool_layout(void)
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
 	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 81
 #ifdef WITH_NETWORK
-	         && NETWORK_SETTINGS_SIZE == 24
+	         && NETWORK_SETTINGS_SIZE == 42
 #endif
 	         , "network wire-layout constants retain their protocol widths");
 }
@@ -1711,6 +1711,10 @@ static void qa_test_network_settings(void)
 	const bool savedSharedCredit = coopSharedCredit;
 	const bool savedDoublePickups = coopDoubleEarnings;
 	const JE_boolean savedCoopCampaign = coopCampaignMode;
+	const JE_boolean savedExpertMode = expertMode;
+	int savedExpert[NETWORK_EXPERT_SLOTS];
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		savedExpert[i] = *expertSettings[i].value;
 	/* SDLNet_Read/Write16/32 require naturally aligned storage. Keep guard bytes around an
 	 * aligned payload instead of making the alignment itself part of this bounds test. */
 	union {
@@ -1732,11 +1736,17 @@ static void qa_test_network_settings(void)
 	coopSharedCredit = true;
 	coopDoubleEarnings = true;
 	vt_ship = true; smoothMotion = true; smoothScroll = true;
+	// Expert Mode multiplies enemy health, weapon energy and prices, so the pair has to agree on
+	// it before the first boss. Each tunable takes a distinct in-range value, so a slot wired to
+	// the wrong offset lands somewhere visible instead of on its neighbour's identical number.
+	expertMode = true;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = expertSettings[i].lo + expertSettings[i].step * (i + 1);
 	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
 	qa_check(packed == NETWORK_SETTINGS_SIZE && guarded.bytes[3] == 0x5a
 	         && guarded.bytes[4 + NETWORK_SETTINGS_SIZE] == 0x5a,
-	         "network settings packing writes exactly its fixed 24-byte block");
+	         "network settings packing writes exactly its fixed block and no byte more");
 
 	/* A joiner has different local preferences before it adopts the host block. */
 	for (int i = 0; i < SSW_COUNT; ++i) superSparkMode[i] = SUPER_SPARKS_OFF;
@@ -1746,6 +1756,9 @@ static void qa_test_network_settings(void)
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
 	xmasMode = 0; gameSpeed = 5;
+	expertMode = false;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = expertSettings[i].def;
 	coop_set_session_shared_credit(false);
 	coopCampaignMode = true;
 	qa_check(network_settings_adopt(packet) == NETWORK_SETTINGS_SIZE,
@@ -1760,6 +1773,10 @@ static void qa_test_network_settings(void)
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
+	bool expertMatch = expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		expertMatch &= *expertSettings[i].value == expertSettings[i].lo + expertSettings[i].step * (i + 1);
+	qa_check(expertMatch, "...including Expert Mode and every tunable behind it");
 	// Doubling is carried in the same word but is inert under Shared, so check the flag itself
 	// by flipping the credit mode the adopted value sits behind.
 	coop_set_session_shared_credit(false);
@@ -1774,6 +1791,10 @@ static void qa_test_network_settings(void)
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
 	         && arcadeRandomBalls && !arcadeRearGunScale && xmasMode == 0 && gameSpeed == 5,
 	         "leaving a network session restores every local simulation preference");
+	expertMatch = !expertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		expertMatch &= *expertSettings[i].value == expertSettings[i].def;
+	qa_check(expertMatch, "...Expert Mode and its tunables included, so the next solo game is ours");
 
 	/* The host runs on flags armed from its own config; the joiner adopts the block packed
 	 * from that same config. The two must land on identical session behavior, or the pair
@@ -1805,10 +1826,13 @@ static void qa_test_network_settings(void)
 	bool malformedClamped = true;
 	for (int i = 0; i < SSW_COUNT; ++i) malformedClamped &= superSparkMode[i] == SUPER_SPARKS_AUTO;
 	for (int i = 0; i < EDW_COUNT; ++i) malformedClamped &= epDiffMode[i] == EPDIFF_AUTO;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		malformedClamped &= *expertSettings[i].value == expertSettings[i].hi;
 	qa_check(malformedClamped && zicaLaserBase == ZICA_BASE_AUTO
 	         && zicaLaserLength == ZICA_LEN_SHORT && wallopSecondBolt == SUPER_SPARKS_AUTO
 	         && xmasMode == -1 && gameSpeed == 4,
-	         "hostile network settings are clamped before any array can be indexed");
+	         "hostile network settings are clamped before any array can be indexed"
+	         " or any multiplier applied");
 	network_settings_restore();
 
 	memcpy(superSparkMode, savedSpark, sizeof(savedSpark));
@@ -1829,6 +1853,9 @@ static void qa_test_network_settings(void)
 	coop_set_session_shared_credit(savedSharedCredit);
 	coop_set_session_double_earnings(savedDoublePickups);
 	coopCampaignMode = savedCoopCampaign;
+	expertMode = savedExpertMode;
+	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
+		*expertSettings[i].value = savedExpert[i];
 #else
 	qa_check(true, "network settings round trip skipped without networking");
 #endif

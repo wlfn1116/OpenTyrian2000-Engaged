@@ -317,8 +317,10 @@ int  network_settings_adopt(const Uint8 *buf);
 void network_settings_check_layout(const Uint8 *buf);
 void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
-// Bytes 0..15 are settings; 16..23 identify the rollback layout and snapshot size.
-#define NETWORK_SETTINGS_SIZE 24
+/* Bytes 0..15 are the original settings; 16..23 identify the rollback layout and snapshot size;
+ * 24 onward is the tail added when the flags word at byte 4 ran out of bits (see network.c for
+ * the field offsets). Everything before 24 kept its place, so only the tail is new ground. */
+#define NETWORK_SETTINGS_SIZE 42
 
 /* Publish the host's Endless run to the joiner, which is how a resumed online run starts both
  * machines from the same record. Chunked over the reliable channel and blocking until delivered;
@@ -418,8 +420,9 @@ int  network_debug_state_size(void);
 void network_debug_state_pack(Uint8 *buf);
 void network_debug_state_adopt(const Uint8 *buf, bool in_level);
 
-// Capacity of the wire block; varz.c asserts that its expert-tunable table fits.
-#define NETWORK_DEBUG_EXPERT_SLOTS 8
+/* Expert-tunable capacity, shared by the two blocks that carry them: this one and the settings
+ * block. varz.c asserts that its table fits, so a seventh tunable needs no wire change. */
+#define NETWORK_EXPERT_SLOTS 8
 
 // Independent simulation hashes used to identify the first divergent subsystem.
 void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_hash);

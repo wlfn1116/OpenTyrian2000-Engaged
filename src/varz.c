@@ -348,7 +348,7 @@ const int expertSettingsCount = (int)(sizeof(expertSettings) / sizeof(expertSett
 // The debug-sync block carries these across the wire in a fixed number of slots, and its loops
 // simply stop when they run out; a setting added past the end would go unsynced in silence.
 COMPILE_TIME_ASSERT(expert_settings_fit_debug_sync,
-                    COUNTOF(expertSettings) <= NETWORK_DEBUG_EXPERT_SLOTS);
+                    COUNTOF(expertSettings) <= NETWORK_EXPERT_SLOTS);
 
 void clamp_expert_settings(void)
 {
