@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 21
+#define ENDLESS_SAVE_VERSION 22
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -146,6 +146,9 @@ typedef struct {
 	Uint8  perkTakenBy[2][ENDLESS_SAVE_PERKS];   // who picked what; perks are personal, so this IS
 	                                             // each ship's holding (perkOwned is the legacy sum)
 	Uint64 playerRng[2];                          // each player's own outpost draw stream
+
+	// Added in v22.
+	Uint8  baseLevelSame;  // 1 = the run charts one base level per slate; fixed for the run
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -295,6 +298,8 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutBytes(f, r->perkTakenBy[1], ENDLESS_SAVE_PERKS);
 	endlessPutU64(f, r->playerRng[0]);
 	endlessPutU64(f, r->playerRng[1]);
+
+	endlessPutU8(f, r->baseLevelSame);               // v22 Same / Varied base level
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -561,6 +566,10 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		memcpy(r->perkTakenBy[0], r->perkOwned, ENDLESS_SAVE_PERKS);
 	}
 
+	// Pre-v22 records predate the chart rule, so they resume as Varied and keep the records they set.
+	if (version >= 22 && !endlessGetU8(f, &r->baseLevelSame))
+		return false;
+
 	return true;
 }
 
@@ -687,7 +696,9 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	    || (version < 15 && first.runMode != ENDLESS_RUNMODE_RELAXED)
 	    || (version >= 15 && first.runMode != ENDLESS_RUNMODE_STANDARD)
 	    || (version < 20 && first.usedCustom != 0)
-	    || (version >= 20 && first.usedCustom != 1))
+	    || (version >= 20 && first.usedCustom != 1)
+	    || (version < 22 && first.baseLevelSame != 0)
+	    || (version >= 22 && first.baseLevelSame != 1))
 	{
 		free(bytes);
 		endlessTestDetail(detail, detailSize, "version defaults differ");
@@ -922,6 +933,8 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	// Disk saves use Relaxed or Standard; in-memory sortie snapshots can carry Hardcore.
 	r->runMode = (Uint8)endlessRunMode;
 
+	r->baseLevelSame = endlessRunBaseLevelSame ? 1 : 0;   // v22 chart rule, fixed for the run
+
 	// v16 cash ledger + v19 sink breakdown. The spare on-disk slots past ENDLESS_CASH_SOURCES /
 	// ENDLESS_CASH_SINKS stay zeroed by the memset.
 	r->cashEarned = endlessRunCashEarned;
@@ -1040,6 +1053,9 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// Restore the saved run mode; pre-v15 records use Relaxed.
 	endlessRunMode = (r->runMode < ENDLESS_RUNMODE_COUNT) ? (EndlessRunMode)r->runMode
 	                                                      : ENDLESS_RUNMODE_RELAXED;
+
+	// ...and the chart rule the run was started under, whatever the toggle currently says.
+	endlessRunBaseLevelSame = r->baseLevelSame != 0;
 
 	endlessRestoreSavedCourses(r);
 
@@ -1452,11 +1468,12 @@ static const char *const endlessBestZoneDiffCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_diff_custom", "best_zone_normal_diff_custom", "best_zone_hardcore_diff_custom",
 };
 
-/* The co-op table lives under the same key with a "_2p" tail. A config written before the split
- * has none of them, which reads as an empty set of co-op records. */
-static void endlessRecordKey(char *out, size_t n, const char *base, int players)
+/* The co-op table lives under the same key with a "_2p" tail, and the Same base-level table under a
+ * further "_same" one. A config written before either split carries neither tail, which reads as an
+ * empty set of records for the tables that gained one. */
+static void endlessRecordKey(char *out, size_t n, const char *base, int players, int variant)
 {
-	snprintf(out, n, "%s%s", base, (players == 1) ? "_2p" : "");
+	snprintf(out, n, "%s%s%s", base, (players == 1) ? "_2p" : "", (variant == 1) ? "_same" : "");
 }
 
 void endlessRecordConfigSave(ConfigSection *section)
@@ -1464,28 +1481,29 @@ void endlessRecordConfigSave(ConfigSection *section)
 	if (section == NULL)
 		return;
 
+	for (int v = 0; v < ENDLESS_BASE_TABLES; ++v)
 	for (int t = 0; t < ENDLESS_PLAYER_TABLES; ++t)
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 	{
 		char key[64];
-		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t);
-		config_set_int_option(section, key, endlessBestZoneUntagged[t][m]);
-		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t);
-		config_set_int_option(section, key, endlessBestZoneUntaggedCustom[t][m] ? 1 : 0);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t, v);
+		config_set_int_option(section, key, endlessBestZoneUntagged[v][t][m]);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t, v);
+		config_set_int_option(section, key, endlessBestZoneUntaggedCustom[v][t][m] ? 1 : 0);
 
 		char zones[ENDLESS_DIFFICULTY_COUNT * 8], marks[ENDLESS_DIFFICULTY_COUNT + 1];
 		size_t len = 0;
 		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 		{
 			len += snprintf(zones + len, sizeof(zones) - len, "%s%d",
-			                (d > 0) ? "," : "", endlessBestZoneDiff[t][m][d]);
-			marks[d] = endlessBestZoneDiffCustom[t][m][d] ? '1' : '0';
+			                (d > 0) ? "," : "", endlessBestZoneDiff[v][t][m][d]);
+			marks[d] = endlessBestZoneDiffCustom[v][t][m][d] ? '1' : '0';
 		}
 		marks[ENDLESS_DIFFICULTY_COUNT] = '\0';
 
-		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t, v);
 		config_set_string_option(section, key, zones);
-		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t, v);
 		config_set_string_option(section, key, marks);
 	}
 }
@@ -1495,34 +1513,35 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 	if (section == NULL)
 		return;
 
+	for (int v = 0; v < ENDLESS_BASE_TABLES; ++v)
 	for (int t = 0; t < ENDLESS_PLAYER_TABLES; ++t)
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 	{
 		char key[64];
 		int best = 0;
-		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneKey[m], t, v);
 		config_get_int_option(section, key, &best);
-		endlessBestZoneUntagged[t][m] = (best > 0) ? best : 0;  // a hand-edited negative reads as "no record"
+		endlessBestZoneUntagged[v][t][m] = (best > 0) ? best : 0;  // a hand-edited negative reads as "no record"
 
 		int custom = 0;
-		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneCustomKey[m], t, v);
 		config_get_int_option(section, key, &custom);
-		endlessBestZoneUntaggedCustom[t][m] = (endlessBestZoneUntagged[t][m] > 0) && (custom != 0);
+		endlessBestZoneUntaggedCustom[v][t][m] = (endlessBestZoneUntagged[v][t][m] > 0) && (custom != 0);
 
 		for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 		{
-			endlessBestZoneDiff[t][m][d] = 0;
-			endlessBestZoneDiffCustom[t][m][d] = false;
+			endlessBestZoneDiff[v][t][m][d] = 0;
+			endlessBestZoneDiffCustom[v][t][m][d] = false;
 		}
 
 		const char *zones = NULL;
-		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffKey[m], t, v);
 		if (config_get_string_option(section, key, &zones) && zones != NULL)
 		{
 			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && *zones != '\0'; ++d)
 			{
 				const int zone = (int)strtol(zones, NULL, 10);
-				endlessBestZoneDiff[t][m][d] = (zone > 0) ? zone : 0;
+				endlessBestZoneDiff[v][t][m][d] = (zone > 0) ? zone : 0;
 
 				const char *const comma = strchr(zones, ',');
 				zones = (comma != NULL) ? comma + 1 : "";
@@ -1530,11 +1549,11 @@ void endlessRecordConfigLoad(const ConfigSection *section)
 		}
 
 		const char *marks = NULL;
-		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t);
+		endlessRecordKey(key, sizeof(key), endlessBestZoneDiffCustomKey[m], t, v);
 		if (config_get_string_option(section, key, &marks) && marks != NULL)
 		{
 			for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT && marks[d] != '\0'; ++d)
-				endlessBestZoneDiffCustom[t][m][d] = (endlessBestZoneDiff[t][m][d] > 0) && (marks[d] == '1');
+				endlessBestZoneDiffCustom[v][t][m][d] = (endlessBestZoneDiff[v][t][m][d] > 0) && (marks[d] == '1');
 		}
 	}
 	endlessRecordRunStart();   // nothing is running yet, so the baseline is the record

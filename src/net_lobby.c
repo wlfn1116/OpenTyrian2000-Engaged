@@ -83,7 +83,7 @@ static const char *const lobbyHostHelp[] =
 	"The classic pair, a ship each, or a race for cash.",
 	"Which Destruct battle both players fight.",
 	"Which episode the session plays.",
-	"Seed, run mode, and who charts each course.",
+	"Seed, run mode, base level, and course picks.",
 	"Applies to both players for the whole game.",
 	"Which ship you take; the joiner gets the other.",
 	"Shared pays a kill or pickup to both players.",
@@ -119,16 +119,20 @@ static const char *const lobbyOnOffValue[]   = { "On", "Off" };
 static const char *const lobbyNetcodeValue[] = { "Rollback", "Delay-Based" };
 
 static const char *const lobbyEndlessLabel[] =
-	{ "Seed", "Run Mode", "Charts Course", "Combo Feed" };
+	{ "Seed", "Run Mode", "Base Level", "Charts Course", "Combo Feed" };
 
 static const char *const lobbyEndlessHelp[] =
 {
 	"A named seed repeats a run; blank rolls one.",
 	"How a fatal hit and saving are handled.",
+	"One level per chart, or one per route.",
 	"Who picks the next sector at the outpost.",
 	"Whose drive streak a kill feeds.",
 	"Return to the host settings.",
 };
+
+// Base Level values, in cycle order: index 0 is Varied.
+static const char *const lobbyBaseLevelValue[] = { "Varied", "Same" };
 
 static const char *const lobbyEndlessRunModeHelp[] =
 {
@@ -401,6 +405,7 @@ static void lobbyEndlessMenu(void)
 	{
 		ITEM_SEED = 0,
 		ITEM_RUNMODE,
+		ITEM_BASELEVEL,
 		ITEM_CHOOSER,
 		ITEM_COMBO,
 		SETTING_COUNT,
@@ -419,9 +424,9 @@ static void lobbyEndlessMenu(void)
 	const int ySettings = 60;
 	const int dySettings = 14;
 	const int hSetting = 12;
-	const int yHelp = 120;
-	const int yModeHelp = 134;
-	const int yBack = 158;
+	const int yHelp = 132;
+	const int yModeHelp = 144;
+	const int yBack = 164;
 
 	lobbyPrepareBackdrop("Endless Setup");
 
@@ -430,6 +435,7 @@ static void lobbyEndlessMenu(void)
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_SEED] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
 		itemValue[ITEM_RUNMODE] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+		itemValue[ITEM_BASELEVEL] = lobbyBaseLevelValue[network_host_endless_base_same ? 1 : 0];
 		itemValue[ITEM_CHOOSER] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
 		itemValue[ITEM_COMBO] = network_host_endless_combo_shared ? lobbyCreditValue[0] : lobbyCreditValue[1];
 
@@ -543,8 +549,8 @@ static void lobbyEndlessMenu(void)
 
 			case SDL_SCANCODE_LEFT:
 			case SDL_SCANCODE_RIGHT:
-				if (selectedIndex == ITEM_RUNMODE || selectedIndex == ITEM_CHOOSER
-				    || selectedIndex == ITEM_COMBO)
+				if (selectedIndex == ITEM_RUNMODE || selectedIndex == ITEM_BASELEVEL
+				    || selectedIndex == ITEM_CHOOSER || selectedIndex == ITEM_COMBO)
 				{
 					action = true;
 					if (lastkey_scan == SDL_SCANCODE_LEFT)
@@ -581,6 +587,12 @@ static void lobbyEndlessMenu(void)
 			JE_playSampleNum(S_CLICK);
 			network_host_endless_run_mode =
 				(network_host_endless_run_mode + ENDLESS_RUNMODE_COUNT + cycleDir) % ENDLESS_RUNMODE_COUNT;
+			break;
+
+		case ITEM_BASELEVEL:
+			// Same puts every route of a chart onto one level, leaving the modifiers as the choice.
+			JE_playSampleNum(S_CLICK);
+			network_host_endless_base_same = !network_host_endless_base_same;
 			break;
 
 		case ITEM_CHOOSER:
@@ -1771,10 +1783,12 @@ void qa_test_net_lobby_strings(void)
 	lobbyCheckRow(lobbyEndlessLabel[0], seedWorst);
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 		lobbyCheckRow(lobbyEndlessLabel[1], endlessRunModeName((EndlessRunMode)m));
+	for (uint i = 0; i < COUNTOF(lobbyBaseLevelValue); ++i)
+		lobbyCheckRow(lobbyEndlessLabel[2], lobbyBaseLevelValue[i]);
 	for (int c = 0; c < ENDLESS_PICK_COUNT; ++c)
-		lobbyCheckRow(lobbyEndlessLabel[2], endlessCourseChooserName((EndlessCourseChooser)c));
+		lobbyCheckRow(lobbyEndlessLabel[3], endlessCourseChooserName((EndlessCourseChooser)c));
 	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
-		lobbyCheckRow(lobbyEndlessLabel[3], lobbyCreditValue[i]);
+		lobbyCheckRow(lobbyEndlessLabel[4], lobbyCreditValue[i]);
 
 	for (uint i = 0; i < COUNTOF(lobbyHostHelp); ++i)
 		lobbyCheckHelp(lobbyHostHelp[i]);

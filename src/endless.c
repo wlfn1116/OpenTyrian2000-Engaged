@@ -421,10 +421,10 @@ const char *endlessRunModeName(EndlessRunMode mode)
 
 /* All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
  * difficulty it started on, or the untagged one if that difficulty is outside the six below.
- * The outer index is crew size: two ships reach depths a solo run cannot, so the two sets of
- * records never meet. */
-int  endlessBestZoneUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { 0 } };
-bool endlessBestZoneUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { false } };
+ * The outer indices are the chart rule (Varied / Same base level) and crew size: neither pair of
+ * runs is comparable, so none of those sets of records ever meet. */
+int  endlessBestZoneUntagged[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { 0 } } };
+bool endlessBestZoneUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { false } } };
 static int endlessBestZoneAtRunStart = 0;
 
 const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
@@ -432,8 +432,8 @@ const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT] = {
 	DIFFICULTY_IMPOSSIBLE, DIFFICULTY_SUICIDE, DIFFICULTY_LORD_OF_GAME,
 };
 
-int  endlessBestZoneDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { 0 } } };
-bool endlessBestZoneDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { false } } };
+int  endlessBestZoneDiff[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { { 0 } } } };
+bool endlessBestZoneDiffCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT] = { { { { false } } } };
 
 int endlessRecordTable(void) { return coopEndlessMode ? 1 : 0; }
 
@@ -442,17 +442,26 @@ const char *endlessRecordTableName(int players)
 	return (players == 1) ? "2 Players" : "1 Player";
 }
 
-static bool endlessRecordArgsOk(int players, EndlessRunMode mode)
+// Picked at run start and fixed from there; the run writes the record set it names.
+bool endlessRunBaseLevelSame = false;
+
+const char *endlessBaseLevelRuleName(int variant)
 {
-	return players >= 0 && players < ENDLESS_PLAYER_TABLES
+	return (variant == 1) ? "Same" : "Varied";
+}
+
+static bool endlessRecordArgsOk(int variant, int players, EndlessRunMode mode)
+{
+	return variant >= 0 && variant < ENDLESS_BASE_TABLES
+	    && players >= 0 && players < ENDLESS_PLAYER_TABLES
 	    && mode >= 0 && mode < ENDLESS_RUNMODE_COUNT;
 }
 
-int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot)
+int endlessBestZoneForDifficulty(int variant, int players, EndlessRunMode mode, int slot)
 {
-	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(variant, players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return 0;
-	return endlessBestZoneDiff[players][mode][slot];
+	return endlessBestZoneDiff[variant][players][mode][slot];
 }
 
 int endlessDifficultySlot(int difficulty)
@@ -489,16 +498,17 @@ void endlessResetCustomWeaponZone(void)
 // The one record the running run writes to, and its mark.
 static void endlessRunRecord(int **zone, bool **mark)
 {
+	const int base = endlessRunBaseLevelVariant();
 	const int slot = endlessDifficultySlot(initialDifficulty);
 	if (slot >= 0)
 	{
-		*zone = &endlessBestZoneDiff[endlessRecordTable()][endlessRunMode][slot];
-		*mark = &endlessBestZoneDiffCustom[endlessRecordTable()][endlessRunMode][slot];
+		*zone = &endlessBestZoneDiff[base][endlessRecordTable()][endlessRunMode][slot];
+		*mark = &endlessBestZoneDiffCustom[base][endlessRecordTable()][endlessRunMode][slot];
 	}
 	else
 	{
-		*zone = &endlessBestZoneUntagged[endlessRecordTable()][endlessRunMode];
-		*mark = &endlessBestZoneUntaggedCustom[endlessRecordTable()][endlessRunMode];
+		*zone = &endlessBestZoneUntagged[base][endlessRecordTable()][endlessRunMode];
+		*mark = &endlessBestZoneUntaggedCustom[base][endlessRecordTable()][endlessRunMode];
 	}
 }
 
@@ -550,72 +560,74 @@ void endlessCustomWeaponZoneEnd(void)
 		endlessMarkRecordCustom();
 }
 
-int endlessBestZoneAny(int players, EndlessRunMode mode)
+int endlessBestZoneAny(int variant, int players, EndlessRunMode mode)
 {
-	if (!endlessRecordArgsOk(players, mode))
+	if (!endlessRecordArgsOk(variant, players, mode))
 		return 0;
 
-	int best = endlessBestZoneUntagged[players][mode];
+	int best = endlessBestZoneUntagged[variant][players][mode];
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[players][mode][d] > best)
-			best = endlessBestZoneDiff[players][mode][d];
+		if (endlessBestZoneDiff[variant][players][mode][d] > best)
+			best = endlessBestZoneDiff[variant][players][mode][d];
 	return best;
 }
 
-const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode)
+const char *endlessRecordAnyCustomMark(int variant, int players, EndlessRunMode mode)
 {
 	// Whichever record is the deepest owns the mark, and a tie takes the first marked one.
-	const int best = endlessBestZoneAny(players, mode);
+	const int best = endlessBestZoneAny(variant, players, mode);
 	if (best <= 0)
 		return "";
 
-	if (endlessBestZoneUntagged[players][mode] == best && endlessBestZoneUntaggedCustom[players][mode])
+	if (endlessBestZoneUntagged[variant][players][mode] == best
+	    && endlessBestZoneUntaggedCustom[variant][players][mode])
 		return " C";
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
-		if (endlessBestZoneDiff[players][mode][d] == best && endlessBestZoneDiffCustom[players][mode][d])
+		if (endlessBestZoneDiff[variant][players][mode][d] == best
+		    && endlessBestZoneDiffCustom[variant][players][mode][d])
 			return " C";
 	return "";
 }
 
-const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot)
+const char *endlessRecordDiffCustomMark(int variant, int players, EndlessRunMode mode, int slot)
 {
-	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(variant, players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return "";
-	return endlessBestZoneDiffCustom[players][mode][slot] ? " C" : "";
+	return endlessBestZoneDiffCustom[variant][players][mode][slot] ? " C" : "";
 }
 
-void endlessClearDeepestRecord(int players, EndlessRunMode mode)
+void endlessClearDeepestRecord(int variant, int players, EndlessRunMode mode)
 {
-	if (!endlessRecordArgsOk(players, mode))
+	if (!endlessRecordArgsOk(variant, players, mode))
 		return;
-	const int best = endlessBestZoneAny(players, mode);
+	const int best = endlessBestZoneAny(variant, players, mode);
 	if (best <= 0)
 		return;
 
 	// Every record standing at that depth goes, so one confirmation always moves the figure and
 	// what remains below it is what the mode now shows.
-	if (endlessBestZoneUntagged[players][mode] == best)
+	if (endlessBestZoneUntagged[variant][players][mode] == best)
 	{
-		endlessBestZoneUntagged[players][mode] = 0;
-		endlessBestZoneUntaggedCustom[players][mode] = false;
+		endlessBestZoneUntagged[variant][players][mode] = 0;
+		endlessBestZoneUntaggedCustom[variant][players][mode] = false;
 	}
 	for (int d = 0; d < ENDLESS_DIFFICULTY_COUNT; ++d)
 	{
-		if (endlessBestZoneDiff[players][mode][d] == best)
+		if (endlessBestZoneDiff[variant][players][mode][d] == best)
 		{
-			endlessBestZoneDiff[players][mode][d] = 0;
-			endlessBestZoneDiffCustom[players][mode][d] = false;
+			endlessBestZoneDiff[variant][players][mode][d] = 0;
+			endlessBestZoneDiffCustom[variant][players][mode][d] = false;
 		}
 	}
 	save_opentyrian_config();
 }
 
-void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot)
+void endlessClearRecordDifficulty(int variant, int players, EndlessRunMode mode, int slot)
 {
-	if (!endlessRecordArgsOk(players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
+	if (!endlessRecordArgsOk(variant, players, mode) || slot < 0 || slot >= ENDLESS_DIFFICULTY_COUNT)
 		return;
-	endlessBestZoneDiff[players][mode][slot] = 0;
-	endlessBestZoneDiffCustom[players][mode][slot] = false;
+	endlessBestZoneDiff[variant][players][mode][slot] = 0;
+	endlessBestZoneDiffCustom[variant][players][mode][slot] = false;
 	save_opentyrian_config();
 }
 
@@ -672,8 +684,9 @@ void endlessResetRun(void)
 	endlessSortieOutpostMods = 0;
 	endlessSortieOutpostEp = 0;
 	endlessCoopHostCharts = true;
-	// New runs override this after reset, and a loaded/reverted one restores the saved mode.
+	// New runs override these after reset, and a loaded/reverted one restores the saved pair.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
+	endlessRunBaseLevelSame = false;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';
 	endlessBaseEp = endlessBaseLvl = endlessPrevBaseEp = endlessPrevBaseLvl = 0;
 	endlessRecentCount = 0;

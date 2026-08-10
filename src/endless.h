@@ -286,6 +286,17 @@ extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
 int endlessRecordTable(void);   // which table the run in progress writes
 const char *endlessRecordTableName(int players);
 
+/* ...and by the chart rule below, for the same reason: a slate of one repeated base level is a
+ * different run from a slate of five. Index 0 is Varied, 1 is Same, and the two have a High Scores
+ * page each. */
+#define ENDLESS_BASE_TABLES 2
+const char *endlessBaseLevelRuleName(int variant);   // "Varied" / "Same"
+
+/* The rule the run in progress is flying, picked on the seed screen (or by the host in the Endless
+ * lobby) and fixed from there: nothing can move a run between the two sets of records. */
+extern bool endlessRunBaseLevelSame;
+static inline int endlessRunBaseLevelVariant(void) { return endlessRunBaseLevelSame ? 1 : 0; }
+
 // Slot a difficulty level occupies, or -1 when runs on it are not broken out.
 int endlessDifficultySlot(int difficulty);
 
@@ -320,21 +331,21 @@ const char *endlessRunModeName(EndlessRunMode mode);
 
 // The mode's record on one difficulty slot, and its deepest on any of them. The latter also counts
 // the untagged record a config written before the breakdown existed still carries.
-int endlessBestZoneForDifficulty(int players, EndlessRunMode mode, int slot);
-int endlessBestZoneAny(int players, EndlessRunMode mode);
+int endlessBestZoneForDifficulty(int variant, int players, EndlessRunMode mode, int slot);
+int endlessBestZoneAny(int variant, int players, EndlessRunMode mode);
 
 // " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
 // against a named mode and difficulty, so the zone number carries this mark alone.
-const char *endlessRecordAnyCustomMark(int players, EndlessRunMode mode);
-const char *endlessRecordDiffCustomMark(int players, EndlessRunMode mode, int slot);
+const char *endlessRecordAnyCustomMark(int variant, int players, EndlessRunMode mode);
+const char *endlessRecordDiffCustomMark(int variant, int players, EndlessRunMode mode, int slot);
 
 // Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
 // a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
-void endlessClearDeepestRecord(int players, EndlessRunMode mode);
-void endlessClearRecordDifficulty(int players, EndlessRunMode mode, int slot);
+void endlessClearDeepestRecord(int variant, int players, EndlessRunMode mode);
+void endlessClearRecordDifficulty(int variant, int players, EndlessRunMode mode, int slot);
 
 // Returns false when the seed screen is cancelled.
-bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode);
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool *outBaseSame);
 
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);

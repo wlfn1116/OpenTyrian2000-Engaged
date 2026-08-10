@@ -180,6 +180,8 @@ void network_endless_session_begin(void);
 extern int  network_host_endless_run_mode;
 extern int  network_host_endless_chooser;
 extern bool network_host_endless_combo_shared;
+// Base Level: true = every route of a chart flies one level, false = a level each.
+extern bool network_host_endless_base_same;
 
 // Adopt the host's Endless block from the connect packet, clamping every field.
 void network_endless_adopt(const Uint8 *buf);

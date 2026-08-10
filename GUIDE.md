@@ -66,11 +66,14 @@ then the run carries on.
 
 ### Starting a run
 
-The start screen takes a seed and a run mode.
+The start screen takes a seed, a run mode, and the base level rule.
 
 - A blank seed generates a random one.
 - The same seed and choices reproduce levels, music, courses, shops, and perks.
 - Combat randomness is not seeded.
+- **Base Level** decides whether a Chart-a-Course slate offers a level per route
+  (**Varied**) or one level for all of them (**Same**); see Chart-a-Course. It is
+  fixed for the run, and the two rules keep separate records.
 
 | Mode | Saving | Dying |
 | --- | --- | --- |
@@ -234,6 +237,13 @@ grade, the active threats and boons, and the exact clear payout.
 Radar reveals which level is underneath. Surveyor adds routes. Recently played
 levels are avoided.
 
+The **Base Level** row on the seed screen decides which levels a chart draws on.
+**Varied**, the default, gives each route its own level. **Same** puts every route
+of a chart onto one level, so the whole choice is which modifiers to fly it under;
+the level itself still changes from one zone to the next. It is picked once per
+run and fixed from there, and the two rules keep separate records (see Saving
+below). Online it is a host setting, under **Endless Setup** in the lobby.
+
 Queued Sabotage charges strip threats from the route you pick, and the card
 updates before launch, including the lower payout.
 
@@ -379,16 +389,21 @@ Hardcore, so each record only moves under the mode and difficulty that set it.
 The Run Over screen shows the one you were playing for, as in
 `Furthest zone: 25`, with the mode and difficulty named on its **Mode** row.
 
-The seed screen shows the deepest record for whichever mode is selected, across
-all difficulties, since it is picked before you choose one.
+The **Base Level** rule splits the records the same way, since a chart of one
+repeated level is a different run from a chart of five, and each rule gets its own
+board.
 
-All three records also have their own page in **High Scores** on the title
+The seed screen shows the deepest record for the mode and base level rule the two
+rows above it are set to, across all difficulties, since the difficulty is picked
+after.
+
+All these records also have their own pages in **High Scores** on the title
 screen, reached by paging right past the episode and Timed Battle boards to the
-last two: **2 Player Campaign** and **Endless**. The Endless page lists every run
-mode at both crew sizes with the zone it stands at; the 2 Player Campaign page
-lists the best combined cash each episode has been finished with online, and who
-was flying. That board is separate from the two-player scores on the episode
-pages, which belong to Arcade.
+last three: **2 Player Campaign**, **Endless: Varied Base** and **Endless: Same
+Base**. Each Endless page lists every run mode at both crew sizes with the zone it
+stands at; the 2 Player Campaign page lists the best combined cash each episode
+has been finished with online, and who was flying. That board is separate from the
+two-player scores on the episode pages, which belong to Arcade.
 
 Selecting a mode opens its breakdown by difficulty: a row for each of Easy,
 Normal, Hard, Impossible, Suicide and Lord of Game, above them an **Any
@@ -397,10 +412,11 @@ the **Any Difficulty** row simply shows the deepest of them, which is what the
 mode list and the seed screen show.
 
 The breakdown is where records are erased. Move to one with Up/Down and select
-it. The page then asks **Are You Sure?** and opens on **No, Keep It**, so
-reaching the wipe means deliberately moving down to **Yes, Erase It** and
-selecting that. Esc unwinds one step at a time: out of the question, then back to
-the mode list, then off the screen. An erased record cannot be recovered.
+it. The page then names the record in full and asks **Are You Sure?**, opening on
+**No, Keep It**, so reaching the wipe means deliberately moving down to **Yes,
+Erase It** and selecting that. Esc unwinds one step at a time: out of the
+question, then back to the mode list, then off the screen. An erased record
+cannot be recovered.
 
 Erasing **Any Difficulty** erases the deepest record under it, and the row then
 shows the next deepest. It only reads `None` once every difficulty below it does.
@@ -527,7 +543,7 @@ are left alone and restored afterwards.
 | Battle Mode | Destruct only. Which of the five battles the session fights: 5-Card War, Traditional, Heli Assault, Heli Defense, or Outgunned. The config-file Custom mode stays offline: it is built from each machine's own file, so the two sides would field different armies. |
 | Episode | Starting episode for a new game. Only episodes installed on the host are offered. Endless always begins at episode 1 and travels on from there, so the row is replaced by Endless Setup. Destruct has no episodes and hides the row. |
 | Level | Timed Battle only, in place of Episode. Which of the three battles both players race. The episode it belongs to comes with it. |
-| Endless Setup | Endless only. Opens a page with the run seed, the run mode, who charts each course, and whose drive streak a kill feeds. |
+| Endless Setup | Endless only. Opens a page with the run seed, the run mode, the base level rule, who charts each course, and whose drive streak a kill feeds. |
 | Difficulty | Starting campaign or Endless difficulty. Linked arcade applies its usual two-player difficulty adjustment. Every game type that gives each player a whole ship (Separate arcade, Timed Battle, Campaign, Endless, SuperTyrian and Super Arcade) plays exactly the rung chosen here, with no adjustment. |
 | Variant | SuperTyrian only, in place of Difficulty. **Standard** is the usual run; **Scrollock** is the gentler one, the same choice solo SuperTyrian makes from the Scroll Lock key. SuperTyrian has no difficulty ladder. |
 | Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade and Timed Battle give both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the row is titled **Host Fights On** and reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
@@ -633,6 +649,7 @@ zone counter; wallets, stock and gear belong to one player each.
 | --- | --- |
 | Seed | A named seed repeats a run exactly. Leave it blank and the run rolls its own, which the joiner's summary screen shows you once the session starts. |
 | Run Mode | **Relaxed**, **Standard** or **Hardcore**, exactly as in a solo run. Relaxed opens the death menu when both ships are down, Standard ends the run there, and Hardcore does that and saves nothing. |
+| Base Level | **Varied** (default) gives each charted route its own level; **Same** puts every route of a chart onto one level, leaving the modifiers as the whole choice. Exactly as in a solo run, and fixed for the session. |
 | Charts Course | Who picks the next sector: **Host**, **Guest**, **Alternating** (turn about, and the turn is kept in the save), or **50-50** (a coin flip from the run seed, so both machines land on the same side of it). |
 | Combo Feed | Whose kill-fire streak a kill feeds. **Individual** (default) counts a kill for the ship whose shot destroyed it, so a drive you paid for is worth what your own shooting earns. **Shared** has every kill feed both streaks. A kill neither of you can be credited with feeds both either way. |
 

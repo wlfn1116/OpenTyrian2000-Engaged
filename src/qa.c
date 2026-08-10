@@ -251,6 +251,7 @@ static void qa_reset_course_inputs(const char *seed, int depth, int difficulty)
 	endlessMode = true;
 	endlessCampaignMods = false;
 	endlessRunMode = ENDLESS_RUNMODE_STANDARD;
+	endlessRunBaseLevelSame = false;   // the shipped chart rule; the Same cases set it themselves
 	endlessRunDepth = depth;
 	difficultyLevel = (JE_shortint)difficulty;
 	endlessSetSeed(seed);
@@ -412,6 +413,72 @@ static void qa_test_courses(void)
 	printf("# course properties: 768 seeds, %u launchable routes\n", routes);
 }
 
+/* The Base Level rule. Same puts every route of a slate onto one level, leaving the modifiers as
+ * the whole choice; Varied deals each route its own. Both must stay seed-deterministic. */
+static void qa_test_course_base_rule(void)
+{
+	static const int depths[] = { 0, 7, 25, 50, 100 };
+	char seed[ENDLESS_SEED_MAXLEN];
+	unsigned multiRouteSlates = 0;
+
+	for (unsigned sample = 0; sample < 160; ++sample)
+	{
+		watchdog_heartbeat();
+		const int depth = depths[sample % COUNTOF(depths)];
+		snprintf(seed, sizeof(seed), "qa-base-%08x", (unsigned)(sample * 2654435761u));
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseLevelSame = true;
+		endlessGenerateCourses();
+		const int sameCount = endlessCourseCnt;
+		const Uint32 sameHash = qa_slate_hash();
+
+		bool oneLevel = sameCount >= 1;
+		for (int i = 1; i < sameCount; ++i)
+			oneLevel &= endlessCourseEp[i] == endlessCourseEp[0]
+			         && endlessCourseSec[i] == endlessCourseSec[0]
+			         && endlessCourseFile[i] == endlessCourseFile[0];
+		qa_check(oneLevel, "Same base level puts every charted route on one level");
+
+		for (int i = 0; i < sameCount; ++i)
+		{
+			JE_byte resolved = 0;
+			qa_check(endlessResolveCourseFile(endlessCourseEp[i], endlessCourseSec[i],
+			                                  endlessCourseFile[i], &resolved)
+			         && resolved == endlessCourseFile[i],
+			         "Same-base route resolves to a launchable level");
+			for (int k = 0; k < i; ++k)
+				qa_check(strcmp(endlessCourseName(i), endlessCourseName(k)) != 0,
+				         "Same-base course names stay unique within a slate");
+		}
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseLevelSame = true;
+		endlessGenerateCourses();
+		qa_check(endlessCourseCnt == sameCount && qa_slate_hash() == sameHash,
+		         "Same-base course generation is deterministic");
+
+		// The rule has to be what decides the slate, so the same seed under Varied must still
+		// hand every route its own level.
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessGenerateCourses();
+		if (endlessCourseCnt > 1)
+		{
+			bool distinct = true;
+			for (int i = 1; i < endlessCourseCnt; ++i)
+				for (int k = 0; k < i; ++k)
+					distinct &= endlessCourseEp[i] != endlessCourseEp[k]
+					         || endlessCourseSec[i] != endlessCourseSec[k];
+			qa_check(distinct, "Varied base level gives each charted route its own level");
+			++multiRouteSlates;
+		}
+	}
+
+	qa_check(multiRouteSlates > 0, "the Varied comparison saw slates with more than one route");
+
+	printf("# base level rule: 160 seeds, %u multi-route Varied slates\n", multiRouteSlates);
+}
+
 static void qa_test_perk_registry(void)
 {
 	const int count = endlessPerkCount();
@@ -487,10 +554,10 @@ static void qa_test_perk_registry(void)
 
 static void qa_test_record_readers(void)
 {
-	int  savedDiff[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
-	bool savedDiffCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
-	int  savedUntagged[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
-	bool savedUntaggedCustom[ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
+	int  savedDiff[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+	bool savedDiffCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT][ENDLESS_DIFFICULTY_COUNT];
+	int  savedUntagged[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
+	bool savedUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT];
 	memcpy(savedDiff, endlessBestZoneDiff, sizeof(savedDiff));
 	memcpy(savedDiffCustom, endlessBestZoneDiffCustom, sizeof(savedDiffCustom));
 	memcpy(savedUntagged, endlessBestZoneUntagged, sizeof(savedUntagged));
@@ -500,40 +567,52 @@ static void qa_test_record_readers(void)
 	memset(endlessBestZoneUntagged, 0, sizeof(savedUntagged));
 	memset(endlessBestZoneUntaggedCustom, 0, sizeof(savedUntaggedCustom));
 
-	endlessBestZoneDiff[0][ENDLESS_RUNMODE_STANDARD][0] = 20;
-	endlessBestZoneDiff[0][ENDLESS_RUNMODE_STANDARD][1] = 20;
-	endlessBestZoneDiffCustom[0][ENDLESS_RUNMODE_STANDARD][1] = true;
-	endlessBestZoneUntagged[0][ENDLESS_RUNMODE_STANDARD] = 15;
-	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = true;
-	qa_check(endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 20
-	         && strcmp(endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
+	endlessBestZoneDiff[0][0][ENDLESS_RUNMODE_STANDARD][0] = 20;
+	endlessBestZoneDiff[0][0][ENDLESS_RUNMODE_STANDARD][1] = 20;
+	endlessBestZoneDiffCustom[0][0][ENDLESS_RUNMODE_STANDARD][1] = true;
+	endlessBestZoneUntagged[0][0][ENDLESS_RUNMODE_STANDARD] = 15;
+	endlessBestZoneUntaggedCustom[0][0][ENDLESS_RUNMODE_STANDARD] = true;
+	qa_check(endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 20
+	         && strcmp(endlessRecordAnyCustomMark(0, 0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
 	         "deepest record derives its custom mark from any marked record tied at that depth");
-	endlessBestZoneUntagged[0][ENDLESS_RUNMODE_STANDARD] = 25;
-	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = false;
-	qa_check(endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25
-	         && endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD)[0] == '\0',
+	endlessBestZoneUntagged[0][0][ENDLESS_RUNMODE_STANDARD] = 25;
+	endlessBestZoneUntaggedCustom[0][0][ENDLESS_RUNMODE_STANDARD] = false;
+	qa_check(endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25
+	         && endlessRecordAnyCustomMark(0, 0, ENDLESS_RUNMODE_STANDARD)[0] == '\0',
 	         "legacy untagged record survives and owns the mode-wide mark when deepest");
-	endlessBestZoneUntaggedCustom[0][ENDLESS_RUNMODE_STANDARD] = true;
-	qa_check(strcmp(endlessRecordAnyCustomMark(0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
+	endlessBestZoneUntaggedCustom[0][0][ENDLESS_RUNMODE_STANDARD] = true;
+	qa_check(strcmp(endlessRecordAnyCustomMark(0, 0, ENDLESS_RUNMODE_STANDARD), " C") == 0,
 	         "legacy untagged custom mark is retained");
 
 	/* The two crew sizes keep separate books: a solo record is invisible to the co-op table. */
-	endlessBestZoneDiff[1][ENDLESS_RUNMODE_STANDARD][0] = 60;
-	qa_check(endlessBestZoneAny(1, ENDLESS_RUNMODE_STANDARD) == 60
-	         && endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25,
+	endlessBestZoneDiff[0][1][ENDLESS_RUNMODE_STANDARD][0] = 60;
+	qa_check(endlessBestZoneAny(0, 1, ENDLESS_RUNMODE_STANDARD) == 60
+	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
 	         "one-player and two-player zone records are kept apart");
-	endlessClearDeepestRecord(1, ENDLESS_RUNMODE_STANDARD);
-	qa_check(endlessBestZoneAny(1, ENDLESS_RUNMODE_STANDARD) == 0
-	         && endlessBestZoneAny(0, ENDLESS_RUNMODE_STANDARD) == 25,
+	endlessClearDeepestRecord(0, 1, ENDLESS_RUNMODE_STANDARD);
+	qa_check(endlessBestZoneAny(0, 1, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
 	         "erasing a co-op record leaves the solo one standing");
+
+	/* ...and so do the two chart rules: a Same-base run cannot reach a Varied record. */
+	endlessBestZoneDiff[1][0][ENDLESS_RUNMODE_STANDARD][0] = 80;
+	qa_check(endlessBestZoneAny(1, 0, ENDLESS_RUNMODE_STANDARD) == 80
+	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
+	         "same-base and varied-base zone records are kept apart");
+	endlessClearRecordDifficulty(1, 0, ENDLESS_RUNMODE_STANDARD, 0);
+	qa_check(endlessBestZoneAny(1, 0, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
+	         "erasing a same-base record leaves the varied-base one standing");
 
 	bool difficultyMap = true;
 	for (int i = 0; i < ENDLESS_DIFFICULTY_COUNT; ++i)
 		difficultyMap &= endlessDifficultySlot(endlessDifficultyLevel[i]) == i;
 	qa_check(difficultyMap && endlessDifficultySlot(-999) == -1
-	         && endlessBestZoneAny(0, (EndlessRunMode)-1) == 0
-	         && endlessBestZoneAny(-1, ENDLESS_RUNMODE_STANDARD) == 0
-	         && endlessBestZoneForDifficulty(0, ENDLESS_RUNMODE_STANDARD, -1) == 0,
+	         && endlessBestZoneAny(0, 0, (EndlessRunMode)-1) == 0
+	         && endlessBestZoneAny(0, -1, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneAny(-1, 0, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneAny(ENDLESS_BASE_TABLES, 0, ENDLESS_RUNMODE_STANDARD) == 0
+	         && endlessBestZoneForDifficulty(0, 0, ENDLESS_RUNMODE_STANDARD, -1) == 0,
 	         "record readers preserve difficulty ordering and reject invalid indices");
 
 	memcpy(endlessBestZoneDiff, savedDiff, sizeof(savedDiff));
@@ -1893,20 +1972,23 @@ static void qa_test_network_endless_lobby(void)
 	const int savedMode = network_host_endless_run_mode;
 	const int savedChooser = network_host_endless_chooser;
 	const bool savedCombo = network_host_endless_combo_shared;
+	const bool savedBaseSame = network_host_endless_base_same;
 	char savedSeed[NET_ENDLESS_SEED_MAX], savedHostSeed[NET_ENDLESS_SEED_MAX];
 	memcpy(savedSeed, network_endless_session_seed, sizeof(savedSeed));
 	memcpy(savedHostSeed, network_host_endless_seed, sizeof(savedHostSeed));
 
-	Uint8 block[3 + NET_ENDLESS_SEED_MAX];
+	Uint8 block[4 + NET_ENDLESS_SEED_MAX];
 	memset(block, 0, sizeof(block));
 	block[0] = (Uint8)ENDLESS_RUNMODE_HARDCORE;
 	block[1] = (Uint8)(ENDLESS_PICK_COUNT - 1);
 	block[2] = 1;
-	memcpy(&block[3], "qa-seed-123", sizeof("qa-seed-123"));
+	block[3] = 1;
+	memcpy(&block[4], "qa-seed-123", sizeof("qa-seed-123"));
 	network_endless_adopt(block);
 	qa_check(network_host_endless_run_mode == ENDLESS_RUNMODE_HARDCORE
 	         && network_host_endless_chooser == ENDLESS_PICK_COUNT - 1
 	         && network_host_endless_combo_shared
+	         && network_host_endless_base_same
 	         && strcmp(network_endless_session_seed, "qa-seed-123") == 0,
 	         "joiner adopts every field of the host's Endless lobby block");
 
@@ -1937,6 +2019,7 @@ static void qa_test_network_endless_lobby(void)
 	network_host_endless_run_mode = savedMode;
 	network_host_endless_chooser = savedChooser;
 	network_host_endless_combo_shared = savedCombo;
+	network_host_endless_base_same = savedBaseSame;
 	memcpy(network_endless_session_seed, savedSeed, sizeof(savedSeed));
 	memcpy(network_host_endless_seed, savedHostSeed, sizeof(savedHostSeed));
 #else
@@ -2444,6 +2527,7 @@ int qa_run_unit_suite(void)
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();
+	qa_test_course_base_rule();
 
 	printf("1..%u\n", qa_checks);
 	printf("# %u checks, %u failures\n", qa_checks, qa_failures);

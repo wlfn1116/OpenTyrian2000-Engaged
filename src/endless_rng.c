@@ -103,8 +103,8 @@ const char *endlessSeedString(void)
 	return endlessRunSeed;
 }
 
-// Seed and run mode selection before the difficulty screen.
-bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
+// Seed, run mode and base-level rule selection before the difficulty screen.
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool *outBaseSame)
 {
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');
@@ -112,14 +112,15 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 	char seed[ENDLESS_SEED_MAXLEN] = "";
 	size_t len = 0;
 	EndlessRunMode mode = ENDLESS_RUNMODE_STANDARD;
+	int baseVariant = 0;   // Varied: a level per charted route
 
-	enum { ROW_SEED, ROW_RANDOM, ROW_MODE, ROW_START, ROW_COUNT };
+	enum { ROW_SEED, ROW_RANDOM, ROW_MODE, ROW_BASE, ROW_START, ROW_COUNT };
 	int selected = ROW_SEED;
 
 	const int xCenter = 320 / 2;
 	const int yRecord = 42;
-	const int yRows   = 82;
-	const int dyRows  = 20;
+	const int yRows   = 78;
+	const int dyRows  = 18;
 	const int hRow    = 15;
 
 	// Cache the static background in VGAScreen2.
@@ -137,11 +138,13 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 	{
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		// The record belongs to the mode selected below, so it follows the Mode row.
+		// The record belongs to the mode and base-level rule selected below, both of which split
+		// the records, so it follows those two rows.
 		char recordLine[48];
-		if (endlessBestZoneAny(0, mode) > 0)
+		if (endlessBestZoneAny(baseVariant, 0, mode) > 0)
 			snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s",
-			         endlessBestZoneAny(0, mode), endlessRecordAnyCustomMark(0, mode));
+			         endlessBestZoneAny(baseVariant, 0, mode),
+			         endlessRecordAnyCustomMark(baseVariant, 0, mode));
 		else
 			SDL_strlcpy(recordLine, "No zone record yet", sizeof(recordLine));
 		draw_font_hv_shadow(VGAScreen, xCenter, yRecord, recordLine, small_font, centered, 15, 4, false, 1);
@@ -151,9 +154,10 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 			snprintf(seedRow, sizeof(seedRow), "Seed: %s_", seed);
 		else
 			SDL_strlcpy(seedRow, "Seed: (random)", sizeof(seedRow));
-		char modeRow[32];
+		char modeRow[32], baseRow[32];
 		snprintf(modeRow, sizeof(modeRow), "Mode: %s", endlessRunModeName(mode));
-		const char *label[ROW_COUNT] = { seedRow, "Randomize", modeRow, "Start" };
+		snprintf(baseRow, sizeof(baseRow), "Base Level: %s", endlessBaseLevelRuleName(baseVariant));
+		const char *label[ROW_COUNT] = { seedRow, "Randomize", modeRow, baseRow, "Start" };
 
 		int rowW[ROW_COUNT];
 		for (int i = 0; i < ROW_COUNT; ++i)
@@ -163,16 +167,22 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 			                    normal_font, centered, 15, -4 + (i == selected ? 2 : 0), false, 2);
 		}
 
-		// Explain the selected mode's death and save policy.
-		const char *modeHelp;
-		switch (mode)
+		// Explain whichever of the two cycling rows is selected; the mode's death and save policy is
+		// the more consequential of the pair, so it is also what the rest of the screen shows.
+		const char *rowHelp;
+		if (selected == ROW_BASE)
 		{
-		case ENDLESS_RUNMODE_HARDCORE: modeHelp = "Hardcore: no saving, and no second chances."; break;
-		case ENDLESS_RUNMODE_STANDARD: modeHelp = "Standard: save anytime; a fatal hit ends the run."; break;
-		default:                       modeHelp = "Relaxed: save anytime; a fatal hit offers a retry."; break;
+			rowHelp = (baseVariant == 1) ? "Same: one base level per chart, modifiers differ."
+			                             : "Varied: every charted route is its own level.";
+		}
+		else switch (mode)
+		{
+		case ENDLESS_RUNMODE_HARDCORE: rowHelp = "Hardcore: no saving, and no second chances."; break;
+		case ENDLESS_RUNMODE_STANDARD: rowHelp = "Standard: save anytime; a fatal hit ends the run."; break;
+		default:                       rowHelp = "Relaxed: save anytime; a fatal hit offers a retry."; break;
 		}
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 4,
-		                    modeHelp, small_font, centered, 15, 2, false, 1);
+		                    rowHelp, small_font, centered, 15, 2, false, 1);
 		draw_font_hv_shadow(VGAScreen, xCenter, yRows + dyRows * ROW_COUNT + 18,
 		                    "Up/Down Move    Enter Select    Esc Back", small_font, centered, 15, 4, false, 1);
 
@@ -252,11 +262,21 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 					mode = (mode == 0) ? ENDLESS_RUNMODE_COUNT - 1 : mode - 1;
 					JE_playSampleNum(S_CLICK);
 				}
+				else if (selected == ROW_BASE)
+				{
+					baseVariant ^= 1;
+					JE_playSampleNum(S_CLICK);
+				}
 				break;
 			case SDL_SCANCODE_RIGHT:
 				if (selected == ROW_MODE)
 				{
 					mode = (mode + 1) % ENDLESS_RUNMODE_COUNT;
+					JE_playSampleNum(S_CLICK);
+				}
+				else if (selected == ROW_BASE)
+				{
+					baseVariant ^= 1;
 					JE_playSampleNum(S_CLICK);
 				}
 				break;
@@ -299,6 +319,11 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 				mode = (mode + 1) % ENDLESS_RUNMODE_COUNT;   // Enter cycles forward; Left/Right also step it
 				JE_playSampleNum(S_CLICK);
 			}
+			else if (selected == ROW_BASE)
+			{
+				baseVariant ^= 1;
+				JE_playSampleNum(S_CLICK);
+			}
 			else
 			{
 				if (len == 0)
@@ -306,6 +331,8 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode)
 				SDL_strlcpy(outSeed, seed, outN);
 				if (outMode)
 					*outMode = mode;
+				if (outBaseSame)
+					*outBaseSame = (baseVariant == 1);
 				JE_playSampleNum(S_SELECT);
 				commit = true;
 				done = true;

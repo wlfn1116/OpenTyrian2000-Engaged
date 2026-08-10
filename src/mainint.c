@@ -1360,12 +1360,14 @@ void JE_sortHighScores(void)
 #define ENDLESS_PAGE_DIFF_ROWS  (ENDLESS_DIFFICULTY_COUNT + 1)
 #define ENDLESS_PAGE_ROW_ANY    0   // the any-difficulty row; the rest are difficulty slot + 1
 
-// Page geometry, shared by the draw and input halves below. The breakdown carries more than twice
-// the rows, so it runs a tighter pitch and starts higher.
+/* Page geometry, shared by the draw and input halves below. Both lists start clear of the header
+ * and end on the same line, so the notes underneath sit in one place; the breakdown carries more
+ * than twice the rows and runs the tighter pitch to manage it. */
 static const int endlessPageXCenter = 160;      // center of the 320px menu field
-static const int endlessPageRowY0 = 66, endlessPageRowDy = 13, endlessPageRowH = 11;
-static const int endlessPageDiffY0 = 70, endlessPageDiffDy = 11, endlessPageDiffH = 10;
+static const int endlessPageRowY0 = 74, endlessPageRowDy = 14, endlessPageRowH = 12;
+static const int endlessPageDiffY0 = 74, endlessPageDiffDy = 11, endlessPageDiffH = 10;
 static const int endlessPageDiffGap = 5;   // sets the any-difficulty row apart from the six under it
+static const int endlessPageNoteGap = 16;  // last row to the first note line
 static const int endlessPageConfirmY0 = 100, endlessPageConfirmDy = 14, endlessPageConfirmH = 13;
 
 static const char *const endlessPageConfirmChoice[] = { "No, Keep It", "Yes, Erase It" };
@@ -1390,17 +1392,18 @@ static const char *endlessPageDiffName(int row)
 	return difficultyNameB[endlessDifficultyLevel[row - 1]];
 }
 
-// The zone and custom mark a breakdown row shows.
-static int endlessPageDiffZone(int players, EndlessRunMode mode, int row)
+// The zone and custom mark a breakdown row shows. The base-level rule is the page, not a row: each
+// of the two has its own board, so `variant` is fixed for everything drawn on one.
+static int endlessPageDiffZone(int variant, int players, EndlessRunMode mode, int row)
 {
-	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(players, mode)
-	                                     : endlessBestZoneForDifficulty(players, mode, row - 1);
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(variant, players, mode)
+	                                     : endlessBestZoneForDifficulty(variant, players, mode, row - 1);
 }
 
-static const char *endlessPageDiffMark(int players, EndlessRunMode mode, int row)
+static const char *endlessPageDiffMark(int variant, int players, EndlessRunMode mode, int row)
 {
-	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessRecordAnyCustomMark(players, mode)
-	                                     : endlessRecordDiffCustomMark(players, mode, row - 1);
+	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessRecordAnyCustomMark(variant, players, mode)
+	                                     : endlessRecordDiffCustomMark(variant, players, mode, row - 1);
 }
 
 // A mode row's label carries its crew size, since the two sets sit in one list.
@@ -1493,7 +1496,7 @@ static void JE_drawCoopCampaignPage(void)
 	JE_textShade(VGAScreen, xLabel, 78 + 13 * COOP_CAMPAIGN_SCORE_EPISODES + 8, note, 15, 2, FULL_SHADE);
 }
 
-static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selectedRow,
+static void JE_drawEndlessRecordPage(int variant, int selectedMode, bool subOpen, int selectedRow,
                                      bool confirmErase, int confirmChoice)
 {
 	int xLabel, xZoneRight;
@@ -1502,15 +1505,17 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selecte
 	if (confirmErase)
 	{
 		// Name exactly what is about to go, since the breakdown makes "the Relaxed record"
-		// ambiguous on its own. The any-difficulty row holds no record of its own, so erasing it
-		// takes the deepest one under it and the row falls back to whatever is left.
+		// ambiguous on its own: the crew size picks the table and the mode and difficulty pick the
+		// row. The any-difficulty row holds no record of its own, so erasing it takes the deepest
+		// one under it and the row falls back to whatever is left.
+		const char *const eraseTable = endlessRecordTableName(ENDLESS_PAGE_ROW_TABLE(selectedMode));
+		const char *const eraseMode = endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode));
 		char question[80];
 		if (selectedRow == ENDLESS_PAGE_ROW_ANY)
-			snprintf(question, sizeof(question), "Erase the deepest %s record?",
-			         endlessRunModeName((EndlessRunMode)selectedMode));
+			snprintf(question, sizeof(question), "Erase the deepest %s %s record?", eraseTable, eraseMode);
 		else
-			snprintf(question, sizeof(question), "Erase the %s record on %s?",
-			         endlessRunModeName((EndlessRunMode)selectedMode), endlessPageDiffName(selectedRow));
+			snprintf(question, sizeof(question), "Erase the %s %s record on %s?",
+			         eraseTable, eraseMode, endlessPageDiffName(selectedRow));
 
 		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Are You Sure?",
 		                    normal_font, centered, 15, -3, false, 2);
@@ -1543,14 +1548,14 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selecte
 		{
 			endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(true, i),
 			                   endlessPageDiffName(i),
-			                   endlessPageDiffZone(ENDLESS_PAGE_ROW_TABLE(selectedMode),
+			                   endlessPageDiffZone(variant, ENDLESS_PAGE_ROW_TABLE(selectedMode),
 			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
-			                   endlessPageDiffMark(ENDLESS_PAGE_ROW_TABLE(selectedMode),
+			                   endlessPageDiffMark(variant, ENDLESS_PAGE_ROW_TABLE(selectedMode),
 			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
 			                   i == selectedRow);
 		}
 
-		const int yNote = endlessPageRowY(true, ENDLESS_PAGE_DIFF_ROWS - 1) + 17;
+		const int yNote = endlessPageRowY(true, ENDLESS_PAGE_DIFF_ROWS - 1) + endlessPageNoteGap;
 		JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
 		JE_textShade(VGAScreen, xLabel, yNote + 10, endlessPageNote[ENDLESS_PAGE_NOTE_ERASE],
 		             15, 2, FULL_SHADE);
@@ -1565,19 +1570,22 @@ static void JE_drawEndlessRecordPage(int selectedMode, bool subOpen, int selecte
 		const int table = ENDLESS_PAGE_ROW_TABLE(i);
 		const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(i);
 		endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(false, i),
-		                   endlessPageModeName(i), endlessBestZoneAny(table, mode),
-		                   endlessRecordAnyCustomMark(table, mode), i == selectedMode);
+		                   endlessPageModeName(i), endlessBestZoneAny(variant, table, mode),
+		                   endlessRecordAnyCustomMark(variant, table, mode), i == selectedMode);
 	}
 
-	const int yNote = endlessPageRowY0 + endlessPageRowDy * ENDLESS_PAGE_MODE_ROWS + 16;
+	const int yNote = endlessPageRowY(false, ENDLESS_PAGE_MODE_ROWS - 1) + endlessPageNoteGap;
 	JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
-	JE_textShade(VGAScreen, xLabel, yNote + 11, endlessPageNote[ENDLESS_PAGE_NOTE_MODES],
+	JE_textShade(VGAScreen, xLabel, yNote + 10, endlessPageNote[ENDLESS_PAGE_NOTE_MODES],
 	             15, 2, FULL_SHADE);
 }
 
-// Everything the Endless page navigates between, so the two halves pass one thing around.
+/* Everything the Endless page navigates between, so the two halves pass one thing around. The two
+ * base-level boards are separate pages of the high-score screen but share this: paging is blocked
+ * while a breakdown or an answer is up, so only the mode-list selection ever carries across. */
 typedef struct
 {
+	int  variant;        // which base-level board this page is (0 Varied, 1 Same)
 	int  mode;           // selected run mode on the mode list, and the mode a breakdown belongs to
 	bool subOpen;        // showing that mode's breakdown rather than the mode list
 	int  row;            // selected breakdown row (ENDLESS_PAGE_ROW_ANY, else difficulty slot + 1)
@@ -1593,9 +1601,9 @@ static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
 		const int table = ENDLESS_PAGE_ROW_TABLE(page->mode);
 		const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode);
 		if (page->row == ENDLESS_PAGE_ROW_ANY)
-			endlessClearDeepestRecord(table, mode);
+			endlessClearDeepestRecord(page->variant, table, mode);
 		else
-			endlessClearRecordDifficulty(table, mode, page->row - 1);
+			endlessClearRecordDifficulty(page->variant, table, mode, page->row - 1);
 		JE_playSampleNum(S_ITEM);
 	}
 	else
@@ -1608,7 +1616,7 @@ static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
 // Ask about the selected breakdown row, unless it has no record to lose.
 static void JE_endlessRecordPageArm(EndlessPageState *page)
 {
-	if (endlessPageDiffZone(ENDLESS_PAGE_ROW_TABLE(page->mode),
+	if (endlessPageDiffZone(page->variant, ENDLESS_PAGE_ROW_TABLE(page->mode),
 	                        (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode), page->row) > 0)
 	{
 		page->confirmErase = true;
@@ -1766,13 +1774,16 @@ void JE_highScoreScreen(void)
 	bool restart = true;
 
 	size_t episodeIndex = 0;
-	// Five episodes, three timed battles, the online co-op Campaign board, then the Endless records
-	const size_t episodeCount = 10;
-	const size_t endlessPage = episodeCount - 1;
-	const size_t coopPage = episodeCount - 2;
+	/* Five episodes, three timed battles, the online co-op Campaign board, then one Endless board
+	 * per base-level rule. The two Endless boards are separate pages because a run under one rule is
+	 * not comparable with a run under the other. */
+	const size_t episodeCount = 11;
+	const size_t endlessSamePage = episodeCount - 1;
+	const size_t endlessVariedPage = episodeCount - 2;
+	const size_t coopPage = episodeCount - 3;
 
 	// Endless page state: the mode list, a mode's breakdown by difficulty, and a pending erase.
-	EndlessPageState endlessPageState = { 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
+	EndlessPageState endlessPageState = { 0, 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
 
 	const int xCenter = 160; // center of 320px menu field
 	const int yMenuHeader = 3;
@@ -1799,9 +1810,13 @@ void JE_highScoreScreen(void)
 		// Restore background and header.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		if (episodeIndex == endlessPage)
+		const bool onEndlessPage = episodeIndex == endlessVariedPage || episodeIndex == endlessSamePage;
+		if (onEndlessPage)
 		{
-			SDL_strlcpy(buffer, "Endless", sizeof(buffer));
+			// Each board names its own rule, which is the only place the two are told apart.
+			endlessPageState.variant = (episodeIndex == endlessSamePage) ? 1 : 0;
+			snprintf(buffer, sizeof(buffer), "Endless: %s Base",
+			         endlessBaseLevelRuleName(endlessPageState.variant));
 
 			// No score board: the Endless page lists the per-mode zone records instead.
 			boardOnePlayer = -1;
@@ -1835,10 +1850,10 @@ void JE_highScoreScreen(void)
 		// Draw episode header.
 		draw_font_hv_shadow(VGAScreen, xCenter, yEpisodeHeader, buffer, normal_font, centered, 15, -3, false, 2);
 
-		if (episodeIndex == endlessPage)
-			JE_drawEndlessRecordPage(endlessPageState.mode, endlessPageState.subOpen,
-			                         endlessPageState.row, endlessPageState.confirmErase,
-			                         endlessPageState.confirmChoice);
+		if (onEndlessPage)
+			JE_drawEndlessRecordPage(endlessPageState.variant, endlessPageState.mode,
+			                         endlessPageState.subOpen, endlessPageState.row,
+			                         endlessPageState.confirmErase, endlessPageState.confirmChoice);
 		else if (episodeIndex == coopPage)
 			JE_drawCoopCampaignPage();
 
@@ -1888,7 +1903,7 @@ void JE_highScoreScreen(void)
 
 		// Draw paging controls. A breakdown or a pending erase owns the page, so paging away is
 		// not offered until the player has backed out of it.
-		const bool endlessBusy = episodeIndex == endlessPage
+		const bool endlessBusy = onEndlessPage
 		                      && (endlessPageState.subOpen || endlessPageState.confirmErase);
 		const bool leftControlVisible = episodeIndex > 0 && !endlessBusy;
 		const bool rightControlVisible = episodeIndex < episodeCount - 1 && !endlessBusy;
@@ -1933,7 +1948,7 @@ void JE_highScoreScreen(void)
 
 		// Handle interaction.
 
-		if (episodeIndex == endlessPage && JE_endlessRecordPageInput(&endlessPageState))
+		if (onEndlessPage && JE_endlessRecordPageInput(&endlessPageState))
 			continue;
 
 		bool leftAction = false;

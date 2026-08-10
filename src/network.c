@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       25           /* v25: the settings block grew a tail (24..41) carrying
+#define NET_VERSION       26           /* v26: the Endless lobby block grew a Base Level byte before
+                                          its seed, deciding whether a chart deals one base level or
+                                          one per route; a v25 peer reads the seed at the old offset
+                                          and would run different zones from the same lobby.
+                                          v25: the settings block grew a tail (24..41) carrying
                                           Expert Mode and its six tunables, which were host
                                           preferences nothing published at connect time; a v24
                                           peer reads the whole connect packet at the old offsets.
@@ -107,7 +111,8 @@
 #define NET_CONNECT_DIFFICULTY 16
 #define NET_CONNECT_SETTINGS  18
 #define NET_CONNECT_ENDLESS   (NET_CONNECT_SETTINGS + NETWORK_SETTINGS_SIZE)
-#define NET_CONNECT_ENDLESS_SIZE (3 + NET_ENDLESS_SEED_MAX)   // run mode, chooser, combo feed, seed
+// run mode, chooser, combo feed, base level, seed
+#define NET_CONNECT_ENDLESS_SIZE (4 + NET_ENDLESS_SEED_MAX)
 #define NET_CONNECT_DESTRUCT  (NET_CONNECT_ENDLESS + NET_CONNECT_ENDLESS_SIZE)
 #define NET_CONNECT_DESTRUCT_SIZE 5   // battle mode, Uint32 terrain seed
 #define NET_CONNECT_NAME      (NET_CONNECT_DESTRUCT + NET_CONNECT_DESTRUCT_SIZE)
@@ -151,6 +156,7 @@ char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
 int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
 int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
 bool network_host_endless_combo_shared = false;
+bool network_host_endless_base_same = false;   // Varied: a level per charted route
 
 // Destruct lobby block. The seed is per session; every round hashes it with the round number.
 int    network_host_destruct_mode = 0;    // MODE_5CARDWAR
@@ -1151,7 +1157,8 @@ static void send_connect_packet(Uint16 episodes_local)
 	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
-	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 3], network_endless_session_seed,
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 3] = network_host_endless_base_same ? 1 : 0;
+	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 4], network_endless_session_seed,
 	       NET_ENDLESS_SEED_MAX);
 	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
 	SDLNet_Write32(network_destruct_session_seed, &packet_out_temp->data[NET_CONNECT_DESTRUCT + 1]);
@@ -1889,7 +1896,8 @@ void network_endless_adopt(const Uint8 *buf)
 	network_host_endless_run_mode = buf[0];
 	network_host_endless_chooser = buf[1];
 	network_host_endless_combo_shared = buf[2] != 0;
-	memcpy(network_endless_session_seed, &buf[3], NET_ENDLESS_SEED_MAX);
+	network_host_endless_base_same = buf[3] != 0;
+	memcpy(network_endless_session_seed, &buf[4], NET_ENDLESS_SEED_MAX);
 	network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
 
 	if (network_host_endless_run_mode < 0 || network_host_endless_run_mode >= ENDLESS_RUNMODE_COUNT)

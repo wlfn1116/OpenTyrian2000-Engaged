@@ -6786,6 +6786,7 @@ static void networkEndlessNewRun(void)
 	endlessRunMode = (EndlessRunMode)network_host_endless_run_mode;
 	endlessCourseChooser = (EndlessCourseChooser)network_host_endless_chooser;
 	endlessCoopComboShared = network_host_endless_combo_shared;
+	endlessRunBaseLevelSame = network_host_endless_base_same;
 	endlessRecordRunStart();
 
 	endlessMode = true;
@@ -7386,7 +7387,7 @@ void networkStartScreen(void)
 			const bool coop = endless || network_game_type == NETWORK_GAME_CAMPAIGN;
 			const bool superTyrianGame = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 
-			const char *label[13], *value[13];
+			const char *label[14], *value[14];
 			int rows = 0;
 
 			label[rows] = "Host";
@@ -7421,6 +7422,8 @@ void networkStartScreen(void)
 			{
 				label[rows] = "Run Mode";
 				value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
+				label[rows] = "Base Level";
+				value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_same ? 1 : 0);
 				label[rows] = "Charts Course";
 				value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
 				label[rows] = "Combo Feed";
@@ -7482,10 +7485,10 @@ void networkStartScreen(void)
 			const int xValue = xLabel + blockW;
 
 			// Centre the list and the waiting line together under the title, which is large-font
-			// and reaches y=40. A full Endless block runs to twelve rows, more than a comfortable
-			// pitch fits, so the longest lists tighten by a pixel rather than running off the
+			// and reaches y=40. A full Endless block runs to thirteen rows, more than a comfortable
+			// pitch fits, so the longest lists tighten by a pixel or two rather than running off the
 			// bottom; everything shorter keeps the roomier spacing.
-			const int dyRow = (rows >= 11) ? 10 : 11;
+			const int dyRow = (rows >= 13) ? 9 : (rows >= 11) ? 10 : 11;
 			const int gapToWait = 14, waitH = 12;
 			const int yTop = 42 + (196 - 42 - (rows * dyRow + gapToWait + waitH)) / 2;
 
@@ -8299,11 +8302,13 @@ bool newEndlessGame(void)
 	JE_initEpisode(1);
 	initial_episode_num = episodeNum;
 
-	// Choose the run seed (random or typed) and the run mode before the difficulty picker.
-	// Cancelling here backs all the way out to the title, exactly like cancelling difficulty.
+	// Choose the run seed (random or typed), the run mode and the base-level rule before the
+	// difficulty picker. Cancelling here backs all the way out to the title, exactly like
+	// cancelling difficulty.
 	char seedbuf[ENDLESS_SEED_MAXLEN];
 	EndlessRunMode runMode = ENDLESS_RUNMODE_STANDARD;
-	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode))
+	bool baseSame = false;
+	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode, &baseSame))
 	{
 		endlessMode = false;
 		play_song(SONG_TITLE);
@@ -8321,6 +8326,7 @@ bool newEndlessGame(void)
 	endlessResetRun();
 	endlessSetSeed(seedbuf);  // establish the run's seeded structural RNG (endlessResetRun blanked it)
 	endlessRunMode = runMode;  // apply the seed screen's mode choice (endlessResetRun reset it)
+	endlessRunBaseLevelSame = baseSame;   // ...and its chart rule, pinned for the whole run
 	endlessRecordRunStart();  // baseline the all-time record so this run's "(+n)" measures only what IT gained
 
 	endlessMode = true;

@@ -685,6 +685,7 @@ bool load_opentyrian_config(void)
 			// ships' combo streaks or only the shooter's.
 			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
 			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
+			config_get_bool_option(section, "net_endless_base_same", &network_host_endless_base_same);
 
 			// Online Arcade: the classic linked pair, or two Separate personal arcades.
 			config_get_bool_option(section, "net_arcade_separate", &arcadeSeparateShips);
@@ -982,6 +983,7 @@ bool save_opentyrian_config(void)
 	config_set_bool_option(section, "net_arcade_timed_battle", network_host_timed_battle, OFF_ON);
 	config_set_int_option(section, "net_battle_level", network_host_battle_level);
 	config_set_bool_option(section, "net_endless_combo_shared", network_host_endless_combo_shared, OFF_ON);
+	config_set_bool_option(section, "net_endless_base_same", network_host_endless_base_same, OFF_ON);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)

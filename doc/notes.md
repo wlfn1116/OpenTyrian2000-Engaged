@@ -266,6 +266,16 @@ Course order uses danger rank and the course's cached payout. Purchased buffs
 and Sabotage must not change the ordering key. Visit flavor rolls are consumed in
 the fixed order Jackpot, Ambush, Gauntlet.
 
+`endlessRunBaseLevelSame` picks which gatherer lays out the visit's routes: Same
+draws once and fills every slot, Varied draws until it has that many distinct
+(episode, section) pairs. The two consume different numbers of `endlessRand`
+draws, so a seed only reproduces a run under the rule it was played on. That is
+why it is a run property with no live global behind it: the solo seed screen and
+the host's Endless lobby page each pick one at run start, it rides the save, and
+the two rules keep separate records. Everything downstream of the gatherer is
+unchanged: modifiers, dedup, ranking and sorting all work off a slate whose base
+danger happens to be identical on every route.
+
 Milestones use the upcoming real zone:
 
 - odd multiples of 25: S/S+;
@@ -329,6 +339,8 @@ the run mode across a retry or bail.
 | 18 | Gear-spending sink |
 | 19 | Full spending breakdown |
 | 20 | Custom-weapon record mark |
+| 21 | Second player's outpost half and the co-op turn flag |
+| 22 | Base Level chart rule |
 
 Append fields and guard reads by version. Older records retain their historical
 field widths. Perk IDs are persisted in owned stacks and pending offers; append
@@ -336,8 +348,11 @@ enum members, and migrate both arrays if an ID is removed or reordered.
 
 The best zone is stored in `opentyrian.cfg`, indexed by `EndlessRunMode`.
 `best_zone` remains the Relaxed compatibility key, `best_zone_normal` remains the
-Standard compatibility key, and Hardcore uses `best_zone_hardcore`. Set the run
-mode before calling `endlessRecordRunStart`.
+Standard compatibility key, and Hardcore uses `best_zone_hardcore`. The co-op
+table adds a `_2p` tail and the Same base-level table a further `_same` one, both
+built by `endlessRecordKey`; an untailed key is the solo Varied table, so a
+config written before either split loads its records where they belong. Set the run mode and `endlessRunBaseLevelSame` before calling
+`endlessRecordRunStart`.
 
 Records are per difficulty, indexed by a slot in `endlessDifficultyLevel`, the
 six levels `difficultySelect` can return. That array's order is the on-disk
@@ -376,10 +391,16 @@ through `endlessOnSectorCleared`, the outpost through `endlessBetweenLevels`, an
 a run that ended mid-zone through `endlessOnRunEnd`. Do not narrow it back to
 clears only, or dying in the zone you flew the weapon in loses the mark.
 
-`endlessSeedSelect` shows the selected mode's record. `JE_highScoreScreen` gained
-a ninth page after the five episodes and three Timed Battles, which lists the
-three modes, opens a mode's breakdown by difficulty, and erases a row through
-`endlessClearDeepestRecord` or `endlessClearRecordDifficulty`. Endless has no score
+`endlessSeedSelect` shows the record for whatever its Mode and Base Level rows
+currently read, since both pick a table. `JE_highScoreScreen` gained a tenth and
+eleventh page after the five episodes, three Timed Battles and the co-op Campaign
+board: one Endless board per base-level rule, each listing every run mode at both
+crew sizes, opening a mode's breakdown by difficulty, and erasing a row through
+`endlessClearDeepestRecord` or `endlessClearRecordDifficulty`. The rule is the
+page rather than a row on it, so `EndlessPageState.variant` is set from the page
+index and everything drawn or erased reads that. The two boards share one state:
+paging is blocked while a breakdown or an answer is up, so nothing but the
+mode-list cursor ever crosses between them. Endless has no score
 table, so that page draws itself: `JE_drawEndlessRecordPage` and
 `JE_endlessRecordPageInput` share the `endlessPage*` geometry and one
 `EndlessPageState`, and the input half returns whether it consumed the tick,
@@ -393,6 +414,12 @@ The answer always opens on No.
 centers that block, so the layout stays centered if the notes are reworded. Zones
 are right-aligned on a column that leaves the custom mark its own strip, which is
 why a record ends flush with the notes whether or not it carries the mark.
+
+Vertically, both lists start below the header at `endlessPageRowY0` /
+`endlessPageDiffY0` and are pitched so the last row lands on the same line, with
+the notes hung off that row by `endlessPageNoteGap`. Keep the second note line
+clear of the paging hint the screen draws at the bottom; the six-row mode list
+and the seven-row breakdown have to stay inside the same band.
 
 Every screen shows a record against a named mode, so the mark accessors supply
 the trailing " C" alone. The page's two note lines explain that mark and
@@ -803,11 +830,15 @@ that menu and changed something, since it sends on a diff against its own
 baseline. Two players who had each set a Boss HP multiplier once therefore
 started a campaign fighting bosses with different health. They travel in the
 settings block now. The flags word at byte 4 was full by then (Timed Battle took
-the last three bits), so the block grew a tail at byte 24: a second flags word
-with fifteen bits still spare, then `NETWORK_EXPERT_SLOTS` Uint16 slots written
-straight off the `expertSettings[]` table, so a seventh tunable needs no wire
-change. Bytes 0..23 kept their offsets. `clamp_expert_settings` runs on adopt
-as well as at config load, so a hostile packet cannot name a 65535x multiplier.
+the last three bits), so the block grew a tail at byte 24: a second flags word,
+then `NETWORK_EXPERT_SLOTS` Uint16 slots written straight off the
+`expertSettings[]` table, so a seventh tunable needs no wire change. Bytes 0..23
+kept their offsets. `clamp_expert_settings` runs on adopt as well as at config
+load, so a hostile packet cannot name a 65535x multiplier.
+
+The Endless chart rule does not travel here. It is a run property rather than a
+config setting, so it rides the Endless lobby block beside the run mode and the
+seed (see below).
 
 Two things that look like the same class of bug and are not, both checked: the
 Extra Sparks toggle and the per-weapon spark cap only move where `JE_doSP`'s
@@ -1044,7 +1075,12 @@ split take is the same split whatever earned it. Zone clear bonuses and bank
 interest stay at face value; they are not collected in the field and doubling them
 would compound with the Financier and Scavenger rates already applied there.
 Combo Feed rides a byte in the connect packet's Endless block (widened to 3 +
-seed, NET_VERSION 17).
+seed, NET_VERSION 17), and the Base Level rule a fourth one after it (4 + seed,
+NET_VERSION 26). Both are host-authoritative the way the run mode and the seed
+are: the joiner adopts them in `network_endless_adopt`, and
+`networkEndlessNewRun` copies the rule into `endlessRunBaseLevelSame`. A resumed
+online run takes it from the host's streamed record instead, like every other run
+property. The lobby row lives on the Endless Setup page with them.
 
 Personal sector effects have their own mask. `endlessActiveMods` is what the
 sector charted, and `endlessPlayerMods[p]` is that plus whatever player p bought

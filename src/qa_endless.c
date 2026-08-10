@@ -24,7 +24,7 @@
 typedef struct
 {
 	JE_boolean endless, coopEndless, coopCampaign, twoPlayer, onePlayer;
-	bool netGame, host, comboShared, hostCharts;
+	bool netGame, host, comboShared, hostCharts, baseLevelSame;
 	uint playerNum;
 	EndlessRunMode runMode;
 	EndlessCourseChooser chooser;
@@ -54,6 +54,7 @@ static void qa_env_save(QaEndlessEnv *e)
 	e->comboShared = endlessCoopComboShared;
 	e->hostCharts = endlessCoopHostCharts;
 	e->runMode = endlessRunMode;      e->chooser = endlessCourseChooser;
+	e->baseLevelSame = endlessRunBaseLevelSame;
 	e->depth = endlessRunDepth;       e->kills = endlessRunKills;
 	e->activeMods = endlessActiveMods;
 	memcpy(e->ships, player, sizeof(e->ships));
@@ -109,6 +110,7 @@ static void qa_env_restore(const QaEndlessEnv *e)
 	endlessActiveMods = e->activeMods;
 	endlessRunKills = e->kills;         endlessRunDepth = e->depth;
 	endlessCourseChooser = e->chooser;  endlessRunMode = e->runMode;
+	endlessRunBaseLevelSame = e->baseLevelSame;
 	endlessCoopHostCharts = e->hostCharts;
 	endlessCoopComboShared = e->comboShared;
 	thisPlayerNum = e->playerNum;

@@ -532,8 +532,28 @@ static Uint64 endlessPickSignatureTheme(int forCourse)
 	return endlessPickThemeMods(endlessHostileThemes, COUNTOF(endlessHostileThemes), sig, 0);
 }
 
+// Base Level = Same: one draw fills every route, so the visit offers modifiers alone.
+static void endlessGatherSharedCourseLevel(int wantCourses)
+{
+	int ep;
+	JE_byte sec, file;
+	if (!endlessRandomSafeLevel(&ep, &sec, &file))
+		return;   // the caller's empty-slate fallback picks it up
+
+	if (wantCourses > ENDLESS_MAX_COURSES)
+		wantCourses = ENDLESS_MAX_COURSES;
+	for (int i = 0; i < wantCourses; ++i)
+	{
+		endlessCourseEp[i] = ep;
+		endlessCourseSec[i] = sec;
+		endlessCourseFile[i] = file;
+		endlessCourseMod[i] = 0;
+	}
+	endlessCourseCnt = wantCourses;
+}
+
 // Gather distinct episode/section pairs outside the recent-play window.
-static void endlessGatherCourseLevels(int wantCourses)
+static void endlessGatherDistinctCourseLevels(int wantCourses)
 {
 	for (int guard = 0; guard < 40 && endlessCourseCnt < wantCourses; ++guard)
 	{
@@ -555,6 +575,16 @@ static void endlessGatherCourseLevels(int wantCourses)
 		endlessCourseMod[endlessCourseCnt] = 0;
 		++endlessCourseCnt;
 	}
+}
+
+// Lay out the visit's routes, by the chart rule the run was started under.
+static void endlessGatherCourseLevels(int wantCourses)
+{
+	if (endlessRunBaseLevelSame)
+		endlessGatherSharedCourseLevel(wantCourses);
+	else
+		endlessGatherDistinctCourseLevels(wantCourses);
+
 	if (endlessCourseCnt == 0)  // fallback: guarantee at least one course
 	{
 		int ep = episodeNum;
