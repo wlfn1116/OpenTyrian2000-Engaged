@@ -3579,6 +3579,17 @@ void draw_ship_illustration(void)
 		 0,  2,  1,  0,  0,  1,  1,  1
 	};
 
+	// The x each mount was drawn with only centres that mount's own sprite on the hull (centre line
+	// x = 77.5), so it belongs to the sprite, not to the mount: the fallbacks below can pair a gun
+	// with a mount drawn for a wider one, and reading x from the mount then draws it off-centre.
+	// Rows 12 and 16-20 are unreachable (12 is unused, 16-20 are the generators).
+	const int weapon_sprite_x[22] =
+	{
+		61, 52, 54, 61, 66, 51, 53, 66, 41, 27,
+		49, 43, 43, 39, 59, 41, 62, 63, 67, 66,
+		63, 51
+	};
+
 	// Each weapon id has a mount point in exactly one of these tables (the other holds -1); prefer
 	// the slot's table but fall back to the weapon's real mount table so an endless cross-slot
 	// weapon never indexes at [-1]. NortShip specials pin to the front.
@@ -3590,7 +3601,6 @@ void draw_ship_illustration(void)
 		 -1,  9,  0,  0,  0,  0,  0,  0,  0,  0,
 		  0,  3,  9,  4,  4,  9,  9,  9
 	};
-	const int front_weapon_x[12] = { 59, 66, 66, 54, 61, 51, 58, 51, 61, 52, 53, 58 };
 	const int front_weapon_y[12] = { 38, 53, 41, 36, 48, 35, 41, 35, 53, 41, 39, 31 };
 
 	const int rear_weapon_xy_list[60] =
@@ -3601,7 +3611,6 @@ void draw_ship_illustration(void)
 		 3,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 		 0, -1, -1, -1, -1, -1, -1, -1
 	};
-	const int rear_weapon_x[7] = { 41, 27,  49,  43, 51, 39, 41 };
 	const int rear_weapon_y[7] = { 92, 92, 113, 102, 97, 96, 76 };
 
 	for (int slot = FRONT_WEAPON; slot <= REAR_WEAPON; ++slot)
@@ -3630,23 +3639,15 @@ void draw_ship_illustration(void)
 			else         use_fi = fi;
 		}
 
-		int x, y;
+		int y;
 		if (use_fi >= 0)
-		{
-			x = front_weapon_x[use_fi];
 			y = front_weapon_y[use_fi];
-		}
 		else if (use_ri >= 0)
-		{
-			x = rear_weapon_x[use_ri];
 			y = rear_weapon_y[use_ri];
-		}
 		else
-		{
 			continue;  // no illustration mount point for this weapon
-		}
 
-		blit_sprite(VGAScreenSeg, x, y, WEAPON_SHAPES, weapon_sprites[id]);
+		blit_sprite(VGAScreenSeg, weapon_sprite_x[weapon_sprites[id]], y, WEAPON_SHAPES, weapon_sprites[id]);
 	}
 
 	// sidekicks
