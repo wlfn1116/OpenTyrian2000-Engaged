@@ -371,6 +371,14 @@ static Uint8 **bg_mirror_setup(Uint8 **map, Uint8 **base, int width, int col0, i
 	return map;
 }
 
+// See backgrnd.h: layer 1's per-tick scroll delta and pan phase, published separately from its
+// rows so a tick that skips the draw still leaves them current.
+void bg_publish_layer_1_phase(void)
+{
+	bg_update_scroll_delta(1, (int)mapY, (int)backPos);
+	bg_set_layer_dx(1, mapXOfs_f, mapXOfs);  // float delta + frac for smooth horizontal pan
+}
+
 void draw_background_1(SDL_Surface *surface)
 {
 	SDL_FillRect(surface, NULL, 0);
@@ -380,10 +388,9 @@ void draw_background_1(SDL_Surface *surface)
 	int mirror_w = 0, col0 = 0;
 	map = bg_mirror_setup(map, (Uint8**)&megaData1.mainmap[0][0], 14, (int)mapXbpPos - 1, &mirror_w, &col0);
 
-	bg_update_scroll_delta(1, (int)mapY, (int)backPos);
+	bg_publish_layer_1_phase();
 
 	rl_current_id = RL_ID_BG_BASE + 1;  // tag rows for cross-frame interpolation
-	bg_set_layer_dx(1, mapXOfs_f, mapXOfs);  // float delta + frac for smooth horizontal pan
 	for (int i = -1; i < 7; i++)
 	{
 		blit_background_row(surface, mapXPos + PLAYFIELD_X_SHIFT, (i * 28) + backPos, map, mirror_w, col0);

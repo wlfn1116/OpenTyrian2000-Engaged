@@ -10109,6 +10109,13 @@ void JE_weaponSimUpdate(void)
 	++weaponSimTime;
 	weaponSimTime %= 150;
 
+	JE_drawItem(1, shopPlayer()->items.ship, shopPlayer()->x - 5, shopPlayer()->y - 7);
+
+	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
+
+	// Power-level interface last: its readout row (y=137) is inside the preview box, and a
+	// trailing sidekick body (fixed y=120, 24px tall) or a dipping satellite sits right on it.
+	// The costs and "POWER: n" are HUD, so they belong on top of the ship and pods.
 	if (leftPower || rightPower)
 	{
 		if (!leftPower)
@@ -10159,10 +10166,6 @@ void JE_weaponSimUpdate(void)
 	}
 	else
 		blit_sprite(VGAScreenSeg, 20, 146, OPTION_SHAPES, 17);  // hide power level interface
-
-	JE_drawItem(1, shopPlayer()->items.ship, shopPlayer()->x - 5, shopPlayer()->y - 7);
-
-	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
 }
 
 void JE_weaponViewFrame(void)

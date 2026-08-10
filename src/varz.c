@@ -1403,6 +1403,59 @@ int shieldGaugeFlash[2] = { 0, 0 };
 int armorGaugeFlash[2]  = { 0, 0 };
 static float gaugeFlashAlpha = 1.0f;
 
+/* Where the shield/armor gauges paint. The tick draws take the classic 1x HUD surface; the
+ * present pass hands in the supersampled frame instead, so the bars render NxN there rather than
+ * arriving block-expanded off VGAScreenSeg. All gauge geometry stays in 1x HUD coordinates and is
+ * multiplied on the way to the pixels, so scale 1 reproduces the classic path byte-for-byte. */
+static SDL_Surface *gauge_dst = NULL;
+static int gauge_scale = 1;
+
+/* Shield/armor levels at the previous and current tick. The bars are event-driven, so without
+ * these the present pass could only redraw them at whole tick values and they would step. */
+static float gauge_shield_prev[2], gauge_shield_cur[2];
+static float gauge_armor_prev[2],  gauge_armor_cur[2];
+static bool  gauge_interp = false;   // present pass: draw between the two, not at the live value
+static float gaugeLevelAlpha = 1.0f;
+
+static SDL_Surface *gauge_surface(void)
+{
+	return gauge_dst != NULL ? gauge_dst : VGAScreen;
+}
+
+static void gauge_fill(int x1, int y1, int x2, int y2, Uint8 color)
+{
+	const int s = gauge_scale;
+	fill_rectangle_xy(gauge_surface(), x1 * s, y1 * s, (x2 + 1) * s - 1, (y2 + 1) * s - 1, color);
+}
+
+static float gauge_level(float prev, float cur, float live)
+{
+	if (!gauge_interp)
+		return live;
+	return prev + (cur - prev) * gaugeLevelAlpha;
+}
+
+static float gauge_shield_level(uint i)
+{
+	return gauge_level(gauge_shield_prev[i], gauge_shield_cur[i], (float)player[i].shield);
+}
+
+static float gauge_armor_level(uint i)
+{
+	return gauge_level(gauge_armor_prev[i], gauge_armor_cur[i], (float)player[i].armor);
+}
+
+// Seed both endpoints from the live values, so a level start (or a first draw) has nothing to
+// interpolate away from.
+void JE_resetGaugeRender(void)
+{
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		gauge_shield_prev[i] = gauge_shield_cur[i] = (float)player[i].shield;
+		gauge_armor_prev[i]  = gauge_armor_cur[i]  = (float)player[i].armor;
+	}
+}
+
 static int gauge_flash_render(int cur)
 {
 	if (cur <= 0)
@@ -1437,6 +1490,21 @@ void JE_repaintShieldArmorBars(void)
 
 void JE_updateGaugeFlash(void)
 {
+	// Latch this tick's levels for the present pass to interpolate between. Held off the replay
+	// passes so a rollback cannot shift the pair twice, but `cur` still tracks every pass: a
+	// correction that changes the hull must not leave a stale bar on screen for a whole tick.
+	if (!rollback_resim)
+		for (uint i = 0; i < COUNTOF(player); ++i)
+		{
+			gauge_shield_prev[i] = gauge_shield_cur[i];
+			gauge_armor_prev[i]  = gauge_armor_cur[i];
+		}
+	for (uint i = 0; i < COUNTOF(player); ++i)
+	{
+		gauge_shield_cur[i] = (float)player[i].shield;
+		gauge_armor_cur[i]  = (float)player[i].armor;
+	}
+
 	if (!gauge_flash_any())
 		return;
 
@@ -1458,16 +1526,26 @@ void JE_updateGaugeFlash(void)
 	JE_repaintShieldArmorBars();
 }
 
-void gauge_flash_present(float alpha)
+void gauge_bars_present(SDL_Surface *dst, int scale, float alpha)
 {
-	if (!gauge_flash_any())
-		return;
-
+	gauge_dst = dst;
+	gauge_scale = scale;
 	gaugeFlashAlpha = alpha;
+	gaugeLevelAlpha = alpha;
+	gauge_interp = true;
+
 	JE_repaintShieldArmorBars();
+
+	gauge_interp = false;
+	gaugeLevelAlpha = 1.0f;
 	gaugeFlashAlpha = 1.0f;
+	gauge_scale = 1;
+	gauge_dst = NULL;
 }
 
+// The whole slot, not just the rows above the bar the classic wipe stopped at: the present pass
+// draws at an interpolated level that can sit BELOW the tick's, and on the supersampled frame the
+// block-expanded 1x bar underneath has to go entirely. Every caller redraws immediately after.
 void JE_wipeShieldArmorBars(void)
 {
 	if (rollback_resim_silent)
@@ -1476,25 +1554,25 @@ void JE_wipeShieldArmorBars(void)
 		return;
 	}
 
-	const uint player_index = gameplay_local_player_index();
-	if (!split_arcade_mode() || galagaMode)
+	SDL_Surface *const saved = gauge_dst;
+	if (gauge_dst == NULL)
+		gauge_dst = VGAScreenSeg;  // the wipe never followed VGAScreen; the bar draws do
+
+	for (uint g = 0; g < 2; ++g)
 	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 137, HUD_X(278), 194 - player[player_index].shield * 2, 0);
+		const int x = (g == 0) ? HUD_X(270) : HUD_X(307);
+		if (!split_arcade_mode() || galagaMode)
+		{
+			gauge_fill(x, 137, x + 8, 194, 0);
+		}
+		else
+		{
+			for (uint i = 0; i < COUNTOF(player); ++i)
+				gauge_fill(x, 60 + 134 * i - 44, x + 8, 60 + 134 * i, 0);
+		}
 	}
-	else
-	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 60 - 44, HUD_X(278), 60, 0);
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(270), 194 - 44, HUD_X(278), 194, 0);
-	}
-	if (!split_arcade_mode() || galagaMode)
-	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 137, HUD_X(315), 194 - (player[player_index].armor > 28 ? 28 : player[player_index].armor) * 2, 0);
-	}
-	else
-	{
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 60 - 44, HUD_X(315), 60, 0);
-		fill_rectangle_xy(VGAScreenSeg, HUD_X(307), 194 - 44, HUD_X(315), 194, 0);
-	}
+
+	gauge_dst = saved;
 }
 
 /* Which ships carry the Endless effect layer: both of them in an online co-op run, player 1
@@ -1765,9 +1843,12 @@ static bool gauge_is_remote(uint i)
 
 static void gauge_dim_rect(int x1, int y1, int x2, int y2)
 {
+	const int s = gauge_scale;
+	SDL_Surface *const dst = gauge_surface();
+
 	// Two shade passes (each halves the in-bank shade): a single one read too close to live.
-	JE_barShade(VGAScreen, x1, y1, x2, y2);
-	JE_barShade(VGAScreen, x1, y1, x2, y2);
+	JE_barShade(dst, x1 * s, y1 * s, (x2 + 1) * s - 1, (y2 + 1) * s - 1);
+	JE_barShade(dst, x1 * s, y1 * s, (x2 + 1) * s - 1, (y2 + 1) * s - 1);
 }
 
 // Label two-player gauge blocks in the shield bank, before the level fade-in.
@@ -1785,21 +1866,25 @@ void JE_drawPlayerTags(void)
 
 // Extend two-player bars into the final row covered by the wipe.
 #define HUD_2P_GAUGE_TOP_PAD 1
-static int hud_2p_gauge_units(uint value)
+static float hud_2p_gauge_units(float value)
 {
-	const int units = (int)roundf(value * 0.8f);
-	return (units > HUD_2P_GAUGE_UNITS_MAX) ? HUD_2P_GAUGE_UNITS_MAX : units;
+	const float units = value * 0.8f;
+	return (units > HUD_2P_GAUGE_UNITS_MAX) ? (float)HUD_2P_GAUGE_UNITS_MAX : units;
 }
 
 // The tick mark showing where a full shield would reach, drawn on the row JE_dBar3 would use as
-// the bar's top at `units_max`. Only worth drawing while the bar is short of it.
-static void draw_shield_ceiling_mark(int x, int bottom_y, int units_now, int units_max, int top_pad)
+// the bar's top at `units_max` (same edge arithmetic, so the two always meet). One 1x row thick
+// whatever the scale. Only worth drawing while the bar is short of it.
+static void draw_shield_ceiling_mark(int x, int bottom_y, float units_now, float units_max, int top_pad)
 {
 	if (units_now >= units_max)
 		return;
 
-	const int y = bottom_y - (2 * units_max + 1) - top_pad;
-	JE_rectangle(VGAScreen, x, y, x + 8, y, 68); /* <MXD> SEGa000 */
+	const int s = gauge_scale;
+	const int y = (int)ceilf((float)((bottom_y - top_pad) * s) - (2.0f * units_max + 1.0f) * (float)s);
+	if (y < 0)
+		return;
+	fill_rectangle_xy(gauge_surface(), x * s, y, (x + 9) * s - 1, y + s - 1, 68); /* <MXD> SEGa000 */
 }
 
 void JE_drawShield(void)
@@ -1814,10 +1899,10 @@ void JE_drawShield(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			const int units = hud_2p_gauge_units(player[i].shield);
-			JE_dBar3(VGAScreen, HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD);
+			const float units = hud_2p_gauge_units(gauge_shield_level(i));
+			JE_dBar3_scaled(gauge_surface(), HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			// Before the dim, so a remote player's mark fades with the rest of their gauge.
-			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units(player[i].shield_max), HUD_2P_GAUGE_TOP_PAD);
+			draw_shield_ceiling_mark(HUD_X(270), 60 + 134 * i, units, hud_2p_gauge_units((float)player[i].shield_max), HUD_2P_GAUGE_TOP_PAD);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(270), 60 + 134 * i - 44, HUD_X(278), 60 + 134 * i);
 		}
@@ -1825,8 +1910,9 @@ void JE_drawShield(void)
 	else
 	{
 		const uint i = gameplay_local_player_index();
-		JE_dBar3(VGAScreen, HUD_X(270), 194, player[i].shield, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0);
-		draw_shield_ceiling_mark(HUD_X(270), 194, player[i].shield, player[i].shield_max, 0);
+		const float units = gauge_shield_level(i);
+		JE_dBar3_scaled(gauge_surface(), HUD_X(270), 194, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0, gauge_scale);
+		draw_shield_ceiling_mark(HUD_X(270), 194, units, (float)player[i].shield_max, 0);
 	}
 }
 
@@ -1834,22 +1920,22 @@ void JE_drawShield(void)
 // "rollover" layers: each full 28 units rolls the bar over and the next chunk fills from the
 // bottom in a different colour gradient, so a heavily-reinforced hull reads as a stacked, multi-
 // hued bar. Layer palette bases are palette-relative (endless levels vary); tuned by eye.
-static void endlessDrawArmorBar(int armor, int flash)
+static void endlessDrawArmorBar(float armor, int flash)
 {
 	static const int layerCol[] = { 224, 112, 80, 176, 16, 48, 96, 32 };
 	const int maxLayers = (int)COUNTOF(layerCol);
 
 	int total = 0;
-	for (int t = armor; t > 0 && total < maxLayers; t -= 28)
+	for (float t = armor; t > 0.0f && total < maxLayers; t -= 28.0f)
 		++total;
 	const int flashLayer = (total <= 1) ? 0 : total - 1;
 
-	int a = armor;
-	for (int layer = 0; a > 0 && layer < maxLayers; ++layer)
+	float a = armor;
+	for (int layer = 0; a > 0.0f && layer < maxLayers; ++layer)
 	{
-		const int seg = (a > 28) ? 28 : a;
-		JE_dBar3(VGAScreen, HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0, 0);
-		a -= 28;
+		const float seg = (a > 28.0f) ? 28.0f : a;
+		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, seg, layerCol[layer], gaugeGradArmor, (layer == flashLayer) ? flash : 0, 0, gauge_scale);
+		a -= 28.0f;
 	}
 }
 
@@ -1873,7 +1959,7 @@ void JE_drawArmor(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
-			JE_dBar3(VGAScreen, HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(player[i].armor), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD);
+			JE_dBar3_scaled(gauge_surface(), HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(gauge_armor_level(i)), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
 		}
@@ -1881,12 +1967,12 @@ void JE_drawArmor(void)
 	else if (endlessFxActive())
 	{
 		const uint i = gameplay_local_player_index();
-		endlessDrawArmorBar(player[i].armor, gauge_flash_render(armorGaugeFlash[i]));
+		endlessDrawArmorBar(gauge_armor_level(i), gauge_flash_render(armorGaugeFlash[i]));
 	}
 	else
 	{
 		const uint i = gameplay_local_player_index();
-		JE_dBar3(VGAScreen, HUD_X(307), 194, player[i].armor, 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0);
+		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, gauge_armor_level(i), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0, gauge_scale);
 	}
 }
 

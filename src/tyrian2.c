@@ -1219,9 +1219,30 @@ static int local_salvo_gauge_percent(void)
 // Geometry shared by the generator and the arcade lives bar in the same HUD slot.
 enum { PG_Y_BOTTOM = 104, PG_BAR_MAX = 93, PG_BASE = 113, PG_POWER_MAX = 900, PG_SEG_SHADE_MAX = 13 };
 
-// level is the pixel height with a fractional AA edge. salvo_frac tints that share green;
-// segments divides counted resources into visible blocks.
-static void draw_gauge_bar(float level, float salvo_frac, int segments)
+// A gauge rect given in 1x HUD coordinates, painted at the present pass's supersample factor.
+static void gauge_bar_fill(SDL_Surface *dst, int scale, int x1, int y1, int x2, int y2, Uint8 color)
+{
+	fill_rectangle_xy(dst, x1 * scale, y1 * scale, (x2 + 1) * scale - 1, (y2 + 1) * scale - 1, color);
+}
+
+// The one row the bar's top edge only partly covers, blended from the bank floor up to the shade
+// the bar ends on. Below 0.04 the row would only carry the floor colour, which reads as a stray dot.
+static void gauge_bar_edge_row(SDL_Surface *dst, int x0, int x1, int top, float cover, int shade, int dark)
+{
+	if (cover <= 0.04f || top < 1)
+		return;
+
+	int edgeCol = dark + (int)(cover * (shade - dark) + 0.5f);
+	if (edgeCol > shade)
+		edgeCol = shade;
+	fill_rectangle_xy(dst, x0, top - 1, x1, top - 1, (Uint8)edgeCol);
+}
+
+// level is the pixel height with a fractional top edge. salvo_frac tints that share green;
+// segments divides counted resources into visible blocks. dst/scale are the present pass's
+// target: at scale > 1 the whole bar renders NxN and the top edge lands on a sub-pixel row,
+// so it climbs smoothly instead of arriving block-expanded off the 1x HUD.
+static void draw_gauge_bar(SDL_Surface *dst, int scale, float level, float salvo_frac, int segments)
 {
 	// 9 pixels wide (x1..x2). The classic art drew this gauge 1px narrower than the
 	// shield/armor bars; extend it right by one so all three gauges match at 9px.
@@ -1232,9 +1253,16 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 	else if (level > PG_BAR_MAX)
 		level = PG_BAR_MAX;
 
-	const int full = (int)level;          // solid pixel rows
-	const float frac = level - full;      // sub-pixel remainder for the top edge
+	const int full = (int)level;          // solid whole rows
 	const int dir = gaugeGradGenerator;   // GaugeGradientDir
+
+	// Exact top edge in target rows, and how much of the row above it reaches into. At scale 1
+	// the solid fill stops at the whole row and `cover` is the classic anti-aliased remainder;
+	// above that, the sub-rows between are filled solid and only the last one is blended.
+	const float topf = (float)((PG_Y_BOTTOM + 1) * scale) - level * (float)scale;
+	const int top = (int)ceilf(topf);
+	const float cover = (float)top - topf;
+	const int solidTop = (PG_Y_BOTTOM - full + 1) * scale;  // first row of the last whole row
 
 	// Kill-fire BOON window: main-gun fire is power-free, so recolour the gauge under the same
 	// condition that gates the free power. The gauge is the local ship's, and the context goes back
@@ -1256,27 +1284,27 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 	const int edgeDark = edgeBase & ~0x0F;  // bank floor: the AA top edge blends up from here
 
 	// Clear the bar slot (its background is black, like the original shrink fill).
-	fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - PG_BAR_MAX, x2, PG_Y_BOTTOM, 0);
+	gauge_bar_fill(dst, scale, x1, PG_Y_BOTTOM - PG_BAR_MAX, x2, PG_Y_BOTTOM, 0);
 
 	if (dir == GAUGE_GRAD_LEFT || dir == GAUGE_GRAD_RIGHT)
 	{
 		// Horizontal gradient: each column is a fixed shade stepping across the width,
-		// with the sub-pixel anti-aliased top edge applied per column. Lifted +2 shades to
-		// match the slightly-brighter horizontal ramp on the shield/armor bars (in-family).
+		// with the sub-pixel top edge applied per column. Lifted +2 shades to match the
+		// slightly-brighter horizontal ramp on the shield/armor bars (in-family).
 		for (int j = 0; j <= x2 - x1; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (x2 - x1 - j);
+			const int cx0 = (x1 + j) * scale, cx1 = (x1 + j + 1) * scale - 1;
 			if (salvoRows >= 1)
-				fill_rectangle_xy(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - salvoRows + 1, x1 + j, PG_Y_BOTTOM, (Uint8)(salvoBase + 2 + off));
+				gauge_bar_fill(dst, scale, x1 + j, PG_Y_BOTTOM - salvoRows + 1, x1 + j, PG_Y_BOTTOM, (Uint8)(salvoBase + 2 + off));
 			if (full > salvoRows)
-				fill_rectangle_xy(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - full + 1, x1 + j, PG_Y_BOTTOM - salvoRows, (Uint8)(base + 2 + off));
-			if (full < PG_BAR_MAX && frac > 0.04f)
+				gauge_bar_fill(dst, scale, x1 + j, PG_Y_BOTTOM - full + 1, x1 + j, PG_Y_BOTTOM - salvoRows, (Uint8)(base + 2 + off));
+			if (full < PG_BAR_MAX)
 			{
 				const int shade = edgeBase + 2 + off;
-				int edgeCol = edgeDark + (int)(frac * (shade - edgeDark) + 0.5f);
-				if (edgeCol > shade)
-					edgeCol = shade;
-				JE_pix(VGAScreenSeg, x1 + j, PG_Y_BOTTOM - full, (Uint8)edgeCol);
+				if (top < solidTop)
+					fill_rectangle_xy(dst, cx0, top, cx1, solidTop - 1, (Uint8)shade);
+				gauge_bar_edge_row(dst, cx0, cx1, top, cover, shade, edgeDark);
 			}
 		}
 
@@ -1285,7 +1313,7 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 		{
 			const int h = PG_BAR_MAX * i / segments;
 			if (h >= 1 && h < full)
-				fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - h + 1, x2, PG_Y_BOTTOM - h + 1, 0);
+				gauge_bar_fill(dst, scale, x1, PG_Y_BOTTOM - h + 1, x2, PG_Y_BOTTOM - h + 1, 0);
 		}
 	}
 	else if (segments > 1)
@@ -1295,18 +1323,19 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 		{
 			const int lo = PG_BAR_MAX * (i - 1) / segments;  // boundary under this block
 			const int hi = PG_BAR_MAX * i / segments;        // boundary at its top
+
 			if (lo + 1 > full)
 				break;
 
-			int top = (i < segments) ? hi - 1 : hi;  // topmost block has no gap above it
-			if (top > full)
-				top = full;
-			if (top < lo + 1)
+			int blockTop = (i < segments) ? hi - 1 : hi;  // topmost block has no gap above it
+			if (blockTop > full)
+				blockTop = full;
+			if (blockTop < lo + 1)
 				continue;
 
 			const int step = (dir == GAUGE_GRAD_DOWN) ? (segments - i) : (i - 1);
 			const int shade = step * PG_SEG_SHADE_MAX / (segments - 1);
-			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - top + 1, x2, PG_Y_BOTTOM - lo, (Uint8)(base + shade));
+			gauge_bar_fill(dst, scale, x1, PG_Y_BOTTOM - blockTop + 1, x2, PG_Y_BOTTOM - lo, (Uint8)(base + shade));
 		}
 	}
 	else
@@ -1323,28 +1352,28 @@ static void draw_gauge_bar(float level, float salvo_frac, int segments)
 			       ((dir == GAUGE_GRAD_DOWN) ? (full - (h2 + 1)) / 7 : (h2 + 1) / 7) == shade &&
 			       (((h2 + 1) <= salvoRows) ? salvoBase : base) == rowBase)
 				++h2;
-			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - h2 + 1, x2, PG_Y_BOTTOM - h + 1, (Uint8)(rowBase + shade));
+			gauge_bar_fill(dst, scale, x1, PG_Y_BOTTOM - h2 + 1, x2, PG_Y_BOTTOM - h + 1, (Uint8)(rowBase + shade));
 			h = h2 + 1;
 		}
 
-		// Anti-aliased leading row: dimmed toward the darkest shade by frac so the top
-		// edge appears to move at sub-pixel resolution as the bar fills. In Down the top
-		// band is the darkest (PG_BASE); in Up it is the current top shade.
-		if (full < PG_BAR_MAX && frac > 0.04f)
+		// The leading edge above the last whole row: solid for the sub-rows it fully covers,
+		// then one row dimmed toward the darkest shade by what is left, so the top edge moves
+		// at sub-pixel resolution as the bar fills. In Down the top band is the darkest
+		// (PG_BASE); in Up it is the current top shade.
+		if (full < PG_BAR_MAX)
 		{
 			const int barCol = (dir == GAUGE_GRAD_DOWN) ? edgeBase : (edgeBase + full / 7);
-			int edgeCol = edgeDark + (int)(frac * (barCol - edgeDark) + 0.5f);
-			if (edgeCol > barCol)
-				edgeCol = barCol;
-			fill_rectangle_xy(VGAScreenSeg, x1, PG_Y_BOTTOM - full, x2, PG_Y_BOTTOM - full, (Uint8)edgeCol);
+			if (top < solidTop)
+				fill_rectangle_xy(dst, x1 * scale, top, (x2 + 1) * scale - 1, solidTop - 1, (Uint8)barCol);
+			gauge_bar_edge_row(dst, x1 * scale, (x2 + 1) * scale - 1, top, cover, barCol, edgeDark);
 		}
 	}
 }
 
 // Generator power (0..PG_POWER_MAX) -> a smooth, un-segmented bar.
-static void draw_power_gauge(float power_value, float salvo_frac)
+static void draw_power_gauge(SDL_Surface *dst, int scale, float power_value, float salvo_frac)
 {
-	draw_gauge_bar(power_value * PG_BAR_MAX / (float)PG_POWER_MAX, salvo_frac, 0);
+	draw_gauge_bar(dst, scale, power_value * PG_BAR_MAX / (float)PG_POWER_MAX, salvo_frac, 0);
 }
 
 // The arcade modes have no generator, so its gauge slot sits empty; hand it to the life
@@ -1358,7 +1387,7 @@ static void draw_lives_gauge(int lives)
 	else if (lives > ARCADE_LIVES_MAX)
 		lives = ARCADE_LIVES_MAX;
 
-	draw_gauge_bar((float)(PG_BAR_MAX * lives / ARCADE_LIVES_MAX), 0.0f, ARCADE_LIVES_MAX);
+	draw_gauge_bar(VGAScreenSeg, 1, (float)(PG_BAR_MAX * lives / ARCADE_LIVES_MAX), 0.0f, ARCADE_LIVES_MAX);
 }
 
 static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha);
@@ -1467,28 +1496,36 @@ void JE_starShowVGA(void)
 					draw_active_zinglon_pillars(interp_buf, rss, true);
 
 					draw_boss_bar_present(interp_buf, rss, alpha);
+					hud_special_light_present(interp_buf, rss, alpha);
 
 					if (use_hi)
 					{
 						// NxN composite + block-expanded 1x HUD, presented through the
 						// dedicated hi path (same on-screen rect as the classic path).
+						// The three gauges go on AFTER the expand, drawn NxN over the
+						// block-expanded copy of themselves: they are the only HUD art
+						// that moves between ticks, so they are the only part with a
+						// sub-pixel position to render.
 						composite_playfield_hi(interp_buf, vga_hi, rss);
-						if (power_gauge_active)
-							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
-							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
-						gauge_flash_present(alpha);
 						expand_hud_to_hi(VGAScreenSeg, vga_hi, rss);
+						if (power_gauge_active)
+							draw_power_gauge(vga_hi, rss,
+							                 (float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
+							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
+						gauge_bars_present(vga_hi, rss, alpha);
 						present_hi(vga_hi);
 					}
 					else
 					{
 						composite_playfield(interp_buf);
 
-						// Power bar at the interpolated level: rises smoothly instead of per-tick steps.
+						// Gauges at the interpolated level: they rise and fall smoothly
+						// instead of stepping once per tick.
 						if (power_gauge_active)
-							draw_power_gauge((float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
+							draw_power_gauge(VGAScreenSeg, 1,
+							                 (float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
 							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
-						gauge_flash_present(alpha);
+						gauge_bars_present(NULL, 1, alpha);
 
 						JE_showVGA();
 					}
@@ -2800,6 +2837,18 @@ static JE_byte backup_save_slot(void)
 	return (twoPlayerMode || isNetworkGame) ? 22 : 11;
 }
 
+/* One strip of the low-armor WARNING band. Opaque, and only the per-tick residual carries it onto
+ * the interpolated frames, so each strip has to claim its rect or coincidental colour matches drop
+ * out of the residual and the band shows holes (see rl_mark_overlay_rect). Filling and marking in
+ * one place keeps the two rectangles from drifting apart. The "WARNING" lettering between the
+ * bottom strips is deliberately NOT marked: its bounding box is mostly playfield showing between
+ * the glyphs, which claiming would freeze at the tick rate instead. */
+static void warning_bar(int x0, int y0, int x1, int y1, Uint8 col)
+{
+	fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, col);
+	rl_mark_overlay_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+}
+
 void JE_main(void)
 {
 	char buffer[256];
@@ -3351,6 +3400,7 @@ start_level_first:
 		player[i].shield     = startShieldFull ? player[i].shield_max : player[i].shield_max / 2;
 		shieldGaugeFlash[i] = armorGaugeFlash[i] = 0;
 	}
+	JE_resetGaugeRender();  // nothing to interpolate away from on the level's first frames
 
 	JE_drawShield();
 	JE_drawArmor();
@@ -3889,7 +3939,7 @@ level_loop:
 			salvo_render_cur = local_salvo_gauge_percent();
 			power_gauge_active = true;
 			lastPower = power / 10;
-			draw_power_gauge((float)power, salvo_render_cur / 100.0f);
+			draw_power_gauge(VGAScreenSeg, 1, (float)power, salvo_render_cur / 100.0f);
 		}
 		else
 		{
@@ -3906,7 +3956,7 @@ level_loop:
 			power_gauge_active = true;
 			lastPower = power / 10;  // keep the legacy counter consistent
 
-			draw_power_gauge((float)power, salvo_render_cur / 100.0f);
+			draw_power_gauge(VGAScreenSeg, 1, (float)power, salvo_render_cur / 100.0f);
 		}
 
 		oldMapX3Ofs = mapX3Ofs;
@@ -3962,9 +4012,17 @@ level_loop:
 
 	/*Draw background*/
 	if (astralDuration == 0)
+	{
 		draw_background_1(VGAScreen);
+	}
 	else
+	{
+		// Astral Zone blanks layer 1, but its pan phase still has to be published: layer 3 pans
+		// from that anchor whenever background3x1 welds the two (SURFACE), so leaving it stale
+		// silently moved the over-ship terrain a tick of parallax off every other layer.
 		JE_clr256(VGAScreen);
+		bg_publish_layer_1_phase();
+	}
 
 	/*Set Movement of background 1*/
 	// base1ScrollPx: px layer 1 (and the event pointer) actually scrolled this tick; 0 on a
@@ -5167,9 +5225,9 @@ draw_player_shot_loop_end:
 			const int warning_text_width = JE_textWidth(warning_text, TINY_FONT);
 			const int warning_x = playfield_left + (PLAYFIELD_WIDTH - warning_text_width) / 2;
 			const int gap_margin = 1;
-			fill_rectangle_xy(VGAScreen, playfield_left, 181, warning_x - gap_margin - 1, 183, warningCol);
-			fill_rectangle_xy(VGAScreen, warning_x + warning_text_width + gap_margin, 181, playfield_right, 183, warningCol);
-			fill_rectangle_xy(VGAScreen, playfield_left, 0, playfield_right, 3, warningCol);
+			warning_bar(playfield_left, 181, warning_x - gap_margin - 1, 183, warningCol);
+			warning_bar(warning_x + warning_text_width + gap_margin, 181, playfield_right, 183, warningCol);
+			warning_bar(playfield_left, 0, playfield_right, 3, warningCol);
 
 			JE_outText(VGAScreen, warning_x, 178, warning_text, 7, (warningCol % 16) / 2);
 

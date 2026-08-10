@@ -28,6 +28,7 @@ extern JE_boolean inputDetected;
 JE_boolean JE_anyButton(void);
 
 void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad);
+void JE_dBar3_scaled(SDL_Surface *surface, JE_integer x, JE_integer y, float num, JE_integer col, JE_integer dir, JE_integer flash, JE_integer topPad, int scale);
 void JE_barDrawShadow(SDL_Surface *surface, JE_word x, JE_word y, JE_word res, JE_word col, JE_word amt, JE_word xsize, JE_word ysize);
 void JE_barDrawMark(SDL_Surface *surface, JE_word x, JE_word y, JE_word col, JE_word mark, JE_word xsize, JE_word ysize);
 void JE_wipeKey(void);

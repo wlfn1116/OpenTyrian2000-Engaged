@@ -480,7 +480,10 @@ void JE_drawArmor(void);
 extern int shieldGaugeFlash[2];
 extern int armorGaugeFlash[2];
 void JE_updateGaugeFlash(void);
-void gauge_flash_present(float alpha);
+void JE_resetGaugeRender(void);
+// Repaint both gauges for one displayed frame: at `alpha` between the previous and current tick's
+// levels, and at `scale` into the supersampled frame (dst NULL = the classic 1x HUD surface).
+void gauge_bars_present(SDL_Surface *dst, int scale, float alpha);
 extern bool hud_bars_dirty;
 void JE_repaintShieldArmorBars(void);
 

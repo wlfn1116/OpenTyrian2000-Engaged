@@ -74,9 +74,10 @@ static RenderCmd *rl_push(void)
 	return c;
 }
 
-/* Rectangles a tick painted an opaque overlay into (see rl_mark_overlay_rect). Small and fixed:
-   the boss bars and the special-ready light are the only claimants. */
-#define RL_OVERLAY_RECTS_MAX 8
+/* Rectangles a tick painted an opaque overlay into (see rl_mark_overlay_rect). Small and fixed;
+   a tick's claimants are the two boss bars, the special-ready light, and the three low-armor
+   WARNING strips, so the cap is headroom rather than a limit anything reaches. */
+#define RL_OVERLAY_RECTS_MAX 12
 static struct { int x, y, w, h; } overlay_rect[RL_OVERLAY_RECTS_MAX];
 static int overlay_rect_count = 0;
 

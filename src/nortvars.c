@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <math.h>
 
 JE_boolean inputDetected;
 
@@ -48,27 +49,51 @@ static int dbar_voffset(int z)
 
 #define GAUGE_FLASH_WHITE 5
 
+// The bar's leading row, when its top edge falls between rows: the top shade blended toward the
+// bank floor by how much of that row the edge covers, so the edge reads as moving at sub-pixel
+// resolution. Supersampling already puts the edge on a sub-row; this softens whatever is left.
+static void dbar_edge_row(SDL_Surface *surface, int x0, int x1, int top, float cover, int shade)
+{
+	if (cover <= 0.04f || top < 1)
+		return;
+
+	const int dark = shade & ~0x0F;
+	int edgeCol = dark + (int)(cover * (shade - dark) + 0.5f);
+	if (edgeCol > shade)
+		edgeCol = shade;
+	fill_rectangle_xy(surface, x0, top - 1, x1, top - 1, (Uint8)edgeCol);
+}
+
 // Draw a 9px gauge with an up, down, left, or right brightness gradient.
+// num is the unit count and may be fractional between ticks; scale renders the whole bar at that
+// supersample factor, so its top edge lands on a sub-pixel row rather than a whole one. Only the
+// height carries the fraction -- the base is the exact scaled row -- so a still bar never jitters.
 // topPad grows the bar by that many rows at the top without touching the bottom row or the
 // 2px band pitch; the two-player strip uses 1 so its four gauges reach the full height the
 // wipe already clears (the one-player bars fill their slot exactly and pass 0).
-void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad)
+void JE_dBar3_scaled(SDL_Surface *surface, JE_integer x, JE_integer y, float num, JE_integer col, JE_integer dir, JE_integer flash, JE_integer topPad, int scale)
 {
 	col += 2;
 
-	if (num < 0)
+	if (num < 0.0f)
 		return;
 
-	int bright = 0;
-	if (flash > 0)
+	const int x0 = x * scale, x1 = (x + 9) * scale - 1;
+	const int bot = (y + 1) * scale - 1;
+	const float topf = (float)((y - topPad) * scale) - (2.0f * num + 1.0f) * (float)scale;
+	int top = (int)ceilf(topf);
+	const float cover = (float)top - topf;  // share of the row above that the edge reaches into
+	if (top < 0)
+		top = 0;
+
+	if (flash >= GAUGE_FLASH_WHITE)
 	{
-		if (flash >= GAUGE_FLASH_WHITE)
-		{
-			fill_rectangle_xy(surface, x, y - (2 * num + 1) - topPad, x + 8, y, 15);
-			return;
-		}
-		bright = flash * 3;
+		fill_rectangle_xy(surface, x0, top, x1, bot, 15);
+		dbar_edge_row(surface, x0, x1, top, cover, 15);
+		return;
 	}
+
+	const int bright = (flash > 0) ? flash * 3 : 0;
 	const int bankTop = (col & 0xF0) | 0x0F;
 
 	if (dir == GAUGE_GRAD_LEFT || dir == GAUGE_GRAD_RIGHT)
@@ -77,8 +102,6 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 		// the width. Same vertical extent as the stacked bands (bottom row y, top row y-2*num-1).
 		// Lifted +2 shades so the horizontal ramp reads a touch brighter (still in-family; the
 		// vertical bar's upper bands reach higher still).
-		const int yBot = y;
-		const int yTop = y - (2 * num + 1) - topPad;
 		for (int j = 0; j <= 8; j++)
 		{
 			const int off = (dir == GAUGE_GRAD_RIGHT) ? j : (8 - j);
@@ -89,15 +112,30 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 				if (shade > bankTop)
 					shade = bankTop;
 			}
-			fill_rectangle_xy(surface, x + j, yTop, x + j, yBot, (Uint8)shade);
+			const int sx0 = (x + j) * scale, sx1 = (x + j + 1) * scale - 1;
+			fill_rectangle_xy(surface, sx0, top, sx1, bot, (Uint8)shade);
+			dbar_edge_row(surface, sx0, sx1, top, cover, shade);
 		}
 		return;
 	}
 
-	// Vertical gradient: Up = classic; Down = the same shading mirrored top-to-bottom.
-	for (JE_integer z = 0; z <= num; z++)
+	// Vertical gradient, bottom-up in 2px bands: Up = classic; Down = the same shading mirrored
+	// top-to-bottom. The topmost band is clipped to the bar's (possibly fractional) top, and past
+	// the last whole unit the shade holds -- which is what carries topPad's extra rows.
+	const int numi = (int)num;
+	int shadeTop = col;
+	for (int z = 0; ; z++)
 	{
-		const int off = (dir == GAUGE_GRAD_DOWN) ? dbar_voffset(num - z) : dbar_voffset(z);
+		const int bandBot = (y - 2 * z + 1) * scale - 1;
+		int bandTop = (y - 2 * z - 1) * scale;
+		const bool last = bandTop <= top;
+		if (last)
+			bandTop = top;
+		if (bandBot < bandTop)
+			break;
+
+		const int zs = (z > numi) ? numi : z;
+		const int off = (dir == GAUGE_GRAD_DOWN) ? dbar_voffset(numi - zs) : dbar_voffset(zs);
 		int shade = col + off;
 		if (bright)
 		{
@@ -105,11 +143,17 @@ void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num
 			if (shade > bankTop)
 				shade = bankTop;
 		}
-		// The topmost band absorbs topPad, so the extra height carries the shade the bar
-		// already ends on rather than introducing a band of its own.
-		JE_rectangle(surface, x, y - 1 - ((z == num) ? topPad : 0), x + 8, y, (Uint8)shade); /* <MXD> SEGa000 */
-		y -= 2;
+		fill_rectangle_xy(surface, x0, bandTop, x1, bandBot, (Uint8)shade); /* <MXD> SEGa000 */
+		shadeTop = shade;
+		if (last)
+			break;
 	}
+	dbar_edge_row(surface, x0, x1, top, cover, shadeTop);
+}
+
+void JE_dBar3(SDL_Surface *surface, JE_integer x,  JE_integer y,  JE_integer num,  JE_integer col,  JE_integer dir,  JE_integer flash,  JE_integer topPad)
+{
+	JE_dBar3_scaled(surface, x, y, (float)num, col, dir, flash, topPad, 1);
 }
 
 void JE_barDrawShadow(SDL_Surface *surface, JE_word x, JE_word y, JE_word res, JE_word col, JE_word amt, JE_word xsize, JE_word ysize)

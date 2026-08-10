@@ -30,7 +30,9 @@ your ship at the display rate, which cuts input latency. Leave it on.
 
 **Sub-pixel** renders the playfield internally at Auto, 1x-5x, or Native. It
 shows most in background scrolling. Without it, distant layers creep in whole
-pixels and visibly step. It only pays off with Smooth Motion on. **Native**
+pixels and visibly step; the generator, shield and armor gauges and the special
+charge meter fill in whole rows for the same reason. It only pays off with
+Smooth Motion on. **Native**
 renders one internal sample per screen pixel, following your monitor rather than
 stopping at 5x (11x on a 4K display, shown beside the setting). Pair it with the
 **Native** scaler, which outputs at the exact window size. Auto stops at 5x
@@ -977,10 +979,9 @@ mouse on desktop and touch on consoles.
 
 The bar beside the special-weapon icon is a charge meter rather than the original
 on/off light. Firing drains it from the top down for as long as the special
-burns, it reaches empty as the recharge begins, then fills back up a row at a
-time and flashes white the moment the special is ready again. It now draws on top
-of everything, so no background layer, enemy or screen effect can cover or
-recolour it.
+burns, it reaches empty as the recharge begins, then fills back up and flashes
+white the moment the special is ready again. It now draws on top of everything,
+so no background layer, enemy or screen effect can cover or recolour it.
 
 ### Debug Mode
 

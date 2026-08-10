@@ -22,6 +22,7 @@
 #include "opentyr.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "vga256d.h"
 #include "video.h"
 
 // Silent rollback passes advance simulation without drawing.
@@ -623,14 +624,18 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
-/* Sprite rows [row_first, row_last] only (row 0 is the sprite's top row), every pixel brightened
- * by `bright` steps toward the top of its own palette bank -- 15 saturates the whole frame to that
- * bank's brightest shade, the boss bar's flash trick. The HUD's special-ready light grows its lit
- * bar upward with the row window and pops it white with `bright`. Unlike its neighbours here this
- * records nothing: like the boss bar the light rides the per-tick residual, which re-applies it
- * over the interpolated frame unfiltered (its caller marks the rect so no pixel is dropped).
+/* A sub-row window of the sprite only, every pixel brightened by `bright` steps toward the top of
+ * its own palette bank -- 15 saturates the whole frame to that bank's brightest shade, the boss
+ * bar's flash trick. The HUD's special-ready light grows its lit bar upward with the window and
+ * pops it white with `bright`. The window is measured in sub-rows from the sprite's top row
+ * (row r covers r*scale .. r*scale+scale-1), so its edge lands inside a row rather than snapping
+ * to one, and every source pixel becomes a scale x scale block. Fully clipped.
+ *
+ * Unlike its neighbours here this records nothing: like the boss bar the light rides the per-tick
+ * residual, which re-applies it over the interpolated frame unfiltered (its caller marks the rect
+ * so no pixel is dropped, and repaints it at the display rate on top).
  */
-void blit_sprite2_rows_bright(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int row_first, int row_last, int bright)
+void blit_sprite2_rows_bright_scaled(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int sub_first, int sub_last, int bright, int scale)
 {
 	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
 
@@ -638,44 +643,46 @@ void blit_sprite2_rows_bright(SDL_Surface *surface, int x, int y, Sprite2_array 
 		return;
 
 	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
-	int row = 0;
+	int row = 0, col = 0;  // sprite row, and column within its 12px cell
 
 	for (; *data != 0x0f; ++data)
 	{
-		if (y >= surface->h || row > row_last)
+		if (row * scale > sub_last)
 			return;
 
 		Uint8 skip_count = *data & 0x0f;
 		Uint8 fill_count = (*data >> 4) & 0x0f;
 
-		x += skip_count;
+		col += skip_count;
 
-		if (fill_count == 0) // move to next pixel row
+		if (fill_count == 0)  // move to next pixel row
 		{
-			y += 1;
-			x -= 12;
+			col -= 12;
 			++row;
+			continue;
 		}
-		else if (y >= 0 && row >= row_first)
-		{
-			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
-			do
-			{
-				++data;
 
-				if (x >= 0 && x < surface->pitch)
-				{
-					const int shade = (*data & 0x0f) + bright;
-					pixel_row[x] = (*data & 0xf0) | (shade > 0x0f ? 0x0f : shade);
-				}
-				x += 1;
-			} while (--fill_count);
-		}
-		else
+		int r0 = row * scale, r1 = r0 + scale - 1;
+		if (r0 < sub_first)
+			r0 = sub_first;
+		if (r1 > sub_last)
+			r1 = sub_last;
+		if (r1 < r0)  // this row falls outside the window
 		{
 			data += fill_count;
-			x += fill_count;
+			col += fill_count;
+			continue;
 		}
+
+		const int y0 = y * scale + r0, y1 = y * scale + r1;
+		do
+		{
+			++data;
+			const int shade = (*data & 0x0f) + bright;
+			const Uint8 color = (Uint8)((*data & 0xf0) | (shade > 0x0f ? 0x0f : shade));
+			fill_rectangle_xy(surface, (x + col) * scale, y0, (x + col + 1) * scale - 1, y1, color);
+			++col;
+		} while (--fill_count);
 	}
 }
 

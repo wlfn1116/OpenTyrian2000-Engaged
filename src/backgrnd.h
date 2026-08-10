@@ -92,6 +92,11 @@ void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map, 
 // each tile pixel is drawn as a scale x scale block, fully clipped, never recorded.
 void blit_background_row_scaled(SDL_Surface *surface, int x, int y, Uint8 **map, int scale, bool blend, int mirror_w, int col0);
 
+// Layer 1's scroll delta + pan anchor for this tick, without drawing its rows. draw_background_1
+// calls it; a tick that blanks the layer instead (Astral Zone) must call it too, or layer 3 loses
+// the anchor it pans from under background3x1 and shifts by a tick's parallax.
+void bg_publish_layer_1_phase(void);
+
 void draw_background_1(SDL_Surface *surface);
 void draw_background_2(SDL_Surface *surface);
 void draw_background_2_blend(SDL_Surface *surface);

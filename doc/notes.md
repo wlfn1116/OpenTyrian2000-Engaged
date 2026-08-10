@@ -83,6 +83,8 @@ Background layers record integer movement and a fractional phase. Bound enemies
 and health bars use the same layer phase.
 
 - `background3x1` binds layer 3 to layer 1.
+- A layer's phase is published per tick even when its rows are not drawn. Layer 1
+  is blanked for the whole of Astral Zone, and a bound layer 3 pans from it.
 - Whole-pixel draw correction and fractional phase remain separate.
 - Round the combined layer and local offset once.
 - Layer 3 may be recorded after its advance; preserve its authored base step.
@@ -98,9 +100,17 @@ boosts without changing long-run distance. Call it once per layer per tick.
 Layer-bound enemies use the same boost and carry. Event spawns crossed during a
 large scroll step need catch-up to the current layer phase.
 
-Palette fades, picture wipes, Destruct, HUD gauges, enhanced boss bars, and Soul
-of Zinglon all have display-rate presentation paths. Their simulation state
-still advances once per tick.
+Palette fades, picture wipes, Destruct, HUD gauges, enhanced boss bars, the
+special-ready light, and Soul of Zinglon all have display-rate presentation
+paths. Their simulation state still advances once per tick.
+
+A meter whose level moves also needs the level itself interpolated, not just its
+flash: the generator, shield, armor and special-charge bars each latch the
+previous and current tick's value and draw between them. Only the height carries
+the fraction; the base stays on the exact scaled row, so a still bar cannot
+jitter. Where the top edge falls between rows it is blended toward the bank
+floor by its coverage, which is what supersampling turns into a real sub-row
+edge.
 
 ### Supersampling
 
@@ -2026,7 +2036,12 @@ damaged visible part. Their render command carries the enemy's layer binding.
 
 Two-player gauge blocks repeat at a 134-pixel stride. `JE_dBar3` paints
 `2 * units + 1` rows upward, while the two-player wipe clears 45 rows. Keep the
-clamped gauge and shield ceiling mark within that cleared region.
+clamped gauge and shield ceiling mark within that cleared region. Units are
+fractional, so the clamp is what guarantees it: at the cap the edge lands on a
+whole row and paints no blended row above it. The wipe clears the whole slot
+rather than only the rows above the bar, because an interpolated level can sit
+below the tick's and the supersampled frame carries a block-expanded copy of the
+bar that has to go. Every caller redraws immediately after wiping.
 
 Help-bar values right-align to `ENDLESS_COURSE_PAYOUT_RIGHT`. Descriptions leave
 room for prices and stack counts. Navigation-map planets iterate `mapPNum`.

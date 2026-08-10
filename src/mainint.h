@@ -152,6 +152,9 @@ int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_L
 // burn of a special still going. Published from the end of JE_doSpecialShot, which holds that
 // ship's gates in the shared globals.
 void hud_special_light_publish(int charge_ticks, int burn_ticks);
+// Repaint the ready light for one displayed frame: the meter at `alpha` between the previous and
+// current tick's fill, at `scale` into the supersampled playfield, over what the residual re-applied.
+void hud_special_light_present(SDL_Surface *dst, int scale, float alpha);
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 

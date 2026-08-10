@@ -7283,6 +7283,13 @@ static int  hud_light_burn_full = 0;
 static int  hud_light_flash = 0;
 static bool hud_light_was_ready = true;
 
+// Render state for the display-rate repaint: the lit row count at the previous and current tick
+// (the clocks step once a tick, so without these the meter would climb one whole row at a time),
+// and where the tick drew it.
+static float hud_light_fill_prev = 0.0f, hud_light_fill_cur = 0.0f;
+static int   hud_light_x = 0, hud_light_y = 0;
+static bool  hud_light_shown = false;
+
 void hud_special_light_publish(int charge_ticks, int burn_ticks)
 {
 	hud_light_charge_left = charge_ticks;
@@ -7299,6 +7306,45 @@ static void hud_special_light_reset(void)
 	hud_light_burn_full = 0;
 	hud_light_flash = 0;
 	hud_light_was_ready = true;
+	hud_light_fill_prev = hud_light_fill_cur = 0.0f;
+	hud_light_shown = false;
+}
+
+/* One paint of the meter: the charged frame fills the spent one from the bottom up to `fill` rows.
+ * `fill` is fractional between ticks and the window is handed over in sub-rows, so at scale > 1
+ * the boundary between the two paints lands inside a row rather than jumping a whole one.
+ */
+static void hud_special_light_paint(SDL_Surface *dst, int scale, int x, int y, float fill, int bright)
+{
+	const int rows = HUD_LIGHT_ROWS * scale;
+	int lit = (int)(fill * (float)scale);  // lit sub-rows, measured up from the bar's bottom
+	if (lit < 0)
+		lit = 0;
+	else if (lit > rows)
+		lit = rows;
+
+	const int first = HUD_LIGHT_ROW_FIRST * scale;
+	const int last = (HUD_LIGHT_ROW_LAST + 1) * scale - 1;
+	const int split = last - lit;  // last spent sub-row; the charged paint runs split+1 .. last
+
+	if (split >= first)
+		blit_sprite2_rows_bright_scaled(dst, x, y, spriteSheet9, 93, first, split, 0, scale);
+	if (lit > 0)
+		blit_sprite2_rows_bright_scaled(dst, x, y, spriteSheet9, 94, split + 1, last, bright, scale);
+}
+
+void hud_special_light_present(SDL_Surface *dst, int scale, float alpha)
+{
+	if (!hud_light_shown)
+		return;
+
+	// The pop decrements by exactly 1 a tick, so the previous value is always cur+1 -- the same
+	// interpolation the HUD gauge and boss-bar flashes use.
+	const int bright = hud_light_flash > 0 ? (int)(hud_light_flash + 1.0f - alpha + 0.5f) : 0;
+
+	hud_special_light_paint(dst, scale, hud_light_x, hud_light_y,
+	                        hud_light_fill_prev + (hud_light_fill_cur - hud_light_fill_prev) * alpha,
+	                        bright);
 }
 
 static void draw_special_ready_light(int x, int y)
@@ -7343,26 +7389,33 @@ static void draw_special_ready_light(int x, int y)
 
 	// Burning drains what was there; recharging fills it back. Both land on empty at the handover,
 	// so a special that burns and then recharges reads as one continuous sweep down and back up.
-	int filled = 0;
+	// Kept fractional: a 12-row meter driven by clocks that can run hundreds of ticks would sit
+	// still for a dozen of them and then jump a whole row.
+	float filled = 0.0f;
 	if (ready)
 		filled = HUD_LIGHT_ROWS;
 	else if (burning)
 		filled = hud_light_burn_full > 0
-		       ? hud_light_burn_left * HUD_LIGHT_ROWS / hud_light_burn_full : 0;
+		       ? (float)hud_light_burn_left * HUD_LIGHT_ROWS / hud_light_burn_full : 0.0f;
 	else if (hud_light_charge_full > 0)
-		filled = (hud_light_charge_full - hud_light_charge_left) * HUD_LIGHT_ROWS / hud_light_charge_full;
+		filled = (float)(hud_light_charge_full - hud_light_charge_left) * HUD_LIGHT_ROWS / hud_light_charge_full;
+
+	if (!rollback_resim_silent)
+	{
+		hud_light_fill_prev = hud_light_fill_cur;
+		hud_light_fill_cur = filled;
+		hud_light_x = x;
+		hud_light_y = y;
+		hud_light_shown = true;
+	}
 
 	// The light is opaque over its ink block, and only the residual carries it onto interpolated
 	// frames; without the mark, a pixel that happens to match the playfield under it is dropped
-	// there and the bar shows a hole.
+	// there and the bar shows a hole. (hud_special_light_present overdraws the whole block on an
+	// interpolated frame, but the residual is still what every other path shows.)
 	rl_mark_overlay_rect(x + HUD_LIGHT_INK_X, y + HUD_LIGHT_ROW_FIRST, HUD_LIGHT_INK_W, HUD_LIGHT_ROWS);
 
-	if (filled < HUD_LIGHT_ROWS)
-		blit_sprite2_rows_bright(VGAScreen, x, y, spriteSheet9, 93,
-		                         HUD_LIGHT_ROW_FIRST, HUD_LIGHT_ROW_LAST - filled, 0);
-	if (filled > 0)
-		blit_sprite2_rows_bright(VGAScreen, x, y, spriteSheet9, 94,
-		                         HUD_LIGHT_ROW_LAST - filled + 1, HUD_LIGHT_ROW_LAST, hud_light_flash);
+	hud_special_light_paint(VGAScreen, 1, x, y, filled, hud_light_flash);
 }
 
 int hud_top_left_right_edge(void)
