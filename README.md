@@ -99,7 +99,7 @@ player hosting.
   the episode, earns and spends their own cash, and can use their own shop at the
   same time between levels. Each machine shows the familiar one-player sidebar
   for its local ship. The hidden ENGAGE mini-games play in co-op too, both ships
-  issued the same kit. 
+  issued the same kit.
 - **Endless co-op.** The whole roguelite with two ships: one shared run, sector
   and zone counter, while wallets, shop stock, perks and kill-fire drives belong
   to one player each. A downed ship spectates the rest of the zone and rejoins
