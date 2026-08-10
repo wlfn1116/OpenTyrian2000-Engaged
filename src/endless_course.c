@@ -30,6 +30,14 @@ int      endlessLastEp = 0;
 JE_byte  endlessLastSec = 0;
 bool     endlessForced = false;  // this visit is a forced "Ambush" (single dangerous sector)
 
+/* The Radar perk's chart reroll. `endlessChartRerolls` is the count the live slate was dealt
+ * under: it salts the visit's structural phases, rides the save, and is the one number both
+ * machines have to agree on before the sector is committed. See "Modifiers and courses" in
+ * doc/notes.md. */
+JE_byte endlessChartRerolls = 0;
+bool    endlessChartStarCharts = false;  // Star Charts as this visit's first chart found it
+uint    endlessChartSeat = 0;            // seat charting the visit, latched when the chart is dealt
+
 // Fold the shipped level's intrinsic danger into its grade, sorting, and payout.
 static int endlessCourseBaseDanger(int i)
 {
@@ -1088,6 +1096,75 @@ void endlessGenerateCourses(void)
 	endlessSortCoursesByDanger();
 	endlessMakeCourseNamesUnique();
 	endlessNameCourseBaseLevels();  // cache each course's base-level name for the Radar perk (after the sort)
+}
+
+/* Salt for a depth-keyed structural phase: this chart, and the zone it charts. The visit's reroll
+ * count is folded in above every 32-bit phase constant, so a rerolled chart brings its own levels,
+ * modifiers and music, while an unrerolled visit keeps the salt its seed has always been played
+ * on. */
+#define ENDLESS_CHART_REROLL_SALT 0x100000000ULL
+
+Uint64 endlessZonePhaseSalt(Uint64 phase)
+{
+	return (Uint64)endlessRunDepth * 2 + phase + ENDLESS_CHART_REROLL_SALT * endlessChartRerolls;
+}
+
+// Deal the slate at the current reroll count. Star Charts is replayed from the value the visit
+// opened with, so a reroll cannot swallow the banked boon.
+void endlessChartRedeal(void)
+{
+	endlessStarChartsOwed = endlessChartStarCharts;
+	endlessReseed(endlessZonePhaseSalt(0));
+	endlessGenerateCourses();
+}
+
+// A fresh outpost: latch the inputs a reroll replays, then chart.
+void endlessChartVisit(void)
+{
+	endlessChartRerolls    = 0;
+	endlessChartStarCharts = endlessStarChartsOwed;
+	endlessChartSeat       = endlessChartingPlayerIndex();
+	endlessChartRedeal();
+}
+
+/* The reroll belongs to the seat charting the visit, as Surveyor's extra routes do, so both
+ * machines agree on whether the chart has one. In co-op only that seat opens the chart screen. */
+bool endlessCourseRerollOffered(void)
+{
+	return endlessMode && endlessPerkEffective(endlessChartSeat, PERK_RADAR) > 0;
+}
+
+bool endlessCourseRerollSpent(void)
+{
+	return endlessChartRerolls >= ENDLESS_CHART_REROLLS;
+}
+
+const char *endlessCourseRerollHelp(void)
+{
+	return endlessCourseRerollSpent() ? "Radar: this chart has already been rerolled."
+	                                  : "Radar: redraw every route on this chart.";
+}
+
+// Chart the visit again. Deterministic in (seed, depth, reroll count), so a peer and a reloaded
+// save rebuild the same slate from the count alone.
+void endlessCourseReroll(void)
+{
+	if (!endlessCourseRerollOffered() || endlessCourseRerollSpent())
+		return;
+	++endlessChartRerolls;
+	endlessChartRedeal();
+}
+
+/* Online: the chart is derived rather than sent, so a peer's reroll arrives as the count on its
+ * shop packet and this machine rebuilds the same slate from it. Only the charting seat rerolls,
+ * and every packet it sends carries the count, so the packet publishing its pick cannot arrive
+ * without it. */
+void endlessChartSyncRerolls(uint p, JE_byte rerolls)
+{
+	if (p != endlessChartSeat || rerolls == endlessChartRerolls)
+		return;
+	endlessChartRerolls = rerolls;
+	endlessChartRedeal();
 }
 
 // Resolve a saved/chosen (episode, section) back to a real endless-safe level file. Prefer the

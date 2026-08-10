@@ -1027,12 +1027,11 @@ void endlessBetweenLevels(void)
 	else
 	{
 		// Seed structural generation by depth. Player-timed draws cannot shift later zone layouts,
-		// and each player's own stream is forked from the same point so a reroll or a gamble on one
-		// machine never moves what the other is dealt.
-		endlessReseed((Uint64)endlessRunDepth * 2);
+		// and each player's own stream is forked from the same point so a shop reroll or a gamble
+		// on one machine never moves what the other is dealt.
 		endlessReseedPlayers((Uint64)endlessRunDepth * 2);
 
-		endlessGenerateCourses();
+		endlessChartVisit();   // seeds the structural phase, then deals this visit's slate
 		endlessResetShopPrices();
 		endlessFillShop();
 

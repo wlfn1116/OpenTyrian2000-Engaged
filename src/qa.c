@@ -262,6 +262,7 @@ static void qa_reset_course_inputs(const char *seed, int depth, int difficulty)
 	endlessLastSec = 0;
 	endlessStarChartsOwed = false;
 	endlessBreakthroughOwed = 0;
+	endlessChartRerolls = 0;      // an unrerolled visit, so the phase salts are the seed's own
 	for (uint p = 0; p < COUNTOF(player); ++p)
 	{
 		endlessPurchasedMods[p] = 0;
@@ -477,6 +478,81 @@ static void qa_test_course_base_rule(void)
 	qa_check(multiRouteSlates > 0, "the Varied comparison saw slates with more than one route");
 
 	printf("# base level rule: 160 seeds, %u multi-route Varied slates\n", multiRouteSlates);
+}
+
+/* Radar's chart reroll. It has to deal a genuinely different visit, leave an unrerolled visit on
+ * the salt every existing seed was played on, stay reproducible from the reroll count alone (which
+ * is all that travels between two machines), and hand out exactly one reroll per outpost. */
+static void qa_test_course_reroll(void)
+{
+	char seed[ENDLESS_SEED_MAXLEN];
+	const unsigned samples = 96;
+	unsigned changed = 0, widened = 0;
+
+	for (unsigned sample = 0; sample < samples; ++sample)
+	{
+		watchdog_heartbeat();
+		const int depth = 3 + (int)(sample % 40);
+		snprintf(seed, sizeof(seed), "qa-reroll-%08x", (unsigned)(sample * 2654435761u));
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessChartVisit();
+		const Uint32 firstHash = qa_slate_hash();
+		const Uint64 firstSalt = endlessZonePhaseSalt(1);
+
+		qa_check(firstSalt == (Uint64)depth * 2 + 1,
+		         "an unrerolled visit keeps the zone phase salt its seed has always used");
+		qa_check(!endlessCourseRerollOffered(),
+		         "a chart offers no reroll without the Radar perk");
+		endlessCourseReroll();
+		qa_check(qa_slate_hash() == firstHash && endlessChartRerolls == 0,
+		         "a reroll without the perk leaves the chart alone");
+
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		qa_check(endlessCourseRerollOffered() && !endlessCourseRerollSpent(),
+		         "the Radar perk offers this visit's chart one reroll");
+
+		endlessCourseReroll();
+		const Uint32 rerolledHash = qa_slate_hash();
+		qa_check(endlessCourseRerollSpent(), "a used reroll reads as spent");
+		qa_check(endlessZonePhaseSalt(1) != firstSalt,
+		         "a reroll moves the charted zone's own phases with it");
+		if (rerolledHash != firstHash)
+			++changed;
+
+		endlessCourseReroll();
+		qa_check(qa_slate_hash() == rerolledHash && endlessChartRerolls == ENDLESS_CHART_REROLLS,
+		         "a spent reroll cannot be used again");
+
+		// The count is all the other machine receives, so replaying it must rebuild the chart.
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessChartVisit();
+		endlessChartSyncRerolls(endlessChartSeat, ENDLESS_CHART_REROLLS);
+		qa_check(qa_slate_hash() == rerolledHash,
+		         "a peer rebuilds the rerolled chart from the reroll count alone");
+
+		// Star Charts widens a chart, and a redeal replays the visit from the same inputs rather
+		// than swallowing the banked boon. Ambush is the case that hands it back instead.
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessStarChartsOwed = true;
+		endlessChartVisit();
+		if (endlessCourseCnt == ENDLESS_MAX_COURSES)
+			++widened;
+		endlessCourseReroll();
+		qa_check(endlessCourseCnt == ENDLESS_MAX_COURSES || endlessStarChartsOwed,
+		         "a rerolled chart either still spends Star Charts or hands the boon back");
+		endlessPerkSetOwned(PERK_RADAR, 0);
+	}
+
+	endlessChartRerolls = 0;  // leave the phase salts where the tests after this one expect them
+
+	qa_check(changed * 4 >= samples * 3, "rerolling deals a different chart on most seeds");
+	qa_check(widened > 0, "the Star Charts case saw charts widened by the boon");
+
+	printf("# chart reroll: %u seeds, %u dealt a different slate, %u widened by Star Charts\n",
+	       samples, changed, widened);
 }
 
 static void qa_test_perk_registry(void)
@@ -2528,6 +2604,7 @@ int qa_run_unit_suite(void)
 	qa_test_resync_serialization();
 	qa_test_courses();
 	qa_test_course_base_rule();
+	qa_test_course_reroll();
 
 	printf("1..%u\n", qa_checks);
 	printf("# %u checks, %u failures\n", qa_checks, qa_failures);

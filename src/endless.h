@@ -361,7 +361,7 @@ void endlessSaveSlot(JE_byte slot);
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.
  * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
-#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS)
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS + 1)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 
@@ -399,6 +399,12 @@ JE_byte     endlessCoursePlanet(int i);
 JE_byte     endlessCourseSection(int i);
 JE_byte     endlessSelectCourse(int i);
 long        endlessCoursePayout(int i);
+
+// Radar perk: one reroll of the whole chart per outpost (the menu row in game_menu.c).
+bool        endlessCourseRerollOffered(void);
+bool        endlessCourseRerollSpent(void);
+const char *endlessCourseRerollHelp(void);
+void        endlessCourseReroll(void);
 
 // One modifier row on a course card.
 typedef struct {

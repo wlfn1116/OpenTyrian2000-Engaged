@@ -6,7 +6,7 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
 `make test TEST_DATA=/path/to/data` runs:
 
 - rollback snapshot and wire-restore checks;
-- save migration fixtures for every supported Endless format (v3 through v20), including
+- save migration fixtures for every supported Endless format (v3 through v23), including
   load -> current save -> reload stability and malformed/truncated/oversized input probes;
 - resync serialization property tests and malformed rollback-packet fuzz cases;
 - fixed-width network settings and resumed-save round trips, guard-byte checks, hostile-value

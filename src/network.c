@@ -70,7 +70,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       26           /* v26: the Endless lobby block grew a Base Level byte before
+#define NET_VERSION       27           /* v27: the Endless shop packet's player block grew a trailing
+                                          chart-reroll byte, which both machines redeal the derived
+                                          course slate from; a v26 peer sends a block one byte short,
+                                          so the length check drops it and the two chart apart.
+                                          v26: the Endless lobby block grew a Base Level byte before
                                           its seed, deciding whether a chart deals one base level or
                                           one per route; a v25 peer reads the seed at the old offset
                                           and would run different zones from the same lobby.

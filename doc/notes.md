@@ -276,6 +276,21 @@ the two rules keep separate records. Everything downstream of the gatherer is
 unchanged: modifiers, dedup, ranking and sorting all work off a slate whose base
 danger happens to be identical on every route.
 
+The Radar perk charts one reroll per outpost. `endlessChartRerolls` is the count
+the live slate was dealt under, and the only value two machines have to agree on:
+`endlessZonePhaseSalt` folds it into every depth-keyed structural phase, above
+the 32-bit phase constants, so a rerolled visit redeals its chart and carries the
+charted zone's music, light cone, gravity direction and dispenser bases with it,
+while zero rerolls reproduces the salt every existing seed was played on.
+`endlessChartVisit` opens a visit by latching what a redeal replays, then deals;
+`endlessChartRedeal` deals again at the current count. Two things are latched
+rather than read live. `endlessChartStarCharts` is the boon as the visit's first
+chart found it, so a slate widened by Star Charts spends it again on a reroll
+instead of losing it. `endlessChartSeat` is the charting seat, latched because
+`endlessAdvanceCourseTurn` moves the turn at departure and a packet arriving
+after that would otherwise be read against the next visit's seat, which would
+leave the two machines with different slates in the sortie snapshot.
+
 Milestones use the upcoming real zone:
 
 - odd multiples of 25: S/S+;
@@ -341,6 +356,7 @@ the run mode across a retry or bail.
 | 20 | Custom-weapon record mark |
 | 21 | Second player's outpost half and the co-op turn flag |
 | 22 | Base Level chart rule |
+| 23 | Radar chart reroll |
 
 Append fields and guard reads by version. Older records retain their historical
 field widths. Perk IDs are persisted in owned stacks and pending offers; append
@@ -493,6 +509,14 @@ RNG-free.
 
 Menu labels, choice counts, and help indices are parallel data. Update all three
 when adding a row.
+
+Chart a Course is the exception to the shop's flat 16px rows: its trailing rows
+(Exit, and the endless Radar reroll when the visit offers one) are each drawn a
+blank line below their menu index, so the click mapping shifts them back and
+makes the gap above the reroll a miss. `endlessCourseRerollRow` is the single
+source for which index that is, and everything reading a planet out of the list
+bounds on `mapPNum` rather than `menuChoices`, because those trailing rows have
+no planet.
 
 Panels over a live level center within the playfield. The pause menu shifts both
 boxes as complete units, and its help line uses the same axis. Keep over-wide
@@ -947,7 +971,8 @@ Split of responsibility inside a run:
 - Run-wide and derived identically on both machines from the seed, depth and
   difficulty: the course slate, the sector's modifiers, zone depth and kills,
   milestones, deferred Star Charts and Breakthrough picks. Nothing about these
-  travels.
+  travels except the chart's reroll count, which is an input to the derivation
+  rather than a result of it.
 - Per player, owned by that player's machine and mirrored to the peer on every
   `PACKET_SHOP_SYNC`: wallet, gear, superbombs, Reinforce tier, revive token,
   pending sector purchases, Sabotage charges, Loan Shark tax, The Long Con,
@@ -984,7 +1009,13 @@ fx ship's own stacks, armed by the fx ship's own hull.
 Two perks act on shared screens instead of on a ship: `endlessPerkSurveyorRoutes`
 reads `endlessChartingPlayerIndex()`, the seat both machines derive identically, so
 one slate cannot be widened differently on the two sides; `endlessPerkRadarActive`
-reads the local player, because the help text it adds is drawn locally.
+reads the local player, because the help text it adds is drawn locally. Radar's
+chart reroll is the shared half of that perk and belongs to the charting seat for
+Surveyor's reason. The chart is derived rather than sent, so what travels is the
+count, a trailing byte on the player block that `endlessChartSyncRerolls` redeals
+from. Every packet the charting machine sends carries it, and the pick rides that
+same packet, so a peer cannot learn the sector index without also learning which
+chart it indexes.
 `endlessPerkGetOwned` / `endlessPerkSetOwned` (the debug screen and the
 campaign-mods config) both name the local row, so the pair round-trips.
 

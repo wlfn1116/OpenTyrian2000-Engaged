@@ -234,8 +234,12 @@ The course screen offers two to five routes, safest first, with equal grades
 ordered by payout. Each card shows a generated sector name, the danger label and
 grade, the active threats and boons, and the exact clear payout.
 
-Radar reveals which level is underneath. Surveyor adds routes. Recently played
-levels are avoided.
+Radar reveals which level is underneath and adds a **Reroll** row below the
+routes. One press redraws the whole chart: new levels, modifiers, payouts and
+route count, and the zone it charts arrives with its own music. The row then
+greys out for the rest of the visit, and stays grey across a save and reload or a
+return to the same outpost after giving a zone up. The next outpost hands you a
+fresh one. Surveyor adds routes. Recently played levels are avoided.
 
 The **Base Level** row on the seed screen decides which levels a chart draws on.
 **Varied**, the default, gives each route its own level. **Same** puts every route
@@ -298,7 +302,7 @@ choices, bought picks four, milestone picks five.
 | Efficient Coils | -15% main-weapon power use | 5 |
 | Shield Matrix | Reduces the shield-recharge interval by 3 ticks | 4 |
 | High-Velocity Shots | +25% player shot speed | 3 |
-| Radar | Reveals course level names | 1 |
+| Radar | Reveals course level names, and rerolls one chart per outpost | 1 |
 | Surveyor | +1 course choice | 2 |
 | Executioner | +15% damage to badly wounded enemies | 3 |
 | Opening Salvo | Charges after 2 seconds of not firing | 1 |
@@ -672,7 +676,9 @@ ship that took it and no other, up to that perk's normal maximum on each of your
 rows. Your Perks list, the Owned counts on a perk offer, and the surcharge an
 **Extra Perk** costs all read your own collection. Two perks act on a screen you
 share rather than on a ship: **Surveyor** widens the course slate when its owner is
-the one charting, and **Radar** names the levels for the player holding it. One buy
+the one charting, and **Radar** names the levels for the player holding it. Radar's
+chart reroll goes with the charting seat, so it is the charting player's Radar that
+offers one, and both of you fly whatever it redraws. One buy
 still reaches further than the ship that made it: **Sector Sabotage** strips a
 danger off the sector you both fly, and sabotage charges from the two of you add up
 to the same three-strip cap.

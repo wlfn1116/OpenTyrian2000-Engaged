@@ -169,7 +169,7 @@ static void endlessPickLevelMusic(void)
 	{
 		endlessReseed((Uint64)(endlessRunDepth - 1) * 2 + 1);
 		prev = endlessLevelSongs[endlessRand() % COUNTOF(endlessLevelSongs)];
-		endlessReseed((Uint64)endlessRunDepth * 2 + 1);
+		endlessReseed(endlessZonePhaseSalt(1));
 	}
 
 	// Milestones use pinned tracks without changing RNG draw order.
@@ -263,17 +263,18 @@ void endlessRegenerateLevel(void)
 	// The shop consumes resume snapshots before a level starts.
 	endlessResumeVisit = false;
 
-	// Reseed the level-start phase by depth.
-	endlessReseed((Uint64)endlessRunDepth * 2 + 1);
+	// Reseed the level-start phase by depth. A rerolled chart shifts every phase below with it,
+	// so the zone it charts arrives with its own music and flavour (endlessZonePhaseSalt).
+	endlessReseed(endlessZonePhaseSalt(1));
 
 	endlessPickLevelMusic();
 
 	// The light cone has its own per-zone phase.
-	endlessReseed((Uint64)endlessRunDepth * 2 + 0x40000000);
+	endlessReseed(endlessZonePhaseSalt(0x40000000));
 	endlessLightCone = (endlessRand() % 10 == 0);
 
 	// Gravity has a separate phase; 0x50000000 belongs to elite rolls.
-	endlessReseed((Uint64)endlessRunDepth * 2 + 0x60000000);
+	endlessReseed(endlessZonePhaseSalt(0x60000000));
 	endlessRollGravityDir();
 }
 
@@ -305,7 +306,7 @@ bool endlessDispenserBaseRoll(void)
 {
 	if (endlessRunDepth + 1 >= ENDLESS_DISPENSER_ALWAYS_ZONE)
 		return true;
-	return (endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x70000000) & 1) != 0;
+	return (endlessSplitMixSeed(endlessZonePhaseSalt(0x70000000)) & 1) != 0;
 }
 
 // Campaign debug effects use gameplay RNG because campaigns have no zone phase.

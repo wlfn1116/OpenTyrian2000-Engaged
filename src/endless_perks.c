@@ -32,7 +32,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Efficient Coils",  "Your weapons draw less generator power.", 5 },
 	{ "Shield Matrix",    "Your shield recharges faster.",        4 },
 	{ "High-Velocity Shots", "Your shots travel faster.",        3 },
-	{ "Radar",            "Chart-a-Course shows each sector's level.", 1 },
+	{ "Radar",            "Reveals sector levels; one reroll a visit.", 1 },
 	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
 	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },

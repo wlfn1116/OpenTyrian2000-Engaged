@@ -722,6 +722,45 @@ static void configure_endless_perk_list_menu(void)
 	perkListPrevSel   = 0;  // force the window to re-follow the selection on the first draw
 }
 
+/* The Radar perk's chart reroll sits a blank line under the charted routes, with Exit below it.
+ * Returns that row's 1-based menu index, or 0 when this visit offers no reroll. Only meaningful
+ * while MENU_PLAY_NEXT_LEVEL is open. */
+static int endlessCourseRerollRow(void)
+{
+	return endlessCourseRerollOffered() ? endlessCourseCount() + 2 : 0;
+}
+
+/* Populate MENU_PLAY_NEXT_LEVEL from the endless course slate: one planet per route, then the
+ * reroll row when it is offered, then Exit. Called on entry and again after a reroll. */
+static void configure_endless_course_menu(void)
+{
+	char (*p)[24] = menuInt[MENU_PLAY_NEXT_LEVEL + 1];
+	const int n = endlessCourseCount();
+
+	mapPNum = (JE_byte)n;
+	for (int i = 0; i < n; ++i)
+	{
+		mapPlanet[i] = endlessCoursePlanet(i);
+		mapSection[i] = endlessCourseSection(i);
+	}
+	JE_computeDots();
+	navX = planetX[mapOrigin - 1];
+	navY = planetY[mapOrigin - 1];
+	newNavX = navX;
+	newNavY = navY;
+
+	int row = 0;
+	SDL_strlcpy(p[row], "Chart a Course", sizeof(p[row]));
+	for (int i = 0; i < n; ++i)
+		SDL_strlcpy(p[++row], endlessCourseName(i), sizeof(p[row]));
+	if (endlessCourseRerollRow() != 0)
+		SDL_strlcpy(p[++row], "Reroll", sizeof(p[row]));
+	SDL_strlcpy(p[++row], miscText[5], sizeof(p[row]));
+
+	menuChoices[MENU_PLAY_NEXT_LEVEL] = row + 1;
+	curSel[MENU_PLAY_NEXT_LEVEL] = 2;
+}
+
 /* Render the endless read-only Perks list, scrolling when it outgrows a page: a window of
  * PERK_LIST_VIS rows follows curSel across the whole list. Rows come from perkListId[], not menuInt.
  * Called from the menu draw dispatch in place of JE_drawMenuChoices. */
@@ -2950,7 +2989,14 @@ void JE_itemScreen(void)
 					/* is play next level screen? */
 					if (curMenu == MENU_PLAY_NEXT_LEVEL)
 					{
-						if (selection == menuChoices[curMenu] + 1)
+						/* Its trailing rows are each drawn a blank line below their menu index, so a
+						 * click lands one row low. The blank above the reroll row is a miss. */
+						const int reroll = endlessCourseRerollRow();
+						if (reroll != 0 && selection == reroll)
+							selection = menuChoices[curMenu] + 1;
+						else if (reroll != 0 && selection == reroll + 1)
+							selection = reroll;
+						else if (selection == menuChoices[curMenu] + 1)
 							selection = menuChoices[curMenu];
 					}
 
@@ -3849,8 +3895,10 @@ void JE_drawMenuChoices(void)
 			}
 		}
 
+		/* Chart a Course keeps a blank line above its trailing rows: Exit, and the endless Radar
+		 * reroll when the visit offers one. Everything above them closes up by one row. */
 		if (!(curMenu == MENU_PLAY_NEXT_LEVEL &&
-			x == menuChoices[curMenu]))
+			(x == menuChoices[curMenu] || x == endlessCourseRerollRow())))
 		{
 			tempY -= line_height;
 		}
@@ -3901,6 +3949,11 @@ void JE_drawMenuChoices(void)
 		// (item 3) in the shop options submenu so the disabled rows read as disabled. (Items 2/3
 		// sit above the Switch-only Touch row, so this holds on Switch too.)
 		if (endlessMode && endlessHardcore() && curMenu == MENU_OPTIONS && (x == 2 || x == 3))
+			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
+
+		// Endless: the Radar reroll is one per outpost, so the row greys out once it is spent.
+		if (curMenu == MENU_PLAY_NEXT_LEVEL && x == endlessCourseRerollRow()
+		    && endlessCourseRerollSpent())
 			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
 	}
 }
@@ -4061,7 +4114,12 @@ static void JE_drawNavMonitor(void)
 // planet spin animation, and the travel-dot reveal by one menu logic tick.
 static void JE_navScreenAdvance(void)
 {
-	if (curSel[MENU_PLAY_NEXT_LEVEL] < menuChoices[MENU_PLAY_NEXT_LEVEL])
+	// Bound by mapPNum, not menuChoices: the endless list ends in rows (the Radar reroll, Exit)
+	// that have no planet, and reading mapPlanet[] past its written entries feeds JE_drawPlanet a
+	// garbage planet number.
+	const bool onPlanet = curSel[MENU_PLAY_NEXT_LEVEL] >= 2
+	                   && curSel[MENU_PLAY_NEXT_LEVEL] - 2 < mapPNum;
+	if (onPlanet)
 	{
 		const unsigned int origin_x_offset = sprite(PLANET_SHAPES, PGR[mapOrigin-1]-1)->width / 2,
 		                   origin_y_offset = sprite(PLANET_SHAPES, PGR[mapOrigin-1]-1)->height / 2,
@@ -4100,7 +4158,7 @@ static void JE_navScreenAdvance(void)
 	}
 	else
 	{
-		if (currentDotNum < planetDots[curSel[MENU_PLAY_NEXT_LEVEL]-2])
+		if (onPlanet && currentDotNum < planetDots[curSel[MENU_PLAY_NEXT_LEVEL]-2])
 			currentDotNum++;
 		currentDotWait = 5;
 	}
@@ -4785,6 +4843,10 @@ void JE_drawMainMenuHelpText(void)
 	else if (leftPower || rightPower)
 	{
 		SDL_strlcpy(tempStr, mainMenuHelp[24-1], sizeof(tempStr));
+	}
+	else if (curMenu == MENU_PLAY_NEXT_LEVEL && curSel[curMenu] == endlessCourseRerollRow())
+	{
+		SDL_strlcpy(tempStr, endlessCourseRerollHelp(), sizeof(tempStr));
 	}
 	else if (endlessMode && curMenu == MENU_PLAY_NEXT_LEVEL && temp < endlessCourseCount())
 	{
@@ -9249,24 +9311,7 @@ void JE_menuFunction(JE_byte select)
 				// Endless: the "next level" list IS the course choice; each entry a shipped
 				// level plus its mutators, pre-generated for this shop visit. Map each to a
 				// distinct planet for the monitor; picking one applies its mutators + launches.
-				const int n = endlessCourseCount();
-				mapPNum = (JE_byte)n;
-				for (x = 0; x < n; x++)
-				{
-					mapPlanet[x] = endlessCoursePlanet(x);
-					mapSection[x] = endlessCourseSection(x);
-				}
-				JE_computeDots();
-				navX = planetX[mapOrigin - 1];
-				navY = planetY[mapOrigin - 1];
-				newNavX = navX;
-				newNavY = navY;
-				menuChoices[MENU_PLAY_NEXT_LEVEL] = n + 2;
-				curSel[MENU_PLAY_NEXT_LEVEL] = 2;
-				strcpy(menuInt[4][0], "Chart a Course");
-				for (x = 0; x < n; x++)
-					SDL_strlcpy(menuInt[4][x + 1], endlessCourseName(x), sizeof(menuInt[4][x + 1]));
-				strcpy(menuInt[4][x + 1], miscText[5]);
+				configure_endless_course_menu();
 			}
 			else
 			{
@@ -9479,6 +9524,20 @@ void JE_menuFunction(JE_byte select)
 		break;
 
 	case MENU_PLAY_NEXT_LEVEL:
+		if (select == endlessCourseRerollRow())
+		{
+			// Radar perk: chart this outpost again, once. The row is drawn greyed once it is
+			// spent, so a press then only confirms that nothing happened.
+			if (endlessCourseRerollSpent())
+			{
+				JE_playSampleNum(S_CLINK);
+				break;
+			}
+			endlessCourseReroll();
+			configure_endless_course_menu();
+			JE_playSampleNum(S_ITEM);
+			break;
+		}
 		if (select == menuChoices[MENU_PLAY_NEXT_LEVEL]) //exit
 		{
 			curMenu = MENU_FULL_GAME;

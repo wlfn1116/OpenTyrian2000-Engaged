@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 22
+#define ENDLESS_SAVE_VERSION 23
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -149,6 +149,10 @@ typedef struct {
 
 	// Added in v22.
 	Uint8  baseLevelSame;  // 1 = the run charts one base level per slate; fixed for the run
+
+	// Added in v23.
+	Uint8  chartRerolls;     // Radar rerolls this outpost's chart has had; salts the visit's phases
+	Uint8  chartStarCharts;  // Star Charts as the visit's chart found it, so a redeal replays it
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -189,11 +193,9 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	endlessCourseCnt = restoredCount;
 
 	// Rebuild an invalid forced visit rather than turning another saved option into an Ambush.
+	// The redeal uses the restored reroll count, so it rebuilds the chart the save was on.
 	if (endlessCourseCnt == 0 || (endlessForced && dropped))
-	{
-		endlessReseed((Uint64)endlessRunDepth * 2);
-		endlessGenerateCourses();
-	}
+		endlessChartRedeal();
 
 	endlessNameCourseBaseLevels();  // populate the Radar perk's base-level cache for the restored chart
 }
@@ -300,6 +302,9 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutU64(f, r->playerRng[1]);
 
 	endlessPutU8(f, r->baseLevelSame);               // v22 Same / Varied base level
+
+	endlessPutU8(f, r->chartRerolls);                // v23 Radar chart reroll
+	endlessPutU8(f, r->chartStarCharts);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -570,6 +575,19 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	if (version >= 22 && !endlessGetU8(f, &r->baseLevelSame))
 		return false;
 
+	// Pre-v23 records predate the Radar chart reroll and resume with this visit's reroll unspent.
+	if (version >= 23)
+	{
+		if (!endlessGetU8(f, &r->chartRerolls) || !endlessGetU8(f, &r->chartStarCharts))
+			return false;
+	}
+	else
+	{
+		// What the visit's chart opened with is not recorded, so take what it still owes: a redeal
+		// of an older save then spends the boon again rather than dropping it.
+		r->chartStarCharts = r->starChartsOwed;
+	}
+
 	return true;
 }
 
@@ -698,7 +716,9 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	    || (version < 20 && first.usedCustom != 0)
 	    || (version >= 20 && first.usedCustom != 1)
 	    || (version < 22 && first.baseLevelSame != 0)
-	    || (version >= 22 && first.baseLevelSame != 1))
+	    || (version >= 22 && first.baseLevelSame != 1)
+	    || (version < 23 && first.chartRerolls != 0)
+	    || (version >= 23 && first.chartRerolls != 1))
 	{
 		free(bytes);
 		endlessTestDetail(detail, detailSize, "version defaults differ");
@@ -935,6 +955,9 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 
 	r->baseLevelSame = endlessRunBaseLevelSame ? 1 : 0;   // v22 chart rule, fixed for the run
 
+	r->chartRerolls    = endlessChartRerolls;             // v23 Radar chart reroll
+	r->chartStarCharts = endlessChartStarCharts ? 1 : 0;
+
 	// v16 cash ledger + v19 sink breakdown. The spare on-disk slots past ENDLESS_CASH_SOURCES /
 	// ENDLESS_CASH_SINKS stay zeroed by the memset.
 	r->cashEarned = endlessRunCashEarned;
@@ -1057,6 +1080,12 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	// ...and the chart rule the run was started under, whatever the toggle currently says.
 	endlessRunBaseLevelSame = r->baseLevelSame != 0;
 
+	// The visit resumes its chart as saved: the reroll count rode in on the record, and the seat
+	// that charted it follows from the co-op turn restored above.
+	endlessChartRerolls    = r->chartRerolls;
+	endlessChartStarCharts = r->chartStarCharts != 0;
+	endlessChartSeat       = endlessChartingPlayerIndex();
+
 	endlessRestoreSavedCourses(r);
 
 	memcpy(itemAvail, r->itemAvail, sizeof(itemAvail));
@@ -1136,6 +1165,9 @@ int endlessPackPlayerBlock(Uint8 *buf, uint p)
 
 	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS; ++i)
 		buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
+
+	// The chart itself is derived on both machines; only the charting seat's reroll count travels.
+	buf[n++] = endlessChartRerolls;
 	return n;
 }
 
@@ -1176,7 +1208,10 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 		const int maxs = endlessPerkTable[i].maxStack;
 		endlessPerkTakenBy[p][i] = (JE_byte)MIN((int)buf[n + i], maxs);
 	}
+	n += ENDLESS_PLAYER_BLOCK_PERKS;
 	endlessPerkRederive();
+
+	endlessChartSyncRerolls(p, buf[n]);
 }
 
 /* Online co-op resume: the host serializes the live run through the same versioned codec the

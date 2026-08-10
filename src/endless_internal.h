@@ -353,6 +353,17 @@ extern int      endlessLastEp;
 extern JE_byte  endlessLastSec;
 extern bool     endlessForced;   // this visit is a forced "Ambush" (single dangerous sector)
 
+// Radar's chart reroll: how many this visit's chart has had, and the inputs a redeal replays.
+#define ENDLESS_CHART_REROLLS 1   // rerolls the perk grants per outpost
+extern JE_byte endlessChartRerolls;
+extern bool    endlessChartStarCharts;
+extern uint    endlessChartSeat;
+
+Uint64 endlessZonePhaseSalt(Uint64 phase);  // depth-keyed phase salt, shifted by the reroll count
+void   endlessChartVisit(void);             // fresh outpost: latch the redeal inputs and chart
+void   endlessChartRedeal(void);            // chart again at the current reroll count
+void   endlessChartSyncRerolls(uint p, JE_byte rerolls);  // adopt a peer's reroll (shop packet)
+
 // Resolve a saved/chosen (episode, section) back to a real endless-safe level file.
 bool endlessResolveCourseFile(int ep, JE_byte sec, JE_byte requestedFile, JE_byte *resolvedFile);
 

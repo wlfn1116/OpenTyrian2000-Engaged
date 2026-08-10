@@ -684,6 +684,9 @@ void endlessResetRun(void)
 	endlessSortieOutpostMods = 0;
 	endlessSortieOutpostEp = 0;
 	endlessCoopHostCharts = true;
+	endlessChartRerolls = 0;
+	endlessChartStarCharts = false;
+	endlessChartSeat = 0;
 	// New runs override these after reset, and a loaded/reverted one restores the saved pair.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
 	endlessRunBaseLevelSame = false;
