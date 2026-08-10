@@ -1,4 +1,10 @@
 # demo  verified_ticks  canonical_registered_state_fnv1a
+# Regenerated 2026-08-10, for a real simulation change: a trailing large sidekick fires from
+# SIDEKICK_TRAIL_SHOT_Y below its position, and all three demos fly a Companion Ship Gerund in the
+# left slot, so its shots start seven pixels lower and connect on different ticks. Verified to be
+# that change alone by building with the constant at 0, every other edit kept: all three hashes came
+# back at the previous line's values. Confirmed not to be a local config artifact: the three hashes
+# below come back identically from a working directory with no opentyrian.cfg in it.
 # Regenerated 2026-08-10, for a real simulation change: Shot Hitboxes defaults to Centered, which
 # moves the point both shot loops collide a projectile from, so shots in the demos connect on
 # different ticks. Confirmed to be the default and not a local config artifact: the three hashes
@@ -13,6 +19,6 @@
 #    sizeof and the layout hash do not move, but the fields after it shift a byte and demo 1's
 #    hashed state moves with them. Verified by building with the field declared and never
 #    assigned: demo 1 still hashes dbd7383e, so the shift alone accounts for it.
-1 180 e4cde413
-2 180 5e1e2886
-3 180 8a547fd9
+1 180 4fbe077f
+2 180 166e7d4a
+3 180 2d71a4f7

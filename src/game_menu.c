@@ -10279,7 +10279,10 @@ void JE_weaponViewFrame(void)
 			}
 			else
 			{
-				b = player_shot_create(o->wport, shot_i, shopPlayer()->sidekick[i].x, shopPlayer()->sidekick[i].y, mouseX, mouseY, o->wpnum, 1);
+				// Same drop as gameplay for a trailing large body (see player.h).
+				const int shot_y = shopPlayer()->sidekick[i].y + (o->tr == 1 ? SIDEKICK_TRAIL_SHOT_Y : 0);
+
+				b = player_shot_create(o->wport, shot_i, shopPlayer()->sidekick[i].x, shot_y, mouseX, mouseY, o->wpnum, 1);
 				shopPlayer()->sidekick[i].animation_enabled = true;  // animate the body while it fires
 			}
 		}

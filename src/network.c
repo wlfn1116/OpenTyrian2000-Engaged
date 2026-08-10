@@ -71,7 +71,11 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       30           /* v30: Shot Hitboxes rides a spare bit of the settings tail's
+#define NET_VERSION       31           /* v31: a trailing large sidekick (the companion ships) fires
+                                          from SIDEKICK_TRAIL_SHOT_Y below its position, so its shots
+                                          spawn seven pixels lower than on a v30 peer and the two
+                                          machines would disagree on when those shots connect.
+                                          v30: Shot Hitboxes rides a spare bit of the settings tail's
                                           flags word and moves where both shot loops take a hit
                                           from; a v29 peer sends the bit as zero, so one machine
                                           would collide from a sprite's middle and the other from

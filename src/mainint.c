@@ -9623,6 +9623,11 @@ redo:
 
 						JE_OptionType *this_option = &options[this_player->items.sidekick[i]];
 
+						// A trailing large body draws downward from the pod position, so it fires
+						// from lower down than the position itself.
+						const int shot_y = this_player->sidekick[i].y
+						                 + (this_player->sidekick[i].style == 1 ? SIDEKICK_TRAIL_SHOT_Y : 0);
+
 						// fire/refill sidekick
 						if (this_option->wport > 0)
 						{
@@ -9652,7 +9657,7 @@ redo:
 
 									if (button[1 + i] && (cheatInfiniteSidekickAmmo || this_player->sidekick[i].ammo > 0))
 									{
-										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, this_player->sidekick[i].y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
 
 										if (!cheatInfiniteSidekickAmmo)
 											--this_player->sidekick[i].ammo;
@@ -9685,7 +9690,7 @@ redo:
 
 									if ((button[0] && (charge_autofire || !this_option->pwr)) || button[1 + i])
 									{
-										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, this_player->sidekick[i].y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
 
 										if (this_player->sidekick[i].charge > 0)
 										{

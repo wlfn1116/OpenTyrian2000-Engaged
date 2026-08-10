@@ -39,6 +39,13 @@ enum
 // and the shop weapon preview (game_menu.c) so the two stay in sync.
 #define FRONT_OPTION_SPREAD 10
 
+// How far down a trailing large sidekick (mount style 1, the companion ships) fires from its
+// position. Its 24x28 body draws downward from that position, so the body's middle sits about
+// seven pixels below it while the weapon's bx/by are measured from the position itself, which put
+// the shot above the companion. See Trailing sidekick shot origin in doc/notes.md. Shared by
+// gameplay (mainint.c) and the shop weapon preview (game_menu.c).
+#define SIDEKICK_TRAIL_SHOT_Y 7
+
 typedef struct
 {
 	Uint8 ship;

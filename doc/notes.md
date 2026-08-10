@@ -115,6 +115,20 @@ only by `RENDER_SUPERSAMPLE_LIMIT`. Auto retains
 Filter enum values are persisted. Append new values without renumbering existing
 ones.
 
+### Trailing sidekick shot origin
+
+A sidekick's position is the point its weapon's `bx`/`by` are measured from. A
+single-tile body is blitted on that point, so its shots line up. A two-by-two
+body is 24x28 and is blitted at `(x-6, y)`, which centres it horizontally and
+hangs it a half tile below the position, putting the body's middle about seven
+pixels lower than where its shots start.
+
+A trailing large body (mount style 1, the companion ships) therefore fires from
+`SIDEKICK_TRAIL_SHOT_Y` below its position, in gameplay and in the shop weapon
+preview. This is a simulation change and carries `NET_VERSION` 31. Front pods
+(style 2) are left alone: their shipped placement over the ship's nose reads
+correctly and moving either half of it is not wanted.
+
 ## Widescreen coordinates
 
 The frame is 356x200. The visible playfield is 299x184 and the HUD is 57 pixels
