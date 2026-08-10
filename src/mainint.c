@@ -7277,11 +7277,13 @@ int hud_lives_row_y(uint p)
 
 static int  hud_light_charge_left = 0;  // recharge ticks still to run
 static int  hud_light_burn_left = 0;    // ...and burn ticks, while a fired special is still going
+static bool hud_light_armed = false;    // the special could be fired this tick (sampled in varz.c)
+static bool hud_light_fired = false;    // ...and one went off during it
+static bool hud_light_await_pop = false;  // a fire is waiting on the special coming back
 static bool hud_light_published = false;
 static int  hud_light_charge_full = 0;  // what each phase started from, so both scale to themselves
 static int  hud_light_burn_full = 0;
 static int  hud_light_flash = 0;
-static bool hud_light_was_ready = true;
 
 // Render state for the display-rate repaint: the lit row count at the previous and current tick
 // (the clocks step once a tick, so without these the meter would climb one whole row at a time),
@@ -7290,22 +7292,29 @@ static float hud_light_fill_prev = 0.0f, hud_light_fill_cur = 0.0f;
 static int   hud_light_x = 0, hud_light_y = 0;
 static bool  hud_light_shown = false;
 
-void hud_special_light_publish(int charge_ticks, int burn_ticks)
+void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired)
 {
 	hud_light_charge_left = charge_ticks;
 	hud_light_burn_left = burn_ticks;
+	hud_light_armed = armed;
+	hud_light_fired = fired;
 	hud_light_published = true;
 }
 
-static void hud_special_light_reset(void)
+void hud_special_light_reset(void)
 {
 	hud_light_charge_left = 0;
 	hud_light_burn_left = 0;
+	hud_light_armed = false;
+	hud_light_fired = false;
+	// No fire outstanding, so a level that opens with a ready special does not pop for it. Level
+	// setup calls this; without it the previous level's unfinished recharge carries over and pops
+	// the moment the new level arms.
+	hud_light_await_pop = false;
 	hud_light_published = false;
 	hud_light_charge_full = 0;
 	hud_light_burn_full = 0;
 	hud_light_flash = 0;
-	hud_light_was_ready = true;
 	hud_light_fill_prev = hud_light_fill_cur = 0.0f;
 	hud_light_shown = false;
 }
@@ -7359,15 +7368,14 @@ static void draw_special_ready_light(int x, int y)
 	hud_light_published = false;
 
 	const bool burning = hud_light_burn_left > 0;
+
+	// Specials that set no recharge at all -- the Repulsor, Attractor and the repair pair, whose
+	// whole limit is releasing and re-pressing fire -- keep a full meter, because it is: nothing
+	// is recharging to drain.
 	const bool ready = !burning && hud_light_charge_left == 0;
 
 	if (!rollback_resim_silent)
 	{
-		// The pop marks a charge landing, so there has to have been one to watch. A recharge
-		// shorter than the flash itself would strobe rather than read, and level setup seeds a
-		// one-tick one; HUD_LIGHT_ROWS ticks is a tick per row, the shortest climb that shows.
-		const bool climbed = hud_light_charge_full >= HUD_LIGHT_ROWS;
-
 		// Each phase is measured against its own opening value, so a short recharge can't inherit
 		// a long one's scale and open half full.
 		if (hud_light_burn_left > hud_light_burn_full)
@@ -7380,11 +7388,23 @@ static void draw_special_ready_light(int x, int y)
 		else if (hud_light_charge_left > hud_light_charge_full)
 			hud_light_charge_full = hud_light_charge_left;
 
-		if (ready && !hud_light_was_ready && climbed)
+		// One rule for every special: a fire arms the pop, and it goes off on the first tick the
+		// special can be fired again. Watching for a rising edge on `armed` instead misses both
+		// ends of the recharge scale -- a recharge spent by a shot on the very tick it lands never
+		// reads as ready, and a recharge of a tick or less (Pearl Wind's is exactly 1) is already
+		// decremented away before the sample, so `armed` never dips and there is no edge at all.
+		// Checked before the fire below arms it, so a shot taken on the tick it re-arms still pops
+		// for the recharge it just finished, then waits on the new one.
+		if (hud_light_await_pop && hud_light_armed)
+		{
 			hud_light_flash = HUD_LIGHT_FLASH;
+			hud_light_await_pop = false;
+		}
 		else if (hud_light_flash > 0)
 			--hud_light_flash;
-		hud_light_was_ready = ready;
+
+		if (hud_light_fired)
+			hud_light_await_pop = true;
 	}
 
 	// Burning drains what was there; recharging fills it back. Both land on empty at the handover,

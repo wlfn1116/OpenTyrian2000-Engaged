@@ -712,12 +712,18 @@ static void salvo_special_burst(JE_byte playerNum)
 static int special_mouse_x_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseXB : mouseX; }
 static int special_mouse_y_for(JE_byte playerNum) { return dual_ship_mode() && playerNum == 2 ? mouseYB : mouseY; }
 
+/* A special went off during the JE_doSpecialShot call in progress. Set here rather than at the four
+   gates that call this, so a fifth can never forget to; JE_doSpecialShot clears it on entry and
+   reads it at the end, which keeps it scoped to one ship's turn through the tick. */
+static bool specialFiredThisCall = false;
+
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
 	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
 	const int special_mouse_x = special_mouse_x_for(playerNum);
 	const int special_mouse_y = special_mouse_y_for(playerNum);
 
+	specialFiredThisCall = true;
 	nextSpecialWait = 0;
 	switch (special[specialType].stype)
 	{
@@ -968,6 +974,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	const int special_mouse_y = special_mouse_y_for(playerNum);
 
 	const uint special_player = (uint)(this_player - player);
+	specialFiredThisCall = false;
 
 	if (shotRepeat[SHOT_SPECIAL] > 0)
 	{
@@ -977,6 +984,21 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	{
 		specialWait--;
 	}
+
+	// Whether the special is available THIS tick, sampled where the fire gates below test it and
+	// before either of them can spend it. The ready light's flash rides this rather than the
+	// end-of-tick clocks published at the bottom: firing on the very tick the cooldown expires
+	// creates and consumes the ready state within one tick, which the clocks never show as ready.
+	// flareDuration and zinglonDuration are decremented further down, so these are the same values
+	// the gates see.
+	//
+	// flareDuration == 0, matching the gate below, NOT the < 2 the old on/off light used: a flare's
+	// last burn tick leaves it at 1, and the recharge that replaces it is only installed later in
+	// the NEXT tick (the flareStart branch). Sampling < 2 catches that one tick in between, where
+	// every clock reads clear but the special cannot be fired -- and pops the light just as the
+	// meter empties, before the recharge it is about to start.
+	const bool special_armed = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
+	                        && flareDuration == 0 && zinglonDuration < 2;
 
 	temp = SFExecuted[playerNum-1];
 	if (temp > 0 && shotRepeat[SHOT_SPECIAL] == 0 && flareDuration == 0)
@@ -1249,7 +1271,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	if (hud_special_block_shown(special_player))
 		hud_special_light_publish(MAX(shotRepeat[SHOT_SPECIAL], specialWait),
 		                          MAX(flareStart ? (int)flareDuration : 0,
-		                              zinglonDuration > 1 ? (int)zinglonDuration : 0));
+		                              zinglonDuration > 1 ? (int)zinglonDuration : 0),
+		                          special_armed, specialFiredThisCall);
 }
 
 void JE_setupExplosion(

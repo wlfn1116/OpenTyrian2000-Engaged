@@ -980,7 +980,9 @@ mouse on desktop and touch on consoles.
 The bar beside the special-weapon icon is a charge meter rather than the original
 on/off light. Firing drains it from the top down for as long as the special
 burns, it reaches empty as the recharge begins, then fills back up and flashes
-white the moment the special is ready again. It now draws on top of everything,
+white the moment the special is ready again. Specials that have no recharge at
+all, such as the Repulsor and the Attractor, keep a full bar, since nothing is
+recharging; they flash on firing instead. The bar now draws on top of everything,
 so no background layer, enemy or screen effect can cover or recolour it.
 
 ### Debug Mode

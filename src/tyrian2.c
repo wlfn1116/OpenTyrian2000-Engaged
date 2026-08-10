@@ -3590,6 +3590,7 @@ start_level_first:
 	zinglonDuration = 0;
 	specialWait = 0;
 	nextSpecialWait = 0;
+	hud_special_light_reset();  // the meter starts this level fresh, not mid-recharge from the last
 	if (dual_ship_mode())
 		coop_ship_runtime_reset();
 	for (uint i = 0; i < 2; i++)  /*Launch the Attachments!*/

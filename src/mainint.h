@@ -150,8 +150,13 @@ int  hud_special_light_x(uint p);
 int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_LIVES_NAME_RISE above
 // The firing ship's two special clocks for the ready light: ticks left on the recharge, and on the
 // burn of a special still going. Published from the end of JE_doSpecialShot, which holds that
-// ship's gates in the shared globals.
-void hud_special_light_publish(int charge_ticks, int burn_ticks);
+// ship's gates in the shared globals. `armed` is sampled earlier in that tick, at the fire gate,
+// so the ready pop still fires when a shot spends the recharge the moment it lands; `fired` says a
+// special went off during the tick, which is the pop's cue for the ones that have no recharge.
+void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired);
+// Drop the meter's carried-over state; level setup calls it so a level cannot open on the previous
+// level's cooldown (which would read as the special arming, and pop).
+void hud_special_light_reset(void);
 // Repaint the ready light for one displayed frame: the meter at `alpha` between the previous and
 // current tick's fill, at `scale` into the supersampled playfield, over what the residual re-applied.
 void hud_special_light_present(SDL_Surface *dst, int scale, float alpha);
