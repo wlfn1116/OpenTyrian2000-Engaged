@@ -3553,7 +3553,11 @@ void network_write_diagnostics(FILE *f)
 	else
 		fprintf(f, "  Desyncs:      none detected\n");
 
-	if (nrb_session_mode())
+	// The two rollbacks are separate modules with separate timelines. Destruct sets the session
+	// netcode like any other type, but its frames run through destruct_rollback.c, so printing the
+	// main game's block for one would put a screenful of zeroes beside the numbers that mean
+	// something.
+	if (nrb_session_mode() && network_game_type != NETWORK_GAME_DESTRUCT)
 		nrb_write_diagnostics(f);
 	drb_write_diagnostics(f);   // only writes while a Destruct rollback session is armed
 }
