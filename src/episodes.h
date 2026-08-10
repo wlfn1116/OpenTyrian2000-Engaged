@@ -181,7 +181,7 @@ void JE_initEpisode(JE_byte newEpisode);
 
 // Hand the shop sheet's 11 never-referenced 2x2 icons to the weapons/sidekicks that otherwise
 // share another item's icon (or fall back to the 167 placeholder). Reads `unusedShopSprites`;
-// restores the shipped icons when it is off, so the Game Tweaks row takes effect between games
+// restores the shipped icons when it is off, so the Visuals row takes effect between games
 // without an item reload. Idempotent.
 void JE_applyUnusedShopSprites(void);
 

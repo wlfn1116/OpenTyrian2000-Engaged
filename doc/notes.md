@@ -517,7 +517,7 @@ that field and `endlessSortieOutpostMods` across the reset inside
 only written at an outpost and `tyrian.sav` already holds the episode.
 
 The two item table sets differ in two ship illustrations, The Stalker 21.126
-price (65535 against 30000), and the item data covered by the Episode Differences
+price (65535 against 30000), and the item data covered by the Episode Versions
 menu, the Gencore Solar Shield icon included. Other campaign writes in the same
 parser need no guard: `']e'`, `']g'` and `']2'` sections are excluded from the
 Endless pool, and `endlessRegenerateLevel` clears the rest.
@@ -532,6 +532,26 @@ RNG-free.
 
 Menu labels, choice counts, and help indices are parallel data. Update all three
 when adding a row.
+
+The options menus (`runOptionsMenu`, opentyr.c) are one table and four generic
+paths, so a row states what it is rather than repeating how to draw, cycle, pick
+and commit it. `menuItemIntSetting` and `menuItemBoolSetting` map a row id to the
+setting behind it; a row those two answer for needs no code at all, and the id
+appears once, in the table. Three id *runs* cover the rows that repeat per weapon
+or per item: `id - MENU_ITEM_SPARKS_MODE_BASE` is the `superSparkMode` slot, and
+likewise for the spark caps and `epDiffMode`. That is what replaced the thirteen
+near-empty submenus those settings used to need, along with the two globals that
+remembered which one you were in. A row that only opens another menu is
+`MENU_ITEM_SUBMENU` plus a `submenu` field. Rows still needing real work
+(the scaler, the synth, the sliders, the toggles with side effects) keep an
+explicit case beside that work.
+
+Two limits bound a menu's shape, both measured out of the font rather than
+counted in characters. Seven rows is the most that fit at the classic 21px pitch;
+past that the loop compresses to keep the last row above the help line. A row
+carrying a value has 135px for its name, and the help line has 275px from x=45.
+The Enhancements tree is built to stay inside the first of those, so every one of
+its menus is at most seven rows.
 
 Chart a Course is the exception to the shop's flat 16px rows: its trailing rows
 (Exit, and the endless Radar reroll when the visit offers one) are each drawn a
@@ -2032,7 +2052,7 @@ Charge-Laser slot moves between episodes, so its write is guarded against
 disagree on: 165 in ep1-3, the MicroCorp HXS Class C picture, against 153 in
 ep4/5, the one the Low and High Energy Gencores use. Every other field of every
 other shield matches across the sets. `JE_applyEpDiffs` owns the field, so the
-Episode Differences menu can force either icon and Auto rewrites the value the
+Episode Versions menu can force either icon and Auto rewrites the value the
 running episode shipped. Nothing collides with that write: both icons are real,
 so the placeholder fallback never fires, and Unused Sprites captures and rewrites
 only `weaponPort` and `options`.

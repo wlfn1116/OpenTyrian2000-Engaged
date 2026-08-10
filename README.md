@@ -65,8 +65,9 @@ The Custom Weapon Creator stores up to 32 weapons, each with 11 editable power
 levels, an optional rear-gun firing mode, and a live test range. A design can be
 equipped as a front gun, rear gun, or sidekick.
 
-Game Tweaks restores differences between the Episode 1-3 and Episode 4-5 weapon
-data, and wakes content the original left dormant.
+The Weapons and Gameplay menus under Enhancements restore differences between the
+Episode 1-3 and Episode 4-5 weapon data, and wake content the original left
+dormant.
 
 OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
 `.sf3`, or `.sf`) next to the executable or in the `data` folder, and is grayed

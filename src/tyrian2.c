@@ -3530,7 +3530,7 @@ start_level_first:
 	if (endlessMode)
 		endlessPreloadBanks();  // load starting sprite banks now so early spawns aren't invisible
 
-	// Dormant dispenser bases: the campaign obeys the Game Tweaks toggle; Endless
+	// Dormant dispenser bases: the campaign obeys the Gameplay menu toggle; Endless
 	// ignores it and asks the zone instead.
 	dispenserBasesActive = endlessMode ? endlessDispenserBaseRoll() : restoreBaseDispensers;
 

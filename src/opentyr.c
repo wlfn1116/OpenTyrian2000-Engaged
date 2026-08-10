@@ -135,64 +135,49 @@ static const char* getSSFilterPickerItem(size_t i, char* buffer, size_t bufferSi
 	return ssFilterNames[i];
 }
 
-/* Enhancements: boss health bar pickers. */
+/* Enhancement value pickers.
+ *
+ * Each is a plain list of labels indexed by the setting itself, so one macro makes
+ * both accessors the menu table asks for. Keep every list in its enum's order:
+ * the index IS the stored value. */
+
+#define NAME_PICKER(name, array)                                                     \
+	static size_t name##Count(void) { return COUNTOF(array); }                       \
+	static const char *name##Item(size_t i, char *buffer, size_t bufferSize)         \
+	{                                                                                \
+		(void)buffer; (void)bufferSize;                                              \
+		return array[i];                                                             \
+	}
 
 static const char *const bossBarStyleNames[]  = { "Classic", "Enhanced" };
 static const char *const bossBarLayoutNames[] = { "Top", "Bottom", "Left", "Right" };
 static const char *const bossBarTwoNames[]    = { "Together", "Split", "Stacked" };
 
-static size_t getBossBarStyleItemsCount(void) { return COUNTOF(bossBarStyleNames); }
-static const char* getBossBarStyleItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return bossBarStyleNames[i];
-}
-
-static size_t getBossBarLayoutItemsCount(void) { return COUNTOF(bossBarLayoutNames); }
-static const char* getBossBarLayoutItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return bossBarLayoutNames[i];
-}
-
-static size_t getBossBarTwoItemsCount(void) { return COUNTOF(bossBarTwoNames); }
-static const char* getBossBarTwoItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return bossBarTwoNames[i];
-}
-
-/* Enhancements: enemy health bar pickers. */
-
 static const char *const enemyBarLayoutNames[]   = { "Horizontal", "Vertical" };
 static const char *const enemyBarPositionNames[] = { "Bottom", "Top", "Left", "Right", "Center" };
-
-static size_t getEnemyBarLayoutItemsCount(void) { return COUNTOF(enemyBarLayoutNames); }
-static const char* getEnemyBarLayoutItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return enemyBarLayoutNames[i];
-}
-
-static size_t getEnemyBarPositionItemsCount(void) { return COUNTOF(enemyBarPositionNames); }
-static const char* getEnemyBarPositionItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return enemyBarPositionNames[i];
-}
-
-/* Enhancements: HUD gauge gradient pickers. */
 
 // Indexed by GaugeGradientDir (config.h). "Up" is the classic vertical gauge look; Left/Right
 // run the gradient across the bar's 9-pixel width instead. The label names the bar's bright end.
 static const char *const gaugeGradNames[] = { "Up", "Down", "Left", "Right" };
 
-static size_t getGaugeGradItemsCount(void) { return COUNTOF(gaugeGradNames); }
-static const char* getGaugeGradItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return gaugeGradNames[i];
-}
+// Shared by every "which episode's data" row: the Zica Laser pattern and all nine
+// Episode Versions items (ZICA_BASE_* and EPDIFF_* run in step, config.h).
+static const char *const episodeNames[] = { "Auto", "Ep 1-3", "Ep 4+" };
+
+static const char *const zicaLengthNames[] = { "Short", "Long" };
+
+// Indexed by the SUPER_SPARKS_* enum (config.h).
+static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
+
+NAME_PICKER(bossBarStyle, bossBarStyleNames)
+NAME_PICKER(bossBarLayout, bossBarLayoutNames)
+NAME_PICKER(bossBarTwo, bossBarTwoNames)
+NAME_PICKER(enemyBarLayout, enemyBarLayoutNames)
+NAME_PICKER(enemyBarPosition, enemyBarPositionNames)
+NAME_PICKER(gaugeGrad, gaugeGradNames)
+NAME_PICKER(episode, episodeNames)
+NAME_PICKER(zicaLength, zicaLengthNames)
+NAME_PICKER(sparkMode, sparkModeNames)
 
 /* Sound: music synthesizer picker. */
 
@@ -212,44 +197,6 @@ static const char* getMusicDeviceItem(size_t i, char* buffer, size_t bufferSize)
 	(void)buffer; (void)bufferSize;
 	return music_device_names[i];
 }
-
-/* Weapon Tweaks: Zica Laser pickers. */
-
-// Indexed by the ZICA_BASE_* / ZICA_LEN_* enums (config.h).
-static const char *const zicaBaseNames[]   = { "Auto", "Ep 1-3", "Ep 4+" };
-static const char *const zicaLengthNames[] = { "Short", "Long" };
-
-static size_t getZicaBaseItemsCount(void) { return COUNTOF(zicaBaseNames); }
-static const char* getZicaBaseItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return zicaBaseNames[i];
-}
-
-static size_t getZicaLengthItemsCount(void) { return COUNTOF(zicaLengthNames); }
-static const char* getZicaLengthItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return zicaLengthNames[i];
-}
-
-// Indexed by the SUPER_SPARKS_* enum (config.h).
-static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
-static size_t getSparkModeItemsCount(void) { return COUNTOF(sparkModeNames); }
-static const char* getSparkModeItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return sparkModeNames[i];
-}
-
-// Which superspark weapon the shared Sparks/Spark Cap rows edit; set when one of the
-// per-weapon submenus under Superspark Weapons is entered (the submenus share their
-// item ids, so this picks the superSparkMode/superSparkClassicCap slot they act on).
-static int currentSparkWeapon = SSW_MEGA_PULSE;
-
-// Likewise for the Episode Differences submenus: which EpDiffWeapon the shared "Version:"
-// row edits (all nine per-item submenus share MENU_ITEM_EPDIFF_MODE / epDiffMode slot).
-static int currentDiffWeapon = EDW_XEGA_BALL;
 
 // Toggle Christmas mode from the Extra menu. Christmas swaps the shape table
 // (tyrianc.shp) and voice samples (voicesc.snd) for festive versions, so the toggle
@@ -294,7 +241,7 @@ static void enforcePlainScalerForSupersample(void)
 	}
 }
 
-// Advance the Weapon Tweaks "Sidekick Autofire" row through its three
+// Advance the Weapons menu's "Sidekick Autofire" row through its three
 // player-visible modes (Off / On / Charged), skipping the debug-only "Fast"
 // mode (CHARGE_AUTOFIRE_FAST). This edits the very same chargeSidekickAutofire
 // the debug menu's autofire row uses, keeping the two in sync. A value
@@ -309,98 +256,132 @@ static void cycleSidekickAutofire(int dir)
 	chargeSidekickAutofire = (JE_byte)v;
 }
 
+/* Every row of every options menu.
+ *
+ * Rows that only open another menu all share MENU_ITEM_SUBMENU; which menu they open
+ * is the row's own `submenu` field, so a new submenu costs one table line and no code.
+ * The three id *runs* at the bottom cover the rows that repeat once per weapon or item:
+ * the row's id minus its base is the array slot it edits. */
 typedef enum
 {
 	MENU_ITEM_NONE = 0,
 	MENU_ITEM_DONE,
-	MENU_ITEM_GRAPHICS,
-	MENU_ITEM_SOUND,
-	MENU_ITEM_ENHANCEMENTS,
-	MENU_ITEM_JUKEBOX,
-	MENU_ITEM_DESTRUCT,
+	MENU_ITEM_SUBMENU,              // opens this row's `submenu`; carries no value of its own
+
+	/* Graphics. */
 	MENU_ITEM_DISPLAY,
 	MENU_ITEM_SCALER,
 	MENU_ITEM_SCALING_MODE,
+	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_SUPERSAMPLE,
 	MENU_ITEM_SS_FILTER,
-	MENU_ITEM_FPS,
 	MENU_ITEM_VSYNC,
+	MENU_ITEM_FPS,
 	MENU_ITEM_SHOW_FPS,
+
+	/* Sound, and the Setup sensitivity slider. */
 	MENU_ITEM_MUSIC_VOLUME,
 	MENU_ITEM_SOUND_VOLUME,
 	MENU_ITEM_MUSIC_DEVICE,         // music synthesizer: OPL3 / FluidSynth / Native MIDI
 	MENU_ITEM_ARMOR_ALARM,          // low-armor WARNING siren on/off
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
-	MENU_ITEM_NETWORK_MENU,         // opens the Network submenu
-	MENU_ITEM_NET_LOG,              // write this session's log/opentyrian_net_<time>.log during online play
-	MENU_ITEM_CLEAR_LOGS,           // delete every stored log, crash and net alike (console-only row)
-	MENU_ITEM_BOSS_BARS,
-	MENU_ITEM_BOSS_BAR_STYLE,
-	MENU_ITEM_BOSS_BAR_LAYOUT,
-	MENU_ITEM_BOSS_BAR_TWO,
-	MENU_ITEM_ENEMY_BARS_MENU,
+
+	/* Enhancements -> Visuals. */
+	MENU_ITEM_EXTRA_PARALLAX,
+	MENU_ITEM_MIRRORED_LAYERS,      // over-panned layer edges mirror (works in both parallax modes)
+	MENU_ITEM_EXTRA_SPARKS,
+	MENU_ITEM_SPECIAL_TINT,         // flare specials grade the whole screen their colour
+	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
+
+	/* Enhancements -> Heads-Up Display. */
 	MENU_ITEM_ENEMY_BARS,
 	MENU_ITEM_ENEMY_BAR_LAYOUT,
 	MENU_ITEM_ENEMY_BAR_POS,
 	MENU_ITEM_ENEMY_BAR_OPACITY,
-	MENU_ITEM_GAUGE_GRADS_MENU,
+	MENU_ITEM_BOSS_BAR_STYLE,
+	MENU_ITEM_BOSS_BAR_LAYOUT,
+	MENU_ITEM_BOSS_BAR_TWO,
 	MENU_ITEM_GAUGE_GRAD_GEN,
 	MENU_ITEM_GAUGE_GRAD_SHIELD,
 	MENU_ITEM_GAUGE_GRAD_ARMOR,
 	MENU_ITEM_GAUGE_FLASH_SHIELD,
 	MENU_ITEM_GAUGE_FLASH_ARMOR,
-	MENU_ITEM_DEBUG_MODE,
-	MENU_ITEM_EXTRA_PARALLAX,
-	MENU_ITEM_MIRRORED_LAYERS,      // over-panned layer edges mirror (works in both parallax modes)
-	MENU_ITEM_SMOOTH_MOTION,
-	MENU_ITEM_EXTRA_SPARKS,
-	MENU_ITEM_XMAS,
-	MENU_ITEM_GAME_TWEAKS,
-	MENU_ITEM_ZICA_LASER,
+
+	/* Enhancements -> Weapons. */
+	MENU_ITEM_CUSTOM_WEAPONS,
+	MENU_ITEM_CUSTOM_CREATOR,
+	MENU_ITEM_CHARGE_LASER,
+	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
+	MENU_ITEM_WALLOP_BOLT,          // Wallop Beam only: the ep4/5 second bolt per volley
 	MENU_ITEM_ZICA_BASE,
 	MENU_ITEM_ZICA_LENGTH,
 	MENU_ITEM_ZICA_LOCK,
 	MENU_ITEM_ZICA_BUFF,
-	MENU_ITEM_SUPERSPARKS,          // opens the Superspark Weapons submenu
-	MENU_ITEM_SPARKS_MEGA_PULSE,    // per-weapon submenu entries...
-	MENU_ITEM_SPARKS_WALLOP,
-	MENU_ITEM_SPARKS_PROTRON_B,
-	MENU_ITEM_SPARKS_ICE,
-	MENU_ITEM_SPARKS_MODE,          // shared rows inside those submenus (see currentSparkWeapon)
-	MENU_ITEM_SPARKS_CAP,
-	MENU_ITEM_WALLOP_BOLT,          // Wallop Beam only: the ep4/5 second bolt per volley
-	MENU_ITEM_EPDIFFS,              // opens the Episode Differences submenu
-	MENU_ITEM_EPDIFF_XEGA,          // per-item submenu entries (mirror EpDiffWeapon order)...
-	MENU_ITEM_EPDIFF_MICROSOL,
-	MENU_ITEM_EPDIFF_FLARE,
-	MENU_ITEM_EPDIFF_NEEDLE,
-	MENU_ITEM_EPDIFF_BUBBLE,
-	MENU_ITEM_EPDIFF_PUNCH,
-	MENU_ITEM_EPDIFF_PRETZEL,
-	MENU_ITEM_EPDIFF_DRAGON,
-	MENU_ITEM_EPDIFF_SOLAR,
-	MENU_ITEM_EPDIFF_MODE,          // shared "Version:" row inside those submenus (see currentDiffWeapon)
-	MENU_ITEM_CHARGE_LASER,
-	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
-	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
-	MENU_ITEM_SPECIAL_TINT,         // flare specials grade the whole screen their colour
+
+	/* Enhancements -> Gameplay. */
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
-	MENU_ITEM_ARCADE_TWEAKS,        // opens the Arcade submenu (the three rows below)
+	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
 	MENU_ITEM_ARCADE_REAR_SCALE,    // arcade rear gun fires at the life count too
-	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
-	MENU_ITEM_CUSTOM_WEAPONS,
-	MENU_ITEM_CUSTOM_CREATOR,
+
+	/* Enhancements -> Diagnostics. */
+	MENU_ITEM_DEBUG_MODE,
+	MENU_ITEM_NET_LOG,              // write this session's log/opentyrian_net_<time>.log during online play
+	MENU_ITEM_CLEAR_LOGS,           // delete every stored log, crash and net alike (console-only row)
+
+	/* Title-screen Extra menu. */
+	MENU_ITEM_JUKEBOX,
+	MENU_ITEM_DESTRUCT,
 	MENU_ITEM_SUPERTYRIAN,
-	MENU_ITEM_ARCADE_MENU,
-	MENU_ITEM_CMDLINE_MENU,
+	MENU_ITEM_XMAS,
 	MENU_ITEM_RICH_MODE,
 	MENU_ITEM_CONSTANT_PLAY,
 	MENU_ITEM_CONSTANT_DIE,
-	MENU_ITEM_ARCADE_SHIP_BASE,  // keep LAST: ids BASE+0..BASE+8 are the 9 arcade ships
+
+	/* Id runs: one row per array slot, the offset from the base picking the slot. */
+	MENU_ITEM_SPARKS_MODE_BASE,                                              // +0..SSW_COUNT-1
+	MENU_ITEM_SPARKS_CAP_BASE = MENU_ITEM_SPARKS_MODE_BASE + SSW_COUNT,      // +0..SSW_COUNT-1
+	MENU_ITEM_EPDIFF_BASE     = MENU_ITEM_SPARKS_CAP_BASE + SSW_COUNT,       // +0..EDW_COUNT-1
+	MENU_ITEM_ARCADE_SHIP_BASE = MENU_ITEM_EPDIFF_BASE + EDW_COUNT,  // keep LAST: +0..+8 are the 9 arcade ships
 } MenuItemId;
+
+typedef enum
+{
+	MENU_NONE = 0,
+	MENU_SETUP,
+	MENU_GRAPHICS,
+	MENU_SOUND,
+	MENU_ENHANCEMENTS,
+	MENU_VISUALS,
+	MENU_HUD,
+	MENU_ENEMY_BARS,
+	MENU_BOSS_BARS,
+	MENU_GAUGES,
+	MENU_WEAPONS,
+	MENU_SPARK_TRAILS,
+	MENU_SPARK_CAPS,
+	MENU_EPISODE_VERSIONS,
+	MENU_ZICA_LASER,
+	MENU_FIRING_SOUNDS,
+	MENU_GAMEPLAY,
+	MENU_ARCADE_MODES,  // Gameplay -> Arcade Modes (settings); MENU_ARCADE below is the ship picker
+	MENU_DIAGNOSTICS,
+	MENU_EXTRA,
+	MENU_ARCADE,
+	MENU_CMDLINE,
+} MenuId;
+
+typedef struct
+{
+	MenuItemId id;
+	const char *name;
+	const char *description;
+	MenuId submenu;  // MENU_ITEM_SUBMENU rows: the menu this row opens
+	size_t (*getPickerItemsCount)(void);
+	const char *(*getPickerItem)(size_t i, char *buffer, size_t bufferSize);
+} MenuItem;
 
 // Central visibility filter for setup rows; currently all rows are visible.
 static bool isMenuItemVisible(MenuItemId id)
@@ -409,10 +390,110 @@ static bool isMenuItemVisible(MenuItemId id)
 	return true;
 }
 
+// Slot an id-run row edits, or -1 if the id is not in that run.
+static int menuItemRunSlot(MenuItemId id, MenuItemId base, int count)
+{
+	return (id >= base && id < (MenuItemId)(base + count)) ? (int)(id - base) : -1;
+}
+
+// A row backed by an int setting reads and writes it through its own picker list, so
+// the two have to come as a pair; a table row missing one is a bug, not a mode.
+static bool menuItemHasPicker(const MenuItem *item)
+{
+	return item->getPickerItemsCount != NULL && item->getPickerItem != NULL;
+}
+
+/* The int settings that are simply an index into the row's own picker list: one map
+ * serves the value drawn, the left/right arrows, and the picker box, so each of the
+ * three stays in step with the others by construction. Rows whose value needs more
+ * than an index (the scaler, the synth, a slider) are handled where they are drawn. */
+static int *menuItemIntSetting(MenuItemId id)
+{
+	int slot;
+
+	if ((slot = menuItemRunSlot(id, MENU_ITEM_SPARKS_MODE_BASE, SSW_COUNT)) >= 0)
+		return &superSparkMode[slot];
+	if ((slot = menuItemRunSlot(id, MENU_ITEM_EPDIFF_BASE, EDW_COUNT)) >= 0)
+		return &epDiffMode[slot];
+
+	switch (id)
+	{
+	case MENU_ITEM_SS_FILTER:        return &render_supersample_filter;
+	case MENU_ITEM_BOSS_BAR_STYLE:   return &bossBarStyle;
+	case MENU_ITEM_BOSS_BAR_LAYOUT:  return &bossBarLayout;
+	case MENU_ITEM_BOSS_BAR_TWO:     return &bossBarTwoMode;
+	case MENU_ITEM_ENEMY_BAR_LAYOUT: return &enemyBarLayout;
+	case MENU_ITEM_ENEMY_BAR_POS:    return &enemyBarPosition;
+	case MENU_ITEM_GAUGE_GRAD_GEN:   return &gaugeGradGenerator;
+	case MENU_ITEM_GAUGE_GRAD_SHIELD: return &gaugeGradShield;
+	case MENU_ITEM_GAUGE_GRAD_ARMOR: return &gaugeGradArmor;
+	case MENU_ITEM_ZICA_BASE:        return &zicaLaserBase;
+	case MENU_ITEM_ZICA_LENGTH:      return &zicaLaserLength;
+	case MENU_ITEM_WALLOP_BOLT:      return &wallopSecondBolt;
+	default:                         return NULL;
+	}
+}
+
+/* Likewise for the plain On/Off rows: flipping the flag is the whole action. Toggles
+ * that also have to *do* something (reload the shape tables, re-init the scaler) keep
+ * their own case next to the work they trigger. */
+static bool *menuItemBoolSetting(MenuItemId id)
+{
+	const int slot = menuItemRunSlot(id, MENU_ITEM_SPARKS_CAP_BASE, SSW_COUNT);
+	if (slot >= 0)
+		return &superSparkClassicCap[slot];
+
+	switch (id)
+	{
+	case MENU_ITEM_SHOW_FPS:            return &show_fps;
+	case MENU_ITEM_ARMOR_ALARM:         return &armorAlarm;
+	case MENU_ITEM_LINK_SOUNDS:         return &linkSounds;
+	case MENU_ITEM_EXTRA_PARALLAX:      return &extraParallax;
+	case MENU_ITEM_MIRRORED_LAYERS:     return &mirroredLayers;
+	case MENU_ITEM_EXTRA_SPARKS:        return &extraSparks;
+	case MENU_ITEM_SPECIAL_TINT:        return &specialScreenTint;
+	case MENU_ITEM_ENEMY_BARS:          return &enemyBars;
+	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
+	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
+	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
+	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
+	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
+	case MENU_ITEM_ZICA_BUFF:           return &zicaLaserBuff;
+	case MENU_ITEM_BASE_DISPENSERS:     return &restoreBaseDispensers;
+	case MENU_ITEM_ARCADE_LIFE_BOOST:   return &arcadeLifeBoost;
+	case MENU_ITEM_ARCADE_RANDOM_BALLS: return &arcadeRandomBalls;
+	case MENU_ITEM_ARCADE_REAR_SCALE:   return &arcadeRearGunScale;
+	case MENU_ITEM_DEBUG_MODE:          return &debugMode;
+	case MENU_ITEM_RICH_MODE:           return &richMode;
+	case MENU_ITEM_CONSTANT_PLAY:       return &constantPlay;
+	case MENU_ITEM_CONSTANT_DIE:        return &constantDie;
+	default:                            return NULL;
+	}
+}
+
 /* Adjust a setup-menu item's value in response to left/right input (dir is -1
  * or +1). Items without a cyclable value are ignored. */
-static void adjustMenuItemValue(MenuItemId id, int dir)
+static void adjustMenuItemValue(const MenuItem *item, int dir)
 {
+	const MenuItemId id = item->id;
+
+	int *const intSetting = menuItemIntSetting(id);
+	if (intSetting != NULL && menuItemHasPicker(item))
+	{
+		const int count = (int)item->getPickerItemsCount();
+		*intSetting = (*intSetting + count + dir) % count;
+		JE_playSampleNum(S_CURSOR);
+		return;
+	}
+
+	bool *const boolSetting = menuItemBoolSetting(id);
+	if (boolSetting != NULL)
+	{
+		*boolSetting = !*boolSetting;
+		JE_playSampleNum(S_CURSOR);
+		return;
+	}
+
 	switch (id)
 	{
 	case MENU_ITEM_MUSIC_VOLUME:
@@ -443,16 +524,8 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		}
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_SS_FILTER:
-		render_supersample_filter = (render_supersample_filter + (int)COUNTOF(ssFilterNames) + dir) % (int)COUNTOF(ssFilterNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
 	case MENU_ITEM_VSYNC:
 		set_vsync(!output_vsync);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_SHOW_FPS:
-		show_fps = !show_fps;
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_MUSIC_DEVICE:
@@ -472,76 +545,12 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		JE_playSampleNum(S_CURSOR);
 		break;
 	}
-	case MENU_ITEM_ARMOR_ALARM:
-		armorAlarm = !armorAlarm;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_LINK_SOUNDS:
-		linkSounds = !linkSounds;
-		JE_playSampleNum(S_CURSOR);
-		break;
 	case MENU_ITEM_NET_LOG:
 		crashlog_set_netlog_enabled(!crashlog_get_netlog_enabled());
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_BOSS_BAR_STYLE:
-		bossBarStyle = (bossBarStyle + (int)COUNTOF(bossBarStyleNames) + dir) % (int)COUNTOF(bossBarStyleNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_BOSS_BAR_LAYOUT:
-		bossBarLayout = (bossBarLayout + (int)COUNTOF(bossBarLayoutNames) + dir) % (int)COUNTOF(bossBarLayoutNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_BOSS_BAR_TWO:
-		bossBarTwoMode = (bossBarTwoMode + (int)COUNTOF(bossBarTwoNames) + dir) % (int)COUNTOF(bossBarTwoNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ENEMY_BARS:
-		enemyBars = !enemyBars;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ENEMY_BAR_LAYOUT:
-		enemyBarLayout = (enemyBarLayout + (int)COUNTOF(enemyBarLayoutNames) + dir) % (int)COUNTOF(enemyBarLayoutNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ENEMY_BAR_POS:
-		enemyBarPosition = (enemyBarPosition + (int)COUNTOF(enemyBarPositionNames) + dir) % (int)COUNTOF(enemyBarPositionNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
 	case MENU_ITEM_ENEMY_BAR_OPACITY:
 		enemyBarOpacity = dir > 0 ? MIN(100, enemyBarOpacity + 5) : MAX(0, enemyBarOpacity - 5);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_GAUGE_GRAD_GEN:
-		gaugeGradGenerator = (gaugeGradGenerator + (int)COUNTOF(gaugeGradNames) + dir) % (int)COUNTOF(gaugeGradNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_GAUGE_GRAD_SHIELD:
-		gaugeGradShield = (gaugeGradShield + (int)COUNTOF(gaugeGradNames) + dir) % (int)COUNTOF(gaugeGradNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_GAUGE_GRAD_ARMOR:
-		gaugeGradArmor = (gaugeGradArmor + (int)COUNTOF(gaugeGradNames) + dir) % (int)COUNTOF(gaugeGradNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_GAUGE_FLASH_SHIELD:
-		gaugeFlashShield = !gaugeFlashShield;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_GAUGE_FLASH_ARMOR:
-		gaugeFlashArmor = !gaugeFlashArmor;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_DEBUG_MODE:
-		debugMode = !debugMode;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_EXTRA_PARALLAX:
-		extraParallax = !extraParallax;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_MIRRORED_LAYERS:
-		mirroredLayers = !mirroredLayers;
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_SMOOTH_MOTION:
@@ -549,136 +558,26 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		enforcePlainScalerForSupersample();  // turning on re-arms Auto; scaler rule applies
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_EXTRA_SPARKS:
-		extraSparks = !extraSparks;
-		JE_playSampleNum(S_CURSOR);
-		break;
 	case MENU_ITEM_XMAS:
 		JE_playSampleNum(toggle_xmas_mode() ? S_CURSOR : S_SPRING);
-		break;
-	case MENU_ITEM_ZICA_BASE:
-		zicaLaserBase = (zicaLaserBase + (int)COUNTOF(zicaBaseNames) + dir) % (int)COUNTOF(zicaBaseNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ZICA_LENGTH:
-		zicaLaserLength = (zicaLaserLength + (int)COUNTOF(zicaLengthNames) + dir) % (int)COUNTOF(zicaLengthNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ZICA_LOCK:
-		zicaLaserLock = !zicaLaserLock;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ZICA_BUFF:
-		zicaLaserBuff = !zicaLaserBuff;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_SPARKS_MODE:
-		superSparkMode[currentSparkWeapon] = (superSparkMode[currentSparkWeapon] + (int)COUNTOF(sparkModeNames) + dir) % (int)COUNTOF(sparkModeNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_SPARKS_CAP:
-		superSparkClassicCap[currentSparkWeapon] = !superSparkClassicCap[currentSparkWeapon];
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_WALLOP_BOLT:
-		wallopSecondBolt = (wallopSecondBolt + (int)COUNTOF(sparkModeNames) + dir) % (int)COUNTOF(sparkModeNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_EPDIFF_MODE:
-		epDiffMode[currentDiffWeapon] = (epDiffMode[currentDiffWeapon] + (int)COUNTOF(zicaBaseNames) + dir) % (int)COUNTOF(zicaBaseNames);
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_CHARGE_LASER:
-		chargeLaserCannon = !chargeLaserCannon;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_BASE_DISPENSERS:
-		restoreBaseDispensers = !restoreBaseDispensers;
-		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_UNUSED_SPRITES:
 		unusedShopSprites = !unusedShopSprites;
 		JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_SPECIAL_TINT:
-		specialScreenTint = !specialScreenTint;
-		JE_playSampleNum(S_CURSOR);
-		break;
 	case MENU_ITEM_SHOT_HITBOXES:
 		centeredShotHitboxes = !centeredShotHitboxes;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ARCADE_LIFE_BOOST:
-		arcadeLifeBoost = !arcadeLifeBoost;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ARCADE_RANDOM_BALLS:
-		arcadeRandomBalls = !arcadeRandomBalls;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_ARCADE_REAR_SCALE:
-		arcadeRearGunScale = !arcadeRearGunScale;
 		JE_playSampleNum(S_CURSOR);
 		break;
 	case MENU_ITEM_SIDEKICK_AUTOFIRE:
 		cycleSidekickAutofire(dir);
 		JE_playSampleNum(S_CURSOR);
 		break;
-	case MENU_ITEM_CUSTOM_WEAPONS:
-		customWeaponEnabled = !customWeaponEnabled;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_RICH_MODE:
-		richMode = !richMode;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_CONSTANT_PLAY:
-		constantPlay = !constantPlay;
-		JE_playSampleNum(S_CURSOR);
-		break;
-	case MENU_ITEM_CONSTANT_DIE:
-		constantDie = !constantDie;
-		JE_playSampleNum(S_CURSOR);
-		break;
 	default:
 		break;
 	}
 }
-
-typedef enum
-{
-	MENU_NONE = 0,
-	MENU_SETUP,
-	MENU_GRAPHICS,
-	MENU_SOUND,
-	MENU_ENHANCEMENTS,
-	MENU_BOSS_BARS,
-	MENU_ENEMY_BARS,
-	MENU_GAUGE_GRADIENTS,
-	MENU_GAME_TWEAKS,
-	MENU_NETWORK,
-	MENU_ZICA_LASER,
-	MENU_SUPERSPARKS,
-	MENU_SPARKS_MEGA_PULSE,
-	MENU_SPARKS_WALLOP,
-	MENU_SPARKS_PROTRON_B,
-	MENU_SPARKS_ICE,
-	MENU_EPDIFFS,
-	MENU_EPDIFF_XEGA,
-	MENU_EPDIFF_MICROSOL,
-	MENU_EPDIFF_FLARE,
-	MENU_EPDIFF_NEEDLE,
-	MENU_EPDIFF_BUBBLE,
-	MENU_EPDIFF_PUNCH,
-	MENU_EPDIFF_PRETZEL,
-	MENU_EPDIFF_DRAGON,
-	MENU_EPDIFF_SOLAR,
-	MENU_ARCADE_TWEAKS,  // Game Tweaks -> Arcade (settings); MENU_ARCADE below is the ship picker
-	MENU_EXTRA,
-	MENU_ARCADE,
-	MENU_CMDLINE,
-} MenuId;
 
 // Runs the shared options-menu framework starting at the given root menu.
 // Returns true if a full game was launched (SuperTyrian / Super Arcade), in
@@ -700,26 +599,23 @@ static bool runOptionsMenu(MenuId startMenu)
 
 	typedef struct
 	{
-		MenuItemId id;
-		const char *name;
-		const char *description;
-		size_t (*getPickerItemsCount)(void);
-		const char *(*getPickerItem)(size_t i, char *buffer, size_t bufferSize);
-	} MenuItem;
-
-	typedef struct
-	{
 		const char *header;
+		// One slot over the most rows a menu can show, so the terminator always fits.
 		const MenuItem items[12];
 	} Menu;
+
+	// Shorthands for the two rows every menu ends with, and for the picker columns.
+	#define MENU_DONE_ROW  { MENU_ITEM_DONE, "Done", "Return to the previous menu." }, { -1 }
+	#define EPISODE_PICKER .getPickerItemsCount = episodeCount, .getPickerItem = episodeItem
+	#define SPARK_PICKER   .getPickerItemsCount = sparkModeCount, .getPickerItem = sparkModeItem
 
 	static const Menu menus[] = {
 		[MENU_SETUP] = {
 			.header = "Setup",
 			.items = {
-				{ MENU_ITEM_GRAPHICS, "Graphics...", "Change the graphics settings." },
-				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
-				{ MENU_ITEM_ENHANCEMENTS, "Enhancements...", "Change the gameplay enhancement settings." },
+				{ MENU_ITEM_SUBMENU, "Graphics...", "Change the graphics settings.", MENU_GRAPHICS },
+				{ MENU_ITEM_SUBMENU, "Sound...", "Change the sound settings.", MENU_SOUND },
+				{ MENU_ITEM_SUBMENU, "Enhancements...", "Change the gameplay enhancement settings.", MENU_ENHANCEMENTS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
@@ -729,204 +625,226 @@ static bool runOptionsMenu(MenuId startMenu)
 			.header = "Graphics",
 			.items = {
 #if !defined(__SWITCH__) && !defined(__vita__)
-				{ MENU_ITEM_DISPLAY, "Display:", "Change the display mode.", getDisplayPickerItemsCount, getDisplayPickerItem },
+				{ MENU_ITEM_DISPLAY, "Display:", "Change the display mode.",
+				  .getPickerItemsCount = getDisplayPickerItemsCount, .getPickerItem = getDisplayPickerItem },
 #endif
-				{ MENU_ITEM_SCALER, "Scaler:", "Change the pixel art scaling algorithm.", getScalerPickerItemsCount, getScalerPickerItem },
-								{ MENU_ITEM_SCALING_MODE, "Scaling Mode:", "Change the scaling mode.", getScalingModePickerItemsCount, getScalingModePickerItem },
-								{ MENU_ITEM_SMOOTH_MOTION, "Smooth Motion:", "Interpolate motion for smooth high-refresh play." },
-								{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.", getSupersamplePickerItemsCount, getSupersamplePickerItem },
-								{ MENU_ITEM_SS_FILTER, "Filter:", "Sub-pixel filter: Sharp, Smooth, or None (raw).", getSSFilterPickerItemsCount, getSSFilterPickerItem },
-								{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
-								{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
-								{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },
-								{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-								{ -1 }
-						},
-				},
+				{ MENU_ITEM_SCALER, "Scaler:", "Change the pixel art scaling algorithm.",
+				  .getPickerItemsCount = getScalerPickerItemsCount, .getPickerItem = getScalerPickerItem },
+				{ MENU_ITEM_SCALING_MODE, "Scaling Mode:", "Change the scaling mode.",
+				  .getPickerItemsCount = getScalingModePickerItemsCount, .getPickerItem = getScalingModePickerItem },
+				{ MENU_ITEM_SMOOTH_MOTION, "Smooth Motion:", "Interpolate motion for smooth high-refresh play." },
+				{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.",
+				  .getPickerItemsCount = getSupersamplePickerItemsCount, .getPickerItem = getSupersamplePickerItem },
+				{ MENU_ITEM_SS_FILTER, "Filter:", "Sub-pixel filter: Sharp, Smooth, or None (raw).",
+				  .getPickerItemsCount = getSSFilterPickerItemsCount, .getPickerItem = getSSFilterPickerItem },
+				{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
+				{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
+				{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },
+				MENU_DONE_ROW
+			},
+		},
 		[MENU_SOUND] = {
 			.header = "Sound",
 			.items = {
 				{ MENU_ITEM_MUSIC_VOLUME, "Music Volume", "Change volume with the left/right arrow keys." },
 				{ MENU_ITEM_SOUND_VOLUME, "Sound Volume", "Change volume with the left/right arrow keys." },
-				{ MENU_ITEM_MUSIC_DEVICE, "Music Synth:", "Synthesizer for music (FluidSynth needs a .sf2).", getMusicDeviceItemsCount, getMusicDeviceItem },
+				{ MENU_ITEM_MUSIC_DEVICE, "Music Synth:", "Synthesizer for music (FluidSynth needs a .sf2).",
+				  .getPickerItemsCount = getMusicDeviceItemsCount, .getPickerItem = getMusicDeviceItem },
 				{ MENU_ITEM_ARMOR_ALARM, "Armor Alarm:", "Siren while your armor is critically low." },
 				{ MENU_ITEM_LINK_SOUNDS, "Link Sounds:", "Sound cue when two ships fuse or unfuse." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				MENU_DONE_ROW
 			},
 		},
+		/* Enhancements is five domains, one submenu each: what you see, what the HUD
+		 * draws, what you fly with, how the game plays, and what it reports. Every
+		 * setting hangs off exactly one of them. */
 		[MENU_ENHANCEMENTS] = {
 			.header = "Enhancements",
 			.items = {
-				{ MENU_ITEM_DEBUG_MODE, "Debug Mode:", "Enable the debug menu and debug level select." },
+				{ MENU_ITEM_SUBMENU, "Visuals...", "Backgrounds, sparks, and screen effects.", MENU_VISUALS },
+				{ MENU_ITEM_SUBMENU, "Heads-Up Display...", "Health bars and the gauges beside your ship.", MENU_HUD },
+				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, episode versions.", MENU_WEAPONS },
+				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, restored enemies, and arcade rules.", MENU_GAMEPLAY },
+				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_VISUALS] = {
+			.header = "Visuals",
+			.items = {
 				{ MENU_ITEM_EXTRA_PARALLAX, "Extra Parallax:", "Wider parallax: strafing sweeps the whole map." },
 				{ MENU_ITEM_MIRRORED_LAYERS, "Mirrored Layers:", "Over-panned layer edges continue as a mirror." },
 				{ MENU_ITEM_EXTRA_SPARKS, "Extra Sparks:", "Denser, longer-lasting explosion spark showers." },
-				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
-				{ MENU_ITEM_CUSTOM_CREATOR, "Custom Weapon Creator...", "Design your own weapon with a live preview." },
-				{ MENU_ITEM_ENEMY_BARS_MENU, "Enemy Bars...", "Health bars on enemies you've damaged." },
-				{ MENU_ITEM_BOSS_BARS, "Boss Health Bars...", "Style and layout of the boss health bars." },
-				{ MENU_ITEM_GAUGE_GRADS_MENU, "Gauge Gradients...", "Gradient direction of each HUD gauge." },
-				{ MENU_ITEM_GAME_TWEAKS, "Game Tweaks...", "Weapon tweaks and restored cut behaviors." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_GAME_TWEAKS] = {
-			.header = "Game Tweaks",
-			.items = {
-				{ MENU_ITEM_SUPERSPARKS, "Superspark Weapons...", "Weapons whose spark trails differ per episode." },
-				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other items that differ between Ep 1-3 and Ep 4-5." },
-				{ MENU_ITEM_ARCADE_TWEAKS, "Arcade...", "Tweaks for the arcade and Super Arcade modes." },
-				{ MENU_ITEM_NETWORK_MENU, "Network...", "Diagnostics for online play." },
-				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
-				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
-				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
 				{ MENU_ITEM_SPECIAL_TINT, "Special Tint:", "Flare specials wash the screen in their colour." },
-				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
-				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
+				MENU_DONE_ROW
 			},
 		},
-		[MENU_ARCADE_TWEAKS] = {
+		[MENU_HUD] = {
+			.header = "Heads-Up Display",
+			.items = {
+				{ MENU_ITEM_SUBMENU, "Enemy Bars...", "Health bars on enemies you have damaged.", MENU_ENEMY_BARS },
+				{ MENU_ITEM_SUBMENU, "Boss Bars...", "Style and placement of the boss health bars.", MENU_BOSS_BARS },
+				{ MENU_ITEM_SUBMENU, "Gauges...", "Gradient and damage flash of the three gauges.", MENU_GAUGES },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_ENEMY_BARS] = {
+			.header = "Enemy Bars",
+			.items = {
+				{ MENU_ITEM_ENEMY_BARS, "Show Bars:", "Show a small health bar on enemies you have hit." },
+				{ MENU_ITEM_ENEMY_BAR_LAYOUT, "Layout:", "Horizontal or vertical bar.",
+				  .getPickerItemsCount = enemyBarLayoutCount, .getPickerItem = enemyBarLayoutItem },
+				{ MENU_ITEM_ENEMY_BAR_POS, "Position:", "Where the bar sits relative to the enemy.",
+				  .getPickerItemsCount = enemyBarPositionCount, .getPickerItem = enemyBarPositionItem },
+				{ MENU_ITEM_ENEMY_BAR_OPACITY, "Opacity:", "Bar transparency. Left/right to adjust." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_BOSS_BARS] = {
+			.header = "Boss Bars",
+			.items = {
+				{ MENU_ITEM_BOSS_BAR_STYLE, "Style:", "Classic or redesigned boss health bars.",
+				  .getPickerItemsCount = bossBarStyleCount, .getPickerItem = bossBarStyleItem },
+				{ MENU_ITEM_BOSS_BAR_LAYOUT, "Layout:", "Top/Bottom (horizontal) or Left/Right (vertical).",
+				  .getPickerItemsCount = bossBarLayoutCount, .getPickerItem = bossBarLayoutItem },
+				{ MENU_ITEM_BOSS_BAR_TWO, "Two Bars:", "How two boss bars are arranged.",
+				  .getPickerItemsCount = bossBarTwoCount, .getPickerItem = bossBarTwoItem },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_GAUGES] = {
+			.header = "Gauges",
+			.items = {
+				{ MENU_ITEM_GAUGE_GRAD_GEN, "Generator:", "Generator gauge gradient direction (bright end).",
+				  .getPickerItemsCount = gaugeGradCount, .getPickerItem = gaugeGradItem },
+				{ MENU_ITEM_GAUGE_GRAD_SHIELD, "Shield:", "Shield gauge gradient direction (bright end).",
+				  .getPickerItemsCount = gaugeGradCount, .getPickerItem = gaugeGradItem },
+				{ MENU_ITEM_GAUGE_GRAD_ARMOR, "Armor:", "Armor gauge gradient direction (bright end).",
+				  .getPickerItemsCount = gaugeGradCount, .getPickerItem = gaugeGradItem },
+				{ MENU_ITEM_GAUGE_FLASH_SHIELD, "Shield Flash:", "Flash the shield gauge white when it takes damage." },
+				{ MENU_ITEM_GAUGE_FLASH_ARMOR, "Armor Flash:", "Flash the armor gauge white when it takes damage." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_WEAPONS] = {
+			.header = "Weapons",
+			.items = {
+				{ MENU_ITEM_CUSTOM_WEAPONS, "Custom Weapons:", "Enable the custom weapon and its buy/sell slot." },
+				{ MENU_ITEM_CUSTOM_CREATOR, "Weapon Creator...", "Design your own weapon with a live preview." },
+				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
+				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
+				{ MENU_ITEM_SUBMENU, "Spark Trails...", "Weapons whose spark trails differ per episode.", MENU_SPARK_TRAILS },
+				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_SPARK_TRAILS] = {
+			// Only the Tyrian 2000 (ep4/5) item data gives these four a superspark projectile
+			// trail. Auto plays each episode as it shipped; On and Off force it everywhere.
+			.header = "Spark Trails",
+			.items = {
+				{ MENU_ITEM_SPARKS_MODE_BASE + SSW_MEGA_PULSE, "Mega Pulse:",
+				  "Spark trail on the Mega Pulse front gun.", SPARK_PICKER },
+				{ MENU_ITEM_SPARKS_MODE_BASE + SSW_WALLOP_BEAM, "Wallop Beam:",
+				  "Spark trail on the Beno Wallop Beam sidekick.", SPARK_PICKER },
+				{ MENU_ITEM_SPARKS_MODE_BASE + SSW_PROTRON_B, "Protron -B-:",
+				  "Spark trail on the Beno Protron -B- sidekick.", SPARK_PICKER },
+				{ MENU_ITEM_SPARKS_MODE_BASE + SSW_ICE, "Ice Beam:",
+				  "Spark trail on the Ice Beam and Blast specials.", SPARK_PICKER },
+				{ MENU_ITEM_WALLOP_BOLT, "Wallop 2nd Bolt:",
+				  "Ep4/5 second bolt per volley: Auto, On, or Off.", SPARK_PICKER },
+				{ MENU_ITEM_SUBMENU, "Spark Caps...", "Hold a trail to the classic limit despite Extra Sparks.", MENU_SPARK_CAPS },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_SPARK_CAPS] = {
+			.header = "Spark Caps",
+			.items = {
+				{ MENU_ITEM_SPARKS_CAP_BASE + SSW_MEGA_PULSE, "Mega Pulse:", "Classic spark limit for the Mega Pulse trail." },
+				{ MENU_ITEM_SPARKS_CAP_BASE + SSW_WALLOP_BEAM, "Wallop Beam:", "Classic spark limit for the Wallop Beam trail." },
+				{ MENU_ITEM_SPARKS_CAP_BASE + SSW_PROTRON_B, "Protron -B-:", "Classic spark limit for the Protron -B- trail." },
+				{ MENU_ITEM_SPARKS_CAP_BASE + SSW_ICE, "Ice Beam:", "Classic spark limit for the Ice Beam trail." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_EPISODE_VERSIONS] = {
+			// Items whose ep1-3 and ep4/5 data differ beyond the spark trail. Auto plays each
+			// episode as it shipped; the other two force one version everywhere.
+			.header = "Episode Versions",
+			.items = {
+				{ MENU_ITEM_SUBMENU, "Zica Laser...", "Zica Laser Lv11 pattern, length, lock, and buff.", MENU_ZICA_LASER },
+				{ MENU_ITEM_SUBMENU, "Firing Sounds...", "Weapons whose firing sound differs per episode.", MENU_FIRING_SOUNDS },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_XEGA_BALL, "Xega Ball:",
+				  "Ep1-3 two weak balls vs Ep4-5 one strong ball.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_MICROSOL_OPT5, "MicroSol Opt 5:",
+				  "Ep1-3 8-way fan vs Ep4-5 twin shot (MicroSol ship).", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_FLARE, "Flare Blast:",
+				  "Which episode's blast sprite the Flare uses.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_SOLAR_SHIELD, "Solar Shield Icon:",
+				  "Ep1-3 shop icon (MicroCorp) vs Ep4-5 (Gencore).", EPISODE_PICKER },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_ZICA_LASER] = {
+			.header = "Zica Laser",
+			.items = {
+				{ MENU_ITEM_ZICA_BASE, "Lv11 Pattern:", "Lv11 shot pattern: Ep1-3 columns or Ep4 spread.", EPISODE_PICKER },
+				{ MENU_ITEM_ZICA_LENGTH, "Lv11 Length:", "Lv11 length; Long is as long as the L10 shot.",
+				  .getPickerItemsCount = zicaLengthCount, .getPickerItem = zicaLengthItem },
+				{ MENU_ITEM_ZICA_LOCK, "Lv11 Lock:", "Long beams follow the ship (Length=Long only)." },
+				{ MENU_ITEM_ZICA_BUFF, "Lv11 Buff:", "Also fire the L10 beam alongside the L11 shots." },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_FIRING_SOUNDS] = {
+			// These five differ between the two item sets in nothing but their firing sound.
+			.header = "Firing Sounds",
+			.items = {
+				{ MENU_ITEM_EPDIFF_BASE + EDW_NEEDLE_LASER, "Needle Laser:",
+				  "Which episode's firing sound the Needle Laser uses.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_BUBBLE_GUM, "Bubble Gum-Gun:",
+				  "Which episode's firing sound the Gum-Gun uses.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_FLYING_PUNCH, "Flying Punch:",
+				  "Which episode's firing sound the Flying Punch uses.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_PRETZEL_MISSILE, "Pretzel Missile:",
+				  "Which episode's firing sound the Pretzel uses.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_DRAGON_FROST, "Dragon Frost:",
+				  "Which episode's firing sound the Dragon Frost uses.", EPISODE_PICKER },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_GAMEPLAY] = {
+			.header = "Gameplay",
+			.items = {
+				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
+				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
+				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_ARCADE_MODES] = {
 			// Rear Gun Scale skips the linked pair alone: player two's rear bay is its life
 			// counter there (arcade_rear_scale_active). All three bind the session online.
-			.header = "Arcade",
+			.header = "Arcade Modes",
 			.items = {
 				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
 				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Randomize the weapon each pickup ball gives." },
 				{ MENU_ITEM_ARCADE_REAR_SCALE, "Rear Gun Scale:", "Rear gun power rises with your life count too." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				MENU_DONE_ROW
 			},
 		},
-		[MENU_NETWORK] = {
-			.header = "Network",
+		[MENU_DIAGNOSTICS] = {
+			.header = "Diagnostics",
 			.items = {
+				{ MENU_ITEM_DEBUG_MODE, "Debug Mode:", "Enable the debug menu and debug level select." },
 				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
 #if defined(__SWITCH__) || defined(__vita__)
 				// Consoles have no file manager to prune the logs with, so the game has to offer it.
 				// Sits with the switch that writes them, but clears every log, not just the net ones.
 				{ MENU_ITEM_CLEAR_LOGS, "Clear Logs", "Delete every log file saved on this system." },
 #endif
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_ZICA_LASER] = {
-			.header = "Zica Laser",
-			.items = {
-				{ MENU_ITEM_ZICA_BASE, "Zica L11 Base:", "Lv11 shot pattern: Ep1-3 columns or Ep4 spread.", getZicaBaseItemsCount, getZicaBaseItem },
-				{ MENU_ITEM_ZICA_LENGTH, "Zica L11 Length:", "Lv11 length; Long is as long as the L10 shot.", getZicaLengthItemsCount, getZicaLengthItem },
-				{ MENU_ITEM_ZICA_LOCK, "Zica L11 Lock:", "Long beams follow the ship (Length=Long only)." },
-				{ MENU_ITEM_ZICA_BUFF, "Zica L11 Buff:", "Also fire the L10 beam alongside the L11 shots." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_SUPERSPARKS] = {
-			// Only the Tyrian 2000 (ep4/5) item data gives these weapons a superspark
-			// projectile trail; each submenu forces that trail on/off per weapon.
-			.header = "Superspark Weapons",
-			.items = {
-				{ MENU_ITEM_SPARKS_MEGA_PULSE, "Mega Pulse...", "Ep1-3 Mega Pulse spark trail and its cap." },
-				{ MENU_ITEM_SPARKS_WALLOP, "Beno Wallop Beam...", "Ep1-3 Wallop Beam sidekick spark trail and cap." },
-				{ MENU_ITEM_SPARKS_PROTRON_B, "Beno Protron -B-...", "Ep1-3 Protron -B- sidekick spark trail and cap." },
-				{ MENU_ITEM_SPARKS_ICE, "Ice Beam / Blast...", "Ep1-3 Ice Beam/Blast special spark trail and cap." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-// The per-weapon submenus share their rows: which weapon they edit comes from
-// currentSparkWeapon, set when the submenu is entered.
-#define SPARK_MENU_ITEMS \
-				{ MENU_ITEM_SPARKS_MODE, "Sparks:", "Trail: Auto (per-episode), On (all), or Off (none).", getSparkModeItemsCount, getSparkModeItem }, \
-				{ MENU_ITEM_SPARKS_CAP, "Spark Cap:", "Force the classic spark limit despite Extra Sparks." }, \
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." }, \
-				{ -1 }
-		[MENU_SPARKS_MEGA_PULSE] = { .header = "Mega Pulse",       .items = { SPARK_MENU_ITEMS } },
-		[MENU_SPARKS_WALLOP]     = {
-			// Same shared rows plus the Wallop-only second-bolt toggle (the ep4/5 data
-			// fires two bolts per volley; the ep1-3 data one).
-			.header = "Beno Wallop Beam",
-			.items = {
-				{ MENU_ITEM_SPARKS_MODE, "Sparks:", "Trail: Auto (per-episode), On (all), or Off (none).", getSparkModeItemsCount, getSparkModeItem },
-				{ MENU_ITEM_SPARKS_CAP, "Spark Cap:", "Force the classic spark limit despite Extra Sparks." },
-				{ MENU_ITEM_WALLOP_BOLT, "2nd Bolt:", "Ep4/5 second bolt per volley: Auto, On, or Off.", getSparkModeItemsCount, getSparkModeItem },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_SPARKS_PROTRON_B]  = { .header = "Beno Protron -B-", .items = { SPARK_MENU_ITEMS } },
-		[MENU_SPARKS_ICE]        = { .header = "Ice Beam / Blast", .items = { SPARK_MENU_ITEMS } },
-#undef SPARK_MENU_ITEMS
-		[MENU_EPDIFFS] = {
-			// Items whose ep1-3 vs ep4/5 item data differ beyond the spark trail (the Zica
-			// Laser is one such weapon, so it lives here too). Each opens a per-item submenu.
-			.header = "Episode Differences",
-			.items = {
-				{ MENU_ITEM_ZICA_LASER, "Zica Laser...", "Zica Laser Lv11 pattern, length, lock, and buff." },
-				{ MENU_ITEM_EPDIFF_XEGA, "Xega Ball...", "Ep1-3 two weak balls vs Ep4-5 one strong ball." },
-				{ MENU_ITEM_EPDIFF_MICROSOL, "MicroSol Option 5...", "Ep1-3 8-way fan vs Ep4-5 twin shot (MicroSol ship)." },
-				{ MENU_ITEM_EPDIFF_FLARE, "Flare / Super Bomb...", "Which episode's blast sprite the Flare uses." },
-				{ MENU_ITEM_EPDIFF_NEEDLE, "Needle Laser...", "Which episode's firing sound it uses." },
-				{ MENU_ITEM_EPDIFF_BUBBLE, "Bubble Gum-Gun...", "Which episode's firing sound it uses." },
-				{ MENU_ITEM_EPDIFF_PUNCH, "Flying Punch...", "Which episode's firing sound it uses." },
-				{ MENU_ITEM_EPDIFF_PRETZEL, "Pretzel Missile...", "Which episode's firing sound it uses." },
-				{ MENU_ITEM_EPDIFF_DRAGON, "Dragon Frost...", "Which episode's firing sound it uses." },
-				{ MENU_ITEM_EPDIFF_SOLAR, "Gencore Solar Shield...", "Ep1-3 shop icon (MicroCorp) vs Ep4-5 (Gencore)." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-// The nine per-item submenus share their one row: which item "Version:" edits comes
-// from currentDiffWeapon, set when the submenu is entered (ids/menu-ids mirror EpDiffWeapon).
-#define EPDIFF_MENU_ITEMS \
-				{ MENU_ITEM_EPDIFF_MODE, "Version:", "Auto (per-episode), or force the Ep 1-3 / Ep 4-5 data.", getZicaBaseItemsCount, getZicaBaseItem }, \
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." }, \
-				{ -1 }
-		[MENU_EPDIFF_XEGA]     = { .header = "Xega Ball",         .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_MICROSOL] = { .header = "MicroSol Option 5", .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_FLARE]    = { .header = "Flare / Super Bomb", .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_NEEDLE]   = { .header = "Needle Laser",      .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_BUBBLE]   = { .header = "Bubble Gum-Gun",    .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_PUNCH]    = { .header = "Flying Punch",      .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_PRETZEL]  = { .header = "Pretzel Missile",   .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_DRAGON]   = { .header = "Dragon Frost",      .items = { EPDIFF_MENU_ITEMS } },
-		[MENU_EPDIFF_SOLAR]    = { .header = "Gencore Solar Shield", .items = { EPDIFF_MENU_ITEMS } },
-#undef EPDIFF_MENU_ITEMS
-		[MENU_BOSS_BARS] = {
-			.header = "Boss Health Bars",
-			.items = {
-				{ MENU_ITEM_BOSS_BAR_STYLE, "Boss Bars:", "Classic or redesigned boss health bars.", getBossBarStyleItemsCount, getBossBarStyleItem },
-				{ MENU_ITEM_BOSS_BAR_LAYOUT, "Bar Layout:", "Top/Bottom (horizontal) or Left/Right (vertical).", getBossBarLayoutItemsCount, getBossBarLayoutItem },
-				{ MENU_ITEM_BOSS_BAR_TWO, "Two Bars:", "How two boss bars are arranged.", getBossBarTwoItemsCount, getBossBarTwoItem },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_ENEMY_BARS] = {
-			.header = "Enemy Bars",
-			.items = {
-				{ MENU_ITEM_ENEMY_BARS, "Enemy Bars:", "Show a small health bar on enemies you've damaged." },
-				{ MENU_ITEM_ENEMY_BAR_LAYOUT, "Layout:", "Horizontal or vertical bar.", getEnemyBarLayoutItemsCount, getEnemyBarLayoutItem },
-				{ MENU_ITEM_ENEMY_BAR_POS, "Position:", "Where the bar sits relative to the enemy.", getEnemyBarPositionItemsCount, getEnemyBarPositionItem },
-				{ MENU_ITEM_ENEMY_BAR_OPACITY, "Opacity:", "Bar transparency. Left/right to adjust." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
-			},
-		},
-		[MENU_GAUGE_GRADIENTS] = {
-			.header = "Gauge Gradients",
-			.items = {
-				{ MENU_ITEM_GAUGE_GRAD_GEN, "Generator:", "Generator gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
-				{ MENU_ITEM_GAUGE_GRAD_SHIELD, "Shield:", "Shield gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
-				{ MENU_ITEM_GAUGE_GRAD_ARMOR, "Armor:", "Armor gauge gradient direction (bright end).", getGaugeGradItemsCount, getGaugeGradItem },
-				{ MENU_ITEM_GAUGE_FLASH_SHIELD, "Shield Flash:", "Flash the shield gauge white when it takes damage." },
-				{ MENU_ITEM_GAUGE_FLASH_ARMOR, "Armor Flash:", "Flash the armor gauge white when it takes damage." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				MENU_DONE_ROW
 			},
 		},
 		[MENU_EXTRA] = {
@@ -935,8 +853,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
 				{ MENU_ITEM_DESTRUCT, "Destruct", "Play the secret Destruct mini-game." },
 				{ MENU_ITEM_SUPERTYRIAN, "SuperTyrian", "Play the tougher SuperTyrian mode." },
-			{ MENU_ITEM_ARCADE_MENU, "Super Arcade...", "Play as one of the secret Super Arcade ships." },
-				{ MENU_ITEM_CMDLINE_MENU, "Command Line...", "Toggle the command-line cheat options." },
+				{ MENU_ITEM_SUBMENU, "Super Arcade...", "Play as one of the secret Super Arcade ships.", MENU_ARCADE },
+				{ MENU_ITEM_SUBMENU, "Command Line...", "Toggle the command-line cheat options.", MENU_CMDLINE },
 				{ MENU_ITEM_XMAS, "Christmas Mode:", "Festive graphics and voices." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
@@ -956,8 +874,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_ARCADE_SHIP_BASE + 6, specialName[6], superShips[7] },
 				{ MENU_ITEM_ARCADE_SHIP_BASE + 7, specialName[7], superShips[8] },
 				{ MENU_ITEM_ARCADE_SHIP_BASE + 8, specialName[8], superShips[9] },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				MENU_DONE_ROW
 			},
 		},
 		[MENU_CMDLINE] = {
@@ -966,11 +883,14 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_RICH_MODE, "Rich Mode:", "Start a new game with maximum money (LOOT)." },
 				{ MENU_ITEM_CONSTANT_PLAY, "Constant Play:", "Testing mode; the C key toggles invincibility (CONSTANT)." },
 				{ MENU_ITEM_CONSTANT_DIE, "Constant Die:", "Testing mode: ship constantly self-destructs (DEATH)." },
-				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
-				{ -1 }
+				MENU_DONE_ROW
 			},
 		},
 	};
+
+	#undef MENU_DONE_ROW
+	#undef EPISODE_PICKER
+	#undef SPARK_PICKER
 
 	char buffer[100];
 
@@ -1077,29 +997,41 @@ static bool runOptionsMenu(MenuId startMenu)
 			if (selected)
 				yPicker = y;
 
-			const char *const name = menuItem->name;
+			// The name and value share one brightness: dimmed while another row's picker
+			// is open, brightened on the selected row.
+			const int shade = -3 + (selected ? 2 : 0) + (disabled ? -4 : 0);
 
-			draw_font_hv_shadow(VGAScreen, xMenuItemName, y, name, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+			draw_font_hv_shadow(VGAScreen, xMenuItemName, y, menuItem->name, normal_font, left_aligned, 15, shade, false, 2);
 
-			switch (menuItem->id)
+			/* Nearly every row's value is one string in the value column, so the rows only
+			 * pick what to say and the draw below says it. A row that paints its own widget
+			 * (the sliders) or has nothing to show leaves value NULL. */
+			const char *value = NULL;
+
+			const int *const intSetting = menuItemIntSetting(menuItem->id);
+			const bool *const boolSetting = menuItemBoolSetting(menuItem->id);
+
+			if (intSetting != NULL && menuItemHasPicker(menuItem))
+				value = menuItem->getPickerItem((size_t)*intSetting, buffer, sizeof buffer);
+			else if (boolSetting != NULL)
+				value = *boolSetting ? "On" : "Off";
+			else switch (menuItem->id)
 			{
-			case MENU_ITEM_DISPLAY:;
-				const char *value = "Window";
+			case MENU_ITEM_DISPLAY:
+				value = "Window";
 				if (fullscreen_display >= 0)
 				{
 					snprintf(buffer, sizeof(buffer), "Display %d", fullscreen_display + 1);
 					value = buffer;
 				}
-
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, value, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
 			case MENU_ITEM_SCALER:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, scalers[scaler].name, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				value = scalers[scaler].name;
 				break;
 
 			case MENU_ITEM_SCALING_MODE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, scaling_mode_names[scaling_mode], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				value = scaling_mode_names[scaling_mode];
 				break;
 
 			case MENU_ITEM_SUPERSAMPLE:
@@ -1109,11 +1041,15 @@ static bool runOptionsMenu(MenuId startMenu)
 					         supersampleNames[render_supersample], effective_supersample());
 				else
 					snprintf(buffer, sizeof(buffer), "%s", supersampleNames[render_supersample]);
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, buffer, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				value = buffer;
 				break;
 
-			case MENU_ITEM_SS_FILTER:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, ssFilterNames[render_supersample_filter], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+			case MENU_ITEM_SMOOTH_MOTION:
+				value = smoothMotion ? "On" : "Off";
+				break;
+
+			case MENU_ITEM_VSYNC:
+				value = output_vsync ? "On" : "Off";
 				break;
 
 			case MENU_ITEM_FPS:
@@ -1123,16 +1059,49 @@ static bool runOptionsMenu(MenuId startMenu)
 					snprintf(buffer, sizeof(buffer), "Uncapped");
 				else
 					snprintf(buffer, sizeof(buffer), "%d", fps_cap);
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, buffer, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				value = buffer;
 				break;
 
-			case MENU_ITEM_VSYNC:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, output_vsync ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+			case MENU_ITEM_MUSIC_DEVICE:
+				value = music_device_names[music_device];
 				break;
 
-			case MENU_ITEM_SHOW_FPS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, show_fps ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+			case MENU_ITEM_NET_LOG:
+				value = crashlog_get_netlog_enabled() ? "On" : "Off";
 				break;
+
+			case MENU_ITEM_CLEAR_LOGS:
+				// An action row, so it has no value of its own; the column carries the
+				// outcome of the press instead, and stays blank until there is one.
+				if (logsCleared != LOGS_CLEAR_UNTOUCHED)
+					value = logsCleared == LOGS_CLEAR_DONE ? "Cleared" : "No Logs";
+				break;
+
+			case MENU_ITEM_ENEMY_BAR_OPACITY:
+				snprintf(buffer, sizeof(buffer), "%d%%", enemyBarOpacity);
+				value = buffer;
+				break;
+
+			case MENU_ITEM_UNUSED_SPRITES:
+				value = unusedShopSprites ? "On" : "Off";
+				break;
+
+			case MENU_ITEM_XMAS:
+				value = xmas ? "On" : "Off";
+				break;
+
+			case MENU_ITEM_SHOT_HITBOXES:
+				value = centeredShotHitboxes ? "Centered" : "Classic";
+				break;
+
+			case MENU_ITEM_SIDEKICK_AUTOFIRE:
+			{
+				// Off/On/Charged are the reachable modes; "Fast" only shows if the
+				// debug menu set CHARGE_AUTOFIRE_FAST; it can't be selected here.
+				static const char *const names[CHARGE_AUTOFIRE_NUM] = { "Off", "On", "Charged", "Fast" };
+				value = names[chargeSidekickAutofire % CHARGE_AUTOFIRE_NUM];
+				break;
+			}
 
 			case MENU_ITEM_MUSIC_VOLUME:
 				JE_barDrawShadow(VGAScreen, xMenuItemValue, y, 1, music_disabled ? 170 : 174, (tyrMusicVolume + 4) / 8, 2, 10);
@@ -1158,195 +1127,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				break;
 			}
 
-			case MENU_ITEM_MUSIC_DEVICE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, music_device_names[music_device], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ARMOR_ALARM:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, armorAlarm ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_LINK_SOUNDS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, linkSounds ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_NET_LOG:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, crashlog_get_netlog_enabled() ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_CLEAR_LOGS:
-				// An action row, so it has no value of its own; the column carries the
-				// outcome of the press instead, and stays blank until there is one.
-				if (logsCleared != LOGS_CLEAR_UNTOUCHED)
-					draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, logsCleared == LOGS_CLEAR_DONE ? "Cleared" : "No Logs", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_BOSS_BAR_STYLE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, bossBarStyleNames[bossBarStyle], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_BOSS_BAR_LAYOUT:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, bossBarLayoutNames[bossBarLayout], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_BOSS_BAR_TWO:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, bossBarTwoNames[bossBarTwoMode], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ENEMY_BARS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, enemyBars ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ENEMY_BAR_LAYOUT:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, enemyBarLayoutNames[enemyBarLayout], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ENEMY_BAR_POS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, enemyBarPositionNames[enemyBarPosition], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ENEMY_BAR_OPACITY:
-				snprintf(buffer, sizeof(buffer), "%d%%", enemyBarOpacity);
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, buffer, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_GAUGE_GRAD_GEN:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeGradNames[gaugeGradGenerator], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_GAUGE_GRAD_SHIELD:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeGradNames[gaugeGradShield], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_GAUGE_GRAD_ARMOR:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeGradNames[gaugeGradArmor], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_GAUGE_FLASH_SHIELD:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeFlashShield ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_GAUGE_FLASH_ARMOR:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, gaugeFlashArmor ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_DEBUG_MODE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, debugMode ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_EXTRA_PARALLAX:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, extraParallax ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_MIRRORED_LAYERS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, mirroredLayers ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SMOOTH_MOTION:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, smoothMotion ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_EXTRA_SPARKS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, extraSparks ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_XMAS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, xmas ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ZICA_BASE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, zicaBaseNames[zicaLaserBase], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ZICA_LENGTH:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, zicaLengthNames[zicaLaserLength], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ZICA_LOCK:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, zicaLaserLock ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ZICA_BUFF:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, zicaLaserBuff ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SPARKS_MODE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, sparkModeNames[superSparkMode[currentSparkWeapon]], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SPARKS_CAP:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, superSparkClassicCap[currentSparkWeapon] ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_WALLOP_BOLT:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, sparkModeNames[wallopSecondBolt], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_EPDIFF_MODE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, zicaBaseNames[epDiffMode[currentDiffWeapon]], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_CHARGE_LASER:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, chargeLaserCannon ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_BASE_DISPENSERS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, restoreBaseDispensers ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_UNUSED_SPRITES:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, unusedShopSprites ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SPECIAL_TINT:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, specialScreenTint ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SHOT_HITBOXES:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, centeredShotHitboxes ? "Centered" : "Classic", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ARCADE_LIFE_BOOST:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeLifeBoost ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ARCADE_RANDOM_BALLS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeRandomBalls ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_ARCADE_REAR_SCALE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeRearGunScale ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_SIDEKICK_AUTOFIRE:
-			{
-				// Off/On/Charged are the reachable modes; "Fast" only shows if the
-				// debug menu set CHARGE_AUTOFIRE_FAST; it can't be selected here.
-				static const char *const names[CHARGE_AUTOFIRE_NUM] = { "Off", "On", "Charged", "Fast" };
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, names[chargeSidekickAutofire % CHARGE_AUTOFIRE_NUM], normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-			}
-
-			case MENU_ITEM_CUSTOM_WEAPONS:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, customWeaponEnabled ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_RICH_MODE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, richMode ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_CONSTANT_PLAY:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, constantPlay ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
-			case MENU_ITEM_CONSTANT_DIE:
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, constantDie ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
-				break;
-
 			default:
-				// Super Arcade ship rows use the code as the name and have no value.
+				// Submenu rows, Done, and the Super Arcade ship codes carry no value.
 				break;
 			}
+
+			if (value != NULL)
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, value, normal_font, left_aligned, 15, shade, false, 2);
 		}
 
 		// Draw status text. The Music Synth row shows live SoundFont status so the
@@ -1475,65 +1262,13 @@ static bool runOptionsMenu(MenuId startMenu)
 									action = true;
 								}
 
-								// Act on menu item via value.
+								// Act on menu item via value. Only the sliders read *where* in the
+								// column the click landed; for every other row either column is
+								// the same press, so they fall through to the shared action.
 								else if (lastmouse_x >= xMenuItemValue && lastmouse_x < xMenuItemValue + wMenuItemValue)
 								{
 									switch (menuItems[*selectedMenuItemIndex].id)
 									{
-									case MENU_ITEM_DISPLAY:
-									case MENU_ITEM_SCALER:
-									case MENU_ITEM_SCALING_MODE:
-									case MENU_ITEM_SUPERSAMPLE:
-									case MENU_ITEM_SS_FILTER:
-									case MENU_ITEM_FPS:
-									case MENU_ITEM_VSYNC:
-									case MENU_ITEM_SHOW_FPS:
-									case MENU_ITEM_MUSIC_DEVICE:
-									case MENU_ITEM_ARMOR_ALARM:
-									case MENU_ITEM_LINK_SOUNDS:
-									case MENU_ITEM_NET_LOG:
-									case MENU_ITEM_BOSS_BAR_STYLE:
-									case MENU_ITEM_BOSS_BAR_LAYOUT:
-									case MENU_ITEM_BOSS_BAR_TWO:
-									case MENU_ITEM_ENEMY_BARS:
-									case MENU_ITEM_ENEMY_BAR_LAYOUT:
-									case MENU_ITEM_ENEMY_BAR_POS:
-									case MENU_ITEM_GAUGE_GRAD_GEN:
-									case MENU_ITEM_GAUGE_GRAD_SHIELD:
-									case MENU_ITEM_GAUGE_GRAD_ARMOR:
-									case MENU_ITEM_GAUGE_FLASH_SHIELD:
-									case MENU_ITEM_GAUGE_FLASH_ARMOR:
-									case MENU_ITEM_DEBUG_MODE:
-									case MENU_ITEM_EXTRA_PARALLAX:
-									case MENU_ITEM_MIRRORED_LAYERS:
-									case MENU_ITEM_SMOOTH_MOTION:
-									case MENU_ITEM_EXTRA_SPARKS:
-									case MENU_ITEM_XMAS:
-									case MENU_ITEM_SPARKS_MODE:
-									case MENU_ITEM_SPARKS_CAP:
-									case MENU_ITEM_WALLOP_BOLT:
-									case MENU_ITEM_EPDIFF_MODE:
-									case MENU_ITEM_ZICA_BASE:
-									case MENU_ITEM_ZICA_LENGTH:
-									case MENU_ITEM_ZICA_LOCK:
-									case MENU_ITEM_ZICA_BUFF:
-									case MENU_ITEM_CHARGE_LASER:
-									case MENU_ITEM_BASE_DISPENSERS:
-									case MENU_ITEM_CUSTOM_WEAPONS:
-									case MENU_ITEM_ARCADE_LIFE_BOOST:
-									case MENU_ITEM_ARCADE_RANDOM_BALLS:
-									case MENU_ITEM_ARCADE_REAR_SCALE:
-									case MENU_ITEM_UNUSED_SPRITES:
-									case MENU_ITEM_SPECIAL_TINT:
-									case MENU_ITEM_SHOT_HITBOXES:
-									case MENU_ITEM_SIDEKICK_AUTOFIRE:
-									case MENU_ITEM_RICH_MODE:
-									case MENU_ITEM_CONSTANT_PLAY:
-									case MENU_ITEM_CONSTANT_DIE:
-									{
-										action = true;
-										break;
-									}
 									case MENU_ITEM_ENEMY_BAR_OPACITY:
 									{
 										JE_playSampleNum(S_CURSOR);
@@ -1571,6 +1306,7 @@ static bool runOptionsMenu(MenuId startMenu)
 										break;
 									}
 									default:
+										action = true;
 										break;
 									}
 								}
@@ -1638,13 +1374,13 @@ static bool runOptionsMenu(MenuId startMenu)
 				case SDL_SCANCODE_LEFT:
 				{
 					fpsTyped = false;
-					adjustMenuItemValue(menuItems[*selectedMenuItemIndex].id, -1);
+					adjustMenuItemValue(&menuItems[*selectedMenuItemIndex], -1);
 					break;
 				}
 				case SDL_SCANCODE_RIGHT:
 				{
 					fpsTyped = false;
-					adjustMenuItemValue(menuItems[*selectedMenuItemIndex].id, +1);
+					adjustMenuItemValue(&menuItems[*selectedMenuItemIndex], +1);
 					break;
 				}
 				case SDL_SCANCODE_SPACE:
@@ -1668,178 +1404,42 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			if (action)
 			{
-				const MenuItemId selectedMenuItemId = menuItems[*selectedMenuItemIndex].id;
+				const MenuItem *const selectedMenuItem = &menuItems[*selectedMenuItemIndex];
+				const MenuItemId selectedMenuItemId = selectedMenuItem->id;
 
-				switch (selectedMenuItemId)
+				/* Opening a submenu, flipping a flag and raising a picker are the three
+				 * things almost every row does, and each is the same work whichever row
+				 * asks for it. Only the rows that do something *else* need a case below. */
+				bool *const boolSetting = menuItemBoolSetting(selectedMenuItemId);
+				const int *const intSetting = menuItemIntSetting(selectedMenuItemId);
+
+				if (selectedMenuItem->submenu != MENU_NONE)
+				{
+					JE_playSampleNum(S_SELECT);
+
+					menuParents[selectedMenuItem->submenu] = currentMenu;
+					currentMenu = selectedMenuItem->submenu;
+					selectedMenuItemIndexes[currentMenu] = 0;
+				}
+				else if (boolSetting != NULL)
+				{
+					*boolSetting = !*boolSetting;
+					JE_playSampleNum(S_CLICK);
+				}
+				else if (intSetting != NULL && menuItemHasPicker(selectedMenuItem))
+				{
+					JE_playSampleNum(S_CLICK);
+
+					currentPicker = selectedMenuItemId;
+					pickerSelectedIndex = (size_t)*intSetting;
+				}
+				else switch (selectedMenuItemId)
 				{
 				case MENU_ITEM_DONE:
 				{
 					JE_playSampleNum(S_SELECT);
 
 					currentMenu = menuParents[currentMenu];
-					break;
-				}
-				case MENU_ITEM_GRAPHICS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_GRAPHICS] = currentMenu;
-					currentMenu = MENU_GRAPHICS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_SOUND:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_SOUND] = currentMenu;
-					currentMenu = MENU_SOUND;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_ENHANCEMENTS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_ENHANCEMENTS] = currentMenu;
-					currentMenu = MENU_ENHANCEMENTS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_BOSS_BARS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_BOSS_BARS] = currentMenu;
-					currentMenu = MENU_BOSS_BARS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_ENEMY_BARS_MENU:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_ENEMY_BARS] = currentMenu;
-					currentMenu = MENU_ENEMY_BARS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRADS_MENU:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_GAUGE_GRADIENTS] = currentMenu;
-					currentMenu = MENU_GAUGE_GRADIENTS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_GAME_TWEAKS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_GAME_TWEAKS] = currentMenu;
-					currentMenu = MENU_GAME_TWEAKS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_ARCADE_TWEAKS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_ARCADE_TWEAKS] = currentMenu;
-					currentMenu = MENU_ARCADE_TWEAKS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_NETWORK_MENU:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_NETWORK] = currentMenu;
-					currentMenu = MENU_NETWORK;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_ZICA_LASER:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_ZICA_LASER] = currentMenu;
-					currentMenu = MENU_ZICA_LASER;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_SUPERSPARKS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_SUPERSPARKS] = currentMenu;
-					currentMenu = MENU_SUPERSPARKS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_SPARKS_MEGA_PULSE:
-				case MENU_ITEM_SPARKS_WALLOP:
-				case MENU_ITEM_SPARKS_PROTRON_B:
-				case MENU_ITEM_SPARKS_ICE:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					// The submenus' item ids are shared; remember which weapon they edit.
-					// Both id and menu-id runs mirror the SuperSparkWeapon enum order.
-					currentSparkWeapon = SSW_MEGA_PULSE + (selectedMenuItemId - MENU_ITEM_SPARKS_MEGA_PULSE);
-					const MenuId sparkMenu = MENU_SPARKS_MEGA_PULSE + (selectedMenuItemId - MENU_ITEM_SPARKS_MEGA_PULSE);
-					menuParents[sparkMenu] = currentMenu;
-					currentMenu = sparkMenu;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_EPDIFFS:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_EPDIFFS] = currentMenu;
-					currentMenu = MENU_EPDIFFS;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_EPDIFF_XEGA:
-				case MENU_ITEM_EPDIFF_MICROSOL:
-				case MENU_ITEM_EPDIFF_FLARE:
-				case MENU_ITEM_EPDIFF_NEEDLE:
-				case MENU_ITEM_EPDIFF_BUBBLE:
-				case MENU_ITEM_EPDIFF_PUNCH:
-				case MENU_ITEM_EPDIFF_PRETZEL:
-				case MENU_ITEM_EPDIFF_DRAGON:
-				case MENU_ITEM_EPDIFF_SOLAR:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					// The submenus' one row is shared; remember which item it edits.
-					// Both id and menu-id runs mirror the EpDiffWeapon enum order.
-					currentDiffWeapon = EDW_XEGA_BALL + (selectedMenuItemId - MENU_ITEM_EPDIFF_XEGA);
-					const MenuId diffMenu = MENU_EPDIFF_XEGA + (selectedMenuItemId - MENU_ITEM_EPDIFF_XEGA);
-					menuParents[diffMenu] = currentMenu;
-					currentMenu = diffMenu;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_ARCADE_MENU:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_ARCADE] = currentMenu;
-					currentMenu = MENU_ARCADE;
-					selectedMenuItemIndexes[currentMenu] = 0;
-					break;
-				}
-				case MENU_ITEM_CMDLINE_MENU:
-				{
-					JE_playSampleNum(S_SELECT);
-
-					menuParents[MENU_CMDLINE] = currentMenu;
-					currentMenu = MENU_CMDLINE;
-					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}
 				case MENU_ITEM_JUKEBOX:
@@ -1876,6 +1476,13 @@ static bool runOptionsMenu(MenuId startMenu)
 						return true;  // game launched; the title screen starts it
 
 					set_menu_centered(true);
+					restart = true;
+					break;
+				}
+				case MENU_ITEM_CUSTOM_CREATOR:
+				{
+					JE_playSampleNum(S_SELECT);
+					JE_customWeaponCreator(false);  // Setup context: design only (no active ship to equip)
 					restart = true;
 					break;
 				}
@@ -1917,12 +1524,12 @@ static bool runOptionsMenu(MenuId startMenu)
 					pickerSelectedIndex = (size_t)render_supersample;
 					break;
 				}
-				case MENU_ITEM_SS_FILTER:
+				case MENU_ITEM_MUSIC_DEVICE:
 				{
 					JE_playSampleNum(S_CLICK);
 
 					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = (size_t)render_supersample_filter;
+					pickerSelectedIndex = music_device;
 					break;
 				}
 				case MENU_ITEM_FPS:
@@ -1953,78 +1560,6 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
-				case MENU_ITEM_MUSIC_DEVICE:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = music_device;
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_STYLE:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = bossBarStyle;
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_LAYOUT:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = bossBarLayout;
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_TWO:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = bossBarTwoMode;
-					break;
-				}
-				case MENU_ITEM_ENEMY_BAR_LAYOUT:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = enemyBarLayout;
-					break;
-				}
-				case MENU_ITEM_ENEMY_BAR_POS:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = enemyBarPosition;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_GEN:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = gaugeGradGenerator;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_SHIELD:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = gaugeGradShield;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_ARMOR:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = gaugeGradArmor;
-					break;
-				}
 				case MENU_ITEM_MUSIC_VOLUME:
 				{
 					JE_playSampleNum(S_CLICK);
@@ -2041,15 +1576,16 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
-				case MENU_ITEM_ARMOR_ALARM:
+				case MENU_ITEM_VSYNC:
 				{
-					armorAlarm = !armorAlarm;
+					set_vsync(!output_vsync);
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
-				case MENU_ITEM_LINK_SOUNDS:
+				case MENU_ITEM_SMOOTH_MOTION:
 				{
-					linkSounds = !linkSounds;
+					set_smooth_motion(!smoothMotion);
+					enforcePlainScalerForSupersample();  // turning on re-arms Auto; scaler rule applies
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
@@ -2065,140 +1601,9 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(logsCleared == LOGS_CLEAR_DONE ? S_SELECT : S_CLICK);
 					break;
 				}
-				case MENU_ITEM_VSYNC:
-				{
-					set_vsync(!output_vsync);
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_SHOW_FPS:
-				{
-					show_fps = !show_fps;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_ENEMY_BARS:
-				{
-					enemyBars = !enemyBars;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_GAUGE_FLASH_SHIELD:
-				{
-					gaugeFlashShield = !gaugeFlashShield;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_GAUGE_FLASH_ARMOR:
-				{
-					gaugeFlashArmor = !gaugeFlashArmor;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_DEBUG_MODE:
-				{
-					debugMode = !debugMode;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_EXTRA_PARALLAX:
-				{
-					extraParallax = !extraParallax;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_MIRRORED_LAYERS:
-				{
-					mirroredLayers = !mirroredLayers;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_SMOOTH_MOTION:
-				{
-					set_smooth_motion(!smoothMotion);
-					enforcePlainScalerForSupersample();  // turning on re-arms Auto; scaler rule applies
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_EXTRA_SPARKS:
-				{
-					extraSparks = !extraSparks;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
 				case MENU_ITEM_XMAS:
 				{
 					JE_playSampleNum(toggle_xmas_mode() ? S_CLICK : S_SPRING);
-					break;
-				}
-				case MENU_ITEM_ZICA_BASE:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = zicaLaserBase;
-					break;
-				}
-				case MENU_ITEM_ZICA_LENGTH:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = zicaLaserLength;
-					break;
-				}
-				case MENU_ITEM_ZICA_LOCK:
-				{
-					zicaLaserLock = !zicaLaserLock;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_ZICA_BUFF:
-				{
-					zicaLaserBuff = !zicaLaserBuff;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_SPARKS_MODE:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = superSparkMode[currentSparkWeapon];
-					break;
-				}
-				case MENU_ITEM_SPARKS_CAP:
-				{
-					superSparkClassicCap[currentSparkWeapon] = !superSparkClassicCap[currentSparkWeapon];
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_WALLOP_BOLT:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = wallopSecondBolt;
-					break;
-				}
-				case MENU_ITEM_EPDIFF_MODE:
-				{
-					JE_playSampleNum(S_CLICK);
-
-					currentPicker = selectedMenuItemId;
-					pickerSelectedIndex = epDiffMode[currentDiffWeapon];
-					break;
-				}
-				case MENU_ITEM_CHARGE_LASER:
-				{
-					chargeLaserCannon = !chargeLaserCannon;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_BASE_DISPENSERS:
-				{
-					restoreBaseDispensers = !restoreBaseDispensers;
-					JE_playSampleNum(S_CLICK);
 					break;
 				}
 				case MENU_ITEM_UNUSED_SPRITES:
@@ -2208,70 +1613,15 @@ static bool runOptionsMenu(MenuId startMenu)
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
-				case MENU_ITEM_SPECIAL_TINT:
-				{
-					specialScreenTint = !specialScreenTint;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
 				case MENU_ITEM_SHOT_HITBOXES:
 				{
 					centeredShotHitboxes = !centeredShotHitboxes;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
-				case MENU_ITEM_ARCADE_LIFE_BOOST:
-				{
-					arcadeLifeBoost = !arcadeLifeBoost;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_ARCADE_RANDOM_BALLS:
-				{
-					arcadeRandomBalls = !arcadeRandomBalls;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_ARCADE_REAR_SCALE:
-				{
-					arcadeRearGunScale = !arcadeRearGunScale;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
 				case MENU_ITEM_SIDEKICK_AUTOFIRE:
 				{
 					cycleSidekickAutofire(+1);
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_CUSTOM_WEAPONS:
-				{
-					customWeaponEnabled = !customWeaponEnabled;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_CUSTOM_CREATOR:
-				{
-					JE_playSampleNum(S_SELECT);
-					JE_customWeaponCreator(false);  // Setup context: design only (no active ship to equip)
-					restart = true;
-					break;
-				}
-				case MENU_ITEM_RICH_MODE:
-				{
-					richMode = !richMode;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_CONSTANT_PLAY:
-				{
-					constantPlay = !constantPlay;
-					JE_playSampleNum(S_CLICK);
-					break;
-				}
-				case MENU_ITEM_CONSTANT_DIE:
-				{
-					constantDie = !constantDie;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}
@@ -2401,7 +1751,12 @@ static bool runOptionsMenu(MenuId startMenu)
 			{
 				JE_playSampleNum(S_CLICK);
 
-				switch (selectedMenuItem->id)
+				// The index-backed settings commit straight into the setting the row maps to;
+				// the rest need work beyond storing the index.
+				int *const intSetting = menuItemIntSetting(selectedMenuItem->id);
+				if (intSetting != NULL)
+					*intSetting = (int)pickerSelectedIndex;
+				else switch (selectedMenuItem->id)
 				{
 				case MENU_ITEM_DISPLAY:
 				{
@@ -2439,11 +1794,6 @@ static bool runOptionsMenu(MenuId startMenu)
 					enforcePlainScalerForSupersample();
 					break;
 				}
-				case MENU_ITEM_SS_FILTER:
-				{
-					render_supersample_filter = (int)pickerSelectedIndex;
-					break;
-				}
 				case MENU_ITEM_MUSIC_DEVICE:
 				{
 					// FluidSynth is grayed out with no SoundFont to load; refuse.
@@ -2454,71 +1804,6 @@ static bool runOptionsMenu(MenuId startMenu)
 					}
 					music_device = (MusicDevice)pickerSelectedIndex;
 					restart_audio();
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_STYLE:
-				{
-					bossBarStyle = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_LAYOUT:
-				{
-					bossBarLayout = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_BOSS_BAR_TWO:
-				{
-					bossBarTwoMode = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_ENEMY_BAR_LAYOUT:
-				{
-					enemyBarLayout = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_ENEMY_BAR_POS:
-				{
-					enemyBarPosition = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_GEN:
-				{
-					gaugeGradGenerator = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_SHIELD:
-				{
-					gaugeGradShield = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_GAUGE_GRAD_ARMOR:
-				{
-					gaugeGradArmor = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_ZICA_BASE:
-				{
-					zicaLaserBase = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_ZICA_LENGTH:
-				{
-					zicaLaserLength = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_SPARKS_MODE:
-				{
-					superSparkMode[currentSparkWeapon] = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_WALLOP_BOLT:
-				{
-					wallopSecondBolt = (int)pickerSelectedIndex;
-					break;
-				}
-				case MENU_ITEM_EPDIFF_MODE:
-				{
-					epDiffMode[currentDiffWeapon] = (int)pickerSelectedIndex;
 					break;
 				}
 				default:

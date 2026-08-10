@@ -302,7 +302,7 @@ extern int enemyBarOpacity;   // 0..100 (percent; 0 hides the bars)
 extern bool smoothMotion;   // interpolate motion between logic ticks for smooth high-refresh play
 void set_smooth_motion(bool enabled);  // off: disables supersampling; off->on: Sub-pixel back to Auto
 extern bool extraSparks;    // raise the explosion superspark limit far above the classic 101 cap
-// Superspark projectile trails (menu: Enhancements -> Weapon Tweaks -> Superspark Weapons). Only
+// Superspark projectile trails (menu: Enhancements -> Weapons -> Spark Trails). Only
 // Ep4/5 item data tags these projectiles; JE_applySuperSparks retags them per episode.
 enum
 {
@@ -357,7 +357,7 @@ typedef enum
 extern int epDiffMode[EDW_COUNT];  // EPDIFF_* : which episode's data each item uses
 
 // Per-gauge gradient direction for the three vertical HUD gauges (menu: Enhancements ->
-// Gauge Gradients). Each gauge can run its shade gradient up the column (Up = classic),
+// Heads-Up Display -> Gauges). Each gauge can run its shade gradient up the column (Up = classic),
 // down it, or across the 9-pixel width (Left/Right). Default Up = the vanilla look.
 typedef enum
 {
@@ -380,7 +380,8 @@ extern bool gaugeFlashArmor;
 // Presentation-only, so the two sides of an online game may set it differently (tyrian2.c).
 extern bool specialScreenTint;
 
-// Zica Laser Lv11 tweaks (menu: Enhancements -> Weapon Tweaks). Three independent axes:
+// Zica Laser Lv11 tweaks (menu: Enhancements -> Weapons -> Episode Versions -> Zica Laser).
+// Three independent axes:
 //   Base   : the Lv11 horizontal shot pattern, forced in every episode.
 //   Length : Lv11 shot length; Short (vanilla) or Long (as long as the Lv10 beam).
 //   Buff   : also fire the Lv10 ship-locked beam alongside the Lv11 shots.

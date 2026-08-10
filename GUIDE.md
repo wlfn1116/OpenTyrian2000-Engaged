@@ -12,9 +12,9 @@ content. This guide explains those additions.
 | Play at my monitor's refresh rate | Setup > Graphics > Smooth Motion |
 | Smooth out scrolling and movement | Setup > Graphics > Sub-pixel |
 | Play with a friend | Main menu > Online Multiplayer |
-| Design a weapon | Setup > Enhancements > Custom Weapon Creator |
-| Change boss and enemy health bars | Setup > Enhancements |
-| Turn restored content on or off | Setup > Enhancements > Game Tweaks |
+| Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
+| Change boss and enemy health bars | Setup > Enhancements > Heads-Up Display |
+| Turn restored content on or off | Setup > Enhancements > Weapons, or > Gameplay |
 | Use a SoundFont instead of OPL | Setup > Sound > Music Synth |
 | Change mouse or touch sensitivity | Setup > Sensitivity |
 | Reach the jukebox, Destruct, and SuperTyrian | Title screen > Extra |
@@ -453,7 +453,7 @@ eleven lives reads as a ship and "11".
 
 ### Arcade tweaks
 
-**Setup > Enhancements > Game Tweaks > Arcade** holds the three arcade switches:
+**Setup > Enhancements > Gameplay > Arcade Modes** holds the three arcade switches:
 Life Boost, Random Pickups and Rear Gun Scale, all off by default. Online, the
 host's three settings bind the session for both machines.
 
@@ -843,7 +843,7 @@ session start. There is no Alt+L during play.
 
 ## Custom Weapon Creator
 
-**Setup > Enhancements > Custom Weapon Creator.** Stores up to 32 weapons, each
+**Setup > Enhancements > Weapons > Weapon Creator.** Stores up to 32 weapons, each
 with 11 power levels, an optional rear-gun firing mode, and a live test range. A
 finished design can be equipped as a front gun, rear gun, or sidekick. The
 **Custom Weapons** row puts it in the shops.
@@ -873,30 +873,33 @@ without either of you seeing the other's in your shop.
 
 ## Restored and tweakable content
 
-**Setup > Enhancements > Game Tweaks** holds the differences between the Episode
-1-3 and Episode 4-5 item data, plus the content the original game shipped but
-never used:
+The differences between the Episode 1-3 and Episode 4-5 item data, plus the
+content the original game shipped but never used, live under **Setup >
+Enhancements** in the menu each belongs to:
 
-- superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice
-- Zica Laser level-11 patterns and beam behaviour
-- Xega Ball and MicroSol Option 5 episode variants
-- Flare and Super Bomb sprites
-- Needle Laser and Bubble Gum-Gun sounds
-- the Gencore Solar Shield's shop icon
-- the cut Charge-Laser sidekick
-- Ice Base Shots
-- Unused Sprites
-- Special Tint
-- Shot Hitboxes
-- sidekick autofire
+| Setting | Menu |
+| --- | --- |
+| Spark trails for Mega Pulse, Wallop Beam, Protron -B- and Ice | Weapons > Spark Trails |
+| Zica Laser level-11 patterns and beam behaviour | Weapons > Episode Versions > Zica Laser |
+| Xega Ball, MicroSol Option 5, Flare blast, Solar Shield icon | Weapons > Episode Versions |
+| Needle Laser, Bubble Gum-Gun, Flying Punch, Pretzel Missile and Dragon Frost sounds | Weapons > Episode Versions > Firing Sounds |
+| The cut Charge-Laser sidekick, and sidekick autofire | Weapons |
+| Ice Base Shots, Shot Hitboxes | Gameplay |
+| Unused Sprites, Special Tint | Visuals |
 
-Each row under **Episode Differences** opens a submenu with one **Version:**
-setting: *Auto*, *Ep 1-3* or *Ep 4+*. Auto is the default and plays each episode
-as it shipped, and the other two force one version everywhere. **Gencore Solar
-Shield** is a shop-icon row rather than a gameplay one. Episodes 1-3 draw that
-shield with the MicroCorp HXS picture and Episodes 4-5 with the one its two
-Gencore siblings use, so the setting picks which icon the shop shows. In an
-online session the host's Episode Differences settings bind both machines.
+Every **Episode Versions** row is one setting with three values: *Auto*, *Ep 1-3*
+or *Ep 4+*. Auto is the default and plays each episode as it shipped, and the
+other two force one version everywhere. **Solar Shield Icon** is a shop-icon row
+rather than a gameplay one. Episodes 1-3 draw the Gencore Solar Shield with the
+MicroCorp HXS picture and Episodes 4-5 with the one its two Gencore siblings use,
+so the setting picks which icon the shop shows. In an online session the host's
+Episode Versions settings bind both machines.
+
+**Spark Trails** works the same way, one row per weapon: only the Episode 4-5
+item data gives these four a spark trail behind their shots. The **Wallop 2nd
+Bolt** row on the same menu is the extra bolt the Episode 4-5 Wallop Beam fires
+each volley. **Spark Caps** holds each trail to the classic spark limit even when
+Extra Sparks is on.
 
 **Ice Base Shots**, on by default, wakes the dormant dispenser bases on Camanis
 (Episode 3) and the secret Camanis research base (Episode 4). The game data gives
@@ -942,17 +945,31 @@ already; the large projectiles differ most. Hit box sizes are the same in both
 modes, and ship-to-enemy collision is untouched. Online, the host's setting
 binds both machines.
 
-## Other enhancements
+## The Enhancements menu
+
+**Setup > Enhancements** is five menus, one per part of the game they change.
+
+| Menu | Holds |
+| --- | --- |
+| Visuals | Extra Parallax, Mirrored Layers, Extra Sparks, Special Tint, Unused Sprites |
+| Heads-Up Display | Enemy Bars, Boss Bars, Gauges |
+| Weapons | Custom weapons and the Weapon Creator, Charge-Laser, Sidekick Autofire, Spark Trails, Episode Versions |
+| Gameplay | Shot Hitboxes, Ice Base Shots, Arcade Modes |
+| Diagnostics | Debug Mode, Network Log, and Clear Logs on the consoles |
+
+The rows that are not covered elsewhere in this guide:
 
 | Setting | Effect |
 | --- | --- |
-| Debug Mode | Adds the debug menu and level selection |
 | Extra Parallax | Uses the full horizontal range of the background layers |
 | Mirrored Layers | Continues background content past a layer's edge as a mirror |
 | Extra Sparks | Raises the spark-particle limit |
-| Enemy Bars | Health bars on enemies you have damaged |
-| Boss Health Bars | Boss-bar style and placement |
-| Gauge Gradients | Gauge direction and damage flashes |
+| Debug Mode | Adds the debug menu and level selection |
+
+**Heads-Up Display** splits into three: *Enemy Bars* is the small health bar on
+enemies you have damaged, with its own layout, position and opacity; *Boss Bars*
+is boss-bar style and placement; *Gauges* is the gradient direction of the
+generator, shield and armor gauges plus their damage flashes.
 
 Under **Setup > Sound**, *Armor Alarm* is the low-armor siren and *Link Sounds*
 is the cue for two ships fusing or unfusing. **Setup > Sensitivity** covers the
@@ -1042,5 +1059,5 @@ example `opentyrian_net_2026-08-04_143012.log`. They are not rotated or deleted.
 For a desync report, attach the matching net log from **both** machines. Each
 contains that machine's state for the disputed frame.
 
-Network logging can be disabled under **Setup > Enhancements > Game Tweaks >
-Network**. On Switch and Vita, **Clear Logs** removes all saved logs.
+Network logging can be disabled under **Setup > Enhancements >
+Diagnostics**. On Switch and Vita, **Clear Logs** removes all saved logs.

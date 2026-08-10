@@ -379,7 +379,7 @@ bool superSparkCapForSprite(JE_word sprite)
 	default:           return false;
 	}
 }
-/* HUD gauge gradient direction (Enhancements -> Gauge Gradients). GAUGE_GRAD_UP
+/* HUD gauge gradient direction (Enhancements -> Heads-Up Display -> Gauges). GAUGE_GRAD_UP
    reproduces the classic vertical gauges; other values run the gradient down the column or
    across its width. Read by draw_power_gauge (tyrian2.c) and JE_dBar3 (nortvars.c). */
 int gaugeGradGenerator = GAUGE_GRAD_UP;
