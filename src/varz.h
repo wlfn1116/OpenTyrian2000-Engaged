@@ -329,6 +329,7 @@ extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;
 extern JE_shortint flareColChg;
+extern bool flareOwnsFilter;  // the live screen grade is a flare's, not the level's (see varz.c)
 extern JE_byte specialWait;
 extern JE_byte nextSpecialWait;
 extern JE_boolean spraySpecial;

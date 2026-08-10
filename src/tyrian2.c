@@ -3323,6 +3323,7 @@ start_level_first:
 	levelFilter = -99;
 	levelBrightness = -14;
 	levelBrightnessChg = 1;
+	flareOwnsFilter = false;  // this one is the level's fade-in, so Special Tint doesn't touch it
 
 	background2notTransparent = false;
 
@@ -5752,7 +5753,10 @@ draw_player_shot_loop_end:
 	}
 
 	/*Filtration*/
-	if (filterActive)
+	// Special Tint off drops the flare's wash here, at the paint, rather than at the flare that
+	// installed it: levelFilter is simulation state, so a peer playing with the other setting
+	// would desync against a flare that never set it.
+	if (filterActive && !(flareOwnsFilter && !specialScreenTint))
 	{
 		if (render_list_recording)
 			rl_rec_filter_screen(levelFilter, levelBrightness);
@@ -9694,6 +9698,7 @@ void JE_eventSystem(void)
 		levelFilterNew     = eventRec[eventLoc-1].eventdat4;
 		levelBrightnessChg = eventRec[eventLoc-1].eventdat5;
 		filterFadeStart    = (eventRec[eventLoc-1].eventdat6 == 0);
+		flareOwnsFilter    = false;  // the level script's own grade; Special Tint never hides it
 		break;
 
 	case 45: /* arcade-only enemy from other enemies */
@@ -10184,10 +10189,22 @@ static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, 
 // One enhanced boss bar: a framed, recessed track with a glossy gradient fill. (gx,gy)/gw/gh are
 // the outer frame; horizontal fills left->right, vertical bottom->up; fraction is 0..1; flash
 // brightens on a hit. Colors stay within the supplied palette bank.
+#define BOSS_BAR_MIN_SIDE 4   // a frame any smaller draws nothing at all
+
+// The tick draw is the only one the residual carries to the interpolated frames
+// (draw_boss_bar_present redraws them there only while they flash), and the gauge is opaque over
+// its whole frame -- but only if it drew one, so this shares the gauge's own size floor. Marking a
+// rect it declined would freeze the playfield under it into the residual instead.
+static void boss_bar_mark_overlay(int gx, int gy, int gw, int gh)
+{
+	if (gw >= BOSS_BAR_MIN_SIDE && gh >= BOSS_BAR_MIN_SIDE)
+		rl_mark_overlay_rect(gx, gy, gw, gh);
+}
+
 static void draw_boss_bar_gauge(SDL_Surface *dst, int scale, int gx, int gy, int gw, int gh,
                                 bool horizontal, float fraction, int flash, int base)
 {
-	if (gw < 4 || gh < 4)
+	if (gw < BOSS_BAR_MIN_SIDE || gh < BOSS_BAR_MIN_SIDE)
 		return;
 	if (fraction < 0.0f)
 		fraction = 0.0f;
@@ -10307,6 +10324,9 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				by = botAnchor - THICK + 1
 				   - ((two && !sideBySide) ? (int)(barCount - 1 - b) * (THICK + GAP) : 0);
 
+			if (decrement)  // the authoritative tick draw
+				boss_bar_mark_overlay(bx, by, bw, THICK);
+
 			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
 			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),
 			                    boss_bar_tint_base(boss_bar[b].link_num));
@@ -10359,6 +10379,9 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				else
 					vTop = mid + GAP / 2 + 1;      // lower bar
 			}
+
+			if (decrement)  // see the horizontal branch
+				boss_bar_mark_overlay(bx, vTop, THICK, vBot - vTop + 1);
 
 			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
 			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),

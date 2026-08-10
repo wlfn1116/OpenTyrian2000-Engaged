@@ -217,6 +217,13 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale);
 // Feedback mode preserves the destination for smoothie trails.
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
 
+// Declare a rectangle this tick painted an opaque overlay into, so the residual takes ALL of it
+// rather than only the pixels that differ from the replay. Without this an overlay pixel that
+// coincidentally matches what the replay draws under it is dropped, and every interpolated or
+// supersampled frame -- which puts that under-pixel somewhere else -- shows a hole in the overlay.
+// Playfield (game_screen) coordinates; cleared by rl_begin_record.
+void rl_mark_overlay_rect(int x, int y, int w, int h);
+
 // Capture the residual: pixels in `reference` (the authoritative frame) that a
 // blit-only replay doesn't reproduce; non-blit draws like superpixels and boss-
 // health bars. `scratch` is a same-size 8-bit work surface. Call after the tick draws.

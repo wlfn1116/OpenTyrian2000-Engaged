@@ -384,6 +384,7 @@ typedef enum
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
+	MENU_ITEM_SPECIAL_TINT,         // flare specials grade the whole screen their colour
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
 	MENU_ITEM_ARCADE_TWEAKS,        // opens the Arcade submenu (the three rows below)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
@@ -600,6 +601,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_SPECIAL_TINT:
+		specialScreenTint = !specialScreenTint;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_SHOT_HITBOXES:
 		centeredShotHitboxes = !centeredShotHitboxes;
 		JE_playSampleNum(S_CURSOR);
@@ -777,6 +782,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
 				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
+				{ MENU_ITEM_SPECIAL_TINT, "Special Tint:", "Flare specials wash the screen in their colour." },
 				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
@@ -1292,6 +1298,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, unusedShopSprites ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_SPECIAL_TINT:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, specialScreenTint ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_SHOT_HITBOXES:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, centeredShotHitboxes ? "Centered" : "Classic", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -1514,6 +1524,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_ARCADE_RANDOM_BALLS:
 									case MENU_ITEM_ARCADE_REAR_SCALE:
 									case MENU_ITEM_UNUSED_SPRITES:
+									case MENU_ITEM_SPECIAL_TINT:
 									case MENU_ITEM_SHOT_HITBOXES:
 									case MENU_ITEM_SIDEKICK_AUTOFIRE:
 									case MENU_ITEM_RICH_MODE:
@@ -2194,6 +2205,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					unusedShopSprites = !unusedShopSprites;
 					JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_SPECIAL_TINT:
+				{
+					specialScreenTint = !specialScreenTint;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

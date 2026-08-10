@@ -7259,6 +7259,112 @@ int hud_lives_row_y(uint p)
 	return hud_special_block_shown(p) ? HUD_LIVES_Y_SPECIAL : HUD_LIVES_Y;
 }
 
+/* Special-ready light. Sprites 93 and 94 are the same 6x12 bar in a spent and a charged paint, so
+ * the meter reads as the charged one filling the spent one a row at a time: it drains top-down for
+ * as long as a fired special burns, meets empty exactly when the burn ends, then climbs back up
+ * over the recharge and pops white on the tick it lands. JE_doSpecialShot publishes the firing
+ * ship's clocks at the end of each tick (it owns the per-ship globals); everything below is
+ * presentation, drawn with the rest of the HUD so no background layer, enemy or screen filter can
+ * reach it.
+ */
+// Both frames paint the same block of the 12px sprite cell: columns 3..8 of rows 1..12.
+#define HUD_LIGHT_ROW_FIRST  1
+#define HUD_LIGHT_ROW_LAST  12
+#define HUD_LIGHT_ROWS      (HUD_LIGHT_ROW_LAST - HUD_LIGHT_ROW_FIRST + 1)
+#define HUD_LIGHT_INK_X      3
+#define HUD_LIGHT_INK_W      6
+#define HUD_LIGHT_FLASH     12   // ticks the ready pop lasts; also its opening brightness
+
+static int  hud_light_charge_left = 0;  // recharge ticks still to run
+static int  hud_light_burn_left = 0;    // ...and burn ticks, while a fired special is still going
+static bool hud_light_published = false;
+static int  hud_light_charge_full = 0;  // what each phase started from, so both scale to themselves
+static int  hud_light_burn_full = 0;
+static int  hud_light_flash = 0;
+static bool hud_light_was_ready = true;
+
+void hud_special_light_publish(int charge_ticks, int burn_ticks)
+{
+	hud_light_charge_left = charge_ticks;
+	hud_light_burn_left = burn_ticks;
+	hud_light_published = true;
+}
+
+static void hud_special_light_reset(void)
+{
+	hud_light_charge_left = 0;
+	hud_light_burn_left = 0;
+	hud_light_published = false;
+	hud_light_charge_full = 0;
+	hud_light_burn_full = 0;
+	hud_light_flash = 0;
+	hud_light_was_ready = true;
+}
+
+static void draw_special_ready_light(int x, int y)
+{
+	// Galaga's wing flies without a special shot at all, so JE_doSpecialShot never runs and there
+	// is no charge to show; anything else that gates it out drops the light the same way.
+	if (!hud_light_published)
+	{
+		hud_special_light_reset();
+		return;
+	}
+	hud_light_published = false;
+
+	const bool burning = hud_light_burn_left > 0;
+	const bool ready = !burning && hud_light_charge_left == 0;
+
+	if (!rollback_resim_silent)
+	{
+		// The pop marks a charge landing, so there has to have been one to watch. A recharge
+		// shorter than the flash itself would strobe rather than read, and level setup seeds a
+		// one-tick one; HUD_LIGHT_ROWS ticks is a tick per row, the shortest climb that shows.
+		const bool climbed = hud_light_charge_full >= HUD_LIGHT_ROWS;
+
+		// Each phase is measured against its own opening value, so a short recharge can't inherit
+		// a long one's scale and open half full.
+		if (hud_light_burn_left > hud_light_burn_full)
+			hud_light_burn_full = hud_light_burn_left;
+		else if (!burning)
+			hud_light_burn_full = 0;
+
+		if (burning || hud_light_charge_left == 0)
+			hud_light_charge_full = 0;
+		else if (hud_light_charge_left > hud_light_charge_full)
+			hud_light_charge_full = hud_light_charge_left;
+
+		if (ready && !hud_light_was_ready && climbed)
+			hud_light_flash = HUD_LIGHT_FLASH;
+		else if (hud_light_flash > 0)
+			--hud_light_flash;
+		hud_light_was_ready = ready;
+	}
+
+	// Burning drains what was there; recharging fills it back. Both land on empty at the handover,
+	// so a special that burns and then recharges reads as one continuous sweep down and back up.
+	int filled = 0;
+	if (ready)
+		filled = HUD_LIGHT_ROWS;
+	else if (burning)
+		filled = hud_light_burn_full > 0
+		       ? hud_light_burn_left * HUD_LIGHT_ROWS / hud_light_burn_full : 0;
+	else if (hud_light_charge_full > 0)
+		filled = (hud_light_charge_full - hud_light_charge_left) * HUD_LIGHT_ROWS / hud_light_charge_full;
+
+	// The light is opaque over its ink block, and only the residual carries it onto interpolated
+	// frames; without the mark, a pixel that happens to match the playfield under it is dropped
+	// there and the bar shows a hole.
+	rl_mark_overlay_rect(x + HUD_LIGHT_INK_X, y + HUD_LIGHT_ROW_FIRST, HUD_LIGHT_INK_W, HUD_LIGHT_ROWS);
+
+	if (filled < HUD_LIGHT_ROWS)
+		blit_sprite2_rows_bright(VGAScreen, x, y, spriteSheet9, 93,
+		                         HUD_LIGHT_ROW_FIRST, HUD_LIGHT_ROW_LAST - filled, 0);
+	if (filled > 0)
+		blit_sprite2_rows_bright(VGAScreen, x, y, spriteSheet9, 94,
+		                         HUD_LIGHT_ROW_LAST - filled + 1, HUD_LIGHT_ROW_LAST, hud_light_flash);
+}
+
 int hud_top_left_right_edge(void)
 {
 	int right = 0;
@@ -7454,8 +7560,15 @@ void JE_inGameDisplays(void)
 	/*Special Weapon?*/
 	const uint local_player = gameplay_local_player_index();
 	if (hud_special_block_shown(local_player))
+	{
 		blit_sprite2x2(VGAScreen, hud_special_icon_x(local_player), HUD_SPECIAL_ICON_Y,
 		               spriteSheet10, special[player[local_player].items.special].itemgraphic);
+		draw_special_ready_light(hud_special_light_x(local_player), HUD_SPECIAL_LIGHT_Y);
+	}
+	else
+	{
+		hud_special_light_reset();  // no block on screen; the next special charges from empty
+	}
 
 	/*Lives Left*/
 	if (arcade_rules_active())
@@ -9743,9 +9856,13 @@ redo:
 
 				rl_current_id = RL_ID_SIDEKICK_BASE + playerNum_ * 2 + (int)i;
 				// Style-0 pods sit at a fixed offset from the ship (reset to ship.x/y each
-				// tick); attach them to the render-rate ship on both axes or they rubber-band
-				// a tick behind it. Other styles move on their own path and interpolate normally.
-				rl_shot_attach = (this_player->sidekick[i].style == 0)
+				// tick), and style-4 satellites orbit it: both are ship position plus an offset,
+				// so attach them to the render-rate ship on both axes or they rubber-band a tick
+				// behind it -- the satellite reading as a whole-pixel step per tick, since its
+				// orbit centre lags a hull that is gliding sub-pixel. The replay subtracts the
+				// ship's tick velocity from their recorded delta, so the orbit itself still
+				// interpolates on top. Other styles move on their own path and interpolate plain.
+				rl_shot_attach = (this_player->sidekick[i].style == 0 || this_player->sidekick[i].style == 4)
 				               ? (3 | ((playerNum_ - 1) << 2))
 				               : 0;
 				if (this_player->sidekick[i].style == 1 || this_player->sidekick[i].style == 2)

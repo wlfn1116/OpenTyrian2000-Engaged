@@ -886,6 +886,7 @@ never used:
 - the cut Charge-Laser sidekick
 - Ice Base Shots
 - Unused Sprites
+- Special Tint
 - Shot Hitboxes
 - sidekick autofire
 
@@ -918,6 +919,15 @@ Banana Blast. Most of these weapons are sold only in Endless, where every port
 can appear in one list. Switching the option off restores the original icons.
 Nothing about the weapons themselves changes.
 
+**Special Tint**, on by default, is the full-screen colour wash the flare-family
+specials lay over the playfield while they burn — the Ice Beam's blue, the
+Fireball's red, the flicker the Soul of Zinglon drives. Switched off, those
+specials fire exactly as before but the screen keeps its own colours, which
+leaves incoming fire easier to read through a long burn. Only the specials' wash
+is suppressed: the fade a level opens with, and any grade a level's own script
+asks for, are untouched. The setting is yours alone and changes nothing about the
+simulation, so the two sides of an online game may set it differently.
+
 **Shot Hitboxes** picks the point a shot is collided from. *Centered*, the
 default, takes the hit from the middle of the frame being drawn and from the
 middle of the sprite it is tested against, so both sides line up with what is on
@@ -947,6 +957,13 @@ binds both machines.
 Under **Setup > Sound**, *Armor Alarm* is the low-armor siren and *Link Sounds*
 is the cue for two ships fusing or unfusing. **Setup > Sensitivity** covers the
 mouse on desktop and touch on consoles.
+
+The bar beside the special-weapon icon is a charge meter rather than the original
+on/off light. Firing drains it from the top down for as long as the special
+burns, it reaches empty as the recharge begins, then fills back up a row at a
+time and flashes white the moment the special is ready again. It now draws on top
+of everything, so no background layer, enemy or screen effect can cover or
+recolour it.
 
 ### Debug Mode
 

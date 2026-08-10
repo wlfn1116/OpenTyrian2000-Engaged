@@ -387,6 +387,9 @@ int gaugeGradShield    = GAUGE_GRAD_RIGHT;
 int gaugeGradArmor     = GAUGE_GRAD_LEFT;
 bool gaugeFlashShield  = true;
 bool gaugeFlashArmor   = true;
+/* Let a burning flare special grade the whole screen its colour, as shipped (the paint is in
+   tyrian2.c; the flare that installs it is JE_doSpecialShot in varz.c). */
+bool specialScreenTint = true;
 /* Zica Laser Lv11 tweaks (JE_applyZicaLaserConfig in episodes.c; front-weapon fire
    loop in mainint.c). */
 int zicaLaserBase = ZICA_BASE_EP4;      /* ZICA_BASE_*: Lv11 shot pattern */
@@ -752,6 +755,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "gauge_flash_armor", &gauge_flash_armor_enabled);
 		gaugeFlashArmor = (gauge_flash_armor_enabled != 0);
 
+		int special_screen_tint = specialScreenTint ? 1 : 0;
+		config_get_int_option(section, "special_screen_tint", &special_screen_tint);
+		specialScreenTint = (special_screen_tint != 0);
+
 		config_get_int_option(section, "zica_l11_base", &zicaLaserBase);
 		if (zicaLaserBase < 0 || zicaLaserBase >= ZICA_BASE_COUNT)
 			zicaLaserBase = ZICA_BASE_EP4;
@@ -1012,6 +1019,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "gauge_grad_armor", gaugeGradArmor);
 	config_set_int_option(section, "gauge_flash_shield", gaugeFlashShield ? 1 : 0);
 	config_set_int_option(section, "gauge_flash_armor", gaugeFlashArmor ? 1 : 0);
+	config_set_int_option(section, "special_screen_tint", specialScreenTint ? 1 : 0);
 	config_set_int_option(section, "zica_l11_base", zicaLaserBase);
 	config_set_int_option(section, "zica_l11_length", zicaLaserLength);
 	config_set_int_option(section, "zica_l11_lock", zicaLaserLock ? 1 : 0);

@@ -4,6 +4,7 @@
 #include "render_list.h"
 
 #include "backgrnd.h"
+#include "rollback.h"
 #include "sprite.h"
 #include "vga256d.h"
 #include "video.h"
@@ -73,6 +74,26 @@ static RenderCmd *rl_push(void)
 	return c;
 }
 
+/* Rectangles a tick painted an opaque overlay into (see rl_mark_overlay_rect). Small and fixed:
+   the boss bars and the special-ready light are the only claimants. */
+#define RL_OVERLAY_RECTS_MAX 8
+static struct { int x, y, w, h; } overlay_rect[RL_OVERLAY_RECTS_MAX];
+static int overlay_rect_count = 0;
+
+void rl_mark_overlay_rect(int x, int y, int w, int h)
+{
+	if (rollback_resim_silent || w <= 0 || h <= 0)
+		return;
+	if (overlay_rect_count >= RL_OVERLAY_RECTS_MAX)
+		return;
+
+	overlay_rect[overlay_rect_count].x = x;
+	overlay_rect[overlay_rect_count].y = y;
+	overlay_rect[overlay_rect_count].w = w;
+	overlay_rect[overlay_rect_count].h = h;
+	++overlay_rect_count;
+}
+
 void rl_begin_record(void)
 {
 	cur_buf ^= 1;             // previous current becomes prev; record into the other
@@ -90,6 +111,7 @@ void rl_begin_record(void)
 	rl_current_acc_y = 0;
 	for (int layer = 1; layer <= 3; ++layer)
 		bg_layer_xofs_valid[layer] = false;
+	overlay_rect_count = 0;
 	render_list_recording = true;
 }
 
@@ -1095,6 +1117,32 @@ static bool rl_res_push(int off, Uint8 val)
 	return true;
 }
 
+/* Take every pixel of each marked overlay rect, not just the ones the diff above caught. A diff
+   drops an overlay pixel that happens to already match what the replay put under it; that is
+   invisible at alpha 1, but an interpolated or supersampled frame redraws the pixel under it
+   somewhere else, and the overlay reads as holes punched through it. Offsets the diff already
+   pushed repeat here harmlessly: both entries carry the same reference value. */
+static void rl_capture_overlay_rects(SDL_Surface *reference)
+{
+	const Uint8 *const ref = (const Uint8 *)reference->pixels;
+
+	for (int r = 0; r < overlay_rect_count; ++r)
+	{
+		const int x0 = MAX(overlay_rect[r].x, 0);
+		const int y0 = MAX(overlay_rect[r].y, 0);
+		const int x1 = MIN(overlay_rect[r].x + overlay_rect[r].w, reference->w);
+		const int y1 = MIN(overlay_rect[r].y + overlay_rect[r].h, reference->h);
+
+		for (int y = y0; y < y1; ++y)
+			for (int x = x0; x < x1; ++x)
+			{
+				const int off = y * reference->pitch + x;
+				if (!rl_res_push(off, ref[off]))
+					return;
+			}
+	}
+}
+
 void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 {
 	JE_clr256(scratch);
@@ -1113,6 +1161,8 @@ void rl_capture_residual(SDL_Surface *reference, SDL_Surface *scratch)
 		if (!rl_res_push((int)i, ref[i]))
 			break;
 	}
+
+	rl_capture_overlay_rects(reference);
 }
 
 // See render_list.h. `before` = the frame just before the post-filter overlays,
@@ -1133,6 +1183,8 @@ void rl_capture_residual_delta(SDL_Surface *before, SDL_Surface *after)
 		if (!rl_res_push((int)i, a[i]))
 			break;
 	}
+
+	rl_capture_overlay_rects(after);
 }
 
 size_t rl_replay_and_compare(SDL_Surface *scratch, SDL_Surface *reference)

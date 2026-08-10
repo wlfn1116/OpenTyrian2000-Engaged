@@ -375,6 +375,11 @@ extern int gaugeGradArmor;      // GaugeGradientDir for the armor gauge
 extern bool gaugeFlashShield;
 extern bool gaugeFlashArmor;
 
+// Flare-family specials (Ice Beam, Fireball, Soul of Zinglon...) wash the whole screen in their
+// colour while they burn. Off keeps the playfield readable; level-scripted grades are unaffected.
+// Presentation-only, so the two sides of an online game may set it differently (tyrian2.c).
+extern bool specialScreenTint;
+
 // Zica Laser Lv11 tweaks (menu: Enhancements -> Weapon Tweaks). Three independent axes:
 //   Base   : the Lv11 horizontal shot pattern, forced in every episode.
 //   Length : Lv11 shot length; Short (vanilla) or Long (as long as the Lv10 beam).

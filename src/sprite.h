@@ -134,6 +134,9 @@ void blit_sprite2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned in
 void blit_sprite2_darken_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
+// Rows [row_first, row_last] only, brightened `bright` steps toward the sprite's own palette bank
+// top. Records nothing -- HUD overlays only, carried by the residual (see sprite.c).
+void blit_sprite2_rows_bright(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, int row_first, int row_last, int bright);
 
 // Supersampled (render-list replay) variants: x,y are HI-buffer coordinates; every
 // source pixel is drawn as a scale x scale block, fully clipped on all edges. These

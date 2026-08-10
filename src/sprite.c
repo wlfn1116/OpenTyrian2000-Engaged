@@ -623,6 +623,62 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
+/* Sprite rows [row_first, row_last] only (row 0 is the sprite's top row), every pixel brightened
+ * by `bright` steps toward the top of its own palette bank -- 15 saturates the whole frame to that
+ * bank's brightest shade, the boss bar's flash trick. The HUD's special-ready light grows its lit
+ * bar upward with the row window and pops it white with `bright`. Unlike its neighbours here this
+ * records nothing: like the boss bar the light rides the per-tick residual, which re-applies it
+ * over the interpolated frame unfiltered (its caller marks the rect so no pixel is dropped).
+ */
+void blit_sprite2_rows_bright(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int row_first, int row_last, int bright)
+{
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+	int row = 0;
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h || row > row_last)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+			++row;
+		}
+		else if (y >= 0 && row >= row_first)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+				{
+					const int shade = (*data & 0x0f) + bright;
+					pixel_row[x] = (*data & 0xf0) | (shade > 0x0f ? 0x0f : shade);
+				}
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
+		}
+	}
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite2(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {

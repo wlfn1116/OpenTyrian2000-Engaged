@@ -302,6 +302,10 @@ JE_byte     astralDuration;
 JE_word     flareDuration;
 JE_boolean  flareStart;
 JE_shortint flareColChg;
+/* The full-screen grade on screen right now was installed by a flare special, not by the level.
+   Presentation-only: it lets the Special Tint setting suppress the flare's wash without touching
+   levelFilter itself, which is simulation state a peer would desync against. */
+bool        flareOwnsFilter = false;
 JE_byte     specialWait;
 JE_byte     nextSpecialWait;
 JE_boolean  spraySpecial;
@@ -963,16 +967,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	const int special_mouse_x = special_mouse_x_for(playerNum);
 	const int special_mouse_y = special_mouse_y_for(playerNum);
 
-	// The ready light sits beside the special block's icon, never on it (see mainint.h), and only
-	// beside the one this machine actually draws.
 	const uint special_player = (uint)(this_player - player);
-	if (hud_special_block_shown(special_player))
-	{
-		const bool ready = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
-		                && flareDuration < 2 && zinglonDuration < 2;
-		blit_sprite2(VGAScreen, hud_special_light_x(special_player), HUD_SPECIAL_LIGHT_Y,
-		             spriteSheet9, ready ? 94 : 93);
-	}
 
 	if (shotRepeat[SHOT_SPECIAL] > 0)
 	{
@@ -1132,6 +1127,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 					levelBrightness = 0;
 				}
 				filterActive = true;
+				flareOwnsFilter = true;
 			}
 
 			if (mt_rand() % 2 == 0)
@@ -1218,6 +1214,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			levelFilter = -99;
 			levelBrightness = -99;
 			filterActive = false;
+			flareOwnsFilter = false;
 		}
 	}
 
@@ -1242,6 +1239,17 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			shotAvail[MAX_PWEAPON-1] = 1;
 		}
 	}
+
+	// Publish this ship's clocks for the ready light, which JE_inGameDisplays draws beside the
+	// special block's icon (see mainint.h). At the END of the tick, past every gate this tick
+	// moved: a special fired now already reads as burning, and the burn hits zero on the same
+	// tick the recharge it hands over to starts, so the meter sweeps through without a jump.
+	// flareStart outlives flareDuration by the one tick that installs that recharge, and holds
+	// the burn there. Only the block this machine actually draws has one.
+	if (hud_special_block_shown(special_player))
+		hud_special_light_publish(MAX(shotRepeat[SHOT_SPECIAL], specialWait),
+		                          MAX(flareStart ? (int)flareDuration : 0,
+		                              zinglonDuration > 1 ? (int)zinglonDuration : 0));
 }
 
 void JE_setupExplosion(

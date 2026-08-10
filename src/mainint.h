@@ -130,10 +130,10 @@ int hud_top_left_right_edge(void);
 int hud_top_right_left_edge(void);
 
 /* The special-weapon block at the top of the playfield: the 2x2 item icon, and beside it the
- * ready light JE_doSpecialShot draws. It belongs to the ship whose HUD this machine draws, and
+ * ready light. It belongs to the ship whose HUD this machine draws, and
  * sits on that ship's own side above that ship's name and lives, which drop by
- * HUD_LIVES_Y_SPECIAL - HUD_LIVES_Y to clear it. varz.c draws the light and mainint.c the icon;
- * both read these, and the boss bar reads the edges above. */
+ * HUD_LIVES_Y_SPECIAL - HUD_LIVES_Y to clear it. mainint.c draws both, with the rest of the HUD;
+ * the boss bar reads the edges above. */
 #define HUD_SPECIAL_ICON_W   24  // blit_sprite2x2: two 12px columns...
 #define HUD_SPECIAL_ICON_H   28  // ...by two 14px rows
 #define HUD_SPECIAL_ICON_Y    1
@@ -148,6 +148,10 @@ bool hud_special_on_right(uint p);      // ...mirrored into the right corner, no
 int  hud_special_icon_x(uint p);
 int  hud_special_light_x(uint p);
 int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_LIVES_NAME_RISE above
+// The firing ship's two special clocks for the ready light: ticks left on the recharge, and on the
+// burn of a special still going. Published from the end of JE_doSpecialShot, which holds that
+// ship's gates in the shared globals.
+void hud_special_light_publish(int charge_ticks, int burn_ticks);
 void JE_mainKeyboardInput(void);
 void JE_pauseGame(void);
 
