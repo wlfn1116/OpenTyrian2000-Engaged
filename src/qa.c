@@ -4,6 +4,8 @@
 #include "config.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "destruct.h"
+#include "destruct_rollback.h"
 #include "endless.h"
 #include "episodes.h"
 #include "endless_internal.h"
@@ -31,6 +33,7 @@ bool qa_test_suite = false;
 const char *qa_fixture_dir = "testing/fixtures/endless";
 int qa_replay_demo = 0;
 unsigned long qa_replay_ticks = 0;
+unsigned long qa_destruct_selftest_ticks = 0;
 bool qa_replay_expect_set = false;
 Uint32 qa_replay_expect = 0;
 int qa_net_rounds = 0;
@@ -2648,4 +2651,30 @@ int qa_run_replay_fixture(void)
 		return 1;
 	}
 	return 0;
+}
+
+/* Headless Destruct with every frame replayed from its own snapshot.  It runs the production
+ * minigame through JE_destructGame, so a field the rollback state walk fails to cover shows up
+ * here rather than as an online desync nobody can reproduce. */
+int qa_run_destruct_selftest(void)
+{
+	if (qa_destruct_selftest_ticks == 0)
+	{
+		fprintf(stderr, "destruct self-test requires a positive tick bound\n");
+		return 2;
+	}
+
+	JE_initPlayerData();
+	JE_destructGame();
+
+	printf("DESTRUCT ticks=%lu failures=%lu\n",
+	       drb_selftest_ticks_run(), drb_selftest_failures());
+
+	if (drb_selftest_ticks_run() != qa_destruct_selftest_ticks)
+	{
+		fprintf(stderr, "destruct self-test ran %lu of %lu ticks\n",
+		        drb_selftest_ticks_run(), qa_destruct_selftest_ticks);
+		return 1;
+	}
+	return drb_selftest_failures() == 0 ? 0 : 1;
 }

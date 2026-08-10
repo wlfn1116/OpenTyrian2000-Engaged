@@ -46,6 +46,9 @@ It is intended to run headlessly with the freeware Tyrian 2000 data beside the b
   structural/gameplay RNG isolation, repeatability, launchable levels, unique display-safe names,
   danger/payout ordering, modifier compatibility, exact milestone rank distributions, and payout bounds;
 - bounded shipped-demo replays with zero rollback divergence and fixed registered-state hashes;
+- a headless Destruct battle with every frame replayed from its own snapshot, which is what
+  proves the minigame's rollback state covers it (the terrain buffer included, since shots
+  collide against those pixels); it has no demo corpus, so it is scripted rather than hashed;
 - two real UDP peers behind a deterministic proxy that injects latency, loss, reordering,
   duplication, and a complete traffic pause, in three scenarios on their own ports:
   - *base*: the reliable channel round-trip, the Relaxed death prompt, and the original

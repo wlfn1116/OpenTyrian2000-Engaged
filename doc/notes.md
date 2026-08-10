@@ -1262,7 +1262,8 @@ queue before the application consumes the chunks.
 ### Rollback input stream
 
 `PACKET_INPUT` has a 48-byte header and up to sixteen redundant 14-byte input
-records. It is unacknowledged and idempotent.
+records. It is unacknowledged and idempotent. `PACKET_DESTRUCT_INPUT` is the
+minigame's own stream on the same terms; see Online Destruct.
 
 - `network_check()` drains up to `NET_DRAIN_MAX`; callers do not add another
   drain loop.
@@ -1642,27 +1643,109 @@ Destruct is `NETWORK_GAME_DESTRUCT`, settled entirely in the lobby: the battle
 mode and a rolled `Uint32` terrain seed travel in the connect packet's Destruct
 block, the host's side rides the existing host-slot field (1 = left), and
 `networkStartScreen` diverts to `loadDestruct` without a `PACKET_DETAILS`
-handshake. Sessions are always delay-based: the minigame is outside the
-rollback registry, so `network_settings_pack` and `network_arm_local_session`
-both force the rollback and recovery bits off for this type. They are also
-always Normal speed: the tick loop paces one lockstep exchange per delay unit
-(`DE_SmoothPresent`), so `gameSpeed` sets how fast the two machines trade state
-packets, not how the battle plays. `network_settings_apply_session_speed` pins
-it before the connect packet is packed, so the joiner adopts the forced value
-along with everything else, and the lobby hides the row rather than clearing
-`network_host_game_speed`, which remains the host's choice for other types.
+handshake. Sessions run either netcode, `de_net_rollback` being
+`nrb_session_mode()` read once at `JE_destructGame`. Desync recovery is the one
+setting the type cannot take: it streams the main game's rollback registry,
+which the minigame is no part of, so `network_settings_pack` and
+`network_arm_local_session` both force that bit off and the lobby hides the row.
+Sessions are always Normal speed so both machines advance frames at one rate;
+`network_settings_apply_session_speed` pins it before the connect packet is
+packed, so the joiner adopts the forced value along with everything else, and
+the lobby hides the row rather than clearing `network_host_game_speed`, which
+remains the host's choice for other types.
 
-The tick loop reuses the main game's lockstep state stream (`PACKET_STATE`,
-XOR parity, resends) with its own payload: one action byte and one control byte
-per tick, plus `mt_rand_count` and an FNV hash of units/shots as a desync
-canary (`DE_NetExchange` in destruct.c). Applied inputs are both sides' bytes
-from `network_delay` ticks ago -- our own replayed from
-`packet_state_out[network_delay]`, the peer's from the arrived packet -- so
-both machines run the identical pair at the identical tick. Control bits: QUIT
-(Esc, ends the session on both at the same tick) and NEWMAP (Backspace's round
-reroll). Pause is offline-only here as in every online mode; control bit 0x02
-stays deliberately unused. The desync canary reports once per session to the
-net log and play continues.
+Both netcodes carry the same per-tick payload: one action byte (the eight
+`de_keys_t` bits) and one control byte. Control bits are QUIT (Esc, ends the
+session on both at the same frame) and NEWMAP (Backspace's round reroll); pause
+is offline-only here as in every online mode, so bit 0x02 stays unused.
+`DE_NetSimHash` plus `mt_rand_count` is the desync canary for both, reported
+once per session to the net log with play continuing.
+
+The delay-based path reuses the main game's lockstep state stream
+(`PACKET_STATE`, XOR parity, resends). Applied inputs are both sides' bytes from
+`network_delay` ticks ago -- our own replayed from
+`packet_state_out[network_delay]`, the peer's from the arrived packet -- so both
+machines run the identical pair at the identical tick (`DE_NetExchange`).
+
+#### Destruct rollback
+
+`destruct_rollback.c` owns the rollback timeline, with its own snapshot ring
+rather than the shared registry in `rollback.c`: that registry is one global
+list whose byte stream the replay fixtures hash and whose layout fingerprint the
+desync recovery compares, so adding the minigame to it would change both for
+every session that never enters Destruct. The ring is `ROLLBACK_RING` slots of
+`DE_StateSize()`, allocated at `drb_session_begin` and freed at
+`drb_session_end`; `JE_destructGame` calls the end unconditionally on entry,
+beside the buffer frees and for the same reason (a teardown longjmps past the
+exit path), and doubly so because a module left armed would have the next
+offline game reading itself as a rollback session.
+
+`DE_StateWalk` is the snapshot, one walk serving save and restore so the two
+cannot disagree about the layout. It covers the unit arrays, walls, shots,
+explosions, `world`, `destruct_player`, `de_endDelay`, `destructFirstTime`, the
+generator state, and the whole `destructTempScreen` pixel buffer. That last one
+is not presentation: shots collide against its `PIXEL_DIRT` pixels and
+explosions carve it, so a mispredicted shell that was not rolled back leaves a
+crater on one machine only. `de_endDelay` moved out of `DE_RunTick` to file
+scope to be reachable from the walk. The pointed-to arrays are walked through
+the live pointers before the structs that hold them, and `DE_StateRestore` puts
+those pointers back afterwards; the allocations outlive every snapshot, so their
+addresses are constant for the session either way.
+
+The tick is one pass of the body between `de_sim_pass:` and `drb_driver`, and a
+`DRB_STEP_RESIM` verdict jumps back to the label. `drb_resim_silent()` switches
+off the present for every pass of a correction except the last, `drb_resim()`
+switches off live input sampling, sound and the frame delay for all of them, and
+the palette fade-in is gated on both so a rollback reaching frame 1 does not
+stall the battle for the fade's own 25 ticks. The driver runs before the delay
+so a correction is replayed inside the tick's own slack. Drawing into VGAScreen
+is repeated during a silent pass rather than skipped: only the terrain writes are
+simulation, and separating them would mean splitting `DE_RunTickShots` and
+`DE_RunTickExplosions` in two.
+
+Predictions repeat the peer's newest record masked to `DE_ROLLBACK_HELD_ACTIONS`
+(the four directions and fire). Change-unit and the two weapon cycles are edge
+triggered -- `DE_NetLocalActions` clears the key as it reads it -- so predicting
+one would take an action the peer never took. `drb_scan_mispredict` compares
+action bits only: control bits never reach the simulation, and
+`drb_process_controls` reads them from the arrived record rather than from what
+a frame consumed, so an unpredicted Esc buys no rollback.
+
+Round ends are the irreversible transition rollback has to be careful with.
+`de_endDelay` reaching zero sets `de_round_over` for the driver instead of
+returning `STATE_RELOAD` on the spot, and the driver holds it until
+`verified_upto` has caught up to the frame, so a mispredicted last shot cannot
+reload one machine's map and not the other's. A round that ends inside a
+correction clamps `resim_target` to that frame. QUIT and NEWMAP take the same
+route through `drb_process_controls`, which only reads frames both machines have
+agreed on. The peer-stopped-simulating backstop ends the round unconfirmed after
+8 s, which is what covers the case where the last packets of a round are lost
+after the peer has already reloaded into the next epoch and stopped serving
+them.
+
+Each round is its own timeline: `drb_round_reset` after `DE_ResetLevel` clears
+the histories, restarts at frame 1, and bumps `drb_epoch` so records still in
+flight from the round just finished are refused. Only strictly older epochs are
+refused, because a peer one round ahead is the machine that regenerated first.
+`PACKET_DESTRUCT_INPUT` is the wire type, redundant and unacknowledged like
+`PACKET_INPUT`: a 28-byte header (frame, ack, epoch, and the canary for the
+newest frame this side considers final) and up to `DRB_REDUNDANCY` two-byte
+records. Sound is suppressed on every re-simulation pass including the presented
+one, because the live pass being corrected already played it.
+
+`--test-destruct-ticks N` is the snapshot self-test, run by
+`testing/run_replay_fixtures.py`. It plays a headless battle through the
+production `JE_destructGame` with scripted input for both sides, simulating every
+frame twice: once live, then again from that frame's own snapshot, comparing the
+two results byte for byte. State the walk misses fails it too, not just state it
+restores wrongly, because an uncovered field carries pass one's value into pass
+two and perturbs what is covered. That is what the check is for: an incomplete
+walk is otherwise invisible until two machines quietly diverge. It runs
+`drb_selftest_*` rather than the driver, leaves `drb_active()` false so the tick
+keeps its offline round handling, and presents nothing, so 400 ticks cost a
+fraction of a second. The self-test does not cover the wire: the driver, the
+prediction, and the confirmed-verdict paths need two peers, and no Destruct
+scenario exists in `network_fault_test.py` yet.
 
 Every map is generated from `network_destruct_session_seed + golden_ratio *
 round` on both machines; nothing about the world crosses the wire. That is why
@@ -1679,7 +1762,7 @@ the tick loop past the frees at the bottom.
 The intro card is a both-ready barrier (`DE_netIntroBarrier`; Timed Battle's card
 is the other one). It announces this
 player's confirmation as a `PACKET_WAITING` and holds until the peer's arrives,
-so no machine reaches `DE_NetExchange` while the other is still reading the
+so no machine reaches the first tick while the other is still reading the
 card. It replaced a five-second auto-advance, which existed only because the
 peer's first `network_state_update` gives up after sixteen -- with the barrier
 neither state stream starts early, so that window never opens and the wait needs

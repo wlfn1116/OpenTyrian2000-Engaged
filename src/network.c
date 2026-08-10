@@ -37,6 +37,7 @@
 #include "console_platform.h"
 #include "crashlog.h"
 #include "custom_weapon.h"
+#include "destruct_rollback.h"
 #include "endless.h"
 #include "game_menu.h"
 #include "episodes.h"
@@ -70,7 +71,12 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       27           /* v27: the Endless shop packet's player block grew a trailing
+#define NET_VERSION       28           /* v28: Destruct plays on either netcode, so the settings
+                                          block's rollback bit now means something for that game
+                                          type and its sessions carry PACKET_DESTRUCT_INPUT; a v27
+                                          peer forces the bit off and would sit on the state stream
+                                          waiting for a lockstep exchange nobody sends.
+                                          v27: the Endless shop packet's player block grew a trailing
                                           chart-reroll byte, which both machines redeal the derived
                                           course slate from; a v26 peer sends a block one byte short,
                                           so the length check drops it and the two chart apart.
@@ -747,6 +753,12 @@ static int network_recv_one(void)
 						// Rollback input stream: redundant, unacknowledged, consumed
 						// directly into the input history.
 						nrb_handle_packet(packet_temp->data, packet_temp->len);
+						last_in_tick = SDL_GetTicks();
+						break;
+
+					case PACKET_DESTRUCT_INPUT:
+						// The minigame's own rollback stream, on the same terms.
+						drb_handle_packet(packet_temp->data, packet_temp->len);
 						last_in_tick = SDL_GetTicks();
 						break;
 
@@ -1670,10 +1682,13 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = EDW_COUNT - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
-	// Destruct is not covered by the rollback registry, so its sessions are lockstep no matter
-	// what the host's netcode preference says; forced here AND in network_arm_local_session so
-	// the packed bit and the host's own session agree.
-	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+	// Destruct brings its own rollback (destruct_rollback.c) and so honours the netcode row, but
+	// desync recovery streams the main game's registry, which the minigame has no part of; the
+	// row is hidden for it and the bit forced off here AND in network_arm_local_session, so the
+	// packed bit and the host's own session agree.
+	const bool rollback_applies = net_rollback;
+	const bool recovery_applies = net_desync_recovery && rollback_applies
+	                           && network_game_type != NETWORK_GAME_DESTRUCT;
 
 	Uint16 flags = 0;
 	flags |= zicaLaserLock         ? 1 << 0 : 0;
@@ -1684,7 +1699,7 @@ int network_settings_pack(Uint8 *buf)
 	// The ship-physics tail is sim code (see JE_playerMovement's vt_sim gate),
 	// so the host's smooth-motion choice binds the session.
 	flags |= (vt_ship && smoothMotion && smoothScroll != 0) ? 1 << 5 : 0;
-	flags |= (net_desync_recovery && rollback_applies) ? 1 << 6 : 0;  // desync recovery; host decides
+	flags |= recovery_applies      ? 1 << 6 : 0;  // desync recovery; host decides
 	flags |= arcadeLifeBoost       ? 1 << 7 : 0;
 	flags |= arcadeRandomBalls     ? 1 << 8 : 0;
 	flags |= coopSharedCredit      ? 1 << 9 : 0;  // co-op credit sharing; host decides
@@ -1788,12 +1803,14 @@ void network_arm_local_session(void)
 	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
 	network_settings_stash();
 
-	// Same forced-lockstep rule the settings block packs: Destruct has no rollback registry.
-	const bool rollback_applies = net_rollback && network_game_type != NETWORK_GAME_DESTRUCT;
+	// Same rule the settings block packs: every game type honours the netcode row, and Destruct
+	// alone cannot take the recovery that streams the main game's registry.
+	const bool rollback_applies = net_rollback;
 
 	nrb_set_session_mode(rollback_applies);
 	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery && rollback_applies);
+	nrb_set_session_recovery(net_desync_recovery && rollback_applies
+	                         && network_game_type != NETWORK_GAME_DESTRUCT);
 	coop_set_session_shared_credit(coopSharedCredit);
 	coop_set_session_double_earnings(coopDoubleEarnings);
 	arcadeSeparateMode = arcadeSeparateShips;
@@ -1803,8 +1820,8 @@ void network_arm_local_session(void)
 // the settings block in the connect packet.  Command-line netplay has no host, so both sides
 // pin Normal.  network_settings_restore puts the player's own speed back afterward.
 //
-// Destruct is Normal whatever the host's stored preference says: it paces one lockstep tick
-// per delay unit, so the speed only decides how fast the two machines trade state packets.
+// Destruct is Normal whatever the host's stored preference says: the speed sets the rate its
+// tick loop runs at, which on either netcode is the rate both machines have to count frames at.
 // The lobby hides the row to match, and the block packed below carries the forced value to
 // the joiner.
 void network_settings_apply_session_speed(void)
@@ -3538,6 +3555,7 @@ void network_write_diagnostics(FILE *f)
 
 	if (nrb_session_mode())
 		nrb_write_diagnostics(f);
+	drb_write_diagnostics(f);   // only writes while a Destruct rollback session is armed
 }
 
 // Tear down far enough that another network_init() can succeed.  Called when the lobby

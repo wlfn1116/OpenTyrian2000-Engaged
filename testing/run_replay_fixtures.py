@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run bounded shipped demos and compare canonical rollback-state hashes."""
+"""Replay the rollback simulations from their own snapshots.
+
+The shipped demos cover the main game and are checked against canonical state hashes; the
+Destruct minigame has no demo corpus, so it is run headlessly instead and only has to replay
+each frame identically.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,8 @@ import argparse
 import os
 import subprocess
 from pathlib import Path
+
+DESTRUCT_TICKS = "400"
 
 
 def main() -> int:
@@ -37,6 +44,17 @@ def main() -> int:
         if result.returncode != 0:
             print(result.stderr, end="")
             failed = True
+
+    command = [
+        str(executable), "--no-sound", "--no-joystick", "--no-xmas",
+        "--data", str(data_dir), "--test-destruct-ticks", DESTRUCT_TICKS,
+    ]
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=120)
+    print(result.stdout, end="")
+    if result.returncode != 0:
+        print(result.stderr, end="")
+        failed = True
+
     return 1 if failed else 0
 
 

@@ -131,6 +131,7 @@
     <ClCompile Include="..\src\crashlog_state.c" />
     <ClCompile Include="..\src\custom_weapon.c" />
     <ClCompile Include="..\src\destruct.c" />
+    <ClCompile Include="..\src\destruct_rollback.c" />
     <ClCompile Include="..\src\editship.c" />
     <ClCompile Include="..\src\endless.c" />
     <ClCompile Include="..\src\endless_combat.c" />
@@ -312,6 +313,7 @@
     <ClInclude Include="..\src\crashlog.h" />
     <ClInclude Include="..\src\custom_weapon.h" />
     <ClInclude Include="..\src\destruct.h" />
+    <ClInclude Include="..\src\destruct_rollback.h" />
     <ClInclude Include="..\src\editship.h" />
     <ClInclude Include="..\src\endless.h" />
     <ClInclude Include="..\src\endless_internal.h" />

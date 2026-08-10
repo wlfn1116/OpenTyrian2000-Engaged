@@ -21,6 +21,7 @@
  * DESTRUCT_MODES counts data-backed modes; MAX_MODES also includes Custom. */
 
 #include "destruct.h"
+#include "destruct_rollback.h"
 
 #include "config.h"
 #include "crashlog.h"
@@ -32,6 +33,7 @@
 #include "keyboard.h"
 #include "loudness.h"
 #include "mtrand.h"
+#include "net_rollback.h"
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
@@ -395,6 +397,14 @@ static bool JE_stabilityCheck(unsigned int, unsigned int);
 static void DE_RunTickPlaySounds(void);
 static void JE_eSound(unsigned int);
 
+#ifdef WITH_NETWORK
+// online netcode
+static Uint32 DE_NetSimHash(void);
+static size_t DE_StateSize(void);
+static void DE_StateSave(void* dst);
+static void DE_StateRestore(const void* src);
+#endif
+
 // Utility functions
 static int center_text(const char* s, unsigned int font)
 {
@@ -493,6 +503,10 @@ static SDL_Scancode defaultKeyConfig[MAX_PLAYERS][MAX_KEY][MAX_KEY_OPTIONS] =
 static SDL_Surface* destructTempScreen;
 static JE_boolean destructFirstTime;
 
+/* Ticks left before the finished round reloads.  Simulation state rather than a tick-local
+ * counter, because a rollback re-simulation has to restore and re-derive it. */
+static unsigned int de_endDelay;
+
 /* Clean copy of the HUD strip (rows 0..HUD_ROWS-1), captured by
  * DE_widenHUDBackdrop and repainted every tick by DE_RunTickDrawHUD so gameplay
  * pixels can't accumulate on the HUD art. */
@@ -514,25 +528,36 @@ static Uint64 destruct_sim_freq = 0, destruct_sim_last = 0;
 static float  destruct_sim_accum = 0.0f;
 
 #ifdef WITH_NETWORK
-/* Online Destruct rides the delay-based lockstep state stream the main game already has: every
- * tick each machine publishes one byte of action bits and one of control bits, then blocks until
- * the peer's packet for the same logical tick is here (XOR parity and resend requests included,
- * all in network.c).  The inputs APPLIED are both sides' bytes from network_delay ticks ago --
- * our own replayed out of the outbound queue, the peer's from the arrived packet -- so the two
- * machines run the identical input pair at the identical tick and the sim never needs to cross
- * the wire at all.  See DE_NetExchange. */
+/* Online Destruct plays on either netcode, chosen by the host's lobby row.
+ *
+ * Delay-based rides the lockstep state stream the main game already has: every tick each machine
+ * publishes one byte of action bits and one of control bits, then blocks until the peer's packet
+ * for the same logical tick is here (XOR parity and resend requests included, all in network.c).
+ * The inputs APPLIED are both sides' bytes from network_delay ticks ago, our own replayed out of
+ * the outbound queue and the peer's from the arrived packet, so the two machines run the identical
+ * input pair at the identical tick and the simulation never crosses the wire.  See DE_NetExchange.
+ *
+ * Rollback applies this machine's input on the frame it was pressed and predicts the peer's, then
+ * corrects by restoring a snapshot of the whole battle and replaying.  destruct_rollback.c owns
+ * the timeline; the state it snapshots is DE_StateSave/DE_StateRestore below. */
 static bool de_net = false;                  /* this Destruct run is an online session */
+static bool de_net_rollback = false;         /* ...and it runs rollback, not the lockstep below */
 static enum de_player_t de_net_local_side;   /* the side this machine's controls drive */
 static unsigned int de_net_round;            /* rounds started; salts the shared terrain seed */
 static bool de_net_desync_noted;
 static bool de_net_have_inputs;              /* false inside the initial delay window */
 static Uint8 de_net_local_bits, de_net_peer_bits;
 
-/* Control bits (state packet byte 5).  QUIT ends the session for both sides at the same tick;
- * NEWMAP is the online Backspace, a fresh round for both.  Pause is offline-only, the rule
- * every online mode follows (see JE_pauseGame), so bit 0x02 stays deliberately unused. */
-#define DE_NET_CTRL_QUIT   0x01
-#define DE_NET_CTRL_NEWMAP 0x04
+/* Both netcodes carry the same control bits (state packet byte 5 for the lockstep, the input
+ * record's second byte for rollback): QUIT ends the session for both sides at the same frame,
+ * NEWMAP is the online Backspace, a fresh round for both.  See DRB_CTRL_* in
+ * destruct_rollback.h; pause is offline-only, so bit 0x02 stays unused. */
+
+/* Bits a rollback prediction may repeat: the ones a player holds down.  Change-unit and the two
+ * weapon cycles are edge triggered (DE_NetLocalActions consumes the key as it reads it), so
+ * predicting one would take an action the peer never took. */
+#define DE_ROLLBACK_HELD_ACTIONS ((1 << MOVE_LEFT) | (1 << MOVE_RIGHT) | (1 << MOVE_UP) \
+                                  | (1 << MOVE_DOWN) | (1 << MOVE_FIRE))
 #endif
 
 static int de_round(float v)
@@ -720,6 +745,65 @@ static void load_destruct_config(Config* config_)
 	}
 }
 
+#ifdef WITH_NETWORK
+/* Everything the config file can vary about the SIMULATION is pinned to the shipped defaults for
+ * the session: the two machines' files have no reason to agree, and any difference here is a
+ * desync (crater aliasing rewrites collision pixels, so it counts).  Both jumpers fire straight so
+ * neither side mans the buggy one.  The next offline game reloads the file, so nothing needs
+ * restoring.  The snapshot self-test pins the same set, to exercise the layout a session runs. */
+static void DE_pinSessionConfig(void)
+{
+	config.max_shots = 40;
+	config.max_explosions = 40;
+	config.min_walls = 20;
+	config.max_walls = 20;
+	config.allow_custom = false;
+	config.alwaysalias = false;
+	config.ai[0] = config.ai[1] = false;
+	config.jumper_straight[0] = config.jumper_straight[1] = true;
+	weaponSystems[UNIT_LASER][SHOT_LASERTRACER] = false;
+	/* max_installations bounds the unit-select wrap, so it is sim state too.  It is derived by
+	 * the caller as a MAX over basetypes' counts, including the two custom army sizes this
+	 * machine's config sets, and it never shrinks across visits, so pin the inputs AND the
+	 * accumulator back to the shipped values. */
+	basetypes[8][0] = basetypes[9][0] = 5;
+	config.max_installations = 10;
+}
+
+/* One battle run headlessly with every frame replayed from its own snapshot; see
+ * drb_selftest_tick.  Called in place of JE_destructMain, so it inherits the pools, sprites and
+ * pinned config JE_destructGame has already set up. */
+static void DE_SnapshotSelfTest(void)
+{
+	JE_loadPic(VGAScreen, 11, false);
+	DE_widenHUDBackdrop(VGAScreen);
+
+	DE_ResetPlayers();
+	destruct_player[PLAYER_LEFT].is_cpu = false;
+	destruct_player[PLAYER_RIGHT].is_cpu = false;
+	world.destructMode = MODE_5CARDWAR;
+
+	drb_selftest_arm(DE_StateSize(), DE_StateSave, DE_StateRestore, qa_destruct_selftest_ticks);
+
+	while (drb_selftest_active())
+	{
+		destructFirstTime = true;
+		mt_srand(0x0DE57121u + de_net_round++);
+		DE_ResetUnits();
+		DE_ResetLevel();
+		drb_round_reset();
+
+		/* A round that ends inside the budget rolls straight into the next one, so the run
+		 * covers a round boundary as well as the battle itself. */
+		while (drb_selftest_active() && DE_RunTick() == STATE_CONTINUE)
+			;
+	}
+
+	printf("# destruct snapshot self-test: %lu ticks, %lu failures\n",
+	       drb_selftest_ticks_run(), drb_selftest_failures());
+}
+#endif
+
 void JE_destructGame(void)
 {
 	unsigned int i;
@@ -732,43 +816,30 @@ void JE_destructGame(void)
 
 #ifdef WITH_NETWORK
 	de_net = isNetworkGame;
+	// The host's Netcode row settles this for both machines, like every other online game type.
+	de_net_rollback = de_net && nrb_session_mode();
 	crashlog_set_phase(de_net ? "Destruct minigame (online)" : "Destruct minigame");
-	if (de_net)
+	if (de_net || qa_destruct_selftest_ticks > 0)
 	{
 		de_net_local_side = thisPlayerNum == 2 ? PLAYER_RIGHT : PLAYER_LEFT;
 		de_net_round = 0;
 		de_net_desync_noted = false;
 		de_net_have_inputs = false;
 
-		/* Everything the config file can vary about the SIMULATION is pinned to the shipped
-		 * defaults for the session: the two machines' files have no reason to agree, and any
-		 * difference here is a desync (crater aliasing rewrites collision pixels, so it counts).
-		 * Both jumpers fire straight so neither side mans the buggy one.  The next offline game
-		 * reloads the file, so nothing needs restoring. */
-		config.max_shots = 40;
-		config.max_explosions = 40;
-		config.min_walls = 20;
-		config.max_walls = 20;
-		config.allow_custom = false;
-		config.alwaysalias = false;
-		config.ai[0] = config.ai[1] = false;
-		config.jumper_straight[0] = config.jumper_straight[1] = true;
-		weaponSystems[UNIT_LASER][SHOT_LASERTRACER] = false;
-		/* max_installations bounds the unit-select wrap, so it is sim state too.  It is
-		 * derived below as a MAX over basetypes' counts -- including the two custom army
-		 * sizes this machine's config sets -- and it never shrinks across visits, so pin
-		 * the inputs AND the accumulator back to the shipped values. */
-		basetypes[8][0] = basetypes[9][0] = 5;
-		config.max_installations = 10;
+		DE_pinSessionConfig();
 
-		network_state_reset();
+		if (de_net)
+			network_state_reset();
 	}
 #else
 	crashlog_set_phase("Destruct minigame");
 #endif
 
 	/* A network teardown longjmps straight out of the tick loop, skipping the frees at the
-	 * bottom; releasing the previous visit's buffers here keeps that path leak-free. */
+	 * bottom; releasing the previous visit's buffers here keeps that path leak-free.  Disarming
+	 * the rollback module belongs to the same rule, and doubly so: a visit that left it armed
+	 * would have the next offline game reading itself as a rollback session. */
+	drb_session_end();
 	free(shotRec);
 	free(exploRec);
 	free(world.mapWalls);
@@ -791,13 +862,28 @@ void JE_destructGame(void)
 	destructTempScreen = game_screen;
 	world.VGAScreen = VGAScreen;
 
+#ifdef WITH_NETWORK
+	/* Arm the snapshot ring now that the pools are allocated and the terrain buffer is known;
+	 * like the buffers above, this also releases a ring a network teardown left behind. */
+	if (de_net_rollback)
+		drb_session_begin(DE_StateSize(), DE_StateSave, DE_StateRestore, DE_NetSimHash,
+		                  DE_ROLLBACK_HELD_ACTIONS);
+#endif
+
 	JE_loadCompShapes(&destructSpriteSheet, '~');
 
 	fade_black(1);
 
 	destruct_sim_timing_init = false;   /* start the smooth-present clock fresh */
 
+#ifdef WITH_NETWORK
+	if (qa_destruct_selftest_ticks > 0)
+		DE_SnapshotSelfTest();
+	else
+#endif
 	JE_destructMain();
+
+	drb_session_end();
 
 	free_sprite2s(&destructSpriteSheet);
 
@@ -864,6 +950,11 @@ static void JE_destructMain(void)
 
 			DE_ResetUnits();
 			DE_ResetLevel();
+
+			/* Each round is its own rollback timeline: frame 1, empty histories, and a fresh
+			 * epoch so records still in flight from the round just finished are refused. */
+			drb_round_reset();
+
 			do
 			{
 				curState = DE_RunTick();
@@ -2111,12 +2202,12 @@ static Uint8 DE_NetLocalControls(void)
 	if (keysactive[SDL_SCANCODE_ESCAPE])
 	{
 		keysactive[SDL_SCANCODE_ESCAPE] = false;
-		bits |= DE_NET_CTRL_QUIT;
+		bits |= DRB_CTRL_QUIT;
 	}
 	if (keysactive[SDL_SCANCODE_BACKSPACE])
 	{
 		keysactive[SDL_SCANCODE_BACKSPACE] = false;
-		bits |= DE_NET_CTRL_NEWMAP;
+		bits |= DRB_CTRL_NEWMAP;
 	}
 
 	return bits;
@@ -2134,7 +2225,7 @@ static Uint32 de_net_float_bits(float f)
 	return u;
 }
 
-/* Desync canary: a summary of everything the lockstep is supposed to keep identical.  Pixel
+/* Desync canary: a summary of everything both netcodes are supposed to keep identical.  Pixel
  * state (the dirt) is left out as too expensive per tick; a divergence there moves a unit or
  * shot within a few ticks and lands in here anyway. */
 static Uint32 DE_NetSimHash(void)
@@ -2173,6 +2264,86 @@ static Uint32 DE_NetSimHash(void)
 	}
 
 	return h;
+}
+
+/* The battle simulation as one blob, for the rollback snapshot ring.  Everything a tick can move
+ * belongs here, the destructible terrain buffer included: shots collide against its pixels, so a
+ * mispredicted explosion that was not rolled back would leave a crater on one machine only.
+ *
+ * The pool sizes are pinned for the whole session (see JE_destructGame), so the layout is settled
+ * once and DE_StateSize can be taken before the first round.  One walk serves both directions so
+ * the two can never disagree about it.  The pointed-to arrays go first, addressed through the live
+ * pointers, and the structs holding those pointers follow; the allocations outlive every snapshot,
+ * so the addresses are constant, and DE_StateRestore puts them back regardless. */
+static void DE_StateWalk(Uint8* buf, bool saving)
+{
+	size_t off = 0;
+
+	#define DE_WALK(mem, bytes)                          \
+		do {                                             \
+			const size_t n_ = (bytes);                   \
+			if (saving)                                  \
+				memcpy(buf + off, (mem), n_);            \
+			else                                         \
+				memcpy((mem), buf + off, n_);            \
+			off += n_;                                   \
+		} while (false)
+
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
+		DE_WALK(destruct_player[i].unit, sizeof(struct destruct_unit_s) * config.max_installations);
+	DE_WALK(world.mapWalls, sizeof(struct destruct_wall_s) * config.max_walls);
+	DE_WALK(shotRec, sizeof(struct destruct_shot_s) * config.max_shots);
+	DE_WALK(exploRec, sizeof(struct destruct_explo_s) * config.max_explosions);
+	DE_WALK(destructTempScreen->pixels,
+	        (size_t)destructTempScreen->pitch * destructTempScreen->h);
+
+	DE_WALK(&world, sizeof(world));
+	DE_WALK(destruct_player, sizeof(destruct_player));
+	DE_WALK(&de_endDelay, sizeof(de_endDelay));
+	DE_WALK(&destructFirstTime, sizeof(destructFirstTime));
+
+	#undef DE_WALK
+
+	/* The generator holds internal pointers, so it saves and restores itself. */
+	if (saving)
+		mt_state_save(buf + off);
+	else
+		mt_state_restore(buf + off);
+}
+
+static size_t DE_StateSize(void)
+{
+	return sizeof(struct destruct_unit_s) * config.max_installations * MAX_PLAYERS
+	     + sizeof(struct destruct_wall_s) * config.max_walls
+	     + sizeof(struct destruct_shot_s) * config.max_shots
+	     + sizeof(struct destruct_explo_s) * config.max_explosions
+	     + (size_t)destructTempScreen->pitch * destructTempScreen->h
+	     + sizeof(world)
+	     + sizeof(destruct_player)
+	     + sizeof(de_endDelay)
+	     + sizeof(destructFirstTime)
+	     + mt_state_size();
+}
+
+static void DE_StateSave(void* dst)
+{
+	DE_StateWalk((Uint8*)dst, true);
+}
+
+static void DE_StateRestore(const void* src)
+{
+	struct destruct_unit_s* units[MAX_PLAYERS];
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
+		units[i] = destruct_player[i].unit;
+	struct destruct_wall_s* const walls = world.mapWalls;
+	SDL_Surface* const screen = world.VGAScreen;
+
+	DE_StateWalk((Uint8*)src, false);   /* the restoring walk only reads through buf */
+
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
+		destruct_player[i].unit = units[i];
+	world.mapWalls = walls;
+	world.VGAScreen = screen;
 }
 
 /* One lockstep exchange, run at the top of every online tick: sample local input, publish it,
@@ -2234,10 +2405,10 @@ static enum de_state_t DE_NetExchange(void)
 	const Uint8 bothControls = ownControls | peerControls;
 
 	// Both machines consume the same bit at the same logical tick, so both leave together.
-	if (bothControls & DE_NET_CTRL_QUIT)
+	if (bothControls & DRB_CTRL_QUIT)
 		return STATE_INIT;
 
-	if (bothControls & DE_NET_CTRL_NEWMAP)
+	if (bothControls & DRB_CTRL_NEWMAP)
 		return STATE_RELOAD;
 
 	de_net_local_bits = ownActions;
@@ -2264,27 +2435,88 @@ static void DE_NetApplyMoves(void)
 	}
 }
 
+/* Scripted input for the snapshot self-test, which has no keyboard and no peer.  A plain LCG
+ * rather than mt_rand: the script must not draw on the simulation's own generator.  Both sides
+ * hold directions and fire freely and cycle units and weapons occasionally, so the battle keeps
+ * shots, craters and unit changes coming for the replay to disagree about. */
+static Uint8 DE_SelfTestActions(void)
+{
+	static Uint32 script = 0x9E3779B9u;
+
+	script = script * 1103515245u + 12345u;
+	const Uint32 r = script >> 8;
+
+	Uint8 bits = (Uint8)(r & DE_ROLLBACK_HELD_ACTIONS);
+	if ((r & 0x1E00) == 0)
+		bits |= 1 << MOVE_CHANGE;
+	if ((r & 0x3C000) == 0)
+		bits |= 1 << MOVE_CYUP;
+	if ((r & 0x78000) == 0)
+		bits |= 1 << MOVE_CYDN;
+	return bits;
+}
+
+/* The rollback counterpart of DE_NetApplyMoves, at the same point of the tick.  A live pass reads
+ * the keyboard and records what it read; a re-simulation replays that record instead, so the
+ * frames behind a correction consume exactly the input they consumed the first time. */
+static void DE_RollbackApplyMoves(void)
+{
+	if (!drb_resim())
+	{
+		if (drb_selftest_active())
+		{
+			drb_selftest_feed(DE_SelfTestActions(), DE_SelfTestActions());
+		}
+		else
+		{
+			service_SDL_events(true);
+			drb_record_local(DE_NetLocalActions(), DE_NetLocalControls());
+		}
+	}
+
+	Uint8 localBits, peerBits;
+	drb_frame_actions(&localBits, &peerBits);
+
+	bool* localMoves = destruct_player[de_net_local_side].moves.actions;
+	bool* peerMoves = destruct_player[1 - de_net_local_side].moves.actions;
+
+	for (int i = 0; i < MAX_MOVE; ++i)
+	{
+		localMoves[i] = (localBits & (1 << i)) != 0;
+		peerMoves[i] = (peerBits & (1 << i)) != 0;
+	}
+}
+
 #endif  /* WITH_NETWORK */
 
 /* Returns the state requested after one complete Destruct tick. */
 static enum de_state_t DE_RunTick(void)
 {
-	static unsigned int endDelay;
-
 	setDelay(1);
-
-	memset(soundQueue, 0, sizeof(soundQueue));
 
 #ifdef WITH_NETWORK
 	// The lockstep exchange leads the tick so its verdicts (leave, new round) settle
-	// before any sim state moves, the explosion-glow fade below included.
-	if (de_net)
+	// before any sim state moves, the explosion-glow fade below included.  Rollback settles
+	// the same verdicts at the bottom instead, once both machines' input for the frame is in.
+	if (de_net && !de_net_rollback)
 	{
 		const enum de_state_t netVerdict = DE_NetExchange();
 		if (netVerdict != STATE_CONTINUE)
 			return netVerdict;
 	}
+
+de_sim_pass:
+	// Snapshot before anything this frame moves, so a correction can restore the frame whole.
+	drb_frame_begin();
 #endif
+
+	memset(soundQueue, 0, sizeof(soundQueue));
+
+	/* A silent re-simulation pass corrects state that is already on screen, so it does the whole
+	 * tick with the present, the sound and the frame delay switched off.  Only the pass that
+	 * catches the timeline up reaches the screen.  The self-test presents nothing at all: it has
+	 * no viewer and runs as fast as the machine can simulate. */
+	const bool de_present = !drb_resim_silent() && !drb_selftest_active();
 
 	JE_tempScreenChecking();
 
@@ -2293,7 +2525,8 @@ static enum de_state_t DE_RunTick(void)
 	 * the clean terrain before this tick draws units and shots, allowing the
 	 * interpolated frames can be rebuilt from a static background. */
 	const int de_ss = effective_supersample();
-	const bool smooth = smoothMotion && de_ss > 1 && !destructFirstTime && DE_ensureSmoothBuffers(de_ss);
+	const bool smooth = de_present && smoothMotion && de_ss > 1 && !destructFirstTime
+	                    && DE_ensureSmoothBuffers(de_ss);
 	if (smooth)
 		DE_ExpandBackgroundHi(de_ss);
 
@@ -2308,35 +2541,51 @@ static enum de_state_t DE_RunTick(void)
 	DE_RunTickAI();
 	DE_RunTickDrawCrosshairs();
 	DE_RunTickDrawHUD();
-	if (!smooth)
+	if (de_present && !smooth)
 		JE_showVGA();   /* smooth path presents in DE_SmoothPresent below */
 
 	if (destructFirstTime)
 	{
-		fade_palette(colors, 25, 0, 255);
+		/* The fade belongs to the first live pass only.  A correction that reaches back to frame 1
+		 * restores the flag with everything else, and fading a palette that is already up would
+		 * stall the battle for the fade's own 25 ticks. */
+		if (de_present && !drb_resim())
+			fade_palette(colors, 25, 0, 255);
 		destructFirstTime = false;
-		endDelay = 0;
+		de_endDelay = 0;
 	}
 
+	bool de_round_over = false;
+
 #ifdef WITH_NETWORK
-	if (de_net)
+	if (de_net_rollback || drb_selftest_active())
+		DE_RollbackApplyMoves();
+	else if (de_net)
 		DE_NetApplyMoves();
 	else
 #endif
 	DE_RunTickGetInput();
 	DE_ProcessInput();
 
-	if (endDelay > 0)
+	if (de_endDelay > 0)
 	{
-		if (--endDelay == 0)
-			return STATE_RELOAD;
+		if (--de_endDelay == 0)
+			de_round_over = true;
 	}
 	else if (DE_RunTickCheckEndgame() == true)
 	{
-		endDelay = 80;
+		de_endDelay = 80;
 	}
 
-	DE_RunTickPlaySounds();
+	/* Under rollback the verdict is held for the driver below, which only lets the round end once
+	 * both machines have confirmed the frames behind it.  Every other path has nothing to confirm
+	 * and leaves on the spot, ahead of this tick's sounds, the way it always has. */
+	if (de_round_over && !drb_active())
+		return STATE_RELOAD;
+
+	// A re-simulation pass would replay sounds the live pass it corrects already played.
+	if (!drb_resim())
+		DE_RunTickPlaySounds();
 
 	/* The rest of this cruft needs to be put in appropriate sections.  All of it is offline-only:
 	 * online, quit travels as a control bit (the exchange consumed the key already), pause would
@@ -2370,16 +2619,43 @@ static enum de_state_t DE_RunTick(void)
 	}
 	}
 
+#ifdef WITH_NETWORK
+	/* The self-test replays every frame in place of the driver, which needs a peer. */
+	if (drb_selftest_active())
+	{
+		if (drb_selftest_tick())
+			goto de_sim_pass;
+	}
+	/* Rollback driver: publish this frame's input, take in the peer's, and either correct the
+	 * timeline or let the frame stand.  It runs before the delay below so a correction is
+	 * replayed inside the tick's own slack rather than a frame late. */
+	else if (de_net_rollback)
+	{
+		switch (drb_driver(de_round_over))
+		{
+		case DRB_STEP_RESIM:
+			goto de_sim_pass;
+		case DRB_STEP_QUIT:
+			return STATE_INIT;
+		case DRB_STEP_NEWMAP:
+			return STATE_RELOAD;
+		case DRB_STEP_PRESENT:
+			break;
+		}
+	}
+#endif
+
 	/* Present the tick.  In smooth mode this loop spans the tick period, drawing
 	 * interpolated supersampled frames; otherwise just wait out the period. */
 	if (smooth)
 		DE_SmoothPresent(de_ss);
-	else
+	else if (de_present)
 		wait_delay();
 
 #ifdef WITH_NETWORK
-	// Online, leaving and reloading are lockstep verdicts settled by the exchange up top; a
-	// local key acting here would end one machine's round and not the other's.
+	// Online, leaving and reloading are netcode verdicts, settled by the lockstep exchange up top
+	// or by the rollback driver above; a local key acting here would end one machine's round and
+	// not the other's.
 	if (de_net)
 		return STATE_CONTINUE;
 #endif

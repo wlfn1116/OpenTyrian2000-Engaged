@@ -2632,6 +2632,13 @@ int main(int argc, char *argv[])
 		return result;
 	}
 
+	if (qa_destruct_selftest_ticks > 0)
+	{
+		const int result = qa_run_destruct_selftest();
+		SDL_Quit();
+		return result;
+	}
+
 #ifdef WITH_NETWORK
 	if (qa_net_rounds > 0)
 	{

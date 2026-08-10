@@ -85,6 +85,7 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 316, 0,   "test-net-lobby-settings", false },
 		{ 317, 0,   "test-net-arcade-separate", false },
 		{ 318, 0,   "test-net-scrollock", false },
+		{ 319, 0,   "test-destruct-ticks", true },
 
 		{ 0, 0, NULL, false}
 	};
@@ -293,6 +294,9 @@ void JE_paramCheck(int argc, char *argv[])
 			break;
 		case 318:
 			qa_net_scrollock = true;
+			break;
+		case 319:
+			qa_destruct_selftest_ticks = strtoul(option.arg, NULL, 10);
 			break;
 
 		default:

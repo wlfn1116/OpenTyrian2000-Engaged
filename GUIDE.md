@@ -553,9 +553,9 @@ are left alone and restored afterwards.
 | Host Flies | Which ship the host takes: the Silver Ship or the Dragonwing. Linked arcade only, and remembered between sessions. Separate arcade and Timed Battle give both players the same ship, SuperTyrian and Super Arcade settle their ships themselves, and Campaign and Endless give both slots the same kind of ship, so the row is hidden and the host flies as player one. In Destruct the row is titled **Host Fights On** and reads **Left Side** or **Right Side**: the side of the battlefield the host mans, with the joiner on the other. |
 | Credit | Campaign and Endless, in place of Host Flies. **Shared** (default) pays every kill and every score pickup to both players at its full value, so you each end the level with the same earnings and neither has to hang back. **Individual** pays a kill to whoever's shot destroyed the enemy and a pickup to whoever flew into it. In Endless, Individual splits what one player would have earned alone between two wallets, so it is the harder economy on purpose. |
 | Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
-| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, since its speed is the rate the two machines trade packets at; your speed for the other game types is left untouched. |
-| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct always plays delay-based and hides the row (and Desync Recovery with it); your rollback preference for the main game is left untouched. |
-| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback: Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. |
+| Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, so both machines count their frames at the same rate; your speed for the other game types is left untouched. |
+| Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct takes this row too, with a rollback of its own (see Online Destruct). |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback: Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. Destruct hides it as well, because the state the host would send is the main game's and not the minigame's. |
 
 **Join by IP Address** takes an address on its own or with a port, like
 `123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
@@ -756,13 +756,24 @@ online as follows:
 | Esc | Ends the session for both players, back to their own menus. A controller's pause button does the same. |
 | F1, F10, F11 | Disabled online: the help screen would stall the connection, and the CPU toggles would split the simulation. |
 
-Destruct sessions play on the delay-based lockstep regardless of the Netcode
-preference, so your inputs land after the session's network delay, like the
-classic online mode. They also play at Normal game speed on both machines: the
-lobby's Game Speed row is hidden for Destruct, because the speed there is the
-rate the two machines trade state packets at rather than anything in the battle.
-Nothing about a Destruct session is saved except the two lobby rows (the Battle
-Mode and which side you man), which are remembered for the next time you host.
+Destruct honours the lobby's Netcode row. On **Rollback**, the default, your own
+aiming and firing answer the moment you press a key, and the other side's units
+and shells are predicted and quietly corrected when their input arrives; a
+correction replays the battle, terrain damage included, so a crater or a kill can
+change in the frame after it appeared. On **Delay-Based** both sides' input lands
+after the session's network delay instead, which never corrects anything but puts
+that delay on your own controls. Leaving the round or the session (Backspace and
+Esc) waits for both machines either way, so neither can reroll a map alone.
+
+Desync Recovery is unavailable here: the state a host would send over is the main
+game's, and the minigame is no part of it. If the two battles do drift apart, the
+session says so in the network log and plays on.
+
+Destruct sessions play at Normal game speed on both machines, so their frame
+counters keep step; the lobby's Game Speed row is hidden for that reason and your
+speed for the other game types is left alone. Nothing about a Destruct session is
+saved except the two lobby rows (the Battle Mode and which side you man), which
+are remembered for the next time you host.
 
 ### Online Timed Battle
 

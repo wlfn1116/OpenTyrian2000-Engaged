@@ -10,6 +10,9 @@ extern bool qa_test_suite;
 extern const char *qa_fixture_dir;
 extern int qa_replay_demo;
 extern unsigned long qa_replay_ticks;
+/* Ticks of headless Destruct to run with every frame replayed from its own snapshot; zero is off.
+ * Proves the rollback snapshot covers the whole battle. */
+extern unsigned long qa_destruct_selftest_ticks;
 extern bool qa_replay_expect_set;
 extern Uint32 qa_replay_expect;
 extern int qa_net_rounds;
@@ -67,6 +70,7 @@ extern bool qa_fast_forward;
 
 int qa_run_unit_suite(void);
 int qa_run_replay_fixture(void);
+int qa_run_destruct_selftest(void);
 
 // Shared check primitive, so a suite can live in its own translation unit.
 void qa_check(bool okay, const char *what);
