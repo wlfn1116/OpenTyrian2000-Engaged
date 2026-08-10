@@ -45,7 +45,7 @@ The simulation still runs at 35 Hz. Smooth Motion interpolates the world at the
 display rate, and in single-player the ship moves at the display rate too, which
 cuts input latency. Demos and network games keep the fixed-step movement.
 Sub-pixel rendering draws the playfield internally at up to 5x, or one sample per
-screen pixel on Native. That is what stops slow scrolling from stepping.
+screen pixel on Native. That is what stops slow scrolling from stepping. 
 
 ### Endless mode
 
