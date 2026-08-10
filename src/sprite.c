@@ -726,6 +726,65 @@ bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
 	return true;
 }
 
+/* Middle of the box the frame's opaque pixels occupy, as an offset from the position it is
+ * blitted at. Walks the packed frame the way sprite2_has_pixel_in_window does; the answer comes
+ * from sprite data alone, so the hit tests built on it stay identical on both machines online.
+ * A frame that draws nothing answers (0, 0), leaving the caller on the blit position itself.
+ */
+void sprite2_center_offset(Sprite2_array sprite2s, unsigned int index, int *out_dx, int *out_dy)
+{
+	*out_dx = 0;
+	*out_dy = 0;
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	int x = 0, y = 0;
+	int minX = 0, maxX = 0, minY = 0, maxY = 0;
+	bool found = false;
+
+	for (; *data != 0x0f; ++data)
+	{
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0)  // control byte with no run: advance to the next sprite row
+		{
+			y += 1;
+			x -= 12;
+			continue;
+		}
+
+		if (!found)
+		{
+			minX = maxX = x;
+			minY = maxY = y;
+			found = true;
+		}
+		if (x < minX)
+			minX = x;
+		if (x + fill_count - 1 > maxX)
+			maxX = x + fill_count - 1;
+		if (y < minY)
+			minY = y;
+		if (y > maxY)
+			maxY = y;
+
+		data += fill_count;  // skip this run's colour bytes
+		x += fill_count;
+	}
+
+	if (!found)
+		return;
+
+	*out_dx = (minX + maxX) / 2;
+	*out_dy = (minY + maxY) / 2;
+}
+
 // Read-only, draw-free twin of blit_sprite2's logical walk (mirrors blit_sprite2_clip's
 // x/y bookkeeping, minus every surface write): returns true as soon as any OPAQUE pixel of
 // sprite `index` would land inside the window [wx0, wx1] x [wy0, wy1). The kill-gate uses it

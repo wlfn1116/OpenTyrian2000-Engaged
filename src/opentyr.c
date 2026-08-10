@@ -248,7 +248,7 @@ static const char* getSparkModeItem(size_t i, char* buffer, size_t bufferSize)
 static int currentSparkWeapon = SSW_MEGA_PULSE;
 
 // Likewise for the Episode Differences submenus: which EpDiffWeapon the shared "Version:"
-// row edits (all eight per-weapon submenus share MENU_ITEM_EPDIFF_MODE / epDiffMode slot).
+// row edits (all nine per-item submenus share MENU_ITEM_EPDIFF_MODE / epDiffMode slot).
 static int currentDiffWeapon = EDW_XEGA_BALL;
 
 // Toggle Christmas mode from the Extra menu. Christmas swaps the shape table
@@ -371,7 +371,7 @@ typedef enum
 	MENU_ITEM_SPARKS_CAP,
 	MENU_ITEM_WALLOP_BOLT,          // Wallop Beam only: the ep4/5 second bolt per volley
 	MENU_ITEM_EPDIFFS,              // opens the Episode Differences submenu
-	MENU_ITEM_EPDIFF_XEGA,          // per-weapon submenu entries (mirror EpDiffWeapon order)...
+	MENU_ITEM_EPDIFF_XEGA,          // per-item submenu entries (mirror EpDiffWeapon order)...
 	MENU_ITEM_EPDIFF_MICROSOL,
 	MENU_ITEM_EPDIFF_FLARE,
 	MENU_ITEM_EPDIFF_NEEDLE,
@@ -379,10 +379,12 @@ typedef enum
 	MENU_ITEM_EPDIFF_PUNCH,
 	MENU_ITEM_EPDIFF_PRETZEL,
 	MENU_ITEM_EPDIFF_DRAGON,
+	MENU_ITEM_EPDIFF_SOLAR,
 	MENU_ITEM_EPDIFF_MODE,          // shared "Version:" row inside those submenus (see currentDiffWeapon)
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_UNUSED_SPRITES,       // spend the shop sheet's unreferenced icons (episodes.c)
+	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
 	MENU_ITEM_ARCADE_TWEAKS,        // opens the Arcade submenu (the three rows below)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
@@ -598,6 +600,10 @@ static void adjustMenuItemValue(MenuItemId id, int dir)
 		JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
 		JE_playSampleNum(S_CURSOR);
 		break;
+	case MENU_ITEM_SHOT_HITBOXES:
+		centeredShotHitboxes = !centeredShotHitboxes;
+		JE_playSampleNum(S_CURSOR);
+		break;
 	case MENU_ITEM_ARCADE_LIFE_BOOST:
 		arcadeLifeBoost = !arcadeLifeBoost;
 		JE_playSampleNum(S_CURSOR);
@@ -662,6 +668,7 @@ typedef enum
 	MENU_EPDIFF_PUNCH,
 	MENU_EPDIFF_PRETZEL,
 	MENU_EPDIFF_DRAGON,
+	MENU_EPDIFF_SOLAR,
 	MENU_ARCADE_TWEAKS,  // Game Tweaks -> Arcade (settings); MENU_ARCADE below is the ship picker
 	MENU_EXTRA,
 	MENU_ARCADE,
@@ -764,12 +771,13 @@ static bool runOptionsMenu(MenuId startMenu)
 			.header = "Game Tweaks",
 			.items = {
 				{ MENU_ITEM_SUPERSPARKS, "Superspark Weapons...", "Weapons whose spark trails differ per episode." },
-				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other weapons that differ between Ep 1-3 and Ep 4-5." },
+				{ MENU_ITEM_EPDIFFS, "Episode Differences...", "Other items that differ between Ep 1-3 and Ep 4-5." },
 				{ MENU_ITEM_ARCADE_TWEAKS, "Arcade...", "Tweaks for the arcade and Super Arcade modes." },
 				{ MENU_ITEM_NETWORK_MENU, "Network...", "Diagnostics for online play." },
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
 				{ MENU_ITEM_UNUSED_SPRITES, "Unused Sprites:", "Give spare shop icons to look-alike weapons." },
+				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
@@ -848,8 +856,8 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_SPARKS_ICE]        = { .header = "Ice Beam / Blast", .items = { SPARK_MENU_ITEMS } },
 #undef SPARK_MENU_ITEMS
 		[MENU_EPDIFFS] = {
-			// Weapons whose ep1-3 vs ep4/5 item data differ beyond the spark trail (the Zica
-			// Laser is one such weapon, so it lives here too). Each opens a per-weapon submenu.
+			// Items whose ep1-3 vs ep4/5 item data differ beyond the spark trail (the Zica
+			// Laser is one such weapon, so it lives here too). Each opens a per-item submenu.
 			.header = "Episode Differences",
 			.items = {
 				{ MENU_ITEM_ZICA_LASER, "Zica Laser...", "Zica Laser Lv11 pattern, length, lock, and buff." },
@@ -861,11 +869,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_EPDIFF_PUNCH, "Flying Punch...", "Which episode's firing sound it uses." },
 				{ MENU_ITEM_EPDIFF_PRETZEL, "Pretzel Missile...", "Which episode's firing sound it uses." },
 				{ MENU_ITEM_EPDIFF_DRAGON, "Dragon Frost...", "Which episode's firing sound it uses." },
+				{ MENU_ITEM_EPDIFF_SOLAR, "Gencore Solar Shield...", "Ep1-3 shop icon (MicroCorp) vs Ep4-5 (Gencore)." },
 				{ MENU_ITEM_DONE, "Done", "Return to the previous menu." },
 				{ -1 }
 			},
 		},
-// The eight per-weapon submenus share their one row: which weapon "Version:" edits comes
+// The nine per-item submenus share their one row: which item "Version:" edits comes
 // from currentDiffWeapon, set when the submenu is entered (ids/menu-ids mirror EpDiffWeapon).
 #define EPDIFF_MENU_ITEMS \
 				{ MENU_ITEM_EPDIFF_MODE, "Version:", "Auto (per-episode), or force the Ep 1-3 / Ep 4-5 data.", getZicaBaseItemsCount, getZicaBaseItem }, \
@@ -879,6 +888,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_EPDIFF_PUNCH]    = { .header = "Flying Punch",      .items = { EPDIFF_MENU_ITEMS } },
 		[MENU_EPDIFF_PRETZEL]  = { .header = "Pretzel Missile",   .items = { EPDIFF_MENU_ITEMS } },
 		[MENU_EPDIFF_DRAGON]   = { .header = "Dragon Frost",      .items = { EPDIFF_MENU_ITEMS } },
+		[MENU_EPDIFF_SOLAR]    = { .header = "Gencore Solar Shield", .items = { EPDIFF_MENU_ITEMS } },
 #undef EPDIFF_MENU_ITEMS
 		[MENU_BOSS_BARS] = {
 			.header = "Boss Health Bars",
@@ -1282,6 +1292,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, unusedShopSprites ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
 
+			case MENU_ITEM_SHOT_HITBOXES:
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, centeredShotHitboxes ? "Centered" : "Classic", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
+				break;
+
 			case MENU_ITEM_ARCADE_LIFE_BOOST:
 				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, arcadeLifeBoost ? "On" : "Off", normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (disabled ? -4 : 0), false, 2);
 				break;
@@ -1500,6 +1514,7 @@ static bool runOptionsMenu(MenuId startMenu)
 									case MENU_ITEM_ARCADE_RANDOM_BALLS:
 									case MENU_ITEM_ARCADE_REAR_SCALE:
 									case MENU_ITEM_UNUSED_SPRITES:
+									case MENU_ITEM_SHOT_HITBOXES:
 									case MENU_ITEM_SIDEKICK_AUTOFIRE:
 									case MENU_ITEM_RICH_MODE:
 									case MENU_ITEM_CONSTANT_PLAY:
@@ -1785,10 +1800,11 @@ static bool runOptionsMenu(MenuId startMenu)
 				case MENU_ITEM_EPDIFF_PUNCH:
 				case MENU_ITEM_EPDIFF_PRETZEL:
 				case MENU_ITEM_EPDIFF_DRAGON:
+				case MENU_ITEM_EPDIFF_SOLAR:
 				{
 					JE_playSampleNum(S_SELECT);
 
-					// The submenus' one row is shared; remember which weapon it edits.
+					// The submenus' one row is shared; remember which item it edits.
 					// Both id and menu-id runs mirror the EpDiffWeapon enum order.
 					currentDiffWeapon = EDW_XEGA_BALL + (selectedMenuItemId - MENU_ITEM_EPDIFF_XEGA);
 					const MenuId diffMenu = MENU_EPDIFF_XEGA + (selectedMenuItemId - MENU_ITEM_EPDIFF_XEGA);
@@ -2178,6 +2194,12 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					unusedShopSprites = !unusedShopSprites;
 					JE_applyUnusedShopSprites();  // repaint the item table now, not at the next episode load
+					JE_playSampleNum(S_CLICK);
+					break;
+				}
+				case MENU_ITEM_SHOT_HITBOXES:
+				{
+					centeredShotHitboxes = !centeredShotHitboxes;
 					JE_playSampleNum(S_CLICK);
 					break;
 				}

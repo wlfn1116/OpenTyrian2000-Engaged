@@ -209,14 +209,63 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
 	}
 }
 
+void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy)
+{
+	if (sprite_frame > 60000)  // special weapon: drawn from the sprite table, which stores its size
+	{
+		const unsigned int id = sprite_frame - 60001;
+		// A special is already taken from the middle of its sprite in both modes; only the pixel
+		// its blit is offset by is new, so Classic keeps the point the vanilla test used.
+		*out_dx = (centeredShotHitboxes ? 1 : 0) + sprite(OPTION_SHAPES, id)->width / 2;
+		*out_dy = sprite(OPTION_SHAPES, id)->height / 2;
+		return;
+	}
+
+	*out_dx = 0;
+	*out_dy = 0;
+
+	if (!centeredShotHitboxes)
+		return;
+
+	if (sprite_frame > 1000)  // superspark trail marker; the frame itself is what is left below it
+		sprite_frame %= 1000;
+
+	if (sprite_frame > 500)
+		sprite2_center_offset(spriteSheet12, sprite_frame - 500, out_dx, out_dy);
+	else
+		sprite2_center_offset(spriteSheet8, sprite_frame, out_dx, out_dy);
+
+	*out_dx += 1;  // the shot is blitted one pixel right of the position it is stored at
+}
+
+void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_dy)
+{
+	*out_dx = 0;
+	*out_dy = 0;
+
+	if (!centeredShotHitboxes)
+		return;
+
+	// The sheet is chosen by the base graphic, not by the animated frame; the draw in tyrian2.c
+	// splits it the same way, and a shot whose animation crosses 500 must not change sheets.
+	if (sgr >= 500)
+		sprite2_center_offset(spriteSheet12, sgr + animate - 500, out_dx, out_dy);
+	else
+		sprite2_center_offset(spriteSheet8, sgr + animate, out_dx, out_dy);
+}
+
 bool player_shot_move_and_draw(
 		int shot_id, bool* out_is_special,
 		int* out_shotx, int* out_shoty,
 		JE_integer* out_shot_damage, JE_byte* out_blast_filter,
 		JE_byte* out_chain, JE_byte* out_playerNum,
-		JE_word* out_special_radiusw, JE_word* out_special_radiush)
+		JE_word* out_special_radiusw, JE_word* out_special_radiush,
+		int* out_hit_dx, int* out_hit_dy)
 {
 	PlayerShotDataType* shot = &playerShotData[shot_id];
+
+	*out_hit_dx = 0;
+	*out_hit_dy = 0;
 
 	shotAvail[shot_id]--;
 	if (shot_id != MAX_PWEAPON - 1)
@@ -322,6 +371,9 @@ bool player_shot_move_and_draw(
 		JE_word sprite_frame = shot->shotGr + shot->shotAni;
 		if (++shot->shotAni == shot->shotAniMax)
 			shot->shotAni = 0;
+
+		// Taken from the frame about to be drawn, before the encodings below are stripped off it.
+		player_shot_hit_offset(sprite_frame, out_hit_dx, out_hit_dy);
 
 		*out_shot_damage = shot->shotDmg;
 		*out_blast_filter = shot->shotBlastFilter;

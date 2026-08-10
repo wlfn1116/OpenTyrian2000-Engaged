@@ -4289,11 +4289,20 @@ level_loop:
 			JE_byte playerNum;
 			JE_word tempX2, tempY2;
 			JE_integer damage;
-			
-			if (!player_shot_move_and_draw(z, &is_special, &tempShotX, &tempShotY, &damage, &temp2, &chain, &playerNum, &tempX2, &tempY2))
+			int shotHitDx, shotHitDy;
+
+			if (!player_shot_move_and_draw(z, &is_special, &tempShotX, &tempShotY, &damage, &temp2,
+			                               &chain, &playerNum, &tempX2, &tempY2,
+			                               &shotHitDx, &shotHitDy))
 			{
 				goto draw_player_shot_loop_end;
 			}
+
+			// The point this shot is collided from: the top-left corner of its sprite cell under
+			// Classic, the middle of the frame it just drew under Centered Hitboxes. The enemy
+			// side of the pair is worked out per enemy below.
+			const int shotHitX = tempShotX + shotHitDx;
+			const int shotHitY = tempShotY + shotHitDy;
 
 			// OVERCHARGE / Overdrive / Heavy Rounds perk (endless): your weapons hit harder.
 			// Gate on the computed percent so any damage source (sector mod or run perk) applies.
@@ -4349,6 +4358,13 @@ level_loop:
 					// their animation and can never lag or desync the hit test.
 					const bool enemyOnPlayfield = enemyVisible[b];
 
+					// Enemy side of that pair. Its quadrants are drawn at +/-6 x, +/-7 y of the
+					// anchor, so that is where the middle of its sprite sits; Classic keeps the
+					// vanilla anchor and the -12 / -6 bias that goes with it.
+					const int enemyHitX = enemy[b].ex + enemy[b].mapoffset + (centeredShotHitboxes ? 6 : 0);
+					const int enemyHitYBig = enemy[b].ey + (centeredShotHitboxes ? 7 : -12);
+					const int enemyHitYSmall = enemy[b].ey + (centeredShotHitboxes ? 7 : -6);
+
 					if (z == MAX_PWEAPON - 1)
 					{
 						if (dual_ship_mode())
@@ -4380,18 +4396,18 @@ level_loop:
 					else if (is_special)
 					{
 						collided = ((enemy[b].enemycycle == 0) &&
-						            (abs(enemy[b].ex + enemy[b].mapoffset - tempShotX - tempX2) < (25 + tempX2)) &&
-						            (abs(enemy[b].ey - tempShotY - 12 - tempY2)                 < (29 + tempY2))) ||
+						            (abs(enemyHitX - shotHitX)      < (25 + tempX2)) &&
+						            (abs(enemyHitYBig - shotHitY)   < (29 + tempY2))) ||
 						           ((enemy[b].enemycycle > 0) &&
-						            (abs(enemy[b].ex + enemy[b].mapoffset - tempShotX - tempX2) < (13 + tempX2)) &&
-						            (abs(enemy[b].ey - tempShotY - 6 - tempY2)                  < (15 + tempY2)));
+						            (abs(enemyHitX - shotHitX)      < (13 + tempX2)) &&
+						            (abs(enemyHitYSmall - shotHitY) < (15 + tempY2)));
 					}
 					else
 					{
 						collided = ((enemy[b].enemycycle == 0) &&
-						            (abs(enemy[b].ex + enemy[b].mapoffset - tempShotX) < 25) && (abs(enemy[b].ey - tempShotY - 12) < 29)) ||
+						            (abs(enemyHitX - shotHitX) < 25) && (abs(enemyHitYBig - shotHitY) < 29)) ||
 						           ((enemy[b].enemycycle > 0) &&
-						            (abs(enemy[b].ex + enemy[b].mapoffset - tempShotX) < 13) && (abs(enemy[b].ey - tempShotY - 6) < 15));
+						            (abs(enemyHitX - shotHitX) < 13) && (abs(enemyHitYSmall - shotHitY) < 15));
 					}
 
 					if (collided && enemyOnPlayfield)
@@ -4848,17 +4864,28 @@ draw_player_shot_loop_end:
 				}
 				else  // check if shot collided with player
 				{
+					// Same pairing as the player-shot test above: Classic anchors the shot at the
+					// top-left corner of its sprite cell and the ship box on its position, Centered
+					// takes the middle of each (the hull is blitted 5 left and 7 up of its position,
+					// 24 by 28, so its middle is +7/+7).
+					int eShotHitDx, eShotHitDy;
+					enemy_shot_hit_offset(enemyShot[z].sgr, enemyShot[z].animate, &eShotHitDx, &eShotHitDy);
+					const int eShotHitX = enemyShot[z].sx + eShotHitDx;
+					const int eShotHitY = enemyShot[z].sy + eShotHitDy;
+
 					for (uint i = 0; i < (twoPlayerMode ? 2 : 1); ++i)
 					{
 						// endless LOW PROFILE boon shrinks the box ~25%; endlessHitboxScale returns the
 						// stock extent otherwise, so this reads as the vanilla test in every other game.
 						const int hitX = endlessHitboxScale((int)player[i].shot_hit_area_x);
 						const int hitY = endlessHitboxScale((int)player[i].shot_hit_area_y);
+						const int shipHitX = player[i].x + (centeredShotHitboxes ? 7 : 0);
+						const int shipHitY = player[i].y + (centeredShotHitboxes ? 7 : 0);
 						if (player[i].is_alive &&
-						    enemyShot[z].sx > player[i].x - hitX &&
-						    enemyShot[z].sx < player[i].x + hitX &&
-						    enemyShot[z].sy > player[i].y - hitY &&
-						    enemyShot[z].sy < player[i].y + hitY)
+						    eShotHitX > shipHitX - hitX &&
+						    eShotHitX < shipHitX + hitX &&
+						    eShotHitY > shipHitY - hitY &&
+						    eShotHitY < shipHitY + hitY)
 						{
 							JE_integer tempX = enemyShot[z].sx;
 							JE_integer tempY = enemyShot[z].sy;

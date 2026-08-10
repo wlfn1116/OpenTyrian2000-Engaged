@@ -352,13 +352,17 @@ int wallopSecondBolt = SUPER_SPARKS_AUTO;
 static const char *const superSparkKeys[SSW_COUNT]    = { "superspark_mega_pulse", "superspark_wallop_beam", "superspark_protron_b", "superspark_ice" };
 static const char *const superSparkCapKeys[SSW_COUNT] = { "superspark_mega_pulse_cap", "superspark_wallop_beam_cap", "superspark_protron_b_cap", "superspark_ice_cap" };
 
-/* Which episode's data each non-spark difference weapon uses (JE_applyEpDiffs, episodes.c):
+/* Which episode's data each non-spark difference item uses (JE_applyEpDiffs, episodes.c):
    EPDIFF_AUTO (per-episode, vanilla), _EP13, or _EP45. Default Auto so vanilla is unchanged. */
-int epDiffMode[EDW_COUNT] = { EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO };
-/* Config keys for the per-weapon episode-difference settings; indexed by EpDiffWeapon. */
+int epDiffMode[EDW_COUNT] = {
+	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,
+	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO
+};
+/* Config keys for the per-item episode-difference settings; indexed by EpDiffWeapon. */
 static const char *const epDiffKeys[EDW_COUNT] = {
 	"epdiff_xega_ball", "epdiff_microsol_opt5", "epdiff_flare", "epdiff_needle_laser",
-	"epdiff_bubble_gum", "epdiff_flying_punch", "epdiff_pretzel_missile", "epdiff_dragon_frost"
+	"epdiff_bubble_gum", "epdiff_flying_punch", "epdiff_pretzel_missile", "epdiff_dragon_frost",
+	"epdiff_solar_shield"
 };
 
 /* Map a trail-tagged shot's sprite back to its weapon's cap setting, for the JE_doSP calls
@@ -410,6 +414,11 @@ bool arcadeRearGunScale = false;
    sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
    Cosmetic and shop-only; it matters most in Endless, which offers every port at once. */
 bool unusedShopSprites = true;
+/* Take a projectile's hit test from the middle of its sprite rather than the top-left corner of
+   its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). Off
+   restores the vanilla geometry, whose boxes sit above the sprites they belong to.
+   Host-authoritative online; doc/notes.md has the box arithmetic. */
+bool centeredShotHitboxes = true;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
@@ -784,6 +793,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "unused_shop_sprites", &unused_shop_sprites);
 		unusedShopSprites = (unused_shop_sprites != 0);
 
+		int centered_shot_hitboxes = centeredShotHitboxes ? 1 : 0;
+		config_get_int_option(section, "centered_shot_hitboxes", &centered_shot_hitboxes);
+		centeredShotHitboxes = (centered_shot_hitboxes != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -1009,6 +1022,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "arcade_random_balls", arcadeRandomBalls ? 1 : 0);
 	config_set_int_option(section, "arcade_rear_gun_scale", arcadeRearGunScale ? 1 : 0);
 	config_set_int_option(section, "unused_shop_sprites", unusedShopSprites ? 1 : 0);
+	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);

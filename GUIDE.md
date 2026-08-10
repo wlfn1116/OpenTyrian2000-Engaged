@@ -874,7 +874,7 @@ without either of you seeing the other's in your shop.
 ## Restored and tweakable content
 
 **Setup > Enhancements > Game Tweaks** holds the differences between the Episode
-1-3 and Episode 4-5 weapon data, plus the content the original game shipped but
+1-3 and Episode 4-5 item data, plus the content the original game shipped but
 never used:
 
 - superspark trails for Mega Pulse, Wallop Beam, Protron B, and Ice
@@ -882,10 +882,20 @@ never used:
 - Xega Ball and MicroSol Option 5 episode variants
 - Flare and Super Bomb sprites
 - Needle Laser and Bubble Gum-Gun sounds
+- the Gencore Solar Shield's shop icon
 - the cut Charge-Laser sidekick
 - Ice Base Shots
 - Unused Sprites
+- Shot Hitboxes
 - sidekick autofire
+
+Each row under **Episode Differences** opens a submenu with one **Version:**
+setting: *Auto*, *Ep 1-3* or *Ep 4+*. Auto is the default and plays each episode
+as it shipped, and the other two force one version everywhere. **Gencore Solar
+Shield** is a shop-icon row rather than a gameplay one. Episodes 1-3 draw that
+shield with the MicroCorp HXS picture and Episodes 4-5 with the one its two
+Gencore siblings use, so the setting picks which icon the shop shows. In an
+online session the host's Episode Differences settings bind both machines.
 
 **Ice Base Shots**, on by default, wakes the dormant dispenser bases on Camanis
 (Episode 3) and the secret Camanis research base (Episode 4). The game data gives
@@ -907,6 +917,20 @@ Z, Sonic Impulse matches Sonic Wave, and Tropical Cherry Companion matches
 Banana Blast. Most of these weapons are sold only in Endless, where every port
 can appear in one list. Switching the option off restores the original icons.
 Nothing about the weapons themselves changes.
+
+**Shot Hitboxes** picks the point a shot is collided from. *Centered*, the
+default, takes the hit from the middle of the frame being drawn and from the
+middle of the sprite it is tested against, so both sides line up with what is on
+screen. *Classic* is the original geometry: a shot is taken from the top-left
+corner of its sprite cell and the enemy it is tested against is anchored the
+same way, so a hit lands about a dozen pixels from where the two sprites meet.
+That mismatch is vertical. Under Classic your fire registers a little late on an
+enemy you are shooting up at, and an enemy your shot has already passed stays in
+range longer than it looks. Incoming enemy fire is where the two modes differ
+least, because an ordinary bullet fills its cell and was close to centred
+already; the large projectiles differ most. Hit box sizes are the same in both
+modes, and ship-to-enemy collision is untouched. Online, the host's setting
+binds both machines.
 
 ## Other enhancements
 

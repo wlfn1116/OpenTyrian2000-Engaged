@@ -364,7 +364,7 @@ static void JE_applySuperSparks(void)
 	JE_retagWeaponSparks(706, superSparkMode[SSW_ICE], icePlain, iceTagged, COUNTOF(icePlain));
 }
 
-// Apply episode-specific weapon data from shipped constants. Auto keeps the running episode;
+// Apply episode-specific item data from shipped constants. Auto keeps the running episode;
 // only active pattern slots are rewritten.
 static void JE_applyEpDiffs(void)
 {
@@ -450,6 +450,11 @@ static void JE_applyEpDiffs(void)
 		case EDW_FLYING_PUNCH:  weapons[794].sound = ep45 ? 30 : 31;  break;
 		case EDW_PRETZEL_MISSILE: weapons[795].sound = ep45 ? 30 : 31;  break;
 		case EDW_DRAGON_FROST:  weapons[806].sound = ep45 ? 30 : 31;  break;
+		case EDW_SOLAR_SHIELD:
+			// The one shop icon the two sets disagree on: ep1-3 gives the Gencore Solar Shield
+			// the MicroCorp HXS Class C picture, ep4/5 the one its two Gencore siblings use.
+			shields[8].itemgraphic = ep45 ? 153 : 165;
+			break;
 		}
 	}
 }
@@ -745,7 +750,7 @@ void JE_loadItemDat(void)
 
 	JE_applySuperSparks();          // restore the ep4/5 superspark trails on the ep1-3 weapons
 
-	JE_applyEpDiffs();              // force the configured ep1-3/ep4-5 data on the other diff weapons
+	JE_applyEpDiffs();              // force the configured ep1-3/ep4-5 data on the other diff items
 
 	// Replace Wobbley's stray first-frame sprite with its normal rest frame.
 	for (int i = 0; i <= OPTION_NUM; ++i)
@@ -789,7 +794,7 @@ void JE_initEpisode(JE_byte newEpisode)
 		// from the captured native, so it is idempotent).
 		JE_applyZicaLaserConfig();
 		JE_applySuperSparks();      // likewise reapply the superspark trail modes (self-correcting)
-		JE_applyEpDiffs();          // and the other per-weapon ep1-3/ep4-5 choices
+		JE_applyEpDiffs();          // and the other per-item ep1-3/ep4-5 choices
 		JE_applyUnusedShopSprites();  // ...and the shop-icon choice (restores the shipped icons when off)
 		return;
 	}

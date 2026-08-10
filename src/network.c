@@ -71,7 +71,18 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       28           /* v28: Destruct plays on either netcode, so the settings
+#define NET_VERSION       30           /* v30: Shot Hitboxes rides a spare bit of the settings tail's
+                                          flags word and moves where both shot loops take a hit
+                                          from; a v29 peer sends the bit as zero, so one machine
+                                          would collide from a sprite's middle and the other from
+                                          its corner and the pair would disagree on every kill.
+                                          v29: Episode Differences gained a ninth entry, the Gencore
+                                          Solar Shield's shop icon, which the full epdiff word at
+                                          byte 2 had no room for; it rides two previously spare bits
+                                          of the settings tail's flags word, and a v28 peer leaves
+                                          them zero, so the host's choice would reach the joiner as
+                                          Auto and the pair would stock two different shop sheets.
+                                          v28: Destruct plays on either netcode, so the settings
                                           block's rollback bit now means something for that game
                                           type and its sessions carry PACKET_DESTRUCT_INPUT; a v27
                                           peer forces the bit off and would sit on the state stream
@@ -1644,10 +1655,17 @@ void network_tyrian_halt(unsigned int err, bool attempt_sync)
 
 /* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
  * layout they always had, so only what is below moved onto new ground. */
-#define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode; fifteen bits spare */
-#define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16               */
+#define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode, bits 1-2 epDiffMode[8], bit 3 centered
+                                 shot hitboxes; twelve spare                                     */
+#define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16                                    */
 COMPILE_TIME_ASSERT(net_settings_block_fits,
                     NET_SET_EXPERT + NETWORK_EXPERT_SLOTS * 2 == NETWORK_SETTINGS_SIZE);
+
+/* The epdiff word at byte 2 holds two bits per entry and was exactly full at eight of them, so
+ * a ninth rides the tail's flags word instead. Grow that split deliberately: a tenth entry needs
+ * somewhere to live, and silently dropping off the wire would leave the two item tables unequal. */
+#define NET_SET_EPDIFF_PACKED 8
+COMPILE_TIME_ASSERT(net_settings_epdiff_fits, EDW_COUNT == NET_SET_EPDIFF_PACKED + 1);
 
 /* Host-authoritative simulation settings.
  * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
@@ -1661,7 +1679,7 @@ static struct
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
-	bool arcadeRearGunScale;
+	bool arcadeRearGunScale, centeredShotHitboxes;
 	int  xmasMode;
 	JE_byte gameSpeed;
 	JE_boolean arcadeSeparateMode;
@@ -1678,8 +1696,8 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = SSW_COUNT - 1; i >= 0; --i)
 		spark = (spark << 2) | (superSparkMode[i] & 3);
 
-	Uint16 epdiff = 0;  // EDW_COUNT(8) x 2 bits
-	for (int i = EDW_COUNT - 1; i >= 0; --i)
+	Uint16 epdiff = 0;  // the first NET_SET_EPDIFF_PACKED(8) entries x 2 bits; the rest ride flags2
+	for (int i = NET_SET_EPDIFF_PACKED - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
 	// Destruct brings its own rollback (destruct_rollback.c) and so honours the netcode row, but
@@ -1727,7 +1745,10 @@ int network_settings_pack(Uint8 *buf)
 	 * machine's own config, and until this went in nothing published either at connect time: only
 	 * the debug block did, and only when somebody opened that menu. Two players who had once set
 	 * a different Boss HP therefore started a campaign fighting bosses with different health. */
-	SDLNet_Write16(expertMode ? 1 : 0, &buf[NET_SET_FLAGS2]);
+	Uint16 flags2 = expertMode ? 1 << 0 : 0;
+	flags2 |= (Uint16)(epDiffMode[EDW_SOLAR_SHIELD] & 3) << 1;
+	flags2 |= centeredShotHitboxes ? 1 << 3 : 0;  // where both shot loops take a hit from
+	SDLNet_Write16(flags2, &buf[NET_SET_FLAGS2]);
 	for (int i = 0; i < NETWORK_EXPERT_SLOTS; ++i)
 		SDLNet_Write16((Uint16)(i < expertSettingsCount ? *expertSettings[i].value : 0),
 		               &buf[NET_SET_EXPERT + i * 2]);
@@ -1776,6 +1797,7 @@ static void network_settings_stash(void)
 	settings_local.arcadeLifeBoost      = arcadeLifeBoost;
 	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
 	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
+	settings_local.centeredShotHitboxes = centeredShotHitboxes;
 	settings_local.xmasMode             = xmasMode;
 	settings_local.gameSpeed            = gameSpeed;
 	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
@@ -1849,7 +1871,7 @@ int network_settings_adopt(const Uint8 *buf)
 		if (superSparkMode[i] >= SUPER_SPARKS_COUNT)
 			superSparkMode[i] = SUPER_SPARKS_AUTO;
 	}
-	for (int i = 0; i < EDW_COUNT; ++i, epdiff >>= 2)
+	for (int i = 0; i < NET_SET_EPDIFF_PACKED; ++i, epdiff >>= 2)
 	{
 		epDiffMode[i] = epdiff & 3;
 		if (epDiffMode[i] >= EPDIFF_MODE_COUNT)
@@ -1901,7 +1923,12 @@ int network_settings_adopt(const Uint8 *buf)
 	// Expert Mode and its tunables, clamped by the same table-driven pass the debug block uses:
 	// every one of these multiplies enemy health, weapon energy or a price, so a hostile packet
 	// must not be able to name 65535 of anything.
-	expertMode = (SDLNet_Read16(&buf[NET_SET_FLAGS2]) & 1) != 0;
+	const Uint16 flags2 = SDLNet_Read16(&buf[NET_SET_FLAGS2]);
+	expertMode = (flags2 & 1) != 0;
+	epDiffMode[EDW_SOLAR_SHIELD] = (flags2 >> 1) & 3;
+	if (epDiffMode[EDW_SOLAR_SHIELD] >= EPDIFF_MODE_COUNT)
+		epDiffMode[EDW_SOLAR_SHIELD] = EPDIFF_AUTO;
+	centeredShotHitboxes = (flags2 & (1 << 3)) != 0;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);
 	clamp_expert_settings();
@@ -3081,6 +3108,7 @@ void network_settings_restore(void)
 	arcadeLifeBoost       = settings_local.arcadeLifeBoost;
 	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
 	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
+	centeredShotHitboxes  = settings_local.centeredShotHitboxes;
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
 	arcadeSeparateMode    = settings_local.arcadeSeparateMode;

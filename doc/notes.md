@@ -502,11 +502,11 @@ that field and `endlessSortieOutpostMods` across the reset inside
 `endlessApplyCurrent`. It needs no save field, because an Endless checkpoint is
 only written at an outpost and `tyrian.sav` already holds the episode.
 
-The two item table sets differ in the Gencore Solar Shield icon, two ship
-illustrations, The Stalker 21.126 price (65535 against 30000), and the weapon data
-covered by the Episode Differences menu. Other campaign writes in the same parser
-need no guard: `']e'`, `']g'` and `']2'` sections are excluded from the Endless
-pool, and `endlessRegenerateLevel` clears the rest.
+The two item table sets differ in two ship illustrations, The Stalker 21.126
+price (65535 against 30000), and the item data covered by the Episode Differences
+menu, the Gencore Solar Shield icon included. Other campaign writes in the same
+parser need no guard: `']e'`, `']g'` and `']2'` sections are excluded from the
+Endless pool, and `endlessRegenerateLevel` clears the rest.
 
 Use `endlessMode` for run structure, saves, prices, and pickup substitution. Use
 `endlessFxActive()` for combat scaling, modifiers, perks, and enemy tiers.
@@ -573,6 +573,34 @@ proportionally, and `hud_bars_dirty` schedules the presentation repaint.
 
 SuperTyrian and Super Arcade ships keep their authored scaling. A zero shield
 base remains zero.
+
+## Projectile hit geometry
+
+Sprites are drawn from their top-left corner and the vanilla shot tests collide
+from that corner. `centeredShotHitboxes` moves both sides of the two shot tests
+onto the middle of their sprites. Box sizes never change.
+
+Player shot against enemy (`tyrian2.c`): Classic measures from the enemy anchor
+biased by -12 y for a large enemy and -6 for a small one, against the shot's
+stored position. Centered measures from the enemy sprite's middle, `+6/+7` of the
+anchor because its quadrants are drawn at +/-6 x and +/-7 y, against the middle
+of the frame the shot is drawing. The half extents stay 25x29 and 13x15.
+
+Enemy shot against player: Classic centres the `shot_hit_area` box on the ship's
+position, Centered on the hull's middle at `+7/+7`, because the hull is blitted
+at `(x-5, y-7)` as a 24x28 block. A special weapon was already collided from the
+middle of its sprite, so only the blit's one pixel of x changes for it.
+
+`player_shot_hit_offset` and `enemy_shot_hit_offset` (`shots.c`) answer the
+offset for whichever mode is in force, over `sprite2_center_offset` (`sprite.c`),
+which walks the packed frame for the box its opaque pixels fill. That answer
+comes from sprite data alone and cannot diverge between machines; the setting
+itself is host-authoritative on `NET_SET_FLAGS2` bit 3. `JE_playerCollide`, ship
+against enemy, is deliberately left alone: both of its anchors already sit about
+equally up and left of their sprites, so it reads as centred already.
+
+The debug hitbox overlay draws every box where the test in force puts it, which
+is how the two modes are told apart on screen.
 
 ## Networking
 
@@ -868,6 +896,12 @@ then `NETWORK_EXPERT_SLOTS` Uint16 slots written straight off the
 `expertSettings[]` table, so a seventh tunable needs no wire change. Bytes 0..23
 kept their offsets. `clamp_expert_settings` runs on adopt as well as at config
 load, so a hostile packet cannot name a 65535x multiplier.
+
+The epdiff word at byte 2 filled up the same way. It holds two bits per
+`EpDiffWeapon`, which the eighth entry exactly exhausted, so the ninth rides bits
+1 and 2 of that second flags word. `NET_SET_EPDIFF_PACKED` names the split and a
+compile-time assert holds `EDW_COUNT` to it, because an entry that quietly fell
+off the wire would leave the pair running unequal item tables.
 
 The Endless chart rule does not travel here. It is a run property rather than a
 config setting, so it rides the Endless lobby block beside the run mode and the
@@ -1979,6 +2013,15 @@ Apply is idempotent and writes the baseline back when the option is off, so
 `JE_initEpisode` and the menu handlers can call it without an item reload. The
 Charge-Laser slot moves between episodes, so its write is guarded against
 `chargeLaserSlot`.
+
+`shields[8]`, the Gencore Solar Shield, is the one icon the two item sets
+disagree on: 165 in ep1-3, the MicroCorp HXS Class C picture, against 153 in
+ep4/5, the one the Low and High Energy Gencores use. Every other field of every
+other shield matches across the sets. `JE_applyEpDiffs` owns the field, so the
+Episode Differences menu can force either icon and Auto rewrites the value the
+running episode shipped. Nothing collides with that write: both icons are real,
+so the placeholder fallback never fires, and Unused Sprites captures and rewrites
+only `weaponPort` and `options`.
 
 ## Weapons
 

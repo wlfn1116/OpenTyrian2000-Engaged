@@ -7021,15 +7021,16 @@ static void JE_drawDebugOverlays(void)
 
 	if (debugHitboxOverlay)
 	{
-		// shootable enemies: hit-area box centred on the enemy sprite (its quadrants
-		// are drawn at +/-6 x, +/-7 y of (ex,ey), so the sprite centre is +6/+7)
+		// shootable enemies: the box player shots are tested against, drawn where that test puts
+		// it. Centered Hitboxes centres it on the enemy sprite (its quadrants are drawn at
+		// +/-6 x, +/-7 y of (ex,ey)); Classic keeps the vanilla anchor and its upward bias.
 		for (int i = 0; i < 100; ++i)
 		{
 			if (enemyAvail[i] != 0)
 				continue;
 			const bool small = (enemy[i].enemycycle > 0);
-			const int cx = enemy[i].ex + enemy[i].mapoffset + 6;
-			const int cy = enemy[i].ey + 7;
+			const int cx = enemy[i].ex + enemy[i].mapoffset + (centeredShotHitboxes ? 6 : 0);
+			const int cy = enemy[i].ey + (centeredShotHitboxes ? 7 : (small ? -6 : -12));
 			const int hw = small ? 13 : 25;
 			const int hh = small ? 15 : 29;
 			debug_box(VGAScreen, cx - hw, cy - hh, cx + hw, cy + hh, COL_ENEMY);
@@ -7043,21 +7044,34 @@ static void JE_drawDebugOverlays(void)
 				continue;
 			const int cx = player[p].x + 7, cy = player[p].y + 7;
 			debug_box(VGAScreen, cx - 12, cy - 14, cx + 12, cy + 14, COL_PLAYER);
+
+			// ...and within it the box enemy shots are tested against, which Centered Hitboxes
+			// moves onto the middle of the hull and Classic leaves on the ship's own position.
+			const int sx = cx - (centeredShotHitboxes ? 0 : 7);
+			const int sy = cy - (centeredShotHitboxes ? 0 : 7);
+			const int hw = endlessHitboxScale((int)player[p].shot_hit_area_x);
+			const int hh = endlessHitboxScale((int)player[p].shot_hit_area_y);
+			debug_box(VGAScreen, sx - hw, sy - hh, sx + hw, sy + hh, COL_PLAYER);
 		}
 
-		// player shots, markers centred on the shot sprite (drawn at shotX+1)
-		for (int i = 0; i < MAX_PWEAPON; ++i)
+		// projectiles, marked at the point each one's own hit test is taken from. The last slot is
+		// the Zinglon pillar's flag rather than a shot, and carries no shot data to read.
+		for (int i = 0; i < MAX_PWEAPON - 1; ++i)
 		{
 			if (shotAvail[i] == 0)
 				continue;
-			const int sx = playerShotData[i].shotX + 6, sy = playerShotData[i].shotY + 6;
+			int dx, dy;
+			player_shot_hit_offset(playerShotData[i].shotGr + playerShotData[i].shotAni, &dx, &dy);
+			const int sx = playerShotData[i].shotX + dx, sy = playerShotData[i].shotY + dy;
 			debug_box(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_PSHOT);
 		}
 		for (int i = 0; i < ENEMY_SHOT_MAX; ++i)
 		{
 			if (enemyShotAvail[i] != 0)
 				continue;
-			const int sx = enemyShot[i].sx, sy = enemyShot[i].sy;
+			int dx, dy;
+			enemy_shot_hit_offset(enemyShot[i].sgr, enemyShot[i].animate, &dx, &dy);
+			const int sx = enemyShot[i].sx + dx, sy = enemyShot[i].sy + dy;
 			debug_box(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_ESHOT);
 		}
 	}

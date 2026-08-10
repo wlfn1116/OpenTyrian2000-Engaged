@@ -126,6 +126,8 @@ void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array, unsigned int index, int wx0, int wx1, int wy0, int wy1);
 bool sprite2_is_blank(Sprite2_array, unsigned int index);  // frame draws nothing (map-drawn / invisible pieces)
+// Middle of the frame's opaque pixels, relative to where it is blitted; (0, 0) if it draws nothing.
+void sprite2_center_offset(Sprite2_array, unsigned int index, int *out_dx, int *out_dy);
 void blit_sprite2_blend(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_blend_clip(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);

@@ -19,6 +19,7 @@
 #include "render_list.h"
 #include "rollback.h"
 #include "shots.h"
+#include "sprite.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "video.h"
@@ -1299,6 +1300,55 @@ static void qa_test_effect_gates(void)
 	endlessActiveMods = savedMods;
 }
 
+/* Where a projectile is collided from. The geometry comes from sprite data alone, so a synthetic
+ * frame pins it exactly; the shot loops in tyrian2.c add the target's own middle to the answer. */
+static void qa_test_shot_hitboxes(void)
+{
+	/* One frame of a 12-wide cell: an empty row, then a four-pixel run at columns 2 to 5 on each
+	 * of the next two rows. A control byte carries the opaque run in its high nibble and the
+	 * transparent skip in its low one, a zero run advances to the next row, and 0x0f ends it. */
+	static const Uint8 body[] = {
+		0x0c,                                // row 0: 12 transparent columns, then the next row
+		0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 1: skip 2, four pixels, skip the rest
+		0x42, 0x11, 0x11, 0x11, 0x11, 0x06,  // row 2: the same
+		0x0f,
+	};
+	union {
+		Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
+		Uint8 bytes[2 + sizeof(body)];
+	} frame;
+	frame.bytes[0] = 2;  // one-entry offset table, little-endian, pointing just past itself
+	frame.bytes[1] = 0;
+	memcpy(frame.bytes + 2, body, sizeof(body));
+
+	const Sprite2_array sheet = { sizeof(frame.bytes), frame.bytes };
+
+	int dx = -1, dy = -1;
+	sprite2_center_offset(sheet, 1, &dx, &dy);
+	qa_check(dx == 3 && dy == 1, "a frame's middle is the middle of the box its opaque pixels fill");
+	sprite2_center_offset(sheet, 2, &dx, &dy);
+	qa_check(dx == 0 && dy == 0, "a frame the sheet does not have leaves the point on the blit position");
+
+	const bool savedCentered = centeredShotHitboxes;
+	const Sprite2_array savedSheet = spriteSheet8;
+	spriteSheet8 = sheet;
+
+	centeredShotHitboxes = false;
+	player_shot_hit_offset(1, &dx, &dy);
+	qa_check(dx == 0 && dy == 0, "Classic collides a shot from the corner of its sprite cell");
+	enemy_shot_hit_offset(1, 0, &dx, &dy);
+	qa_check(dx == 0 && dy == 0, "...an enemy shot included");
+
+	centeredShotHitboxes = true;
+	player_shot_hit_offset(1, &dx, &dy);
+	qa_check(dx == 4 && dy == 1, "Centered collides it from the frame's middle, plus the blit's own pixel");
+	enemy_shot_hit_offset(1, 0, &dx, &dy);
+	qa_check(dx == 3 && dy == 1, "...and an enemy shot from the frame's middle, which is blitted where it sits");
+
+	spriteSheet8 = savedSheet;
+	centeredShotHitboxes = savedCentered;
+}
+
 /* Online Endless: the block each machine publishes for its own player, the way two players'
  * purchases fold into one sector, and who charts the next course. */
 static void qa_test_endless_coop(void)
@@ -1883,6 +1933,7 @@ static void qa_test_network_settings(void)
 	const bool savedCharge = chargeLaserCannon, savedDispensers = restoreBaseDispensers;
 	const bool savedLifeBoost = arcadeLifeBoost, savedRandomBalls = arcadeRandomBalls;
 	const bool savedRearScale = arcadeRearGunScale;
+	const bool savedCenteredHitboxes = centeredShotHitboxes;
 	const int savedXmas = xmasMode;
 	const JE_byte savedSpeed = gameSpeed;
 	const bool savedRollbackConfig = net_rollback, savedRecoveryConfig = net_desync_recovery;
@@ -1913,6 +1964,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = true; zicaLaserBuff = false; wallopSecondBolt = SUPER_SPARKS_ON;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
 	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
+	centeredShotHitboxes = true;
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	coopSharedCredit = true;
@@ -1937,6 +1989,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = false; zicaLaserBuff = true; wallopSecondBolt = SUPER_SPARKS_OFF;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
+	centeredShotHitboxes = false;
 	xmasMode = 0; gameSpeed = 5;
 	expertMode = false;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
@@ -1951,7 +2004,8 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && zicaLaserLength == ZICA_LEN_LONG
 	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
-	         && !arcadeRandomBalls && arcadeRearGunScale && xmasMode == 1 && gameSpeed == 2
+	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes
+	         && xmasMode == 1 && gameSpeed == 2
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
 	         "joiner adopts every host-authoritative simulation setting");
@@ -1971,7 +2025,8 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && zicaLaserLength == ZICA_LEN_SHORT
 	         && !zicaLaserLock && zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
-	         && arcadeRandomBalls && !arcadeRearGunScale && xmasMode == 0 && gameSpeed == 5,
+	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes
+	         && xmasMode == 0 && gameSpeed == 5,
 	         "leaving a network session restores every local simulation preference");
 	expertMatch = !expertMode;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
@@ -2023,7 +2078,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = savedZicaLock; zicaLaserBuff = savedZicaBuff; wallopSecondBolt = savedWallop;
 	chargeLaserCannon = savedCharge; restoreBaseDispensers = savedDispensers;
 	arcadeLifeBoost = savedLifeBoost; arcadeRandomBalls = savedRandomBalls;
-	arcadeRearGunScale = savedRearScale;
+	arcadeRearGunScale = savedRearScale; centeredShotHitboxes = savedCenteredHitboxes;
 	xmasMode = savedXmas; gameSpeed = savedSpeed;
 	net_rollback = savedRollbackConfig; net_desync_recovery = savedRecoveryConfig;
 	vt_ship = savedVt; smoothMotion = savedMotion; smoothScroll = savedScroll;
@@ -2594,6 +2649,7 @@ int qa_run_unit_suite(void)
 	qa_test_partner_repair_special();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
+	qa_test_shot_hitboxes();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();

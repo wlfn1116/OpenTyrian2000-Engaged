@@ -330,9 +330,10 @@ bool superSparkCapForSprite(JE_word sprite); // cap setting for a trail-tagged s
 // every episode with the same SUPER_SPARKS_* Auto/On/Off semantics (Auto = as shipped).
 extern int wallopSecondBolt;
 
-// Weapons whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the superspark
-// trail above (full diff of the two data sets): gameplay reworks, a blast sprite, retuned sounds.
-// epDiffMode[] forces one episode's data; JE_applyEpDiffs rewrites from shipped constants.
+// Items whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the superspark
+// trail above (full diff of the two data sets): gameplay reworks, a blast sprite, retuned sounds,
+// one shop icon. epDiffMode[] forces one episode's data; JE_applyEpDiffs rewrites from shipped
+// constants.
 enum
 {
 	EPDIFF_AUTO = 0,     // per-episode default: ep1-3 data in ep1-3, ep4/5 data in ep4/5
@@ -350,9 +351,10 @@ typedef enum
 	EDW_FLYING_PUNCH,    // Flying Punch (wpn 794): firing sound 31 vs 30
 	EDW_PRETZEL_MISSILE, // Pretzel Missile (wpn 795): firing sound 31 vs 30
 	EDW_DRAGON_FROST,    // Dragon Frost (wpn 806): firing sound 31 vs 30
+	EDW_SOLAR_SHIELD,    // Gencore Solar Shield (shield 8): shop icon 165 vs 153
 	EDW_COUNT
 } EpDiffWeapon;
-extern int epDiffMode[EDW_COUNT];  // EPDIFF_* : which episode's data each weapon uses
+extern int epDiffMode[EDW_COUNT];  // EPDIFF_* : which episode's data each item uses
 
 // Per-gauge gradient direction for the three vertical HUD gauges (menu: Enhancements ->
 // Gauge Gradients). Each gauge can run its shade gradient up the column (Up = classic),
@@ -402,6 +404,7 @@ extern bool arcadeLifeBoost;    // arcade modes: lives scale the shield and armo
 extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, tyrian2.c)
 extern bool arcadeRearGunScale; // 1P arcade: lives raise the rear gun on top of its own pickups (player.c)
 extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to items that share one (episodes.c)
+extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (tyrian2.c)
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
 extern Config opentyrian_config;
