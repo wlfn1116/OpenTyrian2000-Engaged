@@ -3,7 +3,7 @@
 [![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
 A fork of [OpenTyrian2000](https://github.com/KScl/opentyrian2000), which is an
-open-source port of the DOS game Tyrian.
+open-source port of the DOS game Tyrian. 
 
 The original campaigns play as they always did. What the fork adds:
 
