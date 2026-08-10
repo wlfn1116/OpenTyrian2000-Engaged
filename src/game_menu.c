@@ -1789,6 +1789,12 @@ void JE_itemScreen(void)
 		// without leaving this screen. A no-op unless the bonus actually moved.
 		JE_labelAmmoSidekicks();
 
+		// Online: a partner's Sabotage buy fills the shared queue and so changes what this E-Shop
+		// may sell, and it lands on a packet rather than through a local press. Re-label after the
+		// pump; the local buys already relabel from their own dispatch.
+		if (endlessCoop())
+			configure_endless_shop_menu();
+
 		paletteChanged = false;
 
 		leftPower = false;

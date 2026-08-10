@@ -462,10 +462,11 @@ bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; t
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 long endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
-// Maximum queued Sabotage charges per visit.
+// Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
+// shared sector, so co-op spends one queue between the two of them.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3
-long endlessCleansePrice(void);
-int  endlessCleanseCharges(void);    // sabotage strips queued for the next course select
+long endlessCleansePrice(void);      // the local player's own escalating price
+int  endlessCleanseCharges(void);    // strips queued for the next course select, the pair's, capped
 bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES; no further buy will take
 bool endlessTryBuyCleanse(void);
 long endlessGamblePrice(void);

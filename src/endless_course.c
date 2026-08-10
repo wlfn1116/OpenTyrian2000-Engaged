@@ -52,11 +52,7 @@ static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 {
 	const Uint64 folded = endlessFoldPurchasedMods(endlessCourseMod[i],
 	                                              endlessPurchasedMods[endlessEconomyIndex()]);
-	int charges = 0;
-	for (uint p = 0; p < endlessEffectPlayers(); ++p)
-		charges += endlessCleanseChargeCount[p];
-	if (charges > ENDLESS_CLEANSE_MAX_CHARGES)
-		charges = ENDLESS_CLEANSE_MAX_CHARGES;
+	const int charges = endlessCleanseCharges();
 	Uint64 kept = folded;
 	for (int c = 0; c < charges; ++c)
 		kept = endlessStripWorstMod(kept);
@@ -1366,14 +1362,9 @@ JE_byte endlessSelectCourse(int i)
 	// Apply the same Sabotage pass used to price and colour the course card, then hand each
 	// player their own effect mask: what they bought for themselves boosts them alone.
 	endlessActiveMods = endlessCourseMod[i];
-	int charges = 0;
+	const int charges = endlessCleanseCharges();  // the pair's, at the run-wide cap
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
-	{
-		charges += endlessCleanseChargeCount[p];
 		endlessCleanseChargeCount[p] = 0;
-	}
-	if (charges > ENDLESS_CLEANSE_MAX_CHARGES)
-		charges = ENDLESS_CLEANSE_MAX_CHARGES;           // the run-wide cap, however it was paid for
 	for (int c = 0; c < charges; ++c)  // Sabotage: strip the worst hostile bit per charge
 		endlessActiveMods = endlessStripWorstMod(endlessActiveMods);
 	// Add The Long Con's Apex ambush after cleansing so Sabotage cannot remove it.

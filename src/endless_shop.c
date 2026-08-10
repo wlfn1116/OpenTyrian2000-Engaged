@@ -71,7 +71,8 @@ static int endlessBuffChargeFromPaid(long paid)  // cash paid -> charge tier (no
 	return (c > 20) ? 20 : (c < 0 ? 0 : c);
 }
 
-// Revives and cleanse charges persist for the run. Their visit prices reset in endlessResetShopPrices.
+// A held revive persists for the run and its price ladder rides endlessRevivesUsed; sabotage
+// charges and their price ladder are per visit, both reset in endlessResetShopPrices.
 bool endlessReviveHeld[2] = { false, false };
 int  endlessRevivesUsed[2] = { 0, 0 };
 int  endlessCleanseChargeCount[2] = { 0, 0 };
@@ -518,8 +519,21 @@ bool endlessTryBuyExtraPerk(void)
 
 // Sabotage charges strip the worst modifier from the next chosen course.
 long endlessCleansePrice(void)   { return endlessCleanseCost[me()]; }
-int  endlessCleanseCharges(void) { return endlessCleanseChargeCount[me()]; }
-bool endlessCleanseMaxed(void)   { return endlessCleanseChargeCount[me()] >= ENDLESS_CLEANSE_MAX_CHARGES; }
+
+/* Strips queued for the next course select: the pair's, at the run-wide cap however it was paid
+ * for. Charges buy off the shared sector, so this is the one figure the shop, the course card and
+ * the launch pass all read. Each player's count rides the shop packet, so both machines agree,
+ * with a window at a simultaneous buy that the cap here closes on the next packet and the launch
+ * pass closes for good. */
+int endlessCleanseCharges(void)
+{
+	int charges = 0;
+	for (uint p = 0; p < endlessEffectPlayers(); ++p)
+		charges += endlessCleanseChargeCount[p];
+	return (charges > ENDLESS_CLEANSE_MAX_CHARGES) ? ENDLESS_CLEANSE_MAX_CHARGES : charges;
+}
+
+bool endlessCleanseMaxed(void)   { return endlessCleanseCharges() >= ENDLESS_CLEANSE_MAX_CHARGES; }
 bool endlessTryBuyCleanse(void)
 {
 	if (endlessCleanseMaxed() || shopperCash() < (ulong)endlessCleanseCost[me()])

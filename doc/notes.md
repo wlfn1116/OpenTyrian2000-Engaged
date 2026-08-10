@@ -309,7 +309,16 @@ levels ignore script fade and song-change events.
 ### Economy and perks
 
 The course card shows the exact payout that will be banked. Sabotage and
-purchased next-sector modifiers update it immediately. Inventories seed from
+purchased next-sector modifiers update it immediately.
+
+`endlessCleanseCharges` is the one authoritative Sabotage figure: both players'
+queued strips, at `ENDLESS_CLEANSE_MAX_CHARGES`. The buy gate, the E-Shop help
+line, the course card and the launch pass all read it, because the strips come
+off the shared sector and one queue is spent between the pair. Do not reintroduce
+a per-player count in any of them, or a partner pays for a strip the launch pass
+clamps away. The price ladder stays personal. A simultaneous buy on the two
+machines can still exceed the cap for as long as the mirrored counts are stale;
+the launch clamp is what makes that harmless. Inventories seed from
 `player[0].items`, and capped E-Shop rows show no price.
 
 Perk UI and gameplay derive from the same accessors. Sidekick capacity, Opening

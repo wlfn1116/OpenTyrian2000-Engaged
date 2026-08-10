@@ -259,7 +259,7 @@ entry, and Ship Specs becomes the perk list.
 | E-Shop item | Base cost | Result |
 | --- | ---: | --- |
 | Shop Reroll | $6,000 + $1,000/zone | Replaces shop stock; later rerolls cost more |
-| Sector Sabotage | $25,000 + $2,500/zone | Removes one threat from the selected course; up to three |
+| Sector Sabotage | $25,000 + $2,500/zone | Removes one threat from the selected course; up to three per outpost, shared between both players online |
 | Reinforce | $15,000 + $2,000/zone | Adds 6 permanent maximum armour; later tiers cost more |
 | Extra Perk | $70,000 + $2,500/zone | Opens a four-choice perk pick; cost doubles and scales with owned perks |
 | Special Weapon | Share of entry cash | Equips a random safe special |
@@ -681,7 +681,11 @@ chart reroll goes with the charting seat, so it is the charting player's Radar t
 offers one, and both of you fly whatever it redraws. One buy
 still reaches further than the ship that made it: **Sector Sabotage** strips a
 danger off the sector you both fly, and sabotage charges from the two of you add up
-to the same three-strip cap.
+to the same three-strip cap. Once that cap is met the row reads **Sabotage Maxed**
+for both of you, whoever paid, so neither buys a strip the other has already
+covered. You each keep your own escalating price, so splitting the purchases
+between you costs less than one of you buying them all. The queued count on the
+help line is the pair's.
 
 A gamble is yours: the cash, gear and drives it hands out or takes away are the
 gambler's. Its rarer outcomes change the next sector instead (a shop discount, a

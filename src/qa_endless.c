@@ -850,6 +850,25 @@ static void qa_eshop_matrix(void)
 		         "machine %d: sabotage refuses past its per-visit cap", local + 1);
 		qa_check(endlessCleanseMaxed() && !endlessTryBuyCleanse(), label);
 
+		/* The queue is the pair's, because the strips come off the sector both ships fly. A partner
+		 * who has bought none is still locked out once the cap is met, so neither pays for a strip
+		 * the launch pass would clamp away. */
+		endlessCleanseChargeCount[me] = ENDLESS_CLEANSE_MAX_CHARGES - 1;
+		endlessCleanseChargeCount[them] = 1;
+		snprintf(label, sizeof(label),
+		         "machine %d: sabotage counts the partner's charges towards the cap", local + 1);
+		qa_check(endlessCleanseCharges() == ENDLESS_CLEANSE_MAX_CHARGES
+		         && endlessCleanseMaxed() && !endlessTryBuyCleanse(), label);
+
+		endlessCleanseChargeCount[me] = 0;
+		endlessCleanseChargeCount[them] = 1;
+		snprintf(label, sizeof(label),
+		         "machine %d: a partner's charge still leaves room under the cap", local + 1);
+		qa_check(endlessCleanseCharges() == 1 && !endlessCleanseMaxed() && endlessTryBuyCleanse()
+		         && endlessCleanseChargeCount[me] == 1, label);
+		endlessCleanseChargeCount[me] = 0;
+		endlessCleanseChargeCount[them] = 0;
+
 		/* --- kill-fire drives --- */
 		for (int which = 0; which < 3; ++which)
 		{
