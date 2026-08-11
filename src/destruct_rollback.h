@@ -100,6 +100,13 @@ bool drb_selftest_tick(void);
 unsigned long drb_selftest_ticks_run(void);
 unsigned long drb_selftest_failures(void);
 
+/* Wire-transfer probe, run once during the self-test on live battle state: the recovery's own
+ * serialization taken end to end (snapshot, compress, expand, compare).  False means the round trip
+ * did not reproduce the battle byte for byte, so no recovery built on it could either.  The two
+ * sizes report what one transfer costs; both are zero until the probe has run. */
+bool drb_selftest_resync_ok(void);
+void drb_selftest_resync_bytes(size_t *rawBytes, size_t *compressedBytes);
+
 #ifdef WITH_NETWORK
 /* Called from network_check() for inbound PACKET_DESTRUCT_INPUT datagrams. */
 void drb_handle_packet(const Uint8 *data, int len);

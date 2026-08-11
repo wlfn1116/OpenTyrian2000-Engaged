@@ -1071,6 +1071,15 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			fireButtonHeld = true;
 			JE_specialComplete(playerNum, this_player->items.special);
 		}
+		else if (endlessMode)
+		{
+			// Endless answers a fresh press only: latching the hold on the ticks the special cannot
+			// fire (the campaign latches only when a shot goes off) stops a button held across the
+			// recharge from firing it the moment the meter fills. The Autofire Special perk fires
+			// from the gate below, which does not read the latch. See "Scaling and combat" in
+			// doc/notes.md.
+			fireButtonHeld = true;
+		}
 
 	}  /*Main End*/
 

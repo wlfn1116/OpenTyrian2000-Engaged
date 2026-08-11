@@ -264,6 +264,16 @@ bounty deduplication, Shockwave, Martyrdom, and Chain Reaction. Quiet mode still
 updates deduplication state. Elite and champion bounties pay once per logical
 enemy.
 
+The equipped special answers a fresh press in a run. `JE_doSpecialShot` latches
+`fireButtonHeld` while the fire button is down even on the ticks the special
+cannot fire, so a hold that spans the recharge no longer fires it the moment the
+meter fills. The campaign keeps the vanilla latch, which only a shot going off
+sets. The gate is `endlessMode` rather than `endlessFxActive()`, because this is
+a run rule and campaign debug mods must not change how the campaign fires. The
+Autofire Special perk still fires from a held button: its gate runs after this
+one and does not read the latch. Super Arcade's buttons 2 and 3 clear the latch
+every tick above it, so they keep firing as they always have.
+
 ### Modifiers and courses
 
 `endlessModTable` owns modifier text, danger weight, payout, and classification.
@@ -277,7 +287,14 @@ Name collision resolution is deterministic and runs after sorting.
 
 Modifier-specific constraints:
 
-- Martyrdom fires one symmetric burst per logical enemy.
+- Martyrdom fires one symmetric burst per logical enemy, from the middle of that
+  enemy's footprint. `endlessMartyrBurstOrigin` unions the sprite boxes of the
+  dying slot and the drawn members of its `linknum` group, so a multi-tile body
+  bursts from its centre rather than the corner tile that booked the kill; a body
+  of one 12x14 cell keeps the sprite anchor. Only boxes on the playfield join the
+  union, because a boss parks its anchor above the screen under the group's own
+  linknum. Body and burst are the same group, so pieces that carry linknums of
+  their own are separate logical enemies to both and burst where they stand.
 - Seeker state belongs to the projectile and permits one delayed correction.
 - Rising-tide shots clone complete authored volleys.
 - Static combines a power drain with a recharge lockout.
@@ -1341,7 +1358,8 @@ queue before the application consumes the chunks.
 
 `PACKET_INPUT` has a 48-byte header and up to sixteen redundant 14-byte input
 records. It is unacknowledged and idempotent. `PACKET_DESTRUCT_INPUT` is the
-minigame's own stream on the same terms; see Online Destruct.
+minigame's own stream on the same terms, and `PACKET_DESTRUCT_RESYNC` its
+acknowledged recovery transfer; see Online Destruct.
 
 - `network_check()` drains up to `NET_DRAIN_MAX`; callers do not add another
   drain loop.
@@ -1427,7 +1445,8 @@ Transport acknowledgement means that bytes arrived. The joiner sends
 `NRB_RS_ACK` after adopting a complete generation, and the host resets only after
 that application-level acknowledgement. Fatal layout refusal uses a reasoned
 NAK and retires recovery on both peers. Recovery is capped at three attempts per
-level.
+level, and Destruct runs its own copy of all of this per round (see Destruct
+desync recovery).
 
 `PACKET_WAITING` is a paired rendezvous. Menu release, shop exit, and level start
 consume it in the same order on both machines. Loops that inspect packets during
@@ -1722,10 +1741,8 @@ mode and a rolled `Uint32` terrain seed travel in the connect packet's Destruct
 block, the host's side rides the existing host-slot field (1 = left), and
 `networkStartScreen` diverts to `loadDestruct` without a `PACKET_DETAILS`
 handshake. Sessions run either netcode, `de_net_rollback` being
-`nrb_session_mode()` read once at `JE_destructGame`. Desync recovery is the one
-setting the type cannot take: it streams the main game's rollback registry,
-which the minigame is no part of, so `network_settings_pack` and
-`network_arm_local_session` both force that bit off and the lobby hides the row.
+`nrb_session_mode()` read once at `JE_destructGame`, and either answer to the
+recovery row through `nrb_session_recovery()` (see Destruct desync recovery).
 Sessions are always Normal speed so both machines advance frames at one rate;
 `network_settings_apply_session_speed` pins it before the connect packet is
 packed, so the joiner adopts the forced value along with everything else, and
@@ -1821,9 +1838,45 @@ two and perturbs what is covered. That is what the check is for: an incomplete
 walk is otherwise invisible until two machines quietly diverge. It runs
 `drb_selftest_*` rather than the driver, leaves `drb_active()` false so the tick
 keeps its offline round handling, and presents nothing, so 400 ticks cost a
-fraction of a second. The self-test does not cover the wire: the driver, the
-prediction, and the confirmed-verdict paths need two peers, and no Destruct
-scenario exists in `network_fault_test.py` yet.
+fraction of a second. Halfway through the run it also takes the recovery's own
+serialization end to end on live battle state (`drb_selftest_resync_probe`:
+snapshot, compress, expand, compare) and reports raw bytes, compressed bytes and
+chunk count on the `DESTRUCT` line. The self-test does not cover the wire: the
+driver, the prediction, the confirmed-verdict paths and the transfer itself need
+two peers, and no Destruct scenario exists in `network_fault_test.py` yet.
+
+#### Destruct desync recovery
+
+The canary mismatch arms `resync_wanted`; the host acts on it at its driver site
+and the joiner waits for the stream, exactly as `net_rollback.c` does. The wire
+type is `PACKET_DESTRUCT_RESYNC` with the same chunk layout, and the zero-run
+coder is `nrb_resync_compress`/`expand` reused rather than reimplemented. What
+differs is the payload: `DE_StateSave` output goes on the wire unchanged and
+`DE_StateRestore` adopts it, with no relocation layer. The blob holds three
+pointers (`destruct_player[].unit`, `world.mapWalls`, `world.VGAScreen`) and the
+restore re-pins all three unconditionally, so the sender's addresses are
+overwritten before anything reads them. `destruct_player[].keys.Config` also
+crosses, and is a copy of the constant `defaultKeyConfig` table on both machines.
+
+The preamble guard is `DE_StateSize()` alone, without a layout fingerprint. It
+separates the word sizes that matter here, because `world` and `destruct_player`
+carry those three pointers and a 32-bit peer therefore reports a different total;
+`NET_VERSION` covers the rest. A refusal is fatal, retiring recovery for the
+session on both peers.
+
+Adoption resets the timeline through `drb_reset_core`, the round-start path
+without the budget reset, so the three attempts are per round. The recovery
+rendezvous sits after the QUIT and NEWMAP early returns, because a round that is
+already ending has nothing left to repair, and `drb_stall_pump` dispatches an
+inbound stream as well: a desync at a round end leaves one machine waiting to
+confirm it while the other is already streaming. Both stall loops return
+`DRB_STEP_PRESENT` when it fires, since `drb_cur` is back at 1 and their
+conditions no longer mean anything.
+
+Unconfirmed local input dies with the timeline, control bits included, so a quit
+or reroll pressed during the hitch has to be pressed again. One battle costs
+about 81 kB raw and 34 kB compressed (111 chunks); the terrain buffer is most of
+both, and the untouched sky is what the zero-run coder earns its keep on.
 
 Every map is generated from `network_destruct_session_seed + golden_ratio *
 round` on both machines; nothing about the world crosses the wire. That is why

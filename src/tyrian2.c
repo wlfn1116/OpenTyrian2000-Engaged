@@ -83,6 +83,64 @@ static bool arcadeSuperPickupRandomActive(void);
 #define ENDLESS_MARTYR_SHOT_DURATION 120   // ticks before a burst bullet self-expires (also culled off-screen)
 #define ENDLESS_TWO_PI               6.28318531f
 
+// The playfield box an enemy's sprite covers: an ordinary enemy is one 12x14 cell at
+// (ex + mapoffset, ey), a 2x2 enemy four of them around that point. Same geometry the draw uses.
+static void enemy_sprite_box(unsigned int i, int *left, int *top, int *right, int *bottom)
+{
+	const bool big = (enemy[i].size == 1);
+	*left   = enemy[i].ex + enemy[i].mapoffset + (big ? -6 : 0);
+	*top    = enemy[i].ey + (big ? -7 : 0);
+	*right  = *left + (big ? 24 : 12);
+	*bottom = *top  + (big ? 28 : 14);
+}
+
+// MARTYRDOM: the point a kill's burst radiates from. A body drawn as more than one cell (a linked
+// multi-tile enemy, or a 2x2 sprite) bursts from the middle of its footprint: the tile that books
+// the kill sits at a corner of the body, which threw the whole radial pattern off to one side. A
+// single-cell enemy keeps the sprite anchor. Slot i is already freed by the caller, so it is
+// measured directly and its link partners are unioned in around it.
+static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer *oy)
+{
+	int left, top, right, bottom;
+	enemy_sprite_box(i, &left, &top, &right, &bottom);
+	bool multiCell = (enemy[i].size == 1);
+
+	const JE_byte link = enemy[i].linknum;
+	if (link != 0)
+	{
+		for (unsigned int e = 0; e < COUNTOF(enemy); ++e)
+		{
+			if (e == i || enemyAvail[e] == 1 || enemy[e].linknum != link)
+				continue;
+
+			int l, t, r, b;
+			enemy_sprite_box(e, &l, &t, &r, &b);
+
+			// Only the part of the body that is on the playfield counts. A boss parks its anchor
+			// above the screen under the group's own linknum, and taking that in would drag the
+			// middle out of the visible hull. Same window the enemy visibility test uses.
+			if (r <= PLAYFIELD_LEFT || l > PLAYFIELD_RIGHT || b <= 0 || t >= vga_height)
+				continue;
+
+			if (l < left)   left = l;
+			if (t < top)    top = t;
+			if (r > right)  right = r;
+			if (b > bottom) bottom = b;
+			multiCell = true;
+		}
+	}
+
+	if (!multiCell)
+	{
+		*ox = enemy[i].ex + enemy[i].mapoffset;
+		*oy = enemy[i].ey;
+		return;
+	}
+
+	*ox = (JE_integer)((left + right) / 2);
+	*oy = (JE_integer)((top + bottom) / 2);
+}
+
 // MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
 // pool; 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
 // nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite is Martyrdom's own
@@ -245,7 +303,11 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 	// silently eat the burst it had just created.
 	endlessShockwaveClear(sx, sy, shockRadius);
 	if (martyrShots > 0)
-		endlessSpawnMartyrBurst(sx, sy, martyrShots);
+	{
+		JE_integer burstX, burstY;
+		endlessMartyrBurstOrigin(i, &burstX, &burstY);
+		endlessSpawnMartyrBurst(burstX, burstY, martyrShots);
+	}
 	chain_queue_kill(sx, sy, linknum);
 }
 

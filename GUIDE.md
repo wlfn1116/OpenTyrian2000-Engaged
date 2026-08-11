@@ -326,6 +326,11 @@ Additional details:
 - **Ordnance Reserves** grows the magazine without lengthening the total refill.
   **Rapid Recharge** shortens the refill itself and also covers charge-type
   sidekicks.
+- **Autofire Special** is what makes a held fire button keep firing your special.
+  Without it, a run fires the special on a fresh press only: holding fire through
+  the recharge does nothing when the meter fills, so let go and press again. This
+  is an Endless rule; the campaign still fires the special the moment it is ready
+  under a held button.
 
 Every perk screen also offers **Take the Cash**. The buyout grows with depth,
 with the number of offers, and with how many perk stacks you already own.
@@ -557,7 +562,7 @@ are left alone and restored afterwards.
 | Double Earnings | Individual credit only, so the row is not shown under Shared. **On** pays combat income twice over to whoever earned it: score pickups, kill cash, and elite and champion bounties alike. That puts a split take back near what one player alone would have collected. Zone clear bonuses and bank interest are paid at face value. |
 | Game Speed | Session speed for both players. It does not appear in the in-game Esc menu online, so the lobby choice is final. Destruct hides the row and always plays at Normal, so both machines count their frames at the same rate; your speed for the other game types is left untouched. |
 | Netcode | **Rollback** (default) applies your input the instant you press it and quietly corrects the other ship when its input arrives. **Delay-Based** is the original lockstep, whose input lag grows with ping. Destruct takes this row too, with a rollback of its own (see Online Destruct). |
-| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level. The row is only there while Netcode is Rollback: Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. Destruct hides it as well, because the state the host would send is the main game's and not the minigame's. |
+| Desync Recovery | On by default. If the two machines drift apart, the game pauses for a moment, the host sends its whole game state over, and both continue from the host's version. Needs rollback netcode and two builds of the same version; it gives up after three repairs in one level, or in one Destruct round. The row is only there while Netcode is Rollback: Delay-Based cannot detect a desync in the first place, so it hides the row and turns the setting off. Destruct takes this row too, repairing the battle from the host's copy (see Online Destruct). |
 
 **Join by IP Address** takes an address on its own or with a port, like
 `123.45.67.89:1337`. Ctrl+V pastes over whatever is in the field. It comes back
@@ -767,9 +772,14 @@ after the session's network delay instead, which never corrects anything but put
 that delay on your own controls. Leaving the round or the session (Backspace and
 Esc) waits for both machines either way, so neither can reroll a map alone.
 
-Desync Recovery is unavailable here: the state a host would send over is the main
-game's, and the minigame is no part of it. If the two battles do drift apart, the
-session says so in the network log and plays on.
+Desync Recovery works here too, on the battle rather than on a level. Should the
+two battles drift apart, both machines pause on **Resyncing players.**, the host
+sends its copy of the arena over (units, shells, walls and the cratered ground
+alike), and the round carries on from there. It is one hitch of a second or two,
+after which the terrain and the scores are the host's. Whatever you were holding
+down at that moment is dropped, so press it again. Three repairs are allowed per
+round, and a repair needs both players on the same build; the network log names
+the reason whenever one is refused, and the battle plays on regardless.
 
 Destruct sessions play at Normal game speed on both machines, so their frame
 counters keep step; the lobby's Game Speed row is hidden for that reason and your

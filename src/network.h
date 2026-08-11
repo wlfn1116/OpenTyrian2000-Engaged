@@ -111,6 +111,7 @@ static inline Uint32 net_bytes_read32(const void *areap)
 #define PACKET_INPUT         0x60    // rollback input stream (never acknowledged; see net_rollback.c)
 #define PACKET_RESYNC        0x61    // gen, chunk idx/count, len, <state chunk>  (acknowledged; see nrb_resync_*)
 #define PACKET_DESTRUCT_INPUT 0x62   // Destruct rollback input stream (never acknowledged; see destruct_rollback.c)
+#define PACKET_DESTRUCT_RESYNC 0x63  // gen, chunk idx/count, len, <battle chunk>  (acknowledged; see drb_resync_*)
 
 extern bool isNetworkGame;
 extern int network_delay;

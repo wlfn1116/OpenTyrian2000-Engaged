@@ -71,7 +71,19 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       31           /* v31: a trailing large sidekick (the companion ships) fires
+#define NET_VERSION       33           /* v33: two Endless simulation changes. The special answers a
+                                          fresh press instead of a button held across its recharge,
+                                          and a Martyrdom burst leaves the middle of a multi-tile
+                                          body rather than the corner tile that booked the kill. A
+                                          v32 peer fires the special the moment the meter fills and
+                                          spawns those bullets a body's width away, so the two
+                                          machines part company on the shot pool and the wallet.
+                                          v32: a desynchronized Destruct battle is repaired by
+                                          streaming the host's simulation as PACKET_DESTRUCT_RESYNC;
+                                          a v31 peer has no case for that type, so it never
+                                          acknowledges a chunk and the host retransmits the whole
+                                          transfer forever.
+                                          v31: a trailing large sidekick (the companion ships) fires
                                           from SIDEKICK_TRAIL_SHOT_Y below its position, so its shots
                                           spawn seven pixels lower than on a v30 peer and the two
                                           machines would disagree on when those shots connect.
@@ -649,6 +661,8 @@ static int network_recv_one(void)
 					// The Endless zone jump, settled before the course is folded. Same rule again.
 					case PACKET_ENDLESS_JUMP:
 					case PACKET_RESYNC:
+					// Destruct's own recovery stream, on the same terms as PACKET_RESYNC.
+					case PACKET_DESTRUCT_RESYNC:
 						{
 							const Uint16 sync = SDLNet_Read16(&packet_temp->data[2]);
 							/* Signed so the comparison is wraparound-safe: behind the window is a
@@ -1704,13 +1718,10 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = NET_SET_EPDIFF_PACKED - 1; i >= 0; --i)
 		epdiff = (epdiff << 2) | (epDiffMode[i] & 3);
 
-	// Destruct brings its own rollback (destruct_rollback.c) and so honours the netcode row, but
-	// desync recovery streams the main game's registry, which the minigame has no part of; the
-	// row is hidden for it and the bit forced off here AND in network_arm_local_session, so the
-	// packed bit and the host's own session agree.
+	// Destruct brings its own rollback and its own recovery (destruct_rollback.c), so both rows
+	// mean the same thing for every game type.
 	const bool rollback_applies = net_rollback;
-	const bool recovery_applies = net_desync_recovery && rollback_applies
-	                           && network_game_type != NETWORK_GAME_DESTRUCT;
+	const bool recovery_applies = net_desync_recovery && rollback_applies;
 
 	Uint16 flags = 0;
 	flags |= zicaLaserLock         ? 1 << 0 : 0;
@@ -1829,14 +1840,12 @@ void network_arm_local_session(void)
 	// snapshot the joiner's adopt path takes. Both are undone by network_settings_restore.
 	network_settings_stash();
 
-	// Same rule the settings block packs: every game type honours the netcode row, and Destruct
-	// alone cannot take the recovery that streams the main game's registry.
+	// Same rule the settings block packs: every game type honours both netcode rows.
 	const bool rollback_applies = net_rollback;
 
 	nrb_set_session_mode(rollback_applies);
 	nrb_set_session_vt(vt_ship && smoothMotion && smoothScroll != 0);
-	nrb_set_session_recovery(net_desync_recovery && rollback_applies
-	                         && network_game_type != NETWORK_GAME_DESTRUCT);
+	nrb_set_session_recovery(net_desync_recovery && rollback_applies);
 	coop_set_session_shared_credit(coopSharedCredit);
 	coop_set_session_double_earnings(coopDoubleEarnings);
 	arcadeSeparateMode = arcadeSeparateShips;

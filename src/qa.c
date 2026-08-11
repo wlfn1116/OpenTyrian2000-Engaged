@@ -2723,13 +2723,25 @@ int qa_run_destruct_selftest(void)
 	JE_initPlayerData();
 	JE_destructGame();
 
-	printf("DESTRUCT ticks=%lu failures=%lu\n",
-	       drb_selftest_ticks_run(), drb_selftest_failures());
+	size_t probeRaw = 0, probeComp = 0;
+	drb_selftest_resync_bytes(&probeRaw, &probeComp);
+
+	printf("DESTRUCT ticks=%lu failures=%lu resync=%s raw=%lu compressed=%lu chunks=%lu\n",
+	       drb_selftest_ticks_run(), drb_selftest_failures(),
+	       drb_selftest_resync_ok() ? "ok" : "FAILED",
+	       (unsigned long)probeRaw, (unsigned long)probeComp,
+	       probeComp == 0 ? 0UL : (unsigned long)((probeComp + 12 + 307) / 308));
 
 	if (drb_selftest_ticks_run() != qa_destruct_selftest_ticks)
 	{
 		fprintf(stderr, "destruct self-test ran %lu of %lu ticks\n",
 		        drb_selftest_ticks_run(), qa_destruct_selftest_ticks);
+		return 1;
+	}
+	if (!drb_selftest_resync_ok())
+	{
+		fprintf(stderr, "destruct desync recovery: the battle did not survive its own "
+		                "compress/expand round trip\n");
 		return 1;
 	}
 	return drb_selftest_failures() == 0 ? 0 : 1;

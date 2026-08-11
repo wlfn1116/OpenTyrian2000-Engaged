@@ -892,10 +892,9 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		const bool super = network_game_type_is_super(network_game_type);
 		const bool variant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 		/* Destruct brings its own battle-mode row and mans a side rather than flying a ship, so it
-		 * has no episode and no difficulty ladder.  It plays on either netcode, but not with
-		 * desync recovery: that streams the main game's rollback registry, which the minigame is
-		 * no part of.  It has no speed choice either; both sides play it at Normal so their frame
-		 * counters advance together. */
+		 * has no episode and no difficulty ladder.  It answers both netcode rows with its own
+		 * rollback and recovery (destruct_rollback.c).  It has no speed choice; both sides play it
+		 * at Normal so their frame counters advance together. */
 		const bool destruct = network_game_type == NETWORK_GAME_DESTRUCT;
 		/* Arcade's Timed Battle: three fixed levels raced for cash, so the row that names an
 		 * episode names a battle instead. Held on the same row rather than a second one -- the
@@ -920,7 +919,7 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 		// type, which Destruct has no business rewriting.
 		hidden[ITEM_SPEED]      = destruct;
 		hidden[ITEM_NETCODE]    = false;
-		hidden[ITEM_RECOVERY]   = !net_rollback || destruct;
+		hidden[ITEM_RECOVERY]   = !net_rollback;
 
 		// A row the current game type hides cannot stay selected; settle on the next visible one.
 		while (selectedIndex < SETTING_COUNT && hidden[selectedIndex])
