@@ -437,6 +437,13 @@ remain in the owning `Player` and in rollback state.
 `player[].lives` aliases a weapon-power byte. Always bind it through
 `player_lives_port()` so linked and full-ship sessions choose the correct bay.
 
+The last death spends no life, so the counter rests at one while the ship stays
+dead. `player_is_out()` is the display rule: the lives row, the arcade lives
+gauge, both hull gauges, and the superbomb row draw nothing for such a ship.
+Outside the arcade rules the counter is a weapon's power and is not read. The
+tick that ends an explosion raises `hud_bars_dirty` so the gauges are repainted
+then.
+
 Super Arcade resolves colored balls through `player_sa_ball_weapon()`. The ship's
 `items.super_arcade_mode` selects its own arsenal.
 

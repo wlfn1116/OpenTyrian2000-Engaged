@@ -181,6 +181,15 @@ static inline bool all_players_alive(void)
 	return (player[0].is_alive && (!twoPlayerMode || player[1].is_alive));
 }
 
+/* Dead with no life left to come back on, once the wreck has finished exploding. Only the arcade
+ * rules hand out lives, so anywhere else a finished explosion is already final. Every per-ship HUD
+ * readout keys off this; see doc/notes.md#session-modes. */
+static inline bool player_is_out(uint p)
+{
+	return !player[p].is_alive && player[p].exploding_ticks == 0
+	    && (!arcade_rules_active() || *player[p].lives <= 1);
+}
+
 void calc_purple_balls_needed(Player *);
 // Cash off the playfield. Routes player 1's share through the endless ledger; use it for every
 // pickup credit so the run-over earnings breakdown stays accurate.

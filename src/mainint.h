@@ -147,6 +147,9 @@ bool hud_special_on_right(uint p);      // ...mirrored into the right corner, no
 int  hud_special_icon_x(uint p);
 int  hud_special_light_x(uint p);
 int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_LIVES_NAME_RISE above
+// Icons these rows draw, and the counts their layout is measured from. Zero for a ship that is out.
+uint hud_lives_count(uint p);
+uint hud_superbomb_count(uint p);
 // Per-ship recharge and active-effect clocks for the ready light. `armed` is
 // sampled at the fire gate; `fired` covers specials with no recharge.
 void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired);

@@ -1921,6 +1921,9 @@ void JE_drawShield(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
+			if (player_is_out(i))
+				continue;
+
 			const float units = hud_2p_gauge_units(gauge_shield_level(i));
 			JE_dBar3_scaled(gauge_surface(), HUD_X(270), 60 + 134 * i, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			// Before the dim, so a remote player's mark fades with the rest of their gauge.
@@ -1932,6 +1935,9 @@ void JE_drawShield(void)
 	else
 	{
 		const uint i = gameplay_local_player_index();
+		if (player_is_out(i))
+			return;
+
 		const float units = gauge_shield_level(i);
 		JE_dBar3_scaled(gauge_surface(), HUD_X(270), 194, units, 144, gaugeGradShield, gauge_flash_render(shieldGaugeFlash[i]), 0, gauge_scale);
 		draw_shield_ceiling_mark(HUD_X(270), 194, units, (float)player[i].shield_max, 0);
@@ -1981,6 +1987,9 @@ void JE_drawArmor(void)
 	{
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
+			if (player_is_out(i))
+				continue;
+
 			JE_dBar3_scaled(gauge_surface(), HUD_X(307), 60 + 134 * i, hud_2p_gauge_units(gauge_armor_level(i)), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), HUD_2P_GAUGE_TOP_PAD, gauge_scale);
 			if (gauge_is_remote(i))
 				gauge_dim_rect(HUD_X(307), 60 + 134 * i - 44, HUD_X(315), 60 + 134 * i);
@@ -1989,11 +1998,17 @@ void JE_drawArmor(void)
 	else if (endlessFxActive())
 	{
 		const uint i = gameplay_local_player_index();
+		if (player_is_out(i))
+			return;
+
 		endlessDrawArmorBar(gauge_armor_level(i), gauge_flash_render(armorGaugeFlash[i]));
 	}
 	else
 	{
 		const uint i = gameplay_local_player_index();
+		if (player_is_out(i))
+			return;
+
 		JE_dBar3_scaled(gauge_surface(), HUD_X(307), 194, gauge_armor_level(i), 224, gaugeGradArmor, gauge_flash_render(armorGaugeFlash[i]), 0, gauge_scale);
 	}
 }

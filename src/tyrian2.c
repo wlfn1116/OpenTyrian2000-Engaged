@@ -4045,10 +4045,11 @@ level_loop:
 
 			// One-player Arcade modes use the unused generator gauge for lives; two-ship
 			// sessions show this machine's own ship.
-			if (dual_ship_mode())
-				draw_lives_gauge(*player[gameplay_local_player_index()].lives);
-			else if (onePlayerAction)
-				draw_lives_gauge(*player[0].lives);
+			if (dual_ship_mode() || onePlayerAction)
+			{
+				const uint ship = dual_ship_mode() ? gameplay_local_player_index() : 0;
+				draw_lives_gauge(player_is_out(ship) ? 0 : (int)*player[ship].lives);
+			}
 		}
 		else if (coop_mode_active())
 		{

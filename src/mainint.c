@@ -7120,10 +7120,15 @@ static void net_own_state_load(Uint16 sync, int *x, int *y, Uint16 *buttons)
 #define HUD_ROW_H        10   // row pitch that keeps two shadowed TINY_FONT lines clear of each other
 #define HUD_SUPERBOMB_Y  160  // row the superbomb icons blit at, in both bottom corners
 
+uint hud_superbomb_count(uint p)
+{
+	return player_is_out(p) ? 0 : player[p].superbombs;
+}
+
 // Rightmost column player 1's superbomb row reaches (icons march right from x30).
 static int hud_superbomb_p1_right(void)
 {
-	return 30 + 12 * (int)player[0].superbombs;
+	return 30 + 12 * (int)hud_superbomb_count(0);
 }
 
 int hud_fps_row(void)
@@ -7132,7 +7137,7 @@ int hud_fps_row(void)
 	if (!twoPlayerMode || (galagaMode && !coop_mode_active()))
 		return HUD_SCORE_Y + 1;
 
-	if (player[1].superbombs > 0)
+	if (hud_superbomb_count(1) > 0)
 		return HUD_SUPERBOMB_Y - HUD_ROW_H + 1;
 
 	return HUD_SCORE_Y - HUD_ROW_H + 1;
@@ -7144,7 +7149,7 @@ int hud_bottom_band_top(void)
 
 	// Superbomb icons form their own row above the scores at both playfield edges, so a
 	// centred full-width bar has to clear them as well.
-	if (player[0].superbombs > 0 || player[1].superbombs > 0)
+	if (hud_superbomb_count(0) > 0 || hud_superbomb_count(1) > 0)
 		top = HUD_SUPERBOMB_Y;
 
 	if (show_fps)
@@ -7169,6 +7174,11 @@ static int hud_player_name_width(int index)
 static bool hud_lives_shown(void)
 {
 	return arcade_rules_active();
+}
+
+uint hud_lives_count(uint p)
+{
+	return player_is_out(p) ? 0 : *player[p].lives;
 }
 
 /* One icon per life the player still has, so the row reads the same number the outpost's
@@ -7429,7 +7439,7 @@ int hud_top_left_right_edge(void)
 
 	if (hud_lives_shown())
 	{
-		const uint lives = *player[0].lives;
+		const uint lives = hud_lives_count(0);
 
 		// The label sits at x28; the lives row starts at x30 and steps right, or collapses to
 		// a single icon plus a count at x45 once past HUD_LIVES_ICONS_MAX.
@@ -7493,7 +7503,7 @@ int hud_top_right_left_edge(void)
 	if (!twoPlayerMode || (galagaMode && !coop_mode_active()) || !hud_lives_shown())
 		return left;
 
-	const uint lives = *player[1].lives;
+	const uint lives = hud_lives_count(1);
 
 	// Mirror of the above: the label is right-aligned to PLAYFIELD_WIDTH + 22 and the lives
 	// row starts at PLAYFIELD_WIDTH + 7 stepping left. "99" stands in for the widest count.
@@ -7516,7 +7526,7 @@ int hud_bottom_right_top(void)
 	if (twoPlayerMode && (!galagaMode || coop_mode_active()))
 	{
 		top = HUD_SCORE_Y - 1;  // player 2's score lives in this corner
-		if (player[1].superbombs > 0)
+		if (hud_superbomb_count(1) > 0)
 			top = HUD_SUPERBOMB_Y;  // ...with its superbomb row just above
 	}
 
@@ -7591,7 +7601,7 @@ void JE_inGameDisplays(void)
 		}
 		// Endless is one-player, so superbomb icons march rightward from the far side;
 		// only a long row reaches under this readout.
-		if (player[0].superbombs > 0
+		if (hud_superbomb_count(0) > 0
 		    && hud_superbomb_p1_right() >= rightX - 60
 		    && HUD_SUPERBOMB_Y < floorRow)
 		{
@@ -7665,7 +7675,7 @@ void JE_inGameDisplays(void)
 		// full ships and give each its own row, the same as Separate arcade.
 		for (int temp = 0; temp < ((onePlayerAction && !dual_ship_mode()) ? 1 : 2); temp++)
 		{
-			const uint lives = *player[temp].lives;
+			const uint lives = hud_lives_count((uint)temp);
 
 			// Only the ship carrying the special block moves down for it, so a Separate-arcade
 			// joiner drops its own row and leaves player one's where it was.
@@ -7713,7 +7723,7 @@ void JE_inGameDisplays(void)
 	{
 		int x = dual_ship_mode() || i == 0 ? 30 : PLAYFIELD_WIDTH + 7;
 
-		for (uint j = player[i].superbombs; j > 0; --j)
+		for (uint j = hud_superbomb_count(i); j > 0; --j)
 		{
 			blit_sprite2(VGAScreen, x, 160, spriteSheet9, 304);
 			x += (dual_ship_mode() || i == 0) ? 12 : -12;
@@ -8407,6 +8417,11 @@ redo:
 		if (this_player->exploding_ticks > 0)
 		{
 			--this_player->exploding_ticks;
+
+			// The wreck is gone: the ship either respawns below or is out with empty gauges.
+			// Both states need one repaint, and no other event guarantees it.
+			if (this_player->exploding_ticks == 0)
+				hud_bars_dirty = true;
 
 			if (levelEndFxWait > 0)
 			{

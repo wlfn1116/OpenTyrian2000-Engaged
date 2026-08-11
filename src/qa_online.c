@@ -650,6 +650,77 @@ static void qa_rear_gun_mode_matrix(void)
 	thisPlayerNum = 1;
 }
 
+/* ---- 3e. a ship that is out leaves nothing behind on the HUD ------------------------- */
+
+/* The last death spends no life: the counter stops at one and the ship stays dead. A readout
+ * taken straight off the counter therefore offers the survivor's partner a ship it cannot fly,
+ * so every per-ship HUD readout keys off player_is_out instead. */
+static void qa_downed_ship_hud(void)
+{
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].items.weapon[FRONT_WEAPON].power = 1;
+		player[p].items.weapon[REAR_WEAPON].power = 1;
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+		player[p].is_alive = true;
+		player[p].exploding_ticks = 0;
+	}
+
+	qa_modes_clear();
+	twoPlayerMode = true;
+	qa_check(!player_is_out(1) && hud_lives_count(1) == 1,
+	         "a linked-pair ship on its last life still flies it");
+
+	player[1].is_alive = false;
+	player[1].exploding_ticks = 60;
+	qa_check(!player_is_out(1) && hud_lives_count(1) == 1,
+	         "...and holds its icon while the wreck explodes, the way a respawning ship does");
+
+	player[1].exploding_ticks = 0;
+	qa_check(player_is_out(1) && hud_lives_count(1) == 0,
+	         "...but shows nothing once the explosion ends with no life left to spend");
+	qa_check(!player_is_out(0) && hud_lives_count(0) == 1,
+	         "the surviving ship's own row is untouched by its partner going down");
+
+	/* A death with a life in hand ends in a respawn, so the row keeps its icons through it. */
+	*player[1].lives = 3;
+	qa_check(!player_is_out(1) && hud_lives_count(1) == 3,
+	         "a ship with lives left keeps its icons through the death that spends one");
+
+	/* The superbomb row follows the same rule. The bottom-band layout measures it through this
+	 * same count, so the row a boss bar has to clear goes with the icons. */
+	player[1].superbombs = 2;
+	qa_check(hud_superbomb_count(1) == 2,
+	         "a ship still flying shows the superbombs it can still fire");
+	*player[1].lives = 1;
+	qa_check(player_is_out(1) && hud_superbomb_count(1) == 0,
+	         "...and a ship that is out shows none");
+	player[1].superbombs = 0;
+
+	/* Separate arcade counts lives on the front gun, so the same states have to read the same
+	 * way through the other binding. */
+	*player[1].lives = 1;
+	arcadeSeparateMode = true;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
+	qa_check(player_is_out(1) && hud_lives_count(1) == 0,
+	         "a Separate arcade ship reads out the same way off its own front-gun counter");
+
+	/* Co-op hands out no lives, and the byte the pointer aliases there is a weapon's power.
+	 * Reading it as a life count would strand a flying ship at "out" for a level-one front gun. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	player[1].is_alive = true;
+	qa_check(!player_is_out(1), "a flying co-op ship is never out, whatever its front gun holds");
+	player[1].is_alive = false;
+	qa_check(player_is_out(1), "...and a downed one is out as soon as its wreck is gone");
+
+	qa_modes_clear();
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].is_alive = true;
+}
+
 /* ---- 4. the campaign's two wallets -------------------------------------------------- */
 
 /* Online Campaign runs the ordinary cash economy twice over. It shares the Credit rules with
@@ -1683,6 +1754,7 @@ void qa_test_online_suite(void)
 	qa_separate_arcade_lives();
 	qa_special_block_geometry();
 	qa_rear_gun_mode_matrix();
+	qa_downed_ship_hud();
 	qa_campaign_economy_matrix();
 	qa_campaign_score_matrix();
 	qa_online_strings_matrix();
