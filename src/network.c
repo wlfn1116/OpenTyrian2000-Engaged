@@ -56,6 +56,7 @@
 #include "nortsong.h"
 #include "nortvars.h"
 #include "opentyr.h"
+#include "params.h"
 #include "picload.h"
 #include "player.h"
 #include "qa.h"
@@ -71,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       33           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       34           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1008,6 +1009,11 @@ bool network_state_update(void)
 					for (int i = 1; i <= x; i++)
 						for (int j = 4; j < packet_state_in[0]->len; j++)
 							packet_state_in[0]->data[j] ^= packet_state_in[i]->data[j];
+					/* XOR parity covers payload bytes only. Restore the reconstructed packet's
+					 * type and tick before consumers key local replay history from its header. */
+					SDLNet_Write16(PACKET_STATE, &packet_state_in[0]->data[0]);
+					SDLNet_Write16((Uint16)(last_state_in_sync - 1),
+					               &packet_state_in[0]->data[2]);
 					break;
 				}
 			}
@@ -1628,8 +1634,12 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 #define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode, bits 1-2 epDiffMode[8], bit 3 centered
                                  shot hitboxes; twelve spare                                     */
 #define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16                                    */
+#define NET_SET_DEBUG_FLAGS 42 /* Uint16: simulation-affecting Debug Mode toggles                  */
+#define NET_SET_NOCLIP      44 /* Uint8: noclipMode                                                 */
+#define NET_SET_CHARGE_AF   45 /* Uint8: chargeSidekickAutofire                                    */
+#define NET_SET_TWIDDLE     46 /* Uint8: debugTwiddleSpecial; byte 47 reserved                      */
 COMPILE_TIME_ASSERT(net_settings_block_fits,
-                    NET_SET_EXPERT + NETWORK_EXPERT_SLOTS * 2 == NETWORK_SETTINGS_SIZE);
+                    NET_SET_TWIDDLE + 2 == NETWORK_SETTINGS_SIZE);
 
 /* The epdiff word at byte 2 holds two bits per entry and was exactly full at eight of them, so
  * a ninth rides the tail's flags word instead. Grow that split deliberately: a tenth entry needs
@@ -1637,9 +1647,51 @@ COMPILE_TIME_ASSERT(net_settings_block_fits,
 #define NET_SET_EPDIFF_PACKED 8
 COMPILE_TIME_ASSERT(net_settings_epdiff_fits, EDW_COUNT == NET_SET_EPDIFF_PACKED + 1);
 
+static Uint16 network_debug_flags_pack(void)
+{
+	Uint16 flags = 0;
+	flags |= cheatInfiniteShields      ? 1 << 0 : 0;
+	flags |= cheatInfiniteArmor        ? 1 << 1 : 0;
+	flags |= cheatInfiniteGenerator    ? 1 << 2 : 0;
+	flags |= cheatNoEnemyFire          ? 1 << 3 : 0;
+	flags |= cheatInstantCharge        ? 1 << 4 : 0;
+	flags |= cheatInfiniteSidekickAmmo ? 1 << 5 : 0;
+	flags |= autoFireSpecial           ? 1 << 6 : 0;
+	flags |= debugAutofireTwiddle      ? 1 << 7 : 0;
+	flags |= debugToggleFire           ? 1 << 8 : 0;
+	flags |= expertMode                ? 1 << 9 : 0;
+	flags |= difficultyAdjust          ? 1 << 10 : 0;
+	flags |= debugTwiddleTrigger       ? 1 << 11 : 0;
+	flags |= constantPlay              ? 1 << 12 : 0;
+	flags |= constantDie               ? 1 << 13 : 0;
+	return flags;
+}
+
+/* A menu update preserves a one-shot already pending locally. Initial session adoption replaces
+ * the joiner's stale state completely. */
+static void network_debug_flags_adopt(Uint16 flags, bool preserve_pending_trigger)
+{
+	cheatInfiniteShields      = (flags & (1 << 0)) != 0;
+	cheatInfiniteArmor        = (flags & (1 << 1)) != 0;
+	cheatInfiniteGenerator    = (flags & (1 << 2)) != 0;
+	cheatNoEnemyFire          = (flags & (1 << 3)) != 0;
+	cheatInstantCharge        = (flags & (1 << 4)) != 0;
+	cheatInfiniteSidekickAmmo = (flags & (1 << 5)) != 0;
+	autoFireSpecial           = (flags & (1 << 6)) != 0;
+	debugAutofireTwiddle      = (flags & (1 << 7)) != 0;
+	debugToggleFire           = (flags & (1 << 8)) != 0;
+	expertMode               = (flags & (1 << 9)) != 0;
+	difficultyAdjust          = (flags & (1 << 10)) != 0;
+	debugTwiddleTrigger       = (flags & (1 << 11)) != 0
+	                         || (preserve_pending_trigger && debugTwiddleTrigger);
+	constantPlay              = (flags & (1 << 12)) != 0;
+	constantDie               = (flags & (1 << 13)) != 0;
+}
+
 /* Host-authoritative simulation settings.
  * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
- * shared pickups, data sets, or tick rate. Rendering, audio, and local input settings stay local. */
+ * shared pickups, data sets, or tick rate. Rendering and audio stay local. Input conveniences that
+ * are consumed inside the deterministic simulation, such as autofire, have to travel too. */
 static bool settings_stashed = false;
 static struct
 {
@@ -1657,6 +1709,22 @@ static struct
 	int  battleLevel;
 	JE_boolean expertMode;
 	int  expert[NETWORK_EXPERT_SLOTS];
+	bool cheatInfiniteShields;
+	bool cheatInfiniteArmor;
+	bool cheatInfiniteGenerator;
+	bool cheatNoEnemyFire;
+	bool cheatInstantCharge;
+	bool cheatInfiniteSidekickAmmo;
+	bool autoFireSpecial;
+	bool debugAutofireTwiddle;
+	bool debugToggleFire;
+	bool difficultyAdjust;
+	bool debugTwiddleTrigger;
+	bool constantPlay;
+	bool constantDie;
+	JE_byte noclipMode;
+	JE_byte chargeSidekickAutofire;
+	JE_byte debugTwiddleSpecial;
 }
 settings_local;
 
@@ -1720,6 +1788,15 @@ int network_settings_pack(Uint8 *buf)
 		SDLNet_Write16((Uint16)(i < expertSettingsCount ? *expertSettings[i].value : 0),
 		               &buf[NET_SET_EXPERT + i * 2]);
 
+	/* Debug Mode and the player-facing Sidekick Autofire option are all simulation state. The
+	 * ordinary debug packet only publishes edits made after its menu opens, so this initial copy
+	 * closes the gap for two machines arriving with different saved or previous-game values. */
+	SDLNet_Write16(network_debug_flags_pack(), &buf[NET_SET_DEBUG_FLAGS]);
+	buf[NET_SET_NOCLIP]    = noclipMode;
+	buf[NET_SET_CHARGE_AF] = chargeSidekickAutofire;
+	buf[NET_SET_TWIDDLE]   = debugTwiddleSpecial;
+	buf[NET_SET_TWIDDLE + 1] = 0;
+
 	return NETWORK_SETTINGS_SIZE;
 }
 
@@ -1779,6 +1856,22 @@ static void network_settings_stash(void)
 	settings_local.expertMode           = expertMode;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		settings_local.expert[i] = *expertSettings[i].value;
+	settings_local.cheatInfiniteShields      = cheatInfiniteShields;
+	settings_local.cheatInfiniteArmor        = cheatInfiniteArmor;
+	settings_local.cheatInfiniteGenerator    = cheatInfiniteGenerator;
+	settings_local.cheatNoEnemyFire          = cheatNoEnemyFire;
+	settings_local.cheatInstantCharge        = cheatInstantCharge;
+	settings_local.cheatInfiniteSidekickAmmo = cheatInfiniteSidekickAmmo;
+	settings_local.autoFireSpecial           = autoFireSpecial;
+	settings_local.debugAutofireTwiddle      = debugAutofireTwiddle;
+	settings_local.debugToggleFire           = debugToggleFire;
+	settings_local.difficultyAdjust          = difficultyAdjust;
+	settings_local.debugTwiddleTrigger       = debugTwiddleTrigger;
+	settings_local.constantPlay              = constantPlay;
+	settings_local.constantDie               = constantDie;
+	settings_local.noclipMode                = noclipMode;
+	settings_local.chargeSidekickAutofire    = chargeSidekickAutofire;
+	settings_local.debugTwiddleSpecial       = debugTwiddleSpecial;
 	settings_stashed = true;
 }
 
@@ -1891,6 +1984,11 @@ int network_settings_adopt(const Uint8 *buf)
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);
 	clamp_expert_settings();
+
+	network_debug_flags_adopt(SDLNet_Read16(&buf[NET_SET_DEBUG_FLAGS]), false);
+	noclipMode = buf[NET_SET_NOCLIP] % NOCLIP_NUM;
+	chargeSidekickAutofire = buf[NET_SET_CHARGE_AF] % CHARGE_AUTOFIRE_NUM;
+	debugTwiddleSpecial = (buf[NET_SET_TWIDDLE] <= SPECIAL_NUM) ? buf[NET_SET_TWIDDLE] : 0;
 
 	return NETWORK_SETTINGS_SIZE;
 }
@@ -2267,13 +2365,14 @@ static bool network_custom_weapon_receive(void)
 	return true;
 }
 
-/* Publish from a point where the peer is known to be draining its inbound queue: the outpost
- * rendezvous is the one place both machines are guaranteed to be in a pump loop. */
-void network_custom_weapon_publish(void)
+/* Publish while the peer drains its inbound queue. Both machines pump during the outpost
+ * rendezvous and Campaign resume. force=true covers a loaded custom slot when its editor toggle is
+ * currently off. */
+static void network_custom_weapon_publish_internal(bool force)
 {
-	// Nothing to publish while the feature is off: the port stays a placeholder and no ship can
-	// be carrying the weapon. Turning it on and equipping goes through the next rendezvous.
-	if (!isNetworkGame || !coop_mode_active() || !customWeaponEnabled ||
+	// Outside resume, nothing can newly carry the weapon while the feature is off. Turning it on
+	// and equipping goes through the next outpost rendezvous.
+	if (!isNetworkGame || !coop_mode_active() || (!customWeaponEnabled && !force) ||
 	    thisPlayerNum < 1 || thisPlayerNum > 2 || !network_peer_alive())
 		return;
 
@@ -2366,6 +2465,16 @@ void network_custom_weapon_publish(void)
 	}
 
 	free(stream);
+}
+
+void network_custom_weapon_publish(void)
+{
+	network_custom_weapon_publish_internal(false);
+}
+
+void network_custom_weapon_publish_resume(void)
+{
+	network_custom_weapon_publish_internal(true);
 }
 
 /* Endless run transfer. Same chunked shape as the custom weapon exchange above, and for the same
@@ -2856,6 +2965,43 @@ int network_ready_peer(void)
 	return -1;
 }
 
+void network_end_screen_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	/* Unlike a start card, dismissing a terminal result cannot be withdrawn: publish once and
+	 * keep the current screen alive until both players have dismissed it. Waiting for our reliable
+	 * queue to retire prevents the first machine from closing its UDP socket in front of the
+	 * peer's acknowledgement. */
+	network_ready_publish(true);
+	bool peer_ready = false;
+
+	while (network_peer_alive())
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+
+		const int peer = network_ready_peer();
+		if (peer >= 0)
+			peer_ready = peer != 0;
+
+		if (peer_ready && network_is_sync())
+			break;
+
+		if (!output_vsync)
+			limit_render_fps();
+		else
+			SDL_Delay(1);
+	}
+
+	if (qa_net_gameplay_ticks > 0 && peer_ready && network_is_sync())
+	{
+		fprintf(stderr, "net gameplay: terminal rendezvous complete\n");
+		fflush(stderr);
+	}
+}
+
 bool network_shop_pump(void)
 {
 	if (!isNetworkGame || !coop_mode_active() || packet_in[0] == NULL)
@@ -3049,6 +3195,22 @@ void network_settings_restore(void)
 	expertMode                = settings_local.expertMode;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = settings_local.expert[i];
+	cheatInfiniteShields      = settings_local.cheatInfiniteShields;
+	cheatInfiniteArmor        = settings_local.cheatInfiniteArmor;
+	cheatInfiniteGenerator    = settings_local.cheatInfiniteGenerator;
+	cheatNoEnemyFire          = settings_local.cheatNoEnemyFire;
+	cheatInstantCharge        = settings_local.cheatInstantCharge;
+	cheatInfiniteSidekickAmmo = settings_local.cheatInfiniteSidekickAmmo;
+	autoFireSpecial           = settings_local.autoFireSpecial;
+	debugAutofireTwiddle      = settings_local.debugAutofireTwiddle;
+	debugToggleFire           = settings_local.debugToggleFire;
+	difficultyAdjust          = settings_local.difficultyAdjust;
+	debugTwiddleTrigger       = settings_local.debugTwiddleTrigger;
+	constantPlay              = settings_local.constantPlay;
+	constantDie               = settings_local.constantDie;
+	noclipMode                = settings_local.noclipMode;
+	chargeSidekickAutofire    = settings_local.chargeSidekickAutofire;
+	debugTwiddleSpecial       = settings_local.debugTwiddleSpecial;
 
 	settings_stashed = false;
 }
@@ -3094,22 +3256,8 @@ void network_debug_state_pack(Uint8 *buf)
 {
 	memset(buf, 0, NDS_SIZE);
 
-	Uint16 flags = 0;
-	flags |= cheatInfiniteShields     ? 1 << 0 : 0;
-	flags |= cheatInfiniteArmor       ? 1 << 1 : 0;
-	flags |= cheatInfiniteGenerator   ? 1 << 2 : 0;
-	flags |= cheatNoEnemyFire         ? 1 << 3 : 0;
-	flags |= cheatInstantCharge       ? 1 << 4 : 0;
-	flags |= cheatInfiniteSidekickAmmo? 1 << 5 : 0;
-	flags |= autoFireSpecial          ? 1 << 6 : 0;
-	flags |= debugAutofireTwiddle     ? 1 << 7 : 0;
-	flags |= debugToggleFire          ? 1 << 8 : 0;
-	flags |= expertMode               ? 1 << 9 : 0;
-	flags |= difficultyAdjust         ? 1 << 10 : 0;
-	flags |= debugTwiddleTrigger      ? 1 << 11 : 0;
-
 	buf[NDS_DIFFICULTY] = (Uint8)difficultyLevel;
-	SDLNet_Write16(flags, &buf[NDS_FLAGS]);
+	SDLNet_Write16(network_debug_flags_pack(), &buf[NDS_FLAGS]);
 	buf[NDS_NOCLIP]   = noclipMode;
 	buf[NDS_CHARGEAF] = chargeSidekickAutofire;
 	buf[NDS_TWIDDLE]  = debugTwiddleSpecial;
@@ -3130,21 +3278,9 @@ void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 {
 	const Uint16 flags = SDLNet_Read16(&buf[NDS_FLAGS]);
 
-	cheatInfiniteShields      = (flags & (1 << 0)) != 0;
-	cheatInfiniteArmor        = (flags & (1 << 1)) != 0;
-	cheatInfiniteGenerator    = (flags & (1 << 2)) != 0;
-	cheatNoEnemyFire          = (flags & (1 << 3)) != 0;
-	cheatInstantCharge        = (flags & (1 << 4)) != 0;
-	cheatInfiniteSidekickAmmo = (flags & (1 << 5)) != 0;
-	autoFireSpecial           = (flags & (1 << 6)) != 0;
-	debugAutofireTwiddle      = (flags & (1 << 7)) != 0;
-	debugToggleFire           = (flags & (1 << 8)) != 0;
-	expertMode                = (flags & (1 << 9)) != 0;
-	difficultyAdjust          = (flags & (1 << 10)) != 0;
-	// One-shot: both machines resume from the same confirmed frame, so both fire it on the
-	// same tick.  Never cleared here; a trigger already pending locally must still happen.
-	if (flags & (1 << 11))
-		debugTwiddleTrigger = true;
+	// One-shot: both machines resume from the same confirmed frame, so both fire it on the same
+	// tick. A trigger already pending locally must still happen when the incoming block has none.
+	network_debug_flags_adopt(flags, true);
 
 	difficultyLevel = (JE_shortint)buf[NDS_DIFFICULTY];
 	if (difficultyLevel < DIFFICULTY_WIMP || difficultyLevel > DIFFICULTY_10)
@@ -3255,6 +3391,14 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 		HASH_WORD(player[i].is_alive ? 1 : 0);
 		HASH_WORD(player[i].cash);
 	}
+	/* The linked turret direction is shared simulation state but is not stored on either Player.
+	 * Cover it explicitly so a missing input field is reported before differently aimed shots hit
+	 * an enemy. Hash its IEEE bytes exactly, matching the bit-identical wire quantization. */
+	Uint32 link_direction_bits = 0;
+	memcpy(&link_direction_bits, &linkGunDirec,
+	       MIN(sizeof(link_direction_bits), sizeof(linkGunDirec)));
+	HASH_WORD(twoPlayerLinked ? 1 : 0);
+	HASH_WORD(twoPlayerLinked ? link_direction_bits : 0);
 	*player_hash = h;
 
 	// Enemies dominate the simulation, so sample the whole table; position and remaining
@@ -3438,6 +3582,11 @@ void network_diag_note_desync(int level)
 		net_diag.first_desync_tick = SDL_GetTicks();
 		net_diag.first_desync_level = level;
 	}
+}
+
+Uint32 network_desync_count(void)
+{
+	return net_diag.desync_levels;
 }
 
 /* Crash-log network section.

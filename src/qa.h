@@ -25,6 +25,8 @@ extern int qa_net_version_skew;
  * then reports and exits. corrupt_frame bends one frame of epoch 0 on this machine, so the
  * canary has a real divergence to find and the recovery stream something to repair. */
 extern unsigned long qa_net_gameplay_ticks;
+// Presented Delay-Based frames, used by scenario 19's bounded non-rollback verdict.
+extern unsigned long qa_net_delay_frames;
 extern unsigned long qa_net_corrupt_frame;
 /* Save/resume across the wire: save_exit writes the LAST LEVEL slot as a passing gameplay run
  * exits; resume_slot makes the host auto-load that slot, so the joiner adopts the resume form. */

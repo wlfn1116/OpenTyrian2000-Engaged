@@ -5868,6 +5868,30 @@ draw_player_shot_loop_end:
 					{
 						reported_for_level = (int)mainLevel;
 
+						if (qa_net_scenario == 19)
+						{
+							Uint32 link_bits = 0;
+							memcpy(&link_bits, &linkGunDirec,
+							       MIN(sizeof(link_bits), sizeof(linkGunDirec)));
+							fprintf(stderr,
+							        "NET DELAY DESYNC player=%u scroll=%u ph=%08x/%08x "
+							        "pos=%d,%d/%d,%d shield=%d/%d linked=%d dir=%08x input=%u,%04x/%u,%04x\n",
+							        thisPlayerNum, (unsigned)curLoc, (unsigned)our_ph,
+							        (unsigned)their_ph, player[0].x, player[0].y,
+							        player[1].x, player[1].y, player[0].shield, player[1].shield,
+							        twoPlayerLinked ? 1 : 0,
+							        (unsigned)link_bits,
+							        (unsigned)SDLNet_Read16(
+							                &packet_state_out[network_delay]->data[NET_STATE_LINK_FLAGS]),
+							        (unsigned)SDLNet_Read16(
+							                &packet_state_out[network_delay]->data[NET_STATE_LINK_ANGLE]),
+							        (unsigned)SDLNet_Read16(
+							                &packet_state_in[0]->data[NET_STATE_LINK_FLAGS]),
+							        (unsigned)SDLNet_Read16(
+							                &packet_state_in[0]->data[NET_STATE_LINK_ANGLE]));
+							fflush(stderr);
+						}
+
 						// Goes through the net log, not stderr: this is a Windows-subsystem
 						// build with no console, so a printf would be thrown away.
 						char detail[512];
@@ -5927,6 +5951,24 @@ draw_player_shot_loop_end:
 
 						JE_textShade(game_screen, 40, 110 + i * 10, temp, 9, 2, FULL_SHADE);
 					}
+				}
+
+				if (qa_net_scenario == 19 && ++qa_net_delay_frames > qa_net_gameplay_ticks)
+				{
+					const int rc = network_desync_count() == 0 ? 0 : 1;
+					printf("NET DELAY %s player=%u frames=%lu desyncs=%lu\n",
+					       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, qa_net_delay_frames,
+					       (unsigned long)network_desync_count());
+					fflush(stdout);
+
+					const Uint32 drain_started = SDL_GetTicks();
+					while (SDL_GetTicks() - drain_started < 1200)
+					{
+						watchdog_heartbeat();
+						network_check();
+						SDL_Delay(1);
+					}
+					exit(rc);
 				}
 			}
 		}
@@ -6565,6 +6607,11 @@ new_game:
 
 								if (!constantPlay)
 									wait_input(true, true, true);
+
+								/* trentWin leaves the outer game loop and closes the network session. Keep
+								 * the final unlock visible until both players dismiss it. */
+								if (isNetworkGame && trentWin)
+									network_end_screen_rendezvous();
 							}
 
 							jumpSection = true;
@@ -7864,6 +7911,13 @@ void networkStartScreen(void)
 		// Gameplay wire tests: both machines mount the same scripted sidekick combination.
 		if (qa_net_gameplay_ticks > 0 && qa_net_loadout > 0)
 			qa_net_apply_loadout(qa_net_loadout);
+	}
+	else if (network_game_type == NETWORK_GAME_CAMPAIGN)
+	{
+		/* A resumed Campaign jumps straight into its saved level, so it never reaches the initial
+		 * outpost window that normally exchanges custom designs. Publish both players' working
+		 * copies here before item data materializes the loaded custom port/sidekick placeholders. */
+		network_custom_weapon_publish_resume();
 	}
 
 	while (!network_is_sync())

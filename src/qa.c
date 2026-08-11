@@ -15,6 +15,7 @@
 #include "net_rollback.h"
 #include "network.h"
 #include "nortvars.h"
+#include "params.h"
 #include "player.h"
 #include "render_list.h"
 #include "rollback.h"
@@ -41,6 +42,7 @@ int qa_net_rounds = 0;
 int qa_net_scenario = 0;
 int qa_net_version_skew = 0;
 unsigned long qa_net_gameplay_ticks = 0;
+unsigned long qa_net_delay_frames = 0;
 unsigned long qa_net_corrupt_frame = 0;
 bool qa_net_save_exit = false;
 int qa_net_resume_slot = 0;
@@ -961,7 +963,7 @@ static void qa_test_fixed_pool_layout(void)
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
 	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 81
 #ifdef WITH_NETWORK
-	         && NETWORK_SETTINGS_SIZE == 42
+	         && NETWORK_SETTINGS_SIZE == 48
 #endif
 	         , "network wire-layout constants retain their protocol widths");
 }
@@ -1965,6 +1967,22 @@ static void qa_test_network_settings(void)
 	const bool savedDoublePickups = coopDoubleEarnings;
 	const JE_boolean savedCoopCampaign = coopCampaignMode;
 	const JE_boolean savedExpertMode = expertMode;
+	const bool savedInfShields = cheatInfiniteShields;
+	const bool savedInfArmor = cheatInfiniteArmor;
+	const bool savedInfGenerator = cheatInfiniteGenerator;
+	const bool savedNoEnemyFire = cheatNoEnemyFire;
+	const bool savedInstantCharge = cheatInstantCharge;
+	const bool savedInfSidekick = cheatInfiniteSidekickAmmo;
+	const bool savedAutoSpecial = autoFireSpecial;
+	const bool savedAutoTwiddle = debugAutofireTwiddle;
+	const bool savedToggleFire = debugToggleFire;
+	const bool savedDifficultyAdjust = difficultyAdjust;
+	const bool savedTwiddleTrigger = debugTwiddleTrigger;
+	const bool savedConstantPlay = constantPlay;
+	const bool savedConstantDie = constantDie;
+	const JE_byte savedNoclip = noclipMode;
+	const JE_byte savedChargeAF = chargeSidekickAutofire;
+	const JE_byte savedTwiddle = debugTwiddleSpecial;
 	int savedExpert[NETWORK_EXPERT_SLOTS];
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		savedExpert[i] = *expertSettings[i].value;
@@ -1996,6 +2014,22 @@ static void qa_test_network_settings(void)
 	expertMode = true;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = expertSettings[i].lo + expertSettings[i].step * (i + 1);
+	cheatInfiniteShields = true;
+	cheatInfiniteArmor = false;
+	cheatInfiniteGenerator = true;
+	cheatNoEnemyFire = false;
+	cheatInstantCharge = true;
+	cheatInfiniteSidekickAmmo = false;
+	autoFireSpecial = true;
+	debugAutofireTwiddle = false;
+	debugToggleFire = true;
+	difficultyAdjust = false;
+	debugTwiddleTrigger = true;
+	noclipMode = NOCLIP_TRANSPARENT;
+	constantPlay = true;
+	constantDie = false;
+	chargeSidekickAutofire = CHARGE_AUTOFIRE_FULL;
+	debugTwiddleSpecial = SPECIAL_NUM > 0 ? 1 : 0;
 	memset(guarded.bytes, 0x5a, sizeof(guarded.bytes));
 	const int packed = network_settings_pack(packet);
 	qa_check(packed == NETWORK_SETTINGS_SIZE && guarded.bytes[3] == 0x5a
@@ -2014,6 +2048,22 @@ static void qa_test_network_settings(void)
 	expertMode = false;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = expertSettings[i].def;
+	cheatInfiniteShields = false;
+	cheatInfiniteArmor = true;
+	cheatInfiniteGenerator = false;
+	cheatNoEnemyFire = true;
+	cheatInstantCharge = false;
+	cheatInfiniteSidekickAmmo = true;
+	autoFireSpecial = false;
+	debugAutofireTwiddle = true;
+	debugToggleFire = false;
+	difficultyAdjust = true;
+	debugTwiddleTrigger = false;
+	noclipMode = NOCLIP_OFF;
+	constantPlay = false;
+	constantDie = true;
+	chargeSidekickAutofire = CHARGE_AUTOFIRE_OFF;
+	debugTwiddleSpecial = 0;
 	coop_set_session_shared_credit(false);
 	coopCampaignMode = true;
 	qa_check(network_settings_adopt(packet) == NETWORK_SETTINGS_SIZE,
@@ -2033,6 +2083,14 @@ static void qa_test_network_settings(void)
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		expertMatch &= *expertSettings[i].value == expertSettings[i].lo + expertSettings[i].step * (i + 1);
 	qa_check(expertMatch, "...including Expert Mode and every tunable behind it");
+	qa_check(cheatInfiniteShields && !cheatInfiniteArmor && cheatInfiniteGenerator
+	         && !cheatNoEnemyFire && cheatInstantCharge && !cheatInfiniteSidekickAmmo
+	         && autoFireSpecial && !debugAutofireTwiddle && debugToggleFire
+	         && !difficultyAdjust && debugTwiddleTrigger && noclipMode == NOCLIP_TRANSPARENT
+	         && constantPlay && !constantDie
+	         && chargeSidekickAutofire == CHARGE_AUTOFIRE_FULL
+	         && debugTwiddleSpecial == (SPECIAL_NUM > 0 ? 1 : 0),
+	         "...including initial autofire and every simulation-affecting debug control");
 	// Doubling is carried in the same word but is inert under Shared, so check the flag itself
 	// by flipping the credit mode the adopted value sits behind.
 	coop_set_session_shared_credit(false);
@@ -2052,6 +2110,13 @@ static void qa_test_network_settings(void)
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		expertMatch &= *expertSettings[i].value == expertSettings[i].def;
 	qa_check(expertMatch, "...Expert Mode and its tunables included, so the next solo game is ours");
+	qa_check(!cheatInfiniteShields && cheatInfiniteArmor && !cheatInfiniteGenerator
+	         && cheatNoEnemyFire && !cheatInstantCharge && cheatInfiniteSidekickAmmo
+	         && !autoFireSpecial && debugAutofireTwiddle && !debugToggleFire
+	         && difficultyAdjust && !debugTwiddleTrigger && noclipMode == NOCLIP_OFF
+	         && !constantPlay && constantDie
+	         && chargeSidekickAutofire == CHARGE_AUTOFIRE_OFF && debugTwiddleSpecial == 0,
+	         "...and restores the joiner's local autofire/debug controls afterward");
 
 	/* The host runs on flags armed from its own config; the joiner adopts the block packed
 	 * from that same config. The two must land on identical session behavior, or the pair
@@ -2087,7 +2152,9 @@ static void qa_test_network_settings(void)
 		malformedClamped &= *expertSettings[i].value == expertSettings[i].hi;
 	qa_check(malformedClamped && zicaLaserBase == ZICA_BASE_AUTO
 	         && zicaLaserLength == ZICA_LEN_SHORT && wallopSecondBolt == SUPER_SPARKS_AUTO
-	         && xmasMode == -1 && gameSpeed == 4,
+	         && xmasMode == -1 && gameSpeed == 4 && noclipMode < NOCLIP_NUM
+	         && chargeSidekickAutofire < CHARGE_AUTOFIRE_NUM
+	         && debugTwiddleSpecial <= SPECIAL_NUM,
 	         "hostile network settings are clamped before any array can be indexed"
 	         " or any multiplier applied");
 	network_settings_restore();
@@ -2113,6 +2180,22 @@ static void qa_test_network_settings(void)
 	expertMode = savedExpertMode;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = savedExpert[i];
+	cheatInfiniteShields = savedInfShields;
+	cheatInfiniteArmor = savedInfArmor;
+	cheatInfiniteGenerator = savedInfGenerator;
+	cheatNoEnemyFire = savedNoEnemyFire;
+	cheatInstantCharge = savedInstantCharge;
+	cheatInfiniteSidekickAmmo = savedInfSidekick;
+	autoFireSpecial = savedAutoSpecial;
+	debugAutofireTwiddle = savedAutoTwiddle;
+	debugToggleFire = savedToggleFire;
+	difficultyAdjust = savedDifficultyAdjust;
+	debugTwiddleTrigger = savedTwiddleTrigger;
+	noclipMode = savedNoclip;
+	constantPlay = savedConstantPlay;
+	constantDie = savedConstantDie;
+	chargeSidekickAutofire = savedChargeAF;
+	debugTwiddleSpecial = savedTwiddle;
 #else
 	qa_check(true, "network settings round trip skipped without networking");
 #endif

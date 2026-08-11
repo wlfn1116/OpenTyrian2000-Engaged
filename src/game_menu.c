@@ -1480,6 +1480,27 @@ static void qa_shop_auto_visit(void)
 {
 	const ShopOutpostRoute route = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
 	const uint me = thisPlayerNum - 1u;
+	static bool saveRouteTested = false;
+
+	/* Exercise the real online Options action once. Restore the otherwise-unused menu globals
+	 * immediately: the automated visit drives the outpost protocol directly after this check. */
+	if (qa_net_scenario == 13 && !saveRouteTested)
+	{
+		const int savedMenu = curMenu;
+		const bool savedPerformSave = performSave;
+		const bool savedQuickSave = quikSave;
+
+		curMenu = MENU_LIMITED_OPTIONS;
+		JE_menuFunction((JE_byte)options_row(OPT_SAVE));
+		const bool okay = curMenu == MENU_LOAD_SAVE && performSave;
+		fprintf(stderr, "NET SAVE ROUTE %s player=%u\n", okay ? "PASS" : "FAIL", thisPlayerNum);
+		fflush(stderr);
+
+		curMenu = savedMenu;
+		performSave = savedPerformSave;
+		quikSave = savedQuickSave;
+		saveRouteTested = true;
+	}
 
 	if (endlessMode)
 	{
@@ -9415,7 +9436,11 @@ void JE_menuFunction(JE_byte select)
 	// bars, adjusted with left/right, and do nothing on Enter.
 	case MENU_OPTIONS:
 	case MENU_LIMITED_OPTIONS:
-		switch (options_full_row(select))
+	{
+		/* Resolve against the active page before changing curMenu. Online row 2 is Save, while
+		 * the load/save page uses the offline Options numbering. */
+		const int option = options_full_row(select);
+		switch (option)
 		{
 		case OPT_LOAD:
 		case OPT_SAVE:
@@ -9427,7 +9452,7 @@ void JE_menuFunction(JE_byte select)
 				break;
 			}
 			curMenu = MENU_LOAD_SAVE;
-			performSave = (options_full_row(select) == OPT_SAVE);
+			performSave = (option == OPT_SAVE);
 			quikSave = false;
 			break;
 		case OPT_JOYSTICK:
@@ -9445,6 +9470,7 @@ void JE_menuFunction(JE_byte select)
 			break;
 		}
 		break;
+	}
 
 	case MENU_PLAY_NEXT_LEVEL:
 		if (select == endlessCourseRerollRow())

@@ -5941,6 +5941,10 @@ void JE_timedBattleResult(void)
 		} while (!(newkey || newmouse || JE_anyButton()));
 	}
 
+	/* Hold both copies of the result screen until both players dismiss it and both reliable
+	 * announcements have completed. */
+	network_end_screen_rendezvous();
+
 	fade_black(15);
 	set_menu_centered(prevCentered);
 }
@@ -8122,6 +8126,23 @@ static void JE_frontOption(Player *this_player, uint i, int home_x, JE_boolean l
 		this_player->sidekick[i].y = 10;
 }
 
+static Uint16 link_gun_angle_to_wire(float angle)
+{
+	while (angle < 0.0f)
+		angle += (float)(2.0 * M_PI);
+	while (angle >= (float)(2.0 * M_PI))
+		angle -= (float)(2.0 * M_PI);
+
+	// Quantized to 256 steps (~1.4 degrees): raw stick jitter in the low bits reads as a fresh
+	// aim every tick and needlessly buys rollback corrections or delay-state churn.
+	return (Uint16)(angle * (float)(65536.0 / (2.0 * M_PI))) & 0xFF00;
+}
+
+static float link_gun_angle_from_wire(Uint16 angle)
+{
+	return (float)angle * (float)(2.0 * M_PI / 65536.0);
+}
+
 /* Capture the effective per-tick input tuple for a player after the movement
  * routine ran: absolute post-movement position, aim anchors, banking accel,
  * buttons and link-gun state.  This tuple is the simulation's only input door
@@ -8166,14 +8187,7 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 	if (link_analog)
 	{
 		in->buttons |= RB_LINK_ANALOG;
-		float a = link_angle;
-		while (a < 0.0f)
-			a += (float)(2.0 * M_PI);
-		while (a >= (float)(2.0 * M_PI))
-			a -= (float)(2.0 * M_PI);
-		// Quantized to 256 steps (~1.4 degrees): raw stick jitter in the low
-		// bits read as a fresh aim every tick and bought a rollback each time.
-		in->linkAngle = (Uint16)(a * (float)(65536.0 / (2.0 * M_PI))) & 0xFF00;
+		in->linkAngle = link_gun_angle_to_wire(link_angle);
 	}
 }
 
@@ -8194,7 +8208,7 @@ static void rb_apply_tuple(const RbInput *in, Player *this_player,
 	*accelXC_ = (JE_integer)in->accelX;
 	*accelYC_ = (JE_integer)in->accelY;
 	*link_analog = (in->buttons & RB_LINK_ANALOG) != 0;
-	*link_angle = (float)in->linkAngle * (float)(2.0 * M_PI / 65536.0);
+	*link_angle = link_gun_angle_from_wire(in->linkAngle);
 }
 
 /* Repaint the displayed ship's ammo gauge. Silent rollback passes set the HUD dirty instead of
@@ -8755,6 +8769,17 @@ redo:
 			}   /*endLevel*/
 
 #ifdef WITH_NETWORK
+			/* Live-network regression for the delay packet's linked-gun fields. Player two supplies
+			 * stable analog aim and alternating movement so the fused turret consumes both fields. */
+			if (isNetworkGame && qa_net_scenario == 19 && playerNum_ == thisPlayerNum
+			    && playerNum_ == 2 && !rollback_resim && !endLevel)
+			{
+				this_player->x = MIN(MAX(this_player->x + ((curLoc & 1) ? 2 : -2), 60), 240);
+				button[0] = true;
+				link_gun_analog = true;
+				link_gun_angle = 1.25f;
+			}
+
 			if (isNetworkGame && playerNum_ == thisPlayerNum && nrb_active())
 			{
 				// Consume local input immediately and send it redundantly for the peer's
@@ -8778,7 +8803,7 @@ redo:
 				// can only ever apply the quantized value, and both simulations
 				// must feed linkGunDirec the bit-identical float.
 				if (in.buttons & RB_LINK_ANALOG)
-					link_gun_angle = (float)in.linkAngle * (float)(2.0 * M_PI / 65536.0);
+					link_gun_angle = link_gun_angle_from_wire(in.linkAngle);
 			}
 			else if (isNetworkGame && playerNum_ == thisPlayerNum)
 			{
@@ -8788,6 +8813,14 @@ redo:
 					buttons <<= 1;
 					buttons |= button[i];
 				}
+				/* Linked Dragonwing control depends on movement intent. Deriving it from the
+				 * final position and a private mouse anchor can produce different results. */
+				const int link_dx = this_player->x - *mouseX_;
+				const int link_dy = this_player->y - *mouseY_;
+				if (abs(link_dx) > abs(link_dy))
+					buttons |= (link_dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
+				else if (link_dy != 0)
+					buttons |= (link_dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
 
 				// Absolute positions are idempotent when a lost packet is reconstructed.
 				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
@@ -8795,10 +8828,15 @@ redo:
 				SDLNet_Write16(accelXC,        &packet_state_out[0]->data[8]);
 				SDLNet_Write16(accelYC,        &packet_state_out[0]->data[10]);
 				SDLNet_Write16(buttons,        &packet_state_out[0]->data[12]);
+				SDLNet_Write16(link_gun_analog ? 1 : 0,
+				               &packet_state_out[0]->data[NET_STATE_LINK_FLAGS]);
+				const Uint16 link_angle_wire = link_gun_analog
+				                               ? link_gun_angle_to_wire(link_gun_angle) : 0;
+				SDLNet_Write16(link_angle_wire,
+				               &packet_state_out[0]->data[NET_STATE_LINK_ANGLE]);
 
-				// Also keep it keyed by THIS tick's sync number, so the replay below can pick
-				// the entry that matches the tick the remote packet names rather than trusting
-				// two independently-shifted queues to stay in step.
+				// Key this history by the tick named in the remote packet. The inbound and
+				// outbound queues can shift independently after loss recovery.
 				net_own_state_store(SDLNet_Read16(&packet_state_out[0]->data[2]),
 				                    this_player->x, this_player->y, buttons);
 
@@ -8812,6 +8850,8 @@ redo:
 
 				accelXC = 0;
 				accelYC = 0;
+				link_gun_analog = false;
+				link_gun_angle = 0.0f;
 			}
 #endif
 
@@ -8889,6 +8929,8 @@ redo:
 					difficultyLevel = SDLNet_Read16(&packet_state_in[0]->data[16]);
 
 				Uint16 buttons = SDLNet_Read16(&packet_state_in[0]->data[12]);
+				linkIntent = buttons;
+				haveLinkIntent = true;
 				for (int i = 0; i < 4; i++)
 				{
 					button[i] = buttons & 1;
@@ -8900,6 +8942,10 @@ redo:
 				this_player->y = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[6]);
 				accelXC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[8]);
 				accelYC = (Sint16)SDLNet_Read16(&packet_state_in[0]->data[10]);
+				link_gun_analog = (SDLNet_Read16(
+					&packet_state_in[0]->data[NET_STATE_LINK_FLAGS]) & 1) != 0;
+				link_gun_angle = link_gun_angle_from_wire(SDLNet_Read16(
+					&packet_state_in[0]->data[NET_STATE_LINK_ANGLE]));
 			}
 			else
 			{
@@ -8912,6 +8958,8 @@ redo:
 				int own_x, own_y;
 				Uint16 buttons;
 				net_own_state_load(tick, &own_x, &own_y, &buttons);
+				linkIntent = buttons;
+				haveLinkIntent = true;
 
 				for (int i = 0; i < 4; i++)
 				{
@@ -8923,6 +8971,10 @@ redo:
 				this_player->y = own_y;
 				accelXC = (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[8]);
 				accelYC = (Sint16)SDLNet_Read16(&packet_state_out[network_delay]->data[10]);
+				link_gun_analog = (SDLNet_Read16(
+					&packet_state_out[network_delay]->data[NET_STATE_LINK_FLAGS]) & 1) != 0;
+				link_gun_angle = link_gun_angle_from_wire(SDLNet_Read16(
+					&packet_state_out[network_delay]->data[NET_STATE_LINK_ANGLE]));
 			}
 		}
 #endif
@@ -8934,6 +8986,24 @@ redo:
 		{
 			const RbInput *st = rollback_st_get(playerNum_ - 1);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, st->sfTx, st->sfTy);
+		}
+		else if (isNetworkGame && haveLinkIntent)
+		{
+			/* Network tuples carry the dominant movement direction. Rebuild the one-pixel
+			 * target from shared intent so twiddle recognition stays deterministic. */
+			const int dirx = (linkIntent & RB_MOVE_RIGHT) ? 1
+			                 : (linkIntent & RB_MOVE_LEFT) ? -1 : 0;
+			const int diry = (linkIntent & RB_MOVE_DOWN) ? 1
+			                 : (linkIntent & RB_MOVE_UP) ? -1 : 0;
+			JE_SFCodes(playerNum_, this_player->x, this_player->y,
+			           this_player->x - dirx, this_player->y - diry);
+		}
+		else if (isNetworkGame)
+		{
+			/* Delay-Based mode has no consumable tuple during its initial queue fill.
+			 * Feed a neutral direction on both peers during that interval. */
+			JE_SFCodes(playerNum_, this_player->x, this_player->y,
+			           this_player->x, this_player->y);
 		}
 		else if (vt && !isNetworkGame)
 		{
@@ -8993,6 +9063,12 @@ redo:
 		if (moveOk)
 		{
 			/* Linking. */
+
+#ifdef WITH_NETWORK
+			// Keep the delay/analog wire regression in the fused state whose turret reads this field.
+			if (isNetworkGame && qa_net_scenario == 19)
+				twoPlayerLinked = true;
+#endif
 
 			// Rollback uses tuple intent because docked positions include each peer's predicted carrier.
 			const bool linkMoved = haveLinkIntent

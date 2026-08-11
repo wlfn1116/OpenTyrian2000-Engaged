@@ -392,7 +392,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 33.
+`NET_VERSION` bump. The current value is 34.
 
 Recent versions:
 
@@ -412,6 +412,7 @@ Recent versions:
 | 31 | Trailing large-sidekick shot origin |
 | 32 | Destruct recovery stream |
 | 33 | Endless special press latch and centered Martyrdom origin |
+| 34 | Initial debug/autofire state and Delay-Based linked movement/analog aim |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -441,8 +442,9 @@ The host arms local session flags through `network_arm_local_session`; the joine
 adopts the same set from the settings block. Unit tests compare both paths.
 
 The first flags word is full. Expert settings and later Episode Versions bits
-live in the settings tail. Preserve bytes 0 through 23 and clamp received expert
-values.
+live in the settings tail. Initial debug/autofire settings occupy bytes 42
+through 46, with byte 47 reserved. Preserve bytes 0 through 23 and clamp
+received expert and enum values.
 
 Credits use `player_award_pickup_cash`, `player_award_kill_cash`, and
 `player_award_bounty_cash`. Level-time awards name the player index and execute

@@ -38,6 +38,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "network.h"
+#include "net_rollback.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "opentyrian_version.h"
@@ -1975,6 +1976,17 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* Scenario 19 exercises the legacy Delay-Based state stream. Set the host preference before the
+	 * connect block is packed; the joiner then proves it adopts that session choice. */
+	if (qa_net_gameplay_ticks > 0 && qa_net_scenario == 19)
+		net_rollback = false;
+	if (qa_net_gameplay_ticks > 0 && qa_net_scenario == 20)
+	{
+		network_game_type = NETWORK_GAME_ARCADE;
+		network_host_timed_battle = true;
+		network_host_battle_level = 1;
+	}
+
 	/* Multi-zone runs must not lose a ship to the scripted wiggle: a death reroutes the run
 	 * into the death menus, which these scenarios do not model. SuperTyrian's two rungs kill
 	 * the wiggle inside the frame budget too, and every death restarts the level so the
@@ -2116,6 +2128,17 @@ int main(int argc, char *argv[])
 			set_menu_centered(false);
 			JE_main();
 			set_menu_centered(true);
+
+#ifdef WITH_NETWORK
+			/* The headless terminal-screen regression has reached its real completion
+			 * condition. It has no title-screen driver, so end the two test processes here. */
+			if (qa_net_scenario == 20 && qa_net_gameplay_ticks > 0 && timedBattleMode
+			    && mainLevel == 0)
+			{
+				network_shutdown();
+				exit(0);
+			}
+#endif
 
 			if (trentWin)
 			{

@@ -39,6 +39,8 @@ SCENARIOS = (
     (16, "arcade-separate", 0, 90, True),
     (17, "supertyrian", 0, 90, True),
     (18, "super-arcade", 0, 90, True),
+    (19, "delay-linked-analog", 0, 90, True),
+    (20, "timed-battle-finish", 0, 120, True),
 )
 
 
@@ -91,6 +93,10 @@ def run_scenario(
                    "--test-net-game-type", "3", "--test-net-scrollock"]
     if scenario == 18:
         common += ["--test-net-gameplay-ticks", "700", "--test-net-game-type", "4"]
+    if scenario == 19:
+        common += ["--test-net-gameplay-ticks", "700"]
+    if scenario == 20:
+        common += ["--test-net-gameplay-ticks", "1000000", "--test-net-zones", "1"]
     if extra_common:
         common += extra_common
     host_cmd = [str(executable), *common, "--net", f"127.0.0.1:{proxy_a_addr[1]}",
@@ -272,6 +278,10 @@ def run_scenario(
                 or "driving the episode transition" not in join_out):
             print("network fault test: the campaign run never drove the episode transition")
             return 1, transcript, injected
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "NET SAVE ROUTE PASS" not in out:
+                print(f"network fault test: the {who} routed online Save to Load")
+                return 1, transcript, injected
     if scenario == 14:
         for out, who in ((host_out, "host"), (join_out, "joiner")):
             if "net session flags: shared=0 doubled=1" not in out:
@@ -314,6 +324,16 @@ def run_scenario(
             print("network fault test: one colour ball handed both ships the same gun; "
                   "the slot was not resolved against each ship's own arsenal")
             return 1, transcript, injected
+    if scenario == 19:
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "NET DELAY PASS" not in out:
+                print(f"network fault test: the {who} did not complete Delay-Based gameplay")
+                return 1, transcript, injected
+    if scenario == 20:
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "net gameplay: terminal rendezvous complete" not in out:
+                print(f"network fault test: the {who} did not finish the Timed Battle barrier")
+                return 1, transcript, injected
 
     failed = host.returncode != 0 or join.returncode != 0
     return (1 if failed else 0), transcript, injected
@@ -371,7 +391,11 @@ def main() -> int:
             join_dir = tempfile.mkdtemp(prefix="otnet_join_")
             r1, t1, injected = run_scenario(
                 executable, data_dir, base_port, scenario, rounds,
-                extra_common=["--test-net-gameplay-ticks", "200", "--test-net-save-exit"],
+                # Profile 4 leaves player two carrying a compiled custom sidekick. Stage two
+                # starts fresh processes, so the pre-level resume exchange is the only way the
+                # host can materialize that peer-owned design before the first saved tick.
+                extra_common=["--test-net-gameplay-ticks", "200", "--test-net-save-exit",
+                              "--test-net-loadout", "4"],
                 host_dir=host_dir, join_dir=join_dir)
             r2, t2, inj2 = run_scenario(
                 executable, data_dir, base_port + 4, scenario, rounds,

@@ -324,9 +324,8 @@ void network_settings_check_layout(const Uint8 *buf);
 void network_settings_apply_session_speed(void);
 void network_settings_restore(void);
 /* Bytes 0..15 are the original settings; 16..23 identify the rollback layout and snapshot size;
- * 24 onward is the tail added when the flags word at byte 4 ran out of bits (see network.c for
- * the field offsets). Everything before 24 kept its place, so only the tail is new ground. */
-#define NETWORK_SETTINGS_SIZE 42
+ * 24 onward is the extensible tail (see network.c for field offsets). */
+#define NETWORK_SETTINGS_SIZE 48
 
 /* Publish the host's Endless run to the joiner, which is how a resumed online run starts both
  * machines from the same record. Chunked over the reliable channel and blocking until delivered;
@@ -361,6 +360,9 @@ void network_level_rendezvous(void);
  * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */
 void network_ready_publish(bool ready);
 int network_ready_peer(void);
+/* Terminal cards are not retractable: once the local player dismisses one, hold the screen until
+ * the peer has dismissed it too and both reliable announcements have retired. */
+void network_end_screen_rendezvous(void);
 
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
@@ -384,6 +386,9 @@ bool network_shop_peer_locked(void);
 /* Publish this machine's custom weapon through the reliable outpost channel.
  * Both peers need both designs to keep simulation deterministic. */
 void network_custom_weapon_publish(void);
+/* A Campaign resume can enter gameplay without an outpost. Publish even when the editor feature is
+ * locally disabled, because the loaded record may already have either custom slot equipped. */
+void network_custom_weapon_publish_resume(void);
 void network_custom_weapon_reset(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:
 // the joiner has to be allowed to finish shopping first.
@@ -466,15 +471,18 @@ Uint32 network_sim_pools(NetSimPools *detail);
 // Session-long desync memo for the crash log: call once per desynced level (the lockstep
 // once-per-level report and the rollback canary's first report both do).
 void network_diag_note_desync(int level);
+Uint32 network_desync_count(void);
 
 // When false, report at most one mismatch per level and continue play.
 extern bool networkDesyncHalt;
 
 // State packet extension; bytes 4..27 belong to the original state fields.
-#define NET_STATE_RAND   28  // Uint32: mt_rand draws since the level's fixed reseed
-#define NET_STATE_PHASH  32  // Uint32: player state
-#define NET_STATE_EHASH  36  // Uint32: live enemy state
-#define NET_STATE_SIZE   40
+#define NET_STATE_LINK_FLAGS 28  // Uint16: bit 0 = linked Dragonwing analog turret aim
+#define NET_STATE_LINK_ANGLE 30  // Uint16: 0..65535 = 0..2pi
+#define NET_STATE_RAND       32  // Uint32: mt_rand draws since the level's fixed reseed
+#define NET_STATE_PHASH      36  // Uint32: player state
+#define NET_STATE_EHASH      40  // Uint32: live enemy state
+#define NET_STATE_SIZE       44
 
 void JE_clearSpecialRequests(void);
 
@@ -490,6 +498,7 @@ extern bool rollback_resim;
 static inline void network_level_rendezvous(void) { }
 static inline void network_ready_publish(bool ready) { (void)ready; }
 static inline int network_ready_peer(void) { return -1; }
+static inline void network_end_screen_rendezvous(void) { }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }
@@ -508,6 +517,7 @@ static inline void network_endless_run_publish(void) { }
 static inline bool network_endless_run_receive(Uint32 timeout_ms) { (void)timeout_ms; return false; }
 static inline int network_endless_death_sync(int hostChoice) { return hostChoice; }
 static inline void network_custom_weapon_publish(void) { }
+static inline void network_custom_weapon_publish_resume(void) { }
 static inline void network_custom_weapon_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }

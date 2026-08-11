@@ -72,18 +72,20 @@ Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
 | 4 | version-mismatch | Both peers reject incompatible wire versions |
 | 5 | gameplay | Real Arcade rollback with prediction and no desync |
 | 6 | desync-recovery | Deliberate corruption detected and repaired |
-| 7 | save-resume | Two-stage save and host-driven resume |
+| 7 | save-resume | Two-stage save, custom sidekick, and host-driven resume in fresh processes |
 | 8 | outage | Eight-second traffic blackout and recovery |
 | 9 | peer-vanish | Host exits cleanly after the joiner disappears |
 | 10 | sidekick-combos | Four mount combinations, including charge and custom weapons |
 | 11 | menu-race | Both players press Esc on the same rollback frame |
 | 12 | endless-zones | Ten zones covering the modifier registry and wallet parity |
-| 13 | campaign-shop | Shop protocol, custom weapons, and episode transition |
+| 13 | campaign-shop | Shop protocol, online Save routing, custom weapons, and episode transition |
 | 14 | double-earnings | Host arms settings and joiner adopts them |
 | 15 | soak | Long accelerated flight with working-set checks |
 | 16 | arcade-separate | Two complete Arcade ships keep independent state |
 | 17 | supertyrian | Online SuperTyrian on the Scrollock variant |
 | 18 | super-arcade | Independent ship picks and per-ship colored-ball weapons |
+| 19 | delay-linked-analog | Delay-Based linked pair carries movement and analog turret aim |
+| 20 | timed-battle-finish | Both players retire the result screen before session teardown |
 
 Each peer runs in its own temporary directory. Output pipes are drained while
 the processes run so a full pipe cannot stall network service.
