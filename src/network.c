@@ -791,11 +791,20 @@ int network_check(void)
 
 	if (connected)
 	{
-		// timeout
+		// timeout.  Every wait loop services the socket through here, so this halt reaches a dead
+		// link before any of their own deadlines do: it has to name the silence, or the session
+		// ends with no record of what it was waiting for.
 		if (!network_is_alive())
 		{
 			if (!quit)
+			{
+				const Uint32 quiet = SDL_GetTicks() - last_in_tick;
+				const Uint32 quiet_state = SDL_GetTicks() - last_state_in_tick;
+
+				fprintf(stderr, "error: nothing received from the other player for %u ms\n",
+				        (unsigned)(quiet < quiet_state ? quiet : quiet_state));
 				network_tyrian_halt(2, false);
+			}
 		}
 
 		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while

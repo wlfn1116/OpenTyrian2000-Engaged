@@ -576,13 +576,13 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 // These terminate the process without raising an SEH exception, so crash_handler never sees
 // them. Each hook captures the current context and writes the same rich report, then exits.
 
-// Capture the current thread and write a crash or net report. False means reporting was re-entered.
-static bool write_captured_report_ex(bool net, const char *event, const char *detail)
+// Capture the current thread and write a crash report. False means reporting was re-entered.
+static bool write_captured_report(const char *event, const char *detail)
 {
 	if (InterlockedExchange(&s_reporting, 1) != 0)
 		return false;
 
-	FILE *f = net ? open_net_log() : open_log();
+	FILE *f = open_log();
 	if (f != NULL)
 	{
 		CONTEXT ctx;
@@ -599,11 +599,6 @@ static bool write_captured_report_ex(bool net, const char *event, const char *de
 
 	InterlockedExchange(&s_reporting, 0);
 	return true;
-}
-
-static bool write_captured_report(const char *event, const char *detail)
-{
-	return write_captured_report_ex(false, event, detail);
 }
 
 // Latches once a clean-exit fatal has been logged, so a cascade (fread_die -> its caller ->
@@ -625,16 +620,15 @@ void crashlog_note(const char *event, const char *detail)
 	write_captured_report(event ? event : "RECOVERED", detail);
 }
 
-// Public: same report, but into the net log, so netplay health events (desyncs, stalls,
-// resyncs) can't bury a real crash report in the crash log.
+// Public: a netplay health event (desync, stall, resync), into the net log so it cannot bury a
+// real crash report. Symbolising a stack takes long enough to lose the link, and this runs from
+// the live game loop, so the entry carries its detail block alone.
 void crashlog_note_net(const char *event, const char *detail)
 {
-	if (!crashlog_get_netlog_enabled())
-		return;
-	write_captured_report_ex(true, event ? event : "NETWORK", detail);
+	crashlog_netlog_line(event ? event : "NETWORK", detail);
 }
 
-// Public: one short entry, no context/stack body; the session start/end banners.
+// Public: one entry with no context or stack body.
 void crashlog_netlog_line(const char *event, const char *detail)
 {
 	if (!crashlog_get_netlog_enabled())

@@ -692,6 +692,10 @@ walking. State dumps tolerate unloaded item tables and invalid IDs.
 Network and crash logs are created lazily under `log/`. Session diagnostics are
 append-only; console cleanup removes only recognized OpenTyrian log names.
 
+Net log entries carry their event text and detail block only. They are written
+from the live game loop, where a symbolised stack walk stalls socket service past
+the dead-link timeout. Register, stack, and state bodies belong to crash reports.
+
 Switch constraints:
 
 - Keep the SDL window resizable for dock changes.
