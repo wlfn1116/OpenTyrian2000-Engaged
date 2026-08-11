@@ -495,6 +495,18 @@ static SDL_Surface *get_smoothie_frame(int scale)
 static SDL_Surface *pf_hi = NULL;   // NxN playfield replay target (normal levels)
 static SDL_Surface *vga_hi = NULL;  // NxN final frame (playfield composite + HUD)
 
+void tyrian2_deinit(void)
+{
+	SDL_FreeSurface(render_gs);
+	render_gs = NULL;
+	SDL_FreeSurface(smoothie_frame);
+	smoothie_frame = NULL;
+	SDL_FreeSurface(pf_hi);
+	pf_hi = NULL;
+	SDL_FreeSurface(vga_hi);
+	vga_hi = NULL;
+}
+
 static bool ensure_hi_buffers(int scale)
 {
 	return ensure_scaled_surface(&pf_hi, scale) != NULL
@@ -6017,12 +6029,12 @@ void JE_loadMap(void)
 	JE_byte *ref[3][128]; /* [1..3, 0..127] */
 	char s[256];
 
-	JE_byte mapBuf[15 * 600]; /* [1..15 * 600] */
+	static JE_byte mapBuf[15 * 600]; /* [1..15 * 600] */
 	JE_word bufLoc;
 
 	char buffer[256];
 	int i;
-	Uint8 pic_buffer[vga_width * vga_height]; /* screen buffer, 8-bit specific */
+	static Uint8 pic_buffer[vga_width * vga_height]; /* reusable 8-bit wipe buffer */
 
 	crashlog_set_phase("loading level map");
 

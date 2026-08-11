@@ -47,5 +47,7 @@ uint scaler_plain_equivalent(uint index);
 // output size (any ratio), one texel per screen pixel.
 bool scaler_is_native(uint index);
 void scaler_set_native_size(int w, int h);
+// Release cached Native-scaler mappings during final video teardown.
+void video_scale_deinit(void);
 
 #endif /* VIDEO_SCALE_H */

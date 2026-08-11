@@ -48,11 +48,6 @@ ScalingMode scaling_mode = SCALE_WIDESCREEN;  // fill the screen at true 16:9 by
 // Sub-pixel supersampling factor; 0 = Auto (follow the scaler). See video.h.
 int render_supersample = 0;
 
-// Upscale filter for the supersampled present path; Sharp = crisp nearest pixels
-// (the oldschool fullscreen look), Smooth = lightly antialiased, None = raw
-// unfiltered nearest (the default). See video.h.
-int render_supersample_filter = SS_FILTER_NONE;
-
 static void update_native_scaler_dims(void);
 static void native_output_size(int *out_w, int *out_h);
 
@@ -133,12 +128,9 @@ static SDL_Renderer *main_window_renderer = NULL;
 SDL_PixelFormat *main_window_tex_format = NULL;
 static SDL_Texture *main_window_texture = NULL;
 
-// Textures for the supersampled present path, recreated on size change; pass
-// selection (prescale / halving / direct copy) is explained in present_hi().
+// Texture for the supersampled present path, recreated on size change.
 static SDL_Texture *hi_texture = NULL;  // streaming: the palette-converted hi frame
 static int hi_texture_w = 0, hi_texture_h = 0;
-static SDL_Texture *hi_stage = NULL;    // render target for the prescale/halving pass
-static int hi_stage_w = 0, hi_stage_h = 0;
 
 static ScalerFunction scaler_function;
 
@@ -229,13 +221,19 @@ void deinit_video(void)
 {
 	deinit_texture();
 	deinit_renderer();
+	video_scale_deinit();
 
 	SDL_DestroyWindow(main_window);
+	main_window = NULL;
 
 	SDL_FreeSurface(VGAScreenSeg);
+	VGAScreen = VGAScreenSeg = NULL;
 	SDL_FreeSurface(VGAScreen2);
+	VGAScreen2 = NULL;
 	SDL_FreeSurface(game_screen);
+	game_screen = NULL;
 	SDL_FreeSurface(menu_screen);
+	menu_screen = NULL;
 
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
@@ -317,21 +315,14 @@ static void deinit_texture(void)
 		main_window_texture = NULL;
 	}
 
-	// The hi (supersample) textures belong to the same renderer; drop them too so a
-	// renderer recreate (vsync toggle, scaler change) can't leave them dangling.
+	// The hi (supersample) texture belongs to the same renderer; drop it too so a
+	// renderer recreate (vsync toggle, scaler change) can't leave it dangling.
 	if (hi_texture != NULL)
 	{
 		SDL_DestroyTexture(hi_texture);
 		hi_texture = NULL;
 		hi_texture_w = hi_texture_h = 0;
 	}
-	if (hi_stage != NULL)
-	{
-		SDL_DestroyTexture(hi_stage);
-		hi_stage = NULL;
-		hi_stage_w = hi_stage_h = 0;
-	}
-
 	if (main_window_tex_format != NULL)
 	{
 		SDL_FreeFormat(main_window_tex_format);
@@ -766,32 +757,6 @@ static bool ensure_hi_texture(int w, int h)
 	return true;
 }
 
-// (Re)create the intermediate render target for the sharp-bilinear prescale (or the
-// minification halving pass). Returns NULL on failure; callers fall back to a direct
-// linear copy; softer, never broken.
-static SDL_Texture *ensure_hi_stage(int w, int h)
-{
-	if (hi_stage != NULL && hi_stage_w == w && hi_stage_h == h)
-		return hi_stage;
-
-	if (hi_stage != NULL)
-	{
-		SDL_DestroyTexture(hi_stage);
-		hi_stage = NULL;
-	}
-
-	hi_stage = SDL_CreateTexture(main_window_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_TARGET, w, h);
-	if (hi_stage == NULL)
-	{
-		hi_stage_w = hi_stage_h = 0;
-		return NULL;
-	}
-	SDL_SetTextureScaleMode(hi_stage, SDL_ScaleModeLinear);
-	hi_stage_w = w;
-	hi_stage_h = h;
-	return hi_stage;
-}
-
 void present_hi(SDL_Surface *hi)
 {
 	assert(hi->format->BitsPerPixel == 8);
@@ -834,68 +799,13 @@ void present_hi(SDL_Surface *hi)
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(VGAScreen, &dst_rect);
 
-	// Pick the pass chain from the output/frame size ratio and the user's filter
-	// (see video.h); on any stage failure fall back to the direct copy.
-	SDL_Texture *final_tex = hi_texture;
-	SDL_ScaleMode direct_mode = SDL_ScaleModeLinear;
-
-	if (render_supersample_filter == SS_FILTER_NONE)
-	{
-		// None: no filtering at any ratio; point-sample the hi frame straight to the
-		// output. The supersampled detail is dropped rather than blended (raw, aliased
-		// pixels); for when zero smoothing is wanted over the antialias supersampling
-		// normally buys. Skips both the magnify and minify special-casing below.
-		direct_mode = SDL_ScaleModeNearest;
-	}
-	else if (dst_rect.w > hi->w || dst_rect.h > hi->h)
-	{
-		if (render_supersample_filter == SS_FILTER_SHARP)
-		{
-			// Sharp: plain nearest magnification; hard pixel blocks at any output
-			// size, exactly the classic fullscreen look. (Magnification repeats
-			// texels rather than dropping them, so there is no motion shimmer.)
-			direct_mode = SDL_ScaleModeNearest;
-		}
-		else
-		{
-			// Smooth (sharp-bilinear): linear magnification alone would blur, so
-			// nearest-prescale to the smallest integer multiple covering the output,
-			// then let the final linear pass shrink the remainder (ratio in (0.5, 1]).
-			const int kx = (dst_rect.w + hi->w - 1) / hi->w;
-			const int ky = (dst_rect.h + hi->h - 1) / hi->h;
-			const int k = kx > ky ? kx : ky;
-
-			SDL_Texture *stage = ensure_hi_stage(hi->w * k, hi->h * k);
-			if (stage != NULL && SDL_SetRenderTarget(main_window_renderer, stage) == 0)
-			{
-				SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeNearest);
-				SDL_RenderCopy(main_window_renderer, hi_texture, NULL, NULL);
-				SDL_SetRenderTarget(main_window_renderer, NULL);
-				final_tex = stage;
-			}
-		}
-	}
-	else if (hi->w > dst_rect.w * 2 && dst_rect.w > 0)
-	{
-		// Output much smaller (beyond 2:1, e.g. a 4x frame in a 1x window): plain
-		// bilinear minification only samples 2x2 texels and skips the rest (moving
-		// shimmer), so linearly halve first; the final pass then sits within 2:1.
-		SDL_Texture *stage = ensure_hi_stage(hi->w / 2, hi->h / 2);
-		if (stage != NULL && SDL_SetRenderTarget(main_window_renderer, stage) == 0)
-		{
-			SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeLinear);
-			SDL_RenderCopy(main_window_renderer, hi_texture, NULL, NULL);
-			SDL_SetRenderTarget(main_window_renderer, NULL);
-			final_tex = stage;
-		}
-	}
-
-	if (final_tex == hi_texture)
-		SDL_SetTextureScaleMode(hi_texture, direct_mode);
+	// Supersampled output is deliberately raw: a single nearest-neighbor copy with
+	// no filtering or intermediate render target.
+	SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeNearest);
 
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(main_window_renderer);
-	SDL_RenderCopy(main_window_renderer, final_tex, NULL, &dst_rect);
+	SDL_RenderCopy(main_window_renderer, hi_texture, NULL, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
 	sample_fps();

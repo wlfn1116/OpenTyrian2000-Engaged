@@ -193,6 +193,7 @@ void rl_end_record(void);
 // Abandon a recording mid-tick (rollback re-simulation): discard the partial
 // list and keep the last complete frame as the interpolation baseline.
 void rl_abort_record(void);
+void rl_deinit(void);
 
 // Number of commands captured for the current frame.
 size_t rl_count(void);

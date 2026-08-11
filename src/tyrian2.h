@@ -70,6 +70,7 @@ void JE_starShowVGA(void);
 
 void JE_main(void);
 void JE_loadMap(void);
+void tyrian2_deinit(void);
 // The flip/spotlight special code and inverted-control flag, from level and Endless state.
 void JE_deriveStarShowSpecial(void);
 #ifdef WITH_NETWORK

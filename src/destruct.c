@@ -527,6 +527,32 @@ static bool   destruct_sim_timing_init = false;
 static Uint64 destruct_sim_freq = 0, destruct_sim_last = 0;
 static float  destruct_sim_accum = 0.0f;
 
+void destruct_deinit(void)
+{
+	drb_session_end();
+	free_sprite2s(&destructSpriteSheet);
+	free(shotRec);
+	shotRec = NULL;
+	free(exploRec);
+	exploRec = NULL;
+	free(world.mapWalls);
+	world.mapWalls = NULL;
+	free(destruct_player[PLAYER_LEFT].unit);
+	destruct_player[PLAYER_LEFT].unit = NULL;
+	free(destruct_player[PLAYER_RIGHT].unit);
+	destruct_player[PLAYER_RIGHT].unit = NULL;
+	if (destruct_hi != NULL)
+	{
+		SDL_FreeSurface(destruct_hi);
+		destruct_hi = NULL;
+	}
+	if (destruct_bg_hi != NULL)
+	{
+		SDL_FreeSurface(destruct_bg_hi);
+		destruct_bg_hi = NULL;
+	}
+}
+
 #ifdef WITH_NETWORK
 /* Delay-based Destruct applies both peers' inputs after network_delay ticks. Rollback applies local
  * input immediately and replays from DE_StateSave when the prediction differs. */
@@ -826,14 +852,7 @@ void JE_destructGame(void)
 	 * bottom; releasing the previous visit's buffers here keeps that path leak-free.  Disarming
 	 * the rollback module belongs to the same rule, and doubly so: a visit that left it armed
 	 * would have the next offline game reading itself as a rollback session. */
-	drb_session_end();
-	free(shotRec);
-	free(exploRec);
-	free(world.mapWalls);
-	free(destruct_player[PLAYER_LEFT].unit);
-	destruct_player[PLAYER_LEFT].unit = NULL;
-	free(destruct_player[PLAYER_RIGHT].unit);
-	destruct_player[PLAYER_RIGHT].unit = NULL;
+	destruct_deinit();
 
 	//malloc things that have customizable sizes
 	shotRec = malloc_die(sizeof(struct destruct_shot_s) * config.max_shots);
@@ -870,24 +889,7 @@ void JE_destructGame(void)
 #endif
 	JE_destructMain();
 
-	drb_session_end();
-
-	free_sprite2s(&destructSpriteSheet);
-
-	//and of course exit actions go here.
-	free(shotRec);
-	shotRec = NULL;
-	free(exploRec);
-	exploRec = NULL;
-	free(world.mapWalls);
-	world.mapWalls = NULL;
-	free(destruct_player[PLAYER_LEFT].unit);
-	destruct_player[PLAYER_LEFT].unit = NULL;
-	free(destruct_player[PLAYER_RIGHT].unit);
-	destruct_player[PLAYER_RIGHT].unit = NULL;
-
-	if (destruct_hi != NULL)    { SDL_FreeSurface(destruct_hi);    destruct_hi = NULL; }
-	if (destruct_bg_hi != NULL) { SDL_FreeSurface(destruct_bg_hi); destruct_bg_hi = NULL; }
+	destruct_deinit();
 }
 
 static void JE_destructMain(void)
@@ -1523,10 +1525,8 @@ static void DE_widenHUDBackdrop(SDL_Surface* surface)
 		RIGHT_SRC_X = 172   /* right frame's authored x in pic #11 */
 	};
 
-	if (surface->w < 2 * HUD_FRAME_W)
-		return;  /* too narrow to seat both frames without overlap */
-	if (vga_width > surface->pitch)
-		return;  /* a row is pitch bytes; everything below works in vga_width of them */
+	if (surface->w < vga_width || surface->h < HUD_ROWS || surface->pitch < vga_width)
+		return;
 
 	for (int y = 0; y < HUD_ROWS; ++y)
 	{
@@ -1537,7 +1537,7 @@ static void DE_widenHUDBackdrop(SDL_Surface* surface)
 		memset(row + HUD_FRAME_LEFT_X + HUD_FRAME_W, PIXEL_BLACK,
 		       HUD_FRAME_RIGHT_X - (HUD_FRAME_LEFT_X + HUD_FRAME_W));      /* clear the middle */
 
-		memcpy(hudBackdrop + y * vga_width, row, vga_width);              /* keep a clean copy */
+		memcpy(hudBackdrop + y * vga_width, row, vga_width);
 	}
 }
 

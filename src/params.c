@@ -161,13 +161,15 @@ void JE_paramCheck(int argc, char *argv[])
 					fprintf(stderr, "%s: error: invalid network port number\n", argv[0]);
 					exit(EXIT_FAILURE);
 				}
-				
-				network_opponent_host = malloc(temp + 1);
+
+				free(network_opponent_host);
+				network_opponent_host = malloc_die(temp + 1);
 				SDL_strlcpy(network_opponent_host, option.arg, temp + 1);
 			}
 			else
 			{
-				network_opponent_host = malloc(strlen(option.arg) + 1);
+				free(network_opponent_host);
+				network_opponent_host = malloc_die(strlen(option.arg) + 1);
 				strcpy(network_opponent_host, option.arg);
 			}
 			break;

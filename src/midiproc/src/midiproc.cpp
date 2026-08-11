@@ -58,6 +58,11 @@ EXPORT void MIDPROC_Container_SerializeAsSMF(HMIDIContainer container, uint8_t *
     delete serialized_container;
 }
 
+EXPORT void MIDPROC_FreeSerialized(uint8_t *data)
+{
+    delete[] data;
+}
+
 EXPORT void MIDPROC_Container_SerializeAsSMFLoop(HMIDIContainer container, uint8_t ** data_out, size_t * data_out_size)
 {
     *data_out = nullptr;

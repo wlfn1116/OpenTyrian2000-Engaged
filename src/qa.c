@@ -706,14 +706,39 @@ static Uint32 qa_prng(Uint32 *state)
 	return x;
 }
 
+static void qa_test_config_option_removal(void)
+{
+	Config config = {0};
+	ConfigSection *section = config_find_or_add_section(&config, "test", NULL);
+	qa_check(section != NULL, "config option removal creates its test section");
+	if (section != NULL)
+	{
+		config_set_option(section, "first", "1");
+		config_set_option(section, "retired", "2");
+		config_set_option(section, "last", "3");
+
+		qa_check(config_remove_option(section, "retired") && section->options_count == 2 &&
+		             config_get_option(section, "first") != NULL && config_get_option(section, "retired") == NULL &&
+		             config_get_option(section, "last") != NULL,
+		         "config option removal compacts a middle entry");
+		qa_check(!config_remove_option(section, "missing") && section->options_count == 2,
+		         "config option removal leaves a missing key unchanged");
+		qa_check(config_remove_option(section, "first") && config_remove_option(section, "last") &&
+		             section->options_count == 0 && section->options == NULL,
+		         "config option removal releases an empty option array");
+	}
+
+	config_deinit(&config);
+	qa_check(config.sections_count == 0 && config.sections == NULL, "config teardown resets section ownership");
+}
+
 static void qa_test_weapon_editor(void)
 {
-	char encoded[32768], encodedAgain[32768], malformed[4096];
+	static char encoded[32768], encodedAgain[32768], malformed[4096];
 	Uint32 rng = 0xc0570e11u;
 
 	customWeaponResetAllLevels();
-	bool presetsValid = customBulletPresetCount > 0
-	                 && customBulletPresetCount <= CUSTOM_BULLET_PRESET_MAX;
+	bool presetsValid = customBulletPresetCount > 0 && customBulletPresetCount <= CUSTOM_BULLET_PRESET_MAX;
 	for (int i = 0; i < customBulletPresetCount; ++i)
 	{
 		const CustomBulletPreset *const p = &customBulletPreset[i];
@@ -2159,7 +2184,7 @@ static void qa_test_network_endless_lobby(void)
 static void qa_test_resync_serialization(void)
 {
 #ifdef WITH_NETWORK
-	Uint8 raw[4096], packed[8192], expanded[4096];
+	static Uint8 raw[4096], packed[8192], expanded[4096];
 	Uint32 rng = 0x51a7e123u;
 
 	for (unsigned pass = 0; pass < 256; ++pass)
@@ -2625,6 +2650,7 @@ int qa_run_unit_suite(void)
 	/* Mirror normal episode setup before testing item, ship, weapon, and sidekick invariants. */
 	JE_loadItemDat();
 	JE_initPlayerData();
+	qa_test_config_option_removal();
 	qa_test_rollback();
 	qa_test_course_tables();
 	qa_test_structural_rng();

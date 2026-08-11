@@ -23,12 +23,11 @@ The useful settings are under **Setup > Graphics**.
 
 - **Smooth Motion** presents interpolated frames at the display rate. In
   supported single-player modes it also moves the ship at that rate.
-- **Sub-pixel** renders the playfield at Auto, 1x through 5x, or Native. Higher
-  values smooth slow scrolling, movement, and gauge edges.
+- **Sub-pixel** renders the playfield at Auto, Off, 2x through 5x, or Native.
+  Supersampled output uses unfiltered nearest-neighbor sampling.
 - **Native** follows the fitted output size. It costs more GPU time than the
   fixed modes, especially on high-resolution displays.
-- **Filter** selects Sharp, Smooth, or None when resolving the sub-pixel image.
-  The Vita always uses 1x.
+- The Vita always resolves Sub-pixel to 1x.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
 

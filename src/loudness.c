@@ -629,6 +629,29 @@ void deinit_audio(void)
 	lds_free();
 }
 
+void music_deinit(void)
+{
+#ifdef WITH_MIDI
+	if (midi_data != NULL)
+	{
+		for (unsigned int i = 0; i < song_count; ++i)
+			MIDPROC_FreeSerialized(midi_data[i].data);
+		free(midi_data);
+		midi_data = NULL;
+	}
+#endif
+
+	free(song_offset);
+	song_offset = NULL;
+	song_count = 0;
+
+	if (music_file != NULL)
+	{
+		fclose(music_file);
+		music_file = NULL;
+	}
+}
+
 void load_music(void)  // FKA NortSong.loadSong
 {
 	if (music_file == NULL)

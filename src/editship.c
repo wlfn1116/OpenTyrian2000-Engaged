@@ -83,12 +83,31 @@ void JE_loadExtraShapes(void)
 	
 	if (f)
 	{
+		const long file_size = ftell_eof(f);
+		if (file_size < (long)sizeof(extraShips) || file_size - (long)sizeof(extraShips) > UINT16_MAX)
+		{
+			fprintf(stderr, "warning: invalid extra ship file size: %ld\n", file_size);
+			fclose(f);
+			return;
+		}
+
 		extraAvail = true;
-		extraShapeSize = ftell_eof(f) - sizeof(extraShips);
-		extraShapes = malloc(extraShapeSize);
-		fread_die(extraShapes, extraShapeSize, 1, f);
+		extraShapeSize = (JE_word)(file_size - (long)sizeof(extraShips));
+		if (extraShapeSize > 0)
+		{
+			extraShapes = malloc_die(extraShapeSize);
+			fread_die(extraShapes, extraShapeSize, 1, f);
+		}
 		fread_die(extraShips, sizeof(extraShips), 1, f);
 		JE_decryptShips();
 		fclose(f);
 	}
+}
+
+void JE_freeExtraShapes(void)
+{
+	free(extraShapes);
+	extraShapes = NULL;
+	extraShapeSize = 0;
+	extraAvail = false;
 }

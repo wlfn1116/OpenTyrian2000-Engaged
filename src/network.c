@@ -255,29 +255,58 @@ static void packet_copy(UDPpacket *dst, UDPpacket *src)
 	memcpy(dst->data, src->data, src->len);
 }
 
+/* Reuse queue packets to avoid per-tick SDL_net allocations. */
+#define NET_PACKET_POOL_MAX (NET_PACKET_QUEUE * 5)
+static UDPpacket *packet_pool[NET_PACKET_POOL_MAX];
+static int packet_pool_count;
+
+static UDPpacket *packet_acquire(void)
+{
+	if (packet_pool_count > 0)
+		return packet_pool[--packet_pool_count];
+	return SDLNet_AllocPacket(NET_PACKET_SIZE);
+}
+
+static UDPpacket *packet_acquire_or_halt(void)
+{
+	UDPpacket *packet = packet_acquire();
+	if (packet == NULL)
+	{
+		fprintf(stderr, "error: SDLNet_AllocPacket: %s\n", SDLNet_GetError());
+		network_tyrian_halt(2, false);
+	}
+	return packet;
+}
+
+static void packet_release(UDPpacket *packet)
+{
+	if (packet == NULL)
+		return;
+	if (packet_pool_count < NET_PACKET_POOL_MAX)
+		packet_pool[packet_pool_count++] = packet;
+	else
+		SDLNet_FreePacket(packet);
+}
+
+static void packet_destroy(UDPpacket **packet)
+{
+	if (*packet == NULL)
+		return;
+	SDLNet_FreePacket(*packet);
+	*packet = NULL;
+}
+
 static void packets_shift_up(UDPpacket **packet, int max_packets)
 {
-		if (packet[0])
-		{
-			SDLNet_FreePacket(packet[0]);
-		}
-		for (int i = 0; i < max_packets - 1; i++)
-		{
-			packet[i] = packet[i + 1];
-		}
-		packet[max_packets - 1] = NULL;
+	packet_release(packet[0]);
+	memmove(packet, packet + 1, (size_t)(max_packets - 1) * sizeof(*packet));
+	packet[max_packets - 1] = NULL;
 }
 
 static void packets_shift_down(UDPpacket **packet, int max_packets)
 {
-	if (packet[max_packets - 1])
-	{
-		SDLNet_FreePacket(packet[max_packets - 1]);
-	}
-	for (int i = max_packets - 1; i > 0; i--)
-	{
-		packet[i] = packet[i - 1];
-	}
+	packet_release(packet[max_packets - 1]);
+	memmove(packet + 1, packet, (size_t)(max_packets - 1) * sizeof(*packet));
 	packet[0] = NULL;
 }
 
@@ -348,7 +377,7 @@ bool network_send(int len)
 
 	bool temp = network_send_no_ack(len);
 
-	packet_out[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	packet_out[i] = packet_acquire_or_halt();
 	packet_copy(packet_out[i], packet_out_temp);
 
 	last_out_sync++;
@@ -501,7 +530,7 @@ static int network_recv_one(void)
 
 						if (packet_out[i])
 						{
-							SDLNet_FreePacket(packet_out[i]);
+							packet_release(packet_out[i]);
 							packet_out[i] = NULL;
 						}
 
@@ -536,9 +565,9 @@ static int network_recv_one(void)
 							{
 								/* Queue reordered handshake packets in their sequence slot. An
 								 * acknowledged gap would stall the receive window permanently. */
-								if (packet_in[slot] == NULL)
-									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-								packet_copy(packet_in[slot], packet_temp);
+							if (packet_in[slot] == NULL)
+								packet_in[slot] = packet_acquire_or_halt();
+							packet_copy(packet_in[slot], packet_temp);
 							}
 							else if (slot >= NET_PACKET_QUEUE)
 							{
@@ -560,7 +589,7 @@ static int network_recv_one(void)
 						{
 							if (packet_in[i])
 							{
-								SDLNet_FreePacket(packet_in[i]);
+								packet_release(packet_in[i]);
 								packet_in[i] = NULL;
 							}
 						}
@@ -597,7 +626,7 @@ static int network_recv_one(void)
 							if (slot >= 0 && slot < NET_PACKET_QUEUE)
 							{
 								if (packet_in[slot] == NULL)
-									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+									packet_in[slot] = packet_acquire_or_halt();
 								packet_copy(packet_in[slot], packet_temp);
 							}
 							else if (slot >= NET_PACKET_QUEUE)
@@ -668,7 +697,7 @@ static int network_recv_one(void)
 							{
 								++net_diag.state_in;
 								if (packet_state_in[i] == NULL)
-									packet_state_in[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+									packet_state_in[i] = packet_acquire_or_halt();
 								packet_copy(packet_state_in[i], packet_temp);
 							}
 							else
@@ -686,7 +715,7 @@ static int network_recv_one(void)
 							{
 								if (packet_state_in_xor[i] == NULL)
 								{
-									packet_state_in_xor[i] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+									packet_state_in_xor[i] = packet_acquire_or_halt();
 									packet_copy(packet_state_in_xor[i], packet_temp);
 								}
 								else if (SDLNet_Read16(&packet_state_in_xor[i]->data[0]) != PACKET_STATE_XOR)
@@ -885,7 +914,7 @@ void network_state_prepare(void)
 	}
 	else
 	{
-		packet_state_out[0] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+		packet_state_out[0] = packet_acquire_or_halt();
 	}
 	// Set unconditionally: a reused packet would otherwise keep whatever length it had.
 	packet_state_out[0]->len = NET_STATE_SIZE;
@@ -974,7 +1003,7 @@ bool network_state_update(void)
 				if (okay)
 				{
 					++net_diag.xor_rebuilds;
-					packet_state_in[0] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+					packet_state_in[0] = packet_acquire_or_halt();
 					packet_copy(packet_state_in[0], packet_state_in_xor[x]);
 					for (int i = 1; i <= x; i++)
 						for (int j = 4; j < packet_state_in[0]->len; j++)
@@ -1038,19 +1067,24 @@ bool network_state_update(void)
 				SDL_Delay(1);
 		}
 
+		/* The wait completes only after the requested state is installed. */
+		UDPpacket *const current_state = packet_state_in[0];
+		if (current_state == NULL)
+			return false;
+
 		if (network_delay > 1)
 		{
 			// process the current in packet against the xor queue
 			if (packet_state_in_xor[x] == NULL)
 			{
-				packet_state_in_xor[x] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-				packet_copy(packet_state_in_xor[x], packet_state_in[0]);
+				packet_state_in_xor[x] = packet_acquire_or_halt();
+				packet_copy(packet_state_in_xor[x], current_state);
 				packet_state_in_xor[x]->status = 0;
 			}
 			else
 			{
 				for (int j = 4; j < packet_state_in_xor[x]->len; j++)
-					packet_state_in_xor[x]->data[j] ^= packet_state_in[0]->data[j];
+					packet_state_in_xor[x]->data[j] ^= current_state->data[j];
 			}
 		}
 
@@ -1075,7 +1109,7 @@ void network_state_reset(void)
 	{
 		if (packet_state_in[i])
 		{
-			SDLNet_FreePacket(packet_state_in[i]);
+			packet_release(packet_state_in[i]);
 			packet_state_in[i] = NULL;
 		}
 	}
@@ -1083,7 +1117,7 @@ void network_state_reset(void)
 	{
 		if (packet_state_in_xor[i])
 		{
-			SDLNet_FreePacket(packet_state_in_xor[i]);
+			packet_release(packet_state_in_xor[i]);
 			packet_state_in_xor[i] = NULL;
 		}
 	}
@@ -1091,7 +1125,7 @@ void network_state_reset(void)
 	{
 		if (packet_state_out[i])
 		{
-			SDLNet_FreePacket(packet_state_out[i]);
+			packet_release(packet_state_out[i]);
 			packet_state_out[i] = NULL;
 		}
 	}
@@ -1433,7 +1467,7 @@ connect_again:
 }
 
 // Terminate the network session after a local or peer error.
-void network_tyrian_halt(unsigned int err, bool attempt_sync)
+OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 {
 	const char *const err_msg[] = {
 		"Quitting...",
@@ -3497,17 +3531,23 @@ void network_shutdown(void)
 
 	for (int i = 0; i < NET_PACKET_QUEUE; i++)
 	{
-		if (packet_in[i])          { SDLNet_FreePacket(packet_in[i]);          packet_in[i] = NULL; }
-		if (packet_out[i])         { SDLNet_FreePacket(packet_out[i]);         packet_out[i] = NULL; }
-		if (packet_state_in[i])    { SDLNet_FreePacket(packet_state_in[i]);    packet_state_in[i] = NULL; }
-		if (packet_state_in_xor[i]){ SDLNet_FreePacket(packet_state_in_xor[i]);packet_state_in_xor[i] = NULL; }
-		if (packet_state_out[i])   { SDLNet_FreePacket(packet_state_out[i]);   packet_state_out[i] = NULL; }
+		packet_destroy(&packet_in[i]);
+		packet_destroy(&packet_out[i]);
+		packet_destroy(&packet_state_in[i]);
+		packet_destroy(&packet_state_in_xor[i]);
+		packet_destroy(&packet_state_out[i]);
 	}
 
-	if (packet_temp)     { SDLNet_FreePacket(packet_temp);     packet_temp = NULL; }
-	if (packet_out_temp) { SDLNet_FreePacket(packet_out_temp); packet_out_temp = NULL; }
+	packet_destroy(&packet_temp);
+	packet_destroy(&packet_out_temp);
+	while (packet_pool_count > 0)
+		packet_destroy(&packet_pool[--packet_pool_count]);
 
-	if (net_socket) { SDLNet_UDP_Close(net_socket); net_socket = NULL; }
+	if (net_socket)
+	{
+		SDLNet_UDP_Close(net_socket);
+		net_socket = NULL;
+	}
 
 	SDLNet_Quit();
 
@@ -3555,6 +3595,18 @@ void network_shutdown(void)
 	nrb_set_session_recovery(false);
 
 	network_settings_restore();
+}
+
+void network_deinit(void)
+{
+	network_shutdown();
+
+	network_set_player_name(NULL);
+	if (network_opponent_name != empty_string)
+		free(network_opponent_name);
+	network_opponent_name = empty_string;
+	free(network_opponent_host);
+	network_opponent_host = NULL;
 }
 
 /* LAN discovery.
@@ -3788,6 +3840,7 @@ int network_init(void)
 	if (!net_socket)
 	{
 		fprintf(stderr, "error: SDLNet_UDP_Open: %s\n", SDLNet_GetError());
+		SDLNet_Quit();
 		return -2;
 	}
 
@@ -3799,6 +3852,11 @@ int network_init(void)
 	if (!packet_temp || !packet_out_temp)
 	{
 		printf("SDLNet_AllocPacket: %s\n", SDLNet_GetError());
+		packet_destroy(&packet_temp);
+		packet_destroy(&packet_out_temp);
+		SDLNet_UDP_Close(net_socket);
+		net_socket = NULL;
+		SDLNet_Quit();
 		return -3;
 	}
 

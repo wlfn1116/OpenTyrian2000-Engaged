@@ -102,8 +102,8 @@ Values 1 through 5 are fixed factors. `0` is Auto and
 `RENDER_SUPERSAMPLE_NATIVE` follows the fitted output rectangle. Vita resolves
 all modes to 1x.
 
-Filter enum values are persisted. Append new values without renumbering old
-ones.
+The supersampled frame is copied directly with nearest-neighbor sampling. The
+legacy `render_supersample_filter` key is ignored and removed on the next save.
 
 ## Coordinates and sprite bounds
 

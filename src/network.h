@@ -291,12 +291,14 @@ bool network_state_is_reset(void);
 void network_state_reset(void);
 
 int network_connect(void);
-void network_tyrian_halt(unsigned int err, bool attempt_sync);
+OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync);
 
 int network_init(void);
 
 // Close the socket and queues, leaving the module ready for another network_init().
 void network_shutdown(void);
+// Final process teardown, including persistent player/peer strings.
+void network_deinit(void);
 
 /* Automated two-process reliable-channel exercise used by the fault proxy. */
 int network_test_peer(int rounds, int scenario);

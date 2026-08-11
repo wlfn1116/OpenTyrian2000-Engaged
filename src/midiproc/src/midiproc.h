@@ -89,6 +89,7 @@ EXPORT bool MIDPROC_Process(const uint8_t * data, size_t data_size, const char *
  * @param data_out_size The size of the output data
 */
 EXPORT void MIDPROC_Container_SerializeAsSMF(HMIDIContainer container, uint8_t ** data_out, size_t * data_out_size);
+EXPORT void MIDPROC_FreeSerialized(uint8_t *data);
 
 /**
  * @brief Serialize only the looped part of the song as a Standard MIDI File.

@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "crashlog.h"
+#include "destruct.h"
 #include "editship.h"
 #include "endless.h"
 #include "episodes.h"
@@ -40,6 +41,7 @@
 #include "rollback.h"
 #include "shots.h"
 #include "sprite.h"
+#include "tyrian2.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -621,6 +623,46 @@ void JE_drawOptionLevel(void)
 	}
 }
 
+void JE_tyrianShutdown(bool saveConfiguration)
+{
+#ifdef WITH_NETWORK
+	network_shutdown();
+#endif
+	deinit_audio();
+	destruct_deinit();
+	tyrian2_deinit();
+	rl_deinit();
+	deinit_video();
+	deinit_joysticks();
+
+	free_main_shape_tables();
+	free_sprite2s(&shopSpriteSheet);
+	free_sprite2s(&explosionSpriteSheet);
+
+	for (int i = 0; i < SOUND_COUNT; ++i)
+	{
+		free(soundSamples[i]);
+		soundSamples[i] = NULL;
+	}
+
+	if (demo_file != NULL)
+	{
+		fclose(demo_file);
+		demo_file = NULL;
+	}
+
+	if (saveConfiguration)
+		JE_saveConfiguration();
+
+	music_deinit();
+	JE_freeExtraShapes();
+	rollback_deinit();
+	config_deinit(&opentyrian_config);
+#ifdef WITH_NETWORK
+	network_deinit();
+#endif
+}
+
 void JE_tyrianHalt(JE_byte code)
 {
 	// Code 1 is an unrecoverable data error. Write its report before exit()
@@ -629,25 +671,7 @@ void JE_tyrianHalt(JE_byte code)
 		crashlog_report_fatal("FATAL (JE_tyrianHalt error exit)",
 		                      "JE_tyrianHalt(1) -- unrecoverable data/level error; see phase + stack");
 
-	deinit_audio();
-	deinit_video();
-	deinit_joysticks();
-
-	free_main_shape_tables();
-
-	free_sprite2s(&shopSpriteSheet);
-	free_sprite2s(&explosionSpriteSheet);
-	free_sprite2s(&destructSpriteSheet);
-
-	for (int i = 0; i < SOUND_COUNT; i++)
-	{
-		free(soundSamples[i]);
-	}
-
-	if (code != 9)
-	{
-		JE_saveConfiguration();
-	}
+	JE_tyrianShutdown(code != 9);
 
 	/* endkeyboard; */
 

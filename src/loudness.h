@@ -60,6 +60,8 @@ extern const char *const music_device_names[MUSIC_DEVICE_MAX];
 bool init_audio(void);
 bool restart_audio(void);  // tear down + re-init audio (after changing music_device/soundfont)
 void deinit_audio(void);
+/* Release the loaded song archive and converted MIDI data. */
+void music_deinit(void);
 
 void load_music(void);
 void play_song(unsigned int song_num);

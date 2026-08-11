@@ -847,40 +847,44 @@ void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
 
 	const int W = vga_width * scale;
-	const int H = 185 * scale;
 	const int dst_pitch = dst->pitch;
 	const int src_pitch = src->pitch;
 	const int row_step = dst_pitch * scale;  // one 1x row's distance in the hi buffer
 	Uint8 *const dst_px = (Uint8 *)dst->pixels;
 	const Uint8 *const src_px = (const Uint8 *)src->pixels;
 
-	for (int y = H - 1; y >= 0; --y)
+	for (int y1 = 184; y1 >= 0; --y1)
 	{
-		Uint8 *const dp = dst_px + y * dst_pitch;
-		const Uint8 *const sp = src_px + y * src_pitch;
-		const int row1 = (y / scale) * vga_width;  // 1x linear index of this row
-
-		for (int x = W - 1; x >= 0; --x)
+		const int row1 = y1 * vga_width;
+		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
 		{
-			// Waver from the 1x linear index, so the wobble pattern has the same
-			// spatial frequency as the original.
-			const int w1 = row1 + x / scale;
-			const int waver = (abs(((w1 >> 9) & 0x0f) - 8) - 1) * scale;
+			const int y = y1 * scale + sub_y;
+			Uint8 *const dp = dst_px + y * dst_pitch;
+			const Uint8 *const sp = src_px + y * src_pitch;
 
-			int xs = x + waver;
-			if (xs < 0)
-				xs = 0;
-			else if (xs >= W)
-				xs = W - 1;
+			for (int x1 = vga_width - 1; x1 >= 0; --x1)
+			{
+				// Every sub-pixel in a source-sized cell shares its waver.
+				const int w1 = row1 + x1;
+				const int waver = (abs(((w1 >> 9) & 0x0f) - 8) - 1) * scale;
 
-			// Average of source (2x), the current frame's row below, and the
-			// previous frame's row above (all wavered); hue forced red.
-			int value = (sp[xs] & 0x0f) * 2;
-			value += dp[xs + row_step] & 0x0f;
-			if (y - scale >= 0)
-				value += dp[xs - row_step] & 0x0f;
+				for (int sub_x = scale - 1; sub_x >= 0; --sub_x)
+				{
+					const int x = x1 * scale + sub_x;
+					int xs = x + waver;
+					if (xs < 0)
+						xs = 0;
+					else if (xs >= W)
+						xs = W - 1;
 
-			dp[x] = (Uint8)((value / 4) | 0x70);
+					int value = (sp[xs] & 0x0f) * 2;
+					value += dp[xs + row_step] & 0x0f;
+					if (y >= scale)
+						value += dp[xs - row_step] & 0x0f;
+
+					dp[x] = (Uint8)((value / 4) | 0x70);
+				}
+			}
 		}
 	}
 }
@@ -892,41 +896,45 @@ void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 	const Uint8 hue = smoothie_data[1] << 4;
 
 	const int W = vga_width * scale;
-	const int H = 185 * scale;
 	const int dst_pitch = dst->pitch;
 	const int src_pitch = src->pitch;
 	const int row_step = dst_pitch * scale;  // one 1x row's distance in the hi buffer
 	Uint8 *const dst_px = (Uint8 *)dst->pixels;
 	const Uint8 *const src_px = (const Uint8 *)src->pixels;
 
-	for (int y = H - 1; y >= 0; --y)
+	for (int y1 = 184; y1 >= 0; --y1)
 	{
-		Uint8 *const dp = dst_px + y * dst_pitch;
-		const Uint8 *const sp = src_px + y * src_pitch;
-		const int row1 = (y / scale) * vga_width;
-
-		for (int x = W - 1; x >= 0; --x)
+		const int row1 = y1 * vga_width;
+		for (int sub_y = scale - 1; sub_y >= 0; --sub_y)
 		{
-			// Pixel is copied from source if not blue; otherwise averaged with the
-			// current frame's row below (wavered), recoloured to the level's hue.
-			if ((sp[x] & 0x30) == 0)
+			const int y = y1 * scale + sub_y;
+			Uint8 *const dp = dst_px + y * dst_pitch;
+			const Uint8 *const sp = src_px + y * src_pitch;
+
+			for (int x1 = vga_width - 1; x1 >= 0; --x1)
 			{
-				dp[x] = sp[x];
-			}
-			else
-			{
-				const int w1 = row1 + x / scale;
+				const int w1 = row1 + x1;
 				const int waver = (abs(((w1 >> 10) & 0x07) - 4) - 1) * scale;
 
-				int xs = x + waver;
-				if (xs < 0)
-					xs = 0;
-				else if (xs >= W)
-					xs = W - 1;
+				for (int sub_x = scale - 1; sub_x >= 0; --sub_x)
+				{
+					const int x = x1 * scale + sub_x;
+					if ((sp[x] & 0x30) == 0)
+					{
+						dp[x] = sp[x];
+						continue;
+					}
 
-				Uint8 value = sp[x] & 0x0f;
-				value += dp[xs + row_step] & 0x0f;
-				dp[x] = (Uint8)((value / 2) | hue);
+					int xs = x + waver;
+					if (xs < 0)
+						xs = 0;
+					else if (xs >= W)
+						xs = W - 1;
+
+					Uint8 value = sp[x] & 0x0f;
+					value += dp[xs + row_step] & 0x0f;
+					dp[x] = (Uint8)((value / 2) | hue);
+				}
 			}
 		}
 	}

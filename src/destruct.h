@@ -22,5 +22,6 @@
 #include "opentyr.h"
 
 void JE_destructGame(void);
+void destruct_deinit(void);
 
 #endif /* DESTRUCT_H */

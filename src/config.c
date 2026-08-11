@@ -503,12 +503,8 @@ bool load_opentyrian_config(void)
 		else if (render_supersample > RENDER_SUPERSAMPLE_NATIVE)
 			render_supersample = RENDER_SUPERSAMPLE_NATIVE;
 
-		// Sub-pixel filter: 0 = Sharp (crisp pixels), 1 = Smooth (antialiased edges),
-		// 2 = None (raw, unfiltered nearest at every ratio).
-		config_get_int_option(section, "render_supersample_filter", &render_supersample_filter);
-		if (render_supersample_filter < SS_FILTER_SHARP || render_supersample_filter > SS_FILTER_NONE)
-			render_supersample_filter = SS_FILTER_NONE;
-
+		/* Remove the retired filter setting when the configuration is next saved. */
+		config_remove_option(section, "render_supersample_filter");
 	}
 
 	section = config_find_section(config, "keyboard", NULL);
@@ -928,8 +924,6 @@ bool save_opentyrian_config(void)
 
 	config_set_int_option(section, "render_supersample", render_supersample);
 
-	config_set_int_option(section, "render_supersample_filter", render_supersample_filter);
-
 	section = config_find_or_add_section(config, "keyboard", NULL);
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
@@ -1051,7 +1045,10 @@ bool save_opentyrian_config(void)
 	for (int m = 0; m < CUSTOM_WEAPON_MODES; ++m)
 		for (int p = 0; p < CUSTOM_POWER_LEVELS; ++p)
 		{
-			char key[64], blob[16384];   // one raw-weapon blob; sized for the widest (255-bullet) design
+			char key[64];
+			// Saving is single-threaded. Keep the widest raw-weapon blob off the
+			// comparatively small console stacks and reuse it for every level.
+			static char blob[16384];
 			snprintf(key, sizeof(key), "custom_weapon_m%d_l%d_raw", m + 1, p + 1);
 			customWeaponSerializeLevel(m, p, blob, sizeof(blob));
 			config_set_string_option(section, key, blob);

@@ -35,6 +35,12 @@ static size_t counts[2] = { 0, 0 };
 static size_t caps[2] = { 0, 0 };
 static int cur_buf = 0;
 
+// Scratch used while matching command identities across adjacent frames.
+static int match_head[RL_ID_MAX];
+static int match_prev_count[RL_ID_MAX], match_cur_count[RL_ID_MAX];
+static int *match_link;
+static size_t match_link_cap;
+
 static RenderCmd *rl_push(void)
 {
 	size_t *cap = &caps[cur_buf];
@@ -340,25 +346,31 @@ void rl_finalize(void)
 
 	// Per-id forward-linked lists over the previous frame, plus per-id blit counts
 	// for both frames (to detect a changed sub-blit set; see the snap below).
-	static int head[RL_ID_MAX];
-	static int prevN[RL_ID_MAX], curN[RL_ID_MAX];
-	static int *link = NULL;
-	static size_t link_cap = 0;
-
 	for (int i = 0; i < RL_ID_MAX; ++i)
 	{
-		head[i] = -1;
-		prevN[i] = 0;
-		curN[i] = 0;
+		match_head[i] = -1;
+		match_prev_count[i] = 0;
+		match_cur_count[i] = 0;
 	}
 
-	if (link_cap < nprev)
+	if (match_link_cap < nprev)
 	{
-		int *n = realloc(link, nprev * sizeof(int));
+		size_t new_cap = match_link_cap != 0 ? match_link_cap : 4096;
+		while (new_cap < nprev)
+		{
+			const size_t next_cap = new_cap * 2;
+			if (next_cap <= new_cap)
+			{
+				new_cap = nprev;
+				break;
+			}
+			new_cap = next_cap;
+		}
+		int *n = realloc(match_link, new_cap * sizeof(*n));
 		if (n == NULL)
 			return;  // on OOM, skip matching: every command stays snapped (dx=dy=0)
-		link = n;
-		link_cap = nprev;
+		match_link = n;
+		match_link_cap = new_cap;
 	}
 
 	for (size_t i = nprev; i-- > 0; )
@@ -366,9 +378,9 @@ void rl_finalize(void)
 		int id = prev[i].id;
 		if (id <= 0 || id >= RL_ID_MAX)
 			continue;
-		link[i] = head[id];
-		head[id] = (int)i;
-		++prevN[id];
+		match_link[i] = match_head[id];
+		match_head[id] = (int)i;
+		++match_prev_count[id];
 	}
 
 	// Count this frame's blits per id (a pre-pass, since the matching loop below
@@ -377,7 +389,7 @@ void rl_finalize(void)
 	{
 		int id = cur[i].id;
 		if (id > 0 && id < RL_ID_MAX)
-			++curN[id];
+			++match_cur_count[id];
 	}
 
 	for (size_t i = 0; i < ncur; ++i)
@@ -406,21 +418,21 @@ void rl_finalize(void)
 
 		// A changed blit count makes positional pairing unsafe; snap for one tick
 		// (or glide on the recorded velocity when the recorder supplied one).
-		if (prevN[id] != curN[id])
+		if (match_prev_count[id] != match_cur_count[id])
 		{
 			c->dx = hint_dx;
 			c->dy = hint_dy;
 			continue;
 		}
 
-		const int pi = head[id];
+		const int pi = match_head[id];
 		if (pi < 0)
 		{
 			c->dx = hint_dx;  // newly (re)appeared mid-motion: glide, don't snap
 			c->dy = hint_dy;
 			continue;
 		}
-		head[id] = link[pi];
+		match_head[id] = match_link[pi];
 
 		int dx = c->x - prev[pi].x;
 		int dy = c->y - prev[pi].y;
@@ -1106,6 +1118,32 @@ static bool rl_res_push(int off, Uint8 val)
 	res_val[res_count] = val;
 	++res_count;
 	return true;
+}
+
+void rl_deinit(void)
+{
+	for (int i = 0; i < 2; ++i)
+	{
+		free(bufs[i]);
+		bufs[i] = NULL;
+		counts[i] = 0;
+		caps[i] = 0;
+	}
+	free(match_link);
+	match_link = NULL;
+	match_link_cap = 0;
+	free(res_off);
+	res_off = NULL;
+	free(res_val);
+	res_val = NULL;
+	res_count = 0;
+	res_cap = 0;
+	if (rl_scratch_b != NULL)
+	{
+		SDL_FreeSurface(rl_scratch_b);
+		rl_scratch_b = NULL;
+	}
+	render_list_recording = false;
 }
 
 /* Capture every marked overlay pixel. Diff-only capture leaves holes when a matching

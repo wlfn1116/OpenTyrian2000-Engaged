@@ -185,6 +185,31 @@ static void rb_alloc_buffers(void)
 	}
 }
 
+void rollback_deinit(void)
+{
+	for (int i = 0; i < ROLLBACK_RING; ++i)
+	{
+		free(rb_ring[i]);
+		rb_ring[i] = NULL;
+		rb_ring_valid[i] = false;
+	}
+	free(rb_verify_buf);
+	rb_verify_buf = NULL;
+	free(rb_trace_buf);
+	rb_trace_buf = NULL;
+
+	if (rb_log_file != NULL)
+	{
+		fclose(rb_log_file);
+		rb_log_file = NULL;
+	}
+
+	rb_item_count = 0;
+	rb_total_size = 0;
+	rb_fixup_count = 0;
+	rb_registered = false;
+}
+
 static void rb_save_to(Uint8 *buf)
 {
 	for (int i = 0; i < rb_item_count; ++i)
@@ -849,16 +874,15 @@ bool rollback_selftest_tick(void)
 			       (unsigned long)rand_draws, (unsigned)ph, (unsigned)eh,
 			       (unsigned)curLoc);
 
-			if (RB_TRACE_ITEMS_TO > 0
-			    && st_frame >= RB_TRACE_ITEMS_FROM && st_frame <= RB_TRACE_ITEMS_TO
-			    && rb_trace_snapshot())
+#if RB_TRACE_ITEMS_TO > 0
+			if (st_frame >= RB_TRACE_ITEMS_FROM && st_frame <= RB_TRACE_ITEMS_TO && rb_trace_snapshot())
 			{
 				for (int i = 0; i < rb_item_count; ++i)
 					if (rb_items[i].ptr != NULL)
-						rb_log("  item t %lu %-24s %08x",
-						       (unsigned long)st_frame, rb_items[i].name,
+						rb_log("  item t %lu %-24s %08x", (unsigned long)st_frame, rb_items[i].name,
 						       (unsigned)rb_item_hash(&rb_items[i]));
 			}
+#endif
 		}
 
 		if (st_tainted)

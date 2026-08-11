@@ -209,17 +209,24 @@ int JE_loadAnim(const char *filename)
 	}
 
 	fseek(InFile, PAGEHEADER_OFFSET, SEEK_SET);
+	anim_LargePageHeader_t *lastPageHeader = NULL;
 	for (i = 0; i < FileHeader.nlps; i++)
 	{
 		fread_u16_die(&PageHeader[i].baseRecord, 1, InFile);
 		fread_u16_die(&PageHeader[i].nRecords,   1, InFile);
 		fread_u16_die(&PageHeader[i].nBytes,     1, InFile);
+		lastPageHeader = &PageHeader[i];
 	}
 
 	/* Trailing padding is permitted, but every declared page must fit. */
-	if (fileSize < (FileHeader.nlps-1) * ANI_PAGE_SIZE + ANIM_OFFSET
-	  + PageHeader[FileHeader.nlps-1].nBytes
-	  + PageHeader[FileHeader.nlps-1].nRecords * 2 + 8)
+	if (lastPageHeader == NULL)
+	{
+		fclose(InFile);
+		return -1;
+	}
+	const size_t required_size = ((size_t)FileHeader.nlps - 1) * ANI_PAGE_SIZE + ANIM_OFFSET + lastPageHeader->nBytes +
+	                             lastPageHeader->nRecords * 2 + 8;
+	if ((size_t)fileSize < required_size)
 	{
 		fclose(InFile);
 		return -1;

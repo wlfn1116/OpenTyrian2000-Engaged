@@ -124,17 +124,6 @@ static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t buffe
 	return supersampleNames[i];
 }
 
-// Index maps onto render_supersample_filter (SS_FILTER_SHARP / SS_FILTER_SMOOTH /
-// SS_FILTER_NONE). Keep this order in sync with the enum; persisted as the index.
-static const char *const ssFilterNames[] = { "Sharp", "Smooth", "None" };
-
-static size_t getSSFilterPickerItemsCount(void) { return COUNTOF(ssFilterNames); }
-static const char* getSSFilterPickerItem(size_t i, char* buffer, size_t bufferSize)
-{
-	(void)buffer; (void)bufferSize;
-	return ssFilterNames[i];
-}
-
 /* Enhancement labels are indexed by their stored enum values. Keep each list in
  * enum order. */
 
@@ -261,7 +250,6 @@ typedef enum
 	MENU_ITEM_SCALING_MODE,
 	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_SUPERSAMPLE,
-	MENU_ITEM_SS_FILTER,
 	MENU_ITEM_VSYNC,
 	MENU_ITEM_FPS,
 	MENU_ITEM_SHOW_FPS,
@@ -405,7 +393,6 @@ static int *menuItemIntSetting(MenuItemId id)
 
 	switch (id)
 	{
-	case MENU_ITEM_SS_FILTER:        return &render_supersample_filter;
 	case MENU_ITEM_BOSS_BAR_STYLE:   return &bossBarStyle;
 	case MENU_ITEM_BOSS_BAR_LAYOUT:  return &bossBarLayout;
 	case MENU_ITEM_BOSS_BAR_TWO:     return &bossBarTwoMode;
@@ -622,8 +609,6 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SMOOTH_MOTION, "Smooth Motion:", "Interpolate motion for smooth high-refresh play." },
 				{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.",
 				  .getPickerItemsCount = getSupersamplePickerItemsCount, .getPickerItem = getSupersamplePickerItem },
-				{ MENU_ITEM_SS_FILTER, "Filter:", "Sub-pixel filter: Sharp, Smooth, or None (raw).",
-				  .getPickerItemsCount = getSSFilterPickerItemsCount, .getPickerItem = getSSFilterPickerItem },
 				{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
 				{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
 				{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },
@@ -1929,6 +1914,7 @@ int main(int argc, char *argv[])
 	if (qa_test_suite)
 	{
 		const int result = qa_run_unit_suite();
+		JE_tyrianShutdown(false);
 		SDL_Quit();
 		return result;
 	}
@@ -1936,6 +1922,7 @@ int main(int argc, char *argv[])
 	if (qa_replay_demo != 0)
 	{
 		const int result = qa_run_replay_fixture();
+		JE_tyrianShutdown(false);
 		SDL_Quit();
 		return result;
 	}
@@ -1943,6 +1930,7 @@ int main(int argc, char *argv[])
 	if (qa_destruct_selftest_ticks > 0)
 	{
 		const int result = qa_run_destruct_selftest();
+		JE_tyrianShutdown(false);
 		SDL_Quit();
 		return result;
 	}
@@ -2038,7 +2026,7 @@ int main(int argc, char *argv[])
 	if (qa_net_rounds > 0)
 	{
 		const int result = network_test_peer(qa_net_rounds, qa_net_scenario);
-		network_shutdown();
+		JE_tyrianShutdown(false);
 		SDL_Quit();
 		return result;
 	}

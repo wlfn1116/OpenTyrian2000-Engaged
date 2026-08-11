@@ -4038,8 +4038,9 @@ static void JE_spriteViewer(int off_x, int off_y)
 	wait_noinput(false, false, true);
 	newkey = newmouse = false;  // don't let the click/key that opened us leak in
 
-	/* Build the source list from whatever graphics are currently loaded. */
-	VSource src[128];
+	/* Build the source list from whatever graphics are currently loaded. It only
+	 * borrows source pointers, so reusable storage keeps this debug UI's stack small. */
+	static VSource src[128];
 	int nsrc = 0;
 	for (unsigned int t = 0; t < SPRITE_TABLES_MAX; ++t)
 		if (sprite_table[t].count > 0)

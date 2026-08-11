@@ -411,11 +411,9 @@ void crashlog_write_game_state(FILE *f)
 	fprintf(f, "  Scaling:      %s   scaler=%u %s\n",
 	        ((unsigned)scaling_mode < (unsigned)ScalingMode_MAX) ? scaling_mode_names[scaling_mode] : "?",
 	        scaler, (scaler < scalers_count) ? scalers[scaler].name : "?");
-	fprintf(f, "  Smooth motion=%s  supersample=%d(%s)  render_list: rec=%d count=%zu  alpha=%.3f\n",
-	        smoothMotion ? "on" : "off", render_supersample,
-	        render_supersample_filter == SS_FILTER_SMOOTH ? "smooth" :
-	        render_supersample_filter == SS_FILTER_NONE ? "none" : "sharp",
-	        render_list_recording, rl_count(), (double)debug_interp_alpha);
+	fprintf(f, "  Smooth motion=%s  supersample=%d  render_list: rec=%d count=%zu  alpha=%.3f\n",
+	        smoothMotion ? "on" : "off", render_supersample, render_list_recording, rl_count(),
+	        (double)debug_interp_alpha);
 	fprintf(f, "  FPS:          %d (cap %d, show=%d)\n", current_fps, fps_cap, show_fps);
 
 	// Audio.

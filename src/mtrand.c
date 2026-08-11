@@ -80,6 +80,10 @@ unsigned long mt_rand(void)
 		/* Default seed */
 		mt_srand(5489UL);
 	}
+	/* mt_srand initializes all three cursors. This guard also makes a damaged
+	 * generator fail closed instead of dereferencing an invalid cursor. */
+	if (p0 == NULL || p1 == NULL || pm == NULL)
+		return 0;
 	++mt_rand_count;
 	/* Twisted feedback */
 	y = *p0 = *pm++ ^ (((*p0 & UPPER_MASK) | (*p1 & LOWER_MASK)) >> 1) ^ ((~(*p1 & 1)+1) & MATRIX_A);

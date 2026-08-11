@@ -116,6 +116,7 @@ void config_deinit(Config *config)
 	
 	free(config->sections);
 	config->sections = NULL;
+	config->sections_count = 0;
 }
 
 /* config section manipulators -- internal */
@@ -311,6 +312,31 @@ ConfigOption *config_get_option(const ConfigSection *section, const char *key)
 			return option;
 	
 	return NULL;
+}
+
+bool config_remove_option(ConfigSection *section, const char *key)
+{
+	assert(section != NULL);
+	assert(key != NULL);
+
+	const size_t key_len = strlen(key);
+	for (unsigned int i = 0; i < section->options_count; ++i)
+	{
+		if (!string_equal_len(&section->options[i].key, key, key_len))
+			continue;
+
+		deinit_option(&section->options[i]);
+		--section->options_count;
+		memmove(&section->options[i], &section->options[i + 1],
+		        (section->options_count - i) * sizeof(*section->options));
+		if (section->options_count == 0)
+		{
+			free(section->options);
+			section->options = NULL;
+		}
+		return true;
+	}
+	return false;
 }
 
 ConfigOption *config_get_or_set_option_len(ConfigSection *section, const char *key, size_t key_len, const char *value, size_t value_len)

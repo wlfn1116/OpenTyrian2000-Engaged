@@ -460,6 +460,7 @@ int  hud_sidekick_ammo_y(uint slot);
 void JE_drawPlayerTags(void);  // two-player HUD "P1"/"P2" marks; no-op otherwise
 extern bool hud_sidekicks_dirty;
 
+void JE_tyrianShutdown(bool saveConfiguration);
 void JE_tyrianHalt(JE_byte code); /* This ends the game */
 void JE_specialComplete(JE_byte playernum, JE_byte specialType);
 void JE_doSpecialShot(JE_byte playernum, uint *armor, uint *shield);

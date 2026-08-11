@@ -25,6 +25,7 @@
 #include "video.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void nn_32(SDL_Surface *src_surface, SDL_Texture *dst_texture);
@@ -37,6 +38,43 @@ static void scale2x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture);
 static void scale2x_16(SDL_Surface *src_surface, SDL_Texture *dst_texture);
 static void scale3x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture);
 static void scale3x_16(SDL_Surface *src_surface, SDL_Texture *dst_texture);
+
+/* Cache native-scaling source columns to avoid repeated per-pixel divisions. */
+static int *nn_fit_x;
+static int nn_fit_x_cap;
+static int nn_fit_src_w;
+static int nn_fit_dst_w;
+
+static const int *nn_fit_x_map(int src_w, int dst_w)
+{
+	if (src_w == nn_fit_src_w && dst_w == nn_fit_dst_w)
+		return nn_fit_x;
+
+	if (dst_w > nn_fit_x_cap)
+	{
+		int *grown = realloc(nn_fit_x, (size_t)dst_w * sizeof(*grown));
+		if (grown == NULL)
+			return NULL;
+		nn_fit_x = grown;
+		nn_fit_x_cap = dst_w;
+	}
+
+	for (int x = 0; x < dst_w; ++x)
+		nn_fit_x[x] = (int)((Sint64)x * src_w / dst_w);
+
+	nn_fit_src_w = src_w;
+	nn_fit_dst_w = dst_w;
+	return nn_fit_x;
+}
+
+void video_scale_deinit(void)
+{
+	free(nn_fit_x);
+	nn_fit_x = NULL;
+	nn_fit_x_cap = 0;
+	nn_fit_src_w = 0;
+	nn_fit_dst_w = 0;
+}
 
 void hq2x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture);
 void hq3x_32(SDL_Surface *src_surface, SDL_Texture *dst_texture);
@@ -144,9 +182,10 @@ void nn_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 		
 		for (int x = width; x > 0; x--)
 		{
+			const Uint32 color = rgb_palette[*src];
 			for (int z = scale; z > 0; z--)
 			{
-				*(Uint32 *)dst = rgb_palette[*src];
+				*(Uint32 *)dst = color;
 				dst += dst_Bpp;
 			}
 			src++;
@@ -193,9 +232,10 @@ void nn_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 		
 		for (int x = width; x > 0; x--)
 		{
+			const Uint16 color = (Uint16)rgb_palette[*src];
 			for (int z = scale; z > 0; z--)
 			{
-				*(Uint16 *)dst = rgb_palette[*src];
+				*(Uint16 *)dst = color;
 				dst += dst_Bpp;
 			}
 			src++;
@@ -224,6 +264,7 @@ void nn_fit_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 
 	const int src_w = src_surface->w,
 	          src_h = src_surface->h;
+	const int *const x_map = nn_fit_x_map(src_w, dst_width);
 
 	void *tmp_ptr;
 	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
@@ -245,7 +286,10 @@ void nn_fit_32(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 			const Uint8 *src_row = src + (size_t)sy * src_surface->pitch;
 			Uint32 *out = (Uint32 *)dst;
 			for (int x = 0; x < dst_width; ++x)
-				out[x] = rgb_palette[src_row[(Sint64)x * src_w / dst_width]];
+			{
+				const int sx = x_map != NULL ? x_map[x] : (int)((Sint64)x * src_w / dst_width);
+				out[x] = rgb_palette[src_row[sx]];
+			}
 			prev_sy = sy;
 			prev_row = dst;
 		}
@@ -262,6 +306,7 @@ void nn_fit_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 
 	const int src_w = src_surface->w,
 	          src_h = src_surface->h;
+	const int *const x_map = nn_fit_x_map(src_w, dst_width);
 
 	void *tmp_ptr;
 	SDL_LockTexture(dst_texture, NULL, &tmp_ptr, &dst_pitch);
@@ -283,7 +328,10 @@ void nn_fit_16(SDL_Surface *src_surface, SDL_Texture *dst_texture)
 			const Uint8 *src_row = src + (size_t)sy * src_surface->pitch;
 			Uint16 *out = (Uint16 *)dst;
 			for (int x = 0; x < dst_width; ++x)
-				out[x] = (Uint16)rgb_palette[src_row[(Sint64)x * src_w / dst_width]];
+			{
+				const int sx = x_map != NULL ? x_map[x] : (int)((Sint64)x * src_w / dst_width);
+				out[x] = (Uint16)rgb_palette[src_row[sx]];
+			}
 			prev_sy = sy;
 			prev_row = dst;
 		}

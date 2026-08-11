@@ -75,18 +75,6 @@ extern ScalingMode scaling_mode;
 extern int render_supersample;
 int effective_supersample(void);
 
-/*
- * How the supersampled frame fits a larger output: Sharp / Smooth / None.
- * Values persist in the config: keep Sharp=0/Smooth=1 and append.
- */
-enum
-{
-	SS_FILTER_SHARP = 0,
-	SS_FILTER_SMOOTH = 1,
-	SS_FILTER_NONE = 2,
-};
-extern int render_supersample_filter;
-
 extern bool show_fps;          // draw the FPS counter during gameplay
 extern int current_fps;        // presented frames during the last sampled second
 
@@ -114,9 +102,8 @@ void JE_showVGA(void);
 // while a modal system overlay (the Vita IME) is up so the compositor keeps drawing it.
 void video_repeat_last_present(void);
 // Present a supersampled 8-bit frame (vga_width*N x vga_height*N): palette-converted
-// 1:1 into a texture, filtered per render_supersample_filter, and fitted into the
-// same on-screen rectangle the classic path would use, so supersampling never
-// changes the window/output size.
+// 1:1 into a texture, point-sampled into the same on-screen rectangle the classic
+// path would use, so supersampling never changes the window/output size.
 void present_hi(SDL_Surface *hi);
 void set_vsync(bool enabled);
 

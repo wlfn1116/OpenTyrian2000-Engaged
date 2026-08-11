@@ -369,7 +369,9 @@ void deinit_joysticks(void)
 	}
 	
 	free(joystick);
-	
+	joystick = NULL;
+	joysticks = 0;
+
 	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 }
 
@@ -660,7 +662,7 @@ bool detect_joystick_assignment(int j, Joystick_assignment *assignment)
 {
 	/* Capture the initial state for edge detection. */
 	const int axes = SDL_JoystickNumAxes(joystick[j].handle);
-	Sint16 *axis = malloc(axes * sizeof(*axis));
+	Sint16 *axis = malloc_die(axes * sizeof(*axis));
 	for (int i = 0; i < axes; i++)
 		axis[i] = SDL_JoystickGetAxis(joystick[j].handle, i);
 	

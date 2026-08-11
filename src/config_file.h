@@ -319,6 +319,15 @@ static inline ConfigOption *config_set_option(ConfigSection *section, const char
  */
 extern ConfigOption *config_get_option(const ConfigSection *section, const char *key);
 
+/*!
+ * \brief Remove an option by key.
+ *
+ * \param[in,out] section the section containing the option
+ * \param[in] key the option key
+ * \return whether an option was removed
+ */
+extern bool config_remove_option(ConfigSection *section, const char *key);
+
 /*! \see ::config_get_or_set_option() */
 extern ConfigOption *config_get_or_set_option_len(ConfigSection *section, const char *key, size_t key_len, const char *value, size_t value_len);
 

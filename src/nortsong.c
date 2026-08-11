@@ -196,7 +196,7 @@ void loadSndFile(bool xmas)
 			goto die;
 
 		free(soundSamples[i]);
-		soundSamples[i] = malloc(soundSampleCount[i]);
+		soundSamples[i] = malloc_die(soundSampleCount[i]);
 
 		fseek(f, sfxPositions[i], SEEK_SET);
 		fread_u8_die((Uint8 *)soundSamples[i], soundSampleCount[i], f);
@@ -237,7 +237,7 @@ void loadSndFile(bool xmas)
 			goto die;
 
 		free(soundSamples[i]);
-		soundSamples[i] = malloc(soundSampleCount[i]);
+		soundSamples[i] = malloc_die(soundSampleCount[i]);
 
 		fseek(f, voicePositions[vi], SEEK_SET);
 		fread_u8_die((Uint8 *)soundSamples[i], soundSampleCount[i], f);
@@ -262,7 +262,7 @@ void loadSndFile(bool xmas)
 	for (size_t i = 0; i < SOUND_COUNT; ++i)
 		maxSampleSize = MAX(maxSampleSize, soundSampleCount[i]);
 
-	cvt.buf = malloc(maxSampleSize * cvt.len_mult);
+	cvt.buf = malloc_die(maxSampleSize * cvt.len_mult);
 
 	for (size_t i = 0; i < SOUND_COUNT; ++i)
 	{

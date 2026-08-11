@@ -47,6 +47,7 @@ void rollback_register_callback(const char *name, size_t size,
 void rollback_register_fixup(void (*fn)(void));
 /* Registers everything (rollback_state.c + per-file registrars); idempotent. */
 void rollback_register_all(void);
+void rollback_deinit(void);
 size_t rollback_state_size(void);
 
 /* Registers without allocating the snapshot ring.  For callers that need the

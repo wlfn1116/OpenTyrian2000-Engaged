@@ -85,9 +85,9 @@ void load_sprites(unsigned int table, FILE *f)
 		fread_u16_die(&cur_sprite->width,  1, f);
 		fread_u16_die(&cur_sprite->height, 1, f);
 		fread_u16_die(&cur_sprite->size,   1, f);
-		
-		cur_sprite->data = malloc(cur_sprite->size);
-		
+
+		cur_sprite->data = malloc_die(cur_sprite->size);
+
 		fread_u8_die(cur_sprite->data, cur_sprite->size, f);
 	}
 }
@@ -577,7 +577,7 @@ void JE_loadCompShapesB(Sprite2_array *sprite2s, FILE *f)
 {
 	assert(sprite2s->data == NULL);
 
-	sprite2s->data = malloc(sprite2s->size);
+	sprite2s->data = malloc_die(sprite2s->size);
 	fread_u8_die(sprite2s->data, sprite2s->size, f);
 }
 

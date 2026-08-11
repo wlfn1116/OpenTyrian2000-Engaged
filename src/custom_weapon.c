@@ -1173,7 +1173,7 @@ size_t customWeaponSerializeDesign(Uint8 *buf, size_t cap)
 {
 	// Zeroed first so the unused tail of the fixed-width name is not stack residue: the two
 	// machines have to produce the same bytes for the same design.
-	CustomWeaponSlot design;
+	static CustomWeaponSlot design;
 	memset(&design, 0, sizeof(design));
 	customDesignStore(&design);
 
@@ -1366,7 +1366,8 @@ void customWeaponLibrarySave(void)
 	fprintf(f, "count %d\n", customWeaponLibCount);
 	fprintf(f, "current %d\n", customWeaponCurrentSlot);
 
-	char blob[16384];   // one raw-weapon blob; sized for the widest (255-bullet) design
+	/* One raw-weapon blob, reused by this single-threaded writer. */
+	static char blob[16384];
 	for (int i = 0; i < customWeaponLibCount; ++i)
 	{
 		const CustomWeaponSlot *s = &customWeaponLib[i];
@@ -1404,7 +1405,9 @@ void customWeaponLibraryLoad(void)
 		slotSetDefault(&customWeaponLib[i]);
 
 	int count = 1, current = 0, cur = -1;
-	char line[16384];   // must hold a whole "raw m p <blob>" line for the widest (255-bullet) design
+	// Must hold a whole "raw m p <blob>" line for the widest design. Loading is
+	// single-threaded, so persistent scratch avoids a large console stack frame.
+	static char line[16384];
 	while (fgets(line, sizeof(line), f) != NULL)
 	{
 		if (strncmp(line, "count ", 6) == 0)
