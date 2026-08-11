@@ -423,8 +423,8 @@ Timed Battle is an Arcade race with Separate ships. Both players fly a Stalker
 and compete for cash until the selected battle level ends.
 
 Both players confirm a title card before the clock starts. The result screen
-shows both totals. Timed Battle cannot load a save and does not write to the
-single-player Timed Battle boards.
+shows both totals, and either player can dismiss it. Timed Battle cannot load a
+save and does not write to the single-player Timed Battle boards.
 
 ### Saving and resuming
 

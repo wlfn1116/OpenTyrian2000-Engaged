@@ -6578,7 +6578,7 @@ new_game:
 								/* trentWin leaves the outer game loop and closes the network session. Keep
 								 * the final unlock visible until both players dismiss it. */
 								if (isNetworkGame && trentWin)
-									network_end_screen_rendezvous();
+									network_end_screen_rendezvous(true);
 							}
 
 							jumpSection = true;

@@ -85,7 +85,7 @@ Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
 | 17 | supertyrian | Online SuperTyrian on the Scrollock variant |
 | 18 | super-arcade | Independent ship picks and per-ship colored-ball weapons |
 | 19 | delay-linked-analog | Delay-Based linked pair carries movement, analog turret aim, and special-ready flashes |
-| 20 | timed-battle-finish | Both players retire the result screen before session teardown |
+| 20 | timed-battle-finish | A guest dismissal retires both result screens before session teardown |
 
 Each peer runs in its own temporary directory. Output pipes are drained while
 the processes run so a full pipe cannot stall network service.

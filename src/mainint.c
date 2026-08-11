@@ -5925,25 +5925,16 @@ void JE_timedBattleResult(void)
 	JE_showVGA();
 	fade_palette(colors, 15, 0, 255);
 
-	// Service the link while it is up: the peer is sitting on the same screen, and a machine that
-	// stopped answering here would be read as a dropped session rather than a player reading.
+	/* Release the input that reached this card. The rendezvous then accepts a fresh local press or
+	 * the peer's dismissal, so either player can continue without closing the UDP socket early. */
 	if (!constantPlay && qa_net_gameplay_ticks == 0)
-	{
 		wait_noinput(true, true, true);
-		do
-		{
-			setDelay(1);
 
-			NETWORK_KEEP_ALIVE();
-
-			service_SDL_events(true);
-			wait_delay();
-		} while (!(newkey || newmouse || JE_anyButton()));
-	}
-
-	/* Hold both copies of the result screen until both players dismiss it and both reliable
-	 * announcements have completed. */
-	network_end_screen_rendezvous();
+	/* Headless scenario 20 makes the guest the sole initiator. The host must leave through the
+	 * peer-dismiss path that interactive online play uses. */
+	const bool auto_dismiss = constantPlay ||
+	                          (qa_net_gameplay_ticks > 0 && thisPlayerNum != networkHostPlayerNum);
+	network_end_screen_rendezvous(auto_dismiss);
 
 	fade_black(15);
 	set_menu_centered(prevCentered);

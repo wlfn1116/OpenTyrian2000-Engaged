@@ -338,9 +338,13 @@ def run_scenario(
                 print(f"network fault test: the {who} did not complete Delay-Based gameplay")
                 return 1, transcript, injected
     if scenario == 20:
-        for out, who in ((host_out, "host"), (join_out, "joiner")):
+        for out, who, dismissal in ((host_out, "host", "peer"),
+                                    (join_out, "joiner", "local")):
             if "net gameplay: terminal rendezvous complete" not in out:
                 print(f"network fault test: the {who} did not finish the Timed Battle barrier")
+                return 1, transcript, injected
+            if f"dismissal={dismissal}" not in out:
+                print(f"network fault test: the {who} used the wrong result-screen dismissal path")
                 return 1, transcript, injected
 
     failed = host.returncode != 0 or join.returncode != 0

@@ -2999,28 +2999,44 @@ int network_ready_peer(void)
 	return -1;
 }
 
-void network_end_screen_rendezvous(void)
+void network_end_screen_rendezvous(bool local_dismissed)
 {
 	if (!isNetworkGame)
 		return;
 
-	/* Unlike a start card, dismissing a terminal result cannot be withdrawn: publish once and
-	 * keep the current screen alive until both players have dismissed it. Waiting for our reliable
-	 * queue to retire prevents the first machine from closing its UDP socket in front of the
-	 * peer's acknowledgement. */
-	network_ready_publish(true);
+	/* Echoing the first dismissal makes either player's input authoritative while retaining a
+	 * two-way reliable handshake. Both machines keep the screen and socket alive until each
+	 * announcement has been received and acknowledged. */
+	bool local_initiated = local_dismissed;
+	if (local_dismissed)
+		network_ready_publish(true);
 	bool peer_ready = false;
 
 	while (network_peer_alive())
 	{
 		watchdog_heartbeat();
-		service_SDL_events(false);
+		service_SDL_events(true);
+		poll_joysticks();
+
+		if (!local_dismissed && (newkey || newmouse || joydown))
+		{
+			local_dismissed = true;
+			local_initiated = true;
+			network_ready_publish(true);
+		}
 
 		const int peer = network_ready_peer();
 		if (peer >= 0)
+		{
 			peer_ready = peer != 0;
+			if (peer_ready && !local_dismissed)
+			{
+				local_dismissed = true;
+				network_ready_publish(true);
+			}
+		}
 
-		if (peer_ready && network_is_sync())
+		if (local_dismissed && peer_ready && network_is_sync())
 			break;
 
 		if (!output_vsync)
@@ -3029,9 +3045,10 @@ void network_end_screen_rendezvous(void)
 			SDL_Delay(1);
 	}
 
-	if (qa_net_gameplay_ticks > 0 && peer_ready && network_is_sync())
+	if (qa_net_gameplay_ticks > 0 && local_dismissed && peer_ready && network_is_sync())
 	{
-		fprintf(stderr, "net gameplay: terminal rendezvous complete\n");
+		fprintf(stderr, "net gameplay: terminal rendezvous complete, dismissal=%s\n",
+		        local_initiated ? "local" : "peer");
 		fflush(stderr);
 	}
 }

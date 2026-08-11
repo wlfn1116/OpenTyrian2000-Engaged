@@ -364,9 +364,9 @@ void network_level_loaded_rendezvous(void);
  * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */
 void network_ready_publish(bool ready);
 int network_ready_peer(void);
-/* Terminal cards are not retractable: once the local player dismisses one, hold the screen until
- * the peer has dismissed it too and both reliable announcements have retired. */
-void network_end_screen_rendezvous(void);
+/* Terminal cards are not retractable. A caller that has already accepted local input passes true;
+ * otherwise either local input or the peer's announcement dismisses both copies. */
+void network_end_screen_rendezvous(bool local_dismissed);
 
 void network_shop_begin(void);
 void network_shop_send_state(bool done);
@@ -502,7 +502,7 @@ extern bool rollback_resim;
 static inline void network_level_rendezvous(void) { }
 static inline void network_ready_publish(bool ready) { (void)ready; }
 static inline int network_ready_peer(void) { return -1; }
-static inline void network_end_screen_rendezvous(void) { }
+static inline void network_end_screen_rendezvous(bool local_dismissed) { (void)local_dismissed; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }
 static inline bool network_sa_ship_peer_saw_us(void) { return false; }
