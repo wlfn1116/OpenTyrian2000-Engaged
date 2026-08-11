@@ -106,18 +106,23 @@ def run_scenario(
     if scenario == 4:
         join_cmd += ["--test-net-version-skew", "1"]
 
-    env = os.environ.copy()
-    env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
-    # Each peer gets its own scratch working directory: the game writes tyrian.cfg and saves
-    # into the cwd, and a shared one leaks state between runs and races between the peers.
+    base_env = os.environ.copy()
+    base_env.update(SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    # Each peer gets its own scratch working and configuration directories. Unix builds use
+    # XDG_CONFIG_HOME rather than the cwd; sharing the runner's home leaks settings between
+    # scenarios and lets two peers race while writing the same configuration and save files.
     # A caller may pass directories in to carry saves across stages (the resume scenario).
     own_dirs = host_dir is None
     if own_dirs:
         host_dir = tempfile.mkdtemp(prefix="otnet_host_")
         join_dir = tempfile.mkdtemp(prefix="otnet_join_")
-    host = subprocess.Popen(host_cmd, env=env, cwd=host_dir,
+    host_env = base_env.copy()
+    join_env = base_env.copy()
+    host_env["XDG_CONFIG_HOME"] = host_dir
+    join_env["XDG_CONFIG_HOME"] = join_dir
+    host = subprocess.Popen(host_cmd, env=host_env, cwd=host_dir,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    join = subprocess.Popen(join_cmd, env=env, cwd=join_dir,
+    join = subprocess.Popen(join_cmd, env=join_env, cwd=join_dir,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     # Drain both pipes for the whole run. Reading only at the end deadlocks a talkative peer:
@@ -326,6 +331,9 @@ def run_scenario(
             return 1, transcript, injected
     if scenario == 19:
         for out, who in ((host_out, "host"), (join_out, "joiner")):
+            if "separate=0" not in out:
+                print(f"network fault test: the {who} did not enter Linked Arcade")
+                return 1, transcript, injected
             if "NET DELAY PASS" not in out:
                 print(f"network fault test: the {who} did not complete Delay-Based gameplay")
                 return 1, transcript, injected

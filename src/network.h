@@ -357,7 +357,7 @@ bool network_endless_jump_poll(void);
  * needed on a path that starts a level without passing through the outpost. */
 void network_level_rendezvous(void);
 /* Every network level calls this after loading. Its dedicated marker cannot be confused with an
- * outpost or ready-card announcement from the preceding control phase. */
+ * earlier announcement; receiving the peer's marker is sufficient to enter the level. */
 void network_level_loaded_rendezvous(void);
 
 /* Non-blocking, retractable ready barrier for Destruct and Timed Battle cards. Poll returns -1 for

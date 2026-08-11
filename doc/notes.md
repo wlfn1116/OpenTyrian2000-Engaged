@@ -486,6 +486,10 @@ Helpers that service the network include:
 Do not consume a reliable packet in a helper when the next state machine owns
 it. Several shop and level barriers depend on the packet remaining at the head.
 
+The post-load level barrier exits after receiving the peer's dedicated marker,
+which proves that peer has loaded. Normal gameplay service continues retrying
+the local marker if its acknowledgement is still outstanding.
+
 Chunked transfers keep at most half of `NET_PACKET_QUEUE` outstanding. Transport
 acknowledgement confirms delivery; complete transfers also use an application
 acknowledgement.

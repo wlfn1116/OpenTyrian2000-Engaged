@@ -2879,7 +2879,7 @@ bool network_endless_run_receive(Uint32 timeout_ms)
 }
 
 /* Exchange one level-boundary marker and retire preceding control traffic. */
-static void network_level_barrier(Uint16 packet_type)
+static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 {
 	network_prepare(packet_type);
 	network_send(4);
@@ -2911,7 +2911,7 @@ static void network_level_barrier(Uint16 packet_type)
 			network_update();
 		}
 
-		if (peer_ready && network_is_sync())
+		if (peer_ready && (!settle_outbound || network_is_sync()))
 			break;
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
@@ -2932,7 +2932,7 @@ static void network_level_barrier(Uint16 packet_type)
 			SDL_Delay(1);
 	}
 
-	if (!peer_ready || !network_is_sync())
+	if (!peer_ready || (settle_outbound && !network_is_sync()))
 	{
 		fprintf(stderr, "error: level rendezvous timed out\n");
 		network_tyrian_halt(2, false);
@@ -2946,7 +2946,7 @@ void network_level_rendezvous(void)
 	if (!isNetworkGame)
 		return;
 
-	network_level_barrier(PACKET_WAITING);
+	network_level_barrier(PACKET_WAITING, true);
 	network_state_reset();
 }
 
@@ -2957,7 +2957,9 @@ void network_level_loaded_rendezvous(void)
 	if (!isNetworkGame)
 		return;
 
-	network_level_barrier(PACKET_LEVEL_READY);
+	/* Receiving the peer's marker proves that machine has loaded. Our reliable marker may remain
+	 * unacknowledged; gameplay network service keeps retrying it until the peer can leave too. */
+	network_level_barrier(PACKET_LEVEL_READY, false);
 }
 
 /* The both-ready barrier the Destruct title and the Timed Battle card hold on, split into an

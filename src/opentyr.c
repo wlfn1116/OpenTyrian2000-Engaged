@@ -1976,8 +1976,10 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	/* Scenario 19 exercises the legacy Delay-Based state stream. Set the host preference before the
-	 * connect block is packed; the joiner then proves it adopts that session choice. */
+	/* The linked gameplay scenarios must not inherit a saved Separate preference. Scenario 19 also
+	 * exercises the legacy Delay-Based state stream, set before the connect block is packed. */
+	if (qa_net_gameplay_ticks > 0 && (qa_net_scenario == 5 || qa_net_scenario == 19))
+		arcadeSeparateShips = false;
 	if (qa_net_gameplay_ticks > 0 && qa_net_scenario == 19)
 		net_rollback = false;
 	if (qa_net_gameplay_ticks > 0 && qa_net_scenario == 20)
