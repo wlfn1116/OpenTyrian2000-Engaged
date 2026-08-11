@@ -459,10 +459,12 @@ static bool sim_timing_init = false;
 
 float debug_interp_alpha = 0.0f;  // last presented interpolation fraction (perf overlay)
 
-// Smoothie levels present in two passes: render_gs = persistent background plasma (per tick),
-// smoothie_frame = per-frame display buffer composited on top.
+// Smoothie levels keep render_gs as persistent background plasma and smoothie_frame as the current
+// filtered background. Full-resolution mode also draws foreground into smoothie_frame; mixed and
+// Vita cached modes keep the background pristine and use a separate foreground target.
 static SDL_Surface *render_gs = NULL;
 static SDL_Surface *smoothie_frame = NULL;
+static SDL_Surface *smoothie_present_frame = NULL;  // separate foreground target for cached plasma
 
 // (Re)create a lazily-allocated 8-bit surface at scale x the logical size. A factor
 // change discards the old content; fine for the plasma base: the contractive filters
@@ -490,6 +492,11 @@ static SDL_Surface *get_smoothie_frame(int scale)
 	return ensure_scaled_surface(&smoothie_frame, scale);
 }
 
+static SDL_Surface *get_smoothie_present_frame(int scale)
+{
+	return ensure_scaled_surface(&smoothie_present_frame, scale);
+}
+
 // Supersampled present path: the interpolated playfield renders NxN into pf_hi, composites into
 // vga_hi with the 1x HUD block-expanded on top, then presents via present_hi().
 static SDL_Surface *pf_hi = NULL;   // NxN playfield replay target (normal levels)
@@ -501,6 +508,8 @@ void tyrian2_deinit(void)
 	render_gs = NULL;
 	SDL_FreeSurface(smoothie_frame);
 	smoothie_frame = NULL;
+	SDL_FreeSurface(smoothie_present_frame);
+	smoothie_present_frame = NULL;
 	SDL_FreeSurface(pf_hi);
 	pf_hi = NULL;
 	SDL_FreeSurface(vga_hi);
@@ -1203,6 +1212,67 @@ static void expand_hud_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 	}
 }
 
+// Block-expand a smaller 8-bit frame onto the hi frame. With Sub-pixel FX off the smoothie plasma
+// is filtered at native size and expanded here, leaving entities at the sub-pixel factor.
+static void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
+{
+	assert(scale >= 1 && hi->w >= src->w * scale && hi->h >= src->h * scale);
+
+	for (int y = 0; y < src->h; ++y)
+	{
+		const Uint8 *sp = (const Uint8 *)src->pixels + y * src->pitch;
+		Uint8 *const d0 = (Uint8 *)hi->pixels + (y * scale) * hi->pitch;
+
+		Uint8 *d = d0;
+		switch (scale)
+		{
+		case 1:
+			memcpy(d, sp, (size_t)src->w);
+			break;
+		case 2:
+			for (int x = 0; x < src->w; ++x)
+			{
+				const Uint8 v = *sp++;
+				*d++ = v; *d++ = v;
+			}
+			break;
+		case 3:
+			for (int x = 0; x < src->w; ++x)
+			{
+				const Uint8 v = *sp++;
+				*d++ = v; *d++ = v; *d++ = v;
+			}
+			break;
+		case 4:
+			for (int x = 0; x < src->w; ++x)
+			{
+				const Uint8 v = *sp++;
+				*d++ = v; *d++ = v; *d++ = v; *d++ = v;
+			}
+			break;
+		case 5:
+			for (int x = 0; x < src->w; ++x)
+			{
+				const Uint8 v = *sp++;
+				*d++ = v; *d++ = v; *d++ = v; *d++ = v; *d++ = v;
+			}
+			break;
+		default:
+			for (int x = 0; x < src->w; ++x)
+			{
+				const Uint8 v = *sp++;
+				for (int k = 0; k < scale; ++k)
+					*d++ = v;
+			}
+			break;
+		}
+
+		const int row_bytes = src->w * scale;
+		for (int k = 1; k < scale; ++k)
+			memcpy(d0 + k * hi->pitch, d0, row_bytes);
+	}
+}
+
 // Soul of Zinglon light pillar, drawn at display rate from the per-tick request (zinglonPillar*).
 // cx is in HI units; temp is the 1x half-width.
 static void draw_zinglon_pillar(SDL_Surface *surface, int cx, int temp, int scale)
@@ -1466,7 +1536,7 @@ void JE_starShowVGA(void)
 
 		if (smoothScroll != 0)
 		{
-			// Smoothie levels present in two passes; normal levels use game_screen.
+			// Smoothie levels stage backgrounds and foregrounds; normal levels use game_screen.
 			const bool can_interp = frameCountMax > 0 && smoothMotion;
 
 			// Supersample factor for this present pass (Auto follows the scaler; see
@@ -1477,11 +1547,29 @@ void JE_starShowVGA(void)
 			if (!use_hi)
 				rss = 1;
 
-			SDL_Surface *const interp_buf  = anySmoothies ? get_smoothie_frame(rss)
-			                               : (use_hi ? pf_hi : game_screen);
-			SDL_Surface *const bg_feedback = anySmoothies ? get_render_gs(rss) : NULL;
+			// The smoothie feedback filter covers the whole playfield, so its cost
+			// scales with the square of the factor. Sub-pixel FX off runs it at
+			// native size and expands the result into the hi frame. Only the layers
+			// the filter consumes drop with it; the rest stay sub-pixel (split_bg).
+			const int pss = (anySmoothies && !smoothie_full_res) ? 1 : rss;
+			const bool split_bg = (pss != rss);
+			// Vita cannot lower the spatial factor below 1x. Its low-cost mode instead computes the
+			// current tick's plasma once and reuses it while foreground-local movement stays smooth.
+#ifdef __vita__
+			const bool tick_plasma = anySmoothies && !smoothie_full_res && rss == 1;
+#else
+			const bool tick_plasma = false;
+#endif
 
-			if (can_interp && interp_buf != NULL && (!anySmoothies || bg_feedback != NULL))
+			SDL_Surface *const plasma_buf  = anySmoothies ? get_smoothie_frame(pss) : NULL;
+			SDL_Surface *const interp_buf  = anySmoothies ? (tick_plasma ? get_smoothie_present_frame(rss)
+			                                                        : (pss == rss ? plasma_buf : pf_hi))
+			                               : (use_hi ? pf_hi : game_screen);
+			SDL_Surface *const bg_feedback = anySmoothies ? get_render_gs(pss) : NULL;
+			bool tick_plasma_ready = false;
+
+			if (can_interp && interp_buf != NULL
+			    && (!anySmoothies || (plasma_buf != NULL && bg_feedback != NULL)))
 			{
 				// Present every display frame at alpha = accumulator/period (real
 				// elapsed time); break to run the next sim tick once a full period has
@@ -1497,6 +1585,14 @@ void JE_starShowVGA(void)
 				}
 
 				const float counter_to_ms = 1000.0f / (float)sim_perf_freq;
+
+				if (tick_plasma)
+				{
+					memcpy(plasma_buf->pixels, bg_feedback->pixels,
+					       (size_t)bg_feedback->h * bg_feedback->pitch);
+					rl_replay_bg(plasma_buf, 1.0f, pss, false);
+					tick_plasma_ready = true;
+				}
 
 				for (;;)
 				{
@@ -1534,12 +1630,31 @@ void JE_starShowVGA(void)
 
 					if (anySmoothies)
 					{
-						// Pass 1: derive this frame's background by filtering a COPY of
-						// the fixed plasma base with the interpolated backgrounds.
-						memcpy(interp_buf->pixels, bg_feedback->pixels, (size_t)bg_feedback->h * bg_feedback->pitch);
-						rl_replay_bg(interp_buf, alpha, rss);
-						// Pass 2: composite the interpolated entities + overlays on top.
-						rl_replay_fg(interp_buf, alpha, rss);
+						float plasma_alpha = alpha;
+						if (tick_plasma_ready)
+						{
+							// The cached plasma is the current tick endpoint. Keep it pristine while
+							// foreground commands draw into their separate display buffer.
+							memcpy(interp_buf->pixels, plasma_buf->pixels,
+							       (size_t)plasma_buf->h * plasma_buf->pitch);
+							plasma_alpha = 1.0f;
+						}
+						else
+						{
+							// Pass 1: derive this frame's background by filtering a copy of
+							// the fixed plasma base with the interpolated backgrounds.
+							memcpy(plasma_buf->pixels, bg_feedback->pixels,
+							       (size_t)bg_feedback->h * bg_feedback->pitch);
+							rl_replay_bg(plasma_buf, alpha, pss, split_bg);
+							if (interp_buf != plasma_buf)
+							{
+								expand_frame_to_hi(plasma_buf, interp_buf, rss / pss);
+								rl_replay_bg_tail(interp_buf, alpha, rss);
+							}
+						}
+						// Final stage: entities and overlays at foreground scale. Layer-bound
+						// commands share the spatial/temporal phase of the plasma underneath.
+						rl_replay_fg(interp_buf, alpha, rss, pss, plasma_alpha, split_bg);
 					}
 					else
 					{
@@ -1564,6 +1679,7 @@ void JE_starShowVGA(void)
 							                 (float)power_render_prev + (power_render_cur - power_render_prev) * alpha,
 							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
 						gauge_bars_present(vga_hi, rss, alpha);
+						JE_drawPerfOverlay(vga_hi, rss);
 						present_hi(vga_hi);
 					}
 					else
@@ -1578,6 +1694,7 @@ void JE_starShowVGA(void)
 							                 (salvo_render_prev + (salvo_render_cur - salvo_render_prev) * alpha) / 100.0f);
 						gauge_bars_present(NULL, 1, alpha);
 
+						JE_drawPerfOverlay(VGAScreenSeg, 1);
 						JE_showVGA();
 					}
 
@@ -1589,6 +1706,7 @@ void JE_starShowVGA(void)
 			}
 			else
 			{
+				JE_drawPerfOverlay(VGAScreenSeg, 1);
 				JE_showVGA();
 				service_wait_delay();
 				setDelay(frameCountMax);
@@ -1597,11 +1715,20 @@ void JE_starShowVGA(void)
 			// Advance the persistent plasma base one filter step to this tick's plasma,
 			// the base for the next tick's interpolated frames. This is the only place
 			// the smoothie feedback accumulates; exactly once per tick, like the sim.
+			// The whole background enters the persistent plasma, including the layers the
+			// display pass drew itself: the filter's feedback is the previous full frame.
 			if (anySmoothies && bg_feedback != NULL)
-				rl_replay_bg(bg_feedback, 1.0f, rss);
+			{
+				if (tick_plasma_ready)
+					memcpy(bg_feedback->pixels, plasma_buf->pixels,
+					       (size_t)plasma_buf->h * plasma_buf->pitch);
+				else
+					rl_replay_bg(bg_feedback, 1.0f, pss, false);
+			}
 		}
 		else
 		{
+			JE_drawPerfOverlay(VGAScreenSeg, 1);
 			JE_showVGA();
 		}
 	}

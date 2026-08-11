@@ -49,6 +49,8 @@ void JE_dStringDarken(SDL_Surface * screen, int x, int y, const char *s, unsigne
 int JE_fontCenter(const char *s, unsigned int font);
 int JE_textWidth(const char *s, unsigned int font);
 void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int shadetype);
+// FULL_SHADE only, for text drawn straight onto a supersampled present frame. x and y are 1x.
+void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s, unsigned int colorbank, int brightness, int scale);
 void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
 void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, unsigned int brightness, unsigned int font);
 void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, int brightness, unsigned int font, bool shadow);

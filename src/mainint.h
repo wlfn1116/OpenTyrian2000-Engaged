@@ -118,6 +118,8 @@ int JE_loadScreen(bool net2p, bool saving);
 bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p);
 void JE_operation(JE_byte slot);
 void JE_inGameDisplays(void);
+// Debug perf readout, drawn onto the finished frame by the present loop so nothing overdraws it.
+void JE_drawPerfOverlay(SDL_Surface *dst, int scale);
 
 /* Bottom-band HUD precedence: scores, FPS, boss bars, then the Endless readout. */
 int hud_fps_row(void);            // text row the FPS counter occupies

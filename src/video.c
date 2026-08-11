@@ -48,6 +48,12 @@ ScalingMode scaling_mode = SCALE_WIDESCREEN;  // fill the screen at true 16:9 by
 // Sub-pixel supersampling factor; 0 = Auto (follow the scaler). See video.h.
 int render_supersample = 0;
 
+#if defined(__SWITCH__) || defined(__vita__)
+bool smoothie_full_res = false;  // console default: favor stable display-rate performance
+#else
+bool smoothie_full_res = true;
+#endif
+
 static void update_native_scaler_dims(void);
 static void native_output_size(int *out_w, int *out_h);
 
@@ -778,14 +784,30 @@ void present_hi(SDL_Surface *hi)
 		if (SDL_LockTexture(hi_texture, NULL, &tex_pixels, &tex_pitch) != 0)
 			return;
 
+		// Eight lookups per iteration. This pass converts vga_width*vga_height*N*N pixels every
+		// frame, and a one-pixel loop stalls on the dependent index load and palette gather.
 		const Uint8 *src_row = (const Uint8 *)hi->pixels;
 		Uint8 *dst_row = (Uint8 *)tex_pixels;
 		for (int y = 0; y < hi->h; ++y)
 		{
 			const Uint8 *src = src_row;
 			Uint32 *dst = (Uint32 *)dst_row;
-			for (int x = 0; x < hi->w; ++x)
+
+			int x = hi->w;
+			for (; x >= 8; x -= 8, src += 8, dst += 8)
+			{
+				dst[0] = rgb_palette[src[0]];
+				dst[1] = rgb_palette[src[1]];
+				dst[2] = rgb_palette[src[2]];
+				dst[3] = rgb_palette[src[3]];
+				dst[4] = rgb_palette[src[4]];
+				dst[5] = rgb_palette[src[5]];
+				dst[6] = rgb_palette[src[6]];
+				dst[7] = rgb_palette[src[7]];
+			}
+			for (; x > 0; --x)
 				*dst++ = rgb_palette[*src++];
+
 			src_row += hi->pitch;
 			dst_row += tex_pitch;
 		}

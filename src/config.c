@@ -503,6 +503,10 @@ bool load_opentyrian_config(void)
 		else if (render_supersample > RENDER_SUPERSAMPLE_NATIVE)
 			render_supersample = RENDER_SUPERSAMPLE_NATIVE;
 
+		int smoothie_full = smoothie_full_res ? 1 : 0;
+		config_get_int_option(section, "smoothie_full_res", &smoothie_full);
+		smoothie_full_res = (smoothie_full != 0);
+
 		/* Remove the retired filter setting when the configuration is next saved. */
 		config_remove_option(section, "render_supersample_filter");
 	}
@@ -923,6 +927,8 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, SHIP_SENS_CFG, ship_sensitivity);
 
 	config_set_int_option(section, "render_supersample", render_supersample);
+
+	config_set_int_option(section, "smoothie_full_res", smoothie_full_res ? 1 : 0);
 
 	section = config_find_or_add_section(config, "keyboard", NULL);
 	if (section == NULL)

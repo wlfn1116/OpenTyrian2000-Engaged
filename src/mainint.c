@@ -6975,9 +6975,9 @@ static void debug_box(SDL_Surface *s, int x0, int y0, int x1, int y1, Uint8 col)
 	fill_rectangle_xy(s, x1, y0, x1, y1, col);  // right
 }
 
-/* Debug overlays drawn into game_screen at the end of JE_inGameDisplays, so the
- * render-list residual shows them every presented frame. Positions are sim
- * (collision) coordinates, so the boxes deliberately snap, not interpolate. */
+/* Hitbox boxes drawn into game_screen at the end of JE_inGameDisplays, so the render-list
+ * residual shows them every presented frame. Positions are sim (collision) coordinates, so the
+ * boxes deliberately snap, not interpolate. The perf overlay is a present-time draw instead. */
 static void JE_drawDebugOverlays(void)
 {
 	enum { COL_ENEMY = 124, COL_PLAYER = 0xFB, COL_PSHOT = 0xFB, COL_ESHOT = 124 };
@@ -7038,49 +7038,55 @@ static void JE_drawDebugOverlays(void)
 			debug_box(VGAScreen, sx - 1, sy - 1, sx + 1, sy + 1, COL_ESHOT);
 		}
 	}
+}
 
-	if (debugPerfOverlay)
+/* Drawn by the present loop onto the finished frame, after the playfield composite and the HUD, so
+ * nothing can cover it and the text never reaches game_screen (where a smoothie filter would pull
+ * it into the feedback). dst is the composited frame, whose playfield starts at x=0. */
+void JE_drawPerfOverlay(SDL_Surface *dst, int scale)
+{
+	if (!debugPerfOverlay)
+		return;
+
+	int activeEnemies = 0, pShots = 0, eShots = 0;
+	for (int i = 0; i < 100; ++i)
+		if (enemyAvail[i] != 1)
+			++activeEnemies;
+	for (int i = 0; i < MAX_PWEAPON; ++i)
+		if (shotAvail[i] != 0)
+			++pShots;
+	for (int i = 0; i < ENEMY_SHOT_MAX; ++i)
+		if (enemyShotAvail[i] == 0)
+			++eShots;
+
+	const int ms = (current_fps > 0) ? (1000 / current_fps) : 0;
+	const int px = 4;  // just inside the playfield's left edge
+	int py = 4;
+	char buf[40];
+
+	snprintf(buf, sizeof(buf), "FPS %d (%dms)", current_fps, ms);
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	snprintf(buf, sizeof(buf), "ENEMIES %d", activeEnemies);
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	snprintf(buf, sizeof(buf), "SHOTS P%d E%d", pShots, eShots);
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+	snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
+	JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+
+	// PRED is prediction lead; RB is rollback rate/depth; DESYNC counts canary mismatches.
+	if (nrb_active())
 	{
-		int activeEnemies = 0, pShots = 0, eShots = 0;
-		for (int i = 0; i < 100; ++i)
-			if (enemyAvail[i] != 1)
-				++activeEnemies;
-		for (int i = 0; i < MAX_PWEAPON; ++i)
-			if (shotAvail[i] != 0)
-				++pShots;
-		for (int i = 0; i < ENEMY_SHOT_MAX; ++i)
-			if (enemyShotAvail[i] == 0)
-				++eShots;
+		Uint32 predict, depth, rate, desyncs;
+		nrb_stats(&predict, &depth, &rate, &desyncs);
 
-		const int ms = (current_fps > 0) ? (1000 / current_fps) : 0;
-		const int px = PLAYFIELD_LEFT + 4;  // just inside the playfield's left edge
-		int py = 4;
-		char buf[40];
-
-		snprintf(buf, sizeof(buf), "FPS %d (%dms)", current_fps, ms);
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-		snprintf(buf, sizeof(buf), "ENEMIES %d", activeEnemies);
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-		snprintf(buf, sizeof(buf), "SHOTS P%d E%d", pShots, eShots);
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-		snprintf(buf, sizeof(buf), "ALPHA %d%%", (int)(debug_interp_alpha * 100.0f + 0.5f));
-		JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-
-		// PRED is prediction lead; RB is rollback rate/depth; DESYNC counts canary mismatches.
-		if (nrb_active())
+		snprintf(buf, sizeof(buf), "PRED %u", (unsigned)predict);
+		JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+		snprintf(buf, sizeof(buf), "RB %u%%/%u", (unsigned)rate, (unsigned)depth);
+		JE_textShadeScaled(dst, px, py, buf, 15, 2, scale); py += 9;
+		if (desyncs != 0)
 		{
-			Uint32 predict, depth, rate, desyncs;
-			nrb_stats(&predict, &depth, &rate, &desyncs);
-
-			snprintf(buf, sizeof(buf), "PRED %u", (unsigned)predict);
-			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-			snprintf(buf, sizeof(buf), "RB %u%%/%u", (unsigned)rate, (unsigned)depth);
-			JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE); py += 9;
-			if (desyncs != 0)
-			{
-				snprintf(buf, sizeof(buf), "DESYNC %u", (unsigned)desyncs);
-				JE_textShade(VGAScreen, px, py, buf, 15, 2, FULL_SHADE);
-			}
+			snprintf(buf, sizeof(buf), "DESYNC %u", (unsigned)desyncs);
+			JE_textShadeScaled(dst, px, py, buf, 15, 2, scale);
 		}
 	}
 }

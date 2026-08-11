@@ -27,7 +27,15 @@ The useful settings are under **Setup > Graphics**.
   Supersampled output uses unfiltered nearest-neighbor sampling.
 - **Native** follows the fitted output size. It costs more GPU time than the
   fixed modes, especially on high-resolution displays.
+- **Sub-pixel FX** extends sub-pixel rendering to the ice, water, and lava
+  effects. Turning it off draws the effect, and only the background layers that
+  feed it, at native size, which costs much less on those levels at 3x and
+  above. Ships, enemies, shots, and the layers drawn over the effect stay
+  sub-pixel either way. Console builds default this off.
 - The Vita always resolves Sub-pixel to 1x.
+- On Vita this setting is named **Smooth FX**. Turning it off updates the
+  smoothie background once per 35 Hz simulation tick while foreground movement
+  remains display-rate, avoiding repeated feedback filters on the same tick.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
 

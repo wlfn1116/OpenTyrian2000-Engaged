@@ -250,6 +250,7 @@ typedef enum
 	MENU_ITEM_SCALING_MODE,
 	MENU_ITEM_SMOOTH_MOTION,
 	MENU_ITEM_SUPERSAMPLE,
+	MENU_ITEM_SUBPIXEL_FX,
 	MENU_ITEM_VSYNC,
 	MENU_ITEM_FPS,
 	MENU_ITEM_SHOW_FPS,
@@ -420,6 +421,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	switch (id)
 	{
 	case MENU_ITEM_SHOW_FPS:            return &show_fps;
+	case MENU_ITEM_SUBPIXEL_FX:         return &smoothie_full_res;
 	case MENU_ITEM_ARMOR_ALARM:         return &armorAlarm;
 	case MENU_ITEM_LINK_SOUNDS:         return &linkSounds;
 	case MENU_ITEM_EXTRA_PARALLAX:      return &extraParallax;
@@ -609,6 +611,11 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SMOOTH_MOTION, "Smooth Motion:", "Interpolate motion for smooth high-refresh play." },
 				{ MENU_ITEM_SUPERSAMPLE, "Sub-pixel:", "Supersample in-game motion; Native matches your display.",
 				  .getPickerItemsCount = getSupersamplePickerItemsCount, .getPickerItem = getSupersamplePickerItem },
+#ifdef __vita__
+				{ MENU_ITEM_SUBPIXEL_FX, "Smooth FX:", "Update ice, water and lava at the display rate." },
+#else
+				{ MENU_ITEM_SUBPIXEL_FX, "Sub-pixel FX:", "Ice, water and lava effects at sub-pixel size." },
+#endif
 				{ MENU_ITEM_VSYNC, "VSync:", "Sync presentation to your monitor's refresh rate." },
 				{ MENU_ITEM_FPS, "FPS Cap:", "Cap presented frames; type a number, 0 = uncapped." },
 				{ MENU_ITEM_SHOW_FPS, "Show FPS:", "Show a frame-rate counter while playing." },

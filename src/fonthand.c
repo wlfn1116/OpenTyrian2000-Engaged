@@ -170,6 +170,62 @@ void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned in
 	}
 }
 
+// JE_outText onto a supersampled surface. Coordinates and glyph advances stay in 1x units and are
+// multiplied at the blit, so a scaled line breaks exactly where the 1x line does.
+static void out_text_scaled(SDL_Surface *screen, int x, int y, const char *s,
+                            unsigned int colorbank, int brightness, int scale)
+{
+	int bright = 0;
+
+	for (int i = 0; s[i] != '\0'; ++i)
+	{
+		const int sprite_id = font_ascii[(unsigned char)s[i]];
+
+		switch (s[i])
+		{
+		case ' ':
+			x += 6;
+			break;
+
+		case '~':
+			bright = (bright == 0) ? 4 : 0;
+			break;
+
+		default:
+			if (sprite_id != -1 && sprite_exists(TINY_FONT, sprite_id))
+			{
+				if (brightness >= 0)
+					blit_sprite_table_scaled(screen, x * scale, y * scale, TINY_FONT, sprite_id, scale,
+					                         BLITT_HV_UNSAFE, colorbank, brightness + bright, false);
+				else
+					blit_sprite_table_scaled(screen, x * scale, y * scale, TINY_FONT, sprite_id, scale,
+					                         BLITT_DARK, 0, 0, true);
+
+				x += sprite(TINY_FONT, sprite_id)->width + 1;
+			}
+			break;
+		}
+	}
+}
+
+// FULL_SHADE text at the present pass's supersample factor. The outline offsets are 1x, so the
+// halo stays one native pixel wide however far the frame is supersampled.
+void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s,
+                        unsigned int colorbank, int brightness, int scale)
+{
+	if (scale <= 1)
+	{
+		JE_textShade(screen, x, y, s, colorbank, brightness, FULL_SHADE);
+		return;
+	}
+
+	out_text_scaled(screen, x - 1, y, s, 0, -1, scale);
+	out_text_scaled(screen, x + 1, y, s, 0, -1, scale);
+	out_text_scaled(screen, x, y - 1, s, 0, -1, scale);
+	out_text_scaled(screen, x, y + 1, s, 0, -1, scale);
+	out_text_scaled(screen, x, y, s, colorbank, brightness, scale);
+}
+
 void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness)
 {
 	int bright = 0;

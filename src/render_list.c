@@ -9,6 +9,7 @@
 #include "vga256d.h"
 #include "video.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,20 @@ static int match_head[RL_ID_MAX];
 static int match_prev_count[RL_ID_MAX], match_cur_count[RL_ID_MAX];
 static int *match_link;
 static size_t match_link_cap;
+
+// Commands up to and including the tick's last smoothie filter, per buffer; 0 when it recorded
+// none. Everything after that point is not filter input, so a reduced-resolution plasma can leave
+// visible main-surface backgrounds to the high-resolution tail pass. See doc/notes.md.
+static size_t bg_filter_end[2];
+// Background layers whose recorded rows sit after the last smoothie filter. In a mixed-resolution
+// display pass these layers are replayed at the foreground factor, so entities bound to them keep
+// the ordinary display-rate phase instead of the reduced plasma phase.
+static Uint8 bg_tail_layers[2];
+
+static inline bool rl_cmd_is_filter(int kind)
+{
+	return kind == RC_ICED_BLUR || kind == RC_LAVA_FILTER || kind == RC_WATER_FILTER || kind == RC_BLUR;
+}
 
 static RenderCmd *rl_push(void)
 {
@@ -105,6 +120,8 @@ void rl_begin_record(void)
 {
 	cur_buf ^= 1;             // previous current becomes prev; record into the other
 	counts[cur_buf] = 0;
+	bg_filter_end[cur_buf] = 0;
+	bg_tail_layers[cur_buf] = 0;
 	rl_current_id = 0;
 	rl_current_par_frac = 0.0f;
 	rl_current_par_layer = 0;
@@ -125,6 +142,28 @@ void rl_begin_record(void)
 void rl_end_record(void)
 {
 	render_list_recording = false;
+
+	const RenderCmd *const cur = bufs[cur_buf];
+	bg_filter_end[cur_buf] = 0;
+	for (size_t i = counts[cur_buf]; i > 0; --i)
+	{
+		if (rl_cmd_is_filter(cur[i - 1].kind))
+		{
+			bg_filter_end[cur_buf] = i;
+			break;
+		}
+	}
+
+	bg_tail_layers[cur_buf] = 0;
+	for (size_t i = bg_filter_end[cur_buf]; i < counts[cur_buf]; ++i)
+	{
+		const RenderCmd *const c = &cur[i];
+		if (!c->surface && (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND) &&
+		    c->id >= RL_ID_BG_BASE + 1 && c->id <= RL_ID_BG_BASE + 3)
+		{
+			bg_tail_layers[cur_buf] |= (Uint8)(1u << (c->id - RL_ID_BG_BASE));
+		}
+	}
 }
 
 // Abandon a recording mid-tick (rollback re-simulation, self-test replay).
@@ -312,6 +351,39 @@ static inline int rl_layer_y_offset(int layer, bool now, float inv, int scale, i
 	const double offset = ((double)frac100 - (double)(rate100 + own100) * (double)inv) *
 	                      (double)scale / 100.0;
 	return rl_round_offset(offset);
+}
+
+// A filtered layer can be rasterized below the foreground factor (spatial low-cost mode), or held
+// at the tick endpoint while foreground-local movement keeps interpolating (Vita low-cost mode).
+// Quantize only the shared layer transform; keeping entity-local motion separate prevents scenery
+// from sliding against the layer it rides without giving up smooth independent movement.
+static inline int rl_bound_x_offset(const RenderCmd *c, int layer, float inv, int scale,
+                                    int bg_scale, float bg_inv)
+{
+	const float total = c->par_frac - (c->dx + c->par_frac_dx) * inv;
+	if (bg_scale == scale && bg_inv == inv)
+		return rl_iround(total * scale);
+
+	const float shared_at_entity = bg_layer_frac[layer] - bg_layer_dx[layer] * inv;
+	const float shared_at_bg = bg_layer_frac[layer] - bg_layer_dx[layer] * bg_inv;
+	const float own = total - shared_at_entity;
+	const int expand = scale / bg_scale;
+	return rl_iround(shared_at_bg * bg_scale) * expand + rl_iround(own * scale);
+}
+
+static inline int rl_bound_y_offset(int layer, float inv, int scale, int own100,
+                                    int bg_scale, float bg_inv)
+{
+	if (bg_scale == scale && bg_inv == inv)
+		return rl_layer_y_offset(layer, false, inv, scale, own100);
+
+	const int rate100 = rl_iround(bg_layer_dy[layer] * 100.0f);
+	const int frac100 = rl_iround(bg_layer_yfrac[layer] * 100.0f);
+	const double shared = ((double)frac100 - (double)rate100 * (double)bg_inv) *
+	                      (double)bg_scale / 100.0;
+	const double own = -(double)own100 * (double)inv * (double)scale / 100.0;
+	const int expand = scale / bg_scale;
+	return rl_round_offset(shared) * expand + rl_round_offset(own);
 }
 
 // Wrap a delta into [-m/2, m/2) so background rows interpolate smoothly across the
@@ -792,38 +864,51 @@ static bool rl_id_extrapolates(int id)
 	return id >= RL_ID_PSHOT_BASE && id < RL_ID_EXPL_BASE;  // player + enemy shots
 }
 
-// Which slice of the render list a replay pass draws. Smoothie levels split the
-// frame into two passes so the background feedback can evolve continuously (smooth)
-// while entities are composited fresh on top (also smooth) without polluting the
-// feedback. Normal levels use ALL (one self-contained pass).
+// Which slice of the render list a replay pass draws. Smoothie levels separate
+// feedback backgrounds from fresh foregrounds; mixed-resolution mode adds a
+// high-resolution background tail between them. Normal levels use ALL.
 typedef enum
 {
 	RL_PHASE_ALL = 0,  // backgrounds + filters + entities + grade (normal levels)
 	RL_PHASE_BG,       // backgrounds + smoothie filters only (the persistent plasma)
 	RL_PHASE_FG,       // entities + full-screen grade + residual only (onto a plasma copy)
+	RL_PHASE_BG_HEAD,  // BG, stopping at the last filter (the rest is not filter input)
+	RL_PHASE_BG_TAIL,  // backgrounds recorded after the last filter, at foreground scale
 }
 rl_phase;
 
-static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool apply_residual, bool use_override, bool feedback, rl_phase phase, int scale)
+static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool apply_residual,
+                             bool use_override, bool feedback, rl_phase phase, int scale,
+                             int bg_scale, float bg_inv, bool split_bg)
 {
 	const bool was_recording = render_list_recording;
 	render_list_recording = false;  // re-issued blits must not record themselves
 
+	const bool bg_phase = (phase == RL_PHASE_BG || phase == RL_PHASE_BG_HEAD);
+	const bool fg_phase = (phase == RL_PHASE_FG);
+	const bool tail_phase = (phase == RL_PHASE_BG_TAIL);
+
+	// Where the two split passes divide the list. The unsplit phases keep the whole background,
+	// so their boundary sits past the end.
+	const bool split = (phase == RL_PHASE_BG_HEAD || phase == RL_PHASE_BG_TAIL);
+	const size_t filter_end = split ? bg_filter_end[cur_buf] : counts[cur_buf];
+
 	// A = main playfield buffer; B = background scratch (smoothie ping-pong).
-	// At scale > 1 both are supersampled (dst comes in scaled; B is sized to match).
+	// At scale > 1 both are supersampled (dst comes in scaled; B is sized to match). Only the
+	// background phases need B; skipping it keeps a mixed-scale frame from resizing it twice.
 	SDL_Surface *const A = dst;
-	SDL_Surface *const B = rl_get_scratch_b(scale);
+	SDL_Surface *const B = (fg_phase || tail_phase) ? NULL : rl_get_scratch_b(scale);
 
 	// The leaf blitters step rows using the global VGAScreen's pitch; point it
 	// at dst so they write coherently (all 8-bit surfaces share a pitch anyway).
 	SDL_Surface *const saved = VGAScreen;
 	VGAScreen = A;
 
-	// B is rebuilt each frame (the FG phase draws no backgrounds, so it skips B). A
-	// is cleared only for the self-contained ALL pass on normal levels: the BG pass's
-	// A is the persistent plasma (must carry across frames) and the FG pass's A is a
+	// B is rebuilt each frame. Foreground and visible tail phases draw straight onto A, so they
+	// skip B. A is cleared only for the self-contained ALL pass on normal levels: the
+	// BG pass's A is the persistent plasma (must carry across frames) and the FG pass's A is a
 	// fresh copy of it (already populated), so neither may be cleared.
-	if (B != NULL && phase != RL_PHASE_FG)
+	if (B != NULL)
 		JE_clr256(B);
 	if (!feedback && phase == RL_PHASE_ALL)
 		JE_clr256(A);
@@ -834,16 +919,22 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 	{
 		const RenderCmd *const c = &cur[i];
 
-		const bool is_filter = (c->kind == RC_ICED_BLUR || c->kind == RC_LAVA_FILTER || c->kind == RC_WATER_FILTER || c->kind == RC_BLUR);
+		const bool is_filter = rl_cmd_is_filter(c->kind);
 		const bool is_bg = (c->kind == RC_BG_ROW || c->kind == RC_BG_ROW_BLEND || c->kind == RC_STAR);
-		if (phase == RL_PHASE_BG && !(is_bg || is_filter))
-			continue;  // entities and the full-screen grade belong to the FG pass
-		if (phase == RL_PHASE_FG && (is_bg || is_filter))
-			continue;  // backgrounds and filters are already baked into the plasma copy
+		const bool post_filter_bg = is_bg && i >= filter_end;
+		// Only main-surface commands form the visible tail. Scratch rows after the last filter have
+		// no consumer, so the split path can omit them altogether.
+		const bool bg_tail = post_filter_bg && !c->surface;
+		if (bg_phase && (!(is_bg || is_filter) || post_filter_bg))
+			continue;  // entities, the grade, and the tail backgrounds belong to later passes
+		if (fg_phase && (is_filter || (is_bg && !bg_tail)))
+			continue;  // every background is already baked in or replayed by the tail pass
+		if (tail_phase && !bg_tail)
+			continue;  // this pass draws only the unfiltered background tail
 
 		// In the FG pass, entities draw straight onto the display buffer (the plasma
 		// copy); the B/A ping-pong source only matters while evolving the plasma.
-		SDL_Surface *const src = (phase != RL_PHASE_FG && c->surface && B != NULL) ? B : A;
+		SDL_Surface *const src = (c->surface && B != NULL) ? B : A;
 
 		if (is_filter)
 		{
@@ -970,10 +1061,14 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				if (vext)
 					x += rl_iround(vext * alpha * scale);
 			}
-			else if (use_override && (c->par_frac != 0.0f || c->par_frac_dx != 0.0f))
+			else if (use_override && c->par_layer >= 1 && c->par_layer <= 3)
 			{
-				// Round parallax and local motion together.
-				x = c->x * scale + rl_iround((c->par_frac - (c->dx + c->par_frac_dx) * inv) * scale);
+				const int L = c->par_layer;
+				const bool tail_layer = split_bg && (bg_tail_layers[cur_buf] & (1u << L));
+				const int layer_scale = tail_layer ? scale : bg_scale;
+				const float layer_inv = tail_layer ? inv : bg_inv;
+				x = c->x * scale +
+				    rl_bound_x_offset(c, L, inv, scale, layer_scale, layer_inv);
 			}
 			else if (c->dx && inv != 0.0f)
 			{
@@ -1004,10 +1099,13 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			}
 			else if (use_override && c->par_ylayer != 0)
 			{
-				// Apply the canonical layer transform and local motion in one round.
 				const int L = c->par_ylayer;
+				const bool tail_layer = split_bg && (bg_tail_layers[cur_buf] & (1u << L));
+				const int layer_scale = tail_layer ? scale : bg_scale;
+				const float layer_inv = tail_layer ? inv : bg_inv;
 				y = (c->y + c->par_ybase) * scale +
-				    rl_layer_y_offset(L, false, inv, scale, c->par_yown100);
+				    rl_bound_y_offset(L, inv, scale, c->par_yown100,
+				                      layer_scale, layer_inv);
 			}
 			else if (c->dy && inv != 0.0f)
 			{
@@ -1056,7 +1154,8 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 
 void rl_replay(SDL_Surface *dst)
 {
-	rl_replay_common(dst, 0.0f, 0.0f, false, false, false, RL_PHASE_ALL, 1);  // exact positions (inv=0, alpha=0)
+	rl_replay_common(dst, 0.0f, 0.0f, false, false, false, RL_PHASE_ALL,
+	                 1, 1, 0.0f, false);  // exact positions (inv=0, alpha=0)
 }
 
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
@@ -1068,30 +1167,54 @@ void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale)
 
 	// Normal (non-smoothie) levels: one self-contained pass into dst (cleared first),
 	// entities interpolated, residual (superpixels, boss bar, HUD) on top; smoothie
-	// levels use the two passes below instead.
-	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL, scale);
+	// levels use the staged background/foreground replays below instead.
+	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, feedback, RL_PHASE_ALL,
+	                 scale, scale, 1.0f - alpha, false);
 }
 
-// Smoothie pass 1 updates the feedback background without entities.
-void rl_replay_bg(SDL_Surface *dst, float alpha, int scale)
+// Smoothie pass 1 updates the feedback background without entities. With split, it stops at the
+// last filter and leaves the backgrounds recorded after it to a tail pass, which can draw them at
+// a higher scale than the plasma. Both passes must agree on split or the tail is drawn twice.
+void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split)
 {
 	if (alpha < 0.0f)
 		alpha = 0.0f;
 	else if (alpha > 1.0f)
 		alpha = 1.0f;
-	rl_replay_common(dst, 1.0f - alpha, alpha, false, true, true, RL_PHASE_BG, scale);
+	rl_replay_common(dst, 1.0f - alpha, alpha, false, true, true,
+	                 split ? RL_PHASE_BG_HEAD : RL_PHASE_BG,
+	                 scale, scale, 1.0f - alpha, split);
 }
 
-// Smoothie pass 2 (foreground): onto pass 1's background frame, draw the entities at
-// interpolated / ship-override positions plus the full-screen grade, then re-apply
-// the residual overlays (WARNING bars, superpixels, boss bar, HUD). dst not cleared.
-void rl_replay_fg(SDL_Surface *dst, float alpha, int scale)
+// Replay the post-filter background tail at the foreground factor before any entities. Keeping it
+// separate makes reduced- and full-resolution composition obey the same backgrounds-first order.
+void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale)
 {
 	if (alpha < 0.0f)
 		alpha = 0.0f;
 	else if (alpha > 1.0f)
 		alpha = 1.0f;
-	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG, scale);
+	rl_replay_common(dst, 1.0f - alpha, alpha, false, true, false, RL_PHASE_BG_TAIL,
+	                 scale, scale, 1.0f - alpha, true);
+}
+
+// Smoothie foreground: draw entities at the display factor over the completed backgrounds, then
+// apply the full-screen grade and residual overlays. bg_scale/bg_alpha describe the filtered
+// layer transform actually visible underneath, so bound scenery remains locked to it.
+void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
+                  int bg_scale, float bg_alpha, bool split)
+{
+	assert(scale >= 1 && bg_scale >= 1 && bg_scale <= scale && scale % bg_scale == 0);
+	if (alpha < 0.0f)
+		alpha = 0.0f;
+	else if (alpha > 1.0f)
+		alpha = 1.0f;
+	if (bg_alpha < 0.0f)
+		bg_alpha = 0.0f;
+	else if (bg_alpha > 1.0f)
+		bg_alpha = 1.0f;
+	rl_replay_common(dst, 1.0f - alpha, alpha, true, true, false, RL_PHASE_FG,
+	                 scale, bg_scale, 1.0f - bg_alpha, split);
 }
 
 // Append one residual pixel (offset + value). Returns false if growth failed
@@ -1128,6 +1251,8 @@ void rl_deinit(void)
 		bufs[i] = NULL;
 		counts[i] = 0;
 		caps[i] = 0;
+		bg_filter_end[i] = 0;
+		bg_tail_layers[i] = 0;
 	}
 	free(match_link);
 	match_link = NULL;

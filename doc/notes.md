@@ -64,7 +64,9 @@ edges for pause and menu handling.
 Ice, water, and lava use frame feedback:
 
 - `render_gs` holds the persistent filtered background.
-- `smoothie_frame` holds the current background, entities, and overlays.
+- `smoothie_frame` holds the current background. Entities and overlays are drawn
+  over it, or over its expansion in `pf_hi` when the plasma runs at a lower
+  factor than the entities.
 
 Entities never enter the persistent buffer. Full-screen color and brightness
 effects apply to both sides of the residual comparison.
@@ -75,6 +77,12 @@ simulation tick.
 
 Gauge interpolation changes only the filled height. Keep the base on an exact
 scaled row so a steady gauge cannot jitter.
+
+`JE_drawPerfOverlay` runs at the end of every present path, onto the composited
+frame at that pass's factor, so no later draw covers it. Keep it out of
+`game_screen`: text drawn there becomes filter input on the next tick and smears
+into the feedback. The hitbox boxes stay in `game_screen`, where world positions
+belong.
 
 ### Background layers
 
@@ -104,6 +112,39 @@ all modes to 1x.
 
 The supersampled frame is copied directly with nearest-neighbor sampling. The
 legacy `render_supersample_filter` key is ignored and removed on the next save.
+
+`smoothie_full_res` chooses the plasma resolution on ice, water, and lava levels.
+True filters at the sub-pixel factor. False filters at 1x and expands the result
+into `pf_hi`, so the feedback pass, whose cost scales with the square of the
+factor, stays at native size.
+
+The split is per command, not per level. `rl_end_record` records how far into the
+tick the last filter sits; with `split` the background-head pass stops there and
+a background-tail pass draws the rest at its own scale, because a background
+recorded after the last filter is not filter input. The ordinary foreground pass
+then draws every entity over both background passes, preserving the same
+composition order as full-resolution smoothies. Requirements:
+
+- Run the tail after expanding the head and before the foreground.
+- The tick advance keeps `split` false. The filter's feedback is the previous
+  full frame, so the whole background belongs in the persistent plasma.
+- Only the background phases take the render-list scratch surface, so a frame
+  that mixes the two factors does not resize it twice.
+
+Foreground replay also receives the plasma's scale and interpolation phase.
+For an entity bound to a filtered background layer, replay quantizes only the
+shared layer transform to that phase and keeps entity-local movement at the
+foreground factor. Layers in the high-resolution tail retain normal phase.
+
+Vita cannot reduce the plasma below its forced 1x factor. With Smooth FX off it
+therefore computes the current tick endpoint once, keeps it in
+`smoothie_frame`, and composites display-rate foregrounds into the separate
+`smoothie_present_frame`. The endpoint becomes the next persistent feedback
+without another replay. Layer-bound entities use that endpoint's shared phase.
+
+The palette conversion in `present_hi` is unrolled eight pixels per iteration. It
+converts the whole supersampled frame on every present, and a one-pixel loop
+stalls on the dependent index load.
 
 ## Coordinates and sprite bounds
 

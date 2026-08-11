@@ -75,6 +75,11 @@ extern ScalingMode scaling_mode;
 extern int render_supersample;
 int effective_supersample(void);
 
+/* Smoothie (ice, water, lava) quality. True filters at the sub-pixel/display rate. False filters
+ * at 1x and expands while leaving entities sub-pixel; on Vita it instead holds the 1x plasma for
+ * one simulation tick while foreground-local movement remains smooth. See doc/notes.md. */
+extern bool smoothie_full_res;
+
 extern bool show_fps;          // draw the FPS counter during gameplay
 extern int current_fps;        // presented frames during the last sampled second
 

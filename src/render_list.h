@@ -205,10 +205,16 @@ void rl_finalize(void);
 // Re-draw every captured command into dst at its recorded position (alpha=1).
 void rl_replay(SDL_Surface *dst);
 
-// Smoothie levels replay backgrounds and foregrounds separately.
+// Smoothie levels replay feedback backgrounds and foregrounds separately.
 // scale=1 is the classic path; larger values use the supersampled grid.
-void rl_replay_bg(SDL_Surface *dst, float alpha, int scale);
-void rl_replay_fg(SDL_Surface *dst, float alpha, int scale);
+// split leaves backgrounds recorded after the last filter for rl_replay_bg_tail, letting the
+// filtered head and unfiltered tail run at different scales.
+void rl_replay_bg(SDL_Surface *dst, float alpha, int scale, bool split);
+void rl_replay_bg_tail(SDL_Surface *dst, float alpha, int scale);
+// bg_scale/bg_alpha are the filtered background's actual spatial and temporal phase. split tells
+// bound entities that layers from the high-resolution tail retain ordinary display phase.
+void rl_replay_fg(SDL_Surface *dst, float alpha, int scale,
+                  int bg_scale, float bg_alpha, bool split);
 
 // Replay at (x,y) - (dx,dy)*(1-alpha), then apply the residual.
 // Feedback mode preserves the destination for smoothie trails.
