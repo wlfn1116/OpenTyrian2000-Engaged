@@ -195,11 +195,8 @@ void init_video(void)
 	// scaler and find the true window size
 	int win_w = vga_width, win_h = vga_height;
 #if defined(__SWITCH__) || defined(__vita__)
-	// On the consoles the single app-layer always fills the panel, so the window IS the
-	// screen: create it at the native output size (Switch 720p/1080p by dock state; Vita a
-	// fixed 960x544) so the buffer matches the panel 1:1 from the first frame. Keeping the
-	// window RESIZABLE (below) lets the switch-sdl2 driver re-track it on dock/undock; on
-	// Vita the size is constant.
+	// Create console windows at native output size for a 1:1 buffer. Switch keeps
+	// the window resizable so SDL can follow dock transitions.
 	console_get_output_size(&win_w, &win_h);
 #endif
 	main_window = SDL_CreateWindow(opentyrian_str,
@@ -463,11 +460,8 @@ bool init_scaler(unsigned int new_scaler)
 #else
 	if (fullscreen_display == -1)
 	{
-		// Changing scalers, when not in fullscreen mode, forces the window
-		// to resize to exactly match the scaler's output dimensions. Native
-		// has none; give it the largest integer-multiple window that fits the
-		// desktop. (Resize before init_texture: Native sizes its texture from
-		// the window.)
+		// In windowed mode, resize to the scaler output. Native uses the largest
+		// fitting integer multiple and must be sized before texture creation.
 		int w = scalers[scaler].width,
 		    h = scalers[scaler].height;
 		if (scaler_is_native(scaler))
@@ -918,11 +912,8 @@ void video_repaint(void)
 	JE_showVGA();
 }
 
-// Called from the event pump. Repaints when the window size no longer matches the last
-// present (a resolution change / dock transition the game didn't initiate a redraw for),
-// or when `force` is set (an EXPOSED / render-targets-reset event, where the size is
-// unchanged but the backbuffer contents were lost). Cheap in the common case: one size
-// query without a present, making it safe on every event-pump pass.
+// Repaint after an external size change or a forced expose/target reset. The
+// common event-pump path performs only a size query.
 void video_repaint_if_stale(bool force)
 {
 	if (main_window == NULL || main_window_renderer == NULL)

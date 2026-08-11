@@ -43,16 +43,11 @@ extern bool windowHasFocus;
 extern bool new_text;
 extern char last_text[SDL_TEXTINPUTEVENT_TEXT_SIZE];
 
-// Ship-control sensitivity: scales the consoles' touch-drag or the desktop relative mouse
-// motion. Slider range [0, SHIP_SENS_MAX]; the bar's middle (SHIP_SENS_DEFAULT) reproduces
-// the classic 1:1 feel, more bars = higher sensitivity, fewer = lower. One "Sensitivity"
-// row per build; only the help text and config key are per-platform. Persisted in config.
+// Persisted sensitivity for touch drag or relative mouse steering.
+// SHIP_SENS_DEFAULT reproduces the classic 1:1 response.
 #define SHIP_SENS_MAX 255
 #define SHIP_SENS_DEFAULT 128
-// Colour banks for the slider's middle-value marker bar: bank 9 is a dark->light blue ramp
-// identical across the setup/shop palettes. The marker draws dark blue while the fill is
-// below the neutral middle slot and bright blue at/above it, keyed to the drawn bar counts
-// so it flips exactly on the middle bar. Tunable.
+// Blue palette shades used by the slider's neutral-position marker.
 #define SHIP_SENS_MARK_COL     144  // bright blue: the fill has reached the middle slot
 #define SHIP_SENS_MARK_COL_DIM 136  // dark blue:   the fill is still below the middle slot
 #define SHIP_SENS_NAME "Sensitivity"

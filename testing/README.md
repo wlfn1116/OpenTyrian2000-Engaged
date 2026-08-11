@@ -1,98 +1,99 @@
-# Automated correctness tests
+# Tests
 
-The suite exercises production code through the game's hidden QA command-line entry points.
-It is intended to run headlessly with the freeware Tyrian 2000 data beside the build.
+The test runners exercise production code through hidden command-line entry
+points. They run headlessly and need the freeware Tyrian 2000 data.
 
-`make test TEST_DATA=/path/to/data` runs:
+From the repository root:
 
-- rollback snapshot and wire-restore checks;
-- save migration fixtures for every supported Endless format (v3 through v23), including
-  load -> current save -> reload stability and malformed/truncated/oversized input probes;
-- resync serialization property tests and malformed rollback-packet fuzz cases;
-- fixed-width network settings and resumed-save round trips, guard-byte checks, hostile-value
-  clamps, string termination, and restoration of local preferences;
-- custom-weapon editor serialization, malformed input, import-registry validation, port/sidekick
-  materialization bounds, and exact bullet, charge, and library capacities;
-- modifier, theme-name, and perk-registry integrity (unique persisted bits and names, visible
-  font glyphs, menu-width limits, valid combinations, clamped stacks, and bounded distinct offers);
-- a per-modifier online parity matrix: every registry modifier's derived combat parameters
-  (scaling snapshot, gravity vectors, shockwave and martyrdom radii, regen gates, and the rest)
-  computed identically for both player numbers, both network modes, both host roles, and both
-  ships;
-- sidekick and linked-pair simulation state (ammo, refill, charge, satellite angle, attachment
-  latches, link flag and turret angle) surviving a rollback restore exactly;
-- arcade specifics: purple-ball pricing bounds and the maxed-gun cash fallback, the link-gun
-  weapon table, and the split two-player gauge geometry against its wipe region;
-- cash-ledger conservation across ordinary spending, temporary upgrade balances, refunds,
-  trade-ins, duplicate commits, and over-wallet debits;
-- arcade life/hull/rear-gun scaling, damage-ratio preservation, alias avoidance, and HUD ammo
-  gauge segment bounds;
-- legacy and per-difficulty record derivation, effect gates that prevent Endless modifiers from
-  leaking into normal play, and non-overlapping render/object-pool identity ranges;
-- the online mode split across every reachable combination of the two-player, arcade and co-op
-  flags, the wallet each machine spends in all three online modes, arcade's immunity to the
-  co-op credit settings, the two-wallet campaign economy, the co-op campaign record board, the
-  strings the online menus print, and pause being refused in all three online modes;
-- online Endless co-op as a matrix: credit mode against Double Earnings against Scavenger
-  stacks against which machine is asking; all sixteen pairings of what the two ships are
-  flying against Combo Feed and against who fired the killing shot; personal perk stacking,
-  its per-row caps, and the registry pair the debug screen drives; the online arcade shape
-  against Linked and Separate ships, with each Separate ship's own life-counter alias held
-  across a rollback restore; the outpost and every E-Shop button from both machines, with their refusal
-  gates and per-player price escalation and RNG streams; downed, revive-token and
-  revive-at-outpost states against all three run modes; reactive-danger targeting; all four
-  course-chooser modes; the co-op wire block; and whole-session scenarios that combine them;
-- 768 deterministic course seeds across early, milestone, and deep-run depths, checking
-  structural/gameplay RNG isolation, repeatability, launchable levels, unique display-safe names,
-  danger/payout ordering, modifier compatibility, exact milestone rank distributions, and payout bounds;
-- bounded shipped-demo replays with zero rollback divergence and fixed registered-state hashes;
-- a headless Destruct battle with every frame replayed from its own snapshot, which is what
-  proves the minigame's rollback state covers it (the terrain buffer included, since shots
-  collide against those pixels); it has no demo corpus, so it is scripted rather than hashed;
-- two real UDP peers behind a deterministic proxy that injects latency, loss, reordering,
-  duplication, and a complete traffic pause, in three scenarios on their own ports:
-  - *base*: the reliable channel round-trip, the Relaxed death prompt, and the original
-    campaign-shop and Endless-outpost rendezvous sequences;
-  - *campaign*: two complete and different loadouts converging in both directions, six rounds
-    of interleaved purchases from both machines at once, a save checkpoint that moves nothing,
-    and a rendezvous where one machine finishes long before the other;
-  - *endless*: both ships holding different drives, paid charges, hull tiers, tokens, debts and
-    perk slates, all crossing intact and staying their owner's alone on both machines;
-    Individual credit with Double Earnings covering pickup, kill and bounty cash; one ship
-    down while the other flies on, and its revive at the
-    outpost; the charted sector index surviving the rendezvous; the Relaxed both-down prompt;
-    and the whole run record adopted by the joiner.
+```sh
+make test TEST_DATA=/path/to/data
+make sanitize-test TEST_DATA=/path/to/data
+```
 
-  Run one on its own with `--scenario N`. Each peer asserts what it should be seeing of the
-  other, so a field that crosses in only one direction fails on the side that did not get it.
+## In-process suite
 
-  The full harness (`testing/network_fault_test.py` standalone) adds the gameplay scenarios:
-  version-mismatch rejection (4), a real Arcade level flown desync-free under rollback (5), a
-  deliberate corruption repaired through a recovery epoch (6), save mid-session and resume the
-  pair (7), an eight-second blackout ridden out (8), the host's clean exit when the joiner
-  vanishes (9), four sidekick mount matrices including ammo-limited, charge-up, and custom
-  designs (10), both players pressing Esc on the same frame with host-wins arbitration (11),
-  ten Online Endless zones each under a forced modifier slate with cross-peer wallet
-  comparison (12), an Online Campaign arc with the real shop protocol, per-ship custom
-  weapons, and the episode 1 to 2 transition (13), the Double Earnings lobby settings
-  armed end to end with scripted in-simulation pickups (14), an Arcade level flown with
-  Separate ships, which both peers must report flying (16), Online SuperTyrian on the
-  Scrollock variant with both Stalkers reporting the SuperTyrian ruleset (17), and Online
-  Super Arcade with the two peers picking different ships through the announcement protocol,
-  scripted colour-ball grants that must hand each ship the gun its own arsenal keeps in that
-  slot, and both peers required to print identical grant lines (18). Scenario 15 is an
-  accelerated soak (a long flight watching the working set); it runs only when selected
-  explicitly.
+`testing/run_unit_suite.py` runs the broad correctness suite:
 
-  The harness drains both peers' pipes on reader threads for the whole run. Reading only at
-  the end deadlocks a talkative peer once the OS pipe buffer fills: its next print blocks, it
-  stops servicing the socket, and the partner reads the silence as a lost connection.
+```sh
+python3 testing/run_unit_suite.py \
+  --exe ./opentyrian2000 \
+  --data ./data
+```
 
-Regenerate save fixtures only when intentionally changing the migration corpus:
+Coverage includes:
+
+- rollback snapshots, restore fixups, and malformed wire state;
+- every supported Endless save version and migration;
+- custom weapon serialization and capacity limits;
+- modifier, perk, course, and economy invariants;
+- arcade life, hull, rear-gun, and HUD geometry;
+- online mode flags, player ownership, and lobby settings;
+- both-player Endless perks, shops, drives, deaths, and course choices;
+- deterministic generation across 768 course seeds;
+- hostile values, truncation, string termination, and guard bytes.
+
+## Replay suite
+
+`testing/run_replay_fixtures.py` replays shipped demos from rollback snapshots and
+checks their registered-state hashes:
+
+```sh
+python3 testing/run_replay_fixtures.py \
+  --exe ./opentyrian2000 \
+  --data ./data
+```
+
+Destruct has no demo corpus. The runner uses a scripted headless battle and
+compares each tick with a replay from that tick's snapshot.
+
+Replay hashes are compatibility fixtures. Update them only after reviewing an
+intentional simulation change on every desktop CI platform.
+
+## Network fault suite
+
+`testing/network_fault_test.py` starts two game processes behind a deterministic
+UDP proxy. The proxy injects latency, loss, reordering, duplication, and a full
+traffic pause.
+
+```sh
+python3 testing/network_fault_test.py \
+  --exe ./opentyrian2000 \
+  --data ./data
+```
+
+Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
+
+| ID | Name | What it checks |
+| ---: | --- | --- |
+| 0 | base | Reliable round trip, death prompt, and outpost rendezvous |
+| 1 | campaign | Two loadouts, concurrent purchases, save checkpoint, departure |
+| 2 | endless | Player-owned run state, income, downed ship, and course state |
+| 3 | barriers | Forty reliable phase barriers and sequence wrap |
+| 4 | version-mismatch | Both peers reject incompatible wire versions |
+| 5 | gameplay | Real Arcade rollback with prediction and no desync |
+| 6 | desync-recovery | Deliberate corruption detected and repaired |
+| 7 | save-resume | Two-stage save and host-driven resume |
+| 8 | outage | Eight-second traffic blackout and recovery |
+| 9 | peer-vanish | Host exits cleanly after the joiner disappears |
+| 10 | sidekick-combos | Four mount combinations, including charge and custom weapons |
+| 11 | menu-race | Both players press Esc on the same rollback frame |
+| 12 | endless-zones | Ten zones covering the modifier registry and wallet parity |
+| 13 | campaign-shop | Shop protocol, custom weapons, and episode transition |
+| 14 | double-earnings | Host arms settings and joiner adopts them |
+| 15 | soak | Long accelerated flight with working-set checks |
+| 16 | arcade-separate | Two complete Arcade ships keep independent state |
+| 17 | supertyrian | Online SuperTyrian on the Scrollock variant |
+| 18 | super-arcade | Independent ship picks and per-ship colored-ball weapons |
+
+Each peer runs in its own temporary directory. Output pipes are drained while
+the processes run so a full pipe cannot stall network service.
+
+## Save fixtures
+
+Regenerate fixtures only when intentionally changing the migration corpus:
 
 ```sh
 python3 testing/generate_save_fixtures.py
 ```
 
-Replay hashes are compatibility fixtures. Update them only after reviewing an intentional
-simulation change on every desktop CI platform.
+Review the generated records before committing them.

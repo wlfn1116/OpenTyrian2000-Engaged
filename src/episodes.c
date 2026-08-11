@@ -240,11 +240,8 @@ static void JE_applyZicaLaserConfig(void)
 	static const JE_shortint sx_straight[8] = {  0,  0,  0,  0,  0,  0,  0,  0 };
 	static const JE_shortint bx_straight[8] = { -8, -8, -8, -8,  8,  8,  8,  8 };
 
-	// (1) Shape the base Lv11 (short) weapon. Auto restores the captured native layout
-	// (byte-identical to vanilla); forced modes overwrite sx/bx (sy/by/sg keep the vanilla
-	// short bolts).
-	// Sized off the 8-slot sources, not the WEAPON_MULTI_MAX-wide destinations: this is an 8-bullet
-	// weapon, and copying the full destination width would read past these 8-byte arrays.
+	// Shape the short level 11 weapon. Auto restores vanilla; forced modes replace
+	// horizontal layout. Copy only the eight source slots.
 	if (zicaLaserBase == ZICA_BASE_AUTO && zicaNativeCaptured)
 	{
 		memcpy(weapons[wn11].sx, zicaNativeSx, sizeof(zicaNativeSx));

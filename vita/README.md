@@ -1,56 +1,51 @@
-# PlayStation Vita homebrew build
+# PlayStation Vita build
 
-This target builds `vita/build/OpenTyrian2000.vpk`. It requires a
-homebrew-capable Vita and is installed through VitaShell.
+This target produces `vita/build/OpenTyrian2000.vpk`. Install it on a
+homebrew-capable Vita with VitaShell.
 
-The package uses title ID `OTYR20000`. Configuration and saves are stored under
+The title ID is `OTYR20000`. Configuration, saves, and logs live under
 `ux0:data/opentyrian2000`.
 
 ## Requirements
 
 - VitaSDK with SDL2: `vdpm sdl2`
-- native Windows CMake 3.16 or newer
-- `ninja.exe`
+- native CMake 3.16 or newer
+- Ninja
 
-The build script finds CMake in common Windows locations. Set `CMAKE_EXE` or
-`NINJA_EXE` to override its choices. Do not use the MSYS CMake: it passes POSIX
+The Windows build script searches common CMake and Ninja locations. Set
+`CMAKE_EXE` or `NINJA_EXE` to override them. MSYS CMake passes unusable POSIX
 paths to native Ninja.
 
 ## Build
 
-From PowerShell:
+PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File vita\build.ps1
 powershell -ExecutionPolicy Bypass -File vita\build.ps1 -Clean
 ```
 
-From Git Bash:
+Git Bash:
 
 ```sh
 bash vita/build.sh
 bash vita/build.sh clean
 ```
 
-The script builds `eboot.bin`, stages the package tree, and creates the VPK as a
-zip. Staging is required because several Tyrian data filenames do not survive
-per-file arguments passed through `cmd.exe`.
+The script builds `eboot.bin`, stages the package, and creates the VPK. Staging
+avoids filenames that do not survive per-file arguments through `cmd.exe`.
 
-Tyrian data is copied into `app0:data`. Windows-only files, saves, configuration,
-and the large FluidSynth SoundFont are excluded. A copy under
+Tyrian data is bundled under `app0:data`. An external copy under
 `ux0:data/opentyrian2000` takes precedence.
 
 ## LiveArea art
 
-`make_livearea.ps1` regenerates the package images from `switch/icon.jpg`.
-LiveArea images must be indexed PNGs; true-colour images fail installation with
-`0x8010113D`.
+`make_livearea.ps1` regenerates package images from `switch/icon.jpg`.
 
-## Install
+LiveArea images must be indexed PNGs. True-color PNGs fail installation with
+error `0x8010113D`.
 
-Copy `OpenTyrian2000.vpk` to the Vita and install it with VitaShell.
-
-## Default controls
+## Controls
 
 | Input | Action |
 | --- | --- |
@@ -64,18 +59,14 @@ Copy `OpenTyrian2000.vpk` to the Vita and install it with VitaShell.
 
 Bindings and touch sensitivity are configurable. Text fields use the system IME.
 
-MIDI is disabled. The port forces Sub-pixel rendering to 1x while retaining
-Smooth Motion interpolation.
+The port keeps Smooth Motion but forces Sub-pixel rendering to 1x. MIDI and rear
+touch are disabled.
 
-## Networking
+## Online play
 
-Two-player netplay is available from **2 Player Online Arcade** on the main
-menu. Both machines must be on the same network; the port is UDP 1333 by
-default.
+Open **Online Multiplayer** from the main menu. LAN discovery and direct address
+joining are available. The default port is UDP 1333.
 
-Find LAN Games discovers a host on the same subnet, so neither player normally
-has to type an address. The host screen shows this console's IP for the cases
-where broadcast is blocked and the other player has to join by address.
-
-VitaSDK ships no SDL2_net, so `src/vita_net.c` implements the UDP subset the
-netcode uses directly on SceNet. It needs no extra `vdpm` package.
+Vita can play with Windows, Linux, and Switch builds of the same game version.
+VitaSDK has no SDL2_net package, so `src/vita_net.c` supplies the UDP subset used
+by the game.

@@ -9,9 +9,8 @@
 bool wnm_init(void);   // open the OS MIDI-out device; false if unavailable
 void wnm_quit(void);   // stop playback and close the device
 
-// Start playing an in-memory SMF. `loop` repeats it until stopped; `on_finish`
-// (may be NULL) is called from the player thread when a non-looping song ends.
-// Replaces any song already playing. Returns false if the SMF can't be played.
+// Replace the current song with an in-memory SMF. on_finish may be NULL and
+// runs on the player thread after a non-looping song ends.
 bool wnm_play(const uint8_t *smf, size_t size, bool loop, void (*on_finish)(void));
 
 void wnm_stop(void);           // stop and silence (safe; never blocks on winmm)

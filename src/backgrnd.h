@@ -38,11 +38,8 @@ extern int endlessScrollExtraPx1, endlessScrollExtraPx2, endlessScrollExtraPx3;
 // interpolation stays continuous when a speed modifier pushes the scroll past 28px/tick.
 extern int bgScrollDeltaY[4];
 
-// Bottom off-screen margin rows drawn by each background layer (default 1). Widened per
-// tick in tyrian2.c while a scroll-speed modifier is active, so the larger interpolation
-// up-shift can't uncover a black strip below the playfield. Kept STABLE across ticks
-// (set from the modifier being active, not the fractional per-tick step count) so the
-// recorded row count matches frame-to-frame and the layer doesn't snap.
+// Offscreen rows retained below each background layer. Scroll modifiers widen the
+// stable margin so interpolation cannot expose a black strip or change row count.
 extern int bgMarginRows;
 
 // Un-floored parallax offsets (mainint.c) and, per layer, bg_layer_dx (FLOAT scroll delta) +
@@ -62,9 +59,8 @@ extern bool bg_layer_xofs_valid[4];
 // remainder) per layer, gated by bg_smooth_y_active.
 extern float bg_layer_dy[4], bg_layer_yfrac[4];
 extern bool bg_smooth_y_active;
-// this-tick (non-lagged) scroll rate + sub-pixel fraction. Layer 3 alone uses these because it
-// advances backPos3 before recording its rows (draw_background_3). All enemy banks retain their
-// common pre-advance authored phase and use the lagged values above. See backgrnd.c / tyrian2.c.
+// Current-tick scroll state for layer 3, which advances before recording its rows.
+// Enemy banks use the lagged state above to retain their authored phase.
 extern float bg_layer_yfrac_now[4], bg_layer_dy_now[4];
 
 extern JE_word mapX, mapY, mapX2, mapX3, mapY2, mapY3;
@@ -116,11 +112,8 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src);
 /*smoothies #5 is used for 3*/
 /*smoothies #9 is a vertical flip*/
 
-// Supersampled smoothie filters: identical pixel math on NxN buffers. The waver
-// pattern and the feedback neighbour reads are kept at the ORIGINAL spatial scale
-// (offsets multiplied by `scale`), so the plasma looks the same, just rendered on a
-// 1/scale-pixel grid. All four stay contractive toward src, so the hi-res feedback
-// is as stable as the 1x one.
+// Supersampled smoothie filters retain original-scale offsets on NxN buffers.
+// Their feedback remains contractive toward the source.
 void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void water_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);
 void iced_blur_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale);

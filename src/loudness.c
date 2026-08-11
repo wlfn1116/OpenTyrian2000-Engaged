@@ -682,11 +682,8 @@ void play_song(unsigned int song_num)  // FKA NortSong.playSong
 		}
 		else
 		{
-			// Same song already selected: just make sure it isn't paused; do not
-			// restart it. The game re-issues play_song(jingle) every tick during the
-			// level-end sequence, so restarting whenever the backend reports "not
-			// playing" replayed the finished jingle over and over (the "plays more
-			// than once" bug). OPL is idempotent here for exactly this reason.
+			// Repeated requests for the selected song only resume it. Level-end code
+			// requests its jingle every tick, so restarting would loop a one-shot.
 			if (music_device == NATIVE_MIDI) wnm_resume();  // was paused by stop_song
 			else                             fm_resume();
 		}

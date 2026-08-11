@@ -186,11 +186,8 @@ JE_byte SFExecuted[2]; /* [1..2] */
 
 /*Special General Data*/
 JE_byte lvlFileNum;
-// One-shot override for the next level load: forces lvlFileNum after JE_loadMap's section rescan
-// (which otherwise snaps it to the section's first ']L'). Lets a level pool entry / debug pick reach
-// a section's non-first level file; e.g. Episode 1 section 3's second TYRIAN cut (file 15). Set by
-// select_level (from its file_num arg) and by the endless commit paths; consumed + cleared by
-// JE_loadMap. 0 = use the section default. See endless_level.c / game_menu.c.
+// One-shot level-file override for sections with more than one `]L`. Selection paths set it and
+// JE_loadMap consumes it; zero selects the section default.
 JE_byte forcedLvlFileNum = 0;
 JE_word maxEvent, eventLoc;
 /*JE_word maxenemies;*/
@@ -289,11 +286,8 @@ EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
 /* Player Shot Data */
 JE_byte     zinglonDuration;
 
-/* Soul-of-Zinglon light pillar render request, one per ship: JE_doSpecialShot records the
-   pillar here each tick instead of drawing it, so JE_starShowVGA can draw it at the render-
-   rate ship position rather than frozen into the 35Hz residual. Per ship because both can
-   have one up at once, and because zinglonDuration stops at 1 rather than reaching 0, so the
-   counter alone cannot tell a live pillar from a spent one. */
+/* Per-ship Soul of Zinglon render request. The display pass places the pillar at
+ * the render-rate ship position; an explicit flag distinguishes spent duration 1. */
 bool        zinglonPillarActive[2] = { false, false };
 int         zinglonPillarCX[2] = { 0, 0 };    /* pillar centre x in game_screen coords */
 int         zinglonPillarTemp[2] = { 0, 0 };  /* pillar half-width */
@@ -629,10 +623,8 @@ void JE_drawOptionLevel(void)
 
 void JE_tyrianHalt(JE_byte code)
 {
-	// code 1 is the "hard error" convention (missing/short data file, bad level record). It reaches
-	// exit() below bypasses crash handlers, so write a report first. Idempotence lets a path
-	// that already logged the specifics (dir_fopen_die/fread_die) won't be double-reported here.
-	// Normal quits (0), the network-missing notice (5) and the special code 9 are not failures.
+	// Code 1 is an unrecoverable data error. Write its report before exit()
+	// bypasses the crash handlers; duplicate reports are ignored.
 	if (code == 1)
 		crashlog_report_fatal("FATAL (JE_tyrianHalt error exit)",
 		                      "JE_tyrianHalt(1) -- unrecoverable data/level error; see phase + stack");
@@ -985,18 +977,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		specialWait--;
 	}
 
-	// Whether the special is available THIS tick, sampled where the fire gates below test it and
-	// before either of them can spend it. The ready light's flash rides this rather than the
-	// end-of-tick clocks published at the bottom: firing on the very tick the cooldown expires
-	// creates and consumes the ready state within one tick, which the clocks never show as ready.
-	// flareDuration and zinglonDuration are decremented further down, so these are the same values
-	// the gates see.
-	//
-	// flareDuration == 0, matching the gate below, NOT the < 2 the old on/off light used: a flare's
-	// last burn tick leaves it at 1, and the recharge that replaces it is only installed later in
-	// the NEXT tick (the flareStart branch). Sampling < 2 catches that one tick in between, where
-	// every clock reads clear but the special cannot be fired -- and pops the light just as the
-	// meter empties, before the recharge it is about to start.
+	// Sample readiness before either fire gate can spend it. The HUD uses this sample to show a
+	// special that becomes ready and fires within the same tick; flareDuration must match the gate.
 	const bool special_armed = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
 	                        && flareDuration == 0 && zinglonDuration < 2;
 
@@ -1073,11 +1055,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		}
 		else if (endlessMode)
 		{
-			// Endless answers a fresh press only: latching the hold on the ticks the special cannot
-			// fire (the campaign latches only when a shot goes off) stops a button held across the
-			// recharge from firing it the moment the meter fills. The Autofire Special perk fires
-			// from the gate below, which does not read the latch. See "Scaling and combat" in
-			// doc/notes.md.
+			// Endless latches held input during recharge so it cannot fire on the ready
+			// edge. Autofire Special bypasses this latch below.
 			fireButtonHeld = true;
 		}
 
@@ -1271,12 +1250,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		}
 	}
 
-	// Publish this ship's clocks for the ready light, which JE_inGameDisplays draws beside the
-	// special block's icon (see mainint.h). At the END of the tick, past every gate this tick
-	// moved: a special fired now already reads as burning, and the burn hits zero on the same
-	// tick the recharge it hands over to starts, so the meter sweeps through without a jump.
-	// flareStart outlives flareDuration by the one tick that installs that recharge, and holds
-	// the burn there. Only the block this machine actually draws has one.
+	// Publish the displayed ship's clocks after all fire and duration updates. `flareStart` keeps
+	// the final burn tick connected to the recharge that it installs.
 	if (hud_special_block_shown(special_player))
 		hud_special_light_publish(MAX(shotRepeat[SHOT_SPECIAL], specialWait),
 		                          MAX(flareStart ? (int)flareDuration : 0,
@@ -1676,11 +1651,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 		temp -= this_player->shield;
 		this_player->shield = 0;
 
-		// Endless AEGIS GATE boon: a hit big enough to punch through the shield is stopped AT the
-		// shield; the gate spends whatever was left (already zeroed above), eats the remainder and
-		// goes on cooldown. Placed BEFORE cmHullHit because a blocked hit never reached the hull, so
-		// it must not arm the Countermeasure burst, deal armor damage, flash the gauge or reach the
-		// death path. The helper arms the cooldown when it answers true, so this is the one asker.
+		// Aegis Gate spends the remaining shield and blocks overflow before hull-hit
+		// effects. The helper also starts its cooldown.
 		if (endlessFxShip(this_player) && temp > 0
 		    && endlessAegisGateConsume(oldShield, temp))
 		{
@@ -1717,11 +1689,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 				{
 					if (endlessMode && endlessConsumeRevive((uint)(this_player - &player[0])))
 					{
-						// Held revive token: survive the lethal hit. endlessConsumeRevive already
-						// restored armor to full and armed the ~3s enemy-fire stun; here we wipe the
-						// bullet field and grant brief i-frames so the revived ship isn't instantly
-						// re-killed by the same volley. Each cleared bullet pops; without that the
-						// wipe was invisible, indistinguishable from the shots simply having missed.
+						// A revive restores armor and stuns enemy fire. Clear the current volley,
+						// show each bullet popping, and grant brief invulnerability.
 						this_player->invulnerable_ticks = 100;
 						for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
 						{
@@ -1838,11 +1807,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 	JE_drawArmor();
 	VGAScreen = game_screen; /* side-effect of game_screen */
 
-	// STATIC DISCHARGE (endless): taking shield/hull damage also bleeds the generator, never more
-	// than the current reserve. Must use the REAL shield+armor drop, not the return value; that is
-	// 0 whenever the shield fully absorbs a hit, the common early-game case. Only losses count, so a
-	// revive restoring armor can't read as negative. Main player only (its generator is the global
-	// `power`); the helper is 0 when off or under a dead generator.
+	// Static Discharge uses the actual shield and armor loss because the return value is zero for a
+	// fully absorbed hit. Drain only the affected ship's available generator reserve.
 	if (endlessFxShip(this_player))
 	{
 		int lost = 0;
@@ -2094,11 +2060,8 @@ void JE_drawSP(void)
 	}
 }
 
-/* Rollback state registration.
- *
- * This file's sim-relevant statics; the extern-visible globals defined here are
- * registered centrally in rollback_state.c.
- */
+/* Register this file's private simulation state. Public globals are registered
+ * centrally in rollback_state.c. */
 #include "rollback.h"
 
 void varz_register_rollback(void)

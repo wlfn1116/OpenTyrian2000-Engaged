@@ -840,13 +840,8 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 	}
 }
 
-/*
- * Supersampled smoothie filters; same pixel math as the 1x filters on an NxN
- * buffer; see backgrnd.h for the spatial-scale and stability notes. The 1x lava
- * and water filters scan bottom-up, so the "row below" read sees this frame's
- * value while the "row above" read sees the previous frame's; the scaled
- * versions keep that scan order (and therefore those dynamics) exactly.
- */
+/* Supersampled smoothie filters preserve the 1x math and scan order on an NxN
+ * buffer. See backgrnd.h for spatial scaling. */
 void lava_filter_scaled(SDL_Surface *dst, SDL_Surface *src, int scale)
 {
 	assert(src->format->BitsPerPixel == 8 && dst->format->BitsPerPixel == 8);
@@ -1120,11 +1115,8 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 		float rec_dy = dy;
 		if (star->y >= STARFIELD_WRAP)
 		{
-			// Respawn a little ABOVE the visible top edge (negative row) rather than at
-			// row 0, so the star drifts smoothly into view instead of popping in and
-			// holding there for the wrap tick. It stays invisible (y < 0) through the
-			// snap and only crosses the top edge on a normal moving tick, so the
-			// interpolator slides it in mid-motion; no "frozen at the top" blip.
+			// Respawn above the top edge so interpolation slides the star into view
+			// instead of showing it frozen at row zero for a tick.
 			star->y = -(float)(STARFIELD_SPAWN_MIN + (starfield_spawn_phase % STARFIELD_SPAWN_SPREAD));
 			starfield_spawn_phase += 13;  // step coprime with SPREAD -> even coverage of the band
 			rec_dy = 0.0f;                // snap on the wrap; the star is off-screen so nothing streaks
@@ -1137,12 +1129,8 @@ void update_and_draw_starfield(SDL_Surface* surface, int move_speed)
 	}
 }
 
-/* Rollback state registration.
- *
- * The in-level starfield statics are sim state (deterministic, RNG-free, but
- * carried across ticks).  The extern-visible scroll state is registered
- * centrally in rollback_state.c.
- */
+/* Register private starfield simulation state. Public scroll state is registered
+ * centrally in rollback_state.c. */
 #include "rollback.h"
 
 void backgrnd_register_rollback(void)

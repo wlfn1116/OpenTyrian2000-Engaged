@@ -1,390 +1,258 @@
-# OpenTyrian2000 Engaged maintainer notes
+# Maintainer notes
 
-This file records constraints that are easy to miss while changing the fork.
-Player-facing behavior belongs in [GUIDE.md](GUIDE.md). Source comments should
-explain only the local reason for an unclear choice.
+This file holds constraints that are easy to break and hard to recover from the
+code alone. Player behavior belongs in the [player guide](../GUIDE.md). Local
+comments should state only the nearby rule and point here for longer context.
 
 ## Build and targets
 
-`build-all.ps1` builds PC, Switch, and Vita targets and copies successful
-outputs to `build`. A target failure does not stop the remaining targets unless
-`-FailFast` is used.
+`build-all.ps1` builds PC, Switch, and Vita targets and collects successful
+outputs under `build`. Use `-FailFast` when one failed target should stop the
+rest.
 
 Target constraints:
 
-- The PC executable runs beside `data`; `build` is only an output folder.
-- MIDI is enabled only for Windows x86-64.
-- The Windows crash logger is stubbed on other platforms.
-- Switch builds run through devkitPro bash with an MSYS-style `DEVKITPRO` path.
-- Vita builds use native CMake and Ninja. MSYS paths break the native tools, and
-  some data filenames are unsafe as individual shell arguments.
+- The PC executable runs beside `data`; `build` is an output directory.
+- MIDI is available only on Windows x86-64.
+- The Windows crash logger is stubbed elsewhere.
+- Switch builds use devkitPro bash and an MSYS-style `DEVKITPRO` path.
+- Vita builds use native CMake and Ninja. MSYS paths are invalid there.
 - Console Release builds define `NDEBUG`.
 
-Maintained targets should build without warnings. Existing suppressions cover
-specific DOS-era idioms. New warnings should be fixed at their source.
+Keep maintained targets warning-free. Existing warning suppressions cover
+specific DOS-era code and third-party headers.
 
-MSVC uses `/source-charset:utf-8`. Third-party header warnings are suppressed
-around the include. GCC targets suppress `-Wformat-truncation` for fixed-width
-UI fields.
-
-Run MSVC analysis separately:
+MSVC analysis is a separate build:
 
 ```text
 MSBuild visualc\opentyrian.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:RunCodeAnalysis=true /p:EnableMicrosoftCodeAnalysis=true
 ```
 
-Analyzer range warnings require inspection. Use `OT_ASSUME` only after a real
-bounds check.
+Inspect analyzer range warnings. Use `OT_ASSUME` only after a real bounds check.
 
 ## Rendering
 
 ### Render list
 
-The simulation remains fixed at 35 Hz. `render_list.c` records each tick and
-replays it at the display rate.
+The simulation runs at 35 Hz. `render_list.c` records a tick and replays it at
+the display rate.
 
 Required invariants:
 
-- Moving objects need a stable `rl_current_id`.
+- Every moving object has a stable `rl_current_id`.
 - Presentation timing uses the performance counter.
 - Exact replay with `use_override == false` reproduces the recorded frame.
-- Projectile velocity comes from the projectile because slots are reused.
+- Projectile velocity comes from the projectile; shot slots are reused.
 - Ship-attached shots separate ship motion from their own motion.
+- Conditional pieces use a separate ID when their command count can change.
 
-The render list snaps an ID when its command count changes. Conditional parts
-need their own ID when snapping the parent would be visible. The Nort ship's
-banking trim uses `RL_ID_SHIP_TRIM_BASE` for this reason.
+The Nort ship banking trim uses `RL_ID_SHIP_TRIM_BASE` because a changing trim
+count must not snap the hull.
 
 ### Display-rate ship movement
 
-Supported single-player games use a real-time ship integrator. The 35 Hz
-simulation reads the resulting position for shots and collision, keeping the
-sprite and hitbox aligned.
+Supported single-player modes use a real-time ship integrator. The simulation
+reads its position for shots and collision, keeping the sprite and hitbox
+together.
 
-The path is disabled during demo recording, demo playback, and network games.
-Advance it on every presentation-loop iteration, including an iteration that
-also runs a simulation tick. Joystick press edges consumed by the integrator
-must remain available to pause and menu handling.
+Disable this path for demos and network games. Advance it on every presentation
+loop, including loops that also run a simulation tick. Preserve joystick press
+edges for pause and menu handling.
 
-### Feedback filters
+### Feedback and overlays
 
-Ice, water, and lava effects use frame feedback. Smooth presentation keeps two
-separate images:
+Ice, water, and lava use frame feedback:
 
-- `render_gs`: persistent filtered background;
-- `smoothie_frame`: current background, interpolated entities, and overlays.
+- `render_gs` holds the persistent filtered background.
+- `smoothie_frame` holds the current background, entities, and overlays.
 
-Entities must stay out of the persistent buffer or they smear. Full-screen
-color and brightness effects apply to both sides of the residual comparison.
+Entities never enter the persistent buffer. Full-screen color and brightness
+effects apply to both sides of the residual comparison.
 
-### Parallax and scroll
+Palette fades, picture wipes, Destruct, gauges, boss bars, the special meter,
+and Soul of Zinglon have display-rate draw paths. Their state advances once per
+simulation tick.
 
-Background layers record integer movement and a fractional phase. Bound enemies
-and health bars use the same layer phase.
+Gauge interpolation changes only the filled height. Keep the base on an exact
+scaled row so a steady gauge cannot jitter.
+
+### Background layers
+
+Background commands carry integer movement and fractional phase. Layer-bound
+enemies and health bars use the same phase.
 
 - `background3x1` binds layer 3 to layer 1.
-- A layer's phase is published per tick even when its rows are not drawn. Layer 1
-  is blanked for the whole of Astral Zone, and a bound layer 3 pans from it.
-- Whole-pixel draw correction and fractional phase remain separate.
-- Round the combined layer and local offset once.
-- Layer 3 may be recorded after its advance; preserve its authored base step.
-- Horizontal normalization uses the ship's actual travel range.
-- `enemy_rides_layer2` is the shared layer-binding test. Pickups are excluded.
+- Publish a layer phase even when its rows are not drawn.
+- Keep whole-pixel correction separate from fractional phase.
+- Round combined layer and local offsets once.
+- Preserve layer 3's authored base step when it records after advancing.
+- Use the ship's actual travel range for horizontal normalization.
+- `enemy_rides_layer2` is the common layer-binding test. Pickups are excluded.
 
-Mirrored Layers reflects out-of-range columns within the same map row. Each
-render command stores its reflection parameters so 1x and supersampled replay
-match. Feedback filters need the extra reflected strip beyond the visible edge.
+Mirrored Layers reflects columns within the same map row. Render commands carry
+the reflection state so 1x and supersampled replays match.
 
-`endlessScrollExtraPx` publishes the average rate and distributes Endless scroll
-boosts without changing long-run distance. Call it once per layer per tick.
-Layer-bound enemies use the same boost and carry. Event spawns crossed during a
-large scroll step need catch-up to the current layer phase.
-
-Palette fades, picture wipes, Destruct, HUD gauges, enhanced boss bars, the
-special-ready light, and Soul of Zinglon all have display-rate presentation
-paths. Their simulation state still advances once per tick.
-
-A meter whose level moves also needs the level itself interpolated, not just its
-flash: the generator, shield, armor and special-charge bars each latch the
-previous and current tick's value and draw between them. Only the height carries
-the fraction; the base stays on the exact scaled row, so a still bar cannot
-jitter. Where the top edge falls between rows it is blended toward the bank
-floor by its coverage, which is what supersampling turns into a real sub-row
-edge.
+Call `endlessScrollExtraPx` once per layer per tick. Layer-bound enemies use the
+same boost and fractional carry. Large scroll steps must catch event spawns up to
+the current layer phase.
 
 ### Supersampling
 
-The playfield supports fixed 1x through 5x rendering. `0` means Auto, which
-follows the selected scaler and resolves to at least 2x while Smooth Motion is
-active.
+Values 1 through 5 are fixed factors. `0` is Auto and
+`RENDER_SUPERSAMPLE_NATIVE` follows the fitted output rectangle. Vita resolves
+all modes to 1x.
 
-`RENDER_SUPERSAMPLE_NATIVE` follows the fitted output rectangle and is bounded
-only by `RENDER_SUPERSAMPLE_LIMIT`. Auto retains
-`RENDER_SUPERSAMPLE_MAX`. The Vita target always resolves to 1x.
-
-Filter enum values are persisted. Append new values without renumbering existing
+Filter enum values are persisted. Append new values without renumbering old
 ones.
 
-### Trailing sidekick shot origin
+## Coordinates and sprite bounds
 
-A sidekick's position is the point its weapon's `bx`/`by` are measured from. A
-single-tile body is blitted on that point, so its shots line up. A two-by-two
-body is 24x28 and is blitted at `(x-6, y)`, which centres it horizontally and
-hangs it a half tile below the position, putting the body's middle about seven
-pixels lower than where its shots start.
-
-A trailing large body (mount style 1, the companion ships) therefore fires from
-`SIDEKICK_TRAIL_SHOT_Y` below its position, in gameplay and in the shop weapon
-preview. This is a simulation change and carries `NET_VERSION` 31. Front pods
-(style 2) are left alone: their shipped placement over the ship's nose reads
-correctly and moving either half of it is not wanted.
-
-## Widescreen coordinates
-
-The frame is 356x200. The visible playfield is 299x184 and the HUD is 57 pixels
-wide.
+The frame is 356x200. The playfield is 299x184 and the HUD is 57 pixels wide.
 
 - World rendering uses `game_screen` and `PLAYFIELD_LEFT`.
 - The final compositor crops the playfield to screen x=0.
-- Menus use a centered 320-pixel virtual canvas.
+- Menus use a centered 320-pixel canvas.
 - HUD overlays use composited-buffer coordinates.
+- `PLAYFIELD_X_SHIFT` is a background phase, not a crop offset.
+- Row walks use the surface pitch.
 
-`PLAYFIELD_LEFT` is the compositor crop offset. `PLAYFIELD_X_SHIFT` is a separate
-background-tile phase. Use a surface's pitch when stepping rows.
+All `Sprite2_array` blits validate their index. A two-by-two sidekick claims the
+base sprite plus `+1`, `+19`, and `+20`; charge frames need validation too.
 
-Destruct is its own layout: two 144px HUD frames pinned flush to the screen
-edges, with rows `0..HUD_ROWS-1` between them left as open sky so shots crossing
-it stay visible. That window is transient-only. `destructTempScreen` is the
-persistent world -- terrain plus explosion glow -- and the sole thing that
-clears itself there is the 241..255 fade in `DE_blendTempPixel`; anything else
-written above the HUD line is never repainted, never falls, and (below the
-`y <= 14` collision gate) cannot even be shot away, so it hangs in the window
-for the rest of the round. Hence `DE_RunTickExplosions` lets only `EXPL_NORMAL`
-flares up there and keeps `EXPL_DIRT` at the classic `y > 15` ceiling. Every
-other painter already stops short of the window: `DE_generateRings` gates on
-`y > 12`, the base terrain clamps to `y >= 40`, and `DE_widenHUDBackdrop` blacks
-the gap before the round's `VGAScreen -> temp` copy.
+Shop icons use the same nineteen-wide grid. Specials index `spriteSheet10`, and
+ships use `shipgraphic`; their `itemgraphic` fields are unrelated.
 
-The window also made two latent `JE_superPixel` bugs reachable, both from its
-walking pointer: the star starts at `(x-2, y-2)`, so `rowLen * (tempPosY - 2)`
-underflowed in unsigned arithmetic at `y == 1` into a ~4GB pointer jump, and a
-row skipped by the bounds check still took the loop's `s += rowLen - 5` without
-the inner loop's five steps, shifting every row after it 5px left. It now
-addresses each pixel from its own clipped coordinates. Behaviour is unchanged
-for every case vanilla could reach (only trailing rows clip there, where the
-misalignment had nothing left to corrupt).
+### Destruct sky window
 
-Wall placement had a memory-safety bug older than the port: `baseMap[vga_width]`
-is immediately followed in `destruct_world_s` by the `VGAScreen` pointer, and a
-wall footprint at the maximum `wallX` (`vga_width - 11`, 12 wide) reads one
-column past the array -- the pointer's low half, ~3 billion, which
-`JE_placementPosition`'s flatten then wrote back across a dozen real columns.
-The next `DE_drawBaseTerrain` handed that to `JE_rectangle`, whose guard only
-checked the UPPER bounds; as a negative int it slipped through into a wild
-memset (the 2026-08-08 Backspace-reroll crash). Vanilla had the same overflow
-at 320 wide. Fixed at both ends: the placement footprint clamps to the array,
-and `JE_rectangle` rejects negative coordinates like `JE_pix` always has. It
-was also an online desync source -- each machine flattened its own pointer
-bits into the terrain, so the poisoned maps differed per machine.
+Destruct pins two 144-pixel HUD frames to the screen edges. The gap between them
+is open sky in rows `0..HUD_ROWS-1`.
 
-The window is also SOLID now, not just visible. The shot collision pass used to
-skip everything at `y <= 14` (vanilla's ceiling, from when the HUD strip covered
-those rows full-width), which made anything standing in the window a ghost. In
-the gap columns the skip now reaches to the top of the screen; over the boxes
-the classic ceiling stands. The things that can stand there: wall towers
-(`DE_generateWalls` stacks up to five 14px blocks above terrain that clamps at
-y=40, so a peak tower reached y=-30 -- wrapping its unsigned `wallY` -- and the
-tower height is now capped by the headroom above `HUD_ROWS` instead), and ring
-dirt at rows 13-14 (`DE_generateRings` gates at `y > 12`). Units never enter the
-window: fliers clamp at `unitY >= 24` (hitbox rows 18+) and satellites spawn at
-`y >= 30`. Bouncing shots follow the same rule -- the y=14 bounce ceiling was
-thin air in the middle of the open window, so inside the gap columns it drops
-to y=1.
+`destructTempScreen` is persistent terrain and explosion glow. In the sky window,
+only effects that erase themselves may write to it. Dirt, wall generation, and
+collision ceilings must respect the window bounds.
 
-A third sky-window leak lived in the smooth present, not the sim. The tick draw
-shows a shot -- head and trails both -- only while the head's `y` is on-screen
-(`DE_RunTickShots`), so a shot that exits the top freezes its trail slots
-un-decayed at the exit point; `DE_DrawShotsScaled` had no such gate and kept
-repainting those frozen pixels every presented frame for the whole hang time of
-the lob. The shot list is per-tick state, so what looked like stuck debris was
-really a live redraw at the display rate. The scaled draw now applies the tick
-draw's own head gate before touching head or trails; the classic (non-smooth)
-path never had the leak.
+Wall footprints clamp to `baseMap`; the array is followed by a pointer in
+`destruct_world_s`. Rectangle and pixel writers reject negative coordinates.
 
-## Endless mode
+The smooth shot draw uses the same on-screen head test as the tick draw. A shot
+that leaves the top must stop redrawing its frozen trail.
 
-### File ownership
+## Endless
+
+### Ownership
 
 | File | Responsibility |
 | --- | --- |
-| `endless.c` | Run state, lifecycle, milestones, run-over screen |
-| `endless_rng.c` | Seed handling and structural RNG |
+| `endless.c` | Run lifecycle, milestones, summary |
+| `endless_rng.c` | Seeds and structural RNG |
 | `endless_level.c` | Level and music selection |
-| `endless_combat.c` | Scaling, tiers, and combat modifiers |
+| `endless_combat.c` | Scaling, tiers, combat modifiers |
 | `endless_perks.c` | Perks |
 | `endless_shop.c` | Outpost, prices, E-Shop, gamble |
-| `endless_mods.c` | Modifier registry, names, ranks, help text |
+| `endless_mods.c` | Modifier registry and text |
 | `endless_course.c` | Course generation and selection |
 | `endless_save.c` | Sidecar save and sortie snapshots |
 | `endless.h` | Public interface |
-| `endless_internal.h` | Private interface and shared tuning constants |
+| `endless_internal.h` | Private interface and shared tuning |
 
-Keep tuning values in the owning module: combat scaling in
-`endless_combat.c`, perk strengths in `endless_internal.h`, prices in
-`endless_shop.c`, and course generation weights in `endless_course.c`.
+Keep tuning in its owner. Combat scaling belongs in `endless_combat.c`, prices
+in `endless_shop.c`, and course weights in `endless_course.c`.
 
 ### Structural RNG
 
-Endless structure uses SplitMix64 streams derived from the run seed and depth.
-Combat timing must not alter later shops or courses. Every phase salt is unique.
+Shops, courses, and other run structure use SplitMix64 streams derived from seed
+and depth. Combat timing must not change later structure.
 
-Structural draw order is a compatibility interface. Course generation gathers
-levels, assigns themes and boons, applies visit and milestone rules, sorts the
-cards, makes names unique, and caches base-level names. Adding or reordering a
-draw changes existing seeds. Prefer a new draw phase at the end of the relevant
-sequence. Retries reuse their stored or reproducible music choice.
+Draw order is a compatibility interface. Use unique phase salts and append new
+draw phases where possible. Retries reuse stored or reproducible music choices.
 
-### Scaling and combat
+Course generation gathers levels, assigns modifiers, applies visit rules, sorts
+cards, makes names unique, and caches level names. Changing that order changes
+existing seeds.
 
-Real depth drives progression and economy. Effective depth includes difficulty
-and drives most combat scaling.
+`endlessRunBaseLevelSame` selects one of two gatherers. Same and Varied consume
+different draw counts, so the rule is stored with the run and has separate
+records.
+
+Radar rerolls are folded into the phase salt. Latch Star Charts and the charting
+seat at visit start so a redeal uses the same visit rules on both peers.
+
+### Combat
 
 - Scale raw damage before the enemy-health accumulator.
 - Decode piercing damage before scaling and re-encode it afterward.
-- `enemy_has_boss_bar()` is the shared boss test.
-- Contact scaling applies only to player damage.
-- Round percentage changes when truncation would erase a small effect.
+- `enemy_has_boss_bar()` is the common boss test.
+- Contact scaling affects player damage only.
+- Round small percentage effects when truncation would erase them.
 
-Piercing repeat-hit state belongs to the bullet. Charge it once per tick using
-the toughest crossed hull, bank the next lock, and apply it on the following
-bullet pass. Ordinary enemies are unaffected by a boss-specific lock.
+Piercing repeat-hit state belongs to the bullet. Charge it once per tick from the
+toughest crossed hull and apply the lock on the next bullet pass.
 
-Every logical enemy death calls `enemy_logical_death`. It updates kill count,
-bounty deduplication, Shockwave, Martyrdom, and Chain Reaction. Quiet mode still
-updates deduplication state. Elite and champion bounties pay once per logical
-enemy.
+Every logical death calls `enemy_logical_death`. It owns kill count, bounty
+deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
-The equipped special answers a fresh press in a run. `JE_doSpecialShot` latches
-`fireButtonHeld` while the fire button is down even on the ticks the special
-cannot fire, so a hold that spans the recharge no longer fires it the moment the
-meter fills. The campaign keeps the vanilla latch, which only a shot going off
-sets. The gate is `endlessMode` rather than `endlessFxActive()`, because this is
-a run rule and campaign debug mods must not change how the campaign fires. The
-Autofire Special perk still fires from a held button: its gate runs after this
-one and does not read the latch. Super Arcade's buttons 2 and 3 clear the latch
-every tick above it, so they keep firing as they always have.
+Martyrdom uses the visible bounds of the dying linked body. Off-screen anchor
+pieces do not move the burst away from the body on screen.
+
+Endless specials require a fresh press unless Autofire Special is active. Keep
+that gate on `endlessMode`; campaign debug effects do not change campaign firing.
+
+`endlessMode` controls run structure, saving, prices, and pickup substitution.
+`endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
 ### Modifiers and courses
 
-`endlessModTable` owns modifier text, danger weight, payout, and classification.
-New modifiers require review of masks, course pools, danger and payout, monitor
-rows, save bit width, and The End behavior.
+`endlessModTable` owns modifier text, danger, payout, and classification. Adding
+a modifier requires checking:
 
-Compatibility filters prevent modifiers that cancel the same gameplay lever.
-Curated names must be unique, use visible `font_ascii` glyphs, fit the course
-card, and remain within the external table bounds in `endless_internal.h`.
-Name collision resolution is deterministic and runs after sorting.
+- persisted bit width and save migration;
+- compatibility masks and course pools;
+- danger, payout, and The End behavior;
+- monitor rows and help text;
+- visible glyphs, card width, and unique generated names.
 
-Modifier-specific constraints:
+Course order uses cached danger and payout. Purchased buffs and Sabotage update
+the chosen card without changing the original ordering key.
 
-- Martyrdom fires one symmetric burst per logical enemy, from the middle of that
-  enemy's footprint. `endlessMartyrBurstOrigin` unions the sprite boxes of the
-  dying slot and the drawn members of its `linknum` group, so a multi-tile body
-  bursts from its centre rather than the corner tile that booked the kill; a body
-  of one 12x14 cell keeps the sprite anchor. Only boxes on the playfield join the
-  union, because a boss parks its anchor above the screen under the group's own
-  linknum. Body and burst are the same group, so pieces that carry linknums of
-  their own are separate logical enemies to both and burst where they stand.
-- Seeker state belongs to the projectile and permits one delayed correction.
-- Rising-tide shots clone complete authored volleys.
-- Static combines a power drain with a recharge lockout.
-- Retaliation refreshes one timer.
-- Flak Screen affects rising-tide shots only.
-- Low Profile changes damage tests without changing pickup reach.
-- Star Charts and Breakthrough are banked on clear and consumed later.
+Milestones use the upcoming zone:
 
-Course order uses danger rank and the course's cached payout. Purchased buffs
-and Sabotage must not change the ordering key. Visit flavor rolls are consumed in
-the fixed order Jackpot, Ambush, Gauntlet.
+- odd multiples of 25 offer S and S+;
+- other multiples of 50 offer S+ and S++;
+- multiples of 100 offer one END, two S+++, and two S++.
 
-`endlessRunBaseLevelSame` picks which gatherer lays out the visit's routes: Same
-draws once and fills every slot, Varied draws until it has that many distinct
-(episode, section) pairs. The two consume different numbers of `endlessRand`
-draws, so a seed only reproduces a run under the rule it was played on. That is
-why it is a run property with no live global behind it: the solo seed screen and
-the host's Endless lobby page each pick one at run start, it rides the save, and
-the two rules keep separate records. Everything downstream of the gatherer is
-unchanged: modifiers, dedup, ranking and sorting all work off a slate whose base
-danger happens to be identical on every route.
-
-The Radar perk charts one reroll per outpost. `endlessChartRerolls` is the count
-the live slate was dealt under, and the only value two machines have to agree on:
-`endlessZonePhaseSalt` folds it into every depth-keyed structural phase, above
-the 32-bit phase constants, so a rerolled visit redeals its chart and carries the
-charted zone's music, light cone, gravity direction and dispenser bases with it,
-while zero rerolls reproduces the salt every existing seed was played on.
-`endlessChartVisit` opens a visit by latching what a redeal replays, then deals;
-`endlessChartRedeal` deals again at the current count. Two things are latched
-rather than read live. `endlessChartStarCharts` is the boon as the visit's first
-chart found it, so a slate widened by Star Charts spends it again on a reroll
-instead of losing it. `endlessChartSeat` is the charting seat, latched because
-`endlessAdvanceCourseTurn` moves the turn at departure and a packet arriving
-after that would otherwise be read against the next visit's seat, which would
-leave the two machines with different slates in the sortie snapshot.
-
-Milestones use the upcoming real zone:
-
-- odd multiples of 25: S/S+;
-- other multiples of 50: S+/S++;
-- multiples of 100: one END, two S+++, and two S++.
-
-The End uses `ENDLESS_MOD_THEEND` for its name, rank, label, and payout. Other
-modifier bits provide its mechanics. Keep rank-name and rank-color tables the
-same length.
-
-Shop and level music use different indexing. `songBuy` passes directly to
-`play_song`; `levelSong` is one-based and plays as `levelSong - 1`. Stored song
-and depth values prevent adjacent repeats and keep retries stable. Milestone
-levels ignore script fade and song-change events.
+Shop music uses a direct `play_song` index. Level music is one-based and plays
+as `levelSong - 1`.
 
 ### Economy and perks
 
-The course card shows the exact payout that will be banked. Sabotage and
-purchased next-sector modifiers update it immediately.
+The course card shows the amount that will be paid. Sabotage and purchased
+sector effects update it before launch.
 
-`endlessCleanseCharges` is the one authoritative Sabotage figure: both players'
-queued strips, at `ENDLESS_CLEANSE_MAX_CHARGES`. The buy gate, the E-Shop help
-line, the course card and the launch pass all read it, because the strips come
-off the shared sector and one queue is spent between the pair. Do not reintroduce
-a per-player count in any of them, or a partner pays for a strip the launch pass
-clamps away. The price ladder stays personal. A simultaneous buy on the two
-machines can still exceed the cap for as long as the mirrored counts are stale;
-the launch clamp is what makes that harmless. Inventories seed from
-`player[0].items`, and capped E-Shop rows show no price.
+All run cash passes through `endlessCashCredit`, `endlessCashDebit`, or the
+`endlessShopTradeBegin` / `endlessShopTradeCommit` pair. The ledger invariant is:
 
-Perk UI and gameplay derive from the same accessors. Sidekick capacity, Opening
-Salvo timing, and offer count each have one authoritative value. Opening Salvo
-covers emitted shots and manual special effects. A chain-reaction carrier deals
-no damage itself, so `player_shot_create_chained` copies its salvo tag onto the
-child shots in place of the window test, and the boost follows the volley that
-fired the carrier for the whole cascade. Attraction velocity remains within
-`Sint8`, and repairs cap at the Endless hull maximum.
+```text
+earned - spent == wallet
+```
 
-All run cash uses `endlessCashCredit`, `endlessCashDebit`, or the
-`endlessShopTradeBegin` and `endlessShopTradeCommit` bracket. Playfield pickups
-use `player_award_pickup_cash`. The ledger invariant is
-`earned - spent == wallet`.
+`endlessCleanseCharges` is the pair's shared Sabotage count. Prices remain
+personal. The launch path clamps simultaneous purchases to the shared cap.
 
-### Save format
+Perk UI and gameplay use the same accessors. In co-op, use `perkMine` for the
+local outpost owner and `perkFx` for the ship whose effect is being calculated.
 
-`tyrian.sav` is fixed and checksummed. `endless.sav` stores run state and the
-current outpost snapshot. The checkpoint is written at outpost entry. Hardcore
-suppresses disk checkpoints, while its in-memory sortie snapshot still carries
-the run mode across a retry or bail.
+Opening Salvo tags emitted shots. Chained projectiles inherit the tag so delayed
+secondary damage keeps the original volley bonus.
 
-`ENDLESS_SAVE_VERSION` is authoritative. Current history:
+### Saves and records
 
-| Version | Change |
+`tyrian.sav` is fixed and checksummed. `endless.sav` stores the run and current
+outpost snapshot. Hardcore keeps an in-memory sortie snapshot but writes no run
+checkpoint.
+
+`ENDLESS_SAVE_VERSION` is the format authority:
+
+| Version | Added data |
 | ---: | --- |
 | 3 | Seed |
 | 4 | Locked sortie |
@@ -404,1851 +272,431 @@ the run mode across a retry or bail.
 | 18 | Gear-spending sink |
 | 19 | Full spending breakdown |
 | 20 | Custom-weapon record mark |
-| 21 | Second player's outpost half and the co-op turn flag |
-| 22 | Base Level chart rule |
-| 23 | Radar chart reroll |
+| 21 | Co-op player block and course turn |
+| 22 | Base Level rule |
+| 23 | Radar reroll count |
 
-Append fields and guard reads by version. Older records retain their historical
-field widths. Perk IDs are persisted in owned stacks and pending offers; append
-enum members, and migrate both arrays if an ID is removed or reordered.
+Append fields and guard reads by version. Perk IDs appear in stacks and pending
+offers; append enum values or migrate both arrays.
 
-The best zone is stored in `opentyrian.cfg`, indexed by `EndlessRunMode`.
-`best_zone` remains the Relaxed compatibility key, `best_zone_normal` remains the
-Standard compatibility key, and Hardcore uses `best_zone_hardcore`. The co-op
-table adds a `_2p` tail and the Same base-level table a further `_same` one, both
-built by `endlessRecordKey`; an untailed key is the solo Varied table, so a
-config written before either split loads its records where they belong. Set the run mode and `endlessRunBaseLevelSame` before calling
-`endlessRecordRunStart`.
+Records are split by mode, difficulty, crew size, and Base Level rule. The
+difficulty table order is persistent. Append entries without reordering it.
 
-Records are per difficulty, indexed by a slot in `endlessDifficultyLevel`, the
-six levels `difficultySelect` can return. That array's order is the on-disk
-order, so append to it rather than reordering it. One key per mode holds the
-zones as a comma-separated list and another holds their custom marks as a string
-of 0 and 1; a short or absent value leaves the remaining slots empty, which is
-how the list grows. A run writes exactly one record, chosen by `endlessRunRecord`
-from `initialDifficulty`, which `newEndlessGame` fixes before the run and
-`JE_loadGame` restores.
+The custom-weapon mark is earned by firing during a zone. Editor and shop
+previews do not count. Every zone exit closes the mark, including death and Quit
+Level.
 
-`endlessRecordRunStart` baselines the same record, so the run-over gain measures
-that record alone rather than a mode-wide figure a different difficulty may hold.
-The records themselves live in `endless_internal.h`; readers elsewhere go through
-`endlessBestZoneForDifficulty` and `endlessRecordDiffCustomMark`.
-`endlessBestZoneAny` derives a mode's figure as the deepest of its records, for
-the mode list and the seed screen, which is picked before a difficulty exists. It
-cannot disagree with the breakdown behind it, and `endlessClearDeepestRecord`
-erases every record standing at that depth so one confirmation always moves the
-figure. The old per-mode `best_zone` keys survive as `endlessBestZoneUntagged`
-(endless_internal.h), which counts towards the derived figure but is written only
-by a run on a difficulty outside the six. That keeps records from a config
-written before the breakdown existed without inventing a difficulty for them.
+### Retries
 
-Each record also stores whether a custom weapon was in use, under the same key
-plus `_custom`. One rule covers it: a record shows the mark when the run that set
-it flew a custom weapon in a zone. `player_shot_create` reports every shot
-leaving `customWeaponPort` (the custom sidekick fires through that port too), and
-`endlessNoteCustomWeaponShot` arms a per-zone flag, but only while a zone is
-running. That gate, not the timing of anything else, is what keeps the outpost
-weapon editor and the shop's weapon preview out of the record: both fire through
-the same path and neither is a zone.
+Relaxed death and run-over screens own their music fade and finish it before
+returning. Inputs must be released before wreck dismissal is armed.
 
-`endlessCustomWeaponZoneEnd` promotes the flag to `endlessRunUsedCustom` and
-closes the zone. It is idempotent and every way out of a zone calls it: a clear
-through `endlessOnSectorCleared`, the outpost through `endlessBetweenLevels`, and
-a run that ended mid-zone through `endlessOnRunEnd`. Do not narrow it back to
-clears only, or dying in the zone you flew the weapon in loses the mark.
+Retry restores the launch snapshot. Return to Outpost uses the Quit Level path;
+Restart Zone clears the visit-resume flag and reloads the same music.
 
-`endlessSeedSelect` shows the record for whatever its Mode and Base Level rows
-currently read, since both pick a table. `JE_highScoreScreen` gained a tenth and
-eleventh page after the five episodes, three Timed Battles and the co-op Campaign
-board: one Endless board per base-level rule, each listing every run mode at both
-crew sizes, opening a mode's breakdown by difficulty, and erasing a row through
-`endlessClearDeepestRecord` or `endlessClearRecordDifficulty`. The rule is the
-page rather than a row on it, so `EndlessPageState.variant` is set from the page
-index and everything drawn or erased reads that. The two boards share one state:
-paging is blocked while a breakdown or an answer is up, so nothing but the
-mode-list cursor ever crosses between them. Endless has no score
-table, so that page draws itself: `JE_drawEndlessRecordPage` and
-`JE_endlessRecordPageInput` share the `endlessPage*` geometry and one
-`EndlessPageState`, and the input half returns whether it consumed the tick,
-which is what keeps paging and exit in the screen's own shared handling. Erasing
-is menu steps rather than a keypress so it works on a controller. A breakdown or
-a pending answer swallows every input and hides the paging arrows and hint,
-neither of which does anything while one is up; Esc unwinds one level per press.
-The answer always opens on No.
+`itemAvail` belongs to the outpost. Level `]I` blocks must still be read to keep
+the script parser aligned, then discarded under Endless.
 
-`endlessPageColumns` derives the page's two columns from the widest note line and
-centers that block, so the layout stays centered if the notes are reworded. Zones
-are right-aligned on a column that leaves the custom mark its own strip, which is
-why a record ends flush with the notes whether or not it carries the mark.
+Shop stock IDs resolve against the episode that created them. Preserve
+`endlessSortieOutpostEp` across retry before drawing the restored shop.
 
-Vertically, both lists start below the header at `endlessPageRowY0` /
-`endlessPageDiffY0` and are pitched so the last row lands on the same line, with
-the notes hung off that row by `endlessPageNoteGap`. Keep the second note line
-clear of the paging hint the screen draws at the bottom; the six-row mode list
-and the seven-row breakdown have to stay inside the same band.
+## Menus and UI
 
-Every screen shows a record against a named mode, so the mark accessors supply
-the trailing " C" alone. The page's two note lines explain that mark and
-warn what selecting a row leads to. The first uses `=`, which exists in TINY_FONT
-but not in the two larger shape tables, so keep that character out of
-`normal_font` and `large_font` strings. Do not route those notes through
-`JE_helpBox`: it wraps at its `boxwidth` in characters and draws each line
-downward, so a long string at the bottom of a screen loses its tail.
+Menu labels, choice counts, and help indices are parallel data. Update them
+together.
 
-The mark is written in two places, because it is earned after the record it
-belongs to was stamped. `endlessNoteZoneReached` stamps zone and mark together as
-a zone is entered, before it is flown, so `endlessMarkRecordCustom` writes it
-after the fact. That one tests ownership against `endlessBestZoneAtRunStart`, not
-against `endlessRunDepth`: a stamped record is always one ahead of the depth
-while its zone is being flown, so a depth test rejects exactly the record the run
-just set. Nothing clears a mark in place; it goes away when an unassisted run
-sets a deeper record.
+Generic option rows map through `menuItemIntSetting` and
+`menuItemBoolSetting`. Keep explicit cases for rows with side effects, such as
+scalers, synths, sliders, and submenus.
 
-### Death, retries, and effects
+At the classic pitch, seven rows fit above the help line. Measured limits:
 
-Relaxed mode opens `JE_endlessDeathMenu` over the frozen playfield. Standard and
-Hardcore use GAME OVER and lock the pause menu after the fatal hit.
+- 135 pixels for a row name beside its value;
+- 275 pixels for help text from x=45;
+- the active font width, not character count, decides whether text fits.
 
-Both that menu and the run-over summary ramp the track away with `MusicFadeOut`
-(loudness.h): init when the screen is up, tick it from that screen's wait loop,
-finish before leaving so a screen dismissed mid-ramp cannot strand the master
-volume down. It exists because `fade_song` takes six seconds on the MIDI backends
-and a backend-dependent time elsewhere, which is too vague to use as a cue. The
-paths into the summary deliberately leave their track playing for it, so do not
-put a `fade_song` back in front of `endlessOnRunEnd`.
+Chart-a-Course has gap rows. Use `endlessCourseRerollRow` for the reroll index
+and `mapPNum` for planet iteration.
 
-Live-level panels copy `palettes[0][240..255]` into the active text ramp, use the
-correct brightness for each font, center within the 299x184 playfield, and
-restore `colors` before the caller fades out.
+Debug menus separate row IDs from display order. Headings are not selectable;
+filtered views own selection, scrolling, and hit testing.
 
-Wreck dismissal is armed after all inputs are released. `newkey` includes key
-repeat and synthesized joystick keydowns. Esc remains reserved for the pause
-menu in Relaxed mode.
+Boss and enemy bars use playfield coordinates. Enemy bars group by non-zero link
+number, exclude bosses, and follow the most damaged visible member.
 
-Restart Zone calls `clear_song_selection()` so the unchanged track reloads after
-`fade_song()`. Both retry choices restore the launch snapshot. Return to Outpost
-uses the Quit Level path. Restart Zone clears `endlessResumeVisit` and arms the
-locked relaunch.
+Two-player gauge blocks repeat every 134 pixels. `JE_dBar3` draws
+`2 * units + 1` rows upward; keep the clamped gauge and ceiling mark inside the
+45-row wipe.
 
-The outpost owns `itemAvail`. A level script's `']I'` replaces it with that
-level's campaign shop list, and `JE_loadMap` runs before `endlessCaptureSortie`,
-so `']I'` reads its nine rows and discards them under `endlessMode`. Skipping the
-reads would leave the script parser out of step with the file.
+`font_ascii[]` mapping does not prove a glyph is visible:
 
-Stock is stored as item ids, which resolve against the item tables of the episode
-that generated them. `JE_initEpisode` loads ep1-3 from `tyrian.hdt` and ep4/5 from
-the level file, so `endlessSortieOutpostEp` records the outpost's episode and
-`endlessRestoreSortie` restores it before the shop redraws. Both retry paths carry
-that field and `endlessSortieOutpostMods` across the reset inside
-`endlessApplyCurrent`. It needs no save field, because an Endless checkpoint is
-only written at an outpost and `tyrian.sav` already holds the episode.
-
-The two item table sets differ in two ship illustrations, The Stalker 21.126
-price (65535 against 30000), and the item data covered by the Episode Versions
-menu, the Gencore Solar Shield icon included. Other campaign writes in the same
-parser need no guard: `']e'`, `']g'` and `']2'` sections are excluded from the
-Endless pool, and `endlessRegenerateLevel` clears the rest.
-
-Use `endlessMode` for run structure, saves, prices, and pickup substitution. Use
-`endlessFxActive()` for combat scaling, modifiers, perks, and enemy tiers.
-Campaign debug mode can enable effects without run structure. Effect helpers are
-identity operations at depth zero with no modifiers. Per-zone effect reset stays
-RNG-free.
-
-## Menus and debug tools
-
-Menu labels, choice counts, and help indices are parallel data. Update all three
-when adding a row.
-
-The options menus (`runOptionsMenu`, opentyr.c) are one table and four generic
-paths, so a row states what it is rather than repeating how to draw, cycle, pick
-and commit it. `menuItemIntSetting` and `menuItemBoolSetting` map a row id to the
-setting behind it; a row those two answer for needs no code at all, and the id
-appears once, in the table. Three id *runs* cover the rows that repeat per weapon
-or per item: `id - MENU_ITEM_SPARKS_MODE_BASE` is the `superSparkMode` slot, and
-likewise for the spark caps and `epDiffMode`. That is what replaced the thirteen
-near-empty submenus those settings used to need, along with the two globals that
-remembered which one you were in. A row that only opens another menu is
-`MENU_ITEM_SUBMENU` plus a `submenu` field. Rows still needing real work
-(the scaler, the synth, the sliders, the toggles with side effects) keep an
-explicit case beside that work.
-
-Two limits bound a menu's shape, both measured out of the font rather than
-counted in characters. Seven rows is the most that fit at the classic 21px pitch;
-past that the loop compresses to keep the last row above the help line. A row
-carrying a value has 135px for its name, and the help line has 275px from x=45.
-The Enhancements tree is built to stay inside the first of those, so every one of
-its menus is at most seven rows.
-
-Chart a Course is the exception to the shop's flat 16px rows: its trailing rows
-(Exit, and the endless Radar reroll when the visit offers one) are each drawn a
-blank line below their menu index, so the click mapping shifts them back and
-makes the gap above the reroll a miss. `endlessCourseRerollRow` is the single
-source for which index that is, and everything reading a planet out of the list
-bounds on `mapPNum` rather than `menuChoices`, because those trailing rows have
-no planet.
-
-Panels over a live level center within the playfield. The pause menu shifts both
-boxes as complete units, and its help line uses the same axis. Keep over-wide
-text from starting at a negative x because `blit_sprite_hv` wraps rows instead
-of clipping there.
-
-Debug menus separate row identity from display order. Switch logic uses row IDs.
-Headings are non-selectable, and navigation skips them. Filtered views own
-selection, scrolling, and hit testing.
-
-Mid-level loadout edits refresh cached ship data through the normal in-level
-path. Only a ship change restores armor. In Arcade, player two remains the
-Dragonwing role, so its sprite and armor do not follow an edited hull ID. Online
-Campaign gives both players the selected full ship.
-
-Menu ID 15 is an intentional hole left by the removed level grid. The Endless
-editor stages jump values until launch and applies tuning values when leaving
-the screen. Its coordinate width follows the active menu offset.
-
-## Level scripts and randomness
-
-Tyrian levels are authored event scripts. Reseeding `mt_rand` changes background
-enemy selection, spawn jitter, effects, and sound choices. It does not reshuffle
-the authored pickup sequence.
-
-Features that promise varied routes or rewards must make that choice at event
-processing time. Endless uses independent SplitMix64 structural streams in
-`endless_rng.c`.
-
-## Arcade life scaling
-
-With the arcade Life Boost tweak enabled, shield and armor ceilings scale from the
-hull's one-life values to 28 units at 11 lives. The integer accessors are
-`arcade_armor_max`, `arcade_shield_max`, and `arcade_rescale_to_lives`.
-
-`player[].lives` aliases a weapon-power field inside `PlayerItems`, and which bay
-it aliases is `player_lives_port()` (see the Separate arcade section). Life changes
-therefore travel through existing save, network, and rollback state. A life
-pickup flows through `power_up_weapon`; the Galaga and Dragonwing paths are the
-other direct writers.
-
-`Player.hull_armor` stores the hull value. `Player.initial_armor` stores the
-scaled ceiling used by respawn, pickups, and Endless clamps. Gauge values rescale
-proportionally, and `hud_bars_dirty` schedules the presentation repaint.
-
-SuperTyrian and Super Arcade ships keep their authored scaling. A zero shield
-base remains zero.
-
-## Projectile hit geometry
-
-Sprites are drawn from their top-left corner and the vanilla shot tests collide
-from that corner. `centeredShotHitboxes` moves both sides of the two shot tests
-onto the middle of their sprites. Box sizes never change.
-
-Player shot against enemy (`tyrian2.c`): Classic measures from the enemy anchor
-biased by -12 y for a large enemy and -6 for a small one, against the shot's
-stored position. Centered measures from the enemy sprite's middle, `+6/+7` of the
-anchor because its quadrants are drawn at +/-6 x and +/-7 y, against the middle
-of the frame the shot is drawing. The half extents stay 25x29 and 13x15.
-
-Enemy shot against player: Classic centres the `shot_hit_area` box on the ship's
-position, Centered on the hull's middle at `+7/+7`, because the hull is blitted
-at `(x-5, y-7)` as a 24x28 block. A special weapon was already collided from the
-middle of its sprite, so only the blit's one pixel of x changes for it.
-
-`player_shot_hit_offset` and `enemy_shot_hit_offset` (`shots.c`) answer the
-offset for whichever mode is in force, over `sprite2_center_offset` (`sprite.c`),
-which walks the packed frame for the box its opaque pixels fill. That answer
-comes from sprite data alone and cannot diverge between machines; the setting
-itself is host-authoritative on `NET_SET_FLAGS2` bit 3. `JE_playerCollide`, ship
-against enemy, is deliberately left alone: both of its anchors already sit about
-equally up and left of their sprites, so it reads as centred already.
-
-The debug hitbox overlay draws every box where the test in force puts it, which
-is how the two modes are told apart on screen.
-
-## Networking
-
-Both machines simulate both ships. Any menu write that affects simulation must
-reach the peer before either machine resumes. Modal loops call
-`NETWORK_KEEP_ALIVE()` while connected.
-
-Adding or resizing a wire field changes offsets and requires a `NET_VERSION`
-bump. Rendering, audio, and local input settings remain local.
-
-### Host and player slot
-
-`network_is_host` selects the machine that listens and decides session settings.
-`networkHostPlayerNum` selects the ship slot that machine flies. Slot-specific
-Arcade rules remain keyed to player number because player two is the Dragonwing.
-Online Campaign gives both slots the complete one-player ship model.
-
-The joiner's initial slot is provisional in an in-game lobby. The host's choice
-settles both slots. Command-line netplay retains its historical equal-slot
-conflict behavior.
-
-### Online campaign mode
-
-`coopCampaignMode` is the online-only rules flag. `arcade_rules_active()` and
-`split_arcade_mode()` keep the established one-player, local two-player, and
-linked Online Arcade branches unchanged. The host publishes game type, episode, and
-difficulty in `PACKET_CONNECT`; the joiner validates the same values against
-`PACKET_DETAILS` before the session begins. Changing those fields requires a
-`NET_VERSION` bump. The joiner is not prompted to accept them: `PACKET_DETAILS`
-only arrives once the host has already left its start menu, so a prompt there
-would stall a session that has begun. The connect-time host name and game type
-are shown on the joiner's waiting screen instead.
-
-Both peers simulate both complete ships. State that was historically held in
-single-player globals, including generator charge, shot repeat counters,
-sidekick attachment, special cooldowns, and Zinglon state, lives in each
-`Player` during Campaign and is part of the rollback registry. The active ship's
-state is loaded around its movement step and saved immediately afterwards.
-
-### Separate arcade ships
-
-`arcade_separate_mode()` is Online Arcade's second shape: two personal
-single-player arcades sharing one level. `dual_ship_mode()` is the union of it and
-the two co-op modes, and it is the condition every per-ship path keys on, from the
-`coop_ship_runtime_load` / `save` swap and the specials in varz.c down to the
-superbomb row and the score labels. `split_arcade_mode()` keys the opposite half:
-the docking, the Dragonwing, the split HUD picture, and the level-script events
-that skip a block for two players. `arcadeSeparateShips` is the stored lobby
-preference; `arcadeSeparateMode` is the session flag it arms, packed as settings
-bit 11 and stashed by `network_settings_stash` so leaving a session cannot leave
-the next local two-player arcade in the Separate shape. All three Arcade tweaks
-are host-authoritative: `arcadeLifeBoost` on bit 7, `arcadeRandomBalls` on bit 8
-and `arcadeRearGunScale` on bit 12, each stashed and restored with the rest.
-
-Under `dual_ship_mode()` every special is its own ship's. The aim goes through
-`special_mouse_x_for` / `special_mouse_y_for` so ship two steers by `mouseXB` /
-`mouseYB`; `JE_specialComplete` and the flare's per-tick spawn share those, since
-the two had drifted and the weapon-type specials were aiming ship two's shot with
-ship one's pointer. No shipped special reaches that path — a weapon steers on
-`del` 98/99/100 and none of the eighteen stype-1 specials carries one inside its
-`max` frames in any episode — but the Custom Weapon Creator can mint one. The two
-repair specials stay distinct: stype 13 mends the ship that fired, stype 14 is
-vanilla's repair-the-OTHER-hull special and mends the partner.
-
-The specials are the sharpest case of that split, and the reason is one line:
-`JE_doSpecialShot` pins `this_player` to `player[0]` unless `dual_ship_mode()`.
-The linked pair therefore has ONE special, triggered by either player through
-`SFExecuted[]` and charged to that player's own armour or shield, but fired,
-drawn, and collided from ship one throughout — including the Soul-of-Zinglon
-pillar, whose `special_player` index is 0 there and whose collision reads
-`player[0].x` to match. Both passes also decrement the shared `zinglonDuration`,
-so the linked pair's beam decays at twice the solo rate; visual and damage share
-that countdown, so they stay consistent. None of the per-ship special state
-(`player[].zinglon_duration` and its neighbours) is written outside
-`dual_ship_mode()` — the runtime swap is what writes it — so a per-ship path must
-never key on `twoPlayerMode`.
-
-Separate arcade starts both ships on the Stalker (ship 8), the same ship
-`newGame()` hands a solo arcade run, from one copy of player one's arsenal.
-
-Two things differ from co-op rather than following it. Difficulty: the linked pair
-adds a step because two players concentrate fire on one hull, and Separate arcade
-does not, so the host's bump and the joiner's matching subtraction both key on
-`dual_ship_mode()`. Life counters: `player[].lives` aliases a weapon-power byte,
-the Dragonwing's rear bay for the linked pair and each ship's own front gun in
-Separate arcade. Every binding site reads `player_lives_port()`, including
-`rb_fixup_player_lives` in the rollback registry, or a restore would hand ship two
-a different counter than the one the level started with.
-
-`rollback_state_hash` keeps its legacy pre-co-op projection only outside a
-dual-ship session. The block that projection skips (`Player.generator_power`
-through `Player.x`) is live state in Separate arcade exactly as it is in co-op, so
-the gate is `dual_ship_mode()`; single-player replay fixtures are unaffected.
-
-### Online Timed Battle
-
-Arcade's third shape, and the lobby's Mode row is where all three live.
-`network_timed_battle()` is the pair `network_game_type == NETWORK_GAME_ARCADE
-&& network_host_timed_battle`; picking it arms `arcadeSeparateShips` with it, so
-nothing downstream asks about the ships twice. `network_host_battle_level` is
-which of the three battles, and it becomes `timeBattleSelection` for the session.
-
-Both ride the settings block rather than fields of their own -- the shape on bit
-13, the level minus one in bits 14-15, the last three the `Uint16` had. The
-level is not the episode: a battle is reached through the episode holding it
-(`network_timed_battle_episode`, 1 for the first and 5 for the other two), which
-`networkStartScreen` initialises, so it travels to the joiner as the episode it
-is in `PACKET_DETAILS` and the episode script's `]T` jump list picks the section
-out of it. The lobby's Episode row rebadges itself Level and cycles the three
-battle names, the way Difficulty rebadges itself Variant for SuperTyrian.
-
-Nothing in the level scripts needed changing. `timedBattleMode` already gates the
-clock (event 84), the enemies that hatch out of other enemies (event 85), the
-silent countdown and the `]T` jump, and it was already in the rollback registry;
-`timeBattleSelection` is not, and does not need to be -- it is settled before the
-session and constant through it, like `episodeNum`. What was single-player was
-the scoring around them. `JE_endLevelAni` pays the time bonus to both purses (one
-clock, one level) and gives each ship its own lives bonus, and its layout splits:
-solo keeps vanilla's rows with the ship parade moved onto a row of its own,
-clear of the total it used to be drawn through, and a race prints two named bonus
-lines under the shared time bonus instead, having no room for two parades.
-
-A Timed Battle is never offered Load Game -- nothing carries into a scored run
-against a clock -- and it ends on `JE_timedBattleResult` rather than
-`JE_highScoreCheck`: name entry blocks on a keyboard the other machine cannot
-see, and the board is indexed by battle level with one score per row. Both purses
-are settled simulation state and both names came out of the handshake, so the two
-machines compose the same scoreboard without a packet passing. It is reached from
-both exits, the clock's `]q` and the both-dead path, and that second one arrives
-straight from the level with the pillarbox off, so the screen sets and restores
-`set_menu_centered` itself.
-
-`networkTimedBattleReady` is the other both-ready barrier, on the same
-`network_ready_publish` / `network_ready_peer` pair as the Destruct title and for
-the same reason twice over: the joiner has seen nothing but the details list, and
-a race is scored from the first tick, so a machine that started while the other
-was still reading would bank a free lead.
-
-### Online SuperTyrian and Super Arcade
-
-`network_game_type_is_super()` names the two one-player rulesets flown online.
-Both give each player a complete ship, so `networkStartScreen` arms
-`arcadeSeparateMode` for them directly rather than from the settings block: that
-bit carries the host's Arcade preference, and these two game types settle the
-question themselves. The lobby hides the Mode and Host Flies rows for them.
-
-SuperTyrian has no difficulty ladder. Its two variants ride the same
-`network_host_difficulty` field every other type reads as difficulty, because that
-is what they are: `newSuperTyrianGame` reads Scroll Lock and picks between
-`DIFFICULTY_LORD_OF_GAME` (Standard) and `DIFFICULTY_SUICIDE` (Scrollock). The
-lobby row renames itself to Variant and cycles those two, and `PACKET_DETAILS`
-already carries the value. Both ships take the Stalker 21.126 and the Atomic
-RailGun, and the twiddle detector keys off the `superTyrian` flag with per-player
-`SFCurrentCode` / `SFExecuted` rows, so each player works their own combos.
-
-`networkDifficultyBump()` is the one place the host's addition and the joiner's
-subtraction are decided, for every game type. Super Arcade adds the step
-`newSuperArcadeGame` adds solo; SuperTyrian and the two Separate shapes add none;
-the linked arcade pair adds one. The unit suite pins both halves against each
-other per type.
-
-Super Arcade lets each player pick their own hull, and they may match.
-`networkSuperArcadeShipSelect` is its own loop rather than menus.c's
-`episodeSelect` because it has to service the link while it is open and keep
-drawing after this player has chosen, so waiting for the partner is visible.
-It reaches the screen straight out of the handshake's `fade_black`, so it fades
-the palette in on its first composed frame like every other menu; without that the
-whole screen draws under a black palette. Its layout is declared in tyrian2.h
-(`SA_PICK_*`, `sa_pick_name_x` / `_y`) and the unit suite measures the real ship
-names from the data file against it.
-
-The pick is announced rather than dictated: `PACKET_SA_SHIP` carries sender and
-ship, `network_sa_ship_publish` sends this machine's and `network_sa_ship_peer`
-retires the peer's. It is reliable, so a lost announcement is retransmitted, and
-it is listed in `network_recv_one`'s reliable switch, without which it would be
-queued nowhere, never acknowledged, and the pair would deadlock. Both ends clamp
-to 1..SA: the value indexes `SAShip[]` and a `SAWeapon` row on both machines.
-Both machines then equip both ships from the settled pair.
-
-Which Super Arcade ruleset a ship flies is `items.super_arcade_mode`, read through
-`player_sa_ship()`, because online the two ships differ. Every `SAWeapon`,
-`SASpecialWeapon` and `SASpecialWeaponB` read is per ship. A colour ball carries a
-slot, and `player_sa_ball_weapon()` looks that slot up in the collector's own
-arsenal, so one red ball hands each player the gun their own hull keeps there.
-The byte is cleared by `JE_initPlayerData` with the rest of the loadout: left over
-from a previous Super Arcade run it would hand a plain arcade ship that ship's ball
-table and paired special.
-
-### The top-of-playfield special block
-
-The special-weapon icon and the ready light beside it are drawn from two files
-(`JE_inGameDisplays` and `JE_doSpecialShot`) straight into playfield space, with
-no clipping and no precedence of their own, so their geometry is declared once in
-mainint.h and read by everything that has to agree with it. `hud_special_block_shown`
-names the one ship that gets a block, the ship this machine draws the HUD for, and
-that ship's name and lives drop to `HUD_LIVES_Y_SPECIAL` to clear it while the
-other ship's row stays put. Player one's block sits inside the left playfield edge
-and player two's mirrors it against the right, so a Separate-arcade joiner cannot
-paint its special over player one's row. `hud_top_left_right_edge` and
-`hud_top_right_left_edge` report the whole block, light included, because a centred
-TOP boss bar shrinks to those edges and would otherwise draw straight through it.
-The unit suite checks the rectangles do not intersect from both machines.
-
-The shop uses `JE_shopPlayerIndex()` for local presentation and purchasing.
-`PACKET_SHOP_SYNC` publishes an ordered transaction input carrying the owner's
-resulting cash, loadout, weapon mode, and route after each commit. Each owner is
-the sole writer of that state. Save requests use a two-way request/acknowledgement
-checkpoint, and the final shop rendezvous waits for both players. Modal shop
-loops continue servicing acknowledgements and keep-alives.
-
-Each player leaves the outpost by choosing a level, and the two picks can differ.
-The host's is authoritative, but it is held rather than applied on arrival:
-`network_shop_adopt_host_level()` writes `mainLevel` and `jumpSection` only after
-the local player has also finished, so the host committing cannot end the other
-player's outpost visit mid-purchase.
-
-Credit sharing is `coopSharedCredit`, packed as settings bit 9 and adopted into
-`coop_set_session_shared_credit()`, so both machines award identical cash.
-`player_award_pickup_cash` and `player_award_kill_cash` are the only two credit
-paths. The shared branch pays both players, and routes this machine's own share
-through `endlessCashCredit` rather than adding to the wallet directly. Campaign
-has no ledger to reach, but Endless does: paying past it made every shared credit
-undeclared drift, so the audit warned on each one and the run summary filed the
-whole run's income under "other" instead of the source that earned it.
-
-### Leaving the outpost
-
-`shopLeaveOutpost()` runs inside the shop loop rather than after it, so a
-withdrawn commit only has to clear `jumpSection` for the loop to reopen the
-outpost. `ShopOutpostRoute` is captured before anything can pick a level and is
-what the withdrawal restores, along with a staged debug-browser pick.
-
-`shopCampaignRendezvous()` settles the commit in two steps because it must be
-impossible for one machine to leave while the other is going back. Step one
-publishes DONE and accepts Esc until the peer's DONE arrives; step two publishes
-LOCK and waits for the peer's. A machine may withdraw only before it has seen the
-peer's DONE, so the retract window closes for both at the same event, and the
-ordered channel makes a received LOCK proof that no withdrawal can still follow.
-DONE and LOCK are state bits carried by every `PACKET_SHOP_SYNC`, not events, and
-the receiver assigns rather than latches them.
-
-Step two is also the one place both machines are guaranteed to be draining the
-inbound queue, which is why `network_custom_weapon_publish()` is called there.
-
-Those bits are state, so a machine has to be told them again whenever its view is
-reset. `network_shop_begin()` clears what it knew about the peer, which is right
-for a fresh visit and wrong for a partner who committed while this machine was
-still on its way to the outpost: that commit was announced exactly once, into the
-reset, and the two then waited on each other with nothing left to say. Two things
-close it. `SHOP_SYNC_HELLO` rides the packet `network_shop_begin()` sends and asks
-the peer to restate where it stands (its reply carries no HELLO, so it is one
-exchange, never a volley). `network_shop_keepalive()` re-announces every 400ms
-from any loop that waits on the peer, which also covers a restatement that was
-dropped. It is gated on `network_is_sync()`: the reliable queue is 16 deep and
-overflowing it ends the session, so a partner parked in a screen that does not
-drain the queue is never beaten at.
-
-A restatement covers a view that was reset, and not a peer that has already left.
-Once a machine reaches the departure handshake it stops announcing DONE and LOCK
-altogether, so a partner still waiting on either would wait for good. Both waits
-therefore treat `network_shop_departure_pending()` as the rendezvous being over:
-the ordered channel puts that packet behind the announcements, so anything not yet
-seen was missed rather than still coming. The packet is left at the head, because
-the handshake immediately below is the one meant to read it and `network_update`
-there throws away the very thing that handshake then waits on. Endless is where
-this bites: the non-charting player waits for a sector before committing, so the
-two machines reach the rendezvous a long way apart and the second one can find the
-first already gone.
-
-Every outpost purchase publishes, including the E-Shop and the perk pick, which
-previously only reached the peer at the rendezvous.
-
-### Session flags arm on both sides
-
-Every flag the settings block carries must be armed by
-`network_arm_local_session()` from the host's own config and adopted by the
-joiner from the block, the same set in both places. A flag the block carries
-but the arm misses runs the two simulations on different rules from the first
-place it pays out. Double Earnings was exactly that: the joiner adopted it, the
-host never armed it, and every pickup desynced the wallets by its own value,
-one desync-recovery stall after another for the whole session. The unit suite
-pins host arming against joiner adoption with stale session values in place.
-
-The same audit caught Expert Mode. Its flag rides the save record and its six
-tunables ride each machine's own `opentyrian.cfg`, and nothing published either
-at connect time -- only `PACKET_DEBUG_SYNC` did, and only when somebody opened
-that menu and changed something, since it sends on a diff against its own
-baseline. Two players who had each set a Boss HP multiplier once therefore
-started a campaign fighting bosses with different health. They travel in the
-settings block now. The flags word at byte 4 was full by then (Timed Battle took
-the last three bits), so the block grew a tail at byte 24: a second flags word,
-then `NETWORK_EXPERT_SLOTS` Uint16 slots written straight off the
-`expertSettings[]` table, so a seventh tunable needs no wire change. Bytes 0..23
-kept their offsets. `clamp_expert_settings` runs on adopt as well as at config
-load, so a hostile packet cannot name a 65535x multiplier.
-
-The epdiff word at byte 2 filled up the same way. It holds two bits per
-`EpDiffWeapon`, which the eighth entry exactly exhausted, so the ninth rides bits
-1 and 2 of that second flags word. `NET_SET_EPDIFF_PACKED` names the split and a
-compile-time assert holds `EDW_COUNT` to it, because an entry that quietly fell
-off the wire would leave the pair running unequal item tables.
-
-The Endless chart rule does not travel here. It is a run property rather than a
-config setting, so it rides the Endless lobby block beside the run mode and the
-seed (see below).
-
-Two things that look like the same class of bug and are not, both checked: the
-Extra Sparks toggle and the per-weapon spark cap only move where `JE_doSP`'s
-ring buffer wraps -- its loop bound is `num`, so the `mt_rand` draw count is
-identical either way -- and Unused Shop Sprites only rewrites `.itemgraphic`.
-
-Payouts must go to deterministic wallets. `endlessCashCredit` pays the local
-keyboard's wallet and is for outpost-time, self-only flows; anything paid
-during or at the end of a level has to name the player index and run on both
-machines (`endlessAwardEliteKill`, `endlessApplyLevelPayout`, the kill and
-pickup paths). The zone payout pays every participating ship its own interest
-and clear bonus on both machines for that reason.
-
-The flip/spotlight code (`JE_deriveStarShowSpecial`) runs identically online;
-network games used to clear it wholesale, which disabled Topsy Turvy, scripted
-inverted-control levels and the light cone for every online session.
-`smoothies[]` and `starShowVGASpecialCode` are rollback-registered since the
-inverted-control flag reads back into input handling; the replay fixture
-hashes were regenerated for that registry addition after verifying the sim
-bit-identical with the registration removed.
-
-### Keep-alive audit
-
-The peer declares this machine dead after `NET_TIME_OUT` (16s) without traffic,
-and only `network_check()` sends the keep-alives, so every screen a player can
-sit on during an online session must reach it at least every few seconds. Of the
-frame-service helpers, only `wait_input`, `wait_noinput`, `menuWaitForInput`
-(menus.c), `lobbyWaitForInput`, `JE_outTextGlow`/`JE_outCharGlow` and the
-`NETWORK_KEEP_ALIVE()` macro service the network. `service_SDL_events`,
-`service_wait_delay`, `wait_delay`, `JE_showVGA`, `shopWaitFrame` and
-`menuWaitWithSmoothCursor` do not; a loop built only on those starves the link.
-`network_shop_keepalive()` is not a substitute either: it only sends, rate
-limited, and never drains.
-
-Audited screens, all serviced as of this audit: the lobby menus and their text
-entries (pre-session), both connect waits, the outpost and every submenu of it,
-ship specs, save/load and both confirm dialogs, the options pages and both
-input-capture screens, the custom weapon editor, the debug menus, the in-game
-menu and its waits, the help overlay, the Endless death prompt and run-over
-tally, both chunked transfers, the level rendezvous, level text, level-end and
-episode-end screens, the credits, and the halt paths. Five of those starved the
-link until this audit and were fixed by adding `NETWORK_KEEP_ALIVE()` (paired
-with a `network_shop_pump` drain where the outpost protocol can be active):
-the custom weapon editor, the quit confirm dialog, the keyboard and joystick
-capture screens, and the Endless run-over tally.
-
-When adding a new screen reachable online, service the connection in its wait
-loop and extend this list.
-
-### Custom weapons online
-
-Both machines fly both ships, so each player's design has to exist on both.
-`CUSTOM_WEAPON_OWNERS` reserved sets are claimed by `customWeaponClaimSlots()`:
-one weapon port, one sidekick option and one scratch weapon range per player
-index. Ownership is by player index, never by local versus remote, or the two
-machines would disagree about which port a `PlayerItems` id names.
-`customWeaponPort` and `customSidekickSlot` stay as the editor's own, resolved
-through `customWeaponLocalOwner()`. The same rule binds sim-side tests: the
-Endless record flag is registered state, so the shot path asks
-`customWeaponPortIsCustom()` — every owner's port — never `customWeaponPort`,
-which names a different port on each machine.
-
-Reloading item data wipes those slots, and a network game reloads at every level
-start, so `customWeaponInit()` ends in `customWeaponMaterializeAll()`, which
-rebuilds the peer's adopted design as well as the local one.
-
-`customWeaponSerializeDesign` writes only each level's populated bullet slots,
-which keeps an ordinary weapon near two kilobytes against a
-`CUSTOM_WEAPON_WIRE_MAX` worst case of about 45. `PACKET_CUSTOM_WEAPON` carries
-it as numbered chunks. Transport delivery is not enough: the inbound queue is
-`NET_PACKET_QUEUE` deep and only advances as the application consumes it, so the
-receiver answers a completed generation with a chunk count of zero and the sender
-resends the generation until that answer arrives. A per-generation chunk bitmap
-makes a resend idempotent. A design that does not decode is refused rather than
-compiled, and both refusal and non-delivery are recorded in the net log.
-
-`MENU_LIMITED_OPTIONS` is the options page with Load Game removed, built from
-`menuInt[3]` by `configure_options_sens_menu()` rather than from the data file's
-shorter DOS network menu. Its rows therefore sit one higher than the offline
-page's; `options_row()` and `options_full_row()` are the only place that offset is
-written down, and every row is named by the `OPT_*` enum. Sub-screens reached from
-either page (`MENU_LOAD_SAVE`, joystick, keyboard, mouse) have `menuEsc` pointing
-at `MENU_OPTIONS`, so the Esc handler redirects to the online page when
-`isNetworkGame`.
-
-Campaign HUD rendering is local: each machine draws the one-player sidebar for
-its controlled ship. Names and cash totals for both players are drawn inside the
-playfield. Online Arcade retains the split gauges and link presentation.
-
-Both ships run the whole per-player simulation on both machines, so anything that
-paints the shared HUD from inside it has to ask whose strip it is rather than
-paint for whichever player it is simulating. `hud_sidekick_player_index()` (varz.c)
-is that rule; the sidekick ammo gauge goes through it, as does
-`JE_drawOptionsHUD()`. Getting it wrong puts the other player's magazine on your
-HUD, under sidekick icons you may not own.
-
-### Endless online
-
-`coopEndlessMode` is the Endless half of online co-op; `coop_mode_active()` is
-either kind and is what the shared plumbing (ship runtime, HUD, pickups, shop
-netcode, save tag) keys off. `coopCampaignMode` now means the Campaign lobby
-alone.
-
-Split of responsibility inside a run:
-
-- Run-wide and derived identically on both machines from the seed, depth and
-  difficulty: the course slate, the sector's modifiers, zone depth and kills,
-  milestones, deferred Star Charts and Breakthrough picks. Nothing about these
-  travels except the chart's reroll count, which is an input to the derivation
-  rather than a result of it.
-- Per player, owned by that player's machine and mirrored to the peer on every
-  `PACKET_SHOP_SYNC`: wallet, gear, superbombs, Reinforce tier, revive token,
-  pending sector purchases, Sabotage charges, Loan Shark tax, The Long Con,
-  shop prices and the perk row. `endlessPackPlayerBlock` /
-  `endlessUnpackPlayerBlock` are that block; `ENDLESS_PLAYER_BLOCK_SIZE` is its
-  fixed width and the receiver checks the packet is long enough before reading.
-- Local only, never sent: `itemAvail` (each machine shows its own player's
-  shelves) and the cash ledger, which follows `endlessEconomyIndex()` and so
-  tallies this machine's own ship. `player_credit_cash` routes through the ledger
-  on that same index: gating it on player 1 outright had the joiner booking its
-  partner's earnings into its own wallet and paying its own straight past the
-  ledger. Solo the two indices are the same, which is why it read as correct.
-
-Perks are personal: a stack works on the ship that took it and no other. They are
-stored as `endlessPerkTakenBy[2][PERK_COUNT]`, one row per player, and every write
-goes through `endlessPerkGrant` so neither machine clobbers the other's row.
-`endlessPerkEffective(p, id)` is what effects read, either through the fx-ship
-context (`perkFx`, the ship the current effect belongs to) or through the local
-economy index (`perkMine`, for shop pricing, offers and menu text).
-`endlessPerkOwned` survives as the capped sum for diagnostics and the legacy save
-field; no gameplay path reads it.
-
-Anything read at the outpost belongs to the buyer, so it takes `perkMine`:
-`endlessPerkTotalOwned` (the extra-perk surcharge and the buyout's own surcharge),
-`endlessPerkShopCostBp` (Financier's discount, charged to the same player
-`endlessShopTaxPercent` taxes), the slate's offer pool and its Owned counts.
-Anything a level pays or a shot does takes `perkFx` and runs inside a context that
-names the ship: `endlessAwardEliteKill` sets it to the killer,
-`endlessApplyLevelPayout` to each payee in turn, `endlessPerkDeclineBonus` to the
-player taking the buyout, `endlessApplyHullBonus` and `JE_resetPlayerOptions` to
-the ship being outfitted. `endlessAdrenalineActive` is personal on both halves: the
-fx ship's own stacks, armed by the fx ship's own hull.
-
-Two perks act on shared screens instead of on a ship: `endlessPerkSurveyorRoutes`
-reads `endlessChartingPlayerIndex()`, the seat both machines derive identically, so
-one slate cannot be widened differently on the two sides; `endlessPerkRadarActive`
-reads the local player, because the help text it adds is drawn locally. Radar's
-chart reroll is the shared half of that perk and belongs to the charting seat for
-Surveyor's reason. The chart is derived rather than sent, so what travels is the
-count, a trailing byte on the player block that `endlessChartSyncRerolls` redeals
-from. Every packet the charting machine sends carries it, and the pick rides that
-same packet, so a peer cannot learn the sector index without also learning which
-chart it indexes.
-`endlessPerkGetOwned` / `endlessPerkSetOwned` (the debug screen and the
-campaign-mods config) both name the local row, so the pair round-trips.
-
-Outpost draws (stock, rerolls, gambles, perk slates) run on
-`endlessRandFor(player)`, forked from the run seed by `endlessReseedPlayers` at
-each outpost. The structural stream `endlessRand()` keeps generating the course
-slate alone, so a reroll can never shift a later zone's layout for either player.
-
-The sector is committed at the rendezvous, not at the pick: `endlessCoopCourse`
-holds the charting player's index, rides the shop packet in the field Campaign
-uses for `mainLevel`, and both machines call `endlessSelectCourse` on it once
-both are done shopping. Folding earlier would use a stale copy of the other
-player's purchases. `endlessLocalPlayerCharts` answers the Host / Guest /
-Alternating / 50-50 setting; the coin flip derives from `endlessSplitMixSeed` of
-the depth rather than drawing, so it cannot depend on how much either player
-shopped.
-
-The player who is not charting waits for that index *before* committing, in
-`shopEndlessAwaitCourse(true)`: Esc stays a way back into the outpost for as long
-as the wait lasts, and a session that somehow agreed neither of them was charting
-is something both players can walk out of instead of a screen with no live key.
-A locked outpost and a loaded game skip the commit entirely, since both arrive
-with the route already armed. The un-escapable form of the wait remains as the
-backstop for reaching the rendezvous with no index at all.
-
-That backstop, and any other outpost wait that outlives the peer's departure, has
-to leave the reliable queue alone when `network_shop_departure_pending()` is
-true. `network_update()` on a `PACKET_WAITING` at the head throws away the packet
-the level-start handshake three lines later is the one waiting for, and that
-handshake has no timeout: the machine that ate it sat on "Waiting for other
-player." forever while the other loaded the level. The two-peer fault test drives
-the whole departure for exactly this reason; removing the guard fails it.
-
-`endlessPlayerDowned[]` latches a ship that lost its hull while its partner flew
-on. It gates the reactive dangers and the per-tick effects, and
-`endlessReviveDownedAtOutpost` clears it. It is registered rollback state: an
-unregistered latch would resurrect or re-kill a ship across a correction. Both
-ships down is an ordinary death, and in Relaxed the host publishes its death-menu
-choice through `network_endless_death_sync` so both machines take the same branch.
-
-A blank seed in the lobby means "roll one", the same as leaving the solo seed
-screen empty. `network_endless_session_begin()` settles it host-side before the
-connect packet carries it, into `network_endless_session_seed` rather than the
-lobby field, so the row stays "(random)" and the next session rolls again instead
-of silently repeating this one. Sending the blank through was hashing the empty
-string, which dealt every online run the same zones.
-
-Resuming an online run streams the host's sidecar record over
-`PACKET_ENDLESS_RUN`, chunked the same way a custom weapon design is, and the
-joiner adopts it with `endlessRunAdopt`. The same packet carries the death-menu
-choice under a sentinel chunk count of 0xffff.
-
-A packet type only reaches `packet_in[]` if `network_check()` names it in the
-reliable-delivery switch. `PACKET_ENDLESS_RUN` was missing from that list, so
-every packet on the channel was dropped there unread and unacknowledged and the
-whole thing was write-only: the resume transfer, the "I have left the level"
-notice, and the death-prompt choice, which is why picking Return to Outpost left
-the other player waiting on a screen for an answer that could never arrive. Add
-new types to that switch and to nothing else; the sender side looks perfectly
-healthy without it, ack backlog included.
-
-The prompt is read for as long as the player takes, so its frame has to drain the
-queue and not merely acknowledge: the other machine's wait announces itself, and
-a receive queue nothing advances fills and then silently drops what follows.
-`JE_endlessDeathMenu` pumps for that reason. The announcement itself is sent once,
-with a slow re-send behind `network_is_sync()`; repeating it several times a
-second stacked unacknowledged copies until the waiter's own outbound queue
-overflowed and ended the session.
-
-Endless save v21 appends the second player's half, the course-chooser setting,
-the alternating-turn flag, both perk rows and both RNG streams. A v20 or earlier
-record loads into slot 0 with the second slot zeroed and the perk rows rebuilt
-from the effective stacks, so a solo run resumes unchanged.
-
-`enemy_logical_death` carries the killer (0/1, or `ENDLESS_KILLER_NONE` for a
-death nothing can claim, such as a despawn), taken from the shot's
-`playerNumber` at both kill sites. `endlessCountKill` uses it for the Combo Feed
-setting and `endlessAwardEliteKill` for the bounty, which then follows the same
-Shared / Individual credit rule as any other kill cash. An unclaimable kill feeds
-both streaks, so neither ship is punished for it, and its bounty pays player 1:
-"the local player" would have paid a different wallet on each machine.
-
-Double Earnings rides settings-flags bit 10 and `coop_earnings_are_doubled` gates
-itself on Individual credit, so the flag can be stored On without doing anything
-under Shared. It covers combat income whole: `player_award_pickup_cash`,
-`player_award_kill_cash` and `player_award_bounty_cash` all double, because a
-split take is the same split whatever earned it. Zone clear bonuses and bank
-interest stay at face value; they are not collected in the field and doubling them
-would compound with the Financier and Scavenger rates already applied there.
-Combo Feed rides a byte in the connect packet's Endless block (widened to 3 +
-seed, NET_VERSION 17), and the Base Level rule a fourth one after it (4 + seed,
-NET_VERSION 26). Both are host-authoritative the way the run mode and the seed
-are: the joiner adopts them in `network_endless_adopt`, and
-`networkEndlessNewRun` copies the rule into `endlessRunBaseLevelSame`. A resumed
-online run takes it from the host's streamed record instead, like every other run
-property. The lobby row lives on the Endless Setup page with them.
-
-Personal sector effects have their own mask. `endlessActiveMods` is what the
-sector charted, and `endlessPlayerMods[p]` is that plus whatever player p bought
-for themselves; `ENDLESS_PERSONAL_MOD_MASK` is the split, and
-`endlessApplyPurchasedMods` performs it once when the course is committed. The
-kill-fire windows (`endlessTurbodriveTimer`, `endlessComboKills`,
-`endlessOverdriveStacks`) are per player too, so two ships can fly different
-drives at once. A kill feeds both windows; only a ship whose own mask carries a
-drive gets anything from it.
-
-The Endless per-tick work is split in two. `endlessGameplayTick` advances the
-run's own clocks and stays on player 1; `endlessPerShipTick` (mainint.c) is
-everything a ship does for itself, and co-op runs it for BOTH ships. Gating that
-half on player 1, as it originally was, left the second ship with no drive, no
-Rapid Cyclers and no gravity while every rule function still answered correctly
-in isolation. It is a named function rather than an inline block so the test
-suite can call it and cover the gate itself.
-
-Opening Salvo is per ship for the same reason: the charge belongs to the gun
-that sat idle and is spent by the gun that fires, so `endlessSalvoIdle` and
-`endlessSalvoWindow` are `[2]` and `endlessOpeningSalvoTick` walks the ships.
-Its green on the generator gauge is the same state read for the ship THIS
-machine flies: both HUD branches go through `local_salvo_gauge_percent`
-(tyrian2.c), which names the local ship rather than trusting the fx context the
-last simulated ship left behind. The co-op branch used to pass a hard zero, so
-the perk worked online while its gauge never lit. Every other HUD read that
-picks a row follows the rule — the endless armour bar's rollover layers and the
-damage flash under them both come from `gameplay_local_player_index()`.
-The reactive timers follow the same rule: the Aegis Gate cooldown, the Static
-Discharge recharge lockout and the Countermeasure Suite cooldown are all `[2]`,
-indexed by the fx ship, so one hull's block, hit or burst never spends the
-partner's. The dual-ship shield-regen loop in tyrian2.c names each ship as it
-computes it, which is what points the Shield Matrix interval and the lockout
-read at that ship's own row.
-
-The in-game menu's Quit means "back to the outpost" in Endless, for both
-players: `endlessCoopPeerQuitLevel` sets `endlessQuitToOutpost` on the peer,
-which is the same thing the local press does. Campaign and Arcade keep treating
-it as the end of the session, and only they set `haltGame`, which the level
-warning screen reads as "stop the game" and an Endless relaunch would run into.
-
-Three paths read the peer's `PACKET_GAME_QUIT`, and all three have to agree that
-a quit is not a clear, or the machine that stayed banks the zone and deepens
-while the one that quit reopens the same outpost. From there the pair is a zone
-apart for the rest of the run, charting from slates that no longer match. The
-rollback stall's copy of the rule is `nrb_peer_left_level()`, named rather than
-inlined so the suite can drive it.
-
-Which ship an effect is being computed for is `endlessFxPlayer()`, set by
-`endlessSetFxPlayer` at the few places that work through the players in turn:
-`JE_playerMovement` (cadence, tint and the ship blit), `JE_playerDamage`,
-`player_shot_create`, the shot-damage site in tyrian2.c (the shooter, from
-`playerShotData[].playerNumber`), and the two HUD readouts (the local ship). It
-is 0 outside co-op, so single-player behaviour is untouched.
-
-Zone records are kept per crew size: `endlessBestZoneDiff[table][mode][slot]`
-with table 0 solo and 1 co-op, `endlessRecordTable()` choosing the one a run
-writes. The co-op half lives under the same config keys with a `_2p` tail, so a
-config written before the split reads as an empty co-op set. Online co-op
-Campaign has its own board in `coopCampaignScores` (config section
-`coop_scores`), one best run per episode, written by `coopCampaignScoreNote`
-without a name-entry dialog: the lobby already knows both names, and a modal at
-that point would leave the other machine on an unpumped screen.
-
-`JE_itemScreen` performs the level-start handshake (both machines publish
-`PACKET_WAITING`, then `network_state_reset` and a resync) on the way out of the
-outpost. A path that reaches a level WITHOUT passing through it owes the same
-handshake, or one machine starts simulating while the other is still loading and
-the peer's stall gate is the first thing to notice: Restart Zone off the Endless
-death menu and the ENGAGE debug-browser return both call
-`network_level_rendezvous` for that reason.
-
-Two rules keep a session from wedging when one machine leaves a level first.
-`nrb_stall_pump` treats a `PACKET_WAITING`, `PACKET_DETAILS`, `PACKET_GAME_QUIT`,
-`PACKET_SHOP_SYNC` or `PACKET_ENDLESS_RUN` at the head of the reliable queue as
-"the peer is between levels" and ends the local level out of band; without it a
-peer that is alive (keep-alives) but gone holds the stall open for the absolute
-wedge cap. `JE_endlessDeathMenu` sends keep-alives while it is read, and the
-joiner waiting on the host's choice announces itself with the run packet's
-`0xfffe` sentinel so the host is released even if it is still finishing the
-level. A peer that quits through the in-game menu sets `endlessCoopPeerQuit`,
-which the level-end path checks before the death branch: `playerEndLevel` on its
-own would read as this player's death and print the run-over summary.
-
-### Reliable channel
-
-The reliable UDP layer follows these rules:
-
-- A receive error does not prove the link is dead. Wait loops sleep on
-  `network_check() <= 0`.
-- Packet fields are read only when the received length covers them.
-- `network_is_sync()` is `network_ack_backlog() == 0`: every reliable packet
-  sent has been acknowledged and removed from the queue. The acknowledgement
-  high-water mark is not usable for this. It reads ahead of an unacknowledged
-  head whenever the ack for it was lost, and senders gated on it keep queueing.
-- The retry timer belongs to the queue head and starts when a packet becomes
-  it. Restarting it on later sends postpones the head's retransmission for as
-  long as new sends keep coming, so a 250ms keepalive cadence would starve
-  retransmission entirely.
-- A retry resends everything still unacknowledged, oldest first. Resending only
-  the head drains a stale backlog at one packet per interval. The interval
-  follows the measured round trip (twice the keep-alive ping plus margin,
-  clamped to [120, `NET_RETRY`] ticks).
-- A full outbound window in `network_send` is backpressure, not a dead link.
-  The sender services the socket until a slot frees, preserving the prepared
-  packet across the wait because acknowledgement and ping replies overwrite
-  `packet_out_temp`. Only a peer that frees nothing within `NET_TIME_OUT` is
-  treated as lost.
-- An acknowledgement is trusted only for a packet still outstanding. Anything
-  else drifts `queue_out_sync` off `last_out_sync`, and the send path reads
-  that as an overflow.
-- A reliable packet past the end of the receive window is dropped WITHOUT an
-  acknowledgement. Acknowledging it tells the sender it was delivered, it is
-  never sent again, and the window only advances as packets are consumed, so it
-  can never come back: permanent one-way deafness. The slot arithmetic is
-  signed, so a packet from behind the window (consumed already; the ack was
-  lost) still re-acknowledges. `network_window_overflow()` counts the drops.
-- The same rule extends to a late `PACKET_CONNECT` on a connected session (the
-  handshake ends with a deliberate trailing connect, and `connect_reset`
-  retries add more). One that arrives AHEAD of the window head -- reordered
-  past a younger packet -- must be placed into its sequence slot like any
-  reliable packet, discarded only once it surfaces at the head. It used to be
-  acknowledged and dropped on the spot, which left a hole at the head of the
-  window: an acknowledged packet is never resent, `network_update` cannot
-  advance past an empty head, and every later reliable packet parked behind
-  the gap for good. Both peers idle with keep-alives flowing (each side's own
-  outbound is fully acknowledged), so nothing times out. The wire suite's
-  Super Arcade scenario was the only place with an untimed dependency on the
-  window right after the handshake -- the ship-pick exchange -- which is why
-  the hole surfaced as a rare scenario-18 wedge; the arcade/SuperTyrian
-  scenarios rode the same hole out through the level rendezvous's 30-second
-  escape. Heads holding a stale connect are consumed by `network_update`
-  waits, `network_sa_ship_peer`, and `qa_net_drain`.
-
-The sender keeps at most half of `NET_PACKET_QUEUE` outstanding during a resync.
-This prevents transport acknowledgements from filling the receiver's inbound
-queue before the application consumes the chunks.
-
-### Rollback input stream
-
-`PACKET_INPUT` has a 48-byte header and up to sixteen redundant 14-byte input
-records. It is unacknowledged and idempotent. `PACKET_DESTRUCT_INPUT` is the
-minigame's own stream on the same terms, and `PACKET_DESTRUCT_RESYNC` its
-acknowledged recovery transfer; see Online Destruct.
-
-- `network_check()` drains up to `NET_DRAIN_MAX`; callers do not add another
-  drain loop.
-- The level epoch separates frames from different levels.
-- Menu request bits are processed from received truth outside the simulation
-  misprediction test.
-- Received canaries queue until the local frame can be compared.
-- The pool hash covers player shots, enemy shots, explosions, repeating
-  explosions, and the sound queue.
-
-An in-game menu request schedules frame `f + NRB_REQ_LEAD`, and both peers stall
-there until it is final.
-
-Pause is offline-only. `JE_pauseGame` returns immediately under `isNetworkGame`,
-the level loop swallows the key and the focus-loss edge without raising a
-request, and neither `RB_REQ_PAUSE` nor state-packet request bit 0 is set or
-honoured. Both stay reserved so the wire layout is unchanged. A halt on one
-machine alone strands the other, and losing window focus is not consent to it.
-
-`shipGr` and `shipGrPtr` are registered derivations of the selected ship.
-`JE_getShipInfo` also restores armor, so it cannot be used as a restore fixup.
-The display-rate ship prediction latch is registered and reset at level start.
-
-Endless combat effects remain outside the rollback registry. The rollback
-self-test is gated while those effects are active and is enabled through
-`rollback_selftest_set()` so the registry and snapshot ring exist before play.
-
-### Determinism
-
-Demo recording and playback use the same fixed RNG seed. Compare cold-start demo
-traces and enter the demo from the same initial state.
-
-Raw snapshot bytes contain process-specific pointers. Per-item comparisons use
-the relocation walk before hashing. Summary hashes remain the authoritative
-cross-process comparison for fields repaired by restore fixups.
-
-Two `mt_rand()` calls in one C expression have unspecified evaluation order.
-Draw into named locals before using both values. Matching draw counts alone do
-not prove that values were assigned to the same operands.
-
-Simulation floats require consistent compiler behavior. Switch, Vita, and Linux
-disable floating-point contraction, while MSVC uses precise floating-point mode.
-Simulation paths use `sim_sinf` and `sim_cosf`; presentation-only paths may use
-the platform math library. Linux and console builds use signed `char` semantics.
-
-`RB_TRACE_ITEMS_TO` is zero by default. Enable a narrow frame window because a
-full per-item trace is large and can disturb console timing.
-
-Function-local `static` state in a simulation path is a determinism bug twice
-over: a rollback cannot restore it, so every re-simulated frame advances it
-again, and the two machines re-simulate different frames. Four of them each
-desynced online Endless in its own way before the registry picked them up: the
-gravity fractional carry (an extra pixel of pull per resim), the Rapid Cyclers
-and Rapid Recharge fire accumulators (a gun quickened a tick apart), and
-`endlessCountKill`'s multi-part dedup guard, which made a rolled-back kill
-unrepeatable so the Turbodrive combo feed starved on one machine. All four are
-file-scope and registered now (`endless.gravityCarry*`, `endless.perkFireAccum`,
-`endless.perkCdAccum`, `endless.killDedup`), and the run cash ledger
-(`endless.cash*`) rides with them so a re-simulated payment books exactly once.
-The sweep that found them: `grep -n "static" src/endless*.c` filtered to
-mutable locals; keep it clean.
-
-### Desync recovery
-
-Rollback recovery sends the host's registered state in `PACKET_RESYNC` chunks.
-Chunk fields after the four-byte reliable header are generation, chunk index,
-chunk count, and payload length. Chunk zero carries registry size, compressed
-size, and checksum. The payload uses zero-run RLE.
-
-Wire export relocates registered pointers to tags or offsets. Supported targets
-include sprite-sheet globals, `enemyDat`, ship graphic pointers, and background
-map arrays. Unknown pointer homes reject the export. Extend `rb_relocs` when
-registering another pointer.
-
-Peers compare `rollback_layout_fingerprint()` and `rollback_state_size()` during
-connection. Registered state uses fixed-width types across platforms. A layout
-mismatch disables recovery for the session.
-
-The host canonicalizes unused shot and explosion slots before export. Dead enemy
-slots remain intact because some spawn paths inherit their sprite-sheet pointer.
-
-Transport acknowledgement means that bytes arrived. The joiner sends
-`NRB_RS_ACK` after adopting a complete generation, and the host resets only after
-that application-level acknowledgement. Fatal layout refusal uses a reasoned
-NAK and retires recovery on both peers. Recovery is capped at three attempts per
-level, and Destruct runs its own copy of all of this per round (see Destruct
-desync recovery).
-
-`PACKET_WAITING` is a paired rendezvous. Menu release, shop exit, and level start
-consume it in the same order on both machines. Loops that inspect packets during
-a rendezvous must leave unmatched waiting packets queued.
-
-The level-start barrier completes map and sprite loading before the simulation
-fade begins. `JE_advanceLevelFade` advances the fade inside the tick so rollback
-re-simulation sees the same state.
-
-### Presentation after rollback
-
-Presentation state stays outside snapshots and is repaired on the first live
-pass:
-
-- `textErase` decrements only on live passes, and a new message always redraws
-  the message-bar background.
-- Sidekick HUD changes set `hud_sidekicks_dirty` during a silent replay. The rule
-  lives inside `JE_drawOptionsHUD()` and the ammo-gauge painter rather than at the
-  call sites, so a new caller cannot forget it.
-- Shield and armor changes set `hud_bars_dirty`; restore paths request a repaint.
-- Gauge flash counters and link sound cues are presentation state. A counter kept
-  out of the registry has to keep BOTH halves of its life on the live pass: the
-  arming in `JE_playerDamage` and the step in `JE_updateGaugeFlash` are each gated
-  on `!rollback_resim`. Gating only the arming still let every replayed tick step
-  the counter again, so a deep enough correction spent a whole six-tick glow inside
-  one displayed frame. Each ship keeps its own row, so one hull's glow can never
-  start or shorten the partner's.
-- `SFX_CUE_CHANNEL` is reserved for presentation cues.
-
-Future event-driven HUD drawing needs the same dirty-flag repaint pattern.
-
-### Diagnostics
-
-Network events use the net log. Process failures use the crash log. Both are
-created lazily under `log/` with the launch timestamp and are append-only.
-
-Each online session records start and end lines. Desync reports include the
-disputed frame, recent input tuples, pool details, player shots, and enemy state.
-Resync aborts record generation, progress, elapsed time, and cause.
-
-Diagnostic counters span the session. Per-level canary counters reset with the
-rollback core. Writers read module statics without SDL_net calls so crash and
-watchdog contexts can use them.
-
-Switch and Vita write reduced network entries in their user directory. Console
-Clear Logs removes only recognized OpenTyrian log names.
-
-### Online saves
-
-Online games use the existing two-player page in `tyrian.sav`, slots 12 through
-22. Slot 22 remains the automatic LAST LEVEL backup and is read-only in the menu.
-Arcade records remain compatible with local two-player. Campaign records are
-tagged and accepted only while loading an Online Campaign session.
-
-`save_record_pack` and `save_record_unpack` define the 81-byte little-endian
-network record. A resumed `PACKET_DETAILS` appends that record after its normal
-ten-byte prefix. The joiner keeps its own live input-device assignments.
-
-The existing `highScore2` field carries a Campaign marker plus the weapon powers
-and modes not represented by the legacy two-player record. The two `PlayerItems`
-blocks and cash fields then preserve both full loadouts without changing the
-fixed `tyrian.sav` layout or checksum. Shop saves first complete a bidirectional
-state checkpoint so both machines serialize the same transaction boundary.
-
-The legacy record reaches only player one's front bay and player two's rear one,
-which is the whole loadout for the linked pair, where player two's rear bay is
-also its life counter. Every session flying two complete ships needs the other
-half, so `JE_saveGame` writes it for `dual_ship_mode()` under one of two markers:
-`0xc74f` for the co-op modes, `0xc7a5` for the three dual-ship arcade shapes
-(Separate, Super Arcade, SuperTyrian). They are separate because
-`save_record_is_coop` is what admits a record to the Campaign and Endless lobbies,
-and an arcade record must not answer to it. `JE_loadGameRecord` unpacks on either
-marker, keyed on what the record says it is rather than on the current session,
-and rebinds `player[].lives` through `player_lives_port()`: it is the one path
-that installs a loadout without going through `newGame()`, and a resumed Separate
-arcade left on the linked binding would spend ship two's rear-gun power on every
-death.
-
-The three arcade lobbies share one slot page, so `save_type_compatible` reads the
-record to tell them apart: the dual-ship marker must match the session's shape,
-and the two `super_arcade_mode` bytes (`save_record_sa_ship`) must match the game
-type. Loading across them would resume with a loadout the session's own rules
-never issue.
-
-The host selects New Game or Load Game after connection. Network load menus stay
-on the two-player page, filter unavailable episodes and mismatched game types,
-and keep the peer alive. Alt+L is disabled online; Alt+S opens the shared
-two-player save page except while a purchase preview is active.
-
-An involuntary disconnect after gameplay offers a save based on the pre-level
-LAST LEVEL backup. The prompt clears silent rollback state before drawing and
-keeps acknowledgement traffic moving while open.
-
-`network_shop_sync_for_save` waits on the peer's acknowledgement, and that wait
-is a real synchronization point: both machines serialize the same transaction
-boundary through it. It consumes shop traffic and a debug block queued ahead of
-the acknowledgement, then keeps the queue moving on anything else, because the
-acknowledgement is behind whatever is at the head and stopping there strands the
-save. Two exceptions to that:
-
-- `PACKET_GAME_QUIT` is left alone. It was acknowledged on arrival, so the peer
-  counts it delivered and never repeats it; consuming it here means the quit
-  handler never sees the peer leave.
-- The wait is bounded by `NET_SHOP_SAVE_WAIT` and by peer liveness. It had
-  neither, and a peer that vanished between the request and the reply held the
-  game in the loop with no way out.
-
-Breaking on *any* foreign head instead looks tidier and is wrong: the base wire
-scenario's save checkpoint stops converging, because the packet at the head is
-usually transient rendezvous traffic and the acknowledgement is behind it.
-
-### Reaching a queued debug block
-
-`network_debug_sync_pump` inspects only the head. The reliable queue is ordered
-and indexed by sequence number, so nothing can be lifted out of the middle of it:
-a block sitting behind outpost traffic is reachable only to a caller that also
-runs `network_shop_pump`. Every wait pairs the two for that reason.
-
-### Wire-scenario barriers
-
-`qa_net.c` barriers are numbered announcements on `PACKET_WAITING`, completing on
-"the peer has reached at least here". Scenarios may use as many as they need.
-The stall that used to appear past two barriers was the reliable channel, not
-the barrier design: the old retry rules let a keepalive cadence postpone the
-head's retransmission indefinitely and drained a backlog one packet per
-interval, and the outbound window treated fullness as a dead link. The rules
-that replaced them are in the reliable-channel section above.
-
-Wire scenario 3 (`qa_net_barrier_phases`, forty barriers and nothing else) is
-the reproducer: against the old rules it failed about one run in six, one peer
-stalled with a fifteen-deep unacknowledged backlog or halted by queue overflow
-mid-ladder. In a live game that overflow was a healthy session dying with
-"Network connection was lost" after a few seconds of one-way loss at an outpost
-rendezvous. A test peer that hits a session halt exits non-zero with the halt
-message instead of sitting on the "press a button" screen.
-
-Phase announcements are re-broadcast state, not events: every qa_net wait
-re-announces the highest phase this machine has reached, rate limited to one in
-flight. A product wait that legitimately consumes transient rendezvous traffic
-(the save checkpoint does) can eat an announcement unrecorded, and the announcer
-has moved on and never says it again.
-
-Every test-peer scenario starts its reliable sequence space at 0xFFD0, so the
-Uint16 wraparound is crossed in the normal course of every run rather than
-waiting for a soak to reach it.
-
-### Gameplay wire scenarios
-
-Scenarios 4 to 9 in `testing/network_fault_test.py` go beyond the outpost
-protocols. 4 gives the joiner a skewed wire version (`--test-net-version-skew`
-offsets both what the connect packet advertises and what the peer's packet is
-compared against); success is both peers rejecting the handshake with the
-mismatch message and exiting on their own.
-
-Scenarios 5 and 6 fly the first Arcade level on two real peers through the
-fault proxy, using the command-line start with its screens answered by test
-hooks (`qa_net_gameplay_ticks`): the host auto-picks New Game, the outpost and
-briefing are skipped, movement is a scripted wiggle so held-input prediction
-keeps being wrong and the rollback path does real work, and the run reports a
-verdict and exits at the frame limit. 5 requires zero canary mismatches and at
-least one real rollback. 6 also bends one joiner frame's armor
-(`qa_net_corrupt_frame`) after the snapshot, armor because the input tuples
-carry positions and would repair those; its verdict requires the bend detected,
-a recovery run, and the timeline being flown at the limit clean again, on
-session-scoped counters because a recovery and a level restart both wipe the
-per-level ones. Command-line peers have no lobby roles and the recovery
-dispatch acts on the host role alone, so the gameplay test assigns player 1
-the role the lobby would have.
-
-Scenario 7 is save/resume in two stages over the same scratch directories: the
-pair flies and banks the LAST LEVEL slot on exit (`--test-net-save-exit`), then
-relaunches with the host auto-loading it (`--test-net-resume-slot`) so the
-joiner adopts the `PACKET_DETAILS` resume form; the resumed level must fly
-desync-free, which it cannot if either machine resumed to different state. This
-scenario is what found the `net_last_host` clobber: the remembered lobby host
-was applied after command-line parsing and overrode `--net`'s target.
-
-Scenario 8 blacks the proxy out completely for 8 seconds mid-level, inside the
-dead-link timeout; the session must ride it out and still finish clean.
-Scenario 9 kills the joiner mid-level; the host must reach its own clean
-"Network connection was lost" exit rather than hang. The base scenario also
-prints a working-set figure after the handshake and at the finish
-(`NETWORK TEST MEM`), and the harness fails a session whose memory grew.
-
-Scenario 10 flies four sidekick mount combinations with scripted fire
-(`--test-net-loadout`, applied identically on both machines; the fire buttons
-are forced where the input devices would have been sampled): front pod + side
-pod against a trailing pair, double front against satellite + chaser, a
-satellite pair against chaser + front, and ammo-limited + charge-up kicks
-against a custom design + satellite. The custom design is the identical startup
-default on both machines, adopted into owner 1's slots the way the outpost
-exchange would deliver it. A mount whose simulation reads unregistered or
-local-only state desyncs here. The gameplay scenarios all fire constantly since
-the same hook serves them.
-
-Scenarios 11 to 15 extend the same harness. 11 raises the in-game-menu request
-on both machines on the same frame (`--test-net-menu-frame`) and requires the
-host-wins arbitration to leave a clean reliable queue. 12 and 13 are multi-level
-runs (`--test-net-game-type`, `--test-net-zones`): the outpost auto-visit in
-game_menu.c (`qa_shop_auto_visit`) stands in for the player, running the real
-shop protocol (purchases, perk picks, custom weapon designs, the course
-rendezvous and the departure handshake), and a frame-keyed scripted level end
-(`QA_NET_ZONE_END_FRAME`, replayed identically by re-simulation passes) turns
-each bounded flight into a cleared level. 12 flies ten Online Endless zones,
-each charted with a forced modifier slate (`qa_net_zone_mods`) that covers
-every registry bit across the run; both peers print their view of both wallets
-at every outpost and the harness requires the sequences identical, plus a
-nonzero elite bounty by the end. Multi-zone runs set `cheatInfiniteArmor` on
-both peers so the scripted wiggle cannot die into the death menus, and the
-verdict holds a final `PACKET_WAITING` barrier before exiting, because a peer
-still confirming its last level end needs the other machine's packets to
-escape its stall. 13 flies the first two campaign levels with the shop between
-them, each ship flying its own custom weapon design, then jumps the pair into
-episode 1's `]Q` section (26) to drive the real episode transition and flies
-the first level of episode 2. 14 runs the peers under the production lobby
-roles (`--test-net-lobby-settings`): the host arms Individual credit plus
-Double Earnings from its own config, the joiner starts from the opposite values
-and must adopt the settings block, and frame-keyed in-simulation pickup grants
-then have to pay the same doubled wallets on both machines. 15 is the
-accelerated soak, a 12000-tick flight watched by the same working-set check as
-the base scenario (the baseline is re-marked at each level start so one-time
-sprite loads stay out of the figure); it runs only when selected explicitly. 16
-flies a level with Separate arcade ships (`--test-net-arcade-separate` arms it on
-both peers, since command-line netplay adopts nothing) and requires both to report
-`separate=1`, so a run that quietly fell back to the linked pair fails instead of
-passing while proving nothing.
-
-17 and 18 fly the two online one-player rulesets. 17 is SuperTyrian on the
-Scrollock variant (`--test-net-scrollock` pins the variant field on both peers,
-as the lobby would); both must report `st=1 sa1=254 sa2=254`. 18 is Super Arcade:
-the wire peers pick different ships through the real announcement protocol (slot
-1 takes ship 1, slot 2 ship 2), both must report `sa1=1 sa2=2` (a peer that fell
-back to its own pick for both reads 1/1), and a frame-keyed script then walks the
-five colour slots, granting each to both ships through `player_sa_ball_weapon`.
-The harness requires the two peers' `NET SA BALL` lines identical and at least
-one slot to hand the two ships different guns, which is the per-ship lookup
-doing its job.
-
-The session-flags line every gameplay peer prints carries the mode fields the
-scenarios assert: `shared`/`doubled`/`separate`, `st` (superTyrian), and
-`sa1`/`sa2`, the two ships' own `super_arcade_mode` bytes.
-
-Command-line netplay now assigns player 1 the host role at startup (opentyr.c),
-for real sessions and test peers alike: the desync recovery dispatch and the
-menu arbitration act on the host role alone, and a session without one silently
-ran with recovery disabled. Settings stay configured-by-hand on both sides;
-only the role is filled in.
-
-The endless scenario exchanges all three Relaxed death-prompt choices, host to
-joiner, one exchange per choice the way three separate deaths would arrive. The
-campaign scenario ends with the host leaving for a level the joiner did not
-pick, adopted through `network_shop_adopt_host_level`.
-
-The harness gives each peer its own scratch working directory: the game writes
-`tyrian.cfg` and saves into the cwd, and a shared directory leaks state between
-runs and races the two peers against each other. A caller can pass directories
-in to carry saves across stages, which is how the resume scenario works.
-
-### Esc during an online session
-
-Every Esc path reachable online was audited (2026-08-07). All are safe: they
-either back out locally, withdraw through the shop protocol, or send a quit
-notice the peer acts on. Two were fixed to get there: cancelling the lobby's
-connect wait now sends a best-effort `PACKET_QUIT` to whoever it may already
-have been talking to (a joiner mid-connect has no timeout and would otherwise
-wait on its own Esc alone), and an Endless charting player who withdraws from
-the rendezvous clears `endlessCoopCourse` before the withdrawal publishes, or
-the packet still carried the sector and the two machines could chart different
-courses. The Relaxed death prompt deliberately ignores Esc: one of its three
-rows must be chosen, so the joiner's wait always gets an answer.
-
-Simultaneous presses are arbitrated: when both players' menu requests coalesce
-into one scheduled opening, only the host takes the local-menu branch and the
-joiner waits on the host's menu (`req_host_menu` in net_rollback.c). Both
-machines derive "did the host press" from the same verified input records, so
-the two sides always take complementary branches. Without it both machines took
-the local branch and each sent a `PACKET_WAITING` nobody consumed. The
-menu-race wire scenario presses Esc on both machines on the same frame and
-fails on any stale `PACKET_WAITING` left behind.
-
-The same scenario found that the menu release itself leaked: the waiting
-machine broke out of its wait on the release `PACKET_WAITING` without consuming
-it (`network_check` where `network_update` was needed), so every later
-rendezvous on that machine was released one packet early. The peer's
-`PACKET_GAME_QUIT` in that wait stays queued on purpose; the level-end paths
-are the ones that read a quit.
-
-### Online Destruct
-
-Destruct is `NETWORK_GAME_DESTRUCT`, settled entirely in the lobby: the battle
-mode and a rolled `Uint32` terrain seed travel in the connect packet's Destruct
-block, the host's side rides the existing host-slot field (1 = left), and
-`networkStartScreen` diverts to `loadDestruct` without a `PACKET_DETAILS`
-handshake. Sessions run either netcode, `de_net_rollback` being
-`nrb_session_mode()` read once at `JE_destructGame`, and either answer to the
-recovery row through `nrb_session_recovery()` (see Destruct desync recovery).
-Sessions are always Normal speed so both machines advance frames at one rate;
-`network_settings_apply_session_speed` pins it before the connect packet is
-packed, so the joiner adopts the forced value along with everything else, and
-the lobby hides the row rather than clearing `network_host_game_speed`, which
-remains the host's choice for other types.
-
-Both netcodes carry the same per-tick payload: one action byte (the eight
-`de_keys_t` bits) and one control byte. Control bits are QUIT (Esc, ends the
-session on both at the same frame) and NEWMAP (Backspace's round reroll); pause
-is offline-only here as in every online mode, so bit 0x02 stays unused.
-`DE_NetSimHash` plus `mt_rand_count` is the desync canary for both, reported
-once per session to the net log with play continuing.
-
-The delay-based path reuses the main game's lockstep state stream
-(`PACKET_STATE`, XOR parity, resends). Applied inputs are both sides' bytes from
-`network_delay` ticks ago -- our own replayed from
-`packet_state_out[network_delay]`, the peer's from the arrived packet -- so both
-machines run the identical pair at the identical tick (`DE_NetExchange`).
-
-#### Destruct rollback
-
-`destruct_rollback.c` owns the rollback timeline, with its own snapshot ring
-rather than the shared registry in `rollback.c`: that registry is one global
-list whose byte stream the replay fixtures hash and whose layout fingerprint the
-desync recovery compares, so adding the minigame to it would change both for
-every session that never enters Destruct. The ring is `ROLLBACK_RING` slots of
-`DE_StateSize()`, allocated at `drb_session_begin` and freed at
-`drb_session_end`; `JE_destructGame` calls the end unconditionally on entry,
-beside the buffer frees and for the same reason (a teardown longjmps past the
-exit path), and doubly so because a module left armed would have the next
-offline game reading itself as a rollback session.
-
-`DE_StateWalk` is the snapshot, one walk serving save and restore so the two
-cannot disagree about the layout. It covers the unit arrays, walls, shots,
-explosions, `world`, `destruct_player`, `de_endDelay`, `destructFirstTime`, the
-generator state, and the whole `destructTempScreen` pixel buffer. That last one
-is not presentation: shots collide against its `PIXEL_DIRT` pixels and
-explosions carve it, so a mispredicted shell that was not rolled back leaves a
-crater on one machine only. `de_endDelay` moved out of `DE_RunTick` to file
-scope to be reachable from the walk. The pointed-to arrays are walked through
-the live pointers before the structs that hold them, and `DE_StateRestore` puts
-those pointers back afterwards; the allocations outlive every snapshot, so their
-addresses are constant for the session either way.
-
-The tick is one pass of the body between `de_sim_pass:` and `drb_driver`, and a
-`DRB_STEP_RESIM` verdict jumps back to the label. `drb_resim_silent()` switches
-off the present for every pass of a correction except the last, `drb_resim()`
-switches off live input sampling, sound and the frame delay for all of them, and
-the palette fade-in is gated on both so a rollback reaching frame 1 does not
-stall the battle for the fade's own 25 ticks. The driver runs before the delay
-so a correction is replayed inside the tick's own slack. Drawing into VGAScreen
-is repeated during a silent pass rather than skipped: only the terrain writes are
-simulation, and separating them would mean splitting `DE_RunTickShots` and
-`DE_RunTickExplosions` in two.
-
-Predictions repeat the peer's newest record masked to `DE_ROLLBACK_HELD_ACTIONS`
-(the four directions and fire). Change-unit and the two weapon cycles are edge
-triggered -- `DE_NetLocalActions` clears the key as it reads it -- so predicting
-one would take an action the peer never took. `drb_scan_mispredict` compares
-action bits only: control bits never reach the simulation, and
-`drb_process_controls` reads them from the arrived record rather than from what
-a frame consumed, so an unpredicted Esc buys no rollback.
-
-Round ends are the irreversible transition rollback has to be careful with.
-`de_endDelay` reaching zero sets `de_round_over` for the driver instead of
-returning `STATE_RELOAD` on the spot, and the driver holds it until
-`verified_upto` has caught up to the frame, so a mispredicted last shot cannot
-reload one machine's map and not the other's. A round that ends inside a
-correction clamps `resim_target` to that frame. QUIT and NEWMAP take the same
-route through `drb_process_controls`, which only reads frames both machines have
-agreed on. The peer-stopped-simulating backstop ends the round unconfirmed after
-8 s, which is what covers the case where the last packets of a round are lost
-after the peer has already reloaded into the next epoch and stopped serving
-them.
-
-Each round is its own timeline: `drb_round_reset` after `DE_ResetLevel` clears
-the histories, restarts at frame 1, and bumps `drb_epoch` so records still in
-flight from the round just finished are refused. Only strictly older epochs are
-refused, because a peer one round ahead is the machine that regenerated first.
-`PACKET_DESTRUCT_INPUT` is the wire type, redundant and unacknowledged like
-`PACKET_INPUT`: a 28-byte header (frame, ack, epoch, and the canary for the
-newest frame this side considers final) and up to `DRB_REDUNDANCY` two-byte
-records. Sound is suppressed on every re-simulation pass including the presented
-one, because the live pass being corrected already played it.
-
-`--test-destruct-ticks N` is the snapshot self-test, run by
-`testing/run_replay_fixtures.py`. It plays a headless battle through the
-production `JE_destructGame` with scripted input for both sides, simulating every
-frame twice: once live, then again from that frame's own snapshot, comparing the
-two results byte for byte. State the walk misses fails it too, not just state it
-restores wrongly, because an uncovered field carries pass one's value into pass
-two and perturbs what is covered. That is what the check is for: an incomplete
-walk is otherwise invisible until two machines quietly diverge. It runs
-`drb_selftest_*` rather than the driver, leaves `drb_active()` false so the tick
-keeps its offline round handling, and presents nothing, so 400 ticks cost a
-fraction of a second. Halfway through the run it also takes the recovery's own
-serialization end to end on live battle state (`drb_selftest_resync_probe`:
-snapshot, compress, expand, compare) and reports raw bytes, compressed bytes and
-chunk count on the `DESTRUCT` line. The self-test does not cover the wire: the
-driver, the prediction, the confirmed-verdict paths and the transfer itself need
-two peers, and no Destruct scenario exists in `network_fault_test.py` yet.
-
-#### Destruct desync recovery
-
-The canary mismatch arms `resync_wanted`; the host acts on it at its driver site
-and the joiner waits for the stream, exactly as `net_rollback.c` does. The wire
-type is `PACKET_DESTRUCT_RESYNC` with the same chunk layout, and the zero-run
-coder is `nrb_resync_compress`/`expand` reused rather than reimplemented. What
-differs is the payload: `DE_StateSave` output goes on the wire unchanged and
-`DE_StateRestore` adopts it, with no relocation layer. The blob holds three
-pointers (`destruct_player[].unit`, `world.mapWalls`, `world.VGAScreen`) and the
-restore re-pins all three unconditionally, so the sender's addresses are
-overwritten before anything reads them. `destruct_player[].keys.Config` also
-crosses, and is a copy of the constant `defaultKeyConfig` table on both machines.
-
-The preamble guard is `DE_StateSize()` alone, without a layout fingerprint. It
-separates the word sizes that matter here, because `world` and `destruct_player`
-carry those three pointers and a 32-bit peer therefore reports a different total;
-`NET_VERSION` covers the rest. A refusal is fatal, retiring recovery for the
-session on both peers.
-
-Adoption resets the timeline through `drb_reset_core`, the round-start path
-without the budget reset, so the three attempts are per round. The recovery
-rendezvous sits after the QUIT and NEWMAP early returns, because a round that is
-already ending has nothing left to repair, and `drb_stall_pump` dispatches an
-inbound stream as well: a desync at a round end leaves one machine waiting to
-confirm it while the other is already streaming. Both stall loops return
-`DRB_STEP_PRESENT` when it fires, since `drb_cur` is back at 1 and their
-conditions no longer mean anything.
-
-Unconfirmed local input dies with the timeline, control bits included, so a quit
-or reroll pressed during the hitch has to be pressed again. One battle costs
-about 81 kB raw and 34 kB compressed (111 chunks); the terrain buffer is most of
-both, and the untouched sky is what the zero-run coder earns its keep on.
-
-Every map is generated from `network_destruct_session_seed + golden_ratio *
-round` on both machines; nothing about the world crosses the wire. That is why
-every config-file knob that shapes the simulation is pinned to shipped
-defaults for the session in `JE_destructGame` -- shot/explosion/wall pools,
-crater aliasing (it rewrites collision pixels), jumper trajectories, the tracer
-laser, the AI, and `max_installations`, which is a MAX accumulator over the
-config-set custom army sizes and never shrinks across visits. The wall-count
-draw was moved from libc `rand()` to `mt_rand` and the generator/tick trig to
-`sim_sinf`/`sim_cosf` for PC-console determinism. `JE_destructGame` frees the
-previous visit's buffers on entry, because a network teardown longjmps out of
-the tick loop past the frees at the bottom.
-
-The intro card is a both-ready barrier (`DE_netIntroBarrier`; Timed Battle's card
-is the other one). It announces this
-player's confirmation as a `PACKET_WAITING` and holds until the peer's arrives,
-so no machine reaches the first tick while the other is still reading the
-card. It replaced a five-second auto-advance, which existed only because the
-peer's first `network_state_update` gives up after sixteen -- with the barrier
-neither state stream starts early, so that window never opens and the wait needs
-no timeout at all. The wait is unbounded by design: both peers sit on this
-screen pumping keep-alives, and a timeout would start one session without the
-other -- Escape is the way out instead, sending `PACKET_QUIT` before halting so
-an abandoned partner is told rather than left to the dead-link timeout.
-`network_ready_peer` drains a trailing `PACKET_CONNECT` off the
-head first (the same hole `network_sa_ship_peer` guards), and the barrier will
-not release until this machine's own announcement is acknowledged, or the
-retransmit would head the queue on the first tick. A 500ms arming window
-swallows the press that opened the screen, since a held pad button auto-repeats
-into fresh `newkey` edges, and a headless wire peer (`qa_net_gameplay_ticks`)
-confirms itself on arrival.
-
-### ENGAGE mini-games in Online Campaign
-
-The `]e` script command (\*\* ALE \*\*, TIME WAR, SQUADRON) rewrites player
-one's loadout, zeroes their cash, and forces `superTyrian`, `onePlayerAction`
-and -- solo only -- `twoPlayerMode = false`; `]g` on the galaga pair
-additionally clones that loadout over player two. The mode flips are why the
-mini-games needed care online:
-
-- Co-op keeps `twoPlayerMode` through the whole mini-game so both ships fly it
-  (the movement loop's two-ship branch is keyed on that flag). Every galaga
-  drop site is gated on `!coop_mode_active()`: the 30000-ball's wing spawn
-  (which would link the pair and clobber the joiner's live ship -- in co-op it
-  only pays), the respawn and out-of-lives drops in `JE_playerDamage`, the
-  per-tick "spawned Dragonwing died" check, and the level-end reset. Solo keeps
-  the vanilla one-ship-plus-spawned-wing rules exactly.
-- Co-op mini-games issue the ENGAGE loadout to BOTH ships (`]e` loops over the
-  pair; `]g` hands the galaga Vulcan to both), and `player_lives_port()` now
-  answers FRONT for every `dual_ship_mode()` session, so each ship counts three
-  lives on its own front gun instead of player two aliasing onto a rear bay.
-- The classic arcade infinite-generator rule (`power = 900` under
-  `arcade_rules_active()`) must reach the per-ship generator copies in every
-  session that swaps them through the movement pass -- the push is keyed on
-  `dual_ship_mode()`, not `arcade_separate_mode()`. Keying it on Separate alone
-  left co-op mini-game ships draining a generator nothing refilled (the co-op
-  regen branch is the `else` of the arcade branch), which read as "nobody can
-  shoot" a second into ** ALE **.
-- The arcade lives HUD in co-op mini-games draws both ships' rows and the local
-  ship's gauge (Separate-arcade shape); the galaga score/fps corner reservations
-  keep player two's corner in co-op.
-- `shopLeaveOutpost` restores the outpost route before adopting a peer's
-  debug-browser pick: the adopting machine may have committed its own planet
-  already, and the capture inside `debugLevelPickApply` would then record that
-  destination as the jump's return "home" -- quitting the picked level bounced
-  that machine into the mini-game its dead commit pointed at (the
-  quit-SQUADRON-land-in-\*\* ALE \*\* report) while the peer went to its
-  outpost.
-
-- Every wipe/quit reload and pre-level backup goes through `backup_save_slot()`
-  (tyrian2.c): slot 22 whenever `twoPlayerMode || isNetworkGame`. Keying the
-  reload on `twoPlayerMode` alone (the old code) read each machine's *local
-  solo* slot 11 after a mini-game death -- `]e` had cleared the flag -- so the
-  two sims restored two unrelated saves and desynced on the first frame of the
-  reloaded level, with the session flipped to solo flags. The slot-22 record is
-  written by `]b` at the pre-mini-game outpost in lockstep, so both machines
-  restore identical coop state and land back at that outpost. The same path
-  covers Esc-menu quits (`PACKET_GAME_QUIT` mirrors `playerEndLevel`) and the
-  nrb peer-left endings.
-- A cleared TIME WAR keeps its vanilla meaning: `]Q` -> `JE_nextEpisode`, the
-  campaign carries on under SuperTyrian rules with the loadouts as flown --
-  and it does so for EVERY entry path, debug browser included (the browser
-  branch exempts `cleared && !galagaMode`). Online, an entry-flag mismatch on
-  that branch split the pair between "return to the outpost" and "carry on",
-  stranding one machine at `network_level_rendezvous` (30s timeout on a faded
-  screen) while the other ran the ending alone; one shared path removes the
-  split by construction. `superTyrian` and `onePlayerAction` deliberately
-  survive, and a save made during the carry-on resumes back into it: `]e` never
-  writes `items.super_arcade_mode`, but `JE_saveGame` re-derives that byte from
-  the live flag (`superTyrian` -> `SA_SUPERTYRIAN`), and `JE_loadGameRecord`
-  reads it back the same way. Both machines write and restore the same record,
-  so the resume is symmetric. Ship two's byte stays `SA_NONE` (only player
-  one's is derived), which is harmless here: `superTyrian` is one global that
-  covers both ships, and a coop record is admitted to its lobby by
-  `save_record_is_coop`, not by the `save_record_sa_ship` bytes the arcade
-  lobbies gate on. A resumed coop session lands with `onePlayerAction` false,
-  since the two-ship branch clears it.
-  Contrast the mini-game exit path, which is where the flags do go away: the
-  `doNotSaveBackup` branch after the backup reload clears `superTyrian`,
-  `onePlayerAction` and `items.super_arcade_mode` outright, so dying or quitting
-  a mini-game returns a plain campaign.
-- The between-level cutscene chain (`]P` pics, `]W` briefings, `]Q`) is safe
-  online as-is: text screens auto-advance on their `]W` delay digit, and
-  `JE_displayText`/`JE_outCharGlow` pump `NETWORK_KEEP_ALIVE()`, so a slow
-  reader cannot starve the link; the pair re-meets at the next outpost's shop
-  handshake, which tolerates one side arriving late. `JE_readTextSync` (`]S`)
-  is a vanilla `#if 0` stub -- do not lean on it for synchronization.
-- The online debug skip (`RB_REQ_SKIPLEVEL`) sets `endLevel` + `levelEnd = 40`
-  and nothing else. Both halves matter and they pull in opposite directions:
-  - It must be the **wind-down, not `reallyEndLevel`**. That flag stops this
-    machine's sim on the spot, and `nrb_driver`'s end confirmation waits for
-    `verified_upto == nrb_cur` -- the peer's input for the frame this machine
-    now never sends. Whoever consumed the request first walked off into the
-    cutscene while the other sat on "waiting to confirm level end" until the
-    8-second escape or the next between-levels packet freed it. Forty ticks of
-    continued simulation are what let the request propagate, roll back if it
-    landed late, and take effect on the same frame on both machines, which is
-    also what makes them reach `reallyEndLevel` together
-    (`levelEnd == 0`, mainint.c).
-  - It must **not** set `levelTimer` with a zeroed countdown, though the F2
-    cheat sets that pair alongside these two. The natural level end only clears
-    `levelTimer` when time remains, so a zeroed countdown survives into the
-    script and arms every `]t` "you failed" branch.
-  The `!endLevel` guard keeps a re-consumed request (rollback replays the frame)
-  from re-arming the countdown and stretching the wind-down.
-- `adjust_difficulty` scores a co-op pair as two solo players (mean of the two
-  `JE_totalScore`s against the solo thresholds). Vanilla's two-player branch
-  counts raw cash -- correct for the shopless linked arcade where cash is the
-  score, but a co-op pair spends its cash on equipment and read as broke (the
-  drift is `MAX`-only, so the miscount could never raise, only fail to).
-- The galaga rounds are authored endless; `engageGalagaEnd` routes a
-  hypothetical clear of one into the same outpost reload in coop rather than
-  letting galaga flags continue into the campaign. Solo keeps every vanilla
-  behavior, including the slot-11 reload.
-- `]w` (the Time War door) requires both ships in a `dual_ship_mode()` session
-  to fly the Stalker 21.126. One machine evaluating it from a lone Stalker
-  would be a scripted fork taken from synced state, so it stays deterministic
-  either way; requiring both is a design choice, not a sync fix.
-- Entry needs no special handling: the mini-game planets ride the normal
-  outpost departure, where `network_shop_adopt_host_level()` already settles a
-  host/joiner disagreement in the host's favor.
-- The `]h`/`]H` difficulty gates read `initialDifficulty`, which both machines
-  hold identically (host sends lobby+bump, joiner subtracts the bump;
-  resume adopts the host's record), so the hard-only levels -- ep1's harder
-  SAVARA and TYRIAN maps, ep3's TYRIAN X -- appear consistently online. The old
-  slot-11 reload was the one thing that skewed `initialDifficulty` between
-  machines (the 9-vs-15 TYRIAN map split in desync reports).
-- NET_VERSION 23: a v22 peer still reloads its local solo save at a mini-game
-  exit, so the versions must not pair.
-
-The light-cone spotlight (`starShowVGASpecialCode == 2`) is anchored to the
-local machine's own ship in `composite_playfield`/`composite_playfield_hi`
-(`thisPlayerNum >= 2` picks player two on the joiner). The composite runs at
-present time and feeds nothing back into the sim, so the two machines drawing
-different cones cannot desync.
-
-### Withdrawing from the outpost rendezvous
-
-`shopLeaveOutpost` puts its notice up once and leaves it there, so every wait
-below it inherits the "Press Esc to go back" line and each one has to be able
-to honour it. Both steps of `shopCampaignRendezvous` now do:
-
-- Step one (waiting for the peer's commit) withdraws outright: clear the
-  charted sector, re-announce uncommitted, return false.
-- Step two (our lock published, waiting for theirs) cannot simply withdraw --
-  the peer may be reading that lock and leaving on it right now. It drops the
-  lock and the commit, then waits up to 1.5 s to see which happened. No
-  departure packet in that window means the peer read the withdrawal and
-  reopened its own first wait, so the withdrawal stands; a departure means the
-  peer is already at the handshake waiting on our packet and nothing can recall
-  it, so we re-commit and leave with them. Both outcomes are states the peer
-  already handles, which is why this cannot strand either machine.
-
-Past that, in the departure handshake and the state-sync barrier, both machines
-are committed and the level is loading; the hint is briefly stale there by
-design. A peer that withdraws clears its commit, which drops the other machine
-out of step two and back into step one, so the pair never sits in mismatched
-steps.
-
-### The episode loop (`JE_nextEpisode`)
-
-Between levels the RNG is only in lockstep up to the first screen that draws
-from it on its own schedule. `JE_playCredits` is exactly that: its ship
-animation draws `mt_rand` per pass and a keypress ends the roll early, so
-after it the two machines hold different streams. The SuperCarrot grant is
-therefore decided *before* the credits run, while both are still on the
-level's stream (reseeded at level start, draw counts canary-verified) -- drawn
-after, the pair disagreed about the joke. Divergence past that point is
-harmless only because every level start reseeds; anything added between here
-and the next level that must match on both machines has to be settled ahead of
-the credits too, or sent.
-
-The grant itself equips every ship that flies its own arsenal
-(`dual_ship_mode()`). Vanilla's single `player[1]` line hands out a rear gun
-because in the linked pair that bay *is* ship two; a co-op ship needs the whole
-hull. `wait_input` and `JE_displayText` both pump the link (`network_check`
-sends the keep-alives), so the banner, codes screen and credits cannot time the
-peer out.
-
-## UI and sprite safety
-
-All `Sprite2_array` blits pass through `sprite2_index_valid`. Sidekick body
-sprites are one-based. Two-by-two mounts also require offsets `+1`, `+19`, and
-`+20`, plus charge frames. Validate the complete range.
-
-Boss and enemy bars draw in playfield coordinates. Enhanced boss bars also
-redraw at the display rate; only the tick draw decrements their flash timer.
-Enemy bars group by non-zero link number, ignore boss groups, and use the most
-damaged visible part. Their render command carries the enemy's layer binding.
-
-Two-player gauge blocks repeat at a 134-pixel stride. `JE_dBar3` paints
-`2 * units + 1` rows upward, while the two-player wipe clears 45 rows. Keep the
-clamped gauge and shield ceiling mark within that cleared region. Units are
-fractional, so the clamp is what guarantees it: at the cap the edge lands on a
-whole row and paints no blended row above it. The wipe clears the whole slot
-rather than only the rows above the bar, because an interpolated level can sit
-below the tick's and the supersampled frame carries a block-expanded copy of the
-bar that has to go. Every caller redraws immediately after wiping.
-
-Help-bar values right-align to `ENDLESS_COURSE_PAYOUT_RIGHT`. Descriptions leave
-room for prices and stack counts. Navigation-map planets iterate `mapPNum`.
-
-Shop icons are two-by-two blocks on the nineteen-wide `newsh1.shp` grid, so a
-base index also claims `+1`, `+19`, and `+20`. Only `weaponPort`, `powerSys`,
-`options`, and `shields` index that sheet through `itemgraphic`. Specials index
-`spriteSheet10`, and ships use `shipgraphic` against `spriteSheet9` or the
-Tyrian 2000 sheet, so `ships[].itemgraphic` is unused. A zero `itemgraphic` on a
-special is meaningful: the equip guards reject it, which keeps script-only
-specials out of play.
-
-`JE_applyUnusedShopSprites` rewrites icons for the Unused Sprites option. Its
-capture pass runs after the placeholder fallback and after
-`JE_addChargeLaserCannon`, so the stored baseline matches what the shops would
-otherwise draw, and before `customWeaponInit`, which claims unrelated slots.
-Apply is idempotent and writes the baseline back when the option is off, so
-`JE_initEpisode` and the menu handlers can call it without an item reload. The
-Charge-Laser slot moves between episodes, so its write is guarded against
-`chargeLaserSlot`.
-
-`shields[8]`, the Gencore Solar Shield, is the one icon the two item sets
-disagree on: 165 in ep1-3, the MicroCorp HXS Class C picture, against 153 in
-ep4/5, the one the Low and High Energy Gencores use. Every other field of every
-other shield matches across the sets. `JE_applyEpDiffs` owns the field, so the
-Episode Versions menu can force either icon and Auto rewrites the value the
-running episode shipped. Nothing collides with that write: both icons are real,
-so the placeholder fallback never fires, and Unused Sprites captures and rewrites
-only `weaponPort` and `options`.
-
-## Weapons
-
-Episode-specific changes apply after item data loads and remain idempotent.
-Projectile graphics above 1000 encode a superspark palette bank and base sprite.
-
-The custom weapon uses spare runtime slots, one reserved set per player index; see
-Custom weapons online for how the sets are claimed and kept live. Imported designs
-are clamped and otherwise copied exactly. Every design retains at least one segment
-and one power state. Persistence records have fixed field widths.
-
-A shot with `poweruse` temporarily zero bypasses both power cost and generator
-availability. Extra beams also require the primary shot to succeed. The Zica
-level-11 paths enforce this in gameplay and the Creator test range.
-
-## Fonts
-
-`font_ascii[]` mapping does not prove that a glyph has visible pixels.
-
-| Bank | Reliable content |
+| Bank | Safe use |
 | --- | --- |
 | `TINY_FONT` | Most printable characters |
-| `SMALL_FONT_SHAPES` | Letters, digits, and common punctuation |
+| `SMALL_FONT_SHAPES` | Letters, digits, common punctuation |
 | `FONT_SHAPES` | Uppercase headings without digits |
 
 In `SMALL_FONT_SHAPES`, `(`, `)`, `+`, `*`, `=`, `]`, `{`, and `}` are blank.
 The tilde changes brightness and is not printed.
 
-## Audio and MIDI
+## Networking
 
-MIDI backends convert LDS songs through the vendored midiproc library and run
-their own sequencer threads. At a loop boundary, replay pre-loop program,
-controller, pitch, and SysEx state at timestamp zero. Do not replay notes.
+Both machines simulate both ships. Every simulation-affecting menu change must
+reach the peer before either machine resumes. Rendering, audio, and local input
+settings stay local.
 
-The Windows backend uses `CALLBACK_NULL` with its own thread. When a configured
-SoundFont path becomes stale, retry its filename under `data_dir()` before
-automatic discovery.
+`network_is_host` names the settings authority. `networkHostPlayerNum` names the
+ship flown by that machine. Keep these concepts separate.
 
-See [src/midiproc/VENDORED.md](src/midiproc/VENDORED.md) for local library
-changes.
+### Wire compatibility
 
-## Crash logging
+Changing a field, offset, packet meaning, or deterministic rule requires a
+`NET_VERSION` bump. The current value is 33.
 
-The Windows crash log contains a stack trace and guarded game-state dump. The
-watchdog resumes the main thread before symbol loading and stack walking.
-Item-name lookups tolerate unloaded tables and invalid IDs. The Force Crash
-target remains a volatile file-scope pointer in optimized builds.
+Recent versions:
 
-During a network game, state dumps include the network and rollback diagnostic
-sections.
+| Version | Compatibility break |
+| ---: | --- |
+| 20 | Debug zone jump in departure; retractable Super Arcade ship picks |
+| 21 | Online Destruct handshake and lockstep payload |
+| 22 | Online Destruct pause removed |
+| 23 | Co-op ENGAGE exit and TIME WAR continuation |
+| 24 | Timed Battle and retractable ready barrier |
+| 25 | Expert settings tail in the session settings block |
+| 26 | Endless Base Level lobby field |
+| 27 | Endless chart-reroll byte |
+| 28 | Destruct rollback input stream |
+| 29 | Solar Shield Episode Versions bits |
+| 30 | Centered shot-hitbox setting |
+| 31 | Trailing large-sidekick shot origin |
+| 32 | Destruct recovery stream |
+| 33 | Endless special press latch and centered Martyrdom origin |
 
-## Console ports
+Packet reads verify the received length before touching optional fields. Fixed
+wire and save structures use fixed-width types.
 
-Platform paths live in `switch_platform.h` and `vita_platform.h`. Shared code
-accesses them through `console_platform.h`.
+### Session modes
+
+`coopCampaignMode` and `coopEndlessMode` are the two co-op rules flags.
+`coop_mode_active()` covers either. `dual_ship_mode()` also includes Separate
+Arcade, Timed Battle, SuperTyrian, and Super Arcade.
+
+Use `split_arcade_mode()` for linked-pair behavior: docking, Dragonwing rules,
+split HUD, and two-player script branches.
+
+Per-ship runtime state is loaded around each movement pass and saved immediately
+afterward. Generator state, cooldowns, sidekick state, lives, and specials must
+remain in the owning `Player` and in rollback state.
+
+`player[].lives` aliases a weapon-power byte. Always bind it through
+`player_lives_port()` so linked and full-ship sessions choose the correct bay.
+
+Super Arcade resolves colored balls through `player_sa_ball_weapon()`. The ship's
+`items.super_arcade_mode` selects its own arsenal.
+
+### Session settings
+
+The host arms local session flags through `network_arm_local_session`; the joiner
+adopts the same set from the settings block. Unit tests compare both paths.
+
+The first flags word is full. Expert settings and later Episode Versions bits
+live in the settings tail. Preserve bytes 0 through 23 and clamp received expert
+values.
+
+Credits use `player_award_pickup_cash`, `player_award_kill_cash`, and
+`player_award_bounty_cash`. Level-time awards name the player index and execute
+on both machines.
+
+### Keep-alives
+
+The peer timeout is 16 seconds. Any screen that can remain open online must call
+`network_check()` or `NETWORK_KEEP_ALIVE()` from its wait loop.
+
+Helpers that service the network include:
+
+- `wait_input` and `wait_noinput`;
+- `menuWaitForInput` and `lobbyWaitForInput`;
+- `JE_outTextGlow` and `JE_outCharGlow`;
+- `NETWORK_KEEP_ALIVE()`.
+
+`service_SDL_events`, `wait_delay`, `JE_showVGA`, `shopWaitFrame`, and
+`menuWaitWithSmoothCursor` do not service the connection.
+
+### Reliable UDP channel
+
+- A receive error does not prove the link is dead.
+- `network_is_sync()` means the reliable outbound queue is empty.
+- The retry timer belongs to the queue head.
+- A retry sends all unacknowledged packets, oldest first.
+- A full outbound window applies backpressure until a slot frees or the peer
+  times out.
+- Trust acknowledgements only for packets still outstanding.
+- A packet beyond the receive window is dropped without acknowledgement.
+- A packet behind the window is re-acknowledged.
+- A late `PACKET_CONNECT` ahead of the head occupies its ordered slot and is
+  discarded only when it reaches the head.
+
+Do not consume a reliable packet in a helper when the next state machine owns
+it. Several shop and level barriers depend on the packet remaining at the head.
+
+Chunked transfers keep at most half of `NET_PACKET_QUEUE` outstanding. Transport
+acknowledgement confirms delivery; complete transfers also use an application
+acknowledgement.
+
+### Outpost protocol
+
+Each owner is the only writer of their shop state. `PACKET_SHOP_SYNC` mirrors the
+resulting cash, loadout, route, and mode after each committed purchase.
+
+Departure has two states:
+
+1. DONE allows withdrawal while waiting for the peer.
+2. LOCK closes withdrawal once both peers have observed DONE.
+
+DONE and LOCK are state fields, not one-shot events. `SHOP_SYNC_HELLO` and the
+rate-limited shop keep-alive restate them after a view reset.
+
+The host's level choice is adopted only after the local player finishes shopping.
+This prevents a remote commit from closing an active purchase screen.
+
+Custom weapon designs are published during the locked rendezvous. Save requests
+use a separate request and acknowledgement checkpoint.
+
+### Endless co-op ownership
+
+Run-wide state is derived identically from seed, depth, and difficulty. Player
+state is owned by that player's machine and mirrored in the fixed-width Endless
+player block.
+
+Per-player state includes:
+
+- wallet, loadout, bombs, Reinforce tier, and revive;
+- purchased sector effects and shop tax;
+- prices, perk row, and outpost RNG;
+- chart reroll count for the charting seat.
+
+`itemAvail` and the local cash ledger stay local. Structural course RNG remains
+separate from each player's outpost RNG.
+
+Perks are stored in `endlessPerkTakenBy[2][PERK_COUNT]`. Every grant uses
+`endlessPerkGrant`; effects read `endlessPerkEffective` for the current ship.
+
+The course is folded at the departure rendezvous after both players' purchases
+are known. The non-charting player waits before committing and may return to the
+outpost with Esc.
+
+`endlessPlayerDowned[]` is rollback state. Reactive dangers ignore downed ships;
+the outpost revives them. Relaxed both-down choices are host-authoritative.
+
+The Endless gameplay tick is split between run-wide work and per-ship work. In
+co-op, call the per-ship half for both players.
+
+### Rollback input
+
+`PACKET_INPUT` has a fixed header and up to sixteen redundant input records. It
+is unacknowledged and idempotent. A level epoch rejects frames from other levels.
+
+Canaries wait until the local frame is available. Pool hashes cover player and
+enemy shots, explosions, repeating explosions, and the sound queue.
+
+Menu requests schedule a future frame and wait until it is final. When both
+players press Esc together, the host takes the menu and the joiner waits.
+
+Pause request bits remain reserved in the wire layout but are ignored online.
+
+### Determinism
+
+- Demo recording and playback use the same fixed RNG seed and initial state.
+- Store multiple `mt_rand()` results in named locals before one expression.
+- Simulation paths use `sim_sinf` and `sim_cosf`.
+- Linux and console builds use signed `char` semantics.
+- MSVC uses precise floating point; other targets disable contraction.
+- Mutable function-local statics are forbidden in rollback simulation paths.
+- Registered pointers need relocation entries for cross-process export.
+
+Snapshot bytes can contain process-specific pointers. Use the relocation walk
+before cross-process hashing.
+
+### Desync recovery
+
+Main-game recovery sends registered host state in `PACKET_RESYNC` chunks. Chunk
+zero includes registry size, compressed size, and checksum; payloads use zero-run
+RLE.
+
+Peers compare registry size and `rollback_layout_fingerprint()` during connect.
+Unknown pointer homes or layout mismatches disable recovery.
+
+The joiner acknowledges only after adopting the complete generation. Recovery
+is limited to three attempts per level.
+
+Presentation state stays outside snapshots. After a silent replay:
+
+- dirty flags repaint sidekick and gauge HUD state;
+- text backgrounds redraw before messages;
+- gauge flashes and sound cues advance only on live passes;
+- `SFX_CUE_CHANNEL` remains presentation-only.
+
+### Online saves
+
+Online saves use slots 12 through 22 of the two-player page. Slot 22 is the
+read-only `LAST LEVEL` backup.
+
+`save_record_pack` and `save_record_unpack` define the 81-byte little-endian wire
+record. `tyrian.sav` keeps its fixed layout and checksum.
+
+Dual-ship records store missing weapon powers and modes in the existing
+`highScore2` field:
+
+- `0xc74f` marks Campaign and Endless co-op.
+- `0xc7a5` marks Separate Arcade, Timed Battle, Super Arcade, and SuperTyrian.
+
+Game-type compatibility is checked before a record appears in a load menu.
+Rebind lives through `player_lives_port()` after loading.
+
+A shop save completes the bidirectional state checkpoint first. Its wait is
+bounded, drains preceding shop traffic, and leaves `PACKET_GAME_QUIT` for the
+quit handler.
+
+### Online Destruct
+
+Destruct uses `NETWORK_GAME_DESTRUCT`. The connect packet carries battle mode,
+terrain seed, host side, netcode, and recovery setting. Sessions run at Normal
+speed.
+
+Both netcodes use one action byte and one control byte per tick. QUIT and NEWMAP
+are control bits; pause remains unused.
+
+Delay-based play uses the main `PACKET_STATE` stream. Each peer applies both
+players' inputs from `network_delay` ticks earlier.
+
+Rollback lives in `destruct_rollback.c` with its own snapshot ring. The snapshot
+includes units, walls, shots, explosions, world state, RNG, and every pixel of
+`destructTempScreen`; terrain pixels affect collision.
+
+Predictions repeat held directions and fire. Unit changes and weapon cycles are
+edge-triggered and are never predicted.
+
+Round end, Quit, and New Map wait for confirmed input. Each round starts a new
+epoch so late packets cannot enter the next map.
+
+Destruct recovery uses `PACKET_DESTRUCT_RESYNC` and `DE_StateSave`. Restore
+re-pins the three live pointers in the blob before use. Recovery is limited to
+three attempts per round.
+
+Every map derives from the session seed and round number. Pin all config values
+that change simulation to shipped defaults before generating the map.
+
+### ENGAGE mini-games
+
+Online Campaign keeps two-player mode active through `]e` and `]g`. Both ships
+receive the issued loadout and own their lives on the front-gun slot.
+
+Mini-game death or quit reloads two-player `LAST LEVEL` slot 22. A cleared TIME
+WAR continues under SuperTyrian rules. All entry paths, including the debug
+browser, use the same branch.
+
+The online debug skip sets `endLevel` and `levelEnd = 40`. It does not set
+`reallyEndLevel` or arm an expired `levelTimer`; both peers need the wind-down to
+finish and confirm the same frame.
+
+`JE_playCredits` consumes RNG on a local schedule. Decide any shared random
+result before entering credits or send the result over the network.
+
+## Weapons and item data
+
+Episode-specific changes apply after item loading and remain idempotent.
+Projectile graphics above 1000 encode a superspark palette bank and base sprite.
+
+Custom weapons reserve one port, sidekick, and scratch range per player index.
+Ownership is by player index on both machines. `customWeaponMaterializeAll()`
+rebuilds every adopted design after item data reloads.
+
+Wire designs are chunked and acknowledge complete generations. Invalid designs
+are refused before materialization.
+
+A shot with temporary `poweruse == 0` bypasses cost and generator availability.
+Extra beams fire only when the primary shot succeeds.
+
+`JE_applyUnusedShopSprites` captures its baseline after placeholder and
+Charge-Laser setup, before custom weapon slots are claimed. The operation is
+idempotent and restores the baseline when disabled.
+
+The Gencore Solar Shield icon differs between episode item sets. Episode Versions
+owns `shields[8].itemgraphic`; the unused-sprite pass does not rewrite shields.
+
+## Audio, logs, and platforms
+
+MIDI backends convert LDS through vendored midiproc and run their own sequencer
+threads. At a loop boundary, replay pre-loop program, controller, pitch, and
+SysEx state at time zero. Never replay notes.
+
+The Windows MIDI backend uses `CALLBACK_NULL` and its own thread. If a configured
+SoundFont path is stale, retry its filename under `data_dir()` before discovery.
+
+See [midiproc vendor notes](../src/midiproc/VENDORED.md) for local patches.
+
+The Windows crash logger resumes the main thread before symbol loading and stack
+walking. State dumps tolerate unloaded item tables and invalid IDs.
+
+Network and crash logs are created lazily under `log/`. Session diagnostics are
+append-only; console cleanup removes only recognized OpenTyrian log names.
 
 Switch constraints:
 
-- Keep the SDL window resizable and outside desktop-fullscreen mode for dock
-  changes.
-- Use `_Exit` after explicit persistence to avoid broken romfs and stdio
-  teardown.
-- Save controller changes immediately because HOME exit may skip shutdown.
+- Keep the SDL window resizable for dock changes.
+- Persist state before `_Exit` to avoid broken romfs and stdio teardown.
+- Save controller changes immediately because HOME may skip shutdown.
 
 Vita constraints:
 
 - Present at native size and force supersampling to 1x.
-- Keep presenting while the IME dialog is open.
-- Own the IME natively and terminate it exactly once on every exit path.
-- Clear latched `keydown` and `mousedown` state after raw event draining.
-- Disable rear touch and treat front touch as menu taps or gameplay drag.
+- Keep presenting while the IME is open.
+- Terminate the IME once on every exit path.
+- Clear latched key and mouse state after raw event draining.
+- Disable rear touch; use front touch for menu taps and gameplay drag.
 
-Both ports fold the right stick into ship movement and disable MIDI.
+Both ports fold the right stick into movement and disable MIDI. Switch uses
+`switch-sdl2_net`; Vita supplies the required UDP subset in `vita_net.c`.
 
-### Console netplay
+## Level scripts
 
-`WITH_NETWORK` is enabled on both ports. Switch uses `switch-sdl2_net` and calls
-`socketInitializeDefault()`. Vita implements the required UDP subset in
-`vita_net.c` over SceNet.
-
-`network_local_addresses()` falls back to the native console address APIs when
-`SDLNet_GetLocalAddresses` is unavailable. Text fields use `console_swkbd` and
-then apply the field's normal character filter.
-
-## Invisible level structures
-
-Player shots use `enemy_has_visible_pixel` to avoid damaging art-backed enemies
-before they enter the playfield. Some level structures have blank enemy frames
-because the map supplies their art. A fully blank frame falls back to its nominal
-12x14 cell footprint; a frame with any drawn cell uses its pixels.
-
-Resolve blankness against the active sprite sheet with `sprite2_is_blank`.
-Armor 255 keeps the stock spark and projectile behavior.
-
-## Level-script map stops
+Tyrian levels are event scripts. Reseeding `mt_rand` changes spawn jitter,
+background choices, effects, and sounds; it does not reorder authored pickups.
 
 The event clock advances with vertical scroll. A map stop resumes when the screen
-clears, a link-254 jump fires, or `forceEvents` advances the clock.
+clears, link 254 jumps, or `forceEvents` advances the clock.
 
-The parked-enemy watchdog culls a stop-holding enemy only when it is above the
-reachable shot area, cannot move into it, has no reachable live linked member,
-and exceeds `MAP_STOP_STALL_LIMIT` without `forceEvents`. Horizontal motion does
-not affect this test. Crash logs include parked-enemy and stall state.
+The parked-enemy watchdog culls a stop holder only when it cannot enter the
+reachable shot area, has no reachable linked member, and exceeds
+`MAP_STOP_STALL_LIMIT`. Keep HARVEST entrance kills in runtime testing.
 
-Runtime validation remains required for HARVEST boss kills during the entrance.
-The generic parked-enemy watchdog alone does not close that acceptance path.
+Some map-backed structures use blank enemy frames. A fully blank frame falls
+back to its 12x14 cell; a frame with drawn pixels uses those bounds. Resolve
+blankness with `sprite2_is_blank` on the active sheet.
 
-## Dormant dispenser bases
+Dormant dispenser bases are enemy IDs 80 through 83. Piece 80 fires the eye shot
+and four-part bolt on frame 9. Endless activation comes from structural RNG and
+becomes permanent at `ENDLESS_DISPENSER_ALWAYS_ZONE`.
 
-Enemy IDs 80 through 83 form a linked 2x2 base with an authored hatch cycle.
-`dispenserBasesActive` arms the animation. `dispenser_fire` emits the eye shot and
-the four-segment bolt when piece 80 reaches frame 9.
+## Tests
 
-The bolt uses four `spriteSheet8` segments with shared animation timing. Extra
-rising-tide bolts are created as complete four-segment units, and their position
-offsets rotate with velocity so the column remains straight.
+The unit, replay, sanitizer, and two-peer suites are described in
+[testing/README.md](../testing/README.md). Keep scenario mechanics there instead
+of copying them into source comments.
 
-Campaign behavior follows `restoreBaseDispensers`. Endless uses a structural
-per-zone roll below `ENDLESS_DISPENSER_ALWAYS_ZONE` and enables the bases at and
-above that depth.
+Before changing persisted or deterministic state, add coverage for:
+
+- old save migration and malformed input;
+- rollback save and restore;
+- cross-process state hashes;
+- host arming versus joiner adoption;
+- both player indices and both host roles;
+- reliable-channel loss, reordering, duplication, and sequence wrap.
 
 ## General constraints
 
 - Use the correct sprite bank.
 - `enemycycle` is one-based.
-- Positional enums index shipped data; do not remove unused-looking members.
-- `config_file.c`, `opl.c`, and midiproc expose maintained or vendored APIs.
+- Positional enums index shipped data. Do not remove unused-looking entries.
 - Preserve upstream Doxygen comments and third-party documentation.
+- Keep `config_file.c`, `opl.c`, and midiproc public contracts stable.

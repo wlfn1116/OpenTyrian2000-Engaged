@@ -339,25 +339,15 @@ int network_endless_death_sync(int hostChoice);
 // Wire-test diagnostic: this machine's own rendezvous announcement and the sequence guard.
 void network_shop_debug_state(int *localDone, int *localLock, int *mySeq, int *peerSeq);
 
-/* Online Super Arcade ship picks. Each player chooses their own ship (they may match), so the
- * pick is announced rather than dictated: publish this machine's, then wait for the peer's.
- * Reliable, so a lost announcement is retransmitted rather than deadlocking the pair.
- *
- * A pick can be taken back while the peer has not made one, so the announcement carries two
- * things: the ship (0 = taken back) and whether the sender has the other pick in hand. The
- * second is what makes the retraction safe to offer. Neither machine may leave the picker until
- * the peer has acknowledged its ship that way, and nobody retracts once they have the peer's
- * ship -- so by the time either side leaves, the pair it leaves with can no longer change. */
+/* Publish this player's retractable Super Arcade pick. The acknowledgement bit closes retraction
+ * only after both peers hold the same final pair. */
 void network_sa_ship_publish(int ship, bool seen_peer);
 int  network_sa_ship_peer(void);         // the peer's pick, 0 if they have none right now
 bool network_sa_ship_peer_saw_us(void);  // the peer's latest word says they hold our pick
 void network_sa_ship_reset(void);
 
-/* The Endless debug zone jump. Announced the instant START ZONE is pressed, while the partner is
- * still in its outpost, because the partner may be sitting in a wait for a course this machine
- * has just decided not to chart -- and this announcement is what releases it. Neither side ever
- * blocks on the other here. Poll before folding the course: true means a jump is in play (ours or
- * the peer's, host winning a tie) and the fold must be skipped, or it rebuilds the sector over it. */
+/* Publish an Endless debug jump immediately and poll before folding the course. A true poll skips
+ * the fold; the host wins simultaneous jumps. */
 void network_endless_jump_publish(void);
 bool network_endless_jump_poll(void);
 
@@ -365,15 +355,8 @@ bool network_endless_jump_poll(void);
  * needed on a path that starts a level without passing through the outpost. */
 void network_level_rendezvous(void);
 
-/* A both-ready barrier for a card that has to keep drawing while it holds: neither session starts
- * until both players have confirmed. Non-blocking, unlike network_level_rendezvous above, so the
- * screen can report where the pair stands -- publish whenever this player's answer changes, then
- * poll for the peer's every frame. Worn by the Destruct title and the Timed Battle card.
- *
- * The announcement is retractable, so the poll answers with a state rather than an arrival:
- * -1 nothing this frame, 0 the peer withdrew, 1 the peer is ready. A release must also wait on
- * network_is_sync(): the channel is ordered, so a withdrawal sent before the peer's ready was
- * acknowledged always lands ahead of that acknowledgement, and nobody starts alone. */
+/* Non-blocking, retractable ready barrier for Destruct and Timed Battle cards. Poll returns -1 for
+ * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */
 void network_ready_publish(bool ready);
 int network_ready_peer(void);
 
@@ -396,10 +379,8 @@ int  network_shop_peer_course(void);
 void network_shop_set_locked(bool locked);
 bool network_shop_peer_locked(void);
 
-/* Publish this machine's custom weapon design so the peer can fly and simulate it. Both ships
- * run on both machines, so a design that only exists on one of them is a desync. Sending is
- * chunked over the reliable channel and blocks until delivered; call it from the outpost only.
- * Incoming chunks are consumed by network_shop_pump. */
+/* Publish this machine's custom weapon through the reliable outpost channel.
+ * Both peers need both designs to keep simulation deterministic. */
 void network_custom_weapon_publish(void);
 void network_custom_weapon_reset(void);
 // Take the level the host left the outpost for. Call once both players are done, never before:

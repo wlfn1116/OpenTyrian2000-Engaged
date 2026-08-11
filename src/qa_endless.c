@@ -1,8 +1,5 @@
-/* Online Endless co-op: outpost, E-shop, perks, drives, downed/revive, restart.
- *
- * Every case drives the real engine entry points under a two-ship online session, because the
- * combinations that break are the ones a solo run never reaches: two wallets, two shelves, two
- * drives and two death states crossed against the session settings the host picked. */
+/* Online Endless tests use real two-ship entry points for outposts, perks,
+ * drives, death states, and restart behavior. */
 #include "qa.h"
 
 #include "config.h"
@@ -1481,11 +1478,8 @@ static void qa_scenario_suite(void)
 		qa_check(endlessHardcore() == (modes[m] == ENDLESS_RUNMODE_HARDCORE), label);
 	}
 
-	/* The no-save rule is pinned in the data layer, not only in the menus: JE_saveGame and
-	 * endlessSaveSlot both refuse mid-Hardcore-run and leave the slot exactly as it was.
-	 * Driven for Hardcore only; the refusal returns before the config write, so the case is
-	 * safe in-process, while a Standard-mode positive call would write the runner's real
-	 * save file (the migration fixtures and wire scenario 7 cover that side). */
+	/* Verify both save APIs reject mid-run Hardcore without changing the slot. The
+	 * positive path is covered by migration fixtures and wire scenario 7. */
 	{
 		const JE_SaveFileType original = saveFiles[22 - 1];
 		JE_SaveFileType marked;

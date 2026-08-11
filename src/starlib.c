@@ -77,11 +77,8 @@ static void star_fill_block(Uint8 *pixels, int pitch, int w, int h, int hx, int 
 	}
 }
 
-// Draw the classic star cross (centre + 2-pixel arms) supersampled by `scale`,
-// centred on the sub-pixel screen position (fx, fy). round(f*scale) places the
-// whole cross in 1/scale-pixel steps, so present_hi()'s downscale antialiases the
-// motion instead of stepping whole pixels. Colours match the 1x path: the centre
-// is `c0`, the inner arms c0+72, the outer arms c0+144 (Uint8 wrap, as before).
+// Draw the classic star cross at a supersampled sub-pixel position. Preserve
+// the original center, inner-arm, and outer-arm palette offsets.
 static void draw_star_scaled(SDL_Surface *target, float fx, float fy, Uint8 c0, int scale)
 {
 	Uint8 *pixels = target->pixels;

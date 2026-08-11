@@ -535,11 +535,8 @@ static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, U
 	rl_superpixel_block(dst, x, y + scale, scale, z >> 1, color);
 }
 
-// Plot one bar pixel, clipped. opacity < 255 alpha-blends like the engine's
-// translucent sprites (blit_sprite_blend): the bar's colour bank is kept, only the
-// brightness nibble mixes with the background's. Reading the destination makes the
-// draw background-dependent; safe, because the residual capture replays the bar
-// over the reconstructed background (see rl_capture_residual).
+// Plot one clipped bar pixel. Alpha blending retains the bar's palette bank and
+// mixes only brightness over the reconstructed background.
 static inline void rl_hp_plot(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 opacity)
 {
 	if (x < 0 || y < 0 || x >= dst->w || y >= dst->h)
@@ -559,11 +556,8 @@ static inline void rl_hp_plot(SDL_Surface *dst, int x, int y, Uint8 col, Uint8 o
 	*p = (Uint8)((col & 0xf0) | lo);
 }
 
-// Draw one enemy health bar (see draw_enemy_health_bars in tyrian2.c). Shared by the
-// authoritative tick draw and the interpolated replay so the two match pixel-for-pixel
-// (required for the residual diff to cancel the bar out). 2px thick, `along` px long:
-// horizontal fills left->right with a shadow row below, vertical fills bottom->up with
-// a shadow column beside. All writes clip, so any interpolated position is safe.
+// Draw the same clipped health bar for the simulation frame and interpolated replay.
+// Horizontal bars fill rightward; vertical bars fill upward.
 void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity)
 {
 	if (along < 1 || opacity == 0)
@@ -664,12 +658,8 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	switch (c->kind)
 	{
 	case RC_HP_BAR:              rl_draw_hp_bar(dst, x, y, c->bar_w, c->bar_fill, c->bar_col, c->bar_vertical, c->bar_opacity); break;
-	// Clip on X even for the nominally-unclipped kinds: an extrapolating id (player /
-	// enemy shot, rl_id_extrapolates) is drawn at cur + vel*alpha, which leads a fast
-	// edge-exiting shot a pixel or two past the surface bound. The non-clipping blits
-	// wrap that overshoot onto the adjacent row (a shot leaving the left flashing on the
-	// right). Clipping is a no-op for in-bounds sprites, so exact (alpha=0) replays stay
-	// byte-identical in the visible playfield. The scaled path already clips (blit2_block).
+	// Extrapolation can move an otherwise unclipped sprite past an x edge. Clip these commands to
+	// prevent row wrapping; in-bounds and exact replays are unchanged.
 	case RC_SPRITE2:             blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_CLIP:        blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_blend_clip(dst, x, y, c->sheet, c->index); break;
@@ -1118,11 +1108,8 @@ static bool rl_res_push(int off, Uint8 val)
 	return true;
 }
 
-/* Take every pixel of each marked overlay rect, not just the ones the diff above caught. A diff
-   drops an overlay pixel that happens to already match what the replay put under it; that is
-   invisible at alpha 1, but an interpolated or supersampled frame redraws the pixel under it
-   somewhere else, and the overlay reads as holes punched through it. Offsets the diff already
-   pushed repeat here harmlessly: both entries carry the same reference value. */
+/* Capture every marked overlay pixel. Diff-only capture leaves holes when a matching
+ * background pixel moves during interpolation; duplicate offsets are harmless. */
 static void rl_capture_overlay_rects(SDL_Surface *reference)
 {
 	const Uint8 *const ref = (const Uint8 *)reference->pixels;

@@ -352,14 +352,8 @@ Uint32 rollback_selftest_bounded_hash(void)
 	return rollback_selftest_limit_hash;
 }
 
-/* Wire snapshots encode registered pointers as stable table indices or element offsets:
- *   enemy[].sprite2s     one of six fixed sprite-sheet globals, or NULL
- *   enemy[].enemydatofs  &enemyDat[i] (tyrian2.c JE_makeEnemy), or NULL
- *   shipGrPtr/shipGr2ptr &spriteSheet9 or &spriteSheetT2000 (varz.c), or NULL
- *   mapY*Pos, BKwrap*    into megaData{1,2,3}.mainmap; fixed globals, so an
- *                        element offset relocates exactly (mapYPos can sit one
- *                        element BEFORE the array: the level-init -1)
- *   player[].lives       encoded as the player index, then re-derived locally */
+/* Encode registered pointers as stable sprite-sheet ids, enemy or map offsets,
+ * and player indices. mapYPos may legally be one element before its array. */
 
 enum
 {
@@ -707,11 +701,7 @@ static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz)
 	return bad;
 }
 
-/* Per-tick input tuples for the self-test.
- *
- * The self-test replays exactly one tick, so a single record (not a ring) is
- * enough: both players' tuples plus tick-wide event bits.
- */
+/* One tick of both players' input and shared events for snapshot self-tests. */
 static RbInput st_input[2];
 static Uint16  st_event_bits;
 
@@ -942,11 +932,8 @@ void rollback_level_end(void)
 	rb_log_flush();  /* the level's trace is complete; get it on disk */
 }
 
-/* Registration root.
- *
- * The extern-global list lives in rollback_state.c; files with sim-relevant
- * statics export a <file>_register_rollback() collected here.
- */
+/* Registration root. Public globals live in rollback_state.c; modules register
+ * their own private simulation state here. */
 void rollback_state_register_globals(void);   /* rollback_state.c  */
 void tyrian2_register_rollback(void);         /* tyrian2.c statics */
 

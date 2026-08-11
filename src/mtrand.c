@@ -98,16 +98,8 @@ unsigned long mt_rand(void)
 	return y;
 }
 
-/* --- Rollback snapshot support ---------------------------------------------
- *
- * The generator's whole state is x[], three cursor POINTERS into x[], and the
- * draw counter.  A raw memcpy of this file's statics would capture pointer
- * values, which restore fine within one process but are fragile on principle;
- * store the cursors as offsets instead.  Layout: x[N], three int32 offsets, then
- * mt_rand_count -- every field fixed-width, because netplay desync recovery ships
- * this blob to the peer and a Windows/console width difference here made the two
- * machines' snapshots 2500 bytes apart (see mtrand.h).
- */
+/* Rollback RNG state: x[], three cursor offsets, and the draw counter. Fixed-width
+ * fields keep recovery snapshots identical across platforms. */
 size_t mt_state_size(void)
 {
 	return sizeof(x) + 3 * sizeof(int32_t) + sizeof(mt_rand_count);

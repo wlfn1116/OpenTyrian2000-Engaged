@@ -56,12 +56,8 @@ struct Scalers scalers[] =
 	{ 4 * vga_width, 4 * vga_height, nn_16,      nn_32,      "4x" },
 	{ 4 * vga_width, 4 * vga_height, NULL,       hq4x_32,    "hq4x" },
 	{ 5 * vga_width, 5 * vga_height, nn_16,      nn_32,      "5x" },
-	// Fit-to-output: renders at the exact output size (fullscreen: the screen),
-	// one texel per screen pixel, so the final present never rescales. The
-	// dimensions here are placeholders; video.c keeps them synced to the live
-	// window via scaler_set_native_size(). Keep LAST: scaler_plain_equivalent
-	// matches by width, and every algorithm scaler must find its fixed nn twin
-	// first, whatever size this entry currently holds.
+	// Native maps one texel to each output pixel; video.c supplies the live size.
+	// Keep it last because scaler_plain_equivalent matches entries by width.
 	{ 1 * vga_width, 1 * vga_height, nn_fit_16,  nn_fit_32,  "Native" },
 };
 const uint scalers_count = COUNTOF(scalers);

@@ -46,11 +46,8 @@
 // widescreen buffer; also sizes the gradient fade table in video.c.
 #define MENU_X_OFFSET ((vga_width - LEGACY_WIDTH) / 2)
 
-// Clamp on the ship's reference position (this_player->x/y or vt_x/vt_y, not the
-// sprite edge): how close it may get to the playfield edges. Enforced by both
-// JE_playerMovement (mainint.c) and the VT ship integrator (tyrian2.c); re-tune here.
-// blit_sprite2/2x2 draw ~17-31px past this position without clipping at the surface
-// edge, so the margins can't shrink to 0. Originals: 40/8 (x), 10/160 (y).
+// Bounds for the ship's reference point, shared by classic and VT movement.
+// Sprite overhang requires nonzero margins. Original values: 40/8 and 10/160.
 #define SHIP_LEFT_MARGIN   29
 #define SHIP_RIGHT_MARGIN  -4
 #define SHIP_TOP_MARGIN    7

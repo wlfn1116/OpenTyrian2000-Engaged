@@ -71,73 +71,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       33           /* v33: two Endless simulation changes. The special answers a
-                                          fresh press instead of a button held across its recharge,
-                                          and a Martyrdom burst leaves the middle of a multi-tile
-                                          body rather than the corner tile that booked the kill. A
-                                          v32 peer fires the special the moment the meter fills and
-                                          spawns those bullets a body's width away, so the two
-                                          machines part company on the shot pool and the wallet.
-                                          v32: a desynchronized Destruct battle is repaired by
-                                          streaming the host's simulation as PACKET_DESTRUCT_RESYNC;
-                                          a v31 peer has no case for that type, so it never
-                                          acknowledges a chunk and the host retransmits the whole
-                                          transfer forever.
-                                          v31: a trailing large sidekick (the companion ships) fires
-                                          from SIDEKICK_TRAIL_SHOT_Y below its position, so its shots
-                                          spawn seven pixels lower than on a v30 peer and the two
-                                          machines would disagree on when those shots connect.
-                                          v30: Shot Hitboxes rides a spare bit of the settings tail's
-                                          flags word and moves where both shot loops take a hit
-                                          from; a v29 peer sends the bit as zero, so one machine
-                                          would collide from a sprite's middle and the other from
-                                          its corner and the pair would disagree on every kill.
-                                          v29: Episode Differences gained a ninth entry, the Gencore
-                                          Solar Shield's shop icon, which the full epdiff word at
-                                          byte 2 had no room for; it rides two previously spare bits
-                                          of the settings tail's flags word, and a v28 peer leaves
-                                          them zero, so the host's choice would reach the joiner as
-                                          Auto and the pair would stock two different shop sheets.
-                                          v28: Destruct plays on either netcode, so the settings
-                                          block's rollback bit now means something for that game
-                                          type and its sessions carry PACKET_DESTRUCT_INPUT; a v27
-                                          peer forces the bit off and would sit on the state stream
-                                          waiting for a lockstep exchange nobody sends.
-                                          v27: the Endless shop packet's player block grew a trailing
-                                          chart-reroll byte, which both machines redeal the derived
-                                          course slate from; a v26 peer sends a block one byte short,
-                                          so the length check drops it and the two chart apart.
-                                          v26: the Endless lobby block grew a Base Level byte before
-                                          its seed, deciding whether a chart deals one base level or
-                                          one per route; a v25 peer reads the seed at the old offset
-                                          and would run different zones from the same lobby.
-                                          v25: the settings block grew a tail (24..41) carrying
-                                          Expert Mode and its six tunables, which were host
-                                          preferences nothing published at connect time; a v24
-                                          peer reads the whole connect packet at the old offsets.
-                                          v24: Arcade's Mode row gained Timed Battle; the settings
-                                          block spends its last three flag bits on it (which
-                                          battle, and that it is one at all), which a v23 peer
-                                          reads as zero and plays as a plain arcade episode.
-                                          The both-ready barrier's PACKET_WAITING also grew an
-                                          answer byte, so a confirmation can be withdrawn; a v23
-                                          peer's bare one reads as the ready it always was.
-                                          v23: ENGAGE mini-game exits reload the 2P LAST LEVEL
-                                          slot and a TIME WAR clear keeps the coop pair shape;
-                                          a v22 peer reloads its local solo save there instead,
-                                          so the two sims part ways the moment one ends.
-                                          v22: online Destruct drops the shared pause; its
-                                          control bit is neither sent nor honoured, and a v21
-                                          peer pressing P would freeze its own sim while ours
-                                          runs on, so the versions must not pair.
-                                          v21: online Destruct; the connect packet grows a
-                                          Destruct block (battle mode and terrain seed), the state
-                                          stream doubles as its lockstep input exchange, and its
-                                          title card is a PACKET_WAITING barrier both must clear.
-                                          v20: the departure handshake carries the Endless debug
-                                          zone jump (depth, folded modifiers, perk stacks) beside
-                                          the level pick, and PACKET_SA_SHIP carries a retractable
-                                          pick plus the peer's acknowledgement of ours. */
+#define NET_VERSION       33           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -382,11 +316,8 @@ bool network_send(int len)
 	Uint16 i = last_out_sync - queue_out_sync;
 	if (i >= NET_PACKET_QUEUE)
 	{
-		/* A full window is backpressure, not a dead link: the oldest packet is simply not
-		 * acknowledged yet. Hold the sender here with the socket serviced until a slot frees,
-		 * and only a peer that never frees one is treated as lost. The prepared packet has to
-		 * be preserved across the wait: servicing the socket overwrites packet_out_temp with
-		 * acknowledgements and ping replies. */
+		/* A full window is backpressure. Service the socket until a slot opens,
+		 * preserving this packet because service calls reuse packet_out_temp. */
 		Uint8 pending[NET_PACKET_SIZE];
 		memcpy(pending, packet_out_temp->data, (size_t)len);
 
@@ -603,13 +534,8 @@ static int network_recv_one(void)
 							}
 							else if (slot > 0 && slot < NET_PACKET_QUEUE)
 							{
-								/* Ahead of the head (the handshake's trailing connect, reordered
-								 * past a younger packet).  Acknowledging it without occupying its
-								 * sequence slot leaves a hole at the head of the window: an
-								 * acknowledged packet is never resent, the window cannot advance
-								 * past an empty head, and everything later parks behind the gap
-								 * for good.  Place it like any reliable packet instead; whoever
-								 * finds it at the head throws it away. */
+								/* Queue reordered handshake packets in their sequence slot. An
+								 * acknowledged gap would stall the receive window permanently. */
 								if (packet_in[slot] == NULL)
 									packet_in[slot] = SDLNet_AllocPacket(NET_PACKET_SIZE);
 								packet_copy(packet_in[slot], packet_temp);
@@ -676,13 +602,8 @@ static int network_recv_one(void)
 							}
 							else if (slot >= NET_PACKET_QUEUE)
 							{
-								/* Past the end of the receive window, so there is nowhere to put it.
-								 * Do NOT acknowledge: an acknowledgement here tells the sender it was
-								 * delivered and it is never sent again, and the window only advances
-								 * as packets are consumed, so it can never come back. That is a
-								 * permanent one-way deafness, not a hiccup. Withholding the
-								 * acknowledgement leaves it queued at the sender, which retransmits
-								 * once this end has drained enough to take it. */
+								/* Do not acknowledge packets beyond the receive window. The sender
+								 * must retain and retry them after this side drains enough space. */
 								++net_diag.window_overflow;
 								last_in_tick = SDL_GetTicks();
 								break;
@@ -884,11 +805,8 @@ int network_check(void)
 		last_out_tick = SDL_GetTicks();
 	}
 
-	// DRAIN, don't take one.  Every caller polls this at most once per frame while the peer
-	// sends one datagram per frame, so one-per-call sits exactly at break-even: any burst (a
-	// retransmit, a keep-alive, a stray discovery probe) parks a backlog that never clears
-	// again and reads as permanently added latency.  Bounded so a flood cannot hold the frame
-	// open indefinitely.
+	// Drain a bounded batch. Taking one packet per frame cannot clear bursts and
+	// turns their backlog into permanent latency.
 	int handled = 0;
 	for (int i = 0; i < NET_DRAIN_MAX; ++i)
 	{
@@ -1851,14 +1769,8 @@ void network_arm_local_session(void)
 	arcadeSeparateMode = arcadeSeparateShips;
 }
 
-// Session game speed: the host applies its lobby choice here and the joiner adopts it from
-// the settings block in the connect packet.  Command-line netplay has no host, so both sides
-// pin Normal.  network_settings_restore puts the player's own speed back afterward.
-//
-// Destruct is Normal whatever the host's stored preference says: the speed sets the rate its
-// tick loop runs at, which on either netcode is the rate both machines have to count frames at.
-// The lobby hides the row to match, and the block packed below carries the forced value to
-// the joiner.
+// Apply the host's lobby speed for ordinary sessions and restore the local preference afterward.
+// Command-line and Destruct sessions use Normal so both peers advance at the same rate.
 void network_settings_apply_session_speed(void)
 {
 	const bool host_picks_speed = network_from_lobby && network_is_host
@@ -1976,11 +1888,8 @@ void network_endless_adopt(const Uint8 *buf)
 	}
 }
 
-/* Settle the seed this session actually runs on, host side, before the connect packet carries it.
- * A blank lobby field means "roll one", which is what the seed screen does for a solo run; sending
- * the blank straight through hashed the empty string instead and dealt every online run the same
- * zones. Rolled into a session copy, so the lobby row stays "(random)" and the next session rolls
- * again rather than silently repeating this one. */
+/* Resolve a random Endless seed before the host sends it. Keep the lobby field
+ * blank so the next session rolls again. */
 void network_endless_session_begin(void)
 {
 	SDL_strlcpy(network_endless_session_seed, network_host_endless_seed,
@@ -2127,12 +2036,8 @@ void network_shop_begin(void)
 	}
 }
 
-/* Re-announce our rendezvous state while waiting on the peer. DONE, LOCK and the sector index are
- * state carried by every packet rather than events, and the other machine drops its view of ours
- * whenever it opens an outpost of its own (network_shop_begin). A player who committed before
- * their partner had even reached that outpost announced it exactly once, into a reset, and from
- * there the two waited on each other for good. Rate limited, and only ever sent from a wait: a
- * machine still shopping has its own traffic and nothing to re-announce. */
+/* Re-announce DONE, LOCK, and the route while waiting. These are state fields, and a peer clears
+ * its view when opening an outpost; rate limiting keeps only one restatement in flight. */
 void network_shop_keepalive(void)
 {
 	if (!isNetworkGame || !coop_mode_active() || thisPlayerNum < 1 || thisPlayerNum > 2)
@@ -2562,11 +2467,8 @@ int network_endless_death_sync(int hostChoice)
 			limit_render_fps();
 		network_check();
 
-		// Say so: the host may still be finishing the level, where waiting on frames this machine
-		// will never send is what wedges it. This is a reliable packet, so once is enough and
-		// repeating it is what hurt: unacknowledged copies stacked up behind a host that was
-		// reading the prompt until the outbound queue overflowed and took the session down. The
-		// re-send is a slow safety net, and never more than one of them is ever in flight.
+		// Tell a host still in the level that this peer left. Keep at most one reliable
+		// notice in flight so an unattended prompt cannot overflow the send queue.
 		if (announced == 0
 		    || (network_is_sync() && SDL_GetTicks() - announced > 5000))
 		{
@@ -2606,12 +2508,8 @@ int network_endless_death_sync(int hostChoice)
 	return -1;
 }
 
-/* Online Super Arcade ship picks. Each player announces their own and nobody dictates, so this is
- * a plain announcement rather than a host-authoritative setting; identical picks are allowed. Both
- * halves are non-blocking on purpose: the picker screen stays interactive and pumps network_check
- * itself, so a player who has already chosen can watch for their partner without the wait freezing
- * the screen. The reliable channel retransmits a lost announcement, so neither side has to repeat
- * itself. */
+/* Non-blocking Super Arcade pick state. The picker services the connection, and the reliable
+ * channel retransmits each player's independent choice. */
 static int  net_sa_ship_peer_pick = 0;
 static bool net_sa_ship_peer_saw_us = false;
 
@@ -2638,12 +2536,8 @@ bool network_sa_ship_peer_saw_us(void)
 	return isNetworkGame && net_sa_ship_peer_saw_us;
 }
 
-/* The Endless debug zone jump, settled BEFORE the course is folded. That ordering is the whole
- * point: folding rebuilds the sector from the course slate -- level, modifiers and all -- so a
- * jump exchanged after it survives only on the machine that did not fold, and the pair lands in
- * different levels. Both machines announce what they staged (or that they staged nothing), adopt
- * the winner, and then both skip the fold together, so the course slate and whose turn it is to
- * chart stay identical on both sides. Host wins if both jumped. */
+/* Settle an Endless debug jump before folding the course, which would overwrite it. Both peers
+ * skip the fold when a jump exists; the host wins simultaneous jumps. */
 void network_endless_jump_publish(void)
 {
 	Uint16 depth = 0;
@@ -2654,10 +2548,7 @@ void network_endless_jump_publish(void)
 	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
 	const bool myLevel = debugLevelPickGet(&ep, &sec, &file);
 
-	// Announced the moment START ZONE is pressed, while the partner is still sitting in the
-	// outpost. That timing is the fix: the jumper must never block waiting for an answer, because
-	// the partner's own wait (for a course this machine is no longer going to chart) is exactly
-	// what this announcement releases. Two waits facing each other is the deadlock.
+	// Publish immediately so a partner waiting for this player's course can leave that wait.
 	if (!isNetworkGame || !coopEndlessMode || !mine || !myLevel)
 		return;
 
@@ -2675,10 +2566,7 @@ void network_endless_jump_publish(void)
 	network_send(20 + perkCount);
 }
 
-/* Non-blocking counterpart: retire a jump announcement if one heads the reliable queue and adopt
- * it. Returns whether a jump is in play at all -- ours, or one just taken from the peer. Never
- * waits: the partner may be minutes away in its own outpost, and a wait here is what wedged the
- * pair. Both machines call this before folding the course, and a true answer means skip the fold. */
+/* Adopt a queued jump without waiting. A true result tells both peers to skip course folding. */
 bool network_endless_jump_poll(void)
 {
 	Uint16 depth = 0;
@@ -2846,11 +2734,8 @@ bool network_endless_run_receive(Uint32 timeout_ms)
 	return done;
 }
 
-/* The handshake every level start needs: both machines announce they are ready, then the state
- * queues are reset and resynchronized. JE_itemScreen does this itself on the way out of the
- * outpost; a path that reaches a level without passing through it (Restart Zone off the Endless
- * death menu) has to call this instead, or one machine starts simulating while the other is still
- * loading and the peer's stall gate is the first thing to notice. */
+/* Run the level-start ready barrier and reset state queues. Paths that bypass
+ * JE_itemScreen, such as Restart Zone, must call this themselves. */
 void network_level_rendezvous(void)
 {
 	if (!isNetworkGame)
@@ -3935,12 +3820,8 @@ static unsigned long net_test_rss_kb(void)
 	return 0;
 }
 
-/* Hard ceiling on a whole test-peer run.
- *
- * Comfortably inside the harness's own patience (testing/network_fault_test.py gives the pair 90
- * seconds), so a wedged peer reaches its own diagnostic and exits non-zero rather than being
- * killed with the reason still in its buffer. Every wait in qa_net.c honours it too, so the run
- * ends where it stopped making progress instead of at whichever timeout happens to be next. */
+/* Test-peer deadline, kept below the harness deadline so a wedged peer can print
+ * its own diagnostic before the harness kills it. */
 #define NET_TEST_CEILING 70000
 
 static Uint32 net_test_started;
@@ -4085,11 +3966,8 @@ int network_test_peer(int rounds, int scenario)
 			return 1;
 		}
 
-		/*
-		 * Gameplay exchanges stay within a bounded lead over the peer.  Keep the test
-		 * inside that same reliable window: a deliberately lost ACK
-		 * must be recovered by the retry path before the next round is queued.
-		 */
+		/* Keep test traffic within the gameplay lead window so a lost ACK is
+		 * recovered before the next round is queued. */
 		const Uint32 ack_start = SDL_GetTicks();
 		while (!network_is_sync() && SDL_GetTicks() - ack_start < 12000)
 		{
@@ -4388,11 +4266,8 @@ int network_test_peer(int rounds, int scenario)
 	}
 	network_state_reset();
 
-	/* One player reaching the next outpost and committing before the other has even opened theirs.
-	 * The slower machine drains the queue on the way in, as every screen between a level and an
-	 * outpost does, and then network_shop_begin drops what it learned; a commit announced exactly
-	 * once lands in that gap and the two wait on each other for good. The handshake above is the
-	 * barrier that puts both peers at the same point before this starts. */
+	/* Barrier before resetting outpost state. Without it, a fast peer's commit can
+	 * be drained and discarded before the slower peer opens the outpost. */
 	network_shop_begin();
 	if (charting)
 	{

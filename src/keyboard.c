@@ -206,11 +206,8 @@ void service_SDL_events(JE_boolean clear_new)
 	if (rollback_resim)
 		return;
 
-	// Recover from a resolution change (fullscreen toggle, scaler resize, Switch
-	// dock/undock) that the current game state won't redraw for on its own: every
-	// input-wait loop pumps events through here, so re-presenting the frame when the
-	// window size changed stops those screens sitting frozen/black until a keypress.
-	// A no-op (one size query) unless the size actually changed.
+	// Repaint input-wait screens after fullscreen, scaler, or dock changes. This is
+	// otherwise only a size query.
 	video_repaint_if_stale(false);
 
 	if (clear_new)
@@ -359,11 +356,8 @@ void service_SDL_events(JE_boolean clear_new)
 				break;
 
 #if defined(__SWITCH__) || defined(__vita__)
-			// Touchscreen. In menus (absolute mouse mode) a touch is a tap-to-click at the
-			// touched point. During gameplay (relative mouse mode, set by mouseSetRelative)
-			// a drag steers the ship RELATIVELY; fed through the same relative-motion
-			// channel read by render-rate movement. Circling a thumb anywhere circles
-			// the ship, like a trackpad. tfinger coords are normalised [0,1] to the window.
+			// Touch acts as an absolute pointer in menus and a relative trackpad in play.
+			// SDL reports touch coordinates normalized to the window.
 			case SDL_FINGERDOWN:
 			case SDL_FINGERMOTION:
 			case SDL_FINGERUP:

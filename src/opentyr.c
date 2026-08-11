@@ -135,11 +135,8 @@ static const char* getSSFilterPickerItem(size_t i, char* buffer, size_t bufferSi
 	return ssFilterNames[i];
 }
 
-/* Enhancement value pickers.
- *
- * Each is a plain list of labels indexed by the setting itself, so one macro makes
- * both accessors the menu table asks for. Keep every list in its enum's order:
- * the index IS the stored value. */
+/* Enhancement labels are indexed by their stored enum values. Keep each list in
+ * enum order. */
 
 #define NAME_PICKER(name, array)                                                     \
 	static size_t name##Count(void) { return COUNTOF(array); }                       \
@@ -198,10 +195,8 @@ static const char* getMusicDeviceItem(size_t i, char* buffer, size_t bufferSize)
 	return music_device_names[i];
 }
 
-// Toggle Christmas mode from the Extra menu. Christmas swaps the shape table
-// (tyrianc.shp) and voice samples (voicesc.snd) for festive versions, so the toggle
-// reloads them (same swap xmas_prompt does at startup). Persisted via xmasMode across
-// restarts. Returns false if enabling was refused for missing Christmas data files.
+// Toggle the persisted Christmas assets and reload their shapes and voices.
+// Enabling fails when either Christmas data file is missing.
 static bool toggle_xmas_mode(void)
 {
 	const bool want = !xmas;
@@ -241,12 +236,8 @@ static void enforcePlainScalerForSupersample(void)
 	}
 }
 
-// Advance the Weapons menu's "Sidekick Autofire" row through its three
-// player-visible modes (Off / On / Charged), skipping the debug-only "Fast"
-// mode (CHARGE_AUTOFIRE_FAST). This edits the very same chargeSidekickAutofire
-// the debug menu's autofire row uses, keeping the two in sync. A value
-// the debug menu set to Fast collapses into the visible cycle on the first press
-// here and can never be selected back to.
+// Cycle the three player-facing Sidekick Autofire modes, skipping debug-only
+// Fast. Both menus edit the same setting.
 static void cycleSidekickAutofire(int dir)
 {
 	int v = chargeSidekickAutofire;
@@ -256,12 +247,8 @@ static void cycleSidekickAutofire(int dir)
 	chargeSidekickAutofire = (JE_byte)v;
 }
 
-/* Every row of every options menu.
- *
- * Rows that only open another menu all share MENU_ITEM_SUBMENU; which menu they open
- * is the row's own `submenu` field, so a new submenu costs one table line and no code.
- * The three id *runs* at the bottom cover the rows that repeat once per weapon or item:
- * the row's id minus its base is the array slot it edits. */
+/* Option-menu rows. Submenus name their target in `submenu`; repeated item rows
+ * derive their array slot from id minus the run's base. */
 typedef enum
 {
 	MENU_ITEM_NONE = 0,
@@ -969,11 +956,8 @@ static bool runOptionsMenu(MenuId startMenu)
 		if (*selectedMenuItemIndex >= menuItemsCount)
 			*selectedMenuItemIndex = menuItemsCount - 1;
 
-		// Tighten the row pitch when the classic 21px spacing would run off the bottom
-		// (the Graphics menu outgrew it): fit the last row's baseline within y<=172 so
-		// its 13px height clears the bottom text strip at y=192. A menu long enough to need that
-		// also starts higher, spending the gap under the header so the rows it does fit stay as
-		// far apart as they can.
+		// Tighten long menus enough to keep the final row above the footer, using
+		// the spare gap below the header first.
 		yMenuItems = 37;
 		dyMenuItems = 21;
 		if (menuItemsCount > 1 && yMenuItems + dyMenuItems * (int)(menuItemsCount - 1) > 172)
@@ -2028,11 +2012,8 @@ int main(int argc, char *argv[])
 	if (qa_net_gameplay_ticks > 0 && qa_net_arcade_separate)
 		arcadeSeparateShips = true;
 
-	/* Command-line peers have no lobby to hand out roles, and the desync recovery dispatch
-	 * and menu arbitration act on the host role alone. Assign player 1 the role the lobby
-	 * would have. Settings stay configured-by-hand on both sides; only the role is filled in.
-	 * isNetworkGame here always means --net: the lobby cannot have run yet, and the QA
-	 * lobby-settings mode above still numbers its peers the same way. */
+	/* Command-line peers have no lobby to assign roles. Give player 1 the host
+	 * role expected by menu arbitration and desync recovery. */
 	if (isNetworkGame)
 	{
 		network_is_host = thisPlayerNum == 1;

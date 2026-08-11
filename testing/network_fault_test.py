@@ -17,67 +17,27 @@ import time
 from pathlib import Path
 
 
-# Each scenario is a separate pair of peers on its own ports, so one mode's protocol cannot
-# leave state behind for the next. Rounds are only the warm-up that establishes the session;
-# the campaign and Endless scenarios spend their time in their own protocols instead.
-# Rows are (id, name, rounds, deadline seconds, part of the default full run).
+# Rows: id, name, warm-up rounds, deadline seconds, included by default.
+# See testing/README.md for scenario behavior and acceptance criteria.
 SCENARIOS = (
     (0, "base", 48, 90, True),
     (1, "campaign", 6, 90, True),
     (2, "endless", 6, 90, True),
     (3, "barriers", 6, 90, True),
-    # The joiner reports a skewed wire version; success is both peers rejecting the handshake
-    # with the mismatch message and exiting on their own, not a hang or a half-open session.
     (4, "version-mismatch", 2, 90, True),
-    # Real gameplay: both peers fly the first Arcade level under rollback with scripted
-    # movement. 5 must stay desync-free while rollbacks happen; 6 bends one joiner frame and
-    # must detect the desync and repair it through a recovery epoch.
     (5, "gameplay", 0, 90, True),
     (6, "desync-recovery", 0, 90, True),
-    # Two-stage save/resume: the pair flies and saves the LAST LEVEL slot on exit, then the
-    # same pair (same scratch directories) resumes it, host loading and the joiner adopting
-    # the resume form; the resumed level must fly desync-free.
     (7, "save-resume", 0, 90, True),
-    # The proxy goes completely silent for 8 seconds mid-level, then returns. Shorter than the
-    # dead-link timeout, so the session has to ride it out and still finish clean.
     (8, "outage", 0, 90, True),
-    # The joiner is killed mid-level. The host must reach its clean connection-lost path and
-    # exit with the message on its own, not hang until this harness's deadline.
     (9, "peer-vanish", 0, 90, True),
-    # Four sidekick mount combinations (front+side vs trailing pair; double front vs
-    # satellite+chaser; satellite pair vs chaser+front; ammo-limited+charge-up vs a custom
-    # design+satellite), flown with scripted fire. Any mount whose simulation reads
-    # unregistered or local-only state desyncs here.
     (10, "sidekick-combos", 0, 90, True),
-    # Both peers press Esc on the same rollback frame; host-wins arbitration must leave one
-    # menu, one waiter, and a clean reliable queue behind (no stale PACKET_WAITING).
     (11, "menu-race", 0, 90, True),
-    # Online Endless flown across ten zones, one forced modifier slate per zone covering every
-    # charted bit, with the real outpost rendezvous between zones. The peers print their view
-    # of both wallets at each outpost and the harness requires the sequences identical.
     (12, "endless-zones", 0, 480, True),
-    # Online Campaign flown across the first two levels of episode 1, the real shop protocol
-    # (with each ship flying its own custom weapon design) between them, the episode 1 -> 2
-    # transition, and the first level of episode 2.
     (13, "campaign-shop", 0, 300, True),
-    # The peers take the production lobby roles: the host arms Individual credit + Double
-    # Earnings from its own config, the joiner adopts the settings block, and scripted in-sim
-    # pickups then have to pay the same doubled wallets on both machines.
     (14, "double-earnings", 0, 120, True),
-    # Accelerated session-length soak: a long single-level flight watching the working set and
-    # the session counters. Run it with --scenario 15; the default full run skips it.
-    (15, "soak", 0, 480, False),
-    # Online Arcade with Separate ships: two independent arcade ships flying one level, each
-    # with its own lives, guns, sidekicks, specials and generator. Per-ship state left in a
-    # shared global shows up here as a desync, the same way the linked pair's would.
+    (15, "soak", 0, 480, False),  # opt-in because it is intentionally long
     (16, "arcade-separate", 0, 90, True),
-    # Online SuperTyrian: both peers fly the Stalker 21.126 with the Atomic RailGun and the
-    # SuperTyrian twiddle table, on the Scrollock variant (the field every other type reads as
-    # difficulty). Per-player twiddle state that leaked into a shared global desyncs here.
     (17, "supertyrian", 0, 90, True),
-    # Online Super Arcade: the peers pick DIFFERENT ships through the announcement protocol, and
-    # both machines must equip both. A colour-ball grant is then scripted into the flight, which
-    # has to hand each ship the gun ITS OWN arsenal keeps in that slot.
     (18, "super-arcade", 0, 90, True),
 )
 

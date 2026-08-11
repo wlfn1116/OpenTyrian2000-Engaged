@@ -129,11 +129,8 @@ int hud_bottom_right_top(void);   // ...and in the bottom-right corner alone
 int hud_top_left_right_edge(void);
 int hud_top_right_left_edge(void);
 
-/* The special-weapon block at the top of the playfield: the 2x2 item icon, and beside it the
- * ready light. It belongs to the ship whose HUD this machine draws, and
- * sits on that ship's own side above that ship's name and lives, which drop by
- * HUD_LIVES_Y_SPECIAL - HUD_LIVES_Y to clear it. mainint.c draws both, with the rest of the HUD;
- * the boss bar reads the edges above. */
+/* Special icon and ready light for the locally drawn HUD. The name and lives move
+ * down to clear it; boss-bar layout reads these bounds. */
 #define HUD_SPECIAL_ICON_W   24  // blit_sprite2x2: two 12px columns...
 #define HUD_SPECIAL_ICON_H   28  // ...by two 14px rows
 #define HUD_SPECIAL_ICON_Y    1
@@ -148,11 +145,8 @@ bool hud_special_on_right(uint p);      // ...mirrored into the right corner, no
 int  hud_special_icon_x(uint p);
 int  hud_special_light_x(uint p);
 int  hud_lives_row_y(uint p);           // row ship p's lives sit on, name HUD_LIVES_NAME_RISE above
-// The firing ship's two special clocks for the ready light: ticks left on the recharge, and on the
-// burn of a special still going. Published from the end of JE_doSpecialShot, which holds that
-// ship's gates in the shared globals. `armed` is sampled earlier in that tick, at the fire gate,
-// so the ready pop still fires when a shot spends the recharge the moment it lands; `fired` says a
-// special went off during the tick, which is the pop's cue for the ones that have no recharge.
+// Per-ship recharge and active-effect clocks for the ready light. `armed` is
+// sampled at the fire gate; `fired` covers specials with no recharge.
 void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired);
 // Drop the meter's carried-over state; level setup calls it so a level cannot open on the previous
 // level's cooldown (which would read as the special arming, and pop).

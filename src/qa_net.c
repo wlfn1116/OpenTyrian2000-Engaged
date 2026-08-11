@@ -1,13 +1,5 @@
-/* Two real peers on a wire: the Online Campaign and Online Endless co-op protocols.
- *
- * qa_online.c and qa_endless.c pin the rules inside one process. These run the same systems
- * across two processes through the hostile proxy in testing/network_fault_test.py, where the
- * failures are different in kind: a field that never made it into a packet, a state each
- * machine derives differently, a rendezvous that only completes when the two arrive in one
- * particular order.
- *
- * Both peers run this same code and each asserts what it should be seeing of the other, so a
- * field that crosses in only one direction fails on the side that did not receive it. */
+/* Two-peer protocol checks driven by testing/network_fault_test.py. Each process validates its
+ * view of the other, covering one-way state loss and rendezvous ordering. */
 #include "qa.h"
 
 #include "config.h"
@@ -35,10 +27,7 @@
 static Uint32 qa_net_peer_phase;   // highest phase the peer has announced reaching
 static const char *qa_net_here = "(none)";   // the phase this machine last entered
 
-/* Everything needed to tell a starved wait from a wedged one, printed at the failure rather than
- * left for a rerun: an empty queue means the packet never came, and a non-empty one means it is
- * stuck behind a head nobody in this loop consumes. The peer's phase says which of the two
- * machines stopped first. A stall that only reports "peers did not finish" costs an hour. */
+/* Print enough queue and phase state to distinguish a missing packet from a blocked queue head. */
 static void qa_net_fail(const char *what)
 {
 	fprintf(stderr,
@@ -64,16 +53,8 @@ static void qa_net_phase(const char *name)
 	fflush(stderr);
 }
 
-/* Phase announcements.
- *
- * Phases are numbered and the peer's number only ever climbs, so a barrier completes on "they
- * have reached at least here" rather than on catching one particular announcement. That is what
- * makes it safe against a lost copy: an exact match strands whoever missed it, because the peer
- * that got through moves on and starts announcing the phase after, and nothing says the old one
- * again. It is the same reason the purchase waits below are >= rather than ==.
- *
- * Tagged into PACKET_WAITING under a prefix of its own so these cannot be read as the base
- * scenario's round payloads. */
+/* Phases only increase, so waits accept the requested phase or any later one. A dedicated prefix
+ * keeps these PACKET_WAITING payloads separate from the base scenario. */
 #define QA_PHASE_MARK 0x50480000u
 #define QA_PHASE_MASK 0xFFFF0000u
 
@@ -145,15 +126,8 @@ static void qa_net_drain(void)
 		}                                                                            \
 	} while (0)
 
-/* A phase barrier: neither machine goes on until both have reached this point.
- *
- * Barriers matter here because every shop packet carries the sender's whole current state
- * rather than a delta. The moment one machine moves on and mutates, an exact value the other is
- * still waiting to observe may never be sent again.
- *
- * The outpost's own done/lock rendezvous is not the thing to build this out of: it is designed
- * for one visit per level, so driving it repeatedly leaves the previous phase's ready and lock
- * flags standing, and the next barrier reads them as an arrival that has not happened. */
+/* Monotonic test barrier. It stays separate from the outpost DONE/LOCK state, which persists for
+ * one visit and cannot represent repeated test phases. */
 static Uint32 qa_net_my_phase;      // highest phase this machine has announced
 static Uint32 qa_net_announced_at;  // when it last said so
 
@@ -301,14 +275,8 @@ int qa_net_campaign_phases(void)
 	/* Neither machine may start spending until both have read the other's opening loadout. */
 	QA_NET_SYNC(1, "campaign loadout");
 
-	/* Interleaved purchases from both machines at once, which is what two players shopping at
-	 * the same outpost actually do.
-	 *
-	 * Each packet carries the sender's whole current state rather than a delta, so an exact
-	 * intermediate total is not something a peer is guaranteed to ever observe: drop the one
-	 * packet that carried it and the next already holds a later total. Spending only ever
-	 * raises the total, so each round waits for "at least this much" and the exact figures are
-	 * asserted after the barrier below. */
+	/* Interleave both peers' purchases. Packets carry current totals, so intermediate
+	 * values may be skipped; wait for a lower bound and assert exact totals after the barrier. */
 	const int rounds = 6;
 	for (int round = 1; round <= rounds; ++round)
 	{
@@ -754,12 +722,8 @@ int qa_net_endless_phases(void)
 
 	/* ---- the whole run record, host to joiner ---- */
 
-	/* The resume path: the host's run is the run and the joiner adopts it wholesale.
-	 *
-	 * Last, deliberately. The transfer is a blocking chunked push, so for as long as it runs
-	 * the host is reading for its own acknowledgements and nothing else; a phase tag sent at
-	 * it in that window is gone. Nothing follows it here, and the settle below clears any
-	 * straggling announcement before either machine commits to it. */
+	/* Keep the blocking run transfer last because its acknowledgement loop does not consume phase
+	 * announcements. The preceding settle clears any old announcement. */
 	qa_net_phase("Endless run transfer");
 	qa_net_settle();
 	if (thisPlayerNum == networkHostPlayerNum)

@@ -188,11 +188,8 @@ static int endlessPerkFireRate(bool hurtBonus)
 	return rate;
 }
 
-/* Apply Rapid Cyclers and, while hurt, Adrenaline through a fractional accumulator. One carry
- * per ship: both ships tick through here, and a shared carry would have each of them consuming
- * the other's remainder, halving the rate for both. Simulation state, in the rollback registry:
- * which tick a carry crosses a whole step decides which tick a gun fires, and a re-simulated
- * frame advancing an unregistered carry again had the two machines firing a tick apart. */
+/* Per-ship fractional carry for Rapid Cyclers and Adrenaline. Register it for
+ * rollback because the crossing tick determines when each gun fires. */
 int endlessPerkFireAccum[2];
 int endlessPerkSpecialCdAccum[2];
 

@@ -12,9 +12,8 @@
 bool fm_init(const char *soundfont, int sample_rate);
 void fm_quit(void);   // stop playback and tear down synth + driver
 
-// Start an in-memory SMF. `loop` repeats from loopStart when present, otherwise from the top.
-// `on_finish` may be NULL and runs from the sequencer thread when a non-looping song ends.
-// This replaces any active song and returns false if the SMF cannot be played.
+// Replace the current song with an in-memory SMF. Loops honor loopStart;
+// on_finish may be NULL and runs on the sequencer thread.
 bool fm_play(const uint8_t *smf, size_t size, bool loop, void (*on_finish)(void));
 
 void fm_stop(void);            // stop and silence

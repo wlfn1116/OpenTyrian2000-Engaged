@@ -19,11 +19,8 @@
 // Call once, as early as possible in main() (before any file access).
 void switch_platform_init(void);
 
-// Show the Switch software keyboard (there is no physical keyboard). Writes the entered
-// text into out (NUL-terminated). `initial` pre-fills it; `guide` is a hint shown on the
-// keyboard; `max_len` caps the entry length (0 = out_size-1); `numeric` picks the number
-// pad. Returns true if the user confirmed, false if they cancelled. swkbdShow blocks
-// (modal) while the keyboard is up.
+// Show the modal Switch keyboard. `max_len` 0 uses the output buffer's full
+// capacity, and `numeric` selects the number pad. Returns false on cancel.
 bool switch_swkbd(char *out, size_t out_size, size_t max_len,
                   const char *initial, const char *guide, bool numeric);
 
@@ -33,10 +30,8 @@ bool switch_swkbd(char *out, size_t out_size, size_t max_len,
 // Returns false if the network is down or the address is not known.
 bool switch_get_local_ip(uint32_t *out);
 
-// Native output resolution for the console's current operation mode:
-// 1280x720 in handheld, 1920x1080 when docked (TV). This is the size the video
-// layer scans out, so the SDL window/buffer should match it 1:1 to fill the panel
-// crisply without cropping. Either pointer may be NULL. Safe to call any time.
+// Return the native output size: 1280x720 handheld or 1920x1080 docked.
+// Either output pointer may be NULL.
 void switch_get_output_size(int *w, int *h);
 
 #endif // __SWITCH__

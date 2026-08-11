@@ -817,13 +817,8 @@ static const NetworkHostInfo *lobbyPickLanGame(NetworkHostInfo *hosts, int *out_
 	}
 }
 
-// Everything that has to be settled before the machine starts listening.  Returns true to go
-// ahead and host, with the port applied and the slot choice made; false to go back.
-//
-// Laid out like the Endless record page: a centred block of small-font "Label ....... Value"
-// rows, one line of help for whichever row the cursor is on, and the two actions under it in
-// the menu font.  Spelling every setting out in full on its own normal-font row made the
-// screen a wall of text; the value column carries that now.
+// Collect host settings before listening. Returns true with the port and player slot applied, or
+// false when the user backs out.
 static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 {
 	enum
@@ -871,11 +866,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 
 	for (;;)
 	{
-		// Desync recovery is a rollback-only repair: the lockstep path never runs the canary
-		// compare that arms it, so delay-based forces the setting off and takes the row off the
-		// page entirely. It was never reachable while locked, so showing it dimmed only offered
-		// a choice that was not there.  (Destruct hides the row too, below, but without clearing
-		// the setting: it is a main-game preference the minigame has no business rewriting.)
+		// Desync recovery requires rollback canary checks, so delay-based netcode
+		// disables and hides it. Destruct only hides the main-game preference.
 		if (!net_rollback)
 			net_desync_recovery = false;
 
@@ -1329,11 +1321,8 @@ static bool lobbyStartSession(bool as_host)
 	network_from_lobby = true;
 	network_is_host = as_host;
 
-	// The host takes the slot it asked for; the joiner assumes it is hosted by a player 1 and
-	// corrects itself from the host's connect packet, which is the first word it gets on the
-	// subject (see network_connect).  Campaign offers no such choice -- both slots fly the same
-	// kind of ship -- so it always hosts as player 1, leaving network_host_player as the Arcade
-	// preference it is remembered for.  Destruct reads the same slot as its side: 1 left, 2 right.
+	// The host keeps its chosen slot; the joiner adopts it from the connect packet.
+	// Campaign always hosts as player 1, while Destruct treats the slot as its side.
 	const bool slotChoiceApplies = network_game_type == NETWORK_GAME_ARCADE
 	                            || network_game_type == NETWORK_GAME_DESTRUCT;
 	networkHostPlayerNum = (as_host && slotChoiceApplies && network_host_player == 2) ? 2 : 1;

@@ -35,9 +35,8 @@ JE_byte mouseCursor;
 JE_word mouseX, mouseY, mouseButton;
 JE_word mouseXB, mouseYB;
 
-// On the consoles (Switch / Vita) the pointer is the touchscreen; an on-screen cursor
-// sprite misleads (it's absolute in menus and irrelevant to the relative "trackpad" ship
-// control), so the sprite is suppressed there. Pixel grab/restore still runs, so nothing smears.
+// Console touch input needs no cursor sprite. Keep pixel grab/restore active
+// so hiding it does not leave trails.
 #if defined(__SWITCH__) || defined(__vita__)
 #define MOUSE_CURSOR_HIDDEN 1
 #else

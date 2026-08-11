@@ -1,82 +1,77 @@
-# Nintendo Switch homebrew build
+# Nintendo Switch build
 
-This target builds `opentyrian2000.nro` for the Homebrew Launcher or a Switch
-emulator. It requires a homebrew-capable system and is distributed separately
-from the Nintendo eShop.
+This target produces `opentyrian2000.nro` for the Homebrew Launcher and Switch
+emulators. It is not an eShop package.
 
 ## Requirements
 
-Install devkitPro, then install the Switch toolchain, SDL2 and SDL2_net:
+Install devkitPro, then add the Switch toolchain and SDL libraries:
 
 ```sh
 dkp-pacman -S switch-dev switch-sdl2 switch-sdl2_net
 ```
 
-`DEVKITPRO` must be set. On Windows, use the devkitPro MSYS2 shell.
+`DEVKITPRO` must be set. On Windows, build from the devkitPro MSYS2 shell.
 
 ## Game data
 
-Choose one layout:
+Use either location:
 
-- copy the data files into `switch/romfs` before building; or
-- copy them to `sdmc:/switch/opentyrian2000/`.
+- `switch/romfs` before building;
+- `sdmc:/switch/opentyrian2000/` on the SD card.
 
-The SD-card copy takes precedence over bundled data. Filenames are
-case-sensitive in romfs.
+The SD-card copy takes precedence. Romfs filenames are case-sensitive.
 
 ## Build
 
-From the `switch` directory:
+From `switch`:
 
 ```sh
 make
 make clean
 ```
 
-`build.sh` sets up the devkitPro paths when called outside its shell:
+From outside the devkitPro shell, call the helper with devkitPro bash:
 
 ```powershell
 & "D:\devkitPro\msys2\usr\bin\bash.exe" /path/to/project/switch/build.sh
 ```
 
-Invoke the script directly. A devkitPro login shell can truncate multi-command
-runs on some Windows installations.
+Invoke the script as one command. Some Windows devkitPro installations truncate
+multi-command login-shell runs.
 
 ## Install
 
-Copy the output to:
+Copy the result to:
 
 ```text
 sdmc:/switch/opentyrian2000/opentyrian2000.nro
 ```
 
-Configuration and saves are written to the same directory. Emulators can load
-the `.nro` directly.
+Configuration, saves, and logs use the same directory. Emulators can open the
+`.nro` directly.
 
-## Controls
+## Controls and text
 
-Joy-Con and Pro Controllers use SDL's joystick interface. Defaults cover menu
-navigation, movement, and firing; all bindings can be changed in game.
+Joy-Con and Pro Controllers use SDL's joystick interface. Defaults cover menus,
+movement, and firing; bindings can be changed in Setup.
 
-Text-entry screens open the Switch software keyboard.
+Text fields open the Switch software keyboard. The right stick also moves the
+ship. MIDI is disabled.
 
-## Networking
+## Online play
 
-Two-player netplay is available from **2 Player Online Arcade** on the main
-menu. Both machines must be on the same network; the port is UDP 1333 by
-default.
+Open **Online Multiplayer** from the main menu. LAN discovery and direct address
+joining are available. The default port is UDP 1333.
 
-Find LAN Games discovers a host on the same subnet, so neither player normally
-has to type an address. The host screen shows this console's IP for the cases
-where broadcast is blocked and the other player has to join by address.
+Switch can play with Windows, Linux, and Vita builds of the same game version.
 
 ## Troubleshooting
 
-- `Please set DEVKITPRO`: use the devkitPro shell or load
+- `Please set DEVKITPRO`: use the devkitPro shell or source
   `/etc/profile.d/devkit-env.sh`.
-- `pkg-config` not found: verify
+- `pkg-config` missing: check
   `$DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config`.
-- `SDL_net.h: No such file`: install `switch-sdl2_net`, or drop `-DWITH_NETWORK`
-  from `CFLAGS` in the Makefile to build without netplay.
-- Missing data: check `switch/romfs` or
-  `sdmc:/switch/opentyrian2000/`, including filename case.
+- `SDL_net.h` missing: install `switch-sdl2_net`. To build without online play,
+  remove `-DWITH_NETWORK` from `CFLAGS`.
+- Missing game data: check both supported locations and filename case.

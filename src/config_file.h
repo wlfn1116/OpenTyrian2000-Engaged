@@ -31,11 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*!
- * \brief Marks a function that never returns (config_oom exits).  Annotation only -- it generates no
- *        code, but without it a bail-out on a failed allocation reads as a null dereference on the
- *        next line.  Kept local so this module stays free of project-wide headers.
- */
+/*! \brief Marks a function that exits, keeping static analysis on the live path. */
 #if defined(_MSC_VER)
 #define CONFIG_NORETURN __declspec(noreturn)
 #elif defined(__GNUC__)

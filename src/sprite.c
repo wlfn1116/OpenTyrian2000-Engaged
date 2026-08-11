@@ -624,17 +624,8 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
-/* A sub-row window of the sprite only, every pixel brightened by `bright` steps toward the top of
- * its own palette bank -- 15 saturates the whole frame to that bank's brightest shade, the boss
- * bar's flash trick. The HUD's special-ready light grows its lit bar upward with the window and
- * pops it white with `bright`. The window is measured in sub-rows from the sprite's top row
- * (row r covers r*scale .. r*scale+scale-1), so its edge lands inside a row rather than snapping
- * to one, and every source pixel becomes a scale x scale block. Fully clipped.
- *
- * Unlike its neighbours here this records nothing: like the boss bar the light rides the per-tick
- * residual, which re-applies it over the interpolated frame unfiltered (its caller marks the rect
- * so no pixel is dropped, and repaints it at the display rate on top).
- */
+/* Draw a clipped sub-row window at `scale`, brightened within each pixel's palette bank. This is a
+ * presentation overlay and does not record render-list commands. */
 void blit_sprite2_rows_bright_scaled(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int sub_first, int sub_last, int bright, int scale)
 {
 	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
@@ -789,11 +780,8 @@ bool sprite2_is_blank(Sprite2_array sprite2s, unsigned int index)
 	return true;
 }
 
-/* Middle of the box the frame's opaque pixels occupy, as an offset from the position it is
- * blitted at. Walks the packed frame the way sprite2_has_pixel_in_window does; the answer comes
- * from sprite data alone, so the hit tests built on it stay identical on both machines online.
- * A frame that draws nothing answers (0, 0), leaving the caller on the blit position itself.
- */
+/* Return the center of a packed frame's opaque bounds relative to its blit point.
+ * Empty frames return (0, 0). */
 void sprite2_center_offset(Sprite2_array sprite2s, unsigned int index, int *out_dx, int *out_dy)
 {
 	*out_dx = 0;
@@ -848,12 +836,8 @@ void sprite2_center_offset(Sprite2_array sprite2s, unsigned int index, int *out_
 	*out_dy = (minY + maxY) / 2;
 }
 
-// Read-only, draw-free twin of blit_sprite2's logical walk (mirrors blit_sprite2_clip's
-// x/y bookkeeping, minus every surface write): returns true as soon as any OPAQUE pixel of
-// sprite `index` would land inside the window [wx0, wx1] x [wy0, wy1). The kill-gate uses it
-// to ask "is a pixel of this frame actually on screen?" purely from logic state, with no
-// dependency on whether or when the sprite was blitted. The answer is deterministic and
-// never lags the collision. wx1 is INCLUSIVE (a pixel column); wy1 is EXCLUSIVE (a row count).
+// Test whether an opaque sprite pixel reaches [wx0, wx1] x [wy0, wy1) without drawing. `wx1` is
+// inclusive and `wy1` exclusive, matching the collision gate's playfield bounds.
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array sprite2s, unsigned int index,
                                  int wx0, int wx1, int wy0, int wy1)
 {
@@ -936,11 +920,8 @@ void blit_sprite2_blend(SDL_Surface *surface,  int x, int y, Sprite2_array sprit
 	}
 }
 
-// Clipping counterpart of blit_sprite2_blend (per-row X clip, mirrors
-// blit_sprite2_clip). Replay-only helper for rl_draw_cmd: an extrapolated shot
-// can be drawn a pixel or two past the surface edge, where the non-clipping
-// version wraps onto the adjacent row; the brief left-exit-shows-on-the-right
-// flash. Not recorded (replays never record).
+// Clipped blend used only during replay. It prevents extrapolated sprites past
+// an X edge from wrapping into the adjacent row.
 void blit_sprite2_blend_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
 {
 	assert(surface->format->BitsPerPixel == 8);
@@ -1410,11 +1391,8 @@ void blit_sprite_table_scaled(SDL_Surface *surface, int x, int y, unsigned int t
 	}
 }
 
-// tyrianc.shp is built wrong: bank 11 (the second player-shot sheet, spriteSheet12)
-// is a byte-exact copy of bank 7, so every shot with sg > 500 draws bank 7 art in
-// Christmas mode. No festive version of bank 11 exists anywhere; in Tyrian 2.1 that
-// same bank is byte-identical in tyrian.shp and tyrianc.shp, so take it from
-// tyrian.shp. Both files index 304 sprites in that bank, so the swap is safe.
+// tyrianc.shp duplicates bank 7 into bank 11. Load bank 11 from tyrian.shp,
+// where its 304-entry layout matches and the player-shot art is correct.
 static void reload_shot_sprites_2_from_default(void)
 {
 	enum { SHP_NUM = 13, BANK = 11 };

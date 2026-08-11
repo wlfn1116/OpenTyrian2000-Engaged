@@ -1,10 +1,5 @@
-/* Online Arcade and Online Campaign: the mode-flag split, the two-wallet campaign economy,
- * and the co-op campaign record board.
- *
- * The three online modes share one set of flags, so most of what can go wrong here is a rule
- * meant for one of them reaching another: arcade orb rules in a campaign, a campaign's split
- * wallet in arcade, a co-op branch taken by a solo game. Every case states the rule it is
- * pinning rather than restating the expression that implements it. */
+/* Tests for online-mode boundaries: Arcade rules, Campaign wallets, and co-op
+ * records must not leak into one another or solo play. */
 #include "qa.h"
 
 #include "config.h"
@@ -1044,15 +1039,8 @@ static void qa_hostile_packets(void)
 /* ---- the debug-menu wire block ------------------------------------------------------- */
 
 #ifdef WITH_NETWORK
-/* Everything the debug menu can change has to survive a round trip through the block, because
- * both machines simulate both ships: a cheat or a tuning value that takes on one of them alone is
- * two different games. The failure this is built to catch is a field added to the menu and not to
- * the block -- it stays at whatever the receiving machine had, which no amount of play-testing on
- * one machine will show.
- *
- * Deterministic, unlike the same exchange over a wire: pack, mutate everything, adopt, and the
- * mutations have to be gone. The re-pack afterwards is the part with teeth, since it compares the
- * whole block rather than the fields this test happened to think of. */
+/* Round-trip every debug setting through the wire block, then compare the complete re-packed
+ * block. A menu field omitted from the protocol leaves a detectable mutation behind. */
 static void qa_debug_block_roundtrip(void)
 {
 	const int size = network_debug_state_size();
@@ -1158,11 +1146,8 @@ static void qa_debug_block_roundtrip(void)
 
 /* ---- 9. the two one-player rulesets, flown online ------------------------------------ */
 
-/* SuperTyrian and Super Arcade are single-player modes given a second ship. Neither shares
- * anything: two Stalkers with their own twiddle state, or two different Super Arcade hulls with
- * their own ball tables and their own paired specials. What can go wrong is a rule that used to
- * be allowed to read the session-wide superArcadeMode, because solo there was only ever one
- * ship to read it for. */
+/* Online SuperTyrian and Super Arcade give each ship independent state. These
+ * cases catch code that still reads the old session-wide ruleset. */
 static void qa_super_online_matrix(void)
 {
 	char label[224];
@@ -1400,11 +1385,8 @@ static void qa_sa_picker_layout(void)
 
 /* ---- 11. saving a session that flies two complete arcade ships ----------------------- */
 
-/* A save record was built for one ship plus a linked partner: two pItems blocks, but only two of
- * the four weapon powers, and no second weapon mode. Every session that flies two complete ships
- * needs the other half, and the three arcade shapes need it most: ship two's lives ARE its front
- * gun's power there, so without it a resumed run hands the second player a life count nobody
- * ever earned. */
+/* Two-complete-ship saves need all four weapon powers and both rear-fire modes.
+ * Arcade also derives ship two's life count from its front-gun power. */
 static void qa_dual_arcade_save_roundtrip(void)
 {
 	// The two-player LAST LEVEL slot, which is the one an online arcade session writes and the
@@ -1564,11 +1546,8 @@ static void qa_dual_arcade_save_roundtrip(void)
 #ifdef WITH_NETWORK
 /* ---- 12. the Super Arcade ship announcement ------------------------------------------ */
 
-/* Each player announces their own pick and nobody dictates, so the things this protocol has to get
- * right are that the value crossing the wire is a ship and that it came from the OTHER machine --
- * the number indexes SAShip[] and a SAWeapon row. Zero is the one value that is not a ship and is
- * still legal: it takes a pick back. The byte after it is the sender's acknowledgement of OUR pick,
- * and it is what stops either machine leaving while the other could still change ships. */
+/* Each player publishes a Super Arcade ship and acknowledges the peer's pick.
+ * Zero withdraws a pick; no player may leave while the peer can still change. */
 static void qa_sa_ship_packet(void)
 {
 	const JE_boolean savedNet = isNetworkGame;
@@ -1643,12 +1622,8 @@ static void qa_sa_ship_packet(void)
 
 /* ---- 13. the Endless debug zone jump crosses the wire -------------------------------- */
 
-/* A zone jump is one decision made of four parts: the level, the depth, the folded modifier mask
- * and the perk stacks. The level rides the browser-pick fields the campaign already publishes;
- * the other three are what this block carries. A peer that adopted only the level would open the
- * right file at the wrong depth with the wrong modifiers and generate a different sector, which
- * is a desync from the first tick -- so what matters is that all of it survives the round trip,
- * and that a hostile or truncated block cannot be read past. */
+/* An Endless jump includes level, depth, modifier mask, and perk stacks. Test the
+ * whole round trip and reject hostile or truncated blocks. */
 static void qa_endless_jump_pick(void)
 {
 	const JE_boolean savedEndless = endlessMode;

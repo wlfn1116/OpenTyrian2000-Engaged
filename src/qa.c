@@ -53,10 +53,8 @@ bool qa_net_lobby_settings = false;
 bool qa_net_arcade_separate = false;
 bool qa_net_scrollock = false;
 
-/* The forced modifier slate per Endless wire zone. Ten depths cover every charted modifier bit
- * (the gamble-only and banked-boon bits included); depths past the table fly unmodified. Each
- * row respects the compatibility rules course generation enforces (see qa_mods_compatible).
- * Both machines derive the slate from the depth alone, so it can never diverge. */
+/* Deterministic modifier slates for the first ten Endless wire-test zones.
+ * Later zones fly unmodified. */
 Uint64 qa_net_zone_mods(int depth)
 {
 	static const Uint64 slate[] = {
@@ -145,11 +143,8 @@ void qa_net_apply_loadout(int profile)
 		break;
 	case 4:
 	{
-		/* Ammo-limited and charge-up kicks against a custom design and a satellite: the
-		 * counters all live in player[].sidekick and must cross rollback intact. The custom
-		 * design is the identical startup default on both machines, adopted into owner 1's
-		 * slots the way the outpost exchange would deliver it, so both simulations hold the
-		 * same compiled sidekick. */
+		/* Mix ammo, charge, custom, and satellite sidekicks to exercise rollback of
+		 * player[].sidekick counters and compiled owner slots. */
 		const JE_byte ammoKick = qa_first_sidekick_with_ammo();
 		const JE_byte chargeKick = qa_first_sidekick_with_charge();
 		JE_byte customKick = 0;

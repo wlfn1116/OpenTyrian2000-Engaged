@@ -899,11 +899,8 @@ void endless_register_rollback(void)
 	rollback_register("endless.cmCooldown", endlessCmCooldown, sizeof(endlessCmCooldown));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
 
-	/* The run ledger is written by simulation events (a kill pays, a bounty pays), so it has to
-	 * be undone with them. Left out, a speculative frame that pays and is then rolled back keeps
-	 * its entry while the wallet is restored, and the level's re-simulations book the same income
-	 * over and over. The two machines re-simulate different amounts, so their run summaries stop
-	 * agreeing, and every restore reads to the audit as undeclared drift. */
+	/* Roll the run ledger back with the wallet. Otherwise speculative income is
+	 * booked again during re-simulation and peer summaries diverge. */
 	rollback_register("endless.cashEarned", &endlessRunCashEarned, sizeof(endlessRunCashEarned));
 	rollback_register("endless.cashSpent", &endlessRunCashSpent, sizeof(endlessRunCashSpent));
 	rollback_register("endless.cashBySource", endlessCashBySource, sizeof(endlessCashBySource));

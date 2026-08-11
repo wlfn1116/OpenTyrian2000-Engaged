@@ -81,11 +81,8 @@ DrbStep;
  * machine's prediction. */
 DrbStep drb_driver(bool roundOver);
 
-/* Snapshot self-test.  Each tick is simulated twice, the second time from its own snapshot, and
- * the two resulting states are compared byte for byte; anything the state walk fails to cover, or
- * any part of the tick that is not a function of the state it restores, shows up as a difference.
- * It runs offline with scripted input for both sides, so it needs no peer.  Independent of a
- * session: drb_active() stays false throughout, and the driver never runs. */
+/* Offline snapshot self-test. Simulate each scripted tick twice, restoring its snapshot before the
+ * second pass, and compare the complete resulting state. */
 void drb_selftest_arm(size_t stateBytes, void (*save)(void *dst), void (*restore)(const void *src),
                       unsigned long ticks);
 void drb_selftest_disarm(void);

@@ -264,9 +264,8 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	// Cataclysm combines several dangers without an elite tier.
 	// The rare themes carrying neither Apex nor Legion (the 5+-danger pure combos).
 	RARE_PICK(50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
-	// Dead Generator (DEADGEN): no shield regen AND a power-starved main gun. The nastiest
-	// handicap in the game, so it is the rarest and is rolled last. It claims the slot when it
-	// fires. Rear guns / sidekicks / specials carry the fight.
+	// Dead Generator disables shield recharge and starves the main gun. It is the
+	// rarest roll and claims the slot when selected.
 	RARE_FROM(70, endlessDeadgenThemes, true),
 };
 #undef RARE_FROM

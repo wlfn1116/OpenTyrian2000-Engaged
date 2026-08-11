@@ -1197,14 +1197,8 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
-	/* The two pItems blocks carry weapon ids but no powers, and `power[]` above only reaches
-	 * player one's front bay and player two's rear one. That is the whole loadout for the linked
-	 * pair, where player two's rear bay IS its life counter, and half of it for every session
-	 * flying two complete ships: co-op, and the three dual-ship arcade shapes, where ship two's
-	 * lives sit on its own FRONT gun and would be lost. The missing two powers and both weapon
-	 * modes ride the unused second high-score field, under a tag that says which shape wrote it.
-	 * Separate arcade gets its own tag: save_record_is_coop() gates the co-op lobbies, and an
-	 * arcade record must not start answering to it. */
+	/* Dual-ship records pack the two missing weapon powers and both modes into highScore2. Distinct
+	 * co-op and arcade tags keep the shared slot page type-safe. */
 	saveFiles[slot - 1].highScore2 = 0;
 	if (dual_ship_mode())
 	{

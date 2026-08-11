@@ -805,11 +805,8 @@ static const float endlessGravityHeadings[16][2] = {
 	{  0.000f, -1.000f }, {  0.383f, -0.924f }, {  0.707f, -0.707f }, {  0.924f, -0.383f },
 };
 
-/* The classic (non-VT) ship path applies gravity in whole pixels and carries the fraction here,
- * one pair per ship: both ships pull every tick, and a shared carry would hand one ship the step
- * the other's fraction earned. Simulation state, so it is in the rollback registry; as a pair of
- * function-local statics it sat outside every snapshot, each re-simulated frame advanced it
- * again, and the two machines drifted a pixel apart within a zone. */
+/* Per-ship fractional carry for classic gravity. It is rollback state because
+ * shared or unsnapshotted carry makes the two ships drift. */
 static float endlessGravityCarryX[2];
 static float endlessGravityCarryY[2];
 

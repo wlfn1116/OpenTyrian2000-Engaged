@@ -528,18 +528,8 @@ static Uint64 destruct_sim_freq = 0, destruct_sim_last = 0;
 static float  destruct_sim_accum = 0.0f;
 
 #ifdef WITH_NETWORK
-/* Online Destruct plays on either netcode, chosen by the host's lobby row.
- *
- * Delay-based rides the lockstep state stream the main game already has: every tick each machine
- * publishes one byte of action bits and one of control bits, then blocks until the peer's packet
- * for the same logical tick is here (XOR parity and resend requests included, all in network.c).
- * The inputs APPLIED are both sides' bytes from network_delay ticks ago, our own replayed out of
- * the outbound queue and the peer's from the arrived packet, so the two machines run the identical
- * input pair at the identical tick and the simulation never crosses the wire.  See DE_NetExchange.
- *
- * Rollback applies this machine's input on the frame it was pressed and predicts the peer's, then
- * corrects by restoring a snapshot of the whole battle and replaying.  destruct_rollback.c owns
- * the timeline; the state it snapshots is DE_StateSave/DE_StateRestore below. */
+/* Delay-based Destruct applies both peers' inputs after network_delay ticks. Rollback applies local
+ * input immediately and replays from DE_StateSave when the prediction differs. */
 static bool de_net = false;                  /* this Destruct run is an online session */
 static bool de_net_rollback = false;         /* ...and it runs rollback, not the lockstep below */
 static enum de_player_t de_net_local_side;   /* the side this machine's controls drive */
@@ -746,11 +736,8 @@ static void load_destruct_config(Config* config_)
 }
 
 #ifdef WITH_NETWORK
-/* Everything the config file can vary about the SIMULATION is pinned to the shipped defaults for
- * the session: the two machines' files have no reason to agree, and any difference here is a
- * desync (crater aliasing rewrites collision pixels, so it counts).  Both jumpers fire straight so
- * neither side mans the buggy one.  The next offline game reloads the file, so nothing needs
- * restoring.  The snapshot self-test pins the same set, to exercise the layout a session runs. */
+/* Pin every config value that affects Destruct simulation. Peers may have different local files;
+ * the next offline game reloads its own values. */
 static void DE_pinSessionConfig(void)
 {
 	config.max_shots = 40;
@@ -1030,12 +1017,8 @@ static void DE_composeIntro(bool localReady, bool peerReady)
 }
 
 #ifdef WITH_NETWORK
-/* Online, the title screen is a barrier: this machine announces that its player is ready and holds
- * here until the other machine's announcement arrives, so nobody is still reading which side they
- * command while the other is already firing.  Unbounded on purpose -- the peer sits on this same
- * screen keeping the link alive, a timeout would start one session without the other, and Escape
- * is the way out instead.  Escape takes a confirmation back first, so leaving from ready is two
- * presses: a barrier that only released and never stepped back had no way to change your mind. */
+/* Online title barrier: both players confirm before the battle starts. Escape
+ * first withdraws confirmation, then leaves; both states keep the link alive. */
 static void DE_netIntroBarrier(void)
 {
 	bool localReady = false, peerReady = false;
@@ -1440,11 +1423,8 @@ static void DE_generateWalls(struct destruct_world_s* gameWorld)
 
 		} while (isGood == false && tries < 5);
 
-		/* We now have a valid X.  Create the wall, capped where the sky window between the
-		 * HUD boxes begins: five blocks on a terrain peak (y clamps at 40) used to reach
-		 * y = -30, hanging the tower's top in the window -- and wrapping the unsigned wallY.
-		 * The terrain clamp leaves at least two blocks of headroom; the MAX guards the
-		 * loop's termination (remainWalls must shrink) if that clamp ever moves. */
+		/* Cap walls below the HUD sky window and leave two blocks of headroom. The
+		 * MAX also guarantees remainWalls shrinks if the terrain clamp changes. */
 		{
 			const unsigned int baseY = JE_placementPosition(wallX, 12, gameWorld->baseMap);
 			const unsigned int headroom = MAX((baseY - HUD_ROWS) / 14, 1u);
@@ -1565,11 +1545,8 @@ static unsigned int JE_placementPosition(unsigned int passed_x, unsigned int wid
 {
 	unsigned int i, new_y;
 
-	/* The footprint is clamped to the map: baseMap[vga_width] is immediately followed by the
-	 * world's VGAScreen pointer, and the widest wall footprint (wallX up to vga_width-11, 12
-	 * wide) reaches one column past the array -- which read the pointer's low half as a
-	 * terrain height, flattened 3 billion into a dozen real columns, and sent JE_rectangle a
-	 * negative row to memset when the next round drew that terrain. */
+	/* Clamp the wall footprint before reading baseMap. The widest wall can otherwise
+	 * reach one column past the terrain array and corrupt the next draw. */
 	const unsigned int last_x = MIN(passed_x + width - 1, (unsigned int)vga_width - 1);
 
 	/* Flatten the unit footprint to its highest terrain column. This preserves
@@ -2020,11 +1997,8 @@ static void DE_DrawShotsScaled(SDL_Surface* hi, int scale, float alpha)
 		if (shotRec[i].isAvailable)
 			continue;
 
-		/* The tick draw shows a shot -- head AND trails -- only while the head is on-screen
-		 * (DE_RunTickShots).  Off the top, the trail slots freeze un-decayed, so without the
-		 * same gate here the smooth present keeps repainting those frozen pixels at the exit
-		 * point for as long as the shot hangs above the screen: on a full-power lob, seconds
-		 * of what reads as stuck debris in the sky window. */
+		/* Match the tick draw: hide both head and frozen trails while the shot is
+		 * offscreen, preventing stale trail pixels in the sky window. */
 		if (shotRec[i].y < 0 || shotRec[i].y >= vga_height)
 			continue;
 
@@ -2266,15 +2240,8 @@ static Uint32 DE_NetSimHash(void)
 	return h;
 }
 
-/* The battle simulation as one blob, for the rollback snapshot ring.  Everything a tick can move
- * belongs here, the destructible terrain buffer included: shots collide against its pixels, so a
- * mispredicted explosion that was not rolled back would leave a crater on one machine only.
- *
- * The pool sizes are pinned for the whole session (see JE_destructGame), so the layout is settled
- * once and DE_StateSize can be taken before the first round.  One walk serves both directions so
- * the two can never disagree about it.  The pointed-to arrays go first, addressed through the live
- * pointers, and the structs holding those pointers follow; the allocations outlive every snapshot,
- * so the addresses are constant, and DE_StateRestore puts them back regardless. */
+/* Walk the complete Destruct simulation, including collision terrain. Pool sizes and allocations
+ * stay fixed for the session; restore re-pins pointers after copying the blob. */
 static void DE_StateWalk(Uint8* buf, bool saving)
 {
 	size_t off = 0;
@@ -2587,11 +2554,8 @@ de_sim_pass:
 	if (!drb_resim())
 		DE_RunTickPlaySounds();
 
-	/* The rest of this cruft needs to be put in appropriate sections.  All of it is offline-only:
-	 * online, quit travels as a control bit (the exchange consumed the key already), pause would
-	 * strand the other player so P is dead like every online mode's, the AI toggles would fork
-	 * the two sims on the spot, and the help screen blocks the state stream long enough to read
-	 * as a dead connection. */
+	/* Offline-only shortcuts. Online control bits own quit, and blocking or local
+	 * toggles here would stall or split the simulation. */
 #ifdef WITH_NETWORK
 	if (!de_net)
 #endif
@@ -2880,12 +2844,8 @@ static void DE_RunTickExplosions(void)
 			while (tempPosX >= vga_width)
 				tempPosX -= vga_width;
 
-			/* We don't draw our explosion if it's out of bounds vertically.  In the gap between
-			 * the HUD boxes the playfield runs to the top of the screen, so a flare may show up
-			 * there -- but only the glow, which fades itself back to black one shade per tick
-			 * (DE_blendTempPixel).  A dirt flare is terrain, and above the HUD line there is no
-			 * ground for it to join and nothing that ever repaints it, so one left up there hangs
-			 * in the window for the rest of the round.  Dirt keeps the classic ceiling. */
+			/* Normal glow may enter the open sky between HUD boxes because it erases itself. Dirt
+			 * remains below the classic ceiling; persistent terrain is never repainted up there. */
 			{
 				const bool inSky = tempPosX >= HUD_GAP_LEFT && tempPosX < HUD_FRAME_RIGHT_X
 				                && exploRec[i].exploType == EXPL_NORMAL;
@@ -3873,4 +3833,3 @@ static void JE_pixCool(unsigned int x, unsigned int y, Uint8 c)
 	JE_pix(VGAScreen, x, y - 1, c - 2);
 	JE_pix(VGAScreen, x, y + 1, c - 2);
 }
-

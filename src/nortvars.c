@@ -39,9 +39,7 @@ JE_boolean JE_anyButton(void)
 	return newkey || mousedown || joydown;
 }
 
-// Classic vertical shade progression for the 9x2 bands, indexed by band z (0 = bottom):
-// 0,0,0,1,1,2,2,3,3,... i.e. the darkest shade for the first three bands then +1 every two.
-// Matches the original zWait counter exactly; the Down direction mirrors it within the bar.
+// Original shade sequence for the vertical 9x2 bands; downward bars mirror it.
 static int dbar_voffset(int z)
 {
 	return z < 1 ? 0 : (z - 1) / 2;
@@ -64,13 +62,8 @@ static void dbar_edge_row(SDL_Surface *surface, int x0, int x1, int top, float c
 	fill_rectangle_xy(surface, x0, top - 1, x1, top - 1, (Uint8)edgeCol);
 }
 
-// Draw a 9px gauge with an up, down, left, or right brightness gradient.
-// num is the unit count and may be fractional between ticks; scale renders the whole bar at that
-// supersample factor, so its top edge lands on a sub-pixel row rather than a whole one. Only the
-// height carries the fraction -- the base is the exact scaled row -- so a still bar never jitters.
-// topPad grows the bar by that many rows at the top without touching the bottom row or the
-// 2px band pitch; the two-player strip uses 1 so its four gauges reach the full height the
-// wipe already clears (the one-player bars fill their slot exactly and pass 0).
+// Draw a 9px gradient gauge at `scale`. Only its height is fractional; the base stays on an exact
+// row. `topPad` extends the two-player gauge into the extra row its wipe already clears.
 void JE_dBar3_scaled(SDL_Surface *surface, JE_integer x, JE_integer y, float num, JE_integer col, JE_integer dir, JE_integer flash, JE_integer topPad, int scale)
 {
 	col += 2;

@@ -517,11 +517,8 @@ static void draw_menu_power_bar(SDL_Surface *s, int power_value)
 // finished box each present, receiving the interpolation alpha so overlays glide.
 static void (*weaponSimOverlayFn)(float alpha) = NULL;
 
-// The non-blit overlay (power gauge, segment bars, cost/cash text) comes from the
-// captured residual, since the render list records only blits.
-// Caller must already have done, with VGAScreen == VGAScreenSeg:
-//   rl_begin_record(); <draw frame>; rl_end_record(); rl_finalize();
-//   rl_capture_residual(VGAScreenSeg, game_screen);
+// Non-blit preview elements come from the captured residual. The caller must
+// finish render-list recording and residual capture before entering this loop.
 static void JE_weaponSimSmoothPresent(void)
 {
 	enum { RX0 = 8, RY0 = 8, RX1 = 143, RY1 = 182 };  // preview region (inclusive)
@@ -1118,19 +1115,8 @@ static bool shopCampaignRendezvous(void)
 		}                                                                                       \
 	} while (0)
 
-	/* A peer whose departure packet is already at the head of our queue is past BOTH steps of
-	 * this rendezvous: it announced commit and lock ahead of that packet and has stopped
-	 * announcing anything since. Two things follow, and both are load-bearing.
-	 *
-	 * Waiting on a re-announcement that is never coming is a deadlock, so the departure stands in
-	 * for the state we missed -- and we can only have missed it, never be about to receive it,
-	 * because the channel is ordered and its departure is already here.
-	 *
-	 * And that packet must be left where it is. It belongs to the handshake in shopLeaveOutpost
-	 * a few lines further on; network_update here would throw away the very thing that handshake
-	 * then waits on for good. Endless is where this bites: the non-charting player waits for a
-	 * sector before committing, so the two machines reach this rendezvous a long way apart, and
-	 * the one that arrives second can find the other already gone. */
+	/* An ordered departure packet proves the peer completed this rendezvous. Leave it queued for
+	 * the departure handshake; consuming it here would deadlock that handshake. */
 	bool peerDeparted = false;
 
 	for (;;)
@@ -1192,14 +1178,8 @@ static bool shopCampaignRendezvous(void)
 			network_shop_keepalive();
 			QA_RENDEZVOUS_TRACE("lock");
 
-			/* The notice promises Esc for as long as the pair is still in the outpost, so this
-			 * step has to answer it too. Withdrawing here races the peer reading the lock we
-			 * just published and leaving on it, so the withdrawal only stands once that is ruled
-			 * out: drop the lock, then give the peer long enough to either fall back with us (it
-			 * reads the cleared commit and reopens its own first wait) or turn up at the
-			 * departure handshake. A peer already there cannot be recalled -- it is waiting on
-			 * our handshake packet and nothing else -- so that case re-commits and carries on,
-			 * which is what pressing Esc a moment later would have done anyway. */
+			/* Withdrawal races a peer that may already have acted on our lock. Drop the lock and
+			 * commit, then re-commit only if its departure packet proves it already left. */
 			if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
 			{
 				newkey = false;
@@ -1270,15 +1250,8 @@ static void select_level(JE_word section, JE_byte file_num);
  * path already carries, so the waiter only has to know it is a course index there. */
 int endlessCoopCourse = -1;
 
-/* The non-charting player's side of the pick: hold at the outpost until the charting player
- * publishes a sector. Returns the index, or -1 when the player backed out.
- *
- * `escapable` is the normal case, before this machine has committed to leaving: Esc is still a way
- * back to the outpost, and the wait has no deadline because the other player may shop for as long
- * as they like. Committing first and waiting afterwards is what made a session that agreed on
- * nobody charting unrecoverable -- both players sat on a wait screen with no key that did
- * anything. The un-escapable form is the backstop for arriving at the rendezvous with no index,
- * which is a divergence already; it takes the first route rather than waiting on it. */
+/* Wait for the charting player's course. The normal pre-commit wait accepts Esc; the fallback
+ * wait is bounded and selects the first route if the peers reached the rendezvous without one. */
 /* Returned instead of a sector index when the partner took a debug zone jump: there is no course
  * to wait for, and the caller should leave the outpost with the jump the poll just adopted. */
 #define SHOP_COURSE_JUMPED (-2)
@@ -1347,20 +1320,14 @@ ShopOutpostRoute;
  * shop loop then reads that as "still outfitting" and reopens the outpost. */
 static void shopLeaveOutpost(const ShopOutpostRoute *route)
 {
-	// Both rendezvous below are the same wait as far as the player is concerned, so the
-	// notice goes up once and stays: shading twice would darken the frame twice over.
-	// Campaign is the one that can wait a long time -- whoever picks a level first waits
-	// for the other to finish outfitting, and an outpost that merely stops responding
-	// reads as a hang.
+	// Show one notice for both rendezvous; shading twice would darken the frame.
+	// Campaign may wait here while the other player finishes outfitting.
 	shopWaitNotice("Waiting for other player.",
 	               coop_mode_active() ? "They are still in the outpost." : NULL,
 	               coop_mode_active() ? "Press Esc to go back." : NULL);
 
-	// The rendezvous below is the last point where both machines are still in menu code, so
-	// it is where the level they are about to load has to be agreed on.  A debug-browser pick
-	// rides along in the WAITING packet; whichever player made one drags the other into it.
-	// Read here rather than at the send: the campaign hand-off just below has to know a pick
-	// is staged, since a pick outranks the route.
+	// Settle the next level while both peers are still in menu code. A staged debug
+	// pick outranks the campaign route and takes both players with it.
 	JE_byte myPickEp = 0, myPickSec = 0, myPickFile = 0;
 	const bool myPick = debugLevelPickGet(&myPickEp, &myPickSec, &myPickFile);
 
@@ -1384,17 +1351,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			return;
 		}
 
-		/* Endless commits its sector here rather than at the pick, so both players' purchases are
-		 * in before the modifiers are folded. Both machines run endlessSelectCourse on the same
-		 * index and reach the same sector; nothing about it travels except the index itself.
-		 *
-		 * A locked outpost has no pick to make: it relaunches the committed level, already armed
-		 * identically on both machines, and a loaded game brought its route with it. Charting
-		 * either of those would throw that route away for a course nobody chose. */
-		/* A debug zone jump replaces the course outright, so it has to be settled before the fold
-		 * below and not after: folding rebuilds the sector from the slate and would overwrite the
-		 * jump on whichever machine folded. Both machines then skip the fold together, which also
-		 * keeps the course slate and the charting turn identical on the two sides. */
+		/* Fold the shared course after both players finish buying. Locked sorties and loaded games
+		 * already own a route; a debug jump is settled first and replaces the course. */
 		const bool endlessJumping = endlessCoop() && network_endless_jump_poll();
 
 		if (endlessCoop() && !endlessLockedSortie && !gameLoaded && !endlessJumping)
@@ -1417,13 +1375,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			}
 		}
 
-		// Both have committed, so a disagreement can be settled: the host's planet is the one
-		// the session flies.  Deferred to here on purpose -- applied on arrival it would end
-		// the other player's outpost visit the instant the host picked.  A staged browser pick
-		// is exempt: it beats the route on both machines, and taking the host's route here
-		// would leave us loading it while the host adopts the pick below.  Endless is exempt
-		// too: its packets carry a course index in that field, never a level, and the pair
-		// already agreed on the sector above.
+		// Resolve a campaign disagreement only after both players commit. Debug picks and Endless
+		// courses are already settled through their own paths.
 		if (!myPick && !endlessCoop())
 			network_shop_adopt_host_level();
 		network_shop_end();
@@ -1521,11 +1474,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	}
 }
 
-/* A gameplay wire test has no player to walk the outpost, but online co-op still owes it the
- * outpost protocol: the purchase exchange, the perk pick, the custom-weapon designs, the course
- * rendezvous and the level-start handshake all live here. Endless charts the scripted course
- * for this depth under its forced modifier slate (qa_net_zone_mods); Campaign authors and
- * equips each ship's own custom weapon design. */
+/* Wire gameplay drives the real outpost protocol without menu input. It covers
+ * purchases, perks, weapon designs, course selection, and the start barrier. */
 static void qa_shop_auto_visit(void)
 {
 	const ShopOutpostRoute route = { mainLevel, nextLevel, lvlFileNum, forcedLvlFileNum };
@@ -2702,11 +2652,8 @@ void JE_itemScreen(void)
 				inputDetected = newkey || mouseButton > 0;
 
 #if defined(__SWITCH__) || defined(__vita__)
-				// The shoulder buttons cycle the rear gun's fire mode in the weapon preview,
-				// mirroring the [/] key below: L = previous mode, R = next. Raw reads with
-				// local edge state; menus only receive confirm/cancel/directions from a
-				// controller, so the shoulders aren't bound to any action. poll_joysticks
-				// (just above) already ran SDL_JoystickUpdate this tick.
+				// Shoulder-button edges cycle the preview's rear-fire mode, matching
+				// the [ and ] keys below.
 				{
 #if defined(__SWITCH__)
 					static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -3528,11 +3475,8 @@ void draw_ship_illustration(void)
 		const int x = ship_x[sprite_id - 27],
 		          y = ship_y[sprite_id - 27];
 
-		// Gencore II's illustration (sprite 45, a 95px-wide uncompressed block) fills its
-		// "background" with palette 162, the same color (#241408) as shop wall color 226, so
-		// it blends in everywhere except its square top-right corner, which overhangs the panel's
-		// lighter bevel in 3 spots (window ~141-142,30-31 in 16:9) where those dark pixels show.
-		// The raw sprite can't flag them transparent, so save the bevel and paint it back.
+		// Gencore II's opaque square corner covers part of the lighter panel bevel.
+		// Save the bevel first and restore it after drawing the sprite.
 		Uint8 * const seg = (Uint8 *)VGAScreenSeg->pixels;
 		const int segpitch = VGAScreenSeg->pitch;
 		const bool patch_corner = (sprite_id == 45);
@@ -3980,11 +3924,8 @@ void JE_drawMenuChoices(void)
 #define ENDLESS_RANK_CX        MENU_MONITOR_CENTER_X
 #define ENDLESS_RANK_Y        173   // endlessModText draws the body AT this row (no +1 like DARKEN)
 
-// Rank-letter tint, 0 (F) .. 10 (END): a green-to-red ramp. Easy grades take bank 0's clean green
-// (shades 3-7, the same green the boon mod rows use); C..END ride bank 15's pale-yellow -> orange
-// -> deep-red fire ramp. {bank, brightness}, brightness kept in [-2,+5] so the glyph's shades never
-// leave the bank. NOT bank 8 for the greens; its shades 10-12 render brown/gray here. Indexed by
-// endlessCourseRankLevel, so keep it as long as endless_mods.c's endlessRankName[].
+// Green-to-red rank ramp as {bank, brightness}. Keep it aligned with endlessRankName; the chosen
+// brightness range keeps every glyph shade inside its palette bank.
 static const struct { unsigned int bank; int bright; } endlessRankHue[11] = {
 	{  0,  0 },  // F     green        (bank 0 shade 7)
 	{  0, -1 },  // E     green
@@ -4010,11 +3951,8 @@ static int endlessThreatShade(int weight)
 	return 1;
 }
 
-// A threat a queued Sabotage charge will strip is drawn WHITE instead of its danger red. Palette 18
-// has no clean grey RAMP (it's a luminance-sorted planet palette), but bank 13 at +4 lands the
-// three TINY_FONT shades on flat white. Keep the offset at +4: past +5 the shade-10 highlight
-// overflows the bank (blit_sprite_hv_unsafe ORs the shade in, it does not clamp), and lower offsets
-// pick up bank 13's yellow-green entries.
+// Draw threats covered by queued Sabotage in white. Bank 13 offset 4 keeps all
+// three font shades white without overflowing into the next palette bank.
 #define ENDLESS_MOD_CLEANSED_BANK   13
 #define ENDLESS_MOD_CLEANSED_BRIGHT  4
 
@@ -5223,11 +5161,7 @@ void JE_drawScore(void)
 	}
 }
 
-/*
- * Helper used by debug and normal level selection. Mirrors the
- * behaviour of the "Next Level" menu and ensures that all variables
- * required for a level jump are updated consistently.
- */
+// Apply a level jump from either normal or debug selection.
 static void select_level(JE_word section, JE_byte file_num)
 {
 	mainLevel = (JE_byte)section;
@@ -6208,10 +6142,8 @@ static bool endlessDebugScreen(bool jumpMode)
 		NETWORK_KEEP_ALIVE();  // browsing every level in the game can take a while; hold the link
 
 #if defined(__SWITCH__) || defined(__vita__)
-		// The shoulder buttons page a long list (and step the Zone row by 10). Read raw with local
-		// edge state and synthesized into PageUp/PageDown; menus only deliver
-		// confirm/cancel/directions from a pad, so these aren't bound to any action. poll_joysticks
-		// (above) already ran SDL_JoystickUpdate. Guard on !newkey so a real key still wins.
+		// Map shoulder-button edges to Page Up and Page Down. A real key wins
+		// if both inputs arrive together.
 		{
 #if defined(__SWITCH__)
 			static const int shoulder_btn[2] = { 6, 7 };  // switch-sdl2: 6 = L, 7 = R
@@ -7052,12 +6984,8 @@ bool JE_debugLevelSelect(void)
 	return chosen;
 }
 
-/* Custom Weapon Creator.
- * A self-contained editor screen: the left panel is a live firing preview
- * (the same ship-in-a-box the buy/sell screen uses, driven straight through
- * player_shot_create + simulate_player_shots), the right panel is a scrollable
- * list of the custom weapon's editable fields plus actions. Every edit calls
- * customWeaponMaterialize(), so the preview reflects changes instantly. */
+/* Custom Weapon Creator: live firing preview on the left, editor on the right.
+ * Every edit materializes the weapon again so the preview stays current. */
 
 enum  // rows of the editor list (weapon-wide, per-bullet, import, then actions)
 {
@@ -7215,11 +7143,8 @@ static int cwInlineActionId(int row)
 	}
 }
 
-// Editor rows are partitioned into categories. The top-of-panel selector filters the
-// visible rows to one category (or "All"), so you aren't scrolling one long list.
-// Order follows the natural build workflow: pick a saved weapon, seed it from a stock
-// weapon (Import), give it an identity (Setup), shape its power curve (Levels), tune the
-// volley (Firing) and each bullet (Bullet), then test it (Preview).
+// The category selector filters editor rows. Their order follows the workflow
+// from saved design and import through setup, tuning, and preview.
 enum
 {
 	CWCAT_ALL = 0,   // every row (the classic flat list)
@@ -7557,11 +7482,8 @@ static const char *cwActionHelp(int act)
 	}
 }
 
-// Combat-preview target dummies.
-// The dummies give the shots something to hit so on-hit behaviour (Damage, Ice,
-// Explode-To chaining, Homing) is visible. Their count/spacing/height/armour are set
-// from the editor rows via cwLayoutDummies(); the collision + draw code lives further
-// down (near JE_customWeaponCreator).
+// Preview dummies expose damage, ice, chaining, and homing behavior. Layout comes
+// from cwLayoutDummies; collision and drawing live near JE_customWeaponCreator.
 typedef struct { int cx, cy, armor, hit, ice, dead; } CwDummy;
 enum { CW_DUMMY_MAX = 6, CW_DUMMY_R = 8 };
 static CwDummy cwDummies[CW_DUMMY_MAX];
@@ -7975,11 +7897,8 @@ static void cwAdjustRow(int row, int dir)
 	}
 }
 
-// Direct numeric entry.
-// Many value rows have wide ranges or coarse Left/Right steps (cost jumps by 500, a
-// bullet sprite runs 0..65535), so the editor also lets you type an exact number for
-// them. cwNumericRange says which rows accept typing and their valid range; cwSetNumeric
-// applies a typed value; cwCommitNumeric finalizes whatever is being typed.
+// Exact numeric entry for rows whose range is too wide for step controls.
+// cwNumericRange, cwSetNumeric, and cwCommitNumeric own the edit lifecycle.
 
 // Fill lo/hi with a row's valid range and return true if it accepts a typed number.
 // A negative lo marks a signed field (a leading '-' may be typed).
@@ -8316,11 +8235,8 @@ static int cwTrackedShot = -1;
 static int cwTrackedSeg  = -1;  // which bullet segment that shot belongs to (so switching
                                 // segments re-locks even when segments share a sprite)
 
-// Pick/keep the shot the corners track. Keep following the current one only while it is
-// alive, still the edited segment's sprite, AND still the segment we locked onto; otherwise
-// re-acquire, preferring a live shot near the selected segment's spawn column (so segments
-// that share a sprite resolve to the right one), freshest (nearest-ship) as the tie-break.
-// Call once per tick, after the shots have moved.
+// Track the selected segment's live shot. Reacquire by spawn column, then age,
+// when the shot dies or no longer matches; call after shots move each tick.
 static void cwUpdateTrackedShot(int row)
 {
 	if (row < 0 || cwGroupColor(row) != CW_BG_BULLET)

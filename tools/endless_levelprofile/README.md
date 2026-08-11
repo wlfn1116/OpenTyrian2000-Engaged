@@ -1,7 +1,7 @@
 # Endless level-profile generator
 
 `gen_profile.py` generates `src/endless_levelprofile.h`. The table adds a small
-level-specific adjustment to Endless danger ranks and payouts.
+level-specific adjustment to Endless danger and payout.
 
 The source data comes from
 [Tyrian2000Atlas](https://github.com/wlfn1116/Tyrian2000Atlas), which simulates
@@ -33,5 +33,5 @@ modifiers dominate the final rank.
 
 `lengthClass` is 0 for short, 1 for normal, and 2 for long levels.
 
-The CSV retains the component measurements for review and retuning. The generator
-primarily uses `difficulty01` and measured duration.
+The CSV keeps the component measurements for review. The generator mainly uses
+`difficulty01` and measured duration.

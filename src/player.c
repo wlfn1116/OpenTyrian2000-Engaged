@@ -42,11 +42,8 @@ uint player_sa_ship(const Player *this_player)
 	return (sa >= 1 && sa <= SA) ? sa : (uint)SA_NONE;
 }
 
-/* The front gun a Super Arcade colour ball hands THIS ship. Every ball wears the same colour on
- * every ship; the colour is a slot, and the slot is looked up in the collector's own arsenal, so
- * online the two players can pick the same ball off the field and each get their own ship's gun
- * for it. A ship with no Super Arcade ruleset (a scripted ball in a plain game) reads the first
- * ship's table, which is what the single-player path has always done. */
+/* Resolve a Super Arcade color in the collecting ship's arsenal. Plain-game
+ * scripted balls retain the original first-ship fallback. */
 uint player_sa_ball_weapon(const Player *this_player, uint slot)
 {
 	// Script-spawned values are not guaranteed to name a real colour slot.
@@ -57,11 +54,8 @@ uint player_sa_ball_weapon(const Player *this_player, uint slot)
 	return SAWeapon[(sa_ship != SA_NONE ? sa_ship : 1u) - 1][slot];
 }
 
-/* Which weapon bay's power byte doubles as a ship's life counter. The linked arcade pair aliases
- * player two's onto the Dragonwing's rear bay; every two-full-ship session (Separate arcade, the
- * co-op ENGAGE mini-games) gives each ship its own front gun, exactly as a solo arcade run does.
- * Every site that binds player[].lives must use this, or a rollback restore re-derives a
- * different alias than the one the level started with. */
+/* Return the weapon-power byte used as this ship's life counter. All bindings,
+ * including rollback restore, must use the same arcade ownership rule. */
 uint player_lives_port(uint p)
 {
 	if (dual_ship_mode())

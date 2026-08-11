@@ -1,11 +1,8 @@
 /*
  * OpenTyrian: A modern cross-platform port of Tyrian
  *
- * Minimal SDL_net-compatible UDP layer for the PlayStation Vita.
- *
- * VitaSDK has no SDL2_net, so this implements the required UDP and byte-order API on SceNet.
- * It omits TCP and socket sets, supports one address per channel, and keeps SceNet initialized
- * after SDLNet_Quit because the game repeatedly opens short-lived sockets.
+ * Minimal SDL_net-compatible UDP and byte-order API for VitaSDK. It supports one
+ * address per channel and leaves SceNet ready for short-lived game sockets.
  */
 #ifndef VITA_NET_H
 #define VITA_NET_H

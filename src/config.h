@@ -380,12 +380,8 @@ extern bool gaugeFlashArmor;
 // Presentation-only, so the two sides of an online game may set it differently (tyrian2.c).
 extern bool specialScreenTint;
 
-// Zica Laser Lv11 tweaks (menu: Enhancements -> Weapons -> Episode Versions -> Zica Laser).
-// Three independent axes:
-//   Base   : the Lv11 horizontal shot pattern, forced in every episode.
-//   Length : Lv11 shot length; Short (vanilla) or Long (as long as the Lv10 beam).
-//   Buff   : also fire the Lv10 ship-locked beam alongside the Lv11 shots.
-// The defaults (Auto / Short / off) reproduce vanilla Tyrian exactly.
+// Zica level 11 settings: shot layout, bolt length, and an optional level 10 beam.
+// Auto, Short, and off preserve the episode defaults.
 enum
 {
 	ZICA_BASE_AUTO = 0,  // per-episode default: ep1-3 columns, ep4+ spread (vanilla)

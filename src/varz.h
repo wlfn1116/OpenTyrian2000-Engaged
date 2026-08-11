@@ -43,12 +43,8 @@ enum
 	SA_ARCADE = 255
 };
 
-// Enemy-shot pool. ENEMY_SHOT_MAX sizes the enemyShot[]/enemyShotAvail[] arrays AND is the pool
-// cap used in ENDLESS mode, where the "rising tide" fans out many extra enemy bullets. Normal
-// (non-endless) play stays capped at ENEMY_SHOT_NORMAL (the original 60), so those levels fire
-// exactly as before; the enemy-shot creation loop (tyrian2.c) picks the cap by mode. The pool
-// must stay below the render-list id headroom: RL_ID_ESHOT_BASE + slot < RL_ID_EXPL_BASE, i.e.
-// ENEMY_SHOT_MAX <= 1000 (see render_list.h).
+// Normal play keeps the original 60-shot cap; Endless uses the larger array. Keep
+// RL_ID_ESHOT_BASE + ENEMY_SHOT_MAX below RL_ID_EXPL_BASE.
 #define ENEMY_SHOT_NORMAL  60   // non-endless cap (= original behaviour)
 #define ENEMY_SHOT_MAX     500  // array size + endless cap
 

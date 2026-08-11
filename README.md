@@ -2,130 +2,42 @@
 
 [![build](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml/badge.svg)](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions/workflows/build.yml)
 
-A fork of [OpenTyrian2000](https://github.com/KScl/opentyrian2000), which is an
-open-source port of the DOS game Tyrian. 
+OpenTyrian2000 Engaged is a fork of
+[OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
+the DOS game Tyrian.
 
-The original campaigns play as they always did. What the fork adds:
+The original campaigns are still here. The fork adds:
 
-- a 356x200 widescreen frame with a wider 299-pixel playfield
-- smooth display-rate rendering, with optional sub-pixel supersampling
-- **Endless mode**, a roguelite run built from the shipped levels
-- **cross-platform online play** with rollback netcode covering every single
-  mode in the game (including Destruct)
-- content the original game shipped but never used, each behind its own toggle
-- a custom weapon editor
-- expanded health bars, menus, and debug tools
-- optional FluidSynth and system MIDI playback (Windows)
-- Nintendo Switch and PlayStation Vita homebrew builds
+- a wider playfield and smooth high-refresh rendering;
+- Endless mode, built from the original levels;
+- two-player online Campaign, Arcade, Endless, SuperTyrian, Super Arcade, and
+  Destruct;
+- a custom weapon editor;
+- optional restored weapons, effects, sprites, and level objects;
+- FluidSynth and native MIDI support on Windows;
+- Nintendo Switch and PlayStation Vita homebrew ports.
 
-[GUIDE.md](GUIDE.md) is the player guide for all of it.
+See the [player guide](GUIDE.md) for menu paths and feature details.
 
 ## Game data
 
-The release downloads already contain the freeware Tyrian 2000 data, so there is
-nothing separate to fetch. The Windows and Linux packages ship a `data` folder
-beside the binary, and the Switch and Vita builds carry it inside the `.nro` and
-`.vpk`.
+Release packages include the freeware Tyrian 2000 data. Source builds need a
+copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
-Building from source is the exception. Get the data from:
+On Windows and Linux, keep the executable beside the `data` directory. Console
+packages bundle the data, but also accept an external copy as described in their
+build guides.
 
-<https://www.camanis.net/tyrian/tyrian2000.zip>
+## Display and controls
 
-On PC, put the executable beside the `data` directory.
+The game uses a 356x200 frame: a 299-pixel playfield and the original 57-pixel
+HUD. Menus retain their centered 320-pixel layout.
 
-## Highlights
+The simulation runs at 35 Hz. Smooth Motion interpolates between ticks, while
+Sub-pixel rendering removes whole-pixel stepping from slow movement and
+scrolling. Demos and network games keep fixed-step ship movement.
 
-### Widescreen and motion
-
-The frame is 356x200 instead of 320x200. The playfield is 299 pixels wide, with
-the 57-pixel HUD still at the right edge. Menus keep their original 320-pixel
-layout, centred, with a gradient fadeout.
-
-The simulation still runs at 35 Hz. Smooth Motion interpolates the world at the
-display rate, and in single-player the ship moves at the display rate too, which
-cuts input latency. Demos and network games keep the fixed-step movement.
-Sub-pixel rendering draws the playfield internally at up to 5x, or one sample per
-screen pixel on Native. That is what stops slow scrolling from stepping. 
-
-### Endless mode
-
-Endless picks from the original levels and scales enemies with depth. Between
-zones an outpost lets you shop, take perks, and choose your next route from
-several with visible risks and rewards. Sector modifiers supply the rest of the
-difficulty and most of the payout.
-
-Runs are seeded, so the same seed and choices reproduce the same levels, shops,
-courses and perks. A run mode picked at the start sets how forgiving it is:
-Relaxed offers a retry over the wreck, Standard ends the run there, and Hardcore
-also disables checkpoints.
-
-### Weapons and music
-
-The Custom Weapon Creator stores up to 32 weapons, each with 11 editable power
-levels, an optional rear-gun firing mode, and a live test range. A design can be
-equipped as a front gun, rear gun, or sidekick.
-
-The Weapons and Gameplay menus under Enhancements restore differences between the
-Episode 1-3 and Episode 4-5 weapon data, and wake content the original left
-dormant.
-
-OPL is still the default music backend. FluidSynth needs a SoundFont (`.sf2`,
-`.sf3`, or `.sf`) next to the executable or in the `data` folder, and is grayed
-out in the menu when there is none. The Windows system MIDI synthesizer also
-works.
-
-## Online play
-
-Two-player games over the network, set up entirely in-game: Arcade in three
-shapes (linked, separate, or a Timed Battle race), full Campaign and Endless
-co-op, SuperTyrian, Super Arcade, and the Destruct mini-game.
-**Online Multiplayer** on the main menu opens a lobby with Host Game,
-Find LAN Games, and Join by IP Address. On a shared network, LAN discovery finds
-the host without anyone typing an address. The game uses UDP port 1333 by
-default.
-
-Windows, Linux, Switch and Vita players can all play each other, as long as
-everyone is on the same version. Every build runs the same simulation tick for
-tick. Saves cross over as well. Both machines keep their own copy of a session,
-so a game started against a handheld can be resumed later with the desktop
-player hosting.
-
-- **Rollback netcode** by default. Your ship answers input on the tick it
-  happens, the same feel as single player, while the other ship is predicted and
-  silently corrected when its real input arrives. The original delay-based
-  lockstep is still selectable in the host's lobby.
-- **Desync recovery.** If the two machines drift apart, the host ships its whole
-  game state across and both resume from it.
-- **Full Campaign co-op.** Each player flies a complete independent ship through
-  the episode, earns and spends their own cash, and can use their own shop at the
-  same time between levels. Each machine shows the familiar one-player sidebar
-  for its local ship. The hidden ENGAGE mini-games play in co-op too, both ships
-  issued the same kit.
-- **Endless co-op.** The whole roguelite with two ships: one shared run, sector
-  and zone counter, while wallets, shop stock, perks and kill-fire drives belong
-  to one player each. A downed ship spectates the rest of the zone and rejoins
-  at the next outpost. Co-op runs keep their own 2P records.
-- **Save and resume.** Save from the shop mid-session, or when a session drops
-  under you. Campaign and Endless saves carry both complete ships and load back
-  through the lobby that wrote them; linked Arcade saves keep their local
-  two-player compatibility.
-- A ping readout in the outpost, player names and cash along the bottom of the
-  playfield, Arcade gauge tagging, and a session log for diagnosing desyncs.
-
-The host chooses the game type, episode, difficulty, and network settings,
-including whether kills and pickups pay both players in full or each ship earns
-its own. Arcade runs as the classic linked Silver Ship and Dragonwing pair, as
-two Separate personal ships (the single-player arcade game twice over in one
-level, each player with their own HUD, lives, weapons and score), or as a Timed
-Battle, where those two ships race one of the three battle levels for cash.
-SuperTyrian and Super Arcade fly the two one-player rulesets with a ship each,
-and Destruct fights any of its five battle modes across two machines.
-The joiner confirms those game settings before entering. Joiners keep their own
-local settings, which are restored afterwards. [GUIDE.md](GUIDE.md#online-play)
-covers each lobby row, the saving and resuming flow, and what to attach to a
-desync report.
-
-## Controls
+Default keyboard controls:
 
 | Key | Action |
 | --- | --- |
@@ -135,17 +47,27 @@ desync report.
 | Ctrl / Alt | Fire left / right sidekick |
 | Alt+Enter | Toggle fullscreen |
 
-Controls are rebindable, and controllers are supported.
+Keys and controllers can be rebound in Setup.
 
-## Building
+## Online play
 
-Code, comment, and documentation conventions are defined in
-[doc/STYLE.md](doc/STYLE.md). Formatting tools apply to changed lines only;
-vendored code keeps its upstream style. Maintainer invariants and implementation
-decisions are recorded in [doc/notes.md](doc/notes.md).
+Open **Online Multiplayer** from the main menu. A host can be found over LAN or
+joined by address. The default port is UDP 1333.
 
-The Windows project is in `visualc`. The root script builds and collects the PC,
-Switch, and Vita targets:
+Players can mix Windows, Linux, Switch, and Vita builds when both copies use the
+same game version. Rollback is the default netcode; delay-based lockstep remains
+available from the lobby. Campaign and Endless sessions can be saved and resumed
+through their original game type.
+
+For lobby settings, co-op rules, saving, and desync reports, see
+[Online play](GUIDE.md#online-play).
+
+## Build
+
+### Windows
+
+The Visual Studio project is under `visualc`. The root script can build one or
+more targets and collect their outputs under `build`:
 
 ```powershell
 .\build-all.ps1
@@ -154,53 +76,54 @@ Switch, and Vita targets:
 .\build-all.ps1 -Target PC -Configuration Debug -NoCollect
 ```
 
-`.\build-all.ps1 -Help` lists every option. The console targets need their own
-toolchains: 
+Run `.\build-all.ps1 -Help` for the complete option list.
 
-- [Nintendo Switch build](switch/README.md)
-- [PlayStation Vita build](vita/README.md)
+### Linux
 
-On Linux, install the SDL2 development packages and use the root Makefile:
+Install the SDL2 development packages, then use the root Makefile:
 
 ```sh
 sudo apt install gcc make pkg-config libsdl2-dev libsdl2-net-dev
 make
 ```
 
-## Automated testing
+Release builds need only the SDL2 runtime packages. Package names vary by
+distribution.
 
-With the freeware game data in `data/`, run the project-owned correctness suite
-and the Linux sanitizer build with:
+### Consoles
+
+- [Nintendo Switch](switch/README.md)
+- [PlayStation Vita](vita/README.md)
+
+## Tests
+
+With the game data in `data/`:
 
 ```sh
 make test
 make sanitize-test
 ```
 
-The suite covers rollback restore and bounded deterministic demo replays, every
-supported Endless save revision, malformed save/resync inputs, seeded course
-properties, and two real network peers under injected faults. See
-[testing/README.md](testing/README.md) for fixture and runner details.
+The suite covers deterministic replays, rollback state, save migrations,
+malformed inputs, Endless generation, and two network peers behind a fault
+proxy. [testing/README.md](testing/README.md) lists the runners and scenarios.
 
-Running a Linux build, including the release tarball, only needs the SDL2
-runtime libraries. Package names vary by distro:
+GitHub Actions builds Windows, Linux, Switch, and Vita. Current artifacts are
+available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
+and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
-```sh
-sudo apt install libsdl2-2.0-0 libsdl2-net-2.0-0
-```
+## Contributing
 
-GitHub Actions builds Windows, Linux, Switch, and Vita on every push. The newest
-master build is always at the
-[latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest),
-and per-commit artifacts are on the
-[Actions](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions) tab.
-Pushing a tag attaches all four packages to that tag's release.
+Read [doc/STYLE.md](doc/STYLE.md) before changing code or documentation. Longer
+implementation constraints live in [doc/notes.md](doc/notes.md).
+
+Vendored code under `stuff/` and `src/midiproc/` keeps its upstream style.
 
 ## License
 
 GNU General Public License, version 2 or later.
 
-## Related projects
+Related projects:
 
 - [OpenTyrian2000](https://github.com/KScl/opentyrian2000)
 - [OpenTyrian](https://github.com/opentyrian/opentyrian)

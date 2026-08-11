@@ -232,13 +232,8 @@ static Uint32 last_resend_tick;
 /* Diagnostics. */
 static Uint32 stat_rollbacks, stat_resim_frames, stat_deepest;
 
-/* Desync recovery streams registered host state, then starts a new input epoch.
- * Chunk layout after the four-byte reliable header:
- *   [4]  Uint16 gen          attempt id within the level; NAK carries the gen refused
- *   [6]  Uint16 chunk index  0xFFFF = NAK (joiner could not assemble/adopt)
- *   [8]  Uint16 chunk count
- *   [10] Uint16 payload bytes
- * Chunk zero prefixes registry size, compressed size, and FNV-1a checksum before zero-run RLE. */
+/* Recovery chunk header: generation, index, count, and payload size. Chunk zero
+ * also carries registry size, compressed size, and checksum. */
 #define NRB_RS_HDR       12
 #define NRB_RS_PRE       12
 #define NRB_RS_PAYLOAD   (NET_PACKET_SIZE - NRB_RS_HDR)
@@ -397,11 +392,8 @@ void nrb_frame_begin(void)
 		if (local_hist[pf % NRB_HIST].tag == pf)
 			bits |= local_hist[pf % NRB_HIST].in.buttons;
 
-		/* Remote side: consume pf's request bits.  If the movement path already
-		 * consumed the whole tuple this frame, use exactly that view (detector
-		 * coherence).  Otherwise this IS the consumption; truth if it has
-		 * arrived or nothing if not, then stamp it so the detector can
-		 * roll us back should a request pulse turn up later. */
+		/* Reuse the tuple already consumed by movement, or consume it here. The
+		 * shared view lets a late request pulse trigger the right rollback. */
 		{
 			NrbSlot *u = &remote_used[pf % NRB_HIST];
 			if (u->tag == pf && u->kind == NRB_USED_FULL)
@@ -422,17 +414,8 @@ void nrb_frame_begin(void)
 
 		if ((bits & RB_REQ_SKIPLEVEL) && !endLevel)
 		{
-			/* The level-clear wind-down, never an outright end. Both machines have to keep
-			 * simulating until they reach it together: `reallyEndLevel` stops this machine's
-			 * sim on the spot, and the frame it never sends is the one the peer's end
-			 * confirmation is waiting on, so whichever consumed the request first walked into
-			 * the cutscene while the other sat on "waiting to confirm level end". The forty
-			 * ticks are what let the request propagate, roll back if it arrived late, and land
-			 * on the same frame on both.
-			 *
-			 * levelTimer and its zeroed countdown are deliberately NOT set here, though the F2
-			 * cheat sets them alongside these two: that pair reads as an expired level timer,
-			 * which arms every ']t' fail branch in the script that follows. */
+			/* Use the confirmed 40-tick wind-down so both peers keep sending input. Do not set
+			 * reallyEndLevel or levelTimer; either would split the level-end script. */
 			endLevel = true;
 			levelEnd = 40;
 		}
@@ -1126,11 +1109,8 @@ static NrbStep nrb_begin_resim(Uint32 K)
 		stat_deepest = high - K + 1;
 
 	resim_active = true;
-	/* `high`, not nrb_cur: a second correction arriving mid-re-simulation must
-	 * not shorten the pass to the frame we happen to be replaying.  Dropping the
-	 * tail turned those frames back into normal passes, and a normal pass
-	 * re-samples live input over local_hist entries already sent to the peer and
-	 * guarantees a desynchronization. */
+	/* Preserve the original replay ceiling when another correction arrives. A
+	 * shorter pass would resample input already sent to the peer. */
 	resim_target = high;
 	nrb_cur = K;
 	rollback_resim = true;
@@ -1138,13 +1118,8 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	return NRB_STEP_RESIM;
 }
 
-/* A peer that has reached a between-levels handshake is never going to produce the frames a stall
- * is waiting for. Every packet named here is only ever sent from outside a level, so one at the
- * head of the reliable queue settles it: end ours as well, out of band. The packet stays where it
- * is; the rendezvous that follows is what reads it. `head` is 0 when the queue is empty.
- *
- * Returns true when the level was ended. Called by the stall pump and directly by the test suite,
- * which is the only way the quit case below gets covered. */
+/* A between-level packet proves the peer will send no more frames for this level. End locally but
+ * leave the packet queued for its owning rendezvous. */
 bool nrb_peer_left_level(Uint16 head)
 {
 	if (head != PACKET_WAITING && head != PACKET_DETAILS && head != PACKET_GAME_QUIT
@@ -1154,10 +1129,7 @@ bool nrb_peer_left_level(Uint16 head)
 	reallyEndLevel = true;
 	end_agreed = true;
 
-	/* A quit is not a clear. Both other paths that read this packet say so; while this one
-	 * stayed silent the peer banked the zone and deepened while the player who quit reopened
-	 * the same outpost, and the pair spent the rest of the run one zone apart, charting from
-	 * slates that no longer matched. */
+	/* A peer quit abandons the zone; it must not enter the clear-and-bank path. */
 	if (head == PACKET_GAME_QUIT)
 	{
 		playerEndLevel = true;
@@ -1891,11 +1863,8 @@ static bool nrb_resync_receive(void)
 		         resync_used > NRB_RS_MAX ? "   [over budget: started by stray chunks]" : "");
 		crashlog_netlog_line("NETWORK RESYNC ABORT", line);
 
-		/* The NAK is the only "I did not adopt" the host ever hears; transport
-		 * acks say the bytes arrived, not that they were taken.  The reason is what
-		 * separates "try again" from "no stream you can build will ever pass", so a
-		 * layout refusal retires recovery on the host too instead of burning the
-		 * remaining attempts on identical bytes we have already stopped listening for. */
+		/* A transport ACK proves delivery, not adoption. A layout NAK is permanent,
+		 * so retire recovery instead of resending the same unusable snapshot. */
 		nrb_resync_send_nak(have_hdr ? gen : seen_gen,
 		                    resync_layout_bad ? NRB_NAK_FATAL : NRB_NAK_RETRY);
 
@@ -2037,11 +2006,8 @@ static void nrb_qa_gameplay_verdict(void)
 	int rc;
 	if (qa_net_corrupt_frame > 0)
 	{
-		/* A recovery must have run and the timeline being flown at the limit must be clean
-		 * again. Only the host requires its own detection: it is the side that initiates, so
-		 * a recovery on the host implies one, while the joiner can adopt the stream before
-		 * its own compare ever fires. Totals are session-scoped because both a recovery and
-		 * a level restart wipe the per-level counters. */
+		/* Require a completed recovery and a clean final timeline. Only the host must
+		 * detect the mismatch itself because the joiner may adopt first. */
 		const bool detected = (thisPlayerNum == networkHostPlayerNum)
 		                    ? qa_desyncs_total >= 1 : true;
 		rc = (detected && qa_resyncs_total >= 1 && canary_mismatches == 0) ? 0 : 1;
@@ -2216,12 +2182,8 @@ NrbStep nrb_driver(void)
 			break;
 		}
 
-		/* Host-wins arbitration for a simultaneous request: when both players' presses
-		 * coalesced into this one opening, only the host takes the menu branch and the
-		 * joiner waits on the host's menu instead. Without it both machines took the
-		 * local branch and each sent a PACKET_WAITING nobody consumed; a later
-		 * rendezvous (or the stall pump's peer-left-level rule) read the leftover as
-		 * its own release. */
+		/* The host wins simultaneous menu requests; the joiner waits. This avoids two
+		 * unconsumed PACKET_WAITING messages leaking into a later rendezvous. */
 		const bool local_menu = req_local_menu
 		    && (thisPlayerNum == networkHostPlayerNum || !req_host_menu);
 		req_at = 0;
@@ -2280,22 +2242,16 @@ NrbStep nrb_driver(void)
 	if (reallyEndLevel)
 		return NRB_STEP_PRESENT;
 
-	/* Bound prediction depth and outstanding unacked history before advancing.
-	 * SIGNED differences: after a long modal (options menu) the peer may
-	 * legitimately be AHEAD of us; remote_contig/peer_acked beyond our own
-	 * frame counter.  The old unsigned subtraction underflowed to a huge value
-	 * there and stalled both machines into the disconnect timeout. */
+	/* Bound prediction and unacknowledged history. Use signed differences because
+	 * a peer returning from a modal screen may legitimately be ahead. */
 	{
 		const Uint32 wait_start = SDL_GetTicks();
 		bool stall_reported = false;
 
 		while ((Sint64)(nrb_cur + 1) - (Sint64)remote_contig > ROLLBACK_MAX_PREDICT ||
 		       (Sint64)(nrb_cur + 1) - (Sint64)peer_acked > NRB_REDUNDANCY - 1 ||
-		       /* Start-of-level barrier: until the peer's first input arrives
-		        * (it may still be in the shop), hold at frame 3 instead of
-		        * running MAX_PREDICT frames of pure prediction; the peer's
-		        * ship sitting frozen at spawn for 10 frames looked broken and
-		        * guaranteed an opening rollback burst. */
+		       /* Hold at frame 3 until the peer's first input arrives. Predicting
+		        * from the shop creates a frozen ship and an immediate rollback burst. */
 		       (remote_newest == 0 && nrb_cur >= 3))
 		{
 			if (nrb_stall_pump(wait_start, &stall_reported, "peer too far behind"))
@@ -2319,11 +2275,7 @@ NrbStep nrb_driver(void)
 	return NRB_STEP_PRESENT;
 }
 
-/* Crash-log rollback section.
- *
- * Appended under the crash log's Network section.  Reads only statics; safe
- * from a fault handler or the watchdog thread.
- */
+/* Crash-log rollback section. Reads only statics and is safe in fault handlers. */
 void nrb_write_diagnostics(FILE *f)
 {
 	if (f == NULL)

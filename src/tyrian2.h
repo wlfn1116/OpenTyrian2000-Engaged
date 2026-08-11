@@ -120,15 +120,12 @@ void JE_buildArcadeBallPools(void);
 
 void draw_boss_bar(void);
 
-// Endless kill-fire HUD collision avoidance (see JE_inGameDisplays, mainint.c): how far a
-// bottom-right HUD element must shift to clear the currently-shown boss bar, if any.
+// Offsets used to keep the Endless kill-fire HUD clear of a boss bar.
 int  boss_bar_hud_left_shift(int hudRightX);  // px to shift LEFT for a right-side vertical bar
 bool boss_bar_hud_needs_up_shift(void);       // true while a BOTTOM horizontal bar is shown
 int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or INT_MAX if none
 
-// Variable-timestep player ship (experimental; see render notes in tyrian2.c).
-// Mouse sensitivity (ship px per px of pointer motion, orig ~1/4) is shared with
-// the classic per-tick mouse path in JE_playerMovement so both modes feel alike.
+// Experimental variable-timestep ship. Its mouse scale matches classic movement.
 #define VT_MOUSE_SENS 0.25f
 extern bool vt_ship;       // runtime toggle for render-rate ship simulation
 bool vt_ship_owns(void);   // true when VT currently controls the player ship

@@ -113,13 +113,8 @@ static Uint32    canary_checked_upto;
 static bool      canary_reported;       /* one full report per timeline         */
 static Uint32    canary_mismatches;
 
-/* Desync recovery streams the host's battle state, then starts a new input epoch.  Chunk layout
- * after the four-byte reliable header:
- *   [4]  Uint16 gen          attempt id within the round; NAK and ACK carry the gen they answer
- *   [6]  Uint16 chunk index  0xFFFF = NAK (joiner did not adopt), 0xFFFE = ACK (it did)
- *   [8]  Uint16 chunk count  NAK reuses this field for the reason
- *   [10] Uint16 payload bytes
- * Chunk zero prefixes state size, compressed size, and FNV-1a checksum before zero-run RLE. */
+/* Recovery header: generation, chunk index, chunk count, and payload size. ACK
+ * and NAK use reserved indices; chunk zero also carries sizes and checksum. */
 #define DRB_RS_HDR       12
 #define DRB_RS_PRE       12
 #define DRB_RS_PAYLOAD   (NET_PACKET_SIZE - DRB_RS_HDR)
@@ -374,11 +369,8 @@ void drb_frame_actions(Uint8 *local, Uint8 *peer)
 	*peer = used.actions;
 }
 
-/* Advance verified_upto over frames whose consumed input matches the arrived truth, and return the
- * first frame where they differ (0 = none).  Only the action bits are compared: the control bits
- * never reach the simulation, and drb_process_controls reads them from the arrived record rather
- * than from what a frame consumed, so an unpredicted quit or new-map press changes no simulated
- * byte and buying a rollback for it would only re-derive the identical state. */
+/* Advance through verified action input and return the first mismatch. Control
+ * bits bypass simulation, so rolling back for them would reproduce identical state. */
 static Uint32 drb_scan_mispredict(void)
 {
 	while (verified_upto < drb_cur)

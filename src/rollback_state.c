@@ -43,11 +43,8 @@ void backgrnd_register_rollback(void);
 void endless_combat_register_rollback(void);
 void endless_register_rollback(void);
 
-/* player[].lives is an interior pointer into player[].items (mainint.c
- * JE_initPlayerData).  A raw copy restores a correct value only because
- * player[] is a fixed global; re-derive it anyway so the snapshot can never
- * leave a dangling alias.  player_lives_port names the same bay the live
- * binding used, so a restore cannot move a ship's life counter. */
+/* Rebind player[].lives after restore instead of trusting its copied interior
+ * pointer. player_lives_port preserves the original weapon-bay ownership. */
 static void rb_fixup_player_lives(void)
 {
 	for (uint i = 0; i < COUNTOF(player); ++i)
@@ -70,11 +67,8 @@ void rollback_state_register_globals(void)
 	REG(mouseX);  REG(mouseY);  REG(mouseXB);  REG(mouseYB);
 	REG(twoPlayerLinked);
 	REG(linkGunDirec);
-	/* Ship-graphic cache.  Not render state that a replay redraws from the sim:
-	 * it is a derivation of player[].items.ship refreshed only by an explicit
-	 * JE_getShipInfo (which also re-armors, so it cannot serve as a fixup), and
-	 * the Nort Ship request rewrites shipGr from inside the tick.  Pointers are
-	 * into fixed sprite-sheet globals, like the mapY*Pos entries below. */
+	/* Snapshot the ship-graphic cache because JE_getShipInfo has gameplay side
+	 * effects and cannot rebuild it after restore. */
 	REG(shipGr);   REG(shipGrPtr);
 	REG(shipGr2);  REG(shipGr2ptr);
 	REG(twoPlayerMode);        /* galaga mode clears this mid-level         */

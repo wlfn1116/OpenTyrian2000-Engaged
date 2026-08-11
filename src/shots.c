@@ -382,12 +382,8 @@ bool player_shot_move_and_draw(
 
 		*out_is_special = sprite_frame > 60000;
 
-		// Ship-tracking shots (shotXM/shotYM > 100 sentinels) draw at the ship's render-
-		// rate position on the attached axis so the beam base stays on the gun; the
-		// travelling axis extrapolates (see ship_attach in render_list.c). Velocity is
-		// this tick's real on-screen delta (post-accel, post-circle, post ship-lock), so
-		// the exact motion extrapolates; fast shots exit the top cleanly, recycled slots
-		// never streak.
+		// Attach tracking-shot axes to the render-rate ship and extrapolate the moving
+		// axis from this tick's final screen delta.
 		rl_current_id = RL_ID_PSHOT_BASE + shot_id;
 		// The linked-Dragonwing aim markers are recreated every tick, so their
 		// pool slot can drift; a stable id keeps them paired across frames and
@@ -713,11 +709,8 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 				shot->shotY -= player[shot->playerNumber-1].delta_y_shot_move;
 		}
 
-		// Endless "High-Velocity Rounds" perk: speed up genuine shot velocities. Only touch real
-		// speeds (|v| < 100, non-zero) so the >100 ship-track/attach sentinels and the static-0
-		// case are left alone; scaling X and Y together preserves the firing angle. The result is
-		// rounded, kept >= 1 so a moving shot never freezes, and clamped < 100 so a boosted shot
-		// can never read as a sentinel.
+		// High-Velocity Rounds scales real, nonzero velocities on both axes. Keep
+		// results moving and below the ship-attachment sentinel range.
 		if (endlessFxActive())
 		{
 			int spd = endlessPerkShotSpeedPercent();

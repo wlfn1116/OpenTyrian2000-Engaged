@@ -520,11 +520,8 @@ bool endlessTryBuyExtraPerk(void)
 // Sabotage charges strip the worst modifier from the next chosen course.
 long endlessCleansePrice(void)   { return endlessCleanseCost[me()]; }
 
-/* Strips queued for the next course select: the pair's, at the run-wide cap however it was paid
- * for. Charges buy off the shared sector, so this is the one figure the shop, the course card and
- * the launch pass all read. Each player's count rides the shop packet, so both machines agree,
- * with a window at a simultaneous buy that the cap here closes on the next packet and the launch
- * pass closes for good. */
+/* Shared Sabotage charges for the next course, capped across both players. Shop,
+ * course card, and launch all read this settled total. */
 int endlessCleanseCharges(void)
 {
 	int charges = 0;
@@ -945,13 +942,8 @@ static long endlessInterestOn(ulong bank)
 	return interest;
 }
 
-/* Bank interest and the clear bonus before the level-end total is drawn. Returns the local
- * player's amounts for the tally. Every participating ship is paid on every machine: each earns
- * interest on its own bank and its own clear bonus, so both sides of an online session derive
- * the same wallets. Paying only the local wallet left each machine's view of the partner short
- * and skipped the Shared-credit session entirely. Only the local share enters the run ledger,
- * the same rule player_credit_cash applies to kills. Perks are personal, so each ship's own
- * Financier and Scavenger stacks price its own interest and clear bonus. */
+/* Pay every participating ship on every machine so online wallets stay mirrored. Return and book
+ * only the local player's payout; personal perks are evaluated for each payee. */
 void endlessApplyLevelPayout(long *interestOut, long *bonusOut)
 {
 	long interest = 0, bonus = 0;

@@ -1,8 +1,4 @@
-/*
- * High-refresh render interpolation: every playfield draw of a 35Hz tick is recorded
- * and re-drawn at interpolated positions once per displayed frame (re-running the
- * game's draw code is not safe).
- */
+/* Record 35 Hz playfield draws and replay them at interpolated display positions. */
 #ifndef RENDER_LIST_H
 #define RENDER_LIST_H
 
@@ -217,11 +213,8 @@ void rl_replay_fg(SDL_Surface *dst, float alpha, int scale);
 // Feedback mode preserves the destination for smoothie trails.
 void rl_replay_interp(SDL_Surface *dst, float alpha, bool feedback, int scale);
 
-// Declare a rectangle this tick painted an opaque overlay into, so the residual takes ALL of it
-// rather than only the pixels that differ from the replay. Without this an overlay pixel that
-// coincidentally matches what the replay draws under it is dropped, and every interpolated or
-// supersampled frame -- which puts that under-pixel somewhere else -- shows a hole in the overlay.
-// Playfield (game_screen) coordinates; cleared by rl_begin_record.
+// Mark an opaque overlay for full residual capture; diff-only capture can leave
+// holes after its background moves. Coordinates are relative to game_screen.
 void rl_mark_overlay_rect(int x, int y, int w, int h);
 
 // Capture the residual: pixels in `reference` (the authoritative frame) that a

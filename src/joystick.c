@@ -171,11 +171,8 @@ void poll_joystick(int j)
 	bool repeat = joystick[j].joystick_delay < SDL_GetTicks();
 
 #if defined(__SWITCH__) || defined(__vita__)
-	// Make the RIGHT analog stick drive the ship exactly like the LEFT one. Both consoles'
-	// SDL ports expose 4 axes (0/1 = left stick, 2/3 = right stick); the left-stick axis and
-	// the d-pad button already occupy both assignment slots of every direction, so the right
-	// stick can't be added as a normal binding; fold its deflection into analog_direction[]
-	// (which feeds both the digital direction[] and the analog x/y) in the loop below.
+	// Fold the console right stick into analog_direction[] because normal direction
+	// bindings are already occupied by the left stick and d-pad.
 	const bool switch_right_stick = SDL_JoystickNumAxes(joystick[j].handle) >= 4;
 #endif
 
@@ -276,12 +273,8 @@ void push_joysticks_as_keyboard(void)
 		if (!joystick[j].input_pressed)
 			continue;
 		
-		// A single button bound to BOTH a confirm action (fire/menu) and a cancel action
-		// (change-fire/pause); e.g. the Switch B button left on its default "change fire"
-		// (=cancel) while also bound to "menu" (=confirm); would otherwise push Return AND
-		// Escape, making a menu select and go back at once (which can crash debug screens).
-		// Fire only one; prefer cancel (back), which is non-destructive and matches the
-		// B-is-back convention.
+		// If one button maps to confirm and cancel, emit only cancel. Sending Return
+		// and Escape together can select and leave a menu in the same frame.
 		if (joystick[j].cancel)
 			push_key(cancel);
 		else if (joystick[j].confirm)
@@ -521,11 +514,8 @@ bool load_joystick_assignments(Config *config, int j)
 	}
 
 #if defined(__SWITCH__) || defined(__vita__)
-	// Same idea for the d-pad: the consoles have no hat, so a config saved by an earlier
-	// build (or first-run defaults) has only the analog-stick axis on each direction and
-	// the d-pad does nothing. If a direction has no digital (button/hat) binding, back-fill
-	// its matching d-pad button so the d-pad works without a manual reset.
-	// direction a: 0=up, 1=right, 2=down, 3=left.
+	// Backfill console d-pad buttons when an old configuration has only analog
+	// direction bindings. Direction order is up, right, down, left.
 	{
 #if defined(__SWITCH__)
 		static const int dpad_btn[4] = { 13, 14, 15, 12 };  // switch-sdl2: 12=L,13=U,14=R,15=D
