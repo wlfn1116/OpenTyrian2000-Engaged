@@ -78,6 +78,9 @@ simulation tick.
 Gauge interpolation changes only the filled height. Keep the base on an exact
 scaled row so a steady gauge cannot jitter.
 
+Linked arcade runs the shared special path once per player each tick. The meter
+keeps the final clocks and merges ready/fired edges across those two passes.
+
 `JE_drawPerfOverlay` runs at the end of every present path, onto the composited
 frame at that pass's factor, so no later draw covers it. Keep it out of
 `game_screen`: text drawn there becomes filter input on the next tick and smears
@@ -392,7 +395,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 34.
+`NET_VERSION` bump. The current value is 35.
 
 Recent versions:
 
@@ -413,6 +416,7 @@ Recent versions:
 | 32 | Destruct recovery stream |
 | 33 | Endless special press latch and centered Martyrdom origin |
 | 34 | Initial debug/autofire state and Delay-Based linked movement/analog aim |
+| 35 | Dedicated level-start barrier packet |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

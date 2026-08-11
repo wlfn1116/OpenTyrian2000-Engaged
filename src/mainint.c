@@ -7248,6 +7248,7 @@ static bool hud_light_armed = false;    // the special could be fired this tick 
 static bool hud_light_fired = false;    // ...and one went off during it
 static bool hud_light_await_pop = false;  // a fire is waiting on the special coming back
 static bool hud_light_published = false;
+static bool hud_light_sampled_this_tick = false;
 static int  hud_light_charge_full = 0;  // what each phase started from, so both scale to themselves
 static int  hud_light_burn_full = 0;
 static int  hud_light_flash = 0;
@@ -7259,12 +7260,30 @@ static float hud_light_fill_prev = 0.0f, hud_light_fill_cur = 0.0f;
 static int   hud_light_x = 0, hud_light_y = 0;
 static bool  hud_light_shown = false;
 
+static void hud_special_light_tick_begin(void)
+{
+	hud_light_sampled_this_tick = false;
+	hud_light_published = false;
+}
+
 void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired)
 {
 	hud_light_charge_left = charge_ticks;
 	hud_light_burn_left = burn_ticks;
-	hud_light_armed = armed;
-	hud_light_fired = fired;
+
+	/* The linked pair runs the shared special once from each player's movement pass. The second
+	 * pass owns the final clocks, but it must not erase a ready or fired edge from the first. */
+	if (hud_light_sampled_this_tick)
+	{
+		hud_light_armed |= armed;
+		hud_light_fired |= fired;
+	}
+	else
+	{
+		hud_light_armed = armed;
+		hud_light_fired = fired;
+		hud_light_sampled_this_tick = true;
+	}
 	hud_light_published = true;
 }
 
@@ -7279,6 +7298,7 @@ void hud_special_light_reset(void)
 	// the moment the new level arms.
 	hud_light_await_pop = false;
 	hud_light_published = false;
+	hud_light_sampled_this_tick = false;
 	hud_light_charge_full = 0;
 	hud_light_burn_full = 0;
 	hud_light_flash = 0;
@@ -7323,6 +7343,25 @@ void hud_special_light_present(SDL_Surface *dst, int scale, float alpha)
 	                        bright);
 }
 
+static void hud_special_light_step_flash(void)
+{
+	// Check before arming the next shot so one-tick recharges and same-tick refires are visible.
+	if (hud_light_await_pop && hud_light_armed)
+	{
+		hud_light_flash = HUD_LIGHT_FLASH;
+		hud_light_await_pop = false;
+		if (qa_net_gameplay_ticks > 0 && (qa_net_scenario == 5 || qa_net_scenario == 19))
+			++qa_net_special_flashes;
+	}
+	else if (hud_light_flash > 0)
+	{
+		--hud_light_flash;
+	}
+
+	if (hud_light_fired)
+		hud_light_await_pop = true;
+}
+
 static void draw_special_ready_light(int x, int y)
 {
 	// Galaga's wing flies without a special shot at all, so JE_doSpecialShot never runs and there
@@ -7355,18 +7394,7 @@ static void draw_special_ready_light(int x, int y)
 		else if (hud_light_charge_left > hud_light_charge_full)
 			hud_light_charge_full = hud_light_charge_left;
 
-		// Pop on the first tick a special can fire again. Check before arming the
-		// next shot so one-tick recharges and same-tick refires are both visible.
-		if (hud_light_await_pop && hud_light_armed)
-		{
-			hud_light_flash = HUD_LIGHT_FLASH;
-			hud_light_await_pop = false;
-		}
-		else if (hud_light_flash > 0)
-			--hud_light_flash;
-
-		if (hud_light_fired)
-			hud_light_await_pop = true;
+		hud_special_light_step_flash();
 	}
 
 	// Burning drains what was there; recharging fills it back. Both land on empty at the handover,
@@ -7424,6 +7452,43 @@ int hud_top_left_right_edge(void)
 	}
 
 	return right;
+}
+
+/* The linked pair publishes the same shared special twice per tick. Exercise the two edge cases
+ * whose fired sample used to be overwritten by the second pass: an instant Repulsor-style special
+ * and a one-tick recharge that fires again on its ready tick. */
+void qa_test_special_light_events(void)
+{
+	hud_special_light_reset();
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, true);
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+	qa_check(hud_light_await_pop && hud_light_flash == 0,
+	         "linked special light retains an instant special's fired edge across player two's pass");
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+	qa_check(!hud_light_await_pop && hud_light_flash == HUD_LIGHT_FLASH,
+	         "linked instant special flashes on the next ready tick like single-player");
+
+	hud_special_light_reset();
+	hud_special_light_tick_begin();
+	hud_special_light_publish(1, 0, true, true);
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, true);
+	hud_special_light_publish(0, 0, false, false);
+	hud_special_light_step_flash();
+	qa_check(hud_light_await_pop && hud_light_flash == HUD_LIGHT_FLASH,
+	         "linked one-tick recharge flashes and retains a same-tick refire for the next cycle");
+
+	hud_special_light_reset();
 }
 
 int hud_top_right_left_edge(void)
@@ -9314,9 +9379,17 @@ redo:
 			}
 			else if (button[1-1])
 			{
-				shotMultiPos[SHOT_REAR] = 0;
-				b = player_shot_create(0, SHOT_REAR, this_player->x + 1 + roundf(sim_sinf(linkGunDirec) * 20), this_player->y + roundf(sim_cosf(linkGunDirec) * 20), *mouseX_, *mouseY_, linkGunWeapons[this_player->items.weapon[REAR_WEAPON].id-1], playerNum_);
-				player_shot_set_direction(b, this_player->items.weapon[REAR_WEAPON].id, linkGunDirec);
+				const JE_byte rear_weapon_id = this_player->items.weapon[REAR_WEAPON].id;
+				if (rear_weapon_id > 0 && rear_weapon_id <= COUNTOF(linkGunWeapons))
+				{
+					shotMultiPos[SHOT_REAR] = 0;
+					b = player_shot_create(0, SHOT_REAR,
+					                       this_player->x + 1 + roundf(sim_sinf(linkGunDirec) * 20),
+					                       this_player->y + roundf(sim_cosf(linkGunDirec) * 20),
+					                       *mouseX_, *mouseY_, linkGunWeapons[rear_weapon_id - 1],
+					                       playerNum_);
+					player_shot_set_direction(b, rear_weapon_id, linkGunDirec);
+				}
 			}
 		}
 	}
@@ -10038,6 +10111,7 @@ int link_marker_slot[3] = { -1, -1, -1 };
 void JE_mainGamePlayerFunctions(void)
 {
 	/* Player movement and input. */
+	hud_special_light_tick_begin();
 
 	// Last tick's aim markers were drawn (and their slots freed) by the shot
 	// pass that just ran; forget them before this tick's movement re-creates

@@ -27,6 +27,7 @@ extern int qa_net_version_skew;
 extern unsigned long qa_net_gameplay_ticks;
 // Presented Delay-Based frames, used by scenario 19's bounded non-rollback verdict.
 extern unsigned long qa_net_delay_frames;
+extern unsigned long qa_net_special_flashes;
 extern unsigned long qa_net_corrupt_frame;
 /* Save/resume across the wire: save_exit writes the LAST LEVEL slot as a passing gameplay run
  * exits; resume_slot makes the host auto-load that slot, so the joiner adopts the resume form. */
@@ -35,6 +36,7 @@ extern int qa_net_resume_slot;
 // Sidekick mount profile for the gameplay wire tests; 0 keeps the stock loadout.
 extern int qa_net_loadout;
 void qa_net_apply_loadout(int profile);
+void qa_net_apply_linked_special(void);
 
 /* Simultaneous in-game-menu race: both peers raise the request on this frame (0 = off), which
  * is the documented both-players-press-Esc case host-wins arbitration has to settle. */
@@ -84,6 +86,8 @@ void qa_test_online_suite(void);
 void qa_test_net_lobby_strings(void);
 // The Relaxed death prompt's rows and widths against the choice enum (mainint.c).
 void qa_test_endless_death_menu(void);
+// The special-meter fired/ready edges across the linked pair's two movement passes (mainint.c).
+void qa_test_special_light_events(void);
 
 /* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in
  * testing/network_fault_test.py. Zero on success; both peers assert what they see of the other. */

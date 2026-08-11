@@ -3792,42 +3792,9 @@ start_level_first:
 			fflush(stderr);
 		}
 
-		network_prepare(PACKET_WAITING);
-		network_send(4);  // PACKET_WAITING
-
 		SDL_Surface *const save_surface = VGAScreen;
 		VGAScreen = VGAScreenSeg;
-		const Uint32 wait_start = SDL_GetTicks();
-		bool overlay_drawn = false;
-		while (true)
-		{
-			service_SDL_events(false);
-
-			// A debug-menu edit can ride in ahead of the WAITING packet (reliable
-			// and ordered); adopt it rather than letting the drain discard it.
-			if (network_debug_sync_pump(false))
-				continue;
-
-			if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
-			{
-				network_update();
-				break;
-			}
-
-			network_update();
-			network_check();
-
-			// The common case is a sub-RTT wait; only a genuinely slow peer
-			// earns the overlay (same style as the in-level stall pump).
-			if (!overlay_drawn && SDL_GetTicks() - wait_start > 700)
-			{
-				overlay_drawn = true;
-				JE_drawNetworkNotice("Waiting for other player.");
-				JE_showVGA();
-			}
-
-			SDL_Delay(16);
-		}
+		network_level_loaded_rendezvous();
 		VGAScreen = save_surface;
 	}
 #endif
@@ -5955,10 +5922,10 @@ draw_player_shot_loop_end:
 
 				if (qa_net_scenario == 19 && ++qa_net_delay_frames > qa_net_gameplay_ticks)
 				{
-					const int rc = network_desync_count() == 0 ? 0 : 1;
-					printf("NET DELAY %s player=%u frames=%lu desyncs=%lu\n",
+					const int rc = network_desync_count() == 0 && qa_net_special_flashes > 0 ? 0 : 1;
+					printf("NET DELAY %s player=%u frames=%lu desyncs=%lu special-flashes=%lu\n",
 					       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, qa_net_delay_frames,
-					       (unsigned long)network_desync_count());
+					       (unsigned long)network_desync_count(), qa_net_special_flashes);
 					fflush(stdout);
 
 					const Uint32 drain_started = SDL_GetTicks();
@@ -7911,6 +7878,8 @@ void networkStartScreen(void)
 		// Gameplay wire tests: both machines mount the same scripted sidekick combination.
 		if (qa_net_gameplay_ticks > 0 && qa_net_loadout > 0)
 			qa_net_apply_loadout(qa_net_loadout);
+		if (qa_net_gameplay_ticks > 0 && (qa_net_scenario == 5 || qa_net_scenario == 19))
+			qa_net_apply_linked_special();
 	}
 	else if (network_game_type == NETWORK_GAME_CAMPAIGN)
 	{

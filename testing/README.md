@@ -70,7 +70,7 @@ Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
 | 2 | endless | Player-owned run state, income, downed ship, and course state |
 | 3 | barriers | Forty reliable phase barriers and sequence wrap |
 | 4 | version-mismatch | Both peers reject incompatible wire versions |
-| 5 | gameplay | Real Arcade rollback with prediction and no desync |
+| 5 | gameplay | Real linked Arcade rollback, prediction, special-ready flashes, and no desync |
 | 6 | desync-recovery | Deliberate corruption detected and repaired |
 | 7 | save-resume | Two-stage save, custom sidekick, and host-driven resume in fresh processes |
 | 8 | outage | Eight-second traffic blackout and recovery |
@@ -84,7 +84,7 @@ Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
 | 16 | arcade-separate | Two complete Arcade ships keep independent state |
 | 17 | supertyrian | Online SuperTyrian on the Scrollock variant |
 | 18 | super-arcade | Independent ship picks and per-ship colored-ball weapons |
-| 19 | delay-linked-analog | Delay-Based linked pair carries movement and analog turret aim |
+| 19 | delay-linked-analog | Delay-Based linked pair carries movement, analog turret aim, and special-ready flashes |
 | 20 | timed-battle-finish | Both players retire the result screen before session teardown |
 
 Each peer runs in its own temporary directory. Output pipes are drained while

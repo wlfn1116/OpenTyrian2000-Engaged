@@ -2020,6 +2020,11 @@ static void nrb_qa_gameplay_verdict(void)
 		 * and the verdict may fire from an outpost. */
 		rc = (qa_desyncs_total == 0 && (stat_deepest >= 1 || qa_rollbacks_session >= 1)) ? 0 : 1;
 	}
+	if (qa_net_scenario == 5 && qa_net_special_flashes == 0)
+	{
+		fprintf(stderr, "net gameplay: the linked special ready light never flashed\n");
+		rc = 1;
+	}
 
 	if (qa_net_menu_frame > 0)
 	{
@@ -2043,11 +2048,12 @@ static void nrb_qa_gameplay_verdict(void)
 		JE_saveGame(22, "LAST LEVEL    ");
 
 	printf("NET GAMEPLAY %s player=%u frames=%lu epoch=%u depth=%lu desyncs=%lu resyncs=%lu"
-	       " rollbacks=%lu gen=%u zones=%d\n",
+	       " rollbacks=%lu gen=%u zones=%d special-flashes=%lu\n",
 	       rc == 0 ? "PASS" : "FAIL", thisPlayerNum, (unsigned long)nrb_cur,
 	       (unsigned)nrb_epoch, (unsigned long)stat_deepest,
 	       (unsigned long)qa_desyncs_total, (unsigned long)qa_resyncs_total,
-	       (unsigned long)qa_rollbacks_session, (unsigned)resync_gen, qa_net_zones_cleared);
+	       (unsigned long)qa_rollbacks_session, (unsigned)resync_gen, qa_net_zones_cleared,
+	       qa_net_special_flashes);
 	printf("NETWORK TEST MEM player=%u start=%lu end=%lu kb\n", thisPlayerNum,
 	       (unsigned long)network_test_mem_start_kb(), (unsigned long)network_test_mem_now_kb());
 	fflush(stdout);

@@ -43,6 +43,7 @@ int qa_net_scenario = 0;
 int qa_net_version_skew = 0;
 unsigned long qa_net_gameplay_ticks = 0;
 unsigned long qa_net_delay_frames = 0;
+unsigned long qa_net_special_flashes = 0;
 unsigned long qa_net_corrupt_frame = 0;
 bool qa_net_save_exit = false;
 int qa_net_resume_slot = 0;
@@ -109,6 +110,20 @@ static JE_byte qa_first_sidekick_with_charge(void)
 		if (options[i].pwr > 0 && options[i].name[0] != '\0')
 			return (JE_byte)i;
 	return 0;
+}
+
+/* Give the linked-arcade wire test an instant special. Holding fire releases it once, then the
+ * ready light must retain that fired edge across player two's shared-special pass. */
+void qa_net_apply_linked_special(void)
+{
+	for (uint i = 1; i <= SPECIAL_NUM; ++i)
+	{
+		if (special[i].stype == 2)  // Repulsor
+		{
+			player[0].items.special = (JE_byte)i;
+			return;
+		}
+	}
 }
 
 /* Sidekick mount combinations for the gameplay wire tests, applied identically on both
@@ -2750,6 +2765,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_matrices();
 	qa_test_sidekick_rollback_state();
 	qa_test_gauge_flash_lifetime();
+	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();

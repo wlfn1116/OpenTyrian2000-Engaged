@@ -90,6 +90,7 @@ static inline Uint32 net_bytes_read32(const void *areap)
 #define PACKET_QUIT          0x20    // 
 #define PACKET_WAITING       0x21    // 
 #define PACKET_BUSY          0x22    // 
+#define PACKET_LEVEL_READY   0x23    // level-start barrier
 
 #define PACKET_GAME_QUIT     0x30    //
 #define PACKET_GAME_PAUSE    0x31    //
@@ -355,6 +356,9 @@ bool network_endless_jump_poll(void);
 /* Both machines announce they are ready for a level, then resynchronize the state queues. Only
  * needed on a path that starts a level without passing through the outpost. */
 void network_level_rendezvous(void);
+/* Every network level calls this after loading. Its dedicated marker cannot be confused with an
+ * outpost or ready-card announcement from the preceding control phase. */
+void network_level_loaded_rendezvous(void);
 
 /* Non-blocking, retractable ready barrier for Destruct and Timed Battle cards. Poll returns -1 for
  * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */

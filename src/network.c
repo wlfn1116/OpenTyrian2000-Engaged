@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       34           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       35           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -599,6 +599,7 @@ static int network_recv_one(void)
 					case PACKET_DETAILS:
 					case PACKET_WAITING:
 					case PACKET_BUSY:
+					case PACKET_LEVEL_READY:
 					case PACKET_GAME_QUIT:
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
@@ -2877,55 +2878,86 @@ bool network_endless_run_receive(Uint32 timeout_ms)
 	return done;
 }
 
-/* Run the level-start ready barrier and reset state queues. Paths that bypass
+/* Exchange one level-boundary marker and retire preceding control traffic. */
+static void network_level_barrier(Uint16 packet_type)
+{
+	network_prepare(packet_type);
+	network_send(4);
+
+	const Uint32 started = SDL_GetTicks();
+	bool peer_ready = false;
+	bool overlay_drawn = false;
+	while (SDL_GetTicks() - started < NET_TIME_OUT && network_peer_alive())
+	{
+		watchdog_heartbeat();
+		service_SDL_events(false);
+
+		network_check();
+
+		// A debug-menu edit can arrive ahead of the level marker on the ordered channel.
+		// Apply it before advancing the queue to the marker behind it.
+		if (network_debug_sync_pump(false))
+			continue;
+
+		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == packet_type)
+		{
+			peer_ready = true;
+			network_update();
+		}
+		else
+		{
+			// Every earlier control phase is complete at this boundary. Retire any delayed
+			// packet at the head so it cannot hide the level marker behind it.
+			network_update();
+		}
+
+		if (peer_ready && network_is_sync())
+			break;
+
+		mouseCursor = MOUSE_POINTER_NORMAL;
+		JE_mouseStart();
+		JE_showVGA();
+		JE_mouseReplace();
+
+		if (!overlay_drawn && SDL_GetTicks() - started > 700)
+		{
+			overlay_drawn = true;
+			JE_drawNetworkNotice("Waiting for other player.");
+			JE_showVGA();
+		}
+
+		if (!output_vsync)
+			limit_render_fps();
+		else
+			SDL_Delay(1);
+	}
+
+	if (!peer_ready || !network_is_sync())
+	{
+		fprintf(stderr, "error: level rendezvous timed out\n");
+		network_tyrian_halt(2, false);
+	}
+}
+
+/* Run the pre-load ready barrier and reset state queues. Paths that bypass
  * JE_itemScreen, such as Restart Zone, must call this themselves. */
 void network_level_rendezvous(void)
 {
 	if (!isNetworkGame)
 		return;
 
-	network_prepare(PACKET_WAITING);
-	network_send(4);
-
-	const Uint32 started = SDL_GetTicks();
-	while (SDL_GetTicks() - started < 30000)
-	{
-		watchdog_heartbeat();
-		service_SDL_events(false);
-		mouseCursor = MOUSE_POINTER_NORMAL;
-		JE_mouseStart();
-		JE_showVGA();
-		JE_mouseReplace();
-		if (!output_vsync)
-			limit_render_fps();
-
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
-		{
-			network_check();
-			network_update();   // consume it, or the next wait reads this one as its release
-			break;
-		}
-
-		network_update();
-		network_check();
-		if (!network_peer_alive())
-			break;
-	}
-
+	network_level_barrier(PACKET_WAITING);
 	network_state_reset();
-	while (!network_is_sync() && network_peer_alive())
-	{
-		watchdog_heartbeat();
-		service_SDL_events(false);
-		mouseCursor = MOUSE_POINTER_NORMAL;
-		JE_mouseStart();
-		JE_showVGA();
-		JE_mouseReplace();
-		if (!output_vsync)
-			limit_render_fps();
+}
 
-		network_check();
-	}
+/* Synchronize after both machines have loaded the map. This marker has its own type so a delayed
+ * outpost or ready-card packet cannot release one player into the level. */
+void network_level_loaded_rendezvous(void)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_level_barrier(PACKET_LEVEL_READY);
 }
 
 /* The both-ready barrier the Destruct title and the Timed Battle card hold on, split into an
