@@ -458,6 +458,39 @@ static void write_stack_trace(FILE *f, HANDLE proc, HANDLE thr, CONTEXT *ctx)
 	}
 }
 
+// Walk the calling thread without dbghelp: loading symbols from a running game stalls the frame
+// long enough to lose a network link. The RVAs match the symbolised form and decode against the
+// build's .pdb afterwards.
+static void write_stack_trace_raw(FILE *f)
+{
+	void *frames[48];
+	const USHORT count = RtlCaptureStackBackTrace(1, (ULONG)(sizeof(frames) / sizeof(*frames)),
+	                                             frames, NULL);
+
+	fprintf(f, "Stack trace (unsymbolised, decode the RVAs against the .pdb):\n");
+	for (USHORT i = 0; i < count; ++i)
+	{
+		HMODULE module = NULL;
+		GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+		                   | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                   (LPCSTR)frames[i], &module);
+
+		char path[MAX_PATH] = "";
+		const char *name = "?";
+		if (module != NULL && GetModuleFileNameA(module, path, sizeof(path)) != 0)
+		{
+			const char *slash = strrchr(path, '\\');
+			name = slash != NULL ? slash + 1 : path;
+		}
+
+		if (module != NULL)
+			fprintf(f, "  %2u: [rva 0x%llX] %s\n", (unsigned)i,
+			        (unsigned long long)((const char *)frames[i] - (const char *)module), name);
+		else
+			fprintf(f, "  %2u: 0x%llX\n", (unsigned)i, (unsigned long long)(uintptr_t)frames[i]);
+	}
+}
+
 // List loaded modules with their address range, so an RVA (or a fault inside a DLL such as
 // SDL2) can be attributed to the right binary even without a .pdb.
 static void write_modules(FILE *f)
@@ -486,21 +519,30 @@ static void write_modules(FILE *f)
 }
 
 // Write registers, stack, game state, and modules. Flush the stack before less reliable stages.
-static void write_context_report(FILE *f, HANDLE thr, CONTEXT *ctx)
+// Only a report the game does not continue past may symbolise; see write_stack_trace_raw.
+static void write_context_report(FILE *f, HANDLE thr, CONTEXT *ctx, bool symbolise)
 {
-	HANDLE proc = GetCurrentProcess();
 	write_registers(f, ctx);
 
 	// Preserve the decoded fault if the stack walk fails.
 	fflush(f);
 
-	// dbghelp is single-threaded; serialize only the Sym* section.
-	EnterCriticalSection(&s_dbghelpLock);
-	SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-	SymInitialize(proc, NULL, TRUE);
-	write_stack_trace(f, proc, thr, ctx);
-	SymCleanup(proc);
-	LeaveCriticalSection(&s_dbghelpLock);
+	if (symbolise)
+	{
+		HANDLE proc = GetCurrentProcess();
+
+		// dbghelp is single-threaded; serialize only the Sym* section.
+		EnterCriticalSection(&s_dbghelpLock);
+		SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+		SymInitialize(proc, NULL, TRUE);
+		write_stack_trace(f, proc, thr, ctx);
+		SymCleanup(proc);
+		LeaveCriticalSection(&s_dbghelpLock);
+	}
+	else
+	{
+		write_stack_trace_raw(f);
+	}
 
 	fflush(f);
 	crashlog_write_game_state(f);
@@ -543,7 +585,7 @@ static void write_crash_report(EXCEPTION_POINTERS *ep, const char *event)
 		write_header(f, event);
 		write_process_info(f, GetCurrentThreadId());
 		write_exception_details(f, ep->ExceptionRecord);
-		write_context_report(f, GetCurrentThread(), ep->ContextRecord);
+		write_context_report(f, GetCurrentThread(), ep->ContextRecord, true);
 		fclose(f);
 
 		// Suppress the duplicate top-level report for this fault.
@@ -576,13 +618,13 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep)
 // These terminate the process without raising an SEH exception, so crash_handler never sees
 // them. Each hook captures the current context and writes the same rich report, then exits.
 
-// Capture the current thread and write a crash report. False means reporting was re-entered.
-static bool write_captured_report(const char *event, const char *detail)
+// Capture the current thread and write a crash or net report. False means reporting was re-entered.
+static bool write_captured_report_ex(bool net, const char *event, const char *detail)
 {
 	if (InterlockedExchange(&s_reporting, 1) != 0)
 		return false;
 
-	FILE *f = open_log();
+	FILE *f = net ? open_net_log() : open_log();
 	if (f != NULL)
 	{
 		CONTEXT ctx;
@@ -593,12 +635,17 @@ static bool write_captured_report(const char *event, const char *detail)
 		write_process_info(f, GetCurrentThreadId());
 		if (detail != NULL)
 			fprintf(f, "%s\n\n", detail);
-		write_context_report(f, GetCurrentThread(), &ctx);
+		write_context_report(f, GetCurrentThread(), &ctx, !net);
 		fclose(f);
 	}
 
 	InterlockedExchange(&s_reporting, 0);
 	return true;
+}
+
+static bool write_captured_report(const char *event, const char *detail)
+{
+	return write_captured_report_ex(false, event, detail);
 }
 
 // Latches once a clean-exit fatal has been logged, so a cascade (fread_die -> its caller ->
@@ -620,15 +667,16 @@ void crashlog_note(const char *event, const char *detail)
 	write_captured_report(event ? event : "RECOVERED", detail);
 }
 
-// Public: a netplay health event (desync, stall, resync), into the net log so it cannot bury a
-// real crash report. Symbolising a stack takes long enough to lose the link, and this runs from
-// the live game loop, so the entry carries its detail block alone.
+// Public: same report, but into the net log, so netplay health events (desyncs, stalls,
+// resyncs) can't bury a real crash report in the crash log.
 void crashlog_note_net(const char *event, const char *detail)
 {
-	crashlog_netlog_line(event ? event : "NETWORK", detail);
+	if (!crashlog_get_netlog_enabled())
+		return;
+	write_captured_report_ex(true, event ? event : "NETWORK", detail);
 }
 
-// Public: one entry with no context or stack body.
+// Public: one short entry, no context/stack body; the session start/end banners.
 void crashlog_netlog_line(const char *event, const char *detail)
 {
 	if (!crashlog_get_netlog_enabled())
@@ -750,7 +798,7 @@ static void watchdog_dump_hang(int seconds)
 	ResumeThread(s_mainThread);  // resume immediately; all remaining work runs unsuspended
 
 	if (gotContext)
-		write_context_report(f, s_mainThread, &ctx);
+		write_context_report(f, s_mainThread, &ctx, true);
 	else
 		fprintf(f, "(could not read main-thread context)\n");
 

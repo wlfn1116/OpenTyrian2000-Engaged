@@ -792,8 +792,7 @@ int network_check(void)
 	if (connected)
 	{
 		// timeout.  Every wait loop services the socket through here, so this halt reaches a dead
-		// link before any of their own deadlines do: it has to name the silence, or the session
-		// ends with no record of what it was waiting for.
+		// link before their own deadlines do and has to name the silence itself.
 		if (!network_is_alive())
 		{
 			if (!quit)

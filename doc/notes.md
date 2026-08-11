@@ -692,9 +692,10 @@ walking. State dumps tolerate unloaded item tables and invalid IDs.
 Network and crash logs are created lazily under `log/`. Session diagnostics are
 append-only; console cleanup removes only recognized OpenTyrian log names.
 
-Net log entries carry their event text and detail block only. They are written
-from the live game loop, where a symbolised stack walk stalls socket service past
-the dead-link timeout. Register, stack, and state bodies belong to crash reports.
+Net log entries keep the full report body but never load symbols: they are written
+from the live game loop, where symbolisation stalls socket service past the
+dead-link timeout. Their stack frames are RVAs, decoded against the build's
+`.pdb`. Crash and hang reports still symbolise.
 
 Switch constraints:
 
