@@ -3917,10 +3917,11 @@ void JE_drawMenuChoices(void)
 		if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && (x == 2 || x == 4))
 			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
 
-		// Endless hardcore: NO saving of any kind; grey out Load Game (item 2) and Save Game
-		// (item 3) in the shop options submenu so the disabled rows read as disabled. (Items 2/3
-		// sit above the Switch-only Touch row, so this holds on Switch too.)
-		if (endlessMode && endlessHardcore() && curMenu == MENU_OPTIONS && (x == 2 || x == 3))
+		// Endless hardcore forbids all saving and loading, so both rows draw dimmed. The online
+		// page drops Load Game, so resolve the row through options_full_row.
+		if (endlessMode && endlessHardcore() &&
+		    (curMenu == MENU_OPTIONS || curMenu == MENU_LIMITED_OPTIONS) &&
+		    (options_full_row(x) == OPT_LOAD || options_full_row(x) == OPT_SAVE))
 			JE_dStringDarken(VGAScreen, text_x, tempY, entry, font);
 
 		// Endless: the Radar reroll is one per outpost, so the row greys out once it is spent.
