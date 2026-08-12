@@ -300,6 +300,23 @@ presentation-only spark rules given in "Endless special pickups". It is
 staggered by enemy slot, so a linked multi-tile body emits once per part and its
 density tracks the area it covers. Iced and wrecked bodies do not emit.
 
+`endlessEliteTint` is the one source of that bank, for the body, the aura, the
+health bar and the explosion. The explosion carries it through `explosionFilter`:
+a kill site sets it, spawns, and clears it again, so `JE_setupExplosion` can stamp
+every puff without a new argument at sixty call sites. It never survives a tick,
+which is why it is not registered for rollback. `rep_explosions` keeps its own
+copy because a big sequence re-arms itself from the draw loop, where the dying
+enemy is long gone.
+
+The colour bytes added to `Explosion` and `rep_explosion_type` land in existing
+padding, so neither `sizeof` nor the layout fingerprint moves and the replay
+fixtures still hash what they did before. They are zero outside an Endless run.
+Explosions are normally drawn with `blit_sprite2_blend`, so a tinted one takes
+`blit_sprite2_blend_filter`, which recolours and blends in one pass. Two passes
+would read back its own tinted pixels and halve the shade twice. Its argument
+packs the bank and a shade lift, because the blend alone leaves the sprite around
+shade 4 and the elite banks are near-black there.
+
 #### Endless special pickups
 
 `endlessSpecialPickup()` names the data cubes and secret orbs that

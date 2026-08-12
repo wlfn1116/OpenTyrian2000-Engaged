@@ -176,6 +176,11 @@ enum {
 // bright half of the bank for their whole 15 ticks.
 #define ENDLESS_SPARK_BRIGHT 6
 
+// Shade lift for a tinted explosion (see blit_sprite2_blend_filter). Its sprites are mostly bank 7
+// around shade 7, which the blend halves to about 4: legible in their own yellow ramp, near-black
+// in the elite banks. Well under the aura's lift, so the sprite keeps its own gradient.
+#define ENDLESS_EXPLOSION_BRIGHT 3
+
 // Player-side kill-fire tint banks.
 #define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0
 #define ENDLESS_OVERDRIVE_SHIP_FILTER  0x70
@@ -708,6 +713,7 @@ long endlessEliteBounty(void);               // extra cash for destroying an eli
 long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
+Uint8 endlessEliteTint(int eliteState);      // tier's palette-bank filter, 0 for an ordinary enemy
 
 // Call for every logical death so ordinary enemies break the link-group latch.
 void endlessAwardEliteKill(int linknum, int eliteState, int killer);

@@ -378,6 +378,7 @@ JE_word neat;
 /*ExplosionData*/
 Explosion explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
 JE_integer explosionFollowAmountX, explosionFollowAmountY;
+Uint8 explosionFilter;  /* see varz.h */
 
 /*Repeating Explosions*/
 rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
@@ -1375,6 +1376,7 @@ void JE_setupExplosion(
 				explosions[i].followPlayer = followPlayer;
 				explosions[i].fixedPosition = fixedPosition;
 				explosions[i].deltaY = deltaY;
+				explosions[i].filter = explosionFilter;
 				explosions[i].id_gen++;  // distinct interpolation id for this reuse of the slot
 				break;
 			}
@@ -1424,6 +1426,7 @@ void JE_setupExplosionLarge(JE_boolean enemyGround, JE_byte exploNum, JE_integer
 					rep_explosions[i].x = x;
 					rep_explosions[i].y = y;
 					rep_explosions[i].big = big;
+					rep_explosions[i].filter = explosionFilter;
 					break;
 				}
 			}

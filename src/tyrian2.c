@@ -4894,10 +4894,12 @@ level_loop:
 											JE_integer tempX = enemy[temp3].ex + enemy[temp3].mapoffset;
 											JE_integer tempY = enemy[temp3].ey;
 
+											explosionFilter = endlessEliteTint(enemy[temp3].eliteState);
 											if (enemyDat[enemy[temp3].enemytype].esize != 1)
 												JE_setupExplosion(tempX, tempY - 6, 0, 1, false, false);
 											else
 												JE_setupExplosionLarge(enemy[temp3].enemyground, enemy[temp3].explonum / 2, tempX, tempY);
+											explosionFilter = 0;
 										}
 									}
 								}
@@ -5007,6 +5009,7 @@ level_loop:
 										                                   : ENDLESS_KILLER_NONE);
 										}
 
+										explosionFilter = endlessEliteTint(enemy[temp2].eliteState);
 										if (enemyDat[enemy[temp2].enemytype].esize == 1)
 										{
 											JE_setupExplosionLarge(enemy[temp2].enemyground, enemy[temp2].explonum, enemy_screen_x, enemy[temp2].ey);
@@ -5017,6 +5020,7 @@ level_loop:
 											JE_setupExplosion(enemy_screen_x, enemy[temp2].ey, 0, 1, false, false);
 											soundQueue[6] = S_EXPLOSION_8;
 										}
+										explosionFilter = 0;
 									}
 								}
 							}
@@ -5278,6 +5282,9 @@ draw_player_shot_loop_end:
 			JE_integer tempX = rep_explosions[i].x + (mt_rand() % 24) - 12;
 			JE_integer tempY = rep_explosions[i].y + (mt_rand() % 27) - 24;
 
+			// A big sequence keeps re-arming itself, so the tint has to travel with it.
+			explosionFilter = rep_explosions[i].filter;
+
 			if (rep_explosions[i].big)
 			{
 				JE_setupExplosionLarge(false, 2, tempX, tempY);
@@ -5298,6 +5305,7 @@ draw_player_shot_loop_end:
 				rep_explosions[i].delay = 3;
 			}
 
+			explosionFilter = 0;
 			rep_explosions[i].ttl--;
 		}
 	}
@@ -5334,10 +5342,18 @@ draw_player_shot_loop_end:
 					// per-slot generation (4 values disambiguate consecutive reuses); j*4 + 3
 					// stays within the EXPL id range (MAX_EXPLOSIONS*4 < 1000).
 					rl_current_id = RL_ID_EXPL_BASE + j * 4 + (explosions[j].id_gen & 3);
-					if (explosionTransparent)
-						blit_sprite2_blend(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
+					const int ex = explosions[j].x, ey = explosions[j].y;
+					const unsigned int frame = explosions[j].sprite + 1;
+					const Uint8 tint = explosions[j].filter;  // endless elite / champion
+					if (explosionTransparent && tint != 0)
+						blit_sprite2_blend_filter(VGAScreen, ex, ey, explosionSpriteSheet, frame,
+						                          tint | ENDLESS_EXPLOSION_BRIGHT);
+					else if (explosionTransparent)
+						blit_sprite2_blend(VGAScreen, ex, ey, explosionSpriteSheet, frame);
+					else if (tint != 0)
+						blit_sprite2_filter(VGAScreen, ex, ey, explosionSpriteSheet, frame, tint);
 					else
-						blit_sprite2(VGAScreen, explosions[j].x, explosions[j].y, explosionSpriteSheet, explosions[j].sprite + 1);
+						blit_sprite2(VGAScreen, ex, ey, explosionSpriteSheet, frame);
 					rl_current_id = 0;
 				}
 
@@ -10517,9 +10533,8 @@ static int boss_bar_tint_base(JE_byte link_num)
 		for (unsigned int e = 0; e < COUNTOF(enemy); e++)
 			if (enemyAvail[e] != 1 && enemy[e].linknum == link_num && enemy[e].eliteState > tier)
 				tier = enemy[e].eliteState;
-	if (tier == 3) return ENDLESS_CHAMPION_FILTER;
-	if (tier == 2) return ENDLESS_ELITE_FILTER;
-	return 112;  // palette bank 7 (default)
+	const Uint8 tint = endlessEliteTint(tier);
+	return (tint != 0) ? tint : 112;  // palette bank 7 (default)
 }
 
 static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, Uint8 color)
@@ -10940,11 +10955,8 @@ static void draw_enemy_health_bars(void)
 		{
 			// Endless special enemies get a bar in their tint bank (elite / champion) so the
 			// bar reads as part of the enemy; ordinary enemies keep the bank-7 yellow ramp.
-			int barBase = 112;  // palette bank 7
-			if (endlessFxActive() && enemy[e].eliteState == 2)
-				barBase = ENDLESS_ELITE_FILTER;
-			else if (endlessFxActive() && enemy[e].eliteState == 3)
-				barBase = ENDLESS_CHAMPION_FILTER;
+			const Uint8 barTint = endlessEliteTint(enemy[e].eliteState);
+			const int barBase = (barTint != 0) ? barTint : 112;  // palette bank 7
 			// Slot banks 0/25/50/75 use horizontal anchors 2/1/3/1 respectively (the same
 			// batches configured around JE_drawEnemy above). Preserve the representative enemy's
 			// absolute anchor so finalize can apply the same draw-order correction to its bar.

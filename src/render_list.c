@@ -209,6 +209,19 @@ void rl_rec_sprite2_filter(int x, int y, Sprite2_array sheet, unsigned int index
 	c->filter = filter;
 }
 
+void rl_rec_sprite2_blend_filter(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter)
+{
+	RenderCmd *c = rl_push();
+	if (c == NULL)
+		return;
+	c->kind = RC_SPRITE2_BLEND_FILTER;
+	c->x = x;
+	c->y = y;
+	c->sheet = sheet;
+	c->index = index;
+	c->filter = filter;
+}
+
 void rl_rec_sprite2_solid(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 color)
 {
 	RenderCmd *c = rl_push();
@@ -765,6 +778,7 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	case RC_SPRITE2_SOLID:       blit_sprite2_solid_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_filter(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
+	case RC_SPRITE2_BLEND_FILTER: blit_sprite2_blend_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE:              blit_sprite(dst, x, y, c->table, c->index); break;
 	case RC_SPRITE_BLEND:        blit_sprite_blend(dst, x, y, c->table, c->index); break;
 	case RC_SPRITE_HV:           blit_sprite_hv(dst, x, y, c->table, c->index, c->hue, c->value); break;
@@ -794,6 +808,7 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 	case RC_SPRITE2_SOLID:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_SOLID, c->filter); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
+	case RC_SPRITE2_BLEND_FILTER: blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLEND_FILTER, c->filter); break;
 	case RC_SPRITE:              blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_COPY, 0, 0, false); break;
 	case RC_SPRITE_BLEND:        blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_BLEND, 0, 0, false); break;
 	case RC_SPRITE_HV:           blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_HV, c->hue, c->value, false); break;

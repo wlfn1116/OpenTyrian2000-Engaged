@@ -517,6 +517,14 @@ int endlessChampionShotDamagePercent(void)
 	return 150;
 }
 
+// One source for the tier tint worn by the body, its aura, its health bar and its explosion.
+Uint8 endlessEliteTint(int eliteState)
+{
+	if (!endlessFxActive() || eliteState < 2)
+		return 0;
+	return (eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
+}
+
 // Elite/champion contact premium; Clean Signals returns it to neutral.
 int endlessEliteContactPercent(int eliteState)
 {

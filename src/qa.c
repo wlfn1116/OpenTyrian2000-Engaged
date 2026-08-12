@@ -1413,6 +1413,94 @@ static void qa_test_shot_hitboxes(void)
 	centeredShotHitboxes = savedCentered;
 }
 
+/* The tier tint an elite wears, and its route from a kill site into every explosion the death
+ * spawns. Colour is presentation, so nothing here may reach the state hash. */
+static void qa_test_elite_explosion_tint(void)
+{
+	const bool savedMode = endlessMode, savedCampaign = endlessCampaignMods;
+
+	endlessMode = false;
+	endlessCampaignMods = false;
+	qa_check(endlessEliteTint(2) == 0 && endlessEliteTint(3) == 0,
+	         "elite tints cannot leak into normal play");
+
+	endlessMode = true;
+	qa_check(endlessEliteTint(0) == 0 && endlessEliteTint(1) == 0
+	         && endlessEliteTint(2) == ENDLESS_ELITE_FILTER
+	         && endlessEliteTint(3) == ENDLESS_CHAMPION_FILTER,
+	         "only elites and champions carry a tint, each its own bank");
+
+	const Uint32 hashBefore = rollback_state_hash();
+	memset(explosions, 0, sizeof(explosions));
+	memset(rep_explosions, 0, sizeof(rep_explosions));
+
+	explosionFilter = endlessEliteTint(3);
+	JE_setupExplosion(100, 100, 0, 1, false, false);
+	explosionFilter = 0;
+	JE_setupExplosion(100, 100, 0, 1, false, false);
+	qa_check(explosions[0].filter == ENDLESS_CHAMPION_FILTER && explosions[1].filter == 0,
+	         "an explosion keeps the tint set when it was spawned");
+
+	/* explonum 12 is over ten, so the death both puffs and queues a big repeating sequence. */
+	memset(explosions, 0, sizeof(explosions));
+	explosionFilter = endlessEliteTint(2);
+	JE_setupExplosionLarge(false, 12, 100, 100);
+	explosionFilter = 0;
+	int tinted = 0;
+	for (unsigned int i = 0; i < COUNTOF(explosions); ++i)
+		if (explosions[i].ttl != 0 && explosions[i].filter == ENDLESS_ELITE_FILTER)
+			++tinted;
+	qa_check(tinted == 4, "all four puffs of one large explosion carry the tint");
+	qa_check(rep_explosions[0].ttl != 0 && rep_explosions[0].filter == ENDLESS_ELITE_FILTER,
+	         "...and the repeating sequence it arms carries it into its own explosions");
+
+	memset(explosions, 0, sizeof(explosions));
+	memset(rep_explosions, 0, sizeof(rep_explosions));
+	qa_check(rollback_state_hash() == hashBefore,
+	         "explosion colour leaves the registered state byte stream untouched");
+
+	/* Both colour bytes sit in padding the structs already had. Widening either pool moves the
+	 * registry layout and every replay fixture hash with it. */
+	qa_check(sizeof(Explosion) == 14 && sizeof(rep_explosion_type) == 20,
+	         "the explosion pools keep the widths the replay fixtures were recorded at");
+
+	/* The packed bank-and-lift argument, through the blitter replay draws with. One opaque pixel:
+	 * a control byte carrying an opaque run of one in its high nibble and no skip in its low one,
+	 * the pixel, then the end marker. */
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
+	{
+		union {
+			Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
+			Uint8 bytes[10];
+		} frames = { .bytes = { 4, 0, 7, 0,      // two frames, one pixel each, both bank 7
+		                        0x10, 0x78, 0x0f,   // shade 8
+		                        0x10, 0x7f, 0x0f } };  // shade 15
+		const Sprite2_array sheet = { sizeof(frames.bytes), frames.bytes };
+
+		Uint8 *const row = (Uint8 *)VGAScreen->pixels;
+		const Uint8 savedPixels[2] = { row[0], row[1] };
+		const int blended = (8 + 2) / 2 + ENDLESS_EXPLOSION_BRIGHT;
+		const int lifted = blended > 15 ? 15 : blended;
+
+		row[0] = 0x02;  // shade 2, so the average is five before the lift
+		blit_sprite2_blend_filter_clip(VGAScreen, 0, 0, sheet, 1,
+		                              ENDLESS_ELITE_FILTER | ENDLESS_EXPLOSION_BRIGHT);
+		row[1] = 0x0f;  // full shade over full shade: the lift can only overshoot the bank
+		blit_sprite2_blend_filter_clip(VGAScreen, 1, 0, sheet, 2,
+		                              ENDLESS_CHAMPION_FILTER | ENDLESS_EXPLOSION_BRIGHT);
+
+		qa_check(row[0] == (ENDLESS_ELITE_FILTER | lifted)
+		         && row[1] == (ENDLESS_CHAMPION_FILTER | 15),
+		         "a tinted explosion pixel blends into its own bank, lifted and clamped there");
+
+		row[0] = savedPixels[0];
+		row[1] = savedPixels[1];
+	}
+
+	endlessMode = savedMode;
+	endlessCampaignMods = savedCampaign;
+}
+
 /* Which slots a shower lands in, so the per-weapon classic cap can be checked without a screen.
  * Returns the number of live sparks and the lowest and highest slot used. */
 static int qa_spark_span(int *out_lo, int *out_hi)
@@ -3055,6 +3143,7 @@ int qa_run_unit_suite(void)
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_elite_explosion_tint();
 	qa_test_superspark_caps();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();

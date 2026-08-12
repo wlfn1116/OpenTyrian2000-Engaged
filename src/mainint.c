@@ -10906,6 +10906,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 									enemyAvail[temp2] = 1;
 
+									explosionFilter = endlessEliteTint(enemy[temp2].eliteState);
 									if (enemyDat[enemy[temp2].enemytype].esize == 1)
 									{
 										JE_setupExplosionLarge(enemy[temp2].enemyground, enemy[temp2].explonum, enemy_screen_x, enemy[temp2].ey);
@@ -10916,6 +10917,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 										JE_setupExplosion(enemy_screen_x, enemy[temp2].ey, 0, 1, false, false);
 										soundQueue[5] = S_EXPLOSION_4;
 									}
+									explosionFilter = 0;
 								}
 							}
 						}

@@ -102,8 +102,9 @@ ordinary ramps flatten.
 | Elite | 2x to 4x | +25% contact damage | $150 + $40/zone, max $2,500 |
 | Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $350 + $90/zone, max $6,000 |
 
-Elites and champions are palette-shifted and shed sparks in the same tint.
-Linked parts share one tier and one bounty. Bosses can be promoted.
+Elites and champions are palette-shifted and shed sparks in the same tint, and
+they explode in it as well. Linked parts share one tier and one bounty. Bosses
+can be promoted.
 
 ### Sector modifiers
 

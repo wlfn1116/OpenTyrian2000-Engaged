@@ -213,6 +213,7 @@ typedef struct {
 	JE_integer deltaY;
 	Uint8 id_gen;  // bumped each time this slot is reused, to disambiguate the render-
 	               // list interpolation id so a recycled slot isn't mis-paired
+	Uint8 filter;  // palette bank to recolour into, 0 for the sprite's own colours
 } Explosion;
 
 typedef struct {
@@ -220,6 +221,7 @@ typedef struct {
 	unsigned int ttl;
 	unsigned int x, y;
 	bool big;
+	Uint8 filter;  // passed on to each explosion this sequence spawns
 } rep_explosion_type;
 
 // `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade at
@@ -317,6 +319,10 @@ extern JE_word mapStopStallTicks;
 extern JE_word superEnemy254Jump;
 extern Explosion explosions[MAX_EXPLOSIONS];
 extern JE_integer explosionFollowAmountX, explosionFollowAmountY;
+// Tint worn by explosions created by the next JE_setupExplosion / JE_setupExplosionLarge call.
+// Set it, spawn, clear it again: it is never left set across a tick, so it stays out of the
+// rollback registry. Presentation only; the network state hash ignores explosion colour.
+extern Uint8 explosionFilter;
 extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
