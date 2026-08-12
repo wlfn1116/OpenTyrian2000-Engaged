@@ -128,6 +128,12 @@ written at `last_uncapped_superpixel` in the rest of the array. The trail thins
 at the original rate while a shower of one to three sparks, such as an elite aura
 or a pickup glyph, keeps its full 15 ticks.
 
+Only the per-weapon trails may pass `classic_cap`, and only from their own
+setting. Everything else spawns uncapped, the Opening Salvo trail included: a
+volley that also throws uncapped launch flashes retires the classic window faster
+than its capped sparks can show, leaving no trail at all. A salvo drops the cap
+on a weapon's native trail for the same reason.
+
 `JE_drawSP` sweeps the whole array, so sparks already in flight animate out
 cleanly when a setting changes. Both cursors are private to `varz.c`; clear the
 field through `JE_resetSP`.

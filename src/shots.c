@@ -147,10 +147,11 @@ draw_player_shot_loop_end:
 
 // Endless Opening Salvo: the superspark trail marking a boosted shot, coloured from the shot's own
 // sprite so each weapon trails its own hue. (cx,cy) is the shot centre; `launch` is the fatter
-// one-off burst on its first drawn tick, which skips the classic cap.
+// one-off burst on its first drawn tick. Neither takes the classic cap: the volley's own launch
+// flashes would retire the classic window before a capped trail could show.
 static void salvo_sparks_at(int cx, int cy, Uint8 bank, bool launch)
 {
-	JE_doSP(cx, cy, launch ? 14 : 4, launch ? 6 : 4, bank << 4, !launch);
+	JE_doSP(cx, cy, launch ? 14 : 4, launch ? 6 : 4, bank << 4, false);
 }
 
 // ...for a shot drawn from the packed sprite SHEETS (`sprite_frame` with the >1000 tag stripped).
