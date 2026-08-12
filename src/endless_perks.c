@@ -36,7 +36,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
 	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
-	{ "Kinetic Converter","Absorbed shield hits refuel the generator.",3 },
+	{ "Kinetic Converter","Hits refuel power, specials, sidekicks.",3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
 	{ "Financier",        "Better interest and cheaper shop prices.",  4 },
@@ -192,6 +192,7 @@ static int endlessPerkFireRate(bool hurtBonus)
  * rollback because the crossing tick determines when each gun fires. */
 int endlessPerkFireAccum[2];
 int endlessPerkSpecialCdAccum[2];
+int endlessPerkKineticAmmoAccum[2];
 
 int endlessPerkFireDecrements(void)
 {
@@ -377,7 +378,9 @@ int endlessOpeningSalvoScale(int value)
 
 int  endlessOpeningSalvoDamagePercent(void) { return ENDLESS_PERK_SALVO_DMG_PCT; }
 
-// Kinetic Converter.
+// Kinetic Converter. A hit that lands is fed back into what shooting costs: the generator, the
+// special recharge, a sidekick magazine and a charge ramp. Every share scales with the stacks.
+
 // Refund a percentage of absorbed shield cost per stack. The caller clamps generator power.
 int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 {
@@ -385,6 +388,41 @@ int endlessPerkKineticPower(int shieldAbsorbed, int tpwr)
 	if (stacks == 0 || shieldAbsorbed <= 0 || tpwr <= 0)
 		return 0;
 	return shieldAbsorbed * tpwr * ENDLESS_PERK_KINETIC_PCT * stacks / 100;
+}
+
+/* Ticks a hit takes off a special recharge clock. A share of the remaining time rather than a flat
+ * count, because specials range from a 15-tick link recharge to a 250-tick one; the floor of a tick
+ * per stack still clears an almost-expired clock. */
+int endlessPerkKineticCooldownCut(int remaining)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_KINETIC) : 0;
+	if (stacks == 0 || remaining <= 0)
+		return 0;
+	int cut = remaining * ENDLESS_PERK_KINETIC_CD_PCT * stacks / 100;
+	if (cut < stacks)
+		cut = stacks;
+	return (cut > remaining) ? remaining : cut;
+}
+
+/* Whole sidekick rounds a hit gives back. A hit is worth a fraction of a round per stack and the
+ * remainder carries, so one stack still pays out over several hits. Stateful: call once per hit
+ * and honour the answer. */
+int endlessPerkKineticAmmoRounds(void)
+{
+	if (!endlessFxActive())
+	{
+		endlessPerkKineticAmmoAccum[0] = endlessPerkKineticAmmoAccum[1] = 0;
+		return 0;
+	}
+	return endlessAccumSteps(&endlessPerkKineticAmmoAccum[endlessFxPlayer()],
+	                         perkFx(PERK_KINETIC) * ENDLESS_PERK_KINETIC_AMMO_PCT);
+}
+
+/* Charge stages a hit walks a charge sidekick up. Whole stages, since a stage is already the unit
+ * that ramp counts in; the caller clamps at the pod's top stage. */
+int endlessPerkKineticChargeStages(void)
+{
+	return endlessFxActive() ? perkFx(PERK_KINETIC) * ENDLESS_PERK_KINETIC_STAGES : 0;
 }
 
 // endlessGameplayTick advances both ships' countermeasure cooldowns.

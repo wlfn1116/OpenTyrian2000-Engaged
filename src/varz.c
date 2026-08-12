@@ -1635,6 +1635,47 @@ static void endlessGeneratorSet(Player *this_player, int v)
 		power = (uint)v;
 }
 
+/* Wind back both clocks that gate the ship's special: shotRepeat[SHOT_SPECIAL] is the ordinary
+ * cadence, specialWait the one a flare installs on the way out. Same storage split as the
+ * generator above. */
+static void endlessKineticCoolSpecial(Player *this_player)
+{
+	JE_byte *const clocks[2] = {
+		dual_ship_mode() ? &this_player->shot_repeat[SHOT_SPECIAL] : &shotRepeat[SHOT_SPECIAL],
+		dual_ship_mode() ? &this_player->special_wait              : &specialWait,
+	};
+
+	for (uint i = 0; i < COUNTOF(clocks); ++i)
+		*clocks[i] -= (JE_byte)endlessPerkKineticCooldownCut(*clocks[i]);
+}
+
+/* Feed the ship's sidekicks: `rounds` into a magazine, `stages` up a charge ramp. A pod can have
+ * both, since the fire path adds a charge stage to an ammo pod's shot. The ammo gauge is
+ * event-drawn and needs the dirty flag; a charge stage rides the pod sprite, redrawn every tick. */
+static void endlessKineticFeedSidekicks(Player *this_player, int rounds, int stages)
+{
+	bool refilled = false;
+
+	for (uint i = 0; i < COUNTOF(this_player->sidekick); ++i)
+	{
+		const int cap = this_player->sidekick[i].ammo_max;
+		if (rounds > 0 && cap > 0 && this_player->sidekick[i].ammo < cap)
+		{
+			this_player->sidekick[i].ammo = MIN(this_player->sidekick[i].ammo + rounds, cap);
+			refilled = true;
+		}
+
+		// options[].pwr is the pod's top charge stage; 0 means it has no ramp to advance.
+		const uint stageCap = options[this_player->items.sidekick[i]].pwr;
+		if (stages > 0 && this_player->sidekick[i].charge < stageCap)
+			this_player->sidekick[i].charge =
+				MIN(this_player->sidekick[i].charge + (uint)stages, stageCap);
+	}
+
+	if (refilled && (uint)(this_player - player) == hud_sidekick_player_index())
+		hud_sidekicks_dirty = true;
+}
+
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
@@ -1773,15 +1814,26 @@ JE_byte JE_playerDamage(JE_byte temp,
 	if (!rollback_resim && gaugeFlashArmor && this_player->armor < oldArmor)
 		armorGaugeFlash[gi] = GAUGE_FLASH_START;
 
-	// Kinetic Converter perk (endless): a shield that soaks a hit feeds part of that impact back into
-	// the generator. Main player only; re-cap at the generator ceiling since the tick's own recharge/cap
-	// already ran. shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
-	if (endlessFxShip(this_player) && this_player->shield < oldShield)
+	/* Kinetic Converter perk (endless): the generator share reads the impact, so it needs a shield
+	 * that soaked something; the recharge and the sidekicks ride any hit. cmHullHit rather than an
+	 * armor delta, because cheatInfiniteArmor skips the armor deduction. */
+	if (endlessFxShip(this_player) && (this_player->shield < oldShield || cmHullHit))
 	{
-		const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
-		                                           shields[this_player->items.shield].tpwr);
-		if (gained > 0)
-			endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) + gained);
+		// Re-cap at the generator ceiling: the tick's own recharge/cap already ran.
+		// shields[].tpwr is the shield's per-point charge cost, the natural power<->shield rate.
+		if (this_player->shield < oldShield)
+		{
+			const int gained = endlessPerkKineticPower(oldShield - this_player->shield,
+			                                           shields[this_player->items.shield].tpwr);
+			if (gained > 0)
+				endlessGeneratorSet(this_player, endlessGeneratorGet(this_player) + gained);
+		}
+
+		endlessKineticCoolSpecial(this_player);
+
+		// Rounds are stateful: this is the one call per hit, so its answer has to be spent here.
+		endlessKineticFeedSidekicks(this_player, endlessPerkKineticAmmoRounds(),
+		                            endlessPerkKineticChargeStages());
 	}
 
 	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst

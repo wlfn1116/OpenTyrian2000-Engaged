@@ -245,7 +245,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Surveyor | +1 course choice | 2 |
 | Executioner | More damage to badly wounded enemies | 3 |
 | Opening Salvo | Charges a stronger opening volley | 1 |
-| Kinetic Converter | Refunds absorbed shield cost | 3 |
+| Kinetic Converter | Damage taken refunds power, recharge, and sidekicks | 3 |
 | Countermeasures | Clears nearby shots after damage | 2 |
 | Chain Reaction | Kills damage nearby enemies | 3 |
 | Financier | More interest and lower shop prices | 4 |
@@ -255,6 +255,12 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns
 green when it is ready.
+
+Kinetic Converter pays out on every hit that costs shield or hull. Each hit
+takes 8% per stack off whatever is left of the special recharge, credits 0.25
+sidekick rounds per stack, and advances a charge sidekick one charge stage per
+stack. Part-rounds carry over to later hits. Shield absorption additionally
+refunds 20% per stack of the generator power that shield charge was worth.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.

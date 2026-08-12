@@ -733,6 +733,9 @@ int  endlessOpeningSalvoGaugePercent(void); // Opening Salvo: share of the gauge
 int  endlessOpeningSalvoScale(int value);  // Opening Salvo: scale a non-damage special magnitude x2.5 while the window runs (varz.c repulsor/heal/invuln)
 int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
 int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
+int  endlessPerkKineticCooldownCut(int remaining);  // Kinetic Converter: ticks a hit takes off a special-recharge clock holding `remaining` (varz.c JE_playerDamage)
+int  endlessPerkKineticAmmoRounds(void);            // Kinetic Converter: whole sidekick rounds a hit gives back; stateful, call once per hit (varz.c JE_playerDamage)
+int  endlessPerkKineticChargeStages(void);          // Kinetic Converter: charge stages a hit walks a charge sidekick up (varz.c JE_playerDamage)
 void endlessCountermeasureTick(void);        // Countermeasure Suite: advance the burst cooldown one tick (endlessGameplayTick)
 int  endlessPerkCountermeasureRadius(void);  // Countermeasure Suite: projectile-clear radius if ready now (0 = not owned / on cooldown); varz.c JE_playerDamage
 void endlessCountermeasureFired(void);       // Countermeasure Suite: re-arm the cooldown after a burst (varz.c)

@@ -675,6 +675,7 @@ void endlessResetRun(void)
 		endlessSalvoWindow[p] = 0;
 	}
 	memset(endlessCmCooldown, 0, sizeof(endlessCmCooldown));
+	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
 	endlessSortieHave = false;
@@ -908,6 +909,7 @@ void endless_register_rollback(void)
 	rollback_register("endless.cashMark", &endlessCashMark, sizeof(endlessCashMark));
 	rollback_register("endless.perkFireAccum", endlessPerkFireAccum, sizeof(endlessPerkFireAccum));
 	rollback_register("endless.perkCdAccum", endlessPerkSpecialCdAccum, sizeof(endlessPerkSpecialCdAccum));
+	rollback_register("endless.kineticAccum", endlessPerkKineticAmmoAccum, sizeof(endlessPerkKineticAmmoAccum));
 	rollback_register("endless.killDedup", &endlessLastCountedLink, sizeof(endlessLastCountedLink));
 }
 

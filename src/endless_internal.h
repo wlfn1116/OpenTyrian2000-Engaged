@@ -37,6 +37,9 @@ extern int endlessRetaliationTimer;
 // which tick they cross a whole step decides which tick a gun fires.
 extern int endlessPerkFireAccum[2];
 extern int endlessPerkSpecialCdAccum[2];
+// Kinetic Converter's fractional sidekick-round carry, per ship. Rollback state for the same
+// reason: which hit crosses a whole round decides when a pod can fire again.
+extern int endlessPerkKineticAmmoAccum[2];
 
 // Rewards banked on clear and spent at a later outpost.
 extern bool endlessStarChartsOwed;
@@ -147,6 +150,9 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SALVO_DMG_PCT 150 // percentage points; also scales special effects
 #define ENDLESS_PERK_SALVO_WINDOW  35  // ticks a consumed salvo lasts (~1s at the 35Hz sim tick), trigger held or not
 #define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
+#define ENDLESS_PERK_KINETIC_CD_PCT 8  // ...and % of the remaining special recharge that a hit takes off, per stack
+#define ENDLESS_PERK_KINETIC_AMMO_PCT 25 // ...and hundredths of a sidekick round a hit gives back, per stack (carried in an accumulator)
+#define ENDLESS_PERK_KINETIC_STAGES 1  // ...and charge stages a hit walks a charge sidekick up, per stack
 #define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)

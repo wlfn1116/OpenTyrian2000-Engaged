@@ -1942,6 +1942,82 @@ static void qa_test_kill_fire_wiring(void)
 	endlessMode = savedEndless;
 }
 
+/* Kinetic Converter's recharge, magazine and charge-ramp payouts each scale with the stacks, stay
+ * bounded, and stay personal: in co-op only the ship that took the hit may be paid for it. */
+static void qa_test_kinetic_converter(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCoop = coopEndlessMode;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	coopEndlessMode = true;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	const int maxStack = endlessPerkMaxStack(PERK_KINETIC);
+
+	qa_check(endlessPerkKineticCooldownCut(200) == 0 && endlessPerkKineticAmmoRounds() == 0
+	         && endlessPerkKineticChargeStages() == 0,
+	         "a ship without Kinetic Converter is paid nothing for taking a hit");
+
+	// The cut must be monotonic in the stacks, bounded by the time left, and at least a tick.
+	bool cutGrows = true, cutBounded = true;
+	int prevCut = 0;
+	for (int s = 1; s <= maxStack; ++s)
+	{
+		endlessPerkTakenBy[0][PERK_KINETIC] = (JE_byte)s;
+		endlessPerkRederive();
+		const int cut = endlessPerkKineticCooldownCut(200);
+		cutGrows &= cut > prevCut;
+		prevCut = cut;
+		cutBounded &= cut <= 200 && endlessPerkKineticCooldownCut(1) == 1
+		           && endlessPerkKineticCooldownCut(0) == 0;
+	}
+	qa_check(cutGrows, "each Kinetic Converter stack takes more off the special recharge");
+	qa_check(cutBounded, "...but never more of the clock than is left on it");
+
+	// Four hits is one whole round per stack at the 25%-per-stack rate, carry included.
+	for (int s = 1; s <= maxStack; ++s)
+	{
+		endlessPerkTakenBy[0][PERK_KINETIC] = (JE_byte)s;
+		endlessPerkRederive();
+		memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
+		int rounds = 0;
+		for (int hit = 0; hit < 4; ++hit)
+			rounds += endlessPerkKineticAmmoRounds();
+		qa_check(rounds == s, "four absorbed hits give back one sidekick round per Kinetic stack");
+		qa_check(endlessPerkKineticChargeStages() == s,
+		         "...and every hit walks a charge sidekick one stage per stack");
+	}
+
+	// Only the first ship picks it, so the partner's hits pay nothing and each carry stays its own.
+	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
+	endlessPerkTakenBy[0][PERK_KINETIC] = (JE_byte)maxStack;
+	endlessPerkTakenBy[1][PERK_KINETIC] = 0;
+	endlessPerkRederive();
+	int paid[2] = { 0, 0 };
+	for (int hit = 0; hit < 4; ++hit)
+		for (uint p = 0; p < 2; ++p)
+		{
+			endlessSetFxPlayer(p);
+			paid[p] += endlessPerkKineticAmmoRounds();
+		}
+	endlessSetFxPlayer(1);
+	qa_check(paid[0] == maxStack && paid[1] == 0 && endlessPerkKineticCooldownCut(200) == 0
+	         && endlessPerkKineticChargeStages() == 0,
+	         "only the ship that bought Kinetic Converter is paid for a hit");
+
+	endlessSetFxPlayer(0);
+	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+}
+
 /* Whose combo a kill feeds, and what Individual credit does to a pickup. */
 static void qa_test_coop_combo_and_pickups(void)
 {
@@ -2927,6 +3003,7 @@ int qa_run_unit_suite(void)
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
 	qa_test_kill_fire_wiring();
+	qa_test_kinetic_converter();
 	qa_test_coop_combo_and_pickups();
 	qa_test_peer_left_level();
 	qa_test_online_suite();
