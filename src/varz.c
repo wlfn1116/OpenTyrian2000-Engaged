@@ -2131,13 +2131,14 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		superpixels[slot].delta_x = tempx;
 		superpixels[slot].delta_y = tempy + 1;
 		superpixels[slot].color = color;
+		superpixels[slot].bright = 0;
 		superpixels[slot].z = 15;
 	}
 }
 
 // JE_doSP driven by `seed` instead of the simulation RNG. Superpixels are not rollback state, so a
 // presentation-only effect can spawn them this way without touching the deterministic stream.
-void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed)
+void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, JE_byte bright, Uint32 seed)
 {
 	for (int sp = 0; sp < num; sp++)
 	{
@@ -2155,6 +2156,7 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		superpixels[slot].delta_x = tempx;
 		superpixels[slot].delta_y = tempy + 1;
 		superpixels[slot].color = color;
+		superpixels[slot].bright = bright;
 		superpixels[slot].z = 15;
 	}
 }
@@ -2173,24 +2175,29 @@ void JE_drawSP(void)
 			        || (superpixels[i].x >= (unsigned)superpixelClipX0 && superpixels[i].x < (unsigned)superpixelClipX1
 			            && superpixels[i].y >= (unsigned)superpixelClipY0 && superpixels[i].y < (unsigned)superpixelClipY1)))
 			{
+				const Uint8 z = superpixels[i].z;
+				const Uint8 color = superpixels[i].color;
+				const Uint8 bright = superpixels[i].bright;
+
 				// Record for the render list so the spark interpolates smoothly at the
 				// display rate (constant velocity -> the per-tick delta is self-contained).
 				if (render_list_recording)
-					rl_rec_superpixel(superpixels[i].x, superpixels[i].y, superpixels[i].delta_x, superpixels[i].delta_y, superpixels[i].z, superpixels[i].color);
+					rl_rec_superpixel(superpixels[i].x, superpixels[i].y, superpixels[i].delta_x,
+					                  superpixels[i].delta_y, z, color, bright);
 
 				Uint8 *s = (Uint8 *)VGAScreen->pixels; /* screen pointer, 8-bit specific */
 				s += superpixels[i].y * VGAScreen->pitch;
 				s += superpixels[i].x;
 
-				*s = (((*s & 0x0f) + superpixels[i].z) >> 1) + superpixels[i].color;
+				*s = rl_superpixel_value(*s, z, color, bright);
 				if (superpixels[i].x > 0)
-					*(s - 1) = (((*(s - 1) & 0x0f) + (superpixels[i].z >> 1)) >> 1) + superpixels[i].color;
+					*(s - 1) = rl_superpixel_value(*(s - 1), z >> 1, color, bright >> 1);
 				if (superpixels[i].x < VGAScreen->w - 1u)
-					*(s + 1) = (((*(s + 1) & 0x0f) + (superpixels[i].z >> 1)) >> 1) + superpixels[i].color;
+					*(s + 1) = rl_superpixel_value(*(s + 1), z >> 1, color, bright >> 1);
 				if (superpixels[i].y > 0)
-					*(s - VGAScreen->pitch) = (((*(s - VGAScreen->pitch) & 0x0f) + (superpixels[i].z >> 1)) >> 1) + superpixels[i].color;
+					*(s - VGAScreen->pitch) = rl_superpixel_value(*(s - VGAScreen->pitch), z >> 1, color, bright >> 1);
 				if (superpixels[i].y < VGAScreen->h - 1u)
-					*(s + VGAScreen->pitch) = (((*(s + VGAScreen->pitch) & 0x0f) + (superpixels[i].z >> 1)) >> 1) + superpixels[i].color;
+					*(s + VGAScreen->pitch) = rl_superpixel_value(*(s + VGAScreen->pitch), z >> 1, color, bright >> 1);
 			}
 
 			superpixels[i].z--;

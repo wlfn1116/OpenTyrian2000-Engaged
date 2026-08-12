@@ -132,9 +132,10 @@ void blit_sprite2_blend(SDL_Surface *,  int x, int y, Sprite2_array, unsigned in
 void blit_sprite2_blend_clip(SDL_Surface *,  int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_darken(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_darken_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
-// Silhouette in palette 0, for outline passes. Filter 0 gives the greyscale bank, not black.
-void blit_sprite2_black(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
-void blit_sprite2_black_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
+// Silhouette in one flat palette entry, for outline passes. blit_sprite2_filter can't do this:
+// it keeps the sprite's own shade, so a rim drawn with it comes out shaded.
+void blit_sprite2_solid(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 color);
+void blit_sprite2_solid_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 color);
 void blit_sprite2_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 // A sub-row window of the sprite only, brightened `bright` steps toward its own palette bank top,
@@ -152,7 +153,7 @@ typedef enum
 	BLIT2_BLEND,      // blit_sprite2_blend
 	BLIT2_DARKEN,     // blit_sprite2_darken
 	BLIT2_FILTER,     // blit_sprite2_filter (uses the filter arg)
-	BLIT2_BLACK,      // blit_sprite2_black
+	BLIT2_SOLID,      // blit_sprite2_solid (the filter arg is the flat colour)
 } Blit2Op;
 
 typedef enum

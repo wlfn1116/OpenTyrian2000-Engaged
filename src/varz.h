@@ -222,10 +222,13 @@ typedef struct {
 	bool big;
 } rep_explosion_type;
 
+// `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade at
+// spawn and fades to the bank floor, which the presentation-only showers lose against a lit
+// playfield; 0 keeps the classic shading.
 typedef struct {
 	unsigned int x, y, z;
 	signed int delta_x, delta_y;
-	Uint8 color;
+	Uint8 color, bright;
 } superpixel_type;
 
 extern JE_integer tempDat, tempDat2, tempDat3;
@@ -492,7 +495,8 @@ JE_word JE_portConfigs(const Player *this_player);
 // shower is thinned by the whole screen's spark traffic, an uncapped one is not.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
-void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed);
+// `bright` is the shade lift described at superpixel_type; 0 gives the classic JE_doSP shading.
+void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, JE_byte bright, Uint32 seed);
 void JE_drawSP(void);
 void JE_resetSP(void);
 

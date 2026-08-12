@@ -15,7 +15,7 @@ typedef enum
 	RC_SPRITE2_CLIP,
 	RC_SPRITE2_BLEND,
 	RC_SPRITE2_DARKEN,
-	RC_SPRITE2_BLACK,   // silhouette in palette 0 (outline pass)
+	RC_SPRITE2_SOLID,   // silhouette in one flat colour (outline pass); colour in `filter`
 	RC_SPRITE2_FILTER,
 	RC_SPRITE2_FILTER_CLIP,
 	RC_SPRITE,
@@ -81,8 +81,9 @@ typedef struct
 
 	// superpixel (explosion spark): per-tick motion, brightness, colour. Velocity is
 	// constant, so the motion is self-contained (no cross-frame matching, like a star).
+	// sp_bright = the shade lift described at rl_superpixel_value.
 	int sp_dx, sp_dy;
-	Uint8 sp_z, sp_color;
+	Uint8 sp_z, sp_color, sp_bright;
 
 	// enemy health bar (RC_HP_BAR): length along the fill axis, filled-pixel count,
 	// fill colour. Top-left in x,y, interpolating by (dx,dy) like the enemy.
@@ -256,15 +257,28 @@ size_t rl_replay_and_compare(SDL_Surface *scratch, SDL_Surface *reference);
 // Recorder helpers, called from the leaf blit functions when recording.
 void rl_rec_sprite2(int x, int y, Sprite2_array sheet, unsigned int index, RenderCmdKind kind);
 void rl_rec_sprite2_filter(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 filter, bool clip);
+void rl_rec_sprite2_solid(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 color);
 void rl_rec_sprite(int x, int y, unsigned int table, unsigned int index, RenderCmdKind kind, Uint8 hue, Sint8 value, bool black);
 void rl_rec_bg_row(int x, int y, Uint8 **map, bool blend, int mirror_w, int col0);
 void rl_rec_star(int x, float y, float dy, Uint8 color);
-void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color);
+void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color, Uint8 bright);
 void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity);
 // Draw an enemy health bar (shared by the authoritative tick draw and the
 // interpolated replay so they produce identical pixels).
 void rl_draw_hp_bar(SDL_Surface *dst, int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity);
 void rl_rec_filter_screen(int col, int brightness);
 void rl_rec_smoothie_filter(RenderCmdKind kind);  // RC_ICED_BLUR / RC_LAVA_FILTER / RC_WATER_FILTER / RC_BLUR
+
+// Plotted value of one superpixel tap over background `bg`: the z-driven shade, lifted `bright`
+// steps and clamped inside `color`'s own bank so a bright spark can't bleed into the next bank.
+// Halo taps pass both z and bright halved. Shared by the tick draw (JE_drawSP) and the replay, so
+// an exact (alpha=0) replay reproduces the tick pixel-for-pixel.
+static inline Uint8 rl_superpixel_value(Uint8 bg, Uint8 z, Uint8 color, Uint8 bright)
+{
+	unsigned int shade = (((bg & 0x0f) + z) >> 1) + bright;
+	if (shade > 0x0f)
+		shade = 0x0f;
+	return (Uint8)shade + color;
+}
 
 #endif /* RENDER_LIST_H */

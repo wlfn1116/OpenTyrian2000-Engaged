@@ -289,8 +289,8 @@ that gate on `endlessMode`; campaign debug effects do not change campaign firing
 `endlessMode` controls run structure, saving, prices, and pickup substitution.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
-Elite and champion bodies shed a faint aura in the tier's own filter bank, under
-the presentation-only spark rules given in "Endless special pickups". It is
+Elite and champion bodies shed an aura in the tier's own filter bank, under the
+presentation-only spark rules given in "Endless special pickups". It is
 staggered by enemy slot, so a linked multi-tile body emits once per part and its
 density tracks the area it covers. Iced and wrecked bodies do not emit.
 
@@ -308,11 +308,13 @@ registry hash is untouched and a peer running without the icon still agrees.
 Rewriting `egr[]` or `sprite2s` at spawn instead would move that hash and
 invalidate replay fixtures for no simulation reason.
 
-The glyph carries a black cardinal outline drawn with `blit_sprite2_black`
-(`blit_sprite2_filter` cannot: it keeps the sprite's shade in the low nibble, so
-filter 0 gives the greyscale bank). The glyph spans both of the icon's cells, so
-all four outline passes are drawn for both cells before either glyph cell; going
-cell by cell lets the right cell's leftward outline notch the left cell's art.
+The glyph carries a cardinal outline drawn with `blit_sprite2_solid`, in shade
+`ENDLESS_SPECIAL_OUTLINE_SHADE` of whichever bank the icon is currently cycling
+through. `blit_sprite2_filter` cannot draw it: it keeps the sprite's own shade in
+the low nibble, so a rim drawn with it comes out shaded. The glyph spans both of
+the icon's cells, so all four outline passes are drawn for both cells before
+either glyph cell; going cell by cell lets the right cell's leftward outline
+notch the left cell's art.
 
 The pickup also throws a shower in the icon's current bank. Superpixels are
 outside the rollback registry, so it uses `JE_doSPSeeded`, which runs its own
@@ -320,6 +322,13 @@ sequence instead of the simulation RNG and therefore costs the peers no shared
 draw. Emission is skipped on silent resim passes and staggered by enemy slot.
 `JE_drawSP` adds a spark's `color` to the plotted shade, so that argument carries
 the palette bank alone; a non-zero low nibble spills into the next bank.
+
+Brightness comes from `z`, which halves into a mid shade at spawn and fades to
+the bank floor. Both endless showers therefore pass `ENDLESS_SPARK_BRIGHT` as the
+`bright` lift, which `rl_superpixel_value` adds to the shade and clamps at 15 so
+the lift cannot spill into the next bank. Halo taps take half of it, keeping the
+falloff the un-lifted spark has. `bright` is zero for every `JE_doSP` caller, so
+weapon trails and explosion sparks plot exactly the values they always did.
 
 Only the icon's top half is drawn, at `y_offset` 0 so the glyph lands on the
 centre the full 2x2 would have had. The bottom half is a ship body. The pickup

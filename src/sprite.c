@@ -1055,14 +1055,14 @@ void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array 
 	}
 }
 
-// Every opaque pixel written as palette 0, for outline passes. blit_sprite2_filter keeps the
-// sprite's shade in the low nibble, so filter 0 gives the greyscale bank instead of black.
+// Every opaque pixel written as one flat palette entry, for outline passes. blit_sprite2_filter
+// keeps the sprite's own shade in the low nibble, so it draws a shaded copy rather than a rim.
 // does not clip on left or right edges of surface
-void blit_sprite2_black(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+void blit_sprite2_solid(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 color)
 {
 	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
 	if (render_list_recording)
-		rl_rec_sprite2(x, y, sprite2s, index, RC_SPRITE2_BLACK);
+		rl_rec_sprite2_solid(x, y, sprite2s, index, color);
 	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
 	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
 	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
@@ -1090,7 +1090,7 @@ void blit_sprite2_black(SDL_Surface *surface, int x, int y, Sprite2_array sprite
 				if (pixels >= pixels_ul)
 					return;
 				if (pixels >= pixels_ll)
-					*pixels = 0x00;
+					*pixels = color;
 
 				++pixels;
 			}
@@ -1098,8 +1098,8 @@ void blit_sprite2_black(SDL_Surface *surface, int x, int y, Sprite2_array sprite
 	}
 }
 
-// Clipping counterpart of blit_sprite2_black, for rl_draw_cmd replay (see blit_sprite2_darken_clip).
-void blit_sprite2_black_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+// Clipping counterpart of blit_sprite2_solid, for rl_draw_cmd replay (see blit_sprite2_darken_clip).
+void blit_sprite2_solid_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 color)
 {
 	assert(surface->format->BitsPerPixel == 8);
 
@@ -1131,7 +1131,7 @@ void blit_sprite2_black_clip(SDL_Surface *surface, int x, int y, Sprite2_array s
 				++data;
 
 				if (x >= 0 && x < surface->pitch)
-					pixel_row[x] = 0x00;
+					pixel_row[x] = color;
 				x += 1;
 			} while (--fill_count);
 		}
@@ -1306,7 +1306,7 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 			case BLIT2_BLEND:  *p = (((d & 0x0f) + (*p & 0x0f)) / 2) | (d & 0xf0); break;
 			case BLIT2_DARKEN: *p = ((*p & 0x0f) / 2) + (*p & 0xf0); break;
 			case BLIT2_FILTER: *p = filter | (d & 0x0f); break;
-			case BLIT2_BLACK:  *p = 0x00; break;
+			case BLIT2_SOLID:  *p = filter; break;
 			}
 		}
 	}

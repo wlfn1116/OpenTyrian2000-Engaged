@@ -209,6 +209,19 @@ void rl_rec_sprite2_filter(int x, int y, Sprite2_array sheet, unsigned int index
 	c->filter = filter;
 }
 
+void rl_rec_sprite2_solid(int x, int y, Sprite2_array sheet, unsigned int index, Uint8 color)
+{
+	RenderCmd *c = rl_push();
+	if (c == NULL)
+		return;
+	c->kind = RC_SPRITE2_SOLID;
+	c->x = x;
+	c->y = y;
+	c->sheet = sheet;
+	c->index = index;
+	c->filter = color;
+}
+
 void rl_rec_sprite(int x, int y, unsigned int table, unsigned int index, RenderCmdKind kind, Uint8 hue, Sint8 value, bool black)
 {
 	RenderCmd *c = rl_push();
@@ -249,7 +262,7 @@ void rl_rec_star(int x, float y, float dy, Uint8 color)
 	c->star_color = color;
 }
 
-void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color)
+void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color, Uint8 bright)
 {
 	RenderCmd *c = rl_push();
 	if (c == NULL)
@@ -261,6 +274,7 @@ void rl_rec_superpixel(int x, int y, int dx, int dy, Uint8 z, Uint8 color)
 	c->sp_dy = dy;
 	c->sp_z = z;
 	c->sp_color = color;
+	c->sp_bright = bright;
 }
 
 void rl_rec_hp_bar(int x, int y, int along, int fill, Uint8 col, bool vertical, Uint8 opacity)
@@ -573,22 +587,22 @@ void rl_finalize(void)
 
 // Draw one explosion spark (superpixel): a 5-pixel additive blend, matching
 // JE_drawSP (varz.c) so an exact (alpha=0) replay reproduces it pixel-for-pixel.
-static void rl_draw_superpixel(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color)
+static void rl_draw_superpixel(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color, Uint8 bright)
 {
 	if (x < 0 || y < 0 || x >= dst->w || y >= dst->h)
 		return;
 	const int pitch = dst->pitch;
 	Uint8 *const s = (Uint8 *)dst->pixels + y * pitch + x;
-	*s = (((*s & 0x0f) + z) >> 1) + color;
-	if (x > 0)            *(s - 1)     = (((*(s - 1)     & 0x0f) + (z >> 1)) >> 1) + color;
-	if (x < dst->w - 1)   *(s + 1)     = (((*(s + 1)     & 0x0f) + (z >> 1)) >> 1) + color;
-	if (y > 0)            *(s - pitch) = (((*(s - pitch) & 0x0f) + (z >> 1)) >> 1) + color;
-	if (y < dst->h - 1)   *(s + pitch) = (((*(s + pitch) & 0x0f) + (z >> 1)) >> 1) + color;
+	*s = rl_superpixel_value(*s, z, color, bright);
+	if (x > 0)            *(s - 1)     = rl_superpixel_value(*(s - 1),     z >> 1, color, bright >> 1);
+	if (x < dst->w - 1)   *(s + 1)     = rl_superpixel_value(*(s + 1),     z >> 1, color, bright >> 1);
+	if (y > 0)            *(s - pitch) = rl_superpixel_value(*(s - pitch), z >> 1, color, bright >> 1);
+	if (y < dst->h - 1)   *(s + pitch) = rl_superpixel_value(*(s + pitch), z >> 1, color, bright >> 1);
 }
 
 // One scale x scale block of superpixel light (additive-ish blend matching
 // rl_draw_superpixel's per-pixel math), clipped.
-static void rl_superpixel_block(SDL_Surface *dst, int x, int y, int scale, Uint8 z, Uint8 color)
+static void rl_superpixel_block(SDL_Surface *dst, int x, int y, int scale, Uint8 z, Uint8 color, Uint8 bright)
 {
 	int x0 = x < 0 ? 0 : x;
 	int y0 = y < 0 ? 0 : y;
@@ -602,21 +616,21 @@ static void rl_superpixel_block(SDL_Surface *dst, int x, int y, int scale, Uint8
 	{
 		Uint8 *p = (Uint8 *)dst->pixels + yy * dst->pitch + x0;
 		for (int xx = x0; xx < x1; ++xx, ++p)
-			*p = (((*p & 0x0f) + z) >> 1) + color;
+			*p = rl_superpixel_value(*p, z, color, bright);
 	}
 }
 
 // Supersampled explosion spark: the same 5-tap pattern as rl_draw_superpixel with
 // each tap a scale x scale block (halo taps one whole 1x pixel = `scale` away).
-static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color, int scale)
+static void rl_draw_superpixel_scaled(SDL_Surface *dst, int x, int y, Uint8 z, Uint8 color, Uint8 bright, int scale)
 {
 	if (x < -(scale - 1) || y < -(scale - 1) || x >= dst->w || y >= dst->h)
 		return;
-	rl_superpixel_block(dst, x, y, scale, z, color);
-	rl_superpixel_block(dst, x - scale, y, scale, z >> 1, color);
-	rl_superpixel_block(dst, x + scale, y, scale, z >> 1, color);
-	rl_superpixel_block(dst, x, y - scale, scale, z >> 1, color);
-	rl_superpixel_block(dst, x, y + scale, scale, z >> 1, color);
+	rl_superpixel_block(dst, x, y, scale, z, color, bright);
+	rl_superpixel_block(dst, x - scale, y, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(dst, x + scale, y, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(dst, x, y - scale, scale, z >> 1, color, bright >> 1);
+	rl_superpixel_block(dst, x, y + scale, scale, z >> 1, color, bright >> 1);
 }
 
 // Plot one clipped bar pixel. Alpha blending retains the bar's palette bank and
@@ -748,7 +762,7 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	case RC_SPRITE2_CLIP:        blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_blend_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_DARKEN:      blit_sprite2_darken_clip(dst, x, y, c->sheet, c->index); break;
-	case RC_SPRITE2_BLACK:       blit_sprite2_black_clip(dst, x, y, c->sheet, c->index); break;
+	case RC_SPRITE2_SOLID:       blit_sprite2_solid_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_filter(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE:              blit_sprite(dst, x, y, c->table, c->index); break;
@@ -777,7 +791,7 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 	case RC_SPRITE2_CLIP:        blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_COPY, 0); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLEND, 0); break;
 	case RC_SPRITE2_DARKEN:      blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_DARKEN, 0); break;
-	case RC_SPRITE2_BLACK:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLACK, 0); break;
+	case RC_SPRITE2_SOLID:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_SOLID, c->filter); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
 	case RC_SPRITE:              blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_COPY, 0, 0, false); break;
@@ -1000,9 +1014,9 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			const int sx = c->x * scale - rl_iround(c->sp_dx * inv * scale);
 			const int sy = c->y * scale - rl_iround(c->sp_dy * inv * scale);
 			if (scale == 1)
-				rl_draw_superpixel(src, sx, sy, c->sp_z, c->sp_color);
+				rl_draw_superpixel(src, sx, sy, c->sp_z, c->sp_color, c->sp_bright);
 			else
-				rl_draw_superpixel_scaled(src, sx, sy, c->sp_z, c->sp_color, scale);
+				rl_draw_superpixel_scaled(src, sx, sy, c->sp_z, c->sp_color, c->sp_bright, scale);
 			continue;
 		}
 

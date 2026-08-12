@@ -67,8 +67,9 @@
 // and report any pixels that differ from the real frame. Gated off; kept for debugging.
 #define RL_SELFTEST 0
 
-// `black` draws the frame's silhouette instead of its art, for the "?" pickup's outline pass.
-inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool black);
+// `outline` draws the frame as a flat silhouette in a dark shade of the colour the art would have
+// used, for the "?" pickup's outline pass. Only that pickup passes it, and it always has a bank.
+inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline);
 static void draw_enemy_health_bars(void);
 // Defined with the rest of the Random Pickups code (next to JE_makeEnemy), used up in JE_main's
 // enemy loop where Super Arcade repaints a dropped ball into its ship's own weapon set.
@@ -1925,14 +1926,14 @@ static void endlessSpecialIconSparks(unsigned int i)
 	// stays off: the weapon trails recycle that window several times a second, which would cut a
 	// shower this small short of its 15 ticks.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, ENDLESS_SPECIAL_SPARK_COUNT, ENDLESS_SPECIAL_SPARK_REACH,
-	              endlessSpecialIconFilter(), false, rl_enemy_gen * 100u + i);
+	              endlessSpecialIconFilter(), false, ENDLESS_SPARK_BRIGHT, rl_enemy_gen * 100u + i);
 }
 
 #define ENDLESS_ELITE_SPARK_TICKS 5  // one shower per elite this often, staggered by enemy slot
 #define ENDLESS_ELITE_SPARK_COUNT 1  // champions shed twice this
 #define ENDLESS_ELITE_SPARK_REACH 2  // per-tick velocity too, plus one for a 2x2 body
 
-// Faint aura in the tier's own tint (ENDLESS_ELITE_FILTER / ENDLESS_CHAMPION_FILTER), so an elite
+// Bright aura in the tier's own tint (ENDLESS_ELITE_FILTER / ENDLESS_CHAMPION_FILTER), so an elite
 // reads as one at a glance. Presentation only: superpixels are outside the rollback registry and
 // JE_doSPSeeded runs its own sequence. Silent resim passes must not spawn.
 static void endlessEliteAuraSparks(unsigned int i)
@@ -1958,10 +1959,10 @@ static void endlessEliteAuraSparks(unsigned int i)
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, sparks,
 	              ENDLESS_ELITE_SPARK_REACH + (enemy[i].size == 1 ? 1 : 0),
 	              champion ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER, false,
-	              rl_enemy_gen * 137u + i);
+	              ENDLESS_SPARK_BRIGHT, rl_enemy_gen * 137u + i);
 }
 
-inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool black)
+inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline)
 {
 	if (enemy[i].sprite2s == NULL)
 	{
@@ -2033,8 +2034,8 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 	}
 	// The pickup's own cycling bank wins over a hit flash; it is the whole point of the icon.
 	const Uint8 filter = specialPickup ? endlessSpecialIconFilter() : enemy[i].filter;
-	if (black)
-		blit_sprite2_black(surface, x, y, *sheet, index);
+	if (outline)
+		blit_sprite2_solid(surface, x, y, *sheet, index, filter + ENDLESS_SPECIAL_OUTLINE_SHADE);
 	else if (filter != 0)
 		blit_sprite2_filter(surface, x, y, *sheet, index, filter);
 	else

@@ -171,6 +171,11 @@ enum {
 #define ENDLESS_ELITE_FILTER    0xD0
 #define ENDLESS_CHAMPION_FILTER 0x50  // bank 5 = purple (an "epic" aura; 0xB0 read as brown)
 
+// Shade lift for the endless aura and icon spark showers (see rl_superpixel_value). Over a dark
+// background it runs them from shade 13 down to 6 rather than 7 down to 0, so they stay in the
+// bright half of the bank for their whole 15 ticks.
+#define ENDLESS_SPARK_BRIGHT 6
+
 // Player-side kill-fire tint banks.
 #define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0
 #define ENDLESS_OVERDRIVE_SHIP_FILTER  0x70
@@ -552,6 +557,11 @@ bool endlessSpecialPickup(int slot);
 #define ENDLESS_SPECIAL_GLYPH_X1    (9  + ENDLESS_SPECIAL_GLYPH_GRAB)
 #define ENDLESS_SPECIAL_GLYPH_Y0    (2  - ENDLESS_SPECIAL_GLYPH_GRAB)
 #define ENDLESS_SPECIAL_GLYPH_Y1    (12 + ENDLESS_SPECIAL_GLYPH_GRAB)
+
+// Rim shade for the glyph's outline pass, within whichever bank it is cycling through: dark enough
+// to read as an outline, tinted enough to belong to the icon. Below the glyph's own darkest pixel
+// (shade 3), and above the bank floor, which is flat black in some palettes.
+#define ENDLESS_SPECIAL_OUTLINE_SHADE 2
 
 // Replace an embedded data cube with a gem at the enemy slot.
 void endlessDropCubeGem(int slot);
