@@ -488,8 +488,8 @@ JE_word JE_portConfigs(const Player *this_player);
 
 /*SuperPixels*/
 // classic_cap keeps this call inside the classic 101-spark window even when extraSparks is on
-// (used by the superspark weapon trails); pass false to honor the extraSparks setting. The two
-// windows recycle separately, so a capped source cannot shorten an uncapped shower.
+// (used by the superspark weapon trails); pass false to honor the extraSparks setting. A capped
+// shower is thinned by the whole screen's spark traffic, an uncapped one is not.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed);

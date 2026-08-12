@@ -394,8 +394,9 @@ static const char *const epDiffKeys[EDW_COUNT] = {
 };
 
 /* Map a trail-tagged shot's sprite back to its weapon's cap setting, for the JE_doSP calls
-   in shots.c (a flying shot only knows its graphic). Unknown sprites (e.g. sparky custom
-   weapon bullets) honor extraSparks uncapped. */
+   in shots.c (a flying shot only knows its graphic). Pass the shot's base graphic (shotGr),
+   never the drawn frame: shotGr + shotAni walks past the entry on every animated frame.
+   Unknown sprites (e.g. sparky custom weapon bullets) honor extraSparks uncapped. */
 bool superSparkCapForSprite(JE_word sprite)
 {
 	switch (sprite)

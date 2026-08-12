@@ -1413,6 +1413,129 @@ static void qa_test_shot_hitboxes(void)
 	centeredShotHitboxes = savedCentered;
 }
 
+/* Which slots a shower lands in, so the per-weapon classic cap can be checked without a screen.
+ * Returns the number of live sparks and the lowest and highest slot used. */
+static int qa_spark_span(int *out_lo, int *out_hi)
+{
+	int live = 0;
+	*out_lo = MAX_SUPERPIXELS;
+	*out_hi = -1;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		++live;
+		if ((int)i < *out_lo)
+			*out_lo = (int)i;
+		if ((int)i > *out_hi)
+			*out_hi = (int)i;
+	}
+	return live;
+}
+
+/* The per-weapon superspark cap, from the setting through to the slots a trail occupies. */
+static void qa_test_superspark_caps(void)
+{
+	const bool savedExtra = extraSparks;
+	bool savedCap[SSW_COUNT];
+	memcpy(savedCap, superSparkClassicCap, sizeof(savedCap));
+
+	for (int w = 0; w < SSW_COUNT; ++w)
+		superSparkClassicCap[w] = true;
+
+	/* Coverage: a graphic above 1000 draws a trail, and superSparkCapForSprite has to recognise
+	 * its base sprite or the trail runs uncapped whatever the setting says. */
+	int tagged = 0, uncovered = 0, firstUncoveredWpn = -1, firstUncoveredSg = -1;
+	for (int wpn = 0; wpn <= WEAP_NUM; ++wpn)
+	{
+		/* The fire loop reads sg[shotMultiPos - 1] with the cursor wrapping at max, or at 8 when
+		 * max is 0. Everything past that is padding the loader never filled. */
+		int used = weapons[wpn].max ? weapons[wpn].max : 8;
+		if (weapons[wpn].multi > used)
+			used = weapons[wpn].multi;
+		if (used > WEAPON_MULTI_MAX)
+			used = WEAPON_MULTI_MAX;
+
+		for (int m = 0; m < used; ++m)
+		{
+			/* Above 60000 is an option-shape shot, which takes the blended draw instead of the
+			 * trail branch. The trail's colour is the thousands digit shifted into a palette
+			 * bank, so only 1001..15999 is a graphic the data can have meant. */
+			const JE_word sg = weapons[wpn].sg[m];
+			if (sg <= 1000 || sg / 1000 > 15)
+				continue;
+			++tagged;
+			if (superSparkCapForSprite(sg % 1000))
+				continue;
+			++uncovered;
+			if (firstUncoveredWpn < 0)
+			{
+				firstUncoveredWpn = wpn;
+				firstUncoveredSg = sg;
+			}
+		}
+	}
+	if (uncovered)
+		fprintf(stderr, "# %d of %d spark-tagged shot graphics have no cap setting"
+		                " (first: weapon %d, graphic %d)\n",
+		        uncovered, tagged, firstUncoveredWpn, firstUncoveredSg);
+	qa_check(tagged > 0, "the loaded weapon data has spark-tagged shot graphics");
+
+	/* The four the mapping names, at the tagged values JE_applySuperSparks writes. */
+	qa_check(superSparkCapForSprite(7035 % 1000), "Mega Pulse's tagged graphic maps to its setting");
+	qa_check(superSparkCapForSprite(7030 % 1000) && superSparkCapForSprite(7029 % 1000),
+	         "both Wallop Beam bolts map to theirs");
+	qa_check(superSparkCapForSprite(9028 % 1000), "Protron System -B- maps to its setting");
+	qa_check(superSparkCapForSprite(9634 % 1000), "Ice Beam maps to its setting");
+
+	/* The lookup takes the base graphic. A shot draws shotGr + shotAni, and feeding that in
+	 * walks off the entry on every animated frame, which silently uncaps the trail. */
+	static const JE_word taggedGraphics[] = { 7035, 7030, 7029, 9028, 9634 };
+	bool animatedFramesMiss = false;
+	for (unsigned int w = 0; w < COUNTOF(taggedGraphics); ++w)
+		for (JE_word ani = 1; ani < 8; ++ani)
+			if (!superSparkCapForSprite((taggedGraphics[w] + ani) % 1000))
+				animatedFramesMiss = true;
+	qa_check(animatedFramesMiss, "the drawn frame is not a valid key, so call sites must pass shotGr");
+
+	/* Slots: a capped trail stays inside the classic window, an uncapped one leaves it. */
+	int lo, hi;
+	extraSparks = true;
+
+	JE_resetSP();
+	for (int t = 0; t < 40; ++t)
+		JE_doSP(100, 100, 5, 3, 7 << 4, superSparkCapForSprite(7035 % 1000));
+	qa_spark_span(&lo, &hi);
+	qa_check(lo >= 0 && hi < SUPERPIXELS_CLASSIC,
+	         "Mega Pulse with its cap on keeps every spark in the classic window");
+
+	superSparkClassicCap[SSW_MEGA_PULSE] = false;
+	JE_resetSP();
+	for (int t = 0; t < 40; ++t)
+		JE_doSP(100, 100, 5, 3, 7 << 4, superSparkCapForSprite(7035 % 1000));
+	qa_spark_span(&lo, &hi);
+	qa_check(lo >= SUPERPIXELS_CLASSIC, "with its cap off the same trail spawns outside that window");
+
+	/* And the cap is what bounds it: 200 sparks would otherwise all be live at once. */
+	superSparkClassicCap[SSW_MEGA_PULSE] = true;
+	JE_resetSP();
+	for (int t = 0; t < 40; ++t)
+		JE_doSP(100, 100, 5, 3, 7 << 4, superSparkCapForSprite(7035 % 1000));
+	const int cappedLive = qa_spark_span(&lo, &hi);
+	qa_check(cappedLive <= SUPERPIXELS_CLASSIC, "a capped trail never holds more than the classic count");
+
+	superSparkClassicCap[SSW_MEGA_PULSE] = false;
+	JE_resetSP();
+	for (int t = 0; t < 40; ++t)
+		JE_doSP(100, 100, 5, 3, 7 << 4, superSparkCapForSprite(7035 % 1000));
+	const int uncappedLive = qa_spark_span(&lo, &hi);
+	qa_check(uncappedLive > cappedLive, "an uncapped trail holds more than a capped one");
+
+	JE_resetSP();
+	extraSparks = savedExtra;
+	memcpy(superSparkClassicCap, savedCap, sizeof(savedCap));
+}
+
 /* Online Endless: the block each machine publishes for its own player, the way two players'
  * purchases fold into one sector, and who charts the next course. */
 static void qa_test_endless_coop(void)
@@ -2798,6 +2921,7 @@ int qa_run_unit_suite(void)
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_superspark_caps();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();

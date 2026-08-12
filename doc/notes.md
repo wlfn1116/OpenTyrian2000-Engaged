@@ -109,22 +109,28 @@ Sparks live in one array of `MAX_SUPERPIXELS` slots and die after 15 ticks. A
 shower reserves nothing: a later spawn reaching the same slot overwrites a spark
 still in flight, so the spawn rate around a source sets how long its sparks last.
 
-`next_superpixel` splits the array into two windows while Extra Sparks is on.
-The `classic_cap` sources, the superspark weapon trails, wrap inside the first
-`SUPERPIXELS_CLASSIC` slots on their own cursor. Every other source walks the
-rest of the array on `last_superpixel`. With Extra Sparks off both use the
-classic window on one cursor, the original behavior.
+`last_superpixel` advances in `next_superpixel` exactly as it did when every
+source wrote through it: wrapping at `SUPERPIXELS_CLASSIC` for a `classic_cap`
+call and at `MAX_SUPERPIXELS` otherwise. Capped sparks are written at that
+cursor, so the superspark weapon trails keep their original slots. With Extra
+Sparks off every call takes this path and nothing else applies.
 
-Keep the windows separate. On a shared cursor each capped spawn pulls the cursor
-back under `SUPERPIXELS_CLASSIC`, and a firing trail then walks that window fast
-enough to recycle any small shower left in it within a few ticks. A large
-explosion escapes because its count carries the cursor past the window in one
-call. A shower of one to three sparks, such as an elite aura or a pickup glyph,
-does not.
+The per-weapon cap setting is worth what the rest of the screen takes from it. A
+capped trail looks classic-short because uncapped spawns keep landing in the
+classic window and overwriting it, so the trail thins as combat gets busier.
+Anything that stops uncapped spawns from reaching that window, such as giving the
+capped sources a window of their own, leaves the setting doing almost nothing: a
+single trail needs 20 ticks to walk 101 slots and its sparks live 15.
 
-Only the spawn wrap honors a window. `JE_drawSP` sweeps the whole array, so
-sparks already in flight animate out cleanly when a setting changes. The cursors
-are private to `varz.c`; clear the field through `JE_resetSP`.
+So under Extra Sparks an uncapped spark still costs the classic window the slot
+the cursor landed on, retiring whatever was there, but the spark itself is
+written at `last_uncapped_superpixel` in the rest of the array. The trail thins
+at the original rate while a shower of one to three sparks, such as an elite aura
+or a pickup glyph, keeps its full 15 ticks.
+
+`JE_drawSP` sweeps the whole array, so sparks already in flight animate out
+cleanly when a setting changes. Both cursors are private to `varz.c`; clear the
+field through `JE_resetSP`.
 
 ### Background layers
 

@@ -106,7 +106,8 @@ void simulate_player_shots(void)
 						// > 1000 leaves a superspark trail (colour bank = the thousands digit; see
 						// JE_doSP). Without this the weapon-sim previews (shop + custom weapon
 						// creator) silently dropped the superspark / sparky custom-bullet trail.
-						JE_doSP(tempShotX+1 + 6, tempShotY + 6, 5, 3, (anim_frame / 1000) << 4, superSparkCapForSprite(anim_frame % 1000));
+						JE_doSP(tempShotX+1 + 6, tempShotY + 6, 5, 3, (anim_frame / 1000) << 4,
+						        superSparkCapForSprite(shot->shotGr % 1000));
 						anim_frame = anim_frame % 1000;
 					}
 					if (anim_frame > 500)
@@ -442,7 +443,7 @@ bool player_shot_move_and_draw(
 				const bool boost = shot->salvoBoost != 0;
 				JE_doSP(*out_shotx+1 + 6, *out_shoty + 6, boost ? 16 : 5, boost ? 7 : 3,
 				        (sprite_frame / 1000) << 4,
-				        boost ? false : superSparkCapForSprite(sprite_frame % 1000));
+				        boost ? false : superSparkCapForSprite(shot->shotGr % 1000));
 				sprite_frame = sprite_frame % 1000;
 			}
 			// salvoBoost 1 = first drawn tick (always the launch flash), stepping to 2 for the

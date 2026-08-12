@@ -384,8 +384,8 @@ rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
 
 /*SuperPixels*/
 superpixel_type superpixels[MAX_SUPERPIXELS]; /* [0..MaxSP] */
-static unsigned int last_superpixel;          // spawn cursors, see next_superpixel
-static unsigned int last_classic_superpixel;
+static unsigned int last_superpixel;           // shared cursor, exactly as when one window existed
+static unsigned int last_uncapped_superpixel;  // write cursor for the high window
 
 /*Temporary Numbers*/
 JE_byte temp, temp2, temp3;
@@ -2032,29 +2032,33 @@ void JE_clearSPClip(void)
 	superpixelClipActive = false;
 }
 
-// Spawn slot for the next spark. The two windows keep separate cursors so a capped weapon trail
-// cannot recycle the small uncapped showers. See doc/notes.md, "Superspark ring buffer".
+// Spawn slot for the next spark. The shared cursor advances exactly as it did when every source
+// wrote to it, so a capped weapon trail is still thinned by the whole screen's spark traffic. Under
+// Extra Sparks an uncapped spark retires the classic slot it would have taken and is written to the
+// high window instead, which keeps that thinning without shortening the small uncapped showers.
+// See doc/notes.md, "Superspark ring buffer".
 static unsigned int next_superpixel(bool classic_cap)
 {
-	if (extraSparks && classic_cap)
-	{
-		if (++last_classic_superpixel >= SUPERPIXELS_CLASSIC)
-			last_classic_superpixel = 0;
-		return last_classic_superpixel;
-	}
+	const unsigned int cap = (extraSparks && !classic_cap) ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
 
-	const unsigned int first = extraSparks ? SUPERPIXELS_CLASSIC : 0;
-	const unsigned int cap = extraSparks ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
+	if (++last_superpixel >= cap)
+		last_superpixel = 0;
 
-	if (++last_superpixel >= cap || last_superpixel < first)
-		last_superpixel = first;
-	return last_superpixel;
+	if (classic_cap || !extraSparks)
+		return last_superpixel;
+
+	if (last_superpixel < SUPERPIXELS_CLASSIC)
+		superpixels[last_superpixel].z = 0;
+
+	if (++last_uncapped_superpixel >= MAX_SUPERPIXELS || last_uncapped_superpixel < SUPERPIXELS_CLASSIC)
+		last_uncapped_superpixel = SUPERPIXELS_CLASSIC;
+	return last_uncapped_superpixel;
 }
 
 void JE_resetSP(void)
 {
 	last_superpixel = 0;
-	last_classic_superpixel = 0;
+	last_uncapped_superpixel = SUPERPIXELS_CLASSIC;
 	memset(superpixels, 0, sizeof(superpixels));
 }
 
