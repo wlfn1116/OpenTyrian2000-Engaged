@@ -646,6 +646,22 @@ void endlessGrantSpecial(uint p)
 	JE_drawTextWindow(msg);
 }
 
+// Pickups endlessGrantSpecial answers. The conditions mirror JE_playerCollide's two pickup
+// branches, so the "?" art can only appear where a special is handed out. See doc/notes.md,
+// "Endless special pickups".
+bool endlessSpecialPickup(int slot)
+{
+	if (!endlessMode || slot < 0 || slot >= (int)COUNTOF(enemy) || enemyAvail[slot] == 1)
+		return false;
+
+	const int value = enemy[slot].evalue;
+	if (value == 1)
+		return enemy[slot].scoreitem;  // data cube
+
+	// Secret orb. enemyAvail 2 excludes an armored one until it is shot open; balls sit above 20000.
+	return value > 10000 && value <= 20000 && enemyAvail[slot] == 2;
+}
+
 // Weapon power-up substitutions. All three IDs use sprite bank 21.
 #define ENEMY_FRONT_POWERUP 533
 #define ENEMY_REAR_POWERUP  534

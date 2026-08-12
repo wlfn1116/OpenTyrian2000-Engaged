@@ -67,7 +67,8 @@
 // and report any pixels that differ from the real frame. Gated off; kept for debugging.
 #define RL_SELFTEST 0
 
-inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset);
+// `black` draws the frame's silhouette instead of its art, for the "?" pickup's outline pass.
+inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool black);
 static void draw_enemy_health_bars(void);
 // Defined with the rest of the Random Pickups code (next to JE_makeEnemy), used up in JE_main's
 // enemy loop where Super Arcade repaints a dropped ball into its ship's own weapon set.
@@ -1888,7 +1889,46 @@ static Uint32 rl_enemy_hint_gen[100];
 static JE_word rl_enemy_hint_type[100];
 static Uint32 rl_enemy_gen;   // bumped once per sim pass at the loop top
 
-inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset)
+// Banks the Endless "?" pickup cycles through. Level palettes vary, so the list keeps to hues that
+// hold a readable ramp in all of them; bank 0 and the near-black banks are left out.
+static const Uint8 endlessSpecialIconBanks[] = { 0x10, 0x20, 0x30, 0x50, 0x70, 0x90, 0xC0, 0xD0 };
+#define ENDLESS_SPECIAL_ICON_TICKS 7
+
+// Bank for this sim pass. Presentation only: rl_enemy_gen is outside the rollback registry.
+static Uint8 endlessSpecialIconFilter(void)
+{
+	const Uint32 step = (rl_enemy_gen / ENDLESS_SPECIAL_ICON_TICKS) % COUNTOF(endlessSpecialIconBanks);
+	return endlessSpecialIconBanks[step];
+}
+
+#define ENDLESS_SPECIAL_SPARK_TICKS 5  // one shower per pickup this often, staggered by enemy slot
+#define ENDLESS_SPECIAL_SPARK_COUNT 3
+// Reach is also the per-tick velocity, and a spark lives 15 ticks, so this bounds how far the
+// shower carries. Matches the density of the superspark weapon trails.
+#define ENDLESS_SPECIAL_SPARK_REACH 3
+
+// Shower in the glyph's current colour. Presentation only: superpixels are outside the rollback
+// registry and JE_doSPSeeded runs its own sequence. Silent resim passes must not spawn.
+static void endlessSpecialIconSparks(unsigned int i)
+{
+	if (rollback_resim_silent ||
+	    (rl_enemy_gen % ENDLESS_SPECIAL_SPARK_TICKS) != (i % ENDLESS_SPECIAL_SPARK_TICKS))
+		return;
+
+	// Glyph centre, matching the cells the draw places at x_offset -6/+6 and y_offset 0.
+	const int cx = enemy[i].ex + tempMapXOfs + 6;
+	const int cy = enemy[i].ey + 7;
+	if (cx < 0 || cy < 0)
+		return;
+
+	// JE_drawSP adds `color` to the plotted shade, so it carries the bank alone. The classic cap
+	// stays off: last_superpixel is shared, and capping a source this frequent would pull the
+	// cursor back under SUPERPIXELS_CLASSIC and thin every explosion on screen.
+	JE_doSPSeeded((JE_word)cx, (JE_word)cy, ENDLESS_SPECIAL_SPARK_COUNT, ENDLESS_SPECIAL_SPARK_REACH,
+	              endlessSpecialIconFilter(), false, rl_enemy_gen * 100u + i);
+}
+
+inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool black)
 {
 	if (enemy[i].sprite2s == NULL)
 	{
@@ -1924,13 +1964,19 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		rl_enemy_hint_type[i] = enemy[i].enemytype;
 	}
 
+	// Endless special pickups wear the cycling "?" from spriteSheet10 rather than their own art.
+	const bool specialPickup = endlessSpecialPickup((int)i);
+	Sprite2_array *const sheet = specialPickup ? &spriteSheet10 : enemy[i].sprite2s;
+
 	// enemycycle indexes egr[] 1-based; skip anything that doesn't name a real in-sheet sprite
 	// instead of underflowing into a wild read in blit_sprite2.
 	const unsigned int cycle = enemy[i].enemycycle;
 	if (cycle < 1 || cycle > 20)
 		return;
-	const unsigned int index = enemy[i].egr[cycle - 1] + sprite_offset;
-	if (index == 0 || (size_t)index * sizeof(Uint16) > enemy[i].sprite2s->size)
+	const unsigned int index = specialPickup
+	                         ? (unsigned int)ENDLESS_SPECIAL_PICKUP_ICON + sprite_offset
+	                         : enemy[i].egr[cycle - 1] + sprite_offset;
+	if (index == 0 || (size_t)index * sizeof(Uint16) > sheet->size)
 		return;
 
 	rl_current_id = RL_ID_ENEMY_BASE + (int)i;  // tag for cross-frame interpolation
@@ -1952,10 +1998,14 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		rl_current_par_yfrac = tempScrollYfrac;
 		rl_current_par_ylayer = tempScrollYLayer;
 	}
-	if (enemy[i].filter != 0)
-		blit_sprite2_filter(surface, x, y, *enemy[i].sprite2s, index, enemy[i].filter);
+	// The pickup's own cycling bank wins over a hit flash; it is the whole point of the icon.
+	const Uint8 filter = specialPickup ? endlessSpecialIconFilter() : enemy[i].filter;
+	if (black)
+		blit_sprite2_black(surface, x, y, *sheet, index);
+	else if (filter != 0)
+		blit_sprite2_filter(surface, x, y, *sheet, index, filter);
 	else
-		blit_sprite2(surface, x, y, *enemy[i].sprite2s, index);
+		blit_sprite2(surface, x, y, *sheet, index);
 	rl_current_id = 0;
 	rl_current_vel_x = 0;
 	rl_current_vel_y = 0;
@@ -2487,23 +2537,43 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				if (enemy[i].eliteState >= 2 && enemy[i].filter == 0)
 					enemy[i].filter = (enemy[i].eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
 
-				if (enemy[i].size == 1) // 2x2 enemy
+				if (endlessSpecialPickup((int)i))
+				{
+					// Top half of the icon only, at y_offset 0 so the glyph lands on the centre a
+					// full 2x2 pickup would have occupied.
+					if (enemy[i].ey > -13 - ENEMY_DRAW_MARGIN && enemy[i].ey < 182 + ENEMY_DRAW_MARGIN)
+					{
+						// The glyph straddles both cells, so every outline pass must land before
+						// either glyph cell; per-cell order lets one outline notch the other's art.
+						static const struct { int dx, dy; } outline[] = { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } };
+						for (unsigned int o = 0; o < COUNTOF(outline); ++o)
+						{
+							blit_enemy(VGAScreen, i, -6 + outline[o].dx, outline[o].dy, 0, true);
+							blit_enemy(VGAScreen, i,  6 + outline[o].dx, outline[o].dy, 1, true);
+						}
+
+						blit_enemy(VGAScreen, i, -6, 0, 0, false);
+						blit_enemy(VGAScreen, i,  6, 0, 1, false);
+						endlessSpecialIconSparks(i);
+					}
+				}
+				else if (enemy[i].size == 1) // 2x2 enemy
 				{
 					if (enemy[i].ey > -13 - ENEMY_DRAW_MARGIN)
 					{
-						blit_enemy(VGAScreen, i, -6, -7, 0);
-						blit_enemy(VGAScreen, i,  6, -7, 1);
+						blit_enemy(VGAScreen, i, -6, -7, 0, false);
+						blit_enemy(VGAScreen, i,  6, -7, 1, false);
 					}
 					if (enemy[i].ey > -26 - ENEMY_DRAW_MARGIN && enemy[i].ey < 182 + ENEMY_DRAW_MARGIN)
 					{
-						blit_enemy(VGAScreen, i, -6,  7, 19);
-						blit_enemy(VGAScreen, i,  6,  7, 20);
+						blit_enemy(VGAScreen, i, -6,  7, 19, false);
+						blit_enemy(VGAScreen, i,  6,  7, 20, false);
 					}
 				}
 				else
 				{
 					if (enemy[i].ey > -13 - ENEMY_DRAW_MARGIN)
-						blit_enemy(VGAScreen, i, 0, 0, 0);
+						blit_enemy(VGAScreen, i, 0, 0, 0, false);
 				}
 
 				enemy[i].filter = 0;
@@ -8403,36 +8473,42 @@ bool newGame(void)
 
 		initialDifficulty = difficultyLevel;
 
-		if (onePlayerAction)
+		// Only a confirmed start writes the loadout. titleScreen() loops on its own and
+		// JE_initPlayerData runs a level above it, so a write made while backing out of the
+		// selects would carry into the next mode picked in the same visit.
+		if (gameLoaded)
 		{
-			player[0].cash = 0;
+			if (onePlayerAction)
+			{
+				player[0].cash = 0;
 
-			player[0].items.ship = 8;  // Stalker
-		}
-		else if (twoPlayerMode)
-		{
-			for (uint i = 0; i < COUNTOF(player); ++i)
-				player[i].cash = 0;
+				player[0].items.ship = 8;  // Stalker
+			}
+			else if (twoPlayerMode)
+			{
+				for (uint i = 0; i < COUNTOF(player); ++i)
+					player[i].cash = 0;
 
-			player[0].items.ship = 11;  // Silver Ship
+				player[0].items.ship = 11;  // Silver Ship
 
-			difficultyLevel++;
+				difficultyLevel++;
 
-			inputDevice[0] = 1;
-			inputDevice[1] = 2;
-		}
-		else if (richMode)
-		{
-			player[0].cash = 1000000;
-		}
-		else if (gameLoaded)
-		{
-			// allows player to smuggle arcade/super-arcade ships into full game
+				inputDevice[0] = 1;
+				inputDevice[1] = 2;
+			}
+			else if (richMode)
+			{
+				player[0].cash = 1000000;
+			}
+			else
+			{
+				// keeps whatever ship the session already carries
 
-			const ulong initial_cash[] = { 10000, 15000, 20000, 30000, 20000 };
+				const ulong initial_cash[] = { 10000, 15000, 20000, 30000, 20000 };
 
-			assert(episodeNum >= 1 && episodeNum <= EPISODE_AVAILABLE);
-			player[0].cash = initial_cash[episodeNum - 1];
+				assert(episodeNum >= 1 && episodeNum <= EPISODE_AVAILABLE);
+				player[0].cash = initial_cash[episodeNum - 1];
+			}
 		}
 	}
 
@@ -8441,10 +8517,11 @@ bool newGame(void)
 
 bool newSuperArcadeGame(unsigned int i)
 {
-	player[0].items.ship = SAShip[i];
-
 	if (episodeSelect() && difficultySelect())
 	{
+		// Claimed only once the picks are confirmed, so backing out leaves the ship alone.
+		player[0].items.ship = SAShip[i];
+
 		/* Start special mode! */
 		JE_loadPic(VGAScreen, 1, false);
 		JE_clr256(VGAScreen);

@@ -102,6 +102,14 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 };
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
+// Specials are the one item class whose itemgraphic indexes spriteSheet10 (the in-game HUD block)
+// rather than the shop sheet, so this table names that sheet's spare icons.
+static const struct { JE_byte id; JE_word gr; } unusedSpriteSpecials[] =
+{
+	{ 41, 53 },  // SDF Main Gun: twin beams, replacing a "?" shared with seven other specials
+};
+static JE_word unusedSpriteBaseSpecial[COUNTOF(unusedSpriteSpecials)];
+
 // Shipped icons, snapshotted straight after the item load so the toggle can be flipped both
 // ways between games without a reload. unusedSpriteBaseLaser is the Charge-Laser slot's own
 // icon (193), kept beside the slot it was read from.
@@ -119,6 +127,8 @@ static void JE_captureUnusedShopSprites(void)
 		unusedSpriteBasePort[i] = weaponPort[unusedSpritePorts[i].port].itemgraphic;
 	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
 		unusedSpriteBaseOpt[i] = options[unusedSpriteOptions[i].opt].itemgraphic;
+	for (unsigned int i = 0; i < COUNTOF(unusedSpriteSpecials); ++i)
+		unusedSpriteBaseSpecial[i] = special[unusedSpriteSpecials[i].id].itemgraphic;
 
 	unusedSpriteLaserSlot = chargeLaserSlot;
 	unusedSpriteBaseLaser = (chargeLaserSlot > 0) ? options[chargeLaserSlot].itemgraphic : 0;
@@ -138,6 +148,10 @@ void JE_applyUnusedShopSprites(void)
 	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
 		options[unusedSpriteOptions[i].opt].itemgraphic =
 			unusedShopSprites ? unusedSpriteOptions[i].gr : unusedSpriteBaseOpt[i];
+
+	for (unsigned int i = 0; i < COUNTOF(unusedSpriteSpecials); ++i)
+		special[unusedSpriteSpecials[i].id].itemgraphic =
+			unusedShopSprites ? unusedSpriteSpecials[i].gr : unusedSpriteBaseSpecial[i];
 
 	// The Charge-Laser only exists while its own toggle is on; if it was never added, or the
 	// slot moved since capture, leave it alone rather than writing into someone else's item.

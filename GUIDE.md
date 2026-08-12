@@ -275,8 +275,10 @@ Cards include modifier rewards and a small level adjustment. Interest starts at
 | 50, 150, 250, ... | S+ / S++ | Five-choice perk |
 | 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
 
-Data cubes and secret-level orbs become random safe specials. A random-special
-event becomes a weapon power-up.
+Data cubes and secret-level orbs become random safe specials. Both draw as a
+colour-cycling "?" that throws matching sparks, and collect only on the mark
+itself. An armored orb keeps its own look until you shoot it open. A
+random-special event becomes a weapon power-up.
 
 ### Death and saving
 
@@ -517,7 +519,8 @@ Useful restored-content settings:
 - **Ice Base Shots** enables the dormant dispenser-base attack. Endless rolls it
   from the run seed and always enables it from zone 50.
 - **Unused Sprites** assigns distinct shipped icons to weapons that otherwise
-  share or lack one.
+  share or lack one. It also gives the SDF Main Gun its own HUD icon in place of
+  the "?" it shares with seven other specials.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.

@@ -260,6 +260,53 @@ that gate on `endlessMode`; campaign debug effects do not change campaign firing
 `endlessMode` controls run structure, saving, prices, and pickup substitution.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
+#### Endless special pickups
+
+`endlessSpecialPickup()` names the data cubes and secret orbs that
+`endlessGrantSpecial` answers. Its two branches mirror `JE_playerCollide`'s
+pickup branches, so the art cannot appear where no special is handed out. It
+reads enemy state and writes none.
+
+The art swap lives entirely in `blit_enemy`: the sheet becomes `spriteSheet10`
+and the frame becomes `ENDLESS_SPECIAL_PICKUP_ICON`, tinted by a bank that
+advances with `rl_enemy_gen`. Nothing is written to `enemy[]`, so the rollback
+registry hash is untouched and a peer running without the icon still agrees.
+Rewriting `egr[]` or `sprite2s` at spawn instead would move that hash and
+invalidate replay fixtures for no simulation reason.
+
+The glyph carries a black cardinal outline drawn with `blit_sprite2_black`
+(`blit_sprite2_filter` cannot: it keeps the sprite's shade in the low nibble, so
+filter 0 gives the greyscale bank). The glyph spans both of the icon's cells, so
+all four outline passes are drawn for both cells before either glyph cell; going
+cell by cell lets the right cell's leftward outline notch the left cell's art.
+
+The pickup also throws a shower in the icon's current bank. Superpixels are
+outside the rollback registry, so it uses `JE_doSPSeeded`, which runs its own
+sequence instead of the simulation RNG and therefore costs the peers no shared
+draw. Emission is skipped on silent resim passes and staggered by enemy slot.
+`JE_drawSP` adds a spark's `color` to the plotted shade, so that argument carries
+the palette bank alone; a non-zero low nibble spills into the next bank.
+
+Only the icon's top half is drawn, at `y_offset` 0 so the glyph lands on the
+centre the full 2x2 would have had. The bottom half is a ship body. The pickup
+box follows the glyph's measured extent (x 2..9 and y 2..12 from the enemy
+reference point) grown by `ENDLESS_SPECIAL_GLYPH_GRAB` on each side, under the
+same rule vanilla uses for pickups: the ship centre must lie inside the box.
+That box is a simulation change and owns the `NET_VERSION` 37 bump, so retune it
+with a version bump rather than in place.
+
+`JE_playerCollide` ends its score-item branch by firing the enemy's authored
+pickup graphic through `JE_setupExplosion`. Those are the floating value labels
+(`explosion_data` entries 36 and up), and a data cube's is the word "DATA", so a
+converted pickup suppresses it. `endlessSpecialPickup` is sampled before the
+branch body because the body clears `enemyAvail`, which the predicate reads.
+
+Specials are the only item class whose `itemgraphic` indexes `spriteSheet10`
+rather than the shop sheet, which is why `unusedSpriteSpecials` in `episodes.c`
+is measured against that sheet. Both the shipped and replacement icons stay
+inside the pool's validity range, so `unusedShopSprites` cannot change which
+specials `endlessGrantSpecial` can draw and needs no host authority.
+
 ### Modifiers and courses
 
 `endlessModTable` owns modifier text, danger, payout, and classification. Adding
@@ -411,7 +458,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 36.
+`NET_VERSION` bump. The current value is 37.
 
 Recent versions:
 
@@ -434,6 +481,7 @@ Recent versions:
 | 34 | Initial debug/autofire state and Delay-Based linked movement/analog aim |
 | 35 | Dedicated level-start barrier packet |
 | 36 | Host player number on the resume details packet |
+| 37 | Glyph-sized pickup box on Endless special pickups |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

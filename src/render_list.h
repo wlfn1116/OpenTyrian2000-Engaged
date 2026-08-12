@@ -15,6 +15,7 @@ typedef enum
 	RC_SPRITE2_CLIP,
 	RC_SPRITE2_BLEND,
 	RC_SPRITE2_DARKEN,
+	RC_SPRITE2_BLACK,   // silhouette in palette 0 (outline pass)
 	RC_SPRITE2_FILTER,
 	RC_SPRITE2_FILTER_CLIP,
 	RC_SPRITE,

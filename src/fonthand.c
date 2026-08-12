@@ -259,6 +259,19 @@ void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int 
 	}
 }
 
+// JE_outText with a solid black copy one pixel out in the four cardinal directions. Omitting the
+// diagonals rounds the glyph corners, keeping small text legible over artwork without thickening it.
+void JE_outTextOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness)
+{
+	// Negative brightness is JE_outText's solid-black path, so colorbank is unused on these passes.
+	JE_outText(screen, x - 1, y,     s, 0, -1);
+	JE_outText(screen, x + 1, y,     s, 0, -1);
+	JE_outText(screen, x,     y - 1, s, 0, -1);
+	JE_outText(screen, x,     y + 1, s, 0, -1);
+
+	JE_outText(screen, x, y, s, colorbank, brightness);
+}
+
 void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, unsigned int brightness, unsigned int font)
 {
 	for (int i = 0; s[i] != '\0'; ++i)

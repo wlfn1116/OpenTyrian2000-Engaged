@@ -2744,6 +2744,12 @@ JE_boolean JE_inGameSetup(void)
 	const int xHelpOfs = (PLAYFIELD_WIDTH - 255) / 2 - 3;  /* help box: x 3..257 */
 	const int xHelpMid = 3 + xHelpOfs + 255 / 2;
 
+	/* Help box rows (JE_barShade bounds are inclusive), and the text row centred in them. The tiny
+	 * font draws ink 0..7 rows below the origin with the baseline at row 5, so three rows above the
+	 * box middle centres the cap-to-baseline body and leaves descenders in the lower half. */
+	const int yHelpBoxTop = 152, yHelpBoxBottom = 168;
+	const int yHelpText = (yHelpBoxTop + yHelpBoxBottom) / 2 - 3;
+
 	const int xMenuItem = 10 + xOfs;
 	const int xMenuItemName = xMenuItem;
 	const int wMenuItemName = 110;
@@ -2761,8 +2767,8 @@ JE_boolean JE_inGameSetup(void)
 			JE_barShade(VGAScreen, 5 + xOfs, 15, 215 + xOfs, 146);
 
 			// Help box
-			JE_barShade(VGAScreen, 3 + xHelpOfs, 152, 257 + xHelpOfs, 168);
-			JE_barShade(VGAScreen, 5 + xHelpOfs, 154, 255 + xHelpOfs, 166);
+			JE_barShade(VGAScreen, 3 + xHelpOfs, yHelpBoxTop,     257 + xHelpOfs, yHelpBoxBottom);
+			JE_barShade(VGAScreen, 5 + xHelpOfs, yHelpBoxTop + 2, 255 + xHelpOfs, yHelpBoxBottom - 2);
 
 			memcpy(VGAScreen2->pixels, VGAScreen->pixels, VGAScreen2->pitch * VGAScreen2->h);
 
@@ -2848,7 +2854,7 @@ JE_boolean JE_inGameSetup(void)
 		int xHelpText = xHelpMid - JE_textWidth(pause_help, TINY_FONT) / 2;
 		if (xHelpText < 5 + xHelpOfs)
 			xHelpText = 5 + xHelpOfs;
-		JE_outTextAdjust(VGAScreen, xHelpText, 156, pause_help, 14, 6, TINY_FONT, true);
+		JE_outTextAdjust(VGAScreen, xHelpText, yHelpText, pause_help, 14, 6, TINY_FONT, true);
 
 		service_SDL_events(true);
 
@@ -10380,7 +10386,24 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 			// Both refs sit ~equally left/up of their sprite centres (ship +7/+7,
 			// enemy +6/+7), so the ref-to-ref test is effectively centre-to-centre.
-			if (abs(this_player->x - enemy_screen_x) < 12 && abs(this_player->y - enemy[z].ey) < 14)
+			bool touching = abs(this_player->x - enemy_screen_x) < 12 && abs(this_player->y - enemy[z].ey) < 14;
+
+			// Sampled before the branch below clears enemyAvail, which endlessSpecialPickup reads.
+			const bool specialPickup = endlessSpecialPickup(z);
+
+			// An Endless "?" draws one small glyph inside that footprint, so it keeps the vanilla
+			// rule (ship centre inside the pickup's box) measured against the glyph.
+			if (specialPickup)
+			{
+				const int shipCentreX = this_player->x + 7;
+				const int shipCentreY = this_player->y + 7;
+				touching = shipCentreX >= enemy_screen_x + ENDLESS_SPECIAL_GLYPH_X0
+				        && shipCentreX <= enemy_screen_x + ENDLESS_SPECIAL_GLYPH_X1
+				        && shipCentreY >= enemy[z].ey + ENDLESS_SPECIAL_GLYPH_Y0
+				        && shipCentreY <= enemy[z].ey + ENDLESS_SPECIAL_GLYPH_Y1;
+			}
+
+			if (touching)
 			{   /*Collide*/
 				int evalue = enemy[z].evalue;
 				if (evalue > 29999)
@@ -10752,7 +10775,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						player_award_pickup_cash(this_player, evalue);
 					}
-					JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
+					// The authored graphic names the original item; a data cube's spells out "DATA".
+					if (!specialPickup)
+						JE_setupExplosion(enemy_screen_x, enemy[z].ey, 0, enemyDat[enemy[z].enemytype].explosiontype, true, false);
 				}
 				// Endless Low Profile shrinks the damaging collision but keeps the full pickup range;
 				// a boon must not make items harder to grab. endlessHitboxScale is the identity outside

@@ -52,6 +52,8 @@ void JE_textShade(SDL_Surface * screen, int x, int y, const char *s, unsigned in
 // FULL_SHADE only, for text drawn straight onto a supersampled present frame. x and y are 1x.
 void JE_textShadeScaled(SDL_Surface *screen, int x, int y, const char *s, unsigned int colorbank, int brightness, int scale);
 void JE_outText(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
+// JE_outText plus a black cardinal-direction outline, for small text drawn over artwork.
+void JE_outTextOutlined(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness);
 void JE_outTextModify(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, unsigned int brightness, unsigned int font);
 void JE_outTextAdjust(SDL_Surface * screen, int x, int y, const char *s, unsigned int filter, int brightness, unsigned int font, bool shadow);
 void JE_outTextAndDarken(SDL_Surface * screen, int x, int y, const char *s, unsigned int colorbank, int brightness, unsigned int font);

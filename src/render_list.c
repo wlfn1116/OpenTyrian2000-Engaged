@@ -748,6 +748,7 @@ static void rl_draw_cmd(SDL_Surface *dst, const RenderCmd *c, int x, int y)
 	case RC_SPRITE2_CLIP:        blit_sprite2_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_blend_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_DARKEN:      blit_sprite2_darken_clip(dst, x, y, c->sheet, c->index); break;
+	case RC_SPRITE2_BLACK:       blit_sprite2_black_clip(dst, x, y, c->sheet, c->index); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_filter(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_filter_clip(dst, x, y, c->sheet, c->index, c->filter); break;
 	case RC_SPRITE:              blit_sprite(dst, x, y, c->table, c->index); break;
@@ -776,6 +777,7 @@ static void rl_draw_cmd_scaled(SDL_Surface *dst, const RenderCmd *c, int x, int 
 	case RC_SPRITE2_CLIP:        blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_COPY, 0); break;
 	case RC_SPRITE2_BLEND:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLEND, 0); break;
 	case RC_SPRITE2_DARKEN:      blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_DARKEN, 0); break;
+	case RC_SPRITE2_BLACK:       blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_BLACK, 0); break;
 	case RC_SPRITE2_FILTER:      blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
 	case RC_SPRITE2_FILTER_CLIP: blit_sprite2_scaled(dst, x, y, c->sheet, c->index, scale, BLIT2_FILTER, c->filter); break;
 	case RC_SPRITE:              blit_sprite_table_scaled(dst, x, y, c->table, c->index, scale, BLITT_COPY, 0, 0, false); break;

@@ -540,6 +540,19 @@ void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
 // Replace Endless data cubes and secret orbs with a safe special for player p.
 void endlessGrantSpecial(uint p);
 
+// Pickups that hand out a random special. Drives the "?" art (tyrian2.c) and the pickup box
+// (mainint.c). Reads enemy state, writes none.
+bool endlessSpecialPickup(int slot);
+
+// Top half of the shop's unknown-item icon; its bottom half is a ship body. The opaque glyph sits
+// at x 2..9, y 2..12 from the enemy reference point, grown by GRAB on each side for the pickup box.
+#define ENDLESS_SPECIAL_PICKUP_ICON 125
+#define ENDLESS_SPECIAL_GLYPH_GRAB   5
+#define ENDLESS_SPECIAL_GLYPH_X0    (2  - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_X1    (9  + ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y0    (2  - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y1    (12 + ENDLESS_SPECIAL_GLYPH_GRAB)
+
 // Replace an embedded data cube with a gem at the enemy slot.
 void endlessDropCubeGem(int slot);
 

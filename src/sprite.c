@@ -1055,6 +1055,94 @@ void blit_sprite2_darken_clip(SDL_Surface *surface, int x, int y, Sprite2_array 
 	}
 }
 
+// Every opaque pixel written as palette 0, for outline passes. blit_sprite2_filter keeps the
+// sprite's shade in the low nibble, so filter 0 gives the greyscale bank instead of black.
+// does not clip on left or right edges of surface
+void blit_sprite2_black(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+{
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+	if (render_list_recording)
+		rl_rec_sprite2(x, y, sprite2s, index, RC_SPRITE2_BLACK);
+	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
+	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
+	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		pixels += *data & 0x0f;                   // second nibble: transparent pixel count
+		unsigned int count = (*data & 0xf0) >> 4; // first nibble: opaque pixel count
+
+		if (count == 0) // move to next pixel row
+		{
+			pixels += VGAScreen->pitch - 12;
+		}
+		else
+		{
+			while (count--)
+			{
+				++data;
+
+				if (pixels >= pixels_ul)
+					return;
+				if (pixels >= pixels_ll)
+					*pixels = 0x00;
+
+				++pixels;
+			}
+		}
+	}
+}
+
+// Clipping counterpart of blit_sprite2_black, for rl_draw_cmd replay (see blit_sprite2_darken_clip).
+void blit_sprite2_black_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index)
+{
+	assert(surface->format->BitsPerPixel == 8);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= 0)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+					pixel_row[x] = 0x00;
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
+		}
+	}
+}
+
 // does not clip on left or right edges of surface
 void blit_sprite2_filter(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 filter)
 {
@@ -1218,6 +1306,7 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 			case BLIT2_BLEND:  *p = (((d & 0x0f) + (*p & 0x0f)) / 2) | (d & 0xf0); break;
 			case BLIT2_DARKEN: *p = ((*p & 0x0f) / 2) + (*p & 0xf0); break;
 			case BLIT2_FILTER: *p = filter | (d & 0x0f); break;
+			case BLIT2_BLACK:  *p = 0x00; break;
 			}
 		}
 	}

@@ -2060,6 +2060,33 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 	}
 }
 
+// JE_doSP driven by `seed` instead of the simulation RNG. Superpixels are not rollback state, so a
+// presentation-only effect can spawn them this way without touching the deterministic stream.
+void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed)
+{
+	const unsigned int cap = (extraSparks && !classic_cap) ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
+
+	for (int sp = 0; sp < num; sp++)
+	{
+		seed = seed * 1103515245u + 12345u;  // Numerical Recipes LCG; the high bits are the usable ones
+		const JE_real angle = (JE_real)(seed >> 16) / 65536.0 * (2 * M_PI);
+		seed = seed * 1103515245u + 12345u;
+		const JE_real reach = (JE_real)(seed >> 16) / 65536.0;
+
+		const signed int tempy = roundf(cosf(angle) * reach * explowidth);
+		const signed int tempx = roundf(sinf(angle) * reach * explowidth);
+
+		if (++last_superpixel >= cap)
+			last_superpixel = 0;
+		superpixels[last_superpixel].x = tempx + x;
+		superpixels[last_superpixel].y = tempy + y;
+		superpixels[last_superpixel].delta_x = tempx;
+		superpixels[last_superpixel].delta_y = tempy + 1;
+		superpixels[last_superpixel].color = color;
+		superpixels[last_superpixel].z = 15;
+	}
+}
+
 void JE_drawSP(void)
 {
 	for (int i = MAX_SUPERPIXELS; i--; )

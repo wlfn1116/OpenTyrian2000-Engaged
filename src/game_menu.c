@@ -10076,26 +10076,27 @@ void JE_weaponSimUpdate(void)
 			// No [/] key on the consoles; the shoulder buttons cycle the mode
 			// (see the L/R handler in JE_itemScreen). x nudged left so the
 			// longer caption stays inside the preview border (ends at x=143).
-			JE_outText(VGAScreen, 22, 137, "[L/R] Rear Weapon Mode", 1, 4);
+			JE_outTextOutlined(VGAScreen, 22, 137, "[L/R] Rear Weapon Mode", 1, 4);
 #else
-			JE_outText(VGAScreen, 28, 137, miscText[70], 1, 4);
+			JE_outTextOutlined(VGAScreen, 28, 137, miscText[70], 1, 4);
 #endif
 		}
 		else
 		{
+			// This row sits over the preview's starfield and passing ships, so it carries an outline.
 			if (leftPower)
 			{
 				sprintf(buf, "%lu", downgradeCost);
-				JE_outText(VGAScreen, 26, 137, buf, 1, 4);
+				JE_outTextOutlined(VGAScreen, 26, 137, buf, 1, 4);
 			}
 			if (rightPower)
 			{
 				sprintf(buf, "%lu", upgradeCost);
-				JE_outText(VGAScreen, 104, 137, buf, (rightPowerAfford) ? 1 : 7, 4);
+				JE_outTextOutlined(VGAScreen, 104, 137, buf, (rightPowerAfford) ? 1 : 7, 4);
 			}
 
 			sprintf(buf, "%s %d", miscTextB[5], temp);
-			JE_outText(VGAScreen, 58, 137, buf, 15, 4);
+			JE_outTextOutlined(VGAScreen, 58, 137, buf, 15, 4);
 		}
 
 		for (int x = 1; x <= temp; x++)
