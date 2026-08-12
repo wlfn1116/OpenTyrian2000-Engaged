@@ -22,6 +22,7 @@
 #include "opentyr.h"
 
 #include "lvlmast.h"
+#include "sprite.h"
 
 /* Episodes and general data */
 
@@ -184,6 +185,13 @@ void JE_initEpisode(JE_byte newEpisode);
 // restores the shipped icons when it is off, so the Visuals row takes effect between games
 // without an item reload. Idempotent.
 void JE_applyUnusedShopSprites(void);
+
+// Lower half of the shared "?" icon: a bare ship body, the base every rebuilt special icon sits on.
+#define SPECIAL_ICON_SHIP_GR 125
+
+// The unused player-shot sprite that replaces a shared special icon's upper half, or NULL when
+// the special draws its own shipped 2x2. Reads `unusedShopSprites`; see draw_special_icon.
+const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr);
 
 // Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
 // player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded

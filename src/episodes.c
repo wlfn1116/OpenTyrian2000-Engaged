@@ -27,6 +27,7 @@
 #include "lvllib.h"
 #include "lvlmast.h"
 #include "opentyr.h"
+#include "sprite.h"
 
 /* MAIN Weapons Data */
 JE_WeaponPortType weaponPort;
@@ -102,13 +103,24 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 };
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
-// Specials are the one item class whose itemgraphic indexes spriteSheet10 (the in-game HUD block)
-// rather than the shop sheet, so this table names that sheet's spare icons.
-static const struct { JE_byte id; JE_word gr; } unusedSpriteSpecials[] =
+// Specials index spriteSheet10 (the in-game HUD block) rather than the shop sheet, and eleven of
+// them share three icons between them, seven wearing the same "?". Each gets an unused player-shot
+// sprite for its upper half instead, so an entry has to fit the 24x14 draw_special_icon centres it
+// in. Bank is one of tyrian.shp's two shot sheets (JE_loadMainShapeTables).
+static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[] =
 {
-	{ 41, 53 },  // SDF Main Gun: twin beams, replacing a "?" shared with seven other specials
+	{  2, 11,  25 },  // Pearl Wind, the instant-shot record; the field one keeps the shipped icon
+	{  7,  7, 109 },  // Blade Field
+	{  8,  7, 162 },  // SandStorm
+	{ 11,  7, 154 },  // Banana Bomb
+	{ 12,  7, 129 },  // Protron Dispersal
+	{ 13,  7, 253 },  // Astral Zone
+	{ 16,  7,  88 },  // Orange Shield
+	{ 19,  7,  32 },  // Missile Pod
+	{ 41,  7, 265 },  // SDF Main Gun
+	{ 45,  7, 272 },  // 8-Way Microbomb
+	{ 47, 11, 163 },  // Super Pretzel
 };
-static JE_word unusedSpriteBaseSpecial[COUNTOF(unusedSpriteSpecials)];
 
 // Shipped icons, snapshotted straight after the item load so the toggle can be flipped both
 // ways between games without a reload. unusedSpriteBaseLaser is the Charge-Laser slot's own
@@ -127,8 +139,6 @@ static void JE_captureUnusedShopSprites(void)
 		unusedSpriteBasePort[i] = weaponPort[unusedSpritePorts[i].port].itemgraphic;
 	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
 		unusedSpriteBaseOpt[i] = options[unusedSpriteOptions[i].opt].itemgraphic;
-	for (unsigned int i = 0; i < COUNTOF(unusedSpriteSpecials); ++i)
-		unusedSpriteBaseSpecial[i] = special[unusedSpriteSpecials[i].id].itemgraphic;
 
 	unusedSpriteLaserSlot = chargeLaserSlot;
 	unusedSpriteBaseLaser = (chargeLaserSlot > 0) ? options[chargeLaserSlot].itemgraphic : 0;
@@ -149,15 +159,26 @@ void JE_applyUnusedShopSprites(void)
 		options[unusedSpriteOptions[i].opt].itemgraphic =
 			unusedShopSprites ? unusedSpriteOptions[i].gr : unusedSpriteBaseOpt[i];
 
-	for (unsigned int i = 0; i < COUNTOF(unusedSpriteSpecials); ++i)
-		special[unusedSpriteSpecials[i].id].itemgraphic =
-			unusedShopSprites ? unusedSpriteSpecials[i].gr : unusedSpriteBaseSpecial[i];
-
 	// The Charge-Laser only exists while its own toggle is on; if it was never added, or the
 	// slot moved since capture, leave it alone rather than writing into someone else's item.
 	if (unusedSpriteLaserSlot > 0 && unusedSpriteLaserSlot == chargeLaserSlot)
 		options[unusedSpriteLaserSlot].itemgraphic =
 			unusedShopSprites ? UNUSED_SPRITE_CHARGE_LASER_GR : unusedSpriteBaseLaser;
+}
+
+const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr)
+{
+	if (!unusedShopSprites)
+		return NULL;
+
+	for (unsigned int i = 0; i < COUNTOF(unusedSpecialTops); ++i)
+		if (unusedSpecialTops[i].id == id)
+		{
+			*gr = unusedSpecialTops[i].gr;
+			return (unusedSpecialTops[i].bank == 11) ? &spriteSheet12 : &spriteSheet8;
+		}
+
+	return NULL;
 }
 
 static void JE_addChargeLaserCannon(void)

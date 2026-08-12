@@ -624,6 +624,56 @@ Uint8 sprite2_dominant_bank(Sprite2_array sprite2s, unsigned int index)
 	return dominant_bank_of(count);
 }
 
+/* Bounding box of the pixels a packed sprite actually paints, in its own 12px-wide grid; false if
+ * it paints none. Walks it exactly like blit_sprite2, whose row move is a no-op at that pitch.
+ */
+bool sprite2_ink_bounds(Sprite2_array sprite2s, unsigned int index, int *x0, int *y0, int *x1, int *y1)
+{
+	if (!sprite2_index_valid(sprite2s, index))
+		return false;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+	int cursor = 0;
+	int left = 12, top = 0, right = -1, bottom = -1;
+
+	for (; *data != 0x0f; ++data)
+	{
+		cursor += *data & 0x0f;                    // second nibble: transparent pixel count
+		unsigned int count = (*data & 0xf0) >> 4;  // first nibble: opaque pixel count
+
+		while (count--)
+		{
+			++data;
+
+			const int x = cursor % 12, y = cursor / 12;
+			if (right < 0)  // first painted pixel: rows only grow, so this one sets the top
+			{
+				left = right = x;
+				top = bottom = y;
+			}
+			else
+			{
+				if (x < left)
+					left = x;
+				if (x > right)
+					right = x;
+				bottom = y;
+			}
+
+			++cursor;
+		}
+	}
+
+	if (right < 0)
+		return false;
+
+	*x0 = left;
+	*y0 = top;
+	*x1 = right;
+	*y1 = bottom;
+	return true;
+}
+
 /* Draw a clipped sub-row window at `scale`, brightened within each pixel's palette bank. This is a
  * presentation overlay and does not record render-list commands. */
 void blit_sprite2_rows_bright_scaled(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, int sub_first, int sub_last, int bright, int scale)

@@ -525,8 +525,9 @@ Useful restored-content settings:
 - **Ice Base Shots** enables the dormant dispenser-base attack. Endless rolls it
   from the run seed and always enables it from zone 50.
 - **Unused Sprites** assigns distinct shipped icons to weapons that otherwise
-  share or lack one. It also gives the SDF Main Gun its own HUD icon in place of
-  the "?" it shares with seven other specials.
+  share or lack one. It also rebuilds the HUD icons of the eleven specials that
+  shared one, seven of them the same "?". Each keeps its ship body and gains the
+  weapon's own sprite above it.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.

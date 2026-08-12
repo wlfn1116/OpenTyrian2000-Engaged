@@ -122,6 +122,9 @@ void free_sprite2s(Sprite2_array *);
 
 Uint8 sprite2_dominant_bank(Sprite2_array, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
 
+// Extent of the sprite's painted pixels within its 12px cell, for centring it on something else.
+bool sprite2_ink_bounds(Sprite2_array, unsigned int index, int *x0, int *y0, int *x1, int *y1);
+
 void blit_sprite2(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 void blit_sprite2_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index);
 bool sprite2_has_pixel_in_window(int x, int y, Sprite2_array, unsigned int index, int wx0, int wx1, int wy0, int wy1);

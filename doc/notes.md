@@ -345,10 +345,16 @@ converted pickup suppresses it. `endlessSpecialPickup` is sampled before the
 branch body because the body clears `enemyAvail`, which the predicate reads.
 
 Specials are the only item class whose `itemgraphic` indexes `spriteSheet10`
-rather than the shop sheet, which is why `unusedSpriteSpecials` in `episodes.c`
-is measured against that sheet. Both the shipped and replacement icons stay
-inside the pool's validity range, so `unusedShopSprites` cannot change which
-specials `endlessGrantSpecial` can draw and needs no host authority.
+rather than the shop sheet. Eleven of them share three icons between them, seven
+wearing the same "?", so `unusedSpecialTops` in `episodes.c` hands each its own
+upper half. `draw_special_icon` builds those icons instead of blitting the 2x2:
+the bare ship body of `SPECIAL_ICON_SHIP_GR`, then an unused player-shot sprite
+centred on the 24x14 above it. Centring goes by `sprite2_ink_bounds`, the
+sprite's painted extent, since the art rarely fills its 12px cell. Skipping the
+shipped icon whole is what keeps the effect pixels in the lower half of icons
+129 and 273 off the block. No item field changes, so
+`unusedShopSprites` still cannot change which specials `endlessGrantSpecial` can
+draw and needs no host authority.
 
 ### Modifiers and courses
 

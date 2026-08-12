@@ -2833,6 +2833,43 @@ static void qa_test_arcade_matrices(void)
 	player[0] = savedPlayer;
 }
 
+/* Every replacement icon top has to exist in its sheet and fit the space the ship half leaves. */
+static void qa_test_special_icon_tops(void)
+{
+	if (spriteSheet8.data == NULL || spriteSheet12.data == NULL)
+		return;  // shape tables not loaded
+
+	const bool saved = unusedShopSprites;
+	unusedShopSprites = true;
+
+	int replaced = 0;
+	for (uint id = 1; id <= SPECIAL_NUM; ++id)
+	{
+		JE_word top = 0;
+		const Sprite2_array *const sheet = JE_specialIconTop((JE_byte)id, &top);
+		if (sheet == NULL)
+			continue;
+		++replaced;
+
+		int x0, y0, x1, y1;
+		char label[128];
+		snprintf(label, sizeof(label), "special %u icon top fits the ship half's %dx%d",
+		         id, HUD_SPECIAL_ICON_W, HUD_SPECIAL_ICON_H / 2);
+		qa_check(sprite2_ink_bounds(*sheet, top, &x0, &y0, &x1, &y1)
+		         && x1 - x0 < HUD_SPECIAL_ICON_W && y1 - y0 < HUD_SPECIAL_ICON_H / 2, label);
+	}
+
+	qa_check(replaced == 11, "eleven specials take a replacement icon top");
+	printf("# special icon tops: %d replacements\n", replaced);
+
+	unusedShopSprites = false;
+	JE_word unusedTop = 0;
+	qa_check(JE_specialIconTop(41, &unusedTop) == NULL,
+	         "Unused Sprites off leaves every special drawing its shipped icon");
+
+	unusedShopSprites = saved;
+}
+
 /* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
  * to step once per REAL tick and stay each ship's own. Both halves are easy to get wrong online:
  * a replay pass that steps it again spends a whole glow inside one displayed frame, and a shared
@@ -2992,6 +3029,7 @@ int qa_run_unit_suite(void)
 	qa_test_arcade_matrices();
 	qa_test_sidekick_rollback_state();
 	qa_test_gauge_flash_lifetime();
+	qa_test_special_icon_tops();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_modifier_online_parity();

@@ -7387,6 +7387,31 @@ static void hud_special_light_step_flash(void)
 		hud_light_await_pop = true;
 }
 
+// Build the icon of a special that shares one: the bare ship body, then its replacement sprite
+// centred on the upper half (unusedSpecialTops in episodes.c). Drawing the shipped 2x2 for those
+// eleven would show the shared art, including the pixels that reach into its lower half.
+static void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id)
+{
+	JE_word top = 0;
+	const Sprite2_array *const sheet = JE_specialIconTop(id, &top);
+	int x0, y0, x1, y1;
+
+	if (sheet == NULL || !sprite2_ink_bounds(*sheet, top, &x0, &y0, &x1, &y1))
+	{
+		blit_sprite2x2(surface, x, y, spriteSheet10, special[id].itemgraphic);
+		return;
+	}
+
+	const int half = HUD_SPECIAL_ICON_H / 2;
+	blit_sprite2(surface, x,      y + half, spriteSheet10, SPECIAL_ICON_SHIP_GR + 19);
+	blit_sprite2(surface, x + 12, y + half, spriteSheet10, SPECIAL_ICON_SHIP_GR + 20);
+
+	// An odd-width sprite cannot sit dead centre, and the spare column reads better on its left.
+	const int freeW = HUD_SPECIAL_ICON_W - (x1 - x0 + 1);
+	const int freeH = half - (y1 - y0 + 1);
+	blit_sprite2(surface, x + (freeW + 1) / 2 - x0, y + freeH / 2 - y0, *sheet, top);
+}
+
 static void draw_special_ready_light(int x, int y)
 {
 	// Galaga's wing flies without a special shot at all, so JE_doSpecialShot never runs and there
@@ -7714,8 +7739,8 @@ void JE_inGameDisplays(void)
 	const uint local_player = gameplay_local_player_index();
 	if (hud_special_block_shown(local_player))
 	{
-		blit_sprite2x2(VGAScreen, hud_special_icon_x(local_player), HUD_SPECIAL_ICON_Y,
-		               spriteSheet10, special[player[local_player].items.special].itemgraphic);
+		draw_special_icon(VGAScreen, hud_special_icon_x(local_player), HUD_SPECIAL_ICON_Y,
+		                  player[local_player].items.special);
 		draw_special_ready_light(hud_special_light_x(local_player), HUD_SPECIAL_LIGHT_Y);
 	}
 	else
