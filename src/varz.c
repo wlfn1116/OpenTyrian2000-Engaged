@@ -19,6 +19,7 @@
 #include "varz.h"
 
 #include <stdlib.h>  // _Exit (Switch clean-exit path in JE_tyrianHalt)
+#include <string.h>  // memset (JE_resetSP)
 
 #include "config.h"
 #include "crashlog.h"
@@ -383,7 +384,8 @@ rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
 
 /*SuperPixels*/
 superpixel_type superpixels[MAX_SUPERPIXELS]; /* [0..MaxSP] */
-unsigned int last_superpixel;
+static unsigned int last_superpixel;          // spawn cursors, see next_superpixel
+static unsigned int last_classic_superpixel;
 
 /*Temporary Numbers*/
 JE_byte temp, temp2, temp3;
@@ -2030,13 +2032,34 @@ void JE_clearSPClip(void)
 	superpixelClipActive = false;
 }
 
+// Spawn slot for the next spark. The two windows keep separate cursors so a capped weapon trail
+// cannot recycle the small uncapped showers. See doc/notes.md, "Superspark ring buffer".
+static unsigned int next_superpixel(bool classic_cap)
+{
+	if (extraSparks && classic_cap)
+	{
+		if (++last_classic_superpixel >= SUPERPIXELS_CLASSIC)
+			last_classic_superpixel = 0;
+		return last_classic_superpixel;
+	}
+
+	const unsigned int first = extraSparks ? SUPERPIXELS_CLASSIC : 0;
+	const unsigned int cap = extraSparks ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
+
+	if (++last_superpixel >= cap || last_superpixel < first)
+		last_superpixel = first;
+	return last_superpixel;
+}
+
+void JE_resetSP(void)
+{
+	last_superpixel = 0;
+	last_classic_superpixel = 0;
+	memset(superpixels, 0, sizeof(superpixels));
+}
+
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap) /* superpixels */
 {
-	// classic_cap keeps this shower at the classic 101 limit regardless of extraSparks (the
-	// superspark weapon trails pass superSparkCapForSprite so each can stay classic-dense while
-	// explosions keep the big buffer). The shared spawn index just wraps sooner for these calls.
-	const unsigned int cap = (extraSparks && !classic_cap) ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
-
 	// Local int counter, not the global JE_byte `temp`: `num` is a JE_word and callers can request
 	// well over 255 sparks (e.g. damage/2+3 on a big hit), which a byte counter can't reach -> it
 	// would wrap at 255 and loop forever. (The spark pool grew huge for Extra Sparks; see MAX_SUPERPIXELS.)
@@ -2046,17 +2069,13 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		signed int tempy = roundf(cosf(tempr) * mt_rand_1() * explowidth);
 		signed int tempx = roundf(sinf(tempr) * mt_rand_1() * explowidth);
 
-		// Extra Sparks toggle: cap the ring buffer at the big limit or the classic 101. Only the
-		// SPAWN wrap honors the effective cap; JE_drawSP still sweeps the whole array, so sparks
-		// already in flight past the classic cap animate out cleanly when the toggle is turned off.
-		if (++last_superpixel >= cap)
-			last_superpixel = 0;
-		superpixels[last_superpixel].x = tempx + x;
-		superpixels[last_superpixel].y = tempy + y;
-		superpixels[last_superpixel].delta_x = tempx;
-		superpixels[last_superpixel].delta_y = tempy + 1;
-		superpixels[last_superpixel].color = color;
-		superpixels[last_superpixel].z = 15;
+		const unsigned int slot = next_superpixel(classic_cap);
+		superpixels[slot].x = tempx + x;
+		superpixels[slot].y = tempy + y;
+		superpixels[slot].delta_x = tempx;
+		superpixels[slot].delta_y = tempy + 1;
+		superpixels[slot].color = color;
+		superpixels[slot].z = 15;
 	}
 }
 
@@ -2064,8 +2083,6 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 // presentation-only effect can spawn them this way without touching the deterministic stream.
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed)
 {
-	const unsigned int cap = (extraSparks && !classic_cap) ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
-
 	for (int sp = 0; sp < num; sp++)
 	{
 		seed = seed * 1103515245u + 12345u;  // Numerical Recipes LCG; the high bits are the usable ones
@@ -2076,14 +2093,13 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		const signed int tempy = roundf(cosf(angle) * reach * explowidth);
 		const signed int tempx = roundf(sinf(angle) * reach * explowidth);
 
-		if (++last_superpixel >= cap)
-			last_superpixel = 0;
-		superpixels[last_superpixel].x = tempx + x;
-		superpixels[last_superpixel].y = tempy + y;
-		superpixels[last_superpixel].delta_x = tempx;
-		superpixels[last_superpixel].delta_y = tempy + 1;
-		superpixels[last_superpixel].color = color;
-		superpixels[last_superpixel].z = 15;
+		const unsigned int slot = next_superpixel(classic_cap);
+		superpixels[slot].x = tempx + x;
+		superpixels[slot].y = tempy + y;
+		superpixels[slot].delta_x = tempx;
+		superpixels[slot].delta_y = tempy + 1;
+		superpixels[slot].color = color;
+		superpixels[slot].z = 15;
 	}
 }
 

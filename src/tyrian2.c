@@ -1922,8 +1922,8 @@ static void endlessSpecialIconSparks(unsigned int i)
 		return;
 
 	// JE_drawSP adds `color` to the plotted shade, so it carries the bank alone. The classic cap
-	// stays off: last_superpixel is shared, and capping a source this frequent would pull the
-	// cursor back under SUPERPIXELS_CLASSIC and thin every explosion on screen.
+	// stays off: the weapon trails recycle that window several times a second, which would cut a
+	// shower this small short of its 15 ticks.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, ENDLESS_SPECIAL_SPARK_COUNT, ENDLESS_SPECIAL_SPARK_REACH,
 	              endlessSpecialIconFilter(), false, rl_enemy_gen * 100u + i);
 }
@@ -3867,8 +3867,7 @@ start_level_first:
 	levelTimer = false;
 	randomExplosions = false;
 
-	last_superpixel = 0;
-	memset(superpixels, 0, sizeof(superpixels));
+	JE_resetSP();
 
 	returnActive = false;
 

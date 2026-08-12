@@ -103,6 +103,29 @@ frame at that pass's factor, so no later draw covers it. Keep it out of
 into the feedback. The hitbox boxes stay in `game_screen`, where world positions
 belong.
 
+### Superspark ring buffer
+
+Sparks live in one array of `MAX_SUPERPIXELS` slots and die after 15 ticks. A
+shower reserves nothing: a later spawn reaching the same slot overwrites a spark
+still in flight, so the spawn rate around a source sets how long its sparks last.
+
+`next_superpixel` splits the array into two windows while Extra Sparks is on.
+The `classic_cap` sources, the superspark weapon trails, wrap inside the first
+`SUPERPIXELS_CLASSIC` slots on their own cursor. Every other source walks the
+rest of the array on `last_superpixel`. With Extra Sparks off both use the
+classic window on one cursor, the original behavior.
+
+Keep the windows separate. On a shared cursor each capped spawn pulls the cursor
+back under `SUPERPIXELS_CLASSIC`, and a firing trail then walks that window fast
+enough to recycle any small shower left in it within a few ticks. A large
+explosion escapes because its count carries the cursor past the window in one
+call. A shower of one to three sparks, such as an elite aura or a pickup glyph,
+does not.
+
+Only the spawn wrap honors a window. `JE_drawSP` sweeps the whole array, so
+sparks already in flight animate out cleanly when a setting changes. The cursors
+are private to `varz.c`; clear the field through `JE_resetSP`.
+
 ### Background layers
 
 Background commands carry integer movement and fractional phase. Layer-bound

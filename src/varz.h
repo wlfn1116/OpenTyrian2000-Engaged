@@ -418,7 +418,6 @@ extern JE_byte chargeWait, chargeLevel, chargeMax, chargeGr, chargeGrWait;
 extern JE_word neat;
 extern rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS];
 extern superpixel_type superpixels[MAX_SUPERPIXELS];
-extern unsigned int last_superpixel;
 
 // Optional clip window for JE_drawSP. While active, superpixels are only plotted (and
 // recorded for smooth replay) inside [x0,x1) x [y0,y1). The shop weapon preview sets this
@@ -488,12 +487,14 @@ void JE_repaintShieldArmorBars(void);
 JE_word JE_portConfigs(const Player *this_player);
 
 /*SuperPixels*/
-// classic_cap forces the classic 101-spark limit for this call even when extraSparks is on
-// (used by the superspark weapon trails); pass false to honor the extraSparks setting.
+// classic_cap keeps this call inside the classic 101-spark window even when extraSparks is on
+// (used by the superspark weapon trails); pass false to honor the extraSparks setting. The two
+// windows recycle separately, so a capped source cannot shorten an uncapped shower.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, Uint32 seed);
 void JE_drawSP(void);
+void JE_resetSP(void);
 
 void JE_drawOptionLevel(void);
 
