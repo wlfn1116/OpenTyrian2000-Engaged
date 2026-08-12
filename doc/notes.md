@@ -260,6 +260,11 @@ that gate on `endlessMode`; campaign debug effects do not change campaign firing
 `endlessMode` controls run structure, saving, prices, and pickup substitution.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
+Elite and champion bodies shed a faint aura in the tier's own filter bank, under
+the presentation-only spark rules given in "Endless special pickups". It is
+staggered by enemy slot, so a linked multi-tile body emits once per part and its
+density tracks the area it covers. Iced and wrecked bodies do not emit.
+
 #### Endless special pickups
 
 `endlessSpecialPickup()` names the data cubes and secret orbs that

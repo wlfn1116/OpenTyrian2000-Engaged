@@ -1928,6 +1928,39 @@ static void endlessSpecialIconSparks(unsigned int i)
 	              endlessSpecialIconFilter(), false, rl_enemy_gen * 100u + i);
 }
 
+#define ENDLESS_ELITE_SPARK_TICKS 5  // one shower per elite this often, staggered by enemy slot
+#define ENDLESS_ELITE_SPARK_COUNT 1  // champions shed twice this
+#define ENDLESS_ELITE_SPARK_REACH 2  // per-tick velocity too, plus one for a 2x2 body
+
+// Faint aura in the tier's own tint (ENDLESS_ELITE_FILTER / ENDLESS_CHAMPION_FILTER), so an elite
+// reads as one at a glance. Presentation only: superpixels are outside the rollback registry and
+// JE_doSPSeeded runs its own sequence. Silent resim passes must not spawn.
+static void endlessEliteAuraSparks(unsigned int i)
+{
+	if (rollback_resim_silent || enemy[i].eliteState < 2 || enemy[i].iced || enemy[i].edamaged)
+		return;
+	if ((rl_enemy_gen % ENDLESS_ELITE_SPARK_TICKS) != (i % ENDLESS_ELITE_SPARK_TICKS))
+		return;
+
+	// Sprite centre, the same point for a 1x1 body and a 2x2 one. JE_drawSP clips the rest of the
+	// way, so a body hanging off the bottom needs no bound of its own.
+	const int cx = enemy[i].ex + tempMapXOfs + 6;
+	const int cy = enemy[i].ey + 7;
+	if (cx < 0 || cy < 0)
+		return;
+
+	const bool champion = (enemy[i].eliteState == 3);
+	const int sparks = ENDLESS_ELITE_SPARK_COUNT * (champion ? 2 : 1);
+
+	// The classic cap stays off, for the reason given in endlessSpecialIconSparks. The seed stride
+	// differs from that one: an armored secret orb can be an elite as well, and a shared seed would
+	// land both of its showers on the same angles.
+	JE_doSPSeeded((JE_word)cx, (JE_word)cy, sparks,
+	              ENDLESS_ELITE_SPARK_REACH + (enemy[i].size == 1 ? 1 : 0),
+	              champion ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER, false,
+	              rl_enemy_gen * 137u + i);
+}
+
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool black)
 {
 	if (enemy[i].sprite2s == NULL)
@@ -2536,6 +2569,8 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				// here each frame. Skip if something already set filter (e.g. a hit flash).
 				if (enemy[i].eliteState >= 2 && enemy[i].filter == 0)
 					enemy[i].filter = (enemy[i].eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
+
+				endlessEliteAuraSparks(i);
 
 				if (endlessSpecialPickup((int)i))
 				{
