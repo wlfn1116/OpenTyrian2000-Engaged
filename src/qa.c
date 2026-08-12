@@ -2870,6 +2870,25 @@ static void qa_test_special_icon_tops(void)
 	unusedShopSprites = saved;
 }
 
+/* Item data points one of the Flying Punch's bolts (weapon 794, `sg[0]`) at People Pretzels'
+ * sprite, so the load pass redirects it. Every frame that bolt draws has to be blank. */
+static void qa_test_flying_punch_bolt(void)
+{
+	const JE_word sg = weapons[794].sg[0];
+	if (spriteSheet12.data == NULL || sg == 0)
+		return;  // shape tables or item data not loaded
+
+	qa_check(sg > 500 && sg <= 1000, "the Flying Punch's center bolt draws from spriteSheet12");
+
+	for (JE_word ani = 0; ani <= weapons[794].weapani; ++ani)
+	{
+		int x0, y0, x1, y1;
+		char label[96];
+		snprintf(label, sizeof(label), "Flying Punch center bolt frame %u paints nothing", ani + 1u);
+		qa_check(!sprite2_ink_bounds(spriteSheet12, sg - 500 + ani, &x0, &y0, &x1, &y1), label);
+	}
+}
+
 /* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
  * to step once per REAL tick and stay each ship's own. Both halves are easy to get wrong online:
  * a replay pass that steps it again spends a whole glow inside one displayed frame, and a shared
@@ -3030,6 +3049,7 @@ int qa_run_unit_suite(void)
 	qa_test_sidekick_rollback_state();
 	qa_test_gauge_flash_lifetime();
 	qa_test_special_icon_tops();
+	qa_test_flying_punch_bolt();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_modifier_online_parity();

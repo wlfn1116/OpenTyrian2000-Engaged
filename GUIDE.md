@@ -284,7 +284,9 @@ Cards include modifier rewards and a small level adjustment. Interest starts at
 Data cubes and secret-level orbs become random safe specials. Both draw as a
 colour-cycling "?" that throws matching sparks, and collect only on the mark
 itself. An armored orb keeps its own look until you shoot it open. A
-random-special event becomes a weapon power-up.
+random-special event becomes a weapon power-up. Two of the specials in that pool
+are named Pearl Wind; the one that fires a single aimed bolt is shown as Pearl
+Shot, and the flare-style field keeps the original name.
 
 ### Death and saving
 
@@ -513,12 +515,18 @@ to the other machine before launch.
 | --- | --- |
 | Visuals | Parallax, mirrored layers, sparks, special tint, shop sprites |
 | Heads-Up Display | Enemy bars, boss bars, gauges |
-| Weapons | Weapon Creator, Charge-Laser, autofire, trails, episode versions |
+| Weapons | Weapon Creator, Charge-Laser, autofire, spark trails |
 | Gameplay | Shot hitboxes, Ice Base Shots, Arcade tweaks |
+| Episode Versions | Items whose Ep 1-3 and Ep 4-5 data differ |
 | Diagnostics | Debug Mode, network logging, console log cleanup |
 
 Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the data for
-the current episode. Online sessions use the host's choices.
+the current episode. Online sessions use the host's choices. A changed row takes
+effect on the next game.
+
+**Episode Versions > Shop Pictures** holds the three items that differ only in
+artwork. The U-Ship and the Nort Ship have no shop illustration of their own, so
+the two data sets each lend them a different ship's; their rows pick which.
 
 Useful restored-content settings:
 

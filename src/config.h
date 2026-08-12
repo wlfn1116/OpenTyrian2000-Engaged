@@ -332,8 +332,8 @@ extern int wallopSecondBolt;
 
 // Items whose ep1-3 (tyrian.hdt) and ep4/5 (tyrian4/5.lvl) item data differ beyond the superspark
 // trail above (full diff of the two data sets): gameplay reworks, a blast sprite, retuned sounds,
-// one shop icon. epDiffMode[] forces one episode's data; JE_applyEpDiffs rewrites from shipped
-// constants.
+// one shop icon, two shop ship pictures. epDiffMode[] forces one episode's data; JE_applyEpDiffs
+// rewrites from shipped constants.
 enum
 {
 	EPDIFF_AUTO = 0,     // per-episode default: ep1-3 data in ep1-3, ep4/5 data in ep4/5
@@ -352,6 +352,8 @@ typedef enum
 	EDW_PRETZEL_MISSILE, // Pretzel Missile (wpn 795): firing sound 31 vs 30
 	EDW_DRAGON_FROST,    // Dragon Frost (wpn 806): firing sound 31 vs 30
 	EDW_SOLAR_SHIELD,    // Gencore Solar Shield (shield 8): shop icon 165 vs 153
+	EDW_USHIP_PIC,       // U-Ship (ship 10): shop picture 28 (ep1-3) vs 32 (ep4/5)
+	EDW_NORTSHIP_PIC,    // Nort Ship (ship 12): shop picture 33 (ep1-3) vs 32 (ep4/5)
 	EDW_COUNT
 } EpDiffWeapon;
 extern int epDiffMode[EDW_COUNT];  // EPDIFF_* : which episode's data each item uses

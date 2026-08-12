@@ -383,14 +383,14 @@ static const char *const superSparkCapKeys[SSW_COUNT] = { "superspark_mega_pulse
 /* Which episode's data each non-spark difference item uses (JE_applyEpDiffs, episodes.c):
    EPDIFF_AUTO (per-episode, vanilla), _EP13, or _EP45. Default Auto so vanilla is unchanged. */
 int epDiffMode[EDW_COUNT] = {
-	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,
-	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO
+	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,
+	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO
 };
 /* Config keys for the per-item episode-difference settings; indexed by EpDiffWeapon. */
 static const char *const epDiffKeys[EDW_COUNT] = {
 	"epdiff_xega_ball", "epdiff_microsol_opt5", "epdiff_flare", "epdiff_needle_laser",
 	"epdiff_bubble_gum", "epdiff_flying_punch", "epdiff_pretzel_missile", "epdiff_dragon_frost",
-	"epdiff_solar_shield"
+	"epdiff_solar_shield", "epdiff_uship_picture", "epdiff_nortship_picture"
 };
 
 /* Map a trail-tagged shot's sprite back to its weapon's cap setting, for the JE_doSP calls

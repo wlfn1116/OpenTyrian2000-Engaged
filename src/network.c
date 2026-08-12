@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       37           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       38           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1642,7 +1642,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 /* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
  * layout they always had, so only what is below moved onto new ground. */
 #define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode, bits 1-2 epDiffMode[8], bit 3 centered
-                                 shot hitboxes; twelve spare                                     */
+                                 shot hitboxes, bits 4+ the later epDiffMode entries; eight spare */
 #define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16                                    */
 #define NET_SET_DEBUG_FLAGS 42 /* Uint16: simulation-affecting Debug Mode toggles                  */
 #define NET_SET_NOCLIP      44 /* Uint8: noclipMode                                                 */
@@ -1651,11 +1651,22 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 COMPILE_TIME_ASSERT(net_settings_block_fits,
                     NET_SET_TWIDDLE + 2 == NETWORK_SETTINGS_SIZE);
 
-/* The epdiff word at byte 2 holds two bits per entry and was exactly full at eight of them, so
- * a ninth rides the tail's flags word instead. Grow that split deliberately: a tenth entry needs
- * somewhere to live, and silently dropping off the wire would leave the two item tables unequal. */
-#define NET_SET_EPDIFF_PACKED 8
-COMPILE_TIME_ASSERT(net_settings_epdiff_fits, EDW_COUNT == NET_SET_EPDIFF_PACKED + 1);
+/* The epdiff word at byte 2 holds two bits per entry and was exactly full at eight of them, so the
+ * rest ride the tail's flags word. Grow that split deliberately: silently dropping an entry off the
+ * wire would leave the two machines' item tables unequal. */
+#define NET_SET_EPDIFF_PACKED   8  /* entries 0..7 pack into the byte-2 word, two bits each */
+#define NET_SET_EPDIFF_TAIL_BIT 4  /* entries 9 up run from this flags2 bit, two bits each  */
+COMPILE_TIME_ASSERT(net_settings_epdiff_fits,
+                    NET_SET_EPDIFF_TAIL_BIT + 2 * (EDW_COUNT - NET_SET_EPDIFF_PACKED - 1) <= 16);
+
+/* Where epdiff entry i (i >= NET_SET_EPDIFF_PACKED) sits in flags2. Entry 8 keeps its original
+ * bits 1-2, below the shot-hitbox flag; the rest run from NET_SET_EPDIFF_TAIL_BIT up. */
+static int network_epdiff_tail_shift(int i)
+{
+	return (i == NET_SET_EPDIFF_PACKED)
+	       ? 1
+	       : NET_SET_EPDIFF_TAIL_BIT + 2 * (i - NET_SET_EPDIFF_PACKED - 1);
+}
 
 static Uint16 network_debug_flags_pack(void)
 {
@@ -1791,7 +1802,8 @@ int network_settings_pack(Uint8 *buf)
 	 * the debug block did, and only when somebody opened that menu. Two players who had once set
 	 * a different Boss HP therefore started a campaign fighting bosses with different health. */
 	Uint16 flags2 = expertMode ? 1 << 0 : 0;
-	flags2 |= (Uint16)(epDiffMode[EDW_SOLAR_SHIELD] & 3) << 1;
+	for (int i = NET_SET_EPDIFF_PACKED; i < EDW_COUNT; ++i)
+		flags2 |= (Uint16)(epDiffMode[i] & 3) << network_epdiff_tail_shift(i);
 	flags2 |= centeredShotHitboxes ? 1 << 3 : 0;  // where both shot loops take a hit from
 	SDLNet_Write16(flags2, &buf[NET_SET_FLAGS2]);
 	for (int i = 0; i < NETWORK_EXPERT_SLOTS; ++i)
@@ -1987,9 +1999,12 @@ int network_settings_adopt(const Uint8 *buf)
 	// must not be able to name 65535 of anything.
 	const Uint16 flags2 = SDLNet_Read16(&buf[NET_SET_FLAGS2]);
 	expertMode = (flags2 & 1) != 0;
-	epDiffMode[EDW_SOLAR_SHIELD] = (flags2 >> 1) & 3;
-	if (epDiffMode[EDW_SOLAR_SHIELD] >= EPDIFF_MODE_COUNT)
-		epDiffMode[EDW_SOLAR_SHIELD] = EPDIFF_AUTO;
+	for (int i = NET_SET_EPDIFF_PACKED; i < EDW_COUNT; ++i)
+	{
+		epDiffMode[i] = (flags2 >> network_epdiff_tail_shift(i)) & 3;
+		if (epDiffMode[i] >= EPDIFF_MODE_COUNT)
+			epDiffMode[i] = EPDIFF_AUTO;
+	}
 	centeredShotHitboxes = (flags2 & (1 << 3)) != 0;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);

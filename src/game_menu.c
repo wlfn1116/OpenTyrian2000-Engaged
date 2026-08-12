@@ -2267,7 +2267,7 @@ void JE_itemScreen(void)
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Front gun:",
 							weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name);
 						y = draw_2p_info_row(SHOP_2P_SUB_X, y, 2, "Special:",
-							special[shopPlayer()->items.special].name);
+							JE_specialName(shopPlayer()->items.special));
 						y += 4;  // gap between the two blocks
 					}
 					else
@@ -2299,7 +2299,7 @@ void JE_itemScreen(void)
 				JE_textShade(VGAScreen, 25, 50, superShips[SA+1], 15, 0, FULL_SHADE);
 				JE_helpBox(VGAScreen,   25, 60, weaponPort[shopPlayer()->items.weapon[FRONT_WEAPON].id].name, 22);
 				JE_textShade(VGAScreen, 25, 120, superShips[SA+2], 15, 0, FULL_SHADE);
-				JE_helpBox(VGAScreen,   25, 130, special[shopPlayer()->items.special].name, 22);
+				JE_helpBox(VGAScreen,   25, 130, JE_specialName(shopPlayer()->items.special), 22);
 			}
 			else
 			{

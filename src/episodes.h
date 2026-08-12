@@ -193,6 +193,11 @@ void JE_applyUnusedShopSprites(void);
 // the special draws its own shipped 2x2. Reads `unusedShopSprites`; see draw_special_icon.
 const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr);
 
+// Display name of a special. Two records ship as "Pearl Wind", one firing a single aimed bolt and
+// one spraying a flare-style field, and the endless grant pool can hand out either, so the bolt
+// shows as "Pearl Shot" while endless effects are active. Every other name is the loaded one.
+const char *JE_specialName(JE_byte id);
+
 // Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
 // player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded
 // internally against no-op work, so the shop and JE_drawOptions can just call it.

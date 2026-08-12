@@ -513,7 +513,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 37.
+`NET_VERSION` bump. The current value is 38.
 
 Recent versions:
 
@@ -537,6 +537,7 @@ Recent versions:
 | 35 | Dedicated level-start barrier packet |
 | 36 | Host player number on the resume details packet |
 | 37 | Glyph-sized pickup box on Endless special pickups |
+| 38 | Ship picture Episode Versions bits |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -828,8 +829,21 @@ Extra beams fire only when the primary shot succeeds.
 Charge-Laser setup, before custom weapon slots are claimed. The operation is
 idempotent and restores the baseline when disabled.
 
-The Gencore Solar Shield icon differs between episode item sets. Episode Versions
-owns `shields[8].itemgraphic`; the unused-sprite pass does not rewrite shields.
+The Flying Punch (weapon 794) fires five bolts. Four are the quarters of its
+fist, `spriteSheet12` 155, 157, 159 and 161 at two frames each, and the one in
+`sg[0]` continues that run into 163, where the fist art ends and People
+Pretzels' eight-frame spin starts. Item loading blanks that bolt's sprite, so it
+draws nothing while keeping its damage and the smoke trail, which `trail == 198`
+reserves for `sg[0]`. All three item sets ship 663 there, so one guarded rewrite
+covers every episode and stays idempotent.
+
+The Gencore Solar Shield icon differs between the episode item sets, and two
+ships differ in `bigshipgraphic` alone: the U-Ship (28 in Ep 1-3, 32 in Ep 4-5)
+and the Nort Ship (33, then 32). Episode Versions > Shop Pictures owns
+`shields[8].itemgraphic` and those two fields; the unused-sprite pass does not
+rewrite shields. Only 28, 32, 33, 45, and 46 have a placement entry in
+`draw_ship_illustration` and the Ship Specs screen, so no other value may be
+written there.
 
 ## Audio, logs, and platforms
 

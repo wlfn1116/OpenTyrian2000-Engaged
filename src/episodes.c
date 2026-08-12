@@ -104,7 +104,7 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
 // Specials index spriteSheet10 (the in-game HUD block) rather than the shop sheet, and eleven of
-// them share three icons between them, seven wearing the same "?". Each gets an unused player-shot
+// them share three icons between them, seven wearing the same "?". Each gets a player-shot
 // sprite for its upper half instead, so an entry has to fit the 24x14 draw_special_icon centres it
 // in. Bank is one of tyrian.shp's two shot sheets (JE_loadMainShapeTables).
 static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[] =
@@ -119,7 +119,7 @@ static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[
 	{ 19,  7,  32 },  // Missile Pod
 	{ 41,  7, 265 },  // SDF Main Gun
 	{ 45,  7, 272 },  // 8-Way Microbomb
-	{ 47, 11, 163 },  // Super Pretzel
+	{ 47, 11, 163 },  // Super Pretzel, which is People Pretzels' own bolt
 };
 
 // Shipped icons, snapshotted straight after the item load so the toggle can be flipped both
@@ -179,6 +179,19 @@ const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr)
 		}
 
 	return NULL;
+}
+
+const char *JE_specialName(JE_byte id)
+{
+	if (id > SPECIAL_NUM)
+		return special[0].name;  // the "None" record
+
+	// Matched by record data so it holds for both the ep1-3 and the ep4/5 item table.
+	if (endlessFxActive() && special[id].stype == 1 &&
+	    strncmp(special[id].name, "Pearl Wind", 10) == 0)
+		return "Pearl Shot";
+
+	return special[id].name;
 }
 
 static void JE_addChargeLaserCannon(void)
@@ -487,6 +500,15 @@ static void JE_applyEpDiffs(void)
 			// the MicroCorp HXS Class C picture, ep4/5 the one its two Gencore siblings use.
 			shields[8].itemgraphic = ep45 ? 153 : 165;
 			break;
+		case EDW_USHIP_PIC:
+			// The two ships the sets illustrate differently: ep1-3 lends the U-Ship the Gencore
+			// hull with detached wings, ep4/5 the broad USP delta the Talon and Fang use.
+			ships[10].bigshipgraphic = ep45 ? 32 : 28;
+			break;
+		case EDW_NORTSHIP_PIC:
+			// The Nort Ship gets the swept-wing Stalker hull in ep1-3, that same delta in ep4/5.
+			ships[12].bigshipgraphic = ep45 ? 32 : 33;
+			break;
 		}
 	}
 }
@@ -788,6 +810,12 @@ void JE_loadItemDat(void)
 	for (int i = 0; i <= OPTION_NUM; ++i)
 		if (strncmp(options[i].name, "Wobbley", 7) == 0 && options[i].gr[0] == 166)
 			options[i].gr[0] = options[i].gr[1];
+
+	// Four of the Flying Punch's five bolts are the quarters of its fist (spriteSheet12 155, 157,
+	// 159, 161). The fifth continues that run to 163, where the fist art ends and People Pretzels'
+	// spin begins. Blank its tile; the bolt keeps its damage and its trail.
+	if (weapons[794].sg[0] == 663)
+		weapons[794].sg[0] = 547;  // 47 through 54 are empty entries in the same sheet
 
 	// Give every icon-less shop item a placeholder icon (167) so it no longer renders a
 	// blank box; skip the "None" entries (their blank icon is intentional) and empty slots.

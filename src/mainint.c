@@ -4931,7 +4931,7 @@ void JE_debugMenu(bool center)
 				break;
 			case DBG_SPECIAL:
 				if (it->special <= SPECIAL_NUM)
-					snprintf(buf, sizeof(buf), "%s", special[it->special].name);
+					snprintf(buf, sizeof(buf), "%s", JE_specialName(it->special));
 				else
 				{
 					snprintf(buf, sizeof(buf), "%d", it->special);
@@ -4942,7 +4942,7 @@ void JE_debugMenu(bool center)
 			{
 				const int sid = twiddle_special_id(dbgTwiddleId);
 				if (sid >= 1 && sid <= SPECIAL_NUM)
-					snprintf(buf, sizeof(buf), "%s", special[sid].name);
+					snprintf(buf, sizeof(buf), "%s", JE_specialName((JE_byte)sid));
 				else
 				{
 					snprintf(buf, sizeof(buf), "#%d", dbgTwiddleId + 1);
@@ -10508,11 +10508,11 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 							}
 
 							if (isNetworkGame)
-								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], special[evalue - 32100].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], JE_specialName((JE_byte)(evalue - 32100)));
 							else if (twoPlayerMode)
-								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], special[evalue - 32100].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[43-1], JE_specialName((JE_byte)(evalue - 32100)));
 							else
-								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[64-1], special[evalue - 32100].name);
+								snprintf(tempStr, sizeof(tempStr), "%s %s", miscText[64-1], JE_specialName((JE_byte)(evalue - 32100)));
 							JE_drawTextWindow(tempStr);
 							soundQueue[7] = S_POWERUP;
 							enemyAvail[z] = 1;

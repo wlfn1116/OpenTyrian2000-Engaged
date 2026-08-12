@@ -291,6 +291,8 @@ typedef enum
 	MENU_ITEM_CHARGE_LASER,
 	MENU_ITEM_SIDEKICK_AUTOFIRE,    // charge-sidekick autofire (shares chargeSidekickAutofire with the debug menu)
 	MENU_ITEM_WALLOP_BOLT,          // Wallop Beam only: the ep4/5 second bolt per volley
+
+	/* Enhancements -> Episode Versions. */
 	MENU_ITEM_ZICA_BASE,
 	MENU_ITEM_ZICA_LENGTH,
 	MENU_ITEM_ZICA_LOCK,
@@ -339,11 +341,12 @@ typedef enum
 	MENU_WEAPONS,
 	MENU_SPARK_TRAILS,
 	MENU_SPARK_CAPS,
+	MENU_GAMEPLAY,
+	MENU_ARCADE_MODES,  // Gameplay -> Arcade Modes (settings); MENU_ARCADE below is the ship picker
 	MENU_EPISODE_VERSIONS,
 	MENU_ZICA_LASER,
 	MENU_FIRING_SOUNDS,
-	MENU_GAMEPLAY,
-	MENU_ARCADE_MODES,  // Gameplay -> Arcade Modes (settings); MENU_ARCADE below is the ship picker
+	MENU_SHOP_PICTURES,
 	MENU_DIAGNOSTICS,
 	MENU_EXTRA,
 	MENU_ARCADE,
@@ -635,16 +638,17 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
-		/* Enhancements is five domains, one submenu each: what you see, what the HUD
-		 * draws, what you fly with, how the game plays, and what it reports. Every
-		 * setting hangs off exactly one of them. */
+		/* Enhancements is six domains, one submenu each: what you see, what the HUD draws,
+		 * what you fly with, how the game plays, which episode's item data it plays with,
+		 * and what it reports. Every setting hangs off exactly one of them. */
 		[MENU_ENHANCEMENTS] = {
 			.header = "Enhancements",
 			.items = {
 				{ MENU_ITEM_SUBMENU, "Visuals...", "Backgrounds, sparks, and screen effects.", MENU_VISUALS },
 				{ MENU_ITEM_SUBMENU, "Heads-Up Display...", "Health bars and the gauges beside your ship.", MENU_HUD },
-				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, episode versions.", MENU_WEAPONS },
+				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, spark trails.", MENU_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, restored enemies, and arcade rules.", MENU_GAMEPLAY },
+				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
 				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				MENU_DONE_ROW
 			},
@@ -715,7 +719,6 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_CHARGE_LASER, "Charge-Laser:", "Re-add the cut DOS charge sidekick to its shops." },
 				{ MENU_ITEM_SIDEKICK_AUTOFIRE, "Sidekick Autofire:", "Charge sidekicks autofire on the held fire button." },
 				{ MENU_ITEM_SUBMENU, "Spark Trails...", "Weapons whose spark trails differ per episode.", MENU_SPARK_TRAILS },
-				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
 				MENU_DONE_ROW
 			},
 		},
@@ -748,6 +751,26 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
+		[MENU_GAMEPLAY] = {
+			.header = "Gameplay",
+			.items = {
+				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
+				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
+				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
+				MENU_DONE_ROW
+			},
+		},
+		[MENU_ARCADE_MODES] = {
+			// Rear Gun Scale skips the linked pair alone: player two's rear bay is its life
+			// counter there (arcade_rear_scale_active). All three bind the session online.
+			.header = "Arcade Modes",
+			.items = {
+				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
+				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Randomize the weapon each pickup ball gives." },
+				{ MENU_ITEM_ARCADE_REAR_SCALE, "Rear Gun Scale:", "Rear gun power rises with your life count too." },
+				MENU_DONE_ROW
+			},
+		},
 		[MENU_EPISODE_VERSIONS] = {
 			// Items whose ep1-3 and ep4/5 data differ beyond the spark trail. Auto plays each
 			// episode as it shipped; the other two force one version everywhere.
@@ -755,14 +778,13 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_SUBMENU, "Zica Laser...", "Zica Laser Lv11 pattern, length, lock, and buff.", MENU_ZICA_LASER },
 				{ MENU_ITEM_SUBMENU, "Firing Sounds...", "Weapons whose firing sound differs per episode.", MENU_FIRING_SOUNDS },
+				{ MENU_ITEM_SUBMENU, "Shop Pictures...", "Shop artwork that differs between the two sets.", MENU_SHOP_PICTURES },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_XEGA_BALL, "Xega Ball:",
 				  "Ep1-3 two weak balls vs Ep4-5 one strong ball.", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_MICROSOL_OPT5, "MicroSol Opt 5:",
 				  "Ep1-3 8-way fan vs Ep4-5 twin shot (MicroSol ship).", EPISODE_PICKER },
 				{ MENU_ITEM_EPDIFF_BASE + EDW_FLARE, "Flare Blast:",
 				  "Which episode's blast sprite the Flare uses.", EPISODE_PICKER },
-				{ MENU_ITEM_EPDIFF_BASE + EDW_SOLAR_SHIELD, "Solar Shield Icon:",
-				  "Ep1-3 shop icon (MicroCorp) vs Ep4-5 (Gencore).", EPISODE_PICKER },
 				MENU_DONE_ROW
 			},
 		},
@@ -794,23 +816,16 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
-		[MENU_GAMEPLAY] = {
-			.header = "Gameplay",
+		[MENU_SHOP_PICTURES] = {
+			// The three items the two sets differ on in shop artwork and nothing else.
+			.header = "Shop Pictures",
 			.items = {
-				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
-				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
-				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
-				MENU_DONE_ROW
-			},
-		},
-		[MENU_ARCADE_MODES] = {
-			// Rear Gun Scale skips the linked pair alone: player two's rear bay is its life
-			// counter there (arcade_rear_scale_active). All three bind the session online.
-			.header = "Arcade Modes",
-			.items = {
-				{ MENU_ITEM_ARCADE_LIFE_BOOST, "Life Boost:", "Arcade lives raise your shield and armor caps." },
-				{ MENU_ITEM_ARCADE_RANDOM_BALLS, "Random Pickups:", "Randomize the weapon each pickup ball gives." },
-				{ MENU_ITEM_ARCADE_REAR_SCALE, "Rear Gun Scale:", "Rear gun power rises with your life count too." },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_SOLAR_SHIELD, "Solar Shield Icon:",
+				  "Ep1-3 shop icon (MicroCorp) vs Ep4-5 (Gencore).", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_USHIP_PIC, "U-Ship Picture:",
+				  "Ep1-3 Gencore hull vs Ep4-5 USP delta in the shop.", EPISODE_PICKER },
+				{ MENU_ITEM_EPDIFF_BASE + EDW_NORTSHIP_PIC, "Nort Ship Picture:",
+				  "Ep1-3 Stalker hull vs Ep4-5 USP delta in the shop.", EPISODE_PICKER },
 				MENU_DONE_ROW
 			},
 		},

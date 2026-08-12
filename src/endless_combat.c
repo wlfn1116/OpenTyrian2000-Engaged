@@ -628,7 +628,7 @@ void endlessGrantSpecial(uint p)
 	// Item names may be space-padded in the data.
 	char *const name = endlessLastSpecialName[p];
 	const size_t nameSize = sizeof(endlessLastSpecialName[0]);
-	const char *s = special[id].name;
+	const char *s = JE_specialName(id);
 	while (*s == ' ' || *s == '\t')
 		++s;
 	SDL_strlcpy(name, s, nameSize);
