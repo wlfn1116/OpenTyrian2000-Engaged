@@ -295,6 +295,24 @@ that gate on `endlessMode`; campaign debug effects do not change campaign firing
 `endlessMode` controls run structure, saving, prices, and pickup substitution.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
+#### Endless enemy tiers
+
+`endlessEliteTierNow` is the one place a body's tier is decided. `JE_drawEnemy`
+calls it on every tick the slot still reads undecided. A score pickup settles on
+normal at once, and a damageable body rolls, with the answer cached per link
+group for the level so a multi-tile hull cannot end up wearing two tiers.
+
+An enemy the level is holding invulnerable answers 0, meaning ask again. Levels
+spawn bosses and sealed hulls at 255 armor and open them with an "Enemy Global
+Damage change" event, sometimes thousands of ticks later, and the tick's events
+all run before the draw pass. Settling on normal at the first frame would
+therefore exclude every one of those for the rest of the level.
+
+A part whose link group is already decided adopts that tier without waiting,
+which covers armor plating bolted to a damageable core. A body that stays
+invulnerable for its whole life never takes a tier, since nothing can kill it and
+no bounty can be paid for it.
+
 Elite and champion bodies shed an aura in the tier's own filter bank, under the
 presentation-only spark rules given in "Endless special pickups". It is
 staggered by enemy slot, so a linked multi-tile body emits once per part and its

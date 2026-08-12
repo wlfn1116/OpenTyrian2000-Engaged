@@ -396,13 +396,28 @@ static int endlessPickTier(void)
 	return ((int)(endlessEliteRand() % 100) < champPct) ? 3 : 2;
 }
 
-int endlessRollEliteTier(JE_byte linknum)
+static int endlessRollEliteTier(JE_byte linknum)
 {
 	if (linknum == 0)
 		return endlessPickTier();
 	if (endlessEliteLink[linknum] < 0)
 		endlessEliteLink[linknum] = (signed char)endlessPickTier();
 	return endlessEliteLink[linknum];
+}
+
+// The tier this enemy wears from here on, or 0 while the answer must wait for a later tick.
+// Levels hold bosses and sealed hulls at 255 armor and open them up much later, so an
+// invulnerable enemy stays undecided and a part adopts a tier its link group already holds.
+// See doc/notes.md, "Endless enemy tiers".
+int endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem)
+{
+	if (scoreitem)
+		return 1;  // settled: nothing promotes a pickup later
+	if (armorleft > 0 && armorleft < 255)
+		return endlessRollEliteTier(linknum);
+	if (linknum != 0 && endlessEliteLink[linknum] > 0)
+		return endlessEliteLink[linknum];
+	return 0;
 }
 
 // Special-tier HP divisor.

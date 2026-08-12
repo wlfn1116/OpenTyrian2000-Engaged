@@ -702,7 +702,7 @@ const char *endlessKillFireEvilName(void);   // one-word HUD label for the activ
 
 // Tier rolls are cached by link group.
 void endlessResetElites(void);               // clear per-level decisions (each level start)
-int  endlessRollEliteTier(JE_byte linknum);  // spawn tier: 1 normal, 2 elite, 3 champion (per linkgroup)
+int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);  // 1 normal, 2 elite, 3 champion, 0 undecided while the enemy is invulnerable
 int  endlessEliteHpMult(void);               // elite & champion HP multiplier (boss-style divisor)
 int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // combined per-hit HP divisor
 

@@ -104,7 +104,9 @@ ordinary ramps flatten.
 
 Elites and champions are palette-shifted and shed sparks in the same tint, and
 they explode in it as well. Linked parts share one tier and one bounty. Bosses
-can be promoted.
+can be promoted, and so can an enemy that starts out invulnerable: a boss flying
+in armored, or a sealed hull, takes its tier the moment the level opens it up.
+Scenery that can never be damaged is never promoted.
 
 ### Sector modifiers
 

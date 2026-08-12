@@ -1413,6 +1413,43 @@ static void qa_test_shot_hitboxes(void)
 	centeredShotHitboxes = savedCentered;
 }
 
+/* Which enemies a tier roll may land on, and when. The cases that matter are the ones a level
+ * holds invulnerable on their first frame and opens up with a later event. */
+static void qa_test_elite_tier_eligibility(void)
+{
+	const bool savedMode = endlessMode, savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+	const int savedDepth = endlessRunDepth;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	endlessRunDepth = 20;
+	endlessActiveMods = ENDLESS_MOD_APEX;  // every roll returns a tier
+
+	endlessResetElites();
+	qa_check(endlessEliteTierNow(0, 40, false) >= 2, "a damageable enemy takes a tier");
+	qa_check(endlessEliteTierNow(0, 255, false) == 0, "an unlinked invulnerable enemy stays undecided");
+	qa_check(endlessEliteTierNow(0, 255, true) == 1, "a score pickup is never a tier");
+
+	endlessResetElites();
+	qa_check(endlessEliteTierNow(64, 255, false) == 0, "a boss flying in armored waits to roll");
+	const int opened = endlessEliteTierNow(64, 254, false);
+	qa_check(opened >= 2, "...and takes its tier when the level's damage event opens it up");
+	qa_check(endlessEliteTierNow(64, 255, false) == opened,
+	         "an invulnerable part wears the tier its link group already holds");
+
+	endlessActiveMods = ENDLESS_MOD_NOELITE;
+	endlessResetElites();
+	qa_check(endlessEliteTierNow(7, 40, false) == 1 && endlessEliteTierNow(7, 255, false) == 1,
+	         "No Elites decides normal, and the group's parts still agree with it");
+
+	endlessMode = savedMode;
+	endlessCampaignMods = savedCampaign;
+	endlessActiveMods = savedMods;
+	endlessRunDepth = savedDepth;
+	endlessResetElites();
+}
+
 /* The tier tint an elite wears, and its route from a kill site into every explosion the death
  * spawns. Colour is presentation, so nothing here may reach the state hash. */
 static void qa_test_elite_explosion_tint(void)
@@ -3143,6 +3180,7 @@ int qa_run_unit_suite(void)
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();
 	qa_test_superspark_caps();
 	qa_test_network_settings();

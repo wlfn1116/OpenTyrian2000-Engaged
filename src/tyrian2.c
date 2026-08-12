@@ -2500,15 +2500,11 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				enemy[i].scroll_ylayer = (JE_byte)tempScrollYLayer;
 			}
 
-			// Endless: decide once (per linkgroup) this enemy's tier; 0 undecided, 1 normal,
-			// 2 elite, 3 champion; score pickups and invincible (255-armor) enemies excluded.
+			// Endless: this enemy's tier; 0 undecided, 1 normal, 2 elite, 3 champion. Retested
+			// every tick because an invulnerable enemy answers 0 until the level opens it up.
 			if (endlessFxActive() && enemy[i].eliteState == 0)
-			{
-				if (!enemy[i].scoreitem && enemy[i].armorleft > 0 && enemy[i].armorleft < 255)
-					enemy[i].eliteState = (JE_byte)endlessRollEliteTier(enemy[i].linknum);
-				else
-					enemy[i].eliteState = 1;
-			}
+				enemy[i].eliteState = (JE_byte)endlessEliteTierNow(
+					enemy[i].linknum, enemy[i].armorleft, enemy[i].scoreitem);
 
 			// The ship this one tracks: its own coin toss in co-op Endless, ship one everywhere else.
 			const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
