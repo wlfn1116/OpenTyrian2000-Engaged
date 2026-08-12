@@ -1052,7 +1052,7 @@ static int draw_2p_info_row(int x, int y, int bright, const char *label, const c
 // Dim the outpost and centre a notice over it while the other machine catches up.  The shop draws
 // into the 320-wide legacy menu field, so centring is on that rather than on the wider frame.
 // `detail` and `hint` may be NULL when there is nothing to add under the headline.
-static void shopWaitNotice(const char *text, const char *detail, const char *hint)
+void shopWaitNotice(const char *text, const char *detail, const char *hint)
 {
 	JE_barShade(VGAScreen, 3, 3, LEGACY_WIDTH - 4, 196);
 	JE_barShade(VGAScreen, 1, 1, LEGACY_WIDTH - 2, 198);
@@ -1073,7 +1073,7 @@ static void shopWaitNotice(const char *text, const char *detail, const char *hin
 // Keep the waiting frame alive and the cursor moving during a rendezvous. Paced here rather than
 // by a delay in the callers: every one of them can skip its own loop tail with a `continue`, and
 // this runs at the top of each pass. Vsync-on paces through JE_showVGA; off it follows the cap.
-static void shopWaitFrame(void)
+void shopWaitFrame(void)
 {
 	service_SDL_events(false);
 	mouseCursor = MOUSE_POINTER_NORMAL;

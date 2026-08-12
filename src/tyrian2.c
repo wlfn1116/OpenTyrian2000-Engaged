@@ -7045,14 +7045,26 @@ static void networkEndlessNewRun(void)
  * and the joiner adopts it. Each machine then redraws its own shop stock from the seed. */
 static bool networkEndlessResume(JE_byte slot)
 {
+	bool okay;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
-		if (!endlessLoadSlot(slot))
-			return false;
-		network_endless_run_publish();
-		return true;
+		okay = endlessLoadSlot(slot);
+		if (okay)
+			network_endless_run_publish();
 	}
-	return network_endless_run_receive(20000);
+	else
+	{
+		okay = network_endless_run_receive(20000);
+	}
+
+	if (qa_net_gameplay_ticks > 0)
+	{
+		fprintf(stderr, "net gameplay: endless resume %s, slot %d\n",
+		        okay ? "ok" : "FAILED", (int)slot);
+		fflush(stderr);
+	}
+
+	return okay;
 }
 
 /* Steps the host adds to the lobby's difficulty, which the joiner subtracts again so both land on
@@ -7554,17 +7566,29 @@ void networkStartScreen(void)
 		const int resumeSlot = timedBattleMode ? 0 : networkHostStartSelect();
 		if (resumeSlot > 0)
 		{
+			// The load clears the co-op flags; the game type the pair connected on owns them, and
+			// the seat belongs to the save rather than to the lobby row that opened the session.
+			// See "Online saves" in doc/notes.md; the joiner reasserts both the same way.
+			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
+			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
+
+			networkHostPlayerNum = save_slot_online_player((JE_byte)resumeSlot);
+			thisPlayerNum = networkHostPlayerNum;
+
 			network_prepare(PACKET_DETAILS);
 			SDLNet_Write16(network_game_type, &packet_out_temp->data[4]);
 			SDLNet_Write16(episodeNum, &packet_out_temp->data[6]);
 			SDLNet_Write16(difficultyLevel, &packet_out_temp->data[8]);
 			save_record_pack(&packet_out_temp->data[10], &saveFiles[resumeSlot - 1]);
-			network_send(10 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
+			packet_out_temp->data[10 + SAVE_RECORD_PACKED_SIZE] = (Uint8)networkHostPlayerNum;
+			network_send(11 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
 			// The save record carries the two loadouts; the Endless run behind them is its own
 			// sidecar, so it follows on the reliable channel before either machine plays a tick.
+			// Without it there is no session: one machine alone dropping to Campaign would leave
+			// the pair in two different modes.
 			if (coopEndlessMode && !networkEndlessResume((JE_byte)resumeSlot))
-				coopEndlessMode = false;   // no usable run: fall back to a plain co-op campaign
+				network_tyrian_halt(3, false);
 
 			resumed = true;
 		}
@@ -7786,8 +7810,20 @@ void networkStartScreen(void)
 			coopCampaignMode = network_game_type == NETWORK_GAME_CAMPAIGN;
 			coopEndlessMode = network_game_type == NETWORK_GAME_ENDLESS;
 
+			// The host took back the seat it saved in, so this machine flies the other one.
+			if (details_packet->len > 10 + SAVE_RECORD_PACKED_SIZE)
+			{
+				const uint hostSeat = details_packet->data[10 + SAVE_RECORD_PACKED_SIZE];
+				if (hostSeat == 1 || hostSeat == 2)
+				{
+					networkHostPlayerNum = hostSeat;
+					thisPlayerNum = 3 - networkHostPlayerNum;
+				}
+			}
+
+			// Same rule as the host's publish above: no run means no session.
 			if (coopEndlessMode && !networkEndlessResume(0))
-				coopEndlessMode = false;
+				network_tyrian_halt(3, false);
 
 			resumed = true;
 		}

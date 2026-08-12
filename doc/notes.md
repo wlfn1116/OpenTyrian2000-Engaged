@@ -51,13 +51,24 @@ count must not snap the hull.
 
 ### Display-rate ship movement
 
-Supported single-player modes use a real-time ship integrator. The simulation
-reads its position for shots and collision, keeping the sprite and hitbox
-together.
+Supported modes use a real-time ship integrator. The simulation reads its
+position for shots and collision, keeping the sprite and hitbox together.
 
-Disable this path for demos and network games. Advance it on every presentation
-loop, including loops that also run a simulation tick. Preserve joystick press
-edges for pause and menu handling.
+Disable this path for demos, which replay fixed-tick input. Advance it on every
+presentation loop, including loops that also run a simulation tick. Preserve
+joystick press edges for pause and menu handling.
+
+Network games keep the integrator for the local ship and commit its current
+position into the tick that goes on the wire. Rollback presents that live
+position. Delay-Based presents the simulation position, so the sprite, shots,
+and hitbox agree while the ship trails input by `network_delay` ticks. A remote
+ship is never integrated locally: extrapolate it from its last tick position at
+a clamped velocity and ease the result, snapping only across jumps too large to
+be a misprediction.
+
+The integrator is simulation code, so a rollback session adopts the host's
+Smooth Motion choice through `nrb_session_vt()`. A machine's own setting still
+selects how it samples live input.
 
 ### Feedback and overlays
 
@@ -80,6 +91,11 @@ scaled row so a steady gauge cannot jitter.
 
 Linked arcade runs the shared special path once per player each tick. The meter
 keeps the final clocks and merges ready/fired edges across those two passes.
+
+Only live ticks step the ready pop, so the machine that does not own the firing
+input can have the whole shot land in re-simulated ticks and never see its edge.
+The meter leaving full since the previous live tick owes the pop instead. That
+reading survives any split of the ticks and cannot count one shot twice.
 
 `JE_drawPerfOverlay` runs at the end of every present path, onto the composited
 frame at that pass's factor, so no later draw covers it. Keep it out of
@@ -395,7 +411,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 35.
+`NET_VERSION` bump. The current value is 36.
 
 Recent versions:
 
@@ -417,6 +433,7 @@ Recent versions:
 | 33 | Endless special press latch and centered Martyrdom origin |
 | 34 | Initial debug/autofire state and Delay-Based linked movement/analog aim |
 | 35 | Dedicated level-start barrier packet |
+| 36 | Host player number on the resume details packet |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -520,6 +537,11 @@ This prevents a remote commit from closing an active purchase screen.
 Custom weapon designs are published during the locked rendezvous. Save requests
 use a separate request and acknowledgement checkpoint.
 
+The acknowledgement comes from the peer's own outpost pump, so a peer still on
+the level end screen cannot answer. The checkpoint therefore draws the outpost
+wait notice and accepts Esc, and its `NET_SHOP_SAVE_WAIT` cap remains the last
+resort. Every exit writes the save; only the mirrored peer loadout can be stale.
+
 ### Endless co-op ownership
 
 Run-wide state is derived identically from seed, depth, and difficulty. Player
@@ -614,6 +636,30 @@ Rebind lives through `player_lives_port()` after loading.
 A shop save completes the bidirectional state checkpoint first. Its wait is
 bounded, drains preceding shop traffic, and leaves `PACKET_GAME_QUIT` for the
 quit handler.
+
+`JE_loadGameRecord` clears the session mode flags, and the record does not say
+which online lobby is flying it. Both machines therefore reassert
+`coopCampaignMode` and `coopEndlessMode` from `network_game_type` after loading,
+and the disconnect prompt reads `endlessMode` before the load so it can restore
+the sidecar. Resuming Endless also transfers the run itself; if that transfer
+fails the session halts, because a machine that drops to Campaign alone leaves
+the pair in two different modes.
+
+A resume never changes anyone's player number. The record's first loadout is
+always player one, so each machine records the seat it was flying and takes it
+back when it hosts the resume. The seat describes the machine rather than the
+record and `tyrian.sav` has a fixed layout, so `save_slot_online_player` keeps
+it in `opentyrian.cfg`.
+
+The lobby settled `networkHostPlayerNum` on the connect packet, before anyone
+knew a save was coming, so the resume details packet carries the host's seat and
+the joiner adopts the other. The joiner's settings screen has already drawn the
+lobby's seat on its You Fly row by then; nothing simulation-facing has read it.
+
+`is_dragonwing` is `p == 1`, so the Linked Arcade ship is the seat rather than a
+separate choice: a resume overrides the lobby's `network_host_player` row and
+the saved ship follows. The stored preference is left alone for the next new
+game.
 
 ### Online Destruct
 

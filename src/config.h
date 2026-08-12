@@ -435,6 +435,12 @@ bool save_record_is_dual_arcade(const JE_SaveFileType *rec);
 // The Super Arcade ship (1..SA), SA_SUPERTYRIAN, or SA_NONE each of the record's two ships flies.
 uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
 
+/* Which player number this machine was flying when it wrote a two-player slot, so a resume can
+ * hand every player the seat they saved in. Returns 1 for a slot with nothing recorded; setting
+ * anything but 2 forgets the slot. */
+uint save_slot_online_player(JE_byte slot);
+void save_slot_set_online_player(JE_byte slot, uint playerNum);
+
 void JE_encryptSaveTemp(void);
 void JE_decryptSaveTemp(void);
 

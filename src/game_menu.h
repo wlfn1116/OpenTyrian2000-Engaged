@@ -100,4 +100,10 @@ void JE_weaponViewFrame(void);
 // Online Endless: the sector index the charting player committed to, or -1 for none.
 extern int endlessCoopCourse;
 
+#ifdef WITH_NETWORK
+// The outpost's wait presentation, also used by the waits network.c owns.
+void shopWaitNotice(const char *text, const char *detail, const char *hint);
+void shopWaitFrame(void);
+#endif
+
 #endif // GAME_MENU_H

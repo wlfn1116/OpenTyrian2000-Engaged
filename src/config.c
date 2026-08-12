@@ -297,6 +297,34 @@ void coopCampaignScoreNote(void)
 	save_opentyrian_config();
 }
 
+/* One bit per two-player slot: set when this machine wrote that slot while flying player two.
+ * See save_slot_online_player in config.h; `net_save_player_two` carries it in opentyrian.cfg. */
+static Uint16 saveSlotPlayerTwo;
+
+// Slots 1 through 11 are the one-player page, which no online session writes.
+static uint save_slot_online_bit(JE_byte slot)
+{
+	return (slot >= 12 && slot <= SAVE_FILES_NUM) ? 1u << (slot - 12) : 0u;
+}
+
+uint save_slot_online_player(JE_byte slot)
+{
+	const uint bit = save_slot_online_bit(slot);
+	return (bit != 0 && (saveSlotPlayerTwo & bit) != 0) ? 2u : 1u;
+}
+
+void save_slot_set_online_player(JE_byte slot, uint playerNum)
+{
+	const uint bit = save_slot_online_bit(slot);
+	if (bit == 0)
+		return;
+
+	if (playerNum == 2)
+		saveSlotPlayerTwo |= (Uint16)bit;
+	else
+		saveSlotPlayerTwo &= (Uint16)~bit;
+}
+
 JE_word editorLevel;   /*Initial value 800*/
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
@@ -659,6 +687,12 @@ bool load_opentyrian_config(void)
 			if (net_host_player == 1 || net_host_player == 2)
 				network_host_player = net_host_player;
 
+			// Two-player save slots this machine wrote as player two (save_slot_online_player).
+			int net_save_player_two = saveSlotPlayerTwo;
+			config_get_int_option(section, "net_save_player_two", &net_save_player_two);
+			if (net_save_player_two >= 0 && net_save_player_two <= 0xffff)
+				saveSlotPlayerTwo = (Uint16)net_save_player_two;
+
 			// Session game speed forced on both players when hosting (1..5, 4 = Normal).
 			int net_game_speed = network_host_game_speed;
 			config_get_int_option(section, "net_host_game_speed", &net_game_speed);
@@ -992,6 +1026,7 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "net_last_host", net_last_host);
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
+	config_set_int_option(section, "net_save_player_two", saveSlotPlayerTwo);
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
 	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
@@ -1193,6 +1228,10 @@ void JE_saveGame(JE_byte slot, const char *name)
 	saveFiles[slot - 1].expertMode = expertMode;
 
 	strcpy(saveFiles[slot-1].name, name);
+
+	// Remember the seat this machine was flying, and forget it when a local game overwrites the
+	// slot; a resume reads it back so nobody changes player number across the save.
+	save_slot_set_online_player(slot, (isNetworkGame && twoPlayerMode) ? thisPlayerNum : 0);
 
 	for (uint port = 0; port < 2; ++port)
 	{

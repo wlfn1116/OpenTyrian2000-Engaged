@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       35           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       36           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1549,10 +1549,11 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		if (networkDisconnectSavePrompt(err_msg[err]))
 		{
 			// Save the pre-level outpost state, not partial progress from the interrupted level.
+			// The Endless run rides its own sidecar and the load clears the mode flag, so read it
+			// first; without this the re-save keeps no run at all.
+			const bool was_endless = endlessMode;
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
-			// The Endless run rides its own sidecar; restore it too, or the re-save captures
-			// the interrupted level's run state behind an outpost-time record.
-			if (endlessMode)
+			if (was_endless)
 				endlessLoadSlot(22);
 			JE_loadScreen(true, true);
 		}
@@ -3193,11 +3194,32 @@ void network_shop_sync_for_save(void)
 	network_shop_save_ready = false;
 	network_shop_save_request = network_shop_send_packet(SHOP_SYNC_SAVE_REQUEST, 0);
 
+	/* Held back briefly: a peer already outfitting answers within a frame or two, and a notice
+	 * that short only flickers. See "Outpost protocol" in doc/notes.md for who can answer. */
+	bool notice_drawn = false;
+
 	const Uint32 started = SDL_GetTicks();
 	while (!network_shop_save_ready)
 	{
 		watchdog_heartbeat();
-		service_SDL_events(false);
+
+		if (!notice_drawn && SDL_GetTicks() - started > 400)
+		{
+			notice_drawn = true;
+			shopWaitNotice("Waiting for other player.", "They have not reached the outpost yet.",
+			               "Press Esc to save now.");
+		}
+
+		shopWaitFrame();
+
+		// Esc takes the same exit as the timeout below, on the same terms.
+		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+		{
+			newkey = false;
+			JE_playSampleNum(S_SPRING);
+			break;
+		}
+		newkey = false;
 
 		if (network_shop_pump())
 			continue;
@@ -3224,7 +3246,6 @@ void network_shop_sync_for_save(void)
 		 * point and the two machines serialize the same transaction boundary through it. */
 		network_update();
 		network_check();
-		SDL_Delay(16);
 	}
 }
 

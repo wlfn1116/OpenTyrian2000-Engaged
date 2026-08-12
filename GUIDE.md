@@ -22,7 +22,7 @@ and controls work as before.
 The useful settings are under **Setup > Graphics**.
 
 - **Smooth Motion** presents interpolated frames at the display rate. In
-  supported single-player modes it also moves the ship at that rate.
+  supported modes it also moves your own ship at that rate, online included.
 - **Sub-pixel** renders the playfield at Auto, Off, 2x through 5x, or Native.
   Supersampled output uses unfiltered nearest-neighbor sampling.
 - **Native** follows the fitted output size. It costs more GPU time than the
@@ -39,8 +39,9 @@ The useful settings are under **Setup > Graphics**.
 - **FPS Cap** accepts Left/Right steps or a typed number. Use 35 or higher for
   online play. A value of 0 means Uncapped.
 
-The simulation still runs at 35 Hz. Demo recording, demo playback, and network
-games use fixed-step ship movement even when Smooth Motion is enabled.
+The simulation still runs at 35 Hz. Demo recording and demo playback use
+fixed-step ship movement even when Smooth Motion is enabled. Online play sets
+its own rules for ship movement; see Online play.
 
 ## Endless mode
 
@@ -337,7 +338,8 @@ The game refuses online play when the FPS cap is below 35.
 - **Difficulty** sets the session difficulty. SuperTyrian replaces it with the
   Standard or Scrollock **Variant**.
 - **Host Flies** chooses the host's side in Linked Arcade. Destruct calls this
-  row **Host Fights On**.
+  row **Host Fights On**. It applies to a new game; loading a save gives the
+  host the side it saved with instead.
 - **Credit** selects Shared or Individual income in Campaign and Endless.
 - **Double Earnings** doubles combat income under Individual credit.
 - **Game Speed** applies to both players. Destruct always uses Normal.
@@ -350,6 +352,17 @@ settings are restored afterward.
 Rollback applies local input immediately and predicts the remote player.
 Delay-Based waits for the configured network delay. The outpost shows ping;
 raising delay can help a high-latency connection at the cost of input lag.
+
+Rollback also moves your own ship at the display rate, the same as offline play,
+so it answers the controls without waiting for the network. Delay-Based draws
+your ship at the simulation position, which trails your input by the configured
+delay. In both modes the other player's ship is placed from the positions
+arriving over the network and smoothed between them, so it can drift and correct
+in a way your own ship never does.
+
+Ship movement is part of the simulation, so a rollback session uses the host's
+**Smooth Motion** setting. A host who plays with it off gives the whole session
+fixed-step ship movement.
 
 Online games do not pause. Pressing P or changing window focus leaves the game
 running. Use Esc for the in-game menu.
@@ -431,6 +444,10 @@ save and does not write to the single-player Timed Battle boards.
 Save from the shop with **Options > Save Game** or Alt+S. Both machines write a
 copy, so either player can host the resume.
 
+Saving asks the other machine to confirm its loadout first. If that player is
+still on the level end screen, the save shows **Waiting for other player.**
+until they reach the outpost. Press Esc to write the save without waiting.
+
 Linked Arcade saves remain compatible with local two-player play. Separate
 Arcade, SuperTyrian, Super Arcade, Campaign, and Endless saves must be loaded
 through the same online game type that wrote them.
@@ -440,7 +457,13 @@ the game can offer a save based on the outpost before the interrupted level.
 Hardcore Endless never offers a save.
 
 To resume, host the matching game type and choose **Load Game** after the joiner
-connects. Loading is available only at session start.
+connects. Loading is available only at session start. A resumed Campaign or
+Endless session opens the outpost for both players before its level.
+
+Everyone keeps the player number they saved with. A second player who saves
+after the first one disconnects is still player two on the resume, even when
+they host it, and the returning player is still player one. In Linked Arcade
+that player number is the ship, so the saved side comes back too.
 
 ### Desync reports
 

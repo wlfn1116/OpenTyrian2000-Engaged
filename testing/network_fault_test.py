@@ -41,6 +41,7 @@ SCENARIOS = (
     (18, "super-arcade", 0, 90, True),
     (19, "delay-linked-analog", 0, 90, True),
     (20, "timed-battle-finish", 0, 120, True),
+    (21, "endless-resume", 0, 300, True),
 )
 
 
@@ -292,6 +293,13 @@ def run_scenario(
             if "net session flags: shared=0 doubled=1" not in out:
                 print(f"network fault test: the {who} did not arm Individual + Double Earnings")
                 return 1, transcript, injected
+    if scenario == 21 and "--test-net-resume-slot" in (extra_common or []):
+        # This stage hosts from the player-two machine's directory, so the seats have to come out
+        # crossed against the harness's own host/joiner roles.
+        for out, who, seat in ((host_out, "host", 2), (join_out, "joiner", 1)):
+            if f"NET GAMEPLAY PASS player={seat}" not in out:
+                print(f"network fault test: the {who} did not keep player {seat} across the resume")
+                return 1, transcript, injected
     if scenario == 16:
         # A run that quietly fell back to the linked pair would pass the desync check while
         # proving nothing, so require both peers to report the Separate session.
@@ -414,6 +422,31 @@ def main() -> int:
                 extra_common=["--test-net-gameplay-ticks", "300",
                               "--test-net-resume-slot", "22"],
                 host_dir=host_dir, join_dir=join_dir)
+            for scratch in (host_dir, join_dir):
+                shutil.rmtree(scratch, ignore_errors=True)
+            for key, value in inj2.items():
+                injected[key] += value
+            result = 1 if (r1 or r2) else 0
+            transcript = f"[stage 1: play and save]\n{t1}[stage 2: resume]\n{t2}"
+        elif scenario == 21:
+            # The Endless half of scenario 7. Its run lives in a sidecar the save record does not
+            # carry, so the resume has to hand the whole run over before either machine plays a
+            # tick, and both have to come up in the outpost the checkpoint was written in.
+            host_dir = tempfile.mkdtemp(prefix="otnet_host_")
+            join_dir = tempfile.mkdtemp(prefix="otnet_join_")
+            zone = ["--test-net-gameplay-ticks", "1000000",
+                    "--test-net-game-type", "2", "--test-net-zones", "1"]
+            # The outpost writes the LAST LEVEL checkpoint itself, so stage one only has to reach
+            # one; it needs no --test-net-save-exit.
+            r1, t1, injected = run_scenario(
+                executable, data_dir, base_port, scenario, rounds,
+                extra_common=zone, host_dir=host_dir, join_dir=join_dir, deadline_s=deadline_s)
+            # Stage two hosts from the other machine's directory, so the peer that flew player two
+            # is the one loading the save. Nobody may change seats across a resume.
+            r2, t2, inj2 = run_scenario(
+                executable, data_dir, base_port + 4, scenario, rounds,
+                extra_common=zone + ["--test-net-resume-slot", "22"],
+                host_dir=join_dir, join_dir=host_dir, deadline_s=deadline_s)
             for scratch in (host_dir, join_dir):
                 shutil.rmtree(scratch, ignore_errors=True)
             for key, value in inj2.items():

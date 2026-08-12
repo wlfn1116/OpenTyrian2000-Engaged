@@ -1040,6 +1040,33 @@ static void qa_test_save_record_wire(void)
 	         "network save record terminates unterminated peer strings");
 }
 
+// The seat a resume hands back. Restored afterwards: these ride the player's own configuration.
+static void qa_test_save_slot_seats(void)
+{
+	uint saved[SAVE_FILES_NUM];
+	for (uint i = 0; i < SAVE_FILES_NUM; ++i)
+		saved[i] = save_slot_online_player((JE_byte)(i + 1));
+
+	save_slot_set_online_player(22, 2);
+	save_slot_set_online_player(12, 1);
+	qa_check(save_slot_online_player(22) == 2 && save_slot_online_player(12) == 1,
+	         "an online save slot remembers which player number wrote it");
+
+	save_slot_set_online_player(22, 0);
+	qa_check(save_slot_online_player(22) == 1,
+	         "a local save over an online slot forgets its player number");
+
+	save_slot_set_online_player(11, 2);
+	save_slot_set_online_player(0, 2);
+	save_slot_set_online_player(SAVE_FILES_NUM + 1, 2);
+	qa_check(save_slot_online_player(11) == 1 && save_slot_online_player(0) == 1
+	         && save_slot_online_player(SAVE_FILES_NUM + 1) == 1,
+	         "seats are kept only for the two-player page an online session writes");
+
+	for (uint i = 0; i < SAVE_FILES_NUM; ++i)
+		save_slot_set_online_player((JE_byte)(i + 1), saved[i]);
+}
+
 static void qa_test_cash_ledger(void)
 {
 	const bool savedMode = endlessMode;
@@ -2758,6 +2785,7 @@ int qa_run_unit_suite(void)
 	qa_test_custom_weapon_wire();
 	qa_test_fixed_pool_layout();
 	qa_test_save_record_wire();
+	qa_test_save_slot_seats();
 	qa_test_cash_ledger();
 	qa_test_bounty_matrix();
 	qa_test_zone_payout();

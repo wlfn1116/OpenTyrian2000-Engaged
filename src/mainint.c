@@ -7253,6 +7253,8 @@ static bool hud_light_sampled_this_tick = false;
 static int  hud_light_charge_full = 0;  // what each phase started from, so both scale to themselves
 static int  hud_light_burn_full = 0;
 static int  hud_light_flash = 0;
+static bool hud_light_was_ready = false;   // the meter at the previous live tick, and whether
+static bool hud_light_meter_seen = false;  // there has been one; a reset leaves nothing to compare
 
 // Render state for the display-rate repaint: the lit row count at the previous and current tick
 // (the clocks step once a tick, so without these the meter would climb one whole row at a time),
@@ -7298,6 +7300,8 @@ void hud_special_light_reset(void)
 	// setup calls this; without it the previous level's unfinished recharge carries over and pops
 	// the moment the new level arms.
 	hud_light_await_pop = false;
+	hud_light_was_ready = false;
+	hud_light_meter_seen = false;
 	hud_light_published = false;
 	hud_light_sampled_this_tick = false;
 	hud_light_charge_full = 0;
@@ -7344,8 +7348,22 @@ void hud_special_light_present(SDL_Surface *dst, int scale, float alpha)
 	                        bright);
 }
 
+// Full meter: nothing burning and nothing left to recharge.
+static bool hud_special_light_ready(void)
+{
+	return hud_light_burn_left == 0 && hud_light_charge_left == 0;
+}
+
 static void hud_special_light_step_flash(void)
 {
+	// A meter that has left full since the previous live tick owes a pop, whether or not this
+	// machine ever saw the shot's edge. See "Feedback and overlays" in doc/notes.md.
+	const bool ready = hud_special_light_ready();
+	if (hud_light_meter_seen && hud_light_was_ready && !ready)
+		hud_light_await_pop = true;
+	hud_light_was_ready = ready;
+	hud_light_meter_seen = true;
+
 	// Check before arming the next shot so one-tick recharges and same-tick refires are visible.
 	if (hud_light_await_pop && hud_light_armed)
 	{
@@ -7379,7 +7397,7 @@ static void draw_special_ready_light(int x, int y)
 	// Specials that set no recharge at all -- the Repulsor, Attractor and the repair pair, whose
 	// whole limit is releasing and re-pressing fire -- keep a full meter, because it is: nothing
 	// is recharging to drain.
-	const bool ready = !burning && hud_light_charge_left == 0;
+	const bool ready = hud_special_light_ready();
 
 	if (!rollback_resim_silent)
 	{
@@ -7488,6 +7506,37 @@ void qa_test_special_light_events(void)
 	hud_special_light_step_flash();
 	qa_check(hud_light_await_pop && hud_light_flash == HUD_LIGHT_FLASH,
 	         "linked one-tick recharge flashes and retains a same-tick refire for the next cycle");
+
+	/* Rollback: the peer's shot and its whole recharge land on re-simulated ticks, so no live tick
+	 * ever sees the fired edge. The meter having left full is what still owes the pop. */
+	hud_special_light_reset();
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(4, 0, false, false);
+	hud_special_light_step_flash();
+	qa_check(hud_light_await_pop && hud_light_flash == 0,
+	         "a meter that left full owes a pop for the shot only re-simulation saw");
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+	qa_check(!hud_light_await_pop && hud_light_flash == HUD_LIGHT_FLASH,
+	         "that pop arrives when the meter comes back");
+
+	/* A level that opens part way through a recharge has no full meter behind it, so it stays
+	 * silent the way an outstanding fire from the previous level does. */
+	hud_special_light_reset();
+	hud_special_light_tick_begin();
+	hud_special_light_publish(4, 0, false, false);
+	hud_special_light_step_flash();
+	hud_special_light_tick_begin();
+	hud_special_light_publish(0, 0, true, false);
+	hud_special_light_step_flash();
+	qa_check(!hud_light_await_pop && hud_light_flash == 0,
+	         "a recharge carried into a new level does not pop when it finishes");
 
 	hud_special_light_reset();
 }

@@ -86,6 +86,7 @@ Run one case with `--scenario N`. Scenario 15 is excluded from the default run.
 | 18 | super-arcade | Independent ship picks and per-ship colored-ball weapons |
 | 19 | delay-linked-analog | Delay-Based linked pair carries movement, analog turret aim, and special-ready flashes |
 | 20 | timed-battle-finish | A guest dismissal retires both result screens before session teardown |
+| 21 | endless-resume | An Endless run is handed to the joiner, both peers resume in the outpost, and neither changes player number |
 
 Each peer runs in its own temporary directory. Output pipes are drained while
 the processes run so a full pipe cannot stall network service.
