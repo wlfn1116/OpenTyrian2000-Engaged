@@ -149,7 +149,8 @@ static const char *const gaugeGradNames[] = { "Up", "Down", "Left", "Right" };
 
 // Shared by every "which episode's data" row: the Zica Laser pattern and all nine
 // Episode Versions items (ZICA_BASE_* and EPDIFF_* run in step, config.h).
-static const char *const episodeNames[] = { "Auto", "Ep 1-3", "Ep 4+" };
+// "Ep 4-5" spelled out: SMALL_FONT_SHAPES has no '+' glyph, so "Ep 4+" would draw as "Ep 4".
+static const char *const episodeNames[] = { "Auto", "Ep 1-3", "Ep 4-5" };
 
 static const char *const zicaLengthNames[] = { "Short", "Long" };
 
@@ -165,6 +166,19 @@ NAME_PICKER(gaugeGrad, gaugeGradNames)
 NAME_PICKER(episode, episodeNames)
 NAME_PICKER(zicaLength, zicaLengthNames)
 NAME_PICKER(sparkMode, sparkModeNames)
+
+/* Enhancements: preset picker. Indexed by EnhancementPreset, so all three entries appear;
+ * Custom is where hand edits land and has no values of its own, so the picker grays it,
+ * refuses it, and the arrows step past it (config.c holds the settings each preset writes). */
+static size_t enhPresetCount(void)
+{
+	return ENH_PRESET_COUNT;
+}
+static const char *enhPresetItem(size_t i, char *buffer, size_t bufferSize)
+{
+	(void)buffer; (void)bufferSize;
+	return enhancementPresetName((EnhancementPreset)i);
+}
 
 /* Sound: music synthesizer picker. */
 
@@ -264,6 +278,9 @@ typedef enum
 	MENU_ITEM_LINK_SOUNDS,          // 2P fuse/unfuse clink+spring on/off
 	MENU_ITEM_SHIP_SENS,            // "Sensitivity" slider: touch on consoles, mouse on desktop
 
+	/* Enhancements. */
+	MENU_ITEM_ENH_PRESET,           // writes the whole enhancement set at once (config.c)
+
 	/* Enhancements -> Visuals. */
 	MENU_ITEM_EXTRA_PARALLAX,
 	MENU_ITEM_MIRRORED_LAYERS,      // over-panned layer edges mirror (works in both parallax modes)
@@ -305,7 +322,7 @@ typedef enum
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
 	MENU_ITEM_ARCADE_REAR_SCALE,    // arcade rear gun fires at the life count too
 
-	/* Enhancements -> Diagnostics. */
+	/* Setup -> Diagnostics. */
 	MENU_ITEM_DEBUG_MODE,
 	MENU_ITEM_NET_LOG,              // write this session's log/opentyrian_net_<time>.log during online play
 	MENU_ITEM_CLEAR_LOGS,           // delete every stored log, crash and net alike (console-only row)
@@ -451,6 +468,17 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	}
 }
 
+/* Sound a row makes when its value changes. A Firing Sounds row answers with the firing sound it
+ * just chose, so the two episodes' versions can be compared from the menu; every other row makes
+ * the ordinary menu noise. */
+static void playMenuItemSample(MenuItemId id, JE_byte fallback)
+{
+	const int slot = menuItemRunSlot(id, MENU_ITEM_EPDIFF_BASE, EDW_COUNT);
+	const JE_byte sound = slot >= 0 ? JE_epDiffFiringSound(slot, epDiffMode[slot]) : 0;
+
+	JE_playSampleNum(sound != 0 ? sound : fallback);
+}
+
 /* Adjust a setup-menu item's value in response to left/right input (dir is -1
  * or +1). Items without a cyclable value are ignored. */
 static void adjustMenuItemValue(const MenuItem *item, int dir)
@@ -462,7 +490,7 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 	{
 		const int count = (int)item->getPickerItemsCount();
 		*intSetting = (*intSetting + count + dir) % count;
-		JE_playSampleNum(S_CURSOR);
+		playMenuItemSample(id, S_CURSOR);
 		return;
 	}
 
@@ -476,6 +504,21 @@ static void adjustMenuItemValue(const MenuItem *item, int dir)
 
 	switch (id)
 	{
+	case MENU_ITEM_ENH_PRESET:
+	{
+		// Custom joins the cycle once the player has a set of their own to come back to.
+		int next = (int)enhancementPresetState();
+		for (int step = 0; step < ENH_PRESET_COUNT; ++step)
+		{
+			next = (next + ENH_PRESET_COUNT + dir) % ENH_PRESET_COUNT;
+			if (next != ENH_PRESET_CUSTOM || enhancementCustomAvailable())
+				break;
+		}
+
+		enhancementApplyPreset((EnhancementPreset)next);
+		JE_playSampleNum(S_CURSOR);
+		break;
+	}
 	case MENU_ITEM_MUSIC_VOLUME:
 		JE_playSampleNum(S_CURSOR);
 		JE_changeVolume(&tyrMusicVolume, dir * 8, &fxVolume, 0);
@@ -595,7 +638,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_SUBMENU, "Graphics...", "Change the graphics settings.", MENU_GRAPHICS },
 				{ MENU_ITEM_SUBMENU, "Sound...", "Change the sound settings.", MENU_SOUND },
-				{ MENU_ITEM_SUBMENU, "Enhancements...", "Change the gameplay enhancement settings.", MENU_ENHANCEMENTS },
+				{ MENU_ITEM_SUBMENU, "Enhancements...", "Presets and every change this fork adds to the game.", MENU_ENHANCEMENTS },
+				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				{ MENU_ITEM_SHIP_SENS, SHIP_SENS_NAME, SHIP_SENS_HELP },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
 				{ -1 }
@@ -638,18 +682,19 @@ static bool runOptionsMenu(MenuId startMenu)
 				MENU_DONE_ROW
 			},
 		},
-		/* Enhancements is six domains, one submenu each: what you see, what the HUD draws,
-		 * what you fly with, how the game plays, which episode's item data it plays with,
-		 * and what it reports. Every setting hangs off exactly one of them. */
+		/* Enhancements is five domains, one submenu each: what you see, what the HUD draws,
+		 * what you fly with, how the game plays, and which episode's item data it plays with.
+		 * Every setting hangs off exactly one of them, and the Preset row above writes the lot. */
 		[MENU_ENHANCEMENTS] = {
 			.header = "Enhancements",
 			.items = {
+				{ MENU_ITEM_ENH_PRESET, "Preset:", "Vanilla behavior, or the Engaged recommended set.",
+				  .getPickerItemsCount = enhPresetCount, .getPickerItem = enhPresetItem },
 				{ MENU_ITEM_SUBMENU, "Visuals...", "Backgrounds, sparks, and screen effects.", MENU_VISUALS },
 				{ MENU_ITEM_SUBMENU, "Heads-Up Display...", "Health bars and the gauges beside your ship.", MENU_HUD },
 				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, spark trails.", MENU_WEAPONS },
 				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, restored enemies, and arcade rules.", MENU_GAMEPLAY },
 				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
-				{ MENU_ITEM_SUBMENU, "Diagnostics...", "Debug mode and the online session log.", MENU_DIAGNOSTICS },
 				MENU_DONE_ROW
 			},
 		},
@@ -936,6 +981,10 @@ static bool runOptionsMenu(MenuId startMenu)
 
 		const Menu *menu = &menus[currentMenu];
 
+		/* Watch the enhancement settings rather than every row that can write one: any hand
+		 * edit lands here as a set matching neither preset, and becomes the set Custom holds. */
+		enhancementNoteCustom();
+
 		// Draw header.
 		draw_font_hv_shadow(VGAScreen, xCenter, yMenuHeader, menu->header, large_font, centered, 15, -3, false, 2);
 
@@ -1009,6 +1058,10 @@ static bool runOptionsMenu(MenuId startMenu)
 				value = *boolSetting ? "On" : "Off";
 			else switch (menuItem->id)
 			{
+			case MENU_ITEM_ENH_PRESET:
+				value = enhancementPresetName(enhancementPresetState());
+				break;
+
 			case MENU_ITEM_DISPLAY:
 				value = "Window";
 				if (fullscreen_display >= 0)
@@ -1120,7 +1173,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			}
 
 			default:
-				// Submenu rows, Done, and the Super Arcade ship codes carry no value.
+				// Submenu rows, headings, Done, and the Super Arcade ship codes carry no value.
 				break;
 			}
 
@@ -1132,7 +1185,24 @@ static bool runOptionsMenu(MenuId startMenu)
 		// user can confirm FluidSynth actually picked up their .sf2 (see loudness.c).
 		const char *statusText = menuItems[*selectedMenuItemIndex].description;
 		char musicSynthStatus[128];
-		if (menuItems[*selectedMenuItemIndex].id == MENU_ITEM_MUSIC_DEVICE)
+		if (menuItems[*selectedMenuItemIndex].id == MENU_ITEM_ENH_PRESET)
+		{
+			// Say what the current state means. A preset rewrites every enhancement setting,
+			// so it also says that Custom is kept and can be picked again.
+			switch (enhancementPresetState())
+			{
+			case ENH_PRESET_VANILLA:
+				statusText = "Every enhancement set to play like the original game.";
+				break;
+			case ENH_PRESET_ENGAGED:
+				statusText = "Every enhancement at this fork's recommended value.";
+				break;
+			default:
+				statusText = "Your own mix, kept as Custom while you try the others.";
+				break;
+			}
+		}
+		else if (menuItems[*selectedMenuItemIndex].id == MENU_ITEM_MUSIC_DEVICE)
 		{
 			const bool noSoundFont = !soundfont_available();
 			if (noSoundFont && (music_device == FLUIDSYNTH || currentPicker == MENU_ITEM_MUSIC_DEVICE))
@@ -1179,15 +1249,20 @@ static bool runOptionsMenu(MenuId startMenu)
 
 				// Algorithm scalers are unavailable while Sub-pixel is on (the hi
 				// path bypasses them in-game); gray them out. FluidSynth is likewise
-				// unusable with no SoundFont to load (see loudness.c).
+				// unusable with no SoundFont to load (see loudness.c), and Custom until
+				// the player has a set of their own for it to restore.
 				const bool grayed = (currentPicker == MENU_ITEM_SCALER
 				                     && render_supersample != 1 && !scaler_is_plain((uint)i))
 				                 || (currentPicker == MENU_ITEM_MUSIC_DEVICE
-				                     && (MusicDevice)i == FLUIDSYNTH && !soundfont_available());
+				                     && (MusicDevice)i == FLUIDSYNTH && !soundfont_available())
+				                 || (currentPicker == MENU_ITEM_ENH_PRESET
+				                     && (EnhancementPreset)i == ENH_PRESET_CUSTOM
+				                     && !enhancementCustomAvailable());
 
 				const char *value = selectedMenuItem->getPickerItem(i, buffer, sizeof buffer);
 
-				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, value, normal_font, left_aligned, 15, -3 + (selected ? 2 : 0) + (grayed ? -4 : 0), false, 2);
+				draw_font_hv_shadow(VGAScreen, xMenuItemValue, y, value, normal_font, left_aligned, 15,
+				                    -3 + (selected ? 2 : 0) + (grayed ? -4 : 0), false, 2);
 			}
 		}
 
@@ -1367,12 +1442,14 @@ static bool runOptionsMenu(MenuId startMenu)
 				{
 					fpsTyped = false;
 					adjustMenuItemValue(&menuItems[*selectedMenuItemIndex], -1);
+					JE_applyItemDataSettings();  // land the change now, not at the next episode load
 					break;
 				}
 				case SDL_SCANCODE_RIGHT:
 				{
 					fpsTyped = false;
 					adjustMenuItemValue(&menuItems[*selectedMenuItemIndex], +1);
+					JE_applyItemDataSettings();
 					break;
 				}
 				case SDL_SCANCODE_SPACE:
@@ -1416,6 +1493,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				else if (boolSetting != NULL)
 				{
 					*boolSetting = !*boolSetting;
+					JE_applyItemDataSettings();  // covers the Zica Lv11 lock and buff rows
 					JE_playSampleNum(S_CLICK);
 				}
 				else if (intSetting != NULL && menuItemHasPicker(selectedMenuItem))
@@ -1427,6 +1505,14 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				else switch (selectedMenuItemId)
 				{
+				case MENU_ITEM_ENH_PRESET:
+				{
+					JE_playSampleNum(S_CLICK);
+
+					currentPicker = selectedMenuItemId;
+					pickerSelectedIndex = (size_t)enhancementPresetState();
+					break;
+				}
 				case MENU_ITEM_DONE:
 				{
 					JE_playSampleNum(S_SELECT);
@@ -1741,15 +1827,32 @@ static bool runOptionsMenu(MenuId startMenu)
 
 			if (action)
 			{
-				JE_playSampleNum(S_CLICK);
-
 				// The index-backed settings commit straight into the setting the row maps to;
 				// the rest need work beyond storing the index.
 				int *const intSetting = menuItemIntSetting(selectedMenuItem->id);
 				if (intSetting != NULL)
-					*intSetting = (int)pickerSelectedIndex;
-				else switch (selectedMenuItem->id)
 				{
+					*intSetting = (int)pickerSelectedIndex;
+					JE_applyItemDataSettings();  // land the change now, not at the next episode load
+				}
+
+				// After the write, so a Firing Sounds row answers with the sound it just chose.
+				playMenuItemSample(selectedMenuItem->id, S_CLICK);
+
+				if (intSetting == NULL) switch (selectedMenuItem->id)
+				{
+				case MENU_ITEM_ENH_PRESET:
+				{
+					// Custom is grayed out until there is a set of the player's own to restore.
+					if ((EnhancementPreset)pickerSelectedIndex == ENH_PRESET_CUSTOM
+					    && !enhancementCustomAvailable())
+					{
+						JE_playSampleNum(S_SPRING);
+						break;
+					}
+					enhancementApplyPreset((EnhancementPreset)pickerSelectedIndex);
+					break;
+				}
 				case MENU_ITEM_DISPLAY:
 				{
 					if ((int)pickerSelectedIndex - 1 != fullscreen_display)

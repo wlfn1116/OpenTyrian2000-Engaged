@@ -542,9 +542,76 @@ Generic option rows map through `menuItemIntSetting` and
 `menuItemBoolSetting`. Keep explicit cases for rows with side effects, such as
 scalers, synths, sliders, and submenus.
 
+`enhancementSettings[]` in `config.c` lists every setting the Enhancements menu
+edits with the value each preset writes to it. The Preset row derives Vanilla and
+Engaged from that table; an enhancement setting added to the menu but not to the
+table keeps reading as an untouched preset after it is changed.
+`qa_test_enhancement_presets` probes one setting per menu screen and fails when
+one stops reaching the table. It runs last in the suite because it leaves the
+settings where it put them.
+
+Custom is the set the player last had by hand. `enhancementNoteCustom` captures
+it whenever the live values match neither preset, and the menu loop calls it each
+frame rather than every row that can write a setting. It persists as one
+positional list guarded by `enhancementTableShape`, a fingerprint of the table's
+fixed columns; reordering or retuning the table drops the stored list instead of
+restoring values into the wrong settings.
+
+The table deliberately omits `chargeSidekickAutofire`: it is stored per save
+slot, so a preset would overwrite a value that loading a game sets.
+
+Engaged has to equal the shipped defaults in `config.c`, or a fresh install reads
+as Custom before the player has touched anything. Change the two together. All
+five settings Engaged currently differs from Vanilla on travel in the host's
+settings block already, so retuning a preset needs no `NET_VERSION` change.
+
+`epDiffSounds[]` in `episodes.c` holds the five items whose two data sets differ
+only in firing sound. `JE_applyEpDiffs` writes from it and
+`JE_epDiffFiringSound` reads it for the menu's preview, so the two cannot drift.
+
+A gun is a port, not a weapon record: each of its eleven power levels is its own
+record with its own copy of the shared fields, and the shipped data sets them
+alike. Patch such a field through `weaponPort[port].op[mode][level]`, as
+`JE_setPortFiringSound` and `JE_applySuperSparks` do; writing the level-1 record
+alone leaves every upgraded shot on the old value while still changing the item
+data enough to look applied. `qa_test_firing_sound_levels` checks every level of
+the three ported sounds. Sidekicks and specials with no charge stages are single
+records and can be written directly.
+
+Settings baked into the loaded item data (the Charge-Laser slot, Zica Lv11 shape,
+superspark trails, the ep1-3/ep4-5 differences, shop icons) do not take effect by
+being stored: something has to rewrite the tables. `JE_applyItemDataSettings` is
+that step, and the menu calls it as a row changes so the change lands in the
+running game rather than at the next episode load. A firing sound is read live as
+`weapons[wpNum].sound` at fire time, so once the table is rewritten the next shot
+uses it. Every other Enhancements setting is read at use time and needs no apply
+step.
+
+`JE_applyChargeLaserCannon` is reversible where the rest are merely idempotent:
+adding the sidekick consumes a free `options[]` slot, so `JE_loadItemDat` captures
+that slot and its original record first and the toggle writes or restores it. It
+refuses a slot that something else holds, which can happen when the toggle was off
+at load and a custom sidekick claimed it; that case waits for the next item-data
+load rather than overwriting the sidekick.
+
+`qa_test_item_data_settings` hashes the item tables around each of these settings
+and fails if flipping one no longer changes them. Prefer adding a row there to
+hand-checking a new setting.
+
+Menus draw in `normal_font` throughout. `small_font` is not interchangeable with
+it at the same brightness: `blit_sprite_hv` draws palette index
+`hue<<4 | (glyph intensity + value)`, and the small font's glyphs store 7 where
+the normal font stores 13, so the same `value` renders it six palette steps
+darker. `JE_textShade` passes brightness 4 for the help line for that reason.
+
+A row value drawn in `normal_font` is `SMALL_FONT_SHAPES`, which has no `+`
+glyph; missing glyphs are skipped without advancing, so `"Ep 4+"` drew as
+`"Ep 4"` until it was spelled `"Ep 4-5"`.
+
 At the classic pitch, seven rows fit above the help line. Measured limits:
 
 - 135 pixels for a row name beside its value;
+- 95 pixels for the value itself;
 - 275 pixels for help text from x=45;
 - the active font width, not character count, decides whether text fits.
 

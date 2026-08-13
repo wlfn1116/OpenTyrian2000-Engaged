@@ -372,19 +372,25 @@ int superSparkMode[SSW_COUNT] = { SUPER_SPARKS_ON, SUPER_SPARKS_ON, SUPER_SPARKS
    on, so the trail keeps its classic density (JE_doSP calls in shots.c). On by default. */
 bool superSparkClassicCap[SSW_COUNT] = { true, true, true, true };
 /* The ep4/5 Wallop Beam's second bolt (JE_applySuperSparks, episodes.c). Unlike the spark
-   trails this changes firepower (two bolts per volley), so it defaults to Auto = each
-   episode's shipped pattern rather than On. */
-int wallopSecondBolt = SUPER_SPARKS_AUTO;
+   trails this changes firepower (two bolts per volley); On gives every episode the ep4/5
+   double-bolt pattern. */
+int wallopSecondBolt = SUPER_SPARKS_ON;
 
 /* Config keys for the per-weapon trail settings; indexed by SuperSparkWeapon. */
 static const char *const superSparkKeys[SSW_COUNT]    = { "superspark_mega_pulse", "superspark_wallop_beam", "superspark_protron_b", "superspark_ice" };
 static const char *const superSparkCapKeys[SSW_COUNT] = { "superspark_mega_pulse_cap", "superspark_wallop_beam_cap", "superspark_protron_b_cap", "superspark_ice_cap" };
 
 /* Which episode's data each non-spark difference item uses (JE_applyEpDiffs, episodes.c):
-   EPDIFF_AUTO (per-episode, vanilla), _EP13, or _EP45. Default Auto so vanilla is unchanged. */
+   EPDIFF_AUTO (per-episode, vanilla), _EP13, or _EP45. The three gameplay reworks stay on Auto,
+   so each episode plays its own. The rest are picked one by one for how they sound and look
+   rather than by era, so the two shop ship pictures and the Gum-Gun keep their ep1-3 version
+   while the other four firing sounds and the Solar Shield icon take the ep4/5 one.
+   Keep in EpDiffWeapon order. */
 int epDiffMode[EDW_COUNT] = {
-	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,
-	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO
+	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,                                // gameplay reworks
+	EPDIFF_EP45, EPDIFF_EP13, EPDIFF_EP45, EPDIFF_EP45, EPDIFF_EP45,      // firing sounds
+	EPDIFF_EP45,                                                          // Solar Shield icon
+	EPDIFF_EP13, EPDIFF_EP13                                              // borrowed ship pictures
 };
 /* Config keys for the per-item episode-difference settings; indexed by EpDiffWeapon. */
 static const char *const epDiffKeys[EDW_COUNT] = {
@@ -426,22 +432,21 @@ int zicaLaserLength = ZICA_LEN_SHORT;   /* ZICA_LEN_* : Lv11 shot length */
 bool zicaLaserLock = false;             /* Length=Long: ship-lock the side beams (default = free) */
 bool zicaLaserBuff = true;              /* also fire the Lv10 beam alongside the Lv11 shots */
 /* Re-add the cut DOS "Charge-Laser Cannon" sidekick to its original shops + the debug
-   menu (JE_addChargeLaserCannon in episodes.c). */
+   menu (JE_applyChargeLaserCannon in episodes.c). */
 bool chargeLaserCannon = true;
 /* Wake the dormant dispenser bases (enemy 80-83; JE_makeEnemy in tyrian2.c). Campaign
    only; Endless ignores the toggle and asks the zone instead. */
 bool restoreBaseDispensers = true;
 /* Arcade modes only: a ship's shield and armour ceilings scale with its life count
-   (arcade_life_scaling_active in player.c). Off (the default) leaves the vanilla hull
-   numbers, so arcade plays as shipped until the toggle is turned on. */
-bool arcadeLifeBoost = false;
+   (arcade_life_scaling_active in player.c). Off leaves the vanilla hull numbers. */
+bool arcadeLifeBoost = true;
 /* Arcade modes only: every weapon ball a level drops is re-rolled inside its own class
    (JE_makeEnemy in tyrian2.c). Off = the hand-placed pickups the level scripts specify. */
-bool arcadeRandomBalls = false;
+bool arcadeRandomBalls = true;
 /* One-player arcade only: the life count raises the rear gun on top of its own banked power-up
    balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
    player.c). Two-player is out; there the rear bay already IS player 2's life counter. */
-bool arcadeRearGunScale = false;
+bool arcadeRearGunScale = true;
 /* Spend the shop sheet's 11 never-referenced icons on the weapons and sidekicks that ship
    sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
    Cosmetic and shop-only; it matters most in Endless, which offers every port at once. */
@@ -454,6 +459,243 @@ bool centeredShotHitboxes = true;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
+
+/* Every setting the Enhancements menu edits, with the value each preset writes to it. Vanilla
+ * reproduces the DOS game wherever a setting can; Engaged is this fork's recommended set and
+ * matches the defaults above. See "Menus and UI" in doc/notes.md for what depends on this table
+ * staying complete. */
+typedef struct
+{
+	int  *intSetting;   // exactly one of the two pointers is set
+	bool *boolSetting;
+	int   vanilla;
+	int   engaged;
+} EnhancementSetting;
+
+static const EnhancementSetting enhancementSettings[] = {
+	/* Visuals. */
+	{ .boolSetting = &extraParallax,     .vanilla = false, .engaged = false },
+	{ .boolSetting = &mirroredLayers,    .vanilla = false, .engaged = true },
+	{ .boolSetting = &extraSparks,       .vanilla = false, .engaged = true },
+	{ .boolSetting = &specialScreenTint, .vanilla = true,  .engaged = true },
+	{ .boolSetting = &unusedShopSprites, .vanilla = false, .engaged = true },
+
+	/* Enemy bars. Layout, position and opacity only show once the bars are on, so both
+	 * presets share them. */
+	{ .boolSetting = &enemyBars,       .vanilla = false, .engaged = true },
+	{ .intSetting = &enemyBarLayout,   .vanilla = ENEMY_BAR_HORIZONTAL, .engaged = ENEMY_BAR_HORIZONTAL },
+	{ .intSetting = &enemyBarPosition, .vanilla = ENEMY_BAR_POS_BOTTOM, .engaged = ENEMY_BAR_POS_BOTTOM },
+	{ .intSetting = &enemyBarOpacity,  .vanilla = 75, .engaged = 75 },
+
+	/* Boss bars. Classic bars ignore layout and grouping, so both presets leave those alone. */
+	{ .intSetting = &bossBarStyle,   .vanilla = BOSS_BAR_CLASSIC,   .engaged = BOSS_BAR_ENHANCED },
+	{ .intSetting = &bossBarLayout,  .vanilla = BOSS_BAR_TOP,       .engaged = BOSS_BAR_TOP },
+	{ .intSetting = &bossBarTwoMode, .vanilla = BOSS_BAR_TWO_SPLIT, .engaged = BOSS_BAR_TWO_SPLIT },
+
+	/* Gauges. */
+	{ .intSetting = &gaugeGradGenerator, .vanilla = GAUGE_GRAD_UP, .engaged = GAUGE_GRAD_UP },
+	{ .intSetting = &gaugeGradShield,    .vanilla = GAUGE_GRAD_UP, .engaged = GAUGE_GRAD_RIGHT },
+	{ .intSetting = &gaugeGradArmor,     .vanilla = GAUGE_GRAD_UP, .engaged = GAUGE_GRAD_LEFT },
+	{ .boolSetting = &gaugeFlashShield,  .vanilla = false,         .engaged = true },
+	{ .boolSetting = &gaugeFlashArmor,   .vanilla = false,         .engaged = true },
+
+	/* Weapons. */
+	{ .boolSetting = &customWeaponEnabled, .vanilla = false, .engaged = true },
+	{ .boolSetting = &chargeLaserCannon,   .vanilla = false, .engaged = true },
+
+	/* Spark trails, and the Wallop second bolt that goes with them. */
+	{ .intSetting = &superSparkMode[SSW_MEGA_PULSE],  .vanilla = SUPER_SPARKS_AUTO, .engaged = SUPER_SPARKS_ON },
+	{ .intSetting = &superSparkMode[SSW_WALLOP_BEAM], .vanilla = SUPER_SPARKS_AUTO, .engaged = SUPER_SPARKS_ON },
+	{ .intSetting = &superSparkMode[SSW_PROTRON_B],   .vanilla = SUPER_SPARKS_AUTO, .engaged = SUPER_SPARKS_ON },
+	{ .intSetting = &superSparkMode[SSW_ICE],         .vanilla = SUPER_SPARKS_AUTO, .engaged = SUPER_SPARKS_ON },
+	{ .intSetting = &wallopSecondBolt, .vanilla = SUPER_SPARKS_AUTO, .engaged = SUPER_SPARKS_ON },
+
+	/* Classic spark caps. */
+	{ .boolSetting = &superSparkClassicCap[SSW_MEGA_PULSE],  .vanilla = true, .engaged = true },
+	{ .boolSetting = &superSparkClassicCap[SSW_WALLOP_BEAM], .vanilla = true, .engaged = true },
+	{ .boolSetting = &superSparkClassicCap[SSW_PROTRON_B],   .vanilla = true, .engaged = true },
+	{ .boolSetting = &superSparkClassicCap[SSW_ICE],         .vanilla = true, .engaged = true },
+
+	/* Gameplay. */
+	{ .boolSetting = &centeredShotHitboxes,  .vanilla = false, .engaged = true },
+	{ .boolSetting = &restoreBaseDispensers, .vanilla = false, .engaged = true },
+
+	/* Arcade modes. */
+	{ .boolSetting = &arcadeLifeBoost,    .vanilla = false, .engaged = true },
+	{ .boolSetting = &arcadeRandomBalls,  .vanilla = false, .engaged = true },
+	{ .boolSetting = &arcadeRearGunScale, .vanilla = false, .engaged = true },
+
+	/* Zica Laser Lv11. */
+	{ .intSetting = &zicaLaserBase,   .vanilla = ZICA_BASE_AUTO, .engaged = ZICA_BASE_EP4 },
+	{ .intSetting = &zicaLaserLength, .vanilla = ZICA_LEN_SHORT, .engaged = ZICA_LEN_SHORT },
+	{ .boolSetting = &zicaLaserLock,  .vanilla = false,          .engaged = false },
+	{ .boolSetting = &zicaLaserBuff,  .vanilla = false,          .engaged = true },
+
+	/* Episode item data. Vanilla is Auto throughout, which plays each episode with the data it
+	 * shipped with. Engaged keeps Auto for the three gameplay reworks and pins the presentation
+	 * rows one by one, for how each sounds or looks rather than by era. */
+	{ .intSetting = &epDiffMode[EDW_XEGA_BALL],       .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
+	{ .intSetting = &epDiffMode[EDW_MICROSOL_OPT5],   .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
+	{ .intSetting = &epDiffMode[EDW_FLARE],           .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
+	{ .intSetting = &epDiffMode[EDW_NEEDLE_LASER],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },
+	{ .intSetting = &epDiffMode[EDW_BUBBLE_GUM],      .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP13 },
+	{ .intSetting = &epDiffMode[EDW_FLYING_PUNCH],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },
+	{ .intSetting = &epDiffMode[EDW_PRETZEL_MISSILE], .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },
+	{ .intSetting = &epDiffMode[EDW_DRAGON_FROST],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },
+	{ .intSetting = &epDiffMode[EDW_SOLAR_SHIELD],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },
+	{ .intSetting = &epDiffMode[EDW_USHIP_PIC],       .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP13 },
+	{ .intSetting = &epDiffMode[EDW_NORTSHIP_PIC],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP13 },
+};
+
+static int enhancementRead(const EnhancementSetting *setting)
+{
+	return setting->intSetting != NULL ? *setting->intSetting : (*setting->boolSetting ? 1 : 0);
+}
+
+#define PRESET_BIT(preset) (1u << (preset))
+
+const char *enhancementPresetName(EnhancementPreset preset)
+{
+	static const char *const names[ENH_PRESET_COUNT] = { "Vanilla", "Engaged", "Custom" };
+
+	return names[preset % ENH_PRESET_COUNT];
+}
+
+EnhancementPreset enhancementPresetState(void)
+{
+	unsigned int match = PRESET_BIT(ENH_PRESET_VANILLA) | PRESET_BIT(ENH_PRESET_ENGAGED);
+
+	for (size_t i = 0; i < COUNTOF(enhancementSettings); ++i)
+	{
+		const EnhancementSetting *const setting = &enhancementSettings[i];
+		const int value = enhancementRead(setting);
+
+		if (value != setting->vanilla)
+			match &= ~PRESET_BIT(ENH_PRESET_VANILLA);
+		if (value != setting->engaged)
+			match &= ~PRESET_BIT(ENH_PRESET_ENGAGED);
+	}
+
+	// The two presets differ somewhere, so at most one of these bits survives.
+	if ((match & PRESET_BIT(ENH_PRESET_ENGAGED)) != 0)
+		return ENH_PRESET_ENGAGED;
+	if ((match & PRESET_BIT(ENH_PRESET_VANILLA)) != 0)
+		return ENH_PRESET_VANILLA;
+
+	return ENH_PRESET_CUSTOM;
+}
+
+/* The set the player built by hand, so switching to Vanilla or Engaged and back hands it over
+ * again rather than losing it. Captured whenever the live settings match neither preset. */
+static int enhancementCustom[COUNTOF(enhancementSettings)];
+static bool enhancementCustomKnown = false;
+
+/* Fingerprint of the table's fixed columns. A stored Custom set is a positional list, so it is
+ * only meaningful against the table it was written from; a reordered or retuned table changes
+ * this and the stored list is dropped instead of restoring values into the wrong settings. */
+static unsigned int enhancementTableShape(void)
+{
+	unsigned int shape = (unsigned int)COUNTOF(enhancementSettings);
+
+	for (size_t i = 0; i < COUNTOF(enhancementSettings); ++i)
+	{
+		const EnhancementSetting *const setting = &enhancementSettings[i];
+		const unsigned int row = (unsigned int)(setting->vanilla * 3 + setting->engaged * 5)
+		                       + (setting->intSetting != NULL ? 1u : 0u);
+
+		shape = (shape ^ row) * 16777619u;  // FNV-1a mixing step
+	}
+
+	return shape;
+}
+
+/* Read back a stored Custom set. It is a positional list against the table above, so anything
+ * short of a full list for this table leaves nothing remembered rather than a partial set. */
+static void enhancementLoadCustomSet(const char *list)
+{
+	int values[COUNTOF(enhancementSettings)];
+	size_t count = 0;
+
+	for (const char *p = list; *p != '\0'; )
+	{
+		char *end;
+		const long value = strtol(p, &end, 10);
+
+		if (end == p || count == COUNTOF(values))
+			return;
+
+		values[count++] = (int)value;
+		p = (*end == ',') ? end + 1 : end;
+	}
+
+	if (count != COUNTOF(values))
+		return;
+
+	memcpy(enhancementCustom, values, sizeof(enhancementCustom));
+	enhancementCustomKnown = true;
+}
+
+static void enhancementSaveCustomSet(ConfigSection *section)
+{
+	if (!enhancementCustomKnown)
+		return;
+
+	char list[COUNTOF(enhancementSettings) * 8];
+	size_t used = 0;
+
+	for (size_t i = 0; i < COUNTOF(enhancementSettings); ++i)
+	{
+		const int written = snprintf(list + used, sizeof(list) - used, "%s%d",
+		                             i == 0 ? "" : ",", enhancementCustom[i]);
+		if (written < 0 || (size_t)written >= sizeof(list) - used)
+			return;  // a truncated list would restore the wrong settings; write none
+
+		used += (size_t)written;
+	}
+
+	config_set_string_option(section, "custom_set", list);
+	config_set_int_option(section, "custom_set_shape", (int)enhancementTableShape());
+}
+
+bool enhancementCustomAvailable(void)
+{
+	return enhancementCustomKnown;
+}
+
+void enhancementNoteCustom(void)
+{
+	if (enhancementPresetState() != ENH_PRESET_CUSTOM)
+		return;
+
+	for (size_t i = 0; i < COUNTOF(enhancementSettings); ++i)
+		enhancementCustom[i] = enhancementRead(&enhancementSettings[i]);
+
+	enhancementCustomKnown = true;
+}
+
+void enhancementApplyPreset(EnhancementPreset preset)
+{
+	if (preset >= ENH_PRESET_COUNT)
+		return;
+	if (preset == ENH_PRESET_CUSTOM && !enhancementCustomKnown)
+		return;
+
+	for (size_t i = 0; i < COUNTOF(enhancementSettings); ++i)
+	{
+		const EnhancementSetting *const setting = &enhancementSettings[i];
+		const int value = preset == ENH_PRESET_VANILLA ? setting->vanilla
+		                : preset == ENH_PRESET_ENGAGED ? setting->engaged
+		                                               : enhancementCustom[i];
+
+		if (setting->intSetting != NULL)
+			*setting->intSetting = value;
+		else
+			*setting->boolSetting = (value != 0);
+	}
+
+	// Rewrite the item data from the settings just written, the same way a hand-edited row does.
+	JE_applyItemDataSettings();
+}
 
 Config opentyrian_config;  // implicitly initialized
 
@@ -865,6 +1107,16 @@ bool load_opentyrian_config(void)
 		if (gaugeGradArmor < 0 || gaugeGradArmor >= GAUGE_GRAD_COUNT)
 			gaugeGradArmor = GAUGE_GRAD_LEFT;
 
+		// The set the Custom preset hands back, kept only while it still fits the preset table.
+		const char *customSet;
+		int customSetShape = 0;
+		config_get_int_option(section, "custom_set_shape", &customSetShape);
+		if (config_get_string_option(section, "custom_set", &customSet)
+		    && (unsigned int)customSetShape == enhancementTableShape())
+		{
+			enhancementLoadCustomSet(customSet);
+		}
+
 		for (int i = 0; i < expertSettingsCount; ++i)
 			config_get_int_option(section, expertSettings[i].cfgKey, expertSettings[i].value);
 		clamp_expert_settings();  // guard against a hand-edited or stale config
@@ -1067,6 +1319,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "arcade_rear_gun_scale", arcadeRearGunScale ? 1 : 0);
 	config_set_int_option(section, "unused_shop_sprites", unusedShopSprites ? 1 : 0);
 	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
+	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 
 	config_set_int_option(section, "custom_weapon_enabled", customWeaponEnabled ? 1 : 0);

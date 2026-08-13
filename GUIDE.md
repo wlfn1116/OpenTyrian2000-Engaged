@@ -10,10 +10,12 @@ and controls work as before.
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
 | Enable smooth rendering | Setup > Graphics |
+| Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
 | Change health bars or gauges | Setup > Enhancements > Heads-Up Display |
 | Configure restored content | Setup > Enhancements > Weapons or Gameplay |
 | Choose a music backend | Setup > Sound > Music Synth |
+| Turn on Debug Mode or network logs | Setup > Diagnostics |
 | Open Destruct or SuperTyrian | Title screen > Extra |
 | Use in-game cheats | Esc > Extra |
 
@@ -314,7 +316,7 @@ Record pages are under **High Scores** and can be erased there.
 ## Arcade tweaks
 
 Open **Setup > Enhancements > Gameplay > Arcade Modes**. All three settings are
-off by default; the host controls them online.
+on under the Engaged preset and off under Vanilla; the host controls them online.
 
 ### Life Boost
 
@@ -491,8 +493,8 @@ that player number is the ship, so the saved side comes back too.
 Attach the matching network log from both machines. Each log contains its local
 state for the disputed frame.
 
-Network logging is under **Setup > Enhancements > Diagnostics**. Console builds
-also provide **Clear Logs**.
+Network logging is under **Setup > Diagnostics**. Console builds also provide
+**Clear Logs**.
 
 ## Custom Weapon Creator
 
@@ -529,11 +531,39 @@ to the other machine before launch.
 | Weapons | Weapon Creator, Charge-Laser, autofire, spark trails |
 | Gameplay | Shot hitboxes, Ice Base Shots, Arcade tweaks |
 | Episode Versions | Items whose Ep 1-3 and Ep 4-5 data differ |
-| Diagnostics | Debug Mode, network logging, console log cleanup |
+
+### Presets
+
+The **Preset** row at the top sets every enhancement at once:
+
+| Preset | Effect |
+| --- | --- |
+| Vanilla | Plays as close to the original Tyrian 2000 as the settings allow |
+| Engaged | The recommended set, which is also what a new install starts with |
+| Custom | The last set you built by hand |
+
+Changing any setting makes the current values your Custom set. Switching to
+Vanilla or Engaged and back to Custom returns them, and the set survives a
+restart. Editing again from either preset replaces the remembered set with the
+new values, so only the most recent one is kept. Custom stays grayed out until
+you have changed something for it to hold.
+
+Two settings the Enhancements menu shows are outside the presets. **Sidekick
+Autofire** is stored per save slot, so loading a game sets it and a preset must
+not overwrite it. **Weapon Creator** designs weapons rather than holding a
+setting.
 
 Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the data for
 the current episode. Online sessions use the host's choices. A changed row takes
-effect on the next game.
+effect immediately, including in a game already in progress.
+
+Vanilla sets every one of these rows to Auto. Engaged keeps Auto for the three
+gameplay reworks and pins the rest per item, chosen for how each sounds or looks
+rather than by era: the Bubble Gum-Gun keeps its Ep 1-3 sound and the other four
+weapons take their Ep 4+ one, the Solar Shield takes its Ep 4+ icon, and the two
+borrowed ship pictures stay on Ep 1-3. **Firing Sounds** rows play the sound they
+land on as you change them, so the two versions can be compared without starting
+a game.
 
 **Episode Versions > Shop Pictures** holds the three items that differ only in
 artwork. The U-Ship and the Nort Ship have no shop illustration of their own, so
@@ -554,6 +584,12 @@ Useful restored-content settings:
 
 The special-weapon HUD light is a charge meter. It drains during use, fills
 during recharge, and flashes when ready.
+
+## Diagnostics
+
+**Setup > Diagnostics** holds Debug Mode and the network log. These configure
+tools rather than the game, so the Enhancements presets leave them alone.
+Console builds also provide **Clear Logs**, which deletes every stored log.
 
 ### Debug Mode
 

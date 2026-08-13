@@ -132,7 +132,7 @@ static JE_byte unusedSpriteLaserSlot;
 static bool    unusedSpriteCaptured = false;
 
 // Snapshot the as-shipped icons. Runs after the 167 placeholder pass and after
-// JE_addChargeLaserCannon, so the baseline is what the shops would otherwise draw.
+// JE_applyChargeLaserCannon, so the baseline is what the shops would otherwise draw.
 static void JE_captureUnusedShopSprites(void)
 {
 	for (unsigned int i = 0; i < COUNTOF(unusedSpritePorts); ++i)
@@ -194,24 +194,34 @@ const char *JE_specialName(JE_byte id)
 	return special[id].name;
 }
 
-static void JE_addChargeLaserCannon(void)
+/* The sidekick slot the Charge-Laser claims, and what that slot held before it did. Captured
+ * while options[] is freshly loaded, so the toggle can put the original record back and the
+ * menu can flip it without reloading the item data. */
+static int chargeLaserNativeSlot = 0;
+static JE_OptionType chargeLaserNativeOption;
+static bool chargeLaserCaptured = false;
+
+static void JE_captureChargeLaserSlot(void)
 {
-	// Claim the first free ("None") sidekick slot; free slots differ per episode, so
-	// this never clobbers a real weapon. Names are space-padded to 30 chars, hence the
-	// prefix match.
-	int slot = 0;
+	// The first free ("None") sidekick slot; free slots differ per episode, so this never
+	// clobbers a real weapon. Names are space-padded to 30 chars, hence the prefix match.
+	chargeLaserNativeSlot = 0;
 	for (int i = 1; i <= OPTION_NUM; ++i)
 	{
 		if (strncmp(options[i].name, "None", 4) == 0)
 		{
-			slot = i;
+			chargeLaserNativeSlot = i;
+			chargeLaserNativeOption = options[i];
 			break;
 		}
 	}
-	chargeLaserSlot = slot;  // 0 if no free slot; shops check for > 0
-	if (slot == 0)
-		return;  // no spare slot in this episode's item data
 
+	chargeLaserCaptured = true;
+	chargeLaserSlot = 0;
+}
+
+static void JE_writeChargeLaserCannon(int slot)
+{
 	// Six DOS charge stages, weapons 452..457; unused fields remain zero.
 	static const struct { JE_byte shotrepeat, attack; JE_word sg; } stage[6] =
 	{
@@ -258,6 +268,35 @@ static void JE_addChargeLaserCannon(void)
 	o->ammo        = 0;      // infinite; a charge weapon, not an ammo weapon
 	o->stop        = true;
 	o->icongr      = 6;
+}
+
+/* Put the Charge-Laser in its captured slot or take it back out, so the menu toggle applies
+ * without an item-data reload. Only ever writes the slot captured at load: the custom sidekicks
+ * claim from the far end and skip chargeLaserSlot, but with the toggle off at load one of them
+ * could have taken this slot, and overwriting a claimed slot would lose that sidekick. */
+static void JE_applyChargeLaserCannon(void)
+{
+	if (!chargeLaserCaptured || chargeLaserNativeSlot == 0)
+	{
+		chargeLaserSlot = 0;  // no spare slot in this episode's item data
+		return;
+	}
+
+	const bool mine = chargeLaserSlot == chargeLaserNativeSlot;
+
+	if (chargeLaserCannon)
+	{
+		if (!mine && strncmp(options[chargeLaserNativeSlot].name, "None", 4) != 0)
+			return;  // something else holds the slot; wait for the next item-data load
+
+		JE_writeChargeLaserCannon(chargeLaserNativeSlot);
+		chargeLaserSlot = chargeLaserNativeSlot;  // shops check for > 0
+	}
+	else if (mine)
+	{
+		options[chargeLaserNativeSlot] = chargeLaserNativeOption;
+		chargeLaserSlot = 0;
+	}
 }
 
 // The Zica Laser (port 5) Lv11 native horizontal layout, captured before we reshape it so
@@ -411,6 +450,49 @@ static void JE_applySuperSparks(void)
 
 // Apply episode-specific item data from shipped constants. Auto keeps the running episode;
 // only active pattern slots are rewritten.
+/* The five items whose two data sets differ in nothing but the firing sound. One table, so the
+ * apply below and the menu's preview (JE_epDiffFiringSound) cannot drift apart. A gun names its
+ * port, whose every power level takes the sound; the two sidekicks carry no charge stages and
+ * name their single weapon record (see "Menus and UI" in doc/notes.md). */
+static const struct
+{
+	JE_byte port;
+	JE_word weapon;
+	JE_byte ep13, ep45;
+} epDiffSounds[EDW_COUNT] = {
+	[EDW_NEEDLE_LASER]    = { .port = 43,    .ep13 = 31, .ep45 = 13 },
+	[EDW_BUBBLE_GUM]      = { .weapon = 792, .ep13 = 30, .ep45 = 13 },
+	[EDW_FLYING_PUNCH]    = { .weapon = 794, .ep13 = 31, .ep45 = 30 },
+	[EDW_PRETZEL_MISSILE] = { .port = 44,    .ep13 = 31, .ep45 = 30 },
+	[EDW_DRAGON_FROST]    = { .port = 45,    .ep13 = 31, .ep45 = 30 },
+};
+
+// Give every weapon record a port can fire the same sound, across both firing modes.
+static void JE_setPortFiringSound(JE_byte port, JE_byte sound)
+{
+	if (port == 0 || port > PORT_NUM)
+		return;
+
+	for (unsigned int mode = 0; mode < COUNTOF(weaponPort[port].op); ++mode)
+		for (unsigned int level = 0; level < COUNTOF(weaponPort[port].op[0]); ++level)
+		{
+			const JE_word wpn = weaponPort[port].op[mode][level];
+			if (wpn > 0 && wpn <= WEAP_NUM)
+				weapons[wpn].sound = sound;
+		}
+}
+
+JE_byte JE_epDiffFiringSound(int item, int mode)
+{
+	if (item < 0 || item >= EDW_COUNT
+	    || (epDiffSounds[item].port == 0 && epDiffSounds[item].weapon == 0))
+		return 0;
+
+	const bool ep45 = mode == EPDIFF_EP45 || (mode == EPDIFF_AUTO && episodeNum > 3);
+
+	return ep45 ? epDiffSounds[item].ep45 : epDiffSounds[item].ep13;
+}
+
 static void JE_applyEpDiffs(void)
 {
 	for (int w = 0; w < EDW_COUNT; ++w)
@@ -490,11 +572,20 @@ static void JE_applyEpDiffs(void)
 			for (int i = 0; i < 4; ++i)
 				weapons[622].sg[i] = ep45 ? 21 : 20;
 			break;
-		case EDW_NEEDLE_LASER:  weapons[781].sound = ep45 ? 13 : 31;  break;
-		case EDW_BUBBLE_GUM:    weapons[792].sound = ep45 ? 13 : 30;  break;
-		case EDW_FLYING_PUNCH:  weapons[794].sound = ep45 ? 30 : 31;  break;
-		case EDW_PRETZEL_MISSILE: weapons[795].sound = ep45 ? 30 : 31;  break;
-		case EDW_DRAGON_FROST:  weapons[806].sound = ep45 ? 30 : 31;  break;
+		case EDW_NEEDLE_LASER:
+		case EDW_BUBBLE_GUM:
+		case EDW_FLYING_PUNCH:
+		case EDW_PRETZEL_MISSILE:
+		case EDW_DRAGON_FROST:
+		{
+			const JE_byte sound = ep45 ? epDiffSounds[w].ep45 : epDiffSounds[w].ep13;
+
+			if (epDiffSounds[w].port != 0)
+				JE_setPortFiringSound(epDiffSounds[w].port, sound);
+			else
+				weapons[epDiffSounds[w].weapon].sound = sound;
+			break;
+		}
 		case EDW_SOLAR_SHIELD:
 			// The one shop icon the two sets disagree on: ep1-3 gives the Gencore Solar Shield
 			// the MicroCorp HXS Class C picture, ep4/5 the one its two Gencore siblings use.
@@ -783,10 +874,10 @@ void JE_loadItemDat(void)
 
 	fclose(f);
 
-	if (chargeLaserCannon)
-		JE_addChargeLaserCannon();  // re-add the cut DOS Charge-Laser Cannon (shops + debug menu)
-	else
-		chargeLaserSlot = 0;        // disabled: shops/debug keep the stock item layout
+	// Note the slot the cut DOS Charge-Laser Cannon takes and what it displaces, then add it if
+	// the toggle is on (shops + debug menu); off leaves the stock item layout.
+	JE_captureChargeLaserSlot();
+	JE_applyChargeLaserCannon();
 
 	// Capture the Zica Lv11 native pattern now, while wpn 209 still holds freshly-loaded
 	// data, so ZICA_BASE_AUTO can restore it later (JE_applyZicaLaserConfig may reshape it).
@@ -845,17 +936,26 @@ void JE_loadItemDat(void)
 	JE_labelAmmoSidekicks();        // ...and show the magazine size in the shop name (Flying Punch, Bubble Gum-Gun)
 }
 
+void JE_applyItemDataSettings(void)
+{
+	// Each of these rewrites its fields from shipped constants (the Zica Lv11 pattern and the
+	// Charge-Laser's slot from the natives captured at load), so the set is idempotent and safe
+	// to reapply at any time. The Charge-Laser goes first: it sets chargeLaserSlot, which the
+	// shop-icon pass at the end reads.
+	JE_applyChargeLaserCannon();
+	JE_applyZicaLaserConfig();
+	JE_applySuperSparks();
+	JE_applyEpDiffs();
+	JE_applyUnusedShopSprites();
+}
+
 void JE_initEpisode(JE_byte newEpisode)
 {
 	if (newEpisode == episodeNum)
 	{
-		// Same episode: item data isn't reloaded, but the Zica Lv11 config may have changed
-		// in the menu since; reapply so it takes effect next game (restores/reshapes wpn 209
-		// from the captured native, so it is idempotent).
-		JE_applyZicaLaserConfig();
-		JE_applySuperSparks();      // likewise reapply the superspark trail modes (self-correcting)
-		JE_applyEpDiffs();          // and the other per-item ep1-3/ep4-5 choices
-		JE_applyUnusedShopSprites();  // ...and the shop-icon choice (restores the shipped icons when off)
+		// Same episode: the item data isn't reloaded, but the settings baked into it may have
+		// changed in the menu since.
+		JE_applyItemDataSettings();
 		return;
 	}
 

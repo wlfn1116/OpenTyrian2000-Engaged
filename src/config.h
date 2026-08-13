@@ -411,6 +411,29 @@ extern bool unusedShopSprites;  // give the shop sheet's unreferenced icons to i
 extern bool centeredShotHitboxes;  // collide a projectile from the middle of its sprite, not its corner (tyrian2.c)
 extern int  xmasMode;           // -1 = auto (by date), 0 = force off, 1 = force on
 
+/* Enhancement presets. The Enhancements menu's Preset row writes every enhancement setting at
+ * once, and names whichever preset the live values still match. The set is enhancementSettings[]
+ * in config.c; "Menus and UI" in doc/notes.md covers what it leaves out and why. */
+typedef enum
+{
+	ENH_PRESET_VANILLA = 0,  // reproduce the shipped DOS behavior wherever a setting can
+	ENH_PRESET_ENGAGED,      // this fork's recommended set, which is also its defaults
+	ENH_PRESET_CUSTOM,       // the live values match neither preset
+	ENH_PRESET_COUNT
+} EnhancementPreset;
+
+const char *enhancementPresetName(EnhancementPreset preset);
+// The preset the enhancement settings currently match.
+EnhancementPreset enhancementPresetState(void);
+/* Write the settings the named preset holds. CUSTOM hands back the set the player last had, and
+ * does nothing when there is none to hand back. */
+void enhancementApplyPreset(EnhancementPreset preset);
+// Whether a Custom set has been remembered, and so whether CUSTOM is a preset that can be applied.
+bool enhancementCustomAvailable(void);
+/* Remember the live settings as the Custom set if they match neither preset. The menu calls this
+ * as it runs, so any hand edit becomes the set that CUSTOM restores. */
+void enhancementNoteCustom(void);
+
 extern Config opentyrian_config;
 
 void JE_initProcessorType(void);

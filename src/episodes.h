@@ -186,6 +186,15 @@ void JE_initEpisode(JE_byte newEpisode);
 // without an item reload. Idempotent.
 void JE_applyUnusedShopSprites(void);
 
+/* Rewrite the loaded item data from every enhancement setting baked into it: the Zica Lv11
+ * shape, the superspark trails, the ep1-3/ep4-5 item differences, and the shop icons. Idempotent,
+ * so the menu calls it as a row changes and the change lands without starting a new game. */
+void JE_applyItemDataSettings(void);
+
+/* The firing sound an EpDiffWeapon row lands on in the given EPDIFF_* mode, so the Firing Sounds
+ * menu can play what it just chose. 0 for a row whose two versions differ in something else. */
+JE_byte JE_epDiffFiringSound(int item, int mode);
+
 // Lower half of the shared "?" icon: a bare ship body, the base every rebuilt special icon sits on.
 #define SPECIAL_ICON_SHIP_GR 125
 

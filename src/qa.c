@@ -1684,6 +1684,265 @@ static void qa_test_superspark_caps(void)
 	memcpy(superSparkClassicCap, savedCap, sizeof(savedCap));
 }
 
+/* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
+ * tables JE_loadItemDat filled, which is JE_applyItemDataSettings. Each setting below is flipped
+ * between two values with that call in between, and the tables have to come out different. One
+ * that stops reaching them fails here instead of silently doing nothing in the running game. */
+static Uint32 qa_item_data_hash(void)
+{
+	const struct { const void *data; size_t size; } tables[] = {
+		{ weapons,    sizeof(weapons) },
+		{ options,    sizeof(options) },
+		{ weaponPort, sizeof(weaponPort) },
+		{ shields,    sizeof(shields) },
+		{ ships,      sizeof(ships) },
+	};
+
+	Uint32 hash = 2166136261u;
+	for (size_t t = 0; t < COUNTOF(tables); ++t)
+	{
+		const Uint8 *const bytes = tables[t].data;
+		for (size_t i = 0; i < tables[t].size; ++i)
+			hash = (hash ^ bytes[i]) * 16777619u;
+	}
+
+	return hash;
+}
+
+static void qa_test_item_data_settings(void)
+{
+	static const struct
+	{
+		int *intSetting;    // exactly one of the two pointers is set
+		bool *boolSetting;
+		int a, b;
+		const char *name;
+	} baked[] = {
+		{ .boolSetting = &chargeLaserCannon, .a = false, .b = true, .name = "Charge-Laser" },
+		{ .boolSetting = &unusedShopSprites, .a = false, .b = true, .name = "Unused Sprites" },
+		{ .intSetting = &superSparkMode[SSW_MEGA_PULSE], .a = SUPER_SPARKS_OFF, .b = SUPER_SPARKS_ON,
+		  .name = "Mega Pulse trail" },
+		{ .intSetting = &superSparkMode[SSW_WALLOP_BEAM], .a = SUPER_SPARKS_OFF, .b = SUPER_SPARKS_ON,
+		  .name = "Wallop Beam trail" },
+		{ .intSetting = &superSparkMode[SSW_PROTRON_B], .a = SUPER_SPARKS_OFF, .b = SUPER_SPARKS_ON,
+		  .name = "Protron -B- trail" },
+		{ .intSetting = &superSparkMode[SSW_ICE], .a = SUPER_SPARKS_OFF, .b = SUPER_SPARKS_ON,
+		  .name = "Ice Beam trail" },
+		{ .intSetting = &wallopSecondBolt, .a = SUPER_SPARKS_OFF, .b = SUPER_SPARKS_ON,
+		  .name = "Wallop 2nd Bolt" },
+		{ .intSetting = &zicaLaserBase, .a = ZICA_BASE_EP13, .b = ZICA_BASE_EP4,
+		  .name = "Zica Lv11 pattern" },
+		{ .intSetting = &epDiffMode[EDW_XEGA_BALL], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Xega Ball" },
+		{ .intSetting = &epDiffMode[EDW_MICROSOL_OPT5], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "MicroSol Opt 5" },
+		{ .intSetting = &epDiffMode[EDW_FLARE], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Flare Blast" },
+		{ .intSetting = &epDiffMode[EDW_NEEDLE_LASER], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Needle Laser sound" },
+		{ .intSetting = &epDiffMode[EDW_BUBBLE_GUM], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Bubble Gum-Gun sound" },
+		{ .intSetting = &epDiffMode[EDW_FLYING_PUNCH], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Flying Punch sound" },
+		{ .intSetting = &epDiffMode[EDW_PRETZEL_MISSILE], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Pretzel Missile sound" },
+		{ .intSetting = &epDiffMode[EDW_DRAGON_FROST], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Dragon Frost sound" },
+		{ .intSetting = &epDiffMode[EDW_SOLAR_SHIELD], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Solar Shield icon" },
+		{ .intSetting = &epDiffMode[EDW_USHIP_PIC], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "U-Ship picture" },
+		{ .intSetting = &epDiffMode[EDW_NORTSHIP_PIC], .a = EPDIFF_EP13, .b = EPDIFF_EP45,
+		  .name = "Nort Ship picture" },
+	};
+
+	for (size_t i = 0; i < COUNTOF(baked); ++i)
+	{
+		const int saved = baked[i].intSetting != NULL ? *baked[i].intSetting
+		                                              : (*baked[i].boolSetting ? 1 : 0);
+
+		Uint32 hash[2];
+		for (int side = 0; side < 2; ++side)
+		{
+			const int value = side == 0 ? baked[i].a : baked[i].b;
+			if (baked[i].intSetting != NULL)
+				*baked[i].intSetting = value;
+			else
+				*baked[i].boolSetting = (value != 0);
+
+			JE_applyItemDataSettings();
+			hash[side] = qa_item_data_hash();
+		}
+
+		if (hash[0] == hash[1])
+			fprintf(stderr, "# %s does not reach the item data\n", baked[i].name);
+		qa_check(hash[0] != hash[1], "an item-data setting changes the item data when applied");
+
+		if (baked[i].intSetting != NULL)
+			*baked[i].intSetting = saved;
+		else
+			*baked[i].boolSetting = (saved != 0);
+	}
+
+	/* Reapplying the settings that were there all along has to put the tables back exactly, or
+	 * a toggled row would leave the item data subtly different from a fresh load. */
+	const Uint32 restored = (JE_applyItemDataSettings(), qa_item_data_hash());
+	JE_applyItemDataSettings();
+	qa_check(qa_item_data_hash() == restored, "reapplying the same settings is idempotent");
+}
+
+/* A gun is a port: each of its eleven power levels is a separate weapon record with its own
+ * sound, and both data sets set all eleven alike. An epdiff row therefore has to move every
+ * level, and moving only the first leaves every upgraded shot on the other episode's sound while
+ * still changing the item data enough to satisfy the hash check above. */
+static void qa_test_firing_sound_levels(void)
+{
+	static const struct
+	{
+		int item;
+		JE_byte port;    // a gun, whose every power level has to match...
+		JE_word weapon;  // ...or a sidekick's single record
+		const char *name;
+	} sounds[] = {
+		{ EDW_NEEDLE_LASER,    .port = 43, .name = "Needle Laser" },
+		{ EDW_PRETZEL_MISSILE, .port = 44, .name = "Pretzel Missile" },
+		{ EDW_DRAGON_FROST,    .port = 45, .name = "Dragon Frost" },
+		{ EDW_BUBBLE_GUM,    .weapon = 792, .name = "Bubble Gum-Gun" },
+		{ EDW_FLYING_PUNCH,  .weapon = 794, .name = "Flying Punch" },
+	};
+
+	int savedMode[EDW_COUNT];
+	memcpy(savedMode, epDiffMode, sizeof(savedMode));
+
+	const int modes[] = { EPDIFF_EP13, EPDIFF_EP45 };
+	for (size_t i = 0; i < COUNTOF(sounds); ++i)
+	{
+		for (size_t m = 0; m < COUNTOF(modes); ++m)
+		{
+			epDiffMode[sounds[i].item] = modes[m];
+			JE_applyItemDataSettings();
+
+			const JE_byte want = JE_epDiffFiringSound(sounds[i].item, modes[m]);
+			qa_check(want != 0, "a firing-sound row resolves to a sound");
+
+			int levels = 0, wrong = 0;
+			if (sounds[i].port != 0)
+			{
+				for (unsigned int mode = 0; mode < COUNTOF(weaponPort[0].op); ++mode)
+					for (unsigned int lvl = 0; lvl < COUNTOF(weaponPort[0].op[0]); ++lvl)
+					{
+						const JE_word wpn = weaponPort[sounds[i].port].op[mode][lvl];
+						if (wpn == 0 || wpn > WEAP_NUM)
+							continue;
+						++levels;
+						if (weapons[wpn].sound != want)
+							++wrong;
+					}
+			}
+			else
+			{
+				levels = 1;
+				wrong = weapons[sounds[i].weapon].sound != want;
+			}
+
+			if (wrong != 0)
+				fprintf(stderr, "# %s: %d of %d power levels kept the other sound\n",
+				        sounds[i].name, wrong, levels);
+			qa_check(levels > 0, "a firing-sound row names weapon records that exist");
+			qa_check(wrong == 0, "every power level of a firing-sound row takes the chosen sound");
+		}
+	}
+
+	memcpy(epDiffMode, savedMode, sizeof(savedMode));
+	JE_applyItemDataSettings();
+}
+
+/* Enhancement presets (config.c): one probe per menu screen, proving that screen's settings reach
+ * the preset table, plus the Custom set's round trip. Runs last in the suite, because it moves
+ * the real settings and cannot restore what it cannot list. */
+static void qa_test_enhancement_presets(void)
+{
+	/* One setting per Enhancements screen and group. Each is poked away from the Engaged set the
+	 * probe starts from, which leaves the table matching neither preset if the setting is listed. */
+	static const struct
+	{
+		int *intSetting;    // exactly one of the two pointers is set, as in the preset table
+		bool *boolSetting;
+		int poke;
+		const char *name;
+	} probes[] = {
+		{ .boolSetting = &extraParallax, .poke = true, .name = "Visuals" },
+		{ .intSetting = &enemyBarOpacity, .poke = 40, .name = "Enemy Bars" },
+		{ .intSetting = &bossBarLayout, .poke = BOSS_BAR_BOTTOM, .name = "Boss Bars" },
+		{ .intSetting = &gaugeGradGenerator, .poke = GAUGE_GRAD_DOWN, .name = "Gauges" },
+		{ .boolSetting = &gaugeFlashArmor, .poke = false, .name = "Gauge flash" },
+		{ .boolSetting = &customWeaponEnabled, .poke = false, .name = "Weapons" },
+		{ .boolSetting = &chargeLaserCannon, .poke = false, .name = "Charge-Laser" },
+		{ .intSetting = &superSparkMode[SSW_ICE], .poke = SUPER_SPARKS_OFF, .name = "Spark Trails" },
+		{ .intSetting = &wallopSecondBolt, .poke = SUPER_SPARKS_OFF, .name = "Wallop 2nd Bolt" },
+		{ .boolSetting = &superSparkClassicCap[SSW_ICE], .poke = false, .name = "Classic Spark Caps" },
+		{ .boolSetting = &centeredShotHitboxes, .poke = false, .name = "Gameplay" },
+		{ .boolSetting = &arcadeLifeBoost, .poke = false, .name = "Arcade Modes" },
+		{ .intSetting = &epDiffMode[EDW_FLARE], .poke = EPDIFF_EP13, .name = "Item Data" },
+		{ .intSetting = &zicaLaserLength, .poke = ZICA_LEN_LONG, .name = "Zica Laser" },
+		{ .intSetting = &epDiffMode[EDW_NEEDLE_LASER], .poke = EPDIFF_EP13, .name = "Firing Sounds" },
+		{ .intSetting = &epDiffMode[EDW_SOLAR_SHIELD], .poke = EPDIFF_EP13, .name = "Solar Shield icon" },
+		{ .intSetting = &epDiffMode[EDW_USHIP_PIC], .poke = EPDIFF_EP45, .name = "Shop Pictures" },
+	};
+
+	/* Both presets have to land on themselves, or the Preset row would read Custom the moment
+	 * one was applied. */
+	const EnhancementPreset presets[] = { ENH_PRESET_VANILLA, ENH_PRESET_ENGAGED };
+	for (size_t p = 0; p < COUNTOF(presets); ++p)
+	{
+		enhancementApplyPreset(presets[p]);
+		qa_check(enhancementPresetState() == presets[p], "an applied preset reads back as itself");
+	}
+
+	for (size_t i = 0; i < COUNTOF(probes); ++i)
+	{
+		enhancementApplyPreset(ENH_PRESET_ENGAGED);
+
+		if (probes[i].intSetting != NULL)
+			*probes[i].intSetting = probes[i].poke;
+		else
+			*probes[i].boolSetting = (probes[i].poke != 0);
+
+		if (enhancementPresetState() != ENH_PRESET_CUSTOM)
+			fprintf(stderr, "# %s does not reach the preset table\n", probes[i].name);
+		qa_check(enhancementPresetState() == ENH_PRESET_CUSTOM,
+		         "a changed setting turns the Preset row Custom");
+	}
+
+	/* Custom is a set the player keeps: it survives a trip through the other presets and comes
+	 * back with the values that were changed by hand. */
+	enhancementApplyPreset(ENH_PRESET_ENGAGED);
+	*probes[0].boolSetting = (probes[0].poke != 0);
+	const int handMade = *probes[1].intSetting = probes[1].poke;
+	enhancementNoteCustom();
+	qa_check(enhancementCustomAvailable(), "a hand-edited set is remembered as Custom");
+
+	enhancementApplyPreset(ENH_PRESET_VANILLA);
+	qa_check(enhancementPresetState() == ENH_PRESET_VANILLA, "a preset still overwrites that set");
+
+	enhancementApplyPreset(ENH_PRESET_CUSTOM);
+	qa_check(enhancementPresetState() == ENH_PRESET_CUSTOM
+	         && *probes[0].boolSetting == (probes[0].poke != 0) && *probes[1].intSetting == handMade,
+	         "...and Custom hands the whole set back");
+
+	/* Editing from a preset replaces the remembered set rather than adding to it. */
+	enhancementApplyPreset(ENH_PRESET_VANILLA);
+	*probes[2].intSetting = probes[2].poke;
+	enhancementNoteCustom();
+	enhancementApplyPreset(ENH_PRESET_ENGAGED);
+	enhancementApplyPreset(ENH_PRESET_CUSTOM);
+	qa_check(*probes[2].intSetting == probes[2].poke && *probes[1].intSetting != handMade,
+	         "the newest hand-edited set is the one Custom holds");
+
+	enhancementApplyPreset(ENH_PRESET_ENGAGED);
+	qa_check(enhancementPresetState() == ENH_PRESET_ENGAGED, "re-applying a preset clears Custom");
+}
+
 /* Online Endless: the block each machine publishes for its own player, the way two players'
  * purchases fold into one sector, and who charts the next course. */
 static void qa_test_endless_coop(void)
@@ -3222,6 +3481,9 @@ int qa_run_unit_suite(void)
 	qa_test_courses();
 	qa_test_course_base_rule();
 	qa_test_course_reroll();
+	qa_test_item_data_settings();
+	qa_test_firing_sound_levels();
+	qa_test_enhancement_presets();  // keep last: it leaves the enhancement settings where it put them
 
 	printf("1..%u\n", qa_checks);
 	printf("# %u checks, %u failures\n", qa_checks, qa_failures);
