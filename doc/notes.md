@@ -818,7 +818,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 42.
+`NET_VERSION` bump. The current value is 44.
 
 Recent versions:
 
@@ -848,6 +848,7 @@ Recent versions:
 | 41 | Endless tiers settled on an enemy's first frame |
 | 42 | Endless Base Level rule byte carries four rules; level-bag hand in the player block |
 | 43 | Endless run transfer carries the v25 save header |
+| 44 | Endless piercing damage ramp, elite/champ rebalance, remainder carry, and carried per-hull damage |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
