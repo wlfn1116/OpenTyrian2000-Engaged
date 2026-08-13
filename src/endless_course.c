@@ -533,6 +533,92 @@ static Uint64 endlessPickSignatureTheme(int forCourse)
 	return endlessPickThemeMods(endlessHostileThemes, COUNTOF(endlessHostileThemes), sig, 0);
 }
 
+/* Where the next Shuffle draw comes from, and where the live chart's hand came off. Every deal
+ * takes its hand off the front and leaves the cursor past it, so a Radar reroll spends the hand it
+ * discarded. Both are run state and ride the save; see "Level shuffle" in doc/notes.md. */
+int endlessShuffleNext = 0;
+int endlessShuffleHandStart = 0;
+int endlessShuffleHandDepth = -1;
+
+void endlessShuffleSetNext(int position)
+{
+	if (position < 0)
+		position = 0;
+	if (position > ENDLESS_SHUFFLE_POSITION_MAX)
+		position = ENDLESS_SHUFFLE_POSITION_MAX;
+	endlessShuffleNext = position;
+}
+
+/* Online: the cursor is the one chart input that accumulates rather than being recomputed, so it is
+ * the one that can drift. A machine disagreeing with the charting seat's published hand re-anchors
+ * onto it and deals again. Why the depth stamp: "Level shuffle" in doc/notes.md. */
+void endlessShuffleSyncHand(uint p, int handStart)
+{
+	if (p != endlessChartSeat || !endlessBaseRuleShuffled(endlessRunBaseRule)
+	    || endlessShuffleHandDepth != endlessRunDepth
+	    || handStart == endlessShuffleHandStart)
+	{
+		return;
+	}
+	fprintf(stderr, "warning: endless level bag re-anchored from %d to %d\n",
+	        endlessShuffleHandStart, handStart);
+	endlessShuffleSetNext(handStart);
+	endlessChartRedeal();
+}
+
+/* Base Level = Varied Shuffle / Same Shuffle: the chart's levels are taken off the bag in order
+ * rather than sampled. Same Shuffle spends one piece per chart, Varied Shuffle one per route. */
+static void endlessGatherShuffledCourseLevels(int wantCourses)
+{
+	const bool shared = endlessBaseRuleShared(endlessRunBaseRule);
+	if (wantCourses > ENDLESS_MAX_COURSES)
+		wantCourses = ENDLESS_MAX_COURSES;
+	const int wantLevels = shared ? 1 : wantCourses;
+
+	int pos = endlessShuffleNext;
+	int taken = 0;
+	endlessShuffleHandStart = pos;
+	endlessShuffleHandDepth = endlessRunDepth;
+
+	// The refill correction keeps a hand off a level it already holds, so this skip only fires on a
+	// pool too small to carry it. Spending the piece and drawing on is what it costs there.
+	for (int guard = 0; guard < ENDLESS_MAX_COURSES * 2 && taken < wantLevels; ++guard)
+	{
+		int ep;
+		JE_byte sec, file;
+		if (!endlessShuffleSafeLevel(pos, &ep, &sec, &file))
+			break;   // the caller's empty-slate fallback picks it up
+		++pos;
+
+		bool dup = false;
+		for (int k = 0; k < endlessCourseCnt && !dup; ++k)
+			dup = endlessCourseEp[k] == ep && endlessCourseSec[k] == sec;
+		if (dup)
+			continue;
+
+		endlessCourseEp[endlessCourseCnt] = ep;
+		endlessCourseSec[endlessCourseCnt] = sec;
+		endlessCourseFile[endlessCourseCnt] = file;
+		endlessCourseMod[endlessCourseCnt] = 0;
+		++endlessCourseCnt;
+		++taken;
+	}
+	endlessShuffleSetNext(pos);
+
+	// Same Shuffle repeats its one draw across the rest of the chart.
+	if (shared && endlessCourseCnt == 1)
+	{
+		for (int i = 1; i < wantCourses; ++i)
+		{
+			endlessCourseEp[i] = endlessCourseEp[0];
+			endlessCourseSec[i] = endlessCourseSec[0];
+			endlessCourseFile[i] = endlessCourseFile[0];
+			endlessCourseMod[i] = 0;
+		}
+		endlessCourseCnt = wantCourses;
+	}
+}
+
 // Base Level = Same: one draw fills every route, so the visit offers modifiers alone.
 static void endlessGatherSharedCourseLevel(int wantCourses)
 {
@@ -581,7 +667,9 @@ static void endlessGatherDistinctCourseLevels(int wantCourses)
 // Lay out the visit's routes, by the chart rule the run was started under.
 static void endlessGatherCourseLevels(int wantCourses)
 {
-	if (endlessRunBaseLevelSame)
+	if (endlessBaseRuleShuffled(endlessRunBaseRule))
+		endlessGatherShuffledCourseLevels(wantCourses);
+	else if (endlessBaseRuleShared(endlessRunBaseRule))
 		endlessGatherSharedCourseLevel(wantCourses);
 	else
 		endlessGatherDistinctCourseLevels(wantCourses);

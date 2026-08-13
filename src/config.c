@@ -974,7 +974,17 @@ bool load_opentyrian_config(void)
 			// ships' combo streaks or only the shooter's.
 			config_get_bool_option(section, "net_coop_double_pickups", &coopDoubleEarnings);
 			config_get_bool_option(section, "net_endless_combo_shared", &network_host_endless_combo_shared);
-			config_get_bool_option(section, "net_endless_base_same", &network_host_endless_base_same);
+
+			// The chart rule was a Same/Varied flag before the Shuffle rules joined it. Read the
+			// old key first so a host that set it keeps their choice, then let the new one win.
+			bool net_endless_base_same = network_host_endless_base_rule == (int)ENDLESS_BASE_SAME;
+			if (config_get_bool_option(section, "net_endless_base_same", &net_endless_base_same))
+				network_host_endless_base_rule = net_endless_base_same ? (int)ENDLESS_BASE_SAME
+				                                                       : (int)ENDLESS_BASE_VARIED;
+			int net_endless_base_rule = network_host_endless_base_rule;
+			config_get_int_option(section, "net_endless_base_rule", &net_endless_base_rule);
+			if (net_endless_base_rule >= 0 && net_endless_base_rule < ENDLESS_BASE_RULE_COUNT)
+				network_host_endless_base_rule = net_endless_base_rule;
 
 			// Online Arcade: the classic linked pair, or two Separate personal arcades.
 			config_get_bool_option(section, "net_arcade_separate", &arcadeSeparateShips);
@@ -1291,7 +1301,7 @@ bool save_opentyrian_config(void)
 	config_set_bool_option(section, "net_arcade_timed_battle", network_host_timed_battle, OFF_ON);
 	config_set_int_option(section, "net_battle_level", network_host_battle_level);
 	config_set_bool_option(section, "net_endless_combo_shared", network_host_endless_combo_shared, OFF_ON);
-	config_set_bool_option(section, "net_endless_base_same", network_host_endless_base_same, OFF_ON);
+	config_set_int_option(section, "net_endless_base_rule", network_host_endless_base_rule);
 	config_set_bool_option(section, "rollback_selftest", rollback_selftest, OFF_ON);
 	config_set_string_option(section, "soundfont", soundfont);
 	for (int i = 0; i < SSW_COUNT; ++i)

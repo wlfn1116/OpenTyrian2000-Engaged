@@ -10,6 +10,7 @@
 #include "episodes.h"
 #include "endless_internal.h"
 #include "fonthand.h"
+#include "game_menu.h"   // JE_getLevelSections
 #include "mainint.h"
 #include "mtrand.h"
 #include "net_rollback.h"
@@ -267,7 +268,10 @@ static void qa_reset_course_inputs(const char *seed, int depth, int difficulty)
 	endlessMode = true;
 	endlessCampaignMods = false;
 	endlessRunMode = ENDLESS_RUNMODE_STANDARD;
-	endlessRunBaseLevelSame = false;   // the shipped chart rule; the Same cases set it themselves
+	// The shipped chart rule and a full bag; the cases for the other three set their own.
+	endlessRunBaseRule = ENDLESS_BASE_VARIED;
+	endlessShuffleNext = endlessShuffleHandStart = 0;
+	endlessShuffleHandDepth = -1;
 	endlessRunDepth = depth;
 	difficultyLevel = (JE_shortint)difficulty;
 	endlessSetSeed(seed);
@@ -468,7 +472,7 @@ static void qa_test_course_base_rule(void)
 		snprintf(seed, sizeof(seed), "qa-base-%08x", (unsigned)(sample * 2654435761u));
 
 		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
-		endlessRunBaseLevelSame = true;
+		endlessRunBaseRule = ENDLESS_BASE_SAME;
 		endlessGenerateCourses();
 		const int sameCount = endlessCourseCnt;
 		const Uint32 sameHash = qa_slate_hash();
@@ -493,7 +497,7 @@ static void qa_test_course_base_rule(void)
 		}
 
 		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
-		endlessRunBaseLevelSame = true;
+		endlessRunBaseRule = ENDLESS_BASE_SAME;
 		endlessGenerateCourses();
 		qa_check(endlessCourseCnt == sameCount && qa_slate_hash() == sameHash,
 		         "Same-base course generation is deterministic");
@@ -517,6 +521,375 @@ static void qa_test_course_base_rule(void)
 	qa_check(multiRouteSlates > 0, "the Varied comparison saw slates with more than one route");
 
 	printf("# base level rule: 160 seeds, %u multi-route Varied slates\n", multiRouteSlates);
+}
+
+/* ---- the Shuffle rules' bag ---------------------------------------------------------------- */
+
+#define QA_POOL_MAX (EPISODE_MAX * 64)
+
+/* The eligible pool, derived here rather than read from endless_level.c, so the bag is checked
+ * against an independent expectation of what belongs in it. A section the level scripts load twice
+ * counts once, the way a chart counts it. */
+typedef struct { int ep; JE_byte sec; } QaPoolEntry;
+
+static int qa_level_pool(QaPoolEntry *pool)
+{
+	int npool = 0;
+	for (int e = 1; e <= EPISODE_MAX && npool < QA_POOL_MAX; ++e)
+	{
+		if (!episodeAvail[e - 1])
+			continue;
+		JE_byte secs[64], files[64];
+		const uint n = JE_getLevelSections(e, secs, files, COUNTOF(secs));
+		for (uint i = 0; i < n && npool < QA_POOL_MAX; ++i)
+		{
+			bool seen = false;
+			for (int k = 0; k < npool && !seen; ++k)
+				seen = pool[k].ep == e && pool[k].sec == secs[i];
+			if (seen)
+				continue;
+			pool[npool].ep = e;
+			pool[npool].sec = secs[i];
+			++npool;
+		}
+	}
+	return npool;
+}
+
+static int qa_pool_index(const QaPoolEntry *pool, int npool, int ep, JE_byte sec)
+{
+	for (int i = 0; i < npool; ++i)
+		if (pool[i].ep == ep && pool[i].sec == sec)
+			return i;
+	return -1;
+}
+
+// One bagful as pool indices, read straight off the draw.
+static bool qa_shuffle_bagful(const QaPoolEntry *pool, int npool, int refill, int *out)
+{
+	for (int i = 0; i < npool; ++i)
+	{
+		int ep;
+		JE_byte sec, file;
+		if (!endlessShuffleSafeLevel(refill * npool + i, &ep, &sec, &file))
+			return false;
+		out[i] = qa_pool_index(pool, npool, ep, sec);
+		if (out[i] < 0)
+			return false;
+	}
+	return true;
+}
+
+// Every bagful has to be a permutation of the pool, so a run meets each level once per refill.
+static void qa_test_shuffle_permutation(const QaPoolEntry *pool, int npool)
+{
+	static const char *const seeds[] = { "qa-shuffle-a", "qa-shuffle-b", "qa-shuffle-c" };
+	int first[COUNTOF(seeds)][QA_POOL_MAX];
+	bool allPermutations = true, refillsDiffer = false, seedsDiffer = false;
+
+	for (unsigned s = 0; s < COUNTOF(seeds); ++s)
+	{
+		qa_reset_course_inputs(seeds[s], 0, DIFFICULTY_NORMAL);
+		for (int refill = 0; refill < 3; ++refill)
+		{
+			int bag[QA_POOL_MAX];
+			int seen[QA_POOL_MAX] = { 0 };
+			if (!qa_shuffle_bagful(pool, npool, refill, bag))
+			{
+				allPermutations = false;
+				break;
+			}
+			for (int i = 0; i < npool; ++i)
+				++seen[bag[i]];
+			for (int i = 0; i < npool; ++i)
+				allPermutations &= seen[i] == 1;
+
+			if (refill == 0)
+				memcpy(first[s], bag, sizeof(int) * (size_t)npool);
+			else
+				refillsDiffer |= memcmp(first[s], bag, sizeof(int) * (size_t)npool) != 0;
+		}
+	}
+
+	for (unsigned s = 1; s < COUNTOF(seeds); ++s)
+		seedsDiffer |= memcmp(first[0], first[s], sizeof(int) * (size_t)npool) != 0;
+
+	qa_check(allPermutations, "every bagful holds each eligible level exactly once");
+	qa_check(refillsDiffer, "a refill reshuffles rather than repeating the emptied bag");
+	qa_check(seedsDiffer, "different seeds shuffle the bag differently");
+
+	// Re-seeding the same run has to reproduce its bag order exactly.
+	qa_reset_course_inputs(seeds[0], 0, DIFFICULTY_NORMAL);
+	int again[QA_POOL_MAX];
+	qa_check(qa_shuffle_bagful(pool, npool, 0, again)
+	         && memcmp(first[0], again, sizeof(int) * (size_t)npool) == 0,
+	         "one seed always deals the same bag order");
+
+	// The two windows the refill correction keeps disjoint, measured off the bags themselves.
+	bool seamClean = true;
+	for (unsigned s = 0; s < COUNTOF(seeds) && npool >= 3 * ENDLESS_MAX_COURSES; ++s)
+	{
+		qa_reset_course_inputs(seeds[s], 0, DIFFICULTY_NORMAL);
+		int bag0[QA_POOL_MAX], bag1[QA_POOL_MAX];
+		if (!qa_shuffle_bagful(pool, npool, 0, bag0) || !qa_shuffle_bagful(pool, npool, 1, bag1))
+		{
+			seamClean = false;
+			break;
+		}
+		for (int i = 0; i < 2 * ENDLESS_MAX_COURSES - 1; ++i)
+			for (int k = npool - ENDLESS_MAX_COURSES; k < npool; ++k)
+				seamClean &= bag1[i] != bag0[k];
+	}
+	qa_check(seamClean, "a refill opens clear of the pieces the previous bag closed with");
+}
+
+// What one chart spends, and what it deals. Same Shuffle spends one piece however many routes it
+// shows; Varied Shuffle spends one per route.
+static void qa_test_shuffle_spend(int npool)
+{
+	char seed[ENDLESS_SEED_MAXLEN];
+	unsigned variedSlates = 0, seamHands = 0;
+
+	for (unsigned sample = 0; sample < 96; ++sample)
+	{
+		watchdog_heartbeat();
+		const int depth = (int)(sample % 37);
+		snprintf(seed, sizeof(seed), "qa-shuffle-%08x", (unsigned)(sample * 2654435761u));
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+		const int before = endlessShuffleNext;
+		endlessGenerateCourses();
+		const int spent = endlessShuffleNext - before;
+
+		bool distinct = true;
+		for (int i = 1; i < endlessCourseCnt; ++i)
+			for (int k = 0; k < i; ++k)
+				distinct &= endlessCourseEp[i] != endlessCourseEp[k]
+				         || endlessCourseSec[i] != endlessCourseSec[k];
+		qa_check(distinct, "no level appears twice on one Varied Shuffle chart");
+
+		// An Ambush collapses the chart it was dealt, so only an ordinary visit still shows
+		// everything the bag paid for.
+		if (!endlessForced)
+		{
+			qa_check(spent == endlessCourseCnt,
+			         "a Varied Shuffle chart spends exactly one piece per route");
+			++variedSlates;
+		}
+		else
+		{
+			qa_check(spent >= endlessCourseCnt,
+			         "an Ambush still paid for the routes it collapsed");
+		}
+
+		// Reading the chart back is not a deal: only a fresh visit or a reroll moves the bag.
+		const int settled = endlessShuffleNext;
+		for (int i = 0; i < endlessCourseCount(); ++i)
+			(void)endlessCourseName(i);
+		qa_check(endlessShuffleNext == settled, "looking at a chart again draws nothing");
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_SAME_SHUFFLE;
+		endlessGenerateCourses();
+		qa_check(endlessShuffleNext == 1, "a Same Shuffle chart spends one piece however wide");
+		bool oneLevel = endlessCourseCnt >= 1;
+		for (int i = 1; i < endlessCourseCnt; ++i)
+			oneLevel &= endlessCourseEp[i] == endlessCourseEp[0]
+			         && endlessCourseSec[i] == endlessCourseSec[0];
+		qa_check(oneLevel, "Same Shuffle puts every charted route on its one drawn level");
+	}
+
+	/* A hand that straddles a refill still has to come out clean, and the hand after one must not
+	 * repeat the hand before it. Surveyor widens every chart to the slate maximum so each offset
+	 * really does reach the seam. */
+	for (unsigned sample = 0; sample < 24; ++sample)
+	for (int offset = 1; offset < ENDLESS_MAX_COURSES; ++offset)
+	{
+		snprintf(seed, sizeof(seed), "qa-shuffle-seam-%02u", sample);
+		qa_reset_course_inputs(seed, 12, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+		endlessPerkSetOwned(PERK_SURVEYOR, endlessPerkMaxStack(PERK_SURVEYOR));
+		endlessShuffleSetNext(npool - offset);
+
+		// The hand the bag closes on, then the one that opens the refilled bag.
+		endlessGenerateCourses();
+		int lastEp[ENDLESS_MAX_COURSES];
+		JE_byte lastSec[ENDLESS_MAX_COURSES];
+		const int lastCnt = endlessCourseCnt;
+		for (int i = 0; i < lastCnt; ++i)
+		{
+			lastEp[i] = endlessCourseEp[i];
+			lastSec[i] = endlessCourseSec[i];
+		}
+		if (endlessShuffleNext <= npool)
+		{
+			endlessPerkSetOwned(PERK_SURVEYOR, 0);
+			continue;   // this chart stopped short of the seam
+		}
+		++seamHands;
+
+		bool distinct = true;
+		for (int i = 1; i < lastCnt; ++i)
+			for (int k = 0; k < i; ++k)
+				distinct &= lastEp[i] != lastEp[k] || lastSec[i] != lastSec[k];
+		qa_check(distinct, "a chart drawn across a refill still holds no duplicate");
+
+		endlessGenerateCourses();
+		bool fresh = true;
+		for (int i = 0; i < endlessCourseCnt; ++i)
+			for (int k = 0; k < lastCnt; ++k)
+				fresh &= endlessCourseEp[i] != lastEp[k] || endlessCourseSec[i] != lastSec[k];
+		qa_check(fresh, "the first chart off a refilled bag repeats nothing from the last");
+		endlessPerkSetOwned(PERK_SURVEYOR, 0);
+	}
+	qa_check(seamHands > 0, "the seam case saw charts drawn across a refill");
+
+	printf("# level shuffle: %u Varied charts measured, %u drawn across a refill\n",
+	       variedSlates, seamHands);
+}
+
+// A Radar reroll spends the hand it threw away, and both a peer and a reloaded save land on the
+// same next piece.
+static void qa_test_shuffle_reroll_and_resume(void)
+{
+	char seed[ENDLESS_SEED_MAXLEN];
+	unsigned rerolls = 0;
+
+	for (unsigned sample = 0; sample < 48; ++sample)
+	{
+		watchdog_heartbeat();
+		const int depth = 3 + (int)(sample % 29);
+		snprintf(seed, sizeof(seed), "qa-shuffle-r-%08x", (unsigned)(sample * 2654435761u));
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessChartVisit();
+		const int afterFirst = endlessShuffleNext;
+		const Uint32 firstHash = qa_slate_hash();
+
+		endlessCourseReroll();
+		const Uint32 rerolledHash = qa_slate_hash();
+		qa_check(endlessShuffleNext > afterFirst,
+		         "a Radar reroll spends the hand it discarded rather than dealing it again");
+		if (rerolledHash != firstHash)
+			++rerolls;
+
+		// Surveyor widens the chart, so the reroll has to spend the wider hand.
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessPerkSetOwned(PERK_SURVEYOR, endlessPerkMaxStack(PERK_SURVEYOR));
+		endlessChartVisit();
+		const int wideFirst = endlessShuffleNext;
+		const int wideCount = endlessCourseCnt;
+		const bool wideAmbush = endlessForced;   // the first deal's, not the rerolled deal's
+		endlessCourseReroll();
+		qa_check(wideAmbush || wideFirst == wideCount,
+		         "Surveyor's extra routes are paid for out of the bag");
+		qa_check(endlessForced || endlessShuffleNext - wideFirst == endlessCourseCnt,
+		         "a rerolled chart pays for every route it deals");
+		const int afterReroll = endlessShuffleNext;
+		const Uint32 wideHash = qa_slate_hash();
+
+		/* The peer derives the chart from the reroll count alone, so it has to land on the same
+		 * piece. Player two hosting the resumed run changes neither. */
+		Uint8 wire[ENDLESS_RUN_WIRE_MAX];
+		const size_t wireLen = endlessRunSerialize(wire, sizeof(wire));
+		qa_check(wireLen > 0, "a Shuffle run serializes for a resuming peer");
+
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessPerkSetOwned(PERK_SURVEYOR, endlessPerkMaxStack(PERK_SURVEYOR));
+		endlessChartVisit();
+		endlessChartSyncRerolls(endlessChartSeat, ENDLESS_CHART_REROLLS);
+		qa_check(endlessShuffleNext == afterReroll && qa_slate_hash() == wideHash,
+		         "a peer rebuilding the rerolled chart lands on the same next piece");
+
+		// ...and player two hosting the resumed session moves the charting seat without moving the
+		// bag, so the adopted record still opens on the piece the run was owed.
+		const uint savedSeat = thisPlayerNum;
+		const bool savedHost = network_is_host;
+		const JE_boolean savedCoop = coopEndlessMode;
+		const bool savedNet = isNetworkGame;
+		thisPlayerNum = 2;
+		network_is_host = true;
+		coopEndlessMode = true;
+		isNetworkGame = true;
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessMode = true;
+		qa_check(endlessRunAdopt(wire, wireLen) && endlessShuffleNext == afterReroll,
+		         "a resumed run draws the piece it was owed, whichever seat is hosting");
+		thisPlayerNum = savedSeat;
+		network_is_host = savedHost;
+		coopEndlessMode = savedCoop;
+		isNetworkGame = savedNet;
+
+		endlessPerkSetOwned(PERK_RADAR, 0);
+		endlessPerkSetOwned(PERK_SURVEYOR, 0);
+	}
+
+	qa_check(rerolls > 0, "the reroll case saw charts change");
+
+	/* The cursor is the one chart input that accumulates instead of being recomputed, so a machine
+	 * that drifts has to be pulled back by the charting seat's published hand. */
+	qa_reset_course_inputs("qa-shuffle-anchor", 9, DIFFICULTY_NORMAL);
+	endlessRunBaseRule = ENDLESS_BASE_VARIED_SHUFFLE;
+	endlessChartVisit();
+	const int trueHand = endlessShuffleHandStart;
+	const Uint32 trueChart = qa_slate_hash();
+
+	endlessShuffleSetNext(trueHand + 3);   // pretend this machine dealt a hand the peer did not
+	endlessChartRedeal();
+	qa_check(endlessShuffleHandStart != trueHand && qa_slate_hash() != trueChart,
+	         "the drift case really moved this machine off the charting seat's hand");
+	endlessShuffleSyncHand(endlessChartSeat, trueHand);
+	qa_check(endlessShuffleHandStart == trueHand && qa_slate_hash() == trueChart,
+	         "a drifted machine re-anchors onto the charting seat's published hand");
+
+	// The other seat's copy of the field says nothing, and neither does a stamp from another visit.
+	endlessShuffleSyncHand(endlessChartSeat ^ 1, trueHand + 3);
+	qa_check(endlessShuffleHandStart == trueHand, "only the charting seat's hand re-anchors it");
+	endlessShuffleHandDepth = endlessRunDepth + 1;
+	endlessShuffleSyncHand(endlessChartSeat, trueHand + 3);
+	qa_check(endlessShuffleHandStart == trueHand,
+	         "a hand dealt for another visit cannot re-anchor this one");
+	endlessShuffleHandDepth = endlessRunDepth;
+
+	// Unshuffled rules never publish a hand, so a stray one must not disturb their chart.
+	qa_reset_course_inputs("qa-shuffle-anchor", 9, DIFFICULTY_NORMAL);
+	endlessChartVisit();
+	const Uint32 variedChart = qa_slate_hash();
+	endlessShuffleSyncHand(endlessChartSeat, 500);
+	qa_check(qa_slate_hash() == variedChart && endlessShuffleNext == 0,
+	         "a Varied run ignores a published hand");
+
+	// A hand-edited or corrupt cursor must not index off the end of the bag.
+	int ep = 0;
+	JE_byte sec = 0, file = 0;
+	endlessShuffleSetNext(-5);
+	qa_check(endlessShuffleNext == 0, "a negative saved cursor restarts the bag");
+	endlessShuffleSetNext(ENDLESS_SHUFFLE_POSITION_MAX + 1000);
+	qa_check(endlessShuffleNext == ENDLESS_SHUFFLE_POSITION_MAX, "a runaway cursor is capped");
+	qa_check(endlessShuffleSafeLevel(endlessShuffleNext, &ep, &sec, &file),
+	         "the capped cursor still draws a real level");
+	qa_check(!endlessShuffleSafeLevel(-1, &ep, &sec, &file), "a negative position draws nothing");
+	endlessShuffleSetNext(0);
+}
+
+static void qa_test_course_shuffle_rule(void)
+{
+	QaPoolEntry pool[QA_POOL_MAX];
+	const int npool = qa_level_pool(pool);
+	qa_check(npool > 0, "the endless-safe level pool is nonempty");
+	if (npool <= 0)
+		return;
+
+	qa_test_shuffle_permutation(pool, npool);
+	qa_test_shuffle_spend(npool);
+	qa_test_shuffle_reroll_and_resume();
 }
 
 /* Radar's chart reroll. It has to deal a genuinely different visit, leave an unrerolled visit on
@@ -709,15 +1082,31 @@ static void qa_test_record_readers(void)
 	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
 	         "erasing a co-op record leaves the solo one standing");
 
-	/* ...and so do the two chart rules: a Same-base run cannot reach a Varied record. */
-	endlessBestZoneDiff[1][0][ENDLESS_RUNMODE_STANDARD][0] = 80;
-	qa_check(endlessBestZoneAny(1, 0, ENDLESS_RUNMODE_STANDARD) == 80
-	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
-	         "same-base and varied-base zone records are kept apart");
-	endlessClearRecordDifficulty(1, 0, ENDLESS_RUNMODE_STANDARD, 0);
-	qa_check(endlessBestZoneAny(1, 0, ENDLESS_RUNMODE_STANDARD) == 0
-	         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
-	         "erasing a same-base record leaves the varied-base one standing");
+	/* ...and so does every chart rule: no run can reach another rule's record. */
+	for (int rule = 1; rule < ENDLESS_BASE_TABLES; ++rule)
+	{
+		endlessBestZoneDiff[rule][0][ENDLESS_RUNMODE_STANDARD][0] = 80;
+		qa_check(endlessBestZoneAny(rule, 0, ENDLESS_RUNMODE_STANDARD) == 80
+		         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
+		         "each Base Level rule keeps its zone records apart from Varied's");
+		endlessClearRecordDifficulty(rule, 0, ENDLESS_RUNMODE_STANDARD, 0);
+		qa_check(endlessBestZoneAny(rule, 0, ENDLESS_RUNMODE_STANDARD) == 0
+		         && endlessBestZoneAny(0, 0, ENDLESS_RUNMODE_STANDARD) == 25,
+		         "erasing one rule's record leaves the varied-base one standing");
+	}
+
+	// Each rule names a distinct board, and the menu order lists each exactly once.
+	bool namesDistinct = true, orderComplete = true;
+	for (int rule = 0; rule < ENDLESS_BASE_TABLES; ++rule)
+	{
+		for (int other = 0; other < rule; ++other)
+			namesDistinct &= strcmp(endlessBaseLevelRuleName(rule),
+			                        endlessBaseLevelRuleName(other)) != 0;
+		orderComplete &= endlessBaseRuleMenuIndex(endlessBaseRuleAtMenuIndex(rule)) == rule
+		              && qa_display_name_valid(endlessBaseLevelRuleName(rule));
+	}
+	qa_check(namesDistinct && orderComplete,
+	         "the Base Level rules have distinct names and one menu place each");
 
 	bool difficultyMap = true;
 	for (int i = 0; i < ENDLESS_DIFFICULTY_COUNT; ++i)
@@ -3030,7 +3419,7 @@ static void qa_test_network_endless_lobby(void)
 	const int savedMode = network_host_endless_run_mode;
 	const int savedChooser = network_host_endless_chooser;
 	const bool savedCombo = network_host_endless_combo_shared;
-	const bool savedBaseSame = network_host_endless_base_same;
+	const int savedBaseRule = network_host_endless_base_rule;
 	char savedSeed[NET_ENDLESS_SEED_MAX], savedHostSeed[NET_ENDLESS_SEED_MAX];
 	memcpy(savedSeed, network_endless_session_seed, sizeof(savedSeed));
 	memcpy(savedHostSeed, network_host_endless_seed, sizeof(savedHostSeed));
@@ -3040,20 +3429,21 @@ static void qa_test_network_endless_lobby(void)
 	block[0] = (Uint8)ENDLESS_RUNMODE_HARDCORE;
 	block[1] = (Uint8)(ENDLESS_PICK_COUNT - 1);
 	block[2] = 1;
-	block[3] = 1;
+	block[3] = (Uint8)(ENDLESS_BASE_RULE_COUNT - 1);
 	memcpy(&block[4], "qa-seed-123", sizeof("qa-seed-123"));
 	network_endless_adopt(block);
 	qa_check(network_host_endless_run_mode == ENDLESS_RUNMODE_HARDCORE
 	         && network_host_endless_chooser == ENDLESS_PICK_COUNT - 1
 	         && network_host_endless_combo_shared
-	         && network_host_endless_base_same
+	         && network_host_endless_base_rule == ENDLESS_BASE_RULE_COUNT - 1
 	         && strcmp(network_endless_session_seed, "qa-seed-123") == 0,
 	         "joiner adopts every field of the host's Endless lobby block");
 
 	memset(block, 0xEE, sizeof(block));
 	network_endless_adopt(block);
 	qa_check(network_host_endless_run_mode == ENDLESS_RUNMODE_STANDARD
-	         && network_host_endless_chooser == ENDLESS_PICK_HOST,
+	         && network_host_endless_chooser == ENDLESS_PICK_HOST
+	         && network_host_endless_base_rule == ENDLESS_BASE_VARIED,
 	         "out-of-range Endless lobby bytes are clamped to their defaults");
 
 	bool seedScrubbed = network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] == '\0'
@@ -3077,7 +3467,7 @@ static void qa_test_network_endless_lobby(void)
 	network_host_endless_run_mode = savedMode;
 	network_host_endless_chooser = savedChooser;
 	network_host_endless_combo_shared = savedCombo;
-	network_host_endless_base_same = savedBaseSame;
+	network_host_endless_base_rule = savedBaseRule;
 	memcpy(network_endless_session_seed, savedSeed, sizeof(savedSeed));
 	memcpy(network_host_endless_seed, savedHostSeed, sizeof(savedHostSeed));
 #else
@@ -3656,6 +4046,7 @@ int qa_run_unit_suite(void)
 	qa_test_resync_serialization();
 	qa_test_courses();
 	qa_test_course_base_rule();
+	qa_test_course_shuffle_rule();
 	qa_test_course_reroll();
 	qa_test_item_data_settings();
 	qa_test_firing_sound_levels();

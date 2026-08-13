@@ -7181,7 +7181,7 @@ static void networkEndlessNewRun(void)
 	endlessRunMode = (EndlessRunMode)network_host_endless_run_mode;
 	endlessCourseChooser = (EndlessCourseChooser)network_host_endless_chooser;
 	endlessCoopComboShared = network_host_endless_combo_shared;
-	endlessRunBaseLevelSame = network_host_endless_base_same;
+	endlessRunBaseRule = (EndlessBaseRule)network_host_endless_base_rule;
 	endlessRecordRunStart();
 
 	endlessMode = true;
@@ -7827,7 +7827,7 @@ void networkStartScreen(void)
 				label[rows] = "Run Mode";
 				value[rows++] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
 				label[rows] = "Base Level";
-				value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_same ? 1 : 0);
+				value[rows++] = endlessBaseLevelRuleName(network_host_endless_base_rule);
 				label[rows] = "Charts Course";
 				value[rows++] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
 				label[rows] = "Combo Feed";
@@ -8739,8 +8739,8 @@ bool newEndlessGame(void)
 	// cancelling difficulty.
 	char seedbuf[ENDLESS_SEED_MAXLEN];
 	EndlessRunMode runMode = ENDLESS_RUNMODE_STANDARD;
-	bool baseSame = false;
-	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode, &baseSame))
+	EndlessBaseRule baseRule = ENDLESS_BASE_VARIED;
+	if (!endlessSeedSelect(seedbuf, sizeof(seedbuf), &runMode, &baseRule))
 	{
 		endlessMode = false;
 		play_song(SONG_TITLE);
@@ -8758,7 +8758,7 @@ bool newEndlessGame(void)
 	endlessResetRun();
 	endlessSetSeed(seedbuf);  // establish the run's seeded structural RNG (endlessResetRun blanked it)
 	endlessRunMode = runMode;  // apply the seed screen's mode choice (endlessResetRun reset it)
-	endlessRunBaseLevelSame = baseSame;   // ...and its chart rule, pinned for the whole run
+	endlessRunBaseRule = baseRule;   // ...and its chart rule, pinned for the whole run
 	endlessRecordRunStart();  // baseline the all-time record so this run's "(+n)" measures only what IT gained
 
 	endlessMode = true;
@@ -10451,6 +10451,7 @@ void JE_eventSystem(void)
 				player[p].shot_multi_pos[SHOT_SPECIAL2] = 0;
 				player[p].shot_repeat[SHOT_SPECIAL2] = 0;
 			}
+			hud_special_light_rearm(p);
 		}
 		shotMultiPos[SHOT_SPECIAL] = 0;
 		shotRepeat[SHOT_SPECIAL] = 0;

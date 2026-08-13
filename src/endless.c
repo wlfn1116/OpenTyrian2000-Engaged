@@ -421,8 +421,8 @@ const char *endlessRunModeName(EndlessRunMode mode)
 
 /* All-time records, stored in opentyrian.cfg. A run writes one of these: the record for the
  * difficulty it started on, or the untagged one if that difficulty is outside the six below.
- * The outer indices are the chart rule (Varied / Same base level) and crew size: neither pair of
- * runs is comparable, so none of those sets of records ever meet. */
+ * The outer indices are the chart rule (EndlessBaseRule) and crew size: runs under different rules
+ * or crew sizes are not comparable, so none of those sets of records ever meet. */
 int  endlessBestZoneUntagged[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { 0 } } };
 bool endlessBestZoneUntaggedCustom[ENDLESS_BASE_TABLES][ENDLESS_PLAYER_TABLES][ENDLESS_RUNMODE_COUNT] = { { { false } } };
 static int endlessBestZoneAtRunStart = 0;
@@ -443,11 +443,53 @@ const char *endlessRecordTableName(int players)
 }
 
 // Picked at run start and fixed from there; the run writes the record set it names.
-bool endlessRunBaseLevelSame = false;
+EndlessBaseRule endlessRunBaseRule = ENDLESS_BASE_VARIED;
+
+static const char *const endlessBaseRuleName[ENDLESS_BASE_RULE_COUNT] = {
+	"Varied", "Same", "Varied Shuffle", "Same Shuffle",
+};
+
+// One line per rule, shared by the seed screen and the Endless lobby.
+static const char *const endlessBaseRuleHelp[ENDLESS_BASE_RULE_COUNT] = {
+	"Varied: every charted route is its own level.",
+	"Same: one base level per chart, modifiers differ.",
+	"Varied Shuffle: routes come off a shuffled pool.",
+	"Same Shuffle: one level, off that shuffled pool.",
+};
+
+/* Menu and record-page order, pairing each rule with its Shuffle twin. The enum values are the
+ * record, save and wire order, so this is a separate list rather than a reordering of them. */
+static const EndlessBaseRule endlessBaseRuleMenuOrder[ENDLESS_BASE_RULE_COUNT] = {
+	ENDLESS_BASE_VARIED, ENDLESS_BASE_VARIED_SHUFFLE, ENDLESS_BASE_SAME, ENDLESS_BASE_SAME_SHUFFLE,
+};
 
 const char *endlessBaseLevelRuleName(int variant)
 {
-	return (variant == 1) ? "Same" : "Varied";
+	if (variant < 0 || variant >= ENDLESS_BASE_RULE_COUNT)
+		return endlessBaseRuleName[ENDLESS_BASE_VARIED];
+	return endlessBaseRuleName[variant];
+}
+
+const char *endlessBaseLevelRuleHelp(int variant)
+{
+	if (variant < 0 || variant >= ENDLESS_BASE_RULE_COUNT)
+		return endlessBaseRuleHelp[ENDLESS_BASE_VARIED];
+	return endlessBaseRuleHelp[variant];
+}
+
+EndlessBaseRule endlessBaseRuleAtMenuIndex(int index)
+{
+	if (index < 0 || index >= ENDLESS_BASE_RULE_COUNT)
+		return ENDLESS_BASE_VARIED;
+	return endlessBaseRuleMenuOrder[index];
+}
+
+int endlessBaseRuleMenuIndex(EndlessBaseRule rule)
+{
+	for (int i = 0; i < ENDLESS_BASE_RULE_COUNT; ++i)
+		if (endlessBaseRuleMenuOrder[i] == rule)
+			return i;
+	return 0;
 }
 
 static bool endlessRecordArgsOk(int variant, int players, EndlessRunMode mode)
@@ -498,7 +540,7 @@ void endlessResetCustomWeaponZone(void)
 // The one record the running run writes to, and its mark.
 static void endlessRunRecord(int **zone, bool **mark)
 {
-	const int base = endlessRunBaseLevelVariant();
+	const int base = (int)endlessRunBaseRule;
 	const int slot = endlessDifficultySlot(initialDifficulty);
 	if (slot >= 0)
 	{
@@ -688,9 +730,11 @@ void endlessResetRun(void)
 	endlessChartRerolls = 0;
 	endlessChartStarCharts = false;
 	endlessChartSeat = 0;
+	endlessShuffleNext = endlessShuffleHandStart = 0;
+	endlessShuffleHandDepth = -1;
 	// New runs override these after reset, and a loaded/reverted one restores the saved pair.
 	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
-	endlessRunBaseLevelSame = false;
+	endlessRunBaseRule = ENDLESS_BASE_VARIED;
 	endlessBaseName[0] = endlessPrevBaseName[0] = '\0';
 	endlessBaseEp = endlessBaseLvl = endlessPrevBaseEp = endlessPrevBaseLvl = 0;
 	endlessRecentCount = 0;

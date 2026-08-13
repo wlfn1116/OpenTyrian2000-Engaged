@@ -125,14 +125,11 @@ static const char *const lobbyEndlessHelp[] =
 {
 	"A named seed repeats a run; blank rolls one.",
 	"How a fatal hit and saving are handled.",
-	"One level per chart, or one per route.",
+	"How each chart picks the levels behind it.",
 	"Who picks the next sector at the outpost.",
 	"Whose drive streak a kill feeds.",
 	"Return to the host settings.",
 };
-
-// Base Level values, in cycle order: index 0 is Varied.
-static const char *const lobbyBaseLevelValue[] = { "Varied", "Same" };
 
 static const char *const lobbyEndlessRunModeHelp[] =
 {
@@ -435,7 +432,7 @@ static void lobbyEndlessMenu(void)
 		const char *itemValue[SETTING_COUNT];
 		itemValue[ITEM_SEED] = network_host_endless_seed[0] ? network_host_endless_seed : "(random)";
 		itemValue[ITEM_RUNMODE] = endlessRunModeName((EndlessRunMode)network_host_endless_run_mode);
-		itemValue[ITEM_BASELEVEL] = lobbyBaseLevelValue[network_host_endless_base_same ? 1 : 0];
+		itemValue[ITEM_BASELEVEL] = endlessBaseLevelRuleName(network_host_endless_base_rule);
 		itemValue[ITEM_CHOOSER] = endlessCourseChooserName((EndlessCourseChooser)network_host_endless_chooser);
 		itemValue[ITEM_COMBO] = network_host_endless_combo_shared ? lobbyCreditValue[0] : lobbyCreditValue[1];
 
@@ -464,8 +461,13 @@ static void lobbyEndlessMenu(void)
 
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yHelp, lobbyEndlessHelp[selectedIndex],
 		                    small_font, centered, 15, 2, false, 1);
-		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yModeHelp,
-		                    lobbyEndlessRunModeHelp[network_host_endless_run_mode % ENDLESS_RUNMODE_COUNT],
+
+		// The second line follows the selected cycling row, and rests on the run mode's policy.
+		const int runMode = network_host_endless_run_mode % ENDLESS_RUNMODE_COUNT;
+		const char *rowHelp = lobbyEndlessRunModeHelp[runMode];
+		if (selectedIndex == ITEM_BASELEVEL)
+			rowHelp = endlessBaseLevelRuleHelp(network_host_endless_base_rule);
+		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, yModeHelp, rowHelp,
 		                    small_font, centered, 15, 4, false, 1);
 
 		wBack = JE_textWidth("Back", normal_font);
@@ -590,9 +592,10 @@ static void lobbyEndlessMenu(void)
 			break;
 
 		case ITEM_BASELEVEL:
-			// Same puts every route of a chart onto one level, leaving the modifiers as the choice.
 			JE_playSampleNum(S_CLICK);
-			network_host_endless_base_same = !network_host_endless_base_same;
+			network_host_endless_base_rule = (int)endlessBaseRuleAtMenuIndex(
+				(endlessBaseRuleMenuIndex((EndlessBaseRule)network_host_endless_base_rule)
+				 + ENDLESS_BASE_RULE_COUNT + cycleDir) % ENDLESS_BASE_RULE_COUNT);
 			break;
 
 		case ITEM_CHOOSER:
@@ -1772,8 +1775,8 @@ void qa_test_net_lobby_strings(void)
 	lobbyCheckRow(lobbyEndlessLabel[0], seedWorst);
 	for (int m = 0; m < ENDLESS_RUNMODE_COUNT; ++m)
 		lobbyCheckRow(lobbyEndlessLabel[1], endlessRunModeName((EndlessRunMode)m));
-	for (uint i = 0; i < COUNTOF(lobbyBaseLevelValue); ++i)
-		lobbyCheckRow(lobbyEndlessLabel[2], lobbyBaseLevelValue[i]);
+	for (int r = 0; r < ENDLESS_BASE_RULE_COUNT; ++r)
+		lobbyCheckRow(lobbyEndlessLabel[2], endlessBaseLevelRuleName(r));
 	for (int c = 0; c < ENDLESS_PICK_COUNT; ++c)
 		lobbyCheckRow(lobbyEndlessLabel[3], endlessCourseChooserName((EndlessCourseChooser)c));
 	for (uint i = 0; i < COUNTOF(lobbyCreditValue); ++i)
@@ -1788,6 +1791,8 @@ void qa_test_net_lobby_strings(void)
 		lobbyCheckHelp(lobbyEndlessHelp[i]);
 	for (uint i = 0; i < COUNTOF(lobbyEndlessRunModeHelp); ++i)
 		lobbyCheckHelp(lobbyEndlessRunModeHelp[i]);
+	for (int r = 0; r < ENDLESS_BASE_RULE_COUNT; ++r)
+		lobbyCheckHelp(endlessBaseLevelRuleHelp(r));
 
 	for (uint i = 0; i < COUNTOF(lobbyHostAction); ++i)
 	{

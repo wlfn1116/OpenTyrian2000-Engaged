@@ -89,19 +89,21 @@ void endlessPreloadBanks(void)
 	}
 }
 
-// Pick an Endless-safe level from any installed episode.
-bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
+// The Endless-safe levels of every installed episode, in episode and section order. That order is
+// what the bag shuffles, so it has to depend on the install alone.
+typedef struct { int ep; JE_byte sec, file; } EndlessLevelPoolEntry;
+#define ENDLESS_LEVEL_POOL_MAX (EPISODE_MAX * 64)
+
+static int endlessBuildLevelPool(EndlessLevelPoolEntry *pool, int max)
 {
-	// Build the cross-episode pool once, then sample uniformly by level.
-	struct { int ep; JE_byte sec, file; } pool[EPISODE_MAX * 64];
 	int npool = 0;
-	for (int e = 1; e <= EPISODE_MAX && npool < (int)COUNTOF(pool); ++e)
+	for (int e = 1; e <= EPISODE_MAX && npool < max; ++e)
 	{
 		if (!episodeAvail[e - 1])
 			continue;
 		JE_byte secs[64], files[64];
 		const uint n = JE_getLevelSections(e, secs, files, COUNTOF(secs));
-		for (uint i = 0; i < n && npool < (int)COUNTOF(pool); ++i)
+		for (uint i = 0; i < n && npool < max; ++i)
 		{
 			pool[npool].ep   = e;
 			pool[npool].sec  = secs[i];
@@ -109,6 +111,103 @@ bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
 			++npool;
 		}
 	}
+	return npool;
+}
+
+/* Salt of the shuffle's own stream. Above every depth-keyed phase salt (endlessZonePhaseSalt), so
+ * a bag's shuffle cannot collide with a zone's draws. */
+#define ENDLESS_SHUFFLE_SALT 0x2000000000000000ULL
+
+// One bagful: the pool permuted from the run seed and the refill count alone.
+static void endlessShuffleOrder(int *order, int npool, Uint64 refill)
+{
+	Uint64 state = endlessSplitMixSeed(ENDLESS_SHUFFLE_SALT + refill);
+	for (int i = 0; i < npool; ++i)
+		order[i] = i;
+	for (int i = npool - 1; i > 0; --i)
+	{
+		const int j = (int)(endlessSplitMixStep(&state) % (Uint32)(i + 1));
+		const int t = order[i];
+		order[i] = order[j];
+		order[j] = t;
+	}
+}
+
+static bool endlessShuffleInTail(const int *order, int npool, int window, int entry)
+{
+	for (int i = npool - window; i < npool; ++i)
+		if (order[i] == entry)
+			return true;
+	return false;
+}
+
+/* Drop the second cut of a section the pool lists twice, so the bag holds each level once. A chart
+ * tells routes apart by (episode, section), and a bag that promises every level before a repeat has
+ * to count them the same way. Episode 1 section 3 is the only such pair. */
+static int endlessDedupeLevelPool(EndlessLevelPoolEntry *pool, int npool)
+{
+	int kept = 0;
+	for (int i = 0; i < npool; ++i)
+	{
+		bool seen = false;
+		for (int k = 0; k < kept && !seen; ++k)
+			seen = pool[k].ep == pool[i].ep && pool[k].sec == pool[i].sec;
+		if (!seen)
+			pool[kept++] = pool[i];
+	}
+	return kept;
+}
+
+bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte *fileOut)
+{
+	EndlessLevelPoolEntry pool[ENDLESS_LEVEL_POOL_MAX];
+	const int npool = endlessDedupeLevelPool(pool, endlessBuildLevelPool(pool, (int)COUNTOF(pool)));
+	if (npool == 0 || position < 0)
+		return false;
+
+	const Uint64 refill = (Uint64)(position / npool);
+	int order[ENDLESS_LEVEL_POOL_MAX];
+	endlessShuffleOrder(order, npool, refill);
+
+	// A refill must not hand back a piece the emptying bag closed on. Swapping any such piece
+	// out of the opening window and past it keeps the bagful a permutation. The window sizes
+	// and the too-small-pool case are in "Level shuffle" in doc/notes.md.
+	const int tailWindow = ENDLESS_MAX_COURSES;
+	const int headWindow = 2 * ENDLESS_MAX_COURSES - 1;
+	if (refill > 0 && npool >= tailWindow + headWindow + 1)
+	{
+		int prev[ENDLESS_LEVEL_POOL_MAX];
+		endlessShuffleOrder(prev, npool, refill - 1);
+		for (int i = 0; i < headWindow; ++i)
+		{
+			if (!endlessShuffleInTail(prev, npool, tailWindow, order[i]))
+				continue;
+			for (int j = headWindow; j < npool; ++j)
+			{
+				if (endlessShuffleInTail(prev, npool, tailWindow, order[j]))
+					continue;
+				const int t = order[i];
+				order[i] = order[j];
+				order[j] = t;
+				break;
+			}
+		}
+	}
+
+	const EndlessLevelPoolEntry *const drawn = &pool[order[position % npool]];
+	*epOut  = drawn->ep;
+	*secOut = drawn->sec;
+	if (fileOut != NULL)
+		*fileOut = drawn->file;
+	return true;
+}
+
+// Pick an Endless-safe level from any installed episode.
+bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut)
+{
+	// Sample the pool uniformly by level, both cuts of a twice-loaded section included.
+	EndlessLevelPoolEntry pool[ENDLESS_LEVEL_POOL_MAX];
+	const int npool = endlessBuildLevelPool(pool, (int)COUNTOF(pool));
 	if (npool == 0)
 		return false;
 

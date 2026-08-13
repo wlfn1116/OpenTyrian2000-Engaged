@@ -68,8 +68,21 @@ The start screen asks for a seed, run mode, and Base Level rule.
 - A blank seed creates a random run.
 - The same seed and choices reproduce levels, music, courses, shops, and perks.
 - Combat randomness is separate from the run seed.
-- **Varied** gives each route its own level. **Same** uses one level for the
-  whole course card and varies only the modifiers.
+
+Base Level has four rules:
+
+| Rule | Levels on one chart | How they are picked |
+| --- | --- | --- |
+| Varied | One per route | Drawn at random, avoiding the last few played |
+| Varied Shuffle | One per route | Taken in order from a shuffled bag of every level |
+| Same | One, repeated | Drawn at random, avoiding the last few played |
+| Same Shuffle | One, repeated | Taken in order from a shuffled bag of every level |
+
+Both Same rules vary only the modifiers across a chart. Both Shuffle rules hold
+every eligible level in a bag: each chart takes the pieces it needs off the
+front, and the bag refills with a fresh shuffle once it empties. Every level
+comes up once per bagful, so a run works through the whole pool before starting
+over. A Radar reroll spends the hand it discarded and deals the next pieces.
 
 | Mode | Saving | Death |
 | --- | --- | --- |
@@ -212,7 +225,7 @@ Each card shows a generated name, modifiers, grade, and exact clear reward.
 Radar reveals level names and allows one chart reroll per outpost. Surveyor adds
 routes. Sector Sabotage removes threats from the selected route before launch.
 
-The Base Level rule is fixed when the run starts. Varied and Same runs keep
+The Base Level rule is fixed when the run starts. Each of the four rules keeps
 separate records.
 
 ### Outpost and E-Shop

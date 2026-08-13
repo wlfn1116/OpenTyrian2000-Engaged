@@ -301,16 +301,43 @@ extern const int endlessDifficultyLevel[ENDLESS_DIFFICULTY_COUNT];
 int endlessRecordTable(void);   // which table the run in progress writes
 const char *endlessRecordTableName(int players);
 
-/* ...and by the chart rule below, for the same reason: a slate of one repeated base level is a
- * different run from a slate of five. Index 0 is Varied, 1 is Same, and the two have a High Scores
- * page each. */
-#define ENDLESS_BASE_TABLES 2
-const char *endlessBaseLevelRuleName(int variant);   // "Varied" / "Same"
+/* How a visit's chart picks the levels behind its routes. Appended to rather than reordered: the
+ * value indexes the record tables, rides the save, and travels on the connect packet. Menu order
+ * pairs each rule with its Shuffle twin and is a separate list, endlessBaseRuleAtMenuIndex. */
+typedef enum {
+	ENDLESS_BASE_VARIED = 0,       // every charted route is its own level
+	ENDLESS_BASE_SAME,             // one level fills the chart, leaving the modifiers as the choice
+	ENDLESS_BASE_VARIED_SHUFFLE,   // Varied, drawing from the level bag in doc/notes.md
+	ENDLESS_BASE_SAME_SHUFFLE,     // Same, drawing its one level from that bag
+	ENDLESS_BASE_RULE_COUNT
+}
+EndlessBaseRule;
+
+/* ...and by the chart rule above, for the same reason: a slate of one repeated base level is a
+ * different run from a slate of five, and a Shuffle run meets every level in the pool on a
+ * schedule an unshuffled one does not. Each rule has a High Scores page of its own. */
+#define ENDLESS_BASE_TABLES ENDLESS_BASE_RULE_COUNT
+const char *endlessBaseLevelRuleName(int variant);   // the Base Level row's value for that rule
+const char *endlessBaseLevelRuleHelp(int variant);   // the one-line explanation both pickers show
+
+// Menu and record-page order, which is not the enum order. Both directions clamp to Varied.
+EndlessBaseRule endlessBaseRuleAtMenuIndex(int index);
+int             endlessBaseRuleMenuIndex(EndlessBaseRule rule);
 
 /* The rule the run in progress is flying, picked on the seed screen (or by the host in the Endless
- * lobby) and fixed from there: nothing can move a run between the two sets of records. */
-extern bool endlessRunBaseLevelSame;
-static inline int endlessRunBaseLevelVariant(void) { return endlessRunBaseLevelSame ? 1 : 0; }
+ * lobby) and fixed from there: nothing can move a run between the four sets of records. */
+extern EndlessBaseRule endlessRunBaseRule;
+
+// Both Same rules fill every route from one draw; both Shuffle rules take their draws in bag order.
+static inline bool endlessBaseRuleShared(EndlessBaseRule rule)
+{
+	return rule == ENDLESS_BASE_SAME || rule == ENDLESS_BASE_SAME_SHUFFLE;
+}
+
+static inline bool endlessBaseRuleShuffled(EndlessBaseRule rule)
+{
+	return rule == ENDLESS_BASE_VARIED_SHUFFLE || rule == ENDLESS_BASE_SAME_SHUFFLE;
+}
 
 // Slot a difficulty level occupies, or -1 when runs on it are not broken out.
 int endlessDifficultySlot(int difficulty);
@@ -360,7 +387,8 @@ void endlessClearDeepestRecord(int variant, int players, EndlessRunMode mode);
 void endlessClearRecordDifficulty(int variant, int players, EndlessRunMode mode, int slot);
 
 // Returns false when the seed screen is cancelled.
-bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool *outBaseSame);
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
+                       EndlessBaseRule *outBaseRule);
 
 void endlessSetSeed(const char *s);
 const char *endlessSeedString(void);
@@ -376,7 +404,7 @@ void endlessSaveSlot(JE_byte slot);
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.
  * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
-#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS + 1)
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 

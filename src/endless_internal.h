@@ -20,6 +20,7 @@ extern Uint64 endlessEliteRngState;
 Uint32 endlessRand(void);
 void   endlessReseed(Uint64 salt);
 Uint64 endlessSplitMixSeed(Uint64 salt);
+Uint32 endlessSplitMixStep(Uint64 *state);   // advance a stream the caller owns
 Uint32 endlessEliteRand(void);
 
 // Per-player structural RNG: a reroll or gamble on one machine must not shift the other's draws.
@@ -79,6 +80,20 @@ extern int     endlessRecentCount;
 
 // Random safe level not present in the recent-level ring.
 bool endlessRandomSafeLevel(int *epOut, JE_byte *secOut, JE_byte *fileOut);
+
+/* The Shuffle rules' draw: the whole safe pool shuffled into a bag, taken in order, refilled with
+ * a fresh shuffle once empty. Uses a stream of its own, so a shuffled chart consumes no structural
+ * RNG and cannot shift the draws around it. See "Level shuffle" in doc/notes.md. */
+bool endlessShuffleSafeLevel(int position, int *epOut, JE_byte *secOut, JE_byte *fileOut);
+
+extern int endlessShuffleNext;        // pieces the run has drawn; the next hand starts here
+extern int endlessShuffleHandStart;   // where the live chart's hand came off, for the re-anchor
+extern int endlessShuffleHandDepth;   // ...and the visit it was dealt for; -1 = none dealt yet
+
+// Positions are clamped into this range, which is far past any real run's draw count.
+#define ENDLESS_SHUFFLE_POSITION_MAX 1000000000
+void endlessShuffleSetNext(int position);
+void endlessShuffleSyncHand(uint p, int handStart);
 
 // Shared effect reset. It must not consume structural RNG.
 void endlessResetZoneEffects(void);

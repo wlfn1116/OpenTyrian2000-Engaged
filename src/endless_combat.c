@@ -706,6 +706,7 @@ void endlessGrantSpecial(uint p)
 		player[p].shot_multi_pos[SHOT_SPECIAL2] = 0;
 		player[p].shot_repeat[SHOT_SPECIAL2]    = 0;
 	}
+	hud_special_light_rearm(p);
 
 	// Item names may be space-padded in the data.
 	char *const name = endlessLastSpecialName[p];

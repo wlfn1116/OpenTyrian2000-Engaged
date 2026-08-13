@@ -92,6 +92,11 @@ scaled row so a steady gauge cannot jitter.
 Linked arcade runs the shared special path once per player each tick. The meter
 keeps the final clocks and merges ready/fired edges across those two passes.
 
+Each burn and each recharge is measured against its own opening value. A special
+equipped during a recharge starts a phase, so equipping calls
+`hud_special_light_rearm`; the clocks alone cannot tell a replaced cooldown from
+one still counting down.
+
 Only live ticks step the ready pop, so the machine that does not own the firing
 input can have the whole shot land in re-simulated ticks and never see its edge.
 The meter leaving full since the previous live tick owes the pop instead. That
@@ -294,12 +299,45 @@ Course generation gathers levels, assigns modifiers, applies visit rules, sorts
 cards, makes names unique, and caches level names. Changing that order changes
 existing seeds.
 
-`endlessRunBaseLevelSame` selects one of two gatherers. Same and Varied consume
-different draw counts, so the rule is stored with the run and has separate
-records.
+`endlessRunBaseRule` selects one of three gatherers. The rules consume different
+draw counts, so the rule is stored with the run and has separate records. Its
+values are the record, save, and wire order. The menu and the record pages read a
+separate order through `endlessBaseRuleAtMenuIndex`, so reordering what a player
+sees cannot move a stored record.
 
 Radar rerolls are folded into the phase salt. Latch Star Charts and the charting
 seat at visit start so a redeal uses the same visit rules on both peers.
+
+### Level shuffle
+
+The two Shuffle rules draw from a bag rather than sampling. `endlessShuffleNext`
+is the run's cursor into it, and `endlessShuffleSafeLevel` resolves a position:
+the bagful is `position / npool`, permuted by a stream of its own, and the piece
+is `position % npool`. The pool counts a section once even where the level
+scripts load it twice, so a bagful is every level a chart can tell apart.
+
+Every deal advances the cursor by what it spent, which is what makes a Radar
+reroll cost the discarded hand. Every deal advances it, including the redeal a
+peer runs to catch up on a reroll count: both machines then deal the same number
+of hands and land on the same piece. A shuffled deal consumes no structural RNG,
+so it cannot shift the draws around it.
+
+Online, the cursor is the only chart input that accumulates rather than being
+recomputed from seed, depth, reroll count, and charting seat, so it is the only
+one that can drift without healing at the next visit. Each seat publishes the
+position its live hand came off on the player block, only the charting seat's is
+acted on, and a machine that disagrees re-anchors and deals again
+(`endlessShuffleSyncHand`, which logs the repair). The hand carries the depth it
+was dealt for: a machine that has not charted the visit the packet belongs to
+leaves its own next deal alone. Read the hand after the reroll count, so a
+re-anchored redeal runs on the perks the same packet delivered.
+
+A refill reshuffles independently, so its opening window is corrected against the
+emptying bag's closing window: the last `ENDLESS_MAX_COURSES` pieces of a bag
+cannot reappear in the first `2 * ENDLESS_MAX_COURSES - 1` of the next. That is
+the span two consecutive charts can reach across the seam. Swapping the offending
+piece further back keeps the bagful a permutation. A pool too small to seat both
+windows gets no such promise, and the gatherer's own duplicate check covers it.
 
 ### Combat
 
@@ -587,6 +625,7 @@ checkpoint.
 | 21 | Co-op player block and course turn |
 | 22 | Base Level rule |
 | 23 | Radar reroll count |
+| 24 | Level bag cursor and hand; the v22 rule byte widened past Same/Varied |
 
 Append fields and guard reads by version. Perk IDs appear in stacks and pending
 offers; append enum values or migrate both arrays.
@@ -730,7 +769,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 41.
+`NET_VERSION` bump. The current value is 42.
 
 Recent versions:
 
@@ -758,6 +797,7 @@ Recent versions:
 | 39 | Settled Endless special-enemy tier bits |
 | 40 | Ship-centred Endless orbiting specials |
 | 41 | Endless tiers settled on an enemy's first frame |
+| 42 | Endless Base Level rule byte carries four rules; level-bag hand in the player block |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -877,7 +917,7 @@ Per-player state includes:
 - wallet, loadout, bombs, Reinforce tier, and revive;
 - purchased sector effects and shop tax;
 - prices, perk row, and outpost RNG;
-- chart reroll count for the charting seat.
+- chart reroll count and level-bag hand, both acted on for the charting seat.
 
 `itemAvail` and the local cash ledger stay local. Structural course RNG remains
 separate from each player's outpost RNG.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the independent Endless v3-v23 migration corpus."""
+"""Generate the independent Endless v3-v24 migration corpus."""
 
 from __future__ import annotations
 
@@ -130,9 +130,12 @@ def record(version: int) -> bytes:
         out += bytes(rows)
         out += u64(0x0123456789abcdef) + u64(0xfedcba9876543210)
     if version >= 22:
-        out += u8(1)   # baseLevelSame: the run charts one base level per slate
+        out += u8(1)   # baseLevelRule: Same, the one value v22 and v23 could write besides Varied
     if version >= 23:
         out += bytes([1, 1])  # chartRerolls: the Radar reroll is spent; chartStarCharts: it was owed
+    if version >= 24:
+        out += u32(37)  # shuffleNext: pieces this run has drawn from the level bag
+        out += u32(33)  # shuffleHandStart: where the saved chart's hand came off
 
     return bytes(out)
 
@@ -143,7 +146,7 @@ def main() -> int:
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
-    for version in range(3, 24):
+    for version in range(3, 25):
         payload = b"OTES" + bytes([version, 1]) + record(version)
         path = args.output / f"v{version:02d}.sav"
         path.write_bytes(payload)

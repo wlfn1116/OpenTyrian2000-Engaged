@@ -156,6 +156,10 @@ void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, boo
 // Drop the meter's carried-over state; level setup calls it so a level cannot open on the previous
 // level's cooldown (which would read as the special arming, and pop).
 void hud_special_light_reset(void);
+// Open a meter phase for ship `p`, which has just equipped a special: the lockout it arrives with
+// is measured against itself rather than the recharge it replaced. Ignored when that ship has no
+// block on screen.
+void hud_special_light_rearm(uint p);
 // Repaint the ready light for one displayed frame: the meter at `alpha` between the previous and
 // current tick's fill, at `scale` into the supersampled playfield, over what the residual re-applied.
 void hud_special_light_present(SDL_Surface *dst, int scale, float alpha);

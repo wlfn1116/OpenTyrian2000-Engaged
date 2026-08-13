@@ -2088,7 +2088,7 @@ int main(int argc, char *argv[])
 			network_host_endless_run_mode = (int)ENDLESS_RUNMODE_STANDARD;
 			network_host_endless_chooser = (int)ENDLESS_PICK_HOST;
 			network_host_endless_combo_shared = true;
-			network_host_endless_base_same = false;
+			network_host_endless_base_rule = (int)ENDLESS_BASE_VARIED;
 			SDL_strlcpy(network_endless_session_seed, "qa-wire-zones",
 			            sizeof(network_endless_session_seed));
 		}

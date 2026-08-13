@@ -1384,7 +1384,7 @@ static const char *endlessPageDiffName(int row)
 }
 
 // The zone and custom mark a breakdown row shows. The base-level rule is the page, not a row: each
-// of the two has its own board, so `variant` is fixed for everything drawn on one.
+// rule has its own board, so `variant` is fixed for everything drawn on one.
 static int endlessPageDiffZone(int variant, int players, EndlessRunMode mode, int row)
 {
 	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(variant, players, mode)
@@ -1571,12 +1571,12 @@ static void JE_drawEndlessRecordPage(int variant, int selectedMode, bool subOpen
 	             15, 2, FULL_SHADE);
 }
 
-/* Everything the Endless page navigates between, so the two halves pass one thing around. The two
+/* Everything the Endless page navigates between, so the two halves pass one thing around. The
  * base-level boards are separate pages of the high-score screen but share this: paging is blocked
  * while a breakdown or an answer is up, so only the mode-list selection ever carries across. */
 typedef struct
 {
-	int  variant;        // which base-level board this page is (0 Varied, 1 Same)
+	int  variant;        // which base-level board this page is (an EndlessBaseRule)
 	int  mode;           // selected run mode on the mode list, and the mode a breakdown belongs to
 	bool subOpen;        // showing that mode's breakdown rather than the mode list
 	int  row;            // selected breakdown row (ENDLESS_PAGE_ROW_ANY, else difficulty slot + 1)
@@ -1766,12 +1766,11 @@ void JE_highScoreScreen(void)
 
 	size_t episodeIndex = 0;
 	/* Five episodes, three timed battles, the online co-op Campaign board, then one Endless board
-	 * per base-level rule. The two Endless boards are separate pages because a run under one rule is
-	 * not comparable with a run under the other. */
-	const size_t episodeCount = 11;
-	const size_t endlessSamePage = episodeCount - 1;
-	const size_t endlessVariedPage = episodeCount - 2;
-	const size_t coopPage = episodeCount - 3;
+	 * per base-level rule, in the order the Base Level row offers them. The Endless boards are
+	 * separate pages because a run under one rule is not comparable with a run under another. */
+	const size_t endlessFirstPage = 9;
+	const size_t episodeCount = endlessFirstPage + ENDLESS_BASE_TABLES;
+	const size_t coopPage = endlessFirstPage - 1;
 
 	// Endless page state: the mode list, a mode's breakdown by difficulty, and a pending erase.
 	EndlessPageState endlessPageState = { 0, 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
@@ -1801,12 +1800,14 @@ void JE_highScoreScreen(void)
 		// Restore background and header.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		const bool onEndlessPage = episodeIndex == endlessVariedPage || episodeIndex == endlessSamePage;
+		const bool onEndlessPage = episodeIndex >= endlessFirstPage;
 		if (onEndlessPage)
 		{
-			// Each board names its own rule, which is the only place the two are told apart.
-			endlessPageState.variant = (episodeIndex == endlessSamePage) ? 1 : 0;
-			snprintf(buffer, sizeof(buffer), "Endless: %s Base",
+			// Each board names its own rule, which is the only place they are told apart. The pages
+			// follow the Base Level row's order rather than the enum's.
+			endlessPageState.variant =
+				(int)endlessBaseRuleAtMenuIndex((int)(episodeIndex - endlessFirstPage));
+			snprintf(buffer, sizeof(buffer), "Endless: Base Level %s",
 			         endlessBaseLevelRuleName(endlessPageState.variant));
 
 			// No score board: the Endless page lists the per-mode zone records instead.
@@ -7256,6 +7257,7 @@ static bool hud_light_fired = false;    // ...and one went off during it
 static bool hud_light_await_pop = false;  // a fire is waiting on the special coming back
 static bool hud_light_published = false;
 static bool hud_light_sampled_this_tick = false;
+static bool hud_light_rearm_pending = false;  // a special was equipped; its lockout starts a phase
 static int  hud_light_charge_full = 0;  // what each phase started from, so both scale to themselves
 static int  hud_light_burn_full = 0;
 static int  hud_light_flash = 0;
@@ -7273,6 +7275,22 @@ static void hud_special_light_tick_begin(void)
 {
 	hud_light_sampled_this_tick = false;
 	hud_light_published = false;
+
+	// An equip lands after this tick's clocks are published, so its request is taken at the next
+	// tick's opening. Only a live tick owns the scale; a silent pass leaves the request for the
+	// tick that draws. The burn keeps its scale: it belongs to the special that started it.
+	if (hud_light_rearm_pending && !rollback_resim_silent)
+	{
+		hud_light_rearm_pending = false;
+		hud_light_charge_full = 0;
+	}
+}
+
+// Equipping a special opens a meter phase. See "Feedback and overlays" in doc/notes.md.
+void hud_special_light_rearm(uint p)
+{
+	if (hud_special_block_shown(p))
+		hud_light_rearm_pending = true;
 }
 
 void hud_special_light_publish(int charge_ticks, int burn_ticks, bool armed, bool fired)
@@ -7310,6 +7328,7 @@ void hud_special_light_reset(void)
 	hud_light_meter_seen = false;
 	hud_light_published = false;
 	hud_light_sampled_this_tick = false;
+	hud_light_rearm_pending = false;
 	hud_light_charge_full = 0;
 	hud_light_burn_full = 0;
 	hud_light_flash = 0;
@@ -7412,17 +7431,14 @@ static void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id)
 	blit_sprite2(surface, x + (freeW + 1) / 2 - x0, y + freeH / 2 - y0, *sheet, top);
 }
 
-static void draw_special_ready_light(int x, int y)
+/* Advance the meter over the clocks published this tick and return the rows to light.
+ *
+ * Burning drains what was there; recharging fills it back. Both land on empty at the handover, so
+ * a special that burns and then recharges reads as one continuous sweep down and back up. The fill
+ * is kept fractional: a 12-row meter driven by clocks that can run hundreds of ticks would sit
+ * still for a dozen of them and then jump a whole row. */
+static float hud_special_light_step(void)
 {
-	// Galaga's wing flies without a special shot at all, so JE_doSpecialShot never runs and there
-	// is no charge to show; anything else that gates it out drops the light the same way.
-	if (!hud_light_published)
-	{
-		hud_special_light_reset();
-		return;
-	}
-	hud_light_published = false;
-
 	const bool burning = hud_light_burn_left > 0;
 
 	// Specials that set no recharge at all -- the Repulsor, Attractor and the repair pair, whose
@@ -7447,18 +7463,30 @@ static void draw_special_ready_light(int x, int y)
 		hud_special_light_step_flash();
 	}
 
-	// Burning drains what was there; recharging fills it back. Both land on empty at the handover,
-	// so a special that burns and then recharges reads as one continuous sweep down and back up.
-	// Kept fractional: a 12-row meter driven by clocks that can run hundreds of ticks would sit
-	// still for a dozen of them and then jump a whole row.
-	float filled = 0.0f;
 	if (ready)
-		filled = HUD_LIGHT_ROWS;
-	else if (burning)
-		filled = hud_light_burn_full > 0
-		       ? (float)hud_light_burn_left * HUD_LIGHT_ROWS / hud_light_burn_full : 0.0f;
-	else if (hud_light_charge_full > 0)
-		filled = (float)(hud_light_charge_full - hud_light_charge_left) * HUD_LIGHT_ROWS / hud_light_charge_full;
+		return HUD_LIGHT_ROWS;
+	if (burning)
+		return hud_light_burn_full > 0
+		     ? (float)hud_light_burn_left * HUD_LIGHT_ROWS / hud_light_burn_full : 0.0f;
+	if (hud_light_charge_full > 0)
+		return (float)(hud_light_charge_full - hud_light_charge_left)
+		     * HUD_LIGHT_ROWS / hud_light_charge_full;
+
+	return 0.0f;
+}
+
+static void draw_special_ready_light(int x, int y)
+{
+	// Galaga's wing flies without a special shot at all, so JE_doSpecialShot never runs and there
+	// is no charge to show; anything else that gates it out drops the light the same way.
+	if (!hud_light_published)
+	{
+		hud_special_light_reset();
+		return;
+	}
+	hud_light_published = false;
+
+	const float filled = hud_special_light_step();
 
 	if (!rollback_resim_silent)
 	{
@@ -7568,6 +7596,42 @@ void qa_test_special_light_events(void)
 	hud_special_light_step_flash();
 	qa_check(!hud_light_await_pop && hud_light_flash == 0,
 	         "a recharge carried into a new level does not pop when it finishes");
+
+	/* Ten ticks of lockout left of a two hundred tick recharge would open the bar at 95% without a
+	 * phase of its own. The equip lands after that tick's clocks are published, so the request is
+	 * raised between a publish and the next tick's opening, as a pickup raises it. */
+	const JE_byte saved_special = player[0].items.special;
+	player[0].items.special = 1;  // the local ship needs a block for the meter to take the request
+
+	hud_special_light_reset();
+	hud_special_light_tick_begin();
+	hud_special_light_publish(200, 0, false, false);
+	hud_special_light_step();
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(120, 0, false, false);
+	const float part_way = hud_special_light_step();
+	qa_check(part_way > 4.0f && part_way < 5.5f,
+	         "the meter fills across the recharge it is measuring");
+
+	hud_special_light_rearm(0);
+	hud_special_light_tick_begin();
+	hud_special_light_publish(9, 0, false, false);
+	qa_check(hud_special_light_step() == 0.0f,
+	         "a special equipped mid-recharge opens its meter from empty");
+
+	hud_special_light_tick_begin();
+	hud_special_light_publish(4, 0, false, false);
+	const float new_phase = hud_special_light_step();
+	qa_check(new_phase > 6.0f && new_phase < 7.0f,
+	         "and climbs across the lockout it arrived with");
+
+	// A ship whose block is not on screen leaves the meter alone.
+	player[0].items.special = 0;
+	hud_special_light_rearm(0);
+	qa_check(!hud_light_rearm_pending,
+	         "a special equipped off screen does not rescale the meter");
+	player[0].items.special = saved_special;
 
 	hud_special_light_reset();
 }
@@ -10506,6 +10570,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 								this_player->shot_multi_pos[SHOT_SPECIAL2] = 0;
 								this_player->shot_repeat[SHOT_SPECIAL2] = 0;
 							}
+							hud_special_light_rearm((uint)(this_player - player));
 
 							if (isNetworkGame)
 								snprintf(tempStr, sizeof(tempStr), "%s %s %s", JE_getName(dual_ship_mode() ? playerNum_ : 1), miscTextB[4-1], JE_specialName((JE_byte)(evalue - 32100)));
@@ -10661,6 +10726,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 									special_player->shot_multi_pos[SHOT_SPECIAL2] = 0;
 									special_player->shot_repeat[SHOT_SPECIAL2] = 0;
 								}
+								hud_special_light_rearm((uint)(special_player - player));
 							}
 							player_award_pickup_cash(this_player, 250);
 						}

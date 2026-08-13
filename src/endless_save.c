@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 23
+#define ENDLESS_SAVE_VERSION 24
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -147,12 +147,17 @@ typedef struct {
 	                                             // each ship's holding (perkOwned is the legacy sum)
 	Uint64 playerRng[2];                          // each player's own outpost draw stream
 
-	// Added in v22.
-	Uint8  baseLevelSame;  // 1 = the run charts one base level per slate; fixed for the run
+	/* Added in v22 as a Same/Varied flag; v24 widened it to an EndlessBaseRule. Values 0 and 1 kept
+	 * their meaning, so a v22 or v23 record needs no migration. Fixed for the run. */
+	Uint8  baseLevelRule;
 
 	// Added in v23.
 	Uint8  chartRerolls;     // Radar rerolls this outpost's chart has had; salts the visit's phases
 	Uint8  chartStarCharts;  // Star Charts as the visit's chart found it, so a redeal replays it
+
+	// Added in v24. Both are 0 under the two unshuffled rules.
+	Uint32 shuffleNext;       // pieces a Shuffle run has drawn
+	Uint32 shuffleHandStart;  // where the restored chart's hand came off, for the co-op re-anchor
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -302,10 +307,13 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 	endlessPutU64(f, r->playerRng[0]);
 	endlessPutU64(f, r->playerRng[1]);
 
-	endlessPutU8(f, r->baseLevelSame);               // v22 Same / Varied base level
+	endlessPutU8(f, r->baseLevelRule);               // v22 base-level rule, widened in v24
 
 	endlessPutU8(f, r->chartRerolls);                // v23 Radar chart reroll
 	endlessPutU8(f, r->chartStarCharts);
+
+	endlessPutU32(f, r->shuffleNext);                // v24 Shuffle bag cursor and live hand
+	endlessPutU32(f, r->shuffleHandStart);
 }
 
 static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
@@ -573,8 +581,10 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	}
 
 	// Pre-v22 records predate the chart rule, so they resume as Varied and keep the records they set.
-	if (version >= 22 && !endlessGetU8(f, &r->baseLevelSame))
+	if (version >= 22 && !endlessGetU8(f, &r->baseLevelRule))
 		return false;
+	if (r->baseLevelRule >= ENDLESS_BASE_RULE_COUNT)
+		r->baseLevelRule = ENDLESS_BASE_VARIED;
 
 	// Pre-v23 records predate the Radar chart reroll and resume with this visit's reroll unspent.
 	if (version >= 23)
@@ -588,6 +598,19 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		// of an older save then spends the boon again rather than dropping it.
 		r->chartStarCharts = r->starChartsOwed;
 	}
+
+	// Pre-v24 records predate the Shuffle rules, so their bag is genuinely at the start.
+	if (version >= 24
+	    && (!endlessGetU32(f, &r->shuffleNext) || !endlessGetU32(f, &r->shuffleHandStart)))
+	{
+		return false;
+	}
+	// A corrupt cursor restarts the bag rather than indexing off the end, and a hand cannot have
+	// come off a position the cursor has not reached.
+	if (r->shuffleNext > ENDLESS_SHUFFLE_POSITION_MAX)
+		r->shuffleNext = 0;
+	if (r->shuffleHandStart > r->shuffleNext)
+		r->shuffleHandStart = r->shuffleNext;
 
 	return true;
 }
@@ -716,10 +739,12 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	    || (version >= 15 && first.runMode != ENDLESS_RUNMODE_STANDARD)
 	    || (version < 20 && first.usedCustom != 0)
 	    || (version >= 20 && first.usedCustom != 1)
-	    || (version < 22 && first.baseLevelSame != 0)
-	    || (version >= 22 && first.baseLevelSame != 1)
+	    || (version < 22 && first.baseLevelRule != 0)
+	    || (version >= 22 && first.baseLevelRule != 1)
 	    || (version < 23 && first.chartRerolls != 0)
-	    || (version >= 23 && first.chartRerolls != 1))
+	    || (version >= 23 && first.chartRerolls != 1)
+	    || (version < 24 && (first.shuffleNext != 0 || first.shuffleHandStart != 0))
+	    || (version >= 24 && (first.shuffleNext != 37 || first.shuffleHandStart != 33)))
 	{
 		free(bytes);
 		endlessTestDetail(detail, detailSize, "version defaults differ");
@@ -954,10 +979,13 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	// Disk saves use Relaxed or Standard; in-memory sortie snapshots can carry Hardcore.
 	r->runMode = (Uint8)endlessRunMode;
 
-	r->baseLevelSame = endlessRunBaseLevelSame ? 1 : 0;   // v22 chart rule, fixed for the run
+	r->baseLevelRule = (Uint8)endlessRunBaseRule;         // v22 chart rule, fixed for the run
 
 	r->chartRerolls    = endlessChartRerolls;             // v23 Radar chart reroll
 	r->chartStarCharts = endlessChartStarCharts ? 1 : 0;
+
+	r->shuffleNext      = (Uint32)endlessShuffleNext;     // v24 Shuffle bag cursor and live hand
+	r->shuffleHandStart = (Uint32)endlessShuffleHandStart;
 
 	// v16 cash ledger + v19 sink breakdown. The spare on-disk slots past ENDLESS_CASH_SOURCES /
 	// ENDLESS_CASH_SINKS stay zeroed by the memset.
@@ -1079,13 +1107,19 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	                                                      : ENDLESS_RUNMODE_RELAXED;
 
 	// ...and the chart rule the run was started under, whatever the toggle currently says.
-	endlessRunBaseLevelSame = r->baseLevelSame != 0;
+	endlessRunBaseRule = (EndlessBaseRule)r->baseLevelRule;
 
 	// The visit resumes its chart as saved: the reroll count rode in on the record, and the seat
 	// that charted it follows from the co-op turn restored above.
 	endlessChartRerolls    = r->chartRerolls;
 	endlessChartStarCharts = r->chartStarCharts != 0;
 	endlessChartSeat       = endlessChartingPlayerIndex();
+
+	// The bag resumes where the saved chart left it, so the next hand is the one the run was owed.
+	// The restored chart keeps the hand it was dealt from, which is what a peer re-anchors against.
+	endlessShuffleSetNext((int)r->shuffleNext);
+	endlessShuffleHandStart = (int)r->shuffleHandStart;
+	endlessShuffleHandDepth = endlessRunDepth;
 
 	endlessRestoreSavedCourses(r);
 
@@ -1167,8 +1201,14 @@ int endlessPackPlayerBlock(Uint8 *buf, uint p)
 	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS; ++i)
 		buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
 
-	// The chart itself is derived on both machines; only the charting seat's reroll count travels.
+	/* The chart itself is derived on both machines; only the charting seat's reroll count and the
+	 * bag position its hand came off travel, and the second only to repair a drift. */
 	buf[n++] = endlessChartRerolls;
+	const Uint32 hand = (Uint32)endlessShuffleHandStart;
+	buf[n++] = (Uint8)(hand >> 24);
+	buf[n++] = (Uint8)(hand >> 16);
+	buf[n++] = (Uint8)(hand >> 8);
+	buf[n++] = (Uint8)hand;
 	return n;
 }
 
@@ -1213,6 +1253,12 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessPerkRederive();
 
 	endlessChartSyncRerolls(p, buf[n]);
+	++n;
+
+	// After the reroll count, so a re-anchored redeal runs on the perks unpacked above.
+	const Uint32 hand = ((Uint32)buf[n] << 24) | ((Uint32)buf[n + 1] << 16)
+	                  | ((Uint32)buf[n + 2] << 8) | (Uint32)buf[n + 3];
+	endlessShuffleSyncHand(p, (hand > ENDLESS_SHUFFLE_POSITION_MAX) ? 0 : (int)hand);
 }
 
 /* Online co-op resume: the host serializes the live run through the same versioned codec the
@@ -1504,12 +1550,18 @@ static const char *const endlessBestZoneDiffCustomKey[ENDLESS_RUNMODE_COUNT] = {
 	"best_zone_diff_custom", "best_zone_normal_diff_custom", "best_zone_hardcore_diff_custom",
 };
 
-/* The co-op table lives under the same key with a "_2p" tail, and the Same base-level table under a
- * further "_same" one. A config written before either split carries neither tail, which reads as an
- * empty set of records for the tables that gained one. */
+/* The co-op table lives under the same key with a "_2p" tail, and every base-level rule past Varied
+ * under a further tail of its own. A config written before either split carries neither tail, which
+ * reads as an empty set of records for the tables that gained one. */
+static const char *const endlessRecordRuleTail[ENDLESS_BASE_TABLES] = {
+	"", "_same", "_variedshuffle", "_sameshuffle",
+};
+
 static void endlessRecordKey(char *out, size_t n, const char *base, int players, int variant)
 {
-	snprintf(out, n, "%s%s%s", base, (players == 1) ? "_2p" : "", (variant == 1) ? "_same" : "");
+	const char *const tail = (variant >= 0 && variant < ENDLESS_BASE_TABLES)
+	                       ? endlessRecordRuleTail[variant] : "";
+	snprintf(out, n, "%s%s%s", base, (players == 1) ? "_2p" : "", tail);
 }
 
 void endlessRecordConfigSave(ConfigSection *section)

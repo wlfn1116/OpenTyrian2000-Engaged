@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       41           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       42           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -128,7 +128,7 @@ char network_endless_session_seed[NET_ENDLESS_SEED_MAX] = "";
 int  network_host_endless_run_mode = 1;   // ENDLESS_RUNMODE_STANDARD
 int  network_host_endless_chooser = 0;    // ENDLESS_PICK_HOST
 bool network_host_endless_combo_shared = false;
-bool network_host_endless_base_same = false;   // Varied: a level per charted route
+int  network_host_endless_base_rule = 0;  // ENDLESS_BASE_VARIED: a level per charted route
 
 // Destruct lobby block. The seed is per session; every round hashes it with the round number.
 int    network_host_destruct_mode = 0;    // MODE_5CARDWAR
@@ -1169,7 +1169,7 @@ static void send_connect_packet(Uint16 episodes_local)
 	packet_out_temp->data[NET_CONNECT_ENDLESS] = (Uint8)network_host_endless_run_mode;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 1] = (Uint8)network_host_endless_chooser;
 	packet_out_temp->data[NET_CONNECT_ENDLESS + 2] = network_host_endless_combo_shared ? 1 : 0;
-	packet_out_temp->data[NET_CONNECT_ENDLESS + 3] = network_host_endless_base_same ? 1 : 0;
+	packet_out_temp->data[NET_CONNECT_ENDLESS + 3] = (Uint8)network_host_endless_base_rule;
 	memcpy(&packet_out_temp->data[NET_CONNECT_ENDLESS + 4], network_endless_session_seed,
 	       NET_ENDLESS_SEED_MAX);
 	packet_out_temp->data[NET_CONNECT_DESTRUCT] = (Uint8)network_host_destruct_mode;
@@ -2026,7 +2026,7 @@ void network_endless_adopt(const Uint8 *buf)
 	network_host_endless_run_mode = buf[0];
 	network_host_endless_chooser = buf[1];
 	network_host_endless_combo_shared = buf[2] != 0;
-	network_host_endless_base_same = buf[3] != 0;
+	network_host_endless_base_rule = buf[3];
 	memcpy(network_endless_session_seed, &buf[4], NET_ENDLESS_SEED_MAX);
 	network_endless_session_seed[NET_ENDLESS_SEED_MAX - 1] = '\0';
 
@@ -2034,6 +2034,11 @@ void network_endless_adopt(const Uint8 *buf)
 		network_host_endless_run_mode = ENDLESS_RUNMODE_STANDARD;
 	if (network_host_endless_chooser < 0 || network_host_endless_chooser >= ENDLESS_PICK_COUNT)
 		network_host_endless_chooser = ENDLESS_PICK_HOST;
+	if (network_host_endless_base_rule < 0
+	    || network_host_endless_base_rule >= ENDLESS_BASE_RULE_COUNT)
+	{
+		network_host_endless_base_rule = ENDLESS_BASE_VARIED;
+	}
 
 	// Only printable ASCII reaches the seed hash, so a hostile packet cannot smuggle control
 	// characters onto the seed-name line the run-over screen prints.

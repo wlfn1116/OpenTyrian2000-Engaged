@@ -37,8 +37,8 @@ static Uint64 endlessHashString(const char *s)
 	return h;
 }
 
-// One SplitMix64 step, shared by the structural and elite streams.
-static Uint32 endlessSplitMixNext(Uint64 *state)
+// One SplitMix64 step, shared by the structural, elite and caller-owned streams.
+Uint32 endlessSplitMixStep(Uint64 *state)
 {
 	Uint64 z = (*state += 0x9E3779B97F4A7C15ULL);
 	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -60,7 +60,7 @@ Uint64 endlessSplitMixSeed(Uint64 salt)
 // Structural random for levels, courses, perks, and shop stock.
 Uint32 endlessRand(void)
 {
-	return endlessSplitMixNext(&endlessRngState);
+	return endlessSplitMixStep(&endlessRngState);
 }
 
 // Restart a structural phase without depending on earlier player choices.
@@ -72,7 +72,7 @@ void endlessReseed(Uint64 salt)
 // Elite tiers use a separate per-zone stream.
 Uint32 endlessEliteRand(void)
 {
-	return endlessSplitMixNext(&endlessEliteRngState);
+	return endlessSplitMixStep(&endlessEliteRngState);
 }
 
 /* Outpost draws each player makes for themselves (stock, rerolls, gambles, perk slates) run on
@@ -81,7 +81,7 @@ Uint64 endlessPlayerRngState[2] = { 0, 0 };
 
 Uint32 endlessRandFor(uint p)
 {
-	return endlessSplitMixNext(&endlessPlayerRngState[p < COUNTOF(endlessPlayerRngState) ? p : 0]);
+	return endlessSplitMixStep(&endlessPlayerRngState[p < COUNTOF(endlessPlayerRngState) ? p : 0]);
 }
 
 void endlessReseedPlayers(Uint64 salt)
@@ -104,7 +104,8 @@ const char *endlessSeedString(void)
 }
 
 // Seed, run mode and base-level rule selection before the difficulty screen.
-bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool *outBaseSame)
+bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode,
+                       EndlessBaseRule *outBaseRule)
 {
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');
@@ -112,7 +113,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 	char seed[ENDLESS_SEED_MAXLEN] = "";
 	size_t len = 0;
 	EndlessRunMode mode = ENDLESS_RUNMODE_STANDARD;
-	int baseVariant = 0;   // Varied: a level per charted route
+	int baseIndex = 0;   // menu order, not EndlessBaseRule order; opens on Varied
 
 	enum { ROW_SEED, ROW_RANDOM, ROW_MODE, ROW_BASE, ROW_START, ROW_COUNT };
 	int selected = ROW_SEED;
@@ -140,11 +141,12 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 
 		// The record belongs to the mode and base-level rule selected below, both of which split
 		// the records, so it follows those two rows.
+		const int baseRule = (int)endlessBaseRuleAtMenuIndex(baseIndex);
 		char recordLine[48];
-		if (endlessBestZoneAny(baseVariant, 0, mode) > 0)
+		if (endlessBestZoneAny(baseRule, 0, mode) > 0)
 			snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s",
-			         endlessBestZoneAny(baseVariant, 0, mode),
-			         endlessRecordAnyCustomMark(baseVariant, 0, mode));
+			         endlessBestZoneAny(baseRule, 0, mode),
+			         endlessRecordAnyCustomMark(baseRule, 0, mode));
 		else
 			SDL_strlcpy(recordLine, "No zone record yet", sizeof(recordLine));
 		draw_font_hv_shadow(VGAScreen, xCenter, yRecord, recordLine, small_font, centered, 15, 4, false, 1);
@@ -154,9 +156,9 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 			snprintf(seedRow, sizeof(seedRow), "Seed: %s_", seed);
 		else
 			SDL_strlcpy(seedRow, "Seed: (random)", sizeof(seedRow));
-		char modeRow[32], baseRow[32];
+		char modeRow[32], baseRow[40];
 		snprintf(modeRow, sizeof(modeRow), "Mode: %s", endlessRunModeName(mode));
-		snprintf(baseRow, sizeof(baseRow), "Base Level: %s", endlessBaseLevelRuleName(baseVariant));
+		snprintf(baseRow, sizeof(baseRow), "Base Level: %s", endlessBaseLevelRuleName(baseRule));
 		const char *label[ROW_COUNT] = { seedRow, "Randomize", modeRow, baseRow, "Start" };
 
 		int rowW[ROW_COUNT];
@@ -172,8 +174,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 		const char *rowHelp;
 		if (selected == ROW_BASE)
 		{
-			rowHelp = (baseVariant == 1) ? "Same: one base level per chart, modifiers differ."
-			                             : "Varied: every charted route is its own level.";
+			rowHelp = endlessBaseLevelRuleHelp(baseRule);
 		}
 		else switch (mode)
 		{
@@ -264,7 +265,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 				}
 				else if (selected == ROW_BASE)
 				{
-					baseVariant ^= 1;
+					baseIndex = (baseIndex == 0) ? ENDLESS_BASE_RULE_COUNT - 1 : baseIndex - 1;
 					JE_playSampleNum(S_CLICK);
 				}
 				break;
@@ -276,7 +277,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 				}
 				else if (selected == ROW_BASE)
 				{
-					baseVariant ^= 1;
+					baseIndex = (baseIndex + 1) % ENDLESS_BASE_RULE_COUNT;
 					JE_playSampleNum(S_CLICK);
 				}
 				break;
@@ -321,7 +322,7 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 			}
 			else if (selected == ROW_BASE)
 			{
-				baseVariant ^= 1;
+				baseIndex = (baseIndex + 1) % ENDLESS_BASE_RULE_COUNT;   // Enter cycles forward too
 				JE_playSampleNum(S_CLICK);
 			}
 			else
@@ -331,8 +332,8 @@ bool endlessSeedSelect(char *outSeed, size_t outN, EndlessRunMode *outMode, bool
 				SDL_strlcpy(outSeed, seed, outN);
 				if (outMode)
 					*outMode = mode;
-				if (outBaseSame)
-					*outBaseSame = (baseVariant == 1);
+				if (outBaseRule)
+					*outBaseRule = (EndlessBaseRule)baseRule;
 				JE_playSampleNum(S_SELECT);
 				commit = true;
 				done = true;
