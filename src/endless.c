@@ -971,62 +971,63 @@ bool endlessTurbodriveActive(void)
 }
 
 // Run-over flavor text, one line per five-zone band.
-static const char *endlessMilestoneLine(int d)
+static const char *endlessMilestoneLine(int zone)
 {
-	static const char* const lines[] = {
-		"The gate seals shut behind you.",         //   0-4
-		"The last friendly beacon fades.",         //   5
-		"Something is following your signal.",     //  10
-		"The wreckage ahead is still warm.",       //  15
-		"Command has stopped answering.",          //  20
-		"Enemy signals fill every channel.",       //  25
-		"The stars no longer match the charts.",   //  30
-		"Every route leads farther in.",            //  35
-		"The navigation computer refuses course.", //  40
-		"The wrecks are starting to look familiar.", // 45
-		"Something has learned how you fight.",     //  50
-		"The guns have not cooled in hours.",       //  55
-		"A dreadful hush falls between volleys.",  //  60
-		"The hull remembers every impact.",         //  65
-		"No human signal reaches this far.",        //  70
-		"Even the warning lights fall silent.",     //  75
-		"The charts end here.",                     //  80
-		"Nothing living knows these coordinates.", //  85
-		"Reality bends around the wreckage.",       //  90
-		"Your engines run on borrowed time.",       //  95
-		"Legends come this far to die.",            // 100
-		"The enemy no longer sees you as prey.",    // 105
-		"Their fleets gather beyond the static.",   // 110
-		"The stars flicker when you fire.",         // 115
-		"The distress calls are no longer yours.",  // 120
-		"The swarm goes on without end.",           // 125
-		"They tell stories about your ship.",       // 130
-		"Your signal has become a warning.",        // 135
-		"Time loses count between the gunfire.",    // 140
-		"The last known beacon has gone dark.",     // 145
-		"The end of the map was the beginning.",    // 150
-		"These zones should not exist.",            // 155
-		"The next sector is waiting for you.",      // 160
-		"Still it grows. Still you press on.",      // 165
-		"No rescue was ever coming.",               // 170
-		"There are no maps for what comes next.",   // 175
-		"Enemy fleets turn before you arrive.",     // 180
-		"They scatter when your signal appears.",   // 185
-		"The hunters have become the hunted.",      // 190
-		"Only the guns remember you now.",          // 195
-		"Two hundred zones burn behind you.",       // 200
-		"The guns glow white with wrath.",          // 205
-		"Entire fleets vanish in your wake.",       // 210
-		"Your name is now an evacuation order.",    // 215
-		"Even their warships flee your signal.",    // 220
-		"You are the anomaly on their charts.",     // 225
-		"The universe is running out of hiding places.", // 230
-		"Creation grows thin around your ship.",    // 235
-		"There are no more stars ahead.",           // 240
-		"There is nothing left to chart.",          // 245
+	// The marker is the first zone of each band, so it stays put when a line is reworded.
+	static const char *const lines[] = {
+		/*   0 */ "The gate seals shut behind you.",
+		/*   5 */ "The last friendly beacon fades.",
+		/*  10 */ "Something is following your signal.",
+		/*  15 */ "The wreckage ahead is still warm.",
+		/*  20 */ "Command has stopped answering.",
+		/*  25 */ "Enemy signals fill every channel.",
+		/*  30 */ "The stars no longer match the charts.",
+		/*  35 */ "Every route leads farther in.",
+		/*  40 */ "The navigation computer refuses course.",
+		/*  45 */ "The wrecks are starting to look familiar.",
+		/*  50 */ "Something has learned how you fight.",
+		/*  55 */ "The guns have not cooled in hours.",
+		/*  60 */ "A dreadful hush falls between volleys.",
+		/*  65 */ "The hull remembers every impact.",
+		/*  70 */ "No human signal reaches this far.",
+		/*  75 */ "Even the warning lights fall silent.",
+		/*  80 */ "The charts end here.",
+		/*  85 */ "Nothing living knows these coordinates.",
+		/*  90 */ "Reality bends around the wreckage.",
+		/*  95 */ "Your engines run on borrowed time.",
+		/* 100 */ "Legends come this far to die.",
+		/* 105 */ "The enemy no longer sees you as prey.",
+		/* 110 */ "Their fleets gather beyond the static.",
+		/* 115 */ "The stars flicker when you fire.",
+		/* 120 */ "The distress calls are no longer yours.",
+		/* 125 */ "The swarm goes on without end.",
+		/* 130 */ "They tell stories about your ship.",
+		/* 135 */ "Your signal has become a warning.",
+		/* 140 */ "Time loses count between the gunfire.",
+		/* 145 */ "The last known beacon has gone dark.",
+		/* 150 */ "The end of the map was the beginning.",
+		/* 155 */ "These zones should not exist.",
+		/* 160 */ "The next sector is waiting for you.",
+		/* 165 */ "Still it grows. Still you press on.",
+		/* 170 */ "No rescue was ever coming.",
+		/* 175 */ "There are no maps for what comes next.",
+		/* 180 */ "Enemy fleets turn before you arrive.",
+		/* 185 */ "They scatter when your signal appears.",
+		/* 190 */ "The hunters have become the hunted.",
+		/* 195 */ "Only the guns remember you now.",
+		/* 200 */ "Two hundred zones burn behind you.",
+		/* 205 */ "The guns glow white with wrath.",
+		/* 210 */ "Entire fleets vanish in your wake.",
+		/* 215 */ "Your name is now an evacuation order.",
+		/* 220 */ "Even their warships flee your signal.",
+		/* 225 */ "You are the anomaly on their charts.",
+		/* 230 */ "The universe is running out of hiding places.",
+		/* 235 */ "Creation grows thin around your ship.",
+		/* 240 */ "There are no more stars ahead.",
+		/* 245 */ "There is nothing left to chart.",
 	};
 
-	int i = d / 5;
+	int i = zone / 5;
 	if (i < 0)
 		i = 0;
 	if (i >= (int)COUNTOF(lines))
@@ -1035,25 +1036,26 @@ static const char *endlessMilestoneLine(int d)
 }
 
 // Sign-off shown after the final milestone line.
-static const char *endlessMilestoneEpilogue(int d)
+static const char *endlessMilestoneEpilogue(int zone)
 {
-	return (d >= 250) ? "Thank you for playing." : NULL;
+	return (zone >= 250) ? "Thank you for playing." : NULL;
 }
 
-// Draw centered text on the full widescreen surface.
-static void endlessGlowCentered(int y, unsigned int font, const char *s)
+// Centered on vga_width, the full display width.
+static void endlessGlowCentered(int y, unsigned int font, const char *text)
 {
 	textGlowFont = font;
-	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(s, font)) / 2, y, s);
+	JE_outTextGlow(VGAScreen, (vga_width - JE_textWidth(text, font)) / 2, y, text);
 }
 
-// Draw one stat row with a single shared glow effect.
-static void endlessGlowRow(int left, int right, int y, unsigned int font, const char *label, const char *value)
+// One stat row, drawn through a single shared glow so both columns arrive together.
+static void endlessGlowRow(int left, int right, int y, unsigned int font,
+                           const char *label, const char *value)
 {
 	textGlowFont = font;
-	const int xs[2] = { left, right - JE_textWidth(value, font) };
-	const char *const ss[2] = { label, value };
-	JE_outTextGlowMulti(VGAScreen, xs, y, ss, 2);
+	const int x[2] = { left, right - JE_textWidth(value, font) };
+	const char *const text[2] = { label, value };
+	JE_outTextGlowMulti(VGAScreen, x, y, text, 2);
 }
 
 // Dim the campaign-ending ship art behind the run summary.
@@ -1064,18 +1066,18 @@ static void endlessDrawRunEndBackdrop(void)
 {
 	JE_loadPCX(ENDLESS_RUNEND_PIC);
 
-	// Center the 320px image and extend its edge columns into the side strips.
-	const int pad = (vga_width - 320) / 2;   // left strip
-	const int tail = vga_width - pad - 320;  // right strip
+	// Center the legacy-width image and extend its edge columns into the side strips.
+	const int pad = (vga_width - LEGACY_WIDTH) / 2;   // left strip
+	const int tail = vga_width - pad - LEGACY_WIDTH;  // right strip
 	if (pad > 0 && tail >= 0 && vga_width <= VGAScreen->pitch)
 	{
 		for (int row = 0; row < vga_height; ++row)
 		{
 			Uint8 *const p = (Uint8 *)VGAScreen->pixels + row * VGAScreen->pitch;
-			const Uint8 left = p[0], right = p[319];
-			memmove(p + pad, p, 320);
+			const Uint8 left = p[0], right = p[LEGACY_WIDTH - 1];
+			memmove(p + pad, p, LEGACY_WIDTH);
 			memset(p, left, pad);
-			memset(p + pad + 320, right, tail);
+			memset(p + pad + LEGACY_WIDTH, right, tail);
 		}
 	}
 
@@ -1108,7 +1110,7 @@ void endlessOnRunEnd(void)
 	endlessCashAudit();  // last drift check before the tally is printed
 	endlessCustomWeaponZoneEnd();  // a run that died mid-zone still flew whatever it was holding
 
-	// Draw the run summary over the dimmed ship illustration.
+	// Bring up the dimmed ship illustration the summary is drawn over.
 	VGAScreen = VGAScreenSeg;
 	JE_clr256(VGAScreen);
 	endlessDrawRunEndBackdrop();
@@ -1121,35 +1123,36 @@ void endlessOnRunEnd(void)
 	set_colors(white, 254, 254);
 
 	// The tally uses left-aligned labels and right-aligned values. Other lines are centered.
-	// SMALL_FONT_SHAPES lacks several punctuation glyphs, so the text uses words.
+	// FONT_SHAPES, the title font, has no digits. SMALL_FONT_SHAPES has every glyph these rows use.
 	char fellLine[48];
 	snprintf(fellLine, sizeof(fellLine), "You fell in Zone %d", endlessRunDepth + 1);
 
-	// Zero-initialized for the analyzer (C6001): it cannot correlate the n guard with which
+	// Zero-initialized for the analyzer (C6001): it cannot correlate the rowCount guard with which
 	// entries the width loop below reads.
 	struct { char label[28], value[40]; } rows[10] = { 0 };
-	int n = 0;
+	int rowCount = 0;
 	#define RUNEND_ROW(lbl, ...) \
 		do { \
-			if (n < (int)COUNTOF(rows)) \
+			if (rowCount < (int)COUNTOF(rows)) \
 			{ \
-				SDL_strlcpy(rows[n].label, (lbl), sizeof(rows[0].label)); \
-				snprintf(rows[n].value, sizeof(rows[0].value), __VA_ARGS__); \
-				++n; \
+				SDL_strlcpy(rows[rowCount].label, (lbl), sizeof(rows[0].label)); \
+				snprintf(rows[rowCount].value, sizeof(rows[0].value), __VA_ARGS__); \
+				++rowCount; \
 			} \
 		} while (0)
 
 	// Records are split by mode, difficulty, crew size and chart rule, so the summary names them.
-	const int runDifficulty = (initialDifficulty >= 0 && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
+	const int runDifficulty = (initialDifficulty >= 0
+	                           && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
 	                        ? initialDifficulty : 0;
-	// Two ships change what every other row on this screen means -- the kills, the cash, the zones
-	// reached -- so the mode has to say which it was rather than leaving a co-op run to be read as
-	// a solo one.
+	// Two ships change what every other row means (the kills, the cash, the zones reached), so the
+	// Mode row names the crew size as well.
 	if (endlessCoop())
 		RUNEND_ROW("Mode:", "%s, %s, Multiplayer", endlessRunModeName(endlessRunMode),
 		           difficultyNameB[runDifficulty]);
 	else
-		RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
+		RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode),
+		           difficultyNameB[runDifficulty]);
 	RUNEND_ROW("Base Level:", "%s", endlessBaseLevelRuleName(endlessRunBaseRule));
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
@@ -1164,8 +1167,9 @@ void endlessOnRunEnd(void)
 	RUNEND_ROW("Seed:", "%s", endlessSeedString());
 	#undef RUNEND_ROW
 
-	// The record shown is the one this run wrote to, its mode's on the difficulty it was played,
-	// which the Mode row above names. Show a trailing C when a custom weapon set it, and any gain.
+	// The record shown is the one this run wrote to, the table named by the Mode and Base Level
+	// rows above. A trailing C marks a record set with a custom weapon, and a new record also
+	// shows the gain.
 	char recordLine[64];
 	int *bestRecord;
 	bool *bestMark;
@@ -1174,57 +1178,67 @@ void endlessOnRunEnd(void)
 	const int recordGain = best - endlessBestZoneAtStart();
 	const char *const customMark = *bestMark ? " C" : "";
 	if (recordGain > 0)
-		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d%s   up %d", best, customMark, recordGain);
+		snprintf(recordLine, sizeof(recordLine), "New furthest zone: %d%s   up %d",
+		         best, customMark, recordGain);
 	else
 		snprintf(recordLine, sizeof(recordLine), "Furthest zone: %d%s", best, customMark);
 
 	// Size the block to its widest label and widest value, then center it as a unit so both columns
 	// line up whatever the run produced.
 	int labelW = 0, valueW = 0;
-	for (int i = 0; i < n; ++i)
+	for (int i = 0; i < rowCount; ++i)
 	{
 		const int lw = JE_textWidth(rows[i].label, SMALL_FONT_SHAPES);
 		const int vw = JE_textWidth(rows[i].value, SMALL_FONT_SHAPES);
-		if (lw > labelW) labelW = lw;
-		if (vw > valueW) valueW = vw;
+		if (lw > labelW)
+			labelW = lw;
+		if (vw > valueW)
+			valueW = vw;
 	}
 
-	const int colGap = 30;                    // enough that the two columns read as columns
-	const int blockMax = vga_width - 40;      // ...but never past the margins
+	const int colGap = 30;                // enough that the two columns read as columns
+	const int blockMax = vga_width - 40;  // ...but never past the margins
 	int blockW = labelW + colGap + valueW;
 	if (blockW > blockMax)
-		blockW = blockMax;                    // squeeze the gap first: the columns meet before anything clips
+		blockW = blockMax;  // squeeze the gap first: the columns meet before anything clips
 	const int blockLeft = (vga_width - blockW) / 2;
 	const int blockRight = blockLeft + blockW;
 
-	// Fit the title, stats, and closing lines within the screen.
 	const char *const closingLine = endlessMilestoneLine(endlessRunDepth + 1);
 	const char *const closingTail = endlessMilestoneEpilogue(endlessRunDepth + 1);
 
-	const int titleH  = 20;   // FONT_SHAPES
-	const int lineH   = 13;   // SMALL_FONT_SHAPES
-	const int stepMin = 11;   // the pitch the High Scores rows already use for this font
-	const int recordGap = 3;  // the record hangs off the closing line as its own beat, not a new block
-	int titleGap = 12;        // breathing room under the title
-	int tailGap  = 10;        // ...and above the closing milestone line
+	// Vertical metrics. SMALL_FONT_SHAPES glyphs stand 10 scanlines, 13 with a descender, and
+	// JE_outTextGlow outlines one pixel further each way, so a pitch has to clear 12 before the
+	// rows stop touching.
+	const int titleH    = 15;  // FONT_SHAPES cap height
+	const int lineH     = 13;  // SMALL_FONT_SHAPES, descender included
+	const int stepMin   = 11;  // hard floor, where the glow outlines of adjacent rows merge
+	const int recordGap = 3;   // gap for the record, which hangs off the closing line
+	int step     = 14;         // row pitch: two clear scanlines between the glyph bodies
+	int titleGap = 9;          // breathing room under the title
+	int fellGap  = 4;          // ...under fellLine, so the tally reads as a block of its own
+	int tailGap  = 9;          // ...and above the closing milestone line
 
-	const int bodyLines = n + 1;                            // the epitaph, then one line per row
-	const int closeLines = (closingTail != NULL) ? 2 : 1;   // the milestone line, plus the sign-off at 250
-	int step = 18;
+	// The milestone line, plus the sign-off at zone 250.
+	const int closeLines = (closingTail != NULL) ? 2 : 1;
+
 	int total;
-	// Tighten the row pitch and gaps until the summary fits with a margin. The rows array bounds
-	// the tally, so even the fullest summary at its tightest lands inside the 200 scanlines.
-	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH
-	                + tailGap + lineH
+	// Close the gaps between blocks before tightening the row pitch: a summary long enough to need
+	// the room reads better packed than overlapped. The rows array bounds the tally, so even the
+	// fullest summary at its tightest lands inside the 200 scanlines.
+	while ((total = titleH + titleGap + lineH + fellGap + (rowCount - 1) * step
+	                + lineH + tailGap + lineH
 	                + (closeLines - 1) * (recordGap + lineH)
-	                + recordGap + lineH) > 182)
+	                + recordGap + lineH) > 190)
 	{
-		if (step > stepMin)
-			--step;
-		else if (titleGap > 6)
+		if (titleGap > 5)
 			--titleGap;
-		else if (tailGap > 6)
+		else if (tailGap > 5)
 			--tailGap;
+		else if (fellGap > 2)
+			--fellGap;
+		else if (step > stepMin)
+			--step;
 		else
 			break;
 	}
@@ -1235,9 +1249,9 @@ void endlessOnRunEnd(void)
 	y += titleH + titleGap;
 
 	endlessGlowCentered(y, SMALL_FONT_SHAPES, fellLine);
-	y += step;
+	y += lineH + fellGap;
 
-	for (int i = 0; i < n; ++i, y += step)
+	for (int i = 0; i < rowCount; ++i, y += step)
 		endlessGlowRow(blockLeft, blockRight, y, SMALL_FONT_SHAPES, rows[i].label, rows[i].value);
 
 	int closingY = y - step + lineH + tailGap;
