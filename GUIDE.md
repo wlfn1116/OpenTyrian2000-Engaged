@@ -123,8 +123,8 @@ ceiling by zone 167, Suicide by zones 63 and 125.
 | Tier | Health | Offense | Bounty |
 | --- | --- | --- | ---: |
 | Normal | Depth-scaled | Normal | None |
-| Elite | 2x to 4x | +25% contact damage | $150 + $40/zone, max $2,500 |
-| Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $350 + $90/zone, max $6,000 |
+| Elite | 2x to 4x | +25% contact damage | $150 at zone 1, +$40 per zone, max $2,500 |
+| Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $600 at zone 1, +$170 per zone, max $11,000 |
 
 Piercing shots follow their own damage rule. The Mega Cannon, Sonic Impulse, and
 Needle Laser fire them at every power level, and Dragon Frost and Dragon Flame

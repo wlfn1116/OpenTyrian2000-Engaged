@@ -406,7 +406,9 @@ Normal. Up to the pivot the special-enemy share spreads 58 points and the
 champion share of those specials spreads 20, reaching 60% and 30% there. Past it
 the share climbs 0.16% a depth and the champion share 0.32%, so both meet their
 ceilings of 80% and 70% at zone 200. The early divisor is the pivot constant
-itself, so both anchors stay exact if the pivot moves.
+itself, so both anchors stay exact if the pivot moves. Champions are the rarer
+of the two tiers until zone 153 on Normal, where their share passes half, and
+their bounty carries a premium for it.
 
 The two rates split a run in half. Specials arrive quickly while champions stay
 scarce, so the first hundred zones fill with elites, and the second hundred turn

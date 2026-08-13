@@ -603,9 +603,9 @@ long endlessEliteBounty(void)
 }
 long endlessChampionBounty(void)
 {
-	long b = 350 + (long)endlessRunDepth * 90;
-	if (b > 6000)
-		b = 6000;
+	long b = 600 + (long)endlessRunDepth * 170;
+	if (b > 11000)
+		b = 11000;
 	if (endlessPerkEffective(endlessFxPlayer(), PERK_BOUNTY))
 		b *= 2;
 	return b * endlessPerkCashPercent() / 100;
