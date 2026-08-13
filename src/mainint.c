@@ -1340,10 +1340,22 @@ void JE_sortHighScores(void)
 }
 
 // The Endless high-score page. Endless keeps no score table, so the page lists the furthest zone
-// each run mode has reached; selecting one opens that mode's breakdown by difficulty, where a
-// record is erased behind the same confirmation the rest of the game uses for a destructive choice.
+// each run mode has reached; selecting one narrows to the Base Level rules behind it, and one of
+// those to its breakdown by difficulty, where a record is erased behind the same confirmation the
+// rest of the game uses for a destructive choice.
 
-/* One row per run mode and crew size: the three solo modes, then the three co-op ones. A mode's
+/* One list at a time, each a step narrower than the last, and each row the deepest figure in the
+ * list it opens. The four Base Level rules are a level of this rather than four boards to page
+ * between; endlessBestZoneAnyRule holds why summarising them is sound. */
+typedef enum
+{
+	ENDLESS_PAGE_MODES = 0,   // crew size and run mode, at its deepest zone under any rule
+	ENDLESS_PAGE_RULES,       // ...that mode's four Base Level rules
+	ENDLESS_PAGE_DIFFS,       // ...and that rule's difficulties, the one list an erase happens on
+	ENDLESS_PAGE_LEVELS
+} EndlessPageLevel;
+
+/* One row per run mode and crew size: the three solo modes, then the three co-op ones. A rule's
  * breakdown has one row per difficulty, plus a leading row for its record on any of them. */
 #define ENDLESS_PAGE_MODE_ROWS  (ENDLESS_RUNMODE_COUNT * ENDLESS_PLAYER_TABLES)
 #define ENDLESS_PAGE_ROW_TABLE(row) ((row) / ENDLESS_RUNMODE_COUNT)
@@ -1351,29 +1363,43 @@ void JE_sortHighScores(void)
 #define ENDLESS_PAGE_DIFF_ROWS  (ENDLESS_DIFFICULTY_COUNT + 1)
 #define ENDLESS_PAGE_ROW_ANY    0   // the any-difficulty row; the rest are difficulty slot + 1
 
-/* Page geometry, shared by the draw and input halves below. Both lists start clear of the header
- * and end on the same line, so the notes underneath sit in one place; the breakdown carries more
- * than twice the rows and runs the tighter pitch to manage it. */
-static const int endlessPageXCenter = 160;      // center of the 320px menu field
-static const int endlessPageRowY0 = 74, endlessPageRowDy = 14, endlessPageRowH = 12;
-static const int endlessPageDiffY0 = 74, endlessPageDiffDy = 11, endlessPageDiffH = 10;
+/* Everything the page navigates between, so the two halves pass one thing around. Each level keeps
+ * its own selection, which is what the level under it is a breakdown of. */
+typedef struct
+{
+	int  level;          // EndlessPageLevel: which list is showing
+	int  mode;           // selected mode row, carrying both the crew size and the run mode
+	int  variant;        // selected Base Level rule (an EndlessBaseRule)
+	int  row;            // selected breakdown row (ENDLESS_PAGE_ROW_ANY, else difficulty slot + 1)
+	bool confirmErase;   // an erase is waiting on an answer
+	int  confirmChoice;  // which answer the cursor sits on
+} EndlessPageState;
+
+/* Page geometry, shared by the draw and input halves below. Every list is laid out in one band
+ * under the header with the notes in one place below it, so the page holds its shape from level to
+ * level: a shorter list centres in the band, and the difficulty list runs the tighter pitch. */
+static const int endlessPageXCenter = 160;   // center of the 320px menu field
+static const int endlessPageBandY0 = 74, endlessPageBandH = 70;
+static const int endlessPageRowDy = 14, endlessPageRowH = 12;
+static const int endlessPageDiffDy = 11, endlessPageDiffH = 10;
 static const int endlessPageDiffGap = 5;   // sets the any-difficulty row apart from the six under it
-static const int endlessPageNoteGap = 16;  // last row to the first note line
+static const int endlessPageNoteY = 160;   // first note line, keyed to the band and not to a list
 static const int endlessPageConfirmY0 = 100, endlessPageConfirmDy = 14, endlessPageConfirmH = 13;
 
 static const char *const endlessPageConfirmChoice[] = { "No, Keep It", "Yes, Erase It" };
 
 // The note lines are the widest thing on the page, so they set the block the rows line up inside.
-// The mode list swaps the second one for its own; both lists size to the whole set, so their
-// columns agree as you move between them.
+// Each list takes the one after its own level, and all three size to the whole set so their
+// columns agree.
 static const char *const endlessPageNote[] =
 {
 	"C = a custom weapon was used during the run.",
+	"Select a mode to break it down by base level.",
+	"Select a base level to break it down by difficulty.",
 	"Selecting a record erases it, once you confirm.",
-	"Select a mode to break it down by difficulty.",
 };
-#define ENDLESS_PAGE_NOTE_ERASE 1   // shown under the breakdown
-#define ENDLESS_PAGE_NOTE_MODES 2   // ...and this one under the mode list
+COMPILE_TIME_ASSERT(endless_page_notes_per_level,
+                    COUNTOF(endlessPageNote) == ENDLESS_PAGE_LEVELS + 1);
 
 // Label for a breakdown row: the any-difficulty row, else the difficulty's own name.
 static const char *endlessPageDiffName(int row)
@@ -1383,8 +1409,7 @@ static const char *endlessPageDiffName(int row)
 	return difficultyNameB[endlessDifficultyLevel[row - 1]];
 }
 
-// The zone and custom mark a breakdown row shows. The base-level rule is the page, not a row: each
-// rule has its own board, so `variant` is fixed for everything drawn on one.
+// The zone and custom mark a breakdown row shows, under the rule the page has narrowed to.
 static int endlessPageDiffZone(int variant, int players, EndlessRunMode mode, int row)
 {
 	return (row == ENDLESS_PAGE_ROW_ANY) ? endlessBestZoneAny(variant, players, mode)
@@ -1404,6 +1429,87 @@ static const char *endlessPageModeName(int row)
 	snprintf(buf, sizeof(buf), "%s %s",
 	         (ENDLESS_PAGE_ROW_TABLE(row) == 1) ? "2P" : "1P",
 	         endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(row)));
+	return buf;
+}
+
+static int endlessPageRows(int level)
+{
+	if (level == ENDLESS_PAGE_MODES)
+		return ENDLESS_PAGE_MODE_ROWS;
+	return (level == ENDLESS_PAGE_RULES) ? ENDLESS_BASE_TABLES : ENDLESS_PAGE_DIFF_ROWS;
+}
+
+// One row of whichever list is showing: what it is called, how deep it got, and its custom mark.
+typedef struct { const char *label, *mark; int zone; } EndlessPageRow;
+
+static EndlessPageRow endlessPageRowAt(const EndlessPageState *page, int level, int row)
+{
+	const int table = ENDLESS_PAGE_ROW_TABLE(page->mode);
+	const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode);
+	EndlessPageRow out = { "", "", 0 };
+
+	switch (level)
+	{
+	case ENDLESS_PAGE_MODES:
+	{
+		const int rowTable = ENDLESS_PAGE_ROW_TABLE(row);
+		const EndlessRunMode rowMode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(row);
+		out.label = endlessPageModeName(row);
+		out.zone  = endlessBestZoneAnyRule(rowTable, rowMode);
+		out.mark  = endlessRecordAnyRuleCustomMark(rowTable, rowMode);
+		break;
+	}
+	case ENDLESS_PAGE_RULES:
+	{
+		// In the Base Level row's order, which pairs each rule with its Shuffle twin.
+		const int rule = (int)endlessBaseRuleAtMenuIndex(row);
+		out.label = endlessBaseLevelRuleName(rule);
+		out.zone  = endlessBestZoneAny(rule, table, mode);
+		out.mark  = endlessRecordAnyCustomMark(rule, table, mode);
+		break;
+	}
+	default:
+		out.label = endlessPageDiffName(row);
+		out.zone  = endlessPageDiffZone(page->variant, table, mode, row);
+		out.mark  = endlessPageDiffMark(page->variant, table, mode, row);
+		break;
+	}
+	return out;
+}
+
+// Where the cursor sits on the list showing, and where a click puts it. Each level identifies its
+// selection in its own terms, so both go through here.
+static int endlessPageSelected(const EndlessPageState *page, int level)
+{
+	if (level == ENDLESS_PAGE_MODES)
+		return page->mode;
+	if (level == ENDLESS_PAGE_RULES)
+		return endlessBaseRuleMenuIndex((EndlessBaseRule)page->variant);
+	return page->row;
+}
+
+static void endlessPageSelect(EndlessPageState *page, int level, int row)
+{
+	if (level == ENDLESS_PAGE_MODES)
+		page->mode = row;
+	else if (level == ENDLESS_PAGE_RULES)
+		page->variant = (int)endlessBaseRuleAtMenuIndex(row);
+	else
+		page->row = row;
+}
+
+// How the page names where it has narrowed to, in the words of the rows it came through.
+static const char *endlessPageTrail(const EndlessPageState *page, int level)
+{
+	static char buf[64];
+	const char *const table = endlessRecordTableName(ENDLESS_PAGE_ROW_TABLE(page->mode));
+	const char *const mode = endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(page->mode));
+
+	if (level <= ENDLESS_PAGE_RULES)
+		snprintf(buf, sizeof(buf), "%s %s", table, mode);
+	else
+		snprintf(buf, sizeof(buf), "%s %s, %s", table, mode,
+		         endlessBaseLevelRuleName(page->variant));
 	return buf;
 }
 
@@ -1438,14 +1544,24 @@ static void endlessPageDrawRow(int xLabel, int xZoneRight, int y, const char *la
 	JE_textShade(VGAScreen, xZoneRight, y, mark, 15, zoneShade, FULL_SHADE);
 }
 
-// Row baseline on either list. The breakdown's any-difficulty row summarises the six below it, so
-// it stands off from them rather than reading as one of them.
-static int endlessPageRowY(bool subOpen, int row)
+// Row baseline on any of the lists. The breakdown's any-difficulty row summarises the six below it,
+// so it stands off from them rather than reading as one of them.
+static int endlessPageRowY(int level, int row)
 {
-	if (!subOpen)
-		return endlessPageRowY0 + endlessPageRowDy * row;
-	return endlessPageDiffY0 + endlessPageDiffDy * row
-	       + ((row > ENDLESS_PAGE_ROW_ANY) ? endlessPageDiffGap : 0);
+	if (level == ENDLESS_PAGE_DIFFS)
+	{
+		return endlessPageBandY0 + endlessPageDiffDy * row
+		       + ((row > ENDLESS_PAGE_ROW_ANY) ? endlessPageDiffGap : 0);
+	}
+
+	const int span = endlessPageRowDy * (endlessPageRows(level) - 1);
+	return endlessPageBandY0 + (endlessPageBandH - span) / 2 + endlessPageRowDy * row;
+}
+
+// How tall a row is to the mouse, which follows the pitch its list is drawn at.
+static int endlessPageHitH(int level)
+{
+	return (level == ENDLESS_PAGE_DIFFS) ? endlessPageDiffH : endlessPageRowH;
 }
 
 /* The online co-op Campaign board: the best combined cash each episode has been finished with,
@@ -1487,37 +1603,36 @@ static void JE_drawCoopCampaignPage(void)
 	JE_textShade(VGAScreen, xLabel, 78 + 13 * COOP_CAMPAIGN_SCORE_EPISODES + 8, note, 15, 2, FULL_SHADE);
 }
 
-static void JE_drawEndlessRecordPage(int variant, int selectedMode, bool subOpen, int selectedRow,
-                                     bool confirmErase, int confirmChoice)
+static void JE_drawEndlessRecordPage(const EndlessPageState *page)
 {
 	int xLabel, xZoneRight;
 	endlessPageColumns(&xLabel, &xZoneRight);
 
-	if (confirmErase)
+	if (page->confirmErase)
 	{
-		// Name exactly what is about to go, since the breakdown makes "the Relaxed record"
-		// ambiguous on its own: the crew size picks the table and the mode and difficulty pick the
-		// row. The any-difficulty row holds no record of its own, so erasing it takes the deepest
-		// one under it and the row falls back to whatever is left.
-		const char *const eraseTable = endlessRecordTableName(ENDLESS_PAGE_ROW_TABLE(selectedMode));
-		const char *const eraseMode = endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode));
+		/* Name exactly what is about to go: the trail carries the crew size, mode and rule it was
+		 * reached through, and the question the difficulty. The any-difficulty row holds no record
+		 * of its own, so erasing it takes the deepest one under it and falls back to what is left. */
 		char question[80];
-		if (selectedRow == ENDLESS_PAGE_ROW_ANY)
-			snprintf(question, sizeof(question), "Erase the deepest %s %s record?", eraseTable, eraseMode);
+		if (page->row == ENDLESS_PAGE_ROW_ANY)
+			SDL_strlcpy(question, "Erase its deepest record?", sizeof(question));
 		else
-			snprintf(question, sizeof(question), "Erase the %s %s record on %s?",
-			         eraseTable, eraseMode, endlessPageDiffName(selectedRow));
+			snprintf(question, sizeof(question), "Erase its record on %s?",
+			         endlessPageDiffName(page->row));
 
+		const char *const trail = endlessPageTrail(page, ENDLESS_PAGE_DIFFS);
 		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Are You Sure?",
 		                    normal_font, centered, 15, -3, false, 2);
-		JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(question, small_font) / 2, 80,
+		JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(trail, small_font) / 2, 76,
+		             trail, 15, 4, FULL_SHADE);
+		JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(question, small_font) / 2, 86,
 		             question, 15, 2, FULL_SHADE);
 
 		for (int i = 0; i < (int)COUNTOF(endlessPageConfirmChoice); ++i)
 		{
 			draw_font_hv_shadow(VGAScreen, endlessPageXCenter, endlessPageConfirmY0 + endlessPageConfirmDy * i,
 			                    endlessPageConfirmChoice[i], normal_font, centered, 15,
-			                    i == confirmChoice ? -1 : -4, false, 2);
+			                    i == page->confirmChoice ? -1 : -4, false, 2);
 		}
 
 		static const char note[] = "A record cannot be brought back.";
@@ -1527,62 +1642,26 @@ static void JE_drawEndlessRecordPage(int variant, int selectedMode, bool subOpen
 		return;
 	}
 
-	if (subOpen)
-	{
-		char header[64];
-		snprintf(header, sizeof(header), "%s %s by Difficulty",
-		         endlessRecordTableName(ENDLESS_PAGE_ROW_TABLE(selectedMode)),
-		         endlessRunModeName((EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode)));
-		draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, header, normal_font, centered, 15, -3, false, 2);
-
-		for (int i = 0; i < ENDLESS_PAGE_DIFF_ROWS; ++i)
-		{
-			endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(true, i),
-			                   endlessPageDiffName(i),
-			                   endlessPageDiffZone(variant, ENDLESS_PAGE_ROW_TABLE(selectedMode),
-			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
-			                   endlessPageDiffMark(variant, ENDLESS_PAGE_ROW_TABLE(selectedMode),
-			                                       (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(selectedMode), i),
-			                   i == selectedRow);
-		}
-
-		const int yNote = endlessPageRowY(true, ENDLESS_PAGE_DIFF_ROWS - 1) + endlessPageNoteGap;
-		JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
-		JE_textShade(VGAScreen, xLabel, yNote + 10, endlessPageNote[ENDLESS_PAGE_NOTE_ERASE],
-		             15, 2, FULL_SHADE);
-		return;
-	}
-
-	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Furthest Zone",
+	// The top list is the whole board, so it names the figures; the ones under it name their slice
+	// of it instead.
+	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55,
+	                    (page->level == ENDLESS_PAGE_MODES) ? "Furthest Zone"
+	                                                        : endlessPageTrail(page, page->level),
 	                    normal_font, centered, 15, -3, false, 2);
 
-	for (int i = 0; i < ENDLESS_PAGE_MODE_ROWS; ++i)
+	const int rows = endlessPageRows(page->level);
+	const int selected = endlessPageSelected(page, page->level);
+	for (int i = 0; i < rows; ++i)
 	{
-		const int table = ENDLESS_PAGE_ROW_TABLE(i);
-		const EndlessRunMode mode = (EndlessRunMode)ENDLESS_PAGE_ROW_MODE(i);
-		endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(false, i),
-		                   endlessPageModeName(i), endlessBestZoneAny(variant, table, mode),
-		                   endlessRecordAnyCustomMark(variant, table, mode), i == selectedMode);
+		const EndlessPageRow row = endlessPageRowAt(page, page->level, i);
+		endlessPageDrawRow(xLabel, xZoneRight, endlessPageRowY(page->level, i),
+		                   row.label, row.zone, row.mark, i == selected);
 	}
 
-	const int yNote = endlessPageRowY(false, ENDLESS_PAGE_MODE_ROWS - 1) + endlessPageNoteGap;
-	JE_textShade(VGAScreen, xLabel, yNote, endlessPageNote[0], 15, 2, FULL_SHADE);
-	JE_textShade(VGAScreen, xLabel, yNote + 10, endlessPageNote[ENDLESS_PAGE_NOTE_MODES],
+	JE_textShade(VGAScreen, xLabel, endlessPageNoteY, endlessPageNote[0], 15, 2, FULL_SHADE);
+	JE_textShade(VGAScreen, xLabel, endlessPageNoteY + 10, endlessPageNote[1 + page->level],
 	             15, 2, FULL_SHADE);
 }
-
-/* Everything the Endless page navigates between, so the two halves pass one thing around. The
- * base-level boards are separate pages of the high-score screen but share this: paging is blocked
- * while a breakdown or an answer is up, so only the mode-list selection ever carries across. */
-typedef struct
-{
-	int  variant;        // which base-level board this page is (an EndlessBaseRule)
-	int  mode;           // selected run mode on the mode list, and the mode a breakdown belongs to
-	bool subOpen;        // showing that mode's breakdown rather than the mode list
-	int  row;            // selected breakdown row (ENDLESS_PAGE_ROW_ANY, else difficulty slot + 1)
-	bool confirmErase;   // an erase is waiting on an answer
-	int  confirmChoice;  // which answer the cursor sits on
-} EndlessPageState;
 
 // Answer a pending erase. Confirming is the only path that touches a record.
 static void JE_endlessRecordPageAnswer(EndlessPageState *page, int choice)
@@ -1620,12 +1699,28 @@ static void JE_endlessRecordPageArm(EndlessPageState *page)
 	}
 }
 
+// Step in from the selected row, or arm an erase once there is nothing left to narrow.
+static void JE_endlessRecordPageEnter(EndlessPageState *page)
+{
+	if (page->level == ENDLESS_PAGE_DIFFS)
+	{
+		JE_endlessRecordPageArm(page);
+		return;
+	}
+
+	// Open the level below on its first row, so stepping into a different mode or rule starts from
+	// that one's own summary.
+	++page->level;
+	endlessPageSelect(page, page->level, 0);
+	JE_playSampleNum(S_SELECT);
+}
+
 // Endless-page input. Returns true when it consumed the tick, which leaves the shared paging and
 // exit handling untouched. A pending erase consumes everything, so nothing else can act under it.
 static bool JE_endlessRecordPageInput(EndlessPageState *page)
 {
-	const int rows = page->subOpen ? ENDLESS_PAGE_DIFF_ROWS : ENDLESS_PAGE_MODE_ROWS;
-	const int rowH = page->subOpen ? endlessPageDiffH : endlessPageRowH;
+	const int rows = endlessPageRows(page->level);
+	const int rowH = endlessPageHitH(page->level);
 
 	if (newmouse)
 	{
@@ -1653,10 +1748,10 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 			return true;   // a pending answer never falls through to paging or exit
 		}
 
-		if (lastmouse_but == SDL_BUTTON_RIGHT && page->subOpen)
+		if (lastmouse_but == SDL_BUTTON_RIGHT && page->level > ENDLESS_PAGE_MODES)
 		{
-			JE_playSampleNum(S_SPRING);   // back to the mode list, not out of the screen
-			page->subOpen = false;
+			JE_playSampleNum(S_SPRING);   // back out one level; only the mode list leaves the screen
+			--page->level;
 			return true;
 		}
 
@@ -1667,23 +1762,13 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 
 			for (int i = 0; i < rows; ++i)
 			{
-				const int y = endlessPageRowY(page->subOpen, i);
+				const int y = endlessPageRowY(page->level, i);
 				// The whole label-to-record span is clickable, gaps included.
 				if (mouse_y >= y && mouse_y < y + rowH
 				    && mouse_x >= xLabel && mouse_x < endlessPageXCenter + (endlessPageXCenter - xLabel))
 				{
-					if (page->subOpen)
-					{
-						page->row = i;
-						JE_endlessRecordPageArm(page);
-					}
-					else
-					{
-						page->mode = i;
-						page->subOpen = true;
-						page->row = ENDLESS_PAGE_ROW_ANY;
-						JE_playSampleNum(S_SELECT);
-					}
+					endlessPageSelect(page, page->level, i);
+					JE_endlessRecordPageEnter(page);
 					return true;
 				}
 			}
@@ -1705,13 +1790,10 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 			const int n = (int)COUNTOF(endlessPageConfirmChoice);
 			page->confirmChoice = (page->confirmChoice + n + step) % n;
 		}
-		else if (page->subOpen)
-		{
-			page->row = (page->row + rows + step) % rows;
-		}
 		else
 		{
-			page->mode = (page->mode + rows + step) % rows;
+			endlessPageSelect(page, page->level,
+			                  (endlessPageSelected(page, page->level) + rows + step) % rows);
 		}
 		JE_playSampleNum(S_CURSOR);
 		return true;
@@ -1721,18 +1803,12 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 	{
 		if (page->confirmErase)
 			JE_endlessRecordPageAnswer(page, page->confirmChoice);
-		else if (page->subOpen)
-			JE_endlessRecordPageArm(page);
 		else
-		{
-			page->subOpen = true;   // a mode row opens its breakdown; erasing happens in there
-			page->row = ENDLESS_PAGE_ROW_ANY;
-			JE_playSampleNum(S_SELECT);
-		}
+			JE_endlessRecordPageEnter(page);
 		return true;
 	}
 	default:
-		// Esc unwinds one level at a time; anything else a pending answer or breakdown swallows.
+		// Esc unwinds one level at a time; a pending answer or a narrowed list swallows the rest.
 		if (page->confirmErase)
 		{
 			if (lastkey_scan == SDL_SCANCODE_ESCAPE)
@@ -1742,12 +1818,12 @@ static bool JE_endlessRecordPageInput(EndlessPageState *page)
 			}
 			return true;
 		}
-		if (page->subOpen)
+		if (page->level > ENDLESS_PAGE_MODES)
 		{
 			if (lastkey_scan == SDL_SCANCODE_ESCAPE)
 			{
 				JE_playSampleNum(S_SPRING);
-				page->subOpen = false;
+				--page->level;
 			}
 			return true;
 		}
@@ -1765,15 +1841,17 @@ void JE_highScoreScreen(void)
 	bool restart = true;
 
 	size_t episodeIndex = 0;
-	/* Five episodes, three timed battles, the online co-op Campaign board, then one Endless board
-	 * per base-level rule, in the order the Base Level row offers them. The Endless boards are
-	 * separate pages because a run under one rule is not comparable with a run under another. */
-	const size_t endlessFirstPage = 9;
-	const size_t episodeCount = endlessFirstPage + ENDLESS_BASE_TABLES;
-	const size_t coopPage = endlessFirstPage - 1;
+	/* Five episodes, three timed battles, the online co-op Campaign board, and the Endless board.
+	 * Endless keeps four sets of records, one per base-level rule, but they are a level of that
+	 * board's own drill-down rather than four pages to be paged past. */
+	const size_t endlessPage = 9;
+	const size_t episodeCount = endlessPage + 1;
+	const size_t coopPage = endlessPage - 1;
 
-	// Endless page state: the mode list, a mode's breakdown by difficulty, and a pending erase.
-	EndlessPageState endlessPageState = { 0, 0, false, ENDLESS_PAGE_ROW_ANY, false, 0 };
+	// Endless page state: which list is showing, its selection at each level, and a pending erase.
+	EndlessPageState endlessPageState = {
+		ENDLESS_PAGE_MODES, 0, ENDLESS_BASE_VARIED, ENDLESS_PAGE_ROW_ANY, false, 0
+	};
 
 	const int xCenter = 160; // center of 320px menu field
 	const int yMenuHeader = 3;
@@ -1800,15 +1878,10 @@ void JE_highScoreScreen(void)
 		// Restore background and header.
 		memcpy(VGAScreen->pixels, VGAScreen2->pixels, (size_t)VGAScreen->pitch * VGAScreen->h);
 
-		const bool onEndlessPage = episodeIndex >= endlessFirstPage;
+		const bool onEndlessPage = episodeIndex == endlessPage;
 		if (onEndlessPage)
 		{
-			// Each board names its own rule, which is the only place they are told apart. The pages
-			// follow the Base Level row's order rather than the enum's.
-			endlessPageState.variant =
-				(int)endlessBaseRuleAtMenuIndex((int)(episodeIndex - endlessFirstPage));
-			snprintf(buffer, sizeof(buffer), "Endless: Base Level %s",
-			         endlessBaseLevelRuleName(endlessPageState.variant));
+			SDL_strlcpy(buffer, "Endless", sizeof(buffer));
 
 			// No score board: the Endless page lists the per-mode zone records instead.
 			boardOnePlayer = -1;
@@ -1843,9 +1916,7 @@ void JE_highScoreScreen(void)
 		draw_font_hv_shadow(VGAScreen, xCenter, yEpisodeHeader, buffer, normal_font, centered, 15, -3, false, 2);
 
 		if (onEndlessPage)
-			JE_drawEndlessRecordPage(endlessPageState.variant, endlessPageState.mode,
-			                         endlessPageState.subOpen, endlessPageState.row,
-			                         endlessPageState.confirmErase, endlessPageState.confirmChoice);
+			JE_drawEndlessRecordPage(&endlessPageState);
 		else if (episodeIndex == coopPage)
 			JE_drawCoopCampaignPage();
 
@@ -1896,7 +1967,8 @@ void JE_highScoreScreen(void)
 		// Draw paging controls. A breakdown or a pending erase owns the page, so paging away is
 		// not offered until the player has backed out of it.
 		const bool endlessBusy = onEndlessPage
-		                      && (endlessPageState.subOpen || endlessPageState.confirmErase);
+		                      && (endlessPageState.level > ENDLESS_PAGE_MODES
+		                          || endlessPageState.confirmErase);
 		const bool leftControlVisible = episodeIndex > 0 && !endlessBusy;
 		const bool rightControlVisible = episodeIndex < episodeCount - 1 && !endlessBusy;
 

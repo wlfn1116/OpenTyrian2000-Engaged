@@ -1095,6 +1095,22 @@ static void qa_test_record_readers(void)
 		         "erasing one rule's record leaves the varied-base one standing");
 	}
 
+	/* The record page opens on one figure per mode, so that figure has to be the deepest of the
+	 * four rules and carry whichever of them owns it, without ever reaching across the crew sizes
+	 * the rules sit inside. */
+	endlessBestZoneDiff[ENDLESS_BASE_SAME_SHUFFLE][0][ENDLESS_RUNMODE_STANDARD][2] = 41;
+	endlessBestZoneDiffCustom[ENDLESS_BASE_SAME_SHUFFLE][0][ENDLESS_RUNMODE_STANDARD][2] = true;
+	qa_check(endlessBestZoneAnyRule(0, ENDLESS_RUNMODE_STANDARD) == 41
+	         && strcmp(endlessRecordAnyRuleCustomMark(0, ENDLESS_RUNMODE_STANDARD), " C") == 0
+	         && endlessBestZoneAnyRule(1, ENDLESS_RUNMODE_STANDARD) == 0,
+	         "a mode's figure is the deepest rule's, with that rule's mark and its own crew size");
+	endlessBestZoneDiff[ENDLESS_BASE_VARIED][0][ENDLESS_RUNMODE_STANDARD][2] = 55;
+	qa_check(endlessBestZoneAnyRule(0, ENDLESS_RUNMODE_STANDARD) == 55
+	         && endlessRecordAnyRuleCustomMark(0, ENDLESS_RUNMODE_STANDARD)[0] == '\0',
+	         "a deeper unmarked rule takes the figure and drops the mark with it");
+	endlessBestZoneDiff[ENDLESS_BASE_VARIED][0][ENDLESS_RUNMODE_STANDARD][2] = 0;
+	endlessClearRecordDifficulty(ENDLESS_BASE_SAME_SHUFFLE, 0, ENDLESS_RUNMODE_STANDARD, 2);
+
 	// Each rule names a distinct board, and the menu order lists each exactly once.
 	bool namesDistinct = true, orderComplete = true;
 	for (int rule = 0; rule < ENDLESS_BASE_TABLES; ++rule)
@@ -3990,6 +4006,14 @@ static void qa_test_save_fixtures(void)
 		         version, detail[0] ? ": " : "", detail);
 		qa_check(okay, label);
 	}
+
+	// ...and the header field that keeps a record whose width moved from taking every later slot
+	// with it, which is the failure the version number alone did not catch.
+	detail[0] = '\0';
+	const bool guarded = endlessSaveTestWidthGuard(detail, sizeof(detail));
+	char label[320];
+	snprintf(label, sizeof(label), "save record width guard%s%s", detail[0] ? ": " : "", detail);
+	qa_check(guarded, label);
 }
 
 int qa_run_unit_suite(void)

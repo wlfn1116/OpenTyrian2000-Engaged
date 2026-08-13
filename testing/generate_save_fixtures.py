@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the independent Endless v3-v24 migration corpus."""
+"""Generate the independent Endless v3-v25 migration corpus."""
 
 from __future__ import annotations
 
@@ -140,17 +140,27 @@ def record(version: int) -> bytes:
     return bytes(out)
 
 
+WIDTH_VERSION = 25  # first version whose header states how wide its records are
+
+
+def header(version: int, record_bytes: bytes) -> bytes:
+    out = b"OTES" + bytes([version, 1])
+    if version >= WIDTH_VERSION:
+        out += struct.pack("<H", len(record_bytes))
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("testing/fixtures/endless"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
-    for version in range(3, 25):
-        payload = b"OTES" + bytes([version, 1]) + record(version)
+    for version in range(3, 26):
+        payload = record(version)
         path = args.output / f"v{version:02d}.sav"
-        path.write_bytes(payload)
-        print(f"{path}: {len(payload)} bytes")
+        path.write_bytes(header(version, payload) + payload)
+        print(f"{path}: {len(payload)} byte record")
     return 0
 
 

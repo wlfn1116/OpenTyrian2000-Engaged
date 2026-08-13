@@ -327,7 +327,10 @@ writes a run save. Quit Level restores the launch snapshot.
 
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
 trailing `C` marks a record set while either ship used a custom weapon in a zone.
-Record pages are under **High Scores** and can be erased there.
+The **Endless** page under **High Scores** opens on the furthest zone each mode
+has reached under any rule; selecting a mode lists the four Base Level rules
+behind it, and selecting a rule breaks that down by difficulty. Records are
+erased on that last list, behind a confirmation.
 
 ## Arcade tweaks
 

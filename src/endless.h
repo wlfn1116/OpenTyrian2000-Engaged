@@ -376,10 +376,14 @@ const char *endlessRunModeName(EndlessRunMode mode);
 int endlessBestZoneForDifficulty(int variant, int players, EndlessRunMode mode, int slot);
 int endlessBestZoneAny(int variant, int players, EndlessRunMode mode);
 
+// ...and the deepest under any base-level rule, the figure the record page opens on.
+int endlessBestZoneAnyRule(int players, EndlessRunMode mode);
+
 // " C" when a custom weapon set that record, otherwise an empty string. Every record is shown
 // against a named mode and difficulty, so the zone number carries this mark alone.
 const char *endlessRecordAnyCustomMark(int variant, int players, EndlessRunMode mode);
 const char *endlessRecordDiffCustomMark(int variant, int players, EndlessRunMode mode, int slot);
+const char *endlessRecordAnyRuleCustomMark(int players, EndlessRunMode mode);
 
 // Erase records. Destructive, so only call these behind a confirmation. Clearing the deepest peels
 // a mode back one record at a time, which keeps its any-difficulty figure equal to what is left.
@@ -814,5 +818,6 @@ void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..
 /* Save-codec regression hooks used by the project-owned migration/fuzz suite. */
 int  endlessSaveCurrentVersion(void);
 bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize);
+bool endlessSaveTestWidthGuard(char *detail, size_t detailSize);
 
 #endif // ENDLESS_H

@@ -626,12 +626,28 @@ checkpoint.
 | 22 | Base Level rule |
 | 23 | Radar reroll count |
 | 24 | Level bag cursor and hand; the v22 rule byte widened past Same/Varied |
+| 25 | Record width in the header |
 
 Append fields and guard reads by version. Perk IDs appear in stacks and pending
 offers; append enum values or migrate both arrays.
 
+From v25 the header states how many bytes a record is, taken from the writer, so
+appending a field updates it with nothing else to keep in step. A record narrower
+than the running build's is padded and a wider one is trimmed, and either logs the
+mismatch. Before v25 the version alone fixed the width, so a field added without
+the version changing with it read every slot but the first at the wrong offset:
+the misplaced `used` byte fell on a zero, `endlessLoadSlot` reported no run, and
+`JE_loadGame` had already restored the campaign half alone, leaving the slot to
+replay one shipped level forever. Bump the version anyway; the width detects the
+mistake, it does not license it.
+
 Records are split by mode, difficulty, crew size, and Base Level rule. The
 difficulty table order is persistent. Append entries without reordering it.
+
+The High Scores page shows all four rules on one board, as the middle level of a
+mode / rule / difficulty drill-down: each list is the breakdown of the row above
+it, and the row above is the deepest figure in the list it opens. Only the last
+list erases. Adding a split means adding a level, not a page.
 
 The custom-weapon mark is earned by firing during a zone. Editor and shop
 previews do not count. Every zone exit closes the mark, including death and Quit
@@ -798,6 +814,7 @@ Recent versions:
 | 40 | Ship-centred Endless orbiting specials |
 | 41 | Endless tiers settled on an enemy's first frame |
 | 42 | Endless Base Level rule byte carries four rules; level-bag hand in the player block |
+| 43 | Endless run transfer carries the v25 save header |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

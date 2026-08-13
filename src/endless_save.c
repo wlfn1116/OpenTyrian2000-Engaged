@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 24
+#define ENDLESS_SAVE_VERSION 25
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -50,6 +50,18 @@ JE_byte  endlessSortieOutpostEp = 0;
 // version bump.
 #define ENDLESS_SAVE_CASH_SOURCES 12
 #define ENDLESS_SAVE_CASH_SINKS   12
+
+/* File header: the tag, the format version, how many slot records follow, and from v25 how many
+ * bytes each of those records is. Without that last field a record that changed width without the
+ * version changing with it puts every slot but the first at the wrong offset, silently. */
+#define ENDLESS_SAVE_WIDTH_VERSION 25   // first version whose header carries the record width
+#define ENDLESS_HEADER_BYTES       8
+
+typedef struct {
+	int version;   // format version the file was written by
+	int slots;     // records that follow
+	int width;     // bytes per record, or 0 when the version alone fixes it (pre-v25)
+} EndlessSaveHeader;
 
 // Perk IDs are on-disk slots; widen the block and bump the version together.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
@@ -206,19 +218,28 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	endlessNameCourseBaseLevels();  // populate the Radar perk's base-level cache for the restored chart
 }
 
-// Little-endian field I/O. A short read invalidates the optional Endless sidecar.
-static void endlessPutU8(FILE *f, unsigned v)                 { Uint8 b = (Uint8)v; fwrite(&b, 1, 1, f); }
-static void endlessPutU32(FILE *f, Uint32 v)                  { v = SDL_SwapLE32(v); fwrite(&v, 4, 1, f); }
-static void endlessPutU64(FILE *f, Uint64 v)                  { v = SDL_SwapLE64(v); fwrite(&v, 8, 1, f); }
-static void endlessPutBytes(FILE *f, const void *p, size_t n) { fwrite(p, 1, n, f); }
-static bool endlessGetU8(FILE *f, Uint8 *v)                   { return fread(v, 1, 1, f) == 1; }
-static bool endlessGetU32(FILE *f, Uint32 *v)                 { Uint32 b; if (fread(&b, 4, 1, f) != 1) return false; *v = SDL_SwapLE32(b); return true; }
-static bool endlessGetU64(FILE *f, Uint64 *v)                 { Uint64 b; if (fread(&b, 8, 1, f) != 1) return false; *v = SDL_SwapLE64(b); return true; }
-static bool endlessGetBytes(FILE *f, void *p, size_t n)       { return fread(p, 1, n, f) == n; }
+/* Records are laid out as bytes rather than at file positions, so one whose stored width differs
+ * from this build's can be padded or trimmed on its own. A writer with a null buffer measures
+ * rather than stores. See "Save format" in doc/notes.md. */
+#define ENDLESS_REC_MAX  4096            // ceiling for one record; the width itself is measured
+#define ENDLESS_FILE_MAX (1024 * 1024)   // ...and for a whole sidecar file
 
-static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
+typedef struct { Uint8 *p; const Uint8 *end; size_t n; } EndlessWriter;
+typedef struct { const Uint8 *p, *end; } EndlessReader;
+
+// Little-endian field I/O. A short read invalidates the optional Endless sidecar.
+static void endlessPutU8(EndlessWriter *w, unsigned v)                 { if (w->p != NULL && w->p < w->end) *w->p++ = (Uint8)v; ++w->n; }
+static void endlessPutBytes(EndlessWriter *w, const void *p, size_t n) { for (size_t i = 0; i < n; ++i) endlessPutU8(w, ((const Uint8 *)p)[i]); }
+static void endlessPutU32(EndlessWriter *w, Uint32 v)                  { v = SDL_SwapLE32(v); endlessPutBytes(w, &v, 4); }
+static void endlessPutU64(EndlessWriter *w, Uint64 v)                  { v = SDL_SwapLE64(v); endlessPutBytes(w, &v, 8); }
+static bool endlessGetU8(EndlessReader *rd, Uint8 *v)                  { if (rd->p >= rd->end) return false; *v = *rd->p++; return true; }
+static bool endlessGetBytes(EndlessReader *rd, void *p, size_t n)      { if ((size_t)(rd->end - rd->p) < n) return false; memcpy(p, rd->p, n); rd->p += n; return true; }
+static bool endlessGetU32(EndlessReader *rd, Uint32 *v)                { Uint32 b; if (!endlessGetBytes(rd, &b, 4)) return false; *v = SDL_SwapLE32(b); return true; }
+static bool endlessGetU64(EndlessReader *rd, Uint64 *v)                { Uint64 b; if (!endlessGetBytes(rd, &b, 8)) return false; *v = SDL_SwapLE64(b); return true; }
+
+static void endlessWriteRec(EndlessWriter *w, const EndlessSlotRec *r)
 {
-	endlessPutU8(f, r->used ? 1 : 0);
+	endlessPutU8(w, r->used ? 1 : 0);
 
 	const Sint32 s32[] = {
 		r->runDepth, r->armorBonus, r->runKills, r->runBossKills, r->buffCharge, r->revivesUsed,
@@ -227,101 +248,101 @@ static void endlessWriteRec(FILE *f, const EndlessSlotRec *r)
 		r->buffKind, r->cleanseCharges, r->perkChoiceN, r->courseCnt, r->lastEp,
 	};
 	for (unsigned i = 0; i < COUNTOF(s32); ++i)
-		endlessPutU32(f, (Uint32)s32[i]);
+		endlessPutU32(w, (Uint32)s32[i]);
 
-	endlessPutU32(f, r->purchasedMods);
-	endlessPutU8(f, r->reviveHeld);
-	endlessPutU8(f, r->gambleRigged);
-	endlessPutU8(f, r->gamblePerkWon);
-	endlessPutU8(f, r->perkPending);
-	endlessPutU8(f, r->lastSec);
-	endlessPutU8(f, r->forced);
+	endlessPutU32(w, r->purchasedMods);
+	endlessPutU8(w, r->reviveHeld);
+	endlessPutU8(w, r->gambleRigged);
+	endlessPutU8(w, r->gamblePerkWon);
+	endlessPutU8(w, r->perkPending);
+	endlessPutU8(w, r->lastSec);
+	endlessPutU8(w, r->forced);
 
-	endlessPutBytes(f, r->perkOwned, ENDLESS_SAVE_PERKS);
-	endlessPutBytes(f, r->gambleMsg, sizeof(r->gambleMsg));
-	endlessPutBytes(f, r->lastSpecialName, sizeof(r->lastSpecialName));
+	endlessPutBytes(w, r->perkOwned, ENDLESS_SAVE_PERKS);
+	endlessPutBytes(w, r->gambleMsg, sizeof(r->gambleMsg));
+	endlessPutBytes(w, r->lastSpecialName, sizeof(r->lastSpecialName));
 
 	for (unsigned i = 0; i < COUNTOF(r->perkChoice); ++i)
-		endlessPutU32(f, (Uint32)r->perkChoice[i]);
+		endlessPutU32(w, (Uint32)r->perkChoice[i]);
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
-		endlessPutU32(f, (Uint32)r->courseEp[i]);
+		endlessPutU32(w, (Uint32)r->courseEp[i]);
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
-		endlessPutU64(f, r->courseMod[i]);
-	endlessPutBytes(f, r->courseSec, ENDLESS_MAX_COURSES);
-	endlessPutBytes(f, r->courseFile, ENDLESS_MAX_COURSES);
+		endlessPutU64(w, r->courseMod[i]);
+	endlessPutBytes(w, r->courseSec, ENDLESS_MAX_COURSES);
+	endlessPutBytes(w, r->courseFile, ENDLESS_MAX_COURSES);
 
-	endlessPutBytes(f, r->itemAvail, sizeof(r->itemAvail));
-	endlessPutBytes(f, r->itemAvailMax, sizeof(r->itemAvailMax));
-	endlessPutBytes(f, r->seed, sizeof(r->seed));
+	endlessPutBytes(w, r->itemAvail, sizeof(r->itemAvail));
+	endlessPutBytes(w, r->itemAvailMax, sizeof(r->itemAvailMax));
+	endlessPutBytes(w, r->seed, sizeof(r->seed));
 
-	endlessPutU8(f, r->lockedSortie);        // v4 locked-sortie block
-	endlessPutU64(f, r->sortieMods);         // v7: 64-bit (was U32 in v4-v6)
-	endlessPutU8(f, r->sortieSec);
-	endlessPutU32(f, (Uint32)r->sortieEp);
-	endlessPutU8(f, r->sortieFile);
+	endlessPutU8(w, r->lockedSortie);        // v4 locked-sortie block
+	endlessPutU64(w, r->sortieMods);         // v7: 64-bit (was U32 in v4-v6)
+	endlessPutU8(w, r->sortieSec);
+	endlessPutU32(w, (Uint32)r->sortieEp);
+	endlessPutU8(w, r->sortieFile);
 
-	endlessPutU32(f, (Uint32)r->buffCooldownUntil);  // v5 kill-fire recharge
+	endlessPutU32(w, (Uint32)r->buffCooldownUntil);  // v5 kill-fire recharge
 
-	endlessPutU8(f, r->recentCount);                 // v6 anti-repeat recent-level ring
+	endlessPutU8(w, r->recentCount);                 // v6 anti-repeat recent-level ring
 	for (unsigned i = 0; i < ENDLESS_LEVEL_HISTORY; ++i)
-		endlessPutU32(f, (Uint32)r->recentEp[i]);
-	endlessPutBytes(f, r->recentSec, ENDLESS_LEVEL_HISTORY);
+		endlessPutU32(w, (Uint32)r->recentEp[i]);
+	endlessPutBytes(w, r->recentSec, ENDLESS_LEVEL_HISTORY);
 
-	endlessPutU8(f, r->creditsShown);                // v9 zone-100 credits
+	endlessPutU8(w, r->creditsShown);                // v9 zone-100 credits
 
-	endlessPutU8(f, r->lastSong);                    // v10 per-zone music continuity
-	endlessPutU32(f, (Uint32)r->lastSongDepth);
+	endlessPutU8(w, r->lastSong);                    // v10 per-zone music continuity
+	endlessPutU32(w, (Uint32)r->lastSongDepth);
 
-	endlessPutU8(f, r->starChartsOwed);              // v12 boons owed to a later outpost
-	endlessPutU8(f, r->breakthroughOwed);
+	endlessPutU8(w, r->starChartsOwed);              // v12 boons owed to a later outpost
+	endlessPutU8(w, r->breakthroughOwed);
 
-	endlessPutU8(f, r->runMode);                     // v15 Relaxed / Standard / Hardcore
+	endlessPutU8(w, r->runMode);                     // v15 Relaxed / Standard / Hardcore
 
-	endlessPutU64(f, r->cashEarned);                 // v16 stored earnings only
-	endlessPutU64(f, r->cashSpent);                  // v17 added spending and source detail
+	endlessPutU64(w, r->cashEarned);                 // v16 stored earnings only
+	endlessPutU64(w, r->cashSpent);                  // v17 added spending and source detail
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
-		endlessPutU64(f, r->cashBySource[i]);
+		endlessPutU64(w, r->cashBySource[i]);
 
 	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)  // v19 spending breakdown
-		endlessPutU64(f, r->cashBySink[i]);
+		endlessPutU64(w, r->cashBySink[i]);
 
-	endlessPutU8(f, r->usedCustom);                  // v20 custom-weapon record mark
+	endlessPutU8(w, r->usedCustom);                  // v20 custom-weapon record mark
 
 	// v21 online co-op: the second player's own half of the outpost, plus the shared turn flag.
-	endlessPutU8(f, r->coopHostCharts);
-	endlessPutU8(f, r->courseChooser);
+	endlessPutU8(w, r->coopHostCharts);
+	endlessPutU8(w, r->courseChooser);
 	const Sint32 coop32[] = {
 		r->armorBonus2, r->revivesUsed2, r->shopTax2, r->longCon2, r->buffKind2, r->buffCharge2,
 		r->buffCooldownUntil2, r->rerollCost2, r->hullCost2, r->bombCost2, r->extraPerkCost2,
 		r->cleanseCost2, r->shopEntryCash2, r->superbombs2, r->cleanseCharges2,
 	};
 	for (unsigned i = 0; i < COUNTOF(coop32); ++i)
-		endlessPutU32(f, (Uint32)coop32[i]);
-	endlessPutU32(f, r->purchasedMods2);
-	endlessPutU8(f, r->reviveHeld2);
-	endlessPutU8(f, r->gambleRigged2);
-	endlessPutU8(f, r->downed[0]);
-	endlessPutU8(f, r->downed[1]);
-	endlessPutBytes(f, r->perkTakenBy[0], ENDLESS_SAVE_PERKS);
-	endlessPutBytes(f, r->perkTakenBy[1], ENDLESS_SAVE_PERKS);
-	endlessPutU64(f, r->playerRng[0]);
-	endlessPutU64(f, r->playerRng[1]);
+		endlessPutU32(w, (Uint32)coop32[i]);
+	endlessPutU32(w, r->purchasedMods2);
+	endlessPutU8(w, r->reviveHeld2);
+	endlessPutU8(w, r->gambleRigged2);
+	endlessPutU8(w, r->downed[0]);
+	endlessPutU8(w, r->downed[1]);
+	endlessPutBytes(w, r->perkTakenBy[0], ENDLESS_SAVE_PERKS);
+	endlessPutBytes(w, r->perkTakenBy[1], ENDLESS_SAVE_PERKS);
+	endlessPutU64(w, r->playerRng[0]);
+	endlessPutU64(w, r->playerRng[1]);
 
-	endlessPutU8(f, r->baseLevelRule);               // v22 base-level rule, widened in v24
+	endlessPutU8(w, r->baseLevelRule);               // v22 base-level rule, widened in v24
 
-	endlessPutU8(f, r->chartRerolls);                // v23 Radar chart reroll
-	endlessPutU8(f, r->chartStarCharts);
+	endlessPutU8(w, r->chartRerolls);                // v23 Radar chart reroll
+	endlessPutU8(w, r->chartStarCharts);
 
-	endlessPutU32(f, r->shuffleNext);                // v24 Shuffle bag cursor and live hand
-	endlessPutU32(f, r->shuffleHandStart);
+	endlessPutU32(w, r->shuffleNext);                // v24 Shuffle bag cursor and live hand
+	endlessPutU32(w, r->shuffleHandStart);
 }
 
-static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
+static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 {
 	memset(r, 0, sizeof(*r));
 
 	Uint8 used;
-	if (!endlessGetU8(f, &used))
+	if (!endlessGetU8(rd, &used))
 		return false;
 	r->used = used != 0;
 
@@ -334,22 +355,22 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	for (unsigned i = 0; i < COUNTOF(s32); ++i)
 	{
 		Uint32 t;
-		if (!endlessGetU32(f, &t))
+		if (!endlessGetU32(rd, &t))
 			return false;
 		*s32[i] = (Sint32)t;
 	}
 
-	if (!endlessGetU32(f, &r->purchasedMods)
-	    || !endlessGetU8(f, &r->reviveHeld) || !endlessGetU8(f, &r->gambleRigged)
-	    || !endlessGetU8(f, &r->gamblePerkWon) || !endlessGetU8(f, &r->perkPending)
-	    || !endlessGetU8(f, &r->lastSec) || !endlessGetU8(f, &r->forced))
+	if (!endlessGetU32(rd, &r->purchasedMods)
+	    || !endlessGetU8(rd, &r->reviveHeld) || !endlessGetU8(rd, &r->gambleRigged)
+	    || !endlessGetU8(rd, &r->gamblePerkWon) || !endlessGetU8(rd, &r->perkPending)
+	    || !endlessGetU8(rd, &r->lastSec) || !endlessGetU8(rd, &r->forced))
 		return false;
 
 	// v11 widened the perk block. Zero-filled newer slots remain unowned in older records.
 	const size_t perkBytes = (version >= 11) ? ENDLESS_SAVE_PERKS : ENDLESS_SAVE_PERKS_V10;
-	if (!endlessGetBytes(f, r->perkOwned, perkBytes)
-	    || !endlessGetBytes(f, r->gambleMsg, sizeof(r->gambleMsg))
-	    || !endlessGetBytes(f, r->lastSpecialName, sizeof(r->lastSpecialName)))
+	if (!endlessGetBytes(rd, r->perkOwned, perkBytes)
+	    || !endlessGetBytes(rd, r->gambleMsg, sizeof(r->gambleMsg))
+	    || !endlessGetBytes(rd, r->lastSpecialName, sizeof(r->lastSpecialName)))
 		return false;
 
 	// v13 widened perk offers from three to five. Clamp counts to the version's stored width.
@@ -357,7 +378,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	for (unsigned i = 0; i < offerSlots; ++i)
 	{
 		Uint32 t;
-		if (!endlessGetU32(f, &t))
+		if (!endlessGetU32(rd, &t))
 			return false;
 		r->perkChoice[i] = (Sint32)t;
 	}
@@ -389,7 +410,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
 	{
 		Uint32 t;
-		if (!endlessGetU32(f, &t))
+		if (!endlessGetU32(rd, &t))
 			return false;
 		r->courseEp[i] = (Sint32)t;
 	}
@@ -397,25 +418,25 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	{
 		if (version >= 7)
 		{
-			if (!endlessGetU64(f, &r->courseMod[i]))
+			if (!endlessGetU64(rd, &r->courseMod[i]))
 				return false;
 		}
 		else
 		{
 			Uint32 t;   // v3-v6 stored the course mods 32-bit (high bits were unused back then)
-			if (!endlessGetU32(f, &t))
+			if (!endlessGetU32(rd, &t))
 				return false;
 			r->courseMod[i] = t;
 		}
 	}
-	if (!endlessGetBytes(f, r->courseSec, ENDLESS_MAX_COURSES))
+	if (!endlessGetBytes(rd, r->courseSec, ENDLESS_MAX_COURSES))
 		return false;
-	if (version >= 8 && !endlessGetBytes(f, r->courseFile, ENDLESS_MAX_COURSES))
+	if (version >= 8 && !endlessGetBytes(rd, r->courseFile, ENDLESS_MAX_COURSES))
 		return false;
 
-	if (!endlessGetBytes(f, r->itemAvail, sizeof(r->itemAvail))
-	    || !endlessGetBytes(f, r->itemAvailMax, sizeof(r->itemAvailMax))
-	    || !endlessGetBytes(f, r->seed, sizeof(r->seed)))
+	if (!endlessGetBytes(rd, r->itemAvail, sizeof(r->itemAvail))
+	    || !endlessGetBytes(rd, r->itemAvailMax, sizeof(r->itemAvailMax))
+	    || !endlessGetBytes(rd, r->seed, sizeof(r->seed)))
 		return false;
 
 	// Never trust a terminator off disk.
@@ -428,29 +449,29 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	{
 		Uint8  u8;
 		Uint32 u32;
-		if (!endlessGetU8(f, &u8))
+		if (!endlessGetU8(rd, &u8))
 			return false;
 		r->lockedSortie = u8;
 		if (version >= 7)   // v7 widened sortieMods to 64-bit; v4-v6 stored it 32-bit
 		{
 			Uint64 u64;
-			if (!endlessGetU64(f, &u64))
+			if (!endlessGetU64(rd, &u64))
 				return false;
 			r->sortieMods = u64;
 		}
 		else
 		{
-			if (!endlessGetU32(f, &u32))
+			if (!endlessGetU32(rd, &u32))
 				return false;
 			r->sortieMods = u32;
 		}
-		if (!endlessGetU8(f, &u8))
+		if (!endlessGetU8(rd, &u8))
 			return false;
 		r->sortieSec = u8;
-		if (!endlessGetU32(f, &u32))
+		if (!endlessGetU32(rd, &u32))
 			return false;
 		r->sortieEp = (Sint32)u32;
-		if (!endlessGetU8(f, &u8))
+		if (!endlessGetU8(rd, &u8))
 			return false;
 		r->sortieFile = u8;
 	}
@@ -459,7 +480,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	if (version >= 5)
 	{
 		Uint32 u32;
-		if (!endlessGetU32(f, &u32))
+		if (!endlessGetU32(rd, &u32))
 			return false;
 		r->buffCooldownUntil = (Sint32)u32;
 	}
@@ -467,42 +488,45 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// Pre-v6 records resume with an empty recent-level window.
 	if (version >= 6)
 	{
-		if (!endlessGetU8(f, &r->recentCount))
+		if (!endlessGetU8(rd, &r->recentCount))
 			return false;
 		for (unsigned i = 0; i < ENDLESS_LEVEL_HISTORY; ++i)
 		{
 			Uint32 u32;
-			if (!endlessGetU32(f, &u32))
+			if (!endlessGetU32(rd, &u32))
 				return false;
 			r->recentEp[i] = (Sint32)u32;
 		}
-		if (!endlessGetBytes(f, r->recentSec, ENDLESS_LEVEL_HISTORY))
+		if (!endlessGetBytes(rd, r->recentSec, ENDLESS_LEVEL_HISTORY))
 			return false;
 		if (r->recentCount > ENDLESS_LEVEL_HISTORY)
 			r->recentCount = ENDLESS_LEVEL_HISTORY;
 	}
 
 	// Pre-v9 records may show the zone-100 credits once after resuming.
-	if (version >= 9 && !endlessGetU8(f, &r->creditsShown))
+	if (version >= 9 && !endlessGetU8(rd, &r->creditsShown))
 		return false;
 
 	// Pre-v10 records derive the previous song when lastSong remains zero.
 	if (version >= 10)
 	{
 		Uint32 u32;
-		if (!endlessGetU8(f, &r->lastSong) || !endlessGetU32(f, &u32))
+		if (!endlessGetU8(rd, &r->lastSong) || !endlessGetU32(rd, &u32))
 			return false;
 		r->lastSongDepth = (Sint32)u32;
 	}
 
 	// Pre-v12 records resume without deferred Star Charts or Breakthrough rewards.
-	if (version >= 12 && (!endlessGetU8(f, &r->starChartsOwed) || !endlessGetU8(f, &r->breakthroughOwed)))
+	if (version >= 12
+	    && (!endlessGetU8(rd, &r->starChartsOwed) || !endlessGetU8(rd, &r->breakthroughOwed)))
+	{
 		return false;
+	}
 
 	// Pre-v15 records resume in Relaxed mode, matching their original behavior.
 	if (version >= 15)
 	{
-		if (!endlessGetU8(f, &r->runMode))
+		if (!endlessGetU8(rd, &r->runMode))
 			return false;
 		if (r->runMode >= ENDLESS_RUNMODE_COUNT)
 			r->runMode = ENDLESS_RUNMODE_RELAXED;
@@ -511,14 +535,14 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// v16 stores total earnings. v17 adds spending and per-source totals.
 	if (version >= 16)
 	{
-		if (!endlessGetU64(f, &r->cashEarned))
+		if (!endlessGetU64(rd, &r->cashEarned))
 			return false;
 		if (version >= 17)
 		{
-			if (!endlessGetU64(f, &r->cashSpent))
+			if (!endlessGetU64(rd, &r->cashSpent))
 				return false;
 			for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
-				if (!endlessGetU64(f, &r->cashBySource[i]))
+				if (!endlessGetU64(rd, &r->cashBySource[i]))
 					return false;
 		}
 		else
@@ -531,25 +555,25 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// v18 stored only the gear sink; v19 stores every sink. Earlier versions remain zero-filled.
 	if (version == 18)
 	{
-		if (!endlessGetU64(f, &r->cashBySink[ENDLESS_SINK_GEAR]))
+		if (!endlessGetU64(rd, &r->cashBySink[ENDLESS_SINK_GEAR]))
 			return false;
 	}
 	else if (version >= 19)
 	{
 		for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)
-			if (!endlessGetU64(f, &r->cashBySink[i]))
+			if (!endlessGetU64(rd, &r->cashBySink[i]))
 				return false;
 	}
 
 	// Pre-v20 records resume unmarked, so their record only gains a C if the rest of the run earns it.
-	if (version >= 20 && !endlessGetU8(f, &r->usedCustom))
+	if (version >= 20 && !endlessGetU8(rd, &r->usedCustom))
 		return false;
 
 	// Pre-v21 records are single-player: the zero-filled second slot leaves that player with
 	// nothing bought, and the perk rows are rebuilt from the effective stacks below.
 	if (version >= 21)
 	{
-		if (!endlessGetU8(f, &r->coopHostCharts) || !endlessGetU8(f, &r->courseChooser))
+		if (!endlessGetU8(rd, &r->coopHostCharts) || !endlessGetU8(rd, &r->courseChooser))
 			return false;
 		Sint32 *const coop32[] = {
 			&r->armorBonus2, &r->revivesUsed2, &r->shopTax2, &r->longCon2, &r->buffKind2,
@@ -560,16 +584,16 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 		for (unsigned i = 0; i < COUNTOF(coop32); ++i)
 		{
 			Uint32 t;
-			if (!endlessGetU32(f, &t))
+			if (!endlessGetU32(rd, &t))
 				return false;
 			*coop32[i] = (Sint32)t;
 		}
-		if (!endlessGetU32(f, &r->purchasedMods2)
-		    || !endlessGetU8(f, &r->reviveHeld2) || !endlessGetU8(f, &r->gambleRigged2)
-		    || !endlessGetU8(f, &r->downed[0]) || !endlessGetU8(f, &r->downed[1])
-		    || !endlessGetBytes(f, r->perkTakenBy[0], ENDLESS_SAVE_PERKS)
-		    || !endlessGetBytes(f, r->perkTakenBy[1], ENDLESS_SAVE_PERKS)
-		    || !endlessGetU64(f, &r->playerRng[0]) || !endlessGetU64(f, &r->playerRng[1]))
+		if (!endlessGetU32(rd, &r->purchasedMods2)
+		    || !endlessGetU8(rd, &r->reviveHeld2) || !endlessGetU8(rd, &r->gambleRigged2)
+		    || !endlessGetU8(rd, &r->downed[0]) || !endlessGetU8(rd, &r->downed[1])
+		    || !endlessGetBytes(rd, r->perkTakenBy[0], ENDLESS_SAVE_PERKS)
+		    || !endlessGetBytes(rd, r->perkTakenBy[1], ENDLESS_SAVE_PERKS)
+		    || !endlessGetU64(rd, &r->playerRng[0]) || !endlessGetU64(rd, &r->playerRng[1]))
 			return false;
 		if (r->courseChooser >= ENDLESS_PICK_COUNT)
 			r->courseChooser = ENDLESS_PICK_HOST;
@@ -581,7 +605,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	}
 
 	// Pre-v22 records predate the chart rule, so they resume as Varied and keep the records they set.
-	if (version >= 22 && !endlessGetU8(f, &r->baseLevelRule))
+	if (version >= 22 && !endlessGetU8(rd, &r->baseLevelRule))
 		return false;
 	if (r->baseLevelRule >= ENDLESS_BASE_RULE_COUNT)
 		r->baseLevelRule = ENDLESS_BASE_VARIED;
@@ -589,7 +613,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 	// Pre-v23 records predate the Radar chart reroll and resume with this visit's reroll unspent.
 	if (version >= 23)
 	{
-		if (!endlessGetU8(f, &r->chartRerolls) || !endlessGetU8(f, &r->chartStarCharts))
+		if (!endlessGetU8(rd, &r->chartRerolls) || !endlessGetU8(rd, &r->chartStarCharts))
 			return false;
 	}
 	else
@@ -601,7 +625,7 @@ static bool endlessReadRec(FILE *f, EndlessSlotRec *r, int version)
 
 	// Pre-v24 records predate the Shuffle rules, so their bag is genuinely at the start.
 	if (version >= 24
-	    && (!endlessGetU32(f, &r->shuffleNext) || !endlessGetU32(f, &r->shuffleHandStart)))
+	    && (!endlessGetU32(rd, &r->shuffleNext) || !endlessGetU32(rd, &r->shuffleHandStart)))
 	{
 		return false;
 	}
@@ -620,61 +644,106 @@ int endlessSaveCurrentVersion(void)
 	return ENDLESS_SAVE_VERSION;
 }
 
-static bool endlessTestDecode(const Uint8 *bytes, size_t size, EndlessSlotRec *rec, int *version)
+/* The bytes one record occupies in this build, taken from the writer itself, so appending a field
+ * updates what the header advertises with nothing else to keep in step. */
+static int endlessRecordWidth(void)
 {
-	FILE *f = tmpfile();
-	if (f == NULL)
-		return false;
-	if (size != 0 && fwrite(bytes, 1, size, f) != size)
+	static int width = 0;
+	if (width == 0)
 	{
-		fclose(f);
+		EndlessSlotRec probe;
+		memset(&probe, 0, sizeof(probe));
+		EndlessWriter measure = { NULL, NULL, 0 };
+		endlessWriteRec(&measure, &probe);
+		width = (int)measure.n;
+	}
+	return width;
+}
+
+static void endlessWriteHeader(EndlessWriter *w, int slots)
+{
+	endlessPutBytes(w, "OTES", 4);
+	endlessPutU8(w, ENDLESS_SAVE_VERSION);
+	endlessPutU8(w, (unsigned)slots);
+	endlessPutU8(w, (unsigned)(endlessRecordWidth() & 0xFF));   // v25 and up: the record width
+	endlessPutU8(w, (unsigned)((endlessRecordWidth() >> 8) & 0xFF));
+}
+
+static bool endlessReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
+{
+	Uint8 tag[6];
+	if (!endlessGetBytes(rd, tag, sizeof(tag)) || memcmp(tag, "OTES", 4) != 0
+	    || tag[4] < 3 || tag[4] > ENDLESS_SAVE_VERSION
+	    || tag[5] < 1 || tag[5] > SAVE_FILES_NUM)
+	{
 		return false;
 	}
-	rewind(f);
+	h->version = tag[4];
+	h->slots   = tag[5];
+	h->width   = 0;   // before v25 a record is exactly what its own version parses
 
-	Uint8 hdr[6];
-	const bool okay = fread(hdr, 1, sizeof(hdr), f) == sizeof(hdr)
-	               && memcmp(hdr, "OTES", 4) == 0
-	               && hdr[4] >= 3 && hdr[4] <= ENDLESS_SAVE_VERSION
-	               && hdr[5] >= 1 && hdr[5] <= SAVE_FILES_NUM
-	               && endlessReadRec(f, rec, hdr[4]);
-	if (okay && version != NULL)
-		*version = hdr[4];
-	fclose(f);
-	return okay;
+	if (h->version >= ENDLESS_SAVE_WIDTH_VERSION)
+	{
+		Uint8 lo, hi;
+		if (!endlessGetU8(rd, &lo) || !endlessGetU8(rd, &hi))
+			return false;
+		h->width = lo | (hi << 8);
+		if (h->width < 1 || h->width > ENDLESS_REC_MAX)
+			return false;
+	}
+	return true;
+}
+
+/* Take one record off the cursor. A stored width narrower than this build's is padded, so fields
+ * added since read as the zero their version gate would have left them; a wider one has its tail
+ * skipped. Either way the next slot still starts where the file says it does. */
+static bool endlessReadOneRec(EndlessReader *rd, const EndlessSaveHeader *h, EndlessSlotRec *rec)
+{
+	const int want = endlessRecordWidth();
+	if (h->width == 0 || h->width == want)
+		return endlessReadRec(rd, rec, h->version);
+	if (want > ENDLESS_REC_MAX || (size_t)(rd->end - rd->p) < (size_t)h->width)
+		return false;
+
+	Uint8 buf[ENDLESS_REC_MAX];
+	const size_t take = MIN((size_t)h->width, (size_t)want);
+	memcpy(buf, rd->p, take);
+	memset(buf + take, 0, (size_t)want - take);
+	rd->p += h->width;
+
+	EndlessReader one = { buf, buf + want };
+	return endlessReadRec(&one, rec, h->version);
+}
+
+static bool endlessTestDecode(const Uint8 *bytes, size_t size, EndlessSlotRec *rec, int *version)
+{
+	EndlessReader rd = { bytes, bytes + size };
+	EndlessSaveHeader h;
+	if (bytes == NULL || !endlessReadHeader(&rd, &h) || !endlessReadOneRec(&rd, &h, rec))
+		return false;
+	if (version != NULL)
+		*version = h.version;
+	return true;
 }
 
 static bool endlessTestEncode(const EndlessSlotRec *rec, Uint8 **bytes, size_t *size)
 {
-	FILE *f = tmpfile();
-	if (f == NULL)
+	const size_t total = (size_t)ENDLESS_HEADER_BYTES + (size_t)endlessRecordWidth();
+	Uint8 *out = malloc(total);
+	if (out == NULL)
 		return false;
-	const Uint8 hdr[6] = { 'O', 'T', 'E', 'S', ENDLESS_SAVE_VERSION, 1 };
-	if (fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr))
-	{
-		fclose(f);
-		return false;
-	}
-	endlessWriteRec(f, rec);
-	const long end = ftell(f);
-	if (end <= 0 || ferror(f))
-	{
-		fclose(f);
-		return false;
-	}
-	rewind(f);
 
-	*bytes = malloc((size_t)end);
-	*size = (size_t)end;
-	const bool okay = *bytes != NULL && fread(*bytes, 1, *size, f) == *size;
-	if (!okay)
+	EndlessWriter w = { out, out + total, 0 };
+	endlessWriteHeader(&w, 1);
+	endlessWriteRec(&w, rec);
+	if (w.n != total)
 	{
-		free(*bytes);
-		*bytes = NULL;
-		*size = 0;
+		free(out);
+		return false;
 	}
-	fclose(f);
-	return okay;
+	*bytes = out;
+	*size = total;
+	return true;
 }
 
 static void endlessTestDetail(char *detail, size_t detailSize, const char *message)
@@ -815,50 +884,167 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	return true;
 }
 
+/* Prove both directions on a record this build wrote: a narrower file keeps everything it did
+ * carry, a wider one is read without its unknown tail, and a file shorter than it claims still
+ * fails. */
+bool endlessSaveTestWidthGuard(char *detail, size_t detailSize)
+{
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	EndlessSlotRec rec;
+	memset(&rec, 0, sizeof(rec));
+	rec.used = true;
+	rec.runDepth = 91;
+	rec.courseCnt = 1;
+	rec.courseEp[0] = 1;
+	rec.shuffleNext = 12;
+	SDL_strlcpy(rec.seed, "width-guard", sizeof(rec.seed));
+
+	Uint8 *whole = NULL;
+	size_t wholeSize = 0;
+	if (!endlessTestEncode(&rec, &whole, &wholeSize))
+	{
+		endlessTestDetail(detail, detailSize, "encode failed");
+		return false;
+	}
+
+	const size_t width = wholeSize - ENDLESS_HEADER_BYTES;
+	const size_t step = 4;   // stands in for a field one of the two builds has and the other does not
+	Uint8 *narrow = malloc(wholeSize - step);
+	Uint8 *wide = malloc(wholeSize + step);
+	Uint8 *again = NULL;
+	size_t againSize = 0;
+	EndlessSlotRec back;
+	const char *fault = NULL;
+
+	if (width <= step || narrow == NULL || wide == NULL)
+	{
+		fault = "fixture allocation failed";
+	}
+	else
+	{
+		memcpy(narrow, whole, wholeSize - step);
+		narrow[6] = (Uint8)((width - step) & 0xFF);
+		narrow[7] = (Uint8)(((width - step) >> 8) & 0xFF);
+
+		memcpy(wide, whole, wholeSize);
+		memset(wide + wholeSize, 0xa5, step);   // the unknown tail, which must not be read
+		wide[6] = (Uint8)((width + step) & 0xFF);
+		wide[7] = (Uint8)(((width + step) >> 8) & 0xFF);
+	}
+
+	if (fault == NULL && !(endlessTestDecode(narrow, wholeSize - step, &back, NULL)
+	                       && endlessTestEncode(&back, &again, &againSize)
+	                       && againSize == wholeSize
+	                       && memcmp(again + ENDLESS_HEADER_BYTES, whole + ENDLESS_HEADER_BYTES,
+	                                 width - step) == 0))
+	{
+		fault = "a narrower record did not pad";
+	}
+	free(again);
+	again = NULL;
+
+	if (fault == NULL && !(endlessTestDecode(wide, wholeSize + step, &back, NULL)
+	                       && endlessTestEncode(&back, &again, &againSize)
+	                       && againSize == wholeSize
+	                       && memcmp(again, whole, wholeSize) == 0))
+	{
+		fault = "a wider record was not trimmed";
+	}
+	free(again);
+
+	if (fault == NULL && endlessTestDecode(whole, wholeSize - 1, &back, NULL))
+		fault = "a record shorter than the header claims was accepted";
+
+	free(narrow);
+	free(wide);
+	free(whole);
+
+	if (fault != NULL)
+		endlessTestDetail(detail, detailSize, fault);
+	return fault == NULL;
+}
+
+// Read the whole sidecar in. Any file-level problem leaves it as "no endless save".
+static Uint8 *endlessReadSaveFile(size_t *size)
+{
+	FILE *f = dir_fopen(get_user_directory(), ENDLESS_SAVE_FILE, "rb");
+	if (f == NULL)
+		return NULL;
+
+	fseek(f, 0, SEEK_END);
+	const long end = ftell(f);
+	rewind(f);
+
+	Uint8 *bytes = (end > 0 && end <= ENDLESS_FILE_MAX) ? malloc((size_t)end) : NULL;
+	if (bytes != NULL && fread(bytes, 1, (size_t)end, f) != (size_t)end)
+	{
+		free(bytes);
+		bytes = NULL;
+	}
+	fclose(f);
+
+	*size = (bytes != NULL) ? (size_t)end : 0;
+	return bytes;
+}
+
 // Load all slot records. Any sidecar-level error marks the optional cache unused.
 static void endlessReadAllSlots(void)
 {
 	memset(endlessSlotCache, 0, sizeof(endlessSlotCache));
 
-	FILE *f = dir_fopen(get_user_directory(), ENDLESS_SAVE_FILE, "rb");
-	if (f == NULL)
+	size_t size = 0;
+	Uint8 *const bytes = endlessReadSaveFile(&size);
+	if (bytes == NULL)
 		return;
 
-	Uint8 hdr[6];
-	if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)
-	    || memcmp(hdr, "OTES", 4) != 0 || hdr[4] < 3 || hdr[4] > ENDLESS_SAVE_VERSION
-	    || hdr[5] > SAVE_FILES_NUM)
+	EndlessReader rd = { bytes, bytes + size };
+	EndlessSaveHeader h;
+	if (endlessReadHeader(&rd, &h))   // accepts v3 and up; anything else is "no endless save"
 	{
-		fclose(f);  // accept v3 (pre-locked-sortie), v4 and v5; anything else is "no endless save"
-		return;
+		// Say so rather than quietly loading half a run: a width this build does not share means
+		// the records carry fields it does not know about, or lack ones it expects.
+		if (h.width != 0 && h.width != endlessRecordWidth())
+		{
+			fprintf(stderr, "warning: endless save holds %d-byte records, this build writes %d\n",
+			        h.width, endlessRecordWidth());
+		}
+
+		for (int s = 0; s < h.slots; ++s)
+		{
+			EndlessSlotRec rec;
+			if (!endlessReadOneRec(&rd, &h, &rec))
+				break;  // truncated: keep the full records already read
+			if (s < SAVE_FILES_NUM)
+				endlessSlotCache[s] = rec;
+		}
 	}
 
-	const int count = hdr[5];
-	for (int s = 0; s < count; ++s)
-	{
-		EndlessSlotRec rec;
-		if (!endlessReadRec(f, &rec, hdr[4]))
-			break;  // truncated: keep the full records already read
-		if (s < SAVE_FILES_NUM)
-			endlessSlotCache[s] = rec;
-	}
-
-	fclose(f);
+	free(bytes);
 }
 
 // Write the fixed-layout slot cache.
 static void endlessWriteAllSlots(void)
 {
-	FILE *f = dir_fopen_warn(get_user_directory(), ENDLESS_SAVE_FILE, "wb");
-	if (f == NULL)
+	const size_t total = (size_t)ENDLESS_HEADER_BYTES
+	                   + (size_t)SAVE_FILES_NUM * (size_t)endlessRecordWidth();
+	Uint8 *const bytes = malloc(total);
+	if (bytes == NULL)
 		return;
 
-	const Uint8 hdr[6] = { 'O', 'T', 'E', 'S', ENDLESS_SAVE_VERSION, (Uint8)SAVE_FILES_NUM };
-	fwrite(hdr, 1, sizeof(hdr), f);
+	EndlessWriter w = { bytes, bytes + total, 0 };
+	endlessWriteHeader(&w, SAVE_FILES_NUM);
 	for (int s = 0; s < SAVE_FILES_NUM; ++s)
-		endlessWriteRec(f, &endlessSlotCache[s]);
+		endlessWriteRec(&w, &endlessSlotCache[s]);
 
-	fclose(f);
+	FILE *f = dir_fopen_warn(get_user_directory(), ENDLESS_SAVE_FILE, "wb");
+	if (f != NULL)
+	{
+		fwrite(bytes, 1, w.n, f);
+		fclose(f);
+	}
+	free(bytes);
 }
 
 // Snapshot the live run AND the current outpost into a record.

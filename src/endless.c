@@ -614,6 +614,39 @@ int endlessBestZoneAny(int variant, int players, EndlessRunMode mode)
 	return best;
 }
 
+/* The deepest a mode has been under any of the base-level rules. Summarising across rules no more
+ * compares them than the any-difficulty figure compares difficulties: it is the one number the
+ * four have between them, and the record page leads with it before narrowing to one. */
+int endlessBestZoneAnyRule(int players, EndlessRunMode mode)
+{
+	int best = 0;
+	for (int v = 0; v < ENDLESS_BASE_TABLES; ++v)
+	{
+		const int zone = endlessBestZoneAny(v, players, mode);
+		if (zone > best)
+			best = zone;
+	}
+	return best;
+}
+
+const char *endlessRecordAnyRuleCustomMark(int players, EndlessRunMode mode)
+{
+	const int best = endlessBestZoneAnyRule(players, mode);
+	if (best <= 0)
+		return "";
+
+	// Whichever rule is the deepest owns the mark, and a tie takes the first marked one.
+	for (int v = 0; v < ENDLESS_BASE_TABLES; ++v)
+	{
+		if (endlessBestZoneAny(v, players, mode) == best
+		    && endlessRecordAnyCustomMark(v, players, mode)[0] != '\0')
+		{
+			return " C";
+		}
+	}
+	return "";
+}
+
 const char *endlessRecordAnyCustomMark(int variant, int players, EndlessRunMode mode)
 {
 	// Whichever record is the deepest owns the mark, and a tie takes the first marked one.
