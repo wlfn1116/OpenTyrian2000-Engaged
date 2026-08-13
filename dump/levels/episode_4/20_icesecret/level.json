@@ -1,0 +1,22 @@
+{
+ "mapFileChar": "B",
+ "shapeFileChar": "W",
+ "shapeFile": "shapesw.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  10,
+  11
+ ],
+ "endOffset": 663408,
+ "episode": 4,
+ "levelFileNumber": 20,
+ "name": "ICESECRET",
+ "eventCount": 850
+}

@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "X",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  163
+ ],
+ "endOffset": 538856,
+ "episode": 1,
+ "levelFileNumber": 18,
+ "name": "** ALE **",
+ "eventCount": 834
+}

@@ -1,0 +1,1658 @@
+{
+ "mode": 2,
+ "speed": 17152,
+ "tempo": 3,
+ "patternLength": 64,
+ "channelDelay": [
+  0,
+  2,
+  0,
+  1,
+  1,
+  2,
+  2,
+  1,
+  0
+ ],
+ "regBD": 0,
+ "instruments": [
+  {
+   "modMisc": 1,
+   "modVol": 63,
+   "modAD": 254,
+   "modSR": 176,
+   "modWave": 0,
+   "carMisc": 0,
+   "carVol": 63,
+   "carAD": 240,
+   "carSR": 250,
+   "carWave": 0,
+   "feedback": 6,
+   "keyOff": 12,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 0,
+   "vibDelay": 0,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 12,
+   "arpTable": [
+    250,
+    247,
+    246,
+    243,
+    241,
+    237,
+    236,
+    235,
+    234,
+    233,
+    232,
+    231
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 118,
+   "midiVelocity": 112,
+   "midiKey": 0,
+   "midiTranspose": 232,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 33,
+   "modVol": 41,
+   "modAD": 246,
+   "modSR": 98,
+   "modWave": 0,
+   "carMisc": 1,
+   "carVol": 56,
+   "carAD": 240,
+   "carSR": 247,
+   "carWave": 3,
+   "feedback": 12,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 166,
+   "vibDelay": 12,
+   "modTrem": 95,
+   "carTrem": 0,
+   "tremWait": 128,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 81,
+   "midiVelocity": 80,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 2,
+   "modVol": 62,
+   "modAD": 241,
+   "modSR": 242,
+   "modWave": 1,
+   "carMisc": 15,
+   "carVol": 56,
+   "carAD": 248,
+   "carSR": 71,
+   "carWave": 0,
+   "feedback": 14,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 0,
+   "vibDelay": 0,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 170,
+   "midiVelocity": 80,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 2,
+   "modVol": 62,
+   "modAD": 241,
+   "modSR": 242,
+   "modWave": 1,
+   "carMisc": 47,
+   "carVol": 56,
+   "carAD": 247,
+   "carSR": 38,
+   "carWave": 0,
+   "feedback": 14,
+   "keyOff": 16,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 0,
+   "vibDelay": 0,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 174,
+   "midiVelocity": 82,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 0,
+   "modVol": 56,
+   "modAD": 242,
+   "modSR": 242,
+   "modWave": 0,
+   "carMisc": 0,
+   "carVol": 62,
+   "carAD": 246,
+   "carSR": 103,
+   "carWave": 0,
+   "feedback": 14,
+   "keyOff": 0,
+   "portamento": 10,
+   "glide": 128,
+   "fineTune": 0,
+   "vibrato": 0,
+   "vibDelay": 0,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 166,
+   "midiVelocity": 100,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 0,
+   "modVol": 63,
+   "modAD": 248,
+   "modSR": 248,
+   "modWave": 0,
+   "carMisc": 0,
+   "carVol": 63,
+   "carAD": 245,
+   "carSR": 245,
+   "carWave": 0,
+   "feedback": 6,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 32,
+   "vibrato": 0,
+   "vibDelay": 0,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 164,
+   "midiVelocity": 102,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 0,
+   "modVol": 54,
+   "modAD": 200,
+   "modSR": 20,
+   "modWave": 2,
+   "carMisc": 1,
+   "carVol": 63,
+   "carAD": 244,
+   "carSR": 245,
+   "carWave": 0,
+   "feedback": 2,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 163,
+   "vibDelay": 16,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    244,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 38,
+   "midiVelocity": 96,
+   "midiKey": 48,
+   "midiTranspose": 244,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 2,
+   "modVol": 42,
+   "modAD": 246,
+   "modSR": 50,
+   "modWave": 2,
+   "carMisc": 33,
+   "carVol": 61,
+   "carAD": 244,
+   "carSR": 246,
+   "carWave": 2,
+   "feedback": 6,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 150,
+   "vibDelay": 13,
+   "modTrem": 103,
+   "carTrem": 0,
+   "tremWait": 16,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 88,
+   "midiVelocity": 84,
+   "midiKey": 64,
+   "midiTranspose": 12,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  },
+  {
+   "modMisc": 0,
+   "modVol": 54,
+   "modAD": 200,
+   "modSR": 20,
+   "modWave": 2,
+   "carMisc": 1,
+   "carVol": 52,
+   "carAD": 244,
+   "carSR": 245,
+   "carWave": 0,
+   "feedback": 2,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 163,
+   "vibDelay": 16,
+   "modTrem": 0,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    244,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 38,
+   "midiVelocity": 60,
+   "midiKey": 48,
+   "midiTranspose": 244,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  }
+ ],
+ "orders": [
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 249,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 0
+   },
+   {
+    "pattern": 357,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 0
+   },
+   {
+    "pattern": 357,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 2
+   },
+   {
+    "pattern": 357,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 2
+   },
+   {
+    "pattern": 357,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 0
+   },
+   {
+    "pattern": 357,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 0
+   },
+   {
+    "pattern": 357,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 2
+   },
+   {
+    "pattern": 357,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 321,
+    "transpose": 2
+   },
+   {
+    "pattern": 357,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 2,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 189,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 249,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 418,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 289,
+    "transpose": 0
+   },
+   {
+    "pattern": 418,
+    "transpose": 0
+   },
+   {
+    "pattern": 18,
+    "transpose": 0
+   },
+   {
+    "pattern": 75,
+    "transpose": 0
+   },
+   {
+    "pattern": 132,
+    "transpose": 0
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 418,
+    "transpose": 2
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 273,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 0,
+    "transpose": 2
+   },
+   {
+    "pattern": 0,
+    "transpose": 2
+   },
+   {
+    "pattern": 289,
+    "transpose": 2
+   },
+   {
+    "pattern": 418,
+    "transpose": 2
+   },
+   {
+    "pattern": 18,
+    "transpose": 2
+   },
+   {
+    "pattern": 75,
+    "transpose": 2
+   },
+   {
+    "pattern": 132,
+    "transpose": 2
+   },
+   {
+    "pattern": 201,
+    "transpose": 0
+   },
+   {
+    "pattern": 394,
+    "transpose": 0
+   }
+  ]
+ ],
+ "patternWords": [
+  65027,
+  32830,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  16641,
+  0,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  16641,
+  0,
+  16641,
+  0,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  16641,
+  0,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  16641,
+  0,
+  16641,
+  32769,
+  64256,
+  16641,
+  0,
+  17153,
+  32769,
+  64256,
+  17153,
+  0,
+  17153,
+  0,
+  17153,
+  0,
+  17153,
+  0,
+  17153,
+  0,
+  17153,
+  0,
+  17153,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  17665,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  17665,
+  0,
+  17665,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  17665,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  17665,
+  0,
+  17665,
+  32769,
+  64256,
+  17665,
+  0,
+  18177,
+  32769,
+  64256,
+  18177,
+  0,
+  18177,
+  0,
+  18177,
+  0,
+  18177,
+  0,
+  18177,
+  0,
+  18177,
+  0,
+  18177,
+  0,
+  18945,
+  32769,
+  64256,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  32769,
+  64256,
+  18945,
+  0,
+  18945,
+  32769,
+  64256,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  32769,
+  64256,
+  18945,
+  0,
+  18945,
+  0,
+  18433,
+  32769,
+  64256,
+  18433,
+  0,
+  18433,
+  0,
+  18433,
+  32769,
+  64256,
+  18433,
+  0,
+  18945,
+  32769,
+  64256,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  0,
+  18945,
+  0,
+  18433,
+  0,
+  18433,
+  0,
+  9729,
+  32797,
+  33536,
+  10497,
+  32781,
+  33536,
+  11009,
+  32777,
+  64256,
+  9217,
+  32769,
+  64256,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  21506,
+  0,
+  21506,
+  0,
+  21507,
+  32770,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32774,
+  17152,
+  32770,
+  17152,
+  32770,
+  17152,
+  0,
+  17152,
+  0,
+  17152,
+  0,
+  17152,
+  0,
+  6149,
+  32774,
+  17668,
+  32774,
+  6149,
+  32774,
+  17668,
+  32774,
+  6149,
+  32774,
+  17668,
+  32774,
+  6149,
+  32774,
+  17668,
+  32774,
+  9734,
+  32770,
+  12806,
+  32770,
+  11526,
+  32770,
+  12294,
+  32770,
+  12806,
+  32770,
+  9734,
+  32770,
+  11014,
+  32770,
+  11526,
+  32770,
+  10502,
+  32770,
+  13574,
+  32770,
+  13318,
+  32770,
+  12294,
+  32770,
+  11014,
+  32770,
+  14086,
+  32770,
+  12806,
+  32770,
+  12294,
+  32770,
+  14599,
+  32770,
+  14087,
+  32770,
+  13575,
+  32770,
+  13319,
+  32770,
+  13575,
+  0,
+  14087,
+  0,
+  14599,
+  32770,
+  15879,
+  32770,
+  14599,
+  32770,
+  15367,
+  32770,
+  15879,
+  32770,
+  14599,
+  32770,
+  13575,
+  32770,
+  14087,
+  32770,
+  15879,
+  32770,
+  16391,
+  0,
+  15879,
+  0,
+  15367,
+  32770,
+  32769,
+  14599,
+  32770,
+  14087,
+  32770,
+  13575,
+  32770,
+  13319,
+  32770,
+  13575,
+  0,
+  14087,
+  0,
+  14599,
+  32770,
+  15879,
+  32770,
+  14599,
+  32770,
+  15367,
+  32770,
+  15879,
+  32770,
+  14599,
+  32770,
+  13575,
+  32770,
+  14087,
+  32770,
+  15879,
+  32770,
+  16391,
+  0,
+  15879,
+  0,
+  15367,
+  0,
+  6149,
+  32774,
+  6149,
+  32774,
+  6149,
+  32774,
+  6149,
+  32774,
+  6149,
+  32774,
+  6149,
+  32774,
+  6149,
+  32770,
+  6149,
+  32770,
+  6149,
+  0,
+  6149,
+  0,
+  6149,
+  0,
+  6149,
+  63744,
+  32769,
+  9736,
+  32770,
+  12808,
+  32770,
+  11528,
+  32770,
+  12296,
+  32770,
+  12808,
+  32770,
+  9736,
+  32770,
+  11016,
+  32770,
+  11528,
+  32770,
+  10504,
+  32770,
+  13576,
+  32770,
+  13320,
+  32770,
+  12296,
+  32770,
+  11016,
+  32770,
+  14088,
+  32770,
+  12808,
+  32770,
+  12296,
+  0
+ ]
+}

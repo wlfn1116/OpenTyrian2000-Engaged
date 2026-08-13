@@ -1,0 +1,17 @@
+{
+ "mapFileChar": "N",
+ "shapeFileChar": "W",
+ "shapeFile": "shapesw.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  660,
+  661
+ ],
+ "endOffset": 361706,
+ "episode": 4,
+ "levelFileNumber": 11,
+ "name": "?TUNNEL?",
+ "eventCount": 909
+}

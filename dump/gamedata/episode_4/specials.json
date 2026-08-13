@@ -1,0 +1,497 @@
+[
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 0,
+  "displayName": "None"
+ },
+ {
+  "name": "Repulsor                      ",
+  "itemGraphic": 271,
+  "power": 1,
+  "type": 2,
+  "weapon": 0,
+  "id": 1,
+  "displayName": "Repulsor"
+ },
+ {
+  "name": "Pearl Wind                    ",
+  "itemGraphic": 273,
+  "power": 10,
+  "type": 1,
+  "weapon": 620,
+  "id": 2,
+  "displayName": "Pearl Wind"
+ },
+ {
+  "name": "Soul of Zinglon               ",
+  "itemGraphic": 275,
+  "power": 50,
+  "type": 3,
+  "weapon": 0,
+  "id": 3,
+  "displayName": "Soul of Zinglon"
+ },
+ {
+  "name": "Attractor                     ",
+  "itemGraphic": 277,
+  "power": 2,
+  "type": 4,
+  "weapon": 0,
+  "id": 4,
+  "displayName": "Attractor"
+ },
+ {
+  "name": "Ice Beam                      ",
+  "itemGraphic": 121,
+  "power": 5,
+  "type": 1,
+  "weapon": 621,
+  "id": 5,
+  "displayName": "Ice Beam"
+ },
+ {
+  "name": "Flare                         ",
+  "itemGraphic": 123,
+  "power": 10,
+  "type": 5,
+  "weapon": 622,
+  "id": 6,
+  "displayName": "Flare"
+ },
+ {
+  "name": "Blade Field                   ",
+  "itemGraphic": 125,
+  "power": 20,
+  "type": 8,
+  "weapon": 623,
+  "id": 7,
+  "displayName": "Blade Field"
+ },
+ {
+  "name": "SandStorm                     ",
+  "itemGraphic": 125,
+  "power": 20,
+  "type": 6,
+  "weapon": 624,
+  "id": 8,
+  "displayName": "SandStorm"
+ },
+ {
+  "name": "MineField                     ",
+  "itemGraphic": 283,
+  "power": 104,
+  "type": 7,
+  "weapon": 29,
+  "id": 9,
+  "displayName": "MineField"
+ },
+ {
+  "name": "Dual Vulcan                   ",
+  "itemGraphic": 131,
+  "power": 20,
+  "type": 9,
+  "weapon": 658,
+  "id": 10,
+  "displayName": "Dual Vulcan"
+ },
+ {
+  "name": "Banana Bomb                   ",
+  "itemGraphic": 125,
+  "power": 20,
+  "type": 1,
+  "weapon": 525,
+  "id": 11,
+  "displayName": "Banana Bomb"
+ },
+ {
+  "name": "Protron Dispersal             ",
+  "itemGraphic": 125,
+  "power": 30,
+  "type": 10,
+  "weapon": 670,
+  "id": 12,
+  "displayName": "Protron Dispersal"
+ },
+ {
+  "name": "Astral Zone                   ",
+  "itemGraphic": 125,
+  "power": 2,
+  "type": 11,
+  "weapon": 672,
+  "id": 13,
+  "displayName": "Astral Zone"
+ },
+ {
+  "name": "Xega Ball                     ",
+  "itemGraphic": 127,
+  "power": 20,
+  "type": 1,
+  "weapon": 720,
+  "id": 14,
+  "displayName": "Xega Ball"
+ },
+ {
+  "name": "MegaLaser Dual                ",
+  "itemGraphic": 279,
+  "power": 20,
+  "type": 9,
+  "weapon": 751,
+  "id": 15,
+  "displayName": "MegaLaser Dual"
+ },
+ {
+  "name": "Orange Shield                 ",
+  "itemGraphic": 125,
+  "power": 80,
+  "type": 9,
+  "weapon": 749,
+  "id": 16,
+  "displayName": "Orange Shield"
+ },
+ {
+  "name": "Pulse Blast                   ",
+  "itemGraphic": 55,
+  "power": 2,
+  "type": 1,
+  "weapon": 753,
+  "id": 17,
+  "displayName": "Pulse Blast"
+ },
+ {
+  "name": "MegaLaser                     ",
+  "itemGraphic": 91,
+  "power": 100,
+  "type": 9,
+  "weapon": 754,
+  "id": 18,
+  "displayName": "MegaLaser"
+ },
+ {
+  "name": "Missile Pod                   ",
+  "itemGraphic": 125,
+  "power": 80,
+  "type": 9,
+  "weapon": 755,
+  "id": 19,
+  "displayName": "Missile Pod"
+ },
+ {
+  "name": "Minefield                     ",
+  "itemGraphic": 0,
+  "power": 104,
+  "type": 16,
+  "weapon": 710,
+  "id": 20,
+  "displayName": "Minefield"
+ },
+ {
+  "name": "Post-It Blast                 ",
+  "itemGraphic": 0,
+  "power": 105,
+  "type": 1,
+  "weapon": 708,
+  "id": 21,
+  "displayName": "Post-It Blast"
+ },
+ {
+  "name": "Drone **                      ",
+  "itemGraphic": 0,
+  "power": 103,
+  "type": 12,
+  "weapon": 0,
+  "id": 22,
+  "displayName": "Drone **"
+ },
+ {
+  "name": "Repair Player 1               ",
+  "itemGraphic": 0,
+  "power": 98,
+  "type": 14,
+  "weapon": 0,
+  "id": 23,
+  "displayName": "Repair Player 1"
+ },
+ {
+  "name": "Super Bomb                    ",
+  "itemGraphic": 0,
+  "power": 104,
+  "type": 5,
+  "weapon": 622,
+  "id": 24,
+  "displayName": "Super Bomb"
+ },
+ {
+  "name": "Hot Dog                       ",
+  "itemGraphic": 0,
+  "power": 101,
+  "type": 1,
+  "weapon": 711,
+  "id": 25,
+  "displayName": "Hot Dog"
+ },
+ {
+  "name": "Lightning UP                  ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 1,
+  "weapon": 721,
+  "id": 26,
+  "displayName": "Lightning UP"
+ },
+ {
+  "name": "Lightning UP+LEFT             ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 1,
+  "weapon": 722,
+  "id": 27,
+  "displayName": "Lightning UP+LEFT"
+ },
+ {
+  "name": "Lightning UP+RIGHT            ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 1,
+  "weapon": 723,
+  "id": 28,
+  "displayName": "Lightning UP+RIGHT"
+ },
+ {
+  "name": "Lightning LEFT                ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 1,
+  "weapon": 724,
+  "id": 29,
+  "displayName": "Lightning LEFT"
+ },
+ {
+  "name": "Lightning RIGHT               ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 1,
+  "weapon": 725,
+  "id": 30,
+  "displayName": "Lightning RIGHT"
+ },
+ {
+  "name": "MicroSol Option               ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 17,
+  "weapon": 19,
+  "id": 31,
+  "displayName": "MicroSol Option"
+ },
+ {
+  "name": "MicroSol Option2              ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 17,
+  "weapon": 26,
+  "id": 32,
+  "displayName": "MicroSol Option2"
+ },
+ {
+  "name": "MicroSol Option3              ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 17,
+  "weapon": 21,
+  "id": 33,
+  "displayName": "MicroSol Option3"
+ },
+ {
+  "name": "MicroSol Option4              ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 18,
+  "weapon": 22,
+  "id": 34,
+  "displayName": "MicroSol Option4"
+ },
+ {
+  "name": "MicroSol Option5              ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 18,
+  "weapon": 23,
+  "id": 35,
+  "displayName": "MicroSol Option5"
+ },
+ {
+  "name": "MicroSol Option6              ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 18,
+  "weapon": 25,
+  "id": 36,
+  "displayName": "MicroSol Option6"
+ },
+ {
+  "name": "Invulnerability               ",
+  "itemGraphic": 129,
+  "power": 98,
+  "type": 12,
+  "weapon": 0,
+  "id": 37,
+  "displayName": "Invulnerability"
+ },
+ {
+  "name": "Atom Bomb                     ",
+  "itemGraphic": 0,
+  "power": 102,
+  "type": 1,
+  "weapon": 19,
+  "id": 38,
+  "displayName": "Atom Bomb"
+ },
+ {
+  "name": "Seeker Bombs                  ",
+  "itemGraphic": 0,
+  "power": 103,
+  "type": 1,
+  "weapon": 709,
+  "id": 39,
+  "displayName": "Seeker Bombs"
+ },
+ {
+  "name": "Lightning Zone                ",
+  "itemGraphic": 93,
+  "power": 4,
+  "type": 9,
+  "weapon": 750,
+  "id": 40,
+  "displayName": "Lightning Zone"
+ },
+ {
+  "name": "SDF Main Gun                  ",
+  "itemGraphic": 125,
+  "power": 4,
+  "type": 9,
+  "weapon": 778,
+  "id": 41,
+  "displayName": "SDF Main Gun"
+ },
+ {
+  "name": "Ice Blast                     ",
+  "itemGraphic": 0,
+  "power": 4,
+  "type": 1,
+  "weapon": 706,
+  "id": 42,
+  "displayName": "Ice Blast"
+ },
+ {
+  "name": "Repair Player 1               ",
+  "itemGraphic": 0,
+  "power": 98,
+  "type": 13,
+  "weapon": 0,
+  "id": 43,
+  "displayName": "Repair Player 1"
+ },
+ {
+  "name": "Pearl Wind                    ",
+  "itemGraphic": 273,
+  "power": 10,
+  "type": 8,
+  "weapon": 620,
+  "id": 44,
+  "displayName": "Pearl Wind"
+ },
+ {
+  "name": "8-Way Microbomb               ",
+  "itemGraphic": 129,
+  "power": 10,
+  "type": 1,
+  "weapon": 29,
+  "id": 45,
+  "displayName": "8-Way Microbomb"
+ },
+ {
+  "name": "Protron Field                 ",
+  "itemGraphic": 0,
+  "power": 99,
+  "type": 1,
+  "weapon": 707,
+  "id": 46,
+  "displayName": "Protron Field"
+ },
+ {
+  "name": "Super Pretzel                 ",
+  "itemGraphic": 129,
+  "power": 10,
+  "type": 1,
+  "weapon": 1024,
+  "id": 47,
+  "displayName": "Super Pretzel"
+ },
+ {
+  "name": "Dragon Lightning              ",
+  "itemGraphic": 93,
+  "power": 150,
+  "type": 9,
+  "weapon": 1025,
+  "id": 48,
+  "displayName": "Dragon Lightning"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 49,
+  "displayName": "None"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 50,
+  "displayName": "None"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 51,
+  "displayName": "None"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 52,
+  "displayName": "None"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 53,
+  "displayName": "None"
+ },
+ {
+  "name": "None                          ",
+  "itemGraphic": 0,
+  "power": 0,
+  "type": 0,
+  "weapon": 0,
+  "id": 54,
+  "displayName": "None"
+ }
+]

@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "L",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  509
+ ],
+ "endOffset": 300869,
+ "episode": 4,
+ "levelFileNumber": 9,
+ "name": "LAVA EXIT",
+ "eventCount": 1447
+}

@@ -939,6 +939,49 @@ Dormant dispenser bases are enemy IDs 80 through 83. Piece 80 fires the eye shot
 and four-part bolt on frame 9. Endless activation comes from structural RNG and
 becomes permanent at `ENDLESS_DISPENSER_ALWAYS_ZONE`.
 
+## Data dump
+
+`tools/dump/dump_data.py` decodes every file in `data/` into `dump/`. That tree
+is tracked, so regenerating it after a data or reader change produces a real
+diff, and it carries the same content as `data/`, which is not tracked. Its
+readers mirror the loaders in `src/` and name them, so a format question can be
+checked against the code that runs. Update a reader whenever its loader changes.
+
+`dump/index.csv` has one row per data file: category, contents, the loader that
+reads it, the source files that mention it, and the folders the dump wrote. Use
+it to answer "where does this come from" without re-deriving offsets.
+
+`tools/dump/verify_dump.py` is the authority on whether the dump is correct.
+Each check either accounts for every byte of a source file or compares a decoder
+against the engine arithmetic it mirrors, so a passing run is evidence rather
+than an absence of noticed problems. Adding a reader means adding its check; an
+unchecked reader is unverified however plausible its output looks. Two defects
+reached the tree before it existed, both silent: a trailing empty record dropped
+from four script files, and icons that never converted because the handler only
+covered 4bpp. Checks 5 and 3 exist because of them.
+
+Two files decode against their format rather than their extension. `user1.shp`
+and `user2.shp` are not `Sprite_array` files: after a two-byte header they hold
+uncompressed 12x14 cells, and the game never reads them. Every shipped
+`shapes?.dat` carries 520 bytes past its 600th tile slot, which the game never
+reads either; `tiles.json` records the count.
+
+Three item and enemy tables ship, and they disagree. Episodes 1 to 3 read the
+set in `tyrian.hdt` at the offset its first int32 names; episodes 4 and 5 each
+read their own from the last offset in their `.lvl` file. `JE_applyEpDiffs`
+exists because of those differences, so compare the three `gamedata/` sets before
+assuming a value is global.
+
+The `tyrian.hdt` text groups are position-dependent: one wrong count desyncs the
+rest of the file. The dumper's group table is the same one `JE_loadHelpText`
+uses, and it checks that the text ends exactly at the item-data offset.
+
+Every encrypted record file dumps one record per line, each line terminated.
+Joining with newlines instead loses a trailing empty record, which `levels2.dat`,
+`levels4.dat`, `cubetxt1.dat` and `cubetxt2.dat` all end with. Re-encode a line
+as CP437 to recover its decrypted bytes; a reader drops exactly one empty entry
+from the end of a split.
+
 ## Tests
 
 The unit, replay, sanitizer, and two-peer suites are described in

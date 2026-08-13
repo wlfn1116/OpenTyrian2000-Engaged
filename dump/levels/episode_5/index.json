@@ -1,0 +1,70 @@
+{
+ "file": "tyrian5.lvl",
+ "levels": [
+  {
+   "levelFileNumber": 1,
+   "name": "SAVARA",
+   "folder": "01_savara",
+   "shapeFile": "shapesz.dat",
+   "events": 197,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 2,
+   "name": "AST ROCK",
+   "folder": "02_ast_rock",
+   "shapeFile": "shapesz.dat",
+   "events": 311,
+   "randomEnemies": 17
+  },
+  {
+   "levelFileNumber": 3,
+   "name": "STATION",
+   "folder": "03_station",
+   "shapeFile": "shapesx.dat",
+   "events": 1000,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 4,
+   "name": "SAVARA",
+   "folder": "04_savara",
+   "shapeFile": "shapesy.dat",
+   "events": 983,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 5,
+   "name": "ASTEROIDS",
+   "folder": "05_asteroids",
+   "shapeFile": "shapesz.dat",
+   "events": 514,
+   "randomEnemies": 10
+  },
+  {
+   "levelFileNumber": 6,
+   "name": "MINERS",
+   "folder": "06_miners",
+   "shapeFile": "shapesz.dat",
+   "events": 1442,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 7,
+   "name": "CORAL",
+   "folder": "07_coral",
+   "shapeFile": "shapesz.dat",
+   "events": 894,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 8,
+   "name": "FRUIT",
+   "folder": "08_fruit",
+   "shapeFile": "shapesy.dat",
+   "events": 845,
+   "randomEnemies": 7
+  }
+ ],
+ "note": "level names come from the ']L' records in levels5.dat"
+}

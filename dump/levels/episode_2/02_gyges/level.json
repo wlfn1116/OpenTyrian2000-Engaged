@@ -1,0 +1,19 @@
+{
+ "mapFileChar": "R",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  3,
+  5,
+  7
+ ],
+ "endOffset": 73267,
+ "episode": 2,
+ "levelFileNumber": 2,
+ "name": "GYGES",
+ "eventCount": 829
+}

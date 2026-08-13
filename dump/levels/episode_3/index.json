@@ -1,0 +1,102 @@
+{
+ "file": "tyrian3.lvl",
+ "levels": [
+  {
+   "levelFileNumber": 1,
+   "name": "CAMANIS",
+   "folder": "01_camanis",
+   "shapeFile": "shapesw.dat",
+   "events": 1236,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 2,
+   "name": "AST. CITY",
+   "folder": "02_ast_city",
+   "shapeFile": "shapesz.dat",
+   "events": 390,
+   "randomEnemies": 33
+  },
+  {
+   "levelFileNumber": 3,
+   "name": "GAUNTLET",
+   "folder": "03_gauntlet",
+   "shapeFile": "shapesz.dat",
+   "events": 1025,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 4,
+   "name": "IXMUCANE",
+   "folder": "04_ixmucane",
+   "shapeFile": "shapesw.dat",
+   "events": 902,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 5,
+   "name": "BONUS",
+   "folder": "05_bonus",
+   "shapeFile": "shapesz.dat",
+   "events": 786,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 6,
+   "name": "FLEET",
+   "folder": "06_fleet",
+   "shapeFile": "shapesw.dat",
+   "events": 2259,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 7,
+   "name": "STARGATE",
+   "folder": "07_stargate",
+   "shapeFile": "shapesz.dat",
+   "events": 672,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 8,
+   "name": "TYRIAN X",
+   "folder": "08_tyrian_x",
+   "shapeFile": "shapesz.dat",
+   "events": 1197,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 9,
+   "name": "SAWBLADES",
+   "folder": "09_sawblades",
+   "shapeFile": "shapesw.dat",
+   "events": 818,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 10,
+   "name": "SAVARA Y",
+   "folder": "10_savara_y",
+   "shapeFile": "shapesy.dat",
+   "events": 725,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 11,
+   "name": "New Deli",
+   "folder": "11_new_deli",
+   "shapeFile": "shapesz.dat",
+   "events": 656,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 12,
+   "name": "MACES",
+   "folder": "12_maces",
+   "shapeFile": "shapesz.dat",
+   "events": 710,
+   "randomEnemies": 7
+  }
+ ],
+ "note": "level names come from the ']L' records in levels3.dat"
+}

@@ -1,0 +1,184 @@
+**1 SECTION - LEVEL #1****This has not been encrypted in case of changes******
+]T[ 03 03 04 05 06
+]?[ 04 008 001 004 005
+]![ 03
+]G[ 04 1 04 002
+]I[
+ Ship   1 9
+ WeapF  2 45 41 7
+ WeapR  0 11 10 29
+ Power  1 5 2
+ Engine 2 1
+ Opt1   0 9 16 30
+ Opt2   0 9 20 30
+ Armor  1 2 3
+ Shield 1 2 3
+
+**2 SECTION - Episode 5 Level 1*********************************************
+]L[ 9999 009 ASTEROIDS35 05
+
+*03SECTION - Timed Battle 1
+]L[ 9999 008 STATION  38 03
+*04SECTION - Timed Battle 2
+]L[ 9999 008 SAVARA   33 04
+*05SECTION - Timed Battle 3
+]L[ 9999 008 SAVARA   01 01
+*06SECTION - Timed Battle 4
+]L[ 9999 008 SAVARA   01 01
+*07SECTION - Timed Battle 5
+]L[ 9999 008 SAVARA   01 01
+*08SECTION - Timed Battle End
+]q[
+
+*09 SECTION - Episode 5 Stage 2 - Selection*********************************
+]?[ 02 003 002
+]G[ 04 2 02 010  05 011
+]I[
+ Ship   3 14 2
+ WeapF  2 7 43
+ WeapR  0 30 12 15
+ Power  4 3
+ Engine 4
+ Opt1   0 16 31 30
+ Opt2   0 16 31 30
+ Armor  1 2 3
+ Shield 1 4
+
+*10 SECTION - Episode 5 Stage 2*********************************************
+]L[ 9999 012 AST ROCK 02 02
+
+*11 SECTION - Episode 5 Stage 2*********************************************
+]L[ 9999 012 MINERS   06 06
+
+*12 SECTION - Episode 5 Stage 3 - Selection*********************************
+]![ 01
+]?[ 01 011
+]G[ 04 2 08 013  06 014
+]I[
+ Ship   4 5 16
+ WeapF  8 13 17
+ WeapR  0 9 18 28
+ Power  5
+ Engine 2 3
+ Opt1   0 16 13 14
+ Opt2   0 20 13 14
+ Armor  1 2 3
+ Shield 2 3 5
+
+*13 SECTION - Episode 5 Stage 3*********************************************
+]L[ 9999 015 SAVARA   21 04
+
+*14 SECTION - Episode 5 Stage 3*********************************************
+]L[ 9999 020 CORAL    37 07
+
+*15 SECTION - Episode 5 Stage 4 - Selection*********************************
+]![ 02
+]?[ 01 009 006
+]G[ 08 1 09 016
+]I[
+ Ship   1 3 6
+ WeapF  1 2 27 42
+ WeapR  0 10 30 29
+ Power  1 2 3
+ Engine 1
+ Opt1   0 2 3 11
+ Opt2   0 2 3 11
+ Armor  1 2 3
+ Shield 4 6
+
+*16 SECTION - Episode 5 Stage 4*********************************************
+]L[ 9999 017 STATION  23 03
+
+*17 SECTION - Episode 5 Stage 5 - Selection*********************************
+]![ 01
+]?[ 01 010
+]G[ 09 1 13 018
+]I[
+ Ship   3 14 16
+ WeapF  3 13 7 41
+ WeapR  0 9 10
+ Power  3 4
+ Engine 1
+ Opt1   0 6 29
+ Opt2   0 6 29 22
+ Armor  1 2 3
+ Shield 3 8 11
+
+*18 SECTION - Episode 5 Stage 5*********************************************
+]L[ 9999 019 FRUIT    14 08
+
+*19 SECTION - Episode 5 Ending**********************************************
+]M 008[
+]P 005[
+]Wn 03[
+
+Related by your onetime friendship with Buce, you were
+sought out by his people, the Hazudra Collectors, and sent
+to destroy the Zinglonites.
+
+With none of their forces left and the deadly fruit weapons
+destroyed, the universe as a whole is silent once again.  No
+response ever comes of your inquiry to the state of the
+Hazudra or who sent you on this journey.  The secret haunts
+you in your sleep.
+
+Still a hero once again, as always...
+#
+]F[
+]P 014[
+]M 041[
+]Wn 03[
+Congratulations!
+#
+]F[
+]M 031[
+]P 005[
+]Q[
+#
+Did you know?
+Tyrian Purple is actually the name of an ancient purple
+dye?  Since they were obtained from vegetables and
+natural sources, dyes were difficult to obtain and
+Tyrian Purple disappeared around the 15th century.
+#
+Did you know?
+A Tyrian is the term for a person who lived in the
+city of Tyre.
+#
+Did you know?
+Ancient Tyre was a large Phonecian seaport from around
+2000BC up until the Romans came around.  It was
+located on the Mediterranean.
+#
+Did you know?
+Melqart was a Phoenician god and the chief deity of
+Tyre.  He was also called the Tyrian Baal and was
+equated with Nergal, god of the underworld and death.
+#
+Did you know?
+Shakespeare's Pericles was a prince of Tyre.
+#
+Did you know?
+Hiram, who appears in the Bible as David and Solomon's
+ally, was a king of Tyre from 969-936BC.
+#
+Did you know?
+Tyre was finally conquered by Alexander the Great in
+332BC.  After an eight month seige, Alexander drove a
+mole into the sea from the mainland to the island.
+Most of the Tyrians were sold into slavery.
+#
+Did you know?
+Tyre was the site of an artificial harbor built by
+the Phoneicians in the 13th century BC.
+#
+
+*20 SECTION
+]P 005[
+]Wy 01[
+Warning:
+Warning Beacon specifies level 5 automated resistance system.
+
+Unknown response to continued approach.
+#
+]J 015[

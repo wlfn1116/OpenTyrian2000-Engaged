@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "R",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  182
+ ],
+ "endOffset": 508894,
+ "episode": 4,
+ "levelFileNumber": 15,
+ "name": "BRAINIAC",
+ "eventCount": 1969
+}

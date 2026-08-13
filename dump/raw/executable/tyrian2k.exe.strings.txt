@@ -1,0 +1,7 @@
+file0001.exe
+-data 
+Error: Can't run 
+Press Enter to exit...4Error: Missing file SETUP.EXE.  Run HELPME for help.
+#$456789:;<=>?uU
+X[YZ^_]
+#$456789:;<=>?uRuntime error 

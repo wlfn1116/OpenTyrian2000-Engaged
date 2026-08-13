@@ -1,0 +1,193 @@
+{
+ "file": "tyrian.snd",
+ "format": "signed 8-bit mono, 11025 Hz",
+ "trimmedTailBytes": 0,
+ "samples": [
+  {
+   "index": 1,
+   "name": "SCALEDN2",
+   "bytes": 6134,
+   "seconds": 0.5564
+  },
+  {
+   "index": 2,
+   "name": "F2",
+   "bytes": 6813,
+   "seconds": 0.618
+  },
+  {
+   "index": 3,
+   "name": "TEMP10",
+   "bytes": 1676,
+   "seconds": 0.152
+  },
+  {
+   "index": 4,
+   "name": "EXPLSM",
+   "bytes": 5701,
+   "seconds": 0.5171
+  },
+  {
+   "index": 5,
+   "name": "PASS3",
+   "bytes": 9789,
+   "seconds": 0.8879
+  },
+  {
+   "index": 6,
+   "name": "TEMP2",
+   "bytes": 9886,
+   "seconds": 0.8967
+  },
+  {
+   "index": 7,
+   "name": "BYPASS1",
+   "bytes": 10261,
+   "seconds": 0.9307
+  },
+  {
+   "index": 8,
+   "name": "EXP1RT",
+   "bytes": 6743,
+   "seconds": 0.6116
+  },
+  {
+   "index": 9,
+   "name": "EXPLLOW",
+   "bytes": 5277,
+   "seconds": 0.4786
+  },
+  {
+   "index": 10,
+   "name": "TEMP13",
+   "bytes": 12333,
+   "seconds": 1.1186
+  },
+  {
+   "index": 11,
+   "name": "EXPRETAP",
+   "bytes": 14165,
+   "seconds": 1.2848
+  },
+  {
+   "index": 12,
+   "name": "MT2BOOM",
+   "bytes": 12544,
+   "seconds": 1.1378
+  },
+  {
+   "index": 13,
+   "name": "TEMP3",
+   "bytes": 7061,
+   "seconds": 0.6405
+  },
+  {
+   "index": 14,
+   "name": "LAZB",
+   "bytes": 27796,
+   "seconds": 2.5212
+  },
+  {
+   "index": 15,
+   "name": "LAZGUN2",
+   "bytes": 4353,
+   "seconds": 0.3948
+  },
+  {
+   "index": 16,
+   "name": "SPRING",
+   "bytes": 7745,
+   "seconds": 0.7025
+  },
+  {
+   "index": 17,
+   "name": "WARNING",
+   "bytes": 8421,
+   "seconds": 0.7638
+  },
+  {
+   "index": 18,
+   "name": "ITEM",
+   "bytes": 5500,
+   "seconds": 0.4989
+  },
+  {
+   "index": 19,
+   "name": "HIT2",
+   "bytes": 14660,
+   "seconds": 1.3297
+  },
+  {
+   "index": 20,
+   "name": "MACHNGUN",
+   "bytes": 9856,
+   "seconds": 0.894
+  },
+  {
+   "index": 21,
+   "name": "HYPERD2",
+   "bytes": 24975,
+   "seconds": 2.2653
+  },
+  {
+   "index": 22,
+   "name": "EXPLHUG",
+   "bytes": 16000,
+   "seconds": 1.4512
+  },
+  {
+   "index": 23,
+   "name": "CLINK1",
+   "bytes": 3145,
+   "seconds": 0.2853
+  },
+  {
+   "index": 24,
+   "name": "CLICK",
+   "bytes": 1745,
+   "seconds": 0.1583
+  },
+  {
+   "index": 25,
+   "name": "SCALEDN1",
+   "bytes": 3334,
+   "seconds": 0.3024
+  },
+  {
+   "index": 26,
+   "name": "TEMP11",
+   "bytes": 11006,
+   "seconds": 0.9983
+  },
+  {
+   "index": 27,
+   "name": "TEMP16",
+   "bytes": 5460,
+   "seconds": 0.4952
+  },
+  {
+   "index": 28,
+   "name": "SMALL1",
+   "bytes": 3014,
+   "seconds": 0.2734
+  },
+  {
+   "index": 29,
+   "name": "POWERUP",
+   "bytes": 9001,
+   "seconds": 0.8164
+  },
+  {
+   "index": 30,
+   "name": "MARS3",
+   "bytes": 4283,
+   "seconds": 0.3885
+  },
+  {
+   "index": 31,
+   "name": "NEEDLE2",
+   "bytes": 2886,
+   "seconds": 0.2618
+  }
+ ]
+}

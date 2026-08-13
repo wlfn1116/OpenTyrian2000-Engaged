@@ -1,0 +1,32 @@
+{
+ "mapFileChar": "C",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1079,
+  1080,
+  1081,
+  135,
+  136,
+  137,
+  284,
+  462,
+  1009,
+  1010,
+  1011,
+  1012,
+  1013,
+  1014,
+  1015,
+  1016,
+  590
+ ],
+ "endOffset": 50454,
+ "episode": 5,
+ "levelFileNumber": 2,
+ "name": "AST ROCK",
+ "eventCount": 311
+}

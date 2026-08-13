@@ -1,0 +1,17 @@
+{
+ "mapFileChar": "U",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  660,
+  661
+ ],
+ "endOffset": 473885,
+ "episode": 1,
+ "levelFileNumber": 16,
+ "name": "ASSASSIN",
+ "eventCount": 833
+}

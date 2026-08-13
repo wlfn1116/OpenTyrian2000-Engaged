@@ -1,0 +1,22 @@
+{
+ "mapFileChar": "F",
+ "shapeFileChar": "Y",
+ "shapeFile": "shapesy.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  502,
+  502,
+  502,
+  503,
+  503,
+  504,
+  510
+ ],
+ "endOffset": 247242,
+ "episode": 5,
+ "levelFileNumber": 8,
+ "name": "FRUIT",
+ "eventCount": 845
+}

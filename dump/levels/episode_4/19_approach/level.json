@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "Y",
+ "shapeFileChar": "Y",
+ "shapeFile": "shapesy.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  2
+ ],
+ "endOffset": 631664,
+ "episode": 4,
+ "levelFileNumber": 19,
+ "name": "APPROACH",
+ "eventCount": 1288
+}

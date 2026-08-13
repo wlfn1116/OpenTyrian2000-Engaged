@@ -22,3 +22,15 @@
 *.png   binary
 *.jpg   binary
 *.ico   binary
+
+# The tracked data dump (tools/dump/dump_data.py). Its decoded output is text,
+# but the files it copies verbatim are not, and neither are the audio it writes.
+*.wav   binary
+*.lds   binary
+*.exe   binary
+*.ovl   binary
+*.sf2   binary
+*.awe   binary
+*.pif   binary
+*.box   binary
+dump/raw/config/tyrian.cfg binary

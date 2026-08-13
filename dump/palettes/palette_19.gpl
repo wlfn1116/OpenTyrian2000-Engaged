@@ -1,0 +1,260 @@
+GIMP Palette
+Name: Tyrian 19
+Columns: 16
+#
+  0   0   0	index 0
+  0 255   0	index 1
+  0 255   0	index 2
+  0 255   0	index 3
+  0 255   0	index 4
+  0 255   0	index 5
+  0 255   0	index 6
+  0 255   0	index 7
+  0 255   0	index 8
+  0 255   0	index 9
+  0 255   0	index 10
+  0 255   0	index 11
+  0 255   0	index 12
+  0 255   0	index 13
+  0 255   0	index 14
+  0 255   0	index 15
+  0 255   0	index 16
+  0 255   0	index 17
+  0 255   0	index 18
+  0 255   0	index 19
+  0 255   0	index 20
+  0 255   0	index 21
+  0 255   0	index 22
+  0 255   0	index 23
+  0 255   0	index 24
+  0 255   0	index 25
+  0 255   0	index 26
+  0 255   0	index 27
+  0 255   0	index 28
+  0 255   0	index 29
+  0 255   0	index 30
+  0 255   0	index 31
+ 24   0   0	index 32
+ 40   0   0	index 33
+ 56   4   4	index 34
+ 73   8   8	index 35
+ 85  16  12	index 36
+101  24  20	index 37
+117  36  28	index 38
+134  48  36	index 39
+150  60  48	index 40
+162  73  60	index 41
+178  89  73	index 42
+195 109  89	index 43
+211 130 105	index 44
+227 154 121	index 45
+239 174 138	index 46
+255 203 158	index 47
+ 16   0   0	index 48
+ 36   0   0	index 49
+ 60   0   0	index 50
+ 81   0   0	index 51
+105   0   0	index 52
+130   0   0	index 53
+150   0   0	index 54
+162  16   4	index 55
+174  36   8	index 56
+186  60  16	index 57
+199  85  24	index 58
+207 109  32	index 59
+219 134  40	index 60
+227 166  52	index 61
+231 199  65	index 62
+239 227  77	index 63
+ 12   0   0	index 64
+ 28   0   0	index 65
+ 44   0   0	index 66
+ 60   0   0	index 67
+ 77   0   0	index 68
+ 93   0   0	index 69
+109   0   0	index 70
+125   0   0	index 71
+142   0   0	index 72
+158   4   0	index 73
+174   4   0	index 74
+190   4   0	index 75
+207   4   0	index 76
+223   8   0	index 77
+239   8   0	index 78
+255  12   0	index 79
+255  36   0	index 80
+255  65   0	index 81
+255  93   0	index 82
+255 121   0	index 83
+255 146   0	index 84
+255 174   0	index 85
+255 203   0	index 86
+255 231   0	index 87
+255 255   0	index 88
+255 255  81	index 89
+255 255 162	index 90
+255 255 247	index 91
+  0 255   0	index 92
+  0 255   0	index 93
+  0 255   0	index 94
+  0 255   0	index 95
+  0   0   0	index 96
+  4   0   4	index 97
+  8   0   8	index 98
+ 12   0  12	index 99
+ 20   0  20	index 100
+ 24   0  20	index 101
+ 24   0  24	index 102
+ 28   0  24	index 103
+ 28   4  28	index 104
+ 32   4  32	index 105
+ 36   4  32	index 106
+ 36   4  32	index 107
+ 40   8  36	index 108
+ 40   8  40	index 109
+ 44   8  40	index 110
+ 48  12  44	index 111
+ 48  12  44	index 112
+ 52  12  48	index 113
+ 52  16  48	index 114
+ 56  16  52	index 115
+ 60  20  52	index 116
+ 60  20  52	index 117
+ 65  24  56	index 118
+ 65  24  56	index 119
+ 69  28  60	index 120
+ 73  28  65	index 121
+ 73  32  65	index 122
+ 77  32  69	index 123
+ 81  36  73	index 124
+ 81  40  81	index 125
+ 85  40  85	index 126
+ 89  44  89	index 127
+ 89  44  93	index 128
+ 93  48  93	index 129
+ 93  52  97	index 130
+ 97  56 101	index 131
+ 97  56 105	index 132
+ 97  60 105	index 133
+101  65 109	index 134
+101  69 113	index 135
+105  73 117	index 136
+105  73 117	index 137
+109  77 121	index 138
+109  81 125	index 139
+109  85 130	index 140
+113  89 134	index 141
+113  93 138	index 142
+113  97 138	index 143
+117 101 142	index 144
+  0 255   0	index 145
+  0 255   0	index 146
+  0 255   0	index 147
+  0 255   0	index 148
+  0 255   0	index 149
+  0 255   0	index 150
+  0 255   0	index 151
+  0 255   0	index 152
+  0 255   0	index 153
+  0 255   0	index 154
+  0 255   0	index 155
+  0 255   0	index 156
+  0 255   0	index 157
+  0 255   0	index 158
+  0 255   0	index 159
+  0   0   0	index 160
+ 16   0   0	index 161
+ 32   0   0	index 162
+ 36   0   0	index 163
+ 44   0   0	index 164
+ 52   4   4	index 165
+ 56   4   4	index 166
+ 65   8   8	index 167
+ 73  16  12	index 168
+ 77  20  16	index 169
+ 85  24  20	index 170
+ 93  32  24	index 171
+101  40  28	index 172
+105  48  32	index 173
+113  56  40	index 174
+121  65  44	index 175
+130  77  52	index 176
+138  89  60	index 177
+150 101  69	index 178
+158 117  81	index 179
+166 130  89	index 180
+174 142 101	index 181
+186 158 113	index 182
+195 166 121	index 183
+203 182 134	index 184
+211 195 146	index 185
+219 207 158	index 186
+231 223 174	index 187
+239 235 186	index 188
+247 247 203	index 189
+255 255 219	index 190
+255 255 255	index 191
+  4   0   0	index 192
+ 12   4   0	index 193
+ 20   8   0	index 194
+ 24  12   0	index 195
+ 32  16   4	index 196
+ 36  20   4	index 197
+ 44  24   8	index 198
+ 52  28  12	index 199
+ 56  36  16	index 200
+ 65  40  20	index 201
+ 69  44  24	index 202
+ 77  52  32	index 203
+ 81  56  36	index 204
+ 89  65  44	index 205
+ 97  73  52	index 206
+101  81  56	index 207
+109  85  69	index 208
+117  93  77	index 209
+121 101  85	index 210
+130 109  93	index 211
+138 121 101	index 212
+146 130 109	index 213
+154 138 117	index 214
+162 146 125	index 215
+170 154 134	index 216
+178 166 142	index 217
+186 174 154	index 218
+195 182 162	index 219
+203 190 170	index 220
+211 203 178	index 221
+219 211 190	index 222
+227 223 190	index 223
+  0   0   0	index 224
+ 20   0  20	index 225
+ 44   0  44	index 226
+ 69   0  69	index 227
+ 93   4  93	index 228
+117   4 117	index 229
+146   4 146	index 230
+170   8 170	index 231
+178  20 178	index 232
+190  32 190	index 233
+203  48 203	index 234
+211  65 211	index 235
+223  81 223	index 236
+231 101 231	index 237
+243 121 243	index 238
+255 146 255	index 239
+  0   0   0	index 240
+ 20   0  20	index 241
+ 44   0  44	index 242
+ 69   0  69	index 243
+ 93   4  93	index 244
+117   4 117	index 245
+146   4 146	index 246
+170   8 170	index 247
+178  20 178	index 248
+190  32 190	index 249
+203  48 203	index 250
+211  65 211	index 251
+223  81 223	index 252
+231 101 231	index 253
+243 121 243	index 254
+255 146 255	index 255

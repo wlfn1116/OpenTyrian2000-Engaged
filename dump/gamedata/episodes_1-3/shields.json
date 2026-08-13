@@ -1,0 +1,110 @@
+[
+ {
+  "name": "None                          ",
+  "totalPower": 0,
+  "maxPower": 0,
+  "itemGraphic": 304,
+  "cost": 0,
+  "id": 0,
+  "displayName": "None"
+ },
+ {
+  "name": "Structural Integrity Field    ",
+  "totalPower": 5,
+  "maxPower": 2,
+  "itemGraphic": 129,
+  "cost": 100,
+  "id": 1,
+  "displayName": "Structural Integrity Field"
+ },
+ {
+  "name": "Advanced Integrity Field      ",
+  "totalPower": 3,
+  "maxPower": 3,
+  "itemGraphic": 131,
+  "cost": 250,
+  "id": 2,
+  "displayName": "Advanced Integrity Field"
+ },
+ {
+  "name": "Gencore Low Energy Shield     ",
+  "totalPower": 4,
+  "maxPower": 4,
+  "itemGraphic": 153,
+  "cost": 500,
+  "id": 3,
+  "displayName": "Gencore Low Energy Shield"
+ },
+ {
+  "name": "Gencore High Energy Shield    ",
+  "totalPower": 6,
+  "maxPower": 5,
+  "itemGraphic": 153,
+  "cost": 1000,
+  "id": 4,
+  "displayName": "Gencore High Energy Shield"
+ },
+ {
+  "name": "MicroCorp LXS Class A         ",
+  "totalPower": 8,
+  "maxPower": 6,
+  "itemGraphic": 155,
+  "cost": 2000,
+  "id": 5,
+  "displayName": "MicroCorp LXS Class A"
+ },
+ {
+  "name": "MicroCorp LXS Class B         ",
+  "totalPower": 6,
+  "maxPower": 7,
+  "itemGraphic": 157,
+  "cost": 4000,
+  "id": 6,
+  "displayName": "MicroCorp LXS Class B"
+ },
+ {
+  "name": "MicroCorp LXS Class C         ",
+  "totalPower": 5,
+  "maxPower": 9,
+  "itemGraphic": 159,
+  "cost": 5000,
+  "id": 7,
+  "displayName": "MicroCorp LXS Class C"
+ },
+ {
+  "name": "Gencore Solar Shield          ",
+  "totalPower": 2,
+  "maxPower": 7,
+  "itemGraphic": 165,
+  "cost": 10000,
+  "id": 8,
+  "displayName": "Gencore Solar Shield"
+ },
+ {
+  "name": "MicroCorp HXS Class A         ",
+  "totalPower": 9,
+  "maxPower": 10,
+  "itemGraphic": 161,
+  "cost": 12000,
+  "id": 9,
+  "displayName": "MicroCorp HXS Class A"
+ },
+ {
+  "name": "MicroCorp HXS Class B         ",
+  "totalPower": 7,
+  "maxPower": 12,
+  "itemGraphic": 163,
+  "cost": 20000,
+  "id": 10,
+  "displayName": "MicroCorp HXS Class B"
+ },
+ {
+  "name": "MicroCorp HXS Class C         ",
+  "totalPower": 6,
+  "maxPower": 14,
+  "itemGraphic": 165,
+  "cost": 25000,
+  "id": 11,
+  "displayName": "MicroCorp HXS Class C"
+ }
+]

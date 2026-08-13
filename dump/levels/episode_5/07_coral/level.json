@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "E",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1144
+ ],
+ "endOffset": 215553,
+ "episode": 5,
+ "levelFileNumber": 7,
+ "name": "CORAL",
+ "eventCount": 894
+}

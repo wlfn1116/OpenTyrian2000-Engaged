@@ -1,0 +1,28 @@
+{
+ "set": "episode_4",
+ "source": "tyrian4.lvl",
+ "offset": 663408,
+ "storedCounts": [
+  818,
+  60,
+  6,
+  18,
+  37,
+  11,
+  850
+ ],
+ "endOffset": 937226,
+ "bytesAfterLastTable": 77,
+ "bytesAfterLastTableNote": "77 bytes is one more enemy record, a duplicate of the last one with no graphics; the game stops before it",
+ "tableSizes": {
+  "weapons": "0..818 and 1000..1818",
+  "weaponPorts": 61,
+  "specials": 55,
+  "generators": 7,
+  "ships": 19,
+  "sidekicks": 38,
+  "shields": 12,
+  "enemies": "0..850 and 1001..1850"
+ },
+ "note": "field meanings are documented in doc/tyrian.hdt.txt"
+}

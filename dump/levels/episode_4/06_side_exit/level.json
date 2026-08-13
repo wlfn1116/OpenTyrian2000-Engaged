@@ -1,0 +1,23 @@
+{
+ "mapFileChar": "J",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  385,
+  385,
+  390,
+  391,
+  392,
+  393,
+  394,
+  395
+ ],
+ "endOffset": 194910,
+ "episode": 4,
+ "levelFileNumber": 6,
+ "name": "SIDE EXIT",
+ "eventCount": 641
+}

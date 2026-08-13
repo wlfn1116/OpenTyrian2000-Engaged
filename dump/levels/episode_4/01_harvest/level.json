@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "C",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  71
+ ],
+ "endOffset": 34747,
+ "episode": 4,
+ "levelFileNumber": 1,
+ "name": "HARVEST",
+ "eventCount": 1109
+}

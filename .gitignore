@@ -67,6 +67,7 @@ tyrian.sav
 /testing/data/
 /testing/out/
 /testing/__pycache__/
+/tools/dump/__pycache__/
 /testing/*.cfg
 /testing/*.dll
 /testing/*.exe

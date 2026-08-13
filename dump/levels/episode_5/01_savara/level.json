@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "1",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  182
+ ],
+ "endOffset": 24619,
+ "episode": 5,
+ "levelFileNumber": 1,
+ "name": "SAVARA",
+ "eventCount": 197
+}

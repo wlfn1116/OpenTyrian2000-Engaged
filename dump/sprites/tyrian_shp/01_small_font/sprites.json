@@ -1,0 +1,518 @@
+{
+ "title": "Small font",
+ "format": "Sprite_array",
+ "count": 85,
+ "palette": 0,
+ "sprites": [
+  {
+   "index": 0,
+   "width": 8,
+   "height": 10,
+   "bytes": 68
+  },
+  {
+   "index": 1,
+   "width": 8,
+   "height": 10,
+   "bytes": 75
+  },
+  {
+   "index": 2,
+   "width": 8,
+   "height": 10,
+   "bytes": 59
+  },
+  {
+   "index": 3,
+   "width": 8,
+   "height": 10,
+   "bytes": 73
+  },
+  {
+   "index": 4,
+   "width": 7,
+   "height": 10,
+   "bytes": 53
+  },
+  {
+   "index": 5,
+   "width": 7,
+   "height": 10,
+   "bytes": 42
+  },
+  {
+   "index": 6,
+   "width": 8,
+   "height": 10,
+   "bytes": 69
+  },
+  {
+   "index": 7,
+   "width": 7,
+   "height": 10,
+   "bytes": 62
+  },
+  {
+   "index": 8,
+   "width": 2,
+   "height": 10,
+   "bytes": 20
+  },
+  {
+   "index": 9,
+   "width": 7,
+   "height": 10,
+   "bytes": 51
+  },
+  {
+   "index": 10,
+   "width": 8,
+   "height": 10,
+   "bytes": 69
+  },
+  {
+   "index": 11,
+   "width": 7,
+   "height": 10,
+   "bytes": 38
+  },
+  {
+   "index": 12,
+   "width": 12,
+   "height": 10,
+   "bytes": 107
+  },
+  {
+   "index": 13,
+   "width": 8,
+   "height": 10,
+   "bytes": 70
+  },
+  {
+   "index": 14,
+   "width": 8,
+   "height": 10,
+   "bytes": 72
+  },
+  {
+   "index": 15,
+   "width": 8,
+   "height": 10,
+   "bytes": 58
+  },
+  {
+   "index": 16,
+   "width": 8,
+   "height": 10,
+   "bytes": 73
+  },
+  {
+   "index": 17,
+   "width": 8,
+   "height": 10,
+   "bytes": 73
+  },
+  {
+   "index": 18,
+   "width": 8,
+   "height": 10,
+   "bytes": 67
+  },
+  {
+   "index": 19,
+   "width": 8,
+   "height": 10,
+   "bytes": 56
+  },
+  {
+   "index": 20,
+   "width": 8,
+   "height": 10,
+   "bytes": 67
+  },
+  {
+   "index": 21,
+   "width": 8,
+   "height": 10,
+   "bytes": 68
+  },
+  {
+   "index": 22,
+   "width": 12,
+   "height": 10,
+   "bytes": 107
+  },
+  {
+   "index": 23,
+   "width": 9,
+   "height": 10,
+   "bytes": 74
+  },
+  {
+   "index": 24,
+   "width": 8,
+   "height": 10,
+   "bytes": 62
+  },
+  {
+   "index": 25,
+   "width": 7,
+   "height": 10,
+   "bytes": 59
+  },
+  {
+   "index": 26,
+   "width": 2,
+   "height": 10,
+   "bytes": 19
+  },
+  {
+   "index": 27,
+   "width": 7,
+   "height": 10,
+   "bytes": 56
+  },
+  {
+   "index": 28,
+   "width": 2,
+   "height": 10,
+   "bytes": 12
+  },
+  {
+   "index": 29,
+   "width": 2,
+   "height": 12,
+   "bytes": 16
+  },
+  {
+   "index": 30,
+   "width": 2,
+   "height": 12,
+   "bytes": 18
+  },
+  {
+   "index": 31,
+   "width": 2,
+   "height": 8,
+   "bytes": 12
+  },
+  {
+   "index": 32,
+   "width": 2,
+   "height": 4,
+   "bytes": 8
+  },
+  {
+   "index": 33,
+   "width": 5,
+   "height": 4,
+   "bytes": 20
+  },
+  {
+   "index": 34,
+   "width": 8,
+   "height": 10,
+   "bytes": 62
+  },
+  {
+   "index": 35,
+   "width": 8,
+   "height": 10,
+   "bytes": 65
+  },
+  {
+   "index": 36,
+   "width": 7,
+   "height": 10,
+   "bytes": 50
+  },
+  {
+   "index": 37,
+   "width": 8,
+   "height": 10,
+   "bytes": 69
+  },
+  {
+   "index": 38,
+   "width": 7,
+   "height": 10,
+   "bytes": 51
+  },
+  {
+   "index": 39,
+   "width": 7,
+   "height": 10,
+   "bytes": 49
+  },
+  {
+   "index": 40,
+   "width": 8,
+   "height": 13,
+   "bytes": 82
+  },
+  {
+   "index": 41,
+   "width": 8,
+   "height": 10,
+   "bytes": 61
+  },
+  {
+   "index": 42,
+   "width": 2,
+   "height": 10,
+   "bytes": 19
+  },
+  {
+   "index": 43,
+   "width": 7,
+   "height": 13,
+   "bytes": 58
+  },
+  {
+   "index": 44,
+   "width": 7,
+   "height": 10,
+   "bytes": 58
+  },
+  {
+   "index": 45,
+   "width": 3,
+   "height": 10,
+   "bytes": 30
+  },
+  {
+   "index": 46,
+   "width": 10,
+   "height": 10,
+   "bytes": 70
+  },
+  {
+   "index": 47,
+   "width": 8,
+   "height": 10,
+   "bytes": 57
+  },
+  {
+   "index": 48,
+   "width": 8,
+   "height": 10,
+   "bytes": 60
+  },
+  {
+   "index": 49,
+   "width": 8,
+   "height": 12,
+   "bytes": 66
+  },
+  {
+   "index": 50,
+   "width": 8,
+   "height": 12,
+   "bytes": 70
+  },
+  {
+   "index": 51,
+   "width": 7,
+   "height": 10,
+   "bytes": 41
+  },
+  {
+   "index": 52,
+   "width": 6,
+   "height": 10,
+   "bytes": 45
+  },
+  {
+   "index": 53,
+   "width": 6,
+   "height": 10,
+   "bytes": 52
+  },
+  {
+   "index": 54,
+   "width": 8,
+   "height": 10,
+   "bytes": 57
+  },
+  {
+   "index": 55,
+   "width": 7,
+   "height": 10,
+   "bytes": 51
+  },
+  {
+   "index": 56,
+   "width": 10,
+   "height": 10,
+   "bytes": 70
+  },
+  {
+   "index": 57,
+   "width": 7,
+   "height": 10,
+   "bytes": 54
+  },
+  {
+   "index": 58,
+   "width": 8,
+   "height": 13,
+   "bytes": 78
+  },
+  {
+   "index": 59,
+   "width": 7,
+   "height": 10,
+   "bytes": 52
+  },
+  {
+   "index": 60,
+   "width": 1,
+   "height": 3,
+   "bytes": 3
+  },
+  {
+   "index": 61,
+   "width": 8,
+   "height": 11,
+   "bytes": 79
+  },
+  {
+   "index": 62,
+   "width": 11,
+   "height": 10,
+   "bytes": 96
+  },
+  {
+   "index": 63,
+   "width": 2,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 64,
+   "width": 2,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 65,
+   "width": 1,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 66,
+   "width": 2,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 67,
+   "width": 1,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 68,
+   "width": 1,
+   "height": 3,
+   "bytes": 3
+  },
+  {
+   "index": 69,
+   "width": 2,
+   "height": 2,
+   "bytes": 2
+  },
+  {
+   "index": 70,
+   "width": 3,
+   "height": 10,
+   "bytes": 30
+  },
+  {
+   "index": 71,
+   "width": 7,
+   "height": 10,
+   "bytes": 61
+  },
+  {
+   "index": 72,
+   "width": 8,
+   "height": 10,
+   "bytes": 67
+  },
+  {
+   "index": 73,
+   "width": 9,
+   "height": 10,
+   "bytes": 73
+  },
+  {
+   "index": 74,
+   "width": 8,
+   "height": 10,
+   "bytes": 74
+  },
+  {
+   "index": 75,
+   "width": 8,
+   "height": 10,
+   "bytes": 66
+  },
+  {
+   "index": 76,
+   "width": 7,
+   "height": 10,
+   "bytes": 61
+  },
+  {
+   "index": 77,
+   "width": 8,
+   "height": 10,
+   "bytes": 79
+  },
+  {
+   "index": 78,
+   "width": 8,
+   "height": 10,
+   "bytes": 69
+  },
+  {
+   "index": 79,
+   "width": 8,
+   "height": 10,
+   "bytes": 72
+  },
+  {
+   "index": 80,
+   "width": 6,
+   "height": 10,
+   "bytes": 47
+  },
+  {
+   "index": 81,
+   "width": 2,
+   "height": 10,
+   "bytes": 19
+  },
+  {
+   "index": 82,
+   "width": 6,
+   "height": 10,
+   "bytes": 47
+  },
+  {
+   "index": 83,
+   "width": 7,
+   "height": 6,
+   "bytes": 18
+  },
+  {
+   "index": 84,
+   "width": 2,
+   "height": 2,
+   "bytes": 2
+  }
+ ]
+}

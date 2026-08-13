@@ -1,0 +1,35 @@
+{
+ "note": "input is a key bitmask plus a 16-bit hold count; bit order is up, down, left, right, fire, change fire, left sidekick, right sidekick",
+ "demos": [
+  {
+   "file": "demo.1",
+   "episode": 1,
+   "level": "TYRIAN",
+   "frames": 905
+  },
+  {
+   "file": "demo.2",
+   "episode": 1,
+   "level": "SAVARA",
+   "frames": 721
+  },
+  {
+   "file": "demo.3",
+   "episode": 1,
+   "level": "SOH JIN",
+   "frames": 648
+  },
+  {
+   "file": "demo.4",
+   "episode": 1,
+   "level": "MINES",
+   "frames": 223
+  },
+  {
+   "file": "demo.5",
+   "episode": 1,
+   "level": "DELIANI",
+   "frames": 364
+  }
+ ]
+}

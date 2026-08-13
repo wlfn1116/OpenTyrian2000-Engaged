@@ -1,0 +1,61 @@
+{
+ "file": "voicesc.snd",
+ "format": "signed 8-bit mono, 11025 Hz",
+ "trimmedTailBytes": 100,
+ "samples": [
+  {
+   "index": 1,
+   "name": "VOICE1",
+   "bytes": 23565,
+   "seconds": 2.1374
+  },
+  {
+   "index": 2,
+   "name": "VOICE2",
+   "bytes": 23526,
+   "seconds": 2.1339
+  },
+  {
+   "index": 3,
+   "name": "VOICE3",
+   "bytes": 24120,
+   "seconds": 2.1878
+  },
+  {
+   "index": 4,
+   "name": "VOICE4",
+   "bytes": 12557,
+   "seconds": 1.139
+  },
+  {
+   "index": 5,
+   "name": "VOICE5",
+   "bytes": 18584,
+   "seconds": 1.6856
+  },
+  {
+   "index": 6,
+   "name": "VOICE6",
+   "bytes": 21672,
+   "seconds": 1.9657
+  },
+  {
+   "index": 7,
+   "name": "VOICE7",
+   "bytes": 21082,
+   "seconds": 1.9122
+  },
+  {
+   "index": 8,
+   "name": "VOICE8",
+   "bytes": 12280,
+   "seconds": 1.1138
+  },
+  {
+   "index": 9,
+   "name": "VOICE9",
+   "bytes": 29951,
+   "seconds": 2.7166
+  }
+ ]
+}

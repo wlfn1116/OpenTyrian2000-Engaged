@@ -1,0 +1,247 @@
+{
+ "file": "cubetxt5.dat",
+ "cubes": [
+  {
+   "marker": "*01 14",
+   "faceSprite": 13,
+   "title": "HOLO NEWS - GD3 v123-02-48",
+   "header": "News",
+   "body": [
+    "This is Rob Neither with the daily news.",
+    "",
+    "~Zinglon~ ~Cultists~ ~Believed~ ~Behind~ ~Attacks~",
+    "",
+    "In a strange move, a group of cultists following the recently deceased",
+    "~Lord~ ~Zinglon~ have claimed responsibility for several food-related",
+    "bombings in the Savara system.",
+    "",
+    "The attacks seemed to be mainly situated upon a small moon storage facility",
+    "run by the eccentric ~Baker~ ~Bob~.  Apparently, a large quantity of pretzel",
+    "dough and high-speed ~Twister~ ~Bakers~ were stolen during the explosions.",
+    "",
+    "It is still unknown what the true purpose or cause of these bombings is, but",
+    "local authorities have set up a blockade around the planet."
+   ]
+  },
+  {
+   "marker": "*02 02",
+   "faceSprite": 1,
+   "title": "ARCHIVE DATA",
+   "header": "Data",
+   "body": [
+    "Reference: Torm Biology - Dragon",
+    "",
+    "Researchers on the jungle planet ~Torm~ made a breakthrough discovery on the",
+    "true nature of the wildlife referred to as dragons.",
+    "",
+    "Apparently, these lifeforms are not indigenous to the planet but actually",
+    "seeded themselves onto the world without assistance.  Long a difficult and",
+    "dangerous species to study, moreso due to the extreme aggressiveness of nesting",
+    "females, a link has been established to the genetic structure of Torm dragons",
+    "and similar species found on several other uncolonized worlds.",
+    "",
+    "To corroborate this fact, young dragons have a harder chitinous membrane around",
+    "their bodies which stay intact even in a dead vaccuum.  Food reserves are high",
+    "due to the large third stomach which holds undigested food.  Coupled with",
+    "their ability to live off of both oxygen and carbon dioxide and it's clearly",
+    "possible that they can exist in space and maneuver through shifting their",
+    "own mass in powerful wing vibrations.",
+    "",
+    "Later research funding has been low, however, but the remaining project",
+    "members hope to determine if there is some kind of migratory or exploratory",
+    "instinct in the dragon mind."
+   ]
+  },
+  {
+   "marker": "*03 01",
+   "faceSprite": 0,
+   "title": "DATACUBE DISPATCH 0497:SV-510",
+   "header": "News",
+   "body": [
+    "Report, L-line Agents, stream 60",
+    "",
+    "THE GREY BOOKS RETURN:",
+    "",
+    "Mysterious grey books filled with unknown material have surfaced in",
+    "an archaeological expedition to Savara led by well known scientist",
+    "~Graphim~ ~Arugo~.",
+    "",
+    "The books are encased in a medium grade durable material and are alien",
+    "in nature, although ~Graphim~ believes that they originated on a distant",
+    "planet named ~Earth~ mentioned in several folklore passages.",
+    "",
+    "Filled with graphite and lead compounds, the books seem to carry a clue",
+    "to unraveling the mystery behind ~Tyrian's~ unknown past.",
+    "The research team believes that the graphite compounds have a direct",
+    "connection to ~Tyrian's~ gravitron crust."
+   ]
+  },
+  {
+   "marker": "*04 01",
+   "faceSprite": 0,
+   "title": "DATACUBE DISPATCH 0499:CA-220",
+   "header": "News",
+   "body": [
+    "Report, L-line Agents, stream 2041",
+    "",
+    "TRENT HAWKINS MEMORIAL ERECTED",
+    "",
+    "Date: 100031iRev",
+    "",
+    "Today with the collaboration of the Deliani central committee and the ",
+    "Tyrian regional tribunal, a memorial statue was erected on Tyrian's",
+    "capital city of Fauchi's central complex pedestal. ",
+    "",
+    "The statue was erected to commemorate the heroic efforts of Trent",
+    "Hawkins, already a legend in the galaxy for his superhuman fighter",
+    "pilot skills and his single handed rescue of the system from the ",
+    "invading Vykromod fleet."
+   ]
+  },
+  {
+   "marker": "*05 01",
+   "faceSprite": 0,
+   "title": "DATACUBE DISPATCH 024484: ZI-11",
+   "header": "News",
+   "body": [
+    "The followers of Zinglon have announced that they have finally",
+    "settled their centuries old vendetta against the followers of ",
+    "Daizan, a less popular but still proactive radical group who",
+    "attended the militarist school of Chesapeake Academy, Fauchi",
+    "sector on Tyrian.",
+    "",
+    "The Academy, nestled in the forests of Severnai Park, has been",
+    "a religious teaching school for many distinguished literary",
+    "scholars on revealed religion, but recently has fallen into ",
+    "disrepute because of the actions of the Zinglon and Daizan cults.",
+    "The difficulties began when two students maliciously broke the",
+    "arm and leg of a Zinglon research student during a sports",
+    "tournament."
+   ]
+  },
+  {
+   "marker": "*06 02",
+   "faceSprite": 1,
+   "title": "DATACUBE DISPATCH 142: WZ-01",
+   "header": "Alert",
+   "body": [
+    "This is the emergency distress beacon at ~Station~ ~23~.  You are",
+    "advised to keep clear of the immediate area around ~Station~ ~23~.  An",
+    "unspecified state of alarm is in effect due to recent hostilities.  Anyone",
+    "entering this sector will be considered hostile and destroyed.",
+    "",
+    "Repeat: Anyone entering this sector will be considered hostile and destroyed.",
+    "",
+    "Thank you for your observence of this message."
+   ]
+  },
+  {
+   "marker": "*07 13",
+   "faceSprite": 12,
+   "title": "HAVE YOU SEEN PRETZEL PETE?",
+   "header": "Alert",
+   "body": [
+    "The dangerous criminal known as Pretzel Pete has stolen all of my pretzels!",
+    "",
+    "If you see him, proceed with caution, as the pretzels he's stolen have mutated",
+    "horribly under his evil machinations and are extremely dangerous!",
+    "",
+    "Please report any knowledge of him to the nearest authorities.",
+    "",
+    "The pretzel mania he has unleashed must be stopped!"
+   ]
+  },
+  {
+   "marker": "*08 17",
+   "faceSprite": 16,
+   "title": "Computer Recording",
+   "header": "Message",
+   "body": [
+    "We deeply regret having to take this action.  While the universe continued on without",
+    "you, we, part of the Hazudra whole, strapped a proximity bomb onto your ship and redirected",
+    "you with a subtle nudge towards a very hostile enemy asteroid system.",
+    "",
+    "Your cryo system will wake you at this point.  Once we detect your renewed",
+    "signal we'll instruct you further.",
+    "",
+    "Good wishes."
+   ]
+  },
+  {
+   "marker": "*09 18",
+   "faceSprite": 17,
+   "title": "INCOMING MESSAGE FROM ZINGLON : 00426 mark",
+   "header": "Zinglon",
+   "body": [
+    "Again you plague our path toward ultimate wisdom.  Again your cursed mind and stolen",
+    "starfighter technology return.",
+    "",
+    "You were thought to be destroyed in your battle with our god, ~Zinglon~.",
+    "However, I see that some twisted destiny permits you to live.",
+    "",
+    "I cannot."
+   ]
+  },
+  {
+   "marker": "*10 15",
+   "faceSprite": 14,
+   "title": "INCOMING MESSAGE FROM ZINGLON : 00471 mark",
+   "header": "Zinglon",
+   "body": [
+    "A glorious message from our ~god~ led us to this final path.  Some doubt us, but",
+    "we realized to fulfill ~Zinglon's~ wishes we must control the food supply to all.",
+    "Then twist it to his will.",
+    "",
+    "~His~ ire is absolute, and ~his~ hatred for you brims over and envelops your",
+    "future.",
+    "",
+    "Soon you shall behold the ~fruit~ of our glorious and divine leader."
+   ]
+  },
+  {
+   "marker": "*11 17",
+   "faceSprite": 16,
+   "title": "INCOMING MESSAGE FROM HAZUDRA : 92777 mark",
+   "header": "Collector",
+   "body": [
+    "Grand to see that you have emerged victorious from the asteroid fields.  It",
+    "was a most impressive display to see their ships explode from your assault.",
+    "",
+    "Again, we do apologize for setting you on this dangerous course, but there",
+    "really was no other way to stop the ~Zinglonites~.",
+    "",
+    "Yes, ~Zinglon~.  While there is no sign of him in any form, his essence lives",
+    "on in his followers.  It is certain that they are trying once again to",
+    "destroy everything.",
+    "",
+    "~Microsol~ is merely one front to their power, though decidedly weakened.  What",
+    "remains is a more sinister subterfuge.  For instance, already food supplies have",
+    "been reduced to little else but ~Gruel~.  We believe starvation is one part of their",
+    "plans.",
+    "",
+    "Either ~Savara~ or ~Camanis~ would be a good place to look first, as activity on",
+    "both worlds is very high right now.  Your ship will be allowed to travel to either,",
+    "of course, without fear of detonation.  If they notice your presence we",
+    "feel there is a good chance they will reveal themselves to you out of anger.",
+    "",
+    "And thank you, ~Trent~.  The ~Hazudra~ friend you had was once close to me as well.",
+    "I am sorry he could not be with you now, for a good friend would have made the",
+    "journey so much easier."
+   ]
+  },
+  {
+   "marker": "*07 02",
+   "faceSprite": 1,
+   "title": "[Todo]",
+   "header": "Captain's Log",
+   "body": []
+  },
+  {
+   "marker": "*",
+   "faceSprite": null,
+   "title": "",
+   "header": "",
+   "body": []
+  }
+ ]
+}

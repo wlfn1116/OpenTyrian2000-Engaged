@@ -1,0 +1,10 @@
+{
+ "title": "Ship written by the DOS ship editor",
+ "file": "user1.shp",
+ "format": "two-byte header, then uncompressed 12x14 cells",
+ "count": 164,
+ "palette": 0,
+ "header": "0100",
+ "trailingBytes": "82f3615e3c071201c73e6d178cbbd8e2f5e135cc9fed78412b100b1ac6386b1b89b8dee5f0e325dc8ff3735132081f0cc03c6f1c8cb4d0ebf2f636ce95ed7a45271c091adc25760898aacbe3e6f534cc9fec7c44201b0f17cb35661684bbd9e2f7e422db88fb7b5b380f1506c738791486badae1cf31790f",
+ "note": "the game never reads these files; palette index 0 is transparent"
+}

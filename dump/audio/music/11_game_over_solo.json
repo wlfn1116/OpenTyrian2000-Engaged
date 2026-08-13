@@ -1,0 +1,245 @@
+{
+ "mode": 2,
+ "speed": 17152,
+ "tempo": 8,
+ "patternLength": 64,
+ "channelDelay": [
+  0,
+  0,
+  0,
+  1,
+  1,
+  1,
+  2,
+  2,
+  2
+ ],
+ "regBD": 0,
+ "instruments": [
+  {
+   "modMisc": 65,
+   "modVol": 28,
+   "modAD": 240,
+   "modSR": 242,
+   "modWave": 0,
+   "carMisc": 1,
+   "carVol": 56,
+   "carAD": 80,
+   "carSR": 245,
+   "carWave": 2,
+   "feedback": 0,
+   "keyOff": 0,
+   "portamento": 0,
+   "glide": 0,
+   "fineTune": 0,
+   "vibrato": 130,
+   "vibDelay": 8,
+   "modTrem": 133,
+   "carTrem": 0,
+   "tremWait": 0,
+   "arpeggio": 0,
+   "arpTable": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "start": 0,
+   "size": 0,
+   "fms": 0,
+   "transpose": 0,
+   "midiInstrument": 49,
+   "midiVelocity": 112,
+   "midiKey": 0,
+   "midiTranspose": 0,
+   "midiUnused1": 0,
+   "midiUnused2": 0
+  }
+ ],
+ "orders": [
+  [
+   {
+    "pattern": 2,
+    "transpose": 0
+   },
+   {
+    "pattern": 14,
+    "transpose": 0
+   },
+   {
+    "pattern": 26,
+    "transpose": 0
+   },
+   {
+    "pattern": 26,
+    "transpose": 0
+   },
+   {
+    "pattern": 55,
+    "transpose": 0
+   },
+   {
+    "pattern": 85,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   }
+  ],
+  [
+   {
+    "pattern": 10,
+    "transpose": 0
+   },
+   {
+    "pattern": 22,
+    "transpose": 0
+   },
+   {
+    "pattern": 51,
+    "transpose": 0
+   },
+   {
+    "pattern": 51,
+    "transpose": 0
+   },
+   {
+    "pattern": 80,
+    "transpose": 0
+   },
+   {
+    "pattern": 93,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   },
+   {
+    "pattern": 0,
+    "transpose": 0
+   }
+  ]
+ ],
+ "patternWords": [
+  65032,
+  32830,
+  6656,
+  32782,
+  6144,
+  32782,
+  9216,
+  32782,
+  6144,
+  32782,
+  6656,
+  32782,
+  64256,
+  32814,
+  9728,
+  32782,
+  10240,
+  32782,
+  10496,
+  32782,
+  9216,
+  32782,
+  9728,
+  32782,
+  64256,
+  32814,
+  12800,
+  32769,
+  64256,
+  13568,
+  32769,
+  64256,
+  12288,
+  32769,
+  64256,
+  11520,
+  32769,
+  64256,
+  14592,
+  32779,
+  64256,
+  14080,
+  13568,
+  12288,
+  32779,
+  64256,
+  14592,
+  13568,
+  14080,
+  32781,
+  15360,
+  15872,
+  32782,
+  64256,
+  32814,
+  64256,
+  12800,
+  32769,
+  64256,
+  13568,
+  32769,
+  64256,
+  12288,
+  32769,
+  64256,
+  11520,
+  32769,
+  64256,
+  14592,
+  32779,
+  64256,
+  14080,
+  13568,
+  12288,
+  32779,
+  64256,
+  14592,
+  13568,
+  14080,
+  32781,
+  15360,
+  15872,
+  32781,
+  64256,
+  32814,
+  14592,
+  32782,
+  13312,
+  32782,
+  13568,
+  32782,
+  14080,
+  32782,
+  14592,
+  32782,
+  64256,
+  64512,
+  32813
+ ]
+}

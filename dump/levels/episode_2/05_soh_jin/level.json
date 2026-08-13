@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "H",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 161422,
+ "episode": 2,
+ "levelFileNumber": 5,
+ "name": "SOH JIN",
+ "eventCount": 1304
+}

@@ -1,0 +1,22 @@
+{
+ "mapFileChar": "Z",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  10,
+  11
+ ],
+ "endOffset": 442338,
+ "episode": 1,
+ "levelFileNumber": 15,
+ "name": "TYRIAN",
+ "eventCount": 1246
+}

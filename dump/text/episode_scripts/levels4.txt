@@ -1,0 +1,683 @@
+**1 SECTION - Before Level 1 - Gauntlet **************************************
+]?[ 04 004 005 015 016
+]![ 04
+]G[ 16 1 11 002
+]I[
+ Ship   1 9
+ WeapF  2 13 19 40
+ WeapR  0 10 14 18
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 8 19
+ Opt2   0 1 8 19
+ Armor  1 2 3
+ Shield 1 2 4
+
+**2 SECTION - Gauntlet        ************************************************
+]L[ 9999 003 SURFACE  38 04     >> Surface of Ixmucane
+
+**3
+]?[ 04 006 009 010 050
+]![ 04
+]G[ 11 1 11 004
+]I[
+ Ship   3 4 9
+ WeapF  3 7 19 27
+ WeapR  0 29 11 22
+ Power  2 3 4
+ Engine 1
+ Opt1   0 8 14 18
+ Opt2   0 8 14 18
+ Armor  1 2 3
+ Shield 3 5 6
+
+**4
+]L[ 9999 005 LAVA RUN 17 12     >> Lava 4
+
+**5
+]+[ 01
+]?[ 04 007 030 008 041
+]G[ 11 1 11 006
+]I[
+ Ship   3 4 5
+ WeapF  8 20 1
+ WeapR  0 12 29 30
+ Power  2 3 4 5
+ Engine 1
+ Opt1   0 3 7 21
+ Opt2   0 3 7 26
+ Armor  1 2 3
+ Shield 2 4 7
+
+**6
+]L[ 9999 034 CORE     23 05     >> Lava 1
+
+**7
+]s[
+]?[ 04 019 021 035 012
+]+[ 02
+]G[ 11 1 11 008
+]I[
+ Ship   
+ WeapF  
+ WeapR
+ Power  
+ Engine 
+ Opt1   17
+ Opt2   17 27
+ Armor  
+ Shield 
+
+**8
+]L[ 9999 032 ?TUNNEL? 06 11     >> Secret Tunnel
+
+**9       Tunnel Failure
+]s[
+]?[ 01 022
+]![ 01
+]G[ 11 1 11 010
+]I[
+ Ship   3 4 9
+ WeapF  1 8 27 40
+ WeapR  0 14 15 30
+ Power  1 2 3
+ Engine 1
+ Opt1   0 21 3 4
+ Opt2   0 21 3 4
+ Armor  1 2 3
+ Shield 1 2 3
+
+**10
+]L[ 9999 011 ICE EXIT 04 08     >> Exiting Ixmucane  (Ice)
+
+**11
+]?[ 04 024 025 026 011
+]+[ 03
+]G[ 11 1 10 012
+]I[
+ Ship   4 1 5
+ WeapF  3 2 19
+ WeapR  0 12 15 11
+ Power  2 3 4
+ Engine 1
+ Opt1   0 16 19
+ Opt2   0 16 19 23
+ Armor  1 2 3
+ Shield 4 5 6
+
+**12
+]L[ 9999 013 HARVEST  16 01     >> Return to Deliani (Harvest)
+
+**13
+]?[ 04 028 027 042 043
+]G[ 10 1 10 014
+]I[
+ Ship   6 4 3
+ WeapF  13 7 8
+ WeapR  0 14 30 12
+ Power  1 4 5
+ Engine 1
+ Opt1   0 8 10 2
+ Opt2   0 8 10 2
+ Armor  1 2 3
+ Shield 3 4 7
+
+**14
+]L[ 9999 046 UNDERDELI36 07     >> Return to Deliani (Tec)
+
+**15
+]?[ 02 062 063
+]![ 02
+]G[ 08 1 08 016
+]I[
+ Ship   1 7 3
+ WeapF  15 18 2
+ WeapR  0 29 10 9
+ Power  2 3 4
+ Engine 1
+ Opt1   0 6 19
+ Opt2   0 6 19 20
+ Armor  1 2 3
+ Shield 2 4 5
+
+**16
+]L[ 9999 017 SAVARA IV33 03     >> Return again to Savara
+
+**17
+]+[ 03
+]?[ 04 032 031 033 034
+]G[ 08 1 16 018
+]I[
+ Ship   3 4 5
+ WeapF  13 17 19
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 2 9
+ Opt2   0 1 2 9
+ Armor  1 2 3
+ Shield 4 7 8
+
+**18
+]L[ 9999 019 DREAD-NOT35 14     >> The "Fleet"
+
+**19
+]?[ 03 037 038 036
+]![ 03
+]G[ 16 1 09 020
+]I[
+ Ship   4 5 6
+ WeapF  3 1 19 40
+ WeapR  0 30 22 28
+ Power  3 4 5
+ Engine 1
+ Opt1   0 14 19 29
+ Opt2   0 14 21 25
+ Armor  1 2 3
+ Shield 5 6 9
+
+**20
+]L[ 9999 021 EYESPY   13 13     >> Giger Eye
+
+**21
+]?[ 03 039 040 046
+]![ 03
+]G[ 09 1 09 022
+]I[
+ Ship   4 5 7
+ WeapF  20 27 19 3
+ WeapR  0 28 29 30
+ Power  1 2 3
+ Engine
+ Opt1   0 4 14 21
+ Opt2   0 4 14 23
+ Armor
+ Shield 4 6 8
+
+**22
+]L[ 9999 023 BRAINIAC 38 15     >> Brainiac - Next to last level
+
+**23
+]M 034[
+]P 005[
+]Wn 03[
+
+
+                      The End
+#
+]M 030[
+]P 005[
+]Wn 03[
+Slipping deep into your Mega Soundchair, you sip down an
+insta-cocoa from your dispenser.  The whole universe is
+erupting in a fanfare of joy and hope.
+
+Still, one burning thought enters your mind:
+Why am I reading this?
+
+If only you could find a way out of this crazy universe and
+avoid the horrible, smiling face of Transon Lohk.
+#
+]P 005[
+]Wn 03[
+The universe has asked you to save them one too many times,
+and you've decided to hide out on Tyrian and reflect on
+your Hazudra friend who died way back in Episode 1.
+
+Dang.  Can't even remember his name now.
+#
+]M 022[
+]P 005[
+]Wn 03[
+
+
+
+                     ~BUT~ ~THEN!!!~
+#
+]2 024[
+]P 005[
+]Wn 03[
+Incoming message from...
+
+                      VYKROMOD!?
+                     
+#
+]J 024[
+
+**24
+]s[
+]?[ 04 047 048 049 052
+]![ 04
+]G[ 09 1 01 025
+]I[
+ Ship   5 6 7
+ WeapF  13 17 19
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 2 9
+ Opt2   0 1 2 9
+ Armor  1 2 3
+ Shield 2 4 5
+
+**25
+]L[ 9999 037 NOSE DRIP18 16     >> Nose Drip - The final boss.
+
+**26
+]?[ 04 055 056 057 058
+]![ 04
+]G[ 11 1 11 027
+]I[
+ Ship   1 9
+ WeapF  13 17 19
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 2 9
+ Opt2   0 1 2 9
+ Armor  1 2 3
+ Shield 2 4 5
+
+**27
+]L[ 9999 003 WINDY    01 02$$   >> Windy II - A harder maze  (Secret)
+
+**28
+]?[ 02 044 045
+]+[ 01
+]G[ 11 1 11 029
+]I[
+ Ship   3 4 5
+ WeapF  13 17 19
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 2 9
+ Opt2   0 1 2 9
+ Armor  1 2 3
+ Shield 2 4 5
+
+**29
+]L[ 9999 011 DESERTRUN02 10$$   >> Desert Run - Return to the surface (secret)
+
+**30
+]s[
+]?[ 02 017 51
+]![ 02
+]G[ 11 1 11 031
+]I[
+ Ship   9 3 4
+ WeapF  13 17 19
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 2 9
+ Opt2   0 1 2 9
+ Armor  1 2 3
+ Shield 2 4 5
+
+**31
+]L[ 9999 011 LAVA EXIT29 09     >> Lava III Exit
+
+**32 * Did you beat the tunnel boss?
+]2 033[
+]t 009[   Possible Text: You failed.
+]l 009[   Text: Goodie!
+]P 013[
+]Wn 13[
+You patch in your HoloComm to the Zica computer and transmit
+the access codes from your ship's computer.
+
+A few seconds later you are rewarded with a few chirps and a
+growing, low hum.  It will take a while to heat this planet
+back up, and you don't want to become an insta-freeze snack,
+so you race back to your waiting Mega Soundchair and blast
+off!
+#
+]F[
+]J 033[
+
+**33 * You beat the tunnel boss.
+]s[
+]?[ 02 023 020
+]![ 02
+]G[ 11 1 11 010
+]I[
+ Ship   13
+ WeapF
+ WeapR
+ Power
+ Engine
+ Opt1
+ Opt2   27
+ Armor
+ Shield
+
+** 34 * Did you beat the lava boss?
+]t 030[
+]J 035[   Text: You saved the planet.
+
+** 35 * Beat the lava boss - secret level - then on to ?Tunnel?
+]s[
+]?[ 01 018
+]![ 01
+]G[ 11 1 11 036
+]I[
+ Ship
+ WeapF
+ WeapR
+ Power
+ Engine
+ Opt1
+ Opt2   28
+ Armor
+ Shield
+
+** 36 * Beat the lava boss - secret level - then on to ?Tunnel?
+]L[ 9999 007 SIDE EXIT23 06     >> Lava 2
+
+** 37 * Check for Special Ship
+]P 005[
+]M 009[
+]Wn 03[
+
+Poor Vykromod.  I feel sorry for him now.  What a waste.
+
+Still, that should be the last of the war for now.  At least
+it better be.  Is there no way out of this war?
+
+I am...
+
+            alone.
+#
+]2 043[
+]w 038[
+]J 048[
+
+** 38 * Do you have the special ship?
+]P 005[
+]M 029[
+]Wn 03[
+All of a sudden, your prototype starship's computer springs
+to life!  The advanced sensor array has picked up a spatial
+disturbance far out in the distant planet Soh Jin.
+
+That mysterious planet has always been shrouded by the
+Microsol forces.  Only twice have you had the chance to near
+the planet.
+
+What new threat can this be?  Only one way to find out...
+#
+]J 039[
+
+** 39 * Do you have the special ship?
+]s[
+]b[ Save Backup
+]x[
+]?[ 03 061 053 054
+]![ 03
+]G[ 01 2 05 040  21 042
+]I[
+ Ship
+ WeapF  
+ WeapR  
+ Power  
+ Engine 
+ Opt1   
+ Opt2   
+ Armor
+ Shield 
+
+** 40 * Do you have the special ship?
+]e[ ENGAGE items
+]L[ 9999 041 TIME WAR 37 17     >> Time War
+
+** 41 * Special Ending
+]P 005[
+]M 037[
+]Wn 03[
+This is no work of Microsol!  Who could have built that
+incredible ship?  What has this planet done to my ship?
+
+Whatever it was, you have no time to ponder, for in front
+of you stands a giant purple stargate!
+
+Can it be... a way out?
+#
+]P 005[
+]Wn 03[
+With no effort to decide, you know you must enter the gate,
+for it may be the only way out.
+
+Your ships' engines screaming against the atmosphere of the
+planet, you plunge into the gateway.
+
+Just at the crucial moment you yell:
+#
+]F[
+]P 000[ Load TSHP2.PCX
+]Wn 03[
+NOT ZINGLON!!!
+#
+]J 043[
+
+** 42 * Normal Ending
+]P 005[
+]M 009[
+]Wn 03[
+The madness has stopped for now.
+
+Perhaps I will be given a chance to rest.
+
+Someday I may find my way out.
+
+
+Someday...
+#
+
+** 43 * Ending
+]M 008[
+]P 005[
+]Q[
+Secret Hint 4-1-1:
+
+SAVE IXMUCANE
+There are three possible outcomes to the saving of
+Ixmucane.  Only one will save the people on the
+planet.
+#
+Secret Hint 4-1-2:
+
+POWERUPS
+There are only two black powerups in all of Episode 4.
+Both are in the middle of the Harvest level.
+#
+Secret Hint 4-1-3:
+
+SECRET LEVEL : WINDY 2
+This secret level contains many ? boxes.  Each is worth
+thousands of points.
+#
+Secret Hint 4-2-1:
+
+?SECRET LEVELS?
+Only 2 warp balls exist in episode 4.  Most levels are
+found in other special ways.
+#
+Secret Hint 4-2-2:
+
+LAVA EXIT
+What happens when the boss stops?
+#
+Secret Hint 4-2-3:
+
+DESERT (FIRST LEVEL)
+Test of courage:
+
+Do not shoot ANY of the black ship formations in the
+beginning of the level, up to the first two arches.
+#
+Secret Hint 4-3-1:
+
+?TUNNEL?
+Test of courage:
+
+Don't kill the tunnel boss until the explosions stop.
+#
+Secret Hint 4-3-2:
+
+LORD OF GAME
+After GOD MODE is displayed, hold down L+O+R+D all at
+one time to revel a new challenge.
+#
+Secret Hint 4-3-3:
+
+SECRET TO EPISODE 4
+Find the 13th ship, the Stalker 21.126!
+#
+]J 001[
+
+** 44 * Do you have the special ship?
+]s[
+]b[ Save Backup
+]?[ 03 061 059 060
+]![ 03
+]G[ 01 2 05 045  21 042
+]x[
+]I[
+ Ship
+ WeapF  
+ WeapR  
+ Power  
+ Engine 
+ Opt1   
+ Opt2   
+ Armor
+ Shield 
+
+** 45 * Do you have the special ship?
+]e[ ENGAGE items
+]g[ GALAGA mode
+]L[ 9999 043 SQUADRON 37 18     >> Time War
+
+**46
+]+[ 02
+]?[ 03 029 062 013
+]G[ 10 1 08 047
+]I[
+ Ship   1 9 3
+ WeapF  2 7 3
+ WeapR  0 12 15 10
+ Power  1 2 3
+ Engine 1
+ Opt1   0 6 16 14
+ Opt2   0 6 16 14
+ Armor  1 2 3
+ Shield 1 2 3
+
+**47
+]L[ 9999 015 APPROACH 36 19     >> Savara 6
+
+**48 * Normal Ending
+]P 005[
+]M 040[
+]Wn 03[
+Now that I have won the war, I can return to Savara
+and receive a hero's welcome!  Millions of
+Holo-viewers will bow at my feet and bless the very
+channels I appear on.
+
+Sages will cross a thousand desert streams to be
+at my side.  Streams of small dwarves will dance the
+jig of a thousand hours at my celebration.  I could
+be made into anything.
+#
+]P 005[
+]Wn 03[
+But I don't want to be a hero.  I hate this life.
+
+Why, O me, do I strut upon this stage once more?
+
+That's it...
+
+   I won't go!
+#
+]P 005[
+]M 039[
+]Wn 03[
+Computer, lock in to a random galaxy at least 100
+years away!
+
+Earth?  Funny name for a planet.  Wonder if it's
+inhabited.
+
+Who cares?  I'll jump into cryofreeze and sit in
+stasis until we reach this... Earth.
+
+Nobody will EVER find me!
+#
+]P 005[
+]Wn 03[
+And so, space-pilot Trent Hawkins straps down in his
+little craft and sets the thermostat to CRYO.
+
+His ship streams off at maximum speed to his unknown
+destination.  For 101 years, he waits deep within
+his frozen ship.  The galaxy searches for his body
+but he is considered lost and given a hero's
+funeral.
+#
+]P 005[
+]Wn 03[
+Little do they know...
+
+You'll soon be on Earth, ready to slip unnoticed
+into whatever life lurks there.
+#
+]n[
+]P 005[
+]Wn 03[
+In stasis, it's best to keep the mind still active.
+
+Your computer has programmed an endless game to
+keep your mind active those 101 years.
+
+Instructions are located in the data cubes for your
+reference.
+
+And here it is...
+#
+]J 044[
+
+**49
+]![ 04
+]?[ 04 064 065 066 067
+]G[ 11 1 06 050
+]I[
+ Ship   9 3 4
+ WeapF  41 42 40
+ WeapR  0 14 15 22
+ Power  4 5 6
+ Engine 1
+ Opt1   0 16 29
+ Opt2   0 16 29 25
+ Armor  1 2 3
+ Shield 4 5 6
+
+**50
+]L[ 9999 051 ICESECRET35 20**   >> Secret Camanis research base
+
+**51   ICESECRET to HARVEST (sec 12)
+]+[ 03
+]?[ 04 024 025 026 011
+]G[ 06 1 10 012
+]I[
+ Ship   4 1 5
+ WeapF  3 2 19
+ WeapR  0 12 15 11
+ Power  2 3 4
+ Engine 1
+ Opt1   0 16 19
+ Opt2   0 16 19 23
+ Armor  1 2 3
+ Shield 4 5 6
+

@@ -1,0 +1,61 @@
+{
+ "file": "voices.snd",
+ "format": "signed 8-bit mono, 11025 Hz",
+ "trimmedTailBytes": 100,
+ "samples": [
+  {
+   "index": 1,
+   "name": "VOICE1",
+   "bytes": 18201,
+   "seconds": 1.6509
+  },
+  {
+   "index": 2,
+   "name": "VOICE2",
+   "bytes": 19939,
+   "seconds": 1.8085
+  },
+  {
+   "index": 3,
+   "name": "VOICE3",
+   "bytes": 14119,
+   "seconds": 1.2806
+  },
+  {
+   "index": 4,
+   "name": "VOICE4",
+   "bytes": 6445,
+   "seconds": 0.5846
+  },
+  {
+   "index": 5,
+   "name": "VOICE5",
+   "bytes": 13111,
+   "seconds": 1.1892
+  },
+  {
+   "index": 6,
+   "name": "VOICE6",
+   "bytes": 6587,
+   "seconds": 0.5975
+  },
+  {
+   "index": 7,
+   "name": "VOICE7",
+   "bytes": 19051,
+   "seconds": 1.728
+  },
+  {
+   "index": 8,
+   "name": "VOICE8",
+   "bytes": 11801,
+   "seconds": 1.0704
+  },
+  {
+   "index": 9,
+   "name": "VOICE9",
+   "bytes": 22575,
+   "seconds": 2.0476
+  }
+ ]
+}

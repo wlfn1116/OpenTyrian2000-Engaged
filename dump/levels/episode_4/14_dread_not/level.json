@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "H",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  517
+ ],
+ "endOffset": 464853,
+ "episode": 4,
+ "levelFileNumber": 14,
+ "name": "DREAD-NOT",
+ "eventCount": 1022
+}

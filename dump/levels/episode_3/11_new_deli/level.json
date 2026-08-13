@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "S",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 363734,
+ "episode": 3,
+ "levelFileNumber": 11,
+ "name": "New Deli",
+ "eventCount": 656
+}

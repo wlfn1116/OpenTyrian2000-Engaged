@@ -1,0 +1,8 @@
+{
+ "note": "episodes 1-3 share the tables in tyrian.hdt; episodes 4 and 5 each carry their own at the end of their .lvl file, and the three sets disagree on several items",
+ "sets": [
+  "episodes_1-3",
+  "episode_4",
+  "episode_5"
+ ]
+}

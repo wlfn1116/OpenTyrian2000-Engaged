@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "G",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  163
+ ],
+ "endOffset": 135587,
+ "episode": 4,
+ "levelFileNumber": 4,
+ "name": "SURFACE",
+ "eventCount": 904
+}

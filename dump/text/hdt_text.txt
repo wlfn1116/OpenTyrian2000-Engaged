@@ -1,0 +1,680 @@
+tyrian.hdt interface text
+item data offset: 21174, text ends at 21174
+
+[helpText]  ** Section 1 - Online Help - 255 chars max
+  0: ~Start Level~  Select the next level to play (usually there is only one selection).
+  1: ~DATA~  Here you read the datacubes you collect during some levels.  Some cubes have certain... hints.  Be sure to read them!  Select DONE when you are finished reading your cubes.
+  2: ~Player Input~  Select the input device you want to use by pushing left or right.  Tyrian will not allow both players to use the same input device.
+  3: -nogood-
+  4: ~Upgrade Ship~  You can configure many aspects of your ship.  Upgrade points for your ship are gained by shooting enemies and collecting various items.
+  5: ~Purchasing~  Use the up/down arrow keys to select the item you want to view.  When you purchase the item, a bar will move to show the item you have purchased.  You may then exit the menu using done or ESC.
+  6: The amount of money you will have available after purchasing the item selected is shown at the bottom.  Items that are darkened out cost more than you can afford and you will be unable to select them.
+  7: ~Ship Type~  Each ship has a different armor rating.  Armor is your last line of protection from enemy attack and is not easily repaired in the middile of combat.
+  8: ~Front Gun~/~Rear Gun~  Your ship can carry both a front and rear gun.  You can change your weapons or upgrade them from here.
+  9: To ~upgrade~ or ~downgrade~ your existing gun, use the right and left arrow keys or click on the red arrows below your ship.  The bars in the center show you what power level your weapons are at.
+ 10: The red arrows and cost displays indicate when you can upgrade or downgrade your weapons.  If the right arrow is darkened or the cost is displayed in red, you cannot upgrade further.
+ 11: -nogood-
+ 12: Be sure to watch the power bar to see how quickly your energy level will drop while firing.
+ 13: ~Shield~  Your ship is protected by a shield, which you upgrade in the same manner as your ship. Just select the shield you like with the up/down arrow keys, and buy it by pressing the "enter" key or the space bar.
+ 14: ~Generator~  You need power to fly that ship you're in. Your generator is the most important part of your ship. It determines how many shots you can fire at a time as well as how fast your shield recharges.
+ 15: Buy a better generator and you'll have a much better edge. Select your option in the same manner as the other items.
+ 16: ~Sidekicks~  You can have both a left and right sidekick.  These are special weapons that fly alongside your ship.
+ 17: They range from just a simple cannon to the awesome "Atom" bomb. Some are much more powerful than others.  Many have limited ammo, but they will recharge slowly during a level!
+ 18: -nogood-
+ 19: ~Done~  This selection allows you to return to the Main Menu. Click on it when you're ready to fly!
+ 20: ~Options Menu~  From this menu you may configure your joystick or keyboard, and load and save your games.
+ 21: ~Save Game~  The game you have in progress is automatically saved when you finish the level. So if you forget to save your game, just load "Last Level" and the last level you played will be loaded.
+ 22: To save a game select "save game" from the Options menu, find an empty slot, press the Enter key or spacebar, and enter the name of your choice.
+ 23: ~Load Game~  To load a game, follow the same procedure except all you need to do is highlight the name of the game you wish to load and press Enter or hit the spacebar.
+ 24: ~Keyboard~  To configure your keyboard select "Keyboard" from the Options menu. Then, hit the key you wish to use for the function that is highlighted (example: when "up" is highlighted, hit the up arrow on your numeric keypad).
+ 25: ~Joystick~  To configure your joystick, simply select "Joystick" from the Options menu and follow the on-screen instructions.
+ 26: ~Volume~  You may also change the volume of the music or the sound in the game by highlighting either "Music" or "Sound" in the Options menu and using the left and right arrow keys to change the volume.
+ 27: ~Quit Game~  Select this to quit your game.  You will be returned to the title screen.  Use Alt-X for a quick way to quit the game.
+ 28: To exit the game from the title screen simply select "Quit Game" again and press Enter or the spacebar.
+ 29: Select Ordering Info from Main Menu to find out how to order.
+ 30: ~Power Bar~■ Current power available.  Your weapons and shields draw power from here.
+ 31: ~Weapons~■ The two bars show your weapon power for both front and rear weapons.
+ 32: ~Weapon Mode~■ Some rear weapons can have their firing pattern changed with the keyboard command ~change fire~ or a joystick button assigned to ~Change rear weapon~.
+ 33: ~Sidekicks~■ You can have up to two side weapons, usually fired with separate buttons.  The number of shots left are shown under the weapon name.
+ 34: ~Shield/Armor~■ These bars show how much damage you can take.  Shields will recharge with time from your ~power bar~ and a repair ship may appear if your armor is low - shoot it!
+ 35: ~Side-Panel~  Top: Player 1    Bottom: Player 2
+ 36: ~Weapon Power~■ This shows the level of power for each player's main weapon.
+ 37: ~Linking~■ Move both ships together to combine them.  Player 1 disengages by holding down a sidekick firing button and moving up.  Player 2 disengages by moving without firing the main gun.
+ 38: ~Rotation Cannon~■ Player 2 can aim the cannon by holding down the fire button and moving in any direction.
+
+[planetNames]  ** Section 3 - Planet Names - 15 chars max
+  0: Tyrian
+  1: Asteroid 1
+  2: Asteroid 2
+  3: Asteroid 3
+  4: Soh Jin
+  5: Camanis
+  6: Gryphon
+  7: Savara
+  8: Gyges
+  9: Deliani
+ 10: Ixmucane
+ 11: Torm
+ 12: Unknown
+ 13: Unknown
+ 14: Bonus
+ 15: Fleet
+ 16: Botany A
+ 17: Botany B
+ 18: AstCity
+ 19: Gauntlet
+ 20: Skip It
+
+[miscText]  ** Section 4 - Misc text - 50 chars max
+  0: Last Level Completed
+  1: ~Save name:  ~
+  2: EMPTY SLOT
+  3: Cubes collected:
+  4: Press a key
+  5: Exit to Game Menu
+  6: Press C to recalibrate
+  7: INSERT COIN
+  8: Joystick recalibrated
+  9: OK
+ 10: CANCEL
+ 11: Read:
+ 12: EXIT
+ 13: DONE
+ 14: None
+ 15: No Data is available at this time.
+ 16: Warping to secret level!
+ 17: SOUND OFF
+ 18: SOUND ON
+ 19: NEW GAME
+ 20: Good luck...
+ 21: GAME OVER
+ 22: PAUSED
+ 23: Enter your beta password:
+ 24: PART
+ 25: Page
+ 26: Completed:
+ 27: Current Score:
+ 28: Are you sure you want to exit?
+ 29: You will quit this level.
+ 30: You will be returned to the main menu.
+ 31: Use arrow keys to select and press Enter.
+ 32: Press the key to use for this function.
+ 33: Exit to Main Menu
+ 34: Beta Test Version
+ 35: MUSIC OFF
+ 36: MUSIC ON
+ 37: Your total Score:
+ 38: One Player Saved Games
+ 39: Two Player Saved Games
+ 40: Player 1 Score:
+ 41: Player 2 Score:
+ 42: Player 1 got
+ 43: Player 2 got
+ 44: Front Weapon Power-Up
+ 45: Rear Weapon Power-Up
+ 46: One Player
+ 47: Two Player
+ 48: Player 1
+ 49: Player 2
+ 50: High Scores
+ 51: Congratulations!
+ 52: You have earned a high score!
+ 53: Enter your name:
+ 54: Levels in Episode  1:17  2:12  3:12  4:20
+ 55: ~Left~ or ~right~ for 1 or 2 player game.
+ 56: ~Left~ or ~right~ to select episode.
+ 57: Player 1 has earned a high score!
+ 58: Player 2 has earned a high score!
+ 59: Secret Level!
+ 60: * Game Saved *
+ 61: Exiting:
+ 62: Destruction:
+ 63: You got the
+ 64: Press F1 for help.
+ 65: F10 toggles left CPU/Human player.
+ 66: TIME REMAINING
+ 67: >> Bonus Game <<
+ 68: Are you sure you want to save?
+ 69: Original save:
+ 70: [/] Rear Weapon Mode
+ 71: Type Engage or
+
+[miscTextB]  ** Section 5 - LittleMiscText - 12 chars max
+  0: Ep
+  1: Episode
+  2: Last Level
+  3: got
+  4: SUPER
+  5: POWER:
+  6: Time Bonus
+  7: Lives Bonus
+
+[keyNames]  ** Section 6 - Key names - 16 chars max
+  0: KEY CONFIG
+  1: UP
+  2: DOWN
+  3: LEFT
+  4: RIGHT
+  5: FIRE
+  6: CHANGE FIRE
+  7: LEFT SIDEKICK
+  8: RIGHT SIDEKICK
+  9: Reset to Defaults
+ 10: Done
+
+[menuText]  ** Section 7 - Main Menu selections - 20 chars max
+  0: Start New Game
+  1: Load Game
+  2: High Scores
+  3: Instructions
+  4: Demo
+  5: Quit
+  6: ---Ordering Info Before Demo
+
+[eventText]  ** Section 8 - Event text output - 30 chars max
+  0: Enemy approaching from behind.
+  1: Large mass detected ahead!
+  2: Intercepting enemy aircraft.
+  3: Cleared enemy platforms.
+  4: Approaching enemy platforms...
+  5: ~WARNING:~ Spikes ahead!!
+  6: Afterburners activated!
+  7: ** Danger! **
+  8: >>> Bonus Level <<<
+
+[helpTopics]  ** Section 9 - Help topics - 20 chars max
+  0: Help Menu
+  1: One-Player Game Menu
+  2: Two-Player Game Menu
+  3: Upgrade Ship
+  4: Options
+  5: EXIT HELP
+
+[mainMenuHelp]  ** Section 10 - Interface Icons & Other Mini-Help Text - 65 chars max
+  0: Communications : Read incoming messages
+  1: Purchase new weapons and ship components.
+  2: Configuration and Load/Save game
+  3: Journey onward to another level.
+  4: Quit the game.
+  5: Each ship has a different armor rating.
+  6: Change and upgrade your forward weapon.
+  7: Change and upgrade your rear/side weapon.
+  8: Shields are your first line of defense.
+  9: Generators power your weapons and shields.
+ 10: Take a chance : Purchase a special weapon.
+ 11: Return to the previous menu.
+ 12: Load a saved game.  (Shortcut is ALT-L)
+ 13: Save your game for later.  (Shortcut is ALT-S)
+ 14: Change volume with the left/right arrow keys.
+ 15: Configure your Joystick buttons.
+ 16: Change the keys used to play the game.
+ 17: Select this location to visit next.
+ 18: Select the item you want.
+ 19: Press ENTER to change this key.
+ 20: Press up or down to select the save slot you want.
+ 21: Press up or down to select the cube you want to read.
+ 22: Press ESC to exit.
+ 23: Select a weapon.  Left/right arrow keys to change power level.
+ 24: Reset all key selections to the original settings.
+ 25: Continue playing the level.
+ 26: Quit playing the level.
+ 27: Change detail level with the left/right arrow keys.
+ 28: Change game speed with the left/right arrow keys.
+ 29: Use the arrow keys to select the interface device to use.
+ 30: Change the function with the left/right arrow keys.
+ 31: Select this if the position mark is not in the center rectangle.
+ 32: Leave the joystick in the center position and push a button.
+ 33: Access schematics and detailed info on your ship.
+ 34: Configure your mouse buttons.
+ 35: Reset all buttons selections to the original settings.
+ 36: Configuration settings.
+
+[menu1_main]  ** Section 11 - Interface Menu 1 selections - 13 chars max
+  0: Game Menu
+  1: Data
+  2: Ship Specs
+  3: Upgrade Ship
+  4: Options
+  5: Start Level
+  6: Quit Game
+
+[menu2_items]  ** Section 12 - Interface Menu 2 selections - 13 chars max
+  0: Upgrade Ship
+  1: Ship Type
+  2: Front Gun
+  3: Rear Gun
+  4: Shield
+  5: Generator
+  6: Left Sidekick
+  7: Right Sidekick
+  8: Done
+
+[menu3_options]  ** Section 13 - Interface Menu 3 selections - 13 chars max
+  0: Options
+  1: Load
+  2: Save
+  3: Music
+  4: Sound
+  5: Joystick
+  6: Keyboard
+  7: Mouse
+  8: Done
+
+[inGameMenu]  ** Section 14 - InGame Menu selections - 20 chars max
+  0: Music Volume
+  1: Sound Volume
+  2: Detail Level
+  3: Game Speed
+  4: Return to Game
+  5: Quit Level
+
+[detailLevel]  ** Section 15 - Detail level descriptions - 12 chars max
+  0: Low
+  1: Normal
+  2: High
+  3: Pentium
+  4: Laptop VGA
+  5: Wild
+
+[gameSpeed]  ** Section 17 - Speed descriptions - 12 chars max
+  0: Slug Mode
+  1: Slower
+  2: Slow
+  3: Normal
+  4: Turbo
+
+[episodeNames]  ** Section 16 - Episode Names - 30 chars max
+  0: Select an Episode
+  1: Episode 1: Escape
+  2: Episode 2: Treachery 
+  3: Episode 3: Mission: Suicide
+  4: Episode 4: An End to Fate
+  5: Episode 5: Hazudra Fodder
+
+[difficultyNames]  ** Section 17 - Difficulty Levels - 20 chars max
+  0: Difficulty Level
+  1: Easy
+  2: Normal
+  3: Hard
+  4: Impossible
+  5: Suicide
+  6: Lord of Game
+
+[gameplayNames]  ** Section 18 - PlayerNames - 25 chars max
+  0: Players
+  1: 1 Player Full Game
+  2: 1 Player Arcade
+  3: 1 Player Timed Battle
+  4: 2 Player Arcade
+  5: Modem/Network Game
+
+[menu10_twoPlayerMain]  ** Section 19 - Interface Menu 10 selections - 13 chars max
+  0: Game Menu
+  1: Start Level
+  2: Player 1 Input
+  3: Player 2 Input
+  4: Options
+  5: Quit Game
+
+[inputDevices]  ** Section 20 - Interface Devices - 12 chars max
+  0: Keyboard
+  1: Mouse
+  2: Joystick
+
+[networkText]  ** Section 21 - Network Text      - 32 chars max
+  0: has aborted
+  1: a practice game.
+  2: a two-player game.
+  3: Waiting for player 1.
+  4: Other player stopped responding.
+
+[menu11_twoPlayerNetwork]  ** Section 22 - Interface Menu 11 selections - 17 chars max
+  0: Game Menu
+  1: Start Level
+  2: Options
+  3: Quit Game
+
+[highScoreDifficultyNames]  ** Section 23 - Difficulty Levels
+  0: Unranked
+  1: Easy
+  2: Normal
+  3: Hard
+  4: Impossible
+  5: Insanity
+  6: Suicide
+  7: Maniacal
+  8: Terror
+  9: Master
+ 10: Zinglon
+
+[menu12_networkOptions]  ** Section 24 - Interface Menu 12 selections - 17 chars max  (2-player NET)
+  0: Options
+  1: Joystick
+  2: Keyboard
+  3: Mouse
+  4: Music
+  5: Sound
+  6: Done
+
+[menu13_joystick]  ** Section 25 - Interface Menu 13 selections - 17 chars max  (Joystick)
+  0: Joystick
+  1: Button1
+  2: Button2
+  3: Button3
+  4: Button4
+  5: Calibrate
+  6: Done
+
+[joystickButtonNames]  ** Section 26 - Joystick Functions - 20 chars max
+  0: Fire main weapons
+  1: Fire Left Sidekick
+  2: Fire Right Sidekick
+  3: Fire BOTH Sidekicks
+  4: Change rear weapon
+
+[superShips]  ** Super Arcade Modes - 30 chars max
+  0: Super Arcade Mode
+  1: Ninja Star
+  2: StormWind - The Elemental
+  3: The Experimental PQZ
+  4: Captured U-Fighter
+  5: FoodShip Nine
+  6: TX SilverCloud
+  7: Nort-Ship Z
+  8: Dragon
+  9: Pretzel Pete Truck
+ 10: Main Weapon:
+ 11: Special Weapon:
+ 12: Stalker 21.126
+
+[specialNames]  ** Super Arcade Words
+  0: STEALTH
+  1: STORMWIND
+  2: TECHNO
+  3: ENEMY
+  4: WEIRD
+  5: UNKNOWN
+  6: NORTSHIPZ
+  7: LIZARD
+  8: PRETZEL
+  9: DESTRUCT
+ 10: ENGAGE
+
+[destructHelp]  ** DESTRUCT commands
+  0: Left Player
+  1: (Toggle CPU with F10)
+  2: SHIFT or X
+  3: Fire
+  4: CTRL or space
+  5: Change weapon
+  6: ALT
+  7: Switch vehicle
+  8: A/Z
+  9: Change velocity
+ 10: C/V
+ 11: Change angle
+ 12: Right Player
+ 13: (Human - Numeric pad)
+ 14: INSERT or ENTER
+ 15: Fire
+ 16: PGUP and PGDN
+ 17: Change weapon
+ 18: CENTER (5)
+ 19: Change vehicle
+ 20: UP or DOWN
+ 21: Change velocity
+ 22: LEFT or RIGHT
+ 23: Change angle
+ 24: BACKSPACE restarts
+
+[destructWeapons]  ** DESTRUCT weapons
+  0: Tracer
+  1: Small
+  2: Large
+  3: Micro
+  4: Super
+  5: Demolisher
+  6: Small Nuke
+  7: Large Nuke
+  8: Small Dirt
+  9: Large Dirt
+ 10: Repulsor
+ 11: MiniLaser
+ 12: MegaLaser
+ 13: Tracer
+ 14: MegaBlast
+ 15: Mini
+ 16: Bomb
+
+[destructModes]  ** DESTRUCT modes
+  0: 5-Card War
+  1: Traditional
+  2: Heli Assault
+  3: Heli Defense
+  4: Outgunned
+
+[shipInfo]  ** SHIP Data Info
+  0: The ~USP Talon~ provides you with ~one~ ~full~ ~inch~ of armor plating and a generous full-sized generator and engine area.  With both forward and rear mounting systems and 2 cargo bays, it's just like a real ~Microsol~ fighter!
+  1: The craft is especially designed for speed and maneuverability; it gives you an unparalleled 3G base thrust addition!  All this for only ~6000~ cr!!
+  2: The ~SuperCarrot FoodShip 9~ is one of the most advanced edible fighters ever produced.  You can't go wrong with a ~FoodShip~!
+  3: ~Foodships~ are usually complemented by either the ~Hotdog Mustard-spread Technology~, or the dreaded ~SuperBanana Bombs~.
+  4: The ~Gencore Phoenix~ is the main advanced ~Gencore~ ~Solo~ ~Fighter~.  It's an extremely reliable craft that can take a good deal of punishment.
+  5: Standard on the ~Gencore~ ~Solo~ ~Fighter~ line is the new particle redefinition technology, which allows you to materialize extra armor on your outer hull.  Pilots are warned that the system is easily triggered and it completely drains your shields.
+  6: The ~Gencore Maelstrom~ is a refined ~Phoenix~ with an additional ~2cm~ of main hull.  It also features deluxe plush seating with ~extra-wide~ ~armrests~ and ~synth-velour~ ~lining~.
+  7: Standard on the ~Gencore~ ~Solo~ ~Fighter~ line is the new particle redefinition technology, which allows you to materialize extra armor on your outer hull.  Pilots are warned that the system is easily triggered and it completely drains your shields.
+  8: ~Microsol~.  What more do you need to convince you that their ~Stalker Solo Fighter~ is the ship you want?  Not so fast, though.  You'll pay a hefty premium for this ship or have to fill out a stack of forms two feet high.
+  9: With its dense hull alloys and overall excellent defensive capability, you'll sleep safer at night with one of these on your side.
+ 10: ~Microsol~ continues the ~Stalker~ line with the ~Stalker-B~.  This is the deluxe model preferred by Microsol's own Outer Scouts.  It's the ship of choice for those long, solo flights.
+ 11: The ~Stalker-B~ adds an additional ~2~ ~structural~ ~units~ with its refined alloys, for an unheard-of ~28 SUs~ in a solo craft.
+ 12: ~TOP SECRET:~ The quest continues for the strongest ship available with the most powerful backup defense systems.  This is one of the only ships in existence with 3 defense bays!
+ 13: An additional SU has been added to the armor value of this ship, and Microsol has retrofitted a ~Gencore~ ~auto-repair~ ~system~ into each ship, making these the definite superiority fighter!
+ 14: ~Microsol~.  What more do you need to convince you that their ~Stalker Solo Fighter~ is the ship you want?  Not so fast, though.  You'll pay a hefty premium for this ship or have to fill out a stack of forms two feet high.
+ 15: With its dense hull alloys and overall excellent defensive capability, you'll sleep safer at night with one of these on your side.
+ 16: The ~USP Fang~ is a standard ~Talon~ that has been retrofitted with additional armor and a more powerful secondary backup defense system.
+ 17: As always, the ~USP~ invulnerability system is unique in its field and, if used properly, will let you take out anything else in the universe.
+ 18: The ~U-Drone~ is a standard mining drone which has been retrofitted with a manual-drive cockpit and twin rapid-fire vulcan cannons.  Space is limited on this craft, so it's limited to a single backup defense unit.
+ 19: This ship isn't meant for flying around in, but with an infrared scrambler on board, it's a perfect way to sneak in behind enemy lines!
+ 20: No info available on Player 1.
+ 21: Used in Arcade Mode.
+ 22: ~TOP SECRET:~ This ship is on loan from ~Nortaneous'~ personal hanger.  The rent on this ship is very high, but it's incredibly powerful.
+ 23: The only way to describe what this ship does is to fly it and see for yourself.  Nothing on the screen is safe with its ~special~ ~weapon~ active.
+ 24: After destroying the tyrranical might of ~Vykromod~ a second time, Trent found himself locked into the future through the Stargate.  But that's another story.  Now, though, he has returned with his modified ~Stalker C~ to reclaim his past.
+ 25: The ~Modified Stalker~ is equipped with an advanced molecular generator which simulates many conventional weapons.  But, it also has the power to instantly generate any one of a number of side-ships and front attachments.  It's the power of the future.
+ 26: The ~Storm~ is an older model fighter from the ~Bontoria~ ~War~ which erupted about 220 star-years ago.  Unique at its time, it was the first starfighter equipped with an experimental phase shift technology which rendered the craft impossible to hit.
+ 27: In later years, ~Microsol~ acquired the technology for its somewhat popular ~USP~ craft series.  Unfortunately, it required critical extra space, severely limited the size and weight of the craft, and required excessive energy boosts.
+ 28: Dragon
+ 29: Toto
+ 30: This craft is the result of ~Gencore~ raids on key ~Microsol~ research facilities following the recent conflicts in the ~Asteroid~ sectors.
+ 31: Taking an existing ship design, ~Gencore~ retrofitted it with an advanced armor design and power couplings, resulting in a more economical but worthy fighter craft.  This design radically improves ~Gencore~ military effectiveness.
+ 32: Todo
+ 33: Todo
+ 34: PeteZoomer
+ 35: Todo
+ 36: Todo
+ 37: RumBottle
+ 38: Todo
+ 39: Todo
+
+[menu14_superTyrian]  ** Section 27 - Interface Menu 14 selections - 17 chars max
+  0: Game Menu
+  1: Start Level
+  2: Ship Specs
+  3: Options
+  4: Quit Game
+
+[timedBattlePlanets]  ** Section 28 - Timed Battle Planets - 22 chars max
+  0: Timed Battle Selection
+  1: Deliani
+  2: Space Station
+  3: Savara
+
+[setupMenu0]  ** Section 29 - Setup Music List - 11 chars max
+  0: No music
+  1: FM Sound
+  2: SB-16 AWE
+  3: Gravis Midi
+  4: Midi 330h
+  5: Midi 320h
+  6: Midi 332h
+  7: Midi 334h
+  8: Midi 336h
+  9: Midi 300h
+
+[setupMenu1]  ** Section 30 - Setup Music Help List - 59 chars max
+  0: Disable all music.
+  1: Play ~Adlib~ or ~SoundBlaster~ compatible music.
+  2: ~SoundBlaster AWE~ wavetable synthesis.
+  3: ~Gravis Ultrasound~ midi emulation using ~Ultramid~ driver.
+  4: Play ~General Midi~ or compatible music.
+
+[setupMenu2]  ** Section 31 - Setup Sound List - 12 chars max
+  0: No effects
+  1: SoundBlaster
+  2: Gravis
+  3: WSS
+
+[setupMenu3]  ** Section 32 - Setup Sound Help List - 51 chars max
+  0: Disable all sound effects.
+  1: Play ~SoundBlaster~ or compatible sounds.
+  2: Play Digital sound through a ~Gravis Ultrasound~.
+  3: Use the ~Windows Sound System~ for Digital effects.
+
+[setupMenu4]  ** Section 33 - Setup Detail Help List - 59 chars max
+  0: Low detail.  Recommended for a ~386~ processor.
+  1: Normal detail.  Recommended for a ~486~ processor.
+  2: High detail.  Includes transparent explosions.
+  3: All of ~High detail~ plus second background is transparent.
+  4: ~Laptop~ or other ~nonstandard-VGA~ displays.
+
+[setupMenu5]  ** Section 34 - Setup Menu List - 14 chars max
+  0: Music:
+  1: Music volume
+  2: Sound Effects:
+  3: Sound volume
+  4: Game Detail
+  5: Jukebox
+  6: EXIT and SAVE
+
+[setupMenu6]  ** Section 35 - Setup Menu Help List - 63 chars max
+  0: Select your music card.
+  1: Use the left/right ~arrow keys~ to Change the ~music~ volume.
+  2: Select your sound effects card.
+  3: Use the left/right ~arrow keys~ to Change the ~effects~ volume.
+  4: Select your computer processor type.
+  5: Listen to the songs in Tyrian.
+  6: Exit and save configuration.  Press ESC to quit and not save.
+
+[setupMenu7]  ** Section 37 - Setup Sound Card List - 26 chars max
+  0: None
+  1: ES488 Audio Drive (Laptop)
+  2: Mediavision Thunderboard
+  3: Pro-Audio Spectrum 16
+  4: SoundBlaster
+  5: SoundBlaster Pro
+  6: SoundBlaster 16
+  7: Terratec Maestro32
+  8: Adlib
+  9: ES488 Audio Drive (Laptop)
+ 10: Mediavision Thunderboard
+ 11: SoundBlaster
+ 12: SoundBlaster Pro
+ 13: SoundBlaster 16
+ 14: Gravis UltraSound
+ 15: Ensoniq Soundscape
+ 16: Rap 10
+ 17: Terratec Maestro32
+ 18: WaveBlaster Midi
+ 19: Windows Sound System
+ 20: SoundBlaster with AWE
+
+[setupMenu8]  ** Section 38 - Setup DMA List - 15 chars max
+  0: DMA 1 (Default)
+  1: DMA 3
+  2: DMA 0
+
+[setupMenu9]  ** Section 39 - Setup DMA Help List - 40 chars max
+  0: Select this if you don''t know your DMA.
+  1: Force Tyrian to use DMA 3.
+  2: Force Tyrian to use DMA 0.
+
+[menu15_mouseSettings]  ** Section 40 - Mouse Selection Choices
+  0: Mouse
+  1: Button 1
+  2: Button 2
+  3: Button 3
+  4: Reset
+  5: Done
+
+[licensingInfo]  ** Section 41 - Tyrian Licensing Info
+  0: Copyright (c) 1999, Stealth Productions, Inc.
+  1: Game Copyright (c) 1999, Eclipse
+  2: All Rights Reserved
+
+[defaultHighScoreNames]  ** Section 42 - Tyrian Licensing Info
+  0: The Prime Chair
+  1: Transon Lohk
+  2: Javi Onukala
+  3: Mantori
+  4: Nortaneous
+  5: Dougan
+  6: Reid
+  7: General Zinglon
+  8: Late Gyges Phildren
+  9: Vykromod
+ 10: Beppo
+ 11: Borogar
+ 12: ShipMaster Carlos
+ 13: Baker Bob
+ 14: Pretzel Pete
+ 15: Darkfox
+ 16: Softfox
+ 17: The Dragoncat
+ 18: Alexander
+ 19: Danc
+ 20: Andreas
+ 21: Calypso
+ 22: IMBug
+ 23: Zeus
+ 24: Konpyutaa
+ 25: Shadow
+ 26: Ginger
+ 27: Omen
+ 28: Cricket
+ 29: Quintessence
+ 30: Pib
+ 31: Space Horse
+ 32: Chris
+ 33: Eric
+ 34: Lee
+ 35: Vicky
+ 36: Aaron
+ 37: Loyal Stick
+ 38: Eel4Life
+
+[defaultTeamNames]  ** Section 42 - Tyrian Licensing Info
+  0: Team Tyrian
+  1: Team Vykromod
+  2: Gencore Growlers
+  3: Microsol Masters
+  4: Beta Warriors
+  5: Pretzel People
+  6: Rampaging Limes
+  7: Canned Peaches                    
+  8: Bouftown
+  9: Felix Draconics
+
+[orderingInfo]  ** Section 43
+  0: To order direct:
+  1: Visit the XSIV GAMES web site:
+  2: http://www.xsivgames.com
+  3: Or call us toll-free:
+  4: 1-877-4STEALTH
+  5: THANK YOU
+
+[superTyrianText]  ** Section 44
+  0: Cheat codes have been disabled.
+  1: Difficulty level has been set to Lord of Game.
+  2: Difficulty level has been set to Suicide.
+  3: It is imperative that you discover the special codes.
+  4: (Next time, for an easier challenge hold down SCROLL LOCK.)
+  5: Prepare to play...

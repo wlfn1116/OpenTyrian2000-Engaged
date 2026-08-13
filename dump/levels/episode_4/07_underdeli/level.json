@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "I",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  691
+ ],
+ "endOffset": 231911,
+ "episode": 4,
+ "levelFileNumber": 7,
+ "name": "UNDERDELI",
+ "eventCount": 1329
+}

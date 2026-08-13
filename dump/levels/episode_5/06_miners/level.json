@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "D",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1144
+ ],
+ "endOffset": 183337,
+ "episode": 5,
+ "levelFileNumber": 6,
+ "name": "MINERS",
+ "eventCount": 1442
+}

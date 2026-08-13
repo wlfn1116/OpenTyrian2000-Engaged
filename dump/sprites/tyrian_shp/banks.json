@@ -1,0 +1,96 @@
+{
+ "file": "tyrian.shp",
+ "banks": [
+  {
+   "bank": "00_font",
+   "kind": "array",
+   "title": "Large font",
+   "count": 60,
+   "bytes": 6895
+  },
+  {
+   "bank": "01_small_font",
+   "kind": "array",
+   "title": "Small font",
+   "count": 85,
+   "bytes": 4905
+  },
+  {
+   "bank": "02_tiny_font",
+   "kind": "array",
+   "title": "Tiny font",
+   "count": 127,
+   "bytes": 3346
+  },
+  {
+   "bank": "03_planets",
+   "kind": "array",
+   "title": "Planet and map sprites",
+   "count": 152,
+   "bytes": 119838
+  },
+  {
+   "bank": "04_faces",
+   "kind": "array",
+   "title": "Cutscene and datacube faces",
+   "count": 18,
+   "bytes": 45718
+  },
+  {
+   "bank": "05_options_help",
+   "kind": "array",
+   "title": "Menu, option and help sprites",
+   "count": 47,
+   "bytes": 138561
+  },
+  {
+   "bank": "06_weapons",
+   "kind": "array",
+   "title": "Weapon and shop item sprites",
+   "count": 22,
+   "bytes": 31109
+  },
+  {
+   "bank": "07_player_shots",
+   "kind": "sheet",
+   "title": "Player shot sprites",
+   "count": 304,
+   "bytes": 32060
+  },
+  {
+   "bank": "08_player_ships",
+   "kind": "sheet",
+   "title": "Player ship and sidekick sprites",
+   "count": 304,
+   "bytes": 33484
+  },
+  {
+   "bank": "09_powerups",
+   "kind": "sheet",
+   "title": "Power-up sprites",
+   "count": 304,
+   "bytes": 26423
+  },
+  {
+   "bank": "10_pickups",
+   "kind": "sheet",
+   "title": "Coins, datacubes and other pickups",
+   "count": 304,
+   "bytes": 29032
+  },
+  {
+   "bank": "11_player_shots_2",
+   "kind": "sheet",
+   "title": "More player shot sprites",
+   "count": 304,
+   "bytes": 22210
+  },
+  {
+   "bank": "12_t2000_ships",
+   "kind": "sheet",
+   "title": "Tyrian 2000 ship sprites",
+   "count": 304,
+   "bytes": 12348
+  }
+ ]
+}

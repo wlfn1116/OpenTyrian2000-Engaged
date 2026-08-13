@@ -1,0 +1,102 @@
+{
+ "file": "tyrian2.lvl",
+ "levels": [
+  {
+   "levelFileNumber": 1,
+   "name": "TORM",
+   "folder": "01_torm",
+   "shapeFile": "shapesx.dat",
+   "events": 1752,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 2,
+   "name": "GYGES",
+   "folder": "02_gyges",
+   "shapeFile": "shapesx.dat",
+   "events": 829,
+   "randomEnemies": 4
+  },
+  {
+   "levelFileNumber": 3,
+   "name": "BONUS",
+   "folder": "03_bonus",
+   "shapeFile": "shapesz.dat",
+   "events": 178,
+   "randomEnemies": 5
+  },
+  {
+   "levelFileNumber": 4,
+   "name": "ASTCITY",
+   "folder": "04_astcity",
+   "shapeFile": "shapesz.dat",
+   "events": 421,
+   "randomEnemies": 33
+  },
+  {
+   "levelFileNumber": 5,
+   "name": "SOH JIN",
+   "folder": "05_soh_jin",
+   "shapeFile": "shapesz.dat",
+   "events": 1304,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 6,
+   "name": "GRYPHON",
+   "folder": "06_gryphon",
+   "shapeFile": "shapesx.dat",
+   "events": 1299,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 7,
+   "name": "GEM WAR",
+   "folder": "07_gem_war",
+   "shapeFile": "shapesz.dat",
+   "events": 610,
+   "randomEnemies": 25
+  },
+  {
+   "levelFileNumber": 8,
+   "name": "MARKERS",
+   "folder": "08_markers",
+   "shapeFile": "shapesz.dat",
+   "events": 946,
+   "randomEnemies": 25
+  },
+  {
+   "levelFileNumber": 9,
+   "name": "MISTAKES",
+   "folder": "09_mistakes",
+   "shapeFile": "shapesz.dat",
+   "events": 1256,
+   "randomEnemies": 25
+  },
+  {
+   "levelFileNumber": 10,
+   "name": "BOTANY A",
+   "folder": "10_botany_a",
+   "shapeFile": "shapesx.dat",
+   "events": 806,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 11,
+   "name": "BOTANY B",
+   "folder": "11_botany_b",
+   "shapeFile": "shapesx.dat",
+   "events": 552,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 12,
+   "name": "BONUS",
+   "folder": "12_bonus",
+   "shapeFile": "shapesx.dat",
+   "events": 252,
+   "randomEnemies": 3
+  }
+ ],
+ "note": "level names come from the ']L' records in levels2.dat"
+}

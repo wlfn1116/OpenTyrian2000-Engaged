@@ -1,0 +1,17 @@
+{
+ "mapFileChar": "X",
+ "shapeFileChar": "W",
+ "shapeFile": "shapesw.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1001,
+  1002
+ ],
+ "endOffset": 36082,
+ "episode": 3,
+ "levelFileNumber": 1,
+ "name": "CAMANIS",
+ "eventCount": 1236
+}

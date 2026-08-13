@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "A",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  2,
+  3
+ ],
+ "endOffset": 83840,
+ "episode": 5,
+ "levelFileNumber": 3,
+ "name": "STATION",
+ "eventCount": 1000
+}

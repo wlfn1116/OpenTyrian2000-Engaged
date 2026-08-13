@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "T",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  163
+ ],
+ "endOffset": 566187,
+ "episode": 4,
+ "levelFileNumber": 17,
+ "name": "TIME WAR",
+ "eventCount": 473
+}
