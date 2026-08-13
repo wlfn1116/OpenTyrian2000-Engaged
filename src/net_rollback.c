@@ -1101,6 +1101,7 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	}
 
 	rl_abort_record();  /* drop the aborted pass's partial render recording */
+	JE_discardSPPass(); /* separate: rl_abort_record returns early when not recording */
 
 	++stat_rollbacks;
 	++qa_rollbacks_session;

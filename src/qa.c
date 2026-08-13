@@ -1776,6 +1776,87 @@ static void qa_test_superspark_caps(void)
 	memcpy(superSparkClassicCap, savedCap, sizeof(savedCap));
 }
 
+static Uint32 qa_spark_hash(void)
+{
+	Uint32 hash = 2166136261u;
+	const Uint8 *const bytes = (const Uint8 *)superpixels;
+	for (size_t i = 0; i < sizeof(superpixels); ++i)
+		hash = (hash ^ bytes[i]) * 16777619u;
+	return hash;
+}
+
+/* One shower, spawned and drawn the way a level frame does it. The seeded spawn stands in for the
+   simulation RNG a rollback restores, so a re-run of the same frame emits the same sparks. */
+static void qa_spark_frame(Uint32 seed)
+{
+	JE_beginSPPass();
+	JE_doSPSeeded(100, 100, 5, 3, 7 << 4, false, 0, false, seed);
+	JE_drawSP();
+}
+
+/* The ring is presentation state and is not restored with the simulation, so a rollback that
+   discards a pass which has already drawn has to leave it where a clean run of the same frames
+   would: the replacement pass reuses the discarded slots and repeats its step rather than adding
+   one. See doc/notes.md, "Superspark ring buffer". */
+static void qa_test_superspark_discarded_pass(void)
+{
+	if (VGAScreen == NULL || VGAScreen->format->BitsPerPixel != 8)
+		return;
+
+	const bool savedExtra = extraSparks;
+	extraSparks = true;
+
+	JE_resetSP();
+	for (Uint32 f = 0; f < 3; ++f)
+		qa_spark_frame(1234u + f);
+	const Uint32 cleanHash = qa_spark_hash();
+
+	JE_resetSP();
+	for (Uint32 f = 0; f < 2; ++f)
+		qa_spark_frame(1234u + f);
+	qa_spark_frame(1236u);
+	JE_discardSPPass();
+	qa_spark_frame(1236u);
+	qa_check(qa_spark_hash() == cleanHash,
+	         "a discarded drawing pass leaves the spark ring where a clean run leaves it");
+
+	/* Control: with the discard dropped, the same two calls have to disagree. */
+	JE_resetSP();
+	for (Uint32 f = 0; f < 2; ++f)
+		qa_spark_frame(1234u + f);
+	qa_spark_frame(1236u);
+	qa_spark_frame(1236u);
+	qa_check(qa_spark_hash() != cleanHash,
+	         "without it the replayed pass spends a second step and a second set of slots");
+
+	JE_resetSP();
+	extraSparks = savedExtra;
+}
+
+/* Generator draws one shower takes, counted from a fresh seed. */
+static Uint32 qa_spark_rng_draws(bool silent, JE_word num)
+{
+	const bool saved = rollback_resim_silent;
+
+	rollback_resim_silent = silent;
+	mt_srand(20260813u);
+	JE_doSP(100, 100, num, 3, 7 << 4, false);
+	rollback_resim_silent = saved;
+	JE_resetSP();
+	return mt_rand_count;
+}
+
+/* JE_doSP is reached from simulation code, so its draws belong to the deterministic stream even
+   though the sparks themselves do not. Dropping the slot write on a silent re-simulation pass must
+   drop none of them, or the peers' generators separate and the run desyncs. */
+static void qa_test_superspark_rng_cost(void)
+{
+	qa_check(qa_spark_rng_draws(true, 7) == qa_spark_rng_draws(false, 7),
+	         "a silent re-simulation pass costs the RNG exactly what a drawn one costs");
+	qa_check(qa_spark_rng_draws(false, 7) == 7 * 3,
+	         "and that cost is an angle and two magnitudes a spark, which is what a stray guard moves");
+}
+
 /* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
  * tables JE_loadItemDat filled, which is JE_applyItemDataSettings. Each setting below is flipped
  * between two values with that call in between, and the tables have to come out different. One
@@ -3559,6 +3640,8 @@ int qa_run_unit_suite(void)
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();
 	qa_test_superspark_caps();
+	qa_test_superspark_discarded_pass();
+	qa_test_superspark_rng_cost();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();

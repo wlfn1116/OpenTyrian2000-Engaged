@@ -138,6 +138,35 @@ on a weapon's native trail for the same reason.
 cleanly when a setting changes. Both cursors are private to `varz.c`; clear the
 field through `JE_resetSP`.
 
+The ring is presentation state and is not registered for rollback, so nothing
+restores it when the simulation rewinds. Two rules keep it in step with the
+presented timeline instead.
+
+A silent re-simulation pass must not write to it. `JE_doSP` still makes its
+three generator draws per spark on such a pass, because that cost belongs to the
+deterministic stream, and then skips the slot; `JE_drawSP` is skipped whole.
+Otherwise a rollback would stack one shower per re-simulated frame onto a single
+presented frame.
+
+A pass that has already drawn and is then thrown away has to be undone, which
+is what `JE_beginSPPass` and `JE_discardSPPass` are for. The discard rewinds the
+two spawn cursors, so the pass that redraws the frame writes the same slots, and
+subtracts the step `JE_drawSP` took, so that pass takes it once rather than
+carrying every spark an extra tick of travel and decay. Travel is exactly
+invertible; `z == 0` is left alone because a spark the pass retired is retired
+on that frame either way, and a spark still at `SUPERPIXEL_SPAWN_Z` landed after
+the draw and never took the step. Both abandon sites call it, separately from
+`rl_abort_record`, which returns early when recording is off. The residue is
+bounded by the difference in spawn count between the two passes, since they
+simulate the same frame from slightly different state.
+
+Both rules act on every spark on screen at once, and a peer changing direction
+mispredicts most frames, so the unit suite pins them.
+`qa_test_superspark_discarded_pass` hashes the ring after a clean three-frame
+run and after the same run with the third pass discarded and replayed, and
+requires the two to match. `qa_test_superspark_rng_cost` pins the draw count at
+three a spark, which is what a misplaced silent-pass guard moves.
+
 ### Background layers
 
 Background commands carry integer movement and fractional phase. Layer-bound
@@ -405,7 +434,7 @@ reads enemy state and writes none.
 
 The art swap lives entirely in `blit_enemy`: the sheet becomes `spriteSheet10`
 and the frame becomes `ENDLESS_SPECIAL_PICKUP_ICON`, tinted by a bank that
-advances with `rl_enemy_gen`. Nothing is written to `enemy[]`, so the rollback
+advances with `rl_present_gen`. Nothing is written to `enemy[]`, so the rollback
 registry hash is untouched and a peer running without the icon still agrees.
 Rewriting `egr[]` or `sprite2s` at spawn instead would move that hash and
 invalidate replay fixtures for no simulation reason.
@@ -424,6 +453,13 @@ sequence instead of the simulation RNG and therefore costs the peers no shared
 draw. Emission is skipped on silent resim passes and staggered by enemy slot.
 `JE_drawSP` adds a spark's `color` to the plotted shade, so that argument carries
 the palette bank alone; a non-zero low nibble spills into the next bank.
+
+Both the bank cycle and the emission cadence count with `rl_present_gen`, which
+is bumped only on a pass that goes on to be presented. `rl_enemy_gen` counts
+simulation passes, the generation the velocity hints in `blit_enemy` want. It is
+useless as a clock: rollback runs it forward by the re-simulation depth against
+one presented frame, so a cadence keyed to it jumps the cycle and fires the
+shower in bursts and gaps whenever a peer's inputs mispredict.
 
 That shower passes behind the glyph rather than over it. Draw order cannot do it:
 `JE_drawSP` runs after the whole playfield, and moving the sparks ahead of the

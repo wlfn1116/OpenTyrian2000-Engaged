@@ -1891,16 +1891,19 @@ static int    rl_enemy_hint_vx[100], rl_enemy_hint_vy[100];
 static Uint32 rl_enemy_hint_gen[100];
 static JE_word rl_enemy_hint_type[100];
 static Uint32 rl_enemy_gen;   // bumped once per sim pass at the loop top
+// Presented frames, for cosmetics that need a steady clock. Rollback re-simulation runs several sim
+// passes against one presented frame, so a cadence keyed to rl_enemy_gen stutters.
+static Uint32 rl_present_gen;
 
 // Banks the Endless "?" pickup cycles through. Level palettes vary, so the list keeps to hues that
 // hold a readable ramp in all of them; bank 0 and the near-black banks are left out.
 static const Uint8 endlessSpecialIconBanks[] = { 0x10, 0x20, 0x30, 0x50, 0x70, 0x90, 0xC0, 0xD0 };
 #define ENDLESS_SPECIAL_ICON_TICKS 7
 
-// Bank for this sim pass. Presentation only: rl_enemy_gen is outside the rollback registry.
+// Bank for this frame. Presentation only: rl_present_gen is outside the rollback registry.
 static Uint8 endlessSpecialIconFilter(void)
 {
-	const Uint32 step = (rl_enemy_gen / ENDLESS_SPECIAL_ICON_TICKS) % COUNTOF(endlessSpecialIconBanks);
+	const Uint32 step = (rl_present_gen / ENDLESS_SPECIAL_ICON_TICKS) % COUNTOF(endlessSpecialIconBanks);
 	return endlessSpecialIconBanks[step];
 }
 
@@ -1926,7 +1929,7 @@ static void endlessSpecialIconSparks(unsigned int i)
 	                 enemy[i].ex + tempMapXOfs + ENDLESS_SPECIAL_GLYPH_INK_X1 + 1,
 	                 enemy[i].ey + ENDLESS_SPECIAL_GLYPH_INK_Y1 + 1);
 
-	if ((rl_enemy_gen % ENDLESS_SPECIAL_SPARK_TICKS) != (i % ENDLESS_SPECIAL_SPARK_TICKS))
+	if ((rl_present_gen % ENDLESS_SPECIAL_SPARK_TICKS) != (i % ENDLESS_SPECIAL_SPARK_TICKS))
 		return;
 
 	// Glyph centre, matching the cells the draw places at x_offset -6/+6 and y_offset 0.
@@ -1940,7 +1943,7 @@ static void endlessSpecialIconSparks(unsigned int i)
 	// shower this small short of its 15 ticks.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, ENDLESS_SPECIAL_SPARK_COUNT, ENDLESS_SPECIAL_SPARK_REACH,
 	              endlessSpecialIconFilter(), false, ENDLESS_SPARK_BRIGHT, true,
-	              rl_enemy_gen * 100u + i);
+	              rl_present_gen * 100u + i);
 }
 
 #define ENDLESS_ELITE_SPARK_TICKS 5  // one shower per elite this often, staggered by enemy slot
@@ -1954,7 +1957,7 @@ static void endlessEliteAuraSparks(unsigned int i)
 {
 	if (rollback_resim_silent || enemy[i].eliteState < 2 || enemy[i].iced || enemy[i].edamaged)
 		return;
-	if ((rl_enemy_gen % ENDLESS_ELITE_SPARK_TICKS) != (i % ENDLESS_ELITE_SPARK_TICKS))
+	if ((rl_present_gen % ENDLESS_ELITE_SPARK_TICKS) != (i % ENDLESS_ELITE_SPARK_TICKS))
 		return;
 
 	// Sprite centre, the same point for a 1x1 body and a 2x2 one. JE_drawSP clips the rest of the
@@ -1974,7 +1977,7 @@ static void endlessEliteAuraSparks(unsigned int i)
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, sparks,
 	              ENDLESS_ELITE_SPARK_REACH + (enemy[i].size == 1 ? 1 : 0),
 	              champion ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER, false,
-	              ENDLESS_SPARK_BRIGHT, endlessSpecialPickup((int)i), rl_enemy_gen * 137u + i);
+	              ENDLESS_SPARK_BRIGHT, endlessSpecialPickup((int)i), rl_present_gen * 137u + i);
 }
 
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline)
@@ -3951,8 +3954,15 @@ level_loop:
 #endif
 	rollback_selftest_frame_begin();
 
-	// New sim pass: advance the enemy velocity-hint generation (blit_enemy).
+	// New sim pass: advance the enemy velocity-hint generation (blit_enemy). The presentation
+	// clock skips the silent re-simulation passes, so it counts presented frames instead.
 	++rl_enemy_gen;
+	if (!rollback_resim_silent)
+		++rl_present_gen;
+
+	// Open the spark ring's pass here, ahead of the first spawn, so an abandoned pass can hand
+	// its slots back.
+	JE_beginSPPass();
 
 	JE_deriveStarShowSpecial();
 
@@ -6100,6 +6110,7 @@ draw_player_shot_loop_end:
 	if (rollback_selftest_tick())
 	{
 		rl_abort_record();
+		JE_discardSPPass();  // separate from rl_abort_record, which returns early when not recording
 		goto level_loop;
 	}
 

@@ -54,6 +54,7 @@ enum
 #define MAX_REPEATING_EXPLOSIONS 20
 #define MAX_SUPERPIXELS          50000  // was 101; global spark ring buffer; bigger = denser/longer explosion showers
 #define SUPERPIXELS_CLASSIC      101  // the original DOS spark cap; the "Extra Sparks" toggle (extraSparks, config.c) picks between the two
+#define SUPERPIXEL_SPAWN_Z       15   // shade and lifetime a spark starts with; JE_drawSP counts it down to 0
 
 struct JE_SingleEnemyType
 {
@@ -516,6 +517,11 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
                    bool classic_cap, JE_byte bright, bool occluded, Uint32 seed);
 void JE_drawSP(void);
 void JE_resetSP(void);
+// Frame boundary for the ring. JE_beginSPPass opens a drawing pass; JE_discardSPPass puts the ring
+// back the way that pass found it, so the pass redrawing the frame reuses its slots and its step
+// instead of adding a second set. Call the discard wherever a drawn pass is abandoned.
+void JE_beginSPPass(void);
+void JE_discardSPPass(void);
 
 void JE_drawOptionLevel(void);
 

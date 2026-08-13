@@ -2143,11 +2143,49 @@ static unsigned int next_superpixel(bool classic_cap)
 	return last_uncapped_superpixel;
 }
 
+/* State of the drawing pass in progress. A rollback or a self-test replay throws away a pass that
+   has already drawn and re-runs the same frame, so the discard puts the ring back the way it opened
+   the pass and lets the replacement redo it. See doc/notes.md, "Superspark ring buffer". */
+static unsigned int sp_pass_superpixel, sp_pass_uncapped;
+static bool sp_pass_advanced;   // JE_drawSP stepped the ring during this pass
+
+void JE_beginSPPass(void)
+{
+	sp_pass_superpixel = last_superpixel;
+	sp_pass_uncapped = last_uncapped_superpixel;
+	sp_pass_advanced = false;
+}
+
+void JE_discardSPPass(void)
+{
+	last_superpixel = sp_pass_superpixel;
+	last_uncapped_superpixel = sp_pass_uncapped;
+
+	if (sp_pass_advanced)
+	{
+		/* Rewind the step JE_drawSP took, so the replacement pass takes it once and the sparks it
+		   spawns get theirs. Travel is exactly invertible; the two skipped z values are a spark
+		   this pass retired and one spawned after the draw, neither of which took the step. */
+		for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+		{
+			if (superpixels[i].z == 0 || superpixels[i].z >= SUPERPIXEL_SPAWN_Z)
+				continue;
+			superpixels[i].x -= superpixels[i].delta_x;
+			superpixels[i].y -= superpixels[i].delta_y;
+			++superpixels[i].z;
+		}
+	}
+	sp_pass_advanced = false;
+}
+
 void JE_resetSP(void)
 {
 	last_superpixel = 0;
 	last_uncapped_superpixel = SUPERPIXELS_CLASSIC;
 	sp_occluder_count = 0;
+	sp_pass_superpixel = 0;
+	sp_pass_uncapped = SUPERPIXELS_CLASSIC;
+	sp_pass_advanced = false;
 	memset(superpixels, 0, sizeof(superpixels));
 }
 
@@ -2162,6 +2200,12 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		signed int tempy = roundf(cosf(tempr) * mt_rand_1() * explowidth);
 		signed int tempx = roundf(sinf(tempr) * mt_rand_1() * explowidth);
 
+		// A silent re-simulation pass replays frames the presented timeline already spawned from.
+		// The draws above stay, because they are part of the deterministic stream; the superpixels
+		// do not, or a rollback would stack one shower per re-simulated frame.
+		if (rollback_resim_silent)
+			continue;
+
 		const unsigned int slot = next_superpixel(classic_cap);
 		superpixels[slot].x = tempx + x;
 		superpixels[slot].y = tempy + y;
@@ -2170,7 +2214,7 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		superpixels[slot].color = color;
 		superpixels[slot].bright = 0;
 		superpixels[slot].occluded = false;
-		superpixels[slot].z = 15;
+		superpixels[slot].z = SUPERPIXEL_SPAWN_Z;
 	}
 }
 
@@ -2197,12 +2241,14 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		superpixels[slot].color = color;
 		superpixels[slot].bright = bright;
 		superpixels[slot].occluded = occluded;
-		superpixels[slot].z = 15;
+		superpixels[slot].z = SUPERPIXEL_SPAWN_Z;
 	}
 }
 
 void JE_drawSP(void)
 {
+	sp_pass_advanced = true;  // a rollback discarding this pass has a step to rewind
+
 	for (int i = MAX_SUPERPIXELS; i--; )
 	{
 		if (superpixels[i].z)
