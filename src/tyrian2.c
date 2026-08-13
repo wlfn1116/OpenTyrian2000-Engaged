@@ -4622,29 +4622,31 @@ level_loop:
 				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
 				if (z != MAX_PWEAPON - 1 && playerShotData[z].salvoBoost)
 					dmgPct += endlessOpeningSalvoDamagePercent();
-				if (dmgPct != 100 && damage != 99)   // 99 is the ice marker: no damage to scale
+				if (damage >= 250)
 				{
-					const int pierceMark = (damage >= 250) ? 250 : 0;
-					const int raw = damage - pierceMark;
-					int scaled = (raw * dmgPct + 50) / 100;   // round, don't truncate; see below
-					if (raw > 0)
+					// Piercing rounds keep their marker and carry their own remainder, so the
+					// run's levers reach a 1-damage round.
+					damage = 250 + endlessPierceHitDamage(damage - 250, dmgPct,
+					                                      &playerShotData[z].pierceDmgCarry);
+				}
+				else if (dmgPct != 100 && damage != 99)   // 99 is the ice marker: nothing to scale
+				{
+					int scaled = (damage * dmgPct + 50) / 100;   // round, don't truncate; see below
+					if (damage > 0)
 					{
 						if (scaled < 1)
 							scaled = 1;              // a shot that deals damage never rounds away to none
-						// A piercing shot's raw damage is only 0..5, so plain integer scaling rounds
-						// most of the lever away (+50% on 3 damage buys nothing). Guarantee that an
+						// Weapon-table damage runs as low as 1, where plain integer scaling
+						// rounds most of the lever away (+50% on 2 damage buys nothing), so an
 						// uplift moves the number by at least one.
-						if (dmgPct > 100 && scaled <= raw)
-							scaled = raw + 1;
+						if (dmgPct > 100 && scaled <= damage)
+							scaled = damage + 1;
 					}
-					if (pierceMark == 0)
-					{
-						if (scaled > 249)            // keep clear of the piercing marker...
-							scaled = 249;
-						else if (scaled == 99)       // ...and of the ice one
-							scaled = 100;
-					}
-					damage = pierceMark + scaled;
+					if (scaled > 249)                // keep clear of the piercing marker...
+						scaled = 249;
+					else if (scaled == 99)           // ...and of the ice one
+						scaled = 100;
+					damage = scaled;
 				}
 			}
 
@@ -4740,6 +4742,12 @@ level_loop:
 								infiniteShot = true;
 							}
 						}
+
+						// The damage the bullet itself carries, kept for the further hulls it
+						// crosses this tick. `damage` below becomes what this hull's accumulator
+						// paid out, which is zero on anything with an HP multiplier.
+						// See doc/notes.md, "Combat".
+						const int bulletDamage = damage;
 
 						int armorleft = enemy[b].armorleft;
 
@@ -5060,22 +5068,27 @@ level_loop:
 							}
 						}
 
-						damage -= execBonus;  // Executioner: undo the wounded-target bonus before a piercing / overkill shot carries `damage` to the next enemy
-
 						if (infiniteShot)
 						{
-							damage += 250;
+							damage = bulletDamage + 250;
 						}
-						else if (z != MAX_PWEAPON - 1)
+						else
 						{
-							if (damage <= armorleft)
+							// Executioner: undo the wounded-target bonus before an overkill
+							// shot carries `damage` to the next enemy.
+							damage -= execBonus;
+
+							if (z != MAX_PWEAPON - 1)
 							{
-								shotAvail[z] = 0;
-								goto draw_player_shot_loop_end;
-							}
-							else
-							{
-								playerShotData[z].shotDmg -= armorleft;
+								if (damage <= armorleft)
+								{
+									shotAvail[z] = 0;
+									goto draw_player_shot_loop_end;
+								}
+								else
+								{
+									playerShotData[z].shotDmg -= armorleft;
+								}
 							}
 						}
 					}

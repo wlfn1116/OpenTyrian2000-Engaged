@@ -1176,6 +1176,76 @@ static void qa_endless_difficulty_pinned(void)
 	coopEndlessMode = savedCoop;
 }
 
+/* ---- 6c. piercing rounds answer the damage levers ----------------------------------- */
+
+/* What one bullet lands over a run of ticks, carrying its remainder the way the hit site does. */
+static int qa_pierce_run(int rawDamage, int dmgPct, int ticks)
+{
+	JE_byte carry = 0;
+	int total = 0;
+	for (int tick = 0; tick < ticks; ++tick)
+		total += endlessPierceHitDamage(rawDamage, dmgPct, &carry);
+	return total;
+}
+
+/* Piercing damage is 1 a hit in the weapon table, the one quantity a percentage lever cannot reach
+ * in whole points. The rule holds the run's percentage over a bullet's life instead, so every Heavy
+ * Rounds stack has to move what the bullet lands. */
+static void qa_pierce_damage_matrix(void)
+{
+	char label[192];
+	const JE_boolean savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const int savedDepth = endlessRunDepth;
+	const JE_shortint savedDifficulty = difficultyLevel;
+
+	endlessMode = false;
+	endlessCampaignMods = false;
+	qa_check(endlessPiercePotencyPercent() == 100 && qa_pierce_run(1, 100, 100) == 100,
+	         "outside the Endless effect layer a piercing round keeps its weapon-table damage");
+
+	endlessMode = true;
+	difficultyLevel = DIFFICULTY_NORMAL;
+
+	int lastPotency = 0;
+	for (int zone = 1; zone <= 200; ++zone)
+	{
+		endlessRunDepth = zone - 1;
+		const int potency = endlessPiercePotencyPercent();
+
+		snprintf(label, sizeof(label), "zone %d: pierce potency rises and stays bounded", zone);
+		qa_check(potency >= 100 && potency <= endlessScalingOverrideMax(ESO_PIERCEDMG)
+		         && potency >= lastPotency, label);
+		lastPotency = potency;
+
+		/* A round with no damage of its own stays that way however the levers are set. */
+		snprintf(label, sizeof(label), "zone %d: a 0-damage round is never scaled up", zone);
+		qa_check(qa_pierce_run(0, 400, 50) == 0, label);
+
+		/* The carry is what makes the percentage exact over a bullet's life. */
+		snprintf(label, sizeof(label), "zone %d: 100 ticks land the full percentage owed", zone);
+		qa_check(qa_pierce_run(1, 137, 100) == 137 * potency / 100, label);
+
+		/* A stack the player paid for that lands the same damage as the one before it is a dead
+		 * purchase, so the whole ladder has to be strictly increasing. */
+		bool climbs = true;
+		int previous = qa_pierce_run(1, 100, 100);
+		for (int stack = 1; stack <= endlessPerkMaxStack(PERK_DAMAGE); ++stack)
+		{
+			const int landed = qa_pierce_run(1, 100 + stack * ENDLESS_PERK_DAMAGE_PCT, 100);
+			climbs = climbs && landed > previous;
+			previous = landed;
+		}
+		snprintf(label, sizeof(label), "zone %d: every Heavy Rounds stack moves the damage", zone);
+		qa_check(climbs, label);
+	}
+
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	endlessRunDepth = savedDepth;
+	difficultyLevel = savedDifficulty;
+}
+
 /* ---- 7. who charts the next course -------------------------------------------------- */
 
 /* Exactly one machine charts each zone, and both machines have to reach that answer from the
@@ -1660,6 +1730,7 @@ void qa_test_endless_suite(void)
 	qa_death_revive_matrix();
 	qa_danger_target_matrix();
 	qa_endless_difficulty_pinned();
+	qa_pierce_damage_matrix();
 	qa_chooser_matrix();
 	qa_wire_matrix();
 	qa_scenario_suite();

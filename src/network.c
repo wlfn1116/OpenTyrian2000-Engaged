@@ -3625,6 +3625,7 @@ Uint32 network_sim_pools(NetSimPools *detail)
 		HASH_WORD(playerShotData[i].shotDmg);
 		HASH_WORD(playerShotData[i].playerNumber);
 		HASH_WORD(playerShotData[i].pierceLock);
+		HASH_WORD(playerShotData[i].pierceDmgCarry);
 	}
 	POOL_DONE(player_shots, n_pshot);
 

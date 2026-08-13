@@ -90,6 +90,12 @@ int endlessDifficultyZone(void)
 #define ENDLESS_PIERCE_LOCK_ELITE          2  // elite:    0.02
 #define ENDLESS_PIERCE_LOCK_MAX            1
 
+// Piercing damage, percent of the weapon-table value. Piercing rounds carry 0 to 5 raw damage, too
+// coarse for a percentage lever to reach in whole points, so the class gets a ramp of its own and
+// the run's damage percentage applies on top of it. See doc/notes.md, "Combat".
+#define ENDLESS_PIERCE_POTENCY_PER_DEPTH   5  // +% per effective depth (ENDLESS_HP_PER_DEPTH is 4)
+#define ENDLESS_PIERCE_POTENCY_MAX       500  // ceiling, reached at effective depth 80
+
 // Enemy shot cooldown, percent of stock. This one counts DOWN: the deltas are subtracted, so a
 // bigger number means faster enemy fire.
 #define ENDLESS_FIRE_PER_DEPTH_NUM 3    // -% per effective depth, as NUM/DEN (0.75%)
@@ -407,16 +413,20 @@ void endlessResetElites(void)
 	endlessEliteRngState = endlessSplitMixSeed((Uint64)endlessRunDepth * 2 + 0x50000000);
 }
 
-// Natural special-enemy share before modifier overrides.
+// Both special-enemy curves pivot at this effective depth, zone 100 on Normal, and both reach
+// their ceiling at zone 200. Each spreads its rise up to the pivot over this constant, so moving
+// the pivot moves the whole early ramp with it.
+#define ENDLESS_SPECIAL_PIVOT_DEPTH 123
+
+// Natural special-enemy share before modifier overrides. 2% at the surface, 60% at the pivot.
 int endlessNaturalEliteChancePercent(void)
 {
 	ENDLESS_OVERRIDE(ESO_ELITECHANCE);
-	int pct = 2 + endlessEffectiveDepth() / 2;
-	if (pct > 25)
-		pct = 25 + (endlessEffectiveDepth() - 46) * 27 / 50;
-	if (pct > 80)
-		pct = 80;
-	return pct;
+	const int eff = endlessEffectiveDepth();
+	const int pct = (eff <= ENDLESS_SPECIAL_PIVOT_DEPTH)
+	              ? 2 + eff * 58 / ENDLESS_SPECIAL_PIVOT_DEPTH          // 58 points to the pivot
+	              : 60 + (eff - ENDLESS_SPECIAL_PIVOT_DEPTH) * 4 / 25;  // 0.16% per depth past it
+	return endlessClamp(pct, 2, 80);
 }
 
 // Tier-removal boons unlock once they have a meaningful effect.
@@ -446,11 +456,12 @@ static int endlessPickTier(void)
 		return 2;
 	if (endlessActiveMods & ENDLESS_MOD_LEGION)
 		return 3;
-	// Champion share rises from one third to 70%.
-	int champPct = 33 + endlessTideLevel() / 3;
-	if (champPct > 70)
-		champPct = 70;
-	return ((int)(endlessEliteRand() % 100) < champPct) ? 3 : 2;
+	// Champion share of those specials: 10% at the surface, 30% at the pivot, 70% at the ceiling.
+	const int eff = endlessEffectiveDepth();
+	const int share = (eff <= ENDLESS_SPECIAL_PIVOT_DEPTH)
+	                ? 10 + eff * 20 / ENDLESS_SPECIAL_PIVOT_DEPTH         // 20 points to the pivot
+	                : 30 + (eff - ENDLESS_SPECIAL_PIVOT_DEPTH) * 8 / 25;  // 0.32% per depth past it
+	return ((int)(endlessEliteRand() % 100) < endlessClamp(share, 10, 70)) ? 3 : 2;
 }
 
 static int endlessRollEliteTier(JE_byte linknum)
@@ -554,6 +565,29 @@ int endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState)
 		return 0;
 	return endlessClamp(span * atRef / refSpan,
 	                    0, ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE);
+}
+
+// Piercing damage percentage; see the constants for why the class needs a term of its own.
+int endlessPiercePotencyPercent(void)
+{
+	ENDLESS_OVERRIDE(ESO_PIERCEDMG);
+	if (!endlessFxActive())
+		return 100;
+	return endlessClamp(100 + endlessEffectiveDepth() * ENDLESS_PIERCE_POTENCY_PER_DEPTH,
+	                    100, ENDLESS_PIERCE_POTENCY_MAX);
+}
+
+// One piercing bullet's damage for one tick, spent in ENDLESS_PIERCE_DMG_SCALE units with the
+// remainder banked on the bullet, so a lever holds over the bullet's life instead of rounding away.
+int endlessPierceHitDamage(int rawDamage, int dmgPct, JE_byte *carry100)
+{
+	if (rawDamage <= 0)
+		return 0;   // attack 250 is a piercing round with no damage of its own
+	const int total = rawDamage * (dmgPct * endlessPiercePotencyPercent() / 100)
+	                + (carry100 != NULL ? *carry100 : 0);
+	if (carry100 != NULL)
+		*carry100 = (JE_byte)(total % ENDLESS_PIERCE_DMG_SCALE);
+	return total / ENDLESS_PIERCE_DMG_SCALE;
 }
 
 // Special-tier bounty, including Bounty Hunter and Scavenger: personal perks, so both read the
@@ -1330,6 +1364,7 @@ static const struct { const char *name; const char *key; int lo, hi; } endlessOv
 	[ESO_ELITECHANCE] = { "Elite Share %",   "elite_share",   0,                             100 },
 	[ESO_ELITEHP]     = { "Elite HP x",      "elite_hp",      1,                             ENDLESS_HP_MULT_MAX },
 	[ESO_PLAYERDMG]   = { "Your Damage %",   "your_damage",   10,                            1000 },
+	[ESO_PIERCEDMG]   = { "Pierce Damage %", "pierce_damage", 10,                            ENDLESS_PIERCE_POTENCY_MAX },
 	[ESO_PIERCELOCK]  = { "Boss Pierce Lock","boss_pierce",   0,                             ENDLESS_PIERCE_LOCK_MAX * ENDLESS_PIERCE_LOCK_SCALE },
 };
 
@@ -1387,6 +1422,7 @@ int endlessScalingOverrideStock(int id)
 	case ESO_ELITECHANCE: v = endlessNaturalEliteChancePercent(); break;
 	case ESO_ELITEHP:     v = endlessEliteHpMult();               break;
 	case ESO_PLAYERDMG:   v = endlessPlayerDamagePercent();       break;
+	case ESO_PIERCEDMG:   v = endlessPiercePotencyPercent();      break;
 	// Pierce delay depends on the live boss multiplier.
 	case ESO_PIERCELOCK:  v = endlessPierceLock100(true, endlessBossHpMult(), 1); break;
 	default: break;
@@ -1427,6 +1463,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	out->elitePct     = endlessNaturalEliteChancePercent();
 	out->eliteHpMult  = endlessEliteHpMult();
 	out->playerDmgPct = endlessPlayerDamagePercent();
+	out->piercePct    = endlessPiercePotencyPercent();
 	out->pierceLock100 = endlessPierceLock100(true, out->bossMult, 1);  // hundredths of a tick, at the boss tier
 	out->eliteBounty  = endlessEliteBounty();
 	out->champBounty  = endlessChampionBounty();

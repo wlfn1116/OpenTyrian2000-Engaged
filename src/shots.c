@@ -597,10 +597,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		PlayerShotDataType* shot = &playerShotData[shot_id];
 		shot->chainReaction = 0;
 		shot->salvoBoost = salvo_tag;
-		// A recycled slot must not inherit the previous bullet's pierce lockout.
+		// A recycled slot must not inherit the previous bullet's lockout or damage remainder.
 		shot->pierceLock = 0;
 		shot->pierceLockCarry = 0;
 		shot->pierceLockPending = 0;
+		shot->pierceDmgCarry = 0;
 
 		shot->playerNumber = playerNum;
 

@@ -110,15 +110,31 @@ an Atomic RailGun at power 1.
 ### Depth and enemy tiers
 
 On Normal, most ordinary scaling approaches its cap between zones 55 and 100.
-The share of elites and champions keeps rising deeper into the run. A rising
-tide begins near zone 28 and adds shots, damage, and special enemies after the
-ordinary ramps flatten.
+A rising tide begins near zone 25 and adds shots, then damage from zone 30, once
+the ordinary ramps flatten. The share of elites and champions climbs for far
+longer: one enemy in fifty at the start, one in four around zone 40, three in
+five by zone 100, and four in five from zone 200 on. Champions are the scarcer
+tier within that share. They are one special in ten at the start and under a
+third at zone 100, pass elites in number at zone 153, and settle at seven in ten
+by zone 200. A harder difficulty reaches every one of those marks sooner, in
+proportion to its ramp. Hard arrives at the zone-100 mix by zone 83 and at the
+ceiling by zone 167, Suicide by zones 63 and 125.
 
 | Tier | Health | Offense | Bounty |
 | --- | --- | --- | ---: |
 | Normal | Depth-scaled | Normal | None |
 | Elite | 2x to 4x | +25% contact damage | $150 + $40/zone, max $2,500 |
 | Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $350 + $90/zone, max $6,000 |
+
+Piercing shots follow their own damage rule. The Mega Cannon, Sonic Impulse, and
+Needle Laser fire them at every power level, and Dragon Frost and Dragon Flame
+from level 9 up. A piercing shot is never used up, so it damages every hull it
+crosses and hits again on each tick it stays over a target. It also carries only
+one or two points of damage, and some of these weapons mix in shots that carry
+none at all. Depth raises piercing damage on a curve of its own, and your damage
+perks and drives apply on top of that. Bosses, elites, and champions ignore
+repeat hits from the same shot for a fraction of a tick, which limits how fast
+one shot can wear a single target down.
 
 Elites and champions are palette-shifted and shed sparks in the same tint. Their
 shots fly in it and they explode in it as well. Linked parts share one tier and

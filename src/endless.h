@@ -645,6 +645,7 @@ typedef struct {
 	int  elitePct;      // natural elite/champion share, % of eligible enemies
 	int  eliteHpMult;   // elite/champion HP multiplier
 	int  playerDmgPct;  // YOUR shot damage, % of stock (sector mods + perks)
+	int  piercePct;     // your piercing damage, % of the weapon-table value, before playerDmgPct
 	int  pierceLock100; // HUNDREDTHS of a sim tick a boss shrugs off repeat piercing hits for, at this zone's boss multiplier
 	long eliteBounty;   // cash per elite kill
 	long champBounty;   // cash per champion kill
@@ -666,6 +667,7 @@ enum {
 	ESO_ELITECHANCE, // endlessNaturalEliteChancePercent (Elite Pack / Apex / NOELITE still win)
 	ESO_ELITEHP,     // endlessEliteHpMult
 	ESO_PLAYERDMG,   // endlessPlayerDamagePercent
+	ESO_PIERCEDMG,   // endlessPiercePotencyPercent
 	ESO_PIERCELOCK,  // endlessPierceLock100 (pinned = a fixed figure at every tier and multiplier)
 	ESO_COUNT
 };
@@ -751,6 +753,14 @@ int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // co
 // Repeat-hit delay for piercing bullets, in hundredths of a tick.
 #define ENDLESS_PIERCE_LOCK_SCALE 100
 int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);
+
+// Piercing damage, carried between ticks in hundredths of a point.
+#define ENDLESS_PIERCE_DMG_SCALE 100
+int  endlessPiercePotencyPercent(void);      // piercing damage, % of the weapon-table value
+// Whole points one piercing bullet lands this tick. `carry100` is that bullet's remainder in
+// ENDLESS_PIERCE_DMG_SCALE units, read and advanced here.
+int  endlessPierceHitDamage(int rawDamage, int dmgPct, JE_byte *carry100);
+
 long endlessEliteBounty(void);               // extra cash for destroying an elite
 long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)

@@ -350,6 +350,24 @@ windows gets no such promise, and the gatherer's own duplicate check covers it.
 Piercing repeat-hit state belongs to the bullet. Charge it once per tick from the
 toughest crossed hull and apply the lock on the next bullet pass.
 
+The piercing marker encodes 0 to 5 damage points, a quantity too coarse for a
+percentage to land on in whole points. `endlessPierceHitDamage` therefore spends
+the run percentage in `ENDLESS_PIERCE_DMG_SCALE` units and banks the remainder in
+the bullet's `pierceDmgCarry`, which is what holds a lever's full value over the
+bullet's life. `endlessPiercePotencyPercent` is the class's own depth ramp and
+applies before the run percentage, for the same reason.
+
+A piercing bullet carries its own damage to every hull it crosses in a tick. The
+accumulator overwrites `damage` with what one hull's `damageAccum` paid out,
+which is zero on anything with an HP multiplier, so the collision loop keeps the
+undivided value in `bulletDamage` and re-encodes that. Re-encoding the payout
+instead would limit a bullet to one scaled hull a tick, which on a multi-part
+boss is one segment.
+
+`pierceDmgCarry` occupies existing padding in `PlayerShotDataType`. The rollback
+layout fingerprint and the replay fixtures depend on that; a field that grows the
+struct moves both.
+
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
@@ -381,6 +399,21 @@ Spawn position feeds collision, so this is a deterministic rule and owns the
 `NET_VERSION` 40 bump.
 
 #### Endless enemy tiers
+
+Two curves decide which tier a roll lands on, both piecewise linear in effective
+depth and both pivoting at `ENDLESS_SPECIAL_PIVOT_DEPTH`, which is zone 100 on
+Normal. Up to the pivot the special-enemy share spreads 58 points and the
+champion share of those specials spreads 20, reaching 60% and 30% there. Past it
+the share climbs 0.16% a depth and the champion share 0.32%, so both meet their
+ceilings of 80% and 70% at zone 200. The early divisor is the pivot constant
+itself, so both anchors stay exact if the pivot moves.
+
+The two rates split a run in half. Specials arrive quickly while champions stay
+scarce, so the first hundred zones fill with elites, and the second hundred turn
+that crowd into champions while the crowd itself grows slowly. Neither curve
+reads `endlessTideLevel`, which starts much earlier and is tuned for the shots
+and damage it feeds, so sharing it would tie the champion mix to a different
+tuning problem.
 
 `endlessEliteTierNow` is the one place a body's tier is decided, and it answers
 on the first frame `JE_drawEnemy` processes the slot. Settling that early is the

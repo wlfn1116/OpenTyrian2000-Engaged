@@ -35,6 +35,7 @@ typedef struct {
 	JE_byte pierceLockCarry;  // sub-tick remainder, so the lockout can ramp in fractions of a tick
 	JE_byte pierceLockPending;// largest lockout (1/100 tick) charged during the CURRENT tick, banked
 	                          // until the top of the next pass; see the hit site for why
+	JE_byte pierceDmgCarry;   // scaled-damage remainder in hundredths of a point (see endless.h)
 } PlayerShotDataType;
 
 // Large enough for sustained specials and maximum-width custom weapons. Keep

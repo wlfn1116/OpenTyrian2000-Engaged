@@ -5603,6 +5603,7 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	case ESO_EXTRASHOTS:  return sc->extraShots;
 	case ESO_ELITECHANCE: return sc->elitePct;
 	case ESO_ELITEHP:     return sc->eliteHpMult;
+	case ESO_PIERCEDMG:   return sc->piercePct;
 	case ESO_PIERCELOCK:  return sc->pierceLock100;
 	default:              return sc->playerDmgPct;
 	}
@@ -5766,6 +5767,7 @@ static bool endlessDebugScreen(bool jumpMode)
 			EDBG_ADD(EDR_SCALEINFO, EDI_CHAMPBOUNTY, "Champion Bounty");
 			EDBG_ADD(EDR_HEADER, 0, "PLAYER");
 			EDBG_ADD(EDR_SCALE, ESO_PLAYERDMG, "Your Damage %");
+			EDBG_ADD(EDR_SCALE, ESO_PIERCEDMG, "Pierce Damage %");
 			EDBG_ADD(EDR_HEADER, 0, "THE RAMP ITSELF");
 			EDBG_ADD(EDR_SCALEINFO, EDI_EFFDEPTH, "Effective Depth");
 			EDBG_ADD(EDR_SCALEINFO, EDI_RAMPZONE, "Ramp Zone");
