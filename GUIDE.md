@@ -107,12 +107,14 @@ ordinary ramps flatten.
 | Elite | 2x to 4x | +25% contact damage | $150 + $40/zone, max $2,500 |
 | Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $350 + $90/zone, max $6,000 |
 
-Elites and champions are palette-shifted and shed sparks in the same tint, and
-they explode in it as well. Linked parts share one tier and one bounty. Every
-enemy takes its tier on the frame it appears, so nothing recolours or rearms
-while you are fighting it. Bosses can be promoted, and so can an enemy that
-starts out invulnerable, such as a boss flying in armored or a sealed hull.
-Scenery that can never be damaged is never promoted.
+Elites and champions are palette-shifted and shed sparks in the same tint. Their
+shots fly in it and they explode in it as well. Linked parts share one tier and
+one bounty. Every enemy takes its tier on the frame it appears, so nothing
+recolours or rearms while you are fighting it. Bosses can be promoted, and so
+can an enemy that starts out invulnerable, such as a boss flying in armored or
+a sealed hull. Scenery that can never be damaged is never promoted. An enemy
+that turns into another body when it dies, such as a bomb that rises out of the
+wreck, carries its tier into that body; loot it drops does not.
 
 ### Sector modifiers
 

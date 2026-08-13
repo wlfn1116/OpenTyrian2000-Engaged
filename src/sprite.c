@@ -1280,6 +1280,103 @@ void blit_sprite2_filter_clip(SDL_Surface *surface, int x, int y, Sprite2_array 
 	}
 }
 
+// The sprite's own shade, lifted and plotted into the bank `filter` names (see sprite.h for how the
+// two are packed into it).
+static inline Uint8 filter_bright_pixel(Uint8 src, Uint8 filter)
+{
+	unsigned int shade = (src & 0x0f) + (filter & 0x0f);
+	if (shade > 0x0f)
+		shade = 0x0f;
+	return (Uint8)((filter & 0xf0) | shade);
+}
+
+// does not clip on left or right edges of surface
+void blit_sprite2_filter_bright(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 filter)
+{
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+	if (render_list_recording)
+		rl_rec_sprite2_filter_bright(x, y, sprite2s, index, filter, false);
+	Uint8 *             pixels =    (Uint8 *)surface->pixels + (y * surface->pitch) + x;
+	const Uint8 * const pixels_ll = (Uint8 *)surface->pixels,  // lower limit
+	            * const pixels_ul = (Uint8 *)surface->pixels + (surface->h * surface->pitch);  // upper limit
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		pixels += *data & 0x0f;                   // second nibble: transparent pixel count
+		unsigned int count = (*data & 0xf0) >> 4; // first nibble: opaque pixel count
+
+		if (count == 0) // move to next pixel row
+		{
+			pixels += VGAScreen->pitch - 12;
+		}
+		else
+		{
+			while (count--)
+			{
+				++data;
+
+				if (pixels >= pixels_ul)
+					return;
+				if (pixels >= pixels_ll)
+					*pixels = filter_bright_pixel(*data, filter);
+
+				++pixels;
+			}
+		}
+	}
+}
+
+void blit_sprite2_filter_bright_clip(SDL_Surface *surface, int x, int y, Sprite2_array sprite2s, unsigned int index, Uint8 filter)
+{
+	SKIP_IF_SILENT_RESIM();	assert(surface->format->BitsPerPixel == 8);
+	if (render_list_recording)
+		rl_rec_sprite2_filter_bright(x, y, sprite2s, index, filter, true);
+
+	if (!sprite2_index_valid(sprite2s, index))
+		return;
+
+	const Uint8 *data = sprite2s.data + SDL_SwapLE16(((Uint16 *)sprite2s.data)[index - 1]);
+
+	for (; *data != 0x0f; ++data)
+	{
+		if (y >= surface->h)
+			return;
+
+		Uint8 skip_count = *data & 0x0f;
+		Uint8 fill_count = (*data >> 4) & 0x0f;
+
+		x += skip_count;
+
+		if (fill_count == 0) // move to next pixel row
+		{
+			y += 1;
+			x -= 12;
+		}
+		else if (y >= 0)
+		{
+			Uint8 *const pixel_row = (Uint8 *)surface->pixels + (y * surface->pitch);
+			do
+			{
+				++data;
+
+				if (x >= 0 && x < surface->pitch)
+					pixel_row[x] = filter_bright_pixel(*data, filter);
+				x += 1;
+			} while (--fill_count);
+		}
+		else
+		{
+			data += fill_count;
+			x += fill_count;
+		}
+	}
+}
+
 // blit_sprite2_blend's shade average, lifted and plotted into the bank `filter` names (see sprite.h
 // for how the two are packed into it).
 static inline Uint8 blend_filter_pixel(Uint8 dst, Uint8 src, Uint8 filter)
@@ -1454,6 +1551,7 @@ static inline void blit2_block(SDL_Surface *surface, int x, int y, int scale, Ui
 			case BLIT2_FILTER: *p = filter | (d & 0x0f); break;
 			case BLIT2_SOLID:  *p = filter; break;
 			case BLIT2_BLEND_FILTER: *p = blend_filter_pixel(*p, d, filter); break;
+			case BLIT2_FILTER_BRIGHT: *p = filter_bright_pixel(d, filter); break;
 			}
 		}
 	}

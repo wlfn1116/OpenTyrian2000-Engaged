@@ -181,6 +181,11 @@ enum {
 // in the elite banks. Well under the aura's lift, so the sprite keeps its own gradient.
 #define ENDLESS_EXPLOSION_BRIGHT 3
 
+// Shade lift for a tinted enemy bullet (see blit_sprite2_filter_bright). Shot art spans the whole
+// ramp, and the champion bank's bottom third is nearly black, so its darker pixels would disappear
+// at the sprite's own shade. Smaller than the explosion lift, which is undoing a blend as well.
+#define ENDLESS_SHOT_BRIGHT 2
+
 // Player-side kill-fire tint banks.
 #define ENDLESS_TURBODRIVE_SHIP_FILTER 0xC0
 #define ENDLESS_OVERDRIVE_SHIP_FILTER  0x70

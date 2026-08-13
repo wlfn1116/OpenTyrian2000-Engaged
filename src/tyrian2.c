@@ -143,8 +143,9 @@ static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer 
 // MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
 // pool; 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
 // nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite is Martyrdom's own
-// fixed graphic (endlessMartyrShotSprite), so a death burst always looks the same wherever it happens.
-static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
+// fixed graphic (endlessMartyrShotSprite), so a death burst always looks the same wherever it happens,
+// recoloured into `tint` when the enemy that died was an elite or a champion.
+static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots, Uint8 tint)
 {
 	if (shots <= 0)
 		return;
@@ -187,6 +188,7 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots)
 		enemyShot[b].animate = 0;
 		enemyShot[b].animax = 0;
 		enemyShot[b].seekerArm = 0;      // radial by design; never a seeker
+		enemyShot[b].filter = tint;
 	}
 }
 
@@ -294,7 +296,7 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 	{
 		JE_integer burstX, burstY;
 		endlessMartyrBurstOrigin(i, &burstX, &burstY);
-		endlessSpawnMartyrBurst(burstX, burstY, martyrShots);
+		endlessSpawnMartyrBurst(burstX, burstY, martyrShots, endlessEliteTint(elite));
 	}
 	chain_queue_kill(sx, sy, linknum);
 }
@@ -2279,6 +2281,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 		if (enemy[i].eliteState == 3)
 			dpct = dpct * endlessChampionShotDamagePercent() / 100;
 	}
+	const Uint8 tint = endlessEliteTint(enemy[i].eliteState);
 
 	// Align the 12x14 aimed shot with the eye and the lightning column with the lower orb.
 	const JE_integer eyeX = baseX + 10, eyeY = baseY - 34;
@@ -2313,6 +2316,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 	enemyShot[b].animax = weapons[w].weapani;
 	enemyShot[b].sgr = weapons[w].sg[0];
 	enemyShot[b].seekerArm = 0;
+	enemyShot[b].filter = tint;
 	enemyShot[b].syc = weapons[w].acceleration;
 	enemyShot[b].sxc = weapons[w].accelerationx;
 	enemyShot[b].sxm = weapons[w].sx[0];
@@ -2469,6 +2473,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 			enemyShot[c].animax = 4;
 			enemyShot[c].sgr = boltSegment[s];
 			enemyShot[c].seekerArm = 0;
+			enemyShot[c].filter = tint;
 		}
 	}
 }
@@ -2937,6 +2942,9 @@ enemy_still_exists:
 
 								enemyShot[b].sgr = weapons[temp3].sg[tempPos];
 								enemyShot[b].seekerArm = 0;   // endless SEEKER arms this below; 0 for every non-seeker shot
+								// An elite or champion fires in its own bank, so its bullets read as
+								// dangerous as the body they came from. 0 outside an endless run.
+								enemyShot[b].filter = endlessEliteTint(enemy[i].eliteState);
 								switch (j)
 								{
 								case 1:
@@ -4976,6 +4984,13 @@ level_loop:
 
 												enemy[b-1].ex = enemy[temp2].ex;
 												enemy[b-1].ey = enemy[temp2].ey;
+
+												// Endless: a body this death turns into (a rising bomb, a
+												// second stage) continues the same enemy, so it takes the
+												// tier already decided rather than rolling one and changing
+												// colour. Loot is avail 2 and stays untiered.
+												if (enemyAvail[b-1] != 2)
+													enemy[b-1].eliteState = enemy[temp2].eliteState;
 											}
 											b = temp_b;
 										}
@@ -5207,10 +5222,16 @@ draw_player_shot_loop_end:
 						rl_current_vel_y = enemyShot[z].sym;
 						rl_current_acc_x = enemyShot[z].sxc;
 						rl_current_acc_y = enemyShot[z].syc;
-						if (enemyShot[z].sgr >= 500)
-							blit_sprite2(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, spriteSheet12, enemyShot[z].sgr + enemyShot[z].animate - 500);
+						// Graphics from 500 up live in the second sheet, indexed from its start.
+						const bool highSheet = (enemyShot[z].sgr >= 500);
+						Sprite2_array *const sheet = highSheet ? &spriteSheet12 : &spriteSheet8;
+						const unsigned int frame =
+							enemyShot[z].sgr + enemyShot[z].animate - (highSheet ? 500 : 0);
+						if (enemyShot[z].filter != 0)
+							blit_sprite2_filter_bright(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, *sheet,
+							                           frame, enemyShot[z].filter | ENDLESS_SHOT_BRIGHT);
 						else
-							blit_sprite2(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, spriteSheet8, enemyShot[z].sgr + enemyShot[z].animate);
+							blit_sprite2(VGAScreen, enemyShot[z].sx, enemyShot[z].sy, *sheet, frame);
 						rl_current_id = 0;
 						rl_current_vel_x = 0;
 						rl_current_vel_y = 0;

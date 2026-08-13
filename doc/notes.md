@@ -343,22 +343,53 @@ for one of those.
 The scan result is derived from level data and never changes during play, so
 unlike `endlessEliteLink` it is not registered for rollback.
 
+A kill that spawns the enemy named by `enemydie` hands its tier to that spawn
+rather than letting it roll one, so a second stage cannot change colour, health
+or fire rate the moment the first one dies. The gate is the avail value
+`JE_makeEnemy` returned: 2 is loot, which stays untiered like any other
+pickup, and 0 is a body. Across the shipped tables every one of those bodies
+is hostile (the Harvest bomb that rises and fires, a homing wreck, a
+launcher), and every `enemydie` target with no armor is a score pickup.
+Inheriting also reaches bodies the roll could never have promoted, since the
+spawn site marks anything carrying a value as a `scoreitem`: killing an
+elite's second stage is now its own elite kill, with the tier's health and
+its bounty.
+
 Elite and champion bodies shed an aura in the tier's own filter bank, under the
 presentation-only spark rules given in "Endless special pickups". It is
 staggered by enemy slot, so a linked multi-tile body emits once per part and its
 density tracks the area it covers. Iced and wrecked bodies do not emit.
 
 `endlessEliteTint` is the one source of that bank, for the body, the aura, the
-health bar and the explosion. The explosion carries it through `explosionFilter`:
-a kill site sets it, spawns, and clears it again, so `JE_setupExplosion` can stamp
-every puff without a new argument at sixty call sites. It never survives a tick,
-which is why it is not registered for rollback. `rep_explosions` keeps its own
-copy because a big sequence re-arms itself from the draw loop, where the dying
-enemy is long gone.
+health bar, the bullets and the explosion. The explosion carries it through
+`explosionFilter`: a kill site sets it, spawns, and clears it again, so
+`JE_setupExplosion` can stamp every puff without a new argument at sixty call
+sites. It never survives a tick, which is why it is not registered for rollback.
+`rep_explosions` keeps its own copy because a big sequence re-arms itself from
+the draw loop, where the dying enemy is long gone.
 
-The colour bytes added to `Explosion` and `rep_explosion_type` land in existing
-padding, so neither `sizeof` nor the layout fingerprint moves and the replay
-fixtures still hash what they did before. They are zero outside an Endless run.
+Bullets take the same bank, stamped into `EnemyShotType.filter` at each of the
+four spawn sites in tyrian2.c (the turret volley, both halves of the dispenser
+volley, and a Martyrdom death burst). A volley's extra tide shots are struct
+copies of the shot they fan off, so they inherit it. Storing the bank beats
+reading the shooter at draw time: a bullet outlives the enemy that fired it.
+`network_sim_pools` names the shot fields it hashes, so the byte stays out of
+the peer comparison.
+
+A tinted bullet is drawn with `blit_sprite2_filter_bright`, the plain filter
+blit plus `ENDLESS_SHOT_BRIGHT` on each pixel's shade. Shot art spans the whole
+ramp and the champion bank's bottom third is nearly black, so its darker pixels
+would be lost at their own shade. `blit_sprite2_filter` cannot carry the lift:
+it ORs its argument over the sprite's shade, which would collapse the gradient
+into four steps. Its render-list kinds replay through the clipping blitter,
+because extrapolation can push a fast bullet past a screen edge, and the 1x
+path does not clip on x.
+
+The colour bytes added to `Explosion`, `rep_explosion_type` and `EnemyShotType`
+land in existing padding, so neither `sizeof` nor the layout fingerprint moves
+and the replay fixtures still hash what they did before. They are zero outside
+an Endless run.
+
 Explosions are normally drawn with `blit_sprite2_blend`, so a tinted one takes
 `blit_sprite2_blend_filter`, which recolours and blends in one pass. Two passes
 would read back its own tinted pixels and halve the shade twice. Its argument

@@ -141,6 +141,11 @@ void blit_sprite2_solid(SDL_Surface *, int x, int y, Sprite2_array, unsigned int
 void blit_sprite2_solid_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 color);
 void blit_sprite2_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
+// Recolour, then lift the shade, for a sprite whose dark end would vanish in the destination bank
+// (endless elite bullets). `filter` packs the bank and the lift the way blit_sprite2_blend_filter
+// does; the plain filter blit cannot take one, since it ORs its argument over the sprite's shade.
+void blit_sprite2_filter_bright(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
+void blit_sprite2_filter_bright_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 // Recolour and blend in one pass, for a sprite that is normally drawn with blit_sprite2_blend and
 // has to carry a tint (endless elite explosions). Blending afterwards would read its own tinted
 // pixels back and halve the shade twice. `filter` packs the destination bank in its high nibble
@@ -165,6 +170,7 @@ typedef enum
 	BLIT2_FILTER,     // blit_sprite2_filter (uses the filter arg)
 	BLIT2_SOLID,      // blit_sprite2_solid (the filter arg is the flat colour)
 	BLIT2_BLEND_FILTER,  // blit_sprite2_blend_filter (filter arg = bank | shade lift)
+	BLIT2_FILTER_BRIGHT, // blit_sprite2_filter_bright (filter arg = bank | shade lift)
 } Blit2Op;
 
 typedef enum

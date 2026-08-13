@@ -1594,6 +1594,65 @@ static void qa_test_elite_explosion_tint(void)
 	endlessCampaignMods = savedCampaign;
 }
 
+/* An elite's bullets wear the tier bank its body does, stamped into the shot at spawn. The byte
+ * carrying it is presentation, so it may not reach either hash a peer compares. */
+static void qa_test_elite_shot_tint(void)
+{
+	/* Like both explosion pools, the colour byte sits in padding the struct already had. Widening
+	 * the pool moves the registry layout and every replay fixture hash with it. */
+	qa_check(sizeof(EnemyShotType) == 32,
+	         "the enemy-shot pool keeps the width the replay fixtures were recorded at");
+
+	/* The pool hash walks live slots only, so freeing the rest leaves one bullet to compare. */
+	JE_boolean savedAvail[ENEMY_SHOT_MAX];
+	const EnemyShotType savedShot = enemyShot[0];
+	memcpy(savedAvail, enemyShotAvail, sizeof(savedAvail));
+	for (unsigned int i = 0; i < COUNTOF(enemyShotAvail); ++i)
+		enemyShotAvail[i] = 1;
+
+	enemyShotAvail[0] = 0;
+	enemyShot[0].sx = 90;
+	enemyShot[0].sy = 120;
+	enemyShot[0].duration = 20;
+	enemyShot[0].filter = 0;
+	const Uint32 plain = network_sim_pools(NULL);
+	enemyShot[0].filter = ENDLESS_CHAMPION_FILTER;
+	qa_check(network_sim_pools(NULL) == plain,
+	         "bullet colour leaves the pool hash a peer compares untouched");
+
+	memcpy(enemyShotAvail, savedAvail, sizeof(savedAvail));
+	enemyShot[0] = savedShot;
+
+	/* The lift the bullets are drawn with, through the blitter replay draws them with. Same
+	 * one-opaque-pixel frames the explosion tint check above builds. */
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
+	{
+		union {
+			Uint16 align;  // the offset table is read as Uint16, which needs the storage aligned
+			Uint8 bytes[10];
+		} frames = { .bytes = { 4, 0, 7, 0,         // two frames, one pixel each, both bank 7
+		                        0x10, 0x74, 0x0f,      // shade 4
+		                        0x10, 0x7e, 0x0f } };  // shade 14
+		const Sprite2_array sheet = { sizeof(frames.bytes), frames.bytes };
+
+		Uint8 *const row = (Uint8 *)VGAScreen->pixels;
+		const Uint8 savedPixels[2] = { row[0], row[1] };
+		const int lifted = (4 + ENDLESS_SHOT_BRIGHT > 15) ? 15 : 4 + ENDLESS_SHOT_BRIGHT;
+
+		blit_sprite2_filter_bright_clip(VGAScreen, 0, 0, sheet, 1,
+		                                ENDLESS_ELITE_FILTER | ENDLESS_SHOT_BRIGHT);
+		blit_sprite2_filter_bright_clip(VGAScreen, 1, 0, sheet, 2,
+		                                ENDLESS_CHAMPION_FILTER | ENDLESS_SHOT_BRIGHT);
+
+		qa_check(row[0] == (ENDLESS_ELITE_FILTER | lifted)
+		         && row[1] == (ENDLESS_CHAMPION_FILTER | 15),
+		         "a tinted bullet pixel keeps its own shade, lifted and clamped in its bank");
+
+		row[0] = savedPixels[0];
+		row[1] = savedPixels[1];
+	}
+}
+
 /* Which slots a shower lands in, so the per-weapon classic cap can be checked without a screen.
  * Returns the number of live sparks and the lowest and highest slot used. */
 static int qa_spark_span(int *out_lo, int *out_hi)
@@ -3498,6 +3557,7 @@ int qa_run_unit_suite(void)
 	qa_test_shot_hitboxes();
 	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();
+	qa_test_elite_shot_tint();
 	qa_test_superspark_caps();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();

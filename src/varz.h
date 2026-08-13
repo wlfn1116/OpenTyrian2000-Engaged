@@ -201,7 +201,8 @@ typedef struct {
 	JE_word animate;
 	JE_word animax;
 	JE_byte seekerArm; /* endless SEEKER: 0 = not a seeker; >0 counts sim ticks to the single mid-flight course correction, then back to 0 (one turn only). Set at spawn; see tyrian2.c */
-	JE_byte fill[11];
+	JE_byte filter;  // shooter's tier bank, stamped at spawn; 0 for the sprite's own colours
+	JE_byte fill[10];
 } EnemyShotType;
 
 typedef struct {
