@@ -111,7 +111,7 @@ static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[
 {
 	{  2, 11,  25 },  // Pearl Wind, the instant-shot record; the field one keeps the shipped icon
 	{  7,  7, 109 },  // Blade Field
-	{  8,  7, 162 },  // SandStorm
+	{  8,  7, 304 },  // SandStorm
 	{ 11,  7, 154 },  // Banana Bomb
 	{ 12,  7, 129 },  // Protron Dispersal
 	{ 13,  7, 253 },  // Astral Zone
