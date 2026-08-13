@@ -315,21 +315,33 @@ Spawn position feeds collision, so this is a deterministic rule and owns the
 
 #### Endless enemy tiers
 
-`endlessEliteTierNow` is the one place a body's tier is decided. `JE_drawEnemy`
-calls it on every tick the slot still reads undecided. A score pickup settles on
-normal at once, and a damageable body rolls, with the answer cached per link
-group for the level so a multi-tile hull cannot end up wearing two tiers.
+`endlessEliteTierNow` is the one place a body's tier is decided, and it answers
+on the first frame `JE_drawEnemy` processes the slot. Settling that early is the
+point: a tier changes an enemy's colour, its health and its fire rate, so an
+answer that arrived later would land in front of the player. A score pickup is
+normal, a damageable body rolls, and the answer is cached per link group for the
+level so a multi-tile hull cannot end up wearing two tiers.
 
-An enemy the level is holding invulnerable answers 0, meaning ask again. Levels
-spawn bosses and sealed hulls at 255 armor and open them with an "Enemy Global
-Damage change" event, sometimes thousands of ticks later, and the tick's events
-all run before the draw pass. Settling on normal at the first frame would
-therefore exclude every one of those for the rest of the level.
+An enemy the level is holding invulnerable cannot be judged from its armor
+alone. Levels spawn bosses and sealed hulls at 255 armor and open them with an
+"Enemy Global Damage change" event (type 25 or 47), sometimes thousands of ticks
+later, while permanent scenery sits at 255 for its whole life. So
+`endlessResetElites` scans the loaded event list once per level and records
+which link groups such an event can still open, treating only a value of 1 to
+254 as an opening. A record with no link number opens every body, linked or not.
+"Enemy Global Linknum Change" (type 39) renumbers a group, so a group opened
+under its new number counts as openable under its old one, followed to a
+fixpoint because renumbers chain.
 
-A part whose link group is already decided adopts that tier without waiting,
-which covers armor plating bolted to a damageable core. A body that stays
-invulnerable for its whole life never takes a tier, since nothing can kill it and
-no bounty can be paid for it.
+An invulnerable body rolls when the scan says its group can be opened, and is
+normal when it cannot. A part whose link group has already rolled adopts that
+tier either way, which covers armor plating bolted to a damageable core. Across
+the shipped levels the scan reaches about a tenth of the invulnerable spawns.
+The rest are indestructible walls and hazards, and no bounty could ever be paid
+for one of those.
+
+The scan result is derived from level data and never changes during play, so
+unlike `endlessEliteLink` it is not registered for rollback.
 
 Elite and champion bodies shed an aura in the tier's own filter bank, under the
 presentation-only spark rules given in "Endless special pickups". It is
@@ -651,7 +663,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 40.
+`NET_VERSION` bump. The current value is 41.
 
 Recent versions:
 
@@ -678,6 +690,7 @@ Recent versions:
 | 38 | Ship picture Episode Versions bits |
 | 39 | Settled Endless special-enemy tier bits |
 | 40 | Ship-centred Endless orbiting specials |
+| 41 | Endless tiers settled on an enemy's first frame |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

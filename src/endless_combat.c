@@ -330,16 +330,73 @@ int endlessContactDamagePercent(void)
 
 static signed char endlessEliteLink[256];  // per-linknum tier this level: -1 undecided, else 1/2/3
 
+// Link groups this level's script can still make damageable, scanned from the event list at level
+// start and constant from there, so an invulnerable body can be judged on its first frame.
+static bool endlessArmorOpens[256];
+static bool endlessArmorOpensAll;  // a level-wide armor event reaches every body, linked or not
+
 static int endlessMartyrLastLink = 0;
 
 static int endlessShockwaveLastLink = 0;
 
 static int endlessBountyLastLink = 0;
 
+// Level-script events that write enemy armor, and the one that renumbers a link group.
+#define ENDLESS_EVENT_ARMOR_SET     25
+#define ENDLESS_EVENT_ARMOR_SET_ALT 47
+#define ENDLESS_EVENT_RELINK        39
+
+static void endlessScanArmorOpenings(void)
+{
+	memset(endlessArmorOpens, 0, sizeof(endlessArmorOpens));
+	endlessArmorOpensAll = false;
+
+	for (int i = 0; i < maxEvent; ++i)
+	{
+		const int type = eventRec[i].eventtype;
+		if (type != ENDLESS_EVENT_ARMOR_SET && type != ENDLESS_EVENT_ARMOR_SET_ALT)
+			continue;
+		if (eventRec[i].eventdat < 1 || eventRec[i].eventdat > 254)
+			continue;  // 0 kills the body and 255 seals it; neither one opens anything up
+
+		if (eventRec[i].eventdat4 == 0)
+			endlessArmorOpensAll = true;
+		else
+			endlessArmorOpens[eventRec[i].eventdat4] = true;
+	}
+
+	if (endlessArmorOpensAll)
+		return;  // every body is already reachable, so renumbering cannot widen the set
+
+	// Renumbering hands a group a new link number, so a group opened under the new number is
+	// openable under the old one. Repeat until a pass adds nothing, since renumbers chain.
+	bool grew;
+	do
+	{
+		grew = false;
+		for (int i = 0; i < maxEvent; ++i)
+		{
+			if (eventRec[i].eventtype != ENDLESS_EVENT_RELINK)
+				continue;
+
+			const int from = eventRec[i].eventdat, to = eventRec[i].eventdat2;
+			if (from < 1 || from > 255 || to < 1 || to > 255)
+				continue;
+			if (endlessArmorOpens[to] && !endlessArmorOpens[from])
+			{
+				endlessArmorOpens[from] = true;
+				grew = true;
+			}
+		}
+	} while (grew);
+}
+
 void endlessResetElites(void)
 {
 	for (unsigned i = 0; i < COUNTOF(endlessEliteLink); ++i)
 		endlessEliteLink[i] = -1;
+
+	endlessScanArmorOpenings();
 
 	endlessMartyrLastLink = 0;
 	endlessShockwaveLastLink = 0;
@@ -405,19 +462,21 @@ static int endlessRollEliteTier(JE_byte linknum)
 	return endlessEliteLink[linknum];
 }
 
-// The tier this enemy wears from here on, or 0 while the answer must wait for a later tick.
-// Levels hold bosses and sealed hulls at 255 armor and open them up much later, so an
-// invulnerable enemy stays undecided and a part adopts a tier its link group already holds.
+// The tier this enemy wears for the rest of its life, settled on its first processed frame so
+// nothing recolours or rearms in front of the player. A body the level is holding invulnerable
+// takes a tier only when something can eventually hurt it.
 // See doc/notes.md, "Endless enemy tiers".
 int endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem)
 {
 	if (scoreitem)
-		return 1;  // settled: nothing promotes a pickup later
+		return 1;  // nothing promotes a pickup
 	if (armorleft > 0 && armorleft < 255)
 		return endlessRollEliteTier(linknum);
 	if (linknum != 0 && endlessEliteLink[linknum] > 0)
-		return endlessEliteLink[linknum];
-	return 0;
+		return endlessEliteLink[linknum];  // a part of a group that has already rolled
+	if (endlessArmorOpensAll || (linknum != 0 && endlessArmorOpens[linknum]))
+		return endlessRollEliteTier(linknum);  // a later armor event opens this one up
+	return 1;  // invulnerable for its whole life, so never worth a bounty
 }
 
 // Special-tier HP divisor.

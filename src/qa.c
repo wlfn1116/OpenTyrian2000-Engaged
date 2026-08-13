@@ -1436,36 +1436,69 @@ static void qa_test_shot_hitboxes(void)
 	centeredShotHitboxes = savedCentered;
 }
 
-/* Which enemies a tier roll may land on, and when. The cases that matter are the ones a level
- * holds invulnerable on their first frame and opens up with a later event. */
+/* Which enemies a tier roll may land on. Every body settles on its first frame, so the roll reads
+ * the level script to tell a boss flying in armored from scenery that can never be hurt. */
 static void qa_test_elite_tier_eligibility(void)
 {
 	const bool savedMode = endlessMode, savedCampaign = endlessCampaignMods;
 	const Uint64 savedMods = endlessActiveMods;
 	const int savedDepth = endlessRunDepth;
+	const JE_word savedMaxEvent = maxEvent;
+	struct JE_EventRecType savedEvents[4];
+	memcpy(savedEvents, eventRec, sizeof(savedEvents));
 
 	endlessMode = true;
 	endlessCampaignMods = false;
 	endlessRunDepth = 20;
 	endlessActiveMods = ENDLESS_MOD_APEX;  // every roll returns a tier
 
-	endlessResetElites();
-	qa_check(endlessEliteTierNow(0, 40, false) >= 2, "a damageable enemy takes a tier");
-	qa_check(endlessEliteTierNow(0, 255, false) == 0, "an unlinked invulnerable enemy stays undecided");
-	qa_check(endlessEliteTierNow(0, 255, true) == 1, "a score pickup is never a tier");
+	// A level that opens link 64 with a damage event, seals link 12 with one, and renumbers
+	// link 9 into 64. Link 3 is named nowhere, so nothing can ever hurt it.
+	memset(eventRec, 0, sizeof(savedEvents));
+	eventRec[0].eventtype = 25;
+	eventRec[0].eventdat = 200;
+	eventRec[0].eventdat4 = 64;
+	eventRec[1].eventtype = 25;
+	eventRec[1].eventdat = 255;
+	eventRec[1].eventdat4 = 12;
+	eventRec[2].eventtype = 39;
+	eventRec[2].eventdat = 9;
+	eventRec[2].eventdat2 = 64;
+	maxEvent = 3;
 
 	endlessResetElites();
-	qa_check(endlessEliteTierNow(64, 255, false) == 0, "a boss flying in armored waits to roll");
-	const int opened = endlessEliteTierNow(64, 254, false);
-	qa_check(opened >= 2, "...and takes its tier when the level's damage event opens it up");
-	qa_check(endlessEliteTierNow(64, 255, false) == opened,
+	qa_check(endlessEliteTierNow(0, 40, false) >= 2, "a damageable enemy takes a tier");
+	qa_check(endlessEliteTierNow(0, 255, true) == 1, "a score pickup is never a tier");
+	qa_check(endlessEliteTierNow(3, 255, false) == 1, "scenery no armor event can reach is never promoted");
+	qa_check(endlessEliteTierNow(12, 255, false) == 1, "...nor is a body an armor event only seals");
+
+	endlessResetElites();
+	const int boss = endlessEliteTierNow(64, 255, false);
+	qa_check(boss >= 2, "a boss flying in armored takes its tier while it is still invulnerable");
+	qa_check(endlessEliteTierNow(64, 254, false) == boss,
+	         "...and keeps it when the level's damage event opens it up");
+	qa_check(endlessEliteTierNow(9, 255, false) >= 2,
+	         "a group renumbered into an opened one rolls too, under its own number");
+
+	endlessResetElites();
+	qa_check(endlessEliteTierNow(64, 254, false) == endlessEliteTierNow(64, 255, false),
 	         "an invulnerable part wears the tier its link group already holds");
+
+	// A damage event with no link number reaches every body on the field.
+	memset(eventRec, 0, sizeof(savedEvents));
+	eventRec[0].eventtype = 47;
+	eventRec[0].eventdat = 30;
+	maxEvent = 1;
+	endlessResetElites();
+	qa_check(endlessEliteTierNow(0, 255, false) >= 2, "a level-wide damage event opens even unlinked bodies");
 
 	endlessActiveMods = ENDLESS_MOD_NOELITE;
 	endlessResetElites();
 	qa_check(endlessEliteTierNow(7, 40, false) == 1 && endlessEliteTierNow(7, 255, false) == 1,
 	         "No Elites decides normal, and the group's parts still agree with it");
 
+	memcpy(eventRec, savedEvents, sizeof(savedEvents));
+	maxEvent = savedMaxEvent;
 	endlessMode = savedMode;
 	endlessCampaignMods = savedCampaign;
 	endlessActiveMods = savedMods;

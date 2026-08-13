@@ -2513,8 +2513,8 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				enemy[i].scroll_ylayer = (JE_byte)tempScrollYLayer;
 			}
 
-			// Endless: this enemy's tier; 0 undecided, 1 normal, 2 elite, 3 champion. Retested
-			// every tick because an invulnerable enemy answers 0 until the level opens it up.
+			// Endless: settle this enemy's tier once, on the first frame it is processed;
+			// 1 normal, 2 elite, 3 champion.
 			if (endlessFxActive() && enemy[i].eliteState == 0)
 				enemy[i].eliteState = (JE_byte)endlessEliteTierNow(
 					enemy[i].linknum, enemy[i].armorleft, enemy[i].scoreitem);
