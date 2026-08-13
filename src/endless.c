@@ -1139,7 +1139,7 @@ void endlessOnRunEnd(void)
 			} \
 		} while (0)
 
-	// Records are kept per mode and difficulty, so the summary names both.
+	// Records are split by mode, difficulty, crew size and chart rule, so the summary names them.
 	const int runDifficulty = (initialDifficulty >= 0 && (size_t)initialDifficulty < COUNTOF(difficultyNameB))
 	                        ? initialDifficulty : 0;
 	// Two ships change what every other row on this screen means -- the kills, the cash, the zones
@@ -1150,6 +1150,7 @@ void endlessOnRunEnd(void)
 		           difficultyNameB[runDifficulty]);
 	else
 		RUNEND_ROW("Mode:", "%s, %s", endlessRunModeName(endlessRunMode), difficultyNameB[runDifficulty]);
+	RUNEND_ROW("Base Level:", "%s", endlessBaseLevelRuleName(endlessRunBaseRule));
 	RUNEND_ROW("Zones cleared:", "%d", endlessRunDepth);
 	RUNEND_ROW("Enemies destroyed:", "%d", endlessRunKills);
 	RUNEND_ROW("Bosses slain:", "%d", endlessRunBossKills);
@@ -1202,6 +1203,7 @@ void endlessOnRunEnd(void)
 
 	const int titleH  = 20;   // FONT_SHAPES
 	const int lineH   = 13;   // SMALL_FONT_SHAPES
+	const int stepMin = 11;   // the pitch the High Scores rows already use for this font
 	const int recordGap = 3;  // the record hangs off the closing line as its own beat, not a new block
 	int titleGap = 12;        // breathing room under the title
 	int tailGap  = 10;        // ...and above the closing milestone line
@@ -1210,13 +1212,14 @@ void endlessOnRunEnd(void)
 	const int closeLines = (closingTail != NULL) ? 2 : 1;   // the milestone line, plus the sign-off at 250
 	int step = 18;
 	int total;
-	// Tighten row pitch and gaps to fit the deepest-run summary in 200 scanlines.
+	// Tighten the row pitch and gaps until the summary fits with a margin. The rows array bounds
+	// the tally, so even the fullest summary at its tightest lands inside the 200 scanlines.
 	while ((total = titleH + titleGap + (bodyLines - 1) * step + lineH
 	                + tailGap + lineH
 	                + (closeLines - 1) * (recordGap + lineH)
 	                + recordGap + lineH) > 182)
 	{
-		if (step > lineH)
+		if (step > stepMin)
 			--step;
 		else if (titleGap > 6)
 			--titleGap;
