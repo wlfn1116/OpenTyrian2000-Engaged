@@ -226,11 +226,13 @@ typedef struct {
 
 // `bright` lifts the plotted shade (see rl_superpixel_value). z alone halves into a mid shade at
 // spawn and fades to the bank floor, which the presentation-only showers lose against a lit
-// playfield; 0 keeps the classic shading.
+// playfield; 0 keeps the classic shading. `occluded` hides the spark inside this tick's occluder
+// boxes (see JE_addSPOccluder), so a shower thrown from a sprite passes behind it.
 typedef struct {
 	unsigned int x, y, z;
 	signed int delta_x, delta_y;
 	Uint8 color, bright;
+	bool occluded;
 } superpixel_type;
 
 extern JE_integer tempDat, tempDat2, tempDat3;
@@ -436,6 +438,12 @@ extern bool superpixelClipActive;
 extern int superpixelClipX0, superpixelClipY0, superpixelClipX1, superpixelClipY1;
 void JE_setSPClip(int x0, int y0, int x1, int y1);
 void JE_clearSPClip(void);
+
+// A sprite that hides the sparks spawned with `occluded`, in screen pixels, both edges inclusive.
+// The drawing code publishes one box per sprite per tick; JE_drawSP consumes the list and clears
+// it, so a box never outlives the frame that set it.
+void JE_addSPOccluder(int x0, int y0, int x1, int y1);
+
 extern JE_byte temp, temp2, temp3;
 extern JE_word tempW;
 extern JE_boolean doNotSaveBackup;
@@ -502,7 +510,9 @@ JE_word JE_portConfigs(const Player *this_player);
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
 // `bright` is the shade lift described at superpixel_type; 0 gives the classic JE_doSP shading.
-void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, JE_byte bright, Uint32 seed);
+// `occluded` marks the sparks as hidden by this tick's occluder boxes (see JE_addSPOccluder).
+void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
+                   bool classic_cap, JE_byte bright, bool occluded, Uint32 seed);
 void JE_drawSP(void);
 void JE_resetSP(void);
 

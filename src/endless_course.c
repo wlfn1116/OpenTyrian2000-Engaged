@@ -273,14 +273,12 @@ static const EndlessRareInjection endlessRareInjections[] = {
 #undef RARE_FIXED
 
 // Replace Elite Pack once the natural elite share exceeds its 50% cap.
-// Apex and Legion remain valid because they force 100%.
+// endlessCanonicalMods has already taken it off any Apex or Legion course.
 static void endlessFixRedundantElitePack(int c)
 {
 	const Uint64 mods = endlessCourseMod[c];
 	if (!(mods & ENDLESS_MOD_ELITEPACK))
 		return;
-	if (mods & (ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION))
-		return;                               // 100 percent is still an increase
 	if (endlessNaturalEliteChancePercent() <= 50)
 		return;                               // Elite Pack still increases the share
 
@@ -913,10 +911,9 @@ static void endlessEnforceEliteRules(void)
 		for (int c = 0; c < endlessCourseCnt; ++c)
 			endlessCourseMod[c] &= ~locked;
 
-	// NOELITE supersedes NOCHAMP.
+	// Settle the special-enemy ladder before the Elite Pack pass reads the surviving bits.
 	for (int c = 0; c < endlessCourseCnt; ++c)
-		if ((endlessCourseMod[c] & ENDLESS_MOD_NOELITE) && (endlessCourseMod[c] & ENDLESS_MOD_NOCHAMP))
-			endlessCourseMod[c] &= ~(Uint64)ENDLESS_MOD_NOCHAMP;
+		endlessCourseMod[c] = endlessCanonicalMods(endlessCourseMod[c]);
 
 	// Remove Elite Pack when it would cap elites below the natural deep-run rate.
 	// Scan slot zero because Ambush can place a hostile course there.
@@ -1370,6 +1367,8 @@ JE_byte endlessSelectCourse(int i)
 	for (uint p = 0; p < endlessEffectPlayers(); ++p)
 		if (endlessLongCon[p] > 0 && --endlessLongCon[p] == 0)
 			endlessActiveMods |= ENDLESS_MOD_APEX;
+	// The ambush can land on a course that already forces a tier.
+	endlessActiveMods = endlessCanonicalMods(endlessActiveMods);
 
 	endlessApplyPurchasedMods();   // personal buys to their buyer, the rest to the sector
 	for (uint p = 0; p < COUNTOF(endlessPurchasedMods); ++p)

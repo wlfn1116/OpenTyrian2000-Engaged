@@ -438,10 +438,7 @@ Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased)
 {
 	if (purchased & ENDLESS_MOD_KILLFIRE_ANY)
 		sectorMods &= ~(Uint64)ENDLESS_MOD_KILLFIRE_ANY;
-	Uint64 mods = sectorMods | purchased;
-	if ((mods & ENDLESS_MOD_NOELITE) && (mods & ENDLESS_MOD_NOCHAMP))
-		mods &= ~(Uint64)ENDLESS_MOD_NOCHAMP;
-	return mods;
+	return endlessCanonicalMods(sectorMods | purchased);
 }
 
 bool endlessTryBuySpecial(void)

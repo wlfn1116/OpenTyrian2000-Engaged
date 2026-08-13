@@ -1908,12 +1908,23 @@ static Uint8 endlessSpecialIconFilter(void)
 // shower carries. Matches the density of the superspark weapon trails.
 #define ENDLESS_SPECIAL_SPARK_REACH 3
 
-// Shower in the glyph's current colour. Presentation only: superpixels are outside the rollback
-// registry and JE_doSPSeeded runs its own sequence. Silent resim passes must not spawn.
+// Shower in the glyph's current colour, thrown from the glyph's centre and hidden underneath it.
+// Presentation only: superpixels are outside the rollback registry and JE_doSPSeeded runs its own
+// sequence. Silent resim passes must not spawn.
 static void endlessSpecialIconSparks(unsigned int i)
 {
-	if (rollback_resim_silent ||
-	    (rl_enemy_gen % ENDLESS_SPECIAL_SPARK_TICKS) != (i % ENDLESS_SPECIAL_SPARK_TICKS))
+	if (rollback_resim_silent)
+		return;
+
+	// The glyph is drawn well before JE_drawSP, so it hides its own shower through the occluder
+	// list instead of through draw order. Published every tick: the sparks in flight were thrown
+	// from earlier positions and follow the glyph the pickup has now.
+	JE_addSPOccluder(enemy[i].ex + tempMapXOfs + ENDLESS_SPECIAL_GLYPH_INK_X0 - 1,
+	                 enemy[i].ey + ENDLESS_SPECIAL_GLYPH_INK_Y0 - 1,
+	                 enemy[i].ex + tempMapXOfs + ENDLESS_SPECIAL_GLYPH_INK_X1 + 1,
+	                 enemy[i].ey + ENDLESS_SPECIAL_GLYPH_INK_Y1 + 1);
+
+	if ((rl_enemy_gen % ENDLESS_SPECIAL_SPARK_TICKS) != (i % ENDLESS_SPECIAL_SPARK_TICKS))
 		return;
 
 	// Glyph centre, matching the cells the draw places at x_offset -6/+6 and y_offset 0.
@@ -1926,7 +1937,8 @@ static void endlessSpecialIconSparks(unsigned int i)
 	// stays off: the weapon trails recycle that window several times a second, which would cut a
 	// shower this small short of its 15 ticks.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, ENDLESS_SPECIAL_SPARK_COUNT, ENDLESS_SPECIAL_SPARK_REACH,
-	              endlessSpecialIconFilter(), false, ENDLESS_SPARK_BRIGHT, rl_enemy_gen * 100u + i);
+	              endlessSpecialIconFilter(), false, ENDLESS_SPARK_BRIGHT, true,
+	              rl_enemy_gen * 100u + i);
 }
 
 #define ENDLESS_ELITE_SPARK_TICKS 5  // one shower per elite this often, staggered by enemy slot
@@ -1955,11 +1967,12 @@ static void endlessEliteAuraSparks(unsigned int i)
 
 	// The classic cap stays off, for the reason given in endlessSpecialIconSparks. The seed stride
 	// differs from that one: an armored secret orb can be an elite as well, and a shared seed would
-	// land both of its showers on the same angles.
+	// land both of its showers on the same angles. That orb wears the "?" glyph, so its aura goes
+	// behind the glyph too; nothing else on the field publishes an occluder.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, sparks,
 	              ENDLESS_ELITE_SPARK_REACH + (enemy[i].size == 1 ? 1 : 0),
 	              champion ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER, false,
-	              ENDLESS_SPARK_BRIGHT, rl_enemy_gen * 137u + i);
+	              ENDLESS_SPARK_BRIGHT, endlessSpecialPickup((int)i), rl_enemy_gen * 137u + i);
 }
 
 inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x_offset, signed int y_offset, signed int sprite_offset, bool outline)

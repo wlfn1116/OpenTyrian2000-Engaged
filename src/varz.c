@@ -2087,6 +2087,39 @@ void JE_clearSPClip(void)
 	superpixelClipActive = false;
 }
 
+// Sprites hiding this tick's occluded sparks. A shower thrown from the middle of a sprite would
+// otherwise plot over it, since JE_drawSP runs after every playfield draw. Small: only the endless
+// "?" pickup publishes a box, and only while it is on screen.
+#define MAX_SP_OCCLUDERS 24  // sprites past this simply stop hiding sparks
+
+static struct { int x0, y0, x1, y1; } sp_occluders[MAX_SP_OCCLUDERS];
+static unsigned int sp_occluder_count;
+
+void JE_addSPOccluder(int x0, int y0, int x1, int y1)
+{
+	if (sp_occluder_count >= COUNTOF(sp_occluders))
+		return;
+
+	sp_occluders[sp_occluder_count].x0 = x0;
+	sp_occluders[sp_occluder_count].y0 = y0;
+	sp_occluders[sp_occluder_count].x1 = x1;
+	sp_occluders[sp_occluder_count].y1 = y1;
+	++sp_occluder_count;
+}
+
+// Only an on-screen spark spawned with `occluded` reaches this, and the list is empty or one box
+// long in nearly every frame.
+static bool sp_hidden(int x, int y)
+{
+	for (unsigned int i = 0; i < sp_occluder_count; ++i)
+	{
+		if (x >= sp_occluders[i].x0 && x <= sp_occluders[i].x1 &&
+		    y >= sp_occluders[i].y0 && y <= sp_occluders[i].y1)
+			return true;
+	}
+	return false;
+}
+
 // Spawn slot for the next spark. The shared cursor advances exactly as it did when every source
 // wrote to it, so a capped weapon trail is still thinned by the whole screen's spark traffic. Under
 // Extra Sparks an uncapped spark retires the classic slot it would have taken and is written to the
@@ -2114,6 +2147,7 @@ void JE_resetSP(void)
 {
 	last_superpixel = 0;
 	last_uncapped_superpixel = SUPERPIXELS_CLASSIC;
+	sp_occluder_count = 0;
 	memset(superpixels, 0, sizeof(superpixels));
 }
 
@@ -2135,13 +2169,15 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		superpixels[slot].delta_y = tempy + 1;
 		superpixels[slot].color = color;
 		superpixels[slot].bright = 0;
+		superpixels[slot].occluded = false;
 		superpixels[slot].z = 15;
 	}
 }
 
 // JE_doSP driven by `seed` instead of the simulation RNG. Superpixels are not rollback state, so a
 // presentation-only effect can spawn them this way without touching the deterministic stream.
-void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap, JE_byte bright, Uint32 seed)
+void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
+                   bool classic_cap, JE_byte bright, bool occluded, Uint32 seed)
 {
 	for (int sp = 0; sp < num; sp++)
 	{
@@ -2160,6 +2196,7 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		superpixels[slot].delta_y = tempy + 1;
 		superpixels[slot].color = color;
 		superpixels[slot].bright = bright;
+		superpixels[slot].occluded = occluded;
 		superpixels[slot].z = 15;
 	}
 }
@@ -2174,6 +2211,7 @@ void JE_drawSP(void)
 			superpixels[i].y += superpixels[i].delta_y;
 
 			if (superpixels[i].x < (unsigned)VGAScreen->w && superpixels[i].y < (unsigned)VGAScreen->h
+			    && !(superpixels[i].occluded && sp_hidden((int)superpixels[i].x, (int)superpixels[i].y))
 			    && (!superpixelClipActive
 			        || (superpixels[i].x >= (unsigned)superpixelClipX0 && superpixels[i].x < (unsigned)superpixelClipX1
 			            && superpixels[i].y >= (unsigned)superpixelClipY0 && superpixels[i].y < (unsigned)superpixelClipY1)))
@@ -2206,6 +2244,8 @@ void JE_drawSP(void)
 			superpixels[i].z--;
 		}
 	}
+
+	sp_occluder_count = 0;  // the boxes describe the frame just drawn; the next one republishes
 }
 
 /* Register this file's private simulation state. Public globals are registered

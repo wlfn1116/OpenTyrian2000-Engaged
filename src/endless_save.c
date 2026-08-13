@@ -187,7 +187,8 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 		endlessCourseEp[restoredCount] = r->courseEp[i];
 		endlessCourseSec[restoredCount] = r->courseSec[i];
 		endlessCourseFile[restoredCount] = file;
-		endlessCourseMod[restoredCount] = r->courseMod[i];
+		// Charts dealt by an older build can carry a tier bit a stronger one already covers.
+		endlessCourseMod[restoredCount] = endlessCanonicalMods(r->courseMod[i]);
 		++restoredCount;
 	}
 	endlessCourseCnt = restoredCount;

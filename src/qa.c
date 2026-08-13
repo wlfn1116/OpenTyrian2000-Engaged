@@ -294,12 +294,11 @@ static bool qa_mods_compatible(Uint64 m)
 	/* These modifier pairs semantically cancel each other. */
 	if ((m & ENDLESS_MOD_FRAGILE) && (m & ENDLESS_MOD_FORTIFIED)) return false;
 	if ((m & ENDLESS_MOD_DILATION) && (m & (ENDLESS_MOD_SWIFT | ENDLESS_MOD_OVERCLOCK))) return false;
-	if ((m & ENDLESS_MOD_NOELITE) && (m & (ENDLESS_MOD_ELITEPACK | ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION))) return false;
-	if ((m & ENDLESS_MOD_NOCHAMP) && (m & ENDLESS_MOD_LEGION)) return false;
 	if ((m & ENDLESS_MOD_DEADGEN) && (m & ENDLESS_MOD_STATIC)) return false;
-	if ((m & ENDLESS_MOD_NOELITE) && (m & ENDLESS_MOD_NOCHAMP)) return false;
 	if ((m & ENDLESS_MOD_GRAVITY_OMNI) && !(m & ENDLESS_MOD_GRAVITY)) return false;
 	if (qa_popcount64(m & ENDLESS_MOD_KILLFIRE_ANY) > 1) return false;
+	/* Covers every special-enemy pair where the weaker bit changes nothing. */
+	if (endlessCanonicalMods(m) != m) return false;
 	return true;
 }
 
@@ -310,6 +309,30 @@ static void qa_test_course_tables(void)
 	if (!okay)
 		fprintf(stderr, "# modifier table validation: %s\n", detail);
 	qa_check(okay, "modifier and course-name registries satisfy their documented invariants");
+}
+
+// The special-enemy ladder, checked against the shares endlessEliteChancePercent actually reads.
+static void qa_test_canonical_mods(void)
+{
+	static const struct { Uint64 in, want; } cases[] = {
+		{ ENDLESS_MOD_APEX | ENDLESS_MOD_ELITEPACK,   ENDLESS_MOD_APEX },
+		{ ENDLESS_MOD_LEGION | ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_LEGION },
+		{ ENDLESS_MOD_LEGION | ENDLESS_MOD_APEX,      ENDLESS_MOD_LEGION },
+		{ ENDLESS_MOD_LEGION | ENDLESS_MOD_APEX | ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_LEGION },
+		{ ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_LEGION,   ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_APEX },
+		{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_NOCHAMP,  ENDLESS_MOD_NOELITE },
+		{ ENDLESS_MOD_NOELITE | ENDLESS_MOD_LEGION,   ENDLESS_MOD_NOELITE },
+		// Bits on other systems, and the one meaningful pair, must survive untouched.
+		{ ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK },
+		{ ENDLESS_MOD_APEX | ENDLESS_MOD_FORTIFIED,    ENDLESS_MOD_APEX | ENDLESS_MOD_FORTIFIED },
+		{ 0, 0 },
+	};
+	for (unsigned i = 0; i < COUNTOF(cases); ++i)
+	{
+		const Uint64 got = endlessCanonicalMods(cases[i].in);
+		qa_check(got == cases[i].want, "redundant special-enemy bits are dropped");
+		qa_check(endlessCanonicalMods(got) == got, "settling a modifier set twice changes nothing");
+	}
 }
 
 static void qa_test_structural_rng(void)
@@ -3158,6 +3181,7 @@ int qa_run_unit_suite(void)
 	qa_test_config_option_removal();
 	qa_test_rollback();
 	qa_test_course_tables();
+	qa_test_canonical_mods();
 	qa_test_structural_rng();
 	qa_test_perk_registry();
 	qa_test_record_readers();

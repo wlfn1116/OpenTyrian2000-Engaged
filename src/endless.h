@@ -554,14 +554,19 @@ void endlessGrantSpecial(uint p);
 // (mainint.c). Reads enemy state, writes none.
 bool endlessSpecialPickup(int slot);
 
-// Top half of the shop's unknown-item icon; its bottom half is a ship body. The opaque glyph sits
-// at x 2..9, y 2..12 from the enemy reference point, grown by GRAB on each side for the pickup box.
+// Top half of the shop's unknown-item icon; its bottom half is a ship body. INK is the opaque
+// glyph's measured extent from the enemy reference point, grown by GRAB on each side for the pickup
+// box. The outline pass puts one more pixel on each side, so the solid shape is INK grown by 1.
 #define ENDLESS_SPECIAL_PICKUP_ICON 125
+#define ENDLESS_SPECIAL_GLYPH_INK_X0 2
+#define ENDLESS_SPECIAL_GLYPH_INK_X1 9
+#define ENDLESS_SPECIAL_GLYPH_INK_Y0 2
+#define ENDLESS_SPECIAL_GLYPH_INK_Y1 12
 #define ENDLESS_SPECIAL_GLYPH_GRAB   5
-#define ENDLESS_SPECIAL_GLYPH_X0    (2  - ENDLESS_SPECIAL_GLYPH_GRAB)
-#define ENDLESS_SPECIAL_GLYPH_X1    (9  + ENDLESS_SPECIAL_GLYPH_GRAB)
-#define ENDLESS_SPECIAL_GLYPH_Y0    (2  - ENDLESS_SPECIAL_GLYPH_GRAB)
-#define ENDLESS_SPECIAL_GLYPH_Y1    (12 + ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_X0    (ENDLESS_SPECIAL_GLYPH_INK_X0 - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_X1    (ENDLESS_SPECIAL_GLYPH_INK_X1 + ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y0    (ENDLESS_SPECIAL_GLYPH_INK_Y0 - ENDLESS_SPECIAL_GLYPH_GRAB)
+#define ENDLESS_SPECIAL_GLYPH_Y1    (ENDLESS_SPECIAL_GLYPH_INK_Y1 + ENDLESS_SPECIAL_GLYPH_GRAB)
 
 // Rim shade for the glyph's outline pass, within whichever bank it is cycling through: dark enough
 // to read as an outline, tinted enough to belong to the icon. Below the glyph's own darkest pixel

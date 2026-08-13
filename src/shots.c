@@ -488,6 +488,31 @@ bool player_shot_move_and_draw(
 static bool salvoBoostOverride = false;    // take the tag from salvoBoostFromParent
 static bool salvoBoostFromParent = false;  // the chain parent's tag, valid while the override is set
 
+// Offset from a circlesize shot's spawn point to the centre of the loop it walks, in pixels on one
+// axis. shotDev steps as a triangle wave and the position is its running sum, so the loop closes
+// after 4 * cir_size ticks and one period covers all of it.
+static int shot_circle_center_offset_px(int dev, int dir, int cir_size)
+{
+	if (cir_size <= 0)
+		return 0;
+
+	int pos = 0, lowest = 0, highest = 0;
+	for (int tick = 0; tick < 4 * cir_size; ++tick)
+	{
+		dev += dir;
+		pos += dev;
+		if (abs(dev) == cir_size)
+			dir = -dir;
+
+		if (pos < lowest)
+			lowest = pos;
+		if (pos > highest)
+			highest = pos;
+	}
+
+	return (lowest + highest) / 2;
+}
+
 JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word PY, JE_word mouseX, JE_word mouseY, JE_word wpNum, JE_byte playerNum)
 {
 	// The free-power and gun-jam rules below belong to whichever ship is firing.
@@ -709,6 +734,19 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 			shot->shotX -= player[shot->playerNumber-1].delta_x_shot_move;
 			if (shot->shotXM == 101)
 				shot->shotY -= player[shot->playerNumber-1].delta_y_shot_move;
+		}
+
+		// Endless: a special pinned to the ship on both axes and spun by circlesize is a
+		// shield ring. Its shipped spawn offset puts the loop's centre off the hull, so
+		// replace that offset with the loop's own centre and sit the ring on the ship.
+		// See doc/notes.md, "Endless orbiting specials".
+		if (endlessFxActive() && (bay_i == SHOT_SPECIAL || bay_i == SHOT_SPECIAL2) &&
+		    shot->shotComplicated && shot->shotXM > 100 && shot->shotYM > 100)
+		{
+			shot->shotX -= weapon->bx[shotMultiPos[bay_i]-1]
+			             + shot_circle_center_offset_px(shot->shotDevX, shot->shotDirX, shot->shotCirSizeX);
+			shot->shotY -= weapon->by[shotMultiPos[bay_i]-1]
+			             + shot_circle_center_offset_px(shot->shotDevY, shot->shotDirY, shot->shotCirSizeY);
 		}
 
 		// High-Velocity Rounds scales real, nonzero velocities on both axes. Keep

@@ -56,6 +56,9 @@ outpost -> choose a course -> clear the zone -> outpost
 
 Zone 100 rolls the credits and then continues.
 
+The Orange Shield special orbits the ship in Endless. The campaign keeps its
+shipped path, which circles a point above the hull.
+
 ### Starting a run
 
 The start screen asks for a seed, run mode, and Base Level rule.
@@ -112,6 +115,11 @@ Scenery that can never be damaged is never promoted.
 
 Course cards show threats in red and boons in green. The payout column below is
 a multiple of the base clear reward.
+
+A sector sets one special-enemy share. Elite Pack, Apex Swarm, Legion, and No
+Elites all decide it, so only the strongest one a sector carries is listed and
+paid for. No Champions caps the tier instead of the share, so it can appear
+alongside Elite Pack.
 
 #### Threats
 

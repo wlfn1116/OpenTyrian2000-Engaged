@@ -295,6 +295,24 @@ that gate on `endlessMode`; campaign debug effects do not change campaign firing
 `endlessMode` controls run structure, saving, prices, and pickup substitution.
 `endlessFxActive()` controls combat scaling, modifiers, perks, and tiers.
 
+#### Endless orbiting specials
+
+A weapon frame whose `sx` and `sy` both exceed 100 pins the shot to the ship on
+both axes, and a non-zero `circlesize` then walks it around a closed loop. The
+Orange Shield (weapon 749) is the only shipped special built that way. Its loop
+closes every 32 ticks and reaches 32px from its centre on each axis, but its
+shipped `bx` of -24 leaves that centre 2px left of the ship and 26px above it,
+so the ring orbits over the ship rather than around it.
+
+`player_shot_create` centres that class on the ship in Endless: it drops the
+frame's `bx`/`by` and spawns on the loop's own centre instead, which
+`shot_circle_center_offset_px` measures by walking one period of the deviation
+triangle wave. The starting phase stays where the shipped `shotDev`/`shotDir`
+put it, so only the ring's placement moves. Campaign firing is unchanged.
+
+Spawn position feeds collision, so this is a deterministic rule and owns the
+`NET_VERSION` 40 bump.
+
 #### Endless enemy tiers
 
 `endlessEliteTierNow` is the one place a body's tier is decided. `JE_drawEnemy`
@@ -364,6 +382,16 @@ draw. Emission is skipped on silent resim passes and staggered by enemy slot.
 `JE_drawSP` adds a spark's `color` to the plotted shade, so that argument carries
 the palette bank alone; a non-zero low nibble spills into the next bank.
 
+That shower passes behind the glyph rather than over it. Draw order cannot do it:
+`JE_drawSP` runs after the whole playfield, and moving the sparks ahead of the
+enemy banks would bury them under the background layers drawn between. Instead
+the pickup spawns them `occluded` and publishes the glyph's solid shape (the
+measured ink grown by one for the outline pass) through `JE_addSPOccluder` on
+every tick it draws, and `JE_drawSP` skips an occluded spark landing inside one
+of the frame's boxes. Sparks already in flight therefore follow the glyph's
+current position, and they show in full as soon as the pickup is taken. An elite
+secret orb wears the same glyph, so its aura shower is spawned occluded too.
+
 Brightness comes from `z`, which halves into a mid shade at spawn and fades to
 the bank floor. Both endless showers therefore pass `ENDLESS_SPARK_BRIGHT` as the
 `bright` lift, which `rl_superpixel_value` adds to the shade and clamps at 15 so
@@ -407,6 +435,14 @@ a modifier requires checking:
 - danger, payout, and The End behavior;
 - monitor rows and help text;
 - visible glyphs, card width, and unique generated names.
+
+`endlessCanonicalMods` settles the special-enemy ladder, which is No Elites over
+Legion over Apex over Elite Pack, plus the champion cap that turns Legion into
+Apex. It matches what `endlessEliteChancePercent` and `endlessPickTier` read, so
+a weaker bit never survives to add a monitor row, danger, or payout it does not
+earn. It consumes no RNG and is idempotent; generation, launch, the purchase
+fold, and save restore all run it. `endlessValidateModifierTables` rejects a
+naming row that is not already settled.
 
 Course order uses cached danger and payout. Purchased buffs and Sabotage update
 the chosen card without changing the original ordering key.
@@ -548,7 +584,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 38.
+`NET_VERSION` bump. The current value is 40.
 
 Recent versions:
 
@@ -573,6 +609,8 @@ Recent versions:
 | 36 | Host player number on the resume details packet |
 | 37 | Glyph-sized pickup box on Endless special pickups |
 | 38 | Ship picture Episode Versions bits |
+| 39 | Settled Endless special-enemy tier bits |
+| 40 | Ship-centred Endless orbiting specials |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

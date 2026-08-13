@@ -318,6 +318,8 @@ extern const EndlessTheme endlessBreakthroughThemes[5];
 	ENDLESS_MOD_BREAKTHROUGH | ENDLESS_MOD_SOFTLANDING | ENDLESS_MOD_CLEANSIGNALS )
 
 Uint64      endlessMakeTheEndMods(void);   // "The End"; the sector every GRAND milestone deals
+// Drop special-enemy bits that a stronger one in the same set already covers. See endless_mods.c.
+Uint64      endlessCanonicalMods(Uint64 mods);
 Uint64      endlessPickThemeMods(const EndlessTheme *tbl, unsigned count, Uint64 must, Uint64 forbid);
 const char *endlessComboNameSalted(Uint64 mods, unsigned salt);  // salt steps a GENERATED pick to the next word
 // Test the hand-maintained modifier/name registries whose invariants are otherwise only comments.

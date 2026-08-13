@@ -66,6 +66,24 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_CLEANSIGNALS,  -5, "weaker elite attacks" },
 };
 
+/* The special-enemy bits form one ladder: No Elites, Legion, Apex, Elite Pack. A weaker bit beside
+ * a stronger one changes nothing at runtime, yet still lists a monitor row and charges danger and
+ * payout. See "Modifiers and courses" in doc/notes.md. */
+Uint64 endlessCanonicalMods(Uint64 mods)
+{
+	if (mods & ENDLESS_MOD_NOELITE)   // no specials at all, so every tier bit below is inert
+		mods &= ~(Uint64)(ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK
+		                  | ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION);
+	// A champion cap leaves Legion's 100 percent share, which is what Apex already says.
+	if ((mods & ENDLESS_MOD_NOCHAMP) && (mods & ENDLESS_MOD_LEGION))
+		mods = (mods & ~(Uint64)ENDLESS_MOD_LEGION) | ENDLESS_MOD_APEX;
+	if (mods & ENDLESS_MOD_LEGION)
+		mods &= ~(Uint64)(ENDLESS_MOD_APEX | ENDLESS_MOD_ELITEPACK);
+	else if (mods & ENDLESS_MOD_APEX)
+		mods &= ~(Uint64)ENDLESS_MOD_ELITEPACK;
+	return mods;
+}
+
 const EndlessTheme endlessHostileThemes[] = {
 	// Single dangers.
 	{ ENDLESS_MOD_FORTIFIED,   "Fortified" },
@@ -553,7 +571,7 @@ const EndlessTheme endlessRareThemes[] = {
 	{ ENDLESS_MOD_APEX | ENDLESS_MOD_FRENZY, "Alpha Strike" },
 	{ ENDLESS_MOD_APEX | ENDLESS_MOD_ENRAGE, "Omega" },
 	{ ENDLESS_MOD_APEX | ENDLESS_MOD_GRAVITY, "Final Hour" },
-	{ ENDLESS_MOD_APEX | ENDLESS_MOD_ELITEPACK, "Last Stand" },
+	{ ENDLESS_MOD_APEX | ENDLESS_MOD_SHIELDLESS, "Last Stand" },
 	{ ENDLESS_MOD_APEX | ENDLESS_MOD_OVERCLOCK, "Endgame" },
 	{ ENDLESS_MOD_LEGION | ENDLESS_MOD_FORTIFIED,                        "Iron Legion" },
 	{ ENDLESS_MOD_LEGION | ENDLESS_MOD_SWIFT,                            "Blitz Legion" },
@@ -1298,6 +1316,7 @@ bool endlessValidateModifierTables(char *detail, size_t detailSize)
 		{
 			if ((mods & ~(registered | ENDLESS_MOD_GRAVITY_OMNI)) != 0
 			 || ((mods & ENDLESS_MOD_GRAVITY_OMNI) && !(mods & ENDLESS_MOD_GRAVITY))
+			 || endlessCanonicalMods(mods) != mods   // a special-enemy bit a stronger one covers
 			 || endlessPopCount64(mods & ENDLESS_MOD_KILLFIRE_ANY) > 1)
 			{
 				if (detail != NULL && detailSize != 0)
