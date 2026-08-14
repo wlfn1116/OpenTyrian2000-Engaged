@@ -671,13 +671,14 @@ void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 	// A kill nobody can claim pays ship one by rule rather than by merit, so that one stays a
 	// bare figure instead of crediting a player who did not fire.
 	const long paid = coop_earnings_are_doubled() ? bounty * 2 : bounty;
-	char label[48], cash[48];
-	snprintf(label, sizeof(label), "%s Enemy destroyed!", champion ? "Champion" : "Elite");
+	char tier[24], cash[48];
+	snprintf(tier, sizeof(tier), "%s Enemy", champion ? "Champion" : "Elite");
 	if (isNetworkGame && dual_ship_mode() && killer != ENDLESS_KILLER_NONE)
 		snprintf(cash, sizeof(cash), "%s +%ld", JE_getName((JE_byte)(payee + 1)), paid);
 	else
 		snprintf(cash, sizeof(cash), "+%ld", paid);
-	JE_drawTextWindowSplit(label, cash, 244);
+	// The tier name takes the tier's own palette bank, the one its bodies, bars and bullets wear.
+	JE_drawTextWindowSplit(tier, endlessEliteTint(eliteState) >> 4, " destroyed!", cash, 244);
 }
 
 // Special-weapon pickups.

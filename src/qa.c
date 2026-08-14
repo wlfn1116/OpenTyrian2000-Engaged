@@ -2058,6 +2058,78 @@ static void qa_test_elite_shot_tint(void)
 	}
 }
 
+/* The band JE_repaintTextWindow paints: the bar's left edge out to the bounty column. */
+enum { QA_MSGBAR_X = 16, QA_MSGBAR_W = 244 - 16, QA_MSGBAR_H = 11 };
+
+static void qa_copy_message_bar(Uint8 *out)
+{
+	const int y0 = vga_height - QA_MSGBAR_H;
+	for (int y = 0; y < QA_MSGBAR_H; ++y)
+		memcpy(&out[y * QA_MSGBAR_W],
+		       (Uint8 *)VGAScreenSeg->pixels + (y0 + y) * VGAScreenSeg->pitch + QA_MSGBAR_X,
+		       QA_MSGBAR_W);
+}
+
+static bool qa_message_bar_differs(const Uint8 *was)
+{
+	Uint8 now[QA_MSGBAR_H * QA_MSGBAR_W];
+	qa_copy_message_bar(now);
+	return memcmp(now, was, sizeof(now)) != 0;
+}
+
+/* The bounty line names the tier in the tier's own bank. The name is drawn as a string of its own,
+ * so its width has to advance the cursor exactly as one string would: the words after it must land
+ * on the columns they had, and nothing but the tier name may change bank. */
+static void qa_test_elite_message_tint(void)
+{
+	if (VGAScreenSeg == NULL || VGAScreenSeg->format->BitsPerPixel != 8)
+		return;  // the draws below paint the real message bar
+
+	const bool savedSilent = rollback_resim_silent, savedDirty = hud_message_dirty;
+	const JE_word savedErase = textErase;
+	rollback_resim_silent = false;  // a silent re-simulation pass blits nothing
+
+	Uint8 plain[QA_MSGBAR_H * QA_MSGBAR_W], tinted[QA_MSGBAR_H * QA_MSGBAR_W];
+
+	JE_drawTextWindow("Elite Enemy destroyed!");
+	qa_copy_message_bar(plain);
+
+	JE_drawTextWindowSplit("Elite Enemy", ENDLESS_ELITE_FILTER >> 4, " destroyed!", "", 244);
+	qa_copy_message_bar(tinted);
+
+	int moved = 0, recoloured = 0;
+	for (int i = 0; i < QA_MSGBAR_H * QA_MSGBAR_W; ++i)
+	{
+		if (tinted[i] == plain[i])
+			continue;
+		if ((plain[i] & 0xf0) == 0 && tinted[i] == (ENDLESS_ELITE_FILTER | plain[i]))
+			++recoloured;
+		else
+			++moved;
+	}
+
+	qa_check(moved == 0, "colouring the tier name leaves the rest of the bounty line where it was");
+	qa_check(recoloured > 0, "the tier name is painted in the elite bank at the shades it had");
+
+	/* Online a kill can land in a rollback pass that draws nothing, so the line is held and
+	 * repainted on the next pass that reaches the screen. It has to come back with its tint. */
+	JE_drawTextWindow("");  // blank the bar first, so anything the silent post paints shows up
+	rollback_resim_silent = true;
+	JE_drawTextWindowSplit("Elite Enemy", ENDLESS_ELITE_FILTER >> 4, " destroyed!", "", 244);
+	rollback_resim_silent = false;
+
+	qa_check(hud_message_dirty && qa_message_bar_differs(tinted),
+	         "a bounty line posted in a silent pass paints nothing and is held for a visible one");
+
+	JE_repaintTextWindow();
+	qa_check(!qa_message_bar_differs(tinted),
+	         "the held bounty line comes back with its tier colour on the next visible pass");
+
+	textErase = savedErase;
+	hud_message_dirty = savedDirty;
+	rollback_resim_silent = savedSilent;
+}
+
 /* Which slots a shower lands in, so the per-weapon classic cap can be checked without a screen.
  * Returns the number of live sparks and the lowest and highest slot used. */
 static int qa_spark_span(int *out_lo, int *out_hi)
@@ -4261,6 +4333,7 @@ int qa_run_unit_suite(void)
 	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();
+	qa_test_elite_message_tint();
 	qa_test_superspark_caps();
 	qa_test_superspark_discarded_pass();
 	qa_test_superspark_rng_cost();

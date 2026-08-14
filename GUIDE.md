@@ -137,8 +137,9 @@ repeat hits from the same shot for a fraction of a tick, which limits how fast
 one shot can wear a single target down.
 
 Elites and champions are palette-shifted and shed sparks in the same tint. Their
-shots fly in it and they explode in it as well. Linked parts share one tier and
-one bounty. Every enemy takes its tier on the frame it appears, so nothing
+shots fly in it, they explode in it, and the bounty line at the bottom of the
+screen names the tier in it as well. Linked parts share one tier and one
+bounty. Every enemy takes its tier on the frame it appears, so nothing
 recolours or rearms while you are fighting it. Bosses can be promoted, and so
 can an enemy that starts out invulnerable, such as a boss flying in armored or
 a sealed hull. Scenery that can never be damaged is never promoted. An enemy

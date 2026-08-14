@@ -44,7 +44,8 @@ extern bool pause_pressed, ingamemenu_pressed, changefire_pressed;
 extern bool hud_message_dirty;
 
 void JE_drawTextWindow(const char *text);
-void JE_drawTextWindowSplit(const char *left, const char *right, int right_x);
+void JE_drawTextWindowSplit(const char *tint, unsigned int tint_bank, const char *left,
+                            const char *right, int right_x);
 void JE_repaintTextWindow(void);
 void JE_initPlayerData(void);
 void JE_highScoreScreen(void);

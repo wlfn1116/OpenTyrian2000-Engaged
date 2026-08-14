@@ -473,7 +473,10 @@ staggered by enemy slot, so a linked multi-tile body emits once per part and its
 density tracks the area it covers. Iced and wrecked bodies do not emit.
 
 `endlessEliteTint` is the one source of that bank, for the body, the aura, the
-health bar, the bullets and the explosion. The explosion carries it through
+health bar, the bullets, the explosion and the tier name in the bounty line.
+The name reaches it through `JE_drawTextWindowSplit`, which draws an opening
+string in its own bank ahead of the rest of the line; the message bar is one
+bank for the whole line otherwise. The explosion carries it through
 `explosionFilter`: a kill site sets it, spawns, and clears it again, so
 `JE_setupExplosion` can stamp every puff without a new argument at sixty call
 sites. It never survives a tick, which is why it is not registered for rollback.

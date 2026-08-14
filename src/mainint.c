@@ -95,6 +95,8 @@ static Uint8 debug_menu_backup[DEBUG_MENU_WIDTH * DEBUG_MENU_HEIGHT];
 
 /* Keep the last message so a visible pass can repaint anything dropped by
  * silent rollback re-simulation. See hud_message_dirty. */
+static char text_window_tint[32];  // opening words, drawn in their own bank ahead of the left text
+static unsigned int text_window_tint_bank;
 static char text_window_left[96];
 static char text_window_right[32];
 static int text_window_right_x;
@@ -108,7 +110,16 @@ void JE_repaintTextWindow(void)
 {
 	blit_sprite(VGAScreenSeg, 16, vga_height - 11, OPTION_SHAPES, 36);  // in-game text area
 
-	JE_outText(VGAScreenSeg, 20, vga_height - 10, text_window_left, 0, 4);
+	// The tinted opening advances x exactly as JE_outText would have, so the words that follow
+	// sit where they would in one string.
+	int x = 20;
+	if (text_window_tint[0] != '\0')
+	{
+		JE_outText(VGAScreenSeg, x, vga_height - 10, text_window_tint, text_window_tint_bank, 4);
+		x += JE_textWidth(text_window_tint, TINY_FONT);
+	}
+
+	JE_outText(VGAScreenSeg, x, vga_height - 10, text_window_left, 0, 4);
 	if (text_window_right[0] != '\0')
 		JE_outText(VGAScreenSeg, text_window_right_x - JE_textWidth(text_window_right, TINY_FONT), vga_height - 10, text_window_right, 0, 4);
 }
@@ -117,6 +128,7 @@ void JE_repaintTextWindow(void)
 void JE_drawTextWindow(const char *text)
 {
 	SDL_strlcpy(text_window_left, text, sizeof(text_window_left));
+	text_window_tint[0] = '\0';
 	text_window_right[0] = '\0';
 	hud_message_dirty = rollback_resim_silent;
 
@@ -124,10 +136,14 @@ void JE_drawTextWindow(const char *text)
 	JE_repaintTextWindow();
 }
 
-// Draw a split message-bar line: left text at x=20 and right text ending at right_x.
-// Endless uses it for elite labels and bounties.
-void JE_drawTextWindowSplit(const char *left, const char *right, int right_x)
+// Draw a split message-bar line: left text at x=20 and right text ending at right_x. The left side
+// opens with tint in palette bank tint_bank, so a caller can colour its first words; pass NULL to
+// draw the whole line in the bar's own bank. Endless uses it for elite labels and bounties.
+void JE_drawTextWindowSplit(const char *tint, unsigned int tint_bank, const char *left,
+                            const char *right, int right_x)
 {
+	SDL_strlcpy(text_window_tint, (tint != NULL) ? tint : "", sizeof(text_window_tint));
+	text_window_tint_bank = tint_bank;
 	SDL_strlcpy(text_window_left, left, sizeof(text_window_left));
 	SDL_strlcpy(text_window_right, right, sizeof(text_window_right));
 	text_window_right_x = right_x;
