@@ -23,7 +23,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Scavenger",        "More cash from clears, bounties, buyouts.", 4 },
 	{ "Nanorepair",       "Slowly regenerate armor in flight.",   3 },
 	{ "Siphon",           "Chance to restore armor on a kill.",   3 },
-	{ "Bounty Hunter",    "Bounties doubled, score pickups worth 5x.", 1 },
+	{ "Bounty Hunter",    "Bounties doubled, score pickups worth 4x.", 1 },
 	{ "Bulwark",          "Take less damage from every hit.",     5 },
 	{ "Adrenaline",       "Fire faster and hit harder when badly hurt.", 3 },
 	{ "Glass Cannon",     "Big damage, but a weaker hull.",       1 },
