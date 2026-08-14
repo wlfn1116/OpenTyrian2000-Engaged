@@ -979,6 +979,12 @@ The post-load level barrier exits after receiving the peer's dedicated marker,
 which proves that peer has loaded. Normal gameplay service continues retrying
 the local marker if its acknowledgement is still outstanding.
 
+The terminal end-screen barrier completes when both dismissal announcements are
+in and the local one is acknowledged. The peer that finishes first closes its
+socket and answers no further retransmits, so `NET_DEPART_GRACE` of silence
+after both announcements also completes the barrier; without it a lost final
+acknowledgement holds the slower peer for the full dead-link timeout.
+
 Chunked transfers keep at most half of `NET_PACKET_QUEUE` outstanding. Transport
 acknowledgement confirms delivery; complete transfers also use an application
 acknowledgement.

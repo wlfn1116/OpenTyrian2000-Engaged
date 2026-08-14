@@ -93,6 +93,7 @@
 #define NET_RESEND        320          // ticks to wait before requesting unreceived game packet
 #define NET_KEEP_ALIVE    1600         // ticks to wait between keep-alive packets
 #define NET_TIME_OUT      16000        // ticks to wait before considering connection dead
+#define NET_DEPART_GRACE  4000         // ticks of end-screen silence that read as the peer having left
 #define NET_PING_MAX      5000         // round trips longer than this are treated as garbage, not latency
 #define NET_DRAIN_MAX     32           // datagrams network_check() reads per call at most
 
@@ -3034,12 +3035,13 @@ void network_end_screen_rendezvous(bool local_dismissed)
 		return;
 
 	/* Echoing the first dismissal makes either player's input authoritative while retaining a
-	 * two-way reliable handshake. Both machines keep the screen and socket alive until each
-	 * announcement has been received and acknowledged. */
+	 * two-way reliable handshake. Each machine holds the screen until both announcements are in
+	 * and its own is acknowledged, or until a silent peer reads as having finished and left. */
 	bool local_initiated = local_dismissed;
 	if (local_dismissed)
 		network_ready_publish(true);
 	bool peer_ready = false;
+	bool complete = false;
 
 	while (network_peer_alive())
 	{
@@ -3065,8 +3067,24 @@ void network_end_screen_rendezvous(bool local_dismissed)
 			}
 		}
 
-		if (local_dismissed && peer_ready && network_is_sync())
-			break;
+		if (local_dismissed && peer_ready)
+		{
+			if (network_is_sync())
+			{
+				complete = true;
+				break;
+			}
+
+			/* Both announcements are in, so only the final acknowledgement of ours is owed. A
+			 * live peer answers retransmits and keep-alives well inside this window; one that
+			 * finished and closed its socket never will, and NET_TIME_OUT would hold the
+			 * screen for it. */
+			if (SDL_GetTicks() - last_in_tick > NET_DEPART_GRACE)
+			{
+				complete = true;
+				break;
+			}
+		}
 
 		if (!output_vsync)
 			limit_render_fps();
@@ -3074,7 +3092,7 @@ void network_end_screen_rendezvous(bool local_dismissed)
 			SDL_Delay(1);
 	}
 
-	if (qa_net_gameplay_ticks > 0 && local_dismissed && peer_ready && network_is_sync())
+	if (qa_net_gameplay_ticks > 0 && complete)
 	{
 		fprintf(stderr, "net gameplay: terminal rendezvous complete, dismissal=%s\n",
 		        local_initiated ? "local" : "peer");
