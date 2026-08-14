@@ -467,6 +467,14 @@ weapons, sidekicks, special, score, and HUD.
 **Campaign** gives both players complete ships and separate shops. The host's
 planet wins when the two players choose different routes.
 
+The **2 Player Campaign** page under **High Scores** keeps one record per
+episode: the two wallets added together when the pair finished the episode they
+started, under both names. A run that has carried on into a later episode or
+looped back to the first records nothing, and neither does dying, since a
+campaign death reloads the save from the start of the level. Each record names
+the **Credit** rule it was earned on, because Shared and Double Earnings both
+pay roughly twice what a plain Individual split does.
+
 **SuperTyrian** runs two Stalker 21.126 ships under the SuperTyrian rules.
 Standard and Scrollock variants are available.
 

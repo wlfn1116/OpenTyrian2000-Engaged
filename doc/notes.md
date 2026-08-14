@@ -1126,6 +1126,37 @@ separate choice: a resume overrides the lobby's `network_host_player` row and
 the saved ship follows. The stored preference is left alone for the next new
 game.
 
+### Online Campaign records
+
+`coopCampaignScoreNote` owns every condition for a co-op Campaign record, so a
+new call site cannot file one under the wrong episode. It writes only when
+`coopCampaignMode` is set, `episodeNum` still equals `initial_episode_num`, the
+game has not repeated, and this is not demo playback.
+
+Each episode condition guards a case that happens in play. A campaign run
+continues into the next episode and can loop back to the first while keeping
+both purses, and `initial_episode_num` rides in the save record, so a run
+resumed in a later episode still reports the episode it began in. Any of those
+write an earlier episode's row with cash the pair earned after it.
+
+Both `networkStartScreen` branches set `initial_episode_num` themselves, because
+a lobby row picks the episode and the episode-select menu that otherwise records
+it never runs. Nothing else on that path establishes the field: `JE_initEpisode`
+sets only `episodeNum`, and `JE_initPlayerData` leaves it alone. The save
+record's `pItems[8]` is the same field, so a resume carries whatever the start
+screen settled.
+
+There is deliberately no record on death. `JE_loadGame(backup_save_slot())`
+restores both wallets from the level-start backup immediately afterwards, so a
+score taken there is cash the run then discards, and the same path handles Quit
+Level, a peer quit, and a disconnect abort.
+
+The record stores which credit rule paid it, so two figures can be compared; see
+the `COOP_CREDIT_*` enum in `config.h` for why the rule changes the scale. It
+rides its own `coop_campaign_credit_N` key in `opentyrian.cfg` rather than a
+fourth field of `coop_campaign_N`, whose last field is a name that runs to the
+end of the line and may contain a bar.
+
 ### Online Destruct
 
 Destruct uses `NETWORK_GAME_DESTRUCT`. The connect packet carries battle mode,

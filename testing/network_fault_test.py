@@ -288,6 +288,25 @@ def run_scenario(
             if "NET SAVE ROUTE PASS" not in out:
                 print(f"network fault test: the {who} routed online Save to Load")
                 return 1, transcript, injected
+        # The co-op Campaign board's inputs. A lobby row picks the episode, so neither peer runs
+        # the episode-select menu that normally records where a run began; a machine that left the
+        # field stale files the run under the wrong episode, or under none at all.
+        cash = []
+        for out, who in ((host_out, "host"), (join_out, "joiner")):
+            mark = re.search(
+                r"NET CAMPAIGN RECORD player=\d+ start=(\d+) episode=(\d+) cash=(\d+)", out)
+            if mark is None:
+                print(f"network fault test: the {who} never offered the campaign board an episode")
+                return 1, transcript, injected
+            if mark.group(1) != mark.group(2):
+                print(f"network fault test: the {who} did not establish the starting episode "
+                      f"(start={mark.group(1)}, episode={mark.group(2)})")
+                return 1, transcript, injected
+            cash.append(mark.group(3))
+        if cash[0] != cash[1]:
+            print("network fault test: the peers scored different combined cash "
+                  f"({cash[0]} vs {cash[1]})")
+            return 1, transcript, injected
     if scenario == 14:
         for out, who in ((host_out, "host"), (join_out, "joiner")):
             if "net session flags: shared=0 doubled=1" not in out:

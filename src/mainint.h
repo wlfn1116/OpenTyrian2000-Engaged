@@ -49,6 +49,11 @@ void JE_drawTextWindowSplit(const char *tint, unsigned int tint_bank, const char
 void JE_repaintTextWindow(void);
 void JE_initPlayerData(void);
 void JE_highScoreScreen(void);
+// The co-op Campaign board's second line: who was flying, then the terms their figure was earned
+// on, shortened to widthPx. The Px call is the width the board itself gives it.
+void coopCampaignRecordLine(char *out, size_t outSize, const CoopCampaignScore *record,
+                            int widthPx);
+int coopCampaignRecordLineWidthPx(void);
 // One ship's Endless per-tick work; see the definition in mainint.c.
 void endlessPerShipTick(Player *this_player);
 void JE_gammaCorrect_func(JE_byte *col, JE_real r);

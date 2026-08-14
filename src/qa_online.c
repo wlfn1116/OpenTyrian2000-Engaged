@@ -12,6 +12,7 @@
 #include "lvlmast.h"
 #include "mainint.h"
 #include "network.h"
+#include "params.h"   // constantPlay, one of the co-op campaign board's conditions
 #include "player.h"
 #include "rollback.h"
 #include "tyrian2.h"  // the online start screen's difficulty bump, Super Arcade equip, picker layout
@@ -793,6 +794,15 @@ static void qa_campaign_economy_matrix(void)
 
 /* ---- 5. the co-op campaign record board --------------------------------------------- */
 
+// A run that started in this episode and is finishing it, which is the only shape that records.
+static void qa_campaign_run_at_episode(JE_byte episode)
+{
+	initial_episode_num = episode;
+	episodeNum = episode;
+	gameHasRepeated = false;
+	constantPlay = false;
+}
+
 /* One best run per episode, scored on the two players' combined cash. It is a co-op-only
  * board, so nothing else may write to it. */
 static void qa_campaign_score_matrix(void)
@@ -801,6 +811,9 @@ static void qa_campaign_score_matrix(void)
 	char nameHold[24];
 
 	const JE_byte savedEpisode = initial_episode_num;
+	const JE_byte savedEpisodeNum = episodeNum;
+	const JE_boolean savedRepeated = gameHasRepeated;
+	const JE_boolean savedConstantPlay = constantPlay;
 	const JE_shortint savedDifficulty = initialDifficulty;
 	char *const savedOpponent = network_opponent_name;
 
@@ -821,7 +834,7 @@ static void qa_campaign_score_matrix(void)
 		}
 
 		memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
-		initial_episode_num = 1;
+		qa_campaign_run_at_episode(1);
 		initialDifficulty = 2;
 		qa_wallets_clear();
 		player[0].cash = 50000;
@@ -839,9 +852,9 @@ static void qa_campaign_score_matrix(void)
 	qa_wallets_clear();
 	player[0].cash = 1000;
 	player[1].cash = 1000;
-	initial_episode_num = 0;
+	qa_campaign_run_at_episode(0);
 	coopCampaignScoreNote();
-	initial_episode_num = COOP_CAMPAIGN_SCORE_EPISODES + 1;
+	qa_campaign_run_at_episode(COOP_CAMPAIGN_SCORE_EPISODES + 1);
 	coopCampaignScoreNote();
 	bool untouched = true;
 	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
@@ -855,7 +868,7 @@ static void qa_campaign_score_matrix(void)
 		qa_modes_clear();
 		coopCampaignMode = true;
 		memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
-		initial_episode_num = (JE_byte)e;
+		qa_campaign_run_at_episode((JE_byte)e);
 		initialDifficulty = (JE_shortint)(e % 4 + 1);
 		qa_wallets_clear();
 		player[0].cash = 1200;
@@ -884,7 +897,7 @@ static void qa_campaign_score_matrix(void)
 	qa_modes_clear();
 	coopCampaignMode = true;
 	memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
-	initial_episode_num = 1;
+	qa_campaign_run_at_episode(1);
 	initialDifficulty = 2;
 	qa_wallets_clear();
 	player[0].cash = 5000;
@@ -907,11 +920,74 @@ static void qa_campaign_score_matrix(void)
 	coopCampaignScoreNote();
 	qa_check(coopCampaignScores[0].score == 11000, "a better run takes the record");
 
+	/* Cash carried in from an earlier episode never reaches the board. A campaign run continues
+	 * into the next episode and can loop back to the first, and both keep the purse, so only the
+	 * episode the run started in, played once, is a record. */
+	static const char *const carried[3] = {
+		"a run now in a later episode", "a repeated game", "demo playback",
+	};
+	for (int shape = 0; shape < 3; ++shape)
+	{
+		qa_modes_clear();
+		coopCampaignMode = true;
+		memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
+		qa_campaign_run_at_episode(1);
+		if (shape == 0)
+			episodeNum = 2;
+		else if (shape == 1)
+			gameHasRepeated = true;
+		else
+			constantPlay = true;
+
+		qa_wallets_clear();
+		player[0].cash = 400000;
+		player[1].cash = 400000;
+		coopCampaignScoreNote();
+
+		snprintf(label, sizeof(label), "%s writes no record", carried[shape]);
+		qa_check(coopCampaignScores[0].score == 0, label);
+	}
+
+	/* The credit rule decides what a figure is worth, so the record carries the one it was earned
+	 * on. Double Earnings stands down under Shared, which leaves three states. */
+	static const struct { bool shared, doubled; Uint8 want; } creditShapes[3] = {
+		{ true,  false, COOP_CREDIT_SHARED },
+		{ false, false, COOP_CREDIT_INDIVIDUAL },
+		{ false, true,  COOP_CREDIT_INDIVIDUAL_DOUBLED },
+	};
+	for (int i = 0; i < 3; ++i)
+	{
+		qa_modes_clear();
+		coopCampaignMode = true;
+		memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
+		qa_campaign_run_at_episode(1);
+		initialDifficulty = 2;
+		coop_set_session_shared_credit(creditShapes[i].shared);
+		coop_set_session_double_earnings(creditShapes[i].doubled);
+
+		qa_wallets_clear();
+		player[0].cash = 3000;
+		player[1].cash = 3000;
+		coopCampaignScoreNote();
+
+		snprintf(label, sizeof(label), "a record earned on %s says so",
+		         coopCampaignCreditName(creditShapes[i].want));
+		qa_check(coopCampaignScores[0].credit == creditShapes[i].want, label);
+	}
+
+	qa_check(coopCampaignCreditName(COOP_CREDIT_UNKNOWN) == NULL,
+	         "a record kept before the board carried the rule prints without one");
+
 	memset(coopCampaignScores, 0, sizeof(coopCampaignScores));
 	network_opponent_name = savedOpponent;
 	initialDifficulty = savedDifficulty;
+	constantPlay = savedConstantPlay;
+	gameHasRepeated = savedRepeated;
+	episodeNum = savedEpisodeNum;
 	initial_episode_num = savedEpisode;
 	qa_modes_clear();
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_earnings(false);
 }
 
 /* ---- 5b. the strings the lobby and outpost put on screen ---------------------------- */
@@ -989,6 +1065,50 @@ static void qa_online_strings_matrix(void)
 	         "an out-of-range run mode still prints something");
 	qa_check(qa_string_drawable(endlessCourseChooserName((EndlessCourseChooser)99)),
 	         "an out-of-range course chooser still prints something");
+
+	/* The co-op Campaign board's second line carries two lobby-supplied names and the terms the
+	 * figure was earned on. Built from the widest glyph in the font, at the longest name the
+	 * lobby will store, it still has to come back inside the column the page draws it in. */
+	{
+		char widest = 'W';
+		int widestPx = 0;
+		for (int c = '!'; c < 127; ++c)
+		{
+			const char one[2] = { (char)c, '\0' };
+			if (font_ascii[c] >= 0 && JE_textWidth(one, TINY_FONT) > widestPx)
+			{
+				widestPx = JE_textWidth(one, TINY_FONT);
+				widest = (char)c;
+			}
+		}
+
+		const int columnWidthPx = coopCampaignRecordLineWidthPx();
+
+		CoopCampaignScore record = { 100000, "", 0, 0 };
+		for (size_t i = 0; i < 2 * NET_NAME_MAX + sizeof(" and ") - 1; ++i)
+			record.name[i] = widest;
+		memcpy(record.name + NET_NAME_MAX, " and ", sizeof(" and ") - 1);
+
+		for (int d = 0; d <= DIFFICULTY_10; ++d)
+		for (Uint8 credit = 0; credit < COOP_CREDIT_COUNT; ++credit)
+		{
+			record.difficulty = (Uint8)d;
+			record.credit = credit;
+
+			char line[80];
+			coopCampaignRecordLine(line, sizeof(line), &record, columnWidthPx);
+
+			const char *const rule = coopCampaignCreditName(credit);
+			snprintf(label, sizeof(label), "the board's widest line on %s, %s fits its column",
+			         difficultyNameB[d], rule != NULL ? rule : "no recorded rule");
+			qa_check(JE_textWidth(line, TINY_FONT) <= columnWidthPx, label);
+
+			snprintf(label, sizeof(label), "the board's line on %s, %s keeps its terms",
+			         difficultyNameB[d], rule != NULL ? rule : "no recorded rule");
+			qa_check(strstr(line, difficultyNameB[d]) != NULL
+			         && (rule == NULL || strstr(line, rule) != NULL), label);
+		}
+	}
 }
 
 /* ---- 6. online never pauses --------------------------------------------------------- */

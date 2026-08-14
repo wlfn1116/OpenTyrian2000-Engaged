@@ -120,6 +120,19 @@ typedef struct
 // First 10 are timed battle, next 10 are episodes
 extern T2KHighScoreType t2kHighScores[20][3];
 
+/* Which credit rule paid a co-op Campaign run. Shared pays every pickup into both wallets and
+ * Double Earnings pays a split take twice, so the same play reaches roughly twice the combined
+ * cash under either one. A record kept before the board carried this is UNKNOWN and prints
+ * without a rule. */
+enum
+{
+	COOP_CREDIT_UNKNOWN = 0,
+	COOP_CREDIT_SHARED,
+	COOP_CREDIT_INDIVIDUAL,
+	COOP_CREDIT_INDIVIDUAL_DOUBLED,
+	COOP_CREDIT_COUNT,
+};
+
 /* Online co-op Campaign leaves its own board: an arcade pair and a campaign pair earn on
  * completely different economies, so mixing them into the shared two-player table would compare
  * two things that are not comparable. One best run per episode, kept in opentyrian.cfg rather
@@ -129,6 +142,7 @@ typedef struct
 	Sint32 score;      // the two players' combined cash
 	char   name[30];   // both player names, as the lobby knew them
 	Uint8  difficulty;
+	Uint8  credit;     // one of COOP_CREDIT_*, the scale the score was earned on
 }
 CoopCampaignScore;
 
@@ -136,6 +150,8 @@ CoopCampaignScore;
 extern CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
 void coopCampaignScoreConfigSave(ConfigSection *section);
 void coopCampaignScoreConfigLoad(const ConfigSection *section);
+// The lobby's own word for a record's credit rule, or NULL for COOP_CREDIT_UNKNOWN.
+const char *coopCampaignCreditName(Uint8 credit);
 // Record the finished run if it beats that episode's standing best.
 void coopCampaignScoreNote(void);
 

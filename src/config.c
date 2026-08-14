@@ -33,6 +33,7 @@
 #include "network.h"
 #include "nortsong.h"
 #include "opentyr.h"
+#include "params.h"        // constantPlay bars the co-op Campaign board
 #include "player.h"
 #include "rollback.h"
 #include "varz.h"
@@ -225,8 +226,20 @@ T2KHighScoreType t2kHighScores[20][3];
 COMPILE_TIME_ASSERT(coop_campaign_score_episodes, COOP_CAMPAIGN_SCORE_EPISODES == EPISODE_MAX);
 CoopCampaignScore coopCampaignScores[COOP_CAMPAIGN_SCORE_EPISODES];
 
+const char *coopCampaignCreditName(Uint8 credit)
+{
+	switch (credit)
+	{
+	case COOP_CREDIT_SHARED:             return "Shared";
+	case COOP_CREDIT_INDIVIDUAL:         return "Individual";
+	case COOP_CREDIT_INDIVIDUAL_DOUBLED: return "Individual x2";
+	default:                             return NULL;
+	}
+}
+
 /* One line per episode: "score|difficulty|names". A missing or short value leaves the rest of
- * the episodes empty, so the list can grow. */
+ * the episodes empty, so the list can grow. The credit rule rides a second key rather than a
+ * fourth field, because the name runs to the end of the line and may itself contain a bar. */
 void coopCampaignScoreConfigSave(ConfigSection *section)
 {
 	if (section == NULL)
@@ -239,6 +252,9 @@ void coopCampaignScoreConfigSave(ConfigSection *section)
 		snprintf(line, sizeof(line), "%d|%u|%s", coopCampaignScores[e].score,
 		         (unsigned)coopCampaignScores[e].difficulty, coopCampaignScores[e].name);
 		config_set_string_option(section, key, line);
+
+		snprintf(key, sizeof(key), "coop_campaign_credit_%d", e + 1);
+		config_set_int_option(section, key, coopCampaignScores[e].credit);
 	}
 }
 
@@ -269,16 +285,29 @@ void coopCampaignScoreConfigLoad(const ConfigSection *section)
 		p = strchr(p + 1, '|');
 		if (p != NULL)
 			SDL_strlcpy(coopCampaignScores[e].name, p + 1, sizeof(coopCampaignScores[e].name));
+
+		snprintf(key, sizeof(key), "coop_campaign_credit_%d", e + 1);
+		int credit = COOP_CREDIT_UNKNOWN;
+		if (config_get_int_option(section, key, &credit)
+		    && credit > COOP_CREDIT_UNKNOWN && credit < COOP_CREDIT_COUNT)
+			coopCampaignScores[e].credit = (Uint8)credit;
 	}
 }
 
-/* Called once a co-op Campaign run is over. The pair earned together, so the board keeps their
+/* Records a completed co-op Campaign episode. The pair earned together, so the board keeps their
  * combined cash under both names; there is no name-entry dialog because the lobby already knows
- * who they are, and a modal here would leave the other machine waiting on a dead screen. */
+ * who they are, and a modal here would leave the other machine waiting on a dead screen. Every
+ * condition for a record lives here rather than at the call site: see "Online Campaign records"
+ * in doc/notes.md. */
 void coopCampaignScoreNote(void)
 {
 	const int e = initial_episode_num - 1;
-	if (!coopCampaignMode || e < 0 || e >= COOP_CAMPAIGN_SCORE_EPISODES)
+	if (!coopCampaignMode || constantPlay || e < 0 || e >= COOP_CAMPAIGN_SCORE_EPISODES)
+		return;
+
+	// Only the episode the run started in, played once: a later episode or a repeat carries cash
+	// earned before it into this episode's record.
+	if (episodeNum != initial_episode_num || gameHasRepeated)
 		return;
 
 	const Sint64 total = (Sint64)player[0].cash + (Sint64)player[1].cash;
@@ -287,6 +316,12 @@ void coopCampaignScoreNote(void)
 
 	coopCampaignScores[e].score = (total > 0x7fffffff) ? 0x7fffffff : (Sint32)total;
 	coopCampaignScores[e].difficulty = (Uint8)initialDifficulty;
+	if (coop_credit_is_shared())
+		coopCampaignScores[e].credit = COOP_CREDIT_SHARED;
+	else if (coop_earnings_are_doubled())
+		coopCampaignScores[e].credit = COOP_CREDIT_INDIVIDUAL_DOUBLED;
+	else
+		coopCampaignScores[e].credit = COOP_CREDIT_INDIVIDUAL;
 
 	const char *const mine = (network_player_name != NULL && network_player_name[0])
 	                       ? network_player_name : "Player 1";

@@ -3423,9 +3423,8 @@ start_level:
 				return;
 			}
 
-			// A co-op Campaign pair that went down still earned what they earned.
-			coopCampaignScoreNote();
-
+			// A campaign death retries the level. This reload puts both wallets back to their
+			// level-start values, so nothing is banked or recorded here.
 			JE_loadGame(backup_save_slot());
 			if (doNotSaveBackup)
 			{
@@ -7791,6 +7790,10 @@ void networkStartScreen(void)
 			JE_initEpisode(coopEndlessMode ? 1
 			               : timedBattleMode ? (JE_byte)network_timed_battle_episode(timeBattleSelection)
 			               : network_host_episode);
+			/* A lobby row picked the episode, so the episode-select menu that normally records
+			 * where a run began never ran. The co-op Campaign board and the save record both
+			 * read it, and a value left over from an earlier game names the wrong episode. */
+			initial_episode_num = episodeNum;
 			difficultyLevel = network_host_difficulty;
 			initialDifficulty = difficultyLevel;
 
@@ -8022,6 +8025,7 @@ void networkStartScreen(void)
 		else
 		{
 			JE_initEpisode(their_episode);
+			initial_episode_num = episodeNum;  // as the host does; see its branch above
 			difficultyLevel = their_difficulty;
 			initialDifficulty = difficultyLevel - networkDifficultyBump();
 		}

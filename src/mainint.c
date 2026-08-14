@@ -1195,9 +1195,22 @@ void JE_nextEpisode(void)
 		JE_highScoreCheck();
 	}
 
-	// Online co-op Campaign has its own board and no name-entry dialog; see coopCampaignScoreNote.
-	if (episodeNum == initial_episode_num && !gameHasRepeated && !constantPlay)
-		coopCampaignScoreNote();
+	// Online co-op Campaign has its own board and no name-entry dialog; it owns the conditions
+	// for a record, so this is the one place that offers it an episode.
+	coopCampaignScoreNote();
+
+	/* Wire campaign run: the board's inputs at the episode boundary. A lobby row picks the
+	 * episode, so nothing else proves both peers established where the run began, or that they
+	 * agree on the pair's combined cash by the time it is scored. */
+	if (qa_net_gameplay_ticks > 0 && coopCampaignMode)
+	{
+		const int e = initial_episode_num - 1;
+		printf("NET CAMPAIGN RECORD player=%u start=%u episode=%u cash=%lu recorded=%d\n",
+		       thisPlayerNum, (unsigned)initial_episode_num, (unsigned)episodeNum,
+		       (unsigned long)((Uint64)player[0].cash + (Uint64)player[1].cash),
+		       (e >= 0 && e < COOP_CAMPAIGN_SCORE_EPISODES) ? coopCampaignScores[e].score : -1);
+		fflush(stdout);
+	}
 
 	unsigned int newEpisode = JE_findNextEpisode();
 
@@ -1580,22 +1593,56 @@ static int endlessPageHitH(int level)
 	return (level == ENDLESS_PAGE_DIFFS) ? endlessPageDiffH : endlessPageRowH;
 }
 
+/* The co-op Campaign board's columns take the width of the legacy 320 field, like the episode
+ * boards on this screen: two ten-character names followed by the difficulty and the credit rule
+ * need all of it. The record line is indented under its figure. */
+static const int coopPageXLabel = 20, coopPageXRight = 300, coopPageXIndent = 8;
+
+int coopCampaignRecordLineWidthPx(void)
+{
+	return coopPageXRight - (coopPageXLabel + coopPageXIndent);
+}
+
+/* Player names come from the lobby, so the pair can be wider than the row on its own. The terms
+ * are what makes two figures comparable, so the names give way to them. */
+void coopCampaignRecordLine(char *out, size_t outSize, const CoopCampaignScore *record, int widthPx)
+{
+	const char *const credit = coopCampaignCreditName(record->credit);
+	char terms[48];
+	snprintf(terms, sizeof(terms), "  (%s%s%s)",
+	         difficultyNameB[MIN(record->difficulty, DIFFICULTY_10)],
+	         credit != NULL ? ", " : "", credit != NULL ? credit : "");
+
+	char names[sizeof(record->name)];
+	SDL_strlcpy(names, record->name, sizeof(names));
+
+	const int budgetPx = widthPx - JE_textWidth(terms, small_font);
+	size_t keep = strlen(names);
+	while (keep > 0 && JE_textWidth(names, small_font) > budgetPx)
+	{
+		--keep;
+		SDL_strlcpy(names + keep, "...", sizeof(names) - keep);
+	}
+
+	snprintf(out, outSize, "%s%s", names, terms);
+}
+
 /* The online co-op Campaign board: the best combined cash each episode has been finished with,
  * and who was flying. Read-only, so it needs no selection or erase machinery. */
 static void JE_drawCoopCampaignPage(void)
 {
 	static const char note[] = "The best combined cash for each episode, online.";
 
-	const int blockW = JE_textWidth(note, small_font);
-	const int xLabel = endlessPageXCenter - blockW / 2;
-	const int xRight = xLabel + blockW;
+	/* Two tiny-font lines per episode. Both carry a full shade, and the difficulty's parentheses
+	 * are the font's tallest glyphs, so each pitch has to clear a descender and its outline. */
+	const int yFirst = 75, yPitch = 18, yNameOffset = 8, yNoteGap = 14;
 
 	draw_font_hv_shadow(VGAScreen, endlessPageXCenter, 55, "Two Players, One Campaign",
 	                    normal_font, centered, 15, -3, false, 2);
 
 	for (int e = 0; e < COOP_CAMPAIGN_SCORE_EPISODES; ++e)
 	{
-		const int y = 78 + 13 * e;
+		const int y = yFirst + yPitch * e;
 		char label[40], value[32];
 		snprintf(label, sizeof(label), "%s:", episode_name[e + 1]);
 		if (coopCampaignScores[e].score > 0)
@@ -1603,20 +1650,25 @@ static void JE_drawCoopCampaignPage(void)
 		else
 			SDL_strlcpy(value, "None", sizeof(value));
 
-		JE_textShade(VGAScreen, xLabel, y, label, 15, 0, FULL_SHADE);
-		JE_textShade(VGAScreen, xRight - JE_textWidth(value, small_font), y, value, 15, 2, FULL_SHADE);
+		JE_textShade(VGAScreen, coopPageXLabel, y, label, 15, 0, FULL_SHADE);
+		JE_textShade(VGAScreen, coopPageXRight - JE_textWidth(value, small_font), y, value,
+		             15, 2, FULL_SHADE);
 
-		// The names go on their own indented line, so a long pair cannot run into the figure.
+		/* The names go on their own indented line, so a long pair cannot run into the figure. The
+		 * credit rule joins the difficulty: both decide what the figure above them is worth. */
 		if (coopCampaignScores[e].score > 0 && coopCampaignScores[e].name[0] != '\0')
 		{
-			char who[64];
-			snprintf(who, sizeof(who), "%s  (%s)", coopCampaignScores[e].name,
-			         difficultyNameB[MIN(coopCampaignScores[e].difficulty, DIFFICULTY_10)]);
-			JE_textShade(VGAScreen, xLabel + 8, y + 6, who, 15, 4, FULL_SHADE);
+			char who[80];
+			coopCampaignRecordLine(who, sizeof(who), &coopCampaignScores[e],
+			                       coopCampaignRecordLineWidthPx());
+			JE_textShade(VGAScreen, coopPageXLabel + coopPageXIndent, y + yNameOffset, who,
+			             15, 4, FULL_SHADE);
 		}
 	}
 
-	JE_textShade(VGAScreen, xLabel, 78 + 13 * COOP_CAMPAIGN_SCORE_EPISODES + 8, note, 15, 2, FULL_SHADE);
+	const int yNote = yFirst + yPitch * (COOP_CAMPAIGN_SCORE_EPISODES - 1) + yNameOffset + yNoteGap;
+	JE_textShade(VGAScreen, endlessPageXCenter - JE_textWidth(note, small_font) / 2, yNote,
+	             note, 15, 2, FULL_SHADE);
 }
 
 static void JE_drawEndlessRecordPage(const EndlessPageState *page)
