@@ -207,6 +207,7 @@ static void endlessShockwaveClear(JE_integer sx, JE_integer sy, int radius)
 			continue;
 		if (radius > 0 && (abs(enemyShot[b].sx - sx) > radius || abs(enemyShot[b].sy - sy) > radius))
 			continue;
+		enemy_shot_vaporise_sparks(b);
 		JE_setupExplosion(enemyShot[b].sx, enemyShot[b].sy, 0, 0, false, false);
 		enemyShotAvail[b] = true;
 		caught = true;
@@ -312,6 +313,28 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 	chain_queue_kill(sx, sy, linknum);
 }
 
+// The commonest blast filter in the weapon tables, so a chain hit flashing in that bank reads like
+// an ordinary shot hit. Chain Reaction spares elites, whose own tint uses this bank as well.
+#define CHAIN_FLASH_FILTER 0xD0
+
+// Flash a chipped victim the way a player-shot hit does: the whole linked hull at once, ground
+// sprites only. JE_drawEnemy paints filter for one frame and clears it again.
+static void chain_flash_enemy(unsigned int i)
+{
+	if (enemy[i].linknum == 0)
+	{
+		if (enemy[i].enemyground)
+			enemy[i].filter = CHAIN_FLASH_FILTER;
+		return;
+	}
+
+	for (unsigned int g = 0; g < COUNTOF(enemy); ++g)
+	{
+		if (enemy[g].linknum == enemy[i].linknum && enemyAvail[g] != 1 && enemy[g].enemyground != 0)
+			enemy[g].filter = CHAIN_FLASH_FILTER;
+	}
+}
+
 // Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
 // depletes (a plain kill; no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
 // Elites, champions, bosses, staged-death enemies and score pickups are left for real kills.
@@ -361,6 +384,7 @@ static void chain_reaction_process(void)
 				{
 					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives; spark so the arc is visible
 					enemy[e].healthbar_seen = true;            // damage taken: show its health bar
+					chain_flash_enemy(e);
 					JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
 				}
 			}
@@ -1049,18 +1073,20 @@ void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy)
 	*out_dx = 0;
 	*out_dy = 0;
 
-	// Twiddle codes are cardinal sequences (diagonals are ignored), so collapse the
-	// flick to its dominant axis; a hand flick is never perfectly straight, and its
-	// off-axis drift would read as a diagonal. Movement itself stays in vt_ship_step.
-	if (fabsf(ax) >= fabsf(ay))
+	// Twiddle codes are cardinal sequences, so mirror SF_twiddleTarget's cone. It is measured
+	// on the raw accumulator: quantizing first would leave every diagonal at one against one,
+	// which keeps both axes whatever the lean was. Movement itself stays in vt_ship_step.
+	if (ax > deadzone)       *out_dx =  1;
+	else if (ax < -deadzone) *out_dx = -1;
+	if (ay > deadzone)       *out_dy =  1;
+	else if (ay < -deadzone) *out_dy = -1;
+
+	if (*out_dx != 0 && *out_dy != 0)
 	{
-		if (ax > deadzone)       *out_dx =  1;
-		else if (ax < -deadzone) *out_dx = -1;
-	}
-	else
-	{
-		if (ay > deadzone)       *out_dy =  1;
-		else if (ay < -deadzone) *out_dy = -1;
+		if (fabsf(ax) > 2.0f * fabsf(ay))
+			*out_dy = 0;
+		else if (fabsf(ay) > 2.0f * fabsf(ax))
+			*out_dx = 0;
 	}
 }
 
@@ -10720,6 +10746,31 @@ static int boss_flash_render(int color, float alpha)
 	return f;
 }
 
+// Blank rows or columns left between a bar's frame and the nearest HUD ink.
+#define BOSS_BAR_CLEAR 2
+
+void boss_bar_vertical_span(bool onLeft, int *top, int *bot)
+{
+	// The side bars are tuned a row lower than that shared clearance: three blank rows above
+	// the frame and one below. The trailing step is off the neighbour's own inked row.
+	const int aboveGap = BOSS_BAR_CLEAR + 1;
+	const int belowGap = BOSS_BAR_CLEAR - 1;
+	const int topMin = 7;    // three blank rows under the low-armor WARNING strip (rows 0..3)
+	const int botMax = 176;  // one above the WARNING text's first row
+
+	int vTop = (onLeft ? hud_top_left_bottom_edge() : hud_top_right_bottom_edge())
+	         + aboveGap + 1;
+	if (vTop < topMin)
+		vTop = topMin;
+	int vBot = (onLeft ? hud_bottom_left_top_edge() : hud_bottom_right_top_edge())
+	         - belowGap - 1;
+	if (vBot > botMax)
+		vBot = botMax;
+
+	*top = vTop;
+	*bot = vBot;
+}
+
 // Lay out and draw the enhanced boss bars per the player's Enhancements
 // settings (bossBarLayout / bossBarTwoMode). barCount is 1 or 2.
 static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlpha, bool decrement, unsigned int barCount)
@@ -10744,14 +10795,18 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 		const bool top = (bossBarLayout == BOSS_BAR_TOP);
 		const bool sideBySide = two && splitMode;  // halves on one row; else stacked rows
 
-		// Top bars clear the live corner HUD clusters; bottom bars use the playfield edges.
-		int leftClear  = top ? (hud_top_left_right_edge() + 2) : (PF_L + 2);
-		int rightClear = top ? (hud_top_right_left_edge() - 2) : PF_R;
+		// Top bars clear the live corner HUD clusters, bottom bars the playfield edges. Only
+		// the right edge steps off an inked column; the left one already reports the first
+		// free column past its cluster.
+		const int fieldL = PF_L + BOSS_BAR_CLEAR;
+		const int fieldR = PF_R - BOSS_BAR_CLEAR;
+		int leftClear  = top ? (hud_top_left_right_edge() + BOSS_BAR_CLEAR) : fieldL;
+		int rightClear = top ? (hud_top_right_left_edge() - BOSS_BAR_CLEAR - 1) : fieldR;
 
 		// With no corner cluster on that side the measured edge falls outside the playfield,
 		// so pin both limits to the visible area.
-		if (leftClear < PF_L + 2)   leftClear = PF_L + 2;
-		if (rightClear > PF_R)      rightClear = PF_R;
+		if (leftClear < fieldL)   leftClear = fieldL;
+		if (rightClear > fieldR)  rightClear = fieldR;
 		const int leftHalf   = PF_CX - leftClear;
 		const int rightHalf  = rightClear - PF_CX;
 		const int half       = (leftHalf < rightHalf) ? leftHalf : rightHalf;
@@ -10761,7 +10816,7 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 
 		// Clear the level timer at top and the current score/FPS band at bottom.
 		const int topAnchor = levelTimer ? 18 : 6;
-		const int botAnchor = hud_bottom_band_top() - 2;
+		const int botAnchor = hud_bottom_band_top() - BOSS_BAR_CLEAR - 1;
 
 		for (unsigned int b = 0; b < barCount; b++)
 		{
@@ -10794,15 +10849,11 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 	else
 	{
 		// Vertical bars hug the side edges. Split uses both sides; Together runs
-		// in parallel; Stacked places one above the other.
-		const int edgeL    = PF_L + 2;            // left bar's left edge
-		const int edgeR    = PF_R - 1;            // right bar's right edge
-		const int clearTop = 48, clearBot = 158;  // between the top & bottom corner HUD
-		const int fullTop  = 8;                   // clear of the top WARNING strip
-		// A full-height column only happens on the HUD-free right side in one-player, where
-		// the FPS counter may still be sitting in the corner; stop above it if so.
-		const int fullBotLimit = hud_bottom_right_top() - 2;
-		const int fullBot  = (fullBotLimit < 176) ? fullBotLimit : 176;
+		// in parallel; Stacked places one above the other. Each side's span comes from
+		// the corner HUD actually drawn there this tick (boss_bar_vertical_span), so a
+		// clear side gives the full playfield height.
+		const int edgeL = PF_L + BOSS_BAR_CLEAR;   // clear columns inside the left edge
+		const int edgeR = PF_R - BOSS_BAR_CLEAR;   // ...and before the HUD sidebar
 
 		for (unsigned int b = 0; b < barCount; b++)
 		{
@@ -10817,20 +10868,24 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				? edgeL + slot * (THICK + GAP)
 				: edgeR - THICK + 1 - slot * (THICK + GAP);
 
-			// Full height only on a HUD-free side; split forces both sides to the
-			// clear band so the pair matches.
-			const bool clearColumn = (two && splitMode) ? true : (onLeft || twoPlayerMode);
-			int vTop = clearColumn ? clearTop : fullTop;
-			int vBot = clearColumn ? clearBot : fullBot;
+			int vTop, vBot;
+			boss_bar_vertical_span(onLeft, &vTop, &vBot);
 
-			// Stacked: split this side's span into a top half and a bottom half.
+			// Stacked: split this side's span into a top half and a bottom half, the upper
+			// bar shifted one row further down and the lower one row up.
 			if (two && stackMode)
 			{
 				const int mid = (vTop + vBot) / 2;
 				if (b == 0)
-					vBot = mid - GAP / 2;          // upper bar
+				{
+					vTop += 1;
+					vBot = mid - GAP / 2 + 1;      // upper bar
+				}
 				else
-					vTop = mid + GAP / 2 + 1;      // lower bar
+				{
+					vTop = mid + GAP / 2;          // lower bar
+					vBot -= 1;
+				}
 			}
 
 			if (decrement)  // see the horizontal branch
@@ -11173,7 +11228,8 @@ static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 // How far LEFT the endless kill-fire HUD (bottom-right of the playfield, right-aligned to
 // hudRightX) must shift to clear a currently-shown RIGHT-side vertical boss bar, or 0 if none is
 // in the way. Classic style and non-right layouts never occupy that column. Mirrors the bx
-// geometry in draw_boss_bars_enhanced exactly (same BOSS_BAR_THICK/GAP) so the two can't drift.
+// geometry in draw_boss_bars_enhanced exactly (same THICK, GAP and edge clearance) so the two
+// can't drift.
 int boss_bar_hud_left_shift(int hudRightX)
 {
 	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)
@@ -11192,7 +11248,8 @@ int boss_bar_hud_left_shift(int hudRightX)
 	// just one THICK-wide column (see the bx formula in draw_boss_bars_enhanced).
 	const bool together = (bars == 2 && !splitMode && bossBarTwoMode == BOSS_BAR_TWO_TOGETHER);
 	const int slots = together ? 1 : 0;
-	const int leftmostX = (PLAYFIELD_RIGHT - 1) - BOSS_BAR_THICK + 1 - slots * (BOSS_BAR_THICK + BOSS_BAR_GAP);
+	const int leftmostX = (PLAYFIELD_RIGHT - BOSS_BAR_CLEAR) - BOSS_BAR_THICK + 1
+	                    - slots * (BOSS_BAR_THICK + BOSS_BAR_GAP);
 
 	return (hudRightX >= leftmostX) ? (hudRightX - leftmostX + 4) : 0;  // +4px clearance
 }
@@ -11218,7 +11275,7 @@ int boss_bar_bottom_band_top(void)
 	const bool stackedRows = (bars == 2 && bossBarTwoMode != BOSS_BAR_TWO_SPLIT);
 	const int rows = stackedRows ? 2 : 1;
 
-	const int botAnchor = hud_bottom_band_top() - 2;
+	const int botAnchor = hud_bottom_band_top() - BOSS_BAR_CLEAR - 1;   // as in the draw
 	return botAnchor - (rows * BOSS_BAR_THICK + (rows - 1) * BOSS_BAR_GAP) + 1;
 }
 

@@ -1892,6 +1892,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 				    && abs(enemyShot[es].sx - this_player->x) <= reachX
 				    && abs(enemyShot[es].sy - this_player->y) <= reachY)
 				{
+					enemy_shot_vaporise_sparks(es);
 					JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
 					enemyShotAvail[es] = true;
 				}
@@ -2292,6 +2293,39 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 		superpixels[slot].occluded = occluded;
 		superpixels[slot].z = SUPERPIXEL_SPAWN_Z;
 	}
+}
+
+// Shape of the pop; the reach is also each spark's per-tick velocity, so it bounds the spread.
+#define VAPORISE_SPARK_MIN   3
+#define VAPORISE_SPARK_MAX   5
+#define VAPORISE_SPARK_REACH 3
+
+// The bullet's colour is its shooter's tier tint when it carries one, else the palette bank its
+// sprite is mostly drawn in. Contract in varz.h.
+void enemy_shot_vaporise_sparks(unsigned int slot)
+{
+	if (rollback_resim_silent)
+		return;
+
+	const EnemyShotType *const es = &enemyShot[slot];
+
+	// Sheet split and frame arithmetic as the in-game bullet draw does them (tyrian2.c).
+	const bool highSheet = (es->sgr >= 500);
+	const unsigned int frame = es->sgr + es->animate - (highSheet ? 500 : 0);
+	const Uint8 color = (es->filter != 0)
+		? es->filter
+		: (Uint8)(sprite2_dominant_bank(highSheet ? spriteSheet12 : spriteSheet8, frame) << 4);
+
+	// Slot and position in separate bit fields, so bullets swept in the same frame scatter
+	// differently. sp_mix32 spreads them; the count below reads the mixed low bits.
+	const Uint32 seed = sp_mix32(((Uint32)slot << 24)
+	                             ^ (((Uint32)es->sx & 0x1FF) << 12) ^ ((Uint32)es->sy & 0xFFF));
+	const JE_word sparks = (JE_word)(VAPORISE_SPARK_MIN
+	                                 + seed % (VAPORISE_SPARK_MAX - VAPORISE_SPARK_MIN + 1));
+
+	// Thrown from the centre of the bullet's 12px cell.
+	JE_doSPSeeded((JE_word)(es->sx + 6), (JE_word)(es->sy + 6), sparks, VAPORISE_SPARK_REACH,
+	              color, false, ENDLESS_SPARK_BRIGHT, false, seed);
 }
 
 void JE_drawSP(void)

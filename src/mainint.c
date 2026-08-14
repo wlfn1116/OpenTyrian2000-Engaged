@@ -6351,8 +6351,11 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 			}
 			else
 			{
-				if ((temp != 9) &&
-				    (temp4 - 1) % 4 != (temp - 1) % 4 &&
+				/* Strict: anything that is not the next step throws the combo away, including the
+				 * expected direction with the fire button in the wrong state. Only the code just
+				 * consumed (a held direction) and code 9 (everything released) are exempt. See
+				 * doc/notes.md, "Twiddles". */
+				if (temp != 9 &&
 				    (SFCurrentCode[playerNum_-1][temp2] == 0 ||
 				     keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]-1] != temp))
 				{
@@ -6363,15 +6366,16 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 	}
 }
 
-/* The one-pixel target JE_SFCodes reads a movement intent as: a diagonal collapses to its dominant
- * axis, ties to the vertical, the rule rb_fill_tuple applies before intent goes on the wire. dx and
- * dy are positive right and down, and the target sits on the opposite side. See doc/notes.md,
+/* The one-pixel target JE_SFCodes reads a movement intent as: a direction counts only while its
+ * axis exceeds twice the other, and a shallower diagonal keeps both axes, which the detector reads
+ * as a neutral tick. rb_fill_tuple applies the same rule before intent goes on the wire. dx and dy
+ * are positive right and down, and the target sits on the opposite side. See doc/notes.md,
  * "Twiddles". */
 void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y)
 {
-	if (abs(dx) > abs(dy))
+	if (abs(dx) > 2 * abs(dy))
 		dy = 0;
-	else if (dy != 0)
+	else if (abs(dy) > 2 * abs(dx))
 		dx = 0;
 
 	*out_x = px - (dx > 0 ? 1 : dx < 0 ? -1 : 0);
@@ -7825,23 +7829,74 @@ int hud_top_right_left_edge(void)
 	return left;
 }
 
-int hud_bottom_right_top(void)
+/* The FPS counter and the Endless kill readout are deliberately not counted below: both slide
+ * left to clear a right-edge bar instead (boss_bar_hud_left_shift). */
+
+// Bottom row of the top-left cluster (special block, arcade name/lives rows), or -1.
+int hud_top_left_bottom_edge(void)
 {
-	// Nothing claimed: report a row below the playfield so callers clamp to their own limit.
+	int bottom = -1;
+	const uint local_player = gameplay_local_player_index();
+
+	if (hud_special_block_shown(local_player) && !hud_special_on_right(local_player))
+		bottom = HUD_SPECIAL_ICON_Y + HUD_SPECIAL_ICON_H - 1;
+
+	// The deepest ink is the collapsed count at y+3 (shaded TINY_FONT rows end at y+11).
+	// Using y+11 for plain icon rows too keeps the span steady across the collapse point.
+	if (hud_lives_shown())
+	{
+		const int rowBottom = hud_lives_row_y(0) + 11;
+		if (rowBottom > bottom)
+			bottom = rowBottom;
+	}
+
+	return bottom;
+}
+
+// Bottom row of the top-right cluster, or -1. Player two's rows mirror in only when
+// JE_inGameDisplays draws a second lives row.
+int hud_top_right_bottom_edge(void)
+{
+	int bottom = -1;
+	const uint local_player = gameplay_local_player_index();
+
+	if (hud_special_block_shown(local_player) && hud_special_on_right(local_player))
+		bottom = HUD_SPECIAL_ICON_Y + HUD_SPECIAL_ICON_H - 1;
+
+	if (hud_lives_shown() && !(onePlayerAction && !dual_ship_mode()))
+	{
+		const int rowBottom = hud_lives_row_y(1) + 11;
+		if (rowBottom > bottom)
+			bottom = rowBottom;
+	}
+
+	return bottom;
+}
+
+// Top row of the bottom-left corner's claims: player one's score, and the superbomb row above
+// it. A dual-ship session draws only the local ship's bombs, and draws them in this corner.
+int hud_bottom_left_top_edge(void)
+{
+	int top = HUD_SCORE_Y - 1;
+
+	if (hud_superbomb_count(dual_ship_mode() ? gameplay_local_player_index() : 0) > 0)
+		top = HUD_SUPERBOMB_Y;
+
+	return top;
+}
+
+// Top row of the bottom-right corner's claims (player two's score and superbombs), or
+// vga_height with the corner empty.
+int hud_bottom_right_top_edge(void)
+{
 	int top = vga_height;
 
 	if (twoPlayerMode && (!galagaMode || coop_mode_active()))
 	{
-		top = HUD_SCORE_Y - 1;  // player 2's score lives in this corner
-		if (hud_superbomb_count(1) > 0)
-			top = HUD_SUPERBOMB_Y;  // ...with its superbomb row just above
-	}
-
-	if (show_fps)
-	{
-		const int fps_top = hud_fps_row() - 1;
-		if (fps_top < top)
-			top = fps_top;
+		top = HUD_SCORE_Y - 1;
+		// A dual-ship session draws only the local ship's bombs, in the left corner.
+		if (!dual_ship_mode() && hud_superbomb_count(1) > 0)
+			top = HUD_SUPERBOMB_Y;
 	}
 
 	return top;
@@ -8516,6 +8571,15 @@ static float link_gun_angle_from_wire(Uint16 angle)
 	return (float)angle * (float)(2.0 * M_PI / 65536.0);
 }
 
+/* RB_MOVE_DIAG for a displacement that SF_twiddleTarget keeps on both axes, so the peer's twiddle
+ * detector reads the same neutral tick. */
+static Uint16 rb_move_diag_bit(int dx, int dy)
+{
+	int tx, ty;
+	SF_twiddleTarget(0, 0, dx, dy, &tx, &ty);
+	return (tx != 0 && ty != 0) ? RB_MOVE_DIAG : 0;
+}
+
 /* Capture the effective per-tick input tuple for a player after the movement
  * routine ran: absolute post-movement position, aim anchors, banking accel,
  * buttons and link-gun state.  This tuple is the simulation's only input door
@@ -8548,14 +8612,16 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 
 	// Movement intent for the docked-link tests: this tick's real input
 	// displacement, captured before the dock pin rewrites x/y (RB_MOVE_* in
-	// rollback.h).  Dominant axis only, so the turret-rotate target can be
-	// rebuilt from the bits exactly as the classic |dx|>|dy| test chose it.
+	// rollback.h).  The axis bit carries the dominant half exactly as the
+	// classic |dx|>|dy| turret test chose it; RB_MOVE_DIAG marks a tick
+	// outside the twiddle cone.
 	const int dx = (int)in->x - (int)in->mouseX;
 	const int dy = (int)in->y - (int)in->mouseY;
 	if (abs(dx) > abs(dy))
 		in->buttons |= (dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
 	else if (dy != 0)
 		in->buttons |= (dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
+	in->buttons |= rb_move_diag_bit(dx, dy);
 
 	if (link_analog)
 	{
@@ -9199,6 +9265,7 @@ redo:
 					buttons |= (link_dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
 				else if (link_dy != 0)
 					buttons |= (link_dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
+				buttons |= rb_move_diag_bit(link_dx, link_dy);
 
 				// Absolute positions are idempotent when a lost packet is reconstructed.
 				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
@@ -9367,12 +9434,19 @@ redo:
 		}
 		else if (isNetworkGame && haveLinkIntent)
 		{
-			/* Network tuples carry the dominant movement direction. Rebuild the one-pixel
-			 * target from shared intent so twiddle recognition stays deterministic. */
-			const int dirx = (linkIntent & RB_MOVE_RIGHT) ? 1
-			                 : (linkIntent & RB_MOVE_LEFT) ? -1 : 0;
-			const int diry = (linkIntent & RB_MOVE_DOWN) ? 1
-			                 : (linkIntent & RB_MOVE_UP) ? -1 : 0;
+			/* Network tuples carry the dominant movement direction and the outside-the-cone
+			 * flag. Rebuild the one-pixel target from shared intent so twiddle recognition
+			 * stays deterministic. */
+			int dirx = (linkIntent & RB_MOVE_RIGHT) ? 1
+			           : (linkIntent & RB_MOVE_LEFT) ? -1 : 0;
+			int diry = (linkIntent & RB_MOVE_DOWN) ? 1
+			           : (linkIntent & RB_MOVE_UP) ? -1 : 0;
+			if (linkIntent & RB_MOVE_DIAG)
+			{
+				// Any two-axis target reads as neutral; the actual diagonal does not matter.
+				dirx = 1;
+				diry = 1;
+			}
 			int tx, ty;
 			SF_twiddleTarget(this_player->x, this_player->y, dirx, diry, &tx, &ty);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);

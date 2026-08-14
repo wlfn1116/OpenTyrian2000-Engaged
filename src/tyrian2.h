@@ -143,6 +143,11 @@ int  boss_bar_hud_left_shift(int hudRightX);  // px to shift LEFT for a right-si
 bool boss_bar_hud_needs_up_shift(void);       // true while a BOTTOM horizontal bar is shown
 int  boss_bar_bottom_band_top(void);          // topmost row that bar covers, or INT_MAX if none
 
+// Inclusive first and last row a side-hugging vertical boss bar covers, measured from the corner
+// HUD drawn on that side this tick: three blank rows above the frame and one below, clamped to
+// the WARNING strips. Public for the unit suite's clearance checks.
+void boss_bar_vertical_span(bool onLeft, int *top, int *bot);
+
 // Experimental variable-timestep ship. Its mouse scale matches classic movement.
 #define VT_MOUSE_SENS 0.25f
 extern bool vt_ship;       // runtime toggle for render-rate ship simulation

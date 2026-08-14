@@ -15,7 +15,7 @@
 #include "params.h"   // constantPlay, one of the co-op campaign board's conditions
 #include "player.h"
 #include "rollback.h"
-#include "tyrian2.h"  // the online start screen's difficulty bump, Super Arcade equip, picker layout
+#include "tyrian2.h"  // difficulty bump, Super Arcade equip, picker and boss-bar layout
 #include "varz.h"
 #include "video.h"  // PLAYFIELD_LEFT / PLAYFIELD_RIGHT, for the HUD block geometry check
 
@@ -510,14 +510,16 @@ static void qa_special_block_geometry(void)
 		                           lightX, HUD_SPECIAL_LIGHT_Y, HUD_SPECIAL_LIGHT_W, HUD_SPECIAL_LIGHT_H),
 		         label);
 
-		/* The name label is the widest thing on the row, so it is what the block has to clear;
-		 * the lives icons sit HUD_LIVES_NAME_RISE below it and clear it in turn. */
+		/* The name label is the widest thing on the row, so it is what the block has to clear.
+		 * A shaded TINY_FONT line inks rows y-1..y+8, and a blank row must separate the block
+		 * from the name and the name from the lives icons under it. */
 		const int blockBottom = MAX(HUD_SPECIAL_ICON_Y + HUD_SPECIAL_ICON_H,
 		                            HUD_SPECIAL_LIGHT_Y + HUD_SPECIAL_LIGHT_H);
 		snprintf(label, sizeof(label),
-		         "machine %d: the block clears its own ship's name row (block ends %d, name at %d)",
-		         slot, blockBottom - 1, nameY);
-		qa_check(rowY == HUD_LIVES_Y_SPECIAL && nameY >= blockBottom, label);
+		         "machine %d: blank rows separate the block, name and lives (block ends %d, "
+		         "name at %d, lives at %d)",
+		         slot, blockBottom - 1, nameY, rowY);
+		qa_check(rowY == HUD_LIVES_Y_SPECIAL && nameY - 1 > blockBottom && rowY > nameY + 9, label);
 
 		snprintf(label, sizeof(label),
 		         "machine %d: the other ship's row does not move for a special it does not hold",
@@ -580,7 +582,98 @@ static void qa_special_block_geometry(void)
 	thisPlayerNum = 1;
 }
 
-/* ---- 3d. the rear-gun mode toggle is each ship's own --------------------------------- */
+/* ---- 3d. boss bar clearance ---------------------------------------------------------- */
+
+/* Check one side's span against the ink around it, stated here rather than read back from the
+ * layout code: the special block ends on row 28, a lives row's deepest ink is its collapsed
+ * count (rowY+11), the score outline starts on HUD_SCORE_Y-1 and the superbomb row on 160.
+ * The frame keeps three blank rows above and one below. */
+static void qa_boss_bar_side(bool onLeft, int inkBottom, int inkTop, const char *label)
+{
+	int top, bot;
+	boss_bar_vertical_span(onLeft, &top, &bot);
+
+	// One row to step off the neighbour's own ink, then the gap. The clamps are the WARNING
+	// strip above (rows 0..3) and its text below (row 178).
+	const int wantTop = MAX(inkBottom + 1 + 3, 3 + 1 + 3);
+	const int wantBot = MIN(inkTop - 1 - 1, 178 - 1 - 1);
+	char message[224];
+	snprintf(message, sizeof(message), "%s (span %d..%d, expected %d..%d)",
+	         label, top, bot, wantTop, wantBot);
+	qa_check(top == wantTop && bot == wantBot, message);
+}
+
+static void qa_boss_bar_clearance(void)
+{
+	const int scoreTop = vga_height - 26;   // the score row's outline top
+	const int bombTop  = 160;               // the superbomb icon row
+
+	/* Separate arcade, both ships holding a special: the machine flying ship two draws the
+	 * block in the right corner over that ship's name and lives rows. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	arcadeSeparateMode = true;
+	isNetworkGame = true;
+	thisPlayerNum = 2;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].items.special = 1;
+		player[p].superbombs = 0;
+		player[p].is_alive = true;
+	}
+
+	qa_boss_bar_side(false, HUD_LIVES_Y_SPECIAL + 11, scoreTop,
+	                 "right bar clears the special block's lives row and the score");
+	qa_boss_bar_side(true, HUD_LIVES_Y + 11, scoreTop,
+	                 "left bar clears the plain lives row and the score");
+
+	/* The same session seen from ship one's machine: the block swaps corners. */
+	thisPlayerNum = 1;
+	qa_boss_bar_side(false, HUD_LIVES_Y + 11, scoreTop,
+	                 "right bar tracks the block moving to the other corner");
+	qa_boss_bar_side(true, HUD_LIVES_Y_SPECIAL + 11, scoreTop,
+	                 "left bar clears its own ship's shifted rows");
+
+	/* Linked two-player runs the arcade ruleset, so both corners carry name and lives rows
+	 * at their stock height with no special held. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	isNetworkGame = true;
+	thisPlayerNum = 1;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+		player[p].items.special = 0;
+	qa_boss_bar_side(false, HUD_LIVES_Y + 11, scoreTop,
+	                 "the linked pair's right bar sits under player two's lives row");
+	qa_boss_bar_side(true, HUD_LIVES_Y + 11, scoreTop,
+	                 "...and its left bar under player one's");
+
+	/* The linked pair shows both superbomb stocks, player two's row in the right corner. */
+	player[1].superbombs = 2;
+	qa_boss_bar_side(false, HUD_LIVES_Y + 11, bombTop,
+	                 "player two's superbomb row bounds the right bar");
+	qa_boss_bar_side(true, HUD_LIVES_Y + 11, scoreTop,
+	                 "...and leaves the left bar on the score");
+	player[1].superbombs = 0;
+	player[0].superbombs = 1;
+	qa_boss_bar_side(true, HUD_LIVES_Y + 11, bombTop,
+	                 "player one's superbomb row bounds the left bar");
+	player[0].superbombs = 0;
+
+	/* Co-op campaign draws no name or lives rows, so only the scores bound the bars. */
+	qa_modes_clear();
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	isNetworkGame = true;
+	qa_boss_bar_side(false, -1, scoreTop, "a clear right corner frees the whole column");
+	qa_boss_bar_side(true, -1, scoreTop, "the left column runs from the strip to the score");
+
+	/* One player: the right corner is empty top and bottom. */
+	qa_modes_clear();
+	qa_boss_bar_side(false, -1, vga_height, "a one-player right bar runs the full height");
+	qa_boss_bar_side(true, -1, scoreTop, "the one-player left bar still clears the score");
+}
+
+/* ---- 3e. the rear-gun mode toggle is each ship's own --------------------------------- */
 
 /* weapon_mode is per ship and its toggle rides the networked button tuple, so both machines
  * simulate both ships' toggles. The pattern count the toggle wraps against has to be the
@@ -651,7 +744,7 @@ static void qa_rear_gun_mode_matrix(void)
 	thisPlayerNum = 1;
 }
 
-/* ---- 3e. a ship that is out leaves nothing behind on the HUD ------------------------- */
+/* ---- 3f. a ship that is out leaves nothing behind on the HUD ------------------------- */
 
 /* The last death spends no life: the counter stops at one and the ship stays dead. A readout
  * taken straight off the counter therefore offers the survivor's partner a ship it cannot fly,
@@ -1809,6 +1902,83 @@ static void qa_sa_ship_packet(void)
 	isNetworkGame = savedNet;
 	thisPlayerNum = savedThis;
 }
+
+/* ---- the departure gate -------------------------------------------------------------- */
+
+/* Leaving the menu in a game type with no shared outpost is two phases: a withdrawable gate,
+ * then the commit. Cover the packet round trip and every ordering the two waits can see, since
+ * the orderings decide whether a withdrawal can strand the other machine. */
+static void qa_depart_gate(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+
+	isNetworkGame = true;
+
+	Uint8 raw[NET_PACKET_SIZE];
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_DEPART_GATE, &raw[0]);
+
+	qa_check(network_depart_gate_peer() == -1, "no gate announcement has arrived until one does");
+
+	raw[4] = 1;
+	qa_inject_packet(raw, 5);
+	qa_check(network_depart_gate_peer() == 1 && packet_in[0] == NULL,
+	         "the peer's gate is read and its packet retired from the queue");
+
+	raw[4] = 0;
+	qa_inject_packet(raw, 5);
+	qa_check(network_depart_gate_peer() == 0, "a zero is the peer withdrawing to its menu");
+
+	/* Truncated: taken as standing at the gate rather than jamming the queue, which matches
+	 * the bare four-byte form every other rendezvous sends. */
+	qa_inject_packet(raw, 4);
+	qa_check(network_depart_gate_peer() == 1 && packet_in[0] == NULL,
+	         "a gate packet with no answer byte reads as arrival, and does not jam the queue");
+
+	/* A packet of another type is left alone: this poll only ever consumes its own. */
+	SDLNet_Write16(PACKET_WAITING, &raw[0]);
+	qa_inject_packet(raw, 5);
+	qa_check(network_depart_gate_peer() == -1 && packet_in[0] != NULL,
+	         "the gate poll leaves a commit at the head for the phase that reads it");
+	network_update();
+
+	/* The gate wait. Esc outranks everything inbound, so the answer cannot depend on which of
+	 * the two landed first within a frame. */
+	qa_check(network_depart_gate_step(true, -1, 0) == DEPART_GATE_WITHDRAW,
+	         "Esc at the gate reopens the menu");
+	qa_check(network_depart_gate_step(true, 1, 0) == DEPART_GATE_WITHDRAW
+	         && network_depart_gate_step(true, -1, PACKET_WAITING) == DEPART_GATE_WITHDRAW,
+	         "...whatever arrived on the same frame");
+	qa_check(network_depart_gate_step(false, 1, 0) == DEPART_GATE_GO,
+	         "the peer reaching the gate releases the wait");
+	qa_check(network_depart_gate_step(false, -1, PACKET_WAITING) == DEPART_GATE_GO,
+	         "so does a peer that is already past it");
+	qa_check(network_depart_gate_step(false, 0, 0) == DEPART_GATE_WAIT
+	         && network_depart_gate_step(false, -1, 0) == DEPART_GATE_WAIT
+	         && network_depart_gate_step(false, -1, PACKET_KEEP_ALIVE) == DEPART_GATE_WAIT,
+	         "a withdrawn peer, an empty queue and other traffic all keep waiting");
+
+	/* The commit wait does not take Esc; this machine has already announced. The answer it has
+	 * to catch is the peer withdrawing, which sends this machine back to the gate instead of
+	 * leaving it holding a departure the peer walked away from. */
+	qa_check(network_depart_wait_step(0, 0) == DEPART_WAIT_REOPENED
+	         && network_depart_wait_step(0, PACKET_WAITING) == DEPART_WAIT_REOPENED,
+	         "a peer that withdraws reopens the gate, even behind their own commit");
+	qa_check(network_depart_wait_step(-1, PACKET_WAITING) == DEPART_WAIT_DONE,
+	         "the peer's commit pairs with ours and both leave");
+	qa_check(network_depart_wait_step(1, 0) == DEPART_WAIT_MORE
+	         && network_depart_wait_step(-1, 0) == DEPART_WAIT_MORE
+	         && network_depart_wait_step(-1, PACKET_DEPART_GATE) == DEPART_WAIT_MORE,
+	         "a re-announced gate leaves the commit wait waiting");
+
+	/* The pair of decisions the two phases exist for: the machine that pressed Esc reopens its
+	 * menu, and the machine that committed against it falls back to the gate. */
+	qa_check(network_depart_gate_step(true, 1, PACKET_WAITING) == DEPART_GATE_WITHDRAW
+	         && network_depart_wait_step(0, PACKET_WAITING) == DEPART_WAIT_REOPENED,
+	         "one side withdrawing and the other committing resolves to gate and reopen");
+
+	isNetworkGame = savedNet;
+}
 #endif
 
 /* ---- 13. the Endless debug zone jump crosses the wire -------------------------------- */
@@ -1873,6 +2043,7 @@ void qa_test_online_suite(void)
 	qa_arcade_economy_matrix();
 	qa_separate_arcade_lives();
 	qa_special_block_geometry();
+	qa_boss_bar_clearance();
 	qa_rear_gun_mode_matrix();
 	qa_downed_ship_hud();
 	qa_campaign_economy_matrix();
@@ -1887,6 +2058,7 @@ void qa_test_online_suite(void)
 	qa_test_net_lobby_strings();
 	qa_hostile_packets();
 	qa_sa_ship_packet();
+	qa_depart_gate();
 	qa_endless_jump_pick();
 #endif
 

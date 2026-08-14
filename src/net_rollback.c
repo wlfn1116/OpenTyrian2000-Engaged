@@ -129,9 +129,10 @@ bool nrb_active(void)
 #define NRB_HDR_BYTES   48            /* wire size of the packet header       */
 
 /* Wire-relevant tuple bits: the four buttons, the four requests, the analog
- * link flag, and the four RB_MOVE_* docked-link intent bits.  The RB_EV_*
- * bits (9-10) are self-test-local and never leave a machine. */
-#define NRB_WIRE_BUTTONS (0x01FFu | RB_MOVE_MASK)
+ * link flag, and the movement-intent bits (four RB_MOVE_* directions plus the
+ * RB_MOVE_DIAG cone flag).  The RB_EV_* bits (9-10) are self-test-local and
+ * never leave a machine. */
+#define NRB_WIRE_BUTTONS (0x01FFu | RB_MOVE_MASK | RB_MOVE_DIAG)
 /* Of those, the bits the SIMULATION reads.  Pause and in-game-menu requests are
  * processed outside the sim, from remote_hist rather than from what the frame
  * consumed, so an unpredicted pulse changes no simulated byte; comparing them
@@ -140,7 +141,7 @@ bool nrb_active(void)
 /* Bits a PREDICTED tuple may carry: held buttons + analog flag + held movement
  * intent; one-shot request pulses must never be predicted into existence. */
 #define NRB_PREDICT_BUTTONS (RB_BTN_FIRE | RB_BTN_LSIDEKICK | RB_BTN_RSIDEKICK | \
-                             RB_BTN_CHANGEFIRE | RB_LINK_ANALOG | RB_MOVE_MASK)
+                             RB_BTN_CHANGEFIRE | RB_LINK_ANALOG | RB_MOVE_MASK | RB_MOVE_DIAG)
 
 /* How much of a remote frame's tuple the simulation consumed.  The level-end
  * fade and a dead ship skip the movement/apply path entirely, but the frame's
@@ -1124,7 +1125,8 @@ static NrbStep nrb_begin_resim(Uint32 K)
 bool nrb_peer_left_level(Uint16 head)
 {
 	if (head != PACKET_WAITING && head != PACKET_DETAILS && head != PACKET_GAME_QUIT
-	    && head != PACKET_SHOP_SYNC && head != PACKET_ENDLESS_RUN)
+	    && head != PACKET_SHOP_SYNC && head != PACKET_ENDLESS_RUN
+	    && head != PACKET_DEPART_GATE)   // a peer standing at the gate is back in its menu
 		return false;
 
 	reallyEndLevel = true;

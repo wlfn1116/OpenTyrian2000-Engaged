@@ -91,6 +91,7 @@ static inline Uint32 net_bytes_read32(const void *areap)
 #define PACKET_WAITING       0x21    // 
 #define PACKET_BUSY          0x22    // 
 #define PACKET_LEVEL_READY   0x23    // level-start barrier
+#define PACKET_DEPART_GATE   0x24    // at the departure gate (1) or withdrawn back to the menu (0)
 
 #define PACKET_GAME_QUIT     0x30    //
 #define PACKET_GAME_PAUSE    0x31    //
@@ -364,6 +365,34 @@ void network_level_loaded_rendezvous(void);
  * no update, 0 for withdrawal, and 1 for ready; release also waits for network_is_sync(). */
 void network_ready_publish(bool ready);
 int network_ready_peer(void);
+
+/* Departure gate for the game types with no shared outpost behind the wait: the same retractable
+ * shape as the ready barrier, on its own packet type rather than the commit's. Poll returns -1
+ * for no update, 0 for a peer that withdrew to its menu, and 1 for one standing at the gate. See
+ * "Outpost protocol" in doc/notes.md. */
+void network_depart_gate_publish(bool at_gate);
+int network_depart_gate_peer(void);
+
+/* The two gate waits, as pure decision functions so the unit suite can drive every ordering.
+ * `peer_gate` is a network_depart_gate_peer() result and `head` the inbound queue's head type. */
+typedef enum
+{
+	DEPART_GATE_WAIT,      // nobody has moved; keep waiting
+	DEPART_GATE_GO,        // both machines are at the gate; commit
+	DEPART_GATE_WITHDRAW,  // this player pressed Esc; reopen the menu
+}
+DepartGateStep;
+DepartGateStep network_depart_gate_step(bool esc_pressed, int peer_gate, Uint16 head);
+
+typedef enum
+{
+	DEPART_WAIT_MORE,      // no answer yet
+	DEPART_WAIT_DONE,      // the peer committed too; both leave
+	DEPART_WAIT_REOPENED,  // the peer withdrew; fall back to the gate
+}
+DepartWaitStep;
+DepartWaitStep network_depart_wait_step(int peer_gate, Uint16 head);
+
 /* Terminal cards are not retractable. A caller that has already accepted local input passes true;
  * otherwise either local input or the peer's announcement dismisses both copies. */
 void network_end_screen_rendezvous(bool local_dismissed);
@@ -504,6 +533,8 @@ extern bool rollback_resim;
 static inline void network_level_rendezvous(void) { }
 static inline void network_ready_publish(bool ready) { (void)ready; }
 static inline int network_ready_peer(void) { return -1; }
+static inline void network_depart_gate_publish(bool at_gate) { (void)at_gate; }
+static inline int network_depart_gate_peer(void) { return -1; }
 static inline void network_end_screen_rendezvous(bool local_dismissed) { (void)local_dismissed; }
 static inline void network_sa_ship_publish(int ship, bool seen_peer) { (void)ship; (void)seen_peer; }
 static inline int network_sa_ship_peer(void) { return 0; }

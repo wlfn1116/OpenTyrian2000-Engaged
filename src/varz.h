@@ -518,6 +518,10 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 // `occluded` marks the sparks as hidden by this tick's occluder boxes (see JE_addSPOccluder).
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
                    bool classic_cap, JE_byte bright, bool occluded, Uint32 seed);
+// The spark pop a vaporised enemy bullet leaves, in the bullet's own colour (Endless Shockwave
+// and Countermeasures). Call with the slot still live. Presentation only, so a silent resim
+// spawns nothing.
+void enemy_shot_vaporise_sparks(unsigned int slot);
 void JE_drawSP(void);
 void JE_resetSP(void);
 // Frame boundary for the ring. JE_beginSPPass opens a drawing pass; JE_discardSPPass puts the ring

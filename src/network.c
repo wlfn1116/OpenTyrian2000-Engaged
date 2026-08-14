@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       50           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       53           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -617,6 +617,9 @@ static int network_recv_one(void)
 					case PACKET_WAITING:
 					case PACKET_BUSY:
 					case PACKET_LEVEL_READY:
+					// The departure gate. A reliable type missing from this list is queued
+					// nowhere and never acknowledged, so both ends would sit at the gate.
+					case PACKET_DEPART_GATE:
 					case PACKET_GAME_QUIT:
 					case PACKET_GAME_PAUSE:
 					case PACKET_GAME_MENU:
@@ -3092,6 +3095,60 @@ void network_ready_publish(bool ready)
 	network_prepare(PACKET_WAITING);
 	packet_out_temp->data[4] = ready ? 1 : 0;
 	network_send(5);  // PACKET_WAITING + the answer it carries
+}
+
+/* The departure gate. Announced by the machine that picked Start Level and withdrawn when it
+ * presses Esc; the commit only follows once both are standing here. See "Outpost protocol" in
+ * doc/notes.md. */
+void network_depart_gate_publish(bool at_gate)
+{
+	if (!isNetworkGame)
+		return;
+
+	network_prepare(PACKET_DEPART_GATE);
+	packet_out_temp->data[4] = at_gate ? 1 : 0;
+	network_send(5);  // PACKET_DEPART_GATE + the answer it carries
+}
+
+int network_depart_gate_peer(void)
+{
+	if (!isNetworkGame || packet_in[0] == NULL
+	    || SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_DEPART_GATE)
+		return -1;
+
+	const int at_gate = (packet_in[0]->len >= 5) ? (packet_in[0]->data[4] != 0 ? 1 : 0) : 1;
+	network_update();   // consume it, or it heads the queue for the rest of the session
+	return at_gate;
+}
+
+DepartGateStep network_depart_gate_step(bool esc_pressed, int peer_gate, Uint16 head)
+{
+	// Esc is read first: while it is still offered it outranks anything inbound, so the answer
+	// does not depend on which arrived within the frame.
+	if (esc_pressed)
+		return DEPART_GATE_WITHDRAW;
+
+	if (peer_gate > 0)
+		return DEPART_GATE_GO;
+
+	// A commit at the head proves the peer is at the gate and already past it. Left queued for
+	// the commit wait, which is the phase that reads its payload.
+	if (peer_gate < 0 && head == PACKET_WAITING)
+		return DEPART_GATE_GO;
+
+	return DEPART_GATE_WAIT;
+}
+
+DepartWaitStep network_depart_wait_step(int peer_gate, Uint16 head)
+{
+	// A withdrawal outranks a commit queued behind it, so the gate reopens.
+	if (peer_gate == 0)
+		return DEPART_WAIT_REOPENED;
+
+	if (head == PACKET_WAITING)
+		return DEPART_WAIT_DONE;
+
+	return DEPART_WAIT_MORE;
 }
 
 int network_ready_peer(void)

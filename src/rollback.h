@@ -110,6 +110,9 @@ typedef struct
 #define RB_MOVE_UP         (1u << 13)
 #define RB_MOVE_DOWN       (1u << 14)
 #define RB_MOVE_MASK       (RB_MOVE_LEFT | RB_MOVE_RIGHT | RB_MOVE_UP | RB_MOVE_DOWN)
+/* The tick's movement fell outside SF_twiddleTarget's cone. The axis bit above still names the
+ * dominant half for the docked turret; the twiddle detector reads the tick as neutral. */
+#define RB_MOVE_DIAG       (1u << 15)
 
 /* Single-player self-test. Replay each tick from its snapshot and report the first differing
  * registered item. */

@@ -1315,16 +1315,68 @@ typedef struct
 }
 ShopOutpostRoute;
 
-/* Hand the outpost over to the level both machines are about to load. In Campaign a player who
- * is still waiting may withdraw, which restores `route`, clears jumpSection and returns; the
- * shop loop then reads that as "still outfitting" and reopens the outpost. */
+/* Stand at the departure gate until the other machine reaches it. Returns false when this player
+ * pressed Esc and wants the menu back. Only the game types with no outpost rendezvous of their
+ * own come here. */
+static bool shopDepartureGate(void)
+{
+	network_depart_gate_publish(true);
+
+	newkey = false;   // the press that chose Start Level must not close this screen too
+
+	bool esc = false;
+	for (;;)
+	{
+		shopWaitFrame();
+
+		// Sticky: the pump below skips the rest of the pass, so a debug block landing on the
+		// same frame as the press would otherwise swallow it.
+		if (newkey && lastkey_scan == SDL_SCANCODE_ESCAPE)
+			esc = true;
+		newkey = false;
+
+		if (!esc && network_debug_sync_pump(false))
+			continue;
+
+		const int peerGate = network_depart_gate_peer();
+		const Uint16 head = (peerGate < 0) ? network_inbound_head() : 0;
+
+		switch (network_depart_gate_step(esc, peerGate, head))
+		{
+		case DEPART_GATE_WITHDRAW:
+			JE_playSampleNum(S_SPRING);
+			network_depart_gate_publish(false);
+			return false;
+
+		case DEPART_GATE_GO:
+			return true;
+
+		case DEPART_GATE_WAIT:
+			break;
+		}
+
+		if (peerGate >= 0)
+			continue;   // the gate packet is retired; nothing else to advance this pass
+
+		// A peer that has gone leaves nobody to wait for; the commit path times out on its own.
+		if (!network_peer_alive())
+			return true;
+
+		network_update();
+		network_check();
+	}
+}
+
+/* Hand the outpost over to the level both machines are about to load. A player who is still
+ * waiting may withdraw, which restores `route`, clears jumpSection and returns; the shop loop
+ * then reads that as "still outfitting" and reopens the menu. */
 static void shopLeaveOutpost(const ShopOutpostRoute *route)
 {
 	// Show one notice for both rendezvous; shading twice would darken the frame.
 	// Campaign may wait here while the other player finishes outfitting.
 	shopWaitNotice("Waiting for other player.",
 	               coop_mode_active() ? "They are still in the outpost." : NULL,
-	               coop_mode_active() ? "Press Esc to go back." : NULL);
+	               "Press Esc to go back.");
 
 	// Settle the next level while both peers are still in menu code. A staged debug
 	// pick outranks the campaign route and takes both players with it.
@@ -1396,72 +1448,116 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	JE_byte myJumpPerks[ENDLESS_JUMP_PERK_MAX], myJumpPerkCount = 0;
 	const bool myJump = endlessJumpPickGet(&myJumpDepth, &myJumpMods, myJumpPerks, &myJumpPerkCount);
 
-	network_prepare(PACKET_WAITING);
-	packet_out_temp->data[4] = myPick ? 1 : 0;
-	packet_out_temp->data[5] = myPickEp;
-	packet_out_temp->data[6] = myPickSec;
-	packet_out_temp->data[7] = myPickFile;
-	packet_out_temp->data[8] = myJump ? 1 : 0;
-	SDLNet_Write16(myJumpDepth, &packet_out_temp->data[9]);
-	for (int b = 0; b < 8; ++b)   // mods, little end first; NET_ENDLESS_JUMP_MODS
-		packet_out_temp->data[11 + b] = (Uint8)(myJumpMods >> (8 * b));
-	packet_out_temp->data[19] = myJumpPerkCount;
-	memcpy(&packet_out_temp->data[20], myJumpPerks, myJumpPerkCount);
-	network_send(20 + myJumpPerkCount);  // PACKET_WAITING + debug level pick + endless jump
+	/* The gate, then the commit. The commit is sent once and kept across a peer's withdrawal,
+	 * which drops this machine back to the gate; see "Outpost protocol" in doc/notes.md. */
+	bool committed = false;
 
-	while (true)
+	for (;;)
 	{
-		shopWaitFrame();
-
-		// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
-		// and ordered), so both machines load the level with the same loadouts.  The peer's
-		// last outpost packet can be ahead of it too, and an unread one at the head of the
-		// queue stops WAITING from ever arriving.
-		if (network_debug_sync_pump(false) || network_shop_pump())
-			continue;
-
-		if (packet_in[0] && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		if (!coop_mode_active() && !shopDepartureGate())
 		{
-			// Adopt the other player's browser pick.  If we made one too the host's wins,
-			// so the two machines can never resolve the tie in opposite directions.
-			if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
-			    (!myPick || !network_is_host))
-			{
-				// The apply's capture records "home" for the jump's return, and this machine
-				// may have committed its own planet already, leaving mainLevel on that
-				// destination -- an ENGAGE one would then bounce a later quit into ** ALE **.
-				// Put the outpost's route back first; the apply re-arms the level fields.
-				mainLevel = route->mainLevel;
-				nextLevel = route->nextLevel;
-				lvlFileNum = route->lvlFileNum;
-				forcedLvlFileNum = route->forcedLvlFileNum;
-				debugLevelPickApply(packet_in[0]->data[5],
-				                    packet_in[0]->data[6],
-				                    packet_in[0]->data[7]);
-			}
+			mainLevel = route->mainLevel;
+			nextLevel = route->nextLevel;
+			lvlFileNum = route->lvlFileNum;
+			forcedLvlFileNum = route->forcedLvlFileNum;
+			jumpSection = false;
+			gameLoaded = false;
+			debugLevelPickReset();
 
-			// The Endless jump's run state, settled the same way and by the same rule, so a
-			// double jump can never leave one machine's depth against the other's level.
-			if (packet_in[0]->len >= 20 && packet_in[0]->data[8] != 0 &&
-			    (!myJump || !network_is_host))
-			{
-				const JE_byte count = packet_in[0]->data[19];
-				// Trust the length, not the count byte: a truncated packet must not be read past.
-				const size_t have = (size_t)packet_in[0]->len - 20;
-				const JE_byte take = (JE_byte)(count < have ? count : have);
-				Uint64 mods = 0;
-				for (int b = 0; b < 8; ++b)
-					mods |= (Uint64)packet_in[0]->data[11 + b] << (8 * b);
-				endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[9]), mods,
-				                     &packet_in[0]->data[20], take);
-			}
-
-			network_update();
-			break;
+			curMenu = MENU_FULL_GAME;
+			newPal = 1;
+			return;
 		}
 
-		network_update();
-		network_check();
+		if (!committed)
+		{
+			committed = true;
+
+			network_prepare(PACKET_WAITING);
+			packet_out_temp->data[4] = myPick ? 1 : 0;
+			packet_out_temp->data[5] = myPickEp;
+			packet_out_temp->data[6] = myPickSec;
+			packet_out_temp->data[7] = myPickFile;
+			packet_out_temp->data[8] = myJump ? 1 : 0;
+			SDLNet_Write16(myJumpDepth, &packet_out_temp->data[9]);
+			for (int b = 0; b < 8; ++b)   // mods, little end first; NET_ENDLESS_JUMP_MODS
+				packet_out_temp->data[11 + b] = (Uint8)(myJumpMods >> (8 * b));
+			packet_out_temp->data[19] = myJumpPerkCount;
+			memcpy(&packet_out_temp->data[20], myJumpPerks, myJumpPerkCount);
+			network_send(20 + myJumpPerkCount);  // PACKET_WAITING + level pick + endless jump
+		}
+
+		bool reopened = false;
+		for (;;)
+		{
+			shopWaitFrame();
+
+			// A debug-menu edit made in the shop rides in ahead of the WAITING packet (reliable
+			// and ordered), so both machines load the level with the same loadouts.  The peer's
+			// last outpost packet can be ahead of it too, and an unread one at the head of the
+			// queue stops WAITING from ever arriving.
+			if (network_debug_sync_pump(false) || network_shop_pump())
+				continue;
+
+			const int peerGate = network_depart_gate_peer();
+			const Uint16 head = (peerGate < 0) ? network_inbound_head() : 0;
+			const DepartWaitStep step = network_depart_wait_step(peerGate, head);
+
+			if (step == DEPART_WAIT_REOPENED)
+			{
+				reopened = true;
+				break;
+			}
+
+			if (step == DEPART_WAIT_DONE)
+			{
+				// Adopt the other player's browser pick.  If we made one too the host's wins,
+				// so the two machines can never resolve the tie in opposite directions.
+				if (packet_in[0]->len >= 8 && packet_in[0]->data[4] != 0 &&
+				    (!myPick || !network_is_host))
+				{
+					// The apply's capture records "home" for the jump's return, and this machine
+					// may have committed its own planet already, leaving mainLevel on that
+					// destination -- an ENGAGE one would then bounce a later quit into ** ALE **.
+					// Put the outpost's route back first; the apply re-arms the level fields.
+					mainLevel = route->mainLevel;
+					nextLevel = route->nextLevel;
+					lvlFileNum = route->lvlFileNum;
+					forcedLvlFileNum = route->forcedLvlFileNum;
+					debugLevelPickApply(packet_in[0]->data[5],
+					                    packet_in[0]->data[6],
+					                    packet_in[0]->data[7]);
+				}
+
+				// The Endless jump's run state, settled the same way and by the same rule, so a
+				// double jump can never leave one machine's depth against the other's level.
+				if (packet_in[0]->len >= 20 && packet_in[0]->data[8] != 0 &&
+				    (!myJump || !network_is_host))
+				{
+					const JE_byte count = packet_in[0]->data[19];
+					// The length bounds the read; a truncated packet's count byte does not.
+					const size_t have = (size_t)packet_in[0]->len - 20;
+					const JE_byte take = (JE_byte)(count < have ? count : have);
+					Uint64 mods = 0;
+					for (int b = 0; b < 8; ++b)
+						mods |= (Uint64)packet_in[0]->data[11 + b] << (8 * b);
+					endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[9]), mods,
+					                     &packet_in[0]->data[20], take);
+				}
+
+				network_update();
+				break;
+			}
+
+			if (peerGate >= 0)
+				continue;   // a re-announced gate; the commit behind it is what this phase wants
+
+			network_update();
+			network_check();
+		}
+
+		if (!reopened)
+			break;
 	}
 
 	network_state_reset();

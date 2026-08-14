@@ -2585,6 +2585,98 @@ static void qa_test_superspark_seeded_spread(void)
 	JE_resetSP();
 }
 
+/* Lowest sprite in a sheet painted in a bank other than 0, so a colour taken from it cannot be
+ * confused with the 0 an unpaintable index reads as. Returns 0 if the sheet holds none. */
+static JE_word qa_painted_sprite(Sprite2_array sheet, Uint8 *out_bank)
+{
+	for (JE_word index = 1; index < 500; ++index)  /* 500 is the shot graphics' own sheet split */
+	{
+		*out_bank = sprite2_dominant_bank(sheet, index);
+		if (*out_bank != 0)
+			return index;
+	}
+	return 0;
+}
+
+/* Every live spark carries `want`, and at least one is live. */
+static bool qa_sparks_all_coloured(Uint8 want)
+{
+	bool any = false;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		if (superpixels[i].color != want)
+			return false;
+		any = true;
+	}
+	return any;
+}
+
+/* Count, placement and colour of the pop a vaporised bullet leaves (Endless Shockwave and
+ * Countermeasures), and the silence a rollback re-simulation owes it. */
+static void qa_test_vaporised_shot_sparks(void)
+{
+	const EnemyShotType savedShot = enemyShot[0];
+	const bool savedSilent = rollback_resim_silent;
+	int lo, hi;
+
+	enemyShot[0].sx = 100;
+	enemyShot[0].sy = 80;
+	enemyShot[0].animate = 0;
+	enemyShot[0].sgr = 270;
+	enemyShot[0].filter = ENDLESS_ELITE_FILTER;
+
+	JE_resetSP();
+	enemy_shot_vaporise_sparks(0);
+	const int live = qa_spark_span(&lo, &hi);
+	qa_check(live >= 3 && live <= 5, "a vaporised bullet pops into 3 to 5 sparks");
+	qa_check(qa_sparks_all_coloured(ENDLESS_ELITE_FILTER),
+	         "an elite bullet's sparks wear its tier tint");
+
+	/* Thrown from the centre of the bullet's cell, no further than the reach it spawns with. */
+	bool centred = true;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		centred = centred && abs((int)superpixels[i].x - (enemyShot[0].sx + 6)) <= 3
+		                  && abs((int)superpixels[i].y - (enemyShot[0].sy + 6)) <= 3;
+	}
+	qa_check(centred, "the pop is thrown from the bullet's centre");
+
+	/* Without a tier tint the colour comes from the sprite, which sits on one of two sheets: a
+	 * graphic from 500 up is drawn from the second one, indexed from its start. */
+	Uint8 bank8 = 0, bank12 = 0;
+	const JE_word sprite8 = qa_painted_sprite(spriteSheet8, &bank8);
+	const JE_word sprite12 = qa_painted_sprite(spriteSheet12, &bank12);
+	qa_check(sprite8 != 0 && sprite12 != 0,
+	         "both shot sheets hold a painted sprite to colour a pop from");
+
+	enemyShot[0].filter = 0;
+	enemyShot[0].sgr = sprite8;
+	JE_resetSP();
+	enemy_shot_vaporise_sparks(0);
+	qa_check(qa_sparks_all_coloured((Uint8)(bank8 << 4)),
+	         "an untinted bullet's sparks take the bank its sprite is drawn in");
+
+	enemyShot[0].sgr = (JE_word)(500 + sprite12);
+	JE_resetSP();
+	enemy_shot_vaporise_sparks(0);
+	qa_check(qa_sparks_all_coloured((Uint8)(bank12 << 4)),
+	         "a graphic from 500 up is read from the second sheet's start");
+
+	/* Online the sweeps re-run inside rollback re-simulation; only the visible pass spawns. */
+	rollback_resim_silent = true;
+	JE_resetSP();
+	enemy_shot_vaporise_sparks(0);
+	qa_check(qa_spark_span(&lo, &hi) == 0, "a silent resim pass spawns no pop");
+	rollback_resim_silent = savedSilent;
+
+	enemyShot[0] = savedShot;
+	JE_resetSP();
+}
+
 /* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
  * tables JE_loadItemDat filled, which is JE_applyItemDataSettings. Each setting below is flipped
  * between two values with that call in between, and the tables have to come out different. One
@@ -4682,11 +4774,17 @@ static void qa_twiddle_step(JE_byte playerNum, JE_byte code)
 	JE_SFCodes(playerNum, PX, PY, mx, my);
 }
 
+// Nothing entered on either seat.
+static void qa_twiddle_clear(void)
+{
+	memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
+	memset(SFExecuted, 0, sizeof(SFExecuted));
+}
+
 // Perform one whole combo row and report the special it executed (0 if the ship refused it).
 static JE_byte qa_perform_twiddle(JE_byte playerNum, JE_byte comboRow)
 {
-	memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
-	SFExecuted[playerNum - 1] = 0;
+	qa_twiddle_clear();
 
 	for (unsigned k = 0; k < COUNTOF(keyboardCombos[0]); ++k)
 	{
@@ -4785,13 +4883,13 @@ static void qa_test_twiddle_ships(void)
 }
 
 /* Every input path resolves a flick the same way. The detector ignores a tick offering it two
- * directions, so a diagonal collapses to one before it arrives: dominant axis, ties to the
- * vertical, which is what the wire tuple sends. */
+ * directions, so SF_twiddleTarget collapses a flick inside the 2:1 cone to its dominant axis and
+ * keeps both axes for anything shallower, which the detector reads as a neutral tick. */
 static void qa_test_twiddle_diagonals(void)
 {
 	enum { PX = 100, PY = 100 };
 
-	// One entry per shape a flick can take, with the target the collapse has to produce.
+	// One entry per shape a flick can take, with the target the cone has to produce.
 	static const struct {
 		int dx, dy;
 		int wantX, wantY;
@@ -4805,21 +4903,20 @@ static void qa_test_twiddle_diagonals(void)
 		{  1,  3, PX,     PY - 1 },  // mostly down
 		{  5, -2, PX - 1, PY     },  // mostly right, drifting up
 		{ -1, -4, PX,     PY + 1 },  // mostly up, drifting left
-		{  2,  2, PX,     PY - 1 },  // a clean diagonal ties to the vertical
-		{ -2,  2, PX,     PY - 1 },
-		{ -2, -2, PX,     PY + 1 },
+		{  3,  2, PX - 1, PY - 1 },  // inside the cone on neither axis: both survive
+		{  2, -3, PX - 1, PY + 1 },
+		{  2,  2, PX - 1, PY - 1 },  // an exact diagonal
+		{ -2, -2, PX + 1, PY + 1 },
 	};
 
-	bool collapsed = true, single = true;
+	bool resolved = true;
 	for (unsigned f = 0; f < COUNTOF(flicks); ++f)
 	{
 		int tx = 0, ty = 0;
 		SF_twiddleTarget(PX, PY, flicks[f].dx, flicks[f].dy, &tx, &ty);
-		collapsed &= tx == flicks[f].wantX && ty == flicks[f].wantY;
-		single &= (tx == PX) || (ty == PY);  // never both axes at once
+		resolved &= tx == flicks[f].wantX && ty == flicks[f].wantY;
 	}
-	qa_check(collapsed, "a flick resolves to its dominant axis, ties to the vertical");
-	qa_check(single, "...and never reaches the detector as two directions");
+	qa_check(resolved, "a flick collapses inside the 2:1 cone and keeps both axes outside it");
 
 	// A twiddle performed while the ship drifts sideways still registers.
 	const Player saved0 = player[0];
@@ -4853,10 +4950,89 @@ static void qa_test_twiddle_diagonals(void)
 	qa_check(SFExecuted[0] == ICE_BLAST_SPECIAL,
 	         "a twiddle performed while drifting sideways still fires");
 
+	/* A flick shallower than the cone is neutral. Ice Blast sits in ship 3's first combo slot, so
+	 * SFCurrentCode[0][0] exposes its progress directly. */
+	memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
+	SFExecuted[0] = 0;
+	int tx = 0, ty = 0;
+	button[0] = false;
+	SF_twiddleTarget(PX, PY, 0, 3, &tx, &ty);  // down, the first Ice Blast step
+	JE_SFCodes(1, PX, PY, tx, ty);
+	const JE_byte afterStep = SFCurrentCode[0][0];
+	SF_twiddleTarget(PX, PY, 3, 2, &tx, &ty);  // a wander outside the cone
+	JE_SFCodes(1, PX, PY, tx, ty);
+	qa_check(afterStep == 1 && SFCurrentCode[0][0] == 1 && SFExecuted[0] == 0,
+	         "a flick outside the cone neither advances nor cancels a combo");
+	button[0] = true;
+	SF_twiddleTarget(PX, PY, 1, -3, &tx, &ty);  // up with fire, the second step
+	JE_SFCodes(1, PX, PY, tx, ty);
+	qa_check(SFExecuted[0] == ICE_BLAST_SPECIAL, "...and the combo still completes around it");
+
 	memcpy(button, savedButton, sizeof(button));
 	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
 	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
 	player[0] = saved0;
+}
+
+/* Any tick that is not the combo's next code throws it away, except the code just consumed and a
+ * tick with everything released. The expected direction with the fire button in the wrong state
+ * goes too, which is what keeps ordinary flying from finishing a combo. */
+static void qa_test_twiddle_strictness(void)
+{
+	const Player saved0 = player[0];
+	const JE_boolean savedSuper = superTyrian;
+	JE_byte savedCode[2][21];
+	JE_byte savedExec[2];
+	bool savedButton[4];
+	memcpy(savedCode, SFCurrentCode, sizeof(savedCode));
+	memcpy(savedExec, SFExecuted, sizeof(savedExec));
+	memcpy(savedButton, button, sizeof(savedButton));
+
+	// USP Talon's first combo slot is Invulnerability: DOWN, UP, DOWN, then UP with fire held. Its
+	// progress is SFCurrentCode[0][0], and the row's terminator names the special it sets off.
+	superTyrian = false;  // SuperTyrian replaces the ship's rows with its own
+	player[0].items.ship = 1;
+	const JE_byte comboRow = (JE_byte)(shipCombos[1][0] - 1);
+	const JE_byte want = (JE_byte)(keyboardCombos[comboRow][4] - 100);
+
+	// A direction stays pressed across ticks, and the controls pass through neutral between two of
+	// them. Neither costs the combo anything.
+	qa_twiddle_clear();
+	static const JE_byte held[] = { 2, 2, 2, 9, 1, 9, 9, 2, 9, 5 };
+	for (unsigned k = 0; k < COUNTOF(held); ++k)
+		qa_twiddle_step(1, held[k]);
+	qa_check(SFExecuted[0] == want && want != 0,
+	         "a twiddle completes through held directions and releases between steps");
+
+	// Fire pressed one step early, on a step the combo wants bare.
+	qa_twiddle_clear();
+	qa_twiddle_step(1, 2);
+	const JE_byte afterFirst = SFCurrentCode[0][0];
+	qa_twiddle_step(1, 5);  // up, the next step, but with fire held
+	qa_check(afterFirst == 1 && SFCurrentCode[0][0] == 0,
+	         "starting to fire on a step that wants no fire loses the twiddle");
+
+	// ...and fire let go on the last step, which is the only one that wants it.
+	qa_twiddle_clear();
+	static const JE_byte released[] = { 2, 1, 2 };
+	for (unsigned k = 0; k < COUNTOF(released); ++k)
+		qa_twiddle_step(1, released[k]);
+	const JE_byte atLastStep = SFCurrentCode[0][0];
+	qa_twiddle_step(1, 1);  // up, but no longer firing
+	qa_check(atLastStep == 3 && SFCurrentCode[0][0] == 0 && SFExecuted[0] == 0,
+	         "stopping fire on the step that wants it loses the twiddle");
+
+	// Another direction loses it.
+	qa_twiddle_clear();
+	qa_twiddle_step(1, 2);
+	qa_twiddle_step(1, 3);  // left, which the row never asks for
+	qa_check(SFCurrentCode[0][0] == 0, "a direction the combo did not ask for loses it");
+
+	memcpy(button, savedButton, sizeof(button));
+	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
+	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
+	player[0] = saved0;
+	superTyrian = savedSuper;
 }
 
 /* A twiddle keeps its own clock. SFExecuted is cleared at the top of every tick, so a twiddle the
@@ -5043,6 +5219,7 @@ int qa_run_unit_suite(void)
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();
 	qa_test_twiddle_diagonals();
+	qa_test_twiddle_strictness();
 	qa_test_twiddle_cooldown();
 	qa_test_twiddle_charges();
 	qa_test_modifier_online_parity();
@@ -5057,6 +5234,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_discarded_pass();
 	qa_test_superspark_rng_cost();
 	qa_test_superspark_seeded_spread();
+	qa_test_vaporised_shot_sparks();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();

@@ -100,8 +100,8 @@ bool load_next_demo(void);
 bool replay_demo_keys(void);
 
 void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer mouseX_, JE_integer mouseY_);
-// Collapses a movement intent (positive right and down) to the single-direction
-// target JE_SFCodes reads.
+// Resolves a movement intent (positive right and down) to the one-pixel target JE_SFCodes
+// reads: the dominant axis inside the 2:1 cone, both axes (a neutral tick) outside it.
 void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y);
 
 long weapon_upgrade_cost(long base_cost, unsigned int power);
@@ -133,12 +133,20 @@ void JE_drawPerfOverlay(SDL_Surface *dst, int scale);
 /* Bottom-band HUD precedence: scores, FPS, boss bars, then the Endless readout. */
 int hud_fps_row(void);            // text row the FPS counter occupies
 int hud_bottom_band_top(void);    // topmost row the scores/FPS claim anywhere across the width
-int hud_bottom_right_top(void);   // ...and in the bottom-right corner alone
 
 // Horizontal extent of the top corner clusters (name label, lives row, special-weapon block),
 // so a centred TOP boss bar stops short of them instead of being clipped to a legacy constant.
 int hud_top_left_right_edge(void);
 int hud_top_right_left_edge(void);
+
+// Vertical extent of the same corner clusters, for the side-hugging vertical boss bars: the
+// bottom row of each top cluster, -1 where that corner draws nothing, and the top row of each
+// bottom corner's score and superbomb rows. Player one's score holds the bottom-left corner in
+// every mode; only the bottom-right one can be empty, and reports vga_height when it is.
+int hud_top_left_bottom_edge(void);
+int hud_top_right_bottom_edge(void);
+int hud_bottom_left_top_edge(void);
+int hud_bottom_right_top_edge(void);
 
 /* Special icon and ready light for the locally drawn HUD. The name and lives move
  * down to clear it; boss-bar layout reads these bounds. */
@@ -148,9 +156,12 @@ int hud_top_right_left_edge(void);
 #define HUD_SPECIAL_LIGHT_W  12  // one sprite2 column...
 #define HUD_SPECIAL_LIGHT_H  14
 #define HUD_SPECIAL_LIGHT_Y   8  // ...centred against the icon's rows
-#define HUD_LIVES_NAME_RISE   7  // rows the name label sits above the lives row
-#define HUD_LIVES_Y          15
-#define HUD_LIVES_Y_SPECIAL  37  // pushed below the icon when this ship holds a special
+// A shaded TINY_FONT line at y inks rows y-1..y+8. The rise leaves one blank row between
+// the name and the lives icons; Y_SPECIAL puts the name one blank row under the special
+// icon (rows 1..28).
+#define HUD_LIVES_NAME_RISE  10  // rows the name label sits above the lives row
+#define HUD_LIVES_Y          18
+#define HUD_LIVES_Y_SPECIAL  41  // pushed below the icon when this ship holds a special
 bool hud_special_block_shown(uint p);   // ship p's special is the one drawn at the top
 bool hud_special_on_right(uint p);      // ...mirrored into the right corner, not the left one
 int  hud_special_icon_x(uint p);

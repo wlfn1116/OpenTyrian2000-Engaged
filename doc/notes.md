@@ -381,6 +381,12 @@ struct moves both.
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
+The feedback those effects show is presentation only. A bullet swept by Shockwave
+or Countermeasures pops sparks through `enemy_shot_vaporise_sparks`, which seeds
+its own sequence and spawns nothing during a silent resim. The chain-reaction
+chip flash writes the enemy `filter` byte that `JE_drawEnemy` paints for one
+frame and clears, and which reaches neither hash a peer compares.
+
 Every direct write to `armorleft` calls `enemy_note_full_armor`; damage never
 does. `healthbar_max` is what the enemy health bar divides by and the full-HP
 figure the Executioner perk measures a wound against, so it has to survive the
@@ -866,7 +872,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 49.
+`NET_VERSION` bump. The current value is 53.
 
 Recent versions:
 
@@ -903,6 +909,9 @@ Recent versions:
 | 48 | Health bars measure a wound against the armor a part started with |
 | 49 | Endless shop sells the Dragonwing (synthesized ship row 19) |
 | 50 | Save acknowledgement returns the peer's outpost half for the saver's own record |
+| 51 | Withdrawable departure gate ahead of the level commit |
+| 52 | Twiddle 2:1 intent cone and its neutral-tick wire bit |
+| 53 | A twiddle combo resets on any input that is not its next step |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -1017,6 +1026,21 @@ Departure has two states:
 
 DONE and LOCK are state fields, not one-shot events. `SHOP_SYNC_HELLO` and the
 rate-limited shop keep-alive restate them after a view reset.
+
+The game types with no shared outpost reach the same wait with none of that
+behind it, so they run their own two-phase departure on `PACKET_DEPART_GATE`:
+
+1. The gate carries "at the gate" (1) or "withdrawn" (0) and is retractable, so
+   Esc reopens the menu. It is a separate packet type because the commit can be
+   queued directly behind it and the two must not be read as each other.
+2. `PACKET_WAITING` commits, and is sent only once both machines are at the gate.
+
+`network_depart_gate_step` and `network_depart_wait_step` hold the transitions as
+pure functions, so the unit suite can cover the orderings a withdrawal can race.
+A machine that already committed keeps that commit when the peer withdraws: it
+falls back to the gate, and the commit sitting in the peer's queue is the one
+that pairs with their next visit. Neither side resends, and neither is left
+holding a departure alone.
 
 The host's level choice is adopted only after the local player finishes shopping.
 This prevents a remote commit from closing an active purchase screen.
@@ -1332,13 +1356,28 @@ Dragonwing's rear bay rather than a ship. Any mode with two full ships
 (`SHIP_DRAGONWING`) collapses to row 0 in `JE_SFCodes` on either seat.
 
 `JE_SFCodes` ignores a tick that offers it two directions, so every input path
-reaches it through `SF_twiddleTarget`, which collapses a movement intent to one
-cardinal: dominant axis, ties to the vertical. That is the rule `rb_fill_tuple`
-applies before intent goes on the wire, so a diagonal flick resolves the same way
-online and off. Record the collapsed target for self-test replay, so a replayed
-tick reproduces the same direction. Demo playback has no live controls, which is
-why the display-rate path is gated on `play_demo` and the classic path derives
-its intent from the tick's displacement.
+reaches it through `SF_twiddleTarget`. A direction counts only while its axis
+exceeds twice the other; a shallower diagonal keeps both axes and the tick is
+neutral, neither advancing nor cancelling a combo. The cone keeps ordinary
+dodging from reading as twiddle input while a deliberate flick still lands.
+`rb_fill_tuple` applies the same rule before intent goes on the wire: the axis
+bit keeps the dominant half for the docked turret and `RB_MOVE_DIAG` marks the
+neutral tick, so a flick resolves the same way online and off. Record the
+resolved target for self-test replay, so a replayed tick reproduces the same
+direction. Demo playback has no live controls, which is why the display-rate
+path is gated on `play_demo` and the classic path derives its intent from the
+tick's displacement.
+
+Recognition is strict. A tick with fire held and no direction is neutral like a
+shallow diagonal and reaches neither branch; anything else that is not the
+combo's next code cancels it, including the expected direction with the fire
+button in the wrong state. The upstream detector tolerated that case, and
+dropping it is deliberate. Two codes are exempt: the code just consumed, so a
+direction may be held across ticks, and code 9 (everything released). Code 9 has
+to stay exempt because the controls pass through it between any two directions,
+and several combos use it as a step of their own. Fire pressed ahead of its
+direction therefore costs nothing, while a fire change under a held direction has
+to be the step the combo asks for.
 
 `SFExecuted` is cleared at the top of every tick, so `JE_doSpecialShot` either
 fires a recognised twiddle on that tick or discards it. Keep its gate on
