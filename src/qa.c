@@ -2262,6 +2262,68 @@ static void qa_test_superspark_rng_cost(void)
 	         "and that cost is an angle and two magnitudes a spark, which is what a stray guard moves");
 }
 
+#define QA_SEEDED_SHOWERS 64u  /* showers sampled per stride */
+#define QA_SEEDED_REACH   60   /* wide enough that rounding keeps an offset in its quadrant */
+
+/* Offset stored by a one-spark seeded shower, spawned into a cleared ring. */
+static void qa_spark_seeded_offset(Uint32 seed, int *dx, int *dy)
+{
+	JE_resetSP();
+	JE_doSPSeeded(200, 200, 1, QA_SEEDED_REACH, 7 << 4, false, 0, false, seed);
+
+	*dx = 0;
+	*dy = 0;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		*dx = superpixels[i].delta_x;
+		*dy = superpixels[i].delta_y - 1;  /* the stored velocity carries the fall as well */
+		break;
+	}
+}
+
+/* A seeded source's successive showers sit a fixed stride apart, and each has to get a fresh
+   direction out of it. The strides below are what the callers in tyrian2.c produce at their
+   emission cadences. See doc/notes.md, "Superspark ring buffer". */
+static void qa_test_superspark_seeded_spread(void)
+{
+	static const Uint32 strides[] = { 1u, 100u, 137u, 500u, 685u };
+
+	/* Half the even share: a quarter of the showers belongs in each quadrant. */
+	const unsigned int minPerQuadrant = QA_SEEDED_SHOWERS / 8;
+
+	unsigned int worstCount = QA_SEEDED_SHOWERS;
+	Uint32 worstStride = 0;
+
+	for (unsigned int s = 0; s < COUNTOF(strides); ++s)
+	{
+		unsigned int quadrant[4] = { 0, 0, 0, 0 };
+		for (unsigned int shower = 0; shower < QA_SEEDED_SHOWERS; ++shower)
+		{
+			int dx, dy;
+			qa_spark_seeded_offset(4242u + shower * strides[s], &dx, &dy);
+			++quadrant[(dx < 0 ? 1u : 0u) + (dy < 0 ? 2u : 0u)];
+		}
+
+		for (unsigned int q = 0; q < COUNTOF(quadrant); ++q)
+		{
+			if (quadrant[q] >= worstCount)
+				continue;
+			worstCount = quadrant[q];
+			worstStride = strides[s];
+		}
+	}
+
+	if (worstCount < minPerQuadrant)
+		fprintf(stderr, "# stride %u sends only %u of %u showers into its thinnest quadrant\n",
+		        worstStride, worstCount, QA_SEEDED_SHOWERS);
+	qa_check(worstCount >= minPerQuadrant,
+	         "seeded showers a fixed stride apart still reach every quadrant");
+
+	JE_resetSP();
+}
+
 /* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
  * tables JE_loadItemDat filled, which is JE_applyItemDataSettings. Each setting below is flipped
  * between two values with that call in between, and the tables have to come out different. One
@@ -2977,6 +3039,27 @@ static void qa_test_kinetic_converter(void)
 		qa_check(endlessPerkKineticChargeStages() == s,
 		         "...and every hit walks a charge sidekick one stage per stack");
 	}
+
+	// Twiddle charges: cheaper with every stack, never free, and never dearer than the list price.
+	endlessSetFxPlayer(0);
+	endlessPerkTakenBy[0][PERK_KINETIC] = 0;
+	endlessPerkRederive();
+	qa_check(endlessPerkKineticTwiddleCost(20) == 20 && endlessPerkKineticTwiddleCost(0) == 0,
+	         "a ship without Kinetic Converter pays a twiddle's list price");
+
+	bool costFalls = true, costBounded = true;
+	int prevCost = endlessPerkKineticTwiddleCost(20);
+	for (int s = 1; s <= maxStack; ++s)
+	{
+		endlessPerkTakenBy[0][PERK_KINETIC] = (JE_byte)s;
+		endlessPerkRederive();
+		const int paid = endlessPerkKineticTwiddleCost(20);
+		costFalls &= paid < prevCost;
+		prevCost = paid;
+		costBounded &= paid > 0 && endlessPerkKineticTwiddleCost(1) == 1;
+	}
+	qa_check(costFalls, "each Kinetic Converter stack takes more off a twiddle's charge");
+	qa_check(costBounded && prevCost == 7, "...down to a third of a 20-point charge, never free");
 
 	// Only the first ship picks it, so the partner's hits pay nothing and each carry stays its own.
 	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
@@ -3962,6 +4045,130 @@ static void qa_test_partner_repair_special(void)
 	player[0] = saved0; player[1] = saved1;
 }
 
+// Fire one twiddle through the real path, with the clocks and durations that gate it cleared.
+static void qa_fire_twiddle(JE_byte pwr, uint *armor, uint *shield)
+{
+	special[SPECIAL_NUM].pwr = pwr;
+	SFExecuted[0] = SPECIAL_NUM;
+	shotRepeat[SHOT_SPECIAL] = 0;
+	specialWait = 0;
+	flareDuration = 0;
+	flareStart = false;
+	zinglonDuration = 0;
+	astralDuration = 0;
+	JE_doSpecialShot(1, armor, shield);
+}
+
+/* What a twiddle charges. Without Kinetic Converter every kind of charge has to deduct exactly what
+ * it always did, the odd half-shield bar included; with the perk each deducts less, while temp2,
+ * the magnitude JE_specialComplete reads, keeps the list price. Driven through a scratch special
+ * slot, as the repair test above is. */
+static void qa_test_twiddle_charges(void)
+{
+	if (VGAScreenSeg == NULL || game_screen == NULL)
+		return;  // the charge path repaints the real shield and armor gauges
+
+	const JE_boolean savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const JE_boolean savedAuto = autoFireSpecial;
+	const JE_boolean savedDbgAuto = debugAutofireTwiddle;
+	const JE_boolean savedTrigger = debugTwiddleTrigger;
+	const JE_boolean savedFlareStart = flareStart;
+	const JE_byte savedDbgTwiddle = debugTwiddleSpecial;
+	const JE_byte savedSF = SFExecuted[0];
+	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+	const JE_byte savedPwr = special[SPECIAL_NUM].pwr;
+	const JE_byte savedTemp = temp;
+	const JE_byte savedTemp2 = temp2;
+	const JE_byte savedWait = specialWait;
+	const JE_byte savedRepeat = shotRepeat[SHOT_SPECIAL];
+	const JE_byte savedZing = zinglonDuration;
+	const JE_byte savedAstral = astralDuration;
+	const JE_word savedFlare = flareDuration;
+	const Player saved0 = player[0];
+	SDL_Surface *const savedVGA = VGAScreen;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	// The scratch slot takes an inert type: the effect switch has no case 0, so only the charge
+	// runs. Clearing the equipped special keeps the other fire gates shut.
+	special[SPECIAL_NUM].stype = 0;
+	player[0].items.special = 0;
+	autoFireSpecial = false;
+	debugAutofireTwiddle = false;
+	debugTwiddleTrigger = false;
+	debugTwiddleSpecial = 0;
+	endlessMode = false;
+	endlessCampaignMods = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	// Each charge kind: the bars it starts with, the bars vanilla leaves behind, and the magnitude
+	// JE_specialComplete has to be handed either way.
+	static const struct {
+		JE_byte pwr;
+		uint startShield, startArmor;
+		uint leftShield, leftArmor;
+		JE_byte magnitude;
+	} charges[] = {
+		{  20, 50, 30, 30, 30, 20 },  // a fixed shield charge
+		{  98, 41, 30,  0, 30, 41 },  // the whole bar, which is also the effect's size
+		{  99, 41, 30, 20, 30, 20 },  // half of it, rounded as vanilla rounds an odd bar
+		{ 104, 50, 30, 50, 26,  4 },  // a fixed armor charge
+	};
+
+	bool stock = true, cheaper = true, sameEffect = true;
+	for (unsigned c = 0; c < COUNTOF(charges); ++c)
+	{
+		uint shield = charges[c].startShield, armor = charges[c].startArmor;
+		qa_fire_twiddle(charges[c].pwr, &armor, &shield);
+		stock &= shield == charges[c].leftShield && armor == charges[c].leftArmor
+		      && temp2 == charges[c].magnitude;
+	}
+	qa_check(stock, "a twiddle charges its stock shield or armor without Kinetic Converter");
+
+	endlessMode = true;
+	endlessPerkTakenBy[0][PERK_KINETIC] = (JE_byte)endlessPerkMaxStack(PERK_KINETIC);
+	endlessPerkRederive();
+
+	for (unsigned c = 0; c < COUNTOF(charges); ++c)
+	{
+		uint shield = charges[c].startShield, armor = charges[c].startArmor;
+		qa_fire_twiddle(charges[c].pwr, &armor, &shield);
+		const uint spent[2] = { charges[c].startShield - shield, charges[c].startArmor - armor };
+		const uint list[2] = { charges[c].startShield - charges[c].leftShield,
+		                       charges[c].startArmor - charges[c].leftArmor };
+		for (unsigned b = 0; b < COUNTOF(spent); ++b)
+			cheaper &= (list[b] == 0) ? spent[b] == 0 : (spent[b] > 0 && spent[b] < list[b]);
+		sameEffect &= temp2 == charges[c].magnitude;
+	}
+	qa_check(cheaper, "Kinetic Converter charges less for every twiddle, proportional ones too");
+	qa_check(sameEffect, "...and the special still reads the magnitude its list price bought");
+
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	special[SPECIAL_NUM].stype = savedStype;
+	special[SPECIAL_NUM].pwr = savedPwr;
+	SFExecuted[0] = savedSF;
+	temp = savedTemp;
+	temp2 = savedTemp2;
+	shotRepeat[SHOT_SPECIAL] = savedRepeat;
+	specialWait = savedWait;
+	flareDuration = savedFlare;
+	flareStart = savedFlareStart;
+	zinglonDuration = savedZing;
+	astralDuration = savedAstral;
+	autoFireSpecial = savedAuto;
+	debugAutofireTwiddle = savedDbgAuto;
+	debugTwiddleTrigger = savedTrigger;
+	debugTwiddleSpecial = savedDbgTwiddle;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	player[0] = saved0;
+	VGAScreen = savedVGA;
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -4047,6 +4254,7 @@ int qa_run_unit_suite(void)
 	qa_test_flying_punch_bolt();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
+	qa_test_twiddle_charges();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
@@ -4056,6 +4264,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_caps();
 	qa_test_superspark_discarded_pass();
 	qa_test_superspark_rng_cost();
+	qa_test_superspark_seeded_spread();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();

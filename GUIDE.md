@@ -290,7 +290,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Surveyor | +1 course choice | 2 |
 | Executioner | More damage to badly wounded enemies | 3 |
 | Opening Salvo | Charges a stronger opening volley | 1 |
-| Kinetic Converter | Damage taken refunds power, recharge, and sidekicks | 3 |
+| Kinetic Converter | Damage taken refunds power, recharge, and sidekicks; cheaper twiddles | 3 |
 | Countermeasures | Clears nearby shots after damage | 2 |
 | Chain Reaction | Kills damage nearby enemies | 3 |
 | Financier | More interest and lower shop prices | 4 |
@@ -306,6 +306,13 @@ takes 8% per stack off whatever is left of the special recharge, credits 0.25
 sidekick rounds per stack, and advances a charge sidekick one charge stage per
 stack. Part-rounds carry over to later hits. Shield absorption additionally
 refunds 20% per stack of the generator power that shield charge was worth.
+
+It also cuts 22% per stack from the shield or armour charge of a twiddle (a
+special fired by a movement code), so three stacks pay 34% of the list price. A
+charge that costs anything is never cut below one point. The twiddles that spend
+all or half of your shield are discounted the same way and leave the rest of the
+bar standing. Every twiddle keeps the effect its full price buys: Invulnerability
+lasts as long as the shield it would have emptied, and a repair mends as much.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.

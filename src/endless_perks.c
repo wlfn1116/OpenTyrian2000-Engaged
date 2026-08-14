@@ -36,7 +36,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Surveyor",         "Chart-a-Course offers an extra route.",     2 },
 	{ "Executioner",      "Hits deal more to badly wounded enemies.",  3 },
 	{ "Opening Salvo",    "A pause supercharges a second of fire.", 1 },
-	{ "Kinetic Converter","Hits refuel power, specials, sidekicks.",3 },
+	{ "Kinetic Converter","Hits refuel gear; twiddles cost less.", 3 },
 	{ "Countermeasures",  "Taking hull damage clears nearby shots.",   2 },
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
 	{ "Financier",        "Better interest and cheaper shop prices.",  4 },
@@ -423,6 +423,21 @@ int endlessPerkKineticAmmoRounds(void)
 int endlessPerkKineticChargeStages(void)
 {
 	return endlessFxActive() ? perkFx(PERK_KINETIC) * ENDLESS_PERK_KINETIC_STAGES : 0;
+}
+
+/* What a twiddle's shield or armor charge deducts after the discount, rounded to the nearest point
+ * but never down to free. `listCost` is the charge the twiddle would have taken unaided, the
+ * proportional ones included, and the caller keeps that list price as the effect's magnitude. */
+int endlessPerkKineticTwiddleCost(int listCost)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_KINETIC) : 0;
+	if (stacks == 0 || listCost <= 0)
+		return listCost;
+	int pct = 100 - ENDLESS_PERK_KINETIC_TWIDDLE_PCT * stacks;
+	if (pct < 0)  // deeper stacks can reach free, never a refund
+		pct = 0;
+	const int paid = (listCost * pct + 50) / 100;
+	return (paid > 0) ? paid : 1;
 }
 
 // endlessGameplayTick advances both ships' countermeasure cooldowns.

@@ -258,9 +258,9 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	RARE_FROM(28, endlessSluggishThemes, false),
 	// Apex Swarm (every enemy elite), from the Apex-tier rare themes: bare Apex, or Apex plus one
 	// extra danger. Late enough to override a boon slot.
-	RARE_PICK(26, endlessRareThemes, ENDLESS_MOD_APEX, ENDLESS_MOD_LEGION, true),
-	// Legion makes every enemy a champion and remains one of the rarest sectors.
-	RARE_PICK(53, endlessRareThemes, ENDLESS_MOD_LEGION, 0, true),
+	RARE_PICK(15, endlessRareThemes, ENDLESS_MOD_APEX, ENDLESS_MOD_LEGION, true),
+	// Legion makes every enemy a champion and stays rarer than the Apex row above.
+	RARE_PICK(26, endlessRareThemes, ENDLESS_MOD_LEGION, 0, true),
 	// Cataclysm combines several dangers without an elite tier.
 	// The rare themes carrying neither Apex nor Legion (the 5+-danger pure combos).
 	RARE_PICK(50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
@@ -436,7 +436,7 @@ static const EndlessModWeight endlessCombinableMods[] = {
 	// Mid-frequency dangers.
 	{ ENDLESS_MOD_ENRAGE,      4 },
 	{ ENDLESS_MOD_OVERCLOCK,   4 },
-	{ ENDLESS_MOD_ELITEPACK,   4 },
+	{ ENDLESS_MOD_ELITEPACK,   6 },
 	// Lower-frequency variety.
 	{ ENDLESS_MOD_STATIC,      6 },  // a generic damage-punish tax; never pairs the injected-only DEADGEN
 	{ ENDLESS_MOD_SHIELDLESS,  5 },  // defense-only debuff
@@ -509,7 +509,7 @@ static const EndlessModWeight endlessThemeSignatures[] = {
 	{ ENDLESS_MOD_SWIFT,        3 },
 	{ ENDLESS_MOD_DEVASTATING,  3 },
 	{ ENDLESS_MOD_ENRAGE,       4 },
-	{ ENDLESS_MOD_ELITEPACK,    4 },
+	{ ENDLESS_MOD_ELITEPACK,    6 },
 	{ ENDLESS_MOD_OVERCLOCK,    4 },
 	// Scarce signatures remain limited even though curated themes can contain them.
 	{ ENDLESS_MOD_TOPSY,        5 },

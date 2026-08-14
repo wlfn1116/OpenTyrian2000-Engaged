@@ -1016,12 +1016,17 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 		bool can_afford = true;
 
+		/* Kinetic Converter perk (endless) discounts what every charge below deducts. temp2 keeps
+		 * the list price: JE_specialComplete reads it as the effect's magnitude, so a cheaper
+		 * twiddle must not also be a weaker one. The two proportional charges price off the bar
+		 * they would have emptied, so they leave shield behind once the perk is stacked. */
 		if (temp2 > 0)
 		{
 			if (temp2 < 98)  // costs some shield
 			{
-				if (*shield >= temp2)
-					*shield -= temp2;
+				const uint paid = (uint)endlessPerkKineticTwiddleCost(temp2);
+				if (*shield >= paid)
+					*shield -= paid;
 				else
 					can_afford = false;
 			}
@@ -1029,19 +1034,23 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			{
 				if (*shield < 4)
 					can_afford = false;
+				const uint paid = (uint)endlessPerkKineticTwiddleCost((int)*shield);
 				temp2 = *shield;
-				*shield = 0;
+				*shield -= paid;
 			}
 			else if (temp2 == 99)  // costs half shield
 			{
+				const uint stock_spend = *shield - *shield / 2;  // vanilla keeps the smaller half
+				const uint paid = (uint)endlessPerkKineticTwiddleCost((int)stock_spend);
 				temp2 = *shield / 2;
-				*shield = temp2;
+				*shield -= paid;
 			}
 			else  // costs some armor
 			{
 				temp2 -= 100;
-				if (*armor > temp2)
-					*armor -= temp2;
+				const uint paid = (uint)endlessPerkKineticTwiddleCost(temp2);
+				if (*armor > paid)
+					*armor -= paid;
 				else
 					can_afford = false;
 			}
@@ -2218,6 +2227,22 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 	}
 }
 
+// Each draw avalanches its own point on a fixed walk. An LCG cannot serve here: its output is
+// affine in the seed, so a caller's fixed stride between showers becomes a fixed angular step,
+// which at some strides freezes that source into one direction. See doc/notes.md, "Superspark
+// ring buffer".
+#define SP_SEED_STRIDE 0x9E3779B9u  // any odd stride works; the mixing is what spreads the angles
+
+static Uint32 sp_mix32(Uint32 h)  // MurmurHash3 finalizer
+{
+	h ^= h >> 16;
+	h *= 0x85ebca6bu;
+	h ^= h >> 13;
+	h *= 0xc2b2ae35u;
+	h ^= h >> 16;
+	return h;
+}
+
 // JE_doSP driven by `seed` instead of the simulation RNG. Superpixels are not rollback state, so a
 // presentation-only effect can spawn them this way without touching the deterministic stream.
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
@@ -2225,10 +2250,10 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 {
 	for (int sp = 0; sp < num; sp++)
 	{
-		seed = seed * 1103515245u + 12345u;  // Numerical Recipes LCG; the high bits are the usable ones
-		const JE_real angle = (JE_real)(seed >> 16) / 65536.0 * (2 * M_PI);
-		seed = seed * 1103515245u + 12345u;
-		const JE_real reach = (JE_real)(seed >> 16) / 65536.0;
+		seed += SP_SEED_STRIDE;
+		const JE_real angle = (JE_real)(sp_mix32(seed) >> 16) / 65536.0 * (2 * M_PI);
+		seed += SP_SEED_STRIDE;
+		const JE_real reach = (JE_real)(sp_mix32(seed) >> 16) / 65536.0;
 
 		const signed int tempy = roundf(cosf(angle) * reach * explowidth);
 		const signed int tempx = roundf(sinf(angle) * reach * explowidth);

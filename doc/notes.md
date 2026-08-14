@@ -143,6 +143,16 @@ on a weapon's native trail for the same reason.
 cleanly when a setting changes. Both cursors are private to `varz.c`; clear the
 field through `JE_resetSP`.
 
+A seeded spawn, `JE_doSPSeeded`, has to spread its angles across the caller's
+seed stride as well as within one shower, so each draw avalanches its own point
+on a fixed walk. An LCG cannot serve: its output is affine in the seed, and these
+sources build a seed from `rl_present_gen` and emit every few ticks, so their
+showers sit a fixed stride apart and that stride becomes a fixed angular step.
+The elite aura's stride of 685 lands half a degree short of a full turn, which
+freezes each body's aura into a single ray. `qa_test_superspark_seeded_spread`
+samples the strides the callers in `tyrian2.c` produce and requires every
+quadrant to keep a share of the showers.
+
 The ring is presentation state and is not registered for rollback, so nothing
 restores it when the simulation rewinds. Two rules keep it in step with the
 presented timeline instead.
@@ -820,7 +830,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 44.
+`NET_VERSION` bump. The current value is 45.
 
 Recent versions:
 
@@ -851,6 +861,7 @@ Recent versions:
 | 42 | Endless Base Level rule byte carries four rules; level-bag hand in the player block |
 | 43 | Endless run transfer carries the v25 save header |
 | 44 | Endless piercing damage ramp, elite/champ rebalance, remainder carry, and carried per-hull damage |
+| 45 | Kinetic Converter discount on twiddle shield and armor charges |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

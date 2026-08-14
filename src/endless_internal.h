@@ -168,6 +168,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_KINETIC_CD_PCT 8  // ...and % of the remaining special recharge that a hit takes off, per stack
 #define ENDLESS_PERK_KINETIC_AMMO_PCT 25 // ...and hundredths of a sidekick round a hit gives back, per stack (carried in an accumulator)
 #define ENDLESS_PERK_KINETIC_STAGES 1  // ...and charge stages a hit walks a charge sidekick up, per stack
+#define ENDLESS_PERK_KINETIC_TWIDDLE_PCT 22 // ...and % off a twiddle's shield or armor charge, per stack
 #define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
