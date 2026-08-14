@@ -62,7 +62,7 @@ static const char *trim_name(const char *s)
 	return out;
 }
 
-static const char *ship_name   (int id) { return trim_name((id >= 0 && id <= SHIP_NUM    && ships[id].name[0])      ? ships[id].name      : "?"); }
+static const char *ship_name   (int id) { return trim_name((id >= 0 && id <= SHIP_DRAGONWING && ships[id].name[0])  ? ships[id].name      : "?"); }
 static const char *port_name   (int id) { return trim_name((id >= 0 && id <= PORT_NUM    && weaponPort[id].name[0]) ? weaponPort[id].name : "?"); }
 static const char *power_name  (int id) { return trim_name((id >= 0 && id <= POWER_NUM   && powerSys[id].name[0])   ? powerSys[id].name   : "?"); }
 static const char *shield_name (int id) { return trim_name((id >= 0 && id <= SHIELD_NUM  && shields[id].name[0])    ? shields[id].name    : "?"); }

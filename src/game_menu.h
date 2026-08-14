@@ -43,6 +43,26 @@ void load_cubes(void);
 bool load_cube(int cube_slot, int cube_index);
 
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
+
+// Item-list columns: the icon anchor, and the label rows drawn beside it.
+#define SHOP_ITEM_ICON_X 160
+#define SHOP_ITEM_NAME_X 185
+#define SHOP_ITEM_COST_X 187
+
+// Half the width of a hull drawn as two 2x2 halves: JE_drawItem sits each half this far either
+// side of the anchor, so such a hull also overhangs the icon column by this much.
+#define SHOP_WIDE_HULL_HALF 12
+
+typedef struct
+{
+	int iconX, nameX, costX;
+} ShopItemColumns;
+
+// Columns for one ship row of the item list. A hull drawn as two 2x2 halves (the Nort Ship and
+// the Dragonwing) is 48px wide against a 24px icon column, so it takes an anchor shifted right
+// and a label column of its own; every other ship takes the standard columns.
+ShopItemColumns shop_ship_item_columns(JE_word shipId);
+
 void JE_drawMenuHeader(void);
 void JE_drawMenuChoices(void);
 void JE_updateNavScreen(void);

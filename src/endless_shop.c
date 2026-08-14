@@ -294,7 +294,7 @@ static void endlessFillShop(void)
 
 	// itemAvail rows per category (see itemAvailMap in game_menu.c): 0 ships, 1 front,
 	// 2 rear, 3 generator, 5 left sidekick, 6 right sidekick, 8 shield.
-	endlessFillCategory(0, 2, SHIP_NUM,   false, it->ship,                        NULL, 0);  // ships
+	endlessFillCategory(0, 2, SHIP_DRAGONWING, false, it->ship,                   NULL, 0);  // ships
 	endlessFillCategory(1, 3, ENDLESS_REAL_WEAPON_PORTS, false, it->weapon[FRONT_WEAPON].id, &rearEquip, rearEquip > 0 ? 1 : 0);  // front weapons (skip equipped rear)
 	endlessFillCategory(2, 4, ENDLESS_REAL_WEAPON_PORTS, true,  it->weapon[REAR_WEAPON].id,  itemAvail[1], itemAvailMax[1]);  // rear (+None), no dupes vs front
 	endlessFillCategory(3, 6, POWER_NUM,  false, it->generator,                   NULL, 0);  // generators

@@ -429,10 +429,10 @@ void JE_getShipInfo(void)
 {
 	JE_boolean extraShip, extraShip2;
 
-	// An extra ship (id above 90) is described by extraShips[]; ships[] holds only
-	// SHIP_NUM+1 entries, so indexing it with such an id reads well past the end. Default those to
-	// the standard sheet here; JE_SGr picks the real one for them a few lines down.
-	shipGrPtr = (player[0].items.ship <= SHIP_NUM && ships[player[0].items.ship].shipgraphic > 500)
+	// An extra ship (id above 90) is described by extraShips[]; ships[] ends at the synthesized
+	// SHIP_DRAGONWING row, so indexing it with such an id reads well past the end. Default those
+	// to the standard sheet here; JE_SGr picks the real one for them a few lines down.
+	shipGrPtr = (player[0].items.ship <= SHIP_DRAGONWING && ships[player[0].items.ship].shipgraphic > 500)
 	          ? &spriteSheetT2000 : &spriteSheet9;
 	shipGr2ptr = &spriteSheet9;
 
@@ -449,9 +449,9 @@ void JE_getShipInfo(void)
 	}
 	else
 	{
-		// Only ids above 90 are extra ships. IDs 19 through 90 fall beyond ships[], so use
+		// Only ids above 90 are extra ships. IDs 20 through 90 fall beyond ships[], so use
 		// entry 0 if an edited ship or older save carries a stray id.
-		const uint shipIdx = (player[0].items.ship <= SHIP_NUM) ? player[0].items.ship : 0;
+		const uint shipIdx = (player[0].items.ship <= SHIP_DRAGONWING) ? player[0].items.ship : 0;
 		shipGr = ships[shipIdx].shipgraphic - (shipGrPtr == &spriteSheetT2000 ? 500 : 0);
 		player[0].armor = ships[shipIdx].dmg;
 	}
@@ -467,7 +467,7 @@ void JE_getShipInfo(void)
 	}
 	else if (dual_ship_mode())
 	{
-		const uint shipIdx = (player[1].items.ship <= SHIP_NUM) ? player[1].items.ship : 0;
+		const uint shipIdx = (player[1].items.ship <= SHIP_DRAGONWING) ? player[1].items.ship : 0;
 		shipGr2ptr = (ships[shipIdx].shipgraphic > 500) ? &spriteSheetT2000 : &spriteSheet9;
 		shipGr2 = ships[shipIdx].shipgraphic - (shipGr2ptr == &spriteSheetT2000 ? 500 : 0);
 		player[1].armor = ships[shipIdx].dmg;
@@ -490,9 +490,9 @@ void JE_getShipInfo(void)
 		player[i].initial_armor = arcade_armor_max(&player[i]);
 		player[i].armor = player[i].initial_armor;
 
-		// ships[] stops at SHIP_NUM while an "extra" ship is only id > 90, so an id in between
-		// would read past the end here too (see the shipGr fallback above).
-		const uint shipIdx = (player[i].items.ship <= SHIP_NUM) ? player[i].items.ship : 0;
+		// ships[] stops at SHIP_DRAGONWING while an "extra" ship is only id > 90, so an id in
+		// between would read past the end here too (see the shipGr fallback above).
+		const uint shipIdx = (player[i].items.ship <= SHIP_DRAGONWING) ? player[i].items.ship : 0;
 		uint temp = ((i == 0 && extraShip) ||
 		             (i == 1 && extraShip2)) ? 2 : ships[shipIdx].ani;
 

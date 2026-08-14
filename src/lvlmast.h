@@ -34,6 +34,10 @@
 #define SHIELD_NUM  11
 #define SPECIAL_NUM 54
 
+// The Dragonwing has no record in the item data; JE_loadItemDat synthesizes this row so the
+// Endless shop can sell it. ships[] is sized to hold it; SHIP_NUM stays the data-file count.
+#define SHIP_DRAGONWING (SHIP_NUM + 1)
+
 #define ENEMY_END1    850
 #define ENEMY_START2 1001
 #define ENEMY_NUM    1850

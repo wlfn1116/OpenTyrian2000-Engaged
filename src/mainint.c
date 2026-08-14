@@ -679,9 +679,9 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 	switch (itemType)
 	{
 	case 2:
-		// ships[] stops at SHIP_NUM, but only ids above 90 are extra ships. Test the array's
-		// own bound, not the extra-ship one, or an id in between reads past the end.
-		cost = (itemNum > SHIP_NUM) ? 100 : ships[itemNum].cost;
+		// ships[] stops at SHIP_DRAGONWING, but only ids above 90 are extra ships. Test the
+		// array's own bound, not the extra-ship one, or an id in between reads past the end.
+		cost = (itemNum > SHIP_DRAGONWING) ? 100 : ships[itemNum].cost;
 		break;
 	case 3:
 	case 4:
@@ -5002,7 +5002,7 @@ void JE_debugMenu(bool center)
 					snprintf(buf, sizeof(buf), "%d", dbgPlayer + 1);
 				break;
 			case DBG_SHIP:
-				if (it->ship <= SHIP_NUM)
+				if (it->ship <= SHIP_DRAGONWING)
 					snprintf(buf, sizeof(buf), "%s", ships[it->ship].name);
 				else
 				{
@@ -5442,7 +5442,7 @@ void JE_debugMenu(bool center)
 				// out-of-bounds read when the item is first inspected, which is where the
 				// garbage ship graphics came from. Clamp at the top the way Left already does at 0.
 				case DBG_PLAYER: dbgPlayer = (dbgPlayer + 1) % (int)COUNTOF(player); break;
-				case DBG_SHIP: if (edit->ship < SHIP_NUM) ++edit->ship; break;
+				case DBG_SHIP: if (edit->ship < SHIP_DRAGONWING) ++edit->ship; break;
 				case DBG_FRONT_WEAPON: if (edit->weapon[FRONT_WEAPON].id < PORT_NUM) ++edit->weapon[FRONT_WEAPON].id; break;
 				case DBG_FRONT_POWER: if (edit->weapon[FRONT_WEAPON].power < 11) ++edit->weapon[FRONT_WEAPON].power; break;
 				case DBG_REAR_WEAPON: if (edit->weapon[REAR_WEAPON].id < PORT_NUM) ++edit->weapon[REAR_WEAPON].id; break;
@@ -6276,6 +6276,12 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 	 * so it twiddles off the shared "2nd Player ship" row. Every mode where player two owns a ship
 	 * (co-op, separate arcade) uses that ship's own row, like player one. */
 	if (playerNum_ == 2 && !dual_ship_mode())
+	{
+		ship = 0;
+	}
+
+	// A Dragonwing bought at the Endless outpost twiddles off that same shared row.
+	if (ship == SHIP_DRAGONWING)
 	{
 		ship = 0;
 	}
@@ -9892,7 +9898,7 @@ redo:
 		rl_current_id = 0;  // end ship tag
 
 		/*Options Location*/
-		if (playerNum_ == 2 && shipGr_ == 0)  // if dragonwing
+		if (shipGr_ == 0)  // The Dragonwing's wide hull sets sidekicks further out, either seat.
 		{
 			if (this_player->sidekick[LEFT_SIDEKICK].style == 0)
 			{

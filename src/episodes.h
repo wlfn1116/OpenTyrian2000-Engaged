@@ -119,7 +119,7 @@ typedef struct
 	JE_byte     dmg;
 	JE_word     cost;
 	JE_byte     bigshipgraphic;
-} JE_ShipType[SHIP_NUM + 1]; /* [0..shipnum] */
+} JE_ShipType[SHIP_DRAGONWING + 1]; /* [0..shipnum] plus the synthesized Dragonwing row */
 
 /* EnemyData */
 typedef struct
@@ -211,6 +211,10 @@ const char *JE_specialName(JE_byte id);
 // so the pairs that ship under one name (Protron, Multi-Cannon, Vulcan Cannon) are told apart
 // while in endless. Every other name is the loaded one.
 const char *JE_weaponPortName(JE_word id);
+
+// Display name of a ship. The Nort Ship flies as the Nort Ship Z in endless. Every other name is
+// the loaded one; an id past the table is named for the "None" record.
+const char *JE_shipName(JE_word id);
 
 // Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
 // player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded

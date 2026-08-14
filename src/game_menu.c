@@ -2106,7 +2106,7 @@ void JE_itemScreen(void)
 						if (temp > 90)
 							snprintf(tempStr, sizeof(tempStr), "Custom Ship %d", temp - 90);
 						else
-							strcpy(tempStr, ships[temp].name);
+							strcpy(tempStr, JE_shipName(temp));
 						break;
 					case 2: /* front and rear weapon */
 					case 3:
@@ -2145,12 +2145,19 @@ void JE_itemScreen(void)
 				{
 					strcpy(tempStr, miscText[13]);
 				}
-				JE_textShade(VGAScreen, 185, tempY, tempStr, temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
+
+				/* A hull drawn as two halves needs wider columns than the rest. */
+				ShopItemColumns cols = { SHOP_ITEM_ICON_X, SHOP_ITEM_NAME_X, SHOP_ITEM_COST_X };
+				if (tempW < menuChoices[curMenu]-1 && curSel[MENU_UPGRADES]-1 == 1)
+					cols = shop_ship_item_columns(temp);
+
+				JE_textShade(VGAScreen, cols.nameX, tempY, tempStr,
+				             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 
 				/* Draw icon if not DONE. NOTE: None is a normal item with a blank icon. */
 				if (tempW < menuChoices[curMenu]-1)
 				{
-					JE_drawItem(curSel[MENU_UPGRADES]-1, temp, 160, tempY-4);
+					JE_drawItem(curSel[MENU_UPGRADES]-1, temp, cols.iconX, tempY-4);
 				}
 
 				/* Make selected text brighter */
@@ -2162,7 +2169,8 @@ void JE_itemScreen(void)
 					char buf[20];
 
 					snprintf(buf, sizeof buf, "Cost: %lu", temp_cost);
-					JE_textShade(VGAScreen, 187, tempY+10, buf, temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
+					JE_textShade(VGAScreen, cols.costX, tempY+10, buf,
+					             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 				}
 			}
 
@@ -3767,14 +3775,21 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 				shipGr = JE_SGr(itemNum - 90, &shipGrPtr);
 				blit_sprite2x2(VGAScreen, x, y, *shipGrPtr, shipGr);
 			}
+			else if (ships[itemNum].shipgraphic == 0)
+			{
+				// The Dragonwing's shipgraphic (0) is a sentinel too (see the Nort Ship below):
+				// draw the two flat-banking halves the gameplay draw uses.
+				blit_sprite2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 13);
+				blit_sprite2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 51);
+			}
 			else if (ships[itemNum].shipgraphic == 1)
 			{
 				// The Nort Ship's shipgraphic (1) is a sentinel, not a real sprite index; the
 				// gameplay draw (JE_playerMovement) special-cases it into a two-piece hull. Blitting
 				// sprite 1 here (as for a normal ship) shows garbage, so draw the same two halves,
 				// centred on x to match a normal ship's footprint (and gameplay's x-17/x+7 spacing).
-				blit_sprite2x2(VGAScreen, x - 12, y, spriteSheet9, 220);
-				blit_sprite2x2(VGAScreen, x + 12, y, spriteSheet9, 222);
+				blit_sprite2x2(VGAScreen, x - SHOP_WIDE_HULL_HALF, y, spriteSheet9, 220);
+				blit_sprite2x2(VGAScreen, x + SHOP_WIDE_HULL_HALF, y, spriteSheet9, 222);
 			}
 			else if (ships[itemNum].shipgraphic > 500)
 			{
@@ -3790,6 +3805,27 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y)
 			blit_sprite2x2(VGAScreen, x, y, shopSpriteSheet, tempW);
 		}
 	}
+}
+
+/* The Nort Ship and Dragonwing paint as two 2x2 halves straddling the anchor, 48px wide against
+ * the 24px icon column. Each takes an anchor shifted right by that overhang so its hull starts at
+ * the column's left edge, and a label column past its own painted width, which the two do not
+ * share. See "Wide shop hulls" in doc/notes.md; qa_test_wide_hull_columns recomputes both. */
+#define SHOP_NAME_X_DRAGONWING 209  // its halves paint through x=207
+#define SHOP_NAME_X_NORT_SHIP  203  // its halves paint through x=201
+
+ShopItemColumns shop_ship_item_columns(JE_word shipId)
+{
+	ShopItemColumns cols = { SHOP_ITEM_ICON_X, SHOP_ITEM_NAME_X, SHOP_ITEM_COST_X };
+
+	// shipgraphic 0 is the Dragonwing and 1 the Nort Ship; every other hull is a single 2x2.
+	if (shipId == 0 || shipId > SHIP_DRAGONWING || ships[shipId].shipgraphic > 1)
+		return cols;
+
+	cols.iconX += SHOP_WIDE_HULL_HALF;
+	cols.nameX = (ships[shipId].shipgraphic == 0) ? SHOP_NAME_X_DRAGONWING : SHOP_NAME_X_NORT_SHIP;
+	cols.costX = cols.nameX + (SHOP_ITEM_COST_X - SHOP_ITEM_NAME_X);
+	return cols;
 }
 
 void JE_drawMenuHeader(void)
@@ -5123,7 +5159,7 @@ void JE_genItemMenu(JE_byte itemNum)
 		switch (itemNum)
 		{
 		case 2:
-			strcpy(tempStr, ships[temp].name);
+			strcpy(tempStr, JE_shipName(temp));
 			break;
 		case 3:
 		case 4:

@@ -254,6 +254,12 @@ the twin-barrel Vulcan Cannon as Twin Vulcan Cannon; the sweeping-fire Vulcan
 Cannon keeps the original name. Data Cubes opens the E-Shop and Ship Specs
 opens the perk list.
 
+The ship list can offer the Dragonwing, the wide hull player two flies in the
+linked two-player pair. No campaign shop sells it. Here it flies as a full
+ship with its own front and rear guns, priced and armoured between the
+Gencores and the MicroCorp Stalkers, and the sidekicks that trail your ship sit
+wider apart to clear its wings. The Nort Ship is sold here as the Nort Ship Z.
+
 | Item | Base cost | Effect |
 | --- | ---: | --- |
 | Shop Reroll | $6,000 + $1,000/zone | Replace your shop stock |
@@ -379,9 +385,9 @@ stays lit for a while, such as Minefield or Super Bomb: while one of those is
 running, nothing else can start.
 
 In the linked two-player pair, player two flies the Dragonwing's rear bay rather
-than a ship of its own and uses the shared twiddle set. In online co-op and
-Separate Online Arcade each player has a whole ship, so each uses that ship's
-own twiddles.
+than a ship of its own and uses the shared twiddle set. A Dragonwing bought at
+the Endless outpost knows that same set. In online co-op and Separate Online
+Arcade each player has a whole ship, so each uses that ship's own twiddles.
 
 ## Arcade tweaks
 

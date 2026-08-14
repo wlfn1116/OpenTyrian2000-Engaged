@@ -4290,6 +4290,160 @@ static void qa_test_flying_punch_bolt(void)
 	}
 }
 
+/* The Dragonwing's ships[] row is synthesized (no episode table carries one), so its invariants
+ * live here: the graphic-0 sentinel, a hull and price between the Gencore Maelstrom and the
+ * MicroCorp Stalker, the id clamps resolving the row instead of the entry-0 fallback, and the
+ * co-op seat that must not be taken for the linked pair's rear bay. */
+static void qa_test_dragonwing_row(void)
+{
+	const JE_byte hull = ships[SHIP_DRAGONWING].dmg;
+	const JE_word cost = ships[SHIP_DRAGONWING].cost;
+
+	qa_check(ships[SHIP_DRAGONWING].name[0] != '\0' && ships[SHIP_DRAGONWING].shipgraphic == 0,
+	         "the Dragonwing row exists and keeps the two-piece hull sentinel");
+
+	qa_check(hull > ships[4].dmg && hull < ships[5].dmg
+	         && cost > ships[4].cost && cost < ships[5].cost,
+	         "the Dragonwing's hull and price sit between the Gencores and the Stalkers");
+
+	// Earlier tests may leave a price or hull scaling mode on; these want the raw table values.
+	const JE_boolean savedEndless = endlessMode, savedExpert = expertMode;
+	const JE_boolean savedTwo = twoPlayerMode;
+	const bool savedCoop = coopCampaignMode, savedCoopEndless = coopEndlessMode;
+	endlessMode = false;
+	expertMode = false;
+
+	qa_check(JE_getCost(2, SHIP_DRAGONWING) == cost,
+	         "the shop prices the Dragonwing row, not the out-of-table fallback");
+
+	const Player saved0 = player[0], saved1 = player[1];
+	const JE_word savedGr = shipGr, savedGr2 = shipGr2;
+	const uint savedPowerAdd = powerAdd;
+	Sprite2_array *const savedGrPtr = shipGrPtr, *const savedGr2Ptr = shipGr2ptr;
+
+	player[0].items.ship = SHIP_DRAGONWING;
+	JE_getShipInfo();
+	qa_check(player[0].armor == hull && shipGr == 0 && shipGrPtr == &spriteSheet9,
+	         "a seat flying the bought Dragonwing gets its hull and the sentinel graphic");
+
+	/* Graphic 0 is also how the linked pair marks its rear bay, which owns a fixed hull and no ship
+	 * of its own. A second seat that bought the Dragonwing has to resolve through the two-ship path
+	 * instead, or the two machines would fly different armor. */
+	twoPlayerMode = true;
+	coopCampaignMode = true;
+	coopEndlessMode = false;
+	player[1].items.ship = SHIP_DRAGONWING;
+	JE_getShipInfo();
+	qa_check(shipGr2 == 0 && player[1].hull_armor == hull,
+	         "a co-op seat two flying the Dragonwing keeps its own hull, not the linked bay's");
+
+	shipGrPtr = savedGrPtr;
+	shipGr2ptr = savedGr2Ptr;
+	shipGr = savedGr;
+	shipGr2 = savedGr2;
+	powerAdd = savedPowerAdd;
+	player[0] = saved0;
+	player[1] = saved1;
+	coopEndlessMode = savedCoopEndless;
+	coopCampaignMode = savedCoop;
+	twoPlayerMode = savedTwo;
+	expertMode = savedExpert;
+	endlessMode = savedEndless;
+}
+
+/* Painted x-extent of one 2x2 hull piece (cells at +0 and +12 within it) shifted by xOff, folded
+ * into an accumulating min/max that `painted` marks as already holding a value. */
+static bool qa_fold_2x2_ink(Sprite2_array sheet, unsigned int index, int xOff, bool painted,
+                            int *left, int *right)
+{
+	static const struct { unsigned int add; int dx; } cells[] = {
+		{0, 0}, {1, 12}, {19, 0}, {20, 12},
+	};
+
+	for (uint c = 0; c < COUNTOF(cells); ++c)
+	{
+		int x0, y0, x1, y1;
+		if (!sprite2_ink_bounds(sheet, index + cells[c].add, &x0, &y0, &x1, &y1))
+			continue;
+
+		const int l = xOff + cells[c].dx + x0, r = xOff + cells[c].dx + x1;
+		if (!painted || l < *left)
+			*left = l;
+		if (!painted || r > *right)
+			*right = r;
+		painted = true;
+	}
+	return painted;
+}
+
+/* The Nort Ship and Dragonwing paint 48px wide against the item list's 24px icon column, so each
+ * takes a shifted anchor and a label column of its own. Both follow from the sprite ink, so
+ * recompute them: the hull must sit inside the column, and its label must leave the same gap the
+ * tightest single-2x2 hull leaves at the fixed label column. */
+static void qa_test_wide_hull_columns(void)
+{
+	if (spriteSheet9.data == NULL)
+		return;  // shape tables not loaded
+
+	// The tightest clearance a normal hull leaves is the gap the wide ones have to match.
+	int gap = -1;
+	for (uint ship = 1; ship <= SHIP_NUM; ++ship)
+	{
+		const JE_word gr = ships[ship].shipgraphic;
+		if (gr <= 1)
+			continue;  // the two-piece hulls, measured below
+
+		const bool t2000 = gr > 500;
+		int left = 0, right = 0;
+		if (!qa_fold_2x2_ink(t2000 ? spriteSheetT2000 : spriteSheet9, t2000 ? gr - 500 : gr,
+		                     0, false, &left, &right))
+			continue;
+
+		const int shipGap = SHOP_ITEM_NAME_X - (SHOP_ITEM_ICON_X + right) - 1;
+		if (gap < 0 || shipGap < gap)
+			gap = shipGap;
+	}
+	qa_check(gap >= 0, "the item list's normal ship hulls clear its label column");
+	if (gap < 0)
+		return;
+
+	// Left and right half indices JE_drawItem blits, by ship.
+	static const struct { const char *name; JE_word ship; unsigned int left, right; } hulls[] = {
+		{ "Dragonwing", SHIP_DRAGONWING, 13, 51 },
+		{ "Nort Ship",  12,             220, 222 },
+	};
+
+	for (uint i = 0; i < COUNTOF(hulls); ++i)
+	{
+		char label[128];
+		int inkLeft = 0, inkRight = 0;
+		bool painted = qa_fold_2x2_ink(spriteSheet9, hulls[i].left, 0, false, &inkLeft, &inkRight);
+		painted = qa_fold_2x2_ink(spriteSheet9, hulls[i].right, 24, painted, &inkLeft, &inkRight);
+		if (!painted)
+		{
+			snprintf(label, sizeof(label), "the %s hull paints something", hulls[i].name);
+			qa_check(false, label);
+			continue;
+		}
+
+		// JE_drawItem straddles its anchor, so the left half lands a half-width before it.
+		const ShopItemColumns cols = shop_ship_item_columns(hulls[i].ship);
+		const int boxLeft = cols.iconX - SHOP_WIDE_HULL_HALF;
+
+		snprintf(label, sizeof(label), "the %s hull starts at the icon column", hulls[i].name);
+		qa_check(boxLeft == SHOP_ITEM_ICON_X && boxLeft + inkLeft >= SHOP_ITEM_ICON_X, label);
+
+		snprintf(label, sizeof(label), "the %s label clears its own hull", hulls[i].name);
+		qa_check(cols.nameX == boxLeft + inkRight + 1 + gap, label);
+
+		snprintf(label, sizeof(label), "the %s cost row keeps the label offset", hulls[i].name);
+		qa_check(cols.costX - cols.nameX == SHOP_ITEM_COST_X - SHOP_ITEM_NAME_X, label);
+
+		printf("# %s hull: ink %d..%d, label x %d\n", hulls[i].name, inkLeft, inkRight, cols.nameX);
+	}
+	printf("# wide shop hulls clear their labels by %dpx\n", gap);
+}
+
 /* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
  * to step once per REAL tick and stay each ship's own. Both halves are easy to get wrong online:
  * a replay pass that steps it again spends a whole glow inside one displayed frame, and a shared
@@ -4602,6 +4756,11 @@ static void qa_test_twiddle_ships(void)
 	qa_check(qa_perform_twiddle(1, 0) == 0 && qa_perform_twiddle(1, 25) == 0,
 	         "a ship outside the combo table has no twiddles");
 
+	// The Endless-sold Dragonwing collapses to the shared "2nd Player ship" row on any seat.
+	player[0].items.ship = SHIP_DRAGONWING;
+	const JE_byte boughtWing = qa_perform_twiddle(1, (JE_byte)(shipCombos[0][0] - 1));
+	qa_check(boughtWing != 0, "a bought Dragonwing twiddles off the shared row");
+
 	/* Seat two. The linked pair's rear half has no ship of its own and twiddles off row 0; every
 	 * mode where it flies its own ship uses that ship's row. */
 	twoPlayerMode = true;
@@ -4878,6 +5037,8 @@ int qa_run_unit_suite(void)
 	qa_test_gauge_flash_lifetime();
 	qa_test_special_icon_tops();
 	qa_test_flying_punch_bolt();
+	qa_test_dragonwing_row();
+	qa_test_wide_hull_columns();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();

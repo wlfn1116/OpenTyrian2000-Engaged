@@ -864,7 +864,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 48.
+`NET_VERSION` bump. The current value is 49.
 
 Recent versions:
 
@@ -899,6 +899,7 @@ Recent versions:
 | 46 | Twiddle ship coverage, seat-two combo row, own cooldown, and diagonal collapse; scheduled rare sectors |
 | 47 | Bounty Hunter multiplies score pickups |
 | 48 | Health bars measure a wound against the armor a part started with |
+| 49 | Endless shop sells the Dragonwing (synthesized ship row 19) |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -1243,6 +1244,34 @@ rewrite shields. Only 28, 32, 33, 45, and 46 have a placement entry in
 `draw_ship_illustration` and the Ship Specs screen, so no other value may be
 written there.
 
+No episode's ship table carries the Dragonwing, so `JE_loadItemDat` synthesizes
+`ships[SHIP_DRAGONWING]` (id 19) after each load; `shipgraphic` 0 is the
+sentinel that selects the linked pair's two-piece hull draw, in gameplay and in
+`JE_drawItem`. Every ship-id clamp accepts the row (`varz.c`, `JE_getCost`, the
+debug editor, the crash log); ids 20 through 90 stay out of range. Only the
+Endless shop lists it. Campaign stock comes from level scripts, which never name
+id 19, and its `bigshipgraphic` borrows the Talon's 32, one of the five
+placeable values above.
+
+`shipGr2` 0 also marks the linked pair's rear bay, which owns a fixed hull and
+no ship of its own, so a second seat flying a bought Dragonwing must resolve
+through `dual_ship_mode()` to keep its own armor.
+
+### Wide shop hulls
+
+The Nort Ship (`shipgraphic` 1) and the Dragonwing (0) have no single-sprite
+hull. `JE_drawItem` paints each as two 2x2 halves straddling its anchor, 48px
+against the item list's 24px icon column, so `shop_ship_item_columns` shifts
+their anchor right by that overhang to put the hull at the column's left edge
+and gives each a label column past its own painted width. Those widths differ
+(the Dragonwing fills its box, the Nort Ship stops 6px short), so the two labels
+do not share a column. Both come from the sprite ink and
+`qa_test_wide_hull_columns` recomputes them, including the clearance, which is
+the tightest gap any single-2x2 hull leaves at the fixed label column.
+
+Shift the anchor at the call site, never inside `JE_drawItem`: it straddles its
+anchor so a hull centres like a normal ship in the weapon-sim preview.
+
 ### Twiddles
 
 `shipCombos` holds one row per ship id, `shipCombosB` the SuperTyrian row that
@@ -1253,7 +1282,8 @@ have an empty row.
 
 Player two twiddles off row 0 only in the linked pair, where it flies the
 Dragonwing's rear bay rather than a ship. Any mode with two full ships
-(`dual_ship_mode`) uses each ship's own row.
+(`dual_ship_mode`) uses each ship's own row; a bought Dragonwing
+(`SHIP_DRAGONWING`) collapses to row 0 in `JE_SFCodes` on either seat.
 
 `JE_SFCodes` ignores a tick that offers it two directions, so every input path
 reaches it through `SF_twiddleTarget`, which collapses a movement intent to one

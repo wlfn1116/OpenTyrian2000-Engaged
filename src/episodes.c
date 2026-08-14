@@ -212,6 +212,18 @@ const char *JE_weaponPortName(JE_word id)
 	return weaponPort[id].name;
 }
 
+// Ship ids hold across both item tables, so an id match is safe for every loaded table.
+const char *JE_shipName(JE_word id)
+{
+	if (id > SHIP_DRAGONWING)
+		return ships[0].name;  // the "None" record; a shipedit ship is named by its caller
+
+	if (endlessMode && id == 12)
+		return "Nort Ship Z";
+
+	return ships[id].name;
+}
+
 /* The sidekick slot the Charge-Laser claims, and what that slot held before it did. Captured
  * while options[] is freshly loaded, so the toggle can put the original record back and the
  * menu can flip it without reloading the item data. */
@@ -820,6 +832,19 @@ void JE_loadItemDat(void)
 		fread_u16_die(&ships[i].cost,           1, f);
 		fread_u8_die( &ships[i].bigshipgraphic, 1, f);
 	}
+
+	/* The data flies the Dragonwing only as the linked pair's rear half, through the
+	 * shipgraphic 0 draw path, so no episode's table carries a row for it. Build the one the
+	 * Endless shop sells: hull and price sit between the Gencores and the MicroCorp Stalkers,
+	 * and the Talon lends its shop illustration (the Dragonwing never got one). */
+	strcpy(ships[SHIP_DRAGONWING].name, "Dragonwing");
+	ships[SHIP_DRAGONWING].shipgraphic    = 0;
+	ships[SHIP_DRAGONWING].itemgraphic    = 277;
+	ships[SHIP_DRAGONWING].ani            = 2;
+	ships[SHIP_DRAGONWING].spd            = 0;
+	ships[SHIP_DRAGONWING].dmg            = 22;
+	ships[SHIP_DRAGONWING].cost           = 17500;
+	ships[SHIP_DRAGONWING].bigshipgraphic = 32;
 
 	for (int i = 0; i < OPTION_NUM + 1; ++i)
 	{
