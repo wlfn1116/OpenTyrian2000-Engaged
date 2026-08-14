@@ -423,8 +423,9 @@ The linked two-player pair and SuperTyrian are excluded.
 Open **Online Multiplayer** for Host Game, Find LAN Games, Join by IP Address,
 and Your Nickname. The default port is UDP 1333.
 
-LAN discovery works on the same subnet. Direct join addresses are remembered.
-The game refuses online play when the FPS cap is below 35.
+LAN discovery works on the same subnet and finds hosts whatever Listen Port
+they picked. Direct join addresses are remembered. The game refuses online play
+when the FPS cap is below 35.
 
 ### Lobby settings
 
@@ -548,12 +549,15 @@ save and does not write to the single-player Timed Battle boards.
 
 ### Saving and resuming
 
-Save from the shop with **Options > Save Game** or Alt+S. Both machines write a
-copy, so either player can host the resume.
+Save from the shop with **Options > Save Game** or Alt+S. A save writes only to
+the machine it is made on, and it captures both ships' outposts: the other
+machine confirms its half over the connection first. Save on your own machine
+too if you want to host the resume yourself.
 
-Saving asks the other machine to confirm its loadout first. If that player is
-still on the level end screen, the save shows **Waiting for other player.**
-until they reach the outpost. Press Esc to write the save without waiting.
+If the other player is still on the level end screen, the save shows
+**Waiting for other player.** until they reach the outpost. Press Esc to write
+the save without waiting. A save made from the disconnect prompt skips the
+confirmation; there is no one left to ask.
 
 Linked Arcade saves remain compatible with local two-player play. Separate
 Arcade, SuperTyrian, Super Arcade, Campaign, and Endless saves must be loaded
@@ -565,7 +569,10 @@ Hardcore Endless never offers a save.
 
 To resume, host the matching game type and choose **Load Game** after the joiner
 connects. Loading is available only at session start. A resumed Campaign or
-Endless session opens the outpost for both players before its level.
+Endless session opens the outpost for both players before its level. An Endless
+save hands each player back their own shop stock, a reroll bought before saving
+included. A save whose confirmation never arrived, after a disconnect for
+example, deals the joining player's stock again instead.
 
 Everyone keeps the player number they saved with. A second player who saves
 after the first one disconnects is still player two on the resume, even when

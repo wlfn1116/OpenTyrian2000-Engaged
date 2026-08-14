@@ -1597,6 +1597,69 @@ static void qa_scenario_suite(void)
 	endlessRunDepth = 0;
 }
 
+/* A save stores both halves of the outpost: the partner's rows and stream ride the save
+ * acknowledgement into the saver's own record, and a wire adopt hands the other seat its
+ * half back. */
+static void qa_resume_partner_matrix(void)
+{
+	char seedSaved[COUNTOF(endlessRunSeed)];
+	memcpy(seedSaved, endlessRunSeed, sizeof(seedSaved));
+	JE_byte availSaved[9][10], availMaxSaved[9];
+	memcpy(availSaved, itemAvail, sizeof(availSaved));
+	memcpy(availMaxSaved, itemAvailMax, sizeof(availMaxSaved));
+
+	// The saver's machine: seat one flies it, and seat two's half arrived on the save
+	// acknowledgement, packed the way its machine packs it.
+	qa_session(0);
+	qa_clear_ships();
+	endlessRunMode = ENDLESS_RUNMODE_RELAXED;
+	endlessSetSeed("QA HALVES");
+	endlessRunDepth = 7;
+
+	memset(itemAvail, 0, sizeof(itemAvail));
+	memset(itemAvailMax, 0, sizeof(itemAvailMax));
+	itemAvail[0][0] = 5;   // the saver's own row, which must never reach the other seat
+	itemAvailMax[0] = 1;
+
+	Uint8 block[ENDLESS_OUTPOST_BLOCK_SIZE];
+	memset(block, 0, sizeof(block));
+	block[0] = 2;                    // availMax[0]
+	block[9] = 9;                    // avail[0][0]
+	block[10] = 12;                  // avail[0][1]
+	block[9 + 90 + 6] = 0x12;        // stream, big end first
+	block[9 + 90 + 7] = 0x34;
+	endlessPartnerOutpostStash(1, block);
+
+	Uint8 wire[ENDLESS_RUN_WIRE_MAX];
+	const size_t wireLen = endlessRunSerialize(wire, sizeof(wire));
+	qa_check(wireLen > 0, "a run with a stashed partner half serializes");
+
+	// The other machine: seat two adopts and gets its own half back, rows and stream.
+	qa_session(1);
+	memset(itemAvail, 0x77, sizeof(itemAvail));
+	endlessPlayerRngState[1] = 1;
+	qa_check(endlessRunAdopt(wire, wireLen)
+	         && itemAvail[0][0] == 9 && itemAvail[0][1] == 12 && itemAvailMax[0] == 2
+	         && endlessPlayerRngState[1] == 0x1234u,
+	         "the adopted record hands seat two its own half of the outpost");
+
+	// A record without a checkpointed half redeals; the saver's rows never bleed over.
+	qa_session(0);
+	endlessPartnerOutpostClear();
+	itemAvail[0][0] = 5;
+	itemAvailMax[0] = 1;
+	const size_t bareLen = endlessRunSerialize(wire, sizeof(wire));
+	qa_session(1);
+	qa_check(bareLen > 0 && endlessRunAdopt(wire, bareLen)
+	         && itemAvail[0][0] == player[1].items.ship,
+	         "without a half the rows are redealt around this seat's own gear");
+
+	endlessPartnerOutpostClear();
+	endlessSetSeed(seedSaved);
+	memcpy(itemAvail, availSaved, sizeof(availSaved));
+	memcpy(itemAvailMax, availMaxSaved, sizeof(availMaxSaved));
+}
+
 /* ---- entry point -------------------------------------------------------------------- */
 
 /* The flip/spotlight derivation, online and offline alike. Network games used to clear the
@@ -1733,6 +1796,7 @@ void qa_test_endless_suite(void)
 	qa_pierce_damage_matrix();
 	qa_chooser_matrix();
 	qa_wire_matrix();
+	qa_resume_partner_matrix();
 	qa_scenario_suite();
 
 	qa_env_restore(&saved);

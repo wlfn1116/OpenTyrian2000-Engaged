@@ -417,6 +417,15 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 #define ENDLESS_RUN_WIRE_MAX 4096
 size_t endlessRunSerialize(Uint8 *out, size_t max);
 bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
+// Redeal this seat's shop rows: the fallback when an adopted record carries no partner half.
+void endlessShopRedrawStock(void);
+/* The partner's outpost half a save stores next to this machine's own (nothing is written on
+ * the partner's disk). Their machine packs its half onto the save acknowledgement; the stash
+ * holds it until the visit ends. */
+#define ENDLESS_OUTPOST_BLOCK_SIZE (9 + 90 + 8)
+int  endlessPackOwnOutpost(Uint8 *buf);
+void endlessPartnerOutpostStash(uint seat, const Uint8 *block);
+void endlessPartnerOutpostClear(void);
 bool endlessLoadSlot(JE_byte slot);
 bool endlessResumePending(void);
 

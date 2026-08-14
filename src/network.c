@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       49           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       50           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -173,6 +173,11 @@ void network_set_player_name(const char *name)
 // that name, and a file-scope object would collide with it.
 static UDPsocket net_socket;
 static IPaddress ip;
+
+/* Second socket a listening host keeps on the well-known port, so Find LAN Games reaches it
+ * whatever port the game itself is on. The reply names the real port. Closed the moment a
+ * player joins, and best-effort to open: with the port taken, address entry still works. */
+static UDPsocket discover_socket;
 
 UDPpacket *packet_out_temp;
 static UDPpacket *packet_temp;
@@ -442,6 +447,29 @@ int network_ping_ms(void)
 	return (int)(ping_ema + 0.5f);
 }
 
+// Answer a discovery probe with the version, the real game port, and this player's name.
+static void network_discover_answer(UDPsocket sock, const IPaddress *to)
+{
+	// network_set_player_name already clamps the stored name; the re-clamp keeps the
+	// fixed-size packet fill safe on its own terms.
+	size_t name_len = strlen(network_player_name);
+	if (name_len > NET_NAME_MAX)
+		name_len = NET_NAME_MAX;
+
+	SDLNet_Write16(PACKET_DISCOVER_REPLY, &packet_out_temp->data[0]);
+	SDLNet_Write16(NET_VERSION,           &packet_out_temp->data[2]);
+	SDLNet_Write16(network_player_port,   &packet_out_temp->data[4]);
+	memcpy(&packet_out_temp->data[6], network_player_name, name_len);
+	packet_out_temp->data[6 + name_len] = '\0';
+
+	packet_out_temp->len = (int)(6 + name_len + 1);
+	packet_out_temp->address = *to;
+
+	// Channel -1 sends to the packet's own address, which is what we want: replying must
+	// not disturb the channel binding the game protocol uses.
+	SDLNet_UDP_Send(sock, -1, packet_out_temp);
+}
+
 // Consume at most one datagram. A receive error is transient: Windows reports ICMP unreachable as
 // WSAECONNRESET on the next receive without disturbing queued datagrams.
 static int network_recv_one(void)
@@ -463,26 +491,7 @@ static int network_recv_one(void)
 			    SDLNet_Read16(&packet_temp->data[0]) == PACKET_DISCOVER)
 			{
 				if (host_awaiting_peer)
-				{
-					// network_set_player_name already clamps the stored name; the re-clamp
-					// keeps the fixed-size packet fill safe on its own terms.
-					size_t name_len = strlen(network_player_name);
-					if (name_len > NET_NAME_MAX)
-						name_len = NET_NAME_MAX;
-
-					SDLNet_Write16(PACKET_DISCOVER_REPLY, &packet_out_temp->data[0]);
-					SDLNet_Write16(NET_VERSION,           &packet_out_temp->data[2]);
-					SDLNet_Write16(network_player_port,   &packet_out_temp->data[4]);
-					memcpy(&packet_out_temp->data[6], network_player_name, name_len);
-					packet_out_temp->data[6 + name_len] = '\0';
-
-					packet_out_temp->len = (int)(6 + name_len + 1);
-					packet_out_temp->address = packet_temp->address;
-
-					// Channel -1 sends to the packet's own address, which is what we want:
-					// replying must not disturb the channel binding the game protocol uses.
-					SDLNet_UDP_Send(net_socket, -1, packet_out_temp);
-				}
+					network_discover_answer(net_socket, &packet_temp->address);
 
 				return 1;
 			}
@@ -502,6 +511,13 @@ static int network_recv_one(void)
 				peer_addr_known = true;
 				host_awaiting_peer = false;
 				packet_temp->channel = 0;
+
+				// The lobby is full; stop advertising on the well-known port.
+				if (discover_socket)
+				{
+					SDLNet_UDP_Close(discover_socket);
+					discover_socket = NULL;
+				}
 			}
 
 			// Accept the known peer by host address even if NAT rewrites its outbound source port.
@@ -789,6 +805,15 @@ int network_check(void)
 {
 	if (!net_initialized)
 		return -1;
+
+	// Probes land on the well-known port while the game itself listens elsewhere. The socket
+	// exists only while this machine hosts an empty lobby, and answers nothing else.
+	while (discover_socket && SDLNet_UDP_Recv(discover_socket, packet_temp) > 0)
+	{
+		if (host_awaiting_peer && packet_temp->len >= 4 &&
+		    SDLNet_Read16(&packet_temp->data[0]) == PACKET_DISCOVER)
+			network_discover_answer(discover_socket, &packet_temp->address);
+	}
 
 	if (connected)
 	{
@@ -1194,6 +1219,12 @@ int network_connect(void)
 		// network_check() binds channel 0 to them at that point.
 		host_awaiting_peer = true;
 		peer_addr_known = false;
+
+		// Find LAN Games probes the well-known port, so a host on any other port keeps an
+		// ear there too; the reply names the real one. Best effort: with the port taken,
+		// joining by address still works, which is all a missing ear costs.
+		if (network_listen_port != NET_PORT && discover_socket == NULL)
+			discover_socket = SDLNet_UDP_Open(NET_PORT);
 	}
 	else
 	{
@@ -1502,6 +1533,11 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	// suppresses every sprite draw; including this screen's text and menus.
 	rollback_resim = false;
 	rollback_resim_silent = false;
+
+	/* The peer is gone with the session, but it still reads as alive until the activity timeout
+	 * runs out. Disarm the outpost rendezvous now, or a halt raised while the shop was open holds
+	 * the disconnect save on "Waiting for other player." for an answer that cannot come. */
+	network_shop_end();
 
 	if (err >= COUNTOF(err_msg))
 		err = 0;
@@ -2172,6 +2208,11 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 	int len = 22 + network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
 	if (coopEndlessMode)
 		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
+	// The save acknowledgement carries this machine's own outpost, its stock rows and the
+	// stream they came off, so the saver stores both halves in its own file; see "Online
+	// saves" in doc/notes.md.
+	if ((flags & SHOP_SYNC_SAVE_ACK) && coopEndlessMode)
+		len += endlessPackOwnOutpost(&packet_out_temp->data[len]);
 	network_send(len);
 	return sequence;
 }
@@ -2437,8 +2478,9 @@ static void network_custom_weapon_publish_internal(bool force)
 	const Uint32 chunks = (Uint32)((total + NCW_PAYLOAD - 1) / NCW_PAYLOAD);
 	const Uint16 gen = ++network_custom_gen;
 	network_custom_acked = false;
+	bool peer_left = false;
 
-	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_custom_acked; ++attempt)
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_custom_acked && !peer_left; ++attempt)
 	{
 		const Uint32 started = SDL_GetTicks();
 		Uint32 sent = 0;
@@ -2472,6 +2514,17 @@ static void network_custom_weapon_publish_internal(bool force)
 			// acknowledgement is behind whatever it has already sent us.
 			while (network_shop_pump() || network_debug_sync_pump(false))
 				;
+
+			/* Whatever the pumps left is stale or final: a trailing handshake duplicate would
+			 * block the acknowledgement for the whole window, and a quit means it never comes
+			 * (the packet stays queued for the quit handler, as everywhere else). */
+			if (network_inbound_head() == PACKET_CONNECT)
+				network_update();
+			else if (network_inbound_head() == PACKET_GAME_QUIT)
+			{
+				peer_left = true;
+				break;
+			}
 
 			if (!network_peer_alive())
 				break;
@@ -2545,7 +2598,13 @@ void network_endless_run_publish(void)
 	const Uint16 gen = ++network_endless_gen;
 	network_endless_acked = false;
 
-	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_endless_acked; ++attempt)
+	// This wait spans the joiner's whole save apply, and the host arrives with the load
+	// menu's fade-out still on the palette; without a redraw it reads as a hang.
+	const Uint32 publish_start = SDL_GetTicks();
+	bool overlay_drawn = false;
+	bool peer_left = false;
+
+	for (int attempt = 0; attempt < NCW_ATTEMPTS && !network_endless_acked && !peer_left; ++attempt)
 	{
 		const Uint32 started = SDL_GetTicks();
 		Uint32 sent = 0;
@@ -2573,14 +2632,42 @@ void network_endless_run_publish(void)
 			service_SDL_events(false);
 			network_check();
 
-			if (packet_in[0] != NULL
-			    && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_ENDLESS_RUN
-			    && packet_in[0]->len >= NCW_HDR
-			    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == 0)
+			/* The acknowledgement can only surface at the head of the ordered queue, so stale
+			 * traffic ahead of it has to be retired or this spins out the whole window on a
+			 * packet nobody claims. Endless packets are taken before the shop pump gets a look:
+			 * the pump drops that type as a late resume duplicate, the acknowledgement included. */
+			const Uint16 head = network_inbound_head();
+			if (head == PACKET_ENDLESS_RUN)
 			{
-				if (SDLNet_Read16(&packet_in[0]->data[NCW_GEN]) == gen)
+				if (packet_in[0]->len >= NCW_HDR
+				    && SDLNet_Read16(&packet_in[0]->data[NCW_COUNT]) == 0
+				    && SDLNet_Read16(&packet_in[0]->data[NCW_GEN]) == gen)
 					network_endless_acked = true;
-				network_update();
+				network_update();  // the acknowledgement, or a stale generation's leftovers
+			}
+			else if (head == PACKET_GAME_QUIT)
+			{
+				/* The peer has left; nothing is coming. Leave the notice queued: it was
+				 * acknowledged on arrival, and the quit handler still has to see it. */
+				peer_left = true;
+				break;
+			}
+			else if (head == PACKET_CONNECT)
+			{
+				network_update();  // trailing handshake duplicate (see network_sa_ship_peer)
+			}
+			else if (head != 0 && !network_debug_sync_pump(false))
+			{
+				(void)network_shop_pump();  // an early outpost hello ahead of the acknowledgement
+			}
+
+			if (!overlay_drawn && SDL_GetTicks() - publish_start > 700)
+			{
+				overlay_drawn = true;
+				JE_clr256(VGAScreen);
+				JE_drawNetworkNotice("Waiting for other player.");
+				JE_showVGA();
+				fade_palette(colors, 10, 0, 255);  // the load menu faded to black on its way out
 			}
 
 			if (!network_peer_alive())
@@ -2897,6 +2984,8 @@ bool network_endless_run_receive(Uint32 timeout_ms)
 
 		if (have >= count && total > 0)
 		{
+			// The adopt settles this seat's own rows itself: the record's partner half when
+			// the save checkpointed one, a redeal from the restored stream otherwise.
 			done = endlessRunAdopt(buf, total);
 			network_endless_send_ack(gen);   // answer either way: a resend produces the same bytes
 			break;
@@ -3164,7 +3253,15 @@ bool network_shop_pump(void)
 				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
 			if ((flags & SHOP_SYNC_SAVE_ACK) &&
 			    SDLNet_Read16(&packet_in[0]->data[20]) == network_shop_save_request)
+			{
+				/* The peer's own outpost trails the acknowledgement; stash it so the save
+				 * being written captures both halves (see "Online saves" in doc/notes.md). */
+				const int tail = 22 + item_size + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
+				if (coopEndlessMode && packet_in[0]->len >= tail + ENDLESS_OUTPOST_BLOCK_SIZE)
+					endlessPartnerOutpostStash(sender - 1, &packet_in[0]->data[tail]);
+
 				network_shop_save_ready = true;
+			}
 		}
 	}
 
@@ -3817,6 +3914,12 @@ void network_shutdown(void)
 		net_socket = NULL;
 	}
 
+	if (discover_socket)
+	{
+		SDLNet_UDP_Close(discover_socket);
+		discover_socket = NULL;
+	}
+
 	SDLNet_Quit();
 
 	// Reset every sync counter, or a second session would start mid-sequence.
@@ -3914,6 +4017,27 @@ static void discover_send_probe(UDPsocket sock, UDPpacket *probe, Uint32 host_be
 	SDLNet_UDP_Send(sock, -1, probe);
 }
 
+// One round of probes: global broadcast plus each interface's directed /24, per port.
+static void discover_send_volley(UDPsocket sock, UDPpacket *probe, const Uint16 *ports,
+                                 int port_count, const IPaddress *local, int local_count)
+{
+	for (int p = 0; p < port_count; ++p)
+	{
+		discover_send_probe(sock, probe, 0xffffffffu, ports[p]);  // 255.255.255.255
+
+		for (int i = 0; i < local_count; ++i)
+		{
+			if (local[i].host == 0)
+				continue;
+
+			// Directed broadcast for this interface's /24.  Addresses are network byte order,
+			// so the host part is the top byte as stored.
+			const Uint32 subnet_bcast = local[i].host | SDL_SwapBE32(0x000000ffu);
+			discover_send_probe(sock, probe, subnet_bcast, ports[p]);
+		}
+	}
+}
+
 int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*poll)(void))
 {
 	if (max <= 0)
@@ -3944,36 +4068,30 @@ int network_discover(NetworkHostInfo *out, int max, Uint32 timeout_ms, void (*po
 	SDLNet_Write16(NET_VERSION,     &probe->data[2]);
 	probe->len = 4;
 
-	// Ports worth asking: the well-known default, plus whatever this machine last used to
-	// host (players who change it tend to agree on the same number).  A host on some other
-	// port simply will not be found, and has to be reached by typing its address.
+	/* Ports worth asking: the well-known default, which a host on any other port also keeps an
+	 * ear on (see discover_socket), plus whatever this machine last used to host, covering an
+	 * old-build host that changed its port and has no second ear. */
 	Uint16 ports[2] = { NET_PORT, network_listen_port };
 	const int port_count = (ports[1] == ports[0]) ? 1 : 2;
 
 	IPaddress local[8];
 	const int local_count = network_local_addresses(local, (int)COUNTOF(local));
 
-	for (int p = 0; p < port_count; ++p)
-	{
-		discover_send_probe(sock, probe, 0xffffffffu, ports[p]);  // 255.255.255.255
-
-		for (int i = 0; i < local_count; ++i)
-		{
-			if (local[i].host == 0)
-				continue;
-
-			// Directed broadcast for this interface's /24.  Addresses are network byte order,
-			// so the host part is the top byte as stored.
-			const Uint32 subnet_bcast = local[i].host | SDL_SwapBE32(0x000000ffu);
-			discover_send_probe(sock, probe, subnet_bcast, ports[p]);
-		}
-	}
+	discover_send_volley(sock, probe, ports, port_count, local, local_count);
 
 	int found = 0;
 	const Uint32 start = SDL_GetTicks();
+	Uint32 volley_at = start;
 
 	while (SDL_GetTicks() - start < timeout_ms && found < max)
 	{
+		// A probe is one datagram; repeat the round so a single loss cannot empty the window.
+		if (SDL_GetTicks() - volley_at >= 400)
+		{
+			volley_at = SDL_GetTicks();
+			discover_send_volley(sock, probe, ports, port_count, local, local_count);
+		}
+
 		if (SDLNet_UDP_Recv(sock, reply) > 0)
 		{
 			if (reply->len >= 6 &&

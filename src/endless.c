@@ -721,6 +721,7 @@ void endlessResetRun(void)
 {
 	endlessRunDepth   = 0;
 	endlessActiveMods = 0;
+	endlessPartnerOutpostClear();   // no visit yet, so no partner half to store with a save
 	endlessRunUsedCustom = false;
 	endlessCustomFiredZone = false;
 	endlessRunKills   = 0;

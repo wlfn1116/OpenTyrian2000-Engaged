@@ -39,7 +39,7 @@ JE_byte  endlessSortieOutpostEp = 0;
 // tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
 
 #define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 26   // v26: items may carry the Dragonwing ship id (SHIP_DRAGONWING)
+#define ENDLESS_SAVE_VERSION 27   // v27: the partner's outpost half a save checkpoint captured
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
@@ -170,6 +170,14 @@ typedef struct {
 	// Added in v24. Both are 0 under the two unshuffled rules.
 	Uint32 shuffleNext;       // pieces a Shuffle run has drawn
 	Uint32 shuffleHandStart;  // where the restored chart's hand came off, for the co-op re-anchor
+
+	/* Added in v27: the partner's half of the outpost this save checkpointed, as their machine
+	 * reported it over the save acknowledgement. Valid 0 means the checkpoint had no answer. */
+	Uint8  partnerValid;
+	Uint8  partnerSeat;              // player index the half belongs to
+	Uint8  partnerAvailMax[9];
+	Uint8  partnerAvail[9][10];
+	Uint64 partnerRng;
 } EndlessSlotRec;
 
 // One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
@@ -335,6 +343,12 @@ static void endlessWriteRec(EndlessWriter *w, const EndlessSlotRec *r)
 
 	endlessPutU32(w, r->shuffleNext);                // v24 Shuffle bag cursor and live hand
 	endlessPutU32(w, r->shuffleHandStart);
+
+	endlessPutU8(w, r->partnerValid);                // v27 partner outpost half
+	endlessPutU8(w, r->partnerSeat);
+	endlessPutBytes(w, r->partnerAvailMax, sizeof(r->partnerAvailMax));
+	endlessPutBytes(w, r->partnerAvail, sizeof(r->partnerAvail));
+	endlessPutU64(w, r->partnerRng);
 }
 
 static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
@@ -636,6 +650,20 @@ static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 	if (r->shuffleHandStart > r->shuffleNext)
 		r->shuffleHandStart = r->shuffleNext;
 
+	// Pre-v27 records checkpointed no partner half.
+	if (version >= 27)
+	{
+		if (!endlessGetU8(rd, &r->partnerValid) || !endlessGetU8(rd, &r->partnerSeat)
+		    || !endlessGetBytes(rd, r->partnerAvailMax, sizeof(r->partnerAvailMax))
+		    || !endlessGetBytes(rd, r->partnerAvail, sizeof(r->partnerAvail))
+		    || !endlessGetU64(rd, &r->partnerRng))
+		{
+			return false;
+		}
+		if (r->partnerSeat > 1)
+			r->partnerValid = 0;
+	}
+
 	return true;
 }
 
@@ -813,7 +841,11 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	    || (version < 23 && first.chartRerolls != 0)
 	    || (version >= 23 && first.chartRerolls != 1)
 	    || (version < 24 && (first.shuffleNext != 0 || first.shuffleHandStart != 0))
-	    || (version >= 24 && (first.shuffleNext != 37 || first.shuffleHandStart != 33)))
+	    || (version >= 24 && (first.shuffleNext != 37 || first.shuffleHandStart != 33))
+	    || (version < 27 && first.partnerValid != 0)
+	    || (version >= 27 && (first.partnerValid != 1 || first.partnerSeat != 1
+	        || first.partnerAvailMax[0] != 2 || first.partnerAvail[0][0] != 90
+	        || first.partnerRng != 0x1122334455667788ull)))
 	{
 		free(bytes);
 		endlessTestDetail(detail, detailSize, "version defaults differ");
@@ -1047,6 +1079,59 @@ static void endlessWriteAllSlots(void)
 	free(bytes);
 }
 
+/* The partner's half of a save, as their machine reported it over the save acknowledgement:
+ * their stock rows and the stream position they came off. Cleared when a new visit deals, so
+ * a stale half cannot ride a later save; see "Online saves" in doc/notes.md. */
+static struct
+{
+	bool   fresh;
+	Uint8  seat;                 // player index the half belongs to
+	Uint8  availMax[9];
+	Uint8  avail[9][10];
+	Uint64 rng;
+}
+endlessPartnerStash;
+
+// This machine's own outpost, packed for the save acknowledgement. Fixed width and endian-safe.
+int endlessPackOwnOutpost(Uint8 *buf)
+{
+	int n = 0;
+	memcpy(&buf[n], itemAvailMax, sizeof(itemAvailMax));
+	n += (int)sizeof(itemAvailMax);
+	memcpy(&buf[n], itemAvail, sizeof(itemAvail));
+	n += (int)sizeof(itemAvail);
+
+	const Uint64 rng = endlessPlayerRngState[endlessEconomyIndex()];
+	for (int b = 7; b >= 0; --b)
+		buf[n++] = (Uint8)(rng >> (8 * b));
+	return n;
+}
+
+void endlessPartnerOutpostStash(uint seat, const Uint8 *block)
+{
+	if (seat > 1)
+		return;
+
+	endlessPartnerStash.fresh = true;
+	endlessPartnerStash.seat = (Uint8)seat;
+
+	int n = 0;
+	memcpy(endlessPartnerStash.availMax, &block[n], sizeof(endlessPartnerStash.availMax));
+	n += (int)sizeof(endlessPartnerStash.availMax);
+	memcpy(endlessPartnerStash.avail, &block[n], sizeof(endlessPartnerStash.avail));
+	n += (int)sizeof(endlessPartnerStash.avail);
+
+	Uint64 rng = 0;
+	for (int b = 0; b < 8; ++b)
+		rng = (rng << 8) | block[n++];
+	endlessPartnerStash.rng = rng;
+}
+
+void endlessPartnerOutpostClear(void)
+{
+	memset(&endlessPartnerStash, 0, sizeof(endlessPartnerStash));
+}
+
 // Snapshot the live run AND the current outpost into a record.
 static void endlessCaptureCurrent(EndlessSlotRec *r)
 {
@@ -1183,6 +1268,16 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 		r->cashBySink[i] = endlessCashBySink[i];
 
 	r->usedCustom = endlessRunUsedCustom ? 1 : 0;   // v20 custom-weapon record mark
+
+	// The partner's half, when a save checkpoint captured one this visit (v27).
+	if (endlessPartnerStash.fresh)
+	{
+		r->partnerValid = 1;
+		r->partnerSeat = endlessPartnerStash.seat;
+		memcpy(r->partnerAvailMax, endlessPartnerStash.availMax, sizeof(r->partnerAvailMax));
+		memcpy(r->partnerAvail, endlessPartnerStash.avail, sizeof(r->partnerAvail));
+		r->partnerRng = endlessPartnerStash.rng;
+	}
 }
 
 // Reset transient state, restore the saved run and outpost, then reopen the saved visit without a reroll.
@@ -1479,6 +1574,36 @@ bool endlessRunAdopt(const Uint8 *bytes, size_t len)
 
 	endlessApplyCurrent(&rec);
 	endlessMode = true;
+
+	/* The record's own rows belong to the machine that captured them, its equipped gear seeded
+	 * in. This seat's half is the record's partner block when the save checkpointed one; without
+	 * it the rows are redealt from the restored stream, which reproduces the deal this seat was
+	 * originally shown (the capturing machine never draws from its peer's stream). */
+	const uint p = endlessEconomyIndex();
+	if (rec.partnerValid && rec.partnerSeat == p)
+	{
+		memcpy(itemAvailMax, rec.partnerAvailMax, sizeof(itemAvailMax));
+		memcpy(itemAvail, rec.partnerAvail, sizeof(itemAvail));
+		if (rec.partnerRng != 0)
+			endlessPlayerRngState[p] = rec.partnerRng;
+	}
+	else
+	{
+		endlessShopRedrawStock();
+	}
+
+	/* This machine can now save a complete record of its own: the publisher's half is the
+	 * record's own rows and stream, so it becomes the stash here. */
+	endlessPartnerOutpostClear();
+	if (coopEndlessMode)
+	{
+		endlessPartnerStash.fresh = true;
+		endlessPartnerStash.seat = (Uint8)(1 - p);
+		memcpy(endlessPartnerStash.availMax, rec.itemAvailMax, sizeof(endlessPartnerStash.availMax));
+		memcpy(endlessPartnerStash.avail, rec.itemAvail, sizeof(endlessPartnerStash.avail));
+		endlessPartnerStash.rng = rec.playerRng[1 - p];
+	}
+
 	return true;
 }
 
@@ -1504,6 +1629,21 @@ bool endlessLoadSlot(JE_byte slot)
 	endlessApplyCurrent(&endlessSlotCache[slot - 1]);
 	endlessMode = true;  // JE_loadGame cleared it for a normal load; this slot is an endless run
 	endlessRecordRunStart();  // resumed record gains count from this point
+
+	/* Put the record's partner half back in the stash: the resume re-captures this run for the
+	 * wire and the entry checkpoint, and losing the half there would strand the joiner on a
+	 * redeal. It still belongs to the partner, so the semantics hold on this machine. */
+	endlessPartnerOutpostClear();
+	const EndlessSlotRec *const r = &endlessSlotCache[slot - 1];
+	if (r->partnerValid && r->partnerSeat <= 1)
+	{
+		endlessPartnerStash.fresh = true;
+		endlessPartnerStash.seat = r->partnerSeat;
+		memcpy(endlessPartnerStash.availMax, r->partnerAvailMax, sizeof(endlessPartnerStash.availMax));
+		memcpy(endlessPartnerStash.avail, r->partnerAvail, sizeof(endlessPartnerStash.avail));
+		endlessPartnerStash.rng = r->partnerRng;
+	}
+
 	return true;
 }
 

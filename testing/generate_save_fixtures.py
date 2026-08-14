@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the independent Endless v3-v26 migration corpus."""
+"""Generate the independent Endless v3-v27 migration corpus."""
 
 from __future__ import annotations
 
@@ -137,6 +137,11 @@ def record(version: int) -> bytes:
         out += u32(37)  # shuffleNext: pieces this run has drawn from the level bag
         out += u32(33)  # shuffleHandStart: where the saved chart's hand came off
     # v26 widened no field: it only permits the Dragonwing ship id in the items block.
+    if version >= 27:
+        out += bytes([1, 1])          # partnerValid; partnerSeat: player two's half
+        out += bytes([2] * 9)         # partnerAvailMax
+        out += bytes(range(90, 180))  # partnerAvail rows
+        out += u64(0x1122334455667788)
 
     return bytes(out)
 
@@ -157,7 +162,7 @@ def main() -> int:
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
-    for version in range(3, 27):
+    for version in range(3, 28):
         payload = record(version)
         path = args.output / f"v{version:02d}.sav"
         path.write_bytes(header(version, payload) + payload)

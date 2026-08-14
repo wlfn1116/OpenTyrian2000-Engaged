@@ -4,6 +4,7 @@
 #include "endless_internal.h"
 
 #include "config.h"
+#include "crashlog.h"
 #include "custom_weapon.h"
 #include "episodes.h"
 #include "game_menu.h"
@@ -301,6 +302,13 @@ static void endlessFillShop(void)
 	endlessFillCategory(5, 7, OPTION_NUM, true,  it->sidekick[LEFT_SIDEKICK],     NULL, 0);  // left sidekick (+None)
 	endlessFillCategory(6, 8, OPTION_NUM, true,  it->sidekick[RIGHT_SIDEKICK],    NULL, 0);  // right sidekick (+None)
 	endlessFillCategory(8, 5, SHIELD_NUM, false, it->shield,                      NULL, 0);  // shields
+}
+
+/* Redeal this seat's shop rows from its own stream, seeded with its own equipped gear: the
+ * fallback when an adopted record carries no partner half (see endlessRunAdopt). */
+void endlessShopRedrawStock(void)
+{
+	endlessFillShop();
 }
 
 // Outpost economy.
@@ -1029,6 +1037,9 @@ void endlessBetweenLevels(void)
 	}
 	else
 	{
+		// A new visit deals; whatever partner half a save stashed belonged to the old one.
+		endlessPartnerOutpostClear();
+
 		// Seed structural generation by depth. Player-timed draws cannot shift later zone layouts,
 		// and each player's own stream is forked from the same point so a shop reroll or a gamble
 		// on one machine never moves what the other is dealt.
@@ -1056,6 +1067,7 @@ void endlessBetweenLevels(void)
 	// Auto-checkpoint at the completed outpost setup. Hardcore does not save.
 	if (!endlessHardcore())
 	{
+		const Uint32 saveStart = SDL_GetTicks();
 		const JE_byte autoSlot = twoPlayerMode ? 22 : 11;
 		JE_saveGame(autoSlot, "LAST LEVEL    ");
 		endlessSaveSlot(autoSlot);  // side-effect-free run capture into the sidecar (endlessMode is true here)
@@ -1064,7 +1076,23 @@ void endlessBetweenLevels(void)
 		// The checkpoint just written is what the disconnect dialog offers to keep (network.c).
 		// Without this an online Endless session never armed the offer at all.
 		if (isNetworkGame)
+		{
 			network_session_saveable = true;
+
+			// This write sits between the resume handshake and the shop's first frame, where a
+			// stall reads as a network hang. Logging a slow one attributes it to the install's
+			// disk (a cloud-synced folder, say) rather than the link.
+			const Uint32 saveMs = SDL_GetTicks() - saveStart;
+			if (saveMs > 2000)
+			{
+				char detail[96];
+				snprintf(detail, sizeof(detail),
+				         "the outpost checkpoint took %lu ms to write.", (unsigned long)saveMs);
+				crashlog_netlog_line("OUTPOST AUTOSAVE SLOW", detail);
+			}
+		}
+#else
+		(void)saveStart;
 #endif
 	}
 

@@ -398,6 +398,8 @@ void network_custom_weapon_reset(void);
 // the joiner has to be allowed to finish shopping first.
 void network_shop_adopt_host_level(void);
 void network_shop_end(void);
+/* Checkpoint both loadouts before a save. The acknowledgement returns the peer's own outpost
+ * half, which the save stores next to this machine's. */
 void network_shop_sync_for_save(void);
 
 // Synchronize debug-menu simulation state. mark snapshots the baseline, changed compares it,

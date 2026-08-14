@@ -7233,9 +7233,13 @@ static void networkEndlessNewRun(void)
 }
 
 /* Resume an online Endless run: the host loads it from its own sidecar and streams the record,
- * and the joiner adopts it. Each machine then redraws its own shop stock from the seed. */
+ * and the joiner adopts it. The record carries the joiner's own outpost half when the save's
+ * checkpoint captured it; without one the joiner's rows are redealt from the seed (the adopt
+ * settles that; see endlessRunAdopt). */
 static bool networkEndlessResume(JE_byte slot)
 {
+	const Uint32 begin = SDL_GetTicks();
+
 	bool okay;
 	if (thisPlayerNum == networkHostPlayerNum)
 	{
@@ -7246,6 +7250,20 @@ static bool networkEndlessResume(JE_byte slot)
 	else
 	{
 		okay = network_endless_run_receive(20000);
+	}
+
+	// A bounded wait that succeeds late leaves no trace. Put a number on the handoff so a
+	// slow resume is attributable from the net log alone.
+	const Uint32 spent = SDL_GetTicks() - begin;
+	if (okay && spent > 3000)
+	{
+		char detail[120];
+		snprintf(detail, sizeof(detail),
+		         "the %s spent %lu ms in the run handoff before the outpost could open.",
+		         thisPlayerNum == networkHostPlayerNum ? "host (sidecar load + transfer)"
+		                                              : "joiner (transfer wait + adopt)",
+		         (unsigned long)spent);
+		crashlog_netlog_line("ENDLESS RESUME SLOW", detail);
 	}
 
 	if (qa_net_gameplay_ticks > 0)

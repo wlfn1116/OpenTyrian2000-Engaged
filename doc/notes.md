@@ -706,6 +706,8 @@ checkpoint.
 | 23 | Radar reroll count |
 | 24 | Level bag cursor and hand; the v22 rule byte widened past Same/Varied |
 | 25 | Record width in the header |
+| 26 | Dragonwing permitted in the items block; no new field |
+| 27 | Partner outpost half (seat, stock rows, stream) |
 
 Append fields and guard reads by version. Perk IDs appear in stacks and pending
 offers; append enum values or migrate both arrays.
@@ -900,6 +902,7 @@ Recent versions:
 | 47 | Bounty Hunter multiplies score pickups |
 | 48 | Health bars measure a wound against the armor a part started with |
 | 49 | Endless shop sells the Dragonwing (synthesized ship row 19) |
+| 50 | Save acknowledgement returns the peer's outpost half for the saver's own record |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -943,6 +946,18 @@ received expert and enum values.
 Credits use `player_award_pickup_cash`, `player_award_kill_cash`, and
 `player_award_bounty_cash`. Level-time awards name the player index and execute
 on both machines.
+
+### LAN discovery
+
+Find LAN Games broadcasts `PACKET_DISCOVER` to the well-known port and to the
+prober's own last host port, on the global and each interface's directed /24
+broadcast, and repeats the round every 400 ms while it waits because a probe is
+one unacknowledged datagram. The reply names the host's real game port.
+
+A host listening on any other port keeps a second socket on the well-known port
+(`discover_socket`) so those probes still reach it. It answers only while the
+lobby is empty, closes the moment a player joins, and is best-effort to open:
+with the port taken, joining by address still works.
 
 ### Keep-alives
 
@@ -1009,6 +1024,10 @@ This prevents a remote commit from closing an active purchase screen.
 Custom weapon designs are published during the locked rendezvous. Save requests
 use a separate request and acknowledgement checkpoint.
 
+Both chunked publishes (custom weapon, Endless run) retire stale handshake
+duplicates ahead of their acknowledgement and stop on a queued quit, which
+stays queued for the quit handler.
+
 The acknowledgement comes from the peer's own outpost pump, so a peer still on
 the level end screen cannot answer. The checkpoint therefore draws the outpost
 wait notice and accepts Esc, and its `NET_SHOP_SAVE_WAIT` cap remains the last
@@ -1029,6 +1048,17 @@ Per-player state includes:
 
 `itemAvail` and the local cash ledger stay local. Structural course RNG remains
 separate from each player's outpost RNG.
+
+A resume record's own `itemAvail` rows belong to the machine that captured
+them, its equipped gear seeded in. The adopter's half is the record's partner
+block when the save checkpointed one, a reroll included; without one the rows
+are redealt from the restored outpost RNG, which the capture left at the
+visit's start, so the fallback is the deal this seat was originally shown.
+
+The partner stash holds the half between the acknowledgement and the capture.
+It clears when a new visit deals, reloads from the record on a local slot load,
+and rebuilds from the record's own rows on a wire adopt, so both machines can
+save complete records after a resume.
 
 Perks are stored in `endlessPerkTakenBy[2][PERK_COUNT]`. Every grant uses
 `endlessPerkGrant`; effects read `endlessPerkEffective` for the current ship.
@@ -1109,6 +1139,17 @@ A shop save completes the bidirectional state checkpoint first. Its wait is
 bounded, drains preceding shop traffic, and leaves `PACKET_GAME_QUIT` for the
 quit handler.
 
+A save writes only to the machine it is made on. The acknowledgement returns
+the peer's own outpost half (stock rows and outpost stream), which the saver
+stores next to its own in the v27 sidecar record; the peer's disk is never
+touched. A peer still on the level end screen answers the queued request at
+its next outpost, in time for a later save in the same visit; the first save
+then carries no half and the resume redeals for that seat.
+
+`network_tyrian_halt` disarms the shop rendezvous before the disconnect prompt.
+The peer is gone but reads alive until the activity timeout runs out, and the
+save checkpoint would otherwise hold its full cap on a dead link.
+
 `JE_loadGameRecord` clears the session mode flags, and the record does not say
 which online lobby is flying it. Both machines therefore reassert
 `coopCampaignMode` and `coopEndlessMode` from `network_game_type` after loading,
@@ -1116,6 +1157,11 @@ and the disconnect prompt reads `endlessMode` before the load so it can restore
 the sidecar. Resuming Endless also transfers the run itself; if that transfer
 fails the session halts, because a machine that drops to Campaign alone leaves
 the pair in two different modes.
+
+The run transfer draws the wait notice once it runs long, since the host
+arrives with the load menu's fade-out still on the palette. A handoff over
+three seconds and an outpost checkpoint write over two each log a net-log
+line naming the stage, so a slow resume is attributable from one log.
 
 A resume never changes anyone's player number. The record's first loadout is
 always player one, so each machine records the seat it was flying and takes it
