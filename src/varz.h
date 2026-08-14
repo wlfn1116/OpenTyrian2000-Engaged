@@ -50,6 +50,8 @@ enum
 
 #define CURRENT_KEY_SPEED 1  /*Keyboard/Joystick movement rate*/
 
+#define TWIDDLE_MIN_WAIT 14  // shortest gap between two twiddles by the same ship, in ticks
+
 #define MAX_EXPLOSIONS           200
 #define MAX_REPEATING_EXPLOSIONS 20
 #define MAX_SUPERPIXELS          50000  // was 101; global spark ring buffer; bigger = denser/longer explosion showers
@@ -482,6 +484,7 @@ void JE_tyrianShutdown(bool saveConfiguration);
 void JE_tyrianHalt(JE_byte code); /* This ends the game */
 void JE_specialComplete(JE_byte playernum, JE_byte specialType);
 void JE_doSpecialShot(JE_byte playernum, uint *armor, uint *shield);
+void JE_resetTwiddleClocks(void);  // both ships' twiddle cooldowns and any twiddle-owned flare
 
 void JE_wipeShieldArmorBars(void);
 JE_byte JE_playerDamage(JE_byte temp, Player *);

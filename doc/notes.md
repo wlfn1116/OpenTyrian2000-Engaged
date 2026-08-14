@@ -609,6 +609,21 @@ earn. It consumes no RNG and is idempotent; generation, launch, the purchase
 fold, and save restore all run it. `endlessValidateModifierTables` rejects a
 naming row that is not already settled.
 
+Rare signature sectors are scheduled rather than rolled. Each row of
+`endlessRareInjections` carries a window in zones and a salt block, and
+`endlessRareSectorDue` places one sector per window at a seeded offset inside
+it, so a run cannot miss a signature for a whole window. The answer is a pure
+function of the seed, the zone and the visit's reroll count: it costs no run
+state and both peers derive it alike. A Radar reroll re-places the window's
+sector along with everything else, so it can be spent to leave a zone that
+offered one, at the cost of that window's guarantee. The danger ramp adds
+sub-ranges inside the window instead of shrinking the window, because a
+shrinking window moves its own boundaries as the ramp climbs and degenerates
+back into a per-zone roll. Each row that fires takes its own route, so no row
+erases another's guarantee. A row flagged `guarded` also suppresses Jackpot and
+Ambush on its zone; a milestone slate still replaces every route, so a sector
+scheduled onto a milestone zone is lost.
+
 Course order uses cached danger and payout. Purchased buffs and Sabotage update
 the chosen card without changing the original ordering key.
 
@@ -833,7 +848,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 45.
+`NET_VERSION` bump. The current value is 46.
 
 Recent versions:
 
@@ -865,6 +880,7 @@ Recent versions:
 | 43 | Endless run transfer carries the v25 save header |
 | 44 | Endless piercing damage ramp, elite/champ rebalance, remainder carry, and carried per-hull damage |
 | 45 | Kinetic Converter discount on twiddle shield and armor charges |
+| 46 | Twiddle ship coverage, seat-two combo row, own cooldown, and diagonal collapse; scheduled rare sectors |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -1171,6 +1187,38 @@ and the Nort Ship (33, then 32). Episode Versions > Shop Pictures owns
 rewrite shields. Only 28, 32, 33, 45, and 46 have a placement entry in
 `draw_ship_illustration` and the Ship Specs screen, so no other value may be
 written there.
+
+### Twiddles
+
+`shipCombos` holds one row per ship id, `shipCombosB` the SuperTyrian row that
+replaces it. A ship outside the table (a shipedit "extra" ship, id above 90) has
+no twiddles; nothing else may be excluded, and `JE_SFCodes` bounds by
+`COUNTOF(shipCombos)` rather than a literal. Ships 13, 17 and 18 legitimately
+have an empty row.
+
+Player two twiddles off row 0 only in the linked pair, where it flies the
+Dragonwing's rear bay rather than a ship. Any mode with two full ships
+(`dual_ship_mode`) uses each ship's own row.
+
+`JE_SFCodes` ignores a tick that offers it two directions, so every input path
+reaches it through `SF_twiddleTarget`, which collapses a movement intent to one
+cardinal: dominant axis, ties to the vertical. That is the rule `rb_fill_tuple`
+applies before intent goes on the wire, so a diagonal flick resolves the same way
+online and off. Record the collapsed target for self-test replay, so a replayed
+tick reproduces the same direction. Demo playback has no live controls, which is
+why the display-rate path is gated on `play_demo` and the classic path derives
+its intent from the tick's displacement.
+
+`SFExecuted` is cleared at the top of every tick, so `JE_doSpecialShot` either
+fires a recognised twiddle on that tick or discards it. Keep its gate on
+`twiddleWait`, one clock per ship. Gating on the equipped special's
+`shotRepeat[SHOT_SPECIAL]` instead lets a recharge swallow the input, and
+Autofire Special keeps that recharge running nearly every tick.
+`shotRepeat[SHOT_SPECIAL]` is zeroed across `JE_specialComplete` so the recharge
+left behind is the fired special's own, and the equipped special's is restored
+afterwards. `TWIDDLE_MIN_WAIT` floors the gap. A twiddle that starts a flare is
+paced by that flare, whose tail then charges `twiddleWait`. Deduct shield or
+armour only when the whole charge is affordable.
 
 ## Audio, logs, and platforms
 

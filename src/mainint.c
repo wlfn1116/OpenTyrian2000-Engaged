@@ -6220,87 +6220,104 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 
 	uint ship = player[playerNum_-1].items.ship;
 
-	/*Get direction*/
-	if (playerNum_ == 2 && ship < 15)
+	/* The linked pair's second half flies the Dragonwing's rear bay rather than a ship of its own,
+	 * so it twiddles off the shared "2nd Player ship" row. Every mode where player two owns a ship
+	 * (co-op, separate arcade) uses that ship's own row, like player one. */
+	if (playerNum_ == 2 && !dual_ship_mode())
 	{
 		ship = 0;
 	}
 
-	if (ship < 15)
+	// SuperTyrian hands one ship every combo; otherwise the ship needs a row of its own, which a
+	// shipedit "extra" ship (id above 90) has not got.
+	if (!superTyrian && ship >= COUNTOF(shipCombos))
+		return;
+
+	/*Get direction*/
+	temp2 = (mouseY_ > PY_) +    /*UP*/
+	        (mouseY_ < PY_) +    /*DOWN*/
+	        (PX_ < mouseX_) +    /*LEFT*/
+	        (PX_ > mouseX_);     /*RIGHT*/
+	temp = (mouseY_ > PY_) * 1 + /*UP*/
+	       (mouseY_ < PY_) * 2 + /*DOWN*/
+	       (PX_ < mouseX_) * 3 + /*LEFT*/
+	       (PX_ > mouseX_) * 4;  /*RIGHT*/
+
+	if (temp == 0) // no direction being pressed
 	{
-
-		temp2 = (mouseY_ > PY_) +    /*UP*/
-		        (mouseY_ < PY_) +    /*DOWN*/
-		        (PX_ < mouseX_) +    /*LEFT*/
-		        (PX_ > mouseX_);     /*RIGHT*/
-		temp = (mouseY_ > PY_) * 1 + /*UP*/
-		       (mouseY_ < PY_) * 2 + /*DOWN*/
-		       (PX_ < mouseX_) * 3 + /*LEFT*/
-		       (PX_ > mouseX_) * 4;  /*RIGHT*/
-
-		if (temp == 0) // no direction being pressed
+		if (!button[0]) // if fire button is released
 		{
-			if (!button[0]) // if fire button is released
+			temp = 9;
+			temp2 = 1;
+		}
+		else
+		{
+			temp2 = 0;
+			temp = 99;
+		}
+	}
+
+	if (temp2 != 1) // more than one direction pressed: neither advance nor cancel
+		return;
+
+	temp += button[0] * 4;
+
+	temp3 = superTyrian ? 21 : 3;
+	for (temp2 = 0; temp2 < temp3; temp2++)
+	{
+		/*Use SuperTyrian ShipCombos or not?*/
+		temp5 = superTyrian ? shipCombosB[temp2] : shipCombos[ship][temp2];
+
+		// temp5 == selected combo in ship
+		if (temp5 == 0) /* combo doesn't exists */
+		{
+			// mark twiddles as cancelled/finished
+			SFCurrentCode[playerNum_-1][temp2] = 0;
+		}
+		else
+		{
+			// get next combo key
+			temp4 = keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]];
+
+			// correct key
+			if (temp4 == temp)
 			{
-				temp = 9;
-				temp2 = 1;
+				SFCurrentCode[playerNum_-1][temp2]++;
+
+				temp4 = keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]];
+				if (temp4 > 100 && temp4 <= 100 + SPECIAL_NUM)
+				{
+					SFCurrentCode[playerNum_-1][temp2] = 0;
+					SFExecuted[playerNum_-1] = temp4 - 100;
+				}
 			}
 			else
 			{
-				temp2 = 0;
-				temp = 99;
-			}
-		}
-
-		if (temp2 == 1) // if exactly one direction pressed or fire button is released
-		{
-			temp += button[0] * 4;
-
-			temp3 = superTyrian ? 21 : 3;
-			for (temp2 = 0; temp2 < temp3; temp2++)
-			{
-
-				/*Use SuperTyrian ShipCombos or not?*/
-				temp5 = superTyrian ? shipCombosB[temp2] : shipCombos[ship][temp2];
-
-				// temp5 == selected combo in ship
-				if (temp5 == 0) /* combo doesn't exists */
+				if ((temp != 9) &&
+				    (temp4 - 1) % 4 != (temp - 1) % 4 &&
+				    (SFCurrentCode[playerNum_-1][temp2] == 0 ||
+				     keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]-1] != temp))
 				{
-					// mark twiddles as cancelled/finished
 					SFCurrentCode[playerNum_-1][temp2] = 0;
 				}
-				else
-				{
-					// get next combo key
-					temp4 = keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]];
-
-					// correct key
-					if (temp4 == temp)
-					{
-						SFCurrentCode[playerNum_-1][temp2]++;
-
-						temp4 = keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]];
-						if (temp4 > 100 && temp4 <= 100 + SPECIAL_NUM)
-						{
-							SFCurrentCode[playerNum_-1][temp2] = 0;
-							SFExecuted[playerNum_-1] = temp4 - 100;
-						}
-					}
-					else
-					{
-						if ((temp != 9) &&
-						    (temp4 - 1) % 4 != (temp - 1) % 4 &&
-						    (SFCurrentCode[playerNum_-1][temp2] == 0 ||
-						     keyboardCombos[temp5-1][SFCurrentCode[playerNum_-1][temp2]-1] != temp))
-						{
-							SFCurrentCode[playerNum_-1][temp2] = 0;
-						}
-					}
-				}
 			}
 		}
-
 	}
+}
+
+/* The one-pixel target JE_SFCodes reads a movement intent as: a diagonal collapses to its dominant
+ * axis, ties to the vertical, the rule rb_fill_tuple applies before intent goes on the wire. dx and
+ * dy are positive right and down, and the target sits on the opposite side. See doc/notes.md,
+ * "Twiddles". */
+void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y)
+{
+	if (abs(dx) > abs(dy))
+		dy = 0;
+	else if (dy != 0)
+		dx = 0;
+
+	*out_x = px - (dx > 0 ? 1 : dx < 0 ? -1 : 0);
+	*out_y = py - (dy > 0 ? 1 : dy < 0 ? -1 : 0);
 }
 
 // A credits row is a blank spacer when it's the lone "." marker (or empty); the same test the
@@ -9298,8 +9315,9 @@ redo:
 			                 : (linkIntent & RB_MOVE_LEFT) ? -1 : 0;
 			const int diry = (linkIntent & RB_MOVE_DOWN) ? 1
 			                 : (linkIntent & RB_MOVE_UP) ? -1 : 0;
-			JE_SFCodes(playerNum_, this_player->x, this_player->y,
-			           this_player->x - dirx, this_player->y - diry);
+			int tx, ty;
+			SF_twiddleTarget(this_player->x, this_player->y, dirx, diry, &tx, &ty);
+			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);
 		}
 		else if (isNetworkGame)
 		{
@@ -9348,19 +9366,23 @@ redo:
 			if (mouseXC < 0) --dirx; else if (mouseXC > 0) ++dirx;  // analog stick (accumulated above;
 			if (mouseYC < 0) --diry; else if (mouseYC > 0) ++diry;  //   mouseYC already flipped if inverted)
 
-			// left => target is to the ship's right (PX_ < mouseX_) etc.; matches the
-			// original "ship leads toward the target" sign the detector expects.
-			int tx = (int)this_player->x - (dirx > 0 ? 1 : dirx < 0 ? -1 : 0);
-			int ty = (int)this_player->y - (diry > 0 ? 1 : diry < 0 ? -1 : 0);
+			int tx, ty;
+			SF_twiddleTarget(this_player->x, this_player->y, dirx, diry, &tx, &ty);
 			if (rollback_selftest_active())
 				rollback_st_record_sf(playerNum_ - 1, (Sint16)tx, (Sint16)ty);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);
 		}
 		else
 		{
+			// Classic movement: the tick's displacement is the intent, the same quantity the
+			// wire tuple measures.
+			int tx, ty;
+			SF_twiddleTarget(this_player->x, this_player->y,
+			               (int)this_player->x - (int)*mouseX_,
+			               (int)this_player->y - (int)*mouseY_, &tx, &ty);
 			if (rollback_selftest_active() && !rollback_resim)
-				rollback_st_record_sf(playerNum_ - 1, (Sint16)*mouseX_, (Sint16)*mouseY_);
-			JE_SFCodes(playerNum_, this_player->x, this_player->y, *mouseX_, *mouseY_);
+				rollback_st_record_sf(playerNum_ - 1, (Sint16)tx, (Sint16)ty);
+			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);
 		}
 
 		if (moveOk)

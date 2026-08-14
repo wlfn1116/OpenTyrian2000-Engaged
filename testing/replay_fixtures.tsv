@@ -1,4 +1,9 @@
 # demo  verified_ticks  canonical_registered_state_fnv1a
+# Regenerated 2026-08-14, for a snapshot-shape change with no simulation change behind it: the
+# twiddle cooldown (vz.twiddleWait) became one per ship, so a registry scalar became a two-element
+# array and the hashed buffer grew two bytes. Verified by registering only element [0] under its
+# old name and size, every other change in the same commit kept: all three hashes came back at the
+# previous line's values, so nothing in the new ship coverage or twiddle pacing moves the demos.
 # Regenerated 2026-08-10, for a real simulation change: a trailing large sidekick fires from
 # SIDEKICK_TRAIL_SHOT_Y below its position, and all three demos fly a Companion Ship Gerund in the
 # left slot, so its shots start seven pixels lower and connect on different ticks. Verified to be
@@ -19,6 +24,6 @@
 #    sizeof and the layout hash do not move, but the fields after it shift a byte and demo 1's
 #    hashed state moves with them. Verified by building with the field declared and never
 #    assigned: demo 1 still hashes dbd7383e, so the shift alone accounts for it.
-1 180 4fbe077f
-2 180 166e7d4a
-3 180 2d71a4f7
+1 180 35b17167
+2 180 6657771a
+3 180 e140f5af

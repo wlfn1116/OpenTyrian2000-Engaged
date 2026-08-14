@@ -3866,6 +3866,7 @@ start_level_first:
 
 	memset(SFCurrentCode,    0, sizeof(SFCurrentCode));
 	memset(SFExecuted,       0, sizeof(SFExecuted));
+	JE_resetTwiddleClocks();
 
 	zinglonDuration = 0;
 	specialWait = 0;

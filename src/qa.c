@@ -967,6 +967,115 @@ static void qa_test_course_reroll(void)
 	       samples, changed, widened);
 }
 
+static bool qa_slate_carries(Uint64 bits)
+{
+	for (int i = 0; i < endlessCourseCnt; ++i)
+		if (endlessCourseMod[i] & bits)
+			return true;
+	return false;
+}
+
+/* The chart is derived on each machine rather than sent, so both must build the same slate from the
+ * same run state. Anything seat-local leaking into generation shows up here as a hash mismatch. */
+static void qa_test_course_seat_parity(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedHost = network_is_host;
+	const uint savedThis = thisPlayerNum;
+	const uint savedHostNum = networkHostPlayerNum;
+	const bool savedCoop = coopEndlessMode, savedTwo = twoPlayerMode;
+	const EndlessCourseChooser savedChooser = endlessCourseChooser;
+
+	static const EndlessCourseChooser choosers[] = {
+		ENDLESS_PICK_HOST, ENDLESS_PICK_GUEST, ENDLESS_PICK_COINFLIP,
+	};
+	unsigned compared = 0;
+	bool agree = true;
+
+	for (unsigned c = 0; c < COUNTOF(choosers); ++c)
+	{
+		for (unsigned s = 0; s < 24; ++s)
+		{
+			watchdog_heartbeat();
+			char seed[ENDLESS_SEED_MAXLEN];
+			snprintf(seed, sizeof(seed), "qa-seat-%08x", (unsigned)((c * 24 + s) * 2654435761u));
+			const int depth = 1 + (int)(s * 6);   // spans the flat surface, the ramp, and the cap
+
+			Uint32 want = 0;
+			for (uint machine = 1; machine <= 2; ++machine)
+			{
+				isNetworkGame = true;
+				coopEndlessMode = true;
+				twoPlayerMode = true;
+				networkHostPlayerNum = 1;
+				thisPlayerNum = machine;
+				network_is_host = (machine == 1);
+				endlessCourseChooser = choosers[c];
+
+				qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+				endlessChartVisit();
+				if (machine == 1)
+					want = qa_slate_hash();
+				else if (qa_slate_hash() != want)
+					agree = false;
+			}
+			++compared;
+		}
+	}
+
+	isNetworkGame = savedNet;
+	network_is_host = savedHost;
+	thisPlayerNum = savedThis;
+	networkHostPlayerNum = savedHostNum;
+	coopEndlessMode = savedCoop;
+	twoPlayerMode = savedTwo;
+	endlessCourseChooser = savedChooser;
+
+	qa_check(agree, "both machines derive the same chart from the same run state");
+	printf("# chart parity: %u seed and chooser cases compared across both seats\n", compared);
+}
+
+/* A reroll re-places the scheduled signature sectors along with everything else, so it can be spent
+ * to leave a zone that offered one. */
+static void qa_test_course_reroll_dodge(void)
+{
+	// Bits only the scheduled rows deal. SLUGGISH is excluded: it is also a theme signature.
+	const Uint64 scheduled = ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION | ENDLESS_MOD_WARP
+	                       | ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_HOMING | ENDLESS_MOD_KAMIKAZE
+	                       | ENDLESS_MOD_DEADGEN | ENDLESS_MOD_OVERHEAT;
+	unsigned offered = 0, dodged = 0;
+
+	for (unsigned s = 0; s < 400; ++s)
+	{
+		watchdog_heartbeat();
+		const int depth = 3 + (int)(s % 90);
+		if (endlessMilestoneKindOfZone(depth + 1))
+			continue;   // a milestone slate deals its own modifiers over the injected ones
+
+		char seed[ENDLESS_SEED_MAXLEN];
+		snprintf(seed, sizeof(seed), "qa-dodge-%08x", (unsigned)(s * 2654435761u));
+		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
+		endlessPerkSetOwned(PERK_RADAR, 1);
+		endlessChartVisit();
+		if (!qa_slate_carries(scheduled))
+			continue;
+
+		++offered;
+		endlessCourseReroll();
+		if (!qa_slate_carries(scheduled))
+			++dodged;
+	}
+
+	endlessPerkSetOwned(PERK_RADAR, 0);
+	endlessChartRerolls = 0;  // leave the phase salts where the tests after this one expect them
+
+	qa_check(offered > 40, "the dodge sample saw enough charts carrying a scheduled sector");
+	qa_check(dodged * 2 > offered,
+	         "a reroll clears the scheduled sector from most charts that carried one");
+	printf("# reroll dodge: %u charts carried a scheduled sector, %u cleared it\n",
+	       offered, dodged);
+}
+
 static void qa_test_perk_registry(void)
 {
 	const int count = endlessPerkCount();
@@ -4128,6 +4237,7 @@ static void qa_fire_twiddle(JE_byte pwr, uint *armor, uint *shield)
 	flareStart = false;
 	zinglonDuration = 0;
 	astralDuration = 0;
+	JE_resetTwiddleClocks();
 	JE_doSpecialShot(1, armor, shield);
 }
 
@@ -4241,6 +4351,298 @@ static void qa_test_twiddle_charges(void)
 	VGAScreen = savedVGA;
 }
 
+/* One twiddle keystroke through the real detector. The codes are the keyboardCombos alphabet:
+ * 1..4 are UP/DOWN/LEFT/RIGHT, 5..8 the same four with fire held, 9 everything released. The
+ * detector reads a direction as the gap between where the ship is and where it came from, so each
+ * code becomes a one-pixel offset. */
+static void qa_twiddle_step(JE_byte playerNum, JE_byte code)
+{
+	enum { PX = 100, PY = 100 };
+	const bool withFire = (code >= 5 && code <= 8);
+	const JE_byte dir = withFire ? (JE_byte)(code - 4) : code;
+	int mx = PX, my = PY;
+
+	button[0] = withFire;
+
+	if (dir == 1)
+		my = PY + 1;  // up
+	else if (dir == 2)
+		my = PY - 1;  // down
+	else if (dir == 3)
+		mx = PX + 1;  // left
+	else if (dir == 4)
+		mx = PX - 1;  // right
+	// any other code is 9, which holds nothing at all
+
+	JE_SFCodes(playerNum, PX, PY, mx, my);
+}
+
+// Perform one whole combo row and report the special it executed (0 if the ship refused it).
+static JE_byte qa_perform_twiddle(JE_byte playerNum, JE_byte comboRow)
+{
+	memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
+	SFExecuted[playerNum - 1] = 0;
+
+	for (unsigned k = 0; k < COUNTOF(keyboardCombos[0]); ++k)
+	{
+		const JE_byte code = keyboardCombos[comboRow][k];
+		if (code == 0 || code > 9)  // 0 pads the row, >100 is the terminator the detector consumes
+			break;
+		qa_twiddle_step(playerNum, code);
+	}
+
+	return SFExecuted[playerNum - 1];
+}
+
+/* Every ship reaches the twiddles its combo row lists, for either seat, and a ship with no row of
+ * its own reaches none without reading past the table. */
+static void qa_test_twiddle_ships(void)
+{
+	const JE_boolean savedSuper = superTyrian;
+	const JE_boolean savedTwo = twoPlayerMode;
+	const JE_boolean savedCoop = coopCampaignMode;
+	const JE_boolean savedCoopEndless = coopEndlessMode;
+	const JE_boolean savedSep = arcadeSeparateMode;
+	const Player saved0 = player[0], saved1 = player[1];
+	JE_byte savedCode[2][21];
+	JE_byte savedExec[2];
+	bool savedButton[4];
+	memcpy(savedCode, SFCurrentCode, sizeof(savedCode));
+	memcpy(savedExec, SFExecuted, sizeof(savedExec));
+	memcpy(savedButton, button, sizeof(savedButton));
+
+	superTyrian = false;
+	twoPlayerMode = false;
+	coopCampaignMode = false;
+	coopEndlessMode = false;
+	arcadeSeparateMode = false;
+
+	bool everyRow = true, everySpecial = true;
+	unsigned rowsChecked = 0;
+	for (uint ship = 1; ship <= SHIP_NUM; ++ship)
+	{
+		player[0].items.ship = (Uint8)ship;
+		for (unsigned slot = 0; slot < COUNTOF(shipCombos[0]); ++slot)
+		{
+			const JE_byte row = shipCombos[ship][slot];
+			if (row == 0)
+				continue;  // that slot is empty for this ship
+
+			++rowsChecked;
+			const JE_byte fired = qa_perform_twiddle(1, (JE_byte)(row - 1));
+			everyRow &= fired != 0;
+			everySpecial &= fired <= SPECIAL_NUM;
+		}
+	}
+	// The floor guards against a loop that visits nothing; the table lists 34 rows today.
+	qa_check(rowsChecked >= 30 && everyRow && everySpecial,
+	         "every ship performs each twiddle its combo row lists");
+
+	// The last two rows the table carries, checked by name so a bound that shortens names itself.
+	player[0].items.ship = 15;  // Red Dragon
+	const JE_byte dragon = qa_perform_twiddle(1, (JE_byte)(shipCombos[15][0] - 1));
+	player[0].items.ship = 16;  // Gencore II
+	const JE_byte gencore = qa_perform_twiddle(1, (JE_byte)(shipCombos[16][0] - 1));
+	qa_check(dragon != 0 && gencore != 0,
+	         "the last two ships in the table twiddle like the rest");
+
+	// A shipedit "extra" ship has no row of its own, so it reaches no twiddle at all.
+	player[0].items.ship = 91;
+	qa_check(qa_perform_twiddle(1, 0) == 0 && qa_perform_twiddle(1, 25) == 0,
+	         "a ship outside the combo table has no twiddles");
+
+	/* Seat two. The linked pair's rear half has no ship of its own and twiddles off row 0; every
+	 * mode where it flies its own ship uses that ship's row. */
+	twoPlayerMode = true;
+	player[1].items.ship = 12;  // Nort Ship: seeker bombs, protron field, post-it
+	const JE_byte linked = qa_perform_twiddle(2, (JE_byte)(shipCombos[0][0] - 1));
+	const JE_byte linkedOwn = qa_perform_twiddle(2, (JE_byte)(shipCombos[12][0] - 1));
+	coopCampaignMode = true;
+	const JE_byte coopOwn = qa_perform_twiddle(2, (JE_byte)(shipCombos[12][0] - 1));
+	qa_check(linked != 0 && linkedOwn == 0 && coopOwn != 0,
+	         "player two twiddles off the shared row when linked and off its own ship in co-op");
+
+	memcpy(button, savedButton, sizeof(button));
+	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
+	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
+	player[0] = saved0;
+	player[1] = saved1;
+	arcadeSeparateMode = savedSep;
+	coopEndlessMode = savedCoopEndless;
+	coopCampaignMode = savedCoop;
+	twoPlayerMode = savedTwo;
+	superTyrian = savedSuper;
+}
+
+/* Every input path resolves a flick the same way. The detector ignores a tick offering it two
+ * directions, so a diagonal collapses to one before it arrives: dominant axis, ties to the
+ * vertical, which is what the wire tuple sends. */
+static void qa_test_twiddle_diagonals(void)
+{
+	enum { PX = 100, PY = 100 };
+
+	// One entry per shape a flick can take, with the target the collapse has to produce.
+	static const struct {
+		int dx, dy;
+		int wantX, wantY;
+	} flicks[] = {
+		{  0,  0, PX,     PY     },  // standing still
+		{  3,  0, PX - 1, PY     },  // right
+		{ -3,  0, PX + 1, PY     },  // left
+		{  0,  3, PX,     PY - 1 },  // down
+		{  0, -3, PX,     PY + 1 },  // up
+		{  3,  1, PX - 1, PY     },  // mostly right
+		{  1,  3, PX,     PY - 1 },  // mostly down
+		{  5, -2, PX - 1, PY     },  // mostly right, drifting up
+		{ -1, -4, PX,     PY + 1 },  // mostly up, drifting left
+		{  2,  2, PX,     PY - 1 },  // a clean diagonal ties to the vertical
+		{ -2,  2, PX,     PY - 1 },
+		{ -2, -2, PX,     PY + 1 },
+	};
+
+	bool collapsed = true, single = true;
+	for (unsigned f = 0; f < COUNTOF(flicks); ++f)
+	{
+		int tx = 0, ty = 0;
+		SF_twiddleTarget(PX, PY, flicks[f].dx, flicks[f].dy, &tx, &ty);
+		collapsed &= tx == flicks[f].wantX && ty == flicks[f].wantY;
+		single &= (tx == PX) || (ty == PY);  // never both axes at once
+	}
+	qa_check(collapsed, "a flick resolves to its dominant axis, ties to the vertical");
+	qa_check(single, "...and never reaches the detector as two directions");
+
+	// A twiddle performed while the ship drifts sideways still registers.
+	const Player saved0 = player[0];
+	JE_byte savedCode[2][21];
+	JE_byte savedExec[2];
+	bool savedButton[4];
+	memcpy(savedCode, SFCurrentCode, sizeof(savedCode));
+	memcpy(savedExec, SFExecuted, sizeof(savedExec));
+	memcpy(savedButton, button, sizeof(savedButton));
+
+	// Gencore Phoenix's first combo row is Ice Blast: DOWN, then UP with fire held.
+	enum { ICE_BLAST_SPECIAL = 42 };
+	player[0].items.ship = 3;
+	memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
+	SFExecuted[0] = 0;
+
+	static const struct {
+		int dx, dy;
+		bool fire;
+	} iceBlastAdrift[] = {
+		{ -1,  3, false },  // down, drifting left
+		{  1, -3, true  },  // up and fire, drifting right
+	};
+	for (unsigned s = 0; s < COUNTOF(iceBlastAdrift); ++s)
+	{
+		int tx = 0, ty = 0;
+		button[0] = iceBlastAdrift[s].fire;
+		SF_twiddleTarget(PX, PY, iceBlastAdrift[s].dx, iceBlastAdrift[s].dy, &tx, &ty);
+		JE_SFCodes(1, PX, PY, tx, ty);
+	}
+	qa_check(SFExecuted[0] == ICE_BLAST_SPECIAL,
+	         "a twiddle performed while drifting sideways still fires");
+
+	memcpy(button, savedButton, sizeof(button));
+	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
+	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
+	player[0] = saved0;
+}
+
+/* A twiddle keeps its own clock. SFExecuted is cleared at the top of every tick, so a twiddle the
+ * equipped special's recharge turns away is discarded outright, and with an autofiring special
+ * that recharge is running nearly every tick. Firing a twiddle must likewise leave the equipped
+ * special's own recharge where it found it. */
+static void qa_test_twiddle_cooldown(void)
+{
+	if (VGAScreenSeg == NULL || game_screen == NULL)
+		return;  // the charge path repaints the real shield and armor gauges
+
+	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+	const JE_byte savedPwr = special[SPECIAL_NUM].pwr;
+	const JE_byte savedExec = SFExecuted[0];
+	const JE_byte savedRepeat = shotRepeat[SHOT_SPECIAL];
+	const JE_byte savedTemp2 = temp2;
+	const JE_boolean savedAuto = autoFireSpecial;
+	const JE_boolean savedDbgAuto = debugAutofireTwiddle;
+	const JE_boolean savedTrigger = debugTwiddleTrigger;
+	const JE_byte savedDbgTwiddle = debugTwiddleSpecial;
+	const JE_boolean savedEndless = endlessMode;
+	const Player saved0 = player[0];
+	SDL_Surface *const savedVGA = VGAScreen;
+
+	// The scratch slot takes an inert type: the effect switch has no case 0, so only the charge
+	// runs. Clearing the equipped special and the debug twiddle keeps every other fire gate shut,
+	// and stock (non-endless) charges keep the deducted amounts exact.
+	special[SPECIAL_NUM].stype = 0;
+	special[SPECIAL_NUM].pwr = 20;  // a fixed shield charge
+	player[0].items.special = 0;
+	autoFireSpecial = false;
+	debugAutofireTwiddle = false;
+	debugTwiddleTrigger = false;
+	debugTwiddleSpecial = 0;
+	endlessMode = false;
+	endlessSetFxPlayer(0);
+
+	// The equipped special is deep in a recharge. The twiddle must still go off.
+	uint armor = 30, shield = 50;
+	SFExecuted[0] = SPECIAL_NUM;
+	specialWait = 0;
+	flareDuration = 0;
+	flareStart = false;
+	zinglonDuration = 0;
+	astralDuration = 0;
+	JE_resetTwiddleClocks();
+	shotRepeat[SHOT_SPECIAL] = 90;
+	JE_doSpecialShot(1, &armor, &shield);
+	qa_check(shield == 30, "a twiddle fires while the equipped special is recharging");
+	qa_check(shotRepeat[SHOT_SPECIAL] == 89,
+	         "...and leaves the equipped special's recharge alone, bar the tick it just spent");
+
+	// Its own clock then paces it: an immediate repeat is refused, and it comes back after.
+	shield = 50;
+	SFExecuted[0] = SPECIAL_NUM;
+	JE_doSpecialShot(1, &armor, &shield);
+	qa_check(shield == 50, "a second twiddle inside the cooldown is refused");
+
+	for (int tick = 0; tick < TWIDDLE_MIN_WAIT; ++tick)
+	{
+		SFExecuted[0] = 0;
+		JE_doSpecialShot(1, &armor, &shield);
+	}
+	SFExecuted[0] = SPECIAL_NUM;
+	JE_doSpecialShot(1, &armor, &shield);
+	qa_check(shield == 30, "...and fires again once that cooldown runs out");
+
+	// An unaffordable charge takes nothing and leaves the bar it could not pay from intact.
+	shield = 4;
+	special[SPECIAL_NUM].pwr = 98;  // the whole shield bar
+	SFExecuted[0] = SPECIAL_NUM;
+	JE_resetTwiddleClocks();
+	JE_doSpecialShot(1, &armor, &shield);
+	const bool spentWhenPaid = shield == 0;
+	shield = 3;
+	SFExecuted[0] = SPECIAL_NUM;
+	JE_resetTwiddleClocks();
+	JE_doSpecialShot(1, &armor, &shield);
+	qa_check(spentWhenPaid && shield == 3,
+	         "a twiddle nobody can pay for charges nothing at all");
+
+	VGAScreen = savedVGA;
+	player[0] = saved0;
+	endlessMode = savedEndless;
+	debugTwiddleSpecial = savedDbgTwiddle;
+	debugTwiddleTrigger = savedTrigger;
+	debugAutofireTwiddle = savedDbgAuto;
+	autoFireSpecial = savedAuto;
+	temp2 = savedTemp2;
+	shotRepeat[SHOT_SPECIAL] = savedRepeat;
+	SFExecuted[0] = savedExec;
+	special[SPECIAL_NUM].pwr = savedPwr;
+	special[SPECIAL_NUM].stype = savedStype;
+	JE_resetTwiddleClocks();
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -4326,6 +4728,9 @@ int qa_run_unit_suite(void)
 	qa_test_flying_punch_bolt();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
+	qa_test_twiddle_ships();
+	qa_test_twiddle_diagonals();
+	qa_test_twiddle_cooldown();
 	qa_test_twiddle_charges();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
@@ -4354,6 +4759,8 @@ int qa_run_unit_suite(void)
 	qa_test_course_base_rule();
 	qa_test_course_shuffle_rule();
 	qa_test_course_reroll();
+	qa_test_course_seat_parity();
+	qa_test_course_reroll_dodge();
 	qa_test_item_data_settings();
 	qa_test_firing_sound_levels();
 	qa_test_enhancement_presets();  // keep last: it leaves the enhancement settings where it put them

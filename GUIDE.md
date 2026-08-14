@@ -356,6 +356,29 @@ has reached under any rule; selecting a mode lists the four Base Level rules
 behind it, and selecting a rule breaks that down by difficulty. Records are
 erased on that last list, behind a confirmation.
 
+## Twiddles
+
+A twiddle is a short sequence of directions, some of them held with fire, that
+sets off a special weapon you do not have equipped. Each ship knows its own
+twiddles, and three ships know none at all: The Stalker 21.126, PeteZoomer and
+Rum Bottle. SuperTyrian's ship knows every twiddle in the game.
+
+A flick that comes out slightly diagonal still counts as the direction you
+leaned hardest in, so a twiddle performed while drifting sideways registers. An
+exact diagonal counts as its up or down half.
+
+A twiddle charges shield or armour, and it will not go off unless you can pay
+the whole charge. It runs on its own recharge: an equipped special that is still
+recharging never blocks a twiddle, and setting a twiddle off never delays your
+equipped special. The one thing that holds a twiddle back is a special that
+stays lit for a while, such as Minefield or Super Bomb: while one of those is
+running, nothing else can start.
+
+In the linked two-player pair, player two flies the Dragonwing's rear bay rather
+than a ship of its own and uses the shared twiddle set. In online co-op and
+Separate Online Arcade each player has a whole ship, so each uses that ship's
+own twiddles.
+
 ## Arcade tweaks
 
 Open **Setup > Enhancements > Gameplay > Arcade Modes**. All three settings are

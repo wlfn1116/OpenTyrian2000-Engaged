@@ -211,7 +211,7 @@ static int endlessDangerRamp(void)
 	return (s > ENDLESS_DANGER_RAMP_FULL_SCALE) ? ENDLESS_DANGER_RAMP_FULL_SCALE : s;
 }
 
-// Shrink rare-event divisors with depth; brutal rows stop at the midpoint's 2x rate.
+// Shrink a rare row's window with depth; brutal rows stop at the midpoint's 2x rate.
 static int endlessDangerRareDivEx(int base, bool brutal)
 {
 	int ramp = endlessDangerRamp();
@@ -221,55 +221,73 @@ static int endlessDangerRareDivEx(int base, bool brutal)
 	return (d < 1) ? 1 : d;
 }
 
-// Rare signatures overwrite random non-clean slots in table order.
-// Rows draw from a filtered theme pool or use a fixed modifier set.
+/* Rare signatures overwrite random non-clean routes. Every row is scheduled: one sector per window
+ * of zones, at a position inside the window derived from the seed, so a run cannot miss a signature
+ * for a whole window. Rows draw from a filtered theme pool or use a fixed modifier set.
+ * See doc/notes.md, "Modifiers and courses". */
 typedef struct {
-	int                 oneInN;   // base rarity: 1 in this many visits, before the danger ramp
+	int                 window;   // zones per guaranteed sector, before the deep ramp adds more
+	Uint64              salt;     // phase salt block, unique across every structural stream
 	const EndlessTheme *pool;     // pool to draw the sector from; NULL = deal `mods` instead
 	unsigned            poolN;
 	Uint64              must;     // pool entries must carry all of these bits...
 	Uint64              forbid;   // ...and none of these
 	Uint64              mods;     // the fixed bitset, when there is no pool
 	bool                brutal;   // true = the deep ramp on this row is capped at 2x (never routine)
+	bool                guarded;  // true = no visit flavor may erase this row's sector
 } EndlessRareInjection;
 
-#define RARE_FROM(n, tbl, hard)               { (n), (tbl), COUNTOF(tbl), 0, 0, 0, (hard) }
-#define RARE_PICK(n, tbl, must, forbid, hard) { (n), (tbl), COUNTOF(tbl), (must), (forbid), 0, (hard) }
-#define RARE_FIXED(n, bits, hard)             { (n), NULL, 0, 0, 0, (bits), (hard) }
+/* One salt block per row, all below ENDLESS_CHART_REROLL_SALT so no reroll count can alias one. A
+ * block holds a run's window indices at ENDLESS_SCHED_STRIDE apart, which also caps the sub-ranges
+ * one window can carry. A row's block number must stay unique and must not be reused. */
+#define ENDLESS_SCHED_SALT(row) (0x80000000ULL + (Uint64)(row) * 0x01000000ULL)
+#define ENDLESS_SCHED_STRIDE    64
+
+// The reroll count sits above every 32-bit phase constant, so a rerolled visit salts each
+// structural phase it owns, the scheduled sectors included.
+#define ENDLESS_CHART_REROLL_SALT 0x100000000ULL
+
+#define RARE_SCHED(row, w, tbl, hard) \
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), 0, 0, 0, (hard), false }
+#define RARE_PICK(row, w, tbl, must, forbid, hard) \
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, (hard), false }
+#define RARE_GUARD(row, w, tbl, must, forbid, hard) \
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, (hard), true }
+#define RARE_FIXED(row, w, bits, hard) \
+	{ (w), ENDLESS_SCHED_SALT(row), NULL, 0, 0, 0, (bits), (hard), false }
 static const EndlessRareInjection endlessRareInjections[] = {
-	// Homing is the mild tier and does not add ram damage. Its chance is capped.
-	RARE_FROM(26, endlessHomingThemes, true),
+	// Homing is the mild tier and does not add ram damage.
+	RARE_SCHED(0, 26, endlessHomingThemes, true),
 	// Kamikaze is the moderate homing tier; the stronger rammer is a Rampage gamble outcome.
-	// This row follows Homing so the harder tier wins a slot collision.
-	RARE_FROM(55, endlessKamikazeThemes, true),
+	RARE_SCHED(1, 55, endlessKamikazeThemes, true),
 	// Overload: Overclock cranked way up.
-	RARE_FROM(17, endlessOverloadThemes, true),
+	RARE_SCHED(2, 17, endlessOverloadThemes, true),
 	// Warp Speed is a separate high-scroll threat.
-	RARE_FIXED(15, ENDLESS_MOD_WARP, true),
+	RARE_FIXED(3, 15, ENDLESS_MOD_WARP, true),
 	// Hostile Turbodrive and Overdrive turn kill streaks into jammed guns and
-	// for Evil Overdrive weaker shots too. One roll feeds all three mirrors, so the base rarity is
-	// the frequency of "some evil sector"; each individual bit lands at about a third of it.
-	RARE_FROM(12, endlessEvilThemes, true),
+	// for Evil Overdrive weaker shots too. One schedule feeds all three mirrors, so the window is
+	// the cadence of "some evil sector"; each individual bit lands at about a third of it.
+	RARE_SCHED(4, 12, endlessEvilThemes, true),
 	// Reactor Redline quickens guns on kills while applying Overheat damage.
-	RARE_FROM(50, endlessRedlineThemes, true),
+	RARE_SCHED(5, 50, endlessRedlineThemes, true),
 	// Tar Pit (SLUGGISH + GRAVITY): the ship crawls WHILE dragged down. Brutal but always flyable
 	// (endlessGravityDrift slows the pull with the ship), so this one keeps the full ramp. SLUGGISH
 	// stays out of the combinable pool, so this is the sole source of the pairing.
-	RARE_FROM(28, endlessSluggishThemes, false),
+	RARE_SCHED(6, 28, endlessSluggishThemes, false),
 	// Apex Swarm (every enemy elite), from the Apex-tier rare themes: bare Apex, or Apex plus one
-	// extra danger. Late enough to override a boon slot.
-	RARE_PICK(15, endlessRareThemes, ENDLESS_MOD_APEX, ENDLESS_MOD_LEGION, true),
+	// extra danger. Guarded, so no visit flavor can erase the zone it was scheduled for.
+	RARE_GUARD(7, 20, endlessRareThemes, ENDLESS_MOD_APEX, ENDLESS_MOD_LEGION, true),
 	// Legion makes every enemy a champion and stays rarer than the Apex row above.
-	RARE_PICK(26, endlessRareThemes, ENDLESS_MOD_LEGION, 0, true),
+	RARE_GUARD(8, 34, endlessRareThemes, ENDLESS_MOD_LEGION, 0, true),
 	// Cataclysm combines several dangers without an elite tier.
 	// The rare themes carrying neither Apex nor Legion (the 5+-danger pure combos).
-	RARE_PICK(50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
-	// Dead Generator disables shield recharge and starves the main gun. It is the
-	// rarest roll and claims the slot when selected.
-	RARE_FROM(70, endlessDeadgenThemes, true),
+	RARE_PICK(9, 50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
+	// Dead Generator disables shield recharge and starves the main gun.
+	RARE_SCHED(10, 64, endlessDeadgenThemes, true),
 };
-#undef RARE_FROM
+#undef RARE_SCHED
 #undef RARE_PICK
+#undef RARE_GUARD
 #undef RARE_FIXED
 
 // Replace Elite Pack once the natural elite share exceeds its 50% cap.
@@ -818,20 +836,68 @@ static void endlessGraftGambits(int dangerRamp)
 	}
 }
 
-// Roll rare injections in table order; the last successful row wins a contested slot.
-static void endlessInjectRareSectors(void)
+/* Whether this row's sector belongs on the visit being charted. The answer is a pure function of
+ * (seed, zone, reroll count) and spends no structural draw. A Radar reroll re-places the window's
+ * sector along with everything else, so it can be spent to leave a zone that offered one, at the
+ * cost of that window's guarantee.
+ *
+ * The danger ramp adds sub-ranges inside the window rather than shrinking the window itself. A
+ * shrinking window moves its own boundaries as the ramp climbs, which degenerates back into a
+ * per-zone roll and loses the bounded gap the schedule exists to provide. */
+static bool endlessRareSectorDue(const EndlessRareInjection *inj)
 {
+	const int base = inj->window;
+	if (base <= 0)
+		return false;
+
+	const int zone = endlessDifficultyZone() - 1;   // zero-based; window 0 is zones 1..base
+	const int index = zone / base;
+	const int offset = zone - index * base;
+
+	int slots = base / endlessDangerRareDivEx(base, inj->brutal);
+	if (slots < 1)
+		slots = 1;
+	if (slots > ENDLESS_SCHED_STRIDE)
+		slots = ENDLESS_SCHED_STRIDE;
+
+	for (int sub = 0; sub < slots; ++sub)
+	{
+		const int subLo = sub * base / slots;
+		const int subHi = (sub + 1) * base / slots;
+		if (offset < subLo || offset >= subHi)
+			continue;   // past here subHi is above subLo, so the modulo below is safe
+		const Uint64 phase = (Uint64)index * ENDLESS_SCHED_STRIDE + (Uint64)sub
+		                     + ENDLESS_CHART_REROLL_SALT * endlessChartRerolls;
+		const Uint64 pick = endlessSplitMixSeed(inj->salt + phase);
+		return offset == subLo + (int)(pick % (unsigned)(subHi - subLo));
+	}
+	return false;
+}
+
+/* Place every sector due on this visit, in table order, each on its own route so no row can erase
+ * another's guarantee. A slate too short to hold them all falls back to overwriting. Returns true
+ * when a guarded row placed one, which the visit flavors below must then leave alone. */
+static bool endlessInjectRareSectors(void)
+{
+	bool guarded = false;
+	Uint32 claimed = 0;
 	for (unsigned k = 0; k < COUNTOF(endlessRareInjections); ++k)
 	{
 		const EndlessRareInjection *inj = &endlessRareInjections[k];
-		if (endlessCourseCnt > 1 && (endlessRand() % endlessDangerRareDivEx(inj->oneInN, inj->brutal)) == 0)
-		{
-			const int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
-			endlessCourseMod[slot] = (inj->pool != NULL)
-				? endlessPickThemeMods(inj->pool, inj->poolN, inj->must, inj->forbid)
-				: inj->mods;
-		}
+		if (endlessCourseCnt <= 1 || !endlessRareSectorDue(inj))
+			continue;
+
+		int slot = 1 + endlessRand() % (endlessCourseCnt - 1);
+		for (int n = 1; n < endlessCourseCnt - 1 && (claimed & (1u << slot)) != 0; ++n)
+			slot = 1 + slot % (endlessCourseCnt - 1);
+		claimed |= 1u << slot;
+		guarded = guarded || inj->guarded;
+
+		endlessCourseMod[slot] = (inj->pool != NULL)
+			? endlessPickThemeMods(inj->pool, inj->poolN, inj->must, inj->forbid)
+			: inj->mods;
 	}
+	return guarded;
 }
 
 // Replace duplicate ordinary modifier sets with unused hostile themes.
@@ -1133,7 +1199,7 @@ void endlessGenerateCourses(void)
 	endlessWidenHostileCombos(dangerRamp);
 	endlessDealBoonCourse(dangerRamp);
 	endlessGraftGambits(dangerRamp);
-	endlessInjectRareSectors();
+	const bool guardedSector = endlessInjectRareSectors();
 	endlessDedupeCourseMods(idx);
 
 	// Rare whole-visit flavors are mutually exclusive.
@@ -1149,8 +1215,11 @@ void endlessGenerateCourses(void)
 	const bool gauntletRoll = ((int)(endlessRand() % 100) < gauntletPct);
 	const bool ambushRoll   = ((int)(endlessRand() % 100) < ambushPct);
 	// Milestones ignore visit flavors after rolling them so the seed stream remains aligned.
-	const bool doJackpot  = jackpotRoll && (endlessRunDepth > 0) && !milestone;
-	const bool doAmbush   = !doJackpot && ambushRoll && (endlessRunDepth > 0) && !milestone;
+	// Jackpot replaces every route and Ambush collapses the slate, so neither may run on a zone
+	// carrying a guarded sector; Gauntlet preserves existing hostile routes and is left alone.
+	const bool doJackpot  = jackpotRoll && (endlessRunDepth > 0) && !milestone && !guardedSector;
+	const bool doAmbush   = !doJackpot && ambushRoll && (endlessRunDepth > 0) && !milestone
+	                        && !guardedSector;
 	const bool doGauntlet = !doJackpot && !doAmbush && gauntletRoll && (endlessRunDepth > 0) && !milestone;
 
 	if (doJackpot)
@@ -1178,12 +1247,9 @@ void endlessGenerateCourses(void)
 	endlessNameCourseBaseLevels();  // cache each course's base-level name for the Radar perk (after the sort)
 }
 
-/* Salt for a depth-keyed structural phase: this chart, and the zone it charts. The visit's reroll
- * count is folded in above every 32-bit phase constant, so a rerolled chart brings its own levels,
- * modifiers and music, while an unrerolled visit keeps the salt its seed has always been played
- * on. */
-#define ENDLESS_CHART_REROLL_SALT 0x100000000ULL
-
+/* Salt for a depth-keyed structural phase: this chart, and the zone it charts. A rerolled chart
+ * brings its own levels, modifiers and music, while an unrerolled visit keeps the salt its seed has
+ * always been played on. */
 Uint64 endlessZonePhaseSalt(Uint64 phase)
 {
 	return (Uint64)endlessRunDepth * 2 + phase + ENDLESS_CHART_REROLL_SALT * endlessChartRerolls;

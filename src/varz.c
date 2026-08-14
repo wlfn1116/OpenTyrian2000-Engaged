@@ -981,10 +981,45 @@ static bool special_is_flare(JE_byte sidx)
 	return (st >= 5 && st <= 11) || st == 16;
 }
 
-// Debug twiddle autofire has separate flare ownership and pacing. File scope exposes it to rollback.
+/* A twiddle runs on its own clock and its own flare ownership, so the equipped special can never
+ * swallow one. twiddleWait is per ship; the flare pair describes the single live flare. File scope
+ * exposes them to rollback. */
 static JE_boolean flareFromTwiddle = false;
 static JE_word twiddleFlareShotWait = 0;
-static JE_word twiddleWait = 0;
+static JE_word twiddleWait[2] = { 0, 0 };
+
+// A level (or an endless zone) starts with both twiddle clocks idle and no twiddle owning a flare.
+void JE_resetTwiddleClocks(void)
+{
+	flareFromTwiddle = false;
+	twiddleFlareShotWait = 0;
+	twiddleWait[0] = twiddleWait[1] = 0;
+}
+
+/* Fire a special as a twiddle: the recharge lands on the twiddle's own clock, so neither it nor the
+ * equipped special can swallow the other, and a flare twiddle is paced by its flare instead.
+ * Zeroing shotRepeat[SHOT_SPECIAL] across the call isolates the fired special's own recharge. See
+ * doc/notes.md, "Twiddles". */
+static void twiddle_fire(JE_byte playerNum, uint slot, JE_byte specialType)
+{
+	const JE_byte equipped_wait = shotRepeat[SHOT_SPECIAL];
+	shotRepeat[SHOT_SPECIAL] = 0;
+
+	JE_specialComplete(playerNum, specialType);
+
+	if (special_is_flare(specialType))
+	{
+		flareFromTwiddle = true;
+		twiddleFlareShotWait = 0;
+		twiddleWait[slot] = 0;
+	}
+	else
+	{
+		twiddleWait[slot] = MAX(shotRepeat[SHOT_SPECIAL], TWIDDLE_MIN_WAIT);
+	}
+
+	shotRepeat[SHOT_SPECIAL] = equipped_wait;
+}
 
 void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 {
@@ -993,6 +1028,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	const int special_mouse_y = special_mouse_y_for(playerNum);
 
 	const uint special_player = (uint)(this_player - player);
+	const uint twiddle_slot = (playerNum >= 2) ? 1u : 0u;
 	specialFiredThisCall = false;
 
 	if (shotRepeat[SHOT_SPECIAL] > 0)
@@ -1003,18 +1039,28 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	{
 		specialWait--;
 	}
+	if (twiddleWait[twiddle_slot] > 0)
+	{
+		--twiddleWait[twiddle_slot];
+	}
 
 	// Sample readiness before either fire gate can spend it. The HUD uses this sample to show a
 	// special that becomes ready and fires within the same tick; flareDuration must match the gate.
 	const bool special_armed = shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0
 	                        && flareDuration == 0 && zinglonDuration < 2;
 
-	temp = SFExecuted[playerNum-1];
-	if (temp > 0 && shotRepeat[SHOT_SPECIAL] == 0 && flareDuration == 0)
+	/* A recognised twiddle lives for this tick only (JE_playerMovement clears SFExecuted at the top
+	 * of the next one), so refusing it here discards the input. It runs off twiddleWait, its own
+	 * clock, and collides with the equipped special only over a live flare, which no second flare
+	 * may stack onto. See doc/notes.md, "Twiddles". */
+	const JE_byte twiddle_special = SFExecuted[playerNum-1];
+	if (twiddle_special > 0 && twiddleWait[twiddle_slot] == 0
+	    && (flareDuration == 0 || !special_is_flare(twiddle_special)))
 	{
-		temp2 = special[temp].pwr;
+		temp2 = special[twiddle_special].pwr;
 
 		bool can_afford = true;
+		uint spend_shield = 0, spend_armor = 0;
 
 		/* Kinetic Converter perk (endless) discounts what every charge below deducts. temp2 keeps
 		 * the list price: JE_specialComplete reads it as the effect's magnitude, so a cheaper
@@ -1024,35 +1070,26 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		{
 			if (temp2 < 98)  // costs some shield
 			{
-				const uint paid = (uint)endlessPerkKineticTwiddleCost(temp2);
-				if (*shield >= paid)
-					*shield -= paid;
-				else
-					can_afford = false;
+				spend_shield = (uint)endlessPerkKineticTwiddleCost(temp2);
+				can_afford = *shield >= spend_shield;
 			}
 			else if (temp2 == 98)  // costs all shield
 			{
-				if (*shield < 4)
-					can_afford = false;
-				const uint paid = (uint)endlessPerkKineticTwiddleCost((int)*shield);
+				can_afford = *shield >= 4;
+				spend_shield = (uint)endlessPerkKineticTwiddleCost((int)*shield);
 				temp2 = *shield;
-				*shield -= paid;
 			}
 			else if (temp2 == 99)  // costs half shield
 			{
 				const uint stock_spend = *shield - *shield / 2;  // vanilla keeps the smaller half
-				const uint paid = (uint)endlessPerkKineticTwiddleCost((int)stock_spend);
+				spend_shield = (uint)endlessPerkKineticTwiddleCost((int)stock_spend);
 				temp2 = *shield / 2;
-				*shield -= paid;
 			}
 			else  // costs some armor
 			{
 				temp2 -= 100;
-				const uint paid = (uint)endlessPerkKineticTwiddleCost(temp2);
-				if (*armor > paid)
-					*armor -= paid;
-				else
-					can_afford = false;
+				spend_armor = (uint)endlessPerkKineticTwiddleCost(temp2);
+				can_afford = *armor > spend_armor;
 			}
 		}
 
@@ -1060,7 +1097,11 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		shotMultiPos[SHOT_SPECIAL2] = 0;
 
 		if (can_afford)
-			JE_specialComplete(playerNum, temp);
+		{
+			*shield -= spend_shield;
+			*armor -= spend_armor;
+			twiddle_fire(playerNum, twiddle_slot, twiddle_special);
+		}
 
 		SFExecuted[playerNum-1] = 0;
 
@@ -1106,50 +1147,29 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		JE_specialComplete(playerNum, this_player->items.special);
 	}
 
-	// Debug: force-fire the selected twiddle's special. Runs after the equipped
-	// special (which keeps priority) on its own cooldown (twiddleWait), ignores the
-	// shield/armor cost, and won't stack onto an active flare.
+	// Debug: force-fire the selected twiddle's special. Runs after the equipped special (which keeps
+	// priority) on the same clock a performed twiddle uses, ignores the shield/armor cost, and won't
+	// stack onto an active flare.
+	if (playerNum == 1)
 	{
-		if (playerNum == 1)
+		const bool want = debugTwiddleTrigger
+		               || (debugAutofireTwiddle && button[0] && twiddleWait[0] == 0);
+
+		if (want && debugTwiddleSpecial >= 1 && debugTwiddleSpecial <= SPECIAL_NUM &&
+		    flareDuration == 0)
 		{
-			if (twiddleWait > 0)
-				--twiddleWait;
+			debugTwiddleTrigger = false;
 
-			const bool want = debugTwiddleTrigger
-			               || (debugAutofireTwiddle && button[0] && twiddleWait == 0);
+			// JE_specialComplete reads global temp2 for its duration/effect maths;
+			// seed it like the cost path but without deducting, so it fires free.
+			temp2 = special[debugTwiddleSpecial].pwr;
+			if (temp2 == 98)        temp2 = *shield;
+			else if (temp2 == 99)   temp2 = *shield / 2;
+			else if (temp2 >= 100)  temp2 -= 100;
+			shotMultiPos[SHOT_SPECIAL] = 0;
+			shotMultiPos[SHOT_SPECIAL2] = 0;
 
-			if (want && debugTwiddleSpecial >= 1 && debugTwiddleSpecial <= SPECIAL_NUM &&
-			    flareDuration == 0)
-			{
-				debugTwiddleTrigger = false;
-
-				// JE_specialComplete reads global temp2 for its duration/effect maths;
-				// seed it like the cost path but without deducting, so it fires free.
-				temp2 = special[debugTwiddleSpecial].pwr;
-				if (temp2 == 98)        temp2 = *shield;
-				else if (temp2 == 99)   temp2 = *shield / 2;
-				else if (temp2 >= 100)  temp2 -= 100;
-				shotMultiPos[SHOT_SPECIAL] = 0;
-				shotMultiPos[SHOT_SPECIAL2] = 0;
-
-				const int savedSR = shotRepeat[SHOT_SPECIAL];
-				JE_specialComplete(playerNum, debugTwiddleSpecial);
-				if (flareDuration > 0)
-				{
-					// Flare twiddle: tag the flare as the twiddle's (equipped special keeps
-					// firing) and let the flare's own duration pace the re-fire.
-					flareFromTwiddle = true;
-					twiddleFlareShotWait = 0;
-					twiddleWait = 0;
-				}
-				else
-				{
-					twiddleWait = 14;  // instant twiddle: small cadence so it fires right off cooldown
-				}
-				// Don't let the twiddle's special disturb the EQUIPPED special's cooldown
-				// (the twiddle paces itself via twiddleWait / twiddleFlareShotWait).
-				shotRepeat[SHOT_SPECIAL] = savedSR;
-			}
+			twiddle_fire(playerNum, 0, debugTwiddleSpecial);
 		}
 	}
 
@@ -1250,8 +1270,12 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	else if (flareStart)
 	{
 		flareStart = false;
-		if (!flareFromTwiddle)  // twiddle flare paces itself; leave the equipped cooldown alone
-			shotRepeat[SHOT_SPECIAL] = linkToPlayer ? 15 : 200;
+		// The flare's tail charges whichever clock started it.
+		const JE_byte flare_wait = linkToPlayer ? 15 : 200;
+		if (flareFromTwiddle)
+			twiddleWait[twiddle_slot] = flare_wait;
+		else
+			shotRepeat[SHOT_SPECIAL] = flare_wait;
 		flareDuration = 0;
 		flareFromTwiddle = false;
 		twiddleFlareShotWait = 0;
@@ -2327,5 +2351,5 @@ void varz_register_rollback(void)
 {
 	rollback_register("vz.flareFromTwiddle",    &flareFromTwiddle, sizeof(flareFromTwiddle));
 	rollback_register("vz.twiddleFlareWait",    &twiddleFlareShotWait, sizeof(twiddleFlareShotWait));
-	rollback_register("vz.twiddleWait",         &twiddleWait, sizeof(twiddleWait));
+	rollback_register("vz.twiddleWait",         twiddleWait, sizeof(twiddleWait));
 }
