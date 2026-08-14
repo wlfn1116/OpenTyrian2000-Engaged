@@ -207,6 +207,11 @@ const Sprite2_array *JE_specialIconTop(JE_byte id, JE_word *gr);
 // shows as "Pearl Shot" while endless effects are active. Every other name is the loaded one.
 const char *JE_specialName(JE_byte id);
 
+// Display name of a weapon port. The endless shop pools every real port into both gun menus,
+// so the pairs that ship under one name (Protron, Multi-Cannon, Vulcan Cannon) are told apart
+// while in endless. Every other name is the loaded one.
+const char *JE_weaponPortName(JE_word id);
+
 // Refresh the "Ammo N" suffix on every ammo sidekick's shop name, so it shows the magazine the
 // player will actually fly with (the endless Ordnance Reserves perk grows it mid-run). Guarded
 // internally against no-op work, so the shop and JE_drawOptions can just call it.

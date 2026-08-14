@@ -2110,7 +2110,7 @@ void JE_itemScreen(void)
 						break;
 					case 2: /* front and rear weapon */
 					case 3:
-						strcpy(tempStr, weaponPort[temp].name);
+						strcpy(tempStr, JE_weaponPortName(temp));
 						break;
 					case 4: /* shields */
 						strcpy(tempStr, shields[temp].name);
@@ -5127,7 +5127,7 @@ void JE_genItemMenu(JE_byte itemNum)
 			break;
 		case 3:
 		case 4:
-			strcpy(tempStr, weaponPort[temp].name);
+			strcpy(tempStr, JE_weaponPortName(temp));
 			break;
 		case 5:
 			strcpy(tempStr, shields[temp].name);

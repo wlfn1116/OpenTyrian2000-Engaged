@@ -247,8 +247,12 @@ separate records.
 
 ### Outpost and E-Shop
 
-The ordinary shop restocks at each visit. Data Cubes opens the E-Shop and Ship
-Specs opens the perk list.
+The ordinary shop restocks at each visit. Guns that ship under one name are
+shown apart in its menus: the front and rear Protron as Front Protron and Rear
+Protron, the two Multi-Cannons as Front Multi-Cannon and Rear Multi-Cannon, and
+the twin-barrel Vulcan Cannon as Twin Vulcan Cannon; the sweeping-fire Vulcan
+Cannon keeps the original name. Data Cubes opens the E-Shop and Ship Specs
+opens the perk list.
 
 | Item | Base cost | Effect |
 | --- | ---: | --- |

@@ -194,6 +194,24 @@ const char *JE_specialName(JE_byte id)
 	return special[id].name;
 }
 
+// Port ids hold across the ep1-3 and ep4/5 item tables, and custom designs only claim the
+// Test range (48..60), so an id match is safe for every loaded table.
+const char *JE_weaponPortName(JE_word id)
+{
+	if (endlessMode)
+	{
+		switch (id)
+		{
+		case 2:  return "Front Multi-Cannon";
+		case 10: return "Rear Multi-Cannon";
+		case 12: return "Rear Protron";
+		case 13: return "Front Protron";
+		case 15: return "Twin Vulcan Cannon";
+		}
+	}
+	return weaponPort[id].name;
+}
+
 /* The sidekick slot the Charge-Laser claims, and what that slot held before it did. Captured
  * while options[] is freshly loaded, so the toggle can put the original record back and the
  * menu can flip it without reloading the item data. */
