@@ -143,6 +143,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_CASH_PCT      15  // +% cash (clears + bounties) per Scavenger stack
 #define ENDLESS_PERK_REGEN_TICKS  140  // ticks per +1 armor at 1 Nanorepair stack (faster with more)
 #define ENDLESS_PERK_SIPHON_PCT    12  // heal-on-kill chance % per Siphon stack
+#define ENDLESS_PERK_BOUNTY_PICKUP_MULT 5 // Bounty Hunter: score-pickup cash multiplier
 #define ENDLESS_PERK_BULWARK        1  // incoming damage reduced by this per Bulwark stack (min 1 dmg kept)
 #define ENDLESS_PERK_ADRENALINE_PCT 45 // extra fire-accumulator % per Adrenaline stack while badly hurt
 #define ENDLESS_PERK_ADRENALINE_DMG 25 // +% shot damage per Adrenaline stack while badly hurt

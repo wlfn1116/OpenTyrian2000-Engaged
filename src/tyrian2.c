@@ -239,6 +239,17 @@ void JE_deriveStarShowSpecial(void)
 	}
 }
 
+// Before the enemy has been damaged the latest armor write wins; afterwards the value only grows,
+// so a scripted heal refills its health bar and a scripted weakening drains it. The calling
+// contract is in tyrian2.h and the reasoning in doc/notes.md, "Combat".
+void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
+{
+	if (enemy->armorleft >= 255)
+		return;  // the invincible sentinel is not a health value
+	if (!enemy->healthbar_seen || enemy->armorleft > enemy->healthbar_max)
+		enemy->healthbar_max = enemy->armorleft;
+}
+
 // Queue Chain Reaction pulses until the player-shot pass finishes. Processing them afterward keeps
 // link bookkeeping stable and prevents recursive pulses; chain kills never enqueue another pulse.
 #define CHAIN_QUEUE_MAX 64
@@ -349,6 +360,7 @@ static void chain_reaction_process(void)
 				if (chip > 0)
 				{
 					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives; spark so the arc is visible
+					enemy[e].healthbar_seen = true;            // damage taken: show its health bar
 					JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
 				}
 			}
@@ -4854,9 +4866,9 @@ level_loop:
 								{
 									if (!enemy[b].healthbar_seen)
 									{
-										// latch the pre-hit armor as the bar's "full" value
+										// pre-hit armor, if nothing established one earlier
+										enemy_note_full_armor(&enemy[b]);
 										enemy[b].healthbar_seen = true;
-										enemy[b].healthbar_max = armorleft;
 									}
 									enemy[b].armorleft -= damage;
 									JE_setupExplosion(tempShotX, tempShotY, 0, 0, false, false);
@@ -4925,7 +4937,10 @@ level_loop:
 											enemy[temp3].aniwhenfire = 0;
 
 											if (enemy[temp3].armorleft > (unsigned char)enemy[temp3].edlevel)
+											{
 												enemy[temp3].armorleft = enemy[temp3].edlevel;
+												enemy_note_full_armor(&enemy[temp3]);
+											}
 
 											JE_integer tempX = enemy[temp3].ex + enemy[temp3].mapoffset;
 											JE_integer tempY = enemy[temp3].ey;
@@ -5464,6 +5479,7 @@ draw_player_shot_loop_end:
 				enemy[b-1].enemydie = 560 + (mt_rand() % 3) + 1;
 				enemy[b-1].eyc -= backMove3;
 				enemy[b-1].armorleft = 4;
+				enemy_note_full_armor(&enemy[b-1]);
 			}
 			armorShipDelay = 500;
 		}
@@ -9340,7 +9356,8 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 
 	enemy->damageAccum = 0;  // reset expert-mode boss-HP accumulator on (re)spawn
 	enemy->healthbar_seen = false;  // no enemy HP bar until this slot takes damage
-	enemy->healthbar_max = 0;
+	enemy->healthbar_max = 0;       // an invincible spawn has no health value and keeps this 0
+	enemy_note_full_armor(enemy);   // any other spawn takes its scaled armor as full
 	enemy->eliteState = 0;  // endless: elite undecided until first processed (see JE_drawEnemy)
 	enemy->groupHomed = false;
 	// Only an enemy that can actually track draws for a side, so the roll costs the shared RNG
@@ -9923,6 +9940,7 @@ void JE_eventSystem(void)
 					enemy[temp].armorleft = roundf(eventRec[eventLoc-1].eventdat * (difficultyLevel / 2));
 				else
 					enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
+				enemy_note_full_armor(&enemy[temp]);
 			}
 		}
 		break;
@@ -10154,7 +10172,10 @@ void JE_eventSystem(void)
 		for (temp = 0; temp < 100; temp++)
 		{
 			if (eventRec[eventLoc-1].eventdat4 == 0 || enemy[temp].linknum == eventRec[eventLoc-1].eventdat4)
+			{
 				enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
+				enemy_note_full_armor(&enemy[temp]);
+			}
 		}
 		break;
 
@@ -10740,7 +10761,8 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				boss_bar_mark_overlay(bx, by, bw, THICK);
 
 			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
-			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),
+			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
+			                    boss_flash_render(boss_bar[b].color, flashAlpha),
 			                    boss_bar_tint_base(boss_bar[b].link_num));
 
 			if (decrement && boss_bar[b].color > 0)
@@ -10793,7 +10815,8 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 				boss_bar_mark_overlay(bx, vTop, THICK, vBot - vTop + 1);
 
 			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
-			                    boss_bar[b].armor / 254.0f, boss_flash_render(boss_bar[b].color, flashAlpha),
+			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
+			                    boss_flash_render(boss_bar[b].color, flashAlpha),
 			                    boss_bar_tint_base(boss_bar[b].link_num));
 
 			if (decrement && boss_bar[b].color > 0)
@@ -10821,7 +10844,8 @@ static void draw_boss_bars_classic(unsigned int bars)
 
 		const int base = boss_bar_tint_base(boss_bar[b].link_num);  // bank 7, or elite/champion tint
 		JE_barX(x - 25, y, x + 25, y + 5, base + 3);
-		JE_barX(x - (boss_bar[b].armor / 10), y, x + (boss_bar[b].armor + 5) / 10, y + 5, base + 6 + boss_bar[b].color);
+		JE_barX(x - (boss_bar[b].fill / 10), y, x + (boss_bar[b].fill + 5) / 10, y + 5,
+		        base + 6 + boss_bar[b].color);
 
 		if (boss_bar[b].color > 0)
 			boss_bar[b].color--;
@@ -11026,6 +11050,34 @@ static void draw_enemy_health_bars(void)
 	}
 }
 
+JE_byte boss_bar_fill(unsigned int armorleft, unsigned int full)
+{
+	if (armorleft >= 255)
+		return BOSS_BAR_FULL;  // invincible: a scripted phase shows a full bar
+	if (full == 0 || armorleft >= full)
+		return BOSS_BAR_FULL;
+	return (JE_byte)((armorleft * BOSS_BAR_FULL + full / 2) / full);
+}
+
+void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *out_full)
+{
+	unsigned int armor = 256;  // higher than armor max
+	unsigned int full = 0;
+
+	for (unsigned int e = 0; e < COUNTOF(enemy); e++)  // find most damaged
+	{
+		if (enemyAvail[e] != 1 && enemy[e].linknum == link_num)
+			if (enemy[e].armorleft < armor)
+			{
+				armor = enemy[e].armorleft;
+				full = enemy[e].healthbar_max;
+			}
+	}
+
+	*out_armor = armor;
+	*out_full = full;
+}
+
 void draw_boss_bar(void)
 {
 	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
@@ -11033,14 +11085,8 @@ void draw_boss_bar(void)
 		if (boss_bar[b].link_num == 0)
 			continue;
 
-		unsigned int armor = 256;  // higher than armor max
-
-		for (unsigned int e = 0; e < COUNTOF(enemy); e++)  // find most damaged
-		{
-			if (enemyAvail[e] != 1 && enemy[e].linknum == boss_bar[b].link_num)
-				if (enemy[e].armorleft < armor)
-					armor = enemy[e].armorleft;
-		}
+		unsigned int armor, full;
+		boss_bar_survey(boss_bar[b].link_num, &armor, &full);
 
 		if (armor > 255 || armor == 0)  // boss dead?
 		{
@@ -11059,7 +11105,7 @@ void draw_boss_bar(void)
 				endlessShockwaveClear(0, 0, -1);
 		}
 		else
-			boss_bar[b].armor = (armor == 255) ? 254 : armor;  // 255 would make the bar too long
+			boss_bar[b].fill = boss_bar_fill(armor, full);
 	}
 
 	unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)

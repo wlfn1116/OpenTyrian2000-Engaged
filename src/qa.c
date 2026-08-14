@@ -1733,6 +1733,86 @@ static void qa_test_bounty_matrix(void)
 	endlessActiveMods = savedMods;
 }
 
+/* Bounty Hunter's other half: the score-pickup multiplier. The cash belongs to whichever ship
+ * flew over the pickup, so that ship's own row sizes it, and both machines collect for both
+ * ships and must end on the same two wallets. */
+static void qa_test_score_pickup_multiplier(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedTwo = twoPlayerMode, savedCampaign = coopCampaignMode;
+	const bool savedCoop = coopEndlessMode, savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const uint savedThis = thisPlayerNum;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	isNetworkGame = false;
+	twoPlayerMode = false;
+	coopCampaignMode = false;
+	coopEndlessMode = false;
+	endlessMode = false;
+	endlessCampaignMods = false;   // the perk only reaches a campaign through the effect layer
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_BOUNTY, 1);
+
+	const long face = 250, boosted = face * ENDLESS_PERK_BOUNTY_PICKUP_MULT;
+	qa_check(endlessScorePickupValue(0, face) == face,
+	         "a campaign score pickup pays its authored value whatever perks are stored");
+
+	endlessMode = true;
+	qa_check(endlessScorePickupValue(0, face) == boosted
+	         && endlessScorePickupValue(1, face) == face,
+	         "Bounty Hunter multiplies its holder's score pickups and nobody else's");
+	qa_check(endlessScorePickupValue(0, 0) == 0 && endlessScorePickupValue(0, -1) == -1
+	         && endlessScorePickupValue((uint)COUNTOF(player), face) == face,
+	         "the score-pickup multiplier leaves non-cash values and out-of-range ships alone");
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	coopEndlessMode = true;
+
+	char label[160];
+	for (uint machine = 1; machine <= 2; ++machine)
+	for (int shared = 0; shared <= 1; ++shared)
+	for (int doubled = 0; doubled <= 1; ++doubled)
+	{
+		thisPlayerNum = machine;
+		coop_set_session_shared_credit(shared != 0);
+		coop_set_session_double_earnings(doubled != 0);
+		player[0].cash = player[1].cash = 0;
+		endlessCashResync();
+
+		// Player 1 holds the perk; each ship then collects one pickup of the same authored value.
+		for (uint p = 0; p < COUNTOF(player); ++p)
+			player_award_pickup_cash(&player[p], endlessScorePickupValue(p, face));
+
+		const long scale = (doubled && !shared) ? 2 : 1;  // Double Earnings covers pickups
+		const bool okay = shared
+		                ? (player[0].cash == (ulong)(boosted + face)
+		                   && player[1].cash == (ulong)(boosted + face))
+		                : (player[0].cash == (ulong)(boosted * scale)
+		                   && player[1].cash == (ulong)(face * scale));
+		snprintf(label, sizeof(label),
+		         "score pickups (machine %u, %s credit, double %d) pay the right wallets",
+		         machine, shared ? "Shared" : "Individual", doubled);
+		qa_check(okay, label);
+	}
+
+	player[0].cash = player[1].cash = 0;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessCashResync();
+	coop_set_session_shared_credit(true);
+	coop_set_session_double_earnings(false);
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedCoop;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	thisPlayerNum = savedThis;
+}
+
 /* The level-clear payout, which each machine derives for BOTH ships: interest on each ship's
  * own bank plus each ship's clear bonus, identical whichever machine runs it. Paying only the
  * local wallet left each machine's view of the partner short and skipped Shared entirely. */
@@ -4120,6 +4200,77 @@ static void qa_test_special_icon_tops(void)
 	unusedShopSprites = saved;
 }
 
+/* What the health bars divide by. Boss armor varies: the difficulty curve scales it at spawn and
+ * level scripts arm boss groups at their own values, so both bars have to measure a wound against
+ * the armor that part actually started with. */
+static void qa_test_health_bar_scale(void)
+{
+	struct JE_SingleEnemyType part = { 0 };
+
+	part.armorleft = 100;
+	enemy_note_full_armor(&part);
+	qa_check(part.healthbar_max == 100, "an undamaged enemy takes its armor as full health");
+
+	part.armorleft = 20;  /* a script event may arm a group well below its spawn armor */
+	enemy_note_full_armor(&part);
+	qa_check(part.healthbar_max == 20, "a rewrite before the first wound replaces the full value");
+
+	part.healthbar_seen = true;
+	part.armorleft = 8;
+	enemy_note_full_armor(&part);
+	qa_check(part.healthbar_max == 20, "a wounded enemy losing armor keeps its full value");
+
+	part.armorleft = 254;
+	enemy_note_full_armor(&part);
+	qa_check(part.healthbar_max == 254, "a script healing a wounded enemy raises the full value");
+
+	part.armorleft = 255;
+	enemy_note_full_armor(&part);
+	qa_check(part.healthbar_max == 254, "the invincible sentinel is not a health value");
+
+	qa_check(boss_bar_fill(254, 254) == BOSS_BAR_FULL && boss_bar_fill(100, 100) == BOSS_BAR_FULL,
+	         "a boss bar starts full whatever armor its boss was given");
+	qa_check(boss_bar_fill(50, 100) == 127, "half a 100-armor boss draws half a bar");
+	qa_check(boss_bar_fill(1, 254) == 1, "one armor point left still draws a sliver");
+	qa_check(boss_bar_fill(255, 0) == BOSS_BAR_FULL && boss_bar_fill(60, 0) == BOSS_BAR_FULL,
+	         "an invincible phase and an unestablished full value both draw full");
+
+	/* The bar reads the most-damaged part, so it has to divide by that part's own full value. */
+	static const struct { JE_byte avail, armor, full; } parts[] = {
+		{ 0, 200, 254 },  /* an undamaged hull */
+		{ 0,  60, 100 },  /* the most-damaged part: 60 of the 100 it flew in with */
+		{ 1,   1, 254 },  /* destroyed, so the survey has to skip it */
+	};
+	const JE_byte link = 42;
+	JE_byte savedAvail[COUNTOF(parts)];
+	struct JE_SingleEnemyType savedEnemy[COUNTOF(parts)];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+
+	for (uint i = 0; i < COUNTOF(parts); ++i)
+	{
+		savedAvail[i] = enemyAvail[i];
+		enemyAvail[i] = parts[i].avail;
+		enemy[i].linknum = link;
+		enemy[i].armorleft = parts[i].armor;
+		enemy[i].healthbar_max = parts[i].full;
+	}
+
+	unsigned int armor = 0, full = 0;
+	boss_bar_survey(link, &armor, &full);
+	qa_check(armor == 60 && full == 100,
+	         "the survey pairs the most-damaged part with its own full value");
+	qa_check(boss_bar_fill(armor, full) == 152, "which fills 60% of the bar");
+
+	enemyAvail[0] = 1;
+	enemyAvail[1] = 1;
+	boss_bar_survey(link, &armor, &full);
+	qa_check(armor > 255, "a group with no live parts left reports the boss gone");
+
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	for (uint i = 0; i < COUNTOF(parts); ++i)
+		enemyAvail[i] = savedAvail[i];
+}
+
 /* Item data points one of the Flying Punch's bolts (weapon 794, `sg[0]`) at People Pretzels'
  * sprite, so the load pass redirects it. Every frame that bolt draws has to be blank. */
 static void qa_test_flying_punch_bolt(void)
@@ -4719,6 +4870,7 @@ int qa_run_unit_suite(void)
 	qa_test_save_slot_seats();
 	qa_test_cash_ledger();
 	qa_test_bounty_matrix();
+	qa_test_score_pickup_multiplier();
 	qa_test_zone_payout();
 	qa_test_arcade_scaling();
 	qa_test_arcade_matrices();
@@ -4735,6 +4887,7 @@ int qa_run_unit_suite(void)
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_health_bar_scale();
 	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();

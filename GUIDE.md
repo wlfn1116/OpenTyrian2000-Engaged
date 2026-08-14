@@ -278,7 +278,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Scavenger | +15% clear, bounty, and buyout cash | 4 |
 | Nanorepair | Regenerates armour | 3 |
 | Siphon | +12% kill repair chance | 3 |
-| Bounty Hunter | Doubles elite and champion bounties | 1 |
+| Bounty Hunter | Doubles elite and champion bounties, and pays 5x for score pickups | 1 |
 | Bulwark | -1 damage per hit, minimum 1 | 5 |
 | Adrenaline | Faster and stronger fire below one-third armour | 3 |
 | Glass Cannon | +40% damage, -8 maximum armour | 1 |

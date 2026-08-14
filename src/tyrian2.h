@@ -26,10 +26,12 @@
 
 void intro_logos(void);
 
+#define BOSS_BAR_FULL 254  // the fill value of a boss bar at full health
+
 typedef struct
 {
 	Uint8 link_num;
-	Uint8 armor;
+	Uint8 fill;   // bar fill, 0..BOSS_BAR_FULL, from boss_bar_fill
 	Uint8 color;
 }
 boss_bar_t;
@@ -38,6 +40,21 @@ extern boss_bar_t boss_bar[2];
 
 // A boss must match an active, nonzero health-bar link.
 bool enemy_has_boss_bar(JE_byte linknum);
+
+/* How full a boss bar draws, from the most-damaged part's remaining armor and the armor that part
+ * started with. Boss armor varies: the difficulty curve scales it at spawn and level scripts arm
+ * and re-arm boss groups at their own values, so the two have to be measured against each other. */
+JE_byte boss_bar_fill(unsigned int armorleft, unsigned int full);
+
+/* The armor of a boss group's most-damaged live part, and the armor that same part started with.
+ * `*out_armor` comes back above 255 when the group has no live parts left, which is how
+ * draw_boss_bar tells a dead boss from an invincible one. */
+void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *out_full);
+
+/* Re-latch the armor an enemy counts as starting with: its health bar's denominator, and the
+ * full-HP figure the Executioner perk measures a wound against. Call after every direct write to
+ * armorleft; damage must not call it. */
+void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 
 // Route every kill through this function so tallies, bounties, and reactive effects agree.
 // Despawns still clear enemyAvail directly.

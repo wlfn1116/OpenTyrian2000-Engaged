@@ -381,6 +381,22 @@ struct moves both.
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
+Every direct write to `armorleft` calls `enemy_note_full_armor`; damage never
+does. `healthbar_max` is what the enemy health bar divides by and the full-HP
+figure the Executioner perk measures a wound against, so it has to survive the
+spawn armor curve, the chain-reaction chip, the staged-death clamp, and the
+level-script events that rewrite a group's armor. Before an enemy has been
+damaged the latest write wins; afterwards the value only grows, so a script that
+heals a wounded enemy refills its bar and one that weakens it drains the bar.
+255 is the invincible sentinel and is never a denominator.
+
+A boss bar divides by the same value, taken from the part it is reading:
+`boss_bar_survey` returns the most-damaged live part's armor together with the
+armor that part started with, and `boss_bar_fill` scales the pair into the bar's
+0 to `BOSS_BAR_FULL` fill. Boss armor is not always the 254 cap: the difficulty
+curve scales it at spawn, and the shipped levels arm boss groups at 60, 70, 100,
+150, 200 and 250 as well.
+
 Martyrdom uses the visible bounds of the dying linked body. Off-screen anchor
 pieces do not move the burst away from the body on screen.
 
@@ -848,7 +864,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 46.
+`NET_VERSION` bump. The current value is 48.
 
 Recent versions:
 
@@ -881,6 +897,8 @@ Recent versions:
 | 44 | Endless piercing damage ramp, elite/champ rebalance, remainder carry, and carried per-hull damage |
 | 45 | Kinetic Converter discount on twiddle shield and armor charges |
 | 46 | Twiddle ship coverage, seat-two combo row, own cooldown, and diagonal collapse; scheduled rare sectors |
+| 47 | Bounty Hunter multiplies score pickups |
+| 48 | Health bars measure a wound against the armor a part started with |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

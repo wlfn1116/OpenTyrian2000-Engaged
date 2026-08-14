@@ -10966,15 +10966,21 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 
 						memset(shotMultiPos, 0, sizeof(shotMultiPos));
 					}
-					else if (twoPlayerLinked)
-					{
-						// players get equal share of pick-up cash when linked
-						for (uint i = 0; i < COUNTOF(player); ++i)
-							player[i].cash += evalue / COUNTOF(player);
-					}
 					else
 					{
-						player_award_pickup_cash(this_player, evalue);
+						// Bounty Hunter multiplies this where the Endless effect layer runs.
+						const uint collector = (uint)(this_player - &player[0]);
+						const long picked = endlessScorePickupValue(collector, evalue);
+						if (twoPlayerLinked)
+						{
+							// players get equal share of pick-up cash when linked
+							for (uint i = 0; i < COUNTOF(player); ++i)
+								player[i].cash += picked / COUNTOF(player);
+						}
+						else
+						{
+							player_award_pickup_cash(this_player, picked);
+						}
 					}
 					// The authored graphic names the original item; a data cube's spells out "DATA".
 					if (!specialPickup)
@@ -11055,8 +11061,8 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						{
 							if (!enemy[z].healthbar_seen)
 							{
+								enemy_note_full_armor(&enemy[z]);
 								enemy[z].healthbar_seen = true;
-								enemy[z].healthbar_max = enemy[z].armorleft;
 							}
 							enemy[z].armorleft -= damage_to_enemy;
 						}

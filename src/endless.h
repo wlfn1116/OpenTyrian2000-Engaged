@@ -763,6 +763,8 @@ int  endlessPierceHitDamage(int rawDamage, int dmgPct, JE_byte *carry100);
 
 long endlessEliteBounty(void);               // extra cash for destroying an elite
 long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
+// Bounty Hunter also multiplies score pickups; `p` is the ship collecting one (JE_playerCollide).
+long endlessScorePickupValue(uint p, long value);
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
 Uint8 endlessEliteTint(int eliteState);      // tier's palette-bank filter, 0 for an ordinary enemy

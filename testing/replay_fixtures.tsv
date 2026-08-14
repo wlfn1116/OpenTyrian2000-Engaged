@@ -24,6 +24,15 @@
 #    sizeof and the layout hash do not move, but the fields after it shift a byte and demo 1's
 #    hashed state moves with them. Verified by building with the field declared and never
 #    assigned: demo 1 still hashes dbd7383e, so the shift alone accounts for it.
-1 180 35b17167
-2 180 6657771a
-3 180 e140f5af
+# Regenerated 2026-08-14, for a registered-value change with no simulation change behind it: an
+# enemy's healthbar_max now holds the armor it spawned with instead of staying 0 until something
+# damaged it, so every live slot carries a different byte from its first frame. Verified by building
+# with enemy_note_full_armor made inert and the old first-hit assignment restored, every other edit
+# in the commit kept: all three hashes came back at the previous line's values, so nothing in the
+# new denominator, the boss-bar survey, or the script-event calls moves the demos. Confirmed not to
+# be a local config artifact: the three hashes below come back identically from a working directory
+# with no opentyrian.cfg in it. The snapshot shape is untouched: a build of the parent commit in a
+# scratch worktree reports the same 311 items, 455190 bytes, and layout 5fb4f29d.
+1 180 dbd8046d
+2 180 5d38d45a
+3 180 e52e6a2b

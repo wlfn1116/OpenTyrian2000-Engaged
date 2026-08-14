@@ -611,6 +611,16 @@ long endlessChampionBounty(void)
 	return b * endlessPerkCashPercent() / 100;
 }
 
+/* Bounty Hunter's second effect. The cash goes to whoever flew over the pickup, so the multiplier
+ * reads that ship's own row rather than the fx context. Both machines run every pickup for both
+ * ships, so the two wallets agree. */
+long endlessScorePickupValue(uint p, long value)
+{
+	if (!endlessFxActive() || value <= 0 || !endlessPerkEffective(p, PERK_BOUNTY))
+		return value;
+	return value * ENDLESS_PERK_BOUNTY_PICKUP_MULT;
+}
+
 // Champion weapon multipliers; Clean Signals returns them to neutral.
 int endlessChampionFireDelayPercent(void)
 {
