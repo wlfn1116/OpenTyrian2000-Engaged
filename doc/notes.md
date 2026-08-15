@@ -119,9 +119,17 @@ belong.
 
 ### Superspark ring buffer
 
-Sparks live in one array of `MAX_SUPERPIXELS` slots and die after 15 ticks. A
-shower reserves nothing: a later spawn reaching the same slot overwrites a spark
-still in flight, so the spawn rate around a source sets how long its sparks last.
+Sparks live in one array of `MAX_SUPERPIXELS` slots and die after 15 ticks unless
+they are spawned with a shorter life. A shower reserves nothing: a later spawn
+reaching the same slot overwrites a spark still in flight, so the spawn rate
+around a source sets how long its sparks last.
+
+A spark's `z` is its shade as well as its remaining life. `JE_doSPBrief` spawns
+at a lower `z` for a shorter life, so it takes a `bright` lift to keep the spark
+out of the dark half of its bank. It exists for the Opening Salvo cue, which
+would otherwise put a full-life trail behind every bullet of a wide many-shot
+weapon under Extra Sparks: it throws a six-spark puff when a shot launches and
+two sparks a tick in flight, none living past four ticks.
 
 `last_superpixel` advances in `next_superpixel` exactly as it did when every
 source wrote through it: wrapping at `SUPERPIXELS_CLASSIC` for a `classic_cap`
@@ -143,10 +151,10 @@ at the original rate while a shower of one to three sparks, such as an elite aur
 or a pickup glyph, keeps its full 15 ticks.
 
 Only the per-weapon trails may pass `classic_cap`, and only from their own
-setting. Everything else spawns uncapped, the Opening Salvo trail included: a
-volley that also throws uncapped launch flashes retires the classic window faster
-than its capped sparks can show, leaving no trail at all. A salvo drops the cap
-on a weapon's native trail for the same reason.
+setting. Everything else spawns uncapped, the Opening Salvo cue included, since
+the whole screen's spark traffic thins a capped shower. A weapon with a native
+trail keeps that trail on its own cap setting through a salvo, and gets only the
+launch puff on top.
 
 `JE_drawSP` sweeps the whole array, so sparks already in flight animate out
 cleanly when a setting changes. Both cursors are private to `varz.c`; clear the
@@ -166,9 +174,10 @@ The ring is presentation state and is not registered for rollback, so nothing
 restores it when the simulation rewinds. Two rules keep it in step with the
 presented timeline instead.
 
-A silent re-simulation pass must not write to it. `JE_doSP` still makes its
-three generator draws per spark on such a pass, because that cost belongs to the
-deterministic stream, and then skips the slot; `JE_drawSP` is skipped whole.
+A silent re-simulation pass must not write to it. `JE_doSP` and `JE_doSPBrief`
+still make their three generator draws per spark on such a pass, because that
+cost belongs to the deterministic stream, and then skip the slot; `JE_drawSP` is
+skipped whole.
 Otherwise a rollback would stack one shower per re-simulated frame onto a single
 presented frame.
 
@@ -179,10 +188,13 @@ subtracts the step `JE_drawSP` took, so that pass takes it once rather than
 carrying every spark an extra tick of travel and decay. Travel is exactly
 invertible; `z == 0` is left alone because a spark the pass retired is retired
 on that frame either way, and a spark still at `SUPERPIXEL_SPAWN_Z` landed after
-the draw and never took the step. Both abandon sites call it, separately from
-`rl_abort_record`, which returns early when recording is off. The residue is
-bounded by the difference in spawn count between the two passes, since they
-simulate the same frame from slightly different state.
+the draw and never took the step. That last test is why a `JE_doSPBrief` spark
+has to be spawned before `JE_drawSP` in the pass, as the shot draw is: its lower
+`z` is indistinguishable from a stepped spark's, so one spawned after the draw
+would be rewound as though it had stepped. Both abandon sites call it,
+separately from `rl_abort_record`, which returns early when recording is off.
+The residue is bounded by the difference in spawn count between the two passes,
+since they simulate the same frame from slightly different state.
 
 Both rules act on every spark on screen at once, and a peer changing direction
 mispredicts most frames, so the unit suite pins them.
@@ -881,7 +893,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 53.
+`NET_VERSION` bump. The current value is 55.
 
 Recent versions:
 
@@ -922,6 +934,7 @@ Recent versions:
 | 52 | Twiddle 2:1 intent cone and its neutral-tick wire bit |
 | 53 | A twiddle combo resets on any input that is not its next step |
 | 54 | Twiddle horizontal intent mirrors while the screen is upside down |
+| 55 | Sparser Opening Salvo spark cue, spending fewer generator draws per boosted shot |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

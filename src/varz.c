@@ -2223,7 +2223,9 @@ void JE_resetSP(void)
 	memset(superpixels, 0, sizeof(superpixels));
 }
 
-void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap) /* superpixels */
+// The simulation-RNG shower behind JE_doSP and JE_doSPBrief; `life` is the spawn z.
+static void sp_scatter(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
+                       bool classic_cap, JE_byte life, JE_byte bright)
 {
 	// Local int counter, not the global JE_byte `temp`: `num` is a JE_word and callers can request
 	// well over 255 sparks (e.g. damage/2+3 on a big hit), which a byte counter can't reach -> it
@@ -2246,10 +2248,27 @@ void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte colo
 		superpixels[slot].delta_x = tempx;
 		superpixels[slot].delta_y = tempy + 1;
 		superpixels[slot].color = color;
-		superpixels[slot].bright = 0;
+		superpixels[slot].bright = bright;
 		superpixels[slot].occluded = false;
-		superpixels[slot].z = SUPERPIXEL_SPAWN_Z;
+		superpixels[slot].z = life;
 	}
+}
+
+void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap) /* superpixels */
+{
+	sp_scatter(x, y, num, explowidth, color, classic_cap, SUPERPIXEL_SPAWN_Z, 0);
+}
+
+void JE_doSPBrief(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
+                  JE_byte life, JE_byte bright)
+{
+	// z == 0 is a free slot; SUPERPIXEL_SPAWN_Z is the longest life the ring is written around.
+	if (life == 0)
+		life = 1;
+	else if (life > SUPERPIXEL_SPAWN_Z)
+		life = SUPERPIXEL_SPAWN_Z;
+
+	sp_scatter(x, y, num, explowidth, color, false, life, bright);
 }
 
 // Each draw avalanches its own point on a fixed walk. An LCG cannot serve here: its output is

@@ -513,6 +513,12 @@ JE_word JE_portConfigs(const Player *this_player);
 // (used by the superspark weapon trails); pass false to honor the extraSparks setting. A capped
 // shower is thinned by the whole screen's spark traffic, an uncapped one is not.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
+// JE_doSP with each spark's life cut to `life` ticks (1..SUPERPIXEL_SPAWN_Z), always uncapped. A
+// spark's z is its shade as well, so a short life alone spawns it dim; `bright` lifts it back into
+// the visible half of the bank. It draws the simulation RNG exactly as JE_doSP does, so it is
+// simulation code. Spawn before JE_drawSP in the pass; see doc/notes.md, "Superspark ring buffer".
+void JE_doSPBrief(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
+                  JE_byte life, JE_byte bright);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
 // `bright` is the shade lift described at superpixel_type; 0 gives the classic JE_doSP shading.
 // `occluded` marks the sparks as hidden by this tick's occluder boxes (see JE_addSPOccluder).

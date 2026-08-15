@@ -2523,6 +2523,76 @@ static void qa_test_superspark_rng_cost(void)
 	         "and that cost is an angle and two magnitudes a spark, which is what a stray guard moves");
 }
 
+/* First live spark's z and bright, spawned into a cleared ring by JE_doSPBrief. */
+static bool qa_spark_brief_first(JE_byte life, JE_byte bright,
+                                 unsigned int *out_z, Uint8 *out_bright)
+{
+	JE_resetSP();
+	JE_doSPBrief(100, 100, 1, 3, 7 << 4, life, bright);
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		*out_z = superpixels[i].z;
+		*out_bright = superpixels[i].bright;
+		return true;
+	}
+	return false;
+}
+
+/* The Opening Salvo cue spawns through JE_doSPBrief, which cuts a spark's life to `life` ticks and
+   lifts its shade by `bright` so the shorter life does not spawn it dark. It is reached from the
+   shot draw, so its RNG cost has to match JE_doSP's spark for spark. */
+static void qa_test_superspark_brief(void)
+{
+	const bool savedExtra = extraSparks;
+	extraSparks = true;
+
+	unsigned int spawnZ = 0;
+	Uint8 spawnBright = 0;
+	qa_check(qa_spark_brief_first(4, 5, &spawnZ, &spawnBright) && spawnZ == 4 && spawnBright == 5,
+	         "a brief spark spawns at the requested life with the requested lift");
+	qa_check(qa_spark_brief_first(0, 0, &spawnZ, &spawnBright) && spawnZ == 1,
+	         "a zero life still spawns a spark for one tick");
+	qa_check(qa_spark_brief_first(200, 0, &spawnZ, &spawnBright) && spawnZ == SUPERPIXEL_SPAWN_Z,
+	         "a life past the classic spawn z clamps to it");
+
+	int lo, hi;
+	qa_spark_brief_first(4, 5, &spawnZ, &spawnBright);
+	qa_spark_span(&lo, &hi);
+	qa_check(lo >= SUPERPIXELS_CLASSIC,
+	         "a brief shower is uncapped, so it spawns outside the classic window");
+
+	if (VGAScreen != NULL && VGAScreen->format->BitsPerPixel == 8)
+	{
+		qa_spark_brief_first(3, 5, &spawnZ, &spawnBright);
+		JE_drawSP();
+		JE_drawSP();
+		const int liveBefore = qa_spark_span(&lo, &hi);
+		JE_drawSP();
+		const int liveAfter = qa_spark_span(&lo, &hi);
+		qa_check(liveBefore == 1 && liveAfter == 0,
+		         "a three-tick spark is gone after its third draw");
+	}
+
+	mt_srand(20260815u);
+	JE_doSPBrief(100, 100, 6, 5, 7 << 4, 4, 5);
+	const Uint32 briefDraws = mt_rand_count;
+
+	const bool savedSilent = rollback_resim_silent;
+	rollback_resim_silent = true;
+	mt_srand(20260815u);
+	JE_doSPBrief(100, 100, 6, 5, 7 << 4, 4, 5);
+	const Uint32 silentDraws = mt_rand_count;
+	rollback_resim_silent = savedSilent;
+
+	qa_check(briefDraws == qa_spark_rng_draws(false, 6) && silentDraws == briefDraws,
+	         "a brief shower costs the RNG what JE_doSP costs, drawn or silently re-simulated");
+
+	JE_resetSP();
+	extraSparks = savedExtra;
+}
+
 #define QA_SEEDED_SHOWERS 64u  /* showers sampled per stride */
 #define QA_SEEDED_REACH   60   /* wide enough that rounding keeps an offset in its quadrant */
 
@@ -5351,6 +5421,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_caps();
 	qa_test_superspark_discarded_pass();
 	qa_test_superspark_rng_cost();
+	qa_test_superspark_brief();
 	qa_test_superspark_seeded_spread();
 	qa_test_vaporised_shot_sparks();
 	qa_test_network_settings();

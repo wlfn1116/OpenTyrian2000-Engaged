@@ -310,7 +310,8 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns
-green when it is ready.
+green when it is ready, and each boosted shot flashes a few sparks in its own
+colour.
 
 Kinetic Converter pays out on every hit that costs shield or hull. Each hit
 takes 8% per stack off whatever is left of the special recharge, credits 0.25

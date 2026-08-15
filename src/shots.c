@@ -145,13 +145,23 @@ draw_player_shot_loop_end:
 	}
 }
 
-// Endless Opening Salvo: the superspark trail marking a boosted shot, coloured from the shot's own
-// sprite so each weapon trails its own hue. (cx,cy) is the shot centre; `launch` is the fatter
-// one-off burst on its first drawn tick. Neither takes the classic cap: the volley's own launch
-// flashes would retire the classic window before a capped trail could show.
+// Endless Opening Salvo: the spark cue marking a boosted shot, coloured from the shot's own sprite
+// so each weapon flashes its own hue. Kept sparse and short-lived so a wide many-shot weapon does
+// not fill the screen with it; see doc/notes.md, "Superspark ring buffer".
+#define SALVO_LAUNCH_SPARKS     6  // one-off puff on the shot's first drawn tick
+#define SALVO_LAUNCH_REACH      5
+#define SALVO_LAUNCH_LIFE_TICKS 4
+#define SALVO_TRAIL_SPARKS      2  // per tick in flight
+#define SALVO_TRAIL_REACH       3
+#define SALVO_TRAIL_LIFE_TICKS  3
+#define SALVO_SPARK_BRIGHT      5  // shade lift for the shortened life; see JE_doSPBrief
+
+// (cx,cy) is the shot centre; `launch` picks the puff over the flight wisp.
 static void salvo_sparks_at(int cx, int cy, Uint8 bank, bool launch)
 {
-	JE_doSP(cx, cy, launch ? 14 : 4, launch ? 6 : 4, bank << 4, false);
+	JE_doSPBrief(cx, cy, launch ? SALVO_LAUNCH_SPARKS : SALVO_TRAIL_SPARKS,
+	             launch ? SALVO_LAUNCH_REACH : SALVO_TRAIL_REACH, bank << 4,
+	             launch ? SALVO_LAUNCH_LIFE_TICKS : SALVO_TRAIL_LIFE_TICKS, SALVO_SPARK_BRIGHT);
 }
 
 // ...for a shot drawn from the packed sprite SHEETS (`sprite_frame` with the >1000 tag stripped).
@@ -435,21 +445,18 @@ bool player_shot_move_and_draw(
 		}
 		else
 		{
-			// Weapons already tagged with a superspark trail: an Opening Salvo turns that NATIVE
-			// plume up rather than layering a second trail into it, and drops the classic cap so
-			// the denser shower doesn't flush the ring and cut its own tail short.
+			// Weapons already tagged with a superspark trail keep their native plume as it is; an
+			// Opening Salvo adds only the launch puff on top.
 			const bool ownTrail = sprite_frame > 1000;
 			if (ownTrail)
 			{
-				const bool boost = shot->salvoBoost != 0;
-				JE_doSP(*out_shotx+1 + 6, *out_shoty + 6, boost ? 16 : 5, boost ? 7 : 3,
-				        (sprite_frame / 1000) << 4,
-				        boost ? false : superSparkCapForSprite(shot->shotGr % 1000));
+				JE_doSP(*out_shotx+1 + 6, *out_shoty + 6, 5, 3, (sprite_frame / 1000) << 4,
+				        superSparkCapForSprite(shot->shotGr % 1000));
 				sprite_frame = sprite_frame % 1000;
 			}
-			// salvoBoost 1 = first drawn tick (always the launch flash), stepping to 2 for the
-			// flight trail, which a weapon with its own boosted plume does not need. Both stay
-			// truthy, which is all the collision-time damage bonus tests.
+			// salvoBoost 1 = first drawn tick (always the launch puff), stepping to 2 for the
+			// flight wisp, which a weapon with its own plume does not need. Both stay truthy,
+			// which is all the collision-time damage bonus tests.
 			if (shot->salvoBoost)
 			{
 				if (shot->salvoBoost == 1)
