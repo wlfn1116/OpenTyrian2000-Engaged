@@ -257,9 +257,9 @@ typedef struct {
 	{ (w), ENDLESS_SCHED_SALT(row), NULL, 0, 0, 0, (bits), (hard), false }
 static const EndlessRareInjection endlessRareInjections[] = {
 	// Homing is the mild tier and does not add ram damage.
-	RARE_SCHED(0, 26, endlessHomingThemes, true),
+	RARE_SCHED(0, 12, endlessHomingThemes, true),
 	// Kamikaze is the moderate homing tier; the stronger rammer is a Rampage gamble outcome.
-	RARE_SCHED(1, 55, endlessKamikazeThemes, true),
+	RARE_SCHED(1, 26, endlessKamikazeThemes, true),
 	// Overload: Overclock cranked way up.
 	RARE_SCHED(2, 17, endlessOverloadThemes, true),
 	// Warp Speed is a separate high-scroll threat.
@@ -454,7 +454,7 @@ static const EndlessModWeight endlessCombinableMods[] = {
 	// Mid-frequency dangers.
 	{ ENDLESS_MOD_ENRAGE,      4 },
 	{ ENDLESS_MOD_OVERCLOCK,   4 },
-	{ ENDLESS_MOD_ELITEPACK,   6 },
+	{ ENDLESS_MOD_ELITEPACK,   5 },
 	// Lower-frequency variety.
 	{ ENDLESS_MOD_STATIC,      6 },  // a generic damage-punish tax; never pairs the injected-only DEADGEN
 	{ ENDLESS_MOD_SHIELDLESS,  5 },  // defense-only debuff
@@ -527,7 +527,7 @@ static const EndlessModWeight endlessThemeSignatures[] = {
 	{ ENDLESS_MOD_SWIFT,        3 },
 	{ ENDLESS_MOD_DEVASTATING,  3 },
 	{ ENDLESS_MOD_ENRAGE,       4 },
-	{ ENDLESS_MOD_ELITEPACK,    6 },
+	{ ENDLESS_MOD_ELITEPACK,    5 },
 	{ ENDLESS_MOD_OVERCLOCK,    4 },
 	// Scarce signatures remain limited even though curated themes can contain them.
 	{ ENDLESS_MOD_TOPSY,        5 },
