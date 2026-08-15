@@ -495,6 +495,18 @@ the shipped levels the scan reaches about a tenth of the invulnerable spawns.
 The rest are indestructible walls and hazards, and no bounty could ever be paid
 for one of those.
 
+A body the roll never reached keeps the normal tier, and with it normal health,
+bounty and fire rate. Its colour is decided separately: `endlessEliteShellTint`
+paints any part at 255 armor in its link group's bank whenever that group holds
+a tier, so a hull mixing a damageable core with sealed plating tints as one
+elite. The tier answer depends on which part of a hull is processed first, so
+colour cannot be read from it alone without following slot order. The
+call sits inside `JE_drawEnemy`'s per-frame `filter` window and writes no state,
+which keeps it clear of the replay hashes. An unlinked part borrows nothing, and
+neither does one whose group never rolls: EYESPY keeps nine such groups of
+plating that no damage event opens. The aura still reads the body's own tier, so
+it comes from the core rather than the plating.
+
 The scan result is derived from level data and never changes during play, so
 unlike `endlessEliteLink` it is not registered for rollback.
 
@@ -700,6 +712,15 @@ local outpost owner and `perkFx` for the ship whose effect is being calculated.
 Opening Salvo tags emitted shots. Chained projectiles inherit the tag so delayed
 secondary damage keeps the original volley bonus.
 
+The window opens at the top of the tick's shot section, ahead of everything that
+fires in it. `JE_doSpecialShot` runs before the weapon loop, so
+`endlessArmOpeningSalvoForTick` reads that loop's front-gun fire gate a step
+early and spends the charge there; the loop itself then only creates shots.
+Arming it down at the gun left the special pressed by the same button one tick
+outside its own volley, and a special recharging slower than the window landed
+in no later one either. The gate is exported because nothing else inside
+`JE_playerMovement` can be driven from the suite.
+
 ### Saves and records
 
 `tyrian.sav` is fixed and checksummed. `endless.sav` stores the run and current
@@ -893,7 +914,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 55.
+`NET_VERSION` bump. The current value is 56.
 
 Recent versions:
 
@@ -935,6 +956,7 @@ Recent versions:
 | 53 | A twiddle combo resets on any input that is not its next step |
 | 54 | Twiddle horizontal intent mirrors while the screen is upside down |
 | 55 | Sparser Opening Salvo spark cue, spending fewer generator draws per boosted shot |
+| 56 | Opening Salvo armed before the special fires, so the special joins its own volley |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

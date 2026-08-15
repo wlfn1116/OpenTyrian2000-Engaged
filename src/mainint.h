@@ -56,6 +56,8 @@ void coopCampaignRecordLine(char *out, size_t outSize, const CoopCampaignScore *
 int coopCampaignRecordLineWidthPx(void);
 // One ship's Endless per-tick work; see the definition in mainint.c.
 void endlessPerShipTick(Player *this_player);
+// Spend a charged Opening Salvo on the volley this ship fires this tick, before the special does.
+bool endlessArmOpeningSalvoForTick(Player *this_player, JE_byte playerNum_);
 void JE_gammaCorrect_func(JE_byte *col, JE_real r);
 void JE_gammaCorrect(Palette *colorBuffer, JE_byte gamma);
 JE_boolean JE_gammaCheck(void);

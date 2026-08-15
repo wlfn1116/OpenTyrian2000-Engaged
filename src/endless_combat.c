@@ -643,6 +643,16 @@ Uint8 endlessEliteTint(int eliteState)
 	return (eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
 }
 
+// A body the level holds invulnerable takes no tier of its own, yet it is usually one piece of a
+// structure whose damageable parts did. Lend it the group's bank so the whole hull reads as one
+// elite; colour only, and no tier, bounty or health follows it.
+Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft)
+{
+	if (linknum == 0 || armorleft < 255)
+		return 0;
+	return endlessEliteTint(endlessEliteLink[linknum]);
+}
+
 // Elite/champion contact premium; Clean Signals returns it to neutral.
 int endlessEliteContactPercent(int eliteState)
 {

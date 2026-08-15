@@ -2078,6 +2078,16 @@ static void qa_test_elite_tier_eligibility(void)
 	qa_check(endlessEliteTierNow(64, 254, false) == endlessEliteTierNow(64, 255, false),
 	         "an invulnerable part wears the tier its link group already holds");
 
+	/* A part the roll never reached still paints in its group's bank, so a hull that mixes a
+	 * damageable core with sealed plating tints as one body. */
+	const Uint8 groupTint = endlessEliteTint(endlessEliteTierNow(64, 254, false));
+	qa_check(groupTint != 0 && endlessEliteShellTint(64, 255) == groupTint,
+	         "sealed plating borrows the colour its link group holds");
+	qa_check(endlessEliteShellTint(64, 100) == 0,
+	         "...while a damageable part is left to paint from its own tier");
+	qa_check(endlessEliteShellTint(0, 255) == 0 && endlessEliteShellTint(3, 255) == 0,
+	         "an unlinked part, and one whose group never rolls, stay untinted");
+
 	// A damage event with no link number reaches every body on the field.
 	memset(eventRec, 0, sizeof(savedEvents));
 	eventRec[0].eventtype = 47;
@@ -2108,8 +2118,9 @@ static void qa_test_elite_explosion_tint(void)
 
 	endlessMode = false;
 	endlessCampaignMods = false;
-	qa_check(endlessEliteTint(2) == 0 && endlessEliteTint(3) == 0,
-	         "elite tints cannot leak into normal play");
+	qa_check(endlessEliteTint(2) == 0 && endlessEliteTint(3) == 0
+	         && endlessEliteShellTint(64, 255) == 0,
+	         "elite tints cannot leak into normal play, the one sealed plating borrows included");
 
 	endlessMode = true;
 	qa_check(endlessEliteTint(0) == 0 && endlessEliteTint(1) == 0
@@ -3396,6 +3407,58 @@ static void qa_test_kill_fire_wiring(void)
 	endlessResetZonePerkTimers();
 	qa_check(!endlessOpeningSalvoConsume(),
 	         "a ship that never picked Opening Salvo has none to spend");
+
+	/* Where in the tick the window opens. The special fires before the weapon loop, so a salvo
+	 * armed down at the gun left the special that pressed the same button outside its own volley.
+	 * Drive the exported gate the shot section reaches ahead of JE_doSpecialShot. */
+	endlessPerkTakenBy[0][PERK_SALVO] = 1;
+	endlessPerkTakenBy[1][PERK_SALVO] = 1;
+	endlessPerkRederive();
+	endlessResetZonePerkTimers();
+
+	const JE_boolean savedTwo = twoPlayerMode, savedLinked = twoPlayerLinked;
+	const bool savedFire = button[0];
+	const JE_byte savedRepeat = shotRepeat[SHOT_FRONT];
+	const Uint8 savedGun[2] = { player[0].items.weapon[SHOT_FRONT].id,
+	                            player[1].items.weapon[SHOT_FRONT].id };
+
+	twoPlayerMode = true;
+	twoPlayerLinked = false;
+	player[0].items.weapon[SHOT_FRONT].id = player[1].items.weapon[SHOT_FRONT].id = 1;
+	shotRepeat[SHOT_FRONT] = 0;
+	button[0] = true;
+
+	endlessSetFxPlayer(0);
+	qa_check(endlessArmOpeningSalvoForTick(&player[0], 1) && endlessOpeningSalvoVolleyActive(),
+	         "the volley's window is open before the tick's special goes out");
+	endlessSetFxPlayer(1);
+	qa_check(!endlessOpeningSalvoVolleyActive(),
+	         "...and open for the ship that pulled the trigger alone");
+	qa_check(endlessArmOpeningSalvoForTick(&player[1], 2) && endlessOpeningSalvoVolleyActive(),
+	         "...leaving the second ship its own to open from its own bank");
+
+	// Nothing fires on a recharging gun or a released trigger, so neither may spend the charge.
+	endlessResetZonePerkTimers();
+	endlessSetFxPlayer(0);
+	shotRepeat[SHOT_FRONT] = 5;
+	qa_check(!endlessArmOpeningSalvoForTick(&player[0], 1) && !endlessOpeningSalvoVolleyActive()
+	         && endlessOpeningSalvoGaugePercent() == 100,
+	         "a gun still recharging opens no window and keeps the charge banked");
+	shotRepeat[SHOT_FRONT] = 0;
+	button[0] = false;
+	qa_check(!endlessArmOpeningSalvoForTick(&player[0], 1) && endlessOpeningSalvoGaugePercent() == 100,
+	         "...and so does a released trigger");
+	button[0] = true;
+	player[0].items.weapon[SHOT_FRONT].id = 0;
+	qa_check(!endlessArmOpeningSalvoForTick(&player[0], 1) && endlessOpeningSalvoGaugePercent() == 100,
+	         "...and an empty front bay, which has no volley to open one for");
+
+	twoPlayerMode = savedTwo;
+	twoPlayerLinked = savedLinked;
+	button[0] = savedFire;
+	shotRepeat[SHOT_FRONT] = savedRepeat;
+	player[0].items.weapon[SHOT_FRONT].id = savedGun[0];
+	player[1].items.weapon[SHOT_FRONT].id = savedGun[1];
 
 	endlessSetFxPlayer(0);
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));

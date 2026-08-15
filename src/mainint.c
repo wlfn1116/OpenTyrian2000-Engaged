@@ -8726,6 +8726,24 @@ void endlessPerShipTick(Player *this_player)
 	}
 }
 
+/* Spend a charged Opening Salvo on the volley this ship is about to fire, and answer whether one
+ * was there. This is the weapon loop's own front-gun fire gate read a step early, so the window is
+ * already open when JE_doSpecialShot runs; see doc/notes.md, "Economy and perks". Seat two works
+ * the rear bay in the linked pair and never arms one. */
+bool endlessArmOpeningSalvoForTick(Player *this_player, JE_byte playerNum_)
+{
+	if (!endlessFxActive() || !(coopEndlessMode || this_player == &player[0]))
+		return false;
+	if (twoPlayerLinked && playerNum_ == 2)
+		return false;
+	if (twoPlayerMode && !dual_ship_mode() && playerNum_ != 1)
+		return false;
+	if (this_player->items.weapon[SHOT_FRONT].id == 0 || shotRepeat[SHOT_FRONT] > 0 || !button[1-1])
+		return false;
+
+	return endlessOpeningSalvoConsume();
+}
+
 void JE_playerMovement(Player *this_player,
                        JE_byte inputDevice,
                        JE_byte playerNum_,
@@ -10062,6 +10080,14 @@ redo:
 
 				/* PLAYER SHOT Creation */
 
+				// Everything below is this ship's: the salvo it spends, the perks its shots read.
+				// Re-assert the owner, since the Nort banking sparks above fire as player one and
+				// player_shot_create leaves the effect context on whoever it fired for.
+				endlessSetFxPlayer((uint)(this_player - &player[0]));
+
+				// Ahead of the special, so a special pressed with the volley belongs to it.
+				endlessArmOpeningSalvoForTick(this_player, playerNum_);
+
 				/*SpecialShot*/
 				if (!galagaMode)
 					JE_doSpecialShot(playerNum_, &this_player->armor, &this_player->shield);
@@ -10104,11 +10130,8 @@ redo:
 								if (zica_l11 && zicaLaserLength == ZICA_LEN_LONG)
 									l11_primary = ZICA_LONG_WEAP_LEFT;
 
-								// Arm Opening Salvo for every weapon fired during this tick's front-gun volley.
-								if (endlessFxActive() && temp == SHOT_FRONT
-								    && (coopEndlessMode || this_player == &player[0]))
-									endlessOpeningSalvoConsume();
-
+								// Opening Salvo was armed for this tick's whole volley before the
+								// special went out; see endlessArmOpeningSalvoForTick.
 								b = player_shot_create(item, temp, this_player->x, this_player->y, *mouseX_, *mouseY_, l11_primary, playerNum_);
 
 								// Free does not mean unconditional: zeroing poweruse also makes the

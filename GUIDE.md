@@ -139,7 +139,9 @@ one shot can wear a single target down.
 Elites and champions are palette-shifted and shed sparks in the same tint. Their
 shots fly in it, they explode in it, and the bounty line at the bottom of the
 screen names the tier in it as well. Linked parts share one tier and one
-bounty. Every enemy takes its tier on the frame it appears, so nothing
+bounty, and sealed armour in the same group takes the colour too, so a whole
+hull shifts together. Armour that no part of the level ever makes vulnerable
+stays plain. Every enemy takes its tier on the frame it appears, so nothing
 recolours or rearms while you are fighting it. Bosses can be promoted, and so
 can an enemy that starts out invulnerable, such as a boss flying in armored or
 a sealed hull. Scenery that can never be damaged is never promoted. An enemy
@@ -311,7 +313,11 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns
 green when it is ready, and each boosted shot flashes a few sparks in its own
-colour.
+colour. The window covers everything you fire inside it, sidekicks and the
+special included, and a special that goes off on the same press as the volley
+belongs to that volley. A special that fires no shot, such as a repulsor, a
+repair or an invulnerability, gets the 2.5x on its effect instead and bursts
+green off the hull.
 
 Kinetic Converter pays out on every hit that costs shield or hull. Each hit
 takes 8% per stack off whatever is left of the special recharge, credits 0.25

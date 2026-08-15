@@ -777,6 +777,8 @@ long endlessScorePickupValue(uint p, long value);
 int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)
 int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
 Uint8 endlessEliteTint(int eliteState);      // tier's palette-bank filter, 0 for an ordinary enemy
+// Colour an invulnerable part borrows from its link group, 0 when that group holds no tier.
+Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft);
 
 // Call for every logical death so ordinary enemies break the link-group latch.
 void endlessAwardEliteKill(int linknum, int eliteState, int killer);

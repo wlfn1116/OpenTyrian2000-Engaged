@@ -2643,9 +2643,12 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 					goto enemy_gone;
 
 				// Elite/champion tint: filter is zeroed every frame (below), so re-apply it
-				// here each frame. Skip if something already set filter (e.g. a hit flash).
-				if (enemy[i].eliteState >= 2 && enemy[i].filter == 0)
-					enemy[i].filter = (enemy[i].eliteState == 3) ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER;
+				// here each frame. Skip if something already set filter (e.g. a hit flash). A part
+				// with no tier of its own borrows its group's, so a hull tints as one body.
+				if (enemy[i].filter == 0)
+					enemy[i].filter = (enemy[i].eliteState >= 2)
+					                ? endlessEliteTint(enemy[i].eliteState)
+					                : endlessEliteShellTint(enemy[i].linknum, enemy[i].armorleft);
 
 				endlessEliteAuraSparks(i);
 
