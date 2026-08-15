@@ -914,7 +914,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 56.
+`NET_VERSION` bump. The current value is 57.
 
 Recent versions:
 
@@ -957,6 +957,7 @@ Recent versions:
 | 54 | Twiddle horizontal intent mirrors while the screen is upside down |
 | 55 | Sparser Opening Salvo spark cue, spending fewer generator draws per boosted shot |
 | 56 | Opening Salvo armed before the special fires, so the special joins its own volley |
+| 57 | Nort banking sparks belong to the ship that threw them, not always player one |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

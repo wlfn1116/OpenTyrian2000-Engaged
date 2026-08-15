@@ -9981,7 +9981,7 @@ redo:
 						// pick opposite orders, so the jitter landed on opposite axes per platform.
 						const int spark_x = tempW + (mt_rand() % 8) - 4;
 						const int spark_y = this_player->y + (mt_rand() % 8) - 4;
-						b = player_shot_create(0, SHOT_NORTSPARKS, spark_x, spark_y, *mouseX_, *mouseY_, 671, 1);
+						b = player_shot_create(0, SHOT_NORTSPARKS, spark_x, spark_y, *mouseX_, *mouseY_, 671, playerNum_);
 						shotRepeat[SHOT_NORTSPARKS] = abs(ship_banking) - 1;
 					}
 				}
@@ -10081,8 +10081,8 @@ redo:
 				/* PLAYER SHOT Creation */
 
 				// Everything below is this ship's: the salvo it spends, the perks its shots read.
-				// Re-assert the owner, since the Nort banking sparks above fire as player one and
-				// player_shot_create leaves the effect context on whoever it fired for.
+				// Re-assert the owner, since player_shot_create leaves the effect context on whoever
+				// it fired for and the Nort banking sparks above run through it earlier in the tick.
 				endlessSetFxPlayer((uint)(this_player - &player[0]));
 
 				// Ahead of the special, so a special pressed with the volley belongs to it.
