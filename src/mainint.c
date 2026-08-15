@@ -7932,7 +7932,9 @@ void JE_inGameDisplays(void)
 		            ? PLAYFIELD_LEFT + SCORE_INSET
 		            : PLAYFIELD_RIGHT - width - SCORE_INSET + 2;
 
-		if (smoothies[6 - 1])
+		// Endless draws in the light cone's pale ink throughout: its random level order leaves no
+		// fixed backdrop for the dark green default to sit against.
+		if (smoothies[6 - 1] || endlessMode)
 			JE_textShade(VGAScreen, x, vga_height - 25, tempstr, 8, 8, FULL_SHADE);
 		else
 			JE_textShade(VGAScreen, x, vga_height - 25, tempstr, 2, 4, FULL_SHADE);
