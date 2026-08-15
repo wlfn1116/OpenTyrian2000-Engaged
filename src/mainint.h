@@ -103,6 +103,9 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 // Resolves a movement intent (positive right and down) to the one-pixel target JE_SFCodes
 // reads: the dominant axis inside the 2:1 cone, both axes (a neutral tick) outside it.
 void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y);
+// The wire form of that intent (RB_MOVE_* in rollback.h) and the direction rebuilt from it.
+Uint16 rb_move_bits(int dx, int dy);
+void rb_move_dir(Uint16 bits, int *out_dx, int *out_dy);
 
 long weapon_upgrade_cost(long base_cost, unsigned int power);
 ulong JE_getCost(JE_byte itemType, JE_word itemNum);

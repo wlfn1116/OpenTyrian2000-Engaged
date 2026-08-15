@@ -2222,6 +2222,12 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 
 void network_shop_begin(void)
 {
+	/* A level that ended on the peer's quit leaves the notice at the reliable head for its
+	 * handler (nrb_peer_left_level). Both co-op modes reopen the outpost after a quit, so this
+	 * is that handler; the pumps below read only shop traffic and would leave it in front of
+	 * everything the peer sends from now on. */
+	network_quit_notice_retire();
+
 	network_shop_save_request = 0;
 	network_shop_peer_ready = false;
 	network_shop_peer_lock = false;
@@ -3371,6 +3377,19 @@ void network_shop_adopt_host_level(void)
 void network_shop_end(void)
 {
 	network_shop_active = false;
+}
+
+/* Everything the peer sends after its quit queues behind that notice, and the outpost's departure
+ * test reads a queued quit as "the peer already left". See "Outpost protocol" in doc/notes.md. */
+bool network_quit_notice_retire(void)
+{
+	bool retired = false;
+	while (isNetworkGame && network_inbound_head() == PACKET_GAME_QUIT)
+	{
+		network_update();
+		retired = true;
+	}
+	return retired;
 }
 
 /* Both machines write the same two loadouts, so the save waits on the peer confirming what it

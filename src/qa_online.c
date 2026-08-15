@@ -1318,6 +1318,58 @@ static void qa_hostile_packets(void)
 	coopEndlessMode = savedEndless;
 	thisPlayerNum = savedThis;
 }
+
+/* A co-op quit reopens the outpost on both machines with the quitter's notice still at the head
+ * of the other one's reliable queue, where the level leaves it for its handler. Untouched there
+ * it hides every shop packet behind it and reads as a departure; opening the outpost is what
+ * retires it. */
+static void qa_quit_notice_retire(void)
+{
+	const JE_boolean savedNet = isNetworkGame;
+	const bool savedTwo = twoPlayerMode, savedCampaign = coopCampaignMode;
+	const bool savedEndless = coopEndlessMode;
+	const uint savedThis = thisPlayerNum;
+	const Player savedPeer = player[1];
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	coopCampaignMode = false;
+	coopEndlessMode = true;
+	thisPlayerNum = 1;
+
+	Uint8 raw[NET_PACKET_SIZE];
+
+	// The peer's quit at the head, its first outpost packet queued behind it.
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_GAME_QUIT, &raw[0]);
+	qa_inject_packet(raw, 4);
+
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_SHOP_SYNC, &raw[0]);
+	SDLNet_Write16(2, &raw[4]);        // sender: the peer
+	SDLNet_Write16(5000, &raw[6]);     // sequence, past anything seen
+	SDLNet_Write16(0, &raw[8]);        // flags: plain state, so the pump owes no reply
+	SDLNet_Write32(4321, &raw[14]);    // cash, the adopted field the check reads back
+	if (packet_in[1] == NULL)
+		packet_in[1] = SDLNet_AllocPacket(NET_PACKET_SIZE);
+	memcpy(packet_in[1]->data, raw, 40);
+	packet_in[1]->len = 40;
+
+	qa_check(!network_shop_pump() && network_shop_departure_pending(),
+	         "a queued quit blocks the outpost pump and reads as a departure");
+	qa_check(network_quit_notice_retire() && network_inbound_head() == PACKET_SHOP_SYNC,
+	         "opening the outpost retires the peer's quit notice");
+	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].cash == 4321,
+	         "...and the shop packet behind it is read");
+	qa_check(!network_quit_notice_retire(), "there is nothing to retire off an empty queue");
+
+	player[1] = savedPeer;
+	isNetworkGame = savedNet;
+	twoPlayerMode = savedTwo;
+	coopCampaignMode = savedCampaign;
+	coopEndlessMode = savedEndless;
+	thisPlayerNum = savedThis;
+}
 #endif
 
 /* ---- the debug-menu wire block ------------------------------------------------------- */
@@ -2057,6 +2109,7 @@ void qa_test_online_suite(void)
 	qa_debug_block_roundtrip();
 	qa_test_net_lobby_strings();
 	qa_hostile_packets();
+	qa_quit_notice_retire();
 	qa_sa_ship_packet();
 	qa_depart_gate();
 	qa_endless_jump_pick();

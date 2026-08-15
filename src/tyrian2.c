@@ -1090,10 +1090,28 @@ void vt_ship_twiddle_dir(int player_index, int *out_dx, int *out_dy)
 	}
 }
 
+/* The spotlight sits where the ship this machine flies is drawn this frame: the tick position
+ * plus the override channel on an interpolated present, the sim position on the tick present.
+ * The peer's ship stays dark here and lights its own screen. Presentation only. */
+static void spotlight_anchor(bool interpolate, float *out_x, float *out_y)
+{
+	const int p = (isNetworkGame && thisPlayerNum >= 2) ? 1 : 0;
+	if (interpolate)
+	{
+		*out_x = (float)ship_tick_x[p] + rl_get_ship_override_dx(p);
+		*out_y = (float)ship_tick_y[p] + rl_get_ship_override_dy(p);
+	}
+	else
+	{
+		*out_x = (float)player[p].x;
+		*out_y = (float)player[p].y;
+	}
+}
+
 // Copy the freshly-drawn playfield into VGAScreenSeg, applying the special
 // vertical-flip / lighting composites when active; interpolated in-between frames
 // re-composite through here too.
-static void composite_playfield(SDL_Surface *playfield)
+static void composite_playfield(SDL_Surface *playfield, bool interpolate)
 {
 	JE_byte *src;
 	Uint8 *s = VGAScreenSeg->pixels;
@@ -1115,11 +1133,10 @@ static void composite_playfield(SDL_Surface *playfield)
 	}
 	else if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
-		// The cone follows the ship this machine flies; the peer's ship stays in the
-		// dark here and lights its own screen. Presentation only, nothing simulated.
-		const Player *lit = &player[(isNetworkGame && thisPlayerNum >= 2) ? 1 : 0];
-		lighty = 172 - lit->y;
-		lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - lit->x;
+		float litx, lity;
+		spotlight_anchor(interpolate, &litx, &lity);
+		lighty = 172 - round_signed(lity);
+		lightx = (PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - round_signed(litx);
 
 		for (y = 184; y; y--)
 		{
@@ -1166,7 +1183,8 @@ static void composite_playfield(SDL_Surface *playfield)
 // spotlight) on the supersampled playfield, writing into vga_hi's playfield
 // region. The spotlight math runs in HI units (every distance multiplied by
 // scale), so the light circle is the same size on screen, just smoother.
-static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int scale)
+static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int scale,
+                                   bool interpolate)
 {
 	const int width = PLAYFIELD_WIDTH * scale;
 	const int rows = 184 * scale;
@@ -1185,10 +1203,13 @@ static void composite_playfield_hi(SDL_Surface *playfield, SDL_Surface *out, int
 	}
 	else if (starShowVGASpecialCode == 2 && processorType >= 2)
 	{
-		// Same local-ship anchor as composite_playfield.
-		const Player *lit = &player[(isNetworkGame && thisPlayerNum >= 2) ? 1 : 0];
-		const int lighty = (172 - lit->y) * scale;
-		const int lightx = ((PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5) - lit->x) * scale;
+		// Scaled before rounding, so under supersampling the cone glides on the sub-pixel grid
+		// with the ship.
+		float litx, lity;
+		spotlight_anchor(interpolate, &litx, &lity);
+		const float edge = (float)(PLAYFIELD_WIDTH - PLAYFIELD_X_SHIFT + 5);
+		const int lighty = round_signed((172.0f - lity) * (float)scale);
+		const int lightx = round_signed((edge - litx) * (float)scale);
 		const int band = 5 * scale;
 
 		for (int y = rows; y; y--)
@@ -1574,7 +1595,7 @@ void JE_starShowVGA(void)
 		// present paths; the interp loop below redraws it shifted after replay.
 		draw_active_zinglon_pillars(game_screen, 1, false);
 
-		composite_playfield(game_screen);
+		composite_playfield(game_screen, false);
 
 		if (smoothScroll != 0)
 		{
@@ -1714,7 +1735,7 @@ void JE_starShowVGA(void)
 					{
 						// Expand the static HUD, then redraw its three moving gauges at
 						// supersampled resolution for sub-pixel motion.
-						composite_playfield_hi(interp_buf, vga_hi, rss);
+						composite_playfield_hi(interp_buf, vga_hi, rss, true);
 						expand_hud_to_hi(VGAScreenSeg, vga_hi, rss);
 						if (power_gauge_active)
 							draw_power_gauge(vga_hi, rss,
@@ -1726,7 +1747,7 @@ void JE_starShowVGA(void)
 					}
 					else
 					{
-						composite_playfield(interp_buf);
+						composite_playfield(interp_buf, true);
 
 						// Gauges at the interpolated level: they rise and fall smoothly
 						// instead of stepping once per tick.

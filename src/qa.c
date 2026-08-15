@@ -4993,6 +4993,104 @@ static void qa_test_twiddle_diagonals(void)
 	smoothies[9-1] = savedInvert;
 }
 
+/* The direction a target carries, decoded as the top of JE_SFCodes decodes it: 1..4 for
+ * UP/DOWN/LEFT/RIGHT, 0 where there is no single direction (the detector turns that into code 9
+ * or a neutral return). Keep it in step with that decode. */
+static int qa_twiddle_code(int px, int py, int tx, int ty)
+{
+	const int count = (ty > py) + (ty < py) + (px < tx) + (px > tx);
+	if (count != 1)
+		return 0;
+	return (ty > py) * 1 + (ty < py) * 2 + (px < tx) * 3 + (px > tx) * 4;
+}
+
+/* The wire round trip. A peer never sees the displacement, only rb_move_bits, and rebuilds a
+ * direction from them; the detector has to read that the way it reads the displacement itself,
+ * upside down or not, or the two machines resolve one flick as two different codes. */
+static void qa_test_twiddle_wire(void)
+{
+	enum { PX = 100, PY = 100 };
+	const JE_boolean savedInvert = smoothies[9-1];
+	const JE_boolean savedSuper = superTyrian;
+	const Player saved0 = player[0];
+	JE_byte savedCode[2][21];
+	JE_byte savedExec[2];
+	bool savedButton[4];
+	memcpy(savedCode, SFCurrentCode, sizeof(savedCode));
+	memcpy(savedExec, SFExecuted, sizeof(savedExec));
+	memcpy(savedButton, button, sizeof(savedButton));
+
+	// Every shape a tick's displacement can take, as rb_fill_tuple measures it.
+	static const struct {
+		int dx, dy;
+	} flicks[] = {
+		{  0,  0 }, {  1,  0 }, {  0, -1 }, { -1,  1 },
+		{  3,  0 }, { -3,  0 }, {  0,  3 }, {  0, -3 },
+		{  3,  1 }, {  1,  3 }, {  5, -2 }, { -1, -4 },
+		{  3,  2 }, {  2, -3 }, {  2,  2 }, { -2, -2 },
+	};
+
+	bool agree = true;
+	for (int inverted = 0; inverted <= 1; ++inverted)
+	{
+		smoothies[9-1] = inverted != 0;
+		for (unsigned f = 0; f < COUNTOF(flicks); ++f)
+		{
+			int lx = 0, ly = 0, wx = 0, wy = 0, dx = 0, dy = 0;
+			SF_twiddleTarget(PX, PY, flicks[f].dx, flicks[f].dy, &lx, &ly);
+			rb_move_dir(rb_move_bits(flicks[f].dx, flicks[f].dy), &dx, &dy);
+			SF_twiddleTarget(PX, PY, dx, dy, &wx, &wy);
+			agree &= qa_twiddle_code(PX, PY, lx, ly) == qa_twiddle_code(PX, PY, wx, wy);
+		}
+	}
+	qa_check(agree, "a flick reads as the same code from the wire as from its displacement, "
+	                "upside down or not");
+
+	/* A whole combo over the wire on an upside-down screen. The Nort ship's first row is Seeker
+	 * Bombs (LEFT, RIGHT, DOWN with fire); the displacements below are the ones the classic reads
+	 * hand the wire for the rotated keys, RIGHT, LEFT, UP with fire, since the vertical half is
+	 * inverted before the tuple is filled and the horizontal one at the detector. */
+	enum { SEEKER_BOMBS_SPECIAL = 39 };
+	static const struct {
+		int dx, dy;
+		bool fire;
+	} rotated[] = {
+		{  1,  0, false },
+		{ -1,  0, false },
+		{  0,  1, true  },
+	};
+	superTyrian = false;
+	player[0].items.ship = 12;
+
+	for (int inverted = 1; inverted >= 0; --inverted)
+	{
+		smoothies[9-1] = inverted != 0;
+		memset(SFCurrentCode, 0, sizeof(SFCurrentCode));
+		SFExecuted[0] = 0;
+		for (unsigned s = 0; s < COUNTOF(rotated); ++s)
+		{
+			int dx = 0, dy = 0, tx = 0, ty = 0;
+			button[0] = rotated[s].fire;
+			rb_move_dir(rb_move_bits(rotated[s].dx, rotated[s].dy), &dx, &dy);
+			SF_twiddleTarget(PX, PY, dx, dy, &tx, &ty);
+			JE_SFCodes(1, PX, PY, tx, ty);
+		}
+		if (inverted)
+			qa_check(SFExecuted[0] == SEEKER_BOMBS_SPECIAL,
+			         "a rotated combo entered over the wire fires on an upside-down screen");
+		else
+			qa_check(SFExecuted[0] == 0,
+			         "...and the same wire input on an upright screen is not that combo");
+	}
+
+	memcpy(button, savedButton, sizeof(button));
+	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
+	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
+	player[0] = saved0;
+	superTyrian = savedSuper;
+	smoothies[9-1] = savedInvert;
+}
+
 /* Any tick that is not the combo's next code throws it away, except the code just consumed and a
  * tick with everything released. The expected direction with the fire button in the wrong state
  * goes too, which is what keeps ordinary flying from finishing a combo. */
@@ -5238,6 +5336,7 @@ int qa_run_unit_suite(void)
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();
 	qa_test_twiddle_diagonals();
+	qa_test_twiddle_wire();
 	qa_test_twiddle_strictness();
 	qa_test_twiddle_cooldown();
 	qa_test_twiddle_charges();

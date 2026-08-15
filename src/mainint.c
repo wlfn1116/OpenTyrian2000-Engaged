@@ -8574,13 +8574,35 @@ static float link_gun_angle_from_wire(Uint16 angle)
 	return (float)angle * (float)(2.0 * M_PI / 65536.0);
 }
 
-/* RB_MOVE_DIAG for a displacement that SF_twiddleTarget keeps on both axes, so the peer's twiddle
- * detector reads the same neutral tick. */
-static Uint16 rb_move_diag_bit(int dx, int dy)
+/* The RB_MOVE_* bits for a tick's displacement (positive right and down): the dominant axis as the
+ * classic |dx|>|dy| turret test chose it, and RB_MOVE_DIAG for a tick SF_twiddleTarget keeps on
+ * both axes, so the peer's twiddle detector reads the same neutral tick. */
+Uint16 rb_move_bits(int dx, int dy)
 {
+	Uint16 bits = 0;
+	if (abs(dx) > abs(dy))
+		bits |= (dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
+	else if (dy != 0)
+		bits |= (dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
+
 	int tx, ty;
 	SF_twiddleTarget(0, 0, dx, dy, &tx, &ty);
-	return (tx != 0 && ty != 0) ? RB_MOVE_DIAG : 0;
+	if (tx != 0 && ty != 0)
+		bits |= RB_MOVE_DIAG;
+	return bits;
+}
+
+/* The direction the twiddle detector rebuilds from those bits. Any two-axis target reads as
+ * neutral, so a DIAG tick becomes one diagonal; which one does not matter. */
+void rb_move_dir(Uint16 bits, int *out_dx, int *out_dy)
+{
+	*out_dx = (bits & RB_MOVE_RIGHT) ? 1 : (bits & RB_MOVE_LEFT) ? -1 : 0;
+	*out_dy = (bits & RB_MOVE_DOWN) ? 1 : (bits & RB_MOVE_UP) ? -1 : 0;
+	if (bits & RB_MOVE_DIAG)
+	{
+		*out_dx = 1;
+		*out_dy = 1;
+	}
 }
 
 /* Capture the effective per-tick input tuple for a player after the movement
@@ -8613,18 +8635,9 @@ static void rb_fill_tuple(RbInput *in, const Player *this_player,
 	}
 	in->buttons = buttons;
 
-	// Movement intent for the docked-link tests: this tick's real input
-	// displacement, captured before the dock pin rewrites x/y (RB_MOVE_* in
-	// rollback.h).  The axis bit carries the dominant half exactly as the
-	// classic |dx|>|dy| turret test chose it; RB_MOVE_DIAG marks a tick
-	// outside the twiddle cone.
-	const int dx = (int)in->x - (int)in->mouseX;
-	const int dy = (int)in->y - (int)in->mouseY;
-	if (abs(dx) > abs(dy))
-		in->buttons |= (dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
-	else if (dy != 0)
-		in->buttons |= (dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
-	in->buttons |= rb_move_diag_bit(dx, dy);
+	// Movement intent for the docked-link tests and the twiddle detector: this tick's real input
+	// displacement, captured before the dock pin rewrites x/y.
+	in->buttons |= rb_move_bits((int)in->x - (int)in->mouseX, (int)in->y - (int)in->mouseY);
 
 	if (link_analog)
 	{
@@ -9150,7 +9163,11 @@ redo:
 
 				if (smoothies[9-1])
 				{
-					*mouseY_ = this_player->y - (*mouseY_ - this_player->y);
+					// The classic reads above moved the ship by the raw key, and mirroring the
+					// snapshot is what inverts that displacement. VT moved it inverted already
+					// (vt_ship_step); mirrored again, the wire would carry the un-inverted one.
+					if (!vt_input)
+						*mouseY_ = this_player->y - (*mouseY_ - this_player->y);
 					mouseYC = -mouseYC;
 				}
 
@@ -9262,13 +9279,7 @@ redo:
 				}
 				/* Linked Dragonwing control depends on movement intent. Deriving it from the
 				 * final position and a private mouse anchor can produce different results. */
-				const int link_dx = this_player->x - *mouseX_;
-				const int link_dy = this_player->y - *mouseY_;
-				if (abs(link_dx) > abs(link_dy))
-					buttons |= (link_dx > 0) ? RB_MOVE_RIGHT : RB_MOVE_LEFT;
-				else if (link_dy != 0)
-					buttons |= (link_dy > 0) ? RB_MOVE_DOWN : RB_MOVE_UP;
-				buttons |= rb_move_diag_bit(link_dx, link_dy);
+				buttons |= rb_move_bits(this_player->x - *mouseX_, this_player->y - *mouseY_);
 
 				// Absolute positions are idempotent when a lost packet is reconstructed.
 				SDLNet_Write16(this_player->x, &packet_state_out[0]->data[4]);
@@ -9440,17 +9451,8 @@ redo:
 			/* Network tuples carry the dominant movement direction and the outside-the-cone
 			 * flag. Rebuild the one-pixel target from shared intent so twiddle recognition
 			 * stays deterministic. */
-			int dirx = (linkIntent & RB_MOVE_RIGHT) ? 1
-			           : (linkIntent & RB_MOVE_LEFT) ? -1 : 0;
-			int diry = (linkIntent & RB_MOVE_DOWN) ? 1
-			           : (linkIntent & RB_MOVE_UP) ? -1 : 0;
-			if (linkIntent & RB_MOVE_DIAG)
-			{
-				// Any two-axis target reads as neutral; the actual diagonal does not matter.
-				dirx = 1;
-				diry = 1;
-			}
-			int tx, ty;
+			int dirx, diry, tx, ty;
+			rb_move_dir(linkIntent, &dirx, &diry);
 			SF_twiddleTarget(this_player->x, this_player->y, dirx, diry, &tx, &ty);
 			JE_SFCodes(playerNum_, this_player->x, this_player->y, tx, ty);
 		}

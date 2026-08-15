@@ -70,6 +70,15 @@ The integrator is simulation code, so a rollback session adopts the host's
 Smooth Motion choice through `nrb_session_vt()`. A machine's own setting still
 selects how it samples live input.
 
+Anything presented around the ship follows the override channel
+(`rl_get_ship_override_dx/dy`), which carries the sub-tick offset VT produces
+offline and the extrapolation and easing produce online. The spotlight
+composite adds it to `ship_tick_x/y` (`spotlight_anchor`); the Zinglon pillar
+adds it to its own tick-time centre. `player[].x/y` is the presented position
+only offline under VT, where the integrator writes it back every frame. Online
+it is the tick's simulation position and steps, so anything anchored on it
+there lags the sprite by up to a tick.
+
 ### Feedback and overlays
 
 Ice, water, and lava use frame feedback:
@@ -1053,6 +1062,19 @@ Both chunked publishes (custom weapon, Endless run) retire stale handshake
 duplicates ahead of their acknowledgement and stop on a queued quit, which
 stays queued for the quit handler.
 
+The level leaves a peer's `PACKET_GAME_QUIT` at the reliable head for that
+handler (`nrb_peer_left_level`, the options-menu wait). In both co-op modes the
+quit reopens the outpost on both machines (Campaign reloads the level backup
+and runs its `]I` record, Endless restores the sortie), so
+`network_shop_begin` is the handler and retires it through
+`network_quit_notice_retire`. Left there, the outpost's pumps read only shop
+traffic and never reach the packets queued behind it, and
+`network_shop_departure_pending` reads the quit as the peer having already
+left: the quitter's save request went unanswered, and the other machine's
+departure skipped the rendezvous and could fold its own course. The modes with
+no shop rendezvous advance the queue themselves at the departure gate, which
+retires it there.
+
 The acknowledgement comes from the peer's own outpost pump, so a peer still on
 the level end screen cannot answer. The checkpoint therefore draws the outpost
 wait notice and accepts Esc, and its `NET_SHOP_SAVE_WAIT` cap remains the last
@@ -1378,12 +1400,20 @@ and network paths share, and moving it upstream would also mirror ship movement,
 banking accel, and the docked turret angle, which all read unmirrored intent.
 Self-test replay hands its recorded target to `JE_SFCodes` directly, already
 mirrored, so it takes no second pass. The wire still carries the unmirrored
-axis bit and each machine mirrors at its own detector; `smoothies` is rollback
-state and derives from synchronized level and modifier state, so both peers
-resolve the same direction. Upstream reversed only the vertical half, so a
-twiddle there asked for opposite up and down with unchanged left and right. The
-mirror moves simulation on any level that sets the flag, which is what wire
-version 54 marks.
+axis bit (`rb_move_bits`) and each machine mirrors at its own detector
+(`rb_move_dir` into `SF_twiddleTarget`); `smoothies` is rollback state and
+derives from synchronized level and modifier state, so both peers resolve the
+same direction. Upstream reversed only the vertical half, so a twiddle there
+asked for opposite up and down with unchanged left and right. The mirror moves
+simulation on any level that sets the flag, which is what wire version 54 marks.
+
+The snapshot mirror is conditional on the classic reads having moved the ship.
+`vt_ship_step` already inverts the display-rate ship's motion, and online
+`vt_ship_commit_net` hands that inverted displacement to the tick ahead of the
+mirror, so mirroring it again put the raw key on the wire: online with Smooth
+Motion, the vertical half of a twiddle was the un-rotated key while every other
+path rotated it. `vt_input` is the gate because it names exactly the ships VT
+moved this tick; a docked Dragonwing is classic-read even under VT.
 
 Recognition is strict. A tick with fire held and no direction is neutral like a
 shallow diagonal and reaches neither branch; anything else that is not the

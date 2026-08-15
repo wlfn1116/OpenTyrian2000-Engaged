@@ -427,6 +427,9 @@ void network_custom_weapon_reset(void);
 // the joiner has to be allowed to finish shopping first.
 void network_shop_adopt_host_level(void);
 void network_shop_end(void);
+/* Retire the peer's quit notice a level left at the reliable head. network_shop_begin calls it,
+ * as the outpost is where a co-op quit lands; public so the suite can drive it. */
+bool network_quit_notice_retire(void);
 /* Checkpoint both loadouts before a save. The acknowledgement returns the peer's own outpost
  * half, which the save stores next to this machine's. */
 void network_shop_sync_for_save(void);
@@ -558,6 +561,7 @@ static inline void network_custom_weapon_publish_resume(void) { }
 static inline void network_custom_weapon_reset(void) { }
 static inline void network_shop_adopt_host_level(void) { }
 static inline void network_shop_end(void) { }
+static inline bool network_quit_notice_retire(void) { return false; }
 static inline void network_shop_sync_for_save(void) { }
 #endif
 
