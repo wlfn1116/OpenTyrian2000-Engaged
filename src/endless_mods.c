@@ -47,7 +47,7 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_OVERCHARGE,     0, "more weapon damage" },
 	{ ENDLESS_MOD_DILATION,       0, "slower enemy shots" },
 	{ ENDLESS_MOD_FAVOR,          0, "cheaper next shop" },
-	{ ENDLESS_MOD_OVERDRIVE,   0, "Turbodrive + Overblast" },
+	{ ENDLESS_MOD_OVERDRIVE,   0, "stacking damage + firerate" },
 	{ ENDLESS_MOD_OVERBLAST,   0, "kills stack damage" },
 	{ ENDLESS_MOD_BOUNTY,        30, "big cash payout" },
 	{ ENDLESS_MOD_CURSED,        40, "cash now, empty shop" },

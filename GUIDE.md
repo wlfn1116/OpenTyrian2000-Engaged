@@ -176,7 +176,7 @@ alongside Elite Pack.
 | Light Homing | Weak enemy homing | +0.6 |
 | Kamikaze | Moderate enemy homing | +1.2 |
 | Rampage | Strong homing and contact damage | +5.0 |
-| Topsy Turvy | Flips the playfield and controls | +1.0 |
+| Topsy Turvy | Flips the playfield, controls, and twiddle directions | +1.0 |
 | Molasses | Slows the player ship | +1.5 |
 | No Shield Regen | Disables shield recharge | +1.2 |
 | Dead Generator | Disables shield recharge and starves the main gun | +3.0 |

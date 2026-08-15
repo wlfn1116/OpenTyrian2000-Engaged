@@ -6369,10 +6369,13 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 /* The one-pixel target JE_SFCodes reads a movement intent as: a direction counts only while its
  * axis exceeds twice the other, and a shallower diagonal keeps both axes, which the detector reads
  * as a neutral tick. rb_fill_tuple applies the same rule before intent goes on the wire. dx and dy
- * are positive right and down, and the target sits on the opposite side. See doc/notes.md,
- * "Twiddles". */
+ * are positive right and down, and the target sits on the opposite side. An upside-down screen
+ * mirrors the horizontal intent here. See doc/notes.md, "Twiddles". */
 void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y)
 {
+	if (smoothies[9-1])
+		dx = -dx;
+
 	if (abs(dx) > 2 * abs(dy))
 		dy = 0;
 	else if (abs(dy) > 2 * abs(dx))

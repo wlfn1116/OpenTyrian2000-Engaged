@@ -4889,6 +4889,11 @@ static void qa_test_twiddle_diagonals(void)
 {
 	enum { PX = 100, PY = 100 };
 
+	// The detector mirrors the horizontal half on an upside-down screen, so pin the flag off for
+	// every case that expects an unmirrored target.
+	const JE_boolean savedInvert = smoothies[9-1];
+	smoothies[9-1] = false;
+
 	// One entry per shape a flick can take, with the target the cone has to produce.
 	static const struct {
 		int dx, dy;
@@ -4917,6 +4922,19 @@ static void qa_test_twiddle_diagonals(void)
 		resolved &= tx == flicks[f].wantX && ty == flicks[f].wantY;
 	}
 	qa_check(resolved, "a flick collapses inside the 2:1 cone and keeps both axes outside it");
+
+	// An upside-down screen mirrors the horizontal half of every flick. The vertical half reaches
+	// the helper already inverted, so only the expected x moves.
+	smoothies[9-1] = true;
+	bool mirrored = true;
+	for (unsigned f = 0; f < COUNTOF(flicks); ++f)
+	{
+		int tx = 0, ty = 0;
+		SF_twiddleTarget(PX, PY, flicks[f].dx, flicks[f].dy, &tx, &ty);
+		mirrored &= tx == 2 * PX - flicks[f].wantX && ty == flicks[f].wantY;
+	}
+	qa_check(mirrored, "an upside-down screen mirrors a flick's horizontal half only");
+	smoothies[9-1] = false;
 
 	// A twiddle performed while the ship drifts sideways still registers.
 	const Player saved0 = player[0];
@@ -4972,6 +4990,7 @@ static void qa_test_twiddle_diagonals(void)
 	memcpy(SFExecuted, savedExec, sizeof(SFExecuted));
 	memcpy(SFCurrentCode, savedCode, sizeof(savedCode));
 	player[0] = saved0;
+	smoothies[9-1] = savedInvert;
 }
 
 /* Any tick that is not the combo's next code throws it away, except the code just consumed and a

@@ -912,6 +912,7 @@ Recent versions:
 | 51 | Withdrawable departure gate ahead of the level commit |
 | 52 | Twiddle 2:1 intent cone and its neutral-tick wire bit |
 | 53 | A twiddle combo resets on any input that is not its next step |
+| 54 | Twiddle horizontal intent mirrors while the screen is upside down |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -1367,6 +1368,22 @@ resolved target for self-test replay, so a replayed tick reproduces the same
 direction. Demo playback has no live controls, which is why the display-rate
 path is gated on `play_demo` and the classic path derives its intent from the
 tick's displacement.
+
+`smoothies[8]` inverts the vertical axis before any of those paths reaches the
+detector: the classic path mirrors the tick-start `*mouseY_`, the display-rate
+path negates `diry`, and the wire tuple carries the inverted value. The
+horizontal axis has no such upstream hook, so `SF_twiddleTarget` mirrors `dx`
+itself. Keep the mirror there. It is the one funnel the classic, display-rate,
+and network paths share, and moving it upstream would also mirror ship movement,
+banking accel, and the docked turret angle, which all read unmirrored intent.
+Self-test replay hands its recorded target to `JE_SFCodes` directly, already
+mirrored, so it takes no second pass. The wire still carries the unmirrored
+axis bit and each machine mirrors at its own detector; `smoothies` is rollback
+state and derives from synchronized level and modifier state, so both peers
+resolve the same direction. Upstream reversed only the vertical half, so a
+twiddle there asked for opposite up and down with unchanged left and right. The
+mirror moves simulation on any level that sets the flag, which is what wire
+version 54 marks.
 
 Recognition is strict. A tick with fire held and no direction is neutral like a
 shallow diagonal and reaches neither branch; anything else that is not the
