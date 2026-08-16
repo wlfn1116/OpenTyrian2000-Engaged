@@ -596,6 +596,132 @@ static void qa_reactive_state_matrix(void)
 	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1,
 	         "...and P1 alongside it");
 
+	/* Chain Reaction: every stack widens the blast, and the queued pulse is measured against the
+	 * stacks of the ship that made the kill, not whichever ship the effect context last named. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_CHAINRXN, 1);
+	endlessPerkGrant(1, PERK_CHAINRXN, 3);
+	for (int stacks = 0; stacks <= 3; ++stacks)
+	{
+		memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+		endlessPerkGrant(0, PERK_CHAINRXN, (JE_byte)stacks);
+		endlessSetFxPlayer(0);
+		const int want = (stacks == 0)
+		               ? 0
+		               : ENDLESS_PERK_CHAIN_RADIUS + (stacks - 1) * ENDLESS_PERK_CHAIN_REACH;
+		char reachLabel[64];
+		snprintf(reachLabel, sizeof(reachLabel), "Chain Reaction at %d stacks blasts %d px",
+		         stacks, want);
+		qa_check(endlessPerkChainRadius() == want, reachLabel);
+	}
+
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_CHAINRXN, 1);
+	endlessPerkGrant(1, PERK_CHAINRXN, 3);
+	qa_check(endlessPerkChainOwner(0) == 0 && endlessPerkChainOwner(1) == 1,
+	         "a pulse belongs to the ship that fired the killing shot");
+	qa_check(endlessPerkChainOwner(ENDLESS_KILLER_NONE) == 1,
+	         "a kill neither ship can be credited with pulses at the wider holding");
+	endlessSetFxPlayer(1);   // the partner acting last must not lend P1 its reach
+	qa_check(endlessPerkChainOwner(0) == 0, "...and the effect context does not decide ownership");
+	endlessSetFxPlayer(endlessPerkChainOwner(0));
+	qa_check(endlessPerkChainRadius() == ENDLESS_PERK_CHAIN_RADIUS,
+	         "P1's kill blasts at P1's one-stack radius");
+	endlessSetFxPlayer(endlessPerkChainOwner(1));
+	qa_check(endlessPerkChainRadius() == ENDLESS_PERK_CHAIN_RADIUS + 2 * ENDLESS_PERK_CHAIN_REACH,
+	         "...and P2's kill at P2's three-stack radius");
+	endlessSetFxPlayer(0);
+
+	coopEndlessMode = false;
+	qa_check(endlessPerkChainOwner(1) == 0 && endlessPerkChainOwner(ENDLESS_KILLER_NONE) == 0,
+	         "one ship flying alone owns every pulse");
+	qa_test_chain_cascade();   // the queue and the drain, with P1's one stack in the effect context
+	coopEndlessMode = true;
+
+	/* A wave's kills are worth what the ship that made them would have earned by shooting. The
+	 * lobby's Credit rule decides which wallets that reaches, Combo Feed decides whose streak it
+	 * feeds, and the drop is owed whoever made it. Both ships hold the perk, so a pulse owned by
+	 * either has a blast of its own to be measured against. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_CHAINRXN, 1);
+	endlessPerkGrant(1, PERK_CHAINRXN, 1);
+
+	const bool savedCombo = endlessCoopComboShared;
+	const ulong savedCash[2] = { player[0].cash, player[1].cash };
+	coop_set_session_double_earnings(false);   // it would scale every figure below
+
+	const int worth = 500;
+	char label[160];
+
+	for (int shared = 0; shared <= 1; ++shared)
+	{
+		coop_set_session_shared_credit(shared != 0);
+
+		for (int owner = 0; owner <= 1; ++owner)
+		{
+			/* A wave of four, so the answer covers everything the wave kills and not just the
+			 * enemy the first pulse reached. */
+			long paid0 = 0, paid1 = 0;
+			int killed = 0;
+			bool dropped = false;
+			qa_chain_kill_row(owner, worth, 4, &paid0, &paid1, &killed, &dropped);
+
+			const long mine = (owner == 0) ? paid0 : paid1;
+			const long theirs = (owner == 0) ? paid1 : paid0;
+
+			/* A drop can be worth something of its own, so the wave's take is only bounded below
+			 * by the row it cleared. What it may not do is leave any of that take unpaid. */
+			snprintf(label, sizeof(label),
+			         "%s credit pays P%d its whole wave: %d kills, %ld for a row worth %d",
+			         shared ? "Shared" : "Individual", owner + 1, killed, mine, 4 * worth);
+			qa_check(killed >= 4 && mine >= 4 * worth, label);
+
+			snprintf(label, sizeof(label), "...and the partner takes %ld of P%d's %ld",
+			         theirs, owner + 1, mine);
+			qa_check(theirs == (shared ? mine : 0), label);
+
+			snprintf(label, sizeof(label), "...and P%d's wave still leaves the drops behind",
+			         owner + 1);
+			qa_check(dropped, label);
+		}
+	}
+
+	/* A streak only advances for a ship flying a kill-fire drive, so both need one before Combo
+	 * Feed has anything to divide. */
+	const unsigned savedMods[2] = { endlessPlayerMods[0], endlessPlayerMods[1] };
+	endlessPlayerMods[0] = endlessPlayerMods[1] = (unsigned)ENDLESS_MOD_TURBODRIVE;
+
+	coop_set_session_shared_credit(false);   // one wallet at a time, so a streak is the only variable
+	for (int sharedCombo = 0; sharedCombo <= 1; ++sharedCombo)
+	{
+		endlessCoopComboShared = (sharedCombo != 0);
+
+		for (int owner = 0; owner <= 1; ++owner)
+		{
+			long paid0;
+			long paid1;
+			int killed = 0;
+			bool dropped;
+			memset(endlessComboKills, 0, sizeof(endlessComboKills));
+			qa_chain_kill_row(owner, worth, 4, &paid0, &paid1, &killed, &dropped);
+
+			const int mine = endlessComboKills[owner], theirs = endlessComboKills[1 - owner];
+			snprintf(label, sizeof(label),
+			         "%s Combo Feed gives P%d's wave of %d a streak of %d, the partner %d",
+			         sharedCombo ? "Shared" : "Individual", owner + 1, killed, mine, theirs);
+			qa_check(killed >= 4 && mine == killed && theirs == (sharedCombo ? killed : 0), label);
+		}
+	}
+
+	endlessPlayerMods[0] = savedMods[0];
+	endlessPlayerMods[1] = savedMods[1];
+	endlessCoopComboShared = savedCombo;
+	coop_set_session_shared_credit(true);
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	player[0].cash = savedCash[0];
+	player[1].cash = savedCash[1];
+	qa_clear_ships();
+
 	/* Shield Matrix reads the ship being computed; the regen loop names each ship in turn. */
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(1, PERK_SHIELDREGEN, 2);

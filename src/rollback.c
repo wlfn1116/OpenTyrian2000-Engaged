@@ -767,9 +767,20 @@ static bool   st_tainted = false;
 static char   st_taint_why[64];
 static bool   st_level_active = false;
 
+/* The self-test skips levels flown with Endless effects, so nothing in that half of the game is
+ * covered by it. A QA run can lift the exclusion to measure one of those systems on purpose; see
+ * qa_run_replay_fixture. Off outside the test flag, which leaves ordinary play untouched. */
+static bool st_allow_endless = false;
+
+void rollback_selftest_allow_endless(bool on)
+{
+	st_allow_endless = on;
+}
+
 bool rollback_selftest_active(void)
 {
-	return rollback_selftest && st_level_active && !isNetworkGame && !endlessFxActive();
+	return rollback_selftest && st_level_active && !isNetworkGame
+	       && (!endlessFxActive() || st_allow_endless);
 }
 
 /* Allocate buffers when the self-test becomes active mid-level; an empty registry would replay

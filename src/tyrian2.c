@@ -251,27 +251,132 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
 		enemy->healthbar_max = enemy->armorleft;
 }
 
-// Queue Chain Reaction pulses until the player-shot pass finishes. Processing them afterward keeps
-// link bookkeeping stable and prevents recursive pulses; chain kills never enqueue another pulse.
+// Chain Reaction pulses queue here and drain once the player-shot pass has finished, which keeps
+// that pass's link bookkeeping stable: a kill made behind its back would disturb the loop walking
+// it. What a pulse destroys queues a pulse of its own, drained on the tick after.
 #define CHAIN_QUEUE_MAX 64
 static struct { int x, y; } chainPulse[CHAIN_QUEUE_MAX];
 static int chainPulseN = 0;
 static int chainPulseLastLink = 0;   // dedup consecutive same-link kills -> one pulse per multi-tile enemy
 
-// Queue a pulse at a killed enemy's screen position. Deduped per linked enemy exactly like
-// endlessCountKill, so a multi-tile enemy pulses once, not once per tile.
-static void chain_queue_kill(int screenX, int y, int linknum)
+// Perks are personal, so the ship that made the kill decides whether its pulse fires and how far and
+// hard it lands. Registered beside the queue it indexes, which a wave in flight leaves standing
+// across a frame: a restore that brought the pulses back without their owners would measure them
+// against the wrong ship.
+static int chainPulseOwner[CHAIN_QUEUE_MAX];
+
+// Evaluate a pulse under `owner`'s perks rather than the ambient effect player. Returns the context
+// to restore, as the elite payout does in endless_combat.c.
+static uint chain_fx_enter(int owner)
 {
-	if (!endlessPerkChainReactionActive())
-		return;
-	if (linknum != 0 && linknum == chainPulseLastLink)
-		return;
-	chainPulseLastLink = linknum;
+	const uint saved = endlessFxPlayer();
+	endlessSetFxPlayer((uint)owner);
+	return saved;
+}
+
+static void chain_reset_queue(void)
+{
+	chainPulseN = 0;
+	chainPulseLastLink = 0;
+}
+
+// Append a pulse belonging to `owner`. A pulse queued while the drain runs lands past the stretch
+// that drain claimed, so it waits for the next tick: the cascade advances one hop per tick and can
+// be watched crossing a formation. CHAIN_QUEUE_MAX bounds how wide one hop can get.
+static void chain_queue_at(int screenX, int y, int owner)
+{
 	if (chainPulseN < CHAIN_QUEUE_MAX)
 	{
 		chainPulse[chainPulseN].x = screenX;
 		chainPulse[chainPulseN].y = y;
+		chainPulseOwner[chainPulseN] = owner;
 		++chainPulseN;
+	}
+}
+
+// Queue a pulse at a killed enemy's screen position. Deduped per linked enemy exactly like
+// endlessCountKill, so a multi-tile enemy pulses once, not once per tile.
+static void chain_queue_kill(int screenX, int y, int linknum, int killer)
+{
+	const int owner = (int)endlessPerkChainOwner(killer);
+
+	const uint fxSaved = chain_fx_enter(owner);
+	const bool active = endlessPerkChainReactionActive();
+	endlessSetFxPlayer(fxSaved);
+
+	if (!active)
+		return;
+	if (linknum != 0 && linknum == chainPulseLastLink)
+		return;
+	chainPulseLastLink = linknum;
+	chain_queue_at(screenX, y, owner);
+}
+
+// What a destroyed enemy leaves behind: the body its death turns into (loot, a rising bomb, a second
+// stage, a Super Arcade power-up) and what it was worth, paid to `payee`, a 0-based player index.
+// Worth is cash, or a datacube for the enemies carrying one, which Endless drops as a gem instead.
+// Every site that destroys an enemy owes this call; one that skips it deletes the drop and the score.
+static void enemy_death_payout(unsigned int slot, int payee)
+{
+	if ((enemy[slot].enemydie > 0) &&
+	    !((superArcadeMode != SA_NONE) &&
+	      (enemyDat[enemy[slot].enemydie].value == 30000)))
+	{
+		const JE_word dieType = enemy[slot].enemydie;
+		int enemy_offset = (int)slot - ((int)slot % 25);
+		if (enemyDat[dieType].value > 30000)
+		{
+			enemy_offset = 0;
+		}
+		const int b = JE_newEnemy(enemy_offset, dieType, 0);
+		if (b != 0)
+		{
+			if ((superArcadeMode != SA_NONE) && (enemy[b-1].evalue > 30000))
+			{
+				// Random Pickups: roll the colour instead of walking 1-2-3-4-5. The index is a
+				// slot in THIS ship's SAWeapon row, so a roll can only ever hand out one of the
+				// five guns it is allowed to fly.
+				if (arcadeSuperPickupRandomActive())
+					superArcadePowerUp = (mt_rand() % 5) + 1;
+				else
+				{
+					superArcadePowerUp++;
+					if (superArcadePowerUp > 5)
+						superArcadePowerUp = 1;
+				}
+				enemy[b-1].egr[1-1] = 5 + superArcadePowerUp * 2;
+				enemy[b-1].evalue = 30000 + superArcadePowerUp;
+			}
+
+			if (enemy[b-1].evalue != 0)
+				enemy[b-1].scoreitem = true;
+			else
+				enemy[b-1].scoreitem = false;
+
+			enemy[b-1].ex = enemy[slot].ex;
+			enemy[b-1].ey = enemy[slot].ey;
+
+			// Endless: a body this death turns into (a rising bomb, a second stage) continues
+			// the same enemy, so it takes the tier already decided rather than rolling one and
+			// changing colour. Loot is avail 2 and stays untiered.
+			if (enemyAvail[b-1] != 2)
+				enemy[b-1].eliteState = enemy[slot].eliteState;
+		}
+	}
+
+	if ((enemy[slot].evalue > 0) && (enemy[slot].evalue < 10000))
+	{
+		if (enemy[slot].evalue == 1)
+		{
+			if (endlessMode)  // datacube on a shot enemy -> 5000 gem in endless (no cube archive)
+				endlessDropCubeGem(slot);
+			else
+				cubeMax++;
+		}
+		else
+		{
+			player_award_kill_cash(&player[payee], enemy[slot].evalue);
+		}
 	}
 }
 
@@ -310,34 +415,78 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 		endlessMartyrBurstOrigin(i, &burstX, &burstY);
 		endlessSpawnMartyrBurst(burstX, burstY, martyrShots, endlessEliteTint(elite));
 	}
-	chain_queue_kill(sx, sy, linknum);
+	chain_queue_kill(sx, sy, linknum, killer);
 }
 
-// The commonest blast filter in the weapon tables, so a chain hit flashing in that bank reads like
-// an ordinary shot hit. Chain Reaction spares elites, whose own tint uses this bank as well.
-#define CHAIN_FLASH_FILTER 0xD0
+// Bank 15 is the brightest ramp in every shipped palette, so the pulse reads as a flash on any
+// level, and nothing else claims it: elites wear 0xD0, champions 0x50, and 0xD0 is also the
+// commonest blast filter in the weapon tables.
+#define CHAIN_FLASH_FILTER 0xF0
 
-// Flash a chipped victim the way a player-shot hit does: the whole linked hull at once, ground
-// sprites only. JE_drawEnemy paints filter for one frame and clears it again.
+// Flash a chipped victim and the rest of its linked hull; JE_drawEnemy paints filter for one frame
+// and clears it again. Unlike the vanilla shot-hit flash this covers air sprites, since most chain
+// fodder flies. An elite part keeps its tier tint, which rides the same byte.
 static void chain_flash_enemy(unsigned int i)
 {
 	if (enemy[i].linknum == 0)
 	{
-		if (enemy[i].enemyground)
-			enemy[i].filter = CHAIN_FLASH_FILTER;
+		enemy[i].filter = CHAIN_FLASH_FILTER;
 		return;
 	}
 
 	for (unsigned int g = 0; g < COUNTOF(enemy); ++g)
 	{
-		if (enemy[g].linknum == enemy[i].linknum && enemyAvail[g] != 1 && enemy[g].enemyground != 0)
+		if (enemy[g].linknum == enemy[i].linknum && enemyAvail[g] != 1 && enemy[g].eliteState < 2)
 			enemy[g].filter = CHAIN_FLASH_FILTER;
 	}
 }
 
+// The ring shows the reach of the blast and a bolt shows what it caught. Both are seeded from the
+// pulse site and hold no rollback state, so they cost no simulation RNG and need no registration,
+// and both space their sparks by distance so a wider blast is drawn with more of them. See
+// doc/notes.md, "Combat", for the per-tick caps and what they protect.
+#define CHAIN_RING_SPACING_PX   12   // between neighbouring sparks around the ring
+#define CHAIN_RING_LIFE_TICKS    5
+#define CHAIN_RINGS_PER_TICK    16
+#define CHAIN_BOLT_SPACING_PX    4   // between sparks along the bolt: near-solid at this pitch
+#define CHAIN_BOLT_LIFE_TICKS    5
+#define CHAIN_BOLT_WANDER_PX     3   // how far the bolt bows off the straight line at its middle
+#define CHAIN_BOLTS_PER_TICK    16
+
+// A bolt is thin and gone in a few ticks, so it is lit well above the aura lift: the core clamps to
+// the top of the bank and the halo around it stays a shade below, which reads as one bright line.
+#define CHAIN_BOLT_BRIGHT       12
+
+// Sprites are placed by their top-left corner, so both effects work from the centre of a 12px cell.
+#define CHAIN_CELL_MID_PX        6
+
+static void chain_ring_sparks(int x, int y, int radius, int pulse)
+{
+	if (rollback_resim_silent)
+		return;
+
+	JE_doSPRingSeeded((JE_word)(x + CHAIN_CELL_MID_PX), (JE_word)(y + CHAIN_CELL_MID_PX),
+	                  (JE_word)radius, CHAIN_RING_SPACING_PX, CHAIN_FLASH_FILTER,
+	                  CHAIN_RING_LIFE_TICKS, ENDLESS_SPARK_BRIGHT,
+	                  ((Uint32)x << 20) ^ ((Uint32)y << 8) ^ (Uint32)pulse);
+}
+
+static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
+{
+	if (rollback_resim_silent)
+		return;
+
+	JE_doSPBoltSeeded((JE_word)(x0 + CHAIN_CELL_MID_PX), (JE_word)(y0 + CHAIN_CELL_MID_PX),
+	                  (JE_word)(x1 + CHAIN_CELL_MID_PX), (JE_word)(y1 + CHAIN_CELL_MID_PX),
+	                  CHAIN_BOLT_SPACING_PX, CHAIN_BOLT_WANDER_PX, CHAIN_FLASH_FILTER,
+	                  CHAIN_BOLT_LIFE_TICKS, CHAIN_BOLT_BRIGHT,
+	                  ((Uint32)x1 << 20) ^ ((Uint32)y1 << 8) ^ (Uint32)victim);
+}
+
 // Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
-// depletes (a plain kill; no cash, no death-spawn, and it enqueues nothing, so it can't recurse).
-// Elites, champions, bosses, staged-death enemies and score pickups are left for real kills.
+// depletes, and what it vaporises pulses on the next tick, so one kill can send a wave travelling
+// through a formation. Elites, champions, boss groups, invulnerable hulls, score pickups and
+// flag-setters are never touched and stop the wave; a linked enemy is chipped but never destroyed.
 static void chain_reaction_process(void)
 {
 	if (chainPulseN == 0)
@@ -345,11 +494,28 @@ static void chain_reaction_process(void)
 		chainPulseLastLink = 0;
 		return;
 	}
-	const int radius = endlessPerkChainRadius();
-	const int dmg    = endlessPerkChainDamage();
-	for (int p = 0; p < chainPulseN; ++p)
+	// Feedback for this drain. Overlapping pulses each still deal their damage; only the flash, the
+	// puff and the bolt are held to one per victim, which also keeps a dense frame from spending the
+	// whole explosion pool on one enemy.
+	bool flashed[COUNTOF(enemy)] = { false };
+	int rings = 0;
+	int bolts = 0;
+	bool anyHit = false;
+
+	// This tick's hop is the stretch of queue standing at entry. Anything queued below is the next
+	// hop and is left for the next tick.
+	const int hop = chainPulseN;
+
+	for (int p = 0; p < hop; ++p)
 	{
 		const int px = chainPulse[p].x, py = chainPulse[p].y;
+
+		// Each pulse is measured under the perks of the ship that made its kill.
+		const uint fxSaved = chain_fx_enter(chainPulseOwner[p]);
+		const int radius = endlessPerkChainRadius();
+		const int dmg    = endlessPerkChainDamage();
+		endlessSetFxPlayer(fxSaved);
+
 		for (int e = 0; e < 100; ++e)
 		{
 			if (enemyAvail[e] != 0)                            // live enemies only
@@ -382,19 +548,43 @@ static void chain_reaction_process(void)
 					chip = enemy[e].armorleft - 1;             // leave a linked tile alive on 1 armor
 				if (chip > 0)
 				{
-					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives; spark so the arc is visible
+					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives
 					enemy[e].healthbar_seen = true;            // damage taken: show its health bar
-					chain_flash_enemy(e);
-					JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
+					anyHit = true;
+					if (!flashed[e])
+					{
+						flashed[e] = true;
+						chain_flash_enemy(e);
+						JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
+						if (bolts < CHAIN_BOLTS_PER_TICK)
+						{
+							chain_bolt_sparks(px, py, ex, enemy[e].ey, e);
+							++bolts;
+						}
+					}
 				}
 			}
 			else
 			{
-				// Vaporised. QUIET: a chain pop pays nothing (it only ever destroys lone,
-				// non-elite fodder) and must not queue another pulse. It still feeds
-				// the dedup latches, or a later elite reusing this linknum reads as another tile
-				// of the last one and goes unpaid / unswept.
-				enemy_logical_death(e, ENEMY_DEATH_QUIET, ENDLESS_KILLER_NONE);
+				// Vaporised, and paid for exactly as a shot kill is, to the ship whose blast it was.
+				enemy_death_payout(e, chainPulseOwner[p]);
+
+				// QUIET only in that it sets off none of the other reactive effects: no bounty, no
+				// Shockwave, no Martyrdom. It still feeds the dedup latches, or a later elite
+				// reusing this linknum reads as another tile of the last one and goes unpaid, and
+				// it is credited to its owner so the kill feeds that ship's streak.
+				enemy_logical_death(e, ENEMY_DEATH_QUIET, chainPulseOwner[p]);
+				anyHit = true;
+
+				// The cascade the perk is named for, carried at the same ship's radius. It cannot
+				// run away: a pop only ever destroys a lone enemy, which the kill above has already
+				// removed, so the wave only moves outward into what is still alive.
+				chain_queue_at(ex, enemy[e].ey, chainPulseOwner[p]);
+				if (bolts < CHAIN_BOLTS_PER_TICK)   // a kill is reached once, so it needs no latch
+				{
+					chain_bolt_sparks(px, py, ex, enemy[e].ey, e);
+					++bolts;
+				}
 				if (enemyDat[enemy[e].enemytype].esize == 1)
 				{
 					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
@@ -407,9 +597,151 @@ static void chain_reaction_process(void)
 				}
 			}
 		}
+
+		// Every pulse rings, hit or not: the ring is the only reading of the blast radius the player
+		// gets, and one conditional on a hit would arrive after that reading was useful. The cue for
+		// landing damage is the part that waits on a hit.
+		if (rings < CHAIN_RINGS_PER_TICK)
+		{
+			chain_ring_sparks(px, py, radius, p);
+			++rings;
+		}
 	}
-	chainPulseN = 0;
+
+	if (anyHit)
+		soundQueue[5] = S_ENEMY_HIT;   // one per drain, in the slot an ordinary hit uses
+
+	// Close the hop and slide the next one down to the front of the queue.
+	const int carried = chainPulseN - hop;
+	for (int i = 0; i < carried; ++i)
+	{
+		chainPulse[i] = chainPulse[hop + i];
+		chainPulseOwner[i] = chainPulseOwner[hop + i];
+	}
+	chainPulseN = carried;
 	chainPulseLastLink = 0;
+}
+
+/* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
+ * with the state they read. */
+void qa_chain_kill_row(int owner, int evalue, int count,
+                       long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped)
+{
+	const JE_byte dieType = 1;   // any spawnable body; the test only asks whether one appeared
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;   // an empty field, so anything live afterwards came out of a death
+	}
+
+	const uint fxSaved = chain_fx_enter(owner);
+	const int step = endlessPerkChainRadius() / 2;
+	endlessSetFxPlayer(fxSaved);
+
+	for (int i = 0; i < count; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(100 + i * step);
+		enemy[i].ey = 100;
+		enemy[i].armorleft = 1;   // one pulse finishes it
+		enemy[i].enemytype = 1;
+		enemy[i].evalue = (Sint16)evalue;
+		enemy[i].enemydie = dieType;
+	}
+
+	const ulong before0 = player[0].cash, before1 = player[1].cash;
+	const JE_word killedBefore = enemyKilled;
+
+	chain_reset_queue();
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner);
+	for (int t = 0; t < CHAIN_QUEUE_MAX && chainPulseN > 0; ++t)
+		chain_reaction_process();
+
+	*out_paid0 = (long)player[0].cash - (long)before0;
+	*out_paid1 = (long)player[1].cash - (long)before1;
+
+	// Count deaths rather than empty slots: a drop is spawned into whatever slot is free, which
+	// includes the ones the row just vacated.
+	*out_killed = (int)(enemyKilled - killedBefore);
+
+	*out_dropped = false;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		if (enemyAvail[i] != 1)
+			*out_dropped = true;   // the row is all dead by now, so anything live is a drop
+}
+
+/* The cascade, driven through the real queue and the real drain. A row of fodder is laid out inside
+ * one blast of its neighbour, so a single seeded pulse has to carry the whole row, and the same row
+ * spaced beyond the blast has to stop at the first. Lives here because the queue and the drain are
+ * this file's own; declared in qa.h beside the other tests placed with their subject. */
+void qa_test_chain_cascade(void)
+{
+	struct JE_SingleEnemyType savedEnemy[8];
+	JE_byte savedAvail[COUNTOF(savedEnemy)];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+
+	const int radius = endlessPerkChainRadius();
+	const int dmg    = endlessPerkChainDamage();
+	if (radius <= 0 || dmg <= 1)
+	{
+		qa_check(false, "the chain cascade test needs the perk held by the current effect player");
+		return;
+	}
+
+	for (int pass = 0; pass <= 1; ++pass)
+	{
+		const bool touching = (pass == 0);
+		const int step = touching ? radius / 2 : radius * 2;
+
+		for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+		{
+			memset(&enemy[i], 0, sizeof(enemy[i]));
+			enemyAvail[i] = 0;
+			enemy[i].ex = (JE_integer)(20 + (int)i * step);
+			enemy[i].ey = 100;
+			enemy[i].armorleft = (JE_byte)(dmg > 1 ? dmg - 1 : 1);   // one pulse finishes it
+			enemy[i].enemytype = 1;
+		}
+
+		chain_reset_queue();
+		chain_queue_at(enemy[0].ex, enemy[0].ey, 0);
+
+		/* One drain is one tick. Run them until the wave dies out, bounded so a queue that refused
+		 * to empty fails the tick check below instead of hanging the suite. */
+		int ticks = 0;
+		while (chainPulseN > 0 && ticks < CHAIN_QUEUE_MAX)
+		{
+			chain_reaction_process();
+			++ticks;
+		}
+
+		int dead = 0;
+		for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+			if (enemyAvail[i] == 1)
+				++dead;
+
+		char label[128];
+		if (touching)
+		{
+			qa_check(dead == (int)COUNTOF(savedEnemy),
+			         "a wave carries the whole row when each kill lands inside the next blast");
+			/* The row is laid out over several blasts, so no single tick can reach the far end. */
+			snprintf(label, sizeof(label), "...one hop per tick, taking %d of them and then settling",
+			         ticks);
+			qa_check(ticks >= 3 && chainPulseN == 0, label);
+		}
+		else
+		{
+			qa_check(dead == 1, "and it stops at the first when the next is out of reach");
+		}
+	}
+
+	chain_reset_queue();
+	JE_resetSP();   // the drain above threw real rings and bolts
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
 }
 
 // SEEKER ROUNDS: the single mid-flight course correction (a bounded ~23-degree turn toward the
@@ -3875,6 +4207,10 @@ start_level_first:
 	totalEnemy = 0;
 	enemyKilled = 0;
 
+	// A chain wave spends a tick per hop, so one can still be in the air when a level ends. Drop it
+	// here rather than let it fire into the next level's enemies from last level's coordinates.
+	chain_reset_queue();
+
 	astralDuration = 0;
 
 	superArcadePowerUp = 1;
@@ -5029,71 +5365,8 @@ level_loop:
 											globalFlags[enemy[temp2].flagnum-1] = enemy[temp2].setto;
 										}
 
-										if ((enemy[temp2].enemydie > 0) &&
-										    !((superArcadeMode != SA_NONE) &&
-										      (enemyDat[enemy[temp2].enemydie].value == 30000)))
-										{
-											int temp_b = b;
-											tempW = enemy[temp2].enemydie;
-											int enemy_offset = temp2 - (temp2 % 25);
-											if (enemyDat[tempW].value > 30000)
-											{
-												enemy_offset = 0;
-											}
-											b = JE_newEnemy(enemy_offset, tempW, 0);
-											if (b != 0)
-											{
-												if ((superArcadeMode != SA_NONE) && (enemy[b-1].evalue > 30000))
-												{
-													// Random Pickups: roll the colour instead of walking 1-2-3-4-5.
-													// The index is a slot in THIS ship's SAWeapon row, so a roll can
-													// only ever hand out one of the five guns it is allowed to fly.
-													if (arcadeSuperPickupRandomActive())
-														superArcadePowerUp = (mt_rand() % 5) + 1;
-													else
-													{
-														superArcadePowerUp++;
-														if (superArcadePowerUp > 5)
-															superArcadePowerUp = 1;
-													}
-													enemy[b-1].egr[1-1] = 5 + superArcadePowerUp * 2;
-													enemy[b-1].evalue = 30000 + superArcadePowerUp;
-												}
-
-												if (enemy[b-1].evalue != 0)
-													enemy[b-1].scoreitem = true;
-												else
-													enemy[b-1].scoreitem = false;
-
-												enemy[b-1].ex = enemy[temp2].ex;
-												enemy[b-1].ey = enemy[temp2].ey;
-
-												// Endless: a body this death turns into (a rising bomb, a
-												// second stage) continues the same enemy, so it takes the
-												// tier already decided rather than rolling one and changing
-												// colour. Loot is avail 2 and stays untiered.
-												if (enemyAvail[b-1] != 2)
-													enemy[b-1].eliteState = enemy[temp2].eliteState;
-											}
-											b = temp_b;
-										}
-
-										if ((enemy[temp2].evalue > 0) && (enemy[temp2].evalue < 10000))
-										{
-											if (enemy[temp2].evalue == 1)
-											{
-												if (endlessMode)  // datacube on a shot enemy -> 5000 gem in endless (no cube archive)
-													endlessDropCubeGem(temp2);
-												else
-													cubeMax++;
-											}
-											else
-											{
-												// in galaga mode player 2 is sidekick, so give cash to player 1
-												Player *const paid = &player[galagaMode ? 0 : playerNum - 1];
-												player_award_kill_cash(paid, enemy[temp2].evalue);
-											}
-										}
+										// in galaga mode player 2 is sidekick, so give cash to player 1
+										enemy_death_payout(temp2, galagaMode ? 0 : (int)playerNum - 1);
 
 										if ((enemy[temp2].edlevel == -1) && (temp == temp3))
 										{
@@ -11314,6 +11587,7 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.chainPulse",       chainPulse, sizeof(chainPulse));
 	rollback_register("t2.chainPulseN",      &chainPulseN, sizeof(chainPulseN));
 	rollback_register("t2.chainPulseLast",   &chainPulseLastLink, sizeof(chainPulseLastLink));
+	rollback_register("t2.chainPulseOwner",  chainPulseOwner, sizeof(chainPulseOwner));
 	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
 	/* The latch that arms them.  It flips false->true inside the tick, so a replay of

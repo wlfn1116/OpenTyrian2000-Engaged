@@ -44,10 +44,19 @@ bool load_cube(int cube_slot, int cube_index);
 
 void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
 
-// Item-list columns: the icon anchor, and the label rows drawn beside it.
+// Item-list columns: the icon anchor, the label rows drawn beside it, and the last column a row
+// may paint (the scroll-bar track is at 306).
 #define SHOP_ITEM_ICON_X 160
 #define SHOP_ITEM_NAME_X 185
 #define SHOP_ITEM_COST_X 187
+#define SHOP_ITEM_LIST_RIGHT 304
+
+// Where the "already owned" marker starts, and where the Dual-Mode tag's column ends.
+#define SHOP_ITEM_MARKER_X(scrollbar) ((scrollbar) ? 286 : 298)
+
+// Marks a port with two fire modes. Only the rear weapon list draws it: the front bay always
+// fires op[0], so the same port has no mode to toggle there.
+#define SHOP_DUAL_MODE_TAG "Dual-Mode"
 
 // Half the width of a hull drawn as two 2x2 halves: JE_drawItem sits each half this far either
 // side of the anchor, so such a hull also overhangs the icon column by this much.
@@ -62,6 +71,10 @@ typedef struct
 // the Dragonwing) is 48px wide against a 24px icon column, so it takes an anchor shifted right
 // and a label column of its own; every other ship takes the standard columns.
 ShopItemColumns shop_ship_item_columns(JE_word shipId);
+
+// x of the Dual-Mode tag on one item row, from the right edge of the cost text, the tag's width
+// and the marker column. A cost text wide enough to reach that column pushes the tag right of it.
+int shop_dual_mode_tag_x(int costRight, int tagW, int markerX);
 
 void JE_drawMenuHeader(void);
 void JE_drawMenuChoices(void);

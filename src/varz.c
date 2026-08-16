@@ -2314,6 +2314,96 @@ void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byt
 	}
 }
 
+// Both shapes below place sparks by distance rather than by count, so a bigger one is drawn with a
+// heavier hand instead of the same few sparks stretched thinner. The cap is what keeps the largest
+// of them off the classic 101-entry window when Extra Sparks is off.
+#define SP_SHAPE_SPARKS_MAX 24
+
+static JE_word sp_shape_count(JE_real span, JE_byte spacing)
+{
+	if (spacing == 0)
+		return 1;
+	const int n = (int)(span / (JE_real)spacing);
+	if (n < 1)
+		return 1;
+	return (JE_word)(n > SP_SHAPE_SPARKS_MAX ? SP_SHAPE_SPARKS_MAX : n);
+}
+
+void JE_doSPRingSeeded(JE_word x, JE_word y, JE_word radius, JE_byte spacing, JE_byte color,
+                       JE_byte life, JE_byte bright, Uint32 seed)
+{
+	if (radius == 0 || life == 0)
+		return;
+	if (life > SUPERPIXEL_SPAWN_Z)
+		life = SUPERPIXEL_SPAWN_Z;
+
+	const JE_word num = sp_shape_count(2 * M_PI * (JE_real)radius, spacing);
+
+	// A spark is spawned one step out and stepped again before each of its `life` draws, so this
+	// reach puts its last drawn position on the ring.
+	const JE_real step = (JE_real)radius / (JE_real)(life + 1);
+	const JE_real gap = (2 * M_PI) / num;
+
+	for (JE_word sp = 0; sp < num; sp++)
+	{
+		// Even spacing keeps the circle legible; the jitter stays inside one gap, so successive
+		// rings at the same spot do not plot the same points.
+		seed += SP_SEED_STRIDE;
+		const JE_real angle = gap * sp + ((JE_real)(sp_mix32(seed) >> 16) / 65536.0 - 0.5) * gap;
+		const signed int tempx = roundf(sinf(angle) * step);
+		const signed int tempy = roundf(cosf(angle) * step);
+
+		const unsigned int slot = next_superpixel(false);
+		superpixels[slot].x = tempx + x;
+		superpixels[slot].y = tempy + y;
+		superpixels[slot].delta_x = tempx;
+		superpixels[slot].delta_y = tempy;
+		superpixels[slot].color = color;
+		superpixels[slot].bright = bright;
+		superpixels[slot].occluded = false;
+		superpixels[slot].z = life;
+	}
+}
+
+void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte spacing, JE_byte wander,
+                       JE_byte color, JE_byte life, JE_byte bright, Uint32 seed)
+{
+	if (life == 0)
+		return;
+	if (life > SUPERPIXEL_SPAWN_Z)
+		life = SUPERPIXEL_SPAWN_Z;
+
+	const JE_real dx = (JE_real)x1 - (JE_real)x0;
+	const JE_real dy = (JE_real)y1 - (JE_real)y0;
+	const JE_real len = sqrtf(dx * dx + dy * dy);
+	if (len < 1.0)
+		return;
+
+	// Unit normal, along which each point is pushed off the straight line.
+	const JE_real nx = -dy / len;
+	const JE_real ny = dx / len;
+	const JE_word num = sp_shape_count(len, spacing);
+
+	for (JE_word sp = 0; sp < num; sp++)
+	{
+		// Points run from one step off the source to the victim itself. The bow follows a sine
+		// over the whole segment, so it is widest in the middle and vanishes onto the victim.
+		const JE_real t = (JE_real)(sp + 1) / (JE_real)num;
+		seed += SP_SEED_STRIDE;
+		const JE_real swing = ((JE_real)(sp_mix32(seed) >> 16) / 32768.0 - 1.0) * wander * sinf(M_PI * t);
+
+		const unsigned int slot = next_superpixel(false);
+		superpixels[slot].x = (unsigned int)(signed int)roundf(x0 + dx * t + nx * swing);
+		superpixels[slot].y = (unsigned int)(signed int)roundf(y0 + dy * t + ny * swing);
+		superpixels[slot].delta_x = 0;   // a bolt holds its shape and fades in place
+		superpixels[slot].delta_y = 0;
+		superpixels[slot].color = color;
+		superpixels[slot].bright = bright;
+		superpixels[slot].occluded = false;
+		superpixels[slot].z = life;
+	}
+}
+
 // Shape of the pop; the reach is also each spark's per-tick velocity, so it bounds the spread.
 #define VAPORISE_SPARK_MIN   3
 #define VAPORISE_SPARK_MAX   5

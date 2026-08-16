@@ -485,7 +485,27 @@ void endlessResetZonePerkTimers(void)
 
 // Pulse application lives at the player-shot kill sites in tyrian2.c.
 bool endlessPerkChainReactionActive(void) { return endlessFxActive() && perkFx(PERK_CHAINRXN) > 0; }
-int  endlessPerkChainRadius(void)         { return ENDLESS_PERK_CHAIN_RADIUS; }
+
+// The ship whose stacks decide a pulse: the one that made the kill, or, when nothing can be credited
+// with it, whichever ship holds more (endlessCountKill credits an unclaimed kill to both). Outside
+// coop the answer is always ship 0, which is what the effect player resolves to there anyway.
+uint endlessPerkChainOwner(int killer)
+{
+	if (!endlessCoop())
+		return 0;
+	if (killer >= 0 && (uint)killer < COUNTOF(endlessPerkTakenBy))
+		return (uint)killer;
+	return (endlessPerkTakenBy[1][PERK_CHAINRXN] > endlessPerkTakenBy[0][PERK_CHAINRXN]) ? 1 : 0;
+}
+
+// Stacks widen the blast as well as deepening it. Reach compounds with the cascade, since it decides
+// whether the next enemy is close enough to carry the wave on.
+int endlessPerkChainRadius(void)
+{
+	if (!endlessFxActive() || perkFx(PERK_CHAINRXN) == 0)
+		return 0;
+	return ENDLESS_PERK_CHAIN_RADIUS + (perkFx(PERK_CHAINRXN) - 1) * ENDLESS_PERK_CHAIN_REACH;
+}
 
 // Scale pulse damage with ordinary enemy health, without dropping below its base value.
 int endlessPerkChainDamage(void)

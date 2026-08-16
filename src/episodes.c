@@ -103,10 +103,18 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 };
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
-// Specials index spriteSheet10 (the in-game HUD block) rather than the shop sheet, and eleven of
-// them share three icons between them, seven wearing the same "?". Each gets a player-shot
-// sprite for its upper half instead, so an entry has to fit the 24x14 draw_special_icon centres it
-// in. Bank is one of tyrian.shp's two shot sheets (JE_loadMainShapeTables).
+// Unlike the tables above, a special's itemgraphic indexes spriteSheet10 (the in-game HUD block).
+// A row here has to name a 2x2 that no special, sidekick body or charge frame draws, which is why
+// only one of the specials sharing an icon can be fixed this way. doc/notes.md has the survey.
+static const struct { JE_byte id; JE_word gr; } unusedSpecialIcons[] =
+{
+	{ 48, 53 },  // Dragon Lightning (was 93, Lightning Zone's)
+};
+
+// Eleven more have no spare icon to take: three icons between them, eight wearing the same "?".
+// Each gets a player-shot sprite for its upper half instead, so an entry has to fit the 24x14
+// draw_special_icon centres it in. Bank is one of tyrian.shp's two shot sheets
+// (JE_loadMainShapeTables).
 static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[] =
 {
 	{  2, 11,  25 },  // Pearl Wind, the instant-shot record; the field one keeps the shipped icon
@@ -127,6 +135,7 @@ static const struct { JE_byte id; JE_byte bank; JE_word gr; } unusedSpecialTops[
 // icon (193), kept beside the slot it was read from.
 static JE_word unusedSpriteBasePort[COUNTOF(unusedSpritePorts)];
 static JE_word unusedSpriteBaseOpt[COUNTOF(unusedSpriteOptions)];
+static JE_word unusedSpriteBaseSpecial[COUNTOF(unusedSpecialIcons)];
 static JE_word unusedSpriteBaseLaser;
 static JE_byte unusedSpriteLaserSlot;
 static bool    unusedSpriteCaptured = false;
@@ -139,6 +148,8 @@ static void JE_captureUnusedShopSprites(void)
 		unusedSpriteBasePort[i] = weaponPort[unusedSpritePorts[i].port].itemgraphic;
 	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
 		unusedSpriteBaseOpt[i] = options[unusedSpriteOptions[i].opt].itemgraphic;
+	for (unsigned int i = 0; i < COUNTOF(unusedSpecialIcons); ++i)
+		unusedSpriteBaseSpecial[i] = special[unusedSpecialIcons[i].id].itemgraphic;
 
 	unusedSpriteLaserSlot = chargeLaserSlot;
 	unusedSpriteBaseLaser = (chargeLaserSlot > 0) ? options[chargeLaserSlot].itemgraphic : 0;
@@ -158,6 +169,10 @@ void JE_applyUnusedShopSprites(void)
 	for (unsigned int i = 0; i < COUNTOF(unusedSpriteOptions); ++i)
 		options[unusedSpriteOptions[i].opt].itemgraphic =
 			unusedShopSprites ? unusedSpriteOptions[i].gr : unusedSpriteBaseOpt[i];
+
+	for (unsigned int i = 0; i < COUNTOF(unusedSpecialIcons); ++i)
+		special[unusedSpecialIcons[i].id].itemgraphic =
+			unusedShopSprites ? unusedSpecialIcons[i].gr : unusedSpriteBaseSpecial[i];
 
 	// The Charge-Laser only exists while its own toggle is on; if it was never added, or the
 	// slot moved since capture, leave it alone rather than writing into someone else's item.
@@ -218,8 +233,16 @@ const char *JE_shipName(JE_word id)
 	if (id > SHIP_DRAGONWING)
 		return ships[0].name;  // the "None" record; a shipedit ship is named by its caller
 
-	if (endlessMode && id == 12)
-		return "Nort Ship Z";
+	// Three hulls the Endless shop renames after their Super Arcade counterparts.
+	if (endlessMode)
+	{
+		switch (id)
+		{
+		case 11: return "TX SilverCloud";
+		case 12: return "Nort Ship Z";
+		case 17: return "Pretzel Pete Truck";
+		}
+	}
 
 	return ships[id].name;
 }

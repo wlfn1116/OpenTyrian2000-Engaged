@@ -173,7 +173,8 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
-#define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy
+#define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy at one stack
+#define ENDLESS_PERK_CHAIN_REACH   12  // Chain Reaction: px added to that radius by each stack past the first
 #define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
 #define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
 #define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Financier stack (the cap scales with the rate)

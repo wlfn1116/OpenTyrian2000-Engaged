@@ -15,6 +15,12 @@ extern unsigned long qa_replay_ticks;
 extern unsigned long qa_destruct_selftest_ticks;
 extern bool qa_replay_expect_set;
 extern Uint32 qa_replay_expect;
+/* Fly the replayed demo with Endless effects armed, so the self-test's frame-by-frame comparison
+ * reaches a half of the game it otherwise skips: 1 also grants Chain Reaction at full stacks and
+ * covers the pulse queue and a wave crossing a snapshot, 2 is the same level without the perk and
+ * is the control for what 1 reports. The state hash is not the campaign one and is not a fixture;
+ * the failure count is the result. */
+extern int qa_replay_chain;
 extern int qa_net_rounds;
 // Which two-peer wire scenario to run: 0 base, 1 online campaign, 2 online Endless,
 // 3 barrier storm.
@@ -88,6 +94,14 @@ void qa_test_net_lobby_strings(void);
 void qa_test_endless_death_menu(void);
 // The special-meter fired/ready edges across the linked pair's two movement passes (mainint.c).
 void qa_test_special_light_events(void);
+// The Chain Reaction pulse queue: reach, the cascade, and what stops it (tyrian2.c).
+void qa_test_chain_cascade(void);
+/* Drive a chain wave through the real pulse queue and drain (tyrian2.c, which owns both): a row of
+ * `count` enemies worth `evalue` each, spaced so the wave carries, started by a pulse belonging to
+ * `owner`. Reports the cash each ship took over the whole wave, how many of the row it killed, and
+ * whether drops appeared. Clears the enemy table; callers restore it. */
+void qa_chain_kill_row(int owner, int evalue, int count,
+                       long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
 
 /* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in
  * testing/network_fault_test.py. Zero on success; both peers assert what they see of the other. */

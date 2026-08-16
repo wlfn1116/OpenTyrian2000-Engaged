@@ -33,6 +33,14 @@
 # be a local config artifact: the three hashes below come back identically from a working directory
 # with no opentyrian.cfg in it. The snapshot shape is untouched: a build of the parent commit in a
 # scratch worktree reports the same 311 items, 455190 bytes, and layout 5fb4f29d.
-1 180 dbd8046d
-2 180 5d38d45a
-3 180 e52e6a2b
+# Regenerated 2026-08-16, for a snapshot-shape change with no simulation change behind it:
+# Chain Reaction now measures each queued pulse against the perks of the ship that made the kill,
+# so the kill-site queue gained a parallel owner array (t2.chainPulseOwner) and the registry grew
+# one 256-byte item. Verified by building with that single rollback_register line removed, every
+# other edit in the commit kept: all three hashes and the layout hash came back at the previous
+# line's values, so neither the wider per-stack blast nor the new pulse ring, bolts, and flash
+# bank moves the demos. The visual work cannot: it spawns superpixels, which are not registered
+# state. Campaign demos never fire a pulse at all, the perk being Endless-only.
+1 180 35ea206d
+2 180 b958545a
+3 180 b672fe2b

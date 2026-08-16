@@ -39,6 +39,7 @@ unsigned long qa_replay_ticks = 0;
 unsigned long qa_destruct_selftest_ticks = 0;
 bool qa_replay_expect_set = false;
 Uint32 qa_replay_expect = 0;
+int qa_replay_chain = 0;
 int qa_net_rounds = 0;
 int qa_net_scenario = 0;
 int qa_net_version_skew = 0;
@@ -2666,6 +2667,94 @@ static void qa_test_superspark_seeded_spread(void)
 	JE_resetSP();
 }
 
+/* The two shapes the Chain Reaction pulse draws with. Both space their sparks by distance, so the
+ * geometry has to hold at every size the perk reaches: a ring has to land on the radius it was asked
+ * for, and a bolt has to stay on the line between the two things it connects. */
+static void qa_test_superspark_shapes(void)
+{
+	const bool savedExtra = extraSparks;
+	extraSparks = true;
+
+	char label[160];
+
+	/* A spark travels on an integer per-axis delta, so each axis can be half a pixel out on every
+	 * one of the steps its life buys, and the two together land the ring this far off its radius. */
+	const int ringLife = 5;
+	const int ringSlack = (int)(0.5f * (ringLife + 1) * 1.41422f) + 1;
+
+	for (int radius = 20; radius <= 120; radius += 20)
+	{
+		JE_resetSP();
+		JE_doSPRingSeeded(200, 100, (JE_word)radius, 12, 15 << 4, (JE_byte)ringLife, 0, 9001u);
+
+		int lo, hi;
+		const int live = qa_spark_span(&lo, &hi);
+		snprintf(label, sizeof(label), "a %d px ring spaces its sparks out rather than stretching a fixed few",
+		         radius);
+		qa_check(live >= 5 && live <= 24, label);
+
+		/* Step them the way the level loop does, then measure where the ring finished. */
+		for (int t = 0; t < ringLife; ++t)
+			for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+			{
+				if (superpixels[i].z == 0)
+					continue;
+				superpixels[i].x += superpixels[i].delta_x;
+				superpixels[i].y += superpixels[i].delta_y;
+				--superpixels[i].z;
+			}
+
+		int worst = 0;
+		for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+		{
+			if (superpixels[i].delta_x == 0 && superpixels[i].delta_y == 0)
+				continue;
+			const int dx = (int)superpixels[i].x - 200, dy = (int)superpixels[i].y - 100;
+			const int reach = (int)(sqrtf((float)(dx * dx + dy * dy)) + 0.5f);
+			if (abs(reach - radius) > worst)
+				worst = abs(reach - radius);
+		}
+		snprintf(label, sizeof(label), "...and finishes on its %d px radius, %d px out at worst",
+		         radius, worst);
+		qa_check(worst <= ringSlack, label);
+	}
+
+	/* A bolt's sparks sit on the segment, bowed off it by no more than the wander it was given. */
+	static const struct { int x1, y1; } ends[] = { { 260, 100 }, { 140, 160 }, { 200, 40 }, { 201, 101 } };
+	for (unsigned int e = 0; e < COUNTOF(ends); ++e)
+	{
+		JE_resetSP();
+		JE_doSPBoltSeeded(200, 100, (JE_word)ends[e].x1, (JE_word)ends[e].y1, 4, 3, 15 << 4, 5, 12, 4242u);
+
+		const float dx = (float)(ends[e].x1 - 200), dy = (float)(ends[e].y1 - 100);
+		const float len = sqrtf(dx * dx + dy * dy);
+
+		int live = 0;
+		float worst = 0.0f;
+		for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+		{
+			if (superpixels[i].z == 0)
+				continue;
+			++live;
+			/* Distance from the infinite line through the two ends. */
+			const float px = (float)superpixels[i].x - 200.0f, py = (float)superpixels[i].y - 100.0f;
+			const float off = fabsf(px * dy - py * dx) / len;
+			if (off > worst)
+				worst = off;
+		}
+
+		snprintf(label, sizeof(label), "a %d px bolt draws %d sparks, one every 4 px up to the cap",
+		         (int)(len + 0.5f), live);
+		qa_check(live >= 1 && live <= 24 && live >= (int)(len / 4.0f) - 1, label);
+		snprintf(label, sizeof(label), "...and none of them stray past its bow, %d px off at worst",
+		         (int)(worst + 0.5f));
+		qa_check(worst <= 4.0f, label);
+	}
+
+	JE_resetSP();
+	extraSparks = savedExtra;
+}
+
 /* Lowest sprite in a sheet painted in a bank other than 0, so a colour taken from it cannot be
  * confused with the 0 an unpaintable index reads as. Returns 0 if the sheet holds none. */
 static JE_word qa_painted_sprite(Sprite2_array sheet, Uint8 *out_bank)
@@ -2770,6 +2859,7 @@ static Uint32 qa_item_data_hash(void)
 		{ weaponPort, sizeof(weaponPort) },
 		{ shields,    sizeof(shields) },
 		{ ships,      sizeof(ships) },
+		{ special,    sizeof(special) },
 	};
 
 	Uint32 hash = 2166136261u;
@@ -4417,12 +4507,33 @@ static void qa_test_special_icon_tops(void)
 	qa_check(replaced == 11, "eleven specials take a replacement icon top");
 	printf("# special icon tops: %d replacements\n", replaced);
 
+	/* Dragon Lightning has a whole spare icon to take, so it swaps itemgraphic instead of taking a
+	 * rebuilt top, and only it moves: Lightning Zone keeps the icon the two shipped sharing. */
+	JE_applyUnusedShopSprites();
+	const JE_word onDragon = special[48].itemgraphic;
+	const JE_word onZone = special[40].itemgraphic;
+
 	unusedShopSprites = false;
+	JE_applyUnusedShopSprites();
+	qa_check(special[48].itemgraphic == special[40].itemgraphic,
+	         "Dragon Lightning ships sharing Lightning Zone's HUD icon");
+	qa_check(onDragon != onZone && onZone == special[40].itemgraphic,
+	         "Unused Sprites gives Dragon Lightning its own icon and leaves Lightning Zone's");
+
+	/* blit_sprite2x2 draws gr, gr+1, gr+19 and gr+20. sprite2_is_blank also reports an index the
+	 * sheet does not hold, the out-of-range icon endlessGrantSpecial and the debug menu exclude. */
+	static const unsigned int blockOffsets[4] = { 0, 1, 19, 20 };
+	bool painted = true;
+	for (unsigned int i = 0; i < COUNTOF(blockOffsets); ++i)
+		painted = painted && !sprite2_is_blank(spriteSheet10, onDragon + blockOffsets[i]);
+	qa_check(painted, "the spare icon it takes is four sprites the sheet holds and paints");
+
 	JE_word unusedTop = 0;
 	qa_check(JE_specialIconTop(41, &unusedTop) == NULL,
 	         "Unused Sprites off leaves every special drawing its shipped icon");
 
 	unusedShopSprites = saved;
+	JE_applyUnusedShopSprites();
 }
 
 /* What the health bars divide by. Boss armor varies: the difficulty curve scales it at spawn and
@@ -4667,6 +4778,61 @@ static void qa_test_wide_hull_columns(void)
 		printf("# %s hull: ink %d..%d, label x %d\n", hulls[i].name, inkLeft, inkRight, cols.nameX);
 	}
 	printf("# wide shop hulls clear their labels by %dpx\n", gap);
+}
+
+/* The rear weapon list tags a two-mode port after its cost, in a column that has to clear both the
+ * cost text and the owned marker the same row can carry. Endless scales prices, so it is measured
+ * at both multiplier caps as well as at the shipped price. */
+static void qa_test_dual_mode_tag(void)
+{
+	const int tagW = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
+	if (tagW <= 0)
+		return;  // font bank not loaded
+
+	// The ports the tag marks, and the priciest of them.
+	uint dual = 0;
+	JE_word base = 0;
+	for (uint port = 1; port <= PORT_NUM; ++port)
+	{
+		if (weaponPort[port].opnum != 2)
+			continue;
+		++dual;
+		base = MAX(base, weaponPort[port].cost);
+	}
+	qa_check(dual > 0 && base > 0, "the item data has two-mode ports for the rear list to tag");
+	if (dual == 0)
+		return;
+
+	// Multipliers JE_getCost can stack on a shipped price: Endless depth caps at 100x and the
+	// expert Shop Cost knob at 20x.
+	static const struct { const char *what; ulong mult; } prices[] = {
+		{ "campaign",       1 },
+		{ "deep Endless",   100 },
+		{ "the price cap",  100 * 20 },
+	};
+
+	for (uint i = 0; i < COUNTOF(prices); ++i)
+	{
+		char buf[32], label[128];
+		snprintf(buf, sizeof(buf), "Cost: %lu", (ulong)base * prices[i].mult);
+
+		// The row that carries the marker is the tighter case, so measure against that column.
+		const int markerX = SHOP_ITEM_MARKER_X(true);
+		const int costRight = SHOP_ITEM_COST_X + JE_textWidth(buf, TINY_FONT);
+		const int tagX = shop_dual_mode_tag_x(costRight, tagW, markerX);
+
+		snprintf(label, sizeof(label), "the Dual-Mode tag clears a %s price", prices[i].what);
+		qa_check(tagX >= costRight, label);
+
+		snprintf(label, sizeof(label), "the Dual-Mode tag stays in the row at a %s price",
+		         prices[i].what);
+		qa_check(tagX + tagW <= SHOP_ITEM_LIST_RIGHT, label);
+
+		printf("# Dual-Mode tag, %s price \"%s\": cost ends %d, tag %d..%d\n",
+		       prices[i].what, buf, costRight, tagX, tagX + tagW);
+	}
+	printf("# Dual-Mode tag: %u two-mode ports, %dpx wide, column x=%d\n",
+	       dual, tagW, SHOP_ITEM_MARKER_X(true) - tagW);
 }
 
 /* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
@@ -5465,6 +5631,7 @@ int qa_run_unit_suite(void)
 	qa_test_flying_punch_bolt();
 	qa_test_dragonwing_row();
 	qa_test_wide_hull_columns();
+	qa_test_dual_mode_tag();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();
@@ -5486,6 +5653,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_rng_cost();
 	qa_test_superspark_brief();
 	qa_test_superspark_seeded_spread();
+	qa_test_superspark_shapes();
 	qa_test_vaporised_shot_sparks();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
@@ -5529,6 +5697,18 @@ int qa_run_replay_fixture(void)
 	play_demo = true;
 	demo_num = (Uint8)(qa_replay_demo - 1);
 	qa_fast_forward = true;
+
+	/* Chain Reaction is Endless-only, so the shipped demos never fire a pulse and the self-test
+	 * never sees the queue. Arming the effects over a campaign demo puts a wave in the air during
+	 * real play, so the frame-by-frame comparison reaches a queue with pulses standing in it. */
+	if (qa_replay_chain != 0)
+	{
+		endlessCampaignMods = true;
+		rollback_selftest_allow_endless(true);
+		/* 2 arms the effects without the perk, as the control for whatever 1 reports. */
+		if (qa_replay_chain == 1)
+			endlessPerkGrant(0, PERK_CHAINRXN, endlessPerkTable[PERK_CHAINRXN].maxStack);
+	}
 
 	rollback_selftest_ticks = 0;
 	rollback_selftest_failures = 0;

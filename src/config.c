@@ -482,9 +482,10 @@ bool arcadeRandomBalls = true;
    balls, instead of the rear gun sitting where those balls left it (arcade_weapon_power in
    player.c). Two-player is out; there the rear bay already IS player 2's life counter. */
 bool arcadeRearGunScale = true;
-/* Spend the shop sheet's 11 never-referenced icons on the weapons and sidekicks that ship
+/* Spend the sheets' never-referenced icons on the weapons, sidekicks and specials that ship
    sharing another item's icon or with none at all (JE_applyUnusedShopSprites in episodes.c).
-   Cosmetic and shop-only; it matters most in Endless, which offers every port at once. */
+   Cosmetic; it shows in the shops and on the special-weapon HUD icon, and matters most in
+   Endless, which offers every port at once. */
 bool unusedShopSprites = true;
 /* Take a projectile's hit test from the middle of its sprite rather than the top-left corner of
    its cell, and the target's from the middle of its own (the two shot loops in tyrian2.c). Off

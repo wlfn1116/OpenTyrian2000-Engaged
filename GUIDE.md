@@ -260,7 +260,9 @@ The ship list can offer the Dragonwing, the wide hull player two flies in the
 linked two-player pair. No campaign shop sells it. Here it flies as a full
 ship with its own front and rear guns, priced and armoured between the
 Gencores and the MicroCorp Stalkers, and the sidekicks that trail your ship sit
-wider apart to clear its wings. The Nort Ship is sold here as the Nort Ship Z.
+wider apart to clear its wings. Three hulls are renamed after their Super Arcade
+counterparts: the Nort Ship as the Nort Ship Z, the Silver Ship as the TX
+SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 
 | Item | Base cost | Effect |
 | --- | ---: | --- |
@@ -305,7 +307,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Opening Salvo | Charges a stronger opening volley | 1 |
 | Kinetic Converter | Damage taken refunds power, recharge, and sidekicks; cheaper twiddles | 3 |
 | Countermeasures | Clears nearby shots after damage | 2 |
-| Chain Reaction | Kills damage nearby enemies | 3 |
+| Chain Reaction | Kills blast nearby enemies, and those blast on | 3 |
 | Financier | More interest and lower shop prices | 4 |
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
 | Failsafe | Brief invulnerability after hull damage | 2 |
@@ -334,8 +336,27 @@ lasts as long as the shield it would have emptied, and a repair mends as much.
 
 Countermeasures and the Shockwave boon both scrub enemy shots. Every shot they
 destroy bursts into sparks in its own colour, so you can see what the sweep
-caught. Chain Reaction flashes the enemies its pulse damages, as though your own
-guns had hit them.
+caught. Chain Reaction throws a ring of sparks out to the edge of its blast on
+every kill, whether or not anything was standing in it, so the reach you are
+carrying stays on screen. Each enemy the blast catches takes a bolt from the kill
+and a flash. Each stack past the first deepens the damage and widens the blast,
+and the ring grows with it. In co-op the pulse is always the one the ship that
+made the kill paid for, and a kill neither ship can claim uses the wider of the
+two.
+
+Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
+packed formation sends a visible wave travelling outward through it, and a tight
+enough formation goes down with it. What the blast cannot destroy stops the wave
+there: elites, champions, bosses, and any enemy it only wounds. Multi-part hulls
+and linked formations are in that last group, since the blast can wound a linked
+enemy but never destroys one. So the reach a stack buys is worth more than the
+damage figure suggests, since reach is what decides whether the next enemy is
+close enough to carry the wave on.
+
+A kill the wave makes is worth what shooting that enemy would have been. It pays
+its cash to the ship whose blast it was, feeds that ship's kill streak, and
+leaves behind whatever that enemy drops. Elites and champions are never destroyed
+by the wave, so no bounty is lost to it either.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.
@@ -377,6 +398,14 @@ The **Endless** page under **High Scores** opens on the furthest zone each mode
 has reached under any rule; selecting a mode lists the four Base Level rules
 behind it, and selecting a rule breaks that down by difficulty. Records are
 erased on that last list, behind a confirmation.
+
+## Shop
+
+A gun with two fire modes is marked **Dual-Mode** beside its price in the rear
+weapon list. Only that list marks it: the front bay always fires the first mode,
+so the same gun bought for it has nothing to toggle. The mark appears in every
+mode that opens a shop. While you are in that list, the preview box also names
+the key that cycles the equipped gun's mode.
 
 ## Arcade tweaks
 
@@ -660,9 +689,10 @@ Useful restored-content settings:
 - **Ice Base Shots** enables the dormant dispenser-base attack. Endless rolls it
   from the run seed and always enables it from zone 50.
 - **Unused Sprites** assigns distinct shipped icons to weapons that otherwise
-  share or lack one. It also rebuilds the HUD icons of the eleven specials that
-  shared one, seven of them the same "?". Each keeps its ship body and gains the
-  weapon's own sprite above it.
+  share or lack one. It also rebuilds the HUD icons of eleven of the specials
+  that shared one, eight of them wearing the same "?". Each keeps its ship body
+  and gains the weapon's own sprite above it. Dragon Lightning instead takes a
+  spare icon of its own, leaving the bolt it shared to Lightning Zone.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.

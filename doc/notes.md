@@ -402,11 +402,103 @@ struct moves both.
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
+The lobby's Credit rule is not a kill site's problem. `player_credit_cash` applies
+it: Shared pays the full amount into both wallets whichever ship was named,
+Individual pays only the one. A kill site owes the correct payee and nothing else,
+so the chain-reaction drain naming its pulse owner is all that co-op needs, and
+Combo Feed divides the streak separately inside `endlessCountKill`. The matrix in
+`qa_endless.c` drives four-kill waves through the real drain for both Credit
+values, both Combo Feed values, and each ship as the owner, and checks that the
+whole wave's cash reaches the ship that started it, that the partner takes all of
+it or none by the rule, and that the drops still land.
+
+What an enemy is worth is separate from that helper. `enemy_death_payout` owns it:
+the body the death turns into (loot, a rising bomb, a second stage, a Super Arcade
+power-up) and the cash or datacube, paid to a 0-based player index. The player-shot
+loop and the chain-reaction drain both call it, and any further site that destroys
+an enemy owes it, or the drop and the score go with the enemy. In Endless a
+datacube enemy drops a 5000 gem instead of a cube, and Super Arcade power-ups
+belong to that mode alone; the helper spans every mode, which is why it names all
+of them.
+
 The feedback those effects show is presentation only. A bullet swept by Shockwave
 or Countermeasures pops sparks through `enemy_shot_vaporise_sparks`, which seeds
 its own sequence and spawns nothing during a silent resim. The chain-reaction
 chip flash writes the enemy `filter` byte that `JE_drawEnemy` paints for one
 frame and clears, and which reaches neither hash a peer compares.
+
+`ENDLESS_PERK_CHAIN_RADIUS` is the blast at one stack and
+`ENDLESS_PERK_CHAIN_REACH` what each further stack adds. Both that reach and the
+chip damage come from `perkFx`, which reads the ambient effect player, while the
+pulse is drained after the shot loop that queued it, where no context survives.
+`chainPulseOwner` therefore records `endlessPerkChainOwner(killer)` beside each
+queued pulse, and both the queue-time decision and the drain-time figures are
+read under that ship. An unclaimed kill takes the wider of the two holdings, the
+same instinct as `endlessCountKill` crediting one to both. Outside co-op the
+owner is always ship 0, so nothing there changes.
+
+That array is registered, and since the cascade below spends a tick per hop, it
+has to be: a wave in flight leaves pulses queued across the frame boundary, so a
+frame-start snapshot captures them and a restore that brought back the pulses
+without their owners would measure them against the wrong ship. The registry entry
+is what moved the layout fingerprint and the replay fixtures on 2026-08-16; the
+control experiment behind that regeneration is recorded in
+`testing/replay_fixtures.tsv`.
+
+Every pulse throws a ring of sparks that expands to the blast radius, and a bolt
+to each enemy it caught, through `JE_doSPRingSeeded` and `JE_doSPBoltSeeded`. The
+ring is not conditional on catching anything: it is the only reading a player gets
+of the radius they are carrying, and one that appeared only on a hit would arrive
+after the information was useful. Both peers compute the same pulse, so none of
+this needs a packet; both shapes are seeded from the pulse site rather than the
+simulation RNG, and return early under `rollback_resim_silent` so a re-simulated
+frame does not stack another copy.
+
+Both space their sparks by distance (`CHAIN_RING_SPACING`, `CHAIN_BOLT_SPACING`)
+and derive the count from the geometry, so a wider blast is drawn with a heavier
+hand instead of the same few sparks spread thinner; `SP_SHAPE_SPARKS_MAX` bounds
+the largest. The bolt also runs at `CHAIN_BOLT_BRIGHT` rather than the aura lift,
+which clamps its core to the top of the bank and leaves the halo a shade under:
+at the aura lift a four-spark bolt was invisible against a lit playfield.
+`CHAIN_RINGS_PER_TICK` and `CHAIN_BOLTS_PER_TICK` cap how many one drain spawns,
+which matters only with Extra Sparks off, where the classic 101-entry window is
+shared with every weapon trail. The flash, the chip puff and the bolt are held to
+one per victim per drain by `flashed[]`, which leaves the damage of overlapping
+pulses alone and stops one enemy from spending several slots of the 200-entry
+explosion pool.
+
+`qa_test_superspark_shapes` pins the geometry both shapes promise: a ring lands on
+the radius it was given, within the rounding an integer per-axis delta forces over
+its life, and a bolt keeps its sparks on the segment inside its own bow.
+
+What a pulse destroys pulses in turn, through `chain_queue_at`. A drain claims the
+stretch of queue standing at entry, and what it queues below that lands on the
+next tick, so the wave advances a hop at a time and can be watched crossing a
+formation. It cannot run away: a pop only ever destroys a lone enemy, which the
+kill removes from the field before its pulse is queued, so the wave can only
+spread outward into what is still alive, and `CHAIN_QUEUE_MAX` bounds one hop
+besides. A cascade pulse inherits the owner of the pulse that caused it, so the
+whole wave is measured against the ship that started it.
+
+Spending a tick per hop is what puts pulses in the queue across a frame boundary,
+which has two consequences. The owner array has to be registered (above). And a
+wave can still be in the air when a level ends, so the per-level init calls
+`chain_reset_queue`; without it the first tick of the next level would fire the
+leftovers at its enemies, from the previous level's coordinates.
+`qa_test_chain_cascade` (tyrian2.c, where the queue and drain live) drives the
+real drain a tick at a time over a row of fodder spaced inside one blast, checks
+the row needs several ticks to clear and that the queue settles afterwards, and
+uses the same row spaced beyond the blast as the control.
+
+`rollback_selftest_active` skips any level flown with Endless effects, so the
+self-test covers none of that half of the game by default. `--test-replay-chain 1`
+lifts the exclusion (`rollback_selftest_allow_endless`) and flies a shipped demo
+with the effects armed and this perk at full stacks, which is the only way the
+frame-by-frame comparison reaches a pulse queue with a wave crossing a snapshot;
+`2` arms the effects without the perk, as the control. Measured 2026-08-16: 180
+ticks on each of the three demos, no divergence either way. The state hash it
+prints is not a fixture and is not stable between launches, because an armed
+sector rolls its modifiers per run; the failure count is the result.
 
 Every direct write to `armorleft` calls `enemy_note_full_armor`; damage never
 does. `healthbar_max` is what the enemy health bar divides by and the full-HP
@@ -634,16 +726,24 @@ converted pickup suppresses it. `endlessSpecialPickup` is sampled before the
 branch body because the body clears `enemyAvail`, which the predicate reads.
 
 Specials are the only item class whose `itemgraphic` indexes `spriteSheet10`
-rather than the shop sheet. Eleven of them share three icons between them, seven
-wearing the same "?", so `unusedSpecialTops` in `episodes.c` hands each its own
-upper half. `draw_special_icon` builds those icons instead of blitting the 2x2:
-the bare ship body of `SPECIAL_ICON_SHIP_GR`, then an unused player-shot sprite
+rather than the shop sheet. Fifteen of them wear an icon another special also
+wears: eight on the "?" (125), three on 129, and a pair each on 273 and 93. One
+has somewhere to move to, since the sheet holds a spare two-beam 2x2 at 53 that
+no special, sidekick body (`tr` 1 and 2 draw theirs from this sheet) or charge
+frame reads, so `unusedSpecialIcons` in `episodes.c` points Dragon Lightning's
+`itemgraphic` at it and leaves 93 to Lightning Zone. Eleven more have nothing
+spare to take, so `unusedSpecialTops` hands each its own upper half instead.
+`draw_special_icon` builds those icons instead of blitting the 2x2: the
+bare ship body of `SPECIAL_ICON_SHIP_GR`, then an unused player-shot sprite
 centred on the 24x14 above it. Centring goes by `sprite2_ink_bounds`, the
 sprite's painted extent, since the art rarely fills its 12px cell. Skipping the
 shipped icon whole is what keeps the effect pixels in the lower half of icons
-129 and 273 off the block. No item field changes, so
-`unusedShopSprites` still cannot change which specials `endlessGrantSpecial` can
-draw and needs no host authority.
+129 and 273 off the block.
+
+`endlessGrantSpecial` and `debug_special_is_safe` both gate on `itemgraphic`
+being a sprite the sheet holds. Both 53 and 93 pass that test, so the swap
+leaves the grantable pool identical and `unusedShopSprites` still needs no host
+authority.
 
 ### Modifiers and courses
 
@@ -1400,6 +1500,18 @@ the tightest gap any single-2x2 hull leaves at the fixed label column.
 
 Shift the anchor at the call site, never inside `JE_drawItem`: it straddles its
 anchor so a hull centres like a normal ship in the weapon-sim preview.
+
+### Dual-mode tag
+
+The item list prints `SHOP_DUAL_MODE_TAG` after the cost of a port with
+`opnum == 2`, gated on `curSel[MENU_UPGRADES] == 4` so a front-bay row never
+claims a toggle that slot cannot use: the gameplay and shop-preview firing paths
+both read `op[0]` for the front weapon whatever `weapon_mode` holds.
+`shop_dual_mode_tag_x` places it in its own column ending at
+`SHOP_ITEM_MARKER_X`, and pushes it right of that when a scaled Endless cost is
+wide enough to reach it, never past `SHOP_ITEM_LIST_RIGHT`.
+`qa_test_dual_mode_tag` calls that same helper against the narrower marker
+column, at the shipped price and at both multiplier caps.
 
 ### Twiddles
 

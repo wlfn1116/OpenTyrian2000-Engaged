@@ -71,6 +71,7 @@ void JE_paramCheck(int argc, char *argv[])
 		{ 302, 0,   "test-replay",       true },
 		{ 303, 0,   "test-replay-ticks", true },
 		{ 304, 0,   "test-replay-hash",  true },
+		{ 320, 0,   "test-replay-chain", true },
 		{ 305, 0,   "test-net-rounds",   true },
 		{ 306, 0,   "test-net-scenario", true },
 		{ 307, 0,   "test-net-version-skew", true },
@@ -254,6 +255,9 @@ void JE_paramCheck(int argc, char *argv[])
 		case 304:
 			qa_replay_expect = (Uint32)strtoul(option.arg, NULL, 16);
 			qa_replay_expect_set = true;
+			break;
+		case 320:
+			qa_replay_chain = atoi(option.arg);
 			break;
 		case 305:
 			qa_net_rounds = atoi(option.arg);

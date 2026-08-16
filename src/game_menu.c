@@ -2226,12 +2226,14 @@ void JE_itemScreen(void)
 
 				JE_getShipInfo();
 
+				// Hoisted out of the marker block: the Dual-Mode tag ends its column here too.
+				const bool sub_has_scrollbar = sub_total_rows > visible_rows;
+				const int marker_x = SHOP_ITEM_MARKER_X(sub_has_scrollbar);
+
 				/* item-owned marker (pulled left of the scroll bar when it is shown) */
 				if (temp == *playeritem_map(&old_items[shopPlayerIndex], curSel[MENU_UPGRADES] - 2) && temp != 0 && tempW != menuChoices[curMenu]-1)
 				{
-					const bool sub_has_scrollbar = sub_total_rows > visible_rows;
 					const int marker_bar_right = sub_has_scrollbar ? 288 : 300;
-					const int marker_x         = sub_has_scrollbar ? 286 : 298;
 					fill_rectangle_xy(VGAScreen, 160, tempY+7, marker_bar_right, tempY+11, 227);
 					blit_sprite2(VGAScreen, marker_x, tempY+2, shopSpriteSheet, 247);
 				}
@@ -2262,11 +2264,22 @@ void JE_itemScreen(void)
 				/* Draw Cost: if it's not the DONE option */
 				if (tempW != menuChoices[curMenu]-1)
 				{
-					char buf[20];
+					char buf[32];
 
 					snprintf(buf, sizeof buf, "Cost: %lu", temp_cost);
 					JE_textShade(VGAScreen, cols.costX, tempY+10, buf,
 					             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
+
+					// curSel[MENU_UPGRADES] == 4 is the rear list; see SHOP_DUAL_MODE_TAG.
+					if (curSel[MENU_UPGRADES] == 4 && weaponPort[temp].opnum == 2)
+					{
+						const int cost_right = cols.costX + JE_textWidth(buf, TINY_FONT);
+						const int tag_w = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
+						const int tag_x = shop_dual_mode_tag_x(cost_right, tag_w, marker_x);
+
+						JE_textShade(VGAScreen, tag_x, tempY+10, SHOP_DUAL_MODE_TAG,
+						             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
+					}
 				}
 			}
 
@@ -3922,6 +3935,16 @@ ShopItemColumns shop_ship_item_columns(JE_word shipId)
 	cols.nameX = (ships[shipId].shipgraphic == 0) ? SHOP_NAME_X_DRAGONWING : SHOP_NAME_X_NORT_SHIP;
 	cols.costX = cols.nameX + (SHOP_ITEM_COST_X - SHOP_ITEM_NAME_X);
 	return cols;
+}
+
+int shop_dual_mode_tag_x(int costRight, int tagW, int markerX)
+{
+	const int costEnd = costRight + 4;  // a word's gap after the cost text
+
+	int x = markerX - tagW;
+	if (x < costEnd)
+		x = MIN(costEnd, SHOP_ITEM_LIST_RIGHT - tagW);
+	return x;
 }
 
 void JE_drawMenuHeader(void)
