@@ -24,7 +24,7 @@ See the [player guide](GUIDE.md) for menu paths and feature details.
 Release packages include the freeware Tyrian 2000 data. Source builds need a
 copy from [camanis.net](https://www.camanis.net/tyrian/tyrian2000.zip).
 
-On Windows and Linux, the executable should be beside the `data` directory. Console
+On Windows and Linux, the executable should be next to the `data` directory. Console
 packages bundle the data, but also accept an external copy as described in their
 build guides.
 
