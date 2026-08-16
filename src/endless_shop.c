@@ -24,11 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// The stock Tyrian 2000 weapon table fills ports 1-47 with real weapons; ports
-// 48-60 are dummy "Test" placeholders (see custom_weapon.c), so the shop only
-// ever offers front/rear weapons from 1-47.
-#define ENDLESS_REAL_WEAPON_PORTS 47
-
 // Escalating outpost prices, reset each visit.
 long endlessRerollCost[2] = { 0, 0 };
 int  endlessHullCost[2]   = { 0, 0 };
@@ -296,8 +291,8 @@ static void endlessFillShop(void)
 	// itemAvail rows per category (see itemAvailMap in game_menu.c): 0 ships, 1 front,
 	// 2 rear, 3 generator, 5 left sidekick, 6 right sidekick, 8 shield.
 	endlessFillCategory(0, 2, SHIP_DRAGONWING, false, it->ship,                   NULL, 0);  // ships
-	endlessFillCategory(1, 3, ENDLESS_REAL_WEAPON_PORTS, false, it->weapon[FRONT_WEAPON].id, &rearEquip, rearEquip > 0 ? 1 : 0);  // front weapons (skip equipped rear)
-	endlessFillCategory(2, 4, ENDLESS_REAL_WEAPON_PORTS, true,  it->weapon[REAR_WEAPON].id,  itemAvail[1], itemAvailMax[1]);  // rear (+None), no dupes vs front
+	endlessFillCategory(1, 3, SHOP_REAL_WEAPON_PORTS, false, it->weapon[FRONT_WEAPON].id, &rearEquip, rearEquip > 0 ? 1 : 0);  // front weapons (skip equipped rear)
+	endlessFillCategory(2, 4, SHOP_REAL_WEAPON_PORTS, true,  it->weapon[REAR_WEAPON].id,  itemAvail[1], itemAvailMax[1]);  // rear (+None), no dupes vs front
 	endlessFillCategory(3, 6, POWER_NUM,  false, it->generator,                   NULL, 0);  // generators
 	endlessFillCategory(5, 7, OPTION_NUM, true,  it->sidekick[LEFT_SIDEKICK],     NULL, 0);  // left sidekick (+None)
 	endlessFillCategory(6, 8, OPTION_NUM, true,  it->sidekick[RIGHT_SIDEKICK],    NULL, 0);  // right sidekick (+None)

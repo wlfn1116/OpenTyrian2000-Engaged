@@ -265,6 +265,17 @@ static int chainPulseLastLink = 0;   // dedup consecutive same-link kills -> one
 // against the wrong ship.
 static int chainPulseOwner[CHAIN_QUEUE_MAX];
 
+// Whether each queued pulse was struck while its owner's Opening Salvo window was running. Latched
+// rather than read at the point of use: a wave started inside the window keeps the bump for every
+// hop it goes on to make, since the volley is what set it off.
+static bool chainPulseSalvo[CHAIN_QUEUE_MAX];
+
+// The salvo tag of the pulse being drained, for the cascade hops it queues. Idle outside a drain,
+// where a fresh kill reads its owner's window live instead. Tick-local: the drain sets it per pulse
+// and leaves it idle again, so it never stands across the frame boundary the queue itself can.
+#define CHAIN_DRAIN_IDLE (-1)
+static int chainDrainSalvo = CHAIN_DRAIN_IDLE;
+
 // Evaluate a pulse under `owner`'s perks rather than the ambient effect player. Returns the context
 // to restore, as the elite payout does in endless_combat.c.
 static uint chain_fx_enter(int owner)
@@ -278,18 +289,20 @@ static void chain_reset_queue(void)
 {
 	chainPulseN = 0;
 	chainPulseLastLink = 0;
+	chainDrainSalvo = CHAIN_DRAIN_IDLE;
 }
 
 // Append a pulse belonging to `owner`. A pulse queued while the drain runs lands past the stretch
 // that drain claimed, so it waits for the next tick: the cascade advances one hop per tick and can
 // be watched crossing a formation. CHAIN_QUEUE_MAX bounds how wide one hop can get.
-static void chain_queue_at(int screenX, int y, int owner)
+static void chain_queue_at(int screenX, int y, int owner, bool salvo)
 {
 	if (chainPulseN < CHAIN_QUEUE_MAX)
 	{
 		chainPulse[chainPulseN].x = screenX;
 		chainPulse[chainPulseN].y = y;
 		chainPulseOwner[chainPulseN] = owner;
+		chainPulseSalvo[chainPulseN] = salvo;
 		++chainPulseN;
 	}
 }
@@ -302,6 +315,10 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 
 	const uint fxSaved = chain_fx_enter(owner);
 	const bool active = endlessPerkChainReactionActive();
+	// A hop queued from inside a drain carries its parent's tag; a fresh kill reads the owner's own
+	// window, which is why this sits inside that ship's effect context.
+	const bool salvo = (chainDrainSalvo != CHAIN_DRAIN_IDLE) ? (chainDrainSalvo != 0)
+	                                                        : endlessOpeningSalvoVolleyActive();
 	endlessSetFxPlayer(fxSaved);
 
 	if (!active)
@@ -309,7 +326,7 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	if (linknum != 0 && linknum == chainPulseLastLink)
 		return;
 	chainPulseLastLink = linknum;
-	chain_queue_at(screenX, y, owner);
+	chain_queue_at(screenX, y, owner, salvo);
 }
 
 // The divisor a hull spends damage through: Nx boss HP (expert mode and/or endless depth) combined
@@ -675,10 +692,12 @@ static void chain_reaction_process(void)
 	{
 		const int px = chainPulse[p].x, py = chainPulse[p].y;
 
-		// Each pulse is measured under the perks of the ship that made its kill.
+		// Each pulse is measured under the perks of the ship that made its kill, and carries its own
+		// salvo tag both into that figure and on to whatever hops it queues.
+		chainDrainSalvo = chainPulseSalvo[p] ? 1 : 0;
 		const uint fxSaved = chain_fx_enter(chainPulseOwner[p]);
 		const int radius = endlessPerkChainRadius();
-		const int dmg    = endlessPerkChainDamage();
+		const int dmg    = endlessPerkChainDamage(chainPulseSalvo[p]);
 		endlessSetFxPlayer(fxSaved);
 
 		// A linked hull takes one hit per pulse, not one per tile. Indexed by linknum, which the
@@ -779,10 +798,12 @@ static void chain_reaction_process(void)
 	{
 		chainPulse[carried] = chainPulse[src];
 		chainPulseOwner[carried] = chainPulseOwner[src];
+		chainPulseSalvo[carried] = chainPulseSalvo[src];
 		++carried;
 	}
 	chainPulseN = carried;
 	chainPulseLastLink = 0;
+	chainDrainSalvo = CHAIN_DRAIN_IDLE;   // the next fresh kill reads its own window again
 }
 
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
@@ -826,7 +847,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 	const JE_word killedBefore = enemyKilled;
 
 	chain_reset_queue();
-	chain_queue_at(enemy[0].ex, enemy[0].ey, owner);
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, false);
 	for (int t = 0; t < CHAIN_QUEUE_MAX && chainPulseN > 0; ++t)
 		chain_reaction_process();
 
@@ -843,6 +864,76 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 			*out_dropped = true;   // the row is all dead by now, so anything live is a drop
 }
 
+/* Armor one pulse belonging to `owner` takes off a lone enemy left tough enough to survive it, which
+ * is the drain's own answer rather than the accessor's. Contract in qa.h. */
+int qa_chain_pulse_damage(int owner, bool salvo)
+{
+	const JE_byte tough = 250;   // under the invulnerable sentinel, over anything a pulse deals
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	enemyAvail[0] = 0;
+	enemy[0].ex = 100;
+	enemy[0].ey = 100;
+	enemy[0].armorleft = tough;
+	enemy[0].enemytype = 1;
+
+	chain_reset_queue();
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, salvo);
+	chain_reaction_process();
+
+	return tough - enemy[0].armorleft;
+}
+
+/* Contract in qa.h. The row is spaced so clearing it takes several hops, which is the point: only
+ * the first pulse is tagged, so every later one has to have inherited the tag rather than read a
+ * window that has lapsed. */
+bool qa_chain_salvo_latch_holds(int owner)
+{
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	const uint fxSaved = chain_fx_enter(owner);
+	const int step = endlessPerkChainRadius() / 2;
+	endlessSetFxPlayer(fxSaved);
+
+	const int row = 6;
+	for (int i = 0; i < row; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(60 + i * step);
+		enemy[i].ey = 100;
+		enemy[i].armorleft = 1;
+		enemy[i].enemytype = 1;
+	}
+
+	chain_reset_queue();
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, true);   // the volley's own pulse
+
+	/* Every hop after the first is queued by the drain, with the window long gone as far as the
+	 * live check is concerned; the tag has to come from the parent instead. */
+	bool everyHopTagged = true;
+	int hops = 0;
+	while (chainPulseN > 0 && hops < CHAIN_QUEUE_MAX)
+	{
+		for (int p = 0; p < chainPulseN; ++p)
+			if (!chainPulseSalvo[p])
+				everyHopTagged = false;
+
+		chain_reaction_process();
+		++hops;
+	}
+
+	return everyHopTagged && hops >= 3;
+}
+
 /* The cascade, driven through the real queue and the real drain. A row of fodder is laid out inside
  * one blast of its neighbour, so a single seeded pulse has to carry the whole row, and the same row
  * spaced beyond the blast has to stop at the first. Lives here because the queue and the drain are
@@ -855,7 +946,7 @@ void qa_test_chain_cascade(void)
 	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
 
 	const int radius = endlessPerkChainRadius();
-	const int dmg    = endlessPerkChainDamage();
+	const int dmg    = endlessPerkChainDamage(false);
 	if (radius <= 0 || dmg <= 1)
 	{
 		qa_check(false, "the chain cascade test needs the perk held by the current effect player");
@@ -878,7 +969,7 @@ void qa_test_chain_cascade(void)
 		}
 
 		chain_reset_queue();
-		chain_queue_at(enemy[0].ex, enemy[0].ey, 0);
+		chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false);
 
 		/* One drain is one tick. Run them until the wave dies out, bounded so a queue that refused
 		 * to empty fails the tick check below instead of hanging the suite. */
@@ -942,7 +1033,7 @@ void qa_test_chain_cascade(void)
 		for (int t = 0; t < pulses; ++t)
 		{
 			chain_reset_queue();
-			chain_queue_at(enemy[0].ex, enemy[0].ey, 0);   // a pulse right on top of it
+			chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false);   // a pulse right on top of it
 			chain_reaction_process();
 		}
 
@@ -981,7 +1072,7 @@ void qa_test_chain_cascade(void)
 	while (bossTicks < 500 && enemyAvail[0] != 1)
 	{
 		chain_reset_queue();
-		chain_queue_at(60, 100, 0);
+		chain_queue_at(60, 100, 0, false);
 		chain_reaction_process();
 		++bossTicks;
 	}
@@ -1022,7 +1113,7 @@ void qa_test_chain_cascade(void)
 	}
 
 	chain_reset_queue();
-	chain_queue_at(nearX - radius, 100, 0);   // reaches tile 0 only
+	chain_queue_at(nearX - radius, 100, 0, false);   // reaches tile 0 only
 	chain_reaction_process();
 
 	const int worn = (tileArmor - enemy[0].armorleft) + (tileArmor - enemy[1].armorleft)
@@ -11842,6 +11933,7 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.chainPulseN",      &chainPulseN, sizeof(chainPulseN));
 	rollback_register("t2.chainPulseLast",   &chainPulseLastLink, sizeof(chainPulseLastLink));
 	rollback_register("t2.chainPulseOwner",  chainPulseOwner, sizeof(chainPulseOwner));
+	rollback_register("t2.chainPulseSalvo",  chainPulseSalvo, sizeof(chainPulseSalvo));
 	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
 	/* The latch that arms them.  It flips false->true inside the tick, so a replay of

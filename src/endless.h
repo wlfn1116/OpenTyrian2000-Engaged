@@ -824,7 +824,7 @@ void endlessCountermeasureFired(void);       // Countermeasure Suite: re-arm the
 bool endlessPerkChainReactionActive(void);   // Chain Reaction: perk owned (tyrian2.c kill-site pulse queue)
 uint endlessPerkChainOwner(int killer);      // Chain Reaction: ship whose stacks a kill's pulse uses (0 outside coop)
 int  endlessPerkChainRadius(void);           // Chain Reaction: pulse radius in px, widening with each stack
-int  endlessPerkChainDamage(void);           // Chain Reaction: armor damage the pulse deals to nearby fodder
+int  endlessPerkChainDamage(bool salvoBoosted); // Chain Reaction: pulse damage, stacks scaled by the owner's damage
 int  endlessPerkAmmoPercent(void);           // Ordnance Reserves: sidekick-magazine bonus % (0 = not applying); the shop label and the flown magazine both derive from this
 int  endlessPerkSidekickAmmo(int base);      // Ordnance Reserves: a shipped option.ammo magazine, boosted + capped (0 stays 0: charge sidekicks have no magazine)
 int  endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo); // Ordnance Reserves: the per-round refill interval, scaled so a boosted magazine still fills in the shipped time

@@ -609,11 +609,91 @@ static void qa_reactive_state_matrix(void)
 		const int want = (stacks == 0)
 		               ? 0
 		               : ENDLESS_PERK_CHAIN_RADIUS + (stacks - 1) * ENDLESS_PERK_CHAIN_REACH;
-		char reachLabel[64];
+		char reachLabel[96];
 		snprintf(reachLabel, sizeof(reachLabel), "Chain Reaction at %d stacks blasts %d px",
 		         stacks, want);
 		qa_check(endlessPerkChainRadius() == want, reachLabel);
+
+		/* Damage is the stacks against the ship's own damage scale, which is 100% here. */
+		const int wantDmg = stacks * ENDLESS_PERK_CHAIN_DMG;
+		snprintf(reachLabel, sizeof(reachLabel), "...and hits for %d, %d per stack unscaled",
+		         wantDmg, ENDLESS_PERK_CHAIN_DMG);
+		qa_check(endlessPerkChainDamage(false) == (stacks == 0 ? 0 : wantDmg), reachLabel);
 	}
+
+	/* The pulse rides the owner's damage scale, so a damage build deepens it and the partner's
+	 * build never does. Heavy Rounds on one ship only, both holding the same chain stacks, and no
+	 * drives on either: the figures below are derived from the two constants, not from the function
+	 * under test re-run. */
+	const unsigned savedScaleMods[2] = { endlessPlayerMods[0], endlessPlayerMods[1] };
+	endlessPlayerMods[0] = 0;
+	endlessPlayerMods[1] = 0;
+
+	const int chainStacks = 2;
+	const int heavyRounds = 3;
+
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkGrant(0, PERK_CHAINRXN, (JE_byte)chainStacks);
+	endlessPerkGrant(1, PERK_CHAINRXN, (JE_byte)chainStacks);
+	endlessSetFxPlayer(0);
+	const int chainPlain = endlessPerkChainDamage(false);
+
+	endlessPerkGrant(0, PERK_DAMAGE, (JE_byte)heavyRounds);
+	endlessSetFxPlayer(0);
+	const int chainArmed = endlessPerkChainDamage(false);
+	const int chainSalvo = endlessPerkChainDamage(true);
+	endlessSetFxPlayer(1);
+	const int chainPartner = endlessPerkChainDamage(false);
+	endlessSetFxPlayer(0);
+
+	const int wantPlain = chainStacks * ENDLESS_PERK_CHAIN_DMG;
+	const int wantArmed = wantPlain * (100 + heavyRounds * ENDLESS_PERK_DAMAGE_PCT) / 100;
+
+	char scaleLabel[128];
+	snprintf(scaleLabel, sizeof(scaleLabel), "an unbuilt pulse hits for %d, %d a stack",
+	         chainPlain, ENDLESS_PERK_CHAIN_DMG);
+	qa_check(chainPlain == wantPlain, scaleLabel);
+
+	snprintf(scaleLabel, sizeof(scaleLabel), "%d Heavy Rounds deepen it to %d, wanted %d",
+	         heavyRounds, chainArmed, wantArmed);
+	qa_check(chainArmed == wantArmed && chainArmed > chainPlain, scaleLabel);
+
+	snprintf(scaleLabel, sizeof(scaleLabel), "...and leaves the partner's at %d, its own scale",
+	         chainPartner);
+	qa_check(chainPartner == chainPlain, scaleLabel);
+
+	/* Opening Salvo bumps a pulse struck inside its window, the same points it adds to a tagged
+	 * round, and only for the ship whose window it is. */
+	const int wantSalvo = wantPlain * (100 + heavyRounds * ENDLESS_PERK_DAMAGE_PCT
+	                                   + ENDLESS_PERK_SALVO_DMG_PCT) / 100;
+	snprintf(scaleLabel, sizeof(scaleLabel), "a salvo pulse hits for %d against the same build's %d",
+	         chainSalvo, chainArmed);
+	qa_check(chainSalvo == wantSalvo && chainSalvo > chainArmed, scaleLabel);
+
+	/* End to end through the real drain, which is where the owner's scale actually has to be read:
+	 * the same two ships, the same pulse, against a hull tough enough to survive and report it. */
+	const int dealtArmed = qa_chain_pulse_damage(0, false);
+	const int dealtPartner = qa_chain_pulse_damage(1, false);
+	snprintf(scaleLabel, sizeof(scaleLabel),
+	         "a pulse P1 owns lands its own %d, P2's lands %d", dealtArmed, dealtPartner);
+	qa_check(dealtArmed == chainArmed && dealtPartner == chainPartner, scaleLabel);
+
+	const int dealtSalvo = qa_chain_pulse_damage(0, true);
+	const int dealtSalvoP2 = qa_chain_pulse_damage(1, true);
+	snprintf(scaleLabel, sizeof(scaleLabel),
+	         "the tag reaches the drain: P1's salvo pulse lands %d, P2's %d", dealtSalvo, dealtSalvoP2);
+	qa_check(dealtSalvo == chainSalvo && dealtSalvoP2 > dealtPartner, scaleLabel);
+
+	for (int owner = 0; owner <= 1; ++owner)
+	{
+		snprintf(scaleLabel, sizeof(scaleLabel),
+		         "P%d's wave keeps its salvo bump for every hop, after the window would have lapsed",
+		         owner + 1);
+		qa_check(qa_chain_salvo_latch_holds(owner), scaleLabel);
+	}
+
+	endlessPlayerMods[0] = savedScaleMods[0];
+	endlessPlayerMods[1] = savedScaleMods[1];
 
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_CHAINRXN, 1);

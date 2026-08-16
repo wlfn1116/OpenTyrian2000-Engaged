@@ -504,9 +504,32 @@ everything carrying hit points, bosses and elite tiers included, refusing only
 pickups, flag-setters and 255, the invulnerable sentinel. 254 is the ordinary boss
 armor cap and is admitted.
 
-Chain damage goes through `enemy_spend_damage`, the same divisor and accumulator
-the player-shot loop and the ramming path use, so a boss or an elite-tier hull
-spends it at the rate its scaling sets instead of losing raw armor. A tick the
+`endlessPerkChainDamage` is the perk's stacks against `endlessPlayerDamagePercent`,
+the one scale every player-damage source feeds: a pulse is the owning ship's
+damage and rides its build, drives and hostile cuts included, floored at one point
+so a heavily cut pulse still lands something. It deliberately does not read
+`endlessArmorPercent`, the enemy-health ramp: scaling by that grew the figure with
+depth for reasons no build could influence, and made the pulse's kill threshold
+depth-invariant rather than something the player could move. The drain reads the
+figure under the pulse owner's effect context, so in co-op each ship's waves carry
+that ship's damage and not its partner's.
+
+Opening Salvo is the one damage source that is not in that scale, because it is a
+per-shot tag rather than a ship-wide lift: the shot loop adds
+`endlessOpeningSalvoDamagePercent` only to rounds carrying `salvoBoost`. A pulse
+has no such tag, so the queue carries one for it. `chainPulseSalvo` records
+whether the owner's window was running when the kill was struck, and every hop the
+wave goes on to make inherits that tag through `chainDrainSalvo` rather than
+re-reading the window, which by then may have lapsed: the volley is what set the
+wave off, so the wave keeps what the volley bought. `chainDrainSalvo` is -1 outside
+a drain, where a fresh kill reads its owner's window live. The tag array is
+registered with the queue it parallels, which is what moved the layout fingerprint
+and the replay fixtures on 2026-08-16.
+
+Chain damage then goes through `enemy_spend_damage`, the same divisor and
+accumulator the player-shot loop and the ramming path use, so a boss or an
+elite-tier hull spends it at the rate its scaling sets instead of losing raw
+armor. A tick the
 accumulator swallows whole still shows the flash and lights the boss bar, or a
 heavily scaled hull would take the blast in silence. A linked hull that runs out
 of armor goes down whole, through `chain_destroy_group`: one tile left standing
@@ -1548,17 +1571,51 @@ the tightest gap any single-2x2 hull leaves at the fixed label column.
 Shift the anchor at the call site, never inside `JE_drawItem`: it straddles its
 anchor so a hull centres like a normal ship in the weapon-sim preview.
 
-### Dual-mode tag
+### Weapon row tags
 
-The item list prints `SHOP_DUAL_MODE_TAG` after the cost of a port with
-`opnum == 2`, gated on `curSel[MENU_UPGRADES] == 4` so a front-bay row never
-claims a toggle that slot cannot use: the gameplay and shop-preview firing paths
-both read `op[0]` for the front weapon whatever `weapon_mode` holds.
-`shop_dual_mode_tag_x` places it in its own column ending at
-`SHOP_ITEM_MARKER_X`, and pushes it right of that when a scaled Endless cost is
-wide enough to reach it, never past `SHOP_ITEM_LIST_RIGHT`.
-`qa_test_dual_mode_tag` calls that same helper against the narrower marker
-column, at the shipped price and at both multiplier caps.
+`shop_weapon_row_tag` returns the tag a weapon row prints after its cost, or
+NULL. `shop_row_tag_x` puts it in a column ending `SHOP_ROW_TAG_MARKER_GAP`
+short of `SHOP_ITEM_MARKER_X`, since the owned marker's icon paints from that
+column with no padding of its own, and pushes it right when a scaled Endless
+cost is wide enough to reach it, never past `SHOP_ITEM_LIST_RIGHT`.
+`qa_test_dual_mode_tag` calls that helper against the narrower marker column at
+the shipped price and at both multiplier caps, and measures the marker icon's
+ink.
+
+The rear list marks a port with `opnum == 2` as `SHOP_DUAL_MODE_TAG`. The front
+list never does: the gameplay and shop-preview firing paths both read `op[0]`
+for the front weapon whatever `weapon_mode` holds, so that bay has no toggle.
+
+### Weapon bay tags
+
+Endless deals both weapon lists from one id pool (`endlessFillShop`), so it can
+offer a gun for the bay the shipped game never issues it to. Each list marks
+those rows: `SHOP_REAR_GUN_TAG` in the front list, `SHOP_FRONT_GUN_TAG` in the
+rear. A campaign shop fills its two lists from separate `WeapF`/`WeapR` script
+data, so `shop_weapon_row_tag` takes the mixed-bay case as a parameter and no
+other mode draws these.
+
+`shopRearGunPorts` lists the rear guns. Every other port up to
+`SHOP_REAL_WEAPON_PORTS` is a front gun. Port 16 is the exception: its entry
+holds the sidekick weapon table, so it stays unclassified. The rear ids come
+from three places in the shipped data: the `WeapR` rows of every episode script,
+the enemy table's rear weapon pickups (`value` 31000 + id), and the rear halves
+the code issues directly (Banana Blast 24, HotDog 26, NortShip Spreader 37,
+whose second mode holds the same eleven weapons as port 38's only mode).
+
+Three groups needed a judgement call. Episode 4 section 15 carries one
+`WeapF 15 18 2` row selling two rear guns for the front bay, against 20 `WeapR`
+rows for port 15 and 12 for port 18, so both stay rear. Ports 44, 46 and 47 sit
+in the 40-47 block of Tyrian 2000 additions, and every port of that block the
+episode 4 and 5 shops place (40-43 and 45) is a front weapon, so all three are
+read as front. Ports 6 and 32-35 (Protron Z, Shuruiken Field, Poison Bomb,
+Protron Wave, The Orange Juicer) have no evidence in `data/` at all and are
+recorded as front guns; revisit them if a source turns up. Shot data settles
+none of this, since rear guns 21, 24 and 26 fire upward like the front ones.
+
+`qa_test_weapon_bay_tags` checks that every real port names one bay, that a
+two-mode port is always a rear gun (so the two tags never want the same column),
+and that a campaign shop draws no bay tag.
 
 ### Twiddles
 

@@ -2317,7 +2317,7 @@ void JE_itemScreen(void)
 
 				JE_getShipInfo();
 
-				// Hoisted out of the marker block: the Dual-Mode tag ends its column here too.
+				// Hoisted out of the marker block: a row tag ends its column here too.
 				const bool sub_has_scrollbar = sub_total_rows > visible_rows;
 				const int marker_x = SHOP_ITEM_MARKER_X(sub_has_scrollbar);
 
@@ -2326,7 +2326,7 @@ void JE_itemScreen(void)
 				{
 					const int marker_bar_right = sub_has_scrollbar ? 288 : 300;
 					fill_rectangle_xy(VGAScreen, 160, tempY+7, marker_bar_right, tempY+11, 227);
-					blit_sprite2(VGAScreen, marker_x, tempY+2, shopSpriteSheet, 247);
+					blit_sprite2(VGAScreen, marker_x, tempY+2, shopSpriteSheet, SHOP_OWNED_MARKER_SPRITE);
 				}
 
 				/* Draw DONE */
@@ -2361,14 +2361,18 @@ void JE_itemScreen(void)
 					JE_textShade(VGAScreen, cols.costX, tempY+10, buf,
 					             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 
-					// curSel[MENU_UPGRADES] == 4 is the rear list; see SHOP_DUAL_MODE_TAG.
-					if (curSel[MENU_UPGRADES] == 4 && weaponPort[temp].opnum == 2)
+					// 3 is the front weapon list and 4 the rear; only Endless stocks both
+					// of them from one pool of ports.
+					const bool rear_list = curSel[MENU_UPGRADES] == 4;
+					const char *tag = (curSel[MENU_UPGRADES] == 3 || rear_list)
+					                ? shop_weapon_row_tag(temp, rear_list, endlessMode) : NULL;
+					if (tag != NULL)
 					{
 						const int cost_right = cols.costX + JE_textWidth(buf, TINY_FONT);
-						const int tag_w = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
-						const int tag_x = shop_dual_mode_tag_x(cost_right, tag_w, marker_x);
+						const int tag_w = JE_textWidth(tag, TINY_FONT);
+						const int tag_x = shop_row_tag_x(cost_right, tag_w, marker_x);
 
-						JE_textShade(VGAScreen, tag_x, tempY+10, SHOP_DUAL_MODE_TAG,
+						JE_textShade(VGAScreen, tag_x, tempY+10, tag,
 						             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 					}
 				}
@@ -4028,11 +4032,52 @@ ShopItemColumns shop_ship_item_columns(JE_word shipId)
 	return cols;
 }
 
-int shop_dual_mode_tag_x(int costRight, int tagW, int markerX)
+#define SHOP_OPTION_WEAPON_PORT 16  // holds the sidekick weapon table; no bay issues a gun from it
+
+/* The ports the shipped game issues as a rear gun; every other real port is a front gun. See
+ * "Weapon bay tags" in doc/notes.md for where each id comes from. */
+static const JE_byte shopRearGunPorts[] = { 9, 10, 11, 12, 14, 15, 18, 21, 22, 24, 26, 28, 29, 30, 37, 38 };
+
+ShopWeaponBay shop_weapon_port_bay(JE_word port)
+{
+	if (port == 0 || port == SHOP_OPTION_WEAPON_PORT ||
+	    port > SHOP_REAL_WEAPON_PORTS || customWeaponPortIsCustom(port))
+		return SHOP_BAY_UNKNOWN;
+
+	for (uint i = 0; i < COUNTOF(shopRearGunPorts); ++i)
+		if (shopRearGunPorts[i] == port)
+			return SHOP_BAY_REAR;
+
+	return SHOP_BAY_FRONT;
+}
+
+const char *shop_weapon_row_tag(JE_word port, bool rearList, bool mixedBays)
+{
+	if (port == 0 || port > PORT_NUM)
+		return NULL;  // None, and any id past the port table
+
+	// The rear list gives the Dual-Mode tag the column. Only rear guns carry a second mode in the
+	// shipped data, so that never hides a bay tag.
+	if (rearList && weaponPort[port].opnum == 2)
+		return SHOP_DUAL_MODE_TAG;
+
+	if (!mixedBays)
+		return NULL;
+
+	const ShopWeaponBay bay = shop_weapon_port_bay(port);
+	if (bay == SHOP_BAY_FRONT && rearList)
+		return SHOP_FRONT_GUN_TAG;
+	if (bay == SHOP_BAY_REAR && !rearList)
+		return SHOP_REAR_GUN_TAG;
+
+	return NULL;
+}
+
+int shop_row_tag_x(int costRight, int tagW, int markerX)
 {
 	const int costEnd = costRight + 4;  // a word's gap after the cost text
 
-	int x = markerX - tagW;
+	int x = markerX - SHOP_ROW_TAG_MARKER_GAP - tagW;
 	if (x < costEnd)
 		x = MIN(costEnd, SHOP_ITEM_LIST_RIGHT - tagW);
 	return x;

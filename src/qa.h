@@ -104,6 +104,14 @@ void qa_test_chain_cascade(void);
  * drops appeared. Clears the enemy table; callers restore it. */
 void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,
                        long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
+/* Armor one pulse belonging to `owner` takes off a hull tough enough to survive it (tyrian2.c), the
+ * pulse queued with `salvo` as its Opening Salvo tag. The drain's own figure, so it answers whose
+ * damage scale the drain read and whether the tag reached it. Clears the enemy table. */
+int qa_chain_pulse_damage(int owner, bool salvo);
+/* Start a wave for `owner` with the Opening Salvo tag set on its first pulse only, and run it out
+ * (tyrian2.c). True when every hop it went on to make carried the tag too, which is the latch the
+ * window lapsing mid-wave must not break. Clears the enemy table. */
+bool qa_chain_salvo_latch_holds(int owner);
 
 /* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in
  * testing/network_fault_test.py. Zero on success; both peers assert what they see of the other. */

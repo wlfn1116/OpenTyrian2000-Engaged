@@ -41,6 +41,15 @@
 # line's values, so neither the wider per-stack blast nor the new pulse ring, bolts, and flash
 # bank moves the demos. The visual work cannot: it spawns superpixels, which are not registered
 # state. Campaign demos never fire a pulse at all, the perk being Endless-only.
-1 180 35ea206d
-2 180 b958545a
-3 180 b672fe2b
+# Regenerated 2026-08-16, for a snapshot-shape change with no simulation change behind it:
+# a Chain Reaction pulse now carries whether its owner's Opening Salvo window was running when
+# it was struck, so the wave keeps that bump for every hop it goes on to make, and the queue
+# gained a parallel tag array (t2.chainPulseSalvo) that the registry has to restore with the
+# pulses it belongs to. Verified by building with that single rollback_register line removed,
+# every other edit in the commit kept: all three hashes and the layout hash came back at the
+# previous line's values, so neither the salvo bump, the raised per-stack damage, nor the move
+# from the enemy-health ramp to the owner's damage scale moves the demos. None of them can:
+# the perk is Endless-only and the shipped demos never fire a pulse.
+1 180 ef9c276d
+2 180 bb90345a
+3 180 6f74a32b

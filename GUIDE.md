@@ -342,9 +342,13 @@ caught. Chain Reaction throws a ring of sparks out to the edge of its blast on
 every kill, whether or not anything was standing in it, so the reach you are
 carrying stays on screen. Each enemy the blast catches takes a bolt from the kill
 and a flash. Each stack past the first deepens the damage and widens the blast,
-and the ring grows with it. In co-op the pulse is always the one the ship that
-made the kill paid for, and a kill neither ship can claim uses the wider of the
-two.
+and the ring grows with it. The blast is your damage: it rides the same scale
+your guns do, so Heavy Rounds, Glass Cannon, Adrenaline and a drive all deepen it,
+and anything cutting your damage cuts it too. A kill made during an Opening Salvo
+volley carries that bump as well, and keeps it for the whole wave that follows,
+even once the volley itself has run out. In co-op the pulse is always the one the
+ship that made the kill paid for, measured against that ship's own build and that
+ship's own salvo, and a kill neither ship can claim uses the wider of the two.
 
 Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
 packed formation sends a visible wave travelling outward through it, and a tight
@@ -428,6 +432,12 @@ weapon list. Only that list marks it: the front bay always fires the first mode,
 so the same gun bought for it has nothing to toggle. The mark appears in every
 mode that opens a shop. While you are in that list, the preview box also names
 the key that cycles the equipped gun's mode.
+
+The Endless outpost stocks both weapon lists from one pool of guns, so either
+list can offer a gun the campaign only ever sold for the other bay. Those rows
+are marked **Rear** in the front weapon list and **Front** in the rear weapon
+list. Any gun in the list can be bought and fired from that bay; one built for
+the other bay often behaves differently there.
 
 ## Arcade tweaks
 

@@ -54,12 +54,24 @@ void JE_drawItem(JE_byte itemType, JE_word itemNum, JE_word x, JE_word y);
 #define SHOP_ITEM_COST_X 187
 #define SHOP_ITEM_LIST_RIGHT 304
 
-// Where the "already owned" marker starts, and where the Dual-Mode tag's column ends.
+// Where the "already owned" marker starts, and how far short of it a row tag stops. The marker
+// sprite paints from its own column, so a tag that ended there would run into the icon.
 #define SHOP_ITEM_MARKER_X(scrollbar) ((scrollbar) ? 286 : 298)
+#define SHOP_ROW_TAG_MARKER_GAP 4
+#define SHOP_OWNED_MARKER_SPRITE 247  // its frame in shopSpriteSheet
 
 // Marks a port with two fire modes. Only the rear weapon list draws it: the front bay always
 // fires op[0], so the same port has no mode to toggle there.
 #define SHOP_DUAL_MODE_TAG "Dual-Mode"
+
+// Mark a gun the shipped game issues for the other bay. Only a list stocked from both bays can
+// offer such a row, so only Endless draws these.
+#define SHOP_FRONT_GUN_TAG "Front"
+#define SHOP_REAR_GUN_TAG  "Rear"
+
+// The stock Tyrian 2000 weapon table fills ports 1-47 with real weapons; ports 48-60 are dummy
+// "Test" placeholders (see custom_weapon.c), so no shop offers a front or rear weapon above 47.
+#define SHOP_REAL_WEAPON_PORTS 47
 
 // Half the width of a hull drawn as two 2x2 halves: JE_drawItem sits each half this far either
 // side of the anchor, so such a hull also overhangs the icon column by this much.
@@ -75,9 +87,24 @@ typedef struct
 // and a label column of its own; every other ship takes the standard columns.
 ShopItemColumns shop_ship_item_columns(JE_word shipId);
 
-// x of the Dual-Mode tag on one item row, from the right edge of the cost text, the tag's width
-// and the marker column. A cost text wide enough to reach that column pushes the tag right of it.
-int shop_dual_mode_tag_x(int costRight, int tagW, int markerX);
+// The bay the shipped game issues a weapon port for. Ports it issues to neither bay (None, the
+// sidekick weapon table, a custom design) are unknown. See "Weapon bay tags" in doc/notes.md.
+typedef enum
+{
+	SHOP_BAY_UNKNOWN,
+	SHOP_BAY_FRONT,
+	SHOP_BAY_REAR,
+} ShopWeaponBay;
+
+ShopWeaponBay shop_weapon_port_bay(JE_word port);
+
+// The tag one weapon row prints after its cost, or NULL for none. `rearList` selects which of the
+// two weapon menus is drawn, `mixedBays` whether its stock can hold guns issued for either bay.
+const char *shop_weapon_row_tag(JE_word port, bool rearList, bool mixedBays);
+
+// x of a row tag, from the right edge of the cost text, the tag's width and the marker column.
+// A cost text wide enough to reach that column pushes the tag right of it.
+int shop_row_tag_x(int costRight, int tagW, int markerX);
 
 void JE_drawMenuHeader(void);
 void JE_drawMenuChoices(void);

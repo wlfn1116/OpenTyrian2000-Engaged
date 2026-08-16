@@ -4780,14 +4780,19 @@ static void qa_test_wide_hull_columns(void)
 	printf("# wide shop hulls clear their labels by %dpx\n", gap);
 }
 
-/* The rear weapon list tags a two-mode port after its cost, in a column that has to clear both the
- * cost text and the owned marker the same row can carry. Endless scales prices, so it is measured
- * at both multiplier caps as well as at the shipped price. */
+/* A weapon row tags a two-mode port, or a gun Endless stocked for the other bay, after its cost,
+ * in a column that has to clear both the cost text and the owned marker the same row can carry.
+ * Endless scales prices, so it is measured at both multiplier caps as well as at the shipped
+ * price. Dual-Mode is the widest tag, so it is the one the column has to fit. */
 static void qa_test_dual_mode_tag(void)
 {
 	const int tagW = JE_textWidth(SHOP_DUAL_MODE_TAG, TINY_FONT);
 	if (tagW <= 0)
 		return;  // font bank not loaded
+
+	qa_check(JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT) <= tagW
+	         && JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT) <= tagW,
+	         "the bay tags fit the column the Dual-Mode tag sizes");
 
 	// The ports the tag marks, and the priciest of them.
 	uint dual = 0;
@@ -4819,7 +4824,7 @@ static void qa_test_dual_mode_tag(void)
 		// The row that carries the marker is the tighter case, so measure against that column.
 		const int markerX = SHOP_ITEM_MARKER_X(true);
 		const int costRight = SHOP_ITEM_COST_X + JE_textWidth(buf, TINY_FONT);
-		const int tagX = shop_dual_mode_tag_x(costRight, tagW, markerX);
+		const int tagX = shop_row_tag_x(costRight, tagW, markerX);
 
 		snprintf(label, sizeof(label), "the Dual-Mode tag clears a %s price", prices[i].what);
 		qa_check(tagX >= costRight, label);
@@ -4831,8 +4836,84 @@ static void qa_test_dual_mode_tag(void)
 		printf("# Dual-Mode tag, %s price \"%s\": cost ends %d, tag %d..%d\n",
 		       prices[i].what, buf, costRight, tagX, tagX + tagW);
 	}
-	printf("# Dual-Mode tag: %u two-mode ports, %dpx wide, column x=%d\n",
-	       dual, tagW, SHOP_ITEM_MARKER_X(true) - tagW);
+	printf("# Dual-Mode tag: %u two-mode ports, %dpx wide, column ends %d\n",
+	       dual, tagW, SHOP_ITEM_MARKER_X(true) - SHOP_ROW_TAG_MARKER_GAP);
+
+	// The same row can carry the owned marker, whose icon paints from the marker column.
+	if (shopSpriteSheet.data == NULL)
+		JE_loadCompShapes(&shopSpriteSheet, '1');  // the shop loads this bank lazily
+
+	int inkX0, inkY0, inkX1, inkY1;
+	if (sprite2_ink_bounds(shopSpriteSheet, SHOP_OWNED_MARKER_SPRITE,
+	                       &inkX0, &inkY0, &inkX1, &inkY1))
+	{
+		const int markerX = SHOP_ITEM_MARKER_X(true);
+		const int tagRight = markerX - SHOP_ROW_TAG_MARKER_GAP;
+
+		qa_check(tagRight < markerX + inkX0, "a row tag clears the owned marker icon");
+		printf("# owned marker: icon ink %d..%d, tag column ends %d\n",
+		       markerX + inkX0, markerX + inkX1, tagRight);
+	}
+}
+
+// Tags are compared by text: each translation unit gets its own copy of the macro's literal.
+static bool qa_tag_is(const char *tag, const char *want)
+{
+	if (tag == NULL || want == NULL)
+		return tag == want;
+	return strcmp(tag, want) == 0;
+}
+
+/* Endless deals both weapon lists from one id pool, so each list marks the guns the shipped game
+ * issues for the other bay. The mark only means something if every real port names one bay. A
+ * campaign shop fills its two lists from separate data, so it must never carry the mark. */
+static void qa_test_weapon_bay_tags(void)
+{
+	uint front = 0, rear = 0, unclassified = 0;
+
+	for (uint port = 1; port <= SHOP_REAL_WEAPON_PORTS; ++port)
+	{
+		char label[96];
+		const ShopWeaponBay bay = shop_weapon_port_bay(port);
+		const bool dualMode = weaponPort[port].opnum == 2;
+
+		switch (bay)
+		{
+		case SHOP_BAY_FRONT:
+			++front;
+			break;
+		case SHOP_BAY_REAR:
+			++rear;
+			break;
+		default:
+			++unclassified;
+			break;
+		}
+
+		// A two-mode port has to be a rear gun, or its tag and a bay tag want the same column.
+		snprintf(label, sizeof(label), "port %u (%.16s) has a second mode only as a rear gun",
+		         port, weaponPort[port].name);
+		qa_check(!dualMode || bay == SHOP_BAY_REAR, label);
+
+		const char *const wantRear = dualMode ? SHOP_DUAL_MODE_TAG
+		                           : bay == SHOP_BAY_FRONT ? SHOP_FRONT_GUN_TAG : NULL;
+
+		snprintf(label, sizeof(label), "port %u is tagged only where it is out of place", port);
+		qa_check(qa_tag_is(shop_weapon_row_tag(port, false, true),
+		                   bay == SHOP_BAY_REAR ? SHOP_REAR_GUN_TAG : NULL)
+		         && qa_tag_is(shop_weapon_row_tag(port, true, true), wantRear), label);
+
+		snprintf(label, sizeof(label), "port %u carries no bay tag in a campaign shop", port);
+		qa_check(qa_tag_is(shop_weapon_row_tag(port, false, false), NULL)
+		         && qa_tag_is(shop_weapon_row_tag(port, true, false),
+		                      dualMode ? SHOP_DUAL_MODE_TAG : NULL), label);
+	}
+
+	// Port 16 holds the sidekick weapon table; every other real port belongs to a bay.
+	qa_check(front > 0 && rear > 0 && unclassified == 1, "the bay table covers the weapon ports");
+	printf("# weapon bays: %u front, %u rear, %u unclassified of %d ports; tags %dpx / %dpx\n",
+	       front, rear, unclassified, SHOP_REAL_WEAPON_PORTS,
+	       JE_textWidth(SHOP_FRONT_GUN_TAG, TINY_FONT), JE_textWidth(SHOP_REAR_GUN_TAG, TINY_FONT));
 }
 
 /* The shield/armor damage glow is presentation state held out of the rollback registry, so it has
@@ -5632,6 +5713,7 @@ int qa_run_unit_suite(void)
 	qa_test_dragonwing_row();
 	qa_test_wide_hull_columns();
 	qa_test_dual_mode_tag();
+	qa_test_weapon_bay_tags();
 	qa_test_special_light_events();
 	qa_test_partner_repair_special();
 	qa_test_twiddle_ships();
@@ -5707,7 +5789,15 @@ int qa_run_replay_fixture(void)
 		rollback_selftest_allow_endless(true);
 		/* 2 arms the effects without the perk, as the control for whatever 1 reports. */
 		if (qa_replay_chain == 1)
+		{
 			endlessPerkGrant(0, PERK_CHAINRXN, endlessPerkTable[PERK_CHAINRXN].maxStack);
+
+			/* A pulse is scaled by its owner's damage, so give that scale something to say and
+			 * something that moves: Heavy Rounds is a constant lift, while a kill-fire drive opens
+			 * and lapses as the demo kills, changing the figure the drain reads tick to tick. */
+			endlessPerkGrant(0, PERK_DAMAGE, endlessPerkTable[PERK_DAMAGE].maxStack);
+			endlessPlayerMods[0] |= ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_DMGUP;
+		}
 	}
 
 	rollback_selftest_ticks = 0;

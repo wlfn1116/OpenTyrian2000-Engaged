@@ -175,7 +175,10 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
 #define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy at one stack
 #define ENDLESS_PERK_CHAIN_REACH   12  // Chain Reaction: px added to that radius by each stack past the first
-#define ENDLESS_PERK_CHAIN_DMG      8  // Chain Reaction: base armor damage to nearby fodder per stack (scaled by the depth armor ramp)
+// Chain Reaction: armor damage per stack, before the owner's damage scale. 20 is both the median
+// armor of the shipped enemies and the commonest single value among them, so one stack kills that
+// enemy on an unscaled hit; depth raises what it is worth against, a damage build raises the hit.
+#define ENDLESS_PERK_CHAIN_DMG     20
 #define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
 #define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Financier stack (the cap scales with the rate)
 #define ENDLESS_PERK_DISCOUNT_BP  825  // basis points; 4 stacks = 33% off
