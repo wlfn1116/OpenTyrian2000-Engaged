@@ -312,6 +312,39 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	chain_queue_at(screenX, y, owner);
 }
 
+// The divisor a hull spends damage through: Nx boss HP (expert mode and/or endless depth) combined
+// with the endless elite/champion tier. 1 means it takes damage point for point. Every damage site
+// asks this one question, or the same hit wears a boss down at a different rate depending on what
+// dealt it.
+int enemy_hp_multiplier(unsigned int slot)
+{
+	const bool has_boss_bar = enemy_has_boss_bar(enemy[slot].linknum);
+
+	int bossHpMult = 1;
+	if (expertMode)
+		bossHpMult *= expertBossHpMult;
+	if (endlessFxActive())
+		bossHpMult *= endlessBossHpMult();
+
+	return endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[slot].eliteState)
+	                         : (has_boss_bar ? bossHpMult : 1);
+}
+
+// Armor points `damage` buys against this hull, banking the remainder in its accumulator. The player
+// shot loop runs the divide itself instead of calling this, because Executioner has to be measured
+// across the same one.
+int enemy_spend_damage(unsigned int slot, int damage)
+{
+	const int hpMult = enemy_hp_multiplier(slot);
+	if (hpMult <= 1)
+		return damage;
+
+	enemy[slot].damageAccum += damage;
+	const int spent = enemy[slot].damageAccum / hpMult;
+	enemy[slot].damageAccum -= spent * hpMult;
+	return spent;
+}
+
 // What a destroyed enemy leaves behind: the body its death turns into (loot, a rising bomb, a second
 // stage, a Super Arcade power-up) and what it was worth, paid to `payee`, a 0-based player index.
 // Worth is cash, or a datacube for the enemies carrying one, which Endless drops as a gem instead.
@@ -378,6 +411,54 @@ static void enemy_death_payout(unsigned int slot, int payee)
 			player_award_kill_cash(&player[payee], enemy[slot].evalue);
 		}
 	}
+}
+
+// One tile of a hull that is going down: the flag it sets, what it pays out, its death, and its
+// explosion. `staged` asks for the transformation a tile with edlevel -1 owes instead of a death,
+// which the caller decides because it depends on how the killing blow matched the group.
+static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool staged)
+{
+	const int screenX = enemy[slot].ex + enemy[slot].mapoffset;
+
+	if (enemy[slot].special)
+	{
+		assert((unsigned int) enemy[slot].flagnum-1 < COUNTOF(globalFlags));
+		globalFlags[enemy[slot].flagnum-1] = enemy[slot].setto;
+	}
+
+	enemy_death_payout(slot, payee);
+
+	if (staged)
+	{
+		enemy[slot].edlevel = 0;
+		enemyAvail[slot] = 2;
+		enemy[slot].egr[1-1] = enemy[slot].edgr;
+		enemy[slot].ani = 1;
+		enemy[slot].aniactive = 0;
+		enemy[slot].animax = 0;
+		enemy[slot].animin = 1;
+		enemy[slot].edamaged = true;
+		enemy[slot].enemycycle = 1;
+	}
+	else
+	{
+		// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
+		// the one helper; never inline any of them here again (see tyrian2.h).
+		enemy_logical_death(slot, ENEMY_DEATH_FULL, killer);
+	}
+
+	explosionFilter = endlessEliteTint(enemy[slot].eliteState);
+	if (enemyDat[enemy[slot].enemytype].esize == 1)
+	{
+		JE_setupExplosionLarge(enemy[slot].enemyground, enemy[slot].explonum, screenX, enemy[slot].ey);
+		soundQueue[6] = S_EXPLOSION_9;
+	}
+	else
+	{
+		JE_setupExplosion(screenX, enemy[slot].ey, 0, 1, false, false);
+		soundQueue[6] = S_EXPLOSION_8;
+	}
+	explosionFilter = 0;
 }
 
 // Central kill path for tallies, link-group latches, bounties, and reactive effects.
@@ -460,6 +541,9 @@ static void chain_flash_enemy(unsigned int i)
 // Sprites are placed by their top-left corner, so both effects work from the centre of a 12px cell.
 #define CHAIN_CELL_MID_PX        6
 
+// Every value an enemy's linknum can hold, so a per-pulse table can be indexed by it directly.
+#define CHAIN_LINK_COUNT       256
+
 static void chain_ring_sparks(int x, int y, int radius, int pulse)
 {
 	if (rollback_resim_silent)
@@ -483,10 +567,96 @@ static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
 	                  ((Uint32)x1 << 20) ^ ((Uint32)y1 << 8) ^ (Uint32)victim);
 }
 
+// Enemies a pulse may damage. 255 is the invulnerable sentinel and is refused; 254 is the ordinary
+// boss armor cap and is not, so a boss takes the blast like anything else with hit points.
+static bool chain_target_eligible(int slot)
+{
+	if (enemyAvail[slot] != 0)
+		return false;                                  // live enemies only
+	if (enemy[slot].scoreitem || enemy[slot].special)
+		return false;                                  // pickups / flag-setters: never
+	if (enemy[slot].eliteState >= 2)
+		return false;                                  // elites/champions earn a real kill
+	if (enemy[slot].armorleft == 0 || enemy[slot].armorleft >= 255)
+		return false;                                  // dead, or invulnerable
+	return true;
+}
+
+// A linked hull is one target however many tiles it is drawn from: the blast reaches it if it
+// reaches any tile, and lands once in the middle of the tiles it has left. The tile nearest that
+// middle takes it, so a hull with a scaled accumulator spends into one place rather than wherever
+// the blast clipped it. False when no tile is in range.
+static bool chain_group_target(JE_byte linknum, int px, int py, int radius,
+                               int *out_x, int *out_y, int *out_victim)
+{
+	int minX = INT_MAX;
+	int maxX = INT_MIN;
+	int minY = INT_MAX;
+	int maxY = INT_MIN;
+	bool reached = false;
+
+	for (int g = 0; g < 100; ++g)
+	{
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g))
+			continue;
+
+		const int gx = enemy[g].ex + enemy[g].mapoffset;
+		if (gx < minX)
+			minX = gx;
+		if (gx > maxX)
+			maxX = gx;
+		if (enemy[g].ey < minY)
+			minY = enemy[g].ey;
+		if (enemy[g].ey > maxY)
+			maxY = enemy[g].ey;
+
+		if (abs(gx - px) <= radius && abs(enemy[g].ey - py) <= radius)
+			reached = true;
+	}
+
+	if (!reached)
+		return false;
+
+	*out_x = (minX + maxX) / 2;
+	*out_y = (minY + maxY) / 2;
+
+	int best = -1;
+	int bestDist = INT_MAX;
+	for (int g = 0; g < 100; ++g)
+	{
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g))
+			continue;
+
+		const int d = abs((enemy[g].ex + enemy[g].mapoffset) - *out_x) + abs(enemy[g].ey - *out_y);
+		if (d < bestDist)
+		{
+			bestDist = d;
+			best = g;
+		}
+	}
+
+	*out_victim = best;
+	return best >= 0;
+}
+
+// Take a linked hull down whole, every live tile paying out, dying and exploding as it would under
+// a killing shot. One tile left standing would orphan the rest, so the blast finishes all of them or
+// none. The deaths are FULL, which is what queues the wave's next hop, deduped to one per hull.
+static void chain_destroy_group(JE_byte linknum, int owner)
+{
+	for (int g = 0; g < 100; ++g)
+	{
+		if (enemy[g].linknum != linknum || enemyAvail[g] == 1)
+			continue;
+
+		enemy_part_destroy(g, owner, owner, enemy[g].edlevel == -1);
+	}
+}
+
 // Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
 // depletes, and what it vaporises pulses on the next tick, so one kill can send a wave travelling
 // through a formation. Elites, champions, boss groups, invulnerable hulls, score pickups and
-// flag-setters are never touched and stop the wave; a linked enemy is chipped but never destroyed.
+// flag-setters are never touched and stop the wave. A linked hull is taken down whole or not at all.
 static void chain_reaction_process(void)
 {
 	if (chainPulseN == 0)
@@ -516,85 +686,108 @@ static void chain_reaction_process(void)
 		const int dmg    = endlessPerkChainDamage();
 		endlessSetFxPlayer(fxSaved);
 
+		// A linked hull takes one hit per pulse, not one per tile. Indexed by linknum, which the
+		// enemy record holds as a byte.
+		bool groupHit[CHAIN_LINK_COUNT] = { false };
+
 		for (int e = 0; e < 100; ++e)
 		{
-			if (enemyAvail[e] != 0)                            // live enemies only
-				continue;
-			if (enemy[e].scoreitem || enemy[e].special)        // pickups / flag-setters: never
-				continue;
-			if (enemy[e].eliteState >= 2)                      // elites/champions earn a real kill, not a chain pop
-				continue;
-			if (enemy[e].armorleft == 0 || enemy[e].armorleft >= 254)  // dead, or invulnerable/boss marker
+			if (!chain_target_eligible(e))
 				continue;
 
-			// Bosses spend HP through the damageAccum multiplier, so raw armor chipping would
-			// bypass their scaling entirely.
-			if (enemy_has_boss_bar(enemy[e].linknum))
-				continue;
+			const JE_byte linknum = enemy[e].linknum;
+			const bool lone = (linknum == 0);
 
-			const int ex = enemy[e].ex + enemy[e].mapoffset;
-			if (abs(ex - px) > radius || abs(enemy[e].ey - py) > radius)
-				continue;
+			int ex;               // where the blast lands
+			int ey;
+			int victim = e;       // the tile that takes it
 
-			// A LINKED enemy (multi-tile hull, formation) may be chipped but never destroyed here:
-			// removing one tile behind the shot loop's back would orphan the rest of its group. Lone
-			// fodder has no such tie, so the pulse can finish it outright.
-			const bool lone = (enemy[e].linknum == 0);
-
-			if (enemy[e].armorleft > dmg || !lone)
+			if (lone)
 			{
-				int chip = dmg;
-				if (!lone && chip >= enemy[e].armorleft)
-					chip = enemy[e].armorleft - 1;             // leave a linked tile alive on 1 armor
-				if (chip > 0)
+				ex = enemy[e].ex + enemy[e].mapoffset;
+				ey = enemy[e].ey;
+				if (abs(ex - px) > radius || abs(ey - py) > radius)
+					continue;
+			}
+			else
+			{
+				if (groupHit[linknum])
+					continue;
+				if (!chain_group_target(linknum, px, py, radius, &ex, &ey, &victim))
+					continue;
+				groupHit[linknum] = true;
+			}
+
+			// A boss and an elite-tier hull spend damage through an accumulator, so the pulse pays
+			// into that rather than chipping raw armor and bypassing the scaling.
+			const int spend = enemy_spend_damage(victim, dmg);
+
+			// Survives, or goes down: lone fodder on its own, a linked hull with every tile at once.
+			if (enemy[victim].armorleft > spend)
+			{
+				enemy[victim].armorleft -= (JE_byte)spend;     // chipped, but survives
+				if (spend > 0)
+					enemy[victim].healthbar_seen = true;       // damage taken: show its health bar
+
+				// Shown even on a tick the accumulator swallowed whole, or a heavily scaled hull
+				// would take the blast in silence.
+				anyHit = true;
+				boss_bar_note_hit(linknum);
+				if (!flashed[victim])
 				{
-					enemy[e].armorleft -= (JE_byte)chip;       // chipped, but survives
-					enemy[e].healthbar_seen = true;            // damage taken: show its health bar
-					anyHit = true;
-					if (!flashed[e])
+					flashed[victim] = true;
+					chain_flash_enemy(victim);
+					JE_setupExplosion(ex, ey - 6, 0, 0, false, false);
+					if (bolts < CHAIN_BOLTS_PER_TICK)
 					{
-						flashed[e] = true;
-						chain_flash_enemy(e);
-						JE_setupExplosion(ex, enemy[e].ey - 6, 0, 0, false, false);
-						if (bolts < CHAIN_BOLTS_PER_TICK)
-						{
-							chain_bolt_sparks(px, py, ex, enemy[e].ey, e);
-							++bolts;
-						}
+						chain_bolt_sparks(px, py, ex, ey, victim);
+						++bolts;
 					}
 				}
 			}
-			else
+			else if (lone)
 			{
 				// Vaporised, and paid for exactly as a shot kill is, to the ship whose blast it was.
 				enemy_death_payout(e, chainPulseOwner[p]);
 
-				// QUIET only in that it sets off none of the other reactive effects: no bounty, no
-				// Shockwave, no Martyrdom. It still feeds the dedup latches, or a later elite
-				// reusing this linknum reads as another tile of the last one and goes unpaid, and
-				// it is credited to its owner so the kill feeds that ship's streak.
+				// QUIET only in that it sets off none of the other reactive effects: no Shockwave,
+				// no Martyrdom, both of which answer 0 for the plain fodder this branch destroys.
+				// It still feeds the dedup latches, or a later elite reusing this linknum reads as
+				// another tile of the last one and goes unpaid, and it is credited to its owner so
+				// the kill feeds that ship's streak.
 				enemy_logical_death(e, ENEMY_DEATH_QUIET, chainPulseOwner[p]);
 				anyHit = true;
 
-				// The cascade the perk is named for, carried at the same ship's radius. It cannot
-				// run away: a pop only ever destroys a lone enemy, which the kill above has already
-				// removed, so the wave only moves outward into what is still alive.
-				chain_queue_at(ex, enemy[e].ey, chainPulseOwner[p]);
+				// The cascade the perk is named for, carried at the same ship's radius.
+				chain_queue_at(ex, ey, chainPulseOwner[p]);
 				if (bolts < CHAIN_BOLTS_PER_TICK)   // a kill is reached once, so it needs no latch
 				{
-					chain_bolt_sparks(px, py, ex, enemy[e].ey, e);
+					chain_bolt_sparks(px, py, ex, ey, e);
 					++bolts;
 				}
 				if (enemyDat[enemy[e].enemytype].esize == 1)
 				{
-					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, enemy[e].ey);
+					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, ey);
 					soundQueue[6] = S_EXPLOSION_9;
 				}
 				else
 				{
-					JE_setupExplosion(ex, enemy[e].ey, 0, 1, false, false);
+					JE_setupExplosion(ex, ey, 0, 1, false, false);
 					soundQueue[6] = S_EXPLOSION_8;
 				}
+			}
+			else
+			{
+				// The hull's last tile is spent, so the whole thing goes down, boss included. Each
+				// tile dies the way a killing shot would take it, which is also what queues the
+				// wave's next hop.
+				anyHit = true;
+				if (bolts < CHAIN_BOLTS_PER_TICK)
+				{
+					chain_bolt_sparks(px, py, ex, ey, victim);
+					++bolts;
+				}
+				chain_destroy_group(linknum, chainPulseOwner[p]);
 			}
 		}
 
@@ -611,12 +804,14 @@ static void chain_reaction_process(void)
 	if (anyHit)
 		soundQueue[5] = S_ENEMY_HIT;   // one per drain, in the slot an ordinary hit uses
 
-	// Close the hop and slide the next one down to the front of the queue.
-	const int carried = chainPulseN - hop;
-	for (int i = 0; i < carried; ++i)
+	// Close the hop: what it queued becomes the next one, slid down to the front. The queue bound is
+	// spelled out rather than inferred from chainPulseN, which the analyzer cannot follow this far.
+	int carried = 0;
+	for (int src = hop; src < chainPulseN && src < CHAIN_QUEUE_MAX; ++src)
 	{
-		chainPulse[i] = chainPulse[hop + i];
-		chainPulseOwner[i] = chainPulseOwner[hop + i];
+		chainPulse[carried] = chainPulse[src];
+		chainPulseOwner[carried] = chainPulseOwner[src];
+		++carried;
 	}
 	chainPulseN = carried;
 	chainPulseLastLink = 0;
@@ -625,7 +820,8 @@ static void chain_reaction_process(void)
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
  * with the state they read. */
 void qa_chain_kill_row(int owner, int evalue, int count,
-                       long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped)
+                       JE_byte linknum, long *out_paid0, long *out_paid1, int *out_killed,
+                       bool *out_dropped)
 {
 	const JE_byte dieType = 1;   // any spawnable body; the test only asks whether one appeared
 
@@ -648,6 +844,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 		enemy[i].enemytype = 1;
 		enemy[i].evalue = (Sint16)evalue;
 		enemy[i].enemydie = dieType;
+		enemy[i].linknum = linknum;   // 0 lays out lone fodder, anything else one linked hull
 	}
 
 	const ulong before0 = player[0].cash, before1 = player[1].cash;
@@ -738,6 +935,129 @@ void qa_test_chain_cascade(void)
 		}
 	}
 
+	/* A boss the level gave a health bar is damageable, so the blast wears it down, spending through
+	 * the accumulator that scales it rather than chipping raw armor. An invulnerable hull is not, and
+	 * takes nothing however long the blast sits on it. */
+	static const struct { const char *what; JE_byte armor; bool damageable; } hulls[] = {
+		{ "a boss the level gave a health bar", 200, true },
+		{ "an invulnerable hull",               255, false },
+	};
+	const JE_byte savedBossLink = boss_bar[0].link_num;
+	const JE_byte bossLink = 42;
+	boss_bar[0].link_num = bossLink;
+
+	for (uint h = 0; h < COUNTOF(hulls); ++h)
+	{
+		for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+		{
+			memset(&enemy[i], 0, sizeof(enemy[i]));
+			enemyAvail[i] = 1;
+		}
+
+		enemyAvail[0] = 0;
+		enemy[0].ex = 60;
+		enemy[0].ey = 100;
+		enemy[0].linknum = bossLink;
+		enemy[0].armorleft = hulls[h].armor;
+		enemy[0].enemytype = 1;
+
+		/* Its accumulator may swallow several pulses per armor point, so give the blast enough of
+		 * them that one point has to land if it lands at all. */
+		const int pulses = enemy_hp_multiplier(0) + 1;
+		for (int t = 0; t < pulses; ++t)
+		{
+			chain_reset_queue();
+			chain_queue_at(enemy[0].ex, enemy[0].ey, 0);   // a pulse right on top of it
+			chain_reaction_process();
+		}
+
+		char label[160];
+		snprintf(label, sizeof(label), "%d blasts leave %s at %d armor of %d",
+		         pulses, hulls[h].what, enemy[0].armorleft, hulls[h].armor);
+		qa_check(enemyAvail[0] == 0
+		         && (hulls[h].damageable ? enemy[0].armorleft < hulls[h].armor
+		                                 : enemy[0].armorleft == hulls[h].armor), label);
+	}
+
+	/* Sustained fire finishes the job: a boss the blast can damage is a boss the blast can kill, and
+	 * a multi-tile one goes down whole rather than leaving tiles behind. Every tile pays out, the
+	 * same as if a shot had landed the last hit. */
+	for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	const int bossTiles = 3;
+	const int bossWorth = 500;
+	for (int i = 0; i < bossTiles; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(60 + i * 8);
+		enemy[i].ey = 100;
+		enemy[i].linknum = bossLink;
+		enemy[i].armorleft = 10;
+		enemy[i].enemytype = 1;
+		enemy[i].evalue = (Sint16)bossWorth;
+	}
+
+	const ulong cashBefore = player[0].cash;
+	int bossTicks = 0;
+	while (bossTicks < 500 && enemyAvail[0] != 1)
+	{
+		chain_reset_queue();
+		chain_queue_at(60, 100, 0);
+		chain_reaction_process();
+		++bossTicks;
+	}
+
+	char bossLabel[160];
+	snprintf(bossLabel, sizeof(bossLabel), "a boss dies to the blast after %d of them, every tile of it",
+	         bossTicks);
+	qa_check(enemyAvail[0] == 1 && enemyAvail[1] == 1 && enemyAvail[2] == 1, bossLabel);
+
+	const long bossPaid = (long)player[0].cash - (long)cashBefore;
+	snprintf(bossLabel, sizeof(bossLabel), "...paying %ld for its %d tiles at %d each",
+	         bossPaid, bossTiles, bossWorth);
+	qa_check(bossPaid == (long)bossTiles * bossWorth, bossLabel);
+
+	player[0].cash = cashBefore;
+	boss_bar[0].link_num = savedBossLink;
+
+	/* A multi-tile hull is one target: the blast reaches it if it reaches any tile, and lands once
+	 * in the middle rather than once per tile it happens to overlap. Three tiles in a row, with the
+	 * pulse placed to clip only the near one. */
+	for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	const JE_byte tileLink = 7;
+	const JE_byte tileArmor = 200;
+	const int nearX = 100;
+	for (uint i = 0; i < 3; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(nearX + (int)i * (radius / 2));
+		enemy[i].ey = 100;
+		enemy[i].linknum = tileLink;
+		enemy[i].armorleft = tileArmor;
+		enemy[i].enemytype = 1;
+	}
+
+	chain_reset_queue();
+	chain_queue_at(nearX - radius, 100, 0);   // reaches tile 0 only
+	chain_reaction_process();
+
+	const int worn = (tileArmor - enemy[0].armorleft) + (tileArmor - enemy[1].armorleft)
+	               + (tileArmor - enemy[2].armorleft);
+	char tileLabel[160];
+	snprintf(tileLabel, sizeof(tileLabel),
+	         "a three-tile hull clipped at one end takes %d armor, one hit's worth of %d", worn, dmg);
+	qa_check(worn == dmg, tileLabel);
+	qa_check(enemy[1].armorleft < tileArmor && enemy[0].armorleft == tileArmor,
+	         "...and it lands in the middle tile rather than the one the blast touched");
 	chain_reset_queue();
 	JE_resetSP();   // the drain above threw real rings and bolts
 	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
@@ -800,6 +1120,16 @@ bool enemy_has_boss_bar(JE_byte linknum)
 		if (linknum == boss_bar[i].link_num)
 			return true;
 	return false;
+}
+
+// Light this group's health bar for the frames the flash lasts. A hull with no bar has none to light.
+void boss_bar_note_hit(JE_byte linknum)
+{
+	if (linknum == 0)
+		return;
+	for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
+		if (linknum == boss_bar[i].link_num)
+			boss_bar[i].color = 6;
 }
 
 /* Level Event Data */
@@ -1608,8 +1938,9 @@ static void expand_hud_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 }
 
 // Block-expand a smaller 8-bit frame onto the hi frame. With Sub-pixel FX off the smoothie plasma
-// is filtered at native size and expanded here, leaving entities at the sub-pixel factor.
-static void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
+// is filtered at native size and expanded here, leaving entities at the sub-pixel factor. The shop
+// preview expands its menu frame the same way.
+void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale)
 {
 	assert(scale >= 1 && hi->w >= src->w * scale && hi->h >= src->h * scale);
 
@@ -5150,19 +5481,7 @@ level_loop:
 						int armorleft = enemy[b].armorleft;
 
 						const bool has_boss_bar = enemy_has_boss_bar(enemy[b].linknum);
-
-						// Nx boss HP (expert-mode and/or endless-depth). Both use the same
-						// damage accumulator: spend 1 armor per N damage dealt, so the boss
-						// effectively has N times its HP. The two multipliers combine.
-						int bossHpMult = 1;
-						if (expertMode)
-							bossHpMult *= expertBossHpMult;
-						if (endlessFxActive())
-							bossHpMult *= endlessBossHpMult();
-						// Combined divisor: boss depth-scaling and/or endless elite/champion
-						// tier (elites use the accumulator too; an elite boss gets a capped bump).
-						int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[b].eliteState)
-						                         : (has_boss_bar ? bossHpMult : 1);
+						const int hpMult = enemy_hp_multiplier(b);
 
 						// Per-bullet lockout prevents a piercing shot from damaging the same
 						// scaled hull on every overlapping tick.
@@ -5223,9 +5542,7 @@ level_loop:
 
 						if (enemy[b].armorleft < 255)
 						{
-							for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
-								if (temp == boss_bar[i].link_num)
-									boss_bar[i].color = 6;
+							boss_bar_note_hit((JE_byte)temp);
 
 							if (enemy[b].enemyground)
 								enemy[b].filter = temp2;
@@ -5357,50 +5674,12 @@ level_loop:
 									                       ((temp3 > 40) && (temp3 / 20 == temp / 20) && (temp3 <= temp)))))
 									{
 
-										int enemy_screen_x = enemy[temp2].ex + enemy[temp2].mapoffset;
-
-										if (enemy[temp2].special)
-										{
-											assert((unsigned int) enemy[temp2].flagnum-1 < COUNTOF(globalFlags));
-											globalFlags[enemy[temp2].flagnum-1] = enemy[temp2].setto;
-										}
-
 										// in galaga mode player 2 is sidekick, so give cash to player 1
-										enemy_death_payout(temp2, galagaMode ? 0 : (int)playerNum - 1);
-
-										if ((enemy[temp2].edlevel == -1) && (temp == temp3))
-										{
-											enemy[temp2].edlevel = 0;
-											enemyAvail[temp2] = 2;
-											enemy[temp2].egr[1-1] = enemy[temp2].edgr;
-											enemy[temp2].ani = 1;
-											enemy[temp2].aniactive = 0;
-											enemy[temp2].animax = 0;
-											enemy[temp2].animin = 1;
-											enemy[temp2].edamaged = true;
-											enemy[temp2].enemycycle = 1;
-										}
-										else
-										{
-											// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
-											// the one helper; never inline any of them here again (see tyrian2.h).
-											enemy_logical_death(temp2, ENEMY_DEATH_FULL,
-										                    playerNum >= 1 ? (int)playerNum - 1
-										                                   : ENDLESS_KILLER_NONE);
-										}
-
-										explosionFilter = endlessEliteTint(enemy[temp2].eliteState);
-										if (enemyDat[enemy[temp2].enemytype].esize == 1)
-										{
-											JE_setupExplosionLarge(enemy[temp2].enemyground, enemy[temp2].explonum, enemy_screen_x, enemy[temp2].ey);
-											soundQueue[6] = S_EXPLOSION_9;
-										}
-										else
-										{
-											JE_setupExplosion(enemy_screen_x, enemy[temp2].ey, 0, 1, false, false);
-											soundQueue[6] = S_EXPLOSION_8;
-										}
-										explosionFilter = 0;
+										enemy_part_destroy(temp2,
+										                   galagaMode ? 0 : (int)playerNum - 1,
+										                   playerNum >= 1 ? (int)playerNum - 1
+										                                  : ENDLESS_KILLER_NONE,
+										                   (enemy[temp2].edlevel == -1) && (temp == temp3));
 									}
 								}
 							}

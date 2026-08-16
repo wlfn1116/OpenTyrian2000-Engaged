@@ -25,6 +25,7 @@ int rl_current_par_ybase = 0;
 int rl_current_par_ylayer = 0;
 int rl_current_vel_x = 0, rl_current_vel_y = 0;
 int rl_current_acc_x = 0, rl_current_acc_y = 0;
+float rl_current_sub_x = 0.0f, rl_current_sub_y = 0.0f;
 
 // Forward decl: rl_finalize must preserve extrapolating ids' recorded dx/dy.
 static bool rl_id_extrapolates(int id);
@@ -89,6 +90,11 @@ static RenderCmd *rl_push(void)
 	// extrapolating ids that read it and stays 0 (unused) for everything else.
 	c->acc_x = rl_current_acc_x;
 	c->acc_y = rl_current_acc_y;
+	// Sub-pixel remainder of a rounded offset; finalize fills its per-tick change.
+	c->sub_x = rl_current_sub_x;
+	c->sub_y = rl_current_sub_y;
+	c->sub_dx = 0.0f;
+	c->sub_dy = 0.0f;
 	// On smoothie levels the playfield draw ping-pongs between game_screen and
 	// VGAScreen2; capture which buffer this draw targeted so replay can route it.
 	c->surface = (VGAScreen == VGAScreen2) ? 1 : 0;
@@ -133,6 +139,8 @@ void rl_begin_record(void)
 	rl_current_vel_y = 0;
 	rl_current_acc_x = 0;
 	rl_current_acc_y = 0;
+	rl_current_sub_x = 0.0f;
+	rl_current_sub_y = 0.0f;
 	for (int layer = 1; layer <= 3; ++layer)
 		bg_layer_xofs_valid[layer] = false;
 	overlay_rect_count = 0;
@@ -344,21 +352,24 @@ void rl_rec_smoothie_filter(RenderCmdKind kind)
 
 // Lazily-allocated background scratch (the "VGAScreen2" role) for replaying the
 // smoothie two-buffer ping-pong without disturbing the live surfaces. Sized to the
-// replay scale; reallocated only when the supersample factor changes (rare; the
-// scale is constant within a present loop).
-static SDL_Surface *rl_scratch_b = NULL;
+// replay scale, and cached in two slots because a single frame can replay at both
+// factors: the shop preview reconstructs its 1x box before presenting supersampled,
+// and one slot would then free and recreate the surface twice per frame.
+static SDL_Surface *rl_scratch_b[2] = { NULL, NULL };  // [0] = 1x, [1] = supersampled
 
 static SDL_Surface *rl_get_scratch_b(int scale)
 {
+	SDL_Surface **const slot = &rl_scratch_b[scale == 1 ? 0 : 1];
 	const int w = vga_width * scale, h = vga_height * scale;
-	if (rl_scratch_b != NULL && (rl_scratch_b->w != w || rl_scratch_b->h != h))
+
+	if (*slot != NULL && ((*slot)->w != w || (*slot)->h != h))
 	{
-		SDL_FreeSurface(rl_scratch_b);
-		rl_scratch_b = NULL;
+		SDL_FreeSurface(*slot);
+		*slot = NULL;
 	}
-	if (rl_scratch_b == NULL)
-		rl_scratch_b = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
-	return rl_scratch_b;
+	if (*slot == NULL)
+		*slot = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+	return *slot;
 }
 
 // Round-half-away-from-zero, the rounding the 1x replay always used; shared by every
@@ -375,6 +386,17 @@ static inline int rl_iround(float v)
 static inline int rl_round_offset(double v)
 {
 	return (int)floor(v + 0.5);
+}
+
+// Displacement from an entity's recorded (rounded) position to its interpolated one when the
+// sim rounded a sub-pixel offset away: the remainder itself, less the exact own motion still
+// to come this tick. own + sub_d is that motion; keeping them in one float means the position
+// rounds once. A snapped command (recycled slot / teleport) takes the remainder alone.
+static inline float rl_sub_disp(int own, float sub, float sub_d, float inv)
+{
+	if (inv != 0.0f && own <= 40 && own >= -40)
+		return sub - ((float)own + sub_d) * inv;
+	return sub;
 }
 
 // Canonical vertical transform shared by background rows and bound entities.
@@ -554,6 +576,11 @@ void rl_finalize(void)
 		// of the parallax move is already in dx above, so their sum floats the parallax.
 		c->par_frac_dx = c->par_frac - prev[pi].par_frac;
 
+		// Sub-pixel remainder: its change this tick completes dx/dy into the exact
+		// displacement, so replay can interpolate the unrounded path.
+		c->sub_dx = c->sub_x - prev[pi].sub_x;
+		c->sub_dy = c->sub_y - prev[pi].sub_y;
+
 		// Recover only the entity-local displacement from the phase-corrected endpoints.
 		// The canonical layer rate is deliberately NOT stored in the command: replay applies
 		// it independently, so an unmatched/new/clipped bound sprite still follows its layer.
@@ -603,6 +630,8 @@ void rl_finalize(void)
 			dx = 0;
 			dy = 0;
 			par_yown100 = 0;
+			c->sub_dx = 0.0f;  // no motion to complete
+			c->sub_dy = 0.0f;
 		}
 
 		c->dx = dx;
@@ -1098,7 +1127,9 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				x += rl_iround(ship_override_dx[sp] * scale);  // X tracks the render-rate ship
 				// Remove ship velocity so an attached shot can interpolate its own motion.
 				const int own = c->dx - ship_tick_vel_x[sp];
-				if (inv != 0.0f && own && own <= 40 && own >= -40)
+				if (c->sub_x != 0.0f || c->sub_dx != 0.0f)
+					x += rl_iround(rl_sub_disp(own, c->sub_x, c->sub_dx, inv) * scale);
+				else if (inv != 0.0f && own && own <= 40 && own >= -40)
 					x -= rl_iround(own * inv * scale);
 			}
 			else if (extrap)
@@ -1120,6 +1151,12 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				x = c->x * scale +
 				    rl_bound_x_offset(c, L, inv, scale, layer_scale, layer_inv);
 			}
+			else if (use_override && (c->sub_x != 0.0f || c->sub_dx != 0.0f))
+			{
+				// Unrounded placement with no ship anchor (the shop preview's stationary
+				// ship): dx is already the entity's whole-pixel motion on its own.
+				x += rl_iround(rl_sub_disp(c->dx, c->sub_x, c->sub_dx, inv) * scale);
+			}
 			else if (c->dx && inv != 0.0f)
 			{
 				x -= rl_iround(c->dx * inv * scale);
@@ -1129,7 +1166,9 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 			{
 				y += rl_iround(ship_override_dy[sp] * scale);  // Y tracks the render-rate ship
 				const int own = c->dy - ship_tick_vel_y[sp];  // own (orbit) motion; see X
-				if (inv != 0.0f && own && own <= 40 && own >= -40)
+				if (c->sub_y != 0.0f || c->sub_dy != 0.0f)
+					y += rl_iround(rl_sub_disp(own, c->sub_y, c->sub_dy, inv) * scale);
+				else if (inv != 0.0f && own && own <= 40 && own >= -40)
 					y -= rl_iround(own * inv * scale);
 			}
 			else if (extrap)
@@ -1156,6 +1195,10 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 				y = (c->y + c->par_ybase) * scale +
 				    rl_bound_y_offset(L, inv, scale, c->par_yown100,
 				                      layer_scale, layer_inv);
+			}
+			else if (use_override && (c->sub_y != 0.0f || c->sub_dy != 0.0f))
+			{
+				y += rl_iround(rl_sub_disp(c->dy, c->sub_y, c->sub_dy, inv) * scale);  // see X
 			}
 			else if (c->dy && inv != 0.0f)
 			{
@@ -1313,10 +1356,13 @@ void rl_deinit(void)
 	res_val = NULL;
 	res_count = 0;
 	res_cap = 0;
-	if (rl_scratch_b != NULL)
+	for (unsigned i = 0; i < COUNTOF(rl_scratch_b); ++i)
 	{
-		SDL_FreeSurface(rl_scratch_b);
-		rl_scratch_b = NULL;
+		if (rl_scratch_b[i] != NULL)
+		{
+			SDL_FreeSurface(rl_scratch_b[i]);
+			rl_scratch_b[i] = NULL;
+		}
 	}
 	render_list_recording = false;
 }

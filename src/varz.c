@@ -28,6 +28,7 @@
 #include "endless.h"
 #include "episodes.h"
 #include "fonthand.h"
+#include "game_menu.h"
 #include "joystick.h"
 #include "lds_play.h"
 #include "loudness.h"
@@ -634,6 +635,7 @@ void JE_tyrianShutdown(bool saveConfiguration)
 	deinit_audio();
 	destruct_deinit();
 	tyrian2_deinit();
+	game_menu_deinit();
 	rl_deinit();
 	deinit_video();
 	deinit_joysticks();

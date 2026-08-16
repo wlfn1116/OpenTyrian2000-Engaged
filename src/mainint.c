@@ -10414,12 +10414,24 @@ redo:
 				rl_shot_attach = (this_player->sidekick[i].style == 0 || this_player->sidekick[i].style == 4)
 				               ? (3 | ((playerNum_ - 1) << 2))
 				               : 0;
+				if (this_player->sidekick[i].style == 4)
+				{
+					// The orbit offset above is rounded to whole pixels, which makes the
+					// recorded arc advance unevenly; the remainder puts the interpolated
+					// path back on the exact circle. See doc/notes.md, "Render list".
+					const float ox = sim_sinf(optionSatelliteRotate) * 20,
+					            oy = sim_cosf(optionSatelliteRotate) * 20;
+					const float dir = (i == LEFT_SIDEKICK) ? 1.0f : -1.0f;  // right slot mirrors
+					rl_current_sub_x = dir * (ox - roundf(ox));
+					rl_current_sub_y = dir * (oy - roundf(oy));
+				}
 				if (this_player->sidekick[i].style == 1 || this_player->sidekick[i].style == 2)
 					blit_sprite2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
 				else
 					blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
 				rl_current_id = 0;
 				rl_shot_attach = 0;
+				rl_current_sub_x = rl_current_sub_y = 0.0f;
 			}
 
 			if (cheatInstantCharge)
@@ -11185,26 +11197,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						this_player->y_velocity += (enemy[z].eyc * enemy[z].armorleft) / 2;
 					}
 
-					const bool has_boss_bar = enemy_has_boss_bar(enemy[z].linknum);
-
-					// Nx boss HP (expert-mode and/or endless-depth). Both use the same
-					// damage accumulator: spend 1 armor per N damage dealt, so the boss
-					// effectively has N times its HP. The two multipliers combine.
-					int bossHpMult = 1;
-					if (expertMode)
-						bossHpMult *= expertBossHpMult;
-					if (endlessFxActive())
-						bossHpMult *= endlessBossHpMult();
-					// Combined divisor: boss depth-scaling and/or endless elite/champion
-					// tier (elites use the accumulator too; an elite boss gets a capped bump).
-					int hpMult = endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[z].eliteState)
-					                         : (has_boss_bar ? bossHpMult : 1);
-					if (hpMult > 1)
-					{
-						enemy[z].damageAccum += damage_to_enemy;
-						damage_to_enemy = enemy[z].damageAccum / hpMult;
-						enemy[z].damageAccum -= damage_to_enemy * hpMult;
-					}
+					// Nx boss HP (expert mode and/or endless depth) and the endless tier, spent
+					// through the hull's accumulator: 1 armor per N damage dealt.
+					damage_to_enemy = enemy_spend_damage(z, damage_to_enemy);
 
 					int armorleft2 = enemy[z].armorleft;
 					if (armorleft2 == 255)

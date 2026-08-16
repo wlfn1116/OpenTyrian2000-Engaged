@@ -50,7 +50,8 @@ typedef struct
 	Uint8 surface;
 
 	// Identity for cross-frame matching, and this tick's motion (cur - prev):
-	// interpolated replay draws at (x,y) - (dx,dy)*(1-alpha). EXTRAPOLATED ids
+	// interpolated replay draws at (x,y) - (dx,dy)*(1-alpha), with sub_x/sub_y below
+	// completing both terms when the recorder supplied one. EXTRAPOLATED ids
 	// (shots, see rl_id_extrapolates) instead hold their own recorded per-tick
 	// velocity (rl_current_vel_*) and replay forward at (x,y) + (dx+acc,dy+acc)*alpha.
 	int id;
@@ -114,6 +115,12 @@ typedef struct
 	// interpolated, so the laser/main-pulse base stays on the gun. 0 = not attached.
 	Uint8 ship_attach;
 
+	// Sub-pixel remainder of an offset the sim rounded to whole pixels (the satellite
+	// orbit), plus its change since the previous tick. A display replay adds it so the
+	// entity follows the exact path instead of the rounded one; exact replays ignore it.
+	float sub_x, sub_y;
+	float sub_dx, sub_dy;
+
 	// Horizontal correction for an entity anchored to a background layer.
 	// Finalize normalizes par_frac to the layer's recorded anchor. Layer 0 is unbound.
 	float par_frac, par_frac_dx;
@@ -170,6 +177,11 @@ extern int rl_current_vel_x, rl_current_vel_y;
 // leads by velocity + acceleration so a decelerating shot doesn't overshoot and snap
 // back (see acc_x/acc_y in RenderCmd).
 extern int rl_current_acc_x, rl_current_acc_y;
+
+// Sub-pixel remainder (px, |v| <= 0.5) of an offset the sim rounded away, stamped onto
+// the next recorded command(s): the orbiting satellite's, set around its blit, 0
+// otherwise. See sub_x/sub_y in RenderCmd.
+extern float rl_current_sub_x, rl_current_sub_y;
 
 // Identity ranges must not overlap and must stay below RL_ID_MAX.
 enum

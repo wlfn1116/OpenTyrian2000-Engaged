@@ -103,6 +103,11 @@ void deinit_video(void);
 void JE_clr256(SDL_Surface *);
 void JE_showVGA(void);
 
+// The frame JE_showVGA scales, minus the cursor: the pillarboxed composite in
+// centered-menu mode, VGAScreen otherwise. A menu that presents its own supersampled
+// frame expands this and draws the cursor itself (JE_drawMouseToHiFrame).
+SDL_Surface *video_compose_frame(void);
+
 // Re-present the last composed frame (no software scaling). Keeps the display refreshing
 // while a modal system overlay (the Vita IME) is up so the compositor keeps drawing it.
 void video_repeat_last_present(void);

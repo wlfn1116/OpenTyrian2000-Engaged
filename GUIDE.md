@@ -26,7 +26,9 @@ The useful settings are under **Setup > Graphics**.
 - **Smooth Motion** presents interpolated frames at the display rate. In
   supported modes it also moves your own ship at that rate, online included.
 - **Sub-pixel** renders the playfield at Auto, Off, 2x through 5x, or Native.
-  Supersampled output uses unfiltered nearest-neighbor sampling.
+  Supersampled output uses unfiltered nearest-neighbor sampling. The shop's
+  weapon preview renders at the same factor, so its ship, shots, and sidekicks
+  move as smoothly as they do in play.
 - **Native** follows the fitted output size. It costs more GPU time than the
   fixed modes, especially on high-resolution displays.
 - **Sub-pixel FX** extends sub-pixel rendering to the ice, water, and lava
@@ -347,16 +349,31 @@ two.
 Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
 packed formation sends a visible wave travelling outward through it, and a tight
 enough formation goes down with it. What the blast cannot destroy stops the wave
-there: elites, champions, bosses, and any enemy it only wounds. Multi-part hulls
-and linked formations are in that last group, since the blast can wound a linked
-enemy but never destroys one. So the reach a stack buys is worth more than the
-damage figure suggests, since reach is what decides whether the next enemy is
-close enough to carry the wave on.
+there: elites, champions, and any enemy it only wounds. So the reach a stack buys
+is worth more than the damage figure suggests, since reach is what decides
+whether the next enemy is close enough to carry the wave on.
+
+A boss takes the blast like anything else with hit points, and its health bar
+flashes for it. The damage goes through the same scaling a boss applies to your
+guns, so it wears one down at the rate that scaling allows rather than stripping
+raw armour off it. A wave can finish one, too: the boss dies as it would to your
+guns, pays out for every part of itself, and its death carries the wave onward
+like any other. Hulls the level holds invulnerable take nothing at all.
+
+Anything built from several tiles counts once, not once per tile. The blast
+reaches such a hull if it reaches any part of it, and then lands a single hit in
+the middle of the hull, so clipping the far end of a long enemy does the same as
+catching it square.
 
 A kill the wave makes is worth what shooting that enemy would have been. It pays
 its cash to the ship whose blast it was, feeds that ship's kill streak, and
 leaves behind whatever that enemy drops. Elites and champions are never destroyed
 by the wave, so no bounty is lost to it either.
+
+Anything that fires counts as your shot, so specials that scatter fire, and
+weapons whose shots burst into other shots, set the perk off exactly as your
+front gun does. Ramming is the one exception: flying into an enemy destroys it
+without counting as a kill, so it pays nothing and starts no wave.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.

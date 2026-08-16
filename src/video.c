@@ -511,20 +511,25 @@ void JE_clr256(SDL_Surface *screen)
 	SDL_FillRect(screen, NULL, 0);
 }
 
+SDL_Surface *video_compose_frame(void)
+{
+	if (current_x_offset == 0)
+		return VGAScreen;
+
+	blit_with_offset(VGAScreen, menu_screen, current_x_offset);
+	return menu_screen;
+}
+
 void JE_showVGA(void)
 {
-	if (current_x_offset != 0)
-	{
-		blit_with_offset(VGAScreen, menu_screen, current_x_offset);
-		// Draw the cursor onto the composited frame (after the side gradient is
-		// built from the clean content) so it doesn't smear into the pillarbox.
-		JE_drawMouseToMenuScreen(menu_screen, current_x_offset);
-		scale_and_flip(menu_screen);
-	}
-	else
-	{
-		scale_and_flip(VGAScreen);
-	}
+	SDL_Surface *const frame = video_compose_frame();
+
+	// Draw the cursor onto the composited frame (after the side gradient is
+	// built from the clean content) so it doesn't smear into the pillarbox.
+	if (frame != VGAScreen)
+		JE_drawMouseToMenuScreen(frame, current_x_offset);
+
+	scale_and_flip(frame);
 }
 
 // Fit a centred rectangle of the given display aspect ratio (width / height)

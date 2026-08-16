@@ -26,6 +26,9 @@
 
 void intro_logos(void);
 
+// Block-expand an 8-bit frame onto a supersampled one, every pixel a scale x scale block.
+void expand_frame_to_hi(SDL_Surface *src, SDL_Surface *hi, int scale);
+
 #define BOSS_BAR_FULL 254  // the fill value of a boss bar at full health
 
 typedef struct
@@ -40,6 +43,12 @@ extern boss_bar_t boss_bar[2];
 
 // A boss must match an active, nonzero health-bar link.
 bool enemy_has_boss_bar(JE_byte linknum);
+// Light this group's boss bar for the duration of the hit flash; a group without one is untouched.
+void boss_bar_note_hit(JE_byte linknum);
+// The divisor this hull spends damage through: Nx boss HP and the endless tier, 1 for a plain enemy.
+int enemy_hp_multiplier(unsigned int slot);
+// Armor points `damage` buys against it, banking the remainder in the hull's accumulator.
+int enemy_spend_damage(unsigned int slot, int damage);
 
 /* How full a boss bar draws, from the most-damaged part's remaining armor and the armor that part
  * started with. Boss armor varies: the difficulty curve scales it at spawn and level scripts arm

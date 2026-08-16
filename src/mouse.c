@@ -187,6 +187,30 @@ void JE_drawMouseToMenuScreen(SDL_Surface *dst, int x_offset)
 		blit_sprite2x2_clip(dst, x, y, shopSpriteSheet, spriteInfo->index);
 }
 
+// Composite the cursor onto a supersampled frame, block-expanded from the same 1x art so
+// it looks exactly like the classic cursor. For menus that present their own hi frame
+// (the weapon-sim preview): the frame is built before the cursor, so this draws last and
+// survives the region the preview replays over it.
+void JE_drawMouseToHiFrame(SDL_Surface *hi, int scale, int x_offset)
+{
+	cursorPresentPending = false;  // this frame carries the cursor; JE_showVGA must not repeat it
+
+	if (!has_mouse || mouseInactive || MOUSE_CURSOR_HIDDEN)
+		return;
+
+	const MousePointerSpriteInfo *spriteInfo = &mousePointerSprites[mouseCursor];
+	const unsigned int gr = spriteInfo->index;
+	const int x = (mouse_x - spriteInfo->x - spriteInfo->fx + x_offset) * scale;
+	const int y = (mouse_y - spriteInfo->y - spriteInfo->fy) * scale;
+
+	// The quadrant layout of blit_sprite2x2_clip, at hi coordinates.
+	const int x2 = x + 12 * scale, y2 = y + 14 * scale;
+	blit_sprite2_scaled(hi, x, y, shopSpriteSheet, gr, scale, BLIT2_COPY, 0);
+	blit_sprite2_scaled(hi, x2, y, shopSpriteSheet, gr + 1, scale, BLIT2_COPY, 0);
+	blit_sprite2_scaled(hi, x, y2, shopSpriteSheet, gr + 19, scale, BLIT2_COPY, 0);
+	blit_sprite2_scaled(hi, x2, y2, shopSpriteSheet, gr + 20, scale, BLIT2_COPY, 0);
+}
+
 void JE_mouseStartFilter(Uint8 filter)
 {
 	if (has_mouse)

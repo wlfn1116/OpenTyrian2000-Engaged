@@ -657,31 +657,40 @@ static void qa_reactive_state_matrix(void)
 	{
 		coop_set_session_shared_credit(shared != 0);
 
+		/* Both shapes a wave can destroy: loose fodder it walks through hop by hop, and one linked
+		 * hull it takes down whole, which is what a boss is. Their payouts follow the same rule. */
+		static const struct { const char *shape; JE_byte linknum; } shapes[] = {
+			{ "wave",        0 },
+			{ "linked hull", 9 },
+		};
+
+		for (uint s = 0; s < COUNTOF(shapes); ++s)
 		for (int owner = 0; owner <= 1; ++owner)
 		{
-			/* A wave of four, so the answer covers everything the wave kills and not just the
+			/* Four of them, so the answer covers everything the blast destroys and not just the
 			 * enemy the first pulse reached. */
 			long paid0 = 0, paid1 = 0;
 			int killed = 0;
 			bool dropped = false;
-			qa_chain_kill_row(owner, worth, 4, &paid0, &paid1, &killed, &dropped);
+			qa_chain_kill_row(owner, worth, 4, shapes[s].linknum, &paid0, &paid1, &killed, &dropped);
 
 			const long mine = (owner == 0) ? paid0 : paid1;
 			const long theirs = (owner == 0) ? paid1 : paid0;
 
-			/* A drop can be worth something of its own, so the wave's take is only bounded below
-			 * by the row it cleared. What it may not do is leave any of that take unpaid. */
+			/* A drop can be worth something of its own, so the take is only bounded below by the
+			 * four it cleared. What it may not do is leave any of that take unpaid. */
 			snprintf(label, sizeof(label),
-			         "%s credit pays P%d its whole wave: %d kills, %ld for a row worth %d",
-			         shared ? "Shared" : "Individual", owner + 1, killed, mine, 4 * worth);
+			         "%s credit pays P%d its whole %s: %d kills, %ld for four worth %d",
+			         shared ? "Shared" : "Individual", owner + 1, shapes[s].shape, killed, mine,
+			         4 * worth);
 			qa_check(killed >= 4 && mine >= 4 * worth, label);
 
 			snprintf(label, sizeof(label), "...and the partner takes %ld of P%d's %ld",
 			         theirs, owner + 1, mine);
 			qa_check(theirs == (shared ? mine : 0), label);
 
-			snprintf(label, sizeof(label), "...and P%d's wave still leaves the drops behind",
-			         owner + 1);
+			snprintf(label, sizeof(label), "...and P%d's %s still leaves the drops behind",
+			         owner + 1, shapes[s].shape);
 			qa_check(dropped, label);
 		}
 	}
@@ -703,7 +712,7 @@ static void qa_reactive_state_matrix(void)
 			int killed = 0;
 			bool dropped;
 			memset(endlessComboKills, 0, sizeof(endlessComboKills));
-			qa_chain_kill_row(owner, worth, 4, &paid0, &paid1, &killed, &dropped);
+			qa_chain_kill_row(owner, worth, 4, 0, &paid0, &paid1, &killed, &dropped);
 
 			const int mine = endlessComboKills[owner], theirs = endlessComboKills[1 - owner];
 			snprintf(label, sizeof(label),

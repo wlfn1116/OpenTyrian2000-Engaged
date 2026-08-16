@@ -45,6 +45,17 @@ Required invariants:
 - Projectile velocity comes from the projectile; shot slots are reused.
 - Ship-attached shots separate ship motion from their own motion.
 - Conditional pieces use a separate ID when their command count can change.
+- An offset the simulation rounds to whole pixels records its remainder in
+  `rl_current_sub_x/y`.
+
+The remainder channel exists because the rounding quantizes the motion as well
+as the position. A satellite at radius 20 turning 0.15 rad per tick advances in
+whole-pixel steps of 3, 3, 3, 2, 3, 2 while its true motion decays smoothly
+from 2.99 to 2.03, and interpolating the rounded endpoints reproduces that
+uneven arc at any factor. `rl_finalize` pairs each remainder with the previous
+tick's, so replay adds the remainder and subtracts the exact displacement in
+one rounding. Only display replay reads it, keeping exact replay
+byte-identical.
 
 The Nort ship banking trim uses `RL_ID_SHIP_TRIM_BASE` because a changing trim
 count must not snap the hull.
@@ -248,7 +259,8 @@ composition order as full-resolution smoothies. Requirements:
 - The tick advance keeps `split` false. The filter's feedback is the previous
   full frame, so the whole background belongs in the persistent plasma.
 - Only the background phases take the render-list scratch surface, so a frame
-  that mixes the two factors does not resize it twice.
+  that mixes the two factors does not resize it twice. The scratch is also
+  cached per factor, for the shop preview below.
 
 Foreground replay also receives the plasma's scale and interpolation phase.
 For an entity bound to a filtered background layer, replay quantizes only the
@@ -264,6 +276,17 @@ without another replay. Layer-bound entities use that endpoint's shared phase.
 The palette conversion in `present_hi` is unrolled eight pixels per iteration. It
 converts the whole supersampled frame on every present, and a one-pixel loop
 stalls on the dependent index load.
+
+The shop's weapon preview is the fourth `present_hi` consumer, after gameplay,
+the jukebox, and Destruct, so its ship, shots, and orbiting satellites move at
+the same sub-pixel positions they do in play. `JE_weaponSimPresentHi`
+block-expands the composed menu frame, paints the box from a supersampled
+replay at the pillarboxed offset, and restores anything the caller drew over
+the 1x box by comparing it against the same replay in `game_screen`, which
+nothing drew over.
+The cursor is drawn last, into the hi frame, because the box copy would erase
+it. The 1x replay still runs: the gauge, the weapon creator's overlay, and the
+classic fallback all work from it.
 
 ## Coordinates and sprite bounds
 
@@ -470,6 +493,25 @@ explosion pool.
 `qa_test_superspark_shapes` pins the geometry both shapes promise: a ring lands on
 the radius it was given, within the rounding an integer per-axis delta forces over
 its life, and a bolt keeps its sparks on the segment inside its own bow.
+
+A pulse picks targets, not enemies. A lone enemy is one target; a linked hull is
+one target however many tiles it holds, chosen once per pulse through
+`chain_group_target`, which reports the blast as reaching it when any tile is in
+range and lands the hit at the middle of the tiles still alive. The tile nearest
+that middle takes the damage, so a hull with a scaled accumulator spends into one
+place rather than wherever the blast clipped it. `chain_target_eligible` refuses
+255 (the invulnerable sentinel) and admits 254 (the ordinary boss armor cap), so a
+damageable boss is a target like anything else.
+
+Chain damage goes through `enemy_spend_damage`, the same divisor and accumulator
+the player-shot loop and the ramming path use, so a boss or an elite-tier hull
+spends it at the rate its scaling sets instead of losing raw armor. A tick the
+accumulator swallows whole still shows the flash and lights the boss bar, or a
+heavily scaled hull would take the blast in silence. A linked hull that runs out
+of armor goes down whole, through `chain_destroy_group`: one tile left standing
+would orphan the rest, so every live tile takes `enemy_part_destroy`, the same
+sequence a killing shot runs. Those deaths are FULL, which is what queues the
+wave's next hop and lets a dying boss carry it.
 
 What a pulse destroys pulses in turn, through `chain_queue_at`. A drain claims the
 stretch of queue standing at entry, and what it queues below that lands on the

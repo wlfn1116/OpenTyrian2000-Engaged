@@ -28,6 +28,9 @@ JE_longint JE_cashLeft(void);
 uint JE_shopPlayerIndex(void);
 void JE_itemScreen(void);
 
+// Release the shop preview's supersampled frames. Called from JE_tyrianShutdown.
+void game_menu_deinit(void);
+
 // Fill `out` with up to `maxOut` combat-level section numbers for `episode` (the same
 // level scan the debug level picker uses); returns how many were written. When `fileOut`
 // is non-NULL it receives each entry's lvlFileNum in parallel, so callers can distinguish

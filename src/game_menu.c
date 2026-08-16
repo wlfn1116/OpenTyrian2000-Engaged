@@ -512,17 +512,99 @@ static void draw_menu_power_bar(SDL_Surface *s, int power_value)
 	fill_rectangle_xy(s, 145, temp - 1, 149, temp - 1, temp2);
 }
 
-// Smooth weapon-sim preview: replay the recorded frame at interpolated positions, copying only
-// the preview box. weaponSimOverlayFn (NULL except in the custom weapon creator) draws over the
-// finished box each present, receiving the interpolation alpha so overlays glide.
+// Drawn over the finished preview box each present, receiving the interpolation alpha so the
+// overlay glides. NULL except in the custom weapon creator.
 static void (*weaponSimOverlayFn)(float alpha) = NULL;
 
-// Non-blit preview elements come from the captured residual. The caller must
+// Preview region (inclusive), in VGAScreen coordinates.
+enum { SIM_BOX_X0 = 8, SIM_BOX_Y0 = 8, SIM_BOX_X1 = 143, SIM_BOX_Y1 = 182 };
+
+// Supersampled present: the NxN replay of the recorded frame, and the frame handed to
+// present_hi. Kept allocated (like the gameplay hi buffers) and resized on a factor change.
+static SDL_Surface *sim_hi_replay = NULL, *sim_hi_frame = NULL;
+
+void game_menu_deinit(void)
+{
+	SDL_FreeSurface(sim_hi_replay);
+	sim_hi_replay = NULL;
+	SDL_FreeSurface(sim_hi_frame);
+	sim_hi_frame = NULL;
+}
+
+static SDL_Surface *sim_ensure_hi(SDL_Surface **surf, int scale)
+{
+	const int w = vga_width * scale, h = vga_height * scale;
+	if (*surf != NULL && ((*surf)->w != w || (*surf)->h != h))
+	{
+		SDL_FreeSurface(*surf);
+		*surf = NULL;
+	}
+	if (*surf == NULL)
+		*surf = SDL_CreateRGBSurface(0, w, h, 8, 0, 0, 0, 0);
+	return *surf;
+}
+
+// Present the preview box supersampled, so its ship, shots, and orbiting satellites sit at
+// sub-pixel positions between ticks as they do in play. The menu around it is block-expanded,
+// then the box is painted from the NxN replay at the offset the pillarboxed frame put it.
+// Returns false if the buffers could not be allocated.
+static bool JE_weaponSimPresentHi(float alpha, int scale)
+{
+	SDL_Surface *const replay = sim_ensure_hi(&sim_hi_replay, scale);
+	SDL_Surface *const frame = sim_ensure_hi(&sim_hi_frame, scale);
+	if (replay == NULL || frame == NULL)
+		return false;
+
+	rl_replay_interp(replay, alpha, false, scale);
+
+	// The menu around the preview is 1x art, so expanding it is exact; only the box gains
+	// sub-pixel detail.
+	const int x_offset = video_get_menu_x_offset();
+	expand_frame_to_hi(video_compose_frame(), frame, scale);
+
+	const int row_bytes = (SIM_BOX_X1 - SIM_BOX_X0 + 1) * scale,
+	          rows = (SIM_BOX_Y1 - SIM_BOX_Y0 + 1) * scale;
+	const Uint8 *src = (const Uint8 *)replay->pixels
+	                 + (SIM_BOX_Y0 * scale) * replay->pitch + SIM_BOX_X0 * scale;
+	Uint8 *dst = (Uint8 *)frame->pixels
+	           + (SIM_BOX_Y0 * scale) * frame->pitch + (SIM_BOX_X0 + x_offset) * scale;
+	for (int row = 0; row < rows; ++row)
+	{
+		memcpy(dst, src, (size_t)row_bytes);
+		src += replay->pitch;
+		dst += frame->pitch;
+	}
+
+	// The copy above erased whatever the caller drew onto the box after the 1x replay: the
+	// generator gauge's left columns, the weapon creator's overlay. game_screen still holds
+	// that same replay with nothing drawn over it, so the differing pixels are exactly those;
+	// they go back block-expanded, at classic resolution like the gameplay residual.
+	for (int y = SIM_BOX_Y0; y <= SIM_BOX_Y1; ++y)
+	{
+		const Uint8 *const ref = (const Uint8 *)game_screen->pixels + y * game_screen->pitch;
+		const Uint8 *const live = (const Uint8 *)VGAScreenSeg->pixels + y * VGAScreenSeg->pitch;
+		for (int x = SIM_BOX_X0; x <= SIM_BOX_X1; ++x)
+		{
+			if (live[x] == ref[x])
+				continue;
+			Uint8 *d = (Uint8 *)frame->pixels + (y * scale) * frame->pitch + (x + x_offset) * scale;
+			for (int k = 0; k < scale; ++k, d += frame->pitch)
+				memset(d, live[x], scale);
+		}
+	}
+
+	// The cursor goes on last: the box copy above would otherwise erase it wherever it
+	// overlaps the preview.
+	JE_drawMouseToHiFrame(frame, scale, x_offset);
+	present_hi(frame);
+	return true;
+}
+
+// Smooth weapon-sim preview: replay the recorded frame at interpolated positions, copying only
+// the preview box. Non-blit preview elements come from the captured residual, so the caller must
 // finish render-list recording and residual capture before entering this loop.
 static void JE_weaponSimSmoothPresent(void)
 {
-	enum { RX0 = 8, RY0 = 8, RX1 = 143, RY1 = 182 };  // preview region (inclusive)
-
 	// Smooth Motion off: present the already-drawn authoritative frame once and let
 	// menuWaitWithSmoothCursor() wait out the tick; classic, non-interpolated.
 	if (!smoothMotion)
@@ -551,14 +633,18 @@ static void JE_weaponSimSmoothPresent(void)
 			alpha = 1.0f;
 
 		// Reconstruct the recorded frame at interpolated positions into game_screen,
-		// then copy just the preview region over the live menu surface.
-		rl_replay_interp(game_screen, alpha, false, 1);  // menu preview stays 1x
+		// then copy just the preview region over the live menu surface. This 1x frame
+		// stays authoritative even when the supersampled present runs below: the gauge,
+		// the overlay, and the classic present all build on it.
+		rl_replay_interp(game_screen, alpha, false, 1);
 
-		const Uint8 *src = (const Uint8 *)game_screen->pixels + RY0 * game_screen->pitch + RX0;
-		Uint8 *dst = (Uint8 *)VGAScreenSeg->pixels + RY0 * VGAScreenSeg->pitch + RX0;
-		for (int row = RY0; row <= RY1; ++row)
+		const Uint8 *src = (const Uint8 *)game_screen->pixels
+		                 + SIM_BOX_Y0 * game_screen->pitch + SIM_BOX_X0;
+		Uint8 *dst = (Uint8 *)VGAScreenSeg->pixels
+		           + SIM_BOX_Y0 * VGAScreenSeg->pitch + SIM_BOX_X0;
+		for (int row = SIM_BOX_Y0; row <= SIM_BOX_Y1; ++row)
 		{
-			memcpy(dst, src, RX1 - RX0 + 1);
+			memcpy(dst, src, SIM_BOX_X1 - SIM_BOX_X0 + 1);
 			src += game_screen->pitch;
 			dst += VGAScreenSeg->pitch;
 		}
@@ -573,7 +659,12 @@ static void JE_weaponSimSmoothPresent(void)
 
 		if (weaponSimOverlayFn) weaponSimOverlayFn(alpha);
 		JE_mouseStart();
-		JE_showVGA();
+
+		// Sub-pixel preview when supersampling is on, classic present otherwise.
+		const int ss = effective_supersample();
+		if (ss <= 1 || !JE_weaponSimPresentHi(alpha, ss))
+			JE_showVGA();
+
 		JE_mouseReplace();
 
 		if (!output_vsync)
@@ -10192,11 +10283,22 @@ static void JE_drawSimSidekicks(void)
 		// match it across ticks; otherwise a moving pod (orbiting satellite) steps at the
 		// ~23Hz menu tick instead of gliding.
 		rl_current_id = RL_ID_SIDEKICK_BASE + 2 + (int)i;
+		if (o->tr == 4)
+		{
+			// Sub-pixel remainder of the rounded orbit offset, as in gameplay
+			// (the sidekick draw in JE_mainGamePlayerFunctions).
+			const float ox = sinf(optionSatelliteRotate) * 20,
+			            oy = cosf(optionSatelliteRotate) * 20;
+			const float dir = (i == LEFT_SIDEKICK) ? 1.0f : -1.0f;  // right slot mirrors
+			rl_current_sub_x = dir * (ox - roundf(ox));
+			rl_current_sub_y = dir * (oy - roundf(oy));
+		}
 		if (o->tr == 1 || o->tr == 2)
 			blit_sprite2x2(VGAScreen, x - 6, y, spriteSheet10, sprite);
 		else
 			blit_sprite2(VGAScreen, x, y, spriteSheet9, sprite);
 		rl_current_id = 0;
+		rl_current_sub_x = rl_current_sub_y = 0.0f;
 	}
 }
 
