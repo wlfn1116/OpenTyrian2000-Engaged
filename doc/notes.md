@@ -1337,6 +1337,18 @@ enemy shots, explosions, repeating explosions, and the sound queue.
 Menu requests schedule a future frame and wait until it is final. When both
 players press Esc together, the host takes the menu and the joiner waits.
 
+A level end and a scheduled menu frame are confirmed by waiting for the peer's
+records up to that frame. The wait gives up once the peer's newest frame has not
+advanced for `NRB_PEER_IDLE_TIME_OUT`, counted from the last advance rather than
+from the start of the wait: a peer that reaches the same end a few frames later
+confirms at once (our records are already there) and leaves, so its final packet
+is the only carrier of its last frame, and a lost one never comes again. The
+machine leaving a level sends that final packet twice for the same reason. Most
+exits are followed by a reliable packet, which the stall pump reads as the peer
+having left (`nrb_peer_left_level`); the Timed Battle result screen sends
+nothing until the guest dismisses it, so that exit relies on the idle clock.
+The Destruct round end applies the same rule.
+
 Pause request bits remain reserved in the wire layout but are ignored online.
 
 ### Determinism

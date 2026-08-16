@@ -55,6 +55,12 @@ Uint32 nrb_frame(void);
  * clear the peer never made. */
 bool nrb_peer_left_level(Uint16 head);
 
+/* The idle rule behind the level-end and menu-frame confirmation waits: true once `newest`, the
+ * peer's newest frame, has not advanced for NRB_PEER_IDLE_TIME_OUT ms of `now`. Every advance
+ * re-arms the clock (see "Rollback input" in doc/notes.md). Destruct's round end shares it. */
+#define NRB_PEER_IDLE_TIME_OUT 8000
+bool nrb_peer_idle(Uint32 now, Uint32 newest, Uint32 *newest_seen, Uint32 *newest_tick);
+
 /* Perf-overlay counters: current prediction lead, maximum rollback depth, rollbacks per 100 frames,
  * and canary mismatch count. */
 void nrb_stats(Uint32 *predict, Uint32 *depth, Uint32 *rate, Uint32 *desyncs);

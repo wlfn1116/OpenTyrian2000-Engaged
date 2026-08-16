@@ -3828,6 +3828,33 @@ static void qa_test_peer_left_level(void)
 #endif
 }
 
+/* The idle rule that ends a level-end or menu-frame confirmation wait when the peer stops
+ * producing frames. The case that matters is a peer that gained frames after the wait began and
+ * then left; the rule has to fire on it, and every advance has to buy the peer a fresh window. */
+static void qa_test_peer_idle_rule(void)
+{
+#ifdef WITH_NETWORK
+	const Uint32 limit = NRB_PEER_IDLE_TIME_OUT;
+	Uint32 seen = 540, tick = 1000;
+
+	qa_check(!nrb_peer_idle(1000, 540, &seen, &tick), "a wait that just began is not idle");
+	qa_check(!nrb_peer_idle(1000 + limit, 540, &seen, &tick), "...nor at exactly the limit");
+	qa_check(nrb_peer_idle(1001 + limit, 540, &seen, &tick),
+	         "a peer whose newest frame never moved is idle once the limit passes");
+
+	seen = 537;
+	tick = 1000;
+	qa_check(!nrb_peer_idle(1300, 539, &seen, &tick) && seen == 539 && tick == 1300,
+	         "an advance is recorded and re-arms the clock");
+	qa_check(!nrb_peer_idle(1600, 540, &seen, &tick) && tick == 1600,
+	         "...as does every later advance");
+	qa_check(!nrb_peer_idle(1000 + limit, 540, &seen, &tick),
+	         "the limit counts from the last advance, so the original start no longer matters");
+	qa_check(nrb_peer_idle(1601 + limit, 540, &seen, &tick),
+	         "a peer that advanced during the wait and then went quiet is idle from that advance");
+#endif
+}
+
 static void qa_test_network_settings(void)
 {
 #ifdef WITH_NETWORK
@@ -5860,6 +5887,7 @@ int qa_run_unit_suite(void)
 	qa_test_kinetic_converter();
 	qa_test_coop_combo_and_pickups();
 	qa_test_peer_left_level();
+	qa_test_peer_idle_rule();
 	qa_test_online_suite();
 	qa_test_endless_suite();
 	qa_test_save_fixtures();
