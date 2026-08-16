@@ -173,8 +173,8 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
 #define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
 #define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
-#define ENDLESS_PERK_CHAIN_RADIUS  44  // Chain Reaction: pulse radius (px) around a destroyed enemy at one stack
-#define ENDLESS_PERK_CHAIN_REACH   12  // Chain Reaction: px added to that radius by each stack past the first
+#define ENDLESS_PERK_CHAIN_RADIUS  59  // Chain Reaction: pulse radius (px) around a destroyed enemy at one stack
+#define ENDLESS_PERK_CHAIN_REACH   16  // Chain Reaction: px added to that radius by each stack past the first
 // Chain Reaction: armor damage per stack, before the owner's damage scale. 20 is both the median
 // armor of the shipped enemies and the commonest single value among them, so one stack kills that
 // enemy on an unscaled hit; depth raises what it is worth against, a damage build raises the hit.
