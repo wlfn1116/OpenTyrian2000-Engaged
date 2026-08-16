@@ -357,6 +357,12 @@ the wave there. So the reach a stack buys is worth more than the damage figure
 suggests, since reach is what decides whether the next enemy is close enough to
 carry the wave on.
 
+A wave lands on each enemy once. However many of its blasts overlap on a hull,
+in one tick or across the hops that follow, that hull takes one hit from the
+wave; the next kill you make starts the next wave, which lands on it again. So a
+kill in a wall of tough tiles softens every tile within reach by one hit rather
+than shattering the wall, and each further kill takes another layer off.
+
 Elites and champions are fair game. They take the blast through the same health
 multiplier their tier gives them, so they wear down slowly, and a wave that
 finishes one pays its bounty in full to the ship whose blast it was, with the

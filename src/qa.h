@@ -96,6 +96,9 @@ void qa_test_endless_death_menu(void);
 void qa_test_special_light_events(void);
 // The Chain Reaction pulse queue: reach, the cascade, and what stops it (tyrian2.c).
 void qa_test_chain_cascade(void);
+// A wave lands on a hull once, across its overlapping pulses and its hops; the next kill's wave
+// lands again (tyrian2.c).
+void qa_test_chain_wave_latch(void);
 /* Drive a chain wave through the real pulse queue and drain (tyrian2.c, which owns both): a row of
  * `count` enemies worth `evalue` each, spaced so the wave carries, started by a pulse belonging to
  * `owner`. `linknum` 0 lays them out as lone fodder, anything else as the tiles of one linked hull;

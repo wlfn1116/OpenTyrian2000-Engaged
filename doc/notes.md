@@ -501,8 +501,31 @@ range and lands the hit at the middle of the tiles still alive. The tile nearest
 that middle takes the damage, so a hull with a scaled accumulator spends into one
 place rather than wherever the blast clipped it. `chain_target_eligible` takes
 everything carrying hit points, bosses and elite tiers included, refusing only
-pickups, flag-setters and 255, the invulnerable sentinel. 254 is the ordinary boss
-armor cap and is admitted.
+pickups, flag-setters, 255, the invulnerable sentinel, and a hull the pulse's own
+wave has already landed on. 254 is the ordinary boss armor cap and is admitted.
+
+A wave lands on a hull once. A kill inside a wall of 50-armor tiles (SOH JIN lays
+208 of enemy 837 in a grid 24 px apart) puts every neighbour inside several
+dying tiles' blasts at once, which without the latch lets one stack shatter the
+wall in a couple of ticks; with it each wave softens every tile within reach by
+one hit and the next kill takes the next layer. Each queued pulse carries its
+wave in `chainPulseWave`: a fresh kill's wave is the kill's own serial,
+`enemyKilled` as bumped just before `chain_queue_kill` runs, so no two waves in
+the air share a name and a level start (which zeroes `enemyKilled` beside
+`chain_reset_queue`) starts the names over; a hop inherits its parent's through
+`chainDrainWave`, the way the salvo tag travels. The latch is `chainWave` on the
+enemy record, compared in `chain_target_eligible` and written when the hit
+lands: a lone enemy in the drain, every tile of a linked hull in
+`chain_group_target`, so the hull's other tiles fall out of the same pulse by
+ineligibility. `JE_makeEnemy` zeroes it, or a wave still in the air would skip a
+slot's new occupant. The field sits in the record's tail padding on the 64-bit
+targets, so `sizeof` and the `enemy[]` registry item are unchanged; the pulse
+array is a registry item of its own, and moved the fixtures on 2026-08-16.
+Pulses of two different waves in one drain both land, which is why `flashed[]`
+gates only the flash, the puff and the bolt. `qa_test_chain_wave_latch` pins
+all of it: one wave's overlapping pulses on a lone hull and on a linked one, the
+hop a wave's kill queues skipping what the wave already hit, and the next kill's
+wave landing again.
 
 `endlessPerkChainDamage` is the perk's stacks against `endlessPlayerDamagePercent`,
 the one scale every player-damage source feeds: a pulse is the owning ship's
@@ -551,10 +574,11 @@ the pulse that caused it, so the whole wave is measured against the ship that
 started it.
 
 Spending a tick per hop is what puts pulses in the queue across a frame boundary,
-which has two consequences. The owner array has to be registered (above). And a
-wave can still be in the air when a level ends, so the per-level init calls
-`chain_reset_queue`; without it the first tick of the next level would fire the
-leftovers at its enemies, from the previous level's coordinates.
+which has two consequences. The owner, salvo and wave arrays have to be
+registered (above). And a wave can still be in the air when a level ends, so the
+per-level init calls `chain_reset_queue`; without it the first tick of the next
+level would fire the leftovers at its enemies, from the previous level's
+coordinates.
 `qa_test_chain_cascade` (tyrian2.c, where the queue and drain live) drives the
 real drain a tick at a time over a row of fodder spaced inside one blast, checks
 the row needs several ticks to clear and that the queue settles afterwards, and

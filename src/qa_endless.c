@@ -716,6 +716,7 @@ static void qa_reactive_state_matrix(void)
 	qa_check(endlessPerkChainOwner(1) == 0 && endlessPerkChainOwner(ENDLESS_KILLER_NONE) == 0,
 	         "one ship flying alone owns every pulse");
 	qa_test_chain_cascade();   // the queue and the drain, with P1's one stack in the effect context
+	qa_test_chain_wave_latch();
 	coopEndlessMode = true;
 
 	/* A wave's kills are worth what the ship that made them would have earned by shooting. The

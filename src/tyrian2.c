@@ -270,11 +270,18 @@ static int chainPulseOwner[CHAIN_QUEUE_MAX];
 // hop it goes on to make, since the volley is what set it off.
 static bool chainPulseSalvo[CHAIN_QUEUE_MAX];
 
-// The salvo tag of the pulse being drained, for the cascade hops it queues. Idle outside a drain,
-// where a fresh kill reads its owner's window live instead. Tick-local: the drain sets it per pulse
-// and leaves it idle again, so it never stands across the frame boundary the queue itself can.
+// Which wave each queued pulse belongs to: a wave lands on a hull once, however many of its pulses
+// reach it. A fresh kill's wave is the kill's own serial (enemyKilled, bumped just before), so no
+// two waves in the air share a name, and every hop inherits its parent's. doc/notes.md, "Combat".
+static JE_word chainPulseWave[CHAIN_QUEUE_MAX];
+
+// The salvo tag and wave of the pulse being drained, for the cascade hops it queues. Idle outside a
+// drain, where a fresh kill reads its owner's window live and takes a wave of its own. Tick-local:
+// the drain sets them per pulse and leaves them idle again, so they never stand across the frame
+// boundary the queue itself can.
 #define CHAIN_DRAIN_IDLE (-1)
 static int chainDrainSalvo = CHAIN_DRAIN_IDLE;
+static JE_word chainDrainWave = 0;
 
 // Evaluate a pulse under `owner`'s perks rather than the ambient effect player. Returns the context
 // to restore, as the elite payout does in endless_combat.c.
@@ -292,10 +299,10 @@ static void chain_reset_queue(void)
 	chainDrainSalvo = CHAIN_DRAIN_IDLE;
 }
 
-// Append a pulse belonging to `owner`. A pulse queued while the drain runs lands past the stretch
-// that drain claimed, so it waits for the next tick: the cascade advances one hop per tick and can
-// be watched crossing a formation. CHAIN_QUEUE_MAX bounds how wide one hop can get.
-static void chain_queue_at(int screenX, int y, int owner, bool salvo)
+// Append a pulse of `wave` belonging to `owner`. A pulse queued while the drain runs lands past the
+// stretch that drain claimed, so it waits for the next tick: the cascade advances one hop per tick
+// and can be watched crossing a formation. CHAIN_QUEUE_MAX bounds how wide one hop can get.
+static void chain_queue_at(int screenX, int y, int owner, bool salvo, JE_word wave)
 {
 	if (chainPulseN < CHAIN_QUEUE_MAX)
 	{
@@ -303,6 +310,7 @@ static void chain_queue_at(int screenX, int y, int owner, bool salvo)
 		chainPulse[chainPulseN].y = y;
 		chainPulseOwner[chainPulseN] = owner;
 		chainPulseSalvo[chainPulseN] = salvo;
+		chainPulseWave[chainPulseN] = wave;
 		++chainPulseN;
 	}
 }
@@ -312,13 +320,13 @@ static void chain_queue_at(int screenX, int y, int owner, bool salvo)
 static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 {
 	const int owner = (int)endlessPerkChainOwner(killer);
+	const bool inDrain = (chainDrainSalvo != CHAIN_DRAIN_IDLE);
 
 	const uint fxSaved = chain_fx_enter(owner);
 	const bool active = endlessPerkChainReactionActive();
 	// A hop queued from inside a drain carries its parent's tag; a fresh kill reads the owner's own
 	// window, which is why this sits inside that ship's effect context.
-	const bool salvo = (chainDrainSalvo != CHAIN_DRAIN_IDLE) ? (chainDrainSalvo != 0)
-	                                                        : endlessOpeningSalvoVolleyActive();
+	const bool salvo = inDrain ? (chainDrainSalvo != 0) : endlessOpeningSalvoVolleyActive();
 	endlessSetFxPlayer(fxSaved);
 
 	if (!active)
@@ -326,7 +334,7 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	if (linknum != 0 && linknum == chainPulseLastLink)
 		return;
 	chainPulseLastLink = linknum;
-	chain_queue_at(screenX, y, owner, salvo);
+	chain_queue_at(screenX, y, owner, salvo, inDrain ? chainDrainWave : enemyKilled);
 }
 
 // The divisor a hull spends damage through: Nx boss HP (expert mode and/or endless depth) combined
@@ -554,9 +562,6 @@ static void chain_flash_enemy(unsigned int i)
 // Sprites are placed by their top-left corner, so both effects work from the centre of a 12px cell.
 #define CHAIN_CELL_MID_PX        6
 
-// Every value an enemy's linknum can hold, so a per-pulse table can be indexed by it directly.
-#define CHAIN_LINK_COUNT       256
-
 static void chain_ring_sparks(int x, int y, int radius, int pulse)
 {
 	if (rollback_resim_silent)
@@ -580,10 +585,11 @@ static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
 	                  ((Uint32)x1 << 20) ^ ((Uint32)y1 << 8) ^ (Uint32)victim);
 }
 
-// Enemies a pulse may damage, which is everything carrying hit points: bosses and elite tiers
-// included, each spending the blast through whatever accumulator scales it. 255 is the invulnerable
-// sentinel and is refused; 254 is the ordinary boss armor cap and is not.
-static bool chain_target_eligible(int slot)
+// Enemies a pulse of `wave` may damage, which is everything carrying hit points that this wave has
+// not landed on yet: bosses and elite tiers included, each spending the blast through whatever
+// accumulator scales it. 255 is the invulnerable sentinel and is refused; 254 is the ordinary boss
+// armor cap and is not.
+static bool chain_target_eligible(int slot, JE_word wave)
 {
 	if (enemyAvail[slot] != 0)
 		return false;                                  // live enemies only
@@ -591,14 +597,17 @@ static bool chain_target_eligible(int slot)
 		return false;                                  // pickups / flag-setters: never
 	if (enemy[slot].armorleft == 0 || enemy[slot].armorleft >= 255)
 		return false;                                  // dead, or invulnerable
+	if (enemy[slot].chainWave == wave)
+		return false;                                  // this wave has already landed on it
 	return true;
 }
 
 // A linked hull is one target however many tiles it is drawn from: the blast reaches it if it
 // reaches any tile, and lands once in the middle of the tiles it has left. The tile nearest that
 // middle takes it, so a hull with a scaled accumulator spends into one place rather than wherever
-// the blast clipped it. False when no tile is in range.
-static bool chain_group_target(JE_byte linknum, int px, int py, int radius,
+// the blast clipped it, and every tile is marked as hit by `wave` so no other pulse of that wave
+// lands on the hull. False when no tile is in range or the wave has already been here.
+static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_word wave,
                                int *out_x, int *out_y, int *out_victim)
 {
 	int minX = INT_MAX;
@@ -609,7 +618,7 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius,
 
 	for (int g = 0; g < 100; ++g)
 	{
-		if (enemy[g].linknum != linknum || !chain_target_eligible(g))
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave))
 			continue;
 
 		const int gx = enemy[g].ex + enemy[g].mapoffset;
@@ -636,8 +645,9 @@ static bool chain_group_target(JE_byte linknum, int px, int py, int radius,
 	int bestDist = INT_MAX;
 	for (int g = 0; g < 100; ++g)
 	{
-		if (enemy[g].linknum != linknum || !chain_target_eligible(g))
+		if (enemy[g].linknum != linknum || !chain_target_eligible(g, wave))
 			continue;
+		enemy[g].chainWave = wave;
 
 		const int d = abs((enemy[g].ex + enemy[g].mapoffset) - *out_x) + abs(enemy[g].ey - *out_y);
 		if (d < bestDist)
@@ -665,10 +675,11 @@ static void chain_destroy_group(JE_byte linknum, int owner)
 	}
 }
 
-// Drain the pulse queue: each pulse chips armor off nearby NORMAL-tier fodder and vaporises any it
-// depletes, and what it vaporises pulses on the next tick, so one kill can send a wave travelling
-// through a formation. Elites, champions, boss groups, invulnerable hulls, score pickups and
-// flag-setters are never touched and stop the wave. A linked hull is taken down whole or not at all.
+// Drain the pulse queue: each pulse chips armor off nearby enemies and vaporises any it depletes,
+// and what it vaporises pulses on the next tick, so one kill can send a wave travelling through a
+// formation. A wave lands on each hull once, however many of its pulses reach it, and the next kill
+// starts the next wave. Invulnerable hulls, score pickups and flag-setters are never touched and
+// stop the wave; a linked hull is taken down whole or not at all.
 static void chain_reaction_process(void)
 {
 	if (chainPulseN == 0)
@@ -676,9 +687,9 @@ static void chain_reaction_process(void)
 		chainPulseLastLink = 0;
 		return;
 	}
-	// Feedback for this drain. Overlapping pulses each still deal their damage; only the flash, the
-	// puff and the bolt are held to one per victim, which also keeps a dense frame from spending the
-	// whole explosion pool on one enemy.
+	// Feedback for this drain. Pulses of different waves each still deal their damage; only the
+	// flash, the puff and the bolt are held to one per victim, which also keeps a dense frame from
+	// spending the whole explosion pool on one enemy.
 	bool flashed[COUNTOF(enemy)] = { false };
 	int rings = 0;
 	int bolts = 0;
@@ -691,22 +702,20 @@ static void chain_reaction_process(void)
 	for (int p = 0; p < hop; ++p)
 	{
 		const int px = chainPulse[p].x, py = chainPulse[p].y;
+		const JE_word wave = chainPulseWave[p];
 
 		// Each pulse is measured under the perks of the ship that made its kill, and carries its own
-		// salvo tag both into that figure and on to whatever hops it queues.
+		// salvo tag and wave both into that figure and on to whatever hops it queues.
 		chainDrainSalvo = chainPulseSalvo[p] ? 1 : 0;
+		chainDrainWave = wave;
 		const uint fxSaved = chain_fx_enter(chainPulseOwner[p]);
 		const int radius = endlessPerkChainRadius();
 		const int dmg    = endlessPerkChainDamage(chainPulseSalvo[p]);
 		endlessSetFxPlayer(fxSaved);
 
-		// A linked hull takes one hit per pulse, not one per tile. Indexed by linknum, which the
-		// enemy record holds as a byte.
-		bool groupHit[CHAIN_LINK_COUNT] = { false };
-
 		for (int e = 0; e < 100; ++e)
 		{
-			if (!chain_target_eligible(e))
+			if (!chain_target_eligible(e, wave))
 				continue;
 
 			const JE_byte linknum = enemy[e].linknum;
@@ -722,14 +731,11 @@ static void chain_reaction_process(void)
 				ey = enemy[e].ey;
 				if (abs(ex - px) > radius || abs(ey - py) > radius)
 					continue;
+				enemy[e].chainWave = wave;
 			}
-			else
+			else if (!chain_group_target(linknum, px, py, radius, wave, &ex, &ey, &victim))
 			{
-				if (groupHit[linknum])
-					continue;
-				if (!chain_group_target(linknum, px, py, radius, &ex, &ey, &victim))
-					continue;
-				groupHit[linknum] = true;
+				continue;   // out of range, or this wave has hit it; every tile answers the same
 			}
 
 			// A boss and an elite-tier hull spend damage through an accumulator, so the pulse pays
@@ -799,11 +805,12 @@ static void chain_reaction_process(void)
 		chainPulse[carried] = chainPulse[src];
 		chainPulseOwner[carried] = chainPulseOwner[src];
 		chainPulseSalvo[carried] = chainPulseSalvo[src];
+		chainPulseWave[carried] = chainPulseWave[src];
 		++carried;
 	}
 	chainPulseN = carried;
 	chainPulseLastLink = 0;
-	chainDrainSalvo = CHAIN_DRAIN_IDLE;   // the next fresh kill reads its own window again
+	chainDrainSalvo = CHAIN_DRAIN_IDLE;   // the next fresh kill reads its own window and wave again
 }
 
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
@@ -847,7 +854,7 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 	const JE_word killedBefore = enemyKilled;
 
 	chain_reset_queue();
-	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, false);
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, false, 1);
 	for (int t = 0; t < CHAIN_QUEUE_MAX && chainPulseN > 0; ++t)
 		chain_reaction_process();
 
@@ -883,7 +890,7 @@ int qa_chain_pulse_damage(int owner, bool salvo)
 	enemy[0].enemytype = 1;
 
 	chain_reset_queue();
-	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, salvo);
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, salvo, 1);
 	chain_reaction_process();
 
 	return tough - enemy[0].armorleft;
@@ -915,7 +922,7 @@ bool qa_chain_salvo_latch_holds(int owner)
 	}
 
 	chain_reset_queue();
-	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, true);   // the volley's own pulse
+	chain_queue_at(enemy[0].ex, enemy[0].ey, owner, true, 1);   // the volley's own pulse
 
 	/* Every hop after the first is queued by the drain, with the window long gone as far as the
 	 * live check is concerned; the tag has to come from the parent instead. */
@@ -969,7 +976,7 @@ void qa_test_chain_cascade(void)
 		}
 
 		chain_reset_queue();
-		chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false);
+		chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false, 1);
 
 		/* One drain is one tick. Run them until the wave dies out, bounded so a queue that refused
 		 * to empty fails the tick check below instead of hanging the suite. */
@@ -1028,12 +1035,13 @@ void qa_test_chain_cascade(void)
 		enemy[0].enemytype = 1;
 
 		/* Its accumulator may swallow several pulses per armor point, so give the blast enough of
-		 * them that one point has to land if it lands at all. */
+		 * them that one point has to land if it lands at all. Each is a fresh kill's wave, since a
+		 * wave lands only once. */
 		const int pulses = enemy_hp_multiplier(0) + 1;
 		for (int t = 0; t < pulses; ++t)
 		{
 			chain_reset_queue();
-			chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false);   // a pulse right on top of it
+			chain_queue_at(enemy[0].ex, enemy[0].ey, 0, false, (JE_word)(t + 1));   // right on it
 			chain_reaction_process();
 		}
 
@@ -1072,7 +1080,7 @@ void qa_test_chain_cascade(void)
 	while (bossTicks < 500 && enemyAvail[0] != 1)
 	{
 		chain_reset_queue();
-		chain_queue_at(60, 100, 0, false);
+		chain_queue_at(60, 100, 0, false, (JE_word)(bossTicks + 1));   // one kill's wave per tick
 		chain_reaction_process();
 		++bossTicks;
 	}
@@ -1113,7 +1121,7 @@ void qa_test_chain_cascade(void)
 	}
 
 	chain_reset_queue();
-	chain_queue_at(nearX - radius, 100, 0, false);   // reaches tile 0 only
+	chain_queue_at(nearX - radius, 100, 0, false, 1);   // reaches tile 0 only
 	chain_reaction_process();
 
 	const int worn = (tileArmor - enemy[0].armorleft) + (tileArmor - enemy[1].armorleft)
@@ -1126,6 +1134,124 @@ void qa_test_chain_cascade(void)
 	         "...and it lands in the middle tile rather than the one the blast touched");
 	chain_reset_queue();
 	JE_resetSP();   // the drain above threw real rings and bolts
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+}
+
+/* Armor a row of pulses takes off a tough hull at `x`, one pulse per entry of `waves`, all queued
+ * into one drain. The hull is `tiles` linked tiles (linknum 7), or lone fodder at 1. */
+static int qa_chain_pulses_wear(int x, int tiles, const JE_word *waves, int count)
+{
+	const JE_byte tough = 250;
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	for (int i = 0; i < tiles; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(x + i * 8);
+		enemy[i].ey = 100;
+		enemy[i].armorleft = tough;
+		enemy[i].enemytype = 1;
+		enemy[i].linknum = (tiles > 1) ? 7 : 0;
+	}
+
+	chain_reset_queue();
+	for (int p = 0; p < count; ++p)
+		chain_queue_at(x, 100, 0, false, waves[p]);
+	chain_reaction_process();
+
+	int worn = 0;
+	for (int i = 0; i < tiles; ++i)
+		worn += tough - enemy[i].armorleft;
+	return worn;
+}
+
+/* A wave lands on a hull once. Pulses of one wave that overlap on it, in one drain or across the
+ * hops that follow, deal one hit between them; a pulse of another wave, which is what the next
+ * kill starts, lands again. Contract in qa.h; placed here with the queue and the drain. */
+void qa_test_chain_wave_latch(void)
+{
+	struct JE_SingleEnemyType savedEnemy[8];
+	JE_byte savedAvail[COUNTOF(savedEnemy)];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+
+	const int radius = endlessPerkChainRadius();
+	const int dmg    = endlessPerkChainDamage(false);
+	if (radius <= 0 || dmg <= 1)
+	{
+		qa_check(false, "the wave-latch test needs the perk held by the current effect player");
+		return;
+	}
+
+	static const JE_word oneWave[]  = { 1, 1, 1 };
+	static const JE_word twoWaves[] = { 1, 2 };
+	char label[160];
+
+	int worn = qa_chain_pulses_wear(100, 1, oneWave, COUNTOF(oneWave));
+	snprintf(label, sizeof(label), "three pulses of one wave on a lone hull land one hit, %d of %d",
+	         worn, dmg);
+	qa_check(worn == dmg, label);
+
+	worn = qa_chain_pulses_wear(100, 1, twoWaves, COUNTOF(twoWaves));
+	snprintf(label, sizeof(label), "...and pulses of two waves land twice, %d of %d",
+	         worn, 2 * dmg);
+	qa_check(worn == 2 * dmg, label);
+
+	worn = qa_chain_pulses_wear(100, 3, oneWave, COUNTOF(oneWave));
+	snprintf(label, sizeof(label), "a linked hull under three pulses of one wave takes %d of %d",
+	         worn, dmg);
+	qa_check(worn == dmg, label);
+
+	worn = qa_chain_pulses_wear(100, 3, twoWaves, COUNTOF(twoWaves));
+	snprintf(label, sizeof(label), "...and %d of %d under two waves", worn, 2 * dmg);
+	qa_check(worn == 2 * dmg, label);
+
+	/* Across hops: a tough hull inside the seed pulse and inside the pulse of the fodder that seed
+	 * kills is hit by the seed and skipped by the hop, then hit again by the next kill's wave. */
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	const JE_byte tough = 250;
+	enemyAvail[0] = 0;                       // the fodder the seed kills
+	enemy[0].ex = 100;
+	enemy[0].ey = 100;
+	enemy[0].armorleft = 1;
+	enemy[0].enemytype = 1;
+	enemyAvail[1] = 0;                       // the hull both pulses reach
+	enemy[1].ex = (JE_integer)(100 + radius / 2);
+	enemy[1].ey = 100;
+	enemy[1].armorleft = tough;
+	enemy[1].enemytype = 1;
+
+	chain_reset_queue();
+	chain_queue_at(100, 100, 0, false, 1);
+	int hops = 0;
+	while (chainPulseN > 0 && hops < CHAIN_QUEUE_MAX)
+	{
+		chain_reaction_process();
+		++hops;
+	}
+	snprintf(label, sizeof(label),
+	         "the hop a wave's kill queues skips what the wave already hit: %d of %d over %d hops",
+	         tough - enemy[1].armorleft, dmg, hops);
+	qa_check(enemyAvail[0] == 1 && hops == 2 && tough - enemy[1].armorleft == dmg, label);
+
+	chain_reset_queue();
+	chain_queue_at(100, 100, 0, false, 2);   // the next kill, on the same spot
+	chain_reaction_process();
+	snprintf(label, sizeof(label), "...and the next kill's wave lands on it again, %d of %d",
+	         tough - enemy[1].armorleft, 2 * dmg);
+	qa_check(tough - enemy[1].armorleft == 2 * dmg, label);
+
+	chain_reset_queue();
+	JE_resetSP();
 	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
 	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
 }
@@ -10043,6 +10169,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	}
 
 	enemy->damageAccum = 0;  // reset expert-mode boss-HP accumulator on (re)spawn
+	enemy->chainWave = 0;    // a wave still in the air must not skip the slot's new occupant
 	enemy->healthbar_seen = false;  // no enemy HP bar until this slot takes damage
 	enemy->healthbar_max = 0;       // an invincible spawn has no health value and keeps this 0
 	enemy_note_full_armor(enemy);   // any other spawn takes its scaled armor as full
@@ -11932,6 +12059,7 @@ void tyrian2_register_rollback(void)
 	rollback_register("t2.chainPulseLast",   &chainPulseLastLink, sizeof(chainPulseLastLink));
 	rollback_register("t2.chainPulseOwner",  chainPulseOwner, sizeof(chainPulseOwner));
 	rollback_register("t2.chainPulseSalvo",  chainPulseSalvo, sizeof(chainPulseSalvo));
+	rollback_register("t2.chainPulseWave",   chainPulseWave, sizeof(chainPulseWave));
 	rollback_register("t2.shipTick",         ship_tick_x, sizeof(ship_tick_x));
 	rollback_register("t2.shipTickY",        ship_tick_y, sizeof(ship_tick_y));
 	/* The latch that arms them.  It flips false->true inside the tick, so a replay of

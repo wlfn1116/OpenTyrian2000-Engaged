@@ -133,6 +133,7 @@ struct JE_SingleEnemyType
 	JE_integer  yminbounce;
 	JE_integer  ymaxbounce;
 	JE_byte     fill[3]; /* [1..3] */
+	JE_word     chainWave;  /* last Chain Reaction wave to land here; one lands once (tyrian2.c) */
 };
 
 typedef struct JE_SingleEnemyType JE_MultiEnemyType[100]; /* [1..100] */

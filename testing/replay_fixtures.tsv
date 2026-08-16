@@ -57,6 +57,14 @@
 # layout hash came back at the previous line's values, so the ownership gate itself moves none
 # of the demos. Only a flare running out over a live level grade could, and none of the shipped
 # demos does that.
-1 180 75d3e2ff
-2 180 98679efe
-3 180 5e30de71
+# Regenerated 2026-08-16, for a snapshot-shape change with no simulation change behind it:
+# a Chain Reaction wave now lands on each hull once, so every queued pulse carries the wave it
+# belongs to and the queue gained a parallel wave array (t2.chainPulseWave, 128 bytes). The
+# per-hull latch (JE_SingleEnemyType.chainWave) sits in the record's tail padding, so sizeof and
+# the enemy[] item do not move. Verified by building with that single rollback_register line
+# removed, every other edit in the commit kept: all three hashes and the layout hash came back at
+# the previous line's values, so neither the latch nor the wider blast moves the demos. Neither
+# can: the perk is Endless-only and the shipped demos never fire a pulse.
+1 180 011bacff
+2 180 9d4cc6fe
+3 180 a80e3471
