@@ -444,7 +444,7 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 	{
 		// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
 		// the one helper; never inline any of them here again (see tyrian2.h).
-		enemy_logical_death(slot, ENEMY_DEATH_FULL, killer);
+		enemy_logical_death(slot, killer);
 	}
 
 	explosionFilter = endlessEliteTint(enemy[slot].eliteState);
@@ -462,9 +462,8 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 }
 
 // Central kill path for tallies, link-group latches, bounties, and reactive effects.
-// Despawns and collision removals are not kills. Quiet deaths update bookkeeping
-// without chaining more effects.
-void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
+// Despawns and collision removals are not kills.
+void enemy_logical_death(unsigned int i, int killer)
 {
 	enemyAvail[i] = 1;
 	enemyKilled++;
@@ -474,17 +473,14 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 	const JE_integer sx = enemy[i].ex + enemy[i].mapoffset;
 	const JE_integer sy = enemy[i].ey;
 
-	// Latched bookkeeping: mandatory for every kill, elite or not, quiet or not. Each self-guards on
+	// Latched bookkeeping: mandatory for every kill, elite or not. Each self-guards on
 	// endlessFxActive(), so outside an endless run these cost a call and nothing else. The two
-	// decide-functions are evaluated here rather than at the point of use so that a QUIET death still
-	// feeds their latches; neither touches the shot pool, so pulling them above the sweep is safe.
+	// decide-functions are evaluated here rather than at the point of use; neither touches the shot
+	// pool, so pulling them above the sweep is safe.
 	endlessCountKill(linknum, killer);
 	endlessAwardEliteKill(linknum, elite, killer);
 	const int shockRadius = endlessShockwaveRadius(linknum, elite);
 	const int martyrShots = endlessMartyrdomBurstShots(linknum, elite);
-
-	if (kind == ENEMY_DEATH_QUIET)
-		return;
 
 	// SHOCKWAVE runs BEFORE the martyr burst: on the rare sector carrying both, the sweep clears the
 	// fire already in the air and the burst below still gets to spawn. The other order had the sweep
@@ -506,7 +502,7 @@ void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer)
 
 // Flash a chipped victim and the rest of its linked hull; JE_drawEnemy paints filter for one frame
 // and clears it again. Unlike the vanilla shot-hit flash this covers air sprites, since most chain
-// fodder flies. An elite part keeps its tier tint, which rides the same byte.
+// fodder flies. A tier tint rides the same byte and gives way for that frame, as it does for a hit.
 static void chain_flash_enemy(unsigned int i)
 {
 	if (enemy[i].linknum == 0)
@@ -517,7 +513,7 @@ static void chain_flash_enemy(unsigned int i)
 
 	for (unsigned int g = 0; g < COUNTOF(enemy); ++g)
 	{
-		if (enemy[g].linknum == enemy[i].linknum && enemyAvail[g] != 1 && enemy[g].eliteState < 2)
+		if (enemy[g].linknum == enemy[i].linknum && enemyAvail[g] != 1)
 			enemy[g].filter = CHAIN_FLASH_FILTER;
 	}
 }
@@ -567,16 +563,15 @@ static void chain_bolt_sparks(int x0, int y0, int x1, int y1, int victim)
 	                  ((Uint32)x1 << 20) ^ ((Uint32)y1 << 8) ^ (Uint32)victim);
 }
 
-// Enemies a pulse may damage. 255 is the invulnerable sentinel and is refused; 254 is the ordinary
-// boss armor cap and is not, so a boss takes the blast like anything else with hit points.
+// Enemies a pulse may damage, which is everything carrying hit points: bosses and elite tiers
+// included, each spending the blast through whatever accumulator scales it. 255 is the invulnerable
+// sentinel and is refused; 254 is the ordinary boss armor cap and is not.
 static bool chain_target_eligible(int slot)
 {
 	if (enemyAvail[slot] != 0)
 		return false;                                  // live enemies only
 	if (enemy[slot].scoreitem || enemy[slot].special)
 		return false;                                  // pickups / flag-setters: never
-	if (enemy[slot].eliteState >= 2)
-		return false;                                  // elites/champions earn a real kill
 	if (enemy[slot].armorleft == 0 || enemy[slot].armorleft >= 255)
 		return false;                                  // dead, or invulnerable
 	return true;
@@ -745,49 +740,22 @@ static void chain_reaction_process(void)
 					}
 				}
 			}
-			else if (lone)
-			{
-				// Vaporised, and paid for exactly as a shot kill is, to the ship whose blast it was.
-				enemy_death_payout(e, chainPulseOwner[p]);
-
-				// QUIET only in that it sets off none of the other reactive effects: no Shockwave,
-				// no Martyrdom, both of which answer 0 for the plain fodder this branch destroys.
-				// It still feeds the dedup latches, or a later elite reusing this linknum reads as
-				// another tile of the last one and goes unpaid, and it is credited to its owner so
-				// the kill feeds that ship's streak.
-				enemy_logical_death(e, ENEMY_DEATH_QUIET, chainPulseOwner[p]);
-				anyHit = true;
-
-				// The cascade the perk is named for, carried at the same ship's radius.
-				chain_queue_at(ex, ey, chainPulseOwner[p]);
-				if (bolts < CHAIN_BOLTS_PER_TICK)   // a kill is reached once, so it needs no latch
-				{
-					chain_bolt_sparks(px, py, ex, ey, e);
-					++bolts;
-				}
-				if (enemyDat[enemy[e].enemytype].esize == 1)
-				{
-					JE_setupExplosionLarge(enemy[e].enemyground, enemy[e].explonum, ex, ey);
-					soundQueue[6] = S_EXPLOSION_9;
-				}
-				else
-				{
-					JE_setupExplosion(ex, ey, 0, 1, false, false);
-					soundQueue[6] = S_EXPLOSION_8;
-				}
-			}
 			else
 			{
-				// The hull's last tile is spent, so the whole thing goes down, boss included. Each
-				// tile dies the way a killing shot would take it, which is also what queues the
-				// wave's next hop.
+				// Destroyed, and taken the way a killing shot takes it: its payout, its bounty if it
+				// carried one, the death effects its tier owes, and the pulse that carries the wave
+				// on. A lone enemy goes alone; a linked hull goes whole, boss included.
 				anyHit = true;
-				if (bolts < CHAIN_BOLTS_PER_TICK)
+				if (bolts < CHAIN_BOLTS_PER_TICK)   // a kill is reached once, so it needs no latch
 				{
 					chain_bolt_sparks(px, py, ex, ey, victim);
 					++bolts;
 				}
-				chain_destroy_group(linknum, chainPulseOwner[p]);
+
+				if (lone)
+					enemy_part_destroy(e, chainPulseOwner[p], chainPulseOwner[p], false);
+				else
+					chain_destroy_group(linknum, chainPulseOwner[p]);
 			}
 		}
 
@@ -820,8 +788,8 @@ static void chain_reaction_process(void)
 /* Contract in qa.h. The driver lives here because the queue and the drain do; the assertions live
  * with the state they read. */
 void qa_chain_kill_row(int owner, int evalue, int count,
-                       JE_byte linknum, long *out_paid0, long *out_paid1, int *out_killed,
-                       bool *out_dropped)
+                       JE_byte linknum, int eliteState, long *out_paid0, long *out_paid1,
+                       int *out_killed, bool *out_dropped)
 {
 	const JE_byte dieType = 1;   // any spawnable body; the test only asks whether one appeared
 
@@ -847,7 +815,14 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 		enemy[i].linknum = linknum;   // 0 lays out lone fodder, anything else one linked hull
 	}
 
-	const ulong before0 = player[0].cash, before1 = player[1].cash;
+	if (eliteState >= 2)
+	{
+		for (int i = 0; i < count; ++i)
+			enemy[i].eliteState = (JE_byte)eliteState;
+	}
+
+	const ulong before0 = player[0].cash;
+	const ulong before1 = player[1].cash;
 	const JE_word killedBefore = enemyKilled;
 
 	chain_reset_queue();
@@ -5631,9 +5606,9 @@ level_loop:
 											{
 												// Tally, bounty, SHOCKWAVE, MARTYRDOM and the Chain Reaction pulse all live in
 												// the one helper; never inline any of them here again (see tyrian2.h).
-												enemy_logical_death(temp3, ENEMY_DEATH_FULL,
-											                    playerNum >= 1 ? (int)playerNum - 1
-											                                   : ENDLESS_KILLER_NONE);
+												enemy_logical_death(temp3,
+												                    playerNum >= 1 ? (int)playerNum - 1
+												                                   : ENDLESS_KILLER_NONE);
 											}
 
 											enemy[temp3].aniwhenfire = 0;

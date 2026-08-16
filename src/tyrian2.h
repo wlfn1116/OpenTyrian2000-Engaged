@@ -67,14 +67,7 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 
 // Route every kill through this function so tallies, bounties, and reactive effects agree.
 // Despawns still clear enemyAvail directly.
-typedef enum
-{
-	ENEMY_DEATH_FULL,   // an ordinary kill: the reactive boons / dangers / perks all get to fire
-	ENEMY_DEATH_QUIET,  // bookkeeping and latches only, no reactive effects (the Chain Reaction drain)
-}
-enemy_death_kind;
-
-void enemy_logical_death(unsigned int i, enemy_death_kind kind, int killer);
+void enemy_logical_death(unsigned int i, int killer);
 
 extern float debug_interp_alpha;  // last presented interpolation fraction
 

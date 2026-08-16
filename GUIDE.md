@@ -348,10 +348,15 @@ two.
 
 Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
 packed formation sends a visible wave travelling outward through it, and a tight
-enough formation goes down with it. What the blast cannot destroy stops the wave
-there: elites, champions, and any enemy it only wounds. So the reach a stack buys
-is worth more than the damage figure suggests, since reach is what decides
-whether the next enemy is close enough to carry the wave on.
+enough formation goes down with it. Only an enemy the blast merely wounds stops
+the wave there. So the reach a stack buys is worth more than the damage figure
+suggests, since reach is what decides whether the next enemy is close enough to
+carry the wave on.
+
+Elites and champions are fair game. They take the blast through the same health
+multiplier their tier gives them, so they wear down slowly, and a wave that
+finishes one pays its bounty in full to the ship whose blast it was, with the
+usual banner naming that ship in co-op.
 
 A boss takes the blast like anything else with hit points, and its health bar
 flashes for it. The damage goes through the same scaling a boss applies to your
@@ -366,9 +371,9 @@ the middle of the hull, so clipping the far end of a long enemy does the same as
 catching it square.
 
 A kill the wave makes is worth what shooting that enemy would have been. It pays
-its cash to the ship whose blast it was, feeds that ship's kill streak, and
-leaves behind whatever that enemy drops. Elites and champions are never destroyed
-by the wave, so no bounty is lost to it either.
+its cash to the ship whose blast it was, feeds that ship's kill streak, leaves
+behind whatever that enemy drops, and pays any bounty it carried. Nothing is lost
+by letting the wave take a kill instead of your guns.
 
 Anything that fires counts as your shot, so specials that scatter fire, and
 weapons whose shots burst into other shots, set the perk off exactly as your

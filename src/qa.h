@@ -98,10 +98,11 @@ void qa_test_special_light_events(void);
 void qa_test_chain_cascade(void);
 /* Drive a chain wave through the real pulse queue and drain (tyrian2.c, which owns both): a row of
  * `count` enemies worth `evalue` each, spaced so the wave carries, started by a pulse belonging to
- * `owner`. `linknum` 0 lays them out as lone fodder, anything else as the tiles of one linked hull.
+ * `owner`. `linknum` 0 lays them out as lone fodder, anything else as the tiles of one linked hull;
+ * `eliteState` 2 or 3 makes them elites or champions, which carry a bounty on top of their value.
  * Reports the cash each ship took over the whole wave, how many of the row it killed, and whether
  * drops appeared. Clears the enemy table; callers restore it. */
-void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum,
+void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,
                        long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
 
 /* Two-peer wire scenarios (qa_net.c), run by network_test_peer under the hostile proxy in

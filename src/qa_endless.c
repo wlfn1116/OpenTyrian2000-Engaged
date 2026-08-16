@@ -672,7 +672,8 @@ static void qa_reactive_state_matrix(void)
 			long paid0 = 0, paid1 = 0;
 			int killed = 0;
 			bool dropped = false;
-			qa_chain_kill_row(owner, worth, 4, shapes[s].linknum, &paid0, &paid1, &killed, &dropped);
+			qa_chain_kill_row(owner, worth, 4, shapes[s].linknum, 0,
+			                  &paid0, &paid1, &killed, &dropped);
 
 			const long mine = (owner == 0) ? paid0 : paid1;
 			const long theirs = (owner == 0) ? paid1 : paid0;
@@ -695,6 +696,52 @@ static void qa_reactive_state_matrix(void)
 		}
 	}
 
+	/* An elite or a champion the wave destroys owes its bounty on top of its value, and it owes it
+	 * to the ship whose blast killed it. The banner beside the figure names that ship online, from
+	 * the same `killer` this checks the payment against. */
+	static const struct { const char *tier; int state; } tiers[] = {
+		{ "elite",    2 },
+		{ "champion", 3 },
+	};
+
+	for (uint t = 0; t < COUNTOF(tiers); ++t)
+	for (int owner = 0; owner <= 1; ++owner)
+	{
+		coop_set_session_shared_credit(false);   // Individual, so the wallets answer separately
+
+		long paid0 = 0, paid1 = 0;
+		int killed = 0;
+		bool dropped = false;
+		qa_chain_kill_row(owner, worth, 1, 0, tiers[t].state, &paid0, &paid1, &killed, &dropped);
+
+		const long mine = (owner == 0) ? paid0 : paid1;
+		const long theirs = (owner == 0) ? paid1 : paid0;
+
+		snprintf(label, sizeof(label),
+		         "a wave that kills an %s pays P%d %ld, its value and its bounty",
+		         tiers[t].tier, owner + 1, mine);
+		qa_check(killed >= 1 && mine > worth, label);
+
+		snprintf(label, sizeof(label), "...and none of that %s bounty reaches the partner, who took %ld",
+		         tiers[t].tier, theirs);
+		qa_check(theirs == 0, label);
+	}
+
+	/* A champion is the dearer tier, so the two figures have to differ. Equal ones would mean the
+	 * blast pays a flat bounty and the tier premium is going unread. */
+	{
+		long elitePaid = 0, elitePartner = 0;
+		long champPaid = 0, champPartner = 0;
+		int killed = 0;
+		bool dropped = false;
+		coop_set_session_shared_credit(false);
+		qa_chain_kill_row(0, worth, 1, 0, 2, &elitePaid, &elitePartner, &killed, &dropped);
+		qa_chain_kill_row(0, worth, 1, 0, 3, &champPaid, &champPartner, &killed, &dropped);
+		snprintf(label, sizeof(label), "a champion pays more than an elite, %ld against %ld",
+		         champPaid, elitePaid);
+		qa_check(champPaid > elitePaid, label);
+	}
+
 	/* A streak only advances for a ship flying a kill-fire drive, so both need one before Combo
 	 * Feed has anything to divide. */
 	const unsigned savedMods[2] = { endlessPlayerMods[0], endlessPlayerMods[1] };
@@ -712,7 +759,7 @@ static void qa_reactive_state_matrix(void)
 			int killed = 0;
 			bool dropped;
 			memset(endlessComboKills, 0, sizeof(endlessComboKills));
-			qa_chain_kill_row(owner, worth, 4, 0, &paid0, &paid1, &killed, &dropped);
+			qa_chain_kill_row(owner, worth, 4, 0, 0, &paid0, &paid1, &killed, &dropped);
 
 			const int mine = endlessComboKills[owner], theirs = endlessComboKills[1 - owner];
 			snprintf(label, sizeof(label),

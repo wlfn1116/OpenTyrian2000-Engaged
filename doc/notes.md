@@ -499,9 +499,10 @@ one target however many tiles it holds, chosen once per pulse through
 `chain_group_target`, which reports the blast as reaching it when any tile is in
 range and lands the hit at the middle of the tiles still alive. The tile nearest
 that middle takes the damage, so a hull with a scaled accumulator spends into one
-place rather than wherever the blast clipped it. `chain_target_eligible` refuses
-255 (the invulnerable sentinel) and admits 254 (the ordinary boss armor cap), so a
-damageable boss is a target like anything else.
+place rather than wherever the blast clipped it. `chain_target_eligible` takes
+everything carrying hit points, bosses and elite tiers included, refusing only
+pickups, flag-setters and 255, the invulnerable sentinel. 254 is the ordinary boss
+armor cap and is admitted.
 
 Chain damage goes through `enemy_spend_damage`, the same divisor and accumulator
 the player-shot loop and the ramming path use, so a boss or an elite-tier hull
@@ -510,17 +511,21 @@ accumulator swallows whole still shows the flash and lights the boss bar, or a
 heavily scaled hull would take the blast in silence. A linked hull that runs out
 of armor goes down whole, through `chain_destroy_group`: one tile left standing
 would orphan the rest, so every live tile takes `enemy_part_destroy`, the same
-sequence a killing shot runs. Those deaths are FULL, which is what queues the
-wave's next hop and lets a dying boss carry it.
+sequence a killing shot runs. A lone enemy takes that same call. Running the whole
+sequence is what pays the bounty an elite or champion owes, fires the death effects
+its tier carries, and queues the wave's next hop, all of them credited to the ship
+whose blast it was; `endlessAwardEliteKill` dedupes the bounty per link, so a
+multi-tile elite pays once.
 
 What a pulse destroys pulses in turn, through `chain_queue_at`. A drain claims the
 stretch of queue standing at entry, and what it queues below that lands on the
 next tick, so the wave advances a hop at a time and can be watched crossing a
-formation. It cannot run away: a pop only ever destroys a lone enemy, which the
-kill removes from the field before its pulse is queued, so the wave can only
-spread outward into what is still alive, and `CHAIN_QUEUE_MAX` bounds one hop
-besides. A cascade pulse inherits the owner of the pulse that caused it, so the
-whole wave is measured against the ship that started it.
+formation. It cannot run away: whatever a pulse destroys is off the field before
+its own pulse is queued, so the wave only spreads outward into what is still
+alive, a linked hull queues one pulse rather than one per tile, and
+`CHAIN_QUEUE_MAX` bounds one hop besides. A cascade pulse inherits the owner of
+the pulse that caused it, so the whole wave is measured against the ship that
+started it.
 
 Spending a tick per hop is what puts pulses in the queue across a frame boundary,
 which has two consequences. The owner array has to be registered (above). And a
