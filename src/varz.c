@@ -300,9 +300,9 @@ JE_byte     astralDuration;
 JE_word     flareDuration;
 JE_boolean  flareStart;
 JE_shortint flareColChg;
-/* The full-screen grade on screen right now was installed by a flare special, not by the level.
-   Presentation-only: it lets the Special Tint setting suppress the flare's wash without touching
-   levelFilter itself, which is simulation state a peer would desync against. */
+/* The full-screen grade on screen right now was installed by a flare special rather than the level.
+   Decides which grade a flare may pulse and release (simulation state, rollback-registered) and
+   lets the Special Tint setting hide a flare's wash without touching levelFilter. */
 bool        flareOwnsFilter = false;
 JE_byte     specialWait;
 JE_byte     nextSpecialWait;
@@ -1203,7 +1203,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 			else
 				flareColChg = 1;
 
-			if (levelFilter == 7)
+			// Pulse only a grade this flare installed; a level's own filter 7 keeps its brightness.
+			if (flareOwnsFilter && levelFilter == 7)
 			{
 				if (levelBrightness < -6)
 				{
@@ -1281,7 +1282,10 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		flareDuration = 0;
 		flareFromTwiddle = false;
 		twiddleFlareShotWait = 0;
-		if (levelFilter == specialWeaponFilter)
+		// Release the grade only if a flare installed it and this one carries a tint (in co-op the
+		// holder may be the other ship's). Comparing colours let a tint-less flare (-99) match a
+		// level's brightness-only flash. See doc/notes.md, "Flare specials and the level grade".
+		if (flareOwnsFilter && specialWeaponFilter != -99)
 		{
 			levelFilter = -99;
 			levelBrightness = -99;
@@ -2497,4 +2501,5 @@ void varz_register_rollback(void)
 	rollback_register("vz.flareFromTwiddle",    &flareFromTwiddle, sizeof(flareFromTwiddle));
 	rollback_register("vz.twiddleFlareWait",    &twiddleFlareShotWait, sizeof(twiddleFlareShotWait));
 	rollback_register("vz.twiddleWait",         twiddleWait, sizeof(twiddleWait));
+	rollback_register("vz.flareOwnsFilter",     &flareOwnsFilter, sizeof(flareOwnsFilter));
 }

@@ -1689,6 +1689,25 @@ afterwards. `TWIDDLE_MIN_WAIT` floors the gap. A twiddle that starts a flare is
 paced by that flare, whose tail then charges `twiddleWait`. Deduct shield or
 armour only when the whole charge is affordable.
 
+### Flare specials and the level grade
+
+One full-screen grade (`levelFilter`, `levelBrightness`, `filterActive`,
+`filterFade`) is shared by level script event 44 and the flare-family specials
+(stype 5-11 and 16). Only Flare, SandStorm and MineField carry a tint
+(`specialWeaponFilter` 7, 1, 3); the rest run their flare with -99, which is
+also the "no colour" value a brightness-only level flash uses (BRAINIAC,
+EYESPY, LAVA RUN and ASSASSIN fade to white on `levelFilter` -99). A flare
+takes the grade only while the level's is inert (`!filterActive`, or -99/-99
+after a fade completes) and marks it with `flareOwnsFilter`; event 44 and the
+level start clear the mark. The flare pulses brightness (filter 7) and clears
+the grade when it ends only while it holds the mark and has a tint. Upstream
+compared colours at the end instead, so any tint-less flare that ran out during
+a level flash ended the fade at once, and a Flare ending over CORE's late red
+tint (filter 7) removed it. `flareOwnsFilter` is rollback state for the same
+reason `filterActive` is. In two-ship co-op the flare globals swap per ship
+while the mark stays global, so the other ship's tinted flare ending drops the
+holder's grade for one tick before it retakes it.
+
 ## Audio, logs, and platforms
 
 MIDI backends convert LDS through vendored midiproc and run their own sequencer

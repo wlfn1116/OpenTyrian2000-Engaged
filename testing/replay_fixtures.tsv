@@ -50,6 +50,13 @@
 # previous line's values, so neither the salvo bump, the raised per-stack damage, nor the move
 # from the enemy-health ramp to the owner's damage scale moves the demos. None of them can:
 # the perk is Endless-only and the shipped demos never fire a pulse.
-1 180 ef9c276d
-2 180 bb90345a
-3 180 6f74a32b
+# Regenerated 2026-08-16, for a snapshot-shape change with no simulation change behind it:
+# flareOwnsFilter now decides which full-screen grade a flare special may pulse and release, so
+# it joined the registry (vz.flareOwnsFilter, one byte). Verified by building with that single
+# rollback_register line removed, every other edit in the commit kept: all three hashes and the
+# layout hash came back at the previous line's values, so the ownership gate itself moves none
+# of the demos. Only a flare running out over a live level grade could, and none of the shipped
+# demos does that.
+1 180 75d3e2ff
+2 180 98679efe
+3 180 5e30de71

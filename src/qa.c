@@ -5626,6 +5626,120 @@ static void qa_test_twiddle_cooldown(void)
 	JE_resetTwiddleClocks();
 }
 
+// One tick of the live flare inside JE_doSpecialShot, with every fire gate shut.
+static void qa_flare_tick(void)
+{
+	uint armor = 30, shield = 50;
+	SFExecuted[0] = 0;
+	JE_doSpecialShot(1, &armor, &shield);
+}
+
+/* Which full-screen grade a flare special may pulse and release: a tint-less flare running out
+ * leaves a level's brightness flash alone, a tinted one leaves a level's own filter alone, and a
+ * flare that took an idle grade hands it back. See doc/notes.md, "Flare specials and the level
+ * grade". */
+static void qa_test_flare_grade_ownership(void)
+{
+	const JE_boolean savedActive = filterActive, savedFade = filterFade;
+	const JE_boolean savedFadeStart = filterFadeStart, savedOwns = flareOwnsFilter;
+	const JE_shortint savedFilter = levelFilter, savedBright = levelBrightness;
+	const JE_shortint savedChg = levelBrightnessChg, savedColChg = flareColChg;
+	const JE_shortint savedWpnFilter = specialWeaponFilter, savedFreq = specialWeaponFreq;
+	const JE_byte savedWait = specialWait;
+	const JE_byte savedNextWait = nextSpecialWait, savedRepeat = shotRepeat[SHOT_SPECIAL];
+	const JE_byte savedZing = zinglonDuration, savedAstral = astralDuration;
+	const JE_word savedFlare = flareDuration;
+	const JE_boolean savedFlareStart = flareStart, savedLink = linkToPlayer;
+	const JE_boolean savedAuto = autoFireSpecial, savedDbgAuto = debugAutofireTwiddle;
+	const JE_boolean savedTrigger = debugTwiddleTrigger, savedEndless = endlessMode;
+	const JE_byte savedDbgTwiddle = debugTwiddleSpecial, savedExec = SFExecuted[0];
+	const Player saved0 = player[0];
+
+	player[0].items.special = 0;
+	autoFireSpecial = false;
+	debugAutofireTwiddle = false;
+	debugTwiddleTrigger = false;
+	debugTwiddleSpecial = 0;
+	endlessMode = false;
+	endlessSetFxPlayer(0);
+	JE_resetTwiddleClocks();
+	specialWeaponFreq = 0;  // the flare spawns nothing
+	specialWait = 0;
+	nextSpecialWait = 0;
+	linkToPlayer = false;
+	zinglonDuration = 0;
+	astralDuration = 0;
+
+	// A level's white flash half way up, and a tint-less flare (MegaLaser, Missile Pod...) on its
+	// last tick: the flash keeps ramping.
+	filterActive = true; filterFade = true; filterFadeStart = true;
+	levelFilter = -99; levelBrightness = 6; levelBrightnessChg = 1;
+	flareOwnsFilter = false;
+	specialWeaponFilter = -99;
+	flareDuration = 1; flareStart = true;
+	qa_flare_tick();
+	qa_check(!flareStart && flareDuration == 0 && filterActive && filterFade
+	         && levelFilter == -99 && levelBrightness == 6,
+	         "a tint-less flare running out leaves a level's white flash to finish");
+
+	// A level's own filter 7 (CORE's late red tint) with a Flare running: no pulse, no ownership,
+	// and the tint outlives the flare.
+	filterActive = true; filterFade = false;
+	levelFilter = 7; levelBrightness = -99;
+	flareOwnsFilter = false;
+	specialWeaponFilter = 7;
+	flareDuration = 5; flareStart = true;
+	qa_flare_tick();
+	const bool leftAlone = !flareOwnsFilter && filterActive && levelFilter == 7
+	                    && levelBrightness == -99;
+	flareDuration = 1;
+	qa_flare_tick();
+	qa_check(leftAlone && !flareStart && filterActive && levelFilter == 7 && levelBrightness == -99,
+	         "a Flare over a level's own red tint neither pulses nor removes it");
+
+	// An idle grade (the level's fade long finished): the Flare takes it, pulses it, and hands it
+	// back when it runs out.
+	filterActive = true; filterFade = false;
+	levelFilter = -99; levelBrightness = -99;
+	flareOwnsFilter = false;
+	flareDuration = 5; flareStart = true;
+	qa_flare_tick();
+	const bool taken = flareOwnsFilter && filterActive && levelFilter == 7
+	                && (levelBrightness == 1 || levelBrightness == -1);
+	flareDuration = 1;
+	qa_flare_tick();
+	qa_check(taken && !flareStart && !flareOwnsFilter && !filterActive
+	         && levelFilter == -99 && levelBrightness == -99,
+	         "a Flare takes an idle grade, pulses it, and hands it back when it runs out");
+
+	player[0] = saved0;
+	SFExecuted[0] = savedExec;
+	debugTwiddleSpecial = savedDbgTwiddle;
+	endlessMode = savedEndless;
+	debugTwiddleTrigger = savedTrigger;
+	debugAutofireTwiddle = savedDbgAuto;
+	autoFireSpecial = savedAuto;
+	linkToPlayer = savedLink;
+	flareStart = savedFlareStart;
+	flareDuration = savedFlare;
+	astralDuration = savedAstral;
+	zinglonDuration = savedZing;
+	shotRepeat[SHOT_SPECIAL] = savedRepeat;
+	nextSpecialWait = savedNextWait;
+	specialWait = savedWait;
+	specialWeaponFreq = savedFreq;
+	specialWeaponFilter = savedWpnFilter;
+	flareColChg = savedColChg;
+	levelBrightnessChg = savedChg;
+	levelBrightness = savedBright;
+	levelFilter = savedFilter;
+	flareOwnsFilter = savedOwns;
+	filterFadeStart = savedFadeStart;
+	filterFade = savedFade;
+	filterActive = savedActive;
+	JE_resetTwiddleClocks();
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -5722,6 +5836,7 @@ int qa_run_unit_suite(void)
 	qa_test_twiddle_strictness();
 	qa_test_twiddle_cooldown();
 	qa_test_twiddle_charges();
+	qa_test_flare_grade_ownership();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
