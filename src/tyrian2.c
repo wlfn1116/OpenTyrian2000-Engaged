@@ -1577,12 +1577,10 @@ static void vt_ship_step_player(int p, float dt)
 		vt_x[p] += endlessGravityDriftX() * dt;
 		vt_y[p] += endlessGravityDriftY() * dt;
 
-		// Match the simulation bounds, including player 1's tighter two-player bottom edge.
-		const float botMargin = (float)((p == 0) ? SHIP_BOTTOM_MARGIN - 6 : SHIP_BOTTOM_MARGIN);
-
+		// Same playfield bounds the sim enforces (mainint.c); both seats share the floor.
 		if (vt_x[p] > PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN) { vt_x[p] = PLAYFIELD_WIDTH - SHIP_RIGHT_MARGIN; if (vt_vx[p] > 0) vt_vx[p] = 0; }
 		if (vt_x[p] < SHIP_LEFT_MARGIN)                    { vt_x[p] = SHIP_LEFT_MARGIN;                    if (vt_vx[p] < 0) vt_vx[p] = 0; }
-		if (vt_y[p] > botMargin)                           { vt_y[p] = botMargin;                           if (vt_vy[p] > 0) vt_vy[p] = 0; }
+		if (vt_y[p] > SHIP_BOTTOM_MARGIN)                  { vt_y[p] = SHIP_BOTTOM_MARGIN;                  if (vt_vy[p] > 0) vt_vy[p] = 0; }
 		if (vt_y[p] < SHIP_TOP_MARGIN)                     { vt_y[p] = SHIP_TOP_MARGIN;                     if (vt_vy[p] < 0) vt_vy[p] = 0; }
 
 		// Rollback applies local VT at the next tick, so present the live integrator position.

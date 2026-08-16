@@ -9824,18 +9824,10 @@ redo:
 			constantLastX = -constantLastX;
 		}
 
-		if (isNetworkGame && playerNum_ == 1)
-		{
-			// Network mode keeps a 6px tighter bottom bound (room for the other
-			// player's ship); keep it relative to SHIP_BOTTOM_MARGIN as that is tuned.
-			if (this_player->y > SHIP_BOTTOM_MARGIN - 6)
-				this_player->y = SHIP_BOTTOM_MARGIN - 6;
-		}
-		else
-		{
-			if (this_player->y > SHIP_BOTTOM_MARGIN)
-				this_player->y = SHIP_BOTTOM_MARGIN;
-		}
+		// Both seats share one floor, online and local; a docked wing pinned 8px
+		// below player one clamps to the same edge.
+		if (this_player->y > SHIP_BOTTOM_MARGIN)
+			this_player->y = SHIP_BOTTOM_MARGIN;
 
 		if (this_player->y < SHIP_TOP_MARGIN)
 			this_player->y = SHIP_TOP_MARGIN;
