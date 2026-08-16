@@ -1223,6 +1223,19 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 	return false;
 }
 
+/* Re-armed by every advance, so a peer that gained a few frames during the wait and then left the
+ * level trips it too. Pure in its arguments so the unit suite can drive the clock. */
+bool nrb_peer_idle(Uint32 now, Uint32 newest, Uint32 *newest_seen, Uint32 *newest_tick)
+{
+	if (newest != *newest_seen)
+	{
+		*newest_seen = newest;
+		*newest_tick = now;
+	}
+
+	return now - *newest_tick > NRB_PEER_IDLE_TIME_OUT;
+}
+
 /* Desync recovery engine. */
 
 /* FNV-1a over the compressed stream: guards the assembly logic, not the link
@@ -1951,7 +1964,8 @@ enum
 static int nrb_menu_frame_ready(Uint32 *resim_from)
 {
 	const Uint32 wait_start = SDL_GetTicks();
-	const Uint32 newest_at_start = remote_newest;
+	Uint32 newest_seen = remote_newest;
+	Uint32 newest_tick = wait_start;
 	bool stall_reported = false;
 
 	while (verified_upto < nrb_cur)
@@ -1968,7 +1982,7 @@ static int nrb_menu_frame_ready(Uint32 *resim_from)
 
 		/* A peer idle this long has left through an unmodeled route. Stop waiting so
 		 * the local player retains access to the menu and quit path. */
-		if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
+		if (nrb_peer_idle(SDL_GetTicks(), remote_newest, &newest_seen, &newest_tick))
 		{
 			char detail[192];
 			snprintf(detail, sizeof(detail),
@@ -2222,7 +2236,8 @@ NrbStep nrb_driver(void)
 	if (reallyEndLevel && !end_agreed)
 	{
 		const Uint32 wait_start = SDL_GetTicks();
-		const Uint32 newest_at_start = remote_newest;
+		Uint32 newest_seen = remote_newest;
+		Uint32 newest_tick = wait_start;
 		bool stall_reported = false;
 
 		while (verified_upto < nrb_cur && reallyEndLevel)
@@ -2235,7 +2250,7 @@ NrbStep nrb_driver(void)
 				return nrb_begin_resim(K);
 
 			/* If the peer stops producing frames, rely on the next shop rendezvous instead of wedging. */
-			if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
+			if (nrb_peer_idle(SDL_GetTicks(), remote_newest, &newest_seen, &newest_tick))
 			{
 				char detail[192];
 				snprintf(detail, sizeof(detail),
@@ -2246,7 +2261,11 @@ NrbStep nrb_driver(void)
 				break;
 			}
 		}
-		return NRB_STEP_PRESENT;  /* confirmed: let the exit happen */
+
+		/* Confirmed: let the exit happen. Every earlier record rides in the packets after it; the
+		 * final one has none, so a peer still confirming its own end gets a second copy. */
+		nrb_send_input();
+		return NRB_STEP_PRESENT;
 	}
 	if (reallyEndLevel)
 		return NRB_STEP_PRESENT;

@@ -1402,7 +1402,8 @@ DrbStep drb_driver(bool roundOver)
 	if (roundOver)
 	{
 		const Uint32 wait_start = SDL_GetTicks();
-		const Uint32 newest_at_start = remote_newest;
+		Uint32 newest_seen = remote_newest;
+		Uint32 newest_tick = wait_start;
 		bool stall_reported = false;
 
 		while (verified_upto < drb_cur)
@@ -1414,8 +1415,9 @@ DrbStep drb_driver(bool roundOver)
 			if (K != 0)
 				return drb_begin_resim(K);
 
-			/* A peer that stopped producing frames has left; end the round rather than wedge. */
-			if (remote_newest == newest_at_start && SDL_GetTicks() - wait_start > 8000)
+			/* A peer that stopped producing frames has moved on or left; end the round rather
+			 * than wedge. */
+			if (nrb_peer_idle(SDL_GetTicks(), remote_newest, &newest_seen, &newest_tick))
 			{
 				char detail[192];
 				snprintf(detail, sizeof(detail),
