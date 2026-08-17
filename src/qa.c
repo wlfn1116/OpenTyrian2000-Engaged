@@ -2129,7 +2129,7 @@ static void qa_test_guidance_perk(void)
 	id = qa_guidance_fire(SHOT_SPECIAL, plainGun);
 	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...nor a special's at any stack");
 	id = qa_guidance_fire(SHOT_FRONT, guidedGun);
-	int tightened = guidedOwn - ENDLESS_PERK_GUIDANCE_STEP;
+	int tightened = guidedOwn - ENDLESS_PERK_GUIDANCE_TIGHTEN;
 	if (tightened < 1)
 		tightened = 1;
 	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1

@@ -507,7 +507,7 @@ int endlessPerkGuidanceDelay(uint bay, int ownDelay)
 		return 0;
 
 	const int delay = (ownDelay > 0)
-	                ? ownDelay - stacks * ENDLESS_PERK_GUIDANCE_STEP
+	                ? ownDelay - stacks * ENDLESS_PERK_GUIDANCE_TIGHTEN
 	                : ENDLESS_PERK_GUIDANCE_DELAY - (stacks - 1) * ENDLESS_PERK_GUIDANCE_STEP;
 	return delay < 1 ? 1 : delay;
 }
