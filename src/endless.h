@@ -830,7 +830,7 @@ void endlessOpeningSalvoTick(void);        // Opening Salvo: advance the main-gu
 bool endlessOpeningSalvoConsume(void);     // Opening Salvo: main gun fired -> reset idle, arm the charged-volley flag for the rest of this tick (mainint.c)
 bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is a consumed salvo window running? (shots.c: power-free + tag every shot; varz.c specials)
 int  endlessOpeningSalvoGaugePercent(void); // Opening Salvo: share of the gauge that reads green, 0..100 (tyrian2.c draw_power_gauge)
-int  endlessOpeningSalvoScale(int value);  // Opening Salvo: scale a non-damage special magnitude x2.5 while the window runs (varz.c repulsor/heal/invuln)
+int  endlessOpeningSalvoScale(int value);  // Opening Salvo: x2.5 a magnitude no shot tag can reach while the window runs (specials, Zinglon pillar, ram)
 int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
 int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
 int  endlessPerkKineticCooldownCut(int remaining);  // Kinetic Converter: ticks a hit takes off a special-recharge clock holding `remaining` (varz.c JE_playerDamage)

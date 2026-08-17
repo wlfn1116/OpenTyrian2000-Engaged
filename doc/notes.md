@@ -486,13 +486,15 @@ keeps its silent ram removal, and `JE_playerCollide` names the ramming ship as
 the effect player before it reads the ram perks.
 
 Reinforced Prow scales only the enemy's side of a contact tick
-(`endlessPerkProwRamDamage`, then Knife Fight on top, capped at the enemy's
-armor) and cuts the ship's share last, after the depth ramp and the elite and
-Rampage premiums (`endlessPerkProwContactPercent`, floored at one point of a
-real hit); the ship's share still starts from `min(armorleft, damageRate)`, so a
-dying enemy hurts less as it always did. An invulnerable ship rams in Endless
-without being rammed back, gated by `endlessRamWhileInvulnerable`: it lands on
-the ticks where `invulnerable_ticks` is a multiple of
+(`endlessPerkProwRamDamage`, lifted by `endlessOpeningSalvoScale` while a salvo
+window runs, with Knife Fight's bonus off the unlifted figure added to that,
+capped at the enemy's armor) and cuts the ship's share last, after the depth
+ramp and the elite and Rampage premiums (`endlessPerkProwContactPercent`,
+floored at one point of a real hit); the ship's share still starts from
+`min(armorleft, damageRate)`, so a dying enemy hurts less as it always did. An
+invulnerable ship rams in Endless without being rammed back, gated by
+`endlessRamWhileInvulnerable`: it lands on the ticks where
+`invulnerable_ticks` is a multiple of
 `ENDLESS_RAM_INVULN_CADENCE`, a cadence read off registered state so it needs no
 lockout timer of its own and re-simulates as it ran. Failsafe and the
 invulnerability specials therefore feed a ram build at a bounded rate. Vanilla
@@ -509,7 +511,10 @@ both the damage and the blood, since the gap costs a walk of the hull. The shot
 loop adds the bonus in raw damage beside Executioner (`perkRaw`), before the
 health accumulator, and undoes both together (`perkBonus`) before an overkill
 shot carries on, so a scaled hull takes it through the same divide. The ram site
-adds it too; the chain drain does not.
+adds it too. There the bonus and the Opening Salvo lift are both measured off
+the Prow figure and summed, while on a shot the salvo has already raised the
+damage the bonus is taken from, so the two compound. The chain drain adds no
+Knife Fight bonus.
 
 `endlessPerkKnifeFightBlood` is the drip a raised hit leaves, through the new
 `JE_doSPDripSeeded` shape: drops placed within a few px of the hull's centre,
@@ -1022,7 +1027,10 @@ Perk UI and gameplay use the same accessors. In co-op, use `perkMine` for the
 local outpost owner and `perkFx` for the ship whose effect is being calculated.
 
 Opening Salvo tags emitted shots. Chained projectiles inherit the tag so delayed
-secondary damage keeps the original volley bonus.
+secondary damage keeps the original volley bonus. What the tag cannot reach
+reads the live window through `endlessOpeningSalvoScale` instead: a special that
+fires no shot, the Zinglon pillar, and a ram. All three ride the window without
+spending it, since only the front gun's own volley consumes a charge.
 
 The window opens at the top of the tick's shot section, ahead of everything that
 fires in it. `JE_doSpecialShot` runs before the weapon loop, so
@@ -1232,7 +1240,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 64.
+`NET_VERSION` bump. The current value is 65.
 
 Recent versions:
 
@@ -1283,14 +1291,17 @@ Recent versions:
 | 62 | Endless ram kills, invulnerable-ram cadence, Reinforced Prow, Knife Fight and Deflector perks |
 | 63 | 64-bit wallets: shop-sync and debug-sync cash slots, the resume record's cash, 64-bit prices in the Endless player block, and the Endless run transfer as text |
 | 64 | Endless debug block on the zone jump and the debug-sync block: depth, modifiers, both ships' perks and personal buffs, and the campaign-effects flag |
+| 65 | An open Opening Salvo window lifts a ram, Knife Fight's bonus added beside the lift |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name
 the ship they belong to rather than reading the ambient effect context, and the
 returned Deflector shot lands in `playerShotData` / `shotAvail`, which are
-registered. `qa_ram_kill_row` drives the real destruction walk for both Credit
-rules, both ships as the rammer, a lone enemy and a linked hull, and an elite
-whose bounty must reach the rammer alone.
+registered. The Opening Salvo window the ram reads is per-ship registered state
+(`endless.salvoWindow`), so a re-simulated ram lifts as the live one did.
+`qa_ram_kill_row` drives the real destruction walk for both Credit rules, both
+ships as the rammer, a lone enemy and a linked hull, and an elite whose bounty
+must reach the rammer alone.
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

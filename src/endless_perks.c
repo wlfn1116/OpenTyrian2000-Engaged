@@ -382,7 +382,8 @@ int endlessOpeningSalvoGaugePercent(void)
 	return (endlessSalvoIdle[endlessFxPlayer()] >= ENDLESS_PERK_SALVO_IDLE) ? 100 : 0;
 }
 
-// x2.5 a non-damage special magnitude (repulsor push, heal, invuln duration) while a window is up.
+// x2.5 a magnitude no per-shot salvo tag can reach while a window is up: a special that fires
+// nothing (repulsor push, heal, invuln duration), the Zinglon pillar, and a ram.
 // The floor matters: the repulsor hands this a 1, which would otherwise scale back to itself.
 int endlessOpeningSalvoScale(int value)
 {

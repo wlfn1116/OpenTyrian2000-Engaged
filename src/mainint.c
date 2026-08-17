@@ -11179,7 +11179,10 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					const int knifeRam = endlessPerkKnifeFightBonus(damage_to_enemy, knifePct);
 					if (knifeRam > 0)
 						endlessPerkKnifeFightBlood((unsigned)z, knifePct);
-					damage_to_enemy += knifeRam;
+					// An open Opening Salvo window lifts the ram as it lifts a volley. Its lift and
+					// Knife Fight's bonus come off the same Prow figure and are summed, and a ram
+					// rides the window without spending it.
+					damage_to_enemy = endlessOpeningSalvoScale(damage_to_enemy) + knifeRam;
 					if (damage_to_enemy > enemy[z].armorleft)
 						damage_to_enemy = enemy[z].armorleft;
 

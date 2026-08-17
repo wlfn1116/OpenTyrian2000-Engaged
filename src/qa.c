@@ -2411,6 +2411,26 @@ static void qa_test_reinforced_prow_perk(void)
 	         "...only in an endless run");
 	endlessMode = true;
 
+	/* The ram site's own arithmetic: an open Opening Salvo window lifts the Reinforced Prow figure,
+	 * and Knife Fight's bonus comes off that same unlifted figure, the two summed. Neither bonus
+	 * reaches the ship's own share. */
+	const int savedWindow = endlessSalvoWindow[0];
+	endlessSalvoWindow[0] = 0;
+	const int stockRam = endlessPerkProwRamDamage(2);
+	const int knifeRam = endlessPerkKnifeFightBonus(stockRam, 50);
+	qa_check(stockRam == 8 && knifeRam == 4
+	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 12,
+	         "with no salvo window a three-stack ram is its stock x4 plus Knife Fight");
+	endlessSalvoWindow[0] = ENDLESS_PERK_SALVO_WINDOW;
+	qa_check(endlessOpeningSalvoScale(stockRam) == 20
+	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 24,
+	         "...and an open Opening Salvo window lifts that ram 2.5x, Knife Fight added to it");
+	qa_check(endlessPerkKnifeFightBonus(stockRam, 50) == knifeRam,
+	         "...and Knife Fight's bonus reads the same inside the window as outside");
+	qa_check(endlessPerkProwContactPercent() == 25,
+	         "...and never touching what that ram costs the ship");
+	endlessSalvoWindow[0] = savedWindow;
+
 	// Personal: the partner rams on its own stacks.
 	coopEndlessMode = true;
 	endlessSetFxPlayer(1);

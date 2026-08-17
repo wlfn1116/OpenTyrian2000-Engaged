@@ -334,10 +334,12 @@ fire the twin at the same charge, and the shop preview shows the pair.
 side 2 per tick; every stack multiplies the enemy's share (2x, 3x, 4x) and cuts
 yours (75%, 50%, 25%), never below one point. An enemy you destroy by ramming
 pays its cash, drops, and bounty exactly as a shot one does, feeds your kill
-streak, and starts a Chain Reaction wave. While you are invulnerable you ram
-without being rammed back, but land one contact hit every ten ticks instead of
-one every tick. Bosses, elites, and champions spend ram damage through the same
-health multiplier your guns face.
+streak, and starts a Chain Reaction wave. An open Opening Salvo window lifts
+that ram 2.5x, and Knife Fight adds its bonus to the total, both measured from
+the same contact damage. While you are invulnerable you ram without being rammed
+back, but land one contact hit every ten ticks instead of one every tick.
+Bosses, elites, and champions spend ram damage through the same health
+multiplier your guns face.
 
 **Knife Fight** measures the gap between your hull and the nearest edge of the
 enemy you hit, counting the nearest tile of a body built from several, so
@@ -361,7 +363,9 @@ one-second window gives 2.5x damage, removes generator cost, and covers
 everything you fire inside it, sidekicks and the special included. The generator
 gauge turns green when the volley is ready. A special that fires no shot, such
 as a repulsor, a repair, or an invulnerability, gets the 2.5x on its effect
-instead.
+instead. Ramming inside the window hits for 2.5x too, on top of Reinforced
+Prow's own multiplier. A ram never spends the charge, so the main gun still has
+to fire to open the window.
 
 **Kinetic Converter** pays out on every hit that costs shield or hull: 8% per
 stack off whatever is left of the special recharge, 0.25 sidekick rounds per
