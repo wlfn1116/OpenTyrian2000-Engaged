@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       63           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       64           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1728,6 +1728,7 @@ static Uint16 network_debug_flags_pack(void)
 	flags |= debugTwiddleTrigger       ? 1 << 11 : 0;
 	flags |= constantPlay              ? 1 << 12 : 0;
 	flags |= constantDie               ? 1 << 13 : 0;
+	flags |= endlessCampaignMods       ? 1 << 14 : 0;
 	return flags;
 }
 
@@ -1750,6 +1751,17 @@ static void network_debug_flags_adopt(Uint16 flags, bool preserve_pending_trigge
 	                         || (preserve_pending_trigger && debugTwiddleTrigger);
 	constantPlay              = (flags & (1 << 12)) != 0;
 	constantDie               = (flags & (1 << 13)) != 0;
+
+	/* The other half of endlessFxActive: with the two machines disagreeing on it, one flies the
+	 * endless perks and modifiers in a campaign level and the other does not. Armed through the
+	 * shared path, exactly as the debug row toggles it (mainint.c). */
+	if (!endlessMode)
+	{
+		const bool campaignMods = (flags & (1 << 14)) != 0;
+		if (campaignMods && !endlessCampaignMods)
+			endlessCampaignModsArm();
+		endlessCampaignMods = campaignMods;
+	}
 }
 
 /* Host-authoritative simulation settings.
@@ -2816,12 +2828,10 @@ bool network_sa_ship_peer_saw_us(void)
  * skip the fold when a jump exists; the host wins simultaneous jumps. */
 void network_endless_jump_publish(void)
 {
-	Uint16 depth = 0;
-	Uint64 mods = 0;
-	JE_byte perks[ENDLESS_JUMP_PERK_MAX], perkCount = 0;
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
 	JE_byte ep = 0, sec = 0, file = 0;
 
-	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
+	const bool mine = endlessJumpPickGet(block);
 	const bool myLevel = debugLevelPickGet(&ep, &sec, &file);
 
 	// Publish immediately so a partner waiting for this player's course can leave that wait.
@@ -2830,25 +2840,20 @@ void network_endless_jump_publish(void)
 
 	network_prepare(PACKET_ENDLESS_JUMP);
 	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
-	packet_out_temp->data[5] = (mine && myLevel) ? 1 : 0;   // a jump is only usable with its level
-	SDLNet_Write16(depth, &packet_out_temp->data[6]);
-	for (int b = 0; b < 8; ++b)
-		packet_out_temp->data[8 + b] = (Uint8)(mods >> (8 * b));
-	packet_out_temp->data[16] = ep;
-	packet_out_temp->data[17] = sec;
-	packet_out_temp->data[18] = file;
-	packet_out_temp->data[19] = perkCount;
-	memcpy(&packet_out_temp->data[20], perks, perkCount);
-	network_send(20 + perkCount);
+	packet_out_temp->data[5] = 1;   // a jump is only usable with its level, and both are here
+	packet_out_temp->data[6] = ep;
+	packet_out_temp->data[7] = sec;
+	packet_out_temp->data[8] = file;
+	packet_out_temp->data[9] = (Uint8)ENDLESS_DEBUG_BLOCK_SIZE;
+	memcpy(&packet_out_temp->data[10], block, ENDLESS_DEBUG_BLOCK_SIZE);
+	network_send(10 + ENDLESS_DEBUG_BLOCK_SIZE);
 }
 
 /* Adopt a queued jump without waiting. A true result tells both peers to skip course folding. */
 bool network_endless_jump_poll(void)
 {
-	Uint16 depth = 0;
-	Uint64 mods = 0;
-	JE_byte perks[ENDLESS_JUMP_PERK_MAX], perkCount = 0;
-	const bool mine = endlessJumpPickGet(&depth, &mods, perks, &perkCount);
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
+	const bool mine = endlessJumpPickGet(block);
 
 	if (!isNetworkGame || !coopEndlessMode)
 		return mine;
@@ -2862,23 +2867,18 @@ bool network_endless_jump_poll(void)
 		const bool ours = packet_in[0]->data[4] == (Uint8)thisPlayerNum;
 		bool theirs = false;
 
-		if (!ours && packet_in[0]->len >= 20 && packet_in[0]->data[5] != 0)
+		if (!ours && packet_in[0]->len > 10 && packet_in[0]->data[5] != 0)
 		{
 			// The host's jump wins if both jumped, so the two can never resolve it opposite ways.
 			if (!mine || !network_is_host)
 			{
-				// Trust the length over the count byte, and clamp the perk block to what our own
-				// table holds; a peer that knows more perks must not write past the end of ours.
-				const size_t have = (size_t)packet_in[0]->len - 20;
-				const JE_byte n = (JE_byte)(packet_in[0]->data[19] < have
-				                            ? packet_in[0]->data[19] : have);
-				Uint64 peerMods = 0;
-				for (int b = 0; b < 8; ++b)
-					peerMods |= (Uint64)packet_in[0]->data[8 + b] << (8 * b);
-				debugLevelPickApply(packet_in[0]->data[16], packet_in[0]->data[17],
-				                    packet_in[0]->data[18]);
-				endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[6]), peerMods,
-				                     &packet_in[0]->data[20], n);
+				// Trust the length over the block's own length byte, so a truncated packet cannot
+				// walk us past the end of what actually arrived.
+				const size_t have = (size_t)packet_in[0]->len - 10;
+				const size_t said = packet_in[0]->data[9];
+				debugLevelPickApply(packet_in[0]->data[6], packet_in[0]->data[7],
+				                    packet_in[0]->data[8]);
+				endlessJumpPickApply(&packet_in[0]->data[10], said < have ? said : have);
 			}
 			theirs = true;
 		}
@@ -3031,6 +3031,12 @@ static void network_level_barrier(Uint16 packet_type, bool settle_outbound)
 		// A debug-menu edit can arrive ahead of the level marker on the ordered channel.
 		// Apply it before advancing the queue to the marker behind it.
 		if (network_debug_sync_pump(false))
+			continue;
+
+		/* So can the peer's last outpost transaction. The retire below would destroy it, and an
+		 * acknowledged packet is never repeated, so their final purchase (a perk, a hull, a drive)
+		 * would be missing from our mirror of their ship for the whole level. */
+		if (network_shop_pump())
 			continue;
 
 		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == packet_type)
@@ -3519,7 +3525,7 @@ void network_settings_restore(void)
 #define NDS_GEN        4    /* Uint32: generation of the block            */
 #define NDS_SENDER     8    /* Uint8:  publishing player number, 1 or 2   */
 #define NDS_DIFFICULTY 9    /* Uint8                                      */
-#define NDS_FLAGS     10    /* Uint16: the boolean cheats                 */
+#define NDS_FLAGS     10    /* Uint16: the boolean cheats, + endlessCampaignMods at bit 14 */
 #define NDS_NOCLIP    12    /* Uint8                                      */
 #define NDS_CHARGEAF  13    /* Uint8:  chargeSidekickAutofire             */
 #define NDS_TWIDDLE   14    /* Uint8:  debugTwiddleSpecial                */
@@ -3528,7 +3534,8 @@ void network_settings_restore(void)
 #define NDS_ARMOR     58    /* Uint16 armor, shield, per player           */
 #define NDS_EXPERT    66    /* NDS_EXPERT_SLOTS x Uint16                  */
 #define NDS_EXPERT_SLOTS NETWORK_EXPERT_SLOTS
-#define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
+#define NDS_ENDLESS   (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)  /* ENDLESS_DEBUG_BLOCK_SIZE bytes */
+#define NDS_SIZE      (NDS_ENDLESS + ENDLESS_DEBUG_BLOCK_SIZE)
 
 // PlayerItems goes on the wire as flat bytes, enforced by this check. Growing it also
 // requires moving NDS_CASH and later offsets, then bumping NET_VERSION.
@@ -3570,6 +3577,10 @@ void network_debug_state_pack(Uint8 *buf)
 
 	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
 		SDLNet_Write16((Uint16)*expertSettings[i].value, &buf[NDS_EXPERT + i * 2]);
+
+	// The Endless panel's whole slate: depth, modifiers, both ships' perks and personal buffs.
+	// Carried here as well as on the zone jump, so any drift in it heals on the next debug edit.
+	endlessPackDebugBlock(&buf[NDS_ENDLESS]);
 }
 
 void network_debug_state_adopt(const Uint8 *buf, bool in_level)
@@ -3599,6 +3610,8 @@ void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 	for (int i = 0; i < expertSettingsCount && i < NDS_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NDS_EXPERT + i * 2]);
 	clamp_expert_settings();
+
+	endlessUnpackDebugBlock(&buf[NDS_ENDLESS]);
 
 	// Ships, hit boxes, shield ceilings and the sidekick pods are all cached off items[];
 	// the same rebuild the editing machine ran, minus the hull re-armor it already applied.

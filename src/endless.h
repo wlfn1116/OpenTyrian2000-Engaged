@@ -420,6 +420,16 @@ bool endlessSaveLegacyWasRead(void);      // ...and did this session read it thr
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 
+/* What the Endless debug panel rewrites behind the outpost's back: the run's modifier set and
+ * depth, and both ships' perk rows and personal buffs. The panel edits either ship straight into
+ * simulation state, so the block is whole-state and the adopter takes all of it; the debug-sync
+ * generation and the jump's host-wins rule settle two panels open at once. Rides the debug-sync
+ * block and the Endless zone jump; see "Endless debug panel online" in doc/notes.md. */
+#define ENDLESS_DEBUG_BLOCK_PERKS 32
+#define ENDLESS_DEBUG_BLOCK_SIZE  (8 + 2 + 2 * ENDLESS_DEBUG_BLOCK_PERKS + 2 * 8 + 2 * 4)
+void endlessPackDebugBlock(Uint8 *buf);
+void endlessUnpackDebugBlock(const Uint8 *buf);
+
 /* Online co-op resume. The host serializes the live run as the text a save slot holds and the
  * joiner adopts it. Returns 0 / false when there is nothing usable. */
 #define ENDLESS_RUN_WIRE_MAX 16384
@@ -857,6 +867,14 @@ int         endlessPerkMaxStack(int id);     // max stacks this perk allows
 // Perks are personal, so both sides of this pair name THIS machine's own player's stacks.
 int         endlessPerkGetOwned(int id);     // current owned stacks
 void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
+// ...and this pair names the ship outright, for the debug panel, which edits either one.
+int         endlessPerkGetOwnedFor(uint p, int id);
+void        endlessPerkSetOwnedFor(uint p, int id, int n);
+
+/* The kill-fire buffs one ship is flying or has bought (ENDLESS_PERSONAL_MOD_MASK). The setter
+ * re-derives that ship's live mask, so the debug panel can hand a buff to either ship. */
+Uint64 endlessPersonalBuffMods(uint p);
+void   endlessSetPersonalBuffMods(uint p, Uint64 bits);
 
 /* Save-codec regression hooks used by the project-owned migration/fuzz suite. */
 int  endlessSaveLegacyVersionMax(void);

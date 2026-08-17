@@ -118,7 +118,7 @@ static inline Uint64 net_bytes_read64(const void *areap)
 #define PACKET_CUSTOM_WEAPON 0x35    // owner, generation, chunk idx/count, len, <design chunk>
 #define PACKET_ENDLESS_RUN   0x36    // sender, generation, chunk idx/count, len, <run-record chunk>
 #define PACKET_SA_SHIP       0x37    // sender, chosen Super Arcade ship (1..SA)
-#define PACKET_ENDLESS_JUMP  0x38    // sender, armed, depth, mods, level pick, perk stacks
+#define PACKET_ENDLESS_JUMP  0x38    // sender, armed, level pick, len, <Endless debug block>
 
 #define PACKET_STATE_RESEND  0x40    // state_id
 #define PACKET_STATE         0x41    // <state>  (not acknowledged)

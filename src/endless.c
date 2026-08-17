@@ -102,6 +102,25 @@ void endlessApplyPurchasedMods(void)
 	}
 }
 
+/* One ship's kill-fire buffs, contract in endless.h. The live mask is what combat reads and the
+ * purchased mask is what a commit re-folds from, so the setter writes both. */
+Uint64 endlessPersonalBuffMods(uint p)
+{
+	if (p >= COUNTOF(endlessPurchasedMods))
+		return 0;
+	return (endlessPlayerMods[p] | (Uint64)endlessPurchasedMods[p]) & ENDLESS_PERSONAL_MOD_MASK;
+}
+
+void endlessSetPersonalBuffMods(uint p, Uint64 bits)
+{
+	if (p >= COUNTOF(endlessPurchasedMods))
+		return;
+	bits &= ENDLESS_PERSONAL_MOD_MASK;
+	endlessPurchasedMods[p] =
+		(unsigned)((endlessPurchasedMods[p] & ~ENDLESS_PERSONAL_MOD_MASK) | bits);
+	endlessPlayerMods[p] = endlessFoldPurchasedMods(endlessActiveMods, bits);
+}
+
 const char *endlessCourseChooserName(EndlessCourseChooser mode)
 {
 	switch (mode)

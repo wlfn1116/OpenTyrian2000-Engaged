@@ -900,12 +900,22 @@ int         endlessPerkGetOwned(int id)     { return endlessPerkEffective(endles
 
 void endlessPerkSetOwned(int id, int n)
 {
-	if (id < 0 || id >= PERK_COUNT)
+	endlessPerkSetOwnedFor(endlessEconomyIndex(), id, n);
+}
+
+int endlessPerkGetOwnedFor(uint p, int id)
+{
+	return endlessPerkEffective(p, id);
+}
+
+void endlessPerkSetOwnedFor(uint p, int id, int n)
+{
+	if (p >= COUNTOF(endlessPerkTakenBy) || id < 0 || id >= PERK_COUNT)
 		return;
 	if (n < 0)
 		n = 0;
 	if (n > endlessPerkTable[id].maxStack)
 		n = endlessPerkTable[id].maxStack;
-	endlessPerkTakenBy[endlessEconomyIndex()][id] = (JE_byte)n;
+	endlessPerkTakenBy[p][id] = (JE_byte)n;
 	endlessPerkRederive();
 }

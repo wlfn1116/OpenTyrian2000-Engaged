@@ -1959,6 +1959,74 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessShuffleSyncHand(p, (hand > ENDLESS_SHUFFLE_POSITION_MAX) ? 0 : (int)hand);
 }
 
+// The Endless debug panel's edits, contract in endless.h.
+COMPILE_TIME_ASSERT(endless_debug_block_perks_fit, PERK_COUNT <= ENDLESS_DEBUG_BLOCK_PERKS);
+
+void endlessPackDebugBlock(Uint8 *buf)
+{
+	int n = 0;
+	for (int b = 7; b >= 0; --b)
+		buf[n++] = (Uint8)(endlessActiveMods >> (8 * b));
+
+	const Uint16 depth = (Uint16)((endlessRunDepth < 0) ? 0
+	                            : (endlessRunDepth > 0xFFFF) ? 0xFFFF : endlessRunDepth);
+	buf[n++] = (Uint8)(depth >> 8);
+	buf[n++] = (Uint8)depth;
+
+	for (uint p = 0; p < COUNTOF(endlessPerkTakenBy); ++p)
+		for (int i = 0; i < ENDLESS_DEBUG_BLOCK_PERKS; ++i)
+			buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
+
+	/* Both halves of each ship's personal buffs, verbatim. The live mask cannot be re-derived from
+	 * the purchased one: a sector consumes the purchase and zeroes it while the mask it folded
+	 * stays up for the rest of the zone. */
+	for (uint p = 0; p < COUNTOF(endlessPlayerMods); ++p)
+		for (int b = 7; b >= 0; --b)
+			buf[n++] = (Uint8)(endlessPlayerMods[p] >> (8 * b));
+	for (uint p = 0; p < COUNTOF(endlessPurchasedMods); ++p)
+		for (int b = 3; b >= 0; --b)
+			buf[n++] = (Uint8)(endlessPurchasedMods[p] >> (8 * b));
+}
+
+void endlessUnpackDebugBlock(const Uint8 *buf)
+{
+	int n = 0;
+	Uint64 mods = 0;
+	for (int b = 0; b < 8; ++b)
+		mods = (mods << 8) | buf[n++];
+	const bool modsMoved = (mods != endlessActiveMods);
+	endlessActiveMods = mods;
+
+	endlessRunDepth = ((int)buf[n] << 8) | buf[n + 1];
+	n += 2;
+
+	for (uint p = 0; p < COUNTOF(endlessPerkTakenBy); ++p, n += ENDLESS_DEBUG_BLOCK_PERKS)
+		for (int i = 0; i < PERK_COUNT; ++i)
+			endlessPerkTakenBy[p][i] = (JE_byte)MIN((int)buf[n + i], endlessPerkTable[i].maxStack);
+	endlessPerkRederive();
+
+	for (uint p = 0; p < COUNTOF(endlessPlayerMods); ++p)
+	{
+		Uint64 v = 0;
+		for (int b = 0; b < 8; ++b)
+			v = (v << 8) | buf[n++];
+		endlessPlayerMods[p] = v;
+	}
+	for (uint p = 0; p < COUNTOF(endlessPurchasedMods); ++p)
+	{
+		unsigned v = 0;
+		for (int b = 0; b < 4; ++b)
+			v = (v << 8) | buf[n++];
+		endlessPurchasedMods[p] = v;
+	}
+
+	/* Only on a mask that actually moved. The refresh re-rolls the gravity heading off the endless
+	 * stream, and the editing machine draws it exactly once for the same edit; rolling here on an
+	 * unrelated debug block would put the two streams a draw apart. */
+	if (modsMoved)
+		endlessRefreshModDerivedState();
+}
+
 /* Online co-op resume: the host serializes the live run as the same text a save slot holds and the
  * joiner adopts it, so both machines resume from identical state. Each machine's own shop stock is
  * redrawn from the seed rather than sent (see "Endless online" in doc/notes.md). */

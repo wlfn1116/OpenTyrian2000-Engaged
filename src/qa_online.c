@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "endless.h"
+#include "endless_internal.h"  // endlessPerkEffective, for reading a seat's row that is not ours
 #include "episodes.h"
 #include "font.h"      // small_font, for measuring the picker's names against its columns
 #include "fonthand.h"
@@ -1375,6 +1376,44 @@ static void qa_quit_notice_retire(void)
 /* ---- the debug-menu wire block ------------------------------------------------------- */
 
 #ifdef WITH_NETWORK
+/* Everything the Endless debug panel can move, so a test can rewrite it all and put it back. */
+typedef struct {
+	JE_boolean coop;
+	int        depth;
+	Uint64     mods;
+	Uint64     live[2];
+	unsigned   purchased[2];
+	JE_byte    perks[2][64];
+} QaEndlessDebugState;
+
+static void qa_endless_debug_save(QaEndlessDebugState *s)
+{
+	s->coop = coopEndlessMode;
+	s->depth = endlessRunDepth;
+	s->mods = endlessActiveMods;
+	for (uint p = 0; p < 2; ++p)
+	{
+		s->live[p] = endlessPlayerMods[p];
+		s->purchased[p] = endlessPurchasedMods[p];
+		for (int i = 0; i < endlessPerkCount() && i < (int)COUNTOF(s->perks[p]); ++i)
+			s->perks[p][i] = (JE_byte)endlessPerkGetOwnedFor(p, i);
+	}
+}
+
+static void qa_endless_debug_restore(const QaEndlessDebugState *s)
+{
+	coopEndlessMode = s->coop;
+	endlessRunDepth = s->depth;
+	endlessActiveMods = s->mods;
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessPlayerMods[p] = s->live[p];
+		endlessPurchasedMods[p] = s->purchased[p];
+		for (int i = 0; i < endlessPerkCount() && i < (int)COUNTOF(s->perks[p]); ++i)
+			endlessPerkSetOwnedFor(p, i, s->perks[p][i]);
+	}
+}
+
 /* Round-trip every debug setting through the wire block, then compare the complete re-packed
  * block. A menu field omitted from the protocol leaves a detectable mutation behind. */
 static void qa_debug_block_roundtrip(void)
@@ -1475,6 +1514,61 @@ static void qa_debug_block_roundtrip(void)
 	qa_check(debugTwiddleSpecial <= SPECIAL_NUM,
 	         "an out-of-range armed twiddle from a peer is clamped");
 
+	/* The Endless half. The Tune form writes the run's depth and modifiers and either ship's perks
+	 * and personal buffs straight into simulation state, and announces nothing of its own, so the
+	 * block is what carries them. */
+	QaEndlessDebugState savedEndlessState;
+	qa_endless_debug_save(&savedEndlessState);
+
+	coopEndlessMode = true;
+	endlessRunDepth = 41;
+	endlessActiveMods = 0x8000000400000002ull;   // both halves of the 64-bit mask
+	for (uint p = 0; p < 2; ++p)
+		for (int i = 0; i < endlessPerkCount(); ++i)
+			endlessPerkSetOwnedFor(p, i, 0);
+	endlessPerkSetOwnedFor(0, 1, 3);
+	endlessPerkSetOwnedFor(1, 1, 2);
+	endlessSetPersonalBuffMods(0, ENDLESS_MOD_TURBODRIVE);
+	endlessSetPersonalBuffMods(1, ENDLESS_MOD_OVERDRIVE);
+	network_debug_state_pack(published);
+
+	// Opposite of every one of them, so a field the block does not carry stays visibly wrong.
+	endlessRunDepth = 0;
+	endlessActiveMods = 0;
+	endlessPerkSetOwnedFor(0, 1, 0);
+	endlessPerkSetOwnedFor(1, 1, 0);
+	endlessSetPersonalBuffMods(0, 0);
+	endlessSetPersonalBuffMods(1, 0);
+	network_debug_state_adopt(published, false);
+
+	qa_check(endlessRunDepth == 41 && endlessActiveMods == 0x8000000400000002ull,
+	         "the debug block carries the Endless depth and its whole 64-bit modifier mask");
+	qa_check(endlessPerkGetOwnedFor(0, 1) == 3 && endlessPerkGetOwnedFor(1, 1) == 2,
+	         "...and both ships' perk rows, each on its own ship");
+	qa_check(endlessPersonalBuffMods(0) == ENDLESS_MOD_TURBODRIVE
+	         && endlessPersonalBuffMods(1) == ENDLESS_MOD_OVERDRIVE,
+	         "...and each ship's personal buffs");
+	qa_check((endlessPlayerMods[0] & ENDLESS_MOD_OVERDRIVE) == 0
+	         && (endlessPlayerMods[1] & ENDLESS_MOD_TURBODRIVE) == 0,
+	         "...without either ship picking up the other's");
+
+	/* Mid-zone the sector has consumed the purchase and zeroed it, and only the live mask still
+	 * carries the buff. Both halves travel, so the adopting machine ends up holding both as they
+	 * are rather than re-deriving one from an emptied field. */
+	endlessPlayerMods[0] = ENDLESS_MOD_TURBODRIVE;
+	endlessPlayerMods[1] = 0;
+	endlessPurchasedMods[0] = 0;
+	endlessPurchasedMods[1] = ENDLESS_MOD_OVERDRIVE;
+	network_debug_state_pack(published);
+	endlessPlayerMods[0] = endlessPlayerMods[1] = 0;
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+	network_debug_state_adopt(published, false);
+	qa_check(endlessPlayerMods[0] == ENDLESS_MOD_TURBODRIVE && endlessPlayerMods[1] == 0,
+	         "a buff a sector already consumed survives the block on the ship still flying it");
+	qa_check(endlessPurchasedMods[0] == 0 && endlessPurchasedMods[1] == ENDLESS_MOD_OVERDRIVE,
+	         "...and a buff still waiting at the outpost stays waiting, on its own ship");
+
+	qa_endless_debug_restore(&savedEndlessState);
 	memcpy(player, savedShips, sizeof(savedShips));
 	isNetworkGame = savedNet;
 }
@@ -2035,52 +2129,134 @@ static void qa_depart_gate(void)
 
 /* ---- 13. the Endless debug zone jump crosses the wire -------------------------------- */
 
-/* An Endless jump includes level, depth, modifier mask, and perk stacks. Test the
- * whole round trip and reject hostile or truncated blocks. */
+/* An Endless jump carries the level and the whole Endless debug block: depth, modifier mask, both
+ * ships' perk stacks and both ships' personal buffs. Test the round trip, both ships landing where
+ * the panel put them, and refusal of a truncated block. */
 static void qa_endless_jump_pick(void)
 {
 	const JE_boolean savedEndless = endlessMode;
-	const int savedDepth = endlessRunDepth;
-	const Uint64 savedMods = endlessActiveMods;
+	QaEndlessDebugState saved;
+	qa_endless_debug_save(&saved);
 	endlessMode = true;
+	coopEndlessMode = true;
 
-	JE_byte perks[ENDLESS_JUMP_PERK_MAX];
-	JE_byte count = 0;
-	Uint16 depth = 0;
-	Uint64 mods = 0;
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE], readback[ENDLESS_DEBUG_BLOCK_SIZE];
 
 	endlessJumpPickReset();
-	qa_check(!endlessJumpPickGet(&depth, &mods, perks, &count),
-	         "no zone jump is staged until one is made");
+	qa_check(!endlessJumpPickGet(block), "no zone jump is staged until one is made");
 
-	/* The round trip, with a mask that uses both halves of the 64 bits: the modifier set outgrew
-	 * 32 bits (see the TOPSY/SLUGGISH widening), so a 32-bit path would silently drop the top. */
+	/* Stage a jump the way the panel does, with a mask that uses both halves of the 64 bits: the
+	 * modifier set outgrew 32 bits (see the TOPSY/SLUGGISH widening), so a 32-bit path would
+	 * silently drop the top. Ships one and two get different perks and different buffs. */
 	const Uint64 wide = 0x8000000400000002ull;
-	endlessJumpPickApply(37, wide, (const JE_byte[]){ 3, 0, 1 }, 3);
-	qa_check(endlessRunDepth == 37 && endlessActiveMods == wide,
-	         "an adopted zone jump lands the peer's depth and its whole 64-bit modifier mask");
-	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count)
-	         && depth == 37 && mods == wide && count == 3
-	         && perks[0] == 3 && perks[1] == 0 && perks[2] == 1,
-	         "...and re-stages it, so it reads back exactly as it was published");
+	endlessRunDepth = 37;
+	endlessActiveMods = wide;
+	for (uint p = 0; p < 2; ++p)
+		for (int i = 0; i < endlessPerkCount(); ++i)
+			endlessPerkSetOwnedFor(p, i, 0);
+	endlessPerkSetOwnedFor(0, 0, 2);
+	endlessPerkSetOwnedFor(1, 1, 3);
+	endlessSetPersonalBuffMods(0, ENDLESS_MOD_TURBODRIVE);
+	endlessSetPersonalBuffMods(1, ENDLESS_MOD_BACKFIRE);
+	endlessJumpPickStage();
+	qa_check(endlessJumpPickGet(block), "staging a jump arms it");
 
-	/* A count past this build's perk table must clamp against ours, not the sender's. */
-	JE_byte many[ENDLESS_JUMP_PERK_MAX];
-	memset(many, 1, sizeof(many));
-	endlessJumpPickApply(1, 0, many, ENDLESS_JUMP_PERK_MAX);
-	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count) && count <= ENDLESS_JUMP_PERK_MAX,
-	         "a perk block at the array's limit is taken without running past it");
-	endlessJumpPickApply(1, 0, many, (JE_byte)(ENDLESS_JUMP_PERK_MAX + 40));
-	qa_check(endlessJumpPickGet(&depth, &mods, perks, &count) && count == ENDLESS_JUMP_PERK_MAX,
-	         "...and a count past that clamps to what the array can hold");
+	// Wipe it all, then adopt the staged block as the partner's machine would.
+	endlessRunDepth = 0;
+	endlessActiveMods = 0;
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessSetPersonalBuffMods(p, 0);
+		for (int i = 0; i < endlessPerkCount(); ++i)
+			endlessPerkSetOwnedFor(p, i, 0);
+	}
+	endlessJumpPickApply(block, sizeof(block));
+
+	qa_check(endlessRunDepth == 37 && endlessActiveMods == wide,
+	         "an adopted zone jump lands the depth and the whole 64-bit modifier mask");
+	qa_check(endlessPerkGetOwnedFor(0, 0) == 2 && endlessPerkGetOwnedFor(1, 0) == 0
+	         && endlessPerkGetOwnedFor(1, 1) == 3 && endlessPerkGetOwnedFor(0, 1) == 0,
+	         "...and each ship's perk stacks on that ship, whichever machine adopts it");
+	qa_check(endlessPersonalBuffMods(0) == ENDLESS_MOD_TURBODRIVE
+	         && endlessPersonalBuffMods(1) == ENDLESS_MOD_BACKFIRE,
+	         "...and each ship's personal buffs the same way");
+	qa_check(endlessJumpPickGet(readback)
+	         && memcmp(block, readback, sizeof(block)) == 0,
+	         "...and re-stages it byte for byte, so a republish cannot move anything");
+
+	/* A truncated block leaves the run alone. The packet's own length byte is not trusted, so a
+	 * short read has to be refused outright rather than applied to whatever arrived. */
+	endlessRunDepth = 9;
+	endlessActiveMods = 0;
+	endlessPerkSetOwnedFor(0, 0, 1);
+	endlessJumpPickApply(block, sizeof(block) - 1);
+	qa_check(endlessRunDepth == 9 && endlessActiveMods == 0 && endlessPerkGetOwnedFor(0, 0) == 1,
+	         "a truncated jump block is refused, not applied as far as it goes");
+	endlessJumpPickApply(block, 0);
+	qa_check(endlessRunDepth == 9 && endlessPerkGetOwnedFor(0, 0) == 1,
+	         "...and so is an empty one");
+
+	/* Hostile stack counts. These index the perk table on arrival, so the adopt clamps them. */
+	Uint8 hostile[ENDLESS_DEBUG_BLOCK_SIZE];
+	memcpy(hostile, block, sizeof(hostile));
+	memset(&hostile[10], 0xff, 2 * ENDLESS_DEBUG_BLOCK_PERKS);
+	endlessJumpPickApply(hostile, sizeof(hostile));
+	bool clamped = true;
+	for (uint p = 0; p < 2; ++p)
+		for (int i = 0; i < endlessPerkCount(); ++i)
+			clamped = clamped && endlessPerkGetOwnedFor(p, i) <= endlessPerkMaxStack(i);
+	qa_check(clamped, "a peer's out-of-range perk stacks clamp to this build's own maximums");
+
+	/* A depth at the field's ceiling survives the round trip; one past it is what the pack clamps,
+	 * so both machines still agree on the number they fly. */
+	endlessRunDepth = 0xFFFF;
+	endlessJumpPickStage();
+	endlessRunDepth = 0;
+	qa_check(endlessJumpPickGet(block), "a jump at the depth field's ceiling stages");
+	endlessJumpPickApply(block, sizeof(block));
+	qa_check(endlessRunDepth == 0xFFFF, "...and arrives at that ceiling rather than wrapping");
+
+	endlessRunDepth = 0x1FFFF;
+	endlessJumpPickStage();
+	endlessJumpPickGet(block);
+	endlessJumpPickApply(block, sizeof(block));
+	qa_check(endlessRunDepth == 0xFFFF, "a depth past the field clamps instead of wrapping to zero");
 
 	endlessJumpPickReset();
-	qa_check(!endlessJumpPickGet(&depth, &mods, perks, &count),
+	qa_check(!endlessJumpPickGet(block),
 	         "leaving the outpost clears the staged jump, so it fires once and not every level");
 
+	/* The two per-ship accessors the panel and the block are both built on. Their guards are what
+	 * keep a hostile block, or a row the panel has no ship for, out of the arrays behind them. */
+	for (uint p = 0; p < 2; ++p)
+		for (int i = 0; i < endlessPerkCount(); ++i)
+			endlessPerkSetOwnedFor(p, i, 0);
+	endlessPerkSetOwnedFor(2, 0, 3);
+	endlessPerkSetOwnedFor(0, -1, 3);
+	endlessPerkSetOwnedFor(0, endlessPerkCount(), 3);
+	qa_check(endlessPerkGetOwnedFor(0, 0) == 0 && endlessPerkGetOwnedFor(1, 0) == 0,
+	         "a perk write for a ship or an id this build has no room for lands nowhere");
+	qa_check(endlessPerkGetOwnedFor(2, 0) == 0 && endlessPerkGetOwnedFor(0, -1) == 0,
+	         "...and reading one back answers zero rather than the memory beside the array");
+
+	endlessPerkSetOwnedFor(0, 0, -5);
+	qa_check(endlessPerkGetOwnedFor(0, 0) == 0, "a negative stack count clamps to none owned");
+	endlessPerkSetOwnedFor(0, 0, 99);
+	qa_check(endlessPerkGetOwnedFor(0, 0) == endlessPerkMaxStack(0),
+	         "...and one past the maximum clamps to the maximum");
+
+	endlessActiveMods = 0;
+	endlessPurchasedMods[0] = (unsigned)(ENDLESS_MOD_FRENZY | ENDLESS_MOD_TURBODRIVE);
+	endlessSetPersonalBuffMods(0, ENDLESS_MOD_OVERDRIVE | ENDLESS_MOD_FRENZY);
+	qa_check((endlessPurchasedMods[0] & ENDLESS_MOD_FRENZY) != 0,
+	         "setting a ship's buffs leaves the sector effects it bought alone");
+	qa_check(endlessPersonalBuffMods(0) == ENDLESS_MOD_OVERDRIVE,
+	         "...and takes only the personal bits out of what it was handed");
+	qa_check(endlessPersonalBuffMods(2) == 0, "a buff read for a ship that does not exist is none");
+	endlessSetPersonalBuffMods(2, ENDLESS_MOD_TURBODRIVE);   // must not write past the array
+
 	endlessMode = savedEndless;
-	endlessRunDepth = savedDepth;
-	endlessActiveMods = savedMods;
+	qa_endless_debug_restore(&saved);
 }
 
 /* ---- entry point -------------------------------------------------------------------- */

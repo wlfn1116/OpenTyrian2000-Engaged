@@ -1528,10 +1528,8 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 	// The Endless zone jump's run state rides in the same packet as the level pick, because the
 	// two are one decision: the level alone would put the peer in the right file at the wrong
 	// depth, with the wrong modifiers, generating a different sector from the first tick.
-	Uint16 myJumpDepth = 0;
-	Uint64 myJumpMods = 0;
-	JE_byte myJumpPerks[ENDLESS_JUMP_PERK_MAX], myJumpPerkCount = 0;
-	const bool myJump = endlessJumpPickGet(&myJumpDepth, &myJumpMods, myJumpPerks, &myJumpPerkCount);
+	Uint8 myJumpBlock[ENDLESS_DEBUG_BLOCK_SIZE];
+	const bool myJump = endlessJumpPickGet(myJumpBlock);
 
 	/* The gate, then the commit. The commit is sent once and kept across a peer's withdrawal,
 	 * which drops this machine back to the gate; see "Outpost protocol" in doc/notes.md. */
@@ -1564,12 +1562,11 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			packet_out_temp->data[6] = myPickSec;
 			packet_out_temp->data[7] = myPickFile;
 			packet_out_temp->data[8] = myJump ? 1 : 0;
-			SDLNet_Write16(myJumpDepth, &packet_out_temp->data[9]);
-			for (int b = 0; b < 8; ++b)   // mods, little end first; NET_ENDLESS_JUMP_MODS
-				packet_out_temp->data[11 + b] = (Uint8)(myJumpMods >> (8 * b));
-			packet_out_temp->data[19] = myJumpPerkCount;
-			memcpy(&packet_out_temp->data[20], myJumpPerks, myJumpPerkCount);
-			network_send(20 + myJumpPerkCount);  // PACKET_WAITING + level pick + endless jump
+			packet_out_temp->data[9] = myJump ? (Uint8)ENDLESS_DEBUG_BLOCK_SIZE : 0;
+			if (myJump)
+				memcpy(&packet_out_temp->data[10], myJumpBlock, ENDLESS_DEBUG_BLOCK_SIZE);
+			// PACKET_WAITING + level pick + endless jump
+			network_send(10 + (myJump ? ENDLESS_DEBUG_BLOCK_SIZE : 0));
 		}
 
 		bool reopened = false;
@@ -1615,19 +1612,15 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 				}
 
 				// The Endless jump's run state, settled the same way and by the same rule, so a
-				// double jump can never leave one machine's depth against the other's level.
-				if (packet_in[0]->len >= 20 && packet_in[0]->data[8] != 0 &&
+				// double jump can never leave one machine's depth against the other's level, and
+				// two open debug panels resolve the host's way on both machines.
+				if (packet_in[0]->len > 10 && packet_in[0]->data[8] != 0 &&
 				    (!myJump || !network_is_host))
 				{
-					const JE_byte count = packet_in[0]->data[19];
-					// The length bounds the read; a truncated packet's count byte does not.
-					const size_t have = (size_t)packet_in[0]->len - 20;
-					const JE_byte take = (JE_byte)(count < have ? count : have);
-					Uint64 mods = 0;
-					for (int b = 0; b < 8; ++b)
-						mods |= (Uint64)packet_in[0]->data[11 + b] << (8 * b);
-					endlessJumpPickApply(SDLNet_Read16(&packet_in[0]->data[9]), mods,
-					                     &packet_in[0]->data[20], take);
+					// The length bounds the read; a truncated packet's own length byte does not.
+					const size_t have = (size_t)packet_in[0]->len - 10;
+					const size_t said = packet_in[0]->data[9];
+					endlessJumpPickApply(&packet_in[0]->data[10], said < have ? said : have);
 				}
 
 				network_update();
@@ -5543,26 +5536,19 @@ void debugLevelPickReset(void)
 }
 
 /* The Endless jump's run state, staged beside the level pick above. Depth, the folded modifier
- * mask and the perk stacks all feed sector generation, so the peer needs every one of them to
- * build the zone this machine is about to build. */
+ * mask, both ships' perk stacks and both ships' personal buffs all feed the zone, so the peer
+ * needs every one of them to build what this machine is about to build. It travels as the whole
+ * Endless debug block: the panel can edit either ship, so a per-ship half would be a partial view
+ * of a screen that rewrites both. */
 static struct {
-	bool    armed;
-	Uint16  depth;
-	Uint64  mods;
-	JE_byte perks[ENDLESS_JUMP_PERK_MAX];
-	JE_byte perkCount;
+	bool  armed;
+	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
 } endlessJumpPick;
 
-static void endless_jump_pick_stage(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+void endlessJumpPickStage(void)
 {
-	if (perkCount > ENDLESS_JUMP_PERK_MAX)
-		perkCount = ENDLESS_JUMP_PERK_MAX;
-
 	endlessJumpPick.armed = true;
-	endlessJumpPick.depth = depth;
-	endlessJumpPick.mods = mods;
-	endlessJumpPick.perkCount = perkCount;
-	memcpy(endlessJumpPick.perks, perks, perkCount);
+	endlessPackDebugBlock(endlessJumpPick.block);
 }
 
 void endlessJumpPickReset(void)
@@ -5570,35 +5556,24 @@ void endlessJumpPickReset(void)
 	endlessJumpPick.armed = false;
 }
 
-bool endlessJumpPickGet(Uint16 *depth, Uint64 *mods, JE_byte *perks, JE_byte *perkCount)
+bool endlessJumpPickGet(Uint8 *block)
 {
 	if (!endlessJumpPick.armed)
 		return false;
 
-	*depth = endlessJumpPick.depth;
-	*mods = endlessJumpPick.mods;
-	*perkCount = endlessJumpPick.perkCount;
-	memcpy(perks, endlessJumpPick.perks, endlessJumpPick.perkCount);
+	memcpy(block, endlessJumpPick.block, sizeof(endlessJumpPick.block));
 	return true;
 }
 
-void endlessJumpPickApply(Uint16 depth, Uint64 mods, const JE_byte *perks, JE_byte perkCount)
+void endlessJumpPickApply(const Uint8 *block, size_t len)
 {
-	if (perkCount > ENDLESS_JUMP_PERK_MAX)
-		perkCount = ENDLESS_JUMP_PERK_MAX;
+	// A short block is a truncated packet, with nothing usable in the fields past its end.
+	if (len < ENDLESS_DEBUG_BLOCK_SIZE)
+		return;
 
-	endlessRunDepth = depth;
-	endlessActiveMods = mods;
-
-	// Clamped against this build's own table rather than the sender's count, so a peer that
-	// knows more perks than we do cannot write past the end of ours.
-	int n = endlessPerkCount();
-	if (n > perkCount)
-		n = perkCount;
-	for (int p = 0; p < n; ++p)
-		endlessPerkSetOwned(p, perks[p]);
-
-	endless_jump_pick_stage(depth, mods, perks, perkCount);
+	memcpy(endlessJumpPick.block, block, ENDLESS_DEBUG_BLOCK_SIZE);
+	endlessJumpPick.armed = true;
+	endlessUnpackDebugBlock(endlessJumpPick.block);
 }
 
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum)
@@ -5806,6 +5781,7 @@ enum  // row kinds
 	EDR_ACTION,   // idx = EDA_*
 	EDR_LAUNCH,   // start the zone (jump form) / apply and close (tune form)
 	EDR_SECMOD, EDR_BUFMOD, EDR_PERK, EDR_GAMBLE,
+	EDR_SHIP,     // which ship the perk and personal-buff pages edit (co-op only)
 	EDR_CAMPFX,   // the master "run endless effects in a normal game" toggle (tune form, outside endless)
 	EDR_SCALE,    // one scaling lever: reads out at the previewed zone, Left/Right pins an override (idx = ESO_*)
 	EDR_SCALEINFO,// a scaling figure with no override of its own (idx = EDI_*)
@@ -5898,6 +5874,25 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	}
 }
 
+/* Land the debug screen's slate on the run. The sector modifiers are the run's; the perk stacks and
+ * the personal buffs belong to a ship, so both are written per ship. A true result says the modifier
+ * mask moved, which is what the derived-state re-roll keys off. */
+static bool endlessDebugApplySlate(Uint64 sectorMods, const Uint64 *buffs, int perks[2][32],
+                                   int perkCount)
+{
+	const Uint64 folded = endlessFoldPurchasedMods(sectorMods & ~ENDLESS_PERSONAL_MOD_MASK, 0);
+	const bool modsMoved = (folded != endlessActiveMods);
+
+	endlessActiveMods = folded;
+	for (uint p = 0; p < 2; ++p)
+	{
+		endlessSetPersonalBuffMods(p, buffs[p]);   // after the mask: it folds against it
+		for (int i = 0; i < perkCount; ++i)
+			endlessPerkSetOwnedFor(p, i, perks[p][i]);
+	}
+	return modsMoved;
+}
+
 /* Jump mode launches a chosen zone; tune mode applies effects in place. */
 static bool endlessDebugScreen(bool jumpMode)
 {
@@ -5965,19 +5960,27 @@ static bool endlessDebugScreen(bool jumpMode)
 	const int NGAM   = endlessGambleOutcomeCount();
 	int       NPERKS = endlessPerkCount();
 
-	int    dbgPerks[32];               // owned stacks per perk, pre-loaded from the run (edit here)
-	if (NPERKS > (int)COUNTOF(dbgPerks))
-		NPERKS = (int)COUNTOF(dbgPerks);
+	/* Perks and personal buffs belong to one ship, so the screen edits them per ship and the Edit
+	 * Ship row picks which. The sector modifiers below them are the run's and stay shared. */
+	int    dbgPerks[2][32];            // owned stacks per ship per perk, pre-loaded from the run
+	if (NPERKS > (int)COUNTOF(dbgPerks[0]))
+		NPERKS = (int)COUNTOF(dbgPerks[0]);
 
 	const Uint64 runMods = endlessActiveMods | endlessPendingMods();
 
+	int    dbgShip = (int)endlessEconomyIndex();   // opens on your own ship
 	int    dbgZone = endlessRunDepth + 1;
 	bool   dbgZoneTyped = false;       // a number is being typed digit-by-digit (desktop keyboard)
 	int    dbgBase = -1;               // -1 = Random, else an index into endlessBase*
 	int    dbgBaseLast = 0;            // last real level picked, so the Base row can toggle back to it
-	Uint64 dbgMods = runMods;          // sector + personal-buff bits, pre-toggled from the run
-	for (int i = 0; i < NPERKS; ++i)
-		dbgPerks[i] = endlessPerkGetOwned(i);
+	Uint64 dbgMods = runMods & ~ENDLESS_PERSONAL_MOD_MASK;   // sector bits, pre-toggled from the run
+	Uint64 dbgBuffs[2];                // ...and each ship's personal-buff bits
+	for (uint p = 0; p < COUNTOF(dbgBuffs); ++p)
+	{
+		dbgBuffs[p] = endlessPersonalBuffMods(p);
+		for (int i = 0; i < NPERKS; ++i)
+			dbgPerks[p][i] = endlessPerkGetOwnedFor(p, i);
+	}
 
 	char dbgGambleMsg[48];             // last outcome fired here, shown as the gamble list's help
 	dbgGambleMsg[0] = '\0';
@@ -6024,6 +6027,8 @@ static bool endlessDebugScreen(bool jumpMode)
 				EDBG_ADD(EDR_BASE, 0, "Base Level");
 			EDBG_ADD(EDR_HEADER, 0, "SLATE");
 			EDBG_ADD(EDR_OPEN, EDS_SECMOD, "Sector Modifiers");
+			if (coopEndlessMode)
+				EDBG_ADD(EDR_SHIP, 0, "Edit Ship");
 			EDBG_ADD(EDR_OPEN, EDS_BUFMOD, "Personal Buffs");
 			EDBG_ADD(EDR_OPEN, EDS_PERK, "Perks");
 			EDBG_ADD(EDR_HEADER, 0, "TOOLS");
@@ -6216,7 +6221,7 @@ static bool endlessDebugScreen(bool jumpMode)
 				else if (rows[i].idx == EDS_BUFMOD)
 				{
 					for (int m = 0; m < NBUF; ++m)
-						if (dbgMods & endlessDebugBuffMods[m].bit)
+						if (dbgBuffs[dbgShip] & endlessDebugBuffMods[m].bit)
 							++n;
 					if (n)
 						snprintf(val, sizeof(val), "%d on", n);
@@ -6224,7 +6229,7 @@ static bool endlessDebugScreen(bool jumpMode)
 				else if (rows[i].idx == EDS_PERK)
 				{
 					for (int p = 0; p < NPERKS; ++p)
-						n += dbgPerks[p];
+						n += dbgPerks[dbgShip][p];
 					if (n)
 						snprintf(val, sizeof(val), "%d owned", n);
 				}
@@ -6281,13 +6286,18 @@ static bool endlessDebugScreen(bool jumpMode)
 				valBright = isSel ? 5 : 1;
 				labX = px0 + 16;
 				break;
+			case EDR_SHIP:
+				snprintf(val, sizeof(val), "%s%s", dbgShip == 0 ? "One" : "Two",
+				         dbgShip == (int)endlessEconomyIndex() ? "  (yours)" : "");
+				valBright = 6;
+				break;
 			case EDR_SECMOD:
 			case EDR_BUFMOD:
 			{
-				const Uint64 bit = (rows[i].kind == EDR_SECMOD)
-				                 ? endlessDebugSectorMods[rows[i].idx].bit
-				                 : endlessDebugBuffMods[rows[i].idx].bit;
-				const bool on = (dbgMods & bit) != 0;
+				const bool sector = (rows[i].kind == EDR_SECMOD);
+				const Uint64 bit = sector ? endlessDebugSectorMods[rows[i].idx].bit
+				                          : endlessDebugBuffMods[rows[i].idx].bit;
+				const bool on = ((sector ? dbgMods : dbgBuffs[dbgShip]) & bit) != 0;
 				SDL_strlcpy(val, on ? "ON" : "-", sizeof(val));
 				labBright = isSel ? 5 : (on ? 2 : -1);
 				valBright = on ? 6 : (isSel ? 4 : -3);
@@ -6296,7 +6306,7 @@ static bool endlessDebugScreen(bool jumpMode)
 			}
 			case EDR_PERK:
 			{
-				const int p = rows[i].idx, n = dbgPerks[p];
+				const int p = rows[i].idx, n = dbgPerks[dbgShip][p];
 				if (n > 0)
 					snprintf(val, sizeof(val), "%d/%d", n, endlessPerkMaxStack(p));
 				else
@@ -6399,9 +6409,12 @@ static bool endlessDebugScreen(bool jumpMode)
 		case EDR_OPEN:
 			help = rows[s].idx == EDS_SECMOD  ? "Dangers and boons the zone flies with"
 			     : rows[s].idx == EDS_BUFMOD  ? "Kill-fire buffs and their evil mirrors"
-			     : rows[s].idx == EDS_PERK    ? "Perk stacks you carry into the zone"
+			     : rows[s].idx == EDS_PERK    ? "Perk stacks the chosen ship carries in"
 			     : rows[s].idx == EDS_SCALING ? "Every depth-scaled lever, and how it ramps"
 			     :                              "Fire any outcome without paying the fee";
+			break;
+		case EDR_SHIP:
+			help = "Which ship the buffs and perks below belong to";
 			break;
 		case EDR_ACTION:
 			help = rows[s].idx == EDA_CLEAR ? "Turns every modifier and perk off"
@@ -6645,20 +6658,24 @@ static bool endlessDebugScreen(bool jumpMode)
 						ov->value = hi;
 					break;
 				}
+				case EDR_SHIP:
+					dbgShip ^= 1;
+					break;
 				case EDR_SECMOD:
 					dbgMods ^= endlessDebugSectorMods[selIdx].bit;
 					break;
 				case EDR_BUFMOD:
-					dbgMods ^= endlessDebugBuffMods[selIdx].bit;
+					dbgBuffs[dbgShip] ^= endlessDebugBuffMods[selIdx].bit;
 					break;
 				case EDR_PERK:
 				{
 					const int mx = endlessPerkMaxStack(selIdx);
-					dbgPerks[selIdx] += dir;             // wrapping at both ends
-					if (dbgPerks[selIdx] < 0)
-						dbgPerks[selIdx] = mx;
-					else if (dbgPerks[selIdx] > mx)
-						dbgPerks[selIdx] = 0;
+					int *const stack = &dbgPerks[dbgShip][selIdx];
+					*stack += dir;                       // wrapping at both ends
+					if (*stack < 0)
+						*stack = mx;
+					else if (*stack > mx)
+						*stack = 0;
 					break;
 				}
 				case EDR_LEVEL:
@@ -6751,15 +6768,23 @@ static bool endlessDebugScreen(bool jumpMode)
 					else if (selIdx == EDA_CLEAR)
 					{
 						dbgMods = 0;
-						for (int p = 0; p < NPERKS; ++p)
-							dbgPerks[p] = 0;
+						for (uint q = 0; q < COUNTOF(dbgBuffs); ++q)
+						{
+							dbgBuffs[q] = 0;
+							for (int p = 0; p < NPERKS; ++p)
+								dbgPerks[q][p] = 0;
+						}
 						endlessScalingOverridesClear();   // "everything" has to include the pinned levers
 					}
 					else
 					{
-						dbgMods = runMods;
-						for (int p = 0; p < NPERKS; ++p)
-							dbgPerks[p] = endlessPerkGetOwned(p);
+						dbgMods = runMods & ~ENDLESS_PERSONAL_MOD_MASK;
+						for (uint q = 0; q < COUNTOF(dbgBuffs); ++q)
+						{
+							dbgBuffs[q] = endlessPersonalBuffMods(q);
+							for (int p = 0; p < NPERKS; ++p)
+								dbgPerks[q][p] = endlessPerkGetOwnedFor(q, p);
+						}
 					}
 					break;
 				case EDR_CAMPFX:
@@ -6778,15 +6803,18 @@ static bool endlessDebugScreen(bool jumpMode)
 						endlessScalingOverride[selIdx].active = true;
 					}
 					break;
+				case EDR_SHIP:
+					dbgShip ^= 1;
+					break;
 				case EDR_SECMOD:
 					dbgMods ^= endlessDebugSectorMods[selIdx].bit;
 					break;
 				case EDR_BUFMOD:
-					dbgMods ^= endlessDebugBuffMods[selIdx].bit;
+					dbgBuffs[dbgShip] ^= endlessDebugBuffMods[selIdx].bit;
 					break;
 				case EDR_PERK:
-					if (++dbgPerks[selIdx] > endlessPerkMaxStack(selIdx))
-						dbgPerks[selIdx] = 0;   // wraps back to off past the max
+					if (++dbgPerks[dbgShip][selIdx] > endlessPerkMaxStack(selIdx))
+						dbgPerks[dbgShip][selIdx] = 0;   // wraps back to off past the max
 					break;
 				case EDR_GAMBLE:
 					endlessForceGambleOutcome(selIdx);
@@ -6805,13 +6833,9 @@ static bool endlessDebugScreen(bool jumpMode)
 						break;
 					}
 					endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;  // jump to the chosen zone
-					// Apply the chosen combo + personal buffs + any gamble outcome fired on the
-					// gamble list since this screen opened. Same purchase-wins fold a real launch
-					// uses, so a debug jump can't produce a kill-fire state generation would never
-					// hand out.
-					endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
-					for (int p = 0; p < NPERKS; ++p)                     // apply the perk stacks
-						endlessPerkSetOwned(p, dbgPerks[p]);
+					// Apply the chosen combo + each ship's buffs and perks + any gamble outcome
+					// fired on the gamble list since this screen opened.
+					endlessDebugApplySlate(dbgMods, dbgBuffs, dbgPerks, NPERKS);
 					if (dbgBase < 0)
 					{
 						const JE_byte sec = endlessPickNextLevel();  // random endless-safe level (switches episode)
@@ -6834,20 +6858,13 @@ static bool endlessDebugScreen(bool jumpMode)
 						                       (JE_byte)allLevelSec[dbgBase],
 						                       (JE_byte)allLevelFile[dbgBase]);
 					}
-					// ...and the run state around it, which the level pick alone does not carry.
-					{
-						JE_byte staged[ENDLESS_JUMP_PERK_MAX];
-						int n = NPERKS < ENDLESS_JUMP_PERK_MAX ? NPERKS : ENDLESS_JUMP_PERK_MAX;
-						for (int p = 0; p < n; ++p)
-							staged[p] = (JE_byte)(dbgPerks[p] < 0 ? 0
-							                    : dbgPerks[p] > 255 ? 255 : dbgPerks[p]);
-						endless_jump_pick_stage((Uint16)endlessRunDepth, endlessActiveMods,
-						                        staged, (JE_byte)n);
-						// Tell the partner NOW, not at the departure: they may be sitting in a
-						// wait for a course this machine has just stopped charting, and this is
-						// what releases it. Waiting to announce is what left both sides stuck.
-						network_endless_jump_publish();
-					}
+					// ...and the run state around it, which the level pick alone does not carry:
+					// the slate the apply above just landed, both ships included.
+					endlessJumpPickStage();
+					// Tell the partner NOW, not at the departure: they may be sitting in a
+					// wait for a course this machine has just stopped charting, and this is
+					// what releases it. Waiting to announce is what left both sides stuck.
+					network_endless_jump_publish();
 					chosen = true;
 					done = true;
 					break;
@@ -6890,10 +6907,10 @@ static bool endlessDebugScreen(bool jumpMode)
 			endlessCampaignMods = dbgCampFx;
 
 		endlessRunDepth = (dbgZone > 0) ? dbgZone - 1 : 0;
-		endlessActiveMods = endlessFoldPurchasedMods(dbgMods, endlessPendingMods());
-		for (int p = 0; p < NPERKS; ++p)
-			endlessPerkSetOwned(p, dbgPerks[p]);
-		endlessRefreshModDerivedState();   // the panel can change mods mid-level; re-roll what that decides
+		// The panel can change mods mid-level; re-roll what that decides. Only on a real change:
+		// the roll draws the endless stream, and the partner adopting this edit draws it once too.
+		if (endlessDebugApplySlate(dbgMods, dbgBuffs, dbgPerks, NPERKS))
+			endlessRefreshModDerivedState();
 
 		// Persist the setup now rather than at a clean exit. It is a thing you build once and then
 		// play with, and this is a debug feature; a crash is a plausible way for the session to

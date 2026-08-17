@@ -1232,7 +1232,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 63.
+`NET_VERSION` bump. The current value is 64.
 
 Recent versions:
 
@@ -1282,6 +1282,7 @@ Recent versions:
 | 61 | Twin Pods perk fires a second sidekick volley |
 | 62 | Endless ram kills, invulnerable-ram cadence, Reinforced Prow, Knife Fight and Deflector perks |
 | 63 | 64-bit wallets: shop-sync and debug-sync cash slots, the resume record's cash, 64-bit prices in the Endless player block, and the Endless run transfer as text |
+| 64 | Endless debug block on the zone jump and the debug-sync block: depth, modifiers, both ships' perks and personal buffs, and the campaign-effects flag |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name
@@ -1488,6 +1489,30 @@ the outpost revives them. Relaxed both-down choices are host-authoritative.
 
 The Endless gameplay tick is split between run-wide work and per-ship work. In
 co-op, call the per-ship half for both players.
+
+### Endless debug panel online
+
+The Endless zone browser writes simulation state the outpost protocol never sees:
+the run's depth and modifier mask, and each ship's perk stacks and personal
+buffs. All of it travels as one fixed-width block (`endlessPackDebugBlock`), on
+the zone jump and on the debug-sync packet. The block is whole-state and the
+adopter takes all of it, because the panel can edit either ship; a per-ship half
+would be a partial view of a screen that rewrites both. Two panels open at once
+resolve the host's way, by the jump's host-wins rule and the debug-sync
+generation tie-break.
+
+Both halves of a ship's personal buffs travel. The live mask cannot be re-derived
+from the purchased one: a sector consumes the purchase and zeroes it while the
+mask it folded stays up for the rest of the zone.
+
+Perks and buffs written by the panel land on the ship the panel named, on both
+machines. Landing them on whoever adopts gave the two machines different ships
+the perk, which read as "both players got it" and desynced everything the perk
+touched.
+
+The level barrier drains the outpost channel as every other wait does. Retiring
+a shop packet there destroyed the peer's last purchase for the whole level, since
+an acknowledged packet is never repeated.
 
 ### Rollback input
 

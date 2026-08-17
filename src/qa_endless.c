@@ -1924,6 +1924,71 @@ static void qa_scenario_suite(void)
 		qa_check(endlessHardcore() == (modes[m] == ENDLESS_RUNMODE_HARDCORE), label);
 	}
 
+	/* The disconnect chain, end to end on one machine: the outpost checkpoint writes slot 22, the
+	 * dropped session reverts to that backup and saves it into a slot of its own, and the host that
+	 * later resumes it finds an Endless slot whose run and record are the ones it checkpointed.
+	 * Wire scenarios 7 and 21 fly the two-process half. */
+	{
+		JE_SaveFileType savedSlots[2] = { saveFiles[22 - 1], saveFiles[15 - 1] };
+		const NetworkGameType savedType = network_game_type;
+
+		qa_session(0);
+		qa_clear_ships();
+		endlessRunMode = ENDLESS_RUNMODE_STANDARD;
+		endlessRunDepth = 61;
+		endlessRunKills = 4242;
+		endlessArmorBonus[0] = 18;
+		player[0].cash = 5000000000LL;   // past a 32-bit wallet, so a narrowing on the way out shows
+		endlessCashResync();
+		JE_saveGame(22, "LAST LEVEL    ");   // the outpost auto-checkpoint
+
+		/* The disconnect prompt: revert to the pre-level backup, then save it where the player
+		 * chose. JE_loadGameRecord clears endlessMode, so the run has to be read back first. */
+		const bool wasEndless = endlessMode;
+		JE_loadGameRecord(&saveFiles[22 - 1], true);
+		qa_check(wasEndless && !endlessMode,
+		         "loading the backup record clears the mode flag the re-save depends on");
+		qa_check(endlessLoadSlot(22) && endlessMode && endlessRunDepth == 61
+		         && endlessRunKills == 4242 && endlessArmorBonus[0] == 18,
+		         "the checkpointed run comes back off the backup slot");
+		JE_saveGame(15, "DISCONNECTED  ");
+
+		qa_check(endlessSlotHasRun(15) && saveFiles[15 - 1].level != 0
+		         && saveFiles[15 - 1].score == 5000000000LL,
+		         "the disconnect save carries the run and its 64-bit wallet into the chosen slot");
+
+		// What the host's Load Game shows: an Endless lobby takes it, a Campaign lobby does not.
+		network_game_type = NETWORK_GAME_ENDLESS;
+		const bool endlessTakes = save_type_compatible(&saveFiles[15 - 1], 15, true);
+		network_game_type = NETWORK_GAME_CAMPAIGN;
+		const bool campaignRefuses = !save_type_compatible(&saveFiles[15 - 1], 15, true);
+		qa_check(endlessTakes && campaignRefuses,
+		         "an Endless disconnect save is offered to an Endless lobby and withheld from Campaign");
+
+		// ...and hosting it: the record packs for PACKET_DETAILS and the run serializes for transfer.
+		Uint8 packed[SAVE_RECORD_PACKED_SIZE];
+		JE_SaveFileType wired;
+		save_record_pack(packed, &saveFiles[15 - 1]);
+		save_record_unpack(&wired, packed);
+		qa_check(wired.score == 5000000000LL && save_record_is_coop(&wired),
+		         "the resume record reaches the joiner with its wallet and co-op tag");
+
+		qa_check(endlessLoadSlot(15) && endlessRunDepth == 61 && endlessRunKills == 4242,
+		         "the host loads that slot back into the run it saved");
+		Uint8 *const stream = malloc(ENDLESS_RUN_WIRE_MAX);
+		const size_t streamLen = stream ? endlessRunSerialize(stream, ENDLESS_RUN_WIRE_MAX) : 0;
+		endlessRunDepth = 0;
+		endlessRunKills = 0;
+		qa_check(streamLen > 0 && endlessRunAdopt(stream, streamLen)
+		         && endlessRunDepth == 61 && endlessRunKills == 4242,
+		         "...and the joiner adopts the same run off the wire");
+		free(stream);
+
+		network_game_type = savedType;
+		saveFiles[22 - 1] = savedSlots[0];
+		saveFiles[15 - 1] = savedSlots[1];
+	}
+
 	/* Verify both save APIs reject mid-run Hardcore without changing the slot. The
 	 * positive path is covered by migration fixtures and wire scenario 7. */
 	{
