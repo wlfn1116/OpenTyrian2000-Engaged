@@ -23,6 +23,7 @@ bool endlessLockedSortie  = false;
 bool     endlessSortieHave  = false;
 static Player   endlessSortiePlayer[2];
 static Uint64 endlessSortieModsV = 0;
+static Uint64 endlessSortiePlayerModsV[2] = { 0, 0 };
 static JE_byte  endlessSortieSec   = 0;
 static int      endlessSortieEp    = 0;
 static JE_byte  endlessSortieFile  = 0;
@@ -2146,6 +2147,9 @@ void endlessCaptureSortie(void)
 	endlessCaptureCurrent(&endlessSortieRec);                          // endless run + outpost state
 	memcpy(endlessSortiePlayer, player, sizeof(endlessSortiePlayer));  // full loadout (cash / items / superbombs)
 	endlessSortieModsV = endlessActiveMods;   // committed level modifiers
+	// ...and each ship's own half of them. Course selection folded the buff its owner paid for into
+	// this mask and then cleared the purchase it came from, so nothing else can re-derive it.
+	memcpy(endlessSortiePlayerModsV, endlessPlayerMods, sizeof(endlessSortiePlayerModsV));
 	endlessSortieSec   = mainLevel;           // committed section
 	endlessSortieEp    = episodeNum;          // committed episode
 	endlessSortieFile  = lvlFileNum;          // committed level file
@@ -2181,8 +2185,10 @@ void endlessRestoreSortie(void)
 
 	if (endlessHardcore())
 	{
-		// Hardcore reuses the committed course and its post-pick one-shot state.
+		// Hardcore reuses the committed course and its post-pick one-shot state, so the relaunch
+		// skips course selection and has to be handed back the masks it folded (see below).
 		endlessLockedSortie = true;
+		memcpy(endlessPlayerMods, endlessSortiePlayerModsV, sizeof(endlessPlayerMods));
 	}
 	else
 	{
@@ -2209,14 +2215,30 @@ void endlessRestartSortie(void)
 
 	const Uint64  outpostMods = endlessSortieOutpostMods;  // rescue these from the reset inside the apply
 	const JE_byte outpostEp   = endlessSortieOutpostEp;
+	// The pre-pick one-shots go with them. This retry opens no outpost, but a later bail out of the
+	// restarted zone does, and it restores the pending purchases from these; the wallet reverts to a
+	// launch value that has already paid for them.
+	unsigned prePurchased[COUNTOF(endlessSortiePrePurchased)];
+	int      preCleanse[COUNTOF(endlessSortiePreCleanse)];
+	int      preLongCon[COUNTOF(endlessSortiePreLongCon)];
+	memcpy(prePurchased, endlessSortiePrePurchased, sizeof(prePurchased));
+	memcpy(preCleanse, endlessSortiePreCleanse, sizeof(preCleanse));
+	memcpy(preLongCon, endlessSortiePreLongCon, sizeof(preLongCon));
 
 	endlessApplyCurrent(&endlessSortieRec);                           // revert endless state (incl. run mode); also arms endlessResumeVisit
 	memcpy(player, endlessSortiePlayer, sizeof(endlessSortiePlayer)); // revert loadout
+	// Each ship's personal effect mask, which the reset inside the apply blanked. This retry re-arms
+	// the committed level directly, so nothing downstream re-folds it: without this a buff bought for
+	// the zone (Turbodrive and the rest) is gone the moment the zone is restarted.
+	memcpy(endlessPlayerMods, endlessSortiePlayerModsV, sizeof(endlessPlayerMods));
 	endlessSortieHave   = true;                                       // the committed-level statics are still valid
 	endlessLockedSortie = false;   // no outpost is opened, so there is nothing to lock
 	// Preserve outpost modifiers and episode for a later bail from the restarted zone.
 	endlessSortieOutpostMods = outpostMods;
 	endlessSortieOutpostEp   = outpostEp;
+	memcpy(endlessSortiePrePurchased, prePurchased, sizeof(endlessSortiePrePurchased));
+	memcpy(endlessSortiePreCleanse, preCleanse, sizeof(endlessSortiePreCleanse));
+	memcpy(endlessSortiePreLongCon, preLongCon, sizeof(endlessSortiePreLongCon));
 
 	endlessCashResync();           // the reverted wallet is the new baseline (the tally rode in on the record)
 	endlessResumeVisit = false;    // endlessBetweenLevels normally consumes this; nothing will here

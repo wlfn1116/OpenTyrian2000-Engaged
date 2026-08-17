@@ -2180,6 +2180,62 @@ static void qa_death_prompt_matrix(void)
 	endlessSortieHave = savedHave;
 }
 
+/* Restart Zone re-arms the committed level without reopening the outpost, so nothing downstream
+ * re-runs the course pick that folded the drives into the per-ship masks. Everything the launch
+ * was paid for has to survive the revert; the wallet it reverts to has already spent that cash. */
+static void qa_sortie_restart_matrix(void)
+{
+	const bool savedHave = endlessSortieHave;
+	const JE_boolean savedJump = jumpSection;
+	const JE_byte savedMain = mainLevel, savedNext = nextLevel;
+	const JE_byte savedFile = lvlFileNum, savedForced = forcedLvlFileNum;
+
+	qa_session(0);
+	qa_clear_ships();
+
+	/* An outpost that sold a drive to each ship and a sabotage charge to player 1, then the course
+	 * pick: it snapshots the pending buys, folds them, and clears them as consumed. */
+	endlessPurchasedMods[0] = (unsigned)ENDLESS_MOD_TURBODRIVE;
+	endlessPurchasedMods[1] = (unsigned)ENDLESS_MOD_OVERBLAST;
+	endlessCleanseChargeCount[0] = 2;
+	memcpy(endlessSortiePrePurchased, endlessPurchasedMods, sizeof(endlessSortiePrePurchased));
+	memcpy(endlessSortiePreCleanse, endlessCleanseChargeCount, sizeof(endlessSortiePreCleanse));
+	endlessApplyPurchasedMods();
+	endlessPurchasedMods[0] = endlessPurchasedMods[1] = 0;
+
+	endlessCaptureSortie();
+	endlessRestartSortie();
+
+	qa_check((endlessPlayerMods[0] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY) == (Uint64)ENDLESS_MOD_TURBODRIVE,
+	         "a restarted zone hands P1 back the drive it paid for");
+	qa_check((endlessPlayerMods[1] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY) == (Uint64)ENDLESS_MOD_OVERBLAST,
+	         "...and P2 the one it bought for itself");
+
+	// What a drive is worth is the window it opens, so drive one kill through the restored masks.
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	endlessCountKill(0, ENDLESS_KILLER_NONE);
+	qa_check(endlessTurbodriveTimer[0] > 0 && endlessTurbodriveTimer[1] > 0,
+	         "...and both still open their window on a kill after the retry");
+
+	// A later bail out of the restarted zone restores the pre-pick one-shots from these.
+	qa_check(endlessSortiePrePurchased[0] == (unsigned)ENDLESS_MOD_TURBODRIVE
+	         && endlessSortiePrePurchased[1] == (unsigned)ENDLESS_MOD_OVERBLAST,
+	         "a restarted zone still owes the outpost the purchases it launched with");
+	qa_check(endlessSortiePreCleanse[0] == 2, "...and the sabotage charges bought beside them");
+
+	memset(endlessSortiePrePurchased, 0, sizeof(endlessSortiePrePurchased));
+	memset(endlessSortiePreCleanse, 0, sizeof(endlessSortiePreCleanse));
+	memset(endlessTurbodriveTimer, 0, sizeof(endlessTurbodriveTimer));
+	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
+	forcedLvlFileNum = savedForced;
+	lvlFileNum = savedFile;
+	nextLevel = savedNext;
+	mainLevel = savedMain;
+	jumpSection = savedJump;
+	endlessSortieHave = savedHave;
+}
+
 /* Every gamble outcome, fired through the debug trigger from both machines. The assertions are
  * the invariants an outcome must never break whichever effect it rolls: wallets stay inside 32
  * bits, the combined perk holding stays within its caps, and nothing runs away. A broken clamp
@@ -2223,6 +2279,7 @@ void qa_test_endless_suite(void)
 	qa_economy_matrix();
 	qa_gamble_matrix();
 	qa_death_prompt_matrix();
+	qa_sortie_restart_matrix();
 	qa_test_endless_death_menu();
 	qa_modifier_display_matrix();
 	qa_drive_matrix();

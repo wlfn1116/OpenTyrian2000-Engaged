@@ -2446,17 +2446,11 @@ void JE_itemScreen(void)
 
 				for (uint i = 0; i < 2; ++i)
 				{
-					// A network game labels the two totals with the players' own names: the
-					// "Player N" prefix of "Player N Score:" is swapped for the name, keeping
-					// the label's tail (and so its punctuation) intact.
-					const char *label = miscText[40 + i];   // "Player 1 Score:"
-					const char *who = miscText[48 + i];     // "Player 1"
-					const size_t who_len = strlen(who);
-
-					if (isNetworkGame && strncmp(label, who, who_len) == 0)
-						snprintf(buf, sizeof(buf), "%s%s %lld", JE_getName(i + 1), label + who_len, (long long)player[i].cash);
-					else
-						snprintf(buf, sizeof(buf), "%s %lld", label, (long long)player[i].cash);
+					// A network game labels the two totals with the players' own names; the same
+					// swap the level-complete screen makes.
+					char label[80];
+					JE_playerScoreLabel((JE_byte)(i + 1), label, sizeof(label));
+					snprintf(buf, sizeof(buf), "%s %lld", label, (long long)player[i].cash);
 
 					y = draw_2p_info_row(SHOP_2P_X, y, 4, "", buf);
 

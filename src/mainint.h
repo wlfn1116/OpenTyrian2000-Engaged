@@ -198,6 +198,7 @@ void JE_mainGamePlayerFunctions(void);
 // shot draw maps them to stable render-list ids so the indicator interpolates.
 extern int link_marker_slot[3];
 const char *JE_getName(JE_byte pnum);
+void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize);
 
 void JE_playerCollide(Player *this_player, JE_byte playerNum);
 

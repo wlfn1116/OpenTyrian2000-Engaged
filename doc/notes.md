@@ -1125,6 +1125,17 @@ returning. Inputs must be released before wreck dismissal is armed.
 Retry restores the launch snapshot. Return to Outpost uses the Quit Level path;
 Restart Zone clears the visit-resume flag and reloads the same music.
 
+A retry that re-arms the committed level directly (Restart Zone, and a hardcore
+Quit Level, both through `endlessArmLockedRelaunch`) never runs course selection
+again, so nothing downstream re-folds what selection folded. Such a retry must
+restore `endlessPlayerMods`, each ship's own effect mask, from the launch
+snapshot. Selection consumed the purchase that mask was folded from, and the
+reverted wallet has already paid for it, so a dropped mask is a drive bought and
+never flown. Restart Zone carries the pre-pick one-shots
+(`endlessSortiePrePurchased` and its two companions) for the same reason: a
+later bail out of the restarted zone restores the outpost's pending purchases
+from them.
+
 `itemAvail` belongs to the outpost. Level `]I` blocks must still be read to keep
 the script parser aligned, then discarded under Endless.
 

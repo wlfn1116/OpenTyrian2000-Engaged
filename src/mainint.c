@@ -6691,7 +6691,9 @@ void JE_endLevelAni(void)
 	{
 		for (uint i = 0; i < 2; ++i)
 		{
-			snprintf(tempStr, sizeof(tempStr), "%s %lld", miscText[40 + i], (long long)player[i].cash);
+			char label[80];
+			JE_playerScoreLabel((JE_byte)(i + 1), label, sizeof(label));
+			snprintf(tempStr, sizeof(tempStr), "%s %lld", label, (long long)player[i].cash);
 			JE_outTextGlow(VGAScreenSeg, 30, 50 + 20 * i, tempStr);
 		}
 	}
@@ -6738,7 +6740,7 @@ void JE_endLevelAni(void)
 			JE_playSampleNum(S_ITEM);
 
 			x = *player[p].lives * 1000;
-			sprintf(tempStr, "Player %u %s %d", p + 1, miscTextB[7], x);
+			snprintf(tempStr, sizeof(tempStr), "%s %s %d", JE_getName((JE_byte)(p + 1)), miscTextB[7], x);
 			JE_outTextGlow(VGAScreenSeg, 30, 128 + 18 * (int)p, tempStr);
 			player_add_cash(&player[p], x);
 		}
@@ -10693,6 +10695,21 @@ const char *JE_getName(JE_byte pnum)
 	}
 
 	return miscText[47 + pnum];
+}
+
+// "Player N Score:" with its "Player N" prefix swapped for that player's nickname, so an online
+// pair's totals are labelled by name wherever they are shown. Only the prefix is replaced, keeping
+// the label's punctuation; a label that does not open with that name is left as authored.
+void JE_playerScoreLabel(JE_byte pnum, char *out, size_t outSize)
+{
+	const char *const label = miscText[39 + pnum];   // "Player N Score:"
+	const char *const who   = miscText[47 + pnum];   // "Player N"
+	const size_t who_len = strlen(who);
+
+	if (isNetworkGame && strncmp(label, who, who_len) == 0)
+		snprintf(out, outSize, "%s%s", JE_getName(pnum), label + who_len);
+	else
+		snprintf(out, outSize, "%s", label);
 }
 
 // Find the next `]L` name at or after a section, including routing sections with no name of their

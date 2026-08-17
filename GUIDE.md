@@ -423,7 +423,9 @@ Shot, and the flare-style field keeps the original name.
 ### Death and saving
 
 A revive restores the hull, clears enemy shots, and briefly stops enemy fire.
-Without one, Relaxed offers Restart Zone, Return to Outpost, or End Run.
+Without one, Relaxed offers Restart Zone, Return to Outpost, or End Run. Either
+retry keeps what the outpost was paid for, including a drive bought for that
+zone: the cash is spent, so the drive is still flying when the zone restarts.
 
 Relaxed and Standard checkpoint at the outpost, into the same save slot as the
 campaign half of the run (`opentyrian.sav`, see Files and logs). Hardcore never
