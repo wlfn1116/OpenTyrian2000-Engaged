@@ -4715,6 +4715,8 @@ static void qa_test_peer_left_level(void)
 	endlessQuitToOutpost = false;
 	qa_check(!nrb_peer_left_level(0), "an empty queue does not end the level");
 	qa_check(!reallyEndLevel && !playerEndLevel, "...and touches nothing");
+	qa_check(!nrb_peer_left_level(PACKET_GAME_MENU) && !reallyEndLevel,
+	         "a rollback in-game menu release is not a departure: the peer is still in the level");
 
 	qa_check(nrb_peer_left_level(PACKET_WAITING), "a peer at the level handshake ends the level");
 	qa_check(reallyEndLevel && !playerEndLevel && !endlessQuitToOutpost,
@@ -4766,6 +4768,56 @@ static void qa_test_peer_idle_rule(void)
 	         "the limit counts from the last advance, so the original start no longer matters");
 	qa_check(nrb_peer_idle(1601 + limit, 540, &seen, &tick),
 	         "a peer that advanced during the wait and then went quiet is idle from that advance");
+#endif
+}
+
+/* Who owns the in-game menu a frame's request bits open. The property that matters is that the two
+ * seats never disagree: a frame either opens no menu, or opens one with exactly one presser and
+ * one waiter. Either answer twice deadlocks, so drive both seats through every combination. */
+static void qa_test_menu_claim(void)
+{
+#ifdef WITH_NETWORK
+	const Uint16 none = RB_BTN_FIRE;               // traffic on the frame, no request
+	const Uint16 menu = RB_BTN_FIRE | RB_REQ_MENU;
+
+	for (int hostPressed = 0; hostPressed <= 1; ++hostPressed)
+	{
+		for (int joinerPressed = 0; joinerPressed <= 1; ++joinerPressed)
+		{
+			const Uint16 hostBits = hostPressed ? menu : none;
+			const Uint16 joinerBits = joinerPressed ? menu : none;
+
+			// The same frame read from each seat: local and remote swap, is_host does not.
+			const NrbMenuClaim onHost = nrb_menu_claim(hostBits, joinerBits, true);
+			const NrbMenuClaim onJoiner = nrb_menu_claim(joinerBits, hostBits, false);
+
+			qa_check(onHost.open == onJoiner.open
+			         && onHost.open == (hostPressed || joinerPressed),
+			         "both seats agree on whether a frame opens the in-game menu");
+			if (!onHost.open)
+			{
+				qa_check(!onHost.local && !onJoiner.local,
+				         "...and a frame that opens none leaves neither seat holding one");
+				continue;
+			}
+			qa_check(onHost.local != onJoiner.local,
+			         "an opened menu has exactly one presser, so the other seat has someone to wait for");
+			qa_check(onHost.local == (hostPressed != 0),
+			         "the host presses for itself, and takes a tie from the joiner");
+		}
+	}
+
+	/* Presses one frame apart are two frames, and each is claimed on its own: the earlier one is
+	 * the frame the menu opens at, so a joiner that pressed first keeps it. */
+	const NrbMenuClaim earlyOnJoiner = nrb_menu_claim(menu, none, false);
+	const NrbMenuClaim earlyOnHost = nrb_menu_claim(none, menu, true);
+	qa_check(earlyOnJoiner.open && earlyOnJoiner.local && earlyOnHost.open && !earlyOnHost.local,
+	         "a joiner press on a frame the host did not press is the joiner's menu");
+
+	/* Only RB_REQ_MENU opens one; the other request bits ride the same records. */
+	qa_check(!nrb_menu_claim(RB_REQ_SKIPLEVEL | RB_REQ_NORTSHIP | RB_REQ_PAUSE,
+	                         RB_REQ_SKIPLEVEL | RB_REQ_PAUSE, true).open,
+	         "skip-level, Nort ship and the dead pause bit open no menu");
 #endif
 }
 
@@ -7069,6 +7121,7 @@ int qa_run_unit_suite(void)
 	qa_test_coop_combo_and_pickups();
 	qa_test_peer_left_level();
 	qa_test_peer_idle_rule();
+	qa_test_menu_claim();
 	qa_test_online_suite();
 	qa_test_endless_suite();
 	qa_test_save_fixtures();

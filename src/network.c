@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       67           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       68           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -848,6 +848,8 @@ int network_check(void)
 
 			keep_alive_tick = SDL_GetTicks();
 		}
+
+		nrb_menu_keepalive();
 	}
 
 	// Retry everything still unacknowledged, oldest first. Resending only the head would drain
@@ -3392,11 +3394,13 @@ void network_shop_end(void)
 }
 
 /* Everything the peer sends after its quit queues behind that notice, and the outpost's departure
- * test reads a queued quit as "the peer already left". See "Outpost protocol" in doc/notes.md. */
+ * test reads a queued quit as "the peer already left". A menu release a level-end timeout left
+ * behind goes the same way. See "Outpost protocol" in doc/notes.md. */
 bool network_quit_notice_retire(void)
 {
 	bool retired = false;
-	while (isNetworkGame && network_inbound_head() == PACKET_GAME_QUIT)
+	while (isNetworkGame && (network_inbound_head() == PACKET_GAME_QUIT
+	                         || network_inbound_head() == PACKET_GAME_MENU))
 	{
 		network_update();
 		retired = true;

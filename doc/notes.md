@@ -1050,6 +1050,42 @@ outside its own volley, and a special recharging slower than the window landed
 in no later one either. The gate is exported because nothing else inside
 `JE_playerMovement` can be driven from the suite.
 
+### Extra-perk pricing
+
+`endlessExtraPerkPrice` is the depth ladder under three independent terms: the
+owned-stack surcharge, the income index, and the repeat slice.
+
+`endlessIncomeIndexPercent` divides what the run earned by fighting by what its
+cleared zones are expected to pay, `ENDLESS_PERK_REF_INCOME_TENTHS` of
+`endlessClearBase` each. Only `ENDLESS_PERK_INCOME_PASSTHRU_PCT` of the excess
+over par reaches the price, so a route earning twice par still buys more perks
+per zone than a lean one; a full pass-through would make the richer route
+pointless. Bounty cash enters at `ENDLESS_INCOME_BOUNTY_PCT`, because the two
+halves of an elite route pay for different things. Clear cash follows from the
+chart pick, and bounty cash follows from hunting the elites and champions down
+once the sector is flying. Weighting the second one lightly leaves most of the
+reward for playing the sector well. The weight also covers a gap in the modifier
+table: reward tenths price the clear bonus, nothing prices the bounty
+population, so Elite Pack collects twice while listing once. Interest, gambling,
+the perk buyout, the stake and trade-ins are excluded, since none of them measure
+how well a route pays and counting the gamble would let one jackpot raise the
+price of every later perk.
+
+The ledger behind the index is per machine. `player_credit_cash` books only
+`endlessEconomyIndex`, the wallet at this keyboard, so in co-op each side
+already weighs its own player and the index needs no slot of its own. Under
+Shared credit both players earn the same amounts and both machines index alike;
+under Individual the pricing is personal, as Loan Shark already is. Nothing here
+is read inside the rollback sim, so the per-machine ledger cannot reach a sim
+hash.
+
+A repeat buy is detected by comparing the live cost against the price a fresh
+visit opens at, which is why no per-visit counter exists to save and mirror.
+`endlessExtraPerkCost` is not in the player wire block, so this stays local. A
+repeat must also clear `ENDLESS_PERK_VISIT_SLICE_PCT` of the entry bank; two
+slices plus the first buy cannot fit in one bank, so a third perk in one visit
+is unreachable at any income.
+
 ### Saves and records
 
 Every save lives in `opentyrian.sav`, a text file in the same `section` / `item`
@@ -1267,7 +1303,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 67.
+`NET_VERSION` bump. The current value is 68.
 
 Recent versions:
 
@@ -1321,6 +1357,7 @@ Recent versions:
 | 65 | An open Opening Salvo window lifts a ram, Knife Fight's bonus added beside the lift |
 | 66 | Zinglon pillar ramp: Ordnance Reserves stretches the blast, a live beam blocks a refire |
 | 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
+| 68 | Rollback in-game menu at the press frame; `PACKET_GAME_MENU` with an input image releases it, not `PACKET_WAITING` |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name
@@ -1477,8 +1514,9 @@ handler (`nrb_peer_left_level`, the options-menu wait). In both co-op modes the
 quit reopens the outpost on both machines (Campaign reloads the level backup
 and runs its `]I` record, Endless restores the sortie), so
 `network_shop_begin` is the handler and retires it through
-`network_quit_notice_retire`. Left there, the outpost's pumps read only shop
-traffic and never reach the packets queued behind it, and
+`network_quit_notice_retire`, which also drops a rollback menu release
+(`PACKET_GAME_MENU`) a level-end timeout stranded. Left there, the outpost's
+pumps read only shop traffic and never reach the packets queued behind it, and
 `network_shop_departure_pending` reads the quit as the peer having already
 left: the quitter's save request went unanswered, and the other machine's
 departure skipped the rendezvous and could fold its own course. The modes with
@@ -1562,17 +1600,48 @@ is unacknowledged and idempotent. A level epoch rejects frames from other levels
 Canaries wait until the local frame is available. Pool hashes cover player and
 enemy shots, explosions, repeating explosions, and the sound queue.
 
-Menu requests schedule a future frame and wait until it is final. When both
-players press Esc together, the host takes the menu and the joiner waits.
-A rollback session opens the menu on that confirmed frame with no further
-handshake. The `PACKET_GAME_MENU` exchange in `JE_doInGameSetup` belongs to the
-lockstep path, which arrives off a state packet with nothing else proving the
-two machines are together.
+The in-game menu opens at the frame of the press. A request rides the frame's
+input record (`RB_REQ_MENU`, outside the simulated bits), and the menu belongs
+to the earliest verified frame carrying one; both machines read the same
+verified records, so both settle on the same frame and, when both pressed on
+that frame, on the host as the presser. A machine whose timeline ran past that
+frame rewinds to it (`nrb_resim_range` with the frame as both start and target,
+so the pass for it presents), which is why the other player's screen can step
+back a few frames when the notice appears. The presser holds at its own frame
+until the peer's record for it lands, so its screen freezes on the press.
 
-A level end and a scheduled menu frame are confirmed by waiting for the peer's
-records up to that frame. The wait gives up once the peer's newest frame has not
-advanced for `NRB_PEER_IDLE_TIME_OUT`, counted from the last advance rather than
-from the start of the wait: a peer that reaches the same end a few frames later
+Afterwards both machines call `nrb_reset_core` and resume from the menu frame's
+state as a fresh epoch: the frames either had simulated beyond it, and the
+records for them still in flight, are refused as the old epoch. Requests on
+those discarded frames go with them.
+
+The discarded frames are flown again from live input, so a fatal hit taken
+between the press frame and the peer's position is undone, up to the prediction
+depth. Nothing tested when the press is read can prevent that: the rewind
+reaches only frames after the press, and the hit has not happened yet. The
+`endlessDeathLocksMenu` gate in the level loop covers a press made after every
+ship is down, which is a different window. Closing this one would mean
+scheduling the menu a fixed lead ahead again for those modes; the bounded
+window was accepted instead, and GUIDE.md states the effect.
+
+A machine holding a menu produces no frames, so every driver wait (the hold,
+the level-end confirmation, the prediction bound) processes requests and serves
+a menu it finds; a level end reached before the peer's earlier press was seen
+rewinds to the press and ends again on the fresh timeline. The release under
+rollback is `PACKET_GAME_MENU` rather than `PACKET_WAITING`: it carries the
+presser's input image through the menu frame (`nrb_menu_release_fill`), which
+the waits ingest from wherever it sits in the reliable queue, so a peer that
+lost the frame's own datagram still reaches the frame; `nrb_peer_left_level`
+ignores it, the recovery loops leave it at the head, and `network_check` runs
+`nrb_menu_keepalive` so the records repeat while any menu screen is up. The
+`PACKET_GAME_MENU` handshake at the top of `JE_doInGameSetup` belongs to the
+lockstep path, which arrives off a state packet with nothing else proving the
+two machines are together, and its release stays `PACKET_WAITING`.
+
+A level end is confirmed by waiting for the peer's records up to that frame, and
+the menu hold waits the same way. The wait gives up once the peer's newest frame
+has not advanced for `NRB_PEER_IDLE_TIME_OUT`, counted from the last advance
+rather than from the start of the wait: a peer that reaches the same end later
 confirms at once (our records are already there) and leaves, so its final packet
 is the only carrier of its last frame, and a lost one never comes again. The
 machine leaving a level sends that final packet twice for the same reason. Most

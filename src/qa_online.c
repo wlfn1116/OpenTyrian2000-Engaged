@@ -1364,6 +1364,13 @@ static void qa_quit_notice_retire(void)
 	         "...and the shop packet behind it is read");
 	qa_check(!network_quit_notice_retire(), "there is nothing to retire off an empty queue");
 
+	// A rollback menu release a level-end timeout stranded goes the same way as the quit.
+	memset(raw, 0, sizeof(raw));
+	SDLNet_Write16(PACKET_GAME_MENU, &raw[0]);
+	qa_inject_packet(raw, 4);
+	qa_check(!network_shop_pump() && network_quit_notice_retire() && packet_in[0] == NULL,
+	         "opening the outpost retires a stranded in-game menu release");
+
 	player[1] = savedPeer;
 	isNetworkGame = savedNet;
 	twoPlayerMode = savedTwo;

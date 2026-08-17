@@ -127,6 +127,8 @@ bool nrb_active(void)
                                       /* something is wedged beyond waiting   */
 #define NRB_REC_BYTES   14            /* wire size of one input record        */
 #define NRB_HDR_BYTES   48            /* wire size of the packet header       */
+#define NRB_RESEND_MS   100           /* gap between repeats of our records   */
+                                      /* while nothing else is publishing them */
 
 /* Wire-relevant tuple bits: the four buttons, the four requests, the analog
  * link flag, and the movement-intent bits (four RB_MOVE_* directions plus the
@@ -173,9 +175,13 @@ static NrbSlot remote_used[NRB_HIST];   /* what the sim actually consumed     */
 static Uint32 nrb_cur;                  /* frame being simulated              */
 static Uint32 verified_upto;            /* sim used truth through this frame  */
 static Uint32 req_done;                 /* pause/menu processed through this  */
-static Uint32 req_at;                   /* frame the menu opens after; 0=none */
-static bool   req_local_menu;           /* our own press, not the peer's      */
-static bool   req_host_menu;            /* the host machine's press is among the coalesced ones */
+/* In-game menu. menu_at is the verified frame whose request opens it (0 = none pending) and
+ * menu_local whether this machine drives it. menu_press_at is our own press while its frame awaits
+ * the peer's record; menu_frame is set while the menu is open. */
+static Uint32 menu_at;
+static bool   menu_local;
+static Uint32 menu_press_at;
+static Uint32 menu_frame;
 static Uint32 peer_acked;               /* peer holds all our frames <= this  */
 static Uint32 remote_contig;            /* we hold all peer frames <= this    */
 static Uint32 remote_newest;            /* newest peer frame seen (timesync)  */
@@ -327,9 +333,9 @@ static void nrb_reset_core(void)
 	resim_last_K = resim_repeat = 0;
 	resim_livelock_reported = false;
 	end_agreed = false;
-	req_at = 0;
-	req_local_menu = false;
-	req_host_menu = false;
+	menu_at = 0;
+	menu_local = false;
+	menu_press_at = 0;
 
 	/* Until the peer's first packet, predict "parked at spawn, no buttons".
 	 * Ship spawn positions are part of deterministic level init, so both
@@ -606,10 +612,11 @@ static Uint32 nrb_scan_mispredict(void)
 
 /* Wire protocol. */
 
-static void nrb_send_input(void)
+/* Write one PACKET_INPUT image (header, then the records the peer has not acknowledged) into
+ * `data`; returns its length. Sent on its own each frame, and carried inside the in-game menu
+ * release (see nrb_menu_release_fill). */
+static int nrb_build_input(Uint8 *data)
 {
-	Uint8 *data = packet_out_temp->data;
-
 	const Uint32 F = nrb_cur;
 	Uint32 from = peer_acked + 1;
 	if (from < 1)
@@ -669,8 +676,37 @@ static void nrb_send_input(void)
 		data[off + 13] = (Uint8)(Sint8)in->velY;
 	}
 
-	network_send_unacked(off);
+	return off;
+}
+
+static void nrb_send_input(void)
+{
+	network_send_unacked(nrb_build_input(packet_out_temp->data));
 	last_resend_tick = SDL_GetTicks();
+}
+
+int nrb_menu_release_fill(Uint8 *dst)
+{
+	return nrb_build_input(dst);
+}
+
+void nrb_menu_keepalive(void)
+{
+	if (menu_frame == 0 || SDL_GetTicks() - last_resend_tick <= NRB_RESEND_MS)
+		return;
+	nrb_send_input();
+}
+
+/* Read the records a queued in-game menu release carries. The release itself stays queued for
+ * the peer branch of JE_doInGameSetup, which is the handler that consumes it. */
+static void nrb_menu_release_ingest(void)
+{
+	for (int i = 0; i < NET_PACKET_QUEUE; ++i)
+	{
+		const UDPpacket *p = packet_in[i];
+		if (p != NULL && p->len > 4 && SDLNet_Read16(&p->data[0]) == PACKET_GAME_MENU)
+			nrb_handle_packet(&p->data[4], p->len - 4);
+	}
 }
 
 void nrb_handle_packet(const Uint8 *data, int len)
@@ -1034,60 +1070,58 @@ static void nrb_compare_canary(void)
 	peer_pend_n = keep;
 }
 
-/* Schedule state-changing menu requests beyond prediction and wait for peer confirmation.
- * Presentation-only pause requests remain immediate. */
-#define NRB_REQ_LEAD (ROLLBACK_MAX_PREDICT + 2)
+NrbMenuClaim nrb_menu_claim(Uint16 local_bits, Uint16 remote_bits, bool is_host)
+{
+	NrbMenuClaim claim = { false, false };
 
+	if (((local_bits | remote_bits) & RB_REQ_MENU) == 0)
+		return claim;
+
+	/* Both machines resolve this from the same two records, so the joiner yields exactly when
+	 * the host is a presser too, and a lone press is always its own presser's. */
+	const Uint16 host_bits = is_host ? local_bits : remote_bits;
+	claim.open = true;
+	claim.local = (local_bits & RB_REQ_MENU) != 0
+	              && (is_host || (host_bits & RB_REQ_MENU) == 0);
+	return claim;
+}
+
+/* Walk the newly verified frames for an in-game menu request. The menu opens at the earliest one
+ * carrying it, and requests on later frames belong to the timeline that menu discards (see
+ * "Rollback input" in doc/notes.md). A settled frame also stops the walk while the rewind onto it
+ * is in flight, the one state where `verified_upto` is ahead of the frame being simulated. */
 static void nrb_process_requests(void)
 {
-	while (req_done < verified_upto)
+	while (menu_at == 0 && req_done < verified_upto)
 	{
 		const Uint32 f = ++req_done;
 		const Uint16 lbits = (local_hist[f % NRB_HIST].tag == f) ? local_hist[f % NRB_HIST].in.buttons : 0;
 		const Uint16 rbits = (remote_hist[f % NRB_HIST].tag == f) ? remote_hist[f % NRB_HIST].in.buttons : 0;
-		const Uint16 bits = lbits | rbits;
 
 		// RB_REQ_PAUSE is dead: online cannot pause, so a set bit from any source is ignored.
 
-		if (bits & RB_REQ_MENU)
+		const NrbMenuClaim claim = nrb_menu_claim(lbits, rbits,
+		                                          thisPlayerNum == networkHostPlayerNum);
+		if (claim.open)
 		{
-			/* Coalesce nearby requests into the earliest scheduled opening. */
-			const Uint32 at = f + NRB_REQ_LEAD;
-			if (req_at == 0 || at < req_at)
-				req_at = at;
-			req_local_menu |= (lbits & RB_REQ_MENU) != 0;
-
-			/* Both machines read the same verified records, so both derive the same answer to
-			 * "did the host press?", which is what the arbitration below decides on. */
-			const Uint16 hbits = (thisPlayerNum == networkHostPlayerNum) ? lbits : rbits;
-			req_host_menu |= (hbits & RB_REQ_MENU) != 0;
+			menu_at = f;
+			menu_local = claim.local;
 		}
 	}
 }
 
 /* Rollback trigger. */
 
-/* Restore to frame K and arrange for the level loop to re-simulate K..target. */
-static NrbStep nrb_begin_resim(Uint32 K)
+/* Restore to frame K and arrange for the level loop to re-simulate K..target, discarding the
+ * timeline through `high`. Stopping short of `high` abandons frames whose records the peer already
+ * holds, so only the in-game menu does that, and it opens a fresh epoch afterwards. */
+static NrbStep nrb_resim_range(Uint32 K, Uint32 target, Uint32 high)
 {
-	/* Highest frame the timeline we are about to discard ever simulated. */
-	const Uint32 high = (resim_active && resim_target > nrb_cur) ? resim_target : nrb_cur;
-
 	/* Clear consumed-input records for the discarded timeline. Early-return frames may not stamp
 	 * them again; retaining stale records can trigger an endless rollback to K. */
 	for (Uint32 f = K; f <= high; ++f)
 		if (remote_used[f % NRB_HIST].tag == f)
 			memset(&remote_used[f % NRB_HIST], 0, sizeof(remote_used[0]));
-
-	/* Count consecutive rollbacks onto the same frame; the scan uses this to
-	 * break out of a correction that is not converging (see NRB_RESIM_GIVE_UP). */
-	if (K == resim_last_K)
-		++resim_repeat;
-	else
-	{
-		resim_last_K = K;
-		resim_repeat = 1;
-	}
 
 	if (!rollback_restore(K))
 	{
@@ -1104,20 +1138,39 @@ static NrbStep nrb_begin_resim(Uint32 K)
 	rl_abort_record();  /* drop the aborted pass's partial render recording */
 	JE_discardSPPass(); /* separate: rl_abort_record returns early when not recording */
 
+	resim_active = true;
+	resim_target = target;
+	nrb_cur = K;
+	rollback_resim = true;
+	rollback_resim_silent = (K < resim_target);
+	return NRB_STEP_RESIM;
+}
+
+/* Misprediction: restore to frame K and re-simulate up to the frame the timeline had reached. */
+static NrbStep nrb_begin_resim(Uint32 K)
+{
+	/* Highest frame the timeline we are about to discard ever simulated. Kept as the replay
+	 * ceiling when another correction arrives: a shorter pass would resample input already
+	 * sent to the peer. */
+	const Uint32 high = (resim_active && resim_target > nrb_cur) ? resim_target : nrb_cur;
+
+	/* Count consecutive rollbacks onto the same frame; the scan uses this to
+	 * break out of a correction that is not converging (see NRB_RESIM_GIVE_UP). */
+	if (K == resim_last_K)
+		++resim_repeat;
+	else
+	{
+		resim_last_K = K;
+		resim_repeat = 1;
+	}
+
 	++stat_rollbacks;
 	++qa_rollbacks_session;
 	stat_resim_frames += high - K + 1;
 	if (high - K + 1 > stat_deepest)
 		stat_deepest = high - K + 1;
 
-	resim_active = true;
-	/* Preserve the original replay ceiling when another correction arrives. A
-	 * shorter pass would resample input already sent to the peer. */
-	resim_target = high;
-	nrb_cur = K;
-	rollback_resim = true;
-	rollback_resim_silent = (K < resim_target);
-	return NRB_STEP_RESIM;
+	return nrb_resim_range(K, high, high);
 }
 
 /* A between-level packet proves the peer will send no more frames for this level. End locally but
@@ -1150,13 +1203,14 @@ static bool nrb_stall_pump(Uint32 wait_start, bool *stall_reported, const char *
 {
 	service_SDL_events(false);
 
-	if (SDL_GetTicks() - last_resend_tick > 100)
+	if (SDL_GetTicks() - last_resend_tick > NRB_RESEND_MS)
 		nrb_send_input();
 
 	// <= 0, not == 0: a receive error reads nothing, so skipping the sleep on it would
 	// spin this pump on a core for the whole stall.
 	if (network_check() <= 0)
 		SDL_Delay(1);
+	nrb_menu_release_ingest();
 
 	// The peer can start a recovery while we sit in a wait loop (a desync right
 	// at the level end is the classic case).  Handle it here, or its chunks
@@ -1543,11 +1597,11 @@ static int nrb_resync_send_once(void)
 					endlessCoopPeerQuitLevel();
 				outcome = 3;
 			}
-			else if (type == PACKET_WAITING || type == PACKET_DETAILS)
+			else if (type == PACKET_WAITING || type == PACKET_DETAILS || type == PACKET_GAME_MENU)
 			{
-				/* The peer is already in a between-levels handshake: it left
-				 * the level and nothing over there is listening for chunks.
-				 * The packet belongs to the level-end machinery; leave it. */
+				/* The peer is already in a between-levels handshake, or releasing an
+				 * in-game menu it opened before this attempt began: nothing over there is
+				 * listening for chunks. The packet belongs to its own handler; leave it. */
 				outcome = 3;
 			}
 			else
@@ -1699,13 +1753,13 @@ static bool nrb_resync_receive(void)
 				level_over = true;
 				break;
 			}
-			if (type == PACKET_WAITING || type == PACKET_DETAILS)
+			if (type == PACKET_WAITING || type == PACKET_DETAILS || type == PACKET_GAME_MENU)
 			{
-				/* The peer is already in a between-levels handshake: the stream
-				 * is dead, and this packet is a rendezvous release the level
-				 * machinery is (or will be) blocked on.  Same rule as the send
+				/* The peer is already in a between-levels handshake, or releasing an
+				 * in-game menu: the stream is dead, and this packet is a release the
+				 * level machinery is (or will be) blocked on.  Same rule as the send
 				 * side: abort and leave it at the queue head, never consume. */
-				abort = "peer already in the between-levels handshake";
+				abort = "peer already in the between-levels handshake or an in-game menu release";
 				break;
 			}
 			network_update();
@@ -1951,24 +2005,25 @@ static bool nrb_resync_dispatch(void)
 	return nrb_resync_receive();
 }
 
-/* Verdicts for the scheduled-menu wait below. */
+/* Verdicts of the menu hold below. */
 enum
 {
-	NRB_MENU_OPEN,     /* frame confirmed on both machines: open the menu      */
+	NRB_MENU_OPEN,     /* a menu frame is settled: serve it                    */
 	NRB_MENU_RESIM,    /* rollback first; the caller re-enters after it        */
-	NRB_MENU_ABANDON,  /* a desync recovery reset the timeline: no menu frame  */
+	NRB_MENU_ABANDON,  /* the timeline was reset or the peer left: no menu     */
 };
 
-/* The scheduled menu frame has been reached; wait until it is confirmed, at
- * which point both machines hold identical state and the menu may open. */
-static int nrb_menu_frame_ready(Uint32 *resim_from)
+/* Our own press awaits the peer's record for its frame. Hold here, so the screen freezes on the
+ * press, until a menu frame settles: ours once that record lands, or an earlier press of the
+ * peer's that the same records reveal. */
+static int nrb_menu_hold(Uint32 *resim_from)
 {
 	const Uint32 wait_start = SDL_GetTicks();
 	Uint32 newest_seen = remote_newest;
 	Uint32 newest_tick = wait_start;
 	bool stall_reported = false;
 
-	while (verified_upto < nrb_cur)
+	while (menu_at == 0)
 	{
 		if (nrb_stall_pump(wait_start, &stall_reported, "waiting to open the in-game menu"))
 			return NRB_MENU_ABANDON;
@@ -1980,6 +2035,10 @@ static int nrb_menu_frame_ready(Uint32 *resim_from)
 			return NRB_MENU_RESIM;
 		}
 
+		nrb_process_requests();
+		if (menu_at != 0)
+			break;
+
 		/* A peer idle this long has left through an unmodeled route. Stop waiting so
 		 * the local player retains access to the menu and quit path. */
 		if (nrb_peer_idle(SDL_GetTicks(), remote_newest, &newest_seen, &newest_tick))
@@ -1988,13 +2047,63 @@ static int nrb_menu_frame_ready(Uint32 *resim_from)
 			snprintf(detail, sizeof(detail),
 			         "peer stopped simulating at frame %lu while we waited to open the menu "
 			         "at frame %lu (player %u)\n  opening it unsynchronised",
-			         (unsigned long)remote_newest, (unsigned long)nrb_cur, thisPlayerNum);
+			         (unsigned long)remote_newest, (unsigned long)menu_press_at, thisPlayerNum);
 			crashlog_note_net("ROLLBACK MENU TIMEOUT", detail);
+			menu_at = menu_press_at;
+			menu_local = true;   /* nobody left to arbitrate with */
 			break;
 		}
 	}
 
 	return NRB_MENU_OPEN;
+}
+
+/* Serve the menu at menu_at: rewind to it when the timeline ran past (the caller re-enters once
+ * that pass has run), open it over the state both machines confirmed there, then resume on a fresh
+ * epoch, which retires the frames either machine simulated beyond it and their records in flight. */
+static NrbStep nrb_menu_serve(void)
+{
+	/* Every caller runs outside a re-simulation, so nrb_cur is the whole discarded timeline. */
+	if (nrb_cur > menu_at)
+		return nrb_resim_range(menu_at, menu_at, nrb_cur);
+
+	const bool local_menu = menu_local;
+	const Uint32 at = menu_at;
+	menu_at = 0;
+	menu_local = false;
+	menu_press_at = 0;
+
+	if (qa_net_menu_frame > 0)
+	{
+		qa_menu_ran = true;
+		fprintf(stderr, "net gameplay: menu rendezvous at frame %lu (local branch: %d)\n",
+		        (unsigned long)at, local_menu ? 1 : 0);
+		fflush(stderr);
+	}
+
+	/* Our records through the menu frame, in case the peer's copy of the frame's packet was
+	 * lost; the keepalive repeats them for as long as the menu is up. */
+	menu_frame = at;
+	nrb_send_input();
+
+	yourInGameMenuRequest = local_menu;
+	JE_doInGameSetup();
+	yourInGameMenuRequest = false;
+	menu_frame = 0;
+	if (haltGame)
+		reallyEndLevel = true;
+
+	/* Quit to Outpost, or a level end the menu frame itself carried: settled at the same frame
+	 * on both machines, so it needs no confirmation. */
+	if (reallyEndLevel)
+	{
+		end_agreed = true;
+		return NRB_STEP_PRESENT;
+	}
+
+	nrb_reset_core();
+	JE_clearSpecialRequests();
+	return NRB_STEP_PRESENT;
 }
 
 /* Give back time when we are consistently ahead of the peer, GGPO-style: each
@@ -2046,16 +2155,17 @@ static void nrb_qa_gameplay_verdict(void)
 	if (qa_net_menu_frame > 0)
 	{
 		/* The scripted race must have reached the menu, and arbitration must leave the
-		 * reliable queue clean: a stale PACKET_WAITING here is the leftover release the
-		 * unarbitrated race produced, which a later rendezvous would misread. */
+		 * reliable queue clean: a stale release here is the leftover of an unarbitrated
+		 * race, which a later rendezvous would misread. */
 		if (!qa_menu_ran)
 		{
 			fprintf(stderr, "net gameplay: the scripted menu race never reached the menu\n");
 			rc = 1;
 		}
-		if (packet_in[0] != NULL && SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+		if (packet_in[0] != NULL && (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING
+		                             || SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_GAME_MENU))
 		{
-			fprintf(stderr, "net gameplay: stale PACKET_WAITING left after the menu rendezvous\n");
+			fprintf(stderr, "net gameplay: stale menu release left after the menu rendezvous\n");
 			rc = 1;
 		}
 	}
@@ -2145,13 +2255,16 @@ NrbStep nrb_driver(void)
 			s->tag = nrb_cur;
 		}
 		// Wire-test menu race: both peers raise the request on the same frame, which is
-		// the documented simultaneous-Esc case the arbitration above has to settle.
-		if (qa_net_menu_frame > 0 && nrb_cur == qa_net_menu_frame)
+		// the documented simultaneous-Esc case the arbitration has to settle. Once, since
+		// the fresh epoch the menu opens counts through that frame again.
+		if (qa_net_menu_frame > 0 && nrb_cur == qa_net_menu_frame && !qa_menu_ran)
 			inGameMenuRequest = true;
 		// RB_REQ_PAUSE is never sent: online cannot pause. The bit stays reserved.
 		s->in.buttons |= (inGameMenuRequest ? RB_REQ_MENU      : 0) |
 		                 (skipLevelRequest  ? RB_REQ_SKIPLEVEL : 0) |
 		                 (nortShipRequest   ? RB_REQ_NORTSHIP  : 0);
+		if (inGameMenuRequest)
+			menu_press_at = nrb_cur;
 		nrb_send_input();
 		nrb_stamp_canary(nrb_cur);
 	}
@@ -2161,6 +2274,7 @@ NrbStep nrb_driver(void)
 	/* Ingest whatever has arrived and correct the timeline if needed.
 	 * network_check() drains the socket itself (see NET_DRAIN_MAX). */
 	network_check();
+	nrb_menu_release_ingest();
 
 	/* The recovery is over once the peer turns up on the timeline it handed us:
 	 * our epoch has moved on and the peer's first frame there has landed. */
@@ -2169,12 +2283,15 @@ NrbStep nrb_driver(void)
 
 	{
 		const Uint32 K = nrb_scan_mispredict();
+		/* Before the correction, so `req_done` keeps up with `verified_upto` on every path
+		 * that advances it: one left behind by a re-simulation would put the menu rewind's
+		 * target outside the snapshot ring. */
+		nrb_process_requests();
 		if (K != 0)
 			return nrb_begin_resim(K);
 	}
 
 	nrb_compare_canary();
-	nrb_process_requests();
 
 	/* Desync recovery rendezvous.  Either path that fires here leaves the frame
 	 * machinery reset; this pass presents, the next tick simulates the fresh
@@ -2182,6 +2299,13 @@ NrbStep nrb_driver(void)
 	 * may run after one. */
 	if (nrb_resync_dispatch())
 		return NRB_STEP_PRESENT;
+
+	/* In-game menu, at the verified frame that carries the request. It outranks a recovery this
+	 * machine would start: the fresh epoch it opens re-detects a divergence that survives it.
+	 * A peer that already left the level has no menu to meet us in. */
+	if (menu_at != 0 && !end_agreed)
+		return nrb_menu_serve();
+
 	if (resync_wanted)
 	{
 		resync_wanted = false;
@@ -2189,47 +2313,16 @@ NrbStep nrb_driver(void)
 			return NRB_STEP_PRESENT;
 	}
 
-	/* Scheduled menu rendezvous.  req_at is always strictly ahead of nrb_cur when
-	 * it is set (see NRB_REQ_LEAD), so this fires on exactly that frame, on both
-	 * machines, with the same simulation behind it. */
-	if (req_at != 0 && nrb_cur >= req_at)
+	/* Our own press, its frame not yet verified: hold for the peer's record. */
+	if (menu_press_at != 0 && !end_agreed)
 	{
 		Uint32 K = 0;
-		switch (nrb_menu_frame_ready(&K))
-		{
-		case NRB_MENU_RESIM:
+		const int step = nrb_menu_hold(&K);
+		if (step == NRB_MENU_RESIM)
 			return nrb_begin_resim(K);
-		case NRB_MENU_ABANDON:
+		if (step == NRB_MENU_ABANDON)
 			return NRB_STEP_PRESENT;
-		default:
-			break;
-		}
-
-		/* The host wins simultaneous menu requests; the joiner waits. This avoids two
-		 * unconsumed PACKET_WAITING messages leaking into a later rendezvous. */
-		const bool local_menu = req_local_menu
-		    && (thisPlayerNum == networkHostPlayerNum || !req_host_menu);
-		req_at = 0;
-		req_local_menu = false;
-		req_host_menu = false;
-
-		if (qa_net_menu_frame > 0)
-		{
-			qa_menu_ran = true;
-			fprintf(stderr, "net gameplay: menu rendezvous at frame %lu (local branch: %d)\n",
-			        (unsigned long)nrb_cur, local_menu ? 1 : 0);
-			fflush(stderr);
-		}
-
-		yourInGameMenuRequest = local_menu;
-		JE_doInGameSetup();
-		yourInGameMenuRequest = false;
-		if (haltGame)
-			reallyEndLevel = true;
-
-		/* The synchronized in-game menu confirms Quit to Outpost out of band. */
-		if (reallyEndLevel)
-			end_agreed = true;
+		return nrb_menu_serve();
 	}
 
 	/* Confirm predicted level ends; out-of-band menu agreement needs no extra frame. */
@@ -2248,6 +2341,12 @@ NrbStep nrb_driver(void)
 			const Uint32 K = nrb_scan_mispredict();
 			if (K != 0)
 				return nrb_begin_resim(K);
+
+			/* A menu request the records confirm ahead of this end comes first; the level
+			 * ends again on the fresh timeline the menu opens. */
+			nrb_process_requests();
+			if (menu_at != 0)
+				return nrb_menu_serve();
 
 			/* If the peer stops producing frames, rely on the next shop rendezvous instead of wedging. */
 			if (nrb_peer_idle(SDL_GetTicks(), remote_newest, &newest_seen, &newest_tick))
@@ -2287,6 +2386,12 @@ NrbStep nrb_driver(void)
 			const Uint32 K = nrb_scan_mispredict();
 			if (K != 0)
 				return nrb_begin_resim(K);
+
+			/* A peer holding an in-game menu produces no more frames; its request is what
+			 * this wait is short of. */
+			nrb_process_requests();
+			if (menu_at != 0)
+				return nrb_menu_serve();
 		}
 	}
 
@@ -2331,9 +2436,14 @@ void nrb_write_diagnostics(FILE *f)
 	        (unsigned long)nrb_diag.pkt_in, (unsigned long)nrb_diag.refused_malformed,
 	        (unsigned long)nrb_diag.refused_window, (unsigned long)nrb_diag.refused_epoch,
 	        (unsigned long)nrb_diag.stalls);
-	if (req_at != 0)
-		fprintf(f, "    menu:       scheduled for frame %lu%s\n",
-		        (unsigned long)req_at, req_local_menu ? " (our press)" : "");
+	if (menu_frame != 0)
+		fprintf(f, "    menu:       open at frame %lu\n", (unsigned long)menu_frame);
+	else if (menu_at != 0)
+		fprintf(f, "    menu:       settled at frame %lu%s\n",
+		        (unsigned long)menu_at, menu_local ? " (our press)" : "");
+	else if (menu_press_at != 0)
+		fprintf(f, "    menu:       our press at frame %lu awaits the peer's record\n",
+		        (unsigned long)menu_press_at);
 	if (end_agreed)
 		fprintf(f, "    level end agreed out of band\n");
 }

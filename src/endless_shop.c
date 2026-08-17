@@ -145,10 +145,15 @@ void endlessHoistStartWeapon(void)
 
 // Base clear reward before modifier bonuses, shared with the perk buyout.
 // It scales with depth but is capped.
+static Sint64 endlessClearBaseAt(int depth)
+{
+	const Sint64 base = 900 + (Sint64)depth * 220;
+	return (base > 60000) ? 60000 : base;
+}
+
 Sint64 endlessClearBase(void)
 {
-	Sint64 base = 900 + (Sint64)endlessRunDepth * 220;
-	return (base > 60000) ? 60000 : base;
+	return endlessClearBaseAt(endlessRunDepth);
 }
 
 // Calculate a payout from base reward, modifier tenths, and the level-profile adjustment.
@@ -496,6 +501,50 @@ bool endlessConsumeRevive(uint p)
 	return true;
 }
 
+// The price a fresh visit opens at, before this visit's rebuy doubling. Comparing the live cost
+// against it says whether a perk has already been bought here, so no counter has to be kept,
+// saved and mirrored alongside the cost it would duplicate.
+static Sint64 endlessExtraPerkVisitBase(void)
+{
+	return ENDLESS_PRICE_EXTRAPERK_BASE + (Sint64)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
+}
+
+// Clear base summed over the zones already behind us. Summing the real per-zone function keeps
+// the index's yardstick from drifting away from the payout it measures.
+static Sint64 endlessClearBaseSum(int zones)
+{
+	Sint64 sum = 0;
+	for (int z = 0; z < zones; ++z)
+		sum += endlessClearBaseAt(z);
+	return sum;
+}
+
+/* What this run has earned by fighting. Interest, gambling, the perk buyout, the starting stake
+ * and trade-ins are all left out: none of them measure how well the route pays, and counting the
+ * gamble would let one jackpot raise the price of every perk after it. Bounty cash counts at
+ * part weight so hunting down elites and champions keeps most of what it pays. */
+static Sint64 endlessCombatIncome(void)
+{
+	const Uint64 flat = endlessCashBySource[ENDLESS_CASH_KILL]
+	                  + endlessCashBySource[ENDLESS_CASH_PICKUP]
+	                  + endlessCashBySource[ENDLESS_CASH_CLEAR];
+	const Uint64 bounty = endlessCashBySource[ENDLESS_CASH_BOUNTY] * ENDLESS_INCOME_BOUNTY_PCT / 100;
+	return (Sint64)(flat + bounty);
+}
+
+/* This run's fighting income against what the zones behind it are expected to pay, as a percent.
+ * The ledger books only the wallet of whoever is sitting at this keyboard (see player_credit_cash),
+ * so in co-op each machine already reads its own player's income and the index needs no slot of
+ * its own. */
+int endlessIncomeIndexPercent(void)
+{
+	const Sint64 expected = ENDLESS_PERK_REF_INCOME_TENTHS * endlessClearBaseSum(endlessRunDepth) / 10;
+	if (expected < 1)
+		return 100;  // the first outpost has no cleared zone behind it to judge
+	return endlessClamp((int)(100 * endlessCombatIncome() / expected),
+	                    ENDLESS_INCOME_INDEX_MIN, ENDLESS_INCOME_INDEX_MAX);
+}
+
 // Extra perk: the E-Shop opens the perk menu after purchase.
 Sint64 endlessExtraPerkPrice(void)
 {
@@ -504,7 +553,22 @@ Sint64 endlessExtraPerkPrice(void)
 	int surcharge = endlessPerkTotalOwned() * ENDLESS_EXTRA_PERK_OWNED_PCT;
 	if (surcharge > ENDLESS_EXTRA_PERK_OWNED_CAP)
 		surcharge = ENDLESS_EXTRA_PERK_OWNED_CAP;
-	return endlessExtraPerkCost[me()] * (100 + surcharge) / 100;
+	Sint64 price = endlessExtraPerkCost[me()] * (100 + surcharge) / 100;
+
+	// Income index, so a route earning far above par cannot out-buy a lean one perk for perk.
+	const int carried = 100
+	                  + (endlessIncomeIndexPercent() - 100) * ENDLESS_PERK_INCOME_PASSTHRU_PCT / 100;
+	price = price * carried / 100;
+
+	// A repeat this visit also has to clear a slice of the bank the visit opened with. Two slices
+	// plus the first buy cannot fit in one bank, so no outpost sells a third perk.
+	if (endlessExtraPerkCost[me()] > endlessExtraPerkVisitBase())
+	{
+		const Sint64 slice = endlessShopEntryCash[me()] * ENDLESS_PERK_VISIT_SLICE_PCT / 100;
+		if (price < slice)
+			price = slice;
+	}
+	return price;
 }
 bool endlessTryBuyExtraPerk(void)
 {

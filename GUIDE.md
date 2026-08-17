@@ -265,7 +265,7 @@ SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 | Shop Reroll | $6,000 + $1,000/zone | Replace your shop stock |
 | Sector Sabotage | $25,000 + $2,500/zone | Remove one threat, up to three per outpost |
 | Reinforce | $15,000 + $2,000/zone | Add 6 maximum armour |
-| Extra Perk | $70,000 + $2,500/zone | Open a four-choice perk pick |
+| Extra Perk | $70,000 + $2,500/zone, scaled by earnings | Open a four-choice perk pick |
 | Special Weapon | Share of entry cash | Equip a random safe special |
 | Turbodrive / Overblast / Overdrive | Share of entry cash | Add the chosen drive next sector |
 | Revive | $150,000 + $10,000/zone | Survive one lethal hit |
@@ -274,6 +274,14 @@ SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 
 Repeated purchases can cost more. Kill-fire drive prices use the cash held on
 entry to the outpost.
+
+Extra Perk is also priced against what your run has earned by fighting. A run
+pulling in far more than its depth suggests pays more for the same pick, but
+only part of the difference carries over, so the richer route still ends up
+with more perks. Bounty cash counts for less than the rest, leaving most of
+what elites and champions pay in your pocket. A second pick in one visit must
+additionally cost most of the cash you walked in with, so an outpost sells one
+perk more often than two, and never three.
 
 ### Perks
 
@@ -530,7 +538,11 @@ Ship movement is part of the simulation, so a rollback session uses the host's
 fixed-step ship movement.
 
 Online games do not pause. Pressing P or changing window focus leaves the game
-running. Use Esc for the in-game menu.
+running. Use Esc for the in-game menu: it opens on the frame you pressed it,
+and the other player's screen steps back to that frame if it had run ahead.
+Those frames are flown again afterwards, so a fraction of a second is replayed,
+which can undo a hit the other player had just taken. When both players press
+Esc on the same frame, the host gets the menu.
 
 Pressing **Start Level** waits for the other player. Esc takes that wait back and
 returns you to the menu, so you can use Options or keep outfitting while they

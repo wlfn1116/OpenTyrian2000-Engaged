@@ -1296,6 +1296,82 @@ static void qa_eshop_matrix(void)
 			         "machine %d: the partner is not locked out by that purchase", local + 1);
 			qa_check(!endlessBuffOnCooldown(), label);
 		}
+
+		/* --- extra perk --- */
+		qa_session(me);
+		qa_clear_ships();
+		qa_clear_ledger();
+		endlessRunDepth = 20;
+
+		/* Par income for twenty cleared zones: six times the clear base, 900 plus 220 a zone,
+		 * summed over them. Spelled out here so the yardstick is checked and not just echoed.
+		 * The ledger books only the wallet at this keyboard, so each machine weighs its own. */
+		const Sint64 par = 6 * (900 * 20 + 220 * (20 * 19 / 2));
+		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
+		snprintf(label, sizeof(label), "machine %d: par income indexes at 100", local + 1);
+		qa_check(endlessIncomeIndexPercent() == 100, label);
+
+		player[me].cash = 4000000;
+		endlessCashResync();
+		endlessResetShopPrices();
+		const Sint64 atPar = endlessExtraPerkPrice();
+
+		/* Double the income and the perk costs more, but well under double: only part of the
+		 * excess carries through, so the richer route still buys more perks than the lean one. */
+		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)(par * 2);
+		const Sint64 atRich = endlessExtraPerkPrice();
+		snprintf(label, sizeof(label),
+		         "machine %d: double income costs more per perk, less than double", local + 1);
+		qa_check(atRich > atPar && atRich < atPar * 2, label);
+
+		/* The same cash taken as bounty counts at part weight, so clearing out elites and
+		 * champions is charged less than picking a route that pays more on clear. */
+		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
+		endlessCashBySource[ENDLESS_CASH_BOUNTY] = (Uint64)par;
+		const Sint64 atBounty = endlessExtraPerkPrice();
+		endlessCashBySource[ENDLESS_CASH_BOUNTY] = 0;
+		snprintf(label, sizeof(label),
+		         "machine %d: bounty income is charged less than clear income", local + 1);
+		qa_check(atBounty > atPar && atBounty < atRich, label);
+
+		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)(par / 4);
+		snprintf(label, sizeof(label),
+		         "machine %d: a run earning under par pays under the ladder", local + 1);
+		qa_check(endlessExtraPerkPrice() < atPar, label);
+		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
+
+		/* However rich the visit, two entry-cash slices plus the first buy cannot fit in one
+		 * bank, so no outpost sells a third perk. */
+		player[me].cash = 99999999;
+		endlessCashResync();
+		endlessResetShopPrices();
+		int taken = 0;
+		while (taken < 8 && endlessTryBuyExtraPerk())
+			++taken;
+		snprintf(label, sizeof(label),
+		         "machine %d: one outpost never sells a third perk", local + 1);
+		qa_check(taken >= 1 && taken <= 2, label);
+		snprintf(label, sizeof(label),
+		         "machine %d: the perks were charged to the buyer alone", local + 1);
+		qa_check(player[me].cash < 99999999 && player[them].cash == 0, label);
+
+		/* Once the first perk takes more than two fifths of the bank the slice puts the second
+		 * out of reach, which is the usual outcome for a run already carrying perks. */
+		qa_clear_ships();
+		endlessPerkGrant(me, PERK_DAMAGE, 5);
+		endlessPerkGrant(me, PERK_ARMOR, 5);
+		player[me].cash = 1400000;
+		endlessCashResync();
+		endlessResetShopPrices();
+		taken = 0;
+		while (taken < 8 && endlessTryBuyExtraPerk())
+			++taken;
+		snprintf(label, sizeof(label),
+		         "machine %d: a buyer already carrying perks gets one a visit", local + 1);
+		qa_check(taken == 1, label);
+
+		qa_clear_ledger();
+		qa_clear_ships();
 	}
 
 	/* Hostile values must not tip a price or a counter over. A wallet at the top of its range

@@ -536,6 +536,7 @@ bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; t
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 Sint64 endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
+int  endlessIncomeIndexPercent(void);  // fighting income vs par, as a percent; prices the extra perk
 // Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
 // shared sector, so co-op spends one queue between the two of them.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3

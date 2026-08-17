@@ -55,9 +55,9 @@ Uint32 nrb_frame(void);
  * clear the peer never made. */
 bool nrb_peer_left_level(Uint16 head);
 
-/* The idle rule behind the level-end and menu-frame confirmation waits: true once `newest`, the
- * peer's newest frame, has not advanced for NRB_PEER_IDLE_TIME_OUT ms of `now`. Every advance
- * re-arms the clock (see "Rollback input" in doc/notes.md). Destruct's round end shares it. */
+/* The idle rule behind the level-end confirmation wait and the in-game menu hold: true once
+ * `newest`, the peer's newest frame, has not advanced for NRB_PEER_IDLE_TIME_OUT ms of `now`. Every
+ * advance re-arms the clock (see "Rollback input" in doc/notes.md). Destruct's round end shares it. */
 #define NRB_PEER_IDLE_TIME_OUT 8000
 bool nrb_peer_idle(Uint32 now, Uint32 newest, Uint32 *newest_seen, Uint32 *newest_tick);
 
@@ -89,6 +89,25 @@ NrbStep nrb_driver(void);
 #ifdef WITH_NETWORK
 /* Called from network_check() for inbound PACKET_INPUT datagrams. */
 void nrb_handle_packet(const Uint8 *data, int len);
+
+/* Who owns the in-game menu one frame's request bits open. `open` is false when the frame carries
+ * no request. Exactly one of the two machines must answer `local`, so the peer always has someone
+ * to wait for; pure, so the unit suite can drive every ordering two presses arrive in. */
+typedef struct
+{
+	bool open;
+	bool local;   /* this machine drives the menu; the peer waits on its release */
+}
+NrbMenuClaim;
+NrbMenuClaim nrb_menu_claim(Uint16 local_bits, Uint16 remote_bits, bool is_host);
+
+/* In-game menu release (PACKET_GAME_MENU under rollback): fill `dst` with this machine's input
+ * records through the menu frame and return the length. The peer may still be short of the
+ * frame's own datagram, and this reliable copy is what lets it reach the frame regardless. */
+int nrb_menu_release_fill(Uint8 *dst);
+/* Resend those records while the menu is up; network_check() calls it, so every menu screen does.
+ * A no-op outside the menu. */
+void nrb_menu_keepalive(void);
 
 /* Append the rollback module's live state to the crash log's Network section
  * (network_write_diagnostics calls this when the session runs rollback). */

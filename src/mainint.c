@@ -2257,9 +2257,12 @@ void JE_doInGameSetup(void)
 	haltGame = false;
 
 #ifdef WITH_NETWORK
-	// A rollback session reaches this menu on a frame both machines have confirmed and needs no
-	// handshake of its own; the lockstep path does (doc/notes.md, "Rollback input").
-	if (isNetworkGame && !nrb_active())
+	// A rollback session reaches this menu on a frame both machines confirmed and needs no
+	// handshake here; its release also carries the menu frame's input records and, unlike
+	// PACKET_WAITING, means nothing to the level-end paths (doc/notes.md, "Rollback input").
+	const bool rollback = nrb_active();
+	const Uint16 release = rollback ? PACKET_GAME_MENU : PACKET_WAITING;
+	if (isNetworkGame && !rollback)
 	{
 		network_prepare(PACKET_GAME_MENU);
 		network_send(4);  // PACKET_GAME_MENU
@@ -2311,8 +2314,8 @@ void JE_doInGameSetup(void)
 		{
 			if (!playerEndLevel)
 			{
-				network_prepare(PACKET_WAITING);
-				network_send(4);  // PACKET_WAITING
+				network_prepare(release);
+				network_send(rollback ? 4 + nrb_menu_release_fill(&packet_out_temp->data[4]) : 4);
 			}
 			else
 			{
@@ -2346,13 +2349,13 @@ void JE_doInGameSetup(void)
 					limit_render_fps();
 
 				// The other player may be in the debug menu: adopt whatever it rewrote before the
-				// WAITING that releases us.  Reliable and ordered, so it always arrives first.
+				// release that frees us.  Reliable and ordered, so it always arrives first.
 				if (network_debug_sync_pump(true))
 					continue;
 
 				if (packet_in[0])
 				{
-					if (SDLNet_Read16(&packet_in[0]->data[0]) == PACKET_WAITING)
+					if (SDLNet_Read16(&packet_in[0]->data[0]) == release)
 					{
 						// Consume the release, or it sits at the head of the reliable queue
 						// for the rest of the level and the next rendezvous reads it as its
@@ -2378,9 +2381,6 @@ void JE_doInGameSetup(void)
 				network_update();
 				network_check();
 			}
-		}
-		else
-		{
 		}
 
 		while (!network_is_sync())

@@ -208,6 +208,19 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_EXTRA_PERK_OWNED_PCT  40
 #define ENDLESS_EXTRA_PERK_OWNED_CAP 1000
 
+// Extra-perk income index: par income per zone is REF_INCOME_TENTHS of the clear base, and only
+// PASSTHRU_PCT of a run's excess over par reaches the price. Bounty cash counts at part weight, so
+// most of what clearing out elites and champions pays stays untaxed.
+// See doc/notes.md, "Extra-perk pricing".
+#define ENDLESS_PERK_REF_INCOME_TENTHS   60
+#define ENDLESS_INCOME_BOUNTY_PCT        50
+#define ENDLESS_PERK_INCOME_PASSTHRU_PCT 60
+#define ENDLESS_INCOME_INDEX_MIN         70
+#define ENDLESS_INCOME_INDEX_MAX        400
+// A repeat buy in one visit must also clear this share of the bank the visit opened with, which
+// holds even a rich outpost to about one perk and puts a third out of reach at any income.
+#define ENDLESS_PERK_VISIT_SLICE_PCT     60
+
 // Perk decline payout.
 #define ENDLESS_PERK_DECLINE_MULT      25
 #define ENDLESS_PERK_DECLINE_OWNED_PCT  6
