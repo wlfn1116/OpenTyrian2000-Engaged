@@ -265,7 +265,7 @@ SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 | Shop Reroll | $6,000 + $1,000/zone | Replace your shop stock |
 | Sector Sabotage | $25,000 + $2,500/zone | Remove one threat, up to three per outpost |
 | Reinforce | $15,000 + $2,000/zone | Add 6 maximum armour |
-| Extra Perk | $70,000 + $2,500/zone, scaled by earnings | Open a four-choice perk pick |
+| Extra Perk | $70,000 + $2,500/zone, plus a surcharge per perk bought | Open a four-choice perk pick |
 | Special Weapon | Share of entry cash | Equip a random safe special |
 | Turbodrive / Overblast / Overdrive | Share of entry cash | Add the chosen drive next sector |
 | Revive | $150,000 + $10,000/zone | Survive one lethal hit |
@@ -275,13 +275,18 @@ SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 Repeated purchases can cost more. Kill-fire drive prices use the cash held on
 entry to the outpost.
 
-Extra Perk is also priced against what your run has earned by fighting. A run
-pulling in far more than its depth suggests pays more for the same pick, but
-only part of the difference carries over, so the richer route still ends up
-with more perks. Bounty cash counts for less than the rest, leaving most of
-what elites and champions pay in your pocket. A second pick in one visit must
-additionally cost most of the cash you walked in with, so an outpost sells one
-perk more often than two, and never three.
+Extra Perk charges for how many you have already bought. Every purchase raises
+the price of the next one by more than the last did, so the run of multipliers
+is 1.00, 1.20, 1.45, 1.75, 2.10, 2.50 and keeps widening. Perks from the free
+picks are not counted, and neither is how rich you are: a fortune earned in a
+dangerous sector is yours to spend as you like. One outpost sells at most two,
+the second at 2.5x the price your first purchase has just raised it to, and the
+row then reports itself sold out until the next outpost. In co-op the count is
+personal, so a partner who has bought none still pays the opening price.
+
+Because the ladder is fixed and visible, you can read the next price off the
+row and decide against it. A perk at $620,000 competes with a Dragonwing, a
+weapon upgrade, Sector Sabotage and Reinforce, and often loses.
 
 ### Perks
 

@@ -416,7 +416,7 @@ bool endlessSaveLegacyWasRead(void);      // ...and did this session read it thr
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.
  * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
-#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 9 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 11 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 
@@ -536,7 +536,7 @@ bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; t
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
 Sint64 endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
-int  endlessIncomeIndexPercent(void);  // fighting income vs par, as a percent; prices the extra perk
+bool endlessExtraPerkMaxed(void);    // this outpost has sold its limit; no further pick is offered
 // Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
 // shared sector, so co-op spends one queue between the two of them.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3

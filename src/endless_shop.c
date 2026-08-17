@@ -72,7 +72,9 @@ static int endlessBuffChargeFromPaid(Sint64 paid)  // cash paid -> charge tier (
 bool endlessReviveHeld[2] = { false, false };
 int  endlessRevivesUsed[2] = { 0, 0 };
 int  endlessCleanseChargeCount[2] = { 0, 0 };
-Sint64 endlessBombCost[2] = { 0, 0 }, endlessExtraPerkCost[2] = { 0, 0 }, endlessCleanseCost[2] = { 0, 0 };
+Sint64 endlessBombCost[2] = { 0, 0 }, endlessCleanseCost[2] = { 0, 0 };
+int  endlessExtraPerksBought[2] = { 0, 0 };
+int  endlessExtraPerksVisit[2]  = { 0, 0 };
 char endlessGambleMsg[2][48] = { "", "" };
 bool endlessGamblePerkWon[2] = { false, false };  // a gamble handed out a free perk pick; the E-Shop dispatch opens MENU_PERKS
 int  endlessShopTax[2] = { 0, 0 };            // Loan Shark: permanent +% on every shop price for the rest of the run
@@ -145,15 +147,10 @@ void endlessHoistStartWeapon(void)
 
 // Base clear reward before modifier bonuses, shared with the perk buyout.
 // It scales with depth but is capped.
-static Sint64 endlessClearBaseAt(int depth)
-{
-	const Sint64 base = 900 + (Sint64)depth * 220;
-	return (base > 60000) ? 60000 : base;
-}
-
 Sint64 endlessClearBase(void)
 {
-	return endlessClearBaseAt(endlessRunDepth);
+	Sint64 base = 900 + (Sint64)endlessRunDepth * 220;
+	return (base > 60000) ? 60000 : base;
 }
 
 // Calculate a payout from base reward, modifier tenths, and the level-profile adjustment.
@@ -322,7 +319,7 @@ void endlessShopRedrawStock(void)
 #define ENDLESS_PRICE_HULL_PER_ZONE      2000
 #define ENDLESS_PRICE_BOMB_BASE          2500
 #define ENDLESS_PRICE_BOMB_PER_ZONE       400
-#define ENDLESS_PRICE_EXTRAPERK_BASE    70000  // about 100k with one owned perk
+#define ENDLESS_PRICE_EXTRAPERK_BASE    70000  // before the surcharge on perks already bought
 #define ENDLESS_PRICE_EXTRAPERK_PER_ZONE 2500  // extra perks are a luxury on top of the free picks
 #define ENDLESS_PRICE_CLEANSE_BASE      25000
 #define ENDLESS_PRICE_CLEANSE_PER_ZONE   2500
@@ -337,8 +334,6 @@ void endlessShopRedrawStock(void)
 #define ENDLESS_REBUY_HULL_ADD     5000
 #define ENDLESS_REBUY_BOMB_NUM        3      // bombs: x1.5, so a full restock costs more each time
 #define ENDLESS_REBUY_BOMB_DEN        2
-#define ENDLESS_REBUY_EXTRAPERK_NUM   2      // extra perk price doubles
-#define ENDLESS_REBUY_EXTRAPERK_DEN   1
 #define ENDLESS_REBUY_CLEANSE_NUM     2      // sabotage charge: doubles
 #define ENDLESS_REBUY_CLEANSE_DEN     1
 
@@ -353,10 +348,9 @@ void endlessResetShopPrices(void)
 	endlessRerollCost[me()] = ENDLESS_PRICE_REROLL_BASE + (Sint64)endlessRunDepth * ENDLESS_PRICE_REROLL_PER_ZONE;
 	endlessHullCost[me()]   = ENDLESS_PRICE_HULL_BASE + endlessRunDepth * ENDLESS_PRICE_HULL_PER_ZONE;
 	endlessBombCost[me()]   = ENDLESS_PRICE_BOMB_BASE + (Sint64)endlessRunDepth * ENDLESS_PRICE_BOMB_PER_ZONE;
-	endlessExtraPerkCost[me()] = ENDLESS_PRICE_EXTRAPERK_BASE
-	                           + (Sint64)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
 	endlessCleanseCost[me()] = ENDLESS_PRICE_CLEANSE_BASE + (Sint64)endlessRunDepth * ENDLESS_PRICE_CLEANSE_PER_ZONE;
 	endlessCleanseChargeCount[me()] = 0;  // fresh visit: no pending sabotage strips carried in
+	endlessExtraPerksVisit[me()] = 0;     // ...and the perk counter is per visit; the run total is not
 	endlessGambleMsg[me()][0] = '\0';
 	endlessPurchasedMods[me()] = 0;   // fresh visit: no pending buff
 	endlessBuffKind[me()] = 0;        // a kill-fire buff (Turbodrive or Overdrive) can be bought again
@@ -501,82 +495,39 @@ bool endlessConsumeRevive(uint p)
 	return true;
 }
 
-// The price a fresh visit opens at, before this visit's rebuy doubling. Comparing the live cost
-// against it says whether a perk has already been bought here, so no counter has to be kept,
-// saved and mirrored alongside the cost it would duplicate.
-static Sint64 endlessExtraPerkVisitBase(void)
-{
-	return ENDLESS_PRICE_EXTRAPERK_BASE + (Sint64)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
-}
+/* Extra perk. What it costs answers how many have been bought and nothing else: perks taken from
+ * the free picks, and the wealth a run happens to be carrying, both leave the price alone. The
+ * run total is personal, so in co-op one player's spending never prices the other's pick.
+ * See doc/notes.md, "Extra-perk pricing". */
+bool endlessExtraPerkMaxed(void) { return endlessExtraPerksVisit[me()] >= ENDLESS_PERK_VISIT_MAX; }
 
-// Clear base summed over the zones already behind us. Summing the real per-zone function keeps
-// the index's yardstick from drifting away from the payout it measures.
-static Sint64 endlessClearBaseSum(int zones)
-{
-	Sint64 sum = 0;
-	for (int z = 0; z < zones; ++z)
-		sum += endlessClearBaseAt(z);
-	return sum;
-}
-
-/* What this run has earned by fighting. Interest, gambling, the perk buyout, the starting stake
- * and trade-ins are all left out: none of them measure how well the route pays, and counting the
- * gamble would let one jackpot raise the price of every perk after it. Bounty cash counts at
- * part weight so hunting down elites and champions keeps most of what it pays. */
-static Sint64 endlessCombatIncome(void)
-{
-	const Uint64 flat = endlessCashBySource[ENDLESS_CASH_KILL]
-	                  + endlessCashBySource[ENDLESS_CASH_PICKUP]
-	                  + endlessCashBySource[ENDLESS_CASH_CLEAR];
-	const Uint64 bounty = endlessCashBySource[ENDLESS_CASH_BOUNTY] * ENDLESS_INCOME_BOUNTY_PCT / 100;
-	return (Sint64)(flat + bounty);
-}
-
-/* This run's fighting income against what the zones behind it are expected to pay, as a percent.
- * The ledger books only the wallet of whoever is sitting at this keyboard (see player_credit_cash),
- * so in co-op each machine already reads its own player's income and the index needs no slot of
- * its own. */
-int endlessIncomeIndexPercent(void)
-{
-	const Sint64 expected = ENDLESS_PERK_REF_INCOME_TENTHS * endlessClearBaseSum(endlessRunDepth) / 10;
-	if (expected < 1)
-		return 100;  // the first outpost has no cleared zone behind it to judge
-	return endlessClamp((int)(100 * endlessCombatIncome() / expected),
-	                    ENDLESS_INCOME_INDEX_MIN, ENDLESS_INCOME_INDEX_MAX);
-}
-
-// Extra perk: the E-Shop opens the perk menu after purchase.
 Sint64 endlessExtraPerkPrice(void)
 {
-	// Base = depth price, doubled per buy this visit (endlessExtraPerkCost[me()]). Surcharge = a capped
-	// per-owned-perk % on top, recomputed live so it climbs as you actually accumulate perks.
-	int surcharge = endlessPerkTotalOwned() * ENDLESS_EXTRA_PERK_OWNED_PCT;
-	if (surcharge > ENDLESS_EXTRA_PERK_OWNED_CAP)
-		surcharge = ENDLESS_EXTRA_PERK_OWNED_CAP;
-	Sint64 price = endlessExtraPerkCost[me()] * (100 + surcharge) / 100;
+	// Each perk already bought adds STEP, and every step is GROWTH wider than the one before, so
+	// the surcharge is quadratic in the count. The clamp keeps a hostile count from overflowing it.
+	const Sint64 bought = endlessClamp(endlessExtraPerksBought[me()], 0, ENDLESS_PERK_PAID_MAX);
+	const Sint64 surcharge = ENDLESS_PERK_PAID_STEP_PCT * bought
+	                       + ENDLESS_PERK_PAID_GROWTH_PCT * bought * (bought - 1) / 2;
+	const Sint64 base = ENDLESS_PRICE_EXTRAPERK_BASE
+	                  + (Sint64)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
+	Sint64 price = base * (100 + surcharge) / 100;
 
-	// Income index, so a route earning far above par cannot out-buy a lean one perk for perk.
-	const int carried = 100
-	                  + (endlessIncomeIndexPercent() - 100) * ENDLESS_PERK_INCOME_PASSTHRU_PCT / 100;
-	price = price * carried / 100;
-
-	// A repeat this visit also has to clear a slice of the bank the visit opened with. Two slices
-	// plus the first buy cannot fit in one bank, so no outpost sells a third perk.
-	if (endlessExtraPerkCost[me()] > endlessExtraPerkVisitBase())
-	{
-		const Sint64 slice = endlessShopEntryCash[me()] * ENDLESS_PERK_VISIT_SLICE_PCT / 100;
-		if (price < slice)
-			price = slice;
-	}
+	// The second pick at one outpost costs a multiple of that. There is no third.
+	if (endlessExtraPerksVisit[me()] > 0)
+		price = price * ENDLESS_PERK_VISIT_REPEAT_PCT / 100;
 	return price;
 }
+
 bool endlessTryBuyExtraPerk(void)
 {
+	if (endlessExtraPerkMaxed())
+		return false;
 	const Sint64 price = endlessExtraPerkPrice();  // single source of truth: the same value shown in the E-Shop help line
 	if (shopperCash() < price)
 		return false;
 	endlessCashDebit(price, ENDLESS_SINK_PERK);
-	endlessExtraPerkCost[me()] = endlessRebuy(endlessExtraPerkCost[me()], ENDLESS_REBUY_EXTRAPERK_NUM, ENDLESS_REBUY_EXTRAPERK_DEN, 0);
+	++endlessExtraPerksBought[me()];
+	++endlessExtraPerksVisit[me()];
 	endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS_BOUGHT);  // dispatch opens MENU_PERKS to pick one of four
 	return true;
 }

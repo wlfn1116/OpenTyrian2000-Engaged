@@ -83,8 +83,10 @@ typedef struct {
 	Uint8  reviveHeld, gambleRigged;
 	Uint8  perkOwned[ENDLESS_SAVE_PERKS];   // legacy: the summed stacks; perkTakenBy is authoritative
 
-	// Outpost prices and pending buys.
+	// Outpost prices and pending buys. extraPerkCost is legacy: nothing prices off it now, and it
+	// is carried only so the frozen binary reader and older text saves still round-trip.
 	Sint64 rerollCost, hullCost, bombCost, extraPerkCost, cleanseCost, shopEntryCash;
+	Sint32 extraPerksBought, extraPerksVisit;
 	Uint32 purchasedMods;
 	Sint32 buffKind, cleanseCharges;
 	Uint8  gamblePerkWon, perkPending;
@@ -158,6 +160,7 @@ typedef struct {
 	Sint32 armorBonus2;      // player 2's Reinforce tier
 	Sint32 revivesUsed2, shopTax2, longCon2, buffKind2, buffCharge2, buffCooldownUntil2;
 	Sint64 rerollCost2, hullCost2, bombCost2, extraPerkCost2, cleanseCost2, shopEntryCash2;
+	Sint32 extraPerksBought2, extraPerksVisit2;
 	Sint32 superbombs2, cleanseCharges2;
 	Uint32 purchasedMods2;
 	Uint8  reviveHeld2, gambleRigged2, downed[2];
@@ -372,7 +375,7 @@ static void endlessGetStock(const ConfigSection *s, const char *prefix, Uint8 av
  * legacy reader's sake; the text codec addresses both halves the same way. */
 typedef struct {
 	Sint32 *armorBonus, *revivesUsed, *shopTax, *longCon, *buffKind, *buffCharge, *buffCooldownUntil;
-	Sint32 *superbombs, *cleanseCharges;
+	Sint32 *superbombs, *cleanseCharges, *extraPerksBought, *extraPerksVisit;
 	Sint64 *rerollCost, *hullCost, *bombCost, *extraPerkCost, *cleanseCost, *shopEntryCash;
 	Uint32 *purchasedMods;
 	Uint8  *reviveHeld, *gambleRigged, *downed, *gamblePerkWon;
@@ -394,6 +397,7 @@ static EndlessRecPlayer endlessRecPlayerView(EndlessSlotRec *r, uint p)
 		v.shopEntryCash = &r->shopEntryCash; v.purchasedMods = &r->purchasedMods;
 		v.reviveHeld = &r->reviveHeld; v.gambleRigged = &r->gambleRigged; v.downed = &r->downed[0];
 		v.gamblePerkWon = &r->gamblePerkWon; v.perks = r->perkTakenBy[0]; v.rng = &r->playerRng[0];
+		v.extraPerksBought = &r->extraPerksBought; v.extraPerksVisit = &r->extraPerksVisit;
 		v.gambleMsg = r->gambleMsg; v.lastSpecialName = r->lastSpecialName;
 	}
 	else
@@ -406,6 +410,7 @@ static EndlessRecPlayer endlessRecPlayerView(EndlessSlotRec *r, uint p)
 		v.shopEntryCash = &r->shopEntryCash2; v.purchasedMods = &r->purchasedMods2;
 		v.reviveHeld = &r->reviveHeld2; v.gambleRigged = &r->gambleRigged2; v.downed = &r->downed[1];
 		v.gamblePerkWon = &r->gamblePerkWon2; v.perks = r->perkTakenBy[1]; v.rng = &r->playerRng[1];
+		v.extraPerksBought = &r->extraPerksBought2; v.extraPerksVisit = &r->extraPerksVisit2;
 		v.gambleMsg = r->gambleMsg2; v.lastSpecialName = r->lastSpecialName2;
 	}
 	return v;
@@ -489,6 +494,8 @@ static void endlessRecToSection(ConfigSection *s, const EndlessSlotRec *r)
 		endlessPutInt(s, PK("hull_cost"), *v.hullCost);
 		endlessPutInt(s, PK("bomb_cost"), *v.bombCost);
 		endlessPutInt(s, PK("extra_perk_cost"), *v.extraPerkCost);
+		endlessPutInt(s, PK("extra_perks_bought"), *v.extraPerksBought);
+		endlessPutInt(s, PK("extra_perks_visit"), *v.extraPerksVisit);
 		endlessPutInt(s, PK("cleanse_cost"), *v.cleanseCost);
 		endlessPutInt(s, PK("shop_entry_cash"), *v.shopEntryCash);
 		endlessPutHex(s, PK("purchased_mods"), *v.purchasedMods);
@@ -587,6 +594,10 @@ static void endlessRecFromSection(EndlessSlotRec *r, const ConfigSection *s)
 		*v.hullCost = cash_clamp(endlessGetInt(s, PK("hull_cost"), 0));
 		*v.bombCost = cash_clamp(endlessGetInt(s, PK("bomb_cost"), 0));
 		*v.extraPerkCost = cash_clamp(endlessGetInt(s, PK("extra_perk_cost"), 0));
+		// A save written before the extra perk was priced by count carries neither key and resumes
+		// at zero bought, which is the forgiving direction.
+		*v.extraPerksBought = (Sint32)endlessGetInt(s, PK("extra_perks_bought"), 0);
+		*v.extraPerksVisit = (Sint32)endlessGetInt(s, PK("extra_perks_visit"), 0);
 		*v.cleanseCost = cash_clamp(endlessGetInt(s, PK("cleanse_cost"), 0));
 		*v.shopEntryCash = cash_clamp(endlessGetInt(s, PK("shop_entry_cash"), 0));
 		*v.purchasedMods = (Uint32)endlessGetHex(s, PK("purchased_mods"));
@@ -1573,7 +1584,9 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->rerollCost    = endlessRerollCost[0];
 	r->hullCost      = endlessHullCost[0];
 	r->bombCost      = endlessBombCost[0];
-	r->extraPerkCost = endlessExtraPerkCost[0];
+	r->extraPerkCost = 0;   // legacy field: the extra perk is priced off the counts below
+	r->extraPerksBought = endlessExtraPerksBought[0];
+	r->extraPerksVisit  = endlessExtraPerksVisit[0];
 	r->cleanseCost   = endlessCleanseCost[0];
 	r->shopEntryCash = endlessShopEntryCash[0];
 	r->purchasedMods = endlessPurchasedMods[0];
@@ -1597,7 +1610,9 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->rerollCost2    = endlessRerollCost[1];
 	r->hullCost2      = endlessHullCost[1];
 	r->bombCost2      = endlessBombCost[1];
-	r->extraPerkCost2 = endlessExtraPerkCost[1];
+	r->extraPerkCost2 = 0;   // as above
+	r->extraPerksBought2 = endlessExtraPerksBought[1];
+	r->extraPerksVisit2  = endlessExtraPerksVisit[1];
 	r->cleanseCost2   = endlessCleanseCost[1];
 	r->shopEntryCash2 = endlessShopEntryCash[1];
 	r->superbombs2    = (Sint32)player[1].superbombs;
@@ -1724,7 +1739,8 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessRerollCost[0]         = r->rerollCost;
 	endlessHullCost[0]           = r->hullCost;
 	endlessBombCost[0]           = r->bombCost;
-	endlessExtraPerkCost[0]      = r->extraPerkCost;
+	endlessExtraPerksBought[0]   = endlessClamp(r->extraPerksBought, 0, ENDLESS_PERK_PAID_MAX);
+	endlessExtraPerksVisit[0]    = endlessClamp(r->extraPerksVisit, 0, ENDLESS_PERK_VISIT_MAX);
 	endlessCleanseCost[0]        = r->cleanseCost;
 	endlessShopEntryCash[0]      = r->shopEntryCash;
 	endlessPurchasedMods[0]      = r->purchasedMods;
@@ -1748,7 +1764,8 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessRerollCost[1]         = r->rerollCost2;
 	endlessHullCost[1]           = r->hullCost2;
 	endlessBombCost[1]           = r->bombCost2;
-	endlessExtraPerkCost[1]      = r->extraPerkCost2;
+	endlessExtraPerksBought[1]   = endlessClamp(r->extraPerksBought2, 0, ENDLESS_PERK_PAID_MAX);
+	endlessExtraPerksVisit[1]    = endlessClamp(r->extraPerksVisit2, 0, ENDLESS_PERK_VISIT_MAX);
 	endlessCleanseCost[1]        = r->cleanseCost2;
 	endlessShopEntryCash[1]      = r->shopEntryCash2;
 	player[1].superbombs         = (r->superbombs2 < 0) ? 0u : (r->superbombs2 > 10 ? 10u : (uint)r->superbombs2);
@@ -1870,10 +1887,11 @@ int endlessPackPlayerBlock(Uint8 *buf, uint p)
 	buf[n++] = endlessPlayerDowned[p] ? 1 : 0;
 	buf[n++] = (Uint8)MIN(player[p].superbombs, 10u);
 
-	const Sint32 fields[9] = {
+	const Sint32 fields[11] = {
 		endlessArmorBonus[p], (Sint32)endlessPurchasedMods[p], endlessBuffKind[p],
 		endlessBuffCharge[p], endlessBuffCooldownUntil[p], endlessCleanseChargeCount[p],
 		endlessLongCon[p], endlessShopTax[p], endlessRevivesUsed[p],
+		endlessExtraPerksBought[p], endlessExtraPerksVisit[p],
 	};
 	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
 	{
@@ -1915,7 +1933,7 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	const uint bombs = buf[n++];   // MIN evaluates twice, so the read has to happen first
 	player[p].superbombs = MIN(bombs, 10u);
 
-	Sint32 fields[9];
+	Sint32 fields[11];
 	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
 	{
 		fields[i] = (Sint32)(((Uint32)buf[n] << 24) | ((Uint32)buf[n + 1] << 16)
@@ -1939,6 +1957,8 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessLongCon[p]            = fields[6];
 	endlessShopTax[p]            = fields[7];
 	endlessRevivesUsed[p]        = fields[8];
+	endlessExtraPerksBought[p]   = endlessClamp(fields[9], 0, ENDLESS_PERK_PAID_MAX);
+	endlessExtraPerksVisit[p]    = endlessClamp(fields[10], 0, ENDLESS_PERK_VISIT_MAX);
 	endlessRerollCost[p]         = prices[0];
 	endlessHullCost[p]           = prices[1];
 	endlessShopEntryCash[p]      = cash_clamp(prices[2]);

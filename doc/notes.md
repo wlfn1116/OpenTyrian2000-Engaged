@@ -1052,39 +1052,49 @@ in no later one either. The gate is exported because nothing else inside
 
 ### Extra-perk pricing
 
-`endlessExtraPerkPrice` is the depth ladder under three independent terms: the
-owned-stack surcharge, the income index, and the repeat slice.
+`endlessExtraPerkPrice` reads two counters and nothing else:
+`endlessExtraPerksBought`, the perks this player has bought from outposts all
+run, and `endlessExtraPerksVisit`, how many of them at this one.
 
-`endlessIncomeIndexPercent` divides what the run earned by fighting by what its
-cleared zones are expected to pay, `ENDLESS_PERK_REF_INCOME_TENTHS` of
-`endlessClearBase` each. Only `ENDLESS_PERK_INCOME_PASSTHRU_PCT` of the excess
-over par reaches the price, so a route earning twice par still buys more perks
-per zone than a lean one; a full pass-through would make the richer route
-pointless. Bounty cash enters at `ENDLESS_INCOME_BOUNTY_PCT`, because the two
-halves of an elite route pay for different things. Clear cash follows from the
-chart pick, and bounty cash follows from hunting the elites and champions down
-once the sector is flying. Weighting the second one lightly leaves most of the
-reward for playing the sector well. The weight also covers a gap in the modifier
-table: reward tenths price the clear bonus, nothing prices the bounty
-population, so Elite Pack collects twice while listing once. Interest, gambling,
-the perk buyout, the stake and trade-ins are excluded, since none of them measure
-how well a route pays and counting the gamble would let one jackpot raise the
-price of every later perk.
+What the price deliberately ignores is as much of the design as what it reads.
+Free picks, the perk stacks a player holds, the wallet, and how profitable the
+run has been all leave it alone. The free picks set the expected power curve, so
+the shop's job is only to govern how fast a player can buy past that curve. An
+earlier version scaled the price with run income instead, which priced a
+dangerous route's payout back out of the player's hands and so refunded part of
+the risk they took for it. Repetition is the thing worth braking.
 
-The ledger behind the index is per machine. `player_credit_cash` books only
-`endlessEconomyIndex`, the wallet at this keyboard, so in co-op each side
-already weighs its own player and the index needs no slot of its own. Under
-Shared credit both players earn the same amounts and both machines index alike;
-under Individual the pricing is personal, as Loan Shark already is. Nothing here
-is read inside the rollback sim, so the per-machine ledger cannot reach a sim
-hash.
+Each perk already bought adds `ENDLESS_PERK_PAID_STEP_PCT`, and every step is
+`ENDLESS_PERK_PAID_GROWTH_PCT` wider than the one before, making the surcharge
+quadratic in the count; the multipliers those two produce are written out beside
+them in `endless_internal.h`. The count is clamped to `ENDLESS_PERK_PAID_MAX`
+where it is read and where it is loaded, which is far past any reachable total
+and keeps the quadratic inside `Sint64`. Because the ladder is public and
+depends on nothing hidden, a player can read the next price off the row and
+weigh it against a hull, a gun or a Sabotage, which is the competing-uses
+pressure the outpost wants.
 
-A repeat buy is detected by comparing the live cost against the price a fresh
-visit opens at, which is why no per-visit counter exists to save and mirror.
-`endlessExtraPerkCost` is not in the player wire block, so this stays local. A
-repeat must also clear `ENDLESS_PERK_VISIT_SLICE_PCT` of the entry bank; two
-slices plus the first buy cannot fit in one bank, so a third perk in one visit
-is unreachable at any income.
+One outpost sells `ENDLESS_PERK_VISIT_MAX`, the second at
+`ENDLESS_PERK_VISIT_REPEAT_PCT` of the price the first purchase has just raised
+it to. Past that `endlessExtraPerkMaxed` refuses the buy and the E-Shop row
+prints no price, the same shape Hull, Bombs and Sabotage already use.
+
+Both counters are personal, so in co-op a player who has bought five pays for a
+sixth while their partner still pays the opening price. Both ride the outpost
+player block all the same. A machine never prices the partner's pick, but either
+one can write the checkpoint that carries the pair, and `endlessCaptureCurrent`
+reads slot 1 from its own arrays: unmirrored, a host-written save would record
+the joiner's total as zero and hand their ladder back at the opening price.
+`endlessRevivesUsed` is in the block for the same reason.
+`endlessExtraPerksVisit` clears in `endlessResetShopPrices`; the run total
+clears only with the run.
+
+The save appends `extra_perks_bought` and `extra_perks_visit` per player. Both
+default to 0, so a run saved before this change resumes as though it had bought
+none, which is the forgiving direction and unrecoverable anyway: the old
+`extra_perk_cost` held a per-visit doubling that never carried the run total.
+That field stays in the record and the text codec because the frozen binary
+reader still fills it in, and it feeds nothing else.
 
 ### Saves and records
 
@@ -1303,7 +1313,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 68.
+`NET_VERSION` bump. The current value is 69.
 
 Recent versions:
 
@@ -1358,6 +1368,7 @@ Recent versions:
 | 66 | Zinglon pillar ramp: Ordnance Reserves stretches the blast, a live beam blocks a refire |
 | 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
 | 68 | Rollback in-game menu at the press frame; `PACKET_GAME_MENU` with an input image releases it, not `PACKET_WAITING` |
+| 69 | The outpost player block carries the two extra-perk counts, widening it by eight bytes |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name

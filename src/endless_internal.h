@@ -204,22 +204,16 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_OFFERS_BOUGHT    4
 #define ENDLESS_PERK_OFFERS_MILESTONE 5
 
-// Extra-perk surcharge by total owned stacks.
-#define ENDLESS_EXTRA_PERK_OWNED_PCT  40
-#define ENDLESS_EXTRA_PERK_OWNED_CAP 1000
-
-// Extra-perk income index: par income per zone is REF_INCOME_TENTHS of the clear base, and only
-// PASSTHRU_PCT of a run's excess over par reaches the price. Bounty cash counts at part weight, so
-// most of what clearing out elites and champions pays stays untaxed.
-// See doc/notes.md, "Extra-perk pricing".
-#define ENDLESS_PERK_REF_INCOME_TENTHS   60
-#define ENDLESS_INCOME_BOUNTY_PCT        50
-#define ENDLESS_PERK_INCOME_PASSTHRU_PCT 60
-#define ENDLESS_INCOME_INDEX_MIN         70
-#define ENDLESS_INCOME_INDEX_MAX        400
-// A repeat buy in one visit must also clear this share of the bank the visit opened with, which
-// holds even a rich outpost to about one perk and puts a third out of reach at any income.
-#define ENDLESS_PERK_VISIT_SLICE_PCT     60
+// Extra-perk surcharge, charged on perks bought from outposts and nothing else. Each one adds
+// STEP to the price and widens the next step by GROWTH, so the multiplier runs 1.00, 1.20, 1.45,
+// 1.75, 2.10, 2.50. One outpost sells at most VISIT_MAX, the second at REPEAT of the current
+// price. See doc/notes.md, "Extra-perk pricing".
+#define ENDLESS_PERK_PAID_STEP_PCT     20
+#define ENDLESS_PERK_PAID_GROWTH_PCT    5
+#define ENDLESS_PERK_VISIT_REPEAT_PCT 250
+#define ENDLESS_PERK_VISIT_MAX          2
+// Far past any reachable count, and low enough that the quadratic cannot overflow a loaded price.
+#define ENDLESS_PERK_PAID_MAX        1000
 
 // Perk decline payout.
 #define ENDLESS_PERK_DECLINE_MULT      25
@@ -307,7 +301,9 @@ int endlessBuffChargePaid(void);      // the current ship's own charge, which al
 extern bool endlessReviveHeld[2];          // a held revive token survives one lethal hit
 extern int  endlessRevivesUsed[2];         // revives spent this run (the price doubles per use)
 extern int  endlessCleanseChargeCount[2];  // pre-bought strips of the worst mutator off the next course
-extern Sint64 endlessBombCost[2], endlessExtraPerkCost[2], endlessCleanseCost[2];
+extern Sint64 endlessBombCost[2], endlessCleanseCost[2];
+extern int  endlessExtraPerksBought[2];    // perks bought from outposts this run; sets the permanent surcharge
+extern int  endlessExtraPerksVisit[2];     // ...and how many of them at this outpost, capped at ENDLESS_PERK_VISIT_MAX
 extern char endlessGambleMsg[2][48];       // last gamble outcome, for the E-Shop help line
 extern bool endlessGamblePerkWon[2];       // a gamble handed out a free perk pick; the dispatch opens MENU_PERKS
 extern int  endlessShopTax[2];             // Loan Shark: permanent +% on every shop price for the rest of the run

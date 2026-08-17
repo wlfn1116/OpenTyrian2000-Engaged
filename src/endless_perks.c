@@ -130,8 +130,8 @@ int endlessPerkCashPercent(void)
 	return 100 + perkFx(PERK_CASH) * ENDLESS_PERK_CASH_PCT;
 }
 
-// Perk stacks this machine's own player holds, summed across every perk. Both sides of the perk
-// market price off it: the extra-perk surcharge (endlessExtraPerkPrice) and the buyout below.
+// Perk stacks this machine's own player holds, summed across every perk. The "Take the Cash"
+// buyout below prices off it; the E-Shop's extra perk counts only what it has sold.
 int endlessPerkTotalOwned(void)
 {
 	int total = 0;

@@ -164,6 +164,8 @@ static void qa_clear_ships(void)
 		endlessLongCon[p] = 0;
 		endlessGambleRigged[p] = false;
 		endlessCleanseChargeCount[p] = 0;
+		endlessExtraPerksBought[p] = 0;
+		endlessExtraPerksVisit[p] = 0;
 	}
 	endlessActiveMods = 0;
 	endlessRunKills = 0;
@@ -1303,72 +1305,73 @@ static void qa_eshop_matrix(void)
 		qa_clear_ledger();
 		endlessRunDepth = 20;
 
-		/* Par income for twenty cleared zones: six times the clear base, 900 plus 220 a zone,
-		 * summed over them. Spelled out here so the yardstick is checked and not just echoed.
-		 * The ledger books only the wallet at this keyboard, so each machine weighs its own. */
-		const Sint64 par = 6 * (900 * 20 + 220 * (20 * 19 / 2));
-		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
-		snprintf(label, sizeof(label), "machine %d: par income indexes at 100", local + 1);
-		qa_check(endlessIncomeIndexPercent() == 100, label);
-
-		player[me].cash = 4000000;
-		endlessCashResync();
-		endlessResetShopPrices();
-		const Sint64 atPar = endlessExtraPerkPrice();
-
-		/* Double the income and the perk costs more, but well under double: only part of the
-		 * excess carries through, so the richer route still buys more perks than the lean one. */
-		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)(par * 2);
-		const Sint64 atRich = endlessExtraPerkPrice();
-		snprintf(label, sizeof(label),
-		         "machine %d: double income costs more per perk, less than double", local + 1);
-		qa_check(atRich > atPar && atRich < atPar * 2, label);
-
-		/* The same cash taken as bounty counts at part weight, so clearing out elites and
-		 * champions is charged less than picking a route that pays more on clear. */
-		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
-		endlessCashBySource[ENDLESS_CASH_BOUNTY] = (Uint64)par;
-		const Sint64 atBounty = endlessExtraPerkPrice();
-		endlessCashBySource[ENDLESS_CASH_BOUNTY] = 0;
-		snprintf(label, sizeof(label),
-		         "machine %d: bounty income is charged less than clear income", local + 1);
-		qa_check(atBounty > atPar && atBounty < atRich, label);
-
-		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)(par / 4);
-		snprintf(label, sizeof(label),
-		         "machine %d: a run earning under par pays under the ladder", local + 1);
-		qa_check(endlessExtraPerkPrice() < atPar, label);
-		endlessCashBySource[ENDLESS_CASH_CLEAR] = (Uint64)par;
-
-		/* However rich the visit, two entry-cash slices plus the first buy cannot fit in one
-		 * bank, so no outpost sells a third perk. */
+		/* The ladder is depth alone until an outpost has sold one: free picks and a fat wallet
+		 * leave it where it is. */
+		const Sint64 ladder = 70000 + 2500 * 20;
 		player[me].cash = 99999999;
 		endlessCashResync();
 		endlessResetShopPrices();
-		int taken = 0;
-		while (taken < 8 && endlessTryBuyExtraPerk())
-			++taken;
-		snprintf(label, sizeof(label),
-		         "machine %d: one outpost never sells a third perk", local + 1);
-		qa_check(taken >= 1 && taken <= 2, label);
-		snprintf(label, sizeof(label),
-		         "machine %d: the perks were charged to the buyer alone", local + 1);
-		qa_check(player[me].cash < 99999999 && player[them].cash == 0, label);
+		snprintf(label, sizeof(label), "machine %d: a first perk is the depth price", local + 1);
+		qa_check(endlessExtraPerkPrice() == ladder, label);
 
-		/* Once the first perk takes more than two fifths of the bank the slice puts the second
-		 * out of reach, which is the usual outcome for a run already carrying perks. */
-		qa_clear_ships();
 		endlessPerkGrant(me, PERK_DAMAGE, 5);
 		endlessPerkGrant(me, PERK_ARMOR, 5);
-		player[me].cash = 1400000;
+		snprintf(label, sizeof(label),
+		         "machine %d: perks taken from free picks do not raise the price", local + 1);
+		qa_check(endlessExtraPerkPrice() == ladder, label);
+
+		/* The surcharge is quadratic in perks bought: 1.00, 1.20, 1.45, 1.75, 2.10, 2.50. */
+		static const int wantPct[6] = { 100, 120, 145, 175, 210, 250 };
+		bool curveHolds = true;
+		for (int n = 0; n < 6; ++n)
+		{
+			endlessExtraPerksBought[me] = n;
+			if (endlessExtraPerkPrice() != ladder * wantPct[n] / 100)
+				curveHolds = false;
+		}
+		snprintf(label, sizeof(label),
+		         "machine %d: each bought perk widens the surcharge step", local + 1);
+		qa_check(curveHolds, label);
+
+		/* A partner's spending is their own: the count is personal. */
+		endlessExtraPerksBought[me] = 0;
+		endlessExtraPerksBought[them] = 5;
+		snprintf(label, sizeof(label),
+		         "machine %d: the partner's purchases do not price this pick", local + 1);
+		qa_check(endlessExtraPerkPrice() == ladder, label);
+		endlessExtraPerksBought[them] = 0;
+
+		/* One outpost sells two: the second at the repeat multiple of the price it has just
+		 * risen to, and the third is not offered at any wallet. */
+		qa_clear_ships();
+		player[me].cash = 99999999;
 		endlessCashResync();
 		endlessResetShopPrices();
-		taken = 0;
-		while (taken < 8 && endlessTryBuyExtraPerk())
-			++taken;
+		snprintf(label, sizeof(label), "machine %d: the first perk of a visit sells", local + 1);
+		qa_check(endlessTryBuyExtraPerk() && endlessExtraPerksBought[me] == 1, label);
+
+		const Sint64 second = ladder * wantPct[1] / 100 * ENDLESS_PERK_VISIT_REPEAT_PCT / 100;
 		snprintf(label, sizeof(label),
-		         "machine %d: a buyer already carrying perks gets one a visit", local + 1);
-		qa_check(taken == 1, label);
+		         "machine %d: the second is the repeat multiple of the risen price", local + 1);
+		qa_check(!endlessExtraPerkMaxed() && endlessExtraPerkPrice() == second, label);
+		snprintf(label, sizeof(label), "machine %d: the second perk of a visit sells", local + 1);
+		qa_check(endlessTryBuyExtraPerk() && endlessExtraPerksBought[me] == 2, label);
+
+		snprintf(label, sizeof(label),
+		         "machine %d: no outpost sells a third perk, however rich", local + 1);
+		qa_check(endlessExtraPerkMaxed() && !endlessTryBuyExtraPerk()
+		         && endlessExtraPerksBought[me] == 2, label);
+		snprintf(label, sizeof(label),
+		         "machine %d: the perks were charged to the buyer alone", local + 1);
+		qa_check(player[me].cash < 99999999 && player[them].cash == 0
+		         && endlessExtraPerksBought[them] == 0, label);
+
+		/* The visit counter clears at the next outpost; the run total does not. */
+		endlessResetShopPrices();
+		snprintf(label, sizeof(label),
+		         "machine %d: the next outpost sells again at the run's own price", local + 1);
+		qa_check(!endlessExtraPerkMaxed()
+		         && endlessExtraPerkPrice() == ladder * wantPct[2] / 100, label);
 
 		qa_clear_ledger();
 		qa_clear_ships();
@@ -1852,6 +1855,8 @@ static void qa_wire_matrix(void)
 		endlessLongCon[0]         = variant;
 		endlessShopTax[0]         = variant * 25;
 		endlessRevivesUsed[0]     = variant;
+		endlessExtraPerksBought[0] = variant * 3;
+		endlessExtraPerksVisit[0]  = variant % (ENDLESS_PERK_VISIT_MAX + 1);
 		endlessRerollCost[0]      = 1000L * (variant + 1);
 		endlessHullCost[0]        = 500 * (variant + 1);
 		endlessShopEntryCash[0]   = 250000L * (variant + 1);
@@ -1888,6 +1893,8 @@ static void qa_wire_matrix(void)
 		         && endlessLongCon[1] == endlessLongCon[0]
 		         && endlessShopTax[1] == endlessShopTax[0]
 		         && endlessRevivesUsed[1] == endlessRevivesUsed[0]
+		         && endlessExtraPerksBought[1] == endlessExtraPerksBought[0]
+		         && endlessExtraPerksVisit[1] == endlessExtraPerksVisit[0]
 		         && endlessRerollCost[1] == endlessRerollCost[0]
 		         && endlessHullCost[1] == endlessHullCost[0]
 		         && endlessShopEntryCash[1] == endlessShopEntryCash[0], label);
@@ -2099,6 +2106,50 @@ static void qa_scenario_suite(void)
 		network_game_type = savedType;
 		saveFiles[22 - 1] = savedSlots[0];
 		saveFiles[15 - 1] = savedSlots[1];
+	}
+
+	/* The two extra-perk counters ride the save. The run total is what prices the next pick, and
+	 * the visit count has to come back too, or reloading an outpost would sell its limit again. */
+	{
+		const JE_SaveFileType original = saveFiles[22 - 1];
+
+		qa_session(0);
+		qa_clear_ships();
+		endlessRunMode = ENDLESS_RUNMODE_STANDARD;
+		endlessRunDepth = 30;
+		player[0].cash = 99999999;
+		endlessCashResync();
+		endlessResetShopPrices();
+
+		qa_check(endlessTryBuyExtraPerk() && endlessTryBuyExtraPerk() && endlessExtraPerkMaxed(),
+		         "the outpost sells its two perks before the save");
+		endlessExtraPerksBought[1] = 5;   // the partner is further along a ladder of their own
+		const Sint64 pricedAt = endlessExtraPerkPrice();
+		JE_saveGame(22, "PERK COUNTS   ");
+
+		endlessExtraPerksBought[0] = endlessExtraPerksBought[1] = 0;
+		endlessExtraPerksVisit[0] = 0;
+		qa_check(endlessLoadSlot(22) && endlessExtraPerksBought[0] == 2
+		         && endlessExtraPerksBought[1] == 5,
+		         "both players' bought-perk totals come back off the slot");
+		qa_check(endlessExtraPerksVisit[0] == ENDLESS_PERK_VISIT_MAX && endlessExtraPerkMaxed()
+		         && !endlessTryBuyExtraPerk() && endlessExtraPerksBought[0] == 2,
+		         "a reloaded outpost is still sold out, so saving cannot buy a third perk");
+		qa_check(endlessExtraPerkPrice() == pricedAt,
+		         "the restored total quotes the price the run was saved at");
+
+		/* A corrupt count must not come back and overflow the quadratic surcharge. */
+		endlessExtraPerksBought[0] = 999999999;
+		endlessExtraPerksBought[1] = -7;
+		JE_saveGame(22, "PERK COUNTS   ");
+		qa_check(endlessLoadSlot(22) && endlessExtraPerksBought[0] == ENDLESS_PERK_PAID_MAX
+		         && endlessExtraPerksBought[1] == 0 && endlessExtraPerkPrice() > 0,
+		         "a corrupt bought-perk count clamps on load and still quotes a price");
+
+		endlessExtraPerksBought[0] = endlessExtraPerksBought[1] = 0;
+		endlessExtraPerksVisit[0] = endlessExtraPerksVisit[1] = 0;
+		saveFiles[22 - 1] = original;
+		qa_clear_ships();
 	}
 
 	/* Verify both save APIs reject mid-run Hardcore without changing the slot. The

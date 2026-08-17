@@ -805,6 +805,8 @@ void endlessResetRun(void)
 		endlessReviveHeld[p] = false;
 		endlessRevivesUsed[p] = 0;
 		endlessCleanseChargeCount[p] = 0;
+		endlessExtraPerksBought[p] = 0;
+		endlessExtraPerksVisit[p] = 0;
 		endlessGamblePerkWon[p] = false;
 		endlessShopTax[p] = 0;
 		endlessGambleRigged[p] = false;
