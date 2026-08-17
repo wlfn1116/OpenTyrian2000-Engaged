@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 bool qa_test_suite = false;
 const char *qa_fixture_dir = "testing/fixtures/endless";
