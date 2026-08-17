@@ -410,6 +410,9 @@ Cards include modifier rewards and a small level adjustment. Interest starts at
 | 50, 150, 250, ... | S+ / S++ | Five-choice perk |
 | 100, 200, 300, ... | S++ / S+++, plus The End | Five-choice perk |
 
+No route on a multiple of 100 scrolls faster than usual, so Slipstream, Warp
+Speed, Overclock, and Overload never appear on those charts.
+
 Data cubes and secret-level orbs become random safe specials. Both draw as a
 colour-cycling "?" that throws matching sparks, and collect only on the mark
 itself. An armored orb keeps its own look until you shoot it open. A

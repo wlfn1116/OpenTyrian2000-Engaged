@@ -370,8 +370,9 @@ static int endlessModReward(Uint64 bit)
 	return 0;
 }
 
-// Build a distinct hostile combo whose displayed grade matches `rank`.
-static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint64 *used, int usedN)
+// Build a distinct hostile combo whose displayed grade matches `rank`, ignoring bits in `exclude`.
+static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, Uint64 exclude,
+                                           const Uint64 *used, int usedN)
 {
 	int lo = (rank <= 6) ? 34 : (rank == 7) ? 40 : (rank == 8) ? 50 : 60;
 	int hi = (rank <= 6) ? 39 : (rank == 7) ? 49 : (rank == 8) ? 59 : 95;
@@ -394,8 +395,9 @@ static Uint64 endlessMakeRankComboForLevel(int rank, int baseDanger, const Uint6
 			const int t = ord[k]; ord[k] = ord[j]; ord[j] = t;
 		}
 
-		// Which scarce bits sit this attempt out. Rolled unconditionally, so the stream stays aligned.
-		Uint64 sitOut = 0;
+		// Bits held out of this attempt: the caller's exclusions, plus the scarce bits this roll
+		// drops. The rolls are unconditional, so the stream stays aligned.
+		Uint64 sitOut = exclude;
 		for (unsigned s = 0; s < COUNTOF(endlessScarceMods); ++s)
 			if ((endlessRand() % endlessScarceMods[s].oneInN) == 0)
 				sitOut |= endlessScarceMods[s].bit;
@@ -1031,6 +1033,9 @@ static void endlessDealMilestoneSlate(int milestone)
 	if (lowN < 1)
 		lowN = 1;
 
+	// No route of a grand slate quickens the scroll, matching the finale it is charted beside.
+	const Uint64 exclude = (milestone == 2) ? ENDLESS_SCROLL_PACE_MASK : 0;
+
 	// Grand milestones pin The End before dealing the remaining fixed-grade routes.
 	int first = 0;
 	if (milestone == 2)
@@ -1044,7 +1049,8 @@ static void endlessDealMilestoneSlate(int milestone)
 		if (lowLeft > 0)
 			--lowLeft;
 		// Include the level's baseDanger so the displayed grade matches the requested rank.
-		endlessCourseMod[c] = endlessMakeRankComboForLevel(rank, endlessCourseBaseDanger(c), endlessCourseMod, c);
+		endlessCourseMod[c] = endlessMakeRankComboForLevel(rank, endlessCourseBaseDanger(c), exclude,
+		                                                  endlessCourseMod, c);
 	}
 }
 

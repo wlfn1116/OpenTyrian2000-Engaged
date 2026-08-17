@@ -1005,6 +1005,15 @@ Milestones use the upcoming zone:
 - other multiples of 50 offer S+ and S++;
 - multiples of 100 offer one END, two S+++, and two S++.
 
+A multiple of 100 deals no scroll-pace bit on any route: `endlessMakeTheEndMods`
+omits the group, and `endlessDealMilestoneSlate` passes
+`ENDLESS_SCROLL_PACE_MASK` to the combo builder as its exclusion. Overclock and
+Overload belong to that group because they quicken the scroll along with enemy
+fire, so the slate loses two of the pool's heavier weights on top of Slipstream
+and Warp; the rest of the pool still reaches S++ and S+++ on every seed the
+course suite covers. No purchase or gamble outcome grants a scroll-pace bit, so
+nothing adds one after the deal either.
+
 Shop music uses a direct `play_song` index. Level music is one-based and plays
 as `levelSong - 1`.
 

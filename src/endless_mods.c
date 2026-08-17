@@ -610,7 +610,8 @@ const EndlessTheme endlessRareThemes[] = {
 	{ ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE | ENDLESS_MOD_TOPSY | ENDLESS_MOD_SLUGGISH, "Black Sun" },
 };
 
-// The End keeps a fixed enemy-stat core and rolls the remaining dangers per milestone.
+// The End keeps a fixed enemy-stat core and rolls the remaining dangers per milestone, leaving out
+// the scroll-pace group so the finale runs at its level's own speed.
 // Its marker controls naming, rank, and reward independently of the exact combination.
 #define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
                              | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
@@ -622,12 +623,6 @@ Uint64 endlessMakeTheEndMods(void)
 	// Always select an all-elite or, less often, all-champion tier.
 	// Elite Pack is excluded because deep-run normalization can remove it.
 	m |= (endlessRand() % 3 == 0) ? ENDLESS_MOD_LEGION : ENDLESS_MOD_APEX;
-
-	// Select at most one scroll pace.
-	static const Uint64 scroll[] = {
-		0, ENDLESS_MOD_SLIPSTREAM, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_OVERLOAD, ENDLESS_MOD_WARP,
-	};
-	m |= scroll[endlessRand() % COUNTOF(scroll)];
 
 	// Ship hazards are independent. Gravity scales with Sluggish so full throttle can still climb.
 	if (endlessRand() % 2)

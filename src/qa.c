@@ -446,8 +446,13 @@ static void qa_test_courses(void)
 				qa_check((ranks[7] == 2 || ranks[7] == 3) && ranks[7] + ranks[8] == first_count,
 				         "plain milestone contains only the documented S+ and S++ split");
 			else
+			{
 				qa_check(ranks[8] == 2 && ranks[9] == 2 && ranks[10] == 1,
 				         "grand milestone contains two S++, two S+++, and one END route");
+				for (int i = 0; i < first_count; ++i)
+					qa_check((endlessCourseMod[i] & ENDLESS_SCROLL_PACE_MASK) == 0,
+					         "no grand milestone route quickens the scroll");
+			}
 		}
 
 		qa_reset_course_inputs(seed, depth, diff);

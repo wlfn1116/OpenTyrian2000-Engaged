@@ -345,6 +345,11 @@ extern const EndlessTheme endlessBreakthroughThemes[5];
 	ENDLESS_MOD_MARTYRDOM | ENDLESS_MOD_SEEKER | ENDLESS_MOD_STATIC | ENDLESS_MOD_RETALIATION | \
 	ENDLESS_MOD_THEEND )
 
+// Every bit that quickens the level scroll. Overclock and Overload quicken enemy fire as well, so
+// the whole group is excluded where faster scrolling is unwanted.
+#define ENDLESS_SCROLL_PACE_MASK ( \
+	ENDLESS_MOD_SLIPSTREAM | ENDLESS_MOD_OVERCLOCK | ENDLESS_MOD_OVERLOAD | ENDLESS_MOD_WARP )
+
 // Boon bits; a course with both masks is a gambit.
 #define ENDLESS_BOON_MASK ( \
 	ENDLESS_MOD_FRAGILE | ENDLESS_MOD_BOUNTY | ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERCHARGE | \
