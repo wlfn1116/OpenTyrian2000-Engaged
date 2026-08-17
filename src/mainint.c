@@ -10286,6 +10286,11 @@ redo:
 						// from lower down than the position itself.
 						const int shot_y = this_player->sidekick[i].y
 						                 + (this_player->sidekick[i].style == 1 ? SIDEKICK_TRAIL_SHOT_Y : 0);
+						// Twin Pods: the own volley moves inboard by the twin's outboard offset, so the
+						// pair stays centred on the pod (0 without the perk). The perk belongs to the
+						// sidekick's owner, so name that ship instead of using the effect context.
+						const int twin_dx = endlessPerkTwinPodOffset((uint)(this_player - &player[0]), i);
+						const int shot_x = this_player->sidekick[i].x - twin_dx;
 
 						// fire/refill sidekick
 						if (this_option->wport > 0)
@@ -10316,10 +10321,23 @@ redo:
 
 									if (button[1 + i] && (cheatInfiniteSidekickAmmo || this_player->sidekick[i].ammo > 0))
 									{
-										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+										b = player_shot_create(this_option->wport, shot_i, shot_x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
 
 										if (!cheatInfiniteSidekickAmmo)
 											--this_player->sidekick[i].ammo;
+
+										// Twin Pods: the twin spends the next round, so the last
+										// round in the magazine fires alone.
+										if (cheatInfiniteSidekickAmmo || this_player->sidekick[i].ammo > 0)
+										{
+											const JE_integer twin = player_shot_create_twin(
+												b, this_option->wport, i, twin_dx,
+												this_player->sidekick[i].x, shot_y, *mouseX_, *mouseY_,
+												this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+											if (twin < MAX_PWEAPON && !cheatInfiniteSidekickAmmo)
+												--this_player->sidekick[i].ammo;
+										}
+
 										if (this_player->sidekick[i].charge > 0)
 										{
 											shotMultiPos[shot_i] = 0;
@@ -10349,7 +10367,12 @@ redo:
 
 									if ((button[0] && (charge_autofire || !this_option->pwr)) || button[1 + i])
 									{
-										b = player_shot_create(this_option->wport, shot_i, this_player->sidekick[i].x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+										b = player_shot_create(this_option->wport, shot_i, shot_x, shot_y, *mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge, playerNum_);
+										// Twin Pods: no magazine here, so the twin costs generator power only.
+										player_shot_create_twin(
+											b, this_option->wport, i, twin_dx, this_player->sidekick[i].x, shot_y,
+											*mouseX_, *mouseY_, this_option->wpnum + this_player->sidekick[i].charge,
+											playerNum_);
 
 										if (this_player->sidekick[i].charge > 0)
 										{

@@ -831,6 +831,7 @@ int  endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo); // Ordnance R
 int  endlessPerkSpecialDuration(int base, int cap); // Ordnance Reserves: a timed special's duration, stretched; `cap` clamps it for the byte-wide fields (0 = uncapped)
 int  endlessPerkFailsafeTicks(void);         // Failsafe: i-frames a hit that reached the hull grants (0 = not owned); varz.c JE_playerDamage
 int  endlessPerkGuidanceDelay(uint bay, int ownDelay); // Guidance Package: ticks between course corrections for a shot from `bay` (0 = not steered); shots.c player_shot_create
+int  endlessPerkTwinPodOffset(uint p, uint sidekick); // Twin Pods: x offset in px of ship p's twin volley, outboard of the pod; the fire site moves its own volley the same inboard (0 = no twin)
 
 // Perk registry accessors (for the endless debug screen: list / toggle / stack perks).
 int         endlessPerkCount(void);          // number of perks (PERK_COUNT)

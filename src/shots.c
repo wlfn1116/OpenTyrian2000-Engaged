@@ -910,6 +910,20 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	return shot_id;
 }
 
+/* Endless Twin Pods, contract in shots.h: a second full player_shot_create from the same gun, so it
+ * pays the generator again and takes the pattern's next position. A refused first volley fires no
+ * twin, which keeps a pod starved for power or ammo starving whole. See "Combat" in doc/notes.md. */
+JE_integer player_shot_create_twin(JE_integer first, JE_word portNum, uint sidekick, int twinDx,
+                                   int x, int y, JE_word mouseX, JE_word mouseY, JE_word wpNum,
+                                   JE_byte playerNum)
+{
+	if (first >= MAX_PWEAPON || twinDx == 0)
+		return MAX_PWEAPON;
+
+	const uint bay = (sidekick == LEFT_SIDEKICK) ? SHOT_LEFT_SIDEKICK : SHOT_RIGHT_SIDEKICK;
+	return player_shot_create(portNum, bay, (JE_word)(x + twinDx), (JE_word)y, mouseX, mouseY, wpNum, playerNum);
+}
+
 // A chain-reaction carrier deals no damage of its own: it is consumed on impact and replaced by the
 // weapon named in its attack byte, which is what the enemy actually takes. The carrier's Opening
 // Salvo tag passes down so a bomb fired in a charged window still explodes for the boost once the

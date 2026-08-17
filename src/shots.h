@@ -91,6 +91,15 @@ JE_integer player_shot_create(
 	JE_word mousex, JE_word mousey,
 	JE_word wpnum, JE_byte playernum);
 
+/** Endless Twin Pods: fires a sidekick's second volley \a twindx outboard of the pod at \a x, which
+ * is where endlessPerkTwinPodOffset put it (0 = no perk, no twin). \a first is the pod's own
+ * player_shot_create result; nothing fires after a refused volley. Returns the twin's shot, or
+ * MAX_PWEAPON when none fired; the caller spends the round.
+ */
+JE_integer player_shot_create_twin(
+	JE_integer first, JE_word portnum, uint sidekick, int twindx, int x, int y,
+	JE_word mousex, JE_word mousey, JE_word wpnum, JE_byte playernum);
+
 /** Creates the chain-reaction child of a shot that just hit, at the impact point.
  * \a salvo_boost carries the parent's endless Opening Salvo tag onto every child bullet and
  * replaces the live salvo-window test.

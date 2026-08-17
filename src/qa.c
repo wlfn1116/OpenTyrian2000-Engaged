@@ -2261,6 +2261,114 @@ static void qa_test_guidance_perk(void)
 	guidedShotScreenAim = savedGuidedAim;
 }
 
+/* Twin Pods: where the two volleys land around each pod, that the perk stays personal in co-op, and
+ * the two refusals (no first volley, no generator power for a second). */
+static void qa_test_twin_pods_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const uint savedPower = power;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+	power = 10000;
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	const JE_word podPort = 16;   // Miscellaneous Option Weapons: the port every stock sidekick fires through
+	const JE_word podGun = 1;     // Pulse-Cannon level 1: one shot, one pattern position
+	qa_check(weaponPort[podPort].poweruse > 0 && weapons[podGun].multi == 1 && weapons[podGun].max <= 1,
+	         "the twin pods test's port and gun are the ones it assumes");
+	const int off = ENDLESS_PERK_TWINPODS_SPREAD_PX / 2;
+
+	// Without the perk there is no offset and nothing fires. The lone shot marks the pod's centre line.
+	qa_check(endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == 0 && endlessPerkTwinPodOffset(0, RIGHT_SIDEKICK) == 0,
+	         "without Twin Pods a sidekick has no twin offset");
+	JE_integer first = player_shot_create(podPort, SHOT_LEFT_SIDEKICK, 100, 150, 0, 0, podGun, 1);
+	qa_check(first < MAX_PWEAPON
+	         && player_shot_create_twin(first, podPort, LEFT_SIDEKICK, 0, 100, 150, 0, 0, podGun, 1) == MAX_PWEAPON,
+	         "...and no twin volley fires");
+	const int centreX = (first < MAX_PWEAPON) ? playerShotData[first].shotX : 0;
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	// The perk: the twin half the spread outboard of each pod, so the pair mirrors across the ship.
+	endlessPerkTakenBy[0][PERK_TWINPODS] = 1;
+	endlessPerkRederive();
+	qa_check(endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == -off && endlessPerkTwinPodOffset(0, RIGHT_SIDEKICK) == off,
+	         "the twin leaves half the spread left of the left pod and right of the right pod");
+	endlessMode = false;
+	qa_check(endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == 0, "...but only in an endless run");
+	endlessMode = true;
+	qa_check(endlessPerkTwinPodOffset(1, LEFT_SIDEKICK) == -off,
+	         "...and outside co-op a second ship flies off the only perk row there is");
+
+	/* Personal in co-op, and read off the named ship rather than the effect context: the partner's
+	 * pods stay single however the context is pointed, which is what keeps two machines simulating
+	 * the same volley from the same perk rows. */
+	coopEndlessMode = true;
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkTwinPodOffset(1, LEFT_SIDEKICK) == 0 && endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == -off,
+	         "a partner without Twin Pods keeps single pods while the holder's twin");
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkTwinPodOffset(1, LEFT_SIDEKICK) == 0 && endlessPerkTwinPodOffset(0, LEFT_SIDEKICK) == -off,
+	         "...whichever ship the effect context names");
+	endlessPerkTakenBy[1][PERK_TWINPODS] = 1;
+	endlessPerkRederive();
+	qa_check(endlessPerkTwinPodOffset(1, RIGHT_SIDEKICK) == off,
+	         "...and a partner who takes it too gets the same spread");
+	endlessPerkTakenBy[1][PERK_TWINPODS] = 0;
+	endlessPerkRederive();
+	coopEndlessMode = false;
+	endlessSetFxPlayer(0);
+
+	// As the fire sites do it: the own volley the same distance inboard, the twin from the pod's x.
+	const int leftDx = endlessPerkTwinPodOffset(0, LEFT_SIDEKICK),
+	          rightDx = endlessPerkTwinPodOffset(0, RIGHT_SIDEKICK);
+	first = player_shot_create(podPort, SHOT_LEFT_SIDEKICK, 100 - leftDx, 150, 0, 0, podGun, 1);
+	JE_integer twin = player_shot_create_twin(first, podPort, LEFT_SIDEKICK, leftDx,
+	                                          100, 150, 0, 0, podGun, 1);
+	qa_check(first < MAX_PWEAPON && twin < MAX_PWEAPON && twin != first
+	         && playerShotData[first].shotX == centreX + off && playerShotData[twin].shotX == centreX - off
+	         && playerShotData[twin].shotY == playerShotData[first].shotY
+	         && playerShotData[twin].shotDmg == playerShotData[first].shotDmg,
+	         "a left pod's two volleys are the same shot, centred on the pod, the twin outboard");
+	first = player_shot_create(podPort, SHOT_RIGHT_SIDEKICK, 100 - rightDx, 150, 0, 0, podGun, 1);
+	twin = player_shot_create_twin(first, podPort, RIGHT_SIDEKICK, rightDx, 100, 150, 0, 0, podGun, 1);
+	qa_check(twin < MAX_PWEAPON && playerShotData[first].shotX == centreX - off
+	         && playerShotData[twin].shotX == centreX + off,
+	         "...and a right pod's mirror them");
+	qa_check(player_shot_create_twin(MAX_PWEAPON, podPort, LEFT_SIDEKICK, -off,
+	                                 100, 150, 0, 0, podGun, 1) == MAX_PWEAPON,
+	         "a refused first volley fires no twin");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	// The twin pays the generator itself: enough for one volley is enough for one.
+	const uint volleyCost = weaponPort[podPort].poweruse;
+	power = volleyCost + volleyCost / 2;
+	first = player_shot_create(podPort, SHOT_LEFT_SIDEKICK, 100, 150, 0, 0, podGun, 1);
+	twin = player_shot_create_twin(first, podPort, LEFT_SIDEKICK, -off, 100, 150, 0, 0, podGun, 1);
+	qa_check(first < MAX_PWEAPON && twin == MAX_PWEAPON && power == volleyCost / 2,
+	         "a generator that can pay for one volley fires the pod's own and refuses the twin");
+	power = 2 * volleyCost;
+	first = player_shot_create(podPort, SHOT_LEFT_SIDEKICK, 100, 150, 0, 0, podGun, 1);
+	twin = player_shot_create_twin(first, podPort, LEFT_SIDEKICK, -off, 100, 150, 0, 0, podGun, 1);
+	qa_check(first < MAX_PWEAPON && twin < MAX_PWEAPON && power == 0,
+	         "...and one that can pay for two fires both, spending both");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	power = savedPower;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
 /* Guided Aim (guidedShotScreenAim): the weapon-table homing picks and chases the enemy's screen x
  * instead of its map x. Nothing else about the stock rule moves: it still takes any non-free,
  * non-pickup slot and still veers off when its enemy dies. */
@@ -6184,6 +6292,7 @@ int qa_run_unit_suite(void)
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
 	qa_test_guidance_perk();
+	qa_test_twin_pods_perk();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
 	qa_test_elite_tier_eligibility();

@@ -453,6 +453,23 @@ drop out of that range or a free one climb into it, and leaves the pinning 101
 alone, so a Zica beam curves while the whole curve moves with the ship. Only
 circle shots are left unsteered.
 
+Twin Pods is a second `player_shot_create` from the same sidekick bay
+(`player_shot_create_twin`), so it pays the generator again, advances the bay's
+pattern cursor and takes every other shot rule as the first volley did. The
+twin never fires after a refused first volley, and a limited pod fires it only
+when a round is left after its own. The pair is centred on the pod:
+`endlessPerkTwinPodOffset` is half `ENDLESS_PERK_TWINPODS_SPREAD_PX`, signed
+outboard, the fire site moves the pod's own volley that far inboard and the twin
+leaves that far outboard, so side, front-mounted and trailing pods all fire a
+symmetric pair that mirrors across the ship. The shop preview does the same.
+
+That offset takes the firing ship as an argument instead of reading the effect
+context, because the preview fires every shot as player one and would otherwise
+show a co-op guest their partner's pods. Both volleys therefore come off one
+decision, so the two machines cannot disagree about whether a pod fired twice:
+the stacks behind it ride the outpost player block like every other perk, and
+`endless.perkTakenBy` is registered rollback state.
+
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
@@ -1186,6 +1203,7 @@ Recent versions:
 | 58 | Player one reaches the same bottom edge as player two online |
 | 59 | Guidance Package perk steers main-gun, sidekick and special shots |
 | 60 | Guided Aim setting: weapon-table homing steers toward the enemy's screen x |
+| 61 | Twin Pods perk fires a second sidekick volley |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

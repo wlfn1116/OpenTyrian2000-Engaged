@@ -314,6 +314,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
 | Failsafe | Brief invulnerability after hull damage | 2 |
 | Guidance Package | Shots home in; later stacks add sidekicks and specials | 3 |
+| Twin Pods | Every sidekick volley fires twice, at double ammo and power | 1 |
 
 Guidance Package bends each shot toward the nearest enemy that can be hurt.
 Every stack corrects the course more often: about four times a second at one
@@ -326,6 +327,14 @@ Zica Laser beams and parts of the Mega Pulse, keep riding it and curve inside
 its frame, so moving the ship carries the whole curve with it. Score pickups,
 scenery and invulnerable parts are never targets, shots that loop around the
 ship are not steered, and superbombs are never touched.
+
+Twin Pods gives each sidekick a second volley beside its own: the two leave a
+few pixels apart, centred on the pod, whether it rides beside the ship, in
+front of it or behind it. The twin is a full extra shot: it
+draws generator power on its own, spends a round of a limited magazine, and
+continues the pod's firing pattern, so a spread weapon fans wider. A pod on its
+last round fires alone, and a pod refused for power fires nothing. Charge
+sidekicks fire the twin at the same charge. The shop preview shows it.
 
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns

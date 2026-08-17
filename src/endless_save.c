@@ -65,6 +65,10 @@ typedef struct {
 
 // Perk IDs are on-disk slots; widen the block and bump the version together.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
+/* The co-op outpost block carries the same IDs. Its loops truncate rather than overrun, so an
+ * overflow would silently stop syncing the perks past the width and desync the two ships instead
+ * of failing here. Widen it with NET_VERSION. */
+COMPILE_TIME_ASSERT(endless_block_perks_fit, PERK_COUNT <= ENDLESS_PLAYER_BLOCK_PERKS);
 COMPILE_TIME_ASSERT(endless_save_cash_sources_fit, ENDLESS_CASH_SOURCES <= ENDLESS_SAVE_CASH_SOURCES);
 COMPILE_TIME_ASSERT(endless_save_cash_sinks_fit, ENDLESS_CASH_SINKS <= ENDLESS_SAVE_CASH_SINKS);
 

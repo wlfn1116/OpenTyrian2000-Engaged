@@ -10533,8 +10533,14 @@ void JE_weaponViewFrame(void)
 			{
 				// Same drop as gameplay for a trailing large body (see player.h).
 				const int shot_y = shopPlayer()->sidekick[i].y + (o->tr == 1 ? SIDEKICK_TRAIL_SHOT_Y : 0);
+				// Twin Pods as in play: the own volley inboard, the twin outboard, centred on the pod.
+				// The preview fires as player one whoever is shopping, so name the shopper's own perks.
+				const int twin_dx = endlessPerkTwinPodOffset(shopPlayerIndex, i);
+				const int shot_x = shopPlayer()->sidekick[i].x - twin_dx;
 
-				b = player_shot_create(o->wport, shot_i, shopPlayer()->sidekick[i].x, shot_y, mouseX, mouseY, o->wpnum, 1);
+				b = player_shot_create(o->wport, shot_i, shot_x, shot_y, mouseX, mouseY, o->wpnum, 1);
+				player_shot_create_twin(b, o->wport, i, twin_dx, shopPlayer()->sidekick[i].x, shot_y,
+				                        mouseX, mouseY, o->wpnum, 1);
 				shopPlayer()->sidekick[i].animation_enabled = true;  // animate the body while it fires
 			}
 		}

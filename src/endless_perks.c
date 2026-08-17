@@ -43,6 +43,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Ordnance Reserves","More sidekick ammo; specials last longer.", 4 },
 	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
 	{ "Guidance Package", "Main guns home in; 2 sidekicks, 3 specials.", 3 },
+	{ "Twin Pods",        "Sidekicks fire twice; double ammo and power.", 1 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -69,6 +70,14 @@ static JE_byte perkFx(int id)
 static JE_byte perkMine(int id)
 {
 	return endlessPerkEffective(endlessEconomyIndex(), id);
+}
+
+// The stacks in effect for a named ship, for effects that know which ship they belong to instead of
+// leaning on the effect context. Only co-op deals a second row, so everywhere else ship 0 holds the
+// only picks; endlessFxPlayer normalizes the same way.
+static JE_byte perkShip(uint p, int id)
+{
+	return endlessPerkEffective(coopEndlessMode ? p : 0, id);
 }
 
 void endlessPerkRederive(void)
@@ -494,6 +503,18 @@ int endlessPerkGuidanceDelay(uint bay, int ownDelay)
 	                ? ownDelay - stacks * ENDLESS_PERK_GUIDANCE_STEP
 	                : ENDLESS_PERK_GUIDANCE_DELAY - (stacks - 1) * ENDLESS_PERK_GUIDANCE_STEP;
 	return delay < 1 ? 1 : delay;
+}
+
+/* Twin Pods: the x offset, in px, of ship p's twin volley from the pod, or 0 when the perk leaves
+ * that pod alone. The fire site moves the pod's own volley the same distance inboard, so the pair
+ * straddles the pod. The firing ship is named rather than taken from the effect context, because
+ * the shop preview fires every shot as player one; see "Combat" in doc/notes.md. */
+int endlessPerkTwinPodOffset(uint p, uint sidekick)
+{
+	if (!endlessFxActive() || perkShip(p, PERK_TWINPODS) == 0)
+		return 0;
+	const int half = ENDLESS_PERK_TWINPODS_SPREAD_PX / 2;
+	return (sidekick == LEFT_SIDEKICK) ? -half : half;
 }
 
 // Start each zone with countermeasures ready and Opening Salvo charged.

@@ -190,6 +190,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_GUIDANCE_STEP   3 // ...ticks each further stack takes off that, and ticks each stack takes off a homing gun's own interval (floor 1)
 #define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2 // ...stacks before sidekick shots are steered as well
 #define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3 // ...and before special-weapon shots are
+#define ENDLESS_PERK_TWINPODS_SPREAD_PX 12 // Twin Pods: px between a pod's two volleys; the pair straddles the pod, half each side
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
@@ -226,6 +227,7 @@ enum {
 	PERK_ORDNANCE,
 	PERK_FAILSAFE,
 	PERK_GUIDANCE,
+	PERK_TWINPODS,
 	PERK_COUNT
 };
 
