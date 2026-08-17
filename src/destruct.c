@@ -3375,7 +3375,7 @@ static void DE_RunTickDrawHUD(void)
 		JE_outText(VGAScreen, startX + 20, 3, weaponNames[curUnit->shotType], 15, 2);
 		sprintf(tempstr, "dmg~%d~", curUnit->health);
 		JE_outText(VGAScreen, startX + 75, 3, tempstr, 15, 0);
-		sprintf(tempstr, "pts~%d~", destruct_player[i].score);
+		sprintf(tempstr, "pts~%u~", destruct_player[i].score);
 		JE_outText(VGAScreen, startX + 110, 3, tempstr, 15, 0);
 	}
 }

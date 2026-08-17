@@ -155,7 +155,7 @@ static void write_player(FILE *f, int p)
 	        pl->sidekick[RIGHT_SIDEKICK].charge, pl->sidekick[RIGHT_SIDEKICK].charge_ticks,
 	        pl->sidekick[RIGHT_SIDEKICK].ammo, pl->sidekick[RIGHT_SIDEKICK].ammo_max);
 	fprintf(f, "  Special:      %-3d %s\n", (int)it->special, special_name(it->special));
-	fprintf(f, "  Cash:         %lu\n", (unsigned long)pl->cash);
+	fprintf(f, "  Cash:         %lld\n", (long long)pl->cash);
 	fprintf(f, "  Superbombs:   %u\n", pl->superbombs);
 	fprintf(f, "  Position:     (%d, %d)\n", pl->x, pl->y);
 	if (it->super_arcade_mode)

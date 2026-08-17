@@ -82,9 +82,9 @@ Base Level has four rules:
 
 Both Same rules vary only the modifiers across a chart. Both Shuffle rules hold
 every eligible level in a bag: each chart takes the pieces it needs off the
-front, and the bag refills with a fresh shuffle once it empties. Every level
-comes up once per bagful, so a run works through the whole pool before starting
-over. A Radar reroll spends the hand it discarded and deals the next pieces.
+front, and the bag refills with a fresh shuffle once it empties, so a run works
+through the whole pool before any level repeats. A Radar reroll spends the hand
+it discarded and deals the next pieces.
 
 | Mode | Saving | Death |
 | --- | --- | --- |
@@ -111,16 +111,15 @@ an Atomic RailGun at power 1.
 
 ### Depth and enemy tiers
 
-On Normal, most ordinary scaling approaches its cap between zones 55 and 100.
-A rising tide begins near zone 25 and adds shots, then damage from zone 30, once
-the ordinary ramps flatten. The share of elites and champions climbs for far
-longer: one enemy in fifty at the start, one in four around zone 40, three in
-five by zone 100, and four in five from zone 200 on. Champions are the scarcer
-tier within that share. They are one special in ten at the start and under a
-third at zone 100, pass elites in number at zone 153, and settle at seven in ten
-by zone 200. A harder difficulty reaches every one of those marks sooner, in
-proportion to its ramp. Hard arrives at the zone-100 mix by zone 83 and at the
-ceiling by zone 167, Suicide by zones 63 and 125.
+On Normal, most ordinary scaling approaches its cap between zones 55 and 100. A
+rising tide begins near zone 25 and adds shots, then damage from zone 30. The
+share of elites and champions climbs for far longer: one enemy in fifty at the
+start, one in four around zone 40, three in five by zone 100, and four in five
+from zone 200 on. Champions are the scarcer tier within that share, one special
+in ten at the start, under a third at zone 100, and seven in ten by zone 200. A
+harder difficulty reaches every mark sooner in proportion to its ramp: Hard
+takes the zone-100 mix by zone 83 and the ceiling by zone 167, Suicide by zones
+63 and 125.
 
 | Tier | Health | Offense | Bounty |
 | --- | --- | --- | ---: |
@@ -138,17 +137,12 @@ perks and drives apply on top of that. Bosses, elites, and champions ignore
 repeat hits from the same shot for a fraction of a tick, which limits how fast
 one shot can wear a single target down.
 
-Elites and champions are palette-shifted and shed sparks in the same tint. Their
-shots fly in it, they explode in it, and the bounty line at the bottom of the
-screen names the tier in it as well. Linked parts share one tier and one
-bounty, and sealed armour in the same group takes the colour too, so a whole
-hull shifts together. Armour that no part of the level ever makes vulnerable
-stays plain. Every enemy takes its tier on the frame it appears, so nothing
-recolours or rearms while you are fighting it. Bosses can be promoted, and so
-can an enemy that starts out invulnerable, such as a boss flying in armored or
-a sealed hull. Scenery that can never be damaged is never promoted. An enemy
-that turns into another body when it dies, such as a bomb that rises out of the
-wreck, carries its tier into that body; loot it drops does not.
+Elites and champions are palette-shifted, and their sparks, shots, explosions,
+and bounty line all carry the same tint. Linked parts share one tier and one
+bounty, so a whole hull shifts together. Every enemy takes its tier on the frame
+it appears, so nothing recolours or rearms while you are fighting it. Bosses and
+enemies that start out invulnerable can be promoted; scenery that can never be
+damaged cannot.
 
 ### Sector modifiers
 
@@ -319,140 +313,79 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
 | Deflector | A shot your shield absorbs flies back as yours; 2x damage at two stacks | 2 |
 
-Guidance Package bends each shot toward the nearest enemy that can be hurt.
-Every stack corrects the course more often: about four times a second at one
-stack, seven at two and seventeen at three, so a slow or wide gun curls onto
-its target while a fast one barely notices at first and turns hard at full
-stacks. A gun that already homes turns quicker per stack instead of gaining a
-second aim. A steered shot moves on to the next enemy when its own dies and
-flies straight when nothing is left. Shots that ride the ship, such as the
-Zica Laser beams and parts of the Mega Pulse, keep riding it and curve inside
-its frame, so moving the ship carries the whole curve with it. Score pickups,
-scenery and invulnerable parts are never targets, shots that loop around the
-ship are not steered, and superbombs are never touched.
+A few perks work in ways the table cannot show.
 
-Twin Pods gives each sidekick a second volley beside its own: the two leave a
-few pixels apart, centred on the pod, whether it rides beside the ship, in
-front of it or behind it. The twin is a full extra shot: it
-draws generator power on its own, spends a round of a limited magazine, and
-continues the pod's firing pattern, so a spread weapon fans wider. A pod on its
-last round fires alone, and a pod refused for power fires nothing. Charge
-sidekicks fire the twin at the same charge. The shop preview shows it.
+**Guidance Package** bends shots toward the nearest enemy that can be hurt: the
+main guns from one stack, sidekicks from two, specials from three, and each
+stack corrects more often. A slow or wide gun curls onto its target while a fast
+one barely bends until full stacks. A gun that already homes turns quicker
+instead of gaining a second aim, and a steered shot moves to the next enemy when
+its own dies. Shots that ride the ship, such as the Zica Laser beams, curve
+inside its frame. Score pickups, scenery, invulnerable parts, and superbombs are
+never targets.
 
-Ramming is a way to fight in Endless. An enemy you destroy by flying into it
-dies the way a shot enemy dies: it pays its cash, drops what it carried, pays
-its bounty if it was an elite or champion, feeds your kill streak and starts a
-Chain Reaction wave, credited in co-op to the ship that rammed. Contact normally
-deals 2 to each side per tick. Reinforced Prow multiplies your side of that (2x,
-3x, 4x per stack, before Knife Fight) and cuts what you take to 75%, 50% and
-25%, after the depth ramp and any elite or Rampage premium; a hit still costs at
-least one point. An enemy with almost no armour left still hurts you less, as it
-always did. While you are invulnerable, from Failsafe, an invulnerability
-special or the start of a sector, you keep ramming without being rammed back,
-but land
-one contact hit every ten ticks of the window instead of one every tick. Bosses
-and elites spend ram damage through the same health multiplier your guns face,
-so a ram wears them down at that rate.
+**Twin Pods** adds a second volley beside each sidekick's own, the two leaving a
+few pixels apart and centred on the pod. The twin is a full shot: it draws
+generator power and spends a round of a limited magazine, so a pod on its last
+round fires alone and a pod refused for power fires nothing. Charge sidekicks
+fire the twin at the same charge, and the shop preview shows the pair.
 
-Knife Fight rewards flying close. It measures the gap between your hull and the
-nearest edge of the enemy you hit, and for a body built from several tiles the
-nearest tile of the whole body counts, so hugging one end of a boss is enough.
-Within 7 px of that edge every stack adds 15% to the hit; from there the bonus
-fades evenly to nothing at 55 px. It applies per enemy hit, to shots, specials
-and rams alike, and never to Chain Reaction blasts. In co-op each ship is
-measured from its own position. A hit it raises bleeds: a few red drops run
-down the enemy, more of them the deeper the bonus, so you can read how close you
-are without looking away from the fight. The colour follows the sector's
-palette, and a busy screen caps how much runs at once.
+**Reinforced Prow** makes ramming a way to fight. Contact normally costs each
+side 2 per tick; every stack multiplies the enemy's share (2x, 3x, 4x) and cuts
+yours (75%, 50%, 25%), never below one point. An enemy you destroy by ramming
+pays its cash, drops, and bounty exactly as a shot one does, feeds your kill
+streak, and starts a Chain Reaction wave. While you are invulnerable you ram
+without being rammed back, but land one contact hit every ten ticks instead of
+one every tick. Bosses, elites, and champions spend ram damage through the same
+health multiplier your guns face.
 
-Deflector turns your shield into a gun. A shot the shield absorbs whole flies
-back out along the reverse of the path it came in on, as your own shot: it
-carries the damage the shield absorbed, doubled at two stacks, and is then
-scaled like every shot of yours (Heavy Rounds, Knife Fight and the rest apply
-when it lands). A deflection made inside an Opening Salvo window belongs to that
-volley and takes its bonus, so a wall of fire arriving on a charged salvo comes
-back hard. It keeps the bullet's look, its elite or champion tint included, and
-takes no steering, so a shot fired at you from ahead goes straight back at the
-enemy that fired it. A hit that reaches the hull, one taken while you are
-invulnerable, or an empty shield returns nothing, and Bulwark's cut comes off
-before the shield absorbs, so it lowers what comes back. Kills the returned shot
-makes are yours.
+**Knife Fight** measures the gap between your hull and the nearest edge of the
+enemy you hit, counting the nearest tile of a body built from several, so
+hugging one end of a boss is enough. Within 7 px every stack adds 15%, and the
+bonus fades evenly to nothing at 55 px. It applies per enemy hit to shots,
+specials, and rams, and never to Chain Reaction blasts. A raised hit bleeds,
+more heavily the deeper the bonus, so you can read the range without looking
+away from the fight.
 
-Opening Salvo charges after two seconds without main-gun fire. Its one-second
-window gives 2.5x damage and removes generator cost. The generator gauge turns
-green when it is ready, and each boosted shot flashes a few sparks in its own
-colour. The window covers everything you fire inside it, sidekicks and the
-special included, and a special that goes off on the same press as the volley
-belongs to that volley. A special that fires no shot, such as a repulsor, a
-repair or an invulnerability, gets the 2.5x on its effect instead and bursts
-green off the hull.
+**Deflector** returns a shot the shield absorbs whole. It flies back along the
+reverse of its path as your own shot, carrying the damage the shield absorbed,
+doubled at two stacks and then scaled like anything else you fire. It takes no
+steering, so a shot fired from ahead goes straight back at the enemy that fired
+it, and it keeps the bullet's look. A deflection made inside an Opening Salvo
+window belongs to that volley. A hit that reaches the hull, a hit taken while
+you are invulnerable, and an empty shield all return nothing, and Bulwark's cut
+comes off before the shield absorbs, lowering what comes back.
 
-Kinetic Converter pays out on every hit that costs shield or hull. Each hit
-takes 8% per stack off whatever is left of the special recharge, credits 0.25
-sidekick rounds per stack, and advances a charge sidekick one charge stage per
-stack. Part-rounds carry over to later hits. Shield absorption additionally
-refunds 20% per stack of the generator power that shield charge was worth.
+**Opening Salvo** charges after two seconds without main-gun fire. Its
+one-second window gives 2.5x damage, removes generator cost, and covers
+everything you fire inside it, sidekicks and the special included. The generator
+gauge turns green when the volley is ready. A special that fires no shot, such
+as a repulsor, a repair, or an invulnerability, gets the 2.5x on its effect
+instead.
 
-It also cuts 22% per stack from the shield or armour charge of a twiddle (a
-special fired by a movement code), so three stacks pay 34% of the list price. A
-charge that costs anything is never cut below one point. The twiddles that spend
-all or half of your shield are discounted the same way and leave the rest of the
-bar standing. Every twiddle keeps the effect its full price buys: Invulnerability
-lasts as long as the shield it would have emptied, and a repair mends as much.
+**Kinetic Converter** pays out on every hit that costs shield or hull: 8% per
+stack off whatever is left of the special recharge, 0.25 sidekick rounds per
+stack, and one charge stage per stack on a charge sidekick, with part-rounds
+carried over to later hits. Shield absorption also refunds 20% per stack of the
+generator power that shield charge was worth. Separately, it cuts 22% per stack
+from the shield or armour charge of a twiddle (a special fired by a movement
+code), never below one point, and the twiddle still delivers what its full price
+buys.
 
-Countermeasures and the Shockwave boon both scrub enemy shots. Every shot they
-destroy bursts into sparks in its own colour, so you can see what the sweep
-caught. Chain Reaction throws a ring of sparks out to the edge of its blast on
-every kill, whether or not anything was standing in it, so the reach you are
-carrying stays on screen. Each enemy the blast catches takes a bolt from the kill
-and a flash. Each stack past the first deepens the damage and widens the blast,
-and the ring grows with it. The blast is your damage: it rides the same scale
-your guns do, so Heavy Rounds, Glass Cannon, Adrenaline and a drive all deepen it,
-and anything cutting your damage cuts it too. A kill made during an Opening Salvo
-volley carries that bump as well, and keeps it for the whole wave that follows,
-even once the volley itself has run out. In co-op the pulse is always the one the
-ship that made the kill paid for, measured against that ship's own build and that
-ship's own salvo, and a kill neither ship can claim uses the wider of the two.
+**Chain Reaction** blasts nearby enemies on every kill, and each stack past the
+first deepens the damage and widens the blast. The blast is your damage: Heavy
+Rounds, Glass Cannon, Adrenaline, a drive, and an Opening Salvo volley all
+deepen it, anything cutting your damage cuts it too, and a wave keeps the salvo
+bonus for its whole cascade.
 
 Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
-packed formation sends a visible wave travelling outward through it, and a tight
-enough formation goes down with it. Only an enemy the blast merely wounds stops
-the wave there. So the reach a stack buys is worth more than the damage figure
-suggests, since reach is what decides whether the next enemy is close enough to
-carry the wave on.
-
-A wave lands on each enemy once. However many of its blasts overlap on a hull,
-in one tick or across the hops that follow, that hull takes one hit from the
-wave; the next kill you make starts the next wave, which lands on it again. So a
-kill in a wall of tough tiles softens every tile within reach by one hit rather
-than shattering the wall, and each further kill takes another layer off.
-
-Elites and champions are fair game. They take the blast through the same health
-multiplier their tier gives them, so they wear down slowly, and a wave that
-finishes one pays its bounty in full to the ship whose blast it was, with the
-usual banner naming that ship in co-op.
-
-A boss takes the blast like anything else with hit points, and its health bar
-flashes for it. The damage goes through the same scaling a boss applies to your
-guns, so it wears one down at the rate that scaling allows rather than stripping
-raw armour off it. A wave can finish one, too: the boss dies as it would to your
-guns, pays out for every part of itself, and its death carries the wave onward
-like any other. Hulls the level holds invulnerable take nothing at all.
-
-Anything built from several tiles counts once, not once per tile. The blast
-reaches such a hull if it reaches any part of it, and then lands a single hit in
-the middle of the hull, so clipping the far end of a long enemy does the same as
-catching it square.
-
-A kill the wave makes is worth what shooting that enemy would have been. It pays
-its cash to the ship whose blast it was, feeds that ship's kill streak, leaves
-behind whatever that enemy drops, and pays any bounty it carried. Nothing is lost
-by letting the wave take a kill instead of your guns.
-
-Anything that fires counts as your shot, so specials that scatter fire, and
-weapons whose shots burst into other shots, set the perk off exactly as your
-front gun does. So does ramming: an enemy you fly into and destroy is a kill
-like any other and starts a wave of its own.
+packed formation sends a visible wave through it, while an enemy the blast only
+wounds stops the wave there. A wave lands on each enemy once, and on a hull
+built from several tiles once rather than once per tile, so a wall of tough
+tiles loses one layer per kill. Bosses, elites, and champions take the blast
+through their own health multiplier. Kills the wave makes pay exactly what
+shooting those enemies would have. Anything that fires sets the perk off,
+ramming and scattered special fire included.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.
@@ -485,7 +418,8 @@ Shot, and the flare-style field keeps the original name.
 A revive restores the hull, clears enemy shots, and briefly stops enemy fire.
 Without one, Relaxed offers Restart Zone, Return to Outpost, or End Run.
 
-Relaxed and Standard checkpoint at the outpost in `endless.sav`. Hardcore never
+Relaxed and Standard checkpoint at the outpost, into the same save slot as the
+campaign half of the run (`opentyrian.sav`, see Files and logs). Hardcore never
 writes a run save. Quit Level restores the launch snapshot.
 
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
@@ -766,9 +700,8 @@ new values, so only the most recent one is kept. Custom stays grayed out until
 you have changed something for it to hold.
 
 Two settings the Enhancements menu shows are outside the presets. **Sidekick
-Autofire** is stored per save slot, so loading a game sets it and a preset must
-not overwrite it. **Weapon Creator** designs weapons rather than holding a
-setting.
+Autofire** is stored per save slot, so loading a game sets it and no preset
+changes it. **Weapon Creator** designs weapons rather than holding a setting.
 
 Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the data for
 the current episode. Online sessions use the host's choices. A changed row takes
@@ -791,10 +724,10 @@ Useful restored-content settings:
 - **Ice Base Shots** enables the dormant dispenser-base attack. Endless rolls it
   from the run seed and always enables it from zone 50.
 - **Unused Sprites** assigns distinct shipped icons to weapons that otherwise
-  share or lack one. It also rebuilds the HUD icons of eleven of the specials
-  that shared one, eight of them wearing the same "?". Each keeps its ship body
-  and gains the weapon's own sprite above it. Dragon Lightning instead takes a
-  spare icon of its own, leaving the bolt it shared to Lightning Zone.
+  share or lack one, and rebuilds the HUD icons of eleven specials that shared
+  one: each keeps its ship body and gains the weapon's own sprite above it.
+  Dragon Lightning takes a spare icon of its own, leaving the bolt it shared to
+  Lightning Zone.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.
@@ -861,9 +794,24 @@ On Windows, files sit beside the executable. Linux uses
 | File | Contents |
 | --- | --- |
 | `opentyrian.cfg` | Settings and records |
-| `tyrian.sav` | Campaign and two-player saves |
-| `endless.sav` | Current Relaxed or Standard Endless run |
+| `opentyrian.sav` | Save slots (campaign, two-player and Endless) and high scores |
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |
+
+`opentyrian.cfg` and `opentyrian.sav` are plain text in the same format and can
+be read and edited with any text editor while the game is closed.
+`opentyrian.sav` holds a `section 'save' 'N'` for every slot that has a game in
+it (slots 1-11 are the one-player page, 12-22 the two-player page), a
+`section 'endless' 'N'` beside it when that slot holds an Endless run, and a
+`section 'highscore'` for every board. Every value is a named `item`; a line you
+delete goes back to its default, an unknown line is ignored, and cash outside
+0 to 999,999,999,999 is clamped, so a mistake costs that one value and never the
+file. Deleting a slot's sections empties the slot.
+
+Older builds kept `tyrian.sav`, `endless.sav` and `tyrian.cfg` instead. The first
+launch that finds no `opentyrian.sav` imports all three and leaves them in place.
+After that, `endless.sav` is read only to restore a slot named `ZONE n` whose
+`endless` section is missing; such a slot replays one level instead of resuming
+the run. Keep it beside the game until every run has come across.
 
 Logs are created on first use and are not rotated automatically.

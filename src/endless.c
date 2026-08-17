@@ -41,7 +41,7 @@ Uint64 endlessRunCashEarned = 0;
 Uint64 endlessRunCashSpent  = 0;
 Uint64 endlessCashBySource[ENDLESS_CASH_SOURCES] = { 0 };
 Uint64 endlessCashBySink[ENDLESS_CASH_SINKS] = { 0 };
-static ulong endlessCashMark = 0;
+static Sint64 endlessCashMark = 0;   // fixed-width: registered rollback state
 
 /* Online co-op. The sector is shared; wallets, gear and personal upgrades are not. Each machine
  * outfits, spends for and tallies its OWN ship, and mirrors the other's state at the outpost. */
@@ -57,7 +57,7 @@ uint endlessPartnerIndex(void)
 }
 
 // This machine's wallet, which is the one the run ledger follows.
-static ulong endlessWallet(void)
+static Sint64 endlessWallet(void)
 {
 	return player[endlessEconomyIndex()].cash;
 }
@@ -224,13 +224,13 @@ static void endlessCashBook(Uint64 amount, EndlessCashSource src)
 // Book undeclared wallet drift, then re-anchor the ledger mark.
 static void endlessCashReconcile(bool warn)
 {
-	const ulong now = endlessWallet();
+	const Sint64 now = endlessWallet();
 	if (now == endlessCashMark)
 		return;
 	if (warn)
-		fprintf(stderr, "warning: endless cash audit caught an undeclared %s of %llu\n",
+		fprintf(stderr, "warning: endless cash audit caught an undeclared %s of %lld\n",
 		        (now > endlessCashMark) ? "rise" : "fall",
-		        (unsigned long long)((now > endlessCashMark) ? now - endlessCashMark : endlessCashMark - now));
+		        (long long)((now > endlessCashMark) ? now - endlessCashMark : endlessCashMark - now));
 	if (now > endlessCashMark)
 		endlessCashBook((Uint64)(now - endlessCashMark), ENDLESS_CASH_OTHER);
 	else
@@ -253,18 +253,20 @@ void endlessCashDebugOverwrite(void)
 	endlessCashReconcile(false);
 }
 
-void endlessCashCredit(long amount, EndlessCashSource src)
+void endlessCashCredit(Sint64 amount, EndlessCashSource src)
 {
 	if (amount <= 0)
 		return;
+	Player *const wallet = &player[endlessEconomyIndex()];
 	if (!endlessMode)
 	{
-		player[endlessEconomyIndex()].cash += (ulong)amount;   // campaign with the effect layer on: pay out, nothing to tally
+		player_add_cash(wallet, amount);   // campaign with the effect layer on: pay out, nothing to tally
 		return;
 	}
 	endlessCashReconcile(true);   // any undeclared drift surfaces before the mark moves
-	player[endlessEconomyIndex()].cash += (ulong)amount;
-	endlessCashBook((Uint64)amount, src);
+	const Sint64 before = wallet->cash;
+	player_add_cash(wallet, amount);
+	endlessCashBook((Uint64)(wallet->cash - before), src);   // the ceiling can shorten a credit
 	endlessCashMark = endlessWallet();
 }
 
@@ -272,16 +274,16 @@ void endlessCashDebit(Sint64 amount, EndlessCashSink sink)
 {
 	if (amount <= 0)
 		return;
+	Player *const wallet = &player[endlessEconomyIndex()];
 	if (!endlessMode)
 	{
-		player[endlessEconomyIndex()].cash -= (ulong)amount;   // campaign fallback: plain wallet math (no debit runs there today)
+		player_add_cash(wallet, -amount);   // campaign fallback: plain wallet math (no debit runs there today)
 		return;
 	}
 	endlessCashReconcile(true);
-	Uint64 take = (Uint64)amount;
-	if (take > endlessWallet())   // a debit can take at most the wallet
-		take = endlessWallet();
-	player[endlessEconomyIndex()].cash -= (ulong)take;
+	const Sint64 before = wallet->cash;
+	player_add_cash(wallet, -amount);   // a debit can take at most the wallet
+	const Uint64 take = (Uint64)(before - wallet->cash);
 	endlessCashAddSat(&endlessRunCashSpent, take);
 	if ((unsigned)sink < ENDLESS_CASH_SINKS)
 		endlessCashAddSat(&endlessCashBySink[sink], take);
@@ -295,7 +297,7 @@ void endlessCashResync(void)
 }
 
 // The upgrade menu shows a temporary balance; Begin/Commit must bracket one transaction.
-static ulong endlessTradeBefore = 0;
+static Sint64 endlessTradeBefore = 0;
 
 void endlessShopTradeBegin(void)
 {
@@ -310,7 +312,7 @@ void endlessShopTradeCommit(void)
 {
 	if (!endlessMode)
 		return;
-	const ulong now = endlessWallet();   // the exit assignment already committed JE_cashLeft()
+	const Sint64 now = endlessWallet();   // the exit assignment already committed JE_cashLeft()
 	if (now > endlessTradeBefore)
 	{
 		const Uint64 refund = (Uint64)(now - endlessTradeBefore);

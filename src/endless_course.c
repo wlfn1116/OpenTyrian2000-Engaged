@@ -62,7 +62,7 @@ static Uint64 endlessCourseLaunchMods(int i, Uint64 *cleansedOut)
 }
 
 // Price the launch-time modifier set plus the level profile adjustment, matching the banked payout.
-long endlessCoursePayout(int i)
+Sint64 endlessCoursePayout(int i)
 {
 	if (i < 0 || i >= endlessCourseCnt)
 		return 0;
@@ -1475,7 +1475,7 @@ JE_byte endlessSelectCourse(int i)
 	if (i < 0 || i >= endlessCourseCnt)
 		i = 0;
 
-	// Substitute a safe level if a legacy or corrupt sidecar names an invalid section.
+	// Substitute a safe level if a legacy or hand-edited record names an invalid section.
 	JE_byte resolvedFile;
 	if (endlessResolveCourseFile(endlessCourseEp[i], endlessCourseSec[i], endlessCourseFile[i], &resolvedFile))
 	{

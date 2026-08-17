@@ -230,13 +230,33 @@ extern void config_deinit(Config *config);
 extern bool config_parse(Config *config, FILE *file);
 
 /*!
+ * \brief Parse a configuration from a memory buffer.
+ *
+ * \param[in] config the uninitialized configuration
+ * \param[in] text the configuration text; need not be NUL-terminated
+ * \param[in] length the number of bytes in \p text
+ * \return whether parsing succeeded
+ */
+extern bool config_parse_buffer(Config *config, const char *text, size_t length);
+
+/*!
  * \brief Write a configuration to a file.
- * 
+ *
  * \param[in] config the configuration
  * \param[in] file the file handle
  * \return void
  */
 extern void config_write(const Config *config, FILE *file);
+
+/*!
+ * \brief Write a configuration to a memory buffer.
+ *
+ * \param[in] config the configuration
+ * \param[out] buffer the destination; may be \c NULL to measure
+ * \param[in] capacity the number of bytes \p buffer can hold
+ * \return the number of bytes the configuration takes, which may exceed \p capacity
+ */
+extern size_t config_write_buffer(const Config *config, char *buffer, size_t capacity);
 
 /* config section accessors/manipulators -- by type, name */
 
@@ -490,6 +510,26 @@ extern bool config_get_uint_option(const ConfigSection *section, const char *key
  * \return the value
  */
 extern unsigned int config_get_or_set_uint_option(ConfigSection *section, const char *key, unsigned int value);
+
+/*!
+ * \brief Set a 64-bit integer value of an 'item' option by key, creating the option if necessary.
+ *
+ * \param[in] section the section containing the option
+ * \param[in] key the option key
+ * \param[in] value the item value
+ * \return void
+ */
+extern void config_set_int64_option(ConfigSection *section, const char *key, long long value);
+
+/*!
+ * \brief Get a 64-bit integer value of an 'item' option by key.
+ *
+ * \param[in] section the section containing the option
+ * \param[in] key the option key
+ * \param[out] out_value the item value if a valid option exists; otherwise unset
+ * \return whether \p out_value was set
+ */
+extern bool config_get_int64_option(const ConfigSection *section, const char *key, long long *out_value);
 
 /* config option accessors/manipulators -- by reference */
 

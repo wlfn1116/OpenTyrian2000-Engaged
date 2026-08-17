@@ -254,7 +254,7 @@ typedef enum {
 
 // Route every Endless wallet change through this interface. Credit and Debit book ordinary
 // movement; Begin/Commit brackets the upgrade menu's temporary balance and full-refund trades.
-void endlessCashCredit(long amount, EndlessCashSource src);
+void endlessCashCredit(Sint64 amount, EndlessCashSource src);
 void endlessCashDebit(Sint64 amount, EndlessCashSink sink);
 void endlessShopTradeBegin(void);
 void endlessShopTradeCommit(void);
@@ -400,21 +400,27 @@ const char *endlessSeedString(void);
 // Re-fork both players' outpost draw streams from the run seed.
 void endlessReseedPlayers(Uint64 salt);
 
-// Sidecar save keyed by the normal save slot.
+/* The Endless half of every save slot, kept in memory beside saveFiles[] and read and written with
+ * them as 'endless' sections of opentyrian.sav (config.c owns the file). JE_saveGame captures or
+ * clears the slot's half through endlessSaveCaptureSlot before the file is written. */
 bool endlessSlotHasRun(JE_byte slot);
-void endlessSaveSlot(JE_byte slot);
+void endlessSaveCaptureSlot(JE_byte slot);
+void endlessSaveConfigRead(Config *config);
+void endlessSaveConfigWrite(Config *config);
+bool endlessSaveLegacyLoad(void);         // one-time import of the binary endless.sav an older build wrote
+bool endlessSaveRepairFromLegacy(void);   // ...and the halves an Endless-named slot lacks, if it still has them
 
 /* Everything one Endless co-op player owns for themselves that the other machine also has to
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.
  * Rides every outpost sync packet; see "Endless online" in doc/notes.md. */
 #define ENDLESS_PLAYER_BLOCK_PERKS 32
-#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 12 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
+#define ENDLESS_PLAYER_BLOCK_SIZE  (4 + 4 * 9 + 8 * 3 + ENDLESS_PLAYER_BLOCK_PERKS + 1 + 4)
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 
-/* Online co-op resume. The host serializes the live run in the sidecar's own versioned format
- * and the joiner adopts it. Returns 0 / false when there is nothing usable. */
-#define ENDLESS_RUN_WIRE_MAX 4096
+/* Online co-op resume. The host serializes the live run as the text a save slot holds and the
+ * joiner adopts it. Returns 0 / false when there is nothing usable. */
+#define ENDLESS_RUN_WIRE_MAX 16384
 size_t endlessRunSerialize(Uint8 *out, size_t max);
 bool   endlessRunAdopt(const Uint8 *bytes, size_t len);
 // Redeal this seat's shop rows: the fallback when an adopted record carries no partner half.
@@ -454,7 +460,7 @@ int         endlessCourseRankLevel(int i);
 JE_byte     endlessCoursePlanet(int i);
 JE_byte     endlessCourseSection(int i);
 JE_byte     endlessSelectCourse(int i);
-long        endlessCoursePayout(int i);
+Sint64      endlessCoursePayout(int i);
 
 // Radar perk: one reroll of the whole chart per outpost (the menu row in game_menu.c).
 bool        endlessCourseRerollOffered(void);
@@ -481,17 +487,17 @@ void endlessBetweenLevels(void);
 
 // Outpost actions; prices escalate within one visit.
 void endlessResetShopPrices(void);
-long endlessRerollPrice(void);    // current reroll cost (for the menu label)
-int  endlessHullPrice(void);      // current hull-upgrade cost (for the menu label)
+Sint64 endlessRerollPrice(void);    // current reroll cost (for the menu label)
+Sint64 endlessHullPrice(void);      // current hull-upgrade cost (for the menu label)
 bool endlessHullMaxed(void);      // true once the run's armor bonus is capped
 bool endlessTryReroll(void);      // buy a shop reroll; false if unaffordable
 bool endlessTryReinforce(void);   // buy a +armor hull upgrade; false if unaffordable/maxed
 
 // Cash-fraction purchases use the balance recorded on shop entry.
-long endlessTurbodrivePrice(void);         // Turbodrive cost (66% of entry cash), for the label
-long endlessOverblastPrice(void);    // Overblast cost (75% of entry cash), for the label
-long endlessOverdrivePrice(void);   // Overdrive cost (95% of entry cash), for the label
-long endlessSpecialPrice(void);      // Buy-Special cost (80% of entry cash), for the label
+Sint64 endlessTurbodrivePrice(void);         // Turbodrive cost (66% of entry cash), for the label
+Sint64 endlessOverblastPrice(void);    // Overblast cost (75% of entry cash), for the label
+Sint64 endlessOverdrivePrice(void);   // Overdrive cost (95% of entry cash), for the label
+Sint64 endlessSpecialPrice(void);      // Buy-Special cost (80% of entry cash), for the label
 // Persisted IDs: append only.
 enum {
 	ENDLESS_BUFF_KIND_NONE = 0,
@@ -508,24 +514,24 @@ bool endlessTryBuyOverdrive(void);// buy Overdrive; false if unaffordable / a bu
 bool endlessTryBuySpecial(void);     // buy a random special weapon; false if unaffordable
 
 // Remaining E-Shop purchases.
-long endlessBombPrice(void);
+Sint64 endlessBombPrice(void);
 bool endlessBombFull(void);
 bool endlessTryBuyBomb(void);
-long endlessRevivePrice(void);
+Sint64 endlessRevivePrice(void);
 bool endlessReviveArmed(void);       // a revive token is currently held by the shopping player
 bool endlessTryBuyRevive(void);
 bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
 bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
-long endlessExtraPerkPrice(void);
+Sint64 endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
 // Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
 // shared sector, so co-op spends one queue between the two of them.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3
-long endlessCleansePrice(void);      // the local player's own escalating price
+Sint64 endlessCleansePrice(void);      // the local player's own escalating price
 int  endlessCleanseCharges(void);    // strips queued for the next course select, the pair's, capped
 bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES; no further buy will take
 bool endlessTryBuyCleanse(void);
-long endlessGamblePrice(void);
+Sint64 endlessGamblePrice(void);
 bool endlessTryGamble(void);
 const char *endlessGambleResult(void);  // last gamble outcome text (for the E-Shop help line)
 bool endlessGambleWonPerk(void);        // last gamble handed out a free perk pick (dispatch opens MENU_PERKS)
@@ -571,7 +577,7 @@ bool endlessLightConeActive(void);
 // Preload sprite banks needed before their script event.
 void endlessPreloadBanks(void);
 
-long endlessStartingCash(void);
+Sint64 endlessStartingCash(void);
 
 // Apply fixed starting gear before any purchase can occur.
 void endlessApplyStartingLoadout(void);
@@ -591,7 +597,7 @@ void endlessOnRunEnd(void);
 void endlessEndRunToTitle(void);
 
 // Apply the level-clear payout and return its components.
-void endlessApplyLevelPayout(long *interestOut, long *bonusOut);
+void endlessApplyLevelPayout(Sint64 *interestOut, Sint64 *bonusOut);
 
 // Replace Endless data cubes and secret orbs with a safe special for player p.
 void endlessGrantSpecial(uint p);
@@ -793,7 +799,7 @@ const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
 const char *endlessPerkChoiceDesc(int i);      // help-line description for offer i
 const char *endlessPerkChoiceOwnedText(int i); // ...and its "Owned n/max", drawn flush right of that
 void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
-long        endlessPerkDeclineBonus(void);     // "Take the Cash" buyout: scales with depth, slate width and perks owned
+Sint64      endlessPerkDeclineBonus(void);     // "Take the Cash" buyout: scales with depth, slate width and perks owned
 void        endlessDeclinePerk(void);          // take the cash instead of a perk
 
 int endlessPerkArmorBonus(void);     // +max armor from Ablative Plating (added at ship-info, varz.c); may be negative (Glass Cannon)
@@ -851,8 +857,11 @@ int         endlessPerkGetOwned(int id);     // current owned stacks
 void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
 
 /* Save-codec regression hooks used by the project-owned migration/fuzz suite. */
-int  endlessSaveCurrentVersion(void);
+int  endlessSaveLegacyVersionMax(void);
 bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize);
-bool endlessSaveTestWidthGuard(char *detail, size_t detailSize);
+bool endlessSaveTestTextCodec(char *detail, size_t detailSize);
+bool endlessSaveLegacyTestImport(const char *path);   // a whole legacy endless.sav over the slot cache
+bool endlessSaveLegacyTestRepair(const char *path);   // the repair pass against a named legacy file
+bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detailSize);
 
 #endif // ENDLESS_H

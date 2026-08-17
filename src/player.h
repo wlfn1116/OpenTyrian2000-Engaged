@@ -66,13 +66,30 @@ typedef struct
 }
 PlayerItems;
 
+/* Wallets are 64-bit and stay inside [0, CASH_MAX]: change one only through cash_add /
+ * player_add_cash / player_set_cash, which stop a debit at zero and a credit at the ceiling, so no
+ * price or payout can wrap it. 12 digits is beyond any run and inside every readout column. */
+#define CASH_MAX 999999999999LL
+
+static inline Sint64 cash_clamp(Sint64 v)
+{
+	return v < 0 ? 0 : (v > CASH_MAX ? CASH_MAX : v);
+}
+
+static inline Sint64 cash_add(Sint64 wallet, Sint64 delta)
+{
+	wallet = cash_clamp(wallet);
+	if (delta >= 0)
+		return (delta > CASH_MAX - wallet) ? CASH_MAX : wallet + delta;
+	return (delta <= -wallet) ? 0 : wallet + delta;
+}
+
 typedef struct
 {
-	// Fixed-width, not `ulong`: player[] is registered rollback state and netplay desync
-	// recovery ships the snapshot to the peer, so an `unsigned long` here made the struct
-	// 8 bytes wider per player on the consoles than on Windows.
-	Uint32 cash;
-	
+	// Fixed-width: player[] is registered rollback state and netplay desync recovery ships the
+	// snapshot to the peer, so `long` here would size the struct differently per platform.
+	Sint64 cash;
+
 	PlayerItems items, last_items;
 	
 	bool is_dragonwing;  // i.e., is player 2
@@ -156,6 +173,16 @@ Player;
 
 extern Player player[2];
 
+static inline void player_add_cash(Player *p, Sint64 delta)
+{
+	p->cash = cash_add(p->cash, delta);
+}
+
+static inline void player_set_cash(Player *p, Sint64 amount)
+{
+	p->cash = cash_clamp(amount);
+}
+
 uint gameplay_local_player_index(void);
 // The weapon bay whose power byte is player p's arcade life counter; bind player[].lives with it.
 uint player_lives_port(uint p);
@@ -193,11 +220,11 @@ static inline bool player_is_out(uint p)
 void calc_purple_balls_needed(Player *);
 // Cash off the playfield. Routes player 1's share through the endless ledger; use it for every
 // pickup credit so the run-over earnings breakdown stays accurate.
-void player_award_pickup_cash(Player *, long amount);
+void player_award_pickup_cash(Player *, Sint64 amount);
 // Cash off a destroyed enemy, credited to the player whose shot killed it.
-void player_award_kill_cash(Player *, long amount);
+void player_award_kill_cash(Player *, Sint64 amount);
 // An elite or champion bounty: the kill rules, booked under the ledger's own bounty row.
-void player_award_bounty_cash(Player *, long amount);
+void player_award_bounty_cash(Player *, Sint64 amount);
 
 /* Online Campaign credit sharing.
  * coopSharedCredit is the host's stored preference; the session value arrives in the connect

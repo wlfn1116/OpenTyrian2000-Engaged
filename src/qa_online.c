@@ -1267,7 +1267,7 @@ static void qa_hostile_packets(void)
 	/* Truncated shop state: too short to parse, still consumed so the queue keeps moving. */
 	memset(raw, 0xFF, sizeof(raw));
 	SDLNet_Write16(PACKET_SHOP_SYNC, &raw[0]);
-	const Uint32 cashBefore = player[1].cash;
+	const Sint64 cashBefore = player[1].cash;
 	qa_inject_packet(raw, 10);
 	qa_check(network_shop_pump() && packet_in[0] == NULL && player[1].cash == cashBefore,
 	         "a truncated shop packet is consumed without adopting anything");
@@ -1279,7 +1279,7 @@ static void qa_hostile_packets(void)
 	SDLNet_Write16(2, &raw[4]);        // sender: the peer
 	SDLNet_Write16(1000, &raw[6]);     // sequence, past anything seen
 	SDLNet_Write16(0, &raw[8]);        // flags
-	qa_inject_packet(raw, 40);
+	qa_inject_packet(raw, 44);
 	qa_check(network_shop_pump() && network_shop_peer_course() == -1,
 	         "an out-of-range charted course from a hostile packet reads as none");
 
@@ -1349,11 +1349,11 @@ static void qa_quit_notice_retire(void)
 	SDLNet_Write16(2, &raw[4]);        // sender: the peer
 	SDLNet_Write16(5000, &raw[6]);     // sequence, past anything seen
 	SDLNet_Write16(0, &raw[8]);        // flags: plain state, so the pump owes no reply
-	SDLNet_Write32(4321, &raw[14]);    // cash, the adopted field the check reads back
+	net_bytes_write64(4321, &raw[14]); // cash, the adopted field the check reads back
 	if (packet_in[1] == NULL)
 		packet_in[1] = SDLNet_AllocPacket(NET_PACKET_SIZE);
-	memcpy(packet_in[1]->data, raw, 40);
-	packet_in[1]->len = 40;
+	memcpy(packet_in[1]->data, raw, 44);
+	packet_in[1]->len = 44;
 
 	qa_check(!network_shop_pump() && network_shop_departure_pending(),
 	         "a queued quit blocks the outpost pump and reads as a departure");

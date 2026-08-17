@@ -1035,52 +1035,58 @@ in no later one either. The gate is exported because nothing else inside
 
 ### Saves and records
 
-`tyrian.sav` is fixed and checksummed. `endless.sav` stores the run and current
-outpost snapshot. Hardcore keeps an in-memory sortie snapshot but writes no run
-checkpoint.
+Every save lives in `opentyrian.sav`, a text file in the same `section` / `item`
+format as `opentyrian.cfg` (config_file.c). `config.c` owns the file: a
+`section 'saves'` header with the format number, one `section 'save' 'N'` per
+slot that holds a game, the Endless half of that slot as `section 'endless' 'N'`
+(written by endless_save.c into the same Config, so the pair leaves in one write),
+and twenty `section 'highscore'` boards. Every value is a named key: a missing
+key reads as its default, an unknown key is ignored, an unparsable one is its
+default, and wallets are clamped to `[0, CASH_MAX]` on the way in. There are no
+checksums, no encryption, no record widths and no per-field versions, so a hand
+edit that drops or misspells something loses that one value and nothing else.
+`SAVE_FILE_FORMAT` exists for the day a key changes meaning.
 
-`ENDLESS_SAVE_VERSION` is the format authority:
+The Endless record is `EndlessSlotRec`; `endlessRecToSection` and
+`endlessRecFromSection` are its codec, and adding a field means writing and
+reading one more key there. Both ships' halves use the same key names under
+`p1_` / `p2_`. Lists are space-separated numbers; masks are hex. The online resume
+transfer (`endlessRunSerialize` / `endlessRunAdopt`) sends this same section as
+text through `config_write_buffer` / `config_parse_buffer`, so there is one codec
+for disk and wire.
 
-| Version | Added data |
-| ---: | --- |
-| 3 | Seed |
-| 4 | Locked sortie |
-| 5 | Buff recharge |
-| 6 | Recent-level ring |
-| 7 | 64-bit modifiers |
-| 8 | Exact course files |
-| 9 | Credits-shown flag |
-| 10 | Last song and depth |
-| 11 | 32-slot perk block |
-| 12 | Star Charts and Breakthrough debt |
-| 13 | Five stored perk offers |
-| 14 | Rapid Charger migration |
-| 15 | Run mode |
-| 16 | Total cash earned |
-| 17 | Total spent and source breakdown |
-| 18 | Gear-spending sink |
-| 19 | Full spending breakdown |
-| 20 | Custom-weapon record mark |
-| 21 | Co-op player block and course turn |
-| 22 | Base Level rule |
-| 23 | Radar reroll count |
-| 24 | Level bag cursor and hand; the v22 rule byte widened past Same/Varied |
-| 25 | Record width in the header |
-| 26 | Dragonwing permitted in the items block; no new field |
-| 27 | Partner outpost half (seat, stock rows, stream) |
+Hardcore keeps an in-memory sortie snapshot but writes no run checkpoint.
+`JE_saveGame` refuses under Hardcore before it touches either half.
 
-Append fields and guard reads by version. Perk IDs appear in stacks and pending
-offers; append enum values or migrate both arrays.
+The DOS-era files are read once, when `opentyrian.sav` does not exist, and never
+written: `tyrian.sav` (XOR-chained, four checksums, 116-byte slot records, the
+T2K boards appended in the clear) through `legacy_save_parse`, `endless.sav`
+(the `OTES` sidecar, v3..v27, versioned binary records with the width in the
+header from v25) through the frozen `endlessLegacyReadRec`, and the 28-byte
+`tyrian.cfg`, whose settings now sit in `opentyrian.cfg`'s `game` section. The
+imported state is written out in the new form at once.
 
-From v25 the header states how many bytes a record is, taken from the writer, so
-appending a field updates it with nothing else to keep in step. A record narrower
-than the running build's is padded and a wider one is trimmed, and either logs the
-mismatch. Before v25 the version alone fixed the width, so a field added without
-the version changing with it read every slot but the first at the wrong offset:
-the misplaced `used` byte fell on a zero, `endlessLoadSlot` reported no run, and
-`JE_loadGame` had already restored the campaign half alone, leaving the slot to
-replay one shipped level forever. Bump the version anyway; the width detects the
-mistake, it does not license it.
+A sidecar whose version is past v27 is read for its v27 prefix, which the width
+in its header locates; only one with no width at all is refused. Never cap the
+importer at a version instead: a local build can carry a format this tree has no
+commit for, and refusing it silently costs the player their runs.
+
+If `opentyrian.sav` exists but a slot named `ZONE n` has no `endless` section
+while the sidecar still holds that slot's run, `endlessSaveRepairFromLegacy`
+takes it from there. A run without its half loads as a campaign game and replays
+one level, which is what that state looks like from the cockpit.
+
+`testing/fixtures/endless` holds a generated record of every binary version and
+`testing/fixtures/legacy` a real pair; the suite imports all of them, the repair,
+and a record built to look newer than the importer.
+
+Wallets are `Sint64` and every change goes through `cash_add` / `player_add_cash`
+/ `player_set_cash` (player.h), which stop a debit at zero and a credit at
+`CASH_MAX` (twelve nines). Prices, high scores, the co-op board and the Endless
+prices that scale with the wallet (`endlessShopEntryCash`, the reroll and hull
+ladders) are `Sint64` too, and the readouts print `%lld`. `JE_cashLeft` may go
+negative while an unaffordable row is highlighted; the assignment back into the
+wallet clamps.
 
 Records are split by mode, difficulty, crew size, and Base Level rule. The
 difficulty table order is persistent. Append entries without reordering it.
@@ -1226,7 +1232,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 62.
+`NET_VERSION` bump. The current value is 63.
 
 Recent versions:
 
@@ -1275,6 +1281,7 @@ Recent versions:
 | 60 | Guided Aim setting: weapon-table homing steers toward the enemy's screen x |
 | 61 | Twin Pods perk fires a second sidekick volley |
 | 62 | Endless ram kills, invulnerable-ram cadence, Reinforced Prow, Knife Fight and Deflector perks |
+| 63 | 64-bit wallets: shop-sync and debug-sync cash slots, the resume record's cash, 64-bit prices in the Endless player block, and the Endless run transfer as text |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name
@@ -1544,11 +1551,11 @@ Presentation state stays outside snapshots. After a silent replay:
 Online saves use slots 12 through 22 of the two-player page. Slot 22 is the
 read-only `LAST LEVEL` backup.
 
-`save_record_pack` and `save_record_unpack` define the 81-byte little-endian wire
-record. `tyrian.sav` keeps its fixed layout and checksum.
+`save_record_pack` and `save_record_unpack` define the 89-byte little-endian wire
+record, with both wallets at 64 bits.
 
-Dual-ship records store missing weapon powers and modes in the existing
-`highScore2` field:
+Dual-ship records store missing weapon powers and modes in `dualShipTag`, which
+the save file spells out as `dual_ships` plus the two extra powers and modes:
 
 - `0xc74f` marks Campaign and Endless co-op.
 - `0xc7a5` marks Separate Arcade, Timed Battle, Super Arcade, and SuperTyrian.
@@ -1562,7 +1569,7 @@ quit handler.
 
 A save writes only to the machine it is made on. The acknowledgement returns
 the peer's own outpost half (stock rows and outpost stream), which the saver
-stores next to its own in the v27 sidecar record; the peer's disk is never
+stores next to its own as the record's partner half; the peer's disk is never
 touched. A peer still on the level end screen answers the queued request at
 its next outpost, in time for a later save in the same visit; the first save
 then carries no half and the resume redeals for that seat.
@@ -1575,7 +1582,7 @@ save checkpoint would otherwise hold its full cap on a dead link.
 which online lobby is flying it. Both machines therefore reassert
 `coopCampaignMode` and `coopEndlessMode` from `network_game_type` after loading,
 and the disconnect prompt reads `endlessMode` before the load so it can restore
-the sidecar. Resuming Endless also transfers the run itself; if that transfer
+the slot's Endless half. Resuming Endless also transfers the run itself; if that transfer
 fails the session halts, because a machine that drops to Campaign alone leaves
 the pair in two different modes.
 
@@ -1587,8 +1594,9 @@ line naming the stage, so a slow resume is attributable from one log.
 A resume never changes anyone's player number. The record's first loadout is
 always player one, so each machine records the seat it was flying and takes it
 back when it hosts the resume. The seat describes the machine rather than the
-record and `tyrian.sav` has a fixed layout, so `save_slot_online_player` keeps
-it in `opentyrian.cfg`.
+record, so it never rides the wire: `save_slot_online_player` keeps it as the
+slot's `online_seat` key in `opentyrian.sav` (a config written before that file
+existed still hands over its `net_save_player_two` bitmask once).
 
 The lobby settled `networkHostPlayerNum` on the connect packet, before anyone
 knew a save was coming, so the resume details packet carries the host's seat and

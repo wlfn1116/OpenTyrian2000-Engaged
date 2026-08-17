@@ -886,8 +886,8 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 			enemy[i].eliteState = (JE_byte)eliteState;
 	}
 
-	const ulong before0 = player[0].cash;
-	const ulong before1 = player[1].cash;
+	const Sint64 before0 = player[0].cash;
+	const Sint64 before1 = player[1].cash;
 	const JE_word killedBefore = enemyKilled;
 
 	chain_reset_queue();
@@ -895,8 +895,8 @@ void qa_chain_kill_row(int owner, int evalue, int count,
 	for (int t = 0; t < CHAIN_QUEUE_MAX && chainPulseN > 0; ++t)
 		chain_reaction_process();
 
-	*out_paid0 = (long)player[0].cash - (long)before0;
-	*out_paid1 = (long)player[1].cash - (long)before1;
+	*out_paid0 = (long)(player[0].cash - before0);
+	*out_paid1 = (long)(player[1].cash - before1);
 
 	// Count deaths rather than empty slots: a drop is spawned into whatever slot is free, which
 	// includes the ones the row just vacated.
@@ -1112,7 +1112,7 @@ void qa_test_chain_cascade(void)
 		enemy[i].evalue = (Sint16)bossWorth;
 	}
 
-	const ulong cashBefore = player[0].cash;
+	const Sint64 cashBefore = player[0].cash;
 	int bossTicks = 0;
 	while (bossTicks < 500 && enemyAvail[0] != 1)
 	{
@@ -1127,7 +1127,7 @@ void qa_test_chain_cascade(void)
 	         bossTicks);
 	qa_check(enemyAvail[0] == 1 && enemyAvail[1] == 1 && enemyAvail[2] == 1, bossLabel);
 
-	const long bossPaid = (long)player[0].cash - (long)cashBefore;
+	const long bossPaid = (long)(player[0].cash - cashBefore);
 	snprintf(bossLabel, sizeof(bossLabel), "...paying %ld for its %d tiles at %d each",
 	         bossPaid, bossTiles, bossWorth);
 	qa_check(bossPaid == (long)bossTiles * bossWorth, bossLabel);
@@ -4684,8 +4684,7 @@ start_level_first:
 	if (!play_demo && !doNotSaveBackup && !timedBattleMode && !endlessMode)
 	{
 		temp = backup_save_slot();
-		JE_saveGame(temp, "LAST LEVEL    ");
-		endlessSaveSlot(temp);  // not in endless mode: drops any stale endless sidecar record for this slot
+		JE_saveGame(temp, "LAST LEVEL    ");   // not in endless mode: drops any stale endless half of the slot
 
 #ifdef WITH_NETWORK
 		// The backup just written is what the disconnect dialog offers to keep (network.c).
@@ -4997,7 +4996,7 @@ level_loop:
 			if (!coop_mode_active() && (*player[1].lives == 0 || player[1].armor == 0))
 				twoPlayerMode = false;
 
-			if (player[0].cash >= (unsigned)galagaLife)
+			if (player[0].cash >= galagaLife)
 			{
 				soundQueue[6] = S_EXPLOSION_11;
 				soundQueue[7] = S_SOUL_OF_ZINGLON;
@@ -5008,7 +5007,7 @@ level_loop:
 					arcade_rescale_to_lives(&player[0]);
 				}
 				else
-					player[0].cash += 1000;
+					player_add_cash(&player[0], 1000);
 
 				if (galagaLife == 10000)
 					galagaLife = 20000;
@@ -7442,8 +7441,7 @@ new_game:
 						temp = backup_save_slot();
 						if (!endlessMode)  // mid-level savepoint: unstable for endless; it autosaves at the outpost instead (endlessBetweenLevels)
 						{
-							JE_saveGame(temp, "LAST LEVEL    ");
-							endlessSaveSlot(temp);  // keep the endless sidecar in sync: drop any stale record so this campaign save isn't read back as endless
+							JE_saveGame(temp, "LAST LEVEL    ");   // drops any stale endless half of the slot
 						}
 						break;
 
@@ -7524,13 +7522,13 @@ new_game:
 						if (twoPlayerMode)
 						{
 							for (uint i = 0; i < 2; ++i)
-								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lu", miscText[40 + i], (unsigned long)player[i].cash);
+								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lld", miscText[40 + i], (long long)player[i].cash);
 							strcpy(levelWarningText[2], "");
 							levelWarningLines = 3;
 						}
 						else
 						{
-							sprintf(levelWarningText[0], "%s %lu", miscText[37], JE_totalScore(&player[0]));
+							sprintf(levelWarningText[0], "%s %lld", miscText[37], (long long)JE_totalScore(&player[0]));
 							strcpy(levelWarningText[1], "");
 							levelWarningLines = 2;
 						}
@@ -8067,7 +8065,7 @@ static void networkEndlessNewRun(void)
 	endlessReseedPlayers(0);
 }
 
-/* Resume an online Endless run: the host loads it from its own sidecar and streams the record,
+/* Resume an online Endless run: the host loads it from its own save file and streams the record,
  * and the joiner adopts it. The record carries the joiner's own outpost half when the save's
  * checkpoint captured it; without one the joiner's rows are redealt from the seed (the adopt
  * settles that; see endlessRunAdopt). */
@@ -8627,8 +8625,8 @@ void networkStartScreen(void)
 			packet_out_temp->data[10 + SAVE_RECORD_PACKED_SIZE] = (Uint8)networkHostPlayerNum;
 			network_send(11 + SAVE_RECORD_PACKED_SIZE);  // PACKET_DETAILS (resume form)
 
-			// The save record carries the two loadouts; the Endless run behind them is its own
-			// sidecar, so it follows on the reliable channel before either machine plays a tick.
+			// The save record carries the two loadouts; the Endless run behind them is a record of
+			// its own, so it follows on the reliable channel before either machine plays a tick.
 			// Without it there is no session: one machine alone dropping to Campaign would leave
 			// the pair in two different modes.
 			if (coopEndlessMode && !networkEndlessResume((JE_byte)resumeSlot))

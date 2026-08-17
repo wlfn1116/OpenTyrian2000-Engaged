@@ -210,7 +210,7 @@ bool coop_earnings_are_doubled(void)
 
 // Credit earned cash. This machine's own Endless income must pass through the run ledger; Online
 // Campaign's Shared credit pays the full amount to both players instead of to one.
-static void player_credit_cash(Player *this_player, long amount, EndlessCashSource endless_source)
+static void player_credit_cash(Player *this_player, Sint64 amount, EndlessCashSource endless_source)
 {
 	if (coop_credit_is_shared())
 	{
@@ -222,7 +222,7 @@ static void player_credit_cash(Player *this_player, long amount, EndlessCashSour
 			if (endlessMode && i == endlessEconomyIndex())
 				endlessCashCredit(amount, endless_source);
 			else
-				player[i].cash += amount;
+				player_add_cash(&player[i], amount);
 		}
 		return;
 	}
@@ -233,17 +233,17 @@ static void player_credit_cash(Player *this_player, long amount, EndlessCashSour
 	if (endlessMode && this_player == &player[endlessEconomyIndex()])
 		endlessCashCredit(amount, endless_source);
 	else
-		this_player->cash += amount;
+		player_add_cash(this_player, amount);
 }
 
-void player_award_pickup_cash(Player *this_player, long amount)
+void player_award_pickup_cash(Player *this_player, Sint64 amount)
 {
 	if (coop_earnings_are_doubled())
 		amount *= 2;
 	player_credit_cash(this_player, amount, ENDLESS_CASH_PICKUP);
 }
 
-void player_award_kill_cash(Player *this_player, long amount)
+void player_award_kill_cash(Player *this_player, Sint64 amount)
 {
 	// Double Earnings covers combat income whole: kills and the bounties built on them, not
 	// only pickups. Zone bonuses and bank interest stay at face value.
@@ -252,7 +252,7 @@ void player_award_kill_cash(Player *this_player, long amount)
 	player_credit_cash(this_player, amount, ENDLESS_CASH_KILL);
 }
 
-void player_award_bounty_cash(Player *this_player, long amount)
+void player_award_bounty_cash(Player *this_player, Sint64 amount)
 {
 	// A bounty is kill cash under its own ledger row, so the run summary can name it.
 	if (coop_earnings_are_doubled())

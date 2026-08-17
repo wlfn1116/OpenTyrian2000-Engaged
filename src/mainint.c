@@ -74,8 +74,8 @@ const JE_byte topicStart[TOPICS] = { 0, 1, 2, 3, 7, 255 };
 
 JE_shortint constantLastX;
 JE_word textErase;
-ulong upgradeCost;
-ulong downgradeCost;
+Sint64 upgradeCost;
+Sint64 downgradeCost;
 JE_boolean performSave;
 JE_boolean jumpSection;
 JE_boolean useLastBank; /* Use the last 16 colors for DisplayText. */
@@ -659,7 +659,7 @@ static bool helpSystemPage(Uint8 *topic, bool *restart)
 }
 
 // cost to upgrade a weapon power from power-1 (where power == 0 indicates an unupgraded weapon)
-long weapon_upgrade_cost(long base_cost, unsigned int power)
+Sint64 weapon_upgrade_cost(Sint64 base_cost, unsigned int power)
 {
 	assert(power <= 11);
 
@@ -672,9 +672,11 @@ long weapon_upgrade_cost(long base_cost, unsigned int power)
 	return base_cost * temp;
 }
 
-ulong JE_getCost(JE_byte itemType, JE_word itemNum)
+/* Prices are Sint64 like the wallets they are checked against; the widest product here (a 16-bit
+ * base cost, the power ladder, the expert and endless multipliers) stays far below 2^63. */
+Sint64 JE_getCost(JE_byte itemType, JE_word itemNum)
 {
-	long cost = 0;
+	Sint64 cost = 0;
 
 	switch (itemType)
 	{
@@ -708,15 +710,12 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 	if (expertMode)
 	{
 		// purchase price scales with the shop knob; power upgrades with their own knob
-		if (cost > LONG_MAX / expertShopCostMult)
-			cost = LONG_MAX;
-		else
-			cost = cost * expertShopCostMult;
+		cost = cost * expertShopCostMult;
 
 		if (itemType == 3 || itemType == 4)
 		{
-			downgradeCost = (downgradeCost > ULONG_MAX / (ulong)expertUpgradeCostMult) ? ULONG_MAX : downgradeCost * expertUpgradeCostMult;
-			upgradeCost = (upgradeCost > ULONG_MAX / (ulong)expertUpgradeCostMult) ? ULONG_MAX : upgradeCost * expertUpgradeCostMult;
+			downgradeCost = downgradeCost * expertUpgradeCostMult;
+			upgradeCost = upgradeCost * expertUpgradeCostMult;
 		}
 	}
 
@@ -738,12 +737,12 @@ ulong JE_getCost(JE_byte itemType, JE_word itemNum)
 		// percent. Multiplies like Favor does, so the two compound instead of one overriding the other.
 		pct = pct * endlessPerkShopCostBp() / 10000;
 
-		cost = (cost > LONG_MAX / pct) ? LONG_MAX : cost * pct / 100;
+		cost = cost * pct / 100;
 
 		if (itemType == 3 || itemType == 4)
 		{
-			downgradeCost = (downgradeCost > ULONG_MAX / (ulong)pct) ? ULONG_MAX : downgradeCost * (ulong)pct / 100;
-			upgradeCost   = (upgradeCost   > ULONG_MAX / (ulong)pct) ? ULONG_MAX : upgradeCost   * (ulong)pct / 100;
+			downgradeCost = downgradeCost * pct / 100;
+			upgradeCost   = upgradeCost * pct / 100;
 		}
 	}
 
@@ -766,7 +765,7 @@ static int save_effective_episode(const JE_SaveFileType *rec)
 }
 
 // Which sessions may load `slot`. The record's co-op tag says it carries two full loadouts;
-// the Endless sidecar says whether a run sits behind it, which is what separates the two
+// the slot's Endless half says whether a run sits behind it, which is what separates the two
 // online co-op lobbies from each other.
 bool save_type_compatible(const JE_SaveFileType *rec, JE_byte slot, bool net2p)
 {
@@ -1136,9 +1135,9 @@ int JE_loadScreen(bool net2p, bool saving)
 	}
 }
 
-ulong JE_totalScore(const Player *this_player)
+Sint64 JE_totalScore(const Player *this_player)
 {
-	ulong temp = this_player->cash;
+	Sint64 temp = this_player->cash;
 
 	temp += JE_getValue(2, this_player->items.ship);
 	temp += JE_getValue(3, this_player->items.weapon[FRONT_WEAPON].id);
@@ -1151,9 +1150,9 @@ ulong JE_totalScore(const Player *this_player)
 	return temp;
 }
 
-JE_longint JE_getValue(JE_byte itemType, JE_word itemNum)
+Sint64 JE_getValue(JE_byte itemType, JE_word itemNum)
 {
-	long value = 0;
+	Sint64 value = 0;
 
 	switch (itemType)
 	{
@@ -1162,7 +1161,7 @@ JE_longint JE_getValue(JE_byte itemType, JE_word itemNum)
 		break;
 	case 3:
 	case 4:;
-		const long base_value = weaponPort[itemNum].cost;
+		const Sint64 base_value = weaponPort[itemNum].cost;
 
 		const uint port = itemType - 3;
 		const uint item_power = player[JE_shopPlayerIndex()].items.weapon[port].power - 1;
@@ -1205,10 +1204,10 @@ void JE_nextEpisode(void)
 	if (qa_net_gameplay_ticks > 0 && coopCampaignMode)
 	{
 		const int e = initial_episode_num - 1;
-		printf("NET CAMPAIGN RECORD player=%u start=%u episode=%u cash=%lu recorded=%d\n",
+		printf("NET CAMPAIGN RECORD player=%u start=%u episode=%u cash=%lld recorded=%lld\n",
 		       thisPlayerNum, (unsigned)initial_episode_num, (unsigned)episodeNum,
-		       (unsigned long)((Uint64)player[0].cash + (Uint64)player[1].cash),
-		       (e >= 0 && e < COOP_CAMPAIGN_SCORE_EPISODES) ? coopCampaignScores[e].score : -1);
+		       (long long)(player[0].cash + player[1].cash),
+		       (e >= 0 && e < COOP_CAMPAIGN_SCORE_EPISODES) ? (long long)coopCampaignScores[e].score : -1LL);
 		fflush(stdout);
 	}
 
@@ -1646,7 +1645,7 @@ static void JE_drawCoopCampaignPage(void)
 		char label[40], value[32];
 		snprintf(label, sizeof(label), "%s:", episode_name[e + 1]);
 		if (coopCampaignScores[e].score > 0)
-			snprintf(value, sizeof(value), "%d", coopCampaignScores[e].score);
+			snprintf(value, sizeof(value), "%lld", (long long)coopCampaignScores[e].score);
 		else
 			SDL_strlcpy(value, "None", sizeof(value));
 
@@ -2000,10 +1999,10 @@ void JE_highScoreScreen(void)
 				t2kHighScores[boardOnePlayer][i].difficulty = 0;
 
 			const int rank = t2kHighScores[boardOnePlayer][i].difficulty;
-			const int score = t2kHighScores[boardOnePlayer][i].score;
+			const Sint64 score = t2kHighScores[boardOnePlayer][i].score;
 			const char *playerName = t2kHighScores[boardOnePlayer][i].playerName;
 
-			snprintf(buffer, sizeof buffer, "~#%d:~  %d", i + 1, score);
+			snprintf(buffer, sizeof buffer, "~#%d:~  %lld", i + 1, (long long)score);
 			JE_textShade(VGAScreen, 20, y, buffer, 15, 0, FULL_SHADE);
 			JE_textShade(VGAScreen, 110, y, playerName, 15, 2, FULL_SHADE);
 			JE_textShade(VGAScreen, 250, y, difficultyNameB[rank], 15, rank + (rank == 0 ? 0 : -1), FULL_SHADE);
@@ -2022,10 +2021,10 @@ void JE_highScoreScreen(void)
 					t2kHighScores[boardTwoPlayer][i].difficulty = 0;
 
 				const int rank = t2kHighScores[boardTwoPlayer][i].difficulty;
-				const int score = t2kHighScores[boardTwoPlayer][i].score;
+				const Sint64 score = t2kHighScores[boardTwoPlayer][i].score;
 				const char *teamName = t2kHighScores[boardTwoPlayer][i].playerName;
 
-				snprintf(buffer, sizeof buffer, "~#%d:~  %d", i + 1, score);
+				snprintf(buffer, sizeof buffer, "~#%d:~  %lld", i + 1, (long long)score);
 				JE_textShade(VGAScreen, 20, y, buffer, 15, 0, FULL_SHADE);
 				JE_textShade(VGAScreen, 110, y, teamName, 15, 2, FULL_SHADE);
 				JE_textShade(VGAScreen, 250, y, difficultyNameB[rank], 15, rank + (rank == 0 ? 0 : -1), FULL_SHADE);
@@ -4904,8 +4903,8 @@ void JE_debugMenu(bool center)
 	/* Add Cash is an inline numeric field: while the row is selected you type a value (digits
 	 * append, Backspace deletes) and Enter sets cash to it. Starts empty each open; the row shows
 	 * the live cash when you're not on it. See the value display and input switch below. */
-	const int cashMaxDigits = 9;               // 999,999,999 cap: ample, and safely within ulong
-	const ulong cashMax = 999999999UL;
+	const int cashMaxDigits = 12;              // CASH_MAX is 12 digits; the field can type the whole ceiling
+	const Sint64 cashMax = CASH_MAX;
 	char dbgCashStr[16] = "";
 	char dbgHangStr[8] = "";                   // inline typed field for the Hang Watchdog row (seconds)
 
@@ -5140,7 +5139,7 @@ void JE_debugMenu(bool center)
 				if (sel)
 					snprintf(buf, sizeof(buf), "%s|", dbgCashStr);  // your input + '|' caret (empty => just the caret)
 				else
-					snprintf(buf, sizeof(buf), "%lu", (unsigned long)player[dbgPlayer].cash);  // live cash when not editing
+					snprintf(buf, sizeof(buf), "%lld", (long long)player[dbgPlayer].cash);  // live cash when not editing
 				break;
 			case DBG_NO_ENEMY_FIRE:
 				sprintf(buf, "%s", cheatNoEnemyFire ? "ON" : "OFF");
@@ -5417,9 +5416,9 @@ void JE_debugMenu(bool center)
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel > DIFFICULTY_WIMP) --difficultyLevel; break;
 				case DBG_ADD_CASH:
-					player[editPlayer].cash = cashMax;
+					player_set_cash(&player[editPlayer], cashMax);
 					endlessCashDebugOverwrite();
-					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
+					snprintf(dbgCashStr, sizeof(dbgCashStr), "%lld", (long long)cashMax);
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
 				case DBG_PLAY_SOUND: if (dbgSoundId > 1) --dbgSoundId; break;
@@ -5473,9 +5472,9 @@ void JE_debugMenu(bool center)
 				case DBG_AUTO_DIFFICULTY: difficultyAdjust = !difficultyAdjust; break;
 				case DBG_DIFFICULTY: if (difficultyLevel < DIFFICULTY_10) ++difficultyLevel; break;
 				case DBG_ADD_CASH:
-					player[editPlayer].cash = cashMax;
+					player_set_cash(&player[editPlayer], cashMax);
 					endlessCashDebugOverwrite();
-					SDL_strlcpy(dbgCashStr, "999999999", sizeof(dbgCashStr));
+					snprintf(dbgCashStr, sizeof(dbgCashStr), "%lld", (long long)cashMax);
 					break;
 				case DBG_NO_ENEMY_FIRE: cheatNoEnemyFire = !cheatNoEnemyFire; break;
 				case DBG_PLAY_SOUND: if (dbgSoundId < SOUND_COUNT) ++dbgSoundId; break;
@@ -5521,10 +5520,10 @@ void JE_debugMenu(bool center)
 #endif
 					if (dbgCashStr[0])  // ignore a bare Enter on an empty field (don't zero cash by accident)
 					{
-						ulong v = 0;
+						Sint64 v = 0;
 						for (const char *c = dbgCashStr; *c >= '0' && *c <= '9'; ++c)
-							v = v * 10u + (ulong)(*c - '0');
-						player[editPlayer].cash = v;
+							v = v * 10 + (*c - '0');
+						player_set_cash(&player[editPlayer], v);
 						endlessCashDebugOverwrite();
 					}
 					break;
@@ -5868,7 +5867,7 @@ void JE_highScoreCheck(void)
 						JE_textShade(VGAScreen, 60, 55, miscText[53], 11, 4, FULL_SHADE);
 					}
 
-					sprintf(buffer, "%s %d", miscText[37], temp_score);
+					sprintf(buffer, "%s %lld", miscText[37], (long long)temp_score);
 					JE_textShade(VGAScreen, 70, 70, buffer, 11, 4, FULL_SHADE);
 
 					do
@@ -5982,7 +5981,7 @@ void JE_highScoreCheck(void)
 				{
 					if (i != slot)
 					{
-						sprintf(buffer, "~#%d:~  %d", i+1, t2kHighScores[table][i].score);
+						sprintf(buffer, "~#%d:~  %lld", i+1, (long long)t2kHighScores[table][i].score);
 						JE_textShade(VGAScreen,  20, (i * 12) + 65, buffer, 15, 0, FULL_SHADE);
 						JE_textShade(VGAScreen, 150, (i * 12) + 65, t2kHighScores[table][i].playerName, 15, 2, FULL_SHADE);
 					}
@@ -5992,7 +5991,7 @@ void JE_highScoreCheck(void)
 
 				fade_palette(colors, 15, 0, 255);
 
-				sprintf(buffer, "~#%d:~  %d", slot+1, t2kHighScores[table][slot].score);
+				sprintf(buffer, "~#%d:~  %lld", slot+1, (long long)t2kHighScores[table][slot].score);
 
 				frameCountMax = 6;
 				textGlowFont = TINY_FONT;
@@ -6050,7 +6049,7 @@ void JE_timedBattleResult(void)
 	{
 		// Name on the left of a fixed column and total right-aligned on it, so a long name cannot
 		// push a total off the panel and neither row's figures wander as the numbers change.
-		snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)player[i].cash);
+		snprintf(buffer, sizeof(buffer), "%lld", (long long)player[i].cash);
 		// The menu range for this bank and font: the top of it is white, which this backdrop is
 		// far too dark for. The winner takes the step a selected menu row takes, and no more.
 		const int value = (i == winner) ? -2 : -4;
@@ -6118,10 +6117,10 @@ void adjust_difficulty(void)
 	// on as equipment value) and average the pair, or a stocked-up pair reads as broke.
 	const bool linkedScoring = twoPlayerMode && !coop_mode_active();
 
-	const ulong score = linkedScoring ? player[0].cash + player[1].cash
-	                  : twoPlayerMode ? (JE_totalScore(&player[0]) + JE_totalScore(&player[1])) / 2
-	                                  : JE_totalScore(&player[0]),
-	            adjusted_score = roundf(score * score_multiplier[initialDifficulty]);
+	const Sint64 score = linkedScoring ? player[0].cash + player[1].cash
+	                   : twoPlayerMode ? (JE_totalScore(&player[0]) + JE_totalScore(&player[1])) / 2
+	                                   : JE_totalScore(&player[0]),
+	             adjusted_score = (Sint64)roundf(score * score_multiplier[initialDifficulty]);
 
 	uint new_difficulty = 0;
 
@@ -6642,27 +6641,7 @@ void JE_endLevelAni(void)
 
 	Sint8 i;
 
-	long endlessInterest = 0, endlessBonus = 0;  // endless: the level-clear payout, shown below
-
-	if (!constantPlay)
-	{
-		// grant shipedit privileges
-
-		// special
-		if (player[0].items.special < 21)
-			saveTemp[SAVE_FILES_SIZE + 81 + player[0].items.special] = 1;
-
-		for (uint p = 0; p < COUNTOF(player); ++p)
-		{
-			// front, rear
-			for (uint i = 0; i < COUNTOF(player[p].items.weapon); ++i)
-				saveTemp[SAVE_FILES_SIZE + player[p].items.weapon[i].id] = 1;
-
-			// options
-			for (uint i = 0; i < COUNTOF(player[p].items.sidekick); ++i)
-				saveTemp[SAVE_FILES_SIZE + 51 + player[p].items.sidekick[i]] = 1;
-		}
-	}
+	Sint64 endlessInterest = 0, endlessBonus = 0;  // endless: the level-clear payout, shown below
 
 	if (difficulty_adjust_active())
 		adjust_difficulty();
@@ -6707,13 +6686,13 @@ void JE_endLevelAni(void)
 	{
 		for (uint i = 0; i < 2; ++i)
 		{
-			snprintf(tempStr, sizeof(tempStr), "%s %lu", miscText[40 + i], (unsigned long)player[i].cash);
+			snprintf(tempStr, sizeof(tempStr), "%s %lld", miscText[40 + i], (long long)player[i].cash);
 			JE_outTextGlow(VGAScreenSeg, 30, 50 + 20 * i, tempStr);
 		}
 	}
 	else
 	{
-		sprintf(tempStr, "%s %lu", miscText[28-1], (unsigned long)player[0].cash);
+		sprintf(tempStr, "%s %lld", miscText[28-1], (long long)player[0].cash);
 		JE_outTextGlow(VGAScreenSeg, 30, 50, tempStr);
 	}
 
@@ -6725,7 +6704,7 @@ void JE_endLevelAni(void)
 	if (timedBattleMode)
 	{
 		for (uint p = 0; p < (dual_ship_mode() ? COUNTOF(player) : 1u); ++p)
-			player[p].cash += timeBonus;
+			player_add_cash(&player[p], timeBonus);
 
 		if (!dual_ship_mode())
 		{
@@ -6744,9 +6723,6 @@ void JE_endLevelAni(void)
 		JE_outTextGlow(VGAScreenSeg, 40, 108, tempStr);
 	}
 
-	if (!constantPlay)
-		editorLevel += temp / 5;
-
 	if (timedBattleMode && dual_ship_mode())
 	{
 		// Two racers, two life counts. The parade below is a solo flourish with no room to run
@@ -6759,7 +6735,7 @@ void JE_endLevelAni(void)
 			x = *player[p].lives * 1000;
 			sprintf(tempStr, "Player %u %s %d", p + 1, miscTextB[7], x);
 			JE_outTextGlow(VGAScreenSeg, 30, 128 + 18 * (int)p, tempStr);
-			player[p].cash += x;
+			player_add_cash(&player[p], x);
 		}
 	}
 	else if (timedBattleMode)
@@ -6802,18 +6778,18 @@ void JE_endLevelAni(void)
 		x = *player[0].lives * 1000;
 		sprintf(tempStr, "%s %d", miscTextB[7], x);
 		JE_outTextGlow(VGAScreenSeg, 40, 143, tempStr);
-		player[0].cash += x;
+		player_add_cash(&player[0], x);
 	}
 	else if (endlessMode)
 	{
 		// Endless earns cash, not data cubes; show the clear payout just banked above. No '+' or
 		// parentheses: SMALL_FONT_SHAPES silently drops those glyphs.
 		char payStr[64];
-		snprintf(payStr, sizeof(payStr), "Zone Bonus:  %ld", endlessBonus);
+		snprintf(payStr, sizeof(payStr), "Zone Bonus:  %lld", (long long)endlessBonus);
 		JE_outTextGlow(VGAScreenSeg, 30, 120, payStr);
 		if (endlessInterest > 0)
 		{
-			snprintf(payStr, sizeof(payStr), "Bank Interest:  %ld", endlessInterest);
+			snprintf(payStr, sizeof(payStr), "Bank Interest:  %lld", (long long)endlessInterest);
 			JE_outTextGlow(VGAScreenSeg, 30, 138, payStr);
 		}
 	}
@@ -7070,8 +7046,7 @@ void JE_operation(JE_byte slot)
 					if (JE_saveRequest(slot, stemp))
 					{
 						network_shop_sync_for_save();
-						JE_saveGame(slot, stemp);
-						endlessSaveSlot(slot);  // persist/clear the endless run for this slot
+						JE_saveGame(slot, stemp);   // persists or clears the endless run for this slot too
 					}
 				}
 				else if (lastmouse_x > 151 && lastmouse_x < 237 && lastmouse_y > 123 && lastmouse_y < 149)
@@ -7116,8 +7091,7 @@ void JE_operation(JE_byte slot)
 						if (JE_saveRequest(slot, stemp))
 						{
 							network_shop_sync_for_save();
-							JE_saveGame(slot, stemp);
-							endlessSaveSlot(slot);  // persist/clear the endless run for this slot
+							JE_saveGame(slot, stemp);   // persists or clears the endless run for this slot too
 						}
 						break;
 					default:
@@ -7920,9 +7894,9 @@ void JE_inGameDisplays(void)
 		// Name the two scores whenever the ships are independent; the linked pair reads as one
 		// team and has no room for it.
 		if (dual_ship_mode())
-			snprintf(tempstr, sizeof(tempstr), "%s %lu", JE_getName(i + 1), (unsigned long)player[i].cash);
+			snprintf(tempstr, sizeof(tempstr), "%s %lld", JE_getName(i + 1), (long long)player[i].cash);
 		else
-			snprintf(tempstr, sizeof(tempstr), "%lu", (unsigned long)player[i].cash);
+			snprintf(tempstr, sizeof(tempstr), "%lld", (long long)player[i].cash);
 
 		// Ink spans [x, x + width - 2] (width carries that trailing pixel); the shadow widens
 		// it to [x - 1, x + width - 1]. Setting the right shadow edge to PLAYFIELD_RIGHT -
@@ -11164,7 +11138,7 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						{
 							// players get equal share of pick-up cash when linked
 							for (uint i = 0; i < COUNTOF(player); ++i)
-								player[i].cash += picked / COUNTOF(player);
+								player_add_cash(&player[i], picked / (long)COUNTOF(player));
 						}
 						else
 						{

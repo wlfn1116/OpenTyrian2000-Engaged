@@ -36,26 +36,27 @@ Uint64   endlessSortieOutpostMods = 0;
 // so a bail must restore this before the outpost redraws. See "Death, retries" in doc/notes.md.
 JE_byte  endlessSortieOutpostEp = 0;
 
-// tyrian.sav has a fixed checksummed layout, so Endless uses a per-slot sidecar.
+/* Every save slot's Endless half lives in opentyrian.sav as a `section 'endless' 'N'`, written
+ * beside the campaign record so the pair cannot drift (the codec is below). The DOS-era binary
+ * sidecar endless.sav is read only to migrate, through the frozen reader further down. See
+ * "Saves and records" in doc/notes.md. */
 
-#define ENDLESS_SAVE_FILE    "endless.sav"
-#define ENDLESS_SAVE_VERSION 27   // v27: the partner's outpost half a save checkpoint captured
+#define ENDLESS_LEGACY_SAVE_FILE      "endless.sav"
+#define ENDLESS_LEGACY_VERSION_MAX    27   // the last binary format; the reader knows v3..v27
 #define ENDLESS_SAVE_PERKS   32
 #define ENDLESS_SAVE_PERKS_V10 16
 #define ENDLESS_SAVE_PERK_CHARGER_V13 14
 #define ENDLESS_SAVE_OFFERS     ENDLESS_PERK_OFFERS_MILESTONE
 #define ENDLESS_SAVE_OFFERS_V12 3
 
-// Spare cash-source/sink slots, so appending an EndlessCashSource or EndlessCashSink needs no
-// version bump.
+// The legacy record kept spare cash-source/sink slots past the live enums.
 #define ENDLESS_SAVE_CASH_SOURCES 12
 #define ENDLESS_SAVE_CASH_SINKS   12
 
-/* File header: the tag, the format version, how many slot records follow, and from v25 how many
- * bytes each of those records is. Without that last field a record that changed width without the
- * version changing with it puts every slot but the first at the wrong offset, silently. */
-#define ENDLESS_SAVE_WIDTH_VERSION 25   // first version whose header carries the record width
-#define ENDLESS_HEADER_BYTES       8
+// Legacy file header: the tag, the format version, how many slot records follow, and from v25 how
+// many bytes each of those records is.
+#define ENDLESS_LEGACY_WIDTH_VERSION 25   // first version whose header carries the record width
+#define ENDLESS_LEGACY_HEADER_BYTES  8
 
 typedef struct {
 	int version;   // format version the file was written by
@@ -63,11 +64,11 @@ typedef struct {
 	int width;     // bytes per record, or 0 when the version alone fixes it (pre-v25)
 } EndlessSaveHeader;
 
-// Perk IDs are on-disk slots; widen the block and bump the version together.
+// Perk IDs are on-disk slots in the legacy record and in the co-op outpost block alike.
 COMPILE_TIME_ASSERT(endless_save_perks_fit, PERK_COUNT <= ENDLESS_SAVE_PERKS);
-/* The co-op outpost block carries the same IDs. Its loops truncate rather than overrun, so an
- * overflow would silently stop syncing the perks past the width and desync the two ships instead
- * of failing here. Widen it with NET_VERSION. */
+/* The co-op outpost block's loops truncate rather than overrun, so an overflow would silently stop
+ * syncing the perks past the width and desync the two ships instead of failing here. Widen it with
+ * NET_VERSION. */
 COMPILE_TIME_ASSERT(endless_block_perks_fit, PERK_COUNT <= ENDLESS_PLAYER_BLOCK_PERKS);
 COMPILE_TIME_ASSERT(endless_save_cash_sources_fit, ENDLESS_CASH_SOURCES <= ENDLESS_SAVE_CASH_SOURCES);
 COMPILE_TIME_ASSERT(endless_save_cash_sinks_fit, ENDLESS_CASH_SINKS <= ENDLESS_SAVE_CASH_SINKS);
@@ -79,10 +80,10 @@ typedef struct {
 	Sint32 runDepth, armorBonus, runKills, runBossKills;
 	Sint32 buffCharge, revivesUsed, shopTax, longCon, perkDepthDone, superbombs;
 	Uint8  reviveHeld, gambleRigged;
-	Uint8  perkOwned[ENDLESS_SAVE_PERKS];
+	Uint8  perkOwned[ENDLESS_SAVE_PERKS];   // legacy: the summed stacks; perkTakenBy is authoritative
 
 	// Outpost prices and pending buys.
-	Sint32 rerollCost, hullCost, bombCost, extraPerkCost, cleanseCost, shopEntryCash;
+	Sint64 rerollCost, hullCost, bombCost, extraPerkCost, cleanseCost, shopEntryCash;
 	Uint32 purchasedMods;
 	Sint32 buffKind, cleanseCharges;
 	Uint8  gamblePerkWon, perkPending;
@@ -155,10 +156,13 @@ typedef struct {
 	Uint8  courseChooser;    // EndlessCourseChooser the run was started under
 	Sint32 armorBonus2;      // player 2's Reinforce tier
 	Sint32 revivesUsed2, shopTax2, longCon2, buffKind2, buffCharge2, buffCooldownUntil2;
-	Sint32 rerollCost2, hullCost2, bombCost2, extraPerkCost2, cleanseCost2, shopEntryCash2;
+	Sint64 rerollCost2, hullCost2, bombCost2, extraPerkCost2, cleanseCost2, shopEntryCash2;
 	Sint32 superbombs2, cleanseCharges2;
 	Uint32 purchasedMods2;
 	Uint8  reviveHeld2, gambleRigged2, downed[2];
+	Uint8  gamblePerkWon2;
+	char   gambleMsg2[48];
+	char   lastSpecialName2[31];
 	Uint8  perkTakenBy[2][ENDLESS_SAVE_PERKS];   // who picked what; perks are personal, so this IS
 	                                             // each ship's holding (perkOwned is the legacy sum)
 	Uint64 playerRng[2];                          // each player's own outpost draw stream
@@ -184,8 +188,7 @@ typedef struct {
 	Uint64 partnerRng;
 } EndlessSlotRec;
 
-// One record per save slot, mirrored to endless.sav. Read-modify-write on each save keeps the
-// other slots' records intact.
+// One record per save slot, read with and written beside saveFiles[] (config.c owns the file).
 static EndlessSlotRec endlessSlotCache[SAVE_FILES_NUM];
 
 // Restore a chart and migrate records that predate persisted courseFile values.
@@ -230,132 +233,408 @@ static void endlessRestoreSavedCourses(const EndlessSlotRec *r)
 	endlessNameCourseBaseLevels();  // populate the Radar perk's base-level cache for the restored chart
 }
 
-/* Records are laid out as bytes rather than at file positions, so one whose stored width differs
- * from this build's can be padded or trimmed on its own. A writer with a null buffer measures
- * rather than stores. See "Save format" in doc/notes.md. */
-#define ENDLESS_REC_MAX  4096            // ceiling for one record; the width itself is measured
-#define ENDLESS_FILE_MAX (1024 * 1024)   // ...and for a whole sidecar file
+/* Text codec: one config section per record, every field under a name. Absent keys read as zero,
+ * unknown keys are ignored, and lists are space-separated numbers, so a hand edit or a build that
+ * knows one field more or less parses the rest of the record unharmed. The wire
+ * (endlessRunSerialize) carries this same text. */
 
-typedef struct { Uint8 *p; const Uint8 *end; size_t n; } EndlessWriter;
+// A player-prefixed key: p1_armor_bonus, p2_armor_bonus.
+static const char *endlessPlayerKey(char *buf, size_t n, uint p, const char *key)
+{
+	snprintf(buf, n, "p%u_%s", p + 1, key);
+	return buf;
+}
+
+static void endlessPutInt(ConfigSection *s, const char *key, Sint64 v)
+{
+	config_set_int64_option(s, key, (long long)v);
+}
+
+static void endlessPutHex(ConfigSection *s, const char *key, Uint64 v)
+{
+	char buf[24];
+	snprintf(buf, sizeof(buf), "%016" PRIX64, v);
+	config_set_string_option(s, key, buf);
+}
+
+// Space-separated numbers. Unsigned values print unsigned so a 64-bit mask survives the round trip.
+static void endlessPutList(ConfigSection *s, const char *key, const void *vals, size_t count,
+                           size_t width, bool isSigned)
+{
+	const size_t cap = count * 24 + 1;   // 20 digits, a sign and a space per number, at most
+	char *buf = malloc(cap);
+	if (buf == NULL)
+		return;
+	size_t n = 0;
+	for (size_t i = 0; i < count; ++i)
+	{
+		const Uint8 *at = (const Uint8 *)vals + i * width;
+		long long v = 0;
+		switch (width)
+		{
+		case 1: v = isSigned ? *(const Sint8 *)at : *(const Uint8 *)at; break;
+		case 4: v = isSigned ? *(const Sint32 *)at : (long long)*(const Uint32 *)at; break;
+		default: v = *(const long long *)at; break;
+		}
+		char num[32];
+		const int len = (isSigned || width < 8)
+		              ? snprintf(num, sizeof(num), "%s%lld", i ? " " : "", v)
+		              : snprintf(num, sizeof(num), "%s%llu", i ? " " : "", (unsigned long long)v);
+		if (len < 0 || n + (size_t)len >= cap)
+			break;
+		memcpy(buf + n, num, (size_t)len);
+		n += (size_t)len;
+	}
+	buf[n] = '\0';
+	config_set_string_option(s, key, buf);
+	free(buf);
+}
+
+// Read up to `count` numbers into vals; the rest are left as they were. Returns how many parsed.
+static size_t endlessGetList(const ConfigSection *s, const char *key, void *vals, size_t count,
+                             size_t width, bool isSigned)
+{
+	const char *text = NULL;
+	if (!config_get_string_option(s, key, &text) || text == NULL)
+		return 0;
+	size_t got = 0;
+	while (got < count)
+	{
+		while (*text == ' ')
+			++text;
+		if (*text == '\0')
+			break;
+		char *end = NULL;
+		const long long v = isSigned ? strtoll(text, &end, 10) : (long long)strtoull(text, &end, 10);
+		if (end == text)
+			break;
+		text = end;
+		Uint8 *at = (Uint8 *)vals + got * width;
+		switch (width)
+		{
+		case 1: *(Uint8 *)at = (Uint8)v; break;
+		case 4: *(Uint32 *)at = (Uint32)v; break;
+		default: *(long long *)at = v; break;
+		}
+		++got;
+	}
+	return got;
+}
+
+static Sint64 endlessGetInt(const ConfigSection *s, const char *key, Sint64 fallback)
+{
+	long long v;
+	return config_get_int64_option(s, key, &v) ? (Sint64)v : fallback;
+}
+
+static Uint64 endlessGetHex(const ConfigSection *s, const char *key)
+{
+	const char *text = NULL;
+	return (config_get_string_option(s, key, &text) && text != NULL) ? (Uint64)strtoull(text, NULL, 16) : 0;
+}
+
+static void endlessGetStr(const ConfigSection *s, const char *key, char *dst, size_t n)
+{
+	const char *text = NULL;
+	if (config_get_string_option(s, key, &text) && text != NULL)
+		SDL_strlcpy(dst, text, n);
+	else
+		dst[0] = '\0';
+}
+
+// The 9 shop rows: one key per row holding that row's item ids, so the count is the list length.
+static void endlessPutStock(ConfigSection *s, const char *prefix, const Uint8 avail[9][10],
+                            const Uint8 availMax[9])
+{
+	for (int row = 0; row < 9; ++row)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "%s_%d", prefix, row + 1);
+		const size_t n = (availMax[row] > 10) ? 10 : availMax[row];
+		endlessPutList(s, key, avail[row], n, 1, false);
+	}
+}
+
+static void endlessGetStock(const ConfigSection *s, const char *prefix, Uint8 avail[9][10],
+                            Uint8 availMax[9])
+{
+	for (int row = 0; row < 9; ++row)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "%s_%d", prefix, row + 1);
+		memset(avail[row], 0, 10);
+		availMax[row] = (Uint8)endlessGetList(s, key, avail[row], 10, 1, false);
+	}
+}
+
+/* Each player's own half. The record keeps player two's fields under separate names for the frozen
+ * legacy reader's sake; the text codec addresses both halves the same way. */
+typedef struct {
+	Sint32 *armorBonus, *revivesUsed, *shopTax, *longCon, *buffKind, *buffCharge, *buffCooldownUntil;
+	Sint32 *superbombs, *cleanseCharges;
+	Sint64 *rerollCost, *hullCost, *bombCost, *extraPerkCost, *cleanseCost, *shopEntryCash;
+	Uint32 *purchasedMods;
+	Uint8  *reviveHeld, *gambleRigged, *downed, *gamblePerkWon;
+	Uint8  *perks;
+	Uint64 *rng;
+	char   *gambleMsg, *lastSpecialName;
+} EndlessRecPlayer;
+
+static EndlessRecPlayer endlessRecPlayerView(EndlessSlotRec *r, uint p)
+{
+	EndlessRecPlayer v;
+	if (p == 0)
+	{
+		v.armorBonus = &r->armorBonus; v.revivesUsed = &r->revivesUsed; v.shopTax = &r->shopTax;
+		v.longCon = &r->longCon; v.buffKind = &r->buffKind; v.buffCharge = &r->buffCharge;
+		v.buffCooldownUntil = &r->buffCooldownUntil; v.superbombs = &r->superbombs;
+		v.cleanseCharges = &r->cleanseCharges; v.rerollCost = &r->rerollCost; v.hullCost = &r->hullCost;
+		v.bombCost = &r->bombCost; v.extraPerkCost = &r->extraPerkCost; v.cleanseCost = &r->cleanseCost;
+		v.shopEntryCash = &r->shopEntryCash; v.purchasedMods = &r->purchasedMods;
+		v.reviveHeld = &r->reviveHeld; v.gambleRigged = &r->gambleRigged; v.downed = &r->downed[0];
+		v.gamblePerkWon = &r->gamblePerkWon; v.perks = r->perkTakenBy[0]; v.rng = &r->playerRng[0];
+		v.gambleMsg = r->gambleMsg; v.lastSpecialName = r->lastSpecialName;
+	}
+	else
+	{
+		v.armorBonus = &r->armorBonus2; v.revivesUsed = &r->revivesUsed2; v.shopTax = &r->shopTax2;
+		v.longCon = &r->longCon2; v.buffKind = &r->buffKind2; v.buffCharge = &r->buffCharge2;
+		v.buffCooldownUntil = &r->buffCooldownUntil2; v.superbombs = &r->superbombs2;
+		v.cleanseCharges = &r->cleanseCharges2; v.rerollCost = &r->rerollCost2; v.hullCost = &r->hullCost2;
+		v.bombCost = &r->bombCost2; v.extraPerkCost = &r->extraPerkCost2; v.cleanseCost = &r->cleanseCost2;
+		v.shopEntryCash = &r->shopEntryCash2; v.purchasedMods = &r->purchasedMods2;
+		v.reviveHeld = &r->reviveHeld2; v.gambleRigged = &r->gambleRigged2; v.downed = &r->downed[1];
+		v.gamblePerkWon = &r->gamblePerkWon2; v.perks = r->perkTakenBy[1]; v.rng = &r->playerRng[1];
+		v.gambleMsg = r->gambleMsg2; v.lastSpecialName = r->lastSpecialName2;
+	}
+	return v;
+}
+
+static void endlessRecToSection(ConfigSection *s, const EndlessSlotRec *r)
+{
+	// Run.
+	endlessPutInt(s, "run_depth", r->runDepth);
+	endlessPutInt(s, "run_kills", r->runKills);
+	endlessPutInt(s, "run_boss_kills", r->runBossKills);
+	endlessPutInt(s, "perk_depth_done", r->perkDepthDone);
+	config_set_string_option(s, "seed", r->seed);
+	endlessPutInt(s, "run_mode", r->runMode);
+	endlessPutInt(s, "base_level_rule", r->baseLevelRule);
+	endlessPutInt(s, "credits_shown", r->creditsShown);
+	endlessPutInt(s, "used_custom", r->usedCustom);
+	endlessPutInt(s, "last_song", r->lastSong);
+	endlessPutInt(s, "last_song_depth", r->lastSongDepth);
+	endlessPutInt(s, "star_charts_owed", r->starChartsOwed);
+	endlessPutInt(s, "breakthrough_owed", r->breakthroughOwed);
+	endlessPutInt(s, "cash_earned", (Sint64)r->cashEarned);
+	endlessPutInt(s, "cash_spent", (Sint64)r->cashSpent);
+	endlessPutList(s, "cash_by_source", r->cashBySource, ENDLESS_CASH_SOURCES, 8, false);
+	endlessPutList(s, "cash_by_sink", r->cashBySink, ENDLESS_CASH_SINKS, 8, false);
+
+	// The outpost this save reopens: its chart, perk offer, shop rows and recent-level ring.
+	endlessPutInt(s, "course_count", r->courseCnt);
+	endlessPutList(s, "course_episode", r->courseEp, ENDLESS_MAX_COURSES, 4, true);
+	endlessPutList(s, "course_section", r->courseSec, ENDLESS_MAX_COURSES, 1, false);
+	endlessPutList(s, "course_file", r->courseFile, ENDLESS_MAX_COURSES, 1, false);
+	for (int i = 0; i < ENDLESS_MAX_COURSES; ++i)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "course_mods_%d", i + 1);
+		endlessPutHex(s, key, r->courseMod[i]);
+	}
+	endlessPutInt(s, "last_episode", r->lastEp);
+	endlessPutInt(s, "last_section", r->lastSec);
+	endlessPutInt(s, "forced", r->forced);
+	endlessPutInt(s, "chart_rerolls", r->chartRerolls);
+	endlessPutInt(s, "chart_star_charts", r->chartStarCharts);
+	endlessPutInt(s, "shuffle_next", r->shuffleNext);
+	endlessPutInt(s, "shuffle_hand_start", r->shuffleHandStart);
+	endlessPutInt(s, "recent_count", r->recentCount);
+	endlessPutList(s, "recent_episode", r->recentEp, ENDLESS_LEVEL_HISTORY, 4, true);
+	endlessPutList(s, "recent_section", r->recentSec, ENDLESS_LEVEL_HISTORY, 1, false);
+	endlessPutInt(s, "perk_choice_count", r->perkChoiceN);
+	endlessPutList(s, "perk_choice", r->perkChoice, ENDLESS_SAVE_OFFERS, 4, true);
+	endlessPutInt(s, "perk_pending", r->perkPending);
+	endlessPutStock(s, "stock", r->itemAvail, r->itemAvailMax);
+
+	// The locked retry outpost, when the save reopens one.
+	endlessPutInt(s, "sortie_locked", r->lockedSortie);
+	if (r->lockedSortie)
+	{
+		endlessPutHex(s, "sortie_mods", r->sortieMods);
+		endlessPutInt(s, "sortie_section", r->sortieSec);
+		endlessPutInt(s, "sortie_episode", r->sortieEp);
+		endlessPutInt(s, "sortie_file", r->sortieFile);
+	}
+
+	// Co-op run-wide settings, then each ship's own half.
+	endlessPutInt(s, "coop_host_charts", r->coopHostCharts);
+	endlessPutInt(s, "course_chooser", r->courseChooser);
+	for (uint p = 0; p < 2; ++p)
+	{
+		const EndlessRecPlayer v = endlessRecPlayerView((EndlessSlotRec *)r, p);
+		char k[48];
+		#define PK(name) endlessPlayerKey(k, sizeof(k), p, name)
+		endlessPutInt(s, PK("armor_bonus"), *v.armorBonus);
+		endlessPutInt(s, PK("revives_used"), *v.revivesUsed);
+		endlessPutInt(s, PK("shop_tax"), *v.shopTax);
+		endlessPutInt(s, PK("long_con"), *v.longCon);
+		endlessPutInt(s, PK("buff_kind"), *v.buffKind);
+		endlessPutInt(s, PK("buff_charge"), *v.buffCharge);
+		endlessPutInt(s, PK("buff_cooldown_until"), *v.buffCooldownUntil);
+		endlessPutInt(s, PK("superbombs"), *v.superbombs);
+		endlessPutInt(s, PK("cleanse_charges"), *v.cleanseCharges);
+		endlessPutInt(s, PK("reroll_cost"), *v.rerollCost);
+		endlessPutInt(s, PK("hull_cost"), *v.hullCost);
+		endlessPutInt(s, PK("bomb_cost"), *v.bombCost);
+		endlessPutInt(s, PK("extra_perk_cost"), *v.extraPerkCost);
+		endlessPutInt(s, PK("cleanse_cost"), *v.cleanseCost);
+		endlessPutInt(s, PK("shop_entry_cash"), *v.shopEntryCash);
+		endlessPutHex(s, PK("purchased_mods"), *v.purchasedMods);
+		endlessPutInt(s, PK("revive_held"), *v.reviveHeld);
+		endlessPutInt(s, PK("gamble_rigged"), *v.gambleRigged);
+		endlessPutInt(s, PK("downed"), *v.downed);
+		endlessPutInt(s, PK("gamble_perk_won"), *v.gamblePerkWon);
+		endlessPutList(s, PK("perks"), v.perks, PERK_COUNT, 1, false);
+		endlessPutList(s, PK("rng"), v.rng, 1, 8, false);
+		config_set_string_option(s, PK("gamble_message"), v.gambleMsg);
+		config_set_string_option(s, PK("last_special"), v.lastSpecialName);
+		#undef PK
+	}
+
+	// The partner's half of the outpost, when a co-op save checkpoint captured one.
+	if (r->partnerValid)
+	{
+		endlessPutInt(s, "partner_seat", r->partnerSeat + 1);
+		endlessPutStock(s, "partner_stock", r->partnerAvail, r->partnerAvailMax);
+		endlessPutList(s, "partner_rng", &r->partnerRng, 1, 8, false);
+	}
+}
+
+static void endlessRecFromSection(EndlessSlotRec *r, const ConfigSection *s)
+{
+	memset(r, 0, sizeof(*r));
+	r->used = true;
+
+	r->runDepth = (Sint32)endlessGetInt(s, "run_depth", 0);
+	r->runKills = (Sint32)endlessGetInt(s, "run_kills", 0);
+	r->runBossKills = (Sint32)endlessGetInt(s, "run_boss_kills", 0);
+	r->perkDepthDone = (Sint32)endlessGetInt(s, "perk_depth_done", 0);
+	endlessGetStr(s, "seed", r->seed, sizeof(r->seed));
+	r->runMode = (Uint8)endlessGetInt(s, "run_mode", 0);
+	r->baseLevelRule = (Uint8)endlessGetInt(s, "base_level_rule", 0);
+	r->creditsShown = endlessGetInt(s, "credits_shown", 0) != 0;
+	r->usedCustom = endlessGetInt(s, "used_custom", 0) != 0;
+	r->lastSong = (Uint8)endlessGetInt(s, "last_song", 0);
+	r->lastSongDepth = (Sint32)endlessGetInt(s, "last_song_depth", 0);
+	r->starChartsOwed = endlessGetInt(s, "star_charts_owed", 0) != 0;
+	r->breakthroughOwed = (Uint8)endlessGetInt(s, "breakthrough_owed", 0);
+	r->cashEarned = (Uint64)endlessGetInt(s, "cash_earned", 0);
+	r->cashSpent = (Uint64)endlessGetInt(s, "cash_spent", 0);
+	endlessGetList(s, "cash_by_source", r->cashBySource, ENDLESS_CASH_SOURCES, 8, false);
+	endlessGetList(s, "cash_by_sink", r->cashBySink, ENDLESS_CASH_SINKS, 8, false);
+
+	r->courseCnt = (Sint32)endlessGetInt(s, "course_count", 0);
+	endlessGetList(s, "course_episode", r->courseEp, ENDLESS_MAX_COURSES, 4, true);
+	endlessGetList(s, "course_section", r->courseSec, ENDLESS_MAX_COURSES, 1, false);
+	endlessGetList(s, "course_file", r->courseFile, ENDLESS_MAX_COURSES, 1, false);
+	for (int i = 0; i < ENDLESS_MAX_COURSES; ++i)
+	{
+		char key[32];
+		snprintf(key, sizeof(key), "course_mods_%d", i + 1);
+		r->courseMod[i] = endlessGetHex(s, key);
+	}
+	r->lastEp = (Sint32)endlessGetInt(s, "last_episode", 0);
+	r->lastSec = (Uint8)endlessGetInt(s, "last_section", 0);
+	r->forced = endlessGetInt(s, "forced", 0) != 0;
+	r->chartRerolls = (Uint8)endlessGetInt(s, "chart_rerolls", 0);
+	r->chartStarCharts = endlessGetInt(s, "chart_star_charts", 0) != 0;
+	r->shuffleNext = (Uint32)endlessGetInt(s, "shuffle_next", 0);
+	r->shuffleHandStart = (Uint32)endlessGetInt(s, "shuffle_hand_start", 0);
+	r->recentCount = (Uint8)endlessGetInt(s, "recent_count", 0);
+	endlessGetList(s, "recent_episode", r->recentEp, ENDLESS_LEVEL_HISTORY, 4, true);
+	endlessGetList(s, "recent_section", r->recentSec, ENDLESS_LEVEL_HISTORY, 1, false);
+	r->perkChoiceN = (Sint32)endlessGetInt(s, "perk_choice_count", 0);
+	endlessGetList(s, "perk_choice", r->perkChoice, ENDLESS_SAVE_OFFERS, 4, true);
+	r->perkPending = endlessGetInt(s, "perk_pending", 0) != 0;
+	endlessGetStock(s, "stock", r->itemAvail, r->itemAvailMax);
+
+	r->lockedSortie = endlessGetInt(s, "sortie_locked", 0) != 0;
+	r->sortieMods = endlessGetHex(s, "sortie_mods");
+	r->sortieSec = (Uint8)endlessGetInt(s, "sortie_section", 0);
+	r->sortieEp = (Sint32)endlessGetInt(s, "sortie_episode", 0);
+	r->sortieFile = (Uint8)endlessGetInt(s, "sortie_file", 0);
+
+	r->coopHostCharts = endlessGetInt(s, "coop_host_charts", 1) != 0;
+	r->courseChooser = (Uint8)endlessGetInt(s, "course_chooser", 0);
+	for (uint p = 0; p < 2; ++p)
+	{
+		const EndlessRecPlayer v = endlessRecPlayerView(r, p);
+		char k[48];
+		#define PK(name) endlessPlayerKey(k, sizeof(k), p, name)
+		*v.armorBonus = (Sint32)endlessGetInt(s, PK("armor_bonus"), 0);
+		*v.revivesUsed = (Sint32)endlessGetInt(s, PK("revives_used"), 0);
+		*v.shopTax = (Sint32)endlessGetInt(s, PK("shop_tax"), 0);
+		*v.longCon = (Sint32)endlessGetInt(s, PK("long_con"), 0);
+		*v.buffKind = (Sint32)endlessGetInt(s, PK("buff_kind"), 0);
+		*v.buffCharge = (Sint32)endlessGetInt(s, PK("buff_charge"), 0);
+		*v.buffCooldownUntil = (Sint32)endlessGetInt(s, PK("buff_cooldown_until"), 0);
+		*v.superbombs = (Sint32)endlessGetInt(s, PK("superbombs"), 0);
+		*v.cleanseCharges = (Sint32)endlessGetInt(s, PK("cleanse_charges"), 0);
+		// Prices and the entry wallet are wallet-sized: a hand edit past either end is clamped.
+		*v.rerollCost = cash_clamp(endlessGetInt(s, PK("reroll_cost"), 0));
+		*v.hullCost = cash_clamp(endlessGetInt(s, PK("hull_cost"), 0));
+		*v.bombCost = cash_clamp(endlessGetInt(s, PK("bomb_cost"), 0));
+		*v.extraPerkCost = cash_clamp(endlessGetInt(s, PK("extra_perk_cost"), 0));
+		*v.cleanseCost = cash_clamp(endlessGetInt(s, PK("cleanse_cost"), 0));
+		*v.shopEntryCash = cash_clamp(endlessGetInt(s, PK("shop_entry_cash"), 0));
+		*v.purchasedMods = (Uint32)endlessGetHex(s, PK("purchased_mods"));
+		*v.reviveHeld = endlessGetInt(s, PK("revive_held"), 0) != 0;
+		*v.gambleRigged = endlessGetInt(s, PK("gamble_rigged"), 0) != 0;
+		*v.downed = endlessGetInt(s, PK("downed"), 0) != 0;
+		*v.gamblePerkWon = endlessGetInt(s, PK("gamble_perk_won"), 0) != 0;
+		endlessGetList(s, PK("perks"), v.perks, PERK_COUNT, 1, false);
+		endlessGetList(s, PK("rng"), v.rng, 1, 8, false);
+		endlessGetStr(s, PK("gamble_message"), v.gambleMsg, sizeof(r->gambleMsg));
+		endlessGetStr(s, PK("last_special"), v.lastSpecialName, sizeof(r->lastSpecialName));
+		#undef PK
+	}
+	memcpy(r->perkOwned, r->perkTakenBy[0], ENDLESS_SAVE_PERKS);
+
+	// Enum and cursor values index tables; a hand edit past their range falls back like the legacy
+	// reader's did. Counts and stacks are clamped where the record is applied.
+	if (r->courseChooser >= ENDLESS_PICK_COUNT)
+		r->courseChooser = ENDLESS_PICK_HOST;
+	if (r->baseLevelRule >= ENDLESS_BASE_RULE_COUNT)
+		r->baseLevelRule = ENDLESS_BASE_VARIED;
+	if (r->shuffleNext > ENDLESS_SHUFFLE_POSITION_MAX)
+		r->shuffleNext = 0;
+	if (r->shuffleHandStart > r->shuffleNext)
+		r->shuffleHandStart = r->shuffleNext;
+
+	const Sint64 partnerSeat = endlessGetInt(s, "partner_seat", 0);
+	if (partnerSeat == 1 || partnerSeat == 2)
+	{
+		r->partnerValid = 1;
+		r->partnerSeat = (Uint8)(partnerSeat - 1);
+		endlessGetStock(s, "partner_stock", r->partnerAvail, r->partnerAvailMax);
+		endlessGetList(s, "partner_rng", &r->partnerRng, 1, 8, false);
+	}
+}
+
+/* The frozen legacy binary reader for endless.sav (v3..v27), kept only to migrate a file an older
+ * build left behind. Little-endian fields; a short read invalidates the record. */
+#define ENDLESS_LEGACY_REC_MAX  4096            // ceiling for one record
+#define ENDLESS_LEGACY_FILE_MAX (1024 * 1024)   // ...and for a whole sidecar file
+
 typedef struct { const Uint8 *p, *end; } EndlessReader;
 
-// Little-endian field I/O. A short read invalidates the optional Endless sidecar.
-static void endlessPutU8(EndlessWriter *w, unsigned v)                 { if (w->p != NULL && w->p < w->end) *w->p++ = (Uint8)v; ++w->n; }
-static void endlessPutBytes(EndlessWriter *w, const void *p, size_t n) { for (size_t i = 0; i < n; ++i) endlessPutU8(w, ((const Uint8 *)p)[i]); }
-static void endlessPutU32(EndlessWriter *w, Uint32 v)                  { v = SDL_SwapLE32(v); endlessPutBytes(w, &v, 4); }
-static void endlessPutU64(EndlessWriter *w, Uint64 v)                  { v = SDL_SwapLE64(v); endlessPutBytes(w, &v, 8); }
 static bool endlessGetU8(EndlessReader *rd, Uint8 *v)                  { if (rd->p >= rd->end) return false; *v = *rd->p++; return true; }
 static bool endlessGetBytes(EndlessReader *rd, void *p, size_t n)      { if ((size_t)(rd->end - rd->p) < n) return false; memcpy(p, rd->p, n); rd->p += n; return true; }
 static bool endlessGetU32(EndlessReader *rd, Uint32 *v)                { Uint32 b; if (!endlessGetBytes(rd, &b, 4)) return false; *v = SDL_SwapLE32(b); return true; }
 static bool endlessGetU64(EndlessReader *rd, Uint64 *v)                { Uint64 b; if (!endlessGetBytes(rd, &b, 8)) return false; *v = SDL_SwapLE64(b); return true; }
 
-static void endlessWriteRec(EndlessWriter *w, const EndlessSlotRec *r)
-{
-	endlessPutU8(w, r->used ? 1 : 0);
-
-	const Sint32 s32[] = {
-		r->runDepth, r->armorBonus, r->runKills, r->runBossKills, r->buffCharge, r->revivesUsed,
-		r->shopTax, r->longCon, r->perkDepthDone, r->superbombs,
-		r->rerollCost, r->hullCost, r->bombCost, r->extraPerkCost, r->cleanseCost, r->shopEntryCash,
-		r->buffKind, r->cleanseCharges, r->perkChoiceN, r->courseCnt, r->lastEp,
-	};
-	for (unsigned i = 0; i < COUNTOF(s32); ++i)
-		endlessPutU32(w, (Uint32)s32[i]);
-
-	endlessPutU32(w, r->purchasedMods);
-	endlessPutU8(w, r->reviveHeld);
-	endlessPutU8(w, r->gambleRigged);
-	endlessPutU8(w, r->gamblePerkWon);
-	endlessPutU8(w, r->perkPending);
-	endlessPutU8(w, r->lastSec);
-	endlessPutU8(w, r->forced);
-
-	endlessPutBytes(w, r->perkOwned, ENDLESS_SAVE_PERKS);
-	endlessPutBytes(w, r->gambleMsg, sizeof(r->gambleMsg));
-	endlessPutBytes(w, r->lastSpecialName, sizeof(r->lastSpecialName));
-
-	for (unsigned i = 0; i < COUNTOF(r->perkChoice); ++i)
-		endlessPutU32(w, (Uint32)r->perkChoice[i]);
-	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
-		endlessPutU32(w, (Uint32)r->courseEp[i]);
-	for (unsigned i = 0; i < ENDLESS_MAX_COURSES; ++i)
-		endlessPutU64(w, r->courseMod[i]);
-	endlessPutBytes(w, r->courseSec, ENDLESS_MAX_COURSES);
-	endlessPutBytes(w, r->courseFile, ENDLESS_MAX_COURSES);
-
-	endlessPutBytes(w, r->itemAvail, sizeof(r->itemAvail));
-	endlessPutBytes(w, r->itemAvailMax, sizeof(r->itemAvailMax));
-	endlessPutBytes(w, r->seed, sizeof(r->seed));
-
-	endlessPutU8(w, r->lockedSortie);        // v4 locked-sortie block
-	endlessPutU64(w, r->sortieMods);         // v7: 64-bit (was U32 in v4-v6)
-	endlessPutU8(w, r->sortieSec);
-	endlessPutU32(w, (Uint32)r->sortieEp);
-	endlessPutU8(w, r->sortieFile);
-
-	endlessPutU32(w, (Uint32)r->buffCooldownUntil);  // v5 kill-fire recharge
-
-	endlessPutU8(w, r->recentCount);                 // v6 anti-repeat recent-level ring
-	for (unsigned i = 0; i < ENDLESS_LEVEL_HISTORY; ++i)
-		endlessPutU32(w, (Uint32)r->recentEp[i]);
-	endlessPutBytes(w, r->recentSec, ENDLESS_LEVEL_HISTORY);
-
-	endlessPutU8(w, r->creditsShown);                // v9 zone-100 credits
-
-	endlessPutU8(w, r->lastSong);                    // v10 per-zone music continuity
-	endlessPutU32(w, (Uint32)r->lastSongDepth);
-
-	endlessPutU8(w, r->starChartsOwed);              // v12 boons owed to a later outpost
-	endlessPutU8(w, r->breakthroughOwed);
-
-	endlessPutU8(w, r->runMode);                     // v15 Relaxed / Standard / Hardcore
-
-	endlessPutU64(w, r->cashEarned);                 // v16 stored earnings only
-	endlessPutU64(w, r->cashSpent);                  // v17 added spending and source detail
-	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SOURCES; ++i)
-		endlessPutU64(w, r->cashBySource[i]);
-
-	for (unsigned i = 0; i < ENDLESS_SAVE_CASH_SINKS; ++i)  // v19 spending breakdown
-		endlessPutU64(w, r->cashBySink[i]);
-
-	endlessPutU8(w, r->usedCustom);                  // v20 custom-weapon record mark
-
-	// v21 online co-op: the second player's own half of the outpost, plus the shared turn flag.
-	endlessPutU8(w, r->coopHostCharts);
-	endlessPutU8(w, r->courseChooser);
-	const Sint32 coop32[] = {
-		r->armorBonus2, r->revivesUsed2, r->shopTax2, r->longCon2, r->buffKind2, r->buffCharge2,
-		r->buffCooldownUntil2, r->rerollCost2, r->hullCost2, r->bombCost2, r->extraPerkCost2,
-		r->cleanseCost2, r->shopEntryCash2, r->superbombs2, r->cleanseCharges2,
-	};
-	for (unsigned i = 0; i < COUNTOF(coop32); ++i)
-		endlessPutU32(w, (Uint32)coop32[i]);
-	endlessPutU32(w, r->purchasedMods2);
-	endlessPutU8(w, r->reviveHeld2);
-	endlessPutU8(w, r->gambleRigged2);
-	endlessPutU8(w, r->downed[0]);
-	endlessPutU8(w, r->downed[1]);
-	endlessPutBytes(w, r->perkTakenBy[0], ENDLESS_SAVE_PERKS);
-	endlessPutBytes(w, r->perkTakenBy[1], ENDLESS_SAVE_PERKS);
-	endlessPutU64(w, r->playerRng[0]);
-	endlessPutU64(w, r->playerRng[1]);
-
-	endlessPutU8(w, r->baseLevelRule);               // v22 base-level rule, widened in v24
-
-	endlessPutU8(w, r->chartRerolls);                // v23 Radar chart reroll
-	endlessPutU8(w, r->chartStarCharts);
-
-	endlessPutU32(w, r->shuffleNext);                // v24 Shuffle bag cursor and live hand
-	endlessPutU32(w, r->shuffleHandStart);
-
-	endlessPutU8(w, r->partnerValid);                // v27 partner outpost half
-	endlessPutU8(w, r->partnerSeat);
-	endlessPutBytes(w, r->partnerAvailMax, sizeof(r->partnerAvailMax));
-	endlessPutBytes(w, r->partnerAvail, sizeof(r->partnerAvail));
-	endlessPutU64(w, r->partnerRng);
-}
-
-static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
+static bool endlessLegacyReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 {
 	memset(r, 0, sizeof(*r));
 
@@ -364,19 +643,23 @@ static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 		return false;
 	r->used = used != 0;
 
-	Sint32 *const s32[] = {
-		&r->runDepth, &r->armorBonus, &r->runKills, &r->runBossKills, &r->buffCharge, &r->revivesUsed,
-		&r->shopTax, &r->longCon, &r->perkDepthDone, &r->superbombs,
-		&r->rerollCost, &r->hullCost, &r->bombCost, &r->extraPerkCost, &r->cleanseCost, &r->shopEntryCash,
-		&r->buffKind, &r->cleanseCharges, &r->perkChoiceN, &r->courseCnt, &r->lastEp,
-	};
-	for (unsigned i = 0; i < COUNTOF(s32); ++i)
+	// The 21 leading Sint32 fields, in the order the binary record laid them out.
+	Sint32 v[21];
+	for (unsigned i = 0; i < COUNTOF(v); ++i)
 	{
 		Uint32 t;
 		if (!endlessGetU32(rd, &t))
 			return false;
-		*s32[i] = (Sint32)t;
+		v[i] = (Sint32)t;
 	}
+	r->runDepth = v[0];      r->armorBonus = v[1];     r->runKills = v[2];        r->runBossKills = v[3];
+	r->buffCharge = v[4];    r->revivesUsed = v[5];    r->shopTax = v[6];         r->longCon = v[7];
+	r->perkDepthDone = v[8]; r->superbombs = v[9];
+	// Prices and the entry wallet are unsigned 32-bit amounts in the record's Sint32 slots.
+	r->rerollCost = (Uint32)v[10];    r->hullCost = (Uint32)v[11];      r->bombCost = (Uint32)v[12];
+	r->extraPerkCost = (Uint32)v[13]; r->cleanseCost = (Uint32)v[14];   r->shopEntryCash = (Uint32)v[15];
+	r->buffKind = v[16];     r->cleanseCharges = v[17]; r->perkChoiceN = v[18];   r->courseCnt = v[19];
+	r->lastEp = v[20];
 
 	if (!endlessGetU32(rd, &r->purchasedMods)
 	    || !endlessGetU8(rd, &r->reviveHeld) || !endlessGetU8(rd, &r->gambleRigged)
@@ -593,19 +876,19 @@ static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 	{
 		if (!endlessGetU8(rd, &r->coopHostCharts) || !endlessGetU8(rd, &r->courseChooser))
 			return false;
-		Sint32 *const coop32[] = {
-			&r->armorBonus2, &r->revivesUsed2, &r->shopTax2, &r->longCon2, &r->buffKind2,
-			&r->buffCharge2, &r->buffCooldownUntil2, &r->rerollCost2, &r->hullCost2, &r->bombCost2,
-			&r->extraPerkCost2, &r->cleanseCost2, &r->shopEntryCash2, &r->superbombs2,
-			&r->cleanseCharges2,
-		};
-		for (unsigned i = 0; i < COUNTOF(coop32); ++i)
+		Sint32 c[15];   // the 15 co-op Sint32 fields, in record order
+		for (unsigned i = 0; i < COUNTOF(c); ++i)
 		{
 			Uint32 t;
 			if (!endlessGetU32(rd, &t))
 				return false;
-			*coop32[i] = (Sint32)t;
+			c[i] = (Sint32)t;
 		}
+		r->armorBonus2 = c[0];    r->revivesUsed2 = c[1];   r->shopTax2 = c[2];      r->longCon2 = c[3];
+		r->buffKind2 = c[4];      r->buffCharge2 = c[5];    r->buffCooldownUntil2 = c[6];
+		r->rerollCost2 = (Uint32)c[7];     r->hullCost2 = (Uint32)c[8];     r->bombCost2 = (Uint32)c[9];
+		r->extraPerkCost2 = (Uint32)c[10]; r->cleanseCost2 = (Uint32)c[11]; r->shopEntryCash2 = (Uint32)c[12];
+		r->superbombs2 = c[13];   r->cleanseCharges2 = c[14];
 		if (!endlessGetU32(rd, &r->purchasedMods2)
 		    || !endlessGetU8(rd, &r->reviveHeld2) || !endlessGetU8(rd, &r->gambleRigged2)
 		    || !endlessGetU8(rd, &r->downed[0]) || !endlessGetU8(rd, &r->downed[1])
@@ -671,42 +954,19 @@ static bool endlessReadRec(EndlessReader *rd, EndlessSlotRec *r, int version)
 	return true;
 }
 
-int endlessSaveCurrentVersion(void)
+int endlessSaveLegacyVersionMax(void)
 {
-	return ENDLESS_SAVE_VERSION;
+	return ENDLESS_LEGACY_VERSION_MAX;
 }
 
-/* The bytes one record occupies in this build, taken from the writer itself, so appending a field
- * updates what the header advertises with nothing else to keep in step. */
-static int endlessRecordWidth(void)
-{
-	static int width = 0;
-	if (width == 0)
-	{
-		EndlessSlotRec probe;
-		memset(&probe, 0, sizeof(probe));
-		EndlessWriter measure = { NULL, NULL, 0 };
-		endlessWriteRec(&measure, &probe);
-		width = (int)measure.n;
-	}
-	return width;
-}
-
-static void endlessWriteHeader(EndlessWriter *w, int slots)
-{
-	endlessPutBytes(w, "OTES", 4);
-	endlessPutU8(w, ENDLESS_SAVE_VERSION);
-	endlessPutU8(w, (unsigned)slots);
-	endlessPutU8(w, (unsigned)(endlessRecordWidth() & 0xFF));   // v25 and up: the record width
-	endlessPutU8(w, (unsigned)((endlessRecordWidth() >> 8) & 0xFF));
-}
-
-static bool endlessReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
+/* A file past v27 came from a build that appended fields the frozen reader does not know. Its
+ * header still states the record width, so the v27 prefix of every record is where it always was:
+ * read that and skip the tail (endlessLegacyReadOneRec). Only a file with no width is refused. */
+static bool endlessLegacyReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
 {
 	Uint8 tag[6];
 	if (!endlessGetBytes(rd, tag, sizeof(tag)) || memcmp(tag, "OTES", 4) != 0
-	    || tag[4] < 3 || tag[4] > ENDLESS_SAVE_VERSION
-	    || tag[5] < 1 || tag[5] > SAVE_FILES_NUM)
+	    || tag[4] < 3 || tag[5] < 1 || tag[5] > SAVE_FILES_NUM)
 	{
 		return false;
 	}
@@ -714,68 +974,100 @@ static bool endlessReadHeader(EndlessReader *rd, EndlessSaveHeader *h)
 	h->slots   = tag[5];
 	h->width   = 0;   // before v25 a record is exactly what its own version parses
 
-	if (h->version >= ENDLESS_SAVE_WIDTH_VERSION)
+	if (h->version >= ENDLESS_LEGACY_WIDTH_VERSION)
 	{
 		Uint8 lo, hi;
 		if (!endlessGetU8(rd, &lo) || !endlessGetU8(rd, &hi))
 			return false;
 		h->width = lo | (hi << 8);
-		if (h->width < 1 || h->width > ENDLESS_REC_MAX)
+		if (h->width < 1 || h->width > ENDLESS_LEGACY_REC_MAX)
 			return false;
+	}
+	if (h->version > ENDLESS_LEGACY_VERSION_MAX)
+	{
+		if (h->width == 0)
+			return false;
+		fprintf(stderr, "warning: %s is format %d, newer than the v%d importer; reading the fields it knows\n",
+		        ENDLESS_LEGACY_SAVE_FILE, h->version, ENDLESS_LEGACY_VERSION_MAX);
+		h->version = ENDLESS_LEGACY_VERSION_MAX;
 	}
 	return true;
 }
 
-/* Take one record off the cursor. A stored width narrower than this build's is padded, so fields
- * added since read as the zero their version gate would have left them; a wider one has its tail
- * skipped. Either way the next slot still starts where the file says it does. */
-static bool endlessReadOneRec(EndlessReader *rd, const EndlessSaveHeader *h, EndlessSlotRec *rec)
+/* Take one record off the cursor. A file that states its record width is parsed from a zero-padded
+ * copy of exactly that many bytes, so a record written narrower or wider than this reader expects
+ * still leaves the next slot where the file says it starts. */
+static bool endlessLegacyReadOneRec(EndlessReader *rd, const EndlessSaveHeader *h, EndlessSlotRec *rec)
 {
-	const int want = endlessRecordWidth();
-	if (h->width == 0 || h->width == want)
-		return endlessReadRec(rd, rec, h->version);
-	if (want > ENDLESS_REC_MAX || (size_t)(rd->end - rd->p) < (size_t)h->width)
+	if (h->width == 0)
+		return endlessLegacyReadRec(rd, rec, h->version);
+	if ((size_t)(rd->end - rd->p) < (size_t)h->width)
 		return false;
 
-	Uint8 buf[ENDLESS_REC_MAX];
-	const size_t take = MIN((size_t)h->width, (size_t)want);
-	memcpy(buf, rd->p, take);
-	memset(buf + take, 0, (size_t)want - take);
+	Uint8 buf[ENDLESS_LEGACY_REC_MAX];
+	memcpy(buf, rd->p, (size_t)h->width);
+	memset(buf + h->width, 0, sizeof(buf) - (size_t)h->width);
 	rd->p += h->width;
 
-	EndlessReader one = { buf, buf + want };
-	return endlessReadRec(&one, rec, h->version);
+	EndlessReader one = { buf, buf + sizeof(buf) };
+	return endlessLegacyReadRec(&one, rec, h->version);
 }
 
-static bool endlessTestDecode(const Uint8 *bytes, size_t size, EndlessSlotRec *rec, int *version)
+// Decode the first record of a legacy file image; the fixture test and the migration share it.
+static bool endlessLegacyDecode(const Uint8 *bytes, size_t size, EndlessSlotRec *rec, int *version)
 {
 	EndlessReader rd = { bytes, bytes + size };
 	EndlessSaveHeader h;
-	if (bytes == NULL || !endlessReadHeader(&rd, &h) || !endlessReadOneRec(&rd, &h, rec))
+	if (bytes == NULL || !endlessLegacyReadHeader(&rd, &h) || !endlessLegacyReadOneRec(&rd, &h, rec))
 		return false;
 	if (version != NULL)
 		*version = h.version;
 	return true;
 }
 
-static bool endlessTestEncode(const EndlessSlotRec *rec, Uint8 **bytes, size_t *size)
+/* Text encode/decode of a lone record, for the wire and the tests: a one-section config, its text
+ * in a malloc'd buffer. */
+static bool endlessTextEncode(EndlessSlotRec *rec, char **text, size_t *size)
 {
-	const size_t total = (size_t)ENDLESS_HEADER_BYTES + (size_t)endlessRecordWidth();
-	Uint8 *out = malloc(total);
-	if (out == NULL)
-		return false;
-
-	EndlessWriter w = { out, out + total, 0 };
-	endlessWriteHeader(&w, 1);
-	endlessWriteRec(&w, rec);
-	if (w.n != total)
+	Config config;
+	config_init(&config);
+	ConfigSection *section = config_add_section(&config, "endless", "run");
+	if (section == NULL)
 	{
-		free(out);
+		config_deinit(&config);
 		return false;
 	}
-	*bytes = out;
-	*size = total;
+	endlessRecToSection(section, rec);
+
+	const size_t need = config_write_buffer(&config, NULL, 0);
+	char *out = malloc(need + 1);
+	if (out == NULL)
+	{
+		config_deinit(&config);
+		return false;
+	}
+	config_write_buffer(&config, out, need);
+	out[need] = '\0';
+	config_deinit(&config);
+
+	*text = out;
+	*size = need;
 	return true;
+}
+
+static bool endlessTextDecode(const char *text, size_t size, EndlessSlotRec *rec)
+{
+	if (text == NULL)
+		return false;
+	Config config;
+	if (!config_parse_buffer(&config, text, size))
+		return false;
+	const ConfigSection *section = config_find_section(&config, "endless", "run");
+	const bool okay = section != NULL;
+	if (okay)
+		endlessRecFromSection(rec, section);
+	config_deinit(&config);
+	return okay;
 }
 
 static void endlessTestDetail(char *detail, size_t detailSize, const char *message)
@@ -784,6 +1076,8 @@ static void endlessTestDetail(char *detail, size_t detailSize, const char *messa
 		snprintf(detail, detailSize, "%s", message);
 }
 
+/* Prove a legacy fixture still migrates: the sentinels the generator baked in come out, the record
+ * then survives the text codec byte-for-byte, and no truncated or random legacy image is accepted. */
 bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 {
 	if (detail != NULL && detailSize != 0)
@@ -816,7 +1110,7 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 
 	EndlessSlotRec first, second;
 	int version = 0;
-	if (!endlessTestDecode(bytes, (size_t)fileSize, &first, &version))
+	if (!endlessLegacyDecode(bytes, (size_t)fileSize, &first, &version))
 	{
 		free(bytes);
 		endlessTestDetail(detail, detailSize, "fixture did not decode");
@@ -856,25 +1150,25 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 		return false;
 	}
 
-	Uint8 *encoded1 = NULL, *encoded2 = NULL;
+	char *encoded1 = NULL, *encoded2 = NULL;
 	size_t encoded1Size = 0, encoded2Size = 0;
-	if (!endlessTestEncode(&first, &encoded1, &encoded1Size)
-	    || !endlessTestDecode(encoded1, encoded1Size, &second, NULL)
-	    || !endlessTestEncode(&second, &encoded2, &encoded2Size)
+	if (!endlessTextEncode(&first, &encoded1, &encoded1Size)
+	    || !endlessTextDecode(encoded1, encoded1Size, &second)
+	    || !endlessTextEncode(&second, &encoded2, &encoded2Size)
 	    || encoded1Size != encoded2Size || memcmp(encoded1, encoded2, encoded1Size) != 0)
 	{
 		free(bytes); free(encoded1); free(encoded2);
-		endlessTestDetail(detail, detailSize, "current-format round trip is unstable");
+		endlessTestDetail(detail, detailSize, "text round trip is unstable");
 		return false;
 	}
 	free(encoded1);
 	free(encoded2);
 
-	/* Every strict prefix must fail cleanly. Sanitizers enforce the memory-safety half. */
+	/* Every strict prefix of the legacy image must fail cleanly. */
 	for (size_t cut = 0; cut < (size_t)fileSize; ++cut)
 	{
 		EndlessSlotRec junk;
-		if (endlessTestDecode(bytes, cut, &junk, NULL))
+		if (endlessLegacyDecode(bytes, cut, &junk, NULL))
 		{
 			free(bytes);
 			endlessTestDetail(detail, detailSize, "truncated fixture was accepted");
@@ -893,7 +1187,7 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 	memcpy(oversized, bytes, (size_t)fileSize);
 	memset(oversized + fileSize, 0xa5, oversizedSize - (size_t)fileSize);
 	EndlessSlotRec oversizedRec;
-	if (!endlessTestDecode(oversized, oversizedSize, &oversizedRec, NULL))
+	if (!endlessLegacyDecode(oversized, oversizedSize, &oversizedRec, NULL))
 	{
 		free(oversized); free(bytes);
 		endlessTestDetail(detail, detailSize, "oversized input damaged the valid prefix");
@@ -913,17 +1207,18 @@ bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize)
 			fuzz[i] = (Uint8)(rng >> 24);
 		}
 		EndlessSlotRec junk;
-		(void)endlessTestDecode(fuzz, n, &junk, NULL);
+		(void)endlessLegacyDecode(fuzz, n, &junk, NULL);
+		(void)endlessTextDecode((const char *)fuzz, n, &junk);
 	}
 
 	free(bytes);
 	return true;
 }
 
-/* Prove both directions on a record this build wrote: a narrower file keeps everything it did
- * carry, a wider one is read without its unknown tail, and a file shorter than it claims still
- * fails. */
-bool endlessSaveTestWidthGuard(char *detail, size_t detailSize)
+/* Prove the text codec on a record this build made: every field survives a round trip, a key the
+ * reader does not know is ignored, a key it does not find reads as its zero, and a hand-edited
+ * value outside the wallet range is clamped. */
+bool endlessSaveTestTextCodec(char *detail, size_t detailSize)
 {
 	if (detail != NULL && detailSize != 0)
 		detail[0] = '\0';
@@ -932,155 +1227,250 @@ bool endlessSaveTestWidthGuard(char *detail, size_t detailSize)
 	memset(&rec, 0, sizeof(rec));
 	rec.used = true;
 	rec.runDepth = 91;
-	rec.courseCnt = 1;
-	rec.courseEp[0] = 1;
+	rec.courseCnt = 2;
+	rec.courseEp[0] = 3;
+	rec.courseEp[1] = 5;
+	rec.courseSec[1] = 7;
+	rec.courseMod[1] = 0x8000000000000001ull;
 	rec.shuffleNext = 12;
-	SDL_strlcpy(rec.seed, "width-guard", sizeof(rec.seed));
+	rec.shopEntryCash = 4000000000LL;
+	rec.rerollCost2 = 123456789012LL;
+	rec.cashEarned = 5000000000ull;
+	rec.cashBySink[ENDLESS_SINK_GEAR] = 77;
+	rec.perkTakenBy[1][PERK_SPECIALCD] = 2;
+	rec.playerRng[0] = 0xF00DF00DF00DF00Dull;
+	rec.itemAvailMax[3] = 2;
+	rec.itemAvail[3][0] = 40;
+	rec.itemAvail[3][1] = 41;
+	rec.partnerValid = 1;
+	rec.partnerSeat = 1;
+	rec.partnerAvailMax[0] = 1;
+	rec.partnerAvail[0][0] = 9;
+	rec.partnerRng = 0x1122334455667788ull;
+	rec.lockedSortie = 1;
+	rec.sortieMods = 0x4000000000000002ull;
+	rec.sortieEp = 2;
+	SDL_strlcpy(rec.seed, "text-codec", sizeof(rec.seed));
+	SDL_strlcpy(rec.gambleMsg2, "it's 'quoted'", sizeof(rec.gambleMsg2));
 
-	Uint8 *whole = NULL;
-	size_t wholeSize = 0;
-	if (!endlessTestEncode(&rec, &whole, &wholeSize))
-	{
-		endlessTestDetail(detail, detailSize, "encode failed");
-		return false;
-	}
-
-	const size_t width = wholeSize - ENDLESS_HEADER_BYTES;
-	const size_t step = 4;   // stands in for a field one of the two builds has and the other does not
-	Uint8 *narrow = malloc(wholeSize - step);
-	Uint8 *wide = malloc(wholeSize + step);
-	Uint8 *again = NULL;
-	size_t againSize = 0;
+	char *text = NULL;
+	size_t size = 0;
 	EndlessSlotRec back;
 	const char *fault = NULL;
 
-	if (width <= step || narrow == NULL || wide == NULL)
+	if (!endlessTextEncode(&rec, &text, &size))
+		fault = "encode failed";
+	else if (!endlessTextDecode(text, size, &back))
+		fault = "decode failed";
+	else if (memcmp(&rec, &back, sizeof(rec)) != 0)
+		fault = "a field did not survive the round trip";
+	free(text);
+	text = NULL;
+
+	if (fault == NULL)
 	{
-		fault = "fixture allocation failed";
+		Config config;
+		config_init(&config);
+		ConfigSection *section = config_add_section(&config, "endless", "run");
+		endlessRecToSection(section, &rec);
+		config_set_string_option(section, "not_a_field", "ignored");
+		config_remove_option(section, "run_kills");
+		config_set_string_option(section, "p1_shop_entry_cash", "-5");
+		config_set_string_option(section, "p2_reroll_cost", "junk");
+		endlessRecFromSection(&back, section);
+		config_deinit(&config);
+		if (back.runDepth != 91 || back.runKills != 0 || back.shopEntryCash != 0 || back.rerollCost2 != 0)
+			fault = "an unknown, missing or malformed key was not defaulted";
 	}
-	else
-	{
-		memcpy(narrow, whole, wholeSize - step);
-		narrow[6] = (Uint8)((width - step) & 0xFF);
-		narrow[7] = (Uint8)(((width - step) >> 8) & 0xFF);
-
-		memcpy(wide, whole, wholeSize);
-		memset(wide + wholeSize, 0xa5, step);   // the unknown tail, which must not be read
-		wide[6] = (Uint8)((width + step) & 0xFF);
-		wide[7] = (Uint8)(((width + step) >> 8) & 0xFF);
-	}
-
-	if (fault == NULL && !(endlessTestDecode(narrow, wholeSize - step, &back, NULL)
-	                       && endlessTestEncode(&back, &again, &againSize)
-	                       && againSize == wholeSize
-	                       && memcmp(again + ENDLESS_HEADER_BYTES, whole + ENDLESS_HEADER_BYTES,
-	                                 width - step) == 0))
-	{
-		fault = "a narrower record did not pad";
-	}
-	free(again);
-	again = NULL;
-
-	if (fault == NULL && !(endlessTestDecode(wide, wholeSize + step, &back, NULL)
-	                       && endlessTestEncode(&back, &again, &againSize)
-	                       && againSize == wholeSize
-	                       && memcmp(again, whole, wholeSize) == 0))
-	{
-		fault = "a wider record was not trimmed";
-	}
-	free(again);
-
-	if (fault == NULL && endlessTestDecode(whole, wholeSize - 1, &back, NULL))
-		fault = "a record shorter than the header claims was accepted";
-
-	free(narrow);
-	free(wide);
-	free(whole);
 
 	if (fault != NULL)
 		endlessTestDetail(detail, detailSize, fault);
 	return fault == NULL;
 }
 
-// Read the whole sidecar in. Any file-level problem leaves it as "no endless save".
-static Uint8 *endlessReadSaveFile(size_t *size)
+/* opentyrian.sav carries one 'endless' section per slot with a run; config.c parses and writes the
+ * file and hands the Config here for the Endless half. A slot without a section holds no run. */
+void endlessSaveConfigRead(Config *config)
 {
-	FILE *f = dir_fopen(get_user_directory(), ENDLESS_SAVE_FILE, "rb");
-	if (f == NULL)
-		return NULL;
+	memset(endlessSlotCache, 0, sizeof(endlessSlotCache));
+	if (config == NULL)
+		return;
+	for (int s = 0; s < SAVE_FILES_NUM; ++s)
+	{
+		char name[8];
+		snprintf(name, sizeof(name), "%d", s + 1);
+		const ConfigSection *section = config_find_section(config, "endless", name);
+		if (section != NULL && saveFiles[s].level != 0)   // read after the campaign slots
+			endlessRecFromSection(&endlessSlotCache[s], section);
+	}
+}
+
+void endlessSaveConfigWrite(Config *config)
+{
+	for (int s = 0; s < SAVE_FILES_NUM; ++s)
+	{
+		// A run belongs to the campaign slot it was saved with; an empty slot carries none.
+		if (!endlessSlotCache[s].used || saveFiles[s].level == 0)
+			continue;
+		char name[8];
+		snprintf(name, sizeof(name), "%d", s + 1);
+		ConfigSection *section = config_add_section(config, "endless", name);
+		if (section == NULL)
+			exit(EXIT_FAILURE);  // out of memory
+		endlessRecToSection(section, &endlessSlotCache[s]);
+	}
+}
+
+/* Parse the binary sidecar an older build left behind into `out` (SAVE_FILES_NUM records, only the
+ * slots whose campaign half holds a game). The file itself is left in place. */
+static int endlessSaveLegacyParse(FILE *f, EndlessSlotRec *out)
+{
+	memset(out, 0, sizeof(*out) * SAVE_FILES_NUM);
 
 	fseek(f, 0, SEEK_END);
 	const long end = ftell(f);
 	rewind(f);
 
-	Uint8 *bytes = (end > 0 && end <= ENDLESS_FILE_MAX) ? malloc((size_t)end) : NULL;
+	Uint8 *bytes = (end > 0 && end <= ENDLESS_LEGACY_FILE_MAX) ? malloc((size_t)end) : NULL;
 	if (bytes != NULL && fread(bytes, 1, (size_t)end, f) != (size_t)end)
 	{
 		free(bytes);
 		bytes = NULL;
 	}
-	fclose(f);
-
-	*size = (bytes != NULL) ? (size_t)end : 0;
-	return bytes;
-}
-
-// Load all slot records. Any sidecar-level error marks the optional cache unused.
-static void endlessReadAllSlots(void)
-{
-	memset(endlessSlotCache, 0, sizeof(endlessSlotCache));
-
-	size_t size = 0;
-	Uint8 *const bytes = endlessReadSaveFile(&size);
 	if (bytes == NULL)
-		return;
+		return 0;
 
-	EndlessReader rd = { bytes, bytes + size };
+	EndlessReader rd = { bytes, bytes + end };
 	EndlessSaveHeader h;
-	if (endlessReadHeader(&rd, &h))   // accepts v3 and up; anything else is "no endless save"
+	int loaded = 0;
+	if (endlessLegacyReadHeader(&rd, &h))
 	{
-		// Say so rather than quietly loading half a run: a width this build does not share means
-		// the records carry fields it does not know about, or lack ones it expects.
-		if (h.width != 0 && h.width != endlessRecordWidth())
-		{
-			fprintf(stderr, "warning: endless save holds %d-byte records, this build writes %d\n",
-			        h.width, endlessRecordWidth());
-		}
-
 		for (int s = 0; s < h.slots; ++s)
 		{
 			EndlessSlotRec rec;
-			if (!endlessReadOneRec(&rd, &h, &rec))
+			if (!endlessLegacyReadOneRec(&rd, &h, &rec))
 				break;  // truncated: keep the full records already read
-			if (s < SAVE_FILES_NUM)
-				endlessSlotCache[s] = rec;
+			if (s < SAVE_FILES_NUM && saveFiles[s].level != 0)   // read after the campaign slots
+				out[s] = rec;
+			++loaded;
 		}
 	}
-
 	free(bytes);
+	return loaded;
 }
 
-// Write the fixed-layout slot cache.
-static void endlessWriteAllSlots(void)
+static int endlessSaveLegacyParsePath(const char *dir, const char *path, EndlessSlotRec *out)
 {
-	const size_t total = (size_t)ENDLESS_HEADER_BYTES
-	                   + (size_t)SAVE_FILES_NUM * (size_t)endlessRecordWidth();
-	Uint8 *const bytes = malloc(total);
-	if (bytes == NULL)
-		return;
+	FILE *f = (dir != NULL) ? dir_fopen(dir, path, "rb") : fopen(path, "rb");
+	if (f == NULL)
+		return 0;
+	const int loaded = endlessSaveLegacyParse(f, out);
+	fclose(f);
+	return loaded;
+}
 
-	EndlessWriter w = { bytes, bytes + total, 0 };
-	endlessWriteHeader(&w, SAVE_FILES_NUM);
+// The first launch without opentyrian.sav: every slot's half comes from the sidecar.
+bool endlessSaveLegacyLoad(void)
+{
+	const int loaded = endlessSaveLegacyParsePath(get_user_directory(), ENDLESS_LEGACY_SAVE_FILE, endlessSlotCache);
+	if (loaded > 0)
+		printf("Imported %d Endless slot records from the old %s.\n", loaded, ENDLESS_LEGACY_SAVE_FILE);
+	return loaded > 0;
+}
+
+/* opentyrian.sav exists but a slot named for an Endless zone has no run behind it, and the old
+ * sidecar still does: take that slot's half from there. This is the state an import that could not
+ * read the sidecar leaves, and a run without its half replays one level. Returns whether any slot
+ * was repaired. */
+static bool endlessSaveRepairFrom(const char *dir, const char *path)
+{
+	int wanted = 0;
 	for (int s = 0; s < SAVE_FILES_NUM; ++s)
-		endlessWriteRec(&w, &endlessSlotCache[s]);
+		if (saveFiles[s].level != 0 && !endlessSlotCache[s].used
+		    && strncmp(saveFiles[s].levelName, "ZONE ", 5) == 0)
+			++wanted;
+	if (wanted == 0)
+		return false;
 
-	FILE *f = dir_fopen_warn(get_user_directory(), ENDLESS_SAVE_FILE, "wb");
-	if (f != NULL)
+	EndlessSlotRec *legacy = calloc(SAVE_FILES_NUM, sizeof(*legacy));
+	if (legacy == NULL)
+		return false;
+	int repaired = 0;
+	if (endlessSaveLegacyParsePath(dir, path, legacy) > 0)
 	{
-		fwrite(bytes, 1, w.n, f);
-		fclose(f);
+		for (int s = 0; s < SAVE_FILES_NUM; ++s)
+		{
+			if (saveFiles[s].level == 0 || endlessSlotCache[s].used || !legacy[s].used
+			    || strncmp(saveFiles[s].levelName, "ZONE ", 5) != 0)
+				continue;
+			endlessSlotCache[s] = legacy[s];
+			++repaired;
+		}
 	}
+	free(legacy);
+	if (repaired > 0)
+		printf("Restored %d Endless run(s) that %s was missing from the old %s.\n",
+		       repaired, SAVE_FILE_NAME, ENDLESS_LEGACY_SAVE_FILE);
+	return repaired > 0;
+}
+
+bool endlessSaveRepairFromLegacy(void)
+{
+	return endlessSaveRepairFrom(get_user_directory(), ENDLESS_LEGACY_SAVE_FILE);
+}
+
+bool endlessSaveLegacyTestImport(const char *path)
+{
+	return endlessSaveLegacyParsePath(NULL, path, endlessSlotCache) > 0;
+}
+
+bool endlessSaveLegacyTestRepair(const char *path)
+{
+	return endlessSaveRepairFrom(NULL, path);
+}
+
+/* A sidecar from a build past v27: the same record with fields appended and the header saying so.
+ * Built here from the v27 fixture, since no such build is kept. */
+bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detailSize)
+{
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	FILE *f = fopen(v27Path, "rb");
+	if (f == NULL)
+	{
+		endlessTestDetail(detail, detailSize, "v27 fixture missing");
+		return false;
+	}
+	fseek(f, 0, SEEK_END);
+	const long fileSize = ftell(f);
+	rewind(f);
+	const size_t extra = 112;   // fourteen 64-bit fields, as the v28 files seen in the wild carried
+	Uint8 *bytes = (fileSize > ENDLESS_LEGACY_HEADER_BYTES && fileSize < 65536)
+	             ? malloc((size_t)fileSize + extra) : NULL;
+	if (bytes == NULL || fread(bytes, 1, (size_t)fileSize, f) != (size_t)fileSize)
+	{
+		free(bytes);
+		fclose(f);
+		endlessTestDetail(detail, detailSize, "v27 fixture read failed");
+		return false;
+	}
+	fclose(f);
+
+	const size_t width = (size_t)fileSize - ENDLESS_LEGACY_HEADER_BYTES + extra;
+	bytes[4] = ENDLESS_LEGACY_VERSION_MAX + 1;
+	bytes[6] = (Uint8)(width & 0xFF);
+	bytes[7] = (Uint8)((width >> 8) & 0xFF);
+	memset(bytes + fileSize, 0xa5, extra);
+
+	EndlessSlotRec rec;
+	const bool okay = endlessLegacyDecode(bytes, (size_t)fileSize + extra, &rec, NULL)
+	               && rec.used && rec.runDepth == 42 && rec.armorBonus == 7
+	               && rec.partnerValid == 1 && rec.partnerRng == 0x1122334455667788ull;
 	free(bytes);
+	if (!okay)
+		endlessTestDetail(detail, detailSize, "the v27 prefix of a newer record did not import");
+	return okay;
 }
 
 /* The partner's half of a save, as their machine reported it over the save acknowledgement:
@@ -1166,12 +1556,12 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 		r->perkTakenBy[1][i] = (i < PERK_COUNT) ? endlessPerkTakenBy[1][i] : 0;
 	}
 
-	r->rerollCost    = (Sint32)endlessRerollCost[0];
+	r->rerollCost    = endlessRerollCost[0];
 	r->hullCost      = endlessHullCost[0];
-	r->bombCost      = (Sint32)endlessBombCost[0];
-	r->extraPerkCost = (Sint32)endlessExtraPerkCost[0];
-	r->cleanseCost   = (Sint32)endlessCleanseCost[0];
-	r->shopEntryCash = (Sint32)endlessShopEntryCash[0];
+	r->bombCost      = endlessBombCost[0];
+	r->extraPerkCost = endlessExtraPerkCost[0];
+	r->cleanseCost   = endlessCleanseCost[0];
+	r->shopEntryCash = endlessShopEntryCash[0];
 	r->purchasedMods = endlessPurchasedMods[0];
 	r->buffKind      = endlessBuffKind[0];
 	r->cleanseCharges= endlessCleanseChargeCount[0];
@@ -1190,12 +1580,12 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->buffKind2      = endlessBuffKind[1];
 	r->buffCharge2    = endlessBuffCharge[1];
 	r->buffCooldownUntil2 = endlessBuffCooldownUntil[1];
-	r->rerollCost2    = (Sint32)endlessRerollCost[1];
+	r->rerollCost2    = endlessRerollCost[1];
 	r->hullCost2      = endlessHullCost[1];
-	r->bombCost2      = (Sint32)endlessBombCost[1];
-	r->extraPerkCost2 = (Sint32)endlessExtraPerkCost[1];
-	r->cleanseCost2   = (Sint32)endlessCleanseCost[1];
-	r->shopEntryCash2 = (Sint32)endlessShopEntryCash[1];
+	r->bombCost2      = endlessBombCost[1];
+	r->extraPerkCost2 = endlessExtraPerkCost[1];
+	r->cleanseCost2   = endlessCleanseCost[1];
+	r->shopEntryCash2 = endlessShopEntryCash[1];
 	r->superbombs2    = (Sint32)player[1].superbombs;
 	r->cleanseCharges2= endlessCleanseChargeCount[1];
 	r->purchasedMods2 = endlessPurchasedMods[1];
@@ -1205,6 +1595,9 @@ static void endlessCaptureCurrent(EndlessSlotRec *r)
 	r->downed[1]      = endlessPlayerDowned[1] ? 1 : 0;
 	r->playerRng[0]   = endlessPlayerRngState[0];
 	r->playerRng[1]   = endlessPlayerRngState[1];
+	r->gamblePerkWon2 = endlessGamblePerkWon[1] ? 1 : 0;
+	SDL_strlcpy(r->gambleMsg2, endlessGambleMsg[1], sizeof(r->gambleMsg2));
+	SDL_strlcpy(r->lastSpecialName2, endlessLastSpecialName[1], sizeof(r->lastSpecialName2));
 
 	r->perkChoiceN = endlessPerkChoiceN;
 	for (int i = 0; i < ENDLESS_SAVE_OFFERS; ++i)
@@ -1351,6 +1744,9 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessGambleRigged[1]       = r->gambleRigged2 != 0;
 	endlessPlayerDowned[0]       = r->downed[0] != 0;
 	endlessPlayerDowned[1]       = r->downed[1] != 0;
+	endlessGamblePerkWon[1]      = r->gamblePerkWon2 != 0;
+	SDL_strlcpy(endlessGambleMsg[1], r->gambleMsg2, sizeof(endlessGambleMsg[1]));
+	SDL_strlcpy(endlessLastSpecialName[1], r->lastSpecialName2, sizeof(endlessLastSpecialName[1]));
 	endlessSetSeed(r->seed);  // restore the run seed (endlessResetRun blanked it); rehashes + primes the stream
 	// ...then put each player's own draw stream back where the save left it, so a resumed outpost
 	// deals the same next hand. A pre-v21 record has none: endlessSetSeed already primed a pair.
@@ -1434,25 +1830,17 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessResumeVisit = true;  // next outpost: restore this snapshot, do not reroll
 }
 
-void endlessSaveSlot(JE_byte slot)
+/* JE_saveGame calls this for the slot it is about to write, so the Endless half of the slot leaves
+ * with the campaign half in the same file write. Hardcore is refused in JE_saveGame before this
+ * runs, which keeps whatever record the slot held. */
+void endlessSaveCaptureSlot(JE_byte slot)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM)
 		return;
-
-	// The data-level half of the Hardcore no-save rule (the other half is JE_saveGame).
-	// A plain no-op, not the clear branch: JE_saveGame refused too, so whatever record
-	// the slot held before the attempt is still there and still owns its sidecar.
-	if (endlessMode && endlessHardcore())
-		return;
-
-	endlessReadAllSlots();
 	if (endlessMode)
 		endlessCaptureCurrent(&endlessSlotCache[slot - 1]);
-	else if (endlessSlotCache[slot - 1].used)
-		endlessSlotCache[slot - 1].used = false;  // a normal save over an endless slot drops its stale record
 	else
-		return;  // campaign save over a non-endless slot: nothing to store or clear
-	endlessWriteAllSlots();
+		endlessSlotCache[slot - 1].used = false;  // a normal save over an endless slot drops its stale record
 }
 
 /* One player's own half of the outpost, as the other machine needs to see it. Fixed width and
@@ -1468,11 +1856,10 @@ int endlessPackPlayerBlock(Uint8 *buf, uint p)
 	buf[n++] = endlessPlayerDowned[p] ? 1 : 0;
 	buf[n++] = (Uint8)MIN(player[p].superbombs, 10u);
 
-	const Sint32 fields[12] = {
+	const Sint32 fields[9] = {
 		endlessArmorBonus[p], (Sint32)endlessPurchasedMods[p], endlessBuffKind[p],
 		endlessBuffCharge[p], endlessBuffCooldownUntil[p], endlessCleanseChargeCount[p],
 		endlessLongCon[p], endlessShopTax[p], endlessRevivesUsed[p],
-		(Sint32)endlessRerollCost[p], endlessHullCost[p], (Sint32)endlessShopEntryCash[p],
 	};
 	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
 	{
@@ -1482,6 +1869,11 @@ int endlessPackPlayerBlock(Uint8 *buf, uint p)
 		buf[n + 2] = (Uint8)(v >> 8);
 		buf[n + 3] = (Uint8)v;
 	}
+	// The three prices that scale with the wallet travel at the wallet's width.
+	const Sint64 prices[3] = { endlessRerollCost[p], endlessHullCost[p], endlessShopEntryCash[p] };
+	for (unsigned i = 0; i < COUNTOF(prices); ++i)
+		for (int b = 7; b >= 0; --b)
+			buf[n++] = (Uint8)((Uint64)prices[i] >> (8 * b));
 
 	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS; ++i)
 		buf[n++] = (i < PERK_COUNT) ? endlessPerkTakenBy[p][i] : 0;
@@ -1509,11 +1901,19 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	const uint bombs = buf[n++];   // MIN evaluates twice, so the read has to happen first
 	player[p].superbombs = MIN(bombs, 10u);
 
-	Sint32 fields[12];
+	Sint32 fields[9];
 	for (unsigned i = 0; i < COUNTOF(fields); ++i, n += 4)
 	{
 		fields[i] = (Sint32)(((Uint32)buf[n] << 24) | ((Uint32)buf[n + 1] << 16)
 		                     | ((Uint32)buf[n + 2] << 8) | (Uint32)buf[n + 3]);
+	}
+	Sint64 prices[3];
+	for (unsigned i = 0; i < COUNTOF(prices); ++i)
+	{
+		Uint64 v = 0;
+		for (int b = 0; b < 8; ++b)
+			v = (v << 8) | buf[n++];
+		prices[i] = (Sint64)v;
 	}
 
 	endlessArmorBonus[p]         = fields[0];
@@ -1525,9 +1925,9 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessLongCon[p]            = fields[6];
 	endlessShopTax[p]            = fields[7];
 	endlessRevivesUsed[p]        = fields[8];
-	endlessRerollCost[p]         = fields[9];
-	endlessHullCost[p]           = fields[10];
-	endlessShopEntryCash[p]      = fields[11];
+	endlessRerollCost[p]         = prices[0];
+	endlessHullCost[p]           = prices[1];
+	endlessShopEntryCash[p]      = cash_clamp(prices[2]);
 
 	for (int i = 0; i < ENDLESS_PLAYER_BLOCK_PERKS && i < PERK_COUNT; ++i)
 	{
@@ -1546,10 +1946,9 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessShuffleSyncHand(p, (hand > ENDLESS_SHUFFLE_POSITION_MAX) ? 0 : (int)hand);
 }
 
-/* Online co-op resume: the host serializes the live run through the same versioned codec the
- * sidecar uses and the joiner adopts it, so both machines resume from byte-identical state.
- * Each machine's own shop stock is redrawn from the seed rather than sent (see "Endless online"
- * in doc/notes.md). */
+/* Online co-op resume: the host serializes the live run as the same text a save slot holds and the
+ * joiner adopts it, so both machines resume from identical state. Each machine's own shop stock is
+ * redrawn from the seed rather than sent (see "Endless online" in doc/notes.md). */
 size_t endlessRunSerialize(Uint8 *out, size_t max)
 {
 	if (!endlessMode || out == NULL)
@@ -1558,22 +1957,22 @@ size_t endlessRunSerialize(Uint8 *out, size_t max)
 	EndlessSlotRec rec;
 	endlessCaptureCurrent(&rec);
 
-	Uint8 *bytes = NULL;
+	char *text = NULL;
 	size_t size = 0;
-	if (!endlessTestEncode(&rec, &bytes, &size) || size > max)
+	if (!endlessTextEncode(&rec, &text, &size) || size > max)
 	{
-		free(bytes);
+		free(text);
 		return 0;
 	}
-	memcpy(out, bytes, size);
-	free(bytes);
+	memcpy(out, text, size);
+	free(text);
 	return size;
 }
 
 bool endlessRunAdopt(const Uint8 *bytes, size_t len)
 {
 	EndlessSlotRec rec;
-	if (bytes == NULL || !endlessTestDecode(bytes, len, &rec, NULL) || !rec.used)
+	if (bytes == NULL || !endlessTextDecode((const char *)bytes, len, &rec) || !rec.used)
 		return false;
 
 	endlessApplyCurrent(&rec);
@@ -1617,7 +2016,6 @@ bool endlessSlotHasRun(JE_byte slot)
 {
 	if (slot < 1 || slot > SAVE_FILES_NUM)
 		return false;
-	endlessReadAllSlots();
 	return endlessSlotCache[slot - 1].used;
 }
 
@@ -1626,7 +2024,6 @@ bool endlessLoadSlot(JE_byte slot)
 	if (slot < 1 || slot > SAVE_FILES_NUM)
 		return false;
 
-	endlessReadAllSlots();
 	if (!endlessSlotCache[slot - 1].used)
 		return false;
 

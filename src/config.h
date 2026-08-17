@@ -28,10 +28,12 @@
 
 #define SAVE_FILES_NUM (11 * 2)
 
-/* Legacy record sizes are required to locate fields in TYRIAN.SAV. */
-#define SAVE_FILES_SIZE 2552
-#define SIZEOF_SAVEGAMETEMP SAVE_FILES_SIZE + 4 + 100
-#define SAVE_FILE_SIZE (SIZEOF_SAVEGAMETEMP - 4)
+/* The plain-text save file beside opentyrian.cfg. The DOS-era tyrian.sav (encrypted, checksummed,
+ * fixed record widths) is read once to migrate and never written; see "Saves and records" in
+ * doc/notes.md. */
+#define SAVE_FILE_NAME        "opentyrian.sav"
+#define SAVE_FILE_LEGACY_NAME "tyrian.sav"
+#define SAVE_FILE_FORMAT      1   // bumped when a key changes meaning; a missing key is a default
 
 enum
 {
@@ -70,15 +72,14 @@ typedef JE_byte MouseSettings[3];
 
 typedef JE_byte JE_PItemsType[12]; /* [1..12] */
 
-typedef JE_byte JE_EditorItemAvailType[100]; /* [1..100] */
-
+/* One save slot. A slot with level 0 is empty. Slots 12-22 hold two full loadouts: lastItems is
+ * then player two's, and dualShipTag says which two-ship session wrote it. */
 typedef struct
 {
-	JE_word       encode;
 	JE_word       level;
 	JE_PItemsType items;
-	JE_longint    score;
-	JE_longint    score2;
+	Sint64        score;   // player 1 cash
+	Sint64        score2;  // player 2 cash
 	char          levelName[11]; /* string [9]; */ /* SYN: Added one more byte to match lastLevelName below */
 	JE_char       name[15]; /* [1..14] */ /* SYN: Added extra byte for null */
 	JE_byte       cubes;
@@ -92,11 +93,9 @@ typedef struct
 	JE_boolean    gameHasRepeated; /*See if you went from one episode to another*/
 	JE_byte       initialDifficulty;
 
-	/* High Scores - Each episode has both sets of 1&2 player selections - with 3 in each */
-	JE_longint    highScore1;
-	JE_longint    highScore2;  // unused
-	char          highScoreName[30]; /* string [29] */
-	JE_byte       highScoreDiff;
+	/* Zero for a one-ship record. A two-complete-ships record carries a co-op or dual-arcade tag in
+	 * the high half and the powers and modes the two loadout blocks cannot hold in the low half. */
+	Uint32        dualShipTag;
 	JE_boolean    autoFireSpecial;
 	JE_byte       chargeSidekickAutofire;
 	JE_boolean    difficultyAdjust;
@@ -107,12 +106,10 @@ typedef struct
 } JE_SaveFileType;
 
 typedef JE_SaveFileType JE_SaveFilesType[SAVE_FILES_NUM]; /* [1..savefilesnum] */
-typedef JE_byte JE_SaveGameTemp[SAVE_FILES_SIZE + 4 + 100]; /* [1..sizeof(savefilestype) + 4 + 100] */
 
 typedef struct
 {
-	// Tyrian 2000 uses a different high scores struct and appends it to TYRIAN.SAV
-	JE_longint    score;
+	Sint64        score;
 	char          playerName[30];
 	JE_byte       difficulty;
 } T2KHighScoreType;
@@ -135,11 +132,10 @@ enum
 
 /* Online co-op Campaign leaves its own board: an arcade pair and a campaign pair earn on
  * completely different economies, so mixing them into the shared two-player table would compare
- * two things that are not comparable. One best run per episode, kept in opentyrian.cfg rather
- * than in tyrian.sav's fixed high-score block. */
+ * two things that are not comparable. One best run per episode, kept in opentyrian.cfg. */
 typedef struct
 {
-	Sint32 score;      // the two players' combined cash
+	Sint64 score;      // the two players' combined cash
 	char   name[30];   // both player names, as the lobby knew them
 	Uint8  difficulty;
 	Uint8  credit;     // one of COOP_CREDIT_*, the scale the score was earned on
@@ -155,13 +151,11 @@ const char *coopCampaignCreditName(Uint8 credit);
 // Record the finished run if it beats that episode's standing best.
 void coopCampaignScoreNote(void);
 
-extern const JE_byte cryptKey[10];
 extern const DosKeySettings defaultDosKeySettings;  // fka defaultKeySettings
 extern const KeySettings defaultKeySettings;
 extern const MouseSettings defaultMouseSettings;
 extern char defaultHighScoreNames[39][23];
 extern char defaultTeamNames[10][25];
-extern const JE_EditorItemAvailType initialItemAvail;
 extern JE_boolean smoothies[9];
 extern JE_byte starShowVGASpecialCode;
 extern JE_word lastCubeMax, cubeMax;
@@ -261,8 +255,6 @@ extern JE_boolean pentiumMode;
 extern JE_byte gameSpeed;
 extern JE_byte processorType;
 extern JE_SaveFilesType saveFiles;
-extern JE_SaveGameTemp saveTemp;
-extern JE_word editorLevel;
 extern int fps_cap;
 
 /* Enhancement settings. */
@@ -468,7 +460,7 @@ void JE_loadGame(JE_byte slot);
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP);
 
 // Fixed little-endian packed form of a save record, used by the network resume handshake.
-#define SAVE_RECORD_PACKED_SIZE 81
+#define SAVE_RECORD_PACKED_SIZE 89
 void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec);
 void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf);
 bool save_record_is_coop(const JE_SaveFileType *rec);
@@ -483,7 +475,9 @@ uint save_record_sa_ship(const JE_SaveFileType *rec, uint p);
 uint save_slot_online_player(JE_byte slot);
 void save_slot_set_online_player(JE_byte slot, uint playerNum);
 
-void JE_encryptSaveTemp(void);
-void JE_decryptSaveTemp(void);
+/* Save-codec regression hooks (qa.c): the slot codec's round trip and defaults, and a legacy
+ * tyrian.sav imported from an explicit path over the live tables. */
+bool save_file_test_codec(char *detail, size_t detailSize);
+bool save_legacy_test_import(const char *path);
 
 #endif /* CONFIG_H */

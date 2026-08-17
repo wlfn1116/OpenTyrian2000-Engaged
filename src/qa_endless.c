@@ -12,6 +12,7 @@
 #include "varz.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ---- session harness ---------------------------------------------------------------- */
@@ -36,8 +37,7 @@ typedef struct
 	int buffKind[2], buffCharge[2], buffCooldown[2], turbo[2], combo[2], stacks[2];
 	int armorBonus[2], revivesUsed[2], cleanse[2], shopTax[2], longCon[2];
 	bool downed[2], reviveHeld[2], rigged[2];
-	long rerollCost[2], entryCash[2];
-	int hullCost[2];
+	Sint64 rerollCost[2], entryCash[2], hullCost[2];
 	Uint64 rngState[2];
 }
 QaEndlessEnv;
@@ -563,14 +563,14 @@ static void qa_ram_kill_row(int killer, int evalue, int tiles, JE_byte linknum, 
 		enemy[i].eliteState = (JE_byte)((eliteState >= 2) ? eliteState : 0);
 	}
 
-	const ulong before0 = player[0].cash;
-	const ulong before1 = player[1].cash;
+	const Sint64 before0 = player[0].cash;
+	const Sint64 before1 = player[1].cash;
 	const JE_word killedBefore = enemyKilled;
 
 	enemy_kill_group(0, killer, killer);
 
-	*out_paid0 = (long)player[0].cash - (long)before0;
-	*out_paid1 = (long)player[1].cash - (long)before1;
+	*out_paid0 = (long)(player[0].cash - before0);
+	*out_paid1 = (long)(player[1].cash - before1);
 	*out_killed = (int)(enemyKilled - killedBefore);
 
 	*out_dropped = false;
@@ -769,7 +769,7 @@ static void qa_reactive_state_matrix(void)
 	endlessPerkGrant(1, PERK_CHAINRXN, 1);
 
 	const bool savedCombo = endlessCoopComboShared;
-	const ulong savedCash[2] = { player[0].cash, player[1].cash };
+	const Sint64 savedCash[2] = { player[0].cash, player[1].cash };
 	coop_set_session_double_earnings(false);   // it would scale every figure below
 
 	const int worth = 500;
@@ -1021,10 +1021,10 @@ static void qa_outpost_matrix(void)
 		/* A reroll is the acting player's alone: their cash, their escalating price, their
 		 * shelves. The partner's price must not climb because someone else rerolled. */
 		endlessResetShopPrices();
-		const long priceBefore = endlessRerollPrice();
-		const long partnerBefore = endlessRerollCost[them];
-		player[me].cash = (ulong)priceBefore * 4;
-		player[them].cash = (ulong)priceBefore * 4;
+		const Sint64 priceBefore = endlessRerollPrice();
+		const Sint64 partnerBefore = endlessRerollCost[them];
+		player[me].cash = priceBefore * 4;
+		player[them].cash = priceBefore * 4;
 		endlessCashResync();
 		const bool bought = endlessTryReroll();
 		snprintf(label, sizeof(label), "machine %d can afford its reroll", local + 1);
@@ -1937,7 +1937,6 @@ static void qa_scenario_suite(void)
 		memset(&saveFiles[22 - 1], 0x5a, sizeof(saveFiles[22 - 1]));
 		marked = saveFiles[22 - 1];
 		JE_saveGame(22, "HARDCORE QA");
-		endlessSaveSlot(22);
 		qa_check(memcmp(&marked, &saveFiles[22 - 1], sizeof(marked)) == 0,
 		         "Hardcore: a mid-run save attempt leaves the record untouched at the data level");
 		saveFiles[22 - 1] = original;
@@ -2005,15 +2004,15 @@ static void qa_resume_partner_matrix(void)
 	block[9 + 90 + 7] = 0x34;
 	endlessPartnerOutpostStash(1, block);
 
-	Uint8 wire[ENDLESS_RUN_WIRE_MAX];
-	const size_t wireLen = endlessRunSerialize(wire, sizeof(wire));
+	Uint8 *const wire = malloc(ENDLESS_RUN_WIRE_MAX);   // off the stack: the text record is kilobytes
+	const size_t wireLen = wire ? endlessRunSerialize(wire, ENDLESS_RUN_WIRE_MAX) : 0;
 	qa_check(wireLen > 0, "a run with a stashed partner half serializes");
 
 	// The other machine: seat two adopts and gets its own half back, rows and stream.
 	qa_session(1);
 	memset(itemAvail, 0x77, sizeof(itemAvail));
 	endlessPlayerRngState[1] = 1;
-	qa_check(endlessRunAdopt(wire, wireLen)
+	qa_check(wire != NULL && endlessRunAdopt(wire, wireLen)
 	         && itemAvail[0][0] == 9 && itemAvail[0][1] == 12 && itemAvailMax[0] == 2
 	         && endlessPlayerRngState[1] == 0x1234u,
 	         "the adopted record hands seat two its own half of the outpost");
@@ -2023,11 +2022,12 @@ static void qa_resume_partner_matrix(void)
 	endlessPartnerOutpostClear();
 	itemAvail[0][0] = 5;
 	itemAvailMax[0] = 1;
-	const size_t bareLen = endlessRunSerialize(wire, sizeof(wire));
+	const size_t bareLen = wire ? endlessRunSerialize(wire, ENDLESS_RUN_WIRE_MAX) : 0;
 	qa_session(1);
 	qa_check(bareLen > 0 && endlessRunAdopt(wire, bareLen)
 	         && itemAvail[0][0] == player[1].items.ship,
 	         "without a half the rows are redealt around this seat's own gear");
+	free(wire);
 
 	endlessPartnerOutpostClear();
 	endlessSetSeed(seedSaved);

@@ -863,7 +863,7 @@ void endlessTakePerk(int i)
 
 // Cash paid for declining the pick ("Take the Cash"). The constants, and the reasoning behind each
 // term, are in endless_internal.h.
-long endlessPerkDeclineBonus(void)
+Sint64 endlessPerkDeclineBonus(void)
 {
 	// A thinned pool never pays less than a standard slate; milestone slates pay proportionally more.
 	const int offers = endlessClamp(endlessPerkChoiceN, ENDLESS_PERK_OFFERS, ENDLESS_PERK_OFFERS_MILESTONE);
@@ -871,9 +871,7 @@ long endlessPerkDeclineBonus(void)
 	if (surcharge > ENDLESS_PERK_DECLINE_OWNED_CAP)
 		surcharge = ENDLESS_PERK_DECLINE_OWNED_CAP;
 
-	// Stepwise, dividing as it goes: the deepest runs cap the base at 60000, and folding four
-	// multipliers together before any divide would push the intermediate past a 32-bit long.
-	long cash = endlessClearBase() * ENDLESS_PERK_DECLINE_MULT / 10;
+	Sint64 cash = endlessClearBase() * ENDLESS_PERK_DECLINE_MULT / 10;
 	cash = cash * offers / ENDLESS_PERK_OFFERS;
 	cash = cash * (100 + surcharge) / 100;
 

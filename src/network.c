@@ -1,4 +1,4 @@
-﻿/*
+/*
  * OpenTyrian: A modern cross-platform port of Tyrian
  * Copyright (C) 2007-2009  The OpenTyrian Development Team
  *
@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       62           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       63           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1589,7 +1589,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 		if (networkDisconnectSavePrompt(err_msg[err]))
 		{
 			// Save the pre-level outpost state, not partial progress from the interrupted level.
-			// The Endless run rides its own sidecar and the load clears the mode flag, so read it
+			// The load clears the mode flag before the slot's Endless half is read back, so read it
 			// first; without this the re-save keeps no run at all.
 			const bool was_endless = endlessMode;
 			JE_loadGameRecord(&saveFiles[22 - 1], true);
@@ -2211,10 +2211,10 @@ static Uint16 network_shop_send_packet(Uint16 flags, Uint16 acknowledge)
 	SDLNet_Write16(coopEndlessMode ? (Uint16)(endlessCoopCourse + 1) : mainLevel,
 	               &packet_out_temp->data[10]);
 	SDLNet_Write16(jumpSection ? 1 : 0, &packet_out_temp->data[12]);
-	SDLNet_Write32(this_player->cash, &packet_out_temp->data[14]);
-	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[18]);
-	SDLNet_Write16(acknowledge, &packet_out_temp->data[20]);
-	int len = 22 + network_shop_pack_items(&packet_out_temp->data[22], &this_player->items);
+	net_bytes_write64((Uint64)this_player->cash, &packet_out_temp->data[14]);
+	SDLNet_Write16((Uint16)this_player->weapon_mode, &packet_out_temp->data[22]);
+	SDLNet_Write16(acknowledge, &packet_out_temp->data[24]);
+	int len = 26 + network_shop_pack_items(&packet_out_temp->data[26], &this_player->items);
 	if (coopEndlessMode)
 		len += endlessPackPlayerBlock(&packet_out_temp->data[len], thisPlayerNum - 1);
 	// The save acknowledgement carries this machine's own outpost, its stock rows and the
@@ -3276,7 +3276,7 @@ bool network_shop_pump(void)
 	if (SDLNet_Read16(&packet_in[0]->data[0]) != PACKET_SHOP_SYNC)
 		return false;
 
-	if (packet_in[0]->len >= 35)
+	if (packet_in[0]->len >= 39)
 	{
 		const uint sender = SDLNet_Read16(&packet_in[0]->data[4]);
 		const Uint16 sequence = SDLNet_Read16(&packet_in[0]->data[6]);
@@ -3285,12 +3285,12 @@ bool network_shop_pump(void)
 			Player *const peer = &player[sender - 1];
 			const Uint16 flags = SDLNet_Read16(&packet_in[0]->data[8]);
 			network_shop_peer_sequence = sequence;
-			peer->cash = SDLNet_Read32(&packet_in[0]->data[14]);
-			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[18]);
-			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[22]);
+			player_set_cash(peer, (Sint64)net_bytes_read64(&packet_in[0]->data[14]));
+			peer->weapon_mode = SDLNet_Read16(&packet_in[0]->data[22]);
+			const int item_size = network_shop_unpack_items(&peer->items, &packet_in[0]->data[26]);
 			peer->last_items = peer->items;
-			if (coopEndlessMode && packet_in[0]->len >= 22 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
-				endlessUnpackPlayerBlock(&packet_in[0]->data[22 + item_size], sender - 1);
+			if (coopEndlessMode && packet_in[0]->len >= 26 + item_size + ENDLESS_PLAYER_BLOCK_SIZE)
+				endlessUnpackPlayerBlock(&packet_in[0]->data[26 + item_size], sender - 1);
 
 			network_shop_peer_ready = (flags & SHOP_SYNC_DONE) != 0;
 			network_shop_peer_lock  = (flags & SHOP_SYNC_LOCK) != 0;
@@ -3321,11 +3321,11 @@ bool network_shop_pump(void)
 			if (flags & SHOP_SYNC_SAVE_REQUEST)
 				network_shop_send_packet(SHOP_SYNC_SAVE_ACK, sequence);
 			if ((flags & SHOP_SYNC_SAVE_ACK) &&
-			    SDLNet_Read16(&packet_in[0]->data[20]) == network_shop_save_request)
+			    SDLNet_Read16(&packet_in[0]->data[24]) == network_shop_save_request)
 			{
 				/* The peer's own outpost trails the acknowledgement; stash it so the save
 				 * being written captures both halves (see "Online saves" in doc/notes.md). */
-				const int tail = 22 + item_size + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
+				const int tail = 26 + item_size + (coopEndlessMode ? ENDLESS_PLAYER_BLOCK_SIZE : 0);
 				if (coopEndlessMode && packet_in[0]->len >= tail + ENDLESS_OUTPOST_BLOCK_SIZE)
 					endlessPartnerOutpostStash(sender - 1, &packet_in[0]->data[tail]);
 
@@ -3524,9 +3524,9 @@ void network_settings_restore(void)
 #define NDS_CHARGEAF  13    /* Uint8:  chargeSidekickAutofire             */
 #define NDS_TWIDDLE   14    /* Uint8:  debugTwiddleSpecial                */
 #define NDS_ITEMS     16    /* 2 x PlayerItems                            */
-#define NDS_CASH      42    /* 2 x Uint32                                 */
-#define NDS_ARMOR     50    /* Uint16 armor, shield, per player           */
-#define NDS_EXPERT    58    /* NDS_EXPERT_SLOTS x Uint16                  */
+#define NDS_CASH      42    /* 2 x Sint64                                 */
+#define NDS_ARMOR     58    /* Uint16 armor, shield, per player           */
+#define NDS_EXPERT    66    /* NDS_EXPERT_SLOTS x Uint16                  */
 #define NDS_EXPERT_SLOTS NETWORK_EXPERT_SLOTS
 #define NDS_SIZE      (NDS_EXPERT + NDS_EXPERT_SLOTS * 2)
 
@@ -3563,7 +3563,7 @@ void network_debug_state_pack(Uint8 *buf)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		memcpy(&buf[NDS_ITEMS + i * sizeof(PlayerItems)], &player[i].items, sizeof(PlayerItems));
-		SDLNet_Write32((Uint32)player[i].cash, &buf[NDS_CASH + i * 4]);
+		net_bytes_write64((Uint64)player[i].cash, &buf[NDS_CASH + i * 8]);
 		SDLNet_Write16((Uint16)player[i].armor,  &buf[NDS_ARMOR + i * 4]);
 		SDLNet_Write16((Uint16)player[i].shield, &buf[NDS_ARMOR + i * 4 + 2]);
 	}
@@ -3591,7 +3591,7 @@ void network_debug_state_adopt(const Uint8 *buf, bool in_level)
 	for (uint i = 0; i < COUNTOF(player); ++i)
 	{
 		memcpy(&player[i].items, &buf[NDS_ITEMS + i * sizeof(PlayerItems)], sizeof(PlayerItems));
-		player[i].cash   = SDLNet_Read32(&buf[NDS_CASH + i * 4]);
+		player_set_cash(&player[i], (Sint64)net_bytes_read64(&buf[NDS_CASH + i * 8]));
 		player[i].armor  = SDLNet_Read16(&buf[NDS_ARMOR + i * 4]);
 		player[i].shield = SDLNet_Read16(&buf[NDS_ARMOR + i * 4 + 2]);
 	}
@@ -3687,7 +3687,8 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 		HASH_WORD(player[i].armor);
 		HASH_WORD(player[i].shield);
 		HASH_WORD(player[i].is_alive ? 1 : 0);
-		HASH_WORD(player[i].cash);
+		HASH_WORD((Uint32)player[i].cash);
+		HASH_WORD((Uint32)((Uint64)player[i].cash >> 32));
 	}
 	/* The linked turret direction is shared simulation state but is not stored on either Player.
 	 * Cover it explicitly so a missing input field is reported before differently aimed shots hit
@@ -3854,7 +3855,7 @@ void network_sim_detail(NetSimDetail *out)
 		out->p[i].armor  = (Sint32)player[i].armor;
 		out->p[i].shield = (Sint32)player[i].shield;
 		out->p[i].alive  = player[i].is_alive ? 1 : 0;
-		out->p[i].cash   = (Sint32)player[i].cash;
+		out->p[i].cash   = player[i].cash;
 	}
 
 	out->enemy_count = 0;

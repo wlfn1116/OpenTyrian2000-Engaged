@@ -2,6 +2,7 @@
 /originaldostyriandata/
 
 opentyrian.cfg
+opentyrian.sav
 tyrian.cfg
 tyrian.sav
 
@@ -74,6 +75,7 @@ tyrian.sav
 /testing/*.log
 /testing/log/
 /testing/*.sav
+!/testing/fixtures/legacy/*.sav
 /rollback_selftest.log
 /endless.sav
 /testing/guest

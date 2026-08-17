@@ -29,8 +29,8 @@ extern bool button[4]; // fire, left fire, right fire, mode swap
 
 extern JE_shortint constantLastX;
 extern JE_word textErase;
-extern ulong upgradeCost;
-extern ulong downgradeCost;
+extern Sint64 upgradeCost;
+extern Sint64 downgradeCost;
 extern JE_boolean performSave;
 extern JE_boolean jumpSection;
 extern JE_boolean useLastBank;
@@ -109,10 +109,10 @@ void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y);
 Uint16 rb_move_bits(int dx, int dy);
 void rb_move_dir(Uint16 bits, int *out_dx, int *out_dy);
 
-long weapon_upgrade_cost(long base_cost, unsigned int power);
-ulong JE_getCost(JE_byte itemType, JE_word itemNum);
-JE_longint JE_getValue(JE_byte itemType, JE_word itemNum);
-ulong JE_totalScore(const Player *);
+Sint64 weapon_upgrade_cost(Sint64 base_cost, unsigned int power);
+Sint64 JE_getCost(JE_byte itemType, JE_word itemNum);
+Sint64 JE_getValue(JE_byte itemType, JE_word itemNum);
+Sint64 JE_totalScore(const Player *);
 
 void JE_drawPortConfigButtons(void);
 void JE_outCharGlow(JE_word x, JE_word y, const char *s);

@@ -65,6 +65,14 @@
 # removed, every other edit in the commit kept: all three hashes and the layout hash came back at
 # the previous line's values, so neither the latch nor the wider blast moves the demos. Neither
 # can: the perk is Endless-only and the shipped demos never fire a pulse.
-1 180 011bacff
-2 180 9d4cc6fe
-3 180 a80e3471
+# Regenerated 2026-08-17, for a snapshot-shape change with no simulation change behind it:
+# wallets are 64-bit, so Player.cash grew from Uint32 to Sint64 (every field after it in the
+# registered player[] item shifts) and the endless ledger mark (endless.cashMark) became a fixed
+# Sint64 instead of a platform-sized ulong. Verified by building with only those two declarations
+# put back to their old types, every other edit in the commit kept: all three hashes and the layout
+# hash (17b900cb) came back at the previous line's values, so the saturating wallet arithmetic and
+# the wider prices move none of the demos. They cannot: a shipped demo's cash never leaves the
+# range both widths hold.
+1 180 59a5b4cf
+2 180 685e791e
+3 180 0c8616b1

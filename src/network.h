@@ -73,6 +73,23 @@ static inline Uint32 net_bytes_read32(const void *areap)
 #endif
 #endif
 
+// The 64-bit pair, big-endian and byte-wise like the ones above; wallets travel with these.
+static inline void net_bytes_write64(Uint64 value, void *areap)
+{
+	Uint8 *area = (Uint8 *)areap;
+	for (int i = 0; i < 8; ++i)
+		area[i] = (Uint8)(value >> (56 - 8 * i));
+}
+
+static inline Uint64 net_bytes_read64(const void *areap)
+{
+	const Uint8 *area = (const Uint8 *)areap;
+	Uint64 value = 0;
+	for (int i = 0; i < 8; ++i)
+		value = (value << 8) | area[i];
+	return value;
+}
+
 // Covers the 48-byte rollback header plus sixteen 14-byte redundant input records.
 #define NET_PACKET_SIZE   320
 #define NET_PACKET_QUEUE  16
@@ -460,7 +477,8 @@ void network_sim_state(Uint32 *rand_draws, Uint32 *player_hash, Uint32 *enemy_ha
 // Raw fields behind network_sim_state(), captured for line-by-line desync reports.
 typedef struct
 {
-	Sint32 x, y, armor, shield, alive, cash;
+	Sint32 x, y, armor, shield, alive;
+	Sint64 cash;
 }
 NetSimPlayerRow;
 

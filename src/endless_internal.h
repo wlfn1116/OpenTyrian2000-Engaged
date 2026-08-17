@@ -275,9 +275,9 @@ bool endlessAdrenalineActive(void);           // Adrenaline owned and armor belo
 
 /* Outpost state. Everything indexed [2] is one player's own; solo runs use slot 0 alone. Each
  * machine owns its local player's slot and mirrors the peer's from the shop packet. */
-extern long endlessRerollCost[2];     // escalating outpost prices, reset each visit
-extern int  endlessHullCost[2];
-extern long endlessShopEntryCash[2];  // cash on entering the shop; the E-Shop cash-fraction buys price off this
+extern Sint64 endlessRerollCost[2];   // escalating outpost prices, reset each visit
+extern Sint64 endlessHullCost[2];
+extern Sint64 endlessShopEntryCash[2];  // cash on entering the shop; the E-Shop cash-fraction buys price off this
 
 // Purchased kill-fire modifiers are folded in after course selection; both players' are.
 extern unsigned endlessPurchasedMods[2];
@@ -293,7 +293,7 @@ int endlessBuffChargePaid(void);      // the current ship's own charge, which al
 extern bool endlessReviveHeld[2];          // a held revive token survives one lethal hit
 extern int  endlessRevivesUsed[2];         // revives spent this run (the price doubles per use)
 extern int  endlessCleanseChargeCount[2];  // pre-bought strips of the worst mutator off the next course
-extern long endlessBombCost[2], endlessExtraPerkCost[2], endlessCleanseCost[2];
+extern Sint64 endlessBombCost[2], endlessExtraPerkCost[2], endlessCleanseCost[2];
 extern char endlessGambleMsg[2][48];       // last gamble outcome, for the E-Shop help line
 extern bool endlessGamblePerkWon[2];       // a gamble handed out a free perk pick; the dispatch opens MENU_PERKS
 extern int  endlessShopTax[2];             // Loan Shark: permanent +% on every shop price for the rest of the run
@@ -302,9 +302,9 @@ extern int  endlessLongCon[2];             // The Long Con: sectors until a paid
 extern bool endlessResumeVisit;            // a save was just loaded: the next outpost restores its snapshot
 extern bool endlessCreditsShown;           // the zone-100 credits roll already played this run (rides the save)
 
-long   endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
-long   endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
-long   endlessClearBonusForEx(Uint64 mods, int payoutMille);
+Sint64 endlessClearBase(void);              // the depth-scaled unit every endless payout is built from
+Sint64 endlessClearBonusFor(Uint64 mods);   // clear payout for an ARBITRARY modifier set at the current depth
+Sint64 endlessClearBonusForEx(Uint64 mods, int payoutMille);
 int    endlessSortiePayoutMille(void);
 Uint64 endlessStripWorstMod(Uint64 mods);   // strip the single most-dangerous hostile bit (one per cleanse charge)
 

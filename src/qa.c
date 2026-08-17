@@ -797,8 +797,8 @@ static void qa_test_shuffle_reroll_and_resume(void)
 
 		/* The peer derives the chart from the reroll count alone, so it has to land on the same
 		 * piece. Player two hosting the resumed run changes neither. */
-		Uint8 wire[ENDLESS_RUN_WIRE_MAX];
-		const size_t wireLen = endlessRunSerialize(wire, sizeof(wire));
+		Uint8 *const wire = malloc(ENDLESS_RUN_WIRE_MAX);   // off the stack: the text record is kilobytes
+		const size_t wireLen = wire ? endlessRunSerialize(wire, ENDLESS_RUN_WIRE_MAX) : 0;
 		qa_check(wireLen > 0, "a Shuffle run serializes for a resuming peer");
 
 		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
@@ -822,8 +822,9 @@ static void qa_test_shuffle_reroll_and_resume(void)
 		isNetworkGame = true;
 		qa_reset_course_inputs(seed, depth, DIFFICULTY_NORMAL);
 		endlessMode = true;
-		qa_check(endlessRunAdopt(wire, wireLen) && endlessShuffleNext == afterReroll,
+		qa_check(wire != NULL && endlessRunAdopt(wire, wireLen) && endlessShuffleNext == afterReroll,
 		         "a resumed run draws the piece it was owed, whichever seat is hosting");
+		free(wire);
 		thisPlayerNum = savedSeat;
 		network_is_host = savedHost;
 		coopEndlessMode = savedCoop;
@@ -1518,7 +1519,7 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
 	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 81
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 89
 #ifdef WITH_NETWORK
 	         && NETWORK_SETTINGS_SIZE == 48
 #endif
@@ -1533,14 +1534,13 @@ static void qa_test_save_record_wire(void)
 	Uint8 *const packed = guarded + 1;
 
 	memset(&src, 0, sizeof(src));
-	src.encode = 0xaaaa;
 	src.level = 0x1234;
 	for (unsigned i = 0; i < sizeof(src.items); ++i)
 	{
 		src.items[i] = (JE_byte)(i * 7 + 1);
 		src.lastItems[i] = (JE_byte)(255 - i * 9);
 	}
-	src.score = -1234567;
+	src.score = 4000000000LL;   // past the old 32-bit wallet
 	src.score2 = 0x76543210;
 	strcpy(src.levelName, "QA LEVEL");
 	strcpy(src.name, "WIRE PLAYER");
@@ -1549,8 +1549,7 @@ static void qa_test_save_record_wire(void)
 	src.episode = 5; src.difficulty = DIFFICULTY_LORD_OF_GAME;
 	src.secretHint = 3; src.input1 = 1; src.input2 = 2;
 	src.gameHasRepeated = true; src.initialDifficulty = DIFFICULTY_HARD;
-	src.highScore1 = 0x11111111; src.highScore2 = (JE_longint)0xc74f4321u;
-	strcpy(src.highScoreName, "NOT SENT"); src.highScoreDiff = 9;
+	src.dualShipTag = 0xc74f4321u;
 	src.autoFireSpecial = true; src.chargeSidekickAutofire = 2;
 	src.difficultyAdjust = true; src.cheatInfiniteSidekickAmmo = true;
 	src.cheatInfiniteShields = false; src.cheatInfiniteArmor = true; src.expertMode = true;
@@ -1558,14 +1557,13 @@ static void qa_test_save_record_wire(void)
 	memset(guarded, 0xa5, sizeof(guarded));
 	save_record_pack(packed, &src);
 	qa_check(guarded[0] == 0xa5 && guarded[sizeof(guarded) - 1] == 0xa5,
-	         "save-record packing writes exactly its fixed 81-byte frame");
+	         "save-record packing writes exactly its fixed 89-byte frame");
 	save_record_unpack(&dst, packed);
 	save_record_pack(repacked, &dst);
 	qa_check(memcmp(packed, repacked, sizeof(repacked)) == 0,
 	         "network save record pack/unpack round-trips every serialized field");
-	qa_check(dst.encode == 0 && dst.highScore1 == 0 && dst.highScore2 == src.highScore2
-	         && dst.highScoreName[0] == '\0' && dst.highScoreDiff == 0,
-	         "network save record preserves campaign data and clears non-wire metadata");
+	qa_check(dst.score == src.score && dst.score2 == src.score2 && dst.dualShipTag == src.dualShipTag,
+	         "network save record carries 64-bit wallets and the dual-ship tag");
 	qa_check(save_record_is_coop(&dst),
 	         "network save record preserves the Online Campaign type marker");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
@@ -1574,8 +1572,8 @@ static void qa_test_save_record_wire(void)
 	         "network save record preserves all boolean gameplay flags");
 
 	/* Hostile fixed-width strings still have to become safe C strings on receipt. */
-	memset(packed + 38, 'L', 11);
-	memset(packed + 49, 'N', 15);
+	memset(packed + 46, 'L', 11);
+	memset(packed + 57, 'N', 15);
 	save_record_unpack(&dst, packed);
 	qa_check(dst.levelName[sizeof(dst.levelName) - 1] == '\0'
 	         && dst.name[sizeof(dst.name) - 1] == '\0',
@@ -1612,7 +1610,7 @@ static void qa_test_save_slot_seats(void)
 static void qa_test_cash_ledger(void)
 {
 	const bool savedMode = endlessMode;
-	const Uint32 savedCash = player[0].cash;
+	const Sint64 savedCash = player[0].cash;
 	const Uint64 savedEarned = endlessRunCashEarned, savedSpent = endlessRunCashSpent;
 	Uint64 savedSources[ENDLESS_CASH_SOURCES], savedSinks[ENDLESS_CASH_SINKS];
 	memcpy(savedSources, endlessCashBySource, sizeof(savedSources));
@@ -1656,7 +1654,7 @@ static void qa_test_cash_ledger(void)
 	endlessCashDebit(2000, ENDLESS_SINK_SUPPLIES);
 	qa_check(player[0].cash == 0 && endlessRunCashSpent == 1050
 	         && endlessCashBySink[ENDLESS_SINK_SUPPLIES] == 1050
-	         && endlessRunCashEarned - endlessRunCashSpent == player[0].cash,
+	         && endlessRunCashEarned - endlessRunCashSpent == (Uint64)player[0].cash,
 	         "oversized cash debit stops at the wallet and preserves ledger conservation");
 
 	endlessMode = savedMode;
@@ -1840,7 +1838,7 @@ static void qa_test_zone_payout(void)
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkRederive();
 
-	ulong out[2][2];
+	Sint64 out[2][2];
 	for (uint machine = 1; machine <= 2; ++machine)
 	{
 		thisPlayerNum = machine;
@@ -1849,7 +1847,7 @@ static void qa_test_zone_payout(void)
 		player[0].cash = 10000;
 		player[1].cash = 40000;
 		endlessCashResync();
-		long interest = 0, bonus = 0;
+		Sint64 interest = 0, bonus = 0;
 		endlessApplyLevelPayout(&interest, &bonus);
 		out[machine - 1][0] = player[0].cash;
 		out[machine - 1][1] = player[1].cash;
@@ -2383,7 +2381,7 @@ static void qa_test_reinforced_prow_perk(void)
 	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
 	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
 	const JE_word savedKilled = enemyKilled;
-	const ulong savedCash = player[0].cash;
+	const Sint64 savedCash = player[0].cash;
 	const Uint64 savedEarned = endlessRunCashEarned, savedSpent = endlessRunCashSpent;
 	Uint64 savedSources[ENDLESS_CASH_SOURCES], savedSinks[ENDLESS_CASH_SINKS];
 	memcpy(savedSources, endlessCashBySource, sizeof(savedSources));
@@ -2445,7 +2443,7 @@ static void qa_test_reinforced_prow_perk(void)
 	enemy[0].armorleft = 1;
 	enemy[0].enemytype = 1;
 	enemy[0].evalue = 300;
-	const ulong loneCash = player[0].cash;
+	const Sint64 loneCash = player[0].cash;
 	const JE_word loneKilled = enemyKilled;
 	enemy_kill_group(0, 0, 0);
 	qa_check(enemyAvail[0] == 1 && player[0].cash == loneCash + 300 && enemyKilled == loneKilled + 1,
@@ -2467,7 +2465,7 @@ static void qa_test_reinforced_prow_perk(void)
 	enemy[3].linknum = 9;
 	enemy[3].armorleft = 5;
 	enemy[3].enemytype = 1;
-	const ulong hullCash = player[0].cash;
+	const Sint64 hullCash = player[0].cash;
 	enemy_kill_group(1, 0, 0);
 	qa_check(enemyAvail[0] == 1 && enemyAvail[1] == 1 && enemyAvail[2] == 1 && enemyAvail[3] == 0
 	         && player[0].cash == hullCash + 300,
@@ -4640,7 +4638,7 @@ static void qa_test_coop_combo_and_pickups(void)
 	endlessAwardEliteKill(41, 2, 1);
 	qa_check(player[1].cash > 0 && player[0].cash == 0, "an elite bounty pays the ship that killed it");
 
-	const Uint32 shooterBounty = player[1].cash;
+	const Sint64 shooterBounty = player[1].cash;
 	player[0].cash = player[1].cash = 0;
 	endlessCashResync();
 	endlessAwardEliteKill(42, 2, ENDLESS_KILLER_NONE);
@@ -5732,7 +5730,7 @@ static void qa_test_dual_mode_tag(void)
 	for (uint i = 0; i < COUNTOF(prices); ++i)
 	{
 		char buf[32], label[128];
-		snprintf(buf, sizeof(buf), "Cost: %lu", (ulong)base * prices[i].mult);
+		snprintf(buf, sizeof(buf), "Cost: %lld", (long long)base * (long long)prices[i].mult);
 
 		// The row that carries the marker is the tighter case, so measure against that column.
 		const int markerX = SHOP_ITEM_MARKER_X(true);
@@ -6687,24 +6685,79 @@ static void qa_test_save_fixtures(void)
 	char path[512];
 	char detail[256];
 
-	for (int version = 3; version <= endlessSaveCurrentVersion(); ++version)
+	// Every binary endless.sav an older build could have left must still import.
+	for (int version = 3; version <= endlessSaveLegacyVersionMax(); ++version)
 	{
 		snprintf(path, sizeof(path), "%s/v%02d.sav", qa_fixture_dir, version);
 		detail[0] = '\0';
 		const bool okay = endlessSaveTestFixture(path, detail, sizeof(detail));
 		char label[640];
-		snprintf(label, sizeof(label), "save v%02d load/save/load migration%s%s",
+		snprintf(label, sizeof(label), "legacy endless save v%02d imports and round-trips as text%s%s",
 		         version, detail[0] ? ": " : "", detail);
 		qa_check(okay, label);
 	}
 
-	// ...and the header field that keeps a record whose width moved from taking every later slot
-	// with it, which is the failure the version number alone did not catch.
+	// ...and the text record itself: every field survives, and a stray or missing key costs only itself.
 	detail[0] = '\0';
-	const bool guarded = endlessSaveTestWidthGuard(detail, sizeof(detail));
+	const bool codec = endlessSaveTestTextCodec(detail, sizeof(detail));
 	char label[320];
-	snprintf(label, sizeof(label), "save record width guard%s%s", detail[0] ? ": " : "", detail);
-	qa_check(guarded, label);
+	snprintf(label, sizeof(label), "endless text record codec%s%s", detail[0] ? ": " : "", detail);
+	qa_check(codec, label);
+
+	// The campaign slot codec, the same way.
+	detail[0] = '\0';
+	const bool slots = save_file_test_codec(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "campaign slot codec%s%s", detail[0] ? ": " : "", detail);
+	qa_check(slots, label);
+
+	/* A real pair of files from a build before opentyrian.sav imports over the live tables the way
+	 * first launch does. They sit in the fixture directory's `legacy` sibling. Restored afterwards,
+	 * apart from the endless slot cache, which the suite's own saves overwrite slot by slot. */
+	JE_SaveFilesType savedSlots;
+	T2KHighScoreType savedBoards[20][3];
+	memcpy(savedSlots, saveFiles, sizeof(savedSlots));
+	memcpy(savedBoards, t2kHighScores, sizeof(savedBoards));
+	const bool savedEndless = endlessMode;
+
+	snprintf(path, sizeof(path), "%s/../legacy/tyrian.sav", qa_fixture_dir);
+	qa_check(save_legacy_test_import(path), "a legacy tyrian.sav passes its checksums and imports");
+	qa_check(saveFiles[1].level == 1 && saveFiles[1].score == 999999999
+	         && strcmp(saveFiles[1].name, "TEST ENDLESS  ") == 0 && saveFiles[1].episode == 1
+	         && saveFiles[9].level == 23 && saveFiles[9].score == 96422
+	         && saveFiles[21].level == 4 && saveFiles[21].episode == 4
+	         && strcmp(saveFiles[21].name, "LAST LEVEL    ") == 0 && saveFiles[2].level == 0,
+	         "the imported legacy slots carry their names, levels, episodes and cash");
+	snprintf(path, sizeof(path), "%s/../legacy/endless.sav", qa_fixture_dir);
+	qa_check(endlessSaveLegacyTestImport(path), "a legacy endless.sav imports");
+	// Slot 14 held a run in the sidecar but no campaign game: an orphan, dropped on import.
+	qa_check(endlessSlotHasRun(10) && endlessSlotHasRun(2) && !endlessSlotHasRun(3) && !endlessSlotHasRun(14),
+	         "the imported legacy endless slots pair with the campaign slots that hold runs");
+	qa_check(endlessLoadSlot(10) && endlessRunDepth == 8 && endlessRunKills == 1652,
+	         "an imported legacy endless run resumes at its zone with its kill tally");
+	endlessResetRun();
+	endlessMode = savedEndless;
+
+	/* The repair pass: a save file whose Endless-named slot lost its half (an import that could not
+	 * read the sidecar) gets it back from that sidecar, and only that slot. */
+	endlessMode = false;
+	endlessSaveCaptureSlot(10);   // not in endless mode: clears the half, as such an import left it
+	endlessMode = savedEndless;
+	SDL_strlcpy(saveFiles[9].levelName, "ZONE 9", sizeof(saveFiles[9].levelName));
+	qa_check(!endlessSlotHasRun(10) && endlessSaveLegacyTestRepair(path) && endlessSlotHasRun(10)
+	         && !endlessSlotHasRun(14),
+	         "a slot named for a zone with no run behind it takes its run back from the old sidecar");
+	qa_check(!endlessSaveLegacyTestRepair(path), "the repair pass is a no-op once every zone slot has its run");
+
+	// ...and a sidecar from a build past v27 still gives up the v27 prefix of every record.
+	snprintf(path, sizeof(path), "%s/v27.sav", qa_fixture_dir);
+	detail[0] = '\0';
+	const bool newer = endlessSaveTestNewerLegacy(path, detail, sizeof(detail));
+	snprintf(label, sizeof(label), "a legacy endless.sav newer than v27 imports its known fields%s%s",
+	         detail[0] ? ": " : "", detail);
+	qa_check(newer, label);
+
+	memcpy(saveFiles, savedSlots, sizeof(savedSlots));
+	memcpy(t2kHighScores, savedBoards, sizeof(savedBoards));
 }
 
 int qa_run_unit_suite(void)

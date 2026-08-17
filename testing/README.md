@@ -93,10 +93,20 @@ the processes run so a full pipe cannot stall network service.
 
 ## Save fixtures
 
-Regenerate fixtures only when intentionally changing the migration corpus:
+`fixtures/endless/v03.sav` to `v27.sav` are the binary `endless.sav` formats older
+builds wrote, generated independently of the C reader; the suite proves each one
+still imports and round-trips through the text record. That corpus is closed
+(the game writes `opentyrian.sav` now, and its records need no versions), so the
+generator only ever needs re-running to repair a fixture:
 
 ```sh
 python3 testing/generate_save_fixtures.py
 ```
+
+`fixtures/legacy/` holds a real `tyrian.sav` and `endless.sav` pair from a build
+before `opentyrian.sav`; the suite imports both the way first launch does, checks
+the slots and runs it knows are in them, and exercises the repair that restores a
+zone slot whose Endless section is missing. Replace them only with another pair
+whose contents are checked the same way.
 
 Review the generated records before committing them.

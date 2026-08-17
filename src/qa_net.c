@@ -437,9 +437,9 @@ static void qa_net_endless_holding(uint slot)
 	endlessCleanseChargeCount[slot] = (int)(slot % (ENDLESS_CLEANSE_MAX_CHARGES + 1));
 	endlessShopTax[slot]            = (int)(25 * (slot + 1));
 	endlessLongCon[slot]            = (int)(2 + slot);
-	endlessRerollCost[slot]         = (long)(3000 + slot * 1500);
-	endlessHullCost[slot]           = (int)(2500 + slot * 700);
-	endlessShopEntryCash[slot]      = (long)(180000 + slot * 45000);
+	endlessRerollCost[slot]         = 3000 + slot * 1500;
+	endlessHullCost[slot]           = 2500 + slot * 700;
+	endlessShopEntryCash[slot]      = 180000 + slot * 45000;
 	endlessReviveHeld[slot]         = (slot == 0);
 	endlessGambleRigged[slot]       = (slot == 1);
 	player[slot].superbombs         = (uint)(3 + slot);
@@ -468,9 +468,9 @@ static bool qa_net_endless_holding_matches(uint slot)
 	    && endlessCleanseChargeCount[slot] == (int)(slot % (ENDLESS_CLEANSE_MAX_CHARGES + 1))
 	    && endlessShopTax[slot]            == (int)(25 * (slot + 1))
 	    && endlessLongCon[slot]            == (int)(2 + slot)
-	    && endlessRerollCost[slot]         == (long)(3000 + slot * 1500)
-	    && endlessHullCost[slot]           == (int)(2500 + slot * 700)
-	    && endlessShopEntryCash[slot]      == (long)(180000 + slot * 45000)
+	    && endlessRerollCost[slot]         == 3000 + slot * 1500
+	    && endlessHullCost[slot]           == 2500 + slot * 700
+	    && endlessShopEntryCash[slot]      == 180000 + slot * 45000
 	    && endlessReviveHeld[slot]         == (slot == 0)
 	    && endlessGambleRigged[slot]       == (slot == 1)
 	    && player[slot].superbombs         == (uint)(3 + slot)

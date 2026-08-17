@@ -392,9 +392,12 @@ void JE_getLevelSectionName(int episode, JE_byte section, JE_byte fileNum, char 
 	fclose(f);
 }
 
-JE_longint JE_cashLeft(void)
+/* The wallet less the highlighted item's price and its power ladder: the balance the upgrade menu
+ * previews. Negative while an unaffordable row is highlighted; the assignment back into the wallet
+ * clamps, so a preview can never leave a negative balance behind. */
+Sint64 JE_cashLeft(void)
 {
-	JE_longint tempL = shopPlayer()->cash;
+	Sint64 tempL = shopPlayer()->cash;
 
 	// Only the seven real item rows (curSel 2..8) map to a player item and have a price.
 	// Action rows like "Custom" and "Done" don't; mapping them would index playeritem_map
@@ -413,20 +416,11 @@ JE_longint JE_cashLeft(void)
 	case 3:
 	case 4:
 	{
-		long base_cost = weaponPort[itemNum].cost;
+		Sint64 base_cost = weaponPort[itemNum].cost;
 		if (expertMode)
-		{
-			// matches the power-upgrade scaling in JE_getCost
-			if (base_cost > LONG_MAX / expertUpgradeCostMult)
-				base_cost = LONG_MAX;
-			else
-				base_cost = base_cost * expertUpgradeCostMult;
-		}
+			base_cost = base_cost * expertUpgradeCostMult;  // matches the power-upgrade scaling in JE_getCost
 		for (uint i = 1; i < shopPlayer()->items.weapon[curSel[MENU_UPGRADES] - 3].power; ++i)
-		{
-			long step_cost = weapon_upgrade_cost(base_cost, i);
-			tempL -= step_cost;
-		}
+			tempL -= weapon_upgrade_cost(base_cost, i);
 		break;
 	}
 	}
@@ -1694,8 +1688,8 @@ static void qa_shop_auto_visit(void)
 		/* The zone-end wallets, as this machine derives them. The harness compares these
 		 * lines across the two peers; both machines simulate both wallets, so any
 		 * difference is a payment-rule divergence even before the canary would see it. */
-		printf("NET ZONE WALLETS depth=%d p1=%lu p2=%lu bounty=%llu mods=%016llx\n",
-		       endlessRunDepth, (unsigned long)player[0].cash, (unsigned long)player[1].cash,
+		printf("NET ZONE WALLETS depth=%d p1=%lld p2=%lld bounty=%llu mods=%016llx\n",
+		       endlessRunDepth, (long long)player[0].cash, (long long)player[1].cash,
 		       (unsigned long long)endlessCashBySource[ENDLESS_CASH_BOUNTY],
 		       (unsigned long long)endlessActiveMods);
 		fflush(stdout);
@@ -1761,7 +1755,7 @@ static void qa_shop_auto_visit(void)
 	}
 
 	// A scripted purchase, so every visit exercises the transaction path in both directions.
-	shopPlayer()->cash += 100u + thisPlayerNum;
+	player_add_cash(shopPlayer(), 100 + (Sint64)thisPlayerNum);
 	network_shop_send_transaction();
 
 	if (endlessCoop() && !endlessLockedSortie && !gameLoaded)
@@ -2183,7 +2177,7 @@ void JE_itemScreen(void)
 		{
 			/* Move cursor until we hit either "Done" or a weapon the player can afford */
 			while (curSel[MENU_UPGRADE_SUB] < menuChoices[MENU_UPGRADE_SUB] &&
-				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > (unsigned long)shopPlayer()->cash)
+				JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][curSel[MENU_UPGRADE_SUB] - 2]) > shopPlayer()->cash)
 			{
 				curSel[MENU_UPGRADE_SUB] += lastDirection;
 				if (curSel[MENU_UPGRADE_SUB] < 2)
@@ -2226,8 +2220,8 @@ void JE_itemScreen(void)
 
 					if (rightPower)
 					{
-						JE_longint cash_left = JE_cashLeft();
-						rightPowerAfford = cash_left >= 0 && (ulong)cash_left >= upgradeCost; // can afford upgrade
+						const Sint64 cash_left = JE_cashLeft();
+						rightPowerAfford = cash_left >= upgradeCost; // can afford upgrade
 					}
 				}
 			}
@@ -2270,7 +2264,7 @@ void JE_itemScreen(void)
 				if (tempW < upgradeSubScrollTop || tempW >= upgradeSubScrollTop + visible_rows)
 					continue;  // scrolled out of view
 				int tempY = 40 + (tempW - upgradeSubScrollTop) * 26; /* Calculate y position */
-				unsigned long temp_cost;
+				Sint64 temp_cost;
 
 				/* Item or None/Done. */
 				if (tempW < menuChoices[MENU_UPGRADE_SUB] - 1)
@@ -2284,7 +2278,7 @@ void JE_itemScreen(void)
 					temp_cost = 0;
 				}
 
-				int afford_shade = (temp_cost > (unsigned long)shopPlayer()->cash) ? 4 : 0;  // can player afford current weapon at all
+				int afford_shade = (temp_cost > shopPlayer()->cash) ? 4 : 0;  // can player afford current weapon at all
 
 				temp = itemAvail[itemAvailMap[curSel[MENU_UPGRADES]-2]-1][tempW-1]; /* Item ID */
 				switch (curSel[MENU_UPGRADES]-1)
@@ -2357,7 +2351,7 @@ void JE_itemScreen(void)
 				{
 					char buf[32];
 
-					snprintf(buf, sizeof buf, "Cost: %lu", temp_cost);
+					snprintf(buf, sizeof buf, "Cost: %lld", (long long)temp_cost);
 					JE_textShade(VGAScreen, cols.costX, tempY+10, buf,
 					             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 
@@ -2407,7 +2401,7 @@ void JE_itemScreen(void)
 			{
 				char buf[20];
 
-				snprintf(buf, sizeof buf, "%lu", (unsigned long)shopPlayer()->cash);
+				snprintf(buf, sizeof buf, "%lld", (long long)shopPlayer()->cash);
 				// Centre the cash total in the monitor slot, matching the endless course RANK readout
 				// (same slot, same row) instead of growing rightward from a fixed left edge.
 				// y172: DARKEN draws the body at y+1, so this lands on row 173; level with the RANK.
@@ -2463,9 +2457,9 @@ void JE_itemScreen(void)
 					const size_t who_len = strlen(who);
 
 					if (isNetworkGame && strncmp(label, who, who_len) == 0)
-						snprintf(buf, sizeof(buf), "%s%s %lu", JE_getName(i + 1), label + who_len, (unsigned long)player[i].cash);
+						snprintf(buf, sizeof(buf), "%s%s %lld", JE_getName(i + 1), label + who_len, (long long)player[i].cash);
 					else
-						snprintf(buf, sizeof(buf), "%s %lu", label, (unsigned long)player[i].cash);
+						snprintf(buf, sizeof(buf), "%s %lld", label, (long long)player[i].cash);
 
 					y = draw_2p_info_row(SHOP_2P_X, y, 4, "", buf);
 
@@ -3198,7 +3192,7 @@ void JE_itemScreen(void)
 					if (curMenu == MENU_UPGRADE_SUB &&
 						selection == menuChoices[MENU_UPGRADE_SUB])
 					{
-						shopPlayer()->cash = JE_cashLeft();
+						player_set_cash(shopPlayer(), JE_cashLeft());
 						endlessShopTradeCommit();
 						network_shop_send_transaction();
 						curMenu = MENU_UPGRADES;
@@ -3214,7 +3208,7 @@ void JE_itemScreen(void)
 						else
 						{
 							if (curMenu == MENU_UPGRADE_SUB &&
-								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > (unsigned long)shopPlayer()->cash)
+								JE_getCost(curSel[MENU_UPGRADES], itemAvail[itemAvailMap[curSel[MENU_UPGRADES] - 2] - 1][selection - 2]) > shopPlayer()->cash)
 							{
 								JE_playSampleNum(S_CLINK);
 							}
@@ -3344,7 +3338,7 @@ void JE_itemScreen(void)
 					{
 						shopPlayer()->items = old_items[shopPlayerIndex];
 						curSel[MENU_UPGRADE_SUB] = lastCurSel;
-						shopPlayer()->cash = JE_cashLeft();
+						player_set_cash(shopPlayer(), JE_cashLeft());
 						endlessShopTradeCommit();
 						network_shop_send_transaction();
 					}
@@ -4932,7 +4926,7 @@ void JE_drawMainMenuHelpText(void)
 			{
 			case 2:
 				SDL_strlcpy(tempStr, "Reroll the shop stock.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessRerollPrice());
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessRerollPrice());
 				break;
 			case 4:
 				if (endlessHullMaxed())
@@ -4940,7 +4934,7 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Permanently boost max armor.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%d", endlessHullPrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessHullPrice());
 				}
 				break;
 			case 7:
@@ -4953,7 +4947,7 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Each kill quickens your guns.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessTurbodrivePrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessTurbodrivePrice());
 				}
 				break;
 			case 8:
@@ -4966,7 +4960,7 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Each kill stacks your shot damage.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessOverblastPrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessOverblastPrice());
 				}
 				break;
 			case 9:
@@ -4979,7 +4973,7 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Turbodrive + Overblast together.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessOverdrivePrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessOverdrivePrice());
 				}
 				break;
 			case 6:
@@ -4987,7 +4981,7 @@ void JE_drawMainMenuHelpText(void)
 					snprintf(tempStr, sizeof(tempStr), "Got %s!  Buy another:", endlessLastGrantedSpecial());
 				else
 					SDL_strlcpy(tempStr, "Buy a random special weapon.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessSpecialPrice());
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessSpecialPrice());
 				break;
 			case 11:  // Buy Bomb
 				if (endlessBombFull())
@@ -4995,7 +4989,7 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Stock an extra bomb.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessBombPrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessBombPrice());
 				}
 				break;
 			case 10:  // Revive Token
@@ -5004,12 +4998,12 @@ void JE_drawMainMenuHelpText(void)
 				else
 				{
 					SDL_strlcpy(tempStr, "Survive one lethal hit.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessRevivePrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessRevivePrice());
 				}
 				break;
 			case 5:  // Extra Perk
 				SDL_strlcpy(tempStr, "Pick a bonus perk now, from four.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessExtraPerkPrice());
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessExtraPerkPrice());
 				break;
 			case 3:  // Sabotage Sector
 				// Maxed prints no price, like Hull/Bombs: a cost next to an unbuyable row reads as a
@@ -5022,7 +5016,7 @@ void JE_drawMainMenuHelpText(void)
 						snprintf(tempStr, sizeof(tempStr), "%d strip(s) queued.  Buy more:", endlessCleanseCharges());
 					else
 						SDL_strlcpy(tempStr, "Strip the next sector's worst danger.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%ld", endlessCleansePrice());
+					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessCleansePrice());
 				}
 				break;
 			case 12:  // Gamble
@@ -5030,7 +5024,7 @@ void JE_drawMainMenuHelpText(void)
 					SDL_strlcpy(tempStr, endlessGambleResult(), sizeof(tempStr));
 				else
 					SDL_strlcpy(tempStr, "Roll the dice: fortune or ruin.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessGamblePrice());
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessGamblePrice());
 				break;
 			default:
 				SDL_strlcpy(tempStr, "Return to the buy/sell menu.", sizeof(tempStr));
@@ -5060,7 +5054,7 @@ void JE_drawMainMenuHelpText(void)
 			else if (curSel[MENU_PERKS] == menuChoices[MENU_PERKS])
 			{
 				SDL_strlcpy(tempStr, "Take no perk: depth and perks pay more.", sizeof(tempStr));
-				snprintf(costStr, sizeof(costStr), "$%ld", endlessPerkDeclineBonus());
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessPerkDeclineBonus());
 			}
 			else
 			{
@@ -5112,7 +5106,7 @@ void JE_drawMainMenuHelpText(void)
 		// '~' is a brightness toggle in this font renderer, never drawn (see fonthand.c), so keep
 		// it out of format strings; an earlier "~$%ld" here shifted the palette bank and corrupted
 		// the digits rather than printing a tilde.
-		snprintf(costStr, sizeof(costStr), "$%ld", endlessCoursePayout(temp));
+		snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessCoursePayout(temp));
 	}
 	else if (temp == menuChoices[curMenu] - 2 ||
 	         (curMenu == MENU_DATA_CUBES && cubeMax == 0))
@@ -5466,7 +5460,7 @@ void JE_drawScore(void)
 	char cl[24];
 	if (curMenu == MENU_UPGRADE_SUB)
 	{
-		sprintf(cl, "%d", JE_cashLeft());
+		sprintf(cl, "%lld", (long long)JE_cashLeft());
 		// Centre on the monitor slot at the same row the main shop draws the cash total (see the
 		// MENU_MONITOR_CENTER_X / y172 draw in JE_menuFunction), so the readout stays put instead
 		// of jumping to a fixed left edge when the weapon-sim submenu takes over the display.
@@ -9721,7 +9715,7 @@ void JE_menuFunction(JE_byte select)
 			// NOTE for endless: the wallet is deliberately FAKE between Begin and those exits, so no
 			// credit, debit, or audit may run in the window.
 			endlessShopTradeBegin();
-			shopPlayer()->cash = shopPlayer()->cash * 2 - JE_cashLeft();
+			player_set_cash(shopPlayer(), shopPlayer()->cash * 2 - JE_cashLeft());
 		}
 		break;
 
@@ -9814,7 +9808,7 @@ void JE_menuFunction(JE_byte select)
 		{
 			JE_playSampleNum(S_ITEM);
 
-			shopPlayer()->cash = JE_cashLeft();
+			player_set_cash(shopPlayer(), JE_cashLeft());
 			endlessShopTradeCommit();
 			network_shop_send_transaction();
 			curMenu = MENU_UPGRADES;
@@ -10391,12 +10385,12 @@ void JE_weaponSimUpdate(void)
 			// This row sits over the preview's starfield and passing ships, so it carries an outline.
 			if (leftPower)
 			{
-				sprintf(buf, "%lu", downgradeCost);
+				sprintf(buf, "%lld", (long long)downgradeCost);
 				JE_outTextOutlined(VGAScreen, 26, 137, buf, 1, 4);
 			}
 			if (rightPower)
 			{
-				sprintf(buf, "%lu", upgradeCost);
+				sprintf(buf, "%lld", (long long)upgradeCost);
 				JE_outTextOutlined(VGAScreen, 104, 137, buf, (rightPowerAfford) ? 1 : 7, 4);
 			}
 

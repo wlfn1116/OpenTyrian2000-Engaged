@@ -508,6 +508,38 @@ unsigned int config_get_or_set_uint_option(ConfigSection *section, const char *k
 	return value;
 }
 
+void config_set_int64_option(ConfigSection *section, const char *key, long long value)
+{
+	assert(key != NULL);
+
+	char buffer[sdecsizeof(long long) + 1];
+	int buffer_len = snprintf(buffer, sizeof(buffer), "%lld", value);
+
+	if (config_set_option_len(section, key, strlen(key), buffer, buffer_len) == NULL)
+		config_oom();
+}
+
+bool config_get_int64_option(const ConfigSection *section, const char *key, long long *out_value)
+{
+	assert(section != NULL);
+	assert(key != NULL);
+	assert(out_value != NULL);
+
+	const char *value;
+	if (config_get_string_option(section, key, &value))
+	{
+		long long i;
+		int n;
+		if (sscanf(value, "%lli%n", &i, &n) > 0 && value[n] == '\0')  /* must be entire string */
+		{
+			*out_value = i;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* config option accessors/manipulators -- by reference */
 
 ConfigOption *config_set_value_len(ConfigOption *option, const char *value, size_t value_len)
@@ -791,11 +823,51 @@ static bool parse_field(char *buffer, size_t *index, size_t *start, size_t *leng
 	return true;
 }
 
+/* Byte source for the parser: a FILE, or a memory buffer when text is NULL/non-NULL respectively.
+ * The parser reads whichever one is set. */
+typedef struct
+{
+	FILE *file;
+	const char *text;
+	size_t text_length;
+	size_t text_offset;
+} ConfigSource;
+
+static size_t source_read(ConfigSource *source, char *buffer, size_t capacity)
+{
+	if (source->file != NULL)
+		return fread(buffer, sizeof(char), capacity, source->file);
+
+	size_t remaining = source->text_length - source->text_offset;
+	if (remaining > capacity)
+		remaining = capacity;
+	memcpy(buffer, source->text + source->text_offset, remaining);
+	source->text_offset += remaining;
+	return remaining;
+}
+
+static bool config_parse_source(Config *config, ConfigSource *source);
+
 bool config_parse(Config *config, FILE *file)
 {
 	assert(config != NULL);
 	assert(file != NULL);
-	
+
+	ConfigSource source = { file, NULL, 0, 0 };
+	return config_parse_source(config, &source);
+}
+
+bool config_parse_buffer(Config *config, const char *text, size_t length)
+{
+	assert(config != NULL);
+	assert(text != NULL || length == 0);
+
+	ConfigSource source = { NULL, text, length, 0 };
+	return config_parse_source(config, &source);
+}
+
+static bool config_parse_source(Config *config, ConfigSource *source)
+{
 	config_init(config);
 	
 	ConfigSection *section = NULL;
@@ -835,7 +907,7 @@ bool config_parse(Config *config, FILE *file)
 					buffer = new_buffer;
 				}
 				
-				size_t read = fread(&buffer[buffer_end - 1], sizeof(char), buffer_cap - buffer_end, file);
+				size_t read = source_read(source, &buffer[buffer_end - 1], buffer_cap - buffer_end);
 				if (read == 0)
 					break;
 				
@@ -934,17 +1006,52 @@ bool config_parse(Config *config, FILE *file)
 
 /* config writer */
 
-static void write_field(const ConfigString *field, FILE *file)
+/* Byte sink for the writer: a FILE, or a memory buffer that counts every byte and stores the ones
+ * that fit, so a NULL buffer measures. */
+typedef struct
 {
-	fputc('\'', file);
-	
+	FILE *file;
+	char *buffer;
+	size_t capacity;
+	size_t written;
+} ConfigSink;
+
+static void sink_write(ConfigSink *sink, const char *data, size_t length)
+{
+	if (sink->file != NULL)
+	{
+		fwrite(data, sizeof(char), length, sink->file);
+		return;
+	}
+	if (sink->buffer != NULL && sink->written < sink->capacity)
+	{
+		size_t room = sink->capacity - sink->written;
+		memcpy(sink->buffer + sink->written, data, length < room ? length : room);
+	}
+	sink->written += length;
+}
+
+static void sink_putc(ConfigSink *sink, char c)
+{
+	sink_write(sink, &c, 1);
+}
+
+static void sink_puts(ConfigSink *sink, const char *s)
+{
+	sink_write(sink, s, strlen(s));
+}
+
+static void write_field(const ConfigString *field, ConfigSink *file)
+{
+	sink_putc(file, '\'');
+
 	char buffer[128];
 	size_t o = 0;
-	
+
 	for (const char *ci = config_string_to_cstr(field); *ci != '\0'; ++ci)
 	{
 		char c = *ci;
-		
+
 		size_t l;
 		switch (c)
 		{
@@ -959,10 +1066,10 @@ static void write_field(const ConfigString *field, FILE *file)
 				l = (c >= ' ' && c <= '~') ? 1 : 4;
 				break;
 		}
-		
+
 		if (o + l > COUNTOF(buffer))
 		{
-			fwrite(buffer, sizeof(*buffer), o, file);
+			sink_write(file, buffer, o);
 			o = 0;
 		}
 		
@@ -1005,55 +1112,70 @@ static void write_field(const ConfigString *field, FILE *file)
 	}
 	
 	if (o > 0)
-		fwrite(buffer, sizeof(*buffer), o, file);
-	
-	fputc('\'', file);
+		sink_write(file, buffer, o);
+
+	sink_putc(file, '\'');
 }
 
-void config_write(const Config *config, FILE *file)
+static void config_write_sink(const Config *config, ConfigSink *file)
 {
-	assert(config != NULL);
-	assert(file != NULL);
-	
 	for (unsigned int s = 0; s < config->sections_count; ++s)
 	{
 		ConfigSection *section = &config->sections[s];
-		
-		fputs("section ", file);
+
+		sink_puts(file, "section ");
 		write_field(&section->type, file);
 		if (config_string_to_cstr(&section->name) != NULL)
 		{
-			fputc(' ', file);
+			sink_putc(file, ' ');
 			write_field(&section->name, file);
 		}
-		fputc('\n', file);
-		
+		sink_putc(file, '\n');
+
 		for (unsigned int o = 0; o < section->options_count; ++o)
 		{
 			ConfigOption *option = &section->options[o];
-			
+
 			if (option->values_count == 0 && config_string_to_cstr(&option->v.value) != NULL)
 			{
-				fputs("\titem ", file);
+				sink_puts(file, "\titem ");
 				write_field(&option->key, file);
-				fputc(' ', file);
+				sink_putc(file, ' ');
 				write_field(&option->v.value, file);
-				fputc('\n', file);
+				sink_putc(file, '\n');
 			}
 			else
 			{
 				ConfigString *values_end = &option->v.values[option->values_count];
 				for (ConfigString *value = &option->v.values[0]; value < values_end; ++value)
 				{
-					fputs("\tlist ", file);
+					sink_puts(file, "\tlist ");
 					write_field(&option->key, file);
-					fputc(' ', file);
+					sink_putc(file, ' ');
 					write_field(value, file);
-					fputc('\n', file);
+					sink_putc(file, '\n');
 				}
 			}
 		}
-		
-		fputc('\n', file);
+
+		sink_putc(file, '\n');
 	}
+}
+
+void config_write(const Config *config, FILE *file)
+{
+	assert(config != NULL);
+	assert(file != NULL);
+
+	ConfigSink sink = { file, NULL, 0, 0 };
+	config_write_sink(config, &sink);
+}
+
+size_t config_write_buffer(const Config *config, char *buffer, size_t capacity)
+{
+	assert(config != NULL);
+
+	ConfigSink sink = { NULL, buffer, capacity, 0 };
+	config_write_sink(config, &sink);
+	return sink.written;
 }

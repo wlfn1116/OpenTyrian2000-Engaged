@@ -55,11 +55,6 @@
 
 /* Configuration Load/Save handler */
 
-const JE_byte cryptKey[10] = /* [1..10] */
-{
-	15, 50, 89, 240, 147, 34, 86, 9, 32, 208
-};
-
 const DosKeySettings defaultDosKeySettings =
 {
 	72, 80, 75, 77, 57, 28, 29, 56
@@ -112,24 +107,6 @@ static const char *const mouseSettingValues[] =
 
 char defaultHighScoreNames[39][23]; /* [1..39] of string [22] */
 char defaultTeamNames[10][25]; /* [1..22] of string [24] */
-
-const JE_EditorItemAvailType initialItemAvail =
-{
-	1,1,1,0,0,1,1,0,1,1,1,1,1,0,1,0,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0, /* Front/Rear Weapons 1-38  */
-	0,0,0,0,0,0,0,0,0,0,1,                                                           /* Fill                     */
-	1,0,0,0,0,1,0,0,0,1,1,0,1,0,0,0,0,0,                                             /* Sidekicks          51-68 */
-	0,0,0,0,0,0,0,0,0,0,0,                                                           /* Fill                     */
-	1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,                                                   /* Special Weapons    81-93 */
-	0,0,0,0,0                                                                        /* Fill                     */
-};
-
-/* Last 2 bytes = Word
- *
- * Max Value = 1680
- * X div  60 = Armor  (1-28)
- * X div 168 = Shield (1-12)
- * X div 280 = Engine (1-06)
- */
 
 JE_boolean smoothies[9] = /* [1..9] */
 { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -219,7 +196,6 @@ JE_byte    gameSpeed;
 JE_byte    processorType;  /* detail level: 1=Low 2=Normal 3=High 4=Pentium 5=Laptop VGA 6=Wild */
 
 JE_SaveFilesType saveFiles; /*array[1..saveLevelnum] of savefiletype;*/
-JE_SaveGameTemp saveTemp;
 
 T2KHighScoreType t2kHighScores[20][3];
 
@@ -249,7 +225,7 @@ void coopCampaignScoreConfigSave(ConfigSection *section)
 	{
 		char key[32], line[64];
 		snprintf(key, sizeof(key), "coop_campaign_%d", e + 1);
-		snprintf(line, sizeof(line), "%d|%u|%s", coopCampaignScores[e].score,
+		snprintf(line, sizeof(line), "%lld|%u|%s", (long long)coopCampaignScores[e].score,
 		         (unsigned)coopCampaignScores[e].difficulty, coopCampaignScores[e].name);
 		config_set_string_option(section, key, line);
 
@@ -273,8 +249,8 @@ void coopCampaignScoreConfigLoad(const ConfigSection *section)
 		if (!config_get_string_option(section, key, &line) || line == NULL)
 			continue;
 
-		const long score = strtol(line, NULL, 10);
-		coopCampaignScores[e].score = (score > 0) ? (Sint32)score : 0;
+		const long long score = strtoll(line, NULL, 10);
+		coopCampaignScores[e].score = (score > 0) ? cash_clamp((Sint64)score) : 0;
 
 		const char *p = strchr(line, '|');
 		if (p == NULL)
@@ -314,7 +290,7 @@ void coopCampaignScoreNote(void)
 	if (total <= coopCampaignScores[e].score)
 		return;
 
-	coopCampaignScores[e].score = (total > 0x7fffffff) ? 0x7fffffff : (Sint32)total;
+	coopCampaignScores[e].score = cash_clamp(total);
 	coopCampaignScores[e].difficulty = (Uint8)initialDifficulty;
 	if (coop_credit_is_shared())
 		coopCampaignScores[e].credit = COOP_CREDIT_SHARED;
@@ -333,7 +309,7 @@ void coopCampaignScoreNote(void)
 }
 
 /* One bit per two-player slot: set when this machine wrote that slot while flying player two.
- * See save_slot_online_player in config.h; `net_save_player_two` carries it in opentyrian.cfg. */
+ * See save_slot_online_player in config.h; each slot's `online_seat` key carries it. */
 static Uint16 saveSlotPlayerTwo;
 
 // Slots 1 through 11 are the one-player page, which no online session writes.
@@ -359,8 +335,6 @@ void save_slot_set_online_player(JE_byte slot, uint playerNum)
 	else
 		saveSlotPlayerTwo &= (Uint16)~bit;
 }
-
-JE_word editorLevel;   /*Initial value 800*/
 
 /* Enhancement settings (persisted in the [enhancements] config section). */
 int bossBarStyle   = BOSS_BAR_ENHANCED;
@@ -972,7 +946,7 @@ bool load_opentyrian_config(void)
 			if (net_host_player == 1 || net_host_player == 2)
 				network_host_player = net_host_player;
 
-			// Two-player save slots this machine wrote as player two (save_slot_online_player).
+			// Where builds before opentyrian.sav kept the seats; read only until that file exists.
 			int net_save_player_two = saveSlotPlayerTwo;
 			config_get_int_option(section, "net_save_player_two", &net_save_player_two);
 			if (net_save_player_two >= 0 && net_save_player_two <= 0xffff)
@@ -1225,6 +1199,32 @@ bool load_opentyrian_config(void)
 		customWeaponEditMode = 0;
 	}
 
+	/* The settings the DOS-era tyrian.cfg also carries. Read after that file, so these win once
+	 * they are here; a config written before they moved keeps what tyrian.cfg says. */
+	section = config_find_section(config, "game", NULL);
+	if (section != NULL)
+	{
+		int v;
+		if (config_get_int_option(section, "music_volume", &v) && v >= 0 && v <= 255)
+			tyrMusicVolume = (JE_word)v;
+		if (config_get_int_option(section, "sound_volume", &v) && v >= 0 && v <= 255)
+			fxVolume = (JE_word)v;
+		if (config_get_int_option(section, "game_speed", &v) && v >= 1 && v <= 5)
+			gameSpeed = (JE_byte)v;
+		if (config_get_int_option(section, "detail_level", &v) && v >= 1 && v <= 6)
+			processorType = (JE_byte)v;
+		if (config_get_int_option(section, "gamma", &v) && v >= 0 && v <= 4)
+			gammaCorrection = (JE_byte)v;
+		if (config_get_int_option(section, "difficulty", &v) && v >= DIFFICULTY_WIMP && v <= DIFFICULTY_10)
+			difficultyLevel = (JE_shortint)v;
+		if (config_get_int_option(section, "background2", &v))
+			background2 = v != 0;
+		if (config_get_int_option(section, "input_p1", &v) && v >= 0 && v <= 255)
+			inputDevice[0] = (JE_byte)v;
+		if (config_get_int_option(section, "input_p2", &v) && v >= 0 && v <= 255)
+			inputDevice[1] = (JE_byte)v;
+	}
+
 	// Store the complete Endless debug setup in its own section. endless_save.c owns
 	// the format so config.c does not depend on perk or modifier details.
 	endlessDebugConfigLoad(config_find_section(config, "endless_debug", NULL));
@@ -1335,7 +1335,7 @@ bool save_opentyrian_config(void)
 	config_set_string_option(section, "net_last_host", net_last_host);
 	config_set_int_option(section, "net_listen_port", network_listen_port);
 	config_set_int_option(section, "net_host_player", network_host_player);
-	config_set_int_option(section, "net_save_player_two", saveSlotPlayerTwo);
+	config_remove_option(section, "net_save_player_two");   // now each slot's own online_seat key
 	config_set_int_option(section, "net_host_game_speed", network_host_game_speed);
 	config_set_int_option(section, "net_host_destruct_mode", network_host_destruct_mode);
 	config_set_int_option(section, "net_delay", network_delay);
@@ -1409,6 +1409,20 @@ bool save_opentyrian_config(void)
 	for (int i = 0; i < expertSettingsCount; ++i)
 		config_set_int_option(section, expertSettings[i].cfgKey, *expertSettings[i].value);
 
+	// The settings the DOS-era tyrian.cfg also carries (see the matching load above).
+	section = config_find_or_add_section(config, "game", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	config_set_int_option(section, "music_volume", tyrMusicVolume);
+	config_set_int_option(section, "sound_volume", fxVolume);
+	config_set_int_option(section, "game_speed", gameSpeed);
+	config_set_int_option(section, "detail_level", processorType);
+	config_set_int_option(section, "gamma", gammaCorrection);
+	config_set_int_option(section, "difficulty", difficultyLevel);
+	config_set_int_option(section, "background2", background2 ? 1 : 0);
+	config_set_int_option(section, "input_p1", inputDevice[0]);
+	config_set_int_option(section, "input_p2", inputDevice[1]);
+
 	// The Debug Mode endless-effects layer (see the matching load above). endlessDebugConfigSave
 	// declines to write during an endless run, so the section is only ever the CAMPAIGN setup.
 	section = config_find_or_add_section(config, "endless_debug", NULL);
@@ -1480,8 +1494,7 @@ void JE_saveGame(JE_byte slot, const char *name)
 {
 	// Hardcore forbids saving at the data level, not only in the menus that offer it: any
 	// path that reaches here mid-run (a stale disconnect-save flag, a future menu) must
-	// leave the slot exactly as it was.  endlessSaveSlot refuses under the same rule, so
-	// the campaign record and its endless sidecar stay a pair.
+	// leave the slot exactly as it was, its Endless half included.
 	if (endlessMode && endlessHardcore())
 		return;
 
@@ -1550,19 +1563,20 @@ void JE_saveGame(JE_byte slot, const char *name)
 		saveFiles[slot-1].power[port] = player[twoPlayerMode ? port : 0].items.weapon[port].power;
 	}
 
-	/* Dual-ship records pack the two missing weapon powers and both modes into highScore2. Distinct
+	/* Dual-ship records pack the two missing weapon powers and both modes into the tag. Distinct
 	 * co-op and arcade tags keep the shared slot page type-safe. */
-	saveFiles[slot - 1].highScore2 = 0;
+	saveFiles[slot - 1].dualShipTag = 0;
 	if (dual_ship_mode())
 	{
 		const Uint32 extra = (player[0].items.weapon[REAR_WEAPON].power & 0x0f)
 		                   | ((player[1].items.weapon[FRONT_WEAPON].power & 0x0f) << 4)
 		                   | ((player[0].weapon_mode & 0x0f) << 8)
 		                   | ((player[1].weapon_mode & 0x0f) << 12);
-		saveFiles[slot - 1].highScore2 =
-			(JE_longint)((coop_mode_active() ? coop_save_tag : dual_arcade_save_tag) | extra);
+		saveFiles[slot - 1].dualShipTag = (coop_mode_active() ? coop_save_tag : dual_arcade_save_tag) | extra;
 	}
 
+	// The slot's Endless half rides the same write: captured from a run, cleared by any other game.
+	endlessSaveCaptureSlot(slot);
 	JE_saveConfiguration();
 }
 
@@ -1626,8 +1640,8 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 		player[1].items.sidekick_series = player[1].items.sidekick[LEFT_SIDEKICK];
 	}
 
-	player[0].cash = rec->score;
-	player[1].cash = rec->score2;
+	player_set_cash(&player[0], rec->score);
+	player_set_cash(&player[1], rec->score2);
 
 	mainLevel   = rec->level;
 	cubeMax     = rec->cubes;
@@ -1655,7 +1669,7 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 	 * back whichever lobby is reading it. */
 	if (save_record_is_coop(rec) || save_record_is_dual_arcade(rec))
 	{
-		const Uint32 extra = (Uint32)rec->highScore2;
+		const Uint32 extra = rec->dualShipTag;
 		player[0].items.weapon[REAR_WEAPON].power = extra & 0x0f;
 		player[1].items.weapon[FRONT_WEAPON].power = (extra >> 4) & 0x0f;
 		player[0].weapon_mode = (extra >> 8) & 0x0f;
@@ -1795,135 +1809,10 @@ void JE_setNewGameSpeed(void)
 	setDelay(frameCountMax);
 }
 
-void JE_encryptSaveTemp(void)
-{
-	JE_SaveGameTemp s3;
-	JE_word x;
-	JE_byte y;
-
-	memcpy(&s3, &saveTemp, sizeof(s3));
-
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y += s3[x];
-	}
-	saveTemp[SAVE_FILE_SIZE] = y;
-
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y -= s3[x];
-	}
-	saveTemp[SAVE_FILE_SIZE+1] = y;
-
-	y = 1;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y = (y * s3[x]) + 1;
-	}
-	saveTemp[SAVE_FILE_SIZE+2] = y;
-
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y = y ^ s3[x];
-	}
-	saveTemp[SAVE_FILE_SIZE+3] = y;
-
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		saveTemp[x] = saveTemp[x] ^ cryptKey[(x+1) % 10];
-		if (x > 0)
-		{
-			saveTemp[x] = saveTemp[x] ^ saveTemp[x - 1];
-		}
-	}
-}
-
-void JE_decryptSaveTemp(void)
-{
-	JE_boolean correct = true;
-	JE_SaveGameTemp s2;
-	int x;
-	JE_byte y;
-
-	/* Decrypt save game file */
-	for (x = (SAVE_FILE_SIZE - 1); x >= 0; x--)
-	{
-		// (unsigned) only to make the index's non-negativity local; x is >= 0 by the loop condition.
-		const unsigned int k = (unsigned)(x + 1) % 10;
-		OT_ASSUME(k < 10);
-		s2[x] = (JE_byte)saveTemp[x] ^ (JE_byte)(cryptKey[k]);
-		if (x > 0)
-		{
-			s2[x] ^= (JE_byte)saveTemp[x - 1];
-		}
-
-	}
-
-	/* Verify the save checksum. */
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y += s2[x];
-	}
-	if (saveTemp[SAVE_FILE_SIZE] != y)
-	{
-		correct = false;
-		printf("Failed additive checksum: %d vs %d\n", saveTemp[SAVE_FILE_SIZE], y);
-	}
-
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y -= s2[x];
-	}
-	if (saveTemp[SAVE_FILE_SIZE+1] != y)
-	{
-		correct = false;
-		printf("Failed subtractive checksum: %d vs %d\n", saveTemp[SAVE_FILE_SIZE+1], y);
-	}
-
-	y = 1;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y = (y * s2[x]) + 1;
-	}
-	if (saveTemp[SAVE_FILE_SIZE+2] != y)
-	{
-		correct = false;
-		printf("Failed multiplicative checksum: %d vs %d\n", saveTemp[SAVE_FILE_SIZE+2], y);
-	}
-
-	y = 0;
-	for (x = 0; x < SAVE_FILE_SIZE; x++)
-	{
-		y = y ^ s2[x];
-	}
-	if (saveTemp[SAVE_FILE_SIZE+3] != y)
-	{
-		correct = false;
-		printf("Failed XOR'd checksum: %d vs %d\n", saveTemp[SAVE_FILE_SIZE+3], y);
-	}
-
-	/* Barf and die if save file doesn't validate */
-	if (!correct)
-	{
-		fprintf(stderr, "Error reading save file!\n");
-		crashlog_report_fatal("FATAL (save file checksum mismatch)",
-		                      "tyrian.sav failed its checksum validation (corrupt or truncated save)");
-		exit(255);
-	}
-
-	/* Keep decrypted version plz */
-	memcpy(&saveTemp, &s2, sizeof(s2));
-}
-
 const char *get_user_directory(void)
 {
 	static char user_dir[500] = "";
-	
+
 	if (strlen(user_dir) == 0)
 	{
 #if defined(__SWITCH__)
@@ -1954,7 +1843,7 @@ const char *get_user_directory(void)
 		strcpy(user_dir, ".");
 #endif
 	}
-	
+
 	return user_dir;
 }
 
@@ -1963,357 +1852,696 @@ Uint8 joyButtonAssign[4] = {1, 4, 5, 5};
 Uint8 inputDevice_ = 0, jConfigure = 0, midiPort = 1;
 bool configuration_loaded = false;
 
-void JE_loadConfiguration(void)
+/* The one-ship loadout block, and the second block a slot carries: player two's on the two-player
+ * page, the last shop loadout on the one-player page. Named keys under a prefix. */
+static void save_items_write(ConfigSection *section, const char *prefix, const JE_PItemsType items,
+                             const JE_byte *frontPower, const JE_byte *rearPower)
 {
-	FILE *fi;
-	int z;
-	JE_byte *p;
-	int y;
-	
-	fi = dir_fopen_warn(get_user_directory(), "tyrian.cfg", "rb");
-	if (fi && ftell_eof(fi) == 28)
+	char key[48];
+	#define ITEM(name, index) \
+		snprintf(key, sizeof(key), "%s_%s", prefix, name); config_set_int_option(section, key, items[index])
+	ITEM("ship", 11);
+	ITEM("front_weapon", 0);
+	if (frontPower != NULL)
+	{
+		snprintf(key, sizeof(key), "%s_front_power", prefix);
+		config_set_int_option(section, key, *frontPower);
+	}
+	ITEM("rear_weapon", 1);
+	if (rearPower != NULL)
+	{
+		snprintf(key, sizeof(key), "%s_rear_power", prefix);
+		config_set_int_option(section, key, *rearPower);
+	}
+	ITEM("shield", 9);
+	ITEM("generator", 5);
+	ITEM("left_sidekick", 3);
+	ITEM("right_sidekick", 4);
+	ITEM("special", 10);
+	ITEM("sidekick_level", 6);
+	ITEM("sidekick_series", 7);
+	ITEM("mode", 2);
+	ITEM("start_episode", 8);
+	#undef ITEM
+}
+
+static int save_get_int(const ConfigSection *section, const char *key, int fallback)
+{
+	int v = fallback;
+	config_get_int_option(section, key, &v);
+	return v;
+}
+
+static void save_items_read(const ConfigSection *section, const char *prefix, JE_PItemsType items,
+                            JE_byte *frontPower, JE_byte *rearPower)
+{
+	char key[48];
+	#define ITEM(name, index) \
+		snprintf(key, sizeof(key), "%s_%s", prefix, name); \
+		items[index] = (JE_byte)save_get_int(section, key, 0)
+	ITEM("ship", 11);
+	ITEM("front_weapon", 0);
+	ITEM("rear_weapon", 1);
+	ITEM("shield", 9);
+	ITEM("generator", 5);
+	ITEM("left_sidekick", 3);
+	ITEM("right_sidekick", 4);
+	ITEM("special", 10);
+	ITEM("sidekick_level", 6);
+	ITEM("sidekick_series", 7);
+	ITEM("mode", 2);
+	ITEM("start_episode", 8);
+	#undef ITEM
+	if (frontPower != NULL)
+	{
+		snprintf(key, sizeof(key), "%s_front_power", prefix);
+		*frontPower = (JE_byte)save_get_int(section, key, 0);
+	}
+	if (rearPower != NULL)
+	{
+		snprintf(key, sizeof(key), "%s_rear_power", prefix);
+		*rearPower = (JE_byte)save_get_int(section, key, 0);
+	}
+}
+
+/* One slot as a `section 'save' 'N'`. Two-player slots write both ships under p1_/p2_ and name the
+ * two-ship session that wrote them; one-player slots write p1_ and the last shop loadout under
+ * last_. Every key is optional on the way back in. */
+static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, JE_byte slot)
+{
+	const bool twoP = slot > 11;
+
+	config_set_string_option(section, "name", rec->name);
+	config_set_int_option(section, "level", rec->level);
+	config_set_string_option(section, "level_name", rec->levelName);
+	config_set_int_option(section, "episode", rec->episode);
+	config_set_int_option(section, "difficulty", rec->difficulty);
+	config_set_int_option(section, "initial_difficulty", rec->initialDifficulty);
+	config_set_int_option(section, "game_has_repeated", rec->gameHasRepeated ? 1 : 0);
+	config_set_int_option(section, "cubes", rec->cubes);
+	config_set_int_option(section, "secret_hint", rec->secretHint);
+	config_set_int64_option(section, "p1_cash", rec->score);
+	if (twoP)
+		config_set_int64_option(section, "p2_cash", rec->score2);
+
+	// A one-ship record's rear power sits in power[1]; a two-ship record's rear power there is
+	// player two's, and player one's rear and player two's front live in the tag.
+	const JE_byte tagRear = (JE_byte)(rec->dualShipTag & 0x0f);
+	const JE_byte tagFront = (JE_byte)((rec->dualShipTag >> 4) & 0x0f);
+	const bool dual = save_record_is_coop(rec) || save_record_is_dual_arcade(rec);
+	if (twoP)
+	{
+		save_items_write(section, "p1", rec->items, &rec->power[0], dual ? &tagRear : NULL);
+		save_items_write(section, "p2", rec->lastItems, dual ? &tagFront : NULL, &rec->power[1]);
+		if (dual)
+		{
+			config_set_string_option(section, "dual_ships", save_record_is_coop(rec) ? "coop" : "arcade");
+			config_set_int_option(section, "p1_weapon_mode", (rec->dualShipTag >> 8) & 0x0f);
+			config_set_int_option(section, "p2_weapon_mode", (rec->dualShipTag >> 12) & 0x0f);
+		}
+		config_set_int_option(section, "online_seat", (int)save_slot_online_player(slot));
+	}
+	else
+	{
+		save_items_write(section, "p1", rec->items, &rec->power[0], &rec->power[1]);
+		save_items_write(section, "last", rec->lastItems, NULL, NULL);
+	}
+
+	config_set_int_option(section, "input_p1", rec->input1);
+	config_set_int_option(section, "input_p2", rec->input2);
+	config_set_int_option(section, "auto_fire_special", rec->autoFireSpecial ? 1 : 0);
+	config_set_int_option(section, "charge_sidekick_autofire", rec->chargeSidekickAutofire);
+	config_set_int_option(section, "difficulty_adjust", rec->difficultyAdjust ? 1 : 0);
+	config_set_int_option(section, "cheat_infinite_sidekick_ammo", rec->cheatInfiniteSidekickAmmo ? 1 : 0);
+	config_set_int_option(section, "cheat_infinite_shields", rec->cheatInfiniteShields ? 1 : 0);
+	config_set_int_option(section, "cheat_infinite_armor", rec->cheatInfiniteArmor ? 1 : 0);
+	config_set_int_option(section, "expert_mode", rec->expertMode ? 1 : 0);
+}
+
+static void save_get_string(const ConfigSection *section, const char *key, char *dst, size_t n)
+{
+	const char *text = NULL;
+	if (config_get_string_option(section, key, &text) && text != NULL)
+		SDL_strlcpy(dst, text, n);
+	else
+		dst[0] = '\0';
+}
+
+static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, JE_byte slot)
+{
+	const bool twoP = slot > 11;
+	memset(rec, 0, sizeof(*rec));
+
+	save_get_string(section, "name", rec->name, sizeof(rec->name));
+	rec->level = (JE_word)save_get_int(section, "level", 0);
+	save_get_string(section, "level_name", rec->levelName, sizeof(rec->levelName));
+	rec->episode = (JE_byte)save_get_int(section, "episode", 1);
+	// The two difficulties index name tables; a hand edit past the last one reads as Normal.
+	const int difficulty = save_get_int(section, "difficulty", DIFFICULTY_NORMAL);
+	rec->difficulty = (JE_byte)((difficulty < DIFFICULTY_WIMP || difficulty > DIFFICULTY_10)
+	                            ? DIFFICULTY_NORMAL : difficulty);
+	const int initial = save_get_int(section, "initial_difficulty", rec->difficulty);
+	rec->initialDifficulty = (JE_byte)((initial < DIFFICULTY_WIMP || initial > DIFFICULTY_10)
+	                                   ? rec->difficulty : initial);
+	rec->gameHasRepeated = save_get_int(section, "game_has_repeated", 0) != 0;
+	rec->cubes = (JE_byte)save_get_int(section, "cubes", 0);
+	rec->secretHint = (JE_byte)save_get_int(section, "secret_hint", 0);
+	long long cash = 0;
+	config_get_int64_option(section, "p1_cash", &cash);
+	rec->score = cash_clamp((Sint64)cash);
+	cash = 0;
+	config_get_int64_option(section, "p2_cash", &cash);
+	rec->score2 = cash_clamp((Sint64)cash);
+
+	JE_byte p1Rear = 0, p2Front = 0;
+	if (twoP)
+	{
+		save_items_read(section, "p1", rec->items, &rec->power[0], &p1Rear);
+		save_items_read(section, "p2", rec->lastItems, &p2Front, &rec->power[1]);
+		const char *dual = NULL;
+		if (config_get_string_option(section, "dual_ships", &dual) && dual != NULL)
+		{
+			const Uint32 tag = (strcmp(dual, "coop") == 0) ? 0xc74f0000u
+			                 : (strcmp(dual, "arcade") == 0) ? 0xc7a50000u : 0u;
+			if (tag != 0)
+			{
+				rec->dualShipTag = tag | (p1Rear & 0x0f) | ((Uint32)(p2Front & 0x0f) << 4)
+				                 | ((Uint32)(save_get_int(section, "p1_weapon_mode", 1) & 0x0f) << 8)
+				                 | ((Uint32)(save_get_int(section, "p2_weapon_mode", 1) & 0x0f) << 12);
+			}
+		}
+		save_slot_set_online_player(slot, (uint)save_get_int(section, "online_seat", 1));
+	}
+	else
+	{
+		save_items_read(section, "p1", rec->items, &rec->power[0], &rec->power[1]);
+		save_items_read(section, "last", rec->lastItems, NULL, NULL);
+	}
+
+	rec->input1 = (JE_byte)save_get_int(section, "input_p1", 1);
+	rec->input2 = (JE_byte)save_get_int(section, "input_p2", 2);
+	rec->autoFireSpecial = save_get_int(section, "auto_fire_special", 0) != 0;
+	const int chargeAutofire = save_get_int(section, "charge_sidekick_autofire", CHARGE_AUTOFIRE_ON);
+	rec->chargeSidekickAutofire = (JE_byte)((chargeAutofire < 0 || chargeAutofire >= CHARGE_AUTOFIRE_NUM)
+	                                        ? CHARGE_AUTOFIRE_ON : chargeAutofire);
+	rec->difficultyAdjust = save_get_int(section, "difficulty_adjust", 1) != 0;
+	rec->cheatInfiniteSidekickAmmo = save_get_int(section, "cheat_infinite_sidekick_ammo", 0) != 0;
+	rec->cheatInfiniteShields = save_get_int(section, "cheat_infinite_shields", 0) != 0;
+	rec->cheatInfiniteArmor = save_get_int(section, "cheat_infinite_armor", 0) != 0;
+	rec->expertMode = save_get_int(section, "expert_mode", 0) != 0;
+}
+
+// The name of high-score table 0..19: ten Timed Battle boards, then a 1P and 2P board per episode.
+static const char *save_highscore_table_name(char *buf, size_t n, int table)
+{
+	if (table < 10)
+		snprintf(buf, n, "timed battle %d", table + 1);
+	else
+		snprintf(buf, n, "episode %d %s", (table - 10) / 2 + 1, (table % 2 == 0) ? "1p" : "2p");
+	return buf;
+}
+
+static void save_highscores_write(Config *config)
+{
+	for (int table = 0; table < 20; ++table)
+	{
+		char name[32];
+		ConfigSection *section =
+			config_add_section(config, "highscore", save_highscore_table_name(name, sizeof(name), table));
+		if (section == NULL)
+			exit(EXIT_FAILURE);  // out of memory
+		for (int rank = 0; rank < 3; ++rank)
+		{
+			char key[16];
+			snprintf(key, sizeof(key), "score_%d", rank + 1);
+			config_set_int64_option(section, key, t2kHighScores[table][rank].score);
+			snprintf(key, sizeof(key), "name_%d", rank + 1);
+			config_set_string_option(section, key, t2kHighScores[table][rank].playerName);
+			snprintf(key, sizeof(key), "difficulty_%d", rank + 1);
+			config_set_int_option(section, key, t2kHighScores[table][rank].difficulty);
+		}
+	}
+}
+
+static void save_highscores_read(Config *config)
+{
+	for (int table = 0; table < 20; ++table)
+	{
+		char name[32];
+		const ConfigSection *section =
+			config_find_section(config, "highscore", save_highscore_table_name(name, sizeof(name), table));
+		if (section == NULL)
+			continue;   // the invented defaults stand
+		for (int rank = 0; rank < 3; ++rank)
+		{
+			char key[16];
+			long long score = 0;
+			snprintf(key, sizeof(key), "score_%d", rank + 1);
+			config_get_int64_option(section, key, &score);
+			t2kHighScores[table][rank].score = cash_clamp((Sint64)score);
+			snprintf(key, sizeof(key), "name_%d", rank + 1);
+			save_get_string(section, key, t2kHighScores[table][rank].playerName,
+			                sizeof(t2kHighScores[table][rank].playerName));
+			snprintf(key, sizeof(key), "difficulty_%d", rank + 1);
+			t2kHighScores[table][rank].difficulty = (JE_byte)save_get_int(section, key, 0);
+		}
+	}
+}
+
+// Empty slots and blank boards, the state a save file is read over.
+static void save_reset(void)
+{
+	memset(t2kHighScores, 0, sizeof(t2kHighScores));
+
+	memset(saveFiles, 0, sizeof(saveFiles));
+	for (int z = 0; z < SAVE_FILES_NUM; z++)
+	{
+		memset(saveFiles[z].name, ' ', 14);
+		saveFiles[z].name[14] = 0;
+		saveFiles[z].chargeSidekickAutofire = CHARGE_AUTOFIRE_ON;
+		saveFiles[z].difficultyAdjust = true;
+	}
+}
+
+// Fresh-install state: empty slots and invented high-score boards.
+static void save_defaults(void)
+{
+	save_reset();
+
+	for (int z = 0; z < 10; ++z)
+	{
+		for (int y = 0; y < 3; ++y)
+		{
+			// Timed Battle scores
+			t2kHighScores[z][y].score = ((mt_rand() % 50) + 1) * 100;
+			strcpy(t2kHighScores[z][y].playerName,
+			       defaultHighScoreNames[mt_rand() % COUNTOF(defaultHighScoreNames)]);
+			t2kHighScores[z][y].difficulty = 0;
+		}
+	}
+	for (int z = 10; z < 20; ++z)
+	{
+		for (int y = 0; y < 3; ++y)
+		{
+			// Main Game scores
+			t2kHighScores[z][y].score = ((mt_rand() % 20) + 1) * 1000;
+			if (z & 1)
+				strcpy(t2kHighScores[z][y].playerName,
+				       defaultTeamNames[mt_rand() % COUNTOF(defaultTeamNames)]);
+			else
+				strcpy(t2kHighScores[z][y].playerName,
+				       defaultHighScoreNames[mt_rand() % COUNTOF(defaultHighScoreNames)]);
+			t2kHighScores[z][y].difficulty = 0;
+		}
+	}
+}
+
+/* Read opentyrian.sav. A slot without a section is empty and a key without a value is its default,
+ * so a hand edit that drops or misspells something loses that one value and nothing else. */
+static bool save_file_load(void)
+{
+	FILE *file = dir_fopen(get_user_directory(), SAVE_FILE_NAME, "r");
+	if (file == NULL)
+		return false;
+
+	Config config;
+	const bool parsed = config_parse(&config, file);
+	fclose(file);
+	if (!parsed)
+		return false;
+
+	// A file without its header is a broken write or a stray file, so the DOS-era files still stand in.
+	if (config_find_section(&config, "saves", NULL) == NULL)
+	{
+		fprintf(stderr, "warning: %s has no 'saves' section and was not read\n", SAVE_FILE_NAME);
+		config_deinit(&config);
+		return false;
+	}
+
+	save_reset();
+	saveSlotPlayerTwo = 0;   // the slots' own online_seat keys are the record from here on
+	for (int z = 0; z < SAVE_FILES_NUM; z++)
+	{
+		char name[8];
+		snprintf(name, sizeof(name), "%d", z + 1);
+		const ConfigSection *section = config_find_section(&config, "save", name);
+		if (section != NULL)
+			save_slot_read(&saveFiles[z], section, (JE_byte)(z + 1));
+	}
+	save_highscores_read(&config);
+	endlessSaveConfigRead(&config);
+
+	config_deinit(&config);
+	return true;
+}
+
+/* The DOS-era tyrian.sav: XOR-chained, checksummed, fixed offsets. Read once when there is no
+ * opentyrian.sav yet, so an existing installation keeps its slots and boards. */
+#define LEGACY_SAVE_FILES_SIZE 2552
+#define LEGACY_SAVE_TEMP_SIZE  (LEGACY_SAVE_FILES_SIZE + 4 + 100)
+#define LEGACY_SAVE_FILE_SIZE  (LEGACY_SAVE_TEMP_SIZE - 4)
+
+static bool legacy_save_decrypt(Uint8 *saveTemp)
+{
+	static const JE_byte cryptKey[10] = { 15, 50, 89, 240, 147, 34, 86, 9, 32, 208 };
+	Uint8 s2[LEGACY_SAVE_TEMP_SIZE];
+
+	for (int x = LEGACY_SAVE_FILE_SIZE - 1; x >= 0; x--)
+	{
+		const unsigned k = (unsigned)(x + 1) % 10;
+		OT_ASSUME(k < 10);
+		s2[x] = saveTemp[x] ^ cryptKey[k];
+		if (x > 0)
+			s2[x] ^= saveTemp[x - 1];
+	}
+
+	// The four one-byte checksums: additive, subtractive, multiplicative, xor.
+	JE_byte sum = 0, sub = 0, mul = 1, xor = 0;
+	for (int x = 0; x < LEGACY_SAVE_FILE_SIZE; x++)
+	{
+		sum += s2[x];
+		sub -= s2[x];
+		mul = (JE_byte)(mul * s2[x] + 1);
+		xor ^= s2[x];
+	}
+	if (saveTemp[LEGACY_SAVE_FILE_SIZE] != sum || saveTemp[LEGACY_SAVE_FILE_SIZE + 1] != sub
+	    || saveTemp[LEGACY_SAVE_FILE_SIZE + 2] != mul || saveTemp[LEGACY_SAVE_FILE_SIZE + 3] != xor)
+	{
+		fprintf(stderr, "warning: %s failed its checksums and was not imported\n", SAVE_FILE_LEGACY_NAME);
+		return false;
+	}
+
+	memcpy(saveTemp, s2, LEGACY_SAVE_FILE_SIZE);
+	return true;
+}
+
+// Read a legacy tyrian.sav image over the live tables; the caller owns the FILE.
+static bool legacy_save_parse(FILE *fi)
+{
+	Uint8 saveTemp[LEGACY_SAVE_TEMP_SIZE];
+	if (fread(saveTemp, 1, sizeof(saveTemp), fi) != sizeof(saveTemp) || !legacy_save_decrypt(saveTemp))
+		return false;
+
+	save_reset();
+
+	const Uint8 *p = saveTemp;
+	for (int z = 0; z < SAVE_FILES_NUM; z++)
+	{
+		JE_SaveFileType *rec = &saveFiles[z];
+		Uint16 u16;
+		Uint32 u32;
+
+		p += 2;   // encode: a DOS field nothing reads
+		memcpy(&u16, p, 2); p += 2;
+		rec->level = SDL_SwapLE16(u16);
+		memcpy(rec->items, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+		// Legacy wallets are unsigned 32-bit: read as signed, a record past 2^31 comes back negative.
+		memcpy(&u32, p, 4); p += 4;
+		rec->score = cash_clamp((Sint64)SDL_SwapLE32(u32));
+		memcpy(&u32, p, 4); p += 4;
+		rec->score2 = cash_clamp((Sint64)SDL_SwapLE32(u32));
+
+		// Pascal string: a length byte, then the characters.
+		memset(rec->levelName, 0, sizeof(rec->levelName));
+		memcpy(rec->levelName, &p[1], MIN(*p, sizeof(rec->levelName) - 1));
+		p += 10;
+		memcpy(rec->name, p, 14);   // 14 bytes with no length prefix, unlike levelName
+		p += 14;
+
+		rec->cubes = *p++;
+		rec->power[0] = *p++;
+		rec->power[1] = *p++;
+		rec->episode = *p++;
+		memcpy(rec->lastItems, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
+		rec->difficulty = *p++;
+		rec->secretHint = *p++;
+		rec->input1 = *p++;
+		rec->input2 = *p++;
+		rec->gameHasRepeated = *p++ != 0;
+		rec->initialDifficulty = *p++;
+
+		p += 4;   // highScore1: the DOS per-slot table, never shown
+		memcpy(&u32, p, 4); p += 4;
+		rec->dualShipTag = SDL_SwapLE32(u32);
+		p += 30;  // highScoreName
+		p += 1;   // highScoreDiff
+
+		rec->autoFireSpecial = *p++ != 0;
+		rec->chargeSidekickAutofire = *p++;
+		rec->difficultyAdjust = *p++ != 0;
+		rec->cheatInfiniteSidekickAmmo = *p++ != 0;
+		rec->cheatInfiniteShields = *p++ != 0;
+		rec->cheatInfiniteArmor = *p++ != 0;
+		rec->expertMode = *p++ != 0;
+	}
+	assert(p - saveTemp == LEGACY_SAVE_FILES_SIZE);   // the DOS ship editor's unlocks follow, unread
+
+	// The T2K high-score boards follow the encrypted block unencrypted; the episode boards carry
+	// an unused long between the score and the name.
+	for (int z = 0; z < 20; ++z)
+	{
+		for (int y = 0; y < 3; ++y)
+		{
+			Sint32 score = 0;
+			JE_byte len = 0;
+			char name[30];
+			JE_byte difficulty = 0;
+			bool okay = fread(&score, 4, 1, fi) == 1;
+			if (z >= 10)
+				okay = okay && fseek(fi, 4, SEEK_CUR) == 0;
+			okay = okay && fread(&len, 1, 1, fi) == 1 && fread(name, 1, 29, fi) == 29
+			    && fread(&difficulty, 1, 1, fi) == 1;
+			if (!okay)
+			{
+				printf("Imported the save slots from the old %s; its high-score boards were incomplete.\n",
+				       SAVE_FILE_LEGACY_NAME);
+				return true;
+			}
+			t2kHighScores[z][y].score = cash_clamp((Sint64)SDL_SwapLE32((Uint32)score));
+			name[MIN(len, 29)] = '\0';
+			memcpy(t2kHighScores[z][y].playerName, name, 30);
+			t2kHighScores[z][y].difficulty = difficulty;
+		}
+	}
+
+	printf("Imported the save slots and high scores from the old %s.\n", SAVE_FILE_LEGACY_NAME);
+	return true;
+}
+
+static bool legacy_save_load(void)
+{
+	FILE *fi = dir_fopen(get_user_directory(), SAVE_FILE_LEGACY_NAME, "rb");
+	if (fi == NULL)
+		return false;
+	const bool okay = legacy_save_parse(fi);
+	fclose(fi);
+	return okay;
+}
+
+bool save_legacy_test_import(const char *path)
+{
+	FILE *fi = fopen(path, "rb");
+	if (fi == NULL)
+		return false;
+	const bool okay = legacy_save_parse(fi);
+	fclose(fi);
+	return okay;
+}
+
+/* Prove the slot codec on records this build made: a one-ship and a two-ship record survive the
+ * text round trip whole, and a slot with keys missing or malformed reads as its defaults. */
+bool save_file_test_codec(char *detail, size_t detailSize)
+{
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	JE_SaveFileType one, two, back;
+	memset(&one, 0, sizeof(one));
+	one.level = 7;
+	for (unsigned i = 0; i < sizeof(one.items); ++i)
+	{
+		one.items[i] = (JE_byte)(i * 5 + 2);
+		one.lastItems[i] = (JE_byte)(90 - i * 3);
+	}
+	one.score = 4000000000LL;   // past the old 32-bit wallet
+	strcpy(one.levelName, "TYRIAN");
+	strcpy(one.name, "SLOT ONE      ");
+	one.cubes = 3;
+	one.power[0] = 4;
+	one.power[1] = 9;
+	one.episode = 2;
+	one.difficulty = DIFFICULTY_HARD;
+	one.secretHint = 5;
+	one.input1 = 1;
+	one.input2 = 2;
+	one.gameHasRepeated = true;
+	one.initialDifficulty = DIFFICULTY_NORMAL;
+	one.autoFireSpecial = true;
+	one.chargeSidekickAutofire = 2;
+	one.difficultyAdjust = false;
+	one.cheatInfiniteSidekickAmmo = true;
+	one.cheatInfiniteArmor = true;
+	one.expertMode = true;
+
+	two = one;
+	two.score2 = 123456789012LL;
+	two.dualShipTag = 0xc74f0000u | 0x0a | (0x0b << 4) | (2 << 8) | (3 << 12);   // co-op, both extras
+
+	const uint savedSeat = save_slot_online_player(15);
+	save_slot_set_online_player(15, 2);
+
+	const char *fault = NULL;
+	Config config;
+	config_init(&config);
+	ConfigSection *sOne = config_add_section(&config, "save", "3");
+	ConfigSection *sTwo = config_add_section(&config, "save", "15");
+	if (sOne == NULL || sTwo == NULL)
+		fault = "section allocation failed";
+	else
+	{
+		save_slot_write(sOne, &one, 3);
+		save_slot_write(sTwo, &two, 15);
+		save_slot_set_online_player(15, 1);
+
+		save_slot_read(&back, sOne, 3);
+		if (memcmp(&one, &back, sizeof(one)) != 0)
+			fault = "a one-ship slot did not survive the round trip";
+		save_slot_read(&back, sTwo, 15);
+		if (fault == NULL && memcmp(&two, &back, sizeof(two)) != 0)
+			fault = "a two-ship slot did not survive the round trip";
+		if (fault == NULL && save_slot_online_player(15) != 2)
+			fault = "the online seat did not survive the round trip";
+
+		config_remove_option(sOne, "p1_cash");
+		config_set_string_option(sOne, "level", "junk");
+		config_set_string_option(sOne, "p2_cash", "-5");
+		config_set_string_option(sOne, "difficulty", "");
+		save_slot_read(&back, sOne, 3);
+		if (fault == NULL && (back.score != 0 || back.level != 0 || back.score2 != 0
+		                      || back.difficulty != DIFFICULTY_NORMAL))
+			fault = "a missing or malformed key did not read as its default";
+	}
+	config_deinit(&config);
+	save_slot_set_online_player(15, savedSeat);
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
+}
+
+// The DOS-era tyrian.cfg: 28 bytes of settings, read for its values until opentyrian.cfg has them.
+static void legacy_config_load(void)
+{
+	FILE *fi = dir_fopen(get_user_directory(), "tyrian.cfg", "rb");
+	if (fi == NULL)
+		return;
+	if (ftell_eof(fi) == 28)
 	{
 		background2 = 0;
 		fread_bool_die(&background2, fi);
 		fread_u8_die(&gameSpeed, 1, fi);
-		
+
 		fread_u8_die(&inputDevice_, 1, fi);
 		fread_u8_die(&jConfigure, 1, fi);
-		
+
 		fread_u8_die(&versionNum, 1, fi);
-		
+
 		fread_u8_die(&processorType, 1, fi);
 		fread_u8_die(&midiPort, 1, fi);
 		fread_u8_die(&soundEffects, 1, fi);
 		fread_u8_die(&gammaCorrection, 1, fi);
 		fread_s8_die(&difficultyLevel, 1, fi);
-		
+
 		fread_u8_die(joyButtonAssign, 4, fi);
-		
+
 		fread_u16_die(&tyrMusicVolume, 1, fi);
 		fread_u16_die(&fxVolume, 1, fi);
-		
+
 		fread_u8_die(inputDevice, 2, fi);
 
 		fread_u8_die(dosKeySettings, 8, fi);
-		
-		fclose(fi);
 	}
-	else
-	{
-		printf("\nInvalid or missing TYRIAN.CFG! Continuing using defaults.\n\n");
-		
-		soundEffects = 1;
-		memcpy(&dosKeySettings, &defaultDosKeySettings, sizeof(dosKeySettings));
-		background2 = true;
-		tyrMusicVolume = 191;
-		fxVolume = 191;
-		gammaCorrection = 0;
-		processorType = 4;  // detail level "Pentium"
-		gameSpeed = 4;
-		versionNum = 3;
-	}
-	
+	fclose(fi);
+}
+
+void JE_loadConfiguration(void)
+{
+	// The DOS defaults, then the DOS-era tyrian.cfg over them, then opentyrian.cfg over both.
+	soundEffects = 1;
+	memcpy(&dosKeySettings, &defaultDosKeySettings, sizeof(dosKeySettings));
+	background2 = true;
+	tyrMusicVolume = 191;
+	fxVolume = 191;
+	gammaCorrection = 0;
+	processorType = 4;  // detail level "Pentium"
+	gameSpeed = 4;
+	versionNum = 3;
+	legacy_config_load();
+
 	load_opentyrian_config();
-	
+
 	if (tyrMusicVolume > 255)
 		tyrMusicVolume = 255;
 	if (fxVolume > 255)
 		fxVolume = 255;
-	
+
 	set_volume(tyrMusicVolume, fxVolume);
-	
-	fi = dir_fopen_warn(get_user_directory(), "tyrian.sav", "rb");
-	if (fi)
+
+	// The save file, or the pair of DOS-era files an older build left, or nothing at all.
+	bool imported = false;
+	if (save_file_load())
 	{
-
-		fseek(fi, 0, SEEK_SET);
-		fread_die(saveTemp, 1, sizeof(saveTemp), fi);
-		JE_decryptSaveTemp();
-
-		/* Load fields individually because the C structure no longer matches the legacy save layout. */
-
-		p = saveTemp;
-		for (z = 0; z < SAVE_FILES_NUM; z++)
-		{
-			memcpy(&saveFiles[z].encode, p, sizeof(JE_word)); p += 2;
-			saveFiles[z].encode = SDL_SwapLE16(saveFiles[z].encode);
-			
-			memcpy(&saveFiles[z].level, p, sizeof(JE_word)); p += 2;
-			saveFiles[z].level = SDL_SwapLE16(saveFiles[z].level);
-			
-			memcpy(&saveFiles[z].items, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
-			
-			memcpy(&saveFiles[z].score, p, sizeof(JE_longint)); p += 4;
-			saveFiles[z].score = SDL_SwapLE32(saveFiles[z].score);
-			
-			memcpy(&saveFiles[z].score2, p, sizeof(JE_longint)); p += 4;
-			saveFiles[z].score2 = SDL_SwapLE32(saveFiles[z].score2);
-			
-			/* SYN: Pascal strings are prefixed by a byte holding the length! */
-			memset(&saveFiles[z].levelName, 0, sizeof(saveFiles[z].levelName));
-			memcpy(&saveFiles[z].levelName, &p[1], *p);
-			p += 10;
-			
-			/* This was a BYTE array, not a STRING, in the original. Go fig. */
-			memcpy(&saveFiles[z].name, p, 14);
-			p += 14;
-			
-			memcpy(&saveFiles[z].cubes, p, sizeof(JE_byte)); p++;
-			memcpy(&saveFiles[z].power, p, sizeof(JE_byte) * 2); p += 2;
-			memcpy(&saveFiles[z].episode, p, sizeof(JE_byte)); p++;
-			memcpy(&saveFiles[z].lastItems, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
-			memcpy(&saveFiles[z].difficulty, p, sizeof(JE_byte)); p++;
-			memcpy(&saveFiles[z].secretHint, p, sizeof(JE_byte)); p++;
-			memcpy(&saveFiles[z].input1, p, sizeof(JE_byte)); p++;
-			memcpy(&saveFiles[z].input2, p, sizeof(JE_byte)); p++;
-			
-			/* booleans were 1 byte in pascal; working around it */
-			Uint8 temp;
-			memcpy(&temp, p, 1); p++;
-			saveFiles[z].gameHasRepeated = temp != 0;
-			
-			memcpy(&saveFiles[z].initialDifficulty, p, sizeof(JE_byte)); p++;
-			
-			memcpy(&saveFiles[z].highScore1, p, sizeof(JE_longint)); p += 4;
-			saveFiles[z].highScore1 = SDL_SwapLE32(saveFiles[z].highScore1);
-			
-			memcpy(&saveFiles[z].highScore2, p, sizeof(JE_longint)); p += 4;
-			saveFiles[z].highScore2 = SDL_SwapLE32(saveFiles[z].highScore2);
-			
-			memset(&saveFiles[z].highScoreName, 0, sizeof(saveFiles[z].highScoreName));
-			memcpy(&saveFiles[z].highScoreName, &p[1], *p);
-			p += 30;
-			
-			memcpy(&saveFiles[z].highScoreDiff, p, sizeof(JE_byte)); p++;
-
-			memcpy(&temp, p, 1); p++;  // autoFireSpecial
-			saveFiles[z].autoFireSpecial = temp != 0;
-
-			memcpy(&temp, p, 1); p++;  // chargeSidekickAutofire
-			saveFiles[z].chargeSidekickAutofire = temp;  // 0=OFF, 1=ON, 2=fully-charged-only, 3=ON (fastest)
-
-			memcpy(&temp, p, 1); p++;  // difficultyAdjust
-			saveFiles[z].difficultyAdjust = temp != 0;
-
-			memcpy(&temp, p, 1); p++;  // cheatInfiniteSidekickAmmo
-			saveFiles[z].cheatInfiniteSidekickAmmo = temp != 0;
-
-			memcpy(&temp, p, 1); p++;  // cheatInfiniteShields
-			saveFiles[z].cheatInfiniteShields = temp != 0;
-
-			memcpy(&temp, p, 1); p++;  // cheatInfiniteArmor
-			saveFiles[z].cheatInfiniteArmor = temp != 0;
-
-			memcpy(&temp, p, 1); p++;  // expertMode
-			saveFiles[z].expertMode = temp != 0;
-		}
-
-		/* The legacy save layout stores each score component as one byte. */
-		editorLevel = (saveTemp[SIZEOF_SAVEGAMETEMP - 5] << 8) | saveTemp[SIZEOF_SAVEGAMETEMP - 6];
-
-		// T2K High Scores are unencrypted after saveTemp
-		for (z = 0; z < 10; ++z)
-		{
-			JE_byte len;
-
-			for (y = 0; y < 3; ++y)
-			{
-				fread_s32_die(&t2kHighScores[z][y].score, 1, fi);
-				t2kHighScores[z][y].score = SDL_SwapLE32(t2kHighScores[z][y].score);
-
-				fread_u8_die(&len, 1, fi);
-				fread_die(t2kHighScores[z][y].playerName, 1, 29, fi);
-
-				t2kHighScores[z][y].playerName[len] = '\0';
-				fread_u8_die(&t2kHighScores[z][y].difficulty, 1, fi);
-			}
-		}
-		for (z = 10; z < 20; ++z)
-		{
-			JE_byte len;
-
-			for (y = 0; y < 3; ++y)
-			{
-				fread_s32_die(&t2kHighScores[z][y].score, 1, fi);
-				t2kHighScores[z][y].score = SDL_SwapLE32(t2kHighScores[z][y].score);
-
-				fseek(fi, 4, SEEK_CUR); // Unknown long int that seems to have no effect
-				fread_u8_die(&len, 1, fi);
-
-				fread_die(t2kHighScores[z][y].playerName, 1, 29, fi);
-				t2kHighScores[z][y].playerName[len] = '\0';
-				fread_u8_die(&t2kHighScores[z][y].difficulty, 1, fi);
-			}
-		}
-
-		fclose(fi);
+		imported = endlessSaveRepairFromLegacy();
 	}
 	else
 	{
-		/* We didn't have a save file! Let's make up random stuff! */
-		editorLevel = 800;
-
-		for (z = 0; z < 100; z++)
-		{
-			saveTemp[SAVE_FILES_SIZE + z] = initialItemAvail[z];
-		}
-
-		for (z = 0; z < SAVE_FILES_NUM; z++)
-		{
-			saveFiles[z].level = 0;
-
-			for (y = 0; y < 14; y++)
-			{
-				saveFiles[z].name[y] = ' ';
-			}
-			saveFiles[z].name[14] = 0;
-
-			saveFiles[z].highScore1 = ((mt_rand() % 20) + 1) * 1000;
-
-			if (z % 6 > 2)
-			{
-				saveFiles[z].highScore2 = ((mt_rand() % 20) + 1) * 1000;
-				strcpy(saveFiles[z].highScoreName, defaultTeamNames[mt_rand() % COUNTOF(defaultTeamNames)]);
-			}
-			else
-			{
-				strcpy(saveFiles[z].highScoreName, defaultHighScoreNames[mt_rand() % COUNTOF(defaultHighScoreNames)]);
-			}
-
-			saveFiles[z].autoFireSpecial = false;
-
-			saveFiles[z].chargeSidekickAutofire = CHARGE_AUTOFIRE_ON;
-			saveFiles[z].difficultyAdjust = true;
-			saveFiles[z].cheatInfiniteSidekickAmmo = false;
-			saveFiles[z].cheatInfiniteShields = false;
-			saveFiles[z].cheatInfiniteArmor = false;
-			saveFiles[z].expertMode = false;
-		}
-
-		for (z = 0; z < 10; ++z)
-		{
-			for (y = 0; y < 3; ++y)
-			{
-				// Timed Battle scores
-				t2kHighScores[z][y].score = ((mt_rand() % 50) + 1) * 100;
-				strcpy(t2kHighScores[z][y].playerName, defaultHighScoreNames[mt_rand() % COUNTOF(defaultHighScoreNames)]);
-			}
-		}
-		for (z = 10; z < 20; ++z)
-		{
-			for (y = 0; y < 3; ++y)
-			{
-				// Main Game scores
-				t2kHighScores[z][y].score = ((mt_rand() % 20) + 1) * 1000;
-				if (z & 1)
-					strcpy(t2kHighScores[z][y].playerName, defaultTeamNames[mt_rand() % COUNTOF(defaultTeamNames)]);
-				else
-					strcpy(t2kHighScores[z][y].playerName, defaultHighScoreNames[mt_rand() % COUNTOF(defaultHighScoreNames)]);
-			}
-		}
+		if (!legacy_save_load())
+			save_defaults();
+		else
+			imported = true;
+		if (endlessSaveLegacyLoad())
+			imported = true;
 	}
-	
+
 	JE_initProcessorType();
 	configuration_loaded = true;
+
+	// Write the imported state in the new form at once, so the migration does not wait on a save.
+	if (imported)
+		JE_saveConfiguration();
 }
 
+/* Write opentyrian.sav: the slots that hold a game, each Endless half beside its slot, and the
+ * high-score boards. Everything is a named key in the same format as opentyrian.cfg. */
 void JE_saveConfiguration(void)
 {
-	FILE *f;
-	JE_byte *p;
-	int z;
-
 	// Don't save nothing
 	if (!configuration_loaded)
 		return;
 
-	p = saveTemp;
-	for (z = 0; z < SAVE_FILES_NUM; z++)
+	Config config;
+	config_init(&config);
+
+	ConfigSection *section = config_add_section(&config, "saves", NULL);
+	if (section == NULL)
+		exit(EXIT_FAILURE);  // out of memory
+	config_set_int_option(section, "format", SAVE_FILE_FORMAT);
+
+	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{
-		JE_SaveFileType tempSaveFile;
-		memcpy(&tempSaveFile, &saveFiles[z], sizeof(tempSaveFile));
-		
-		tempSaveFile.encode = SDL_SwapLE16(tempSaveFile.encode);
-		memcpy(p, &tempSaveFile.encode, sizeof(JE_word)); p += 2;
-		
-		tempSaveFile.level = SDL_SwapLE16(tempSaveFile.level);
-		memcpy(p, &tempSaveFile.level, sizeof(JE_word)); p += 2;
-		
-		memcpy(p, &tempSaveFile.items, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
-		
-		tempSaveFile.score = SDL_SwapLE32(tempSaveFile.score);
-		memcpy(p, &tempSaveFile.score, sizeof(JE_longint)); p += 4;
-		
-		tempSaveFile.score2 = SDL_SwapLE32(tempSaveFile.score2);
-		memcpy(p, &tempSaveFile.score2, sizeof(JE_longint)); p += 4;
-		
-		/* SYN: Pascal strings are prefixed by a byte holding the length! */
-		memset(p, 0, sizeof(tempSaveFile.levelName));
-		*p = strlen(tempSaveFile.levelName);
-		memcpy(&p[1], &tempSaveFile.levelName, *p);
-		p += 10;
-		
-		/* This was a BYTE array, not a STRING, in the original. Go fig. */
-		memcpy(p, &tempSaveFile.name, 14);
-		p += 14;
-		
-		memcpy(p, &tempSaveFile.cubes, sizeof(JE_byte)); p++;
-		memcpy(p, &tempSaveFile.power, sizeof(JE_byte) * 2); p += 2;
-		memcpy(p, &tempSaveFile.episode, sizeof(JE_byte)); p++;
-		memcpy(p, &tempSaveFile.lastItems, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
-		memcpy(p, &tempSaveFile.difficulty, sizeof(JE_byte)); p++;
-		memcpy(p, &tempSaveFile.secretHint, sizeof(JE_byte)); p++;
-		memcpy(p, &tempSaveFile.input1, sizeof(JE_byte)); p++;
-		memcpy(p, &tempSaveFile.input2, sizeof(JE_byte)); p++;
-		
-		/* booleans were 1 byte in pascal; working around it */
-		Uint8 temp = tempSaveFile.gameHasRepeated != false;
-		memcpy(p, &temp, 1); p++;
-		
-		memcpy(p, &tempSaveFile.initialDifficulty, sizeof(JE_byte)); p++;
-		
-		tempSaveFile.highScore1 = SDL_SwapLE32(tempSaveFile.highScore1);
-		memcpy(p, &tempSaveFile.highScore1, sizeof(JE_longint)); p += 4;
-		
-		tempSaveFile.highScore2 = SDL_SwapLE32(tempSaveFile.highScore2);
-		memcpy(p, &tempSaveFile.highScore2, sizeof(JE_longint)); p += 4;
-		
-		memset(p, 0, sizeof(tempSaveFile.highScoreName));
-		*p = strlen(tempSaveFile.highScoreName);
-		memcpy(&p[1], &tempSaveFile.highScoreName, *p);
-		p += 30;
-		
-		memcpy(p, &tempSaveFile.highScoreDiff, sizeof(JE_byte)); p++;
-
-		temp = tempSaveFile.autoFireSpecial != false;
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.chargeSidekickAutofire;  // 0=OFF, 1=ON, 2=fully-charged-only, 3=ON (fastest)
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.difficultyAdjust != false;
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.cheatInfiniteSidekickAmmo != false;
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.cheatInfiniteShields != false;
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.cheatInfiniteArmor != false;
-		memcpy(p, &temp, 1); p++;
-
-		temp = tempSaveFile.expertMode != false;
-		memcpy(p, &temp, 1); p++;
+		if (saveFiles[z].level == 0)
+			continue;   // an empty slot is a slot with no section
+		char name[8];
+		snprintf(name, sizeof(name), "%d", z + 1);
+		section = config_add_section(&config, "save", name);
+		if (section == NULL)
+			exit(EXIT_FAILURE);  // out of memory
+		save_slot_write(section, &saveFiles[z], (JE_byte)(z + 1));
 	}
-	
-	saveTemp[SIZEOF_SAVEGAMETEMP - 6] = editorLevel >> 8;
-	saveTemp[SIZEOF_SAVEGAMETEMP - 5] = editorLevel;
-	
-	JE_encryptSaveTemp();
-	
-	// Best-effort, as above: dir_fopen_warn is what actually reports a broken save directory.
+	endlessSaveConfigWrite(&config);
+	save_highscores_write(&config);
+
+	// Best-effort, as in save_opentyrian_config: dir_fopen_warn is what reports a broken directory.
 #ifndef TARGET_WIN32
 	const int mkdir_result = mkdir(get_user_directory(), 0700);
 #else
@@ -2321,85 +2549,16 @@ void JE_saveConfiguration(void)
 #endif
 	(void)mkdir_result;
 
-	f = dir_fopen_warn(get_user_directory(), "tyrian.sav", "wb");
+	FILE *f = dir_fopen_warn(get_user_directory(), SAVE_FILE_NAME, "w");
 	if (f != NULL)
 	{
-		fwrite_die(saveTemp, 1, sizeof(saveTemp), f);
-
-		// T2K High Scores are unencrypted after saveTemp
-		for (z = 0; z < 10; ++z)
-		{
-			JE_longint templi;
-			JE_byte len;
-
-			for (y = 0; y < 3; ++y)
-			{
-				templi = SDL_SwapLE32(t2kHighScores[z][y].score);
-				len = strlen(t2kHighScores[z][y].playerName);
-				fwrite_s32_die(&templi, f);
-
-				fwrite_u8_die(&len, 1, f);
-				fwrite_die(t2kHighScores[z][y].playerName, 1, 29, f);
-				fwrite_u8_die(&t2kHighScores[z][y].difficulty, 1, f);
-			}
-		}
-		for (z = 10; z < 20; ++z)
-		{
-			JE_longint templi;
-			JE_byte len;
-
-			for (y = 0; y < 3; ++y)
-			{
-				templi = SDL_SwapLE32(t2kHighScores[z][y].score);
-				len = strlen(t2kHighScores[z][y].playerName);
-				fwrite_s32_die(&templi, f);
-
-				templi = 0x12345678;
-				fwrite_s32_die(&templi, f); // Unknown long int that seems to have no effect
-
-				fwrite_u8_die(&len, 1, f);
-				fwrite_die(t2kHighScores[z][y].playerName, 1, 29, f);
-				fwrite_u8_die(&t2kHighScores[z][y].difficulty, 1, f);
-			}
-		}
-
+		config_write(&config, f);
 #if _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
 		fsync(fileno(f));
 #endif
 		fclose(f);
 	}
-	
-	JE_decryptSaveTemp();
-	
-	f = dir_fopen_warn(get_user_directory(), "tyrian.cfg", "wb");
-	if (f != NULL)
-	{
-		fwrite_bool_die(&background2, f);
-		fwrite_u8_die(&gameSpeed, 1, f);
-		
-		fwrite_u8_die(&inputDevice_, 1, f);
-		fwrite_u8_die(&jConfigure, 1, f);
-		
-		fwrite_u8_die(&versionNum, 1, f);
-		fwrite_u8_die(&processorType, 1, f);
-		fwrite_u8_die(&midiPort, 1, f);
-		fwrite_u8_die(&soundEffects, 1, f);
-		fwrite_u8_die(&gammaCorrection, 1, f);
-		fwrite_s8_die(&difficultyLevel, 1, f);
-		fwrite_u8_die(joyButtonAssign, 4, f);
-		
-		fwrite_u16_die(&tyrMusicVolume, f);
-		fwrite_u16_die(&fxVolume, f);
-		
-		fwrite_u8_die(inputDevice, 2, f);
-		
-		fwrite_u8_die(dosKeySettings, 8, f);
-		
-#if _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
-		fsync(fileno(f));
-#endif
-		fclose(f);
-	}
+	config_deinit(&config);
 
 	save_opentyrian_config();
 }
@@ -2410,7 +2569,7 @@ void JE_saveConfiguration(void)
 
 bool save_record_is_coop(const JE_SaveFileType *rec)
 {
-	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc74f0000u;
+	return (rec->dualShipTag & 0xffff0000u) == 0xc74f0000u;
 }
 
 /* The arcade half of the same marker: two complete ships, but arcade rules and two scores rather
@@ -2418,7 +2577,7 @@ bool save_record_is_coop(const JE_SaveFileType *rec)
  * record to the Campaign and Endless lobbies. */
 bool save_record_is_dual_arcade(const JE_SaveFileType *rec)
 {
-	return ((Uint32)rec->highScore2 & 0xffff0000u) == 0xc7a50000u;
+	return (rec->dualShipTag & 0xffff0000u) == 0xc7a50000u;
 }
 
 /* Which ruleset each of the record's two ships was flying, read straight out of the loadout
@@ -2439,11 +2598,11 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	memcpy(p, rec->items, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
 	memcpy(p, rec->lastItems, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
 
-	Uint32 u32 = SDL_SwapLE32((Uint32)rec->score);
-	memcpy(p, &u32, 4); p += 4;
-	u32 = SDL_SwapLE32((Uint32)rec->score2);
-	memcpy(p, &u32, 4); p += 4;
-	u32 = SDL_SwapLE32((Uint32)rec->highScore2);
+	Uint64 u64 = SDL_SwapLE64((Uint64)rec->score);
+	memcpy(p, &u64, 8); p += 8;
+	u64 = SDL_SwapLE64((Uint64)rec->score2);
+	memcpy(p, &u64, 8); p += 8;
+	Uint32 u32 = SDL_SwapLE32(rec->dualShipTag);
 	memcpy(p, &u32, 4); p += 4;
 
 	memcpy(p, rec->levelName, sizeof(rec->levelName)); p += sizeof(rec->levelName);
@@ -2483,13 +2642,14 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	memcpy(rec->items, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
 	memcpy(rec->lastItems, p, sizeof(JE_PItemsType)); p += sizeof(JE_PItemsType);
 
+	Uint64 u64;
+	memcpy(&u64, p, 8); p += 8;
+	rec->score = cash_clamp((Sint64)SDL_SwapLE64(u64));
+	memcpy(&u64, p, 8); p += 8;
+	rec->score2 = cash_clamp((Sint64)SDL_SwapLE64(u64));
 	Uint32 u32;
 	memcpy(&u32, p, 4); p += 4;
-	rec->score = (JE_longint)SDL_SwapLE32(u32);
-	memcpy(&u32, p, 4); p += 4;
-	rec->score2 = (JE_longint)SDL_SwapLE32(u32);
-	memcpy(&u32, p, 4); p += 4;
-	rec->highScore2 = (JE_longint)SDL_SwapLE32(u32);
+	rec->dualShipTag = SDL_SwapLE32(u32);
 
 	memcpy(rec->levelName, p, sizeof(rec->levelName)); p += sizeof(rec->levelName);
 	rec->levelName[sizeof(rec->levelName) - 1] = '\0';
