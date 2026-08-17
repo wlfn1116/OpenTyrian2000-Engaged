@@ -27,6 +27,8 @@ typedef struct {
 	JE_byte shotTrail;
 	JE_word shotGr, shotAni, shotAniMax;
 	Uint8 shotDmg;
+	// aimDelayMax carries the steering interval in SHOT_AIM_DELAY_MASK; SHOT_AIM_GUIDANCE on top marks
+	// a shot the endless Guidance Package steers, which aims at screen x and retargets (see shots.c).
 	JE_byte shotBlastFilter, chainReaction, playerNumber, aimAtEnemy, aimDelay, aimDelayMax;
 	JE_byte salvoBoost;  // endless Opening Salvo perk: 1 = this shot is part of a charged volley (extra damage at collision)
 	// Per-bullet Endless pierce lock. An enemy-wide lock would discard the other
@@ -37,6 +39,17 @@ typedef struct {
 	                          // until the top of the next pass; see the hit site for why
 	JE_byte pierceDmgCarry;   // scaled-damage remainder in hundredths of a point (see endless.h)
 } PlayerShotDataType;
+
+// The bit rides in aimDelayMax because a new field would grow the struct, which moves the rollback
+// layout fingerprint and the replay fixtures. Weapon-table intervals are 1..8, well under the mask.
+#define SHOT_AIM_GUIDANCE   0x80
+#define SHOT_AIM_DELAY_MASK 0x7f
+
+// A shot velocity above 100 rides the ship: the move subtracts 120 and adds the ship's delta, so
+// 120 rests beside the ship and the shipped tables use 111 to 124 for beams that drift either way.
+// Steering clamps a riding velocity to this range, which keeps it riding.
+#define SHOT_ATTACHED_VEL_MIN 101  // ...and on x this one value pins both axes; steering leaves it alone
+#define SHOT_ATTACHED_VEL_MAX 199  // drift cap, well clear of the range the shipped tables use
 
 // Large enough for sustained specials and maximum-width custom weapons. Keep
 // RL_ID_PSHOT_BASE + MAX_PWEAPON below RL_ID_ESHOT_BASE.
@@ -54,6 +67,11 @@ void player_shot_set_direction(JE_integer shot_id, uint weapon_id, JE_real direc
  * \a sprite_frame here so every caller uses the same geometry. */
 void player_shot_hit_offset(JE_word sprite_frame, int *out_dx, int *out_dy);
 void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_dy);
+
+/** One course correction of a homing shot, run when its steering interval elapses. Weapon-table
+ * homing keeps the stock rule, aiming at screen x only under guidedShotScreenAim; a
+ * SHOT_AIM_GUIDANCE shot aims at screen x and retargets. */
+void player_shot_aim_step(PlayerShotDataType *shot);
 
 /** Moves and draws a shot. Does \b not collide it with enemies.
  * The hit offset is that of the frame drawn this tick.

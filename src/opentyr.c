@@ -317,6 +317,7 @@ typedef enum
 
 	/* Enhancements -> Gameplay. */
 	MENU_ITEM_SHOT_HITBOXES,        // collide projectiles from the middle of their sprites (tyrian2.c)
+	MENU_ITEM_GUIDED_AIM,           // weapon-table homing steers toward the enemy's screen x (shots.c)
 	MENU_ITEM_BASE_DISPENSERS,      // wake the dormant dispenser bases (enemy 80-83)
 	MENU_ITEM_ARCADE_LIFE_BOOST,    // arcade lives scale the shield/armour ceilings
 	MENU_ITEM_ARCADE_RANDOM_BALLS,  // arcade weapon balls re-rolled within their class
@@ -456,6 +457,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
 	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
 	case MENU_ITEM_ZICA_BUFF:           return &zicaLaserBuff;
+	case MENU_ITEM_GUIDED_AIM:          return &guidedShotScreenAim;
 	case MENU_ITEM_BASE_DISPENSERS:     return &restoreBaseDispensers;
 	case MENU_ITEM_ARCADE_LIFE_BOOST:   return &arcadeLifeBoost;
 	case MENU_ITEM_ARCADE_RANDOM_BALLS: return &arcadeRandomBalls;
@@ -693,7 +695,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Visuals...", "Backgrounds, sparks, and screen effects.", MENU_VISUALS },
 				{ MENU_ITEM_SUBMENU, "Heads-Up Display...", "Health bars and the gauges beside your ship.", MENU_HUD },
 				{ MENU_ITEM_SUBMENU, "Weapons...", "Custom weapons, restored gear, spark trails.", MENU_WEAPONS },
-				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, restored enemies, and arcade rules.", MENU_GAMEPLAY },
+				{ MENU_ITEM_SUBMENU, "Gameplay...", "Collision, homing, restored enemies, and arcade rules.", MENU_GAMEPLAY },
 				{ MENU_ITEM_SUBMENU, "Episode Versions...", "Items that differ between Ep 1-3 and Ep 4-5.", MENU_EPISODE_VERSIONS },
 				MENU_DONE_ROW
 			},
@@ -800,6 +802,7 @@ static bool runOptionsMenu(MenuId startMenu)
 			.header = "Gameplay",
 			.items = {
 				{ MENU_ITEM_SHOT_HITBOXES, "Shot Hitboxes:", "Where a shot hits from: its middle or its corner." },
+				{ MENU_ITEM_GUIDED_AIM, "Guided Aim:", "Guided shots steer to where enemies are drawn." },
 				{ MENU_ITEM_BASE_DISPENSERS, "Ice Base Shots:", "Wake dormant ice bases in the main game." },
 				{ MENU_ITEM_SUBMENU, "Arcade Modes...", "Tweaks for the arcade and Super Arcade modes.", MENU_ARCADE_MODES },
 				MENU_DONE_ROW

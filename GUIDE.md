@@ -313,6 +313,19 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Financier | More interest and lower shop prices | 4 |
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
 | Failsafe | Brief invulnerability after hull damage | 2 |
+| Guidance Package | Shots home in; later stacks add sidekicks and specials | 3 |
+
+Guidance Package bends each shot toward the nearest enemy that can be hurt.
+Every stack corrects the course more often: about four times a second at one
+stack, seven at two and seventeen at three, so a slow or wide gun curls onto
+its target while a fast one barely notices at first and turns hard at full
+stacks. A gun that already homes turns quicker per stack instead of gaining a
+second aim. A steered shot moves on to the next enemy when its own dies and
+flies straight when nothing is left. Shots that ride the ship, such as the
+Zica Laser beams and parts of the Mega Pulse, keep riding it and curve inside
+its frame, so moving the ship carries the whole curve with it. Score pickups,
+scenery and invulnerable parts are never targets, shots that loop around the
+ship are not steered, and superbombs are never touched.
 
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns
@@ -682,7 +695,7 @@ to the other machine before launch.
 | Visuals | Parallax, mirrored layers, sparks, special tint, shop sprites |
 | Heads-Up Display | Enemy bars, boss bars, gauges |
 | Weapons | Weapon Creator, Charge-Laser, autofire, spark trails |
-| Gameplay | Shot hitboxes, Ice Base Shots, Arcade tweaks |
+| Gameplay | Shot hitboxes, Guided Aim, Ice Base Shots, Arcade tweaks |
 | Episode Versions | Items whose Ep 1-3 and Ep 4-5 data differ |
 
 ### Presets
@@ -735,6 +748,11 @@ Useful restored-content settings:
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.
   The host controls it online.
+- **Guided Aim** makes homing weapons such as the Heavy Guided Bombs steer to
+  where an enemy is drawn. As shipped they steer to its position on the map,
+  which sits to one side of the sprite by the parallax of the enemy's layer, so
+  they can miss what they chase. Off by default in both presets, so Vanilla and
+  Engaged keep the shipped homing. The host controls it online.
 
 The special-weapon HUD light is a charge meter. It drains during use, fills
 during recharge, and flashes when ready.

@@ -72,7 +72,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       58           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       60           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -1682,7 +1682,8 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 /* The settings block's tail, added when the flags word at byte 4 filled up. Bytes 0..23 keep the
  * layout they always had, so only what is below moved onto new ground. */
 #define NET_SET_FLAGS2   24   /* Uint16: bit 0 expertMode, bits 1-2 epDiffMode[8], bit 3 centered
-                                 shot hitboxes, bits 4+ the later epDiffMode entries; eight spare */
+                                 shot hitboxes, bits 4+ the later epDiffMode entries, bit 15 Guided
+                                 Aim; seven spare between the two                                  */
 #define NET_SET_EXPERT   26   /* NETWORK_EXPERT_SLOTS x Uint16                                    */
 #define NET_SET_DEBUG_FLAGS 42 /* Uint16: simulation-affecting Debug Mode toggles                  */
 #define NET_SET_NOCLIP      44 /* Uint8: noclipMode                                                 */
@@ -1696,8 +1697,10 @@ COMPILE_TIME_ASSERT(net_settings_block_fits,
  * wire would leave the two machines' item tables unequal. */
 #define NET_SET_EPDIFF_PACKED   8  /* entries 0..7 pack into the byte-2 word, two bits each */
 #define NET_SET_EPDIFF_TAIL_BIT 4  /* entries 9 up run from this flags2 bit, two bits each  */
+#define NET_SET_GUIDED_AIM_BIT 15  /* guidedShotScreenAim; the epdiff tail grows up to it   */
 COMPILE_TIME_ASSERT(net_settings_epdiff_fits,
-                    NET_SET_EPDIFF_TAIL_BIT + 2 * (EDW_COUNT - NET_SET_EPDIFF_PACKED - 1) <= 16);
+                    NET_SET_EPDIFF_TAIL_BIT + 2 * (EDW_COUNT - NET_SET_EPDIFF_PACKED - 1)
+                    <= NET_SET_GUIDED_AIM_BIT);
 
 /* Where epdiff entry i (i >= NET_SET_EPDIFF_PACKED) sits in flags2. Entry 8 keeps its original
  * bits 1-2, below the shot-hitbox flag; the rest run from NET_SET_EPDIFF_TAIL_BIT up. */
@@ -1762,7 +1765,7 @@ static struct
 	bool zicaLaserLock, zicaLaserBuff;
 	int  wallopSecondBolt;
 	bool chargeLaserCannon, restoreBaseDispensers, arcadeLifeBoost, arcadeRandomBalls;
-	bool arcadeRearGunScale, centeredShotHitboxes;
+	bool arcadeRearGunScale, centeredShotHitboxes, guidedShotScreenAim;
 	int  xmasMode;
 	JE_byte gameSpeed;
 	JE_boolean arcadeSeparateMode;
@@ -1845,6 +1848,7 @@ int network_settings_pack(Uint8 *buf)
 	for (int i = NET_SET_EPDIFF_PACKED; i < EDW_COUNT; ++i)
 		flags2 |= (Uint16)(epDiffMode[i] & 3) << network_epdiff_tail_shift(i);
 	flags2 |= centeredShotHitboxes ? 1 << 3 : 0;  // where both shot loops take a hit from
+	flags2 |= guidedShotScreenAim ? 1 << NET_SET_GUIDED_AIM_BIT : 0;  // which x a guided shot chases
 	SDLNet_Write16(flags2, &buf[NET_SET_FLAGS2]);
 	for (int i = 0; i < NETWORK_EXPERT_SLOTS; ++i)
 		SDLNet_Write16((Uint16)(i < expertSettingsCount ? *expertSettings[i].value : 0),
@@ -1904,6 +1908,7 @@ static void network_settings_stash(void)
 	settings_local.arcadeRandomBalls    = arcadeRandomBalls;
 	settings_local.arcadeRearGunScale   = arcadeRearGunScale;
 	settings_local.centeredShotHitboxes = centeredShotHitboxes;
+	settings_local.guidedShotScreenAim  = guidedShotScreenAim;
 	settings_local.xmasMode             = xmasMode;
 	settings_local.gameSpeed            = gameSpeed;
 	// Session-scoped, so leaving a session has to put it back: a leftover Separate flag would
@@ -2046,6 +2051,7 @@ int network_settings_adopt(const Uint8 *buf)
 			epDiffMode[i] = EPDIFF_AUTO;
 	}
 	centeredShotHitboxes = (flags2 & (1 << 3)) != 0;
+	guidedShotScreenAim = (flags2 & (1 << NET_SET_GUIDED_AIM_BIT)) != 0;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
 		*expertSettings[i].value = (int)SDLNet_Read16(&buf[NET_SET_EXPERT + i * 2]);
 	clamp_expert_settings();
@@ -3478,6 +3484,7 @@ void network_settings_restore(void)
 	arcadeRandomBalls     = settings_local.arcadeRandomBalls;
 	arcadeRearGunScale    = settings_local.arcadeRearGunScale;
 	centeredShotHitboxes  = settings_local.centeredShotHitboxes;
+	guidedShotScreenAim   = settings_local.guidedShotScreenAim;
 	xmasMode              = settings_local.xmasMode;
 	gameSpeed             = settings_local.gameSpeed;
 	arcadeSeparateMode    = settings_local.arcadeSeparateMode;

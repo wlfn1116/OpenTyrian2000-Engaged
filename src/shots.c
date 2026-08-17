@@ -33,6 +33,101 @@
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
 JE_byte shotAvail[MAX_PWEAPON]; /* [1..MaxPWeapon] */   /*0:Avail 1-255:Duration left*/
 
+/* Endless Guidance Package steering. The collision loop measures an enemy at ex + mapoffset, so a
+ * steered shot chases that screen x; the weapon-table homing below it keeps its stock map-x aim
+ * unless the Guided Aim setting (guidedShotScreenAim) moves it to the same screen x. A target is a
+ * live, shootable hull: pickups, scenery and invulnerable parts would pile shots into something
+ * they can never hurt. */
+static bool shot_guidance_target_ok(int slot)
+{
+	return enemyAvail[slot] == 0 && !enemy[slot].scoreitem
+	    && enemy[slot].armorleft > 0 && enemy[slot].armorleft < 255;
+}
+
+// Nearest steerable enemy to (x, y), 1-based like aimAtEnemy; 0 when the field holds none.
+static JE_byte shot_guidance_nearest(int x, int y)
+{
+	int best_dist = 65000;
+	JE_byte closest = 0;
+	for (int slot = 0; slot < (int)COUNTOF(enemy); ++slot)
+	{
+		if (!shot_guidance_target_ok(slot))
+			continue;
+		const int dist = abs(enemy[slot].ex + enemy[slot].mapoffset - x) + abs(enemy[slot].ey - y);
+		if (dist < best_dist)
+		{
+			best_dist = dist;
+			closest = (JE_byte)(slot + 1);
+		}
+	}
+	return closest;
+}
+
+// Only a shot walking a circle is left alone, since a course correction would pull it off its
+// pattern. A shot riding the ship is steered within the ship's frame, so its curve travels with it.
+static bool shot_guidance_can_steer(const PlayerShotDataType *shot)
+{
+	return !shot->shotComplicated;
+}
+
+/* One velocity nudge on one axis. A ship-relative velocity (see SHOT_ATTACHED_VEL_MIN) is nudged
+ * within its range, so the shot keeps riding the ship and its curve travels with it; a free velocity
+ * is kept out of that range. On x the range starts one above the value that pins both axes, which
+ * `xAxis` names because that meaning belongs to x alone. */
+static void shot_guidance_nudge(JE_integer *vel, bool positive, bool xAxis)
+{
+	if (xAxis && *vel == SHOT_ATTACHED_VEL_MIN)
+		return;
+
+	const int lowest = xAxis ? SHOT_ATTACHED_VEL_MIN + 1 : SHOT_ATTACHED_VEL_MIN;
+	int v = *vel + (positive ? 1 : -1);
+	if (*vel >= SHOT_ATTACHED_VEL_MIN)
+		v = v < lowest ? lowest : (v > SHOT_ATTACHED_VEL_MAX ? SHOT_ATTACHED_VEL_MAX : v);
+	else if (v >= SHOT_ATTACHED_VEL_MIN)
+		v = SHOT_ATTACHED_VEL_MIN - 1;
+	*vel = (JE_integer)v;
+}
+
+void player_shot_aim_step(PlayerShotDataType *shot)
+{
+	const bool guidance = (shot->aimDelayMax & SHOT_AIM_GUIDANCE) != 0;
+	shot->aimDelay = shot->aimDelayMax & SHOT_AIM_DELAY_MASK;
+
+	// A steered shot whose enemy is gone looks for the next one; with none left it flies straight.
+	if (guidance && (shot->aimAtEnemy == 0 || !shot_guidance_target_ok(shot->aimAtEnemy - 1)))
+		shot->aimAtEnemy = shot_guidance_nearest(shot->shotX, shot->shotY);
+	if (shot->aimAtEnemy == 0)
+		return;
+
+	const struct JE_SingleEnemyType *target = &enemy[shot->aimAtEnemy - 1];
+	if (guidance)
+	{
+		shot_guidance_nudge(&shot->shotXM, shot->shotX < target->ex + target->mapoffset, true);
+		shot_guidance_nudge(&shot->shotYM, shot->shotY < target->ey, false);
+	}
+	else if (enemyAvail[shot->aimAtEnemy - 1] != 1)
+	{
+		const int target_x = target->ex + (guidedShotScreenAim ? target->mapoffset : 0);
+		if (shot->shotX < target_x)
+			shot->shotXM++;
+		else
+			shot->shotXM--;
+
+		if (shot->shotY < target->ey)
+			shot->shotYM++;
+		else
+			shot->shotYM--;
+	}
+	else
+	{
+		// Stock rule for a weapon-table shot whose enemy died: veer off sideways.
+		if (shot->shotXM > 0)
+			shot->shotXM++;
+		else
+			shot->shotXM--;
+	}
+}
+
 void simulate_player_shots(void)
 {
 	/* Player Shot Images */
@@ -352,32 +447,11 @@ bool player_shot_move_and_draw(
 				JE_setupExplosion(shot->shotX, shot->shotY, 0, shot->shotTrail, false, false);
 		}
 
-		if (shot->aimAtEnemy != 0)
+		// A Guidance Package shot keeps polling for an enemy even while it has none to chase.
+		if (shot->aimAtEnemy != 0 || (shot->aimDelayMax & SHOT_AIM_GUIDANCE))
 		{
 			if (--shot->aimDelay == 0)
-			{
-				shot->aimDelay = shot->aimDelayMax;
-
-				if (enemyAvail[shot->aimAtEnemy - 1] != 1)
-				{
-					if (shot->shotX < enemy[shot->aimAtEnemy - 1].ex)
-						shot->shotXM++;
-					else
-						shot->shotXM--;
-
-					if (shot->shotY < enemy[shot->aimAtEnemy - 1].ey)
-						shot->shotYM++;
-					else
-						shot->shotYM--;
-				}
-				else
-				{
-					if (shot->shotXM > 0)
-						shot->shotXM++;
-					else
-						shot->shotXM--;
-				}
-			}
+				player_shot_aim_step(shot);
 		}
 
 		JE_word sprite_frame = shot->shotGr + shot->shotAni;
@@ -779,7 +853,17 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 			}
 		}
 
-		if (weapon->aim > 5)  /*Guided Shot*/
+		// Endless Guidance Package: steer the shots the weapon table would not, and tighten the ones
+		// it already does. A shot that cannot be steered keeps its weapon-table aim.
+		const int guidance_delay = endlessFxActive()
+		    ? endlessPerkGuidanceDelay(bay_i, weapon->aim > 5 ? weapon->aim - 5 : 0) : 0;
+		if (guidance_delay > 0 && shot_guidance_can_steer(shot))
+		{
+			shot->aimAtEnemy = shot_guidance_nearest(shot->shotX, shot->shotY);
+			shot->aimDelay = 5;
+			shot->aimDelayMax = (JE_byte)(guidance_delay | SHOT_AIM_GUIDANCE);
+		}
+		else if (weapon->aim > 5)  /*Guided Shot*/
 		{
 			uint best_dist = 65000;
 			JE_byte closest_enemy = 0;
@@ -788,7 +872,9 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 			{
 				if (enemyAvail[x] != 1 && !enemy[x].scoreitem)
 				{
-					y = abs(enemy[x].ex - shot->shotX) + abs(enemy[x].ey - shot->shotY);
+					// Guided Aim measures the same screen x the shot will steer toward.
+					const int enemy_x = enemy[x].ex + (guidedShotScreenAim ? enemy[x].mapoffset : 0);
+					y = abs(enemy_x - shot->shotX) + abs(enemy[x].ey - shot->shotY);
 					if (y < best_dist)
 					{
 						best_dist = y;
@@ -803,6 +889,7 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		else
 		{
 			shot->aimAtEnemy = 0;
+			shot->aimDelayMax &= SHOT_AIM_DELAY_MASK;  // a recycled slot must not keep the guidance bit
 		}
 
 		shotRepeat[bay_i] = weapon->shotrepeat;

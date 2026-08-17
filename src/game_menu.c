@@ -4775,7 +4775,7 @@ void JE_doShipSpecs(void)
 
 /* Leftmost x at which `right` can sit flush against that edge, backing off to just after `text`
  * when an unusually long description would otherwise reach it. */
-static int help_bar_right_x(const char *text, const char *right)
+int help_bar_right_x(const char *text, const char *right)
 {
 	const int afterText = 10 + JE_textWidth(text, TINY_FONT) + 5;
 	const int x = ENDLESS_COURSE_PAYOUT_RIGHT - JE_textWidth(right, TINY_FONT);

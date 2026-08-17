@@ -186,6 +186,10 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 #define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
+#define ENDLESS_PERK_GUIDANCE_DELAY  8 // Guidance Package: ticks between course corrections on a gun with no homing of its own, at one stack
+#define ENDLESS_PERK_GUIDANCE_STEP   3 // ...ticks each further stack takes off that, and ticks each stack takes off a homing gun's own interval (floor 1)
+#define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2 // ...stacks before sidekick shots are steered as well
+#define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3 // ...and before special-weapon shots are
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
@@ -221,6 +225,7 @@ enum {
 	PERK_FINANCIER,
 	PERK_ORDNANCE,
 	PERK_FAILSAFE,
+	PERK_GUIDANCE,
 	PERK_COUNT
 };
 

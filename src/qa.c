@@ -1087,6 +1087,9 @@ static void qa_test_perk_registry(void)
 		         "perk name fits its menu field and uses visible glyphs");
 		qa_check(endlessPerkDesc(i)[0] != '\0' && endlessPerkMaxStack(i) > 0,
 		         "perk registry row has a description and positive stack limit");
+		// The pick screen draws "Owned n/max" flush right of the description on one help line.
+		qa_check(help_bar_right_x(endlessPerkDesc(i), "Owned 9/9") == help_bar_right_x("", "Owned 9/9"),
+		         "perk description leaves the stack count flush right on the help bar");
 		for (int j = 0; j < i; ++j)
 			qa_check(strcmp(endlessPerkName(i), endlessPerkName(j)) != 0,
 			         "perk names are unique");
@@ -2029,6 +2032,317 @@ static void qa_test_shot_hitboxes(void)
 
 	spriteSheet8 = savedSheet;
 	centeredShotHitboxes = savedCentered;
+}
+
+// One shot from `bay` at a fixed spot, fired by player 1; MAX_PWEAPON when the gun refused.
+static JE_integer qa_guidance_fire(uint bay, JE_word gun)
+{
+	return player_shot_create(0, bay, 100, 150, 0, 0, gun, 1);
+}
+
+static bool qa_guidance_marked(JE_integer id)
+{
+	return id < MAX_PWEAPON && (playerShotData[id].aimDelayMax & SHOT_AIM_GUIDANCE) != 0;
+}
+
+/* Guidance Package: which bays it steers at which stacks, what it will and will not aim at, and
+ * the course correction itself. The stock weapon-table homing is checked beside it, since the two
+ * share the move-side and the stock branch has to stay as shipped. */
+static void qa_test_guidance_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const bool savedGuidedAim = guidedShotScreenAim;
+	const uint savedPower = power;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	guidedShotScreenAim = false;   // the shipped homing is what the stock checks below pin
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+	power = 10000;   // the guns below must not be refused for generator power
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	const JE_word plainGun = 1;     // Pulse-Cannon level 1: one straight, unguided shot
+	const JE_word guidedGun = 587;  // Heavy Guided Bombs: one shot that homes on its own
+	qa_check(weapons[plainGun].aim <= 5 && weapons[plainGun].circlesize == 0
+	         && weapons[plainGun].multi == 1 && weapons[guidedGun].aim > 5
+	         && weapons[guidedGun].multi == 1,
+	         "the guidance test's stock guns are the ones it assumes");
+	const int guidedOwn = weapons[guidedGun].aim - 5;
+
+	/* The field: one shootable hull whose screen x (ex + mapoffset) is left of the shot while its
+	 * map x is right of it, and three nearer things a steered shot must ignore: a pickup, an
+	 * invulnerable part and scenery. */
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	enemyAvail[0] = 0;
+	enemy[0].ex = 120;
+	enemy[0].mapoffset = -40;
+	enemy[0].ey = 60;
+	enemy[0].armorleft = 20;
+	enemyAvail[1] = 2;
+	enemy[1].ex = 100;
+	enemy[1].ey = 100;
+	enemy[1].armorleft = 255;
+	enemy[1].scoreitem = true;
+	enemyAvail[2] = 0;
+	enemy[2].ex = 100;
+	enemy[2].ey = 120;   // the nearest thing on the field
+	enemy[2].armorleft = 255;
+	enemyAvail[3] = 2;
+	enemy[3].ex = 100;
+	enemy[3].ey = 110;
+	enemy[3].armorleft = 255;
+
+	// No stacks: nothing changes, and the stock branch aims where it always did.
+	JE_integer id = qa_guidance_fire(SHOT_FRONT, plainGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 0 && !qa_guidance_marked(id),
+	         "without Guidance Package an unguided gun's shot is not steered");
+	id = qa_guidance_fire(SHOT_FRONT, guidedGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 3
+	         && playerShotData[id].aimDelayMax == guidedOwn,
+	         "...and a stock guided shot keeps its shipped aim: nearest map x, invulnerable part included");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	// One stack: the main guns steer, the sidekicks and the specials do not.
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 1;
+	endlessPerkRederive();
+	const JE_integer steered = qa_guidance_fire(SHOT_FRONT, plainGun);
+	qa_check(steered < MAX_PWEAPON && playerShotData[steered].aimAtEnemy == 1
+	         && playerShotData[steered].aimDelayMax == (ENDLESS_PERK_GUIDANCE_DELAY | SHOT_AIM_GUIDANCE),
+	         "one stack steers a front-gun shot at the nearest shootable hull by screen x");
+	id = qa_guidance_fire(SHOT_REAR, plainGun);
+	qa_check(qa_guidance_marked(id) && playerShotData[id].aimAtEnemy == 1, "...the rear gun's too");
+	id = qa_guidance_fire(SHOT_LEFT_SIDEKICK, plainGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id) && playerShotData[id].aimAtEnemy == 0,
+	         "...but not a sidekick's at one stack");
+	id = qa_guidance_fire(SHOT_SPECIAL, plainGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...nor a special's at any stack");
+	id = qa_guidance_fire(SHOT_FRONT, guidedGun);
+	int tightened = guidedOwn - ENDLESS_PERK_GUIDANCE_STEP;
+	if (tightened < 1)
+		tightened = 1;
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1
+	         && playerShotData[id].aimDelayMax == (tightened | SHOT_AIM_GUIDANCE),
+	         "a gun that homes already turns tighter and is re-aimed at a shootable hull");
+
+	// Two stacks: the sidekicks join and every interval shortens.
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 2;
+	endlessPerkRederive();
+	id = qa_guidance_fire(SHOT_RIGHT_SIDEKICK, plainGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1
+	         && playerShotData[id].aimDelayMax
+	            == ((ENDLESS_PERK_GUIDANCE_DELAY - ENDLESS_PERK_GUIDANCE_STEP) | SHOT_AIM_GUIDANCE),
+	         "two stacks steer a sidekick's shot, on the shorter interval");
+	id = qa_guidance_fire(SHOT_SPECIAL2, plainGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...and still leave the specials alone");
+
+	// Three stacks: the specials join; the superbomb and chained bays never do.
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 3;
+	endlessPerkRederive();
+	id = qa_guidance_fire(SHOT_SPECIAL, plainGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1
+	         && playerShotData[id].aimDelayMax
+	            == ((ENDLESS_PERK_GUIDANCE_DELAY - 2 * ENDLESS_PERK_GUIDANCE_STEP) | SHOT_AIM_GUIDANCE),
+	         "three stacks steer a special's shot, on the shortest interval");
+	id = qa_guidance_fire(SHOT_SPECIAL2, plainGun);
+	qa_check(qa_guidance_marked(id), "...from either special bay");
+	id = qa_guidance_fire(SHOT_P1_SUPERBOMB, plainGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...but never a superbomb");
+	id = qa_guidance_fire(SHOT_MISC, plainGun);
+	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...nor a chained child");
+
+	// The correction, from one spot: a steered shot bends toward the screen x, the stock rule
+	// toward the map x, and each reloads its own interval.
+	PlayerShotDataType *s = &playerShotData[steered];
+	s->shotX = 100;
+	s->shotXM = 0;
+	s->shotYM = -12;
+	s->aimDelay = 1;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == -1 && s->shotYM == -13 && s->aimDelay == ENDLESS_PERK_GUIDANCE_DELAY,
+	         "a steered shot bends toward the enemy's screen x and reloads its interval");
+	PlayerShotDataType stock = *s;
+	stock.aimDelayMax = (JE_byte)guidedOwn;
+	stock.aimAtEnemy = 1;
+	stock.shotXM = 0;
+	player_shot_aim_step(&stock);
+	qa_check(stock.shotXM == 1 && stock.aimDelay == guidedOwn,
+	         "...where the stock rule bends toward its map x");
+
+	// The enemy dies with a second hull standing to the right, then the field empties.
+	enemyAvail[0] = 1;
+	enemyAvail[5] = 0;
+	enemy[5].ex = 200;
+	enemy[5].mapoffset = 0;
+	enemy[5].ey = 60;
+	enemy[5].armorleft = 20;
+	s->shotXM = 0;
+	player_shot_aim_step(s);
+	qa_check(s->aimAtEnemy == 6 && s->shotXM == 1,
+	         "a steered shot whose enemy died moves on to the next shootable hull");
+	stock.shotXM = 0;
+	player_shot_aim_step(&stock);
+	qa_check(stock.aimAtEnemy == 1 && stock.shotXM == -1,
+	         "...while the stock rule veers off, as shipped");
+	enemyAvail[5] = 1;
+	s->shotXM = 0;
+	player_shot_aim_step(s);
+	qa_check(s->aimAtEnemy == 0 && s->shotXM == 0,
+	         "...and flies straight once nothing shootable is left");
+
+	/* A shot riding the ship is steered inside the ship's frame: a riding velocity (120 sits still
+	 * beside the ship) takes the same nudge and never leaves its band, so the curve travels with the
+	 * ship; a free velocity never crosses into the band either. */
+	enemyAvail[5] = 0;   // the hull to the upper right stands again
+	s->shotX = 100;
+	s->shotY = 150;
+	s->shotXM = 120;
+	s->shotYM = -8;
+	player_shot_aim_step(s);
+	qa_check(s->aimAtEnemy == 6 && s->shotXM == 121 && s->shotYM == -9,
+	         "a shot riding the ship curves toward the enemy inside the ship's frame");
+	s->shotXM = SHOT_ATTACHED_VEL_MAX;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == SHOT_ATTACHED_VEL_MAX, "...and its riding velocity is capped at the range's top");
+	s->shotXM = SHOT_ATTACHED_VEL_MIN - 1;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == SHOT_ATTACHED_VEL_MIN - 1,
+	         "...while a free velocity never crosses into the riding range");
+	enemy[5].ex = 0;   // now to the upper left: the nudges turn negative
+	s->shotXM = SHOT_ATTACHED_VEL_MIN + 1;
+	s->shotYM = SHOT_ATTACHED_VEL_MIN;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == SHOT_ATTACHED_VEL_MIN + 1 && s->shotYM == SHOT_ATTACHED_VEL_MIN,
+	         "...a riding velocity never falls out of the range on either axis");
+	s->shotXM = SHOT_ATTACHED_VEL_MIN;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == SHOT_ATTACHED_VEL_MIN, "...and the value that pins both axes is left alone");
+	enemy[5].ex = 200;
+
+	const JE_word ridingGun = 203;  // Zica Laser level 5: every beam rides the ship on x
+	qa_check(weapons[ridingGun].sx[0] > 100 && weapons[ridingGun].circlesize == 0,
+	         "the guidance test's riding gun is the one it assumes");
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 1;
+	endlessPerkRederive();
+	id = qa_guidance_fire(SHOT_FRONT, ridingGun);
+	qa_check(qa_guidance_marked(id) && playerShotData[id].shotXM >= SHOT_ATTACHED_VEL_MIN
+	         && playerShotData[id].aimAtEnemy == 6,
+	         "a gun that rides the ship is steered and keeps riding it");
+
+	// A recycled slot: the mark must not outlive the shot that carried it.
+	memset(shotAvail, 0, sizeof(shotAvail));
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 0;
+	endlessPerkRederive();
+	id = qa_guidance_fire(SHOT_FRONT, plainGun);
+	qa_check(id == steered && !qa_guidance_marked(id) && playerShotData[id].aimAtEnemy == 0,
+	         "an unsteered shot in a recycled slot does not inherit the guidance mark");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	power = savedPower;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+	guidedShotScreenAim = savedGuidedAim;
+}
+
+/* Guided Aim (guidedShotScreenAim): the weapon-table homing picks and chases the enemy's screen x
+ * instead of its map x. Nothing else about the stock rule moves: it still takes any non-free,
+ * non-pickup slot and still veers off when its enemy dies. */
+static void qa_test_guided_screen_aim(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const bool savedGuidedAim = guidedShotScreenAim;
+	const uint savedPower = power;
+
+	endlessMode = false;   // no perk in the way: the weapon-table branch alone decides
+	endlessCampaignMods = false;
+	power = 10000;
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	const JE_word guidedGun = 587;  // Heavy Guided Bombs: one shot that homes on its own
+	qa_check(weapons[guidedGun].aim > 5 && weapons[guidedGun].multi == 1,
+	         "the Guided Aim test's gun is the one it assumes");
+	const int guidedOwn = weapons[guidedGun].aim - 5;
+
+	/* Two enemies level with each other, both right of the shot on the map: A is the nearer by
+	 * map x, B by screen x. B is an invulnerable part, which the stock rule takes either way. */
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	enemyAvail[0] = 0;
+	enemy[0].ex = 110;
+	enemy[0].mapoffset = 30;    // screen x 140
+	enemy[0].ey = 100;
+	enemy[0].armorleft = 20;
+	enemyAvail[1] = 0;
+	enemy[1].ex = 140;
+	enemy[1].mapoffset = -40;   // screen x 100, level with the shot
+	enemy[1].ey = 100;
+	enemy[1].armorleft = 255;
+
+	guidedShotScreenAim = false;
+	JE_integer id = qa_guidance_fire(SHOT_FRONT, guidedGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1
+	         && playerShotData[id].aimDelayMax == guidedOwn,
+	         "with Guided Aim off a guided shot picks the nearest enemy by map x");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	guidedShotScreenAim = true;
+	id = qa_guidance_fire(SHOT_FRONT, guidedGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 2
+	         && playerShotData[id].aimDelayMax == guidedOwn,
+	         "with Guided Aim on it picks by screen x, invulnerable part included, on its own interval");
+
+	// The correction from one spot: B's map x is right of the shot, its screen x is on the shot.
+	PlayerShotDataType *s = &playerShotData[id];
+	s->shotX = 100;
+	s->shotXM = 0;
+	s->shotYM = -12;
+	s->aimDelay = 1;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == -1 && s->shotYM == -13 && s->aimDelay == guidedOwn,
+	         "a Guided Aim shot bends toward the enemy's screen x and reloads its interval");
+	guidedShotScreenAim = false;
+	s->shotXM = 0;
+	player_shot_aim_step(s);
+	qa_check(s->shotXM == 1, "...where the shipped rule bends toward its map x");
+
+	// The enemy dies: the stock veer-off still applies, and no retarget happens.
+	guidedShotScreenAim = true;
+	enemyAvail[1] = 1;
+	s->shotXM = -1;
+	player_shot_aim_step(s);
+	qa_check(s->aimAtEnemy == 2 && s->shotXM == -2,
+	         "a Guided Aim shot whose enemy died veers off like the shipped rule");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	guidedShotScreenAim = savedGuidedAim;
+	power = savedPower;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
 }
 
 /* Which enemies a tier roll may land on. Every body settles on its first frame, so the roll reads
@@ -3046,6 +3360,7 @@ static void qa_test_enhancement_presets(void)
 		{ .intSetting = &wallopSecondBolt, .poke = SUPER_SPARKS_OFF, .name = "Wallop 2nd Bolt" },
 		{ .boolSetting = &superSparkClassicCap[SSW_ICE], .poke = false, .name = "Classic Spark Caps" },
 		{ .boolSetting = &centeredShotHitboxes, .poke = false, .name = "Gameplay" },
+		{ .boolSetting = &guidedShotScreenAim, .poke = true, .name = "Guided Aim" },
 		{ .boolSetting = &arcadeLifeBoost, .poke = false, .name = "Arcade Modes" },
 		{ .intSetting = &epDiffMode[EDW_FLARE], .poke = EPDIFF_EP13, .name = "Item Data" },
 		{ .intSetting = &zicaLaserLength, .poke = ZICA_LEN_LONG, .name = "Zica Laser" },
@@ -3867,7 +4182,7 @@ static void qa_test_network_settings(void)
 	const bool savedCharge = chargeLaserCannon, savedDispensers = restoreBaseDispensers;
 	const bool savedLifeBoost = arcadeLifeBoost, savedRandomBalls = arcadeRandomBalls;
 	const bool savedRearScale = arcadeRearGunScale;
-	const bool savedCenteredHitboxes = centeredShotHitboxes;
+	const bool savedCenteredHitboxes = centeredShotHitboxes, savedGuidedAim = guidedShotScreenAim;
 	const int savedXmas = xmasMode;
 	const JE_byte savedSpeed = gameSpeed;
 	const bool savedRollbackConfig = net_rollback, savedRecoveryConfig = net_desync_recovery;
@@ -3914,7 +4229,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = true; zicaLaserBuff = false; wallopSecondBolt = SUPER_SPARKS_ON;
 	chargeLaserCannon = true; restoreBaseDispensers = false;
 	arcadeLifeBoost = true; arcadeRandomBalls = false; arcadeRearGunScale = true;
-	centeredShotHitboxes = true;
+	centeredShotHitboxes = true; guidedShotScreenAim = true;
 	xmasMode = 1; gameSpeed = 2;
 	net_rollback = true; net_desync_recovery = true;
 	coopSharedCredit = true;
@@ -3955,7 +4270,7 @@ static void qa_test_network_settings(void)
 	zicaLaserLock = false; zicaLaserBuff = true; wallopSecondBolt = SUPER_SPARKS_OFF;
 	chargeLaserCannon = false; restoreBaseDispensers = true;
 	arcadeLifeBoost = false; arcadeRandomBalls = true; arcadeRearGunScale = false;
-	centeredShotHitboxes = false;
+	centeredShotHitboxes = false; guidedShotScreenAim = false;
 	xmasMode = 0; gameSpeed = 5;
 	expertMode = false;
 	for (int i = 0; i < expertSettingsCount && i < NETWORK_EXPERT_SLOTS; ++i)
@@ -3986,7 +4301,7 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_EP4 && zicaLaserLength == ZICA_LEN_LONG
 	         && zicaLaserLock && !zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_ON
 	         && chargeLaserCannon && !restoreBaseDispensers && arcadeLifeBoost
-	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes
+	         && !arcadeRandomBalls && arcadeRearGunScale && centeredShotHitboxes && guidedShotScreenAim
 	         && xmasMode == 1 && gameSpeed == 2
 	         && nrb_session_mode() && nrb_session_vt() && nrb_session_recovery()
 	         && coop_credit_is_shared(),
@@ -4015,7 +4330,7 @@ static void qa_test_network_settings(void)
 	qa_check(arraysMatch && zicaLaserBase == ZICA_BASE_AUTO && zicaLaserLength == ZICA_LEN_SHORT
 	         && !zicaLaserLock && zicaLaserBuff && wallopSecondBolt == SUPER_SPARKS_OFF
 	         && !chargeLaserCannon && restoreBaseDispensers && !arcadeLifeBoost
-	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes
+	         && arcadeRandomBalls && !arcadeRearGunScale && !centeredShotHitboxes && !guidedShotScreenAim
 	         && xmasMode == 0 && gameSpeed == 5,
 	         "leaving a network session restores every local simulation preference");
 	expertMatch = !expertMode;
@@ -4078,6 +4393,7 @@ static void qa_test_network_settings(void)
 	chargeLaserCannon = savedCharge; restoreBaseDispensers = savedDispensers;
 	arcadeLifeBoost = savedLifeBoost; arcadeRandomBalls = savedRandomBalls;
 	arcadeRearGunScale = savedRearScale; centeredShotHitboxes = savedCenteredHitboxes;
+	guidedShotScreenAim = savedGuidedAim;
 	xmasMode = savedXmas; gameSpeed = savedSpeed;
 	net_rollback = savedRollbackConfig; net_desync_recovery = savedRecoveryConfig;
 	vt_ship = savedVt; smoothMotion = savedMotion; smoothScroll = savedScroll;
@@ -5867,6 +6183,8 @@ int qa_run_unit_suite(void)
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();
+	qa_test_guidance_perk();
+	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
 	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();

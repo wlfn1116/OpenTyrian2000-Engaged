@@ -42,6 +42,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Financier",        "Better interest and cheaper shop prices.",  4 },
 	{ "Ordnance Reserves","More sidekick ammo; specials last longer.", 4 },
 	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
+	{ "Guidance Package", "Main guns home in; 2 sidekicks, 3 specials.", 3 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -469,6 +470,30 @@ int endlessPerkFailsafeTicks(void)
 	if (!endlessFxActive())
 		return 0;
 	return perkFx(PERK_FAILSAFE) * ENDLESS_PERK_FAILSAFE_TICKS;
+}
+
+/* Guidance Package: the steering interval, in ticks between course corrections, the perk gives a
+ * shot leaving `bay`, or 0 when the perk leaves that shot alone. `ownDelay` is the weapon table's
+ * interval for a gun that homes already, 0 otherwise; such a gun is tightened rather than replaced.
+ * The main guns steer from the first stack, the sidekicks from the second, the specials from the
+ * third. shots.c applies it. */
+int endlessPerkGuidanceDelay(uint bay, int ownDelay)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_GUIDANCE) : 0;
+	if (stacks == 0)
+		return 0;
+
+	const bool mainGun = bay == SHOT_FRONT || bay == SHOT_REAR || bay == SHOT_P2_CHARGE;
+	const bool sidekick = bay == SHOT_LEFT_SIDEKICK || bay == SHOT_RIGHT_SIDEKICK;
+	const bool specialGun = bay == SHOT_SPECIAL || bay == SHOT_SPECIAL2;
+	if (!mainGun && !(sidekick && stacks >= ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS)
+	    && !(specialGun && stacks >= ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS))
+		return 0;
+
+	const int delay = (ownDelay > 0)
+	                ? ownDelay - stacks * ENDLESS_PERK_GUIDANCE_STEP
+	                : ENDLESS_PERK_GUIDANCE_DELAY - (stacks - 1) * ENDLESS_PERK_GUIDANCE_STEP;
+	return delay < 1 ? 1 : delay;
 }
 
 // Start each zone with countermeasures ready and Opening Salvo charged.

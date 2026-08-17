@@ -420,7 +420,38 @@ boss is one segment.
 
 `pierceDmgCarry` occupies existing padding in `PlayerShotDataType`. The rollback
 layout fingerprint and the replay fixtures depend on that; a field that grows the
-struct moves both.
+struct moves both. The Guidance Package mark is a bit in `aimDelayMax`
+(`SHOT_AIM_GUIDANCE`) for the same reason; the interval sits under
+`SHOT_AIM_DELAY_MASK`.
+
+Weapon-table homing aims at `enemy.ex`, the map x, while the collision loop
+measures the enemy at `ex + mapoffset`, so a stock guided shot is off by the
+parallax offset of the enemy's layer, which grows toward the sides of the
+playfield and further under Extra Parallax. `guidedShotScreenAim` (Setup >
+Enhancements > Gameplay > Guided Aim) moves both the nearest-enemy pick in
+`player_shot_create` and the correction in `player_shot_aim_step` to that screen
+x and changes nothing else about the stock rule: it still takes any non-free,
+non-pickup slot and still veers off when its enemy dies. It defaults off in both
+presets because the attract demos fire Heavy Guided Bombs, so the replay
+fixtures pin the shipped aim; it is host-authoritative online (`NET_SET_FLAGS2`
+bit 15).
+
+A Guidance Package shot aims at the screen x, retargets when its enemy is gone,
+and takes only a live shootable hull (`shot_guidance_target_ok`), so a volley
+never piles into an invulnerable part or a pickup. `player_shot_create` decides
+the mark from `bay_i` alone
+(`endlessPerkGuidanceDelay`): main guns from one stack, sidekicks from two,
+specials from three, with the interval stepping down each stack; the chained
+children and superbombs go through other bays and stay unsteered.
+
+A shot velocity above 100 rides the ship: the move adds it, takes 120 back and
+adds the ship's delta, so 120 rests beside the ship and the shipped tables use
+111 to 124 for beams that drift either way (101 on x pins both axes instead).
+Guidance nudges such a velocity within `SHOT_ATTACHED_VEL_MIN` to
+`SHOT_ATTACHED_VEL_MAX` (`shot_guidance_nudge`), never letting a riding velocity
+drop out of that range or a free one climb into it, and leaves the pinning 101
+alone, so a Zica beam curves while the whole curve moves with the ship. Only
+circle shots are left unsteered.
 
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
@@ -1108,7 +1139,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 58.
+`NET_VERSION` bump. The current value is 60.
 
 Recent versions:
 
@@ -1153,6 +1184,8 @@ Recent versions:
 | 56 | Opening Salvo armed before the special fires, so the special joins its own volley |
 | 57 | Nort banking sparks belong to the ship that threw them, not always player one |
 | 58 | Player one reaches the same bottom edge as player two online |
+| 59 | Guidance Package perk steers main-gun, sidekick and special shots |
+| 60 | Guided Aim setting: weapon-table homing steers toward the enemy's screen x |
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.
@@ -1189,9 +1222,10 @@ The host arms local session flags through `network_arm_local_session`; the joine
 adopts the same set from the settings block. Unit tests compare both paths.
 
 The first flags word is full. Expert settings and later Episode Versions bits
-live in the settings tail. Initial debug/autofire settings occupy bytes 42
-through 46, with byte 47 reserved. Preserve bytes 0 through 23 and clamp
-received expert and enum values.
+live in the settings tail, whose Episode Versions run grows upward from bit 4
+toward the Guided Aim flag at bit 15. Initial debug/autofire settings occupy
+bytes 42 through 46, with byte 47 reserved. Preserve bytes 0 through 23 and
+clamp received expert and enum values.
 
 Credits use `player_award_pickup_cash`, `player_award_kill_cash`, and
 `player_award_bounty_cash`. Level-time awards name the player index and execute

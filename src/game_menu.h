@@ -106,6 +106,10 @@ const char *shop_weapon_row_tag(JE_word port, bool rearList, bool mixedBays);
 // A cost text wide enough to reach that column pushes the tag right of it.
 int shop_row_tag_x(int costRight, int tagW, int markerX);
 
+// x of a figure drawn flush right on the endless help bar after `text`; a description long enough
+// to reach it pushes the figure right of its usual edge instead.
+int help_bar_right_x(const char *text, const char *right);
+
 void JE_drawMenuHeader(void);
 void JE_drawMenuChoices(void);
 void JE_updateNavScreen(void);

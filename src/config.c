@@ -492,6 +492,11 @@ bool unusedShopSprites = true;
    restores the vanilla geometry, whose boxes sit above the sprites they belong to.
    Host-authoritative online; doc/notes.md has the box arithmetic. */
 bool centeredShotHitboxes = true;
+/* Steer a weapon-table guided shot toward the enemy's screen x (ex + mapoffset), where the
+   collision loop measures it (player_shot_aim_step in shots.c). Off keeps the shipped map-x aim,
+   which the attract demos and the replay fixtures pin. Host-authoritative online; doc/notes.md,
+   "Combat", covers what stays stock. */
+bool guidedShotScreenAim = false;
 /* Christmas mode override: -1 = auto-detect by date (original), 0 = force off, 1 = force
    on. Set to 0/1 by the Enhancements toggle so the choice persists. */
 int xmasMode = 0;
@@ -552,8 +557,9 @@ static const EnhancementSetting enhancementSettings[] = {
 	{ .boolSetting = &superSparkClassicCap[SSW_PROTRON_B],   .vanilla = true, .engaged = true },
 	{ .boolSetting = &superSparkClassicCap[SSW_ICE],         .vanilla = true, .engaged = true },
 
-	/* Gameplay. */
+	/* Gameplay. Guided Aim is an opt-in: both presets keep the shipped homing. */
 	{ .boolSetting = &centeredShotHitboxes,  .vanilla = false, .engaged = true },
+	{ .boolSetting = &guidedShotScreenAim,   .vanilla = false, .engaged = false },
 	{ .boolSetting = &restoreBaseDispensers, .vanilla = false, .engaged = true },
 
 	/* Arcade modes. */
@@ -1127,6 +1133,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "centered_shot_hitboxes", &centered_shot_hitboxes);
 		centeredShotHitboxes = (centered_shot_hitboxes != 0);
 
+		int guided_shot_screen_aim = guidedShotScreenAim ? 1 : 0;
+		config_get_int_option(section, "guided_shot_screen_aim", &guided_shot_screen_aim);
+		guidedShotScreenAim = (guided_shot_screen_aim != 0);
+
 		config_get_int_option(section, "xmas", &xmasMode);
 		if (xmasMode < -1 || xmasMode > 1)
 			xmasMode = 0;
@@ -1365,6 +1375,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "arcade_rear_gun_scale", arcadeRearGunScale ? 1 : 0);
 	config_set_int_option(section, "unused_shop_sprites", unusedShopSprites ? 1 : 0);
 	config_set_int_option(section, "centered_shot_hitboxes", centeredShotHitboxes ? 1 : 0);
+	config_set_int_option(section, "guided_shot_screen_aim", guidedShotScreenAim ? 1 : 0);
 	enhancementSaveCustomSet(section);
 	config_set_int_option(section, "xmas", xmasMode);
 
