@@ -741,6 +741,7 @@ unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generato
 int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
 bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
 int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
+bool endlessRamWhileInvulnerable(uint invulnerableTicks); // Endless: an invulnerable ship lands a ram on this tick? (one per ENDLESS_RAM_INVULN_CADENCE ticks; mainint.c)
 int  endlessShockwaveRadius(int linknum, int eliteState); // 0, 80 (elite), or 120 (champion)
 bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
 
@@ -832,6 +833,13 @@ int  endlessPerkSpecialDuration(int base, int cap); // Ordnance Reserves: a time
 int  endlessPerkFailsafeTicks(void);         // Failsafe: i-frames a hit that reached the hull grants (0 = not owned); varz.c JE_playerDamage
 int  endlessPerkGuidanceDelay(uint bay, int ownDelay); // Guidance Package: ticks between course corrections for a shot from `bay` (0 = not steered); shots.c player_shot_create
 int  endlessPerkTwinPodOffset(uint p, uint sidekick); // Twin Pods: x offset in px of ship p's twin volley, outboard of the pod; the fire site moves its own volley the same inboard (0 = no twin)
+int  endlessPerkProwRamDamage(int damage);   // Reinforced Prow: what a contact tick deals the enemy, from the stock figure (mainint.c)
+int  endlessPerkProwContactPercent(void);    // Reinforced Prow: share of contact damage the ship still takes, 100 = all (mainint.c)
+int  endlessShipHullGapPx(uint p, unsigned slot); // px from ship p's hull to the nearest live tile of `slot`'s hull; 0 while touching
+int  endlessPerkKnifeFightPercent(unsigned slot); // Knife Fight: bonus % for the fx ship's hit on `slot` at the current gap (0 = none)
+int  endlessPerkKnifeFightBonus(int damage, int pct); // Knife Fight: that bonus in armor points, from raw damage (tyrian2.c, mainint.c)
+void endlessPerkKnifeFightBlood(unsigned slot, int pct);  // Knife Fight: bleed the hull for a raised hit; presentation only, budgeted per frame
+int  endlessPerkDeflectDamage(int absorbed); // Deflector: damage of the shot a shield absorption returns, 0 = none (tyrian2.c)
 
 // Perk registry accessors (for the endless debug screen: list / toggle / stack perks).
 int         endlessPerkCount(void);          // number of perks (PERK_COUNT)

@@ -473,6 +473,76 @@ the stacks behind it ride the outpost player block like every other perk, and
 Every logical death calls `enemy_logical_death`. It owns kill count, bounty
 deduplication, Shockwave, Martyrdom, and Chain Reaction.
 
+`enemy_kill_group` is the killing blow's walk over a hull: the slot, everything
+a link-254 blow takes, and the parts the level's three linking rules name, each
+through `enemy_part_destroy`, with the edlevel -1 transformation for a part the
+plain link rule matched and the link-254 event jump. The player-shot loop and
+the Endless ram site both call it, so an Endless ram kill is the shot's own
+destruction path: payout, tally, bounty, death effects and the wave, credited to
+the ship that rammed. The walk runs on the shared `temp2`/`temp3` deliberately:
+the shot loop reads whatever those hold on a further hit in the same tick, and
+the extraction was verified hash-neutral against the replay fixtures. Vanilla
+keeps its silent ram removal, and `JE_playerCollide` names the ramming ship as
+the effect player before it reads the ram perks.
+
+Reinforced Prow scales only the enemy's side of a contact tick
+(`endlessPerkProwRamDamage`, then Knife Fight on top, capped at the enemy's
+armor) and cuts the ship's share last, after the depth ramp and the elite and
+Rampage premiums (`endlessPerkProwContactPercent`, floored at one point of a
+real hit); the ship's share still starts from `min(armorleft, damageRate)`, so a
+dying enemy hurts less as it always did. An invulnerable ship rams in Endless
+without being rammed back, gated by `endlessRamWhileInvulnerable`: it lands on
+the ticks where `invulnerable_ticks` is a multiple of
+`ENDLESS_RAM_INVULN_CADENCE`, a cadence read off registered state so it needs no
+lockout timer of its own and re-simulates as it ran. Failsafe and the
+invulnerability specials therefore feed a ram build at a bounded rate. Vanilla
+keeps an invulnerable ship out of contact.
+
+Knife Fight is measured per hull hit: `endlessShipHullGapPx` is the larger
+per-axis clearance between the ship's 24x28 sprite box (centre x+7, y+7) and the
+nearest live tile of the hull the hit landed on, every tile sharing a nonzero
+link counting, a tile's box being its 12x14 cell or the four cells of a 2x2
+body. `endlessPerkKnifeFightPercent` is whole inside
+`ENDLESS_PERK_KNIFE_FULL_PX` and fades linearly over
+`ENDLESS_PERK_KNIFE_FADE_PX`. Each hit takes that figure once and spends it on
+both the damage and the blood, since the gap costs a walk of the hull. The shot
+loop adds the bonus in raw damage beside Executioner (`perkRaw`), before the
+health accumulator, and undoes both together (`perkBonus`) before an overkill
+shot carries on, so a scaled hull takes it through the same divide. The ram site
+adds it too; the chain drain does not.
+
+`endlessPerkKnifeFightBlood` is the drip a raised hit leaves, through the new
+`JE_doSPDripSeeded` shape: drops placed within a few px of the hull's centre,
+each falling straight down at its own rate, so the shower reads as running
+rather than bursting. Presentation only, by the recipe in "Superspark ring
+buffer": no simulation RNG, nothing spawned during a silent re-simulation, and a
+cadence off `rl_presented_frames`, the accessor for `rl_present_gen` that a
+cosmetic outside tyrian2.c should count. No fixed palette bank is red in all 24
+shipped palettes, so `knife_blood_bank` picks the reddest ramp of the live
+`colors`, judged on the bright shades a drop plots in and recomputed once per
+presented frame because a level script can change the palette.
+`KNIFE_BLOOD_PER_FRAME` bounds what one frame spawns however many hits land in
+it; that budget is spent during drawing, so a discarded rollback pass leaves the
+replacement with less of it and the frame bleeds thinner.
+
+Deflector fires from the enemy-shot collision after `JE_playerDamage`, on the
+condition that the shield fell and the armor did not (an Aegis block counts, a
+hull hit and an invulnerable ship do not), with the shield delta as the absorbed
+figure. `player_shot_create_deflected` fills a pool slot directly rather than
+through the weapon table: the bullet's sprite, frame and tier tint, its velocity
+and acceleration negated (a resting bullet leaves straight up), no steering, and
+a frame at or past 60000 refused because the player draw would take it from the
+special-weapon table. It does name the firing ship as the effect player on
+entry, exactly as `player_shot_create` does, and takes that ship's Opening Salvo
+tag when its window is running: a deflection leaves the ship inside the window
+like anything fired in one, so it earns the volley's damage bonus and spark cue.
+`PlayerShotDataType.tint` sits in the
+alignment hole after `shotComplicated`, so the struct size, the layout
+fingerprint and the fixtures are unchanged; `player_shot_create` zeroes it so a
+recycled slot flies untinted, and `player_shot_move_and_draw` draws a tinted
+shot through `blit_sprite2_filter_bright` at `ENDLESS_SHOT_BRIGHT`, as the enemy
+loop did.
+
 The lobby's Credit rule is not a kill site's problem. `player_credit_cash` applies
 it: Shared pays the full amount into both wallets whichever ship was named,
 Individual pays only the one. A kill site owes the correct payee and nothing else,
@@ -1156,7 +1226,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 60.
+`NET_VERSION` bump. The current value is 62.
 
 Recent versions:
 
@@ -1204,6 +1274,15 @@ Recent versions:
 | 59 | Guidance Package perk steers main-gun, sidekick and special shots |
 | 60 | Guided Aim setting: weapon-table homing steers toward the enemy's screen x |
 | 61 | Twin Pods perk fires a second sidekick volley |
+| 62 | Endless ram kills, invulnerable-ram cadence, Reinforced Prow, Knife Fight and Deflector perks |
+
+Online, the three perks are ordinary simulation: the stacks ride the outpost
+player block like every other perk, the ram site and the two damage sites name
+the ship they belong to rather than reading the ambient effect context, and the
+returned Deflector shot lands in `playerShotData` / `shotAvail`, which are
+registered. `qa_ram_kill_row` drives the real destruction walk for both Credit
+rules, both ships as the rammer, a lone enemy and a linked hull, and an elite
+whose bounty must reach the rammer alone.
 
 Packet reads verify the received length before touching optional fields. Fixed
 wire and save structures use fixed-width types.

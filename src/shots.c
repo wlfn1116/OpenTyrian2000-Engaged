@@ -539,18 +539,16 @@ bool player_shot_move_and_draw(
 					salvo_shot_sparks(*out_shotx + 1, *out_shoty, sprite_frame, false);
 				shot->salvoBoost = 2;
 			}
-			if (sprite_frame > 500)
-			{
-				if (background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100)
-					blit_sprite2_darken(VGAScreen, *out_shotx+1, *out_shoty + shadowYDist, spriteSheet12, sprite_frame - 500);
-				blit_sprite2(VGAScreen, *out_shotx+1, *out_shoty, spriteSheet12, sprite_frame - 500);
-			}
+			// A tinted shot (a returned elite or champion bullet) is drawn as the enemy loop drew it.
+			Sprite2_array *const sheet = (sprite_frame > 500) ? &spriteSheet12 : &spriteSheet8;
+			const unsigned int frame = (sprite_frame > 500) ? sprite_frame - 500 : sprite_frame;
+			if (background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100)
+				blit_sprite2_darken(VGAScreen, *out_shotx+1, *out_shoty + shadowYDist, *sheet, frame);
+			if (shot->tint != 0)
+				blit_sprite2_filter_bright(VGAScreen, *out_shotx+1, *out_shoty, *sheet, frame,
+				                           shot->tint | ENDLESS_SHOT_BRIGHT);
 			else
-			{
-				if (background2 && *out_shoty + shadowYDist < 190 && tmp_shotXM < 100)
-					blit_sprite2_darken(VGAScreen, *out_shotx+1, *out_shoty + shadowYDist, spriteSheet8, sprite_frame);
-				blit_sprite2(VGAScreen, *out_shotx+1, *out_shoty, spriteSheet8, sprite_frame);
-			}
+				blit_sprite2(VGAScreen, *out_shotx+1, *out_shoty, *sheet, frame);
 		}
 		rl_current_id = 0;
 		rl_current_vel_x = 0;
@@ -678,11 +676,12 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 		PlayerShotDataType* shot = &playerShotData[shot_id];
 		shot->chainReaction = 0;
 		shot->salvoBoost = salvo_tag;
-		// A recycled slot must not inherit the previous bullet's lockout or damage remainder.
+		// A recycled slot must not inherit the previous bullet's lockout, damage remainder or tint.
 		shot->pierceLock = 0;
 		shot->pierceLockCarry = 0;
 		shot->pierceLockPending = 0;
 		shot->pierceDmgCarry = 0;
+		shot->tint = 0;
 
 		shot->playerNumber = playerNum;
 
@@ -922,6 +921,83 @@ JE_integer player_shot_create_twin(JE_integer first, JE_word portNum, uint sidek
 
 	const uint bay = (sidekick == LEFT_SIDEKICK) ? SHOT_LEFT_SIDEKICK : SHOT_RIGHT_SIDEKICK;
 	return player_shot_create(portNum, bay, (JE_word)(x + twinDx), (JE_word)y, mouseX, mouseY, wpNum, playerNum);
+}
+
+/* Endless Deflector, contract in shots.h. The returned shot keeps the bullet's sprite, animation
+ * frame and tier tint and flies its path in reverse, velocity and acceleration both negated, so a
+ * lobbed shot arcs back the way it came. Its damage is scaled at collision like every player shot's;
+ * the blast tint is the sprite's own colour, which is also what the Opening Salvo cue reads. See
+ * "Combat" in doc/notes.md. */
+#define DEFLECT_MIN_SPEED   4    // px per tick straight up, for a bullet that had come to rest
+#define DEFLECT_LIFE_TICKS  255  // the pool countdown; the screen cull retires it before that
+
+// A player-shot velocity past 100 rides the ship (SHOT_ATTACHED_VEL_MIN); a returned bullet never may.
+static JE_integer deflect_velocity(int v)
+{
+	return (JE_integer)(v > 99 ? 99 : (v < -99 ? -99 : v));
+}
+
+JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damage, JE_byte playerNum)
+{
+	// The salvo window read below belongs to the deflecting ship, as it does in player_shot_create.
+	endlessSetFxPlayer(playerNum >= 1 ? (uint)playerNum - 1 : 0);
+
+	// A frame past 60000 is drawn from the special-weapon table, which no bullet belongs to.
+	if (damage <= 0 || incoming->sgr >= 60000)
+		return MAX_PWEAPON;
+
+	int shot_id;
+	for (shot_id = 0; shot_id < MAX_PWEAPON; shot_id++)
+		if (shotAvail[shot_id] == 0)
+			break;
+	if (shot_id == MAX_PWEAPON)
+		return MAX_PWEAPON;
+
+	PlayerShotDataType *shot = &playerShotData[shot_id];
+	shot->shotX = incoming->sx;
+	shot->shotY = incoming->sy;
+	shot->shotXM = deflect_velocity(-incoming->sxm);
+	shot->shotYM = deflect_velocity(-incoming->sym);
+	shot->shotXC = (JE_integer)-incoming->sxc;
+	shot->shotYC = (JE_integer)-incoming->syc;
+	if (shot->shotXM == 0 && shot->shotYM == 0)
+		shot->shotYM = -DEFLECT_MIN_SPEED;
+
+	shot->shotComplicated = 0;
+	shot->shotDevX = 0;
+	shot->shotDirX = 0;
+	shot->shotDevY = 0;
+	shot->shotDirY = 0;
+	shot->shotCirSizeX = 0;
+	shot->shotCirSizeY = 0;
+	shot->shotTrail = 255;
+
+	// The player draw takes frames above 500 from the second sheet, the enemy draw from 500 up, and
+	// no shipped bullet sits on 500, so the sprite carries over as it is. The enemy loop wraps its
+	// frame at animax, the player loop at shotAniMax.
+	shot->shotGr = incoming->sgr;
+	shot->shotAni = incoming->animate;
+	shot->shotAniMax = (incoming->animax > 0) ? incoming->animax : 1;
+	shot->tint = incoming->filter;   // an elite's or champion's bullet keeps its tier bank
+	shot->shotDmg = (Uint8)damage;
+	shot->shotBlastFilter = (JE_byte)((incoming->sgr > 500)
+	                                  ? sprite2_dominant_bank(spriteSheet12, incoming->sgr - 500)
+	                                  : sprite2_dominant_bank(spriteSheet8, incoming->sgr)) << 4;
+	shot->chainReaction = 0;
+	shot->playerNumber = playerNum;
+	shot->aimAtEnemy = 0;
+	shot->aimDelay = 0;
+	shot->aimDelayMax = 0;
+	// A deflection leaves the ship inside a charged window like anything else fired in one, so it
+	// takes the tag, its damage bonus and its spark cue.
+	shot->salvoBoost = (endlessFxActive() && endlessOpeningSalvoVolleyActive()) ? 1 : 0;
+	shot->pierceLock = 0;
+	shot->pierceLockCarry = 0;
+	shot->pierceLockPending = 0;
+	shot->pierceDmgCarry = 0;
+
+	shotAvail[shot_id] = DEFLECT_LIFE_TICKS;
+	return shot_id;
 }
 
 // A chain-reaction carrier deals no damage of its own: it is consumed on impact and replaced by the

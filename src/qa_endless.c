@@ -538,6 +538,47 @@ static void qa_perk_matrix(void)
 
 /* ---- 3b. per-ship reactive timers ---------------------------------------------------- */
 
+/* Drive one Endless ram kill through the real destruction walk and report what it paid, counted and
+ * left behind. Shaped like qa_chain_kill_row: `tiles` bodies worth `evalue` each, linked together
+ * when `linknum` is nonzero, at `eliteState` when that is a tier. */
+static void qa_ram_kill_row(int killer, int evalue, int tiles, JE_byte linknum, int eliteState,
+                            long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped)
+{
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;   // an empty field, so anything live afterwards came out of a death
+	}
+
+	for (int i = 0; i < tiles; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(100 + i * 8);
+		enemy[i].ey = 100;
+		enemy[i].armorleft = 1;
+		enemy[i].enemytype = 1;
+		enemy[i].evalue = (Sint16)evalue;
+		enemy[i].enemydie = 1;   // any spawnable body; the test only asks whether one appeared
+		enemy[i].linknum = linknum;
+		enemy[i].eliteState = (JE_byte)((eliteState >= 2) ? eliteState : 0);
+	}
+
+	const ulong before0 = player[0].cash;
+	const ulong before1 = player[1].cash;
+	const JE_word killedBefore = enemyKilled;
+
+	enemy_kill_group(0, killer, killer);
+
+	*out_paid0 = (long)player[0].cash - (long)before0;
+	*out_paid1 = (long)player[1].cash - (long)before1;
+	*out_killed = (int)(enemyKilled - killedBefore);
+
+	*out_dropped = false;
+	for (uint i = 0; i < COUNTOF(enemy); ++i)
+		if (enemyAvail[i] != 1)
+			*out_dropped = true;   // the row is all dead by now, so anything live is a drop
+}
+
 /* The reactive danger and perk timers belong to one hull each: the Aegis gate, the Static
  * Discharge recharge lockout, the Countermeasure Suite cooldown and the Shield Matrix interval.
  * A shared timer had one ship's event disarming or slowing the partner. */
@@ -855,6 +896,77 @@ static void qa_reactive_state_matrix(void)
 	endlessCoopComboShared = savedCombo;
 	coop_set_session_shared_credit(true);
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
+	player[0].cash = savedCash[0];
+	player[1].cash = savedCash[1];
+	qa_clear_ships();
+
+	/* A ram kill is a kill, so it owes the same wallets a shot does: the lobby's Credit rule decides
+	 * which of them, and the ram site names the rammer as both payee and killer. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+
+	for (int shared = 0; shared <= 1; ++shared)
+	{
+		coop_set_session_shared_credit(shared != 0);
+
+		static const struct { const char *shape; JE_byte linknum; int tiles; } rams[] = {
+			{ "lone enemy", 0, 1 },
+			{ "linked hull", 9, 3 },
+		};
+
+		for (uint s = 0; s < COUNTOF(rams); ++s)
+		for (int killer = 0; killer <= 1; ++killer)
+		{
+			long paid0 = 0, paid1 = 0;
+			int killed = 0;
+			bool dropped = false;
+			qa_ram_kill_row(killer, worth, rams[s].tiles, rams[s].linknum, 0,
+			                &paid0, &paid1, &killed, &dropped);
+
+			const long mine = (killer == 0) ? paid0 : paid1;
+			const long theirs = (killer == 0) ? paid1 : paid0;
+
+			snprintf(label, sizeof(label),
+			         "%s credit pays P%d for ramming a %s: %d kills, %ld for %d worth %d",
+			         shared ? "Shared" : "Individual", killer + 1, rams[s].shape, killed, mine,
+			         rams[s].tiles, worth);
+			qa_check(killed >= 1 && mine >= (long)rams[s].tiles * worth, label);
+
+			snprintf(label, sizeof(label), "...and the partner takes %ld of P%d's %ld",
+			         theirs, killer + 1, mine);
+			qa_check(theirs == (shared ? mine : 0), label);
+
+			snprintf(label, sizeof(label), "...and P%d's ram still leaves the drop behind",
+			         killer + 1);
+			qa_check(dropped, label);
+		}
+	}
+
+	/* An elite a ram destroys owes its bounty, and owes it to the ship that rammed it. This is what
+	 * separates an Endless ram from the vanilla one, which removed the enemy and paid nothing. */
+	for (int killer = 0; killer <= 1; ++killer)
+	{
+		coop_set_session_shared_credit(false);
+
+		long plain0 = 0, plain1 = 0, elite0 = 0, elite1 = 0;
+		int killed = 0;
+		bool dropped = false;
+		qa_ram_kill_row(killer, worth, 1, 0, 0, &plain0, &plain1, &killed, &dropped);
+		qa_ram_kill_row(killer, worth, 1, 0, 2, &elite0, &elite1, &killed, &dropped);
+
+		const long plain = (killer == 0) ? plain0 : plain1;
+		const long elite = (killer == 0) ? elite0 : elite1;
+		const long partner = (killer == 0) ? elite1 : elite0;
+
+		snprintf(label, sizeof(label), "P%d ramming an elite is paid %ld over the %ld a plain kill pays",
+		         killer + 1, elite, plain);
+		qa_check(elite > plain, label);
+
+		snprintf(label, sizeof(label), "...and none of that bounty reaches the partner, who took %ld",
+		         partner);
+		qa_check(partner == 0, label);
+	}
+
+	coop_set_session_shared_credit(true);
 	player[0].cash = savedCash[0];
 	player[1].cash = savedCash[1];
 	qa_clear_ships();

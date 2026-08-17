@@ -11178,32 +11178,57 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 				// Endless Low Profile shrinks the damaging collision but keeps the full pickup range;
 				// a boon must not make items harder to grab. endlessHitboxScale is the identity outside
 				// the boon, so every other game tests exactly the 12x14 the outer branch did.
-				else if (this_player->invulnerable_ticks == 0 && enemyAvail[z] == 0 && !noclipMode &&
+				else if ((this_player->invulnerable_ticks == 0
+				          || endlessRamWhileInvulnerable(this_player->invulnerable_ticks)) &&
+				         enemyAvail[z] == 0 && !noclipMode &&
 				         (enemyDat[enemy[z].enemytype].explosiontype & 1) == 0 && // explosiontype & 1 == 0: not ground enemy
 				         abs(this_player->x - enemy_screen_x) < endlessHitboxScale(12) &&
 				         abs(this_player->y - enemy[z].ey) < endlessHitboxScale(14))
 				{
+					// The ram perks and the kill credit below belong to the ship doing the ramming.
+					endlessSetFxPlayer((uint)(this_player - &player[0]));
+
 					int armorleft = enemy[z].armorleft;
 					if (armorleft > damageRate)
 						armorleft = damageRate;
 
-					int damage_to_enemy = armorleft;
+					// Reinforced Prow and Knife Fight raise what the enemy takes; the ship's own share
+					// below stays on the stock figure, so a nearly dead enemy still hurts less. A ram
+					// happens at nil range, so Knife Fight is always at its deepest here.
+					const int knifePct = endlessFxActive() ? endlessPerkKnifeFightPercent((unsigned)z) : 0;
+					int damage_to_enemy = endlessPerkProwRamDamage(damageRate);
+					const int knifeRam = endlessPerkKnifeFightBonus(damage_to_enemy, knifePct);
+					if (knifeRam > 0)
+						endlessPerkKnifeFightBlood((unsigned)z, knifePct);
+					damage_to_enemy += knifeRam;
+					if (damage_to_enemy > enemy[z].armorleft)
+						damage_to_enemy = enemy[z].armorleft;
 
 					int playerHit = armorleft;
 					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
 						playerHit = playerHit * 3 / 2;
 					// Endless depth ramp: the contact damage the PLAYER receives climbs past the mid-game
-					// (+150% by zone 100, up to +500%). Scales only playerHit; damage_to_enemy above keeps
-					// the unscaled collision damage, so enemies aren't ground down any faster by ramming.
+					// (+150% by zone 100, up to +500%). Scales only playerHit; damage_to_enemy above never
+					// sees the ramp, so depth alone grinds no enemy down faster.
 					if (endlessFxActive())
 						playerHit = playerHit * endlessContactDamagePercent() / 100;
 					// Elite/champion tiers ram harder than a plain enemy: elites +25%, champions +50%.
 					// This stacks with the depth ramp unless Clean Signals flattens the premium to 100%.
 					if (endlessFxActive())
 						playerHit = playerHit * endlessEliteContactPercent(enemy[z].eliteState) / 100;
+					// Reinforced Prow cuts the ship's share last, after every premium, and a real hit
+					// still costs a point.
+					if (endlessFxActive() && playerHit > 0)
+					{
+						playerHit = playerHit * endlessPerkProwContactPercent() / 100;
+						if (playerHit < 1)
+							playerHit = 1;
+					}
 					if (playerHit > 255)
 						playerHit = 255;
-					JE_playerDamage((JE_byte)playerHit, this_player);
+					// An invulnerable ship (Endless, on the cadence above) rams without being rammed.
+					if (this_player->invulnerable_ticks == 0)
+						JE_playerDamage((JE_byte)playerHit, this_player);
 
 					// player ship gets push-back from collision
 					if (enemy[z].armorleft > 0)
@@ -11240,10 +11265,16 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 						}
 						soundQueue[5] = S_ENEMY_HIT;
 					}
+					else if (endlessFxActive())
+					{
+						// Endless: a ram kill is a kill, taken the way a killing shot takes it and
+						// credited to the ship that rammed.
+						enemy_kill_group((unsigned)z, (int)playerNum_ - 1, (int)playerNum_ - 1);
+					}
 					else
 					{
-						// A ram destroys the enemy without awarding a kill. Routing this through
-						// enemy_logical_death would make elite ramming profitable.
+						// A ram removes the enemy without awarding a kill: no payout, no bounty, no
+						// death effects.
 						for (temp2 = 0; temp2 < 100; temp2++)
 						{
 							if (enemyAvail[temp2] != 1)

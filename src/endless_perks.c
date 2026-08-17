@@ -7,10 +7,13 @@
 #include "custom_weapon.h"
 #include "episodes.h"
 #include "mainint.h"
+#include "palette.h"
 #include "player.h"
+#include "rollback.h"
 #include "tyrian2.h"
 #include "varz.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +47,9 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
 	{ "Guidance Package", "Main guns home in; 2 sidekicks, 3 specials.", 3 },
 	{ "Twin Pods",        "Sidekicks fire twice; double ammo and power.", 1 },
+	{ "Reinforced Prow",  "Ram much harder and take much less for it.", 3 },
+	{ "Knife Fight",      "More damage the closer you fly to a foe.", 4 },
+	{ "Deflector",        "Shield hits return fire at the shooter.", 2 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -515,6 +521,187 @@ int endlessPerkTwinPodOffset(uint p, uint sidekick)
 		return 0;
 	const int half = ENDLESS_PERK_TWINPODS_SPREAD_PX / 2;
 	return (sidekick == LEFT_SIDEKICK) ? -half : half;
+}
+
+// Reinforced Prow: what a tick of contact deals to the enemy, from the stock `damage`.
+int endlessPerkProwRamDamage(int damage)
+{
+	if (!endlessFxActive() || damage <= 0)
+		return damage;
+	return damage * (100 + perkFx(PERK_PROW) * ENDLESS_PERK_PROW_DMG_PCT) / 100;
+}
+
+// Reinforced Prow: the share of contact damage the ship still takes (100 = all of it). The ram
+// site applies it after every other contact scale and keeps at least one point of a real hit.
+int endlessPerkProwContactPercent(void)
+{
+	if (!endlessFxActive())
+		return 100;
+	return 100 - perkFx(PERK_PROW) * ENDLESS_PERK_PROW_TAKEN_PCT;
+}
+
+/* Knife Fight measures from hull to hull. The ship is its 24x28 sprite, blitted 5 left and 7 up of
+ * its position; a tile is the 12x14 cell at its position, or the four cells around it when size is
+ * 1. Both boxes are taken by centre and half-extent, and the gap is the larger per-axis clearance,
+ * 0 while the boxes overlap. */
+#define KNIFE_SHIP_HALF_W 12
+#define KNIFE_SHIP_HALF_H 14
+static int knife_box_gap(int cx0, int cy0, int hw0, int hh0, int cx1, int cy1, int hw1, int hh1)
+{
+	const int gapX = abs(cx0 - cx1) - (hw0 + hw1);
+	const int gapY = abs(cy0 - cy1) - (hh0 + hh1);
+	const int gap = (gapX > gapY) ? gapX : gapY;
+	return (gap < 0) ? 0 : gap;
+}
+
+// One tile's gap from a ship centred at (shipX, shipY). A 2x2 body is two cells wide and high.
+static int knife_tile_gap(int shipX, int shipY, unsigned g)
+{
+	const int half = (enemy[g].size == 1) ? 2 : 1;
+	return knife_box_gap(shipX, shipY, KNIFE_SHIP_HALF_W, KNIFE_SHIP_HALF_H,
+	                     enemy[g].ex + enemy[g].mapoffset + 6, enemy[g].ey + 7, 6 * half, 7 * half);
+}
+
+/* The gap in px between ship p's hull and the nearest live tile of the hull `slot` belongs to: every
+ * tile sharing a nonzero link is one hull, so a boss is measured to whichever part is closest, and a
+ * lone enemy is measured to itself. */
+int endlessShipHullGapPx(uint p, unsigned slot)
+{
+	if (p >= COUNTOF(player) || slot >= COUNTOF(enemy))
+		return INT_MAX;
+
+	const int shipX = player[p].x + 7, shipY = player[p].y + 7;
+	int nearest = knife_tile_gap(shipX, shipY, slot);
+
+	const JE_byte link = enemy[slot].linknum;
+	if (link == 0)
+		return nearest;
+
+	for (unsigned g = 0; g < COUNTOF(enemy); ++g)
+	{
+		if (g == slot || enemy[g].linknum != link || enemyAvail[g] == 1)
+			continue;
+		const int gap = knife_tile_gap(shipX, shipY, g);
+		if (gap < nearest)
+			nearest = gap;
+	}
+	return nearest;
+}
+
+// Knife Fight: the bonus percentage a hit on `slot` by the fx ship earns, whole inside
+// ENDLESS_PERK_KNIFE_FULL_PX and fading linearly to nothing over the fade distance beyond it.
+int endlessPerkKnifeFightPercent(unsigned slot)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_KNIFE) : 0;
+	if (stacks == 0)
+		return 0;
+	const int gap = endlessShipHullGapPx(endlessFxPlayer(), slot);
+	const int full = stacks * ENDLESS_PERK_KNIFE_PCT;
+	if (gap <= ENDLESS_PERK_KNIFE_FULL_PX)
+		return full;
+	const int left = ENDLESS_PERK_KNIFE_FULL_PX + ENDLESS_PERK_KNIFE_FADE_PX - gap;
+	if (left <= 0)
+		return 0;
+	return (full * left + ENDLESS_PERK_KNIFE_FADE_PX / 2) / ENDLESS_PERK_KNIFE_FADE_PX;
+}
+
+// Knife Fight in armor points, from the raw damage of a hit before any enemy-health scaling, so it
+// is measured across the same accumulator as Executioner is (tyrian2.c) and holds against a boss.
+// `pct` is the figure above, taken once per hit and spent on both the damage and the blood.
+int endlessPerkKnifeFightBonus(int damage, int pct)
+{
+	if (damage <= 0 || pct <= 0)
+		return 0;
+	return (damage * pct + 50) / 100;
+}
+
+/* The blood a Knife Fight hit draws. Presentation only: the drops are superpixels, which sit outside
+ * the rollback registry, and JE_doSPDripSeeded runs its own sequence rather than the simulation RNG.
+ * Shade lift matches the other endless showers. See "Combat" in doc/notes.md. */
+#define KNIFE_BLOOD_DROPS_MAX     4  // at the deepest bonus; enough to mark the hit and stay out of the way
+#define KNIFE_BLOOD_PER_FRAME    10  // ...and one presented frame spawns no more than this, over every hit in it
+#define KNIFE_BLOOD_SPREAD_PX     4  // how wide a shower starts around the hit
+#define KNIFE_BLOOD_LIFE_TICKS    9  // a drop runs for about a quarter second, then fades
+#define KNIFE_BLOOD_SHADE_LO      9  // the shades a bank is judged red on: the bright half a drop plots in
+#define KNIFE_BLOOD_SHADE_HI     14
+
+/* The reddest ramp of the palette the level is flying, since no fixed bank is red in all 24 shipped
+ * ones. Recomputed once per presented frame, because a level script can change the palette. */
+static Uint8 knife_blood_bank(void)
+{
+	static Uint8 bank = 0;
+	static Uint32 bankFrame = (Uint32)-1;
+	if (bankFrame == rl_presented_frames())
+		return bank;
+	bankFrame = rl_presented_frames();
+
+	int best = INT_MIN;
+	for (unsigned b = 0; b < 16; ++b)
+	{
+		int score = 0;
+		for (unsigned s = KNIFE_BLOOD_SHADE_LO; s <= KNIFE_BLOOD_SHADE_HI; ++s)
+		{
+			const SDL_Color *const c = &colors[b * 16 + s];
+			score += (int)c->r - (c->g > c->b ? c->g : c->b);
+		}
+		if (score > best)
+		{
+			best = score;
+			bank = (Uint8)(b << 4);
+		}
+	}
+	return bank;
+}
+
+// Bleed the hull `slot` for a hit that Knife Fight raised by `pct`, deeper bonus for more blood.
+void endlessPerkKnifeFightBlood(unsigned slot, int pct)
+{
+	static Uint32 budgetFrame = (Uint32)-1;
+	static int budgetLeft = 0;
+
+	if (rollback_resim_silent || pct <= 0 || slot >= COUNTOF(enemy))
+		return;
+
+	if (budgetFrame != rl_presented_frames())
+	{
+		budgetFrame = rl_presented_frames();
+		budgetLeft = KNIFE_BLOOD_PER_FRAME;
+	}
+	if (budgetLeft <= 0)
+		return;
+
+	// The deepest bonus the perk can reach is the full shower; a fading one bleeds proportionally.
+	const int full = endlessPerkTable[PERK_KNIFE].maxStack * ENDLESS_PERK_KNIFE_PCT;
+	int drops = (pct * KNIFE_BLOOD_DROPS_MAX + full - 1) / full;
+	if (drops > budgetLeft)
+		drops = budgetLeft;
+	budgetLeft -= drops;
+
+	// The hit's own hull, at the middle of its sprite, on the screen x the collision measured.
+	const int cx = enemy[slot].ex + enemy[slot].mapoffset + 6;
+	const int cy = enemy[slot].ey + 7;
+	if (cx < 0 || cy < 0)
+		return;
+
+	JE_doSPDripSeeded((JE_word)cx, (JE_word)cy, (JE_word)drops, KNIFE_BLOOD_SPREAD_PX,
+	                  knife_blood_bank(), KNIFE_BLOOD_LIFE_TICKS, ENDLESS_SPARK_BRIGHT,
+	                  rl_presented_frames() * 251u + slot);
+}
+
+/* Deflector: the damage the shot a shield absorption returns carries, from the shield points that
+ * absorbed it, or 0 when the perk leaves the hit alone. The value is a player shot's, so it stays
+ * clear of the 250+ piercing and 99 ice markers; the collision loop scales it as the ship's own. */
+int endlessPerkDeflectDamage(int absorbed)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_DEFLECTOR) : 0;
+	if (stacks == 0 || absorbed <= 0)
+		return 0;
+	int damage = (stacks >= 2) ? absorbed * ENDLESS_PERK_DEFLECT_MULT2 / 100 : absorbed;
+	if (damage > 249)
+		damage = 249;
+	else if (damage == 99)
+		damage = 100;
+	return damage;
 }
 
 // Start each zone with countermeasures ready and Opening Salvo charged.

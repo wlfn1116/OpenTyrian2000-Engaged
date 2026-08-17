@@ -535,6 +535,10 @@ void JE_doSPRingSeeded(JE_word x, JE_word y, JE_word radius, JE_byte spacing, JE
 // straight line by up to `wander` px at its middle. Seeded and uncapped like JE_doSPRingSeeded.
 void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte spacing, JE_byte wander,
                        JE_byte color, JE_byte life, JE_byte bright, Uint32 seed);
+// Sparks that run downward from (x,y), each starting within `spread` px of it and falling at its own
+// pace, so the shower reads as a drip rather than a burst. Seeded and uncapped like the shapes above.
+void JE_doSPDripSeeded(JE_word x, JE_word y, JE_word num, JE_byte spread, JE_byte color,
+                       JE_byte life, JE_byte bright, Uint32 seed);
 // The spark pop a vaporised enemy bullet leaves, in the bullet's own colour (Endless Shockwave
 // and Countermeasures). Call with the slot still live. Presentation only, so a silent resim
 // spawns nothing.

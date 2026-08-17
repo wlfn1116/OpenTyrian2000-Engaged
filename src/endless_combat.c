@@ -661,6 +661,16 @@ int endlessEliteContactPercent(int eliteState)
 	return (eliteState == 3) ? 150 : 125;
 }
 
+/* An invulnerable ship rams in Endless, so Failsafe and the invulnerability specials feed a ram
+ * build, but it lands only every so many ticks of its window: the cadence is read off the ticks
+ * left, so it needs no state of its own and re-simulates as it ran. Vanilla keeps such a ship out
+ * of contact entirely. See "Combat" in doc/notes.md. */
+#define ENDLESS_RAM_INVULN_CADENCE 10
+bool endlessRamWhileInvulnerable(uint invulnerableTicks)
+{
+	return endlessFxActive() && invulnerableTicks % ENDLESS_RAM_INVULN_CADENCE == 0;
+}
+
 // The link latch pays one bounty per logical enemy.
 void endlessAwardEliteKill(int linknum, int eliteState, int killer)
 {

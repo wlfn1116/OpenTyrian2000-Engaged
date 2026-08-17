@@ -486,6 +486,43 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 	explosionFilter = 0;
 }
 
+/* Which parts a killing blow on `slot` takes with it: the slot itself, everything a link-254 blow
+ * touches, and the parts its nonzero link names by the level's three linking rules. `staged` is the
+ * transformation a part with edlevel -1 owes in place of a death, and only a part matched by the
+ * plain link rule takes it. */
+static bool enemy_kill_group_matches(unsigned int slot, unsigned int part, JE_byte link, bool *staged)
+{
+	const JE_byte partLink = enemy[part].linknum;
+	*staged = enemy[part].edlevel == -1 && link == partLink;
+	if (part == slot || link == 254)
+		return true;
+	return link != 255
+	    && (link == partLink || link - 100 == partLink
+	        || (partLink > 40 && partLink / 20 == link / 20 && partLink <= link));
+}
+
+// Contract in tyrian2.h. The walk runs on the shared temp2/temp3 on purpose: a further hit of the
+// same shot in the same tick reads what they hold, and this keeps the extraction exact.
+void enemy_kill_group(unsigned int slot, int payee, int killer)
+{
+	JE_byte link = enemy[slot].linknum;
+	if (link == 0)
+		link = 255;
+
+	if (link == 254 && superEnemy254Jump > 0)
+		JE_eventJump(superEnemy254Jump);
+
+	for (temp2 = 0; temp2 < 100; temp2++)
+	{
+		if (enemyAvail[temp2] == 1)
+			continue;
+		temp3 = enemy[temp2].linknum;
+		bool staged;
+		if (enemy_kill_group_matches(slot, temp2, link, &staged))
+			enemy_part_destroy(temp2, payee, killer, staged);
+	}
+}
+
 // Central kill path for tallies, link-group latches, bounties, and reactive effects.
 // Despawns and collision removals are not kills.
 void enemy_logical_death(unsigned int i, int killer)
@@ -2806,6 +2843,9 @@ static Uint32 rl_enemy_gen;   // bumped once per sim pass at the loop top
 // Presented frames, for cosmetics that need a steady clock. Rollback re-simulation runs several sim
 // passes against one presented frame, so a cadence keyed to rl_enemy_gen stutters.
 static Uint32 rl_present_gen;
+
+// Contract in tyrian2.h.
+Uint32 rl_presented_frames(void) { return rl_present_gen; }
 
 // Banks the Endless "?" pickup cycles through. Level palettes vary, so the list keeps to hues that
 // hold a readable ramp in all of them; bank 0 and the near-black banks are left out.
@@ -5697,33 +5737,41 @@ level_loop:
 							}
 						}
 
-						// Apply Executioner to raw damage before the health multiplier accumulator; a
-						// post-divide percentage would vanish against heavily scaled targets.
-						const int execRaw = endlessFxActive()
+						// Apply Executioner and Knife Fight to raw damage before the health multiplier
+						// accumulator; a post-divide percentage would vanish against heavily scaled
+						// targets. Both are per hull: the wound and the range belong to this enemy.
+						// The range is measured once and spent on both the damage and the blood.
+						const int knifePct = endlessFxActive()
+							? endlessPerkKnifeFightPercent((unsigned)b) : 0;
+						const int knifeRaw = endlessPerkKnifeFightBonus(damage, knifePct);
+						const int perkRaw = endlessFxActive()
 							? endlessPerkExecutionerBonus(damage, enemy[b].armorleft,
 							      enemy[b].healthbar_seen ? enemy[b].healthbar_max : 0, has_boss_bar)
+							  + knifeRaw
 							: 0;
+						if (knifeRaw > 0)
+							endlessPerkKnifeFightBlood((unsigned)b, knifePct);
 
 						// Armor points the bonus actually bought, which is what the shot-carry paths at the
 						// bottom have to undo; they work in post-divide space, so the raw bonus is the
 						// wrong quantity to subtract there.
-						int execBonus;
+						int perkBonus;
 
 						if (hpMult > 1)
 						{
-							// Run the accumulator once, then measure the perk by re-dividing the same
-							// starting state without it. `plain` only reads the pre-hit accumulator; the
+							// Run the accumulator once, then measure the perks by re-dividing the same
+							// starting state without them. `plain` only reads the pre-hit accumulator; the
 							// bonused pass is the one that commits.
 							const int plain = (enemy[b].damageAccum + damage) / hpMult;
-							enemy[b].damageAccum += damage + execRaw;
+							enemy[b].damageAccum += damage + perkRaw;
 							damage = enemy[b].damageAccum / hpMult;
 							enemy[b].damageAccum -= damage * hpMult;
-							execBonus = damage - plain;
+							perkBonus = damage - plain;
 						}
 						else
 						{
-							damage += execRaw;
-							execBonus = execRaw;
+							damage += perkRaw;
+							perkBonus = perkRaw;
 						}
 
 						temp = enemy[b].linknum;
@@ -5850,29 +5898,9 @@ level_loop:
 						}
 						else
 						{
-
-							if ((temp == 254) && (superEnemy254Jump > 0))
-								JE_eventJump(superEnemy254Jump);
-
-							for (temp2 = 0; temp2 < 100; temp2++)
-							{
-								if (enemyAvail[temp2] != 1)
-								{
-									temp3 = enemy[temp2].linknum;
-									if ((temp2 == b) || (temp == 254) ||
-									    ((temp != 255) && ((temp == temp3) || (temp - 100 == temp3) ||
-									                       ((temp3 > 40) && (temp3 / 20 == temp / 20) && (temp3 <= temp)))))
-									{
-
-										// in galaga mode player 2 is sidekick, so give cash to player 1
-										enemy_part_destroy(temp2,
-										                   galagaMode ? 0 : (int)playerNum - 1,
-										                   playerNum >= 1 ? (int)playerNum - 1
-										                                  : ENDLESS_KILLER_NONE,
-										                   (enemy[temp2].edlevel == -1) && (temp == temp3));
-									}
-								}
-							}
+							// in galaga mode player 2 is sidekick, so give cash to player 1
+							enemy_kill_group(b, galagaMode ? 0 : (int)playerNum - 1,
+							                 playerNum >= 1 ? (int)playerNum - 1 : ENDLESS_KILLER_NONE);
 						}
 
 						if (infiniteShot)
@@ -5881,9 +5909,9 @@ level_loop:
 						}
 						else
 						{
-							// Executioner: undo the wounded-target bonus before an overkill
+							// Executioner and Knife Fight: undo this hull's bonus before an overkill
 							// shot carries `damage` to the next enemy.
-							damage -= execBonus;
+							damage -= perkBonus;
 
 							if (z != MAX_PWEAPON - 1)
 							{
@@ -6025,10 +6053,25 @@ draw_player_shot_loop_end:
 
 							if (player[i].invulnerable_ticks == 0)
 							{
+								const uint shieldBefore = player[i].shield;
+								const uint armorBefore = player[i].armor;
 								if ((temp = JE_playerDamage(temp, &player[i])) > 0)
 								{
 									player[i].x_velocity += (enemyShot[z].sxm * temp) / 2;
 									player[i].y_velocity += (enemyShot[z].sym * temp) / 2;
+								}
+
+								// Deflector: a hit the shield took whole flies back out along the
+								// reverse of its path, as this ship's shot. JE_playerDamage left the
+								// effect context on this ship, so the perk read is its own.
+								if (endlessFxActive() && player[i].armor == armorBefore
+								    && player[i].shield < shieldBefore)
+								{
+									const int absorbed = (int)(shieldBefore - player[i].shield);
+									const int returned = endlessPerkDeflectDamage(absorbed);
+									if (returned > 0)
+										player_shot_create_deflected(&enemyShot[z], returned,
+										                             (JE_byte)(i + 1));
 								}
 							}
 

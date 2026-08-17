@@ -69,6 +69,16 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy);
 // Despawns still clear enemyAvail directly.
 void enemy_logical_death(unsigned int i, int killer);
 
+/* Take the hull `slot` belongs to down as a killing shot does: every linked part pays out to
+ * `payee`, dies credited to `killer` and explodes, a part with edlevel -1 transforms instead, and a
+ * link-254 kill fires the level's jump. The player-shot loop and the Endless ram site share it. */
+void enemy_kill_group(unsigned int slot, int payee, int killer);
+
+/* Frames presented since the game started, the clock a cosmetic paces itself on. Rollback runs
+ * several simulation passes against one presented frame, so a cadence counted in sim ticks stutters.
+ * Outside the rollback registry, and never a simulation input. */
+Uint32 rl_presented_frames(void);
+
 extern float debug_interp_alpha;  // last presented interpolation fraction
 
 extern char tempStr[31];

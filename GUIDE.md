@@ -315,6 +315,9 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Failsafe | Brief invulnerability after hull damage | 2 |
 | Guidance Package | Shots home in; later stacks add sidekicks and specials | 3 |
 | Twin Pods | Every sidekick volley fires twice, at double ammo and power | 1 |
+| Reinforced Prow | Ramming deals 2x, 3x, 4x and costs you 75%, 50%, 25% | 3 |
+| Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
+| Deflector | A shot your shield absorbs flies back as yours; 2x damage at two stacks | 2 |
 
 Guidance Package bends each shot toward the nearest enemy that can be hurt.
 Every stack corrects the course more often: about four times a second at one
@@ -335,6 +338,45 @@ draws generator power on its own, spends a round of a limited magazine, and
 continues the pod's firing pattern, so a spread weapon fans wider. A pod on its
 last round fires alone, and a pod refused for power fires nothing. Charge
 sidekicks fire the twin at the same charge. The shop preview shows it.
+
+Ramming is a way to fight in Endless. An enemy you destroy by flying into it
+dies the way a shot enemy dies: it pays its cash, drops what it carried, pays
+its bounty if it was an elite or champion, feeds your kill streak and starts a
+Chain Reaction wave, credited in co-op to the ship that rammed. Contact normally
+deals 2 to each side per tick. Reinforced Prow multiplies your side of that (2x,
+3x, 4x per stack, before Knife Fight) and cuts what you take to 75%, 50% and
+25%, after the depth ramp and any elite or Rampage premium; a hit still costs at
+least one point. An enemy with almost no armour left still hurts you less, as it
+always did. While you are invulnerable, from Failsafe, an invulnerability
+special or the start of a sector, you keep ramming without being rammed back,
+but land
+one contact hit every ten ticks of the window instead of one every tick. Bosses
+and elites spend ram damage through the same health multiplier your guns face,
+so a ram wears them down at that rate.
+
+Knife Fight rewards flying close. It measures the gap between your hull and the
+nearest edge of the enemy you hit, and for a body built from several tiles the
+nearest tile of the whole body counts, so hugging one end of a boss is enough.
+Within 7 px of that edge every stack adds 15% to the hit; from there the bonus
+fades evenly to nothing at 55 px. It applies per enemy hit, to shots, specials
+and rams alike, and never to Chain Reaction blasts. In co-op each ship is
+measured from its own position. A hit it raises bleeds: a few red drops run
+down the enemy, more of them the deeper the bonus, so you can read how close you
+are without looking away from the fight. The colour follows the sector's
+palette, and a busy screen caps how much runs at once.
+
+Deflector turns your shield into a gun. A shot the shield absorbs whole flies
+back out along the reverse of the path it came in on, as your own shot: it
+carries the damage the shield absorbed, doubled at two stacks, and is then
+scaled like every shot of yours (Heavy Rounds, Knife Fight and the rest apply
+when it lands). A deflection made inside an Opening Salvo window belongs to that
+volley and takes its bonus, so a wall of fire arriving on a charged salvo comes
+back hard. It keeps the bullet's look, its elite or champion tint included, and
+takes no steering, so a shot fired at you from ahead goes straight back at the
+enemy that fired it. A hit that reaches the hull, one taken while you are
+invulnerable, or an empty shield returns nothing, and Bulwark's cut comes off
+before the shield absorbs, so it lowers what comes back. Kills the returned shot
+makes are yours.
 
 Opening Salvo charges after two seconds without main-gun fire. Its one-second
 window gives 2.5x damage and removes generator cost. The generator gauge turns
@@ -409,8 +451,8 @@ by letting the wave take a kill instead of your guns.
 
 Anything that fires counts as your shot, so specials that scatter fire, and
 weapons whose shots burst into other shots, set the perk off exactly as your
-front gun does. Ramming is the one exception: flying into an enemy destroys it
-without counting as a kill, so it pays nothing and starts no wave.
+front gun does. So does ramming: an enemy you fly into and destroy is a kill
+like any other and starts a wave of its own.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.

@@ -191,6 +191,12 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2 // ...stacks before sidekick shots are steered as well
 #define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3 // ...and before special-weapon shots are
 #define ENDLESS_PERK_TWINPODS_SPREAD_PX 12 // Twin Pods: px between a pod's two volleys; the pair straddles the pod, half each side
+#define ENDLESS_PERK_PROW_DMG_PCT   100 // Reinforced Prow: +% ram damage dealt per stack (x2, x3, x4)
+#define ENDLESS_PERK_PROW_TAKEN_PCT  25 // ...and -% contact damage taken per stack (75%, 50%, 25%; a hit still costs 1)
+#define ENDLESS_PERK_KNIFE_PCT       15 // Knife Fight: +% damage per stack with the enemy's hull within FULL_PX of the ship's
+#define ENDLESS_PERK_KNIFE_FULL_PX    7 // ...the gap at or under which the whole bonus applies
+#define ENDLESS_PERK_KNIFE_FADE_PX   48 // ...and the further gap over which it fades to nothing (none from 55 px out)
+#define ENDLESS_PERK_DEFLECT_MULT2  200 // Deflector: % of the absorbed damage the returned shot carries at two stacks (100 at one)
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
@@ -228,6 +234,9 @@ enum {
 	PERK_FAILSAFE,
 	PERK_GUIDANCE,
 	PERK_TWINPODS,
+	PERK_PROW,
+	PERK_KNIFE,
+	PERK_DEFLECTOR,
 	PERK_COUNT
 };
 

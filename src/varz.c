@@ -2410,6 +2410,41 @@ void JE_doSPBoltSeeded(JE_word x0, JE_word y0, JE_word x1, JE_word y1, JE_byte s
 	}
 }
 
+// Fall rates a drop is dealt, in px per tick. The slowest still clears its own trail over a short
+// life, and the range is what makes a shower spread into separate runs instead of one bar.
+#define SP_DRIP_FALL_MIN 1
+#define SP_DRIP_FALL_MAX 3
+
+void JE_doSPDripSeeded(JE_word x, JE_word y, JE_word num, JE_byte spread, JE_byte color,
+                       JE_byte life, JE_byte bright, Uint32 seed)
+{
+	if (life == 0)
+		return;
+	if (life > SUPERPIXEL_SPAWN_Z)
+		life = SUPERPIXEL_SPAWN_Z;
+
+	for (JE_word sp = 0; sp < num; sp++)
+	{
+		seed += SP_SEED_STRIDE;
+		const int offX = (int)(sp_mix32(seed) % (2u * spread + 1u)) - spread;
+		seed += SP_SEED_STRIDE;
+		const int offY = (int)(sp_mix32(seed) % (spread + 1u));
+		seed += SP_SEED_STRIDE;
+		const int fall = SP_DRIP_FALL_MIN
+		               + (int)(sp_mix32(seed) % (SP_DRIP_FALL_MAX - SP_DRIP_FALL_MIN + 1));
+
+		const unsigned int slot = next_superpixel(false);
+		superpixels[slot].x = (unsigned int)((int)x + offX);
+		superpixels[slot].y = (unsigned int)((int)y + offY);
+		superpixels[slot].delta_x = 0;   // a drop runs straight down
+		superpixels[slot].delta_y = fall;
+		superpixels[slot].color = color;
+		superpixels[slot].bright = bright;
+		superpixels[slot].occluded = false;
+		superpixels[slot].z = life;
+	}
+}
+
 // Shape of the pop; the reach is also each spark's per-tick velocity, so it bounds the spread.
 #define VAPORISE_SPARK_MIN   3
 #define VAPORISE_SPARK_MAX   5

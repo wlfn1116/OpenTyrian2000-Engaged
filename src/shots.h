@@ -19,10 +19,14 @@
 #ifndef SHOTS_H
 #define SHOTS_H
 #include "opentyr.h"
+#include "varz.h"
 
 typedef struct {
 	JE_integer shotX, shotY, shotXM, shotYM, shotXC, shotYC;
 	JE_boolean shotComplicated;
+	// Palette bank the sprite is drawn in, 0 for its own colours: a returned elite or champion bullet
+	// keeps its tier's. Sits in the alignment hole after shotComplicated, so the layout is unchanged.
+	JE_byte tint;
 	JE_integer shotDevX, shotDirX, shotDevY, shotDirY, shotCirSizeX, shotCirSizeY;
 	JE_byte shotTrail;
 	JE_word shotGr, shotAni, shotAniMax;
@@ -99,6 +103,13 @@ JE_integer player_shot_create(
 JE_integer player_shot_create_twin(
 	JE_integer first, JE_word portnum, uint sidekick, int twindx, int x, int y,
 	JE_word mousex, JE_word mousey, JE_word wpnum, JE_byte playernum);
+
+/** Endless Deflector: returns \a incoming, an enemy shot the shield has just absorbed, as
+ * player \a playernum's shot, flying back out along the reverse of the path it came in on and
+ * carrying \a damage. It takes no steering, and takes that player's Opening Salvo tag when their
+ * window is running. Returns the shot, or MAX_PWEAPON when the pool is full.
+ */
+JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damage, JE_byte playernum);
 
 /** Creates the chain-reaction child of a shot that just hit, at the impact point.
  * \a salvo_boost carries the parent's endless Opening Salvo tag onto every child bullet and

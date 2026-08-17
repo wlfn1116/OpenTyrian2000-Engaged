@@ -2369,6 +2369,363 @@ static void qa_test_twin_pods_perk(void)
 	coopEndlessMode = savedCoop;
 }
 
+/* Reinforced Prow: the ram figures per stack, the invulnerable-ram cadence, and the Endless ram
+ * kill going through the shot's own destruction walk (payout, tally, a linked hull down whole). */
+static void qa_test_reinforced_prow_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	struct JE_SingleEnemyType savedEnemy[8];
+	JE_byte savedAvail[COUNTOF(savedEnemy)];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	const JE_word savedKilled = enemyKilled;
+	const ulong savedCash = player[0].cash;
+	const Uint64 savedEarned = endlessRunCashEarned, savedSpent = endlessRunCashSpent;
+	Uint64 savedSources[ENDLESS_CASH_SOURCES], savedSinks[ENDLESS_CASH_SINKS];
+	memcpy(savedSources, endlessCashBySource, sizeof(savedSources));
+	memcpy(savedSinks, endlessCashBySink, sizeof(savedSinks));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+	endlessCashResync();
+
+	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
+	         "without Reinforced Prow a ram deals and costs the stock figure");
+	static const int dealt[] = { 4, 6, 8 };
+	static const int taken[] = { 75, 50, 25 };
+	bool ladder = true;
+	for (int s = 1; s <= 3; ++s)
+	{
+		endlessPerkTakenBy[0][PERK_PROW] = (JE_byte)s;
+		endlessPerkRederive();
+		ladder &= endlessPerkProwRamDamage(2) == dealt[s - 1]
+		       && endlessPerkProwContactPercent() == taken[s - 1];
+	}
+	qa_check(ladder, "the stacks deal x2, x3, x4 and take 75%, 50%, 25%");
+	endlessMode = false;
+	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
+	         "...only in an endless run");
+	endlessMode = true;
+
+	// Personal: the partner rams on its own stacks.
+	coopEndlessMode = true;
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
+	         "a co-op partner without the perk rams at stock");
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkProwRamDamage(2) == 8, "...while the holder rams at its stacks");
+	coopEndlessMode = false;
+
+	// An invulnerable ship lands a ram every tenth tick of its window in Endless, never outside it.
+	qa_check(endlessRamWhileInvulnerable(20) && endlessRamWhileInvulnerable(10)
+	         && !endlessRamWhileInvulnerable(19) && !endlessRamWhileInvulnerable(1),
+	         "an invulnerable ship rams on the tick cadence");
+	endlessMode = false;
+	qa_check(!endlessRamWhileInvulnerable(20), "...and outside Endless never");
+	endlessMode = true;
+
+	/* The Endless ram kill: enemy_kill_group takes a lone enemy and pays it out, and takes a linked
+	 * hull whole. Both are what a killing shot does. */
+	for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+	enemyAvail[0] = 0;
+	enemy[0].ex = 100;
+	enemy[0].ey = 100;
+	enemy[0].armorleft = 1;
+	enemy[0].enemytype = 1;
+	enemy[0].evalue = 300;
+	const ulong loneCash = player[0].cash;
+	const JE_word loneKilled = enemyKilled;
+	enemy_kill_group(0, 0, 0);
+	qa_check(enemyAvail[0] == 1 && player[0].cash == loneCash + 300 && enemyKilled == loneKilled + 1,
+	         "a ram kill removes the enemy, pays its worth and counts");
+
+	for (uint i = 0; i < 3; ++i)
+	{
+		enemyAvail[i] = 0;
+		enemy[i].ex = (JE_integer)(100 + i * 8);
+		enemy[i].ey = 100;
+		enemy[i].linknum = 7;
+		enemy[i].armorleft = 1;
+		enemy[i].enemytype = 1;
+		enemy[i].evalue = 100;
+	}
+	enemyAvail[3] = 0;   // a bystander with another link stays
+	enemy[3].ex = 200;
+	enemy[3].ey = 100;
+	enemy[3].linknum = 9;
+	enemy[3].armorleft = 5;
+	enemy[3].enemytype = 1;
+	const ulong hullCash = player[0].cash;
+	enemy_kill_group(1, 0, 0);
+	qa_check(enemyAvail[0] == 1 && enemyAvail[1] == 1 && enemyAvail[2] == 1 && enemyAvail[3] == 0
+	         && player[0].cash == hullCash + 300,
+	         "...and a linked hull goes down whole, every tile paid, its neighbour untouched");
+	JE_resetSP();
+	memset(explosions, 0, sizeof(explosions));   // the deaths above puffed; explosions[] is registered
+
+	enemyKilled = savedKilled;
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	player[0].cash = savedCash;
+	endlessRunCashEarned = savedEarned;
+	endlessRunCashSpent = savedSpent;
+	memcpy(endlessCashBySource, savedSources, sizeof(savedSources));
+	memcpy(endlessCashBySink, savedSinks, sizeof(savedSinks));
+	endlessCashResync();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
+/* Knife Fight: the hull-to-hull gap, the bonus ladder over it, a linked hull measured to its nearest
+ * tile, and the perk staying with the ship that flies close in co-op. */
+static void qa_test_knife_fight_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	struct JE_SingleEnemyType savedEnemy[8];
+	JE_byte savedAvail[COUNTOF(savedEnemy)];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+	memcpy(savedAvail, enemyAvail, sizeof(savedAvail));
+	const Player savedPlayers[2] = { player[0], player[1] };
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+	for (uint i = 0; i < COUNTOF(savedEnemy); ++i)
+	{
+		memset(&enemy[i], 0, sizeof(enemy[i]));
+		enemyAvail[i] = 1;
+	}
+
+	// The ship's hull covers x-5..x+18, y-7..y+20; a lone 12x14 tile at (ex, ey) covers ex..ex+11,
+	// ey..ey+13. With the ship at (100, 150) a tile at (100, ey) sits 129 - ey px above it.
+	player[0].x = 100;
+	player[0].y = 150;
+	enemyAvail[0] = 0;
+	enemy[0].ex = 100;
+	enemy[0].ey = 100;
+	enemy[0].armorleft = 50;
+	enemy[0].enemytype = 1;
+	qa_check(endlessShipHullGapPx(0, 0) == 29, "the gap is measured between the two hulls' edges");
+	enemy[0].ey = 130;
+	qa_check(endlessShipHullGapPx(0, 0) == 0, "...and is zero once they overlap");
+	enemy[0].ey = 100;
+	enemy[0].ex = 160;   // 41 px clear on x, 29 on y: the wider clearance is the gap
+	qa_check(endlessShipHullGapPx(0, 0) == 41, "...and the larger per-axis clearance decides");
+	enemy[0].ex = 100;
+	enemy[0].size = 1;   // a 2x2 body reaches 7 px further down
+	qa_check(endlessShipHullGapPx(0, 0) == 22, "a 2x2 body is measured to its outer edge");
+	enemy[0].size = 0;
+
+	qa_check(endlessPerkKnifeFightPercent(0) == 0
+	         && endlessPerkKnifeFightBonus(20, endlessPerkKnifeFightPercent(0)) == 0,
+	         "without Knife Fight there is no bonus");
+	endlessPerkTakenBy[0][PERK_KNIFE] = 4;
+	endlessPerkRederive();
+	const int fullY = 129 - ENDLESS_PERK_KNIFE_FULL_PX;   // the tile that sits exactly the full gap away
+	enemy[0].ey = (JE_integer)fullY;
+	qa_check(endlessPerkKnifeFightPercent(0) == 4 * ENDLESS_PERK_KNIFE_PCT
+	         && endlessPerkKnifeFightBonus(20, endlessPerkKnifeFightPercent(0))
+	            == 20 * 4 * ENDLESS_PERK_KNIFE_PCT / 100,
+	         "at the full gap four stacks give the whole bonus");
+	enemy[0].ey = 130;
+	qa_check(endlessPerkKnifeFightPercent(0) == 4 * ENDLESS_PERK_KNIFE_PCT,
+	         "...touching gives the same");
+	enemy[0].ey = (JE_integer)(fullY - ENDLESS_PERK_KNIFE_FADE_PX / 2);   // half way through the fade
+	qa_check(endlessPerkKnifeFightPercent(0) == 4 * ENDLESS_PERK_KNIFE_PCT / 2,
+	         "half way out it is half");
+	enemy[0].ey = (JE_integer)(fullY - ENDLESS_PERK_KNIFE_FADE_PX);
+	qa_check(endlessPerkKnifeFightPercent(0) == 0, "...and at the end of the fade nothing");
+	enemy[0].ey = (JE_integer)fullY;
+	endlessPerkTakenBy[0][PERK_KNIFE] = 1;
+	endlessPerkRederive();
+	qa_check(endlessPerkKnifeFightPercent(0) == ENDLESS_PERK_KNIFE_PCT, "one stack is one step");
+	endlessMode = false;
+	qa_check(endlessPerkKnifeFightPercent(0) == 0, "...only in an endless run");
+	endlessMode = true;
+
+	// A linked hull is measured to whichever tile is nearest, though the hit landed elsewhere.
+	enemy[0].ey = 100;
+	enemy[0].linknum = 7;
+	enemyAvail[1] = 0;
+	enemy[1].ex = 100;
+	enemy[1].ey = (JE_integer)fullY;
+	enemy[1].linknum = 7;
+	enemy[1].armorleft = 50;
+	enemy[1].enemytype = 1;
+	qa_check(endlessShipHullGapPx(0, 0) == ENDLESS_PERK_KNIFE_FULL_PX
+	         && endlessPerkKnifeFightPercent(0) == ENDLESS_PERK_KNIFE_PCT,
+	         "a hit on a far tile of a linked hull is measured to its nearest tile");
+	enemyAvail[1] = 1;
+	qa_check(endlessShipHullGapPx(0, 0) == 29, "...a dead tile no longer counts");
+	enemy[0].linknum = 0;
+
+	// Personal, and measured from the owner's own ship: the partner is far away, the holder close.
+	coopEndlessMode = true;
+	player[1].x = 100;
+	player[1].y = 150;
+	player[0].x = 20;
+	player[0].y = 20;
+	enemy[0].ey = (JE_integer)fullY;
+	endlessPerkTakenBy[0][PERK_KNIFE] = 0;
+	endlessPerkTakenBy[1][PERK_KNIFE] = 2;
+	endlessPerkRederive();
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkKnifeFightPercent(0) == 2 * ENDLESS_PERK_KNIFE_PCT,
+	         "in co-op the holder's shot is measured from the holder's ship");
+	endlessSetFxPlayer(0);
+	qa_check(endlessPerkKnifeFightPercent(0) == 0, "...and the partner without it gets nothing");
+	endlessSetFxPlayer(1);
+	player[1].y = 20;
+	qa_check(endlessPerkKnifeFightPercent(0) == 0, "...nor the holder from far away");
+	coopEndlessMode = false;
+	endlessSetFxPlayer(0);
+
+	player[0] = savedPlayers[0];
+	player[1] = savedPlayers[1];
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
+/* Deflector: the returned damage per stack and its marker guards, and the returned shot itself: the
+ * hit ship's own, on the reverse path, with the bullet's look, unsteered, and carrying that ship's
+ * Opening Salvo tag when its window is running. */
+static void qa_test_deflector_perk(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	JE_byte savedPerks[2][PERK_COUNT];
+	int savedSalvo[2];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	memcpy(savedSalvo, endlessSalvoWindow, sizeof(savedSalvo));
+	memset(endlessSalvoWindow, 0, sizeof(endlessSalvoWindow));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	qa_check(endlessPerkDeflectDamage(6) == 0, "without Deflector a shield hit returns nothing");
+	endlessPerkTakenBy[0][PERK_DEFLECTOR] = 1;
+	endlessPerkRederive();
+	qa_check(endlessPerkDeflectDamage(6) == 6 && endlessPerkDeflectDamage(0) == 0,
+	         "one stack returns the absorbed damage, and nothing for nothing");
+	endlessPerkTakenBy[0][PERK_DEFLECTOR] = 2;
+	endlessPerkRederive();
+	qa_check(endlessPerkDeflectDamage(6) == 12, "two stacks return it doubled");
+	qa_check(endlessPerkDeflectDamage(200) == 249 && endlessPerkDeflectDamage(50) == 100,
+	         "...clear of the piercing and ice markers");
+	endlessMode = false;
+	qa_check(endlessPerkDeflectDamage(6) == 0, "...only in an endless run");
+	endlessMode = true;
+
+	coopEndlessMode = true;
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkDeflectDamage(6) == 0, "a co-op partner without the perk returns nothing");
+	endlessSetFxPlayer(0);
+	coopEndlessMode = false;
+
+	// The returned shot: player two's, at the bullet, velocity and acceleration reversed.
+	memset(shotAvail, 0, sizeof(shotAvail));
+	EnemyShotType incoming;
+	memset(&incoming, 0, sizeof(incoming));
+	incoming.sx = 120;
+	incoming.sy = 90;
+	incoming.sxm = 3;
+	incoming.sym = 5;
+	incoming.sxc = 1;
+	incoming.syc = -1;
+	incoming.sgr = 12;
+	incoming.animate = 1;
+	incoming.animax = 3;
+	incoming.filter = ENDLESS_CHAMPION_FILTER;
+	const JE_integer id = player_shot_create_deflected(&incoming, 12, 2);
+	qa_check(id < MAX_PWEAPON && shotAvail[id] > 0, "a returned shot takes a pool slot");
+	if (id < MAX_PWEAPON)
+	{
+		const PlayerShotDataType *s = &playerShotData[id];
+		qa_check(s->shotX == 120 && s->shotY == 90 && s->shotXM == -3 && s->shotYM == -5
+		         && s->shotXC == -1 && s->shotYC == 1,
+		         "...leaving from the bullet along the reverse of its path");
+		qa_check(s->playerNumber == 2 && s->shotDmg == 12 && s->shotGr == 12 && s->shotAni == 1
+		         && s->shotAniMax == 3 && s->tint == ENDLESS_CHAMPION_FILTER,
+		         "...as the hit ship's own shot, at the returned damage, in the bullet's look and tier");
+		qa_check(s->aimAtEnemy == 0 && s->aimDelayMax == 0 && !s->shotComplicated && s->chainReaction == 0
+		         && s->salvoBoost == 0 && s->pierceLock == 0,
+		         "...unsteered, and untagged outside a salvo window");
+	}
+
+	/* A deflection inside a charged Opening Salvo window joins that volley, and the window it joins
+	 * is the deflecting ship's own. */
+	memset(shotAvail, 0, sizeof(shotAvail));
+	endlessSalvoWindow[0] = ENDLESS_PERK_SALVO_WINDOW;
+	endlessSalvoWindow[1] = 0;
+	coopEndlessMode = true;
+	const JE_integer inSalvo = player_shot_create_deflected(&incoming, 12, 1);
+	qa_check(inSalvo < MAX_PWEAPON && playerShotData[inSalvo].salvoBoost == 1,
+	         "a deflection inside a charged window carries the volley's tag");
+	const JE_integer partnerShot = player_shot_create_deflected(&incoming, 12, 2);
+	qa_check(partnerShot < MAX_PWEAPON && playerShotData[partnerShot].salvoBoost == 0,
+	         "...and the partner, whose own window is not running, deflects untagged");
+	coopEndlessMode = false;
+	memset(endlessSalvoWindow, 0, sizeof(endlessSalvoWindow));
+	endlessSetFxPlayer(0);
+	// The slot recycled by a gun's shot sheds the tint; the ordinary create keeps its own colours.
+	memset(shotAvail, 0, sizeof(shotAvail));
+	const uint savedPower = power;
+	power = 10000;
+	const JE_integer plain = player_shot_create(1, SHOT_FRONT, 100, 150, 0, 0, 1, 1);
+	qa_check(plain < MAX_PWEAPON && playerShotData[plain].tint == 0,
+	         "a gun's shot in the same slot flies untinted");
+	power = savedPower;
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	incoming.sxm = 0;
+	incoming.sym = 0;
+	incoming.animax = 0;
+	const JE_integer still = player_shot_create_deflected(&incoming, 3, 1);
+	qa_check(still < MAX_PWEAPON && playerShotData[still].shotYM < 0 && playerShotData[still].shotAniMax == 1,
+	         "a bullet that had stopped leaves straight up, and a still sprite stays on its frame");
+	incoming.sgr = 65535;
+	qa_check(player_shot_create_deflected(&incoming, 3, 1) == MAX_PWEAPON
+	         && player_shot_create_deflected(&incoming, 0, 1) == MAX_PWEAPON,
+	         "no shot for a frame past the sheets or for no damage");
+	memset(shotAvail, 0, sizeof(shotAvail));
+
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	memcpy(endlessSalvoWindow, savedSalvo, sizeof(savedSalvo));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
 /* Guided Aim (guidedShotScreenAim): the weapon-table homing picks and chases the enemy's screen x
  * instead of its map x. Nothing else about the stock rule moves: it still takes any non-free,
  * non-pickup slot and still veers off when its enemy dies. */
@@ -3267,6 +3624,110 @@ static void qa_test_vaporised_shot_sparks(void)
 
 	enemyShot[0] = savedShot;
 	JE_resetSP();
+}
+
+/* The blood a Knife Fight hit draws: drops that run down from the hull that was hit, in the reddest
+ * bank of the palette in use, deeper bonus for more of them, silent under a re-simulation and
+ * bounded over a presented frame. */
+static void qa_test_knife_fight_blood(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const bool savedSilent = rollback_resim_silent;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	struct JE_SingleEnemyType savedEnemy = enemy[0];
+	const JE_byte savedAvail = enemyAvail[0];
+	const Player savedPlayer = player[0];
+	int lo, hi;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkTakenBy[0][PERK_KNIFE] = (JE_byte)endlessPerkMaxStack(PERK_KNIFE);
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	// The ship right above the enemy, which is the deepest the bonus goes.
+	memset(&enemy[0], 0, sizeof(enemy[0]));
+	enemyAvail[0] = 0;
+	enemy[0].ex = 100;
+	enemy[0].ey = 100;
+	enemy[0].armorleft = 50;
+	enemy[0].enemytype = 1;
+	player[0].x = 100;
+	player[0].y = 130;
+	const int deepPct = endlessPerkKnifeFightPercent(0);
+	qa_check(deepPct > 0, "the blood test flies close enough to raise a hit");
+
+	JE_resetSP();
+	endlessPerkKnifeFightBlood(0, 0);
+	qa_check(qa_spark_span(&lo, &hi) == 0, "a hit Knife Fight did not raise draws no blood");
+	rollback_resim_silent = true;
+	endlessPerkKnifeFightBlood(0, deepPct);
+	qa_check(qa_spark_span(&lo, &hi) == 0, "...and neither does a silent resim pass");
+	rollback_resim_silent = savedSilent;
+
+	JE_resetSP();
+	endlessPerkKnifeFightBlood(0, deepPct);
+	const int deepDrops = qa_spark_span(&lo, &hi);
+	qa_check(deepDrops > 0, "a raised hit bleeds");
+
+	bool falls = true, oneBank = true, atHull = true;
+	Uint8 bank = 0;
+	for (unsigned int i = 0; i < MAX_SUPERPIXELS; ++i)
+	{
+		if (superpixels[i].z == 0)
+			continue;
+		falls = falls && superpixels[i].delta_y > 0 && superpixels[i].delta_x == 0;
+		if (bank == 0)
+			bank = superpixels[i].color;
+		oneBank = oneBank && superpixels[i].color == bank;
+		atHull = atHull && abs((int)superpixels[i].x - (enemy[0].ex + enemy[0].mapoffset + 6)) <= 8
+		                && abs((int)superpixels[i].y - (enemy[0].ey + 7)) <= 8;
+	}
+	qa_check(falls, "...in drops that run straight down");
+	qa_check(atHull, "...from the hull that was hit");
+	qa_check(oneBank && (bank & 0x0f) == 0, "...all in one palette bank");
+
+	// Which bank that is follows the palette in use: nothing else in it reads redder.
+	int chosenRed = INT_MIN, reddest = INT_MIN;
+	for (unsigned b = 0; b < 16; ++b)
+	{
+		int score = 0;
+		for (unsigned s = 9; s <= 14; ++s)
+		{
+			const SDL_Color *const c = &colors[b * 16 + s];
+			score += (int)c->r - (int)((c->g > c->b) ? c->g : c->b);
+		}
+		if (score > reddest)
+			reddest = score;
+		if ((Uint8)(b << 4) == bank)
+			chosenRed = score;
+	}
+	qa_check(chosenRed == reddest, "...and no bank of this palette reads redder");
+
+	JE_resetSP();
+	endlessPerkKnifeFightBlood(0, deepPct / 4);
+	qa_check(qa_spark_span(&lo, &hi) < deepDrops, "a fading bonus bleeds less");
+
+	// One presented frame's budget is shared by every hit in it, so a burst of them runs dry.
+	JE_resetSP();
+	for (int shower = 0; shower < 40; ++shower)
+		endlessPerkKnifeFightBlood(0, deepPct);
+	const int bled = qa_spark_span(&lo, &hi);
+	qa_check(bled > 0 && bled < 40 * deepDrops, "a frame full of raised hits stops at its budget");
+
+	JE_resetSP();
+	player[0] = savedPlayer;
+	enemy[0] = savedEnemy;
+	enemyAvail[0] = savedAvail;
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
 }
 
 /* Settings baked into the loaded item data do nothing on their own: something has to rewrite the
@@ -6293,6 +6754,9 @@ int qa_run_unit_suite(void)
 	qa_test_shot_hitboxes();
 	qa_test_guidance_perk();
 	qa_test_twin_pods_perk();
+	qa_test_reinforced_prow_perk();
+	qa_test_knife_fight_perk();
+	qa_test_deflector_perk();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
 	qa_test_elite_tier_eligibility();
@@ -6306,6 +6770,7 @@ int qa_run_unit_suite(void)
 	qa_test_superspark_seeded_spread();
 	qa_test_superspark_shapes();
 	qa_test_vaporised_shot_sparks();
+	qa_test_knife_fight_blood();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
 	qa_test_endless_coop();
