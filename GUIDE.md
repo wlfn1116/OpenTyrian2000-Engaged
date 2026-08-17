@@ -307,7 +307,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Financier | More interest and lower shop prices | 4 |
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
 | Failsafe | Brief invulnerability after hull damage | 2 |
-| Guidance Package | Shots home in; later stacks add sidekicks and specials | 3 |
+| Guidance Package | Shots home in; later stacks add sidekicks and specials | 4 |
 | Twin Pods | Every sidekick volley fires twice, at double ammo and power | 1 |
 | Reinforced Prow | Ramming deals 2x, 3x, 4x and costs you 75%, 50%, 25% | 3 |
 | Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
@@ -582,7 +582,9 @@ Both players can shop at once. Rerolls and gambles affect the buyer. Sector
 Sabotage combines across the pair because both ships fly the same sector.
 
 The charting player chooses the course. The other player may keep shopping or
-wait, and can return to the outpost with Esc until departure is committed.
+wait, and can return to the outpost with Esc until departure is committed. Under
+Alternating the turn passes only once a sector has been flown to its end, so a
+sector the pair dies on or quits is re-charted by the same player.
 
 A destroyed ship spectates while its partner continues. It returns at the next
 outpost with full hull and no shield. If both ships go down, the run mode decides

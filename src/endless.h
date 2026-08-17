@@ -63,7 +63,7 @@ extern bool endlessCoopHostCharts;                 // Alternating: is the host c
 const char *endlessCourseChooserName(EndlessCourseChooser mode);
 bool endlessLocalPlayerCharts(void);   // does this machine pick the next course?
 uint endlessChartingPlayerIndex(void); // which SEAT picks it, identical on both machines
-void endlessAdvanceCourseTurn(void);   // call once a course has been committed
+void endlessAdvanceCourseTurn(void);   // call once a sector has been flown to its end
 
 // A downed player spectates until the zone ends, then revives at the outpost.
 extern bool endlessPlayerDowned[2];
@@ -763,7 +763,7 @@ bool endlessRamWhileInvulnerable(uint invulnerableTicks); // Endless: an invulne
 int  endlessShockwaveRadius(int linknum, int eliteState); // 0, 80 (elite), or 120 (champion)
 bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
 
-// Bank Star Charts and Breakthrough after a clear.
+// Bank Star Charts and Breakthrough after a clear, and hand Alternating its next turn.
 void endlessOnSectorCleared(void);
 
 // Hostile kill-fire effects share the normal combo machinery.

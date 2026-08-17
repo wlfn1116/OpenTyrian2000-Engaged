@@ -187,8 +187,8 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
 #define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
 #define ENDLESS_PERK_GUIDANCE_DELAY  6 // Guidance Package: ticks between course corrections on a gun with no homing of its own, at one stack
-#define ENDLESS_PERK_GUIDANCE_STEP   2 // ...ticks each further stack takes off that
-#define ENDLESS_PERK_GUIDANCE_TIGHTEN 4 // ...and ticks each stack takes off the interval of a gun that homes already (floor 1 either way)
+#define ENDLESS_PERK_GUIDANCE_STEP   2 // ...ticks each further stack takes off that, the fourth landing on the floor of 1
+#define ENDLESS_PERK_GUIDANCE_TIGHTEN 4 // ...and ticks each stack takes off the interval of a gun that homes already (same floor)
 #define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2 // ...stacks before sidekick shots are steered as well
 #define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3 // ...and before special-weapon shots are
 #define ENDLESS_PERK_TWINPODS_SPREAD_PX 12 // Twin Pods: px between a pod's two volleys; the pair straddles the pod, half each side

@@ -1709,8 +1709,44 @@ static void qa_chooser_matrix(void)
 	}
 	qa_check(repeat == hostCount, "...and the same seed deals the same turns again");
 
+	/* The turn counts sectors flown. A sector the pair bails out of is re-charted by the same
+	 * player, so the launch snapshot has to reopen the outpost on the turn that charted it. */
+	{
+		const bool savedHave = endlessSortieHave, savedCustom = endlessRunUsedCustom;
+		const JE_byte savedOutpostEp = endlessSortieOutpostEp;
+		const Uint64 savedOutpostMods = endlessSortieOutpostMods;
+
+		qa_session(0);
+		qa_clear_ships();
+		endlessCourseChooser = ENDLESS_PICK_ALTERNATE;
+		endlessCoopHostCharts = true;
+		endlessRunMode = ENDLESS_RUNMODE_RELAXED;   // a run mode whose bail reopens the outpost
+		endlessRunUsedCustom = false;               // keep the clear below off the record tables
+		endlessSortieOutpostEp = 0;                 // no episode reload inside the restore
+		endlessSortieOutpostMods = 0;
+
+		endlessCaptureSortie();        // the host charted this sector and launched into it
+		endlessCoopHostCharts = false; // whatever the level leaves behind must not survive the bail
+
+		endlessRestoreSortie();   // died, or gave the sector up: back to the same outpost
+		qa_check(endlessCoopHostCharts && endlessChartSeat == networkHostPlayerNum - 1u,
+		         "a bailed sector reopens the outpost on the turn that charted it");
+
+		endlessOnSectorCleared();
+		qa_check(!endlessCoopHostCharts,
+		         "...and flying a sector to its end is what passes the turn");
+
+		endlessSortieOutpostMods = savedOutpostMods;
+		endlessSortieOutpostEp = savedOutpostEp;
+		endlessRunUsedCustom = savedCustom;
+		endlessSortieHave = savedHave;
+		endlessLockedSortie = false;
+		endlessResumeVisit = false;
+	}
+
 	endlessRunDepth = 0;
 	endlessCourseChooser = ENDLESS_PICK_HOST;
+	endlessCoopHostCharts = true;
 	network_is_host = true;
 }
 
@@ -2206,9 +2242,11 @@ static void qa_sortie_restart_matrix(void)
 	endlessCaptureSortie();
 	endlessRestartSortie();
 
-	qa_check((endlessPlayerMods[0] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY) == (Uint64)ENDLESS_MOD_TURBODRIVE,
+	const Uint64 drive0 = endlessPlayerMods[0] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY;
+	const Uint64 drive1 = endlessPlayerMods[1] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY;
+	qa_check(drive0 == (Uint64)ENDLESS_MOD_TURBODRIVE,
 	         "a restarted zone hands P1 back the drive it paid for");
-	qa_check((endlessPlayerMods[1] & (Uint64)ENDLESS_MOD_KILLFIRE_ANY) == (Uint64)ENDLESS_MOD_OVERBLAST,
+	qa_check(drive1 == (Uint64)ENDLESS_MOD_OVERBLAST,
 	         "...and P2 the one it bought for itself");
 
 	// What a drive is worth is the window it opens, so drive one kill through the restored masks.

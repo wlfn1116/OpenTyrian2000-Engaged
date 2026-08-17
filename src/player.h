@@ -126,6 +126,7 @@ typedef struct
 	bool option_attachment_return[2];
 	bool special_fire_held;
 	Uint8 zinglon_duration;
+	Uint8 zinglon_ramp;
 	Uint8 astral_duration;
 	Uint16 flare_duration;
 	bool flare_start;

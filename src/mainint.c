@@ -2257,7 +2257,9 @@ void JE_doInGameSetup(void)
 	haltGame = false;
 
 #ifdef WITH_NETWORK
-	if (isNetworkGame)
+	// A rollback session reaches this menu on a frame both machines have confirmed and needs no
+	// handshake of its own; the lockstep path does (doc/notes.md, "Rollback input").
+	if (isNetworkGame && !nrb_active())
 	{
 		network_prepare(PACKET_GAME_MENU);
 		network_send(4);  // PACKET_GAME_MENU
@@ -6740,7 +6742,8 @@ void JE_endLevelAni(void)
 			JE_playSampleNum(S_ITEM);
 
 			x = *player[p].lives * 1000;
-			snprintf(tempStr, sizeof(tempStr), "%s %s %d", JE_getName((JE_byte)(p + 1)), miscTextB[7], x);
+			snprintf(tempStr, sizeof(tempStr), "%s %s %d",
+			         JE_getName((JE_byte)(p + 1)), miscTextB[7], x);
 			JE_outTextGlow(VGAScreenSeg, 30, 128 + 18 * (int)p, tempStr);
 			player_add_cash(&player[p], x);
 		}
@@ -10460,6 +10463,7 @@ static void coop_ship_runtime_load(Player *this_player)
 	memcpy(optionAttachmentReturn, this_player->option_attachment_return, sizeof(optionAttachmentReturn));
 	fireButtonHeld = this_player->special_fire_held;
 	zinglonDuration = this_player->zinglon_duration;
+	zinglonRamp = this_player->zinglon_ramp;
 	astralDuration = this_player->astral_duration;
 	flareDuration = this_player->flare_duration;
 	flareStart = this_player->flare_start;
@@ -10488,6 +10492,7 @@ static void coop_ship_runtime_save(Player *this_player)
 	memcpy(this_player->option_attachment_return, optionAttachmentReturn, sizeof(optionAttachmentReturn));
 	this_player->special_fire_held = fireButtonHeld;
 	this_player->zinglon_duration = zinglonDuration;
+	this_player->zinglon_ramp = zinglonRamp;
 	this_player->astral_duration = astralDuration;
 	this_player->flare_duration = flareDuration;
 	this_player->flare_start = flareStart;
@@ -10519,6 +10524,7 @@ void coop_ship_runtime_reset(void)
 		memset(this_player->option_attachment_return, 0, sizeof(this_player->option_attachment_return));
 		this_player->special_fire_held = false;
 		this_player->zinglon_duration = 0;
+		this_player->zinglon_ramp = 0;
 		this_player->astral_duration = 0;
 		this_player->flare_duration = 0;
 		this_player->flare_start = false;
@@ -10582,7 +10588,12 @@ void JE_mainGamePlayerFunctions(void)
 			if (!player[1].port_config_change)
 				player[1].port_config_done = true;
 			astralDuration = MAX(player[0].astral_duration, player[1].astral_duration);
-			zinglonDuration = MAX(player[0].zinglon_duration, player[1].zinglon_duration);
+			// The summary the shared globals carry has to describe one beam, so the longer-running
+			// ship lends both halves of its pillar: a ramp read against the other's duration would
+			// size the beam wrong.
+			const uint zinglonLead = player[1].zinglon_duration > player[0].zinglon_duration ? 1 : 0;
+			zinglonDuration = player[zinglonLead].zinglon_duration;
+			zinglonRamp = player[zinglonLead].zinglon_ramp;
 			shotAvail[MAX_PWEAPON - 1] =
 				((player[0].zinglon_duration > 1 && player[0].zinglon_duration % 5 == 0) ||
 				 (player[1].zinglon_duration > 1 && player[1].zinglon_duration % 5 == 0));

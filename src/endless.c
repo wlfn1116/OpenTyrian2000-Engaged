@@ -907,6 +907,10 @@ void endlessOnSectorCleared(void)
 	if (endlessActiveMods & ENDLESS_MOD_BREAKTHROUGH)
 		++endlessBreakthroughOwed;
 
+	// The Alternating turn counts sectors flown, so it passes here rather than at the course pick:
+	// a sector the pair bails out of is re-charted by the player who charted it.
+	endlessAdvanceCourseTurn();
+
 	endlessCustomWeaponZoneEnd();
 }
 

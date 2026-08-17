@@ -289,6 +289,7 @@ EnemyShotType enemyShot[ENEMY_SHOT_MAX]; /* [1..Enemyshotmax]  */
 
 /* Player Shot Data */
 JE_byte     zinglonDuration;
+JE_byte     zinglonRamp;  /* how far the pillar has opened so far, 0..ZINGLON_PILLAR_HALF_W */
 
 /* Per-ship Soul of Zinglon render request. The display pass places the pillar at
  * the render-rate ship position; an explicit flag distinguishes spent duration 1. */
@@ -738,6 +739,25 @@ static int special_mouse_y_for(JE_byte playerNum) { return dual_ship_mode() && p
    reads it at the end, which keeps it scoped to one ship's turn through the tick. */
 static bool specialFiredThisCall = false;
 
+/* The beam widens over its opening ticks, holds while the blast runs, then closes over its last
+ * ones. At the stock 50-tick blast this is vanilla's `25 - abs(duration - 25)` tick for tick, so
+ * only a duration Ordnance Reserves stretched sees a hold. See doc/notes.md, "The Zinglon light
+ * pillar". */
+int zinglon_pillar_width(int ramp, int duration)
+{
+	const int closing = duration < ZINGLON_PILLAR_HALF_W ? duration : ZINGLON_PILLAR_HALF_W;
+	return ramp < closing ? ramp : closing;
+}
+
+/* Open the light pillar, or refresh one still running. A blast that lands on a live beam keeps its
+ * ramp, so the beam holds the width it reached instead of snapping shut and reopening. */
+static void zinglon_blast_start(void)
+{
+	if (zinglonDuration <= 1)
+		zinglonRamp = 0;
+	zinglonDuration = (JE_byte)endlessPerkSpecialDuration(50, 255);
+}
+
 void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 {
 	Player *const this_player = dual_ship_mode() ? &player[playerNum - 1] : &player[0];
@@ -785,7 +805,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 		}
 		/*Zinglon Blast*/
 		case 3:
-			zinglonDuration = 50;
+			zinglon_blast_start();
 			shotRepeat[SHOT_SPECIAL] = 100;
 			soundQueue[7] = S_SOUL_OF_ZINGLON;
 			break;
@@ -850,9 +870,7 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 					specialWeaponFilter = 3;
 					specialWeaponFreq = 3;
 					flareDuration = endlessPerkSpecialDuration(50 + 10 * this_player->items.weapon[FRONT_WEAPON].power, 0);
-					// zinglonDuration is deliberately NOT stretched: its beam brightness is drawn as
-					// `25 - abs(zinglonDuration - 25)`, a ramp that only works on the stock 50 ticks.
-					zinglonDuration = 50;
+					zinglon_blast_start();
 					shotRepeat[SHOT_SPECIAL] = 100;
 					soundQueue[7] = S_SOUL_OF_ZINGLON;
 					break;
@@ -998,6 +1016,23 @@ void JE_resetTwiddleClocks(void)
 	twiddleWait[0] = twiddleWait[1] = 0;
 }
 
+/* Every clock that keeps a fired special alive, cleared at level start, the block every mode enters
+ * a level through. A flare goes on spawning shots for as long as flareDuration lasts, so one still
+ * running when a level ends would keep firing in the level that loads next, the title screen's demo
+ * included. See doc/notes.md, "Twiddles", for why the flare parameters stay out. */
+void JE_resetSpecialState(void)
+{
+	zinglonDuration = 0;
+	zinglonRamp = 0;
+	astralDuration = 0;
+	flareDuration = 0;
+	flareStart = false;
+	specialWait = 0;
+	nextSpecialWait = 0;
+	debugTwiddleTrigger = false;  // an unconsumed one-shot must not fire into the next level
+	JE_resetTwiddleClocks();
+}
+
 /* Fire a special as a twiddle: the recharge lands on the twiddle's own clock, so neither it nor the
  * equipped special can swallow the other, and a flare twiddle is paced by its flare instead.
  * Zeroing shotRepeat[SHOT_SPECIAL] across the call isolates the fired special's own recharge. See
@@ -1125,7 +1160,9 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		{
 			fireButtonHeld = false;
 		}
-		else if (shotRepeat[SHOT_SPECIAL] == 0 && !fireButtonHeld &&
+		// A live Zinglon beam turns a refire away as a live flare does, the clause the special_armed
+		// sample above already carried. Only a recharge Rapid Recharge drained early reaches it.
+		else if (shotRepeat[SHOT_SPECIAL] == 0 && !fireButtonHeld && zinglonDuration < 2 &&
 		         (flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		         specialWait == 0)
 		{
@@ -1141,8 +1178,13 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 	}  /*Main End*/
 
-	if ((autoFireSpecial || endlessPerkAutoFireSpecial()) && (playerNum == 1 || dual_ship_mode()) && this_player->items.special > 0 &&
-		shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 &&
+	// A demo replays a recorded input stream, so the debug fire helpers stay out of it: the held
+	// fire button they read comes from the recording rather than from a player at the controls.
+	const bool debug_fire_helpers = !play_demo && !record_demo;
+
+	if (((autoFireSpecial && debug_fire_helpers) || endlessPerkAutoFireSpecial()) &&
+		(playerNum == 1 || dual_ship_mode()) && this_player->items.special > 0 &&
+		shotRepeat[SHOT_SPECIAL] == 0 && specialWait == 0 && zinglonDuration < 2 &&
 		(flareDuration == 0 || (flareFromTwiddle && !special_is_flare(this_player->items.special))) &&
 		(button[0] || (superArcadeMode != SA_NONE && (button[1] || button[2]))))
 	{
@@ -1152,7 +1194,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	// Debug: force-fire the selected twiddle's special. Runs after the equipped special (which keeps
 	// priority) on the same clock a performed twiddle uses, ignores the shield/armor cost, and won't
 	// stack onto an active flare.
-	if (playerNum == 1)
+	if (playerNum == 1 && debug_fire_helpers)
 	{
 		const bool want = debugTwiddleTrigger
 		               || (debugAutofireTwiddle && button[0] && twiddleWait[0] == 0);
@@ -1296,7 +1338,7 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 
 	if (zinglonDuration > 1)
 	{
-		temp = 25 - abs(zinglonDuration - 25);
+		temp = (JE_byte)zinglon_pillar_width(zinglonRamp, zinglonDuration);
 
 		// Record the pillar for the render layer (JE_starShowVGA) instead of drawing:
 		// into game_screen it would snap at 35Hz and freeze the scrolled background.
@@ -1309,6 +1351,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 		if (endlessOpeningSalvoVolleyActive() && temp > 0)
 			JE_doSP(this_player->x + 7, mt_rand() % 184, 6, (JE_byte)temp, ENDLESS_SALVO_SPARK_COLOR, false);
 
+		if (zinglonRamp < ZINGLON_PILLAR_HALF_W)
+			zinglonRamp++;
 		zinglonDuration--;
 		if (zinglonDuration % 5 == 0)
 		{

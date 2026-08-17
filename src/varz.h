@@ -334,9 +334,14 @@ extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];
 extern JE_byte zinglonDuration;
+extern JE_byte zinglonRamp;
 extern bool zinglonPillarActive[2];
 extern int zinglonPillarCX[2];
 extern int zinglonPillarTemp[2];
+#define ZINGLON_PILLAR_HALF_W 25  // widest the light pillar reaches, either side of the ship
+// Half-width of a pillar `ramp` ticks into its opening with `duration` ticks left to run. The drawn
+// beam and the column that damages both read it, so the two can never disagree.
+int zinglon_pillar_width(int ramp, int duration);
 extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;
@@ -486,6 +491,7 @@ void JE_tyrianHalt(JE_byte code); /* This ends the game */
 void JE_specialComplete(JE_byte playernum, JE_byte specialType);
 void JE_doSpecialShot(JE_byte playernum, uint *armor, uint *shield);
 void JE_resetTwiddleClocks(void);  // both ships' twiddle cooldowns and any twiddle-owned flare
+void JE_resetSpecialState(void);   // every special clock and live flare, so none crosses a level
 
 void JE_wipeShieldArmorBars(void);
 JE_byte JE_playerDamage(JE_byte temp, Player *);

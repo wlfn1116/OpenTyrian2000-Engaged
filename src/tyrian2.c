@@ -4771,8 +4771,6 @@ start_level_first:
 	// here rather than let it fire into the next level's enemies from last level's coordinates.
 	chain_reset_queue();
 
-	astralDuration = 0;
-
 	superArcadePowerUp = 1;
 
 	yourInGameMenuRequest = false;
@@ -4823,11 +4821,8 @@ start_level_first:
 
 	memset(SFCurrentCode,    0, sizeof(SFCurrentCode));
 	memset(SFExecuted,       0, sizeof(SFExecuted));
-	JE_resetTwiddleClocks();
 
-	zinglonDuration = 0;
-	specialWait = 0;
-	nextSpecialWait = 0;
+	JE_resetSpecialState();
 	hud_special_light_reset();  // the meter starts this level fresh, not mid-recharge from the last
 	if (dual_ship_mode())
 		coop_ship_runtime_reset();
@@ -5633,7 +5628,8 @@ level_loop:
 							temp = 0;
 							for (uint p = 0; p < COUNTOF(player); ++p)
 							{
-								const int width = 25 - abs((int)player[p].zinglon_duration - 25);
+								const int width = zinglon_pillar_width(player[p].zinglon_ramp,
+								                                       player[p].zinglon_duration);
 								if (player[p].zinglon_duration > 1 &&
 								    abs(enemy[b].ex + enemy[b].mapoffset - (player[p].x + 7)) < width)
 								{
@@ -5644,7 +5640,7 @@ level_loop:
 						}
 						else
 						{
-							temp = 25 - abs(zinglonDuration - 25);
+							temp = (JE_byte)zinglon_pillar_width(zinglonRamp, zinglonDuration);
 							collided = abs(enemy[b].ex + enemy[b].mapoffset - (player[0].x + 7)) < temp;
 						}
 						temp2 = 9;

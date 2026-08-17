@@ -1502,7 +1502,7 @@ static void shopLeaveOutpost(const ShopOutpostRoute *route)
 			}
 			if (course < 0)
 				course = shopEndlessAwaitCourse(false);
-			endlessAdvanceCourseTurn();
+			// The chart turn passes in endlessOnSectorCleared, once the sector is flown.
 			select_level(endlessSelectCourse(course), 0);
 			endlessCoopCourse = -1;
 			if (qa_net_gameplay_ticks > 0)

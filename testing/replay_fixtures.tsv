@@ -73,6 +73,16 @@
 # hash (17b900cb) came back at the previous line's values, so the saturating wallet arithmetic and
 # the wider prices move none of the demos. They cannot: a shipped demo's cash never leaves the
 # range both widths hold.
-1 180 59a5b4cf
-2 180 685e791e
-3 180 0c8616b1
+# Regenerated 2026-08-17, for a snapshot-shape change with no simulation change behind it: the
+# Soul-of-Zinglon pillar now carries how far it has opened as well as how long it has left, so the
+# registry gained one byte (vz.zinglonRamp) and Player gained zinglon_ramp, which shifts every
+# field after it and moves the layout hash to 2a7c8438. Verified by building with only those two
+# declarations removed and the ramp held in an unregistered array instead, every other edit in the
+# commit kept: all three hashes came back at the previous line's values (layout 562a034e), so
+# neither the shared width helper, the Ordnance Reserves stretch, nor the live-beam fire gate moves
+# the demos. None of them can: the stretch is Endless-only, the gate needs a recharge drained
+# faster than the blast runs, which only an Endless perk does, and the width helper reproduces
+# vanilla's own curve tick for tick at the stock 50-tick blast.
+1 180 732e4ddb
+2 180 62523b72
+3 180 c7264c7f

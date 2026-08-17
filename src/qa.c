@@ -2154,13 +2154,21 @@ static void qa_test_guidance_perk(void)
 	qa_check(id < MAX_PWEAPON && playerShotData[id].aimAtEnemy == 1
 	         && playerShotData[id].aimDelayMax
 	            == ((ENDLESS_PERK_GUIDANCE_DELAY - 2 * ENDLESS_PERK_GUIDANCE_STEP) | SHOT_AIM_GUIDANCE),
-	         "three stacks steer a special's shot, on the shortest interval");
+	         "three stacks steer a special's shot, on a shorter interval");
 	id = qa_guidance_fire(SHOT_SPECIAL2, plainGun);
 	qa_check(qa_guidance_marked(id), "...from either special bay");
 	id = qa_guidance_fire(SHOT_P1_SUPERBOMB, plainGun);
 	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...but never a superbomb");
 	id = qa_guidance_fire(SHOT_MISC, plainGun);
 	qa_check(id < MAX_PWEAPON && !qa_guidance_marked(id), "...nor a chained child");
+
+	// Four stacks: no bay gate reaches this far, and the interval bottoms out at every tick.
+	qa_check(endlessPerkMaxStack(PERK_GUIDANCE) == 4, "the registry offers a fourth guidance stack");
+	endlessPerkTakenBy[0][PERK_GUIDANCE] = 4;
+	endlessPerkRederive();
+	id = qa_guidance_fire(SHOT_FRONT, plainGun);
+	qa_check(id < MAX_PWEAPON && playerShotData[id].aimDelayMax == (1 | SHOT_AIM_GUIDANCE),
+	         "four stacks correct on every tick");
 
 	// The correction, from one spot: a steered shot bends toward the screen x, the stock rule
 	// toward the map x, and each reloads its own interval.
@@ -6674,6 +6682,205 @@ static void qa_test_flare_grade_ownership(void)
 	JE_resetTwiddleClocks();
 }
 
+/* The Zinglon light pillar. Its width has to trace vanilla's curve tick for tick over a stock blast,
+ * spend a duration Ordnance Reserves stretched at full width instead of running off the end of it,
+ * and hold the beam open when a second blast lands on a live one. */
+static void qa_test_zinglon_pillar(void)
+{
+	const JE_byte savedZing = zinglonDuration, savedRamp = zinglonRamp;
+	const JE_byte savedStype = special[SPECIAL_NUM].stype;
+	const JE_byte savedRepeat = shotRepeat[SHOT_SPECIAL];
+	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+	JE_byte savedPerks[2][PERK_COUNT];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+
+	// Upstream drew the beam as `25 - abs(duration - 25)`, which the ramp has to reproduce exactly.
+	bool stockCurve = true;
+	for (int d = 50, ramp = 0; d > 1; --d)
+	{
+		stockCurve = stockCurve && zinglon_pillar_width(ramp, d) == 25 - abs(d - 25);
+		if (ramp < ZINGLON_PILLAR_HALF_W)
+			++ramp;
+	}
+	qa_check(stockCurve, "the Zinglon pillar traces vanilla's width curve over a stock blast");
+
+	// A stretched one opens on the same ramp, holds every tick the stretch bought, then closes.
+	int held = 0, lastWidth = -1;
+	bool bounded = true;
+	for (int d = 110, ramp = 0; d > 1; --d)
+	{
+		const int w = zinglon_pillar_width(ramp, d);
+		bounded = bounded && w >= 0 && w <= ZINGLON_PILLAR_HALF_W;
+		held += (w == ZINGLON_PILLAR_HALF_W);
+		lastWidth = w;
+		if (ramp < ZINGLON_PILLAR_HALF_W)
+			++ramp;
+	}
+	qa_check(bounded && held == 110 - 2 * ZINGLON_PILLAR_HALF_W + 1 && lastWidth == 2,
+	         "a stretched Zinglon blast spends its extra ticks open and still closes at the end");
+
+	// The scratch slot takes Soul of Zinglon's shape: the pillar with no flare beside it.
+	special[SPECIAL_NUM].stype = 3;
+	endlessMode = false;
+	endlessCampaignMods = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	zinglonDuration = 0;
+	zinglonRamp = 0;
+	JE_specialComplete(1, SPECIAL_NUM);
+	const JE_byte stockTicks = zinglonDuration;
+
+	// A blast onto a live beam refreshes the window and leaves the beam at the width it reached.
+	zinglonRamp = ZINGLON_PILLAR_HALF_W;
+	zinglonDuration = 5;
+	JE_specialComplete(1, SPECIAL_NUM);
+	const bool refireHolds = zinglonRamp == ZINGLON_PILLAR_HALF_W && zinglonDuration == stockTicks;
+
+	// One fired with the beam spent opens from closed again.
+	zinglonDuration = 1;
+	zinglonRamp = ZINGLON_PILLAR_HALF_W;
+	JE_specialComplete(1, SPECIAL_NUM);
+	qa_check(stockTicks == 50 && refireHolds && zinglonRamp == 0,
+	         "a Zinglon blast on a live beam refreshes it, and one fired cold opens from nothing");
+
+	// Ordnance Reserves stretches the blast, as it already stretched the flare beside it.
+	endlessMode = true;
+	endlessPerkSetOwned(PERK_ORDNANCE, endlessPerkMaxStack(PERK_ORDNANCE));
+	zinglonDuration = 0;
+	zinglonRamp = 0;
+	JE_specialComplete(1, SPECIAL_NUM);
+	qa_check(zinglonDuration == endlessPerkSpecialDuration(50, 255) && zinglonDuration > stockTicks,
+	         "Ordnance Reserves stretches the Zinglon blast");
+
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	endlessCampaignMods = savedMods;
+	endlessMode = savedEndless;
+	shotRepeat[SHOT_SPECIAL] = savedRepeat;
+	special[SPECIAL_NUM].stype = savedStype;
+	zinglonRamp = savedRamp;
+	zinglonDuration = savedZing;
+}
+
+/* No special outlives the level that fired it, and the debug fire helpers stay out of a demo.
+ * Either one left alone puts the previous run's special into the title screen's demo. */
+static void qa_test_special_state_reset(void)
+{
+	if (VGAScreenSeg == NULL || game_screen == NULL)
+		return;  // the live flare below spawns its shots
+
+	const JE_byte savedStype = special[SPECIAL_NUM].stype, savedPwr = special[SPECIAL_NUM].pwr;
+	const JE_byte savedZing = zinglonDuration, savedAstral = astralDuration;
+	const JE_byte savedWait = specialWait, savedNextWait = nextSpecialWait;
+	const JE_byte savedRepeat = shotRepeat[SHOT_SPECIAL], savedExec = SFExecuted[0];
+	const JE_byte savedTemp2 = temp2, savedDbgTwiddle = debugTwiddleSpecial;
+	const JE_word savedFlare = flareDuration;
+	const JE_boolean savedFlareStart = flareStart, savedSpray = spraySpecial;
+	const JE_boolean savedLink = linkToPlayer, savedTrigger = debugTwiddleTrigger;
+	const JE_boolean savedAuto = autoFireSpecial, savedDbgAuto = debugAutofireTwiddle;
+	const JE_boolean savedEndless = endlessMode, savedDemo = play_demo;
+	const JE_shortint savedFilter = specialWeaponFilter, savedFreq = specialWeaponFreq;
+	const JE_word savedWpn = specialWeaponWpn;
+	const Player saved0 = player[0], saved1 = player[1];
+	SDL_Surface *const savedVGA = VGAScreen;
+
+	// A special of every shape is mid-flight: a flare spawning shots, a beam, a recharge, a
+	// twiddle the menu armed but nobody consumed.
+	zinglonDuration = 40;
+	zinglonRamp = ZINGLON_PILLAR_HALF_W;
+	astralDuration = 30;
+	flareDuration = 200;
+	flareStart = true;
+	specialWait = 15;
+	nextSpecialWait = 20;
+	debugTwiddleTrigger = true;
+
+	JE_resetSpecialState();
+	qa_check(flareDuration == 0 && !flareStart && zinglonDuration == 0 && zinglonRamp == 0
+	         && astralDuration == 0
+	         && specialWait == 0 && nextSpecialWait == 0 && !debugTwiddleTrigger,
+	         "level start clears every clock a fired special left running");
+
+	// Two ships keep their own copy of those clocks and swap them in per ship, so the mirrors are
+	// the other half of the barrier: only a dual-ship level start clears them.
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].flare_duration = 100;
+		player[p].flare_start = true;
+		player[p].zinglon_duration = 20;
+		player[p].zinglon_ramp = ZINGLON_PILLAR_HALF_W;
+		player[p].astral_duration = 20;
+		player[p].special_wait = 10;
+		player[p].next_special_wait = 10;
+		player[p].spray_special = true;
+	}
+	coop_ship_runtime_reset();
+	bool mirrorsIdle = true;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		mirrorsIdle = mirrorsIdle && player[p].flare_duration == 0 && !player[p].flare_start
+		           && player[p].zinglon_duration == 0 && player[p].zinglon_ramp == 0
+		           && player[p].astral_duration == 0
+		           && player[p].special_wait == 0 && player[p].next_special_wait == 0
+		           && !player[p].spray_special;
+	}
+	qa_check(mirrorsIdle, "a dual-ship level start clears both ships' special mirrors");
+
+	// The scratch slot takes the Minefield shape: a flare whose shots follow the ship. Clearing
+	// the equipped special and Autofire Special leaves the debug twiddle as the only fire gate.
+	special[SPECIAL_NUM].stype = 16;
+	special[SPECIAL_NUM].pwr = 2;
+	player[0].items.special = 0;
+	autoFireSpecial = false;
+	endlessMode = false;
+	endlessSetFxPlayer(0);
+	debugAutofireTwiddle = true;
+	debugTwiddleSpecial = SPECIAL_NUM;
+	button[0] = true;
+	SFExecuted[0] = 0;
+	shotRepeat[SHOT_SPECIAL] = 0;
+
+	uint armor = 30, shield = 50;
+	play_demo = true;
+	JE_doSpecialShot(1, &armor, &shield);
+	const bool demoStaysClean = flareDuration == 0;
+
+	play_demo = false;
+	JE_doSpecialShot(1, &armor, &shield);
+	qa_check(demoStaysClean && flareDuration > 0,
+	         "the debug twiddle stays out of a demo and fires for a player at the controls");
+
+	VGAScreen = savedVGA;
+	player[0] = saved0;
+	player[1] = saved1;
+	play_demo = savedDemo;
+	endlessMode = savedEndless;
+	debugAutofireTwiddle = savedDbgAuto;
+	autoFireSpecial = savedAuto;
+	debugTwiddleTrigger = savedTrigger;
+	debugTwiddleSpecial = savedDbgTwiddle;
+	linkToPlayer = savedLink;
+	spraySpecial = savedSpray;
+	specialWeaponWpn = savedWpn;
+	specialWeaponFreq = savedFreq;
+	specialWeaponFilter = savedFilter;
+	flareStart = savedFlareStart;
+	flareDuration = savedFlare;
+	temp2 = savedTemp2;
+	SFExecuted[0] = savedExec;
+	shotRepeat[SHOT_SPECIAL] = savedRepeat;
+	nextSpecialWait = savedNextWait;
+	specialWait = savedWait;
+	astralDuration = savedAstral;
+	zinglonDuration = savedZing;
+	special[SPECIAL_NUM].pwr = savedPwr;
+	special[SPECIAL_NUM].stype = savedStype;
+	button[0] = false;
+	JE_resetTwiddleClocks();
+}
+
 static void qa_test_rollback(void)
 {
 	rollback_register_all();
@@ -6829,6 +7036,8 @@ int qa_run_unit_suite(void)
 	qa_test_twiddle_cooldown();
 	qa_test_twiddle_charges();
 	qa_test_flare_grade_ownership();
+	qa_test_zinglon_pillar();
+	qa_test_special_state_reset();
 	qa_test_modifier_online_parity();
 	qa_test_effect_gates();
 	qa_test_shot_hitboxes();

@@ -1125,6 +1125,13 @@ returning. Inputs must be released before wreck dismissal is armed.
 Retry restores the launch snapshot. Return to Outpost uses the Quit Level path;
 Restart Zone clears the visit-resume flag and reloads the same music.
 
+The Alternating chart turn advances in `endlessOnSectorCleared`, so it counts
+sectors flown rather than courses picked. The launch snapshot has to reopen its
+outpost on the turn that charted it, and advancing at the course commit puts the
+snapshot one turn ahead: the bail then hands a re-charted sector to the wrong
+player. Advancing on the clear also covers the two paths that skip the commit:
+a loaded game and a debug jump.
+
 A retry that re-arms the committed level directly (Restart Zone, and a hardcore
 Quit Level, both through `endlessArmLockedRelaunch`) never runs course selection
 again, so nothing downstream re-folds what selection folded. Such a retry must
@@ -1260,7 +1267,7 @@ ship flown by that machine. Keep these concepts separate.
 ### Wire compatibility
 
 Changing a field, offset, packet meaning, or deterministic rule requires a
-`NET_VERSION` bump. The current value is 65.
+`NET_VERSION` bump. The current value is 67.
 
 Recent versions:
 
@@ -1312,6 +1319,8 @@ Recent versions:
 | 63 | 64-bit wallets: shop-sync and debug-sync cash slots, the resume record's cash, 64-bit prices in the Endless player block, and the Endless run transfer as text |
 | 64 | Endless debug block on the zone jump and the debug-sync block: depth, modifiers, both ships' perks and personal buffs, and the campaign-effects flag |
 | 65 | An open Opening Salvo window lifts a ram, Knife Fight's bonus added beside the lift |
+| 66 | Zinglon pillar ramp: Ordnance Reserves stretches the blast, a live beam blocks a refire |
+| 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name
@@ -1555,6 +1564,10 @@ enemy shots, explosions, repeating explosions, and the sound queue.
 
 Menu requests schedule a future frame and wait until it is final. When both
 players press Esc together, the host takes the menu and the joiner waits.
+A rollback session opens the menu on that confirmed frame with no further
+handshake. The `PACKET_GAME_MENU` exchange in `JE_doInGameSetup` belongs to the
+lockstep path, which arrives off a state packet with nothing else proving the
+two machines are together.
 
 A level end and a scheduled menu frame are confirmed by waiting for the peer's
 records up to that frame. The wait gives up once the peer's newest frame has not
@@ -1921,6 +1934,25 @@ afterwards. `TWIDDLE_MIN_WAIT` floors the gap. A twiddle that starts a flare is
 paced by that flare, whose tail then charges `twiddleWait`. Deduct shield or
 armour only when the whole charge is affordable.
 
+`JE_resetSpecialState` clears every clock a fired special leaves running (its
+own durations, the special and twiddle cooldowns, and an unconsumed
+`debugTwiddleTrigger`) at level start. None of that state is per-level
+otherwise, and a flare keeps spawning shots for as long as `flareDuration`
+lasts, so a special still live when a level ends would go on firing in the
+level that loads next, the title screen's demo included. Nothing else has to
+opt in: a special fires only from `JE_doSpecialShot`, whose one production
+caller is the level tick, and every mode reaches that tick through the
+`start_level`/`start_level_first` block that calls the reset. Two ships hold
+their own copy of those clocks (`coop_ship_runtime_load`), read only under
+`dual_ship_mode`, which every dual-ship level start precedes with
+`coop_ship_runtime_reset`. The flare's own parameters (`specialWeaponWpn` and
+friends) are read only while `flareDuration` lasts and every flare assigns
+them, so they stay out of the reset; writing `specialWeaponFilter` there moves
+all three demo replay hashes for no change in behaviour. Autofire Special and
+the debug menu's armed twiddle are gated on `play_demo`/`record_demo`, because
+the held fire button they read belongs to the recording rather than to a player
+at the controls.
+
 ### Flare specials and the level grade
 
 One full-screen grade (`levelFilter`, `levelBrightness`, `filterActive`,
@@ -1939,6 +1971,30 @@ tint (filter 7) removed it. `flareOwnsFilter` is rollback state for the same
 reason `filterActive` is. In two-ship co-op the flare globals swap per ship
 while the mark stays global, so the other ship's tinted flare ending drops the
 holder's grade for one tick before it retakes it.
+
+### The Zinglon light pillar
+
+Soul of Zinglon (special 3, stype 3) and MineField's flare (stype 7) both raise
+the light pillar on `zinglonDuration`. Two counters describe it: that one holds
+how long the blast has left, and `zinglonRamp` holds how far the beam has
+opened. `zinglon_pillar_width` opens it over 25 ticks, holds it while the blast
+runs, and closes it over the last 25. At the stock 50 ticks that reproduces
+upstream's `25 - abs(zinglonDuration - 25)` tick for tick, so only a duration
+Ordnance Reserves stretched sees a hold. The single counter could not express
+one: past 50 ticks it wrapped the byte negative, and a refire snapped the beam
+shut mid-blast. Ordnance Reserves stretches the blast the way it already
+stretched the flare beside it.
+
+A blast fired onto a live beam keeps the ramp and refreshes the window alone,
+which is what the twiddle and autofire paths reach. The equipped fire gate
+carries `zinglonDuration < 2`, the clause the `special_armed` HUD sample already
+had, so the ready light and the gate agree. Only a recharge Rapid Recharge
+drained early reaches it; the stock 100-tick one outlasts the blast.
+
+Both the drawn beam and the damage column in `tyrian2.c` read the shared width.
+The ramp is registered state with a per-ship mirror (`player[].zinglon_ramp`),
+so two ships' beams stay independent under rollback, and the globals summarise
+whichever ship's blast has longer to run, taking its ramp with it.
 
 ## Audio, logs, and platforms
 
