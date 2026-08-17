@@ -858,6 +858,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 
 			const JE_SaveFileType *const saveFile = &saveFiles[playersIndex * 11 + i];
+			const JE_byte slot = (JE_byte)(playersIndex * 11 + i + 1);
 
 			const bool disabled = saveFile->level == 0;
 			// Online loads: a save whose episode this session lacks is shown but dimmed and
@@ -866,7 +867,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			const bool epLocked = net2p && !saving && !disabled &&
 			                      (saveEpisode < 1 || saveEpisode > EPISODE_MAX || !episodeAvail[saveEpisode - 1]);
 			const bool typeLocked = !saving && !disabled &&
-			                      !save_type_compatible(saveFile, (JE_byte)(playersIndex * 11 + i + 1), net2p);
+			                      !save_type_compatible(saveFile, slot, net2p);
 
 			char buffer[22];
 
@@ -886,7 +887,11 @@ int JE_loadScreen(bool net2p, bool saving)
 				snprintf(buffer, sizeof buffer, "%s %s", miscTextB[2], saveFile->levelName);
 				JE_textShade(VGAScreen, xMenuItemLastLevel, y, buffer, 5, bright, FULL_SHADE);
 
-				snprintf(buffer, sizeof buffer, "%s %u", miscTextB[1], saveFile->episode);
+				// An Endless run's episode field is only its current zone's source level.
+				if (endlessSlotHasRun(slot))
+					SDL_strlcpy(buffer, "Endless", sizeof buffer);
+				else
+					snprintf(buffer, sizeof buffer, "%s %u", miscTextB[1], saveFile->episode);
 				JE_textShade(VGAScreen, xMenuItemEpisode, y, buffer, 5, bright, FULL_SHADE);
 			}
 		}

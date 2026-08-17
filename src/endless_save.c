@@ -1321,6 +1321,18 @@ void endlessSaveConfigWrite(Config *config)
 	}
 }
 
+/* Whether this session read the sidecar through. config.c records it in opentyrian.sav, so a save
+ * file that has taken the sidecar in never consults it again, while one whose import failed
+ * tries once more. */
+static bool endlessLegacySidecarRead = false;
+
+bool endlessSaveLegacyWasRead(void) { return endlessLegacySidecarRead; }
+
+bool endlessSaveLegacyExists(void)
+{
+	return dir_file_exists(get_user_directory(), ENDLESS_LEGACY_SAVE_FILE);
+}
+
 /* Parse the binary sidecar an older build left behind into `out` (SAVE_FILES_NUM records, only the
  * slots whose campaign half holds a game). The file itself is left in place. */
 static int endlessSaveLegacyParse(FILE *f, EndlessSlotRec *out)
@@ -1345,6 +1357,7 @@ static int endlessSaveLegacyParse(FILE *f, EndlessSlotRec *out)
 	int loaded = 0;
 	if (endlessLegacyReadHeader(&rd, &h))
 	{
+		endlessLegacySidecarRead = true;
 		for (int s = 0; s < h.slots; ++s)
 		{
 			EndlessSlotRec rec;

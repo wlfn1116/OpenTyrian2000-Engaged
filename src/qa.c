@@ -1708,12 +1708,12 @@ static void qa_test_bounty_matrix(void)
 		endlessAwardEliteKill(++link, champ ? 3 : 2, 1);   // player 2's kill
 
 		endlessSetFxPlayer(1);   // read the figure the killer's row produced
-		const long base = champ ? endlessChampionBounty() : endlessEliteBounty();
+		const Sint64 base = champ ? endlessChampionBounty() : endlessEliteBounty();
 		endlessSetFxPlayer(0);
-		const long want = (doubled && !shared) ? base * 2 : base;  // Double Earnings covers bounties
+		const Sint64 want = (doubled && !shared) ? base * 2 : base;  // Double Earnings covers bounties
 		const bool okay = shared
-		                ? (player[0].cash == (ulong)want && player[1].cash == (ulong)want)
-		                : (player[1].cash == (ulong)want && player[0].cash == 0);
+		                ? (player[0].cash == want && player[1].cash == want)
+		                : (player[1].cash == want && player[0].cash == 0);
 		snprintf(label, sizeof(label),
 		         "%s bounty (machine %u, %s credit, double %d, perk %d) pays the right wallets",
 		         champ ? "champion" : "elite", machine,
@@ -1758,7 +1758,7 @@ static void qa_test_score_pickup_multiplier(void)
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_BOUNTY, 1);
 
-	const long face = 250, boosted = face * ENDLESS_PERK_BOUNTY_PICKUP_MULT;
+	const Sint64 face = 250, boosted = face * ENDLESS_PERK_BOUNTY_PICKUP_MULT;
 	qa_check(endlessScorePickupValue(0, face) == face,
 	         "a campaign score pickup pays its authored value whatever perks are stored");
 
@@ -1789,12 +1789,10 @@ static void qa_test_score_pickup_multiplier(void)
 		for (uint p = 0; p < COUNTOF(player); ++p)
 			player_award_pickup_cash(&player[p], endlessScorePickupValue(p, face));
 
-		const long scale = (doubled && !shared) ? 2 : 1;  // Double Earnings covers pickups
+		const Sint64 scale = (doubled && !shared) ? 2 : 1;  // Double Earnings covers pickups
 		const bool okay = shared
-		                ? (player[0].cash == (ulong)(boosted + face)
-		                   && player[1].cash == (ulong)(boosted + face))
-		                : (player[0].cash == (ulong)(boosted * scale)
-		                   && player[1].cash == (ulong)(face * scale));
+		                ? (player[0].cash == boosted + face && player[1].cash == boosted + face)
+		                : (player[0].cash == boosted * scale && player[1].cash == face * scale);
 		snprintf(label, sizeof(label),
 		         "score pickups (machine %u, %s credit, double %d) pay the right wallets",
 		         machine, shared ? "Shared" : "Individual", doubled);
@@ -6738,7 +6736,9 @@ static void qa_test_save_fixtures(void)
 	endlessMode = savedEndless;
 
 	/* The repair pass: a save file whose Endless-named slot lost its half (an import that could not
-	 * read the sidecar) gets it back from that sidecar, and only that slot. */
+	 * read the sidecar) gets it back from that sidecar, and only that slot. The save file records
+	 * that the sidecar has been taken in, which is what stops a deleted run coming back; that gate
+	 * lives in JE_loadConfiguration, so this drives the pass itself. */
 	endlessMode = false;
 	endlessSaveCaptureSlot(10);   // not in endless mode: clears the half, as such an import left it
 	endlessMode = savedEndless;
@@ -6747,6 +6747,7 @@ static void qa_test_save_fixtures(void)
 	         && !endlessSlotHasRun(14),
 	         "a slot named for a zone with no run behind it takes its run back from the old sidecar");
 	qa_check(!endlessSaveLegacyTestRepair(path), "the repair pass is a no-op once every zone slot has its run");
+	qa_check(endlessSaveLegacyWasRead(), "reading a sidecar through is what marks it taken in");
 
 	// ...and a sidecar from a build past v27 still gives up the v27 prefix of every record.
 	snprintf(path, sizeof(path), "%s/v27.sav", qa_fixture_dir);

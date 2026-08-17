@@ -420,7 +420,9 @@ Without one, Relaxed offers Restart Zone, Return to Outpost, or End Run.
 
 Relaxed and Standard checkpoint at the outpost, into the same save slot as the
 campaign half of the run (`opentyrian.sav`, see Files and logs). Hardcore never
-writes a run save. Quit Level restores the launch snapshot.
+writes a run save. Quit Level restores the launch snapshot. Such a slot reads
+**Endless** on the Saved Games screen and `End` in the outpost's **Load Game**
+and **Save Game** list, where a campaign save names its episode.
 
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
 trailing `C` marks a record set while either ship used a custom weapon in a zone.

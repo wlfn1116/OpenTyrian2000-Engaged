@@ -2156,6 +2156,11 @@ static void save_defaults(void)
 	}
 }
 
+/* Whether opentyrian.sav records that the DOS-era endless.sav has been taken in. Until it does, a
+ * slot named for a zone with no run behind it is repaired from that sidecar; afterwards the sidecar
+ * is never read again, so deleting a run's section stays deleted. */
+static bool save_legacy_endless_taken = false;
+
 /* Read opentyrian.sav. A slot without a section is empty and a key without a value is its default,
  * so a hand edit that drops or misspells something loses that one value and nothing else. */
 static bool save_file_load(void)
@@ -2171,12 +2176,14 @@ static bool save_file_load(void)
 		return false;
 
 	// A file without its header is a broken write or a stray file, so the DOS-era files still stand in.
-	if (config_find_section(&config, "saves", NULL) == NULL)
+	const ConfigSection *header = config_find_section(&config, "saves", NULL);
+	if (header == NULL)
 	{
 		fprintf(stderr, "warning: %s has no 'saves' section and was not read\n", SAVE_FILE_NAME);
 		config_deinit(&config);
 		return false;
 	}
+	save_legacy_endless_taken = save_get_int(header, "endless_sav_imported", 0) != 0;
 
 	save_reset();
 	saveSlotPlayerTwo = 0;   // the slots' own online_seat keys are the record from here on
@@ -2393,14 +2400,22 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	const char *fault = NULL;
 	Config config;
 	config_init(&config);
-	ConfigSection *sOne = config_add_section(&config, "save", "3");
-	ConfigSection *sTwo = config_add_section(&config, "save", "15");
+
+	/* Adding a section can move the ones already there, so write each through the pointer its own
+	 * add returned and look both up again once no more are coming. */
+	ConfigSection *section = config_add_section(&config, "save", "3");
+	if (section != NULL)
+		save_slot_write(section, &one, 3);
+	section = config_add_section(&config, "save", "15");
+	if (section != NULL)
+		save_slot_write(section, &two, 15);
+
+	ConfigSection *const sOne = config_find_section(&config, "save", "3");
+	ConfigSection *const sTwo = config_find_section(&config, "save", "15");
 	if (sOne == NULL || sTwo == NULL)
 		fault = "section allocation failed";
 	else
 	{
-		save_slot_write(sOne, &one, 3);
-		save_slot_write(sTwo, &two, 15);
 		save_slot_set_online_player(15, 1);
 
 		save_slot_read(&back, sOne, 3);
@@ -2491,7 +2506,8 @@ void JE_loadConfiguration(void)
 	bool imported = false;
 	if (save_file_load())
 	{
-		imported = endlessSaveRepairFromLegacy();
+		if (!save_legacy_endless_taken)
+			imported = endlessSaveRepairFromLegacy();
 	}
 	else
 	{
@@ -2503,11 +2519,18 @@ void JE_loadConfiguration(void)
 			imported = true;
 	}
 
+	/* The sidecar is done with once it has been read through, or when there is none, and it stays
+	 * done: a later launch skips the repair and so never reads it again. An import that could not
+	 * read one leaves this false, so the next launch tries again. */
+	const bool noteTaken = !save_legacy_endless_taken
+	                    && (!endlessSaveLegacyExists() || endlessSaveLegacyWasRead());
+	save_legacy_endless_taken |= noteTaken;
+
 	JE_initProcessorType();
 	configuration_loaded = true;
 
 	// Write the imported state in the new form at once, so the migration does not wait on a save.
-	if (imported)
+	if (imported || noteTaken)
 		JE_saveConfiguration();
 }
 
@@ -2526,6 +2549,7 @@ void JE_saveConfiguration(void)
 	if (section == NULL)
 		exit(EXIT_FAILURE);  // out of memory
 	config_set_int_option(section, "format", SAVE_FILE_FORMAT);
+	config_set_int_option(section, "endless_sav_imported", save_legacy_endless_taken ? 1 : 0);
 
 	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{

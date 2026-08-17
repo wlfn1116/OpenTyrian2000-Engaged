@@ -409,6 +409,8 @@ void endlessSaveConfigRead(Config *config);
 void endlessSaveConfigWrite(Config *config);
 bool endlessSaveLegacyLoad(void);         // one-time import of the binary endless.sav an older build wrote
 bool endlessSaveRepairFromLegacy(void);   // ...and the halves an Endless-named slot lacks, if it still has them
+bool endlessSaveLegacyExists(void);       // is that file there at all?
+bool endlessSaveLegacyWasRead(void);      // ...and did this session read it through?
 
 /* Everything one Endless co-op player owns for themselves that the other machine also has to
  * know: the run-wide sector effects are derived identically on both sides, but these are bought.

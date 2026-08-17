@@ -2077,7 +2077,11 @@ void JE_itemScreen(void)
 
 						strcpy(tempStr, saveFiles[x-2].levelName);
 
-						snprintf(buf, sizeof buf, "%s%d", miscTextB[1-1], saveFiles[x-2].episode);
+						if (endlessSlotHasRun((JE_byte)(x - 1)))
+							SDL_strlcpy(buf, "End", sizeof buf);
+						else
+							snprintf(buf, sizeof buf, "%s%d",
+							         miscTextB[1-1], saveFiles[x-2].episode);
 						JE_textShade(VGAScreen, 297, tempY, buf, temp2 / 16, temp2 % 16 - 8, DARKEN);
 					}
 

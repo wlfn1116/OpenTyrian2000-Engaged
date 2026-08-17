@@ -265,11 +265,13 @@ extern ConfigSection *config_add_section_len(Config *config, const char *type, s
 
 /*!
  * \brief Add a section to a configuration.
- * 
+ *
  * \param[in] config the configuration to contain the section
  * \param[in] type the type of the section
  * \param[in] name the name of the section; may be \c NULL
  * \return the added section; \c NULL if out of memory
+ * \warning Adding a section invalidates every ::ConfigSection pointer previously returned for this
+ *          configuration.  Use each one before the next add, or look it up again afterwards.
  */
 static inline ConfigSection *config_add_section(Config *config, const char *type, const char *name)
 {
