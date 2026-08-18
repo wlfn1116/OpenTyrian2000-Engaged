@@ -5858,7 +5858,7 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	switch (idx)
 	{
 	case ESO_ARMOR:       return sc->armorPct;
-	case ESO_BOSSHP:      return sc->bossMult;
+	case ESO_BOSSHP:      return sc->bossMult100;
 	case ESO_FIREDELAY:   return sc->fireDelayPct;
 	case ESO_SHOTSPEED:   return sc->shotSpeedPct;
 	case ESO_SHOTDMG:     return sc->shotDmgPct;
@@ -5866,7 +5866,7 @@ static long endlessScaleFieldOf(const EndlessScaling *sc, int kind, int idx)
 	case ESO_TIDE:        return sc->tide;
 	case ESO_EXTRASHOTS:  return sc->extraShots;
 	case ESO_ELITECHANCE: return sc->elitePct;
-	case ESO_ELITEHP:     return sc->eliteHpMult;
+	case ESO_ELITEHP:     return sc->eliteHpMult100;
 	case ESO_PIERCEDMG:   return sc->piercePct;
 	case ESO_PIERCELOCK:  return sc->pierceLock100;
 	default:              return sc->playerDmgPct;
@@ -6268,9 +6268,11 @@ static bool endlessDebugScreen(bool jumpMode)
 				// figure is indistinguishable from one the ramp produced.
 				const bool pinned = endlessScalingOverride[rows[i].idx].active;
 				const long v = endlessScaleFieldOf(&sc, EDR_SCALE, rows[i].idx);
-				// The pierce lockout is carried as fixed-point hundredths of a sim tick so it can
-				// ramp smoothly; show the tick figure it means, not the raw fixed-point number.
-				if (rows[i].idx == ESO_PIERCELOCK)
+				// The pierce lockout and the two HP multipliers are carried as fixed-point
+				// hundredths so they can ramp smoothly; show the figure each means, not the raw
+				// number. A pinned multiplier is entered in whole x and scaled to match.
+				if (rows[i].idx == ESO_PIERCELOCK || rows[i].idx == ESO_BOSSHP
+				    || rows[i].idx == ESO_ELITEHP)
 					snprintf(val, sizeof(val), "%ld.%02ld%s", v / 100, v % 100, pinned ? "  PIN" : "");
 				else
 					snprintf(val, sizeof(val), "%ld%s", v, pinned ? "  PIN" : "");

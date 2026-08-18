@@ -1715,6 +1715,25 @@ static void qa_hp_zone(int zone, int *armorPct, int *overflow100, int *eliteMult
 	*bossMult    = endlessBossHpMult();
 }
 
+/* The figures the damage path actually divides by, in ENDLESS_HP_MULT_SCALE units. */
+static void qa_mult100(int zone, int *boss100, int *elite100)
+{
+	endlessRunDepth = zone - 1;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	endlessActiveMods = 0;
+	if (boss100 != NULL)
+		*boss100 = endlessBossHpMult100();
+	if (elite100 != NULL)
+		*elite100 = endlessEliteHpMult100();
+}
+
+static int qa_boss100(int zone)
+{
+	int v;
+	qa_mult100(zone, &v, NULL);
+	return v;
+}
+
 /* The ceilings, where each is reached, and the promise the knee exists for: every zone below it
  * keeps the curve it had when the ceilings were 600% / 4x / 16x, so raising them cannot disturb
  * a run that never gets that deep. The ordinary curve also has to survive the 254 armor byte,
@@ -1767,12 +1786,14 @@ static void qa_hp_scaling_matrix(void)
 	/* The ceilings themselves, and the zone each one lands on. */
 	static const struct { int zone, armorPct, overflow100, eliteMult, bossMult; } rungs[] = {
 		{   1,  100, 100, 2,  1 },
-		{  53,  360, 100, 3,  9 },   /* the boss knee */
-		{  65,  420, 100, 4, 15 },   /* the elite knee */
-		{  82,  504, 100, 5, 23 },
-		{  98,  584, 100, 5, 31 },   /* one zone short of both ceilings */
-		{  99,  588, 100, 6, 32 },   /* elite and boss ceilings, the zone before The End */
-		{ 101,  600, 100, 6, 32 },   /* the spawn-armor ceiling */
+		{  53,  360, 100, 3,  9 },   /* the boss ramp's first anchor */
+		{  65,  420, 100, 4, 12 },   /* the elite ramp's */
+		{  82,  504, 100, 5, 16 },
+		{  98,  584, 100, 5, 19 },   /* one zone short of the elite ceiling */
+		{  99,  588, 100, 6, 20 },   /* elite ceiling and the boss mid anchor, before The End */
+		{ 101,  600, 100, 6, 20 },   /* the spawn-armor ceiling */
+		{ 198,  600, 180, 6, 31 },   /* one zone short of the boss ceiling */
+		{ 199,  600, 181, 6, 32 },   /* boss ceiling, before the next The End */
 		{ 221,  600, 200, 6, 32 },   /* ordinary ceiling: 1200% of stock */
 		{ 400,  600, 200, 6, 32 },
 	};
@@ -1787,24 +1808,76 @@ static void qa_hp_scaling_matrix(void)
 		         && eliteMult == rungs[i].eliteMult && bossMult == rungs[i].bossMult, label);
 	}
 
-	/* The End is a GRAND milestone every 100th zone, and both raised ceilings have to be standing
-	 * by the time one is charted, not a zone or two after it. */
+	/* The End is a GRAND milestone every 100th zone. Each raised curve has to arrive on the zone
+	 * before one, never a zone or two after: elites reach their ceiling by the first milestone,
+	 * the boss reaches its mid anchor there and its ceiling by the second. */
 	int eliteCeiling, bossCeiling;
 	qa_hp_zone(400, &armorPct, &overflow100, &eliteCeiling, &bossCeiling);
-	for (int zone = 100; zone <= 300; zone += 100)
+	static const struct { int zone, boss; } milestones[] = { { 100, 20 }, { 200, 32 }, { 300, 32 } };
+	for (unsigned i = 0; i < COUNTOF(milestones); ++i)
 	{
-		qa_hp_zone(zone, &armorPct, &overflow100, &eliteMult, &bossMult);
+		qa_hp_zone(milestones[i].zone, &armorPct, &overflow100, &eliteMult, &bossMult);
 		snprintf(label, sizeof(label),
 		         "zone %d is a GRAND milestone and meets it at elite x%d, boss x%d",
-		         zone, eliteMult, bossMult);
-		qa_check(endlessMilestoneKindOfZone(zone) == 2
-		         && eliteMult == eliteCeiling && bossMult == bossCeiling, label);
+		         milestones[i].zone, eliteMult, bossMult);
+		qa_check(endlessMilestoneKindOfZone(milestones[i].zone) == 2
+		         && eliteMult == eliteCeiling && bossMult == milestones[i].boss, label);
 	}
+	qa_check(bossCeiling == 32, "the boss ramp holds its last anchor once past it");
 
 	/* An elite boss keeps its doubled premium at the raised boss ceiling. */
+	const int ceiling100 = qa_boss100(400);
 	snprintf(label, sizeof(label), "an elite boss spends twice a plain boss at the x%d ceiling",
 	         bossCeiling);
-	qa_check(endlessEnemyHpMult(true, bossCeiling, 3) == 2 * bossCeiling, label);
+	qa_check(endlessEnemyHpMult100(true, ceiling100, 3) == 2 * ceiling100, label);
+
+	/* The boss multiplier is carried in hundredths, so it thickens a fraction at a time instead of
+	 * a whole multiplier every few zones. Its whole-number crossings have to stay where the stepped
+	 * curve puts them, or smoothing would have retuned the ramp. */
+	bool crossingsHeld = true, sawFraction = false, climbs = true;
+	int prev100 = 0;
+	for (int zone = 1; zone <= 260; ++zone)
+	{
+		const int live100 = qa_boss100(zone);
+		endlessRunDepth = zone - 1;
+		if (live100 / ENDLESS_HP_MULT_SCALE != endlessBossHpMult())
+			crossingsHeld = false;
+		if (live100 % ENDLESS_HP_MULT_SCALE != 0)
+			sawFraction = true;
+		if (live100 < prev100)
+			climbs = false;
+		prev100 = live100;
+	}
+	qa_check(crossingsHeld && climbs,
+	         "the smoothed boss multiplier climbs and floors to the whole-x curve at every zone");
+	qa_check(sawFraction, "...and does spend part of the run on a fraction of a multiplier");
+
+	/* A zone-to-zone step is now a fraction, where the stepped curve moved in whole multipliers. */
+	const int step = qa_boss100(70) - qa_boss100(69);
+	snprintf(label, sizeof(label), "zone 69 to 70 thickens a boss by %d.%02dx, not a whole one",
+	         step / ENDLESS_HP_MULT_SCALE, step % ENDLESS_HP_MULT_SCALE);
+	qa_check(step > 0 && step < ENDLESS_HP_MULT_SCALE, label);
+
+	/* The elite curve is carried the same way, and the combined divisor has to spend the fraction
+	 * rather than the floor, or a tier would sit on the same toughness for a dozen zones. */
+	bool eliteHeld = true, eliteFraction = false;
+	for (int zone = 1; zone <= 260; ++zone)
+	{
+		int live100;
+		qa_mult100(zone, NULL, &live100);
+		if (live100 / ENDLESS_HP_MULT_SCALE != endlessEliteHpMult())
+			eliteHeld = false;
+		if (live100 % ENDLESS_HP_MULT_SCALE != 0)
+			eliteFraction = true;
+	}
+	qa_check(eliteHeld && eliteFraction,
+	         "the elite multiplier is a fraction too, and floors to the whole-x curve at every zone");
+
+	int boss100, elite100;
+	qa_mult100(70, &boss100, &elite100);
+	qa_check(endlessEnemyHpMult100(false, boss100, 2) == elite100
+	         && endlessEnemyHpMult100(true, boss100, 1) == boss100,
+	         "the combined divisor carries each hull's fraction rather than its floor");
 
 	/* The overflow is spent through the damage divisor, which the armor byte cannot cap. */
 	memset(&enemy[0], 0, sizeof(enemy[0]));

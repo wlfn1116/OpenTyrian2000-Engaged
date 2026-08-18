@@ -337,22 +337,29 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	chain_queue_at(screenX, y, owner, salvo, inDrain ? chainDrainWave : enemyKilled);
 }
 
-// The tier multiplier this hull's damage is divided by: Nx boss HP (expert mode and/or endless
-// depth) combined with the endless elite/champion tier. 1 means it takes damage point for point.
-// This is the whole-x figure the pierce delay is calibrated against; the damage sites divide by
-// enemy_hp_divisor100, which carries the endless ordinary-HP overflow as well.
-int enemy_hp_multiplier(unsigned int slot)
+// The tier multiplier this hull's damage is divided by, in ENEMY_DAMAGE_ACCUM_SCALE units: Nx boss
+// HP (expert mode and/or endless depth) combined with the endless elite/champion tier. The boss
+// share is fractional, so a boss thickens a little each zone instead of a whole multiplier at a
+// time. 100 means it takes damage point for point.
+static int enemy_hp_multiplier100(unsigned int slot)
 {
 	const bool has_boss_bar = enemy_has_boss_bar(enemy[slot].linknum);
 
-	int bossHpMult = 1;
+	int bossHpMult100 = ENEMY_DAMAGE_ACCUM_SCALE;
 	if (expertMode)
-		bossHpMult *= expertBossHpMult;
+		bossHpMult100 *= expertBossHpMult;
 	if (endlessFxActive())
-		bossHpMult *= endlessBossHpMult();
+		bossHpMult100 = bossHpMult100 * endlessBossHpMult100() / ENEMY_DAMAGE_ACCUM_SCALE;
 
-	return endlessFxActive() ? endlessEnemyHpMult(has_boss_bar, bossHpMult, enemy[slot].eliteState)
-	                         : (has_boss_bar ? bossHpMult : 1);
+	if (!endlessFxActive())
+		return has_boss_bar ? bossHpMult100 : ENEMY_DAMAGE_ACCUM_SCALE;
+	return endlessEnemyHpMult100(has_boss_bar, bossHpMult100, enemy[slot].eliteState);
+}
+
+// The whole-x reading of the same figure, which is what the pierce delay is calibrated against.
+int enemy_hp_multiplier(unsigned int slot)
+{
+	return enemy_hp_multiplier100(slot) / ENEMY_DAMAGE_ACCUM_SCALE;
 }
 
 // The divisor a hull spends damage through, in hundredths: the tier multiplier above times the
@@ -361,7 +368,7 @@ int enemy_hp_multiplier(unsigned int slot)
 // same hit wears a boss down at a different rate depending on what dealt it.
 int enemy_hp_divisor100(unsigned int slot)
 {
-	return enemy_hp_multiplier(slot) * endlessArmorOverflow100();
+	return enemy_hp_multiplier100(slot) * endlessArmorOverflow100() / ENEMY_DAMAGE_ACCUM_SCALE;
 }
 
 // Armor points `damage` buys against this hull, banking the remainder in its accumulator. The player

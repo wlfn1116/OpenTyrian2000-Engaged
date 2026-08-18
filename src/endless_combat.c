@@ -74,21 +74,13 @@ int endlessDifficultyZone(void)
 #define ENDLESS_HP_MAX           600    // spawn-armor ceiling, reached at effective depth 125
 #define ENDLESS_HP_OVERFLOW_MAX 1200    // total ceiling, at depth 275 (zone 221 on Normal)
 
-// Boss HP, as a whole multiplier (1 = stock). The ramp steepens at the knee so the early game keeps
-// the curve it had when the ceiling was 16x. See doc/notes.md, "Endless HP scaling".
-#define ENDLESS_BOSS_DEPTH_PER_X   8    // +1x per this many effective depths, up to the knee
-#define ENDLESS_BOSS_KNEE_DEPTH   64    // depth the late ramp takes over at (zone 53 on Normal)
-#define ENDLESS_BOSS_LATE_X_PER_STEP 2  // +this many x per LATE_STEP_DEPTH past the knee
-#define ENDLESS_BOSS_LATE_STEP_DEPTH 5  // ...the depth that step spans
+// Boss and special-tier HP are whole multipliers (1 = stock), each read off a ramp of anchors.
+// The clamps below also bound their debug overrides. See doc/notes.md, "Endless HP scaling".
 #define ENDLESS_BOSS_FORTIFIED     3    // FORTIFIED: +this many x (a 4x boss at depth 0)
 #define ENDLESS_BOSS_MARKED        2    // gamble "Marked": the boss you paid to forget comes back bulked up
-#define ENDLESS_BOSS_MAX          32    // ceiling, at depth 122 (zone 99 on Normal)
+#define ENDLESS_BOSS_MAX          32    // ceiling, at depth 247 (zone 199 on Normal)
 
-// Elite/champion HP is a divisor on top of ordinary armor scaling, with the same knee treatment.
 #define ENDLESS_ELITE_HP_BASE      2    // multiplier at depth 0
-#define ENDLESS_ELITE_HP_PER_X    40    // +1x per this many effective depths, up to the knee
-#define ENDLESS_ELITE_HP_KNEE_DEPTH 80  // depth the late ramp takes over at (zone 65 on Normal)
-#define ENDLESS_ELITE_HP_LATE_PER_X 21  // +1x per this many effective depths past the knee
 #define ENDLESS_ELITE_HP_MAX       6    // ceiling, at depth 122 (zone 99 on Normal)
 
 // Repeat-pierce delay at the reference zone, in hundredths of a tick.
@@ -171,43 +163,67 @@ int endlessArmorOverflow100(void)
 	return (total > ENDLESS_HP_MAX) ? total * 100 / ENDLESS_HP_MAX : 100;
 }
 
-// Bare boss depth curve in hundredths, before modifiers and clamping. The ramp steepens past the
-// knee so the zones below it keep the curve they had under the old 16x ceiling, and lands the
-// ceiling on the zone before a GRAND milestone. Both the stepped and the continuous multiplier
-// read this, so the two cannot drift apart.
+// An HP ramp is a piecewise-linear walk through anchors, read in hundredths of a multiplier. The
+// anchors are the tuning: each names an effective depth and the multiplier the curve passes through
+// there, and a segment's rate is whatever joins its two ends. The ramp holds its last anchor, so
+// that value is the curve's ceiling and FRAGILE halves it rather than an ever-growing figure.
+typedef struct { int depth, mult100; } EndlessRampAnchor;
+
+static int endlessRampAt100(const EndlessRampAnchor *pts, unsigned count, int effDepth)
+{
+	if (effDepth <= pts[0].depth)
+		return pts[0].mult100;
+
+	for (unsigned i = 1; i < count; ++i)
+	{
+		if (effDepth >= pts[i].depth)
+			continue;
+		const int span = pts[i].depth - pts[i - 1].depth;
+		const int rise = pts[i].mult100 - pts[i - 1].mult100;
+		return pts[i - 1].mult100 + (effDepth - pts[i - 1].depth) * rise / span;
+	}
+	return pts[count - 1].mult100;
+}
+
+// Boss HP. The first segment is the curve the mode shipped with, so every zone below depth 64 is
+// untouched; the two after it carry the raised ceiling, landing 20x and 32x on the zones before a
+// GRAND milestone. Both the stepped and the continuous multiplier read this, so the two cannot
+// drift apart.
+static const EndlessRampAnchor endlessBossAnchors[] = {
+	{   0,  100 },   // 1x at the surface
+	{  64,  900 },   // 9x, zone 53 on Normal
+	{ 122, 2000 },   // 20x, zone 99
+	{ 247, 3200 },   // 32x, zone 199
+};
+
 static int endlessBossRamp100(int effDepth)
 {
-	const int kneeDepth = (effDepth < ENDLESS_BOSS_KNEE_DEPTH) ? effDepth : ENDLESS_BOSS_KNEE_DEPTH;
-	const int lateDepth = effDepth - kneeDepth;
-	return 100 + kneeDepth * 100 / ENDLESS_BOSS_DEPTH_PER_X
-	           + lateDepth * 100 * ENDLESS_BOSS_LATE_X_PER_STEP / ENDLESS_BOSS_LATE_STEP_DEPTH;
+	return endlessRampAt100(endlessBossAnchors, COUNTOF(endlessBossAnchors), effDepth);
 }
 
-// Boss HP divisor.
-int endlessBossHpMult(void)
+// Boss HP divisor in hundredths. This is what damage is spent through, so a boss gains health a
+// fraction of a multiplier at a time rather than a whole one every few zones. The debug override is
+// pinned in whole x and scaled here. Every additive modifier keeps the whole-x crossings of
+// endlessBossHpMult; FRAGILE halves the true figure rather than the floored one.
+int endlessBossHpMult100(void)
 {
-	ENDLESS_OVERRIDE(ESO_BOSSHP);
-	int mult = endlessBossRamp100(endlessEffectiveDepth()) / 100;
-	if (endlessActiveMods & ENDLESS_MOD_FORTIFIED)
-		mult += ENDLESS_BOSS_FORTIFIED;
-	if (endlessActiveMods & ENDLESS_MOD_MARKED)
-		mult += ENDLESS_BOSS_MARKED;
-	if (endlessActiveMods & ENDLESS_MOD_FRAGILE)
-		mult = (mult + 1) / 2;
-	return endlessClamp(mult, 1, ENDLESS_BOSS_MAX);
-}
+	if (endlessScalingOverride[ESO_BOSSHP].active)
+		return endlessScalingOverride[ESO_BOSSHP].value * ENDLESS_HP_MULT_SCALE;
 
-// Continuous counterpart of endlessBossHpMult, used to calibrate the pierce delay.
-static int endlessBossHpMult100(void)
-{
 	int mult = endlessBossRamp100(endlessEffectiveDepth());
 	if (endlessActiveMods & ENDLESS_MOD_FORTIFIED)
-		mult += ENDLESS_BOSS_FORTIFIED * 100;
+		mult += ENDLESS_BOSS_FORTIFIED * ENDLESS_HP_MULT_SCALE;
 	if (endlessActiveMods & ENDLESS_MOD_MARKED)
-		mult += ENDLESS_BOSS_MARKED * 100;
+		mult += ENDLESS_BOSS_MARKED * ENDLESS_HP_MULT_SCALE;
 	if (endlessActiveMods & ENDLESS_MOD_FRAGILE)
 		mult = (mult + 1) / 2;
-	return endlessClamp(mult, 100, ENDLESS_BOSS_MAX * 100);
+	return endlessClamp(mult, ENDLESS_HP_MULT_SCALE, ENDLESS_BOSS_MAX * ENDLESS_HP_MULT_SCALE);
+}
+
+// Whole-x reading of the same curve, which is what the pierce delay is calibrated against.
+int endlessBossHpMult(void)
+{
+	return endlessBossHpMult100() / ENDLESS_HP_MULT_SCALE;
 }
 
 // Enemy cooldown percentage; lower is faster.
@@ -525,45 +541,46 @@ int endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem)
 	return 1;  // invulnerable for its whole life, so never worth a bounty
 }
 
-// Bare elite depth curve in hundredths, with the same knee treatment as the boss ramp. The stepped
-// multiplier is this divided by 100.
+// Elite and champion HP, on the same anchor ramp. Its first segment is likewise the shipped curve.
+static const EndlessRampAnchor endlessEliteAnchors[] = {
+	{   0, 200 },   // 2x at the surface
+	{  80, 400 },   // 4x, zone 65 on Normal
+	{ 122, 600 },   // 6x, zone 99
+};
+
 static int endlessEliteRamp100(int effDepth)
 {
-	const int kneeDepth = (effDepth < ENDLESS_ELITE_HP_KNEE_DEPTH)
-	                    ? effDepth : ENDLESS_ELITE_HP_KNEE_DEPTH;
-	const int lateDepth = effDepth - kneeDepth;
-	const int mult100   = ENDLESS_ELITE_HP_BASE * 100
-	                    + kneeDepth * 100 / ENDLESS_ELITE_HP_PER_X
-	                    + lateDepth * 100 / ENDLESS_ELITE_HP_LATE_PER_X;
-	return endlessClamp(mult100, ENDLESS_ELITE_HP_BASE * 100, ENDLESS_ELITE_HP_MAX * 100);
+	return endlessRampAt100(endlessEliteAnchors, COUNTOF(endlessEliteAnchors), effDepth);
 }
 
-// Special-tier HP divisor.
-int endlessEliteHpMult(void)
+// Special-tier HP divisor in hundredths, on the same footing as the boss one: this is what damage
+// is spent through, and the debug override is pinned in whole x and scaled here.
+int endlessEliteHpMult100(void)
 {
-	ENDLESS_OVERRIDE(ESO_ELITEHP);
+	if (endlessScalingOverride[ESO_ELITEHP].active)
+		return endlessScalingOverride[ESO_ELITEHP].value * ENDLESS_HP_MULT_SCALE;
 	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
-		return 1;
-	return endlessEliteRamp100(endlessEffectiveDepth()) / 100;
-}
-
-// Continuous counterpart of endlessEliteHpMult, used to calibrate the pierce delay.
-static int endlessEliteHpMult100(void)
-{
-	if (endlessActiveMods & ENDLESS_MOD_GIANTKILLER)
-		return 100;
+		return ENDLESS_HP_MULT_SCALE;
 	return endlessEliteRamp100(endlessEffectiveDepth());
 }
 
-// Combined boss and special-tier HP divisor.
-int endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState)
+// Whole-x reading of the same curve, which is what the pierce delay is calibrated against.
+int endlessEliteHpMult(void)
+{
+	return endlessEliteHpMult100() / ENDLESS_HP_MULT_SCALE;
+}
+
+// Combined boss and special-tier HP divisor, in hundredths.
+int endlessEnemyHpMult100(bool hasBossBar, int bossHpMult100, int eliteState)
 {
 	if (!hasBossBar)
-		return (eliteState >= 2) ? endlessEliteHpMult() : 1;
+		return (eliteState >= 2) ? endlessEliteHpMult100() : ENDLESS_HP_MULT_SCALE;
 	if (eliteState < 2 || (endlessActiveMods & ENDLESS_MOD_GIANTKILLER))
-		return bossHpMult;
-	int mult = bossHpMult * 2;
-	int cap  = (bossHpMult > ENDLESS_HP_MULT_MAX) ? bossHpMult : ENDLESS_HP_MULT_MAX;
+		return bossHpMult100;
+
+	const int mult = bossHpMult100 * 2;
+	const int ceiling = ENDLESS_HP_MULT_MAX * ENDLESS_HP_MULT_SCALE;
+	const int cap  = (bossHpMult100 > ceiling) ? bossHpMult100 : ceiling;
 	return (mult > cap) ? cap : mult;
 }
 
@@ -1483,7 +1500,7 @@ int endlessScalingOverrideStock(int id)
 	switch (id)
 	{
 	case ESO_ARMOR:       v = endlessArmorPercentTotal();         break;
-	case ESO_BOSSHP:      v = endlessBossHpMult();                break;
+	case ESO_BOSSHP:      v = endlessBossHpMult100();             break;
 	case ESO_FIREDELAY:   v = endlessFireDelayPercent();          break;
 	case ESO_SHOTSPEED:   v = endlessShotSpeedPercent();          break;
 	case ESO_SHOTDMG:     v = endlessShotDamagePercent();         break;
@@ -1491,7 +1508,7 @@ int endlessScalingOverrideStock(int id)
 	case ESO_TIDE:        v = endlessTideLevel();                 break;
 	case ESO_EXTRASHOTS:  v = endlessExtraEnemyShots();           break;
 	case ESO_ELITECHANCE: v = endlessNaturalEliteChancePercent(); break;
-	case ESO_ELITEHP:     v = endlessEliteHpMult();               break;
+	case ESO_ELITEHP:     v = endlessEliteHpMult100();            break;
 	case ESO_PLAYERDMG:   v = endlessPlayerDamagePercent();       break;
 	case ESO_PIERCEDMG:   v = endlessPiercePotencyPercent();      break;
 	// Pierce delay depends on the live boss multiplier.
@@ -1524,7 +1541,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	out->diffZone     = endlessDifficultyZone();
 	out->rampPercent  = endlessDifficultyRampPercent();
 	out->armorPct     = endlessArmorPercentTotal();
-	out->bossMult     = endlessBossHpMult();
+	out->bossMult100  = endlessBossHpMult100();
 	out->fireDelayPct = endlessFireDelayPercent();
 	out->shotSpeedPct = endlessShotSpeedPercent();
 	out->shotDmgPct   = endlessShotDamagePercent();
@@ -1532,10 +1549,11 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 	out->extraShots   = endlessExtraEnemyShots();
 	out->contactPct   = endlessContactDamagePercent();
 	out->elitePct     = endlessNaturalEliteChancePercent();
-	out->eliteHpMult  = endlessEliteHpMult();
+	out->eliteHpMult100 = endlessEliteHpMult100();
 	out->playerDmgPct = endlessPlayerDamagePercent();
 	out->piercePct    = endlessPiercePotencyPercent();
-	out->pierceLock100 = endlessPierceLock100(true, out->bossMult, 1);  // hundredths of a tick, at the boss tier
+	// Hundredths of a tick, at the boss tier; the delay is calibrated against the whole-x reading.
+	out->pierceLock100 = endlessPierceLock100(true, out->bossMult100 / ENDLESS_HP_MULT_SCALE, 1);
 	out->eliteBounty  = endlessEliteBounty();
 	out->champBounty  = endlessChampionBounty();
 

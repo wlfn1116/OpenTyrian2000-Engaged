@@ -11217,22 +11217,22 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					int playerHit = armorleft;
 					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
 						playerHit = playerHit * 3 / 2;
-					// Endless depth ramp: the contact damage the PLAYER receives climbs past the mid-game
-					// (+150% by zone 100, up to +500%). Scales only playerHit; damage_to_enemy above never
-					// sees the ramp, so depth alone grinds no enemy down faster.
-					if (endlessFxActive())
-						playerHit = playerHit * endlessContactDamagePercent() / 100;
-					// Elite/champion tiers ram harder than a plain enemy: elites +25%, champions +50%.
-					// This stacks with the depth ramp unless Clean Signals flattens the premium to 100%.
-					if (endlessFxActive())
-						playerHit = playerHit * endlessEliteContactPercent(enemy[z].eliteState) / 100;
-					// Reinforced Prow cuts the ship's share last, after every premium, and a real hit
-					// still costs a point.
+					// Three Endless percentages ride the ship's share of a ram, and they are spent
+					// as one rounded pass rather than three divides: the depth ramp (the contact
+					// damage the PLAYER receives, +150% by zone 99 and up to +500%), the tier
+					// premium (elites +25%, champions +50%, flattened by Clean Signals), then
+					// Reinforced Prow's cut. Chaining the divides truncated each one in turn and
+					// lost up to two points of a ram. Only playerHit is scaled; damage_to_enemy
+					// above never sees the ramp, so depth alone grinds no enemy down faster.
 					if (endlessFxActive() && playerHit > 0)
 					{
-						playerHit = playerHit * endlessPerkProwContactPercent() / 100;
+						const Sint64 pct = (Sint64)endlessContactDamagePercent()
+						                 * endlessEliteContactPercent(enemy[z].eliteState)
+						                 * endlessPerkProwContactPercent();
+						const Sint64 scale = 100LL * 100 * 100;
+						playerHit = (int)((playerHit * pct + scale / 2) / scale);
 						if (playerHit < 1)
-							playerHit = 1;
+							playerHit = 1;   // a real hit still costs a point
 					}
 					if (playerHit > 255)
 						playerHit = 255;

@@ -770,13 +770,20 @@ Normal. Zones below quote Normal.
 | --- | --- | --- | --- |
 | Ordinary spawn armor | `100 + eff x 4` % | 600% | zone 101 |
 | Ordinary overflow | the same slope, continued | 1200% total | zone 221 |
-| Elite and champion | `2 + eff/40`, then `+1x per 21` past depth 80 | 6x | zone 99 |
-| Boss | `1 + eff/8`, then `+2x per 5` past depth 64 | 32x | zone 99 |
+| Elite and champion | anchors 2x, 4x at depth 80, 6x at 122 | 6x | zone 99 |
+| Boss | anchors 1x, 9x at depth 64, 20x at 122, 32x at 247 | 32x | zone 199 |
 
-The elite and boss ramps steepen at a knee rather than taking a single steeper
-slope, so every zone below the knee keeps the curve it had when the ceilings
-were 4x and 16x. Both late rates are set to land the ceiling on zone 99, the
-zone before a GRAND milestone, so The End is always fought at the full figure.
+The two tier curves are `EndlessRampAnchor` tables read by `endlessRampAt100`: a
+piecewise-linear walk in hundredths where each anchor names a depth and the
+multiplier the curve passes through there, so a segment's rate is whatever joins
+its ends. Retuning is moving an anchor. The ramp holds its last anchor, which is
+what makes that value the ceiling and what FRAGILE halves.
+
+Each curve's first segment is the one the mode shipped with, so every zone below
+depth 64 (boss) and depth 80 (elite) is untouched by the raised ceilings. The
+later anchors sit on the zone before a GRAND milestone: elites reach 6x and the
+boss 20x by zone 99, and the boss reaches 32x by zone 199, so an End is never
+fought a zone or two short of the figure it was tuned against.
 Every other landmark that used to sit on zone 100 was moved to 99 for the same
 reason: `ENDLESS_CONTACT_ANCHOR`, `ENDLESS_TIDE_SHOT_ANCHOR`,
 `ENDLESS_DANGER_RAMP_MID`, and `ENDLESS_SPECIAL_PIVOT_DEPTH`, whose move also
@@ -800,7 +807,32 @@ and the overflow beyond it.
 `endlessBossRamp100` and `endlessEliteRamp100` are the single authority for their
 curves. The stepped multiplier is the hundredths value divided by 100, which is
 exact, so a stepped and a continuous reading cannot drift apart. Modifiers apply
-outside the ramp because FRAGILE halves the modified total.
+outside the ramp because FRAGILE halves the modified total, which against a
+32x boss leaves 16x.
+
+Both tier multipliers are spent at their hundredths value
+(`endlessBossHpMult100`, `endlessEliteHpMult100`, in `ENDLESS_HP_MULT_SCALE`
+units), so a hull thickens by a fraction of a multiplier each zone rather than by
+a whole one every few. `endlessBossHpMult` and `endlessEliteHpMult` are their
+floors and exist for the pierce delay, which is calibrated in whole x. Every
+whole-number crossing sits on the zone the stepped curve put it on, for the plain
+curves and for FORTIFIED and MARKED; FRAGILE is the one exception, because halving
+the true figure is not halving its floor. The `ESO_BOSSHP` and `ESO_ELITEHP`
+overrides stay in whole x and are scaled at the read, so their persisted values
+keep their meaning and a pinned row reads back as `16.00 PIN`.
+
+Fractions are only worth carrying where something accumulates them. The two
+multipliers qualify because `damageAccum` banks the remainder between hits. Enemy
+shot damage and velocity are stamped once onto a byte and a `JE_shortint` at
+spawn, so they round to nearest instead; player shot damage does the same and adds
+a floor so an uplift always moves a 1-damage weapon; piercing damage carries its
+own remainder on the bullet (`ENDLESS_PIERCE_DMG_SCALE`). An enemy's shot cooldown
+is a whole-tick countdown with no carry, so it keeps truncating.
+
+The ram a ship takes runs three Endless percentages (depth ramp, tier premium,
+Reinforced Prow) and spends them as one rounded pass in `mainint.c`. As three
+chained divides each truncated in turn, which cost up to two points of a ram and
+changed the result on about half of the reachable combinations.
 
 Damage is spent through `enemy_hp_divisor100` in `ENEMY_DAMAGE_ACCUM_SCALE`
 units, banked in `damageAccum`. Without the overflow the divisor is a whole
@@ -1416,7 +1448,7 @@ Recent versions:
 | 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
 | 68 | Rollback in-game menu at the press frame; `PACKET_GAME_MENU` with an input image releases it, not `PACKET_WAITING` |
 | 69 | The outpost player block carries the two extra-perk counts, widening it by eight bytes |
-| 70 | Endless HP ceilings raised (elite 6x, boss 32x) and the ordinary curve continued past the 254 armor byte as a hundredths damage divisor |
+| 70 | Endless HP ceilings raised (elite 6x, boss 32x), both tier multipliers and the ram-damage chain spent fractionally, and the ordinary curve continued past the 254 armor byte as a hundredths damage divisor |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name

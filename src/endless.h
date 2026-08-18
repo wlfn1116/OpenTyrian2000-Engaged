@@ -204,6 +204,10 @@ enum {
 // Global effective-HP multiplier ceiling, wide enough for an elite boss at the 32x boss ceiling.
 #define ENDLESS_HP_MULT_MAX 64
 
+// Hundredths: the unit the boss and combined HP multipliers are carried in, so a boss gains health
+// a fraction of a multiplier at a time. Matches ENEMY_DAMAGE_ACCUM_SCALE, which spends them.
+#define ENDLESS_HP_MULT_SCALE 100
+
 // Authored level identity retained after levelName becomes "ZONE n".
 const char *endlessBaseLevelName(void);
 int         endlessBaseLevelEpisode(void);
@@ -650,7 +654,8 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI);
 // Depth and modifier scaling. Boss HP uses a divisor because armor is byte-sized.
 int endlessArmorPercent(void);      // ordinary-enemy HP scale (100 = unchanged); 254 cap applies
 int endlessArmorOverflow100(void);  // that curve past the spawn ceiling, hundredths, as a divisor
-int endlessBossHpMult(void);        // boss HP divisor (1 = unchanged); N = N times boss HP
+int endlessBossHpMult100(void);     // boss HP divisor, hundredths (100 = unchanged)
+int endlessBossHpMult(void);        // ...and its whole-x reading, which the pierce delay is set by
 int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchanged; lower = fires faster)
 int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
 int endlessShotDamagePercent(void); // enemy shot-damage scale (100 = unchanged; higher = hits harder)
@@ -664,7 +669,7 @@ typedef struct {
 	int  diffZone;      // endlessDifficultyZone(): the zone the player-facing thresholds see
 	int  rampPercent;   // the difficulty tilt itself: 50 (Wimp) .. 160 (Insanity and beyond)
 	int  armorPct;      // ordinary-enemy HP, % of stock, spawn armor and overflow together
-	int  bossMult;      // boss HP multiplier
+	int  bossMult100;   // boss HP multiplier, in ENDLESS_HP_MULT_SCALE units
 	int  fireDelayPct;  // enemy shot cooldown, % of stock (LOWER = faster fire)
 	int  shotSpeedPct;  // enemy projectile speed, % of stock
 	int  shotDmgPct;    // enemy shot damage, % of stock
@@ -672,7 +677,7 @@ typedef struct {
 	int  extraShots;    // extra enemy shots added per firing volley
 	int  contactPct;    // contact/ram damage the PLAYER receives, % of stock
 	int  elitePct;      // natural elite/champion share, % of eligible enemies
-	int  eliteHpMult;   // elite/champion HP multiplier
+	int  eliteHpMult100; // elite/champion HP multiplier, in ENDLESS_HP_MULT_SCALE units
 	int  playerDmgPct;  // YOUR shot damage, % of stock (sector mods + perks)
 	int  piercePct;     // your piercing damage, % of the weapon-table value, before playerDmgPct
 	int  pierceLock100; // HUNDREDTHS of a sim tick a boss shrugs off repeat piercing hits for, at this zone's boss multiplier
@@ -686,7 +691,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 // An active override bypasses both depth and modifiers for one lever.
 enum {
 	ESO_ARMOR,       // endlessArmorPercent and endlessArmorOverflow100 together
-	ESO_BOSSHP,      // endlessBossHpMult
+	ESO_BOSSHP,      // endlessBossHpMult100, pinned in whole x
 	ESO_FIREDELAY,   // endlessFireDelayPercent
 	ESO_SHOTSPEED,   // endlessShotSpeedPercent
 	ESO_SHOTDMG,     // endlessShotDamagePercent
@@ -694,7 +699,7 @@ enum {
 	ESO_TIDE,        // endlessTideLevel
 	ESO_EXTRASHOTS,  // endlessExtraEnemyShots (bypasses FLAK SCREEN too)
 	ESO_ELITECHANCE, // endlessNaturalEliteChancePercent (Elite Pack / Apex / NOELITE still win)
-	ESO_ELITEHP,     // endlessEliteHpMult
+	ESO_ELITEHP,     // endlessEliteHpMult100, pinned in whole x
 	ESO_PLAYERDMG,   // endlessPlayerDamagePercent
 	ESO_PIERCEDMG,   // endlessPiercePotencyPercent
 	ESO_PIERCELOCK,  // endlessPierceLock100 (pinned = a fixed figure at every tier and multiplier)
@@ -777,8 +782,10 @@ const char *endlessKillFireEvilName(void);   // one-word HUD label for the activ
 // Tier rolls are cached by link group.
 void endlessResetElites(void);               // clear per-level decisions and rescan the level script (each level start)
 int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);  // this body's tier, settled on its first frame: 1 normal, 2 elite, 3 champion
-int  endlessEliteHpMult(void);               // elite & champion HP multiplier (boss-style divisor)
-int  endlessEnemyHpMult(bool hasBossBar, int bossHpMult, int eliteState);  // combined per-hit HP divisor
+int  endlessEliteHpMult100(void);            // elite & champion HP divisor, hundredths
+int  endlessEliteHpMult(void);               // ...and its whole-x reading
+// Combined per-hit HP divisor, hundredths.
+int  endlessEnemyHpMult100(bool hasBossBar, int bossHpMult100, int eliteState);
 
 // Repeat-hit delay for piercing bullets, in hundredths of a tick.
 #define ENDLESS_PIERCE_LOCK_SCALE 100
