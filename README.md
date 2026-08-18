@@ -4,7 +4,7 @@
 
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian 2000.
+the DOS game Tyrian 2000. 
 
 This fork adds:
 
