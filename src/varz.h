@@ -211,10 +211,11 @@ typedef struct {
 	JE_byte duration;
 	JE_word animate;
 	JE_word animax;
-	// Counts down to a Seeker shot's single course correction; zero when inactive.
+	// Course-correction state uses two reserved bytes, preserving this structure's size.
 	JE_byte seekerArm;
+	JE_byte seekerLeft;
 	JE_byte filter;  // shooter's tier bank, stamped at spawn; 0 for the sprite's own colours
-	JE_byte fill[10];
+	JE_byte fill[9];
 } EnemyShotType;
 
 typedef struct {

@@ -185,7 +185,9 @@ static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots, Uin
 		enemyShot[b].duration = ENDLESS_MARTYR_SHOT_DURATION;
 		enemyShot[b].animate = 0;
 		enemyShot[b].animax = 0;
-		enemyShot[b].seekerArm = 0;      // radial by design; never a seeker
+		// Radial burst shots never course-correct.
+		enemyShot[b].seekerArm = 0;
+		enemyShot[b].seekerLeft = 0;
 		enemyShot[b].filter = tint;
 	}
 }
@@ -1289,15 +1291,13 @@ void qa_test_chain_wave_latch(void)
 	memcpy(enemyAvail, savedAvail, sizeof(savedAvail));
 }
 
-// SEEKER ROUNDS: the single mid-flight course correction (a bounded ~23-degree turn toward the
-// player), applied once per shot at ~half a second (see the enemy-shot movement loop). Rotates the
-// velocity toward the player while preserving its speed; if the player already sits within the max
-// turn, it aims straight instead. NOT continuous homing; the caller disarms the shot afterwards.
-#define ENDLESS_SEEKER_DELAY_TICKS 17     // ~0.5s at the 35Hz sim before the one correction fires
-#define ENDLESS_SEEKER_TURN_COS 0.9205f   // cos(~23 deg); the max single-shot turn
-#define ENDLESS_SEEKER_TURN_SIN 0.3907f   // sin(~23 deg)
+// Apply one tier-limited course correction while preserving shot speed. The
+// movement loop owns the delay and remaining-pass count.
+#define ENDLESS_SEEKER_DELAY_TICKS 17     // ~0.5s at the 35Hz sim between corrections
 static void endlessSeekerCorrect(EnemyShotType *s)
 {
+	float turnCos = 0.0f, turnSin = 0.0f;
+	endlessSeekerTurn(&turnCos, &turnSin);
 	const float vx = (float)s->sxm, vy = (float)s->sym;
 	const float speed = sqrtf(vx * vx + vy * vy);
 	if (speed < 0.5f)
@@ -1311,18 +1311,19 @@ static void endlessSeekerCorrect(EnemyShotType *s)
 	const float ux = dx / dmag, uy = dy / dmag;      // unit vector toward the player
 	const float cvx = vx / speed, cvy = vy / speed;  // current unit heading
 	const float dot = cvx * ux + cvy * uy;           // cos(angle between heading and target)
-	if (dot >= ENDLESS_SEEKER_TURN_COS)
+	if (dot >= turnCos)
 	{
 		s->sxm = (JE_integer)roundf(ux * speed);     // within one turn: snap straight at the player, keep the speed
 		s->sym = (JE_integer)roundf(uy * speed);
 	}
 	else
 	{
-		float sn = ENDLESS_SEEKER_TURN_SIN;          // rotate by exactly the max turn, toward the player's side
+		float sn = turnSin;
+		// The cross-product sign selects the shorter rotation.
 		if (cvx * uy - cvy * ux < 0.0f)
-			sn = -sn;                                // sign from the cross product picks the shorter way round
-		s->sxm = (JE_integer)roundf(vx * ENDLESS_SEEKER_TURN_COS - vy * sn);
-		s->sym = (JE_integer)roundf(vx * sn + vy * ENDLESS_SEEKER_TURN_COS);
+			sn = -sn;
+		s->sxm = (JE_integer)roundf(vx * turnCos - vy * sn);
+		s->sym = (JE_integer)roundf(vx * sn + vy * turnCos);
 	}
 	if (s->sxm == 0 && s->sym == 0)                  // rounding zeroed a tiny vector; keep it moving
 	{
@@ -3258,6 +3259,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 	enemyShot[b].animax = weapons[w].weapani;
 	enemyShot[b].sgr = weapons[w].sg[0];
 	enemyShot[b].seekerArm = 0;
+	enemyShot[b].seekerLeft = 0;
 	enemyShot[b].filter = tint;
 	enemyShot[b].syc = weapons[w].acceleration;
 	enemyShot[b].sxc = weapons[w].accelerationx;
@@ -3300,7 +3302,8 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 
 	if (endlessFxActive())
 	{
-		if (endlessSeekerActive())
+		enemyShot[b].seekerLeft = endlessSeekerPasses();
+		if (enemyShot[b].seekerLeft > 0)
 			enemyShot[b].seekerArm = 1;
 		enemyShot[b].sxm = (enemyShot[b].sxm * spct + (enemyShot[b].sxm >= 0 ? 50 : -50)) / 100;
 		enemyShot[b].sym = (enemyShot[b].sym * spct + (enemyShot[b].sym >= 0 ? 50 : -50)) / 100;
@@ -3415,6 +3418,7 @@ static void dispenser_fire(unsigned int i, JE_integer baseX, JE_integer baseY)
 			enemyShot[c].animax = 4;
 			enemyShot[c].sgr = boltSegment[s];
 			enemyShot[c].seekerArm = 0;
+			enemyShot[c].seekerLeft = 0;
 			enemyShot[c].filter = tint;
 		}
 	}
@@ -3885,7 +3889,8 @@ enemy_still_exists:
 								enemyShot[b].animax = weapons[temp3].weapani;
 
 								enemyShot[b].sgr = weapons[temp3].sg[tempPos];
-								enemyShot[b].seekerArm = 0;   // endless SEEKER arms this below; 0 for every non-seeker shot
+								enemyShot[b].seekerArm = 0;
+								enemyShot[b].seekerLeft = 0;
 								// An elite or champion fires in its own bank, so its bullets read as
 								// dangerous as the body they came from. 0 outside an endless run.
 								enemyShot[b].filter = endlessEliteTint(enemy[i].eliteState);
@@ -3955,9 +3960,8 @@ enemy_still_exists:
 
 								if (endlessFxActive())
 								{
-									// SEEKER: arm this newly-fired shot for its single mid-flight course
-									// correction (counted + applied in the enemy-shot movement loop below).
-									if (endlessSeekerActive())
+									enemyShot[b].seekerLeft = endlessSeekerPasses();
+									if (enemyShot[b].seekerLeft > 0)
 										enemyShot[b].seekerArm = 1;
 
 									// Endless: enemy projectiles get faster with depth. Scale both
@@ -5947,13 +5951,11 @@ draw_player_shot_loop_end:
 		{
 			if (enemyShotAvail[z] == 0)
 			{
-				// SEEKER: a one-time bounded course correction toward the player, ~half a second after
-				// firing. seekerArm is nonzero only for shots armed at spawn under the mod; it counts
-				// sim ticks, fires the single turn at the delay, then disarms (0 = done / not a seeker).
 				if (enemyShot[z].seekerArm > 0 && ++enemyShot[z].seekerArm >= ENDLESS_SEEKER_DELAY_TICKS)
 				{
 					endlessSeekerCorrect(&enemyShot[z]);
-					enemyShot[z].seekerArm = 0;   // one correction only
+					enemyShot[z].seekerLeft = (enemyShot[z].seekerLeft > 0) ? enemyShot[z].seekerLeft - 1 : 0;
+					enemyShot[z].seekerArm = (enemyShot[z].seekerLeft > 0) ? 1 : 0;
 				}
 
 				// Homing shots chase the nearer ship still flying; solo play keeps player 1.

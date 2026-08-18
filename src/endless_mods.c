@@ -37,6 +37,10 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_DEADGEN,   30, "generator dead" },
 	{ ENDLESS_MOD_MARTYRDOM, 18, "kills fire a burst" },
 	{ ENDLESS_MOD_SEEKER,    14, "shots curve at you" },
+	{ ENDLESS_MOD_TWINSEEK,  18, "shots curve twice" },
+	{ ENDLESS_MOD_HUNTER,    21, "shots swerve at you" },
+	{ ENDLESS_MOD_TRUEAIM,   27, "shots snap onto you" },
+	{ ENDLESS_MOD_KILLSHOT,  38, "shots snap on twice" },
 	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },
 	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },
 	// The finale marker has no monitor row. Its weight controls reward and slate ordering.
@@ -66,8 +70,12 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_CLEANSIGNALS,  -5, "weaker elite attacks" },
 };
 
-// Special-enemy modifiers form a strength ladder. Remove lower tiers so they
-// cannot add duplicate monitor rows or payout weight.
+static const Uint64 endlessSeekerLadder[] = {
+	ENDLESS_MOD_KILLSHOT, ENDLESS_MOD_TRUEAIM, ENDLESS_MOD_HUNTER,
+	ENDLESS_MOD_TWINSEEK, ENDLESS_MOD_SEEKER,
+};
+
+// Keep only the highest tier in each strength ladder.
 Uint64 endlessCanonicalMods(Uint64 mods)
 {
 	if (mods & ENDLESS_MOD_NOELITE)   // no specials at all, so every tier bit below is inert
@@ -80,6 +88,12 @@ Uint64 endlessCanonicalMods(Uint64 mods)
 		mods &= ~(Uint64)(ENDLESS_MOD_APEX | ENDLESS_MOD_ELITEPACK);
 	else if (mods & ENDLESS_MOD_APEX)
 		mods &= ~(Uint64)ENDLESS_MOD_ELITEPACK;
+	for (unsigned i = 0; i < COUNTOF(endlessSeekerLadder); ++i)
+		if (mods & endlessSeekerLadder[i])
+		{
+			mods &= ~(ENDLESS_MOD_SEEKER_ANY ^ endlessSeekerLadder[i]);
+			break;
+		}
 	return mods;
 }
 
@@ -634,12 +648,23 @@ Uint64 endlessMakeTheEndMods(void)
 	// Reactive dangers are independent. DEADGEN is absent, so Static remains compatible.
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_MARTYRDOM;
-	if (endlessRand() % 2)
-		m |= ENDLESS_MOD_SEEKER;
+	const bool corrects = (endlessRand() % 2) != 0;
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_STATIC;
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_RETALIATION;
+
+	// Draw last to preserve the established structural RNG sequence.
+	static const Uint64 rungs[] = {
+		ENDLESS_MOD_SEEKER, ENDLESS_MOD_TWINSEEK, ENDLESS_MOD_HUNTER,
+		ENDLESS_MOD_TRUEAIM, ENDLESS_MOD_KILLSHOT,
+	};
+	unsigned unlocked = 1 + (unsigned)(endlessDifficultyZone() / 100);
+	if (unlocked > COUNTOF(rungs))
+		unlocked = COUNTOF(rungs);
+	const Uint64 rung = rungs[endlessRand() % unlocked];
+	if (corrects)
+		m |= rung;
 
 	return m;
 }
@@ -720,6 +745,38 @@ const EndlessTheme endlessSeekerThemes[] = {
 	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_FRENZY,       "Smart Swarm" },
 	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_DEVASTATING,  "Lock On" },
 	{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_FORTIFIED,    "Tracker Rounds" },
+};
+
+const EndlessTheme endlessTwinSeekThemes[] = {
+	{ ENDLESS_MOD_TWINSEEK,                            "Twin Seekers" },
+	{ ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_SWIFT,        "Double Tap" },
+	{ ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_FRENZY,       "Second Guess" },
+	{ ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_DEVASTATING,  "Course Correction" },
+	{ ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_FORTIFIED,    "Second Look" },
+};
+
+const EndlessTheme endlessHunterThemes[] = {
+	{ ENDLESS_MOD_HUNTER,                            "Hunter Rounds" },
+	{ ENDLESS_MOD_HUNTER | ENDLESS_MOD_SWIFT,        "Hard Turn" },
+	{ ENDLESS_MOD_HUNTER | ENDLESS_MOD_FRENZY,       "Hunting Pack" },
+	{ ENDLESS_MOD_HUNTER | ENDLESS_MOD_DEVASTATING,  "Hard Lock" },
+	{ ENDLESS_MOD_HUNTER | ENDLESS_MOD_ELITEPACK,    "Elite Hunters" },
+};
+
+const EndlessTheme endlessTrueAimThemes[] = {
+	{ ENDLESS_MOD_TRUEAIM,                            "True Aim" },
+	{ ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_SWIFT,        "Snap Shot" },
+	{ ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_FRENZY,       "Aimed Swarm" },
+	{ ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_DEVASTATING,  "Direct Hit" },
+	{ ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_FORTIFIED,    "Steady Aim" },
+};
+
+const EndlessTheme endlessKillshotThemes[] = {
+	{ ENDLESS_MOD_KILLSHOT,                            "Kill Shot" },
+	{ ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_SWIFT,        "Point Blank" },
+	{ ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_FRENZY,       "Execution" },
+	{ ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_DEVASTATING,  "Final Answer" },
+	{ ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_FORTIFIED,    "Iron Sights" },
 };
 
 // This table names bare omnidirectional gravity; generation adds the cosmetic OMNI bit separately.
@@ -1100,6 +1157,10 @@ static const struct { const EndlessTheme *tbl; unsigned n; } endlessThemePools[]
 	THEME_POOL(endlessDeadgenThemes),
 	THEME_POOL(endlessMartyrdomThemes),
 	THEME_POOL(endlessSeekerThemes),
+	THEME_POOL(endlessTwinSeekThemes),
+	THEME_POOL(endlessHunterThemes),
+	THEME_POOL(endlessTrueAimThemes),
+	THEME_POOL(endlessKillshotThemes),
 	THEME_POOL(endlessBreakthroughThemes),
 	THEME_POOL(endlessWarpThemes),
 };
@@ -1391,6 +1452,12 @@ static const struct { Uint64 combo; int bonus; } endlessSynergies[] = {
 	{ ENDLESS_MOD_SWIFT       | ENDLESS_MOD_HOMING,      4 },
 	{ ENDLESS_MOD_TOPSY       | ENDLESS_MOD_GRAVITY,     4 },
 	{ ENDLESS_MOD_SEEKER      | ENDLESS_MOD_SWIFT,       4 },
+	{ ENDLESS_MOD_TWINSEEK    | ENDLESS_MOD_SWIFT,       5 },
+	{ ENDLESS_MOD_HUNTER      | ENDLESS_MOD_SWIFT,       6 },
+	{ ENDLESS_MOD_TRUEAIM     | ENDLESS_MOD_SWIFT,       7 },
+	{ ENDLESS_MOD_KILLSHOT    | ENDLESS_MOD_SWIFT,       8 },
+	{ ENDLESS_MOD_TRUEAIM     | ENDLESS_MOD_SLUGGISH,    6 },
+	{ ENDLESS_MOD_KILLSHOT    | ENDLESS_MOD_SLUGGISH,    8 },
 	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,      5 },
 };
 

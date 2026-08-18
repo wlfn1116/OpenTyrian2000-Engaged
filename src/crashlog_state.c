@@ -196,6 +196,8 @@ static void write_endless_mods(FILE *f, Uint64 mods)
 		{ ENDLESS_MOD_GIANTKILLER, "GiantKiller" }, { ENDLESS_MOD_SHOCKWAVE,  "Shockwave"  },
 		{ ENDLESS_MOD_STARCHARTS,  "StarCharts"  }, { ENDLESS_MOD_BREAKTHROUGH,"Breakthrough"},
 		{ ENDLESS_MOD_SOFTLANDING, "SoftLanding" }, { ENDLESS_MOD_CLEANSIGNALS,"CleanSignals"},
+		{ ENDLESS_MOD_TWINSEEK,    "TwinSeek"    }, { ENDLESS_MOD_HUNTER,     "Hunter"     },
+		{ ENDLESS_MOD_TRUEAIM,     "TrueAim"     }, { ENDLESS_MOD_KILLSHOT,   "KillShot"   },
 	};
 
 	fprintf(f, "  Active mods:  0x%016llX", (unsigned long long)mods);

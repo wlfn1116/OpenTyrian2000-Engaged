@@ -353,8 +353,28 @@ a modifier requires updates to:
 - monitor rows and help text;
 - glyphs, card width, and generated-name uniqueness.
 
-`endlessCanonicalMods` resolves the special-enemy ladder. It is idempotent and
-uses no RNG. Run it after generation, purchase folding, launch, and restore.
+`endlessCanonicalMods` resolves the special-enemy and course-correction ladders.
+It is idempotent and uses no RNG. Run it after generation, purchase folding,
+launch, and restore.
+
+Course-correction modifiers are mutually exclusive. Canonicalization keeps the
+strongest one:
+
+| Modifier | Corrections | Maximum turn | Availability |
+| --- | ---: | ---: | --- |
+| Seeker Rounds | 1 | 23 degrees | Ordinary pools |
+| Twin Seekers | 2 | 23 degrees | 40-zone rare window |
+| Hunter Rounds | 1 | 55 degrees | 110-zone window from zone 45 |
+| True Aim | 1 | Direct | 140-zone window from zone 120 |
+| Kill Shot | 2 | Direct | 200-zone window from zone 180 |
+
+`seekerArm` counts down to the next correction; `seekerLeft` records how many
+remain. Both fields must start at zero for ordinary shots. The two bytes come
+from `EnemyShotType`'s reserved tail, keeping the structure size unchanged.
+
+The finale unlocks one more correction tier per 100 difficulty zones. Draw its
+tier after the established finale rolls so older seed-stream positions remain
+stable.
 
 Rare signatures are scheduled by seeded windows. A Radar reroll may move the
 signature within its window. Guarded signatures suppress Jackpot and Ambush;
@@ -499,7 +519,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 70. Packet readers check length before
+`NET_VERSION` bump. The current version is 71. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -534,6 +554,7 @@ Recent compatibility points:
 | 68 | Rollback menu opens on the verified press frame |
 | 69 | Extra Perk counters in the outpost player block |
 | 70 | Fractional and overflow Endless HP scaling |
+| 71 | Course-correction tiers and per-shot pass state |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

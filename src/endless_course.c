@@ -229,6 +229,7 @@ typedef struct {
 	Uint64              must;     // pool entries must carry all of these bits...
 	Uint64              forbid;   // ...and none of these
 	Uint64              mods;     // the fixed bitset, when there is no pool
+	int                 minZone;  // first eligible difficulty zone
 	bool                brutal;   // true = the deep ramp on this row is capped at 2x (never routine)
 	bool                guarded;  // true = no visit flavor may erase this row's sector
 } EndlessRareInjection;
@@ -244,13 +245,15 @@ typedef struct {
 #define ENDLESS_CHART_REROLL_SALT 0x100000000ULL
 
 #define RARE_SCHED(row, w, tbl, hard) \
-	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), 0, 0, 0, (hard), false }
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), 0, 0, 0, 0, (hard), false }
+#define RARE_DEEP(row, w, tbl, floor, hard) \
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), 0, 0, 0, (floor), (hard), false }
 #define RARE_PICK(row, w, tbl, must, forbid, hard) \
-	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, (hard), false }
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, 0, (hard), false }
 #define RARE_GUARD(row, w, tbl, must, forbid, hard) \
-	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, (hard), true }
+	{ (w), ENDLESS_SCHED_SALT(row), (tbl), COUNTOF(tbl), (must), (forbid), 0, 0, (hard), true }
 #define RARE_FIXED(row, w, bits, hard) \
-	{ (w), ENDLESS_SCHED_SALT(row), NULL, 0, 0, 0, (bits), (hard), false }
+	{ (w), ENDLESS_SCHED_SALT(row), NULL, 0, 0, 0, (bits), 0, (hard), false }
 static const EndlessRareInjection endlessRareInjections[] = {
 	// Homing is the mild tier and does not add ram damage.
 	RARE_SCHED(0, 12, endlessHomingThemes, true),
@@ -280,8 +283,13 @@ static const EndlessRareInjection endlessRareInjections[] = {
 	RARE_PICK(9, 50, endlessRareThemes, 0, ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION, true),
 	// Dead Generator disables shield recharge and starves the main gun.
 	RARE_SCHED(10, 64, endlessDeadgenThemes, true),
+	RARE_SCHED(11, 40, endlessTwinSeekThemes, true),
+	RARE_DEEP(12, 110, endlessHunterThemes, 45, false),
+	RARE_DEEP(13, 140, endlessTrueAimThemes, 120, false),
+	RARE_DEEP(14, 200, endlessKillshotThemes, 180, false),
 };
 #undef RARE_SCHED
+#undef RARE_DEEP
 #undef RARE_PICK
 #undef RARE_GUARD
 #undef RARE_FIXED
@@ -336,7 +344,11 @@ static const struct { Uint64 bit; int group; } endlessMilestonePool[] = {
 	{ ENDLESS_MOD_TOPSY,       0 },
 	{ ENDLESS_MOD_SLUGGISH,    0 },
 	{ ENDLESS_MOD_MARTYRDOM,   0 },  // the four reactive dangers: independent levers, any mix may land
-	{ ENDLESS_MOD_SEEKER,      0 },
+	{ ENDLESS_MOD_SEEKER,      5 },
+	{ ENDLESS_MOD_TWINSEEK,    5 },
+	{ ENDLESS_MOD_HUNTER,      5 },
+	{ ENDLESS_MOD_TRUEAIM,     5 },
+	{ ENDLESS_MOD_KILLSHOT,    5 },
 	{ ENDLESS_MOD_STATIC,      0 },  // safe here: DEADGEN is out of the pool, so the incompatibility can't arise
 	{ ENDLESS_MOD_RETALIATION, 0 },
 	{ ENDLESS_MOD_SLIPSTREAM,  1 },  // scroll pace
@@ -841,6 +853,8 @@ static bool endlessRareSectorDue(const EndlessRareInjection *inj)
 {
 	const int base = inj->window;
 	if (base <= 0)
+		return false;
+	if (endlessDifficultyZone() < inj->minZone)
 		return false;
 
 	const int zone = endlessDifficultyZone() - 1;   // zero-based; window 0 is zones 1..base

@@ -156,6 +156,13 @@ enum {
 #define ENDLESS_MOD_BREAKTHROUGH ((Uint64)1 << 51)
 #define ENDLESS_MOD_SOFTLANDING  ((Uint64)1 << 52)
 #define ENDLESS_MOD_CLEANSIGNALS ((Uint64)1 << 53)
+#define ENDLESS_MOD_TWINSEEK     ((Uint64)1 << 54)
+#define ENDLESS_MOD_HUNTER       ((Uint64)1 << 55)
+#define ENDLESS_MOD_TRUEAIM      ((Uint64)1 << 56)
+#define ENDLESS_MOD_KILLSHOT     ((Uint64)1 << 57)
+
+#define ENDLESS_MOD_SEEKER_ANY (ENDLESS_MOD_SEEKER | ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER | \
+                                ENDLESS_MOD_TRUEAIM | ENDLESS_MOD_KILLSHOT)
 
 // A course carries at most one kill-fire modifier.
 #define ENDLESS_MOD_FIREBOOST      (ENDLESS_MOD_TURBODRIVE | ENDLESS_MOD_OVERDRIVE)
@@ -776,6 +783,23 @@ int  endlessShipTintFilter(void);
 int      endlessMartyrdomBurstShots(int linknum, int eliteState);
 JE_word  endlessMartyrShotSprite(void);
 bool     endlessSeekerActive(void);
+
+typedef enum {
+	ENDLESS_SEEK_NONE = 0,
+	ENDLESS_SEEK_CURVE,
+	ENDLESS_SEEK_TWIN,
+	ENDLESS_SEEK_WIDE,
+	ENDLESS_SEEK_TRUE,
+	ENDLESS_SEEK_KILL,
+	ENDLESS_SEEK_TIERS
+}
+EndlessSeekerTier;
+
+// Turn returns the cosine and sine of the tier's maximum correction angle. A
+// cosine of -1 allows a direct re-aim.
+EndlessSeekerTier endlessSeekerTier(void);
+JE_byte endlessSeekerPasses(void);
+void    endlessSeekerTurn(float *turnCos, float *turnSin);
 
 // The caller caps this drain at the generator's current reserve.
 unsigned endlessStaticDischargeDrain(unsigned actualDamage);

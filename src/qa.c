@@ -331,6 +331,11 @@ static void qa_test_canonical_mods(void)
 		// Bits on other systems, and the one meaningful pair, must survive untouched.
 		{ ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK, ENDLESS_MOD_NOCHAMP | ENDLESS_MOD_ELITEPACK },
 		{ ENDLESS_MOD_APEX | ENDLESS_MOD_FORTIFIED,    ENDLESS_MOD_APEX | ENDLESS_MOD_FORTIFIED },
+		{ ENDLESS_MOD_SEEKER | ENDLESS_MOD_TWINSEEK,   ENDLESS_MOD_TWINSEEK },
+		{ ENDLESS_MOD_TWINSEEK | ENDLESS_MOD_HUNTER,   ENDLESS_MOD_HUNTER },
+		{ ENDLESS_MOD_HUNTER | ENDLESS_MOD_TRUEAIM,    ENDLESS_MOD_TRUEAIM },
+		{ ENDLESS_MOD_SEEKER_ANY,                      ENDLESS_MOD_KILLSHOT },
+		{ ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_SWIFT,    ENDLESS_MOD_KILLSHOT | ENDLESS_MOD_SWIFT },
 		{ 0, 0 },
 	};
 	for (unsigned i = 0; i < COUNTOF(cases); ++i)
@@ -339,6 +344,60 @@ static void qa_test_canonical_mods(void)
 		qa_check(got == cases[i].want, "redundant special-enemy bits are dropped");
 		qa_check(endlessCanonicalMods(got) == got, "settling a modifier set twice changes nothing");
 	}
+}
+
+static void qa_test_seeker_tiers(void)
+{
+	const bool savedMode = endlessMode;
+	const bool savedCampaign = endlessCampaignMods;
+	const Uint64 savedMods = endlessActiveMods;
+
+	static const struct { Uint64 mods; int tier; int passes; float turnCos; } cases[] = {
+		{ 0,                       ENDLESS_SEEK_NONE,  0, 1.0000f },
+		{ ENDLESS_MOD_SEEKER,      ENDLESS_SEEK_CURVE, 1, 0.9205f },
+		{ ENDLESS_MOD_TWINSEEK,    ENDLESS_SEEK_TWIN,  2, 0.9205f },
+		{ ENDLESS_MOD_HUNTER,      ENDLESS_SEEK_WIDE,  1, 0.5736f },
+		{ ENDLESS_MOD_TRUEAIM,     ENDLESS_SEEK_TRUE,  1, -1.0000f },
+		{ ENDLESS_MOD_KILLSHOT,    ENDLESS_SEEK_KILL,  2, -1.0000f },
+		{ ENDLESS_MOD_SEEKER_ANY,  ENDLESS_SEEK_KILL,  2, -1.0000f },
+	};
+
+	endlessMode = false;
+	endlessCampaignMods = false;
+	endlessActiveMods = ENDLESS_MOD_KILLSHOT;
+	qa_check(endlessSeekerTier() == ENDLESS_SEEK_NONE && !endlessSeekerActive()
+	         && endlessSeekerPasses() == 0,
+	         "no shot corrects course outside an endless run");
+
+	endlessMode = true;
+	for (unsigned i = 0; i < COUNTOF(cases); ++i)
+	{
+		float turnCos = 0.0f, turnSin = 0.0f;
+		endlessActiveMods = cases[i].mods;
+		endlessSeekerTurn(&turnCos, &turnSin);
+		qa_check(endlessSeekerTier() == cases[i].tier, "each sector runs its strongest correction tier");
+		qa_check(endlessSeekerPasses() == cases[i].passes, "a tier corrects the number of times it declares");
+		qa_check(turnCos == cases[i].turnCos, "a tier bends through the angle it declares");
+		qa_check(endlessSeekerActive() == (cases[i].passes > 0),
+		         "shots arm exactly when the sector has a correction tier");
+	}
+
+	static const Uint64 ladder[] = {
+		ENDLESS_MOD_SEEKER, ENDLESS_MOD_TWINSEEK, ENDLESS_MOD_HUNTER,
+		ENDLESS_MOD_TRUEAIM, ENDLESS_MOD_KILLSHOT,
+	};
+	for (unsigned i = 0; i < COUNTOF(ladder); ++i)
+	{
+		qa_check(endlessModWord(ladder[i])[0] != '\0', "every correction tier lists a monitor row");
+		qa_check((ladder[i] & ENDLESS_HOSTILE_MASK) != 0, "every correction tier counts as a danger");
+		if (i > 0)
+			qa_check(endlessDangerScore(ladder[i]) > endlessDangerScore(ladder[i - 1]),
+			         "the correction ladder gains danger at every rung");
+	}
+
+	endlessActiveMods = savedMods;
+	endlessCampaignMods = savedCampaign;
+	endlessMode = savedMode;
 }
 
 static void qa_test_structural_rng(void)
@@ -5212,7 +5271,7 @@ typedef struct
 	int shockElite, shockChamp, martyrElite, martyrChamp;
 	int champFire, champDmg;
 	unsigned staticDrain;
-	Uint8 regenOff, regenFree, seeker, scrollActive;
+	Uint8 regenOff, regenFree, seeker, seekTier, seekPasses, scrollActive;
 } QaModParity;
 
 static Uint32 qa_float_bits(float v)
@@ -5258,6 +5317,8 @@ static void qa_mod_parity_sample(int zone, Uint64 mods, uint fx, QaModParity *ou
 	out->regenOff = endlessShieldRegenOff() ? 1 : 0;
 	out->regenFree = endlessShieldRegenFree() ? 1 : 0;
 	out->seeker = endlessSeekerActive() ? 1 : 0;
+	out->seekTier = (Uint8)endlessSeekerTier();
+	out->seekPasses = endlessSeekerPasses();
 	out->scrollActive = endlessScrollBoostActive() ? 1 : 0;
 }
 
@@ -7114,6 +7175,7 @@ int qa_run_unit_suite(void)
 	qa_test_knife_fight_blood();
 	qa_test_network_settings();
 	qa_test_network_endless_lobby();
+	qa_test_seeker_tiers();
 	qa_test_endless_coop();
 	qa_test_kill_fire_drives();
 	qa_test_kill_fire_wiring();

@@ -1267,9 +1267,53 @@ int endlessMartyrdomBurstShots(int linknum, int eliteState)
 #define ENDLESS_MARTYR_SHOT_SGR 100
 JE_word endlessMartyrShotSprite(void) { return ENDLESS_MARTYR_SHOT_SGR; }
 
+#define ENDLESS_SEEK_COS_23DEG  0.9205f
+#define ENDLESS_SEEK_SIN_23DEG  0.3907f
+#define ENDLESS_SEEK_COS_55DEG  0.5736f
+#define ENDLESS_SEEK_SIN_55DEG  0.8192f
+#define ENDLESS_SEEK_COS_ANYDEG (-1.0f)
+#define ENDLESS_SEEK_COS_NODEG  1.0f
+
+static const struct { float turnCos, turnSin; JE_byte passes; } endlessSeekerBend[ENDLESS_SEEK_TIERS] = {
+	{ ENDLESS_SEEK_COS_NODEG,  0.0f,                   0 },
+	{ ENDLESS_SEEK_COS_23DEG,  ENDLESS_SEEK_SIN_23DEG, 1 },
+	{ ENDLESS_SEEK_COS_23DEG,  ENDLESS_SEEK_SIN_23DEG, 2 },
+	{ ENDLESS_SEEK_COS_55DEG,  ENDLESS_SEEK_SIN_55DEG, 1 },
+	{ ENDLESS_SEEK_COS_ANYDEG, 0.0f,                   1 },
+	{ ENDLESS_SEEK_COS_ANYDEG, 0.0f,                   2 },
+};
+
+EndlessSeekerTier endlessSeekerTier(void)
+{
+	if (!endlessFxActive())
+		return ENDLESS_SEEK_NONE;
+	if (endlessActiveMods & ENDLESS_MOD_KILLSHOT)
+		return ENDLESS_SEEK_KILL;
+	if (endlessActiveMods & ENDLESS_MOD_TRUEAIM)
+		return ENDLESS_SEEK_TRUE;
+	if (endlessActiveMods & ENDLESS_MOD_HUNTER)
+		return ENDLESS_SEEK_WIDE;
+	if (endlessActiveMods & ENDLESS_MOD_TWINSEEK)
+		return ENDLESS_SEEK_TWIN;
+	if (endlessActiveMods & ENDLESS_MOD_SEEKER)
+		return ENDLESS_SEEK_CURVE;
+	return ENDLESS_SEEK_NONE;
+}
+
 bool endlessSeekerActive(void)
 {
-	return endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_SEEKER);
+	return endlessSeekerTier() != ENDLESS_SEEK_NONE;
+}
+
+JE_byte endlessSeekerPasses(void)
+{
+	return endlessSeekerBend[endlessSeekerTier()].passes;
+}
+
+void endlessSeekerTurn(float *turnCos, float *turnSin)
+{
+	*turnCos = endlessSeekerBend[endlessSeekerTier()].turnCos;
+	*turnSin = endlessSeekerBend[endlessSeekerTier()].turnSin;
 }
 
 // Static combines a raw power drain with a recharge lockout.

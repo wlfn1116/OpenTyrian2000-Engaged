@@ -183,6 +183,10 @@ alongside Elite Pack.
 | Dead Generator | Disables shield recharge and starves the main gun | +3.0 |
 | Martyrdom | Killed enemies fire a radial burst | +1.8 |
 | Seeker Rounds | Enemy shots make one delayed correction | +1.4 |
+| Twin Seekers | Enemy shots make two delayed corrections | +1.8 |
+| Hunter Rounds | Enemy shots make one much wider correction | +2.1 |
+| True Aim | Enemy shots re-aim exactly at the ship once | +2.7 |
+| Kill Shot | Enemy shots re-aim exactly at the ship twice | +3.8 |
 | Static Discharge | Damage drains and stalls the generator | +1.1 |
 | Retaliation | Kills briefly speed up enemy fire | +1.5 |
 | Backfire | Kills briefly jam your guns | +1.2 |
@@ -192,6 +196,9 @@ alongside Elite Pack.
 | Marked | Strengthens the next boss | Varies |
 | Nitro | More player damage; any hit is fatal | Varies |
 | Dud | Disables superbombs | Varies |
+
+The five course-correction threats from Seeker Rounds through Kill Shot are
+mutually exclusive.
 
 #### Boons
 
