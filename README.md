@@ -4,14 +4,13 @@
 
 OpenTyrian2000 Engaged is a fork of
 [OpenTyrian2000](https://github.com/KScl/opentyrian2000), an open-source port of
-the DOS game Tyrian 2000.
+the DOS game Tyrian 2000. 
 
 This fork adds:
 
 - a wider playfield and smooth high-refresh rendering;
 - Endless mode, built from the original levels;
-- two-player online Campaign, Arcade, Endless, SuperTyrian, Super Arcade, and
-  Destruct;
+- two-player online play across every mode (yes, even Destruct);
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows;
