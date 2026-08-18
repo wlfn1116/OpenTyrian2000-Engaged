@@ -10,8 +10,8 @@ This fork adds:
 
 - a wider playfield and smooth high-refresh rendering;
 - Endless mode, built from the original levels;
-- two-player online Campaign, Arcade, Endless, SuperTyrian, Super Arcade, and
-  Destruct;
+- two-player online across every mode (Campaign, Arcade, Endless, SuperTyrian,
+  Super Arcade, and even Destruct);
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows;
