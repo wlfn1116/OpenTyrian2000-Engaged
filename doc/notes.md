@@ -837,7 +837,9 @@ changed the result on about half of the reachable combinations.
 Damage is spent through `enemy_hp_divisor100` in `ENEMY_DAMAGE_ACCUM_SCALE`
 units, banked in `damageAccum`. Without the overflow the divisor is a whole
 multiple of 100 and the payouts are identical to the whole-number divisor this
-replaced; the accumulator simply holds 100 times the value it used to.
+replaced, with the accumulator holding 100 times the value it used to.
+`ENDLESS_HP_MULT_SCALE` is the same unit on the Endless side of the boundary and
+has to keep the same value; `qa_hp_scaling_matrix` pins the pair.
 
 #### Endless enemy tiers
 
@@ -1448,7 +1450,7 @@ Recent versions:
 | 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
 | 68 | Rollback in-game menu at the press frame; `PACKET_GAME_MENU` with an input image releases it, not `PACKET_WAITING` |
 | 69 | The outpost player block carries the two extra-perk counts, widening it by eight bytes |
-| 70 | Endless HP ceilings raised (elite 6x, boss 32x), both tier multipliers and the ram-damage chain spent fractionally, and the ordinary curve continued past the 254 armor byte as a hundredths damage divisor |
+| 70 | Endless depth scaling: raised HP ceilings, fractional tier multipliers, an ordinary-HP overflow divisor past the 254 armor byte, and the zone-100 landmarks moved to 99 |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name

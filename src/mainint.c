@@ -11217,13 +11217,9 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					int playerHit = armorleft;
 					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
 						playerHit = playerHit * 3 / 2;
-					// Three Endless percentages ride the ship's share of a ram, and they are spent
-					// as one rounded pass rather than three divides: the depth ramp (the contact
-					// damage the PLAYER receives, +150% by zone 99 and up to +500%), the tier
-					// premium (elites +25%, champions +50%, flattened by Clean Signals), then
-					// Reinforced Prow's cut. Chaining the divides truncated each one in turn and
-					// lost up to two points of a ram. Only playerHit is scaled; damage_to_enemy
-					// above never sees the ramp, so depth alone grinds no enemy down faster.
+					// The depth ramp, the tier premium and Reinforced Prow's cut, spent as one
+					// rounded pass so no divide truncates ahead of the next. Only playerHit is
+					// scaled: depth alone grinds no enemy down faster.
 					if (endlessFxActive() && playerHit > 0)
 					{
 						const Sint64 pct = (Sint64)endlessContactDamagePercent()

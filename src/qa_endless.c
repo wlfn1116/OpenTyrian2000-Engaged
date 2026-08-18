@@ -1734,10 +1734,10 @@ static int qa_boss100(int zone)
 	return v;
 }
 
-/* The ceilings, where each is reached, and the promise the knee exists for: every zone below it
- * keeps the curve it had when the ceilings were 600% / 4x / 16x, so raising them cannot disturb
- * a run that never gets that deep. The ordinary curve also has to survive the 254 armor byte,
- * which is what the overflow divisor is for. */
+/* The ceilings, where each is reached, and the promise the first ramp segment exists for: every
+ * zone below it keeps the curve it had when the ceilings were 600% / 4x / 16x, so raising them
+ * cannot disturb a run that never gets that deep. The ordinary curve also has to survive the 254
+ * armor byte, which is what the overflow divisor is for. */
 static void qa_hp_scaling_matrix(void)
 {
 	char label[192];
@@ -1752,7 +1752,7 @@ static void qa_hp_scaling_matrix(void)
 
 	int armorPct, overflow100, eliteMult, bossMult;
 
-	/* Pre-knee zones answer the formulas that were in place before the ceilings moved. */
+	/* The opening segment answers the formulas that were in place before the ceilings moved. */
 	bool sameEarly = true;
 	for (int zone = 1; zone <= 65 && sameEarly; ++zone)
 	{
@@ -1766,7 +1766,7 @@ static void qa_hp_scaling_matrix(void)
 		if (eff <= 64 && bossMult != 1 + eff / 8)
 			sameEarly = false;
 	}
-	qa_check(sameEarly, "zones below each knee keep the curve they had under the old ceilings");
+	qa_check(sameEarly, "each ramp's opening segment keeps the curve it had under the old ceilings");
 
 	/* Neither ramp may dip or stall backwards on its way up. */
 	bool monotonic = true;
@@ -1781,12 +1781,12 @@ static void qa_hp_scaling_matrix(void)
 		lastBoss = bossMult;
 		lastTotal = total;
 	}
-	qa_check(monotonic, "every HP curve climbs without a step backwards at its knee");
+	qa_check(monotonic, "every HP curve climbs without a step backwards at an anchor");
 
 	/* The ceilings themselves, and the zone each one lands on. */
 	static const struct { int zone, armorPct, overflow100, eliteMult, bossMult; } rungs[] = {
 		{   1,  100, 100, 2,  1 },
-		{  53,  360, 100, 3,  9 },   /* the boss ramp's first anchor */
+		{  53,  360, 100, 3,  9 },   /* the boss ramp's middle anchor */
 		{  65,  420, 100, 4, 12 },   /* the elite ramp's */
 		{  82,  504, 100, 5, 16 },
 		{  98,  584, 100, 5, 19 },   /* one zone short of the elite ceiling */
@@ -1878,6 +1878,11 @@ static void qa_hp_scaling_matrix(void)
 	qa_check(endlessEnemyHpMult100(false, boss100, 2) == elite100
 	         && endlessEnemyHpMult100(true, boss100, 1) == boss100,
 	         "the combined divisor carries each hull's fraction rather than its floor");
+
+	/* Endless names the multiplier's unit and tyrian2 names the accumulator's. They sit either side
+	 * of a module boundary and nothing in the build stops them drifting, so pin them here. */
+	qa_check(ENDLESS_HP_MULT_SCALE == ENEMY_DAMAGE_ACCUM_SCALE,
+	         "the HP multiplier and the damage accumulator are counted in the same unit");
 
 	/* The overflow is spent through the damage divisor, which the armor byte cannot cap. */
 	memset(&enemy[0], 0, sizeof(enemy[0]));

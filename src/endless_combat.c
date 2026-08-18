@@ -201,10 +201,8 @@ static int endlessBossRamp100(int effDepth)
 	return endlessRampAt100(endlessBossAnchors, COUNTOF(endlessBossAnchors), effDepth);
 }
 
-// Boss HP divisor in hundredths. This is what damage is spent through, so a boss gains health a
-// fraction of a multiplier at a time rather than a whole one every few zones. The debug override is
-// pinned in whole x and scaled here. Every additive modifier keeps the whole-x crossings of
-// endlessBossHpMult; FRAGILE halves the true figure rather than the floored one.
+// Boss HP divisor in hundredths, which is what damage is spent through. The debug override is
+// pinned in whole x and scaled here. See doc/notes.md, "Endless HP scaling".
 int endlessBossHpMult100(void)
 {
 	if (endlessScalingOverride[ESO_BOSSHP].active)
@@ -553,8 +551,7 @@ static int endlessEliteRamp100(int effDepth)
 	return endlessRampAt100(endlessEliteAnchors, COUNTOF(endlessEliteAnchors), effDepth);
 }
 
-// Special-tier HP divisor in hundredths, on the same footing as the boss one: this is what damage
-// is spent through, and the debug override is pinned in whole x and scaled here.
+// Special-tier HP divisor in hundredths, on the same footing as the boss one.
 int endlessEliteHpMult100(void)
 {
 	if (endlessScalingOverride[ESO_ELITEHP].active)

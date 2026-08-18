@@ -186,8 +186,8 @@ static Uint64 endlessMakeBoonCombo(void)
 
 // Deep-run danger rises in two stages; Gauntlet and Ambush remain capped.
 #define ENDLESS_DANGER_RAMP_START 40   // zone the tilt begins (no escalation at/below)
-#define ENDLESS_DANGER_RAMP_MID   99   // zone the tilt reaches its "~2x" tuning (scale == ENDLESS_DANGER_RAMP_MID_SCALE)
-#define ENDLESS_DANGER_RAMP_FULL  250  // zone the tilt caps at its "~6x" tuning (scale == ENDLESS_DANGER_RAMP_FULL_SCALE)
+#define ENDLESS_DANGER_RAMP_MID   99   // zone the tilt reaches its "~2x" tuning (MID_SCALE)
+#define ENDLESS_DANGER_RAMP_FULL  250  // zone the tilt caps at its "~6x" tuning (FULL_SCALE)
 #define ENDLESS_DANGER_RAMP_MID_SCALE  100  // preserves the existing ramp through the midpoint
 #define ENDLESS_DANGER_RAMP_FULL_SCALE 500  // cap for uncapped deep-run adjustments
 #define ENDLESS_DANGER_GAUNTLET_CAP_PCT 45  // leaves a non-Gauntlet route possible
