@@ -112,20 +112,23 @@ an Atomic RailGun at power 1.
 ### Depth and enemy tiers
 
 On Normal, most ordinary scaling approaches its cap between zones 55 and 100. A
-rising tide begins near zone 25 and adds shots, then damage from zone 30. The
-share of elites and champions climbs for far longer: one enemy in fifty at the
-start, one in four around zone 40, three in five by zone 100, and four in five
-from zone 200 on. Champions are the scarcer tier within that share, one special
-in ten at the start, under a third at zone 100, and seven in ten by zone 200. A
-harder difficulty reaches every mark sooner in proportion to its ramp: Hard
-takes the zone-100 mix by zone 83 and the ceiling by zone 167, Suicide by zones
-63 and 125.
+rising tide begins near zone 25 and adds shots, then damage from zone 30. Enemy
+health keeps climbing past that: ordinary enemies pass six times their stock
+health around zone 100 and go on gaining until they reach twelve times it at
+zone 221. Elites and bosses reach their 6x and 32x ceilings at zone 99, so The
+End is always fought at the full figure. The share of elites and champions
+climbs for far longer: one enemy in fifty at the start, one in four around zone
+40, three in five by zone 99, and four in five from zone 199 on. Champions are
+the scarcer tier within that share, one special in ten at the start, under a
+third at zone 99, and seven in ten by zone 199. A harder difficulty reaches
+every mark sooner in proportion to its ramp: Hard takes the zone-99 mix by zone
+83 and the ceiling by zone 166, Suicide by zones 62 and 125.
 
 | Tier | Health | Offense | Bounty |
 | --- | --- | --- | ---: |
 | Normal | Depth-scaled | Normal | None |
-| Elite | 2x to 4x | +25% contact damage | $150 at zone 1, +$40 per zone, max $2,500 |
-| Champion | 2x to 4x | Faster fire, +50% shot and contact damage | $600 at zone 1, +$170 per zone, max $11,000 |
+| Elite | 2x to 6x | +25% contact damage | $150 at zone 1, +$40 per zone, max $2,500 |
+| Champion | 2x to 6x | Faster fire, +50% shot and contact damage | $600 at zone 1, +$170 per zone, max $11,000 |
 
 Piercing shots follow their own damage rule. The Mega Cannon, Sonic Impulse, and
 Needle Laser fire them at every power level, and Dragon Frost and Dragon Flame

@@ -58,6 +58,10 @@ enum
 #define SUPERPIXELS_CLASSIC      101  // the original DOS spark cap; the "Extra Sparks" toggle (extraSparks, config.c) picks between the two
 #define SUPERPIXEL_SPAWN_Z       15   // shade and lifetime a spark starts with; JE_drawSP counts it down to 0
 
+/* Hundredths: the unit JE_SingleEnemyType.damageAccum and enemy_hp_divisor100 are counted in, so a
+ * fractional HP multiplier can be spent exactly. */
+#define ENEMY_DAMAGE_ACCUM_SCALE 100
+
 struct JE_SingleEnemyType
 {
 	JE_byte     fillbyte;
@@ -67,7 +71,9 @@ struct JE_SingleEnemyType
 	JE_shortint excc, eycc; /* FIXED ACCELERATION WAITTIME */
 	JE_shortint exccw, eyccw;
 	JE_byte     armorleft;
-	int         damageAccum; /* expert-mode boss HP: accumulates damage, expertBossHpMult pts = 1 armor */
+	/* Damage banked against a scaled hull, in ENEMY_DAMAGE_ACCUM_SCALE units per armor point.
+	 * enemy_hp_divisor100 of them buy one point; see enemy_spend_damage. */
+	int         damageAccum;
 	JE_byte     healthbar_max;  /* armor this slot started with; its HP bar divides by this */
 	JE_boolean  healthbar_seen; /* set once this enemy has taken player damage (gates the enemy HP bar) */
 	JE_byte     eshotwait[3], eshotmultipos[3]; /* [1..3] */

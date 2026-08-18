@@ -760,14 +760,61 @@ put it, so only the ring's placement moves. Campaign firing is unchanged.
 Spawn position feeds collision, so this is a deterministic rule and owns the
 `NET_VERSION` 40 bump.
 
+#### Endless HP scaling
+
+Four levers carry enemy health, all clocked by `endlessEffectiveDepth`, which is
+run depth times the difficulty ramp times 1.25 and so runs at 1.25 a zone on
+Normal. Zones below quote Normal.
+
+| Lever | Curve | Ceiling | Reached at |
+| --- | --- | --- | --- |
+| Ordinary spawn armor | `100 + eff x 4` % | 600% | zone 101 |
+| Ordinary overflow | the same slope, continued | 1200% total | zone 221 |
+| Elite and champion | `2 + eff/40`, then `+1x per 21` past depth 80 | 6x | zone 99 |
+| Boss | `1 + eff/8`, then `+2x per 5` past depth 64 | 32x | zone 99 |
+
+The elite and boss ramps steepen at a knee rather than taking a single steeper
+slope, so every zone below the knee keeps the curve it had when the ceilings
+were 4x and 16x. Both late rates are set to land the ceiling on zone 99, the
+zone before a GRAND milestone, so The End is always fought at the full figure.
+Every other landmark that used to sit on zone 100 was moved to 99 for the same
+reason: `ENDLESS_CONTACT_ANCHOR`, `ENDLESS_TIDE_SHOT_ANCHOR`,
+`ENDLESS_DANGER_RAMP_MID`, and `ENDLESS_SPECIAL_PIVOT_DEPTH`, whose move also
+brings the two tier-share ceilings from zone 200 down to 199. Only the
+spawn-armor handoff at zone 101 stays where it is: it is where `armorleft` runs
+out of room, not a difficulty ceiling, and the ordinary curve climbs through it
+without a step.
+Champions carry the elite multiplier; the tier changes bounty, pierce lock, ram
+damage and shockwave radius, not health. An elite boss takes
+`bossHpMult x 2` bounded by `ENDLESS_HP_MULT_MAX`, which is 64 so the premium
+survives at the 32x boss ceiling.
+
+`armorleft` is a byte and `JE_makeEnemy` clips it at 254, so the ordinary curve
+can only be spent as spawn armor up to `ENDLESS_HP_MAX`. Past that,
+`endlessArmorOverflow100` carries the remainder as a multiplier on the damage
+divisor, which has no such limit. The two together are what
+`endlessArmorPercentTotal` reports, and that is the figure the debug panel and
+the `ESO_ARMOR` override work in: the override drives the spawn scale up to 600
+and the overflow beyond it.
+
+`endlessBossRamp100` and `endlessEliteRamp100` are the single authority for their
+curves. The stepped multiplier is the hundredths value divided by 100, which is
+exact, so a stepped and a continuous reading cannot drift apart. Modifiers apply
+outside the ramp because FRAGILE halves the modified total.
+
+Damage is spent through `enemy_hp_divisor100` in `ENEMY_DAMAGE_ACCUM_SCALE`
+units, banked in `damageAccum`. Without the overflow the divisor is a whole
+multiple of 100 and the payouts are identical to the whole-number divisor this
+replaced; the accumulator simply holds 100 times the value it used to.
+
 #### Endless enemy tiers
 
 Two curves decide which tier a roll lands on, both piecewise linear in effective
-depth and both pivoting at `ENDLESS_SPECIAL_PIVOT_DEPTH`, which is zone 100 on
+depth and both pivoting at `ENDLESS_SPECIAL_PIVOT_DEPTH`, which is zone 99 on
 Normal. Up to the pivot the special-enemy share spreads 58 points and the
 champion share of those specials spreads 20, reaching 60% and 30% there. Past it
 the share climbs 0.16% a depth and the champion share 0.32%, so both meet their
-ceilings of 80% and 70% at zone 200. The early divisor is the pivot constant
+ceilings of 80% and 70% at zone 199. The early divisor is the pivot constant
 itself, so both anchors stay exact if the pivot moves. Champions are the rarer
 of the two tiers until zone 153 on Normal, where their share passes half, and
 their bounty carries a premium for it.
@@ -1369,6 +1416,7 @@ Recent versions:
 | 67 | A rollback session no longer exchanges `PACKET_GAME_MENU` when the in-game menu opens |
 | 68 | Rollback in-game menu at the press frame; `PACKET_GAME_MENU` with an input image releases it, not `PACKET_WAITING` |
 | 69 | The outpost player block carries the two extra-perk counts, widening it by eight bytes |
+| 70 | Endless HP ceilings raised (elite 6x, boss 32x) and the ordinary curve continued past the 254 armor byte as a hundredths damage divisor |
 
 Online, the three perks are ordinary simulation: the stacks ride the outpost
 player block like every other perk, the ram site and the two damage sites name

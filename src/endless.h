@@ -201,8 +201,8 @@ enum {
 #define ENDLESS_OVERDRIVE_MAX_STACKS 200
 #define ENDLESS_OVERDRIVE_DMG_MAX    150
 
-// Global effective-HP multiplier ceiling.
-#define ENDLESS_HP_MULT_MAX 24
+// Global effective-HP multiplier ceiling, wide enough for an elite boss at the 32x boss ceiling.
+#define ENDLESS_HP_MULT_MAX 64
 
 // Authored level identity retained after levelName becomes "ZONE n".
 const char *endlessBaseLevelName(void);
@@ -649,6 +649,7 @@ JE_word endlessResolvePowerupDrop(JE_word eDatI);
 
 // Depth and modifier scaling. Boss HP uses a divisor because armor is byte-sized.
 int endlessArmorPercent(void);      // ordinary-enemy HP scale (100 = unchanged); 254 cap applies
+int endlessArmorOverflow100(void);  // that curve past the spawn ceiling, hundredths, as a divisor
 int endlessBossHpMult(void);        // boss HP divisor (1 = unchanged); N = N times boss HP
 int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchanged; lower = fires faster)
 int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
@@ -662,7 +663,7 @@ typedef struct {
 	int  effDepth;      // endlessEffectiveDepth(): run depth x ramp% x 1.25, the levers' own clock
 	int  diffZone;      // endlessDifficultyZone(): the zone the player-facing thresholds see
 	int  rampPercent;   // the difficulty tilt itself: 50 (Wimp) .. 160 (Insanity and beyond)
-	int  armorPct;      // ordinary-enemy HP, % of stock
+	int  armorPct;      // ordinary-enemy HP, % of stock, spawn armor and overflow together
 	int  bossMult;      // boss HP multiplier
 	int  fireDelayPct;  // enemy shot cooldown, % of stock (LOWER = faster fire)
 	int  shotSpeedPct;  // enemy projectile speed, % of stock
@@ -684,7 +685,7 @@ void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScalin
 
 // An active override bypasses both depth and modifiers for one lever.
 enum {
-	ESO_ARMOR,       // endlessArmorPercent
+	ESO_ARMOR,       // endlessArmorPercent and endlessArmorOverflow100 together
 	ESO_BOSSHP,      // endlessBossHpMult
 	ESO_FIREDELAY,   // endlessFireDelayPercent
 	ESO_SHOTSPEED,   // endlessShotSpeedPercent

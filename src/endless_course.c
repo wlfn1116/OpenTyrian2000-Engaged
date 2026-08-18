@@ -186,7 +186,7 @@ static Uint64 endlessMakeBoonCombo(void)
 
 // Deep-run danger rises in two stages; Gauntlet and Ambush remain capped.
 #define ENDLESS_DANGER_RAMP_START 40   // zone the tilt begins (no escalation at/below)
-#define ENDLESS_DANGER_RAMP_MID   100  // zone the tilt reaches its "~2x" tuning (scale == ENDLESS_DANGER_RAMP_MID_SCALE)
+#define ENDLESS_DANGER_RAMP_MID   99   // zone the tilt reaches its "~2x" tuning (scale == ENDLESS_DANGER_RAMP_MID_SCALE)
 #define ENDLESS_DANGER_RAMP_FULL  250  // zone the tilt caps at its "~6x" tuning (scale == ENDLESS_DANGER_RAMP_FULL_SCALE)
 #define ENDLESS_DANGER_RAMP_MID_SCALE  100  // preserves the existing ramp through the midpoint
 #define ENDLESS_DANGER_RAMP_FULL_SCALE 500  // cap for uncapped deep-run adjustments
@@ -1199,7 +1199,7 @@ void endlessGenerateCourses(void)
 	int idx[COUNTOF(endlessHostileThemes)];
 	endlessShuffleThemeOrder(idx);
 
-	const int dangerRamp = endlessDangerRamp();  // 0 at zone 40, 100 at zone 100, 500 at zone 250
+	const int dangerRamp = endlessDangerRamp();  // 0 at zone 40, 100 at zone 99, 500 at zone 250
 
 	endlessDealHostileThemes(idx);
 	endlessWidenHostileCombos(dangerRamp);

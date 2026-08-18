@@ -45,8 +45,11 @@ extern boss_bar_t boss_bar[2];
 bool enemy_has_boss_bar(JE_byte linknum);
 // Light this group's boss bar for the duration of the hit flash; a group without one is untouched.
 void boss_bar_note_hit(JE_byte linknum);
-// The divisor this hull spends damage through: Nx boss HP and the endless tier, 1 for a plain enemy.
+// The tier multiplier this hull carries: Nx boss HP and the endless tier, 1 for a plain enemy.
 int enemy_hp_multiplier(unsigned int slot);
+// The divisor its damage is actually spent through, in ENEMY_DAMAGE_ACCUM_SCALE units: the tier
+// multiplier times the endless ordinary-HP overflow. 100 means it takes damage point for point.
+int enemy_hp_divisor100(unsigned int slot);
 // Armor points `damage` buys against it, banking the remainder in the hull's accumulator.
 int enemy_spend_damage(unsigned int slot, int damage);
 

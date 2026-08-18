@@ -1700,6 +1700,187 @@ static void qa_pierce_damage_matrix(void)
 	difficultyLevel = savedDifficulty;
 }
 
+/* ---- 6d. the depth curves and their landmarks ---------------------------------------- */
+
+/* One zone's levers, read on Normal with no modifiers standing. */
+static void qa_hp_zone(int zone, int *armorPct, int *overflow100, int *eliteMult, int *bossMult)
+{
+	endlessRunDepth = zone - 1;
+	difficultyLevel = DIFFICULTY_NORMAL;
+	endlessActiveMods = 0;
+
+	*armorPct    = endlessArmorPercent();
+	*overflow100 = endlessArmorOverflow100();
+	*eliteMult   = endlessEliteHpMult();
+	*bossMult    = endlessBossHpMult();
+}
+
+/* The ceilings, where each is reached, and the promise the knee exists for: every zone below it
+ * keeps the curve it had when the ceilings were 600% / 4x / 16x, so raising them cannot disturb
+ * a run that never gets that deep. The ordinary curve also has to survive the 254 armor byte,
+ * which is what the overflow divisor is for. */
+static void qa_hp_scaling_matrix(void)
+{
+	char label[192];
+	const JE_boolean savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const int savedDepth = endlessRunDepth;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	const Uint64 savedActive = endlessActiveMods;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+
+	int armorPct, overflow100, eliteMult, bossMult;
+
+	/* Pre-knee zones answer the formulas that were in place before the ceilings moved. */
+	bool sameEarly = true;
+	for (int zone = 1; zone <= 65 && sameEarly; ++zone)
+	{
+		const int eff = (zone - 1) * 125 / 100;
+		qa_hp_zone(zone, &armorPct, &overflow100, &eliteMult, &bossMult);
+
+		if (armorPct != ((100 + eff * 4 > 600) ? 600 : 100 + eff * 4) || overflow100 != 100)
+			sameEarly = false;
+		if (eliteMult != 2 + eff / 40)
+			sameEarly = false;
+		if (eff <= 64 && bossMult != 1 + eff / 8)
+			sameEarly = false;
+	}
+	qa_check(sameEarly, "zones below each knee keep the curve they had under the old ceilings");
+
+	/* Neither ramp may dip or stall backwards on its way up. */
+	bool monotonic = true;
+	int lastElite = 0, lastBoss = 0, lastTotal = 0;
+	for (int zone = 1; zone <= 400 && monotonic; ++zone)
+	{
+		qa_hp_zone(zone, &armorPct, &overflow100, &eliteMult, &bossMult);
+		const int total = armorPct * overflow100 / 100;
+		if (eliteMult < lastElite || bossMult < lastBoss || total < lastTotal)
+			monotonic = false;
+		lastElite = eliteMult;
+		lastBoss = bossMult;
+		lastTotal = total;
+	}
+	qa_check(monotonic, "every HP curve climbs without a step backwards at its knee");
+
+	/* The ceilings themselves, and the zone each one lands on. */
+	static const struct { int zone, armorPct, overflow100, eliteMult, bossMult; } rungs[] = {
+		{   1,  100, 100, 2,  1 },
+		{  53,  360, 100, 3,  9 },   /* the boss knee */
+		{  65,  420, 100, 4, 15 },   /* the elite knee */
+		{  82,  504, 100, 5, 23 },
+		{  98,  584, 100, 5, 31 },   /* one zone short of both ceilings */
+		{  99,  588, 100, 6, 32 },   /* elite and boss ceilings, the zone before The End */
+		{ 101,  600, 100, 6, 32 },   /* the spawn-armor ceiling */
+		{ 221,  600, 200, 6, 32 },   /* ordinary ceiling: 1200% of stock */
+		{ 400,  600, 200, 6, 32 },
+	};
+	for (unsigned i = 0; i < COUNTOF(rungs); ++i)
+	{
+		qa_hp_zone(rungs[i].zone, &armorPct, &overflow100, &eliteMult, &bossMult);
+		snprintf(label, sizeof(label),
+		         "zone %d scales to %d%% x%d.%02d ordinary, elite x%d, boss x%d",
+		         rungs[i].zone, armorPct, overflow100 / 100, overflow100 % 100,
+		         eliteMult, bossMult);
+		qa_check(armorPct == rungs[i].armorPct && overflow100 == rungs[i].overflow100
+		         && eliteMult == rungs[i].eliteMult && bossMult == rungs[i].bossMult, label);
+	}
+
+	/* The End is a GRAND milestone every 100th zone, and both raised ceilings have to be standing
+	 * by the time one is charted, not a zone or two after it. */
+	int eliteCeiling, bossCeiling;
+	qa_hp_zone(400, &armorPct, &overflow100, &eliteCeiling, &bossCeiling);
+	for (int zone = 100; zone <= 300; zone += 100)
+	{
+		qa_hp_zone(zone, &armorPct, &overflow100, &eliteMult, &bossMult);
+		snprintf(label, sizeof(label),
+		         "zone %d is a GRAND milestone and meets it at elite x%d, boss x%d",
+		         zone, eliteMult, bossMult);
+		qa_check(endlessMilestoneKindOfZone(zone) == 2
+		         && eliteMult == eliteCeiling && bossMult == bossCeiling, label);
+	}
+
+	/* An elite boss keeps its doubled premium at the raised boss ceiling. */
+	snprintf(label, sizeof(label), "an elite boss spends twice a plain boss at the x%d ceiling",
+	         bossCeiling);
+	qa_check(endlessEnemyHpMult(true, bossCeiling, 3) == 2 * bossCeiling, label);
+
+	/* The overflow is spent through the damage divisor, which the armor byte cannot cap. */
+	memset(&enemy[0], 0, sizeof(enemy[0]));
+
+	qa_hp_zone(101, &armorPct, &overflow100, &eliteMult, &bossMult);
+	qa_check(enemy_hp_divisor100(0) == 100 && enemy_spend_damage(0, 7) == 7,
+	         "below the ordinary ceiling a plain hull still takes damage point for point");
+
+	qa_hp_zone(221, &armorPct, &overflow100, &eliteMult, &bossMult);
+	enemy[0].damageAccum = 0;
+	int paid = 0;
+	for (int hit = 0; hit < 100; ++hit)
+		paid += enemy_spend_damage(0, 1);
+	snprintf(label, sizeof(label), "100 damage buys %d armor points at the ordinary ceiling", paid);
+	qa_check(enemy_hp_divisor100(0) == 200 && paid == 50, label);
+
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	endlessRunDepth = savedDepth;
+	difficultyLevel = savedDifficulty;
+	endlessActiveMods = savedActive;
+}
+
+/* Every depth landmark that used to sit on zone 100 now sits on 99, so a GRAND milestone is fought
+ * with all of them already standing rather than one zone short. The HP ceilings are checked above;
+ * these are the rest of the curve family, each read one zone short and then on the mark. */
+static void qa_depth_landmark_matrix(void)
+{
+	char label[192];
+	const JE_boolean savedEndless = endlessMode;
+	const JE_boolean savedMods = endlessCampaignMods;
+	const int savedDepth = endlessRunDepth;
+	const JE_shortint savedDifficulty = difficultyLevel;
+	const Uint64 savedActive = endlessActiveMods;
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	endlessActiveMods = 0;
+	difficultyLevel = DIFFICULTY_NORMAL;
+
+	static const struct { const char *what; int shortOf, onMark; } marks[] = {
+		{ "special-enemy share reaches 60%",  59,  60 },
+		{ "ram damage reaches +150%",        247, 250 },
+		{ "the tide reaches 3 extra shots",    2,   3 },
+	};
+
+	for (unsigned i = 0; i < COUNTOF(marks); ++i)
+	{
+		int got[2];
+		for (int step = 0; step < 2; ++step)
+		{
+			endlessRunDepth = 97 + step;   // zones 98 then 99
+			got[step] = (i == 0) ? endlessNaturalEliteChancePercent()
+			          : (i == 1) ? endlessContactDamagePercent()
+			                     : endlessExtraEnemyShots();
+		}
+		snprintf(label, sizeof(label), "%s on zone 99, not before (%d then %d)",
+		         marks[i].what, got[0], got[1]);
+		qa_check(got[0] == marks[i].shortOf && got[1] == marks[i].onMark, label);
+	}
+
+	/* The share curve's own ceiling moved with its pivot, onto the zone before the next milestone. */
+	endlessRunDepth = 197;
+	const int atShort = endlessNaturalEliteChancePercent();
+	endlessRunDepth = 198;
+	const int atMark = endlessNaturalEliteChancePercent();
+	snprintf(label, sizeof(label), "the special-enemy share tops out at %d%% on zone 199", atMark);
+	qa_check(atShort < atMark && atMark == 80, label);
+
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedMods;
+	endlessRunDepth = savedDepth;
+	difficultyLevel = savedDifficulty;
+	endlessActiveMods = savedActive;
+}
+
 /* ---- 7. who charts the next course -------------------------------------------------- */
 
 /* Exactly one machine charts each zone, and both machines have to reach that answer from the
@@ -2456,6 +2637,8 @@ void qa_test_endless_suite(void)
 	qa_danger_target_matrix();
 	qa_endless_difficulty_pinned();
 	qa_pierce_damage_matrix();
+	qa_hp_scaling_matrix();
+	qa_depth_landmark_matrix();
 	qa_chooser_matrix();
 	qa_wire_matrix();
 	qa_resume_partner_matrix();

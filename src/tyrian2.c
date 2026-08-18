@@ -337,10 +337,10 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 	chain_queue_at(screenX, y, owner, salvo, inDrain ? chainDrainWave : enemyKilled);
 }
 
-// The divisor a hull spends damage through: Nx boss HP (expert mode and/or endless depth) combined
-// with the endless elite/champion tier. 1 means it takes damage point for point. Every damage site
-// asks this one question, or the same hit wears a boss down at a different rate depending on what
-// dealt it.
+// The tier multiplier this hull's damage is divided by: Nx boss HP (expert mode and/or endless
+// depth) combined with the endless elite/champion tier. 1 means it takes damage point for point.
+// This is the whole-x figure the pierce delay is calibrated against; the damage sites divide by
+// enemy_hp_divisor100, which carries the endless ordinary-HP overflow as well.
 int enemy_hp_multiplier(unsigned int slot)
 {
 	const bool has_boss_bar = enemy_has_boss_bar(enemy[slot].linknum);
@@ -355,18 +355,27 @@ int enemy_hp_multiplier(unsigned int slot)
 	                         : (has_boss_bar ? bossHpMult : 1);
 }
 
+// The divisor a hull spends damage through, in hundredths: the tier multiplier above times the
+// endless ordinary-HP overflow, which is the part of the depth curve the 254 armor byte cannot
+// hold. 100 means it takes damage point for point. Every damage site asks this one question, or the
+// same hit wears a boss down at a different rate depending on what dealt it.
+int enemy_hp_divisor100(unsigned int slot)
+{
+	return enemy_hp_multiplier(slot) * endlessArmorOverflow100();
+}
+
 // Armor points `damage` buys against this hull, banking the remainder in its accumulator. The player
 // shot loop runs the divide itself instead of calling this, because Executioner has to be measured
 // across the same one.
 int enemy_spend_damage(unsigned int slot, int damage)
 {
-	const int hpMult = enemy_hp_multiplier(slot);
-	if (hpMult <= 1)
+	const int divisor100 = enemy_hp_divisor100(slot);
+	if (divisor100 <= 100)
 		return damage;
 
-	enemy[slot].damageAccum += damage;
-	const int spent = enemy[slot].damageAccum / hpMult;
-	enemy[slot].damageAccum -= spent * hpMult;
+	enemy[slot].damageAccum += damage * ENEMY_DAMAGE_ACCUM_SCALE;
+	const int spent = enemy[slot].damageAccum / divisor100;
+	enemy[slot].damageAccum -= spent * divisor100;
 	return spent;
 }
 
@@ -1074,7 +1083,8 @@ void qa_test_chain_cascade(void)
 		/* Its accumulator may swallow several pulses per armor point, so give the blast enough of
 		 * them that one point has to land if it lands at all. Each is a fresh kill's wave, since a
 		 * wave lands only once. */
-		const int pulses = enemy_hp_multiplier(0) + 1;
+		const int divisor100 = enemy_hp_divisor100(0);
+		const int pulses = (divisor100 + ENEMY_DAMAGE_ACCUM_SCALE - 1) / ENEMY_DAMAGE_ACCUM_SCALE + 1;
 		for (int t = 0; t < pulses; ++t)
 		{
 			chain_reset_queue();
@@ -5707,6 +5717,7 @@ level_loop:
 
 						const bool has_boss_bar = enemy_has_boss_bar(enemy[b].linknum);
 						const int hpMult = enemy_hp_multiplier(b);
+						const int divisor100 = enemy_hp_divisor100(b);
 
 						// Per-bullet lockout prevents a piercing shot from damaging the same
 						// scaled hull on every overlapping tick.
@@ -5752,15 +5763,16 @@ level_loop:
 						// wrong quantity to subtract there.
 						int perkBonus;
 
-						if (hpMult > 1)
+						if (divisor100 > 100)
 						{
 							// Run the accumulator once, then measure the perks by re-dividing the same
 							// starting state without them. `plain` only reads the pre-hit accumulator; the
 							// bonused pass is the one that commits.
-							const int plain = (enemy[b].damageAccum + damage) / hpMult;
-							enemy[b].damageAccum += damage + perkRaw;
-							damage = enemy[b].damageAccum / hpMult;
-							enemy[b].damageAccum -= damage * hpMult;
+							const int plain = (enemy[b].damageAccum
+							                   + damage * ENEMY_DAMAGE_ACCUM_SCALE) / divisor100;
+							enemy[b].damageAccum += (damage + perkRaw) * ENEMY_DAMAGE_ACCUM_SCALE;
+							damage = enemy[b].damageAccum / divisor100;
+							enemy[b].damageAccum -= damage * divisor100;
 							perkBonus = damage - plain;
 						}
 						else
@@ -10205,7 +10217,7 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 			enemy->scoreitem = true;
 	}
 
-	enemy->damageAccum = 0;  // reset expert-mode boss-HP accumulator on (re)spawn
+	enemy->damageAccum = 0;  // reset the scaled-HP damage accumulator on (re)spawn
 	enemy->chainWave = 0;    // a wave still in the air must not skip the slot's new occupant
 	enemy->healthbar_seen = false;  // no enemy HP bar until this slot takes damage
 	enemy->healthbar_max = 0;       // an invincible spawn has no health value and keeps this 0
