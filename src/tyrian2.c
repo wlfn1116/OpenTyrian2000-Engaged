@@ -441,6 +441,23 @@ static void enemy_death_payout(unsigned int slot, int payee)
 	}
 }
 
+// Contract in tyrian2.h. Avail 2 keeps a wreck out of the shot pool and out of contact, and
+// edamaged keeps it out of the firing loop.
+bool enemy_is_wreck(unsigned int slot)
+{
+	return enemyAvail[slot] == 2 && enemy[slot].edamaged;
+}
+
+// Contract in tyrian2.h.
+Uint8 enemy_body_tint(unsigned int slot)
+{
+	if (enemy_is_wreck(slot))
+		return 0;
+	return (enemy[slot].eliteState >= 2)
+	       ? endlessEliteTint(enemy[slot].eliteState)
+	       : endlessEliteShellTint(enemy[slot].linknum, enemy[slot].armorleft);
+}
+
 // One tile of a hull that is going down: the flag it sets, what it pays out, its death, and its
 // explosion. `staged` asks for the transformation a tile with edlevel -1 owes instead of a death,
 // which the caller decides because it depends on how the killing blow matched the group.
@@ -3527,11 +3544,8 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 					goto enemy_gone;
 
 				// Reapply tier tint after the per-frame reset unless a hit effect owns the filter.
-				// Untiered linked parts borrow their hull's tint.
 				if (enemy[i].filter == 0)
-					enemy[i].filter = (enemy[i].eliteState >= 2)
-					                ? endlessEliteTint(enemy[i].eliteState)
-					                : endlessEliteShellTint(enemy[i].linknum, enemy[i].armorleft);
+					enemy[i].filter = enemy_body_tint(i);
 
 				endlessEliteAuraSparks(i);
 

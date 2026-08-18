@@ -3050,6 +3050,31 @@ static void qa_test_elite_tier_eligibility(void)
 	qa_check(endlessEliteShellTint(0, 255) == 0 && endlessEliteShellTint(3, 255) == 0,
 	         "an unlinked part, and one whose group never rolls, stay untinted");
 
+	// Cover both routes into the tint, and the wreck state that closes each of them.
+	const JE_byte savedAvail = enemyAvail[0];
+	const struct JE_SingleEnemyType savedEnemy = enemy[0];
+
+	enemyAvail[0] = 0;
+	enemy[0].edamaged = false;
+	enemy[0].eliteState = 3;
+	enemy[0].linknum = 64;
+	enemy[0].armorleft = 255;
+	qa_check(enemy_body_tint(0) == ENDLESS_CHAMPION_FILTER,
+	         "a live champion paints in its own bank");
+	enemy[0].eliteState = 1;
+	qa_check(enemy_body_tint(0) == groupTint,
+	         "...and its sealed plating in the one the group lends");
+
+	enemyAvail[0] = 2;
+	enemy[0].edamaged = true;
+	qa_check(enemy_is_wreck(0) && enemy_body_tint(0) == 0,
+	         "a wreck stops borrowing the group's bank");
+	enemy[0].eliteState = 3;
+	qa_check(enemy_body_tint(0) == 0, "...and a champion's wreck drops the bank it wore itself");
+
+	enemy[0] = savedEnemy;
+	enemyAvail[0] = savedAvail;
+
 	// A damage event with no link number reaches every body on the field.
 	memset(eventRec, 0, sizeof(savedEvents));
 	eventRec[0].eventtype = 47;
