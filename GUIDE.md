@@ -32,10 +32,9 @@ The useful settings are under **Setup > Graphics**.
 - **Native** follows the fitted output size. It costs more GPU time than the
   fixed modes, especially on high-resolution displays.
 - **Sub-pixel FX** extends sub-pixel rendering to the ice, water, and lava
-  effects. Turning it off draws the effect, and only the background layers that
-  feed it, at native size, which costs much less on those levels at 3x and
-  above. Ships, enemies, shots, and the layers drawn over the effect stay
-  sub-pixel either way. Console builds default this off.
+  effects. Turning it off renders the feedback and its source layers at native
+  size, reducing the cost at 3x and above. Foreground objects stay sub-pixel.
+  Console builds default this off.
 - The Vita always resolves Sub-pixel to 1x.
 - On Vita this setting is named **Smooth FX**. Turning it off updates the
   smoothie background once per 35 Hz simulation tick while foreground movement
@@ -111,21 +110,21 @@ an Atomic RailGun at power 1.
 
 ### Depth and enemy tiers
 
-On Normal, most ordinary scaling approaches its cap between zones 55 and 100. A
-rising tide begins near zone 25 and adds shots, then damage from zone 30. Enemy
-health keeps climbing past that: ordinary enemies pass six times their stock
-health around zone 100 and go on gaining until they reach twelve times it at
-zone 221. Elites reach their 6x ceiling at zone 99, and bosses pass 20x there
-and go on to 32x at zone 199, so an End is always fought at the full figure for
-its depth. Boss, elite and champion health all rise by a fraction of a
-multiplier every zone rather than in whole jumps, so consecutive zones feel a
-step apart instead of identical for several and then suddenly much tougher. The
-share of elites and champions climbs for far longer: one enemy in fifty at the start, one in four around zone
-40, three in five by zone 99, and four in five from zone 199 on. Champions are
-the scarcer tier within that share, one special in ten at the start, under a
-third at zone 99, and seven in ten by zone 199. A harder difficulty reaches
-every mark sooner in proportion to its ramp: Hard takes the zone-99 mix by zone
-83 and the ceiling by zone 166, Suicide by zones 62 and 125.
+Normal difficulty reaches these landmarks:
+
+| Zone | Change |
+| ---: | --- |
+| 25 | The rising tide begins adding enemy shots |
+| 30 | The tide begins raising enemy damage |
+| 40 | Roughly one enemy in four is elite or champion |
+| 99 | Elites reach 6x health; bosses reach 20x; three enemies in five are special |
+| 199 | Bosses reach 32x health; four enemies in five are special |
+| 221 | Ordinary enemies reach their 12x health ceiling |
+
+Health rises in fractional steps each zone. Champions make up about one tenth
+of special enemies at the start, just under a third at zone 99, and seven tenths
+at zone 199. Higher difficulties reach the same marks sooner: Hard reaches the
+zone-99 mix at zone 83, while Suicide reaches it at zone 62.
 
 | Tier | Health | Offense | Bounty |
 | --- | --- | --- | ---: |
@@ -133,15 +132,13 @@ every mark sooner in proportion to its ramp: Hard takes the zone-99 mix by zone
 | Elite | 2x to 6x | +25% contact damage | $150 at zone 1, +$40 per zone, max $2,500 |
 | Champion | 2x to 6x | Faster fire, +50% shot and contact damage | $600 at zone 1, +$170 per zone, max $11,000 |
 
-Piercing shots follow their own damage rule. The Mega Cannon, Sonic Impulse, and
-Needle Laser fire them at every power level, and Dragon Frost and Dragon Flame
-from level 9 up. A piercing shot is never used up, so it damages every hull it
-crosses and hits again on each tick it stays over a target. It also carries only
-one or two points of damage, and some of these weapons mix in shots that carry
-none at all. Depth raises piercing damage on a curve of its own, and your damage
-perks and drives apply on top of that. Bosses, elites, and champions ignore
-repeat hits from the same shot for a fraction of a tick, which limits how fast
-one shot can wear a single target down.
+Piercing shots pass through every hull they cross and can hit again while they
+overlap a target. They carry little damage per hit, then gain their own depth
+scaling plus your damage perks and drives. Bosses, elites, and champions have a
+short repeat-hit lock against the same shot.
+
+The Mega Cannon, Sonic Impulse, and Needle Laser always fire piercing shots.
+Dragon Frost and Dragon Flame gain them at power 9.
 
 Elites and champions are palette-shifted, and their sparks, shots, explosions,
 and bounty line all carry the same tint. Linked parts share one tier and one
@@ -251,20 +248,21 @@ separate records.
 
 ### Outpost and E-Shop
 
-The ordinary shop restocks at each visit. Guns that ship under one name are
-shown apart in its menus: the front and rear Protron as Front Protron and Rear
-Protron, the two Multi-Cannons as Front Multi-Cannon and Rear Multi-Cannon, and
-the twin-barrel Vulcan Cannon as Twin Vulcan Cannon; the sweeping-fire Vulcan
-Cannon keeps the original name. Data Cubes opens the E-Shop and Ship Specs
-opens the perk list.
+The ordinary shop restocks at each visit. Data Cubes opens the E-Shop and Ship
+Specs opens the perk list.
 
-The ship list can offer the Dragonwing, the wide hull player two flies in the
-linked two-player pair. No campaign shop sells it. Here it flies as a full
-ship with its own front and rear guns, priced and armoured between the
-Gencores and the MicroCorp Stalkers, and the sidekicks that trail your ship sit
-wider apart to clear its wings. Three hulls are renamed after their Super Arcade
-counterparts: the Nort Ship as the Nort Ship Z, the Silver Ship as the TX
-SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
+The shop distinguishes guns that share a shipped name:
+
+- Front Protron and Rear Protron;
+- Front Multi-Cannon and Rear Multi-Cannon;
+- Twin Vulcan Cannon for the twin-barrel version;
+- Vulcan Cannon for the sweeping-fire version.
+
+The Dragonwing appears only in the Endless shop. It flies as a full ship with
+front and rear guns, and trailing sidekicks move outward to clear its wings.
+
+Three hulls use their Super Arcade names: Nort Ship Z, TX SilverCloud, and
+Pretzel Pete Truck.
 
 | Item | Base cost | Effect |
 | --- | ---: | --- |
@@ -281,18 +279,14 @@ SilverCloud, and the PeteZoomer as the Pretzel Pete Truck.
 Repeated purchases can cost more. Kill-fire drive prices use the cash held on
 entry to the outpost.
 
-Extra Perk charges for how many you have already bought. Every purchase raises
-the price of the next one by more than the last did, so the run of multipliers
-is 1.00, 1.20, 1.45, 1.75, 2.10, 2.50 and keeps widening. Perks from the free
-picks are not counted, and neither is how rich you are: a fortune earned in a
-dangerous sector is yours to spend as you like. One outpost sells at most two,
-the second at 2.5x the price your first purchase has just raised it to, and the
-row then reports itself sold out until the next outpost. In co-op the count is
-personal, so a partner who has bought none still pays the opening price.
+Extra Perk uses a visible price ladder. Its first multipliers are 1.00, 1.20,
+1.45, 1.75, 2.10, and 2.50, with larger increases later.
 
-Because the ladder is fixed and visible, you can read the next price off the
-row and decide against it. A perk at $620,000 competes with a Dragonwing, a
-weapon upgrade, Sector Sabotage and Reinforce, and often loses.
+- Free perk picks do not raise the price.
+- Wallet size and run income do not affect it.
+- An outpost sells at most two paid perks.
+- The second costs 2.5x the newly raised price.
+- Each co-op player has their own purchase count.
 
 ### Perks
 
@@ -332,83 +326,68 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
 | Deflector | A shot your shield absorbs flies back as yours; 2x damage at two stacks | 2 |
 
-A few perks work in ways the table cannot show.
+A few perks need more detail than the table can hold.
 
-**Guidance Package** bends shots toward the nearest enemy that can be hurt: the
-main guns from one stack, sidekicks from two, specials from three, and each
-stack corrects more often. A slow or wide gun curls onto its target while a fast
-one barely bends until full stacks. A gun that already homes turns quicker
-instead of gaining a second aim, and a steered shot moves to the next enemy when
-its own dies. Shots that ride the ship, such as the Zica Laser beams, curve
-inside its frame. Score pickups, scenery, invulnerable parts, and superbombs are
-never targets.
+**Guidance Package**
 
-**Twin Pods** adds a second volley beside each sidekick's own, the two leaving a
-few pixels apart and centred on the pod. The twin is a full shot: it draws
-generator power and spends a round of a limited magazine, so a pod on its last
-round fires alone and a pod refused for power fires nothing. Charge sidekicks
-fire the twin at the same charge, and the shop preview shows the pair.
+- Stack 1 steers main guns, stack 2 adds sidekicks, and stack 3 adds specials.
+- Later stacks correct course more often.
+- Guided shots retarget when their enemy dies.
+- Pickups, scenery, invulnerable parts, and superbombs are ignored.
 
-**Reinforced Prow** makes ramming a way to fight. Contact normally costs each
-side 2 per tick; every stack multiplies the enemy's share (2x, 3x, 4x) and cuts
-yours (75%, 50%, 25%), never below one point. An enemy you destroy by ramming
-pays its cash, drops, and bounty exactly as a shot one does, feeds your kill
-streak, and starts a Chain Reaction wave. An open Opening Salvo window lifts
-that ram 2.5x, and Knife Fight adds its bonus to the total, both measured from
-the same contact damage. While you are invulnerable you ram without being rammed
-back, but land one contact hit every ten ticks instead of one every tick.
-Bosses, elites, and champions spend ram damage through the same health
-multiplier your guns face.
+**Twin Pods**
 
-**Knife Fight** measures the gap between your hull and the nearest edge of the
-enemy you hit, counting the nearest tile of a body built from several, so
-hugging one end of a boss is enough. Within 7 px every stack adds 15%, and the
-bonus fades evenly to nothing at 55 px. It applies per enemy hit to shots,
-specials, and rams, and never to Chain Reaction blasts. A raised hit bleeds,
-more heavily the deeper the bonus, so you can read the range without looking
-away from the fight.
+- Each sidekick volley gains a second shot centered on the pod.
+- The extra shot costs generator power and ammunition.
+- A pod with one round left fires only its original shot.
+- Charge sidekicks fire both shots at the same charge.
 
-**Deflector** returns a shot the shield absorbs whole. It flies back along the
-reverse of its path as your own shot, carrying the damage the shield absorbed,
-doubled at two stacks and then scaled like anything else you fire. It takes no
-steering, so a shot fired from ahead goes straight back at the enemy that fired
-it, and it keeps the bullet's look. A deflection made inside an Opening Salvo
-window belongs to that volley. A hit that reaches the hull, a hit taken while
-you are invulnerable, and an empty shield all return nothing, and Bulwark's cut
-comes off before the shield absorbs, lowering what comes back.
+**Reinforced Prow**
 
-**Opening Salvo** charges after two seconds without main-gun fire. Its
-one-second window gives 2.5x damage, removes generator cost, and covers
-everything you fire inside it, sidekicks and the special included. The generator
-gauge turns green when the volley is ready. A special that fires no shot, such
-as a repulsor, a repair, or an invulnerability, gets the 2.5x on its effect
-instead. Ramming inside the window hits for 2.5x too, on top of Reinforced
-Prow's own multiplier. A ram never spends the charge, so the main gun still has
-to fire to open the window.
+- Stacks deal 2x, 3x, and 4x contact damage.
+- Damage taken falls to 75%, 50%, and 25%, with a one-point minimum.
+- Ram kills award normal drops, bounty, streak credit, and Chain Reaction.
+- Opening Salvo and Knife Fight can raise ram damage.
+- Invulnerability allows one unanswered ram hit every ten ticks.
 
-**Kinetic Converter** pays out on every hit that costs shield or hull: 8% per
-stack off whatever is left of the special recharge, 0.25 sidekick rounds per
-stack, and one charge stage per stack on a charge sidekick, with part-rounds
-carried over to later hits. Shield absorption also refunds 20% per stack of the
-generator power that shield charge was worth. Separately, it cuts 22% per stack
-from the shield or armour charge of a twiddle (a special fired by a movement
-code), never below one point, and the twiddle still delivers what its full price
-buys.
+**Knife Fight**
 
-**Chain Reaction** blasts nearby enemies on every kill, and each stack past the
-first deepens the damage and widens the blast. The blast is your damage: Heavy
-Rounds, Glass Cannon, Adrenaline, a drive, and an Opening Salvo volley all
-deepen it, anything cutting your damage cuts it too, and a wave keeps the salvo
-bonus for its whole cascade.
+- Each stack adds 15% damage within 7 px of the enemy hull.
+- The bonus fades to zero at 55 px.
+- It applies to shots, specials, and rams, but not Chain Reaction.
+- Blood effects show when the bonus is active.
 
-Anything the blast destroys blasts in turn, one hop per tick, so a kill in a
-packed formation sends a visible wave through it, while an enemy the blast only
-wounds stops the wave there. A wave lands on each enemy once, and on a hull
-built from several tiles once rather than once per tile, so a wall of tough
-tiles loses one layer per kill. Bosses, elites, and champions take the blast
-through their own health multiplier. Kills the wave makes pay exactly what
-shooting those enemies would have. Anything that fires sets the perk off,
-ramming and scattered special fire included.
+**Deflector**
+
+- A shot fully absorbed by shield returns along its incoming path.
+- Returned damage equals shield loss, doubled at two stacks.
+- Hull hits, empty shields, and invulnerable hits return nothing.
+- Bulwark reduces the absorbed amount before Deflector reads it.
+- A return fired during Opening Salvo keeps the volley bonus.
+
+**Opening Salvo**
+
+- Two seconds without main-gun fire charges a one-second window.
+- The window gives 2.5x damage and removes generator cost.
+- Sidekicks, specials, shotless effects, and rams receive the bonus.
+- The generator gauge turns green when ready.
+- Only main-gun fire spends the charge.
+
+**Kinetic Converter**
+
+- Each stack removes 8% of remaining special recharge after damage.
+- Each stack restores 0.25 sidekick rounds and one charge stage.
+- Shield loss refunds 20% of its generator value per stack.
+- Twiddle shield or armor cost falls by 22% per stack, to a minimum of one.
+
+**Chain Reaction**
+
+- Kills blast nearby enemies. Later stacks add damage and radius.
+- Player damage bonuses and penalties also affect the blast.
+- Anything destroyed creates the next hop one tick later.
+- Each wave hits a linked hull once, regardless of tile count.
+- Tier health multipliers still apply.
+- Wave kills award the same drops, cash, and bounty as direct kills.
 
 Every perk screen also offers **Take the Cash**. Its value rises with depth,
 offer count, and owned perk stacks.
@@ -432,12 +411,12 @@ Cards include modifier rewards and a small level adjustment. Interest starts at
 No route on a multiple of 100 scrolls faster than usual, so Slipstream, Warp
 Speed, Overclock, and Overload never appear on those charts.
 
-Data cubes and secret-level orbs become random safe specials. Both draw as a
-colour-cycling "?" that throws matching sparks, and collect only on the mark
-itself. An armored orb keeps its own look until you shoot it open. A
-random-special event becomes a weapon power-up. Two of the specials in that pool
-are named Pearl Wind; the one that fires a single aimed bolt is shown as Pearl
-Shot, and the flare-style field keeps the original name.
+Data cubes and secret-level orbs become random safe specials. They draw as a
+color-cycling `?` and collect only on the glyph. Armored orbs keep their original
+look until opened.
+
+Random-special events become weapon power-ups. The aimed-bolt version of Pearl
+Wind is labeled Pearl Shot; the flare keeps the Pearl Wind name.
 
 ### Death and saving
 
@@ -453,11 +432,10 @@ writes a run save. Quit Level restores the launch snapshot. Such a slot reads
 and **Save Game** list, where a campaign save names its episode.
 
 Records are split by run mode, difficulty, Base Level rule, and crew size. A
-trailing `C` marks a record set while either ship used a custom weapon in a zone.
-The **Endless** page under **High Scores** opens on the furthest zone each mode
-has reached under any rule; selecting a mode lists the four Base Level rules
-behind it, and selecting a rule breaks that down by difficulty. Records are
-erased on that last list, behind a confirmation.
+trailing `C` marks a run that used a custom weapon.
+
+The **Endless** high-score page drills down from mode, to Base Level rule, to
+difficulty. Records can be erased from the final list after confirmation.
 
 ## Shop
 
@@ -537,23 +515,20 @@ Rollback applies local input immediately and predicts the remote player.
 Delay-Based waits for the configured network delay. The outpost shows ping;
 raising delay can help a high-latency connection at the cost of input lag.
 
-Rollback also moves your own ship at the display rate, the same as offline play,
-so it answers the controls without waiting for the network. Delay-Based draws
-your ship at the simulation position, which trails your input by the configured
-delay. In both modes the other player's ship is placed from the positions
-arriving over the network and smoothed between them, so it can drift and correct
-in a way your own ship never does.
+Rollback moves your ship at the display rate. Delay-Based draws it at the
+delayed simulation position. The remote ship is smoothed between received
+positions in either mode, so it may drift and correct.
 
 Ship movement is part of the simulation, so a rollback session uses the host's
 **Smooth Motion** setting. A host who plays with it off gives the whole session
 fixed-step ship movement.
 
 Online games do not pause. Pressing P or changing window focus leaves the game
-running. Use Esc for the in-game menu: it opens on the frame you pressed it,
-and the other player's screen steps back to that frame if it had run ahead.
-Those frames are flown again afterwards, so a fraction of a second is replayed,
-which can undo a hit the other player had just taken. When both players press
-Esc on the same frame, the host gets the menu.
+running.
+
+Esc opens the in-game menu on its input frame. Rollback may replay a fraction of
+a second to reach that frame, which can undo a very recent hit. If both players
+press Esc on the same frame, the host gets the menu.
 
 Pressing **Start Level** waits for the other player. Esc takes that wait back and
 returns you to the menu, so you can use Options or keep outfitting while they
@@ -572,13 +547,11 @@ weapons, sidekicks, special, score, and HUD.
 **Campaign** gives both players complete ships and separate shops. The host's
 planet wins when the two players choose different routes.
 
-The **2 Player Campaign** page under **High Scores** keeps one record per
-episode: the two wallets added together when the pair finished the episode they
-started, under both names. A run that has carried on into a later episode or
-looped back to the first records nothing, and neither does dying, since a
-campaign death reloads the save from the start of the level. Each record names
-the **Credit** rule it was earned on, because Shared and Double Earnings both
-pay roughly twice what a plain Individual split does.
+The **2 Player Campaign** high-score page keeps one record per episode. It stores
+both names, the combined wallets, and the Credit rule.
+
+The record is written only when the pair finishes its starting episode. Later
+episodes, loops, and deaths do not replace it.
 
 **SuperTyrian** runs two Stalker 21.126 ships under the SuperTyrian rules.
 Standard and Scrollock variants are available.
@@ -664,11 +637,11 @@ the game can offer a save based on the outpost before the interrupted level.
 Hardcore Endless never offers a save.
 
 To resume, host the matching game type and choose **Load Game** after the joiner
-connects. Loading is available only at session start. A resumed Campaign or
-Endless session opens the outpost for both players before its level. An Endless
-save hands each player back their own shop stock, a reroll bought before saving
-included. A save whose confirmation never arrived, after a disconnect for
-example, deals the joining player's stock again instead.
+connects. Loading is available only at session start.
+
+Campaign and Endless resumes open at the outpost. Endless restores each
+player's confirmed stock and rerolls. If the peer confirmation never arrived,
+the joining player's stock is dealt again.
 
 Everyone keeps the player number they saved with. A second player who saves
 after the first one disconnects is still player two on the resume, even when
@@ -743,13 +716,14 @@ Episode Versions rows accept Auto, Ep 1-3, or Ep 4+. Auto follows the data for
 the current episode. Online sessions use the host's choices. A changed row takes
 effect immediately, including in a game already in progress.
 
-Vanilla sets every one of these rows to Auto. Engaged keeps Auto for the three
-gameplay reworks and pins the rest per item, chosen for how each sounds or looks
-rather than by era: the Bubble Gum-Gun keeps its Ep 1-3 sound and the other four
-weapons take their Ep 4+ one, the Solar Shield takes its Ep 4+ icon, and the two
-borrowed ship pictures stay on Ep 1-3. **Firing Sounds** rows play the sound they
-land on as you change them, so the two versions can be compared without starting
-a game.
+Vanilla sets every Episode Versions row to Auto. Engaged uses:
+
+- Ep 1-3 sound for the Bubble Gum-Gun;
+- Ep 4+ sounds for the other four weapons;
+- the Ep 4+ Solar Shield icon;
+- Ep 1-3 shop pictures for the two borrowed ship illustrations.
+
+Changing a **Firing Sounds** row previews the selected sound.
 
 **Episode Versions > Shop Pictures** holds the three items that differ only in
 artwork. The U-Ship and the Nort Ship have no shop illustration of their own, so
@@ -760,19 +734,15 @@ Useful restored-content settings:
 - **Ice Base Shots** enables the dormant dispenser-base attack. Endless rolls it
   from the run seed and always enables it from zone 50.
 - **Unused Sprites** assigns distinct shipped icons to weapons that otherwise
-  share or lack one, and rebuilds the HUD icons of eleven specials that shared
-  one: each keeps its ship body and gains the weapon's own sprite above it.
-  Dragon Lightning takes a spare icon of its own, leaving the bolt it shared to
-  Lightning Zone.
+  share or lack one. It also rebuilds eleven duplicated special icons from each
+  ship body and weapon sprite. Dragon Lightning gets its own spare icon.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.
   The host controls it online.
 - **Guided Aim** makes homing weapons such as the Heavy Guided Bombs steer to
-  where an enemy is drawn. As shipped they steer to its position on the map,
-  which sits to one side of the sprite by the parallax of the enemy's layer, so
-  they can miss what they chase. Off by default in both presets, so Vanilla and
-  Engaged keep the shipped homing. The host controls it online.
+  the drawn enemy instead of a map coordinate displaced by parallax. It is off
+  in both presets. The host controls it online.
 
 The special-weapon HUD light is a charge meter. It drains during use, fills
 during recharge, and flashes when ready.
@@ -834,15 +804,18 @@ On Windows, files sit beside the executable. Linux uses
 | `log/opentyrian_log_<time>.log` | Windows crash report |
 | `log/opentyrian_net_<time>.log` | Online session log |
 
-`opentyrian.cfg` and `opentyrian.sav` are plain text in the same format and can
-be read and edited with any text editor while the game is closed.
-`opentyrian.sav` holds a `section 'save' 'N'` for every slot that has a game in
-it (slots 1-11 are the one-player page, 12-22 the two-player page), a
-`section 'endless' 'N'` beside it when that slot holds an Endless run, and a
-`section 'highscore'` for every board. Every value is a named `item`; a line you
-delete goes back to its default, an unknown line is ignored, and cash outside
-0 to 999,999,999,999 is clamped, so a mistake costs that one value and never the
-file. Deleting a slot's sections empties the slot.
+`opentyrian.cfg` and `opentyrian.sav` are plain text. Edit them only while the
+game is closed.
+
+`opentyrian.sav` contains:
+
+- `section 'save' 'N'` for each occupied slot;
+- `section 'endless' 'N'` for an Endless run;
+- `section 'highscore'` for each board.
+
+Slots 1 through 11 are the one-player page; 12 through 22 are the two-player
+page. Missing values use defaults, unknown keys are ignored, and cash is clamped
+to 0 through 999,999,999,999. Removing a slot's sections empties that slot.
 
 Older builds kept `tyrian.sav`, `endless.sav` and `tyrian.cfg` instead. The first
 launch that finds no `opentyrian.sav` imports all three and leaves them in place.

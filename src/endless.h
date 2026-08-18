@@ -424,11 +424,8 @@ bool endlessSaveLegacyWasRead(void);      // ...and did this session read it thr
 int  endlessPackPlayerBlock(Uint8 *buf, uint p);
 void endlessUnpackPlayerBlock(const Uint8 *buf, uint p);
 
-/* What the Endless debug panel rewrites behind the outpost's back: the run's modifier set and
- * depth, and both ships' perk rows and personal buffs. The panel edits either ship straight into
- * simulation state, so the block is whole-state and the adopter takes all of it; the debug-sync
- * generation and the jump's host-wins rule settle two panels open at once. Rides the debug-sync
- * block and the Endless zone jump; see "Endless debug panel online" in doc/notes.md. */
+/* Whole simulation state edited by the Endless debug panel: depth, modifiers, and both ships'
+ * perks and personal buffs. Host generation wins simultaneous edits. */
 #define ENDLESS_DEBUG_BLOCK_PERKS 32
 #define ENDLESS_DEBUG_BLOCK_SIZE  (8 + 2 + 2 * ENDLESS_DEBUG_BLOCK_PERKS + 2 * 8 + 2 * 4)
 void endlessPackDebugBlock(Uint8 *buf);
@@ -503,17 +500,18 @@ void endlessBetweenLevels(void);
 
 // Outpost actions; prices escalate within one visit.
 void endlessResetShopPrices(void);
-Sint64 endlessRerollPrice(void);    // current reroll cost (for the menu label)
-Sint64 endlessHullPrice(void);      // current hull-upgrade cost (for the menu label)
-bool endlessHullMaxed(void);      // true once the run's armor bonus is capped
-bool endlessTryReroll(void);      // buy a shop reroll; false if unaffordable
-bool endlessTryReinforce(void);   // buy a +armor hull upgrade; false if unaffordable/maxed
+Sint64 endlessRerollPrice(void);
+Sint64 endlessHullPrice(void);
+bool endlessHullMaxed(void);
+bool endlessTryReroll(void);
+bool endlessTryReinforce(void);
 
 // Cash-fraction purchases use the balance recorded on shop entry.
-Sint64 endlessTurbodrivePrice(void);         // Turbodrive cost (66% of entry cash), for the label
-Sint64 endlessOverblastPrice(void);    // Overblast cost (75% of entry cash), for the label
-Sint64 endlessOverdrivePrice(void);   // Overdrive cost (95% of entry cash), for the label
-Sint64 endlessSpecialPrice(void);      // Buy-Special cost (80% of entry cash), for the label
+Sint64 endlessTurbodrivePrice(void);
+Sint64 endlessOverblastPrice(void);
+Sint64 endlessOverdrivePrice(void);
+Sint64 endlessSpecialPrice(void);
+
 // Persisted IDs: append only.
 enum {
 	ENDLESS_BUFF_KIND_NONE = 0,
@@ -522,44 +520,53 @@ enum {
 	ENDLESS_BUFF_KIND_OVERBLAST,
 };
 int  endlessBuffKindBought(void);
-bool endlessBuffOnCooldown(void);    // a kill-fire buy is on recharge (a prior buy locked all three); no buy this visit
-int  endlessBuffCooldownLeft(void);  // sectors until the kill-fire buys unlock again (0 = ready now)
-bool endlessTryBuyTurbodrive(void);        // buy Turbodrive; false if unaffordable / a buff already owned / on recharge
-bool endlessTryBuyOverblast(void);   // buy Overblast; false if unaffordable / a buff already owned / on recharge
-bool endlessTryBuyOverdrive(void);// buy Overdrive; false if unaffordable / a buff already owned / on recharge
-bool endlessTryBuySpecial(void);     // buy a random special weapon; false if unaffordable
+bool endlessBuffOnCooldown(void);
+int  endlessBuffCooldownLeft(void);
+bool endlessTryBuyTurbodrive(void);
+bool endlessTryBuyOverblast(void);
+bool endlessTryBuyOverdrive(void);
+bool endlessTryBuySpecial(void);
 
 // Remaining E-Shop purchases.
 Sint64 endlessBombPrice(void);
 bool endlessBombFull(void);
 bool endlessTryBuyBomb(void);
 Sint64 endlessRevivePrice(void);
-bool endlessReviveArmed(void);       // a revive token is currently held by the shopping player
+bool endlessReviveArmed(void);
 bool endlessTryBuyRevive(void);
-bool endlessConsumeRevive(uint p);   // spend player p's held revive on death; true = survived (caller clears the bullet field); also arms the grace window below
-bool endlessReviveGraceActive(void); // ~3s after a spent revive: every enemy gun is stunned (tyrian2.c enemy-fire + Martyrdom burst)
+
+// A successful revive arms a short enemy-fire grace period. The caller clears
+// the bullet field when endlessConsumeRevive returns true.
+bool endlessConsumeRevive(uint p);
+bool endlessReviveGraceActive(void);
+
 Sint64 endlessExtraPerkPrice(void);
-bool endlessTryBuyExtraPerk(void);   // charges + rolls the offers; the dispatch then opens MENU_PERKS
-bool endlessExtraPerkMaxed(void);    // this outpost has sold its limit; no further pick is offered
+bool endlessTryBuyExtraPerk(void);
+bool endlessExtraPerkMaxed(void);
+
 // Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
 // shared sector, so co-op spends one queue between the two of them.
 #define ENDLESS_CLEANSE_MAX_CHARGES 3
-Sint64 endlessCleansePrice(void);      // the local player's own escalating price
-int  endlessCleanseCharges(void);    // strips queued for the next course select, the pair's, capped
-bool endlessCleanseMaxed(void);      // queue is at ENDLESS_CLEANSE_MAX_CHARGES; no further buy will take
+Sint64 endlessCleansePrice(void);
+int  endlessCleanseCharges(void);
+bool endlessCleanseMaxed(void);
 bool endlessTryBuyCleanse(void);
 Sint64 endlessGamblePrice(void);
 bool endlessTryGamble(void);
-const char *endlessGambleResult(void);  // last gamble outcome text (for the E-Shop help line)
-bool endlessGambleWonPerk(void);        // last gamble handed out a free perk pick (dispatch opens MENU_PERKS)
-void endlessClearGamblePerk(void);      // consume that flag once the perk menu has opened, so later E-Shop buys don't re-open it
-int  endlessShopTaxPercent(void);       // Loan Shark: permanent +% added to every shop price this run (0 = none)
-int  endlessPerkShopCostBp(void);       // Financier perk: what the outpost charges, in basis points (10000 = unchanged); multiplies the depth-scaled percent in JE_getCost
-int  endlessGambleOutcomeCount(void);   // number of distinct gamble outcomes (for the debug "Gamble Outcomes" page)
-const char *endlessGambleOutcomeName(int id);  // display name of gamble outcome `id`
-void endlessForceGambleOutcome(int id); // debug: fire outcome `id`'s effect directly (no fee), for testing
-const char *endlessLastGrantedSpecial(void);  // name of the last special granted this shop visit ("" if none)
-unsigned endlessPendingMods(void);   // kill-fire buff bits bought this visit, not yet applied (for the debug jump)
+const char *endlessGambleResult(void);
+bool endlessGambleWonPerk(void);
+void endlessClearGamblePerk(void);
+int  endlessShopTaxPercent(void);
+
+// Financier's shop multiplier in basis points; 10000 leaves prices unchanged.
+int  endlessPerkShopCostBp(void);
+
+// Debug and menu accessors for the current shop visit.
+int  endlessGambleOutcomeCount(void);
+const char *endlessGambleOutcomeName(int id);
+void endlessForceGambleOutcome(int id);
+const char *endlessLastGrantedSpecial(void);
+unsigned endlessPendingMods(void);
 // Purchased kill-fire modifiers win conflicts.
 Uint64 endlessFoldPurchasedMods(Uint64 sectorMods, Uint64 purchased);
 
@@ -651,58 +658,58 @@ JE_word endlessPowerupDropEnemy(void);
 // Redirect a maxed-port power-up to the other port, then to a gem.
 JE_word endlessResolvePowerupDrop(JE_word eDatI);
 
-// Depth and modifier scaling. Boss HP uses a divisor because armor is byte-sized.
-int endlessArmorPercent(void);      // ordinary-enemy HP scale (100 = unchanged); 254 cap applies
-int endlessArmorOverflow100(void);  // that curve past the spawn ceiling, hundredths, as a divisor
-int endlessBossHpMult100(void);     // boss HP divisor, hundredths (100 = unchanged)
-int endlessBossHpMult(void);        // ...and its whole-x reading, which the pierce delay is set by
-int endlessFireDelayPercent(void);  // enemy shot-cooldown scale (100 = unchanged; lower = fires faster)
-int endlessShotSpeedPercent(void);  // enemy projectile-speed scale (100 = unchanged; higher = faster)
-int endlessShotDamagePercent(void); // enemy shot-damage scale (100 = unchanged; higher = hits harder)
-int endlessContactDamagePercent(void); // scales player damage only
+// Depth and modifier scaling. Percentages use 100 as stock; HP multipliers use
+// hundredths because ordinary armor is byte-sized.
+int endlessArmorPercent(void);
+int endlessArmorOverflow100(void);
+int endlessBossHpMult100(void);
+int endlessBossHpMult(void);
+int endlessFireDelayPercent(void);
+int endlessShotSpeedPercent(void);
+int endlessShotDamagePercent(void);
+int endlessContactDamagePercent(void);
 
-// Debug snapshot of the pure depth/modifier levers.
-
-// The ramp as computed for one (zone, difficulty, mods) triple.
+// The scaling ramp for one (zone, difficulty, mods) tuple.
 typedef struct {
-	int  effDepth;      // endlessEffectiveDepth(): run depth x ramp% x 1.25, the levers' own clock
-	int  diffZone;      // endlessDifficultyZone(): the zone the player-facing thresholds see
-	int  rampPercent;   // the difficulty tilt itself: 50 (Wimp) .. 160 (Insanity and beyond)
-	int  armorPct;      // ordinary-enemy HP, % of stock, spawn armor and overflow together
-	int  bossMult100;   // boss HP multiplier, in ENDLESS_HP_MULT_SCALE units
-	int  fireDelayPct;  // enemy shot cooldown, % of stock (LOWER = faster fire)
-	int  shotSpeedPct;  // enemy projectile speed, % of stock
-	int  shotDmgPct;    // enemy shot damage, % of stock
-	int  tide;          // the rising-tide coefficient
-	int  extraShots;    // extra enemy shots added per firing volley
-	int  contactPct;    // contact/ram damage the PLAYER receives, % of stock
-	int  elitePct;      // natural elite/champion share, % of eligible enemies
-	int  eliteHpMult100; // elite/champion HP multiplier, in ENDLESS_HP_MULT_SCALE units
-	int  playerDmgPct;  // YOUR shot damage, % of stock (sector mods + perks)
-	int  piercePct;     // your piercing damage, % of the weapon-table value, before playerDmgPct
-	int  pierceLock100; // HUNDREDTHS of a sim tick a boss shrugs off repeat piercing hits for, at this zone's boss multiplier
-	long eliteBounty;   // cash per elite kill
-	long champBounty;   // cash per champion kill
+	int  effDepth;       // Internal clock used by the scaling levers.
+	int  diffZone;       // Zone used by player-facing thresholds.
+	int  rampPercent;    // Difficulty tilt: 50 on Wimp through 160 on Insanity.
+	int  armorPct;       // Ordinary enemy HP, including overflow.
+	int  bossMult100;
+	int  fireDelayPct;   // Lower values fire faster.
+	int  shotSpeedPct;
+	int  shotDmgPct;
+	int  tide;
+	int  extraShots;
+	int  contactPct;
+	int  elitePct;
+	int  eliteHpMult100;
+	int  playerDmgPct;
+	int  piercePct;
+	int  pierceLock100;  // Hundredths of a simulation tick.
+	long eliteBounty;
+	long champBounty;
 } EndlessScaling;
 
 // Temporarily swaps the three input globals; not reentrant.
 void endlessScalingSnapshot(int zone, int difficulty, Uint64 mods, EndlessScaling *out);
 
-// An active override bypasses both depth and modifiers for one lever.
+// An active override bypasses depth and modifiers for one lever. Armor uses one
+// override for both its base and overflow values.
 enum {
-	ESO_ARMOR,       // endlessArmorPercent and endlessArmorOverflow100 together
-	ESO_BOSSHP,      // endlessBossHpMult100, pinned in whole x
-	ESO_FIREDELAY,   // endlessFireDelayPercent
-	ESO_SHOTSPEED,   // endlessShotSpeedPercent
-	ESO_SHOTDMG,     // endlessShotDamagePercent
-	ESO_CONTACT,     // endlessContactDamagePercent
-	ESO_TIDE,        // endlessTideLevel
-	ESO_EXTRASHOTS,  // endlessExtraEnemyShots (bypasses FLAK SCREEN too)
-	ESO_ELITECHANCE, // endlessNaturalEliteChancePercent (Elite Pack / Apex / NOELITE still win)
-	ESO_ELITEHP,     // endlessEliteHpMult100, pinned in whole x
-	ESO_PLAYERDMG,   // endlessPlayerDamagePercent
-	ESO_PIERCEDMG,   // endlessPiercePotencyPercent
-	ESO_PIERCELOCK,  // endlessPierceLock100 (pinned = a fixed figure at every tier and multiplier)
+	ESO_ARMOR,
+	ESO_BOSSHP,
+	ESO_FIREDELAY,
+	ESO_SHOTSPEED,
+	ESO_SHOTDMG,
+	ESO_CONTACT,
+	ESO_TIDE,
+	ESO_EXTRASHOTS,
+	ESO_ELITECHANCE,
+	ESO_ELITEHP,
+	ESO_PLAYERDMG,
+	ESO_PIERCEDMG,
+	ESO_PIERCELOCK,
 	ESO_COUNT
 };
 
@@ -713,77 +720,93 @@ typedef struct {
 
 extern EndlessScalingOverride endlessScalingOverride[ESO_COUNT];
 
-const char *endlessScalingOverrideName(int id);   // short row label
-const char *endlessScalingOverrideKey(int id);    // config-file key; ON DISK, never rename one
-int         endlessScalingOverrideStock(int id);  // what the lever would read right now UNoverridden
-int         endlessScalingOverrideMin(int id);    // sane editing bounds for the debug row
+const char *endlessScalingOverrideName(int id);
+
+// Config keys are persisted and must not be renamed.
+const char *endlessScalingOverrideKey(int id);
+int         endlessScalingOverrideStock(int id);
+int         endlessScalingOverrideMin(int id);
 int         endlessScalingOverrideMax(int id);
-void        endlessScalingOverridesClear(void);   // drop every pin
-int         endlessScalingOverrideCount(void);    // how many are currently pinned (0 = all stock)
+void        endlessScalingOverridesClear(void);
+int         endlessScalingOverrideCount(void);
 
 // Rising tide adds projectile count after the ordinary intensity ramps flatten.
-int endlessTideLevel(void);        // the single tide knob (0 early, then +1 per effective depth)
-int endlessExtraEnemyShots(void);  // extra enemy shots to add to each firing volley at this tide
-int endlessFanPhaseNow(void);      // tide fan lean; flips every second of zone time
+int endlessTideLevel(void);
+int endlessExtraEnemyShots(void);
+int endlessFanPhaseNow(void);
 
-// Player-side + time-based modifier hooks (see endless.c).
-int  endlessPlayerDamagePercent(void);  // OVERCHARGE / Overdrive stacks + Heavy Rounds perk: your shot-damage scale (100 = normal)
-void endlessGameplayTick(void);         // once per game tick (main player): zone timer + turbodrive/Overdrive decay
-bool endlessConsumeArmorHudDirty(void); // true once after the Overheat DoT shaves hull -> the game loop repaints the armor bar
-bool endlessTurbodriveActive(void);      // TURBODRIVE kill-streak fire boost currently active?
+// Player-side scaling and per-tick state.
+int  endlessPlayerDamagePercent(void);
+void endlessGameplayTick(void);
+bool endlessConsumeArmorHudDirty(void);
+bool endlessTurbodriveActive(void);
 
 // Live kill-fire values for the HUD.
-int endlessKillBuffTicksLeft(void);    // window ticks remaining (drains ~2s after the last kill)
-int endlessKillBuffTicksMax(void);     // full window length, for the timer bar proportion
-int endlessKillBuffComboCount(void);   // combo kill count driving the escalation, shown as "xN"
-int endlessKillBuffColorBank(void);    // themed palette bank (red Turbodrive / yellow Overdrive / blue Overblast)
-int endlessKillBuffFireMultiplier(void);// fire-rate multiplier the buff is granting (1 = none; 2x..10x on the combo ramp; the same schedule for Turbodrive and Overdrive)
-int endlessKillBuffDamagePercent(void); // shot-damage bonus % the buff is granting (0 during Turbodrive)
-int  endlessKillBuffFireDecrements(void); // extra shotRepeat decrements this tick (the combo ramp; Turbodrive and Overdrive alike)
-int  endlessPerkSpecialCooldownDecrements(void); // Rapid Recharge perk: extra cooldown decrements/tick, applied by the caller to the special-weapon gate AND sidekick ammo refill
-int   endlessGravityPullX(uint p);      // GRAVITY: ship p's per-tick horizontal nudge (classic non-VT ship path; nonzero only for an omni well)
-int   endlessGravityPullY(uint p);      // GRAVITY: ship p's per-tick vertical nudge (classic non-VT ship path)
-float endlessGravityDrift(void);        // GRAVITY: pull magnitude in px per 35Hz tick (direction-agnostic)
-float endlessGravityDriftX(void);       // GRAVITY: horizontal drag component in px/tick (VT ship path; nonzero only for an omni well)
-float endlessGravityDriftY(void);       // GRAVITY: vertical drag component in px/tick (VT ship path)
-float endlessMoveScale(void);           // Sluggish input scale; 1.0 is normal
-bool  endlessShieldRegenOff(void);      // SHIELDLESS or DEADGEN: true when the shield must not recharge (gate the shield-regen step in tyrian2.c)
-bool  endlessShieldRegenFree(void);     // AUXREACTOR: shield regen draws no generator power this sector (tyrian2.c: skip the `power -= shieldT` AND its power>shieldT gate)
-unsigned endlessGeneratorPowerAdd(unsigned normalAdd); // DEADGEN: generator charge per tick, throttled to a trickle (else the passed-in normal rate)
-int  endlessScrollBoostPercent(void); // 0/70/220 for the active scroll modifier; single source for layers and bound scripted motion
-bool endlessScrollBoostActive(void);    // true while any scroll-speed modifier is active (stable across the tick, unlike the fractional step count)
-// Call once per layer (channels 0-2) per tick.
+int endlessKillBuffTicksLeft(void);
+int endlessKillBuffTicksMax(void);
+int endlessKillBuffComboCount(void);
+int endlessKillBuffColorBank(void);
+int endlessKillBuffFireMultiplier(void);
+int endlessKillBuffDamagePercent(void);
+int endlessKillBuffFireDecrements(void);
+int endlessPerkSpecialCooldownDecrements(void);
+
+// Integer gravity offsets serve the classic ship path; float components serve
+// the velocity-based path. Drift values are pixels per 35 Hz tick.
+int   endlessGravityPullX(uint p);
+int   endlessGravityPullY(uint p);
+float endlessGravityDrift(void);
+float endlessGravityDriftX(void);
+float endlessGravityDriftY(void);
+float endlessMoveScale(void);
+
+// Power-system modifiers.
+bool     endlessShieldRegenOff(void);
+bool     endlessShieldRegenFree(void);
+unsigned endlessGeneratorPowerAdd(unsigned normalAdd);
+
+// Scroll boost is stable for the tick. Ask for each layer's extra pixels once
+// per tick, using channels 0 through 2.
+int  endlessScrollBoostPercent(void);
+bool endlessScrollBoostActive(void);
 int  endlessScrollExtraPx(int channel, int fireStep, int delayMax, int baseThisTick, float *rateOut, float *fracOut);
-int  endlessShipTintFilter(void);       // player-ship blit filter: electric yellow while the TURBODRIVE buff is active (0 = none)
+int  endlessShipTintFilter(void);
 
 // Combat hooks for modifiers that need engine-owned object pools.
-int      endlessMartyrdomBurstShots(int linknum, int eliteState); // MARTYRDOM: burst size for this kill; 0 (no burst / off), else 4/6/8 by tier; dedups so a multi-tile enemy bursts once
-JE_word  endlessMartyrShotSprite(void);           // MARTYRDOM: the burst's own fixed bullet sprite (never the level's fire, so it always looks the same)
-bool     endlessSeekerActive(void);               // SEEKER: a newly-fired enemy shot should arm for one mid-flight course correction
-unsigned endlessStaticDischargeDrain(unsigned actualDamage); // STATIC: generator power to bleed for a hit of this size (0 = modifier off / dead generator); caller caps at the current reserve
+int      endlessMartyrdomBurstShots(int linknum, int eliteState);
+JE_word  endlessMartyrShotSprite(void);
+bool     endlessSeekerActive(void);
+
+// The caller caps this drain at the generator's current reserve.
+unsigned endlessStaticDischargeDrain(unsigned actualDamage);
 
 // Boons queried at collision or death sites.
-int  endlessHitboxScale(int area);       // LOW PROFILE: shrink a player hit-area half-extent (returns `area` unchanged when the boon is off)
-bool endlessAegisGateConsume(int shieldBefore, int spill); // AEGIS GATE: may this hit be stopped at the shield? `spill` is the damage about to reach armor (trivial spills aren't worth the gate). true ARMS the cooldown, so call once per hit and honour the answer (varz.c JE_playerDamage)
-int  endlessEliteContactPercent(int eliteState); // CLEAN SIGNALS: the elite/champion RAM premium (100/125/150, all 100 under the boon), applied by mainint.c on top of endlessContactDamagePercent
-bool endlessRamWhileInvulnerable(uint invulnerableTicks); // Endless: an invulnerable ship lands a ram on this tick? (one per ENDLESS_RAM_INVULN_CADENCE ticks; mainint.c)
-int  endlessShockwaveRadius(int linknum, int eliteState); // 0, 80 (elite), or 120 (champion)
-bool endlessShockwaveActive(void);       // SHOCKWAVE: on? (tyrian2.c clears the whole field when a boss bar empties)
+int  endlessHitboxScale(int area);
+
+// A successful gate check arms its cooldown, so call it once per hit.
+bool endlessAegisGateConsume(int shieldBefore, int spill);
+int  endlessEliteContactPercent(int eliteState);
+bool endlessRamWhileInvulnerable(uint invulnerableTicks);
+int  endlessShockwaveRadius(int linknum, int eliteState);
+bool endlessShockwaveActive(void);
 
 // Bank Star Charts and Breakthrough after a clear, and hand Alternating its next turn.
 void endlessOnSectorCleared(void);
 
 // Hostile kill-fire effects share the normal combo machinery.
-bool endlessKillFireIsEvil(void);            // is the active kill-fire window an evil curse (not a boon)?
-int  endlessKillFireJamTicks(void);          // extra shotRepeat cooldown per shot while an evil curse is up (0 otherwise)
-int  endlessKillBuffEvilDamagePenalty(void); // Evil Overdrive: shot-damage REDUCTION % currently applied (0 otherwise), for the HUD
-const char *endlessKillFireEvilName(void);   // one-word HUD label for the active curse: JAMMED (Backfire) / BURNOUT / MISFIRE ("" if none)
+bool endlessKillFireIsEvil(void);
+int  endlessKillFireJamTicks(void);
+int  endlessKillBuffEvilDamagePenalty(void);
+const char *endlessKillFireEvilName(void);
 
 // Tier rolls are cached by link group.
-void endlessResetElites(void);               // clear per-level decisions and rescan the level script (each level start)
-int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);  // this body's tier, settled on its first frame: 1 normal, 2 elite, 3 champion
-int  endlessEliteHpMult100(void);            // elite & champion HP divisor, hundredths
-int  endlessEliteHpMult(void);               // ...and its whole-x reading
+void endlessResetElites(void);
+
+// Tier is settled on the body's first frame: 1 normal, 2 elite, 3 champion.
+int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);
+int  endlessEliteHpMult100(void);
+int  endlessEliteHpMult(void);
+
 // Combined per-hit HP divisor, hundredths.
 int  endlessEnemyHpMult100(bool hasBossBar, int bossHpMult100, int eliteState);
 
@@ -793,18 +816,22 @@ int  endlessPierceLock100(bool hasBossBar, int hpMult, int eliteState);
 
 // Piercing damage, carried between ticks in hundredths of a point.
 #define ENDLESS_PIERCE_DMG_SCALE 100
-int  endlessPiercePotencyPercent(void);      // piercing damage, % of the weapon-table value
+int  endlessPiercePotencyPercent(void);
+
 // Whole points one piercing bullet lands this tick. `carry100` is that bullet's remainder in
 // ENDLESS_PIERCE_DMG_SCALE units, read and advanced here.
 int  endlessPierceHitDamage(int rawDamage, int dmgPct, JE_byte *carry100);
 
-long endlessEliteBounty(void);               // extra cash for destroying an elite
-long endlessChampionBounty(void);            // extra cash for destroying a champion (more)
+long endlessEliteBounty(void);
+long endlessChampionBounty(void);
+
 // Bounty Hunter also multiplies score pickups; `p` is the ship collecting one (JE_playerCollide).
 long endlessScorePickupValue(uint p, long value);
-int  endlessChampionFireDelayPercent(void);  // champion extra fire-cooldown scale (lower = faster)
-int  endlessChampionShotDamagePercent(void); // champion extra shot-damage scale (higher = harder)
-Uint8 endlessEliteTint(int eliteState);      // tier's palette-bank filter, 0 for an ordinary enemy
+
+int  endlessChampionFireDelayPercent(void);
+int  endlessChampionShotDamagePercent(void);
+Uint8 endlessEliteTint(int eliteState);
+
 // Colour an invulnerable part borrows from its link group, 0 when that group holds no tier.
 Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft);
 
@@ -812,85 +839,99 @@ Uint8 endlessEliteShellTint(JE_byte linknum, JE_byte armorleft);
 void endlessAwardEliteKill(int linknum, int eliteState, int killer);
 
 // Run-persistent perks.
-extern bool endlessPerkPending;      // a perk pick is queued for the next shop's front gate
+extern bool endlessPerkPending;
 
-void        endlessGeneratePerkChoices(int offers);  // roll this visit's offers (call before the shop)
-int         endlessPerkChoiceCount(void);      // how many perks are offered (3; 4 if bought, 5 after a milestone)
-const char *endlessPerkChoiceName(int i);      // menu label for offered perk i
-const char *endlessPerkChoiceDesc(int i);      // help-line description for offer i
-const char *endlessPerkChoiceOwnedText(int i); // ...and its "Owned n/max", drawn flush right of that
-void        endlessTakePerk(int i);            // acquire offered perk i (increments its stack); the post-zone pick is free
-Sint64      endlessPerkDeclineBonus(void);     // "Take the Cash" buyout: scales with depth, slate width and perks owned
-void        endlessDeclinePerk(void);          // take the cash instead of a perk
+// Generate choices before entering the shop.
+void        endlessGeneratePerkChoices(int offers);
+int         endlessPerkChoiceCount(void);
+const char *endlessPerkChoiceName(int i);
+const char *endlessPerkChoiceDesc(int i);
+const char *endlessPerkChoiceOwnedText(int i);
+void        endlessTakePerk(int i);
+Sint64      endlessPerkDeclineBonus(void);
+void        endlessDeclinePerk(void);
 
-int endlessPerkArmorBonus(void);     // +max armor from Ablative Plating (added at ship-info, varz.c); may be negative (Glass Cannon)
-int endlessPerkFireDecrements(void); // extra shotRepeat decrements/tick from Rapid Cyclers (+ Adrenaline when hurt)
-int endlessPerkPreviewFireDecrements(void); // ...the same for the shop weapon preview, minus Adrenaline (the preview shows the full-hull cadence)
-int endlessPlayerDamageReduce(void); // flat reduction on each hit taken (Bulwark relic); applied in JE_playerDamage
-bool endlessPerkAutoFireSpecial(void); // Autofire Special perk: auto-fire the equipped special while fire is held (varz.c)
-int endlessPerkPowerUsePercent(void);  // Efficient Coils perk: generator power-use scale per main-weapon shot (100 = normal, lower = cheaper); applied in shots.c
-int endlessPerkShieldWait(int base);   // Shield Matrix perk: shield-regen interval (ticks between +1 shield) reduced from `base`, floored; applied at the shield-regen reset in tyrian2.c
-int endlessPerkChargeTicks(int base);  // Rapid Recharge perk: charge-base sidekick charge interval (ticks per +1 charge level) reduced from `base`, floored; applied at the sidekick charge loop in mainint.c
-int endlessPerkShotSpeedPercent(void); // High-Velocity Rounds perk: shot travel-speed scale (100 = normal); applied to genuine shot velocities in shots.c player_shot_create
-bool endlessPerkRadarActive(void);     // Radar perk: Chart-a-Course help line names each sector's base level (endless_course.c endlessCourseHelp)
-int  endlessPerkSurveyorRoutes(void);  // Surveyor perk: extra Chart-a-Course routes this visit (endless_course.c, added after the RNG roll)
-int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss); // Executioner: bonus damage vs a wounded enemy (tyrian2.c shot collision)
-void endlessOpeningSalvoTick(void);        // Opening Salvo: advance the main-gun idle timer one tick (endlessGameplayTick)
-bool endlessOpeningSalvoConsume(void);     // Opening Salvo: main gun fired -> reset idle, arm the charged-volley flag for the rest of this tick (mainint.c)
-bool endlessOpeningSalvoVolleyActive(void);// Opening Salvo: is a consumed salvo window running? (shots.c: power-free + tag every shot; varz.c specials)
-int  endlessOpeningSalvoGaugePercent(void); // Opening Salvo: share of the gauge that reads green, 0..100 (tyrian2.c draw_power_gauge)
-int  endlessOpeningSalvoScale(int value);  // Opening Salvo: x2.5 a magnitude no shot tag can reach while the window runs (specials, Zinglon pillar, ram)
-int  endlessOpeningSalvoDamagePercent(void); // Opening Salvo: +% damage the charged volley deals (tyrian2.c collision)
-int  endlessPerkKineticPower(int shieldAbsorbed, int tpwr); // Kinetic Converter: generator power refunded for an absorbed shield hit (varz.c JE_playerDamage)
-int  endlessPerkKineticCooldownCut(int remaining);  // Kinetic Converter: ticks a hit takes off a special-recharge clock holding `remaining` (varz.c JE_playerDamage)
-int  endlessPerkKineticAmmoRounds(void);            // Kinetic Converter: whole sidekick rounds a hit gives back; stateful, call once per hit (varz.c JE_playerDamage)
-int  endlessPerkKineticChargeStages(void);          // Kinetic Converter: charge stages a hit walks a charge sidekick up (varz.c JE_playerDamage)
-int  endlessPerkKineticTwiddleCost(int listCost);   // Kinetic Converter: what a twiddle's shield/armor charge deducts, discounted (varz.c JE_doSpecialShot)
-void endlessCountermeasureTick(void);        // Countermeasure Suite: advance the burst cooldown one tick (endlessGameplayTick)
-int  endlessPerkCountermeasureRadius(void);  // Countermeasure Suite: projectile-clear radius if ready now (0 = not owned / on cooldown); varz.c JE_playerDamage
-void endlessCountermeasureFired(void);       // Countermeasure Suite: re-arm the cooldown after a burst (varz.c)
-bool endlessPerkChainReactionActive(void);   // Chain Reaction: perk owned (tyrian2.c kill-site pulse queue)
-uint endlessPerkChainOwner(int killer);      // Chain Reaction: ship whose stacks a kill's pulse uses (0 outside coop)
-int  endlessPerkChainRadius(void);           // Chain Reaction: pulse radius in px, widening with each stack
-int  endlessPerkChainDamage(bool salvoBoosted); // Chain Reaction: pulse damage, stacks scaled by the owner's damage
-int  endlessPerkAmmoPercent(void);           // Ordnance Reserves: sidekick-magazine bonus % (0 = not applying); the shop label and the flown magazine both derive from this
-int  endlessPerkSidekickAmmo(int base);      // Ordnance Reserves: a shipped option.ammo magazine, boosted + capped (0 stays 0: charge sidekicks have no magazine)
-int  endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo); // Ordnance Reserves: the per-round refill interval, scaled so a boosted magazine still fills in the shipped time
-int  endlessPerkSpecialDuration(int base, int cap); // Ordnance Reserves: a timed special's duration, stretched; `cap` clamps it for the byte-wide fields (0 = uncapped)
-int  endlessPerkFailsafeTicks(void);         // Failsafe: i-frames a hit that reached the hull grants (0 = not owned); varz.c JE_playerDamage
-int  endlessPerkGuidanceDelay(uint bay, int ownDelay); // Guidance Package: ticks between course corrections for a shot from `bay` (0 = not steered); shots.c player_shot_create
-int  endlessPerkTwinPodOffset(uint p, uint sidekick); // Twin Pods: x offset in px of ship p's twin volley, outboard of the pod; the fire site moves its own volley the same inboard (0 = no twin)
-int  endlessPerkProwRamDamage(int damage);   // Reinforced Prow: what a contact tick deals the enemy, from the stock figure (mainint.c)
-int  endlessPerkProwContactPercent(void);    // Reinforced Prow: share of contact damage the ship still takes, 100 = all (mainint.c)
-int  endlessShipHullGapPx(uint p, unsigned slot); // px from ship p's hull to the nearest live tile of `slot`'s hull; 0 while touching
-int  endlessPerkKnifeFightPercent(unsigned slot); // Knife Fight: bonus % for the fx ship's hit on `slot` at the current gap (0 = none)
-int  endlessPerkKnifeFightBonus(int damage, int pct); // Knife Fight: that bonus in armor points, from raw damage (tyrian2.c, mainint.c)
-void endlessPerkKnifeFightBlood(unsigned slot, int pct);  // Knife Fight: bleed the hull for a raised hit; presentation only, budgeted per frame
-int  endlessPerkDeflectDamage(int absorbed); // Deflector: damage of the shot a shield absorption returns, 0 = none (tyrian2.c)
+// General perk effects.
+int  endlessPerkArmorBonus(void);
+int  endlessPerkFireDecrements(void);
+int  endlessPerkPreviewFireDecrements(void);
+int  endlessPlayerDamageReduce(void);
+bool endlessPerkAutoFireSpecial(void);
+int  endlessPerkPowerUsePercent(void);
+int  endlessPerkShieldWait(int base);
+int  endlessPerkChargeTicks(int base);
+int  endlessPerkShotSpeedPercent(void);
+bool endlessPerkRadarActive(void);
+int  endlessPerkSurveyorRoutes(void);
+int  endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss);
 
-// Perk registry accessors (for the endless debug screen: list / toggle / stack perks).
-int         endlessPerkCount(void);          // number of perks (PERK_COUNT)
-const char *endlessPerkName(int id);         // perk display name
-const char *endlessPerkDesc(int id);         // perk one-line effect description (for the perk-list help)
-int         endlessPerkMaxStack(int id);     // max stacks this perk allows
-// Perks are personal, so both sides of this pair name THIS machine's own player's stacks.
-int         endlessPerkGetOwned(int id);     // current owned stacks
-void        endlessPerkSetOwned(int id, int n); // set owned stacks (clamped 0..max)
-// ...and this pair names the ship outright, for the debug panel, which edits either one.
+// Opening Salvo.
+void endlessOpeningSalvoTick(void);
+bool endlessOpeningSalvoConsume(void);
+bool endlessOpeningSalvoVolleyActive(void);
+int  endlessOpeningSalvoGaugePercent(void);
+int  endlessOpeningSalvoScale(int value);
+int  endlessOpeningSalvoDamagePercent(void);
+
+// Kinetic Converter. Ammo-round bookkeeping is stateful; call it once per hit.
+int endlessPerkKineticPower(int shieldAbsorbed, int tpwr);
+int endlessPerkKineticCooldownCut(int remaining);
+int endlessPerkKineticAmmoRounds(void);
+int endlessPerkKineticChargeStages(void);
+int endlessPerkKineticTwiddleCost(int listCost);
+
+// Countermeasure Suite.
+void endlessCountermeasureTick(void);
+int  endlessPerkCountermeasureRadius(void);
+void endlessCountermeasureFired(void);
+
+// Chain Reaction.
+bool endlessPerkChainReactionActive(void);
+uint endlessPerkChainOwner(int killer);
+int  endlessPerkChainRadius(void);
+int  endlessPerkChainDamage(bool salvoBoosted);
+
+// Ordnance Reserves. A duration cap of zero is unlimited.
+int endlessPerkAmmoPercent(void);
+int endlessPerkSidekickAmmo(int base);
+int endlessPerkSidekickRefillTicks(int baseTicks, int stockAmmo);
+int endlessPerkSpecialDuration(int base, int cap);
+
+// Collision and weapon perks. Guidance returns zero for an unsteered shot;
+// endlessShipHullGapPx returns zero while the hulls touch.
+int  endlessPerkFailsafeTicks(void);
+int  endlessPerkGuidanceDelay(uint bay, int ownDelay);
+int  endlessPerkTwinPodOffset(uint p, uint sidekick);
+int  endlessPerkProwRamDamage(int damage);
+int  endlessPerkProwContactPercent(void);
+int  endlessShipHullGapPx(uint p, unsigned slot);
+int  endlessPerkKnifeFightPercent(unsigned slot);
+int  endlessPerkKnifeFightBonus(int damage, int pct);
+void endlessPerkKnifeFightBlood(unsigned slot, int pct);
+int  endlessPerkDeflectDamage(int absorbed);
+
+// Perk registry accessors for the debug screen.
+int         endlessPerkCount(void);
+const char *endlessPerkName(int id);
+const char *endlessPerkDesc(int id);
+int         endlessPerkMaxStack(int id);
+
+// The first pair addresses this machine's player. The second names the ship.
+int         endlessPerkGetOwned(int id);
+void        endlessPerkSetOwned(int id, int n);
 int         endlessPerkGetOwnedFor(uint p, int id);
 void        endlessPerkSetOwnedFor(uint p, int id, int n);
 
-/* The kill-fire buffs one ship is flying or has bought (ENDLESS_PERSONAL_MOD_MASK). The setter
- * re-derives that ship's live mask, so the debug panel can hand a buff to either ship. */
+// The setter re-derives the ship's live personal-modifier mask.
 Uint64 endlessPersonalBuffMods(uint p);
 void   endlessSetPersonalBuffMods(uint p, Uint64 bits);
 
-/* Save-codec regression hooks used by the project-owned migration/fuzz suite. */
+// Save-codec hooks used by the migration and fuzz tests.
 int  endlessSaveLegacyVersionMax(void);
 bool endlessSaveTestFixture(const char *path, char *detail, size_t detailSize);
 bool endlessSaveTestTextCodec(char *detail, size_t detailSize);
-bool endlessSaveLegacyTestImport(const char *path);   // a whole legacy endless.sav over the slot cache
-bool endlessSaveLegacyTestRepair(const char *path);   // the repair pass against a named legacy file
+bool endlessSaveLegacyTestImport(const char *path);
+bool endlessSaveLegacyTestRepair(const char *path);
 bool endlessSaveTestNewerLegacy(const char *v27Path, char *detail, size_t detailSize);
 
 #endif // ENDLESS_H

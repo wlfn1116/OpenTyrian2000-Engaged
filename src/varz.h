@@ -55,7 +55,8 @@ enum
 #define MAX_EXPLOSIONS           200
 #define MAX_REPEATING_EXPLOSIONS 20
 #define MAX_SUPERPIXELS          50000  // was 101; global spark ring buffer; bigger = denser/longer explosion showers
-#define SUPERPIXELS_CLASSIC      101  // the original DOS spark cap; the "Extra Sparks" toggle (extraSparks, config.c) picks between the two
+// Original DOS cap; Extra Sparks selects between this and SUPERPIXELS_MAX.
+#define SUPERPIXELS_CLASSIC      101
 #define SUPERPIXEL_SPAWN_Z       15   // shade and lifetime a spark starts with; JE_drawSP counts it down to 0
 
 /* Hundredths: the unit JE_SingleEnemyType.damageAccum and enemy_hp_divisor100 are counted in, so a
@@ -210,7 +211,8 @@ typedef struct {
 	JE_byte duration;
 	JE_word animate;
 	JE_word animax;
-	JE_byte seekerArm; /* endless SEEKER: 0 = not a seeker; >0 counts sim ticks to the single mid-flight course correction, then back to 0 (one turn only). Set at spawn; see tyrian2.c */
+	// Counts down to a Seeker shot's single course correction; zero when inactive.
+	JE_byte seekerArm;
 	JE_byte filter;  // shooter's tier bank, stamped at spawn; 0 for the sprite's own colours
 	JE_byte fill[10];
 } EnemyShotType;
@@ -266,7 +268,8 @@ extern const JE_byte shipCombos[19][3];
 extern JE_byte SFCurrentCode[2][21];
 extern JE_byte SFExecuted[2];
 extern JE_byte lvlFileNum;
-extern JE_byte forcedLvlFileNum;  // one-shot: force the next load's lvlFileNum past JE_loadMap's rescan (0 = section default)
+// One-shot override for the next level load; zero uses the section default.
+extern JE_byte forcedLvlFileNum;
 extern JE_word maxEvent, eventLoc;
 extern struct JE_EventRecType eventRec[];
 extern JE_word levelEnemy[40], levelEnemyMax;
@@ -401,8 +404,7 @@ extern JE_boolean dispenserBasesActive;
 extern JE_boolean difficultyAdjust;
 extern JE_boolean expertMode;
 
-/* Expert-mode tunables (adjustable via the Expert Settings debug submenu).
- * Defaults are deliberately mild so expert mode is "harder but fair". */
+// Expert-mode defaults, adjustable from the Expert Settings debug menu.
 #define EXPERT_DEF_BOSS_HP      3    /* boss HP multiplier (x)            */
 #define EXPERT_DEF_ENEMY_ARMOR  125  /* regular enemy armor scaling (%)   */
 #define EXPERT_DEF_ENERGY       150  /* weapon energy use (%)             */
@@ -526,10 +528,8 @@ JE_word JE_portConfigs(const Player *this_player);
 // (used by the superspark weapon trails); pass false to honor the extraSparks setting. A capped
 // shower is thinned by the whole screen's spark traffic, an uncapped one is not.
 void JE_doSP(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color, bool classic_cap);
-// JE_doSP with each spark's life cut to `life` ticks (1..SUPERPIXEL_SPAWN_Z), always uncapped. A
-// spark's z is its shade as well, so a short life alone spawns it dim; `bright` lifts it back into
-// the visible half of the bank. It draws the simulation RNG exactly as JE_doSP does, so it is
-// simulation code. Spawn before JE_drawSP in the pass; see doc/notes.md, "Superspark ring buffer".
+// Uncapped JE_doSP with a shorter life. It keeps JE_doSP's simulation RNG cost; `bright`
+// compensates for the lower initial z. Spawn it before JE_drawSP.
 void JE_doSPBrief(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
                   JE_byte life, JE_byte bright);
 // The same shower from `seed` rather than the simulation RNG, for presentation-only effects.
@@ -537,10 +537,8 @@ void JE_doSPBrief(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte
 // `occluded` marks the sparks as hidden by this tick's occluder boxes (see JE_addSPOccluder).
 void JE_doSPSeeded(JE_word x, JE_word y, JE_word num, JE_byte explowidth, JE_byte color,
                    bool classic_cap, JE_byte bright, bool occluded, Uint32 seed);
-// An expanding ring centred on (x,y), reaching `radius` px on the last tick of its `life`. Seeded
-// like JE_doSPSeeded, so it is presentation only, and always uncapped. `spacing` is the gap left
-// between neighbouring sparks on the finished ring: the count follows from the circumference, so a
-// wider ring is drawn with more sparks rather than the same few spread thinner.
+// Presentation-only spark ring that reaches `radius` on its last life tick. `spacing` controls
+// density, so larger rings receive more sparks.
 void JE_doSPRingSeeded(JE_word x, JE_word y, JE_word radius, JE_byte spacing, JE_byte color,
                        JE_byte life, JE_byte bright, Uint32 seed);
 // A bolt of motionless sparks strung from (x0,y0) to (x1,y1), `spacing` px apart and bowed off the

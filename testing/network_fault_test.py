@@ -35,7 +35,7 @@ SCENARIOS = (
     (12, "endless-zones", 0, 480, True),
     (13, "campaign-shop", 0, 300, True),
     (14, "double-earnings", 0, 120, True),
-    (15, "soak", 0, 480, False),  # opt-in because it is intentionally long
+    (15, "soak", 0, 480, False),  # Long-running opt-in case.
     (16, "arcade-separate", 0, 90, True),
     (17, "supertyrian", 0, 90, True),
     (18, "super-arcade", 0, 90, True),
@@ -241,8 +241,7 @@ def run_scenario(
     if own_dirs:
         for scratch in (host_dir, join_dir):
             shutil.rmtree(scratch, ignore_errors=True)
-    # Exit codes belong in the transcript: a peer that died mid-run leaves output that simply
-    # stops, which reads exactly like a hang until you see the code that killed it.
+    # Include exit codes so a crashed peer is distinguishable from a hang.
     transcript = (f"--- host (exit {host.returncode}) ---\n{host_out}"
                   f"--- joiner (exit {join.returncode}) ---\n{join_out}")
     if scenario == 4:

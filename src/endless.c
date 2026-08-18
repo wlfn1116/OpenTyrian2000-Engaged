@@ -977,9 +977,7 @@ void endlessGameplayTick(void)
 	endlessCountermeasureTick();  // Countermeasure Suite perk: advance the burst cooldown
 }
 
-/* The run and per-zone state a re-simulated tick has to see exactly as the live pass did. The
- * sector's own modifiers and the perk collection do not move inside a level, but a desync
- * recovery adopts the peer's whole snapshot, so they travel with it. */
+/* Run and zone state required by re-simulation and full-state recovery. */
 void endless_register_rollback(void)
 {
 	rollback_register("endless.activeMods", &endlessActiveMods, sizeof(endlessActiveMods));
@@ -1183,8 +1181,7 @@ void endlessOnRunEnd(void)
 	SDL_Color white = { 255, 255, 255 };
 	set_colors(white, 254, 254);
 
-	// The tally uses left-aligned labels and right-aligned values. Other lines are centered.
-	// FONT_SHAPES, the title font, has no digits. SMALL_FONT_SHAPES has every glyph these rows use.
+	// Tally rows use left labels, right values, and SMALL_FONT_SHAPES for its digit support.
 	char fellLine[48];
 	snprintf(fellLine, sizeof(fellLine), "You fell in Zone %d", endlessRunDepth + 1);
 

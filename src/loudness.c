@@ -867,9 +867,8 @@ void set_volume(Uint8 musicVolume_, Uint8 sampleVolume_)  // FKA NortSong.setVol
 #endif
 }
 
-// Toggle music on/off. For OPL the audio callback simply stops rendering while
-// music_disabled is set; the MIDI backends play on their own device/thread, so
-// pause/resume them explicitly here.
+// OPL observes music_disabled in the audio callback. MIDI backends need an explicit pause on
+// their device or sequencer thread.
 void set_music_disabled(bool disabled)
 {
 	music_disabled = disabled;

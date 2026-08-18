@@ -49,11 +49,8 @@ typedef struct
 	// blends it into the main buffer. Always 0 on non-smoothie levels.
 	Uint8 surface;
 
-	// Identity for cross-frame matching, and this tick's motion (cur - prev):
-	// interpolated replay draws at (x,y) - (dx,dy)*(1-alpha), with sub_x/sub_y below
-	// completing both terms when the recorder supplied one. EXTRAPOLATED ids
-	// (shots, see rl_id_extrapolates) instead hold their own recorded per-tick
-	// velocity (rl_current_vel_*) and replay forward at (x,y) + (dx+acc,dy+acc)*alpha.
+	// Cross-frame identity and tick displacement. Interpolated IDs replay backward from (x,y);
+	// extrapolated IDs use their recorded velocity and acceleration to replay forward.
 	int id;
 	int dx, dy;
 

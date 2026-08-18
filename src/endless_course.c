@@ -22,21 +22,19 @@
 int      endlessCourseCnt = 0;
 int      endlessCourseEp[ENDLESS_MAX_COURSES];
 JE_byte  endlessCourseSec[ENDLESS_MAX_COURSES];
-JE_byte  endlessCourseFile[ENDLESS_MAX_COURSES];  // each course's specific lvlFileNum (see forcedLvlFileNum)
+JE_byte  endlessCourseFile[ENDLESS_MAX_COURSES];  // Course-specific lvlFileNum.
 Uint64 endlessCourseMod[ENDLESS_MAX_COURSES];
-static JE_byte  endlessCourseNameSalt[ENDLESS_MAX_COURSES];  // per-visit nudge so no two offered names read the same
-static char     endlessCourseBaseName[ENDLESS_MAX_COURSES][10];  // Radar perk: authored level name behind each course (9 chars + NUL)
+static JE_byte  endlessCourseNameSalt[ENDLESS_MAX_COURSES];
+static char     endlessCourseBaseName[ENDLESS_MAX_COURSES][10];
 int      endlessLastEp = 0;
 JE_byte  endlessLastSec = 0;
-bool     endlessForced = false;  // this visit is a forced "Ambush" (single dangerous sector)
+bool     endlessForced = false;
 
-/* The Radar perk's chart reroll. `endlessChartRerolls` is the count the live slate was dealt
- * under: it salts the visit's structural phases, rides the save, and is the one number both
- * machines have to agree on before the sector is committed. See "Modifiers and courses" in
- * doc/notes.md. */
+// Saved reroll count used to salt course generation. Peers must agree on it
+// before committing a sector.
 JE_byte endlessChartRerolls = 0;
-bool    endlessChartStarCharts = false;  // Star Charts as this visit's first chart found it
-uint    endlessChartSeat = 0;            // seat charting the visit, latched when the chart is dealt
+bool    endlessChartStarCharts = false;
+uint    endlessChartSeat = 0;
 
 // Fold the shipped level's intrinsic danger into its grade, sorting, and payout.
 static int endlessCourseBaseDanger(int i)
@@ -221,10 +219,8 @@ static int endlessDangerRareDivEx(int base, bool brutal)
 	return (d < 1) ? 1 : d;
 }
 
-/* Rare signatures overwrite random non-clean routes. Every row is scheduled: one sector per window
- * of zones, at a position inside the window derived from the seed, so a run cannot miss a signature
- * for a whole window. Rows draw from a filtered theme pool or use a fixed modifier set.
- * See doc/notes.md, "Modifiers and courses". */
+/* Scheduled rare sectors, one seeded placement per zone window. A row draws from its filtered
+ * theme pool or uses its fixed modifier set; see doc/notes.md#modifiers-and-courses. */
 typedef struct {
 	int                 window;   // zones per guaranteed sector, before the deep ramp adds more
 	Uint64              salt;     // phase salt block, unique across every structural stream
@@ -784,7 +780,8 @@ static void endlessWidenHostileCombos(int dangerRamp)
 // Some visits replace a hostile route with a named or generated boon.
 // Breakthrough is a much rarer replacement because it grants a perk.
 #define ENDLESS_BREAKTHROUGH_PCT   7
-#define ENDLESS_BREAKTHROUGH_DEPTH 5   // never in the opening zones: perks are still arriving on their own cadence there
+// Keep Breakthrough out of the opening perk cadence.
+#define ENDLESS_BREAKTHROUGH_DEPTH 5
 
 // Do not chart Breakthrough when the same clear already awards a guaranteed perk.
 // The outpost can present one perk pick at a time.
@@ -838,14 +835,8 @@ static void endlessGraftGambits(int dangerRamp)
 	}
 }
 
-/* Whether this row's sector belongs on the visit being charted. The answer is a pure function of
- * (seed, zone, reroll count) and spends no structural draw. A Radar reroll re-places the window's
- * sector along with everything else, so it can be spent to leave a zone that offered one, at the
- * cost of that window's guarantee.
- *
- * The danger ramp adds sub-ranges inside the window rather than shrinking the window itself. A
- * shrinking window moves its own boundaries as the ramp climbs, which degenerates back into a
- * per-zone roll and loses the bounded gap the schedule exists to provide. */
+/* Test the seeded placement for this zone, window, and reroll count without consuming structural
+ * RNG. Deeper runs add placements within the same window so its boundaries stay stable. */
 static bool endlessRareSectorDue(const EndlessRareInjection *inj)
 {
 	const int base = inj->window;

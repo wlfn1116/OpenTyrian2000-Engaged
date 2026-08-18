@@ -836,9 +836,8 @@ int network_check(void)
 		}
 
 		// keep-alive, which doubles as the ping probe: it is the one thing still flowing while
-		// a player sits in the outpost, so the round trip stays measurable off the menus.  The
-		// four extra bytes cost an old peer nothing; it reads the header and ignores the rest,
-		// and simply never sends the reply that would produce a reading.
+		// a player sits in the outpost, so the round trip stays measurable off the menus. Older
+		// peers ignore the four-byte tail and send no timing reply.
 		static Uint32 keep_alive_tick = 0;
 		if (SDL_GetTicks() - keep_alive_tick > NET_KEEP_ALIVE)
 		{
@@ -1267,9 +1266,8 @@ int network_connect(void)
 	if (network_from_lobby)
 		thisPlayerNum = network_is_host ? networkHostPlayerNum : 3 - networkHostPlayerNum;
 
-	// Session flags from our own config.  A lobby joiner overwrites these when it adopts the
-	// host's settings block; a command-line game assigns player 1 the host role (opentyr.c)
-	// but adopts nothing, so both sides must simply be configured alike (as with network_delay).
+	// A lobby joiner adopts the host's session flags. Command-line peers receive no settings
+	// block and must start with matching configuration.
 	network_arm_local_session();
 
 connect_reset:
@@ -1547,8 +1545,7 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 	if (err >= COUNTOF(err_msg))
 		err = 0;
 
-	// A test peer has no player to press a button; report the halt and exit non-zero so the
-	// harness reads the reason instead of killing a process parked on the message screen.
+	// Test peers report the halt and exit nonzero because no player can dismiss this screen.
 	if (qa_net_rounds > 0 || qa_net_gameplay_ticks > 0)
 	{
 		fprintf(stderr, "network test: session halt: %s\n", err_msg[err]);
@@ -1694,9 +1691,8 @@ OT_NORETURN void network_tyrian_halt(unsigned int err, bool attempt_sync)
 COMPILE_TIME_ASSERT(net_settings_block_fits,
                     NET_SET_TWIDDLE + 2 == NETWORK_SETTINGS_SIZE);
 
-/* The epdiff word at byte 2 holds two bits per entry and was exactly full at eight of them, so the
- * rest ride the tail's flags word. Grow that split deliberately: silently dropping an entry off the
- * wire would leave the two machines' item tables unequal. */
+// The epdiff word holds eight two-bit entries. Later entries use flags2; keep
+// the split in sync when extending the table.
 #define NET_SET_EPDIFF_PACKED   8  /* entries 0..7 pack into the byte-2 word, two bits each */
 #define NET_SET_EPDIFF_TAIL_BIT 4  /* entries 9 up run from this flags2 bit, two bits each  */
 #define NET_SET_GUIDED_AIM_BIT 15  /* guidedShotScreenAim; the epdiff tail grows up to it   */
@@ -1766,10 +1762,8 @@ static void network_debug_flags_adopt(Uint16 flags, bool preserve_pending_trigge
 	}
 }
 
-/* Host-authoritative simulation settings.
- * Synchronize settings that change RNG use, weapon/enemy data, object spawning, survivability,
- * shared pickups, data sets, or tick rate. Rendering and audio stay local. Input conveniences that
- * are consumed inside the deterministic simulation, such as autofire, have to travel too. */
+/* Host-authoritative settings that affect simulation or deterministic input. Rendering and
+ * audio settings remain local. */
 static bool settings_stashed = false;
 static struct
 {
@@ -2913,8 +2907,7 @@ int network_sa_ship_peer(void)
 		{
 			const uint sender = packet_in[0]->data[4];
 			const int ship = packet_in[0]->data[5];
-			// Clamped: the value indexes SAShip[] and a SAWeapon row on both machines. Zero is a
-			// pick taken back, which is why the range starts there and not at one.
+			// This indexes SAShip[] and SAWeapon. Zero retracts a previous pick.
 			if (sender != thisPlayerNum && ship >= 0 && ship <= SA)
 			{
 				net_sa_ship_peer_pick = ship;
@@ -3463,8 +3456,7 @@ void network_shop_sync_for_save(void)
 		if (network_inbound_head() == PACKET_GAME_QUIT)
 			break;
 
-		// A peer that goes quiet between the request and the reply must not hold the game here.
-		// The save is worth having with one stale ship in it; it is not worth hanging over.
+		// Bound the wait. On timeout, write the save with stale peer state.
 		if (!network_peer_alive() || SDL_GetTicks() - started > NET_SHOP_SAVE_WAIT)
 			break;
 
@@ -4283,8 +4275,8 @@ static void network_allow_conn_reset(void)
 		return;
 	}
 
-	// A joiner deliberately opens port 0, which SDL_net leaves unbound and reports as 0; there is
-	// nothing to compare against then, and the socket type check above already stands alone.
+	// Joiners open port 0, which SDL_net may report as unbound. The socket type
+	// check is sufficient in that case.
 	const IPaddress *const bound = SDLNet_UDP_GetPeerAddress(net_socket, -1);
 	if (bound != NULL && bound->port != 0)
 	{

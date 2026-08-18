@@ -1035,7 +1035,7 @@ static bool drb_resync_host_run(void)
 		if (r == 1)
 			return true;
 		if (r < 0)
-			break;  /* hard stop; its own entry named the reason */
+			break;  /* The failing step already logged the cause. */
 	}
 	if (resync_used >= DRB_RS_MAX)
 		crashlog_netlog_line("DESTRUCT RESYNC GIVE-UP",
@@ -1260,9 +1260,7 @@ static bool drb_resync_receive(void)
 	         resync_used > DRB_RS_MAX ? "   [over budget: started by stray chunks]" : "");
 	crashlog_netlog_line("DESTRUCT RESYNC ABORT", line);
 
-	/* The NAK is the only "I did not adopt" the host ever hears.  The reason separates "try again"
-	 * from "no stream you can build will pass", so a layout refusal retires recovery on the host
-	 * too instead of burning the remaining attempts on identical bytes. */
+	/* Report whether a retry can help. A layout refusal retires recovery on the host. */
 	drb_resync_send_nak(have_hdr ? gen : seen_gen,
 	                    resync_layout_bad ? DRB_NAK_FATAL : DRB_NAK_RETRY);
 

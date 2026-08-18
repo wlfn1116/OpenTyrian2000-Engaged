@@ -31,18 +31,15 @@ enabled section decoded, so a partial run puts more files there than a full one.
 
 ## Verify
 
-`verify_dump.py` checks the dump against the data it came from. Every check
-either accounts for each byte of a source file or compares a decoder against the
-arithmetic the engine uses, so "the dump is correct" is a command rather than a
-judgement:
+`verify_dump.py` checks the dump against its source data. Each check accounts for
+every byte or compares a decoder with the engine calculation it mirrors:
 
 ```sh
 python tools/dump/verify_dump.py --reproducible
 ```
 
-It prints TAP and exits nonzero on any failure. Run it after regenerating, and
-after changing a reader. Adding a decoder means adding its check here; a reader
-with no check is not verified, whatever the dump looks like.
+It prints TAP and exits nonzero on failure. Run it after regeneration or a
+reader change. Every new decoder needs a corresponding check.
 
 ## Output
 
@@ -60,8 +57,12 @@ folder layout and `dump/manifest.json` records the run.
 
 ## Adding a format
 
-Put the decoder in `tyrian_formats.py` with a comment naming its loader, add a
-writer method to `Dumper`, call `self.cover(source_file, out_path)` so the master
-index links the two, and add a `CATALOG` row describing the file. A file with no
-decoder still reaches `dump/raw/`, so nothing goes missing while a reader is
-being written.
+To add a format:
+
+1. Add the decoder to `tyrian_formats.py` and name the engine loader it mirrors.
+2. Add a writer method to `Dumper`.
+3. Call `self.cover(source_file, out_path)` for the master index.
+4. Add a `CATALOG` row.
+5. Add verification coverage.
+
+Undecoded files still appear under `dump/raw/`.

@@ -111,7 +111,8 @@ typedef struct
 	JE_word sourcePort;    // weaponPort index (1..PORT_NUM) when it has power levels; 0 = sidekick-sourced
 	JE_word sourceWeapon;  // weapon number to use when sourcePort == 0 (a sidekick's single shot)
 	JE_word sourceOption;  // options[] index when sidekick-sourced (0 otherwise); lets Import clone the body
-	JE_byte maxPower;      // sampleable stages: a port's highest power level, or a charge sidekick's shot count (pwr+1); 1 if it has neither
+	// Highest sampleable stage, or a charge sidekick's shot count. Defaults to 1.
+	JE_byte maxPower;
 } CustomBulletPreset;
 
 // Headroom for every unique source across all PORT_NUM (60) ports + OPTION_NUM (37)

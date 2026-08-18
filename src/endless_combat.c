@@ -68,7 +68,7 @@ int endlessDifficultyZone(void)
 // Ordinary-enemy HP, percent of stock. The armor byte stops at 254, so growth past
 // ENDLESS_HP_MAX is spent through the damage divisor instead (see endlessArmorOverflow100).
 #define ENDLESS_HP_PER_DEPTH       4    // +% per effective depth, which is +5%/zone on Normal
-#define ENDLESS_HP_FORTIFIED     120    // FORTIFIED: +% (2.2x HP, clearly felt)
+#define ENDLESS_HP_FORTIFIED     120    // FORTIFIED: +% (2.2x HP)
 #define ENDLESS_HP_FRAGILE        50    // FRAGILE: -%
 #define ENDLESS_HP_MIN            25    // floor: a FRAGILE zone-0 enemy still takes a hit
 #define ENDLESS_HP_MAX           600    // spawn-armor ceiling, reached at effective depth 125
@@ -90,9 +90,8 @@ int endlessDifficultyZone(void)
 #define ENDLESS_PIERCE_LOCK_ELITE          2  // elite:    0.02
 #define ENDLESS_PIERCE_LOCK_MAX            1
 
-// Piercing damage, percent of the weapon-table value. Piercing rounds carry 0 to 5 raw damage, too
-// coarse for a percentage lever to reach in whole points, so the class gets a ramp of its own and
-// the run's damage percentage applies on top of it. See doc/notes.md, "Combat".
+// Piercing damage as a percentage of the weapon-table value. Fractional carry preserves changes
+// below one point; see doc/notes.md#combat-pipeline.
 #define ENDLESS_PIERCE_POTENCY_PER_DEPTH   5  // +% per effective depth (ENDLESS_HP_PER_DEPTH is 4)
 #define ENDLESS_PIERCE_POTENCY_MAX       500  // ceiling, reached at effective depth 80
 
@@ -951,7 +950,8 @@ int endlessKillBuffDamagePercent(void)
 	if (!endlessTurbodriveActive() || !(endlessPlayerMods[endlessFxPlayer()] & ENDLESS_MOD_DMGUP))
 		return 0;  // Overdrive and Overblast grant damage; Turbodrive affects fire rate only.
 	int pct = endlessBuffChargePaid() * 2;  // cash-paid charge adds flat damage on top of the per-kill stacks
-	pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;  // Overdrive OR Overblast: +150% at full stacks (combo 200)
+	// Overdrive and Overblast reach +150% at a full combo.
+	pct += endlessOverdriveStacks[endlessFxPlayer()] * ENDLESS_OVERDRIVE_DMG_MAX / ENDLESS_OVERDRIVE_MAX_STACKS;
 	return pct;
 }
 

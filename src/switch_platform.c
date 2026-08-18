@@ -33,8 +33,7 @@ static void switch_platform_exit(void)
 
 void switch_platform_init(void)
 {
-	// Mount bundled read-only data. If the .nro carries no romfs this simply
-	// fails and we fall back to the SD card copy; not fatal, so ignore the result.
+	// Mount bundled read-only data. Failure means the SD-card copy is used.
 	romfsInit();
 
 	// Make sure the writable config/save directory exists. mkdir() does not create

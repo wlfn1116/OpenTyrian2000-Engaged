@@ -252,9 +252,7 @@ int qa_net_campaign_phases(void)
 	for (uint p = 0; p < COUNTOF(player); ++p)
 		player[p].lives = &player[p].items.weapon[player_lives_port(p)].power;
 
-	/* Two complete, different loadouts. Every field of the peer's has to arrive, not just the
-	 * cash the older baseline checked: a ship kitted out on one machine and half-empty on the
-	 * other is two different simulations. */
+	/* Two distinct complete loadouts exercise every synchronized field. */
 	qa_net_phase("campaign loadout publish");
 	qa_net_campaign_loadout(local, QA_ME);
 	memset(&peer->items, 0, sizeof(peer->items));

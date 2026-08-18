@@ -826,8 +826,7 @@ void present_hi(SDL_Surface *hi)
 	SDL_Rect dst_rect;
 	calc_dst_render_rect(VGAScreen, &dst_rect);
 
-	// Supersampled output is deliberately raw: a single nearest-neighbor copy with
-	// no filtering or intermediate render target.
+	// Present supersampled output with one unfiltered nearest-neighbor copy.
 	SDL_SetTextureScaleMode(hi_texture, SDL_ScaleModeNearest);
 
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);

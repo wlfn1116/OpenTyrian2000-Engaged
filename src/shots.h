@@ -34,7 +34,7 @@ typedef struct {
 	// aimDelayMax carries the steering interval in SHOT_AIM_DELAY_MASK; SHOT_AIM_GUIDANCE on top marks
 	// a shot the endless Guidance Package steers, which aims at screen x and retargets (see shots.c).
 	JE_byte shotBlastFilter, chainReaction, playerNumber, aimAtEnemy, aimDelay, aimDelayMax;
-	JE_byte salvoBoost;  // endless Opening Salvo perk: 1 = this shot is part of a charged volley (extra damage at collision)
+	JE_byte salvoBoost;  // Opening Salvo charged-volley tag.
 	// Per-bullet Endless pierce lock. An enemy-wide lock would discard the other
 	// bullets in the same volley instead of preventing repeated overlap hits.
 	JE_byte pierceLock;       // sim ticks before this bullet may deal damage again
@@ -77,10 +77,8 @@ void enemy_shot_hit_offset(JE_word sgr, JE_word animate, int *out_dx, int *out_d
  * SHOT_AIM_GUIDANCE shot aims at screen x and retargets. */
 void player_shot_aim_step(PlayerShotDataType *shot);
 
-/** Moves and draws a shot. Does \b not collide it with enemies.
- * The hit offset is that of the frame drawn this tick.
- * \return False if the shot went off-screen, true otherwise.
- */
+/** Move and draw a shot without enemy collision. Returns false off-screen and reports the hit
+ * offset of the frame drawn this tick. */
 bool player_shot_move_and_draw(
 	int shot_id, bool *out_is_special,
 	int *out_shotx, int *out_shoty,
@@ -95,20 +93,14 @@ JE_integer player_shot_create(
 	JE_word mousex, JE_word mousey,
 	JE_word wpnum, JE_byte playernum);
 
-/** Endless Twin Pods: fires a sidekick's second volley \a twindx outboard of the pod at \a x, which
- * is where endlessPerkTwinPodOffset put it (0 = no perk, no twin). \a first is the pod's own
- * player_shot_create result; nothing fires after a refused volley. Returns the twin's shot, or
- * MAX_PWEAPON when none fired; the caller spends the round.
- */
+/** Fire the Twin Pods follow-up at \a x + \a twindx after a successful primary shot. Returns the
+ * new slot or MAX_PWEAPON; the caller spends the round. */
 JE_integer player_shot_create_twin(
 	JE_integer first, JE_word portnum, uint sidekick, int twindx, int x, int y,
 	JE_word mousex, JE_word mousey, JE_word wpnum, JE_byte playernum);
 
-/** Endless Deflector: returns \a incoming, an enemy shot the shield has just absorbed, as
- * player \a playernum's shot, flying back out along the reverse of the path it came in on and
- * carrying \a damage. It takes no steering, and takes that player's Opening Salvo tag when their
- * window is running. Returns the shot, or MAX_PWEAPON when the pool is full.
- */
+/** Return an absorbed enemy shot as player \a playernum's shot with \a damage. The shot has no
+ * steering and inherits an active Opening Salvo; returns MAX_PWEAPON when no slot is available. */
 JE_integer player_shot_create_deflected(const EnemyShotType *incoming, int damage, JE_byte playernum);
 
 /** Creates the chain-reaction child of a shot that just hit, at the impact point.

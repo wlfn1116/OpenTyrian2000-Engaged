@@ -762,10 +762,8 @@ static void qa_reactive_state_matrix(void)
 	qa_test_chain_wave_latch();
 	coopEndlessMode = true;
 
-	/* A wave's kills are worth what the ship that made them would have earned by shooting. The
-	 * lobby's Credit rule decides which wallets that reaches, Combo Feed decides whose streak it
-	 * feeds, and the drop is owed whoever made it. Both ships hold the perk, so a pulse owned by
-	 * either has a blast of its own to be measured against. */
+	/* Wave kills use the owner's normal payout, Credit rule, and Combo Feed rule. Both ships hold
+	 * the perk so either ownership path has a measurable blast. */
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_CHAINRXN, 1);
 	endlessPerkGrant(1, PERK_CHAINRXN, 1);
@@ -791,8 +789,7 @@ static void qa_reactive_state_matrix(void)
 		for (uint s = 0; s < COUNTOF(shapes); ++s)
 		for (int owner = 0; owner <= 1; ++owner)
 		{
-			/* Four of them, so the answer covers everything the blast destroys and not just the
-			 * enemy the first pulse reached. */
+			/* Four targets cover the initial pulse and its cascade. */
 			long paid0 = 0, paid1 = 0;
 			int killed = 0;
 			bool dropped = false;
@@ -1642,9 +1639,8 @@ static int qa_pierce_run(int rawDamage, int dmgPct, int ticks)
 	return total;
 }
 
-/* Piercing damage is 1 a hit in the weapon table, the one quantity a percentage lever cannot reach
- * in whole points. The rule holds the run's percentage over a bullet's life instead, so every Heavy
- * Rounds stack has to move what the bullet lands. */
+// Fractional carry lets percentage bonuses affect one-point piercing hits over
+// the bullet's lifetime.
 static void qa_pierce_damage_matrix(void)
 {
 	char label[192];

@@ -401,10 +401,8 @@ static bool menuItemHasPicker(const MenuItem *item)
 	return item->getPickerItemsCount != NULL && item->getPickerItem != NULL;
 }
 
-/* The int settings that are simply an index into the row's own picker list: one map
- * serves the value drawn, the left/right arrows, and the picker box, so each of the
- * three stays in step with the others by construction. Rows whose value needs more
- * than an index (the scaler, the synth, a slider) are handled where they are drawn. */
+/* Integer settings that index their row's picker list. One map serves drawing, arrows, and the
+ * picker; settings with side effects keep explicit cases where they are drawn. */
 static int *menuItemIntSetting(MenuItemId id)
 {
 	int slot;
@@ -883,8 +881,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_DEBUG_MODE, "Debug Mode:", "Enable the debug menu and debug level select." },
 				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
 #if defined(__SWITCH__) || defined(__vita__)
-				// Consoles have no file manager to prune the logs with, so the game has to offer it.
-				// Sits with the switch that writes them, but clears every log, not just the net ones.
+				// Console users need an in-game way to clear crash and network logs.
 				{ MENU_ITEM_CLEAR_LOGS, "Clear Logs", "Delete every log file saved on this system." },
 #endif
 				MENU_DONE_ROW
@@ -1924,10 +1921,12 @@ static bool runOptionsMenu(MenuId startMenu)
 int main(int argc, char *argv[])
 {
 #if defined(__SWITCH__) || defined(__vita__)
-	console_platform_init();   // console early init (mount data + ensure the writable user dir exists), before any file access
+	// Mount data and prepare the user directory before file access.
+	console_platform_init();
 #endif
 
-	install_crash_handler();  // write log/opentyrian_log_<launch time>.log beside the exe on any unhandled crash / CRT fatal
+	// Crash logs sit beside the executable.
+	install_crash_handler();
 	watchdog_init();          // ...and on a hard main-thread hang (infinite loop), which throws no exception
 
 	mt_srand(time(NULL));
@@ -2073,10 +2072,8 @@ int main(int argc, char *argv[])
 		networkHostPlayerNum = 1;
 	}
 
-	/* Gameplay wire scenarios beyond Arcade: the harness names the mode, and both peers must
-	 * simply be configured alike (there is no lobby to adopt from). The Endless session
-	 * settings are the fixed QA slate: Standard run mode, host charts, shared Combo Feed,
-	 * pinned seed. */
+	/* The harness names non-Arcade wire modes directly, so both peers receive the same fixed
+	 * settings here. */
 	if (qa_net_gameplay_ticks > 0 && qa_net_game_type >= 0
 	    && qa_net_game_type < NETWORK_GAME_TYPE_COUNT)
 	{

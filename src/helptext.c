@@ -48,8 +48,9 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 	{ 31, 31, 31, 31, 32, 12,                  0, 0, 0, 0, 0 },
 	{  4, 34,  3,  5,                    0, 0, 0, 0, 0, 0, 0 },
 	{ 35, 35, 35, 36, 12,                   0, 0, 0, 0, 0, 0 },
-	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },  // [15]=Debug Play Level (custom help)
-	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }   // [16]=E-Shop; [17]=Perks zero-fills (both: help in game_menu.c)
+	// Debug Play Level, E-Shop and Perks draw custom help.
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 
 JE_byte verticalHeight = 7;
@@ -82,7 +83,7 @@ char shipInfo[HELPTEXT_SHIPINFO_COUNT][2][256];                          /* [1..
 char licensingInfo[3][46];                                               /* [1..3] of string */
 char orderingInfo[6][32];                                                /* [1..6] of string */
 char superTyrianText[6][64];                                             /* [1..6] of string */
-char menuInt[MENU_MAX+1][14][24];                                        /* [0..18][0..13] of string[23]; 14 rows (was 11) + 24-byte labels (was 18) for the endless E-Shop */
+char menuInt[MENU_MAX+1][14][24];
 
 static void decrypt_string(char *s, size_t len)
 {
@@ -199,7 +200,8 @@ void JE_HBox(SDL_Surface *screen, int x, int y, unsigned int  messagenum, unsign
 
 void JE_loadHelpText(void)
 {
-	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0 };  // last two 0 = E-Shop + Perks rows (populated at runtime, not from file)
+	// E-Shop and Perks are populated at runtime, not loaded from tyrian.hdt.
+	const unsigned int menuInt_entries[MENU_MAX + 1] = { -1, 7, 9, 9, -1, -1, 11, -1, -1, -1, 6, 4, 7, 7, 5, 6, 0, 0, 0 };
 	const unsigned int setup_entries[10] = {10, 5, 4, 4, 5, 7, 7, 21, 3, 3};
 	
 	FILE *f = dir_fopen_die(data_dir(), "tyrian.hdt", "rb");

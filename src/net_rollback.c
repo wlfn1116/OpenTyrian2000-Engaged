@@ -168,8 +168,8 @@ static NrbSlot local_hist[NRB_HIST];
 static NrbSlot remote_hist[NRB_HIST];   /* truth, as received                 */
 static NrbSlot remote_used[NRB_HIST];   /* what the sim actually consumed     */
 
-/* Request bits that are frame-locked into the sim (pause/menu are processed
- * outside the sim at confirm time and deliberately excluded). */
+// Requests consumed inside the frame-locked simulation. Pause and menus run at
+// confirmation time instead.
 #define NRB_SIM_REQS (RB_REQ_SKIPLEVEL | RB_REQ_NORTSHIP)
 
 static Uint32 nrb_cur;                  /* frame being simulated              */
@@ -1640,8 +1640,7 @@ static int nrb_resync_send_once(void)
 
 	if (outcome != 1 && fail != NULL)
 	{
-		/* Peer-departure exits (quit, between-levels handshake) are not logged
-		 * here: the level is over and the recovery simply became moot. */
+		/* Peer departure ends the level and cancels pending recovery. */
 		char line[224];
 		snprintf(line, sizeof(line),
 		         "host attempt %lu of %d gen %u failed: %s  (%lu/%lu chunks sent, %lu ms)",
@@ -1680,7 +1679,7 @@ static bool nrb_resync_host_run(void)
 		if (r == 1)
 			return true;
 		if (r < 0)
-			break;  /* hard stop; its own entry named the reason */
+			break;  /* The failing step already logged the cause. */
 	}
 	if (resync_used >= NRB_RS_MAX)
 		crashlog_netlog_line("NETWORK RESYNC GIVE-UP",
@@ -1901,9 +1900,7 @@ static bool nrb_resync_receive(void)
 	{
 		resync_gen = gen;
 
-		/* Before the reset, and before we present: the host is blocked waiting for
-		 * exactly this, and it is the only evidence it will ever get that the bytes
-		 * were not merely delivered but taken. */
+		/* Acknowledge adoption before reset or presentation; the host is waiting on this result. */
 		nrb_resync_send_ack(gen);
 
 		char detail[192];

@@ -278,7 +278,8 @@ JE_MultiEnemyType enemy;
 JE_EnemyAvailType enemyAvail;  /* values: 0: used, 1: free, 2: secret pick-up */
 JE_word enemyOffset;
 JE_word enemyOnScreen;
-JE_word enemyParkedAbove;   // of enemyOnScreen: parked above the screen with no way to ever enter it (map-stop watchdog, tyrian2.c)
+// On-screen enemies parked above the map with no path back in.
+JE_word enemyParkedAbove;
 JE_word mapStopStallTicks;  // ticks a scripted map stop has been held only by parked-above enemies
 JE_word superEnemy254Jump;
 
@@ -348,8 +349,7 @@ ExpertSetting expertSettings[] =
 };
 const int expertSettingsCount = (int)(sizeof(expertSettings) / sizeof(expertSettings[0]));
 
-// The debug-sync block carries these across the wire in a fixed number of slots, and its loops
-// simply stop when they run out; a setting added past the end would go unsynced in silence.
+// The debug-sync block has a fixed slot count. Keep every expert setting inside it.
 COMPILE_TIME_ASSERT(expert_settings_fit_debug_sync,
                     COUNTOF(expertSettings) <= NETWORK_EXPERT_SLOTS);
 
@@ -921,9 +921,8 @@ void JE_specialComplete(JE_byte playerNum, JE_byte specialType)
 				this_player->invulnerable_ticks = 100;
 			}
 			break;
-		// Repair specials, Opening Salvo x2.5. Vanilla leans on JE_drawArmor's blanket 28 clamp to
-		// bound these, but endless deliberately SKIPS it (reinforced hulls exceed 28), so cap on the
-		// hull's own max; the rule an armour PICKUP follows. Endless-only; vanilla is untouched.
+		// Opening Salvo scales repair specials. Endless caps them at the ship's
+		// reinforced maximum; campaign keeps its stock clamp.
 		case 13:
 			this_player->armor += endlessOpeningSalvoScale(temp2 / 4 + 1);
 			if (endlessFxActive() && this_player->initial_armor > 0 && this_player->armor > this_player->initial_armor)
@@ -1609,9 +1608,8 @@ void JE_repaintShieldArmorBars(void)
 
 void JE_updateGaugeFlash(void)
 {
-	// Latch this tick's levels for the present pass to interpolate between. Held off the replay
-	// passes so a rollback cannot shift the pair twice, but `cur` still tracks every pass: a
-	// correction that changes the hull must not leave a stale bar on screen for a whole tick.
+	// Latch endpoints once per live tick. `cur` still follows re-simulation so corrected gauges
+	// repaint immediately.
 	if (!rollback_resim)
 		for (uint i = 0; i < COUNTOF(player); ++i)
 		{
@@ -1627,9 +1625,7 @@ void JE_updateGaugeFlash(void)
 	if (!gauge_flash_any())
 		return;
 
-	// One step per REAL tick, which is why the replay passes are excluded: a rollback re-runs ticks
-	// that already spent their step, and a deep enough correction burned a whole glow out inside a
-	// single displayed frame. The arming above is held off the replay passes for the same reason.
+	// Step once per live tick. Re-simulation has already spent this presentation clock.
 	if (!rollback_resim)
 	{
 		for (int i = 0; i < 2; ++i)
@@ -1662,9 +1658,7 @@ void gauge_bars_present(SDL_Surface *dst, int scale, float alpha)
 	gauge_dst = NULL;
 }
 
-// The whole slot, not just the rows above the bar the classic wipe stopped at: the present pass
-// draws at an interpolated level that can sit BELOW the tick's, and on the supersampled frame the
-// block-expanded 1x bar underneath has to go entirely. Every caller redraws immediately after.
+// Clear the full slot before drawing an interpolated or supersampled bar. Callers redraw it now.
 void JE_wipeShieldArmorBars(void)
 {
 	if (rollback_resim_silent)
@@ -1823,7 +1817,7 @@ JE_byte JE_playerDamage(JE_byte temp,
 			JE_setupExplosion(this_player->x - 17, this_player->y + 16, 0, 20, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x - 5 , this_player->y + 16, 0, 21, false, !twoPlayerMode);
 			JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
-			soundQueue[4] = S_CLINK;   // the "deflected" cue; deliberately NOT S_SHIELD_HIT / S_HULL_HIT
+			soundQueue[4] = S_CLINK;  // Deflection cue.
 		}
 
 		if (temp > 0)
@@ -2174,7 +2168,7 @@ void JE_clearSPClip(void)
 // Sprites hiding this tick's occluded sparks. A shower thrown from the middle of a sprite would
 // otherwise plot over it, since JE_drawSP runs after every playfield draw. Small: only the endless
 // "?" pickup publishes a box, and only while it is on screen.
-#define MAX_SP_OCCLUDERS 24  // sprites past this simply stop hiding sparks
+#define MAX_SP_OCCLUDERS 24  // additional sprites do not occlude sparks
 
 static struct { int x0, y0, x1, y1; } sp_occluders[MAX_SP_OCCLUDERS];
 static unsigned int sp_occluder_count;
@@ -2204,11 +2198,8 @@ static bool sp_hidden(int x, int y)
 	return false;
 }
 
-// Spawn slot for the next spark. The shared cursor advances exactly as it did when every source
-// wrote to it, so a capped weapon trail is still thinned by the whole screen's spark traffic. Under
-// Extra Sparks an uncapped spark retires the classic slot it would have taken and is written to the
-// high window instead, which keeps that thinning without shortening the small uncapped showers.
-// See doc/notes.md, "Superspark ring buffer".
+// Advance the shared cursor so all spark traffic still thins classic weapon trails. With Extra
+// Sparks, uncapped effects retire that classic slot and write into the upper window instead.
 static unsigned int next_superpixel(bool classic_cap)
 {
 	const unsigned int cap = (extraSparks && !classic_cap) ? MAX_SUPERPIXELS : SUPERPIXELS_CLASSIC;
@@ -2227,9 +2218,7 @@ static unsigned int next_superpixel(bool classic_cap)
 	return last_uncapped_superpixel;
 }
 
-/* State of the drawing pass in progress. A rollback or a self-test replay throws away a pass that
-   has already drawn and re-runs the same frame, so the discard puts the ring back the way it opened
-   the pass and lets the replacement redo it. See doc/notes.md, "Superspark ring buffer". */
+/* Spark-ring checkpoint for a drawing pass that rollback may discard and replay. */
 static unsigned int sp_pass_superpixel, sp_pass_uncapped;
 static bool sp_pass_advanced;   // JE_drawSP stepped the ring during this pass
 

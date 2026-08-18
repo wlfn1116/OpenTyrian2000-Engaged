@@ -79,7 +79,8 @@ void load_sprites_file(unsigned int table, const char *filename);
 void load_sprites(unsigned int table, FILE *f);
 void free_sprites(unsigned int table);
 
-Uint8 sprite_dominant_bank(unsigned int table, unsigned int index); // palette bank (0..15) the sprite is mostly drawn in
+// Palette bank in which most of the sprite is drawn.
+Uint8 sprite_dominant_bank(unsigned int table, unsigned int index);
 
 void blit_sprite(SDL_Surface *, int x, int y, unsigned int table, unsigned int index); // JE_newDrawCShapeNum
 void blit_sprite_blend(SDL_Surface *, int x, int y, unsigned int table, unsigned int index); // JE_newDrawCShapeTrick
@@ -146,11 +147,8 @@ void blit_sprite2_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsign
 // does; the plain filter blit cannot take one, since it ORs its argument over the sprite's shade.
 void blit_sprite2_filter_bright(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_filter_bright_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
-// Recolour and blend in one pass, for a sprite that is normally drawn with blit_sprite2_blend and
-// has to carry a tint (endless elite explosions). Blending afterwards would read its own tinted
-// pixels back and halve the shade twice. `filter` packs the destination bank in its high nibble
-// and a shade lift in its low one, because halving a shade into a dark bank leaves almost nothing
-// visible; the lift is added after the blend and clamped at the bank top.
+// Recolor and blend in one pass without reading tinted output back. `filter` packs the destination
+// bank in its high nibble and a post-blend shade lift in its low nibble.
 void blit_sprite2_blend_filter(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 void blit_sprite2_blend_filter_clip(SDL_Surface *, int x, int y, Sprite2_array, unsigned int index, Uint8 filter);
 // A sub-row window of the sprite only, brightened `bright` steps toward its own palette bank top,

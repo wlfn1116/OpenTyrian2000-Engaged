@@ -350,11 +350,8 @@ void rl_rec_smoothie_filter(RenderCmdKind kind)
 	// filter's SOURCE buffer; the destination is always the main buffer.
 }
 
-// Lazily-allocated background scratch (the "VGAScreen2" role) for replaying the
-// smoothie two-buffer ping-pong without disturbing the live surfaces. Sized to the
-// replay scale, and cached in two slots because a single frame can replay at both
-// factors: the shop preview reconstructs its 1x box before presenting supersampled,
-// and one slot would then free and recreate the surface twice per frame.
+// Background scratch for smoothie replay. Cache 1x and supersampled sizes because the shop
+// preview can use both in one frame.
 static SDL_Surface *rl_scratch_b[2] = { NULL, NULL };  // [0] = 1x, [1] = supersampled
 
 static SDL_Surface *rl_get_scratch_b(int scale)
@@ -581,9 +578,8 @@ void rl_finalize(void)
 		c->sub_dx = c->sub_x - prev[pi].sub_x;
 		c->sub_dy = c->sub_y - prev[pi].sub_y;
 
-		// Recover only the entity-local displacement from the phase-corrected endpoints.
-		// The canonical layer rate is deliberately NOT stored in the command: replay applies
-		// it independently, so an unmatched/new/clipped bound sprite still follows its layer.
+		// Recover entity-local displacement. Replay applies the layer rate separately
+		// so unmatched or clipped sprites still follow their layer.
 		int par_yown100 = 0;
 		bool par_ybound_match = false;
 		if (c->par_ylayer >= 1 && c->par_ylayer <= 3 &&
@@ -1058,10 +1054,8 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 
 		if (c->kind == RC_STAR)
 		{
-			// Interpolate only the row (x is fixed): the star slides from its
-			// previous row to the recorded one across the tick. star_dy is 0 on a
-			// wrap tick, so a wrapped star simply snaps to the top. At scale > 1 the
-			// float row lands on the 1/scale-pixel grid; slow drifts glide.
+			// Interpolate the fixed-x star row. Wraps set star_dy to 0 and snap to the top;
+			// supersampling places slow drift on the finer pixel grid.
 			const float sy = c->star_y - c->star_dy * inv;
 			if (scale == 1)
 				draw_starfield_star(src, c->star_x, (int)(sy + 0.5f), c->star_color);
@@ -1224,9 +1218,7 @@ static void rl_replay_common(SDL_Surface *dst, float inv, float alpha, bool appl
 		}
 		else if (res_ref_pitch > 0)
 		{
-			// Residual pixels were captured against the 1x reference; re-apply each
-			// as a scale x scale block (overlays like the boss bar simply appear at
-			// classic resolution; correct, just not supersampled).
+			// Residuals use the 1x reference, so reapply each pixel as a scale-square block.
 			for (size_t i = 0; i < res_count; ++i)
 			{
 				const int rx = res_off[i] % res_ref_pitch;

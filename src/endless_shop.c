@@ -76,12 +76,15 @@ Sint64 endlessBombCost[2] = { 0, 0 }, endlessCleanseCost[2] = { 0, 0 };
 int  endlessExtraPerksBought[2] = { 0, 0 };
 int  endlessExtraPerksVisit[2]  = { 0, 0 };
 char endlessGambleMsg[2][48] = { "", "" };
-bool endlessGamblePerkWon[2] = { false, false };  // a gamble handed out a free perk pick; the E-Shop dispatch opens MENU_PERKS
-int  endlessShopTax[2] = { 0, 0 };            // Loan Shark: permanent +% on every shop price for the rest of the run
-bool endlessGambleRigged[2] = { false, false };   // Rigged rolls twice and keeps the worse result
-int  endlessLongCon[2] = { 0, 0 };            // The Long Con: sectors until a paid-and-forgotten APEX ambush comes due (0 = none)
-bool endlessResumeVisit   = false;  // a save was just loaded: the next outpost restores its snapshot instead of rerolling (consumed by endlessBetweenLevels)
-bool endlessCreditsShown  = false;  // the zone-100 credits roll has already played this run; rides the save so reloading the zone-101 outpost doesn't replay it
+bool endlessGamblePerkWon[2] = { false, false };
+int  endlessShopTax[2] = { 0, 0 };
+bool endlessGambleRigged[2] = { false, false };
+int  endlessLongCon[2] = { 0, 0 };
+
+// Loading resumes the saved outpost instead of dealing a new one. Credits are
+// also saved so the zone-101 outpost cannot replay them.
+bool endlessResumeVisit  = false;
+bool endlessCreditsShown = false;
 
 // Cash-fraction purchases use the entry balance so their prices remain fixed during the visit.
 Sint64 endlessShopEntryCash[2] = { 0, 0 };
@@ -292,17 +295,16 @@ static void endlessFillShop(void)
 
 	// itemAvail rows per category (see itemAvailMap in game_menu.c): 0 ships, 1 front,
 	// 2 rear, 3 generator, 5 left sidekick, 6 right sidekick, 8 shield.
-	endlessFillCategory(0, 2, SHIP_DRAGONWING, false, it->ship,                   NULL, 0);  // ships
-	endlessFillCategory(1, 3, SHOP_REAL_WEAPON_PORTS, false, it->weapon[FRONT_WEAPON].id, &rearEquip, rearEquip > 0 ? 1 : 0);  // front weapons (skip equipped rear)
-	endlessFillCategory(2, 4, SHOP_REAL_WEAPON_PORTS, true,  it->weapon[REAR_WEAPON].id,  itemAvail[1], itemAvailMax[1]);  // rear (+None), no dupes vs front
-	endlessFillCategory(3, 6, POWER_NUM,  false, it->generator,                   NULL, 0);  // generators
-	endlessFillCategory(5, 7, OPTION_NUM, true,  it->sidekick[LEFT_SIDEKICK],     NULL, 0);  // left sidekick (+None)
-	endlessFillCategory(6, 8, OPTION_NUM, true,  it->sidekick[RIGHT_SIDEKICK],    NULL, 0);  // right sidekick (+None)
-	endlessFillCategory(8, 5, SHIELD_NUM, false, it->shield,                      NULL, 0);  // shields
+	endlessFillCategory(0, 2, SHIP_DRAGONWING, false, it->ship,                   NULL, 0);
+	endlessFillCategory(1, 3, SHOP_REAL_WEAPON_PORTS, false, it->weapon[FRONT_WEAPON].id, &rearEquip, rearEquip > 0 ? 1 : 0);
+	endlessFillCategory(2, 4, SHOP_REAL_WEAPON_PORTS, true,  it->weapon[REAR_WEAPON].id,  itemAvail[1], itemAvailMax[1]);
+	endlessFillCategory(3, 6, POWER_NUM,  false, it->generator,                   NULL, 0);
+	endlessFillCategory(5, 7, OPTION_NUM, true,  it->sidekick[LEFT_SIDEKICK],     NULL, 0);
+	endlessFillCategory(6, 8, OPTION_NUM, true,  it->sidekick[RIGHT_SIDEKICK],    NULL, 0);
+	endlessFillCategory(8, 5, SHIELD_NUM, false, it->shield,                      NULL, 0);
 }
 
-/* Redeal this seat's shop rows from its own stream, seeded with its own equipped gear: the
- * fallback when an adopted record carries no partner half (see endlessRunAdopt). */
+// Rebuild local shop rows when an adopted record has no partner data.
 void endlessShopRedrawStock(void)
 {
 	endlessFillShop();
@@ -495,10 +497,8 @@ bool endlessConsumeRevive(uint p)
 	return true;
 }
 
-/* Extra perk. What it costs answers how many have been bought and nothing else: perks taken from
- * the free picks, and the wealth a run happens to be carrying, both leave the price alone. The
- * run total is personal, so in co-op one player's spending never prices the other's pick.
- * See doc/notes.md, "Extra-perk pricing". */
+/* Extra Perk purchases are capped per visit and counted per player. Pricing details live in
+ * doc/notes.md#economy-and-perks. */
 bool endlessExtraPerkMaxed(void) { return endlessExtraPerksVisit[me()] >= ENDLESS_PERK_VISIT_MAX; }
 
 Sint64 endlessExtraPerkPrice(void)
@@ -570,7 +570,8 @@ Uint64 endlessStripWorstMod(Uint64 mods)
 		ENDLESS_MOD_MISFIRE, ENDLESS_MOD_SEEKER, ENDLESS_MOD_OVERHEAT,
 		ENDLESS_MOD_BACKFIRE, ENDLESS_MOD_STATIC,
 		ENDLESS_MOD_SWIFT, ENDLESS_MOD_OVERCLOCK, ENDLESS_MOD_ENRAGE, ENDLESS_MOD_SLIPSTREAM,
-		ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI, ENDLESS_MOD_TOPSY,  // gravity + its omni flag strip together, so a sabotaged well is fully cleared (not left as an orphaned omni pull)
+		// Strip Gravity with its direction flag.
+		ENDLESS_MOD_GRAVITY | ENDLESS_MOD_GRAVITY_OMNI, ENDLESS_MOD_TOPSY,
 		ENDLESS_MOD_KAMIKAZE, ENDLESS_MOD_HOMING,  // mild homing tiers are stripped last
 	};
 	for (unsigned i = 0; i < COUNTOF(order); ++i)
@@ -631,7 +632,8 @@ static void endlessApplyGambleOutcome(int id, Sint64 cost)
 		{ const Sint64 win = cost * 4; endlessCashCredit(win, ENDLESS_CASH_GAMBLE); snprintf(msg, GAMBLE_MSG_LEN, "Revive held --  +$%lld", (long long)win); }
 		break;
 	case EGO_PERK:
-		endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);  // the E-Shop dispatch opens MENU_PERKS when endlessGambleWonPerk() is set
+		// The E-Shop dispatcher opens the perk menu after this flag is set.
+		endlessGeneratePerkChoices(ENDLESS_PERK_OFFERS);
 		if (endlessPerkChoiceCount() > 0)
 		{ endlessGamblePerkWon[me()] = true; SDL_strlcpy(msg, "Won a free perk pick!", GAMBLE_MSG_LEN); }
 		else
@@ -849,7 +851,8 @@ static void endlessApplyGambleOutcome(int id, Sint64 cost)
 static int endlessRollToOutcome(int roll)
 {
 	if (roll < 5)  return EGO_JACKPOT;
-	if (roll < 12) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_REVIVE; case 1: return EGO_HULL; default: return EGO_OVERCLOCK; } }  // EGO_PERK pulled out -> now a 1/2500 ultra-rare draw (endlessTryGamble)
+	// Free perks use the ultra-rare draw in endlessTryGamble.
+	if (roll < 12) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_REVIVE; case 1: return EGO_HULL; default: return EGO_OVERCLOCK; } }
 	if (roll < 24) return EGO_WIN;
 	if (roll < 31) return EGO_SPECIAL;
 	if (roll < 37) { switch (endlessRandFor(me()) % 3) { case 0: return EGO_ARSENAL; case 1: return EGO_SECONDWIND; default: return EGO_BLOODMONEY; } }

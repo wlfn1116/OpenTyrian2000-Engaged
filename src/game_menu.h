@@ -146,16 +146,12 @@ void debugLevelJumpReturn(void);
 
 // Stage and synchronize a debug-browser level choice for the next network launch.
 // debugLevelPickGet() reports whether this machine has a browser pick staged (and what it is);
-// debugLevelPickApply() adopts the peer's, exactly as if this machine had made it.
+// debugLevelPickApply() adopts a peer's staged pick through the same path.
 bool debugLevelPickGet(JE_byte *episode, JE_byte *section, JE_byte *fileNum);
 void debugLevelPickApply(JE_byte episode, JE_byte section, JE_byte fileNum);
 void debugLevelPickReset(void);
 
-/* The Endless zone jump's other half. A level pick alone is not enough there: the jump also sets
- * the run's depth and modifiers and both ships' perks and personal buffs, and all of them feed
- * sector generation, so a peer that adopted only the level would build a different zone from the
- * same file. It travels as the Endless debug block (endless.h), which the jumping machine stages
- * beside the level pick; the departure handshake carries both. */
+/* Stage and adopt the whole Endless debug block paired with a network level jump. */
 bool endlessJumpPickGet(Uint8 *block);              // fills ENDLESS_DEBUG_BLOCK_SIZE bytes
 void endlessJumpPickApply(const Uint8 *block, size_t len);
 void endlessJumpPickStage(void);                    // capture the state this machine just applied

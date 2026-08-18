@@ -515,7 +515,8 @@ bool wnm_init(void)
 	if (g_hmo != NULL)
 		return true;
 	static bool vol_defaulted = false;
-	if (!vol_defaulted) { SDL_AtomicSet(&g_master_vol, 255); vol_defaulted = true; }  // don't clobber a set volume on re-open
+	// Set the default only on the first open.
+	if (!vol_defaulted) { SDL_AtomicSet(&g_master_vol, 255); vol_defaulted = true; }
 	MMRESULT r = midiOutOpen(&g_hmo, MIDI_MAPPER, 0, 0, CALLBACK_NULL);
 	if (r != MMSYSERR_NOERROR)
 	{

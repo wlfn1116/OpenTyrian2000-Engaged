@@ -502,7 +502,8 @@ bool fm_init(const char *soundfont, int sample_rate)
 		return true;  // already initialized
 
 	static bool vol_defaulted = false;
-	if (!vol_defaulted) { SDL_AtomicSet(&g_master_vol, 255); vol_defaulted = true; }  // don't clobber a set volume on re-open
+	// Set the default only on the first open.
+	if (!vol_defaulted) { SDL_AtomicSet(&g_master_vol, 255); vol_defaulted = true; }
 
 	g_sf_loaded = false;
 	if (sample_rate <= 0)

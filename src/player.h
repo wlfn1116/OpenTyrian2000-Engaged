@@ -211,7 +211,7 @@ static inline bool all_players_alive(void)
 
 /* Dead with no life left to come back on, once the wreck has finished exploding. Only the arcade
  * rules hand out lives, so anywhere else a finished explosion is already final. Every per-ship HUD
- * readout keys off this; see doc/notes.md#session-modes. */
+ * readout keys off this; see doc/notes.md#modes-and-session-settings. */
 static inline bool player_is_out(uint p)
 {
 	return !player[p].is_alive && player[p].exploding_ticks == 0

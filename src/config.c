@@ -270,11 +270,8 @@ void coopCampaignScoreConfigLoad(const ConfigSection *section)
 	}
 }
 
-/* Records a completed co-op Campaign episode. The pair earned together, so the board keeps their
- * combined cash under both names; there is no name-entry dialog because the lobby already knows
- * who they are, and a modal here would leave the other machine waiting on a dead screen. Every
- * condition for a record lives here rather than at the call site: see "Online Campaign records"
- * in doc/notes.md. */
+/* Record a completed co-op Campaign episode under both lobby names. Eligibility stays here; see
+ * doc/notes.md#online-saves-and-records. */
 void coopCampaignScoreNote(void)
 {
 	const int e = initial_episode_num - 1;
@@ -354,15 +351,13 @@ bool enemyBars       = true;
 int enemyBarLayout   = ENEMY_BAR_HORIZONTAL;
 int enemyBarPosition = ENEMY_BAR_POS_BOTTOM;
 int enemyBarOpacity  = 75;
-/* Interpolate motion between the fixed ~35Hz logic ticks for high-refresh play;
-   off = classic one present per tick. Gates vt_ship_owns() and the JE_starShowVGA
-   interpolation loop (tyrian2.c). */
+// Interpolate the fixed 35 Hz simulation for high-refresh displays. Off renders
+// one frame per simulation tick.
 bool smoothMotion  = true;
 
 void set_smooth_motion(bool enabled)
 {
-	// Only on a real off->on transition (not the config-load self-call), so a
-	// deliberately saved Sub-pixel choice survives a restart.
+	// Preserve a saved supersampling choice during config load.
 	if (enabled && !smoothMotion)
 		render_supersample = 0;  // re-arm Auto supersampling
 	smoothMotion = enabled;
@@ -389,12 +384,8 @@ int wallopSecondBolt = SUPER_SPARKS_ON;
 static const char *const superSparkKeys[SSW_COUNT]    = { "superspark_mega_pulse", "superspark_wallop_beam", "superspark_protron_b", "superspark_ice" };
 static const char *const superSparkCapKeys[SSW_COUNT] = { "superspark_mega_pulse_cap", "superspark_wallop_beam_cap", "superspark_protron_b_cap", "superspark_ice_cap" };
 
-/* Which episode's data each non-spark difference item uses (JE_applyEpDiffs, episodes.c):
-   EPDIFF_AUTO (per-episode, vanilla), _EP13, or _EP45. The three gameplay reworks stay on Auto,
-   so each episode plays its own. The rest are picked one by one for how they sound and look
-   rather than by era, so the two shop ship pictures and the Gum-Gun keep their ep1-3 version
-   while the other four firing sounds and the Solar Shield icon take the ep4/5 one.
-   Keep in EpDiffWeapon order. */
+/* Episode data selected for each non-spark difference item. Keep this in EpDiffWeapon order;
+   the Engaged choices are listed in GUIDE.md under Episode Versions. */
 int epDiffMode[EDW_COUNT] = {
 	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,                                // gameplay reworks
 	EPDIFF_EP45, EPDIFF_EP13, EPDIFF_EP45, EPDIFF_EP45, EPDIFF_EP45,      // firing sounds
@@ -408,10 +399,8 @@ static const char *const epDiffKeys[EDW_COUNT] = {
 	"epdiff_solar_shield", "epdiff_uship_picture", "epdiff_nortship_picture"
 };
 
-/* Map a trail-tagged shot's sprite back to its weapon's cap setting, for the JE_doSP calls
-   in shots.c (a flying shot only knows its graphic). Pass the shot's base graphic (shotGr),
-   never the drawn frame: shotGr + shotAni walks past the entry on every animated frame.
-   Unknown sprites (e.g. sparky custom weapon bullets) honor extraSparks uncapped. */
+/* Look up a trail's classic cap from its base sprite. Animated frames and unknown sprites do
+   not identify a capped weapon. */
 bool superSparkCapForSprite(JE_word sprite)
 {
 	switch (sprite)
@@ -1492,9 +1481,7 @@ static void pitems_to_playeritems(PlayerItems *items, const JE_PItemsType pItems
 
 void JE_saveGame(JE_byte slot, const char *name)
 {
-	// Hardcore forbids saving at the data level, not only in the menus that offer it: any
-	// path that reaches here mid-run (a stale disconnect-save flag, a future menu) must
-	// leave the slot exactly as it was, its Endless half included.
+	// Enforce Hardcore below the menus. A mid-run call must leave both slot sections unchanged.
 	if (endlessMode && endlessHardcore())
 		return;
 
@@ -2587,26 +2574,20 @@ void JE_saveConfiguration(void)
 	save_opentyrian_config();
 }
 
-/* Packed save record for the network resume handshake: the host serializes the chosen 2-player
- * save with this and the joiner applies it through JE_loadGameRecord, so both machines start the
- * resumed session from byte-identical state. */
+// Packed save record used to give both peers identical resume state.
 
 bool save_record_is_coop(const JE_SaveFileType *rec)
 {
 	return (rec->dualShipTag & 0xffff0000u) == 0xc74f0000u;
 }
 
-/* The arcade half of the same marker: two complete ships, but arcade rules and two scores rather
- * than a shared campaign purse. Deliberately NOT save_record_is_coop, which is what admits a
- * record to the Campaign and Endless lobbies. */
+// Dual arcade records contain two ships and scores, but no shared campaign purse.
 bool save_record_is_dual_arcade(const JE_SaveFileType *rec)
 {
 	return (rec->dualShipTag & 0xffff0000u) == 0xc7a50000u;
 }
 
-/* Which ruleset each of the record's two ships was flying, read straight out of the loadout
- * blocks (pItems[2], the super_arcade_mode byte). Ship two only means anything on a record that
- * carries two of them; a one-ship record's second block is player one's `last_items`. */
+// Ruleset stored in each ship's loadout. Ship two is valid only for two-ship records.
 uint save_record_sa_ship(const JE_SaveFileType *rec, uint p)
 {
 	return p == 0 ? rec->items[2] : rec->lastItems[2];

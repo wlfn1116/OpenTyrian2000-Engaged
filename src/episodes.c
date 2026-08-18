@@ -103,9 +103,8 @@ static const struct { JE_byte opt; JE_word gr; } unusedSpriteOptions[] =
 };
 #define UNUSED_SPRITE_CHARGE_LASER_GR 17  // ...plus the Charge-Laser Cannon, slot resolved below
 
-// Unlike the tables above, a special's itemgraphic indexes spriteSheet10 (the in-game HUD block).
-// A row here has to name a 2x2 that no special, sidekick body or charge frame draws, which is why
-// only one of the specials sharing an icon can be fixed this way. doc/notes.md has the survey.
+// Special itemgraphic values index spriteSheet10. Each replacement must be an otherwise unused
+// 2x2; see doc/notes.md#special-pickups-and-orbiting-specials.
 static const struct { JE_byte id; JE_word gr; } unusedSpecialIcons[] =
 {
 	{ 48, 53 },  // Dragon Lightning (was 93, Lightning Zone's)

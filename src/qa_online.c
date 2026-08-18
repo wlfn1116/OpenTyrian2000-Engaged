@@ -1086,9 +1086,7 @@ static void qa_campaign_score_matrix(void)
 
 /* ---- 5b. the strings the lobby and outpost put on screen ---------------------------- */
 
-/* Every value the online menus print has to be there, be drawable in the game font, and fit
- * the row it sits on. A name that runs past its column is only visible on the machine that
- * happens to open that screen, which is why it is checked here instead. */
+/* Check that online menu values exist, render in the game font, and fit their columns. */
 static bool qa_string_drawable(const char *s)
 {
 	if (s == NULL || s[0] == '\0' || strlen(s) >= 24)
@@ -1657,8 +1655,7 @@ static void qa_super_online_matrix(void)
 	         && player[0].items.sidekick[RIGHT_SIDEKICK] == 24,
 	         "the Nort Ship still brings its pair of Companion Ship Quicksilvers online");
 
-	/* One colour, two different guns: the whole point of the per-ship lookup, and the thing a
-	 * session-wide read would silently get right only when both players picked the same ship. */
+	/* One color maps to a different gun for each selected ship. */
 	networkSuperArcadeEquip(&player[0], 1);
 	networkSuperArcadeEquip(&player[1], 2);
 	bool anyDiffer = false;
@@ -2030,7 +2027,7 @@ static void qa_sa_ship_packet(void)
 	qa_check(network_sa_ship_peer() == 4 && !network_sa_ship_peer_saw_us(),
 	         "an announcement with no acknowledgement byte is a pick and nothing more");
 
-	/* This machine's own announcement, reflected back: it is not the peer's. */
+	/* Ignore this machine's reflected announcement. */
 	network_sa_ship_reset();
 	raw[4] = 1;  raw[5] = 4;  raw[6] = 1;
 	qa_inject_packet(raw, 7);

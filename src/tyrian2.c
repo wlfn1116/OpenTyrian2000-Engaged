@@ -79,7 +79,8 @@ static bool arcadeSuperPickupRandomActive(void);
 // MARTYRDOM and SEEKER ROUNDS both act on enemyShot[] (spawned/moved here in tyrian2.c), so their
 // spawn/movement code lives with the pool while the per-modifier decisions live in endless_combat.c.
 
-#define ENDLESS_MARTYR_POOL_MARGIN   48    // suppress the whole burst unless at least (shots + this) enemy-shot slots are free; the "pool nearly full" guard
+// Leave this many enemy-shot slots free before allowing a Martyrdom burst.
+#define ENDLESS_MARTYR_POOL_MARGIN   48
 #define ENDLESS_MARTYR_SHOT_SPEED    3.0f  // slow bullets, as specified ("four slow cardinal shots")
 #define ENDLESS_MARTYR_SHOT_DMG      4     // base per-bullet damage, scaled by the sector's shot-damage ramp
 #define ENDLESS_MARTYR_SHOT_DURATION 120   // ticks before a burst bullet self-expires (also culled off-screen)
@@ -140,11 +141,8 @@ static void endlessMartyrBurstOrigin(unsigned int i, JE_integer *ox, JE_integer 
 	*oy = (JE_integer)((top + bottom) / 2);
 }
 
-// MARTYRDOM: fire a `shots`-way radial burst of slow bullets from (sx, sy) into the shared enemy-shot
-// pool; 4 = cardinal (right/down/left/up), 6/8 = evenly spaced. Suppressed only when the pool is
-// nearly full, so a wall of dying enemies can't flood the screen. The bullet sprite is Martyrdom's own
-// fixed graphic (endlessMartyrShotSprite), so a death burst always looks the same wherever it happens,
-// recoloured into `tint` when the enemy that died was an elite or a champion.
+// Spawn a 4-, 6-, or 8-way Martyrdom burst unless the shared enemy-shot pool is nearly full.
+// Every burst uses the fixed Martyrdom sprite recolored by `tint`.
 static void endlessSpawnMartyrBurst(JE_integer sx, JE_integer sy, int shots, Uint8 tint)
 {
 	if (shots <= 0)
@@ -240,9 +238,8 @@ void JE_deriveStarShowSpecial(void)
 	}
 }
 
-// Before the enemy has been damaged the latest armor write wins; afterwards the value only grows,
-// so a scripted heal refills its health bar and a scripted weakening drains it. The calling
-// contract is in tyrian2.h and the reasoning in doc/notes.md, "Combat".
+// Before damage, the latest armor write becomes full health. After damage, full health can only
+// grow. See doc/notes.md#combat-pipeline.
 void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
 {
 	if (enemy->armorleft >= 255)
@@ -251,34 +248,23 @@ void enemy_note_full_armor(struct JE_SingleEnemyType *enemy)
 		enemy->healthbar_max = enemy->armorleft;
 }
 
-// Chain Reaction pulses queue here and drain once the player-shot pass has finished, which keeps
-// that pass's link bookkeeping stable: a kill made behind its back would disturb the loop walking
-// it. What a pulse destroys queues a pulse of its own, drained on the tick after.
+// Drain Chain Reaction after the player-shot pass so its link walk stays stable. Cascade pulses
+// run on the following tick.
 #define CHAIN_QUEUE_MAX 64
 static struct { int x, y; } chainPulse[CHAIN_QUEUE_MAX];
 static int chainPulseN = 0;
 static int chainPulseLastLink = 0;   // dedup consecutive same-link kills -> one pulse per multi-tile enemy
 
-// Perks are personal, so the ship that made the kill decides whether its pulse fires and how far and
-// hard it lands. Registered beside the queue it indexes, which a wave in flight leaves standing
-// across a frame: a restore that brought the pulses back without their owners would measure them
-// against the wrong ship.
+// Owner, salvo, and wave travel with every queued pulse and are rollback state.
 static int chainPulseOwner[CHAIN_QUEUE_MAX];
 
-// Whether each queued pulse was struck while its owner's Opening Salvo window was running. Latched
-// rather than read at the point of use: a wave started inside the window keeps the bump for every
-// hop it goes on to make, since the volley is what set it off.
+// Opening Salvo state at the kill that began this pulse.
 static bool chainPulseSalvo[CHAIN_QUEUE_MAX];
 
-// Which wave each queued pulse belongs to: a wave lands on a hull once, however many of its pulses
-// reach it. A fresh kill's wave is the kill's own serial (enemyKilled, bumped just before), so no
-// two waves in the air share a name, and every hop inherits its parent's. doc/notes.md, "Combat".
+// Wave serial used to limit a wave to one hit per linked hull.
 static JE_word chainPulseWave[CHAIN_QUEUE_MAX];
 
-// The salvo tag and wave of the pulse being drained, for the cascade hops it queues. Idle outside a
-// drain, where a fresh kill reads its owner's window live and takes a wave of its own. Tick-local:
-// the drain sets them per pulse and leaves them idle again, so they never stand across the frame
-// boundary the queue itself can.
+// Tick-local state inherited by cascade pulses queued during a drain.
 #define CHAIN_DRAIN_IDLE (-1)
 static int chainDrainSalvo = CHAIN_DRAIN_IDLE;
 static JE_word chainDrainWave = 0;
@@ -324,8 +310,7 @@ static void chain_queue_kill(int screenX, int y, int linknum, int killer)
 
 	const uint fxSaved = chain_fx_enter(owner);
 	const bool active = endlessPerkChainReactionActive();
-	// A hop queued from inside a drain carries its parent's tag; a fresh kill reads the owner's own
-	// window, which is why this sits inside that ship's effect context.
+	// A cascade inherits its parent tag. A fresh kill reads the owner's live salvo window.
 	const bool salvo = inDrain ? (chainDrainSalvo != 0) : endlessOpeningSalvoVolleyActive();
 	endlessSetFxPlayer(fxSaved);
 
@@ -655,11 +640,8 @@ static bool chain_target_eligible(int slot, JE_word wave)
 	return true;
 }
 
-// A linked hull is one target however many tiles it is drawn from: the blast reaches it if it
-// reaches any tile, and lands once in the middle of the tiles it has left. The tile nearest that
-// middle takes it, so a hull with a scaled accumulator spends into one place rather than wherever
-// the blast clipped it, and every tile is marked as hit by `wave` so no other pulse of that wave
-// lands on the hull. False when no tile is in range or the wave has already been here.
+// Treat a linked hull as one target. A reached hull takes one hit at its live center and marks all
+// parts with `wave`; return false when the hull is out of range or already hit.
 static bool chain_group_target(JE_byte linknum, int px, int py, int radius, JE_word wave,
                                int *out_x, int *out_y, int *out_victim)
 {
@@ -728,11 +710,8 @@ static void chain_destroy_group(JE_byte linknum, int owner)
 	}
 }
 
-// Drain the pulse queue: each pulse chips armor off nearby enemies and vaporises any it depletes,
-// and what it vaporises pulses on the next tick, so one kill can send a wave travelling through a
-// formation. A wave lands on each hull once, however many of its pulses reach it, and the next kill
-// starts the next wave. Invulnerable hulls, score pickups and flag-setters are never touched and
-// stop the wave; a linked hull is taken down whole or not at all.
+// Drain one Chain Reaction hop. Each wave hits a hull once; destroyed targets queue the next hop.
+// Pickups, flag setters, and invulnerable hulls stop propagation.
 static void chain_reaction_process(void)
 {
 	if (chainPulseN == 0)
@@ -1823,7 +1802,7 @@ void vt_ship_commit_net(int player_index)
 	player[p].x = (int)lrintf(vt_x[p]);
 	player[p].y = (int)lrintf(vt_y[p]);
 
-	// The wire carries position, not velocity, but the tilt/banking code still reads these.
+	// The wire carries position. Local tilt and banking still need the matching velocity.
 	player[p].x_velocity = (int)lrintf(vt_vx[p]);
 	player[p].y_velocity = (int)lrintf(vt_vy[p]);
 	vt_wrote_vx[p] = player[p].x_velocity;
@@ -2682,11 +2661,8 @@ void JE_starShowVGA(void)
 				setDelay(frameCountMax);
 			}
 
-			// Advance the persistent plasma base one filter step to this tick's plasma,
-			// the base for the next tick's interpolated frames. This is the only place
-			// the smoothie feedback accumulates; exactly once per tick, like the sim.
-			// The whole background enters the persistent plasma, including the layers the
-			// display pass drew itself: the filter's feedback is the previous full frame.
+			// Advance persistent smoothie feedback once per tick. Store the full background because
+			// the next filter reads the previous complete frame.
 			if (anySmoothies && bg_feedback != NULL)
 			{
 				if (tick_plasma_ready)
@@ -2939,10 +2915,8 @@ static void endlessEliteAuraSparks(unsigned int i)
 	const bool champion = (enemy[i].eliteState == 3);
 	const int sparks = ENDLESS_ELITE_SPARK_COUNT * (champion ? 2 : 1);
 
-	// The classic cap stays off, for the reason given in endlessSpecialIconSparks. The seed stride
-	// differs from that one: an armored secret orb can be an elite as well, and a shared seed would
-	// land both of its showers on the same angles. That orb wears the "?" glyph, so its aura goes
-	// behind the glyph too; nothing else on the field publishes an occluder.
+	// Elite auras use a different seed stride from pickup sparks because one orb may emit both.
+	// Auras on the special glyph share its occluder.
 	JE_doSPSeeded((JE_word)cx, (JE_word)cy, sparks,
 	              ENDLESS_ELITE_SPARK_REACH + (enemy[i].size == 1 ? 1 : 0),
 	              champion ? ENDLESS_CHAMPION_FILTER : ENDLESS_ELITE_FILTER, false,
@@ -3019,7 +2993,7 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 		rl_current_par_yfrac = tempScrollYfrac;
 		rl_current_par_ylayer = tempScrollYLayer;
 	}
-	// The pickup's own cycling bank wins over a hit flash; it is the whole point of the icon.
+	// The special-pickup color cycle takes precedence over a hit flash.
 	const Uint8 filter = specialPickup ? endlessSpecialIconFilter() : enemy[i].filter;
 	if (outline)
 		blit_sprite2_solid(surface, x, y, *sheet, index, filter + ENDLESS_SPECIAL_OUTLINE_SHADE);
@@ -3109,9 +3083,8 @@ static bool enemy_has_visible_pixel(unsigned int i)
 	}
 }
 
-// True if this live enemy is stuck above the top of the screen with no way to ever leave:
-// beyond shot reach (ey <= -58) and vertically frozen. HORIZONTAL state is deliberately
-// ignored because HARVEST's anchor carries a sideways sway.
+// True when a live enemy is frozen above shot reach. Horizontal movement does
+// not count because HARVEST's anchor sways sideways.
 static bool enemy_stuck_above_screen(unsigned int i)
 {
 	return enemy[i].ey   <= -58 &&
@@ -3135,16 +3108,13 @@ static bool enemy_link_group_reachable(unsigned int i)
 	return false;
 }
 
-// The watchdog's real target: stuck above the reach line AND with no reachable link-group partner
-// left, i.e. an enemy no shot can ever touch again. This is the "boss died before its script staged
-// the fight" state and nothing else.
+// The watchdog targets enemies above shot reach with no reachable link partner.
 static bool enemy_stuck_orphaned(unsigned int i)
 {
 	return enemy_stuck_above_screen(i) && !enemy_link_group_reachable(i);
 }
 
-// Count live enemies orphaned above the screen: a dedicated full-pool scan, deliberately not the
-// draw loop's on-screen census.
+// Count orphaned enemies with a full-pool scan, independent of drawing.
 static unsigned int count_stuck_above_screen(void)
 {
 	unsigned int n = 0;
@@ -3552,9 +3522,8 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				    enemy[i].egr[enemy[i].enemycycle - 1] == 999)
 					goto enemy_gone;
 
-				// Elite/champion tint: filter is zeroed every frame (below), so re-apply it
-				// here each frame. Skip if something already set filter (e.g. a hit flash). A part
-				// with no tier of its own borrows its group's, so a hull tints as one body.
+				// Reapply tier tint after the per-frame reset unless a hit effect owns the filter.
+				// Untiered linked parts borrow their hull's tint.
 				if (enemy[i].filter == 0)
 					enemy[i].filter = (enemy[i].eliteState >= 2)
 					                ? endlessEliteTint(enemy[i].eliteState)
@@ -5168,7 +5137,8 @@ level_loop:
 		}
 		else
 		{
-			power += endlessGeneratorPowerAdd(powerAdd);  // endless DEADGEN throttles the generator to a trickle (normal rate otherwise)
+			// Dead Generator throttles the normal charge rate.
+			power += endlessGeneratorPowerAdd(powerAdd);
 			if (power > 900)
 				power = 900;
 
@@ -6195,7 +6165,8 @@ draw_player_shot_loop_end:
 				continue;
 			}
 
-			rep_explosions[i].y += backMove2 + endlessScrollExtraPx2 + 1;  // scroll-track layer 2 at smooth overclock pace; +1 fall speed unchanged
+			// Track layer 2 while keeping the explosion's one-pixel fall speed.
+			rep_explosions[i].y += backMove2 + endlessScrollExtraPx2 + 1;
 			JE_integer tempX = rep_explosions[i].x + (mt_rand() % 24) - 12;
 			JE_integer tempY = rep_explosions[i].y + (mt_rand() % 27) - 24;
 
@@ -6601,8 +6572,7 @@ draw_player_shot_loop_end:
 					    deathGameOverTicks >= DEATH_GAMEOVER_TICKS_MAX)
 					{
 						reallyEndLevel = true;
-						// Not live input, but it lands on the same one-shot: record it so a
-						// self-test replay of this tick ends the level where this one did.
+						// Record the automatic dismissal for self-test replay.
 						if (rollback_selftest_active())
 							rollback_st_event(RB_EV_DISMISS);
 					}
@@ -7026,7 +6996,8 @@ draw_player_shot_loop_end:
 	if (!anySmoothies)
 		rl_capture_residual(game_screen, VGAScreen2);  // non-blit pixels (superpixels, boss bar)
 	else
-		rl_capture_residual_delta(VGAScreen2, game_screen);  // overlay-only (WARNING bars, boss bar, HUD) -> re-applied unfiltered on the display frame
+		// Reapply overlay-only changes to the display frame without filtering.
+		rl_capture_residual_delta(VGAScreen2, game_screen);
 	vt_ship_tick();       // fold external forces / repositions into the variable-dt ship
 	// Publish tick velocity for render interpolation of ship-attached shots.
 	for (int p = 0; p < (twoPlayerMode ? 2 : 1); ++p)
@@ -7454,7 +7425,8 @@ new_game:
 					case 'b':
 						// Online rides the 2-player LAST LEVEL slot; solo keeps the original slot 11.
 						temp = backup_save_slot();
-						if (!endlessMode)  // mid-level savepoint: unstable for endless; it autosaves at the outpost instead (endlessBetweenLevels)
+						// Endless saves at outposts; its mid-level state is not stable.
+						if (!endlessMode)
 						{
 							JE_saveGame(temp, "LAST LEVEL    ");   // drops any stale endless half of the slot
 						}
@@ -9548,9 +9520,7 @@ bool newSuperArcadeGame(unsigned int i)
 
 		player[0].cash = 0;
 
-		// Record the ship on the ship, not only in the session global: every SAWeapon and
-		// SASpecialWeapon read is per ship now (player_sa_ship), because online Super Arcade
-		// lets the two players fly different ones.
+		// Online Super Arcade stores each player's ship for per-ship weapon lookup.
 		player[0].items.super_arcade_mode = (Uint8)(i + 1);
 		player[0].items.weapon[FRONT_WEAPON].id = SAWeapon[i][0];
 		player[0].items.special = SASpecialWeapon[i];
@@ -12048,11 +12018,8 @@ static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 	draw_boss_bars_enhanced(dst, scale, alpha, false, bars);
 }
 
-// How far LEFT the endless kill-fire HUD (bottom-right of the playfield, right-aligned to
-// hudRightX) must shift to clear a currently-shown RIGHT-side vertical boss bar, or 0 if none is
-// in the way. Classic style and non-right layouts never occupy that column. Mirrors the bx
-// geometry in draw_boss_bars_enhanced exactly (same THICK, GAP and edge clearance) so the two
-// can't drift.
+// Shift needed to clear a right-side enhanced boss bar, or 0. Keep this geometry in sync with
+// draw_boss_bars_enhanced.
 int boss_bar_hud_left_shift(int hudRightX)
 {
 	const unsigned int bars = (boss_bar[0].link_num != 0 ? 1 : 0)

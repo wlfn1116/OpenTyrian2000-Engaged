@@ -78,9 +78,8 @@ int customWeaponLocalOwner(void)
 	return clampi(owner, 0, CUSTOM_WEAPON_OWNERS - 1);
 }
 
-/* Sim-side "is this a custom weapon" test. It must cover every owner's port, not just
- * customWeaponPort: that global names the local owner's port, which differs per machine online,
- * and the Endless record flag it feeds is registered state that must match on both. */
+/* Simulation-side custom-port test for every owner. `customWeaponPort` names only the local
+ * owner's port and differs between online peers. */
 bool customWeaponPortIsCustom(JE_word port)
 {
 	for (int i = 0; i < CUSTOM_WEAPON_OWNERS; ++i)
@@ -147,10 +146,7 @@ static void sanitizeRawWeapon(JE_WeaponType *w)
 {
 	w->multi = (JE_byte)clampi(w->multi, 1, CUSTOM_BULLETS_MAX);
 	w->max   = (JE_byte)clampi(w->max,   1, CUSTOM_BULLETS_MAX);
-	// NOTE: shotrepeat 0 is valid and important; it fires a shot every tick, which is
-	// what makes a laser render as one solid beam (104 stock weapons rely on it, incl.
-	// every "Laser" power level). Flooring it to 1 halves the fire rate and opens gaps
-	// between beam segments, so do not clamp it here.
+	// shotrepeat 0 fires every tick. Stock lasers rely on it for a continuous beam.
 	if (w->sound > CUSTOM_SOUND_MAX)
 		w->sound = CUSTOM_SOUND_MAX;
 }
@@ -304,9 +300,7 @@ void customWeaponImportAllLevels(int presetIdx)
 			customWeaponEquipSlot = CUSTOM_EQUIP_LEFT;
 		}
 
-		// Clone the source sidekick's BODY (mount / sprite / animation) too, so importing a
-		// stock sidekick reproduces how it looks and where it sits; e.g. the Micro Sol
-		// FrontBlaster comes across front-mounted with its own pod sprite, not just its shot.
+		// Clone the source sidekick body, mount, and animation along with its shot.
 		if (bp->sourceOption > 0 && bp->sourceOption <= OPTION_NUM)
 		{
 			const JE_OptionType *so = &options[bp->sourceOption];
@@ -585,8 +579,7 @@ int customWeaponRemoveBullet(int index)
 	w->sx[last] = 0;  w->sy[last] = 0;  w->bx[last] = 0;  w->by[last] = 0;
 
 	w->multi = (JE_byte)(n - 1);
-	// Leave `max` alone (matching the Bullets row): a design that deliberately keeps
-	// max > multi for a variation pattern survives a segment removal.
+	// Keep `max`; variation patterns may have more stages than active segments.
 	return (at >= n - 1) ? at - 1 : at;   // select the segment now occupying this slot
 }
 
@@ -1234,7 +1227,7 @@ bool customWeaponAdoptDesign(int owner, const Uint8 *buf, size_t len)
 	design->sidekickFrameStep = clampi(wireGetU8(&r), 0, 40);
 	design->sidekickAnimate   = clampi(wireGetU8(&r), 1, 2);
 
-	// A build with more modes or levels than the sender simply leaves the extra ones blank.
+	// Leave modes or levels beyond the sender's layout blank.
 	for (int m = 0; m < modes; ++m)
 		for (int p = 0; p < levels; ++p)
 			wireGetWeapon(&r, &design->raw[m][p]);

@@ -33,11 +33,8 @@
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
 JE_byte shotAvail[MAX_PWEAPON]; /* [1..MaxPWeapon] */   /*0:Avail 1-255:Duration left*/
 
-/* Endless Guidance Package steering. The collision loop measures an enemy at ex + mapoffset, so a
- * steered shot chases that screen x; the weapon-table homing below it keeps its stock map-x aim
- * unless the Guided Aim setting (guidedShotScreenAim) moves it to the same screen x. A target is a
- * live, shootable hull: pickups, scenery and invulnerable parts would pile shots into something
- * they can never hurt. */
+/* Guidance Package targets the screen position of a live, shootable hull. Stock homing uses map x
+ * unless Guided Aim is enabled. */
 static bool shot_guidance_target_ok(int slot)
 {
 	return enemyAvail[slot] == 0 && !enemy[slot].scoreitem
@@ -923,11 +920,8 @@ JE_integer player_shot_create_twin(JE_integer first, JE_word portNum, uint sidek
 	return player_shot_create(portNum, bay, (JE_word)(x + twinDx), (JE_word)y, mouseX, mouseY, wpNum, playerNum);
 }
 
-/* Endless Deflector, contract in shots.h. The returned shot keeps the bullet's sprite, animation
- * frame and tier tint and flies its path in reverse, velocity and acceleration both negated, so a
- * lobbed shot arcs back the way it came. Its damage is scaled at collision like every player shot's;
- * the blast tint is the sprite's own colour, which is also what the Opening Salvo cue reads. See
- * "Combat" in doc/notes.md. */
+/* Deflected shots keep the incoming art and tier tint while reversing velocity and acceleration.
+ * Damage follows the normal player-shot path; see doc/notes.md#perk-interactions. */
 #define DEFLECT_MIN_SPEED   4    // px per tick straight up, for a bullet that had come to rest
 #define DEFLECT_LIFE_TICKS  255  // the pool countdown; the screen cull retires it before that
 

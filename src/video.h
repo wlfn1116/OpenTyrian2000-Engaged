@@ -34,10 +34,8 @@
 #define PLAYFIELD_X_SHIFT (-12)
 #define HUD_X(x) ((x) + (vga_width - LEGACY_WIDTH))
 
-/*
- * PLAYFIELD_LEFT must equal composite_playfield()'s crop offset, and is
- * deliberately NOT derived from PLAYFIELD_X_SHIFT (an unrelated tile phase).
- */
+// Must match composite_playfield()'s crop offset. PLAYFIELD_X_SHIFT is an
+// unrelated tile phase.
 #define PLAYFIELD_LEFT   24
 #define PLAYFIELD_RIGHT  (PLAYFIELD_LEFT + PLAYFIELD_WIDTH - 1)
 #define PLAYFIELD_CENTER_X(w)  (PLAYFIELD_LEFT + (PLAYFIELD_WIDTH - (int)(w)) / 2)
@@ -75,9 +73,8 @@ extern ScalingMode scaling_mode;
 extern int render_supersample;
 int effective_supersample(void);
 
-/* Smoothie (ice, water, lava) quality. True filters at the sub-pixel/display rate. False filters
- * at 1x and expands while leaving entities sub-pixel; on Vita it instead holds the 1x plasma for
- * one simulation tick while foreground-local movement remains smooth. See doc/notes.md. */
+/* Smoothie quality. True filters at display resolution; false filters at 1x while keeping
+ * foreground motion smooth. Vita reuses the 1x endpoint for one simulation tick. */
 extern bool smoothie_full_res;
 
 extern bool show_fps;          // draw the FPS counter during gameplay

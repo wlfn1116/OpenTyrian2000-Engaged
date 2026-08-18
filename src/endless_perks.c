@@ -328,8 +328,8 @@ int endlessPerkExecutionerBonus(int damage, int armorleft, int fullHp, bool boss
 	return (damage * stacks * ENDLESS_PERK_EXEC_DMG_PCT + 50) / 100;
 }
 
-// endlessSalvoIdle[endlessFxPlayer()] charges the salvo; endlessSalvoWindow[endlessFxPlayer()] tracks its active period. Both are per
-// ship: the charge belongs to the gun that sat idle, and the gun that fires is the one that spends it.
+// Salvo charge and its active window are per ship. The gun that waits earns
+// the charge, and the gun that fires spends it.
 
 // One ship's start-of-tick housekeeping.
 static void endlessOpeningSalvoTickOne(void)
@@ -488,11 +488,8 @@ int endlessPerkFailsafeTicks(void)
 	return perkFx(PERK_FAILSAFE) * ENDLESS_PERK_FAILSAFE_TICKS;
 }
 
-/* Guidance Package: the steering interval, in ticks between course corrections, the perk gives a
- * shot leaving `bay`, or 0 when the perk leaves that shot alone. `ownDelay` is the weapon table's
- * interval for a gun that homes already, 0 otherwise; such a gun is tightened rather than replaced.
- * The main guns steer from the first stack, the sidekicks from the second, the specials from the
- * third. shots.c applies it. */
+/* Guidance Package steering interval for a shot leaving `bay`, or 0 when it does not apply.
+ * Existing homing uses `ownDelay`; stack thresholds are documented in GUIDE.md. */
 int endlessPerkGuidanceDelay(uint bay, int ownDelay)
 {
 	const int stacks = endlessFxActive() ? perkFx(PERK_GUIDANCE) : 0;
@@ -512,10 +509,8 @@ int endlessPerkGuidanceDelay(uint bay, int ownDelay)
 	return delay < 1 ? 1 : delay;
 }
 
-/* Twin Pods: the x offset, in px, of ship p's twin volley from the pod, or 0 when the perk leaves
- * that pod alone. The fire site moves the pod's own volley the same distance inboard, so the pair
- * straddles the pod. The firing ship is named rather than taken from the effect context, because
- * the shop preview fires every shot as player one; see "Combat" in doc/notes.md. */
+/* Twin Pods offset from the named ship's pod, or 0 when inactive. The fire site moves the
+ * original volley inboard by the same distance. */
 int endlessPerkTwinPodOffset(uint p, uint sidekick)
 {
 	if (!endlessFxActive() || perkShip(p, PERK_TWINPODS) == 0)
@@ -616,9 +611,8 @@ int endlessPerkKnifeFightBonus(int damage, int pct)
 	return (damage * pct + 50) / 100;
 }
 
-/* The blood a Knife Fight hit draws. Presentation only: the drops are superpixels, which sit outside
- * the rollback registry, and JE_doSPDripSeeded runs its own sequence rather than the simulation RNG.
- * Shade lift matches the other endless showers. See "Combat" in doc/notes.md. */
+/* Knife Fight hit effect. It uses presentation-only seeded sparks and the common Endless shade
+ * lift; see doc/notes.md#perk-interactions. */
 #define KNIFE_BLOOD_DROPS_MAX     4  // at the deepest bonus; enough to mark the hit and stay out of the way
 #define KNIFE_BLOOD_PER_FRAME    10  // ...and one presented frame spawns no more than this, over every hit in it
 #define KNIFE_BLOOD_SPREAD_PX     4  // how wide a shower starts around the hit
@@ -862,8 +856,7 @@ void endlessTakePerk(int i)
 	endlessPerkDepthDone = endlessRunDepth;  // this zone's perk is resolved (survives a save/reload)
 }
 
-// Cash paid for declining the pick ("Take the Cash"). The constants, and the reasoning behind each
-// term, are in endless_internal.h.
+// Cash paid by Take the Cash. Its tuning constants are in endless_internal.h.
 Sint64 endlessPerkDeclineBonus(void)
 {
 	// A thinned pool never pays less than a standard slate; milestone slates pay proportionally more.

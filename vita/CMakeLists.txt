@@ -23,7 +23,7 @@ set(VITA_VERSION  "01.00")
 
 # Compiler flags: signed char matches the engine's x86 assumptions; relaxed
 # aliasing supports the data loaders; unfused floats preserve netplay parity.
-# The format warning is disabled for intentionally fixed-width display strings.
+# Fixed-width display strings require this format-warning exception.
 add_compile_options(-Wall -Wno-format-truncation -O2 -fsigned-char -fno-strict-aliasing
                     -ffp-contract=off)
 

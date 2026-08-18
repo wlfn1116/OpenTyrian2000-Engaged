@@ -15,11 +15,8 @@ extern unsigned long qa_replay_ticks;
 extern unsigned long qa_destruct_selftest_ticks;
 extern bool qa_replay_expect_set;
 extern Uint32 qa_replay_expect;
-/* Fly the replayed demo with Endless effects armed, so the self-test's frame-by-frame comparison
- * reaches a half of the game it otherwise skips: 1 also grants Chain Reaction at full stacks and
- * covers the pulse queue and a wave crossing a snapshot, 2 is the same level without the perk and
- * is the control for what 1 reports. The state hash is not the campaign one and is not a fixture;
- * the failure count is the result. */
+/* Endless replay mode: 1 grants full Chain Reaction; 2 is the no-perk control. The failure count
+ * is authoritative; its state hash is not a fixture. */
 extern int qa_replay_chain;
 extern int qa_net_rounds;
 // Which two-peer wire scenario to run: 0 base, 1 online campaign, 2 online Endless,
@@ -99,12 +96,8 @@ void qa_test_chain_cascade(void);
 // A wave lands on a hull once, across its overlapping pulses and its hops; the next kill's wave
 // lands again (tyrian2.c).
 void qa_test_chain_wave_latch(void);
-/* Drive a chain wave through the real pulse queue and drain (tyrian2.c, which owns both): a row of
- * `count` enemies worth `evalue` each, spaced so the wave carries, started by a pulse belonging to
- * `owner`. `linknum` 0 lays them out as lone fodder, anything else as the tiles of one linked hull;
- * `eliteState` 2 or 3 makes them elites or champions, which carry a bounty on top of their value.
- * Reports the cash each ship took over the whole wave, how many of the row it killed, and whether
- * drops appeared. Clears the enemy table; callers restore it. */
+/* Run a Chain Reaction wave through the production queue. `linknum` 0 creates separate enemies;
+ * other values create one linked hull. Returns payout, kills, and drop state, and clears enemy[]. */
 void qa_chain_kill_row(int owner, int evalue, int count, JE_byte linknum, int eliteState,
                        long *out_paid0, long *out_paid1, int *out_killed, bool *out_dropped);
 /* Armor one pulse belonging to `owner` takes off a hull tough enough to survive it (tyrian2.c), the

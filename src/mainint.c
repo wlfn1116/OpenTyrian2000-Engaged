@@ -1068,7 +1068,7 @@ int JE_loadScreen(bool net2p, bool saving)
 			}
 		}
 
-		// Arrow keys raise these too, so the online pin has to gate here, not just the mouse arrows.
+		// Arrow keys also raise these actions; the online pin gates both input sources here.
 		if (leftAction && !net2p)
 		{
 			playersIndex = playersIndex == 0 ? 1 : 0;
@@ -5176,8 +5176,7 @@ void JE_debugMenu(bool center)
 					snprintf(buf, sizeof(buf), "%ds", crashlog_get_hang_timeout());  // live value
 				break;
 			case DBG_ENDLESS_FX:
-				// Inside a real endless run the layer is simply on, and this toggle has nothing to
-				// say; report that rather than a switch that would appear to do nothing.
+				// Endless runs always enable this layer, so report its fixed state.
 				if (endlessMode)
 					sprintf(buf, "%s", "ENDLESS");
 				else
@@ -5199,8 +5198,7 @@ void JE_debugMenu(bool center)
 				break;
 			}
 			case DBG_ROLLBACK_SELFTEST:
-				// Carry the running tally, not just the switch: it is the only sign from inside the
-				// game that the verification is actually armed and what it has found so far.
+				// Show the running failure count while verification is armed.
 				if (!rollback_selftest)
 					sprintf(buf, "%s", "OFF");
 				else if (endlessFxActive())
@@ -5212,7 +5210,7 @@ void JE_debugMenu(bool center)
 				else
 					sprintf(buf, "%s", "ON");
 				break;
-			case DBG_FORCE_CRASH:  // action: deliberately crash to test the crash logger
+			case DBG_FORCE_CRASH:  // Crash-logger test action.
 				sprintf(buf, "%s", "[Enter]");
 				break;
 			default:
@@ -5557,7 +5555,7 @@ void JE_debugMenu(bool center)
 						reallyEndLevel = true;
 					done = true;
 					break;
-				case DBG_FORCE_CRASH:  // deliberately fault to exercise the crash logger
+				case DBG_FORCE_CRASH:
 					debug_force_crash();
 					break;
 				case DBG_PLAY_SOUND:  // Play the selected sound sample
@@ -6372,11 +6370,8 @@ void JE_SFCodes(JE_byte playerNum_, JE_integer PX_, JE_integer PY_, JE_integer m
 	}
 }
 
-/* The one-pixel target JE_SFCodes reads a movement intent as: a direction counts only while its
- * axis exceeds twice the other, and a shallower diagonal keeps both axes, which the detector reads
- * as a neutral tick. rb_fill_tuple applies the same rule before intent goes on the wire. dx and dy
- * are positive right and down, and the target sits on the opposite side. An upside-down screen
- * mirrors the horizontal intent here. See doc/notes.md, "Twiddles". */
+/* Collapse movement into the 2:1 twiddle cone. Shallow diagonals remain neutral; Topsy Turvy
+ * mirrors horizontal intent here. See doc/notes.md#twiddles-and-specials. */
 void SF_twiddleTarget(int px, int py, int dx, int dy, int *out_x, int *out_y)
 {
 	if (smoothies[9-1])
@@ -7131,9 +7126,8 @@ static void debug_box(SDL_Surface *s, int x0, int y0, int x1, int y1, Uint8 col)
 	fill_rectangle_xy(s, x1, y0, x1, y1, col);  // right
 }
 
-/* Hitbox boxes drawn into game_screen at the end of JE_inGameDisplays, so the render-list
- * residual shows them every presented frame. Positions are sim (collision) coordinates, so the
- * boxes deliberately snap, not interpolate. The perf overlay is a present-time draw instead. */
+// Hitboxes use simulation coordinates and snap between ticks. The performance
+// overlay is drawn at presentation time.
 static void JE_drawDebugOverlays(void)
 {
 	enum { COL_ENEMY = 124, COL_PLAYER = 0xFB, COL_PSHOT = 0xFB, COL_ESHOT = 124 };
@@ -7585,12 +7579,8 @@ static void draw_special_icon(SDL_Surface *surface, int x, int y, JE_byte id)
 	blit_sprite2(surface, x + (freeW + 1) / 2 - x0, y + freeH / 2 - y0, *sheet, top);
 }
 
-/* Advance the meter over the clocks published this tick and return the rows to light.
- *
- * Burning drains what was there; recharging fills it back. Both land on empty at the handover, so
- * a special that burns and then recharges reads as one continuous sweep down and back up. The fill
- * is kept fractional: a 12-row meter driven by clocks that can run hundreds of ticks would sit
- * still for a dozen of them and then jump a whole row. */
+/* Advance the special meter from its published clocks. Burn and recharge meet at empty, and the
+ * fractional fill prevents long clocks from jumping a whole row at a time. */
 static float hud_special_light_step(void)
 {
 	const bool burning = hud_light_burn_left > 0;
@@ -7816,8 +7806,7 @@ int hud_top_right_left_edge(void)
 	return left;
 }
 
-/* The FPS counter and the Endless kill readout are deliberately not counted below: both slide
- * left to clear a right-edge bar instead (boss_bar_hud_left_shift). */
+// The FPS and kill counters slide left around a right-edge bar instead.
 
 // Bottom row of the top-left cluster (special block, arcade name/lives rows), or -1.
 int hud_top_left_bottom_edge(void)
@@ -8918,7 +8907,7 @@ redo:
 			JE_drawArmor();
 			VGAScreen = game_screen; /* side-effect of game_screen */
 
-			// as if instant death weren't enough, player also gets infinite lives in order to enjoy an infinite number of deaths -_-
+			// Preserve the mode's repeating instant-death loop.
 			if (*player[0].lives < ARCADE_LIVES_MAX)
 			{
 				++(*player[0].lives);
@@ -11071,16 +11060,20 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 				}
 				else if (evalue > 10000 && enemyAvail[z] == 2)
 				{
-					if (endlessMode) { enemyAvail[z] = 1; soundQueue[7] = S_POWERUP; endlessGrantSpecial((uint)(this_player - &player[0])); }  /* secret orb -> random special in endless (no map warp) */ else if (!bonusLevel)
+					if (endlessMode)
+					{
+						enemyAvail[z] = 1;
+						soundQueue[7] = S_POWERUP;
+						endlessGrantSpecial((uint)(this_player - &player[0]));
+					}
+					else if (!bonusLevel)
 					{
 						play_song(30);  /*Zanac*/
 						bonusLevel = true;
 						nextLevel = evalue - 10000;
 						enemyAvail[z] = 1;
 
-						// Announce the destination secret level (by name) in the bottom
-						// HUD message bar, like the "Good luck" text; it auto-erases after
-						// a short time (textErase).
+						// Show the secret destination in the temporary HUD message.
 						char secretName[16];
 						JE_getLevelName(nextLevel, secretName, sizeof(secretName));
 						if (secretName[0] != '\0')
@@ -11098,8 +11091,12 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					{
 						cubeMax++;
 						soundQueue[3] = V_DATA_CUBE;
-										if (endlessMode)  // datacubes don't accumulate in endless (cube data is inconsistent / crashes)
-											{ cubeMax--; soundQueue[3] = S_POWERUP; endlessGrantSpecial((uint)(this_player - &player[0])); }  /* datacube -> random special in endless */
+										if (endlessMode)
+										{
+											cubeMax--;
+											soundQueue[3] = S_POWERUP;
+											endlessGrantSpecial((uint)(this_player - &player[0]));
+										}
 					}
 					else if (evalue == -1)  // got front weapon powerup
 					{
@@ -11208,18 +11205,15 @@ void JE_playerCollide(Player *this_player, JE_byte playerNum_)
 					if (knifeRam > 0)
 						endlessPerkKnifeFightBlood((unsigned)z, knifePct);
 					// An open Opening Salvo window lifts the ram as it lifts a volley. Its lift and
-					// Knife Fight's bonus come off the same Prow figure and are summed, and a ram
-					// rides the window without spending it.
+					// Ramming uses Opening Salvo without spending it; Knife Fight adds separately.
 					damage_to_enemy = endlessOpeningSalvoScale(damage_to_enemy) + knifeRam;
 					if (damage_to_enemy > enemy[z].armorleft)
 						damage_to_enemy = enemy[z].armorleft;
 
 					int playerHit = armorleft;
-					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))  // Rampage (the brutal Kamikaze): rammers hit ~1.5x harder
+					if (endlessFxActive() && (endlessActiveMods & ENDLESS_MOD_RAMPAGE))
 						playerHit = playerHit * 3 / 2;
-					// The depth ramp, the tier premium and Reinforced Prow's cut, spent as one
-					// rounded pass so no divide truncates ahead of the next. Only playerHit is
-					// scaled: depth alone grinds no enemy down faster.
+					// Apply incoming ram modifiers in one rounded pass.
 					if (endlessFxActive() && playerHit > 0)
 					{
 						const Sint64 pct = (Sint64)endlessContactDamagePercent()

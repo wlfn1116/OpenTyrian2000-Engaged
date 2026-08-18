@@ -18,27 +18,27 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_ENRAGE,        10, "enemy fire rate climbs" },
 	{ ENDLESS_MOD_GRAVITY,        8, "downward pull" },
 	{ ENDLESS_MOD_ELITEPACK,     20, "half enemies elite" },
-	{ ENDLESS_MOD_OVERCLOCK,     16, "faster enemy attacks" },  // fire rate, shot speed, and scrolling
+	{ ENDLESS_MOD_OVERCLOCK,     16, "faster enemy attacks" },
 	{ ENDLESS_MOD_SLIPSTREAM,     6, "faster scrolling" },
-	{ ENDLESS_MOD_KAMIKAZE,      12, "enemies home in" },   // moderate homing without ram damage
+	{ ENDLESS_MOD_KAMIKAZE,      12, "enemies home in" },
 	{ ENDLESS_MOD_HOMING,         6, "light homing" },
-	{ ENDLESS_MOD_RAMPAGE,       50, "enemies ram you" },   // gamble-only strong homing and ram damage
-	{ ENDLESS_MOD_OVERLOAD,      30, "extreme enemy attacks" },  // stronger Overclock variant
+	{ ENDLESS_MOD_RAMPAGE,       50, "enemies ram you" },
+	{ ENDLESS_MOD_OVERLOAD,      30, "extreme enemy attacks" },
 	{ ENDLESS_MOD_APEX,          40, "all enemies elite" },
 	{ ENDLESS_MOD_LEGION,        50, "all champion enemies" },
-	{ ENDLESS_MOD_WARP,          20, "much faster scrolling" },  // Slipstream cranked way up (rare injected)
+	{ ENDLESS_MOD_WARP,          20, "much faster scrolling" },
 	{ ENDLESS_MOD_BACKFIRE, 12, "kills jam your guns" },
 	{ ENDLESS_MOD_BURNOUT,   18, "kills weaken guns" },
 	{ ENDLESS_MOD_MISFIRE,   14, "kills cut your damage" },
-	{ ENDLESS_MOD_OVERHEAT,  14, "hull burns over time" },  // the reactor cooks you (gamble deal + rare Redline sector)
-	{ ENDLESS_MOD_TOPSY,     10, "upside-down view" },      // controls invert with the playfield
+	{ ENDLESS_MOD_OVERHEAT,  14, "hull burns over time" },
+	{ ENDLESS_MOD_TOPSY,     10, "upside-down view" },
 	{ ENDLESS_MOD_SLUGGISH,  15, "your ship slowed" },
 	{ ENDLESS_MOD_SHIELDLESS, 12, "no shield regen" },
-	{ ENDLESS_MOD_DEADGEN,   30, "generator dead" },        // no shield regen AND the main gun is starved of power (super-rare)
-	{ ENDLESS_MOD_MARTYRDOM, 18, "kills fire a burst" },    // a slain enemy's death throe: a radial burst (4/6/8 by tier)
-	{ ENDLESS_MOD_SEEKER,    14, "shots curve at you" },    // enemy projectiles bend once toward you mid-flight
+	{ ENDLESS_MOD_DEADGEN,   30, "generator dead" },
+	{ ENDLESS_MOD_MARTYRDOM, 18, "kills fire a burst" },
+	{ ENDLESS_MOD_SEEKER,    14, "shots curve at you" },
 	{ ENDLESS_MOD_STATIC,    11, "hits drain power" },
-	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },  // a kill spree whips enemy fire faster (distinct from time-based Enrage)
+	{ ENDLESS_MOD_RETALIATION, 15, "kills quicken fire" },
 	// The finale marker has no monitor row. Its weight controls reward and slate ordering.
 	{ ENDLESS_MOD_THEEND,   150, NULL },
 	// Boons generally reduce or omit clear cash.
@@ -51,7 +51,7 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_OVERBLAST,   0, "kills stack damage" },
 	{ ENDLESS_MOD_BOUNTY,        30, "big cash payout" },
 	{ ENDLESS_MOD_CURSED,        40, "cash now, empty shop" },
-	{ ENDLESS_MOD_NOCHAMP,        0, "no champion enemies" },     // no clear-cash: the boon already costs you the elite/champion bounties
+	{ ENDLESS_MOD_NOCHAMP,        0, "no champion enemies" },
 	{ ENDLESS_MOD_NOELITE,        0, "no elites or champions" },
 	// Survival boons reduce clear cash. Informational and economy-only boons have zero weight.
 	{ ENDLESS_MOD_AEGIS,         -5, "shield blocks overflow" },
@@ -66,9 +66,8 @@ const EndlessMod endlessModTable[] = {
 	{ ENDLESS_MOD_CLEANSIGNALS,  -5, "weaker elite attacks" },
 };
 
-/* The special-enemy bits form one ladder: No Elites, Legion, Apex, Elite Pack. A weaker bit beside
- * a stronger one changes nothing at runtime, yet still lists a monitor row and charges danger and
- * payout. See "Modifiers and courses" in doc/notes.md. */
+// Special-enemy modifiers form a strength ladder. Remove lower tiers so they
+// cannot add duplicate monitor rows or payout weight.
 Uint64 endlessCanonicalMods(Uint64 mods)
 {
 	if (mods & ENDLESS_MOD_NOELITE)   // no specials at all, so every tier bit below is inert
@@ -1360,41 +1359,39 @@ const char *endlessComboNameSalted(Uint64 mods, unsigned salt)
 
 // Tier words, grades, and rewards share the net-danger score.
 
-// Survival boons reduce net danger; economic boons do not.
+// Survival boons reduce net danger; delayed and economic rewards do not.
 static const struct { Uint64 bit; int credit; } endlessBoonMitigation[] = {
-	{ ENDLESS_MOD_DILATION,    8 },  // enemy shots crawl: the biggest dodge cushion
-	{ ENDLESS_MOD_FRAGILE,     8 },  // frail foes die fast: fewer guns left firing
-	{ ENDLESS_MOD_NOELITE,     8 },  // removes elite and champion tiers
-	{ ENDLESS_MOD_NOCHAMP,     5 },  // no champions: drops the nastiest tier (1.7x fire, +50% shot dmg, fat HP)
-	{ ENDLESS_MOD_OVERCHARGE,  5 },  // shots hit harder: quicker kills
-	{ ENDLESS_MOD_OVERDRIVE,   5 },  // Turbodrive + Overblast together: quickened guns and stacking damage
-	{ ENDLESS_MOD_OVERBLAST,   4 },  // each kill stacks damage
-	{ ENDLESS_MOD_TURBODRIVE, 3 },  // each kill quickens the guns
-	// The later survival boons. Star Charts and Breakthrough are absent on purpose: their reward lands
-	// at the NEXT outpost, so they buy no safety inside the sector and must not soften its tier.
-	{ ENDLESS_MOD_LOWPROFILE,  7 },  // a quarter off the hitbox: the broadest dodge cushion of the set
-	{ ENDLESS_MOD_AEGIS,       5 },  // the shield can no longer be punched through in one hit
-	{ ENDLESS_MOD_FLAKSCREEN,  5 },  // suppresses half of added tide shots
-	{ ENDLESS_MOD_GIANTKILLER, 5 },  // elites/champions die at ordinary speed, so their guns leave the fight sooner
-	{ ENDLESS_MOD_CLEANSIGNALS,4 },  // the special tier stops firing fast and hitting hard
-	{ ENDLESS_MOD_SOFTLANDING, 3 },  // ramming stops being a death sentence (projectiles still are)
-	{ ENDLESS_MOD_SHOCKWAVE,   3 },  // each special kill buys a moment of clear air
-	{ ENDLESS_MOD_AUXREACTOR,  3 },  // shields refill without starving the guns
+	{ ENDLESS_MOD_DILATION,    8 },
+	{ ENDLESS_MOD_FRAGILE,     8 },
+	{ ENDLESS_MOD_NOELITE,     8 },
+	{ ENDLESS_MOD_NOCHAMP,     5 },
+	{ ENDLESS_MOD_OVERCHARGE,  5 },
+	{ ENDLESS_MOD_OVERDRIVE,   5 },
+	{ ENDLESS_MOD_OVERBLAST,   4 },
+	{ ENDLESS_MOD_TURBODRIVE,  3 },
+	{ ENDLESS_MOD_LOWPROFILE,  7 },
+	{ ENDLESS_MOD_AEGIS,       5 },
+	{ ENDLESS_MOD_FLAKSCREEN,  5 },
+	{ ENDLESS_MOD_GIANTKILLER, 5 },
+	{ ENDLESS_MOD_CLEANSIGNALS,4 },
+	{ ENDLESS_MOD_SOFTLANDING, 3 },
+	{ ENDLESS_MOD_SHOCKWAVE,   3 },
+	{ ENDLESS_MOD_AUXREACTOR,  3 },
 };
 
 // Synergy bonuses contribute to both danger and payout. Matching entries stack.
 static const struct { Uint64 combo; int bonus; } endlessSynergies[] = {
-	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_GRAVITY,     8 },  // Tar Pit
-	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_KAMIKAZE,    7 },  // slowed while rammers home in
-	{ ENDLESS_MOD_DEADGEN    | ENDLESS_MOD_FORTIFIED,   6 },  // starved guns against fortified hulls
-	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_HOMING,      5 },  // slowed vs light homing: dodging no longer shakes it
-	{ ENDLESS_MOD_FORTIFIED  | ENDLESS_MOD_ENRAGE,      5 },  // longer fights allow more Enrage scaling
-	{ ENDLESS_MOD_SHIELDLESS | ENDLESS_MOD_DEVASTATING, 5 },  // no regen and every hit lands harder: one mistake sticks
-	{ ENDLESS_MOD_SLUGGISH   | ENDLESS_MOD_FRENZY,      4 },  // half the reach to thread twice the bullets
-	{ ENDLESS_MOD_SWIFT      | ENDLESS_MOD_HOMING,      4 },  // fast homing shots
-	{ ENDLESS_MOD_TOPSY      | ENDLESS_MOD_GRAVITY,     4 },  // a flipped view AND a pull: which way is up, and away?
-	{ ENDLESS_MOD_SEEKER      | ENDLESS_MOD_SWIFT,     4 },  // fast guided shots
-	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,    5 },  // a kill-storm stacked on the time-based fire climb: it screams fastest exactly when you clear hardest
+	{ ENDLESS_MOD_SLUGGISH    | ENDLESS_MOD_GRAVITY,     8 },
+	{ ENDLESS_MOD_SLUGGISH    | ENDLESS_MOD_KAMIKAZE,    7 },
+	{ ENDLESS_MOD_DEADGEN     | ENDLESS_MOD_FORTIFIED,   6 },
+	{ ENDLESS_MOD_SLUGGISH    | ENDLESS_MOD_HOMING,      5 },
+	{ ENDLESS_MOD_FORTIFIED   | ENDLESS_MOD_ENRAGE,      5 },
+	{ ENDLESS_MOD_SHIELDLESS  | ENDLESS_MOD_DEVASTATING, 5 },
+	{ ENDLESS_MOD_SLUGGISH    | ENDLESS_MOD_FRENZY,      4 },
+	{ ENDLESS_MOD_SWIFT       | ENDLESS_MOD_HOMING,      4 },
+	{ ENDLESS_MOD_TOPSY       | ENDLESS_MOD_GRAVITY,     4 },
+	{ ENDLESS_MOD_SEEKER      | ENDLESS_MOD_SWIFT,       4 },
+	{ ENDLESS_MOD_RETALIATION | ENDLESS_MOD_ENRAGE,      5 },
 };
 
 // Total synergy bonus for a modifier set: every combo whose bits are all present, summed (they stack).

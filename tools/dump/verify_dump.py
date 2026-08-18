@@ -49,7 +49,6 @@ def require(condition, message):
         raise Failure(message)
 
 
-# ---------------------------------------------------------------------------
 # Helpers shared by several checks
 
 
@@ -103,7 +102,6 @@ def tree_hash(root):
     return digest.hexdigest()
 
 
-# ---------------------------------------------------------------------------
 # Coverage and hygiene
 
 
@@ -155,7 +153,6 @@ def _line_endings(data_dir, dump_dir):
     return "%d files" % checked
 
 
-# ---------------------------------------------------------------------------
 # Text: every decrypted record must survive the round trip
 
 
@@ -208,7 +205,6 @@ def _hdt_alignment(data_dir, dump_dir):
     return "offset %d" % text["itemDataOffset"]
 
 
-# ---------------------------------------------------------------------------
 # Tables and levels: account for every byte
 
 
@@ -265,7 +261,6 @@ def _demos(data_dir, dump_dir):
     return "%d input frames" % total
 
 
-# ---------------------------------------------------------------------------
 # Pixels: compare each decoder against the engine's own arithmetic
 
 
@@ -472,9 +467,6 @@ def _audio(data_dir, dump_dir):
         require(offsets[-1] <= len(data), "%s last offset is past the end" % name)
         n += count
     return "%d entries" % n
-
-
-# ---------------------------------------------------------------------------
 
 
 def main(argv=None):

@@ -246,8 +246,9 @@ JE_byte endlessPickNextLevel(void)
 	return sec;
 }
 
-// Level music excludes jingles and avoids immediate repeats.
-static const JE_byte endlessLevelSongs[] = {  // omits shop #3, level-end #10, game-over #11, high-score #34, MusicMan #19, ZANAC3 #31, BEER #41
+// Level music excludes jingles and avoids immediate repeats. This omits the
+// shop, level-end, game-over, high-score and novelty tracks.
+static const JE_byte endlessLevelSongs[] = {
 	1, 2, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 35, 36, 37, 38, 39, 40,
 };
 

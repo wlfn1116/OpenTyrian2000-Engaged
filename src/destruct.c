@@ -2167,8 +2167,7 @@ static Uint8 DE_NetLocalActions(void)
 	return bits;
 }
 
-// The session-level keys, consumed here so the offline handlers at the bottom of the tick can
-// never act on them a second time behind the exchange's back.
+// Consume session keys before the offline handlers can act on them again.
 static Uint8 DE_NetLocalControls(void)
 {
 	Uint8 bits = 0;
@@ -2903,7 +2902,8 @@ static void DE_TestExplosionCollision(unsigned int PosX, unsigned int PosY)
 
 static void DE_DestroyUnit(enum de_player_t playerID, struct destruct_unit_s* unit)
 {
-	JE_makeExplosion(unit->unitX + 5, roundf(unit->unitY) - 5, (unit->unitType == UNIT_HELI) ? SHOT_SMALL : SHOT_INVALID); /* Only helicopters use the small-shot explosion. */
+	// Only helicopters use the small-shot explosion.
+	JE_makeExplosion(unit->unitX + 5, roundf(unit->unitY) - 5, (unit->unitType == UNIT_HELI) ? SHOT_SMALL : SHOT_INVALID);
 
 	if (unit->unitType != UNIT_SATELLITE)
 	{
@@ -3663,7 +3663,7 @@ static void DE_MakeShot(enum de_player_t curPlayer, const struct destruct_unit_s
 
 		if (config.jumper_straight[curPlayer])
 		{
-			/* Deliberately duplicates the default case for clarity. */
+			/* Same trajectory as the default jumper. */
 
 			shotRec[shotIndex].x = curUnit->unitX + 6 - sim_cosf(curUnit->angle) * 10 * direction;
 			shotRec[shotIndex].y = curUnit->unitY - 7 - sim_sinf(curUnit->angle) * 10;

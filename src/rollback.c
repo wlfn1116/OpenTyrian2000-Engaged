@@ -705,8 +705,7 @@ static int rb_verify_against(const Uint8 *ref, char *out, size_t outsz)
 			++bad;
 			if (out && bad <= 8)
 			{
-				/* Hex context: 8 bytes from the diff onward, live vs reference,
-				 * so a report names not just the item but the actual values. */
+				/* Include eight live and reference bytes from the first mismatch. */
 				char live_hex[3 * 8 + 1] = "", ref_hex[3 * 8 + 1] = "";
 				const Uint8 *live = it->ptr;   /* NULL for callback items */
 				for (size_t b = 0; live && b < 8 && first_diff + b < it->size; ++b)

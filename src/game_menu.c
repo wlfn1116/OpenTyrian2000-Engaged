@@ -74,8 +74,8 @@ enum
 	MENU_SUPER_TYRIAN = 13,
 	MENU_MOUSE_CONFIG = 14,  // T2000
 	// Retired debug-level grid. Keep the hole because menu tables are indexed by these IDs.
-	MENU_ESHOP = 16,  // endless "E-Shop": reroll / reinforce / buy buff / buy special
-	MENU_PERKS = 17,  // endless perk pick: forced 1-of-3 (1-of-4 bought, 1-of-5 after a milestone) + decline, gating the buy/sell front menu
+	MENU_ESHOP = 16,
+	MENU_PERKS = 17,
 };
 
 // Center of the asymmetric monitor readout used by shop cash and Endless rank.
@@ -147,16 +147,14 @@ static Player *shopPlayer(void)
 	return &player[shopPlayerIndex];
 }
 
-// Endless: MENU_PERKS doubles as the forced perk PICK and (with this flag set) a read-only perk
-// LIST; the flag keeps the two uses' dispatch / Esc / help / draw behaviour apart.
+// MENU_PERKS serves both the forced choice and the read-only owned-perk list.
 static bool endlessPerkListMode = false;
-static int  perkListId[32];  // perk-list display row (curSel-2) -> perk id; -1 = "(none yet)" sentinel. Sized well above PERK_COUNT.
+static int  perkListId[32];
 
-// Vertical scroll for the endless read-only Perks list (MENU_PERKS in list mode) when the run's
-// collection outgrows one page; mirrors the buy/sell sub-list scroll (upgradeSubScrollTop) below.
-static int perkListScrollTop = 1;   // 1-based first visible row (tempW); the window follows the selection
-static int perkListPrevSel = 0;     // curSel last frame; the view re-follows only when it changes
-#define PERK_LIST_VIS 14            // rows visible per page before scrolling (14 = the most that fit above the cash bar)
+// Owned-perk list scroll state. Rows are one-based.
+static int perkListScrollTop = 1;
+static int perkListPrevSel = 0;
+#define PERK_LIST_VIS 14
 
 static JE_boolean keyboardUsed;
 static JE_byte weaponSimTime;
@@ -203,10 +201,11 @@ static PlayerItems old_items[2];  // shared shop-entry snapshots
 
 static struct cube_struct cube[4];
 
-static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };  // [16]=E-Shop: 5 buys + Done; [17]=Perks: 3 + decline (set at runtime)
-// 1-based target menu for Esc. [14]=Mouse Setup goes back to Options like the other config
-// screens do; it read 2 (Upgrade Ship), which is not where it was opened from.
-// [16]=E-Shop, [17]=Perks -> back to buy/sell (MENU_FULL_GAME); Perks Esc is special-cased to "take the cash"
+// Endless menu sizes are adjusted at runtime.
+static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5 };
+
+// One-based target menu for Esc. Endless screens return to buy/sell; perk
+// choice handles Esc as Take the Cash.
 static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1 };
 static const JE_byte itemAvailMap[7] = { 1, 2, 3, 9, 4, 6, 7 };
 static const JE_word planetX[21] = { 200, 150, 240, 300, 270, 280, 320, 260, 220, 150, 160, 210, 80, 240, 220, 180, 310, 330, 150, 240, 200 };
@@ -780,12 +779,10 @@ static void configure_endless_perk_menu(void)
 	menuChoices[MENU_PERKS] = n + 2;  // rows 2..(n+1) = perks; row (n+2) = decline
 }
 
-/* Populate MENU_PERKS as a read-only list of the perks owned this run (the "Perks" front-menu entry
- * that replaces Ship Specs in endless). Rows render from perkListId[], not menuInt, so the list can
- * hold every owned perk and scroll. */
+// Populate the scrolling, read-only perk list shown in place of Ship Specs.
 static void configure_endless_perk_list_menu(void)
 {
-	SDL_strlcpy(menuInt[MENU_PERKS + 1][0], "Perks", sizeof(menuInt[MENU_PERKS + 1][0]));  // title, drawn by JE_drawMenuHeader
+	SDL_strlcpy(menuInt[MENU_PERKS + 1][0], "Perks", sizeof(menuInt[MENU_PERKS + 1][0]));
 
 	// Perks are personal, so the list is this player's own collection.
 	const int total = endlessPerkCount();
@@ -1799,10 +1796,8 @@ void JE_itemScreen(void)
 	}
 
 	bool quit = false;
-	// Every dual-ship session, not just co-op: Separate arcade (the shape online Super Arcade and
-	// SuperTyrian fly) gives each machine a complete ship of its own, so this page has to read the
-	// local one or both players are shown ship one's hull, guns and cash. The helper answers 0 for
-	// everything that shares a single arsenal, so solo and the linked pair keep ship one.
+	// Full-ship online modes show the local ship's hull, guns, and cash. Modes with one shared
+	// arsenal continue to use player 0.
 	shopPlayerIndex = gameplay_local_player_index();
 
 	crashlog_set_phase("shop / buy-sell menu");
@@ -2334,7 +2329,7 @@ void JE_itemScreen(void)
 				JE_textShade(VGAScreen, cols.nameX, tempY, tempStr,
 				             temp2 / 16, temp2 % 16 - 8 - afford_shade, DARKEN);
 
-				/* Draw icon if not DONE. NOTE: None is a normal item with a blank icon. */
+				/* Draw every item icon except DONE. None uses a blank icon. */
 				if (tempW < menuChoices[curMenu]-1)
 				{
 					JE_drawItem(curSel[MENU_UPGRADES]-1, temp, cols.iconX, tempY-4);
@@ -3103,7 +3098,8 @@ void JE_itemScreen(void)
 
 				if (mouseX > 170 && mouseX < 308)
 				{
-					const JE_byte mouseSelectionY[MENU_MAX] = { 16, 16, 16, 16, 26, 12, 11, 28, 0, 16, 16, 16, 8, 16, 24, 16, 16, 16 };  // [16]=E-Shop, [17]=Perks pick: 16px rows like the buy/sell menus
+					// E-Shop and perk choices use the same row pitch as buy/sell.
+					const JE_byte mouseSelectionY[MENU_MAX] = { 16, 16, 16, 16, 26, 12, 11, 28, 0, 16, 16, 16, 8, 16, 24, 16, 16, 16 };
 
 					// The read-only perk LIST draws at tight 10px rows in a small font (JE_drawMenuChoices);
 					// the forced perk PICK keeps the standard 16px pitch.
@@ -3657,9 +3653,7 @@ void JE_itemScreen(void)
 		}
 
 #ifdef WITH_NETWORK
-		// Leaving the outpost is a rendezvous with the other machine.  It sits inside the loop
-		// so a withdrawn Campaign commit can simply carry on: it clears jumpSection, and the
-		// condition below then reads this visit as unfinished.
+		// Keep departure inside the menu loop so a withdrawn Campaign commit can resume shopping.
 		if (isNetworkGame && !quit && (gameLoaded || jumpSection))
 			shopLeaveOutpost(&outpostRoute);
 #endif
@@ -4595,7 +4589,7 @@ void JE_drawDots(void)
 			tempX = planetDotX[x][y] - tempNavX + 66 - 2;
 			tempY = planetDotY[x][y] - tempNavY + 85 - 2;
 			if (tempX > 0 && tempX < 140 && tempY > 0 && tempY < 168)
-				blit_sprite(VGAScreenSeg, tempX, tempY, OPTION_SHAPES, (x == curSel[MENU_PLAY_NEXT_LEVEL]-2 && y < currentDotNum) ? 30 : 29);  // navigation dots
+				blit_sprite(VGAScreenSeg, tempX, tempY, OPTION_SHAPES, (x == curSel[MENU_PLAY_NEXT_LEVEL]-2 && y < currentDotNum) ? 30 : 29);
 		}
 	}
 }
@@ -5534,11 +5528,8 @@ void debugLevelPickReset(void)
 	endlessJumpPickReset();
 }
 
-/* The Endless jump's run state, staged beside the level pick above. Depth, the folded modifier
- * mask, both ships' perk stacks and both ships' personal buffs all feed the zone, so the peer
- * needs every one of them to build what this machine is about to build. It travels as the whole
- * Endless debug block: the panel can edit either ship, so a per-ship half would be a partial view
- * of a screen that rewrites both. */
+/* Whole Endless debug block staged with a network level jump. It includes depth, modifiers, and
+ * both ships' perks and personal buffs. */
 static struct {
 	bool  armed;
 	Uint8 block[ENDLESS_DEBUG_BLOCK_SIZE];
@@ -5651,51 +5642,46 @@ static const struct { Uint64 bit; Uint8 grp; const char *name; const char *hint;
 	{ ENDLESS_MOD_KAMIKAZE,    EMG_DANGER, "Kamikaze (mid)",  NULL },
 	{ ENDLESS_MOD_HOMING,      EMG_DANGER, "Homing (light)",  NULL },
 	{ ENDLESS_MOD_GRAVITY,     EMG_DANGER, "Gravity Well",    NULL },
-	{ ENDLESS_MOD_GRAVITY_OMNI,EMG_DANGER, "Gravity (omni)",  "pull on a random heading" },  // no registry row: it rides GRAVITY
+	{ ENDLESS_MOD_GRAVITY_OMNI,EMG_DANGER, "Gravity (omni)",  "pull on a random heading" },
 	{ ENDLESS_MOD_OVERCLOCK,   EMG_DANGER, "Overclock",       NULL },
 	{ ENDLESS_MOD_SLIPSTREAM,  EMG_DANGER, "Slipstream",      NULL },
 	{ ENDLESS_MOD_OVERLOAD,    EMG_DANGER, "Overload",        NULL },
 	{ ENDLESS_MOD_WARP,        EMG_DANGER, "Warp Speed",      NULL },
-	{ ENDLESS_MOD_TOPSY,       EMG_DANGER, "Topsy-Turvy",     NULL },  // fork: upside-down screen (boss-style controls)
-	{ ENDLESS_MOD_SLUGGISH,    EMG_DANGER, "Sluggish Ship",   NULL },  // fork: slowed movement (kbd/mouse/touch)
-	{ ENDLESS_MOD_SHIELDLESS,  EMG_DANGER, "No Shield Regen", NULL },  // fork: shields never recharge
-	{ ENDLESS_MOD_DEADGEN,     EMG_DANGER, "Dead Generator",  NULL },  // fork: no shields + starved main gun (super-rare)
-	{ ENDLESS_MOD_MARTYRDOM,   EMG_DANGER, "Martyrdom",       NULL },  // dying enemies fire a final radial burst (4/6/8 by tier)
-	{ ENDLESS_MOD_SEEKER,      EMG_DANGER, "Seeker Rounds",   NULL },  // enemy shots make one mid-flight course correction
-	{ ENDLESS_MOD_STATIC,      EMG_DANGER, "Static Discharge",NULL },  // taking damage bleeds generator power (x5, capped)
-	{ ENDLESS_MOD_RETALIATION, EMG_DANGER, "Retaliation",     NULL },  // each kill briefly quickens enemy fire (~25%)
+	{ ENDLESS_MOD_TOPSY,       EMG_DANGER, "Topsy-Turvy",     NULL },
+	{ ENDLESS_MOD_SLUGGISH,    EMG_DANGER, "Sluggish Ship",   NULL },
+	{ ENDLESS_MOD_SHIELDLESS,  EMG_DANGER, "No Shield Regen", NULL },
+	{ ENDLESS_MOD_DEADGEN,     EMG_DANGER, "Dead Generator",  NULL },
+	{ ENDLESS_MOD_MARTYRDOM,   EMG_DANGER, "Martyrdom",       NULL },
+	{ ENDLESS_MOD_SEEKER,      EMG_DANGER, "Seeker Rounds",   NULL },
+	{ ENDLESS_MOD_STATIC,      EMG_DANGER, "Static Discharge",NULL },
+	{ ENDLESS_MOD_RETALIATION, EMG_DANGER, "Retaliation",     NULL },
 	{ ENDLESS_MOD_FRAGILE,     EMG_BOON,   "Fragile",         NULL },
 	{ ENDLESS_MOD_BOUNTY,      EMG_BOON,   "Bounty",          NULL },
 	{ ENDLESS_MOD_OVERCHARGE,  EMG_BOON,   "Overcharged",     NULL },
 	{ ENDLESS_MOD_DILATION,    EMG_BOON,   "Time Dilation",   NULL },
 	{ ENDLESS_MOD_FAVOR,       EMG_BOON,   "Merchant Favor",  NULL },
 	{ ENDLESS_MOD_CURSED,      EMG_BOON,   "Cursed Bounty",   NULL },
-	{ ENDLESS_MOD_NOCHAMP,     EMG_BOON,   "No Champions",    NULL },  // champions demoted to elites
-	{ ENDLESS_MOD_NOELITE,     EMG_BOON,   "No Elites",       NULL },  // no elite/champion tier at all (supersedes No Champions)
-	// The later BOONS. Star Charts / Breakthrough pay out at the NEXT outpost, so toggling them here
-	// only shows up after the jumped-to zone is actually cleared.
-	{ ENDLESS_MOD_AEGIS,       EMG_BOON,   "Aegis Gate",      NULL },  // shields can't be punched through (70-tick cooldown per block)
-	{ ENDLESS_MOD_FLAKSCREEN,  EMG_BOON,   "Flak Screen",     NULL },  // halves the tide's ADDED shots (nothing to see before zone ~25)
-	{ ENDLESS_MOD_AUXREACTOR,  EMG_BOON,   "Aux Reactor",     NULL },  // shield regen costs no generator power
-	{ ENDLESS_MOD_LOWPROFILE,  EMG_BOON,   "Low Profile",     NULL },  // damage hitbox shrunk ~25% (pickup reach unchanged)
-	{ ENDLESS_MOD_GIANTKILLER, EMG_BOON,   "Giant Killer",    NULL },  // elites/champions lose their HP multiplier only
-	{ ENDLESS_MOD_CLEANSIGNALS,EMG_BOON,   "Clean Signals",   NULL },  // ...and this one takes their fire rate / shot damage instead
-	{ ENDLESS_MOD_SHOCKWAVE,   EMG_BOON,   "Shockwave",       NULL },  // elite/champion kills vaporise nearby enemy shots
-	{ ENDLESS_MOD_SOFTLANDING, EMG_BOON,   "Soft Landing",    NULL },  // contact damage the PLAYER takes cut to 30%
-	{ ENDLESS_MOD_STARCHARTS,  EMG_BOON,   "Star Charts",     NULL },  // clear -> the next ordinary chart deals a full slate
-	{ ENDLESS_MOD_BREAKTHROUGH,EMG_BOON,   "Breakthrough",    NULL },  // clear -> a bonus perk pick at the next outpost
-	// Gamble-only next-sector effects, also toggleable here for zone-jump testing. NITRO/OVERHEAT
-	// normally ride with OVERCHARGE / TURBODRIVE (toggle those too for the full "deal"); here each
-	// is isolable. All are read straight from endlessActiveMods in-level, so the jump applies them.
+	{ ENDLESS_MOD_NOCHAMP,     EMG_BOON,   "No Champions",    NULL },
+	{ ENDLESS_MOD_NOELITE,     EMG_BOON,   "No Elites",       NULL },
+	{ ENDLESS_MOD_AEGIS,       EMG_BOON,   "Aegis Gate",      NULL },
+	{ ENDLESS_MOD_FLAKSCREEN,  EMG_BOON,   "Flak Screen",     NULL },
+	{ ENDLESS_MOD_AUXREACTOR,  EMG_BOON,   "Aux Reactor",     NULL },
+	{ ENDLESS_MOD_LOWPROFILE,  EMG_BOON,   "Low Profile",     NULL },
+	{ ENDLESS_MOD_GIANTKILLER, EMG_BOON,   "Giant Killer",    NULL },
+	{ ENDLESS_MOD_CLEANSIGNALS,EMG_BOON,   "Clean Signals",   NULL },
+	{ ENDLESS_MOD_SHOCKWAVE,   EMG_BOON,   "Shockwave",       NULL },
+	{ ENDLESS_MOD_SOFTLANDING, EMG_BOON,   "Soft Landing",    NULL },
+	{ ENDLESS_MOD_STARCHARTS,  EMG_BOON,   "Star Charts",     NULL },
+	{ ENDLESS_MOD_BREAKTHROUGH,EMG_BOON,   "Breakthrough",    NULL },
+	// Gamble-only next-sector effects. Each can be isolated for debugging.
 	{ ENDLESS_MOD_MARKED,      EMG_DEAL,   "Marked (boss+)",  "next boss beefed up" },
 	{ ENDLESS_MOD_NITRO,       EMG_DEAL,   "Nitro (1-hit)",   "you hit hard, any hit kills" },
 	{ ENDLESS_MOD_OVERHEAT,    EMG_DEAL,   "Overheat DoT",    NULL },
 	{ ENDLESS_MOD_DUD,         EMG_DEAL,   "Dud Bombs",       "superbombs will not fire" },
-	{ ENDLESS_MOD_RAMPAGE,     EMG_DEAL,   "Rampage (ram!)",  NULL },  // the original brutal Kamikaze; also the ~1/5000 gamble outcome
+	{ ENDLESS_MOD_RAMPAGE,     EMG_DEAL,   "Rampage (ram!)",  NULL },
 };
 
-/* The six PERSONAL kill-fire mods; the three boons and their three evil mirrors; on their own
- * debug list (they buff/debuff YOU, not the sector). */
+// Personal kill-fire effects use their own debug list.
 static const struct { Uint64 bit; const char *name; const char *hint; } endlessDebugBuffMods[] = {
 	{ ENDLESS_MOD_TURBODRIVE,  "Turbodrive",  NULL },
 	{ ENDLESS_MOD_OVERBLAST,   "Overblast",   NULL },
@@ -5705,10 +5691,8 @@ static const struct { Uint64 bit; const char *name; const char *hint; } endlessD
 	{ ENDLESS_MOD_MISFIRE,     "Misfire",     NULL },
 };
 
-/* Every level in the game, across every installed episode; the list BOTH debug pickers browse
- * (the campaign one below, and the endless jump's base-level screen). Names are deliberately not
- * endless-flavoured: `endlessBaseName` is also a global in endless_level.c (the crash log's
- * base-level history), and a file-static of the same name would quietly shadow it. */
+/* Installed levels shared by both debug pickers. Keep the allLevel prefix distinct from the
+ * endlessBaseName crash-log state in endless_level.c. */
 #define ALL_LEVEL_MAX 256
 static int     allLevelEp[ALL_LEVEL_MAX];
 static JE_word allLevelSec[ALL_LEVEL_MAX];
@@ -5716,8 +5700,7 @@ static JE_byte allLevelFile[ALL_LEVEL_MAX];
 static char    allLevelName[ALL_LEVEL_MAX][18];
 static int     allLevelCount;
 
-// Gather every episode's ]L levels into one list, remembering each level's episode so a jump can
-// switch to it. Same ']L' / '*' walk JE_loadMap uses; an absent episode is simply skipped.
+// Gather each installed episode's ]L levels and remember the owning episode for debug jumps.
 static void loadAllLevels(void)
 {
 	allLevelCount = 0;
@@ -6373,9 +6356,7 @@ static bool endlessDebugScreen(bool jumpMode)
 		case EDR_SCALE:
 		case EDR_SCALEINFO:
 		{
-			// The curve, not just the number: a lever's whole point is WHERE it turns on and where
-			// it stops, and one figure at one zone shows neither. Sampled through the same snapshot
-			// the rows use, at the chosen difficulty and slate.
+			// Sample the curve at its start, pivot, and ceiling using the selected difficulty.
 			int n = 0;
 			helpBuf[0] = '\0';
 			for (unsigned c = 0; c < COUNTOF(endlessCurveZones); ++c)
@@ -8677,9 +8658,8 @@ static void cwResetDummies(void)
 		explosions[j].ttl = 0;
 }
 
-// Curve the edited weapon's live shots toward the nearest dummy (X only, so the bend is
-// clearly visible) when Homing is on. Mirrors the game's per-tick +/-1 nudge (shots.c:279);
-// the shop simulator doesn't home, so we do it here. All preview shots are the custom weapon.
+// Preview Homing by nudging live shots toward the nearest dummy on X. The shop simulator has no
+// target tracking, so this mirrors the gameplay correction here.
 static void cwHomeShots(void)
 {
 	if (cwCur()->aim <= 5 || cwDummyCount == 0)
@@ -9087,8 +9067,7 @@ bool JE_customWeaponCreator(bool canEquip)
 		}
 		fill_rectangle_xy(VGAScreen, panX0 + 2, catY + row_h - 1, panX1 - 2, catY + row_h - 1, C_DIV);
 
-		// In a focused category, tint the whole field area with its band colour so it runs
-		// all the way down to the pinned action buttons, not just behind the few rows.
+		// Extend the focused category tint through the field area to the pinned actions.
 		if (cwCategory != CWCAT_ALL)
 			fill_rectangle_xy(VGAScreen, panX0 + 2, fieldsTop - 1, panX1 - 2, actionsTop - 3, cwCatColor(cwCategory));
 
@@ -9471,7 +9450,7 @@ bool JE_customWeaponCreator(bool canEquip)
 	set_palette(colors, 0, 255);
 
 	customWeaponLibrarySave();  // persist the whole weapon library to its own file
-	save_opentyrian_config();  // persist the active design to disk immediately, not just at game exit
+	save_opentyrian_config();  // persist the active design immediately
 	return equipped;
 }
 
@@ -9619,8 +9598,8 @@ void JE_menuFunction(JE_byte select)
 		}
 		break;
 
-	case MENU_PERKS:  // endless perk pick (forced 1-of-3, wider bought / at a milestone, + decline); one-shot gate before the shop
-		if (endlessPerkListMode)  // read-only perk list reached from the buy/sell menu; any pick just returns
+	case MENU_PERKS:
+		if (endlessPerkListMode)
 		{
 			endlessPerkListMode = false;
 			curMenu = MENU_FULL_GAME;
@@ -9732,10 +9711,8 @@ void JE_menuFunction(JE_byte select)
 			upgradeSubPrevSel = 0;    // force the view to snap to the selection on entry
 			curMenu = MENU_UPGRADE_SUB;
 			lastCurSel = curSel[MENU_UPGRADE_SUB];
-			// Shop with the equipped item's trade-in value folded in; every exit restores the real
-			// balance (shop player cash = JE_cashLeft()) and books the delta via endlessShopTradeCommit.
-			// NOTE for endless: the wallet is deliberately FAKE between Begin and those exits, so no
-			// credit, debit, or audit may run in the window.
+			// Temporarily include the trade-in value. No other cash operation may run
+			// before endlessShopTradeCommit restores and audits the balance.
 			endlessShopTradeBegin();
 			player_set_cash(shopPlayer(), shopPlayer()->cash * 2 - JE_cashLeft());
 		}
@@ -10444,10 +10421,8 @@ void JE_weaponViewFrame(void)
 	mouseX = shopPlayer()->x;
 	mouseY = shopPlayer()->y;
 
-	// Endless perks quicken the guns in the preview as in play: apply the fire-rate perks' extra
-	// shotRepeat decrements once per tick, so the preview's fire cadence (and the generator drain on
-	// the power gauge) reflects the perks you own. Adrenaline is deliberately left OUT (see
-	// endlessPerkPreviewFireDecrements); it's a hurt-only burst, and you launch at full hull.
+	// Apply owned fire-rate perks to the preview. Adrenaline is excluded because
+	// it requires hull damage.
 	if (endlessMode)
 	{
 		const int dec = endlessPerkPreviewFireDecrements();
@@ -10533,7 +10508,7 @@ void JE_weaponViewFrame(void)
 			shopPlayer()->sidekick[i].y = shopPlayer()->y + ((i == LEFT_SIDEKICK) ? dy : -dy);
 			break;
 		}
-		default:  // trailing companions (tr 1/3); deliberately side by side, not gameplay-faithful
+		default:  // Show trailing companions side by side.
 			shopPlayer()->sidekick[i].x = (i == LEFT_SIDEKICK) ? 72 - 15 : 72 + 15;
 			shopPlayer()->sidekick[i].y = 120;
 			break;

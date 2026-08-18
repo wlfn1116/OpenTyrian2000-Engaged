@@ -9,9 +9,7 @@ otherwise.
 import os
 import struct
 
-# ---------------------------------------------------------------------------
-# Table sizes (src/lvlmast.h). Both weapon and enemy tables are split in two
-# banks with an unused gap between them.
+# Table sizes from src/lvlmast.h. Weapon and enemy tables have two banks separated by a gap.
 
 WEAP_END1 = 818
 WEAP_START2 = 1000
@@ -48,7 +46,6 @@ SAMPLE_RATE = 11025  # signed 8-bit mono (src/nortsong.c builds the converter fr
 MAP_LAYERS = ((14, 300), (14, 600), (15, 600))
 
 
-# ---------------------------------------------------------------------------
 # Byte-level helpers
 
 
@@ -113,7 +110,6 @@ def read_file(path):
         return f.read()
 
 
-# ---------------------------------------------------------------------------
 # Encrypted Pascal strings (src/helptext.c, decrypt_string)
 
 CRYPT_KEY = (204, 129, 63, 255, 71, 19, 25, 62, 1, 99)
@@ -148,7 +144,6 @@ def read_script_lines(data):
     return lines
 
 
-# ---------------------------------------------------------------------------
 # palette.dat (src/palette.c, JE_loadPals)
 
 
@@ -173,7 +168,6 @@ def load_palettes(path):
     return expanded, raw
 
 
-# ---------------------------------------------------------------------------
 # Sprite_array .shp files (src/sprite.c, load_sprites)
 #
 # u16 sprite count, then per sprite a "populated" byte and, when set, u16
@@ -233,7 +227,6 @@ def load_sprite_array(data, offset=0):
     return sprites
 
 
-# ---------------------------------------------------------------------------
 # Compiled 12px sheets, "Sprite2" (src/sprite.c, blit_sprite2)
 #
 # A table of u16 byte offsets, then the frames. Frame N (1-based) starts at
@@ -301,7 +294,6 @@ def load_sprite2_sheet(data):
     return frames
 
 
-# ---------------------------------------------------------------------------
 # user1.shp / user2.shp
 #
 # Neither file is a Sprite_array despite the extension: after a two-byte header
@@ -321,7 +313,6 @@ def load_raw_cell_sheet(path, offset=2):
     return cells, data[:offset], body[count * size:]
 
 
-# ---------------------------------------------------------------------------
 # tyrian.shp / tyrianc.shp (src/sprite.c, JE_loadMainShapeTables)
 #
 # u16 bank count (13), s32 bank offsets, then the banks. Banks 0-6 are
@@ -359,7 +350,6 @@ def load_main_shp(path):
     return banks
 
 
-# ---------------------------------------------------------------------------
 # shapes?.dat tilesets (src/tyrian2.c, JE_loadMap)
 #
 # 600 records: a "blank" byte and, when it is zero, a 24x28 tile. Palette index
@@ -384,9 +374,8 @@ def load_tileset(path):
     return tiles
 
 
-# ---------------------------------------------------------------------------
-# tyrian.pic (src/picload.c, JE_loadPic) and stand-alone PCX files
-# (src/pcxload.c, JE_loadPCX). Both use the same PCX run-length encoding.
+# tyrian.pic and stand-alone PCX files use the same PCX run-length encoding.
+# See src/picload.c and src/pcxload.c.
 
 
 def decode_pcx_rle(data, width=320, height=200):
@@ -433,7 +422,6 @@ def load_pcx(path):
     return decode_pcx_rle(body), palette
 
 
-# ---------------------------------------------------------------------------
 # tyrian.snd / voices.snd / voicesc.snd (src/nortsong.c, loadSndFile)
 #
 # u16 sample count, u32 offsets, then signed 8-bit mono at 11025 Hz. Voice
@@ -467,9 +455,7 @@ def wav_from_signed8(samples, rate=SAMPLE_RATE):
     return header + body
 
 
-# ---------------------------------------------------------------------------
-# music.mus (src/loudness.c, load_music) and the LDS songs inside it
-# (src/lds_play.c, lds_load)
+# music.mus and its LDS songs (src/loudness.c and src/lds_play.c)
 
 
 def load_music_bank(path):
@@ -532,7 +518,6 @@ def parse_lds(blob):
     return song
 
 
-# ---------------------------------------------------------------------------
 # tyrend.anm, a DeluxePaint Animation "LPF" file (src/animlib.c)
 
 ANM_PALETTE_OFFSET = 0x100
@@ -636,7 +621,6 @@ def anm_apply_frame(screen, record):
     return screen
 
 
-# ---------------------------------------------------------------------------
 # Item and enemy tables (src/episodes.c, JE_loadItemDat)
 #
 # Episodes 1-3 keep them in tyrian.hdt at the offset its first int32 names.
@@ -811,7 +795,6 @@ def load_item_data(data, offset):
     }
 
 
-# ---------------------------------------------------------------------------
 # tyrian.hdt text blocks (src/helptext.c, JE_loadHelpText)
 #
 # Groups of encrypted records, each wrapped in a label record the game skips.
@@ -898,7 +881,6 @@ def load_hdt_text(path):
     return {"itemDataOffset": item_offset, "textEndOffset": r.pos, "groups": groups}
 
 
-# ---------------------------------------------------------------------------
 # tyrian?.lvl level files (src/lvllib.c, JE_analyzeLevel; src/tyrian2.c, JE_loadMap)
 #
 # u16 offset count, s32 offsets. Each playable level owns two offsets and the
@@ -960,7 +942,6 @@ def load_level(data, offset):
     return level
 
 
-# ---------------------------------------------------------------------------
 # demo.1 .. demo.5 (src/mainint.c, load_next_demo / replay_demo_keys)
 
 DEMO_KEY_BITS = ("up", "down", "left", "right", "fire", "changeFire",
@@ -1005,7 +986,6 @@ def load_demo(path):
     return demo
 
 
-# ---------------------------------------------------------------------------
 # exitmsg.bin: an 80x25 DOS text-mode screen (character, attribute pairs).
 
 
@@ -1024,7 +1004,6 @@ def load_text_screen(path, width=80, height=25):
     return rows
 
 
-# ---------------------------------------------------------------------------
 # Small conveniences shared by the writers.
 
 

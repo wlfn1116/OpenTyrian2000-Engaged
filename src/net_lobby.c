@@ -295,8 +295,7 @@ static bool lobbyTextEntry(const char *title, const char *prompt, char *buf, siz
 		draw_font_hv_shadow(VGAScreen, LOBBY_XCENTER, 150, "Enter to accept, Esc to cancel",
 		                    normal_font, centered, 15, -5, false, 2);
 
-		// Composite the mouse cursor like every other lobby screen; without
-		// this the pointer simply disappears while a field is open.
+		// Text fields use their own present loop, so composite the lobby cursor here.
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
 		JE_showVGA();
@@ -1163,10 +1162,8 @@ static bool lobbyHostMenu(char *port_buf, size_t port_buf_size)
 			const bool wasVariant = network_game_type == NETWORK_GAME_SUPERTYRIAN;
 			network_game_type = (NetworkGameType)((network_game_type + NETWORK_GAME_TYPE_COUNT + cycleDir)
 			                                      % NETWORK_GAME_TYPE_COUNT);
-			// Crossing into or out of SuperTyrian changes what the difficulty row means, so park
-			// the value it is leaving behind and take back the one it is returning to. Without the
-			// swap a ladder rung left over would read as "Standard" while the session flew at it,
-			// and cycling back out would strand the row on Lord of Game.
+			// SuperTyrian uses this row for its variant. Save and restore the regular difficulty
+			// while crossing that mode boundary.
 			if ((network_game_type == NETWORK_GAME_SUPERTYRIAN) != wasVariant)
 			{
 				if (wasVariant)

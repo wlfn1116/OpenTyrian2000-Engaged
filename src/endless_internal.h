@@ -52,7 +52,8 @@ extern int  endlessBreakthroughOwed;
 #define ENDLESS_FINALE_SHOP_SONG        24  // "The final edge"; only the outpost charting the credits zone, pre-credits
 #define ENDLESS_FINALE_SHOP_SONG_LVL    25
 
-#define ENDLESS_CREDITS_ZONE 100  // zones cleared before the run rolls the credits (once per run, at the outpost that follows)
+// Credits roll at the next outpost after this many cleared zones.
+#define ENDLESS_CREDITS_ZONE 100
 
 int     endlessMilestoneKindOfZone(int zone);
 int     endlessMilestoneKind(void);
@@ -123,10 +124,12 @@ bool endlessStaticLockoutActive(void);
 void endlessStaticLockoutTick(void);
 void endlessStaticLockoutReset(void);
 
-int  endlessDifficultyZone(void);              // the current zone as the difficulty ramp sees it
-int  endlessNaturalEliteChancePercent(void);   // the depth-driven SPECIAL-enemy share, before mutators
-bool endlessEliteBoonsUnlocked(void);          // are NOCHAMP / NOELITE / GIANTKILLER / CLEANSIGNALS eligible to be charted yet?
-bool endlessTideBoonsUnlocked(void);           // is FLAKSCREEN worth charting yet (i.e. is the tide adding shots at all)?
+int  endlessDifficultyZone(void);
+int  endlessNaturalEliteChancePercent(void);
+
+// Course generation unlocks these boons only once their targets can appear.
+bool endlessEliteBoonsUnlocked(void);
+bool endlessTideBoonsUnlocked(void);
 
 void endlessAegisTick(void);
 void endlessAegisReset(void);
@@ -136,78 +139,93 @@ void endlessReviveGraceArm(void);
 void endlessReviveGraceTick(void);
 void endlessReviveGraceReset(void);
 
-// Perk tuning.
-#define ENDLESS_PERK_DAMAGE_PCT    12  // +% shot damage per Heavy Rounds stack
-#define ENDLESS_PERK_FIRE_PCT      20  // fire-decrement accumulator % per Rapid Cyclers stack
-#define ENDLESS_PERK_ARMOR_STEP     8  // +max armor per Ablative Plating stack
-#define ENDLESS_PERK_CASH_PCT      15  // +% cash (clears + bounties) per Scavenger stack
-#define ENDLESS_PERK_REGEN_TICKS  140  // ticks per +1 armor at 1 Nanorepair stack (faster with more)
-#define ENDLESS_PERK_SIPHON_PCT    12  // heal-on-kill chance % per Siphon stack
-#define ENDLESS_PERK_BOUNTY_PICKUP_MULT 4 // Bounty Hunter: score-pickup cash multiplier
-#define ENDLESS_PERK_BULWARK        1  // incoming damage reduced by this per Bulwark stack (min 1 dmg kept)
-#define ENDLESS_PERK_ADRENALINE_PCT 45 // extra fire-accumulator % per Adrenaline stack while badly hurt
-#define ENDLESS_PERK_ADRENALINE_DMG 25 // +% shot damage per Adrenaline stack while badly hurt
-#define ENDLESS_PERK_ADRENALINE_HP  3  // Adrenaline triggers when armor < 1/this of max
-#define ENDLESS_PERK_GLASS_DMG     40  // Glass Cannon: +% shot damage
-#define ENDLESS_PERK_GLASS_ARMOR    8  // Glass Cannon: -max armor (the drawback)
-#define ENDLESS_PERK_SPECIALCD_PCT 25  // extra special-cooldown-decrement accumulator % per stack
-#define ENDLESS_PERK_POWERUSE_PCT  15  // -% generator power drawn per main-weapon shot, per Efficient Coils stack
-#define ENDLESS_PERK_POWERUSE_MIN  20  // ...but firing never costs less than this % of stock power
-#define ENDLESS_PERK_SHIELDRGN_STEP 3  // shield-regen interval cut by this many ticks per Shield Matrix stack (base 15)
-#define ENDLESS_PERK_SHIELDRGN_MIN  3  // ...but never quicker than +1 shield per this many ticks (floor)
-#define ENDLESS_PERK_CHARGE_STEP    4  // ticks cut from the charge-sidekick charge interval per Rapid Recharge stack (base 20)
-#define ENDLESS_PERK_CHARGE_MIN     4  // ...but a charge level never builds quicker than this many ticks (floor)
-#define ENDLESS_PERK_SHOTSPEED_PCT 25  // +% shot travel speed per High-Velocity Rounds stack
-#define ENDLESS_PERK_SURVEYOR_ROUTES 1 // +Chart-a-Course routes per Surveyor stack (capped at ENDLESS_MAX_COURSES)
-#define ENDLESS_PERK_EXEC_DMG_PCT  15  // +% shot damage per Executioner stack, vs a wounded target
-#define ENDLESS_PERK_EXEC_HP_PCT   25  // Executioner "wounded" threshold: target below this % of full HP
-#define ENDLESS_PERK_EXEC_BOSS_PCT 15  // ...a tighter threshold for boss-bar enemies (harder to execute)
-#define ENDLESS_PERK_SALVO_IDLE    70  // ticks the main gun must sit idle to charge an Opening Salvo (2s at the 35Hz sim tick)
-#define ENDLESS_PERK_SALVO_DMG_PCT 150 // percentage points; also scales special effects
-#define ENDLESS_PERK_SALVO_WINDOW  35  // ticks a consumed salvo lasts (~1s at the 35Hz sim tick), trigger held or not
-#define ENDLESS_PERK_KINETIC_PCT   20  // Kinetic Converter: % of an absorbed shield hit's generator-cost refunded as power, per stack
-#define ENDLESS_PERK_KINETIC_CD_PCT 8  // ...and % of the remaining special recharge that a hit takes off, per stack
-#define ENDLESS_PERK_KINETIC_AMMO_PCT 25 // ...and hundredths of a sidekick round a hit gives back, per stack (carried in an accumulator)
-#define ENDLESS_PERK_KINETIC_STAGES 1  // ...and charge stages a hit walks a charge sidekick up, per stack
-#define ENDLESS_PERK_KINETIC_TWIDDLE_PCT 22 // ...and % off a twiddle's shield or armor charge, per stack
-#define ENDLESS_PERK_CM_RADIUS1    80  // Countermeasure Suite: projectile-clear radius (px) at 1 stack
-#define ENDLESS_PERK_CM_RADIUS2   120  // ...widened radius at 2 stacks
-#define ENDLESS_PERK_CM_COOLDOWN   70  // ...ticks between countermeasure bursts (~2s at 35Hz)
-#define ENDLESS_PERK_CHAIN_RADIUS  59  // Chain Reaction: pulse radius (px) around a destroyed enemy at one stack
-#define ENDLESS_PERK_CHAIN_REACH   16  // Chain Reaction: px added to that radius by each stack past the first
-// Chain Reaction: armor damage per stack, before the owner's damage scale. 20 is both the median
-// armor of the shipped enemies and the commonest single value among them, so one stack kills that
-// enemy on an unscaled hit; depth raises what it is worth against, a damage build raises the hit.
+// Perk tuning. Values are per stack unless a comment says otherwise.
+#define ENDLESS_PERK_DAMAGE_PCT    12  // Heavy Rounds damage (%).
+#define ENDLESS_PERK_FIRE_PCT      20  // Rapid Cyclers fire accumulator (%).
+#define ENDLESS_PERK_ARMOR_STEP     8  // Ablative Plating maximum armor.
+#define ENDLESS_PERK_CASH_PCT      15  // Scavenger cash (%).
+#define ENDLESS_PERK_REGEN_TICKS  140  // Nanorepair ticks per armor point at one stack.
+#define ENDLESS_PERK_SIPHON_PCT    12  // Siphon heal chance (%).
+#define ENDLESS_PERK_BOUNTY_PICKUP_MULT 4
+#define ENDLESS_PERK_BULWARK        1
+
+// Adrenaline and Glass Cannon.
+#define ENDLESS_PERK_ADRENALINE_PCT 45
+#define ENDLESS_PERK_ADRENALINE_DMG 25
+#define ENDLESS_PERK_ADRENALINE_HP   3  // Active below one third armor.
+#define ENDLESS_PERK_GLASS_DMG      40
+#define ENDLESS_PERK_GLASS_ARMOR     8
+
+// Cooldowns, power, shields and shot speed.
+#define ENDLESS_PERK_SPECIALCD_PCT  25
+#define ENDLESS_PERK_POWERUSE_PCT   15
+#define ENDLESS_PERK_POWERUSE_MIN   20  // Minimum power cost (% of stock).
+#define ENDLESS_PERK_SHIELDRGN_STEP  3
+#define ENDLESS_PERK_SHIELDRGN_MIN   3
+#define ENDLESS_PERK_CHARGE_STEP     4
+#define ENDLESS_PERK_CHARGE_MIN      4
+#define ENDLESS_PERK_SHOTSPEED_PCT  25
+
+// Course choice and Executioner.
+#define ENDLESS_PERK_SURVEYOR_ROUTES 1
+#define ENDLESS_PERK_EXEC_DMG_PCT   15
+#define ENDLESS_PERK_EXEC_HP_PCT    25
+#define ENDLESS_PERK_EXEC_BOSS_PCT  15
+
+// Opening Salvo, in simulation ticks.
+#define ENDLESS_PERK_SALVO_IDLE     70
+#define ENDLESS_PERK_SALVO_DMG_PCT 150
+#define ENDLESS_PERK_SALVO_WINDOW   35
+
+// Kinetic Converter.
+#define ENDLESS_PERK_KINETIC_PCT         20
+#define ENDLESS_PERK_KINETIC_CD_PCT       8
+#define ENDLESS_PERK_KINETIC_AMMO_PCT    25  // Hundredths of a round.
+#define ENDLESS_PERK_KINETIC_STAGES       1
+#define ENDLESS_PERK_KINETIC_TWIDDLE_PCT 22
+
+// Countermeasure Suite.
+#define ENDLESS_PERK_CM_RADIUS1    80
+#define ENDLESS_PERK_CM_RADIUS2   120
+#define ENDLESS_PERK_CM_COOLDOWN   70
+
+// Chain Reaction. Base damage matches the median shipped enemy's armor.
+#define ENDLESS_PERK_CHAIN_RADIUS  59
+#define ENDLESS_PERK_CHAIN_REACH   16
 #define ENDLESS_PERK_CHAIN_DMG     20
-#define ENDLESS_INTEREST_BASE_PCT  10  // stock bank interest: % of unspent cash paid on each level clear
-#define ENDLESS_PERK_INTEREST_PCT   5  // ...+this many points per Financier stack (the cap scales with the rate)
-#define ENDLESS_PERK_DISCOUNT_BP  825  // basis points; 4 stacks = 33% off
-#define ENDLESS_PERK_AMMO_PCT      30  // Ordnance Reserves: +% sidekick magazine per stack (always at least +1 round)
-#define ENDLESS_PERK_AMMO_CAP     250  // ...magazine ceiling, so the shop label and the byte-wide item field stay in range
-#define ENDLESS_PERK_SPECDUR_PCT   30  // ...and +% duration per stack on the timed special weapons
-#define ENDLESS_PERK_FAILSAFE_TICKS  9 // Failsafe: i-frames granted per stack by a hit that reaches the hull (~0.25s at the 35Hz sim tick, so ~0.5s at 2 stacks)
-#define ENDLESS_PERK_GUIDANCE_DELAY  6 // Guidance Package: ticks between course corrections on a gun with no homing of its own, at one stack
-#define ENDLESS_PERK_GUIDANCE_STEP   2 // ...ticks each further stack takes off that, the fourth landing on the floor of 1
-#define ENDLESS_PERK_GUIDANCE_TIGHTEN 4 // ...and ticks each stack takes off the interval of a gun that homes already (same floor)
-#define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2 // ...stacks before sidekick shots are steered as well
-#define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3 // ...and before special-weapon shots are
-#define ENDLESS_PERK_TWINPODS_SPREAD_PX 12 // Twin Pods: px between a pod's two volleys; the pair straddles the pod, half each side
-#define ENDLESS_PERK_PROW_DMG_PCT   100 // Reinforced Prow: +% ram damage dealt per stack (x2, x3, x4)
-#define ENDLESS_PERK_PROW_TAKEN_PCT  25 // ...and -% contact damage taken per stack (75%, 50%, 25%; a hit still costs 1)
-#define ENDLESS_PERK_KNIFE_PCT       15 // Knife Fight: +% damage per stack with the enemy's hull within FULL_PX of the ship's
-#define ENDLESS_PERK_KNIFE_FULL_PX    7 // ...the gap at or under which the whole bonus applies
-#define ENDLESS_PERK_KNIFE_FADE_PX   48 // ...and the further gap over which it fades to nothing (none from 55 px out)
-#define ENDLESS_PERK_DEFLECT_MULT2  200 // Deflector: % of the absorbed damage the returned shot carries at two stacks (100 at one)
+
+// Financier and Ordnance Reserves.
+#define ENDLESS_INTEREST_BASE_PCT 10
+#define ENDLESS_PERK_INTEREST_PCT  5
+#define ENDLESS_PERK_DISCOUNT_BP 825
+#define ENDLESS_PERK_AMMO_PCT     30
+#define ENDLESS_PERK_AMMO_CAP    250  // Fits the byte-wide item field.
+#define ENDLESS_PERK_SPECDUR_PCT  30
+
+// Defensive and guidance perks.
+#define ENDLESS_PERK_FAILSAFE_TICKS   9
+#define ENDLESS_PERK_GUIDANCE_DELAY   6
+#define ENDLESS_PERK_GUIDANCE_STEP    2
+#define ENDLESS_PERK_GUIDANCE_TIGHTEN 4
+#define ENDLESS_PERK_GUIDANCE_SIDEKICK_STACKS 2
+#define ENDLESS_PERK_GUIDANCE_SPECIAL_STACKS  3
+
+// Close-range and sidekick perks.
+#define ENDLESS_PERK_TWINPODS_SPREAD_PX 12
+#define ENDLESS_PERK_PROW_DMG_PCT      100
+#define ENDLESS_PERK_PROW_TAKEN_PCT     25
+#define ENDLESS_PERK_KNIFE_PCT          15
+#define ENDLESS_PERK_KNIFE_FULL_PX       7
+#define ENDLESS_PERK_KNIFE_FADE_PX      48
+#define ENDLESS_PERK_DEFLECT_MULT2      200
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3
 #define ENDLESS_PERK_OFFERS_BOUGHT    4
 #define ENDLESS_PERK_OFFERS_MILESTONE 5
 
-// Extra-perk surcharge, charged on perks bought from outposts and nothing else. Each one adds
-// STEP to the price and widens the next step by GROWTH, so the multiplier runs 1.00, 1.20, 1.45,
-// 1.75, 2.10, 2.50. One outpost sells at most VISIT_MAX, the second at REPEAT of the current
-// price. See doc/notes.md, "Extra-perk pricing".
+// Extra Perk price ladder. STEP and GROWTH use the run purchase count; REPEAT and VISIT_MAX
+// govern repeat purchases at one outpost. See doc/notes.md#economy-and-perks.
 #define ENDLESS_PERK_PAID_STEP_PCT     20
 #define ENDLESS_PERK_PAID_GROWTH_PCT    5
 #define ENDLESS_PERK_VISIT_REPEAT_PCT 250
@@ -340,8 +358,8 @@ extern const EndlessTheme endlessEvilThemes[30];
 extern const EndlessTheme endlessRedlineThemes[2];
 extern const EndlessTheme endlessSluggishThemes[5];
 extern const EndlessTheme endlessDeadgenThemes[5];
-extern const EndlessTheme endlessMartyrdomThemes[5];  // MARTYRDOM: rare-injected death-burst sectors (its own pool)
-extern const EndlessTheme endlessSeekerThemes[5];     // SEEKER: rare-injected course-correcting-shot sectors (its own pool)
+extern const EndlessTheme endlessMartyrdomThemes[5];
+extern const EndlessTheme endlessSeekerThemes[5];
 extern const EndlessTheme endlessBreakthroughThemes[5];
 
 // Bits included in combat danger and hostile naming.

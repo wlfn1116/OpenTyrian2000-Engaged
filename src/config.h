@@ -301,7 +301,8 @@ extern int bossBarTwoMode;  // BossBarTwoMode
 extern bool armorAlarm;     // low-armor WARNING siren (Setup > Sound)
 extern bool linkSounds;     // 2P fuse/unfuse clink+spring (Setup > Sound)
 extern bool debugMode;      // gates the debug menu and debug level select
-extern bool extraParallax;  // wider all-layer horizontal parallax (strafe sweeps the full map width); off = original amplitude
+// Widens all-layer parallax so strafing sweeps the full map width.
+extern bool extraParallax;
 extern bool mirroredLayers; // over-panned layer edges continue as a flipped mirror image (both parallax modes)
 extern bool enemyBars;      // show a small health bar on damaged enemies
 extern int enemyBarLayout;    // EnemyBarLayout
@@ -411,7 +412,8 @@ extern int  zicaLaserLength;    // ZICA_LEN_*  : Lv11 shot length
 extern bool zicaLaserLock;      // Length=Long: lock the side beams to the ship (like the Lv10 beam)
 extern bool zicaLaserBuff;      // also fire the Lv10 beam alongside the Lv11 shots
 extern bool chargeLaserCannon;  // re-add the cut DOS "Charge-Laser Cannon" sidekick to shops
-extern bool restoreBaseDispensers;  // wake the dormant dispenser bases (enemy 80-83); Endless ignores it and rolls 50/50 per zone
+// Wakes dormant dispenser bases 80-83. Endless rolls this per zone instead.
+extern bool restoreBaseDispensers;
 extern bool arcadeLifeBoost;    // arcade modes: lives scale the shield and armour ceilings (player.c)
 extern bool arcadeRandomBalls;  // arcade modes: re-roll each weapon ball within its class (JE_makeEnemy, tyrian2.c)
 extern bool arcadeRearGunScale; // 1P arcade: lives raise the rear gun on top of its own pickups (player.c)
