@@ -5535,12 +5535,14 @@ level_loop:
 				}
 			}
 
+			// Zinglon uses the reserved last slot without a playerShotData entry. Its branch below
+			// supplies these outputs, and safe defaults keep player indexing in range.
 			bool is_special = false;
 			int tempShotX = 0, tempShotY = 0;
-			JE_byte chain;
-			JE_byte playerNum;
-			JE_word tempX2, tempY2;
-			JE_integer damage;
+			JE_byte chain = 0;
+			JE_byte playerNum = 1;
+			JE_word tempX2 = 0, tempY2 = 0;
+			JE_integer damage = 0;
 			int shotHitDx, shotHitDy;
 
 			if (!player_shot_move_and_draw(z, &is_special, &tempShotX, &tempShotY, &damage, &temp2,
@@ -5558,13 +5560,13 @@ level_loop:
 
 			// Scale real damage from every Endless source. Decode ice and piercing markers before
 			// scaling, then restore the marker.
-			if (endlessFxActive())
+			if (endlessFxActive() && z != MAX_PWEAPON - 1)
 			{
 				endlessSetFxPlayer(playerShotData[z].playerNumber >= 1
 				                   ? (uint)playerShotData[z].playerNumber - 1 : 0);
 				int dmgPct = endlessPlayerDamagePercent();
 				// Opening Salvo perk: shots tagged as part of a charged volley get an extra bump on top.
-				if (z != MAX_PWEAPON - 1 && playerShotData[z].salvoBoost)
+				if (playerShotData[z].salvoBoost)
 					dmgPct += endlessOpeningSalvoDamagePercent();
 				if (damage >= 250)
 				{
@@ -5613,32 +5615,17 @@ level_loop:
 
 					if (z == MAX_PWEAPON - 1)
 					{
-						if (dual_ship_mode())
-						{
-							collided = false;
-							temp = 0;
-							for (uint p = 0; p < COUNTOF(player); ++p)
-							{
-								const int width = zinglon_pillar_width(player[p].zinglon_ramp,
-								                                       player[p].zinglon_duration);
-								if (player[p].zinglon_duration > 1 &&
-								    abs(enemy[b].ex + enemy[b].mapoffset - (player[p].x + 7)) < width)
-								{
-									collided = true;
-									temp = MAX(temp, width);
-								}
-							}
-						}
-						else
-						{
-							temp = (JE_byte)zinglon_pillar_width(zinglonRamp, zinglonDuration);
-							collided = abs(enemy[b].ex + enemy[b].mapoffset - (player[0].x + 7)) < temp;
-						}
+						int width = 0, pillarDamage = 0;
+						uint owner = 0;
+						collided = zinglon_pillar_hit(enemy[b].ex + enemy[b].mapoffset,
+						                              &width, &pillarDamage, &owner);
+						temp = (JE_byte)width;
 						temp2 = 9;
 						chain = 0;
-						// The Zinglon pillar is a pseudo-shot with no playerShotData entry, so it
-						// misses the salvoBoost tag and the scaling block above; scale it here.
-						damage = endlessOpeningSalvoScale(10);
+						damage = pillarDamage;
+						// Damage perks and kill credit belong to the beam's owner.
+						playerNum = (JE_byte)(owner + 1);
+						endlessSetFxPlayer(owner);
 					}
 					else if (is_special)
 					{

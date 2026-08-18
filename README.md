@@ -10,7 +10,7 @@ This fork adds:
 
 - a wider playfield and smooth high-refresh rendering;
 - Endless mode, built from the original levels;
-- two-player online play across every mode (yes, even Destruct);
+- two-player online play across every mode;
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows;

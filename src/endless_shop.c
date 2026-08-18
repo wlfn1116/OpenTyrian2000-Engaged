@@ -497,7 +497,6 @@ bool endlessConsumeRevive(uint p)
 	return true;
 }
 
-// Return a percentage multiplier compounded once per purchase.
 static Sint64 endlessExtraPerkCompound(int stepPct, int count)
 {
 	const int steps = endlessClamp(count, 0, ENDLESS_PERK_COMPOUND_MAX);

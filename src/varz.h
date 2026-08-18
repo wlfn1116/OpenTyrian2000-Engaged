@@ -349,9 +349,12 @@ extern bool zinglonPillarActive[2];
 extern int zinglonPillarCX[2];
 extern int zinglonPillarTemp[2];
 #define ZINGLON_PILLAR_HALF_W 25  // widest the light pillar reaches, either side of the ship
+#define ZINGLON_PILLAR_DAMAGE 10  // what the beam deals to one hull per firing tick, before scaling
 // Half-width of a pillar `ramp` ticks into its opening with `duration` ticks left to run. The drawn
 // beam and the column that damages both read it, so the two can never disagree.
 int zinglon_pillar_width(int ramp, int duration);
+// Return whether a live beam covers this screen x and report its width, damage, and owner.
+bool zinglon_pillar_hit(int hullScreenX, int *width_px, int *damage, uint *owner);
 extern JE_byte astralDuration;
 extern JE_word flareDuration;
 extern JE_boolean flareStart;

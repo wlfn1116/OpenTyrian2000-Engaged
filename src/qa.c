@@ -6888,17 +6888,20 @@ static void qa_test_flare_grade_ownership(void)
 	JE_resetTwiddleClocks();
 }
 
-/* The Zinglon light pillar. Its width has to trace vanilla's curve tick for tick over a stock blast,
- * spend a duration Ordnance Reserves stretched at full width instead of running off the end of it,
- * and hold the beam open when a second blast lands on a live one. */
+/* Zinglon width, refresh, damage scaling, and co-op ownership. */
 static void qa_test_zinglon_pillar(void)
 {
 	const JE_byte savedZing = zinglonDuration, savedRamp = zinglonRamp;
 	const JE_byte savedStype = special[SPECIAL_NUM].stype;
 	const JE_byte savedRepeat = shotRepeat[SHOT_SPECIAL];
 	const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
 	JE_byte savedPerks[2][PERK_COUNT];
 	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	Player savedShips[2];
+	memcpy(savedShips, player, sizeof(savedShips));
+	int savedSalvo[2];
+	memcpy(savedSalvo, endlessSalvoWindow, sizeof(savedSalvo));
 
 	// Upstream drew the beam as `25 - abs(duration - 25)`, which the ramp has to reproduce exactly.
 	bool stockCurve = true;
@@ -6960,6 +6963,63 @@ static void qa_test_zinglon_pillar(void)
 	qa_check(zinglonDuration == endlessPerkSpecialDuration(50, 255) && zinglonDuration > stockTicks,
 	         "Ordnance Reserves stretches the Zinglon blast");
 
+	/* The pillar helper supplies collision data for the beam's reserved shot slot. */
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	memset(endlessSalvoWindow, 0, sizeof(endlessSalvoWindow));
+	coopEndlessMode = false;
+	endlessMode = false;
+	player[0].x = 100;
+	zinglonRamp = ZINGLON_PILLAR_HALF_W;
+	zinglonDuration = 30;
+
+	int width = 0, dmg = 0;
+	uint owner = 9;
+	const bool onBeam = zinglon_pillar_hit(player[0].x + 7, &width, &dmg, &owner);
+	qa_check(onBeam && dmg == ZINGLON_PILLAR_DAMAGE && width == ZINGLON_PILLAR_HALF_W && owner == 0,
+	         "outside an endless run the beam deals its stock damage, on the one ship");
+	qa_check(!zinglon_pillar_hit(player[0].x + 7 + ZINGLON_PILLAR_HALF_W, &width, &dmg, &owner)
+	         && dmg == 0,
+	         "...and a hull past its edge takes nothing");
+
+	// The pillar uses the same damage modifiers as player shots.
+	endlessMode = true;
+	endlessPerkSetOwned(PERK_DAMAGE, endlessPerkMaxStack(PERK_DAMAGE));
+	zinglon_pillar_hit(player[0].x + 7, &width, &dmg, &owner);
+	const int buffed = dmg;
+	qa_check(buffed == endlessScaleOwnDamage(ZINGLON_PILLAR_DAMAGE, false)
+	         && buffed > ZINGLON_PILLAR_DAMAGE,
+	         "Heavy Rounds lifts the beam the way it lifts a bullet");
+	endlessSalvoWindow[0] = ENDLESS_PERK_SALVO_WINDOW;
+	endlessPerkSetOwned(PERK_SALVO, endlessPerkMaxStack(PERK_SALVO));
+	zinglon_pillar_hit(player[0].x + 7, &width, &dmg, &owner);
+	qa_check(dmg == endlessScaleOwnDamage(ZINGLON_PILLAR_DAMAGE, true) && dmg > buffed,
+	         "...and a charged Opening Salvo window bumps it further");
+	memset(endlessSalvoWindow, 0, sizeof(endlessSalvoWindow));
+	endlessPerkSetOwned(PERK_SALVO, 0);
+	endlessPerkSetOwned(PERK_DAMAGE, 0);
+
+	/* Overlapping co-op beams use the stronger hit and its owner. */
+	coopEndlessMode = true;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		player[p].x = 100;
+		player[p].zinglon_ramp = ZINGLON_PILLAR_HALF_W;
+		player[p].zinglon_duration = 30;
+	}
+	endlessPerkTakenBy[1][PERK_DAMAGE] = endlessPerkMaxStack(PERK_DAMAGE);
+	endlessPerkRederive();
+	const bool pairHit = zinglon_pillar_hit(player[0].x + 7, &width, &dmg, &owner);
+	qa_check(pairHit && owner == 1 && dmg == buffed,
+	         "under two beams the hull takes the stronger one, billed to the ship behind it");
+	player[1].zinglon_duration = 0;
+	zinglon_pillar_hit(player[0].x + 7, &width, &dmg, &owner);
+	qa_check(owner == 0 && dmg == ZINGLON_PILLAR_DAMAGE,
+	         "...and with that beam spent the partner's own scale is all that is left");
+
+	memcpy(endlessSalvoWindow, savedSalvo, sizeof(savedSalvo));
+	memcpy(player, savedShips, sizeof(savedShips));
+	coopEndlessMode = savedCoop;
 	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
 	endlessPerkRederive();
 	endlessCampaignMods = savedMods;

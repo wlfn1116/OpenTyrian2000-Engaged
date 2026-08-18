@@ -743,6 +743,7 @@ int endlessFanPhaseNow(void);
 
 // Player-side scaling and per-tick state.
 int  endlessPlayerDamagePercent(void);
+int  endlessScaleOwnDamage(int base, bool salvoBoosted);
 void endlessGameplayTick(void);
 bool endlessConsumeArmorHudDirty(void);
 bool endlessTurbodriveActive(void);

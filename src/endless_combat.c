@@ -1389,6 +1389,17 @@ int endlessPlayerDamagePercent(void)
 	return pct;
 }
 
+// Apply player-shot scaling to non-projectile damage. Opening Salvo uses the same additive bonus.
+int endlessScaleOwnDamage(int base, bool salvoBoosted)
+{
+	if (base <= 0)
+		return base;
+	const int pct = endlessPlayerDamagePercent()
+	              + (salvoBoosted ? endlessOpeningSalvoDamagePercent() : 0);
+	const int scaled = base * pct / 100;
+	return (scaled < 1) ? 1 : scaled;
+}
+
 // Flat Bulwark reduction; JE_playerDamage retains a minimum of one.
 int endlessPlayerDamageReduce(void)
 {

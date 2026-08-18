@@ -263,11 +263,9 @@ for the ship whose effect is being calculated.
   twiddle charges.
 
 Countermeasures is stateless. Each hull hit calls `endlessCountermeasureBurst`;
-shield-only hits do not. The sweep extends 80 or 120 pixels past the ship's
-hitbox on each axis.
-
-Vaporized shots keep their normal sparks. Draw the edge flare and play its sound
-only when the sweep clears at least one shot.
+shield-only hits do not. The sweep extends 80 or 120 pixels past the hitbox on
+each axis. Cleared shots keep their sparks; the edge flare and sound require at
+least one cleared shot.
 
 Opening Salvo is armed before `JE_doSpecialShot` and the front-gun loop. Only the
 front gun consumes the charge.
@@ -528,7 +526,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 72. Packet readers check length before
+`NET_VERSION` bump. The current version is 73. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -565,6 +563,7 @@ Recent compatibility points:
 | 70 | Fractional and overflow Endless HP scaling |
 | 71 | Course-correction tiers and per-shot pass state |
 | 72 | Countermeasure Suite bursts on every hull hit |
+| 73 | Zinglon pillar damage scale and beam ownership |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.
@@ -802,6 +801,11 @@ Soul of Zinglon and MineField share `zinglonDuration` and `zinglonRamp`.
 `zinglon_pillar_width` opens for 25 ticks, holds, then closes for 25. A refire
 refreshes duration without resetting a live ramp. Keep the ramp per ship and in
 rollback state.
+
+The beam occupies `MAX_PWEAPON - 1` without a `playerShotData` entry.
+`zinglon_pillar_hit` supplies its collision width, scaled damage, and owner.
+Overlapping beams do not stack; the stronger hit wins and its owner gets the
+perk context and kill credit.
 
 ## Audio, logs, and consoles
 

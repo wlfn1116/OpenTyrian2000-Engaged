@@ -286,9 +286,9 @@ Pretzel Pete Truck.
 Repeated purchases can cost more. Kill-fire drive prices use the cash held on
 entry to the outpost.
 
-Extra Perk gets more expensive with every stack you hold and every perk you buy.
-Repeated purchases at one outpost add a temporary surcharge, which resets at
-the next outpost. Co-op players are priced separately.
+Extra Perk costs more for every stack you hold and every perk you buy. Buying
+several at one outpost adds a surcharge until the next outpost. Co-op players
+are priced separately.
 
 ### Perks
 
@@ -384,8 +384,8 @@ A few perks need more detail than the table can hold.
 
 **Countermeasures**
 
-Every hull hit clears nearby enemy shots. A second stack widens the sweep.
-Shield-only hits do not trigger it, and there is no cooldown.
+Every hull hit clears nearby enemy shots. A second stack widens the sweep;
+shield-only hits do not trigger it. There is no cooldown.
 
 **Chain Reaction**
 

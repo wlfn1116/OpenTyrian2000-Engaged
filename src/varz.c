@@ -749,6 +749,51 @@ int zinglon_pillar_width(int ramp, int duration)
 	return ramp < closing ? ramp : closing;
 }
 
+// Apply the owner's player-damage scale to the beam.
+static int zinglon_pillar_damage(uint owner)
+{
+	const uint fxSaved = endlessFxPlayer();
+	endlessSetFxPlayer(owner);
+	const int dmg = endlessScaleOwnDamage(ZINGLON_PILLAR_DAMAGE, endlessOpeningSalvoVolleyActive());
+	endlessSetFxPlayer(fxSaved);
+	return dmg;
+}
+
+bool zinglon_pillar_hit(int hullScreenX, int *width_px, int *damage, uint *owner)
+{
+	*width_px = 0;
+	*damage = 0;
+	*owner = 0;
+
+	if (!dual_ship_mode())
+	{
+		*width_px = zinglon_pillar_width(zinglonRamp, zinglonDuration);
+		if (abs(hullScreenX - (player[0].x + 7)) >= *width_px)
+			return false;
+		*damage = zinglon_pillar_damage(0);
+		return true;
+	}
+
+	bool hit = false;
+	for (uint p = 0; p < COUNTOF(player); ++p)
+	{
+		const int width = zinglon_pillar_width(player[p].zinglon_ramp, player[p].zinglon_duration);
+		if (player[p].zinglon_duration <= 1 || abs(hullScreenX - (player[p].x + 7)) >= width)
+			continue;
+
+		const int dmg = zinglon_pillar_damage(p);
+		if (!hit || dmg > *damage)
+		{
+			*owner = p;
+			*damage = dmg;
+		}
+		if (width > *width_px)
+			*width_px = width;
+		hit = true;
+	}
+	return hit;
+}
+
 /* Open the light pillar, or refresh one still running. A blast that lands on a live beam keeps its
  * ramp, so the beam holds the width it reached instead of snapping shut and reopening. */
 static void zinglon_blast_start(void)

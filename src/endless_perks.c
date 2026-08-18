@@ -715,18 +715,12 @@ int endlessPerkChainRadius(void)
 }
 
 // A pulse is the owning ship's damage, so it rides that ship's damage scale exactly as its guns do,
-// drives and hostile cuts included, off a base its own stacks set. `salvoBoosted` adds the Opening
-// Salvo bump into that percentage rather than multiplying it over the result, which is how the shot
-// loop spends it. One point is the floor: a pulse that lands nothing is not holding the perk.
+// drives and hostile cuts included, off a base its own stacks set.
 int endlessPerkChainDamage(bool salvoBoosted)
 {
 	if (!endlessFxActive() || perkFx(PERK_CHAINRXN) == 0)
 		return 0;
-	const int base = perkFx(PERK_CHAINRXN) * ENDLESS_PERK_CHAIN_DMG;
-	const int pct = endlessPlayerDamagePercent()
-	              + (salvoBoosted ? endlessOpeningSalvoDamagePercent() : 0);
-	const int scaled = base * pct / 100;
-	return (scaled < 1) ? 1 : scaled;
+	return endlessScaleOwnDamage(perkFx(PERK_CHAINRXN) * ENDLESS_PERK_CHAIN_DMG, salvoBoosted);
 }
 
 // Ordnance Reserves expands sidekick magazines and timed special effects.
