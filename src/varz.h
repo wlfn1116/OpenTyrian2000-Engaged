@@ -504,6 +504,8 @@ void JE_resetSpecialState(void);   // every special clock and live flare, so non
 
 void JE_wipeShieldArmorBars(void);
 JE_byte JE_playerDamage(JE_byte temp, Player *);
+// Clear enemy shots within a ship's Countermeasures reach; return the number cleared.
+int endlessCountermeasureBurst(Player *);
 
 void JE_setupExplosion(JE_integer x, JE_integer y, JE_integer deltaY, JE_integer type, bool fixedPosition, bool followPlayer);
 void JE_setupExplosionLarge(JE_boolean enemyground, JE_byte explonum, JE_integer x, JE_integer y);

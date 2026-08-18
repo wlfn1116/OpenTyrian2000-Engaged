@@ -549,7 +549,6 @@ bool endlessReviveGraceActive(void);
 
 Sint64 endlessExtraPerkPrice(void);
 bool endlessTryBuyExtraPerk(void);
-bool endlessExtraPerkMaxed(void);
 
 // Maximum queued Sabotage charges per visit, counted across both players: the charges buy off the
 // shared sector, so co-op spends one queue between the two of them.
@@ -904,10 +903,8 @@ int endlessPerkKineticAmmoRounds(void);
 int endlessPerkKineticChargeStages(void);
 int endlessPerkKineticTwiddleCost(int listCost);
 
-// Countermeasure Suite.
-void endlessCountermeasureTick(void);
+// Countermeasure Suite. The effect context selects the ship being hit.
 int  endlessPerkCountermeasureRadius(void);
-void endlessCountermeasureFired(void);
 
 // Chain Reaction.
 bool endlessPerkChainReactionActive(void);

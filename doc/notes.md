@@ -262,6 +262,13 @@ for the ship whose effect is being calculated.
 - Kinetic Converter applies to actual shield or hull loss and to affordable
   twiddle charges.
 
+Countermeasures is stateless. Each hull hit calls `endlessCountermeasureBurst`;
+shield-only hits do not. The sweep extends 80 or 120 pixels past the ship's
+hitbox on each axis.
+
+Vaporized shots keep their normal sparks. Draw the edge flare and play its sound
+only when the sweep clears at least one shot.
+
 Opening Salvo is armed before `JE_doSpecialShot` and the front-gun loop. Only the
 front gun consumes the charge.
 
@@ -406,14 +413,16 @@ row.
 `endlessCleanseCharges` is the shared Sabotage count. Prices, perk rows, shop RNG,
 and Extra Perk counters are personal.
 
-`endlessExtraPerkPrice` reads only:
+`endlessExtraPerkPrice` starts with the depth price, then applies:
 
-- `endlessExtraPerksBought`, the player's paid perks this run;
-- `endlessExtraPerksVisit`, the player's paid perks this outpost.
+- `ENDLESS_PERK_OWNED_PCT` for every held stack, including free picks;
+- `ENDLESS_PERK_PAID_GROWTH_PCT` compounded over `endlessExtraPerksBought`;
+- `ENDLESS_PERK_VISIT_REPEAT_PCT` compounded over `endlessExtraPerksVisit`.
 
-Free perks, held stacks, wallet size, and run income do not affect the ladder.
-Clamp both counters to their declared maxima. The second purchase at one outpost
-uses `ENDLESS_PERK_VISIT_REPEAT_PCT`; refuse later purchases.
+All three counts are personal. The purchase counts are saved and mirrored;
+`endlessResetShopPrices` clears only the visit count. Wallet size and income do
+not affect the price. `ENDLESS_PERK_COMPOUND_MAX` bounds both exponents if a
+save contains a corrupt count.
 
 ### Saves, records, and retries
 
@@ -519,7 +528,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 71. Packet readers check length before
+`NET_VERSION` bump. The current version is 72. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -555,6 +564,7 @@ Recent compatibility points:
 | 69 | Extra Perk counters in the outpost player block |
 | 70 | Fractional and overflow Endless HP scaling |
 | 71 | Course-correction tiers and per-shot pass state |
+| 72 | Countermeasure Suite bursts on every hull hit |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

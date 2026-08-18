@@ -617,27 +617,25 @@ static void qa_reactive_state_matrix(void)
 	qa_check(endlessGeneratorPowerAdd(7) == 7, "the zone-start reset clears every ship's lockout");
 	endlessActiveMods = 0;
 
-	/* Countermeasures: each ship's burst re-arms its own cooldown at its own stack radius. */
+	/* Countermeasures is per ship and has no cooldown. */
 	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
 	endlessPerkGrant(0, PERK_COUNTERMEASURE, 1);
 	endlessPerkGrant(1, PERK_COUNTERMEASURE, 2);
 	endlessResetZonePerkTimers();
 	endlessSetFxPlayer(0);
 	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1,
-	         "P1's countermeasures are ready at its own one-stack radius");
-	endlessCountermeasureFired();
-	qa_check(endlessPerkCountermeasureRadius() == 0, "...and firing puts P1 on cooldown");
+	         "P1's countermeasures sweep at its own one-stack radius");
 	endlessSetFxPlayer(1);
 	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS2,
-	         "P1's burst leaves P2's wider suite armed");
-	endlessCountermeasureFired();
-	for (int t = 0; t < ENDLESS_PERK_CM_COOLDOWN; ++t)
-		endlessCountermeasureTick();
-	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS2,
-	         "the tick re-arms P2");
+	         "...and P2's second stack widens only P2's");
 	endlessSetFxPlayer(0);
-	qa_check(endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1,
-	         "...and P1 alongside it");
+	bool everyHit = true;
+	for (int hit = 0; hit < 8; ++hit)   // eight hull hits in a row, with no tick in between
+		everyHit = everyHit && endlessPerkCountermeasureRadius() == ENDLESS_PERK_CM_RADIUS1;
+	qa_check(everyHit, "...and consecutive hull hits are each armed: the suite has no cooldown");
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	qa_check(endlessPerkCountermeasureRadius() == 0, "a ship without the perk sweeps nothing");
 
 	/* Chain Reaction: every stack widens the blast, and the queued pulse is measured against the
 	 * stacks of the ship that made the kill, not whichever ship the effect context last named. */
@@ -1302,8 +1300,7 @@ static void qa_eshop_matrix(void)
 		qa_clear_ledger();
 		endlessRunDepth = 20;
 
-		/* The ladder is depth alone until an outpost has sold one: free picks and a fat wallet
-		 * leave it where it is. */
+		/* Wallet size does not affect the base quote. */
 		const Sint64 ladder = 70000 + 2500 * 20;
 		player[me].cash = 99999999;
 		endlessCashResync();
@@ -1311,64 +1308,93 @@ static void qa_eshop_matrix(void)
 		snprintf(label, sizeof(label), "machine %d: a first perk is the depth price", local + 1);
 		qa_check(endlessExtraPerkPrice() == ladder, label);
 
+		/* Held stacks count whether they were free or paid. */
 		endlessPerkGrant(me, PERK_DAMAGE, 5);
 		endlessPerkGrant(me, PERK_ARMOR, 5);
+		const Sint64 held = ladder * (100 + 10 * ENDLESS_PERK_OWNED_PCT) / 100;
 		snprintf(label, sizeof(label),
-		         "machine %d: perks taken from free picks do not raise the price", local + 1);
-		qa_check(endlessExtraPerkPrice() == ladder, label);
+		         "machine %d: perks taken from free picks raise the price", local + 1);
+		qa_check(endlessExtraPerkPrice() == held, label);
 
-		/* The surcharge is quadratic in perks bought: 1.00, 1.20, 1.45, 1.75, 2.10, 2.50. */
-		static const int wantPct[6] = { 100, 120, 145, 175, 210, 250 };
+		/* The held-stack surcharge has no separate cap. */
+		endlessPerkGrant(me, PERK_BULWARK, 5);
+		endlessPerkGrant(me, PERK_SPECIALCD, 4);
+		endlessPerkGrant(me, PERK_POWERUSE, 5);
+		endlessPerkGrant(me, PERK_SHIELDREGEN, 4);
+		snprintf(label, sizeof(label),
+		         "machine %d: no ceiling holds the held surcharge down", local + 1);
+		qa_check(endlessExtraPerkPrice() == ladder * (100 + 28 * ENDLESS_PERK_OWNED_PCT) / 100,
+		         label);
+		endlessPerkGrant(me, PERK_BULWARK, -5);
+		endlessPerkGrant(me, PERK_SPECIALCD, -4);
+		endlessPerkGrant(me, PERK_POWERUSE, -5);
+		endlessPerkGrant(me, PERK_SHIELDREGEN, -4);
+
+		/* Paid perks compound by GROWTH, truncating at each step. */
 		bool curveHolds = true;
-		for (int n = 0; n < 6; ++n)
+		Sint64 wantPct = 100;
+		for (int n = 0; n < 5; ++n, wantPct = wantPct * ENDLESS_PERK_PAID_GROWTH_PCT / 100)
 		{
 			endlessExtraPerksBought[me] = n;
-			if (endlessExtraPerkPrice() != ladder * wantPct[n] / 100)
+			if (endlessExtraPerkPrice() != held * wantPct / 100)
 				curveHolds = false;
 		}
 		snprintf(label, sizeof(label),
-		         "machine %d: each bought perk widens the surcharge step", local + 1);
+		         "machine %d: each bought perk compounds the price", local + 1);
 		qa_check(curveHolds, label);
 
-		/* A partner's spending is their own: the count is personal. */
+		/* The compound cap prevents overflow from a corrupt count. */
+		endlessExtraPerksBought[me] = ENDLESS_PERK_PAID_MAX;
+		const Sint64 capped = endlessExtraPerkPrice();
+		endlessExtraPerksBought[me] = ENDLESS_PERK_COMPOUND_MAX;
+		snprintf(label, sizeof(label),
+		         "machine %d: an absurd purchase count still quotes a finite price", local + 1);
+		qa_check(capped > 0 && capped == endlessExtraPerkPrice(), label);
+
+		/* Both price terms are per player. */
 		endlessExtraPerksBought[me] = 0;
 		endlessExtraPerksBought[them] = 5;
+		endlessPerkGrant(them, PERK_DAMAGE, 5);
 		snprintf(label, sizeof(label),
-		         "machine %d: the partner's purchases do not price this pick", local + 1);
-		qa_check(endlessExtraPerkPrice() == ladder, label);
+		         "machine %d: the partner's perks and purchases do not price this pick", local + 1);
+		qa_check(endlessExtraPerkPrice() == held, label);
 		endlessExtraPerksBought[them] = 0;
+		endlessPerkGrant(them, PERK_DAMAGE, -5);
 
-		/* One outpost sells two: the second at the repeat multiple of the price it has just
-		 * risen to, and the third is not offered at any wallet. */
+		/* Same-outpost purchases compound REPEAT on top of GROWTH. */
 		qa_clear_ships();
-		player[me].cash = 99999999;
+		player[me].cash = 999999999;
 		endlessCashResync();
 		endlessResetShopPrices();
 		snprintf(label, sizeof(label), "machine %d: the first perk of a visit sells", local + 1);
 		qa_check(endlessTryBuyExtraPerk() && endlessExtraPerksBought[me] == 1, label);
 
-		const Sint64 second = ladder * wantPct[1] / 100 * ENDLESS_PERK_VISIT_REPEAT_PCT / 100;
+		bool spreeHolds = true;
+		Sint64 growthPct = ENDLESS_PERK_PAID_GROWTH_PCT, repeatPct = ENDLESS_PERK_VISIT_REPEAT_PCT;
+		for (int n = 1; n < 4; ++n)
+		{
+			if (endlessExtraPerkPrice() != ladder * growthPct / 100 * repeatPct / 100
+			    || !endlessTryBuyExtraPerk() || endlessExtraPerksBought[me] != n + 1)
+				spreeHolds = false;
+			growthPct = growthPct * ENDLESS_PERK_PAID_GROWTH_PCT / 100;
+			repeatPct = repeatPct * ENDLESS_PERK_VISIT_REPEAT_PCT / 100;
+		}
 		snprintf(label, sizeof(label),
-		         "machine %d: the second is the repeat multiple of the risen price", local + 1);
-		qa_check(!endlessExtraPerkMaxed() && endlessExtraPerkPrice() == second, label);
-		snprintf(label, sizeof(label), "machine %d: the second perk of a visit sells", local + 1);
-		qa_check(endlessTryBuyExtraPerk() && endlessExtraPerksBought[me] == 2, label);
-
-		snprintf(label, sizeof(label),
-		         "machine %d: no outpost sells a third perk, however rich", local + 1);
-		qa_check(endlessExtraPerkMaxed() && !endlessTryBuyExtraPerk()
-		         && endlessExtraPerksBought[me] == 2, label);
+		         "machine %d: one outpost sells a fourth perk at a compounded repeat price",
+		         local + 1);
+		qa_check(spreeHolds && endlessExtraPerksVisit[me] == 4, label);
 		snprintf(label, sizeof(label),
 		         "machine %d: the perks were charged to the buyer alone", local + 1);
-		qa_check(player[me].cash < 99999999 && player[them].cash == 0
+		qa_check(player[me].cash < 999999999 && player[them].cash == 0
 		         && endlessExtraPerksBought[them] == 0, label);
 
 		/* The visit counter clears at the next outpost; the run total does not. */
 		endlessResetShopPrices();
 		snprintf(label, sizeof(label),
-		         "machine %d: the next outpost sells again at the run's own price", local + 1);
-		qa_check(!endlessExtraPerkMaxed()
-		         && endlessExtraPerkPrice() == ladder * wantPct[2] / 100, label);
+		         "machine %d: the next outpost drops the repeat surcharge, not the run total",
+		         local + 1);
+		qa_check(endlessExtraPerksVisit[me] == 0
+		         && endlessExtraPerkPrice() == ladder * growthPct / 100, label);
 
 		qa_clear_ledger();
 		qa_clear_ships();
@@ -2111,7 +2137,7 @@ static void qa_wire_matrix(void)
 		endlessShopTax[0]         = variant * 25;
 		endlessRevivesUsed[0]     = variant;
 		endlessExtraPerksBought[0] = variant * 3;
-		endlessExtraPerksVisit[0]  = variant % (ENDLESS_PERK_VISIT_MAX + 1);
+		endlessExtraPerksVisit[0]  = variant + 1;
 		endlessRerollCost[0]      = 1000L * (variant + 1);
 		endlessHullCost[0]        = 500 * (variant + 1);
 		endlessShopEntryCash[0]   = 250000L * (variant + 1);
@@ -2376,8 +2402,8 @@ static void qa_scenario_suite(void)
 		endlessCashResync();
 		endlessResetShopPrices();
 
-		qa_check(endlessTryBuyExtraPerk() && endlessTryBuyExtraPerk() && endlessExtraPerkMaxed(),
-		         "the outpost sells its two perks before the save");
+		qa_check(endlessTryBuyExtraPerk() && endlessTryBuyExtraPerk()
+		         && endlessExtraPerksVisit[0] == 2, "the outpost sells two perks before the save");
 		endlessExtraPerksBought[1] = 5;   // the partner is further along a ladder of their own
 		const Sint64 pricedAt = endlessExtraPerkPrice();
 		JE_saveGame(22, "PERK COUNTS   ");
@@ -2387,13 +2413,10 @@ static void qa_scenario_suite(void)
 		qa_check(endlessLoadSlot(22) && endlessExtraPerksBought[0] == 2
 		         && endlessExtraPerksBought[1] == 5,
 		         "both players' bought-perk totals come back off the slot");
-		qa_check(endlessExtraPerksVisit[0] == ENDLESS_PERK_VISIT_MAX && endlessExtraPerkMaxed()
-		         && !endlessTryBuyExtraPerk() && endlessExtraPerksBought[0] == 2,
-		         "a reloaded outpost is still sold out, so saving cannot buy a third perk");
-		qa_check(endlessExtraPerkPrice() == pricedAt,
-		         "the restored total quotes the price the run was saved at");
+		qa_check(endlessExtraPerksVisit[0] == 2 && endlessExtraPerkPrice() == pricedAt,
+		         "the restored counts quote the price the run was saved at");
 
-		/* A corrupt count must not come back and overflow the quadratic surcharge. */
+		/* Corrupt saved counts cannot overflow the compounding surcharge. */
 		endlessExtraPerksBought[0] = 999999999;
 		endlessExtraPerksBought[1] = -7;
 		JE_saveGame(22, "PERK COUNTS   ");

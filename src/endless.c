@@ -771,7 +771,6 @@ void endlessResetRun(void)
 		endlessSalvoIdle[p] = ENDLESS_PERK_SALVO_IDLE;
 		endlessSalvoWindow[p] = 0;
 	}
-	memset(endlessCmCooldown, 0, sizeof(endlessCmCooldown));
 	memset(endlessPerkKineticAmmoAccum, 0, sizeof(endlessPerkKineticAmmoAccum));
 	endlessLockedSortie = false;
 	endlessQuitToOutpost = false;
@@ -974,7 +973,6 @@ void endlessGameplayTick(void)
 	}
 
 	endlessOpeningSalvoTick();    // Opening Salvo perk: advance the main-gun idle timer
-	endlessCountermeasureTick();  // Countermeasure Suite perk: advance the burst cooldown
 }
 
 /* Run and zone state required by re-simulation and full-state recovery. */
@@ -1000,7 +998,6 @@ void endless_register_rollback(void)
 	rollback_register("endless.regenTick", &endlessRegenTick, sizeof(endlessRegenTick));
 	rollback_register("endless.salvoIdle", endlessSalvoIdle, sizeof(endlessSalvoIdle));
 	rollback_register("endless.salvoWindow", endlessSalvoWindow, sizeof(endlessSalvoWindow));
-	rollback_register("endless.cmCooldown", endlessCmCooldown, sizeof(endlessCmCooldown));
 	rollback_register("endless.buffCharge", endlessBuffCharge, sizeof(endlessBuffCharge));
 
 	/* Roll the run ledger back with the wallet. Otherwise speculative income is

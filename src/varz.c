@@ -1756,6 +1756,44 @@ static void endlessKineticFeedSidekicks(Player *this_player, int rounds, int sta
 		hud_sidekicks_dirty = true;
 }
 
+// Clear enemy shots within this ship's Countermeasures reach. Return the number cleared.
+int endlessCountermeasureBurst(Player *this_player)
+{
+	const int cmRadius = endlessPerkCountermeasureRadius();
+	if (cmRadius <= 0)
+		return 0;
+
+	// The perk's radius begins at the hull edge, not the ship's centre.
+	const int reachX = (int)this_player->shot_hit_area_x + cmRadius;
+	const int reachY = (int)this_player->shot_hit_area_y + cmRadius;
+
+	int swept = 0;
+	for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
+	{
+		if (!enemyShotAvail[es]
+		    && abs(enemyShot[es].sx - this_player->x) <= reachX
+		    && abs(enemyShot[es].sy - this_player->y) <= reachY)
+		{
+			enemy_shot_vaporise_sparks(es);
+			JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
+			enemyShotAvail[es] = true;
+			++swept;
+		}
+	}
+
+	// Announce only a burst that cleared at least one shot.
+	if (swept > 0)
+	{
+		JE_setupExplosion(this_player->x - reachX, this_player->y, 0, 0, false, false);
+		JE_setupExplosion(this_player->x + reachX, this_player->y, 0, 0, false, false);
+		JE_setupExplosion(this_player->x, this_player->y - reachY, 0, 0, false, false);
+		JE_setupExplosion(this_player->x, this_player->y + reachY, 0, 0, false, false);
+		soundQueue[4] = S_WEAPON_7;  // point-defense "thunk"
+	}
+
+	return swept;
+}
+
 JE_byte JE_playerDamage(JE_byte temp,
                         Player *this_player)
 {
@@ -1916,41 +1954,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 		                            endlessPerkKineticChargeStages());
 	}
 
-	// Countermeasure Suite perk (endless): a hit that reaches the HULL triggers a point-defense burst
-	// that vaporises enemy projectiles around the ship (radius grows at 2 stacks), on a shared cooldown.
 	if (endlessFxShip(this_player) && cmHullHit)
-	{
-		const int cmRadius = endlessPerkCountermeasureRadius();  // 0 unless owned AND off cooldown
-		if (cmRadius > 0)
-		{
-			// "Within N pixels" is measured from the SHIP, not from its centre reference point. The
-			// hull already spans +-shot_hit_area (12x10), and anything inside that has by definition
-			// just hit you (the enemy-shot loop frees that bullet BEFORE calling us), so a bare N
-			// from the centre leaves only an empty ~14px halo. Reach N PAST the hitbox instead.
-			const int reachX = (int)this_player->shot_hit_area_x + cmRadius;
-			const int reachY = (int)this_player->shot_hit_area_y + cmRadius;
-
-			for (int es = 0; es < ENEMY_SHOT_MAX; ++es)
-			{
-				if (!enemyShotAvail[es]
-				    && abs(enemyShot[es].sx - this_player->x) <= reachX
-				    && abs(enemyShot[es].sy - this_player->y) <= reachY)
-				{
-					enemy_shot_vaporise_sparks(es);
-					JE_setupExplosion(enemyShot[es].sx, enemyShot[es].sy, 0, 0, false, false);
-					enemyShotAvail[es] = true;
-				}
-			}
-
-			// A ring flare at the sweep's edge so the burst always reads, even when it caught nothing.
-			JE_setupExplosion(this_player->x - reachX, this_player->y, 0, 0, false, false);
-			JE_setupExplosion(this_player->x + reachX, this_player->y, 0, 0, false, false);
-			JE_setupExplosion(this_player->x, this_player->y - reachY, 0, 0, false, false);
-			JE_setupExplosion(this_player->x, this_player->y + reachY, 0, 0, false, false);
-			soundQueue[4] = S_WEAPON_7;    // point-defense "thunk"
-			endlessCountermeasureFired();  // re-arm the cooldown
-		}
-	}
+		endlessCountermeasureBurst(this_player);
 
 	// Failsafe extends hull-hit invulnerability without shortening a longer revive/respawn window.
 	if (endlessFxShip(this_player) && cmHullHit && this_player->is_alive)

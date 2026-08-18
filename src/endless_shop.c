@@ -497,31 +497,33 @@ bool endlessConsumeRevive(uint p)
 	return true;
 }
 
-/* Extra Perk purchases are capped per visit and counted per player. Pricing details live in
- * doc/notes.md#economy-and-perks. */
-bool endlessExtraPerkMaxed(void) { return endlessExtraPerksVisit[me()] >= ENDLESS_PERK_VISIT_MAX; }
+// Return a percentage multiplier compounded once per purchase.
+static Sint64 endlessExtraPerkCompound(int stepPct, int count)
+{
+	const int steps = endlessClamp(count, 0, ENDLESS_PERK_COMPOUND_MAX);
+	Sint64 pct = 100;
+	for (int n = 0; n < steps; ++n)
+		pct = pct * stepPct / 100;
+	return pct;
+}
 
+// Extra Perk pricing is personal. See doc/notes.md#economy-and-perks.
 Sint64 endlessExtraPerkPrice(void)
 {
-	// Each perk already bought adds STEP, and every step is GROWTH wider than the one before, so
-	// the surcharge is quadratic in the count. The clamp keeps a hostile count from overflowing it.
-	const Sint64 bought = endlessClamp(endlessExtraPerksBought[me()], 0, ENDLESS_PERK_PAID_MAX);
-	const Sint64 surcharge = ENDLESS_PERK_PAID_STEP_PCT * bought
-	                       + ENDLESS_PERK_PAID_GROWTH_PCT * bought * (bought - 1) / 2;
+	const Sint64 owned = (Sint64)endlessPerkTotalOwned() * ENDLESS_PERK_OWNED_PCT;
 	const Sint64 base = ENDLESS_PRICE_EXTRAPERK_BASE
 	                  + (Sint64)endlessRunDepth * ENDLESS_PRICE_EXTRAPERK_PER_ZONE;
-	Sint64 price = base * (100 + surcharge) / 100;
+	Sint64 price = base * (100 + owned) / 100;
+	price = price * endlessExtraPerkCompound(ENDLESS_PERK_PAID_GROWTH_PCT,
+	                                         endlessExtraPerksBought[me()]) / 100;
 
-	// The second pick at one outpost costs a multiple of that. There is no third.
-	if (endlessExtraPerksVisit[me()] > 0)
-		price = price * ENDLESS_PERK_VISIT_REPEAT_PCT / 100;
+	price = price * endlessExtraPerkCompound(ENDLESS_PERK_VISIT_REPEAT_PCT,
+	                                         endlessExtraPerksVisit[me()]) / 100;
 	return price;
 }
 
 bool endlessTryBuyExtraPerk(void)
 {
-	if (endlessExtraPerkMaxed())
-		return false;
 	const Sint64 price = endlessExtraPerkPrice();  // single source of truth: the same value shown in the E-Shop help line
 	if (shopperCash() < price)
 		return false;

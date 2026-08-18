@@ -1740,7 +1740,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessHullCost[0]           = r->hullCost;
 	endlessBombCost[0]           = r->bombCost;
 	endlessExtraPerksBought[0]   = endlessClamp(r->extraPerksBought, 0, ENDLESS_PERK_PAID_MAX);
-	endlessExtraPerksVisit[0]    = endlessClamp(r->extraPerksVisit, 0, ENDLESS_PERK_VISIT_MAX);
+	endlessExtraPerksVisit[0]    = endlessClamp(r->extraPerksVisit, 0, ENDLESS_PERK_PAID_MAX);
 	endlessCleanseCost[0]        = r->cleanseCost;
 	endlessShopEntryCash[0]      = r->shopEntryCash;
 	endlessPurchasedMods[0]      = r->purchasedMods;
@@ -1765,7 +1765,7 @@ static void endlessApplyCurrent(const EndlessSlotRec *r)
 	endlessHullCost[1]           = r->hullCost2;
 	endlessBombCost[1]           = r->bombCost2;
 	endlessExtraPerksBought[1]   = endlessClamp(r->extraPerksBought2, 0, ENDLESS_PERK_PAID_MAX);
-	endlessExtraPerksVisit[1]    = endlessClamp(r->extraPerksVisit2, 0, ENDLESS_PERK_VISIT_MAX);
+	endlessExtraPerksVisit[1]    = endlessClamp(r->extraPerksVisit2, 0, ENDLESS_PERK_PAID_MAX);
 	endlessCleanseCost[1]        = r->cleanseCost2;
 	endlessShopEntryCash[1]      = r->shopEntryCash2;
 	player[1].superbombs         = (r->superbombs2 < 0) ? 0u : (r->superbombs2 > 10 ? 10u : (uint)r->superbombs2);
@@ -1958,7 +1958,7 @@ void endlessUnpackPlayerBlock(const Uint8 *buf, uint p)
 	endlessShopTax[p]            = fields[7];
 	endlessRevivesUsed[p]        = fields[8];
 	endlessExtraPerksBought[p]   = endlessClamp(fields[9], 0, ENDLESS_PERK_PAID_MAX);
-	endlessExtraPerksVisit[p]    = endlessClamp(fields[10], 0, ENDLESS_PERK_VISIT_MAX);
+	endlessExtraPerksVisit[p]    = endlessClamp(fields[10], 0, ENDLESS_PERK_PAID_MAX);
 	endlessRerollCost[p]         = prices[0];
 	endlessHullCost[p]           = prices[1];
 	endlessShopEntryCash[p]      = cash_clamp(prices[2]);

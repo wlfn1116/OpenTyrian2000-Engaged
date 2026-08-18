@@ -187,7 +187,6 @@ void endlessReviveGraceReset(void);
 // Countermeasure Suite.
 #define ENDLESS_PERK_CM_RADIUS1    80
 #define ENDLESS_PERK_CM_RADIUS2   120
-#define ENDLESS_PERK_CM_COOLDOWN   70
 
 // Chain Reaction. Base damage matches the median shipped enemy's armor.
 #define ENDLESS_PERK_CHAIN_RADIUS  59
@@ -224,13 +223,13 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_OFFERS_BOUGHT    4
 #define ENDLESS_PERK_OFFERS_MILESTONE 5
 
-// Extra Perk price ladder. STEP and GROWTH use the run purchase count; REPEAT and VISIT_MAX
-// govern repeat purchases at one outpost. See doc/notes.md#economy-and-perks.
-#define ENDLESS_PERK_PAID_STEP_PCT     20
-#define ENDLESS_PERK_PAID_GROWTH_PCT    5
-#define ENDLESS_PERK_VISIT_REPEAT_PCT 250
-#define ENDLESS_PERK_VISIT_MAX          2
-// Far past any reachable count, and low enough that the quadratic cannot overflow a loaded price.
+// Extra Perk pricing. See doc/notes.md#economy-and-perks.
+#define ENDLESS_PERK_OWNED_PCT         40
+#define ENDLESS_PERK_PAID_GROWTH_PCT  150
+#define ENDLESS_PERK_VISIT_REPEAT_PCT 175
+// Bounds compound prices when a save contains a corrupt count.
+#define ENDLESS_PERK_COMPOUND_MAX      12
+// Saved purchase counts are clamped above any reachable run.
 #define ENDLESS_PERK_PAID_MAX        1000
 
 // Perk decline payout.
@@ -289,7 +288,6 @@ extern int endlessPerkChoiceN;
 extern int endlessRegenTick;
 extern int endlessSalvoIdle[2];
 extern int endlessSalvoWindow[2];
-extern int endlessCmCooldown[2];
 
 void endlessResetZonePerkTimers(void);
 extern int endlessPerkDepthDone;
@@ -321,7 +319,7 @@ extern int  endlessRevivesUsed[2];         // revives spent this run (the price 
 extern int  endlessCleanseChargeCount[2];  // pre-bought strips of the worst mutator off the next course
 extern Sint64 endlessBombCost[2], endlessCleanseCost[2];
 extern int  endlessExtraPerksBought[2];    // perks bought from outposts this run; sets the permanent surcharge
-extern int  endlessExtraPerksVisit[2];     // ...and how many of them at this outpost, capped at ENDLESS_PERK_VISIT_MAX
+extern int  endlessExtraPerksVisit[2];     // ...and how many of them at this outpost, for the repeat surcharge
 extern char endlessGambleMsg[2][48];       // last gamble outcome, for the E-Shop help line
 extern bool endlessGamblePerkWon[2];       // a gamble handed out a free perk pick; the dispatch opens MENU_PERKS
 extern int  endlessShopTax[2];             // Loan Shark: permanent +% on every shop price for the rest of the run

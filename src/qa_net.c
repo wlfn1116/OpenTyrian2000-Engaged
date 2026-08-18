@@ -435,7 +435,7 @@ static void qa_net_endless_holding(uint slot)
 	endlessCleanseChargeCount[slot] = (int)(slot % (ENDLESS_CLEANSE_MAX_CHARGES + 1));
 	endlessShopTax[slot]            = (int)(25 * (slot + 1));
 	endlessExtraPerksBought[slot]   = (int)(3 + slot * 2);
-	endlessExtraPerksVisit[slot]    = (int)(slot % (ENDLESS_PERK_VISIT_MAX + 1));
+	endlessExtraPerksVisit[slot]    = (int)(slot + 1);
 	endlessLongCon[slot]            = (int)(2 + slot);
 	endlessRerollCost[slot]         = 3000 + slot * 1500;
 	endlessHullCost[slot]           = 2500 + slot * 700;
@@ -468,7 +468,7 @@ static bool qa_net_endless_holding_matches(uint slot)
 	    && endlessCleanseChargeCount[slot] == (int)(slot % (ENDLESS_CLEANSE_MAX_CHARGES + 1))
 	    && endlessShopTax[slot]            == (int)(25 * (slot + 1))
 	    && endlessExtraPerksBought[slot]   == (int)(3 + slot * 2)
-	    && endlessExtraPerksVisit[slot]    == (int)(slot % (ENDLESS_PERK_VISIT_MAX + 1))
+	    && endlessExtraPerksVisit[slot]    == (int)(slot + 1)
 	    && endlessLongCon[slot]            == (int)(2 + slot)
 	    && endlessRerollCost[slot]         == 3000 + slot * 1500
 	    && endlessHullCost[slot]           == 2500 + slot * 700

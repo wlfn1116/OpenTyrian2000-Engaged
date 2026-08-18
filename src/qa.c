@@ -2815,6 +2815,99 @@ static void qa_test_deflector_perk(void)
 	coopEndlessMode = savedCoop;
 }
 
+/* Countermeasures clears shots within hull-relative reach and has no cooldown. */
+static void qa_test_countermeasure_burst(void)
+{
+	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_boolean savedCoop = coopEndlessMode;
+	const Player savedPlayer = player[0];
+	JE_byte savedPerks[2][PERK_COUNT];
+	EnemyShotType savedShots[8];
+	JE_boolean savedAvail[ENEMY_SHOT_MAX];
+	Explosion savedExplosions[MAX_EXPLOSIONS];
+	memcpy(savedPerks, endlessPerkTakenBy, sizeof(savedPerks));
+	memcpy(savedShots, enemyShot, sizeof(savedShots));
+	memcpy(savedAvail, enemyShotAvail, sizeof(savedAvail));
+	memcpy(savedExplosions, explosions, sizeof(savedExplosions));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+	coopEndlessMode = false;
+	memset(endlessPerkTakenBy, 0, sizeof(endlessPerkTakenBy));
+	endlessPerkRederive();
+	endlessSetFxPlayer(0);
+
+	player[0].x = 140;
+	player[0].y = 100;
+	player[0].shot_hit_area_x = 12;
+	player[0].shot_hit_area_y = 10;
+	const int reachX = 12 + ENDLESS_PERK_CM_RADIUS1;
+	const int reachY = 10 + ENDLESS_PERK_CM_RADIUS1;
+
+	// Check both axes because the hitbox is not square.
+	memset(enemyShotAvail, 1, sizeof(enemyShotAvail));   // an empty sky, so the counts below are exact
+	for (uint i = 0; i < COUNTOF(savedShots); ++i)
+	{
+		memset(&enemyShot[i], 0, sizeof(enemyShot[i]));
+		enemyShotAvail[i] = 0;
+		enemyShot[i].sx = 140;
+		enemyShot[i].sy = 100;
+		enemyShot[i].sgr = 270;
+	}
+	enemyShot[4].sx = (JE_integer)(140 + reachX);
+	enemyShot[5].sx = (JE_integer)(140 + reachX + 1);
+	enemyShot[6].sy = (JE_integer)(100 + reachY);
+	enemyShot[7].sy = (JE_integer)(100 + reachY + 1);
+
+	qa_check(endlessCountermeasureBurst(&player[0]) == 0 && enemyShotAvail[0] == 0,
+	         "without the perk a hull hit sweeps nothing");
+
+	endlessPerkTakenBy[0][PERK_COUNTERMEASURE] = 1;
+	endlessPerkRederive();
+	qa_check(endlessCountermeasureBurst(&player[0]) == 6,
+	         "the burst takes every bullet out to its reach, measured past the hitbox");
+	qa_check(enemyShotAvail[0] && enemyShotAvail[4] && enemyShotAvail[6]
+	         && !enemyShotAvail[5] && !enemyShotAvail[7],
+	         "...and leaves the ones a pixel beyond it, on either axis, flying");
+
+	endlessPerkTakenBy[0][PERK_COUNTERMEASURE] = 2;
+	endlessPerkRederive();
+	qa_check(endlessCountermeasureBurst(&player[0]) == 2
+	         && enemyShotAvail[5] && enemyShotAvail[7],
+	         "a second stack reaches the bullets one stack left flying");
+	qa_check(endlessCountermeasureBurst(&player[0]) == 0,
+	         "a burst over cleared air takes nothing");
+
+	// Each consecutive hit must clear a fresh shot without a recharge tick.
+	endlessPerkTakenBy[0][PERK_COUNTERMEASURE] = 1;
+	endlessPerkRederive();
+	bool everyHit = true;
+	for (uint hit = 0; hit < 8; ++hit)
+	{
+		enemyShotAvail[0] = 0;
+		enemyShot[0].sx = 140;
+		enemyShot[0].sy = 100;
+		everyHit = everyHit && endlessCountermeasureBurst(&player[0]) == 1 && enemyShotAvail[0];
+	}
+	qa_check(everyHit, "consecutive hull hits each fire: nothing has to recharge between them");
+
+	endlessMode = false;
+	enemyShotAvail[0] = 0;
+	qa_check(endlessCountermeasureBurst(&player[0]) == 0 && enemyShotAvail[0] == 0,
+	         "...and none of it happens outside an endless run");
+
+	memcpy(enemyShot, savedShots, sizeof(savedShots));
+	memcpy(enemyShotAvail, savedAvail, sizeof(savedAvail));
+	memcpy(explosions, savedExplosions, sizeof(savedExplosions));
+	JE_resetSP();
+	memcpy(endlessPerkTakenBy, savedPerks, sizeof(savedPerks));
+	endlessPerkRederive();
+	player[0] = savedPlayer;
+	endlessMode = savedEndless;
+	endlessCampaignMods = savedCampaign;
+	coopEndlessMode = savedCoop;
+}
+
 /* Guided Aim (guidedShotScreenAim): the weapon-table homing picks and chases the enemy's screen x
  * instead of its map x. Nothing else about the stock rule moves: it still takes any non-free,
  * non-pickup slot and still veers off when its enemy dies. */
@@ -7159,6 +7252,7 @@ int qa_run_unit_suite(void)
 	qa_test_reinforced_prow_perk();
 	qa_test_knife_fight_perk();
 	qa_test_deflector_perk();
+	qa_test_countermeasure_burst();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
 	qa_test_elite_tier_eligibility();

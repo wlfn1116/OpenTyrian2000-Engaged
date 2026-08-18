@@ -384,7 +384,7 @@ void endlessResetZoneEffects(void)
 	endlessRetaliationTimer = 0;   // RETALIATION window
 	endlessStaticLockoutReset();   // no Static Discharge generator lockout carried in
 	endlessReviveGraceReset();     // ...and no leftover revive stun: the next zone opens shooting
-	endlessResetZonePerkTimers();  // Opening Salvo / Countermeasure: neither charge nor cooldown crosses the outpost
+	endlessResetZonePerkTimers();  // Opening Salvo: no half-spent charge crosses the outpost
 	memset(endlessOverdriveStacks, 0, sizeof(endlessOverdriveStacks));
 	memset(endlessComboKills, 0, sizeof(endlessComboKills));
 	endlessResetKillDedup();       // no link number carried in from the last zone's final kill

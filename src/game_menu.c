@@ -4987,13 +4987,8 @@ void JE_drawMainMenuHelpText(void)
 				}
 				break;
 			case 5:  // Extra Perk
-				if (endlessExtraPerkMaxed())
-					snprintf(tempStr, sizeof(tempStr), "This outpost has sold its %d perks.", ENDLESS_PERK_VISIT_MAX);
-				else
-				{
-					SDL_strlcpy(tempStr, "Pick a bonus perk now, from four.", sizeof(tempStr));
-					snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessExtraPerkPrice());
-				}
+				SDL_strlcpy(tempStr, "Pick a bonus perk now, from four.", sizeof(tempStr));
+				snprintf(costStr, sizeof(costStr), "$%lld", (long long)endlessExtraPerkPrice());
 				break;
 			case 3:  // Sabotage Sector
 				// Maxed prints no price, like Hull/Bombs: a cost next to an unbuyable row reads as a

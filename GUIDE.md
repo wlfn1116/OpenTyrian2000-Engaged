@@ -276,7 +276,7 @@ Pretzel Pete Truck.
 | Shop Reroll | $6,000 + $1,000/zone | Replace your shop stock |
 | Sector Sabotage | $25,000 + $2,500/zone | Remove one threat, up to three per outpost |
 | Reinforce | $15,000 + $2,000/zone | Add 6 maximum armour |
-| Extra Perk | $70,000 + $2,500/zone, plus a surcharge per perk bought | Open a four-choice perk pick |
+| Extra Perk | $70,000 + $2,500/zone, plus perk surcharges | Open a four-choice perk pick |
 | Special Weapon | Share of entry cash | Equip a random safe special |
 | Turbodrive / Overblast / Overdrive | Share of entry cash | Add the chosen drive next sector |
 | Revive | $150,000 + $10,000/zone | Survive one lethal hit |
@@ -286,14 +286,9 @@ Pretzel Pete Truck.
 Repeated purchases can cost more. Kill-fire drive prices use the cash held on
 entry to the outpost.
 
-Extra Perk uses a visible price ladder. Its first multipliers are 1.00, 1.20,
-1.45, 1.75, 2.10, and 2.50, with larger increases later.
-
-- Free perk picks do not raise the price.
-- Wallet size and run income do not affect it.
-- An outpost sells at most two paid perks.
-- The second costs 2.5x the newly raised price.
-- Each co-op player has their own purchase count.
+Extra Perk gets more expensive with every stack you hold and every perk you buy.
+Repeated purchases at one outpost add a temporary surcharge, which resets at
+the next outpost. Co-op players are priced separately.
 
 ### Perks
 
@@ -322,7 +317,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Executioner | More damage to badly wounded enemies | 3 |
 | Opening Salvo | Charges a stronger opening volley | 1 |
 | Kinetic Converter | Damage taken refunds power, recharge, and sidekicks; cheaper twiddles | 3 |
-| Countermeasures | Clears nearby shots after damage | 2 |
+| Countermeasures | Clears nearby shots on every hull hit | 2 |
 | Chain Reaction | Kills blast nearby enemies, and those blast on | 3 |
 | Financier | More interest and lower shop prices | 4 |
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
@@ -386,6 +381,11 @@ A few perks need more detail than the table can hold.
 - Each stack restores 0.25 sidekick rounds and one charge stage.
 - Shield loss refunds 20% of its generator value per stack.
 - Twiddle shield or armor cost falls by 22% per stack, to a minimum of one.
+
+**Countermeasures**
+
+Every hull hit clears nearby enemy shots. A second stack widens the sweep.
+Shield-only hits do not trigger it, and there is no cooldown.
 
 **Chain Reaction**
 
