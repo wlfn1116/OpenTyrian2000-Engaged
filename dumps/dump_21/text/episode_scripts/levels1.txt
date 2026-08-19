@@ -1,0 +1,471 @@
+**1 SECTION - LEVEL #1****This has not been encrypted in case of changes******
+]J 002[
+
+**2 SECTION - LEVEL #1 - Tyrian*********************************************** 9 10 11
+]?[ 04 001 002 023 005
+]![ 04
+]G[ 01 1 01 003
+]I[
+ Ship   1
+ WeapF  13 2 7
+ WeapR  0 11 10 29
+ Power  1 2 3
+ Engine 1
+ Opt1   0 9 16 30
+ Opt2   0 9 20 30
+ Armor  1 2 3
+ Shield 1 2 3
+
+**3 SECTION - Tyrian          ************************************************
+]h[
+]L[ 9999 004 TYRIAN   18 09
+]L[ 9999 004 TYRIAN   18 15
+
+
+**4 SECTION - ASTEROID DECISION************************************************
+]?[ 04 006 007 012 018
+]G[ 01 2 02 005  03 006
+]I[
+ Ship   1
+ WeapF  2 13 17
+ WeapR  0 11 12
+ Power  1 2 3
+ Engine 1
+ Opt1   0 1 19 15
+ Opt2   0 1 19 15
+ Armor  1 2 3
+ Shield 3 4 5
+
+**5 SECTION - Tyrian to Asteroid Field 1**************************************
+]L[ 9999 008 ASTEROID101 01
+
+**6 SECTION - Tyrian to Asteroid Field 2**************************************
+]L[ 9999 008 ASTEROID202 02
+
+
+**7 SECTION - Savara from Windy     ******************************************
+]?[ 03 015 013 028
+]![ 03
+]G[ 02 1 08 010
+]J 009[
+
+**8 SECTION - Savara from Asteroids ******************************************
+]?[ 03 015 013 028
+]G[ 03 1 08 010
+]J 009[
+
+**9 SECTION - Savara**********************************************************
+]I[
+ Ship   1
+ WeapF  1 2 17
+ WeapR  0 12 15 29
+ Power  1 2 3 4
+ Engine 1 2 3
+ Opt1   0 2 6 15
+ Opt2   0 2 6 15
+ Armor  1 2 3
+ Shield 3 4
+]J 010[
+
+**10SECTION - Savara**********************************************************
+]H[ 029
+]L[ 9999 024 SAVARA   33 12
+
+**11SECTION - Deliani from Savara*********************************************
+]M 016[
+]P 005[
+]Wy 01[
+Warning:
+Trajectory heading intercepts minefield surrounding Deliani.
+
+Navigation through minefield necessary to reach Deliani.
+
+Unknown magnetic forces detected ahead.  
+#
+]J 012[
+
+**12SECTION - Mines  *********************************************************
+]s[
+]?[ 04 010 011 013 017   (No cubes)
+]G[ 15 1 10 013
+]I[
+ Ship   1 3 9
+ WeapF  7 2 13
+ WeapR  0 10 18
+ Power  1 2 3 4
+ Engine 1 2 3
+ Opt1   0 2 8 10
+ Opt2   0 2 8 10
+ Armor  1 2 3
+ Shield 2 3 4 5
+
+**13SECTION - Mines  *********************************************************
+]L[ 9999 018 MINES    17 07
+
+**14SECTION - Windy***********************************************************
+]J 032[  Needed to fool Warp Ball!
+
+**15SECTION - Bubbles Bonus Stage*********************************************
+]?[ 04 004 024 025 031
+]G[ 01 1 13 016
+]I[
+ Ship   1 9
+ WeapF  19 7 2
+ WeapR  0 9 10 11
+ Power  1 2 3
+ Engine 1
+ Opt1   0 21 7 8
+ Opt2   0 21 7 8
+ Armor  1 2 3
+ Shield 3 4 5
+
+**16SECTION - Bubbles Level***************************************************
+]L[ 9999 017 BUBBLES  26 04 $
+
+**17SECTION - Bubbles To Asteroid Decision************************************
+]?[ 04 016 013 036 037
+]G[ 01 2 02 005  03 006
+]I[
+ Ship   1 9
+ WeapF  2 7 13
+ WeapR  0 12 14
+ Power  1 2 3
+ Engine 1
+ Opt1   0 4 8 10
+ Opt2   0 4 8 10
+ Armor  1 2 3
+ Shield 2 3 4 5
+
+**18SECTION - Deliani   *
+]?[ 03 015 016 017
+]G[ 10 1 10 019
+]I[
+ Ship   1 3 9
+ WeapF  7 2 1
+ WeapR  0 10 18 15
+ Power  1 2 3 4
+ Engine 1 2 3
+ Opt1   0 2 8 13
+ Opt2   0 2 8 13
+ Armor  1 2 3
+ Shield 3 4 5
+
+**19SECTION - Deliani   *
+]L[ 9999 037 DELIANI  14 05
+
+**20SECTION - Asteroid4 *
+]?[ 03 008 009 014
+]G[ 02 1 13 021
+]I[
+ Ship   1 9
+ WeapF  2 17 20
+ WeapR  0 12 11 10
+ Power  2 3 4
+ Engine 1 2 3
+ Opt1   0 3 8 10
+ Opt2   0 3 8 10
+ Armor  1 2 3
+ Shield 3 4 5
+
+**21SECTION - Asteroid4 *
+]L[ 9999 008 ASTEROID?02 03 $
+
+**22SECTION - Asteroid4 *
+]?[ 03 008 009 014
+]G[ 03 1 14 023
+]I[
+ Ship   1 9
+ WeapF  2 17 3
+ WeapR  0 12 11 15
+ Power  2 3 4
+ Engine 1 2 3
+ Opt1   0 3 8 10
+ Opt2   0 3 8 10
+ Armor  1 2 3
+ Shield 3 4 5
+
+**23SECTION - Asteroid4 *
+]L[ 9999 008 MINEMAZE 23 06 $
+
+**24SECTION - Bonus after Savara*
+]?[ 04 010 011 016 017
+]G[ 08 1 15 025
+]I[
+ Ship   1 9
+ WeapF  2 17 7
+ WeapR  0 12 18 15
+ Power  2 3 4
+ Engine 1 2 3
+ Opt1   0 1 2 13
+ Opt2   0 1 2 13
+ Armor  1 2 3
+ Shield 3 4 5
+
+**25SECTION - Bonus after Savara*
+]L[ 9999 011 BONUS    18 10$$
+
+**26SECTION - END GAME*
+]F[
+]M 031[
+]P 005[
+]Q[
+Secret Hint 1-1-1:
+
+BONUS ROUND
+Increase your score in the bonus level by waiting for
+enemies to attack you.  One of the ships is carrying a
+5000-point gem!
+#
+Secret Hint 1-1-2:
+
+TYRIAN  (First Level)
+There is a secret to the first U-ship that attacks you.
+#
+Secret Hint 1-1-3:
+
+ASTEROID LEVELS
+The rock faces conceal two bonus levels.
+#
+Secret Hint 1-2-1:
+
+ASTEROID 2
+There is a secret to the first tank in the level.
+#
+Secret Hint 1-2-2:
+
+SECRET LEVEL
+There is a way to go from one secret level to one other
+secret level to maximize your score!
+#
+Secret Hint 1-2-3:
+
+ASTEROID 2
+Several of the tanks in this level are worth more if
+you wait a while before destroying them.  You can get
+extra power-ups this way.
+#
+Secret Hint 1-3-1:
+
+TYRIAN  (First Level)
+The rock formations conceal a secret fortune.
+#
+Secret Hint 1-3-2:
+
+IMPOSSIBLE
+Type a capital G at difficulty selection screen.
+#
+Secret Hint 1-3-3:
+
+EPISODE 3
+Play at the hard difficulty level for an extra reward.
+#
+
+ Ship   1 2 3 4
+ WeapF  1 2 3 7 17 20
+ WeapR  10 11 12 15 18 22
+ Power  1 2 3 4
+ Engine 1 2 3
+ Opt1   1 2 6 7 8 9 10
+ Opt2   1 2 6 7 8 9 10
+ Armor  1 2 3
+ Shield 1 2 3 4 5 8 9
+
+**27SECTION - END GAME*
+]?[ 04 004 024 025 027
+]G[ 01 1 14 028
+]I[
+ Ship   1 9
+ WeapF  20 7 27
+ WeapR  0 12 10 28
+ Power  1 2 3
+ Engine 1
+ Opt1   0 2 14 8
+ Opt2   0 2 14 8
+ Armor  1 2 3
+ Shield 3 4 5
+
+**28SECTION - Bubbles Level***************************************************
+]L[ 9999 017 HOLES    24 11$$
+
+**29SECTION - Other Savara ***************************************************
+]L[ 9999 024 SAVARA   33 08
+
+**30SECTION - Desert       ***************************************************
+]?[ 04 004 024 025 026
+]G[ 01 1 05 031
+]I[
+ Ship   1 3
+ WeapF  20 2 7
+ WeapR  0 12 15 22
+ Power  1 2 4
+ Engine 1
+ Opt1   0 7 9 10
+ Opt2   0 7 9 10
+ Armor  1 2 3
+ Shield 1 2 9
+
+**31SECTION - Tyrian          ************************************************
+]L[ 9999 004 SOH JIN  16 13
+
+**32SECTION - Windy           ************************************************
+]?[ 03 029 030 032
+]G[ 02 1 01 033
+]I[
+ Ship   1 3
+ WeapF  1 3 17
+ WeapR  0 10 15 12
+ Power  2 3 5
+ Engine 1 2 3
+ Opt1   0 2 6
+ Opt2   0 2 6 23
+ Armor  1 2 3
+ Shield 3 4
+
+**33SECTION - Windy           ************************************************
+]L[ 9999 007 WINDY    26 14$$
+
+**34SECTION - End             ************************************************
+
+**35 SECTION - LEVEL #1 - Tyrian*********************************************** 9 10 11
+]s[
+]?[ 02 021 022
+]![ 02
+]G[ 08 1 01 036
+]I[
+ Ship   1
+ WeapF  13 17 3
+ WeapR  0 11 10 12
+ Power  2 3 4
+ Engine 1
+ Opt1   0 1 9 29
+ Opt2   0 1 9 20
+ Armor  1 2 3
+ Shield 1 2 3
+
+**36 SECTION - Tyrian          ************************************************
+]L[ 9999 042 ASSASSIN 36 16
+
+**37SECTION - Deliani   *
+]?[ 02 019 020
+]![ 02
+]G[ 10 1 08 038
+]I[
+ Ship   1 4 9
+ WeapF  8 2 3 1
+ WeapR  0 10 18 15
+ Power  2 3 4
+ Engine 1 2 3
+ Opt1   0 3 6 16
+ Opt2   0 3 6 16
+ Armor  1 2 3
+ Shield 3 4 5
+
+**38SECTION - Deliani   *
+]L[ 9999 039 SAVARA V 33 17
+
+**39SECTION - Deliani   *
+]M 009[
+]P 005[
+]Wn 03[
+Now that you've saved the crisis on Savara and earned the
+help of Transon Lohk, you head back to Tyrian to find out
+more about this new power.
+
+How could such an innocent pile of rocks be used to
+devastate planets?
+
+You must locate a sample of this new energy.  If nothing
+else, perhaps it could be harnessed back against Microsol's
+new device.
+#
+]M 005[
+]P 005[
+]Wn 03[
+There, on the far side of Tyrian.  A sample?
+
+Looks like a fairly substantial... oh no!
+
+
+                     MICROSOL!
+#
+]J 035[
+
+**40 * Do you have the special ship?
+]s[
+]b[ Save Backup
+]x[
+]?[ 03 033 034 035
+]![ 03
+]G[ 01 2 05 041  21 026
+]I[
+ Ship
+ WeapF  
+ WeapR  
+ Power  
+ Engine 
+ Opt1   
+ Opt2   
+ Armor
+ Shield 
+
+*41SECTION - Extra MiniGame
+]e[ ENGAGE items
+]g[ GALAGA mode
+]L[ 9999 026 ** ALE **41 18
+
+*42SECTION - EndGame?
+]M 008[
+]P 009[
+]Wn 03[
+That was too close. You've been nearly vaporized, crushed,
+blown to pieces, flame broiled, and electrocuted one too
+many times. Only your incredible targeting skills and class
+1 fancy flying has kept you alive.
+
+Those boys at Deliani clearly have some even more hair 
+raising missions for you up their sleeve. Why were YOU
+chosen to be their errand boy?  Why is half the galaxy after
+your head? Can you beat the odds and, most importantly, can
+you survive without becoming space bacon?
+#
+]M 022[
+]U 008[
+]Wn 03[
+If not, things could become unpleasant.
+#
+]2 026[
+]n[
+]F[
+]M 038[
+]P 009[
+]Wn 03[
+This is Rob Neither with the daily news.
+
+Zinglon's Ale has been stolen!
+
+The Grand Moolah Yimbo revealed today that all of their
+god, Zinglon's, holy ale has been abducted.  Millions of
+thirsty worshippers fled in panic when the news hit.
+#
+]P 009[
+]Wn 03[
+A panic-stricken Savaran citizen:
+
+"I nearly fainted when I heard the news.  How can we
+continue to believe in a just universe and freedom to
+eat crackers if we have no ale?  I don't know yet what
+I'm going to do."
+#
+]P 009[
+]Wn 03[
+This is certainly a crisis of grand proportions.  All
+other work has stopped.
+
+The Grand Moolah has told us that someone must retrieve
+the ale from the clutches of Dai-Zan, the god of deceit
+and bad form.  Who will save us from this torment?
+
+My Zinglon, I need a drink!
+#
+]i 038[
+]J 040[

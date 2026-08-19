@@ -9,41 +9,33 @@ otherwise.
 import os
 import struct
 
-# Table sizes from src/lvlmast.h. Weapon and enemy tables have two banks separated by a gap.
-
-WEAP_END1 = 818
-WEAP_START2 = 1000
-WEAP_NUM = 1818
-PORT_NUM = 60
-POWER_NUM = 6
-OPTION_NUM = 37
-SHIP_NUM = 18
-SHIELD_NUM = 11
-SPECIAL_NUM = 54
-ENEMY_END1 = 850
-ENEMY_START2 = 1001
-ENEMY_NUM = 1850
-
-# Enemy shapebank (1-based) to the newsh<c>.shp that holds its frames (src/lvlmast.c).
-SHAPE_FILE = ['2', '4', '7', '8', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
-              'O', 'P', 'Q', 'R', 'S', 'T', 'U', '5', '#', 'V', '0', '@', '3', '^', '5', '9', "'", '%']
-
-# Palette index each tyrian.pic screen is drawn with (src/pcxmast.c).
-PCX_PALETTE = [0, 7, 5, 8, 10, 5, 18, 19, 19, 20, 21, 22, 5, 23]
-PCX_NUM = 14
-
 # Palette index each shop/menu face uses (src/pcxmast.c, facepal).
 FACE_PALETTE = [1, 2, 3, 4, 6, 9, 11, 12, 16, 13, 14, 15]
+
+# Palette index each tyrian.pic screen is drawn with (src/pcxmast.c). Tyrian 1.1
+# stops after the first PCX_NUM of these.
+PCX_PALETTE = [0, 7, 5, 8, 10, 5, 18, 19, 19, 20, 21, 22, 5, 23]
 
 TILE_W, TILE_H = 24, 28
 TILES_PER_SET = 600
 
-SFX_COUNT = 31
 VOICE_COUNT = 9
 SAMPLE_RATE = 11025  # signed 8-bit mono (src/nortsong.c builds the converter from this)
 
 # Layout of the map layers inside a level record (src/tyrian2.c, JE_loadMap).
 MAP_LAYERS = ((14, 300), (14, 600), (15, 600))
+
+# Three releases ship the same containers with different contents: Tyrian 1.1
+# (1995), Tyrian 2.1 (1996) and Tyrian 2000 (1999). Each one grew the item
+# tables, the sprite banks and the interface text, and 2.1 moved the episode 1-3
+# item tables out of the level files into tyrian.hdt. Every table that differs is
+# defined below and collected in VERSIONS at the end of this file. `use_version`
+# binds one release to the names the readers use, so call it once before
+# decoding. The module starts on Tyrian 2000.
+
+VERSION_2000 = "tyrian2000"
+VERSION_2_1 = "tyrian2.1"
+VERSION_1_1 = "tyrian1.1"
 
 
 # Byte-level helpers
@@ -108,6 +100,17 @@ class Reader(object):
 def read_file(path):
     with open(path, "rb") as f:
         return f.read()
+
+
+def data_index(data_dir):
+    """Lower-case file name to the name on disk.
+
+    Tyrian 1.1 ships upper-case names and Tyrian 2000 lower-case ones. Callers
+    ask for the lower-case name and look the real one up here, so a dump reads
+    the same either way and its output does not inherit the source's case.
+    """
+    return {name.lower(): name for name in sorted(os.listdir(data_dir))
+            if os.path.isfile(os.path.join(data_dir, name))}
 
 
 # Encrypted Pascal strings (src/helptext.c, decrypt_string)
@@ -247,37 +250,37 @@ def sprite2_offsets(data):
     return list(struct.unpack_from("<%dH" % count, data, 0))
 
 
-def decode_sprite2(data, offset):
-    """One compiled frame. Returns (height, list of 12 * height indices or None)."""
+def decode_sprite2(data, offset, end=None):
+    """One compiled frame. Returns (height, list of 12 * height indices or None).
+
+    The engine walks a single cursor over a 12-pixel raster (src/sprite.c,
+    blit_sprite2 and sprite2_ink_bounds): the low nibble of a control byte skips
+    that many pixels and the high nibble paints that many literal ones. Nothing
+    marks the end of a row. Tyrian 2000 always skips a whole row at a time, but
+    Tyrian 1.1 pads its streams with zero bytes that skip nothing at all.
+
+    A frame stops at 0x0f or at `end`, where the next one starts. Tyrian 2000
+    always reaches the terminator first; Tyrian 1.1 writes no terminator and
+    relies on the offset table alone.
+    """
     pixels = {}
-    row, col = 0, 0
-    max_row = 0
-    i = offset
-    while i < len(data) and data[i] != 0x0f:
-        b = data[i]
-        col += b & 0x0f
-        run = (b >> 4) & 0x0f
-        if run == 0:
-            row += 1
-            col -= SPRITE2_WIDTH
-            i += 1
-            continue
+    stop = len(data) if end is None else min(end, len(data))
+    cursor, i = 0, offset
+    while i < stop and data[i] != 0x0f:
+        cursor += data[i] & 0x0f
+        run = (data[i] >> 4) & 0x0f
         for _ in range(run):
             i += 1
-            if i >= len(data):
+            if i >= stop:
                 break
-            if 0 <= col < SPRITE2_WIDTH and row >= 0:
-                pixels[(col, row)] = data[i]
-                if row > max_row:
-                    max_row = row
-            col += 1
+            pixels[cursor] = data[i]
+            cursor += 1
         i += 1
 
-    height = max(max_row + 1, 1)
+    height = max(pixels) // SPRITE2_WIDTH + 1 if pixels else 1
     out = [None] * (SPRITE2_WIDTH * height)
-    for (x, y), value in pixels.items():
-        if y < height:
-            out[y * SPRITE2_WIDTH + x] = value
+    for at, value in pixels.items():
+        out[at] = value
     return height, out
 
 
@@ -289,7 +292,8 @@ def load_sprite2_sheet(data):
         if off >= len(data):
             frames.append({"index": n, "offset": off, "height": 0, "pixels": []})
             continue
-        height, pixels = decode_sprite2(data, off)
+        end = offsets[n] if n < len(offsets) and offsets[n] > off else len(data)
+        height, pixels = decode_sprite2(data, off, end)
         frames.append({"index": n, "offset": off, "height": height, "pixels": pixels})
     return frames
 
@@ -315,10 +319,13 @@ def load_raw_cell_sheet(path, offset=2):
 
 # tyrian.shp / tyrianc.shp (src/sprite.c, JE_loadMainShapeTables)
 #
-# u16 bank count (13), s32 bank offsets, then the banks. Banks 0-6 are
-# Sprite_array tables; banks 7-12 are compiled 12px sheets.
+# u16 bank count, s32 bank offsets, then the banks. The Sprite_array tables come
+# first and the compiled 12px sheets follow. Tyrian 2000 holds 13 banks and
+# Tyrian 2.1 the same 12 before it; Tyrian 1.1 holds 11 and orders its seven
+# tables differently. The lists below name each bank by what it draws, not by
+# the slot the engine loads it into.
 
-MAIN_SHP_BANKS = [
+MAIN_SHP_BANKS_2000 = [
     ("00_font", "array", "Large font"),
     ("01_small_font", "array", "Small font"),
     ("02_tiny_font", "array", "Tiny font"),
@@ -332,6 +339,22 @@ MAIN_SHP_BANKS = [
     ("10_pickups", "sheet", "Coins, datacubes and other pickups"),
     ("11_player_shots_2", "sheet", "More player shot sprites"),
     ("12_t2000_ships", "sheet", "Tyrian 2000 ship sprites"),
+]
+
+MAIN_SHP_BANKS_2_1 = MAIN_SHP_BANKS_2000[:12]
+
+MAIN_SHP_BANKS_1_1 = [
+    ("00_planets", "array", "Planet and map sprites"),
+    ("01_font", "array", "Large font"),
+    ("02_small_font", "array", "Small font"),
+    ("03_faces", "array", "Cutscene and datacube faces"),
+    ("04_options_help", "array", "Menu, option and help sprites"),
+    ("05_tiny_font", "array", "Tiny font"),
+    ("06_weapons", "array", "Weapon and shop item sprites"),
+    ("07_player_shots", "sheet", "Player shot sprites"),
+    ("08_player_ships", "sheet", "Player ship and sidekick sprites"),
+    ("09_powerups", "sheet", "Power-up sprites"),
+    ("10_pickups", "sheet", "Coins, datacubes and other pickups"),
 ]
 
 
@@ -699,7 +722,7 @@ def load_item_data(data, offset):
     header = r.array("H", 7)
 
     weapons = {}
-    for lo, hi in ((0, WEAP_END1), (WEAP_START2, WEAP_NUM)):
+    for lo, hi in WEAPON_BANKS:
         for i in range(lo, hi + 1):
             weapons[i] = _read_weapon(r)
 
@@ -777,7 +800,7 @@ def load_item_data(data, offset):
         })
 
     enemies = {}
-    for lo, hi in ((0, ENEMY_END1), (ENEMY_START2, ENEMY_NUM)):
+    for lo, hi in ENEMY_BANKS:
         for i in range(lo, hi + 1):
             enemies[i] = _read_enemy(r)
 
@@ -797,11 +820,13 @@ def load_item_data(data, offset):
 
 # tyrian.hdt text blocks (src/helptext.c, JE_loadHelpText)
 #
-# Groups of encrypted records, each wrapped in a label record the game skips.
+# A group is a label record, its entries, then a closing record the game skips.
 # The counts below are the ones the game reads; a mismatch desynchronises the
-# whole file, so the dumper checks the final offset against the item-data one.
+# rest of the file, so the dumper checks where the text ended. Tyrian 2000 added
+# entries to thirteen of these groups and nineteen groups of its own, so the two
+# lists share only their order.
 
-HDT_GROUPS = [
+HDT_GROUPS_2000 = [
     ("helpText", 39),
     ("planetNames", 21),
     ("miscText", 72),
@@ -854,12 +879,87 @@ HDT_GROUPS = [
     ("superTyrianText", 6),
 ]
 
+HDT_GROUPS_2_1 = [
+    ("helpText", 39),
+    ("planetNames", 21),
+    ("miscText", 68),
+    ("miscTextB", 5),
+    ("keyNames", 11),
+    ("menuText", 7),
+    ("eventText", 9),
+    ("helpTopics", 6),
+    ("mainMenuHelp", 34),
+    ("menu1_main", 7),
+    ("menu2_items", 9),
+    ("menu3_options", 8),
+    ("inGameMenu", 6),
+    ("detailLevel", 6),
+    ("gameSpeed", 5),
+    ("episodeNames", 6),
+    ("difficultyNames", 7),
+    ("gameplayNames", 5),
+    ("menu10_twoPlayerMain", 6),
+    ("inputDevices", 3),
+    ("networkText", 4),
+    ("menu11_twoPlayerNetwork", 4),
+    ("highScoreDifficultyNames", 11),
+    ("menu12_networkOptions", 6),
+    ("menu13_joystick", 7),
+    ("joystickButtonNames", 5),
+    ("superShips", 11),
+    ("specialNames", 9),
+    ("destructHelp", 25),
+    ("destructWeapons", 17),
+    ("destructModes", 5),
+    ("shipInfo", 26),
+    ("menu14_superTyrian", 5),
+]
+
+HDT_GROUPS_1_1 = [
+    ("helpText", 39),
+    ("planetNames", 20),
+    ("miscText", 66),
+    ("miscTextB", 4),
+    ("keyNames", 11),
+    ("menuText", 7),
+    ("eventText", 7),
+    ("helpTopics", 6),
+    ("mainMenuHelp", 33),
+    ("menu1_main", 6),
+    ("menu2_items", 9),
+    ("menu3_options", 8),
+    ("inGameMenu", 6),
+    ("detailLevel", 6),
+    ("gameSpeed", 5),
+    ("episodeNames", 6),
+    ("difficultyNames", 6),
+    ("gameplayNames", 5),
+    ("menu10_twoPlayerMain", 6),
+    ("inputDevices", 3),
+    ("networkText", 4),
+    ("menu11_twoPlayerNetwork", 4),
+    ("highScoreDifficultyNames", 11),
+    ("menu12_networkOptions", 6),
+    ("menu13_joystick", 7),
+    ("joystickButtonNames", 5),
+    ("superShips", 10),
+    ("specialNames", 9),
+    ("destructHelp", 25),
+    ("destructWeapons", 17),
+    ("destructModes", 5),
+]
+
 
 def load_hdt_text(path):
-    """Every text group in tyrian.hdt, plus the item-data offset it starts with."""
+    """Every text group in tyrian.hdt.
+
+    Tyrian 2000 prefixes the file with the offset of the item tables it also
+    holds; Tyrian 1.1 keeps its tables in the level files and starts straight at
+    the text, so `itemDataOffset` is None there.
+    """
     data = read_file(path)
     r = Reader(data)
-    item_offset = r.s32()
+    item_offset = r.s32() if HDT_ITEM_OFFSET else None
 
     groups = []
     for index, (name, count) in enumerate(HDT_GROUPS):
@@ -1041,3 +1141,134 @@ def name_list_from_source(src_path, array_name):
         else:
             i += 1
     return names
+
+
+# What changed between releases
+
+# Enemy shapebank (1-based) to the newsh<c>.shp that holds its frames
+# (src/lvlmast.c). The table only ever grew: Tyrian 1.1 defines the first 30
+# banks, Tyrian 2.1 the first 34 and Tyrian 2000 all 36, with no slot ever
+# reassigned. Each release stores its own copy verbatim in file0001.exe, which
+# is where these lengths come from.
+SHAPE_FILE_ALL = list("2478ABCDEFGHIJKLMNOPQRSTU5#V0@3^59'%")
+
+# Item and enemy tables are stored as one bank per (first, last) pair, inclusive.
+# Tyrian 2000 keeps its additions in a second bank past a gap.
+
+VERSIONS = {
+    VERSION_2000: {
+        "STORED_COUNTS": (818, 60, 6, 18, 37, 11, 850),
+        "WEAPON_BANKS": ((0, 818), (1000, 1818)),
+        "ENEMY_BANKS": ((0, 850), (1001, 1850)),
+        "PORT_NUM": 60,
+        "POWER_NUM": 6,
+        "OPTION_NUM": 37,
+        "SHIP_NUM": 18,
+        "SHIELD_NUM": 11,
+        "SPECIAL_NUM": 54,
+        "SHAPE_FILE": SHAPE_FILE_ALL[:36],
+        "MAIN_SHP_BANKS": MAIN_SHP_BANKS_2000,
+        "HDT_GROUPS": HDT_GROUPS_2000,
+        "HDT_ITEM_OFFSET": True,
+        "ITEM_DATA_EPISODES": (4, 5),
+        "PCX_NUM": 14,
+        "SFX_COUNT": 31,
+    },
+    VERSION_2_1: {
+        "STORED_COUNTS": (780, 42, 6, 13, 30, 10, 850),
+        "WEAPON_BANKS": ((0, 780),),
+        "ENEMY_BANKS": ((0, 850),),
+        "PORT_NUM": 42,
+        "POWER_NUM": 6,
+        "OPTION_NUM": 30,
+        "SHIP_NUM": 13,
+        "SHIELD_NUM": 10,
+        "SPECIAL_NUM": 46,
+        "SHAPE_FILE": SHAPE_FILE_ALL[:34],
+        "MAIN_SHP_BANKS": MAIN_SHP_BANKS_2_1,
+        "HDT_GROUPS": HDT_GROUPS_2_1,
+        "HDT_ITEM_OFFSET": True,
+        "ITEM_DATA_EPISODES": (4,),
+        "PCX_NUM": 13,
+        "SFX_COUNT": 29,
+    },
+    VERSION_1_1: {
+        "STORED_COUNTS": (720, 39, 6, 12, 18, 10, 850),
+        "WEAPON_BANKS": ((0, 720),),
+        "ENEMY_BANKS": ((0, 850),),
+        "PORT_NUM": 39,
+        "POWER_NUM": 6,
+        "OPTION_NUM": 18,
+        "SHIP_NUM": 12,
+        "SHIELD_NUM": 10,
+        "SPECIAL_NUM": 25,
+        "SHAPE_FILE": SHAPE_FILE_ALL[:30],
+        "MAIN_SHP_BANKS": MAIN_SHP_BANKS_1_1,
+        "HDT_GROUPS": HDT_GROUPS_1_1,
+        "HDT_ITEM_OFFSET": False,
+        "ITEM_DATA_EPISODES": (1, 2, 3),
+        "PCX_NUM": 12,
+        "SFX_COUNT": 29,
+    },
+}
+
+
+def use_version(name):
+    """Bind one release's tables to the names the readers above read.
+
+    The readers look these up when they run, so one call before decoding decides
+    the whole run. Rebinding mid-run would leave earlier output on the old sizes.
+    """
+    if name not in VERSIONS:
+        raise ValueError("unknown data version: %s" % name)
+    globals().update(VERSIONS[name], VERSION=name)
+
+    # STORED_COUNTS is what the file writes in front of its tables, and it says
+    # the same thing as the sizes above. Disagreeing here would desynchronise
+    # every read after the first table, so say so now instead.
+    sizes = (WEAPON_BANKS[0][1], PORT_NUM, POWER_NUM, SHIP_NUM,
+             OPTION_NUM, SHIELD_NUM, ENEMY_BANKS[0][1])
+    if STORED_COUNTS != sizes:
+        raise ValueError("%s: stored counts %s do not match its table sizes %s"
+                         % (name, STORED_COUNTS, sizes))
+
+
+def item_table_header(data_dir):
+    """The seven counts stored in front of the item tables, or None.
+
+    Tyrian 2.1 and 2000 keep the episode 1-3 tables behind the text in
+    tyrian.hdt, which starts with their offset. Tyrian 1.1 writes no such offset
+    and keeps a set at the end of every level file instead.
+    """
+    names = data_index(data_dir)
+    if "tyrian.hdt" in names:
+        data = read_file(os.path.join(data_dir, names["tyrian.hdt"]))
+        offset = struct.unpack_from("<i", data, 0)[0]
+        if 0 < offset <= len(data) - 14:
+            return struct.unpack_from("<7H", data, offset)
+    if "tyrian1.lvl" in names:
+        data, count, offsets = load_level_index(os.path.join(data_dir, names["tyrian1.lvl"]))
+        if offsets[count - 1] <= len(data) - 14:
+            return struct.unpack_from("<7H", data, offsets[count - 1])
+    return None
+
+
+def sniff_version(data_dir):
+    """Which release a data directory holds.
+
+    The stored item counts name it: they grew at every step and no two releases
+    share a set. A directory that matches none of them falls back to the episodes
+    it ships, and the dumper reports the mismatch.
+    """
+    header = item_table_header(data_dir)
+    for name, tables in VERSIONS.items():
+        if header == tables["STORED_COUNTS"]:
+            return name
+
+    names = data_index(data_dir)
+    if "tyrian5.lvl" in names:
+        return VERSION_2000
+    return VERSION_2_1 if "tyrian4.lvl" in names else VERSION_1_1
+
+
+use_version(VERSION_2000)

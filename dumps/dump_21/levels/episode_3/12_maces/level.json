@@ -1,0 +1,22 @@
+{
+ "mapFileChar": "9",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  10,
+  11
+ ],
+ "endOffset": 393398,
+ "episode": 3,
+ "levelFileNumber": 12,
+ "name": "MACES",
+ "eventCount": 710
+}

@@ -1,0 +1,302 @@
+*01 06 {After Gauntlet}
+ASTEROID CITY FLUX 53861
+Reid
+We have finally been able to get through! Javi was jamming our transmissions
+for some time. I grieve for the loss of your parents, Trent. I learned of
+their death only hours ago. And at the same time I read of your imprisonment
+by Javi. It is up to you to help us stop the Microsol fleet from using the
+Gravitium. You must fly to the Microsol base planet of Ixmucane and give us
+information on fleet strength before we can marshall our forces. How many
+ships, weapons, defensive capabilities, everything. Then route the information
+to us via a Link Flux. We will be waiting, and good luck to you.
+
+*02 10 {After Gauntlet}
+STATION GRYPHON FLUX 73725
+Captain
+We have monitored your escape, Hawkins. You won't get far. I have notified
+The Microsol patrol nearby and they are on an intercept course to pick you
+up. You could make it easier for me by waiting where you are, because I have
+given them orders to destroy you if you show resistance.
+
+*03 06 {After Gauntlet}
+ASTEROID CITY FLUX 53862
+Reid
+A word of warning when maneuvering through the caverns of Ixmucane. You must be
+wary of the sawblades that Microsol installed as a security measure. If I
+remember correctly, the sawblades are believed developed or at least stored
+at station Gryphon. The more advanced models can be nearly indestructible.
+Also huge slabs of rock can be torn from the walls and hurled at your ship
+using the power of the Gravitium. Beware.
+
+*04 07 {After Gyges}
+DELIANI FLUX 23672
+Vykromod
+So... you think you can outsmart a corporation whose size you cannot even
+possibly imagine? You are the biggest fool I have ever seen. Turn back
+now while you have the chance. You will never find the fleet's secret base, 
+and soon we will emerge and crush you into pulp if you remain here. 
+Leave now.
+
+*05 06 {After Gyges}
+ASTEROID CITY FLUX 53863
+Reid
+Trent! Flee to Stargate sector immediately!! Have detected a large sqadron
+apprxxme.
+
+<!> ~Transmission~ ~end~.
+
+*06 09 {After Stargate -ninja- }
+STARGATE TRANSMISSION FLUX 0178205
+???
+We see that you are not a part of the hideous mass that threatens the sector.
+But it is not safe for you to be here. You must go to Camanis, the ice world, 
+where we can supply you with weapons that can utterly destroy the fleet of
+Microsol. We cannot emerge into the sector with our race because Microsol
+has closed the Stargate now. It is up to you now, human. For the life of
+millions, you must stop that fleet.
+
+*07 12 {After Camanis}
+CAMANIS TRANSMISSION FLUX 001
+Beppo
+Hey, there, friend. I see you've met up wid a few of me pals on Torm, yes?
+We pirates are good. I work for the outworlders and they have told me to 
+give you lotsa weapons for your ship. Just step aside and I'll install 
+the ones you want. You pilots are good. Weapons are good. Freedom is good!
+After this battle, we can go snow jumping. Waddaya say?
+
+*08 07 {After Camanis}
+SUBSPACE TRANSMISSION FLUX 002
+Vykromod
+We have tracked you. You are now within our grasp. Prepare to meet your
+death, Trent Hawkins. You have caused Microsol enough trouble. 
+
+This is not an idle threat, idiot. You WILL die.
+
+*09 04 {After Fleet -Tyrian X-}
+TYRIAN TRANSMISSION FLUX 01282
+Borogar
+Trent Hawkins, congratulations! You've won the game! But it's not over yet...
+
+Tyrian X awaits you! You must once again fly into the world where you started
+this whole shebang and fight off incessant waves of enemies! We
+thought you'd be interested in another shot at the title. Have fun! Heh...
+heh, heh...
+
+*10 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Zica SuperCharger
+
+This is a modular adaptation of the Gencore Zica SuperLaser.  It is supposed to
+use an original Zica laser core instead of the larger, power drawing model
+re-engineered by Gencore.  The technology behind the Zica Laser is not well
+understood, which is why duplicates of the model are not as powerful as the
+original model.
+
+*11 01 {Secret}
+ARCHIVE DATA
+Data
+Reference: Stargate
+
+
+Summary:
+Stargates are big distortions in space.  There's one here in episode 3.
+Enjoy your stay.
+
+
+Stargates are believed to be some sort of rift created by a massive black hole.
+While this theory holds up among science fiction writers, the actual phenomenon
+behind the stargate is unknown.  It has been suggested that these are portions
+of space created in the big bang which formed the universe.
+
+It is believed that time is the "fourth dimension" so therefore it may have
+quantity and react in the same way as other phenomena.  The Stargate in our
+quadrant appears to either distort time or space, perhaps both.  The few ships
+that have explored the Stargate and returned reported massive changes in
+location.  So massive are these apparent changes that no recognizable
+constellations have ever been found in any direction from the captains who
+have passed through.
+
+Therefore, there is either a tremendous shift in location or time to produce
+such unexpected results.  No ship so far has spent enough time through the
+Stargate to determine what the actual result is.  This problem is compounded
+by the fact that independent ship captains have reported arriving in different
+locations, suggesting the Stargate's destination is not fixed.
+
+It has been suggested that if you travel through the stargate to
+reverse course immediately and head back!
+
+*12 09 {After Camanis}
+CAMANIS TRANSMISSION FLUX 0178205
+???
+You know that everything is doomed, don't you?
+
+I wish I had never gotten into this mess.
+
+Well, anyway, let's talk about hot dogs!
+
+You know, the kind of hot dog that used to be generated at holo-cricket games.
+Now THAT was a hot dog.  I could use one of those right now.
+
+If you get a chance to swing by Ixmucane again, why don't you pick up one for me?
+
+Your pal, Nanol.
+
+*13 07   {Secret}
+ANONYMOUS TRANSMISSION
+Anonymous
+The Perils of Space-Fruit:
+
+What in the universe is all this fruit doing flying around in outer-space?
+It has long been the practice of ship captains to destroy other ships and
+collect their protected food stores as a trophy, since most other matter is
+generally incinerated.
+
+So why do we do it?  What makes some sentient life so insensible to pain and
+suffering that we think picking up our victim's last meal is some sort of
+great feat of skill.  It may seem humourous to you, gentle readers to see
+flying mugs of ale, spinning oranges, and hurtling strawberries, but I see
+the remains of the dead, the unfortunate souls whose lives were lost without
+the benefit of scarfing down that last bit of replicated food.
+
+I beseech thee, gentle reader, to think twice before reveling in such victory.
+Where will this madness end?  Trade values measured in fruit to replace
+coins and gems?  Perhaps someone will develop weapons of mass food destruction,
+allowing you to hurtle foodstuffs at unwary victims.  No!  This cannot be
+allowed to happen!  Pray to Zinglon that he will free us from this vile threat!
+
+Paid for by the benevolent members of the church of Zinglon.
+
+*14 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Mega SoundChair
+
+Sensors on your ship pick up the minute disturbances caused by sound-waves
+acting on the very fine particle streams in space, then amplify and filter the identified distortions which are
+then sent to your Mega SoundChair for playback.  This is a consumer product which has been found to
+alleviate stress and panic in untrained pilots who begain invading space with their own Star Yachts a
+number of years ago.  It was found that when placed into silence, people would turn to music to alleviate
+the dread (and subsequent insanity) by being alone in space and unable to hear anything.  This remedy
+was insufficient, however, since the music had several adverse side effects:  It didn't make sense to the
+mind when you're watching meteors and other objects hurtling by, consumers couldn't hear messages
+broadcast to them, and people would get so wrapped up in the music they'd relax and wouldn't watch
+where they were going.  This was an especially bad problem in the time before Automatic Guidance and
+Proximity Warning systems were refined.  So, they decided to amplify what little sound was out there and
+solve the problem of the unending silence panic before there were no more Star Yachts to go around.
+
+*15 07 {After Tyrian-X}
+SUBSPACE TRANSMISSION FLUX 410
+Vykromod
+Aw, geez.  Now you've gone and destroyed my home planet.
+
+Did you ever wonder why I carry a purple cloak?
+
+HAHAHAHAHAHAHAHA!  Now, I will have my revenge!
+
+The name of this game isn't Tyrian!  You've spelled it incorrectly, Trent
+Hawkins!  The universe will know of your pitiful mistake and I will rule
+again!
+
+*16 12 {After Tyrian-X}
+DELIANI TRANSMISSION FLUX 263
+Beppo
+Top o' the morning, wee laddie.
+
+I be the clone of that nasty old pirate.  The scourge of Torm, I be called.
+
+I found it, Trent!  Be it that I did, and did it at that.  The wondrous
+Prototype Stalker.  If you can make it past Savara, I might consider giving
+it up to you.  For a price...
+
+This baby has it all.  Someday you may even learn to use the top-secret
+post-it mine sprayer.  (Only in version 1.1, it be!)
+
+Well, I be off now. Arrrrr!
+
+*17 03
+DELIANI EMPORIUM DATAFLUX
+Ad
+Now that the game is almost over, Hank has finally gotten out of jail for
+USP fraud!  And now, he's gone crazy!
+
+He's hired Beppo's clone to scour the seven sectors and steal whatever goods
+he can from the wreckage Trent Hawkins has strewn across the galaxy.  And ya
+know what?  He's found it all!
+
+Zica Lasers, Constant Lasers, Lightning Blasts, Protron Cannons, Missile
+Launchers, 8-Way Microbombs, Side Ships, and much, much more.  Also, rumor
+has it that Beppo's got the new Microsol Fighter, but he's not tellin' unless
+you've got the cash.
+
+So come on down right now while anarchy lasts!
+
+*18 02
+Top Secret: Gravitron Pulse-Wave
+ARCHIVE DATA
+
+The gravitron Pulse-Wave is the ultimate in power system technology.
+This is based on the Tyrian research project.  Not commonly known is that
+the Gryphon Explosion was caused by a Gravitron drive being connected to
+a Zica Flamethrower system.  This produced a 10 AEU [astral explosion
+units] shock which destroyed much of the station.  Therefore, use of this
+drive is not suggested in open combat.
+
+The Harbringer Plasma system was designed for the invisible ship
+Illuminator.  The ship will be deployed at the rear of the main Microsol
+fleet in our final assault.  Failure in the mission in any way will
+result in the ship breaking off from combat.
+
+<Archive note: Further details on the Illuminator are Class-16 and available
+ only to Vykromod-level access.>
+
+The Illuminati is being defended by a secondary battleship platform, which
+is also classified.  It's job is to set up a mine defense barrier while
+the Illuminator acts from a safe position.  Should the secondary platform
+be destroyed, the Illuminator will break off the attack.
+
+This energy system is highly confidential and is not to be released into
+general distribution.  Any Microsol ship is authorized to self-destruct
+using the F2+F3+F4 code.  After vaporizing their armor with the code, pilots
+are recommended to crash their ship in an uncharted location if possible.
+
+*19 11
+INCOMING TRANSMISSION from Magnatower Center
+Transon
+
+Now, look, Trent Hawkins, I am sick and tired of you blowing our Z-29
+Central Defense Ship to bits!
+
+Take your stupid war somewhere else and stop destroying our defense fleet!
+
+I don't care if your family WAS killed down here!
+If you ever return to Savara, I'm going to call out a planetary alert and
+send the entire sector after your ship!  
+
+So, GO AWAY!
+
+*20 01
+DELIANI TRANSMISSION FLUX 83278
+Javi
+Hello, Trent.  I received word from a rather irate Transon Lohk that you'd
+be headed this way.
+
+The Illuminator is safely tucked away where you won't find it.  I'll give
+you a hint.  It's not on Deliani.
+
+But I am.
+
+I have the defenses of the entire planet waiting to move down on you and take
+you out.
+
+Enjoy your stay, Trent.  If you're reading this message, I know you've
+hacked into our defense net.  If not...
+*21 01 {After Deliani?}
+DELIANI TRANSMISSION FLUX 83278
+Javi
+Oh, by the way.  Nice job you did for us back at Ixmucane.  We would have lost
+a number of ships from the modified Zica weapons being tested there.
+
+Didn't know about that, huh?  Too bad, no-one can help you now.
+
+*

@@ -1,0 +1,28 @@
+{
+ "set": "episodes_1-3",
+ "source": "tyrian.hdt",
+ "offset": 16465,
+ "storedCounts": [
+  780,
+  42,
+  6,
+  13,
+  30,
+  10,
+  850
+ ],
+ "endOffset": 153657,
+ "bytesAfterLastTable": 0,
+ "bytesAfterLastTableNote": "the tables end the file",
+ "tableSizes": {
+  "weapons": "0..780",
+  "weaponPorts": 43,
+  "specials": 47,
+  "generators": 7,
+  "ships": 14,
+  "sidekicks": 31,
+  "shields": 11,
+  "enemies": "0..850"
+ },
+ "note": "field meanings are documented in doc/tyrian.hdt.txt"
+}

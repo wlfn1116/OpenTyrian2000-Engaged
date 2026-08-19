@@ -1,0 +1,3202 @@
+{
+ "episode": 1,
+ "levelName": "ASTEROID2",
+ "levelFileNumber": 2,
+ "frontWeapon": 19,
+ "rearWeapon": 14,
+ "superArcadeMode": 0,
+ "leftSidekick": 0,
+ "rightSidekick": 0,
+ "generator": 3,
+ "sidekickLevel": 2,
+ "sidekickSeries": 1,
+ "initialEpisode": 1,
+ "shield": 4,
+ "special": 0,
+ "ship": 1,
+ "frontWeaponPower": 5,
+ "rearWeaponPower": 2,
+ "unused": [
+  0,
+  0,
+  0
+ ],
+ "levelSong": 2,
+ "input": [
+  {
+   "keys": 0,
+   "hold": 1
+  },
+  {
+   "keys": 16,
+   "hold": 15,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 15,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 10,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 9,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 12,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 8,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 22,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 28,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 28,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 8,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 12,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 30,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 9,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 8,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 1,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 24,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 39,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 6,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 5,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 40,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 13,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 17,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 5,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 4,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 6,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 16,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 1,
+   "hold": 5,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 11,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 3,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 59,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 2,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 6,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 5,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 3,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 14,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 7,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 13,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 13,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 9,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 3,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 13,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 6,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 5,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 12,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 10,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 9,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 9,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 2,
+   "hold": 11,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 18,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 9,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 7,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 7,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 9,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 12,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 7,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 5,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 9,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 42,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 10,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 26,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 10,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 9,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 1,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 7,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 2,
+   "hold": 9,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 7,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 7,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 6,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 7,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 33,
+   "pressed": []
+  },
+  {
+   "keys": 32,
+   "hold": 4,
+   "pressed": [
+    "changeFire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 16,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 10,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 32,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 7,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 78,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 10,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 5,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 5,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "left"
+   ]
+  },
+  {
+   "keys": 1,
+   "hold": 2,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 6,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 21,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 6,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 10,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 13,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 6,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 4,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 9,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 7,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 4,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 45,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 4,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 7,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 5,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 16,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 16,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 7,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 7,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 5,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 5,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 24,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 1,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 9,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 4,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 8,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 2,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 3,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 6,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 6,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 6,
+   "pressed": []
+  },
+  {
+   "keys": 32,
+   "hold": 3,
+   "pressed": [
+    "changeFire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 4,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 7,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 6,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 4,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 6,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 9,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 6,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 5,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 12,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 4,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 4,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 7,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 8,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 6,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 6,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 11,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 9,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 10,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 6,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 5,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 12,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 1,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 7,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 7,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 9,
+   "hold": 5,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 4,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 4,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 3,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 9,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 3,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 3,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 3,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 15,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 12,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 33,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "changeFire"
+   ]
+  },
+  {
+   "keys": 1,
+   "hold": 1,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 15,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 11,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 5,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 8,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 3,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 21,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 37,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 11,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 8,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 10,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 29,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 5,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 5,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "left"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 9,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 17,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 8,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 12,
+   "pressed": []
+  },
+  {
+   "keys": 32,
+   "hold": 2,
+   "pressed": [
+    "changeFire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 8,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 14,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 13,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 4,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 18,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 20,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 21,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 20,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 27,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 22,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 7,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 15,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 8,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 11,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 20,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 9,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 1,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 13,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 6,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 5,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 10,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 1,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 1,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 8,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 11,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 5,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 9,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 1,
+   "pressed": []
+  },
+  {
+   "keys": 2,
+   "hold": 6,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 15,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 6,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 9,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 8,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 8,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 16,
+   "hold": 14,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 3,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 39,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 8,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 10,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 9,
+   "hold": 9,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 11,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "down",
+    "right"
+   ]
+  },
+  {
+   "keys": 10,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "right"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 14,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 7,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 2,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 17,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 13,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 16,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 14,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 15,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 15,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 13,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 21,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 4,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 17,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 4,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 18,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 7,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 9,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 12,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 8,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 11,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 3,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 10,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 4,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 14,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 9,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 10,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 10,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 2,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 5,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 4,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 19,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 12,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 9,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 14,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 11,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 18,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 18,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 5,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 4,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 12,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 5,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 17,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 10,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 8,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 21,
+   "hold": 10,
+   "pressed": [
+    "up",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 18,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 6,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 3,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 10,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 3,
+   "pressed": []
+  },
+  {
+   "keys": 4,
+   "hold": 6,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 8,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 1,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 19,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 18,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 11,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 10,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 2,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 10,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 9,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 12,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 2,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 10,
+   "hold": 5,
+   "pressed": [
+    "down",
+    "right"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 7,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 17,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 2,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 8,
+   "hold": 5,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 14,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 2,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 4,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 11,
+   "pressed": []
+  },
+  {
+   "keys": 17,
+   "hold": 3,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 14,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 1,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 1,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 14,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 11,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 5,
+   "pressed": []
+  },
+  {
+   "keys": 1,
+   "hold": 1,
+   "pressed": [
+    "up"
+   ]
+  },
+  {
+   "keys": 9,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 12,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 17,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 2,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 4,
+   "hold": 1,
+   "pressed": [
+    "left"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 15,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 11,
+   "pressed": []
+  },
+  {
+   "keys": 9,
+   "hold": 1,
+   "pressed": [
+    "up",
+    "right"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 20,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 6,
+   "hold": 24,
+   "pressed": [
+    "down",
+    "left"
+   ]
+  },
+  {
+   "keys": 2,
+   "hold": 1,
+   "pressed": [
+    "down"
+   ]
+  },
+  {
+   "keys": 0,
+   "hold": 2,
+   "pressed": []
+  },
+  {
+   "keys": 8,
+   "hold": 1,
+   "pressed": [
+    "right"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 1,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 25,
+   "hold": 22,
+   "pressed": [
+    "up",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 3,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 8,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 2,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 2,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 5,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 22,
+   "hold": 3,
+   "pressed": [
+    "down",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 26,
+   "hold": 8,
+   "pressed": [
+    "down",
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 1,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 23,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 10,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 21,
+   "hold": 12,
+   "pressed": [
+    "up",
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 7,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 19,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 18,
+   "hold": 17,
+   "pressed": [
+    "down",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 23,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 29,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 31,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 34,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 3,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 28,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 2,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 27,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 31,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 24,
+   "hold": 34,
+   "pressed": [
+    "right",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 1,
+   "pressed": [
+    "fire"
+   ]
+  },
+  {
+   "keys": 20,
+   "hold": 35,
+   "pressed": [
+    "left",
+    "fire"
+   ]
+  },
+  {
+   "keys": 16,
+   "hold": 5,
+   "pressed": [
+    "fire"
+   ]
+  }
+ ]
+}

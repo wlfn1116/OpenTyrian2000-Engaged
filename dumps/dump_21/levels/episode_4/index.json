@@ -1,0 +1,166 @@
+{
+ "file": "tyrian4.lvl",
+ "levels": [
+  {
+   "levelFileNumber": 1,
+   "name": "HARVEST",
+   "folder": "01_harvest",
+   "shapeFile": "shapesz.dat",
+   "events": 1109,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 2,
+   "name": "WINDY",
+   "folder": "02_windy",
+   "shapeFile": "shapesz.dat",
+   "events": 970,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 3,
+   "name": "SAVARA IV",
+   "folder": "03_savara_iv",
+   "shapeFile": "shapesy.dat",
+   "events": 1129,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 4,
+   "name": "SURFACE",
+   "folder": "04_surface",
+   "shapeFile": "shapes).dat",
+   "events": 904,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 5,
+   "name": "CORE",
+   "folder": "05_core",
+   "shapeFile": "shapes).dat",
+   "events": 675,
+   "randomEnemies": 30
+  },
+  {
+   "levelFileNumber": 6,
+   "name": "SIDE EXIT",
+   "folder": "06_side_exit",
+   "shapeFile": "shapes).dat",
+   "events": 640,
+   "randomEnemies": 8
+  },
+  {
+   "levelFileNumber": 7,
+   "name": "UNDERDELI",
+   "folder": "07_underdeli",
+   "shapeFile": "shapes).dat",
+   "events": 1338,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 8,
+   "name": "ICE EXIT",
+   "folder": "08_ice_exit",
+   "shapeFile": "shapesw.dat",
+   "events": 750,
+   "randomEnemies": 20
+  },
+  {
+   "levelFileNumber": 9,
+   "name": "LAVA EXIT",
+   "folder": "09_lava_exit",
+   "shapeFile": "shapes).dat",
+   "events": 1444,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 10,
+   "name": "DESERTRUN",
+   "folder": "10_desertrun",
+   "shapeFile": "shapes).dat",
+   "events": 552,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 11,
+   "name": "?TUNNEL?",
+   "folder": "11_tunnel",
+   "shapeFile": "shapesw.dat",
+   "events": 909,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 12,
+   "name": "LAVA RUN",
+   "folder": "12_lava_run",
+   "shapeFile": "shapes).dat",
+   "events": 1243,
+   "randomEnemies": 8
+  },
+  {
+   "levelFileNumber": 13,
+   "name": "EYESPY",
+   "folder": "13_eyespy",
+   "shapeFile": "shapesx.dat",
+   "events": 1006,
+   "randomEnemies": 4
+  },
+  {
+   "levelFileNumber": 14,
+   "name": "DREAD-NOT",
+   "folder": "14_dread_not",
+   "shapeFile": "shapesz.dat",
+   "events": 1022,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 15,
+   "name": "BRAINIAC",
+   "folder": "15_brainiac",
+   "shapeFile": "shapes).dat",
+   "events": 1969,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 16,
+   "name": "NOSE DRIP",
+   "folder": "16_nose_drip",
+   "shapeFile": "shapesz.dat",
+   "events": 666,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 17,
+   "name": "TIME WAR",
+   "folder": "17_time_war",
+   "shapeFile": "shapes).dat",
+   "events": 473,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 18,
+   "name": "SQUADRON",
+   "folder": "18_squadron",
+   "shapeFile": "shapes).dat",
+   "events": 595,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 19,
+   "name": "APPROACH",
+   "folder": "19_approach",
+   "shapeFile": "shapesy.dat",
+   "events": 1288,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 20,
+   "name": "ICESECRET",
+   "folder": "20_icesecret",
+   "shapeFile": "shapesw.dat",
+   "events": 850,
+   "randomEnemies": 7
+  }
+ ],
+ "note": "level names come from the ']L' records in levels4.dat"
+}

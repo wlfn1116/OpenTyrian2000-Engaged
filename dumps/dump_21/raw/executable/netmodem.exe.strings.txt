@@ -1,0 +1,139 @@
+!ZYr+3
+Turbo-C - Copyright (c) 1988 Borland Intl.
+Divide error
+Abnormal program termination
+NETMODEM
+XXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXX
+Time limit expired!
+CONNECT
+CARRIER
+ONLINE
+[1;36mEstablishing connection...
+[1;36mEstablishing connection...
+Aborted.
+AT &F &C1 &D2 &Q5 &K0 S46=0
+Trying to start game.  Press ESC twice to abort.
+   Looking for 
+Serial connection
+ on COM
+ baud, 
+   NOTE: If you have problems communicating at 
+ baud, try switching
+         to 14400 instead. Some modems aren't reliable past 14400 baud.
+   Ignoring carrier-detect signal!
+   16550 UART support disabled!
+   Fast hangups enabled!
+   Using COM Port Address 
+   Using COM Port IRQ 
+AT &F &C1 &D2 &Q5 &K0 S46=0
+   Init string: 
+------------------------------------------------------------------------------
+   Usage: NETMODEM [@paramfile[,section]] [parameters] gamename[.exe]
+   Parameters:
+      -COM <1/2/3/4>    Use COM1, COM2, COM3, or COM4. Default is COM2.
+      -BAUD <baud>      Set baud.  2400, 9600, 14400, 28800, 19200, 38400.
+      -SET <8N1/7E2>    Set data bits, parity, stop bits. Default is 8N1.
+      -DIAL "<phone>"   Dial this phone number.
+      -ANSWER           Wait for a call then answer the phone.
+      -ANSWERNOW        Answer immediately.
+      -ACCEPT           Accept calls in the background as game plays.
+      -TERM             Go into terminal mode so you can manually log in.
+      -INIT "<string>"  Your modem's init string (Default is "ATZ")
+      -SERIAL           Use direct serial link, not modem.
+      -ONLINE           My modem is already connected and online.
+   See docs for other parameters: -IGNORECD, -NO16550, -ADDR, and -IRQ.
+   Parameter files: The default section for this driver is 
+------------------------------------------------------------------------------
+ANSWER
+ANSWERNOW
+ACCEPT
+WELCOME
+SERIAL
+ONLINE
+IGNORECD
+SYNCHTIME
+ONLINETIME
+NO16550
+FASTHANGUP
+   Waiting for call.
+   Answering now.
+   Dialing 
+Aborted.
+   Hanging up and resetting...
+Didn't connect.
+   Auto redial in 5 seconds.
+   Answering.
+Didn't connect.
+   Waiting for call.
+   Establishing modem connection.
+   Establishing serial connection.
+   Problems!  Make sure you specified the right COM
+   port and modem settings.
+Couldn't synchronize.
+ Aborting!
+Aborted.
+EpicNET
+I feel good!
+Epic MODEM/SERIAL Daemon v1.00
+   Copyright 1995 Epic MegaGames, Inc.
+NETMODEM
+   Error initializing modem: 
+   Don't run this driver alone.  Please run the game instead.
+   Initializing modem...
+   Press ESC to abort, ENTER to hang up and try again.
+   NETMODEM: 
+   Press ESC to abort.
+netterm &
+   NETMODEM: Could not start terminal program NETTERM.EXE.
+   Hanging up and resetting...
+   NETMODEM: 
+   NETMODEM: Unsynching...
+   NETMODEM: Unsynching...
+   NETMODEM: Hanging up...
+OFFLINE
+ONLINE
+Out of memory
+16550 UART, FIFOs enabled.
+16550 UART, FIFOs unavailable.
+8250A or 16450 UART detected.
+8250B UART detected.
+No UART Detected!
+Bad Input Buffer!
+Bad Output Buffer!
+Bad Port! Try 1-4.
+Bad Parity! Try N, E, O, M, or S.
+Bad Data Bits! Try 7 or 8.
+Bad Stop Bits! Try 1 or 2.
+Bad Baud! Try 2400, 9600, 14400, or 19200.
+COM%c: %s at %li Baud, %s
+   Parameters from file 
+, section 
+: Can't read parameter file
+: Can't find section 
+Bad parameter 
+Bad parameter 
+ERROR: You must specify a value for parameter 
+ERROR: You must specify a value for parameter 
+ERROR: Parameter 
+ must be between 
+0123456789ABCDEF
+Driver Interrupt has been changed!
+   %s: Int 8 has changed!
+I feel good!
+: Could not find an available interrupt.
+: Hooked onto interrupt 
+   %s: Hooking Timer.
+   Don't run this driver alone.  Please run the game.
+         !!!!!                  
+@@@@@@@@@@@@@@@
+@@@@@@@
+@@@@@@
+print scanf : floating point formats not linked
+(null)
+0123456789ABCDEF
+COMPAQ
+COMSPEC

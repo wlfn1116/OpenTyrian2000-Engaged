@@ -1,0 +1,33 @@
+Printing it...
+" Use ARROW KEYS to scroll         
+Press ESC to exit
+          Press "P" to printU
+3Copyright 1994 Epic MegaGames, all rights reserved.U
+        U
+HelpMe#Online Manual and Help Instructions
+How may I help you? 
+  3Copyright 1994 Epic MegaGames, all rights reserved.U
+I The file HELPME.DOC is missing from this disk,  so help is not available
+#$456789:;<=>?uU
+X[YZ^_]
+#$456789:;<=>?uRuntime error 
+HELPME.DOC
+MANUAL.DOC
+CATALOG.EXE
+SAFARI.EXE
+SYSOP.DOC
+VENDOR.DOC
+LICENSE.DOC
+ORDER.DOC
+ORDER_UK.DOC
+ORDER_DE.DOC
+&Getting Started & Troubleshooting Tips
+The Manual
+Epic MegaGames Catalog
+Safari Software Catalog
+Information for BBS Sysops
+!Information for Shareware Vendors
+Software License Agreement
+Order Form (North America)
+Order Form (UK/Europe)
+Order Form (Germany/Europe)

@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "P",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 381242,
+ "episode": 2,
+ "levelFileNumber": 12,
+ "name": "BONUS",
+ "eventCount": 252
+}

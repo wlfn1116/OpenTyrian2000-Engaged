@@ -1,0 +1,329 @@
+16STUB
+Stub error (
+)$DPMI error (
+)$Loader error (
+insufficient memory for initialization$memory manager does not support DPMI or VCPI$must be run on a 386 processor$unrecognized hardware, run DPMIINST$unrecognized environment parameters$unable to initialize page tables$bad A20 off parameter$bad A20 on parameter$bad switch parameter$insufficient extended memory$cannot create FRET$cannot create linear address space$cannot create system linear space$cannot copy kernel to high memory$undefined error$unable to copy DOSX$unable to copy IDT$unable to create int chain table$unable to create PM stack$unable to initialize swapping$
+: $unrecognized error$internal error$out of memory$out of selectors$out of internal tables$invalid dynamic link$couldn't open file$invalid exe format$wrong version$cannot initialize$DLL initialization error$,
+$needs at least 286$can't find $unexpected DOS error$file not found: $path not found: $access denied: $not enough memory to load $invalid environment$invalid file $
+0123456789ABCDEFXXXP
+rtm.exe
+dpmi16bi.ovl
+$*$*$*
+PM STUB
+TYRIAN2
+KERNEL
+KERNEL
+TYRIAN2.EXE
+HELP: I am unsynchronized!U
+j$j2j2
+r,G&:-u
+jJjOjNjSh
+Next Level
+POWER: 
+Custom Ship 
+Cost: 
+Waiting for other player.
+Cheat codes have been disabled..Difficulty level has been set to Lord of Game.)Difficulty level has been set to Suicide.5It is imperitive that you discover the special codes.;(Next time, for an easier challenge hold down SCROLL LOCK.)
+Prepare to play...
+Waiting for other player.U
+TYREND.ANM
+LAST LEVEL    
+Or play... 
+ at Title
+TSHP2.PCX
+SHAPES
+LAST LEVEL    
+DEMOREC.
+WARNING
+Memory left = 
+Enemies onscreen = 
+ FPS  
+  *Other player stopped responding
+t<:D6u
+t=:\7u
+pl@@Pj
+pl@@Pj
+r,G&:-u
+>Jld}#
+>Jld} 
+hl&kEPM
+Welcome to... >> Tyrian v2.1 <<$Memory available before allocation: 
+NEWSH$.SHP
+TYRIAN.SND
+VOICES.SND9 I dunna think she can handle the memory stress, captain!- bytes of free RAM recommended at this point.
+Risk going on?  (Y/N)
+windir
+Joystick detected.  
+No joystick found.
+Joystick override.
+Mouse Detected.   #Mouse driver reports three buttons.
+No mouse found.
+TyrianC.SHP
+*****************************
+Christmas has been detected.
+  Activate Christmas? (Y/N)
+Christmas is missing.
+-------
+--------
+Hello, Windows user!>Windows has been detected:  Funky (2.1) mode has been enabled.HWe suggest you run Tyrian in Dos Mode for performance reasons, but there>should be no reason why it will not otherwise work in Windows.K* Network Warning: Do not use the Windows IPX with the Tyrian network play.O* Music Note: If you have music playing in the background in Windows, now wouldK  be a good time to turn it off before you get an irritating error message..Please press a key to continue or ESC to quit.
+SoundBlaster active
+DSP Version 
+SB port 
+Interrupt 
+Game will be recorded.&The other player stopped responding...
+>`lbs!
+>`lbu-
+>`lduR
++The network/modem connection has timed out.FYou should check your modem/network settings and physical connections.J(Make sure both computers are using the same baud rate and the cord hasn't
+ fallen out.)#Press ENTER to return to the arena.
+Other player exited the game.
+You have exited the game.
+EXITMSG.BIN
+call=file0002.EXE
+(Sleep well, Trent, you deserve the rest.?You now have permission to borrow my ship on your next mission.6Also, you might want to try out the YESXMAS parameter.
+  Type: File0001 YESXMAS"You'll need the 2.1 patch, though!U
+6fph1#
+NEWSH$.SHP
+TYRIAN.PIC
+PALETTE.DAT
+>Jl0ut
+Jl-d}k
+Jl-d}k
+Jl-d}k
+Jl-0uk
+Jl-0uk
+Jl-0uk
+>Jl N~h
+TYRIANC.SHP
+TYRIAN.SHP
+Cheaters always prosper.
+              
+j$j2j2
+nl@@PjZ
+nl@PjY
+< r,<%v
+<'r$<@w 
+`lk>|lm
+~lk>|lm
+fk>|lm
+Wk>|lm
+Waiting for other player.
+j?j?j?
+j(j+j"j,
+j6jTj#j(
+j~j&j7
+j(j(j j,
+j(j<j!j,
+j(jgj"j,
+Other player in options menu.
+Waiting for other player.U
+EPISODE
+ORDER.EXE
+Completed
+                              
+j$j2j2
+tAj<j7
+nl@@PjZ
+nl@PjY
+< r%<%v
+ESTSC.SHP
+TYRIAN.CDT
+_lk>|l
+TYRIAN.HDT
+TYRIAN.CFG
+Tyrian.SAV
+TYRIAN.SAV
+tyrian.sav
+tyrian.cfg
+Completed
+Completed
+3The version of the Epic Challenge you're running is6too early!  You need at least version 1.00 for Tyrian.
+I am player 
+I am playing against 
+Synchronizing computers...
+PSQRVW
+_^ZY[X
+TYRIAN.HDT
+TYRIAN
+CUBETXT
+LEVELS
+TYRIAN
+PSQRVW
+_^ZY[X
+SOUND.RPT
+Tyrian Sound Report:
+Using SoundBlaster
+DSP Version 
+SB port 
+Interrupt 
+SoundBlaster DMA channel 1
+SoundBlaster DMA channel 3
+SoundBlaster DMA channel 0
+Attempted Sound effects mode #
+Error code: ( (probably means you have no sound card)
+Attempted FM/Midi mode #' (probably means you have no midi card)
+End of transmission.
+SOUND? parameter:6 SoundCard settings and info stored in file SOUND.RPT.
+Press any key to continue.
+music.mus
+TYRIAN.SND
+VOICESC.SND
+VOICES.SND
+loudness.awe
+Warning: File not found --> 
+Searching for Tyrian files...
+:\TYRIAN\
+Tyrian data files found at *WARNING: Unable to find Tyrian data files.
+Stopped on file =Please reinstall the files or place the CD-Rom in your drive.
+TYRIAN.CFG
+call=setup.EXE
+ Use a keyboard to record a demo.
+Keyboard redirection disabled.
+!PSQRVU
+Sound System (C)1993-1995 by LOUDNESS. All rights reserved.
+Date: 10/09/95 Time: 20:38:07
+PSQRVW
+_^ZY[X
+%2>JVbmx
+xmbVJ>2%
+!%*/49>CIOUZagmsy
+ysmgaZUOIC>94/*%!
+!#%'),.0369<?BEILPTX\`ejoty
+LIFC@=:74
+Portions Copyright (c) 1983,92 BorlandEU
+WVQUSP
+NGItL&
+=.u2GI
+s0CGISQW
+INTSHPB.PCX
+SETUP2.PCX
+TYRPLAY.PCX
+TYRLOG2.PCX
+P1.PCX
+TYRPLAY2.PCX
+BUC4.PCX
+GMOVR4a.PCX
+GMOVR4b.PCX
+EPICSKY.PCX
+DESTRUCT.PCX
+ECLIPSE.PCX
+FIREPICA.PCX
+The Prime Chair
+Transon Lohk
+Javi Onukala
+Mantori
+Nortaneous
+Dougan
+General Zinglon
+Late Gyges Phildren
+Vykromod
+Borogar
+ShipMaster Carlos
+Jake Stone
+Malvineous Havershim
+Marta Louise Velasquez
+Jazz Jackrabbit
+Eva Earlong
+Devan Shell
+Crystal Devroe
+Steffan Tommas
+Milano Angston
+Christian
+Shirro
+Jean-Paul
+Ibrahim Hothe
+Cossette Akira
+Hans Kreissack
+Rennis the Rat Guard
+Jackrabbits
+Team Tyrian
+The Elam Brothers
+Dare to Dream Team
+Pinball Freaks
+Extreme Pinball Freaks
+Team Vykromod
+Epic All-Stars
+Hans Keissack's WARriors
+Team Overkill
+Pied Pipers
+Gencore Growlers
+Microsol Masters
+Beta Warriors
+Team Loco
+The Shellians
+Jungle Jills
+Murderous Malvineous
+The Traffic Department
+Clan Mikal
+Clan Patrok
+Carlos' Crawlers
+QPGHIJKLMNO 
+#$%&'()*+,-./0123456789:;<CRD
+WXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+EQUALS
+BACKSPACE
+LEFT BRACKET
+RIGHT BRACKET
+CONTROL
+SEMI-COLON
+SINGLE QUOTE
+REVERSE QUOTE
+BACKSPACE
+PERIOD
+RIGHT SHIFT
+SPACEBAR
+CAPSLOCK
+NUMLOCK
+SCROLL LOCK
+PAGE UP
+KEYPAD CENTER
+PAGE DOWN
+INSERT
+2478ABCDEFGHIJKLMNOPQRSTU5#V0@3^59
+0123456789ABCDEF
+SCALEDN2
+TEMP10
+EXPLSM
+BYPASS1
+EXP1RT
+EXPLLOW
+TEMP13
+EXPRETAP
+MT2BOOM
+LAZGUN2
+SPRING
+WARNING
+MACHNGUN
+HYPERD2
+EXPLHUG
+CLINK1
+SCALEDN1
+TEMP11
+TEMP16
+SMALL1
+POWERUP
+VOICE1
+VOICE2
+VOICE3
+VOICE4
+VOICE5
+VOICE6
+VOICE7
+VOICE8
+VOICE9
+ULTRAMID
+BORDER
+RECORD
+NOROBERT
+CONSTANT
+NOSOUND
+JUKEBOX
+MAXVOL
+SOUND?
+FLICKER
+JOYMAX
+WEAKJOY
+NOWINCHK
+NOXMAS
+YESXMAS
+Runtime error 000 at 0000:0000.

@@ -1,0 +1,17 @@
+{
+ "mapFileChar": "W",
+ "shapeFileChar": "W",
+ "shapeFile": "shapesw.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  660,
+  661
+ ],
+ "endOffset": 127967,
+ "episode": 3,
+ "levelFileNumber": 4,
+ "name": "IXMUCANE",
+ "eventCount": 902
+}

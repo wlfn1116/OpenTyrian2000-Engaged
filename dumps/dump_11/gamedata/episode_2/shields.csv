@@ -1,0 +1,12 @@
+id,name,totalPower,maxPower,itemGraphic,cost,displayName
+0,None                          ,0,0,304,0,None
+1,Structural Integrity Field    ,5,2,129,100,Structural Integrity Field
+2,Advanced Integrity Field      ,3,3,131,250,Advanced Integrity Field
+3,Gencore Low Energy Shield     ,4,4,153,500,Gencore Low Energy Shield
+4,Gencore High Energy Shield    ,6,5,153,1000,Gencore High Energy Shield
+5,MicroCorp LXS Class A         ,8,6,155,2000,MicroCorp LXS Class A
+6,MicroCorp LXS Class B         ,6,7,157,4000,MicroCorp LXS Class B
+7,MicroCorp LXS Class C         ,5,9,159,5000,MicroCorp LXS Class C
+8,MicroCorp HXS Class A         ,9,10,161,12000,MicroCorp HXS Class A
+9,MicroCorp HXS Class B         ,7,12,163,20000,MicroCorp HXS Class B
+10,MicroCorp HXS Class C         ,6,14,165,25000,MicroCorp HXS Class C

@@ -1,0 +1,48 @@
+id,name,itemGraphic,power,type,weapon,displayName
+0,None                          ,0,0,0,0,None
+1,Repulsor                      ,271,1,2,0,Repulsor
+2,Pearl Wind                    ,273,10,1,620,Pearl Wind
+3,Soul of Zinglon               ,275,50,3,0,Soul of Zinglon
+4,Attractor                     ,277,2,4,0,Attractor
+5,Ice Beam                      ,121,5,1,621,Ice Beam
+6,Flare                         ,123,10,5,622,Flare
+7,Blade Field                   ,125,20,8,623,Blade Field
+8,SandStorm                     ,125,20,6,624,SandStorm
+9,MineField                     ,283,104,7,29,MineField
+10,Dual Vulcan                   ,131,20,9,658,Dual Vulcan
+11,Banana Bomb                   ,125,20,1,525,Banana Bomb
+12,Protron Dispersal             ,125,30,10,670,Protron Dispersal
+13,Astral Zone                   ,125,2,11,672,Astral Zone
+14,Xega Ball                     ,127,20,1,720,Xega Ball
+15,MegaLaser Dual                ,279,20,9,751,MegaLaser Dual
+16,Orange Shield                 ,125,80,9,749,Orange Shield
+17,Pulse Blast                   ,55,2,1,753,Pulse Blast
+18,MegaLaser                     ,91,100,9,754,MegaLaser
+19,Missile Pod                   ,125,80,9,755,Missile Pod
+20,Minefield                     ,0,104,16,710,Minefield
+21,Post-It Blast                 ,0,105,1,708,Post-It Blast
+22,Drone **                      ,0,103,12,0,Drone **
+23,Repair Player 1               ,0,98,14,0,Repair Player 1
+24,Super Bomb                    ,0,104,5,622,Super Bomb
+25,Hot Dog                       ,0,101,1,711,Hot Dog
+26,Lightning UP                  ,0,0,1,721,Lightning UP
+27,Lightning UP+LEFT             ,0,0,1,722,Lightning UP+LEFT
+28,Lightning UP+RIGHT            ,0,0,1,723,Lightning UP+RIGHT
+29,Lightning LEFT                ,0,0,1,724,Lightning LEFT
+30,Lightning RIGHT               ,0,0,1,725,Lightning RIGHT
+31,MicroSol Option               ,0,0,17,19,MicroSol Option
+32,MicroSol Option2              ,0,0,18,26,MicroSol Option2
+33,MicroSol Option3              ,0,0,17,21,MicroSol Option3
+34,MicroSol Option4              ,0,0,18,22,MicroSol Option4
+35,MicroSol Option5              ,0,0,18,23,MicroSol Option5
+36,MicroSol Option6              ,0,0,18,25,MicroSol Option6
+37,Invulnerability               ,129,98,12,0,Invulnerability
+38,Atom Bomb                     ,0,102,1,19,Atom Bomb
+39,Seeker Bombs                  ,0,103,1,709,Seeker Bombs
+40,Lightning Zone                ,93,4,9,750,Lightning Zone
+41,SDF Main Gun                  ,125,4,9,778,SDF Main Gun
+42,Ice Blast                     ,0,4,1,706,Ice Blast
+43,Repair Player 1               ,0,98,13,0,Repair Player 1
+44,Pearl Wind                    ,273,10,8,620,Pearl Wind
+45,8-Way Microbomb               ,129,10,1,29,8-Way Microbomb
+46,Protron Field                 ,0,99,1,707,Protron Field

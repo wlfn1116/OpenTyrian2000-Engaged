@@ -1,0 +1,2512 @@
+{
+ "file": "levels4.dat",
+ "sections": [
+  {
+   "section": 1,
+   "marker": "**1 SECTION - Before Level 1 - Gauntlet **************************************",
+   "lines": [
+    {
+     "raw": "]?[ 04 004 005 015 016",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 04",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 16 1 11 002",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 9"
+    },
+    {
+     "raw": " WeapF  2 13 19 40"
+    },
+    {
+     "raw": " WeapR  0 10 14 18"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 8 19"
+    },
+    {
+     "raw": " Opt2   0 1 8 19"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 1 2 4"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 2,
+   "marker": "**2 SECTION - Gauntlet        ************************************************",
+   "lines": [
+    {
+     "raw": "]L[ 9999 003 SURFACE  38 04     >> Surface of Ixmucane",
+     "command": "L",
+     "nextLevel": 3,
+     "levelName": "SURFACE",
+     "song": 38,
+     "levelFileNumber": 4,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 3,
+   "marker": "**3",
+   "lines": [
+    {
+     "raw": "]?[ 04 006 009 010 050",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 04",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 004",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 9"
+    },
+    {
+     "raw": " WeapF  3 7 19 27"
+    },
+    {
+     "raw": " WeapR  0 29 11 22"
+    },
+    {
+     "raw": " Power  2 3 4"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 14 18"
+    },
+    {
+     "raw": " Opt2   0 8 14 18"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 3 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 4,
+   "marker": "**4",
+   "lines": [
+    {
+     "raw": "]L[ 9999 005 LAVA RUN 17 12     >> Lava 4",
+     "command": "L",
+     "nextLevel": 5,
+     "levelName": "LAVA RUN",
+     "song": 17,
+     "levelFileNumber": 12,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 5,
+   "marker": "**5",
+   "lines": [
+    {
+     "raw": "]+[ 01",
+     "command": "+"
+    },
+    {
+     "raw": "]?[ 04 007 030 008 041",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 11 1 11 006",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 5"
+    },
+    {
+     "raw": " WeapF  8 20 1"
+    },
+    {
+     "raw": " WeapR  0 12 29 30"
+    },
+    {
+     "raw": " Power  2 3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 3 7 21"
+    },
+    {
+     "raw": " Opt2   0 3 7 26"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 7"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 6,
+   "marker": "**6",
+   "lines": [
+    {
+     "raw": "]L[ 9999 034 CORE     23 05     >> Lava 1",
+     "command": "L",
+     "nextLevel": 34,
+     "levelName": "CORE",
+     "song": 23,
+     "levelFileNumber": 5,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 7,
+   "marker": "**7",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 04 019 021 035 012",
+     "command": "?"
+    },
+    {
+     "raw": "]+[ 02",
+     "command": "+"
+    },
+    {
+     "raw": "]G[ 11 1 11 008",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   "
+    },
+    {
+     "raw": " WeapF  "
+    },
+    {
+     "raw": " WeapR"
+    },
+    {
+     "raw": " Power  "
+    },
+    {
+     "raw": " Engine "
+    },
+    {
+     "raw": " Opt1   17"
+    },
+    {
+     "raw": " Opt2   17 27"
+    },
+    {
+     "raw": " Armor  "
+    },
+    {
+     "raw": " Shield "
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 8,
+   "marker": "**8",
+   "lines": [
+    {
+     "raw": "]L[ 9999 032 ?TUNNEL? 06 11$$   >> Secret Tunnel",
+     "command": "L",
+     "nextLevel": 32,
+     "levelName": "?TUNNEL?",
+     "song": 6,
+     "levelFileNumber": 11,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 9,
+   "marker": "**9       Tunnel Failure",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 01 022",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 010",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 9"
+    },
+    {
+     "raw": " WeapF  1 8 27 40"
+    },
+    {
+     "raw": " WeapR  0 14 15 30"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 21 3 4"
+    },
+    {
+     "raw": " Opt2   0 21 3 4"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 1 2 3"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 10,
+   "marker": "**10",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 ICE EXIT 04 08     >> Exiting Ixmucane  (Ice)",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "ICE EXIT",
+     "song": 4,
+     "levelFileNumber": 8,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 11,
+   "marker": "**11",
+   "lines": [
+    {
+     "raw": "]?[ 04 024 025 026 011",
+     "command": "?"
+    },
+    {
+     "raw": "]+[ 03",
+     "command": "+"
+    },
+    {
+     "raw": "]G[ 11 1 10 012",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 1 5"
+    },
+    {
+     "raw": " WeapF  3 2 19"
+    },
+    {
+     "raw": " WeapR  0 12 15 11"
+    },
+    {
+     "raw": " Power  2 3 4"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 16 19"
+    },
+    {
+     "raw": " Opt2   0 16 19 23"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 12,
+   "marker": "**12",
+   "lines": [
+    {
+     "raw": "]L[ 9999 013 HARVEST  16 01     >> Return to Deliani (Harvest)",
+     "command": "L",
+     "nextLevel": 13,
+     "levelName": "HARVEST",
+     "song": 16,
+     "levelFileNumber": 1,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 13,
+   "marker": "**13",
+   "lines": [
+    {
+     "raw": "]?[ 04 028 027 042 043",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 10 1 10 014",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   6 4 3"
+    },
+    {
+     "raw": " WeapF  13 7 8"
+    },
+    {
+     "raw": " WeapR  0 14 30 12"
+    },
+    {
+     "raw": " Power  1 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 10 2"
+    },
+    {
+     "raw": " Opt2   0 8 10 2"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 3 4 7"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 14,
+   "marker": "**14",
+   "lines": [
+    {
+     "raw": "]L[ 9999 046 UNDERDELI36 07     >> Return to Deliani (Tec)",
+     "command": "L",
+     "nextLevel": 46,
+     "levelName": "UNDERDELI",
+     "song": 36,
+     "levelFileNumber": 7,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 15,
+   "marker": "**15",
+   "lines": [
+    {
+     "raw": "]?[ 02 062 063",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 02",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 08 1 08 016",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 7 3"
+    },
+    {
+     "raw": " WeapF  15 18 2"
+    },
+    {
+     "raw": " WeapR  0 29 10 9"
+    },
+    {
+     "raw": " Power  2 3 4"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 6 19"
+    },
+    {
+     "raw": " Opt2   0 6 19 20"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 16,
+   "marker": "**16",
+   "lines": [
+    {
+     "raw": "]L[ 9999 017 SAVARA IV33 03     >> Return again to Savara",
+     "command": "L",
+     "nextLevel": 17,
+     "levelName": "SAVARA IV",
+     "song": 33,
+     "levelFileNumber": 3,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 17,
+   "marker": "**17",
+   "lines": [
+    {
+     "raw": "]+[ 03",
+     "command": "+"
+    },
+    {
+     "raw": "]?[ 04 032 031 033 034",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 08 1 16 018",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 5"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 4 7 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 18,
+   "marker": "**18",
+   "lines": [
+    {
+     "raw": "]L[ 9999 019 DREAD-NOT35 14     >> The \"Fleet\"",
+     "command": "L",
+     "nextLevel": 19,
+     "levelName": "DREAD-NOT",
+     "song": 35,
+     "levelFileNumber": 14,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 19,
+   "marker": "**19",
+   "lines": [
+    {
+     "raw": "]?[ 03 037 038 036",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 03",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 16 1 09 020",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 5 6"
+    },
+    {
+     "raw": " WeapF  3 1 19 40"
+    },
+    {
+     "raw": " WeapR  0 30 22 28"
+    },
+    {
+     "raw": " Power  3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 14 19 29"
+    },
+    {
+     "raw": " Opt2   0 14 21 25"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 9"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 20,
+   "marker": "**20",
+   "lines": [
+    {
+     "raw": "]L[ 9999 021 EYESPY   13 13     >> Giger Eye",
+     "command": "L",
+     "nextLevel": 21,
+     "levelName": "EYESPY",
+     "song": 13,
+     "levelFileNumber": 13,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 21,
+   "marker": "**21",
+   "lines": [
+    {
+     "raw": "]?[ 03 039 040 046",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 03",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 09 1 09 022",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 5 7"
+    },
+    {
+     "raw": " WeapF  20 27 19 3"
+    },
+    {
+     "raw": " WeapR  0 28 29 30"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine"
+    },
+    {
+     "raw": " Opt1   0 4 14 21"
+    },
+    {
+     "raw": " Opt2   0 4 14 23"
+    },
+    {
+     "raw": " Armor"
+    },
+    {
+     "raw": " Shield 4 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 22,
+   "marker": "**22",
+   "lines": [
+    {
+     "raw": "]L[ 9999 023 BRAINIAC 38 15     >> Brainiac - Next to last level",
+     "command": "L",
+     "nextLevel": 23,
+     "levelName": "BRAINIAC",
+     "song": 38,
+     "levelFileNumber": 15,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 23,
+   "marker": "**23",
+   "lines": [
+    {
+     "raw": "]M 034[",
+     "command": "M"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "                      The End"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]M 030[",
+     "command": "M"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Slipping deep into your Mega Soundchair, you sip down an"
+    },
+    {
+     "raw": "insta-cocoa from your dispenser.  The whole universe is"
+    },
+    {
+     "raw": "erupting in a fanfare of joy and hope."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Still, one burning thought enters your mind:"
+    },
+    {
+     "raw": "Why am I reading this?"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "If only you could find a way out of this crazy universe and"
+    },
+    {
+     "raw": "avoid the horrible, smiling face of Transon Lohk."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "The universe has asked you to save them one too many times,"
+    },
+    {
+     "raw": "and you've decided to hide out on Tyrian and reflect on"
+    },
+    {
+     "raw": "your Hazudra friend who died way back in Episode 1."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Dang.  Can't even remember his name now."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]M 022[",
+     "command": "M"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "                     ~BUT~ ~THEN!!!~"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]2 024[",
+     "command": "2"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Incoming message from..."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "                      VYKROMOD!?"
+    },
+    {
+     "raw": "                     "
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]J 024[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 24,
+   "marker": "**24",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 04 047 048 049 052",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 04",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 09 1 01 025",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   5 6 7"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 25,
+   "marker": "**25",
+   "lines": [
+    {
+     "raw": "]L[ 9999 037 NOSE DRIP18 16     >> Nose Drip - The final boss.",
+     "command": "L",
+     "nextLevel": 37,
+     "levelName": "NOSE DRIP",
+     "song": 18,
+     "levelFileNumber": 16,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 26,
+   "marker": "**26",
+   "lines": [
+    {
+     "raw": "]?[ 04 055 056 057 058",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 04",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 027",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 9"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 27,
+   "marker": "**27",
+   "lines": [
+    {
+     "raw": "]L[ 9999 003 WINDY    01 02$$   >> Windy II - A harder maze  (Secret)",
+     "command": "L",
+     "nextLevel": 3,
+     "levelName": "WINDY",
+     "song": 1,
+     "levelFileNumber": 2,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 28,
+   "marker": "**28",
+   "lines": [
+    {
+     "raw": "]?[ 02 044 045",
+     "command": "?"
+    },
+    {
+     "raw": "]+[ 01",
+     "command": "+"
+    },
+    {
+     "raw": "]G[ 11 1 11 029",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 5"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 29,
+   "marker": "**29",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 DESERTRUN02 10$$   >> Desert Run - Return to the surface (secret)",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "DESERTRUN",
+     "song": 2,
+     "levelFileNumber": 10,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 30,
+   "marker": "**30",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 02 017 51",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 02",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 031",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 3 4"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 31,
+   "marker": "**31",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 LAVA EXIT29 09     >> Lava III Exit",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "LAVA EXIT",
+     "song": 29,
+     "levelFileNumber": 9,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 32,
+   "marker": "**32 * Did you beat the tunnel boss?",
+   "lines": [
+    {
+     "raw": "]t 009[   Possible Text: You failed.",
+     "command": "t"
+    },
+    {
+     "raw": "]l 009[   Text: Goodie!",
+     "command": "l"
+    },
+    {
+     "raw": "]P 013[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 13[",
+     "command": "W"
+    },
+    {
+     "raw": "You patch in your HoloComm to the Zica computer and transmit"
+    },
+    {
+     "raw": "the access codes from your ship's computer."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "A few seconds later you are rewarded with a few chirps and a"
+    },
+    {
+     "raw": "growing, low hum.  It will take a while to heat this planet"
+    },
+    {
+     "raw": "back up, and you don't want to become an insta-freeze snack,"
+    },
+    {
+     "raw": "so you race back to your waiting Mega Soundchair and blast"
+    },
+    {
+     "raw": "off!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]F[",
+     "command": "F"
+    },
+    {
+     "raw": "]J 033[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 33,
+   "marker": "**33 * You beat the tunnel boss.",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 02 023 020",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 02",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 010",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   13"
+    },
+    {
+     "raw": " WeapF"
+    },
+    {
+     "raw": " WeapR"
+    },
+    {
+     "raw": " Power"
+    },
+    {
+     "raw": " Engine"
+    },
+    {
+     "raw": " Opt1"
+    },
+    {
+     "raw": " Opt2   27"
+    },
+    {
+     "raw": " Armor"
+    },
+    {
+     "raw": " Shield"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 34,
+   "marker": "** 34 * Did you beat the lava boss?",
+   "lines": [
+    {
+     "raw": "]t 030[",
+     "command": "t"
+    },
+    {
+     "raw": "]J 035[   Text: You saved the planet.",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 35,
+   "marker": "** 35 * Beat the lava boss - secret level - then on to ?Tunnel?",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]?[ 01 018",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 11 1 11 036",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship"
+    },
+    {
+     "raw": " WeapF"
+    },
+    {
+     "raw": " WeapR"
+    },
+    {
+     "raw": " Power"
+    },
+    {
+     "raw": " Engine"
+    },
+    {
+     "raw": " Opt1"
+    },
+    {
+     "raw": " Opt2   28"
+    },
+    {
+     "raw": " Armor"
+    },
+    {
+     "raw": " Shield"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 36,
+   "marker": "** 36 * Beat the lava boss - secret level - then on to ?Tunnel?",
+   "lines": [
+    {
+     "raw": "]L[ 9999 007 SIDE EXIT23 06     >> Lava 2",
+     "command": "L",
+     "nextLevel": 7,
+     "levelName": "SIDE EXIT",
+     "song": 23,
+     "levelFileNumber": 6,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 37,
+   "marker": "** 37 * Check for Special Ship",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 009[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Poor Vykromod.  I feel sorry for him now.  What a waste."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Still, that should be the last of the war for now.  At least"
+    },
+    {
+     "raw": "it better be.  Is there no way out of this war?"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "I am..."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "            alone."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]2 043[",
+     "command": "2"
+    },
+    {
+     "raw": "]w 038[",
+     "command": "w"
+    },
+    {
+     "raw": "]J 048[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 38,
+   "marker": "** 38 * Do you have the special ship?",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 029[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "All of a sudden, your prototype starship's computer springs"
+    },
+    {
+     "raw": "to life!  The advanced sensor array has picked up a spatial"
+    },
+    {
+     "raw": "disturbance far out in the distant planet Soh Jin."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "That mysterious planet has always been shrouded by the"
+    },
+    {
+     "raw": "Microsol forces.  Only twice have you had the chance to near"
+    },
+    {
+     "raw": "the planet."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "What new threat can this be?  Only one way to find out..."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]J 039[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 39,
+   "marker": "** 39 * Do you have the special ship?",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]b[ Save Backup",
+     "command": "b"
+    },
+    {
+     "raw": "]x[",
+     "command": "x"
+    },
+    {
+     "raw": "]?[ 03 061 053 054",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 03",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 01 2 05 040  21 042",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship"
+    },
+    {
+     "raw": " WeapF  "
+    },
+    {
+     "raw": " WeapR  "
+    },
+    {
+     "raw": " Power  "
+    },
+    {
+     "raw": " Engine "
+    },
+    {
+     "raw": " Opt1   "
+    },
+    {
+     "raw": " Opt2   "
+    },
+    {
+     "raw": " Armor"
+    },
+    {
+     "raw": " Shield "
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 40,
+   "marker": "** 40 * Do you have the special ship?",
+   "lines": [
+    {
+     "raw": "]e[ ENGAGE items",
+     "command": "e"
+    },
+    {
+     "raw": "]L[ 9999 041 TIME WAR 37 17     >> Time War",
+     "command": "L",
+     "nextLevel": 41,
+     "levelName": "TIME WAR",
+     "song": 37,
+     "levelFileNumber": 17,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 41,
+   "marker": "** 41 * Special Ending",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 037[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "This is no work of Microsol!  Who could have built that"
+    },
+    {
+     "raw": "incredible ship?  What has this planet done to my ship?"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Whatever it was, you have no time to ponder, for in front"
+    },
+    {
+     "raw": "of you stands a giant purple stargate!"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Can it be... a way out?"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "With no effort to decide, you know you must enter the gate,"
+    },
+    {
+     "raw": "for it may be the only way out."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Your ships' engines screaming against the atmosphere of the"
+    },
+    {
+     "raw": "planet, you plunge into the gateway."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Just at the crucial moment you yell:"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]F[",
+     "command": "F"
+    },
+    {
+     "raw": "]P 000[ Load TSHP2.PCX",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "ENGAGE!!!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]J 043[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 42,
+   "marker": "** 42 * Normal Ending",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 009[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "The madness has stopped for now."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Perhaps I will be given a chance to rest."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Someday I may find my way out."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Someday..."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 43,
+   "marker": "** 43 * Ending",
+   "lines": [
+    {
+     "raw": "]M 008[",
+     "command": "M"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Q[",
+     "command": "Q"
+    },
+    {
+     "raw": "Secret Hint 4-1-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "SAVE IXMUCANE"
+    },
+    {
+     "raw": "There are three possible outcomes to the saving of"
+    },
+    {
+     "raw": "Ixmucane.  Only one will save the people on the"
+    },
+    {
+     "raw": "planet."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-1-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "POWERUPS"
+    },
+    {
+     "raw": "There are only two black powerups in all of Episode 4."
+    },
+    {
+     "raw": "Both are in the middle of the Harvest level."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-1-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "SECRET LEVEL : WINDY 2"
+    },
+    {
+     "raw": "This secret level contains many ? boxes.  Each is worth"
+    },
+    {
+     "raw": "thousands of points."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-2-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "?SECRET LEVELS?"
+    },
+    {
+     "raw": "Only 2 warp balls exist in episode 4.  Most levels are"
+    },
+    {
+     "raw": "found in other special ways."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-2-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "LAVA EXIT"
+    },
+    {
+     "raw": "What happens when the boss stops?"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-2-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "DESERT (FIRST LEVEL)"
+    },
+    {
+     "raw": "Test of courage:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Do not shoot ANY of the black ship formations in the"
+    },
+    {
+     "raw": "beginning of the level, up to the first two arches."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-3-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "?TUNNEL?"
+    },
+    {
+     "raw": "Test of courage:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Don't kill the tunnel boss until the explosions stop."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-3-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "LORD OF GAME"
+    },
+    {
+     "raw": "After GOD MODE is displayed, hold down L+O+R+D all at"
+    },
+    {
+     "raw": "one time to revel a new challenge."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 4-3-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "SECRET TO EPISODE 4"
+    },
+    {
+     "raw": "Find the 13th ship, the Stalker 21.126!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]J 001[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 44,
+   "marker": "** 44 * Do you have the special ship?",
+   "lines": [
+    {
+     "raw": "]s[",
+     "command": "s"
+    },
+    {
+     "raw": "]b[ Save Backup",
+     "command": "b"
+    },
+    {
+     "raw": "]?[ 03 061 059 060",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 03",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 01 2 05 045  21 042",
+     "command": "G"
+    },
+    {
+     "raw": "]x[",
+     "command": "x"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship"
+    },
+    {
+     "raw": " WeapF  "
+    },
+    {
+     "raw": " WeapR  "
+    },
+    {
+     "raw": " Power  "
+    },
+    {
+     "raw": " Engine "
+    },
+    {
+     "raw": " Opt1   "
+    },
+    {
+     "raw": " Opt2   "
+    },
+    {
+     "raw": " Armor"
+    },
+    {
+     "raw": " Shield "
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 45,
+   "marker": "** 45 * Do you have the special ship?",
+   "lines": [
+    {
+     "raw": "]e[ ENGAGE items",
+     "command": "e"
+    },
+    {
+     "raw": "]g[ GALAGA mode",
+     "command": "g"
+    },
+    {
+     "raw": "]L[ 9999 043 SQUADRON 37 18     >> Time War",
+     "command": "L",
+     "nextLevel": 43,
+     "levelName": "SQUADRON",
+     "song": 37,
+     "levelFileNumber": 18,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 46,
+   "marker": "**46",
+   "lines": [
+    {
+     "raw": "]+[ 02",
+     "command": "+"
+    },
+    {
+     "raw": "]?[ 03 029 062 013",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 10 1 08 047",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 9 3"
+    },
+    {
+     "raw": " WeapF  2 7 3"
+    },
+    {
+     "raw": " WeapR  0 12 15 10"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 6 16 14"
+    },
+    {
+     "raw": " Opt2   0 6 16 14"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 1 2 3"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 47,
+   "marker": "**47",
+   "lines": [
+    {
+     "raw": "]L[ 9999 015 APPROACH 36 19     >> Savara 6",
+     "command": "L",
+     "nextLevel": 15,
+     "levelName": "APPROACH",
+     "song": 36,
+     "levelFileNumber": 19,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 48,
+   "marker": "**48 * Normal Ending",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 040[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Now that I have won the war, I can return to Savara"
+    },
+    {
+     "raw": "and receive a hero's welcome!  Millions of"
+    },
+    {
+     "raw": "Holo-viewers will bow at my feet and bless the very"
+    },
+    {
+     "raw": "channels I appear on."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Sages will cross a thousand desert streams to be"
+    },
+    {
+     "raw": "at my side.  Streams of small dwarves will dance the"
+    },
+    {
+     "raw": "jig of a thousand hours at my celebration.  I could"
+    },
+    {
+     "raw": "be made into anything."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "But I don't want to be a hero.  I hate this life."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Why, O me, do I strut upon this stage once more?"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "That's it..."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "   I won't go!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 039[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Computer, lock in to a random galaxy at least 100"
+    },
+    {
+     "raw": "years away!"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Earth?  Funny name for a planet.  Wonder if it's"
+    },
+    {
+     "raw": "inhabited."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Who cares?  I'll jump into cryofreeze and sit in"
+    },
+    {
+     "raw": "stasis until we reach this... Earth."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Nobody will EVER find me!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "And so, space-pilot Trent Hawkins straps down in his"
+    },
+    {
+     "raw": "little craft and sets the thermostat to CRYO."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "His ship streams off at maximum speed to his unknown"
+    },
+    {
+     "raw": "destination.  For 101 years, he waits deep within"
+    },
+    {
+     "raw": "his frozen ship.  The galaxy searches for his body"
+    },
+    {
+     "raw": "but he is considered lost and given a hero's"
+    },
+    {
+     "raw": "funeral."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Little do they know..."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "You'll soon be on Earth, ready to slip unnoticed"
+    },
+    {
+     "raw": "into whatever life lurks there."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]n[",
+     "command": "n"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "In stasis, it's best to keep the mind still active."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Your computer has programmed an endless game to"
+    },
+    {
+     "raw": "keep your mind active those 101 years."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Instructions are located in the data cubes for your"
+    },
+    {
+     "raw": "reference."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "And here it is..."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]J 044[",
+     "command": "J"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 49,
+   "marker": "**49",
+   "lines": [
+    {
+     "raw": "]![ 04",
+     "command": "!"
+    },
+    {
+     "raw": "]?[ 04 064 065 066 067",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 11 1 06 050",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 3 4"
+    },
+    {
+     "raw": " WeapF  41 42 40"
+    },
+    {
+     "raw": " WeapR  0 14 15 22"
+    },
+    {
+     "raw": " Power  4 5 6"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 16 29"
+    },
+    {
+     "raw": " Opt2   0 16 29 25"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 50,
+   "marker": "**50",
+   "lines": [
+    {
+     "raw": "]L[ 9999 051 ICESECRET35 20**   >> Secret Camanis research base",
+     "command": "L",
+     "nextLevel": 51,
+     "levelName": "ICESECRET",
+     "song": 35,
+     "levelFileNumber": 20,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 51,
+   "marker": "**51   ICESECRET to HARVEST (sec 12)",
+   "lines": [
+    {
+     "raw": "]+[ 03",
+     "command": "+"
+    },
+    {
+     "raw": "]?[ 04 024 025 026 011",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 06 1 10 012",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 1 5"
+    },
+    {
+     "raw": " WeapF  3 2 19"
+    },
+    {
+     "raw": " WeapR  0 12 15 11"
+    },
+    {
+     "raw": " Power  2 3 4"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 16 19"
+    },
+    {
+     "raw": " Opt2   0 16 19 23"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  }
+ ],
+ "note": "']' opens a script command; see doc/notes.md, Level scripts"
+}

@@ -1,0 +1,27 @@
+id,name,itemGraphic,power,type,weapon,displayName
+0,None                          ,0,0,0,0,None
+1,Repulsor                      ,271,1,2,0,Repulsor
+2,Pearl Wind                    ,273,10,1,620,Pearl Wind
+3,Soul of Zinglon               ,275,50,3,0,Soul of Zinglon
+4,Attractor                     ,277,2,4,0,Attractor
+5,Ice Beam                      ,121,20,1,621,Ice Beam
+6,Flare                         ,123,10,5,622,Flare
+7,Blade Field                   ,125,20,8,623,Blade Field
+8,SandStorm                     ,125,20,6,624,SandStorm
+9,MineField                     ,125,104,7,29,MineField
+10,Dual Vulcan                   ,125,20,9,658,Dual Vulcan
+11,Banana Bomb                   ,125,20,1,525,Banana Bomb
+12,Protron Dispersal             ,125,0,10,670,Protron Dispersal
+13,Astral Zone                   ,125,20,11,672,Astral Zone
+14,Invulnerability               ,0,98,12,0,Invulnerability
+15,Atom Bomb                     ,0,102,1,19,Atom Bomb
+16,Seeker Bombs                  ,0,103,1,709,Seeker Bombs
+17,Ice Blast                     ,0,4,1,706,Ice Blast
+18,Repair Player 1               ,0,98,13,0,Repair Player 1
+19,Protron Field                 ,0,99,1,707,Protron Field
+20,Minefield                     ,0,104,16,710,Minefield
+21,Post-It Blast                 ,0,105,1,708,Post-It Blast
+22,Drone **                      ,0,103,12,0,Drone **
+23,Repair Player 1               ,0,98,14,0,Repair Player 1
+24,Super Bomb                    ,0,104,5,622,Super Bomb
+25,Hot Dog                       ,0,101,1,711,Hot Dog

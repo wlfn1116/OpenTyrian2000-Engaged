@@ -1,0 +1,31 @@
+{
+ "mapFileChar": "T",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  390,
+  390,
+  390,
+  390,
+  390,
+  391,
+  391,
+  391,
+  391,
+  392,
+  392,
+  392,
+  393,
+  393,
+  477,
+  478
+ ],
+ "endOffset": 108643,
+ "episode": 1,
+ "levelFileNumber": 4,
+ "name": "BUBBLES",
+ "eventCount": 210
+}

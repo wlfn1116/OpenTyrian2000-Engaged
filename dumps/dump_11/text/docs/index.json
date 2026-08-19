@@ -1,0 +1,45 @@
+{
+ "note": "documents shipped with the release, decoded from CP437 to UTF-8 with LF line endings and the DOS end-of-file marker dropped",
+ "documents": [
+  {
+   "file": "file_id.diz",
+   "bytes": 304,
+   "text": "file_id.txt"
+  },
+  {
+   "file": "helpme.doc",
+   "bytes": 15596,
+   "text": "helpme.txt"
+  },
+  {
+   "file": "license.doc",
+   "bytes": 7869,
+   "text": "license.txt"
+  },
+  {
+   "file": "manual.doc",
+   "bytes": 32299,
+   "text": "manual.txt"
+  },
+  {
+   "file": "modems.txt",
+   "bytes": 3082,
+   "text": "modems.txt"
+  },
+  {
+   "file": "order.doc",
+   "bytes": 6130,
+   "text": "order.txt"
+  },
+  {
+   "file": "order_de.doc",
+   "bytes": 3885,
+   "text": "order_de.txt"
+  },
+  {
+   "file": "order_uk.doc",
+   "bytes": 5685,
+   "text": "order_uk.txt"
+  }
+ ]
+}

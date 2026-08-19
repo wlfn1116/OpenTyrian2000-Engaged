@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "V",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 198086,
+ "episode": 2,
+ "levelFileNumber": 6,
+ "name": "GRYPHON",
+ "eventCount": 1299
+}

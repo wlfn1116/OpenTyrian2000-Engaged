@@ -1,0 +1,4 @@
+{
+ "note": "files with no decoder, copied byte for byte. Executables also get a .strings.txt of their printable runs.",
+ "count": 19
+}

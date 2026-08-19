@@ -1,0 +1,95 @@
+file,bytes,category,contents,readBy,sourceReferences,dumpedTo,dumped
+cubetxt1.dat,12957,text,Datacube text for one episode,src/game_menu.c load_cube,episodes.c,text/datacubes,1
+cubetxt2.dat,14298,text,Datacube text for one episode,src/game_menu.c load_cube,episodes.c,text/datacubes,1
+cubetxt3.dat,9750,text,Datacube text for one episode,src/game_menu.c load_cube,episodes.c,text/datacubes,1
+demo.1,1605,demos,Recorded attract-mode input for one level,src/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_1.json,1
+demo.2,1749,demos,Recorded attract-mode input for one level,src/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_2.json,1
+demo.3,1341,demos,Recorded attract-mode input for one level,src/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_3.json,1
+demo.4,1083,demos,Recorded attract-mode input for one level,src/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_4.json,1
+demo.5,1083,demos,Recorded attract-mode input for one level,src/mainint.c load_next_demo and replay_demo_keys,mainint.c,demos/demo_5.json,1
+dpmi16bi.ovl,50544,executable,DOS extender overlay,not read at runtime,,raw/executable/dpmi16bi.ovl|raw/executable/dpmi16bi.ovl.strings.txt,1
+estsc.shp,115338,sprites,Ending and credits sprites,src/mainint.c JE_playCredits,mainint.c,sprites/standalone/estsc_shp,1
+exitmsg.bin,4000,text,80x25 DOS text screen shown on exit,not read at runtime,,text/exitmsg.txt,1
+file0001.exe,212480,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/file0001.exe|raw/executable/file0001.exe.strings.txt,1
+file0002.exe,84810,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/file0002.exe|raw/executable/file0002.exe.strings.txt,1
+file_id.diz,304,text,BBS description shipped with the release,not read at runtime,,text/docs/file_id.txt,1
+helpme.doc,15596,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/helpme.txt,1
+helpme.exe,15372,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/helpme.exe|raw/executable/helpme.exe.strings.txt,1
+levels1.dat,6596,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/tyrian2.c JE_loadMap,episodes.c|game_menu.c,text/episode_scripts,1
+levels2.dat,5222,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/tyrian2.c JE_loadMap,episodes.c|game_menu.c,text/episode_scripts,1
+levels3.dat,6040,levels,"Episode script: shop stock, planets, datacubes, text and level order",src/tyrian2.c JE_loadMap,episodes.c|game_menu.c,text/episode_scripts,1
+license.doc,7869,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/license.txt,1
+loudness.awe,34350,audio,AWE32 instrument bank from the DOS build,not read at runtime,,raw/audio/loudness.awe,1
+manual.doc,32299,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/manual.txt,1
+modems.txt,3082,text,Modem notes for the DOS network game,not read at runtime,,text/docs/modems.txt,1
+music.mus,138507,audio,LOUDNESS (LDS) AdLib songs,src/loudness.c load_music; src/lds_play.c lds_load,loudness.c,audio/music,1
+netarena.exe,97236,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/netarena.exe|raw/executable/netarena.exe.strings.txt,1
+netarena.pcx,22826,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netarena.png,1
+netfont1.pcx,8692,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netfont1.png,1
+netfont2.pcx,10327,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netfont2.png,1
+netipx.exe,27124,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/netipx.exe|raw/executable/netipx.exe.strings.txt,1
+netmega.pcx,33221,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netmega.png,1
+netmodem.exe,41982,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/netmodem.exe|raw/executable/netmodem.exe.strings.txt,1
+netset.pcx,53766,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/netset.png,1
+netterm.exe,98336,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/netterm.exe|raw/executable/netterm.exe.strings.txt,1
+netterm.int,633,config,'ITS File' string table a DOS launcher reads its interface from,not read at runtime,,raw/config/netterm.int,1
+newsh#.shp,19139,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh#,1
+newsh0.shp,18474,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh0,1
+newsh1.shp,32724,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",episodes.c|mainint.c|sprite.c,sprites/newsh/newsh1,1
+newsh2.shp,36902,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh2,1
+newsh4.shp,29773,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh4,1
+newsh6.shp,20011,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh6,1
+newsh7.shp,44811,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh7,1
+newsh8.shp,36862,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh8,1
+newsh@.shp,12286,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh@,1
+newsha.shp,27220,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsha,1
+newshb.shp,39993,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshb,1
+newshc.shp,42741,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshc,1
+newshd.shp,43333,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshd,1
+newshe.shp,30422,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshe,1
+newshf.shp,16814,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshf,1
+newshg.shp,38181,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshg,1
+newshh.shp,48062,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshh,1
+newshi.shp,32014,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshi,1
+newshj.shp,45047,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshj,1
+newshk.shp,27826,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshk,1
+newshl.shp,20137,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshl,1
+newshm.shp,23512,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshm,1
+newshn.shp,42124,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshn,1
+newsho.shp,24163,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsho,1
+newshp.shp,47361,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshp,1
+newshq.shp,31033,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshq,1
+newshr.shp,36381,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshr,1
+newshs.shp,49979,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshs,1
+newsht.shp,15654,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsht,1
+newshu.shp,37166,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshu,1
+newshv.shp,24303,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newshv,1
+newsh~.shp,18407,sprites,"Compiled 12px sheets: enemy shapebanks, shop, explosions, destruct","src/sprite.c JE_loadCompShapes; enemy records name the bank, src/lvlmast.c maps it to the file",mainint.c|sprite.c,sprites/newsh/newsh~,1
+order.doc,6130,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/order.txt,1
+order.exe,20557,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/order.exe|raw/executable/order.exe.strings.txt,1
+order.tfp,272652,misc,Resource file for the DOS ordering program,not read at runtime,,raw/misc/order.tfp,1
+order_de.doc,3885,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/order_de.txt,1
+order_uk.doc,5685,text,"DOS-era manual, licence or ordering document in CP437 text",not read at runtime,,text/docs/order_uk.txt,1
+palette.dat,17664,graphics,VGA palettes of 256 six-bit colours,src/palette.c JE_loadPals; every 8-bit draw resolves through one of these,palette.c,palettes,1
+rtm.exe,120853,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/rtm.exe|raw/executable/rtm.exe.strings.txt,1
+setup.box,24,misc,24-byte marker written by the DOS setup program,not read at runtime,,raw/misc/setup.box,1
+setup.exe,60160,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/setup.exe|raw/executable/setup.exe.strings.txt,1
+setup.ini,77,config,Language and network choice written by the DOS setup program,not read at runtime,,raw/config/setup.ini,1
+setup.int,7451,config,'ITS File' string table a DOS launcher reads its interface from,not read at runtime,,raw/config/setup.int,1
+shapesw.dat,190624,tiles,Level tileset: 600 slots of 24x28 tiles,"src/tyrian2.c JE_loadMap, chosen by the level header",mainint.c|tyrian2.c,tiles/shapesw,1
+shapesx.dat,214144,tiles,Level tileset: 600 slots of 24x28 tiles,"src/tyrian2.c JE_loadMap, chosen by the level header",mainint.c|tyrian2.c,tiles/shapesx,1
+shapesy.dat,126784,tiles,Level tileset: 600 slots of 24x28 tiles,"src/tyrian2.c JE_loadMap, chosen by the level header",mainint.c|tyrian2.c,tiles/shapesy,1
+shapesz.dat,244384,tiles,Level tileset: 600 slots of 24x28 tiles,"src/tyrian2.c JE_loadMap, chosen by the level header",mainint.c|tyrian2.c,tiles/shapesz,1
+tyrend.anm,3315848,animation,"Episode 3 ending animation, DeluxePaint LPF","src/animlib.c JE_playAnim, from the ']A' episode script command",tyrian2.c,anim/tyrend,1
+tyrian.cdt,1125,text,"Credits roll, one colour-tagged line per record",src/mainint.c JE_playCredits,mainint.c,text/credits.txt,1
+tyrian.exe,4336,executable,DOS or Windows executable shipped with the data,not read at runtime,,raw/executable/tyrian.exe|raw/executable/tyrian.exe.strings.txt,1
+tyrian.hdt,11804,text,"Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat,config.h|episodes.c|helptext.c,text/hdt_text.json,1
+tyrian.ico,766,graphics,Windows icon for one of the DOS-era launchers,not read at runtime,,images/icons/tyrian.ico|images/icons/tyrian.png,1
+tyrian.pic,344158,graphics,Run-length 320x200 interface backdrops,src/picload.c JE_loadPic,picload.c,images/pic,1
+tyrian.shp,435452,sprites,"Sprite banks: fonts, planets, faces, menu art, player shots and ships",src/sprite.c JE_loadMainShapeTables,episodes.c|mainint.c|opentyr.c|sprite.c,sprites/tyrian_shp,1
+tyrian.snd,268494,audio,"Sound effects, signed 8-bit mono at 11025 Hz",src/nortsong.c loadSndFile,nortsong.c,audio/sfx,1
+tyrian1.lvl,535395,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|file.c|lvllib.c,gamedata/episode_1|levels/episode_1,1
+tyrian2.lvl,486134,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|lvllib.c,gamedata/episode_2|levels/episode_2,1
+tyrian3.lvl,523177,levels,"Level headers, event scripts and tile maps; some also hold their episode's item tables",src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat,episodes.c|lvllib.c,gamedata/episode_3|levels/episode_3,1
+tyrset.pcx,53766,graphics,320x200 PCX screen carrying its own palette,not read at runtime; part of the DOS setup or network tools,,images/pcx/tyrset.png,1
+voices.snd,132767,audio,Voice samples in the same format,src/nortsong.c loadSndFile,nortsong.c,audio/voices,1

@@ -1,0 +1,1151 @@
+{
+ "file": "levels3.dat",
+ "sections": [
+  {
+   "section": 1,
+   "marker": "**1 SECTION - Before Level 1 - Gauntlet **************************************",
+   "lines": [
+    {
+     "raw": "]?[ 01 011",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 07 1 20 002",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 9"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 2 9"
+    },
+    {
+     "raw": " Opt2   0 1 2 9"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 2,
+   "marker": "**2 SECTION - Gauntlet        ************************************************",
+   "lines": [
+    {
+     "raw": "]L[ 9999 003 GAUNTLET 01 03",
+     "command": "L",
+     "nextLevel": 3,
+     "levelName": "GAUNTLET",
+     "song": 1,
+     "levelFileNumber": 3,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 3,
+   "marker": "**3 SECTION - Before Level 2 - Gyges (Tunnel) ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 03 001 002 003",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 20 1 11 004",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3 9"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 2 19"
+    },
+    {
+     "raw": " Opt2   0 8 2 19"
+    },
+    {
+     "raw": " Armor  1 2 4"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 4,
+   "marker": "**4 SECTION - Justincase*",
+   "lines": [
+    {
+     "raw": "]L[ 9999 005 IXMUCANE 14 04",
+     "command": "L",
+     "nextLevel": 5,
+     "levelName": "IXMUCANE",
+     "song": 14,
+     "levelFileNumber": 4,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 5,
+   "marker": "**5 SECTION - Before Level 3 - Bonus          ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 03 004 005 014",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 11 1 15 006",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 9"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 2 7"
+    },
+    {
+     "raw": " Opt2   0 8 2 7"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 6,
+   "marker": "**6 SECTION - Bonus",
+   "lines": [
+    {
+     "raw": "]L[ 9999 007 BONUS    28 05$$",
+     "command": "L",
+     "nextLevel": 7,
+     "levelName": "BONUS",
+     "song": 28,
+     "levelFileNumber": 5,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 7,
+   "marker": "**7 SECTION - Before Level 4 - Stargate       ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 01 011",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 14 008",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 4 5"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 2 7"
+    },
+    {
+     "raw": " Opt2   0 8 2 7"
+    },
+    {
+     "raw": " Armor  1 2 4"
+    },
+    {
+     "raw": " Shield 4 5 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 8,
+   "marker": "**8 SECTION - Stargate",
+   "lines": [
+    {
+     "raw": "]L[ 9999 009 STARGATE 16 07",
+     "command": "L",
+     "nextLevel": 9,
+     "levelName": "STARGATE",
+     "song": 16,
+     "levelFileNumber": 7,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 9,
+   "marker": "**9 SECTION - Before Level 5 - Camanis        ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 014",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 06 010",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 4 6"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 7 14"
+    },
+    {
+     "raw": " Opt2   0 8 7 14"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 3 4"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 10,
+   "marker": "*10 SECTION - Camanis",
+   "lines": [
+    {
+     "raw": "]L[ 9999 024 CAMANIS  04 01",
+     "command": "L",
+     "nextLevel": 24,
+     "levelName": "CAMANIS",
+     "song": 4,
+     "levelFileNumber": 1,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 11,
+   "marker": "*11 SECTION - Before Level 6 - Space Fleet    ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 03 007 008 012",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 16 012",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 5 6"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  2 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 4 29 12"
+    },
+    {
+     "raw": " Opt2   0 4 29 12"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 12,
+   "marker": "*12 SECTION - Space Fleet",
+   "lines": [
+    {
+     "raw": "]L[ 9999 016 FLEET    29 06",
+     "command": "L",
+     "nextLevel": 16,
+     "levelName": "FLEET",
+     "song": 29,
+     "levelFileNumber": 6,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 13,
+   "marker": "*13 SECTION - End of game                     ********************************",
+   "lines": [
+    {
+     "raw": "]@[",
+     "command": "@"
+    },
+    {
+     "raw": "]M 009[",
+     "command": "M"
+    },
+    {
+     "raw": "]A[",
+     "command": "A"
+    },
+    {
+     "raw": "]F[",
+     "command": "F"
+    },
+    {
+     "raw": "]P 907[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "Your ship streams from the incandescent glow of the"
+    },
+    {
+     "raw": "explosions you have just created in the midst of the"
+    },
+    {
+     "raw": "Microsol fleet, and hunts down the final escape pod"
+    },
+    {
+     "raw": "from the mother ship just as it punches into hyperspace. "
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "It is finally over. The people of Deliani are saved,"
+    },
+    {
+     "raw": "and you have stopped a galaxy wide catastrophe."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]C[",
+     "command": "C"
+    },
+    {
+     "raw": "]P 907[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "\"Congratulations!\" shouts Transon Lohk over the comm"
+    },
+    {
+     "raw": "screen. \"Our forces were ready to defend the city"
+    },
+    {
+     "raw": "after your last transmission, but thanks to you we"
+    },
+    {
+     "raw": "haven't even suffered a scratch. I will make sure you"
+    },
+    {
+     "raw": "are richly rewarded for this...\""
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]C[",
+     "command": "C"
+    },
+    {
+     "raw": "]P 907[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "You smile and flick off the comm, your mouth twisting"
+    },
+    {
+     "raw": "into a frown. No reward could bring back your parents,"
+    },
+    {
+     "raw": "and your best friend. Though you have saved millions of"
+    },
+    {
+     "raw": "lives, why did the people closest to you have to suffer?"
+    },
+    {
+     "raw": "Still, there's nothing you can do about it, and you vow"
+    },
+    {
+     "raw": "to make sure that the same thing never happens again."
+    },
+    {
+     "raw": "From now on Tyrian sector will be a name synonymous"
+    },
+    {
+     "raw": "with peace..."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]F[",
+     "command": "F"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Q[",
+     "command": "Q"
+    },
+    {
+     "raw": "Secret Hint 3-1-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "BONUS ROUND"
+    },
+    {
+     "raw": "There are two sections where a solid row of ships move"
+    },
+    {
+     "raw": "down and wait.  The first purple ship that comes down"
+    },
+    {
+     "raw": "each time has a power-up.  Others carry gems."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-1-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "CAMANIS"
+    },
+    {
+     "raw": "In the section where enemies fly straight up behind you,"
+    },
+    {
+     "raw": "there is a slow-moving enemy that has a power-up."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-1-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "SECRET LEVEL : SAWBLADES"
+    },
+    {
+     "raw": "The spiders, while hard to reach, contain 10000 pts in"
+    },
+    {
+     "raw": "gems."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-2-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "?SECRET LEVELS?"
+    },
+    {
+     "raw": "Two secret levels in Episode 3 are in the same place."
+    },
+    {
+     "raw": "(Mull that one over.)"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-2-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "STARGATE"
+    },
+    {
+     "raw": "Two of the flying spikes can be destroyed.  Each is"
+    },
+    {
+     "raw": "worth 10000 pts."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-2-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "EPISODE 3"
+    },
+    {
+     "raw": "Play at the hard difficulty level for an extra reward."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-3-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "EPISODE 3"
+    },
+    {
+     "raw": "There are three secret levels you can access with the"
+    },
+    {
+     "raw": "warp bubbles."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-3-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "GOD MODE"
+    },
+    {
+     "raw": "Type a capital G, then type a SHIFT-RIGHT BRACKET."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 3-3-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "INSANE DETAIL"
+    },
+    {
+     "raw": "In the Setup program, type a W when you have detail"
+    },
+    {
+     "raw": "level selected."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 14,
+   "marker": "*14 SECTION - Before Level 4A - Asteroid City ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 014 013",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 13 015",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 3 6"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 3 2 14"
+    },
+    {
+     "raw": " Opt2   0 3 2 14"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 6 7 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 15,
+   "marker": "*15 SECTION - Asteroid City",
+   "lines": [
+    {
+     "raw": "]L[ 9999 009 AST. CITY02 02",
+     "command": "L",
+     "nextLevel": 9,
+     "levelName": "AST. CITY",
+     "song": 2,
+     "levelFileNumber": 2,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 16,
+   "marker": "*16 SECTION - Xtra Level 1 - New Tyrian       ********************************",
+   "lines": [
+    {
+     "raw": "]H[ 013",
+     "command": "H"
+    },
+    {
+     "raw": "]?[ 04 001 002 004 005",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 16 1 01 017",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1"
+    },
+    {
+     "raw": " WeapF  20 19 5"
+    },
+    {
+     "raw": " WeapR  0 21 22 14"
+    },
+    {
+     "raw": " Power  3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 16 17 12"
+    },
+    {
+     "raw": " Opt2   0 16 17 12"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 3 4"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 17,
+   "marker": "*17 SECTION - Tyrian X",
+   "lines": [
+    {
+     "raw": "]L[ 9999 020 TYRIAN X 18 08",
+     "command": "L",
+     "nextLevel": 20,
+     "levelName": "TYRIAN X",
+     "song": 18,
+     "levelFileNumber": 8,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 18,
+   "marker": "*18 SECTION - Before Level 4B - Sawblades     ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 013",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 14 019",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   4 5 6"
+    },
+    {
+     "raw": " WeapF  1 5 8"
+    },
+    {
+     "raw": " WeapR  0 21 22 18"
+    },
+    {
+     "raw": " Power  3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 3 13 7"
+    },
+    {
+     "raw": " Opt2   0 3 13 7"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 6 7 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 19,
+   "marker": "*19 SECTION - Sawblades",
+   "lines": [
+    {
+     "raw": "]L[ 9999 009 SAWBLADES14 09",
+     "command": "L",
+     "nextLevel": 9,
+     "levelName": "SAWBLADES",
+     "song": 14,
+     "levelFileNumber": 9,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 20,
+   "marker": "*20 SECTION - Xtra Level 2 - New Savara       ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 05 015 017 016 018 012",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 01 1 08 021",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 1 4"
+    },
+    {
+     "raw": " WeapF  1 5 8"
+    },
+    {
+     "raw": " WeapR  0 21 22 18"
+    },
+    {
+     "raw": " Power  3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 4 13 21"
+    },
+    {
+     "raw": " Opt2   0 4 13 20"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 6 7 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 21,
+   "marker": "*21 SECTION - Savara Y",
+   "lines": [
+    {
+     "raw": "]L[ 9999 022 SAVARA Y 21 10",
+     "command": "L",
+     "nextLevel": 22,
+     "levelName": "SAVARA Y",
+     "song": 21,
+     "levelFileNumber": 10,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 22,
+   "marker": "*22 SECTION - Xtra Level 3 - New Deli         ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 04 019 020 020 020",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 08 1 10 023",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   5 6 7"
+    },
+    {
+     "raw": " WeapF  4 5 8"
+    },
+    {
+     "raw": " WeapR  0 18 21 22"
+    },
+    {
+     "raw": " Power  4 5 6"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 5 21 18"
+    },
+    {
+     "raw": " Opt2   0 5 22 18"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 6 7 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 23,
+   "marker": "*23 SECTION - New Deli",
+   "lines": [
+    {
+     "raw": "]L[ 9999 013 New Deli 14 11",
+     "command": "L",
+     "nextLevel": 13,
+     "levelName": "New Deli",
+     "song": 14,
+     "levelFileNumber": 11,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 24,
+   "marker": "*24 SECTION - Blue Asteroids                  ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 03 007 008 012",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 06 1 15 025",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1"
+    },
+    {
+     "raw": " WeapF  8 4 19"
+    },
+    {
+     "raw": " WeapR  0 12 9  15"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 2 13 6"
+    },
+    {
+     "raw": " Opt2   0 2 13 6"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 4 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 25,
+   "marker": "*25 SECTION - Blue Asteroids",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 MACES    07 12$$",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "MACES",
+     "song": 7,
+     "levelFileNumber": 12,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": " Ship   1 2 3 4"
+    },
+    {
+     "raw": " WeapF  1 2 3 7 17"
+    },
+    {
+     "raw": " WeapR  10 11 12 15 18"
+    },
+    {
+     "raw": " Power  1 2 3 4"
+    },
+    {
+     "raw": " Engine 1 2 3"
+    },
+    {
+     "raw": " Opt1   1 2 6 7 8 10"
+    },
+    {
+     "raw": " Opt2   1 2 6 7 8 10"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 1 2 3 4 5 8"
+    }
+   ]
+  }
+ ],
+ "note": "']' opens a script command; see doc/notes.md, Level scripts"
+}

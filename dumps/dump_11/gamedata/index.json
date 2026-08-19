@@ -1,0 +1,8 @@
+{
+ "note": "each episode carries its own tables at the end of its .lvl file; the three sets differ only in the weapon table, and only two of those records differ in the shot slots the game reads",
+ "sets": [
+  "episode_1",
+  "episode_2",
+  "episode_3"
+ ]
+}

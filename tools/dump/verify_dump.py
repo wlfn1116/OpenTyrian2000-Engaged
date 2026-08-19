@@ -26,11 +26,29 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import dump_data                                        # noqa: E402
 import tyrian_formats as tf                             # noqa: E402
 
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 
 CHECKS = []
+
+_NAMES = {}
+
+
+def data_path(data_dir, name):
+    """The file on disk behind a lower-case data name (Tyrian 1.1 ships upper case)."""
+    if data_dir not in _NAMES:
+        _NAMES[data_dir] = tf.data_index(data_dir)
+    return os.path.join(data_dir, _NAMES[data_dir].get(name, name))
+
+
+def data_files(data_dir, prefix="", suffix=""):
+    """Lower-case names of the data files matching a prefix and a suffix."""
+    if data_dir not in _NAMES:
+        _NAMES[data_dir] = tf.data_index(data_dir)
+    return sorted(n for n in _NAMES[data_dir]
+                  if n.startswith(prefix) and n.endswith(suffix))
 
 
 def check(name):
@@ -91,13 +109,21 @@ def png_indexed_pixels(path):
     return width, height, bytes(out)
 
 
+# README.md names the directory the run wrote to, so a scratch regeneration
+# cannot match the tracked copy. Everything it decoded still has to.
+TREE_HASH_SKIP = ("README.md",)
+
+
 def tree_hash(root):
     digest = hashlib.sha256()
     for base, dirs, files in os.walk(root):
         dirs.sort()
         for name in sorted(files):
             path = os.path.join(base, name)
-            digest.update(os.path.relpath(path, root).replace(os.sep, "/").encode())
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            if rel in TREE_HASH_SKIP:
+                continue
+            digest.update(rel.encode())
             digest.update(open(path, "rb").read())
     return digest.hexdigest()
 
@@ -108,8 +134,8 @@ def tree_hash(root):
 @check("every data file produced output")
 def _coverage(data_dir, dump_dir):
     rows = list(csv.DictReader(open(os.path.join(dump_dir, "index.csv"), encoding="utf-8")))
-    on_disk = sorted(n for n in os.listdir(data_dir) if os.path.isfile(os.path.join(data_dir, n)))
-    require(len(rows) == len(on_disk),
+    on_disk = data_files(data_dir)
+    require(sorted(r["file"] for r in rows) == on_disk,
             "index.csv lists %d files, data holds %d" % (len(rows), len(on_disk)))
     missing = [r["file"] for r in rows if r["dumped"] != "1"]
     require(not missing, "no output for: %s" % ", ".join(missing))
@@ -159,13 +185,13 @@ def _line_endings(data_dir, dump_dir):
 @check("decrypted records round-trip byte for byte")
 def _records(data_dir, dump_dir):
     total = 0
-    pairs = [(os.path.join(data_dir, "levels%d.dat" % e),
+    pairs = [(data_path(data_dir, "levels%d.dat" % e),
               os.path.join(dump_dir, "text", "episode_scripts", "levels%d.txt" % e))
              for e in range(1, 6)]
-    pairs += [(os.path.join(data_dir, "cubetxt%d.dat" % e),
+    pairs += [(data_path(data_dir, "cubetxt%d.dat" % e),
                os.path.join(dump_dir, "text", "datacubes", "cubetxt%d.txt" % e))
               for e in range(1, 6)]
-    pairs.append((os.path.join(data_dir, "tyrian.cdt"),
+    pairs.append((data_path(data_dir, "tyrian.cdt"),
                   os.path.join(dump_dir, "text", "credits.txt")))
 
     for src, out in pairs:
@@ -178,10 +204,15 @@ def _records(data_dir, dump_dir):
         total += len(want)
 
     # tyrian.hdt keeps its text in labelled groups, so compare through the JSON.
-    hdt = os.path.join(data_dir, "tyrian.hdt")
+    hdt = data_path(data_dir, "tyrian.hdt")
     if os.path.exists(hdt):
-        offset = struct.unpack_from("<i", tf.read_file(hdt), 0)[0]
-        want = decrypted_records(hdt, 4, offset)
+        # Tyrian 2000 prefixes the text with the offset of the item tables behind
+        # it. Tyrian 1.1 has none, so its text runs from byte 0 to the last byte.
+        start, end = 0, None
+        if tf.HDT_ITEM_OFFSET:
+            start = 4
+            end = struct.unpack_from("<i", tf.read_file(hdt), 0)[0]
+        want = decrypted_records(hdt, start, end)
         text = json.load(open(os.path.join(dump_dir, "text", "hdt_text.json"), encoding="utf-8"))
         got = []
         for i, group in enumerate(text["groups"]):
@@ -196,13 +227,17 @@ def _records(data_dir, dump_dir):
     return "%d records" % total
 
 
-@check("tyrian.hdt text ends exactly at the item-data offset")
+@check("tyrian.hdt text ends where the file says it should")
 def _hdt_alignment(data_dir, dump_dir):
     text = json.load(open(os.path.join(dump_dir, "text", "hdt_text.json"), encoding="utf-8"))
-    require(text["textEndOffset"] == text["itemDataOffset"],
-            "text ends at %d, item data starts at %d"
-            % (text["textEndOffset"], text["itemDataOffset"]))
-    return "offset %d" % text["itemDataOffset"]
+    # Tyrian 2000 stores the item tables behind the text and names their offset;
+    # Tyrian 1.1 keeps its tables elsewhere, so the text runs to the last byte.
+    end = text["itemDataOffset"]
+    if end is None:
+        end = os.path.getsize(data_path(data_dir, "tyrian.hdt"))
+    require(text["textEndOffset"] == end,
+            "text ends at %d, expected %d" % (text["textEndOffset"], end))
+    return "offset %d" % end
 
 
 # Tables and levels: account for every byte
@@ -216,22 +251,53 @@ def _item_tables(data_dir, dump_dir):
         if not os.path.exists(index_path):
             continue
         index = json.load(open(index_path, encoding="utf-8"))
-        size = os.path.getsize(os.path.join(data_dir, index["source"]))
+        size = os.path.getsize(data_path(data_dir, index["source"]))
         require(index["endOffset"] + index["bytesAfterLastTable"] == size,
                 "%s: %d + %d != %d" % (label, index["endOffset"],
                                        index["bytesAfterLastTable"], size))
-        require(index["bytesAfterLastTable"] == 77,
-                "%s: expected one trailing enemy record (77 bytes), found %d"
+        # Tyrian 2000 leaves one spare enemy record past the tables; Tyrian 1.1
+        # ends its level file on the last one.
+        require(index["bytesAfterLastTable"] in (0, 77),
+                "%s: expected nothing or one trailing enemy record, found %d bytes"
                 % (label, index["bytesAfterLastTable"]))
         checked += 1
     return "%d table sets" % checked
+
+
+@check("the stored item counts are the ones this release uses")
+def _stored_counts(data_dir, dump_dir):
+    seen = 0
+    for label in sorted(os.listdir(os.path.join(dump_dir, "gamedata"))):
+        index_path = os.path.join(dump_dir, "gamedata", label, "index.json")
+        if not os.path.exists(index_path):
+            continue
+        index = json.load(open(index_path, encoding="utf-8"))
+        require(tuple(index["storedCounts"]) == tuple(tf.STORED_COUNTS),
+                "%s stores %s, expected %s"
+                % (label, tuple(index["storedCounts"]), tuple(tf.STORED_COUNTS)))
+        seen += 1
+    return "%s in %d sets" % (",".join(str(n) for n in tf.STORED_COUNTS), seen)
+
+
+@check("compiled frames fit the cell the contact sheets lay them on")
+def _sprite2_cells(data_dir, dump_dir):
+    tallest, n = 0, 0
+    for label, kind, blob in _each_bank(data_dir):
+        if kind != "sheet":
+            continue
+        for frame in tf.load_sprite2_sheet(blob):
+            require(frame["height"] <= dump_data.SPRITE2_CELL[1],
+                    "%s frame %d is %d rows tall" % (label, frame["index"], frame["height"]))
+            tallest = max(tallest, frame["height"])
+            n += 1
+    return "%d frames, tallest %d of %d rows" % (n, tallest, dump_data.SPRITE2_CELL[1])
 
 
 @check("level records leave no gap in the .lvl file")
 def _level_gaps(data_dir, dump_dir):
     levels = 0
     for episode in range(1, 6):
-        path = os.path.join(data_dir, "tyrian%d.lvl" % episode)
+        path = data_path(data_dir, "tyrian%d.lvl" % episode)
         if not os.path.exists(path):
             continue
         data, count, offsets = tf.load_level_index(path)
@@ -250,7 +316,7 @@ def _level_gaps(data_dir, dump_dir):
 def _demos(data_dir, dump_dir):
     total = 0
     for n in range(1, 6):
-        path = os.path.join(data_dir, "demo.%d" % n)
+        path = data_path(data_dir, "demo.%d" % n)
         if not os.path.exists(path):
             continue
         demo = tf.load_demo(path)
@@ -295,33 +361,38 @@ def _blit_sprite_reference(width, height, data):
     return buf
 
 
-def _sprite2_reference(blob, offset):
-    """The linear cursor src/sprite.c sprite2_ink_bounds() walks: blit_sprite2 at pitch 12."""
+def _sprite2_reference(blob, offset, end):
+    """The linear cursor src/sprite.c sprite2_ink_bounds() walks: blit_sprite2 at pitch 12.
+
+    Stops at `end` as well as at 0x0f: Tyrian 1.1 leaves the terminator out and
+    bounds a frame with the start of the next one.
+    """
     painted = {}
     cursor, i = 0, offset
-    while i < len(blob) and blob[i] != 0x0f:
+    while i < end and blob[i] != 0x0f:
         cursor += blob[i] & 0x0f
         run = (blob[i] >> 4) & 0x0f
         for _ in range(run):
             i += 1
+            if i >= end:
+                break
             painted[cursor] = blob[i]
             cursor += 1
         i += 1
-    return painted
+    return painted, i
 
 
 def _each_bank(data_dir):
+    present = set(data_files(data_dir))
     for name in ("tyrian.shp", "tyrianc.shp"):
-        path = os.path.join(data_dir, name)
-        if os.path.exists(path):
-            for (folder, kind, _title), blob in tf.load_main_shp(path):
+        if name in present:
+            for (folder, kind, _title), blob in tf.load_main_shp(data_path(data_dir, name)):
                 yield "%s/%s" % (name, folder), kind, blob
     for name in ("estsc.shp", "estpa.shp"):
-        path = os.path.join(data_dir, name)
-        if os.path.exists(path):
-            yield name, "array", tf.read_file(path)
-    for path in sorted(glob.glob(os.path.join(data_dir, "newsh*.shp"))):
-        yield os.path.basename(path), "sheet", tf.read_file(path)
+        if name in present:
+            yield name, "array", tf.read_file(data_path(data_dir, name))
+    for name in data_files(data_dir, "newsh", ".shp"):
+        yield name, "sheet", tf.read_file(data_path(data_dir, name))
 
 
 @check("Sprite_array decode matches blit_sprite()")
@@ -346,11 +417,15 @@ def _sprite2(data_dir, dump_dir):
     for label, kind, blob in _each_bank(data_dir):
         if kind != "sheet":
             continue
-        for index, offset in enumerate(tf.sprite2_offsets(blob), start=1):
+        offsets = tf.sprite2_offsets(blob)
+        for index, offset in enumerate(offsets, start=1):
             if offset >= len(blob):
                 continue
-            want = _sprite2_reference(blob, offset)
-            height, got = tf.decode_sprite2(blob, offset)
+            end = offsets[index] if index < len(offsets) and offsets[index] > offset else len(blob)
+            want, stopped = _sprite2_reference(blob, offset, end)
+            require(stopped <= end,
+                    "%s frame %d reads %d bytes past the next frame" % (label, index, stopped - end))
+            height, got = tf.decode_sprite2(blob, offset, end)
             painted = sum(1 for v in got if v is not None)
             require(painted == len(want),
                     "%s frame %d paints %d pixels, engine paints %d"
@@ -365,7 +440,7 @@ def _sprite2(data_dir, dump_dir):
 
 @check("palette expansion matches JE_loadPals")
 def _palette(data_dir, dump_dir):
-    path = os.path.join(data_dir, "palette.dat")
+    path = data_path(data_dir, "palette.dat")
     raw = tf.read_file(path)
     expanded, six = tf.load_palettes(path)
     for p in range(len(expanded)):
@@ -383,7 +458,8 @@ def _palette(data_dir, dump_dir):
 @check("tile PNGs hold the source bytes")
 def _tiles(data_dir, dump_dir):
     n = 0
-    for path in sorted(glob.glob(os.path.join(data_dir, "shapes*.dat"))):
+    for name in data_files(data_dir, "shapes", ".dat"):
+        path = data_path(data_dir, name)
         stem = os.path.splitext(os.path.basename(path))[0]
         for i, tile in enumerate(tf.load_tileset(path)):
             if tile is None:
@@ -400,7 +476,7 @@ def _tiles(data_dir, dump_dir):
 
 @check("tyrian.pic screens decode to exactly 320x200")
 def _pic(data_dir, dump_dir):
-    path = os.path.join(data_dir, "tyrian.pic")
+    path = data_path(data_dir, "tyrian.pic")
     data = tf.read_file(path)
     r = tf.Reader(data)
     r.u16()
@@ -427,11 +503,8 @@ def _pic(data_dir, dump_dir):
 @check("stand-alone PCX bodies are fully consumed")
 def _pcx(data_dir, dump_dir):
     n = 0
-    for name in ("tshp2.pcx", "shipedit.pcx"):
-        path = os.path.join(data_dir, name)
-        if not os.path.exists(path):
-            continue
-        body = tf.read_file(path)[128:-769]
+    for name in data_files(data_dir, suffix=".pcx"):
+        body = tf.read_file(data_path(data_dir, name))[128:-769]
         px = j = 0
         while px < 320 * 200 and j < len(body):
             p = body[j]
@@ -452,11 +525,11 @@ def _audio(data_dir, dump_dir):
     n = 0
     banks = [("tyrian.snd", tf.SFX_COUNT), ("voices.snd", tf.VOICE_COUNT),
              ("voicesc.snd", tf.VOICE_COUNT), ("music.mus", None)]
+    present = set(data_files(data_dir))
     for name, expected in banks:
-        path = os.path.join(data_dir, name)
-        if not os.path.exists(path):
+        if name not in present:
             continue
-        data = tf.read_file(path)
+        data = tf.read_file(data_path(data_dir, name))
         r = tf.Reader(data)
         count = r.u16()
         if expected is not None:
@@ -473,14 +546,25 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default=os.path.join(REPO, "data"))
-    parser.add_argument("--dump", default=os.path.join(REPO, "dump"))
+    parser.add_argument("--dump", help="dump to check (default: the tree for this release)")
     parser.add_argument("--reproducible", action="store_true",
                         help="also regenerate into a scratch tree and compare hashes")
     args = parser.parse_args(argv)
 
-    for path, what in ((args.data, "data directory"), (args.dump, "dump directory")):
-        if not os.path.isdir(path):
-            parser.error("%s not found: %s" % (what, path))
+    if not os.path.isdir(args.data):
+        parser.error("data directory not found: %s" % args.data)
+    if args.dump is None:
+        args.dump = os.path.join(REPO, dump_data.DUMP_ROOT,
+                                 dump_data.TREE_NAME[tf.sniff_version(args.data)])
+    if not os.path.isdir(args.dump):
+        parser.error("dump directory not found: %s" % args.dump)
+
+    # The checks read the same tables the dump was written with.
+    manifest = os.path.join(args.dump, "manifest.json")
+    version = None
+    if os.path.exists(manifest):
+        version = json.load(open(manifest, encoding="utf-8")).get("dataVersion")
+    tf.use_version(version or tf.sniff_version(args.data))
 
     failures = 0
     print("1..%d" % (len(CHECKS) + (1 if args.reproducible else 0)))

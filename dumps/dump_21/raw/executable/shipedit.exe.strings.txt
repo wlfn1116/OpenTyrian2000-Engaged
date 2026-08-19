@@ -1,0 +1,371 @@
+16STUB
+Stub error (
+)$DPMI error (
+)$Loader error (
+insufficient memory for initialization$memory manager does not support DPMI or VCPI$must be run on a 386 processor$unrecognized hardware, run DPMIINST$unrecognized environment parameters$unable to initialize page tables$bad A20 off parameter$bad A20 on parameter$bad switch parameter$insufficient extended memory$cannot create FRET$cannot create linear address space$cannot create system linear space$cannot copy kernel to high memory$undefined error$unable to copy DOSX$unable to copy IDT$unable to create int chain table$unable to create PM stack$unable to initialize swapping$
+: $unrecognized error$internal error$out of memory$out of selectors$out of internal tables$invalid dynamic link$couldn't open file$invalid exe format$wrong version$cannot initialize$DLL initialization error$,
+$needs at least 286$can't find $unexpected DOS error$file not found: $path not found: $access denied: $not enough memory to load $invalid environment$invalid file $
+0123456789ABCDEFXXXP
+rtm.exe
+dpmi16bi.ovl
+$*$*$*
+PM STUB
+SHIPEDIT
+KERNEL
+KERNEL
+SHIPEDIT.EXE
+SHIP EDITOR - SHIP #
+<ACTIVATE>   PLAYER 1: TAB & 
+   PLAYER 2: CAPS & 
+Are You Sure?
+No Files found, you Git!
+Sorting...
+        
+>t5@v9
+>t5[s2
+SHIPEDIT.PCX
+EDIT GRAPHICS
+<- SHIP 
+Shape file $ not found.  Will create a new file.U
+SONG SELECTION
+ONTINUOUS PLAY
+t!jsjsj}jvj
+jrjrj~jwh
+jsjsj}jvj
+jrjrj~jwh
+j?j?j?
+SHIPEDIT.PCX
+Tyrian version 
+Tyrian Edit v1.0
+Mouse Active
+SHAPES
+SETTINGS.DAT
+USER.SHP
+The editor file is USER.SHP.The compiled file used by Tyrian is NEWSH$.SHP
+USER.SHP
+NEWSH$.SHP
+PALETTE.DAT
+TYRIAN.CFG
+Tyrian.SAV
+TYRIAN.SAV
+tyrian.sav
+tyrian.cfg
+PSQRVW
+_^ZY[X
+SOUND.RPT
+Tyrian Sound Report:
+Using SoundBlaster
+DSP Version 
+SB port 
+Interrupt 
+SoundBlaster DMA channel 1
+SoundBlaster DMA channel 3
+SoundBlaster DMA channel 0
+Attempted Sound effects mode #
+Error code: ( (probably means you have no sound card)
+Attempted FM/Midi mode #' (probably means you have no midi card)
+End of transmission.
+SOUND? parameter:6 SoundCard settings and info stored in file SOUND.RPT.
+Press any key to continue.
+music.mus
+TYRIAN.SND
+VOICES.SND
+Warning: File not found --> 
+Searching for Tyrian files...
+:\TYRIAN\
+Tyrian data files found at *WARNING: Unable to find Tyrian data files.
+Stopped on file =Please reinstall the files or place the CD-Rom in your drive.
+TYRIAN.CFG
+Sound System (C)1993-1995 by LOUDNESS. All rights reserved.
+Date: 10/09/95 Time: 20:38:07
+PSQRVW
+_^ZY[X
+%2>JVbmx
+xmbVJ>2%
+!%*/49>CIOUZagmsy
+ysmgaZUOIC>94/*%!
+!#%'),.0369<?BEILPTX\`ejoty
+LIFC@=:74
+Portions Copyright (c) 1983,92 BorlandEU
+WVQUSP
+NGItL&
+MAIN SCREEN
+GRAPHICS
+JUKEBOX
+Nothing
+Normal Closest Remap
+Greyscale Remap
+Decolorizing
+Colorizing
+Wacky Decolorizing
+Full Colorizing
+Random Optimizer
+UPS : Tan Ship
+Gencore : Dark Grey Ship
+Microsol : Light Grey Ship
+U-Ship
+Player 1 : Silver Ship
+Player 2 : Big Brown Ship
+Carrot Ship
+Custom ship #1
+Custom ship #2
+Custom ship #3
+Custom ship #4
+Custom ship #5
+Custom ship #6
+Custom ship #7
+Custom ship #8
+FPulse Cannon
+FMulti Cannon
+FMega Cannon
+FLaser
+FZica Laser
+FWeird Protron
+FVulcan Cannon
+FLightning Cannon
+RStarburst
+RMulti Cannon
+RSonic Wave
+RProtron
+FProtron
+FWild Ball
+RVulcan Cannon
+FMissile Launcher
+RFireball
+FMega Pulse
+FHeavy Missile Launcher
+RHeavy Missile Launcher
+RMega Pulse
+FBanana
+RBanana
+FHotdog
+RHotdog
+FHyper Pulse
+RGuided Micro Bombs
+RHeavy Guided Bombs
+RScatter Wave
+FGuided Bombs
+FShuruiken Field
+FPoison Bomb
+FProtron Wave
+FThe Orange Juicer
+Single Shot
+Dual Shot
+Charge Cannon
+Vulcan Shot
+Wobbley
+Super Missile       Ammo 5
+Atom Bombs          Ammo 40
+Phoenix Device      Ammo 8
+Plasma Storm        Ammo 10
+Mini-Missile        Ammo 100
+Buster Rocket       Ammo 30
+Zica Supercharger
+Microbomb           Ammo 60
+8-Way Microbomb     Ammo 30
+Post-it Mine        Ammo 20
+Mint-O-Ship
+Flamethrower
+Side Ship           Ammo 100
+Companion Ship Warfly
+FrontBlaster   [RIGHT ONLY]
+Companion Ship Gerund
+FireBomb       [RIGHT ONLY]
+Indigo         [RIGHT ONLY]
+Companion Ship ???
+Tangerine      [RIGHT ONLY]
+FrontBlasterII [RIGHT ONLY]
+Wallop Beam    [RIGHT ONLY]
+Protron -B-    [RIGHT ONLY]
+Tropical Cherry Companion
+Repulsor
+Pearl Wind
+Soul of Zinglon
+Attractor
+Ice Beam
+Blade Field
+Sandstorm
+Minefield
+Dual Vulcan
+Banana Bomb
+Protron Dispersal
+Xega Ball
+Mega Laser Dual
+Orange Shield
+Pulse Blast
+Mega Laser
+Structural Integrity Field
+Advanced Integrity Field
+Gencore Low Energy Field
+Gencore High Energy Field
+Microcorp LXS Class A
+Microcorp LXS Class B
+Microcorp LXS Class C
+Microcorp HXS Class A
+Microcorp HXS Class B
+Microcorp HXS Class C
+Standard MR-9
+Standard MR-12
+Gencore Custom MR-12
+Standard MicroFusion
+Advanced MicroFusion
+Gravitron Pulse-Wave
+   Ship #
+Ship Graphic
+Front Weapon
+Rear Weapon
+Special Weapon
+Left Sidekick
+Right Sidekick
+Shield
+The Prime Chair
+Transon Lohk
+Javi Onukala
+Mantori
+Nortaneous
+Dougan
+General Zinglon
+Late Gyges Phildren
+Vykromod
+Borogar
+ShipMaster Carlos
+Jake Stone
+Malvineous Havershim
+Marta Louise Velasquez
+Jazz Jackrabbit
+Eva Earlong
+Devan Shell
+Crystal Devroe
+Steffan Tommas
+Milano Angston
+Christian
+Shirro
+Jean-Paul
+Ibrahim Hothe
+Cossette Akira
+Hans Kreissack
+Rennis the Rat Guard
+Jackrabbits
+Team Tyrian
+The Elam Brothers
+Dare to Dream Team
+Pinball Freaks
+Extreme Pinball Freaks
+Team Vykromod
+Epic All-Stars
+Hans Keissack's WARriors
+Team Overkill
+Pied Pipers
+Gencore Growlers
+Microsol Masters
+Beta Warriors
+Team Loco
+The Shellians
+Jungle Jills
+Murderous Malvineous
+The Traffic Department
+Clan Mikal
+Clan Patrok
+Carlos' Crawlers
+>AAAAA>
+?@@<@@?
+AAA^@@@
+?@@@@@@
+>AA>AA>
+^AA^@@@
+r%'%%%%
+>AA]AAA
+>AA9AA=
+AAA}AAA
+~   !!
+7IIAAAA
+CEIQaAA
+>AAAAA>
+>AAAAQ> 
+AAAAAA>
+AAABD(
+AAAAIU"
+0123456789ABCDEF
+ASTEROI2.DAT
+ASTEROID.DAT
+BUY.DAT
+CAMANIS.DAT
+CAMANISE.DAT
+DELIANI.DAT
+DELIANI2.DAT
+ENDING1.DAT
+ENDING2.DAT
+ENDLEVEL.DAT
+GAMEOVER.DAT
+GRYPHON.DAT
+GRYPHONE.DAT
+GYGES.DAT
+GYGESE.DAT
+HALLOWS.DAT
+ZICA.DAT
+TYRSONG2.DAT
+LOUDNESS.DAT
+NAVC.DAT
+SAVARA.DAT
+SAVARAE.DAT
+SPACE1.DAT
+SPACE2.DAT
+STARENDB.DAT
+START5.DAT
+TALK.DAT
+TORM.DAT
+TRANSON.DAT
+TYRSONG.DAT
+ZANAC3.DAT
+ZANACS.DAT
+SAVARA2.DAT
+HISCORE.DAT
+TYR4-1.DAT
+TYR4-3.DAT
+TYR4-2.DAT
+TYR4-0.DAT
+TYR4-4.DAT
+TYR4-5.DAT
+TYR-BEER.DAT
+Asteroid Dance Part 2
+Asteroid Dance Part 1
+Buy/Sell Music
+CAMANIS
+CAMANISE
+Deli Shop Quartet
+Deli Shop Quartet No. 2
+Ending Number 1
+Ending Number 2
+End of Level
+Game Over Solo
+Gryphons of the West
+Somebody pick up the Gryphone
+Gyges, Will You Please Help Me?
+I speak Gygese
+Halloween Ramble
+Tunneling Trolls
+Tyrian, The Level
+The MusicMan
+The Navigator
+Come Back to Me, Savara
+Come Back again to Savara
+Space Journey 1
+Space Journey 2
+The final edge
+START5
+Parlance
+Torm - The Gathering
+TRANSON
+Tyrian: The Song
+ZANAC3
+ZANACS
+Return me to Savara
+High Score Table
+One Mustn't Fall
+Sarah's Song
+A Field for Mag
+Rock Garden
+Quest for Peace
+Composition in Q
+ULTRAMID
+Runtime error 000 at 0000:0000.

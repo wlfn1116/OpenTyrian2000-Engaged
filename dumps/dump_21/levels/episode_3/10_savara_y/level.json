@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "Y",
+ "shapeFileChar": "Y",
+ "shapeFile": "shapesy.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  163
+ ],
+ "endOffset": 333592,
+ "episode": 3,
+ "levelFileNumber": 10,
+ "name": "SAVARA Y",
+ "eventCount": 724
+}

@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "8",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  282
+ ],
+ "endOffset": 315446,
+ "episode": 1,
+ "levelFileNumber": 11,
+ "name": "HOLES",
+ "eventCount": 1210
+}

@@ -1,0 +1,8 @@
+id,name,itemGraphic,power,speed,cost,displayName
+0,None                          ,0,0,2,0,None
+1,Standard MR-9                 ,241,10,0,500,Standard MR-9
+2,Advanced MR-12                ,243,14,0,2000,Advanced MR-12
+3,Gencore Custom MR-12          ,269,19,1,5000,Gencore Custom MR-12
+4,Standard MicroFusion          ,245,25,1,10000,Standard MicroFusion
+5,Advanced MircoFusion          ,267,30,0,15000,Advanced MircoFusion
+6,Gravitron Pulse-Wave          ,271,50,-1,50000,Gravitron Pulse-Wave

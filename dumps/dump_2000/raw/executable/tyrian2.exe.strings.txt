@@ -1,0 +1,337 @@
+string
+xalloc
+r.<0ux
+YY<xtZ<XtV
+xalloc
+string *
+string
+WjXjXjXjX
+X"X4X?XJXZX
+V)VAVPV_VsV
+VaWaWaWaW
+W*W9WMWU
+[YiYwY
+YgZgZgZgZ
+Z)Z7ZBZMZZZU
+[:[E[&[0[:[E[
+PQRSTUVW
+_^][[ZYX
+**BCCxh1U
+Bad_cast
+Bad_typeid
+Type_info *
+Type_info
+(~VW_^
+hn!jrj
+h^"jrj
+h^"jrj
+hn!jrj
+>J+d}J3
+F;6J+}
+xalloc
+TStringRef *
+string::lengtherror
+xalloc
+TStringRef
+TReference
+string::lengtherror
+xalloc
+string
+string::outofrange
+NULL CHECK
+Borland C++ - Copyright 1993 Borland Intl.
+Divide error
+MenuHelp
+MenuHelp
+MenuExit
+MenuTitle
+HelpMe
+-ifneeded
+-megaload
+EndAnsi
+EndAnsi
+EndLine
+EndLine
+Out of memory!
+Setup Error: %s
+SetupINI
+LANGUAGE
+Language
+LNGNum
+SetupINI
+Not enough free memory for graphics!
+MegaScrn
+Can't load background screen!
+MegaFont
+Can't load font!
+MegaMenu
+MegaMenu
+MegaMenu
+MegaMenu
+MegaRun
+*setup
+Can't initialize file manager.
+Important SETUP files are missing or damaged!
+Not enough free memory for virtual page!
+BkgndScrn
+Can't load background screen!
+Can't load font!
+SetupCD
+CDViolation
+SetupNET
+SetupCD
+_Descr
+MODEM_BrandInfo
+MODEM_BrandFile
+MODEMS:Data
+MODEMS:Data
+MODEM_Brand
+MODEMS:Data
+MODEMBRANDNUM
+MODEMBRAND
+MODEMINIT
+MODEM_ChangeInit
+MODEM_PromptInit
+MODEMINIT
+MODEM_ChangeAdvanced
+MODEM_PromptAdvanced
+MODEMADVANCED
+MODEM_PromptPhone
+MODEMPHONE
+MODEM_Com
+MODEM_ComList
+MODEMCOM
+MODEM_Speed
+MODEM_SpeedList
+MODEM_SpeedRate
+MODEMBAUD
+MODEM_Win1
+MODEM_Win2
+MODEM_WinBrand
+MODEM_WinCom
+MODEM_WinSpeed
+MODEM_COMList
+MODEM_SpeedList
+MODEM_WinInit
+MODEM_WinAdvanced
+MODEM_Brand
+MODEM_Init
+MODEM_Com
+MODEM_Speed
+MODEM_Advanced
+MODEM_Call
+MODEM_Wait
+MODEM_Already
+ExitToMain
+MODEM_Menu
+call=NETMODEM.EXE -c %i -b %s -i "%s" %s %s NETARENA -l 2 FILE0001
+MODEM_SpeedList
+SERIAL_Win1
+SERIAL_Win2
+SERIAL_WinCom
+SERIAL_WinSpeed
+SERIAL_PortList
+SERIAL_SpeedList
+SERIAL_WinAdvanced
+SERIAL_ChangeAdvanced
+SERIAL_PromptAdvanced
+SERIALADVANCED
+SERIAL_Port
+SERIAL_PortList
+SERIALCOM
+SERIAL_Speed
+SERIAL_SpeedList
+SERIAL_SpeedRate
+SERIALSPEED
+SERIAL_Port
+SERIAL_Speed
+SERIAL_Advanced
+SERIAL_Begin
+ExitToMain
+SERIAL_Menu
+call=NETMODEM.EXE -c %i -b %s -s %s NETARENA -l 1 FILE0001
+SERIAL_SpeedList
+IPX_ChangeAdvanced
+IPX_PromptAdvanced
+IPXADVANCED
+IPX_WinAdvanced
+IPX_Advanced
+IPX_Begin
+ExitToMain
+IPX_Menu
+call=NETIPX.EXE %s NETARENA -l 0 FILE0001
+%s:INFO
+MODEM_Win1
+MODEM_Win2
+MODEM_WinBrand
+MODEM_WinCom
+MODEM_WinSpeed
+MODEM_COMList
+MODEM_SpeedList
+MODEM_WinInit
+MODEM_WinAdvanced
+MODEM_PromptPhone
+BBSPHONE
+BBS_Other
+MODEM_Brand
+MODEM_Init
+MODEM_Com
+MODEM_Speed
+MODEM_Advanced
+ExitToMain
+BBS_Menu
+%s:PHONE
+call=NETMODEM.EXE
+ -term
+ -c %i -b %s -i "%s" -d "%s" %s NETARENA -lag 3
+MODEM_SpeedList
+ -pcx 
+ FILE0001
+INFO:MODEMCOM
+INFO:MODEMBAUD
+INFO:MODEMCHOICE
+INFO:MODEMBRANDNUM
+AT &F &C1 &D2 &Q5 &K0 S46=0
+INFO:MODEMINIT
+INFO:MODEMINIT
+Standard 14.4 modem
+INFO:MODEMBRAND
+INFO:MODEMBRAND
+INFO:MODEMPHONE
+INFO:MODEMPHONE
+INFO:MODEMADVANCED
+INFO:MODEMADVANCED
+INFO:SERIALCOM
+INFO:SERIALSPEED
+INFO:SERIALADVANCED
+INFO:SERIALADVANCED
+INFO:IPXADVANCED
+INFO:IPXADVANCED
+INFO:BBSPHONE
+INFO:BBSPHONE
+NetTypes
+NetTypes
+_MenuOpt
+ExitToMain
+INFO:NETTYPE
+INFO:NETTYPE
+NetMenu
+NETTYPE
+SERIAL
+CDINIFname
+CDINIModule
+CDINILabel
+CDSetupName
+SetupCD
+CDINIModule
+CDINILabel
+CDINIFname
+@ECHO OFF
+MainEXE
+CDDrivePrompt
+CDSureExit
+CDSureExit
+CDNoAB
+CDLocalDir
+CDDirPrompt
+CDNoRoot
+CDLocalSpace
+CDNoSpace
+CDBadDir
+CDCopying
+CDFiles
+CDErrorCopy
+CDINIModule
+CDINILabel
+CDINIModule
+CDINILabel
+CDINIModule
+CDINIFname
+CDINIFname
+YesWord
+NoWord
+        
+SolidWin
+%s="%s"
+%s="%s",
+   "%s"
+its_save_text_element 1
+its_save_text_element 2
+ITS File
+its_save_binary 1
+its_save_binary 2
+its_load_binary 4
+ITS File
+its_load_binary 5
+International
+Module #%i: '%s', contains %i entries.
+   %i:%s='%s'
+   ...'%s'
+BOX File
+Box %i: (box file %s) contains %i subfiles.
+   File %i name='%s', info='%s',offset=%li, size=%li
+Attempted to open two BOX files simultaneously.
+fwritestring 1
+fwritestring 2
+fwritestring 3
+freadstring 1
+freadstring 2
+Abnormal program termination
+),(((((),(((
+Out of memory
+         !!!!!                  
+@@@@@@@@@@@@@@@
+@@@@@@@
+@@@@@@
+(null)
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+Saturday
+January
+February
+August
+September
+October
+November
+December
+%s %s %02d %02d:%02d:%02d %4d
+Error 0
+Invalid function number
+No such file or directory
+Path not found
+Too many open files
+Permission denied
+Bad file number
+Memory arena trashed
+Not enough memory
+Invalid memory block address
+Invalid environment
+Invalid format
+Invalid access code
+Invalid data
+No such device
+Attempted to remove current directory
+Not same device
+No more files
+Invalid argument
+Arg list too big
+Exec format error
+Cross-device link
+Math argument
+Result too large
+File already exists
+Possible deadlock
+Unknown error
+<notype>
+**BCCxh1
+COMPAQ
+print scanf : floating point formats not linked
+COMSPEC
+COMSPEC
+String reference out of range
+String reference out of range
+String reference out of range

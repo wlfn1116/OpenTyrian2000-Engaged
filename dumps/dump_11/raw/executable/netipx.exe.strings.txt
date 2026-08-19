@@ -1,0 +1,58 @@
+!ZYr+3
+Turbo-C - Copyright (c) 1988 Borland Intl.
+Divide error
+Abnormal program termination
+   NETIPX: Closing socket %Xh.
+------------------------------------------------------------------------------
+   Usage: NETIPX [@paramfile[,section]] [parameters] gamename[.exe]
+   Parameters:
+      -S <skt>       Our IPX socket number in hex (Normally %Xh)
+      -N <net> [skt] Recognize IPX network segment & optional socket
+      -D             Debugging (full messages & beeps)
+      -B <baud>      Slow down to simulate modem speed (example: -B 9600)
+   Parameter files: The default section for this driver is %s.
+   Use the ';' character for comments in parameter files.  Sample: 
+      [NETIPX]        ; Denotes start of section
+      -S 3D01         ; Use 3D01h as our outgoing IPX socket
+      -N 1 3D00       ; Recognize servers on net 1, socket 3D00h
+      -N 2 3D05       ; Recognize servers on net 2, socket 3D05h
+------------------------------------------------------------------------------
+   Simulating %Li baud
+   Broadcast net %lX, socket %X.
+EpicNET
+NETIPX
+I feel good!
+Epic IPX Daemon v1.00
+   Copyright 1995 Epic MegaGames, Inc.
+NETIPX
+   You don't have an IPX network driver loaded.  You must have have
+   IPX.COM or IPXODI.COM.  Run HELPME.EXE for more information.
+   Your IPX address is %s, socket %Xh.
+   Error: Could not open socket.  IPX may not be installed properly,
+   or you are running through Windows without the correct settings.
+   Parameters from file 
+, section 
+: Can't read parameter file
+: Can't find section 
+Bad parameter 
+Bad parameter 
+ERROR: You must specify a value for parameter 
+ERROR: You must specify a value for parameter 
+ERROR: Parameter 
+ must be between 
+0123456789ABCDEF
+Driver Interrupt has been changed!
+   %s: Int 8 has changed!
+I feel good!
+: Could not find an available interrupt.
+: Hooked onto interrupt 
+   %s: Hooking Timer.
+   Don't run this driver alone.  Please run the game.
+         !!!!!                  
+@@@@@@@@@@@@@@@
+@@@@@@@
+@@@@@@
+print scanf : floating point formats not linked
+(null)
+0123456789ABCDEF
+COMPAQ

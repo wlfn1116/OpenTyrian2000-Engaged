@@ -1,0 +1,315 @@
+16STUB
+Stub error (
+)$DPMI error (
+)$Loader error (
+insufficient memory for initialization$memory manager does not support DPMI or VCPI$must be run on a 386 processor$unrecognized hardware, run DPMIINST$unrecognized environment parameters$unable to initialize page tables$bad A20 off parameter$bad A20 on parameter$bad switch parameter$insufficient extended memory$cannot create FRET$cannot create linear address space$cannot create system linear space$cannot copy kernel to high memory$undefined error$unable to copy DOSX$unable to copy IDT$unable to create int chain table$unable to create PM stack$unable to initialize swapping$
+: $unrecognized error$internal error$out of memory$out of selectors$out of internal tables$invalid dynamic link$couldn't open file$invalid exe format$wrong version$cannot initialize$DLL initialization error$,
+$needs at least 286$can't find $unexpected DOS error$file not found: $path not found: $access denied: $not enough memory to load $invalid environment$invalid file $
+0123456789ABCDEFXXXP
+rtm.exe
+dpmi16bi.ovl
+$*$*$*
+PM STUB
+KERNEL
+KERNEL
+SETUP.EXE
+TYRIAN.SHP
+Press ESC to quit the jukebox.(Arrow keys change the song being played.
+Sound Cards
+SETUP'Unable to initialize Gravis Ultrasound./You probably do not have a ~Gravis Ultrasound~.
+ERROR 
+: Sound Effects disabled.:You probably do not have a ~SoundBlaster~-compatible card.!ERROR: Ultramid driver not found.&You probably do not have midi enabled.
+: AWE not found.
+: Unable to initialize Midi.!Please select a sound card first.CNote: You must load setup again for ~midi~ settings to take effect.
+For your information:
+Sound FX Error #$ occured after sound initialization.?Remember: You need to have UltraMid loaded to get FX in Tyrian.
+Type "TYRIAN" to play the game.
+TYRIAN.PIC
+TYRIAN.PIC
+PALETTE.DAT
+TYRIAN.SHP
+TYRIAN.CFG
+Tyrian.SAV
+TYRIAN.SAV
+tyrian.sav
+tyrian.cfg
+TYRIAN
+PSQRVW
+_^ZY[X
+SOUND.RPT
+Tyrian Sound Report:
+Using SoundBlaster
+DSP Version 
+SB port 
+Interrupt 
+SoundBlaster DMA channel 1
+SoundBlaster DMA channel 3
+Attempted Sound effects mode #
+Error code: ( (probably means you have no sound card)
+Attempted FM/Midi mode #' (probably means you have no midi card)
+End of transmission.
+SOUND? parameter:6 SoundCard settings and info stored in file SOUND.RPT.
+Press any key to continue.
+music.mus
+music.mus
+TYRIAN.SND
+VOICES.SND
+loudness.awe
+TYRIAN.SND
+VOICES.SND
+Warning: File not found --> 
+Tyrian.HDT
+Searching for Tyrian files...
+:\TYRIAN\TYRIAN.HDT
+:\TYRIAN\
+Tyrian data files found at *WARNING: Unable to find Tyrian data files.=Please reinstall the files or place the CD-Rom in your drive.
+TYRIAN.CFG
+Keyboard redirection disabled.
+Sound System (C)1993-1995 by LOUDNESS. All rights reserved.
+Date: 07/28/95 Time: 15:29:08
+PSQRVW
+_^ZY[X
+%2>JVbmx
+xmbVJ>2%
+!%*/49>CIOUZagmsy
+ysmgaZUOIC>94/*%!
+!#%'),.0369<?BEILPTX\`ejoty
+LIFC@=:74
+Portions Copyright (c) 1983,92 BorlandEU
+WVQUSP
+NGItL&
+No music
+FM Sound
+SB-16 AWE
+Gravis Midi
+Midi 330h
+Midi 320h
+Midi 332h
+Midi 334h
+Midi 336h
+Midi 300h
+Disable all music.
+0Play ~Adlib~ or ~SoundBlaster~ compatible music.
+'~SoundBlaster AWE~ wavetable synthesis.
+;~Gravis Ultrasound~ midi emulation using ~Ultramid~ driver.(Play ~General Midi~ or compatible music.
+No effects
+SoundBlaster
+Gravis
+Disable all sound effects.
+*Play ~SoundBlaster~ or compatible effects.
+1Play Digital sound through a ~Gravis Ultrasound~.
+3Use the ~Windows Sound System~ for Digital effects.
+Normal
+Pentium
+Laptop Vga
+/Low detail.  Recommended for a ~386~ processor.
+2Normal detail.  Recommended for a ~486~ processor.
+.High detail.  Includes transparent explosions.
+;All of ~High detail~ plus second background is transparent.
+-~Laptop~ or other ~nonstandard-VGA~ displays.
+Music:
+Music volume
+Sound Effects:
+Sound volume
+Game Detail
+Jukebox
+EXIT and SAVE
+Select your music card.
+=Use the left/right ~arrow keys~ to Change the ~music~ volume.
+Select your sound effects card.
+?Use the left/right ~arrow keys~ to Change the ~effects~ volume.
+$Select your computer processor type.
+Listen to the songs in Tyrian.
+=Exit and save configuration.  Press ESC to quit and not save.
+Mediavision Thunderboard
+Pro-Audio Spectrum 16
+SoundBlaster
+SoundBlaster Pro
+SoundBlaster 16
+Terratec Maestro32
+Mediavision Thunderboard
+SoundBlaster
+SoundBlaster Pro
+SoundBlaster 16
+Gravis UltraSound
+Ensoniq Soundscape
+Rap 10
+Terratec Maestro32
+WaveBlaster Midi
+Windows Sound System
+SoundBlaster with AWE
+DMA 1 (Default
+'Select this if you don't know your DMA.
+Force Tyrian to use DMA 3.
+INTSHPB.PCX
+SETUP2.PCX
+TYRPLAY.PCX
+TYRLOG2.PCX
+P1.PCX
+TYRPLAY2.PCX
+BUC4.PCX
+GMOVR4a.PCX
+GMOVR4b.PCX
+EPICSKY.PCX
+DESTRUCT.PCX
+ECLIPSE.PCX
+The Prime Chair
+Transon Lohk
+Javi Onukala
+Mantori
+Nortaneous
+Dougan
+General Zinglon
+The late Gyges Phildren
+Vykromod
+Borogar
+ShipMaster Carlos
+Jake Stone
+Malvineous Havershim
+Marta Louise Velasquez
+Jazz Jackrabbit
+Eva Earlong
+Devan Shell
+Crystal Devroe
+Steffan Tommas
+Milano Angston
+Christian
+Shirro
+Jean-Paul
+Ibrahim Hothe
+Cossette Akira
+Hans Kreissack
+Rennis the Rat Guard
+Jackrabbits
+Team Tyrian
+The Elam Brothers
+Dare to Dream Team
+Pinball Freaks
+Extreme Pinball Freaks
+Team Vykromod
+Epic All-Stars
+Hans Keissack's WARriors
+Team Overkill
+Pied Pipers
+Gencore Growlers
+Microsol Masters
+Beta Warriors
+Team Loco
+The Shellians
+Jungle Jills
+Murderous Malvineous
+The Traffic Department
+Clan Mikal
+Clan Patrok
+Carlos' Crawlers
+QPGHIJKLMNO 
+#$%&'()*+,-./0123456789:;<CRD
+WXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+0123456789ABCDEF
+TEMP10
+EXPLSM
+BYPASS1
+EXP1RT
+EXPLLOW
+TEMP13
+EXPRETAP
+MT2BOOM
+LAZGUN2
+SPRING
+WARNING
+MACHNGUN
+HYPERD1
+EXPLHUG
+CLINK1
+MISSLE
+TEMP11
+TEMP16
+SMALL1
+POWERUP
+VOICE1
+VOICE2
+VOICE3
+VOICE4
+VOICE5
+VOICE6
+VOICE7
+VOICE8
+VOICE9
+ASTEROI2.DAT
+ASTEROID.DAT
+BUY.DAT
+CAMANIS.DAT
+CAMANISE.DAT
+DELIANI.DAT
+DELIANI2.DAT
+ENDING1.DAT
+ENDING2.DAT
+ENDLEVEL.DAT
+GAMEOVER.DAT
+GRYPHON.DAT
+GRYPHONE.DAT
+GYGES.DAT
+GYGESE.DAT
+HALLOWS.DAT
+ZICA.DAT
+TYRSONG2.DAT
+LOUDNESS.DAT
+NAVC.DAT
+SAVARA.DAT
+SAVARAE.DAT
+SPACE1.DAT
+SPACE2.DAT
+STARENDB.DAT
+START5.DAT
+TALK.DAT
+TORM.DAT
+TRANSON.DAT
+TYRSONG.DAT
+ZANAC3.DAT
+ZANACS.DAT
+SAVARA2.DAT
+HISCORE.DAT
+Asteroid Dance Part 2
+Asteroid Dance Part 1
+Buy/Sell Music
+CAMANIS
+CAMANISE
+Deli Shop Quartet
+Deli Shop Quartet No. 2
+Ending Number 1
+Ending Number 2
+End of Level
+Game Over Solo
+Gryphons of the West
+Somebody pick up the Gryphone
+Gyges, Will You Please Help Me?
+I speak Gygese
+Halloween Ramble
+Tunneling Trolls
+Tyrian, The Level
+The MusicMan
+The Navigator
+Come Back to Me, Savara
+Come Back again to Savara
+Space Journey 1
+Space Journey 2
+The final edge
+START5
+Parlance
+Torm - The Gathering
+TRANSON
+Tyrian: The Song
+ZANAC3
+ZANACS
+Return me to Savara
+High Score Table
+ULTRAMID
+BORDER
+RECORD
+NOROBERT
+CONSTANT
+NOSOUND
+JUKEBOX
+MAXVOL
+SOUND?
+Runtime error 000 at 0000:0000.

@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "U",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 158999,
+ "episode": 3,
+ "levelFileNumber": 5,
+ "name": "BONUS",
+ "eventCount": 786
+}

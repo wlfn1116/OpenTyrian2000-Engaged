@@ -1,0 +1,346 @@
+string
+xalloc
+xalloc
+string *
+string
+OY[YdYuY
+YCZCZCZCZ
+X)X8XLXaXqX
+X:Y:Y:Y:Y
+4[B[P[b[t[
+[@\@\@\@\
+\&\3\U
+PQRSTUVW
+_^][[ZYX
+cmXnXnXn
+**BCCxh1U
+Bad_cast
+Bad_typeid
+Type_info *
+Type_info
+!ZYr-3
+  =omu
+S&:G'u
+S&:G'u
+|(t]WV
+YF;6XU|
+F;6\U|
+F;6ZU|
+F;6^U|
+F;6`U|
+F;6bU|
+2!YF;6\U|
+F;6ZU|
+F;6XU|
+F;6^U|
+F;6ZU}
+F;6XU|
+RF;6XU|
+R;6XU}
+F;6\U|
+F;6XU|
+F;6XU|
+G;>ZU}
+F;6\U}
+F;6\U}
+F;6ZU}
+RF;6XU|
+G;>XU|
+G;>XU|
+RF;6XU|
+F;6`U}
+F;6ZU|
+F;6XU|
+F;6XU|
+F;6ZU}
+F;6XU}
+G;>XU|
+F;6XU|
+RF;6XU|
+RF;6XU}
+xalloc
+TStringRef *
+string::lengtherror
+xalloc
+TStringRef
+TReference
+string::lengtherror
+xalloc
+string
+string::outofrange
+NULL CHECK
+Borland C++ - Copyright 1993 Borland Intl.
+Divide error
+| Challenge | Whisper | Yell | Refresh | Exit 
+Challenge this player to a fight.  Challenge yourself for 1-player game.
+Whisper a message to this player
+Chat with everybody in the arena
+Refresh the player list
+Exit and disconnect
+Want to play a 1-player game? | Yes | No 
+Play a 1-player game - you can still see whispers if they come in
+Go back to challenge menu
+Wait for response, or: | Abort | Whisper 
+Withdraw your challenge
+Whisper a message
+Accept challenge? | Yes | No | Whisper 
+Wait for start, or: | Abort | Whisper
+Don't watch this player's next fight
+Whisper a message
+Exit the Challenge Arena? | Yes | No 
+Unknown
+Starting
+Available
+Practicing
+Challenging
+Pondering
+Watching
+Scoping
+Forming team
+Joining team
+Joined team
+Ran out of memory!
+OMF.EXE
+FIGHTR8.AF
+TYRIAN.EXE
+TYRIAN2.LVL
+Couldn't find game's EXE file!
+You need %liK more conventional memory available to play
+Please free up more conventional memory and try again.
+                                  
+Run HELPME.EXE for more information on freeing up memory.
+Press any key to exit...
+OMF CD
+Tyrian
+Tyrian CD
+Tyrian 1.1
+(Full)
+Player               Action
+Wn/Loss    Version     %2i of %i
+UNKNOWN
+ %3i/%i
+%s: %s
+Whisper a message to %s.  Press ENTER when done, Esc to abort.
+Whisper: 
+Yell: 
+Yell a message to everybody in the Challenge Arena.
+To whisper to one player, type his name, a ':', and your message.
+Press 'Esc' to return to the challenge arena menu.
+Not enough free memory for virtual page!
+NETARENA.PCX
+Can't load background screen!
+NETFONT1.PCX
+Can't load font!
+NETFONT2.PCX
+Can't load font!
+Enter your name: 
+Duplicate name!  Choose another.
+Entering the arena...
+Entering the arena...
+has entered the Arena
+has left the Arena
+Can only challenge %s players!
+Must have same version of %s!
+Challenging %s
+%s refuses your challenge
+%s has left
+%s accepts!
+You are asking to watch %s
+%s won't let you watch
+%s has challenged you!
+%s has left
+%s has lost touch with you
+%s declines your challenge
+gameInit failed.
+Length overflow!
+No free interrupts to hook onto!
+Epic Challenge Arena, Copyright 1995 Epic MegaGames, Inc., all rights reserved. Modifying this program or using it in any way other than as outlined in the included LICENSE.DOC file requires a signed agreement.
+%s !%08lX
+*Error running game!
+ is busy challenging 
+wants to challenge you!
+ is busy pondering 
+Wants to challenge you!
+ is busy fighting 
+Wants to challenge you!
+ is busy watching 
+Wants to challenge you!
+ is busy watching 
+Wants to challenge you!
+ is practicing. Try a whisper.
+Wants to challenge you!
+This player hasn't started
+Wants to challenge you!
+ is busy
+Wants to challenge you!
+Only Epic Challenge Arena player can challenge!
+Only Epic Challenge Arena player can challenge!
+Unsupported!
+Unsupported!
+ has withdrawn
+Can't allocate ArenaServer.
+Challenge Arena
+Can't start net: %s
+Make sure you're running the right program to start a network game.
+For more information, please run HELPME.EXE and see the networking section.
+Don't run the Epic Challenge Arena directly.
+Please run the game instead.
+Starting
+netPostDirRequest: Not posted!
+NETDUMP.TXT
+================================ ArenaDump ================================
+Coreleft=%li.
+has disconnected
+MASTER
+Net already started!
+Not enough memory for packet buffer!
+Not enough memory for ad list!
+Not enough memory for dir req list!
+Not enough memory for ad list!
+Not enough memory for server table!
+Not enough memory for ID's!
+   NET Socket %i %s: 
+Sockets: %3i Free %3i Cli %3i Srv %3i PendC %3i PendS %3i Dead %3i Drv %3i Unk
+NET Socket Packet Queue:
+Incoming
+Outgoing
+NET Global Packet Table:
+   %i buffers, %i available.
+* Socket: %i
+* Length: %i
+* Data:
+ ID      = %i
+ Name    = %i
+ Version = %i
+NET AD: hServer=%i, SERVICE ID=%i, Name=%s, Version=%i
+   Flags=%i, ClientCount=%i, ClientMax=%i, Requests=%i, Socket=%i
+   ShortDescr=%s
+SS_FREE
+SS_DEAD
+SS_ONLINE
+SS_PENDING_S
+SS_PENDING_C
+   [%2i] %-8s %6li %6li %5li %5li %5s %5s %5s %5s %5i
+[%i] %s (%i) [%li/%i] %s %lX
+NET: Socket Tree
+NET: Socket Statistics
+   ----Socket----  --Packets--  --KBytes--  -Min-Byte-  -Max-Byte-  Over
+    Num Name       Sent   Rcvd  Sent  Rcvd  Sent  Rcvd  Sent  Rcvd  runs
+netCloseSocket: Tried to close HSOCKET_NONE!
+Can't open socket through local driver!
+Can't open socket through non-hardware driver!
+Bad socket flags!
+Packet table full!
+Socket table full!
+netIsSocketDead: HSOCKET_NONE!
+netIsSocketPortal: HSOCKET_NONE!
+netIsSocketOnline: HSOCKET_NONE!
+netIsSocketPending: HSOCKET_NONE!
+netIsSocketLocal: HSOCKET_NONE!
+LOCAL:%i
+NETIPX
+/%04X/
+NETMODEM
+MODEM:
+NETINTER
+IP://%i.%i.%i.%i:%i/
+NETBIOS:
+UNKNOWN
+PutPacketInQueueToApp: Debug code mismatch
+netSendPacket: HSOCKET_MASTER!
+netSendPacket: HSOCKET_NONE!
+netSendPacket: NULL Packet!
+netSendPacket: Bad socket %i, Status=%i.
+netKillPacket: NULL Packet!
+Packet allocated on stack instead of via netNewPacket()
+netGetNewPacket: HSOCKET_NONE!
+netPostDirRequest: Socket isn't a portal!
+netRetractDirRequest: Bad HDREQ!
+netSendMsg: MsgPacket==NULL!
+netBroadcastMsg: MsgPacket==NULL!
+You need at least version %i!
+Sorry, this server isn't accepting players now.
+Sorry, this server is full.
+Server socket table is full!
+RJLS: JoinCallback==NULL!
+Can't find server.
+netRequestJoin: PortalSocket is not a portal!
+Socket table full!
+Socket table full!
+Unavailable
+netPostAd: HSOCKET_NONE!
+NET: Hardware Driver List
+HARDWARE SOCKET %i: %s
+        Address: %lu
+       Drv Intr: %i
+       App Intr: %i
+       Incoming: %i
+        MaxConn: %i
+        Version: %i
+     Master Ver: %i
+     Status Msg: %s
+     Match Code: %s
+ Con State Physical_Address
+ %3i  %3i    %s
+Driver %s requires a later version of the program!
+Couldn't hook App interrupt!
+Socket table full!
+Abnormal program termination
+),(((((),(((
+Out of memory
+         !!!!!                  
+@@@@@@@@@@@@@@@
+@@@@@@@
+@@@@@@
+(null)
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+Saturday
+January
+February
+August
+September
+October
+November
+December
+%s %s %02d %02d:%02d:%02d %4d
+Error 0
+Invalid function number
+No such file or directory
+Path not found
+Too many open files
+Permission denied
+Bad file number
+Memory arena trashed
+Not enough memory
+Invalid memory block address
+Invalid environment
+Invalid format
+Invalid access code
+Invalid data
+No such device
+Attempted to remove current directory
+Not same device
+No more files
+Invalid argument
+Arg list too big
+Exec format error
+Cross-device link
+Math argument
+Result too large
+File already exists
+Possible deadlock
+Unknown error
+<notype>
+**BCCxh1
+COMPAQ
+print scanf : floating point formats not linked
+COMSPEC
+COMSPEC
+String reference out of range
+String reference out of range
+String reference out of range

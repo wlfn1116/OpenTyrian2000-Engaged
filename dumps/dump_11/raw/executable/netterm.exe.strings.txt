@@ -1,0 +1,250 @@
+string
+xalloc
+r.<0ux
+YY<xtZ<XtV
+xalloc
+string *
+string
+1V=VFVWVlVuV
+V%W%W%W%W
+U.UCUSUcUvU
+X$X2XDXVXaXiXwX
+X"Y"Y"Y"Y
+PQRSTUVW
+_^][[ZYX
+Ej:k:k:k
+**BCCxh1U
+Bad_cast
+Bad_typeid
+Type_info *
+Type_info
+b!YF;6
+xalloc
+TStringRef *
+string::lengtherror
+xalloc
+TStringRef
+TReference
+string::lengtherror
+xalloc
+string
+string::outofrange
+NULL CHECK
+Borland C++ - Copyright 1993 Borland Intl.
+Divide error
+Terminal Error: %s
+Out of memory!
+  Press F1 for menu
+MAINTERM_Title
+MainTerm_Menu
+DialPrompt
+Dialing
+NoConnect
+HangingUp
+AnswerNow
+NoConnect
+AnswerWait
+NoConnect
+ExitSure
+<%02X>
+NETTERM
+Modem driver not loaded.  Please run the game instead.
+Can't open term socket!
+Initializing modem...
+Modem is busy!
+No response from modem!
+Aborted!
+   Parameters from file 
+, section 
+: Can't read parameter file
+: Can't find section 
+Bad parameter 
+Bad parameter 
+ERROR: You must specify a value for parameter 
+ERROR: You must specify a value for parameter 
+ERROR: Parameter 
+ must be between 
+MASTER
+Net already started!
+Not enough memory for packet buffer!
+Not enough memory for ad list!
+Not enough memory for dir req list!
+Not enough memory for ad list!
+Not enough memory for server table!
+Not enough memory for ID's!
+   NET Socket %i %s: 
+Sockets: %3i Free %3i Cli %3i Srv %3i PendC %3i PendS %3i Dead %3i Drv %3i Unk
+NET Socket Packet Queue:
+Incoming
+Outgoing
+NET Global Packet Table:
+   %i buffers, %i available.
+* Socket: %i
+* Length: %i
+* Data:
+ ID      = %i
+ Name    = %i
+ Version = %i
+NET AD: hServer=%i, SERVICE ID=%i, Name=%s, Version=%i
+   Flags=%i, ClientCount=%i, ClientMax=%i, Requests=%i, Socket=%i
+   ShortDescr=%s
+SS_FREE
+SS_DEAD
+SS_ONLINE
+SS_PENDING_S
+SS_PENDING_C
+   [%2i] %-8s %6li %6li %5li %5li %5s %5s %5s %5s %5i
+[%i] %s (%i) [%li/%i] %s %lX
+NET: Socket Tree
+NET: Socket Statistics
+   ----Socket----  --Packets--  --KBytes--  -Min-Byte-  -Max-Byte-  Over
+    Num Name       Sent   Rcvd  Sent  Rcvd  Sent  Rcvd  Sent  Rcvd  runs
+netCloseSocket: Tried to close HSOCKET_NONE!
+Can't open socket through local driver!
+Can't open socket through non-hardware driver!
+Bad socket flags!
+Packet table full!
+Socket table full!
+netIsSocketDead: HSOCKET_NONE!
+netIsSocketPortal: HSOCKET_NONE!
+netIsSocketOnline: HSOCKET_NONE!
+netIsSocketPending: HSOCKET_NONE!
+netIsSocketLocal: HSOCKET_NONE!
+LOCAL:%i
+NETIPX
+/%04X/
+NETMODEM
+MODEM:
+NETINTER
+IP://%i.%i.%i.%i:%i/
+NETBIOS:
+UNKNOWN
+Packet allocated on stack instead of via netNewPacket()
+netSendPacket: HSOCKET_MASTER!
+netSendPacket: HSOCKET_NONE!
+netSendPacket: NULL Packet!
+netSendPacket: Bad socket %i, Status=%i.
+netKillPacket: NULL Packet!
+Packet allocated on stack instead of via netNewPacket()
+netGetNewPacket: HSOCKET_NONE!
+netPostDirRequest: Socket isn't a portal!
+netRetractDirRequest: Bad HDREQ!
+netSendMsg: MsgPacket==NULL!
+netBroadcastMsg: MsgPacket==NULL!
+You need at least version %i!
+Sorry, this server isn't accepting players now.
+Sorry, this server is full.
+Server socket table is full!
+RJLS: JoinCallback==NULL!
+Can't find server.
+netRequestJoin: PortalSocket is not a portal!
+Socket table full!
+Socket table full!
+Unavailable
+netPostAd: HSOCKET_NONE!
+NET: Hardware Driver List
+HARDWARE SOCKET %i: %s
+        Address: %lu
+       Drv Intr: %i
+       App Intr: %i
+       Incoming: %i
+        MaxConn: %i
+        Version: %i
+     Master Ver: %i
+     Status Msg: %s
+     Match Code: %s
+ Con State Physical_Address
+ %3i  %3i    %s
+Driver %s requires a later version of the program!
+Couldn't hook App interrupt!
+Socket table full!
+SingleWin
+SingleWin
+YesWord
+NoWord
+SingleWin
+SingleWin
+        
+SolidWin
+SingleWin
+%s="%s"
+%s="%s",
+   "%s"
+its_save_text_element 1
+its_save_text_element 2
+ITS File
+its_save_binary 1
+its_save_binary 2
+its_load_binary 4
+ITS File
+its_load_binary 5
+International
+Module #%i: '%s', contains %i entries.
+   %i:%s='%s'
+   ...'%s'
+BOX File
+Box %i: (box file %s) contains %i subfiles.
+   File %i name='%s', info='%s',offset=%li, size=%li
+Attempted to open two BOX files simultaneously.
+fwritestring 1
+fwritestring 2
+fwritestring 3
+freadstring 1
+freadstring 2
+Abnormal program termination
+),(((((),(((
+Out of memory
+         !!!!!                  
+@@@@@@@@@@@@@@@
+@@@@@@@
+@@@@@@
+(null)
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+Saturday
+January
+February
+August
+September
+October
+November
+December
+%s %s %02d %02d:%02d:%02d %4d
+Error 0
+Invalid function number
+No such file or directory
+Path not found
+Too many open files
+Permission denied
+Bad file number
+Memory arena trashed
+Not enough memory
+Invalid memory block address
+Invalid environment
+Invalid format
+Invalid access code
+Invalid data
+No such device
+Attempted to remove current directory
+Not same device
+No more files
+Invalid argument
+Arg list too big
+Exec format error
+Cross-device link
+Math argument
+Result too large
+File already exists
+Possible deadlock
+Unknown error
+<notype>
+**BCCxh1
+COMPAQ
+print scanf : floating point formats not linked
+String reference out of range
+String reference out of range
+String reference out of range

@@ -1,0 +1,640 @@
+{
+ "itemDataOffset": 16465,
+ "textEndOffset": 16465,
+ "groups": [
+  {
+   "name": "helpText",
+   "label": "** Section 1 - Online Help - 255 chars max",
+   "endLabel": "",
+   "entries": [
+    "~Next Level~  Select the next level to play (usually there is only one selection).",
+    "~DATA~  Here you read the datacubes you collect during some levels.  Some cubes have certain... hints.  Be sure to read them!  Select DONE when you are finished reading your cubes.",
+    "~Player Input~  Select the input device you want to use by pushing left or right.  Tyrian will not allow both players to use the same input device.",
+    "-nogood-",
+    "~Upgrade Ship~  You can configure many aspects of your ship.  Upgrade points for your ship are gained by shooting enemies and collecting various items.",
+    "~Purchasing~  Use the up/down arrow keys to select the item you want to view.  When you purchase the item, a bar will move to show the item you have purchased.  You may then exit the menu using done or ESC.",
+    "The amount of money you will have available after purchasing the item selected is shown at the bottom.  Items that are darkened out cost more than you can afford and you will be unable to select them.",
+    "~Ship Type~  Each ship has a different armor rating.  Armor is your last line of protection from enemy attack and is not easily repaired in the middile of combat.",
+    "~Front Gun~/~Rear Gun~  Your ship can carry both a front and rear gun.  You can change your weapons or upgrade them from here.",
+    "To ~upgrade~ or ~downgrade~ your existing gun, use the right and left arrow keys or click on the red arrows below your ship.  The bars in the center show you what power level your weapons are at.",
+    "The red arrows and cost displays indicate when you can upgrade or downgrade your weapons.  If the right arrow is darkened or the cost is displayed in red, you cannot upgrade further.",
+    "-nogood-",
+    "Be sure to watch the power bar to see how quickly your energy level will drop while firing.",
+    "~Shield~  Your ship is protected by a shield, which you upgrade in the same manner as your ship. Just select the shield you like with the up/down arrow keys, and buy it by pressing the \"enter\" key or the space bar.",
+    "~Generator~  You need power to fly that ship you're in. Your generator is the most important part of your ship. It determines how many shots you can fire at a time as well as how fast your shield recharges.",
+    "Buy a better generator and you'll have a much better edge. Select your option in the same manner as the other items.",
+    "~Sidekicks~  You can have both a left and right sidekick.  These are special weapons that fly alongside your ship.",
+    "They range from just a simple cannon to the awesome \"Atom\" bomb. Some are much more powerful than others.  Many have limited ammo, but they will recharge slowly during a level!",
+    "-nogood-",
+    "~Done~  This selection allows you to return to the Main Menu. Click on it when you're ready to fly!",
+    "~Options Menu~  From this menu you may configure your joystick or keyboard, and load and save your games.",
+    "~Save Game~  The game you have in progress is automatically saved when you finish the level. So if you forget to save your game, just load \"Last Level\" and the last level you played will be loaded.",
+    "To save a game select \"save game\" from the Options menu, find an empty slot, press the Enter key or spacebar, and enter the name of your choice.",
+    "~Load Game~  To load a game, follow the same procedure except all you need to do is highlight the name of the game you wish to load and press Enter or hit the spacebar.",
+    "~Keyboard~  To configure your keyboard select \"Keyboard\" from the Options menu. Then, hit the key you wish to use for the function that is highlighted (example: when \"up\" is highlighted, hit the up arrow on your numeric keypad).",
+    "~Joystick~  To configure your joystick, simply select \"Joystick\" from the Options menu and follow the on-screen instructions.",
+    "~Volume~  You may also change the volume of the music or the sound in the game by highlighting either \"Music\" or \"Sound\" in the Options menu and using the left and right arrow keys to change the volume.",
+    "~Quit Game~  Select this to quit your game.  You will be returned to the title screen.  Use Alt-X for a quick way to quit the game.",
+    "To exit the game from the title screen simply select \"Quit Game\" again and press Enter or the spacebar.",
+    "Select Ordering Info from Main Menu to find out how to order or dial 1-800-972-7434 to order directly from Epic.",
+    "~Power Bar~■ Current power available.  Your weapons and shields draw power from here.",
+    "~Weapons~■ The two bars show your weapon power for both front and rear weapons.",
+    "~Weapon Mode~■ Some rear weapons can have their firing pattern changed with the keyboard command ~change fire~ or a joystick button assigned to ~Change rear weapon~.",
+    "~Sidekicks~■ You can have up to two side weapons, usually fired with separate buttons.  The number of shots left are shown under the weapon name.",
+    "~Shield/Armor~■ These bars show how much damage you can take.  Shields will recharge with time from your ~power bar~ and a repair ship may appear if your armor is low - shoot it!",
+    "~Side-Panel~  Top: Player 1    Bottom: Player 2",
+    "~Weapon Power~■ This shows the level of power for each player's main weapon.",
+    "~Linking~■ Move both ships together to combine them.  Player 1 disengages by holding down a sidekick firing button and moving up.  Player 2 disengages by moving without firing the main gun.",
+    "~Rotation Cannon~■ Player 2 can aim the cannon by holding down the fire button and moving in any direction."
+   ]
+  },
+  {
+   "name": "planetNames",
+   "label": "** Section 3 - Planet Names - 15 chars max",
+   "endLabel": "",
+   "entries": [
+    "Tyrian",
+    "Asteroid 1",
+    "Asteroid 2",
+    "Asteroid 3",
+    "Soh Jin",
+    "Camanis",
+    "Gryphon",
+    "Savara",
+    "Gyges",
+    "Deliani",
+    "Ixmucane",
+    "Torm",
+    "Unknown",
+    "Unknown",
+    "Bonus",
+    "Fleet",
+    "Botany A",
+    "Botany B",
+    "AstCity",
+    "Gauntlet",
+    "Skip It"
+   ]
+  },
+  {
+   "name": "miscText",
+   "label": "** Section 4 - Misc text - 50 chars max",
+   "endLabel": "",
+   "entries": [
+    "Last Level Completed",
+    "~Save name:  ~",
+    "EMPTY SLOT",
+    "Cubes collected:",
+    "Press a key",
+    "Exit to Game Menu",
+    "Press C to recalibrate",
+    "INSERT COIN",
+    "Joystick recalibrated",
+    "OK",
+    "CANCEL",
+    "Read:",
+    "EXIT",
+    "DONE",
+    "None",
+    "No Data is available at this time.",
+    "Warping to secret level!",
+    "SOUND OFF",
+    "SOUND ON",
+    "NEW GAME",
+    "Good luck...",
+    "GAME OVER",
+    "PAUSED",
+    "Enter your beta password:",
+    "PART",
+    "Page",
+    "Completed:",
+    "Current Score:",
+    "Are you sure you want to exit?",
+    "You will quit this level.",
+    "You will be returned to the main menu.",
+    "Use arrow keys to select and press Enter.",
+    "Press the key to use for this function.",
+    "Exit to Main Menu",
+    "Beta Test Version",
+    "MUSIC OFF",
+    "MUSIC ON",
+    "Your total Score:",
+    "One Player Saved Games",
+    "Two Player Saved Games",
+    "Player 1 Score:",
+    "Player 2 Score:",
+    "Player 1 got",
+    "Player 2 got",
+    "Front Weapon Power-Up",
+    "Rear Weapon Power-Up",
+    "One Player",
+    "Two Player",
+    "Player 1",
+    "Player 2",
+    "High Scores",
+    "Congratulations!",
+    "You have earned a high score!",
+    "Enter your name:",
+    "Levels in Episode  1:17  2:12  3:12  4:20",
+    "~Left~ or ~right~ for 1 or 2 player game.",
+    "~Left~ or ~right~ to select episode.",
+    "Player 1 has earned a high score!",
+    "Player 2 has earned a high score!",
+    "Secret Level!",
+    "* Game Saved *",
+    "Exiting:",
+    "Destruction:",
+    "You got the",
+    "Press F1 for help.",
+    "F10 toggles left CPU/Human player.",
+    "TIME REMAINING",
+    ">> Bonus Game <<"
+   ]
+  },
+  {
+   "name": "miscTextB",
+   "label": "** Section 5 - LittleMiscText - 12 chars max",
+   "endLabel": "",
+   "entries": [
+    "Ep",
+    "Episode",
+    "Last Level",
+    "got",
+    "SUPER"
+   ]
+  },
+  {
+   "name": "keyNames",
+   "label": "** Section 6 - Key names - 16 chars max",
+   "endLabel": "",
+   "entries": [
+    "KEY CONFIG",
+    "UP",
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "FIRE",
+    "CHANGE FIRE",
+    "LEFT SIDEKICK",
+    "RIGHT SIDEKICK",
+    "Reset to Defaults",
+    "Done"
+   ]
+  },
+  {
+   "name": "menuText",
+   "label": "** Section 7 - Main Menu selections - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "Start New Game",
+    "Load Game",
+    "High Scores",
+    "Instructions",
+    "Ordering Info",
+    "Demo",
+    "Quit"
+   ]
+  },
+  {
+   "name": "eventText",
+   "label": "** Section 8 - Event text output - 30 chars max",
+   "endLabel": "",
+   "entries": [
+    "Enemy approaching from behind.",
+    "Large mass detected ahead!",
+    "Intercepting enemy aircraft.",
+    "Cleared enemy platforms.",
+    "Approaching enemy platforms...",
+    "~WARNING:~ Spikes ahead!!",
+    "Afterburners activated!",
+    "** Danger! **",
+    ">>> Bonus Level <<<"
+   ]
+  },
+  {
+   "name": "helpTopics",
+   "label": "** Section 9 - Help topics - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "Help Menu",
+    "One-Player Game Menu",
+    "Two-Player Game Menu",
+    "Upgrade Ship",
+    "Options",
+    "EXIT HELP"
+   ]
+  },
+  {
+   "name": "mainMenuHelp",
+   "label": "** Section 10 - Interface Icons & Other Mini-Help Text - 65 chars max",
+   "endLabel": "",
+   "entries": [
+    "Communications : Read incoming messages",
+    "Purchase new weapons and ship components.",
+    "Configuration and Load/Save game",
+    "Journey onward to another level.",
+    "Quit the game.",
+    "Each ship has a different armor rating.",
+    "Change and upgrade your forward weapon.",
+    "Change and upgrade your rear/side weapon.",
+    "Shields are your first line of defense.",
+    "Generators power your weapons and shields.",
+    "Take a chance : Purchase a special weapon.",
+    "Return to the previous menu.",
+    "Load a saved game.  (Shortcut is ALT-L)",
+    "Save your game for later.  (Shortcut is ALT-S)",
+    "Change volume with the left/right arrow keys.",
+    "Configure your Joystick buttons.",
+    "Change the keys used to play the game.",
+    "Select this location to visit next.",
+    "Select the item you want.",
+    "Press ENTER to change this key.",
+    "Press up or down to select the save slot you want.",
+    "Press up or down to select the cube you want to read.",
+    "Press ESC to exit.",
+    "Select a weapon.  Left/right arrow keys to change power level.",
+    "Reset all key selections to the original settings.",
+    "Continue playing the level.",
+    "Quit playing the level.",
+    "Change detail level with the left/right arrow keys.",
+    "Change game speed with the left/right arrow keys.",
+    "Use the arrow keys to select the interface device to use.",
+    "Change the function with the left/right arrow keys.",
+    "Select this if the position mark is not in the center rectangle.",
+    "Leave the joystick in the center position and push a button.",
+    "Access schematics and detailed info on your ship."
+   ]
+  },
+  {
+   "name": "menu1_main",
+   "label": "** Section 11 - Interface Menu 1 selections - 13 chars max",
+   "endLabel": "",
+   "entries": [
+    "Game Menu",
+    "Data",
+    "Ship Specs",
+    "Upgrade Ship",
+    "Options",
+    "Play Next Level",
+    "Quit Game"
+   ]
+  },
+  {
+   "name": "menu2_items",
+   "label": "** Section 12 - Interface Menu 2 selections - 13 chars max",
+   "endLabel": "",
+   "entries": [
+    "Upgrade Ship",
+    "Ship Type",
+    "Front Gun",
+    "Rear Gun",
+    "Shield",
+    "Generator",
+    "Left Sidekick",
+    "Right Sidekick",
+    "Done"
+   ]
+  },
+  {
+   "name": "menu3_options",
+   "label": "** Section 13 - Interface Menu 3 selections - 13 chars max",
+   "endLabel": "",
+   "entries": [
+    "Options",
+    "Load",
+    "Save",
+    "Music",
+    "Sound",
+    "Joystick",
+    "Keyboard",
+    "Done"
+   ]
+  },
+  {
+   "name": "inGameMenu",
+   "label": "** Section 14 - InGame Menu selections - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "Music Volume",
+    "Sound Volume",
+    "Detail Level",
+    "Game Speed",
+    "Return to Game",
+    "Quit Level"
+   ]
+  },
+  {
+   "name": "detailLevel",
+   "label": "** Section 15 - Detail level descriptions - 12 chars max",
+   "endLabel": "",
+   "entries": [
+    "Low",
+    "Normal",
+    "High",
+    "Pentium",
+    "Laptop VGA",
+    "Wild"
+   ]
+  },
+  {
+   "name": "gameSpeed",
+   "label": "** Section 17 - Speed descriptions - 12 chars max",
+   "endLabel": "",
+   "entries": [
+    "Slug Mode",
+    "Slower",
+    "Slow",
+    "Normal",
+    "Turbo"
+   ]
+  },
+  {
+   "name": "episodeNames",
+   "label": "** Section 16 - Episode Names - 30 chars max",
+   "endLabel": "",
+   "entries": [
+    "Select an Episode",
+    "Episode 1: Escape",
+    "Episode 2: Treachery ",
+    "Episode 3: Mission: Suicide",
+    "Episode 4: An End to Fate",
+    "Episode ?: Bonus"
+   ]
+  },
+  {
+   "name": "difficultyNames",
+   "label": "** Section 17 - Difficulty Levels - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "Difficulty Level",
+    "Easy",
+    "Normal",
+    "Hard",
+    "Impossible",
+    "Suicide",
+    "Lord of Game"
+   ]
+  },
+  {
+   "name": "gameplayNames",
+   "label": "** Section 18 - PlayerNames - 25 chars max",
+   "endLabel": "",
+   "entries": [
+    "Players",
+    "1 Player Full Game",
+    "1 Player Arcade",
+    "2 Player Arcade",
+    "Modem/Network Game"
+   ]
+  },
+  {
+   "name": "menu10_twoPlayerMain",
+   "label": "** Section 19 - Interface Menu 10 selections - 13 chars max",
+   "endLabel": "",
+   "entries": [
+    "Game Menu",
+    "Play Next Level",
+    "Player 1 Input",
+    "Player 2 Input",
+    "Options",
+    "Quit Game"
+   ]
+  },
+  {
+   "name": "inputDevices",
+   "label": "** Section 20 - Interface Devices - 12 chars max",
+   "endLabel": "",
+   "entries": [
+    "Keyboard",
+    "Mouse",
+    "Joystick"
+   ]
+  },
+  {
+   "name": "networkText",
+   "label": "** Section 21 - Network Text      - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "has aborted",
+    "a practice game.",
+    "a two-player game.",
+    "Waiting for player 1."
+   ]
+  },
+  {
+   "name": "menu11_twoPlayerNetwork",
+   "label": "** Section 22 - Interface Menu 11 selections - 17 chars max",
+   "endLabel": "",
+   "entries": [
+    "Game Menu",
+    "Play Next Level",
+    "Options",
+    "Quit Game"
+   ]
+  },
+  {
+   "name": "highScoreDifficultyNames",
+   "label": "** Section 23 - Difficulty Levels",
+   "endLabel": "",
+   "entries": [
+    "Unranked",
+    "Wimp",
+    "Easy",
+    "Normal",
+    "Hard",
+    "Impossible",
+    "Insanity",
+    "Suicide",
+    "Maniacal",
+    "Zinglon",
+    "Nortaneous"
+   ]
+  },
+  {
+   "name": "menu12_networkOptions",
+   "label": "** Section 24 - Interface Menu 12 selections - 17 chars max  (2-player NET)",
+   "endLabel": "",
+   "entries": [
+    "Options",
+    "Joystick",
+    "Keyboard",
+    "Music",
+    "Sound",
+    "Done"
+   ]
+  },
+  {
+   "name": "menu13_joystick",
+   "label": "** Section 25 - Interface Menu 13 selections - 17 chars max  (Joystick)",
+   "endLabel": "",
+   "entries": [
+    "Joystick",
+    "Button1",
+    "Button2",
+    "Button3",
+    "Button4",
+    "Calibrate",
+    "Done"
+   ]
+  },
+  {
+   "name": "joystickButtonNames",
+   "label": "** Section 26 - Joystick Functions - 20 chars max",
+   "endLabel": "",
+   "entries": [
+    "Fire main weapons",
+    "Fire Left Sidekick",
+    "Fire Right Sidekick",
+    "Fire BOTH Sidekicks",
+    "Change rear weapon"
+   ]
+  },
+  {
+   "name": "superShips",
+   "label": "** Super Arcade Modes - 30 chars max",
+   "endLabel": "",
+   "entries": [
+    "Super Arcade Mode",
+    "Ninja Star",
+    "StormWind - The Elemental",
+    "The Experimental PQZ",
+    "Captured U-Fighter",
+    "FoodShip Nine",
+    "TX SilverCloud",
+    "Nort-Ship Z",
+    "Main Weapon:",
+    "Special Weapon:",
+    "Stalker 21.126"
+   ]
+  },
+  {
+   "name": "specialNames",
+   "label": "** Super Arcade Words",
+   "endLabel": "",
+   "entries": [
+    "STEALTH",
+    "STORMWIND",
+    "TECHNO",
+    "ENEMY",
+    "WEIRD",
+    "UNKNOWN",
+    "NORTSHIPZ",
+    "DESTRUCT",
+    "ENGAGE"
+   ]
+  },
+  {
+   "name": "destructHelp",
+   "label": "** DESTRUCT commands",
+   "endLabel": "",
+   "entries": [
+    "Left Player",
+    "(Toggle CPU with F10)",
+    "SHIFT or X",
+    "Fire",
+    "CTRL or space",
+    "Change weapon",
+    "ALT",
+    "Switch vehicle",
+    "A/Z",
+    "Change velocity",
+    "C/V",
+    "Change angle",
+    "Right Player",
+    "(Human - Numeric pad)",
+    "INSERT or ENTER",
+    "Fire",
+    "PGUP and PGDN",
+    "Change weapon",
+    "CENTER (5)",
+    "Change vehicle",
+    "UP or DOWN",
+    "Change velocity",
+    "LEFT or RIGHT",
+    "Change angle",
+    "BACKSPACE restarts"
+   ]
+  },
+  {
+   "name": "destructWeapons",
+   "label": "** DESTRUCT weapons",
+   "endLabel": "",
+   "entries": [
+    "Tracer",
+    "Small",
+    "Large",
+    "Micro",
+    "Super",
+    "Demolisher",
+    "Small Nuke",
+    "Large Nuke",
+    "Small Dirt",
+    "Large Dirt",
+    "Repulsor",
+    "MiniLaser",
+    "MegaLaser",
+    "Tracer",
+    "MegaBlast",
+    "Mini",
+    "Bomb"
+   ]
+  },
+  {
+   "name": "destructModes",
+   "label": "** DESTRUCT modes",
+   "endLabel": "",
+   "entries": [
+    "5-Card War",
+    "Traditional",
+    "Heli Assault",
+    "Heli Defense",
+    "Outgunned"
+   ]
+  },
+  {
+   "name": "shipInfo",
+   "label": "** SHIP Data Info",
+   "endLabel": "",
+   "entries": [
+    "The ~USP Talon~ provides you with ~one~ ~full~ ~inch~ of armor plating and a generous full-sized generator and engine area.  With both forward and rear mounting systems and 2 cargo bays, it's just like a real ~Microsol~ fighter!",
+    "The craft is especially designed for speed and maneuverability; it gives you an unparalleled 3G base thrust addition!  All this for only ~6000~ cr!!",
+    "The ~SuperCarrot FoodShip 9~ is one of the most advanced edible fighters ever produced.  You can't go wrong with a ~FoodShip~!",
+    "~Foodships~ are usually complemented by either the ~Hotdog Mustard-spread Technology~, or the dreaded ~SuperBanana Bombs~.",
+    "The ~Gencore Phoenix~ is the main advanced ~Gencore~ ~Solo~ ~Fighter~.  It's an extremely reliable craft that can take a good deal of punishment.",
+    "Standard on the ~Gencore~ ~Solo~ ~Fighter~ line is the new particle redefinition technology, which allows you to materialize extra armor on your outer hull.  Pilots are warned that the system is easily triggered and it completely drains your shields.",
+    "The ~Gencore Maelstrom~ is a refined ~Phoenix~ with an additional ~2cm~ of main hull.  It also features deluxe plush seating with ~extra-wide~ ~armrests~ and ~synth-velour~ ~lining~.",
+    "Standard on the ~Gencore~ ~Solo~ ~Fighter~ line is the new particle redefinition technology, which allows you to materialize extra armor on your outer hull.  Pilots are warned that the system is easily triggered and it completely drains your shields.",
+    "~Microsol~.  What more do you need to convince you that their ~Stalker Solo Fighter~ is the ship you want?  Not so fast, though.  You'll pay a hefty premium for this ship or have to fill out a stack of forms two feet high.",
+    "With its dense hull alloys and overall excellent defensive capability, you'll sleep safer at night with one of these on your side.",
+    "~Microsol~ continues the ~Stalker~ line with the ~Stalker-B~.  This is the deluxe model preferred by Microsol's own Outer Scouts.  It's the ship of choice for those long, solo flights.",
+    "The ~Stalker-B~ adds an additional ~2~ ~structural~ ~units~ with its refined alloys, for an unheard-of ~28 SUs~ in a solo craft.",
+    "~TOP SECRET:~ The quest continues for the strongest ship available with the most powerful backup defense systems.  This is one of the only ships in existence with 3 defense bays!",
+    "An additional SU has been added to the armor value of this ship, and Microsol has retrofitted a ~Gencore~ ~auto-repair~ ~system~ into each ship, making these the definite superiority fighter!",
+    "~Microsol~.  What more do you need to convince you that their ~Stalker Solo Fighter~ is the ship you want?  Not so fast, though.  You'll pay a hefty premium for this ship or have to fill out a stack of forms two feet high.",
+    "With its dense hull alloys and overall excellent defensive capability, you'll sleep safer at night with one of these on your side.",
+    "The ~USP Fang~ is a standard ~Talon~ that has been retrofitted with additional armor and a more powerful secondary backup defense system.",
+    "As always, the ~USP~ invulnerability system is unique in its field and, if used properly, will let you take out anything else in the universe.",
+    "The ~U-Drone~ is a standard mining drone which has been retrofitted with a manual-drive cockpit and twin rapid-fire vulcan cannons.  Space is limited on this craft, so it's limited to a single backup defense unit.",
+    "This ship isn't meant for flying around in, but with an infrared scrambler on board, it's a perfect way to sneak in behind enemy lines!",
+    "No info available on Player 1.",
+    "Used in Arcade Mode.",
+    "~TOP SECRET:~ This ship is on loan from ~Nortaneous'~ personal hanger.  The rent on this ship is very high, but it's incredibly powerful.",
+    "The only way to describe what this ship does is to fly it and see for yourself.  Nothing on the screen is safe with its ~special~ ~weapon~ active.",
+    "After destroying the tyrranical might of ~Vykromod~ a second time, Trent found himself locked into the future through the Stargate.  But that's another story.  Now, though, he has returned with his modified ~Stalker C~ to reclaim his past.",
+    "The ~Modified Stalker~ is equipped with an advanced molecular generator which simulates many conventional weapons.  But, it also has the power to instantly generate any one of a number of side-ships and front attachments.  It's the power of the future."
+   ]
+  },
+  {
+   "name": "menu14_superTyrian",
+   "label": "** Section 27 - Interface Menu 14 selections - 17 chars max",
+   "endLabel": "",
+   "entries": [
+    "Game Menu",
+    "Play Next Level",
+    "Ship Specs",
+    "Options",
+    "Quit Game"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+ "mapFileChar": "Q",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  1,
+  3,
+  5,
+  7
+ ],
+ "endOffset": 430635,
+ "episode": 4,
+ "levelFileNumber": 13,
+ "name": "EYESPY",
+ "eventCount": 1006
+}

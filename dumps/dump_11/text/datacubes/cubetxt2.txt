@@ -1,0 +1,312 @@
+*01 01 {Start of Episode 2}
+MISSION BRIEFING FLUX 0473
+Javi
+Gencore Security Chief
+
+We have been monitoring some unusual freighter shipments between the derelict
+planet of Gyges and the capital planet of Torm. Both planets are marked on
+your Navigation Screen. Insight into these shipments may give us a clue to 
+the whereabouts of Microsol's base of operations. First, set course for Torm 
+and investigate. Then return to Deliani to report your findings and to await
+further instructions.
+
+You will be given a Gencore Hawk to fly for this mission and greater weapon
+clearance priority. Good luck!
+*02 01 {Start of Episode 2 - Cube from Deliani}
+DELIANI TRANSMISSION FLUX 2894
+Javi
+Some warnings about Torm. There are dragons there. Yes, dragons. These tree
+dragons enjoy feeding on metal and berillium ore of which your ship is
+built, so once awakened they'll munch you right out of the sky. The best 
+weapon against them is a fire or flame based weapon. 
+
+Also beware of space pirates who have made a number of secret bases there
+and can strike without warning. Their ships are usually camouflaged in shades
+of green and can be difficult to spot amongst Torm's thick jungles.
+
+*03 11 {After Torm}
+TORM TRANSMISSION FLUX
+Dougan
+Well, well, well. Looks like you've gotten yourself into too much trouble,
+as usual. Torm is no place to be investigating for Microsol shipments. 
+
+Hmm... perhaps the reason you've been tracked this far is because there was a
+homing device planted on your ship's undercarriage. Pretty high signal one,
+too. Don't worry. I removed it, but whoever has been sending you on these
+missions sounds like they have no idea what's going on. Microsol's activities
+are centered around Savara and the Stargate. I'd say you've been sent on a 
+wild goose chase. Have a word with that Javi Onukala you mentioned. Ask for 
+answers.
+
+*04 01 {After Deliani}
+DELIANI TRANSMISSION FLUX 02975
+Javi
+I see you have investigated Torm without success. There HAS to be something
+there. 
+
+Homing device? I know nothing about that, but I will run an investigation.
+We can't have people trying to murder our agents. Now...
+
+I have been receiving reports from the Ixmucane sector that something 
+unusual is going on there. Your next mission will be to fly there and 
+investigate. Please select anything you like from our supply stocks.
+
+*05 01 {After Deliani}
+DELIANI TRANSMISSION FLUX 02976
+Javi
+Beware on this mission of rebels from the Mendivian C sector, near Ixmucane.
+These are human pirates who are aiding the Hazudra forces there led by a
+faction leader named Reid. Be careful in there or they'll destroy you,
+thinking you are a Microsol scout.
+
+Microsol is attempting to gain control of the Hazudra territory there, thus
+the rebel forces. But they will make no exceptions when it comes to an 
+intruder.
+
+*06 09 {After Giger -Ninja- }
+STARGATE TRANSMISSION FLUX 13619
+???
+Your life is forfeit, human. We know of your plans to sweep the Tyrian
+sector and destroy all life. We are going to attack your fleet and obliterate
+your merciless ships until you are no longer a threat to us. Your only hope
+of escape is to call off the attack. Now.
+
+*07 01 {After Giger}
+DELIANI TRANSMISSION FLUX 23920
+Javi
+We have been notified of a course change. You must immediately head for the
+Mendivian C sector and the home city of the rebel forces there. Obliterate
+them and return to us. They are threatening to overtake the sector. 
+
+Be careful, Trent. You'll need all the firepower you can get.
+
+*08 06 {After Asteroid}
+ASTEROID CITY TRANSMISSION 37238
+Reid
+I am Reid, head of the rebel Mendivian and Anti Microsol league. We do not
+know why you have attacked. I would like an explanation.
+
+What?? WE are not the ones planning an attack against the sector for total
+domination. It is Microsol, stationed in Savara and ready to launch within 
+the next 10 days! You have been tricked! Apparently you were decieved by 
+Javi, who is a Hazudra traitor. He was stolen at birth and placed under 
+holographic mind control by Microsol. The most we have been able to uncover 
+about him is that he is apparently an infiltrator into Gencore Tech Alliance. 
+You MUST return to Deliani and stop him! He is probably the means for Microsol 
+to overthrow Gencore. 
+
+Quickly.. restock your ship and head for Deliani before Javi has another
+chance to signal Microsol for the start of the attack!
+
+You may be able to reach them before they form a strategic defense.
+
+*09 01 {After Deliani?}
+DELIANI TRANSMISSION FLUX 83278
+Javi
+I see you have discovered the truth. I was going to use you as a scout
+for the fleet before I had your brain scanned for knowledge of the Gravitium. 
+Well, no matter. You have served your purpose. Our scientists have uncovered 
+its secrets and installed new engines into our fleet ships, giving them far 
+more power to distribute to the weapon banks. The invasion will begin soon 
+and you will have only a few precious days left before we execute you. You are 
+being sent by tractor beam to the Impound Station at Gryphon, a little known
+and desolate edge of the sector where you will be unable to help your friends
+in the Asteroid City. Enjoy your last hours, Trent.
+
+*10 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Sonic Cannon
+
+The sonic cannon weapon creates a minute gravitational center using FPP (Forced Particle Packing
+technology) which allows a particle field to remain intact.  The gravitational center is destabilized with a
+hyper flux modulator before being released from the weapon.  The destabilized gravitational core
+modulates at a fixed frequency which is fast enough to create a shimmering field in the optical range
+around green.  The frequency generator uses a system of sound wave generators to help modulate the
+frequency for the maximum particle dispersal and energy so far possible - hence the damage from the
+weapon is caused by the sonic modulators before the weapon is fired.
+
+*11 02 {Secret}
+
+*12 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Zica Flamethrower
+
+This weapon was found during an excavation of an ancient tunnel-world apparently
+build by these strange space-inhabiting creatures.  It is believed the Zica were
+not air-breathers but subsisted mostly on thermal radiation and various
+liquids for survival.
+
+We believe this had a profound impact on their technological development,
+since they appear to have developed tools and devices to manipulate and take
+advantage of thermal and other radiation-based energies.  Their mastery of
+thermal energy appears to have led to the development of this unique null-space
+flamethrower.
+
+What little information which has leaked out of Station Gryphon, where the only
+remaining samples of this device are stored, indicates the weapon uses an
+energy-based particle field to generate the flame without any external air
+or energy source.
+
+Even this limited information would not have been available if it wasn't for
+the unfortunate accident which apparently occured when a researcher removed
+the outer covering to study the interior.  A large section of the left-rear
+portion of the station is still missing to this day, a testimony to those who
+would fool with something they do not understand.
+
+See The Not-so-Great Gryphon Explosion
+    Tunnel Worlds, Zica
+    Pirate Activity, Gryphon Sector
+    Weapons Research, Station Gryphon
+    Zica Laser Weapon
+
+*13 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Pirate Activity, Gryphon Sector
+
+Gryphon Sector is the main secret weapons research center for Microsol.
+It was long rumored to be an ordinary military station, but since the
+Not-so-Great Gryphon Explosion, Microsol has decided to let it remain in
+public knowledge.  In fact, once a year, they invite members of competing
+industries to the Station to view how far behind they are in comparison to
+Microsol.
+
+Still, the station has had it's share of hardships.  Many pirates of both
+the Mikal and Patrok clans have long looked upon it as the pinnacle of their
+career if they can infiltrate the station's defenses and land a raiding party
+within the research section, then return with something from their weapons
+labs.  Most never even make it to the station, destroyed by the dreaded Pong
+ships.
+
+One retired pirate of the Patrok clan, one ShipMaster Carlos, wrote a book
+detailing highlights of his extensive career.  One of which was the
+infiltration and removal of a weapon now commonly referred to as the Zica
+Laser Cannon.  He is believed to have been assassinated the next day, but
+they were too late to stop Gencore from transmitting his book over FLUXNet.
+In addition, his ship was never found, though it is believed to have been
+equipped with the Zica Laser.  Two months later, Gencore finished development
+of a device also called the Zica Laser.
+
+See The Not-so-Great Gryphon Explosion
+    Weapons Research, Station Gryphon
+    Zica Laser Weapon
+
+*14 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: The Not-so-Great Gryphon Explosion
+
+While under the leadership of General Zinglon, station commander at Gryphon,
+a group of scientists excavated what is now called planet Gyges, after the
+late Doctor of Metacology, Gyges Phildren.  It is believed they excavated a
+number of artifacts and devices which were then transferred to the secret
+research station, Gryphon.
+
+Full details were never released, but it is known that Gyges was conducting
+some unorthodox research into the abnormal meta-physical energy invoved in the
+firing of a secret weapon nicknamed the Zica Flamethrower.  He apparently
+removed the outer casing of the device.  This mistake cost him his life and
+the lives of over twelve thousand crewmembers serving in that section of the
+station at the time.  Sections of the station are still missing, since it was
+deemed to expensive and inefficient to repair the damaged sections than build
+newer, better designed sections.
+
+Incidentally, General Zinglon is believed to have been demonstrating a new matter
+transporter at the time of the explosion, but never arrived at his destination.
+A surge of energy occured as the fusion generator near the research section
+exploded.  The transporter was linked to that generator since it required
+additional power to function than was available with the standard reactors.
+
+At that same time, billions of people reported seeing an image remarkably like
+his on their vidscreens.  This in turn produced a fanatical faction of divine
+seekers, frustrated with their attempts to convince people that circular
+shapes should be worshipped as gods.  They called themselves the Cult of
+Zinglon and now work in secret to bring Zinglon, "Master of All", back from
+whatever his dimension his molecules were scattered to.
+
+See Tunnel World, Zica
+    Weapons Research, Station Gryphon
+    Zica Flamethrower
+
+*15 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Zica Laser Weapon
+
+The Zica Laser Weapon was introduced by Gencore after several years of
+successful introduction of Zica products by Microsol.  It is still unknown
+why so many of these products were named after the Zica, an ancient race
+which used to inhabit Gyges, among other tunnel worlds.  However, it is
+possible that some of these devices are not simply part of the marketing
+frenzy but are actually unique technologies from Gyges.
+
+This weapon is the most likely to be linked to the Gyges excavation, though
+oddly enough, Gencore was not involved in the archaeological research.  Still,
+the weapon generates forced laser bursts which independent scientists have
+not been able to fully explain.  Laser effects are well known for the blue
+range of light, but the forced pulse patterns are totally unreasonable.
+
+The only answer that has been given so far is that there may be some unknown
+energy working to distort the laser.  Research is still being conducted on
+the effects and reactions of the energy, though little has been accomplished.
+
+See Tunnel World, Zica
+
+*16 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Tunnel World, Zica
+
+Gyges is the only known tunnel world to have been excavated.  Even though the
+Zica had apparently been dead for 421965032 standard years, 14 days, and 32
+minutes, their internal defenses were still partially active and destroyed
+many ships who came to investigate the tunnel world.
+
+Microsol launched a giant excavation of the planet, equipped with powerful
+destroyers as well as research vessels.  Even still, 241 died trying to stop
+the defensive systems.  General Zinglon reportedly sacrificed ships to get
+through to the control centers, rather than allow the defensive weapons to be
+destroyed.
+
+To this day, the tunnel world is a center of Microsol activity.  Its open
+tunnels allow for easy shipbuilding and mining of mineral deposits, as well
+as the powerful geothermal energy radiation near the core.  Scientists, however,
+are still not certain of the exact second that the last member of the Zica
+race on Gyges died, but believe it is about 25 additional seconds from their
+previous estimate (calculated from their exact time of arrival for final excavation).
+
+Researchers quote advances in dating techniques to determine more accurately
+the events on Gyges.  Also, they claim the fact that many of their
+researchers are still being killed by accidents involving the alien technology
+hampers their ability to conduct more tests.
+
+*17 02 {Secret}
+ARCHIVE DATA
+Data
+Reference: Weapons Research, Station Gryphon
+
+Station Gryphon has recently been the main output of Microsol's advanced
+weapon design program.  They have released a number of high powered weapon
+systems, including several advancements on their ~Pulse~ ~Cannon~ systems, and
+their unique Starburst defense field.
+
+After the Not-so-Great Gryphon Explosion, some aspects of their research was
+turned over to public scrutiny, believed to be because of investigations by
+families and friends of the twelve thousand crew members that died.  It is
+now rumored that they have just developed a new field of weapons technology
+which will allow them to build much bigger weapons onto conventional battle
+cruisers.
+
+See The Not-so-Great Gryphon Explosion
+
+*18 02 {After Deliani?}
+DELIANI TRANSMISSION FLUX 83278
+Javi
+Oh, by the way.  Nice job you did for us back at Ixmucane.  We would have lost
+a number of ships from the modified Zica weapons being tested there.
+
+Didn't know about that, huh?  Too bad, no-one can help you now.
+
+*

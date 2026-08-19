@@ -1,0 +1,18 @@
+{
+ "mapFileChar": "5",
+ "shapeFileChar": "X",
+ "shapeFile": "shapesx.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  142,
+  143,
+  144
+ ],
+ "endOffset": 327626,
+ "episode": 2,
+ "levelFileNumber": 10,
+ "name": "BOTANY A",
+ "eventCount": 812
+}

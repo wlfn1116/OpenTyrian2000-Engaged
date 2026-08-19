@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "2",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  678
+ ],
+ "endOffset": 236468,
+ "episode": 3,
+ "levelFileNumber": 7,
+ "name": "STARGATE",
+ "eventCount": 672
+}

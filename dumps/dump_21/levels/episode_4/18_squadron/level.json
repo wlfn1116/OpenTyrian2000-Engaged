@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "V",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  163
+ ],
+ "endOffset": 594520,
+ "episode": 4,
+ "levelFileNumber": 18,
+ "name": "SQUADRON",
+ "eventCount": 595
+}

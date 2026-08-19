@@ -1,14 +1,37 @@
 # Data dumper
 
-`dump_data.py` decodes every file in `data/` into `dump/`. It reads only; the
-data directory is never modified. `dump/` is tracked, so it carries the same
-content as `data/`, which is not.
+`dump_data.py` decodes every file in a data directory into a tree under
+`dumps/`. It reads only; the data directory is never modified. The trees are
+tracked, so they carry the same content as the data directories, which are not.
 
 ```sh
 python tools/dump/dump_data.py
 ```
 
 A full run takes about ten seconds and writes roughly 90 MB.
+
+## Data versions
+
+The dumper reads all three shipped releases. It identifies one from the item
+counts stored in front of its tables, so no option is needed to switch, and each
+release has a data directory and a tree of its own:
+
+| Release | Data | Tree |
+| --- | --- | --- |
+| Tyrian 1.1 | `data_11/` | `dumps/dump_11/` |
+| Tyrian 2.1 | `data_21/` | `dumps/dump_21/` |
+| Tyrian 2000 | `data/` | `dumps/dump_2000/` |
+
+```sh
+python tools/dump/dump_data.py --data data_21
+```
+
+Each release grew the item tables, the sprite banks and the interface text, and
+2.1 moved the episode 1 to 3 item tables out of the level files into
+`tyrian.hdt`. `tyrian_formats.py` keeps every table that differs and binds one
+release with `use_version`; `dumps/DIFFERENCES.md` is the readable version of
+the same story. Names are matched and written in lower case, so the upper-case
+names Tyrian 1.1 ships produce the same tree.
 
 ## Options
 
@@ -19,6 +42,7 @@ A full run takes about ten seconds and writes roughly 90 MB.
 | `--only SECTION...` | Dump only these sections. |
 | `--skip SECTION...` | Skip these sections. |
 | `--palette N` | `palette.dat` index for assets that store no palette (default 0, the gameplay palette). |
+| `--version V` | Decode as `tyrian2000`, `tyrian2.1` or `tyrian1.1` instead of the sniffed release. |
 | `--no-map-images` | Write level maps as CSV only. |
 | `--no-sprite-files` | Write contact sheets but not one PNG per sprite. |
 | `--anim-stride N` | Write every Nth animation frame. |
@@ -39,14 +63,16 @@ python tools/dump/verify_dump.py --reproducible
 ```
 
 It prints TAP and exits nonzero on failure. Run it after regeneration or a
-reader change. Every new decoder needs a corresponding check.
+reader change, once per tree; `--data` and `--dump` pick the pair to check.
+Every new decoder needs a corresponding check.
 
 ## Output
 
-`dump/index.csv` is the entry point: one row per data file with its category,
-what it holds, the loader that reads it, the source files that mention it by
-name, and the folders this dump wrote from it. `dump/README.md` describes the
-folder layout and `dump/manifest.json` records the run.
+`index.csv` is the entry point of a tree: one row per data file with its
+category, what it holds, the loader that reads it, the source files that mention
+it by name, and the folders this dump wrote from it. The tree's `README.md`
+describes its folder layout and `manifest.json` records the run. `dumps/README.md`
+indexes the trees and is rewritten whenever one of them is.
 
 ## Files
 

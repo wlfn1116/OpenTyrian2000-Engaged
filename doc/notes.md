@@ -865,19 +865,38 @@ background choices, effects, and sounds. It does not reorder authored pickups.
 `tools/dump/dump_data.py` mirrors loaders in `src/` and writes the tracked
 `dump/` tree. Update a reader when its loader changes.
 
+The dumper reads Tyrian 1.1, Tyrian 2.1 and Tyrian 2000. It identifies a data
+directory from the item counts stored in front of its tables and binds the
+tables that differ, so `data/`, `data_21/` and `data_11/` dump to
+`dumps/dump_2000/`, `dumps/dump_21/` and `dumps/dump_11/` with the same layout.
+`dumps/DIFFERENCES.md` records what changed between the three.
+
 `tools/dump/verify_dump.py` is the correctness check. Every reader needs a check
 that accounts for all source bytes or compares the engine arithmetic it mirrors.
+Point it at the tree under test with `--data` and `--dump`.
 
 Format traps:
 
 - `user1.shp` and `user2.shp` contain a two-byte header and raw 12x14 cells.
 - Shipped `shapes?.dat` files contain 520 bytes after tile 600.
-- Episodes 1 through 3, 4, and 5 use three different item/enemy tables.
-- `tyrian.hdt` text groups are position-dependent and end at the item-data
-  offset.
+- Episodes 1 through 3, 4, and 5 use three different item/enemy tables. Tyrian
+  2.1 has the same split with no episode 5. Tyrian 1.1 stores a set at the end of
+  every level file and none in `tyrian.hdt`.
+- `tyrian.hdt` text groups are position-dependent. They end at the item-data
+  offset in Tyrian 2000 and at the last byte in Tyrian 1.1, which stores no
+  offset at all.
+- A compiled 12px frame ends where the next offset in its table starts. Tyrian
+  2.1 and 2000 also terminate one with 0x0f. Tyrian 1.1 does not, and pads its
+  streams with zero bytes that skip nothing.
+- Tyrian 1.1 orders the seven `tyrian.shp` sprite tables differently and ships
+  eleven banks; Tyrian 2.1 ships twelve in the 2000 order.
+- The enemy shapebank table only grows: 30 entries in 1.1, 34 in 2.1, 36 in 2000,
+  with no slot reassigned. Each release stores it verbatim in `file0001.exe`.
 - Encrypted record dumps preserve one terminator per record, including trailing
   empty records.
 - Re-encode decrypted text as CP437 to recover its bytes.
+- Data files are matched and dumped in lower case. Tyrian 1.1 names them in
+  upper case, and the same release dumps to the same tree either way.
 
 Use `dump/index.csv` to find a data file's decoder, engine loader, references,
 and outputs.

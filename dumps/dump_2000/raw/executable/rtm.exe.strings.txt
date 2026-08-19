@@ -1,0 +1,301 @@
+0123456789ABCDEFS
+{RTM loader version 1.5 Copyright (c) 1990-94 Borland International
+This loader is invoked and required by Borland tools
+0123456789ABCDEFS
+VWPQRS
+VWPQRS
+You have attempted to run Windows in enhanced mode while
+running in a shell under a protected mode program.  This
+is not a compatible configuration.  Run Windows in standard
+mode instead (win /S).
+0123456789ABCDEFS
+PSQRWV
+^_ZY[X
+PSQRWV
+^_ZY[X
+PSQRWV.
+^_ZY[X
+0123456789ABCDEFS
+SQWVPR
+/_ZY[X
+!PQVW&
+0123456789ABCDEFXXX.
+----------------------------------------------------------------------------
+        UNHANDLED EXCEPTION $
+ Error code: $
+ AX = $
+   BX = $
+   CX = $
+   DX = $
+ SI = $
+   DI = $
+   BP = $
+   SP = $
+ CS = $
+ DS = $
+ ES = $
+ SS = $
+   Invalid segment $
+   Limit =$
+ segment #$
+PSQRWV.
+^_ZY[X
+t;PSQR
+PQRSTUVW
+_^][[ZYX
+PQRSTUVW
+_^][[ZYX
+2PQRSTUVW
+_^][[ZYX
+PQRSTUVW
+_^][[ZYX
+V4i4|4
+4|4PQRSTUVW
+_^][[ZYX
+35A5X5o53535}5PQRSTUVW
+_^][[ZYX
+PQRSTUVW
+_^][[ZYX
+-*)_^YY
+,*&<)>**
+>**&>s"
+,*-&<_^
+;>,*tX
+F;6,*t
+;6,*t4V
+t$tptpt
+w$w$w$w$wU
+PQRSTUVW
+_^][[ZYX
+_^][[ZYX
+PQRSTUVW
+_^][[ZYX.
+_^][[ZYX
+PQRSTUVW
+_^][[ZYX
+MS-DOS
+Error: no DOS extensions in the DPMI server
+$Error: needs DOS 3.x or higher
+$*$*$*
+DPMI LOADER built 06/07/94  17:41:55
+BORLANDUNRESOLVEDENTRYHOOK
+Runtime error: invalid entrypoint called
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+0000$Internal error $.
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+Can't open '$'
+no memory for vector state
+process table full
+can't alloc resource record
+EXTMAX
+EXTMIN
+EXTLEAVE
+REALMAX
+REALMIN
+REALLEAVE
+Warning: unrecognized option in environment string RTM
+Fatal application error 
+&<&<tempprof.$$$
+(O)K: 
+(O)K, (C)ancel: 
+(A)bort, (R)etry, (I)gnore: 
+(Y)es, (N)o, (C)ancel: 
+(Y)es, (N)o: 
+(R)etry, (C)ancel: 
+P+W+h+
+AaRrIi
+0123456789ABCDEF
+0123456789abcdef
+-%-0-;-F-Q-
+0123456789ABCDEF  LowMem  
+   HiMem  
+  ExtSwap 
+  EmsSwap 
+  MemSwap 
+  Discard 
+ Uncommmit
+ FileSwap 
+    H1    
+    H2    
+    H3    
+    H4    
+    H5    
+    H6    
+    H7    
+    H8    
+ FREE            
+ USED @
+       
+   Heap[
+       (Total: 
+  Free 
+) STUNNED  
+)          
+ hndl  type  sel  ownr  address   -size-    moveable    used in           
+                       Heap ends at 
+                              
+   MEMORY TYPE 
+(Total: 
+  Free 
+  cont?
+Free block [%.4X] in heap [%.4x] has unaligned size
+Neighbour free blocks [%.4X] and [%.4x] not merged 
+Neighbour free blocks [%.4X] and [%.4x] not merged 
+Block [%.4X] in heap [%.4x] has unaligned address
+Gap in heap between blocks [%.4X] and [%.4x]
+Blockheader [%.4X] has wrong link backwards 
+Blockheader [%.4X] wrong header type
+ParentHeap mismatch at block [%.4X]
+Moveable area error in heap [%.4X] at block [%.4X]
+Pointer to last locked block is wrong in heap [%.4X] %.4X/%.4X
+Heap total size mismatch in heap [%.4X]
+Heap total size mismatch in heap [%.4X]
+Heap free  size mismatch in heap [%.4X]
+Blockheader [%.4X] has wrong free link backwards 
+Used block in free linklist in heap [%.4X]
+Free blocks not in memory address order [%.4X]-[%.4X] in heap [%.4X]
+Heap free  size mismatch ( via freelist) in heap [%.4X]
+Last locked block is free in heap [%.4X]
+Last locked block is not locked in heap [%.4X]
+Last locked block is not last in heap [%.4X]
+Heapheader [%.4X] has wrong link backwards 
+Heapheader [%.4X] wrong header type
+ParentmemType mismatch at heap [%.4X]
+MemType total size mismatch in MemType [%.4X]
+MemType free  size mismatch in MemType [%.4X]
+MemType swap  size mismatch in MemType [%.4X]
+ Warning: stunned heap [
+Lost heaphandle [%.4X]
+Lost heaphandle [%.4X]
+Lost heaphandle [%.4X]
+Lost blockhandle [%.4X]
+Lost blockhandle [%.4X]
+Garbage handle type [%.4X]
+Invalid handle in free list [%.4X]
+Invalid free handle number 
+ Virtual Management Errors
+ ** EMSCopyToMem from 
+ size 
+ ** EMSCopyFromMem from 
+ size 
+ ** EXTCopyToMem from 
+ size 
+ ** EXTCopyFromMem from 
+ size 
+ ** VMsumM mismatch 
+ ** VMsumS mismatch 
+RTM.EXE_
+KERNEL_
+KERNEL.EXE_
+KERNEL
+FATALEXIT
+GETVERSION
+LOCALINIT
+LOCALALLOC
+LOCALREALLOC
+LOCALFREE
+LOCALLOCK
+LOCALUNLOCK
+LOCALSIZE
+LOCALHANDLE
+LOCALFLAGS
+LOCALCOMPACT
+GLOBALALLOC
+GLOBALREALLOC
+GLOBALFREE
+GLOBALLOCK
+GLOBALUNLOCK
+GLOBALSIZE
+GLOBALHANDLE
+GLOBALFLAGS
+LOCKSEGMENT
+UNLOCKSEGMENT
+GLOBALCOMPACT
+WAITEVENT
+GETCURRENTTASK$
+GETMODULEHANDLE/
+GETMODULEUSAGE0
+GETMODULEFILENAME1
+GETPROCADDRESS2
+CATCH7
+THROW8
+GETPROFILEINT9
+GETPROFILESTRING:
+WRITEPROFILESTRING;
+FINDRESOURCE<
+LOADRESOURCE=
+LOCKRESOURCE>
+FREERESOURCE?
+ACCESSRESOURCE@
+SIZEOFRESOURCEA
+OPENFILEJ
+_LCLOSEQ
+_LREADR
+_LCREATS
+_LLSEEKT
+_LOPENU
+_LWRITEV
+INITTASK[
+LOADLIBRARY_
+FREELIBRARY`
+DOS3CALLf
+__AHSHIFTq
+__AHINCRr
+OUTPUTDEBUGSTRINGs
+LOCALSHRINKy
+GETPRIVATEPROFILEINT
+GETPRIVATEPROFILESTRING
+WRITEPRIVATEPROFILESTRING
+GETDOSENVIRONMENT
+GETWINFLAGS
+GETEXEPTR
+GETWINDOWSDIRECTORY
+GETSYSTEMDIRECTORY
+GLOBALNOTIFY
+GLOBALLRUOLDEST
+GLOBALLRUNEWEST
+GETFREESPACE
+ALLOCDSTOCSALIAS
+__ROMBIOS
+__A000H
+ALLOCSELECTOR
+FREESELECTOR
+PRESTOCHANGOSELECTOR
+__WINFLAGS
+__D000H
+__B000H
+__B800H
+__0000H
+GLOBALDOSALLOC
+GLOBALDOSFREE
+GETSELECTORBASE
+SETSELECTORBASE
+GETSELECTORLIMIT
+SETSELECTORLIMIT
+__E000H
+GLOBALPAGELOCK
+GLOBALPAGEUNLOCK
+__0040H
+__F000H
+__C000H
+GLOBALFIX
+GLOBALUNFIX
+USER.EXE_
+MESSAGEBOX
+INITAPP
+GETTICKCOUNT
+GETCURRENTTIME
+LOADSTRING
+ENUMTASKWINDOWS
+GETDESKTOPWINDOW
+_WSPRINTF
+ANSIUPPER
+ANSILOWER
+KEYBOARD_KEYBOARD.EXE_
+KEYBOARD
+ANSITOOEM
+OEMTOANSI
+ANSITOOEMBUFF
+OEMTOANSIBUFF
+WIN87EM_
+WIN87EM.EXE_

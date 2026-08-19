@@ -1,0 +1,150 @@
+{
+ "file": "tyrian1.lvl",
+ "levels": [
+  {
+   "levelFileNumber": 1,
+   "name": "ASTEROID1",
+   "folder": "01_asteroid1",
+   "shapeFile": "shapesz.dat",
+   "events": 456,
+   "randomEnemies": 21
+  },
+  {
+   "levelFileNumber": 2,
+   "name": "ASTEROID2",
+   "folder": "02_asteroid2",
+   "shapeFile": "shapesz.dat",
+   "events": 731,
+   "randomEnemies": 33
+  },
+  {
+   "levelFileNumber": 3,
+   "name": "ASTEROID?",
+   "folder": "03_asteroid",
+   "shapeFile": "shapesz.dat",
+   "events": 323,
+   "randomEnemies": 33
+  },
+  {
+   "levelFileNumber": 4,
+   "name": "BUBBLES",
+   "folder": "04_bubbles",
+   "shapeFile": "shapesz.dat",
+   "events": 240,
+   "randomEnemies": 16
+  },
+  {
+   "levelFileNumber": 5,
+   "name": "DELIANI",
+   "folder": "05_deliani",
+   "shapeFile": "shapesz.dat",
+   "events": 545,
+   "randomEnemies": 3
+  },
+  {
+   "levelFileNumber": 6,
+   "name": "MINEMAZE",
+   "folder": "06_minemaze",
+   "shapeFile": "shapesz.dat",
+   "events": 440,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 7,
+   "name": "MINES",
+   "folder": "07_mines",
+   "shapeFile": "shapesz.dat",
+   "events": 517,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 8,
+   "name": "SAVARA",
+   "folder": "08_savara",
+   "shapeFile": "shapesy.dat",
+   "events": 584,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 9,
+   "name": "TYRIAN",
+   "folder": "09_tyrian",
+   "shapeFile": "shapesz.dat",
+   "events": 1009,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 10,
+   "name": "BONUS",
+   "folder": "10_bonus",
+   "shapeFile": "shapesz.dat",
+   "events": 248,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 11,
+   "name": "HOLES",
+   "folder": "11_holes",
+   "shapeFile": "shapesz.dat",
+   "events": 1214,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 12,
+   "name": "SAVARA",
+   "folder": "12_savara",
+   "shapeFile": "shapesy.dat",
+   "events": 832,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 13,
+   "name": "SOH JIN",
+   "folder": "13_soh_jin",
+   "shapeFile": "shapesz.dat",
+   "events": 380,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 14,
+   "name": "WINDY",
+   "folder": "14_windy",
+   "shapeFile": "shapesz.dat",
+   "events": 838,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 15,
+   "name": "TYRIAN",
+   "folder": "15_tyrian",
+   "shapeFile": "shapesz.dat",
+   "events": 1246,
+   "randomEnemies": 7
+  },
+  {
+   "levelFileNumber": 16,
+   "name": "ASSASSIN",
+   "folder": "16_assassin",
+   "shapeFile": "shapesz.dat",
+   "events": 833,
+   "randomEnemies": 2
+  },
+  {
+   "levelFileNumber": 17,
+   "name": "SAVARA V",
+   "folder": "17_savara_v",
+   "shapeFile": "shapesy.dat",
+   "events": 1000,
+   "randomEnemies": 1
+  },
+  {
+   "levelFileNumber": 18,
+   "name": "** ALE **",
+   "folder": "18_ale",
+   "shapeFile": "shapesz.dat",
+   "events": 834,
+   "randomEnemies": 1
+  }
+ ],
+ "note": "level names come from the ']L' records in levels1.dat"
+}

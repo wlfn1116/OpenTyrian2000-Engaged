@@ -1,0 +1,65 @@
+.>&6de
+MAXMEM
+MAXLOW
+SWAPFILE
+(No Value) 
+(Bad Value) 
+DPMIMEM=
+DPMI error in DPMIMEM environment variable: 
+Ergo DPMI (286) version $
+running -- built at $
+QSRVW.
+QSRVW.
+M 9.01
+DPMI: Unexpected error $
+Unhandled exception $
+ErrCode $
+f_f^f]f
+f[fZfYfX
+Cannot enable A20$
+f_f^f]f
+f[fZfYfX
+$*$*$*
+DPMI Server
+2P17:56:23 on 05/25/94
+'Exceed max number of mem block entries$
+Selector $
+  Base $
+  Limit $
+  ARB $
+PSQRVW
+_^ZY[X
+V:PSQRh
+PSQRhx
+fVfWfQfSfP
+f_f^f]f
+f[fZfYfX
+fXf[fYf_f^
+f_f^f]
+f[fZfYfX
+N&;vBt
+ERGOGETLDT
+fPfPfPfPfRfQfPj
+------------------
+System Memory Pool
+------------------
+Total entries:   $
+Unused head:     $
+Allocated head:  $
+Free head:       $
+Pool index:      $
+ Unused    $
+ Own: $
+Next/prev $
+  Address $
+  Size $
+PSRVWj
+<f<{<I
+not handling new chains yet$
+VWPSQR3
+ZY[X_^
+MS-DOS
+2DXFUNC - failed to set base of grown handle table$
+3DXFUNC - failed to set limit of grown handle table$
+L#^#}#
+!!MACHINE_DB!!

@@ -1,0 +1,1040 @@
+{
+ "file": "levels2.dat",
+ "sections": [
+  {
+   "section": 1,
+   "marker": "**1 SECTION - Before Level 1 - Torm-Jungle ***********************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 001 002",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 02",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 01 1 12 002",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3"
+    },
+    {
+     "raw": " WeapF  13 17 19"
+    },
+    {
+     "raw": " WeapR  0 9 30 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 1 18 10"
+    },
+    {
+     "raw": " Opt2   0 1 18 10"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 4 5"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 2,
+   "marker": "**2 SECTION - Torm-Jungle     ************************************************",
+   "lines": [
+    {
+     "raw": "]L[ 9999 003 TORM     28 01",
+     "command": "L",
+     "nextLevel": 3,
+     "levelName": "TORM",
+     "song": 28,
+     "levelFileNumber": 1,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 3,
+   "marker": "**3 SECTION - Before Level 2 - Giger          ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 03 003 004 005",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 12 1 09 004",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3"
+    },
+    {
+     "raw": " WeapF  2 3 13"
+    },
+    {
+     "raw": " WeapR  0 15 11 12"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 8 6 16"
+    },
+    {
+     "raw": " Opt2   0 8 6 16"
+    },
+    {
+     "raw": " Armor  1 2 4"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 4,
+   "marker": "**4 SECTION - Giger world",
+   "lines": [
+    {
+     "raw": "]L[ 9999 005 GYGES    14 02",
+     "command": "L",
+     "nextLevel": 5,
+     "levelName": "GYGES",
+     "song": 14,
+     "levelFileNumber": 2,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 5,
+   "marker": "**5 SECTION - Before Level 3 - Bonus          ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 007",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 09 1 15 006",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3 4"
+    },
+    {
+     "raw": " WeapF  1 17 20"
+    },
+    {
+     "raw": " WeapR  0 15 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 9 13 17"
+    },
+    {
+     "raw": " Opt2   0 9 13 17"
+    },
+    {
+     "raw": " Armor  2 3 4"
+    },
+    {
+     "raw": " Shield 4 5 6"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 6,
+   "marker": "**6 SECTION - Bonus",
+   "lines": [
+    {
+     "raw": "]L[ 9999 007 BONUS    28 03$$",
+     "command": "L",
+     "nextLevel": 7,
+     "levelName": "BONUS",
+     "song": 28,
+     "levelFileNumber": 3,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 7,
+   "marker": "**7 SECTION - Before Level 4 - Asteroid City  ********************************",
+   "lines": [
+    {
+     "raw": "]?[ 00",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 19 008",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   9 3 4"
+    },
+    {
+     "raw": " WeapF  2 3 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 2 7 19"
+    },
+    {
+     "raw": " Opt2   0 2 7 19"
+    },
+    {
+     "raw": " Armor  1 2 4"
+    },
+    {
+     "raw": " Shield 4 5 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 8,
+   "marker": "**8 SECTION - Asteroid City",
+   "lines": [
+    {
+     "raw": "]L[ 9999 023 ASTCITY  01 04",
+     "command": "L",
+     "nextLevel": 23,
+     "levelName": "ASTCITY",
+     "song": 1,
+     "levelFileNumber": 4,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 9,
+   "marker": "**9 SECTION - Before Level 5 - Space Attack   ********************************",
+   "lines": [
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]?[ 01 008",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 13 1 05 010",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3 5"
+    },
+    {
+     "raw": " WeapF  2 1 20"
+    },
+    {
+     "raw": " WeapR  0 9 30 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 3 11 10"
+    },
+    {
+     "raw": " Opt2   0 3 11 10"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 3 4"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 10,
+   "marker": "*10 SECTION - Space Attack",
+   "lines": [
+    {
+     "raw": "]L[ 9999 020 SOH JIN  04 05",
+     "command": "L",
+     "nextLevel": 20,
+     "levelName": "SOH JIN",
+     "song": 4,
+     "levelFileNumber": 5,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 11,
+   "marker": "*11 SECTION - Before Level 6 - Station Gryphon *******************************",
+   "lines": [
+    {
+     "raw": "]![ 02",
+     "command": "!"
+    },
+    {
+     "raw": "]?[ 02 011 012",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 07 1 07 012",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 4 5"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  2 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 17 6 21"
+    },
+    {
+     "raw": " Opt2   0 17 6 21"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 12,
+   "marker": "*12 SECTION - Station Gryphon",
+   "lines": [
+    {
+     "raw": "]L[ 9999 013 GRYPHON  24 06",
+     "command": "L",
+     "nextLevel": 13,
+     "levelName": "GRYPHON",
+     "song": 24,
+     "levelFileNumber": 6,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 13,
+   "marker": "*13 SECTION - End of game                     ********************************",
+   "lines": [
+    {
+     "raw": "]M 008[",
+     "command": "M"
+    },
+    {
+     "raw": "]P 007[",
+     "command": "P"
+    },
+    {
+     "raw": "]Wn 03[",
+     "command": "W"
+    },
+    {
+     "raw": "First half of the sector wants you dead only because of"
+    },
+    {
+     "raw": "what you know. Then, you seek help only to be suckered"
+    },
+    {
+     "raw": "into a scheme by them to wipe out the other half of the"
+    },
+    {
+     "raw": "sector. Third, when you learn their plans, you're sent"
+    },
+    {
+     "raw": "to prison! Now that you've blasted your way to freedom,"
+    },
+    {
+     "raw": "just how free are you? There is an invasion at hand,"
+    },
+    {
+     "raw": "and it looks like you're the only one who can stop it."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Otherwise...     There won't be anyplace left to hide."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]F[",
+     "command": "F"
+    },
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]Q[",
+     "command": "Q"
+    },
+    {
+     "raw": "Secret Hint 2-1-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "Jungle Level"
+    },
+    {
+     "raw": "A certain small scout craft is attacked by one of the"
+    },
+    {
+     "raw": "dragons.  Wait until the last second to destroy it and"
+    },
+    {
+     "raw": "you might get a power-up."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-1-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "TYRIAN  (First Level)"
+    },
+    {
+     "raw": "There is a secret to the first U-ship that attacks you."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-1-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "ASTEROID LEVELS"
+    },
+    {
+     "raw": "The rock faces conceal two bonus levels."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-2-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "ASTEROID 2"
+    },
+    {
+     "raw": "There is a secret to the first tank in the level."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-2-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "SECRET LEVEL"
+    },
+    {
+     "raw": "There is a way to go from one secret level to one other"
+    },
+    {
+     "raw": "secret level to maximize your score!"
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-2-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "ASTEROID 2"
+    },
+    {
+     "raw": "Several of the tanks in this level are worth more if"
+    },
+    {
+     "raw": "you wait a while before destroying them.  You can get"
+    },
+    {
+     "raw": "extra power-ups this way."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-3-1:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "TYRIAN  (First Level)"
+    },
+    {
+     "raw": "The rock formations conceal a secret fortune."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-3-2:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "IMPOSSIBLE"
+    },
+    {
+     "raw": "Type a capital G."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "Secret Hint 2-3-3:"
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "EPISODE 3"
+    },
+    {
+     "raw": "Play at the hard difficulty level for an extra reward."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 14,
+   "marker": "*14 SECTION - Secret Level 1 - GemWarfare      *******************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 007",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 05 1 14 015",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 4 5"
+    },
+    {
+     "raw": " WeapF  1 3 19 20"
+    },
+    {
+     "raw": " WeapR  0 11 29 18"
+    },
+    {
+     "raw": " Power  2 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 2 7"
+    },
+    {
+     "raw": " Opt2   0 2 7 23"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 15,
+   "marker": "*15 SECTION - Gem Warfare",
+   "lines": [
+    {
+     "raw": "]L[ 9999 016 GEM WAR  24 07",
+     "command": "L",
+     "nextLevel": 16,
+     "levelName": "GEM WAR",
+     "song": 24,
+     "levelFileNumber": 7,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 16,
+   "marker": "*16 SECTION - Secret Level 2 - Markers         *******************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 007",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 14 1 15 017",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 4 5"
+    },
+    {
+     "raw": " WeapF  2 20 19"
+    },
+    {
+     "raw": " WeapR  0 9 10 11"
+    },
+    {
+     "raw": " Power  2 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 17 6 16"
+    },
+    {
+     "raw": " Opt2   0 17 6 16"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 8"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 17,
+   "marker": "*17 SECTION - Station Gryphon",
+   "lines": [
+    {
+     "raw": "]L[ 9999 018 MARKERS  02 08",
+     "command": "L",
+     "nextLevel": 18,
+     "levelName": "MARKERS",
+     "song": 2,
+     "levelFileNumber": 8,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 18,
+   "marker": "*18 SECTION - Secret Level 3 - Mistakes        *******************************",
+   "lines": [
+    {
+     "raw": "]?[ 02 006 007",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 15 1 13 019",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 2 6"
+    },
+    {
+     "raw": " WeapF  1 27 19"
+    },
+    {
+     "raw": " WeapR  0 12 15 11"
+    },
+    {
+     "raw": " Power  1 3 6"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 7  6 3"
+    },
+    {
+     "raw": " Opt2   0 7  6 3"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 1 2 3"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 19,
+   "marker": "*19 SECTION - Mistakes",
+   "lines": [
+    {
+     "raw": "]L[ 9999 009 MISTAKES 17 09",
+     "command": "L",
+     "nextLevel": 9,
+     "levelName": "MISTAKES",
+     "song": 17,
+     "levelFileNumber": 9,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 20,
+   "marker": "*20 SECTION - Another Level - Botany           *******************************",
+   "lines": [
+    {
+     "raw": "]P 005[",
+     "command": "P"
+    },
+    {
+     "raw": "]M 016[",
+     "command": "M"
+    },
+    {
+     "raw": "]Wy 01[",
+     "command": "W"
+    },
+    {
+     "raw": "Warning:"
+    },
+    {
+     "raw": "Trajectory heading intercepts hydroponic labs surrounding"
+    },
+    {
+     "raw": "station Gryphon."
+    },
+    {
+     "raw": ""
+    },
+    {
+     "raw": "The hydroponic laboratories are not as heavily guarded and"
+    },
+    {
+     "raw": "may allow easy access into the station.  Two routes are"
+    },
+    {
+     "raw": "available through the defenses.  The first is on the outer"
+    },
+    {
+     "raw": "rim of the station and will allow room for ships to attack."
+    },
+    {
+     "raw": "The second is, unfortunately, heavily guarded by automatic"
+    },
+    {
+     "raw": "turrets."
+    },
+    {
+     "raw": "#"
+    },
+    {
+     "raw": "]?[ 01 009",
+     "command": "?"
+    },
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]G[ 05 2 17 021  18 022",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   3 4 5"
+    },
+    {
+     "raw": " WeapF  1 2 3 9"
+    },
+    {
+     "raw": " WeapR  0 15 12 10"
+    },
+    {
+     "raw": " Power  3 4 5"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 2 10 16"
+    },
+    {
+     "raw": " Opt2   0 2 10 16"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 5 6 7"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 21,
+   "marker": "*21 SECTION - Another Level - Botany A         *******************************",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 BOTANY A 24 10",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "BOTANY A",
+     "song": 24,
+     "levelFileNumber": 10,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 22,
+   "marker": "*22 SECTION - Another Level - Botany B         *******************************",
+   "lines": [
+    {
+     "raw": "]L[ 9999 011 BOTANY B 13 11",
+     "command": "L",
+     "nextLevel": 11,
+     "levelName": "BOTANY B",
+     "song": 13,
+     "levelFileNumber": 11,
+     "normalBonusLevel": false,
+     "bonusLevel": false
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 23,
+   "marker": "*23 SECTION - Before Level 4.5-Bonus 2        ********************************",
+   "lines": [
+    {
+     "raw": "]![ 01",
+     "command": "!"
+    },
+    {
+     "raw": "]?[ 01 008",
+     "command": "?"
+    },
+    {
+     "raw": "]G[ 19 1 13 024",
+     "command": "G"
+    },
+    {
+     "raw": "]I[",
+     "command": "I"
+    },
+    {
+     "raw": " Ship   1 3 5"
+    },
+    {
+     "raw": " WeapF  2 1 20"
+    },
+    {
+     "raw": " WeapR  0 9 30 11"
+    },
+    {
+     "raw": " Power  1 2 3"
+    },
+    {
+     "raw": " Engine 1"
+    },
+    {
+     "raw": " Opt1   0 3 11 10"
+    },
+    {
+     "raw": " Opt2   0 3 11 10"
+    },
+    {
+     "raw": " Armor  1 2 3"
+    },
+    {
+     "raw": " Shield 2 3 4"
+    },
+    {
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "section": 24,
+   "marker": "*24 SECTION - Jungle Bonus",
+   "lines": [
+    {
+     "raw": "]L[ 9999 009 BONUS    28 12$$",
+     "command": "L",
+     "nextLevel": 9,
+     "levelName": "BONUS",
+     "song": 28,
+     "levelFileNumber": 12,
+     "normalBonusLevel": true,
+     "bonusLevel": true
+    },
+    {
+     "raw": ""
+    }
+   ]
+  }
+ ],
+ "note": "']' opens a script command; see doc/notes.md, Level scripts"
+}

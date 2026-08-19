@@ -1,0 +1,23 @@
+{
+ "mapFileChar": "O",
+ "shapeFileChar": ")",
+ "shapeFile": "shapes).dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  385,
+  385,
+  390,
+  391,
+  392,
+  393,
+  394,
+  395
+ ],
+ "endOffset": 397181,
+ "episode": 4,
+ "levelFileNumber": 12,
+ "name": "LAVA RUN",
+ "eventCount": 1243
+}

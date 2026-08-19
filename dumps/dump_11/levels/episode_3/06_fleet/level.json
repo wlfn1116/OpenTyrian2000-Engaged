@@ -1,0 +1,17 @@
+{
+ "mapFileChar": "B",
+ "shapeFileChar": "W",
+ "shapeFile": "shapesw.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  700,
+  701
+ ],
+ "endOffset": 206221,
+ "episode": 3,
+ "levelFileNumber": 6,
+ "name": "FLEET",
+ "eventCount": 2258
+}

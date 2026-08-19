@@ -7509,7 +7509,12 @@ new_game:
 						if (twoPlayerMode)
 						{
 							for (uint i = 0; i < 2; ++i)
-								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lld", miscText[40 + i], (long long)player[i].cash);
+							{
+								char label[80];
+								JE_playerScoreLabel((JE_byte)(i + 1), label, sizeof(label));
+								snprintf(levelWarningText[i], sizeof(*levelWarningText), "%s %lld",
+								         label, (long long)player[i].cash);
+							}
 							strcpy(levelWarningText[2], "");
 							levelWarningLines = 3;
 						}

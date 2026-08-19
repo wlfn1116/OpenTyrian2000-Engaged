@@ -1,0 +1,53 @@
+{
+ "source": "data",
+ "dataVersion": "tyrian2000",
+ "sections": {
+  "palettes": {
+   "count": 24
+  },
+  "images": {
+   "tyrian.pic": 14,
+   "pcx": 2,
+   "icons": 4
+  },
+  "sprites": {
+   "frames": 17015
+  },
+  "tiles": {
+   "tiles": 1531
+  },
+  "anim": {
+   "frames": 112
+  },
+  "gamedata": {
+   "sets": [
+    "episodes_1-3",
+    "episode_4",
+    "episode_5"
+   ]
+  },
+  "levels": {
+   "episodes": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  "demos": {
+   "count": 5
+  },
+  "raw": {
+   "copied": 27
+  },
+  "index": {
+   "files": 114
+  }
+ },
+ "palette": 0,
+ "mapImages": true,
+ "spriteFiles": true,
+ "animStride": 1,
+ "warnings": []
+}

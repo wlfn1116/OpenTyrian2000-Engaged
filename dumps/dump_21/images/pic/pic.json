@@ -1,0 +1,57 @@
+{
+ "note": "tyrian.pic holds 13 320x200 backdrops; each names a palette.dat index",
+ "screens": [
+  {
+   "screen": 1,
+   "palette": 0
+  },
+  {
+   "screen": 2,
+   "palette": 7
+  },
+  {
+   "screen": 3,
+   "palette": 5
+  },
+  {
+   "screen": 4,
+   "palette": 8
+  },
+  {
+   "screen": 5,
+   "palette": 10
+  },
+  {
+   "screen": 6,
+   "palette": 5
+  },
+  {
+   "screen": 7,
+   "palette": 18
+  },
+  {
+   "screen": 8,
+   "palette": 19
+  },
+  {
+   "screen": 9,
+   "palette": 19
+  },
+  {
+   "screen": 10,
+   "palette": 20
+  },
+  {
+   "screen": 11,
+   "palette": 21
+  },
+  {
+   "screen": 12,
+   "palette": 22
+  },
+  {
+   "screen": 13,
+   "palette": 5
+  }
+ ]
+}

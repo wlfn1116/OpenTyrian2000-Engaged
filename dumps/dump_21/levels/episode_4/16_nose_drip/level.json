@@ -1,0 +1,16 @@
+{
+ "mapFileChar": "S",
+ "shapeFileChar": "Z",
+ "shapeFile": "shapesz.dat",
+ "mapX": 1,
+ "mapX2": 1,
+ "mapX3": 1,
+ "randomEnemies": [
+  182
+ ],
+ "endOffset": 538008,
+ "episode": 4,
+ "levelFileNumber": 16,
+ "name": "NOSE DRIP",
+ "eventCount": 666
+}

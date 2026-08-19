@@ -37,6 +37,18 @@ REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 # the sane default for anything whose palette is not stored with it.
 DEFAULT_PALETTE = 0
 
+# A DOS text file ends at its first end-of-file marker; whatever follows is padding.
+DOS_EOF = bytes([0x1a])
+
+# Contact sheets are a browsing aid, not data, so they are laid out to be read.
+# A compiled sheet's own rows are 19 frames wide, which is what makes a 2x2 item
+# out of frames N, N+1, N+19 and N+20; on that grid it draws as one picture.
+# 12x14 cells are too small to study at native size, so those sheets magnify.
+SPRITE2_COLUMNS = 19
+SPRITE2_CELL = (tf.SPRITE2_WIDTH, 14)
+SPRITE2_SHEET_SCALE = 3
+SHEET_BACKGROUND = ((26, 26, 30), (38, 38, 45))
+
 SECTIONS = ["palettes", "images", "sprites", "tiles", "anim",
             "gamedata", "text", "levels", "audio", "demos", "raw"]
 
@@ -45,15 +57,15 @@ SECTIONS = ["palettes", "images", "sprites", "tiles", "anim",
 # column names the loader; `src_references` adds anything else that mentions the
 # file by name.
 CATALOG = [
-    ("palette.dat", "graphics", "24 VGA palettes of 256 six-bit colours",
+    ("palette.dat", "graphics", "VGA palettes of 256 six-bit colours",
      "src/palette.c JE_loadPals; every 8-bit draw resolves through one of these"),
-    ("tyrian.pic", "graphics", "14 run-length 320x200 interface backdrops",
+    ("tyrian.pic", "graphics", "Run-length 320x200 interface backdrops",
      "src/picload.c JE_loadPic"),
     ("tshp2.pcx", "graphics", "PCX backdrop for the Super Tyrian ship pick and the Endless run-over screen",
      "src/pcxload.c JE_loadPCX; src/tyrian2.c; src/endless.c ENDLESS_RUNEND_PIC"),
     ("shipedit.pcx", "graphics", "Backdrop for the DOS ship editor",
      "not read at runtime"),
-    ("tyrian.shp", "sprites", "13 banks: fonts, planets, faces, menu art, player shots and ships",
+    ("tyrian.shp", "sprites", "Sprite banks: fonts, planets, faces, menu art, player shots and ships",
      "src/sprite.c JE_loadMainShapeTables"),
     ("tyrianc.shp", "sprites", "Christmas variant of tyrian.shp",
      "src/sprite.c JE_loadMainShapeTables, when the Christmas theme is on"),
@@ -69,13 +81,13 @@ CATALOG = [
      "not read at runtime; browsable in the debug sprite viewer"),
     ("shapes*.dat", "tiles", "Level tileset: 600 slots of 24x28 tiles",
      "src/tyrian2.c JE_loadMap, chosen by the level header"),
-    ("tyrian?.lvl", "levels", "Level headers, event scripts and tile maps; episodes 4 and 5 also hold their item tables",
+    ("tyrian?.lvl", "levels", "Level headers, event scripts and tile maps; some also hold their episode's item tables",
      "src/lvllib.c JE_analyzeLevel; src/tyrian2.c JE_loadMap; src/episodes.c JE_loadItemDat"),
     ("levels?.dat", "levels", "Episode script: shop stock, planets, datacubes, text and level order",
      "src/tyrian2.c JE_loadMap"),
     ("cubetxt?.dat", "text", "Datacube text for one episode",
      "src/game_menu.c load_cube"),
-    ("tyrian.hdt", "text", "Interface text plus the episode 1-3 item and enemy tables",
+    ("tyrian.hdt", "text", "Interface text, and in Tyrian 2000 the episode 1-3 item and enemy tables",
      "src/helptext.c JE_loadHelpText; src/episodes.c JE_loadItemDat"),
     ("tyrian.cdt", "text", "Credits roll, one colour-tagged line per record",
      "src/mainint.c JE_playCredits"),
@@ -83,13 +95,13 @@ CATALOG = [
      "not read at runtime"),
     ("readme.txt", "text", "Readme shipped with the game data",
      "not read at runtime"),
-    ("tyrian.snd", "audio", "31 sound effects, signed 8-bit mono at 11025 Hz",
+    ("tyrian.snd", "audio", "Sound effects, signed 8-bit mono at 11025 Hz",
      "src/nortsong.c loadSndFile"),
-    ("voices.snd", "audio", "9 voice samples",
+    ("voices.snd", "audio", "Voice samples in the same format",
      "src/nortsong.c loadSndFile"),
     ("voicesc.snd", "audio", "Christmas variant of voices.snd",
      "src/nortsong.c loadSndFile, when the Christmas theme is on"),
-    ("music.mus", "audio", "41 LOUDNESS (LDS) AdLib songs",
+    ("music.mus", "audio", "LOUDNESS (LDS) AdLib songs",
      "src/loudness.c load_music; src/lds_play.c lds_load"),
     ("loudness.awe", "audio", "AWE32 instrument bank from the DOS build",
      "not read at runtime"),
@@ -117,7 +129,57 @@ CATALOG = [
      "not read at runtime"),
     ("*.dll", "library", "Runtime library for the shipped Tyrian 2000 build",
      "not read at runtime by this port"),
+    ("*.pcx", "graphics", "320x200 PCX screen carrying its own palette",
+     "not read at runtime; part of the DOS setup or network tools"),
+    ("file_id.diz", "text", "BBS description shipped with the release",
+     "not read at runtime"),
+    ("modems.txt", "text", "Modem notes for the DOS network game",
+     "not read at runtime"),
+    ("*.doc", "text", "DOS-era manual, licence or ordering document in CP437 text",
+     "not read at runtime"),
+    ("*.ini", "config", "Language and network choice written by the DOS setup program",
+     "not read at runtime"),
+    ("*.int", "config", "'ITS File' string table a DOS launcher reads its interface from",
+     "not read at runtime"),
+    ("*.tfp", "misc", "Resource file for the DOS ordering program",
+     "not read at runtime"),
 ]
+
+RELEASE_NAME = {tf.VERSION_2000: "Tyrian 2000", tf.VERSION_2_1: "Tyrian 2.1",
+                tf.VERSION_1_1: "Tyrian 1.1"}
+
+# One data directory and one tree per release, so a run needs no path arguments.
+DUMP_ROOT = "dumps"
+DATA_NAME = {tf.VERSION_2000: "data", tf.VERSION_2_1: "data_21", tf.VERSION_1_1: "data_11"}
+TREE_NAME = {tf.VERSION_2000: "dump_2000", tf.VERSION_2_1: "dump_21", tf.VERSION_1_1: "dump_11"}
+RELEASE_ORDER = [tf.VERSION_1_1, tf.VERSION_2_1, tf.VERSION_2000]
+
+# What gamedata/ holds. Tyrian 2000 moved the episode 1-3 tables into tyrian.hdt
+# and gave its two new episodes their own.
+GAMEDATA_NOTE = {
+    tf.VERSION_2000: "episodes 1-3 share the tables in tyrian.hdt; episodes 4 and 5 each "
+                     "carry their own at the end of their .lvl file, and the three sets "
+                     "disagree on several items",
+    tf.VERSION_2_1: "episodes 1-3 share the tables in tyrian.hdt and episode 4 carries its "
+                    "own at the end of tyrian4.lvl",
+    tf.VERSION_1_1: "each episode carries its own tables at the end of its .lvl file; the "
+                    "three sets differ only in the weapon table, and only two of those "
+                    "records differ in the shot slots the game reads",
+}
+
+# The same split as prose, for the Notes section of the dump README.
+ITEM_TABLE_NOTE = {
+    tf.VERSION_2000: """Item and enemy tables exist in three versions. Episodes 1 to 3 share the set in
+`tyrian.hdt`; episodes 4 and 5 each carry their own at the end of their `.lvl`
+file. `gamedata/` keeps them separate because they disagree on several items.""",
+    tf.VERSION_2_1: """Episodes 1 to 3 share the item and enemy tables stored behind the text in
+`tyrian.hdt`. Episode 4 carries its own at the end of `tyrian4.lvl`, and
+`gamedata/` keeps the two sets separate because they disagree on several items.""",
+    tf.VERSION_1_1: """Each episode carries its own item and enemy tables at the end of its `.lvl`
+file. `gamedata/` keeps the three sets separate, though they differ only in the
+weapon table: most records disagree in the shot slots past `multi`, which the
+game never reads, and just two disagree in the slots it does.""",
+}
 
 
 # Output helpers
@@ -213,6 +275,42 @@ def slug(text):
     return out or "unnamed"
 
 
+NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven",
+                "eight", "nine", "ten", "eleven", "twelve"]
+
+
+def number_word(count):
+    """Small counts read better spelled out in prose."""
+    return NUMBER_WORDS[count] if count < len(NUMBER_WORDS) else str(count)
+
+
+def name_list(names):
+    """`a`, `b` and `c`, in code ticks."""
+    ticked = ["`%s`" % n for n in names]
+    if len(ticked) < 2:
+        return "".join(ticked)
+    return "%s and %s" % (", ".join(ticked[:-1]), ticked[-1])
+
+
+def scale_rgba(pixels, width, height, factor):
+    """Nearest-neighbour magnification. Returns (pixels, width, height)."""
+    if factor <= 1:
+        return pixels, width, height
+    out = bytearray()
+    for y in range(height):
+        row = pixels[y * width * 4:(y + 1) * width * 4]
+        wide = bytearray()
+        for x in range(width):
+            wide += row[x * 4:(x + 1) * 4] * factor
+        out += bytes(wide) * factor
+    return bytes(out), width * factor, height * factor
+
+
+def bank_ranges(banks):
+    """The stored index ranges of a table, as "0..818 and 1000..1818"."""
+    return " and ".join("%d..%d" % (lo, hi) for lo, hi in banks)
+
+
 def catalog_entry(name):
     lowered = name.lower()
     for pattern, category, description, used_by in CATALOG:
@@ -227,14 +325,22 @@ def catalog_entry(name):
 class Dumper(object):
 
     def __init__(self, args):
-        self.data_dir = args.data
-        self.out = args.out
+        # Absolute from here on: `cover` records output paths relative to `out`,
+        # and a relative one would leave the directory name in every index row.
+        self.data_dir = os.path.abspath(args.data)
+        self.out = os.path.abspath(args.out) if args.out else None
+        self.names = tf.data_index(self.data_dir)
+        self.version = args.version or tf.sniff_version(self.data_dir)
+        tf.use_version(self.version)
+        if args.out is None:
+            self.out = os.path.join(REPO, DUMP_ROOT, TREE_NAME[self.version])
         self.palette_index = args.palette
         self.map_images = args.map_images
         self.sprite_files = args.sprite_files
         self.anim_stride = max(1, args.anim_stride)
         self.verbose = not args.quiet
-        self.manifest = {"source": portable_path(self.data_dir), "sections": {}}
+        self.manifest = {"source": portable_path(self.data_dir),
+                         "dataVersion": self.version, "sections": {}}
         self.warnings = []
         self.palettes = []
         self.raw_palettes = []
@@ -244,11 +350,12 @@ class Dumper(object):
 
     # -- small utilities ---------------------------------------------------
 
-    def path(self, *parts):
-        return os.path.join(self.data_dir, *parts)
+    def path(self, name):
+        """The file on disk behind a lower-case data name."""
+        return os.path.join(self.data_dir, self.names.get(name, name))
 
     def exists(self, name):
-        return os.path.exists(self.path(name))
+        return name in self.names
 
     def dest(self, *parts):
         return os.path.join(self.out, *parts)
@@ -265,8 +372,8 @@ class Dumper(object):
         self.manifest["sections"].setdefault(section, {})[key] = value
 
     def cover(self, source_name, out_path):
-        """Note that `source_name` produced `out_path` (absolute or dump-relative)."""
-        rel = os.path.relpath(out_path, self.out) if os.path.isabs(out_path) else out_path
+        """Note that `source_name` produced `out_path`, somewhere under `out`."""
+        rel = os.path.relpath(out_path, self.out)
         self.outputs.setdefault(source_name, [])
         rel = rel.replace("\\", "/")
         if rel not in self.outputs[source_name]:
@@ -278,8 +385,8 @@ class Dumper(object):
         return self.palettes[(self.palette_index if index is None else index) % len(self.palettes)]
 
     def data_files(self):
-        return sorted(n for n in os.listdir(self.data_dir)
-                      if os.path.isfile(self.path(n)))
+        """Every data file, named in lower case whatever the directory uses."""
+        return sorted(self.names)
 
     # -- palette.dat -------------------------------------------------------
 
@@ -335,21 +442,25 @@ class Dumper(object):
                                   320, 200, pixels, self.palette(pal_index))
                 index.append({"screen": i + 1, "palette": pal_index})
             write_json(os.path.join(out, "pic.json"),
-                       {"note": "tyrian.pic holds 14 320x200 backdrops; each names a palette.dat index",
+                       {"note": "tyrian.pic holds %d 320x200 backdrops; each names a palette.dat index"
+                                % tf.PCX_NUM,
                         "screens": index})
             self.cover("tyrian.pic", out)
             self.record("images", "tyrian.pic", len(screens))
             self.log("images: tyrian.pic (%d screens)" % len(screens))
 
-        for name in ("tshp2.pcx", "shipedit.pcx"):
-            if not self.exists(name):
-                continue
+        # Every stand-alone PCX is a 320x200 screen carrying its own palette,
+        # whether the game reads it or a DOS-era tool did.
+        pcx = [n for n in self.data_files() if n.endswith(".pcx")]
+        for name in pcx:
             out = ensure_dir(self.dest("images", "pcx"))
             pixels, palette = tf.load_pcx(self.path(name))
             target = os.path.join(out, name.replace(".pcx", ".png"))
             png.write_indexed(target, 320, 200, pixels, palette or self.palette())
             self.cover(name, target)
             self.log("images: %s" % name)
+        if pcx:
+            self.record("images", "pcx", len(pcx))
 
         icons = [n for n in self.data_files() if n.lower().endswith(".ico")]
         if icons:
@@ -417,31 +528,41 @@ class Dumper(object):
 
     # -- sprite sheets -----------------------------------------------------
 
-    def write_sprite_array(self, sprites, out_dir, title):
-        """Individual PNGs plus a contact sheet for one Sprite_array bank."""
+    def write_sprite_array(self, sprites, out_dir, title, palette_index=None):
+        """Individual PNGs plus a contact sheet for one Sprite_array bank.
+
+        `palette_index` picks a palette per sprite. The cutscene faces need it:
+        each one is drawn with a palette of its own (src/pcxmast.c, facepal) and
+        is unreadable in any other.
+        """
         ensure_dir(out_dir)
-        palette = self.palette()
-        entries, decoded = [], []
-        for s in sprites:
+        entries, decoded, used = [], [], []
+        for n, s in enumerate(sprites):
+            index = self.palette_index if palette_index is None else palette_index(n)
+            palette = self.palette(index)
             entry = {"index": s["index"], "width": s["width"],
                      "height": s["height"], "bytes": s["size"]}
+            if palette_index is not None:
+                entry["palette"] = index
+            used.append(index)
             if s["width"] == 0 or s["height"] == 0:
                 entry["empty"] = True
                 entries.append(entry)
                 decoded.append(None)
                 continue
             indices = tf.decode_sprite(s["width"], s["height"], s["data"])
-            decoded.append((s["width"], s["height"], indices))
+            decoded.append((s["width"], s["height"], indices, palette))
             if self.sprite_files:
                 png.write_rgba(os.path.join(out_dir, "sprite_%03d.png" % s["index"]),
                                s["width"], s["height"],
                                png.indexed_to_rgba(indices, palette))
             entries.append(entry)
 
-        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded, palette)
+        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded)
         write_json(os.path.join(out_dir, "sprites.json"),
                    {"title": title, "format": "Sprite_array", "count": len(sprites),
-                    "palette": self.palette_index, "sprites": entries})
+                    "palette": sorted(set(used)) if palette_index is not None else self.palette_index,
+                    "sprites": entries})
         return len(sprites)
 
     def write_sprite2_sheet(self, blob, out_dir, title):
@@ -458,50 +579,77 @@ class Dumper(object):
                 entries.append(entry)
                 decoded.append(None)
                 continue
-            decoded.append((tf.SPRITE2_WIDTH, frame["height"], frame["pixels"]))
+            decoded.append((tf.SPRITE2_WIDTH, frame["height"], frame["pixels"], palette))
             if self.sprite_files:
                 png.write_rgba(os.path.join(out_dir, "sprite_%04d.png" % frame["index"]),
                                tf.SPRITE2_WIDTH, frame["height"],
                                png.indexed_to_rgba(frame["pixels"], palette))
             entries.append(entry)
 
-        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded, palette)
+        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded,
+                                 columns=SPRITE2_COLUMNS, cell=SPRITE2_CELL, pad=0,
+                                 scale=SPRITE2_SHEET_SCALE)
         write_json(os.path.join(out_dir, "sprites.json"),
                    {"title": title, "format": "compiled 12px sheet (Sprite2)",
                     "count": len(frames), "palette": self.palette_index,
                     "note": "frames are 1-based; 2x2 items use N, N+1, N+19, N+20",
+                    "sheetColumns": SPRITE2_COLUMNS,
+                    "sheetScale": SPRITE2_SHEET_SCALE,
                     "sprites": entries})
         return len(frames)
 
-    def write_contact_sheet(self, path, decoded, palette, pad=2):
-        """One image holding every frame of a bank, laid out on a grid."""
+    def face_palette(self, n):
+        """The palette the shop and cutscenes draw face `n` with (src/pcxmast.c)."""
+        return tf.FACE_PALETTE[n] if n < len(tf.FACE_PALETTE) else self.palette_index
+
+    def write_contact_sheet(self, path, decoded, columns=None, cell=None,
+                            pad=2, scale=1):
+        """One image holding every frame of a bank, laid out on a grid.
+
+        `columns` and `cell` pin the layout when the format has a row width of
+        its own, so the parts of a multi-cell item land side by side and read as
+        one picture instead of four scattered quarters. Cells alternate between
+        two dark tones, which shows where each one ends without a border cutting
+        through a sprite that spans several.
+        """
         items = [d for d in decoded if d is not None]
         if not items:
             return
-        cell_w = max(d[0] for d in items) + pad
-        cell_h = max(d[1] for d in items) + pad
-        cols, rows = grid_shape(len(decoded))
+
+        cell_w, cell_h = cell if cell else (max(d[0] for d in items) + pad,
+                                            max(d[1] for d in items) + pad)
+        cols = columns or grid_shape(len(decoded))[0]
+        rows = (len(decoded) + cols - 1) // cols
         width, height = cols * cell_w, rows * cell_h
-        if width * height > 64 * 1024 * 1024:
-            self.warn("contact sheet for %s would be %dx%d; skipped" % (path, width, height))
+        if width * height * scale * scale > 64 * 1024 * 1024:
+            self.warn("contact sheet for %s would be %dx%d; skipped"
+                      % (path, width * scale, height * scale))
             return
 
-        canvas = bytearray(width * height * 4)
+        canvas = bytearray()
+        for row in range(rows):
+            line = bytearray()
+            for col in range(cols):
+                line += bytes(SHEET_BACKGROUND[(row + col) % 2] + (255,)) * cell_w
+            canvas += bytes(line) * cell_h
+
         for n, item in enumerate(decoded):
             if item is None:
                 continue
-            w, h, indices = item
+            w, h, indices, palette = item
             ox, oy = (n % cols) * cell_w, (n // cols) * cell_h
-            for y in range(h):
+            for y in range(min(h, cell_h)):
                 base = ((oy + y) * width + ox) * 4
-                for x in range(w):
+                for x in range(min(w, cell_w)):
                     value = indices[y * w + x]
                     if value is None:
                         continue
                     r, g, b = palette[value]
                     at = base + x * 4
                     canvas[at:at + 4] = bytes((r, g, b, 255))
-        png.write_rgba(path, width, height, bytes(canvas))
+
+        pixels, width, height = scale_rgba(bytes(canvas), width, height, scale)
+        png.write_rgba(path, width, height, pixels)
 
     def dump_sprites(self):
         total = 0
@@ -515,7 +663,10 @@ class Dumper(object):
             for (folder, kind, title), blob in banks:
                 out_dir = os.path.join(root, folder)
                 if kind == "array":
-                    count = self.write_sprite_array(tf.load_sprite_array(blob), out_dir, title)
+                    faces = folder.endswith("_faces")
+                    count = self.write_sprite_array(
+                        tf.load_sprite_array(blob), out_dir, title,
+                        palette_index=self.face_palette if faces else None)
                 else:
                     count = self.write_sprite2_sheet(blob, out_dir, title)
                 summary.append({"bank": folder, "kind": kind, "title": title,
@@ -574,11 +725,11 @@ class Dumper(object):
         alpha = [0] + [255] * 255
         decoded = []
         for i, cell in enumerate(cells):
-            decoded.append((tf.RAW_CELL_W, tf.RAW_CELL_H, list(cell)))
+            decoded.append((tf.RAW_CELL_W, tf.RAW_CELL_H, list(cell), palette))
             if self.sprite_files:
                 png.write_indexed(os.path.join(out_dir, "cell_%03d.png" % i),
                                   tf.RAW_CELL_W, tf.RAW_CELL_H, cell, palette, alpha)
-        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded, palette)
+        self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded)
         write_json(os.path.join(out_dir, "sprites.json"),
                    {"title": "Ship written by the DOS ship editor", "file": name,
                     "format": "two-byte header, then uncompressed %dx%d cells"
@@ -611,18 +762,12 @@ class Dumper(object):
                     png.write_indexed(os.path.join(out_dir, "tile_%03d.png" % (i + 1)),
                                       tf.TILE_W, tf.TILE_H, tile, palette, alpha)
 
-            cols, rows = grid_shape(len(tiles))
-            width, height = cols * tf.TILE_W, rows * tf.TILE_H
-            canvas = bytearray(width * height)
-            for i, tile in enumerate(tiles):
-                if tile is None:
-                    continue
-                ox, oy = (i % cols) * tf.TILE_W, (i // cols) * tf.TILE_H
-                for y in range(tf.TILE_H):
-                    at = (oy + y) * width + ox
-                    canvas[at:at + tf.TILE_W] = tile[y * tf.TILE_W:(y + 1) * tf.TILE_W]
-            png.write_indexed(os.path.join(out_dir, "_sheet.png"),
-                              width, height, bytes(canvas), palette, alpha)
+            # No gap between cells: neighbouring tiles are often halves of one
+            # structure, and a map draws them touching.
+            decoded = [None if t is None else
+                       (tf.TILE_W, tf.TILE_H, [None if v == 0 else v for v in t], palette)
+                       for t in tiles]
+            self.write_contact_sheet(os.path.join(out_dir, "_sheet.png"), decoded, pad=0)
 
             # Each of the 600 slots costs one flag byte plus, when it is not blank,
             # a full tile. Every shipped tileset carries 520 unread bytes past that.
@@ -677,17 +822,17 @@ class Dumper(object):
 
     def dump_gamedata(self):
         sets = []
-        if self.exists("tyrian.hdt"):
+        if tf.HDT_ITEM_OFFSET and self.exists("tyrian.hdt"):
             data = tf.read_file(self.path("tyrian.hdt"))
             offset = struct.unpack_from("<i", data, 0)[0]
             sets.append(("episodes_1-3", "tyrian.hdt", data, offset))
 
-        for episode in (4, 5):
+        for episode in tf.ITEM_DATA_EPISODES:
             name = "tyrian%d.lvl" % episode
             if not self.exists(name):
                 continue
             data, count, offsets = tf.load_level_index(self.path(name))
-            # Episodes 4 and 5 keep their own item tables at the final offset.
+            # These episodes keep their own item tables at the final offset.
             sets.append(("episode_%d" % episode, name, data, offsets[count - 1]))
 
         written = []
@@ -697,6 +842,10 @@ class Dumper(object):
             except (EOFError, struct.error) as exc:
                 self.warn("item data in %s is unreadable: %s" % (source, exc))
                 continue
+            if tuple(tables["header"]) != tuple(tf.STORED_COUNTS):
+                self.warn("%s stores the counts %s, which are not the %s set %s"
+                          % (source, tuple(tables["header"]), RELEASE_NAME[self.version],
+                             tuple(tf.STORED_COUNTS)))
             out = ensure_dir(self.dest("gamedata", label))
             self.write_item_tables(out, label, source, offset, tables,
                                    len(data) - tables["endOffset"])
@@ -705,10 +854,7 @@ class Dumper(object):
             self.log("gamedata: %s (from %s)" % (label, source))
 
         write_json(self.dest("gamedata", "index.json"),
-                   {"note": "episodes 1-3 share the tables in tyrian.hdt; episodes 4 and 5 each "
-                            "carry their own at the end of their .lvl file, and the three sets "
-                            "disagree on several items",
-                    "sets": written})
+                   {"note": GAMEDATA_NOTE[self.version], "sets": written})
         self.record("gamedata", "sets", written)
 
     def write_item_tables(self, out, label, source, offset, tables, trailing):
@@ -749,17 +895,18 @@ class Dumper(object):
             "storedCounts": tables["header"],
             "endOffset": tables["endOffset"],
             "bytesAfterLastTable": trailing,
-            "bytesAfterLastTableNote": "77 bytes is one more enemy record, a duplicate of the "
-                                       "last one with no graphics; the game stops before it",
+            "bytesAfterLastTableNote": ("%d bytes is one more enemy record, a duplicate of the "
+                                        "last one with no graphics; the game stops before it"
+                                        % trailing) if trailing else "the tables end the file",
             "tableSizes": {
-                "weapons": "0..%d and %d..%d" % (tf.WEAP_END1, tf.WEAP_START2, tf.WEAP_NUM),
+                "weapons": bank_ranges(tf.WEAPON_BANKS),
                 "weaponPorts": tf.PORT_NUM + 1,
                 "specials": tf.SPECIAL_NUM + 1,
                 "generators": tf.POWER_NUM + 1,
                 "ships": tf.SHIP_NUM + 1,
                 "sidekicks": tf.OPTION_NUM + 1,
                 "shields": tf.SHIELD_NUM + 1,
-                "enemies": "0..%d and %d..%d" % (tf.ENEMY_END1, tf.ENEMY_START2, tf.ENEMY_NUM),
+                "enemies": bank_ranges(tf.ENEMY_BANKS),
             },
             "note": "field meanings are documented in doc/tyrian.hdt.txt",
         })
@@ -772,9 +919,11 @@ class Dumper(object):
             text = tf.load_hdt_text(self.path("tyrian.hdt"))
             write_json(os.path.join(out, "hdt_text.json"), text)
 
-            lines = ["tyrian.hdt interface text",
-                     "item data offset: %d, text ends at %d"
-                     % (text["itemDataOffset"], text["textEndOffset"]), ""]
+            summary = "text ends at %d, the end of the file" % text["textEndOffset"]
+            if text["itemDataOffset"] is not None:
+                summary = ("item data offset: %d, text ends at %d"
+                           % (text["itemDataOffset"], text["textEndOffset"]))
+            lines = ["tyrian.hdt interface text", summary, ""]
             for group in text["groups"]:
                 lines.append("[%s]  %s" % (group["name"], group.get("label", "")))
                 for i, entry in enumerate(group["entries"]):
@@ -782,7 +931,13 @@ class Dumper(object):
                 lines.append("")
             write_text(os.path.join(out, "hdt_text.txt"), "\n".join(lines))
             self.cover("tyrian.hdt", os.path.join(out, "hdt_text.json"))
-            if text["textEndOffset"] > text["itemDataOffset"]:
+            if text["itemDataOffset"] is None:
+                # With no item tables behind it the text runs to the end of the file.
+                size = os.path.getsize(self.path("tyrian.hdt"))
+                if text["textEndOffset"] != size:
+                    self.warn("tyrian.hdt text ended at %d of %d bytes; group counts may be stale"
+                              % (text["textEndOffset"], size))
+            elif text["textEndOffset"] > text["itemDataOffset"]:
                 self.warn("tyrian.hdt text overran the item-data offset; group counts may be stale")
             self.log("text: tyrian.hdt (%d groups)" % len(text["groups"]))
 
@@ -822,7 +977,34 @@ class Dumper(object):
             shutil.copyfile(self.path("readme.txt"), self.dest("text", "data_readme.txt"))
             self.cover("readme.txt", self.dest("text", "data_readme.txt"))
 
+        self.dump_documents()
         self.dump_episode_scripts()
+
+    def dump_documents(self):
+        """The prose a release shipped beside the game: manual, licence, ordering."""
+        docs = [n for n in self.data_files()
+                if n.endswith((".doc", ".diz", ".txt")) and n != "readme.txt"]
+        if not docs:
+            return
+
+        out = ensure_dir(self.dest("text", "docs"))
+        index, taken = [], set()
+        for name in docs:
+            stem = os.path.splitext(name)[0] + ".txt"
+            target = os.path.join(out, stem if stem not in taken else name + ".txt")
+            taken.add(os.path.basename(target))
+            raw = tf.read_file(self.path(name))
+            body = raw.split(DOS_EOF, 1)[0].decode("cp437")
+            write_text(target, "\n".join(body.splitlines()))
+            self.cover(name, target)
+            index.append({"file": name, "bytes": len(raw),
+                          "text": os.path.basename(target)})
+
+        write_json(os.path.join(out, "index.json"),
+                   {"note": "documents shipped with the release, decoded from CP437 to UTF-8 with "
+                            "LF line endings and the DOS end-of-file marker dropped",
+                    "documents": index})
+        self.log("text: %d documents" % len(docs))
 
     @staticmethod
     def split_cubes(lines):
@@ -1031,8 +1213,9 @@ class Dumper(object):
                 title = ""
                 if folder == "sfx" and i < len(titles):
                     title = titles[i]
-                elif folder.startswith("voices") and tf.SFX_COUNT + i < len(titles):
-                    title = titles[tf.SFX_COUNT + i]
+                elif folder.startswith("voices"):
+                    # soundTitle[] ends with the voices, however many effects precede them.
+                    title = titles[len(titles) - tf.VOICE_COUNT + i]
                 stem = "%02d_%s" % (i + 1, slug(title)) if title else "%02d" % (i + 1)
                 with open(os.path.join(out, stem + ".wav"), "wb") as f:
                     f.write(tf.wav_from_signed8(blob))
@@ -1198,12 +1381,130 @@ class Dumper(object):
                    {"source": portable_path(self.data_dir),
                     "fileCount": len(rows),
                     "note": "one row per file in the data directory: what it holds, which source "
-                            "files read it, and where this dump put it",
+                            "files read it, and where this dump put it. Names are lower-cased, so "
+                            "a release shipped in upper case dumps to the same tree",
                     "files": rows})
         self.record("index", "files", len(rows))
         missing = [r["file"] for r in rows if not r["dumped"]]
         if missing and complete:
             self.warn("no output written for: %s" % ", ".join(missing))
+
+    # -- README ------------------------------------------------------------
+
+    def regenerate_command(self):
+        """The command line that reproduces this tree."""
+        parts = ["python tools/dump/dump_data.py"]
+        if self.data_dir != os.path.join(REPO, DATA_NAME[self.version]):
+            parts.append("--data " + portable_path(self.data_dir))
+        if self.out != os.path.join(REPO, DUMP_ROOT, TREE_NAME[self.version]):
+            parts.append("--out " + portable_path(self.out))
+        return " ".join(parts)
+
+    def readme_layout(self):
+        """A table row for each folder this run wrote."""
+        names = self.data_files()
+
+        def tally(suffix, prefix=""):
+            return len([n for n in names if n.startswith(prefix) and n.endswith(suffix)])
+
+        standalone = [n for n in ("estsc.shp", "estpa.shp", "user1.shp", "user2.shp")
+                      if self.exists(n)]
+        described = [
+            ("palettes", "The %d palettes in `palette.dat` as JSON, PNG swatches and GIMP "
+                         "`.gpl` files." % len(self.palettes)),
+            ("images/pic", "The %d full-screen backdrops in `tyrian.pic`, each with the palette "
+                           "it ships with." % tf.PCX_NUM),
+            ("images/pcx", "The %s stand-alone PCX screens, which carry their own palettes."
+                           % number_word(tally(".pcx"))),
+            ("images/icons", "The Windows icons, copied and converted to PNG."),
+            ("sprites/tyrian_shp", "The %d banks in `tyrian.shp`: fonts, faces, planets, menu art, "
+                                   "shots and ships." % len(tf.MAIN_SHP_BANKS)),
+            ("sprites/tyrianc_shp", "The Christmas variant of the same file."),
+            ("sprites/newsh", "The compiled 12px enemy and interface sheets, plus the shapebank map."),
+            ("sprites/standalone", "The stand-alone sprite files: %s." % name_list(standalone)),
+            ("tiles", "The %s `shapes?.dat` tilesets, one PNG per tile plus a contact sheet."
+                      % number_word(tally(".dat", "shapes"))),
+            ("anim/tyrend", "Every decoded frame of the episode 3 ending animation."),
+            ("gamedata", "Weapons, ports, specials, generators, ships, sidekicks, shields and enemies."),
+            ("text", "Interface text, credits, datacubes, episode scripts and the DOS exit screen."),
+            ("text/docs", "The manual, licence and ordering documents as UTF-8 text."),
+            ("levels", "Per level: header, event script, the three tile maps as CSV, and rendered maps."),
+            ("audio", "Sound effects and voices as WAV, songs as `.lds` blobs with parsed JSON."),
+            ("demos", "The %s recorded attract-mode demos, header and input stream."
+                      % number_word(tally("", "demo."))),
+            ("raw", "Every file no other section decoded, copied byte for byte, with strings "
+                    "pulled from executables."),
+        ]
+        return ["| `%s/` | %s |" % (folder, text) for folder, text in described
+                if os.path.isdir(self.dest(*folder.split("/")))]
+
+    def readme_notes(self):
+        """The paragraphs under Notes, in order."""
+        notes = [ITEM_TABLE_NOTE[self.version]]
+        notes.append("""Enemy records name a 1-based shapebank rather than a file.
+`sprites/newsh/index.json` maps each shapebank to the sheet that holds its frames.""")
+        notes.append("""Compiled sheet frames are 1-based and 12 pixels wide. A 2x2 item uses frames
+N, N+1, N+19 and N+20.""")
+        notes.append("""Level tile maps store a byte per cell. `tile_lookup.json` turns that byte into a
+1-based tile in the level's tileset, where 0 draws nothing. Palette index 0 is
+transparent in every background layer.""")
+        notes.append("""Field meanings for the weapon, item and enemy records are documented in
+`doc/tyrian.hdt.txt`.""")
+
+        state = [n for n in ("tyrian.sav", "opentyrian.cfg") if self.exists(n)]
+        if state:
+            notes.append("""%s: player state rather than shipped data, copied
+into `raw/` without being parsed.""" % name_list(state))
+        return notes
+
+    def write_dumps_index(self):
+        """Refresh the index beside the trees, from whatever manifests are there.
+
+        Each tree explains itself in its own README. This one explains the set:
+        which release each tree holds and how they compare. It is rebuilt from
+        the manifests rather than from this run, so regenerating any one tree
+        keeps the whole table honest.
+        """
+        root = os.path.dirname(self.out)
+        if os.path.basename(root) != DUMP_ROOT:
+            return
+
+        rows = []
+        for version in RELEASE_ORDER:
+            path = os.path.join(root, TREE_NAME[version], "manifest.json")
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8") as f:
+                manifest = json.load(f)
+            sections = manifest["sections"]
+            rows.append({
+                "release": RELEASE_NAME[version],
+                "tree": TREE_NAME[version],
+                "data": manifest["source"],
+                "files": sections.get("index", {}).get("files", 0),
+                "episodes": len(sections.get("levels", {}).get("episodes", [])),
+                "sets": len(sections.get("gamedata", {}).get("sets", [])),
+                "palettes": sections.get("palettes", {}).get("count", 0),
+                "backdrops": sections.get("images", {}).get("tyrian.pic", 0),
+                "frames": sections.get("sprites", {}).get("frames", 0),
+                "tiles": sections.get("tiles", {}).get("tiles", 0),
+            })
+        if not rows:
+            return
+
+        table = ["| Release | Tree | Data | Files | Episodes | Item sets | Palettes | "
+                 "Backdrops | Sprite frames | Tiles |",
+                 "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for r in rows:
+            table.append("| %s | [`%s/`](%s/) | `%s/` | %d | %d | %d | %d | %d | %d | %d |"
+                         % (r["release"], r["tree"], r["tree"], r["data"], r["files"],
+                            r["episodes"], r["sets"], r["palettes"], r["backdrops"],
+                            r["frames"], r["tiles"]))
+
+        commands = ["python tools/dump/dump_data.py --data %s" % r["data"] for r in rows]
+        write_text(os.path.join(root, "README.md"),
+                   DUMPS_INDEX_TEMPLATE % {"table": "\n".join(table),
+                                           "commands": "\n    ".join(commands)})
 
     # -- driver ------------------------------------------------------------
 
@@ -1239,18 +1540,76 @@ class Dumper(object):
         write_json(self.dest("manifest.json"), self.manifest)
         write_text(self.dest("README.md"), README_TEMPLATE % {
             "source": portable_path(self.data_dir),
+            "release": RELEASE_NAME[self.version],
+            "command": self.regenerate_command(),
             "palette": self.palette_index,
+            "layout": "\n".join(self.readme_layout()),
+            "notes": "\n\n".join(self.readme_notes()),
         })
+        self.write_dumps_index()
         self.log("done in %.1fs -> %s" % (time.time() - started, self.out))
+
+
+DUMPS_INDEX_TEMPLATE = """# Tyrian data dumps
+
+One decoded tree per shipped release. Each tree holds every file of its data
+directory, decoded where a reader exists and copied byte for byte where none
+does. `tools/dump/dump_data.py` writes this page and everything under the trees,
+so edit the tool rather than the output. DIFFERENCES.md is written by hand.
+
+%(table)s
+
+[DIFFERENCES.md](DIFFERENCES.md) walks through what changed between the three
+releases, from the ship list to the container formats.
+
+## Reading a tree
+
+Start at `index.csv`. It has one row per data file: its size, what it holds,
+which files in `src/` read it, and the folders this dump wrote from it. Each
+tree's own `README.md` describes its layout and `manifest.json` records the
+options that run used.
+
+The same conventions hold in all three trees:
+
+- Data file names are matched and written in lower case, whatever case the
+  release ships them in.
+- Sprites and tiles are coloured with palette 0, the one gameplay and the shop
+  run on. Anything that names or carries another palette is drawn with that one
+  instead: each `tyrian.pic` backdrop names a `palette.dat` index, each
+  stand-alone PCX embeds a palette, and each cutscene face has a palette of its
+  own that it is unreadable without.
+- `_sheet.png` in a sprite or tile folder is a contact sheet, laid out to be
+  read rather than to match the file. Compiled 12-pixel sheets use the 19-column
+  grid the format itself implies, so a 2x2 item drawn from frames N, N+1, N+19
+  and N+20 appears as one picture, and they are magnified three times. Cells
+  alternate between two dark tones so transparent pixels stay visible.
+- Field meanings for the weapon, item and enemy records are documented in
+  [`doc/tyrian.hdt.txt`](../doc/tyrian.hdt.txt).
+
+## Regenerating
+
+Each release is dumped from its own data directory and lands in its own tree:
+
+    %(commands)s
+
+`tools/dump/verify_dump.py` checks a tree against the data it came from. Every
+check either accounts for each byte of a source file or compares a decoder with
+the engine calculation it mirrors:
+
+    python tools/dump/verify_dump.py --data data_21 --reproducible
+
+Run it once per tree after regenerating. Because the readers are deterministic,
+a diff in a tree is a real change in the data or in a decoder.
+"""
 
 
 README_TEMPLATE = """# Tyrian data dump
 
-Generated by `tools/dump/dump_data.py` from `%(source)s`. Every file in the data
-directory is represented here. Sprites and tiles are coloured with palette
-%(palette)d unless the asset stores its own palette. Regenerate with:
+Generated by `tools/dump/dump_data.py` from `%(source)s`, a %(release)s data
+directory. Every file in it is represented here. Sprites and tiles are coloured
+with palette %(palette)d unless the asset stores its own palette. Regenerate with:
 
-    python tools/dump/dump_data.py
+    %(command)s
 
 The same data and the same readers produce the same tree, so a diff here is a
 real change. Do not edit these files by hand.
@@ -1265,44 +1624,11 @@ the options this run used and any warnings.
 
 | Folder | Contents |
 | --- | --- |
-| `palettes/` | The 24 palettes in `palette.dat` as JSON, PNG swatches and GIMP `.gpl` files. |
-| `images/pic/` | The 14 full-screen backdrops in `tyrian.pic`, each with the palette it ships with. |
-| `images/pcx/` | `tshp2.pcx` and `shipedit.pcx`, which carry their own palettes. |
-| `images/icons/` | The Windows icons, copied and converted to PNG. |
-| `sprites/tyrian_shp/` | The 13 banks in `tyrian.shp`: fonts, faces, planets, menu art, shots and ships. |
-| `sprites/tyrianc_shp/` | The Christmas variant of the same file. |
-| `sprites/newsh/` | The compiled 12px enemy and interface sheets, plus the shapebank map. |
-| `sprites/standalone/` | `estsc.shp`, `estpa.shp` and the two DOS ship-editor files. |
-| `tiles/` | The five `shapes?.dat` tilesets, one PNG per tile plus a contact sheet. |
-| `anim/tyrend/` | Every decoded frame of the episode 3 ending animation. |
-| `gamedata/` | Weapons, ports, specials, generators, ships, sidekicks, shields and enemies. |
-| `text/` | Interface text, credits, datacubes, episode scripts and the DOS exit screen. |
-| `levels/` | Per level: header, event script, the three tile maps as CSV, and rendered maps. |
-| `audio/` | Sound effects and voices as WAV, songs as `.lds` blobs with parsed JSON. |
-| `demos/` | The five recorded attract-mode demos, header and input stream. |
-| `raw/` | Every file no other section decoded, copied byte for byte, with strings pulled from executables. |
+%(layout)s
 
 ## Notes
 
-Item and enemy tables exist in three versions. Episodes 1 to 3 share the set in
-`tyrian.hdt`; episodes 4 and 5 each carry their own at the end of their `.lvl`
-file. `gamedata/` keeps them separate because they disagree on several items.
-
-Enemy records name a 1-based shapebank rather than a file.
-`sprites/newsh/index.json` maps each shapebank to the sheet that holds its frames.
-
-Compiled sheet frames are 1-based and 12 pixels wide. A 2x2 item uses frames
-N, N+1, N+19 and N+20.
-
-Level tile maps store a byte per cell. `tile_lookup.json` turns that byte into a
-1-based tile in the level's tileset, where 0 draws nothing. Palette index 0 is
-transparent in every background layer.
-
-Field meanings for the weapon, item and enemy records are documented in
-`doc/tyrian.hdt.txt`.
-
-`tyrian.sav` and `opentyrian.cfg` are player state rather than shipped data, so
-they are copied into `raw/` without being parsed.
+%(notes)s
 """
 
 
@@ -1311,14 +1637,16 @@ def main(argv=None):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default=os.path.join(REPO, "data"),
                         help="data directory to read (default: <repo>/data)")
-    parser.add_argument("--out", default=os.path.join(REPO, "dump"),
-                        help="output directory (default: <repo>/dump)")
+    parser.add_argument("--out",
+                        help="output directory (default: <repo>/dumps/<tree for this release>)")
     parser.add_argument("--only", nargs="+", metavar="SECTION",
                         help="dump only these sections")
     parser.add_argument("--skip", nargs="+", metavar="SECTION", default=[],
                         help="skip these sections")
     parser.add_argument("--palette", type=int, default=DEFAULT_PALETTE,
                         help="palette.dat index for assets with no palette of their own")
+    parser.add_argument("--version", choices=sorted(tf.VERSIONS),
+                        help="data version to decode as (default: sniffed from the directory)")
     parser.add_argument("--no-map-images", dest="map_images", action="store_false",
                         help="write level maps as CSV only, skipping the rendered PNGs")
     parser.add_argument("--no-sprite-files", dest="sprite_files", action="store_false",
