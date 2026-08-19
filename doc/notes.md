@@ -318,6 +318,8 @@ Tier selection rules:
   damageable. Permanent scenery must not roll a tier.
 - Follow type 39 link renames to a fixpoint.
 - Pass a tier through hostile `enemydie` transformations.
+- Treat `enemyAvail == 2 && edamaged` after an `edlevel == -1` transformation
+  as wreckage. Wrecks stay out of combat and draw without tier tint.
 - Keep the event scan derived and outside rollback state.
 
 `endlessEliteTint` is the palette-bank authority for bodies, health bars, shots,

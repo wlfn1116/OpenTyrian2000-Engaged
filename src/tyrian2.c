@@ -441,14 +441,11 @@ static void enemy_death_payout(unsigned int slot, int payee)
 	}
 }
 
-// Contract in tyrian2.h. Avail 2 keeps a wreck out of the shot pool and out of contact, and
-// edamaged keeps it out of the firing loop.
 bool enemy_is_wreck(unsigned int slot)
 {
 	return enemyAvail[slot] == 2 && enemy[slot].edamaged;
 }
 
-// Contract in tyrian2.h.
 Uint8 enemy_body_tint(unsigned int slot)
 {
 	if (enemy_is_wreck(slot))

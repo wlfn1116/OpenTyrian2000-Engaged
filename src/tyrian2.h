@@ -78,12 +78,10 @@ void enemy_logical_death(unsigned int i, int killer);
  * link-254 kill fires the level's jump. The player-shot loop and the Endless ram site share it. */
 void enemy_kill_group(unsigned int slot, int payee, int killer);
 
-/* True once a part has taken that edlevel -1 transformation. Nothing can shoot it, ram it or fire
- * from it after that, so what is left is wreckage. */
+/* True for an edlevel -1 transformed part that no longer participates in combat. */
 bool enemy_is_wreck(unsigned int slot);
 
-/* The endless tier colour this body paints in, 0 for none: its own tier, or the bank its link group
- * lends sealed plating. Wreckage has stopped being an enemy and drops both. */
+/* Return a live body's tier tint or its linked group's sealed-shell tint. Wrecks return 0. */
 Uint8 enemy_body_tint(unsigned int slot);
 
 /* Frames presented since the game started, the clock a cosmetic paces itself on. Rollback runs

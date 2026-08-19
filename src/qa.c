@@ -3050,7 +3050,7 @@ static void qa_test_elite_tier_eligibility(void)
 	qa_check(endlessEliteShellTint(0, 255) == 0 && endlessEliteShellTint(3, 255) == 0,
 	         "an unlinked part, and one whose group never rolls, stay untinted");
 
-	// Cover both routes into the tint, and the wreck state that closes each of them.
+	// Wrecks clear both direct tier tint and borrowed shell tint.
 	const JE_byte savedAvail = enemyAvail[0];
 	const struct JE_SingleEnemyType savedEnemy = enemy[0];
 
