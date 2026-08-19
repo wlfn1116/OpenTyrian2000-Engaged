@@ -21,7 +21,6 @@ inserted slots described below.
 | Episodes | 3 | 4 | 5 |
 | Level records | 37 | 62 | 70 |
 | Files in the compared directory | 94 | 106 | 114 |
-| Data directory | `data_11/` | `data_21/` | `data/` |
 | Dump | `dump_11/` | `dump_21/` | `dump_2000/` |
 
 ## At a glance

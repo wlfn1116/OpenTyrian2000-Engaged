@@ -5,11 +5,11 @@ directory, decoded where a reader exists and copied byte for byte where none
 does. `tools/dump/dump_data.py` writes this page and everything under the trees,
 so edit the tool rather than the output. DIFFERENCES.md is written by hand.
 
-| Release | Tree | Data | Files | Episodes | Item sets | Palettes | Backdrops | Sprite frames | Tiles |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Tyrian 1.1 | [`dump_11/`](dump_11/) | `data_11/` | 94 | 3 | 3 | 23 | 12 | 11455 | 1148 |
-| Tyrian 2.1 | [`dump_21/`](dump_21/) | `data_21/` | 106 | 4 | 2 | 23 | 13 | 14717 | 1339 |
-| Tyrian 2000 | [`dump_2000/`](dump_2000/) | `data/` | 114 | 5 | 3 | 24 | 14 | 17015 | 1531 |
+| Release | Tree | Files | Episodes | Item sets | Palettes | Backdrops | Sprite frames | Tiles |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Tyrian 1.1 | [`dump_11/`](dump_11/) | 94 | 3 | 3 | 23 | 12 | 11455 | 1148 |
+| Tyrian 2.1 | [`dump_21/`](dump_21/) | 106 | 4 | 2 | 23 | 13 | 14717 | 1339 |
+| Tyrian 2000 | [`dump_2000/`](dump_2000/) | 114 | 5 | 3 | 24 | 14 | 17015 | 1531 |
 
 [DIFFERENCES.md](DIFFERENCES.md) walks through what changed between the three
 releases, from the ship list to the container formats.
@@ -40,17 +40,17 @@ The same conventions hold in all three trees:
 
 ## Regenerating
 
-Each release is dumped from its own data directory and lands in its own tree:
+Each release is dumped from its own data directory and lands in its own tree.
+The tool identifies the release from the item counts in front of its tables, so
+one command covers all three:
 
-    python tools/dump/dump_data.py --data data_11
-    python tools/dump/dump_data.py --data data_21
-    python tools/dump/dump_data.py --data data
+    python tools/dump/dump_data.py --data DIR
 
 `tools/dump/verify_dump.py` checks a tree against the data it came from. Every
 check either accounts for each byte of a source file or compares a decoder with
 the engine calculation it mirrors:
 
-    python tools/dump/verify_dump.py --data data_21 --reproducible
+    python tools/dump/verify_dump.py --data DIR --reproducible
 
 Run it once per tree after regenerating. Because the readers are deterministic,
 a diff in a tree is a real change in the data or in a decoder.
