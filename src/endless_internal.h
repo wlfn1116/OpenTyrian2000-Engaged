@@ -224,9 +224,9 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_OFFERS_MILESTONE 5
 
 // Extra Perk pricing. See doc/notes.md#economy-and-perks.
-#define ENDLESS_PERK_OWNED_PCT         40
-#define ENDLESS_PERK_PAID_GROWTH_PCT  150
-#define ENDLESS_PERK_VISIT_REPEAT_PCT 175
+#define ENDLESS_PERK_OWNED_PCT         15
+#define ENDLESS_PERK_PAID_GROWTH_PCT  120
+#define ENDLESS_PERK_VISIT_REPEAT_PCT 150
 // Bounds compound prices when a save contains a corrupt count.
 #define ENDLESS_PERK_COMPOUND_MAX      12
 // Saved purchase counts are clamped above any reachable run.
