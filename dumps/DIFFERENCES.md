@@ -57,8 +57,8 @@ release, and its script file `levels3.dat` is byte for byte identical in 2.1 and
 2000. The level data itself in `tyrian3.lvl` was still edited at both steps.
 
 **Episode 1** grew from 14 level records to 18 in 2.1. The four newcomers are a
-second TYRIAN, ASSASSIN, SAVARA V and `** ALE **`, and they are still there in
-2000.
+second TYRIAN (Hard+ difficulty exclusive), ASSASSIN, SAVARA V and `** ALE **`,
+and they are still there in 2000.
 
 **Episode 2** gained one record in 2.1, a second BONUS level, and stayed at 12.
 
