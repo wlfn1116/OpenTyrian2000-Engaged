@@ -18,6 +18,9 @@ This fork adds:
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
+## Showcase
+[Quick Endless mode gameplay (also shows the high-refersh rendering) - watch on YouTube](https://youtu.be/uuwwIsWoOMQ)
+
 ## Game data
 
 Release packages include the freeware Tyrian 2000 data. Source builds need a
