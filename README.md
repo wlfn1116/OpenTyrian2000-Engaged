@@ -19,8 +19,10 @@ This fork adds:
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
 ## Showcase
-[Quick Endless mode gameplay (also shows the high-refersh rendering) - watch on YouTube](https://youtu.be/uuwwIsWoOMQ)
 
+[Online campaign co-op and online Destruct gameplay (also shows the high-refersh rendering)](https://www.youtube.com/watch?v=6XYol6TJdhE)  
+[Quick Endless mode gameplay](https://www.youtube.com/watch?v=uuwwIsWoOMQ)  
+[Endless mode Zone 100 clear](https://www.youtube.com/watch?v=O9BM6xOAqes)  
 ## Game data
 
 Release packages include the freeware Tyrian 2000 data. Source builds need a
