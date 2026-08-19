@@ -1,0 +1,57 @@
+# Shared by every Ubuntu job in build.yml.
+
+name: Install SDL2
+description: Install the SDL2 development packages the Linux builds link against.
+
+runs:
+  using: composite
+  steps:
+    - name: apt-get libsdl2-dev libsdl2-net-dev
+      shell: bash
+      env:
+        # No terminal is attached, so nothing can answer a debconf or
+        # needrestart dialog. Both have to stay quiet.
+        DEBIAN_FRONTEND: noninteractive
+        NEEDRESTART_MODE: a
+        NEEDRESTART_SUSPEND: 1
+      run: |
+        set -eu
+
+        # apt waits forever by default: the dpkg lock has no timeout and a
+        # stalled mirror is retried without one. Bound every wait so a blocked
+        # install fails the job in minutes instead of holding it open until the
+        # six-hour limit.
+        apt_opts=(-o DPkg::Lock::Timeout=90
+                  -o Acquire::Retries=3
+                  -o Acquire::http::Timeout=20
+                  -o Acquire::https::Timeout=20)
+
+        apt_get()
+        {
+          timeout 120 sudo -E apt-get -y "${apt_opts[@]}" "$@" < /dev/null
+        }
+
+        for attempt in 1 2 3; do
+          if apt_get update && apt_get install libsdl2-dev libsdl2-net-dev; then
+            exit 0
+          fi
+          echo "apt attempt $attempt did not finish"
+
+          # A killed apt can leave dpkg mid-transaction, which the next attempt
+          # refuses to work around on its own.
+          timeout 120 sudo -E dpkg --configure -a || true
+
+          # The runner's Azure mirror is the usual stall. A rewrite failure is
+          # not worth losing the remaining attempts over.
+          if [ "$attempt" -eq 1 ]; then
+            find /etc/apt \( -name '*.list' -o -name '*.sources' \) -print |
+              xargs -r sudo sed -i 's|//azure.archive.ubuntu.com/|//archive.ubuntu.com/|g' || true
+            apt_opts+=(-o Acquire::ForceIPv4=true)
+            echo 'retrying from archive.ubuntu.com over IPv4'
+          fi
+
+          sleep 5
+        done
+
+        echo 'SDL2 packages could not be installed'
+        exit 1
