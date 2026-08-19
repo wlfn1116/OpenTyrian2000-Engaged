@@ -17,35 +17,41 @@ runs:
       run: |
         set -eu
 
-        # apt waits forever by default: the dpkg lock has no timeout and a
-        # stalled mirror is retried without one. Bound every wait so a blocked
-        # install fails the job in minutes instead of holding it open until the
-        # six-hour limit.
+        # The runner's sources are a mirrorlist whose priority:1 entry is the
+        # regional Azure mirror. When that host stops answering, apt can stall
+        # in the failover with no output and no internal timeout, so only an
+        # outside bound ends it. Give every call one.
+        apt_get()
+        {
+          timeout -k 10 "$1" sudo -E apt-get -y "${apt_opts[@]}" "${@:2}" < /dev/null
+        }
+
         apt_opts=(-o DPkg::Lock::Timeout=90
                   -o Acquire::Retries=3
                   -o Acquire::http::Timeout=20
                   -o Acquire::https::Timeout=20)
 
-        apt_get()
-        {
-          timeout 120 sudo -E apt-get -y "${apt_opts[@]}" "$@" < /dev/null
-        }
-
         for attempt in 1 2 3; do
-          if apt_get update && apt_get install libsdl2-dev libsdl2-net-dev; then
+          if apt_get 150 update && apt_get 150 install libsdl2-dev libsdl2-net-dev; then
             exit 0
           fi
           echo "apt attempt $attempt did not finish"
 
           # A killed apt can leave dpkg mid-transaction, which the next attempt
           # refuses to work around on its own.
-          timeout 120 sudo -E dpkg --configure -a || true
+          timeout -k 10 60 sudo -E dpkg --configure -a || true
 
-          # The runner's Azure mirror is the usual stall. A rewrite failure is
-          # not worth losing the remaining attempts over.
+          # Retry against the Ubuntu archive directly. Replacing the mirrorlist
+          # URI rather than reordering it is what takes the failover out of the
+          # picture; archive.ubuntu.com serves the security suite too.
           if [ "$attempt" -eq 1 ]; then
-            find /etc/apt \( -name '*.list' -o -name '*.sources' \) -print |
-              xargs -r sudo sed -i 's|//azure.archive.ubuntu.com/|//archive.ubuntu.com/|g' || true
+            archive=https://archive.ubuntu.com/ubuntu/
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources \
+                     /etc/apt/sources.list.d/*.list; do
+              test -f "$f" || continue
+              sudo sed -i -e "s|mirror+file:/etc/apt/apt-mirrors\.txt|$archive|g" \
+                          -e "s|http://azure\.archive\.ubuntu\.com/ubuntu/|$archive|g" "$f"
+            done
             apt_opts+=(-o Acquire::ForceIPv4=true)
             echo 'retrying from archive.ubuntu.com over IPv4'
           fi
