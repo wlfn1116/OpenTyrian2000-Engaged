@@ -71,11 +71,9 @@ struct SoundPatch
     uint8_t portamento;
     int8_t glide;
 #endif
-    // Detune in 1/16 of a semitone, reduced at load to this patch's offset within its group of
-    // otherwise identical patches. See LdsReduceDetune().
+    // Detune in 1/16 semitones, normalized within equivalent patch groups.
     int8_t finetune;
-    // Player ticks this voice sounds for on its envelope alone, or 0 when it holds instead.
-    // See LdsEnvelopeTicks().
+    // Envelope-derived duration in player ticks; 0 means hold.
     uint16_t envelope_ticks;
 #ifdef ENABLE_VIB
     uint8_t vibrato;
@@ -99,10 +97,7 @@ struct SoundPatch
     // skip 2 bytes worth of MIDI dummy fields or whatever
 };
 
-/* opl.c scales an operator's amplitude by a fixed factor every sample and turns the operator off
- * once it reaches 1e-8. The sample rate cancels out of the phase duration, and decrelconst[0] is
- * the slowest of the four key-scale slots, so using it bounds the note from above. Returns -1 for
- * a rate of zero, which never moves. */
+/* Use opl.c's slowest key-scale slot. A zero rate returns -1 because it never completes. */
 static double LdsEnvPhaseSeconds(unsigned rate, double from, double to)
 {
     static const double DecRelConst = 1.0 / 39.28064;
@@ -115,8 +110,7 @@ static double LdsEnvPhaseSeconds(unsigned rate, double from, double to)
     return std::log(to / from) / perSample;
 }
 
-/* Seconds until one operator falls silent, or -1 when it sustains instead. A percussive operator
- * decays to the sustain level and then keeps going to silence while the key is still down. */
+/* Return a percussive operator's time to silence, or -1 for a sustaining operator. */
 static double LdsOperatorSeconds(uint8_t misc, uint8_t ad, uint8_t sr)
 {
     static const double Silence = 0.00000001;
@@ -136,13 +130,10 @@ static double LdsOperatorSeconds(uint8_t misc, uint8_t ad, uint8_t sr)
     return (decay < 0.0 || release < 0.0) ? -1.0 : decay + release;
 }
 
-/* Ticks a voice sounds for with nothing releasing it, or 0 when it holds. A patch with no key-off
- * length leans on the Adlib envelope to stop the note. MIDI has no such envelope, and the only
- * other release here is the channel's next note, which can be most of a song away. Both operators
- * are heard in AM mode, so the note lasts as long as the slower one. */
+/* Estimate a key-off-free voice's duration. AM voices use the slower operator; 0 means hold. */
 static uint16_t LdsEnvelopeTicks(const uint8_t * record)
 {
-    // Initialize(1, 35) with DefaultTempoLDS puts a player tick at 500000/35 microseconds.
+    // DefaultTempoLDS at 35 Hz produces 70 player ticks per second.
     static const double TicksPerSecond = 70.0;
     static const double MaxTicks = 65535.0;
 
@@ -315,16 +306,13 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
     #endif
     }
 
-    // A detuned patch lands between two keys, so take the nearer key and leave the
-    // remainder on the wheel. Truncating instead would swallow any detune below a
-    // semitone and drop a larger one onto the wrong key.
+    // Split detune between the nearest key and a pitch-wheel remainder.
     const unsigned key = (note + 8) >> 4;
 
 #ifdef ENABLE_WHEEL
     const int key_detune = (int) note - (int) (key << 4);
 
-    // The wheel already carries glide and vibrato for this channel, so the remainder
-    // rides along in the same term rather than fighting it for the bend.
+    // Glide, vibrato, and residual detune share the channel pitch wheel.
     if (channel != 9)
         c->lasttune = (int16_t) (c->lasttune + key_detune);
 
@@ -439,7 +427,7 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
 static const size_t LdsPatchBytes    = 46;
 static const size_t LdsPositionBytes = 9 * 3;
 
-/* Byte offsets inside a patch record. A layered voice varies exactly these and nothing else. */
+/* Patch fields excluded from voice-group identity. */
 static const size_t LdsModVolume    = 1;
 static const size_t LdsCarVolume    = 6;
 static const size_t LdsDetune       = 14;
@@ -459,11 +447,8 @@ static bool LdsSameVoice(const uint8_t * a, const uint8_t * b)
     return true;
 }
 
-/* A patch's detune does two jobs. Within a group of otherwise identical patches it is the relative
- * offset that makes a layered voice shimmer, and the synth needs it. On a patch with no such twin
- * it is Adlib voicing, which midi_transpose already covers for MIDI, and sounding it would leave
- * that part flat or sharp on its own. Reduce every patch to its offset within its group, which
- * leaves a lone patch at zero. */
+/* Preserve relative detune within equivalent patch groups. Lone patches normalize to zero because
+ * midi_transpose carries their authored MIDI pitch. */
 static void LdsReduceDetune(std::vector<SoundPatch> & patches, const uint8_t * records)
 {
     std::vector<int8_t> reduced(patches.size());
@@ -1345,9 +1330,7 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
                 buffer[0] = last_note[i];
                 buffer[1] = 127;
 
-                /* Release where the song stops, however much of the note was left. A looping song
-                 * marks its end here and repeats the section above, so the player never reaches a
-                 * later tick and a release scheduled there would leave the note held for good. */
+                /* Release at the loop boundary; events scheduled later are never reached on repeat. */
                 Track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::NoteOff, last_channel[i], buffer, 2));
 
             #ifdef ENABLE_WHEEL

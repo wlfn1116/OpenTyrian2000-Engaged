@@ -815,53 +815,22 @@ MIDI backends convert LDS through vendored midiproc. At loop start, replay
 pre-loop program, controller, pitch, and SysEx state at time zero. Never replay
 notes.
 
-An LDS patch carries a detune in sixteenths of a semitone, and it serves two ends.
-Across a group of otherwise identical patches it is the relative offset that makes
-a layered voice shimmer. On a patch standing alone it is Adlib voicing, and
-`midi_transpose` already covers MIDI pitch there, so sounding it leaves that part
-flat or sharp by itself. The converter reduces every patch to its offset within
-its group, sounds the nearest key, and leaves the remainder on the pitch wheel, in
-the term that already carries glide and vibrato for that channel. Across the
-shipped songs that leaves 6 to 19 cents of detune on 7.3% of melodic notes and
-moves no note off its written key. `qa_test_lds_midi_detune` pins both jobs.
+### LDS conversion
 
-The same split governs `arp_tab[0]`, which the Adlib player folds in as a fixed
-transpose whenever a patch has no arpeggio sequence. It is Adlib-side voicing, and
-`midi_transpose` is the MIDI-side transpose the author set beside it. Adding
-`arp_tab[0]` on the MIDI path double-transposes: of the 58 melodic patches that
-carry one, 19 have `midi_transpose` set to the same value, and one pair sums to 72
-semitones. Leave it to `midi_transpose`.
+LDS detune uses sixteenths of a semitone. Group equivalent patches while
+ignoring volume, MIDI velocity, and detune; normalize each group around zero,
+sound the nearest MIDI key, and put the remainder on the channel's pitch wheel.
+A lone patch normalizes to zero because `midi_transpose` owns its MIDI pitch.
+Do not add `arp_tab[0]` on the MIDI path; it is part of the Adlib voicing.
 
-A patch whose `keyoff` is zero names no note length. The Adlib voice stops on its
-own: a percussive operator decays to the sustain level and then keeps going to
-silence with the key still down. MIDI has no such envelope, and the converter's
-only other release is the channel's next note, so those notes rang on. The
-converter now derives a length from the envelope, using `opl.c`'s own constants
-and its 1e-8 cutoff, and takes whichever comes first. The estimate uses the
-slowest key-scale slot, so it only ever bounds a note from above: of 66462
-candidate note-ons it shortens 44, the worst falling from 126 seconds to 2.2.
-Voices that sustain, and rates of zero, are left to hold as before.
+A zero `keyoff` relies on the OPL envelope. `LdsEnvelopeTicks` estimates the
+percussive decay from `opl.c` using the slowest key-scale slot; zero means the
+voice sustains or has a rate that never completes. The estimate is an upper
+bound. Exact KSR scaling needs the note and belongs in `PlaySound`.
 
-A note still sounding when the walk stops is released at that tick. The loop end
-marker sits there, and a looping player repeats the section above it, so a release
-scheduled past that point is never reached and the note stays held through every
-repeat. It also stretched the reported duration, which is what decides whether a
-song loops at all.
-
-The envelope length is an upper bound, not the exact figure. `opl.c` scales the
-decay by a key-scale offset taken from the note's block and the patch's KSR bit,
-and this uses the slowest slot instead. A real note can fall silent up to 1.75x
-sooner with KSR clear, which is 393 of the 421 candidate patches, and up to 14x
-sooner with it set. Reproducing that needs the note, so it belongs in PlaySound
-with the frequency table beside it.
-
-Three LDS features still do not reach the MIDI path, all behind `ENABLE_VIB`,
-`ENABLE_TREM`, and `ENABLE_ARP` in `MIDIProcessorLDS.cpp`. Measured over the
-shipped songs: vibrato covers 64% of note-ons, tremolo 33%, and running arpeggio
-sequences 2.5%. That code has never been compiled and does not build as written:
-it calls `add_event` rather than `AddEvent`, names `PitchWheel` rather than
-`PitchBendChange`, and strands the `vibwait` countdown inside a branch that only
-exists when `ENABLE_ARP` is set, so a delayed vibrato would never start.
+Release active notes at the song or loop boundary. Events scheduled past that
+point are never reached on repeat. `ENABLE_VIB`, `ENABLE_TREM`, and `ENABLE_ARP`
+remain disabled because those branches are incomplete.
 
 Windows native MIDI uses `CALLBACK_NULL` and its own sequencer thread. When a
 configured SoundFont path is stale, retry its filename under `data_dir()` before

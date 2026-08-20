@@ -4116,18 +4116,7 @@ static void qa_test_firing_sound_levels(void)
 
 #ifdef WITH_MIDI
 
-/* LDS to MIDI detune (src/midiproc/src/MIDIProcessorLDS.cpp). A patch's detune byte serves two
- * ends. Across a group of otherwise identical patches it is the relative offset that makes a
- * layered voice shimmer, and it has to reach the synth. On a patch standing alone it is Adlib
- * voicing, which midi_transpose already covers for MIDI, and sounding it leaves that part flat or
- * sharp by itself. The converter keeps only the offset within a group, sounds the nearest key, and
- * leaves the remainder on the pitch wheel.
- *
- * A patch with no key-off length leans on the Adlib envelope to stop the note, which MIDI has no
- * equivalent for. A percussive voice has to be released on its own; a sustaining one must not be.
- *
- * The same probe watches controller 7. A voice's level belongs to the channel its note is about to
- * sound on, not to the channel that channel's previous note used. */
+/* LDS detune, envelope release, channel ownership, and truncation checks. */
 
 #define QA_LDS_PATCH_BYTES 46
 #define QA_LDS_TEMPO       7    // a row every 8 ticks, so one position spans 512 of them
@@ -4137,10 +4126,8 @@ static void qa_test_firing_sound_levels(void)
 #define QA_LDS_WHEEL_RANGE 12   // semitones, as MIDIProcessorLDS.cpp announces over RPN
 #define QA_LDS_BEND_CENTER 8192
 
-/* Patches sharing a program form one voice group here, since the program is the only unmasked byte
- * the probe varies. Keep every program below 0x80, which would route to percussion instead.
- * Detunes are in sixteenths of a semitone. At most eight rows, so the probe song keeps channel 8
- * free for its stop command. */
+/* Program identifies voice groups in this probe. Detune uses 1/16 semitone units, and channel 8
+ * remains free for the stop command. */
 static const struct
 {
 	JE_byte program;
@@ -4218,16 +4205,13 @@ static size_t qa_lds_build(JE_byte *out)
 
 	for (unsigned ch = 0; ch < 9; ++ch)
 	{
-		// A voice sets its level on row 0, sounds its note on row 1, then waits out the rest.
-		// Channel 8 carries no voice: it waits instead and stops the song on the last row, which
-		// leaves room for an envelope to run out while the song is still playing.
+		// Voices set volume, play once, then wait. Channel 8 stops on the final row.
 		const bool voiced = ch < voices;
 
 		p = qa_lds_put16(p, voiced ? 0xfd00u | qaLdsVoices[ch].level : 0x8000u | (QA_LDS_ROWS - 2));
 		p = qa_lds_put16(p, voiced ? ((unsigned)QA_LDS_NOTE << 8) | ch : 0xfc00u);
 
-		// Nothing past here is ever read, and a trailing word nothing reads would let the song
-		// survive being truncated, which the check below is looking for.
+		// Omit unread trailing words so truncation checks cover the parser's actual boundary.
 		if (voiced)
 			p = qa_lds_put16(p, 0x8000u | (QA_LDS_ROWS - 3));
 	}
@@ -4401,11 +4385,7 @@ static void qa_test_lds_midi_detune(void)
 		qa_check(voice[v].level == wantLevel, "a volume controller reaches its own voice");
 	}
 
-
-	/* Row 5 decays inside the song, row 6 has an envelope that outlasts it, and row 7 sustains.
-	 * The rest name no decay rate. Voices with nothing to release them ring until the song ends,
-	 * and nothing may be scheduled past that: a looping song repeats the section above its end,
-	 * so a later release is never reached and would hold the note for good. */
+	/* Voice 5 decays before the end, voice 6 outlasts it, and voice 7 sustains. */
 	qa_check(voices == 8, "the probe still has the eight voices these checks name");
 	if (voices == 8)
 	{
@@ -4422,9 +4402,7 @@ static void qa_test_lds_midi_detune(void)
 	MIDPROC_FreeSerialized(smf);
 	MIDPROC_Container_Delete(container);
 
-	/* Every proper prefix of the song is malformed, and the converter has to say so. This guards
-	 * the accept path only. An undersized length check reads past the input instead, which
-	 * nothing here can observe; a sanitizer build is what catches that. */
+	/* Every proper prefix must be rejected. Sanitizers cover out-of-bounds reads. */
 	size_t accepted = 0, firstAccepted = 0;
 	for (size_t cut = 1; cut < songSize; ++cut)
 	{
