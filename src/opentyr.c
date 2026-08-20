@@ -139,6 +139,8 @@ static const char* getSupersamplePickerItem(size_t i, char* buffer, size_t buffe
 static const char *const bossBarStyleNames[]  = { "Classic", "Enhanced" };
 static const char *const bossBarLayoutNames[] = { "Top", "Bottom", "Left", "Right" };
 static const char *const bossBarTwoNames[]    = { "Together", "Split", "Stacked" };
+// Must match VulnerableCueMode.
+static const char *const vulnCueNames[]       = { "Off", "Bosses", "All" };
 
 static const char *const enemyBarLayoutNames[]   = { "Horizontal", "Vertical" };
 static const char *const enemyBarPositionNames[] = { "Bottom", "Top", "Left", "Right", "Center" };
@@ -160,6 +162,7 @@ static const char *const sparkModeNames[] = { "Auto", "On", "Off" };
 NAME_PICKER(bossBarStyle, bossBarStyleNames)
 NAME_PICKER(bossBarLayout, bossBarLayoutNames)
 NAME_PICKER(bossBarTwo, bossBarTwoNames)
+NAME_PICKER(vulnCue, vulnCueNames)
 NAME_PICKER(enemyBarLayout, enemyBarLayoutNames)
 NAME_PICKER(enemyBarPosition, enemyBarPositionNames)
 NAME_PICKER(gaugeGrad, gaugeGradNames)
@@ -418,6 +421,7 @@ static int *menuItemIntSetting(MenuItemId id)
 	case MENU_ITEM_BOSS_BAR_STYLE:   return &bossBarStyle;
 	case MENU_ITEM_BOSS_BAR_LAYOUT:  return &bossBarLayout;
 	case MENU_ITEM_BOSS_BAR_TWO:     return &bossBarTwoMode;
+	case MENU_ITEM_BOSS_VULN_CUE:    return &vulnerableCue;
 	case MENU_ITEM_ENEMY_BAR_LAYOUT: return &enemyBarLayout;
 	case MENU_ITEM_ENEMY_BAR_POS:    return &enemyBarPosition;
 	case MENU_ITEM_GAUGE_GRAD_GEN:   return &gaugeGradGenerator;
@@ -450,7 +454,6 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_EXTRA_SPARKS:        return &extraSparks;
 	case MENU_ITEM_SPECIAL_TINT:        return &specialScreenTint;
 	case MENU_ITEM_ENEMY_BARS:          return &enemyBars;
-	case MENU_ITEM_BOSS_VULN_CUE:       return &bossVulnerableCue;
 	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
 	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
@@ -717,7 +720,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enemy Bars...", "Health bars on enemies you have damaged.", MENU_ENEMY_BARS },
 				{ MENU_ITEM_SUBMENU, "Boss Bars...", "Style and placement of the boss health bars.", MENU_BOSS_BARS },
 				{ MENU_ITEM_SUBMENU, "Gauges...", "Gradient and damage flash of the three gauges.", MENU_GAUGES },
-				{MENU_ITEM_BOSS_VULN_CUE, "Vulnerable Cue:", "Grey a boss bar out until it can be hurt, then flash."},
+				{MENU_ITEM_BOSS_VULN_CUE, "Vulnerable Cue:", "Which hulls flash when they turn damageable.",
+				  .getPickerItemsCount = vulnCueCount, .getPickerItem = vulnCueItem},
 				MENU_DONE_ROW
 			},
 		},

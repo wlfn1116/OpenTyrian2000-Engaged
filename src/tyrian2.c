@@ -2871,6 +2871,13 @@ bool enemy_armed_flash_arms(JE_byte wasArmor, JE_byte nowArmor, JE_byte avail)
 	return wasArmor >= 255 && nowArmor > 0 && nowArmor < 255 && avail == 0;
 }
 
+bool enemy_armed_flash_shows(JE_byte linknum)
+{
+	if (vulnerableCue == VULN_CUE_ALL)
+		return true;
+	return vulnerableCue == VULN_CUE_BOSSES && enemy_has_boss_bar(linknum);
+}
+
 Uint8 enemy_armed_flash_lift(Uint32 left)
 {
 	if (left == 0)
@@ -2891,7 +2898,7 @@ static Uint32 enemy_armed_flash_left(unsigned int slot)
 // Arm after direct armor writes on live passes; damage never calls this path.
 static void enemy_note_armed(unsigned int slot, JE_byte wasArmor)
 {
-	if (!bossVulnerableCue || rollback_resim)
+	if (vulnerableCue == VULN_CUE_OFF || rollback_resim)
 		return;
 	if (!enemy_armed_flash_arms(wasArmor, enemy[slot].armorleft, enemyAvail[slot]))
 		return;
@@ -3626,8 +3633,11 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				    enemy[i].egr[enemy[i].enemycycle - 1] == 999)
 					goto enemy_gone;
 
-				// Vulnerability flash overrides tint; otherwise restore the tier bank after reset.
-				enemyFlashLift = enemy_armed_flash_lift(enemy_armed_flash_left(i));
+				// The flash overrides tint. Choose its scope here because the boss bar may
+				// appear after the armor event in the same tick.
+				enemyFlashLift = enemy_armed_flash_shows(enemy[i].linknum)
+				               ? enemy_armed_flash_lift(enemy_armed_flash_left(i))
+				               : 0;
 				if (enemyFlashLift == 0 && enemy[i].filter == 0)
 					enemy[i].filter = enemy_body_tint(i);
 
@@ -11572,9 +11582,9 @@ static void boss_bar_colours(JE_byte link_num, int *base, int *lift)
 		}
 	}
 
-	*lift = bossVulnerableCue ? (int)cue : 0;
+	*lift = (vulnerableCue != VULN_CUE_OFF) ? (int)cue : 0;
 
-	if (bossVulnerableCue && armor == 255)
+	if (vulnerableCue != VULN_CUE_OFF && armor == 255)
 	{
 		*base = BOSS_BAR_GREY_BANK;
 		return;

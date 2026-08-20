@@ -298,7 +298,16 @@ typedef enum
 extern int bossBarStyle;    // BossBarStyle
 extern int bossBarLayout;   // BossBarLayout
 extern int bossBarTwoMode;  // BossBarTwoMode
-extern bool bossVulnerableCue; // grey invulnerable boss bars and flash when damageable
+/* Which enemies flash when a level makes them damageable. */
+typedef enum
+{
+	VULN_CUE_OFF = 0,
+	VULN_CUE_BOSSES = 1,  // bodies represented by a boss bar; default
+	VULN_CUE_ALL = 2,
+	VULN_CUE_COUNT
+} VulnerableCueMode;
+
+extern int vulnerableCue;   // VulnerableCueMode
 extern bool armorAlarm;     // low-armor WARNING siren (Setup > Sound)
 extern bool linkSounds;     // 2P fuse/unfuse clink+spring (Setup > Sound)
 extern bool debugMode;      // gates the debug menu and debug level select

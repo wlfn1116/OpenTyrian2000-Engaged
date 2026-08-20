@@ -337,7 +337,7 @@ void save_slot_set_online_player(JE_byte slot, uint playerNum)
 int bossBarStyle   = BOSS_BAR_ENHANCED;
 int bossBarLayout  = BOSS_BAR_TOP;
 int bossBarTwoMode = BOSS_BAR_TWO_SPLIT;
-bool bossVulnerableCue = true;
+int vulnerableCue  = VULN_CUE_BOSSES;
 bool armorAlarm    = true;  // low-armor WARNING siren (Setup > Sound)
 bool linkSounds    = true;  // 2P fuse/unfuse clink+spring (Setup > Sound)
 /* When off: debug menu and debug level select hidden; buy/sell and pause menus
@@ -496,7 +496,7 @@ static const EnhancementSetting enhancementSettings[] = {
 	{ .intSetting = &bossBarStyle,   .vanilla = BOSS_BAR_CLASSIC,   .engaged = BOSS_BAR_ENHANCED },
 	{ .intSetting = &bossBarLayout,  .vanilla = BOSS_BAR_TOP,       .engaged = BOSS_BAR_TOP },
 	{ .intSetting = &bossBarTwoMode, .vanilla = BOSS_BAR_TWO_SPLIT, .engaged = BOSS_BAR_TWO_SPLIT },
-	{ .boolSetting = &bossVulnerableCue, .vanilla = false, .engaged = true },
+	{ .intSetting = &vulnerableCue,  .vanilla = VULN_CUE_OFF, .engaged = VULN_CUE_BOSSES },
 
 	/* Gauges. */
 	{ .intSetting = &gaugeGradGenerator, .vanilla = GAUGE_GRAD_UP, .engaged = GAUGE_GRAD_UP },
@@ -832,9 +832,10 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "boss_bar_layout", &bossBarLayout);
 		config_get_int_option(section, "boss_bar_two_mode", &bossBarTwoMode);
 
-		int boss_vulnerable_cue = bossVulnerableCue ? 1 : 0;
-		config_get_int_option(section, "boss_vulnerable_cue", &boss_vulnerable_cue);
-		bossVulnerableCue = (boss_vulnerable_cue != 0);
+		/* Existing 0 and 1 values map to Off and Bosses. */
+		config_get_int_option(section, "boss_vulnerable_cue", &vulnerableCue);
+		if (vulnerableCue < VULN_CUE_OFF || vulnerableCue >= VULN_CUE_COUNT)
+			vulnerableCue = VULN_CUE_BOSSES;
 
 		int armor_alarm_enabled = armorAlarm ? 1 : 0;
 		config_get_int_option(section, "armor_alarm", &armor_alarm_enabled);
@@ -1356,7 +1357,7 @@ bool save_opentyrian_config(void)
 	config_set_int_option(section, "gauge_grad_generator", gaugeGradGenerator);
 	config_set_int_option(section, "gauge_grad_shield", gaugeGradShield);
 	config_set_int_option(section, "gauge_grad_armor", gaugeGradArmor);
-	config_set_int_option(section, "boss_vulnerable_cue", bossVulnerableCue ? 1 : 0);
+	config_set_int_option(section, "boss_vulnerable_cue", vulnerableCue);
 	config_set_int_option(section, "gauge_flash_shield", gaugeFlashShield ? 1 : 0);
 	config_set_int_option(section, "gauge_flash_armor", gaugeFlashArmor ? 1 : 0);
 	config_set_int_option(section, "special_screen_tint", specialScreenTint ? 1 : 0);

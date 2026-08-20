@@ -68,6 +68,8 @@ void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *ou
 
 /* Return whether a live slot changed from invulnerable to damageable armor. */
 bool enemy_armed_flash_arms(JE_byte wasArmor, JE_byte nowArmor, JE_byte avail);
+/* True if this body belongs to the configured cue scope. */
+bool enemy_armed_flash_shows(JE_byte linknum);
 /* Return the body-flash shade lift for the remaining presented frames. */
 Uint8 enemy_armed_flash_lift(Uint32 left);
 

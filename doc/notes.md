@@ -87,10 +87,12 @@ per simulation tick.
 
 ### Boss vulnerability cue
 
-`bossVulnerableCue` is presentation-only. Arm it when a direct write changes
-`armorleft` from 255 to 1 through 254; damage must not arm it. Store
-`rl_presented_frames() + 1` on live passes and clear the stamp when a slot is
-reused.
+`vulnerableCue` is presentation-only: Off, Bosses, or All. Arm it only when a
+direct write changes `armorleft` from 255 to 1 through 254. Store
+`rl_presented_frames() + 1` on live passes and clear it when the slot is reused.
+
+Choose the eligible set when drawing. An armor event can run before the boss bar
+appears in the same tick, and may affect a link group or every active slot.
 
 Resolve bar colour and flash from the link group because `boss_bar[]` slots can
 move. Bank 0 is the in-game grey ramp; use `blit_sprite2_filter_bright` for the

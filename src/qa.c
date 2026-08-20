@@ -4540,7 +4540,7 @@ static void qa_test_enhancement_presets(void)
 		{ .boolSetting = &extraParallax, .poke = true, .name = "Visuals" },
 		{ .intSetting = &enemyBarOpacity, .poke = 40, .name = "Enemy Bars" },
 		{ .intSetting = &bossBarLayout, .poke = BOSS_BAR_BOTTOM, .name = "Boss Bars" },
-		{ .boolSetting = &bossVulnerableCue, .poke = false, .name = "Vulnerable Cue" },
+		{ .intSetting = &vulnerableCue, .poke = VULN_CUE_ALL, .name = "Vulnerable Cue" },
 		{ .intSetting = &gaugeGradGenerator, .poke = GAUGE_GRAD_DOWN, .name = "Gauges" },
 		{ .boolSetting = &gaugeFlashArmor, .poke = false, .name = "Gauge flash" },
 		{ .boolSetting = &customWeaponEnabled, .poke = false, .name = "Weapons" },
@@ -6231,6 +6231,28 @@ static void qa_test_vulnerable_cue(void)
 			break;
 		}
 	qa_check(enemy_armed_flash_lift(1) > 0, "without going dark before the cue ends");
+
+	/* Cue scope when one armor event affects boss and non-boss bodies. */
+	const int savedCue = vulnerableCue;
+	const Uint8 savedLink[2] = { boss_bar[0].link_num, boss_bar[1].link_num };
+	boss_bar[0].link_num = 42;
+	boss_bar[1].link_num = 0;
+
+	vulnerableCue = VULN_CUE_BOSSES;
+	qa_check(enemy_armed_flash_shows(42), "a hull carrying a boss bar shows the cue");
+	qa_check(!enemy_armed_flash_shows(7), "a linked hull with no bar of its own does not");
+	qa_check(!enemy_armed_flash_shows(0), "and neither does unlinked traffic");
+
+	vulnerableCue = VULN_CUE_ALL;
+	qa_check(enemy_armed_flash_shows(0) && enemy_armed_flash_shows(7),
+	         "All Enemies hands the cue to everything an armor event arms");
+
+	vulnerableCue = VULN_CUE_OFF;
+	qa_check(!enemy_armed_flash_shows(42), "Off silences it even on a boss");
+
+	vulnerableCue = savedCue;
+	boss_bar[0].link_num = savedLink[0];
+	boss_bar[1].link_num = savedLink[1];
 }
 
 /* Item data points one of the Flying Punch's bolts (weapon 794, `sg[0]`) at People Pretzels'
