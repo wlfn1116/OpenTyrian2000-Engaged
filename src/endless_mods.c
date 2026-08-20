@@ -658,7 +658,7 @@ Uint64 endlessMakeTheEndMods(void)
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_RETALIATION;
 
-	// Draw last to preserve the established structural RNG sequence.
+	// Drawn after the fixed hazards, so the established structural RNG sequence is preserved.
 	static const Uint64 rungs[] = {
 		ENDLESS_MOD_SEEKER, ENDLESS_MOD_TWINSEEK, ENDLESS_MOD_HUNTER,
 		ENDLESS_MOD_TRUEAIM, ENDLESS_MOD_KILLSHOT,
@@ -669,6 +669,14 @@ Uint64 endlessMakeTheEndMods(void)
 	const Uint64 rung = rungs[endlessRand() % unlocked];
 	if (corrects)
 		m |= rung;
+
+	// At most one homing tier, from a single draw: Kamikaze on 1 in 33, Light Homing on 1 in 11.
+	// The two are exclusive here as they are in the ordinary pool, where they share a tier group.
+	const unsigned homing = endlessRand() % 33;
+	if (homing == 0)
+		m |= ENDLESS_MOD_KAMIKAZE;
+	else if (homing < 4)
+		m |= ENDLESS_MOD_HOMING;
 
 	return m;
 }

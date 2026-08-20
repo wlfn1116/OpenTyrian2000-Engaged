@@ -425,6 +425,8 @@ Milestones use the upcoming zone:
 - Multiples of 100 offer one END, two S+++, and two S++.
 - Multiples of 100 exclude every scroll-pace modifier.
 - The END route never carries Dead Generator. Static has a 1-in-22 draw.
+- One draw gives the END route a homing tier: Kamikaze at 1-in-33, Light Homing at
+  3-in-33. The two never appear together.
 
 Course order uses cached danger and payout. Purchases and Sabotage update the
 chosen card without changing its original sort key.
@@ -560,7 +562,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 76. Packet readers check length before
+`NET_VERSION` bump. The current version is 77. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -601,6 +603,7 @@ Recent compatibility points:
 | 74 | Boss-bar live-part surveys exclude wreckage |
 | 75 | The End excludes Dead Generator and makes Static rare |
 | 76 | Homing modifiers exclude permanent scenery and pickups |
+| 77 | The End rolls one homing tier |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

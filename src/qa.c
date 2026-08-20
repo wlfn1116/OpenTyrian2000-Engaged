@@ -530,14 +530,15 @@ static void qa_test_courses(void)
 	printf("# course properties: 768 seeds, %u launchable routes\n", routes);
 }
 
-/* The End excludes Dead Generator and gives Static a rare independent roll. */
+/* The End excludes Dead Generator, gives Static a rare independent roll, and rolls at most one
+ * homing tier: Light Homing on 1 in 11 and Kamikaze on 1 in 33. */
 static void qa_test_finale_mods(void)
 {
 	static const int depths[] = { 99, 199, 299, 399 };   // the depth a zone-100 finale is charted at
 	const unsigned samples = 2048;
 	char seed[ENDLESS_SEED_MAXLEN];
-	unsigned statics = 0;
-	bool deadgen = false, built = true;
+	unsigned statics = 0, homing = 0, kamikaze = 0;
+	bool deadgen = false, built = true, bothTiers = false;
 
 	for (unsigned sample = 0; sample < samples; ++sample)
 	{
@@ -552,14 +553,27 @@ static void qa_test_finale_mods(void)
 			deadgen = true;
 		if (mods & ENDLESS_MOD_STATIC)
 			++statics;
+		if (mods & ENDLESS_MOD_HOMING)
+			++homing;
+		if (mods & ENDLESS_MOD_KAMIKAZE)
+			++kamikaze;
+		if ((mods & ENDLESS_MOD_HOMING) && (mods & ENDLESS_MOD_KAMIKAZE))
+			bothTiers = true;
 	}
 
 	qa_check(built, "every finale carries its marker and an all-elite tier");
 	qa_check(!deadgen, "no finale runs the generator dead");
 	qa_check(statics * 20 < samples, "Static lands on fewer than one finale in twenty");
 	qa_check(statics > 0, "...and a finale can still roll it");
+	qa_check(!bothTiers, "no finale carries two homing tiers at once");
+	// Wide bands: the draw is 3-in-33 and 1-in-33, so hold the shape rather than the exact count.
+	qa_check(homing * 16 > samples && homing * 6 < samples,
+	         "Light Homing lands on about one finale in eleven");
+	qa_check(kamikaze * 66 > samples && kamikaze * 16 < samples,
+	         "Kamikaze lands on about one finale in thirty-three");
 
-	printf("# finale modifiers: %u seeds, Static on %u\n", samples, statics);
+	printf("# finale modifiers: %u seeds, Static on %u, Homing on %u, Kamikaze on %u\n",
+	       samples, statics, homing, kamikaze);
 }
 
 /* The Base Level rule. Same puts every route of a slate onto one level, leaving the modifiers as
