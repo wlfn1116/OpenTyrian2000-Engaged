@@ -117,13 +117,6 @@ GitHub Actions builds Windows, Linux, Switch, and Vita. Current artifacts are
 available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
 and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
-## Contributing
-
-Read [doc/STYLE.md](doc/STYLE.md) before changing code or documentation. Longer
-implementation constraints live in [doc/notes.md](doc/notes.md).
-
-Vendored code under `stuff/` and `src/midiproc/` keeps its upstream style.
-
 ## License
 
 GNU General Public License, version 2 or later.
