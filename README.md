@@ -13,7 +13,7 @@ This fork adds:
 - two-player online play across every mode;
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
-- FluidSynth and native MIDI support on Windows;
+- FluidSynth and native MIDI support (on Windows);
 - Nintendo Switch and PlayStation Vita homebrew ports.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
