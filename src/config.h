@@ -298,6 +298,7 @@ typedef enum
 extern int bossBarStyle;    // BossBarStyle
 extern int bossBarLayout;   // BossBarLayout
 extern int bossBarTwoMode;  // BossBarTwoMode
+extern bool bossVulnerableCue; // grey invulnerable boss bars and flash when damageable
 extern bool armorAlarm;     // low-armor WARNING siren (Setup > Sound)
 extern bool linkSounds;     // 2P fuse/unfuse clink+spring (Setup > Sound)
 extern bool debugMode;      // gates the debug menu and debug level select

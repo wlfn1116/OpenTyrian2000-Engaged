@@ -85,6 +85,18 @@ per simulation tick.
 - Draw `JE_drawPerfOverlay` after the final composite.
 - Keep hitbox overlays in `game_screen`; keep text out of feedback surfaces.
 
+### Boss vulnerability cue
+
+`bossVulnerableCue` is presentation-only. Arm it when a direct write changes
+`armorleft` from 255 to 1 through 254; damage must not arm it. Store
+`rl_presented_frames() + 1` on live passes and clear the stamp when a slot is
+reused.
+
+Resolve bar colour and flash from the link group because `boss_bar[]` slots can
+move. Bank 0 is the in-game grey ramp; use `blit_sprite2_filter_bright` for the
+body flash. Grey the bar while every live group part remains invulnerable, then
+use the newest cue stamp for its brightness.
+
 ### Supersparks
 
 Sparks share one `MAX_SUPERPIXELS` ring. A later spawn may replace a live spark.

@@ -4442,6 +4442,7 @@ static void qa_test_enhancement_presets(void)
 		{ .boolSetting = &extraParallax, .poke = true, .name = "Visuals" },
 		{ .intSetting = &enemyBarOpacity, .poke = 40, .name = "Enemy Bars" },
 		{ .intSetting = &bossBarLayout, .poke = BOSS_BAR_BOTTOM, .name = "Boss Bars" },
+		{ .boolSetting = &bossVulnerableCue, .poke = false, .name = "Vulnerable Cue" },
 		{ .intSetting = &gaugeGradGenerator, .poke = GAUGE_GRAD_DOWN, .name = "Gauges" },
 		{ .boolSetting = &gaugeFlashArmor, .poke = false, .name = "Gauge flash" },
 		{ .boolSetting = &customWeaponEnabled, .poke = false, .name = "Weapons" },
@@ -6094,6 +6095,36 @@ static void qa_test_health_bar_scale(void)
 		enemyAvail[i] = savedAvail[i];
 }
 
+/* Boss vulnerability transition and flash fade. */
+static void qa_test_vulnerable_cue(void)
+{
+	qa_check(enemy_armed_flash_arms(255, 254, 0),
+	         "a level arming an invulnerable boss lights the cue");
+	qa_check(enemy_armed_flash_arms(255, 1, 0), "even one armor point is a target");
+	qa_check(!enemy_armed_flash_arms(100, 50, 0),
+	         "an enemy that could already be hurt has nothing to announce");
+	qa_check(!enemy_armed_flash_arms(255, 255, 0), "and neither has one left invulnerable");
+	qa_check(!enemy_armed_flash_arms(255, 0, 0), "armor landing on zero kills rather than arms");
+	qa_check(!enemy_armed_flash_arms(255, 254, 1) && !enemy_armed_flash_arms(255, 254, 2),
+	         "a freed or lingering slot is no target to announce");
+
+	qa_check(enemy_armed_flash_lift(ENEMY_ARMED_FLASH_FRAMES) == 0x0f,
+	         "the body opens solid white on the frame the cue is armed");
+	qa_check(enemy_armed_flash_lift(ENEMY_ARMED_FLASH_WHITE) == 0x0f,
+	         "and holds white for the frames the shield gauge holds it");
+	qa_check(enemy_armed_flash_lift(ENEMY_ARMED_FLASH_WHITE - 1) < 0x0f,
+	         "then drops into its own shading in greys");
+	qa_check(enemy_armed_flash_lift(0) == 0, "and is back in its colours once the cue is spent");
+
+	for (Uint32 left = ENEMY_ARMED_FLASH_FRAMES; left > 0; --left)
+		if (enemy_armed_flash_lift(left - 1) > enemy_armed_flash_lift(left))
+		{
+			qa_check(false, "the flash only ever fades");
+			break;
+		}
+	qa_check(enemy_armed_flash_lift(1) > 0, "without going dark before the cue ends");
+}
+
 /* Item data points one of the Flying Punch's bolts (weapon 794, `sg[0]`) at People Pretzels'
  * sprite, so the load pass redirects it. Every frame that bolt draws has to be blank. */
 static void qa_test_flying_punch_bolt(void)
@@ -7654,6 +7685,7 @@ int qa_run_unit_suite(void)
 	qa_test_countermeasure_burst();
 	qa_test_guided_screen_aim();
 	qa_test_health_bar_scale();
+	qa_test_vulnerable_cue();
 	qa_test_elite_tier_eligibility();
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();

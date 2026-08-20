@@ -64,6 +64,14 @@ JE_byte boss_bar_fill(unsigned int armorleft, unsigned int full);
  * draw_boss_bar tells a dead boss from an invincible one. */
 void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *out_full);
 
+#define ENEMY_ARMED_FLASH_FRAMES 6  // presented frames; matches GAUGE_FLASH_START
+#define ENEMY_ARMED_FLASH_WHITE  5  // full-white threshold; matches GAUGE_FLASH_WHITE
+
+/* Return whether a live slot changed from invulnerable to damageable armor. */
+bool enemy_armed_flash_arms(JE_byte wasArmor, JE_byte nowArmor, JE_byte avail);
+/* Return the body-flash shade lift for the remaining presented frames. */
+Uint8 enemy_armed_flash_lift(Uint32 left);
+
 /* Re-latch the armor an enemy counts as starting with: its health bar's denominator, and the
  * full-HP figure the Executioner perk measures a wound against. Call after every direct write to
  * armorleft; damage must not call it. */

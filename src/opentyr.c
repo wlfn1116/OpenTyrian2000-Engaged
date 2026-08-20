@@ -296,6 +296,7 @@ typedef enum
 	MENU_ITEM_BOSS_BAR_STYLE,
 	MENU_ITEM_BOSS_BAR_LAYOUT,
 	MENU_ITEM_BOSS_BAR_TWO,
+	MENU_ITEM_BOSS_VULN_CUE,
 	MENU_ITEM_GAUGE_GRAD_GEN,
 	MENU_ITEM_GAUGE_GRAD_SHIELD,
 	MENU_ITEM_GAUGE_GRAD_ARMOR,
@@ -449,6 +450,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_EXTRA_SPARKS:        return &extraSparks;
 	case MENU_ITEM_SPECIAL_TINT:        return &specialScreenTint;
 	case MENU_ITEM_ENEMY_BARS:          return &enemyBars;
+	case MENU_ITEM_BOSS_VULN_CUE:       return &bossVulnerableCue;
 	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
 	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
@@ -715,6 +717,7 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Enemy Bars...", "Health bars on enemies you have damaged.", MENU_ENEMY_BARS },
 				{ MENU_ITEM_SUBMENU, "Boss Bars...", "Style and placement of the boss health bars.", MENU_BOSS_BARS },
 				{ MENU_ITEM_SUBMENU, "Gauges...", "Gradient and damage flash of the three gauges.", MENU_GAUGES },
+				{MENU_ITEM_BOSS_VULN_CUE, "Vulnerable Cue:", "Grey a boss bar out until it can be hurt, then flash."},
 				MENU_DONE_ROW
 			},
 		},

@@ -745,6 +745,8 @@ Useful restored-content settings:
   ship body and weapon sprite. Dragon Lightning gets its own spare icon.
 - **Special Tint** controls the full-screen wash from flare-family specials. It
   is visual and may differ between online players.
+- **Vulnerable Cue** greys invulnerable boss bars and flashes the boss when it
+  becomes damageable. It is visual and may differ between online players.
 - **Shot Hitboxes** selects Classic top-left anchors or Centered sprite anchors.
   The host controls it online.
 - **Guided Aim** makes homing weapons such as the Heavy Guided Bombs steer to

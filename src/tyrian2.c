@@ -2855,6 +2855,56 @@ static Uint32 rl_present_gen;
 // Contract in tyrian2.h.
 Uint32 rl_presented_frames(void) { return rl_present_gen; }
 
+/* Boss vulnerability cue. Timing and grouping rules live in doc/notes.md. */
+
+// Presented-frame stamp plus one; 0 means idle.
+static Uint32 enemyArmedFlashAt[100];
+
+// In-game palette's greyscale ramp.
+#define ENEMY_FLASH_BANK 0x00
+
+// Per-body shade lift passed to blit_enemy.
+static Uint8 enemyFlashLift;
+
+bool enemy_armed_flash_arms(JE_byte wasArmor, JE_byte nowArmor, JE_byte avail)
+{
+	return wasArmor >= 255 && nowArmor > 0 && nowArmor < 255 && avail == 0;
+}
+
+Uint8 enemy_armed_flash_lift(Uint32 left)
+{
+	if (left == 0)
+		return 0;
+	if (left >= ENEMY_ARMED_FLASH_WHITE)
+		return 0x0f;
+	return (Uint8)(left * 3);
+}
+
+static Uint32 enemy_armed_flash_left(unsigned int slot)
+{
+	if (enemyArmedFlashAt[slot] == 0)
+		return 0;
+	const Uint32 elapsed = rl_present_gen + 1 - enemyArmedFlashAt[slot];
+	return (elapsed < ENEMY_ARMED_FLASH_FRAMES) ? ENEMY_ARMED_FLASH_FRAMES - elapsed : 0;
+}
+
+// Arm after direct armor writes on live passes; damage never calls this path.
+static void enemy_note_armed(unsigned int slot, JE_byte wasArmor)
+{
+	if (!bossVulnerableCue || rollback_resim)
+		return;
+	if (!enemy_armed_flash_arms(wasArmor, enemy[slot].armorleft, enemyAvail[slot]))
+		return;
+
+	enemyArmedFlashAt[slot] = rl_present_gen + 1;
+}
+
+// A recycled slot must not inherit the last occupant's cue.
+static void enemy_armed_flash_clear(unsigned int slot)
+{
+	enemyArmedFlashAt[slot] = 0;
+}
+
 // Banks the Endless "?" pickup cycles through. Level palettes vary, so the list keeps to hues that
 // hold a readable ramp in all of them; bank 0 and the near-black banks are left out.
 static const Uint8 endlessSpecialIconBanks[] = { 0x10, 0x20, 0x30, 0x50, 0x70, 0x90, 0xC0, 0xD0 };
@@ -3012,6 +3062,8 @@ inline static void blit_enemy(SDL_Surface *surface, unsigned int i, signed int x
 	const Uint8 filter = specialPickup ? endlessSpecialIconFilter() : enemy[i].filter;
 	if (outline)
 		blit_sprite2_solid(surface, x, y, *sheet, index, filter + ENDLESS_SPECIAL_OUTLINE_SHADE);
+	else if (enemyFlashLift != 0)
+		blit_sprite2_filter_bright(surface, x, y, *sheet, index, ENEMY_FLASH_BANK | enemyFlashLift);
 	else if (filter != 0)
 		blit_sprite2_filter(surface, x, y, *sheet, index, filter);
 	else
@@ -3540,8 +3592,9 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				    enemy[i].egr[enemy[i].enemycycle - 1] == 999)
 					goto enemy_gone;
 
-				// Reapply tier tint after the per-frame reset unless a hit effect owns the filter.
-				if (enemy[i].filter == 0)
+				// Vulnerability flash overrides tint; otherwise restore the tier bank after reset.
+				enemyFlashLift = enemy_armed_flash_lift(enemy_armed_flash_left(i));
+				if (enemyFlashLift == 0 && enemy[i].filter == 0)
 					enemy[i].filter = enemy_body_tint(i);
 
 				endlessEliteAuraSparks(i);
@@ -3586,6 +3639,7 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				}
 
 				enemy[i].filter = 0;
+				enemyFlashLift = 0;
 			}
 
 			if (enemy[i].excc)
@@ -4595,6 +4649,8 @@ start_level_first:
 
 	for (unsigned int i = 0; i < COUNTOF(boss_bar); i++)
 		boss_bar[i].link_num = 0;
+
+	memset(enemyArmedFlashAt, 0, sizeof(enemyArmedFlashAt));
 
 	forceEvents = false;  /*Force events to continue if background movement = 0*/
 
@@ -5864,8 +5920,10 @@ level_loop:
 
 											if (enemy[temp3].armorleft > (unsigned char)enemy[temp3].edlevel)
 											{
+												const JE_byte wasArmor = enemy[temp3].armorleft;
 												enemy[temp3].armorleft = enemy[temp3].edlevel;
 												enemy_note_full_armor(&enemy[temp3]);
+												enemy_note_armed(temp3, wasArmor);
 											}
 
 											JE_integer tempX = enemy[temp3].ex + enemy[temp3].mapoffset;
@@ -9773,6 +9831,7 @@ Sint16 JE_newEnemy(int enemyOffset, Uint16 eDatI, Sint16 uniqueShapeTableI)
 		if (enemyAvail[i] == 1)
 		{
 			enemyAvail[i] = JE_makeEnemy(&enemy[i], eDatI, uniqueShapeTableI);
+			enemy_armed_flash_clear(i);
 			return i + 1;
 		}
 	}
@@ -10308,6 +10367,7 @@ void JE_createNewEventEnemy(JE_byte enemyTypeOfs, JE_word enemyOffset, Sint16 un
 	tempW = eventRec[eventLoc-1].eventdat + enemyTypeOfs;
 
 	enemyAvail[b-1] = JE_makeEnemy(&enemy[b-1], tempW, uniqueShapeTableI);
+	enemy_armed_flash_clear(b-1);
 
 	// When T2000 gives an X position of -200, what it actually wants is a random X position...
 	if (eventRec[eventLoc-1].eventdat2 == -200)
@@ -10782,11 +10842,13 @@ void JE_eventSystem(void)
 		{
 			if (eventRec[eventLoc-1].eventdat4 == 0 || enemy[temp].linknum == eventRec[eventLoc-1].eventdat4)
 			{
+				const JE_byte wasArmor = enemy[temp].armorleft;
 				if (galagaMode)
 					enemy[temp].armorleft = roundf(eventRec[eventLoc-1].eventdat * (difficultyLevel / 2));
 				else
 					enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
 				enemy_note_full_armor(&enemy[temp]);
+				enemy_note_armed(temp, wasArmor);
 			}
 		}
 		break;
@@ -11019,8 +11081,10 @@ void JE_eventSystem(void)
 		{
 			if (eventRec[eventLoc-1].eventdat4 == 0 || enemy[temp].linknum == eventRec[eventLoc-1].eventdat4)
 			{
+				const JE_byte wasArmor = enemy[temp].armorleft;
 				enemy[temp].armorleft = eventRec[eventLoc-1].eventdat;
 				enemy_note_full_armor(&enemy[temp]);
+				enemy_note_armed(temp, wasArmor);
 			}
 		}
 		break;
@@ -11447,17 +11511,43 @@ static void JE_barX(JE_word x1, JE_word y1, JE_word x2, JE_word y2, JE_byte col)
 	fill_rectangle_xy(VGAScreen, x1, y2,     x2, y2,     col - 1);
 }
 
-// Palette-bank base for a boss bar, matching the boss's endless tier tint (elite / champion)
-// so the bar reads as part of that boss; ordinary and campaign bosses keep bank 7.
-static int boss_bar_tint_base(JE_byte link_num)
+#define BOSS_BAR_GREY_BANK ENEMY_FLASH_BANK
+
+/* Return the link group's bar palette and flash lift. Invulnerable groups use the grey bank. */
+static void boss_bar_colours(JE_byte link_num, int *base, int *lift)
 {
-	int tier = 0;  // highest tier among the boss's live parts
-	if (endlessFxActive() && link_num != 0)
+	int tier = 0;              // highest endless tier among the group's live parts
+	unsigned int armor = 256;  // its most-damaged part, on boss_bar_survey's terms
+	Uint32 cue = 0;            // frames left on the youngest arming cue among them
+
+	if (link_num != 0)
+	{
 		for (unsigned int e = 0; e < COUNTOF(enemy); e++)
-			if (enemyAvail[e] != 1 && enemy[e].linknum == link_num && enemy[e].eliteState > tier)
+		{
+			if (enemyAvail[e] == 1 || enemy[e].linknum != link_num)
+				continue;
+
+			if (enemy[e].eliteState > tier)
 				tier = enemy[e].eliteState;
-	const Uint8 tint = endlessEliteTint(tier);
-	return (tint != 0) ? tint : 112;  // palette bank 7 (default)
+			if (enemy[e].armorleft < armor)
+				armor = enemy[e].armorleft;
+
+			const Uint32 left = enemy_armed_flash_left(e);
+			if (left > cue)
+				cue = left;
+		}
+	}
+
+	*lift = bossVulnerableCue ? (int)cue : 0;
+
+	if (bossVulnerableCue && armor == 255)
+	{
+		*base = BOSS_BAR_GREY_BANK;
+		return;
+	}
+
+	const Uint8 tint = endlessFxActive() ? endlessEliteTint(tier) : 0;
+	*base = (tint != 0) ? tint : 112;  // palette bank 7 (default)
 }
 
 static void bbfill(SDL_Surface *dst, int x0, int y0, int x1, int y1, int scale, Uint8 color)
@@ -11635,10 +11725,13 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			if (decrement)  // the authoritative tick draw
 				boss_bar_mark_overlay(bx, by, bw, THICK);
 
+			int base, lift;
+			boss_bar_colours(boss_bar[b].link_num, &base, &lift);
+			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
+
 			draw_boss_bar_gauge(dst, scale, bx, by, bw, THICK, true,
 			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
-			                    boss_flash_render(boss_bar[b].color, flashAlpha),
-			                    boss_bar_tint_base(boss_bar[b].link_num));
+			                    (lift > hit) ? lift : hit, base);
 
 			if (decrement && boss_bar[b].color > 0)
 				boss_bar[b].color--;
@@ -11689,10 +11782,13 @@ static void draw_boss_bars_enhanced(SDL_Surface *dst, int scale, float flashAlph
 			if (decrement)  // see the horizontal branch
 				boss_bar_mark_overlay(bx, vTop, THICK, vBot - vTop + 1);
 
+			int base, lift;
+			boss_bar_colours(boss_bar[b].link_num, &base, &lift);
+			const int hit = boss_flash_render(boss_bar[b].color, flashAlpha);
+
 			draw_boss_bar_gauge(dst, scale, bx, vTop, THICK, vBot - vTop + 1, false,
 			                    boss_bar[b].fill / (float)BOSS_BAR_FULL,
-			                    boss_flash_render(boss_bar[b].color, flashAlpha),
-			                    boss_bar_tint_base(boss_bar[b].link_num));
+			                    (lift > hit) ? lift : hit, base);
 
 			if (decrement && boss_bar[b].color > 0)
 				boss_bar[b].color--;
@@ -11717,10 +11813,13 @@ static void draw_boss_bars_classic(unsigned int bars)
 
 		unsigned int y = (levelTimer) ? 15 : 7;
 
-		const int base = boss_bar_tint_base(boss_bar[b].link_num);  // bank 7, or elite/champion tint
+		int base, lift;
+		boss_bar_colours(boss_bar[b].link_num, &base, &lift);
+		const int flash = (lift > boss_bar[b].color) ? lift : boss_bar[b].color;
+
 		JE_barX(x - 25, y, x + 25, y + 5, base + 3);
 		JE_barX(x - (boss_bar[b].fill / 10), y, x + (boss_bar[b].fill + 5) / 10, y + 5,
-		        base + 6 + boss_bar[b].color);
+		        base + 6 + flash);
 
 		if (boss_bar[b].color > 0)
 			boss_bar[b].color--;
@@ -12010,8 +12109,15 @@ static void draw_boss_bar_present(SDL_Surface *dst, int scale, float alpha)
 
 	bool flashing = false;
 	for (unsigned int b = 0; b < COUNTOF(boss_bar); b++)
-		if (boss_bar[b].link_num != 0 && boss_bar[b].color > 0)
+	{
+		if (boss_bar[b].link_num == 0)
+			continue;
+
+		int base, lift;
+		boss_bar_colours(boss_bar[b].link_num, &base, &lift);
+		if (boss_bar[b].color > 0 || lift > 0)
 			flashing = true;
+	}
 	if (!flashing)
 		return;
 
