@@ -5,6 +5,8 @@
 
 #include "string_compat.h"
 #include "common_compat.h"
+
+#include <cmath>
 #define ENABLE_WHEEL
 //#define ENABLE_VIB
 //#define ENABLE_ARP
@@ -69,7 +71,12 @@ struct SoundPatch
     uint8_t portamento;
     int8_t glide;
 #endif
-    // skip 1 byte
+    // Detune in 1/16 of a semitone, reduced at load to this patch's offset within its group of
+    // otherwise identical patches. See LdsReduceDetune().
+    int8_t finetune;
+    // Player ticks this voice sounds for on its envelope alone, or 0 when it holds instead.
+    // See LdsEnvelopeTicks().
+    uint16_t envelope_ticks;
 #ifdef ENABLE_VIB
     uint8_t vibrato;
     uint8_t vibrato_delay;
@@ -92,6 +99,76 @@ struct SoundPatch
     // skip 2 bytes worth of MIDI dummy fields or whatever
 };
 
+/* opl.c scales an operator's amplitude by a fixed factor every sample and turns the operator off
+ * once it reaches 1e-8. The sample rate cancels out of the phase duration, and decrelconst[0] is
+ * the slowest of the four key-scale slots, so using it bounds the note from above. Returns -1 for
+ * a rate of zero, which never moves. */
+static double LdsEnvPhaseSeconds(unsigned rate, double from, double to)
+{
+    static const double DecRelConst = 1.0 / 39.28064;
+
+    if (rate == 0)
+        return -1.0;
+
+    const double perSample = -7.4493 * std::log(2.0) * DecRelConst * std::pow(2.0, (double) rate);
+
+    return std::log(to / from) / perSample;
+}
+
+/* Seconds until one operator falls silent, or -1 when it sustains instead. A percussive operator
+ * decays to the sustain level and then keeps going to silence while the key is still down. */
+static double LdsOperatorSeconds(uint8_t misc, uint8_t ad, uint8_t sr)
+{
+    static const double Silence = 0.00000001;
+
+    if (misc & 0x20)
+        return -1.0;
+
+    const unsigned level = sr >> 4;
+    const double sustain = (level == 15) ? 0.0 : std::pow(2.0, -0.5 * (double) level);
+
+    if (sustain <= Silence)
+        return LdsEnvPhaseSeconds(ad & 15, 1.0, Silence);
+
+    const double decay = LdsEnvPhaseSeconds(ad & 15, 1.0, sustain);
+    const double release = LdsEnvPhaseSeconds(sr & 15, sustain, Silence);
+
+    return (decay < 0.0 || release < 0.0) ? -1.0 : decay + release;
+}
+
+/* Ticks a voice sounds for with nothing releasing it, or 0 when it holds. A patch with no key-off
+ * length leans on the Adlib envelope to stop the note. MIDI has no such envelope, and the only
+ * other release here is the channel's next note, which can be most of a song away. Both operators
+ * are heard in AM mode, so the note lasts as long as the slower one. */
+static uint16_t LdsEnvelopeTicks(const uint8_t * record)
+{
+    // Initialize(1, 35) with DefaultTempoLDS puts a player tick at 500000/35 microseconds.
+    static const double TicksPerSecond = 70.0;
+    static const double MaxTicks = 65535.0;
+
+    double seconds = LdsOperatorSeconds(record[5], record[7], record[8]);
+
+    if ((record[10] & 1) == 1)
+    {
+        const double modulator = LdsOperatorSeconds(record[0], record[2], record[3]);
+
+        if (seconds < 0.0 || modulator < 0.0)
+            seconds = -1.0;
+        else if (modulator > seconds)
+            seconds = modulator;
+    }
+
+    if (seconds < 0.0)
+        return 0;
+
+    const double ticks = seconds * TicksPerSecond;
+
+    if (ticks >= MaxTicks)
+        return (uint16_t) MaxTicks;
+
+    return (uint16_t) ((ticks < 1.0) ? 1.0 : ticks);
+}
+
 struct channel_state
 {
 #ifdef ENABLE_WHEEL
@@ -102,8 +179,9 @@ struct channel_state
 #ifdef ENABLE_WHEEL
     uint8_t glideto, portspeed;
 #endif
-    uint8_t nextvol, volmod, volcar,
-        keycount, packwait;
+    uint8_t nextvol, volmod, volcar, packwait;
+    // Ticks left before this note is released. An envelope length outruns a byte.
+    uint16_t keycount;
 #ifdef ENABLE_VIB
     uint8_t vibwait, vibspeed, vibrate, vibcount;
 #endif
@@ -144,8 +222,8 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
 
     if (channel != 9)
     {
-        // set fine tune
-        high += c->finetune;
+        // The patch detune and the channel detune sum in a signed byte, as in lds_play.c.
+        high += ((patch.finetune + c->finetune + 0x80) & 0xFF) - 0x80;
 
         // arpeggio handling
     #ifdef ENABLE_ARP
@@ -205,7 +283,7 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
     {
         buffer[0] = 7;
         buffer[1] = (uint8_t) volume;
-        track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::ControlChange, last_channel[chan], buffer, 2));
+        track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::ControlChange, channel, buffer, 2));
         last_sent_volume[channel] = (uint8_t) volume;
     }
 
@@ -224,19 +302,32 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
             note += c->lasttune;
             c->lasttune = 0;
 
-            if (last_pitch_wheel[channel] != 0)
+            if (last_pitch_wheel[last_channel[chan]] != 0)
             {
                 buffer[0] = 0;
                 buffer[1] = 64;
 
                 track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::PitchBendChange, last_channel[chan], buffer, 2));
 
-                last_pitch_wheel[channel] = 0;
+                last_pitch_wheel[last_channel[chan]] = 0;
             }
         }
     #endif
     }
+
+    // A detuned patch lands between two keys, so take the nearer key and leave the
+    // remainder on the wheel. Truncating instead would swallow any detune below a
+    // semitone and drop a larger one onto the wrong key.
+    const unsigned key = (note + 8) >> 4;
+
 #ifdef ENABLE_WHEEL
+    const int key_detune = (int) note - (int) (key << 4);
+
+    // The wheel already carries glide and vibrato for this channel, so the remainder
+    // rides along in the same term rather than fighting it for the bend.
+    if (channel != 9)
+        c->lasttune = (int16_t) (c->lasttune + key_detune);
+
     if (c->lasttune != last_pitch_wheel[channel])
     {
         buffer[0] = (uint8_t) WHEEL_SCALE_LOW(c->lasttune);
@@ -253,12 +344,12 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
         if (!patch.portamento || last_note[chan] == 0xFF)
         #endif
         {
-            buffer[0] = (uint8_t) (note >> 4);
+            buffer[0] = (uint8_t) key;
             buffer[1] = patch.midi_velocity;
 
             track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::NoteOn, channel, buffer, 2));
 
-            last_note[chan] = (uint8_t) (note >> 4);
+            last_note[chan] = (uint8_t) key;
             last_channel[chan] = (uint8_t) channel;
         #ifdef ENABLE_WHEEL
             c->gototune = c->lasttune;
@@ -267,7 +358,7 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
     #ifdef ENABLE_WHEEL
         else
         {
-            c->gototune = (int16_t) (note - (last_note[chan] << 4) + c->lasttune);
+            c->gototune = (int16_t) (note - (last_note[chan] << 4) + c->lasttune - key_detune);
             c->portspeed = patch.portamento;
 
             buffer[0] = last_note[chan] = (uint8_t) saved_last_note;
@@ -280,12 +371,12 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
 #ifdef ENABLE_WHEEL
     else
     {
-        buffer[0] = (uint8_t) (note >> 4);
+        buffer[0] = (uint8_t) key;
         buffer[1] = patch.midi_velocity;
 
         track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::NoteOn, channel, buffer, 2));
 
-        last_note[chan] = (uint8_t) (note >> 4);
+        last_note[chan] = (uint8_t) key;
         last_channel[chan] = (uint8_t) channel;
 
         c->gototune = patch.glide;
@@ -339,9 +430,64 @@ static void PlaySound(uint8_t currentInstrument[], std::vector<SoundPatch> const
 #ifdef ENABLE_WHEEL
     c->glideto  = 0;
 #endif
-    c->keycount = patch.keyoff;
+    c->keycount = (patch.keyoff != 0) ? patch.keyoff : patch.envelope_ticks;
     c->nextvol  = 0;
     c->finetune = 0;
+}
+
+/* Record sizes in an LDS file. A position holds one three-byte entry per channel. */
+static const size_t LdsPatchBytes    = 46;
+static const size_t LdsPositionBytes = 9 * 3;
+
+/* Byte offsets inside a patch record. A layered voice varies exactly these and nothing else. */
+static const size_t LdsModVolume    = 1;
+static const size_t LdsCarVolume    = 6;
+static const size_t LdsDetune       = 14;
+static const size_t LdsMidiVelocity = 41;
+
+static bool LdsSameVoice(const uint8_t * a, const uint8_t * b)
+{
+    for (size_t i = 0; i < LdsPatchBytes; ++i)
+    {
+        if (i == LdsModVolume || i == LdsCarVolume || i == LdsDetune || i == LdsMidiVelocity)
+            continue;
+
+        if (a[i] != b[i])
+            return false;
+    }
+
+    return true;
+}
+
+/* A patch's detune does two jobs. Within a group of otherwise identical patches it is the relative
+ * offset that makes a layered voice shimmer, and the synth needs it. On a patch with no such twin
+ * it is Adlib voicing, which midi_transpose already covers for MIDI, and sounding it would leave
+ * that part flat or sharp on its own. Reduce every patch to its offset within its group, which
+ * leaves a lone patch at zero. */
+static void LdsReduceDetune(std::vector<SoundPatch> & patches, const uint8_t * records)
+{
+    std::vector<int8_t> reduced(patches.size());
+
+    for (size_t i = 0; i < patches.size(); ++i)
+    {
+        int total = 0, members = 0;
+
+        for (size_t j = 0; j < patches.size(); ++j)
+        {
+            if (LdsSameVoice(records + (i * LdsPatchBytes), records + (j * LdsPatchBytes)))
+            {
+                total += patches[j].finetune;
+                ++members;
+            }
+        }
+
+        const int mean = (total < 0 ? total - (members / 2) : total + (members / 2)) / members;
+
+        reduced[i] = (int8_t) (patches[i].finetune - mean);
+    }
+
+    for (size_t i = 0; i < patches.size(); ++i)
+        patches[i].finetune = reduced[i];
 }
 
 bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer & container)
@@ -379,7 +525,7 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
     uint8_t pattern_length = it[3];
     it += 4;
 
-    if (end - it < 9)
+    if (end - it < 10)  // nine channel delays, then the percussion register
         return false;
 
     uint8_t ChannelDelay[9] = { };
@@ -400,10 +546,11 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
 
     it += 2;
 
-    if (end - it < 46 * PatchCount)
+    if ((size_t) (end - it) < LdsPatchBytes * PatchCount)
         return false;
 
     std::vector<SoundPatch> Patches(PatchCount);
+    const uint8_t * const PatchRecords = &(*it);
 
     for (uint16_t i = 0; i < PatchCount; ++i)
     {
@@ -414,10 +561,10 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
     #ifdef ENABLE_WHEEL
         patch.portamento = *it++;
         patch.glide = (int8_t) *it++;
-        it++;
     #else
-        it += 3;
+        it += 2;
     #endif
+        patch.finetune = (int8_t) *it++;
     #ifdef ENABLE_VIB
         patch.vibrato = *it++;
         patch.vibrato_delay = *it++;
@@ -452,6 +599,11 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
     #endif
     }
 
+    LdsReduceDetune(Patches, PatchRecords);
+
+    for (uint16_t i = 0; i < PatchCount; ++i)
+        Patches[i].envelope_ticks = LdsEnvelopeTicks(PatchRecords + (i * LdsPatchBytes));
+
     if (end - it < 2)
         return false;
 
@@ -464,7 +616,7 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
 
     std::vector<position_data> Positions((size_t) (9 * PositionCount));
 
-    if (end - it < 3 * PositionCount)
+    if ((size_t) (end - it) < LdsPositionBytes * PositionCount)
         return false;
 
     for (uint16_t  i = 0; i < PositionCount; ++i)
@@ -1193,7 +1345,10 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
                 buffer[0] = last_note[i];
                 buffer[1] = 127;
 
-                Track.AddEvent(MIDIEvent(Timestamp + Channel[i].keycount, MIDIEvent::NoteOff, last_channel[i], buffer, 2));
+                /* Release where the song stops, however much of the note was left. A looping song
+                 * marks its end here and repeats the section above, so the player never reaches a
+                 * later tick and a release scheduled there would leave the note held for good. */
+                Track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::NoteOff, last_channel[i], buffer, 2));
 
             #ifdef ENABLE_WHEEL
                 if (last_pitch_wheel[last_channel[i]] != 0)
@@ -1201,7 +1356,7 @@ bool MIDIProcessor::ProcessLDS(std::vector<uint8_t> const & data, MIDIContainer 
                     buffer[0] = 0;
                     buffer[1] = 0x40;
 
-                    Track.AddEvent(MIDIEvent(Timestamp + Channel[i].keycount, MIDIEvent::PitchBendChange, last_channel[i], buffer, 2));
+                    Track.AddEvent(MIDIEvent(Timestamp, MIDIEvent::PitchBendChange, last_channel[i], buffer, 2));
                 }
             #endif
             }
