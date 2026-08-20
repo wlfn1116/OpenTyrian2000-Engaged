@@ -39,8 +39,8 @@ The game uses a 356x200 frame: a 299-pixel playfield and the original
 
 The simulation runs at 35 Hz. Smooth Motion interpolates between ticks, while
 Sub-pixel rendering removes whole-pixel stepping from slow movement and
-scrolling. Smooth Motion also moves your own ship at the display rate, rollback
-network games included. Demos keep fixed-step ship movement.
+scrolling. Smooth Motion also moves your own ship at the display rate,
+rollback network games included. Demos keep fixed-step ship movement.
 
 Default keyboard controls:
 
