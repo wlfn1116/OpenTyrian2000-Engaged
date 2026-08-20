@@ -470,7 +470,12 @@ static void enemy_part_destroy(unsigned int slot, int payee, int killer, bool st
 
 	enemy_death_payout(slot, payee);
 
-	if (staged)
+	if (staged && endlessHomingTierActive())
+	{
+		// Remove enemy corpses so they don't hang around the player for the rest of the level.
+		enemyAvail[slot] = 1;
+	}
+	else if (staged)
 	{
 		enemy[slot].edlevel = 0;
 		enemyAvail[slot] = 2;

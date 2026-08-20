@@ -321,10 +321,10 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Chain Reaction | Kills blast nearby enemies, and those blast on | 3 |
 | Financier | More interest and lower shop prices | 4 |
 | Ordnance Reserves | More sidekick ammo and special duration | 4 |
-| Failsafe | Brief invulnerability after hull damage | 2 |
+| Failsafe | Brief invulnerability after hull damage | 4 |
 | Guidance Package | Shots home in; later stacks add sidekicks and specials | 4 |
 | Twin Pods | Every sidekick volley fires twice, at double ammo and power | 1 |
-| Reinforced Prow | Ramming deals 2x, 3x, 4x and costs you 75%, 50%, 25% | 3 |
+| Reinforced Prow | Ramming deals 2x to 5x and costs you 78%, 56%, 34%, 12% | 4 |
 | Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
 | Deflector | A shot your shield absorbs flies back as yours; 2x damage at two stacks | 2 |
 
@@ -346,8 +346,8 @@ A few perks need more detail than the table can hold.
 
 **Reinforced Prow**
 
-- Stacks deal 2x, 3x, and 4x contact damage.
-- Damage taken falls to 75%, 50%, and 25%, with a one-point minimum.
+- Stacks deal 2x, 3x, 4x, and 5x contact damage.
+- Damage taken falls to 78%, 56%, 34%, and 12%, with a one-point minimum.
 - Ram kills award normal drops, bounty, streak credit, and Chain Reaction.
 - Opening Salvo and Knife Fight can raise ram damage.
 - Invulnerability allows one unanswered ram hit every ten ticks.

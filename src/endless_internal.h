@@ -202,7 +202,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_SPECDUR_PCT  30
 
 // Defensive and guidance perks.
-#define ENDLESS_PERK_FAILSAFE_TICKS   9
+#define ENDLESS_PERK_FAILSAFE_TICKS   4
 #define ENDLESS_PERK_GUIDANCE_DELAY   6
 #define ENDLESS_PERK_GUIDANCE_STEP    2
 #define ENDLESS_PERK_GUIDANCE_TIGHTEN 4
@@ -212,7 +212,7 @@ void endlessReviveGraceReset(void);
 // Close-range and sidekick perks.
 #define ENDLESS_PERK_TWINPODS_SPREAD_PX 12
 #define ENDLESS_PERK_PROW_DMG_PCT      100
-#define ENDLESS_PERK_PROW_TAKEN_PCT     25
+#define ENDLESS_PERK_PROW_TAKEN_PCT     22
 #define ENDLESS_PERK_KNIFE_PCT          15
 #define ENDLESS_PERK_KNIFE_FULL_PX       7
 #define ENDLESS_PERK_KNIFE_FADE_PX      48

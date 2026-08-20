@@ -271,6 +271,11 @@ Settle this on the body's first processed frame, after its link is known. Restor
 the enemy table's acceleration when it should not chase. Rebuild the link flags
 from the live board before each homing pass; they are not rollback state.
 
+A tier also suppresses the wreck an `edlevel` -1 part leaves. That corpse settled
+its tracking while alive and is past the shot loop's reach afterwards, so it would
+follow the ship for the rest of the level with nothing able to clear it.
+`endlessHomingTierActive` names the three tiers for both rules.
+
 ### Perk interactions
 
 Perks belong to a player. Use `perkMine` for the local outpost owner and `perkFx`
@@ -602,7 +607,7 @@ Recent compatibility points:
 | 73 | Zinglon pillar damage scale and beam ownership |
 | 74 | Boss-bar live-part surveys exclude wreckage |
 | 75 | The End excludes Dead Generator and makes Static rare |
-| 76 | Homing modifiers exclude permanent scenery and pickups |
+| 76 | Homing modifiers exclude permanent scenery, pickups, and wreckage |
 | 77 | The End rolls one homing tier |
 
 Earlier versions are available in Git history. Keep this table focused on rules

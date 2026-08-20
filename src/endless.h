@@ -79,6 +79,8 @@ uint endlessDangerTargetPlayer(int fromX, int fromY);
 // spent there), and keeps it for life unless that ship goes down.
 uint endlessRollHomingTarget(void);
 uint endlessHomingTargetPlayer(uint stored);
+// True while the sector floors enemy tracking: Light Homing, Kamikaze, or Rampage.
+bool endlessHomingTierActive(void);
 void endlessReviveDownedAtOutpost(void);
 
 // Number of active modifier bits.

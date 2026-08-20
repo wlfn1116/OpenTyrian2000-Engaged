@@ -2520,17 +2520,17 @@ static void qa_test_reinforced_prow_perk(void)
 
 	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
 	         "without Reinforced Prow a ram deals and costs the stock figure");
-	static const int dealt[] = { 4, 6, 8 };
-	static const int taken[] = { 75, 50, 25 };
+	static const int dealt[] = { 4, 6, 8, 10 };
+	static const int taken[] = { 78, 56, 34, 12 };
 	bool ladder = true;
-	for (int s = 1; s <= 3; ++s)
+	for (int s = 1; s <= 4; ++s)
 	{
 		endlessPerkTakenBy[0][PERK_PROW] = (JE_byte)s;
 		endlessPerkRederive();
 		ladder &= endlessPerkProwRamDamage(2) == dealt[s - 1]
 		       && endlessPerkProwContactPercent() == taken[s - 1];
 	}
-	qa_check(ladder, "the stacks deal x2, x3, x4 and take 75%, 50%, 25%");
+	qa_check(ladder, "the stacks deal x2 to x5 and take 78%, 56%, 34%, 12%");
 	endlessMode = false;
 	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
 	         "...only in an endless run");
@@ -2543,16 +2543,16 @@ static void qa_test_reinforced_prow_perk(void)
 	endlessSalvoWindow[0] = 0;
 	const int stockRam = endlessPerkProwRamDamage(2);
 	const int knifeRam = endlessPerkKnifeFightBonus(stockRam, 50);
-	qa_check(stockRam == 8 && knifeRam == 4
-	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 12,
-	         "with no salvo window a three-stack ram is its stock x4 plus Knife Fight");
+	qa_check(stockRam == 10 && knifeRam == 5
+	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 15,
+	         "with no salvo window a four-stack ram is its stock x5 plus Knife Fight");
 	endlessSalvoWindow[0] = ENDLESS_PERK_SALVO_WINDOW;
-	qa_check(endlessOpeningSalvoScale(stockRam) == 20
-	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 24,
+	qa_check(endlessOpeningSalvoScale(stockRam) == 25
+	         && endlessOpeningSalvoScale(stockRam) + knifeRam == 30,
 	         "...and an open Opening Salvo window lifts that ram 2.5x, Knife Fight added to it");
 	qa_check(endlessPerkKnifeFightBonus(stockRam, 50) == knifeRam,
 	         "...and Knife Fight's bonus reads the same inside the window as outside");
-	qa_check(endlessPerkProwContactPercent() == 25,
+	qa_check(endlessPerkProwContactPercent() == 12,
 	         "...and never touching what that ram costs the ship");
 	endlessSalvoWindow[0] = savedWindow;
 
@@ -2562,7 +2562,7 @@ static void qa_test_reinforced_prow_perk(void)
 	qa_check(endlessPerkProwRamDamage(2) == 2 && endlessPerkProwContactPercent() == 100,
 	         "a co-op partner without the perk rams at stock");
 	endlessSetFxPlayer(0);
-	qa_check(endlessPerkProwRamDamage(2) == 8, "...while the holder rams at its stacks");
+	qa_check(endlessPerkProwRamDamage(2) == 10, "...while the holder rams at its stacks");
 	coopEndlessMode = false;
 
 	// An invulnerable ship lands a ram every tenth tick of its window in Endless, never outside it.
@@ -3201,6 +3201,20 @@ static void qa_test_homing_chaser_eligibility(void)
 	qa_check(endlessHomingChaser(0),
 	         "loot riding a link number is not scenery and poisons nothing");
 	qa_check(!endlessHomingChaser(1), "...and the pickup itself never gives chase");
+
+	// The tiers that floor tracking are also the ones whose wreckage would trail the ship.
+	const Uint64 savedMods = endlessActiveMods;
+	const Uint64 tiers[] = { ENDLESS_MOD_HOMING, ENDLESS_MOD_KAMIKAZE, ENDLESS_MOD_RAMPAGE };
+	bool everyTier = true;
+	for (unsigned t = 0; t < COUNTOF(tiers); ++t)
+	{
+		endlessActiveMods = tiers[t];
+		everyTier = everyTier && endlessHomingTierActive();
+	}
+	endlessActiveMods = 0;
+	qa_check(!endlessHomingTierActive(), "a sector with no homing tier keeps its wreckage");
+	qa_check(everyTier, "...and every tier that floors tracking drops the corpse instead");
+	endlessActiveMods = savedMods;
 
 	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
 	for (unsigned i = 0; i < COUNTOF(savedAvail); ++i)

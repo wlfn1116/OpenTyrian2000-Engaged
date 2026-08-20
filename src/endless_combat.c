@@ -1263,6 +1263,14 @@ uint endlessHomingTargetPlayer(uint stored)
 }
 
 // Modifier decisions used by engine-owned object pools.
+
+// True while the sector floors enemy tracking, which is what makes a body chase the ship.
+bool endlessHomingTierActive(void)
+{
+	return endlessFxActive() && (endlessActiveMods &
+	       (ENDLESS_MOD_HOMING | ENDLESS_MOD_KAMIKAZE | ENDLESS_MOD_RAMPAGE)) != 0;
+}
+
 int endlessMartyrdomBurstShots(int linknum, int eliteState)
 {
 	if (!endlessFxActive() || !(endlessActiveMods & ENDLESS_MOD_MARTYRDOM))

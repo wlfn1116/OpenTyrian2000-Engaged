@@ -44,10 +44,10 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Chain Reaction",   "Kills blast nearby enemies.",               3 },
 	{ "Financier",        "Better interest and cheaper shop prices.",  4 },
 	{ "Ordnance Reserves","More sidekick ammo; specials last longer.", 4 },
-	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 2 },
+	{ "Failsafe",         "A hull hit leaves you briefly untouchable.", 4 },
 	{ "Guidance Package", "Main guns home in; 2 sidekicks, 3 specials.", 4 },
 	{ "Twin Pods",        "Sidekicks fire twice; double ammo and power.", 1 },
-	{ "Reinforced Prow",  "Ram much harder and take much less for it.", 3 },
+	{ "Reinforced Prow",  "Ram much harder and take much less for it.", 4 },
 	{ "Knife Fight",      "More damage the closer you fly to a foe.", 4 },
 	{ "Deflector",        "Shield hits return fire at the shooter.", 2 },
 };
