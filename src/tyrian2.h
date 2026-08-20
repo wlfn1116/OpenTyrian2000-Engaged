@@ -91,6 +91,12 @@ bool enemy_is_wreck(unsigned int slot);
 /* Return a live body's tier tint or its linked group's sealed-shell tint. Wrecks return 0. */
 Uint8 enemy_body_tint(unsigned int slot);
 
+/* Rebuild link-group scenery flags before the homing pass. */
+void endlessScanSceneryLinks(void);
+
+/* True if Endless homing may steer this body. Call endlessScanSceneryLinks first. */
+bool endlessHomingChaser(unsigned int slot);
+
 /* Frames presented since the game started, the clock a cosmetic paces itself on. Rollback runs
  * several simulation passes against one presented frame, so a cadence counted in sim ticks stutters.
  * Outside the rollback registry, and never a simulation input. */

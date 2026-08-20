@@ -521,6 +521,16 @@ static int endlessRollEliteTier(JE_byte linknum)
 	return endlessEliteLink[linknum];
 }
 
+// Match player-shot eligibility, including armor events that open a link later.
+bool endlessEnemyDestructible(JE_byte avail, JE_byte linknum, JE_byte armorleft)
+{
+	if (avail != 0)
+		return false;
+	if (armorleft > 0 && armorleft < 255)
+		return true;
+	return endlessArmorOpensAll || (linknum != 0 && endlessArmorOpens[linknum]);
+}
+
 // The tier this enemy wears for the rest of its life, settled on its first processed frame so
 // nothing recolours or rearms in front of the player. A body the level is holding invulnerable
 // takes a tier only when something can eventually hurt it.

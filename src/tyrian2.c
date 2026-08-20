@@ -3194,10 +3194,37 @@ static unsigned int count_stuck_above_screen(void)
 // Wait about six seconds before culling a stuck-above enemy.
 enum { MAP_STOP_STALL_LIMIT = 210 };
 
+// Per-link scenery flags, rebuilt before each homing pass.
+static bool endlessLinkHoldsScenery[256];
+
+void endlessScanSceneryLinks(void)
+{
+	memset(endlessLinkHoldsScenery, 0, sizeof(endlessLinkHoldsScenery));
+
+	for (int i = 0; i < 100; i++)
+	{
+		if (enemyAvail[i] != 1 && enemy[i].linknum != 0 && !enemy[i].scoreitem &&
+		    !endlessEnemyDestructible(enemyAvail[i], enemy[i].linknum, enemy[i].armorleft))
+			endlessLinkHoldsScenery[enemy[i].linknum] = true;
+	}
+}
+
+// Loot keeps its drift. Linked bodies chase only if every member can eventually be shot.
+bool endlessHomingChaser(unsigned int i)
+{
+	if (enemy[i].scoreitem)
+		return true;
+	if (!endlessEnemyDestructible(enemyAvail[i], enemy[i].linknum, enemy[i].armorleft))
+		return false;
+	return enemy[i].linknum == 0 || !endlessLinkHoldsScenery[enemy[i].linknum];
+}
+
 static void endlessGroupHoming(void)
 {
 	if (!endlessFxActive())
 		return;
+
+	endlessScanSceneryLinks();
 
 	for (int i = 0; i < 100; i++)
 		enemy[i].groupHomed = false;
@@ -3511,6 +3538,19 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 	{
 		if (enemyAvail[i] != 1)
 		{
+			// Settle tier and homing eligibility on the body's first processed frame.
+			if (endlessFxActive() && enemy[i].eliteState == 0)
+			{
+				enemy[i].eliteState = (JE_byte)endlessEliteTierNow(
+					enemy[i].linknum, enemy[i].armorleft, enemy[i].scoreitem);
+
+				if (!endlessHomingChaser(i))
+				{
+					enemy[i].xaccel = enemyDat[enemy[i].enemytype].xaccel;
+					enemy[i].yaccel = enemyDat[enemy[i].enemytype].yaccel;
+				}
+			}
+
 			skyGlueThisEnemy = skyBank && enemy_rides_layer2(&enemy[i]);
 
 			enemy[i].mapoffset = tempMapXOfs;
@@ -3529,12 +3569,6 @@ void JE_drawEnemy(int enemyOffset) // actually does a whole lot more than just d
 				enemy[i].scroll_yfrac = tempScrollYfracBar;
 				enemy[i].scroll_ylayer = (JE_byte)tempScrollYLayer;
 			}
-
-			// Endless: settle this enemy's tier once, on the first frame it is processed;
-			// 1 normal, 2 elite, 3 champion.
-			if (endlessFxActive() && enemy[i].eliteState == 0)
-				enemy[i].eliteState = (JE_byte)endlessEliteTierNow(
-					enemy[i].linknum, enemy[i].armorleft, enemy[i].scoreitem);
 
 			// The ship this one tracks: its own coin toss in co-op Endless, ship one everywhere else.
 			const Player *const prey = &player[endlessHomingTargetPlayer(enemy[i].homeTarget)];
@@ -10017,8 +10051,8 @@ uint JE_makeEnemy(struct JE_SingleEnemyType *enemy, Uint16 eDatI, Sint16 uniqueS
 	enemy->xaccel = enemyDat[eDatI].xaccel;
 	enemy->yaccel = enemyDat[eDatI].yaccel;
 
-	// Endless homing tiers raise weak tracking to minimum accelerations 90, 92, or 96.
-	// Existing stronger tracking is preserved; Rampage also adds collision damage.
+	// Homing tiers floor weak tracking at 90, 92, or 96. Stronger tracking survives;
+	// Rampage also adds collision damage. Scenery is restored on its first processed frame.
 	if (endlessFxActive())
 	{
 		const int trackFloor = (endlessActiveMods & ENDLESS_MOD_RAMPAGE)  ? 96

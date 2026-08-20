@@ -255,6 +255,20 @@ Direct writes to `armorleft` call `enemy_note_full_armor`; damage does not. Armo
 `endlessMode` controls run structure, saves, prices, and pickup replacement.
 `endlessFxActive()` controls scaling, modifiers, perks, and tiers.
 
+### Enemy homing
+
+Light Homing, Kamikaze, and Rampage floor weak tracking at 90, 92, and 96.
+Stronger tracking survives, and later script writes still win.
+
+`endlessEnemyDestructible` mirrors shot eligibility. Only state 0 can be hit;
+sealed bodies qualify only when an armor event can open their link. If any member
+of a linked object is permanent scenery, the whole object stays still. Loot keeps
+its drift.
+
+Settle this on the body's first processed frame, after its link is known. Restore
+the enemy table's acceleration when it should not chase. Rebuild the link flags
+from the live board before each homing pass; they are not rollback state.
+
 ### Perk interactions
 
 Perks belong to a player. Use `perkMine` for the local outpost owner and `perkFx`
@@ -408,6 +422,7 @@ Milestones use the upcoming zone:
 - Other multiples of 50 offer S+ and S++.
 - Multiples of 100 offer one END, two S+++, and two S++.
 - Multiples of 100 exclude every scroll-pace modifier.
+- The END route never carries Dead Generator. Static has a 1-in-22 draw.
 
 Course order uses cached danger and payout. Purchases and Sabotage update the
 chosen card without changing its original sort key.
@@ -543,7 +558,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 74. Packet readers check length before
+`NET_VERSION` bump. The current version is 76. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -582,6 +597,8 @@ Recent compatibility points:
 | 72 | Countermeasure Suite bursts on every hull hit |
 | 73 | Zinglon pillar damage scale and beam ownership |
 | 74 | Boss-bar live-part surveys exclude wreckage |
+| 75 | The End excludes Dead Generator and makes Static rare |
+| 76 | Homing modifiers exclude permanent scenery |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

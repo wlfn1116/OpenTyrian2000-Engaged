@@ -826,6 +826,9 @@ const char *endlessKillFireEvilName(void);
 // Tier rolls are cached by link group.
 void endlessResetElites(void);
 
+// True if player shots can damage this body now or after an armor event.
+bool endlessEnemyDestructible(JE_byte avail, JE_byte linknum, JE_byte armorleft);
+
 // Tier is settled on the body's first frame: 1 normal, 2 elite, 3 champion.
 int  endlessEliteTierNow(JE_byte linknum, JE_byte armorleft, bool scoreitem);
 int  endlessEliteHpMult100(void);

@@ -629,6 +629,9 @@ const EndlessTheme endlessRareThemes[] = {
 #define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
                              | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
 
+// Static is rare on The End; Dead Generator is excluded from its source pools.
+#define ENDLESS_THEEND_STATIC_ODDS 22
+
 Uint64 endlessMakeTheEndMods(void)
 {
 	Uint64 m = ENDLESS_MOD_THEEND | ENDLESS_THEEND_CORE;
@@ -645,11 +648,12 @@ Uint64 endlessMakeTheEndMods(void)
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_SLUGGISH;
 
-	// Reactive dangers are independent. DEADGEN is absent, so Static remains compatible.
+	// Reactive dangers are independent.
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_MARTYRDOM;
 	const bool corrects = (endlessRand() % 2) != 0;
-	if (endlessRand() % 2)
+	// Keep Static's own draw here to preserve later RNG positions.
+	if (endlessRand() % ENDLESS_THEEND_STATIC_ODDS == 0)
 		m |= ENDLESS_MOD_STATIC;
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_RETALIATION;

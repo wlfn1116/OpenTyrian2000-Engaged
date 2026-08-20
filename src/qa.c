@@ -512,8 +512,12 @@ static void qa_test_courses(void)
 				qa_check(ranks[8] == 2 && ranks[9] == 2 && ranks[10] == 1,
 				         "grand milestone contains two S++, two S+++, and one END route");
 				for (int i = 0; i < first_count; ++i)
+				{
 					qa_check((endlessCourseMod[i] & ENDLESS_SCROLL_PACE_MASK) == 0,
 					         "no grand milestone route quickens the scroll");
+					qa_check((endlessCourseMod[i] & ENDLESS_MOD_DEADGEN) == 0,
+					         "no grand milestone route runs the generator dead");
+				}
 			}
 		}
 
@@ -524,6 +528,38 @@ static void qa_test_courses(void)
 	}
 
 	printf("# course properties: 768 seeds, %u launchable routes\n", routes);
+}
+
+/* The End excludes Dead Generator and gives Static a rare independent roll. */
+static void qa_test_finale_mods(void)
+{
+	static const int depths[] = { 99, 199, 299, 399 };   // the depth a zone-100 finale is charted at
+	const unsigned samples = 2048;
+	char seed[ENDLESS_SEED_MAXLEN];
+	unsigned statics = 0;
+	bool deadgen = false, built = true;
+
+	for (unsigned sample = 0; sample < samples; ++sample)
+	{
+		watchdog_heartbeat();
+		snprintf(seed, sizeof(seed), "qa-end-%08x", (unsigned)(sample * 2654435761u));
+		qa_reset_course_inputs(seed, depths[sample % COUNTOF(depths)], DIFFICULTY_NORMAL);
+
+		const Uint64 mods = endlessMakeTheEndMods();
+		if (!(mods & ENDLESS_MOD_THEEND) || !(mods & (ENDLESS_MOD_APEX | ENDLESS_MOD_LEGION)))
+			built = false;
+		if (mods & ENDLESS_MOD_DEADGEN)
+			deadgen = true;
+		if (mods & ENDLESS_MOD_STATIC)
+			++statics;
+	}
+
+	qa_check(built, "every finale carries its marker and an all-elite tier");
+	qa_check(!deadgen, "no finale runs the generator dead");
+	qa_check(statics * 20 < samples, "Static lands on fewer than one finale in twenty");
+	qa_check(statics > 0, "...and a finale can still roll it");
+
+	printf("# finale modifiers: %u seeds, Static on %u\n", samples, statics);
 }
 
 /* The Base Level rule. Same puts every route of a slate onto one level, leaving the modifiers as
@@ -3097,6 +3133,68 @@ static void qa_test_elite_tier_eligibility(void)
 	endlessCampaignMods = savedCampaign;
 	endlessActiveMods = savedMods;
 	endlessRunDepth = savedDepth;
+	endlessResetElites();
+}
+
+/* Homing eligibility for active, scripted, linked, and pickup bodies. */
+static void qa_test_homing_chaser_eligibility(void)
+{
+	const bool savedMode = endlessMode, savedCampaign = endlessCampaignMods;
+	const JE_word savedMaxEvent = maxEvent;
+	struct JE_EventRecType savedEvents[2];
+	memcpy(savedEvents, eventRec, sizeof(savedEvents));
+
+	endlessMode = true;
+	endlessCampaignMods = false;
+
+	// Link 64 opens through an armor event; link 7 never opens.
+	memset(eventRec, 0, sizeof(savedEvents));
+	eventRec[0].eventtype = 25;
+	eventRec[0].eventdat = 200;
+	eventRec[0].eventdat4 = 64;
+	maxEvent = 1;
+	endlessResetElites();
+
+	qa_check(endlessEnemyDestructible(0, 0, 40), "a damageable body can be shot");
+	qa_check(!endlessEnemyDestructible(2, 0, 40),
+	         "...but avail 2 carries no health the shot loop will look at");
+	qa_check(endlessEnemyDestructible(0, 64, 255) && !endlessEnemyDestructible(0, 7, 255),
+	         "a sealed body waits on its link group's damage event");
+
+	// A destructible weak point shares link 12 with permanent scenery.
+	const JE_byte savedAvail[3] = { enemyAvail[0], enemyAvail[1], enemyAvail[2] };
+	struct JE_SingleEnemyType savedEnemy[3];
+	memcpy(savedEnemy, enemy, sizeof(savedEnemy));
+
+	memset(enemy, 0, sizeof(savedEnemy));
+	enemyAvail[0] = 0;
+	enemy[0].linknum = 12;
+	enemy[0].armorleft = 40;
+	enemyAvail[1] = 2;
+	enemy[1].linknum = 12;
+	enemy[1].armorleft = 255;
+	enemyAvail[2] = 0;
+	enemy[2].linknum = 0;
+	enemy[2].armorleft = 40;
+	endlessScanSceneryLinks();
+
+	qa_check(!endlessHomingChaser(0) && !endlessHomingChaser(1),
+	         "a span keeps still even where a destructible weak point sits inside it");
+	qa_check(endlessHomingChaser(2), "an unlinked damageable body still gives chase");
+
+	enemy[1].scoreitem = true;
+	endlessScanSceneryLinks();
+	qa_check(endlessHomingChaser(0) && endlessHomingChaser(1),
+	         "loot riding a link number is not scenery and poisons nothing");
+
+	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
+	for (unsigned i = 0; i < COUNTOF(savedAvail); ++i)
+		enemyAvail[i] = savedAvail[i];
+
+	memcpy(eventRec, savedEvents, sizeof(savedEvents));
+	maxEvent = savedMaxEvent;
+	endlessMode = savedMode;
+	endlessCampaignMods = savedCampaign;
 	endlessResetElites();
 }
 
@@ -7697,6 +7795,7 @@ int qa_run_unit_suite(void)
 	qa_test_health_bar_scale();
 	qa_test_vulnerable_cue();
 	qa_test_elite_tier_eligibility();
+	qa_test_homing_chaser_eligibility();
 	qa_test_elite_explosion_tint();
 	qa_test_elite_shot_tint();
 	qa_test_elite_message_tint();
@@ -7724,6 +7823,7 @@ int qa_run_unit_suite(void)
 	qa_test_save_fixtures();
 	qa_test_resync_serialization();
 	qa_test_courses();
+	qa_test_finale_mods();
 	qa_test_course_base_rule();
 	qa_test_course_shuffle_rule();
 	qa_test_course_reroll();

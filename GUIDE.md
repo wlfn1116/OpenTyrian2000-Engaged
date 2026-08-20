@@ -418,6 +418,8 @@ Cards include modifier rewards and a small level adjustment. Interest starts at
 No route on a multiple of 100 scrolls faster than usual, so Slipstream, Warp
 Speed, Overclock, and Overload never appear on those charts.
 
+The End never rolls Dead Generator. Static Discharge is rare there.
+
 Data cubes and secret-level orbs become random safe specials. They draw as a
 color-cycling `?` and collect only on the glyph. Armored orbs keep their original
 look until opened.
