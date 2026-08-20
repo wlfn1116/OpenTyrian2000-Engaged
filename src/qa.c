@@ -6085,6 +6085,16 @@ static void qa_test_health_bar_scale(void)
 	         "the survey pairs the most-damaged part with its own full value");
 	qa_check(boss_bar_fill(armor, full) == 152, "which fills 60% of the bar");
 
+	/* Boss-bar surveys ignore wreckage while retaining active transformed parts. */
+	enemyAvail[0] = 2;
+	boss_bar_survey(link, &armor, &full);
+	qa_check(armor == 60 && full == 100,
+	         "a hull that leaves wreckage beside a live part still reads the live one");
+
+	enemyAvail[1] = 2;
+	boss_bar_survey(link, &armor, &full);
+	qa_check(armor > 255, "wreckage a dead boss leaves behind is not a live part");
+
 	enemyAvail[0] = 1;
 	enemyAvail[1] = 1;
 	boss_bar_survey(link, &armor, &full);

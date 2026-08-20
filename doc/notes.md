@@ -97,6 +97,9 @@ move. Bank 0 is the in-game grey ramp; use `blit_sprite2_filter_bright` for the
 body flash. Grey the bar while every live group part remains invulnerable, then
 use the newest cue stamp for its brightness.
 
+Boss-bar surveys include only parts with `enemyAvail == 0`. Wreckage uses state
+2 and is out of combat; transformed parts that remain active still count.
+
 ### Supersparks
 
 Sparks share one `MAX_SUPERPIXELS` ring. A later spawn may replace a live spark.
@@ -540,7 +543,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 73. Packet readers check length before
+`NET_VERSION` bump. The current version is 74. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -578,6 +581,7 @@ Recent compatibility points:
 | 71 | Course-correction tiers and per-shot pass state |
 | 72 | Countermeasure Suite bursts on every hull hit |
 | 73 | Zinglon pillar damage scale and beam ownership |
+| 74 | Boss-bar live-part surveys exclude wreckage |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

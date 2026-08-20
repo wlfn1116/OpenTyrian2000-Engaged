@@ -59,9 +59,8 @@ int enemy_spend_damage(unsigned int slot, int damage);
  * and re-arm boss groups at their own values, so the two have to be measured against each other. */
 JE_byte boss_bar_fill(unsigned int armorleft, unsigned int full);
 
-/* The armor of a boss group's most-damaged live part, and the armor that same part started with.
- * `*out_armor` comes back above 255 when the group has no live parts left, which is how
- * draw_boss_bar tells a dead boss from an invincible one. */
+/* Return remaining and full armor for a group's most-damaged active part. Wreckage is ignored;
+ * `*out_armor` above 255 means the group has no live parts. */
 void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *out_full);
 
 #define ENEMY_ARMED_FLASH_FRAMES 6  // presented frames; matches GAUGE_FLASH_START

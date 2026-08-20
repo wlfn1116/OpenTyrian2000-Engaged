@@ -11524,7 +11524,7 @@ static void boss_bar_colours(JE_byte link_num, int *base, int *lift)
 	{
 		for (unsigned int e = 0; e < COUNTOF(enemy); e++)
 		{
-			if (enemyAvail[e] == 1 || enemy[e].linknum != link_num)
+			if (enemyAvail[e] != 0 || enemy[e].linknum != link_num)
 				continue;
 
 			if (enemy[e].eliteState > tier)
@@ -12040,7 +12040,7 @@ void boss_bar_survey(JE_byte link_num, unsigned int *out_armor, unsigned int *ou
 
 	for (unsigned int e = 0; e < COUNTOF(enemy); e++)  // find most damaged
 	{
-		if (enemyAvail[e] != 1 && enemy[e].linknum == link_num)
+		if (enemyAvail[e] == 0 && enemy[e].linknum == link_num)
 			if (enemy[e].armorleft < armor)
 			{
 				armor = enemy[e].armorleft;
