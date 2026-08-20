@@ -264,8 +264,8 @@ Stronger tracking survives, and later script writes still win.
 
 `endlessEnemyDestructible` mirrors shot eligibility. Only state 0 can be hit;
 sealed bodies qualify only when an armor event can open their link. If any member
-of a linked object is permanent scenery, the whole object stays still. Loot keeps
-its drift.
+of a linked object is permanent scenery, the whole object stays still. Pickups
+keep the drift their level script gave them and never chase.
 
 Settle this on the body's first processed frame, after its link is known. Restore
 the enemy table's acceleration when it should not chase. Rebuild the link flags
@@ -600,7 +600,7 @@ Recent compatibility points:
 | 73 | Zinglon pillar damage scale and beam ownership |
 | 74 | Boss-bar live-part surveys exclude wreckage |
 | 75 | The End excludes Dead Generator and makes Static rare |
-| 76 | Homing modifiers exclude permanent scenery |
+| 76 | Homing modifiers exclude permanent scenery and pickups |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

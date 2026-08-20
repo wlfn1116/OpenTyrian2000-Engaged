@@ -3184,8 +3184,9 @@ static void qa_test_homing_chaser_eligibility(void)
 
 	enemy[1].scoreitem = true;
 	endlessScanSceneryLinks();
-	qa_check(endlessHomingChaser(0) && endlessHomingChaser(1),
+	qa_check(endlessHomingChaser(0),
 	         "loot riding a link number is not scenery and poisons nothing");
+	qa_check(!endlessHomingChaser(1), "...and the pickup itself never gives chase");
 
 	memcpy(enemy, savedEnemy, sizeof(savedEnemy));
 	for (unsigned i = 0; i < COUNTOF(savedAvail); ++i)

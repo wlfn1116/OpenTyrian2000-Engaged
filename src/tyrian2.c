@@ -3216,11 +3216,12 @@ void endlessScanSceneryLinks(void)
 	}
 }
 
-// Loot keeps its drift. Linked bodies chase only if every member can eventually be shot.
+// Loot keeps its scripted drift, so a homing sector never sends pickups after the ship.
+// Linked bodies chase only if every member can eventually be shot.
 bool endlessHomingChaser(unsigned int i)
 {
 	if (enemy[i].scoreitem)
-		return true;
+		return false;
 	if (!endlessEnemyDestructible(enemyAvail[i], enemy[i].linknum, enemy[i].armorleft))
 		return false;
 	return enemy[i].linknum == 0 || !endlessLinkHoldsScenery[enemy[i].linknum];
