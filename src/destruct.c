@@ -1155,16 +1155,18 @@ static enum de_mode_t JE_modeSelect(void)
 
 	while (true)
 	{
-		// Keyboard-only: nothing here hit-tests a tap, so the touch ports need the cursor
-		// keys and confirm to pick a mode at all.
-		touch_ui_set_layout(TOUCH_LAYOUT_PICK);
-
 		DrawModeSelectMenu(mode);
 		JE_showVGA();
 
 		newkey = false;
 		do
 		{
+			// Keyboard-only: nothing here hit-tests a tap, so the touch ports need the
+			// cursor keys and confirm to pick a mode at all. Asserted inside this wait,
+			// not around it: the wait is where all the time goes, and a layout request
+			// left unrenewed goes stale in a fraction of a second.
+			touch_ui_set_layout(TOUCH_LAYOUT_PICK);
+
 			push_joysticks_as_keyboard();  // controller -> arrows/Return/Escape (no keyboard on Switch)
 			service_SDL_events(false);
 			SDL_Delay(16);
