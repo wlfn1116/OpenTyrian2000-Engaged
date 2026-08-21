@@ -849,6 +849,7 @@ that would do nothing if you pressed it.
 | Any menu | Back | None |
 | A list too long to fit | Back, left, right | Up, down, confirm |
 | Destruct mode select | Back | Up, down, confirm |
+| A screen waiting for any key | Back | Confirm |
 | Jukebox | Back, previous track | Next track |
 | Rear Gun in the shop | Back | Rear weapon mode |
 | Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
@@ -862,8 +863,9 @@ where tapping cannot do the job. That means a list longer than its frame, where 
 tap only reaches the rows currently drawn: the debug screens, and the shop's buy
 and sell list when the outpost is carrying more than six items. Destruct's mode
 select gets up, down and confirm for a different reason. It reads the keyboard
-directly and hit-tests nothing, so a tap there does nothing at all. Holding an
-arrow repeats it.
+directly and hit-tests nothing, so a tap there does nothing at all, and its
+title, help and pause screens get confirm for the same reason. Holding an arrow
+repeats it.
 
 Destruct holds its aim, power, and fire buttons the way a key would, and steps
 the unit and weapon one press at a time.

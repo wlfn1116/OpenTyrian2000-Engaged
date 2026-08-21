@@ -1119,6 +1119,8 @@ static void JE_introScreen(void)
 #endif
 	while (!newkey)
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
 		service_SDL_events(false);
 		SDL_Delay(16);
@@ -1757,6 +1759,8 @@ static void JE_helpScreen(void)
 
 	do  /* wait until user hits a key */
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
 		SDL_Delay(16);
@@ -1779,6 +1783,8 @@ static void JE_pauseScreen(void)
 
 	do  /* wait until user hits a key */
 	{
+		// Waiting for any key, which a finger cannot express: offer confirm.
+		touch_ui_set_layout(TOUCH_LAYOUT_CONFIRM);
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
 		SDL_Delay(16);

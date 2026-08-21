@@ -42,6 +42,7 @@ typedef enum
 	TOUCH_LAYOUT_MENU,      // the default everywhere else
 	TOUCH_LAYOUT_LIST,      // a scrolling list a tap cannot reach all of: the debug screens
 	TOUCH_LAYOUT_PICK,      // a short keyboard-only menu: up, down, confirm
+	TOUCH_LAYOUT_CONFIRM,   // a screen waiting for any key: confirm
 	TOUCH_LAYOUT_JUKEBOX,
 	TOUCH_LAYOUT_DESTRUCT
 } TouchLayout;
