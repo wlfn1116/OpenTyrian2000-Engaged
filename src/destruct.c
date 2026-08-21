@@ -2344,6 +2344,7 @@ static void DE_StateRestore(const void* src)
  * de_net_peer_bits are applied at the same point of the tick the offline path reads its keys. */
 static enum de_state_t DE_NetExchange(void)
 {
+	touch_ui_flush_keys();
 	service_SDL_events(true);
 
 	const Uint8 actions = DE_NetLocalActions();
@@ -2461,6 +2462,7 @@ static void DE_RollbackApplyMoves(void)
 		}
 		else
 		{
+			touch_ui_flush_keys();
 			service_SDL_events(true);
 			drb_record_local(DE_NetLocalActions(), DE_NetLocalControls());
 		}
@@ -3416,6 +3418,9 @@ static void DE_RunTickGetInput(void)
 	SDL_Scancode key;
 
 	/* Key and action arrays share indices, including alternate binding slots. */
+	// Destruct pumps its own events rather than going through push_joysticks_as_keyboard,
+	// so the on-screen buttons' queued keys have to be pushed here instead.
+	touch_ui_flush_keys();
 	service_SDL_events(true);
 
 	for (player_index = 0; player_index < MAX_PLAYERS; player_index++)

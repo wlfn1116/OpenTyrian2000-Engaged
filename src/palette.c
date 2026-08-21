@@ -74,24 +74,18 @@ void set_palette(Palette colors, unsigned int first_color, unsigned int last_col
 	}
 }
 
-/* Brightest component anywhere in the live palette. A real palette always holds something
- * near white, so this reads 255 during play and falls to 0 as a fade reaches black, which
- * is what anything drawn outside the palettized frame needs in order to fade with it. */
-Uint8 palette_peak(void)
+/* Wall-clock of the last fade step. Every screen transition steps the palette through
+ * step_fade_palette below, so a fresh stamp means a transition is running. Anything drawn
+ * outside the palettized frame reads this to keep off the screen while one does. */
+static Uint32 fade_step_ms;
+
+bool palette_fading(void)
 {
-	Uint8 peak = 0;
+	// Long enough to bridge the gap between fade steps at the slowest frame rate, short
+	// enough that the screen does not sit stripped after the last one.
+	const Uint32 quiet_ms = 120;
 
-	for (uint i = 0; i < 256; ++i)
-	{
-		if (palette[i].r > peak)
-			peak = palette[i].r;
-		if (palette[i].g > peak)
-			peak = palette[i].g;
-		if (palette[i].b > peak)
-			peak = palette[i].b;
-	}
-
-	return peak;
+	return fade_step_ms != 0 && SDL_GetTicks() - fade_step_ms < quiet_ms;
 }
 
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)
@@ -127,7 +121,9 @@ void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_
 void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, unsigned int last_color)
 {
 	assert(steps > 0);
-	
+
+	fade_step_ms = SDL_GetTicks();
+
 	for (unsigned int i = first_color; i <= last_color; i++)
 	{
 		const int delta[3] = { diff[i][0] / steps, diff[i][1] / steps, diff[i][2] / steps };

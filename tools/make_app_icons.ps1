@@ -1,16 +1,17 @@
 <#
 .SYNOPSIS
-Generate the Android and iOS launcher icons from visualc/tyrian2000.ico.
+Generate the Android, iOS, and macOS app icons from visualc/tyrian2000.ico.
 
 .DESCRIPTION
-Both mobile ports need bitmap icons at fixed sizes, which neither build system can
-derive from a .ico. This writes them from the largest frame in the icon file. Scaling is
+None of the three build systems can derive a bitmap icon from a .ico, so this writes them
+at the fixed sizes each one wants, from the largest frame in the icon file. Scaling is
 nearest-neighbour: the source is pixel art, and a smooth filter turns it to mush.
 
 Android gets adaptive-icon foregrounds, whose artwork must stay inside the central 72 of
 108 density-independent pixels or a launcher mask will clip it, plus square legacy
 bitmaps. iOS gets opaque icons, because alpha in an iOS app icon renders as black and is
-rejected by the store tooling.
+rejected by the store tooling. macOS gets an .iconset of the rounded square Apple's icon
+grid asks for, which iconutil packs into an .icns during the build.
 
 Re-run after changing the source icon. The output is committed, so a build never needs it.
 #>
@@ -55,6 +56,43 @@ function New-IconBitmap($art, [int]$size, [double]$coverage, [bool]$opaque) {
         $edge = [int][Math]::Round($size * $coverage)
         $off = [int][Math]::Round(($size - $edge) / 2.0)
         $g.DrawImage($art, $off, $off, $edge, $edge)
+    } finally {
+        $g.Dispose()
+    }
+    return $bmp
+}
+
+# Draw $art on the rounded square of Apple's macOS icon grid: an 824-of-1024 plate with a
+# corner radius of 22.5% of its edge, centred on a transparent canvas. Unlike iOS, macOS
+# expects the icon to carry that shape itself rather than filling the whole square.
+function New-MacIconBitmap($art, [int]$size) {
+    $bmp = New-Object System.Drawing.Bitmap($size, $size)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    try {
+        $g.Clear([System.Drawing.Color]::Transparent)
+        $g.SmoothingMode = 'AntiAlias'
+
+        $plate = $size * (824.0 / 1024.0)
+        $off = ($size - $plate) / 2.0
+        $d = $plate * 0.45  # diameter of the corner arcs
+
+        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $path.AddArc($off, $off, $d, $d, 180, 90)
+        $path.AddArc($off + $plate - $d, $off, $d, $d, 270, 90)
+        $path.AddArc($off + $plate - $d, $off + $plate - $d, $d, $d, 0, 90)
+        $path.AddArc($off, $off + $plate - $d, $d, $d, 90, 90)
+        $path.CloseFigure()
+
+        $brush = New-Object System.Drawing.SolidBrush($BackColor)
+        $g.FillPath($brush, $path)
+        $brush.Dispose()
+        $path.Dispose()
+
+        $g.InterpolationMode = 'NearestNeighbor'
+        $g.PixelOffsetMode = 'Half'
+        $edge = [int][Math]::Round($plate * 0.86)
+        $artOff = [int][Math]::Round(($size - $edge) / 2.0)
+        $g.DrawImage($art, $artOff, $artOff, $edge, $edge)
     } finally {
         $g.Dispose()
     }
@@ -119,6 +157,26 @@ for ($y = 0; $y -lt $tinted.Height; $y++) {
     }
 }
 Save-Png $tinted (Join-Path $appIconSet 'AppIcon-1024-tinted.png')
+
+# macOS. An .iconset directory, which the build hands to iconutil; the names and sizes
+# below are the ones that tool requires, and it rejects a set containing anything else.
+Write-Host 'macos:'
+$iconset = Join-Path $Root 'macos\tyrian2000.iconset'
+$macSizes = @{
+    'icon_16x16.png'      = 16
+    'icon_16x16@2x.png'   = 32
+    'icon_32x32.png'      = 32
+    'icon_32x32@2x.png'   = 64
+    'icon_128x128.png'    = 128
+    'icon_128x128@2x.png' = 256
+    'icon_256x256.png'    = 256
+    'icon_256x256@2x.png' = 512
+    'icon_512x512.png'    = 512
+    'icon_512x512@2x.png' = 1024
+}
+foreach ($f in $macSizes.GetEnumerator()) {
+    Save-Png (New-MacIconBitmap $art $f.Value) (Join-Path $iconset $f.Key)
+}
 
 $art.Dispose()
 Write-Host 'done'

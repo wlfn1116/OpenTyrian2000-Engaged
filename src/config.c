@@ -1856,6 +1856,17 @@ const char *get_user_directory(void)
 		// App-private storage, resolved by mobile_platform_init(). Nothing here survives
 		// an uninstall on either system.
 		snprintf(user_dir, sizeof(user_dir), "%s", mobile_user_dir());
+#elif defined(TARGET_MACOS)
+		// ~/Library/Application Support, where a bundled app is expected to write; a .app
+		// has no directory of its own a user could reach. SDL_GetPrefPath() creates the
+		// directory and returns it with a trailing separator, which dir_fopen() re-adds.
+		char *pref = SDL_GetPrefPath("OpenTyrian", "OpenTyrian2000");
+		snprintf(user_dir, sizeof(user_dir), "%s", pref != NULL ? pref : ".");
+		SDL_free(pref);
+
+		const size_t pref_len = strlen(user_dir);
+		if (pref_len > 1 && user_dir[pref_len - 1] == '/')
+			user_dir[pref_len - 1] = '\0';
 #elif !defined(TARGET_WIN32)
 		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
 		if (xdg_config_home != NULL)

@@ -272,6 +272,7 @@ void push_joysticks_as_keyboard(void)
 	// select buttons only while it keeps arriving, so a screen that reads nothing is not
 	// given controls that do nothing.
 	touch_ui_menu_navigable();
+	touch_ui_flush_keys();
 
 	poll_joysticks();
 	

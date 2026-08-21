@@ -184,7 +184,7 @@ static Uint32 desired_signature(Uint32 now_ms)
 	sig = sig * 31u + (fresh(navigable_at_ms, now_ms) ? 1u : 0u);
 	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
 	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
-	sig = sig * 31u + palette_peak();
+	sig = sig * 31u + (palette_fading() ? 1u : 0u);
 
 	for (int i = 0; i < TOUCH_BTN_COUNT; ++i)
 		sig = sig * 31u + (btn_held[i] ? 1u : 0u);
@@ -346,24 +346,12 @@ static bool overlaps_frame(const SDL_Rect *button, const SDL_Rect *frame)
 	       button->y < frame->y + frame->h && button->y + button->h > frame->y;
 }
 
-/* Screen fades are palette fades, which the buttons never pass through: they are drawn by
- * the renderer, after the palettized frame has been converted. Scaling their colours by
- * the palette's peak reproduces the fade on them, so a transition to black takes them with
- * it instead of leaving them lit over an empty screen. Scaled towards black rather than
- * towards transparent because an icon is built from overlapping shapes, and any alpha
- * below full blends twice where those meet. */
-static Uint8 dim(int component, Uint8 peak)
+static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held)
 {
-	return (Uint8)(component * (int)peak / 255);
-}
-
-static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held, Uint8 peak)
-{
-	SDL_SetRenderDrawColor(renderer, dim(held ? 60 : 14, peak), dim(held ? 66 : 16, peak),
-	                       dim(held ? 88 : 26, peak), alpha);
+	SDL_SetRenderDrawColor(renderer, held ? 60 : 14, held ? 66 : 16, held ? 88 : 26, alpha);
 	SDL_RenderFillRect(renderer, r);
 
-	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak), 235);
+	SDL_SetRenderDrawColor(renderer, 165, 176, 205, 235);
 	SDL_RenderDrawRect(renderer, r);
 
 	const SDL_Rect inner = { r->x + 1, r->y + 1, r->w - 2, r->h - 2 };
@@ -554,7 +542,24 @@ static void draw_icon(SDL_Renderer *renderer, TouchIcon icon, const SDL_Rect *r)
 	}
 }
 
-// Re-emit the key of a held repeating button. Menus are the only consumer; Destruct reads
+/* A press queues its key here rather than pushing it straight into SDL, because a press
+ * arrives inside service_SDL_events and several screens pump events more than once per
+ * iteration -- JE_mouseStart pumps before the loop's own read. A key pushed during the
+ * first pump is registered there and then wiped by the second pump's clear_new, which is
+ * why the debug menus ignored the buttons entirely. Holding it until
+ * push_joysticks_as_keyboard runs puts it exactly where a controller's synthesized keys
+ * land: immediately before the pump whose result the screen reads. */
+#define PENDING_KEY_MAX  4
+static SDL_Scancode pending_key[PENDING_KEY_MAX];
+static int pending_key_count;
+
+static void queue_key(SDL_Scancode scan)
+{
+	if (pending_key_count < PENDING_KEY_MAX)
+		pending_key[pending_key_count++] = scan;
+}
+
+// Re-queue the key of a held repeating button. Menus are the only consumer; Destruct reads
 // held state per tick and needs no repeat.
 static void service_repeat(Uint32 now_ms)
 {
@@ -570,8 +575,18 @@ static void service_repeat(Uint32 now_ms)
 			continue;
 
 		btn_repeat_ms[def->id] = now_ms;
-		push_key(def->emit);
+		queue_key(def->emit);
 	}
+}
+
+void touch_ui_flush_keys(void)
+{
+	service_repeat(SDL_GetTicks());
+
+	for (int i = 0; i < pending_key_count; ++i)
+		push_key(pending_key[i]);
+
+	pending_key_count = 0;
 }
 
 void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
@@ -595,16 +610,16 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	layout_out_w = out_w;
 	layout_out_h = out_h;
 
-	// Mid-fade the buttons dim with the screen; once it is fully black they are gone, and
-	// a press must not land on a button nobody can see.
-	const Uint8 peak = palette_peak();
-	layout_valid = peak > 0;
+	/* A screen transition is a palette fade, which the buttons never pass through: they are
+	 * drawn by the renderer, after the palettized frame has been converted. Rather than
+	 * trying to follow the fade -- which reads as a flash against content that fades on its
+	 * own schedule -- they leave the screen for the length of it. Nothing is interactive
+	 * mid-transition anyway, so the press test goes with them. */
+	layout_valid = !palette_fading();
 
 	// This frame is what the buttons now look like, so an idle wait loop has nothing left
 	// to repaint until something changes again.
 	presented_signature = desired_signature(now_ms);
-
-	service_repeat(now_ms);
 
 	if (!layout_valid)
 		return;
@@ -619,12 +634,12 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 		const bool held = btn_held[shown[i]->id];
 		const Uint8 alpha = overlaps_frame(r, frame) ? TOUCH_BTN_ALPHA_OVERLAP : TOUCH_BTN_ALPHA_CLEAR;
 
-		draw_plate(renderer, r, alpha, held, peak);
+		draw_plate(renderer, r, alpha, held);
 
 		// Opaque, even over a translucent plate: an icon built from overlapping shapes
 		// blends twice where they meet, and any alpha below full shows that as a seam.
 		// The plate already brightens on press, so the icon needs no second cue.
-		SDL_SetRenderDrawColor(renderer, dim(226, peak), dim(232, peak), dim(248, peak), 255);
+		SDL_SetRenderDrawColor(renderer, 226, 232, 248, 255);
 		draw_icon(renderer, (TouchIcon)shown[i]->icon, r);
 	}
 
@@ -655,7 +670,7 @@ bool touch_ui_finger_down(SDL_FingerID finger, float nx, float ny)
 		btn_repeat_ms[def->id] = now_ms;
 
 		if (def->emit != SDL_SCANCODE_UNKNOWN)
-			push_key(def->emit);
+			queue_key(def->emit);
 		else if (def->id == TOUCH_BTN_PAUSE)
 			ingamemenu_pressed = true;   // the same latch a pad's pause button sets
 		else if (def->id == TOUCH_BTN_WEAPON)

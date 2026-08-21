@@ -93,7 +93,6 @@ void wait_noinput(JE_boolean keyboard, JE_boolean mouse, JE_boolean joystick)
 		SDL_Delay(SDL_POLL_INTERVAL);
 		poll_joysticks();
 		service_SDL_events(false);
-		touch_ui_idle_repaint();
 
 #ifdef WITH_NETWORK
 		if (isNetworkGame)

@@ -249,6 +249,18 @@ jobs:
           find android/app/src/main/jni -name 'gradle-wrapper.jar' -print -delete
           find android/app/src/main/jni -name 'gradle-wrapper.properties' -delete
 
+      # tools/make_mobile_icons.ps1 writes these and they are committed, so a missing one
+      # means the generator was not re-run. Checked here because the APK is no place to
+      # look: a release build renames resources.
+      - name: Check the committed launcher icons
+        run: |
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            for f in ic_launcher ic_launcher_foreground; do
+              p="android/app/src/main/res/mipmap-$d/$f.png"
+              test -s "$p" || { echo "missing $p; re-run tools/make_mobile_icons.ps1"; exit 1; }
+            done
+          done
+
       - name: Install the pinned NDK and platform
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
@@ -300,9 +312,9 @@ jobs:
                       assets/data/tyrian1.lvl assets/data/filelist.txt; do
             printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
           done
-          # aapt2 rewrites resource paths: density qualifiers gain a -v4 suffix and names
-          # can be shortened, so match the launcher icon by name rather than by path.
-          printf '%s\n' "$list" | grep -q 'ic_launcher' || { echo "no launcher icon in the APK"; exit 1; }
+          # No icon check here: a release build runs the resources through aapt2 optimize,
+          # which renames them, so nothing about their APK path or name is stable. The
+          # committed sources are checked before the build instead.
 
       # Already a compressed archive; skip GitHub's wrapper compression.
       - uses: actions/upload-artifact@v6

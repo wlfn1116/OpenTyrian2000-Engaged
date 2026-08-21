@@ -60,6 +60,12 @@ void touch_ui_set_extra(TouchButton button);
  * knowing they exist, and a screen that reads nothing shows only Esc. */
 void touch_ui_menu_navigable(void);
 
+/* Push the keys the on-screen buttons have queued. Called from push_joysticks_as_keyboard,
+ * which every navigable screen runs immediately before the pump it reads: a key pushed from
+ * inside the pump itself lands in whichever pump happened to receive the touch, and screens
+ * that pump twice per iteration (JE_mouseStart does) then clear it before reading. */
+void touch_ui_flush_keys(void);
+
 // True while a finger is on the button. Destruct reads its held actions this way.
 bool touch_ui_held(TouchButton button);
 
@@ -100,6 +106,7 @@ void touch_ui_idle_repaint(void);
  * the button and layout names need no definition here. */
 #define touch_ui_render(renderer, frame)  ((void)0)
 #define touch_ui_menu_navigable()         ((void)0)
+#define touch_ui_flush_keys()             ((void)0)
 #define touch_ui_idle_repaint()           ((void)0)
 #define touch_ui_set_layout(layout)       ((void)0)
 #define touch_ui_set_extra(button)        ((void)0)
