@@ -9,7 +9,7 @@ and controls work as before.
 | --- | --- |
 | Start Endless | Main menu > 1 Player Endless |
 | Play online | Main menu > Online Multiplayer |
-| Change online ship colors, opacity, or HP bars | Online outpost > Options > Online |
+| Change online ship colors, opacity, or HP bars | Online outpost > Customize |
 | Enable smooth rendering | Setup > Graphics |
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
@@ -626,22 +626,24 @@ save and does not write to the single-player Timed Battle boards.
 
 ### Telling the two ships apart
 
-During an online game, open **Options > Online** at the outpost.
+During an online game, choose **Customize** at the outpost.
 
-- **Color** dyes your hull and sidekicks. Your partner sees it too, while shots
-  keep their weapon colors. Shades follow the current level palette; Endless
-  hides the four colors used by kill-fire drives.
-- **Opacity** fades the other player and their shots from 100% to 20%. Turn off
-  **Apply to Ship** to fade only their shots. This setting affects only your
-  screen.
-- **HP Bars** shows the other player's shield and armor, either always or for
-  two seconds after a hit. Placement and opacity use the enemy-bar settings under
-  **Setup > Enhancements > Heads-Up Display**.
+- **Ship Color** dyes your hull and sidekicks. Your partner sees it too, while
+  shots keep their weapon colors. Shades follow the current level palette;
+  Endless hides the four colors used by kill-fire drives.
+- **Partner Opacity** fades the other player and their shots from 100% to 20%.
+  Turn off **Apply to Ship** to fade only their shots. This setting affects only
+  your screen.
+- **Partner HP Bars** displays the other player's shield and armor, either always
+  or for two seconds after a hit. Placement and base opacity use the enemy-bar
+  settings under **Setup > Enhancements > Heads-Up Display**. With **Apply to
+  Ship** on, the bars fade with the ship.
 
-Linked Arcade omits HP Bars because its shared HUD already shows both players.
+Linked Arcade omits Partner HP Bars because its shared HUD already shows both
+players.
 
-Opacity and HP Bars affect only your screen. Online saves keep both players'
-choices, so resuming preserves each view regardless of who hosts.
+**Partner Opacity** and **Partner HP Bars** affect only your screen. Online saves
+keep both players' choices, even if the other player hosts the resume.
 
 ### Saving and resuming
 
@@ -745,6 +747,7 @@ effect immediately, including in a game already in progress.
 
 Vanilla sets every Episode Versions row to Auto. Engaged uses:
 
+- the Ep 1-3 Xega Ball with two weaker balls;
 - Ep 1-3 sound for the Bubble Gum-Gun;
 - Ep 4+ sounds for the other four weapons;
 - the Ep 4+ Solar Shield icon;
@@ -785,8 +788,9 @@ Console builds also provide **Clear Logs**, which deletes every stored log.
 
 ### Debug Mode
 
-Debug Mode adds a menu to the shop and in-game menu, plus a level browser. It can
-change loadout, cash, cheats, difficulty, and expert multipliers.
+Debug Mode is off by default. It adds a menu to the shop and in-game menu, plus a
+level browser. It can change loadout, cash, cheats, difficulty, and expert
+multipliers.
 
 Online changes are sent to the peer. Endless Effects and Rollback Self-Test are
 disabled online.

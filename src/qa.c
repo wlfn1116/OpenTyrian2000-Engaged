@@ -5525,8 +5525,10 @@ static void qa_test_partner_hp_bars(void)
 
 		const int bx = 4, by = 4, bw = 24, bh = 20;
 
-		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh,
-		                         20, 20, ARMOR_GAUGE_LAYER_UNITS / 2);  // shield full, armour half
+		// Full shield, half armor.
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20,
+		                         ARMOR_GAUGE_LAYER_UNITS / 2,
+		                         ARMOR_GAUGE_LAYER_UNITS);
 
 		const Uint8 *const pixels = (const Uint8 *)VGAScreen->pixels;
 		const int pitch = VGAScreen->pitch;
@@ -5548,7 +5550,8 @@ static void qa_test_partner_hp_bars(void)
 
 		// Rollover uses the current layer for fill and the previous layer for track.
 		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20,
-		                         ARMOR_GAUGE_LAYER_UNITS + ARMOR_GAUGE_LAYER_UNITS / 2);
+		                         ARMOR_GAUGE_LAYER_UNITS + ARMOR_GAUGE_LAYER_UNITS / 2,
+		                         2 * ARMOR_GAUGE_LAYER_UNITS);
 
 		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX] & 0xf0)
 		         == (armorGaugeLayerCol[1] & 0xf0),
@@ -5556,6 +5559,28 @@ static void qa_test_partner_hp_bars(void)
 		qa_check((pixels[(barY + ENEMY_BAR_THICK) * pitch + barX + barLen - 1] & 0xf0)
 		         == (armorGaugeLayerCol[0] & 0xf0),
 		         "...over a track showing the full layer underneath");
+
+		// A Life Boost hull is full at its current 12-point ceiling.
+		const int farEnd = (barY + ENEMY_BAR_THICK) * pitch + barX + barLen - 1;
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20, 12, 12);
+		const Uint8 weakHull = pixels[farEnd];
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20,
+		                         12, ARMOR_GAUGE_LAYER_UNITS);
+		qa_check(weakHull > pixels[farEnd],
+		         "a mini armor bar divides by the hull's own ceiling, not the strongest hull's");
+
+		// Armor above one gauge layer still reads full at its current ceiling.
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 20, 20,
+		                         2 * ARMOR_GAUGE_LAYER_UNITS, 2 * ARMOR_GAUGE_LAYER_UNITS);
+		qa_check((pixels[farEnd] & 0xf0) == (armorGaugeLayerCol[1] & 0xf0),
+		         "a fully repaired upgraded hull fills its top layer end to end");
+
+		// Shield bars also use the ship's current ceiling.
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 8, 8, 12, 12);
+		const Uint8 weakShield = pixels[barY * pitch + barX + barLen - 1];
+		hud_draw_ship_hp_bars_at(0, bx, bx + bw - 1, by, by + bh, 8, 20, 12, 12);
+		qa_check(weakShield > pixels[barY * pitch + barX + barLen - 1],
+		         "...and the shield bar does the same with shield_max");
 	}
 
 	// Linked Arcade skips bars because its shared HUD already shows both ships.
@@ -5607,6 +5632,19 @@ static void qa_test_partner_hp_bars(void)
 			for (int col = 30; col < 70; ++col)
 				painted += (pixels[(probeY + row) * pitch + col] != 0);
 		qa_check(painted == 0, "Linked Arcade paints none, whatever the setting says");
+
+		// 70% bar opacity scaled by 30% ship opacity is 21%.
+		enemyBarOpacity = 70;
+		NetShipView fade = netStyleView(0);
+		fade.opacity = 30;
+		fade.shipOpacity = true;
+		netStyleSetView(0, fade);
+		qa_check(hud_ship_hp_bar_opacity() == 53,
+		         "the partner's opacity scales the enemy-bar setting instead of replacing it");
+		fade.shipOpacity = false;
+		netStyleSetView(0, fade);
+		qa_check(hud_ship_hp_bar_opacity() == 178,
+		         "...and sparing their ship leaves the bars at the enemy-bar setting alone");
 
 		netStyleSetView(0, savedView);
 		thisPlayerNum = savedPlayerNum;
@@ -8116,6 +8154,12 @@ static void qa_test_save_fixtures(void)
 	const bool slots = save_file_test_codec(detail, sizeof(detail));
 	snprintf(label, sizeof(label), "campaign slot codec%s%s", detail[0] ? ": " : "", detail);
 	qa_check(slots, label);
+
+	// Customize is inserted without changing stock row mappings.
+	detail[0] = '\0';
+	const bool rows = game_menu_test_outpost_rows(detail, sizeof(detail));
+	snprintf(label, sizeof(label), "online outpost rows%s%s", detail[0] ? ": " : "", detail);
+	qa_check(rows, label);
 
 	/* A real pair of files from a build before opentyrian.sav imports over the live tables the way
 	 * first launch does. They sit in the fixture directory's `legacy` sibling. Restored afterwards,

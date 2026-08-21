@@ -2263,10 +2263,21 @@ static void ship_hp_bar_draw_one(int id, int x, int y, int along, bool vertical,
 	}
 }
 
-void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
-                              uint shield, uint shieldMax, uint armor)
+// Scale the configured bar opacity with the hull when Apply to Ship is enabled.
+Uint8 hud_ship_hp_bar_opacity(void)
 {
-	const Uint8 opacity = (Uint8)(enemyBarOpacity * 255 / 100);
+	const NetShipView view = netStyleLocalView();
+	const int pct = view.shipOpacity
+	                ? enemyBarOpacity * view.opacity / NET_OPACITY_FULL
+	                : enemyBarOpacity;
+
+	return (Uint8)(pct * 255 / 100);
+}
+
+void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
+                              uint shield, uint shieldMax, uint armor, uint armorMax)
+{
+	const Uint8 opacity = hud_ship_hp_bar_opacity();
 	if (opacity == 0)
 		return;
 
@@ -2297,8 +2308,13 @@ void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
 		++layers;
 	const int topArmor = (int)armor - (layers - 1) * ARMOR_GAUGE_LAYER_UNITS;
 
+	// Only the layer containing armorMax may be shorter than a normal gauge layer.
+	int layerMax = (int)armorMax - (layers - 1) * ARMOR_GAUGE_LAYER_UNITS;
+	if (layerMax > ARMOR_GAUGE_LAYER_UNITS || layerMax < 1)
+		layerMax = ARMOR_GAUGE_LAYER_UNITS;
+
 	ship_hp_bar_draw_one(id, x, y, along, vertical,
-	                     (float)topArmor / (float)ARMOR_GAUGE_LAYER_UNITS,
+	                     (float)topArmor / (float)layerMax,
 	                     armorGaugeLayerCol[layers - 1],
 	                     (layers > 1) ? armorGaugeLayerCol[layers - 2] : 0, opacity);
 }
@@ -2332,9 +2348,9 @@ void hud_draw_ship_hp_bars(void)
 
 	int l, r, t, b;
 	hud_ship_hp_bar_box(seat, &l, &r, &t, &b);
-	// The cached shield ceiling the HUD's own tick mark reads, so both agree on what "full" means.
 	hud_draw_ship_hp_bars_at(RL_ID_SHIP_BAR_BASE + 1 + (int)seat, l, r, t, b,
-	                         player[seat].shield, player[seat].shield_max, player[seat].armor);
+	                         player[seat].shield, player[seat].shield_max,
+	                         player[seat].armor, player[seat].initial_armor);
 }
 
 void JE_drawArmor(void)

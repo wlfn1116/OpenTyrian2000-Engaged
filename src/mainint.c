@@ -2879,10 +2879,18 @@ JE_boolean JE_inGameSetup(void)
 
 	size_t selectedIndex = 0;
 
-	const int yMenuItems = 18;
-	/* 8 rows fit at the classic pitch; a 9th (Debug row) needs it tightened so
-	 * the last row clears the help box. */
-	const int dyMenuItems = menuItemsCount > 8 ? 14 : 16;
+	const int hMenuItem = 13;
+
+	// JE_barShade bounds are inclusive.
+	const int yMenuBoxTop = 13, yMenuBoxBottom = 148;
+
+	// Center the visible rows. Nine rows use the tightest 14 px pitch.
+	const int menuRows = (int)menuItemsCount;
+	const int yMenuMargin = 5;
+	const int hMenuRowSpan = yMenuBoxBottom - yMenuBoxTop - 2 * yMenuMargin;
+	const int dyMenuItems = menuRows > 1 ? (hMenuRowSpan - hMenuItem) / (menuRows - 1) : 0;
+	const int hMenuBlock = dyMenuItems * (menuRows - 1) + hMenuItem;
+	const int yMenuItems = yMenuBoxTop + (yMenuBoxBottom - yMenuBoxTop - hMenuBlock) / 2;
 
 	/* Both boxes are authored flush against the left edge (x=3); centre each of them in the
 	 * PLAYFIELD, which composite_playfield lays down at screen x 0, PLAYFIELD_WIDTH (299) wide,
@@ -2904,15 +2912,13 @@ JE_boolean JE_inGameSetup(void)
 	const int xMenuItemValue = xMenuItemName + wMenuItemName;
 	const int wMenuItemValue = 90;
 	const int wMenuItem = wMenuItemName + wMenuItemValue;
-	const int hMenuItem = 13;
 
 	for (bool done = false; !done; )
 	{
 		if (restart)
 		{
-			// Main box (extended down a little to fit the extra Extra row)
-			JE_barShade(VGAScreen, 3 + xOfs, 13, 217 + xOfs, 148);
-			JE_barShade(VGAScreen, 5 + xOfs, 15, 215 + xOfs, 146);
+			JE_barShade(VGAScreen, 3 + xOfs, yMenuBoxTop,     217 + xOfs, yMenuBoxBottom);
+			JE_barShade(VGAScreen, 5 + xOfs, yMenuBoxTop + 2, 215 + xOfs, yMenuBoxBottom - 2);
 
 			// Help box
 			JE_barShade(VGAScreen, 3 + xHelpOfs, yHelpBoxTop,     257 + xHelpOfs, yHelpBoxBottom);

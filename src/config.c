@@ -341,9 +341,8 @@ int bossBarTwoMode = BOSS_BAR_TWO_SPLIT;
 int vulnerableCue  = VULN_CUE_BOSSES;
 bool armorAlarm    = true;  // low-armor WARNING siren (Setup > Sound)
 bool linkSounds    = true;  // 2P fuse/unfuse clink+spring (Setup > Sound)
-/* When off: debug menu and debug level select hidden; buy/sell and pause menus
-   keep their stock layout. */
-bool debugMode     = true;
+// Disabling Debug Mode hides its menus and restores the stock layouts.
+bool debugMode     = false;
 /* Extends horizontal parallax to the full map span. Off preserves the stock amplitude. */
 bool extraParallax = false;
 /* Reflects columns beyond a map row's edge in both parallax modes. */
@@ -389,7 +388,7 @@ static const char *const superSparkCapKeys[SSW_COUNT] = { "superspark_mega_pulse
 /* Episode data selected for each non-spark difference item. Keep this in EpDiffWeapon order;
    the Engaged choices are listed in GUIDE.md under Episode Versions. */
 int epDiffMode[EDW_COUNT] = {
-	EPDIFF_AUTO, EPDIFF_AUTO, EPDIFF_AUTO,                                // gameplay reworks
+	EPDIFF_EP13, EPDIFF_AUTO, EPDIFF_AUTO,                                // gameplay reworks
 	EPDIFF_EP45, EPDIFF_EP13, EPDIFF_EP45, EPDIFF_EP45, EPDIFF_EP45,      // firing sounds
 	EPDIFF_EP45,                                                          // Solar Shield icon
 	EPDIFF_EP13, EPDIFF_EP13                                              // borrowed ship pictures
@@ -539,10 +538,9 @@ static const EnhancementSetting enhancementSettings[] = {
 	{ .boolSetting = &zicaLaserLock,  .vanilla = false,          .engaged = false },
 	{ .boolSetting = &zicaLaserBuff,  .vanilla = false,          .engaged = true },
 
-	/* Episode item data. Vanilla is Auto throughout, which plays each episode with the data it
-	 * shipped with. Engaged keeps Auto for the three gameplay reworks and pins the presentation
-	 * rows one by one, for how each sounds or looks rather than by era. */
-	{ .intSetting = &epDiffMode[EDW_XEGA_BALL],       .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
+	/* Vanilla uses Auto throughout. Engaged pins the Xega Ball and presentation rows listed in
+	 * GUIDE.md; the other gameplay changes stay on Auto. */
+	{ .intSetting = &epDiffMode[EDW_XEGA_BALL],       .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP13 },
 	{ .intSetting = &epDiffMode[EDW_MICROSOL_OPT5],   .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
 	{ .intSetting = &epDiffMode[EDW_FLARE],           .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_AUTO },
 	{ .intSetting = &epDiffMode[EDW_NEEDLE_LASER],    .vanilla = EPDIFF_AUTO, .engaged = EPDIFF_EP45 },

@@ -28,6 +28,9 @@ Sint64 JE_cashLeft(void);
 uint JE_shopPlayerIndex(void);
 void JE_itemScreen(void);
 
+// QA hook for online outpost row mapping; writes a failure reason to detail.
+bool game_menu_test_outpost_rows(char *detail, size_t detailSize);
+
 // Release the shop preview's supersampled frames. Called from JE_tyrianShutdown.
 void game_menu_deinit(void);
 

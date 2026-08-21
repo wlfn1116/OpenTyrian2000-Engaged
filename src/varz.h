@@ -537,17 +537,19 @@ bool enemy_bar_place(int boxL, int boxR, int boxT, int boxB, int thick, bool ver
 #define ARMOR_GAUGE_LAYERS 8
 extern const int armorGaugeLayerCol[ARMOR_GAUGE_LAYERS];
 
-/* Draw the partner's shield and armor using enemy-bar placement. `_at` accepts preview samples;
- * shieldMax 0 omits shield, and armor uses gauge units with rollover. */
+/* Draw the partner's gauges with enemy-bar placement. `_at` also accepts preview values;
+ * shieldMax 0 omits the shield. */
 void hud_draw_ship_hp_bars(void);
 void hud_draw_ship_hp_bars_at(int id, int boxL, int boxR, int boxT, int boxB,
-                              uint shield, uint shieldMax, uint armor);
+                              uint shield, uint shieldMax, uint armor, uint armorMax);
 void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b);
+Uint8 hud_ship_hp_bar_opacity(void);
 
 // Half-full samples for the outpost preview.
 #define HUD_HP_BAR_SAMPLE_SHIELD     1
 #define HUD_HP_BAR_SAMPLE_SHIELD_MAX 2
 #define HUD_HP_BAR_SAMPLE_ARMOR      (ARMOR_GAUGE_LAYER_UNITS / 2)
+#define HUD_HP_BAR_SAMPLE_ARMOR_MAX  ARMOR_GAUGE_LAYER_UNITS
 void hud_ship_hp_bar_reset(void);   // clear On Hit timers
 
 extern int shieldGaugeFlash[2];

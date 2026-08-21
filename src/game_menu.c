@@ -87,19 +87,20 @@ enum
 // Center of the asymmetric monitor readout used by shop cash and Endless rank.
 #define MENU_MONITOR_CENTER_X 77
 
-/* Online Options replaces Load Game with Online and moves Save up one row. Use the mapping helpers
- * instead of duplicating row numbers. */
+// Online Options omits Load Game, shifting later rows up.
 enum
 {
 	OPT_LOAD = 2, OPT_SAVE, OPT_MUSIC, OPT_SOUND, OPT_SENS, OPT_JOYSTICK, OPT_KEYBOARD,
 	OPT_MOUSE, OPT_EXIT,
 	OPTIONS_ROWS = OPT_EXIT - OPT_LOAD + 1,
-	// Online-only row with no offline equivalent.
-	OPT_ONLINE = OPT_EXIT + 1,
 };
 
-// Baseline of an options row, matching JE_drawMenuChoices' 16px pitch.
-#define OPTIONS_ROW_Y(row) (38 + ((row) - 2) * 16)
+// Baseline of an options row, matching JE_drawMenuChoices' pitch.
+#define MENU_ROW_H 16
+#define OPTIONS_ROW_Y(row) (38 + ((row) - 2) * MENU_ROW_H)
+
+// Keep menu rows above the help line.
+#define MENU_HELP_TEXT_Y 187
 
 // Online color grid, rebuilt per visit because Endless reserves some palette banks.
 #define ONLINE_COLOR_COLS     5
@@ -164,26 +165,89 @@ static JE_boolean leftPower, rightPower, rightPowerAfford;
 static JE_byte currentCube;
 static uint shopPlayerIndex;
 
-// Where a full-page options row lands on the page now open.
+// Map a full Options row to the current page.
 static int options_row(int fullRow)
 {
-	if (curMenu != MENU_LIMITED_OPTIONS)
-		return fullRow;
-	if (fullRow == OPT_ONLINE)
-		return OPT_SAVE;      // Online stands where Save does offline
-	return (fullRow <= OPT_SAVE) ? fullRow - 1 : fullRow;
+	return (curMenu == MENU_LIMITED_OPTIONS) ? fullRow - 1 : fullRow;
 }
 
-// ...and back: which full-page row a selection on the page now open stands for.
+// Recover the full Options row.
 static int options_full_row(int row)
 {
-	if (curMenu != MENU_LIMITED_OPTIONS)
-		return row;
-	if (row == OPT_LOAD)
-		return OPT_SAVE;
-	if (row == OPT_SAVE)
-		return OPT_ONLINE;
-	return row;
+	return (curMenu == MENU_LIMITED_OPTIONS) ? row + 1 : row;
+}
+
+// Insert Customize above Options while keeping existing menu logic on stock row numbers.
+static const struct { int menu, optionsRow, stockRows; } outpostMenus[] = {
+	{ MENU_FULL_GAME,       5, 7 },
+	{ MENU_2_PLAYER_ARCADE, 5, 6 },
+	{ MENU_1_PLAYER_ARCADE, 3, 4 },
+	{ MENU_SUPER_TYRIAN,    4, 5 },
+};
+
+// Match the menu chosen at the start of JE_itemScreen().
+static int outpost_menu(void)
+{
+	if (superTyrian)
+		return MENU_SUPER_TYRIAN;
+	if ((isNetworkGame && !coop_mode_active()) || onePlayerAction)
+		return MENU_1_PLAYER_ARCADE;
+	if (split_arcade_mode())
+		return MENU_2_PLAYER_ARCADE;
+	return MENU_FULL_GAME;
+}
+
+// Return the online Customize row, or 0 when absent.
+static int outpost_customize_row(int menu)
+{
+	if (!isNetworkGame)
+		return 0;
+
+	for (uint i = 0; i < COUNTOF(outpostMenus); ++i)
+		if (outpostMenus[i].menu == menu)
+			return outpostMenus[i].optionsRow;
+
+	return 0;
+}
+
+// Where an offline row lands on the menu now drawn.
+static int outpost_row(int menu, int stockRow)
+{
+	const int customize = outpost_customize_row(menu);
+	return (customize != 0 && stockRow >= customize) ? stockRow + 1 : stockRow;
+}
+
+// Map a displayed row back to stock numbering; Customize maps to Options.
+static int outpost_stock_row(int menu, int row)
+{
+	const int customize = outpost_customize_row(menu);
+	return (customize != 0 && row > customize) ? row - 1 : row;
+}
+
+// Separator height before checking whether the menu still fits.
+static int outpost_gap_px_raw(int menu, int row)
+{
+	if (menu == MENU_FULL_GAME)
+		return (row >= outpost_row(menu, 7)) ? MENU_ROW_H : 0;
+
+	if (menu == MENU_2_PLAYER_ARCADE)
+		return (row > outpost_row(menu, 3) ? MENU_ROW_H : 0)
+		     + (row > outpost_row(menu, 4) ? MENU_ROW_H : 0);
+
+	return 0;
+}
+
+// Drop optional separators when added rows would reach the help text.
+static bool outpost_gaps_drawn(int menu)
+{
+	const int last = menuChoices[menu];
+	return OPTIONS_ROW_Y(last) + outpost_gap_px_raw(menu, last) + MENU_ROW_H <= MENU_HELP_TEXT_Y;
+}
+
+// Return the separator height only when it fits.
+static int outpost_row_gap_px(int menu, int row)
+{
+	return outpost_gaps_drawn(menu) ? outpost_gap_px_raw(menu, row) : 0;
 }
 
 uint JE_shopPlayerIndex(void)
@@ -263,9 +327,9 @@ static struct cube_struct cube[4];
 // Endless menu sizes are adjusted at runtime.
 static const JE_MenuChoiceType menuChoicesDefault = { 9, 9, 9, 0, 0, 11, (SAVE_FILES_NUM / 2) + 2, 0, 0, 6, 4, 6, 7, 5, 6, 0, 7, 5, 0, 0, 0, 0 };
 
-// One-based target menu for Esc. Online pickers return to the Online page.
+// Pickers return to Customize; its Esc handler returns to the active outpost.
 static const JE_byte menuEsc[MENU_MAX] = { 0, 1, 1, 1, 2, 3, 3, 1, 8, 0, 0, 11, 3, 0, 3, 1, 1, 1,
-                                           MENU_LIMITED_OPTIONS + 1, MENU_ONLINE + 1, MENU_ONLINE + 1,
+                                           MENU_FULL_GAME + 1, MENU_ONLINE + 1, MENU_ONLINE + 1,
                                            MENU_ONLINE + 1 };
 static const JE_byte itemAvailMap[7] = { 1, 2, 3, 9, 4, 6, 7 };
 static const JE_word planetX[21] = { 200, 150, 240, 300, 270, 280, 320, 260, 220, 150, 160, 210, 80, 240, 220, 180, 310, 330, 150, 240, 200 };
@@ -1074,18 +1138,16 @@ static void configure_options_sens_menu(void)
 		SDL_strlcpy(menuInt[3][6], menuInt[3][5], entrySize);  // Joystick Setup
 		SDL_strlcpy(menuInt[3][5], "Sens", entrySize);  // new item 6
 
-		// Online Options omits Load Game. Save moves up and Online takes Save's row.
+		// Online Options omits Load Game; every row below it moves up one.
 		SDL_strlcpy(menuInt[12][0], menuInt[3][0], entrySize);  // title
-		SDL_strlcpy(menuInt[12][1], menuInt[3][2], entrySize);  // Save
-		SDL_strlcpy(menuInt[12][2], "Online", entrySize);
-		for (int i = 3; i <= OPTIONS_ROWS; ++i)
-			SDL_strlcpy(menuInt[12][i], menuInt[3][i], entrySize);
+		for (int i = 1; i < OPTIONS_ROWS; ++i)
+			SDL_strlcpy(menuInt[12][i], menuInt[3][i + 1], entrySize);
 
 		shifted = true;
 	}
 
-	menuChoices[MENU_OPTIONS] = OPTIONS_ROWS + 1;              // rows 2..10
-	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS + 1;      // rows 2..10, Online for Load Game
+	menuChoices[MENU_OPTIONS] = OPTIONS_ROWS + 1;          // rows 2..10
+	menuChoices[MENU_LIMITED_OPTIONS] = OPTIONS_ROWS;      // rows 2..9, one shorter for Load Game
 }
 
 // First and last cells both use NONE for Off and Done; position distinguishes them.
@@ -1167,12 +1229,20 @@ static void draw_online_hpbars_page(void)
 
 	JE_drawMenuChoices();
 
-	// Preview the partner at full opacity; the simulator draws the bars.
-	netStylePreviewSet(netStylePeerColor(), NET_OPACITY_FULL);
+	// Match the in-level view; the simulator draws the bars.
+	netStylePreviewSet(netStylePeerColor(), netStyleLocalView().opacity);
 }
 
 // Value pickers confirm with Done; the Online page retains its Exit row.
 #define ONLINE_PICKER_DONE "Done"
+
+// Run after debug-row setup, with menuChoices reset to stock counts.
+static void configure_outpost_customize_menu(void)
+{
+	for (uint i = 0; i < COUNTOF(outpostMenus); ++i)
+		if (outpost_customize_row(outpostMenus[i].menu) != 0)
+			++menuChoices[outpostMenus[i].menu];
+}
 
 // Generate Online menus because tyrian.hdt has no entries for them.
 static void configure_online_menus(void)
@@ -1180,13 +1250,13 @@ static void configure_online_menus(void)
 	const size_t entrySize = sizeof(menuInt[0][0]);
 	char (*online)[24] = menuInt[MENU_ONLINE + 1];
 
-	SDL_strlcpy(online[0], "Online", entrySize);
+	SDL_strlcpy(online[0], "Customize", entrySize);
 
 	int row = 1;
-	SDL_strlcpy(online[row++], "Color", entrySize);
-	SDL_strlcpy(online[row++], "Opacity", entrySize);
+	SDL_strlcpy(online[row++], "Ship Color", entrySize);
+	SDL_strlcpy(online[row++], "Partner Opacity", entrySize);
 	if (online_hp_bars_offered())
-		SDL_strlcpy(online[row++], "HP Bars", entrySize);
+		SDL_strlcpy(online[row++], "Partner HP Bars", entrySize);
 	SDL_strlcpy(online[row], menuInt[3][OPTIONS_ROWS], entrySize);  // the options page's own Exit
 	menuChoices[MENU_ONLINE] = (JE_byte)(row + 1);
 
@@ -1203,6 +1273,126 @@ static void configure_online_menus(void)
 
 	configure_online_color_grid();
 	menuChoices[MENU_ONLINE_OPACITY] = ONLINE_OPACITY_STEPS + 3;
+}
+
+bool game_menu_test_outpost_rows(char *detail, size_t detailSize)
+{
+	if (detail != NULL && detailSize != 0)
+		detail[0] = '\0';
+
+	const bool savedNet = isNetworkGame;
+	const JE_boolean savedSuper = superTyrian, savedOne = onePlayerAction, savedTwo = twoPlayerMode;
+	const JE_boolean savedCoopC = coopCampaignMode, savedCoopE = coopEndlessMode;
+	const JE_boolean savedSep = arcadeSeparateMode;
+
+	// Online modes that reach an outpost.
+	static const struct { const char *name; bool coop, separate, super; } modes[] = {
+		{ "co-op Campaign",  true,  false, false },
+		{ "co-op Endless",   true,  false, false },
+		{ "Linked Arcade",   false, false, false },
+		{ "Separate Arcade", false, true,  false },
+		{ "SuperTyrian",     false, false, true  },
+	};
+
+	const char *fault = NULL;
+
+	isNetworkGame = true;
+	twoPlayerMode = true;
+	for (uint m = 0; m < COUNTOF(modes) && fault == NULL; ++m)
+	{
+		coopCampaignMode = modes[m].coop;
+		coopEndlessMode = false;
+		arcadeSeparateMode = modes[m].separate;
+		superTyrian = modes[m].super;
+		onePlayerAction = false;
+
+		const int menu = outpost_menu();
+		const int customize = outpost_customize_row(menu);
+		if (customize == 0)
+		{
+			fault = "an online mode opened an outpost menu with no Customize row";
+			break;
+		}
+
+		// Customize occupies Options' stock row and shifts Options down.
+		if (outpost_stock_row(menu, customize) != customize
+		    || outpost_stock_row(menu, customize + 1) != customize)
+			fault = "Customize did not land directly above Options";
+
+		// Display rows round-trip to stock numbering, including debug rows.
+		for (int stock = 2; fault == NULL && stock <= 11; ++stock)
+			if (outpost_stock_row(menu, outpost_row(menu, stock)) != stock)
+				fault = "an outpost row lost its offline row across the insertion";
+
+		// Customize adds one row after debug setup.
+		const JE_byte before = menuChoices[menu];
+		configure_outpost_customize_menu();
+		const bool grew = (menuChoices[menu] == before + 1);
+		menuChoices[menu] = before;
+		if (fault == NULL && !grew)
+			fault = "the outpost menu did not make room for its Customize row";
+
+		// The insertion point holds the stock Options label.
+		if (fault == NULL && strcmp(menuInt[menu + 1][customize - 1], menuInt[MENU_OPTIONS + 1][0]) != 0)
+			fault = "the Customize row was not measured against the Options row";
+	}
+
+	// Offline outposts keep stock numbering.
+	isNetworkGame = false;
+	for (uint i = 0; fault == NULL && i < COUNTOF(outpostMenus); ++i)
+		if (outpost_customize_row(outpostMenus[i].menu) != 0
+		    || outpost_row(outpostMenus[i].menu, 5) != 5)
+			fault = "an offline outpost menu grew a Customize row";
+
+	// Keep optional gaps when they fit; never let them reach the help line.
+	const JE_boolean savedDebug = debugMode;
+	for (uint i = 0; fault == NULL && i < COUNTOF(outpostMenus); ++i)
+	{
+		const int menu = outpostMenus[i].menu;
+
+		// Debug setup starts from these stock counts.
+		const int stockDefault = (menu == MENU_FULL_GAME)
+		                         ? menuChoicesDefault[menu] - 2   // default includes debug rows
+		                         : menuChoicesDefault[menu];
+		if (outpostMenus[i].stockRows != stockDefault)
+		{
+			fault = "an outpost menu's stock row count drifted from menuChoicesDefault";
+			break;
+		}
+
+		const JE_byte savedCount = menuChoices[menu];
+		for (int debug = 0; debug <= 1 && fault == NULL; ++debug)
+			for (int online = 0; online <= 1 && fault == NULL; ++online)
+			{
+				debugMode = (debug != 0);
+				isNetworkGame = (online != 0);
+
+				const int last = outpostMenus[i].stockRows + (debug ? 2 : 0)
+				               + (outpost_customize_row(menu) != 0 ? 1 : 0);
+				menuChoices[menu] = (JE_byte)last;
+
+				if (OPTIONS_ROW_Y(last) + outpost_row_gap_px(menu, last) + MENU_ROW_H > MENU_HELP_TEXT_Y)
+					fault = "an outpost menu's last row reached the help line";
+				else if (!outpost_gaps_drawn(menu)
+				         && OPTIONS_ROW_Y(last) + outpost_gap_px_raw(menu, last) + MENU_ROW_H
+				            <= MENU_HELP_TEXT_Y)
+					fault = "an outpost menu dropped a blank line it had room for";
+			}
+		menuChoices[menu] = savedCount;
+	}
+	debugMode = savedDebug;
+
+	arcadeSeparateMode = savedSep;
+	coopEndlessMode = savedCoopE;
+	coopCampaignMode = savedCoopC;
+	twoPlayerMode = savedTwo;
+	onePlayerAction = savedOne;
+	superTyrian = savedSuper;
+	isNetworkGame = savedNet;
+
+	if (fault != NULL && detail != NULL && detailSize != 0)
+		snprintf(detail, detailSize, "%s", fault);
+	return fault == NULL;
 }
 
 // Online pickers reserve the left panel for the weapon simulator.
@@ -2153,6 +2343,7 @@ void JE_itemScreen(void)
 	memcpy(menuChoices, menuChoicesDefault, sizeof(menuChoices));
 	configure_buysell_debug_menu();
 	configure_arcade_debug_menus();
+	configure_outpost_customize_menu();
 	configure_custom_weapon_menu();
 	configure_options_sens_menu();
 	configure_online_menus();
@@ -3494,7 +3685,7 @@ void JE_itemScreen(void)
 						            : menuChoices[curMenu] + 1;  // outside the visible list
 					}
 
-					if (curMenu == MENU_2_PLAYER_ARCADE)
+					if (curMenu == MENU_2_PLAYER_ARCADE && outpost_gaps_drawn(curMenu))
 					{
 						if (selection > 5)
 							selection--;
@@ -3502,21 +3693,21 @@ void JE_itemScreen(void)
 							selection--;
 					}
 
-					if (curMenu == MENU_FULL_GAME)
+					if (curMenu == MENU_FULL_GAME && outpost_gaps_drawn(curMenu))
 					{
+						// First row below the Start Level separator.
+						const int gap = outpost_row(curMenu, 7);
 						if (debugMode)
 						{
-							// items 7-9 (debug block + Quit) draw 16px lower after the
-							// "Start Level" gap; shift the click target to match
-							if (selection >= 8)
+							// The separator shifts the debug rows and Quit.
+							if (selection > gap)
 								selection--;
 						}
 						else
 						{
-							// "Quit Game" (item 7) is drawn 16px lower with a blank
-							// gap above it; clamp clicks at or below it to Quit
-							if (selection > 7)
-								selection = 7;
+							// Clamp the separator and everything below it to Quit.
+							if (selection > gap)
+								selection = gap;
 						}
 					}
 
@@ -3673,10 +3864,10 @@ void JE_itemScreen(void)
 					curMenu = oldMenu;
 					newPal = oldPal;
 				}
-				else if (curMenu == MENU_LIMITED_OPTIONS)
+				else if (curMenu == MENU_LIMITED_OPTIONS || curMenu == MENU_ONLINE)
 				{
 					newPal = 1;
-					curMenu = coop_mode_active() ? MENU_FULL_GAME : MENU_1_PLAYER_ARCADE;
+					curMenu = outpost_menu();
 				}
 				else if (menuEsc[curMenu] == 0)
 				{
@@ -4553,29 +4744,12 @@ void JE_drawMenuChoices(void)
 	{
 		int line_height = tightFont ? 10 : 16;
 		int tempY = 38 + (x - 1) * line_height;
-		/* Extra spacing after "Start Level": the original's blank gap above "Quit
-		 * Game"; with Debug Mode on it also offsets the debug block (items 7-9). */
-		if (curMenu == MENU_FULL_GAME && x >= 7)
-		{
-			tempY += 16;
-		}
+		tempY += outpost_row_gap_px(curMenu, x);
 
 		// Endless perk menu / E-Shop: a blank line separating the buys from the final Done row.
 		if ((curMenu == MENU_PERKS || curMenu == MENU_ESHOP) && x == menuChoices[curMenu])
 		{
 			tempY += tightFont ? 10 : 16;
-		}
-
-		if (curMenu == MENU_2_PLAYER_ARCADE)
-		{
-			if (x > 3)
-			{
-				tempY += 16;
-			}
-			if (x > 4)
-			{
-				tempY += 16;
-			}
 		}
 
 		/* Chart a Course keeps a blank line above its trailing rows: Exit, and the endless Radar
@@ -4591,7 +4765,10 @@ void JE_drawMenuChoices(void)
 			tempY += (x-2) * 8;
 		}
 
-		const char* entry = menuInt[curMenu + 1][x - 1];
+		// Customize has no menuInt row; later labels use stock row numbers.
+		const char* entry = (x == outpost_customize_row(curMenu))
+		                    ? "Customize"
+		                    : menuInt[curMenu + 1][outpost_stock_row(curMenu, x) - 1];
 
 		str = malloc_die(strlen(entry) + 2);
 		if (curSel[curMenu] == x)
@@ -5301,46 +5478,55 @@ void JE_drawMainMenuHelpText(void)
 	}
 	else if (curMenu < MENU_PLAY_NEXT_LEVEL || curMenu >= MENU_2_PLAYER_ARCADE)
 	{
-		if (debugMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 7)
+		// Resolve inserted rows before using stock help indices.
+		const JE_byte sel = (JE_byte)outpost_stock_row(curMenu, curSel[curMenu]);
+		const int stockLast = outpost_stock_row(curMenu, menuChoices[curMenu]);
+		temp = (JE_byte)(sel - 2);
+
+		if (curSel[curMenu] == outpost_customize_row(curMenu))
+		{
+			SDL_strlcpy(tempStr, "Tell the two ships apart on screen.", sizeof(tempStr));
+		}
+		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 7)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Debug: equip your ship.");
 		}
-		else if (debugMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 8)
+		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 8)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Debug: select a level.");
 		}
-		else if (debugMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 9)
+		else if (debugMode && curMenu == MENU_FULL_GAME && sel == 9)
 		{
 			SDL_strlcpy(tempStr, mainMenuHelp[5 - 1], sizeof(tempStr));
 		}
 		else if (debugMode &&
 		         (curMenu == MENU_1_PLAYER_ARCADE || curMenu == MENU_2_PLAYER_ARCADE || curMenu == MENU_SUPER_TYRIAN) &&
-		         curSel[curMenu] >= menuChoices[curMenu] - 2)
+		         sel >= stockLast - 2)
 		{
 			// The inserted Debug entries have no menuHelp[] slot (0 would index
 			// mainMenuHelp[-1]); supply their text, and read Quit's from its original slot.
-			if (curSel[curMenu] == menuChoices[curMenu] - 2)
+			if (sel == stockLast - 2)
 				snprintf(tempStr, sizeof(tempStr), "Debug: equip your ship.");
-			else if (curSel[curMenu] == menuChoices[curMenu] - 1)
+			else if (sel == stockLast - 1)
 				snprintf(tempStr, sizeof(tempStr), "Debug: select a level.");
 			else
-				SDL_strlcpy(tempStr, mainMenuHelp[menuHelp[curMenu][menuChoices[curMenu] - 4] - 1], sizeof(tempStr));
+				SDL_strlcpy(tempStr, mainMenuHelp[menuHelp[curMenu][stockLast - 4] - 1], sizeof(tempStr));
 		}
-		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && curSel[curMenu] == 6)
+		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME && sel == 6)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Retry the level you gave up.");
 		}
 		else if (endlessMode && endlessLockedSortie && curMenu == MENU_FULL_GAME &&
-		         (curSel[curMenu] == 2 || curSel[curMenu] == 4))
+		         (sel == 2 || sel == 4))
 		{
 			// Locked "gave up the level" outpost: the E-Shop and loadout are frozen.
 			snprintf(tempStr, sizeof(tempStr), "Locked - you gave up the level.");
 		}
-		else if (endlessMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 2)
+		else if (endlessMode && curMenu == MENU_FULL_GAME && sel == 2)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Open the E-Shop.");
 		}
-		else if (endlessMode && curMenu == MENU_FULL_GAME && curSel[curMenu] == 3)
+		else if (endlessMode && curMenu == MENU_FULL_GAME && sel == 3)
 		{
 			snprintf(tempStr, sizeof(tempStr), "Review the perks you've acquired.");
 		}
@@ -5502,9 +5688,7 @@ void JE_drawMainMenuHelpText(void)
 		{
 			// Zero entries use local help for rows absent from the data file.
 			const int help = menuHelp[curMenu][temp];
-			if (options_full_row(curSel[curMenu]) == OPT_ONLINE)
-				SDL_strlcpy(tempStr, "Tell the two ships apart on screen.", sizeof(tempStr));
-			else if (help == 0)
+			if (help == 0)
 				SDL_strlcpy(tempStr, SHIP_SENS_HELP, sizeof(tempStr));
 			else
 				SDL_strlcpy(tempStr, mainMenuHelp[help - 1], sizeof(tempStr));
@@ -5605,7 +5789,7 @@ void JE_drawMainMenuHelpText(void)
 		SDL_strlcpy(tempStr, mainMenuHelp[17 + curMenu - 3], sizeof(tempStr));
 	}
 	
-	JE_textShade(VGAScreen, 10, 187, tempStr, 14, 1, DARKEN);
+	JE_textShade(VGAScreen, 10, MENU_HELP_TEXT_Y, tempStr, 14, 1, DARKEN);
 	// Right-align prices and payouts with palette-specific highlighting; perk stack counts stay neutral.
 	if (costStr[0] != '\0')
 	{
@@ -9966,6 +10150,18 @@ void JE_menuFunction(JE_byte select)
 
 	curSelect = curSel[curMenu];
 
+	// Handle Customize, then restore stock row numbers for the existing switches.
+	if (outpost_customize_row(curMenu) != 0)
+	{
+		if (select == outpost_customize_row(curMenu))
+		{
+			curSel[MENU_ONLINE] = ONLINE_ROW_COLOR;
+			curMenu = MENU_ONLINE;
+			return;
+		}
+		select = (JE_byte)outpost_stock_row(curMenu, select);
+	}
+
 	switch (curMenu)
 	{
 	case MENU_FULL_GAME:
@@ -10243,9 +10439,6 @@ void JE_menuFunction(JE_byte select)
 			performSave = (option == OPT_SAVE);
 			quikSave = false;
 			break;
-		case OPT_ONLINE:
-			curMenu = MENU_ONLINE;
-			break;
 		case OPT_JOYSTICK:
 			curMenu = MENU_JOYSTICK_CONFIG;
 			break;
@@ -10256,8 +10449,7 @@ void JE_menuFunction(JE_byte select)
 			curMenu = MENU_MOUSE_CONFIG;
 			break;
 		case OPT_EXIT:
-			// Online Arcade runs its own front page; everything else goes back to buy/sell.
-			curMenu = (isNetworkGame && !coop_mode_active()) ? MENU_1_PLAYER_ARCADE : MENU_FULL_GAME;
+			curMenu = outpost_menu();
 			break;
 		}
 		break;
@@ -10287,7 +10479,7 @@ void JE_menuFunction(JE_byte select)
 			JE_initWeaponView();
 			break;
 		default:
-			curMenu = MENU_LIMITED_OPTIONS;
+			curMenu = outpost_menu();
 			break;
 		}
 		break;
@@ -10498,7 +10690,7 @@ void JE_menuFunction(JE_byte select)
 		break;
 
 	case MENU_2_PLAYER_ARCADE:
-		switch (curSel[curMenu])
+		switch (select)
 		{
 		case 2:
 			mainLevel = mapSection[mapPNum-1];
@@ -10552,7 +10744,7 @@ void JE_menuFunction(JE_byte select)
 		break;
 
 	case MENU_1_PLAYER_ARCADE:
-		switch (curSel[curMenu])
+		switch (select)
 		{
 		case 2:
 			mainLevel = mapSection[mapPNum-1];
@@ -10677,7 +10869,7 @@ joystick_assign_done:
 		break;
 
 	case MENU_SUPER_TYRIAN:
-		switch (curSel[curMenu])
+		switch (select)
 		{
 		case 2:
 			mainLevel = mapSection[mapPNum-1];
@@ -10912,7 +11104,8 @@ void JE_weaponSimUpdate(void)
 		int l, r, t, b;
 		hud_ship_hp_bar_box(shop_draw_seat(), &l, &r, &t, &b);
 		hud_draw_ship_hp_bars_at(0, l, r, t, b, HUD_HP_BAR_SAMPLE_SHIELD,
-		                         HUD_HP_BAR_SAMPLE_SHIELD_MAX, HUD_HP_BAR_SAMPLE_ARMOR);
+		                         HUD_HP_BAR_SAMPLE_SHIELD_MAX, HUD_HP_BAR_SAMPLE_ARMOR,
+		                         HUD_HP_BAR_SAMPLE_ARMOR_MAX);
 	}
 
 	// Power-level interface last: its readout row (y=137) is inside the preview box, and a

@@ -33,7 +33,7 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 {
 	{  1, 34,  2,  3,  4,  5,                  0, 0, 0, 0, 0 },
 	{  6,  7,  8,  9, 10, 11, 11, 12,                0, 0, 0 },
-	// Online Options replaces Load Game with Online. Zero rows use local help text.
+	// Zero rows use local help text.
 	{ 13, 14, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -43,7 +43,8 @@ const JE_byte menuHelp[MENU_MAX][11] = /* [1..maxmenu, 1..11] */
 	{                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 	{  4, 30, 30,  3,  5,                   0, 0, 0, 0, 0, 0 },
 	{  4, 37, 12,                     0, 0, 0, 0, 0, 0, 0, 0 },
-	{ 14,  0, 15, 15,  0, 16, 17, 35, 12,          0, 0 },
+	// Online Options: the page above without its Load Game row.
+	{ 14, 15, 15,  0, 16, 17, 35, 12,              0, 0, 0 },
 	{ 31, 31, 31, 31, 32, 12,                  0, 0, 0, 0, 0 },
 	{  4, 34,  3,  5,                    0, 0, 0, 0, 0, 0, 0 },
 	{ 35, 35, 35, 36, 12,                   0, 0, 0, 0, 0, 0 },

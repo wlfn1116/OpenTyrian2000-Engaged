@@ -555,6 +555,9 @@ Other UI limits:
 - Value: 95 px.
 - Help text from x=45: 275 px.
 - Chart-a-Course uses `endlessCourseRerollRow` and `mapPNum` because it has gaps.
+- Online outposts insert Customize above Options. Keep switches and help on stock
+  row numbers; translate display rows with `outpost_row()` and
+  `outpost_stock_row()`.
 - Debug menu headings are not selectable.
 - Boss and enemy bars use playfield coordinates.
 - Two-player gauge blocks repeat every 134 px.
@@ -570,7 +573,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 79. Packet readers check length before
+`NET_VERSION` bump. The current version is 80. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -612,7 +615,7 @@ Recent compatibility points:
 | 75 | The End excludes Dead Generator and makes Static rare |
 | 76 | Homing modifiers exclude permanent scenery, pickups, and wreckage |
 | 77 | The End rolls one homing tier |
-| 78 | Ship dye announcements (`PACKET_PLAYER_LOOK`) |
+| 78 | Ship dye announcements |
 | 79 | Save records carry both ships' dyes |
 | 80 | Look packets and saves carry per-seat views |
 
@@ -645,13 +648,18 @@ Alpha blits mix brightness in sixteenths and keep one palette bank. Full opacity
 uses the original blit path. Faded bodies and shots omit their shadows.
 
 Partner HP bars reuse `enemy_bar_place()` and its layout settings, but not the
-enemy-bar on/off switch. Armor rollover uses the current layer for the fill and
-the previous layer for the track. `JE_updateGaugeFlash()` advances the On Hit
-timer only on live ticks, so the timer stays outside rollback. Linked Arcade
-omits the bars because its shared HUD already shows both players.
+enemy-bar on/off switch. Their opacity starts with `enemyBarOpacity` and follows
+the partner fade when **Apply to Ship** is on. Shield and armor use that ship's
+own ceilings, `shield_max` and `initial_armor`, so Life Boost and Endless upgrades
+stay proportional. Armor rollover draws the current layer over the previous one;
+only the ceiling's last layer may be shorter than 28 units.
+
+`JE_updateGaugeFlash()` advances the On Hit timer only on live ticks, keeping it
+outside rollback. Linked Arcade omits the bars because its shared HUD already
+shows both players.
 
 `netStyleSessionReset()` restores defaults for a new session. A resume restores
-dyes from the shared record and local view settings from that machine's slot.
+both seats' dyes and views from the record itself.
 
 ### Modes and session settings
 
