@@ -49,6 +49,7 @@
 #include "rollback.h"
 #include "sprite.h"
 #include "console_platform.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
@@ -305,6 +306,7 @@ typedef enum
 	MENU_ITEM_GAUGE_GRAD_ARMOR,
 	MENU_ITEM_GAUGE_FLASH_SHIELD,
 	MENU_ITEM_GAUGE_FLASH_ARMOR,
+	MENU_ITEM_TOUCH_SIDEKICKS,      // touch ports only: draw the sidekick fire buttons
 
 	/* Enhancements -> Weapons. */
 	MENU_ITEM_CUSTOM_WEAPONS,
@@ -456,6 +458,7 @@ static bool *menuItemBoolSetting(MenuItemId id)
 	case MENU_ITEM_ENEMY_BARS:          return &enemyBars;
 	case MENU_ITEM_GAUGE_FLASH_SHIELD:  return &gaugeFlashShield;
 	case MENU_ITEM_GAUGE_FLASH_ARMOR:   return &gaugeFlashArmor;
+	case MENU_ITEM_TOUCH_SIDEKICKS:     return &touchSidekickButtons;
 	case MENU_ITEM_CUSTOM_WEAPONS:      return &customWeaponEnabled;
 	case MENU_ITEM_CHARGE_LASER:        return &chargeLaserCannon;
 	case MENU_ITEM_ZICA_LOCK:           return &zicaLaserLock;
@@ -722,6 +725,9 @@ static bool runOptionsMenu(MenuId startMenu)
 				{ MENU_ITEM_SUBMENU, "Gauges...", "Gradient and damage flash of the three gauges.", MENU_GAUGES },
 				{MENU_ITEM_BOSS_VULN_CUE, "Vulnerable Cue:", "Which hulls flash when they turn damageable.",
 				  .getPickerItemsCount = vulnCueCount, .getPickerItem = vulnCueItem},
+#ifdef TOUCH_UI_BUTTONS
+				{ MENU_ITEM_TOUCH_SIDEKICKS, "Sidekick Buttons:", "On-screen buttons that fire your sidekicks." },
+#endif
 				MENU_DONE_ROW
 			},
 		},

@@ -14,6 +14,7 @@ and controls work as before.
 | Play as close to the original as possible | Setup > Enhancements > Preset |
 | Design a weapon | Setup > Enhancements > Weapons > Weapon Creator |
 | Change health bars or gauges | Setup > Enhancements > Heads-Up Display |
+| Turn the touch sidekick buttons on or off | Setup > Enhancements > Heads-Up Display |
 | Configure restored content | Setup > Enhancements > Weapons or Gameplay |
 | Choose a music backend | Setup > Sound > Music Synth |
 | Turn on Debug Mode or network logs | Setup > Diagnostics |
@@ -838,22 +839,47 @@ also holds the main weapon down, so there is no separate fire control. **Setup >
 Sensitivity** scales how far the ship travels per finger movement; the middle of
 the slider tracks your finger one to one.
 
-Phones and tablets add two on-screen buttons, because a finger cannot express
-those actions on its own:
+Phones and tablets add on-screen buttons for everything a finger cannot express
+on its own. Which buttons appear depends on the screen, so nothing is on display
+that would do nothing if you pressed it.
 
-| Button | Position | Action |
+| Screen | Left side | Right side |
 | --- | --- | --- |
-| Pause | Top left | Opens the in-game pause menu |
-| Rear weapon mode | Top right | Cycles the rear weapon mode, same as the `[` key |
+| Flying a level | Pause, left sidekick | Rear weapon mode, both sidekicks, right sidekick |
+| Any menu | Back | None |
+| A menu you can move through | Back, left, right | Up, down, select |
+| Jukebox | Back, previous track | Next track |
+| Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
 
-Both sit outside the playfield. A phone is wider than the 16:9 frame the game
-draws, so they take the pillarbox beside it, against the frame edge rather than
-the screen edge; that keeps them clear of a display cutout in landscape. On a
-display at 16:9 or narrower there is no pillarbox to use, and they fade back
-over the frame corners instead. A finger held on a button never steers and never
-fires, so the other thumb can keep flying.
+Back is always the top left button and always does what Esc does on a keyboard,
+so no screen can trap you. The arrow and select buttons appear on every screen
+that reads the menu keys, which is the same test that decides whether a
+controller can drive it; holding an arrow repeats it, so a long list does not
+need one tap per row. Destruct holds its aim, power, and fire buttons the way a
+key would, and steps the unit and weapon one press at a time.
 
-Switch and Vita have physical buttons and draw neither one.
+Rows line up across the two sides: left sits level with up, right with down, and
+whatever that screen treats as its main action sits on the bottom row.
+
+The three sidekick buttons are the exception to "only what the screen needs":
+they are the only way to fire a sidekick by hand on a touch device, but nothing
+requires them, so **Setup > Enhancements > Heads-Up Display > Sidekick Buttons**
+turns them off. They are on by default, and the setting is not part of the
+Enhancements presets: a preset describes how the game behaves, not which
+controls you are given. Each icon shows both sidekick slots, with the ones that
+button fires drawn firing.
+
+The buttons sit outside the playfield. A phone is wider than the 16:9 frame the
+game draws, so they take the pillarbox beside it, against the frame edge rather
+than the screen edge; that keeps them clear of a display cutout in landscape. A
+4:3 tablet has no pillarbox but does have a band above the frame, and they use
+that. On a display at exactly 16:9 there is no margin at all, and they fade back
+over the frame edges instead.
+
+A finger held on a button never steers and never fires, so the other thumb can
+keep flying.
+
+Switch and Vita have physical buttons and draw none of this.
 
 ## Files and logs
 

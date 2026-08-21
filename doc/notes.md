@@ -521,6 +521,7 @@ together.
 - `enhancementSettings[]` is the authority for both presets.
 - Engaged values must match fresh-install defaults.
 - `chargeSidekickAutofire` is per-save and stays outside presets.
+- `touchSidekickButtons` is a control, not a behaviour, and stays outside presets.
 - Apply table-backed settings through `JE_applyItemDataSettings` immediately.
 
 Clip the weapon simulator's starfield to its preview box with

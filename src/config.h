@@ -321,6 +321,10 @@ extern bool debugMode;      // gates the debug menu and debug level select
 extern bool extraParallax;
 extern bool mirroredLayers; // over-panned layer edges continue as a flipped mirror image (both parallax modes)
 extern bool enemyBars;      // show a small health bar on damaged enemies
+// On-screen sidekick fire buttons on the touch ports. Outside the enhancement presets on
+// purpose: a preset describes how the game behaves, not which controls you are given, and
+// on a phone these are the only way to fire a sidekick at all.
+extern bool touchSidekickButtons;
 extern int enemyBarLayout;    // EnemyBarLayout
 extern int enemyBarPosition;  // EnemyBarPosition
 extern int enemyBarOpacity;   // 0..100 (percent; 0 hides the bars)

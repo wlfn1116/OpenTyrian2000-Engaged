@@ -7,6 +7,7 @@ package, and it needs a Mac with Xcode to build.
 
 - Xcode 15 or newer, with the iOS SDK
 - CMake 3.21 or newer
+- Ninja
 
 ## SDL sources
 
@@ -30,19 +31,30 @@ configuring. CMake reads that directory at configure time and copies it into
 `OpenTyrian2000.app/data`, where the game finds it through `SDL_GetBasePath`.
 Re-run CMake after changing the data set.
 
+## Icon and name
+
+The app is named "Tyrian 2000 Engaged". Its icons are generated from
+`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1` into `ios/icons`, and
+CMake copies them to the bundle root where `CFBundleIconFiles` expects them.
+The output is committed, so a build never runs it; re-run it after changing the
+source icon.
+
 ## Build
 
 ```sh
-cmake -S ios -B ios/build -G Xcode \
+cmake -S ios -B ios/build -G Ninja \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-  -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-  -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-  -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+  -DCMAKE_BUILD_TYPE=Release \
   -DOPENTYRIAN_COMMIT=$(git rev-parse --short HEAD)
-cmake --build ios/build --config Release
+cmake --build ios/build --parallel
 ```
+
+Use Ninja rather than `-G Xcode`. SDL2's CMakeLists runs several hundred
+feature probes, and the Xcode generator makes each one a separate `xcodebuild`
+process, which stretches configure from about a minute to over ten. Nothing in
+this project depends on Xcode-generator behaviour.
 
 ## Install
 
@@ -52,12 +64,13 @@ development team. Wrap the bundle in the layout those tools expect:
 
 ```sh
 rm -rf Payload && mkdir Payload
-cp -R ios/build/Release-iphoneos/OpenTyrian2000.app Payload/
+cp -R ios/build/OpenTyrian2000.app Payload/
 zip -qry OpenTyrian2000-Engaged-iOS.ipa Payload
 ```
 
-To sign it yourself instead, drop the three `CODE_SIGN` options and pass
-`-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=<your team id>`.
+Non-Xcode generators do not sign at all, so there is nothing to switch off. To
+sign the bundle yourself, run `codesign` over it afterwards with your own
+identity and entitlements.
 
 ## Files
 
@@ -68,7 +81,8 @@ before removing the app.
 ## Controls
 
 Steering is screen-relative: drag anywhere and the ship follows your finger,
-which also holds the main weapon down. Two on-screen buttons sit outside the
-playfield in the pillarbox, pause at the top left and rear weapon mode at the
-top right. MFi and Bluetooth controllers work through SDL's joystick interface.
-Text fields raise the system keyboard over an in-game prompt.
+which also holds the main weapon down. On-screen buttons in the pillarbox cover
+everything else, and change with the screen; see
+[Touch controls](../GUIDE.md#touch-controls). MFi and Bluetooth controllers work
+through SDL's joystick interface. Text fields raise the system keyboard over an
+in-game prompt.

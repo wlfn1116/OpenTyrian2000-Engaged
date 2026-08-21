@@ -42,6 +42,14 @@ which is why the manifest is required. Regenerate it whenever the data set
 changes. Files whose length no longer matches the asset are unpacked again, so
 an updated data set arrives with the next build.
 
+## Icon and name
+
+The app is named "Tyrian 2000 Engaged". Its launcher icons are generated from
+`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1`, which writes the
+adaptive-icon foregrounds and legacy bitmaps under `app/src/main/res`. The
+output is committed, so a build never runs it; re-run it after changing the
+source icon.
+
 ## Build
 
 From `android`:
@@ -67,7 +75,8 @@ uninstall, so export a save before removing the app.
 ## Controls
 
 Steering is screen-relative: drag anywhere and the ship follows your finger,
-which also holds the main weapon down. Two on-screen buttons sit outside the
-playfield in the pillarbox, pause at the top left and rear weapon mode at the
-top right. Gamepads work through SDL's joystick interface. Text fields raise the
-system keyboard over an in-game prompt.
+which also holds the main weapon down. On-screen buttons in the pillarbox cover
+everything else, and change with the screen; see
+[Touch controls](../GUIDE.md#touch-controls). Gamepads work through SDL's
+joystick interface. Text fields raise the system keyboard over an in-game
+prompt.

@@ -27,6 +27,7 @@
 #include "opentyr.h"
 #include "params.h"
 #include "rollback.h"
+#include "touch_ui.h"
 #include "varz.h"
 #include "video.h"
 
@@ -265,6 +266,12 @@ void push_joysticks_as_keyboard(void)
 	// No live input during a rollback re-simulation (see service_SDL_events).
 	if (rollback_resim)
 		return;
+
+	// Every screen that wants menu-style keys calls this, which makes it the one honest
+	// signal for "this screen can be navigated". The touch ports show their arrow and
+	// select buttons only while it keeps arriving, so a screen that reads nothing is not
+	// given controls that do nothing.
+	touch_ui_menu_navigable();
 
 	poll_joysticks();
 	

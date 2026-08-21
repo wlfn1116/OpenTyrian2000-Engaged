@@ -42,6 +42,7 @@
 #include "qa.h"
 #include "sim_math.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "varz.h"
 #include "vga256d.h"
 #include "video.h"
@@ -2117,6 +2118,25 @@ static void DE_SmoothPresent(int scale)
 	setDelay(1);   /* keep `target` current for other timing readers */
 }
 
+/* Action bits from the on-screen buttons, shaped like DE_NetLocalActions so both the
+ * offline and the online gather can fold them in. Holding a direction repeats through the
+ * per-tick read, exactly as a held key does; the two cyclers are taps and are consumed
+ * here, so this runs once per live tick and never during a re-simulation. */
+static Uint8 DE_TouchActions(void)
+{
+	Uint8 bits = 0;
+
+	if (touch_ui_held(TOUCH_BTN_LEFT))       bits |= 1 << KEY_LEFT;
+	if (touch_ui_held(TOUCH_BTN_RIGHT))      bits |= 1 << KEY_RIGHT;
+	if (touch_ui_held(TOUCH_BTN_UP))         bits |= 1 << KEY_UP;
+	if (touch_ui_held(TOUCH_BTN_DOWN))       bits |= 1 << KEY_DOWN;
+	if (touch_ui_held(TOUCH_BTN_FIRE))       bits |= 1 << KEY_FIRE;
+	if (touch_ui_take_tap(TOUCH_BTN_CHANGE)) bits |= 1 << KEY_CHANGE;
+	if (touch_ui_take_tap(TOUCH_BTN_CYCLE))  bits |= 1 << KEY_CYUP;
+
+	return bits;
+}
+
 #ifdef WITH_NETWORK
 
 /* Local action bits for this tick.  Online, BOTH keyboard layouts drive the local side --
@@ -2163,6 +2183,8 @@ static Uint8 DE_NetLocalActions(void)
 		// quit control bit by the gather below.
 		if (joystick[0].action_pressed[5]) keysactive[SDL_SCANCODE_ESCAPE] = true;
 	}
+
+	bits |= DE_TouchActions();
 
 	return bits;
 }
@@ -2459,6 +2481,10 @@ static void DE_RollbackApplyMoves(void)
 static enum de_state_t DE_RunTick(void)
 {
 	setDelay(1);
+
+	// Aim, power, fire, and the two cyclers are more than a pad's face buttons carry, so
+	// the touch ports get a Destruct-specific set (see DE_TouchActions).
+	touch_ui_set_layout(TOUCH_LAYOUT_DESTRUCT);
 
 #ifdef WITH_NETWORK
 	// The lockstep exchange leads the tick so its verdicts (leave, new round) settle
@@ -3442,6 +3468,24 @@ static void DE_RunTickGetInput(void)
 			if (joystick[0].action_pressed[1]) act[KEY_CHANGE] = true;  // change unit (tap)
 			if (joystick[0].action_pressed[2]) act[KEY_CYDN]   = true;  // previous weapon (tap)
 			if (joystick[0].action_pressed[3]) act[KEY_CYUP]   = true;  // next weapon (tap)
+		}
+	}
+
+	// Touch: one gather for the tick, then fanned out to every human player the same way
+	// the pad above is.
+	const Uint8 touch = DE_TouchActions();
+	if (touch != 0)
+	{
+		for (player_index = 0; player_index < MAX_PLAYERS; player_index++)
+		{
+			if (destruct_player[player_index].is_cpu)
+				continue;
+
+			for (key_index = 0; key_index < MAX_KEY; key_index++)
+			{
+				if (touch & (1 << key_index))
+					destruct_player[player_index].moves.actions[key_index] = true;
+			}
 		}
 	}
 }

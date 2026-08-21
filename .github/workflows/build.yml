@@ -240,6 +240,15 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C "$jni/SDL2"
           tar -xzf sdl2net.tar.gz --strip-components=1 -C "$jni/SDL2_net"
 
+      # SDL ships a sample Android project whose Gradle wrapper JAR is not a published
+      # Gradle release, and setup-gradle refuses to run while any unrecognised wrapper is
+      # anywhere in the workspace. Only SDL's Java sources are used here, so drop the
+      # wrappers. Unconditional, because a cache saved before this step still holds them.
+      - name: Drop SDL's bundled Gradle wrappers
+        run: |
+          find android/app/src/main/jni -name 'gradle-wrapper.jar' -print -delete
+          find android/app/src/main/jni -name 'gradle-wrapper.properties' -delete
+
       - name: Install the pinned NDK and platform
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
@@ -288,7 +297,8 @@ jobs:
           list=$(unzip -Z1 OpenTyrian2000-Engaged-Android.apk)
           for want in lib/arm64-v8a/libmain.so lib/armeabi-v7a/libmain.so \
                       lib/arm64-v8a/libSDL2.so lib/arm64-v8a/libSDL2_net.so \
-                      assets/data/tyrian1.lvl assets/data/filelist.txt; do
+                      assets/data/tyrian1.lvl assets/data/filelist.txt \
+                      res/mipmap-xxxhdpi/ic_launcher_foreground.png; do
             printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
           done
 
@@ -336,27 +346,30 @@ jobs:
           tar -xzf sdl2.tar.gz --strip-components=1 -C ios/external/SDL2
           tar -xzf sdl2net.tar.gz --strip-components=1 -C ios/external/SDL2_net
 
-      # Device slice only, and unsigned: there is no signing identity on a public runner,
-      # so the .ipa is for sideloading (see ios/README.md).
+      # Ninja, never -G Xcode: SDL2's several hundred configure probes each become a
+      # separate xcodebuild process under that generator, which turns a one-minute
+      # configure into a ten-minute one on a runner billed at ten times the Linux rate.
+      # Device slice only, and unsigned, since a public runner has no signing identity;
+      # the .ipa is for sideloading (see ios/README.md).
       - name: Configure
         run: |
-          cmake -S ios -B ios/build -G Xcode \
+          command -v ninja > /dev/null || brew install ninja
+          cmake -S ios -B ios/build -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_BUILD_TYPE=Release \
             -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
 
       - name: Build
-        run: cmake --build ios/build --config Release -- -quiet
+        run: cmake --build ios/build --parallel
 
       - name: Package unsigned IPA
         run: |
-          app=ios/build/Release-iphoneos/OpenTyrian2000.app
+          app=ios/build/OpenTyrian2000.app
           test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
           test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
+          test -f "$app/AppIcon60x60@3x.png" || { echo "app icon missing from the bundle"; exit 1; }
           rm -rf Payload
           mkdir Payload
           cp -R "$app" Payload/

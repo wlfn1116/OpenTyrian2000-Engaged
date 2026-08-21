@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.21)
 
 # SDL2's iOS backend is Objective-C and its HIDAPI is C++. Enabling both here rather than
 # letting the subproject do it keeps the toolchain probes at the top level.
+#
+# Build this with Ninja or Makefiles, not -G Xcode. SDL2's CMakeLists runs several hundred
+# feature probes, and under the Xcode generator every try_compile is a separate xcodebuild
+# process: configure alone takes over ten minutes, against roughly one with Ninja. Nothing
+# here depends on Xcode-generator behaviour.
 project(OpenTyrian2000 C CXX OBJC)
 
 set(CMAKE_C_STANDARD 99)
@@ -37,14 +42,28 @@ set(SDL_NET_SOURCES
 
 file(GLOB OT_SOURCES "${OT_ROOT}/src/*.c")
 
-# Read-only game data, copied into OpenTyrian2000.app/data where SDL_GetBasePath finds it.
-file(GLOB OT_DATA "${OT_ROOT}/data/*")
-if(NOT OT_DATA)
-  message(FATAL_ERROR "No files in ${OT_ROOT}/data; install the Tyrian 2000 data before configuring.")
+if(NOT EXISTS "${OT_ROOT}/data/tyrian1.lvl")
+  message(FATAL_ERROR "No Tyrian 2000 data in ${OT_ROOT}/data; install it before configuring.")
 endif()
-set_source_files_properties(${OT_DATA} PROPERTIES MACOSX_PACKAGE_LOCATION "data")
 
-add_executable(OpenTyrian2000 MACOSX_BUNDLE ${OT_SOURCES} ${SDL_NET_SOURCES} ${OT_DATA})
+add_executable(OpenTyrian2000 MACOSX_BUNDLE ${OT_SOURCES} ${SDL_NET_SOURCES})
+
+# Read-only game data, copied into OpenTyrian2000.app/data where SDL_GetBasePath finds it.
+# A post-build copy rather than MACOSX_PACKAGE_LOCATION, which only the Xcode generator
+# honours, and this build deliberately avoids Xcode (see the note above the project call).
+add_custom_command(TARGET OpenTyrian2000 POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_directory
+          "${OT_ROOT}/data" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/data"
+  COMMENT "Copying game data into the bundle")
+
+# Launcher icons, named for the sizes CFBundleIconFiles asks iOS for. They sit at the
+# bundle root because a compiled asset catalog would need an actool step Ninja has not.
+file(GLOB OT_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/icons/*.png")
+foreach(icon IN LISTS OT_ICONS)
+  add_custom_command(TARGET OpenTyrian2000 POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${icon}" "$<TARGET_BUNDLE_CONTENT_DIR:OpenTyrian2000>/")
+endforeach()
 
 target_include_directories(OpenTyrian2000 PRIVATE "${OT_ROOT}/src" "${SDL_NET_DIR}")
 
@@ -68,10 +87,8 @@ target_link_libraries(OpenTyrian2000 PRIVATE SDL2::SDL2-static SDL2::SDL2main)
 
 set_target_properties(OpenTyrian2000 PROPERTIES
   MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
-  MACOSX_BUNDLE_BUNDLE_NAME "OpenTyrian 2000"
+  MACOSX_BUNDLE_BUNDLE_NAME "Tyrian 2000 Engaged"
   MACOSX_BUNDLE_GUI_IDENTIFIER "${OT_BUNDLE_ID}"
   MACOSX_BUNDLE_SHORT_VERSION_STRING "${OT_VERSION}"
   MACOSX_BUNDLE_BUNDLE_VERSION "${OT_VERSION}"
-  XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${OT_BUNDLE_ID}"
-  XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
 )

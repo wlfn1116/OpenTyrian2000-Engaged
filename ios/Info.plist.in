@@ -13,7 +13,33 @@
 	<key>CFBundleName</key>
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
 	<key>CFBundleDisplayName</key>
-	<string>OpenTyrian 2000</string>
+	<string>Tyrian 2000 Engaged</string>
+	<!-- Icons live at the bundle root rather than in a compiled asset catalog: the build
+	     uses Ninja, which has no actool step to compile one. iOS picks the closest size. -->
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon60x60</string>
+				<string>AppIcon76x76</string>
+				<string>AppIcon83.5x83.5</string>
+			</array>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon60x60</string>
+				<string>AppIcon76x76</string>
+				<string>AppIcon83.5x83.5</string>
+			</array>
+		</dict>
+	</dict>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
