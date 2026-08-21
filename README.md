@@ -71,8 +71,8 @@ For lobby settings, co-op rules, saving, and desync reports, see
 
 ### Windows
 
-The Visual Studio project is under `visualc`. The root script can build one
-or more targets and collect their outputs under `build`:
+The Visual Studio project is under `visualc`. The root script can build
+one or more targets and collect their outputs under `build`:
 
 ```powershell
 .\build-all.ps1
