@@ -23,6 +23,7 @@
 #include "mouse.h"
 #include "opentyr.h"
 #include "palette.h"
+#include "touch_ui.h"
 #include "video_scale.h"
 
 #include "console_platform.h"  // console_get_output_size()
@@ -48,8 +49,8 @@ ScalingMode scaling_mode = SCALE_WIDESCREEN;  // fill the screen at true 16:9 by
 // Sub-pixel supersampling factor; 0 = Auto (follow the scaler). See video.h.
 int render_supersample = 0;
 
-#if defined(__SWITCH__) || defined(__vita__)
-bool smoothie_full_res = false;  // console default: favor stable display-rate performance
+#ifdef PLATFORM_HANDHELD
+bool smoothie_full_res = false;  // handheld default: favor stable display-rate performance
 #else
 bool smoothie_full_res = true;
 #endif
@@ -192,8 +193,8 @@ void init_video(void)
 	// Create the window with a temporary initial size, hidden until we set up the
 	// scaler and find the true window size
 	int win_w = vga_width, win_h = vga_height;
-#if defined(__SWITCH__) || defined(__vita__)
-	// Create console windows at native output size for a 1:1 buffer. Switch keeps
+#ifdef PLATFORM_HANDHELD
+	// Create the window at the device's native output size for a 1:1 buffer. Switch keeps
 	// the window resizable so SDL can follow dock transitions.
 	console_get_output_size(&win_w, &win_h);
 #endif
@@ -356,8 +357,8 @@ void reinit_fullscreen(int new_display)
 {
 	fullscreen_display = new_display;
 
-#if defined(__SWITCH__) || defined(__vita__)
-	// Consoles have one always-fullscreen display and the SDL driver owns the window size.
+#ifdef PLATFORM_HANDHELD
+	// These platforms have one always-fullscreen display and the SDL driver owns the window size.
 	// Forcing FULLSCREEN_DESKTOP here pinned the Switch buffer to 1080p; leave it untouched.
 	return;
 #endif
@@ -395,8 +396,8 @@ void reinit_fullscreen(int new_display)
 
 void video_on_win_resize(void)
 {
-#if defined(__SWITCH__) || defined(__vita__)
-	// The console SDL driver owns the window size; the present path re-reads the live window
+#ifdef PLATFORM_HANDHELD
+	// The SDL driver owns the window size here; the present path re-reads the live window
 	// size every frame (calc_dst_render_rect), so there's nothing to reconcile. Snapping the
 	// window back to a scaler-sized minimum here would just fight the driver (e.g. a 4x scaler
 	// is wider than 720p) and re-break fullscreen.
@@ -434,8 +435,8 @@ void video_on_win_resize(void)
 
 void toggle_fullscreen(void)
 {
-#if defined(__SWITCH__) || defined(__vita__)
-	return;  // always fullscreen on the consoles; nothing to toggle
+#ifdef PLATFORM_HANDHELD
+	return;  // always fullscreen on these platforms; nothing to toggle
 #endif
 
 	if (fullscreen_display != -1)
@@ -450,8 +451,8 @@ bool init_scaler(unsigned int new_scaler)
 
 	scaler = new_scaler;
 
-#if defined(__SWITCH__) || defined(__vita__)
-	// On the consoles the window must stay at the panel's native size (the driver owns it);
+#ifdef PLATFORM_HANDHELD
+	// The window must stay at the panel's native size (the driver owns it) on these platforms;
 	// only the scaler's intermediate texture, recreated by init_texture() below, changes.
 	// The final present (calc_dst_render_rect) scales that texture to fill the window.
 #else
@@ -723,6 +724,7 @@ static void scale_and_flip(SDL_Surface *src_surface)
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(main_window_renderer);
 	SDL_RenderCopy(main_window_renderer, main_window_texture, NULL, &dst_rect);
+	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
 	sample_fps();
@@ -741,6 +743,7 @@ void video_repeat_last_present(void)
 	SDL_RenderClear(main_window_renderer);
 	if (main_window_texture != NULL)
 		SDL_RenderCopy(main_window_renderer, main_window_texture, NULL, &last_output_rect);
+	touch_ui_render(main_window_renderer, &last_output_rect);
 	SDL_RenderPresent(main_window_renderer);
 }
 
@@ -832,6 +835,7 @@ void present_hi(SDL_Surface *hi)
 	SDL_SetRenderDrawColor(main_window_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(main_window_renderer);
 	SDL_RenderCopy(main_window_renderer, hi_texture, NULL, &dst_rect);
+	touch_ui_render(main_window_renderer, &dst_rect);
 	SDL_RenderPresent(main_window_renderer);
 
 	sample_fps();

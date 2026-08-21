@@ -49,6 +49,11 @@ const char *data_dir(void)
 		VITA_USER_DIR,
 		VITA_DATA_DIR,
 #endif
+#if defined(__ANDROID__) || defined(TARGET_IOS)
+		// The app bundle on iOS, and the copy unpacked out of the APK on Android;
+		// mobile_platform_init() resolves both before this runs.
+		mobile_data_dir(),
+#endif
 		custom_data_dir,
 		TYRIAN_DIR,
 		"data",

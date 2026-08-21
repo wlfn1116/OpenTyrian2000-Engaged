@@ -768,7 +768,7 @@ bool load_opentyrian_config(void)
 		config_get_int_option(section, "show_fps", &show_fps_enabled);
 		show_fps = (show_fps_enabled != 0);
 
-		// Ship-control sensitivity slider: touch on the consoles, mouse on desktop.
+		// Ship-control sensitivity slider: touch on the handheld ports, mouse on desktop.
 		config_get_int_option(section, SHIP_SENS_CFG, &ship_sensitivity);
 		if (ship_sensitivity < 0 || ship_sensitivity > SHIP_SENS_MAX)
 			ship_sensitivity = SHIP_SENS_DEFAULT;
@@ -1845,6 +1845,10 @@ const char *get_user_directory(void)
 #elif defined(__vita__)
 		// Fixed writable location on the memory card; vita_platform_init() creates it.
 		strcpy(user_dir, VITA_USER_DIR);
+#elif defined(__ANDROID__) || defined(TARGET_IOS)
+		// App-private storage, resolved by mobile_platform_init(). Nothing here survives
+		// an uninstall on either system.
+		snprintf(user_dir, sizeof(user_dir), "%s", mobile_user_dir());
 #elif !defined(TARGET_WIN32)
 		char *xdg_config_home = getenv("XDG_CONFIG_HOME");
 		if (xdg_config_home != NULL)

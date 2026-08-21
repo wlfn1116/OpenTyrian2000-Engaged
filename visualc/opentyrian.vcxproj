@@ -187,6 +187,7 @@
     <ClCompile Include="..\src\sndmast.c" />
     <ClCompile Include="..\src\sprite.c" />
     <ClCompile Include="..\src\starlib.c" />
+    <ClCompile Include="..\src\touch_ui.c" />
     <ClCompile Include="..\src\tyrian2.c" />
     <ClCompile Include="..\src\varz.c" />
     <ClCompile Include="..\src\vga256d.c" />
@@ -360,6 +361,7 @@
     <ClInclude Include="..\src\sndmast.h" />
     <ClInclude Include="..\src\sprite.h" />
     <ClInclude Include="..\src\starlib.h" />
+    <ClInclude Include="..\src\touch_ui.h" />
     <ClInclude Include="..\src\tyrian2.h" />
     <ClInclude Include="..\src\varz.h" />
     <ClInclude Include="..\src\vga256d.h" />

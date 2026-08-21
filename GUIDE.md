@@ -820,18 +820,47 @@ Choose a backend under **Setup > Sound > Music Synth**. Put a SoundFont beside
 the executable or in `data`; FluidSynth is unavailable in the menu until one is
 found.
 
-## Console builds
+## Console and mobile builds
 
-Switch and Vita builds include online play and use the system keyboard for text
-fields. MIDI is disabled.
+Switch, Vita, Android, and iOS builds include online play and use the system
+keyboard for text fields. MIDI is disabled.
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)
+- [Android](android/README.md)
+- [iOS](ios/README.md)
+
+### Touch controls
+
+Every touch build steers the same way: drag anywhere on the screen and the ship
+follows your finger, no matter where the drag started. Holding a finger down
+also holds the main weapon down, so there is no separate fire control. **Setup >
+Sensitivity** scales how far the ship travels per finger movement; the middle of
+the slider tracks your finger one to one.
+
+Phones and tablets add two on-screen buttons, because a finger cannot express
+those actions on its own:
+
+| Button | Position | Action |
+| --- | --- | --- |
+| Pause | Top left | Opens the in-game pause menu |
+| Rear weapon mode | Top right | Cycles the rear weapon mode, same as the `[` key |
+
+Both sit outside the playfield. A phone is wider than the 16:9 frame the game
+draws, so they take the pillarbox beside it, against the frame edge rather than
+the screen edge; that keeps them clear of a display cutout in landscape. On a
+display at 16:9 or narrower there is no pillarbox to use, and they fade back
+over the frame corners instead. A finger held on a button never steers and never
+fires, so the other thumb can keep flying.
+
+Switch and Vita have physical buttons and draw neither one.
 
 ## Files and logs
 
 On Windows, files sit beside the executable. Linux uses
-`~/.config/opentyrian2000`. Console locations are listed in their build guides.
+`~/.config/opentyrian2000`. Console and mobile locations are listed in their
+build guides; on Android and iOS the files live in app-private storage that the
+system deletes on uninstall.
 
 | File | Contents |
 | --- | --- |

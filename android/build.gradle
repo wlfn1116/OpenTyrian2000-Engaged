@@ -1,0 +1,5 @@
+// Root build file. The Android Gradle Plugin version is pinned so a CI runner image
+// update cannot silently change the toolchain that produces the APK.
+plugins {
+	id 'com.android.application' version '8.7.3' apply false
+}

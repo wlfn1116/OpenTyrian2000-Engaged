@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Edge to edge under the cutout: the game centres a 16:9 frame and puts its touch
+         buttons in the pillarbox, so the extra width is usable rather than letterboxed
+         away by the system. -->
+    <style name="OpenTyrianTheme" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

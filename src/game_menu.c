@@ -7401,9 +7401,9 @@ static bool endlessDebugScreen(bool jumpMode)
 				switch (selKind)
 				{
 				case EDR_ZONE:
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 				{
-					// No physical keyboard on the consoles: the software keypad is how a far zone
+					// No physical keyboard here: the software keypad is how a far zone
 					// gets reached without thousands of button presses.
 					char kb[8];
 					snprintf(kb, sizeof(kb), "%d", dbgZone);

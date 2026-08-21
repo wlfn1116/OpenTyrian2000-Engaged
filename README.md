@@ -14,7 +14,7 @@ This fork adds:
 - a custom weapon editor;
 - optional restored weapons, effects, sprites, and level objects;
 - FluidSynth and native MIDI support on Windows;
-- Nintendo Switch and PlayStation Vita homebrew ports.
+- Nintendo Switch, PlayStation Vita, Android, and iOS ports.
 
 See the [player guide](GUIDE.md) for menu paths and feature details.
 
@@ -54,15 +54,19 @@ Default keyboard controls:
 
 Keys and controllers can be rebound in Setup.
 
+On Android and iOS a drag anywhere steers the ship and also fires; pause and
+rear weapon mode get on-screen buttons in the pillarbox beside the playfield.
+See [Touch controls](GUIDE.md#touch-controls).
+
 ## Online play
 
 Open **Online Multiplayer** from the main menu. A host can be found over LAN
 or joined by address. The default port is UDP 1333.
 
-Players can mix Windows, Linux, Switch, and Vita builds when both copies use the
-same game version. Rollback is the default netcode; delay-based lockstep remains
-available from the lobby. Campaign and Endless sessions can be saved and resumed
-through their original game type.
+Players can mix Windows, Linux, Android, iOS, Switch, and Vita builds when both
+copies use the same game version. Rollback is the default netcode; delay-based
+lockstep remains available from the lobby. Campaign and Endless sessions can be
+saved and resumed through their original game type.
 
 For lobby settings, co-op rules, saving, and desync reports, see
 [Online play](GUIDE.md#online-play).
@@ -95,10 +99,12 @@ make
 Release builds need only the SDL2 runtime packages. Package names vary by
 distribution.
 
-### Consoles
+### Consoles and mobile
 
 - [Nintendo Switch](switch/README.md)
 - [PlayStation Vita](vita/README.md)
+- [Android](android/README.md)
+- [iOS](ios/README.md)
 
 ## Tests
 
@@ -113,8 +119,8 @@ The suite covers deterministic replays, rollback state, save migrations,
 malformed inputs, Endless generation, and two network peers behind a fault
 proxy. [testing/README.md](testing/README.md) lists the runners and scenarios.
 
-GitHub Actions builds Windows, Linux, Switch, and Vita. Current artifacts are
-available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
+GitHub Actions builds Windows, Linux, Android, iOS, Switch, and Vita. Current
+artifacts are available from the [latest pre-release](https://github.com/wlfn1116/OpenTyrian2000-Engaged/releases/tag/latest)
 and the [Actions page](https://github.com/wlfn1116/OpenTyrian2000-Engaged/actions).
 
 ## License

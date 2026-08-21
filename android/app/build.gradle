@@ -1,0 +1,67 @@
+plugins {
+	id 'com.android.application'
+}
+
+// Single source of truth for the version string: src/opentyrian_version.h, the same header
+// the title screen and the Vita packaging read.
+def engagedVersion() {
+	def header = file('../../src/opentyrian_version.h').text
+	def match = header =~ /OPENTYRIAN_VERSION\s+"[^"0-9]*([0-9]+(?:\.[0-9]+)*)"/
+	return match ? match[0][1] : '1.0'
+}
+
+// versionCode has to increase monotonically for Android to accept an in-place upgrade, and
+// it has to be an integer, so pack the dotted version into one.
+def engagedVersionCode(String version) {
+	def parts = version.tokenize('.').collect { it.toInteger() }
+	while (parts.size() < 3) parts << 0
+	return parts[0] * 10000 + parts[1] * 100 + parts[2]
+}
+
+android {
+	namespace 'net.opentyrian.engaged'
+	compileSdk 35
+	ndkVersion '27.2.12479018'
+
+	defaultConfig {
+		applicationId 'net.opentyrian.engaged'
+		minSdk 26
+		targetSdk 35
+		versionName engagedVersion()
+		versionCode engagedVersionCode(engagedVersion())
+
+		externalNativeBuild {
+			ndkBuild {
+				// The short commit id lands on the title screen, matching every other target.
+				arguments "OPENTYRIAN_COMMIT=${project.findProperty('opentyrianCommit') ?: ''}"
+				abiFilters 'arm64-v8a', 'armeabi-v7a'
+			}
+		}
+	}
+
+	externalNativeBuild {
+		ndkBuild {
+			path 'src/main/jni/Android.mk'
+		}
+	}
+
+	sourceSets {
+		// SDL ships the Java half of its Android backend with its sources; the activity in
+		// src/main/java only names the libraries to load.
+		main.java.srcDirs += 'src/main/jni/SDL2/android-project/app/src/main/java'
+	}
+
+	buildTypes {
+		release {
+			minifyEnabled false
+			// Debug keys, because a sideloaded build has no store identity to protect. CI
+			// caches the keystore so upgrades install over an earlier build.
+			signingConfig signingConfigs.debug
+		}
+	}
+
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_17
+		targetCompatibility JavaVersion.VERSION_17
+	}
+}

@@ -68,8 +68,8 @@ const char *opentyrian_str = "OpenTyrian 2000 Engaged";
 const char *opentyrian_version = OPENTYRIAN_VERSION;
 const char *opentyrian_commit = OPENTYRIAN_COMMIT;
 
-#if !defined(__SWITCH__) && !defined(__vita__)
-// The consoles (Switch / Vita) have a single, always-fullscreen display managed by the
+#ifndef PLATFORM_HANDHELD
+// The console and mobile ports have a single, always-fullscreen display managed by the
 // video driver, so the Window/Display picker is meaningless there and is omitted from
 // the Graphics menu below.
 static size_t getDisplayPickerItemsCount(void)
@@ -653,7 +653,7 @@ static bool runOptionsMenu(MenuId startMenu)
 		[MENU_GRAPHICS] = {
 			.header = "Graphics",
 			.items = {
-#if !defined(__SWITCH__) && !defined(__vita__)
+#ifndef PLATFORM_HANDHELD
 				{ MENU_ITEM_DISPLAY, "Display:", "Change the display mode.",
 				  .getPickerItemsCount = getDisplayPickerItemsCount, .getPickerItem = getDisplayPickerItem },
 #endif
@@ -887,8 +887,8 @@ static bool runOptionsMenu(MenuId startMenu)
 			.items = {
 				{ MENU_ITEM_DEBUG_MODE, "Debug Mode:", "Enable the debug menu and debug level select." },
 				{ MENU_ITEM_NET_LOG, "Network Log:", "Record online sessions to a net log file." },
-#if defined(__SWITCH__) || defined(__vita__)
-				// Console users need an in-game way to clear crash and network logs.
+#ifdef PLATFORM_HANDHELD
+				// These platforms need an in-game way to clear crash and network logs.
 				{ MENU_ITEM_CLEAR_LOGS, "Clear Logs", "Delete every log file saved on this system." },
 #endif
 				MENU_DONE_ROW
@@ -1619,8 +1619,8 @@ static bool runOptionsMenu(MenuId startMenu)
 				}
 				case MENU_ITEM_FPS:
 				{
-#if defined(__SWITCH__) || defined(__vita__)
-					// No physical keyboard on the consoles; the system keypad stands in
+#ifdef PLATFORM_HANDHELD
+					// No physical keyboard here; the system keypad stands in
 					// for the desktop's typed digits.
 					char kb[8];
 					snprintf(kb, sizeof(kb), "%d", fps_cap);
@@ -1927,7 +1927,7 @@ static bool runOptionsMenu(MenuId startMenu)
 #endif
 int main(int argc, char *argv[])
 {
-#if defined(__SWITCH__) || defined(__vita__)
+#ifdef PLATFORM_HANDHELD
 	// Mount data and prepare the user directory before file access.
 	console_platform_init();
 #endif

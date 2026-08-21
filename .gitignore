@@ -84,3 +84,20 @@ tyrian.sav
 /custom_weapons.cfg
 /data_11
 /data_21
+
+# Android (Gradle + ndk-build) output and the SDL sources CI unpacks beside the game
+/android/.gradle/
+/android/build/
+/android/local.properties
+/android/app/build/
+/android/app/.cxx/
+/android/app/src/main/jni/SDL2/
+/android/app/src/main/jni/SDL2_net/
+/android/app/src/main/assets/data/
+
+# iOS (CMake + Xcode) output and its unpacked SDL sources
+/ios/build/
+/ios/external/
+/Payload/
+/OpenTyrian2000-Engaged-*.ipa
+/OpenTyrian2000-Engaged-*.apk

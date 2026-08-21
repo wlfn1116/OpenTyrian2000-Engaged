@@ -1,5 +1,5 @@
 # Builds all release targets on pushes, pull requests, and manual runs. Master
-# refreshes the `latest` pre-release; version tags attach the same four artifacts
+# refreshes the `latest` pre-release; version tags attach the same six artifacts
 # to a tagged release. The data job supplies one stripped freeware-data artifact
 # to every platform job.
 
@@ -200,6 +200,175 @@ jobs:
           path: OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
           compression-level: 0
 
+  android:
+    name: Android
+    needs: data
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+      ANDROID_NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ndk-build compiles the SDL sources alongside the game, so the port pins its own
+      # SDL rather than inheriting whatever the runner image happens to ship.
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            android/app/src/main/jni/SDL2
+            android/app/src/main/jni/SDL2_net
+          key: android-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          jni=android/app/src/main/jni
+          mkdir -p "$jni/SDL2" "$jni/SDL2_net"
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C "$jni/SDL2"
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C "$jni/SDL2_net"
+
+      - name: Install the pinned NDK and platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;$ANDROID_NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: android/app/src/main/assets/data
+
+      # An APK keeps its assets inside the archive, so the game unpacks them on first run
+      # (src/mobile_platform.c). That needs a manifest, because asset directories cannot be
+      # enumerated from C. Build it outside the directory so it never lists itself.
+      - name: Index the packaged data
+        working-directory: android/app/src/main/assets/data
+        run: |
+          ls -1 > ../filelist.tmp
+          mv ../filelist.tmp filelist.txt
+          test -s filelist.txt
+
+      # A sideloaded build is signed with Gradle's debug key. Caching it keeps the
+      # signature stable, so a new build installs over the previous one.
+      - name: Cache the debug signing key
+        uses: actions/cache@v5
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.12'
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          gradle --no-daemon assembleRelease \
+            -PopentyrianCommit="$(printf %.7s "$GITHUB_SHA")"
+          cp app/build/outputs/apk/release/app-release.apk \
+             "$GITHUB_WORKSPACE/OpenTyrian2000-Engaged-Android.apk"
+
+      # There is no way to run the game on a runner, so check what the APK actually
+      # contains: both ABIs, and the data the first launch unpacks.
+      - name: Verify APK contents
+        run: |
+          list=$(unzip -Z1 OpenTyrian2000-Engaged-Android.apk)
+          for want in lib/arm64-v8a/libmain.so lib/armeabi-v7a/libmain.so \
+                      lib/arm64-v8a/libSDL2.so lib/arm64-v8a/libSDL2_net.so \
+                      assets/data/tyrian1.lvl assets/data/filelist.txt; do
+            printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
+          done
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-Android
+          path: OpenTyrian2000-Engaged-Android.apk
+          compression-level: 0
+
+  ios:
+    name: iOS
+    needs: data
+    timeout-minutes: 45
+    runs-on: macos-latest
+    env:
+      SDL2_VERSION: 2.30.11
+      SDL2_NET_VERSION: 2.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      # ios/CMakeLists.txt globs data/ at configure time, so the files have to land first.
+      - uses: actions/download-artifact@v7
+        with:
+          name: tyrian2000-data
+          path: data
+
+      - name: Restore cached SDL sources
+        id: sdl-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ios/external/SDL2
+            ios/external/SDL2_net
+          key: ios-sdl-${{ env.SDL2_VERSION }}-${{ env.SDL2_NET_VERSION }}
+
+      - name: Download SDL sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ios/external/SDL2 ios/external/SDL2_net
+          curl -fL --retry 3 -o sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-$SDL2_VERSION.tar.gz"
+          curl -fL --retry 3 -o sdl2net.tar.gz \
+            "https://github.com/libsdl-org/SDL_net/releases/download/release-$SDL2_NET_VERSION/SDL2_net-$SDL2_NET_VERSION.tar.gz"
+          tar -xzf sdl2.tar.gz --strip-components=1 -C ios/external/SDL2
+          tar -xzf sdl2net.tar.gz --strip-components=1 -C ios/external/SDL2_net
+
+      # Device slice only, and unsigned: there is no signing identity on a public runner,
+      # so the .ipa is for sideloading (see ios/README.md).
+      - name: Configure
+        run: |
+          cmake -S ios -B ios/build -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DOPENTYRIAN_COMMIT="$(printf %.7s "$GITHUB_SHA")"
+
+      - name: Build
+        run: cmake --build ios/build --config Release -- -quiet
+
+      - name: Package unsigned IPA
+        run: |
+          app=ios/build/Release-iphoneos/OpenTyrian2000.app
+          test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
+          test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$app" Payload/
+          zip -qry OpenTyrian2000-Engaged-iOS.ipa Payload
+
+      # Already a compressed archive; skip GitHub's wrapper compression.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OpenTyrian2000-Engaged-iOS
+          path: OpenTyrian2000-Engaged-iOS.ipa
+          compression-level: 0
+
   switch:
     name: Nintendo Switch
     needs: data
@@ -279,7 +448,7 @@ jobs:
   prerelease:
     name: Update latest pre-release
     if: github.ref == 'refs/heads/master'
-    needs: [windows, linux, switch, vita, tests, sanitizers]
+    needs: [windows, linux, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -296,6 +465,8 @@ jobs:
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Android.apk
+                  OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           subject=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" \
@@ -308,7 +479,7 @@ jobs:
   release:
     name: Attach to release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [windows, linux, switch, vita, tests, sanitizers]
+    needs: [windows, linux, android, ios, switch, vita, tests, sanitizers]
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
@@ -326,6 +497,8 @@ jobs:
         run: |
           assets=(OpenTyrian2000-Engaged-Windows-x86_64.7z
                   OpenTyrian2000-Engaged-Linux-x86_64.tar.gz
+                  OpenTyrian2000-Engaged-Android.apk
+                  OpenTyrian2000-Engaged-iOS.ipa
                   OpenTyrian2000-Engaged-Switch.nro
                   OpenTyrian2000-Engaged-Vita.vpk)
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
