@@ -1637,7 +1637,7 @@ static void qa_test_fixed_pool_layout(void)
 	         && RL_ID_SIDEKICK_BASE + 4 <= RL_ID_LINKGUN_BASE
 	         && RL_ID_LINKGUN_BASE + 3 < RL_ID_MAX,
 	         "render identities for ships, sidekicks, and link guns remain disjoint");
-	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 91
+	qa_check(sizeof(PlayerItems) == 13 && SAVE_RECORD_PACKED_SIZE == 97
 #ifdef WITH_NETWORK
 	         && NETWORK_SETTINGS_SIZE == 48
 #endif
@@ -1672,11 +1672,14 @@ static void qa_test_save_record_wire(void)
 	src.difficultyAdjust = true; src.cheatInfiniteSidekickAmmo = true;
 	src.cheatInfiniteShields = false; src.cheatInfiniteArmor = true; src.expertMode = true;
 	src.shipColor[0] = 6; src.shipColor[1] = NET_SHIP_COLORS;
+	src.viewOpacity[0] = NET_OPACITY_MIN; src.viewOpacity[1] = NET_OPACITY_FULL;
+	src.viewShipOpacity[0] = 0; src.viewShipOpacity[1] = 1;
+	src.viewHpBars[0] = NET_HP_BARS_ALWAYS; src.viewHpBars[1] = NET_HP_BARS_ON_HIT;
 
 	memset(guarded, 0xa5, sizeof(guarded));
 	save_record_pack(packed, &src);
 	qa_check(guarded[0] == 0xa5 && guarded[sizeof(guarded) - 1] == 0xa5,
-	         "save-record packing writes exactly its fixed 91-byte frame");
+	         "save-record packing writes exactly its fixed 97-byte frame");
 	save_record_unpack(&dst, packed);
 	save_record_pack(repacked, &dst);
 	qa_check(memcmp(packed, repacked, sizeof(repacked)) == 0,
@@ -1687,6 +1690,10 @@ static void qa_test_save_record_wire(void)
 	         "network save record preserves the Online Campaign type marker");
 	qa_check(dst.shipColor[0] == src.shipColor[0] && dst.shipColor[1] == src.shipColor[1],
 	         "network save record carries both ships' online dyes");
+	qa_check(memcmp(dst.viewOpacity, src.viewOpacity, sizeof(src.viewOpacity)) == 0
+	         && memcmp(dst.viewShipOpacity, src.viewShipOpacity, sizeof(src.viewShipOpacity)) == 0
+	         && memcmp(dst.viewHpBars, src.viewHpBars, sizeof(src.viewHpBars)) == 0,
+	         "...and both machines' views of the other ship, by seat");
 	qa_check(dst.gameHasRepeated && dst.autoFireSpecial && dst.difficultyAdjust
 	         && dst.cheatInfiniteSidekickAmmo && !dst.cheatInfiniteShields
 	         && dst.cheatInfiniteArmor && dst.expertMode,
@@ -5444,6 +5451,28 @@ static void qa_test_menu_claim(void)
 #endif
 }
 
+// Change one local-view field while preserving the others.
+static void qa_set_local_opacity(int pct)
+{
+	NetShipView view = netStyleLocalView();
+	view.opacity = (Uint8)pct;
+	netStyleSetLocalView(view);
+}
+
+static void qa_set_local_ship_opacity(bool on)
+{
+	NetShipView view = netStyleLocalView();
+	view.shipOpacity = on;
+	netStyleSetLocalView(view);
+}
+
+static void qa_set_local_hp_bars(int mode)
+{
+	NetShipView view = netStyleLocalView();
+	view.hpBars = (Uint8)mode;
+	netStyleSetLocalView(view);
+}
+
 // Partner HP-bar bounds, placement, painting, and mode eligibility.
 static void qa_test_partner_hp_bars(void)
 {
@@ -5536,14 +5565,14 @@ static void qa_test_partner_hp_bars(void)
 		const JE_boolean savedTwo = twoPlayerMode, savedSep = arcadeSeparateMode;
 		const JE_boolean savedCoop = coopCampaignMode, savedCoopE = coopEndlessMode;
 		const uint savedPlayerNum = thisPlayerNum;
-		const int savedMode = netPartnerHpBars;
+		const NetShipView savedView = netStyleView(0);
 
 		isNetworkGame = true;
 		twoPlayerMode = true;
 		coopCampaignMode = false;
 		coopEndlessMode = false;
 		thisPlayerNum = 1;                 // this machine flies seat 0
-		netPartnerHpBars = NET_HP_BARS_ALWAYS;
+		qa_set_local_hp_bars(NET_HP_BARS_ALWAYS);
 		enemyBarPosition = ENEMY_BAR_POS_BOTTOM;
 		enemyBarOpacity = 100;
 		shipGr2 = 5;
@@ -5579,7 +5608,7 @@ static void qa_test_partner_hp_bars(void)
 				painted += (pixels[(probeY + row) * pitch + col] != 0);
 		qa_check(painted == 0, "Linked Arcade paints none, whatever the setting says");
 
-		netPartnerHpBars = savedMode;
+		netStyleSetView(0, savedView);
 		thisPlayerNum = savedPlayerNum;
 		coopEndlessMode = savedCoopE;
 		coopCampaignMode = savedCoop;
@@ -5597,7 +5626,7 @@ static void qa_test_partner_hp_bars(void)
 	player[1] = saved1;
 }
 
-// Per-seat dyes, local opacity, previews, and sprite blending.
+// Per-seat dyes, per-seat views, previews, and sprite blending.
 static void qa_test_online_ship_style(void)
 {
 	const bool savedNet = isNetworkGame;
@@ -5605,8 +5634,7 @@ static void qa_test_online_ship_style(void)
 	const JE_boolean savedMode = endlessMode, savedCampaign = endlessCampaignMods;
 	const uint savedPlayerNum = thisPlayerNum;
 	const int savedColor[2] = { netStyleSeatColor(0), netStyleSeatColor(1) };
-	const int savedOpacity = netPartnerOpacity;
-	const bool savedShipOpacity = netPartnerShipOpacity;
+	const NetShipView savedView[2] = { netStyleView(0), netStyleView(1) };
 
 	netStylePreviewClear();
 
@@ -5619,7 +5647,7 @@ static void qa_test_online_ship_style(void)
 	twoPlayerMode = false;
 	thisPlayerNum = 2;
 	netStyleSetSeatColor(1, 5);
-	netPartnerOpacity = 50;
+	qa_set_local_opacity(50);
 	qa_check(netStyleIsPlain(netStyleForSeat(0)) && netStyleIsPlain(netStyleForSeat(1)),
 	         "offline play ignores the online ship colours");
 
@@ -5635,15 +5663,26 @@ static void qa_test_online_ship_style(void)
 	         "the partner wears the dye they announced, at the opacity this machine set");
 
 	thisPlayerNum = 1;
+	qa_set_local_opacity(50);
 	qa_check(netStyleForSeat(0).opacity == NET_STYLE_SOLID && netStyleForSeat(1).opacity == 8,
 	         "the opacity lands on the partner whichever seat this machine flies");
+
+	// Each seat retains its own view; only the local seat affects this screen.
+	qa_check(netStyleView(1).opacity == 50 && netStyleView(0).opacity == 50
+	         && netStyleLocalView().opacity == 50,
+	         "each seat holds its own view and this machine reads the seat it flies");
+	thisPlayerNum = 2;
+	qa_set_local_opacity(NET_OPACITY_FULL);
+	thisPlayerNum = 1;
+	qa_check(netStyleView(1).opacity == NET_OPACITY_FULL && netStyleLocalView().opacity == 50,
+	         "...so the peer's own view never overwrites this one");
 
 	// Picker steps map to a nonzero, strictly decreasing mix.
 	bool laddered = true;
 	int previous = NET_STYLE_SOLID + 1;
 	for (int pct = NET_OPACITY_FULL; pct >= NET_OPACITY_MIN; pct -= NET_OPACITY_STEP)
 	{
-		netPartnerOpacity = pct;
+		qa_set_local_opacity(pct);
 		const int opacity = netStyleForSeat(1).opacity;
 		laddered = laddered && opacity < previous && opacity >= 1 && opacity <= NET_STYLE_SOLID;
 		previous = opacity;
@@ -5690,11 +5729,11 @@ static void qa_test_online_ship_style(void)
 
 	// Apply to Ship affects bodies only; shots always use partner opacity.
 	thisPlayerNum = 1;
-	netPartnerOpacity = 50;
-	netPartnerShipOpacity = true;
+	qa_set_local_opacity(50);
+	qa_set_local_ship_opacity(true);
 	qa_check(netStyleForSeat(1).opacity == 8 && netStyleForShot(1).opacity == 8,
 	         "the partner's ship and its shots share one opacity by default");
-	netPartnerShipOpacity = false;
+	qa_set_local_ship_opacity(false);
 	qa_check(netStyleForSeat(1).opacity == NET_STYLE_SOLID && netStyleForSeat(1).bank == 4,
 	         "sparing the ship draws their hull solid and keeps its dye");
 	qa_check(netStyleForShot(1).opacity == 8 && netStyleForShot(1).bank < 0,
@@ -5702,18 +5741,22 @@ static void qa_test_online_ship_style(void)
 	qa_check(netStyleForSeat(0).opacity == NET_STYLE_SOLID
 	         && netStyleForShot(0).opacity == NET_STYLE_SOLID,
 	         "neither reaches the ship this machine flies");
-	netPartnerShipOpacity = true;
+	qa_set_local_ship_opacity(true);
 
 	// Fresh sessions start plain; saved sessions restore their styles later.
 	netStyleSetSeatColor(0, 9);
 	netStyleSetSeatColor(1, 4);
-	netPartnerOpacity = NET_OPACITY_MIN;
-	netPartnerShipOpacity = false;
+	qa_set_local_opacity(NET_OPACITY_MIN);
+	qa_set_local_ship_opacity(false);
+	qa_set_local_hp_bars(NET_HP_BARS_ALWAYS);
 	netStyleSessionReset();
-	qa_check(netStyleSeatColor(0) == NET_SHIP_COLOR_NONE
-	         && netStyleSeatColor(1) == NET_SHIP_COLOR_NONE
-	         && netPartnerOpacity == NET_OPACITY_FULL && netPartnerShipOpacity,
-	         "a session starting forgets the look the last one was flying");
+	bool forgotten = true;
+	for (uint seat = 0; seat < 2; ++seat)
+		forgotten = forgotten && netStyleSeatColor(seat) == NET_SHIP_COLOR_NONE
+		            && netStyleView(seat).opacity == NET_OPACITY_FULL
+		            && netStyleView(seat).shipOpacity
+		            && netStyleView(seat).hpBars == NET_HP_BARS_OFF;
+	qa_check(forgotten, "a session starting forgets the look the last one was flying");
 	netStyleSessionReset();
 	qa_check(netStylePeerColor() == NET_SHIP_COLOR_NONE, "a session ending forgets the peer's dye");
 
@@ -5763,10 +5806,11 @@ static void qa_test_online_ship_style(void)
 	endlessMode = savedMode;
 	endlessCampaignMods = savedCampaign;
 	thisPlayerNum = savedPlayerNum;
-	netStyleSetSeatColor(0, savedColor[0]);
-	netStyleSetSeatColor(1, savedColor[1]);
-	netPartnerOpacity = savedOpacity;
-	netPartnerShipOpacity = savedShipOpacity;
+	for (uint seat = 0; seat < 2; ++seat)
+	{
+		netStyleSetSeatColor(seat, savedColor[seat]);
+		netStyleSetView(seat, savedView[seat]);
+	}
 }
 
 static void qa_test_network_settings(void)

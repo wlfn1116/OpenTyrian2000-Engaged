@@ -1144,11 +1144,26 @@ static int online_full_row(int row)
 	return (!online_hp_bars_offered() && row >= ONLINE_ROW_HPBARS) ? row + 1 : row;
 }
 
+// Store and announce this seat's view so either player can host a resume.
+static void online_set_local_view(NetShipView view)
+{
+	const NetShipView was = netStyleLocalView();
+	netStyleSetLocalView(view);
+
+	const NetShipView now = netStyleLocalView();
+	if (now.opacity != was.opacity || now.shipOpacity != was.shipOpacity || now.hpBars != was.hpBars)
+		network_player_look_publish();  // publish immediately instead of waiting for keep-alive
+}
+
 static void draw_online_hpbars_page(void)
 {
 	const int cursor = curSel[MENU_ONLINE_HPBARS];
 	if (cursor >= 2 && cursor < menuChoices[MENU_ONLINE_HPBARS])
-		netPartnerHpBars = cursor - 2;
+	{
+		NetShipView view = netStyleLocalView();
+		view.hpBars = (Uint8)(cursor - 2);
+		online_set_local_view(view);
+	}
 
 	JE_drawMenuChoices();
 
@@ -1220,7 +1235,7 @@ static void draw_online_color_page(void)
 	if (cell >= 0 && cell < online_color_cells - 1 && netStyleSeatColor(seat) != online_color_cell[cell])
 	{
 		netStyleSetSeatColor(seat, online_color_cell[cell]);
-		network_player_color_publish();  // publish immediately instead of waiting for keep-alive
+		network_player_look_publish();  // publish immediately instead of waiting for keep-alive
 	}
 
 	for (int i = 0; i < online_color_cells; ++i)
@@ -1303,7 +1318,11 @@ static void draw_online_opacity_page(void)
 {
 	const int cursor = curSel[MENU_ONLINE_OPACITY];
 	if (cursor >= ONLINE_OPACITY_FIRST_ROW && cursor < menuChoices[MENU_ONLINE_OPACITY])
-		netPartnerOpacity = online_opacity_of_row(cursor);
+	{
+		NetShipView view = netStyleLocalView();
+		view.opacity = (Uint8)online_opacity_of_row(cursor);
+		online_set_local_view(view);
+	}
 
 	for (int row = 2; row <= menuChoices[MENU_ONLINE_OPACITY]; ++row)
 	{
@@ -1325,7 +1344,7 @@ static void draw_online_opacity_page(void)
 		if (toggle)
 		{
 			JE_textShade(VGAScreen, ONLINE_OPACITY_SWATCH_X, y,
-			             netPartnerShipOpacity ? "On" : "Off",
+			             netStyleLocalView().shipOpacity ? "On" : "Off",
 			             textCol / 16, textCol % 16 - 8, DARKEN);
 		}
 		else if (!leave)
@@ -1338,7 +1357,7 @@ static void draw_online_opacity_page(void)
 	}
 
 	// Preview the partner; net_style.c applies the ship toggle.
-	netStylePreviewSet(netStylePeerColor(), netPartnerOpacity);
+	netStylePreviewSet(netStylePeerColor(), netStyleLocalView().opacity);
 }
 
 /* Map the resolved shop submenu to a static crash-log phase string.
@@ -10258,12 +10277,12 @@ void JE_menuFunction(JE_byte select)
 			break;
 		case ONLINE_ROW_OPACITY:
 			curSel[MENU_ONLINE_OPACITY] = (JE_byte)(ONLINE_OPACITY_FIRST_ROW
-				+ (NET_OPACITY_FULL - netPartnerOpacity) / NET_OPACITY_STEP);
+				+ (NET_OPACITY_FULL - netStyleLocalView().opacity) / NET_OPACITY_STEP);
 			curMenu = MENU_ONLINE_OPACITY;
 			JE_initWeaponView();
 			break;
 		case ONLINE_ROW_HPBARS:
-			curSel[MENU_ONLINE_HPBARS] = (JE_byte)(2 + netPartnerHpBars);
+			curSel[MENU_ONLINE_HPBARS] = (JE_byte)(2 + netStyleLocalView().hpBars);
 			curMenu = MENU_ONLINE_HPBARS;
 			JE_initWeaponView();
 			break;
@@ -10283,7 +10302,10 @@ void JE_menuFunction(JE_byte select)
 		// The ship toggle changes in place; other rows return.
 		if (select == ONLINE_OPACITY_TOGGLE_ROW)
 		{
-			netPartnerShipOpacity = !netPartnerShipOpacity;
+			NetShipView view = netStyleLocalView();
+			view.shipOpacity = !view.shipOpacity;
+			online_set_local_view(view);
+
 			JE_playSampleNum(S_CLICK);
 			break;
 		}
@@ -10885,7 +10907,7 @@ void JE_weaponSimUpdate(void)
 	JE_drawSimSidekicks();  // pods on top of the ship, matching gameplay layering
 
 	// Reuse the gameplay worker with half-full samples; outpost values are empty.
-	if (curMenu == MENU_ONLINE_HPBARS && netPartnerHpBars != NET_HP_BARS_OFF)
+	if (curMenu == MENU_ONLINE_HPBARS && netStyleLocalView().hpBars != NET_HP_BARS_OFF)
 	{
 		int l, r, t, b;
 		hud_ship_hp_bar_box(shop_draw_seat(), &l, &r, &t, &b);

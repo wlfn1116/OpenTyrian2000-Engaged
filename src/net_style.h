@@ -36,9 +36,6 @@
 #define NET_OPACITY_MIN   20
 #define NET_OPACITY_FULL 100
 
-extern int  netPartnerOpacity;      // local percent, NET_OPACITY_MIN..NET_OPACITY_FULL
-extern bool netPartnerShipOpacity;  // false fades shots only
-
 // When to show shield and armor bars on the other ship.
 enum
 {
@@ -48,7 +45,20 @@ enum
 	NET_HP_BARS_COUNT,
 };
 
-extern int netPartnerHpBars;        // local NET_HP_BARS_* value
+/* A seat's local view of the other ship. Only netStyleLocalView affects rendering; both seats are
+ * retained for online resumes. */
+typedef struct
+{
+	Uint8 opacity;      // percent, NET_OPACITY_MIN..NET_OPACITY_FULL
+	bool  shipOpacity;  // false fades only what the ship fires
+	Uint8 hpBars;       // one of NET_HP_BARS_*
+}
+NetShipView;
+
+NetShipView netStyleView(uint seat);
+void netStyleSetView(uint seat, NetShipView view);
+NetShipView netStyleLocalView(void);
+void netStyleSetLocalView(NetShipView view);
 
 // A sprite bank and opacity in sixteenths. A negative bank keeps the source bank.
 #define NET_STYLE_SOLID 16

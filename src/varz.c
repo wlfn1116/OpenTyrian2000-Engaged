@@ -2317,15 +2317,17 @@ void hud_ship_hp_bar_box(uint seat, int *l, int *r, int *t, int *b)
 
 void hud_draw_ship_hp_bars(void)
 {
+	const NetShipView view = netStyleLocalView();
+
 	// Linked Arcade already shows both ships on its shared HUD.
-	if (netPartnerHpBars == NET_HP_BARS_OFF || !isNetworkGame || !twoPlayerMode
+	if (view.hpBars == NET_HP_BARS_OFF || !isNetworkGame || !twoPlayerMode
 	    || split_arcade_mode())
 		return;
 
 	const uint seat = 1u - netStyleLocalSeat();
 	if (seat >= COUNTOF(player) || !player[seat].is_alive)
 		return;
-	if (netPartnerHpBars == NET_HP_BARS_ON_HIT && ship_hp_bar_hit[seat] <= 0)
+	if (view.hpBars == NET_HP_BARS_ON_HIT && ship_hp_bar_hit[seat] <= 0)
 		return;
 
 	int l, r, t, b;

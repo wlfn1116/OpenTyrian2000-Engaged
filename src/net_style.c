@@ -23,12 +23,51 @@
 #include "network.h"
 #include "player.h"
 
-int  netPartnerOpacity = NET_OPACITY_FULL;
-bool netPartnerShipOpacity = true;
-int  netPartnerHpBars = NET_HP_BARS_OFF;
-
 // One dye per player seat.
 static int shipColor[2] = { NET_SHIP_COLOR_NONE, NET_SHIP_COLOR_NONE };
+
+// Each seat owns the view chosen on that player's machine.
+#define NET_SHIP_VIEW_DEFAULT { .opacity = NET_OPACITY_FULL, .shipOpacity = true, .hpBars = NET_HP_BARS_OFF }
+
+static NetShipView shipView[2] = { NET_SHIP_VIEW_DEFAULT, NET_SHIP_VIEW_DEFAULT };
+
+static const NetShipView defaultView = NET_SHIP_VIEW_DEFAULT;
+
+static NetShipView clampView(NetShipView view)
+{
+	int opacity = view.opacity - view.opacity % NET_OPACITY_STEP;
+	if (opacity < NET_OPACITY_MIN)
+		opacity = NET_OPACITY_MIN;
+	else if (opacity > NET_OPACITY_FULL)
+		opacity = NET_OPACITY_FULL;
+	view.opacity = (Uint8)opacity;
+
+	if (view.hpBars >= NET_HP_BARS_COUNT)
+		view.hpBars = NET_HP_BARS_OFF;
+
+	return view;
+}
+
+NetShipView netStyleView(uint seat)
+{
+	return (seat < COUNTOF(shipView)) ? shipView[seat] : defaultView;
+}
+
+void netStyleSetView(uint seat, NetShipView view)
+{
+	if (seat < COUNTOF(shipView))
+		shipView[seat] = clampView(view);
+}
+
+NetShipView netStyleLocalView(void)
+{
+	return netStyleView(netStyleLocalSeat());
+}
+
+void netStyleSetLocalView(NetShipView view)
+{
+	netStyleSetView(netStyleLocalSeat(), view);
+}
 
 static bool previewActive = false;
 static int  previewColor = NET_SHIP_COLOR_NONE;
@@ -44,10 +83,10 @@ static int clampColor(int color)
 void netStyleSessionReset(void)
 {
 	for (unsigned int i = 0; i < COUNTOF(shipColor); ++i)
+	{
 		shipColor[i] = NET_SHIP_COLOR_NONE;
-	netPartnerOpacity = NET_OPACITY_FULL;
-	netPartnerShipOpacity = true;
-	netPartnerHpBars = NET_HP_BARS_OFF;
+		shipView[i] = defaultView;
+	}
 }
 
 void netStyleSetSeatColor(uint seat, int color)
@@ -107,6 +146,8 @@ uint netStyleLocalSeat(void)
 static NetShipStyle seatStyle(uint seat, bool body)
 {
 	int color = NET_SHIP_COLOR_NONE, opacity = NET_OPACITY_FULL;
+	// Only the local seat's view affects rendering.
+	const NetShipView local = netStyleLocalView();
 
 	if (previewActive)
 	{
@@ -117,7 +158,7 @@ static NetShipStyle seatStyle(uint seat, bool body)
 	{
 		color = netStyleSeatColor(seat);
 		if (seat != netStyleLocalSeat())
-			opacity = netPartnerOpacity;
+			opacity = local.opacity;
 	}
 	else
 	{
@@ -129,7 +170,7 @@ static NetShipStyle seatStyle(uint seat, bool body)
 	if (body && color != NET_SHIP_COLOR_NONE && !netStyleColorReserved(color))
 		style.bank = (Sint8)(color - 1);
 
-	if (opacity < NET_OPACITY_FULL && (!body || netPartnerShipOpacity))
+	if (opacity < NET_OPACITY_FULL && (!body || local.shipOpacity))
 	{
 		const int pct = (opacity < NET_OPACITY_MIN) ? NET_OPACITY_MIN : opacity;
 		style.opacity = (Uint8)((pct * NET_STYLE_SOLID + 50) / NET_OPACITY_FULL);

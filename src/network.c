@@ -73,7 +73,7 @@
 
 /* UDP session transport, handshake, discovery, and deterministic state exchange. */
 
-#define NET_VERSION       79           /* See doc/notes.md#wire-compatibility. */
+#define NET_VERSION       80           /* See doc/notes.md#wire-compatibility. */
 #define NET_PORT          1333         // UDP
 
 // PACKET_CONNECT layout past the 4-byte header: version, delay, episode mask, player number,
@@ -681,11 +681,21 @@ static int network_recv_one(void)
 						last_in_tick = SDL_GetTicks();
 						break;
 
-					case PACKET_PLAYER_COLOR:
+					case PACKET_PLAYER_LOOK:
 						// Repeated keep-alive announcements repair packet loss.
-						if (packet_temp->len >= 6 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
+						if (packet_temp->len >= 9 && packet_temp->data[4] >= 1 && packet_temp->data[4] <= 2
 						    && packet_temp->data[4] != (Uint8)thisPlayerNum)
-							netStyleSetSeatColor(packet_temp->data[4] - 1u, packet_temp->data[5]);
+						{
+							const uint seat = packet_temp->data[4] - 1u;
+							netStyleSetSeatColor(seat, packet_temp->data[5]);
+
+							// Cache the sender's view for future saves; it does not affect this machine.
+							NetShipView view;
+							view.opacity = packet_temp->data[6];
+							view.shipOpacity = packet_temp->data[7] != 0;
+							view.hpBars = packet_temp->data[8];
+							netStyleSetView(seat, view);
+						}
 
 						last_in_tick = SDL_GetTicks();
 						break;
@@ -855,7 +865,7 @@ int network_check(void)
 			SDLNet_Write32(SDL_GetTicks(), &packet_out_temp->data[4]);
 			network_send_no_ack(8);
 
-			network_player_color_publish();  // repeat cosmetic state on the keep-alive beat
+			network_player_look_publish();  // repeat cosmetic state on the keep-alive beat
 
 			keep_alive_tick = SDL_GetTicks();
 		}
@@ -2816,15 +2826,20 @@ void network_sa_ship_reset(void)
 	net_sa_ship_peer_saw_us = false;
 }
 
-void network_player_color_publish(void)
+void network_player_look_publish(void)
 {
 	if (!isNetworkGame || !connected)
 		return;
 
-	network_prepare(PACKET_PLAYER_COLOR);
+	const NetShipView view = netStyleLocalView();
+
+	network_prepare(PACKET_PLAYER_LOOK);
 	packet_out_temp->data[4] = (Uint8)thisPlayerNum;
 	packet_out_temp->data[5] = (Uint8)netStyleSeatColor(netStyleLocalSeat());
-	network_send_no_ack(6);
+	packet_out_temp->data[6] = view.opacity;
+	packet_out_temp->data[7] = view.shipOpacity ? 1 : 0;
+	packet_out_temp->data[8] = view.hpBars;
+	network_send_no_ack(9);
 }
 
 void network_sa_ship_publish(int ship, bool seen_peer)

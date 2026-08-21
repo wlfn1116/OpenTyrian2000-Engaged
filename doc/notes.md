@@ -612,8 +612,9 @@ Recent compatibility points:
 | 75 | The End excludes Dead Generator and makes Static rare |
 | 76 | Homing modifiers exclude permanent scenery, pickups, and wreckage |
 | 77 | The End rolls one homing tier |
-| 78 | Ship dye announcements (`PACKET_PLAYER_COLOR`) |
+| 78 | Ship dye announcements (`PACKET_PLAYER_LOOK`) |
 | 79 | Save records carry both ships' dyes |
+| 80 | Look packets and saves carry per-seat views |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.
@@ -624,11 +625,14 @@ that still constrain current code.
 sidekicks; shot styles never take the ship dye. Offline styles are always plain.
 
 - Dyes belong to player seats. Repeat the unacknowledged
-  `PACKET_PLAYER_COLOR` on the keep-alive beat so packet loss repairs itself.
+  `PACKET_PLAYER_LOOK` on the keep-alive beat so packet loss repairs itself.
   Store both dyes in `JE_SaveFileType` so a resumed peer receives them.
-- Opacity belongs to the local machine and applies only to the other seat.
-  **Apply to Ship** may spare the body without sparing its shots. Store these
-  settings beside each save slot, outside the networked record.
+- Opacity, **Apply to Ship**, and **HP Bars** form one `NetShipView` per seat.
+  Only `netStyleLocalView()` affects rendering. **Apply to Ship** may spare the
+  body without sparing its shots.
+- Announce and store both seats' views so either player can host a resume.
+  Two-player records carry them; one-player records must leave the session view
+  alone.
 - Use `thisPlayerNum` in `netStyleLocalSeat()`. The Linked Arcade sidebar helper
   names player one on both machines.
 - Kill-fire tint overrides dye. `netStyleColorReserved()` removes its four banks

@@ -640,6 +640,9 @@ During an online game, open **Options > Online** at the outpost.
 
 Linked Arcade omits HP Bars because its shared HUD already shows both players.
 
+Opacity and HP Bars affect only your screen. Online saves keep both players'
+choices, so resuming preserves each view regardless of who hosts.
+
 ### Saving and resuming
 
 Save from the shop with **Options > Save Game** or Alt+S. A save writes only to

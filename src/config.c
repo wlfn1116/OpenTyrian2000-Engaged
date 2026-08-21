@@ -334,44 +334,6 @@ void save_slot_set_online_player(JE_byte slot, uint playerNum)
 		saveSlotPlayerTwo &= (Uint16)~bit;
 }
 
-// Per-slot view settings kept outside the networked save record.
-static struct
-{
-	JE_byte opacity;
-	bool    shipOpacity;
-	JE_byte hpBars;
-}
-saveSlotView[SAVE_FILES_NUM];
-
-void save_slot_online_view(JE_byte slot, int *opacity, bool *shipOpacity, int *hpBars)
-{
-	const bool known = (slot >= 1 && slot <= SAVE_FILES_NUM);
-
-	if (opacity != NULL)
-		*opacity = known ? saveSlotView[slot - 1].opacity : NET_OPACITY_FULL;
-	if (shipOpacity != NULL)
-		*shipOpacity = known ? saveSlotView[slot - 1].shipOpacity : true;
-	if (hpBars != NULL)
-		*hpBars = known ? saveSlotView[slot - 1].hpBars : NET_HP_BARS_OFF;
-}
-
-void save_slot_set_online_view(JE_byte slot, int opacity, bool shipOpacity, int hpBars)
-{
-	if (slot < 1 || slot > SAVE_FILES_NUM)
-		return;
-
-	// Snap hand-edited opacity to a picker step.
-	opacity -= opacity % NET_OPACITY_STEP;
-	if (opacity < NET_OPACITY_MIN)  opacity = NET_OPACITY_MIN;
-	if (opacity > NET_OPACITY_FULL) opacity = NET_OPACITY_FULL;
-	if (hpBars < 0 || hpBars >= NET_HP_BARS_COUNT)
-		hpBars = NET_HP_BARS_OFF;
-
-	saveSlotView[slot - 1].opacity = (JE_byte)opacity;
-	saveSlotView[slot - 1].shipOpacity = shipOpacity;
-	saveSlotView[slot - 1].hpBars = (JE_byte)hpBars;
-}
-
 /* Enhancement settings (persisted in the [enhancements] config section). */
 int bossBarStyle   = BOSS_BAR_ENHANCED;
 int bossBarLayout  = BOSS_BAR_TOP;
@@ -1587,10 +1549,16 @@ void JE_saveGame(JE_byte slot, const char *name)
 	saveFiles[slot - 1].cheatInfiniteShields = cheatInfiniteShields;
 	saveFiles[slot - 1].cheatInfiniteArmor = cheatInfiniteArmor;
 	saveFiles[slot - 1].expertMode = expertMode;
-	// Dyes travel in the record; partner view settings remain local to this slot.
+	// Store dyes and views by seat so either player can host a resume.
 	for (uint p = 0; p < COUNTOF(saveFiles[slot - 1].shipColor); ++p)
+	{
 		saveFiles[slot - 1].shipColor[p] = (JE_byte)netStyleSeatColor(p);
-	save_slot_set_online_view(slot, netPartnerOpacity, netPartnerShipOpacity, netPartnerHpBars);
+
+		const NetShipView view = netStyleView(p);
+		saveFiles[slot - 1].viewOpacity[p] = view.opacity;
+		saveFiles[slot - 1].viewShipOpacity[p] = view.shipOpacity ? 1 : 0;
+		saveFiles[slot - 1].viewHpBars[p] = view.hpBars;
+	}
 
 	strcpy(saveFiles[slot-1].name, name);
 
@@ -1624,8 +1592,6 @@ void JE_saveGame(JE_byte slot, const char *name)
 void JE_loadGame(JE_byte slot)
 {
 	JE_loadGameRecord(&saveFiles[slot-1], (slot-1) > 10);
-	// Peer-supplied records do not replace this machine's view settings.
-	save_slot_online_view(slot, &netPartnerOpacity, &netPartnerShipOpacity, &netPartnerHpBars);
 }
 
 void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
@@ -1696,6 +1662,20 @@ void JE_loadGameRecord(const JE_SaveFileType *rec, bool twoP)
 
 	for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
 		netStyleSetSeatColor(p, rec->shipColor[p]);
+
+	// Views are seat-indexed because thisPlayerNum may be assigned after loading.
+	// One-player records have no online view and leave the current session alone.
+	if (twoP)
+	{
+		for (uint p = 0; p < COUNTOF(rec->viewOpacity); ++p)
+		{
+			NetShipView view;
+			view.opacity = rec->viewOpacity[p];
+			view.shipOpacity = rec->viewShipOpacity[p] != 0;
+			view.hpBars = rec->viewHpBars[p];
+			netStyleSetView(p, view);
+		}
+	}
 
 	autoFireSpecial = rec->autoFireSpecial;
 	chargeSidekickAutofire = rec->chargeSidekickAutofire;
@@ -2006,14 +1986,18 @@ static void save_slot_write(ConfigSection *section, const JE_SaveFileType *rec, 
 			config_set_int_option(section, "p2_weapon_mode", (rec->dualShipTag >> 12) & 0x0f);
 		}
 		config_set_int_option(section, "online_seat", (int)save_slot_online_player(slot));
-		config_set_int_option(section, "p1_ship_color", rec->shipColor[0]);
-		config_set_int_option(section, "p2_ship_color", rec->shipColor[1]);
-		int slotOpacity, slotHpBars;
-		bool slotShipOpacity;
-		save_slot_online_view(slot, &slotOpacity, &slotShipOpacity, &slotHpBars);
-		config_set_int_option(section, "online_opacity", slotOpacity);
-		config_set_int_option(section, "online_ship_opacity", slotShipOpacity ? 1 : 0);
-		config_set_int_option(section, "online_hp_bars", slotHpBars);
+		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
+		{
+			char key[32];
+			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
+			config_set_int_option(section, key, rec->shipColor[p]);
+			snprintf(key, sizeof(key), "p%u_online_opacity", p + 1);
+			config_set_int_option(section, key, rec->viewOpacity[p]);
+			snprintf(key, sizeof(key), "p%u_online_ship_opacity", p + 1);
+			config_set_int_option(section, key, rec->viewShipOpacity[p] ? 1 : 0);
+			snprintf(key, sizeof(key), "p%u_online_hp_bars", p + 1);
+			config_set_int_option(section, key, rec->viewHpBars[p]);
+		}
 	}
 	else
 	{
@@ -2087,16 +2071,20 @@ static void save_slot_read(JE_SaveFileType *rec, const ConfigSection *section, J
 		save_slot_set_online_player(slot, (uint)save_get_int(section, "online_seat", 1));
 		for (uint p = 0; p < COUNTOF(rec->shipColor); ++p)
 		{
-			char key[16];
+			char key[32];
 			snprintf(key, sizeof(key), "p%u_ship_color", p + 1);
 			const int color = save_get_int(section, key, NET_SHIP_COLOR_NONE);
 			rec->shipColor[p] = (JE_byte)((color < NET_SHIP_COLOR_NONE || color > NET_SHIP_COLORS)
 			                              ? NET_SHIP_COLOR_NONE : color);
+
+			// netStyleSetView snaps a hand-edited opacity to a picker step; keep the record raw.
+			snprintf(key, sizeof(key), "p%u_online_opacity", p + 1);
+			rec->viewOpacity[p] = (JE_byte)save_get_int(section, key, NET_OPACITY_FULL);
+			snprintf(key, sizeof(key), "p%u_online_ship_opacity", p + 1);
+			rec->viewShipOpacity[p] = (JE_byte)(save_get_int(section, key, 1) != 0);
+			snprintf(key, sizeof(key), "p%u_online_hp_bars", p + 1);
+			rec->viewHpBars[p] = (JE_byte)save_get_int(section, key, NET_HP_BARS_OFF);
 		}
-		save_slot_set_online_view(slot,
-		                          save_get_int(section, "online_opacity", NET_OPACITY_FULL),
-		                          save_get_int(section, "online_ship_opacity", 1) != 0,
-		                          save_get_int(section, "online_hp_bars", NET_HP_BARS_OFF));
 	}
 	else
 	{
@@ -2253,8 +2241,6 @@ static bool save_file_load(void)
 
 	save_reset();
 	saveSlotPlayerTwo = 0;   // the slots' own online_seat keys are the record from here on
-	for (int z = 0; z < SAVE_FILES_NUM; ++z)
-		save_slot_set_online_view((JE_byte)(z + 1), NET_OPACITY_FULL, true, NET_HP_BARS_OFF);
 	for (int z = 0; z < SAVE_FILES_NUM; z++)
 	{
 		char name[8];
@@ -2461,15 +2447,16 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	two = one;
 	two.score2 = 123456789012LL;
 	two.dualShipTag = 0xc74f0000u | 0x0a | (0x0b << 4) | (2 << 8) | (3 << 12);   // co-op, both extras
+	// Use distinct per-seat values to expose missing two-player keys.
+	for (uint p = 0; p < COUNTOF(two.viewOpacity); ++p)
+	{
+		two.viewOpacity[p] = (JE_byte)(NET_OPACITY_MIN + p * NET_OPACITY_STEP);
+		two.viewShipOpacity[p] = (JE_byte)(p == 0);
+		two.viewHpBars[p] = (JE_byte)(p == 0 ? NET_HP_BARS_ON_HIT : NET_HP_BARS_ALWAYS);
+	}
 
 	const uint savedSeat = save_slot_online_player(15);
 	save_slot_set_online_player(15, 2);
-
-	// Use non-default local view values to catch missing keys.
-	int savedOpacity, savedBars;
-	bool savedShipOpacity;
-	save_slot_online_view(15, &savedOpacity, &savedShipOpacity, &savedBars);
-	save_slot_set_online_view(15, NET_OPACITY_MIN, false, NET_HP_BARS_ON_HIT);
 
 	const char *fault = NULL;
 	Config config;
@@ -2491,7 +2478,6 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	else
 	{
 		save_slot_set_online_player(15, 1);
-		save_slot_set_online_view(15, NET_OPACITY_FULL, true, NET_HP_BARS_OFF);
 
 		save_slot_read(&back, sOne, 3);
 		if (memcmp(&one, &back, sizeof(one)) != 0)
@@ -2502,11 +2488,13 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 		if (fault == NULL && save_slot_online_player(15) != 2)
 			fault = "the online seat did not survive the round trip";
 
-		int opacity, bars;
-		bool shipOpacity;
-		save_slot_online_view(15, &opacity, &shipOpacity, &bars);
-		if (fault == NULL && (opacity != NET_OPACITY_MIN || shipOpacity || bars != NET_HP_BARS_ON_HIT))
-			fault = "the online look did not survive the round trip";
+		// Report missing view keys separately from the full-record comparison.
+		if (fault == NULL)
+			for (uint p = 0; p < COUNTOF(two.viewOpacity); ++p)
+				if (back.viewOpacity[p] != two.viewOpacity[p]
+				    || back.viewShipOpacity[p] != two.viewShipOpacity[p]
+				    || back.viewHpBars[p] != two.viewHpBars[p])
+					fault = "the online look did not survive the round trip";
 
 		config_remove_option(sOne, "p1_cash");
 		config_set_string_option(sOne, "level", "junk");
@@ -2519,7 +2507,6 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	}
 	config_deinit(&config);
 	save_slot_set_online_player(15, savedSeat);
-	save_slot_set_online_view(15, savedOpacity, savedShipOpacity, savedBars);
 
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
@@ -2725,8 +2712,13 @@ void save_record_pack(Uint8 *buf, const JE_SaveFileType *rec)
 	*p++ = rec->cheatInfiniteShields != false;
 	*p++ = rec->cheatInfiniteArmor != false;
 	*p++ = rec->expertMode != false;
-	*p++ = rec->shipColor[0];
-	*p++ = rec->shipColor[1];
+	for (uint i = 0; i < COUNTOF(rec->shipColor); ++i)
+	{
+		*p++ = rec->shipColor[i];
+		*p++ = rec->viewOpacity[i];
+		*p++ = rec->viewShipOpacity[i];
+		*p++ = rec->viewHpBars[i];
+	}
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
@@ -2775,8 +2767,13 @@ void save_record_unpack(JE_SaveFileType *rec, const Uint8 *buf)
 	rec->cheatInfiniteShields = *p++ != 0;
 	rec->cheatInfiniteArmor = *p++ != 0;
 	rec->expertMode = *p++ != 0;
-	rec->shipColor[0] = *p++;
-	rec->shipColor[1] = *p++;
+	for (uint i = 0; i < COUNTOF(rec->shipColor); ++i)
+	{
+		rec->shipColor[i] = *p++;
+		rec->viewOpacity[i] = *p++;
+		rec->viewShipOpacity[i] = *p++;
+		rec->viewHpBars[i] = *p++;
+	}
 
 	assert(p - buf == SAVE_RECORD_PACKED_SIZE);
 }
