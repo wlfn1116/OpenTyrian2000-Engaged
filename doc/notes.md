@@ -429,9 +429,10 @@ Milestones use the upcoming zone:
 - Other multiples of 50 offer S+ and S++.
 - Multiples of 100 offer one END, two S+++, and two S++.
 - Multiples of 100 exclude every scroll-pace modifier.
-- The END route never carries Dead Generator. Static has a 1-in-22 draw.
-- One draw gives the END route a homing tier: Kamikaze at 1-in-33, Light Homing at
-  3-in-33. The two never appear together.
+- The END route never carries Dead Generator. Static Discharge rolls at 1-in-22;
+  Topsy Turvy rolls at 1-in-17.
+- One draw chooses at most one homing tier: Light Homing at 1-in-2 or Kamikaze at
+  1-in-33.
 
 Course order uses cached danger and payout. Purchases and Sabotage update the
 chosen card without changing its original sort key.
@@ -618,6 +619,8 @@ Recent compatibility points:
 | 78 | Ship dye announcements |
 | 79 | Save records carry both ships' dyes |
 | 80 | Look packets and saves carry per-seat views |
+| 81 | The End makes Topsy Turvy rare |
+| 82 | The End rolls Light Homing on a coin flip |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.

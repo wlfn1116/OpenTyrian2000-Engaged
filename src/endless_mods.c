@@ -629,8 +629,9 @@ const EndlessTheme endlessRareThemes[] = {
 #define ENDLESS_THEEND_CORE (ENDLESS_MOD_FORTIFIED | ENDLESS_MOD_FRENZY | ENDLESS_MOD_SWIFT \
                              | ENDLESS_MOD_DEVASTATING | ENDLESS_MOD_ENRAGE)
 
-// Static is rare on The End; Dead Generator is excluded from its source pools.
+// Keep separate draws for Static and Topsy Turvy so later RNG positions stay stable.
 #define ENDLESS_THEEND_STATIC_ODDS 22
+#define ENDLESS_THEEND_TOPSY_ODDS  17
 
 Uint64 endlessMakeTheEndMods(void)
 {
@@ -643,7 +644,7 @@ Uint64 endlessMakeTheEndMods(void)
 	// Ship hazards are independent. Gravity scales with Sluggish so full throttle can still climb.
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_GRAVITY;
-	if (endlessRand() % 2)
+	if (endlessRand() % ENDLESS_THEEND_TOPSY_ODDS == 0)
 		m |= ENDLESS_MOD_TOPSY;
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_SLUGGISH;
@@ -652,7 +653,6 @@ Uint64 endlessMakeTheEndMods(void)
 	if (endlessRand() % 2)
 		m |= ENDLESS_MOD_MARTYRDOM;
 	const bool corrects = (endlessRand() % 2) != 0;
-	// Keep Static's own draw here to preserve later RNG positions.
 	if (endlessRand() % ENDLESS_THEEND_STATIC_ODDS == 0)
 		m |= ENDLESS_MOD_STATIC;
 	if (endlessRand() % 2)
@@ -670,12 +670,11 @@ Uint64 endlessMakeTheEndMods(void)
 	if (corrects)
 		m |= rung;
 
-	// At most one homing tier, from a single draw: Kamikaze on 1 in 33, Light Homing on 1 in 11.
-	// The two are exclusive here as they are in the ordinary pool, where they share a tier group.
-	const unsigned homing = endlessRand() % 33;
-	if (homing == 0)
+	// One draw keeps Kamikaze (2/66) and Light Homing (33/66) mutually exclusive.
+	const unsigned homing = endlessRand() % 66;
+	if (homing < 2)
 		m |= ENDLESS_MOD_KAMIKAZE;
-	else if (homing < 4)
+	else if (homing < 35)
 		m |= ENDLESS_MOD_HOMING;
 
 	return m;

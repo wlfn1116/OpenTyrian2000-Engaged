@@ -531,14 +531,13 @@ static void qa_test_courses(void)
 	printf("# course properties: 768 seeds, %u launchable routes\n", routes);
 }
 
-/* The End excludes Dead Generator, gives Static a rare independent roll, and rolls at most one
- * homing tier: Light Homing on 1 in 11 and Kamikaze on 1 in 33. */
+// Check The End's exclusions and probability bands across seeded runs.
 static void qa_test_finale_mods(void)
 {
 	static const int depths[] = { 99, 199, 299, 399 };   // the depth a zone-100 finale is charted at
 	const unsigned samples = 2048;
 	char seed[ENDLESS_SEED_MAXLEN];
-	unsigned statics = 0, homing = 0, kamikaze = 0;
+	unsigned statics = 0, topsy = 0, homing = 0, kamikaze = 0;
 	bool deadgen = false, built = true, bothTiers = false;
 
 	for (unsigned sample = 0; sample < samples; ++sample)
@@ -554,6 +553,8 @@ static void qa_test_finale_mods(void)
 			deadgen = true;
 		if (mods & ENDLESS_MOD_STATIC)
 			++statics;
+		if (mods & ENDLESS_MOD_TOPSY)
+			++topsy;
 		if (mods & ENDLESS_MOD_HOMING)
 			++homing;
 		if (mods & ENDLESS_MOD_KAMIKAZE)
@@ -566,15 +567,17 @@ static void qa_test_finale_mods(void)
 	qa_check(!deadgen, "no finale runs the generator dead");
 	qa_check(statics * 20 < samples, "Static lands on fewer than one finale in twenty");
 	qa_check(statics > 0, "...and a finale can still roll it");
+	qa_check(topsy * 10 < samples && topsy * 34 > samples,
+	         "the upside-down view lands on about one finale in seventeen");
 	qa_check(!bothTiers, "no finale carries two homing tiers at once");
-	// Wide bands: the draw is 3-in-33 and 1-in-33, so hold the shape rather than the exact count.
-	qa_check(homing * 16 > samples && homing * 6 < samples,
-	         "Light Homing lands on about one finale in eleven");
+	// Wide bands check the distribution without pinning exact counts.
+	qa_check(homing * 3 > samples && homing * 3 < samples * 2,
+	         "Light Homing lands on about one finale in two");
 	qa_check(kamikaze * 66 > samples && kamikaze * 16 < samples,
 	         "Kamikaze lands on about one finale in thirty-three");
 
-	printf("# finale modifiers: %u seeds, Static on %u, Homing on %u, Kamikaze on %u\n",
-	       samples, statics, homing, kamikaze);
+	printf("# finale modifiers: %u seeds, Static %u, Topsy %u, Homing %u, Kamikaze %u\n",
+	       samples, statics, topsy, homing, kamikaze);
 }
 
 /* The Base Level rule. Same puts every route of a slate onto one level, leaving the modifiers as
