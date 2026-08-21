@@ -8,7 +8,7 @@ the DOS game Tyrian 2000.
 
 This fork adds:
 
-- a wider playfield and smooth high-refresh rendering;
+- a wider 16:9 playfield and smooth high-refresh rendering;
 - Endless mode, built from the original levels;
 - two-player online play across every mode;
 - a custom weapon editor;
