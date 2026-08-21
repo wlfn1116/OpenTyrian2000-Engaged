@@ -50,6 +50,7 @@
 #include "qa.h"
 #include "render_list.h"
 #include "rollback.h"
+#include "touch_ui.h"
 #include "net_rollback.h"
 #include "shots.h"
 #include "sndmast.h"
@@ -5282,6 +5283,10 @@ void JE_debugMenu(bool center)
 		                 : "Left/Right change   Enter use   Esc close",
 		             small_font, centered, 15, -3);
 #endif
+
+		// A scrolling list, so a tap only reaches the rows already drawn: this screen keeps
+		// the cursor keys.
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();

@@ -847,17 +847,23 @@ that would do nothing if you pressed it.
 | --- | --- | --- |
 | Flying a level | Pause, left sidekick | Rear weapon mode, both sidekicks, right sidekick |
 | Any menu | Back | None |
-| A menu you can move through | Back, left, right | Up, down, select |
+| A list too long to fit | Back, left, right | Up, down, confirm |
 | Jukebox | Back, previous track | Next track |
-| Rear Gun in the shop | Back, left, right | Rear weapon mode, up, down, select |
+| Rear Gun in the shop | Back | Rear weapon mode |
 | Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
 
 Back is always the top left button and always does what Esc does on a keyboard,
-so no screen can trap you. The arrow and select buttons appear on every screen
-that reads the menu keys, which is the same test that decides whether a
-controller can drive it; holding an arrow repeats it, so a long list does not
-need one tap per row. Destruct holds its aim, power, and fire buttons the way a
-key would, and steps the unit and weapon one press at a time.
+so no screen can trap you.
+
+In an ordinary menu that is the only button, because a tap is already a click:
+menu rows, sliders and pickers all follow your finger. Cursor keys only appear
+where tapping cannot do the job, which is a list longer than its frame — the
+debug screens, and the shop's buy and sell list when the outpost is carrying
+more than six items. There a tap can only reach the rows currently drawn, so
+those screens add up, down, left, right and confirm. Holding an arrow repeats it.
+
+Destruct holds its aim, power, and fire buttons the way a key would, and steps
+the unit and weapon one press at a time.
 
 Rows line up across the two sides: left sits level with up, right with down, and
 whatever that screen treats as its main action sits on the bottom row.

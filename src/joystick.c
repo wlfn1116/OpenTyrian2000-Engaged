@@ -267,11 +267,8 @@ void push_joysticks_as_keyboard(void)
 	if (rollback_resim)
 		return;
 
-	// Every screen that wants menu-style keys calls this, which makes it the one honest
-	// signal for "this screen can be navigated". The touch ports show their arrow and
-	// select buttons only while it keeps arriving, so a screen that reads nothing is not
-	// given controls that do nothing.
-	touch_ui_menu_navigable();
+	// Screens that want menu-style keys all call this, immediately before the pump they
+	// read, which is exactly where the on-screen buttons' keys have to land.
 	touch_ui_flush_keys();
 
 	poll_joysticks();

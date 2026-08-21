@@ -53,7 +53,6 @@ typedef enum
 typedef enum
 {
 	GATE_ALWAYS,
-	GATE_NAV,        // the screen reports that it reads the menu keys
 	GATE_SIDEKICKS   // the player asked for the sidekick buttons (Enhancements > HUD)
 } TouchGate;
 
@@ -85,14 +84,27 @@ static const TouchButtonDef LAYOUT_GAME[] =
 	{ TOUCH_BTN_SIDEKICK_R,    ICON_POD_R,     1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_SIDEKICKS },
 };
 
+/* Back alone. Every ordinary menu hit-tests the pointer -- rows, sliders, pickers -- so a
+ * tap is already a click and arrow buttons would only duplicate a finger. Esc is the
+ * exception: nothing on screen expresses it, which is what made a screen without it a dead
+ * end. */
 static const TouchButtonDef LAYOUT_MENU[] =
 {
+	{ TOUCH_BTN_ESC, ICON_CLOSE, -1, 0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+};
+
+/* The debug screens are scrolling lists, and there a tap only reaches the rows already
+ * drawn, so the cursor keys are the only way to the rest. Left and right come too: tapping
+ * a row advances its value, and reversing that is a right-click no touchscreen has. Confirm
+ * completes the set, so a row can be used without tapping it. */
+static const TouchButtonDef LAYOUT_LIST[] =
+{
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
-	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_LEFT,   true,  GATE_NAV },
-	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_RIGHT,  true,  GATE_NAV },
-	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     true,  GATE_NAV },
-	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   true,  GATE_NAV },
-	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_NAV },
+	{ TOUCH_BTN_LEFT,   ICON_LEFT,   -1, -3, SDL_SCANCODE_LEFT,   true,  GATE_ALWAYS },
+	{ TOUCH_BTN_RIGHT,  ICON_RIGHT,  -1, -2, SDL_SCANCODE_RIGHT,  true,  GATE_ALWAYS },
+	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     true,  GATE_ALWAYS },
+	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   true,  GATE_ALWAYS },
+	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
@@ -136,7 +148,6 @@ static bool layout_valid;
 
 static TouchLayout requested_layout;
 static Uint32 requested_at_ms;
-static Uint32 navigable_at_ms;
 static Uint8 requested_extra;
 static Uint32 extra_at_ms;
 static Uint32 presented_signature;
@@ -185,7 +196,6 @@ static Uint32 desired_signature(Uint32 now_ms)
 		layout = requested_layout;
 
 	Uint32 sig = (Uint32)layout;
-	sig = sig * 31u + (fresh(navigable_at_ms, now_ms) ? 1u : 0u);
 	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
 	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
 	sig = sig * 31u + (palette_fading() ? 1u : 0u);
@@ -216,11 +226,6 @@ void touch_ui_set_extra(TouchButton button)
 {
 	requested_extra = (Uint8)button;
 	extra_at_ms = SDL_GetTicks();
-}
-
-void touch_ui_menu_navigable(void)
-{
-	navigable_at_ms = SDL_GetTicks();
 }
 
 /* Where the buttons live, in preference order: the pillarbox bar beside the frame, which
@@ -296,6 +301,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 
 	switch (layout)
 	{
+	case TOUCH_LAYOUT_LIST:     defs = LAYOUT_LIST;     count = (int)COUNTOF(LAYOUT_LIST);     break;
 	case TOUCH_LAYOUT_JUKEBOX:  defs = LAYOUT_JUKEBOX;  count = (int)COUNTOF(LAYOUT_JUKEBOX);  break;
 	case TOUCH_LAYOUT_DESTRUCT: defs = LAYOUT_DESTRUCT; count = (int)COUNTOF(LAYOUT_DESTRUCT); break;
 	case TOUCH_LAYOUT_GAME:     defs = LAYOUT_GAME;     count = (int)COUNTOF(LAYOUT_GAME);     break;
@@ -303,14 +309,11 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 	default:                    defs = LAYOUT_MENU;     count = (int)COUNTOF(LAYOUT_MENU);     break;
 	}
 
-	const bool navigable = fresh(navigable_at_ms, now_ms);
 	const TouchGeometry g = measure(frame, out_w, out_h);
 
 	shown_count = 0;
 	for (int i = 0; i < count && shown_count < LAYOUT_MAX_BUTTONS; ++i)
 	{
-		if (defs[i].gate == GATE_NAV && !navigable)
-			continue;
 		if (defs[i].gate == GATE_SIDEKICKS && !touchSidekickButtons)
 			continue;
 

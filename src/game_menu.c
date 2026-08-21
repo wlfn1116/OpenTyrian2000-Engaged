@@ -3402,6 +3402,12 @@ void JE_itemScreen(void)
 					}
 				}
 
+				// The buy/sell list drops to five visible rows once it overflows
+				// (upgradeSubVisibleRows), and a tap can only reach the rows drawn, so an
+				// overflowing list gets the cursor keys. A list that fits does not.
+				if (curMenu == MENU_UPGRADE_SUB && upgradeSubVisibleRows() < 6)
+					touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
 				menuWaitWithSmoothCursor();  // was wait_delay(); keeps the cursor smooth
 
 				push_joysticks_as_keyboard();
@@ -7126,6 +7132,9 @@ static bool endlessDebugScreen(bool jumpMode)
 			draw_font_hv(VGAScreen, mid_x, py1 - 18, help, small_font, centered, 15, 1);
 		draw_font_hv(VGAScreen, mid_x, py1 - 9, screenKeys[screen], small_font, centered, 15, -3);
 
+		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
+
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();
 		JE_showVGA();
@@ -7785,6 +7794,9 @@ bool JE_debugLevelSelect(void)
 		draw_font_hv(VGAScreen, mid_x, py1 - 9, "Enter Play   L/R Episode   Esc Back",
 		             small_font, centered, 15, -3);
 #endif
+
+		// A scrolling list: this screen keeps the cursor keys (see JE_debugMenu).
+		touch_ui_set_layout(TOUCH_LAYOUT_LIST);
 
 		mouseCursor = MOUSE_POINTER_NORMAL;
 		JE_mouseStart();

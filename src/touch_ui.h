@@ -40,6 +40,7 @@ typedef enum
 {
 	TOUCH_LAYOUT_GAME,      // chosen automatically while a level is being flown
 	TOUCH_LAYOUT_MENU,      // the default everywhere else
+	TOUCH_LAYOUT_LIST,      // a scrolling list a tap cannot reach all of: the debug screens
 	TOUCH_LAYOUT_JUKEBOX,
 	TOUCH_LAYOUT_DESTRUCT
 } TouchLayout;
@@ -54,11 +55,6 @@ void touch_ui_set_layout(TouchLayout layout);
  * menu set does not cover. Re-asserted every frame and stale-checked like a layout request,
  * so a screen only has to call it while the key is live. */
 void touch_ui_set_extra(TouchButton button);
-
-/* Report that the current screen reads the menu keys. push_joysticks_as_keyboard() calls
- * this, so every screen already wired for a controller gets the navigation buttons without
- * knowing they exist, and a screen that reads nothing shows only Esc. */
-void touch_ui_menu_navigable(void);
 
 /* Push the keys the on-screen buttons have queued. Called from push_joysticks_as_keyboard,
  * which every navigable screen runs immediately before the pump it reads: a key pushed from
@@ -105,7 +101,6 @@ void touch_ui_idle_repaint(void);
  * the touch ports. Each unused macro argument disappears with the expansion, which is why
  * the button and layout names need no definition here. */
 #define touch_ui_render(renderer, frame)  ((void)0)
-#define touch_ui_menu_navigable()         ((void)0)
 #define touch_ui_flush_keys()             ((void)0)
 #define touch_ui_idle_repaint()           ((void)0)
 #define touch_ui_set_layout(layout)       ((void)0)
