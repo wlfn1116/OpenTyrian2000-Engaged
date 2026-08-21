@@ -297,10 +297,12 @@ jobs:
           list=$(unzip -Z1 OpenTyrian2000-Engaged-Android.apk)
           for want in lib/arm64-v8a/libmain.so lib/armeabi-v7a/libmain.so \
                       lib/arm64-v8a/libSDL2.so lib/arm64-v8a/libSDL2_net.so \
-                      assets/data/tyrian1.lvl assets/data/filelist.txt \
-                      res/mipmap-xxxhdpi/ic_launcher_foreground.png; do
+                      assets/data/tyrian1.lvl assets/data/filelist.txt; do
             printf '%s\n' "$list" | grep -qx "$want" || { echo "missing $want"; exit 1; }
           done
+          # aapt2 rewrites resource paths: density qualifiers gain a -v4 suffix and names
+          # can be shortened, so match the launcher icon by name rather than by path.
+          printf '%s\n' "$list" | grep -q 'ic_launcher' || { echo "no launcher icon in the APK"; exit 1; }
 
       # Already a compressed archive; skip GitHub's wrapper compression.
       - uses: actions/upload-artifact@v6
@@ -369,7 +371,8 @@ jobs:
           app=ios/build/OpenTyrian2000.app
           test -x "$app/OpenTyrian2000" || { echo "no app binary at $app"; exit 1; }
           test -f "$app/data/tyrian1.lvl" || { echo "game data missing from the bundle"; exit 1; }
-          test -f "$app/AppIcon60x60@3x.png" || { echo "app icon missing from the bundle"; exit 1; }
+          test -f "$app/AppIcon60x60@3x.png" || { echo "flat app icon missing from the bundle"; exit 1; }
+          test -f "$app/Assets.car" || { echo "icon asset catalog missing from the bundle"; exit 1; }
           rm -rf Payload
           mkdir Payload
           cp -R "$app" Payload/

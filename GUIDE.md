@@ -849,6 +849,7 @@ that would do nothing if you pressed it.
 | Any menu | Back | None |
 | A menu you can move through | Back, left, right | Up, down, select |
 | Jukebox | Back, previous track | Next track |
+| Rear Gun in the shop | Back, left, right | Rear weapon mode, up, down, select |
 | Destruct | Back, aim left, aim right, change unit | Next weapon, more power, less power, fire |
 
 Back is always the top left button and always does what Esc does on a keyboard,

@@ -74,6 +74,26 @@ void set_palette(Palette colors, unsigned int first_color, unsigned int last_col
 	}
 }
 
+/* Brightest component anywhere in the live palette. A real palette always holds something
+ * near white, so this reads 255 during play and falls to 0 as a fade reaches black, which
+ * is what anything drawn outside the palettized frame needs in order to fade with it. */
+Uint8 palette_peak(void)
+{
+	Uint8 peak = 0;
+
+	for (uint i = 0; i < 256; ++i)
+	{
+		if (palette[i].r > peak)
+			peak = palette[i].r;
+		if (palette[i].g > peak)
+			peak = palette[i].g;
+		if (palette[i].b > peak)
+			peak = palette[i].b;
+	}
+
+	return peak;
+}
+
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color)
 {
 	for (uint i = first_color; i <= last_color; ++i)

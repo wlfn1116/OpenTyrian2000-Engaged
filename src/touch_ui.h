@@ -32,6 +32,7 @@ typedef enum
 	TOUCH_BTN_SIDEKICK_L,     // in a level, optional: fire the left sidekick
 	TOUCH_BTN_SIDEKICK_R,
 	TOUCH_BTN_SIDEKICK_BOTH,
+	TOUCH_BTN_REAR_MODE,      // shop preview: cycle the rear weapon mode, the ] key
 	TOUCH_BTN_COUNT
 } TouchButton;
 
@@ -48,6 +49,11 @@ typedef enum
  * clearing it -- including the longjmp out of an online Destruct teardown -- cannot strand
  * the wrong buttons on a later screen. */
 void touch_ui_set_layout(TouchLayout layout);
+
+/* Ask for one extra button on top of the current layout, for a screen that reads a key the
+ * menu set does not cover. Re-asserted every frame and stale-checked like a layout request,
+ * so a screen only has to call it while the key is live. */
+void touch_ui_set_extra(TouchButton button);
 
 /* Report that the current screen reads the menu keys. push_joysticks_as_keyboard() calls
  * this, so every screen already wired for a controller gets the navigation buttons without
@@ -80,6 +86,13 @@ bool touch_ui_owns_finger(SDL_FingerID finger);
 // is wider than 16:9. Call after the frame copy and before SDL_RenderPresent.
 void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame);
 
+/* Re-present the finished frame from inside a wait loop when the buttons would now be
+ * drawn differently. Screens that draw once and then spin on the event pump never present
+ * again on their own, so without this their buttons are simply absent -- and a button that
+ * was never drawn is one nothing can press, because the press test runs against the last
+ * drawn layout. Only presents when something actually changed. */
+void touch_ui_idle_repaint(void);
+
 #else
 
 /* Callers are ordinary cross-platform code, so everything it uses collapses to nothing off
@@ -87,7 +100,9 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame);
  * the button and layout names need no definition here. */
 #define touch_ui_render(renderer, frame)  ((void)0)
 #define touch_ui_menu_navigable()         ((void)0)
+#define touch_ui_idle_repaint()           ((void)0)
 #define touch_ui_set_layout(layout)       ((void)0)
+#define touch_ui_set_extra(button)        ((void)0)
 #define touch_ui_held(button)             (false)
 #define touch_ui_take_tap(button)         (false)
 

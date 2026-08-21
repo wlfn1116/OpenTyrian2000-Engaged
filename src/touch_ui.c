@@ -11,6 +11,8 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mainint.h"
+#include "palette.h"
+#include "video.h"
 
 #include <math.h>
 
@@ -111,7 +113,15 @@ static const TouchButtonDef LAYOUT_DESTRUCT[] =
 	{ TOUCH_BTN_FIRE,   ICON_FIRE,    1, -1, SDL_SCANCODE_UNKNOWN, false, GATE_ALWAYS },
 };
 
-#define LAYOUT_MAX_BUTTONS  8
+/* Buttons a single screen adds to whatever layout is up. They take the top right slot,
+ * which every layout but Destruct leaves free and which the in-level weapon-mode button
+ * already occupies, so a control that cycles something keeps one place. */
+static const TouchButtonDef LAYOUT_EXTRA[] =
+{
+	{ TOUCH_BTN_REAR_MODE, ICON_CYCLE, 1, 0, SDL_SCANCODE_RIGHTBRACKET, false, GATE_ALWAYS },
+};
+
+#define LAYOUT_MAX_BUTTONS  9
 
 // Live layout, rebuilt every present.
 static const TouchButtonDef *shown[LAYOUT_MAX_BUTTONS];
@@ -123,6 +133,9 @@ static bool layout_valid;
 static TouchLayout requested_layout;
 static Uint32 requested_at_ms;
 static Uint32 navigable_at_ms;
+static Uint8 requested_extra;
+static Uint32 extra_at_ms;
+static Uint32 presented_signature;
 
 static SDL_FingerID btn_finger[TOUCH_BTN_COUNT];
 static bool btn_held[TOUCH_BTN_COUNT];
@@ -158,10 +171,47 @@ static bool is_sidekick(int id)
 	       id == TOUCH_BTN_SIDEKICK_BOTH;
 }
 
+/* Everything that decides what the next present would draw, folded into one value. Built
+ * from the inputs rather than from the last drawn layout, so it changes as soon as a
+ * screen reports itself navigable -- before any frame has shown its buttons. */
+static Uint32 desired_signature(Uint32 now_ms)
+{
+	TouchLayout layout = mouseGetRelative() ? TOUCH_LAYOUT_GAME : TOUCH_LAYOUT_MENU;
+	if (fresh(requested_at_ms, now_ms))
+		layout = requested_layout;
+
+	Uint32 sig = (Uint32)layout;
+	sig = sig * 31u + (fresh(navigable_at_ms, now_ms) ? 1u : 0u);
+	sig = sig * 31u + (touchSidekickButtons ? 1u : 0u);
+	sig = sig * 31u + (fresh(extra_at_ms, now_ms) ? (Uint32)requested_extra + 1u : 0u);
+	sig = sig * 31u + palette_peak();
+
+	for (int i = 0; i < TOUCH_BTN_COUNT; ++i)
+		sig = sig * 31u + (btn_held[i] ? 1u : 0u);
+
+	return sig;
+}
+
+void touch_ui_idle_repaint(void)
+{
+	if (desired_signature(SDL_GetTicks()) == presented_signature)
+		return;
+
+	// JE_showVGA re-composes and presents, which runs touch_ui_render and settles the
+	// signature. Safe from a wait loop: the screen behind it is already finished.
+	video_repaint();
+}
+
 void touch_ui_set_layout(TouchLayout layout)
 {
 	requested_layout = layout;
 	requested_at_ms = SDL_GetTicks();
+}
+
+void touch_ui_set_extra(TouchButton button)
+{
+	requested_extra = (Uint8)button;
+	extra_at_ms = SDL_GetTicks();
 }
 
 void touch_ui_menu_navigable(void)
@@ -265,6 +315,19 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 		++shown_count;
 	}
 
+	if (fresh(extra_at_ms, now_ms))
+	{
+		for (size_t i = 0; i < COUNTOF(LAYOUT_EXTRA) && shown_count < LAYOUT_MAX_BUTTONS; ++i)
+		{
+			if (LAYOUT_EXTRA[i].id != requested_extra)
+				continue;
+
+			shown[shown_count] = &LAYOUT_EXTRA[i];
+			shown_rect[shown_count] = place(&LAYOUT_EXTRA[i], &g, out_h);
+			++shown_count;
+		}
+	}
+
 	// A tap on a button that has since left the screen is stale. Dropping it stops, say,
 	// a last-instant Destruct weapon cycle from firing when Destruct is next opened.
 	bool live[TOUCH_BTN_COUNT] = { false };
@@ -283,12 +346,24 @@ static bool overlaps_frame(const SDL_Rect *button, const SDL_Rect *frame)
 	       button->y < frame->y + frame->h && button->y + button->h > frame->y;
 }
 
-static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held)
+/* Screen fades are palette fades, which the buttons never pass through: they are drawn by
+ * the renderer, after the palettized frame has been converted. Scaling their colours by
+ * the palette's peak reproduces the fade on them, so a transition to black takes them with
+ * it instead of leaving them lit over an empty screen. Scaled towards black rather than
+ * towards transparent because an icon is built from overlapping shapes, and any alpha
+ * below full blends twice where those meet. */
+static Uint8 dim(int component, Uint8 peak)
 {
-	SDL_SetRenderDrawColor(renderer, held ? 60 : 14, held ? 66 : 16, held ? 88 : 26, alpha);
+	return (Uint8)(component * (int)peak / 255);
+}
+
+static void draw_plate(SDL_Renderer *renderer, const SDL_Rect *r, Uint8 alpha, bool held, Uint8 peak)
+{
+	SDL_SetRenderDrawColor(renderer, dim(held ? 60 : 14, peak), dim(held ? 66 : 16, peak),
+	                       dim(held ? 88 : 26, peak), alpha);
 	SDL_RenderFillRect(renderer, r);
 
-	SDL_SetRenderDrawColor(renderer, 165, 176, 205, 235);
+	SDL_SetRenderDrawColor(renderer, dim(165, peak), dim(176, peak), dim(205, peak), 235);
 	SDL_RenderDrawRect(renderer, r);
 
 	const SDL_Rect inner = { r->x + 1, r->y + 1, r->w - 2, r->h - 2 };
@@ -519,9 +594,20 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 	build_layout(frame, out_w, out_h, now_ms);
 	layout_out_w = out_w;
 	layout_out_h = out_h;
-	layout_valid = true;
+
+	// Mid-fade the buttons dim with the screen; once it is fully black they are gone, and
+	// a press must not land on a button nobody can see.
+	const Uint8 peak = palette_peak();
+	layout_valid = peak > 0;
+
+	// This frame is what the buttons now look like, so an idle wait loop has nothing left
+	// to repaint until something changes again.
+	presented_signature = desired_signature(now_ms);
 
 	service_repeat(now_ms);
+
+	if (!layout_valid)
+		return;
 
 	SDL_BlendMode prev_blend;
 	SDL_GetRenderDrawBlendMode(renderer, &prev_blend);
@@ -533,12 +619,12 @@ void touch_ui_render(SDL_Renderer *renderer, const SDL_Rect *frame)
 		const bool held = btn_held[shown[i]->id];
 		const Uint8 alpha = overlaps_frame(r, frame) ? TOUCH_BTN_ALPHA_OVERLAP : TOUCH_BTN_ALPHA_CLEAR;
 
-		draw_plate(renderer, r, alpha, held);
+		draw_plate(renderer, r, alpha, held, peak);
 
 		// Opaque, even over a translucent plate: an icon built from overlapping shapes
 		// blends twice where they meet, and any alpha below full shows that as a seam.
 		// The plate already brightens on press, so the icon needs no second cue.
-		SDL_SetRenderDrawColor(renderer, 226, 232, 248, 255);
+		SDL_SetRenderDrawColor(renderer, dim(226, peak), dim(232, peak), dim(248, peak), 255);
 		draw_icon(renderer, (TouchIcon)shown[i]->icon, r);
 	}
 

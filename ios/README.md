@@ -34,10 +34,16 @@ Re-run CMake after changing the data set.
 ## Icon and name
 
 The app is named "Tyrian 2000 Engaged". Its icons are generated from
-`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1` into `ios/icons`, and
-CMake copies them to the bundle root where `CFBundleIconFiles` expects them.
-The output is committed, so a build never runs it; re-run it after changing the
-source icon.
+`visualc/tyrian2000.ico` by `tools/make_mobile_icons.ps1`. The output is
+committed, so a build never runs it; re-run it after changing the source icon.
+
+The build ships the icon twice. `ios/Assets.xcassets` is compiled by `actool`
+during the build and is the one iOS prefers; its artwork has a transparent
+background, and it carries dark and tinted variants, so the system draws its own
+material behind the ship rather than the icon supplying a slab of colour. That
+is what the Liquid Glass treatment expects. `ios/icons` holds flat opaque PNGs
+copied to the bundle root as the `CFBundleIconFiles` fallback, which stay opaque
+because that path composites alpha onto black.
 
 ## Build
 

@@ -48,6 +48,7 @@
 #include "render_list.h"
 #include "shots.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "tyrian2.h"
 #include "varz.h"
 #include "vga256d.h"
@@ -11124,7 +11125,9 @@ void JE_weaponSimUpdate(void)
 			&& weaponPort[shopPlayer()->items.weapon[REAR_WEAPON].id].opnum == 2
 			&& (weaponSimTime >= 75))
 		{
-			// [/] Rear Weapon Mode
+			// [/] Rear Weapon Mode. The touch ports get it as a button while this hint is
+			// up, so the mode can be cycled here and watched in the preview.
+			touch_ui_set_extra(TOUCH_BTN_REAR_MODE);
 #if defined(__SWITCH__) || defined(__vita__)
 			// No [/] key on the consoles; the shoulder buttons cycle the mode
 			// (see the L/R handler in JE_itemScreen). x nudged left so the

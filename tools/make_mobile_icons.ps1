@@ -86,8 +86,9 @@ foreach ($d in $densities.GetEnumerator()) {
              (Join-Path $androidRes ("mipmap-{0}\ic_launcher_foreground.png" -f $d.Key))
 }
 
-# iOS. Names carry the point size and scale iOS looks for through CFBundleIconFiles.
-Write-Host 'ios:'
+# iOS, flat icons. Names carry the point size and scale iOS looks for through
+# CFBundleIconFiles, the fallback for anything that does not read the asset catalog.
+Write-Host 'ios (flat):'
 $iosIcons = Join-Path $Root 'ios\icons'
 $iosSizes = @{
     'AppIcon60x60@2x.png'     = 120
@@ -98,6 +99,26 @@ $iosSizes = @{
 foreach ($f in $iosSizes.GetEnumerator()) {
     Save-Png (New-IconBitmap $art $f.Value 0.86 $true) (Join-Path $iosIcons $f.Key)
 }
+
+# iOS asset catalog. One 1024 image per appearance, all with a transparent background so
+# the system draws its own material behind the ship rather than a flat slab of navy. The
+# tinted appearance is monochrome, which is what iOS expects to colourise.
+Write-Host 'ios (asset catalog):'
+$appIconSet = Join-Path $Root 'ios\Assets.xcassets\AppIcon.appiconset'
+Save-Png (New-IconBitmap $art 1024 0.80 $false) (Join-Path $appIconSet 'AppIcon-1024.png')
+Save-Png (New-IconBitmap $art 1024 0.80 $false) (Join-Path $appIconSet 'AppIcon-1024-dark.png')
+
+# Monochrome copy for the tinted appearance: luminance in, alpha preserved.
+$tinted = New-IconBitmap $art 1024 0.80 $false
+for ($y = 0; $y -lt $tinted.Height; $y++) {
+    for ($x = 0; $x -lt $tinted.Width; $x++) {
+        $p = $tinted.GetPixel($x, $y)
+        if ($p.A -eq 0) { continue }
+        $l = [int](0.299 * $p.R + 0.587 * $p.G + 0.114 * $p.B)
+        $tinted.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($p.A, $l, $l, $l))
+    }
+}
+Save-Png $tinted (Join-Path $appIconSet 'AppIcon-1024-tinted.png')
 
 $art.Dispose()
 Write-Host 'done'

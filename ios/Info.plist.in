@@ -14,8 +14,11 @@
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
 	<key>CFBundleDisplayName</key>
 	<string>Tyrian 2000 Engaged</string>
-	<!-- Icons live at the bundle root rather than in a compiled asset catalog: the build
-	     uses Ninja, which has no actool step to compile one. iOS picks the closest size. -->
+	<!-- The compiled asset catalog, which iOS prefers and which is the only place it reads
+	     per-appearance artwork from. CFBundleIcons below lists the flat bundle-root PNGs as
+	     the fallback for anything that does not read the catalog. -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>

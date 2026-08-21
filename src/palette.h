@@ -37,6 +37,11 @@ void JE_loadPals(void);
 void set_palette(Palette colors, unsigned int first_color, unsigned int last_color);
 void set_colors(SDL_Color color, unsigned int first_color, unsigned int last_color);
 
+// Brightest component in the live palette, 255 during play and 0 once a fade reaches
+// black. Overlays drawn outside the palettized frame scale themselves by this to fade
+// along with everything else.
+Uint8 palette_peak(void);
+
 void init_step_fade_palette(int diff[256][3], Palette colors, unsigned int first_color, unsigned int last_color);
 void init_step_fade_solid(int diff[256][3], SDL_Color color, unsigned int first_color, unsigned int last_color);
 void step_fade_palette(int diff[256][3], int steps, unsigned int first_color, unsigned int last_color);

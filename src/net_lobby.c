@@ -38,6 +38,7 @@
 #include "player.h"
 #include "qa.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "vga256d.h"
 #include "video.h"
 
@@ -209,6 +210,7 @@ static bool lobbyWaitForInput(void)
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
+		touch_ui_idle_repaint();
 
 		NETWORK_KEEP_ALIVE();
 

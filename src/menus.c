@@ -34,6 +34,7 @@
 #include "picload.h"
 #include "qa.h"
 #include "sprite.h"
+#include "touch_ui.h"
 #include "varz.h"  // SA_NONE, for clearing the one-player rulesets before an online session
 #include "vga256d.h"
 #include "video.h"
@@ -58,6 +59,7 @@ static bool menuWaitForInput(void)
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
+		touch_ui_idle_repaint();
 
 		NETWORK_KEEP_ALIVE();
 

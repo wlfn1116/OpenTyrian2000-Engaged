@@ -1121,6 +1121,7 @@ static void JE_introScreen(void)
 	{
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
 		service_SDL_events(false);
+		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	}
 
@@ -1161,6 +1162,7 @@ static enum de_mode_t JE_modeSelect(void)
 		{
 			push_joysticks_as_keyboard();  // controller -> arrows/Return/Escape (no keyboard on Switch)
 			service_SDL_events(false);
+			touch_ui_idle_repaint();
 			SDL_Delay(16);
 		} while (!newkey);
 
@@ -1755,6 +1757,7 @@ static void JE_helpScreen(void)
 	{
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
+		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	} while (!newkey);
 
@@ -1777,6 +1780,7 @@ static void JE_pauseScreen(void)
 	{
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
+		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	} while (!newkey);
 
