@@ -127,9 +127,11 @@ enum
 #define ONLINE_OPACITY_Y0     38
 #define ONLINE_OPACITY_SWATCH_X   250
 #define ONLINE_OPACITY_SWATCH_W    46
-// Preview swatch shades in the shop palette's grayscale bank.
+#define ONLINE_OPACITY_SWATCH_H     7
+// Sample a bright hull over a dark, starred background.
 #define ONLINE_OPACITY_HULL_SHADE  14
 #define ONLINE_OPACITY_BACK_SHADE   2
+#define ONLINE_OPACITY_STAR_SHADE  12
 
 /*** Structs ***/
 struct cube_struct
@@ -1154,6 +1156,9 @@ static void draw_online_hpbars_page(void)
 	netStylePreviewSet(netStylePeerColor(), NET_OPACITY_FULL);
 }
 
+// Value pickers confirm with Done; the Online page retains its Exit row.
+#define ONLINE_PICKER_DONE "Done"
+
 // Generate Online menus because tyrian.hdt has no entries for them.
 static void configure_online_menus(void)
 {
@@ -1178,7 +1183,7 @@ static void configure_online_menus(void)
 	SDL_strlcpy(bars[1], "Off", entrySize);
 	SDL_strlcpy(bars[2], "On Hit", entrySize);
 	SDL_strlcpy(bars[3], "Always", entrySize);
-	SDL_strlcpy(bars[4], online[row], entrySize);
+	SDL_strlcpy(bars[4], ONLINE_PICKER_DONE, entrySize);
 	menuChoices[MENU_ONLINE_HPBARS] = 5;
 
 	configure_online_color_grid();
@@ -1241,7 +1246,7 @@ static void draw_online_color_page(void)
 			fill_rectangle_xy(VGAScreen, x0, y0, x1, y1, ONLINE_CELL_PANEL);
 			draw_font_hv_shadow(VGAScreen, (x0 + x1 + 1) / 2,
 			                    y0 + (ONLINE_COLOR_CELL_H - ONLINE_COLOR_LABEL_H) / 2,
-			                    (i == 0) ? "Off" : "Done", small_font, centered,
+			                    (i == 0) ? "Off" : ONLINE_PICKER_DONE, small_font, centered,
 			                    15, selected ? 6 : 3, false, 1);
 		}
 
@@ -1255,6 +1260,36 @@ static void draw_online_color_page(void)
 
 	// Preview this ship's selected color at full opacity.
 	netStylePreviewSet(netStyleSeatColor(seat), NET_OPACITY_FULL);
+}
+
+// Draw background detail behind each opacity sample so the fade is visible.
+static void draw_opacity_sample(int x0, int y0, int w, int h, int sixteenths)
+{
+	static const int starX[] = { 4, 12, 21, 29, 38, 43 };
+	static const int starY[] = { 1, 4, 2, 5, 1, 3 };
+
+	fill_rectangle_xy(VGAScreen, x0, y0, x0 + w - 1, y0 + h - 1, ONLINE_OPACITY_BACK_SHADE);
+	for (unsigned int i = 0; i < COUNTOF(starX); ++i)
+		if (starX[i] < w && starY[i] < h)
+			JE_pix(VGAScreen, x0 + starX[i], y0 + starY[i], ONLINE_OPACITY_STAR_SHADE);
+
+	// Match the partner's selected dye.
+	const int color = netStylePeerColor();
+	const Uint8 bank = (color != NET_SHIP_COLOR_NONE) ? (Uint8)((color - 1) << 4) : 0x00;
+
+	Uint8 *const pixels = (Uint8 *)VGAScreen->pixels;
+	for (int y = y0; y < y0 + h; ++y)
+	{
+		Uint8 *const scan = pixels + y * VGAScreen->pitch;
+		for (int x = x0; x < x0 + w; ++x)
+		{
+			int shade = (ONLINE_OPACITY_HULL_SHADE * sixteenths
+			             + (scan[x] & 0x0f) * (NET_STYLE_SOLID - sixteenths) + 8) / NET_STYLE_SOLID;
+			if (shade > 0x0f)
+				shade = 0x0f;
+			scan[x] = (Uint8)(bank | shade);
+		}
+	}
 }
 
 // The opacity a row stands for, counting down from full.
@@ -1281,7 +1316,7 @@ static void draw_online_opacity_page(void)
 		if (toggle)
 			SDL_strlcpy(label, "Apply to Ship", sizeof(label));
 		else if (leave)
-			SDL_strlcpy(label, menuInt[MENU_ONLINE + 1][3], sizeof(label));
+			SDL_strlcpy(label, ONLINE_PICKER_DONE, sizeof(label));
 		else
 			snprintf(label, sizeof(label), "%d%%", online_opacity_of_row(row));
 
@@ -1295,12 +1330,10 @@ static void draw_online_opacity_page(void)
 		}
 		else if (!leave)
 		{
-			const int sixteenths = (online_opacity_of_row(row) * NET_STYLE_SOLID + 50) / NET_OPACITY_FULL;
-			const int mixed = (ONLINE_OPACITY_HULL_SHADE * sixteenths
-			                   + ONLINE_OPACITY_BACK_SHADE * (NET_STYLE_SOLID - sixteenths) + 8)
-			                / NET_STYLE_SOLID;
-			fill_rectangle_xy(VGAScreen, ONLINE_OPACITY_SWATCH_X, y,
-			                  ONLINE_OPACITY_SWATCH_X + ONLINE_OPACITY_SWATCH_W - 1, y + 6, (Uint8)mixed);
+			const int sixteenths =
+				(online_opacity_of_row(row) * NET_STYLE_SOLID + 50) / NET_OPACITY_FULL;
+			draw_opacity_sample(ONLINE_OPACITY_SWATCH_X, y,
+			                    ONLINE_OPACITY_SWATCH_W, ONLINE_OPACITY_SWATCH_H, sixteenths);
 		}
 	}
 

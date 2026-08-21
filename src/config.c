@@ -2465,6 +2465,12 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	const uint savedSeat = save_slot_online_player(15);
 	save_slot_set_online_player(15, 2);
 
+	// Use non-default local view values to catch missing keys.
+	int savedOpacity, savedBars;
+	bool savedShipOpacity;
+	save_slot_online_view(15, &savedOpacity, &savedShipOpacity, &savedBars);
+	save_slot_set_online_view(15, NET_OPACITY_MIN, false, NET_HP_BARS_ON_HIT);
+
 	const char *fault = NULL;
 	Config config;
 	config_init(&config);
@@ -2485,6 +2491,7 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	else
 	{
 		save_slot_set_online_player(15, 1);
+		save_slot_set_online_view(15, NET_OPACITY_FULL, true, NET_HP_BARS_OFF);
 
 		save_slot_read(&back, sOne, 3);
 		if (memcmp(&one, &back, sizeof(one)) != 0)
@@ -2494,6 +2501,12 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 			fault = "a two-ship slot did not survive the round trip";
 		if (fault == NULL && save_slot_online_player(15) != 2)
 			fault = "the online seat did not survive the round trip";
+
+		int opacity, bars;
+		bool shipOpacity;
+		save_slot_online_view(15, &opacity, &shipOpacity, &bars);
+		if (fault == NULL && (opacity != NET_OPACITY_MIN || shipOpacity || bars != NET_HP_BARS_ON_HIT))
+			fault = "the online look did not survive the round trip";
 
 		config_remove_option(sOne, "p1_cash");
 		config_set_string_option(sOne, "level", "junk");
@@ -2506,6 +2519,7 @@ bool save_file_test_codec(char *detail, size_t detailSize)
 	}
 	config_deinit(&config);
 	save_slot_set_online_player(15, savedSeat);
+	save_slot_set_online_view(15, savedOpacity, savedShipOpacity, savedBars);
 
 	if (fault != NULL && detail != NULL && detailSize != 0)
 		snprintf(detail, detailSize, "%s", fault);
