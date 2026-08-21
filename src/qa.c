@@ -2767,9 +2767,7 @@ static void qa_test_knife_fight_perk(void)
 	coopEndlessMode = savedCoop;
 }
 
-/* Deflector: the returned damage per stack and its marker guards, and the returned shot itself: the
- * hit ship's own, on the reverse path, with the bullet's look, unsteered, and carrying that ship's
- * Opening Salvo tag when its window is running. */
+// Deflector damage, ownership, shot reversal, and Opening Salvo inheritance.
 static void qa_test_deflector_perk(void)
 {
 	const JE_boolean savedEndless = endlessMode, savedCampaign = endlessCampaignMods;
@@ -2806,6 +2804,29 @@ static void qa_test_deflector_perk(void)
 	qa_check(endlessPerkDeflectDamage(6) == 0, "a co-op partner without the perk returns nothing");
 	endlessSetFxPlayer(0);
 	coopEndlessMode = false;
+
+	// The shield refund uses the same perk stacks and never reaches the absorbed amount.
+	qa_check(endlessPerkDeflectShieldSpared(10) == 3 && endlessPerkDeflectShieldSpared(100) == 34,
+	         "two stacks spare 34% of what the shield stopped");
+	endlessPerkTakenBy[0][PERK_DEFLECTOR] = 1;
+	endlessPerkRederive();
+	qa_check(endlessPerkDeflectShieldSpared(10) == 2 && endlessPerkDeflectShieldSpared(2) == 0,
+	         "one stack spares 17%, in whole points, and a hit too small to discount spares none");
+	bool overSpared = false;
+	for (int hit = 1; hit <= 255; ++hit)
+		overSpared |= (endlessPerkDeflectShieldSpared(hit) >= hit);
+	qa_check(!overSpared, "...and no hit ever leaves the shield more than it spent");
+	endlessMode = false;
+	qa_check(endlessPerkDeflectShieldSpared(10) == 0,
+	         "...outside an endless run the shield spends it all");
+	endlessMode = true;
+	coopEndlessMode = true;
+	endlessSetFxPlayer(1);
+	qa_check(endlessPerkDeflectShieldSpared(10) == 0, "a co-op partner without the perk spares nothing");
+	endlessSetFxPlayer(0);
+	coopEndlessMode = false;
+	endlessPerkTakenBy[0][PERK_DEFLECTOR] = 2;
+	endlessPerkRederive();
 
 	// The returned shot: player two's, at the bullet, velocity and acceleration reversed.
 	memset(shotAvail, 0, sizeof(shotAvail));
@@ -3287,6 +3308,79 @@ static void qa_test_elite_explosion_tint(void)
 	memset(rep_explosions, 0, sizeof(rep_explosions));
 	qa_check(rollback_state_hash() == hashBefore,
 	         "explosion colour leaves the registered state byte stream untouched");
+
+	// Local opacity stays outside registered snapshot bytes.
+	explosionOpacity = 8;
+	JE_setupExplosion(100, 100, 0, 14, false, false);
+	explosionOpacity = NET_STYLE_SOLID;
+	JE_setupExplosion(100, 100, 0, 14, false, false);
+	qa_check(explosion_opacity(0) == 8 && explosion_opacity(1) == NET_STYLE_SOLID,
+	         "an explosion keeps the opacity set when it was spawned");
+	memset(explosions, 0, sizeof(explosions));
+	qa_check(rollback_state_hash() == hashBefore,
+	         "...and that opacity never reaches the registered state byte stream");
+
+	// Partner shield bubbles follow hull opacity and Apply to Ship.
+	{
+		const bool savedNet = isNetworkGame;
+		const JE_boolean savedTwo = twoPlayerMode;
+		const uint savedPlayerNum = thisPlayerNum;
+		const NetShipView savedView = netStyleView(0);
+		const Player saved0 = player[0], saved1 = player[1];
+		const JE_boolean savedEndless = endlessMode, savedMods = endlessCampaignMods;
+		const int savedShieldFlash[2] = { shieldGaugeFlash[0], shieldGaugeFlash[1] };
+		const int savedArmorFlash[2] = { armorGaugeFlash[0], armorGaugeFlash[1] };
+
+		isNetworkGame = true;
+		twoPlayerMode = true;
+		endlessMode = false;          // avoid perk side effects
+		endlessCampaignMods = false;
+		thisPlayerNum = 1;             // local seat 0
+		NetShipView view = savedView;
+		view.opacity = 50;
+		view.shipOpacity = true;
+		netStyleSetView(0, view);
+
+		for (uint seat = 0; seat < 2; ++seat)
+		{
+			player[seat].x = 100;
+			player[seat].y = 100;
+			player[seat].shield = 20;
+			player[seat].shield_max = 20;
+			player[seat].armor = 20;
+			player[seat].is_alive = true;
+		}
+
+		memset(explosions, 0, sizeof(explosions));
+		JE_playerDamage(1, &player[1]);
+		qa_check(explosions[0].ttl != 0 && explosion_opacity(0) == 8,
+		         "the partner's shield bubble fades with their hull");
+
+		memset(explosions, 0, sizeof(explosions));
+		JE_playerDamage(1, &player[0]);
+		qa_check(explosions[0].ttl != 0 && explosion_opacity(0) == NET_STYLE_SOLID,
+		         "...and this machine's own bubble stays solid");
+
+		view.shipOpacity = false;   // Apply to Ship off
+		netStyleSetView(0, view);
+		memset(explosions, 0, sizeof(explosions));
+		JE_playerDamage(1, &player[1]);
+		qa_check(explosions[0].ttl != 0 && explosion_opacity(0) == NET_STYLE_SOLID,
+		         "...and sparing their ship spares the bubble with it");
+
+		player[1] = saved1;
+		player[0] = saved0;
+		shieldGaugeFlash[0] = savedShieldFlash[0]; shieldGaugeFlash[1] = savedShieldFlash[1];
+		armorGaugeFlash[0] = savedArmorFlash[0];   armorGaugeFlash[1] = savedArmorFlash[1];
+		endlessCampaignMods = savedMods;
+		endlessMode = savedEndless;
+		endlessSetFxPlayer(0);
+		memset(explosions, 0, sizeof(explosions));
+		netStyleSetView(0, savedView);
+		thisPlayerNum = savedPlayerNum;
+		twoPlayerMode = savedTwo;
+		isNetworkGame = savedNet;
+	}
 
 	/* Both colour bytes sit in padding the structs already had. Widening either pool moves the
 	 * registry layout and every replay fixture hash with it. */

@@ -49,7 +49,7 @@ const EndlessPerk endlessPerkTable[PERK_COUNT] = {
 	{ "Twin Pods",        "Sidekicks fire twice; double ammo and power.", 1 },
 	{ "Reinforced Prow",  "Ram much harder and take much less for it.", 4 },
 	{ "Knife Fight",      "More damage the closer you fly to a foe.", 4 },
-	{ "Deflector",        "Shield hits return fire at the shooter.", 2 },
+	{ "Deflector",        "Shots hurt your shield less and bounce back.", 2 },
 };
 
 bool endlessPerkPending = false;             // a perk pick is queued for the next shop
@@ -664,9 +664,8 @@ void endlessPerkKnifeFightBlood(unsigned slot, int pct)
 	                  rl_presented_frames() * 251u + slot);
 }
 
-/* Deflector: the damage the shot a shield absorption returns carries, from the shield points that
- * absorbed it, or 0 when the perk leaves the hit alone. The value is a player shot's, so it stays
- * clear of the 250+ piercing and 99 ice markers; the collision loop scales it as the ship's own. */
+/* Returned-shot damage from a shield absorption. Keep it clear of the 250+ piercing and 99 ice
+ * markers; collision code applies the firing ship's scaling. */
 int endlessPerkDeflectDamage(int absorbed)
 {
 	const int stacks = endlessFxActive() ? perkFx(PERK_DEFLECTOR) : 0;
@@ -678,6 +677,15 @@ int endlessPerkDeflectDamage(int absorbed)
 	else if (damage == 99)
 		damage = 100;
 	return damage;
+}
+
+// Shield points refunded after damage resolution. Too-small discounts round to zero.
+int endlessPerkDeflectShieldSpared(int absorbed)
+{
+	const int stacks = endlessFxActive() ? perkFx(PERK_DEFLECTOR) : 0;
+	if (stacks == 0 || absorbed <= 0)
+		return 0;
+	return (absorbed * stacks * ENDLESS_PERK_DEFLECT_SHIELD_PCT + 50) / 100;
 }
 
 // Start each zone with Opening Salvo charged.

@@ -382,6 +382,15 @@ JE_word neat;
 Explosion explosions[MAX_EXPLOSIONS]; /* [1..ExplosionMax] */
 JE_integer explosionFollowAmountX, explosionFollowAmountY;
 Uint8 explosionFilter;  /* see varz.h */
+Uint8 explosionOpacity = NET_STYLE_SOLID;  /* see varz.h */
+
+static Uint8 explosionOpacityBySlot[MAX_EXPLOSIONS];
+
+Uint8 explosion_opacity(uint slot)
+{
+	return (slot < COUNTOF(explosionOpacityBySlot) && explosionOpacityBySlot[slot] != 0)
+	       ? explosionOpacityBySlot[slot] : NET_STYLE_SOLID;
+}
 
 /*Repeating Explosions*/
 rep_explosion_type rep_explosions[MAX_REPEATING_EXPLOSIONS]; /* [1..20] */
@@ -1505,6 +1514,7 @@ void JE_setupExplosion(
 				explosions[i].fixedPosition = fixedPosition;
 				explosions[i].deltaY = deltaY;
 				explosions[i].filter = explosionFilter;
+				explosionOpacityBySlot[i] = explosionOpacity;
 				explosions[i].id_gen++;  // distinct interpolation id for this reuse of the slot
 				break;
 			}
@@ -1974,6 +1984,9 @@ JE_byte JE_playerDamage(JE_byte temp,
 	{
 		this_player->shield -= temp;
 
+		// Shield-hit explosions follow the hull's local presentation style.
+		explosionOpacity = netStyleForSeat((this_player == &player[1]) ? 1u : 0u).opacity;
+
 		JE_setupExplosion(this_player->x - 17, this_player->y - 12, 0, 14, false, !twoPlayerMode);
 		JE_setupExplosion(this_player->x - 5 , this_player->y - 12, 0, 15, false, !twoPlayerMode);
 		JE_setupExplosion(this_player->x + 7 , this_player->y - 12, 0, 16, false, !twoPlayerMode);
@@ -1985,6 +1998,8 @@ JE_byte JE_playerDamage(JE_byte temp,
 		JE_setupExplosion(this_player->x - 17, this_player->y + 16, 0, 20, false, !twoPlayerMode);
 		JE_setupExplosion(this_player->x - 5 , this_player->y + 16, 0, 21, false, !twoPlayerMode);
 		JE_setupExplosion(this_player->x + 7 , this_player->y + 16, 0, 22, false, !twoPlayerMode);
+
+		explosionOpacity = NET_STYLE_SOLID;
 	}
 
 	// Arm presentation-only gauge flashes only on the live pass; rollback must not restart them.

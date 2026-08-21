@@ -340,6 +340,11 @@ extern JE_integer explosionFollowAmountX, explosionFollowAmountY;
 // Set it, spawn, clear it again: it is never left set across a tick, so it stays out of the
 // rollback registry. Presentation only; the network state hash ignores explosion colour.
 extern Uint8 explosionFilter;
+
+/* Opacity for the next explosion, in sixteenths. JE_setupExplosion() stamps it into a local side
+ * table; reset it after spawning. */
+extern Uint8 explosionOpacity;
+Uint8 explosion_opacity(uint slot);
 extern JE_boolean fireButtonHeld;
 extern JE_boolean enemyShotAvail[ENEMY_SHOT_MAX];
 extern EnemyShotType enemyShot[ENEMY_SHOT_MAX];

@@ -936,6 +936,7 @@ int  endlessPerkKnifeFightPercent(unsigned slot);
 int  endlessPerkKnifeFightBonus(int damage, int pct);
 void endlessPerkKnifeFightBlood(unsigned slot, int pct);
 int  endlessPerkDeflectDamage(int absorbed);
+int  endlessPerkDeflectShieldSpared(int absorbed);
 
 // Perk registry accessors for the debug screen.
 int         endlessPerkCount(void);

@@ -327,7 +327,7 @@ Breakthrough, the E-Shop, and the gamble can add more picks.
 | Twin Pods | Every sidekick volley fires twice, at double ammo and power | 1 |
 | Reinforced Prow | Ramming deals 2x to 5x and costs you 78%, 56%, 34%, 12% | 4 |
 | Knife Fight | +15% damage within 7 px of an enemy, fading out by 55 px | 4 |
-| Deflector | A shot your shield absorbs flies back as yours; 2x damage at two stacks | 2 |
+| Deflector | Enemy shots cost 17% less shield per stack and bounce back; 2x return damage at two stacks | 2 |
 
 A few perks need more detail than the table can hold.
 
@@ -363,10 +363,12 @@ A few perks need more detail than the table can hold.
 **Deflector**
 
 - A shot fully absorbed by shield returns along its incoming path.
-- Returned damage equals shield loss, doubled at two stacks.
+- Returned damage equals the absorbed hit, doubled at two stacks.
 - Hull hits, empty shields, and invulnerable hits return nothing.
 - Bulwark reduces the absorbed amount before Deflector reads it.
 - A return fired during Opening Salvo keeps the volley bonus.
+- Each stack reduces shield loss from enemy shots by 17%.
+- Shield overflow still deals full armor damage. Rams get no discount.
 
 **Opening Salvo**
 
@@ -632,8 +634,8 @@ During an online game, choose **Customize** at the outpost.
   shots keep their weapon colors. Shades follow the current level palette;
   Endless hides the four colors used by kill-fire drives.
 - **Partner Opacity** fades the other player and their shots from 100% to 20%.
-  Turn off **Apply to Ship** to fade only their shots. This setting affects only
-  your screen.
+  With **Apply to Ship** on, their hull, shield-hit effect, and HP bars fade too.
+  Turn it off to fade only their shots. This setting affects only your screen.
 - **Partner HP Bars** displays the other player's shield and armor, either always
   or for two seconds after a hit. Placement and base opacity use the enemy-bar
   settings under **Setup > Enhancements > Heads-Up Display**. With **Apply to

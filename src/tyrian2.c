@@ -38,6 +38,7 @@
 #include "mouse.h"
 #include "mtrand.h"
 #include "network.h"
+#include "net_style.h"
 #include "nortsong.h"
 #include "nortvars.h"
 #include "opentyr.h"
@@ -6165,6 +6166,18 @@ draw_player_shot_loop_end:
 										player_shot_create_deflected(&enemyShot[z], returned,
 										                             (JE_byte)(i + 1));
 								}
+
+								// Refund after damage resolution so armor overflow uses the full hit.
+								if (endlessFxActive() && player[i].shield < shieldBefore)
+								{
+									const int stopped = (int)(shieldBefore - player[i].shield);
+									const int spared = endlessPerkDeflectShieldSpared(stopped);
+									if (spared > 0)
+									{
+										player[i].shield += (uint)spared;
+										hud_bars_dirty = true;  // JE_playerDamage drew the unrefunded loss
+									}
+								}
 							}
 
 							break;
@@ -6341,7 +6354,11 @@ draw_player_shot_loop_end:
 					const int ex = explosions[j].x, ey = explosions[j].y;
 					const unsigned int frame = explosions[j].sprite + 1;
 					const Uint8 tint = explosions[j].filter;  // endless elite / champion
-					if (explosionTransparent && tint != 0)
+					const Uint8 alpha = explosion_opacity(j);
+					// Shield bubbles never combine partial opacity with an Endless tier tint.
+					if (alpha < NET_STYLE_SOLID)
+						blit_sprite2_alpha(VGAScreen, ex, ey, explosionSpriteSheet, frame, -1, alpha);
+					else if (explosionTransparent && tint != 0)
 						blit_sprite2_blend_filter(VGAScreen, ex, ey, explosionSpriteSheet, frame,
 						                          tint | ENDLESS_EXPLOSION_BRIGHT);
 					else if (explosionTransparent)

@@ -217,6 +217,7 @@ void endlessReviveGraceReset(void);
 #define ENDLESS_PERK_KNIFE_FULL_PX       7
 #define ENDLESS_PERK_KNIFE_FADE_PX      48
 #define ENDLESS_PERK_DEFLECT_MULT2      200
+#define ENDLESS_PERK_DEFLECT_SHIELD_PCT 17
 
 // Offer-array width is fixed by the widest persisted slate.
 #define ENDLESS_PERK_OFFERS           3

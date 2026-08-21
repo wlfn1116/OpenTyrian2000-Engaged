@@ -292,7 +292,8 @@ for the ship whose effect is being calculated.
   divisor. Presentation blood uses seeded sparks and a per-frame budget.
 - Deflector fires only when shield falls and armor does not. The returned shot
   keeps the incoming art and tint, reverses motion, and takes the firing ship's
-  damage context.
+  damage context. Its shield discount is refunded after damage resolution,
+  preserving full armor overflow and returned damage.
 - Opening Salvo tags emitted shots. Chained shots and Chain Reaction waves carry
   the tag. Rams and shotless specials read the live window.
 - Kinetic Converter applies to actual shield or hull loss and to affordable
@@ -574,7 +575,7 @@ flown by that machine.
 ### Wire compatibility
 
 Any deterministic rule, packet meaning, field, or offset change requires a
-`NET_VERSION` bump. The current version is 80. Packet readers check length before
+`NET_VERSION` bump. The current version is 83. Packet readers check length before
 optional fields and use fixed-width types.
 
 Recent compatibility points:
@@ -621,6 +622,7 @@ Recent compatibility points:
 | 80 | Look packets and saves carry per-seat views |
 | 81 | The End makes Topsy Turvy rare |
 | 82 | The End rolls Light Homing on a coin flip |
+| 83 | Deflector discounts the shield's share of a shot |
 
 Earlier versions are available in Git history. Keep this table focused on rules
 that still constrain current code.
@@ -633,6 +635,9 @@ sidekicks; shot styles never take the ship dye. Offline styles are always plain.
 - Dyes belong to player seats. Repeat the unacknowledged
   `PACKET_PLAYER_LOOK` on the keep-alive beat so packet loss repairs itself.
   Store both dyes in `JE_SaveFileType` so a resumed peer receives them.
+- Shield-hit explosions follow hull opacity. `JE_setupExplosion()` copies
+  `explosionOpacity` into a parallel slot table; local opacity must stay out of
+  the snapshotted and hashed `Explosion` structure.
 - Opacity, **Apply to Ship**, and **HP Bars** form one `NetShipView` per seat.
   Only `netStyleLocalView()` affects rendering. **Apply to Ship** may spare the
   body without sparing its shots.
