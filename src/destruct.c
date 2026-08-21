@@ -1121,7 +1121,6 @@ static void JE_introScreen(void)
 	{
 		push_joysticks_as_keyboard();  // let a controller dismiss the title (no keyboard on Switch)
 		service_SDL_events(false);
-		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	}
 
@@ -1154,6 +1153,10 @@ static enum de_mode_t JE_modeSelect(void)
 
 	while (true)
 	{
+		// Keyboard-only: nothing here hit-tests a tap, so the touch ports need the cursor
+		// keys and confirm to pick a mode at all.
+		touch_ui_set_layout(TOUCH_LAYOUT_PICK);
+
 		DrawModeSelectMenu(mode);
 		JE_showVGA();
 
@@ -1162,7 +1165,6 @@ static enum de_mode_t JE_modeSelect(void)
 		{
 			push_joysticks_as_keyboard();  // controller -> arrows/Return/Escape (no keyboard on Switch)
 			service_SDL_events(false);
-			touch_ui_idle_repaint();
 			SDL_Delay(16);
 		} while (!newkey);
 
@@ -1757,7 +1759,6 @@ static void JE_helpScreen(void)
 	{
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
-		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	} while (!newkey);
 
@@ -1780,7 +1781,6 @@ static void JE_pauseScreen(void)
 	{
 		push_joysticks_as_keyboard();  // controller counts as a keypress (no keyboard on Switch)
 		service_SDL_events(true);
-		touch_ui_idle_repaint();
 		SDL_Delay(16);
 	} while (!newkey);
 

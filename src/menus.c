@@ -59,7 +59,6 @@ static bool menuWaitForInput(void)
 	{
 		push_joysticks_as_keyboard();
 		service_SDL_events(false);
-		touch_ui_idle_repaint();
 
 		NETWORK_KEEP_ALIVE();
 

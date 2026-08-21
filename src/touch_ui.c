@@ -107,6 +107,17 @@ static const TouchButtonDef LAYOUT_LIST[] =
 	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
 };
 
+/* A short keyboard-only menu that hit-tests nothing, so a tap cannot move or confirm a
+ * row: Destruct's mode select is the one that matters, where without this the minigame
+ * cannot be started at all. No left or right, because these screens read neither. */
+static const TouchButtonDef LAYOUT_PICK[] =
+{
+	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
+	{ TOUCH_BTN_UP,     ICON_UP,      1, -3, SDL_SCANCODE_UP,     true,  GATE_ALWAYS },
+	{ TOUCH_BTN_DOWN,   ICON_DOWN,    1, -2, SDL_SCANCODE_DOWN,   true,  GATE_ALWAYS },
+	{ TOUCH_BTN_SELECT, ICON_SELECT,  1, -1, SDL_SCANCODE_RETURN, false, GATE_ALWAYS },
+};
+
 static const TouchButtonDef LAYOUT_JUKEBOX[] =
 {
 	{ TOUCH_BTN_ESC,    ICON_CLOSE,  -1,  0, SDL_SCANCODE_ESCAPE, false, GATE_ALWAYS },
@@ -210,6 +221,11 @@ static Uint32 desired_signature(Uint32 now_ms)
 
 void touch_ui_idle_repaint(void)
 {
+	// A level presents every frame on its own, and repainting from inside its tick could
+	// put a half-drawn frame on screen. Only idle screens need this.
+	if (mouseGetRelative())
+		return;
+
 	if (desired_signature(SDL_GetTicks()) == presented_signature)
 		return;
 
@@ -304,6 +320,7 @@ static void build_layout(const SDL_Rect *frame, int out_w, int out_h, Uint32 now
 	switch (layout)
 	{
 	case TOUCH_LAYOUT_LIST:     defs = LAYOUT_LIST;     count = (int)COUNTOF(LAYOUT_LIST);     break;
+	case TOUCH_LAYOUT_PICK:     defs = LAYOUT_PICK;     count = (int)COUNTOF(LAYOUT_PICK);     break;
 	case TOUCH_LAYOUT_JUKEBOX:  defs = LAYOUT_JUKEBOX;  count = (int)COUNTOF(LAYOUT_JUKEBOX);  break;
 	case TOUCH_LAYOUT_DESTRUCT: defs = LAYOUT_DESTRUCT; count = (int)COUNTOF(LAYOUT_DESTRUCT); break;
 	case TOUCH_LAYOUT_GAME:     defs = LAYOUT_GAME;     count = (int)COUNTOF(LAYOUT_GAME);     break;

@@ -267,9 +267,14 @@ void push_joysticks_as_keyboard(void)
 	if (rollback_resim)
 		return;
 
-	// Screens that want menu-style keys all call this, immediately before the pump they
-	// read, which is exactly where the on-screen buttons' keys have to land.
+	/* Screens that want menu-style keys all call this, immediately before the pump they
+	 * read, which is exactly where the on-screen buttons' keys have to land. It is also the
+	 * one place every hand-rolled wait loop passes through, so the buttons are repainted
+	 * from here too: several of those loops draw once and then only pump, and a layout that
+	 * went stale after the screen changed would otherwise stay on screen -- leaving the
+	 * jukebox's track buttons behind on the menu that follows it. */
 	touch_ui_flush_keys();
+	touch_ui_idle_repaint();
 
 	poll_joysticks();
 	
